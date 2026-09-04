@@ -1,0 +1,32 @@
+# Local/runtime configuration and credentials
+config.php
+.env
+.env.*
+!.env.example
+private/*
+!private/.htaccess
+!private/README.txt
+
+# Runtime/user-generated data
+uploads/**
+!uploads/.htaccess
+!uploads/README.txt
+
+# Logs, caches and temporary files
+*.log
+*.tmp
+*.temp
+.cache/
+cache/
+tmp/
+
+# Editor / OS noise
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Local test/build output
+coverage/
+recovery-inventory.generated.md
+recovery-inventory.generated.json
