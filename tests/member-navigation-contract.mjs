@@ -32,7 +32,7 @@ assert.ok(nav.includes("has_permission('knowledge.manage'"), 'My Knowledge must 
 assert.ok(nav.includes("has_permission('artist_listening.access'"), 'My Transcriptions must be permission gated');
 assert.ok(nav.includes("user_has_role('artist'"), 'Artist Workspace must require artist identity');
 assert.ok(nav.includes("has_permission('producer.access'"), 'Stem Studio must retain producer access');
-assert.ok(nav.includes("?preview=1"), 'unpublished owners should receive a usable profile preview URL');
+assert.ok(nav.includes("empty($profile['is_public'])") && nav.includes("'preview=1'"), 'unpublished owners should receive a usable profile preview URL');
 assert.ok(!nav.includes('My Library'), 'My Library is not a canonical user-dropdown destination');
 assert.ok(!nav.includes('Agent Settings'), 'Agent Settings belongs inside My Account');
 assert.ok(!nav.includes("'Profile Agent'"), 'Profile Agent belongs inside My Account');
