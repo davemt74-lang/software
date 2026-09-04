@@ -36,8 +36,8 @@ $html = preg_replace(
 
 if (has_permission('artist_listening.access', $user)) {
     $recordingsNavLink = '<a class="chat-sidebar-nav-link chat-sidebar-recordings-link" href="'
-        . e(url('/artist-listening.php')) . '" aria-label="Open My Recordings">'
-        . '<span aria-hidden="true">●</span><strong>My Recordings</strong></a>';
+        . e(url('/artist-listening.php')) . '" aria-label="Open My Transcriptions">'
+        . '<span aria-hidden="true">●</span><strong>My Transcriptions</strong></a>';
     $html = preg_replace_callback(
         '~(\s*</nav>\s*</section>\s*<section class="chat-sidebar-history-section")~',
         static fn(array $matches): string => "\n          " . $recordingsNavLink . $matches[1],
@@ -113,46 +113,22 @@ try {
     $agentInitialConversationId = (int)$chatInitialConversationId;
 }
 
-// Public-profile lookup is deliberately isolated from Chat identity. A missing or
-// partially upgraded profile schema must never force a renamed owner agent back
-// to the universal system identity.
-try {
-    if ($pdoForAgent && function_exists('profile_agent_schema_ready') && profile_agent_schema_ready($pdoForAgent)) {
-        $profileRow = profile_migrate_artist_identity($pdoForAgent, $user);
-        $profileUsername = trim((string)($profileRow['username'] ?? ''));
-        if ($profileUsername !== '') $canonicalProfileUrl = profile_public_url($profileUsername);
-    }
-} catch (Throwable $e) {
-    $canonicalProfileUrl = '';
+// Canonical account dropdown. Replace the legacy menu as one unit so Chat does
+// not inject parallel account.php hash links that drift from the other surfaces.
+$chatProfileLinks = '';
+foreach (member_navigation_menu_links($user) as $menuLink) {
+    $class = !empty($menuLink['danger']) ? ' class="logout"' : '';
+    $chatProfileLinks .= '<a' . $class
+        . ' data-chat-profile-link="' . e((string)$menuLink['key']) . '"'
+        . ' href="' . e((string)$menuLink['url']) . '">'
+        . '<span>' . e((string)$menuLink['label']) . '</span><span>↗</span></a>';
 }
-
-// Canonical account/profile links are server-rendered. They must not depend on
-// the user-agent JavaScript bundle or browser cache state. Keep the legacy artist
-// link until a canonical profile URL really exists so partial upgrades lose no UI.
-if ($canonicalProfileUrl !== '') {
-    $html = preg_replace(
-        '~<a[^>]*>\s*<span>View Artist Profile</span>\s*<span>↗</span>\s*</a>~s',
-        '',
-        $html,
-        1
-    ) ?? $html;
-}
-$serverProfileLinks = '';
-if ($canonicalProfileUrl !== '') {
-    $serverProfileLinks .= '<a data-chat-profile-link="profile" href="' . e($canonicalProfileUrl) . '"><span>My Profile</span><span>↗</span></a>';
-}
-if (has_permission('account.access', $user) && has_permission('chat.access', $user)) {
-    $serverProfileLinks .= '<a data-chat-profile-link="agent-settings" href="' . e(url('/account.php#agents-data')) . '"><span>Agent Settings</span><span>↗</span></a>';
-    $serverProfileLinks .= '<a data-chat-profile-link="profile-agent" href="' . e(url('/account.php#profile-agent')) . '"><span>Profile Agent</span><span>↗</span></a>';
-}
-if ($serverProfileLinks !== '') {
-    $html = preg_replace(
-        '~(<nav class="chat-profile-links">)~',
-        '$1' . $serverProfileLinks,
-        $html,
-        1
-    ) ?? $html;
-}
+$html = preg_replace(
+    '~<nav class="chat-profile-links">.*?</nav>~s',
+    '<nav class="chat-profile-links">' . $chatProfileLinks . '</nav>',
+    $html,
+    1
+) ?? $html;
 
 $chatApiEndpoint = $agentFeatureReady
     ? url('/api/chat-v236.php') . ($activeUserAgent ? '?agent=' . (int)$activeUserAgent['id'] : '')

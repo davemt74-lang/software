@@ -65,6 +65,7 @@ $config = [
     'endpoint'=>url('/api/artist-listening-v172.php'),
     'longEndpoint'=>url('/api/artist-listening-long-v237.php'),
     'userId'=>(int)$user['id'],
+    'userMenuLinks'=>member_navigation_menu_links($user),
     'csrf'=>csrf_token(),
     'conversationId'=>0,
     'schemaReady'=>artist_listening_v172_schema_ready(),
@@ -383,11 +384,24 @@ $config = [
       const menu = document.createElement('div');
       menu.className = 'sf-listening-user-menu';
       menu.dataset.listeningUserMenu = '1';
-      menu.innerHTML = `<button type="button" class="sf-listening-user-menu-button" data-listening-user-menu-toggle aria-expanded="false" aria-controls="sfListeningUserMenuDropdown" aria-label="Open user menu"><span class="sf-listening-user-avatar"><span data-listening-user-avatar-fallback aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.5"></circle><path d="M5.5 19c.8-3.7 3-5.5 6.5-5.5s5.7 1.8 6.5 5.5"></path></svg></span><img data-listening-user-avatar hidden alt=""></span></button><div class="sf-listening-user-menu-dropdown" id="sfListeningUserMenuDropdown" data-listening-user-menu-dropdown hidden><a href="account.php"><span>My Account</span><span>↗</span></a><a href="my-library.php"><span>My Library</span><span>↗</span></a><a href="artist-profile.php?user_id=${encodeURIComponent(String(userId))}"><span>View Artist Profile</span><span>↗</span></a><a href="chat.php"><span>Agent Chat</span><span>↗</span></a><a href="logout.php"><span>Log Out</span><span>↗</span></a></div>`;
+      menu.innerHTML = `<button type="button" class="sf-listening-user-menu-button" data-listening-user-menu-toggle aria-expanded="false" aria-controls="sfListeningUserMenuDropdown" aria-label="Open user menu"><span class="sf-listening-user-avatar"><span data-listening-user-avatar-fallback aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.5"></circle><path d="M5.5 19c.8-3.7 3-5.5 6.5-5.5s5.7 1.8 6.5 5.5"></path></svg></span><img data-listening-user-avatar hidden alt=""></span></button><div class="sf-listening-user-menu-dropdown" id="sfListeningUserMenuDropdown" data-listening-user-menu-dropdown hidden></div>`;
+      const dropdown = menu.querySelector('[data-listening-user-menu-dropdown]');
+      const menuLinks = Array.isArray(listeningConfig.userMenuLinks) ? listeningConfig.userMenuLinks : [];
+      menuLinks.forEach(item => {
+        if (!item || !item.url || !item.label || !dropdown) return;
+        const link = document.createElement('a');
+        link.href = String(item.url);
+        if (item.danger) link.classList.add('logout');
+        const label = document.createElement('span');
+        label.textContent = String(item.label);
+        const arrow = document.createElement('span');
+        arrow.textContent = '↗';
+        link.append(label, arrow);
+        dropdown.appendChild(link);
+      });
       aiButton.insertAdjacentElement('afterend', menu);
 
       const button = menu.querySelector('[data-listening-user-menu-toggle]');
-      const dropdown = menu.querySelector('[data-listening-user-menu-dropdown]');
       const image = menu.querySelector('[data-listening-user-avatar]');
       const fallback = menu.querySelector('[data-listening-user-avatar-fallback]');
       const close = () => {

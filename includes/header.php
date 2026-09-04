@@ -6,6 +6,7 @@ $activePage = $activePage ?? '';
 $headerUser = current_user();
 $headerNotificationCount = $headerUser ? notification_unread_count($headerUser) : 0;
 $headerNotifications = $headerUser ? notification_recent($headerUser, 6) : [];
+$headerUserMenuLinks = $headerUser ? member_navigation_menu_links($headerUser) : [];
 $headerArtistProfileUrl = artist_workspace_v181_profile_url_for_user($headerUser);
 
 // An existing Artist workspace is authoritative for profile navigation. The
@@ -52,7 +53,6 @@ $headerCanManageArtist = $headerUser
             <a href="<?= e(url('/chat.php')) ?>">Agent Chat</a>
             <a href="<?= e(url('/chat.php?view=player')) ?>">Player</a>
           <?php endif; ?>
-          <?php if (has_permission('account.access', $headerUser) && function_exists('artist_workspace_v181_schema_ready') && artist_workspace_v181_schema_ready()): ?><a class="<?= $activePage === 'library' ? 'active' : '' ?>" href="<?= e(url('/my-library.php')) ?>">My Library</a><?php endif; ?>
           <?php if (has_permission('account.access', $headerUser)): ?><a class="<?= $activePage === 'account' ? 'active' : '' ?>" href="<?= e(url('/account.php')) ?>">My Account</a><?php endif; ?>
         <?php else: ?>
           <a class="<?= $activePage === 'home' ? 'active' : '' ?>" href="<?= e(url('/index.php')) ?>">Home</a>
@@ -133,23 +133,9 @@ $headerCanManageArtist = $headerUser
             </div>
 
             <div class="user-menu-links">
-              <?php if (has_permission('chat.access')): ?>
-                <a href="<?= e(url('/chat.php')) ?>"><span>Stonefellow Chat</span><span>↗</span></a>
-              <?php endif; ?>
-              <?php if (has_permission('account.access')): ?>
-                <a href="<?= e(url('/account.php')) ?>"><span>My Account</span><span>↗</span></a>
-                <?php if (function_exists('artist_workspace_v181_schema_ready') && artist_workspace_v181_schema_ready()): ?><a href="<?= e(url('/my-library.php')) ?>"><span>My Library</span><span>↗</span></a><?php endif; ?>
-              <?php endif; ?>
-              <?php if ($headerCanManageArtist): ?>
-                <a href="<?= e(url('/admin/artist.php')) ?>"><span>Artist Admin</span><span>↗</span></a>
-              <?php endif; ?>
-              <?php if ($headerArtistProfileUrl !== ''): ?>
-                <a href="<?= e($headerArtistProfileUrl) ?>"><span>View Artist Profile</span><span>↗</span></a>
-              <?php endif; ?>
-              <?php if (has_permission('admin.access')): ?>
-                <a href="<?= e(url('/admin/index.php')) ?>"><span>Admin Dashboard</span><span>↗</span></a>
-              <?php endif; ?>
-              <a class="user-menu-logout" href="<?= e(url('/logout.php')) ?>"><span>Log Out</span><span>↗</span></a>
+              <?php foreach ($headerUserMenuLinks as $menuLink): ?>
+                <a<?= !empty($menuLink['danger']) ? ' class="user-menu-logout"' : '' ?> href="<?= e((string)$menuLink['url']) ?>"><span><?= e((string)$menuLink['label']) ?></span><span>↗</span></a>
+              <?php endforeach; ?>
             </div>
           </div>
         </div>
