@@ -1,0 +1,94 @@
+name: Unpack recovery source
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  unpack:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Safely unpack recovery archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          ZIP='band-chatgpt-pr82-listening-transcription-recovery (77).zip'
+
+          if [[ ! -f "$ZIP" ]]; then
+            echo 'Recovery ZIP already removed; nothing to do.'
+            exit 0
+          fi
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import shutil
+          import zipfile
+
+          root = Path.cwd().resolve()
+          archive = root / 'band-chatgpt-pr82-listening-transcription-recovery (77).zip'
+          staging = root / '.unpack-staging'
+
+          if staging.exists():
+              shutil.rmtree(staging)
+          staging.mkdir()
+
+          with zipfile.ZipFile(archive) as zf:
+              for member in zf.infolist():
+                  target = (staging / member.filename).resolve()
+                  if target != staging and staging not in target.parents:
+                      raise RuntimeError(f'Unsafe archive path: {member.filename}')
+              zf.extractall(staging)
+
+          entries = [p for p in staging.iterdir() if p.name not in {'__MACOSX'}]
+          source = staging
+          if len(entries) == 1 and entries[0].is_dir():
+              source = entries[0]
+
+          for item in source.iterdir():
+              if item.name in {'.git', '.github'}:
+                  continue
+              destination = root / item.name
+              if destination.exists():
+                  if destination.is_dir() and not destination.is_symlink():
+                      shutil.rmtree(destination)
+                  else:
+                      destination.unlink()
+              shutil.move(str(item), str(destination))
+
+          shutil.rmtree(staging, ignore_errors=True)
+          archive.unlink()
+          PY
+
+      - name: Commit extracted source
+        shell: bash
+        run: |
+          set -euo pipefail
+          ZIP='band-chatgpt-pr82-listening-transcription-recovery (77).zip'
+
+          if git ls-files --error-unmatch "$ZIP" >/dev/null 2>&1 && [[ -f "$ZIP" ]]; then
+            echo 'Archive was not extracted.' >&2
+            exit 1
+          fi
+
+          rm -f .github/workflows/unpack-recovery.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+
+          if git diff --cached --quiet; then
+            echo 'No repository changes to commit.'
+            exit 0
+          fi
+
+          git commit -m 'Extract recovery source into repository'
+          git push origin HEAD:main
