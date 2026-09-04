@@ -15,7 +15,7 @@ if (!column_exists('users', 'avatar_path')) {
     redirect(url('/upgrade.php'));
 }
 
-$accountArtistProfileUrl = artist_workspace_v181_profile_url_for_user($user);
+$accountUserMenuLinks = member_navigation_menu_links($user);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!verify_csrf()) {
@@ -250,12 +250,9 @@ $accountBrainTools = agent_brain_tools($user);
             </div>
 
             <nav class="chat-profile-links">
-              <?php if (has_permission('chat.access', $user)): ?><a href="<?= e(url('/chat.php')) ?>"><span>Agent Chat</span><span>↗</span></a><a href="<?= e(url('/chat.php?view=player')) ?>"><span>Player</span><span>↗</span></a><?php endif; ?>
-              <?php if ($accountArtistProfileUrl !== ''): ?><a href="<?= e($accountArtistProfileUrl) ?>"><span>View Artist Profile</span><span>↗</span></a><?php endif; ?>
-              <?php if (has_permission('admin.access')): ?>
-                <a href="<?= e(url('/admin/index.php')) ?>"><span>Admin Dashboard</span><span>↗</span></a>
-              <?php endif; ?>
-              <a class="logout" href="<?= e(url('/logout.php')) ?>"><span>Log Out</span><span>↗</span></a>
+              <?php foreach ($accountUserMenuLinks as $menuLink): ?>
+                <a<?= !empty($menuLink['danger']) ? ' class="logout"' : '' ?> href="<?= e((string)$menuLink['url']) ?>"><span><?= e((string)$menuLink['label']) ?></span><span>↗</span></a>
+              <?php endforeach; ?>
             </nav>
           </div>
         </div>

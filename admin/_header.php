@@ -25,7 +25,7 @@ if ($adminCrmVisible && function_exists('crm_v180_schema_ready') && crm_v180_sch
     try { $adminCrmNew = (int)db()->query("SELECT COUNT(*) FROM crm_leads WHERE stage='new'")->fetchColumn(); } catch (Throwable $e) {}
 }
 $isArtistAdmin = user_has_role('artist', $user);
-$adminArtistProfileUrl = artist_workspace_v181_profile_url_for_user($user);
+$adminUserMenuLinks = member_navigation_menu_links($user);
 ?>
 <!doctype html>
 <html lang="en">
@@ -94,7 +94,11 @@ $adminArtistProfileUrl = artist_workspace_v181_profile_url_for_user($user);
       </div>
       <div class="admin-user-menu" id="adminUserMenu">
         <button class="admin-user-menu-button" id="adminUserMenuButton" type="button" aria-expanded="false" aria-controls="adminUserDropdown"><span class="admin-avatar admin-avatar-sm"><?php if (user_avatar_url($user) !== ''): ?><img src="<?= e(user_avatar_url($user)) ?>" alt=""><?php else: ?><span><?= e(user_initials($user)) ?></span><?php endif; ?></span><span class="admin-user-menu-copy"><strong><?= e($user['display_name'] ?? '') ?></strong><small><?= e($adminRoleSummary) ?></small></span><span class="admin-user-chevron">⌄</span></button>
-        <div class="admin-user-dropdown" id="adminUserDropdown" hidden><div class="admin-user-dropdown-head"><span class="admin-avatar admin-avatar-lg"><?php if (user_avatar_url($user) !== ''): ?><img src="<?= e(user_avatar_url($user)) ?>" alt=""><?php else: ?><span><?= e(user_initials($user)) ?></span><?php endif; ?></span><div><strong><?= e($user['display_name'] ?? '') ?></strong><span><?= e($user['email'] ?? '') ?></span></div></div><nav class="admin-user-dropdown-links"><?php if (has_permission('account.access')): ?><a href="<?= e(url('/account.php')) ?>"><span>My Account</span><span>↗</span></a><?php endif; ?><?php if (has_permission('chat.access')): ?><a href="<?= e(url('/chat.php')) ?>"><span>Agent Chat</span><span>↗</span></a><?php endif; ?><?php if (has_permission('chat.access')): ?><a href="<?= e(url('/chat.php?view=player')) ?>"><span>Player</span><span>↗</span></a><?php endif; ?><?php if ($adminArtistProfileUrl !== ''): ?><a href="<?= e($adminArtistProfileUrl) ?>"><span>View Artist Profile</span><span>↗</span></a><?php endif; ?><a href="<?= e(url('/index.php')) ?>"><span>View Website</span><span>↗</span></a><a class="admin-user-logout" href="<?= e(url('/logout.php')) ?>"><span>Log Out</span><span>↗</span></a></nav></div>
+        <div class="admin-user-dropdown" id="adminUserDropdown" hidden><div class="admin-user-dropdown-head"><span class="admin-avatar admin-avatar-lg"><?php if (user_avatar_url($user) !== ''): ?><img src="<?= e(user_avatar_url($user)) ?>" alt=""><?php else: ?><span><?= e(user_initials($user)) ?></span><?php endif; ?></span><div><strong><?= e($user['display_name'] ?? '') ?></strong><span><?= e($user['email'] ?? '') ?></span></div></div><nav class="admin-user-dropdown-links">
+          <?php foreach ($adminUserMenuLinks as $menuLink): ?>
+            <a<?= !empty($menuLink['danger']) ? ' class="admin-user-logout"' : '' ?> href="<?= e((string)$menuLink['url']) ?>"><span><?= e((string)$menuLink['label']) ?></span><span>↗</span></a>
+          <?php endforeach; ?>
+        </nav></div>
       </div>
     </div>
     <?php endif; ?>
