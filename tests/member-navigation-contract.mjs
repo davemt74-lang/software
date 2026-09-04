@@ -34,8 +34,8 @@ assert.ok(nav.includes("user_has_role('artist'"), 'Artist Workspace must require
 assert.ok(nav.includes("has_permission('producer.access'"), 'Stem Studio must retain producer access');
 assert.ok(nav.includes("empty($profile['is_public'])") && nav.includes("'preview=1'"), 'unpublished owners should receive a usable profile preview URL');
 assert.ok(!nav.includes('My Library'), 'My Library is not a canonical user-dropdown destination');
-assert.ok(!nav.includes('Agent Settings'), 'Agent Settings belongs inside My Account');
-assert.ok(!nav.includes("'Profile Agent'"), 'Profile Agent belongs inside My Account');
+assert.ok(!nav.includes("'agent_settings'"), 'Agent Settings belongs inside My Account');
+assert.ok(!nav.includes("'profile_agent'"), 'Profile Agent belongs inside My Account');
 
 for (const [name, source] of [['account', account], ['admin', admin], ['site header', header]]) {
   assert.ok(source.includes('member_navigation_menu_links'), `${name} should use canonical member navigation`);
