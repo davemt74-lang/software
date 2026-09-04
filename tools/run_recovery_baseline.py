@@ -37,16 +37,16 @@ NODE_TESTS = [
     'tests/stem-midi-composition-v218.mjs',
     'tests/stem-virtual-midi-keyboard-v219.mjs',
     'tests/artist-workspace-v181.mjs',
-    'tests/artist-cms-v186.mjs',
     'tests/crm-v180.mjs',
     'tests/account-scope-v181.mjs',
 ]
 
-# These tests are valuable historical evidence but are not part of the new
-# baseline because they directly read workflow files that were lost with the
-# original repository. Do not recreate obsolete workflows just to satisfy them.
+# These tests contain useful source assertions but also directly read the lost
+# PR82 GitHub workflow. Preserve them as historical evidence; do not recreate an
+# obsolete workflow file merely to make a recovery baseline appear green.
 HISTORICAL_WORKFLOW_COUPLED_TESTS = [
     'tests/artist-profile-v181.mjs',
+    'tests/artist-cms-v186.mjs',
 ]
 
 PHP_TESTS = [
