@@ -1,0 +1,6492 @@
+(() => {
+  const cfg = window.STONEFELLOW_STEM_STUDIO;
+  if (!cfg || !Array.isArray(cfg.stems) || !cfg.stems.length) return;
+
+  const playButton = document.getElementById('stemPlayButton');
+  const currentTimeEl = document.getElementById('stemCurrentTime');
+  const masterVolume = document.getElementById('stemMasterVolume');
+  const masterValue = document.getElementById('stemMasterValue');
+
+  const auxReturnA = document.getElementById('auxReturnA');
+  const auxReturnB = document.getElementById('auxReturnB');
+  const auxReturnAValue = document.getElementById('auxReturnAValue');
+  const auxReturnBValue = document.getElementById('auxReturnBValue');
+
+  const masterMeterBars = [
+    ...document.querySelectorAll('[data-master-meter] i')
+  ];
+  const resetMixButton = document.getElementById('stemResetMix');
+
+  const loopToggleButton = document.getElementById('stemLoopToggle');
+  const loopClearButton = document.getElementById('stemLoopClear');
+
+  const dawArrange = document.getElementById('dawArrange');
+  const timelineSurface = document.getElementById('dawTimelineSurface');
+  const ruler = document.getElementById('dawRuler');
+  const rulerLines = document.getElementById('dawRulerLines');
+  const playhead = document.getElementById('dawPlayhead');
+  const loopSelection = document.getElementById('dawLoopSelection');
+  const loopLabel = document.getElementById('dawLoopLabel');
+  const markerLane = document.getElementById('dawMarkerLane');
+
+  const timelineZoomOut = document.getElementById('timelineZoomOut');
+  const timelineZoomIn = document.getElementById('timelineZoomIn');
+  const timelineZoomValue = document.getElementById('timelineZoomValue');
+  const addTimelineMarker = document.getElementById('addTimelineMarker');
+  const addTimelineRegion = document.getElementById('addTimelineRegion');
+
+  const trackList = document.getElementById('dawTrackList');
+  const arrangeLanes = document.getElementById('dawArrangeLanes');
+  const mixerScroll = document.getElementById('dawMixerScroll');
+  const studio = document.getElementById('stemStudio');
+  const pluginRackHandle = document.getElementById('pluginRackHandle');
+
+  const pluginDirectoryDialog = document.getElementById('pluginDirectoryDialog');
+  const pluginDirectoryTrack = document.getElementById('pluginDirectoryTrack');
+  const pluginEditor = document.getElementById('pluginEditor');
+  const pluginEditorTitle = document.getElementById('pluginEditorTitle');
+  const pluginEditorControls = document.getElementById('pluginEditorControls');
+  const pluginBypassButton = document.getElementById('pluginBypassButton');
+  const pluginRemoveButton = document.getElementById('pluginRemoveButton');
+
+  const masterBusDialog = document.getElementById('masterBusDialog');
+  const mixSaveDialog = document.getElementById('mixSaveDialog');
+  const savedMixList = document.getElementById('savedMixList');
+  const stemMixName = document.getElementById('stemMixName');
+  const saveStemMixButton = document.getElementById('saveStemMix');
+
+  const duration = Number(cfg.duration || 0);
+  const trackId = Number(cfg.trackId || 0);
+  const userId = Number(cfg.userId || 0);
+
+  const localStateKey =
+    `stonefellow:stem-studio:state:${userId}:${trackId}`;
+
+  let localPersistenceReady = false;
+  let localSaveTimer = 0;
+  let selectedStemId = 0;
+
+  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+
+  let context = null;
+  let busInput = null;
+  let eqLow = null;
+  let eqMid = null;
+  let eqHigh = null;
+  let compressor = null;
+  let masterGain = null;
+  let masterAnalyser = null;
+  let masterLevelData = null;
+
+  let auxAInput = null;
+  let auxAConvolver = null;
+  let auxAReturnGain = null;
+
+  let auxBInput = null;
+  let auxBDelay = null;
+  let auxBFeedback = null;
+  let auxBReturnGain = null;
+
+  const groupState = {
+    vocals:{volume:1,muted:false,input:null,gain:null,analyser:null,data:null},
+    rhythm:{volume:1,muted:false,input:null,gain:null,analyser:null,data:null},
+    music:{volume:1,muted:false,input:null,gain:null,analyser:null,data:null}
+  };
+
+  let dryGain = null;
+  let wetGain = null;
+  let reverb = null;
+
+  let playing = false;
+  let position = 0;
+  let startedAt = 0;
+  let frame = 0;
+
+  // Explicit seeks are coordinated. Normal animation frames never repeatedly
+  // rewrite media.currentTime; doing that against HTTP range-backed MP3/WAV
+  // streams can continuously restart decoders and produce static.
+  let seekSerial = 0;
+  let seekInProgress = false;
+
+  let draggedStemId = 0;
+  let dragSourceElement = null;
+  let selectedMixId = 0;
+
+  let pluginRackOpen = false;
+  let pluginRackHeight = 348;
+  let pluginTargetStemId = 0;
+  let pluginEditIndex = -1;
+
+  let loopStart = 0;
+  let loopEnd = 0;
+  let loopActive = false;
+
+  let timelineZoom = 1;
+  let timelineMarkers = [];
+  let timelineRegions = [];
+
+  let selectingLoop = false;
+  let selectionPointerId = null;
+  let selectionStartTime = 0;
+  let selectionStartX = 0;
+  let selectionDragged = false;
+  let suppressSurfaceClickUntil = 0;
+
+  let syncingVerticalScroll = false;
+
+  const pluginState = {
+    eq: true,
+    compressor: true,
+    reverb: false
+  };
+
+  const dbText = gain => {
+    const value = Math.max(0, Number(gain || 0));
+    if (value <= 0.0001) return '-∞ dB';
+    const db = 20 * Math.log10(value);
+    return `${db >= 0 ? '+' : ''}${db.toFixed(1)} dB`;
+  };
+
+  const panText = value => {
+    const pan = Number(value || 0);
+    if (Math.abs(pan) < 0.015) return 'C';
+    return pan < 0
+      ? `L${Math.round(Math.abs(pan) * 100)}`
+      : `R${Math.round(pan * 100)}`;
+  };
+
+  const formatTime = seconds => {
+    const safe = Math.max(0, Number(seconds || 0));
+    const minutes = Math.floor(safe / 60);
+    const secs = Math.floor(safe % 60).toString().padStart(2, '0');
+    return `${minutes}:${secs}`;
+  };
+
+  const stems = cfg.stems.map(meta => {
+    const leftRow = document.querySelector(
+      `[data-stem-id="${Number(meta.id)}"]`
+    );
+    const mixer = document.querySelector(
+      `[data-mixer-stem="${Number(meta.id)}"]`
+    );
+    const arrangeRow = document.querySelector(
+      `[data-arrange-stem="${Number(meta.id)}"]`
+    );
+    const audio = leftRow?.querySelector('.stem-audio');
+    const volume = mixer?.querySelector('[data-stem-volume]');
+    const pan = mixer?.querySelector('[data-stem-pan]');
+    const volumeOutput = mixer?.querySelector('[data-volume-value]');
+    const panOutput = mixer?.querySelector('[data-pan-value]');
+    const knob = mixer?.querySelector('[data-pan-knob]');
+    const eqBars = [
+      ...(mixer?.querySelectorAll('[data-track-eq] span') || [])
+    ];
+    const pluginList = mixer?.querySelector('[data-track-plugin-list]');
+    const addPluginButton = mixer?.querySelector('[data-add-track-plugin]');
+
+    const auxSendA = mixer?.querySelector('[data-aux-send="a"]');
+    const auxSendB = mixer?.querySelector('[data-aux-send="b"]');
+    const auxSendAValue = mixer?.querySelector('[data-aux-send-value="a"]');
+    const auxSendBValue = mixer?.querySelector('[data-aux-send-value="b"]');
+
+    const trim = mixer?.querySelector('[data-track-trim]');
+    const trimValue = mixer?.querySelector('[data-track-trim-value]');
+    const phaseButton = mixer?.querySelector('[data-track-phase]');
+    const monoButton = mixer?.querySelector('[data-track-mono]');
+    const groupSelect = mixer?.querySelector('[data-track-group]');
+
+    const automationToggle = leftRow?.querySelector('[data-automation-toggle]');
+    const automationLane = arrangeRow?.querySelector('[data-automation-lane]');
+    const automationParameter = arrangeRow?.querySelector('[data-automation-parameter]');
+    const automationGraph = arrangeRow?.querySelector('[data-automation-graph]');
+    const automationPath = arrangeRow?.querySelector('[data-automation-path]');
+    const automationPointsGroup = arrangeRow?.querySelector('[data-automation-points]');
+
+    const muteButtons = [
+      ...document.querySelectorAll(
+        `[data-stem-id="${Number(meta.id)}"] [data-stem-mute],` +
+        `[data-mixer-stem="${Number(meta.id)}"] [data-stem-mute]`
+      )
+    ];
+
+    const soloButtons = [
+      ...document.querySelectorAll(
+        `[data-stem-id="${Number(meta.id)}"] [data-stem-solo],` +
+        `[data-mixer-stem="${Number(meta.id)}"] [data-stem-solo]`
+      )
+    ];
+
+    return {
+      ...meta,
+      id: Number(meta.id),
+      leftRow,
+      mixer,
+      arrangeRow,
+      audio,
+      volume,
+      pan,
+      volumeOutput,
+      panOutput,
+      knob,
+      eqBars,
+      pluginList,
+      addPluginButton,
+      auxSendA,
+      auxSendB,
+      auxSendAValue,
+      auxSendBValue,
+      trim,
+      trimValue,
+      phaseButton,
+      monoButton,
+      groupSelect,
+      automationToggle,
+      automationLane,
+      automationParameter,
+      automationGraph,
+      automationPath,
+      automationPointsGroup,
+
+      plugins: [],
+      pluginNodes: [],
+
+      trimDb:0,
+      phase:false,
+      mono:false,
+      group:
+        String(meta.role || '').toLowerCase() === 'vocal'
+          ? 'vocals'
+          : ['drums','percussion','bass'].includes(
+              String(meta.role || '').toLowerCase()
+            )
+            ? 'rhythm'
+            : 'music',
+
+      sends: {
+        a: 0,
+        b: 0
+      },
+      automation: {
+        volume: [],
+        pan: [],
+        auxA: [],
+        auxB: []
+      },
+      automationOpen: false,
+
+      auxASendGain: null,
+      auxBSendGain: null,
+
+      muteButtons,
+      soloButtons,
+      muted: false,
+      solo: false,
+      trimNode:null,
+      polarityNode:null,
+      monoSplitter:null,
+      monoLeft:null,
+      monoRight:null,
+      monoSum:null,
+      gainNode: null,
+      panNode: null,
+      analyserNode: null,
+      frequencyData: null,
+      sourceNode: null,
+      pendingPlay: false,
+      initialGain: Math.max(0, Math.min(1.5, Number(meta.volume || 1))),
+      initialPan: Math.max(-1, Math.min(1, Number(meta.pan || 0))),
+      userGain: Math.max(0, Math.min(1.5, Number(meta.volume || 1)))
+    };
+  }).filter(stem => stem.audio);
+
+  const stemById = id => stems.find(stem => stem.id === Number(id));
+
+  function localViewState() {
+    return {
+      arrangeScrollLeft: Number(dawArrange?.scrollLeft || 0),
+      arrangeScrollTop: Number(dawArrange?.scrollTop || 0),
+      trackScrollTop: Number(trackList?.scrollTop || 0),
+      mixerScrollLeft: Number(mixerScroll?.scrollLeft || 0),
+      selectedStemId: Number(selectedStemId || 0),
+      pluginRackOpen:Boolean(pluginRackOpen),
+      pluginRackHeight:Number(pluginRackHeight || 348),
+      timelineZoom:Number(timelineZoom || 1),
+      automationOpen:stems
+        .filter(stem => stem.automationOpen)
+        .map(stem => stem.id),
+      automationParameters:Object.fromEntries(
+        stems.map(stem => [
+          String(stem.id),
+          stem.automationParameter?.value ||
+            'volume'
+        ])
+      )
+    };
+  }
+
+  function saveLocalStateNow() {
+    if (!localPersistenceReady) return;
+
+    try {
+      localStorage.setItem(
+        localStateKey,
+        JSON.stringify({
+          schemaVersion: 1,
+          savedAt: Date.now(),
+          trackId,
+          userId,
+          mix: collectMixState(),
+          view: localViewState()
+        })
+      );
+    } catch (error) {
+      console.warn(
+        'Stem Studio local autosave unavailable.',
+        error
+      );
+    }
+  }
+
+  function scheduleLocalSave(delay = 180) {
+    if (!localPersistenceReady) return;
+
+    window.clearTimeout(localSaveTimer);
+    localSaveTimer = window.setTimeout(
+      saveLocalStateNow,
+      delay
+    );
+  }
+
+  function markSelectedStem(stemId) {
+    selectedStemId = Number(stemId || 0);
+
+    document.querySelectorAll(
+      '.daw-track-row.selected,' +
+      '.daw-stem-channel.selected,' +
+      '.daw-arrange-row.selected'
+    ).forEach(el => el.classList.remove('selected'));
+
+    const stem = stemById(selectedStemId);
+
+    stem?.leftRow?.classList.add('selected');
+    stem?.mixer?.classList.add('selected');
+    stem?.arrangeRow?.classList.add('selected');
+  }
+
+  function restoreLocalState() {
+    let payload = null;
+
+    try {
+      const raw = localStorage.getItem(localStateKey);
+
+      if (raw) {
+        payload = JSON.parse(raw);
+      }
+    } catch (error) {
+      console.warn(
+        'Stem Studio local restore unavailable.',
+        error
+      );
+    }
+
+    if (
+      payload &&
+      typeof payload === 'object' &&
+      Number(payload.trackId || 0) === trackId &&
+      payload.mix &&
+      typeof payload.mix === 'object'
+    ) {
+      applyMixState(payload.mix);
+    }
+
+    const view = (
+      payload &&
+      typeof payload.view === 'object'
+    )
+      ? payload.view
+      : {};
+
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (dawArrange) {
+          dawArrange.scrollLeft = Math.max(
+            0,
+            Number(view.arrangeScrollLeft || 0)
+          );
+          dawArrange.scrollTop = Math.max(
+            0,
+            Number(
+              view.arrangeScrollTop ??
+              view.trackScrollTop ??
+              0
+            )
+          );
+        }
+
+        if (trackList) {
+          trackList.scrollTop = Math.max(
+            0,
+            Number(
+              view.trackScrollTop ??
+              view.arrangeScrollTop ??
+              0
+            )
+          );
+        }
+
+        if (mixerScroll) {
+          mixerScroll.scrollLeft = Math.max(
+            0,
+            Number(view.mixerScrollLeft || 0)
+          );
+        }
+
+        const savedStemId = Number(
+          view.selectedStemId || 0
+        );
+
+        if (savedStemId && stemById(savedStemId)) {
+          markSelectedStem(savedStemId);
+        }
+
+        setPluginRack(
+          Boolean(view.pluginRackOpen),
+          Number(view.pluginRackHeight || 348),
+          false
+        );
+
+        setTimelineZoom(
+          Number(view.timelineZoom || 1),
+          false
+        );
+
+        const openAutomation = Array.isArray(
+          view.automationOpen
+        )
+          ? view.automationOpen.map(Number)
+          : [];
+
+        stems.forEach(stem => {
+          const savedParameter =
+            view.automationParameters?.[
+              String(stem.id)
+            ];
+
+          if (
+            savedParameter &&
+            ['volume','pan','auxA','auxB']
+              .includes(savedParameter) &&
+            stem.automationParameter
+          ) {
+            stem.automationParameter.value =
+              savedParameter;
+          }
+
+          setAutomationOpen(
+            stem,
+            openAutomation.includes(stem.id),
+            false
+          );
+        });
+
+        localPersistenceReady = true;
+      });
+    });
+  }
+
+  function globalPosition() {
+    if (!playing) return position;
+    return Math.min(
+      duration,
+      position + (performance.now() - startedAt) / 1000
+    );
+  }
+
+  function makeImpulse(ctx, seconds = 1.1, decay = 2.6) {
+    const length = Math.max(1, Math.floor(ctx.sampleRate * seconds));
+    const buffer = ctx.createBuffer(2, length, ctx.sampleRate);
+
+    for (let channel = 0; channel < 2; channel++) {
+      const data = buffer.getChannelData(channel);
+
+      for (let i = 0; i < length; i++) {
+        data[i] = (Math.random() * 2 - 1)
+          * Math.pow(1 - i / length, decay);
+      }
+    }
+
+    return buffer;
+  }
+
+  function defaultPlugin(type) {
+    if (type === 'eq5') {
+      return {
+        type:'eq5',
+        enabled:true,
+        params:{
+          f1:80,f2:250,f3:1000,f4:4000,f5:12000,
+          b1:0,b2:0,b3:0,b4:0,b5:0
+        }
+      };
+    }
+
+    if (type === 'delay') {
+      return {
+        type:'delay',
+        enabled:true,
+        params:{
+          time:0.28,
+          feedback:0.32,
+          mix:0.20
+        }
+      };
+    }
+
+    if (type === 'compressor') {
+      return {
+        type:'compressor',
+        enabled:true,
+        params:{
+          threshold:-18,
+          ratio:4,
+          knee:12,
+          attack:0.012,
+          release:0.24,
+          makeup:0
+        }
+      };
+    }
+
+    return {
+      type:'reverb',
+      enabled:true,
+      params:{
+        decay:1.8,
+        size:1.0,
+        damping:9000,
+        mix:0.18
+      }
+    };
+  }
+
+  function normalizeTrackPlugins(plugins) {
+    if (!Array.isArray(plugins)) return [];
+
+    const freqRanges = [
+      [40,180],
+      [120,700],
+      [500,2500],
+      [1800,8000],
+      [6000,18000]
+    ];
+
+    return plugins.slice(0,4)
+      .map(plugin => {
+        if (
+          !plugin ||
+          !['eq5','delay','compressor','reverb']
+            .includes(plugin.type)
+        ) {
+          return null;
+        }
+
+        const base = defaultPlugin(plugin.type);
+        const params = {
+          ...base.params,
+          ...(plugin.params || {})
+        };
+
+        if (plugin.type === 'eq5') {
+          ['b1','b2','b3','b4','b5'].forEach(key => {
+            params[key] = Math.max(
+              -18,
+              Math.min(18,Number(params[key] || 0))
+            );
+          });
+
+          ['f1','f2','f3','f4','f5'].forEach((key,index) => {
+            const [min,max] = freqRanges[index];
+            params[key] = Math.max(
+              min,
+              Math.min(
+                max,
+                Number(params[key] || base.params[key])
+              )
+            );
+          });
+        } else if (plugin.type === 'delay') {
+          params.time = Math.max(
+            0.02,
+            Math.min(1.5,Number(params.time || 0.28))
+          );
+          params.feedback = Math.max(
+            0,
+            Math.min(0.92,Number(params.feedback || 0.32))
+          );
+          params.mix = Math.max(
+            0,
+            Math.min(1,Number(params.mix || 0.20))
+          );
+        } else if (plugin.type === 'compressor') {
+          params.threshold = Math.max(
+            -60,
+            Math.min(0,Number(params.threshold ?? -18))
+          );
+          params.ratio = Math.max(
+            1,
+            Math.min(20,Number(params.ratio || 4))
+          );
+          params.knee = Math.max(
+            0,
+            Math.min(40,Number(params.knee ?? 12))
+          );
+          params.attack = Math.max(
+            0.001,
+            Math.min(1,Number(params.attack || 0.012))
+          );
+          params.release = Math.max(
+            0.01,
+            Math.min(3,Number(params.release || 0.24))
+          );
+          params.makeup = Math.max(
+            -6,
+            Math.min(18,Number(params.makeup || 0))
+          );
+        } else {
+          params.decay = Math.max(
+            0.2,
+            Math.min(8,Number(params.decay || 1.8))
+          );
+          params.size = Math.max(
+            0.25,
+            Math.min(2.5,Number(params.size || 1))
+          );
+          params.damping = Math.max(
+            800,
+            Math.min(20000,Number(params.damping || 9000))
+          );
+          params.mix = Math.max(
+            0,
+            Math.min(1,Number(params.mix || 0.18))
+          );
+        }
+
+        return {
+          type:plugin.type,
+          enabled:plugin.enabled !== false,
+          params
+        };
+      })
+      .filter(Boolean);
+  }
+
+  function pluginLabel(plugin) {
+    if (plugin.type === 'eq5') return '5-Band EQ';
+    if (plugin.type === 'delay') return 'Delay';
+    if (plugin.type === 'compressor') return 'Compressor';
+    return 'Reverb';
+  }
+
+  function renderTrackPluginList(stem) {
+    if (!stem.pluginList) return;
+
+    stem.pluginList.innerHTML = stem.plugins.map((plugin,index) => `
+      <button
+        type="button"
+        class="daw-track-plugin-chip${plugin.enabled ? '' : ' bypassed'}"
+        data-edit-track-plugin="${stem.id}"
+        data-plugin-index="${index}"
+        draggable="true"
+        title="Drag to reorder · ${plugin.enabled ? 'Edit' : 'Bypassed'} ${pluginLabel(plugin)}"
+      >
+        <i class="daw-plugin-order-handle">⋮</i>
+        <span>${
+          plugin.type === 'eq5'
+            ? 'EQ5'
+            : plugin.type === 'delay'
+              ? 'DLY'
+              : plugin.type === 'compressor'
+                ? 'CMP'
+                : 'RVB'
+        }</span>
+        <small>${plugin.enabled ? 'ON' : 'OFF'}</small>
+      </button>
+    `).join('');
+
+    let draggedIndex = -1;
+    let didDrag = false;
+
+    stem.pluginList
+      .querySelectorAll('[data-edit-track-plugin]')
+      .forEach(button => {
+        button.addEventListener('dragstart',event => {
+          draggedIndex = Number(
+            button.dataset.pluginIndex || -1
+          );
+          didDrag = true;
+          button.classList.add('dragging-plugin');
+          event.dataTransfer.effectAllowed = 'move';
+          event.dataTransfer.setData(
+            'text/plain',
+            String(draggedIndex)
+          );
+        });
+
+        button.addEventListener('dragover',event => {
+          if (draggedIndex < 0) return;
+          event.preventDefault();
+          button.classList.add('plugin-drop-target');
+        });
+
+        button.addEventListener('dragleave',() => {
+          button.classList.remove('plugin-drop-target');
+        });
+
+        button.addEventListener('drop',event => {
+          event.preventDefault();
+          button.classList.remove('plugin-drop-target');
+
+          const targetIndex = Number(
+            button.dataset.pluginIndex || -1
+          );
+
+          if (
+            draggedIndex < 0 ||
+            targetIndex < 0 ||
+            draggedIndex === targetIndex
+          ) {
+            return;
+          }
+
+          const [plugin] = stem.plugins.splice(
+            draggedIndex,
+            1
+          );
+          stem.plugins.splice(
+            targetIndex,
+            0,
+            plugin
+          );
+
+          renderTrackPluginList(stem);
+
+          if (context) {
+            rebuildTrackPluginGraph(stem);
+          }
+
+          scheduleLocalSave(0);
+        });
+
+        button.addEventListener('dragend',() => {
+          draggedIndex = -1;
+          button.classList.remove('dragging-plugin');
+
+          requestAnimationFrame(() => {
+            didDrag = false;
+          });
+        });
+
+        button.addEventListener('click',event => {
+          event.stopPropagation();
+
+          if (didDrag) {
+            return;
+          }
+
+          openPluginEditor(
+            Number(button.dataset.editTrackPlugin || 0),
+            Number(button.dataset.pluginIndex || 0)
+          );
+        });
+      });
+
+    if (stem.addPluginButton) {
+      stem.addPluginButton.hidden =
+        stem.plugins.length >= 4;
+    }
+  }
+
+  function setPluginRack(open, height = null, persist = true) {
+    pluginRackOpen = Boolean(open);
+
+    if (height !== null && Number.isFinite(Number(height))) {
+      pluginRackHeight = Math.max(
+        320,
+        Math.min(560, Number(height))
+      );
+    } else {
+      pluginRackHeight = pluginRackOpen ? 520 : 348;
+    }
+
+    if (studio) {
+      studio.classList.toggle(
+        'plugin-rack-open',
+        pluginRackOpen
+      );
+
+      studio.style.setProperty(
+        '--mixer-height',
+        `${pluginRackOpen ? pluginRackHeight : 348}px`
+      );
+    }
+
+    pluginRackHandle?.setAttribute(
+      'aria-expanded',
+      pluginRackOpen ? 'true' : 'false'
+    );
+
+    if (pluginRackHandle) {
+      const small = pluginRackHandle.querySelector('small');
+      if (small) {
+        small.textContent = pluginRackOpen
+          ? 'drag down'
+          : 'drag up';
+      }
+    }
+
+    if (persist) {
+      scheduleLocalSave();
+    }
+  }
+
+  function disconnectTrackPluginNodes(stem) {
+    (stem.pluginNodes || []).forEach(node => {
+      try {
+        node.disconnect();
+      } catch (error) {}
+    });
+
+    stem.pluginNodes = [];
+
+    stem.plugins.forEach(plugin => {
+      if (plugin?._runtime?.rebuildTimer) {
+        window.clearTimeout(plugin._runtime.rebuildTimer);
+      }
+      delete plugin._runtime;
+    });
+  }
+
+  function createEq5Graph(plugin) {
+    const frequencyKeys = ['f1','f2','f3','f4','f5'];
+    const gainKeys = ['b1','b2','b3','b4','b5'];
+
+    const filters = frequencyKeys.map((frequencyKey, index) => {
+      const node = context.createBiquadFilter();
+
+      node.type = index === 0
+        ? 'lowshelf'
+        : index === frequencyKeys.length - 1
+          ? 'highshelf'
+          : 'peaking';
+
+      node.frequency.value = Number(plugin.params[frequencyKey]);
+      node.Q.value = index === 0 || index === frequencyKeys.length - 1
+        ? 0.7
+        : 1.0;
+      node.gain.value = Number(plugin.params[gainKeys[index]] || 0);
+
+      return node;
+    });
+
+    for (let i = 0; i < filters.length - 1; i++) {
+      filters[i].connect(filters[i + 1]);
+    }
+
+    plugin._runtime = {
+      type: 'eq5',
+      filters
+    };
+
+    return {
+      input: filters[0],
+      output: filters[filters.length - 1],
+      nodes: filters
+    };
+  }
+
+  function createDelayGraph(plugin) {
+    const input = context.createGain();
+    const output = context.createGain();
+    const dry = context.createGain();
+    const wet = context.createGain();
+    const delay = context.createDelay(2.0);
+    const feedback = context.createGain();
+
+    delay.delayTime.value = Number(plugin.params.time || 0.28);
+    feedback.gain.value = Number(plugin.params.feedback || 0.32);
+
+    const mix = Math.max(
+      0,
+      Math.min(1, Number(plugin.params.mix || 0.20))
+    );
+
+    dry.gain.value = 1 - mix;
+    wet.gain.value = mix;
+
+    input.connect(dry);
+    dry.connect(output);
+
+    input.connect(delay);
+    delay.connect(wet);
+    wet.connect(output);
+
+    delay.connect(feedback);
+    feedback.connect(delay);
+
+    plugin._runtime = {
+      type: 'delay',
+      delay,
+      feedback,
+      dry,
+      wet
+    };
+
+    return {
+      input,
+      output,
+      nodes: [input, output, dry, wet, delay, feedback]
+    };
+  }
+
+  function createCompressorGraph(plugin) {
+    const input = context.createGain();
+    const compressorNode = context.createDynamicsCompressor();
+    const makeup = context.createGain();
+    const output = context.createGain();
+
+    compressorNode.threshold.value = Number(plugin.params.threshold);
+    compressorNode.ratio.value = Number(plugin.params.ratio);
+    compressorNode.knee.value = Number(plugin.params.knee);
+    compressorNode.attack.value = Number(plugin.params.attack);
+    compressorNode.release.value = Number(plugin.params.release);
+    makeup.gain.value = Math.pow(
+      10,
+      Number(plugin.params.makeup || 0) / 20
+    );
+
+    input.connect(compressorNode);
+    compressorNode.connect(makeup);
+    makeup.connect(output);
+
+    plugin._runtime = {
+      type:'compressor',
+      compressor:compressorNode,
+      makeup
+    };
+
+    return {
+      input,
+      output,
+      nodes:[input,compressorNode,makeup,output]
+    };
+  }
+
+  function createReverbGraph(plugin) {
+    const input = context.createGain();
+    const output = context.createGain();
+    const dry = context.createGain();
+    const wet = context.createGain();
+    const convolver = context.createConvolver();
+    const damping = context.createBiquadFilter();
+
+    const mix = Math.max(
+      0,
+      Math.min(1,Number(plugin.params.mix || 0.18))
+    );
+
+    dry.gain.value = 1 - mix;
+    wet.gain.value = mix;
+
+    damping.type = 'lowpass';
+    damping.frequency.value = Number(
+      plugin.params.damping || 9000
+    );
+
+    convolver.buffer = makeImpulse(
+      context,
+      Number(plugin.params.decay || 1.8),
+      Math.max(
+        1.2,
+        3.4 / Number(plugin.params.size || 1)
+      )
+    );
+
+    input.connect(dry);
+    dry.connect(output);
+
+    input.connect(convolver);
+    convolver.connect(damping);
+    damping.connect(wet);
+    wet.connect(output);
+
+    plugin._runtime = {
+      type:'reverb',
+      convolver,
+      damping,
+      dry,
+      wet,
+      rebuildTimer:0
+    };
+
+    return {
+      input,
+      output,
+      nodes:[input,output,dry,wet,convolver,damping]
+    };
+  }
+
+  function updateTrackPluginAudio(plugin) {
+    if (!context || !plugin?._runtime) {
+      return;
+    }
+
+    const now = context.currentTime;
+
+    if (
+      plugin.type === 'eq5' &&
+      plugin._runtime.type === 'eq5'
+    ) {
+      const frequencyKeys = ['f1','f2','f3','f4','f5'];
+      const gainKeys = ['b1','b2','b3','b4','b5'];
+
+      plugin._runtime.filters.forEach((filter,index) => {
+        filter.frequency.setTargetAtTime(
+          Number(plugin.params[frequencyKeys[index]]),
+          now,
+          0.012
+        );
+        filter.gain.setTargetAtTime(
+          Number(plugin.params[gainKeys[index]]),
+          now,
+          0.012
+        );
+      });
+      return;
+    }
+
+    if (
+      plugin.type === 'delay' &&
+      plugin._runtime.type === 'delay'
+    ) {
+      const mix = Math.max(
+        0,
+        Math.min(1,Number(plugin.params.mix || 0))
+      );
+
+      plugin._runtime.delay.delayTime.setTargetAtTime(
+        Number(plugin.params.time || 0.28),
+        now,
+        0.018
+      );
+      plugin._runtime.feedback.gain.setTargetAtTime(
+        Number(plugin.params.feedback || 0.32),
+        now,
+        0.018
+      );
+      plugin._runtime.dry.gain.setTargetAtTime(
+        1 - mix,
+        now,
+        0.018
+      );
+      plugin._runtime.wet.gain.setTargetAtTime(
+        mix,
+        now,
+        0.018
+      );
+      return;
+    }
+
+    if (
+      plugin.type === 'compressor' &&
+      plugin._runtime.type === 'compressor'
+    ) {
+      const node = plugin._runtime.compressor;
+
+      node.threshold.setTargetAtTime(
+        Number(plugin.params.threshold),
+        now,
+        0.012
+      );
+      node.ratio.setTargetAtTime(
+        Number(plugin.params.ratio),
+        now,
+        0.012
+      );
+      node.knee.setTargetAtTime(
+        Number(plugin.params.knee),
+        now,
+        0.012
+      );
+      node.attack.setTargetAtTime(
+        Number(plugin.params.attack),
+        now,
+        0.012
+      );
+      node.release.setTargetAtTime(
+        Number(plugin.params.release),
+        now,
+        0.018
+      );
+      plugin._runtime.makeup.gain.setTargetAtTime(
+        Math.pow(
+          10,
+          Number(plugin.params.makeup || 0) / 20
+        ),
+        now,
+        0.018
+      );
+      return;
+    }
+
+    if (
+      plugin.type === 'reverb' &&
+      plugin._runtime.type === 'reverb'
+    ) {
+      const mix = Math.max(
+        0,
+        Math.min(1,Number(plugin.params.mix || 0))
+      );
+
+      plugin._runtime.dry.gain.setTargetAtTime(
+        1 - mix,
+        now,
+        0.02
+      );
+      plugin._runtime.wet.gain.setTargetAtTime(
+        mix,
+        now,
+        0.02
+      );
+      plugin._runtime.damping.frequency.setTargetAtTime(
+        Number(plugin.params.damping || 9000),
+        now,
+        0.02
+      );
+
+      window.clearTimeout(
+        plugin._runtime.rebuildTimer || 0
+      );
+
+      plugin._runtime.rebuildTimer = window.setTimeout(
+        () => {
+          if (!context || !plugin?._runtime?.convolver) {
+            return;
+          }
+
+          plugin._runtime.convolver.buffer = makeImpulse(
+            context,
+            Number(plugin.params.decay || 1.8),
+            Math.max(
+              1.2,
+              3.4 / Number(plugin.params.size || 1)
+            )
+          );
+        },
+        90
+      );
+    }
+  }
+
+  function rebuildTrackPluginGraph(stem) {
+    if (
+      !context ||
+      !stem.analyserNode ||
+      !stem.gainNode
+    ) {
+      return;
+    }
+
+    const sourceOutput = stem.panNode || stem.gainNode;
+
+    try {
+      sourceOutput.disconnect();
+    } catch (error) {}
+
+    disconnectTrackPluginNodes(stem);
+
+    let current = sourceOutput;
+
+    stem.plugins.forEach(plugin => {
+      if (!plugin.enabled) return;
+
+      let graph;
+
+      if (plugin.type === 'eq5') {
+        graph = createEq5Graph(plugin);
+      } else if (plugin.type === 'delay') {
+        graph = createDelayGraph(plugin);
+      } else if (plugin.type === 'compressor') {
+        graph = createCompressorGraph(plugin);
+      } else {
+        graph = createReverbGraph(plugin);
+      }
+
+      current.connect(graph.input);
+      current = graph.output;
+      stem.pluginNodes.push(...graph.nodes);
+    });
+
+    current.connect(stem.analyserNode);
+
+    if (stem.auxASendGain) {
+      current.connect(stem.auxASendGain);
+    }
+
+    if (stem.auxBSendGain) {
+      current.connect(stem.auxBSendGain);
+    }
+  }
+
+  function rebuildAllTrackPluginGraphs() {
+    if (!context) return;
+
+    stems.forEach(stem => {
+      rebuildTrackPluginGraph(stem);
+    });
+  }
+
+  function openPluginDirectory(stemId) {
+    const stem = stemById(stemId);
+    if (!stem) return;
+
+    pluginTargetStemId = stem.id;
+    pluginEditIndex = -1;
+
+    if (pluginDirectoryTrack) {
+      pluginDirectoryTrack.innerHTML = `
+        <span>INSERT ON TRACK</span>
+        <strong>${escapeHtml(stem.stem_name || stem.name || `Stem ${stem.id}`)}</strong>
+      `;
+    }
+
+    if (pluginEditor) {
+      pluginEditor.hidden = true;
+    }
+
+    document.getElementById('pluginDirectoryGrid')?.removeAttribute('hidden');
+    openModal(pluginDirectoryDialog);
+  }
+
+  function eqFrequencyToX(frequency) {
+    const min = 20;
+    const max = 20000;
+    const width = 680;
+    const left = 42;
+
+    return left + (
+      Math.log10(frequency / min) /
+      Math.log10(max / min)
+    ) * width;
+  }
+
+  function eqXToFrequency(x) {
+    const min = 20;
+    const max = 20000;
+    const width = 680;
+    const left = 42;
+    const ratio = Math.max(
+      0,
+      Math.min(1, (x - left) / width)
+    );
+
+    return min * Math.pow(max / min, ratio);
+  }
+
+  function eqGainToY(gain) {
+    const top = 20;
+    const height = 240;
+    return top + ((18 - gain) / 36) * height;
+  }
+
+  function eqYToGain(y) {
+    const top = 20;
+    const height = 240;
+    const ratio = Math.max(
+      0,
+      Math.min(1, (y - top) / height)
+    );
+    return 18 - ratio * 36;
+  }
+
+  function formatFrequency(value) {
+    const frequency = Number(value || 0);
+
+    if (frequency >= 1000) {
+      return `${(frequency / 1000).toFixed(
+        frequency >= 10000 ? 1 : 2
+      ).replace(/\.0+$/, '')} kHz`;
+    }
+
+    return `${Math.round(frequency)} Hz`;
+  }
+
+  function svgPoint(event, svg) {
+    const point = svg.createSVGPoint();
+    point.x = event.clientX;
+    point.y = event.clientY;
+
+    const matrix = svg.getScreenCTM();
+
+    if (!matrix) {
+      return {x:0,y:0};
+    }
+
+    const transformed = point.matrixTransform(
+      matrix.inverse()
+    );
+
+    return {
+      x: transformed.x,
+      y: transformed.y
+    };
+  }
+
+  function eqCurvePath(plugin) {
+    const points = [
+      [20, 0],
+      [plugin.params.f1, plugin.params.b1],
+      [plugin.params.f2, plugin.params.b2],
+      [plugin.params.f3, plugin.params.b3],
+      [plugin.params.f4, plugin.params.b4],
+      [plugin.params.f5, plugin.params.b5],
+      [20000, 0]
+    ].map(([frequency, gain]) => [
+      eqFrequencyToX(frequency),
+      eqGainToY(gain)
+    ]);
+
+    let path = `M ${points[0][0]} ${points[0][1]}`;
+
+    for (let i = 1; i < points.length; i++) {
+      const [x0, y0] = points[i - 1];
+      const [x1, y1] = points[i];
+      const mid = (x0 + x1) / 2;
+
+      path += ` C ${mid} ${y0}, ${mid} ${y1}, ${x1} ${y1}`;
+    }
+
+    return path;
+  }
+
+  function renderEqGraph(plugin) {
+    if (!pluginEditorControls) return;
+
+    const frequencyKeys = ['f1','f2','f3','f4','f5'];
+    const gainKeys = ['b1','b2','b3','b4','b5'];
+    const labels = ['LOW','LOW-MID','MID','HIGH-MID','HIGH'];
+
+    pluginEditorControls.innerHTML = `
+      <div class="daw-plugin-graph-shell">
+        <div class="daw-plugin-graph-head">
+          <div>
+            <span>5-BAND PARAMETRIC EQ</span>
+            <strong>Drag a node horizontally for frequency and vertically for gain.</strong>
+          </div>
+          <button type="button" class="daw-small-button" data-reset-eq>Flat</button>
+        </div>
+
+        <svg
+          class="daw-plugin-graph daw-eq-graph"
+          data-eq-graph
+          viewBox="0 0 764 300"
+          role="img"
+          aria-label="Interactive five band equalizer graph"
+        >
+          <defs>
+            <linearGradient id="eqFillGradient" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="currentColor" stop-opacity=".22"/>
+              <stop offset="100%" stop-color="currentColor" stop-opacity="0"/>
+            </linearGradient>
+          </defs>
+
+          <g class="daw-graph-grid">
+            ${[20,50,100,250,500,1000,2500,5000,10000,20000]
+              .map(f => `
+                <line x1="${eqFrequencyToX(f)}" y1="20" x2="${eqFrequencyToX(f)}" y2="260"></line>
+                <text x="${eqFrequencyToX(f)}" y="282">${formatFrequency(f)}</text>
+              `).join('')}
+            ${[-18,-12,-6,0,6,12,18]
+              .map(g => `
+                <line x1="42" y1="${eqGainToY(g)}" x2="722" y2="${eqGainToY(g)}"></line>
+                <text x="8" y="${eqGainToY(g)+4}">${g > 0 ? '+' : ''}${g}</text>
+              `).join('')}
+          </g>
+
+          <path
+            class="daw-eq-fill"
+            data-eq-fill
+            d="${eqCurvePath(plugin)} L 722 ${eqGainToY(0)} L 42 ${eqGainToY(0)} Z"
+          ></path>
+
+          <path
+            class="daw-eq-curve"
+            data-eq-curve
+            d="${eqCurvePath(plugin)}"
+          ></path>
+
+          ${frequencyKeys.map((frequencyKey, index) => `
+            <g
+              class="daw-eq-node"
+              data-eq-node="${index}"
+              tabindex="0"
+              role="slider"
+              aria-label="${labels[index]} EQ band"
+              aria-valuetext="${formatFrequency(plugin.params[frequencyKey])}, ${Number(plugin.params[gainKeys[index]]).toFixed(1)} dB"
+              transform="translate(${eqFrequencyToX(plugin.params[frequencyKey])} ${eqGainToY(plugin.params[gainKeys[index]])})"
+            >
+              <circle class="daw-eq-node-halo" r="14"></circle>
+              <circle class="daw-eq-node-core" r="7"></circle>
+              <text x="0" y="-20">${index + 1}</text>
+            </g>
+          `).join('')}
+        </svg>
+
+        <div class="daw-eq-node-readouts">
+          ${frequencyKeys.map((frequencyKey,index) => `
+            <button
+              type="button"
+              data-eq-focus="${index}"
+              class="daw-eq-readout"
+            >
+              <strong>${labels[index]}</strong>
+              <span data-eq-frequency="${index}">${formatFrequency(plugin.params[frequencyKey])}</span>
+              <em data-eq-gain="${index}">${Number(plugin.params[gainKeys[index]]).toFixed(1)} dB</em>
+            </button>
+          `).join('')}
+        </div>
+      </div>
+    `;
+
+    bindEqGraph(plugin);
+  }
+
+  function updateEqGraphDom(plugin) {
+    const graph = pluginEditorControls?.querySelector('[data-eq-graph]');
+    if (!graph) return;
+
+    const frequencyKeys = ['f1','f2','f3','f4','f5'];
+    const gainKeys = ['b1','b2','b3','b4','b5'];
+    const curve = eqCurvePath(plugin);
+
+    const curveEl = graph.querySelector('[data-eq-curve]');
+    const fillEl = graph.querySelector('[data-eq-fill]');
+
+    if (curveEl) {
+      curveEl.setAttribute('d', curve);
+    }
+
+    if (fillEl) {
+      fillEl.setAttribute(
+        'd',
+        `${curve} L 722 ${eqGainToY(0)} L 42 ${eqGainToY(0)} Z`
+      );
+    }
+
+    graph.querySelectorAll('[data-eq-node]')
+      .forEach((node,index) => {
+        node.setAttribute(
+          'transform',
+          `translate(${eqFrequencyToX(plugin.params[frequencyKeys[index]])} ${eqGainToY(plugin.params[gainKeys[index]])})`
+        );
+        node.setAttribute(
+          'aria-valuetext',
+          `${formatFrequency(plugin.params[frequencyKeys[index]])}, ${Number(plugin.params[gainKeys[index]]).toFixed(1)} dB`
+        );
+
+        const frequencyReadout =
+          pluginEditorControls.querySelector(`[data-eq-frequency="${index}"]`);
+        const gainReadout =
+          pluginEditorControls.querySelector(`[data-eq-gain="${index}"]`);
+
+        if (frequencyReadout) {
+          frequencyReadout.textContent =
+            formatFrequency(plugin.params[frequencyKeys[index]]);
+        }
+
+        if (gainReadout) {
+          gainReadout.textContent =
+            `${Number(plugin.params[gainKeys[index]]).toFixed(1)} dB`;
+        }
+      });
+  }
+
+  function bindEqGraph(plugin) {
+    const svg = pluginEditorControls?.querySelector('[data-eq-graph]');
+    if (!svg) return;
+
+    const frequencyKeys = ['f1','f2','f3','f4','f5'];
+    const gainKeys = ['b1','b2','b3','b4','b5'];
+    const frequencyRanges = [
+      [40,180],
+      [120,700],
+      [500,2500],
+      [1800,8000],
+      [6000,18000]
+    ];
+
+    const applyNode = (index, x, y) => {
+      const [minFrequency,maxFrequency] = frequencyRanges[index];
+
+      plugin.params[frequencyKeys[index]] = Math.max(
+        minFrequency,
+        Math.min(maxFrequency, eqXToFrequency(x))
+      );
+
+      plugin.params[gainKeys[index]] = Math.round(
+        Math.max(-18, Math.min(18, eqYToGain(y))) * 10
+      ) / 10;
+
+      updateEqGraphDom(plugin);
+      updateTrackPluginAudio(plugin);
+      scheduleLocalSave();
+    };
+
+    svg.querySelectorAll('[data-eq-node]')
+      .forEach((node,index) => {
+        let pointerId = null;
+
+        node.addEventListener('pointerdown', event => {
+          if (event.button !== 0) return;
+
+          pointerId = event.pointerId;
+          node.setPointerCapture(pointerId);
+          node.classList.add('dragging');
+          event.preventDefault();
+          event.stopPropagation();
+        });
+
+        node.addEventListener('pointermove', event => {
+          if (event.pointerId !== pointerId) return;
+
+          const point = svgPoint(event, svg);
+          applyNode(index, point.x, point.y);
+        });
+
+        const finish = event => {
+          if (event.pointerId !== pointerId) return;
+
+          try {
+            node.releasePointerCapture(pointerId);
+          } catch (error) {}
+
+          pointerId = null;
+          node.classList.remove('dragging');
+        };
+
+        node.addEventListener('pointerup', finish);
+        node.addEventListener('pointercancel', finish);
+
+        node.addEventListener('keydown', event => {
+          const frequencyKey = frequencyKeys[index];
+          const gainKey = gainKeys[index];
+
+          if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+            event.preventDefault();
+            plugin.params[gainKey] = Math.max(
+              -18,
+              Math.min(
+                18,
+                Number(plugin.params[gainKey]) +
+                (event.key === 'ArrowUp' ? 0.5 : -0.5)
+              )
+            );
+          } else if (
+            event.key === 'ArrowLeft' ||
+            event.key === 'ArrowRight'
+          ) {
+            event.preventDefault();
+            const direction = event.key === 'ArrowRight' ? 1 : -1;
+            plugin.params[frequencyKey] *= Math.pow(2, direction / 24);
+
+            const [minFrequency,maxFrequency] = frequencyRanges[index];
+            plugin.params[frequencyKey] = Math.max(
+              minFrequency,
+              Math.min(maxFrequency, plugin.params[frequencyKey])
+            );
+          } else {
+            return;
+          }
+
+          updateEqGraphDom(plugin);
+          updateTrackPluginAudio(plugin);
+          scheduleLocalSave();
+        });
+      });
+
+    pluginEditorControls
+      .querySelectorAll('[data-eq-focus]')
+      .forEach(button => {
+        button.addEventListener('click', () => {
+          svg.querySelector(
+            `[data-eq-node="${button.dataset.eqFocus}"]`
+          )?.focus();
+        });
+      });
+
+    pluginEditorControls
+      .querySelector('[data-reset-eq]')
+      ?.addEventListener('click', () => {
+        const defaults = defaultPlugin('eq5').params;
+
+        Object.assign(plugin.params, defaults);
+        updateEqGraphDom(plugin);
+        updateTrackPluginAudio(plugin);
+        scheduleLocalSave();
+      });
+  }
+
+  function delayTimeToX(value) {
+    return 50 + (
+      (Math.max(0.02, Math.min(1.5, value)) - 0.02) /
+      (1.5 - 0.02)
+    ) * 610;
+  }
+
+  function delayXToTime(x) {
+    const ratio = Math.max(0, Math.min(1, (x - 50) / 610));
+    return 0.02 + ratio * (1.5 - 0.02);
+  }
+
+  function delayFeedbackToY(value) {
+    return 250 - (
+      Math.max(0, Math.min(0.92, value)) / 0.92
+    ) * 210;
+  }
+
+  function delayYToFeedback(y) {
+    const ratio = Math.max(0, Math.min(1, (250 - y) / 210));
+    return ratio * 0.92;
+  }
+
+  function delayMixToY(value) {
+    return 250 - Math.max(0, Math.min(1, value)) * 210;
+  }
+
+  function delayYToMix(y) {
+    return Math.max(0, Math.min(1, (250 - y) / 210));
+  }
+
+  function renderDelayGraph(plugin) {
+    if (!pluginEditorControls) return;
+
+    const timeX = delayTimeToX(plugin.params.time);
+    const feedbackY = delayFeedbackToY(plugin.params.feedback);
+    const mixY = delayMixToY(plugin.params.mix);
+
+    pluginEditorControls.innerHTML = `
+      <div class="daw-plugin-graph-shell">
+        <div class="daw-plugin-graph-head">
+          <div>
+            <span>STEREO DELAY</span>
+            <strong>Drag the echo node for time/feedback. Drag the wet node for mix.</strong>
+          </div>
+          <button type="button" class="daw-small-button" data-reset-delay>Reset</button>
+        </div>
+
+        <svg
+          class="daw-plugin-graph daw-delay-graph"
+          data-delay-graph
+          viewBox="0 0 764 300"
+          role="img"
+          aria-label="Interactive delay graph"
+        >
+          <g class="daw-graph-grid">
+            ${[0.02,0.25,0.5,0.75,1.0,1.25,1.5]
+              .map(t => `
+                <line x1="${delayTimeToX(t)}" y1="40" x2="${delayTimeToX(t)}" y2="250"></line>
+                <text x="${delayTimeToX(t)}" y="280">${t.toFixed(t < 0.1 ? 2 : 1)}s</text>
+              `).join('')}
+            ${[0,0.23,0.46,0.69,0.92]
+              .map(f => `
+                <line x1="50" y1="${delayFeedbackToY(f)}" x2="660" y2="${delayFeedbackToY(f)}"></line>
+                <text x="10" y="${delayFeedbackToY(f)+4}">${Math.round(f*100)}%</text>
+              `).join('')}
+          </g>
+
+          <path
+            class="daw-delay-tail"
+            data-delay-tail
+            d="M 50 250 C ${timeX*0.45} 250, ${timeX*0.75} ${feedbackY}, ${timeX} ${feedbackY}"
+          ></path>
+
+          ${[1,2,3,4].map(n => `
+            <circle
+              class="daw-delay-repeat"
+              data-delay-repeat="${n}"
+              cx="${Math.min(660, timeX + n * 55)}"
+              cy="${Math.min(250, feedbackY + n * (250-feedbackY)/5)}"
+              r="${Math.max(2.5, 7 - n)}"
+            ></circle>
+          `).join('')}
+
+          <g
+            class="daw-delay-node"
+            data-delay-node
+            tabindex="0"
+            role="slider"
+            aria-label="Delay time and feedback"
+            aria-valuetext="${Number(plugin.params.time).toFixed(2)} seconds, ${Math.round(plugin.params.feedback*100)} percent feedback"
+            transform="translate(${timeX} ${feedbackY})"
+          >
+            <circle class="daw-delay-node-halo" r="15"></circle>
+            <circle class="daw-delay-node-core" r="8"></circle>
+            <text x="0" y="-20">ECHO</text>
+          </g>
+
+          <g class="daw-delay-mix-axis">
+            <line x1="700" y1="40" x2="700" y2="250"></line>
+            <text x="700" y="280">WET</text>
+          </g>
+
+          <g
+            class="daw-delay-node daw-delay-mix-node"
+            data-delay-mix-node
+            tabindex="0"
+            role="slider"
+            aria-label="Delay wet mix"
+            aria-valuetext="${Math.round(plugin.params.mix*100)} percent wet"
+            transform="translate(700 ${mixY})"
+          >
+            <circle class="daw-delay-node-halo" r="13"></circle>
+            <circle class="daw-delay-node-core" r="7"></circle>
+          </g>
+        </svg>
+
+        <div class="daw-delay-readouts">
+          <button type="button" data-delay-focus="echo">
+            <strong>TIME</strong>
+            <span data-delay-time>${Number(plugin.params.time).toFixed(2)} s</span>
+          </button>
+          <button type="button" data-delay-focus="echo">
+            <strong>FEEDBACK</strong>
+            <span data-delay-feedback>${Math.round(plugin.params.feedback*100)}%</span>
+          </button>
+          <button type="button" data-delay-focus="mix">
+            <strong>WET MIX</strong>
+            <span data-delay-mix>${Math.round(plugin.params.mix*100)}%</span>
+          </button>
+        </div>
+      </div>
+    `;
+
+    bindDelayGraph(plugin);
+  }
+
+  function updateDelayGraphDom(plugin) {
+    const svg = pluginEditorControls?.querySelector('[data-delay-graph]');
+    if (!svg) return;
+
+    const timeX = delayTimeToX(plugin.params.time);
+    const feedbackY = delayFeedbackToY(plugin.params.feedback);
+    const mixY = delayMixToY(plugin.params.mix);
+
+    const node = svg.querySelector('[data-delay-node]');
+    const mixNode = svg.querySelector('[data-delay-mix-node]');
+
+    node?.setAttribute(
+      'transform',
+      `translate(${timeX} ${feedbackY})`
+    );
+    node?.setAttribute(
+      'aria-valuetext',
+      `${Number(plugin.params.time).toFixed(2)} seconds, ${Math.round(plugin.params.feedback*100)} percent feedback`
+    );
+
+    mixNode?.setAttribute(
+      'transform',
+      `translate(700 ${mixY})`
+    );
+    mixNode?.setAttribute(
+      'aria-valuetext',
+      `${Math.round(plugin.params.mix*100)} percent wet`
+    );
+
+    svg.querySelector('[data-delay-tail]')?.setAttribute(
+      'd',
+      `M 50 250 C ${timeX*0.45} 250, ${timeX*0.75} ${feedbackY}, ${timeX} ${feedbackY}`
+    );
+
+    svg.querySelectorAll('[data-delay-repeat]')
+      .forEach((circle,index) => {
+        const n = index + 1;
+        circle.setAttribute(
+          'cx',
+          Math.min(660, timeX + n * 55)
+        );
+        circle.setAttribute(
+          'cy',
+          Math.min(
+            250,
+            feedbackY + n * (250-feedbackY)/5
+          )
+        );
+      });
+
+    const timeReadout =
+      pluginEditorControls.querySelector('[data-delay-time]');
+    const feedbackReadout =
+      pluginEditorControls.querySelector('[data-delay-feedback]');
+    const mixReadout =
+      pluginEditorControls.querySelector('[data-delay-mix]');
+
+    if (timeReadout) {
+      timeReadout.textContent =
+        `${Number(plugin.params.time).toFixed(2)} s`;
+    }
+    if (feedbackReadout) {
+      feedbackReadout.textContent =
+        `${Math.round(plugin.params.feedback*100)}%`;
+    }
+    if (mixReadout) {
+      mixReadout.textContent =
+        `${Math.round(plugin.params.mix*100)}%`;
+    }
+  }
+
+  function bindDelayGraph(plugin) {
+    const svg = pluginEditorControls?.querySelector('[data-delay-graph]');
+    if (!svg) return;
+
+    const echoNode = svg.querySelector('[data-delay-node]');
+    const mixNode = svg.querySelector('[data-delay-mix-node]');
+
+    if (echoNode) {
+      let pointerId = null;
+
+      echoNode.addEventListener('pointerdown', event => {
+        if (event.button !== 0) return;
+        pointerId = event.pointerId;
+        echoNode.setPointerCapture(pointerId);
+        echoNode.classList.add('dragging');
+        event.preventDefault();
+      });
+
+      echoNode.addEventListener('pointermove', event => {
+        if (event.pointerId !== pointerId) return;
+        const point = svgPoint(event, svg);
+
+        plugin.params.time = Math.round(
+          delayXToTime(point.x) * 100
+        ) / 100;
+        plugin.params.feedback = Math.round(
+          delayYToFeedback(point.y) * 100
+        ) / 100;
+
+        updateDelayGraphDom(plugin);
+        updateTrackPluginAudio(plugin);
+        scheduleLocalSave();
+      });
+
+      const finish = event => {
+        if (event.pointerId !== pointerId) return;
+        try {
+          echoNode.releasePointerCapture(pointerId);
+        } catch (error) {}
+        pointerId = null;
+        echoNode.classList.remove('dragging');
+      };
+
+      echoNode.addEventListener('pointerup', finish);
+      echoNode.addEventListener('pointercancel', finish);
+
+      echoNode.addEventListener('keydown', event => {
+        if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+          event.preventDefault();
+          plugin.params.time = Math.max(
+            0.02,
+            Math.min(
+              1.5,
+              Number(plugin.params.time) +
+              (event.key === 'ArrowRight' ? 0.01 : -0.01)
+            )
+          );
+        } else if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+          event.preventDefault();
+          plugin.params.feedback = Math.max(
+            0,
+            Math.min(
+              0.92,
+              Number(plugin.params.feedback) +
+              (event.key === 'ArrowUp' ? 0.01 : -0.01)
+            )
+          );
+        } else {
+          return;
+        }
+
+        updateDelayGraphDom(plugin);
+        updateTrackPluginAudio(plugin);
+        scheduleLocalSave();
+      });
+    }
+
+    if (mixNode) {
+      let pointerId = null;
+
+      mixNode.addEventListener('pointerdown', event => {
+        if (event.button !== 0) return;
+        pointerId = event.pointerId;
+        mixNode.setPointerCapture(pointerId);
+        mixNode.classList.add('dragging');
+        event.preventDefault();
+      });
+
+      mixNode.addEventListener('pointermove', event => {
+        if (event.pointerId !== pointerId) return;
+        const point = svgPoint(event, svg);
+
+        plugin.params.mix = Math.round(
+          delayYToMix(point.y) * 100
+        ) / 100;
+
+        updateDelayGraphDom(plugin);
+        updateTrackPluginAudio(plugin);
+        scheduleLocalSave();
+      });
+
+      const finish = event => {
+        if (event.pointerId !== pointerId) return;
+        try {
+          mixNode.releasePointerCapture(pointerId);
+        } catch (error) {}
+        pointerId = null;
+        mixNode.classList.remove('dragging');
+      };
+
+      mixNode.addEventListener('pointerup', finish);
+      mixNode.addEventListener('pointercancel', finish);
+
+      mixNode.addEventListener('keydown', event => {
+        if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') {
+          return;
+        }
+
+        event.preventDefault();
+        plugin.params.mix = Math.max(
+          0,
+          Math.min(
+            1,
+            Number(plugin.params.mix) +
+            (event.key === 'ArrowUp' ? 0.02 : -0.02)
+          )
+        );
+
+        updateDelayGraphDom(plugin);
+        updateTrackPluginAudio(plugin);
+        scheduleLocalSave();
+      });
+    }
+
+    pluginEditorControls
+      .querySelectorAll('[data-delay-focus]')
+      .forEach(button => {
+        button.addEventListener('click', () => {
+          if (button.dataset.delayFocus === 'mix') {
+            mixNode?.focus();
+          } else {
+            echoNode?.focus();
+          }
+        });
+      });
+
+    pluginEditorControls
+      .querySelector('[data-reset-delay]')
+      ?.addEventListener('click', () => {
+        Object.assign(
+          plugin.params,
+          defaultPlugin('delay').params
+        );
+        updateDelayGraphDom(plugin);
+        updateTrackPluginAudio(plugin);
+        scheduleLocalSave();
+      });
+  }
+
+  function compressorDbToX(db) {
+    return 52 + (
+      (clamp(db,-60,0) + 60) / 60
+    ) * 620;
+  }
+
+  function compressorDbToY(db) {
+    return 252 - (
+      (clamp(db,-60,0) + 60) / 60
+    ) * 212;
+  }
+
+  function compressorCurvePath(plugin) {
+    const threshold = Number(plugin.params.threshold);
+    const ratio = Number(plugin.params.ratio);
+    const makeup = Number(plugin.params.makeup || 0);
+    const points = [];
+
+    for (let db = -60; db <= 0; db += 2) {
+      const out = db <= threshold
+        ? db + makeup
+        : threshold +
+          (db - threshold) / ratio +
+          makeup;
+
+      points.push([
+        compressorDbToX(db),
+        compressorDbToY(out)
+      ]);
+    }
+
+    return points.map(
+      ([x,y],index) =>
+        `${index === 0 ? 'M' : 'L'} ${x} ${y}`
+    ).join(' ');
+  }
+
+  function renderCompressorGraph(plugin) {
+    if (!pluginEditorControls) return;
+
+    const thresholdX =
+      compressorDbToX(plugin.params.threshold);
+    const ratioY = 244 - (
+      (clamp(plugin.params.ratio,1,20) - 1) /
+      19
+    ) * 176;
+    const makeupY = 244 - (
+      (clamp(plugin.params.makeup,-6,18) + 6) /
+      24
+    ) * 176;
+
+    pluginEditorControls.innerHTML = `
+      <div class="daw-plugin-graph-shell">
+        <div class="daw-plugin-graph-head">
+          <div>
+            <span>DYNAMICS COMPRESSOR</span>
+            <strong>Drag THRESH left/right and up/down for threshold/ratio. Drag MAKEUP vertically.</strong>
+          </div>
+          <button type="button" class="daw-small-button" data-reset-compressor>Reset</button>
+        </div>
+
+        <svg
+          class="daw-plugin-graph daw-compressor-graph"
+          data-compressor-graph
+          viewBox="0 0 764 300"
+          aria-label="Interactive compressor graph"
+        >
+          <g class="daw-graph-grid">
+            ${[-60,-48,-36,-24,-12,0].map(db => `
+              <line x1="${compressorDbToX(db)}" y1="40" x2="${compressorDbToX(db)}" y2="252"></line>
+              <line x1="52" y1="${compressorDbToY(db)}" x2="672" y2="${compressorDbToY(db)}"></line>
+              <text x="${compressorDbToX(db)}" y="278">${db}</text>
+            `).join('')}
+          </g>
+
+          <line class="daw-compressor-unity" x1="52" y1="252" x2="672" y2="40"></line>
+          <path class="daw-compressor-curve" data-compressor-curve d="${compressorCurvePath(plugin)}"></path>
+
+          <g
+            class="daw-compressor-node"
+            data-compressor-node
+            transform="translate(${thresholdX} ${ratioY})"
+            tabindex="0"
+          >
+            <circle r="14"></circle>
+            <circle r="7"></circle>
+            <text x="0" y="-20">THRESH</text>
+          </g>
+
+          <g class="daw-compressor-makeup-axis">
+            <line x1="710" y1="68" x2="710" y2="244"></line>
+            <text x="710" y="276">MAKEUP</text>
+          </g>
+
+          <g
+            class="daw-compressor-node daw-compressor-makeup-node"
+            data-compressor-makeup-node
+            transform="translate(710 ${makeupY})"
+            tabindex="0"
+          >
+            <circle r="12"></circle>
+            <circle r="6"></circle>
+          </g>
+        </svg>
+
+        <div class="daw-plugin-secondary-controls">
+          <label>KNEE <input type="range" min="0" max="40" step="1" value="${plugin.params.knee}" data-comp-param="knee"><output>${Number(plugin.params.knee).toFixed(0)} dB</output></label>
+          <label>ATTACK <input type="range" min="0.001" max="1" step="0.001" value="${plugin.params.attack}" data-comp-param="attack"><output>${Math.round(plugin.params.attack*1000)} ms</output></label>
+          <label>RELEASE <input type="range" min="0.01" max="3" step="0.01" value="${plugin.params.release}" data-comp-param="release"><output>${Number(plugin.params.release).toFixed(2)} s</output></label>
+        </div>
+
+        <div class="daw-delay-readouts">
+          <button type="button"><strong>THRESHOLD</strong><span data-comp-threshold>${Number(plugin.params.threshold).toFixed(1)} dB</span></button>
+          <button type="button"><strong>RATIO</strong><span data-comp-ratio>${Number(plugin.params.ratio).toFixed(1)}:1</span></button>
+          <button type="button"><strong>MAKEUP</strong><span data-comp-makeup>${Number(plugin.params.makeup).toFixed(1)} dB</span></button>
+        </div>
+      </div>
+    `;
+
+    bindCompressorGraph(plugin);
+  }
+
+  function updateCompressorGraphDom(plugin) {
+    const svg = pluginEditorControls?.querySelector(
+      '[data-compressor-graph]'
+    );
+    if (!svg) return;
+
+    const thresholdX =
+      compressorDbToX(plugin.params.threshold);
+    const ratioY = 244 - (
+      (clamp(plugin.params.ratio,1,20) - 1) /
+      19
+    ) * 176;
+    const makeupY = 244 - (
+      (clamp(plugin.params.makeup,-6,18) + 6) /
+      24
+    ) * 176;
+
+    svg.querySelector('[data-compressor-node]')
+      ?.setAttribute(
+        'transform',
+        `translate(${thresholdX} ${ratioY})`
+      );
+
+    svg.querySelector('[data-compressor-makeup-node]')
+      ?.setAttribute(
+        'transform',
+        `translate(710 ${makeupY})`
+      );
+
+    svg.querySelector('[data-compressor-curve]')
+      ?.setAttribute(
+        'd',
+        compressorCurvePath(plugin)
+      );
+
+    const threshold =
+      pluginEditorControls.querySelector(
+        '[data-comp-threshold]'
+      );
+    const ratio =
+      pluginEditorControls.querySelector(
+        '[data-comp-ratio]'
+      );
+    const makeup =
+      pluginEditorControls.querySelector(
+        '[data-comp-makeup]'
+      );
+
+    if (threshold) {
+      threshold.textContent =
+        `${Number(plugin.params.threshold).toFixed(1)} dB`;
+    }
+    if (ratio) {
+      ratio.textContent =
+        `${Number(plugin.params.ratio).toFixed(1)}:1`;
+    }
+    if (makeup) {
+      makeup.textContent =
+        `${Number(plugin.params.makeup).toFixed(1)} dB`;
+    }
+  }
+
+  function bindCompressorGraph(plugin) {
+    const svg = pluginEditorControls?.querySelector(
+      '[data-compressor-graph]'
+    );
+    if (!svg) return;
+
+    const node = svg.querySelector(
+      '[data-compressor-node]'
+    );
+    const makeupNode = svg.querySelector(
+      '[data-compressor-makeup-node]'
+    );
+
+    const bindNode = (
+      element,
+      onMove
+    ) => {
+      if (!element) return;
+
+      let pointerId = null;
+
+      element.addEventListener(
+        'pointerdown',
+        event => {
+          if (event.button !== 0) return;
+          pointerId = event.pointerId;
+          element.setPointerCapture(pointerId);
+          element.classList.add('dragging');
+          event.preventDefault();
+        }
+      );
+
+      element.addEventListener(
+        'pointermove',
+        event => {
+          if (event.pointerId !== pointerId) {
+            return;
+          }
+          onMove(svgPoint(event,svg));
+        }
+      );
+
+      const finish = event => {
+        if (event.pointerId !== pointerId) {
+          return;
+        }
+        try {
+          element.releasePointerCapture(pointerId);
+        } catch (error) {}
+        pointerId = null;
+        element.classList.remove('dragging');
+      };
+
+      element.addEventListener('pointerup',finish);
+      element.addEventListener('pointercancel',finish);
+    };
+
+    bindNode(node,point => {
+      plugin.params.threshold = Math.round(
+        clamp(
+          ((point.x - 52) / 620) * 60 - 60,
+          -60,
+          0
+        ) * 10
+      ) / 10;
+
+      plugin.params.ratio = Math.round(
+        (
+          1 +
+          clamp((244 - point.y) / 176,0,1) * 19
+        ) * 10
+      ) / 10;
+
+      updateCompressorGraphDom(plugin);
+      updateTrackPluginAudio(plugin);
+      scheduleLocalSave();
+    });
+
+    bindNode(makeupNode,point => {
+      plugin.params.makeup = Math.round(
+        (
+          -6 +
+          clamp((244 - point.y) / 176,0,1) * 24
+        ) * 10
+      ) / 10;
+
+      updateCompressorGraphDom(plugin);
+      updateTrackPluginAudio(plugin);
+      scheduleLocalSave();
+    });
+
+    pluginEditorControls
+      .querySelectorAll('[data-comp-param]')
+      .forEach(input => {
+        input.addEventListener('input',() => {
+          const key = input.dataset.compParam;
+          plugin.params[key] = Number(input.value);
+          const output = input.parentElement
+            ?.querySelector('output');
+
+          if (output) {
+            output.textContent = key === 'attack'
+              ? `${Math.round(plugin.params[key] * 1000)} ms`
+              : key === 'release'
+                ? `${plugin.params[key].toFixed(2)} s`
+                : `${plugin.params[key].toFixed(0)} dB`;
+          }
+
+          updateTrackPluginAudio(plugin);
+          scheduleLocalSave();
+        });
+      });
+
+    pluginEditorControls
+      .querySelector('[data-reset-compressor]')
+      ?.addEventListener('click',() => {
+        Object.assign(
+          plugin.params,
+          defaultPlugin('compressor').params
+        );
+        renderCompressorGraph(plugin);
+        updateTrackPluginAudio(plugin);
+        scheduleLocalSave();
+      });
+  }
+
+  function reverbDecayToX(value) {
+    return 52 + (
+      (clamp(value,0.2,8) - 0.2) /
+      7.8
+    ) * 610;
+  }
+
+  function reverbMixToY(value) {
+    return 244 - clamp(value,0,1) * 176;
+  }
+
+  function reverbSizeToX(value) {
+    return 52 + (
+      (clamp(value,0.25,2.5) - 0.25) /
+      2.25
+    ) * 610;
+  }
+
+  function reverbDampingToY(value) {
+    const min = 800;
+    const max = 20000;
+    const ratio =
+      Math.log(clamp(value,min,max) / min) /
+      Math.log(max / min);
+    return 244 - ratio * 176;
+  }
+
+  function renderReverbGraph(plugin) {
+    if (!pluginEditorControls) return;
+
+    const tailX =
+      reverbDecayToX(plugin.params.decay);
+    const mixY =
+      reverbMixToY(plugin.params.mix);
+    const roomX =
+      reverbSizeToX(plugin.params.size);
+    const dampingY =
+      reverbDampingToY(plugin.params.damping);
+
+    pluginEditorControls.innerHTML = `
+      <div class="daw-plugin-graph-shell">
+        <div class="daw-plugin-graph-head">
+          <div>
+            <span>ALGORITHMIC ROOM</span>
+            <strong>Drag TAIL for decay/mix, ROOM for size, and DAMP vertically for tone.</strong>
+          </div>
+          <button type="button" class="daw-small-button" data-reset-reverb>Reset</button>
+        </div>
+
+        <svg
+          class="daw-plugin-graph daw-reverb-graph"
+          data-reverb-graph
+          viewBox="0 0 764 300"
+          aria-label="Interactive reverb graph"
+        >
+          <g class="daw-graph-grid">
+            ${[0.2,1,2,3,4,6,8].map(t => `
+              <line x1="${reverbDecayToX(t)}" y1="68" x2="${reverbDecayToX(t)}" y2="244"></line>
+              <text x="${reverbDecayToX(t)}" y="278">${t}s</text>
+            `).join('')}
+            ${[0,.25,.5,.75,1].map(m => `
+              <line x1="52" y1="${reverbMixToY(m)}" x2="662" y2="${reverbMixToY(m)}"></line>
+            `).join('')}
+          </g>
+
+          <path
+            class="daw-reverb-tail"
+            data-reverb-tail
+            d="M 52 ${244 - plugin.params.mix * 80} C ${tailX * .45} ${110 - plugin.params.mix * 20}, ${tailX * .72} ${mixY}, ${tailX} ${mixY} L ${tailX + 40} 244"
+          ></path>
+
+          <g class="daw-reverb-node" data-reverb-tail-node transform="translate(${tailX} ${mixY})">
+            <circle r="14"></circle><circle r="7"></circle><text y="-20">TAIL</text>
+          </g>
+
+          <g class="daw-reverb-node daw-reverb-room-node" data-reverb-room-node transform="translate(${roomX} 210)">
+            <circle r="13"></circle><circle r="6"></circle><text y="-19">ROOM</text>
+          </g>
+
+          <line class="daw-reverb-damp-axis" x1="706" y1="68" x2="706" y2="244"></line>
+          <g class="daw-reverb-node daw-reverb-damp-node" data-reverb-damp-node transform="translate(706 ${dampingY})">
+            <circle r="12"></circle><circle r="6"></circle>
+          </g>
+        </svg>
+
+        <div class="daw-delay-readouts">
+          <button type="button"><strong>DECAY</strong><span data-reverb-decay>${Number(plugin.params.decay).toFixed(2)} s</span></button>
+          <button type="button"><strong>ROOM SIZE</strong><span data-reverb-size>${Number(plugin.params.size).toFixed(2)}×</span></button>
+          <button type="button"><strong>DAMPING</strong><span data-reverb-damping>${formatFrequency(plugin.params.damping)}</span></button>
+          <button type="button"><strong>WET MIX</strong><span data-reverb-mix>${Math.round(plugin.params.mix*100)}%</span></button>
+        </div>
+      </div>
+    `;
+
+    bindReverbGraph(plugin);
+  }
+
+  function updateReverbGraphDom(plugin) {
+    const svg = pluginEditorControls?.querySelector(
+      '[data-reverb-graph]'
+    );
+    if (!svg) return;
+
+    const tailX =
+      reverbDecayToX(plugin.params.decay);
+    const mixY =
+      reverbMixToY(plugin.params.mix);
+    const roomX =
+      reverbSizeToX(plugin.params.size);
+    const dampingY =
+      reverbDampingToY(plugin.params.damping);
+
+    svg.querySelector('[data-reverb-tail-node]')
+      ?.setAttribute(
+        'transform',
+        `translate(${tailX} ${mixY})`
+      );
+    svg.querySelector('[data-reverb-room-node]')
+      ?.setAttribute(
+        'transform',
+        `translate(${roomX} 210)`
+      );
+    svg.querySelector('[data-reverb-damp-node]')
+      ?.setAttribute(
+        'transform',
+        `translate(706 ${dampingY})`
+      );
+
+    svg.querySelector('[data-reverb-tail]')
+      ?.setAttribute(
+        'd',
+        `M 52 ${244 - plugin.params.mix * 80} C ${tailX * .45} ${110 - plugin.params.mix * 20}, ${tailX * .72} ${mixY}, ${tailX} ${mixY} L ${tailX + 40} 244`
+      );
+
+    const values = {
+      decay:`${Number(plugin.params.decay).toFixed(2)} s`,
+      size:`${Number(plugin.params.size).toFixed(2)}×`,
+      damping:formatFrequency(plugin.params.damping),
+      mix:`${Math.round(plugin.params.mix * 100)}%`
+    };
+
+    Object.entries(values).forEach(([key,value]) => {
+      const el = pluginEditorControls.querySelector(
+        `[data-reverb-${key}]`
+      );
+      if (el) el.textContent = value;
+    });
+  }
+
+  function bindReverbGraph(plugin) {
+    const svg = pluginEditorControls?.querySelector(
+      '[data-reverb-graph]'
+    );
+    if (!svg) return;
+
+    const bind = (selector,callback) => {
+      const node = svg.querySelector(selector);
+      if (!node) return;
+
+      let pointerId = null;
+
+      node.addEventListener('pointerdown',event => {
+        if (event.button !== 0) return;
+        pointerId = event.pointerId;
+        node.setPointerCapture(pointerId);
+        node.classList.add('dragging');
+        event.preventDefault();
+      });
+
+      node.addEventListener('pointermove',event => {
+        if (event.pointerId !== pointerId) return;
+        callback(svgPoint(event,svg));
+      });
+
+      const finish = event => {
+        if (event.pointerId !== pointerId) return;
+        try {
+          node.releasePointerCapture(pointerId);
+        } catch (error) {}
+        pointerId = null;
+        node.classList.remove('dragging');
+      };
+
+      node.addEventListener('pointerup',finish);
+      node.addEventListener('pointercancel',finish);
+    };
+
+    bind('[data-reverb-tail-node]',point => {
+      plugin.params.decay = Math.round(
+        (
+          0.2 +
+          clamp((point.x - 52) / 610,0,1) * 7.8
+        ) * 100
+      ) / 100;
+      plugin.params.mix = Math.round(
+        clamp((244 - point.y) / 176,0,1) * 100
+      ) / 100;
+
+      updateReverbGraphDom(plugin);
+      updateTrackPluginAudio(plugin);
+      scheduleLocalSave();
+    });
+
+    bind('[data-reverb-room-node]',point => {
+      plugin.params.size = Math.round(
+        (
+          0.25 +
+          clamp((point.x - 52) / 610,0,1) * 2.25
+        ) * 100
+      ) / 100;
+
+      updateReverbGraphDom(plugin);
+      updateTrackPluginAudio(plugin);
+      scheduleLocalSave();
+    });
+
+    bind('[data-reverb-damp-node]',point => {
+      const ratio = clamp(
+        (244 - point.y) / 176,
+        0,
+        1
+      );
+
+      plugin.params.damping = Math.round(
+        800 * Math.pow(20000 / 800,ratio)
+      );
+
+      updateReverbGraphDom(plugin);
+      updateTrackPluginAudio(plugin);
+      scheduleLocalSave();
+    });
+
+    pluginEditorControls
+      .querySelector('[data-reset-reverb]')
+      ?.addEventListener('click',() => {
+        Object.assign(
+          plugin.params,
+          defaultPlugin('reverb').params
+        );
+        renderReverbGraph(plugin);
+        updateTrackPluginAudio(plugin);
+        scheduleLocalSave();
+      });
+  }
+
+  function openPluginEditor(stemId, index) {
+    const stem = stemById(stemId);
+    const plugin = stem?.plugins?.[index];
+
+    if (!stem || !plugin) return;
+
+    pluginTargetStemId = stem.id;
+    pluginEditIndex = index;
+
+    if (pluginDirectoryTrack) {
+      pluginDirectoryTrack.innerHTML = `
+        <span>TRACK</span>
+        <strong>${escapeHtml(stem.stem_name || stem.name || `Stem ${stem.id}`)}</strong>
+      `;
+    }
+
+    if (pluginEditorTitle) {
+      pluginEditorTitle.textContent = pluginLabel(plugin);
+    }
+
+    if (pluginBypassButton) {
+      pluginBypassButton.textContent = plugin.enabled
+        ? 'Bypass'
+        : 'Enable';
+      pluginBypassButton.classList.toggle(
+        'active',
+        !plugin.enabled
+      );
+    }
+
+    if (plugin.type === 'eq5') {
+      renderEqGraph(plugin);
+    } else if (plugin.type === 'delay') {
+      renderDelayGraph(plugin);
+    } else if (plugin.type === 'compressor') {
+      renderCompressorGraph(plugin);
+    } else {
+      renderReverbGraph(plugin);
+    }
+
+    document.getElementById('pluginDirectoryGrid')
+      ?.setAttribute('hidden', '');
+
+    if (pluginEditor) {
+      pluginEditor.hidden = false;
+    }
+
+    openModal(pluginDirectoryDialog);
+  }
+
+  function addTrackPlugin(stem, type) {
+    if (!stem || stem.plugins.length >= 4) return;
+
+    stem.plugins.push(defaultPlugin(type));
+    renderTrackPluginList(stem);
+
+    if (context) {
+      rebuildTrackPluginGraph(stem);
+    }
+
+    scheduleLocalSave(0);
+    openPluginEditor(
+      stem.id,
+      stem.plugins.length - 1
+    );
+  }
+
+  function rebuildMasterGraph() {
+    if (
+      !context ||
+      !busInput ||
+      !eqLow ||
+      !eqMid ||
+      !eqHigh ||
+      !compressor ||
+      !masterGain ||
+      !masterAnalyser ||
+      !dryGain ||
+      !wetGain ||
+      !reverb
+    ) {
+      return;
+    }
+
+    [
+      busInput,
+      eqLow,
+      eqMid,
+      eqHigh,
+      compressor,
+      masterGain,
+      masterAnalyser,
+      dryGain,
+      wetGain,
+      reverb
+    ].forEach(node => {
+      try {
+        node.disconnect();
+      } catch (error) {}
+    });
+
+    let current = busInput;
+
+    if (pluginState.eq) {
+      current.connect(eqLow);
+      eqLow.connect(eqMid);
+      eqMid.connect(eqHigh);
+      current = eqHigh;
+    }
+
+    if (pluginState.compressor) {
+      current.connect(compressor);
+      current = compressor;
+    }
+
+    current.connect(masterGain);
+    masterGain.connect(masterAnalyser);
+
+    masterAnalyser.connect(dryGain);
+    dryGain.connect(context.destination);
+
+    if (pluginState.reverb) {
+      masterAnalyser.connect(reverb);
+      reverb.connect(wetGain);
+      wetGain.gain.value = 0.18;
+      wetGain.connect(context.destination);
+    } else {
+      wetGain.gain.value = 0;
+    }
+  }
+
+  function clamp(value,min,max) {
+    return Math.max(
+      min,
+      Math.min(max,Number(value))
+    );
+  }
+
+  function normalizeAutomation(automation) {
+    const source = (
+      automation &&
+      typeof automation === 'object'
+    )
+      ? automation
+      : {};
+
+    const specs = {
+      volume:[0,1.5],
+      pan:[-1,1],
+      auxA:[0,1],
+      auxB:[0,1]
+    };
+
+    const output = {};
+
+    Object.entries(specs).forEach(([key,[min,max]]) => {
+      const points = Array.isArray(source[key])
+        ? source[key]
+        : [];
+
+      output[key] = points
+        .slice(0,64)
+        .map(point => ({
+          t:clamp(point?.t ?? 0,0,duration),
+          v:clamp(point?.v ?? 0,min,max)
+        }))
+        .sort((a,b) => a.t - b.t);
+    });
+
+    return output;
+  }
+
+  function applyStemSendAudio(stem,bus,value) {
+    const gainNode = bus === 'a'
+      ? stem.auxASendGain
+      : stem.auxBSendGain;
+
+    if (gainNode && context) {
+      gainNode.gain.setTargetAtTime(
+        clamp(value,0,1),
+        context.currentTime,
+        0.012
+      );
+    }
+  }
+
+  function setStemSend(stem,bus,value,persist = true) {
+    if (!stem) return;
+
+    const clean = clamp(value,0,1);
+    stem.sends[bus] = clean;
+
+    const input = bus === 'a'
+      ? stem.auxSendA
+      : stem.auxSendB;
+    const output = bus === 'a'
+      ? stem.auxSendAValue
+      : stem.auxSendBValue;
+
+    if (input) {
+      input.value = String(clean);
+    }
+
+    if (output) {
+      output.textContent = `${Math.round(clean * 100)}%`;
+    }
+
+    applyStemSendAudio(stem,bus,clean);
+
+    if (persist) {
+      scheduleLocalSave();
+    }
+  }
+
+  function setReturnLevel(bus,value,persist = true) {
+    const clean = clamp(value,0,1.5);
+    const input = bus === 'a'
+      ? auxReturnA
+      : auxReturnB;
+    const output = bus === 'a'
+      ? auxReturnAValue
+      : auxReturnBValue;
+    const gain = bus === 'a'
+      ? auxAReturnGain
+      : auxBReturnGain;
+
+    if (input) {
+      input.value = String(clean);
+    }
+
+    if (output) {
+      output.textContent = dbText(clean);
+    }
+
+    if (gain && context) {
+      gain.gain.setTargetAtTime(
+        clean,
+        context.currentTime,
+        0.012
+      );
+    }
+
+    if (persist) {
+      scheduleLocalSave();
+    }
+  }
+
+  function setTrackTrim(stem,value,persist = true) {
+    if (!stem) return;
+
+    stem.trimDb = clamp(value,-12,12);
+
+    if (stem.trim) {
+      stem.trim.value = String(stem.trimDb);
+    }
+
+    if (stem.trimValue) {
+      stem.trimValue.textContent =
+        `${stem.trimDb >= 0 ? '+' : ''}${stem.trimDb.toFixed(1)} dB`;
+    }
+
+    if (stem.trimNode && context) {
+      stem.trimNode.gain.setTargetAtTime(
+        Math.pow(10,stem.trimDb / 20),
+        context.currentTime,
+        0.008
+      );
+    }
+
+    if (persist) {
+      scheduleLocalSave();
+    }
+  }
+
+  function setTrackPhase(stem,enabled,persist = true) {
+    if (!stem) return;
+
+    stem.phase = Boolean(enabled);
+    stem.phaseButton?.classList.toggle(
+      'active',
+      stem.phase
+    );
+
+    if (stem.polarityNode && context) {
+      stem.polarityNode.gain.setTargetAtTime(
+        stem.phase ? -1 : 1,
+        context.currentTime,
+        0.006
+      );
+    }
+
+    if (persist) {
+      scheduleLocalSave();
+    }
+  }
+
+  function rebuildStemInputRouting(stem) {
+    if (
+      !context ||
+      !stem.sourceNode ||
+      !stem.trimNode ||
+      !stem.polarityNode ||
+      !stem.gainNode
+    ) {
+      return;
+    }
+
+    [
+      stem.sourceNode,
+      stem.trimNode,
+      stem.polarityNode,
+      stem.monoSplitter,
+      stem.monoLeft,
+      stem.monoRight,
+      stem.monoSum
+    ].forEach(node => {
+      if (!node) return;
+      try {
+        node.disconnect();
+      } catch (error) {}
+    });
+
+    stem.sourceNode.connect(stem.trimNode);
+    stem.trimNode.connect(stem.polarityNode);
+
+    if (
+      stem.mono &&
+      stem.monoSplitter &&
+      stem.monoLeft &&
+      stem.monoRight &&
+      stem.monoSum
+    ) {
+      stem.polarityNode.connect(
+        stem.monoSplitter
+      );
+      stem.monoSplitter.connect(
+        stem.monoLeft,
+        0
+      );
+      stem.monoSplitter.connect(
+        stem.monoRight,
+        1
+      );
+      stem.monoLeft.connect(stem.monoSum);
+      stem.monoRight.connect(stem.monoSum);
+      stem.monoSum.connect(stem.gainNode);
+    } else {
+      stem.polarityNode.connect(
+        stem.gainNode
+      );
+    }
+  }
+
+  function setTrackMono(stem,enabled,persist = true) {
+    if (!stem) return;
+
+    stem.mono = Boolean(enabled);
+    stem.monoButton?.classList.toggle(
+      'active',
+      stem.mono
+    );
+
+    if (context) {
+      rebuildStemInputRouting(stem);
+    }
+
+    if (persist) {
+      scheduleLocalSave();
+    }
+  }
+
+  function groupTarget(group) {
+    return groupState[group]?.input || busInput;
+  }
+
+  function routeStemToGroup(stem) {
+    if (!context || !stem?.analyserNode) return;
+
+    try {
+      stem.analyserNode.disconnect();
+    } catch (error) {}
+
+    stem.analyserNode.connect(
+      groupTarget(stem.group)
+    );
+  }
+
+  function setTrackGroup(stem,group,persist = true) {
+    if (!stem) return;
+
+    const clean = [
+      'direct',
+      'vocals',
+      'rhythm',
+      'music'
+    ].includes(group)
+      ? group
+      : 'direct';
+
+    stem.group = clean;
+
+    if (stem.groupSelect) {
+      stem.groupSelect.value = clean;
+    }
+
+    if (context) {
+      routeStemToGroup(stem);
+    }
+
+    if (persist) {
+      scheduleLocalSave();
+    }
+  }
+
+  function updateGroupBus(group,persist = true) {
+    const state = groupState[group];
+    if (!state) return;
+
+    const input = document.querySelector(
+      `[data-group-volume="${group}"]`
+    );
+    const output = document.querySelector(
+      `[data-group-volume-value="${group}"]`
+    );
+    const mute = document.querySelector(
+      `[data-group-mute="${group}"]`
+    );
+
+    if (input) {
+      input.value = String(state.volume);
+    }
+
+    if (output) {
+      output.textContent = dbText(state.volume);
+    }
+
+    mute?.classList.toggle(
+      'active',
+      state.muted
+    );
+
+    if (state.gain && context) {
+      state.gain.gain.setTargetAtTime(
+        state.muted ? 0 : state.volume,
+        context.currentTime,
+        0.01
+      );
+    }
+
+    if (persist) {
+      scheduleLocalSave();
+    }
+  }
+
+  function ensureAudioGraph() {
+    if (!AudioContextClass || context) return;
+
+    context = new AudioContextClass();
+
+    busInput = context.createGain();
+
+    Object.keys(groupState).forEach(group => {
+      const state = groupState[group];
+
+      state.input = context.createGain();
+      state.gain = context.createGain();
+      state.analyser = context.createAnalyser();
+      state.analyser.fftSize = 256;
+      state.analyser.smoothingTimeConstant = 0.7;
+      state.data = new Uint8Array(
+        state.analyser.fftSize
+      );
+
+      state.gain.gain.value =
+        state.muted ? 0 : state.volume;
+
+      state.input.connect(state.analyser);
+      state.analyser.connect(state.gain);
+      state.gain.connect(busInput);
+    });
+
+    eqLow = context.createBiquadFilter();
+    eqLow.type = 'lowshelf';
+    eqLow.frequency.value = 140;
+    eqLow.gain.value = 0;
+
+    eqMid = context.createBiquadFilter();
+    eqMid.type = 'peaking';
+    eqMid.frequency.value = 1200;
+    eqMid.Q.value = 0.8;
+    eqMid.gain.value = 0;
+
+    eqHigh = context.createBiquadFilter();
+    eqHigh.type = 'highshelf';
+    eqHigh.frequency.value = 5200;
+    eqHigh.gain.value = 0;
+
+    compressor = context.createDynamicsCompressor();
+    compressor.threshold.value = -18;
+    compressor.knee.value = 14;
+    compressor.ratio.value = 2;
+    compressor.attack.value = 0.012;
+    compressor.release.value = 0.24;
+
+    masterGain = context.createGain();
+    masterGain.gain.value = Number(
+      masterVolume?.value || 1
+    );
+
+    masterAnalyser = context.createAnalyser();
+    masterAnalyser.fftSize = 512;
+    masterAnalyser.smoothingTimeConstant = 0.72;
+    masterLevelData = new Uint8Array(
+      masterAnalyser.fftSize
+    );
+
+    dryGain = context.createGain();
+    wetGain = context.createGain();
+
+    reverb = context.createConvolver();
+    reverb.buffer = makeImpulse(context);
+
+    // AUX A: shared room reverb return.
+    auxAInput = context.createGain();
+    auxAConvolver = context.createConvolver();
+    auxAConvolver.buffer = makeImpulse(
+      context,
+      1.9,
+      2.4
+    );
+    auxAReturnGain = context.createGain();
+    auxAReturnGain.gain.value = Number(
+      auxReturnA?.value || 0.8
+    );
+
+    auxAInput.connect(auxAConvolver);
+    auxAConvolver.connect(auxAReturnGain);
+    auxAReturnGain.connect(busInput);
+
+    // AUX B: shared feedback delay return.
+    auxBInput = context.createGain();
+    auxBDelay = context.createDelay(2.0);
+    auxBDelay.delayTime.value = 0.32;
+    auxBFeedback = context.createGain();
+    auxBFeedback.gain.value = 0.34;
+    auxBReturnGain = context.createGain();
+    auxBReturnGain.gain.value = Number(
+      auxReturnB?.value || 0.7
+    );
+
+    auxBInput.connect(auxBDelay);
+    auxBDelay.connect(auxBReturnGain);
+    auxBDelay.connect(auxBFeedback);
+    auxBFeedback.connect(auxBDelay);
+    auxBReturnGain.connect(busInput);
+
+    stems.forEach(stem => {
+      try {
+        stem.sourceNode =
+          context.createMediaElementSource(stem.audio);
+
+        stem.trimNode = context.createGain();
+        stem.trimNode.gain.value = Math.pow(
+          10,
+          stem.trimDb / 20
+        );
+
+        stem.polarityNode = context.createGain();
+        stem.polarityNode.gain.value =
+          stem.phase ? -1 : 1;
+
+        stem.gainNode = context.createGain();
+
+        stem.monoSplitter =
+          context.createChannelSplitter(2);
+        stem.monoLeft = context.createGain();
+        stem.monoRight = context.createGain();
+        stem.monoSum = context.createGain();
+        stem.monoLeft.gain.value = 0.5;
+        stem.monoRight.gain.value = 0.5;
+
+        stem.analyserNode = context.createAnalyser();
+        stem.analyserNode.fftSize = 1024;
+        stem.analyserNode.minDecibels = -96;
+        stem.analyserNode.maxDecibels = -18;
+        stem.analyserNode.smoothingTimeConstant = 0.68;
+        stem.frequencyData = new Uint8Array(
+          stem.analyserNode.frequencyBinCount
+        );
+
+        stem.auxASendGain = context.createGain();
+        stem.auxASendGain.gain.value =
+          Number(stem.sends.a || 0);
+        stem.auxASendGain.connect(auxAInput);
+
+        stem.auxBSendGain = context.createGain();
+        stem.auxBSendGain.gain.value =
+          Number(stem.sends.b || 0);
+        stem.auxBSendGain.connect(auxBInput);
+
+        if (context.createStereoPanner) {
+          stem.panNode =
+            context.createStereoPanner();
+          stem.panNode.pan.value = Number(
+            stem.pan?.value || 0
+          );
+          stem.gainNode.connect(stem.panNode);
+        }
+
+        rebuildStemInputRouting(stem);
+        rebuildTrackPluginGraph(stem);
+        routeStemToGroup(stem);
+      } catch (error) {
+        console.error(
+          'Stem audio graph failed',
+          stem.id,
+          error
+        );
+      }
+    });
+
+    rebuildMasterGraph();
+    updateGains();
+
+    stems.forEach(stem => {
+      setStemSend(
+        stem,
+        'a',
+        stem.sends.a,
+        false
+      );
+      setStemSend(
+        stem,
+        'b',
+        stem.sends.b,
+        false
+      );
+      setTrackTrim(
+        stem,
+        stem.trimDb,
+        false
+      );
+      setTrackPhase(
+        stem,
+        stem.phase,
+        false
+      );
+      setTrackMono(
+        stem,
+        stem.mono,
+        false
+      );
+      setTrackGroup(
+        stem,
+        stem.group,
+        false
+      );
+    });
+
+    Object.keys(groupState).forEach(group => {
+      updateGroupBus(group,false);
+    });
+  }
+
+
+  function updateEqDisplays(reset = false) {
+    stems.forEach(stem => {
+      if (!stem.eqBars.length) return;
+
+      if (
+        reset ||
+        !stem.analyserNode ||
+        !stem.frequencyData ||
+        !context
+      ) {
+        stem.eqBars.forEach(bar => {
+          bar.style.setProperty('--eq-scale', '0.035');
+          bar.style.setProperty('--eq-peak', '0');
+        });
+        return;
+      }
+
+      stem.analyserNode.getByteFrequencyData(stem.frequencyData);
+
+      const data = stem.frequencyData;
+      const nyquist = context.sampleRate / 2;
+      const binHz = nyquist / data.length;
+
+      stem.eqBars.forEach(bar => {
+        const center = Number(
+          bar.dataset.frequency || 0
+        );
+
+        if (!center || !Number.isFinite(center)) {
+          bar.style.setProperty('--eq-scale', '0.035');
+          return;
+        }
+
+        // One-octave-ish display band centered on the labeled frequency.
+        const lowerHz = Math.max(
+          20,
+          center / Math.SQRT2
+        );
+        const upperHz = Math.min(
+          nyquist,
+          center * Math.SQRT2
+        );
+
+        const from = Math.max(
+          0,
+          Math.floor(lowerHz / binHz)
+        );
+        const to = Math.min(
+          data.length - 1,
+          Math.ceil(upperHz / binHz)
+        );
+
+        let sum = 0;
+        let peak = 0;
+        let count = 0;
+
+        for (let i = from; i <= to; i++) {
+          const value = data[i] / 255;
+          sum += value * value;
+          peak = Math.max(peak, value);
+          count++;
+        }
+
+        const rms = count
+          ? Math.sqrt(sum / count)
+          : 0;
+
+        // Blend RMS and peak so quiet tracks still visibly move without
+        // pinning every band at full scale.
+        const energy = Math.max(
+          rms * 1.55,
+          peak * 0.72
+        );
+
+        const scale = Math.max(
+          0.035,
+          Math.min(
+            1,
+            Math.pow(energy, 0.78)
+          )
+        );
+
+        bar.style.setProperty(
+          '--eq-scale',
+          scale.toFixed(3)
+        );
+
+        bar.style.setProperty(
+          '--eq-peak',
+          peak.toFixed(3)
+        );
+      });
+    });
+  }
+
+  function updateGroupMeters(reset = false) {
+    Object.entries(groupState).forEach(
+      ([group,state]) => {
+        const bars = [
+          ...document.querySelectorAll(
+            `[data-group-channel="${group}"] .daw-group-meter span`
+          )
+        ];
+
+        if (!bars.length) return;
+
+        if (
+          reset ||
+          !state.analyser ||
+          !state.data
+        ) {
+          bars.forEach(bar => {
+            bar.style.setProperty(
+              '--group-level',
+              '2%'
+            );
+          });
+          return;
+        }
+
+        state.analyser.getByteTimeDomainData(
+          state.data
+        );
+
+        let sum = 0;
+
+        for (
+          let i = 0;
+          i < state.data.length;
+          i++
+        ) {
+          const sample =
+            (state.data[i] - 128) / 128;
+          sum += sample * sample;
+        }
+
+        const rms = Math.sqrt(
+          sum / Math.max(1,state.data.length)
+        );
+
+        const percent = `${
+          Math.max(
+            2,
+            Math.min(100,rms * 380)
+          ).toFixed(1)
+        }%`;
+
+        bars.forEach(bar => {
+          bar.style.setProperty(
+            '--group-level',
+            percent
+          );
+        });
+      }
+    );
+  }
+
+  function updateMasterMeter(reset = false) {
+    if (!masterMeterBars.length) return;
+
+    if (
+      reset ||
+      !masterAnalyser ||
+      !masterLevelData
+    ) {
+      masterMeterBars.forEach(bar => {
+        bar.style.setProperty('--master-level', '2%');
+      });
+      return;
+    }
+
+    masterAnalyser.getByteTimeDomainData(masterLevelData);
+
+    let sum = 0;
+
+    for (let i = 0; i < masterLevelData.length; i++) {
+      const sample = (masterLevelData[i] - 128) / 128;
+      sum += sample * sample;
+    }
+
+    const rms = Math.sqrt(
+      sum / Math.max(1, masterLevelData.length)
+    );
+
+    const level = Math.max(
+      0.02,
+      Math.min(1, rms * 3.8)
+    );
+
+    const percent = `${(level * 100).toFixed(1)}%`;
+
+    masterMeterBars.forEach(bar => {
+      bar.style.setProperty('--master-level', percent);
+    });
+  }
+
+  function updateKnob(stem) {
+    const value = Math.max(
+      -1,
+      Math.min(1, Number(stem.pan?.value || 0))
+    );
+    const degrees = -135 + ((value + 1) / 2) * 270;
+
+    stem.knob?.style.setProperty('--knob-angle', `${degrees}deg`);
+    stem.knob?.setAttribute('aria-valuenow', value.toFixed(2));
+
+    if (stem.panOutput) {
+      stem.panOutput.textContent = panText(value);
+    }
+  }
+
+  function setStemPan(stem, value) {
+    const pan = Math.max(-1, Math.min(1, Number(value || 0)));
+
+    if (stem.pan) {
+      stem.pan.value = String(pan);
+    }
+
+    if (stem.panNode && context) {
+      stem.panNode.pan.setTargetAtTime(
+        pan,
+        context.currentTime,
+        0.008
+      );
+    }
+
+    updateKnob(stem);
+    scheduleLocalSave();
+  }
+
+  function updateReadouts(stem) {
+    if (stem.volumeOutput) {
+      stem.volumeOutput.textContent = dbText(stem.userGain);
+    }
+
+    updateKnob(stem);
+  }
+
+  function updateGains() {
+    const anySolo = stems.some(stem => stem.solo);
+
+    stems.forEach(stem => {
+      const audible = !stem.muted && (!anySolo || stem.solo);
+      const gain = audible
+        ? Math.max(0, Number(stem.userGain || 0))
+        : 0;
+
+      if (stem.gainNode && context) {
+        stem.gainNode.gain.setTargetAtTime(
+          gain,
+          context.currentTime,
+          0.008
+        );
+      } else {
+        stem.audio.volume = Math.max(0, Math.min(1, gain));
+        stem.audio.muted = !audible;
+      }
+
+      [stem.leftRow, stem.mixer, stem.arrangeRow].forEach(el => {
+        el?.classList.toggle('muted', stem.muted);
+        el?.classList.toggle('soloed', stem.solo);
+      });
+
+      stem.muteButtons.forEach(button => {
+        button.classList.toggle('active', stem.muted);
+      });
+
+      stem.soloButtons.forEach(button => {
+        button.classList.toggle('active', stem.solo);
+      });
+
+      updateReadouts(stem);
+    });
+
+    scheduleLocalSave();
+  }
+
+  function stemLocalTime(stem, globalTime) {
+    return globalTime - Number(stem.offset || 0);
+  }
+
+  function stemIsActiveAt(stem, globalTime) {
+    const localTime = stemLocalTime(stem, globalTime);
+    const stemDuration = Number(stem.duration || 0);
+
+    return (
+      localTime >= 0 &&
+      localTime < stemDuration
+    );
+  }
+
+  function setStemPlayback(stem, globalTime) {
+    const active = stemIsActiveAt(stem, globalTime);
+
+    if (!active) {
+      if (!stem.audio.paused) {
+        stem.audio.pause();
+      }
+      return;
+    }
+
+    // During ordinary playback, currentTime is intentionally NOT rewritten.
+    // The media element keeps decoding continuously from its last explicit
+    // seek, which avoids range-request churn and decoder noise.
+    if (
+      playing &&
+      !seekInProgress &&
+      stem.audio.paused &&
+      !stem.pendingPlay
+    ) {
+      stem.pendingPlay = true;
+
+      stem.audio.play()
+        .catch(error => {
+          console.error(
+            'Stem playback failed',
+            stem.id,
+            error
+          );
+        })
+        .finally(() => {
+          stem.pendingPlay = false;
+        });
+    }
+  }
+
+  function syncAll() {
+    const now = globalPosition();
+    stems.forEach(stem => setStemPlayback(stem, now));
+  }
+
+  function waitForMetadata(audio, timeoutMs = 1800) {
+    if (audio.readyState >= 1) {
+      return Promise.resolve();
+    }
+
+    return new Promise(resolve => {
+      let done = false;
+
+      const finish = () => {
+        if (done) return;
+        done = true;
+
+        audio.removeEventListener(
+          'loadedmetadata',
+          finish
+        );
+        audio.removeEventListener(
+          'durationchange',
+          finish
+        );
+        audio.removeEventListener(
+          'error',
+          finish
+        );
+
+        resolve();
+      };
+
+      audio.addEventListener(
+        'loadedmetadata',
+        finish,
+        {once:true}
+      );
+      audio.addEventListener(
+        'durationchange',
+        finish,
+        {once:true}
+      );
+      audio.addEventListener(
+        'error',
+        finish,
+        {once:true}
+      );
+
+      setTimeout(finish, timeoutMs);
+
+      try {
+        audio.load();
+      } catch (error) {}
+    });
+  }
+
+  function waitForSeek(audio, target, timeoutMs = 1800) {
+    if (
+      Number.isFinite(audio.currentTime) &&
+      Math.abs(audio.currentTime - target) < 0.04 &&
+      !audio.seeking
+    ) {
+      return Promise.resolve();
+    }
+
+    return new Promise(resolve => {
+      let done = false;
+
+      const finish = () => {
+        if (done) return;
+        done = true;
+
+        audio.removeEventListener(
+          'seeked',
+          finish
+        );
+        audio.removeEventListener(
+          'canplay',
+          finish
+        );
+        audio.removeEventListener(
+          'error',
+          finish
+        );
+
+        resolve();
+      };
+
+      audio.addEventListener(
+        'seeked',
+        finish,
+        {once:true}
+      );
+      audio.addEventListener(
+        'canplay',
+        finish,
+        {once:true}
+      );
+      audio.addEventListener(
+        'error',
+        finish,
+        {once:true}
+      );
+
+      setTimeout(finish, timeoutMs);
+
+      try {
+        audio.currentTime = target;
+      } catch (error) {
+        finish();
+      }
+    });
+  }
+
+  async function seekStemSafely(
+    stem,
+    globalTime,
+    serial
+  ) {
+    if (serial !== seekSerial) return;
+
+    const localTime = stemLocalTime(
+      stem,
+      globalTime
+    );
+    const stemDuration = Number(
+      stem.duration || 0
+    );
+
+    stem.pendingPlay = false;
+
+    if (!stem.audio.paused) {
+      stem.audio.pause();
+    }
+
+    if (
+      localTime < 0 ||
+      localTime >= stemDuration
+    ) {
+      return;
+    }
+
+    await waitForMetadata(stem.audio);
+
+    if (serial !== seekSerial) return;
+
+    const mediaDuration = Number.isFinite(
+      stem.audio.duration
+    )
+      ? stem.audio.duration
+      : stemDuration;
+
+    const target = Math.max(
+      0,
+      Math.min(
+        Math.max(0, mediaDuration - 0.01),
+        localTime
+      )
+    );
+
+    await waitForSeek(
+      stem.audio,
+      target
+    );
+  }
+
+  async function seekAllSafely(
+    globalTime,
+    resumeAfter = false
+  ) {
+    const serial = ++seekSerial;
+    const target = Math.max(
+      0,
+      Math.min(
+        duration,
+        Number(globalTime || 0)
+      )
+    );
+
+    seekInProgress = true;
+    cancelAnimationFrame(frame);
+
+    stems.forEach(stem => {
+      stem.pendingPlay = false;
+
+      if (!stem.audio.paused) {
+        stem.audio.pause();
+      }
+    });
+
+    position = target;
+
+    if (currentTimeEl) {
+      currentTimeEl.textContent =
+        formatTime(position);
+    }
+
+    updatePlayhead(position);
+
+    // Let the browser issue the required range requests together, but wait for
+    // each decoder to confirm the new position before restarting playback.
+    await Promise.allSettled(
+      stems.map(stem =>
+        seekStemSafely(
+          stem,
+          position,
+          serial
+        )
+      )
+    );
+
+    if (serial !== seekSerial) {
+      return;
+    }
+
+    seekInProgress = false;
+
+    if (resumeAfter) {
+      startedAt = performance.now();
+      playing = true;
+
+      stems.forEach(stem => {
+        setStemPlayback(
+          stem,
+          position
+        );
+      });
+
+      if (playButton) {
+        playButton.textContent = '❚❚';
+        playButton.setAttribute(
+          'aria-label',
+          'Pause'
+        );
+      }
+
+      frame = requestAnimationFrame(render);
+    } else {
+      playing = false;
+
+      if (playButton) {
+        playButton.textContent = '▶';
+        playButton.setAttribute(
+          'aria-label',
+          'Play'
+        );
+      }
+    }
+  }
+
+  function updatePlayhead(now) {
+    const percent = duration > 0
+      ? Math.max(
+          0,
+          Math.min(
+            100,
+            (now / duration) * 100
+          )
+        )
+      : 0;
+
+    if (playhead) {
+      playhead.style.left = `${percent}%`;
+    }
+  }
+
+  function seekTo(time) {
+    const resumeAfter = playing;
+
+    // Invalidate the running clock immediately so it cannot advance while the
+    // media elements are repositioning.
+    playing = false;
+
+    return seekAllSafely(
+      time,
+      resumeAfter
+    );
+  }
+
+  function render() {
+    if (seekInProgress) {
+      return;
+    }
+
+    let now = globalPosition();
+
+    if (
+      playing &&
+      loopActive &&
+      loopEnd > loopStart &&
+      now >= loopEnd
+    ) {
+      const resumeAfter = true;
+      playing = false;
+
+      seekAllSafely(
+        loopStart,
+        resumeAfter
+      ).catch(error => {
+        console.error(
+          'Loop seek failed',
+          error
+        );
+      });
+
+      return;
+    }
+
+    if (currentTimeEl) {
+      currentTimeEl.textContent =
+        formatTime(now);
+    }
+
+    updatePlayhead(now);
+    applyAutomationAt(now);
+    updateEqDisplays(false);
+    updateGroupMeters(false);
+    updateMasterMeter(false);
+
+    if (!playing) {
+      return;
+    }
+
+    if (now >= duration) {
+      pauseAll();
+      position = duration;
+
+      if (currentTimeEl) {
+        currentTimeEl.textContent =
+          formatTime(duration);
+      }
+
+      updatePlayhead(duration);
+      return;
+    }
+
+    syncAll();
+    frame = requestAnimationFrame(render);
+  }
+
+  async function playAll() {
+    ensureAudioGraph();
+
+    if (!context) {
+      alert(
+        'Web Audio is not available in this browser.'
+      );
+      return;
+    }
+
+    if (context.state === 'suspended') {
+      await context.resume();
+    }
+
+    if (
+      loopActive &&
+      loopEnd > loopStart &&
+      (
+        position < loopStart ||
+        position >= loopEnd
+      )
+    ) {
+      position = loopStart;
+    } else if (
+      position >= duration - 0.02
+    ) {
+      position =
+        loopActive &&
+        loopEnd > loopStart
+          ? loopStart
+          : 0;
+    }
+
+    // Start from one confirmed decoder position rather than asking every
+    // animation frame to correct currentTime.
+    playing = false;
+
+    await seekAllSafely(
+      position,
+      true
+    );
+  }
+
+  function pauseAll() {
+    if (playing) {
+      position = globalPosition();
+    }
+
+    ++seekSerial;
+    seekInProgress = false;
+    playing = false;
+
+    stems.forEach(stem => {
+      stem.audio.pause();
+    });
+
+    cancelAnimationFrame(frame);
+    restoreStaticAutomationTargets();
+    updateEqDisplays(true);
+    updateGroupMeters(true);
+    updateMasterMeter(true);
+
+    if (playButton) {
+      playButton.textContent = '▶';
+      playButton.setAttribute('aria-label', 'Play');
+    }
+
+    updatePlayhead(position);
+  }
+
+  function selectStem(stem) {
+    markSelectedStem(stem.id);
+
+    stem.mixer?.scrollIntoView({
+      block: 'nearest',
+      inline: 'center',
+      behavior: 'smooth'
+    });
+
+    scheduleLocalSave();
+  }
+
+  function applyPreset(name) {
+    stems.forEach(stem => {
+      const role = String(stem.role || '').toLowerCase();
+
+      stem.solo = false;
+      stem.muted = false;
+
+      if (name === 'vocals') {
+        stem.solo = role === 'vocal';
+      } else if (name === 'instrumental') {
+        stem.muted = role === 'vocal';
+      } else if (name === 'rhythm') {
+        stem.solo = ['drums', 'percussion', 'bass'].includes(role);
+      }
+    });
+
+    updateGains();
+  }
+
+  function setPluginState(name, enabled) {
+    if (!(name in pluginState)) return;
+
+    pluginState[name] = Boolean(enabled);
+
+    document.querySelectorAll(
+      `[data-master-plugin="${name}"]`
+    ).forEach(button => {
+      button.classList.toggle('active', pluginState[name]);
+    });
+
+    if (context) {
+      rebuildMasterGraph();
+    }
+
+    scheduleLocalSave();
+  }
+
+  function defaultGroupForRole(role) {
+    const value = String(role || '').toLowerCase();
+
+    if (value === 'vocal') {
+      return 'vocals';
+    }
+
+    if (
+      ['drums','percussion','bass']
+        .includes(value)
+    ) {
+      return 'rhythm';
+    }
+
+    return 'music';
+  }
+
+  function resetMix() {
+    stems.forEach(stem => {
+      stem.muted = false;
+      stem.solo = false;
+      stem.userGain = stem.initialGain;
+
+      if (stem.volume) {
+        stem.volume.value = String(
+          stem.userGain
+        );
+      }
+
+      setStemPan(
+        stem,
+        stem.initialPan
+      );
+      setStemSend(stem,'a',0,false);
+      setStemSend(stem,'b',0,false);
+      setTrackTrim(stem,0,false);
+      setTrackPhase(stem,false,false);
+      setTrackMono(stem,false,false);
+    });
+
+    if (masterVolume) {
+      masterVolume.value = '1';
+    }
+
+    if (masterValue) {
+      masterValue.textContent = '0.0 dB';
+    }
+
+    if (masterGain) {
+      masterGain.gain.value = 1;
+    }
+
+    setReturnLevel('a',0.8,false);
+    setReturnLevel('b',0.7,false);
+
+    Object.keys(groupState).forEach(group => {
+      groupState[group].volume = 1;
+      groupState[group].muted = false;
+      updateGroupBus(group,false);
+    });
+
+    setPluginState('eq',true);
+    setPluginState('compressor',true);
+    setPluginState('reverb',false);
+
+    clearLoop();
+    updateGains();
+    scheduleLocalSave(0);
+  }
+
+  // ---------------------------------------------------------
+  // Track automation lanes.
+  // ---------------------------------------------------------
+  function automationSpec(parameter) {
+    if (parameter === 'pan') {
+      return {
+        min:-1,
+        max:1,
+        fallback:0,
+        format:value => panText(value)
+      };
+    }
+
+    if (parameter === 'volume') {
+      return {
+        min:0,
+        max:1.5,
+        fallback:1,
+        format:value => dbText(value)
+      };
+    }
+
+    return {
+      min:0,
+      max:1,
+      fallback:0,
+      format:value => `${Math.round(value * 100)}%`
+    };
+  }
+
+  function automationValueAt(points,time,fallback) {
+    if (!Array.isArray(points) || !points.length) {
+      return fallback;
+    }
+
+    if (time <= points[0].t) {
+      return points[0].v;
+    }
+
+    const last = points[points.length - 1];
+
+    if (time >= last.t) {
+      return last.v;
+    }
+
+    for (let i = 1; i < points.length; i++) {
+      const right = points[i];
+
+      if (time <= right.t) {
+        const left = points[i - 1];
+        const span = Math.max(
+          0.0001,
+          right.t - left.t
+        );
+        const ratio = (time - left.t) / span;
+
+        return left.v +
+          (right.v - left.v) * ratio;
+      }
+    }
+
+    return fallback;
+  }
+
+  function automationPointXY(parameter,point) {
+    const spec = automationSpec(parameter);
+    const x = duration > 0
+      ? clamp(point.t / duration,0,1) * 1000
+      : 0;
+    const normalized = (
+      point.v - spec.min
+    ) / Math.max(0.0001,spec.max - spec.min);
+    const y = 78 - clamp(normalized,0,1) * 68;
+
+    return {x,y};
+  }
+
+  function automationXYValue(parameter,x,y) {
+    const spec = automationSpec(parameter);
+    const t = clamp(x / 1000,0,1) * duration;
+    const normalized = clamp(
+      (78 - y) / 68,
+      0,
+      1
+    );
+    const v = spec.min +
+      normalized * (spec.max - spec.min);
+
+    return {
+      t:Math.round(t * 1000) / 1000,
+      v:Math.round(v * 1000) / 1000
+    };
+  }
+
+  function renderAutomationLane(stem) {
+    if (
+      !stem?.automationGraph ||
+      !stem.automationPath ||
+      !stem.automationPointsGroup
+    ) {
+      return;
+    }
+
+    const parameter =
+      stem.automationParameter?.value ||
+      'volume';
+    const points = stem.automation[parameter] || [];
+    const spec = automationSpec(parameter);
+
+    const path = points
+      .map((point,index) => {
+        const {x,y} = automationPointXY(
+          parameter,
+          point
+        );
+        return `${index === 0 ? 'M' : 'L'} ${x} ${y}`;
+      })
+      .join(' ');
+
+    stem.automationPath.setAttribute(
+      'd',
+      path
+    );
+
+    stem.automationPointsGroup.innerHTML =
+      points.map((point,index) => {
+        const {x,y} = automationPointXY(
+          parameter,
+          point
+        );
+
+        return `
+          <g
+            class="daw-automation-point"
+            data-automation-point="${index}"
+            transform="translate(${x} ${y})"
+            tabindex="0"
+            role="slider"
+            aria-valuetext="${formatTime(point.t)} · ${spec.format(point.v)}"
+          >
+            <circle r="6"></circle>
+            <text x="8" y="-8">${spec.format(point.v)}</text>
+          </g>
+        `;
+      }).join('');
+
+    bindAutomationPoints(stem);
+  }
+
+  function setAutomationOpen(stem,open,persist = true) {
+    if (!stem) return;
+
+    stem.automationOpen = Boolean(open);
+
+    stem.leftRow?.classList.toggle(
+      'automation-open',
+      stem.automationOpen
+    );
+    stem.arrangeRow?.classList.toggle(
+      'automation-open',
+      stem.automationOpen
+    );
+    stem.automationToggle?.classList.toggle(
+      'active',
+      stem.automationOpen
+    );
+
+    if (stem.automationLane) {
+      stem.automationLane.hidden =
+        !stem.automationOpen;
+    }
+
+    if (stem.automationOpen) {
+      renderAutomationLane(stem);
+    }
+
+    if (persist) {
+      scheduleLocalSave();
+    }
+  }
+
+  function automationGraphPoint(event,svg) {
+    const point = svgPoint(event,svg);
+
+    return {
+      x:clamp(point.x,0,1000),
+      y:clamp(point.y,10,78)
+    };
+  }
+
+  function updateAutomationGraphDom(stem) {
+    if (
+      !stem?.automationGraph ||
+      !stem.automationPath ||
+      !stem.automationPointsGroup
+    ) {
+      return;
+    }
+
+    const parameter =
+      stem.automationParameter?.value ||
+      'volume';
+    const points = stem.automation[parameter] || [];
+    const spec = automationSpec(parameter);
+
+    stem.automationPath.setAttribute(
+      'd',
+      points.map((point,index) => {
+        const {x,y} = automationPointXY(
+          parameter,
+          point
+        );
+        return `${index === 0 ? 'M' : 'L'} ${x} ${y}`;
+      }).join(' ')
+    );
+
+    stem.automationPointsGroup
+      .querySelectorAll('[data-automation-point]')
+      .forEach((node,index) => {
+        const point = points[index];
+        if (!point) return;
+
+        const {x,y} = automationPointXY(
+          parameter,
+          point
+        );
+
+        node.setAttribute(
+          'transform',
+          `translate(${x} ${y})`
+        );
+        node.setAttribute(
+          'aria-valuetext',
+          `${formatTime(point.t)} · ${spec.format(point.v)}`
+        );
+
+        const text = node.querySelector('text');
+        if (text) {
+          text.textContent = spec.format(point.v);
+        }
+      });
+  }
+
+  function bindAutomationPoints(stem) {
+    const parameter =
+      stem.automationParameter?.value ||
+      'volume';
+    const points = stem.automation[parameter] || [];
+
+    stem.automationPointsGroup
+      ?.querySelectorAll('[data-automation-point]')
+      .forEach(node => {
+        const index = Number(
+          node.dataset.automationPoint
+        );
+        let pointerId = null;
+
+        node.addEventListener('pointerdown',event => {
+          if (event.button !== 0) return;
+
+          pointerId = event.pointerId;
+          node.setPointerCapture(pointerId);
+          node.classList.add('dragging');
+          event.preventDefault();
+          event.stopPropagation();
+        });
+
+        node.addEventListener('pointermove',event => {
+          if (event.pointerId !== pointerId) {
+            return;
+          }
+
+          const point = automationGraphPoint(
+            event,
+            stem.automationGraph
+          );
+          points[index] = automationXYValue(
+            parameter,
+            point.x,
+            point.y
+          );
+
+          updateAutomationGraphDom(stem);
+          scheduleLocalSave();
+        });
+
+        const finish = event => {
+          if (event.pointerId !== pointerId) {
+            return;
+          }
+
+          try {
+            node.releasePointerCapture(pointerId);
+          } catch (error) {}
+
+          pointerId = null;
+          node.classList.remove('dragging');
+
+          points.sort((a,b) => a.t - b.t);
+          renderAutomationLane(stem);
+          scheduleLocalSave();
+        };
+
+        node.addEventListener('pointerup',finish);
+        node.addEventListener('pointercancel',finish);
+
+        node.addEventListener('dblclick',event => {
+          event.preventDefault();
+          event.stopPropagation();
+
+          points.splice(index,1);
+          renderAutomationLane(stem);
+          scheduleLocalSave();
+        });
+
+        node.addEventListener('keydown',event => {
+          if (
+            event.key !== 'Delete' &&
+            event.key !== 'Backspace'
+          ) {
+            return;
+          }
+
+          event.preventDefault();
+          points.splice(index,1);
+          renderAutomationLane(stem);
+          scheduleLocalSave();
+        });
+      });
+  }
+
+  function bindAutomationEditor(stem) {
+    stem.automationToggle?.addEventListener(
+      'click',
+      event => {
+        event.stopPropagation();
+        setAutomationOpen(
+          stem,
+          !stem.automationOpen
+        );
+      }
+    );
+
+    stem.automationParameter?.addEventListener(
+      'change',
+      () => {
+        renderAutomationLane(stem);
+        scheduleLocalSave();
+      }
+    );
+
+    stem.automationGraph?.addEventListener(
+      'click',
+      event => {
+        if (
+          event.target.closest(
+            '[data-automation-point]'
+          )
+        ) {
+          return;
+        }
+
+        const parameter =
+          stem.automationParameter?.value ||
+          'volume';
+        const point = automationGraphPoint(
+          event,
+          stem.automationGraph
+        );
+
+        stem.automation[parameter].push(
+          automationXYValue(
+            parameter,
+            point.x,
+            point.y
+          )
+        );
+        stem.automation[parameter].sort(
+          (a,b) => a.t - b.t
+        );
+
+        renderAutomationLane(stem);
+        scheduleLocalSave();
+      }
+    );
+  }
+
+  function applyAutomationAt(time) {
+    const anySolo = stems.some(
+      stem => stem.solo
+    );
+
+    stems.forEach(stem => {
+      const volumePoints =
+        stem.automation.volume || [];
+      const panPoints =
+        stem.automation.pan || [];
+      const auxAPoints =
+        stem.automation.auxA || [];
+      const auxBPoints =
+        stem.automation.auxB || [];
+
+      const volume = automationValueAt(
+        volumePoints,
+        time,
+        stem.userGain
+      );
+
+      const pan = automationValueAt(
+        panPoints,
+        time,
+        Number(stem.pan?.value || 0)
+      );
+
+      const sendA = automationValueAt(
+        auxAPoints,
+        time,
+        stem.sends.a
+      );
+
+      const sendB = automationValueAt(
+        auxBPoints,
+        time,
+        stem.sends.b
+      );
+
+      const audible =
+        !stem.muted &&
+        (!anySolo || stem.solo);
+
+      if (stem.gainNode && context) {
+        stem.gainNode.gain.setTargetAtTime(
+          audible ? volume : 0,
+          context.currentTime,
+          0.008
+        );
+      }
+
+      if (stem.panNode && context) {
+        stem.panNode.pan.setTargetAtTime(
+          pan,
+          context.currentTime,
+          0.008
+        );
+      }
+
+      applyStemSendAudio(stem,'a',sendA);
+      applyStemSendAudio(stem,'b',sendB);
+    });
+  }
+
+  function restoreStaticAutomationTargets() {
+    stems.forEach(stem => {
+      if (stem.panNode && context) {
+        stem.panNode.pan.setTargetAtTime(
+          Number(stem.pan?.value || 0),
+          context.currentTime,
+          0.008
+        );
+      }
+
+      applyStemSendAudio(
+        stem,
+        'a',
+        stem.sends.a
+      );
+      applyStemSendAudio(
+        stem,
+        'b',
+        stem.sends.b
+      );
+    });
+
+    updateGains();
+  }
+
+  // ---------------------------------------------------------
+  // Main arrange timeline: scroll, seek, highlight, repeat.
+  // ---------------------------------------------------------
+  function setTimelineZoom(value,persist = true,anchorTime = null) {
+    const previousWidth =
+      timelineSurface?.getBoundingClientRect().width ||
+      1;
+
+    const viewportWidth =
+      dawArrange?.clientWidth ||
+      1;
+
+    const anchor = anchorTime === null
+      ? (
+          duration > 0
+            ? (
+                (
+                  (dawArrange?.scrollLeft || 0) +
+                  viewportWidth / 2
+                ) / previousWidth
+              ) * duration
+            : 0
+        )
+      : clamp(anchorTime,0,duration);
+
+    timelineZoom = clamp(value,0.5,8);
+
+    resizeTimelineSurface();
+
+    if (
+      dawArrange &&
+      timelineSurface &&
+      duration > 0
+    ) {
+      const width =
+        timelineSurface.getBoundingClientRect().width;
+      const targetX =
+        (anchor / duration) * width;
+
+      dawArrange.scrollLeft = Math.max(
+        0,
+        targetX - viewportWidth / 2
+      );
+    }
+
+    if (timelineZoomValue) {
+      timelineZoomValue.textContent =
+        `${Math.round(timelineZoom * 100)}%`;
+    }
+
+    if (persist) {
+      scheduleLocalSave();
+    }
+  }
+
+  function resizeTimelineSurface() {
+    if (!timelineSurface || !dawArrange) return;
+
+    const viewport = Math.max(
+      1,
+      dawArrange.clientWidth
+    );
+    const pixelsPerSecond =
+      duration > 240 ? 10 : 22;
+
+    const target = Math.max(
+      viewport,
+      1200,
+      duration *
+        pixelsPerSecond *
+        timelineZoom
+    );
+
+    timelineSurface.style.width =
+      `${Math.ceil(target)}px`;
+
+    if (timelineZoomValue) {
+      timelineZoomValue.textContent =
+        `${Math.round(timelineZoom * 100)}%`;
+    }
+
+    renderRuler();
+    renderMarkersAndRegions();
+  }
+
+  function renderRuler() {
+    if (!rulerLines || duration <= 0) return;
+
+    const interval = duration > 600
+      ? 60
+      : duration > 240
+        ? 30
+        : duration > 120
+          ? 15
+          : 10;
+
+    const markers = [];
+
+    for (let second = 0; second <= duration; second += interval) {
+      const left = (second / duration) * 100;
+
+      markers.push(
+        `<span class="daw-ruler-marker" style="left:${left}%">` +
+        `<b>${formatTime(second)}</b></span>`
+      );
+    }
+
+    rulerLines.innerHTML = markers.join('');
+  }
+
+  function timelineTimeFromPointer(event) {
+    if (!timelineSurface || duration <= 0) return 0;
+
+    const rect = timelineSurface.getBoundingClientRect();
+    const x = Math.max(
+      0,
+      Math.min(rect.width, event.clientX - rect.left)
+    );
+
+    return (x / Math.max(1, rect.width)) * duration;
+  }
+
+  function timelineEntityId(prefix) {
+    return `${prefix}-${Date.now()}-${Math.random()
+      .toString(36)
+      .slice(2,8)}`;
+  }
+
+  function addMarkerAt(time,label = null) {
+    timelineMarkers.push({
+      id:timelineEntityId('marker'),
+      time:clamp(time,0,duration),
+      label:label || `Marker ${timelineMarkers.length + 1}`
+    });
+
+    timelineMarkers.sort(
+      (a,b) => a.time - b.time
+    );
+
+    renderMarkersAndRegions();
+    scheduleLocalSave(0);
+  }
+
+  function addRegionAt(start,end,label = null) {
+    const cleanStart = clamp(
+      Math.min(start,end),
+      0,
+      duration
+    );
+    const cleanEnd = clamp(
+      Math.max(start,end),
+      0,
+      duration
+    );
+
+    if (cleanEnd - cleanStart < 0.15) {
+      return;
+    }
+
+    timelineRegions.push({
+      id:timelineEntityId('region'),
+      start:cleanStart,
+      end:cleanEnd,
+      label:label || `Region ${timelineRegions.length + 1}`
+    });
+
+    timelineRegions.sort(
+      (a,b) => a.start - b.start
+    );
+
+    renderMarkersAndRegions();
+    scheduleLocalSave(0);
+  }
+
+  function renderMarkersAndRegions() {
+    if (!markerLane || duration <= 0) return;
+
+    markerLane.innerHTML = [
+      ...timelineRegions.map(region => {
+        const left = (
+          region.start / duration
+        ) * 100;
+        const width = (
+          (region.end - region.start) /
+          duration
+        ) * 100;
+
+        return `
+          <div
+            class="daw-region-item"
+            data-region-id="${escapeHtml(region.id)}"
+            style="left:${left}%;width:${Math.max(.08,width)}%"
+          >
+            <button
+              type="button"
+              class="daw-region-handle daw-region-handle-left"
+              data-region-edge="start"
+              aria-label="Resize region start"
+            ></button>
+            <button
+              type="button"
+              class="daw-region-body"
+              data-region-body
+              title="${escapeHtml(region.label)} · ${formatTime(region.start)}–${formatTime(region.end)}"
+            >
+              <span>${escapeHtml(region.label)}</span>
+            </button>
+            <button
+              type="button"
+              class="daw-region-delete"
+              data-region-delete
+              aria-label="Delete region"
+            >×</button>
+            <button
+              type="button"
+              class="daw-region-handle daw-region-handle-right"
+              data-region-edge="end"
+              aria-label="Resize region end"
+            ></button>
+          </div>
+        `;
+      }),
+      ...timelineMarkers.map(marker => {
+        const left = (
+          marker.time / duration
+        ) * 100;
+
+        return `
+          <div
+            class="daw-marker-item"
+            data-marker-id="${escapeHtml(marker.id)}"
+            style="left:${left}%"
+          >
+            <button
+              type="button"
+              class="daw-marker-body"
+              data-marker-body
+              title="${escapeHtml(marker.label)} · ${formatTime(marker.time)}"
+            >
+              <i></i>
+              <span>${escapeHtml(marker.label)}</span>
+            </button>
+            <button
+              type="button"
+              class="daw-marker-delete"
+              data-marker-delete
+              aria-label="Delete marker"
+            >×</button>
+          </div>
+        `;
+      })
+    ].join('');
+
+    bindMarkerRegionEvents();
+  }
+
+  function bindMarkerRegionEvents() {
+    markerLane
+      ?.querySelectorAll('[data-marker-id]')
+      .forEach(item => {
+        const marker = timelineMarkers.find(
+          entry =>
+            entry.id === item.dataset.markerId
+        );
+        const body = item.querySelector(
+          '[data-marker-body]'
+        );
+
+        if (!marker || !body) return;
+
+        let pointerId = null;
+        let moved = false;
+
+        body.addEventListener('pointerdown',event => {
+          if (event.button !== 0) return;
+
+          pointerId = event.pointerId;
+          moved = false;
+          body.setPointerCapture(pointerId);
+          event.preventDefault();
+        });
+
+        body.addEventListener('pointermove',event => {
+          if (event.pointerId !== pointerId) {
+            return;
+          }
+
+          moved = true;
+          marker.time =
+            timelineTimeFromPointer(event);
+
+          item.style.left =
+            `${(marker.time / duration) * 100}%`;
+        });
+
+        const finish = event => {
+          if (event.pointerId !== pointerId) {
+            return;
+          }
+
+          try {
+            body.releasePointerCapture(pointerId);
+          } catch (error) {}
+
+          pointerId = null;
+
+          if (moved) {
+            timelineMarkers.sort(
+              (a,b) => a.time - b.time
+            );
+            scheduleLocalSave();
+          }
+        };
+
+        body.addEventListener('pointerup',finish);
+        body.addEventListener(
+          'pointercancel',
+          finish
+        );
+
+        body.addEventListener('click',() => {
+          if (moved) {
+            moved = false;
+            return;
+          }
+
+          seekTo(marker.time).catch(error => {
+            console.error(
+              'Marker seek failed',
+              error
+            );
+          });
+        });
+
+        body.addEventListener('dblclick',event => {
+          event.preventDefault();
+
+          const label = window.prompt(
+            'Marker name',
+            marker.label
+          );
+
+          if (label !== null && label.trim()) {
+            marker.label = label.trim().slice(0,80);
+            renderMarkersAndRegions();
+            scheduleLocalSave(0);
+          }
+        });
+
+        item.querySelector('[data-marker-delete]')
+          ?.addEventListener('click',event => {
+            event.stopPropagation();
+
+            timelineMarkers =
+              timelineMarkers.filter(
+                entry =>
+                  entry.id !== marker.id
+              );
+
+            renderMarkersAndRegions();
+            scheduleLocalSave(0);
+          });
+      });
+
+    markerLane
+      ?.querySelectorAll('[data-region-id]')
+      .forEach(item => {
+        const region = timelineRegions.find(
+          entry =>
+            entry.id === item.dataset.regionId
+        );
+
+        if (!region) return;
+
+        const bindDrag = (
+          element,
+          mode
+        ) => {
+          if (!element) return;
+
+          let pointerId = null;
+          let startTime = 0;
+          let originalStart = 0;
+          let originalEnd = 0;
+          let moved = false;
+
+          element.addEventListener(
+            'pointerdown',
+            event => {
+              if (event.button !== 0) return;
+
+              pointerId = event.pointerId;
+              startTime =
+                timelineTimeFromPointer(event);
+              originalStart = region.start;
+              originalEnd = region.end;
+              moved = false;
+
+              element.setPointerCapture(
+                pointerId
+              );
+              event.preventDefault();
+              event.stopPropagation();
+            }
+          );
+
+          element.addEventListener(
+            'pointermove',
+            event => {
+              if (
+                event.pointerId !== pointerId
+              ) {
+                return;
+              }
+
+              moved = true;
+              const now =
+                timelineTimeFromPointer(event);
+
+              if (mode === 'start') {
+                region.start = clamp(
+                  now,
+                  0,
+                  region.end - .15
+                );
+              } else if (mode === 'end') {
+                region.end = clamp(
+                  now,
+                  region.start + .15,
+                  duration
+                );
+              } else {
+                const delta = now - startTime;
+                const length =
+                  originalEnd -
+                  originalStart;
+
+                region.start = clamp(
+                  originalStart + delta,
+                  0,
+                  Math.max(
+                    0,
+                    duration - length
+                  )
+                );
+                region.end =
+                  region.start + length;
+              }
+
+              const left =
+                (region.start / duration) *
+                100;
+              const width =
+                (
+                  (region.end - region.start) /
+                  duration
+                ) * 100;
+
+              item.style.left = `${left}%`;
+              item.style.width =
+                `${Math.max(.08,width)}%`;
+            }
+          );
+
+          const finish = event => {
+            if (
+              event.pointerId !== pointerId
+            ) {
+              return;
+            }
+
+            try {
+              element.releasePointerCapture(
+                pointerId
+              );
+            } catch (error) {}
+
+            pointerId = null;
+
+            if (moved) {
+              timelineRegions.sort(
+                (a,b) => a.start - b.start
+              );
+              scheduleLocalSave();
+            }
+          };
+
+          element.addEventListener(
+            'pointerup',
+            finish
+          );
+          element.addEventListener(
+            'pointercancel',
+            finish
+          );
+
+          if (mode === 'move') {
+            element.addEventListener(
+              'click',
+              () => {
+                if (moved) {
+                  moved = false;
+                  return;
+                }
+
+                setLoopRange(
+                  region.start,
+                  region.end,
+                  true
+                );
+
+                seekTo(region.start).catch(
+                  error => {
+                    console.error(
+                      'Region seek failed',
+                      error
+                    );
+                  }
+                );
+              }
+            );
+
+            element.addEventListener(
+              'dblclick',
+              event => {
+                event.preventDefault();
+
+                const label = window.prompt(
+                  'Region name',
+                  region.label
+                );
+
+                if (
+                  label !== null &&
+                  label.trim()
+                ) {
+                  region.label =
+                    label.trim().slice(0,80);
+                  renderMarkersAndRegions();
+                  scheduleLocalSave(0);
+                }
+              }
+            );
+          }
+        };
+
+        bindDrag(
+          item.querySelector(
+            '[data-region-body]'
+          ),
+          'move'
+        );
+        bindDrag(
+          item.querySelector(
+            '[data-region-edge="start"]'
+          ),
+          'start'
+        );
+        bindDrag(
+          item.querySelector(
+            '[data-region-edge="end"]'
+          ),
+          'end'
+        );
+
+        item.querySelector('[data-region-delete]')
+          ?.addEventListener('click',event => {
+            event.stopPropagation();
+
+            timelineRegions =
+              timelineRegions.filter(
+                entry =>
+                  entry.id !== region.id
+              );
+
+            renderMarkersAndRegions();
+            scheduleLocalSave(0);
+          });
+      });
+  }
+
+  function updateLoopOverlay(start = loopStart, end = loopEnd, visible = null) {
+    if (!loopSelection || duration <= 0) return;
+
+    const hasRange = end > start;
+    const shouldShow = visible === null ? hasRange : visible;
+
+    loopSelection.hidden = !shouldShow;
+
+    if (!shouldShow) return;
+
+    const left = Math.max(0, Math.min(100, (start / duration) * 100));
+    const right = Math.max(0, Math.min(100, (end / duration) * 100));
+
+    loopSelection.style.left = `${left}%`;
+    loopSelection.style.width = `${Math.max(0.05, right - left)}%`;
+
+    if (loopLabel) {
+      loopLabel.textContent = `${formatTime(start)} – ${formatTime(end)}`;
+    }
+  }
+
+  function updateLoopButtons() {
+    const hasRange = loopEnd > loopStart;
+
+    if (loopToggleButton) {
+      loopToggleButton.disabled = !hasRange;
+      loopToggleButton.textContent = loopActive
+        ? 'Loop: On'
+        : 'Loop: Off';
+      loopToggleButton.classList.toggle('active', loopActive);
+    }
+
+    if (loopClearButton) {
+      loopClearButton.hidden = !hasRange;
+    }
+  }
+
+  function setLoopRange(start, end, active = true) {
+    loopStart = Math.max(0, Math.min(duration, Math.min(start, end)));
+    loopEnd = Math.max(
+      loopStart,
+      Math.min(duration, Math.max(start, end))
+    );
+
+    if (loopEnd - loopStart < 0.15) {
+      loopStart = 0;
+      loopEnd = 0;
+      loopActive = false;
+    } else {
+      loopActive = Boolean(active);
+    }
+
+    updateLoopOverlay();
+    updateLoopButtons();
+    scheduleLocalSave();
+  }
+
+  function clearLoop() {
+    loopStart = 0;
+    loopEnd = 0;
+    loopActive = false;
+    updateLoopOverlay(0, 0, false);
+    updateLoopButtons();
+    scheduleLocalSave();
+  }
+
+  ruler?.addEventListener('pointerdown', event => {
+    if (event.button !== 0) return;
+
+    selectionPointerId = event.pointerId;
+    selectionStartTime = timelineTimeFromPointer(event);
+    selectionStartX = event.clientX;
+    selectionDragged = false;
+    selectingLoop = true;
+
+    ruler.setPointerCapture(selectionPointerId);
+    event.preventDefault();
+  });
+
+  ruler?.addEventListener('pointermove', event => {
+    if (
+      !selectingLoop ||
+      event.pointerId !== selectionPointerId
+    ) {
+      return;
+    }
+
+    const current = timelineTimeFromPointer(event);
+    const moved = Math.abs(event.clientX - selectionStartX);
+
+    if (moved > 5) {
+      selectionDragged = true;
+
+      updateLoopOverlay(
+        Math.min(selectionStartTime, current),
+        Math.max(selectionStartTime, current),
+        true
+      );
+    }
+  });
+
+  function finishTimelineSelection(event) {
+    if (
+      !selectingLoop ||
+      event.pointerId !== selectionPointerId
+    ) {
+      return;
+    }
+
+    const current = timelineTimeFromPointer(event);
+
+    try {
+      ruler?.releasePointerCapture(selectionPointerId);
+    } catch (error) {}
+
+    selectingLoop = false;
+    selectionPointerId = null;
+    suppressSurfaceClickUntil = performance.now() + 80;
+
+    if (selectionDragged) {
+      const start = Math.min(selectionStartTime, current);
+      const end = Math.max(selectionStartTime, current);
+
+      setLoopRange(start, end, true);
+      seekTo(start).catch(error => {
+        console.error('Timeline seek failed', error);
+      });
+    } else {
+      seekTo(current).catch(error => {
+        console.error('Timeline seek failed', error);
+      });
+    }
+
+    selectionDragged = false;
+  }
+
+  ruler?.addEventListener('pointerup', finishTimelineSelection);
+  ruler?.addEventListener('pointercancel', event => {
+    if (event.pointerId !== selectionPointerId) return;
+
+    selectingLoop = false;
+    selectionPointerId = null;
+    selectionDragged = false;
+    updateLoopOverlay();
+  });
+
+  timelineSurface?.addEventListener('click', event => {
+    if (performance.now() < suppressSurfaceClickUntil) return;
+    if (event.target.closest('.daw-ruler')) return;
+
+    const trackArea = event.target.closest(
+      '.daw-arrange-track,.daw-clip'
+    );
+
+    if (trackArea) {
+      seekTo(
+        timelineTimeFromPointer(event)
+      ).catch(error => {
+        console.error('Timeline seek failed', error);
+      });
+    }
+  });
+
+  timelineZoomOut?.addEventListener('click',() => {
+    setTimelineZoom(
+      timelineZoom / 1.25
+    );
+  });
+
+  timelineZoomIn?.addEventListener('click',() => {
+    setTimelineZoom(
+      timelineZoom * 1.25
+    );
+  });
+
+  addTimelineMarker?.addEventListener(
+    'click',
+    () => {
+      addMarkerAt(globalPosition());
+    }
+  );
+
+  addTimelineRegion?.addEventListener(
+    'click',
+    () => {
+      if (loopEnd > loopStart) {
+        addRegionAt(
+          loopStart,
+          loopEnd
+        );
+        return;
+      }
+
+      const start = globalPosition();
+      addRegionAt(
+        start,
+        Math.min(
+          duration,
+          start + Math.min(8,duration)
+        )
+      );
+    }
+  );
+
+  loopToggleButton?.addEventListener('click', () => {
+    if (loopEnd <= loopStart) return;
+
+    loopActive = !loopActive;
+    updateLoopButtons();
+    scheduleLocalSave();
+  });
+
+  loopClearButton?.addEventListener('click', clearLoop);
+
+  // Native trackpads already emit deltaX. This explicitly preserves
+  // two-finger left/right scrolling while keeping song playback independent.
+  dawArrange?.addEventListener(
+    'wheel',
+    event => {
+      if (
+        event.ctrlKey ||
+        event.metaKey
+      ) {
+        event.preventDefault();
+
+        setTimelineZoom(
+          timelineZoom *
+            (
+              event.deltaY < 0
+                ? 1.12
+                : 1 / 1.12
+            ),
+          true,
+          timelineTimeFromPointer(event)
+        );
+
+        return;
+      }
+
+      if (Math.abs(event.deltaX) > 0.1) {
+        event.preventDefault();
+        dawArrange.scrollLeft += event.deltaX;
+      } else if (
+        event.shiftKey &&
+        Math.abs(event.deltaY) > 0.1
+      ) {
+        event.preventDefault();
+        dawArrange.scrollLeft += event.deltaY;
+      }
+    },
+    {passive:false}
+  );
+
+  function syncVerticalScroll(source, target) {
+    if (!source || !target || syncingVerticalScroll) return;
+
+    syncingVerticalScroll = true;
+    target.scrollTop = source.scrollTop;
+
+    requestAnimationFrame(() => {
+      syncingVerticalScroll = false;
+    });
+  }
+
+  dawArrange?.addEventListener('scroll', () => {
+    syncVerticalScroll(dawArrange, trackList);
+    scheduleLocalSave(260);
+  });
+
+  trackList?.addEventListener('scroll', () => {
+    syncVerticalScroll(trackList, dawArrange);
+    scheduleLocalSave(260);
+  });
+
+  mixerScroll?.addEventListener('scroll', () => {
+    scheduleLocalSave(260);
+  });
+
+  window.addEventListener('resize', resizeTimelineSurface);
+
+  // ---------------------------------------------------------
+  // Handle-only drag/drop ordering.
+  // ---------------------------------------------------------
+  function currentOrder() {
+    return stems.map(stem => stem.id);
+  }
+
+  function applyOrder(order) {
+    const normalized = [];
+
+    order.forEach(id => {
+      const stem = stemById(id);
+
+      if (stem && !normalized.includes(stem.id)) {
+        normalized.push(stem.id);
+      }
+    });
+
+    stems.forEach(stem => {
+      if (!normalized.includes(stem.id)) {
+        normalized.push(stem.id);
+      }
+    });
+
+    const sorted = normalized
+      .map(id => stemById(id))
+      .filter(Boolean);
+
+    stems.splice(0, stems.length, ...sorted);
+
+    stems.forEach((stem, index) => {
+      if (trackList && stem.leftRow) {
+        trackList.appendChild(stem.leftRow);
+      }
+
+      if (arrangeLanes && stem.arrangeRow) {
+        arrangeLanes.appendChild(stem.arrangeRow);
+      }
+
+      if (mixerScroll && stem.mixer) {
+        mixerScroll.appendChild(stem.mixer);
+      }
+
+      const number = stem.mixer?.querySelector('.daw-channel-number');
+
+      if (number) {
+        number.textContent = String(index + 1).padStart(2, '0');
+      }
+    });
+
+    scheduleLocalSave();
+  }
+
+  function moveStemBefore(sourceId, targetId) {
+    if (sourceId === targetId) return;
+
+    const order = currentOrder().filter(id => id !== sourceId);
+    const targetIndex = order.indexOf(targetId);
+
+    if (targetIndex < 0) {
+      order.push(sourceId);
+    } else {
+      order.splice(targetIndex, 0, sourceId);
+    }
+
+    applyOrder(order);
+  }
+
+  function bindDragHandle(handle) {
+    const parent = handle?.closest('[data-drag-stem]');
+    if (!handle || !parent) return;
+
+    handle.addEventListener('dragstart', event => {
+      draggedStemId = Number(parent.dataset.dragStem || 0);
+      dragSourceElement = parent;
+
+      parent.classList.add('dragging');
+
+      event.dataTransfer.effectAllowed = 'move';
+      event.dataTransfer.setData(
+        'text/plain',
+        String(draggedStemId)
+      );
+    });
+
+    handle.addEventListener('dragend', () => {
+      draggedStemId = 0;
+
+      dragSourceElement?.classList.remove('dragging');
+      dragSourceElement = null;
+
+      document.querySelectorAll('.drag-over')
+        .forEach(el => el.classList.remove('drag-over'));
+    });
+  }
+
+  function bindDropZone(element) {
+    if (!element) return;
+
+    element.addEventListener('dragover', event => {
+      if (!draggedStemId) return;
+
+      event.preventDefault();
+      event.dataTransfer.dropEffect = 'move';
+      element.classList.add('drag-over');
+    });
+
+    element.addEventListener('dragleave', () => {
+      element.classList.remove('drag-over');
+    });
+
+    element.addEventListener('drop', event => {
+      if (!draggedStemId) return;
+
+      event.preventDefault();
+      element.classList.remove('drag-over');
+
+      const sourceId = Number(
+        event.dataTransfer.getData('text/plain') ||
+        draggedStemId
+      );
+      const targetId = Number(element.dataset.dragStem || 0);
+
+      if (sourceId && targetId) {
+        moveStemBefore(sourceId, targetId);
+      }
+    });
+  }
+
+  document.querySelectorAll('[data-drag-handle]')
+    .forEach(bindDragHandle);
+
+  document.querySelectorAll('[data-drag-stem]')
+    .forEach(bindDropZone);
+
+  // ---------------------------------------------------------
+  // Stable pan knobs and independent volume faders.
+  // ---------------------------------------------------------
+  stems.forEach(stem => {
+    const knob = stem.knob;
+
+    if (knob) {
+      let dragStartY = 0;
+      let dragStartValue = 0;
+      let pointerId = null;
+
+      knob.addEventListener('pointerdown', event => {
+        if (event.button !== 0) return;
+
+        pointerId = event.pointerId;
+        dragStartY = event.clientY;
+        dragStartValue = Number(stem.pan?.value || 0);
+
+        knob.setPointerCapture(pointerId);
+        knob.classList.add('dragging-knob');
+        event.preventDefault();
+        event.stopPropagation();
+      });
+
+      knob.addEventListener('pointermove', event => {
+        if (pointerId !== event.pointerId) return;
+
+        const delta = (dragStartY - event.clientY) / 85;
+        setStemPan(stem, dragStartValue + delta);
+      });
+
+      const finishPanDrag = event => {
+        if (pointerId !== event.pointerId) return;
+
+        try {
+          knob.releasePointerCapture(pointerId);
+        } catch (error) {}
+
+        pointerId = null;
+        knob.classList.remove('dragging-knob');
+      };
+
+      knob.addEventListener('pointerup', finishPanDrag);
+      knob.addEventListener('pointercancel', finishPanDrag);
+
+      knob.addEventListener('dblclick', event => {
+        event.preventDefault();
+        event.stopPropagation();
+        setStemPan(stem, 0);
+      });
+
+      knob.addEventListener('keydown', event => {
+        const current = Number(stem.pan?.value || 0);
+        const step = event.shiftKey ? 0.1 : 0.02;
+
+        if (
+          event.key === 'ArrowLeft' ||
+          event.key === 'ArrowDown'
+        ) {
+          event.preventDefault();
+          setStemPan(stem, current - step);
+        } else if (
+          event.key === 'ArrowRight' ||
+          event.key === 'ArrowUp'
+        ) {
+          event.preventDefault();
+          setStemPan(stem, current + step);
+        } else if (
+          event.key === 'Home' ||
+          event.key === '0'
+        ) {
+          event.preventDefault();
+          setStemPan(stem, 0);
+        }
+      });
+    }
+
+    stem.volume?.addEventListener('pointerdown', event => {
+      event.stopPropagation();
+    });
+
+    stem.volume?.addEventListener('dragstart', event => {
+      event.preventDefault();
+    });
+  });
+
+  // ---------------------------------------------------------
+  // Saved supervisor custom mixes.
+  // ---------------------------------------------------------
+  async function mixRequest(action, extra = {}) {
+    if (!cfg.canSaveMix || !cfg.mixEndpoint) {
+      throw new Error(
+        'Saved mixes are not available for this account.'
+      );
+    }
+
+    const response = await fetch(cfg.mixEndpoint, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        action,
+        track_id: trackId,
+        csrf_token: cfg.csrf,
+        ...extra
+      })
+    });
+
+    const data = await response.json().catch(() => null);
+
+    if (!response.ok || !data?.ok) {
+      throw new Error(
+        data?.error ||
+        'Saved mix request failed.'
+      );
+    }
+
+    return data;
+  }
+
+  function collectMixState() {
+    const state = {
+      masterVolume:Number(masterVolume?.value || 1),
+      returns:{
+        a:Number(auxReturnA?.value || 0.8),
+        b:Number(auxReturnB?.value || 0.7)
+      },
+      groups:Object.fromEntries(
+        Object.entries(groupState).map(
+          ([key,state]) => [
+            key,
+            {
+              volume:Number(state.volume || 0),
+              muted:Boolean(state.muted)
+            }
+          ]
+        )
+      ),
+      markers:timelineMarkers.map(marker => ({
+        id:marker.id,
+        time:marker.time,
+        label:marker.label
+      })),
+      regions:timelineRegions.map(region => ({
+        id:region.id,
+        start:region.start,
+        end:region.end,
+        label:region.label
+      })),
+      plugins:{...pluginState},
+      loop:{
+        start:loopStart,
+        end:loopEnd,
+        active:loopActive
+      },
+      order:currentOrder(),
+      stems:{}
+    };
+
+    stems.forEach(stem => {
+      state.stems[String(stem.id)] = {
+        volume:Number(stem.userGain || 0),
+        pan:Number(stem.pan?.value || 0),
+        trim:Number(stem.trimDb || 0),
+        phase:Boolean(stem.phase),
+        mono:Boolean(stem.mono),
+        group:String(stem.group || 'direct'),
+        muted:Boolean(stem.muted),
+        solo:Boolean(stem.solo),
+        sends:{
+          a:Number(stem.sends.a || 0),
+          b:Number(stem.sends.b || 0)
+        },
+        automation:normalizeAutomation(stem.automation),
+        plugins:stem.plugins.map(plugin => ({
+          type:plugin.type,
+          enabled:plugin.enabled !== false,
+          params:{...plugin.params}
+        }))
+      };
+    });
+
+    return state;
+  }
+
+
+  function applyMixState(state) {
+    if (!state || typeof state !== 'object') return;
+
+    if (Array.isArray(state.order)) {
+      applyOrder(state.order.map(Number));
+    }
+
+    stems.forEach(stem => {
+      const mix = state.stems?.[String(stem.id)];
+      if (!mix) return;
+
+      stem.userGain = Math.max(
+        0,
+        Math.min(
+          1.5,
+          Number(mix.volume ?? stem.userGain)
+        )
+      );
+
+      stem.trimDb = clamp(
+        mix.trim ?? 0,
+        -12,
+        12
+      );
+      stem.phase = Boolean(mix.phase);
+      stem.mono = Boolean(mix.mono);
+      stem.group = [
+        'direct',
+        'vocals',
+        'rhythm',
+        'music'
+      ].includes(mix.group)
+        ? mix.group
+        : stem.group;
+
+      stem.muted = Boolean(mix.muted);
+      stem.solo = Boolean(mix.solo);
+      stem.sends = {
+        a:clamp(mix.sends?.a ?? 0,0,1),
+        b:clamp(mix.sends?.b ?? 0,0,1)
+      };
+      stem.automation =
+        normalizeAutomation(mix.automation);
+      stem.plugins =
+        normalizeTrackPlugins(mix.plugins);
+
+      setStemSend(stem,'a',stem.sends.a,false);
+      setStemSend(stem,'b',stem.sends.b,false);
+      setTrackTrim(stem,stem.trimDb,false);
+      setTrackPhase(stem,stem.phase,false);
+      setTrackMono(stem,stem.mono,false);
+      setTrackGroup(stem,stem.group,false);
+      renderTrackPluginList(stem);
+      renderAutomationLane(stem);
+
+      if (context) {
+        rebuildTrackPluginGraph(stem);
+      }
+
+      if (stem.volume) {
+        stem.volume.value = String(stem.userGain);
+      }
+
+      setStemPan(stem, Number(mix.pan ?? 0));
+    });
+
+    const master = Math.max(
+      0,
+      Math.min(
+        1.5,
+        Number(state.masterVolume ?? 1)
+      )
+    );
+
+    if (masterVolume) {
+      masterVolume.value = String(master);
+    }
+
+    if (masterValue) {
+      masterValue.textContent = dbText(master);
+    }
+
+    if (masterGain && context) {
+      masterGain.gain.setTargetAtTime(
+        master,
+        context.currentTime,
+        0.008
+      );
+    }
+
+    setReturnLevel(
+      'a',
+      Number(state.returns?.a ?? 0.8),
+      false
+    );
+    setReturnLevel(
+      'b',
+      Number(state.returns?.b ?? 0.7),
+      false
+    );
+
+    Object.keys(groupState).forEach(group => {
+      const saved = state.groups?.[group] || {};
+      groupState[group].volume = clamp(
+        saved.volume ?? 1,
+        0,
+        1.5
+      );
+      groupState[group].muted =
+        Boolean(saved.muted);
+      updateGroupBus(group,false);
+    });
+
+    timelineMarkers = Array.isArray(state.markers)
+      ? state.markers.map((marker,index) => ({
+          id:String(
+            marker.id ||
+            `marker-${Date.now()}-${index}`
+          ),
+          time:clamp(marker.time ?? 0,0,duration),
+          label:String(marker.label || `Marker ${index + 1}`)
+        }))
+      : [];
+
+    timelineRegions = Array.isArray(state.regions)
+      ? state.regions
+          .map((region,index) => ({
+            id:String(
+              region.id ||
+              `region-${Date.now()}-${index}`
+            ),
+            start:clamp(region.start ?? 0,0,duration),
+            end:clamp(region.end ?? 0,0,duration),
+            label:String(region.label || `Region ${index + 1}`)
+          }))
+          .filter(region => region.end > region.start)
+      : [];
+
+    renderMarkersAndRegions();
+
+    Object.entries(state.plugins || {})
+      .forEach(([name, enabled]) => {
+        setPluginState(name, Boolean(enabled));
+      });
+
+    if (
+      state.loop &&
+      Number(state.loop.end || 0) >
+      Number(state.loop.start || 0)
+    ) {
+      setLoopRange(
+        Number(state.loop.start || 0),
+        Number(state.loop.end || 0),
+        Boolean(state.loop.active)
+      );
+    } else {
+      clearLoop();
+    }
+
+    updateGains();
+  }
+
+  async function refreshMixList() {
+    if (!savedMixList || !cfg.canSaveMix) return;
+
+    savedMixList.innerHTML =
+      '<p class="daw-modal-empty">Loading saved mixes…</p>';
+
+    try {
+      const data = await mixRequest('list');
+      const mixes = Array.isArray(data.mixes)
+        ? data.mixes
+        : [];
+
+      if (!mixes.length) {
+        savedMixList.innerHTML =
+          '<p class="daw-modal-empty">No saved mixes yet.</p>';
+
+        selectedMixId = 0;
+        return;
+      }
+
+      savedMixList.innerHTML = mixes.map(mix => `
+        <article class="daw-saved-mix-row" data-mix-id="${Number(mix.id)}">
+          <button type="button" data-load-mix="${Number(mix.id)}">
+            <strong>${escapeHtml(mix.mix_name || 'My Mix')}</strong>
+            <small>${escapeHtml(mix.updated_at || '')}</small>
+          </button>
+          <button
+            type="button"
+            class="daw-mix-delete"
+            data-delete-mix="${Number(mix.id)}"
+          >×</button>
+        </article>
+      `).join('');
+
+      savedMixList
+        .querySelectorAll('[data-load-mix]')
+        .forEach(button => {
+          button.addEventListener('click', async () => {
+            try {
+              const data = await mixRequest('load', {
+                mix_id: Number(
+                  button.dataset.loadMix || 0
+                )
+              });
+
+              selectedMixId = Number(data.mix?.id || 0);
+
+              if (stemMixName) {
+                stemMixName.value = String(
+                  data.mix?.mix_name ||
+                  'My Mix'
+                );
+              }
+
+              applyMixState(data.mix?.state || {});
+              closeModal(mixSaveDialog);
+              scheduleLocalSave(0);
+            } catch (error) {
+              alert(error.message);
+            }
+          });
+        });
+
+      savedMixList
+        .querySelectorAll('[data-delete-mix]')
+        .forEach(button => {
+          button.addEventListener('click', async () => {
+            const mixId = Number(
+              button.dataset.deleteMix || 0
+            );
+
+            if (!confirm('Delete this saved mix?')) {
+              return;
+            }
+
+            try {
+              await mixRequest('delete', {
+                mix_id: mixId
+              });
+
+              if (selectedMixId === mixId) {
+                selectedMixId = 0;
+              }
+
+              await refreshMixList();
+            } catch (error) {
+              alert(error.message);
+            }
+          });
+        });
+    } catch (error) {
+      savedMixList.innerHTML =
+        `<p class="daw-modal-empty">${escapeHtml(error.message)}</p>`;
+    }
+  }
+
+  function escapeHtml(value) {
+    return String(value ?? '')
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#039;');
+  }
+
+  function openModal(modal) {
+    if (!modal) return;
+
+    modal.hidden = false;
+    document.body.classList.add('daw-modal-open');
+  }
+
+  function closeModal(modal) {
+    if (!modal) return;
+
+    modal.hidden = true;
+
+    if (
+      masterBusDialog?.hidden !== false &&
+      mixSaveDialog?.hidden !== false &&
+      pluginDirectoryDialog?.hidden !== false
+    ) {
+      document.body.classList.remove('daw-modal-open');
+    }
+  }
+
+  // ---------------------------------------------------------
+  // Main controls.
+  // ---------------------------------------------------------
+  playButton?.addEventListener('click', () => {
+    if (playing) {
+      pauseAll();
+    } else {
+      playAll().catch(error => {
+        console.error(error);
+        alert('Could not start Stem Studio playback.');
+      });
+    }
+  });
+
+  masterVolume?.addEventListener('input', () => {
+    const value = Number(masterVolume.value || 1);
+
+    if (masterValue) {
+      masterValue.textContent = dbText(value);
+    }
+
+    if (masterGain && context) {
+      masterGain.gain.setTargetAtTime(
+        value,
+        context.currentTime,
+        0.008
+      );
+    }
+
+    scheduleLocalSave();
+  });
+
+  auxReturnA?.addEventListener('input', () => {
+    setReturnLevel(
+      'a',
+      Number(auxReturnA.value || 0.8)
+    );
+  });
+
+  auxReturnB?.addEventListener('input', () => {
+    setReturnLevel(
+      'b',
+      Number(auxReturnB.value || 0.7)
+    );
+  });
+
+  document.querySelectorAll('[data-group-volume]')
+    .forEach(input => {
+      input.addEventListener('input',() => {
+        const group = input.dataset.groupVolume;
+        if (!groupState[group]) return;
+
+        groupState[group].volume = clamp(
+          input.value,
+          0,
+          1.5
+        );
+        updateGroupBus(group);
+      });
+    });
+
+  document.querySelectorAll('[data-group-mute]')
+    .forEach(button => {
+      button.addEventListener('click',() => {
+        const group = button.dataset.groupMute;
+        if (!groupState[group]) return;
+
+        groupState[group].muted =
+          !groupState[group].muted;
+        updateGroupBus(group);
+      });
+    });
+
+  stems.forEach(stem => {
+    stem.muteButtons.forEach(button => {
+      button.addEventListener('click', event => {
+        event.stopPropagation();
+
+        stem.muted = !stem.muted;
+        updateGains();
+      });
+    });
+
+    stem.soloButtons.forEach(button => {
+      button.addEventListener('click', event => {
+        event.stopPropagation();
+
+        stem.solo = !stem.solo;
+        updateGains();
+      });
+    });
+
+    stem.volume?.addEventListener('input', () => {
+      stem.userGain = Number(
+        stem.volume.value || 0
+      );
+
+      updateGains();
+    });
+
+    stem.trim?.addEventListener('input',() => {
+      setTrackTrim(
+        stem,
+        Number(stem.trim.value || 0)
+      );
+    });
+
+    stem.phaseButton?.addEventListener(
+      'click',
+      () => {
+        setTrackPhase(
+          stem,
+          !stem.phase
+        );
+      }
+    );
+
+    stem.monoButton?.addEventListener(
+      'click',
+      () => {
+        setTrackMono(
+          stem,
+          !stem.mono
+        );
+      }
+    );
+
+    stem.groupSelect?.addEventListener(
+      'change',
+      () => {
+        setTrackGroup(
+          stem,
+          stem.groupSelect.value
+        );
+      }
+    );
+
+    stem.auxSendA?.addEventListener('input', () => {
+      setStemSend(
+        stem,
+        'a',
+        Number(stem.auxSendA.value || 0)
+      );
+    });
+
+    stem.auxSendB?.addEventListener('input', () => {
+      setStemSend(
+        stem,
+        'b',
+        Number(stem.auxSendB.value || 0)
+      );
+    });
+
+    bindAutomationEditor(stem);
+
+    stem.leftRow
+      ?.querySelector('[data-track-select]')
+      ?.addEventListener(
+        'click',
+        () => selectStem(stem)
+      );
+
+    stem.arrangeRow?.addEventListener(
+      'click',
+      () => selectStem(stem)
+    );
+  });
+
+  document.querySelectorAll('[data-stem-preset]')
+    .forEach(button => {
+      button.addEventListener('click', () => {
+        applyPreset(
+          button.dataset.stemPreset ||
+          'full'
+        );
+      });
+    });
+
+  document.querySelectorAll('[data-master-plugin]')
+    .forEach(button => {
+      button.addEventListener('click', () => {
+        const name = button.dataset.masterPlugin;
+
+        if (!(name in pluginState)) return;
+
+        setPluginState(
+          name,
+          !pluginState[name]
+        );
+
+        ensureAudioGraph();
+      });
+    });
+
+  resetMixButton?.addEventListener('click', resetMix);
+
+  document.getElementById('openMasterBus')
+    ?.addEventListener(
+      'click',
+      () => openModal(masterBusDialog)
+    );
+
+  document.getElementById('openMasterBusChannel')
+    ?.addEventListener(
+      'click',
+      () => openModal(masterBusDialog)
+    );
+
+  document.querySelectorAll('[data-close-master-bus]')
+    .forEach(button => {
+      button.addEventListener(
+        'click',
+        () => closeModal(masterBusDialog)
+      );
+    });
+
+  // ---------------------------------------------------------
+  // Pull-up per-track plugin rack.
+  // ---------------------------------------------------------
+  if (pluginRackHandle) {
+    let rackPointerId = null;
+    let rackStartY = 0;
+    let rackStartHeight = 348;
+    let rackMoved = false;
+
+    pluginRackHandle.addEventListener('pointerdown', event => {
+      if (event.button !== 0) return;
+
+      rackPointerId = event.pointerId;
+      rackStartY = event.clientY;
+      rackStartHeight = pluginRackOpen
+        ? pluginRackHeight
+        : 348;
+      rackMoved = false;
+
+      pluginRackHandle.setPointerCapture(rackPointerId);
+      pluginRackHandle.classList.add('dragging-rack');
+      event.preventDefault();
+    });
+
+    pluginRackHandle.addEventListener('pointermove', event => {
+      if (event.pointerId !== rackPointerId) return;
+
+      const delta = rackStartY - event.clientY;
+
+      if (Math.abs(delta) > 4) {
+        rackMoved = true;
+      }
+
+      const nextHeight = Math.max(
+        320,
+        Math.min(560, rackStartHeight + delta)
+      );
+
+      pluginRackOpen = nextHeight >= 392;
+      setPluginRack(
+        pluginRackOpen,
+        nextHeight,
+        false
+      );
+    });
+
+    const finishRackDrag = event => {
+      if (event.pointerId !== rackPointerId) return;
+
+      try {
+        pluginRackHandle.releasePointerCapture(rackPointerId);
+      } catch (error) {}
+
+      rackPointerId = null;
+      pluginRackHandle.classList.remove('dragging-rack');
+
+      if (rackMoved) {
+        setPluginRack(
+          pluginRackOpen,
+          pluginRackOpen
+            ? Math.max(500, pluginRackHeight)
+            : 348
+        );
+      }
+    };
+
+    pluginRackHandle.addEventListener('pointerup', finishRackDrag);
+    pluginRackHandle.addEventListener('pointercancel', finishRackDrag);
+
+    pluginRackHandle.addEventListener('click', () => {
+      if (rackMoved) {
+        rackMoved = false;
+        return;
+      }
+
+      setPluginRack(
+        !pluginRackOpen,
+        pluginRackOpen ? 348 : 520
+      );
+    });
+  }
+
+  stems.forEach(stem => {
+    renderTrackPluginList(stem);
+
+    stem.addPluginButton?.addEventListener('click', event => {
+      event.stopPropagation();
+      openPluginDirectory(stem.id);
+    });
+  });
+
+  document.querySelectorAll('[data-plugin-type]')
+    .forEach(button => {
+      button.addEventListener('click', () => {
+        const stem = stemById(pluginTargetStemId);
+        const type = button.dataset.pluginType;
+
+        if (!stem || !['eq5','delay','compressor','reverb'].includes(type)) return;
+
+        addTrackPlugin(stem, type);
+      });
+    });
+
+  document.querySelectorAll('[data-close-plugin-directory]')
+    .forEach(button => {
+      button.addEventListener(
+        'click',
+        () => closeModal(pluginDirectoryDialog)
+      );
+    });
+
+  pluginBypassButton?.addEventListener('click', () => {
+    const stem = stemById(pluginTargetStemId);
+    const plugin = stem?.plugins?.[pluginEditIndex];
+
+    if (!stem || !plugin) return;
+
+    plugin.enabled = !plugin.enabled;
+
+    renderTrackPluginList(stem);
+    rebuildTrackPluginGraph(stem);
+    openPluginEditor(stem.id, pluginEditIndex);
+    scheduleLocalSave();
+  });
+
+  pluginRemoveButton?.addEventListener('click', () => {
+    const stem = stemById(pluginTargetStemId);
+
+    if (!stem || pluginEditIndex < 0) return;
+
+    stem.plugins.splice(pluginEditIndex, 1);
+    pluginEditIndex = -1;
+
+    renderTrackPluginList(stem);
+    rebuildTrackPluginGraph(stem);
+    scheduleLocalSave(0);
+    closeModal(pluginDirectoryDialog);
+  });
+
+  document.getElementById('openMixSaves')
+    ?.addEventListener(
+      'click',
+      async () => {
+        openModal(mixSaveDialog);
+        await refreshMixList();
+      }
+    );
+
+  document.querySelectorAll('[data-close-mix-dialog]')
+    .forEach(button => {
+      button.addEventListener(
+        'click',
+        () => closeModal(mixSaveDialog)
+      );
+    });
+
+  saveStemMixButton?.addEventListener('click', async () => {
+    try {
+      const name = String(
+        stemMixName?.value ||
+        'My Mix'
+      ).trim() || 'My Mix';
+
+      const data = await mixRequest('save', {
+        mix_id: selectedMixId || 0,
+        mix_name: name,
+        state: collectMixState()
+      });
+
+      selectedMixId = Number(data.mix_id || 0);
+
+      await refreshMixList();
+    } catch (error) {
+      alert(error.message);
+    }
+  });
+
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape') {
+      closeModal(masterBusDialog);
+      closeModal(mixSaveDialog);
+      closeModal(pluginDirectoryDialog);
+      return;
+    }
+
+    if (
+      event.code === 'Space' &&
+      ![
+        'INPUT',
+        'TEXTAREA',
+        'SELECT',
+        'BUTTON'
+      ].includes(document.activeElement?.tagName)
+    ) {
+      event.preventDefault();
+
+      if (playing) {
+        pauseAll();
+      } else {
+        playAll().catch(() => {});
+      }
+    }
+  });
+
+  if (masterValue) {
+    masterValue.textContent = dbText(
+      masterVolume?.value || 1
+    );
+  }
+
+  setReturnLevel('a',Number(auxReturnA?.value || 0.8),false);
+  setReturnLevel('b',Number(auxReturnB?.value || 0.7),false);
+
+  stems.forEach(stem => {
+    updateReadouts(stem);
+    setStemPan(stem,stem.initialPan);
+    setStemSend(stem,'a',stem.sends.a,false);
+    setStemSend(stem,'b',stem.sends.b,false);
+    setTrackTrim(stem,stem.trimDb,false);
+    setTrackPhase(stem,stem.phase,false);
+    setTrackMono(stem,stem.mono,false);
+    setTrackGroup(stem,stem.group,false);
+    renderAutomationLane(stem);
+  });
+
+  Object.keys(groupState).forEach(group => {
+    updateGroupBus(group,false);
+  });
+
+  setPluginRack(false, 348, false);
+  resizeTimelineSurface();
+  clearLoop();
+  updatePlayhead(0);
+  updateEqDisplays(true);
+  updateGroupMeters(true);
+  updateMasterMeter(true);
+  updateGains();
+  restoreLocalState();
+
+  window.addEventListener('pagehide', () => {
+    if (localPersistenceReady) {
+      window.clearTimeout(localSaveTimer);
+      saveLocalStateNow();
+    }
+
+    pauseAll();
+  });
+})();

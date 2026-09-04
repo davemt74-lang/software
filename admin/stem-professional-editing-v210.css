@@ -1,0 +1,299 @@
+/* Stonefellow Stem Studio v210 — professional clip editing / comping UX */
+
+.sf-v210-tools{
+  display:flex;
+  align-items:center;
+  gap:6px;
+  min-width:0;
+  margin-left:6px;
+}
+
+.sf-v210-toolset{
+  display:inline-flex;
+  align-items:center;
+  overflow:hidden;
+  border:1px solid rgba(255,255,255,.08);
+  border-radius:7px;
+  background:rgba(255,255,255,.025);
+}
+
+.sf-v210-toolset button,
+.sf-v210-tools>button{
+  min-height:27px;
+  border:0;
+  border-right:1px solid rgba(255,255,255,.065);
+  background:transparent;
+  color:inherit;
+  padding:0 7px;
+  font:800 9px/1 system-ui,sans-serif;
+  letter-spacing:.035em;
+  cursor:pointer;
+}
+
+.sf-v210-toolset button:last-child{border-right:0}
+.sf-v210-tools>button{
+  border:1px solid rgba(255,255,255,.08);
+  border-radius:6px;
+  background:rgba(255,255,255,.035);
+}
+
+.sf-v210-toolset button.active,
+.sf-v210-toolset button[aria-pressed="true"]{
+  background:rgba(255,255,255,.12);
+}
+
+.sf-v210-toolset button:hover,
+.sf-v210-toolset button:focus-visible,
+.sf-v210-tools>button:not(:disabled):hover,
+.sf-v210-tools>button:not(:disabled):focus-visible{
+  background:rgba(255,255,255,.085);
+  outline:none;
+}
+
+.sf-v210-tools>button:disabled{
+  opacity:.35;
+  cursor:default;
+}
+
+.sf-v210-tools [data-v210-range-label]{
+  min-width:88px;
+  max-width:150px;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  font:700 9px/1 ui-monospace,SFMono-Regular,Consolas,monospace;
+  opacity:.64;
+}
+
+.sf-v210-marquee{
+  position:fixed;
+  z-index:100090;
+  pointer-events:none;
+  border:1px solid rgba(230,214,190,.92);
+  background:rgba(230,214,190,.11);
+  box-shadow:0 0 0 1px rgba(0,0,0,.32) inset;
+}
+
+#dawTimelineSurface{
+  position:relative;
+}
+
+.sf-v210-range-overlay{
+  position:absolute;
+  z-index:16;
+  top:0;
+  bottom:0;
+  pointer-events:none;
+  border-left:1px solid rgba(230,214,190,.7);
+  border-right:1px solid rgba(230,214,190,.7);
+  background:rgba(230,214,190,.065);
+  box-shadow:0 0 0 1px rgba(230,214,190,.03) inset;
+}
+
+html[data-stem-edit-tool-v210="marquee"] #dawArrangeLanes,
+html[data-stem-edit-tool-v210="marquee"] .daw-arrange-track{
+  cursor:crosshair;
+}
+
+html[data-stem-edit-tool-v210="range"] #dawTimelineSurface,
+html[data-stem-edit-tool-v210="range"] #dawRuler,
+html[data-stem-edit-tool-v210="range"] #dawArrangeLanes,
+html[data-stem-edit-tool-v210="range"] .daw-arrange-track{
+  cursor:col-resize;
+}
+
+.daw-main-stem-clip,
+[data-library-loop-clip]{
+  --sf-v210-fade-in:0%;
+  --sf-v210-fade-out:0%;
+}
+
+.sf-v210-fade-shape{
+  position:absolute;
+  z-index:7;
+  top:0;
+  bottom:0;
+  pointer-events:none;
+  opacity:.38;
+}
+
+.sf-v210-fade-shape-in{
+  left:0;
+  width:var(--sf-v210-fade-in);
+  background:linear-gradient(135deg,rgba(255,255,255,.02) 0 47%,rgba(255,255,255,.48) 49%,rgba(255,255,255,.08) 51% 100%);
+}
+
+.sf-v210-fade-shape-out{
+  right:0;
+  width:var(--sf-v210-fade-out);
+  background:linear-gradient(45deg,rgba(255,255,255,.08) 0 49%,rgba(255,255,255,.48) 51%,rgba(255,255,255,.02) 53% 100%);
+}
+
+.sf-v210-fade-handle{
+  position:absolute;
+  z-index:22;
+  top:2px;
+  width:10px;
+  height:10px;
+  padding:0;
+  border:1px solid rgba(255,255,255,.48);
+  border-radius:2px;
+  background:rgba(8,8,8,.76);
+  opacity:0;
+  transform:scale(.9);
+  transition:opacity .12s ease,transform .12s ease,background .12s ease;
+  cursor:ew-resize;
+}
+
+.sf-v210-fade-in-handle{left:2px}
+.sf-v210-fade-out-handle{right:2px}
+
+.daw-main-stem-clip:hover .sf-v210-fade-handle,
+[data-library-loop-clip]:hover .sf-v210-fade-handle,
+.sf-v209-selected .sf-v210-fade-handle,
+.sf-v210-slip-preview .sf-v210-fade-handle{
+  opacity:.88;
+  transform:scale(1);
+}
+
+.sf-v210-fade-handle:hover,
+.sf-v210-fade-handle:focus-visible{
+  opacity:1!important;
+  background:rgba(230,214,190,.25);
+  outline:none;
+}
+
+.sf-v210-xfade-handle{
+  position:absolute;
+  z-index:24;
+  top:50%;
+  right:-7px;
+  width:15px;
+  height:15px;
+  margin-top:-7px;
+  padding:0;
+  border:1px solid rgba(230,214,190,.68);
+  border-radius:50%;
+  background:rgba(15,15,15,.9);
+  color:rgba(255,255,255,.9);
+  font:800 12px/12px system-ui,sans-serif;
+  text-align:center;
+  cursor:ew-resize;
+  box-shadow:0 1px 6px rgba(0,0,0,.4);
+}
+
+.sf-v210-xfade-handle:hover,
+.sf-v210-xfade-handle:focus-visible{
+  background:rgba(230,214,190,.24);
+  outline:none;
+}
+
+.sf-v210-drag-preview{
+  transform:translateX(var(--sf-v210-drag-x,0px))!important;
+  opacity:.82!important;
+  z-index:50!important;
+  will-change:transform;
+  box-shadow:0 0 0 1px rgba(230,214,190,.5),0 8px 22px rgba(0,0,0,.26)!important;
+}
+
+.sf-v210-slip-preview{
+  outline:2px dashed rgba(230,214,190,.78)!important;
+  outline-offset:-3px!important;
+  cursor:ew-resize!important;
+}
+
+.sf-v210-take-badge{
+  position:absolute;
+  z-index:9;
+  top:4px;
+  right:5px;
+  max-width:105px;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  pointer-events:none;
+  border:1px solid rgba(230,214,190,.16);
+  border-radius:999px;
+  background:rgba(230,214,190,.07);
+  padding:2px 5px;
+  font:800 8px/1 system-ui,sans-serif;
+  letter-spacing:.045em;
+  opacity:.72;
+}
+
+[data-take-of-stem]{position:relative}
+
+.sf-v210-context{
+  position:fixed;
+  z-index:100120;
+  width:210px;
+  overflow:hidden;
+  border:1px solid rgba(255,255,255,.09);
+  border-radius:9px;
+  background:rgba(18,18,18,.985);
+  padding:5px;
+  box-shadow:0 18px 50px rgba(0,0,0,.48);
+  backdrop-filter:blur(18px);
+}
+
+.sf-v210-context button{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:8px;
+  width:100%;
+  min-height:30px;
+  border:0;
+  border-radius:5px;
+  background:transparent;
+  color:inherit;
+  padding:0 8px;
+  text-align:left;
+  font:700 10px/1.1 system-ui,sans-serif;
+  cursor:pointer;
+}
+
+.sf-v210-context button span{
+  margin-left:auto;
+  font:600 8px/1 ui-monospace,SFMono-Regular,Consolas,monospace;
+  opacity:.45;
+}
+
+.sf-v210-context button:hover:not(:disabled),
+.sf-v210-context button:focus-visible:not(:disabled){
+  background:rgba(255,255,255,.07);
+  outline:none;
+}
+
+.sf-v210-context button:disabled{
+  opacity:.32;
+  cursor:default;
+}
+
+.sf-v210-context button.danger{opacity:.72}
+.sf-v210-context button.danger:hover{background:rgba(255,90,90,.1)}
+.sf-v210-context i{
+  display:block;
+  height:1px;
+  margin:4px 3px;
+  background:rgba(255,255,255,.07);
+}
+
+@media(max-width:980px){
+  .sf-v210-tools [data-v210-range-label]{display:none}
+  .sf-v210-toolset button{padding:0 6px;font-size:8px}
+}
+
+@media(max-width:760px){
+  .sf-v210-tools{
+    width:100%;
+    order:22;
+    justify-content:flex-end;
+    margin-left:0;
+  }
+  .sf-v210-toolset{margin-right:auto}
+  .sf-v210-toolset button,
+  .sf-v210-tools>button{min-height:25px;font-size:8px}
+  .sf-v210-fade-handle{opacity:.8;width:12px;height:12px}
+  .sf-v210-context{width:min(220px,calc(100vw - 16px))}
+}

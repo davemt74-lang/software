@@ -1,0 +1,117 @@
+import fs from 'node:fs';
+import vm from 'node:vm';
+import assert from 'node:assert/strict';
+import {execFileSync} from 'node:child_process';
+
+const source=fs.readFileSync('admin/stem-session-safety-v216.js','utf8');
+const css=fs.readFileSync('admin/stem-session-safety-v216.css','utf8');
+const endpoint=fs.readFileSync('api/stem-session-v216.php','utf8');
+const wrapper=fs.readFileSync('admin/stems.php','utf8');
+const core=fs.readFileSync('admin/stems-v108.js','utf8');
+const v211=fs.readFileSync('admin/stem-automation-mixer-v211.js','utf8');
+const v215Hardening=fs.readFileSync('admin/stem-audio-engine-v215-hardening.js','utf8');
+
+execFileSync('php',['-l','api/stem-session-v216.php'],{stdio:'pipe'});
+execFileSync(process.execPath,['--check','admin/stem-session-safety-v216.js'],{stdio:'pipe'});
+
+const sandbox={console};sandbox.globalThis=sandbox;vm.createContext(sandbox);vm.runInContext(source,sandbox,{filename:'stem-session-safety-v216.js'});
+const api=sandbox.StonefellowStemSessionSafetyV216;
+assert.ok(api,'v216 API should load');
+assert.equal(api.build,'stem-session-safety-v216-20260901');
+
+assert.equal(api.stableStringify({b:2,a:1}),api.stableStringify({a:1,b:2}));
+assert.equal(api.sessionSignature({a:1},{b:2},{c:3}),api.sessionSignature({a:1},{b:2},{c:3}));
+assert.notEqual(api.sessionSignature({a:1},{b:2},{c:3}),api.sessionSignature({a:2},{b:2},{c:3}));
+assert.equal(api.checkpointLabel('  Vocal   comp   done  '),'Vocal comp done');
+assert.equal(api.reservedName('autosave',123),'__V216_AUTOSAVE__');
+assert.equal(api.reservedName('slot_a',123),'__V216_SLOT_A__');
+assert.equal(api.reservedName('slot_b',123),'__V216_SLOT_B__');
+assert.equal(api.reservedName('checkpoint',123),'__V216_CHECKPOINT__:123');
+assert.equal(api.classifyMixName('__V216_AUTOSAVE__'),'autosave');
+assert.equal(api.classifyMixName('__V216_SLOT_A__'),'slot_a');
+assert.equal(api.classifyMixName('__V216_CHECKPOINT__:1'),'checkpoint');
+assert.equal(api.classifyMixName('Client Mix 4'),'user_save');
+assert.equal(api.isHiddenMixName('__V216_SLOT_B__'),true);
+assert.equal(api.isHiddenMixName('Master Mix'),false);
+assert.equal(api.needsV211Reload({modes:{1:'read'},pluginAutomation:{}},{modes:{1:'write'},pluginAutomation:{}}),false);
+assert.equal(api.needsV211Reload({pluginAutomation:{}},{pluginAutomation:{1:{'plugin:0:eq5:b1':[{t:1,v:2}]}}}),true);
+
+assert.match(core,/localStateKey/,'core local crash state must remain in place');
+assert.match(core,/function saveLocalStateNow\(/,'core local recovery writer must remain in place');
+assert.match(core,/function restoreLocalState\(/,'core local recovery restore must remain in place');
+assert.match(core,/mixRequest,/,'core runtime must expose the validated saved-mix API');
+assert.match(core,/collectMixState,/,'core runtime must expose current session state');
+assert.match(core,/saveCurrentVersion,/,'v216 must extend existing Save behavior');
+assert.match(v211,/getSettings:\(\)=>clone\(settings\)/,'v216 must capture existing v211 automation/mixer settings');
+assert.match(v211,/pluginAutomation:\(\)=>clone\(settings\.pluginAutomation\)/,'v211 plugin automation must remain authoritative');
+assert.match(v215Hardening,/save_mix_engine/,'v215 engine state must continue persisting beside v216 sessions');
+assert.match(v215Hardening,/load_mix_engine/,'v215 engine state must continue restoring beside v216 sessions');
+
+assert.match(source,/AUTOSAVE_DELAY=2200/);
+assert.match(source,/AUTOSAVE_MIN_GAP=3500/);
+assert.match(source,/studio\(\)\?\.mixRequest\?\.\('save'/);
+assert.match(source,/studio\(\)\?\.mixRequest\?\.\('load'/);
+assert.match(source,/AUTOSAVED · UNSAVED VERSION/);
+assert.match(source,/UNSAVED CHANGES/);
+assert.match(source,/RECOVERED · UNSAVED VERSION/);
+assert.match(source,/LOCAL RECOVERY · UNSAVED/,'newer local crash state must remain a first-class recovery path');
+assert.match(source,/SET A/);
+assert.match(source,/SET B/);
+assert.match(source,/CHECKPOINTS/);
+assert.match(source,/CREATE CHECKPOINT/);
+assert.match(source,/filterHiddenMixes/);
+assert.match(source,/applyV211Settings/);
+assert.match(source,/pluginAutomation/);
+assert.match(source,/queueReloadRestore/,'unsupported v211 settings must use a safe reload handoff');
+assert.match(source,/sessionStorage/);
+assert.match(source,/localStorage/);
+assert.match(source,/studioSaveButton/);
+assert.match(source,/studioSaveAsButton/);
+assert.match(source,/isCoreRecording/,'autosave must not interrupt active recording');
+assert.doesNotMatch(source,/SpeechRecognition|ElevenLabs|premium-voice|conversation-voice|chatVoiceButton/);
+
+assert.match(endpoint,/require_permission\('chat\.access'\)/);
+assert.match(endpoint,/verify_csrf\(\)/);
+assert.match(endpoint,/can_manage_track_production/);
+assert.match(endpoint,/__V216_AUTOSAVE__/);
+assert.match(endpoint,/__V216_SLOT_A__/);
+assert.match(endpoint,/__V216_SLOT_B__/);
+assert.match(endpoint,/__V216_CHECKPOINT__:/);
+assert.match(endpoint,/sessionV216/);
+assert.match(endpoint,/automationV211/);
+assert.match(endpoint,/pluginAutomation/);
+assert.match(endpoint,/array_slice\(\$ids,20\)/,'checkpoint retention must be capped at twenty');
+assert.match(endpoint,/LEFT\(mix_name,20\)=\?/,'checkpoint lookup must not use SQL wildcard semantics for the reserved prefix');
+assert.match(endpoint,/LEFT\(mix_name,7\)=\?/,'reserved-session index must not use SQL wildcard semantics for underscores');
+assert.match(endpoint,/16777216/,'session JSON must remain capped');
+assert.match(endpoint,/delete_checkpoint/);
+assert.doesNotMatch(endpoint,/ALTER TABLE|CREATE TABLE/,'v216 must require no schema migration');
+
+assert.match(css,/sf-v216-toolbar/);
+assert.match(css,/sf-v216-modal/);
+assert.match(css,/sf-v216-checkpoint/);
+assert.match(css,/sf-v216-toast/);
+
+assert.match(wrapper,/\$sessionSafetyToken = 'stem-session-safety-v216-20260901';/);
+assert.match(wrapper,/STONEFELLOW_STEM_SESSION_V216/);
+assert.match(wrapper,/api\/stem-session-v216\.php/);
+assert.match(wrapper,/data-stem-session-v216-recovery-guard/,'recovery guard must load before the main v216 runtime');
+assert.match(wrapper,/stem-session-safety-v216-recovery-guard-20260901/);
+assert.match(wrapper,/serverSignature===localSignature/,'matching local/server autosave signatures may use the server recovery record');
+assert.match(wrapper,/data\.records\.autosave=null/,'a stale server autosave must be hidden when the local dirty state is newer/different');
+assert.match(wrapper,/coreStateKey=`stonefellow:stem-studio:state:/,'v216 recall hardening must target the core crash-recovery key');
+assert.match(wrapper,/schemaVersion:1/,'v216 recalled state must use the core local recovery schema');
+assert.match(wrapper,/mix,view:\{\}/,'v216 recalled mix must be persisted immediately for crash recovery');
+assert.match(wrapper,/studio\.applyMixState=function\(state\)/,'external v216 recall must patch the exposed apply path');
+assert.match(wrapper,/persistAppliedMix\(\)/,'external recalls must immediately refresh the core local recovery snapshot');
+assert.match(wrapper,/data-stem-session-v216/);
+assert.match(wrapper,/stem-session-safety-v216\.js\?v=/);
+assert.match(wrapper,/stem-session-safety-v216\.css\?v=/);
+assert.match(wrapper,/stem-session-safety-v216-20260901/);
+const v215Index=wrapper.indexOf('data-stem-audio-v215-hardening');
+const guardIndex=wrapper.indexOf('data-stem-session-v216-recovery-guard');
+const v216Index=wrapper.indexOf('data-stem-session-v216 rel');
+assert.ok(v215Index>=0&&guardIndex>v215Index,'v216 recovery guard must load after the complete v215 audio-engine stack');
+assert.ok(v216Index>guardIndex,'v216 main runtime must load after the stale-autosave recovery guard');
+
+console.log('STEM_SESSION_SAFETY_V216=PASS');

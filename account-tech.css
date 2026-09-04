@@ -1,0 +1,88 @@
+:root{
+  --account-bg:#f4f5f7;
+  --account-surface:#fff;
+  --account-surface-2:#f8f9fa;
+  --account-ink:#111318;
+  --account-muted:#6d7580;
+  --account-line:#d8dde3;
+  --account-line-soft:#e8ebef;
+  --account-hover:#f0f2f4;
+}
+body:has(.account-canvas){background:var(--account-bg)!important;color:var(--account-ink)!important;font-family:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif!important}
+body:has(.account-canvas) .chat-app{background:var(--account-bg)!important}
+body:has(.account-canvas) .chat-main{background:var(--account-bg)!important;color:var(--account-ink)!important}
+body:has(.account-canvas) .chat-topbar{background:rgba(255,255,255,.96)!important;border-bottom:1px solid var(--account-line)!important;box-shadow:0 1px 8px rgba(17,19,24,.04)!important}
+body:has(.account-canvas) .chat-topbar-title strong{color:#111318!important}
+body:has(.account-canvas) .chat-topbar-title span{color:#737b85!important}
+body:has(.account-canvas) .chat-icon-button,body:has(.account-canvas) .chat-notification-link{background:#fff!important;border:1px solid #d6dbe1!important;border-radius:2px!important;color:#40474f!important}
+body:has(.account-canvas) .chat-sidebar{background:#fff!important;border-right:1px solid var(--account-line)!important;box-shadow:none!important}
+body:has(.account-canvas) .chat-brand{color:#111318!important;font-family:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif!important;font-weight:900!important;letter-spacing:-.035em!important;text-transform:none!important}
+body:has(.account-canvas) .chat-history-label{color:#838b95!important}
+body:has(.account-canvas) .chat-history-item,body:has(.account-canvas) .chat-sidebar-footer>a{color:#626a75!important;border-radius:2px!important}
+body:has(.account-canvas) .chat-history-item:hover,body:has(.account-canvas) .chat-history-item.active,body:has(.account-canvas) .chat-sidebar-footer>a:hover{background:#f1f3f5!important;color:#111318!important}
+body:has(.account-canvas) .chat-sidebar-footer{border-color:#eceff2!important}
+body:has(.account-canvas) .chat-user-card{background:#f8f9fa!important;border:1px solid #e2e5e9!important;border-radius:3px!important;color:#111318!important}
+body:has(.account-canvas) .chat-avatar,body:has(.account-canvas) .chat-top-avatar{background:#eceff2!important;border:1px solid #cfd4da!important;color:#343a40!important;filter:grayscale(1)}
+body:has(.account-canvas) .chat-user-card small{color:#7b838d!important}
+body:has(.account-canvas) .chat-top-dropdown{background:#fff!important;border:1px solid #d6dbe1!important;color:#111318!important;box-shadow:0 20px 50px rgba(17,19,24,.12)!important;border-radius:4px!important}
+body:has(.account-canvas) .chat-profile-links a,body:has(.account-canvas) .chat-notification-dropdown-list a{color:#4f5761!important}
+body:has(.account-canvas) .chat-profile-links a:hover,body:has(.account-canvas) .chat-notification-dropdown-list a:hover{background:#f1f3f5!important;color:#111318!important}
+
+.account-canvas{background:var(--account-bg)!important;padding:28px!important}
+.account-canvas-inner{width:min(1120px,100%)!important}
+.account-canvas-hero{padding:24px!important;background:#fff!important;border:1px solid var(--account-line)!important;border-radius:3px!important;box-shadow:none!important}
+.account-canvas-avatar{background:#eceff2!important;color:#333a42!important;border:1px solid #cfd5dc!important;border-radius:3px!important;box-shadow:none!important;filter:grayscale(1)}
+.account-canvas-user h1{color:#111318!important;letter-spacing:-.035em!important}
+.account-canvas-user>div>span,.account-canvas-meta{color:#737b85!important}
+.account-shell-button,.account-file-button{background:#fff!important;color:#343a40!important;border:1px solid #ccd2d8!important;border-radius:2px!important;box-shadow:none!important}
+.account-shell-button:hover,.account-file-button:hover{background:#f1f3f5!important;border-color:#adb5bd!important;color:#111318!important}
+.account-shell-button.primary{background:#111318!important;color:#fff!important;border-color:#111318!important}
+.account-alert{background:#fff!important;color:#424951!important;border:1px solid #cdd3da!important;border-left:3px solid #555d66!important;border-radius:2px!important}
+.account-alert.error{color:#343a40!important;border-color:#b7bdc4!important;border-left-color:#111318!important}
+.account-canvas-grid{grid-template-columns:210px minmax(0,1fr)!important;gap:16px!important}
+.account-canvas-nav{background:#fff!important;border:1px solid var(--account-line)!important;border-radius:3px!important;padding:6px!important}
+.account-canvas-nav a{color:#69717c!important;border-radius:1px!important;border-left:2px solid transparent!important;padding:10px 11px!important;font-weight:700!important}
+.account-canvas-nav a:hover,.account-canvas-nav a:focus-visible{background:#f1f3f5!important;color:#111318!important;border-left-color:#111318!important}
+.account-canvas-content{gap:14px!important}
+.account-panel,.agent-brain-memory-grid>section,.agent-brain-tools,.account-access-card{background:#fff!important;border:1px solid var(--account-line)!important;border-radius:3px!important;box-shadow:none!important;color:#111318!important}
+.account-panel{padding:24px!important}
+.account-panel-head{border-bottom:1px solid #eceff2!important;padding-bottom:16px!important;margin-bottom:18px!important}
+.account-panel-head>span,.agent-brain-tools header>span{color:#747c86!important}
+.account-panel-head h2,.agent-brain-tools h3{color:#111318!important;letter-spacing:-.025em!important}
+.account-panel-head p,.account-panel p{color:#69717c!important}
+.account-field label{color:#626b75!important}
+.account-field input,.account-field textarea{background:#fff!important;color:#111318!important;border:1px solid #ccd2d8!important;border-radius:2px!important;box-shadow:none!important}
+.account-field input:focus,.account-field textarea:focus{border-color:#555d66!important;box-shadow:0 0 0 2px rgba(17,19,24,.08)!important;outline:none!important}
+.account-submit{background:#111318!important;color:#fff!important;border:1px solid #111318!important;border-radius:2px!important;box-shadow:none!important}
+.account-submit:hover{background:#292d33!important}
+.account-remove-photo{color:#69717c!important}.account-remove-photo input{accent-color:#111318!important}
+.agent-brain-stats article{background:#f8f9fa!important;border:1px solid #e0e4e8!important;border-radius:2px!important;color:#111318!important}
+.agent-brain-stats span,.agent-memory-row span,.agent-memory-detail>span,.agent-memory-empty{color:#737b85!important}
+.agent-memory-row,.agent-memory-detail{border-color:#e8ebef!important}
+.agent-soul-reset button{background:#fff!important;color:#5e6670!important;border:1px solid #cfd5db!important;border-radius:2px!important}
+.agent-soul-reset button:hover{background:#f1f3f5!important;color:#111318!important}
+.agent-brain-tool-grid a,.account-access-card{background:#fff!important;color:#111318!important;border:1px solid #d8dde3!important;border-radius:2px!important}
+.agent-brain-tool-grid a:hover,.account-access-card:hover{background:#f7f8f9!important;border-color:#adb5bd!important;transform:none!important}
+.agent-brain-tool-grid a small,.agent-brain-tool-grid a p,.account-access-card small,.account-access-card p{color:#737b85!important}
+.account-access-card>span{color:#343a40!important}
+
+/* Profile Agent dashboard follows the same management shell. */
+.sf-profile-dashboard,.sf-profile-dashboard *{box-sizing:border-box}
+.sf-profile-card,.sf-conversation-view{background:#fff!important;border:1px solid #d8dde3!important;border-radius:3px!important;color:#111318!important;box-shadow:none!important}
+.sf-profile-card p,.sf-profile-help,.sf-profile-field span,.sf-profile-access-row small,.sf-profile-list-row small{color:#737b85!important}
+.sf-profile-field input,.sf-profile-field textarea,.sf-profile-field select,.sf-profile-access-row select,.sf-conversation-reply input{background:#fff!important;color:#111318!important;border:1px solid #ccd2d8!important;border-radius:2px!important}
+.sf-profile-field input:focus,.sf-profile-field textarea:focus,.sf-profile-field select:focus,.sf-profile-access-row select:focus,.sf-conversation-reply input:focus{border-color:#555d66!important;box-shadow:0 0 0 2px rgba(17,19,24,.08)!important;outline:none!important}
+.sf-profile-actions button,.sf-profile-actions a,.sf-profile-list-row button{background:#fff!important;color:#343a40!important;border:1px solid #ccd2d8!important;border-radius:2px!important}
+.sf-profile-actions .primary,.sf-conversation-reply button{background:#111318!important;color:#fff!important;border-color:#111318!important;border-radius:2px!important}
+.sf-profile-access-row,.sf-profile-list-row{background:#fff!important;border:1px solid #e0e4e8!important;border-radius:2px!important}
+.sf-attention-high{border-left:3px solid #111318!important}
+.sf-conversation-message{background:#f4f5f7!important;color:#343a40!important;border-radius:2px!important}.sf-conversation-message.visitor{background:#eceff2!important}.sf-conversation-message.owner{border-left:2px solid #111318!important}
+.sf-profile-toggle{color:#5f6771!important}.sf-profile-toggle input{accent-color:#111318!important}
+.sf-profile-url code{color:#555d66!important;background:#f3f5f6!important;padding:4px 6px!important;border-radius:1px!important}
+.sf-profile-status{color:#555d66!important}
+
+@media(max-width:820px){
+  body:has(.account-canvas) .chat-sidebar{box-shadow:22px 0 55px rgba(17,19,24,.15)!important}
+  .account-canvas{padding:14px!important}.account-canvas-grid{grid-template-columns:1fr!important}.account-canvas-nav{position:static!important;grid-template-columns:repeat(2,minmax(0,1fr))!important}.account-canvas-nav a{text-align:left!important}
+}
+@media(max-width:560px){.account-panel{padding:18px!important}.account-canvas-hero{padding:18px!important}.account-canvas-nav{grid-template-columns:1fr 1fr!important}}

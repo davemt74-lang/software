@@ -1,0 +1,29 @@
+/* Stonefellow v91 — full-canvas camera/media workspace */
+.chat-media-studio{position:fixed!important;inset:0!important;z-index:30000!important;display:block!important;padding:0!important;background:#090b0a!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
+.chat-media-studio[hidden]{display:none!important}
+.chat-media-panel{width:100vw!important;height:100dvh!important;max-height:none!important;border:0!important;border-radius:0!important;box-shadow:none!important;background:#0b0e0c!important;overflow:hidden!important}
+.chat-media-head{position:sticky;top:0;z-index:10;min-height:62px;padding:10px 16px!important;background:rgba(13,16,14,.96);border-bottom:1px solid #29302c!important;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
+.chat-media-head h2{font-size:16px!important}.chat-media-head span{font-size:9px!important}
+.chat-media-head-actions{align-items:center}.chat-media-head-actions button{min-height:36px;border-radius:7px!important}
+.chat-media-body{flex:1!important;min-height:0!important;overflow:auto!important;padding:16px 18px 40px!important}
+.chat-media-status{max-width:1200px;margin:0 auto 12px!important}
+.chat-media-feeds{max-width:1500px;margin:0 auto;grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:14px!important}
+.chat-media-feed{border-radius:8px!important;border-color:#2b332e!important;background:#050706!important}
+.chat-media-feed video{width:100%;height:min(55vh,620px);aspect-ratio:auto!important;object-fit:contain!important}
+.chat-media-feed footer{min-height:50px;background:#101411;border-top:1px solid #252c28}
+.chat-media-library{max-width:1500px;margin:20px auto 0!important;padding-top:18px!important}
+.chat-media-library-grid{grid-template-columns:repeat(4,minmax(0,1fr))!important}
+.chat-media-library-card{background:#121714!important;border-color:#29312c!important}
+.chat-media-button,.editor-agent-video{border:0;background:transparent;color:inherit;width:38px;height:38px;border-radius:10px;display:grid;place-items:center;cursor:pointer;font-size:0;flex:0 0 38px}
+.chat-media-button:hover,.editor-agent-video:hover{background:rgba(255,255,255,.08)}
+.chat-media-button::before,.editor-agent-video::before{content:'';width:19px;height:14px;border:1.8px solid currentColor;border-radius:4px;display:block;box-sizing:border-box;position:relative}
+.chat-media-button::after,.editor-agent-video::after{content:'';width:6px;height:8px;border:1.8px solid currentColor;border-left:0;border-radius:0 3px 3px 0;transform:translate(12px,-11px) skewY(-18deg);display:block;box-sizing:border-box}
+.editor-agent-composer .editor-agent-video{color:#cbb69d!important;border:1px solid rgba(190,155,111,.28)!important;background:#211b16!important;align-self:flex-end!important}
+@media(max-width:900px){.chat-media-feeds{grid-template-columns:1fr!important}.chat-media-feed video{height:auto;max-height:58vh}.chat-media-library-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}}
+@media(max-width:600px){.chat-media-head{align-items:flex-start!important;padding:8px 10px!important}.chat-media-head-actions{gap:4px!important}.chat-media-head-actions button{padding:6px 8px!important;font-size:10px}.chat-media-body{padding:10px 8px 28px!important}.chat-media-library-grid{grid-template-columns:1fr!important}}
+
+/* v95 camera device recovery / diagnostics */
+.chat-media-feed-state{min-height:220px;display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:9px;padding:24px;color:#c8d1ca;background:#0c100d}
+.chat-media-feed-state strong{font-size:15px}.chat-media-feed-state span{max-width:680px;color:#9da9a1;line-height:1.45}.chat-media-feed-state small{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:#657069}
+.chat-media-feed-state.error{border-left:3px solid #a9584c;background:#120d0c}.chat-media-feed-state button{min-height:34px;padding:7px 12px;border:1px solid #465149;border-radius:7px;background:#18201b;color:#d7dfd9;cursor:pointer}
+.chat-media-feed-ready{margin-left:auto;color:#8dcc9f;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.08em}

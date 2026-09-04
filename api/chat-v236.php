@@ -1,0 +1,119 @@
+<?php
+declare(strict_types=1);
+require dirname(__DIR__) . '/includes/bootstrap.php';
+
+header('Content-Type: application/json; charset=UTF-8');
+header('Cache-Control: no-store');
+
+$user=current_user();
+if(!$user||!has_permission('chat.access',$user)){http_response_code(403);echo json_encode(['ok'=>false,'error'=>'Chat access is not available for this account.']);exit;}
+$pdo=db();
+if(!$pdo||!table_exists('chat_conversations')||!user_agent_system_schema_ready_v236($pdo)){http_response_code(503);echo json_encode(['ok'=>false,'error'=>'Agent Chat storage is not ready. An administrator needs to run the database upgrade.']);exit;}
+
+$userId=(int)$user['id'];
+$requestedAgentId=max(0,(int)($_GET['agent']??0));
+$activeAgent=$requestedAgentId>0?user_agent_get_v236($pdo,$userId,$requestedAgentId):null;
+if($requestedAgentId>0&&(!$activeAgent||empty($activeAgent['is_active']))){http_response_code(404);echo json_encode(['ok'=>false,'error'=>'That agent is not available.']);exit;}
+$principal=user_agent_principal_v236($user,$activeAgent);
+
+$input=json_decode((string)file_get_contents('php://input'),true);if(!is_array($input))$input=$_POST;
+$csrf=(string)($input['csrf_token']??'');if($csrf===''||!hash_equals(csrf_token(),$csrf)){http_response_code(419);echo json_encode(['ok'=>false,'error'=>'Session expired. Refresh the page and try again.']);exit;}
+$action=(string)($input['action']??'send');
+
+function chat_v236_claim_legacy_history_v237(PDO $pdo,int $userId,?array $agent): int
+{
+    if(!$agent)return 0;
+
+    // Before user-owned agents existed, every owner conversation was stored with
+    // user_agent_id=NULL. The first named agent is presented to the owner as a
+    // rename/continuation of their Stonefellow identity, so those pre-agent chats
+    // must follow that first agent instead of becoming permanently unloadable.
+    // Never claim conversations created after the first agent existed: those can
+    // be intentional universal-system conversations and must remain isolated.
+    $first=$pdo->prepare('SELECT id,created_at FROM user_agents WHERE owner_user_id=? ORDER BY created_at ASC,id ASC LIMIT 1');
+    $first->execute([$userId]);$row=$first->fetch();
+    if(!$row||(int)$row['id']!==(int)$agent['id'])return 0;
+    $createdAt=trim((string)($row['created_at']??''));if($createdAt==='')return 0;
+
+    $claim=$pdo->prepare('UPDATE chat_conversations SET user_agent_id=? WHERE user_id=? AND user_agent_id IS NULL AND created_at<=?');
+    $claim->execute([(int)$agent['id'],$userId,$createdAt]);
+    return $claim->rowCount();
+}
+
+function chat_v236_scope_sql(?array $agent,string $alias='c'): array
+{
+    if($agent)return ["{$alias}.user_agent_id=?",[(int)$agent['id']]];
+    return ["{$alias}.user_agent_id IS NULL",[]];
+}
+
+function chat_v236_conversation(PDO $pdo,int $conversationId,int $userId,?array $agent): ?array
+{
+    [$scope,$params]=chat_v236_scope_sql($agent,'c');$stmt=$pdo->prepare("SELECT c.* FROM chat_conversations c WHERE c.id=? AND c.user_id=? AND {$scope} LIMIT 1");$stmt->execute(array_merge([$conversationId,$userId],$params));return $stmt->fetch()?:null;
+}
+
+function chat_v236_authorized_media(array $media,array $context): array
+{
+    $titles=[];foreach($context as $item){$source=(string)($item['source']??'');if(str_starts_with($source,'database:track:')||str_starts_with($source,'artist:track:'))$titles[mb_strtolower(trim((string)($item['title']??'')))]=true;}
+    if(!$titles)return [];
+    return array_values(array_filter($media,static function(array $item)use($titles):bool{$title=mb_strtolower(trim((string)($item['title']??'')));return $title!==''&&isset($titles[$title]);}));
+}
+
+try{
+    chat_v236_claim_legacy_history_v237($pdo,$userId,$activeAgent);
+
+    if($action==='list'){
+        [$scope,$params]=chat_v236_scope_sql($activeAgent,'c');$stmt=$pdo->prepare("SELECT c.id,c.title,c.created_at,c.updated_at,COALESCE(MAX(m.id),0) latest_message_id FROM chat_conversations c LEFT JOIN chat_messages m ON m.conversation_id=c.id WHERE c.user_id=? AND {$scope} GROUP BY c.id ORDER BY latest_message_id DESC,c.updated_at DESC,c.id DESC LIMIT 50");$stmt->execute(array_merge([$userId],$params));echo json_encode(['ok'=>true,'conversations'=>$stmt->fetchAll(),'agent_name'=>(string)$principal['display_name'],'agent_id'=>(int)$principal['agent_id']]);exit;
+    }
+
+    if($action==='activity'){
+        player_process_show_reminders($user);
+        [$scope,$params]=chat_v236_scope_sql($activeAgent,'c');$stmt=$pdo->prepare("SELECT c.id FROM chat_conversations c WHERE c.user_id=? AND {$scope} ORDER BY c.updated_at DESC,c.id DESC LIMIT 1");$stmt->execute(array_merge([$userId],$params));$activeConversationId=(int)$stmt->fetchColumn();$activeMessageId=0;
+        if($activeConversationId>0){$m=$pdo->prepare('SELECT COALESCE(MAX(id),0) FROM chat_messages WHERE conversation_id=?');$m->execute([$activeConversationId]);$activeMessageId=(int)$m->fetchColumn();}
+        if(!table_exists('notifications')){echo json_encode(['ok'=>true,'updates'=>[],'latest_id'=>0,'unread_count'=>0,'conversation_id'=>$activeConversationId,'latest_message_id'=>$activeMessageId]);exit;}
+        $afterId=max(0,(int)($input['after_id']??0));
+        if($afterId>0){$n=$pdo->prepare("SELECT id,type,title,body,target_url,created_at FROM notifications WHERE user_id=? AND id>? AND type IN ('agent_track_share','producer_track_share','agent_supervisor_listen','stem_region_note','production_note','new_track_release','new_album_release','show_reminder','artist_post','release_deadline','release_action') ORDER BY id ASC LIMIT 30");$n->execute([$userId,$afterId]);$updates=$n->fetchAll();}
+        else{$n=$pdo->prepare("SELECT id,type,title,body,target_url,created_at FROM notifications WHERE user_id=? AND type IN ('agent_track_share','producer_track_share','agent_supervisor_listen','stem_region_note','production_note','new_track_release','new_album_release','show_reminder','artist_post','release_deadline','release_action') AND created_at>=DATE_SUB(NOW(),INTERVAL 7 DAY) ORDER BY id DESC LIMIT 10");$n->execute([$userId]);$updates=array_reverse($n->fetchAll());}
+        $latest=$pdo->prepare("SELECT COALESCE(MAX(id),0) FROM notifications WHERE user_id=? AND type IN ('agent_track_share','producer_track_share','agent_supervisor_listen','stem_region_note','production_note','new_track_release','new_album_release','show_reminder','artist_post','release_deadline','release_action')");$latest->execute([$userId]);
+        echo json_encode(['ok'=>true,'updates'=>$updates,'latest_id'=>(int)$latest->fetchColumn(),'unread_count'=>notification_unread_count($user),'conversation_id'=>$activeConversationId,'latest_message_id'=>$activeMessageId],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);exit;
+    }
+
+    if($action==='new'){
+        $workspaceId=artist_workspace_v181_scope_id($user);$stmt=$pdo->prepare('INSERT INTO chat_conversations (user_id,user_agent_id,artist_workspace_id,title) VALUES (?,?,?,?)');$stmt->execute([$userId,$activeAgent?(int)$activeAgent['id']:null,$workspaceId?:null,'New chat']);echo json_encode(['ok'=>true,'conversation_id'=>(int)$pdo->lastInsertId()]);exit;
+    }
+
+    if($action==='load'){
+        $conversationId=(int)($input['conversation_id']??0);$conversation=chat_v236_conversation($pdo,$conversationId,$userId,$activeAgent);if(!$conversation)throw new RuntimeException('Conversation not found for this agent.');$stmt=$pdo->prepare('SELECT id,role,message,context_json,created_at FROM chat_messages WHERE conversation_id=? ORDER BY id DESC LIMIT 300');$stmt->execute([$conversationId]);echo json_encode(['ok'=>true,'conversation'=>$conversation,'messages'=>array_reverse($stmt->fetchAll()),'agent_name'=>(string)$principal['display_name']]);exit;
+    }
+
+    if($action==='messages_after'){
+        $conversationId=(int)($input['conversation_id']??0);if(!chat_v236_conversation($pdo,$conversationId,$userId,$activeAgent))throw new RuntimeException('Conversation not found for this agent.');$afterId=max(0,(int)($input['after_id']??0));$stmt=$pdo->prepare('SELECT id,role,message,context_json,created_at FROM chat_messages WHERE conversation_id=? AND id>? ORDER BY id ASC LIMIT 80');$stmt->execute([$conversationId,$afterId]);echo json_encode(['ok'=>true,'conversation_id'=>$conversationId,'messages'=>$stmt->fetchAll()],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);exit;
+    }
+
+    if($action==='delete'){
+        $conversationId=(int)($input['conversation_id']??0);if(!chat_v236_conversation($pdo,$conversationId,$userId,$activeAgent))throw new RuntimeException('Conversation not found for this agent.');$pdo->prepare('DELETE FROM chat_conversations WHERE id=? AND user_id=?')->execute([$conversationId,$userId]);echo json_encode(['ok'=>true]);exit;
+    }
+
+    if($action==='send'){
+        $query=trim((string)($input['message']??''));$conversationId=(int)($input['conversation_id']??0);$inputMode=(string)($input['input_mode']??'text');$inputMode=$inputMode==='voice'?'voice':'text';if($query==='')throw new RuntimeException('Enter a message.');if(mb_strlen($query)>6000)throw new RuntimeException('That message is too long.');
+        if($conversationId<1){$title=mb_strimwidth($query,0,70,'…');$workspaceId=artist_workspace_v181_scope_id($user);$stmt=$pdo->prepare('INSERT INTO chat_conversations (user_id,user_agent_id,artist_workspace_id,title) VALUES (?,?,?,?)');$stmt->execute([$userId,$activeAgent?(int)$activeAgent['id']:null,$workspaceId?:null,$title]);$conversationId=(int)$pdo->lastInsertId();}
+        elseif(!chat_v236_conversation($pdo,$conversationId,$userId,$activeAgent))throw new RuntimeException('Conversation not found for this agent.');
+
+        $rawAgentContext=is_array($input['agent_context']??null)?$input['agent_context']:[];$rawAgentContext['conversation_id']=$conversationId;$agentContext=agent_surface_v131_enrich($user,'chat',$rawAgentContext);
+        $historyStmt=$pdo->prepare('SELECT role,message FROM chat_messages WHERE conversation_id=? ORDER BY id DESC LIMIT 12');$historyStmt->execute([$conversationId]);$history=array_reverse($historyStmt->fetchAll());
+        $stmt=$pdo->prepare('INSERT INTO chat_messages (conversation_id,user_id,role,message) VALUES (?,?,?,?)');$stmt->execute([$conversationId,$userId,'user',$query]);$userMessageId=(int)$pdo->lastInsertId();agent_brain_archive_and_parse($user,$conversationId,$userMessageId,'user',$query,$inputMode);
+
+        $toolResult=function_exists('release_v105_chat_tool')?release_v105_chat_tool($query,$user,$conversationId):['handled'=>false,'answer'=>'','stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[]];if(empty($toolResult['handled']))$toolResult=agent_tool_execute_query($query,$user,$conversationId);
+        if(!empty($toolResult['handled'])){$answer=(string)$toolResult['answer'];$context=[];}
+        else{$result=chat_generate_answer_policy_v236($query,$history,$user,$principal,$agentContext,$conversationId);$answer=(string)$result['answer'];$context=$result['context'];}
+
+        $publicSources=[];foreach($context as $item){$source=(string)($item['source']??'');if($source==='agent-context:v131'||$source==='agent:identity')continue;$entry=['source'=>$source,'title'=>(string)($item['title']??'')];if(str_starts_with($source,'knowledge:')){$kid=(int)substr($source,10);$knowledge=get_knowledge_item($kid);if($knowledge&&!empty($knowledge['file_path'])&&(int)($knowledge['created_by_user_id']??0)===$userId)$entry['url']=url('/knowledge-file.php?id='.$kid);}$publicSources[]=$entry;}
+
+        $mediaLimit=track_is_playlist_request($query)?7:(track_is_next_request($query)?1:4);$answerMedia=track_media_from_answer($answer,$user,$mediaLimit);$queryMedia=track_media_suggestions($query,$user,$mediaLimit);$media=chat_v236_authorized_media(array_slice(track_merge_media_suggestions($answerMedia,$queryMedia),0,$mediaLimit),$context);$playlistTitle=$media?track_playlist_title($query):'';
+        $toolSources=!empty($toolResult['sources'])&&is_array($toolResult['sources'])?$toolResult['sources']:[];$publicSources=array_merge($publicSources,$toolSources);
+        $messageContext=['sources'=>$publicSources,'media'=>$media,'stem_media'=>!empty($toolResult['stem_media'])&&is_array($toolResult['stem_media'])?$toolResult['stem_media']:[],'actions'=>!empty($toolResult['actions'])&&is_array($toolResult['actions'])?$toolResult['actions']:[],'playlist_title'=>$playlistTitle,'agent_context'=>$agentContext,'agent'=>['id'=>(int)$principal['agent_id'],'name'=>(string)$principal['display_name'],'kind'=>(string)$principal['kind']]];
+        $contextJson=json_encode($messageContext,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);$stmt=$pdo->prepare('INSERT INTO chat_messages (conversation_id,user_id,role,message,context_json) VALUES (?,NULL,?,?,?)');$stmt->execute([$conversationId,'assistant',$answer,$contextJson]);$assistantMessageId=(int)$pdo->lastInsertId();agent_brain_archive_and_parse($user,$conversationId,$assistantMessageId,'assistant',$answer,$inputMode);$pdo->prepare('UPDATE chat_conversations SET updated_at=NOW() WHERE id=?')->execute([$conversationId]);
+        echo json_encode(['ok'=>true,'conversation_id'=>$conversationId,'user_message_id'=>$userMessageId,'assistant_message_id'=>$assistantMessageId,'answer'=>$answer,'sources'=>$publicSources,'media'=>$media,'stem_media'=>$messageContext['stem_media'],'actions'=>$messageContext['actions'],'playlist_title'=>$playlistTitle,'input_mode'=>$inputMode,'agent_name'=>(string)$principal['display_name'],'agent_id'=>(int)$principal['agent_id']],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);exit;
+    }
+
+    throw new RuntimeException('Unknown chat action.');
+}catch(Throwable $e){http_response_code(400);echo json_encode(['ok'=>false,'error'=>$e->getMessage()]);}

@@ -1,0 +1,54 @@
+import fs from 'node:fs';
+import assert from 'node:assert/strict';
+const read=p=>fs.readFileSync(p,'utf8');
+const helper=read('includes/artist-posts-v183.php');
+const admin=read('admin/artist-posts.php');
+const profile=read('profile.php');
+const profileRuntime=read('includes/profile-agent.php');
+const image=read('artist-post-image.php');
+const bootstrap=read('includes/bootstrap.php');
+const header=read('admin/_header.php');
+const upgrade=read('upgrade.php');
+const workflow=read('.github/workflows/pr82-listening-recovery.yml');
+
+assert.match(helper,/column_exists\('artist_posts_v181','image_photo_id'\)/);
+assert.match(helper,/ADD COLUMN image_photo_id BIGINT UNSIGNED NULL/);
+assert.match(helper,/WHERE id=\? AND workspace_id=\? LIMIT 1/);
+assert.match(helper,/artist_media_v182_photo\(\$pdo,\$workspaceId,\$photoId\)/);
+assert.match(helper,/INNER JOIN artist_catalog_photos_v181 ph ON ph.id=p.image_photo_id AND ph.workspace_id=p.workspace_id/);
+assert.match(helper,/\(int\)\$row\['is_published'\]!==1/);
+assert.match(helper,/can_view_visibility/);
+assert.match(helper,/artist_media_v182_resolve_stored_photo/);
+
+assert.match(admin,/user_has_role\('artist'/);
+assert.match(admin,/has_permission\('posts.manage'/);
+assert.match(admin,/name="image_photo_id"/);
+assert.match(admin,/artist_media_v182_picker/);
+assert.match(admin,/artist_posts_v183_validate_photo/);
+assert.match(admin,/UPDATE artist_posts_v181 SET .* WHERE id=\? AND workspace_id=\?/s);
+assert.match(admin,/DELETE FROM artist_posts_v181 WHERE id=\? AND workspace_id=\?/);
+assert.match(admin,/VALUES \(\?,\?,\?,\?,\?,'',\?,\?,\?,\?\)/);
+assert.doesNotMatch(admin,/name="image_path"/);
+assert.match(admin,/Published/);
+assert.match(admin,/Drafts/);
+assert.match(admin,/artist-post-preview/);
+assert.match(admin,/Publish on Artist Profile/);
+assert.match(admin,/FILTER_VALIDATE_URL|artist_workspace_v181_validate_external_url/);
+
+// Canonical profile retains rich public post rendering.
+assert.match(profileRuntime,/artist_workspace_v181_public_records\(\$kind,\$viewer,\$limit,\$wid\)/);
+assert.match(profile,/artist-post-image\.php\?post=/);
+assert.match(profile,/published_at/);
+assert.match(profile,/post_type/);
+assert.match(profile,/Open media ↗/);
+assert.match(profile,/profile-post-meta/);
+assert.match(image,/artist_posts_v183_public_image/);
+assert.doesNotMatch(image,/artist_posts_v183_ensure_schema/);
+assert.match(image,/X-Content-Type-Options: nosniff/);
+assert.match(bootstrap,/artist-posts-v183\.php/);
+assert.match(header,/artist-posts\.php/);
+assert.match(upgrade,/artist_posts_v183_schema_ready/);
+assert.match(upgrade,/artist_posts_v183_ensure_schema/);
+assert.match(workflow,/find tests -maxdepth 1 -type f/,'recovery workflow must execute the complete Node contract suite');
+assert.match(workflow,/node "\$test"/,'recovery workflow must execute each discovered Node contract test, including artist posts');
+console.log('ARTIST_POSTS_V183=PASS');

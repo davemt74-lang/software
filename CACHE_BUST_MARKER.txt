@@ -1,0 +1,2 @@
+Stonefellow hard cache bust: force-cache-bust-20260825-2
+Purpose: verify a newly added file from this deployment reaches the live document root.

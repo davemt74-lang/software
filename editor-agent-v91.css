@@ -1,0 +1,12 @@
+/* Stonefellow v91/v102 — contextual embedded Agent surface */
+.editor-agent-panel{isolation:isolate}
+.editor-agent-history{position:relative;padding:18px 14px 18px!important;border:1px solid rgba(255,255,255,.055);border-bottom:0;border-radius:18px 18px 0 0;background:linear-gradient(180deg,rgba(12,15,18,.22),rgba(12,15,18,.10));box-shadow:0 -10px 34px rgba(0,0,0,.10);backdrop-filter:blur(5px) saturate(.9);-webkit-backdrop-filter:blur(5px) saturate(.9)}
+.editor-agent-line div{background:rgba(255,255,255,.42)!important;border-color:rgba(255,255,255,.14)!important;box-shadow:0 7px 20px rgba(0,0,0,.055)!important;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+.editor-agent-line.user div{background:rgba(21,19,17,.48)!important;border-color:rgba(218,190,157,.13)!important;color:#fff!important}
+.editor-agent-line small{color:rgba(238,238,238,.68)!important;text-shadow:0 1px 3px rgba(0,0,0,.40)!important}
+.editor-agent-footer{background:rgba(10,10,10,.90)!important;border-color:rgba(255,255,255,.065)!important}
+.editor-agent-composer{background:rgba(22,20,18,.91)!important}
+#videoAgentButton[data-agent-state="listening"],.studio-agent-trigger[data-agent-state="listening"]{color:#58a6ff!important;border-color:rgba(88,166,255,.72)!important;box-shadow:0 0 0 2px rgba(88,166,255,.13),0 0 18px rgba(88,166,255,.24)!important}
+#videoAgentButton[data-agent-state="processing"],.studio-agent-trigger[data-agent-state="processing"]{color:#49d17d!important;border-color:rgba(73,209,125,.72)!important;box-shadow:0 0 0 2px rgba(73,209,125,.12),0 0 18px rgba(73,209,125,.22)!important}
+#videoAgentButton[data-agent-state="speaking"],#videoAgentButton[data-agent-state="responding"],.studio-agent-trigger[data-agent-state="speaking"],.studio-agent-trigger[data-agent-state="responding"]{color:#ff626b!important;border-color:rgba(255,98,107,.75)!important;box-shadow:0 0 0 2px rgba(255,98,107,.12),0 0 18px rgba(255,98,107,.24)!important}
+@media(max-width:700px){.editor-agent-history{padding:12px 9px 14px!important;border-radius:14px 14px 0 0}}

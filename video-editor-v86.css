@@ -1,0 +1,76 @@
+:root{color-scheme:dark;--ve-bg:#0d0d0e;--ve-panel:#151517;--ve-panel2:#1c1c1f;--ve-line:#2b2b30;--ve-text:#f4f4f5;--ve-muted:#9b9ba3}
+*{box-sizing:border-box}
+body.video-editor-body{margin:0;background:var(--ve-bg);color:var(--ve-text);font:14px/1.45 Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;overflow:hidden}
+.video-editor-shell{display:flex;min-height:100vh}
+.video-editor-main{margin-left:260px;width:calc(100% - 260px);min-width:0;height:100vh;display:flex;flex-direction:column}
+.video-editor-topbar{height:72px;padding:10px 18px;border-bottom:1px solid var(--ve-line);display:flex;align-items:center;gap:16px;background:#111113}
+.video-editor-topbar>div:first-of-type{display:flex;flex-direction:column;min-width:0;flex:1}
+.video-editor-topbar span,.video-editor-library header span,.video-editor-inspector header span,.video-timeline-panel header span{font-size:11px;text-transform:uppercase;letter-spacing:.12em;color:var(--ve-muted)}
+.video-editor-topbar input{border:0;background:transparent;color:var(--ve-text);font-size:20px;font-weight:700;outline:0;padding:0;min-width:0}
+.video-editor-top-actions{display:flex;gap:8px;align-items:center}
+.video-editor-top-actions select,.video-editor-top-actions button,.video-upload-button,.video-editor-library footer button,.video-preview-controls button,.video-timeline-panel header button,.video-editor-inspector button{border:1px solid var(--ve-line);background:#202024;color:var(--ve-text);border-radius:9px;padding:9px 12px;font:inherit;cursor:pointer}
+.video-editor-top-actions button{background:#f3f3f4;color:#111;font-weight:700}
+.video-editor-workspace{display:grid;grid-template-columns:270px minmax(0,1fr) 250px;min-height:0;flex:1}
+.video-editor-library,.video-editor-inspector{background:var(--ve-panel);min-height:0;overflow:auto}
+.video-editor-library{border-right:1px solid var(--ve-line);padding:14px}
+.video-editor-inspector{border-left:1px solid var(--ve-line);padding:14px}
+.video-editor-library header,.video-editor-inspector header,.video-timeline-panel header{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px}
+.video-editor-library h2,.video-editor-inspector h2,.video-timeline-panel h2{font-size:16px;margin:1px 0 0}
+.video-upload-button{font-size:12px}
+.video-library-tabs{display:grid;grid-template-columns:1fr 1fr;gap:4px;background:#101012;border-radius:10px;padding:4px;margin-bottom:10px}
+.video-library-tabs button{border:0;border-radius:7px;background:transparent;color:var(--ve-muted);padding:8px;cursor:pointer}
+.video-library-tabs button.active{background:#28282d;color:white}
+.video-library-list{display:flex;flex-direction:column;gap:7px}
+.video-library-card{display:grid;grid-template-columns:48px minmax(0,1fr);gap:9px;padding:8px;border:1px solid var(--ve-line);border-radius:10px;background:#19191c;cursor:pointer}
+.video-library-card img,.video-library-thumb{width:48px;height:48px;object-fit:cover;border-radius:7px;background:#0b0b0c;display:grid;place-items:center;color:var(--ve-muted);overflow:hidden}
+.video-library-card>div:last-child{min-width:0}
+.video-library-card strong{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.video-library-card small{color:var(--ve-muted);display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.video-library-card button{margin-top:5px;border:0;border-radius:6px;padding:5px 7px;background:#2a2a2f;color:#fff;cursor:pointer;font-size:11px}
+.video-editor-library footer{margin-top:14px;padding-top:12px;border-top:1px solid var(--ve-line)}
+.video-editor-library footer p{font-size:11px;color:var(--ve-muted)}
+.video-editor-center{min-width:0;display:grid;grid-template-rows:minmax(260px,1fr) 280px;background:#0c0c0e}
+.video-preview-shell{display:flex;flex-direction:column;min-height:0;padding:14px}
+.video-preview-stage{position:relative;flex:1;min-height:220px;background:#050506;border:1px solid #242429;border-radius:12px;display:grid;place-items:center;overflow:hidden}
+.video-preview-stage video,.video-preview-stage img{max-width:100%;max-height:100%;width:100%;height:100%;object-fit:contain}
+.video-preview-empty{display:flex;flex-direction:column;align-items:center;color:var(--ve-muted);gap:5px}
+.video-preview-empty strong{color:#d7d7db;font-size:18px}
+.video-preview-controls{display:flex;align-items:center;gap:8px;padding-top:10px}
+.video-preview-controls span{margin-left:auto;color:var(--ve-muted);font-variant-numeric:tabular-nums}
+.video-timeline-panel{border-top:1px solid var(--ve-line);padding:12px;overflow:auto;background:#121214}
+.video-timeline-ruler{height:16px;position:relative;border-bottom:1px solid var(--ve-line);margin:0 0 8px 84px}
+#videoTimelinePlayhead{position:absolute;left:0;top:0;bottom:-190px;width:2px;background:#f2f2f3;z-index:8;pointer-events:none}
+.video-timeline-lane{display:grid;grid-template-columns:76px minmax(0,1fr);gap:8px;margin-bottom:9px;align-items:stretch}
+.video-timeline-lane>strong{font-size:10px;color:var(--ve-muted);padding-top:11px}
+.video-timeline-track{min-height:72px;border:1px solid var(--ve-line);border-radius:8px;background:#0e0e10;padding:6px;display:flex;gap:5px;align-items:stretch;overflow-x:auto}
+.video-timeline-item{min-width:120px;max-width:220px;border:1px solid #34343a;background:#242429;border-radius:7px;padding:8px;cursor:pointer;position:relative}
+.video-timeline-item.selected{outline:2px solid #e8e8ea}
+.video-timeline-item[data-type="audio"]{background:#1d2520}
+.video-timeline-item[data-type="photo"]{background:#21222b}
+.video-timeline-item strong,.video-timeline-item small{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.video-timeline-item small{color:var(--ve-muted);font-size:10px}
+.video-editor-inspector form,.video-project-settings{display:flex;flex-direction:column;gap:10px}
+.video-editor-inspector label{display:flex;flex-direction:column;gap:5px;color:var(--ve-muted);font-size:12px}
+.video-editor-inspector input[type="number"]{width:100%;border:1px solid var(--ve-line);border-radius:8px;background:#101012;color:white;padding:8px}
+.video-inspector-check{flex-direction:row!important;align-items:center}
+.video-inspector-empty{color:var(--ve-muted);padding:12px 0 18px}
+.video-project-settings{border-top:1px solid var(--ve-line);margin-top:18px;padding-top:14px}
+.video-project-settings h3{margin:0}
+.video-editor-inspector button.danger{background:#2b1719;border-color:#4a2529}
+.video-editor-status{margin-top:14px;padding:9px;border-radius:8px;background:#202024;color:#ddd}
+.video-editor-status[data-state="error"]{background:#351b1d}
+.video-editor-status[data-state="success"]{background:#183022}
+@media(max-width:1100px){.video-editor-workspace{grid-template-columns:220px minmax(0,1fr)}.video-editor-inspector{position:fixed;right:0;top:72px;bottom:0;width:250px;z-index:20;box-shadow:-10px 0 30px #0008}.video-editor-center{padding-right:0}}
+@media(max-width:780px){body.video-editor-body{overflow:auto}.video-editor-main{margin-left:0;width:100%;height:auto;min-height:100vh}.video-editor-workspace{grid-template-columns:1fr}.video-editor-library{border-right:0;border-bottom:1px solid var(--ve-line);max-height:300px}.video-editor-center{grid-template-rows:360px 280px}.video-editor-inspector{position:static;width:auto;border-left:0;border-top:1px solid var(--ve-line)}.video-editor-top-actions select{display:none}}
+
+
+/* Stonefellow v89 — full-canvas Video Studio */
+.video-editor-shell{display:block!important;width:100vw;height:100vh;overflow:hidden}
+.video-editor-main{margin-left:0!important;width:100%!important;height:100vh;min-width:0;display:flex;flex-direction:column}
+.video-editor-topbar{height:54px!important;min-height:54px;padding:7px 12px!important;background:#101412!important;display:flex;align-items:center;justify-content:space-between;gap:10px;overflow:visible}
+.video-editor-header-left,.video-editor-top-actions,.video-header-save-actions{display:flex;align-items:center;gap:7px;min-width:0}.video-editor-header-left{flex:1}.video-editor-topbar #videoProjectTitle{font-size:14px!important;font-weight:800;min-width:120px;max-width:min(380px,35vw);height:36px;padding:0 8px;border:0;background:transparent}
+.video-header-button,.video-editor-top-actions .video-header-button{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:34px;padding:7px 11px;border:1px solid #344039!important;border-radius:4px!important;background:#111614!important;color:#e8e8e4!important;font-size:11px!important;font-weight:800!important;text-decoration:none;white-space:nowrap;cursor:pointer}.video-header-button:hover{border-color:#607365!important}.video-editor-top-actions #videoAgentButton{order:99}.video-menu-button strong{font-size:9px;text-transform:uppercase;letter-spacing:.08em}
+.video-main-menu{position:fixed;top:58px;left:12px;z-index:1200;width:min(320px,calc(100vw - 24px));padding:12px;border:1px solid #333b36;border-radius:8px;background:#121614;box-shadow:0 18px 50px #000a}.video-main-menu label{display:flex;flex-direction:column;gap:5px;margin-bottom:9px;color:#aaa;font-size:10px;text-transform:uppercase;letter-spacing:.08em}.video-main-menu select,.video-main-menu button,.video-main-menu .video-upload-button{width:100%;padding:9px;border:1px solid #333b36;border-radius:6px;background:#1a1f1c;color:#eee;text-align:left}
+.video-editor-workspace{grid-template-columns:280px minmax(0,1fr) 300px!important;flex:1;min-height:0}.video-editor-center{grid-template-rows:minmax(360px,1fr) minmax(220px,34vh)!important;min-height:0}.video-preview-shell{padding:10px!important}.video-preview-stage{min-height:300px!important;border-radius:6px!important}.video-editor-library,.video-editor-inspector{transition:transform .18s ease,opacity .18s ease}.video-editor-workspace.library-hidden{grid-template-columns:0 minmax(0,1fr) 300px!important}.video-editor-workspace.library-hidden .video-editor-library{overflow:hidden;padding:0;border:0;opacity:0}.video-editor-workspace.inspector-hidden{grid-template-columns:280px minmax(0,1fr) 0!important}.video-editor-workspace.inspector-hidden .video-editor-inspector{overflow:hidden;padding:0;border:0;opacity:0}.video-editor-workspace.library-hidden.inspector-hidden{grid-template-columns:0 minmax(0,1fr) 0!important}
+@media(max-width:1100px){.video-editor-workspace,.video-editor-workspace.library-hidden,.video-editor-workspace.inspector-hidden,.video-editor-workspace.library-hidden.inspector-hidden{grid-template-columns:minmax(0,1fr)!important}.video-editor-library{position:fixed;z-index:900;left:0;top:54px;bottom:0;width:min(320px,88vw);border-right:1px solid var(--ve-line)!important;box-shadow:16px 0 36px #000b}.video-editor-inspector{position:fixed!important;z-index:900;right:0;top:54px!important;bottom:0;width:min(320px,88vw)!important;box-shadow:-16px 0 36px #000b}.video-editor-workspace.library-hidden .video-editor-library{transform:translateX(-105%);opacity:0;padding:14px}.video-editor-workspace.inspector-hidden .video-editor-inspector{transform:translateX(105%);opacity:0;padding:14px}.video-editor-center{grid-template-rows:minmax(360px,1fr) minmax(230px,36vh)!important}.video-editor-topbar #videoProjectTitle{max-width:28vw}}
+@media(max-width:720px){body.video-editor-body{overflow:hidden!important}.video-editor-shell,.video-editor-main{height:100dvh!important;min-height:100dvh!important}.video-editor-topbar{padding:6px 7px!important;gap:5px}.video-menu-button strong,.video-header-save-actions #videoSaveAsProject,.video-editor-top-actions #videoInspectorToggle,.video-editor-top-actions #videoLibraryToggle{display:none}.video-header-button,.video-editor-top-actions .video-header-button{min-width:36px;min-height:36px;padding:6px 8px;font-size:10px!important}.video-editor-topbar #videoProjectTitle{font-size:12px!important;max-width:34vw;padding:0 3px}.video-editor-center{grid-template-rows:minmax(300px,1fr) minmax(210px,36vh)!important}.video-preview-shell{padding:5px!important}.video-preview-stage{min-height:250px!important}.video-timeline-panel{padding:8px!important}.video-editor-library,.video-editor-inspector{top:54px;width:92vw!important}.video-preview-controls button{padding:7px 9px}.video-preview-controls{font-size:11px}}

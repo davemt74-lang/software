@@ -1,0 +1,1268 @@
+<?php
+declare(strict_types=1);
+
+@ini_set('display_errors', '0');
+@ini_set('html_errors', '0');
+@set_time_limit(45);
+ob_start();
+
+require dirname(__DIR__) . '/includes/bootstrap.php';
+require_permission('tracks.manage');
+
+header('Content-Type: application/json; charset=UTF-8');
+header('Cache-Control: no-store');
+
+$requestId = date('YmdHis') . '-' . substr(bin2hex(random_bytes(5)), 0, 10);
+const STONEFELLOW_DIRECT_BUILD = 'v29';
+$responded = false;
+
+function direct_stem_log(string $requestId, string $message): void
+{
+    $path = STONEFELLOW_ROOT . '/private/stem-import.log';
+    @file_put_contents(
+        $path,
+        '[' . date('c') . '] [' . $requestId . '] DIRECT ' . $message . PHP_EOL,
+        FILE_APPEND | LOCK_EX
+    );
+}
+
+function direct_stem_json(array $payload, int $status = 200): never
+{
+    global $requestId, $responded;
+
+    $responded = true;
+    $payload['request_id'] = $requestId;
+    $payload['importer_build'] = STONEFELLOW_DIRECT_BUILD;
+
+    $noise = '';
+    while (ob_get_level() > 0) {
+        $noise .= (string)ob_get_clean();
+    }
+
+    if (trim($noise) !== '') {
+        direct_stem_log(
+            $requestId,
+            'Suppressed output: ' . mb_substr(strip_tags($noise), 0, 1500)
+        );
+    }
+
+    http_response_code($status);
+    header('Content-Type: application/json; charset=UTF-8');
+    header('Cache-Control: no-store');
+
+    echo json_encode(
+        $payload,
+        JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE
+    );
+    exit;
+}
+
+register_shutdown_function(static function (): void {
+    global $responded, $requestId;
+
+    if ($responded) {
+        return;
+    }
+
+    $error = error_get_last();
+    if (!$error || !in_array((int)$error['type'], [
+        E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR, E_USER_ERROR
+    ], true)) {
+        return;
+    }
+
+    direct_stem_log(
+        $requestId,
+        'Fatal: ' . (string)$error['message']
+        . ' in ' . (string)$error['file']
+        . ':' . (string)$error['line']
+    );
+
+    while (ob_get_level() > 0) {
+        @ob_end_clean();
+    }
+
+    if (!headers_sent()) {
+        http_response_code(500);
+        header('Content-Type: application/json; charset=UTF-8');
+    }
+
+    echo json_encode([
+        'ok'=>false,
+        'error'=>'The direct MP3 importer stopped because of a server PHP error.',
+        'request_id'=>$requestId,
+    ]);
+});
+
+function direct_stem_session_dir(int $userId, string $uploadId): string
+{
+    if (!preg_match('/^[a-f0-9]{32}$/', $uploadId)) {
+        throw new RuntimeException('Invalid upload session.');
+    }
+
+    return STONEFELLOW_ROOT
+        . '/private/direct-stem-uploads/u' . $userId
+        . '/' . $uploadId;
+}
+
+function direct_stem_state_path(string $dir): string
+{
+    return $dir . '/state.json';
+}
+
+function direct_stem_load_state(string $dir): array
+{
+    $path = direct_stem_state_path($dir);
+
+    if (!is_file($path)) {
+        throw new RuntimeException('Direct stem upload session was not found.');
+    }
+
+    $state = json_decode((string)file_get_contents($path), true);
+
+    if (!is_array($state)) {
+        throw new RuntimeException('Direct stem upload state is damaged.');
+    }
+
+    return $state;
+}
+
+function direct_stem_save_state(string $dir, array $state): void
+{
+    $json = json_encode(
+        $state,
+        JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE
+    );
+
+    if (
+        !is_string($json) ||
+        file_put_contents(direct_stem_state_path($dir), $json, LOCK_EX) === false
+    ) {
+        throw new RuntimeException('Could not save direct stem upload state.');
+    }
+}
+
+function direct_stem_cleanup(string $dir): void
+{
+    if (!is_dir($dir)) {
+        return;
+    }
+
+    foreach (glob($dir . '/*') ?: [] as $file) {
+        if (is_file($file)) {
+            @unlink($file);
+        }
+    }
+
+    @rmdir($dir);
+}
+
+function direct_stem_clean_sessions(): void
+{
+    $root = STONEFELLOW_ROOT . '/private/direct-stem-uploads';
+    $cutoff = time() - 86400;
+
+    foreach (glob($root . '/u*/*') ?: [] as $dir) {
+        if (!is_dir($dir) || (filemtime($dir) ?: time()) >= $cutoff) {
+            continue;
+        }
+
+        direct_stem_cleanup($dir);
+    }
+}
+
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    direct_stem_json(['ok'=>false,'error'=>'POST required.'], 405);
+}
+
+if (!verify_csrf()) {
+    direct_stem_json(['ok'=>false,'error'=>'Session expired.'], 419);
+}
+
+$user = current_user();
+$userId = (int)($user['id'] ?? 0);
+$trackId = (int)($_POST['track_id'] ?? 0);
+$uploadId = strtolower(trim((string)($_POST['upload_id'] ?? '')));
+$action = trim((string)($_POST['action'] ?? ''));
+
+if (
+    $userId < 1 ||
+    $trackId < 1 ||
+    !preg_match('/^[a-f0-9]{32}$/', $uploadId)
+) {
+    direct_stem_json(['ok'=>false,'error'=>'Invalid direct stem request.'], 400);
+}
+
+$pdo = db();
+$stmt = $pdo?->prepare('SELECT * FROM tracks WHERE id=? LIMIT 1');
+$stmt?->execute([$trackId]);
+$track = $stmt ? $stmt->fetch() : false;
+
+if (!$track) {
+    direct_stem_json(['ok'=>false,'error'=>'Track not found.'], 404);
+}
+
+try {
+    direct_stem_clean_sessions();
+    $dir = direct_stem_session_dir($userId, $uploadId);
+
+    if ($action === 'probe') {
+        direct_stem_json([
+            'ok'=>true,
+            'phase'=>'probe',
+            'php_version'=>PHP_VERSION,
+            'memory_limit'=>(string)ini_get('memory_limit'),
+        ]);
+    }
+
+    if ($action === 'init') {
+        $filesJson = (string)($_POST['files_json'] ?? '');
+        $files = json_decode($filesJson, true);
+
+        $hasRpp = (int)($_POST['has_rpp'] ?? 0) === 1;
+
+        if (!is_array($files) || count($files) > 96) {
+            throw new RuntimeException('Select up to 96 MP3 or WAV stem files.');
+        }
+
+        if (!$files && !$hasRpp) {
+            throw new RuntimeException('Select at least one MP3/WAV stem or a REAPER .rpp project file.');
+        }
+
+        $totalBytes = 0;
+        $cleanFiles = [];
+
+        foreach ($files as $index=>$file) {
+            $name = stem_clean_filename((string)($file['name'] ?? ''));
+            $size = (int)($file['size'] ?? 0);
+            $duration = max(0.0, (float)($file['duration'] ?? 0));
+
+            $extension = mb_strtolower(pathinfo($name, PATHINFO_EXTENSION));
+
+            if (
+                $name === '' ||
+                !in_array($extension, ['mp3','wav'], true) ||
+                $size < 1
+            ) {
+                throw new RuntimeException(
+                    'Browser ZIP import accepts MP3 or WAV stems only.'
+                );
+            }
+
+            $totalBytes += $size;
+
+            $cleanFiles[] = [
+                'index'=>(int)$index,
+                'name'=>$name,
+                'size'=>$size,
+                'duration'=>$duration,
+                'next_chunk'=>0,
+                'total_chunks'=>0,
+                'written'=>0,
+                'complete'=>false,
+            ];
+        }
+
+        if ($totalBytes > stem_max_package_bytes()) {
+            throw new RuntimeException('The selected stems exceed the configured upload limit.');
+        }
+
+        $free = @disk_free_space(STONEFELLOW_ROOT);
+        $required = $totalBytes + (48 * 1024 * 1024);
+
+        if (is_numeric($free) && (float)$free < $required) {
+            throw new RuntimeException(
+                'Not enough server disk space. These stems need about '
+                . number_format($required / 1024 / 1024, 0)
+                . ' MB including a small safety reserve.'
+            );
+        }
+
+        if (
+            !is_dir($dir) &&
+            !mkdir($dir, 0700, true) &&
+            !is_dir($dir)
+        ) {
+            throw new RuntimeException('Could not create the direct upload directory.');
+        }
+
+        $state = [
+            'track_id'=>$trackId,
+            'user_id'=>$userId,
+            'files'=>$cleanFiles,
+            'total_bytes'=>$totalBytes,
+            'expects_rpp'=>$hasRpp,
+            'rpp_name'=>'',
+            'rpp_path'=>'',
+            'created_at'=>time(),
+        ];
+
+        direct_stem_save_state($dir, $state);
+
+        direct_stem_log(
+            $requestId,
+            'Init track=' . $trackId
+            . ' files=' . count($cleanFiles)
+            . ' bytes=' . $totalBytes
+        );
+
+        direct_stem_json([
+            'ok'=>true,
+            'phase'=>'initialized',
+            'file_count'=>count($cleanFiles),
+            'total_bytes'=>$totalBytes,
+            'expects_rpp'=>$hasRpp,
+        ]);
+    }
+
+    if ($action === 'file_chunk') {
+        $state = direct_stem_load_state($dir);
+        $fileIndex = (int)($_POST['file_index'] ?? -1);
+        $chunkIndex = (int)($_POST['chunk_index'] ?? -1);
+        $totalChunks = (int)($_POST['total_chunks'] ?? 0);
+
+        if (!isset($state['files'][$fileIndex])) {
+            throw new RuntimeException('Unknown stem file.');
+        }
+
+        $fileState = $state['files'][$fileIndex];
+
+        if (
+            $chunkIndex < 0 ||
+            $totalChunks < 1 ||
+            $chunkIndex >= $totalChunks
+        ) {
+            throw new RuntimeException('Invalid direct stem chunk.');
+        }
+
+        if ((int)$fileState['next_chunk'] !== $chunkIndex) {
+            throw new RuntimeException(
+                'Stem chunks arrived out of order. Expected chunk '
+                . ((int)$fileState['next_chunk'] + 1) . '.'
+            );
+        }
+
+        $chunk = $_FILES['chunk'] ?? [];
+        if (($chunk['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+            throw new RuntimeException('A direct stem chunk failed to upload.');
+        }
+
+        $chunkSize = (int)($chunk['size'] ?? 0);
+        if ($chunkSize < 1 || $chunkSize > stem_chunk_bytes() + 1024) {
+            throw new RuntimeException('Invalid direct stem chunk size.');
+        }
+
+        $stemExtension = mb_strtolower(
+            pathinfo((string)$fileState['name'], PATHINFO_EXTENSION)
+        );
+        $partPath = $dir
+            . '/stem-'
+            . str_pad((string)$fileIndex, 3, '0', STR_PAD_LEFT)
+            . '.'
+            . $stemExtension;
+        $input = fopen((string)$chunk['tmp_name'], 'rb');
+        $output = fopen($partPath, $chunkIndex === 0 ? 'wb' : 'ab');
+
+        if (!$input || !$output) {
+            if (is_resource($input)) fclose($input);
+            if (is_resource($output)) fclose($output);
+            throw new RuntimeException('Could not write the uploaded stem.');
+        }
+
+        try {
+            $copied = stream_copy_to_stream($input, $output);
+        } finally {
+            fclose($input);
+            fclose($output);
+        }
+
+        if ($copied === false) {
+            throw new RuntimeException('Could not save the uploaded stem.');
+        }
+
+        $fileState['next_chunk'] = $chunkIndex + 1;
+        $fileState['total_chunks'] = $totalChunks;
+        $fileState['written'] = (int)$fileState['written'] + (int)$copied;
+
+        if ($fileState['next_chunk'] >= $totalChunks) {
+            $actual = filesize($partPath) ?: 0;
+
+            if ($actual !== (int)$fileState['size']) {
+                throw new RuntimeException(
+                    'Stem size mismatch for ' . $fileState['name'] . '.'
+                );
+            }
+
+            $fileState['complete'] = true;
+        }
+
+        $state['files'][$fileIndex] = $fileState;
+        direct_stem_save_state($dir, $state);
+
+        direct_stem_json([
+            'ok'=>true,
+            'phase'=>'uploading_stem',
+            'file_index'=>$fileIndex,
+            'chunk_index'=>$chunkIndex,
+            'complete'=>(bool)$fileState['complete'],
+        ]);
+    }
+
+    if ($action === 'rpp') {
+        $state = direct_stem_load_state($dir);
+        $rpp = $_FILES['rpp'] ?? [];
+
+        if (($rpp['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) {
+            direct_stem_json([
+                'ok'=>true,
+                'phase'=>'rpp_skipped',
+            ]);
+        }
+
+        if (($rpp['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+            throw new RuntimeException('The REAPER project file could not be uploaded.');
+        }
+
+        $name = stem_clean_filename((string)($rpp['name'] ?? 'project.rpp'));
+        $size = (int)($rpp['size'] ?? 0);
+        $tmpName = (string)($rpp['tmp_name'] ?? '');
+
+        // REAPER projects are plain-text files. Validate the actual file
+        // signature rather than relying only on the filename extension.
+        // This also accepts .RPP, .rpp-bak, and renamed project files.
+        $header = '';
+        if ($tmpName !== '' && is_file($tmpName)) {
+            $handle = @fopen($tmpName, 'rb');
+            if ($handle) {
+                $header = (string)fread($handle, 512);
+                fclose($handle);
+            }
+        }
+
+        $looksLikeReaper = (bool)preg_match(
+            '/^\s*<REAPER_PROJECT\b/i',
+            $header
+        );
+
+        if (
+            $size < 1 ||
+            $size > 64 * 1024 * 1024 ||
+            !$looksLikeReaper
+        ) {
+            throw new RuntimeException(
+                'The selected file is not a readable REAPER project. '
+                . 'Received "' . $name . '" (' .
+                number_format(max(0, $size) / 1024, 1) .
+                ' KB). Select the actual REAPER .rpp project file, not a ZIP, '
+                . 'audio file, or .reapeaks file.'
+            );
+        }
+
+        // Keep the original filename when possible, but normalize backup or
+        // extensionless names to .rpp for stored project metadata.
+        $lowerName = mb_strtolower($name);
+        if (!str_ends_with($lowerName, '.rpp')) {
+            $base = preg_replace('/\.rpp-bak$/i', '', $name) ?: $name;
+            $base = preg_replace('/\.[^.]+$/', '', $base) ?: $base;
+            $name = stem_clean_filename($base . '.rpp');
+        }
+
+        $destination = $dir . '/project.rpp';
+
+        if (!move_uploaded_file($tmpName, $destination)) {
+            throw new RuntimeException('Could not save the REAPER project file.');
+        }
+
+        $state['rpp_name'] = $name;
+        $state['rpp_path'] = $destination;
+        direct_stem_save_state($dir, $state);
+
+        direct_stem_json([
+            'ok'=>true,
+            'phase'=>'rpp_uploaded',
+            'rpp_name'=>$name,
+        ]);
+    }
+
+    if ($action === 'meta') {
+        $state = direct_stem_load_state($dir);
+        $metaJson = (string)($_POST['rpp_meta_json'] ?? '');
+
+        if ($metaJson === '') {
+            $state['rpp_info'] = [
+                'project_name'=>(string)$track['title'],
+                'tempo_bpm'=>null,
+                'time_signature'=>'',
+                'project_sample_rate'=>null,
+                'tracks'=>[],
+                'file_map'=>[],
+            ];
+        } else {
+            $rppInfo = json_decode($metaJson, true);
+
+            if (!is_array($rppInfo)) {
+                throw new RuntimeException(
+                    'Browser REAPER metadata could not be decoded.'
+                );
+            }
+
+            $rppInfo['project_name'] = mb_substr(
+                trim((string)($rppInfo['project_name'] ?? $track['title'])),
+                0,
+                190
+            );
+            $rppInfo['tempo_bpm'] = isset($rppInfo['tempo_bpm'])
+                ? (float)$rppInfo['tempo_bpm']
+                : null;
+            $rppInfo['time_signature'] = mb_substr(
+                trim((string)($rppInfo['time_signature'] ?? '')),
+                0,
+                20
+            );
+            $rppInfo['project_sample_rate'] = isset($rppInfo['project_sample_rate'])
+                ? (int)$rppInfo['project_sample_rate']
+                : null;
+
+            if (!isset($rppInfo['file_map']) || !is_array($rppInfo['file_map'])) {
+                $rppInfo['file_map'] = [];
+            }
+
+            // The server only needs compact per-file placement metadata.
+            // Do not persist the full browser-parsed REAPER track tree.
+            $safeMap = [];
+
+            foreach (
+                array_slice(
+                    $rppInfo['file_map'],
+                    0,
+                    256,
+                    true
+                ) as $key=>$map
+            ) {
+                if (!is_array($map)) {
+                    continue;
+                }
+
+                $safeKey = mb_strtolower(
+                    mb_substr((string)$key, 0, 255)
+                );
+
+                $safeMap[$safeKey] = [
+                    'track_name'=>mb_substr(
+                        (string)($map['track_name'] ?? ''),
+                        0,
+                        190
+                    ),
+                    'track_guid'=>mb_substr(
+                        (string)($map['track_guid'] ?? ''),
+                        0,
+                        80
+                    ),
+                    'volume'=>(float)($map['volume'] ?? 1.0),
+                    'pan'=>max(
+                        -1.0,
+                        min(1.0, (float)($map['pan'] ?? 0.0))
+                    ),
+                    'fx_summary'=>mb_substr(
+                        (string)($map['fx_summary'] ?? ''),
+                        0,
+                        1000
+                    ),
+                    'position'=>(float)($map['position'] ?? 0.0),
+                    'length'=>(float)($map['length'] ?? 0.0),
+                ];
+            }
+
+            $rppInfo['tracks'] = [];
+            $rppInfo['file_map'] = $safeMap;
+            $state['rpp_info'] = $rppInfo;
+        }
+
+        direct_stem_save_state($dir, $state);
+
+        direct_stem_json([
+            'ok'=>true,
+            'phase'=>'meta_saved',
+            'mapped_files'=>count(
+                $state['rpp_info']['file_map'] ?? []
+            ),
+        ]);
+    }
+
+    if ($action === 'save_open') {
+        $state = direct_stem_load_state($dir);
+
+        foreach ($state['files'] as $file) {
+            if (empty($file['complete'])) {
+                throw new RuntimeException(
+                    'Stem upload is incomplete: ' . (string)$file['name']
+                );
+            }
+        }
+
+        // Only filesystem setup here. No DB query and no RPP parsing.
+        $importToken = date('Ymd-His')
+            . '-' . substr(bin2hex(random_bytes(6)), 0, 12);
+
+        $stemDir = STONEFELLOW_ROOT
+            . '/uploads/stems/track-' . $trackId
+            . '/' . $importToken;
+
+        $projectDir = STONEFELLOW_ROOT
+            . '/uploads/projects/track-' . $trackId;
+
+        if (
+            !is_dir($stemDir) &&
+            !mkdir($stemDir, 0755, true) &&
+            !is_dir($stemDir)
+        ) {
+            throw new RuntimeException(
+                'Could not create final stem storage.'
+            );
+        }
+
+        if (
+            !is_dir($projectDir) &&
+            !mkdir($projectDir, 0755, true) &&
+            !is_dir($projectDir)
+        ) {
+            throw new RuntimeException(
+                'Could not create final project storage.'
+            );
+        }
+
+        $state['save'] = [
+            'import_token'=>$importToken,
+            'stem_dir'=>$stemDir,
+            'project_dir'=>$projectDir,
+            'project_path'=>'',
+            'project_file_name'=>'',
+            'project_id'=>0,
+            'created_project'=>false,
+            'had_existing_project'=>false,
+            'project_start'=>0.0,
+            'next_index'=>0,
+            'new_paths'=>[],
+            'old_paths'=>[],
+            'max_end'=>0.0,
+        ];
+
+        direct_stem_save_state($dir, $state);
+
+        direct_stem_json([
+            'ok'=>true,
+            'phase'=>'save_open',
+        ]);
+    }
+
+    if ($action === 'save_rpp') {
+        $state = direct_stem_load_state($dir);
+        $save = $state['save'] ?? null;
+
+        if (!is_array($save)) {
+            throw new RuntimeException('Save session is not open.');
+        }
+
+        $rppInfo = $state['rpp_info'] ?? [
+            'project_name'=>(string)$track['title'],
+            'tempo_bpm'=>null,
+            'time_signature'=>'',
+            'project_sample_rate'=>null,
+            'tracks'=>[],
+            'file_map'=>[],
+        ];
+
+        $positions = [];
+        foreach ($state['files'] as $file) {
+            $map = stem_match_rpp_file(
+                $rppInfo['file_map'] ?? [],
+                (string)$file['name']
+            );
+            $positions[] = (float)($map['position'] ?? 0.0);
+        }
+
+        $save['project_start'] = $positions
+            ? min($positions)
+            : 0.0;
+
+        if (
+            !empty($state['rpp_path']) &&
+            is_file((string)$state['rpp_path'])
+        ) {
+            $projectFile = (string)$save['import_token']
+                . '-'
+                . stem_clean_filename((string)$state['rpp_name']);
+
+            $projectFinal = rtrim(
+                (string)$save['project_dir'],
+                DIRECTORY_SEPARATOR
+            ) . DIRECTORY_SEPARATOR . $projectFile;
+
+            if (!@rename(
+                (string)$state['rpp_path'],
+                $projectFinal
+            )) {
+                throw new RuntimeException(
+                    'Could not move the REAPER project file.'
+                );
+            }
+
+            $save['project_path'] =
+                '/uploads/projects/track-' . $trackId
+                . '/' . $projectFile;
+            $save['project_file_name'] =
+                (string)$state['rpp_name'];
+            $save['new_paths'][] =
+                (string)$save['project_path'];
+            $state['rpp_path'] = '';
+        }
+
+        $state['save'] = $save;
+        direct_stem_save_state($dir, $state);
+
+        direct_stem_json([
+            'ok'=>true,
+            'phase'=>'save_rpp',
+            'project_start'=>$save['project_start'],
+        ]);
+    }
+
+    if ($action === 'save_db') {
+        $state = direct_stem_load_state($dir);
+        $save = $state['save'] ?? null;
+
+        if (!is_array($save)) {
+            throw new RuntimeException('Save session is not open.');
+        }
+
+        // The only DB setup request. It is intentionally isolated so a host
+        // failure here cannot be confused with parsing or file movement.
+        $pdo->prepare(
+            'DELETE FROM track_stems
+             WHERE track_id=? AND is_active=0'
+        )->execute([$trackId]);
+
+        $existingProject = stem_project_for_track($trackId);
+        $rppInfo = $state['rpp_info'] ?? [];
+
+        if ($existingProject) {
+            $save['project_id'] =
+                (int)$existingProject['id'];
+            $save['had_existing_project'] = true;
+
+            if ($save['project_path'] === '') {
+                $save['project_path'] =
+                    (string)($existingProject['rpp_file_path'] ?? '');
+                $save['project_file_name'] =
+                    (string)($existingProject['rpp_file_name'] ?? '');
+            } elseif (
+                !empty($existingProject['rpp_file_path']) &&
+                (string)$existingProject['rpp_file_path']
+                    !== (string)$save['project_path']
+            ) {
+                $save['old_paths'][] =
+                    (string)$existingProject['rpp_file_path'];
+            }
+        } else {
+            $stmt = $pdo->prepare(
+                'INSERT INTO track_projects
+                 (track_id,project_name,source_zip_name,
+                  rpp_file_name,rpp_file_path,tempo_bpm,
+                  time_signature,project_sample_rate,
+                  media_sample_rate,project_start_seconds,
+                  imported_by_user_id,imported_at)
+                 VALUES (?,?,?,?,?,?,?,?,?,?,?,NOW())'
+            );
+
+            $stmt->execute([
+                $trackId,
+                (string)($rppInfo['project_name']
+                    ?? $track['title']),
+                'Browser ZIP stems',
+                (string)$save['project_file_name'],
+                (string)$save['project_path'],
+                $rppInfo['tempo_bpm'] ?? null,
+                (string)($rppInfo['time_signature'] ?? ''),
+                $rppInfo['project_sample_rate'] ?? null,
+                null,
+                (float)$save['project_start'],
+                $userId,
+            ]);
+
+            $save['project_id'] =
+                (int)$pdo->lastInsertId();
+            $save['created_project'] = true;
+        }
+
+        $oldStems = stems_for_track($trackId);
+        foreach ($oldStems as $oldStem) {
+            if (!empty($oldStem['file_path'])) {
+                $save['old_paths'][] =
+                    (string)$oldStem['file_path'];
+            }
+        }
+
+        $save['old_paths'] = array_values(
+            array_unique($save['old_paths'])
+        );
+
+        $state['save'] = $save;
+        direct_stem_save_state($dir, $state);
+
+        direct_stem_json([
+            'ok'=>true,
+            'phase'=>'save_db',
+            'project_id'=>(int)$save['project_id'],
+            'total_stems'=>count($state['files']),
+        ]);
+    }
+
+    if ($action === 'row_add') {
+        $state = direct_stem_load_state($dir);
+        $save = $state['save'] ?? null;
+
+        if (!is_array($save)) {
+            throw new RuntimeException(
+                'Save session is not ready.'
+            );
+        }
+
+        if (!empty($save['pending_row'])) {
+            // A successful prior row_add response may have been lost.
+            direct_stem_json([
+                'ok'=>true,
+                'phase'=>'row_add',
+                'completed'=>(int)($save['next_index'] ?? 0),
+                'pending'=>true,
+                'stem_name'=>(string)($save['pending_row']['stem_name'] ?? ''),
+            ]);
+        }
+
+        $index = (int)($save['next_index'] ?? 0);
+        $files = $state['files'] ?? [];
+
+        if ($index >= count($files)) {
+            direct_stem_json([
+                'ok'=>true,
+                'phase'=>'row_add',
+                'completed'=>$index,
+                'total'=>count($files),
+                'done'=>true,
+            ]);
+        }
+
+        $file = $files[$index];
+        $stemExtension = strtolower(
+            pathinfo((string)$file['name'], PATHINFO_EXTENSION)
+        );
+
+        if (!in_array($stemExtension, ['mp3','wav'], true)) {
+            throw new RuntimeException(
+                'Unsupported stem type: ' . (string)$file['name']
+            );
+        }
+
+        $temp = $dir
+            . '/stem-'
+            . str_pad((string)$index, 3, '0', STR_PAD_LEFT)
+            . '.'
+            . $stemExtension;
+
+        if (!is_file($temp)) {
+            throw new RuntimeException(
+                'Uploaded stem is missing before save: '
+                . (string)$file['name']
+            );
+        }
+
+        $savedName = str_pad(
+            (string)($index + 1),
+            2,
+            '0',
+            STR_PAD_LEFT
+        ) . '-' . stem_clean_filename((string)$file['name']);
+
+        $relative = '/uploads/stems/track-'
+            . $trackId
+            . '/'
+            . (string)$save['import_token']
+            . '/'
+            . $savedName;
+
+        $map = stem_match_rpp_file(
+            $state['rpp_info']['file_map'] ?? [],
+            (string)$file['name']
+        );
+
+        $sourceTrackName = trim(
+            (string)($map['track_name'] ?? '')
+        );
+
+        $role = stem_role_from_metadata(
+            $sourceTrackName . ' ' . (string)$file['name'],
+            ''
+        );
+
+        $baseName = preg_replace(
+            '/-consolidated(?=\.(mp3|wav)$)/i',
+            '',
+            (string)$file['name']
+        ) ?: (string)$file['name'];
+
+        $baseName = preg_replace(
+            '/\.(mp3|wav)$/i',
+            '',
+            $baseName
+        ) ?: $baseName;
+
+        $baseName = preg_replace(
+            '/^\d{1,3}-/',
+            '',
+            $baseName
+        ) ?: $baseName;
+
+        $stemName = $sourceTrackName !== ''
+            ? $sourceTrackName
+            : trim($baseName);
+
+        if ($stemName === '') {
+            $stemName = 'Stem ' . ($index + 1);
+        }
+
+        $position = (float)($map['position'] ?? 0.0);
+        $offset = max(
+            0.0,
+            $position - (float)($save['project_start'] ?? 0.0)
+        );
+
+        $duration = max(
+            0.0,
+            (float)($file['duration'] ?? 0)
+        );
+
+        if ($duration <= 0 && is_array($map)) {
+            $duration = max(
+                0.0,
+                (float)($map['length'] ?? 0)
+            );
+        }
+
+        // Intentionally minimal INSERT. All optional REAPER detail columns use
+        // their schema defaults. This avoids the wide row that was the only
+        // remaining operation returning a HostGator 500.
+        $insert = $pdo->prepare(
+            'INSERT INTO track_stems
+             (track_id,project_id,stem_name,stem_role,file_name,file_path,
+              duration_seconds,start_offset_seconds,sort_order,is_active)
+             VALUES (?,?,?,?,?,?,?,?,?,0)'
+        );
+
+        $insert->execute([
+            $trackId,
+            (int)$save['project_id'],
+            substr($stemName, 0, 190),
+            substr($role, 0, 80),
+            substr((string)$file['name'], 0, 255),
+            $relative,
+            round($duration, 4),
+            round($offset, 4),
+            $index + 1,
+        ]);
+
+        $rowId = (int)$pdo->lastInsertId();
+
+        if ($rowId < 1) {
+            throw new RuntimeException(
+                'Stem database row was not created.'
+            );
+        }
+
+        $save['pending_row'] = [
+            'id'=>$rowId,
+            'index'=>$index,
+            'stem_name'=>substr($stemName, 0, 190),
+            'relative'=>$relative,
+            'saved_name'=>$savedName,
+            'temp'=>$temp,
+            'duration'=>$duration,
+            'offset'=>$offset,
+        ];
+
+        $state['save'] = $save;
+        direct_stem_save_state($dir, $state);
+
+        direct_stem_json([
+            'ok'=>true,
+            'phase'=>'row_add',
+            'completed'=>$index,
+            'total'=>count($files),
+            'stem_name'=>$stemName,
+        ]);
+    }
+
+    if ($action === 'file_place') {
+        $state = direct_stem_load_state($dir);
+        $save = $state['save'] ?? null;
+
+        if (!is_array($save)) {
+            throw new RuntimeException(
+                'Save session is not ready.'
+            );
+        }
+
+        $pending = $save['pending_row'] ?? null;
+
+        if (!is_array($pending)) {
+            throw new RuntimeException(
+                'No pending stem row is ready for file placement.'
+            );
+        }
+
+        $final = rtrim(
+            (string)$save['stem_dir'],
+            DIRECTORY_SEPARATOR
+        ) . DIRECTORY_SEPARATOR . (string)$pending['saved_name'];
+
+        if (!is_file((string)$pending['temp'])) {
+            // If the file already reached final storage, treat the request as
+            // an idempotent retry.
+            if (!is_file($final)) {
+                throw new RuntimeException(
+                    'Uploaded stem file disappeared before placement.'
+                );
+            }
+        } elseif (!@rename((string)$pending['temp'], $final)) {
+            throw new RuntimeException(
+                'Could not move the uploaded stem into final storage.'
+            );
+        }
+
+        $save['new_paths'][] = (string)$pending['relative'];
+        $save['max_end'] = max(
+            (float)($save['max_end'] ?? 0),
+            (float)$pending['offset'] + (float)$pending['duration']
+        );
+        $save['next_index'] = (int)$pending['index'] + 1;
+        unset($save['pending_row']);
+
+        $state['save'] = $save;
+        direct_stem_save_state($dir, $state);
+
+        direct_stem_json([
+            'ok'=>true,
+            'phase'=>'file_place',
+            'completed'=>(int)$save['next_index'],
+            'total'=>count($state['files'] ?? []),
+            'stem_name'=>(string)$pending['stem_name'],
+        ]);
+    }
+
+    if ($action === 'save_finish') {
+        $state = direct_stem_load_state($dir);
+        $save = $state['save'] ?? null;
+
+        if (!is_array($save)) {
+            throw new RuntimeException(
+                'Commit has not been prepared.'
+            );
+        }
+
+        $total = count($state['files'] ?? []);
+
+        if (!empty($save['pending_row'])) {
+            throw new RuntimeException(
+                'A stem database row is waiting for file placement.'
+            );
+        }
+
+        if ((int)($save['next_index'] ?? 0) !== $total) {
+            throw new RuntimeException(
+                'Not all stems have been staged yet.'
+            );
+        }
+
+        $rppInfo = $state['rpp_info'] ?? [];
+        $projectId = (int)$save['project_id'];
+
+        $pdo->beginTransaction();
+
+        try {
+            if (!empty($save['had_existing_project'])) {
+                $stmt = $pdo->prepare(
+                    'UPDATE track_projects
+                     SET project_name=?,source_zip_name=?,rpp_file_name=?,rpp_file_path=?,
+                         tempo_bpm=?,time_signature=?,project_sample_rate=?,media_sample_rate=?,
+                         project_start_seconds=?,imported_by_user_id=?,imported_at=NOW()
+                     WHERE id=?'
+                );
+
+                $stmt->execute([
+                    (string)($rppInfo['project_name'] ?? $track['title']),
+                    'Browser ZIP stems',
+                    (string)($save['project_file_name'] ?? ''),
+                    (string)($save['project_path'] ?? ''),
+                    $rppInfo['tempo_bpm'] ?? null,
+                    (string)($rppInfo['time_signature'] ?? ''),
+                    $rppInfo['project_sample_rate'] ?? null,
+                    null,
+                    (float)($save['project_start'] ?? 0),
+                    $userId,
+                    $projectId,
+                ]);
+            }
+
+            // For a normal ZIP import there are new stems. Replace the active
+            // set only now, after every new stem has safely staged.
+            if ($total > 0) {
+                $pdo->prepare(
+                    'DELETE FROM track_stems
+                     WHERE track_id=? AND is_active=1'
+                )->execute([$trackId]);
+
+                $pdo->prepare(
+                    'UPDATE track_stems
+                     SET is_active=1
+                     WHERE track_id=? AND project_id=? AND is_active=0'
+                )->execute([
+                    $trackId,
+                    $projectId,
+                ]);
+            }
+
+            if (
+                (int)($track['tempo_bpm'] ?? 0) < 1 &&
+                !empty($rppInfo['tempo_bpm'])
+            ) {
+                $pdo->prepare(
+                    'UPDATE tracks SET tempo_bpm=? WHERE id=?'
+                )->execute([
+                    (int)round((float)$rppInfo['tempo_bpm']),
+                    $trackId,
+                ]);
+            }
+
+            if (
+                trim((string)($track['duration'] ?? '')) === '' &&
+                (float)($save['max_end'] ?? 0) > 0
+            ) {
+                $pdo->prepare(
+                    'UPDATE tracks SET duration=? WHERE id=?'
+                )->execute([
+                    stem_format_duration(
+                        (float)$save['max_end']
+                    ),
+                    $trackId,
+                ]);
+            }
+
+            $pdo->commit();
+        } catch (Throwable $e) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            throw $e;
+        }
+
+        foreach (($save['old_paths'] ?? []) as $oldPath) {
+            stem_delete_path_if_local((string)$oldPath);
+            stem_cleanup_empty_parent((string)$oldPath);
+        }
+
+        direct_stem_cleanup($dir);
+
+        direct_stem_log(
+            $requestId,
+            'Stage finished track=' . $trackId
+            . ' stems=' . $total
+        );
+
+        direct_stem_json([
+            'ok'=>true,
+            'phase'=>'complete',
+            'stem_count'=>$total,
+            'studio_url'=>url(
+                '/admin/stems.php?track=' . $trackId
+            ),
+        ]);
+    }
+
+    if ($action === 'abort') {
+        $state = [];
+
+        if (is_file(direct_stem_state_path($dir))) {
+            try {
+                $state = direct_stem_load_state($dir);
+            } catch (Throwable $ignored) {
+                $state = [];
+            }
+        }
+
+        $save = $state['save'] ?? null;
+
+        if (is_array($save)) {
+            try {
+                if (!empty($save['pending_row']['id'])) {
+                    $pdo->prepare(
+                        'DELETE FROM track_stems WHERE id=? AND is_active=0'
+                    )->execute([
+                        (int)$save['pending_row']['id'],
+                    ]);
+                }
+
+                $pdo->prepare(
+                    'DELETE FROM track_stems
+                     WHERE track_id=? AND project_id=? AND is_active=0'
+                )->execute([
+                    $trackId,
+                    (int)($save['project_id'] ?? 0),
+                ]);
+
+                if (!empty($save['created_project'])) {
+                    $countStmt = $pdo->prepare(
+                        'SELECT COUNT(*) FROM track_stems
+                         WHERE project_id=? AND is_active=1'
+                    );
+                    $countStmt->execute([
+                        (int)($save['project_id'] ?? 0),
+                    ]);
+
+                    if ((int)$countStmt->fetchColumn() === 0) {
+                        $pdo->prepare(
+                            'DELETE FROM track_projects WHERE id=?'
+                        )->execute([
+                            (int)($save['project_id'] ?? 0),
+                        ]);
+                    }
+                }
+            } catch (Throwable $ignored) {
+                // The visible upload error is more important than cleanup.
+            }
+
+            foreach (($save['new_paths'] ?? []) as $path) {
+                stem_delete_path_if_local((string)$path);
+                stem_cleanup_empty_parent((string)$path);
+            }
+        }
+
+        direct_stem_cleanup($dir);
+
+        direct_stem_json([
+            'ok'=>true,
+            'phase'=>'aborted',
+        ]);
+    }
+
+    throw new RuntimeException('Unknown direct stem upload action.');
+} catch (Throwable $e) {
+    direct_stem_log(
+        $requestId,
+        'Error action=' . $action
+        . ' track=' . $trackId
+        . ': ' . $e->getMessage()
+    );
+
+    direct_stem_json([
+        'ok'=>false,
+        'error'=>$e->getMessage(),
+    ], 400);
+}

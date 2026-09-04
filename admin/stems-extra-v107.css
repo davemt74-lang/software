@@ -1,0 +1,18 @@
+
+/* Stonefellow v92 — compact autosave-first Studio header. */
+.daw-canvas-header-v92{min-height:58px;gap:18px}
+.daw-canvas-left-v92{display:flex;align-items:center;gap:14px;min-width:0;flex:1}
+.daw-header-audio-v92{order:2;display:flex;align-items:center;gap:9px;min-width:0;padding:0 4px}
+.daw-header-audio-v92 .daw-header-audio-connect{font-size:14px;font-weight:750;min-height:38px;padding:0 12px}
+.daw-header-audio-v92 .daw-header-audio-monitor{font-size:13px;min-width:42px;min-height:36px}
+.daw-header-input-meter-v92{width:112px!important;height:12px!important;min-width:82px;border-radius:999px;overflow:hidden}
+.daw-header-input-meter-v92 i{height:100%;border-radius:inherit}
+.daw-header-record-status-v92{font-size:13px!important;font-weight:800;letter-spacing:.045em;max-width:220px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.daw-header-autosave-status{font-size:11px;opacity:.64;white-space:nowrap}
+.daw-studio-menu-v92{min-width:min(390px,calc(100vw - 24px))}
+.daw-studio-menu-project-v92{padding:13px 14px 12px;margin:-2px -2px 8px;border-radius:10px;background:rgba(255,255,255,.055);display:grid;gap:3px}
+.daw-studio-menu-project-v92>span{font-size:10px;letter-spacing:.14em;opacity:.55}
+.daw-studio-menu-project-v92>strong{font-size:16px;line-height:1.2}
+.daw-studio-menu-project-v92>small{font-size:11px;opacity:.7;line-height:1.4}
+.daw-studio-menu-v92 .daw-menu-primary-v92{background:rgba(255,255,255,.085)}
+@media(max-width:900px){.daw-canvas-header-v92{align-items:flex-start}.daw-canvas-left-v92{flex-wrap:wrap}.daw-header-audio-v92{order:3;width:100%}.daw-header-input-meter-v92{flex:1}.daw-header-autosave-status{display:none}}

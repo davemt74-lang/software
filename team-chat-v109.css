@@ -1,0 +1,235 @@
+/* Stonefellow v110 — fixed Team Chat rail below the global header */
+.sf-online-rail-v109,
+.sf-team-chat-windows-v109,
+.sf-team-chat-windows-v109 *{box-sizing:border-box}
+
+.sf-online-rail-v109{
+  position:fixed;
+  z-index:9900;
+  top:46px;
+  right:0;
+  bottom:0;
+  width:48px;
+  height:auto;
+  display:flex;
+  flex-direction:column;
+  border-left:1px solid rgba(190,155,111,.16);
+  border-radius:0;
+  background:#0c0b0a;
+  overflow:hidden;
+  color:#ece4da;
+}
+.sf-online-rail-v109.offline{opacity:.72}
+.sf-online-users-v109{
+  min-height:0;
+  flex:1 1 auto;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  gap:8px;
+  padding:10px 4px;
+  overflow-y:auto;
+  overflow-x:hidden;
+  scrollbar-width:none;
+}
+.sf-online-users-v109::-webkit-scrollbar{display:none}
+.sf-online-user-v109{
+  position:relative;
+  width:40px;
+  height:40px;
+  min-height:40px;
+  display:grid;
+  place-items:center;
+  padding:0;
+  border:0;
+  border-radius:50%;
+  background:transparent;
+  color:#cfc4b7;
+  cursor:pointer;
+}
+.sf-online-user-v109:hover .sf-team-avatar-v109,
+.sf-online-user-v109:focus-visible .sf-team-avatar-v109{
+  border-color:rgba(228,201,167,.76);
+  transform:scale(1.05)
+}
+.sf-online-user-v109:focus-visible{outline:1px solid rgba(228,201,167,.55);outline-offset:2px}
+.sf-team-avatar-v109{
+  position:relative;
+  width:36px;
+  height:36px;
+  display:grid;
+  place-items:center;
+  overflow:hidden;
+  border:1px solid rgba(211,175,132,.28);
+  border-radius:50%;
+  background:linear-gradient(145deg,#3b2b20,#17120e);
+  color:#f1dfc7;
+  font-size:.58rem;
+  font-weight:900;
+  letter-spacing:.02em;
+  transition:.16s ease;
+}
+.sf-team-avatar-v109.compact{width:34px;height:34px}
+.sf-team-avatar-v109 img{width:100%;height:100%;object-fit:cover}
+.sf-online-user-v109[data-online="0"] .sf-team-avatar-v109{opacity:.56;filter:saturate(.65)}
+.sf-online-dot-v109{
+  position:absolute;
+  right:1px;
+  bottom:1px;
+  width:10px;
+  height:10px;
+  border:2px solid #0c0b0a;
+  border-radius:50%;
+  background:#54d17a;
+  box-shadow:0 0 0 1px rgba(84,209,122,.12);
+}
+.sf-online-unread-v109{
+  position:absolute;
+  z-index:2;
+  top:-3px;
+  right:-2px;
+  min-width:16px;
+  height:16px;
+  display:grid;
+  place-items:center;
+  padding:0 4px;
+  border:2px solid #0c0b0a;
+  border-radius:999px;
+  background:#ba493c;
+  color:#fff;
+  font-size:.46rem;
+}
+
+.sf-team-chat-windows-v109{
+  position:fixed;
+  z-index:9950;
+  right:56px;
+  bottom:10px;
+  max-width:calc(100vw - 72px);
+  display:flex;
+  flex-direction:row-reverse;
+  align-items:flex-end;
+  gap:10px;
+  overflow-x:auto;
+  padding:8px 2px 2px 8px;
+  pointer-events:none;
+}
+.sf-team-chat-v109{
+  width:310px;
+  height:390px;
+  flex:0 0 310px;
+  display:grid;
+  grid-template-rows:52px minmax(0,1fr) auto;
+  overflow:hidden;
+  border:1px solid rgba(190,155,111,.28);
+  border-radius:13px 13px 8px 8px;
+  background:#15120f;
+  color:#ece4da;
+  box-shadow:0 22px 55px rgba(0,0,0,.48);
+  pointer-events:auto;
+}
+.sf-team-chat-v109.minimized{height:52px}
+.sf-team-chat-v109.minimized .sf-team-chat-body-v109,
+.sf-team-chat-v109.minimized .sf-team-chat-form-v109{display:none}
+.sf-team-chat-head-v109{
+  min-width:0;
+  display:grid;
+  grid-template-columns:34px minmax(0,1fr) auto;
+  gap:8px;
+  align-items:center;
+  padding:8px 8px 8px 10px;
+  border-bottom:1px solid rgba(190,155,111,.16);
+  background:#1b1713;
+}
+.sf-team-chat-head-v109>div:nth-child(2){min-width:0;display:grid;gap:2px}
+.sf-team-chat-head-v109 strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.76rem}
+.sf-team-chat-head-v109 small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#756d65;font-size:.54rem}
+.sf-team-chat-head-v109 small.online{color:#79bd8b}
+.sf-team-chat-head-actions-v109{display:flex;gap:2px}
+.sf-team-chat-head-actions-v109 button{
+  width:28px;
+  height:28px;
+  display:grid;
+  place-items:center;
+  border:0;
+  border-radius:7px;
+  background:transparent;
+  color:#8c8278;
+  cursor:pointer;
+  font-size:1rem;
+}
+.sf-team-chat-head-actions-v109 button:hover{background:#28211a;color:#eee}
+.sf-team-chat-body-v109{
+  min-height:0;
+  display:flex;
+  flex-direction:column;
+  gap:7px;
+  overflow-y:auto;
+  padding:12px 10px;
+  background:linear-gradient(180deg,#110f0d,#15120f);
+}
+.sf-team-message-v109{max-width:82%;display:flex;flex-direction:column;gap:2px}
+.sf-team-message-v109.mine{align-self:flex-end;align-items:flex-end}
+.sf-team-message-v109.theirs{align-self:flex-start;align-items:flex-start}
+.sf-team-message-v109>div{
+  padding:8px 10px;
+  border-radius:12px;
+  background:#28221c;
+  color:#d8cec2;
+  font-size:.73rem;
+  line-height:1.42;
+  white-space:pre-wrap;
+  overflow-wrap:anywhere;
+}
+.sf-team-message-v109.mine>div{background:#d7bea0;color:#21170f;border-bottom-right-radius:4px}
+.sf-team-message-v109.theirs>div{border-bottom-left-radius:4px}
+.sf-team-message-v109 small{padding:0 3px;color:#625b54;font-size:.46rem}
+.sf-team-chat-empty-v109{margin:auto;color:#6f6760;text-align:center;font-size:.63rem;line-height:1.45}
+.sf-team-chat-form-v109{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) 34px;
+  gap:6px;
+  align-items:end;
+  padding:8px;
+  border-top:1px solid rgba(190,155,111,.16);
+  background:#1a1612;
+}
+.sf-team-chat-form-v109 textarea{
+  width:100%;
+  min-height:34px;
+  max-height:90px;
+  resize:none;
+  border:1px solid rgba(190,155,111,.2);
+  border-radius:9px;
+  outline:0;
+  padding:8px 9px;
+  background:#100e0c;
+  color:#e8ded3;
+  font:inherit;
+  font-size:.7rem;
+  line-height:1.35;
+}
+.sf-team-chat-form-v109 button{
+  width:34px;
+  height:34px;
+  border:0;
+  border-radius:9px;
+  background:#d7bea0;
+  color:#21170f;
+  cursor:pointer;
+  font-weight:900;
+}
+.sf-team-chat-form-v109 button:disabled{opacity:.45;cursor:wait}
+
+body.sf-team-rail-active .chat-main{padding-right:48px}
+
+@media(max-width:760px){
+  .sf-online-rail-v109{display:none!important}
+  .sf-team-chat-windows-v109{right:6px;max-width:calc(100vw - 12px);bottom:5px;gap:7px}
+  .sf-team-chat-v109{width:min(300px,calc(100vw - 24px));flex-basis:min(300px,calc(100vw - 24px));height:380px}
+  body.sf-team-rail-active .chat-main{padding-right:0}
+}
+
+@media(prefers-reduced-motion:reduce){
+  .sf-team-chat-v109,.sf-team-avatar-v109{transition:none!important}
+}
