@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 const page = fs.readFileSync('artist-listening.php','utf8');
 const workspace = fs.readFileSync('artist-listening-workspace.js','utf8');
 const capture = fs.readFileSync('artist-listening.js','utf8');
+const naming = fs.readFileSync('artist-listening-naming.js','utf8');
 const ai = fs.readFileSync('artist-listening-ai.js','utf8');
 const transcript = fs.readFileSync('artist-listening-transcript.js','utf8');
 const realtime = fs.readFileSync('artist-listening-realtime.js','utf8');
@@ -29,6 +30,15 @@ assert.match(page,/artist-listening-ai\.js\?v=c18c3dc8/,'AI controller must use 
 assert.doesNotMatch(page,/artist-listening[^"']*-v\d+[^"']*\.(?:js|css)/,'Artist Listening page must not load numbered frontend layers');
 assert.equal((page.match(/artist-listening-ai\.js\?/g) || []).length, 1, 'AI controller must load exactly once');
 assert.equal((page.match(/artist-listening\.css\?/g) || []).length, 1, 'one canonical stylesheet must load exactly once');
+
+/* New transcription creation has one owner: the workspace. Naming only renames. */
+assert.match(workspace,/\[data-listening-workspace-new\]'\)\.addEventListener\('click', \(\) => void createDocument\(\)\)/);
+assert.match(workspace,/\[data-listening-workspace-create\]'\)\.addEventListener\('click', \(\) => void createDocument\(\)\)/);
+assert.match(workspace,/api174\('create_draft'/);
+assert.doesNotMatch(naming,/createNamedTranscript|create_draft|endpoint174|sfTranscriptionNamingBusy/);
+assert.doesNotMatch(naming,/data-listening-workspace-new|data-listening-workspace-create/);
+assert.doesNotMatch(naming,/stopImmediatePropagation/);
+assert.match(naming,/data-v196-rename/);
 
 /* Header ownership: EXIT + Save + AI Summary. Copy/Download do not exist. */
 assert.match(workspace,/data-listening-workspace-exit/);
