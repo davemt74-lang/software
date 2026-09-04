@@ -1,0 +1,42 @@
+name: Build Clean Deploy
+
+on:
+  push:
+    branches:
+      - deploy/package-20260904
+    paths:
+      - .github/workflows/build-clean-deploy.yml
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@v4
+
+      - name: Build runtime package
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p deploy
+          rsync -a ./ deploy/ \
+            --exclude='.git/' \
+            --exclude='.github/' \
+            --exclude='tests/' \
+            --exclude='tools/' \
+            --exclude='RECOVERY_RUNTIME_BASELINE.md' \
+            --exclude='recovery-inventory.generated.md' \
+            --exclude='recovery-inventory.generated.json' \
+            --exclude='admin/force-cache-repair-20260825.php'
+          printf '%s\n' 'Source commit: b76f0bc4ab29722dedd9ffece426ac7cc0055d68' > deploy/DEPLOY_SOURCE.txt
+
+      - name: Upload clean deploy ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: software-deploy-b76f0bc4
+          path: deploy/
+          if-no-files-found: error
+          compression-level: 6
