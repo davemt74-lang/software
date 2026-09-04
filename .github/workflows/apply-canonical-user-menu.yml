@@ -1,0 +1,38 @@
+name: Apply Canonical User Menu
+
+on:
+  push:
+    branches:
+      - feature/canonical-user-menu-20260904
+    paths:
+      - .github/workflows/apply-canonical-user-menu.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Apply canonical navigation patch
+        run: python3 tools/apply_member_navigation.py
+      - name: Commit generated application changes
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add includes/bootstrap.php includes/member-navigation.php includes/header.php admin/_header.php account.php chat.php artist-listening.php knowledge.php tests/member-navigation-contract.mjs tools/run_recovery_baseline.py
+          git diff --cached --check
+          if git diff --cached --quiet; then
+            echo "No application changes to commit."
+            exit 0
+          fi
+          git commit -m "Consolidate canonical user navigation"
+          git push
