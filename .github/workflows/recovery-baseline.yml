@@ -1,0 +1,39 @@
+name: Recovery Baseline
+
+on:
+  push:
+    branches:
+      - main
+      - recovery/**
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  baseline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          coverage: none
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Runtime versions
+        run: |
+          php --version
+          node --version
+          python3 --version
+
+      - name: Run recovered baseline suite
+        run: python3 tools/run_recovery_baseline.py
