@@ -10,6 +10,9 @@ if (!$pdo) {
     redirect(url('/admin/index.php'));
 }
 
+$maxImageBytes = (int)($config['uploads']['max_image_bytes'] ?? 5242880);
+$maxImageMegabytes = max(1, (int)round($maxImageBytes / 1048576));
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!verify_csrf()) {
         flash('error', 'Session expired. Try again.');
@@ -34,12 +37,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $newLogoPath = null;
 
     try {
-        global $config;
         $newLogoPath = upload_file(
             $_FILES['site_logo'] ?? [],
             ['jpg', 'jpeg', 'png', 'webp'],
             ['image/jpeg', 'image/png', 'image/webp'],
-            (int)($config['uploads']['max_image_bytes'] ?? 5242880),
+            $maxImageBytes,
             'branding'
         );
 
@@ -100,7 +102,7 @@ require __DIR__ . '/_header.php';
       <div>
         <span class="admin-site-settings-kicker">Brand asset</span>
         <h3 id="site-logo-upload-title">System logo</h3>
-        <p class="muted">Transparent PNG or WEBP works best. JPG is also supported. Maximum file size: 5 MB.</p>
+        <p class="muted">Transparent PNG or WEBP works best. JPG is also supported. Maximum file size: <?= (int)$maxImageMegabytes ?> MB.</p>
       </div>
 
       <form method="post" action="" enctype="multipart/form-data" class="admin-site-logo-form">
@@ -114,7 +116,7 @@ require __DIR__ . '/_header.php';
       </form>
 
       <?php if ($logoUrl !== ''): ?>
-        <form method="post" action="" class="admin-site-remove-logo-form" onsubmit="return confirm('Remove the current system logo?');">
+        <form method="post" action="" class="admin-site-remove-logo-form">
           <?= csrf_field() ?>
           <input type="hidden" name="action" value="remove_logo">
           <button class="btn" type="submit">Remove Logo</button>
