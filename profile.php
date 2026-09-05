@@ -160,6 +160,6 @@ profileAgentLauncher?.addEventListener('click',()=>setProfileAgentOpen(profileAg
 profileAgentClose?.addEventListener('click',()=>setProfileAgentOpen(false));
 document.addEventListener('keydown',event=>{if(event.key==='Escape'&&profileAgentShell&&!profileAgentShell.hidden)setProfileAgentOpen(false);});
 </script>
-<?php if($agent&&!$preview): ?><script src="<?= e(url('/profile-agent.js?v=profile-agent-attention-20260903')) ?>"></script><?php endif; ?>
+<?php if($agent&&!$preview): ?><script src="<?= e(url('/profile-agent.js?v=profile-activity-20260905')) ?>"></script><?php endif; ?>
 </body>
 </html>

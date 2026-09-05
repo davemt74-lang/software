@@ -18,6 +18,7 @@ NODE_TESTS = [
     'tests/user-agent-data-policy-contract.mjs',
     'tests/user-agent-shared-knowledge-hardening-contract.mjs',
     'tests/profile-agent-attention-contract.mjs',
+    'tests/profile-activity-chat-contract.mjs',
     'tests/conversation-consolidation-v131.mjs',
     'tests/chat-player-responsive-v205.mjs',
     'tests/stem-transport-v200.mjs',

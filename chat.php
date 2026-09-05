@@ -10,7 +10,8 @@ $recordingUiBuild = 'chat-recording-results-v206-20260901';
 $recordingPersistenceBuild = 'chat-recordings-v242-20260902';
 $agentThemeBuild = 'agent-theme-v242-20260902';
 $agentOverlayBuild = 'agent-updates-hidden-v206-20260901';
-$agentIdentityBuild = 'live-wiring-20260903-3';
+$agentIdentityBuild = 'profile-activity-20260905';
+$profileActivityBuild = 'profile-activity-20260905';
 $headerUiBuild = 'live-wiring-20260903-3';
 
 if (!headers_sent()) {
@@ -147,6 +148,8 @@ $agentChatBootstrap = '<script data-user-agent-chat-v236>(function(){"use strict
     . ',endpoint:' . json_encode(url('/api/user-agent-system-v236.php'), JSON_UNESCAPED_SLASHES)
     . ',chatBaseUrl:' . json_encode(url('/chat.php'), JSON_UNESCAPED_SLASHES)
     . ',accountUrl:' . json_encode(url('/account.php#agents-data'), JSON_UNESCAPED_SLASHES)
+    . ',profileAgentEndpoint:' . json_encode(url('/api/profile-agent.php'), JSON_UNESCAPED_SLASHES)
+    . ',profileAgentUrl:' . json_encode(url('/profile-agent.php'), JSON_UNESCAPED_SLASHES)
     . ',csrf:' . json_encode(csrf_token(), JSON_UNESCAPED_SLASHES)
     . '};})();</script>';
 
@@ -264,6 +267,11 @@ $agentIdentityRuntime = $agentFeatureReady
         . '<script data-chat-agent-identity-v236 src="' . e(url('/chat-agent-identity-v236.js?v=' . $agentIdentityBuild)) . '"></script>'
     : '';
 
+$profileActivityRuntime = $agentFeatureReady && $pdoForAgent && profile_agent_schema_ready($pdoForAgent)
+    ? '<link rel="stylesheet" data-profile-activity-chat href="' . e(url('/profile-activity-chat.css?v=' . $profileActivityBuild)) . '">'
+        . '<script data-profile-activity-chat src="' . e(url('/profile-activity-chat.js?v=' . $profileActivityBuild)) . '"></script>'
+    : '';
+
 $runtime = $headerUiRuntime
          . $themeRuntime
          . $hardening
@@ -275,6 +283,7 @@ $runtime = $headerUiRuntime
          . '<script data-agent-context-v142 src="' . e(url('/agent-context-v131.js?v=' . $controlBuild)) . '"></script>'
          . '<script data-chat-voice data-chat-echo-guard="canonical" data-chat-streaming="enabled" data-chat-processed-input="enabled" data-chat-barge="speech-recognition" data-chat-turn-pause="1800" data-chat-lifecycle="canonical" src="' . e(url('/chat-voice.js?v=' . $voiceCacheBuild)) . '"></script>'
          . $agentIdentityRuntime
+         . $profileActivityRuntime
          . '<script data-team-chat-admin-v109 src="' . e(url('/team-chat-admin-v109.js?v=mobile-rail-v115-20260825')) . '"></script>'
          . $railLayout
          . '<span data-stonefellow-build="' . e($runtimeBuild) . '" data-chat-controls-build="' . e($controlBuild) . '" data-premium-voice-build="' . e($premiumVoiceBuild) . '" data-chat-voice-build="' . e($voiceAssetBuild) . '" data-chat-voice-feature-build="' . e($voiceCacheBuild) . '" data-recording-ui-build="' . e($recordingUiBuild) . '" data-recording-persistence-build="' . e($recordingPersistenceBuild) . '" data-agent-theme-build="' . e($agentThemeBuild) . '" data-agent-overlay-build="' . e($agentOverlayBuild) . '" data-user-agent-build="' . e($agentIdentityBuild) . '" hidden></span>';
