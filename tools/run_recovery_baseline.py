@@ -53,6 +53,7 @@ NODE_TESTS = [
     'tests/site-settings-branding-contract.mjs',
     'tests/member-sidebar-shell-contract.mjs',
     'tests/member-header-contract.mjs',
+    'tests/transcription-agent-knowledge-integration.mjs',
 ]
 
 # These tests contain useful source assertions but also directly read the lost

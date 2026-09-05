@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 require dirname(__DIR__) . '/includes/bootstrap.php';
+require_once dirname(__DIR__) . '/includes/profile-agent-transcription-context.php';
 header('Content-Type: application/json; charset=UTF-8');
 header('Cache-Control: no-store');
 
@@ -73,7 +74,10 @@ if($action==='message'){
     $cid=max(0,(int)($input['conversation_id']??0));$conversation=$cid?profile_agent_conversation_get($pdo,$cid,$owner,(int)$session['id']):null;if(!$conversation)$conversation=profile_agent_conversation_create($pdo,$profile,$agent,$session);$cid=(int)$conversation['id'];profile_agent_rate_check($pdo,$cid);
     $pdo->prepare("INSERT INTO profile_agent_messages (conversation_id,sender_type,sender_user_id,message) VALUES (?,'visitor',?,?)")->execute([$cid,(int)($visitor['id']??0)?:null,$query]);$pdo->prepare('UPDATE profile_visit_sessions SET last_message_at=NOW() WHERE id=?')->execute([(int)$session['id']]);
     $history=[];foreach(profile_agent_messages($pdo,$cid,14) as $m){if($m['sender_type']==='visitor')$history[]=['role'=>'user','message'=>(string)$m['message']];elseif(in_array($m['sender_type'],['agent','owner'],true))$history[]=['role'=>'assistant','message'=>(string)$m['message']];}
-    $context=profile_agent_context($pdo,$profile,$agent,$visitor,$query);$substantive=array_values(array_filter($context,static fn(array $c):bool=>!in_array((string)$c['source'],['profile:identity','profile:rules'],true)));$greeting=(bool)preg_match('/^(?:hi|hello|hey|good\s+(?:morning|afternoon|evening))[!.\s]*$/i',$query);
+    $context=profile_agent_context($pdo,$profile,$agent,$visitor,$query);
+    foreach(profile_agent_transcript_brain_context_v255($pdo,$ownerUser,$agent,$visitor,$query,$cid) as $item)$context[]=$item;
+    if(count($context)>24)$context=array_slice($context,0,24);
+    $substantive=array_values(array_filter($context,static fn(array $c):bool=>!in_array((string)$c['source'],['profile:identity','profile:rules'],true)));$greeting=(bool)preg_match('/^(?:hi|hello|hey|good\s+(?:morning|afternoon|evening))[!.\s]*$/i',$query);
     if(!$substantive&&!$greeting){profile_agent_needs_owner($pdo,$profile,$agent,$session,$conversation,$query);$answer='I don’t have approved information to answer that accurately yet. I’ve asked '.(string)$profile['display_name'].' for input rather than guessing.';}
     elseif($greeting){$answer=trim((string)($profile['profile_agent_greeting']??''))?:'Hi — I’m '.(string)$agent['display_name'].', '.(string)$profile['display_name'].'’s AI representative. What would you like to know?';}
     else{$answer=chat_remote_answer($query,$history,$context,$ownerUser);if($answer===null)$answer=chat_local_answer($query,$context);if(trim((string)$answer)===''){profile_agent_needs_owner($pdo,$profile,$agent,$session,$conversation,$query);$answer='I don’t have enough approved information to answer that accurately.';}}

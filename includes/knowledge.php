@@ -143,6 +143,9 @@ function personal_knowledge_store(
     if (!personal_knowledge_available($user)) {
         throw new RuntimeException('Personal Knowledge Base storage is unavailable for this account.');
     }
+    if (!personal_capability_has_v242('personal_knowledge.manage', $user)) {
+        throw new RuntimeException('Personal Knowledge management is unavailable for this account.');
+    }
 
     $pdo = db();
     $userId = max(0, (int)($user['id'] ?? 0));
@@ -187,6 +190,9 @@ function personal_knowledge_store(
 
     if ($knowledgeId < 1) throw new RuntimeException('Could not save personal knowledge.');
     reindex_knowledge_item($knowledgeId, $content);
+    if (function_exists('shared_knowledge_index_sync_item_v236')) {
+        shared_knowledge_index_sync_item_v236($pdo, $knowledgeId);
+    }
     return $knowledgeId;
 }
 
