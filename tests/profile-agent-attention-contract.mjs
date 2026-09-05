@@ -14,6 +14,7 @@ const agentSettings=read('account-agent-settings-v236.js');
 const userAgents=read('includes/user-agent-system-v236.php');
 const memberNav=read('includes/member-navigation.php');
 const sidebar=read('includes/workspace-sidebar-v82.php');
+const mainSidebar=read('includes/main-sidebar.php');
 const legacy=read('artist-profile.php');
 const ht=read('.htaccess');
 const identity=read('chat-agent-identity-v236.js');
@@ -87,8 +88,9 @@ assert.doesNotMatch(loader,/profile-dashboard/,'My Account no longer injects the
 assert.doesNotMatch(agentSettings,/name="is_profile_agent"/,'My Agents no longer exposes a competing public Profile Agent checkbox');
 assert.match(userAgents,/array_key_exists\('is_profile_agent',\$input\)/,'ordinary agent edits preserve portal-managed Profile Agent designation');
 assert.match(memberNav,/personal_capability_has_v242\('profile_agent\.access',\$user\)[\s\S]*Profile Agent[\s\S]*url\('\/profile-agent\.php'\)/,'avatar navigation exposes Profile Agent only through its personal capability gate');
-assert.match(sidebar,/url\('\/profile-agent\.php'\)/,'workspace sidebar routes to the standalone Profile Agent portal');
-assert.doesNotMatch(sidebar,/account\.php#profile-agent/,'workspace sidebar no longer points at the removed account section');
+assert.match(sidebar,/require __DIR__ \. '\/main-sidebar\.php';/,'workspace sidebar must delegate navigation ownership to the canonical member sidebar');
+assert.match(mainSidebar,/url\('\/profile-agent\.php'\)/,'canonical member sidebar routes to the standalone Profile Agent portal');
+assert.doesNotMatch(mainSidebar,/account\.php#profile-agent/,'canonical member sidebar no longer points at the removed account section');
 assert.match(page,/url\('\/profile-agent\.php'\)/,'public profile owner navigation returns to the Profile Agent portal');
 assert.doesNotMatch(page,/on Stonefellow/,'public profile metadata does not hardcode the system name');
 
