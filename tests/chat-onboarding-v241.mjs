@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -64,6 +65,8 @@ assert.match(domain, /account:onboarding-state/);
 assert.match(domain, /profile agent/i);
 assert.match(domain, /voice\\s\+clone/);
 assert.match(domain, /setup status/);
+assert.match(domain, /what\\s\+setup\\s\+/);
+assert.match(domain, /public\|visible\|private/);
 
 // Both text and streaming Chat already enter release_v105_chat_tool before any
 // model generation. That shared synchronous gate must delegate setup/capability
@@ -72,10 +75,39 @@ const capabilityGate = releaseChat.indexOf('chat_onboarding_v241_tool');
 const releaseGate = releaseChat.indexOf('release_v105_schema_ready');
 assert.ok(capabilityGate >= 0 && releaseGate > capabilityGate, 'Capability state must short-circuit before release work');
 assert.match(releaseChat, /if \(!empty\(\$accountState\['handled'\]\)\) return \$accountState/);
+assert.match(releaseChat, /function chat_account_state_intent_v241/);
 assert.match(textChat, /release_v105_chat_tool/);
 assert.match(voiceChat, /release_v105_chat_tool/);
 assert.match(textChat, /empty\(\$toolResult\['handled'\]\)[\s\S]*chat_generate_answer_policy_v236/);
 assert.match(voiceChat, /if\(!empty\(\$toolResult\['handled'\]\)\)[\s\S]*else\{[\s\S]*ai_v121_stream_chat_response/);
+
+// Execute the real PHP intent guard, rather than only checking its source.
+// Personal saved-state questions must short-circuit; explanatory questions must not.
+const intentProbe = spawnSync('php', ['-r', String.raw`
+require 'includes/release-chat-v105.php';
+$cases = [
+    ['is my Profile Agent enabled?', true],
+    ['do I have a voice clone?', true],
+    ['what setup am I missing?', true],
+    ['what do I still need to set up?', true],
+    ['is my profile public?', true],
+    ['is my profile private?', true],
+    ['is my Profile Agent on?', true],
+    ['what is a Profile Agent?', false],
+    ['how does a voice clone work on mobile?', false],
+    ['explain social chat', false],
+];
+foreach ($cases as [$query, $expected]) {
+    $actual = chat_account_state_intent_v241($query);
+    if ($actual !== $expected) {
+        fwrite(STDERR, $query . ' expected ' . ($expected ? 'true' : 'false') . ' got ' . ($actual ? 'true' : 'false') . PHP_EOL);
+        exit(1);
+    }
+}
+echo "ACCOUNT_STATE_INTENT_V241=PASS\n";
+`], {cwd:root, encoding:'utf8'});
+assert.equal(intentProbe.status, 0, intentProbe.stderr || 'Account-state intent routing probe failed');
+assert.match(intentProbe.stdout, /ACCOUNT_STATE_INTENT_V241=PASS/);
 
 for (const deterministic of [api, domain]) {
   assert.equal(deterministic.includes('chat_remote_answer'), false, 'Deterministic onboarding/state code must not invoke remote LLM chat');
