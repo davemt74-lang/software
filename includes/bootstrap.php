@@ -33,6 +33,7 @@ if (!headers_sent()) header('X-Stonefellow-Production: ' . STONEFELLOW_PRODUCTIO
 require_once __DIR__ . '/permissions.php';
 require_once __DIR__ . '/chat-settings-v237.php';
 require_once __DIR__ . '/permissions-v105.php';
+require_once __DIR__ . '/personal-capabilities-v242.php';
 require_once __DIR__ . '/user-agent-system-v236.php';
 require_once __DIR__ . '/user-data-usage-v236.php';
 require_once __DIR__ . '/midi-v217.php';
