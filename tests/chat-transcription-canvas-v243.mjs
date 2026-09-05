@@ -20,7 +20,9 @@ assert.ok(listening.includes("header('Content-Range: bytes '"),'partial recordin
 assert.ok(listening.includes("header('Content-Type: ' . (string)$recording['mime_type'])"),'recording stream must preserve the stored browser audio MIME');
 assert.ok(listening.includes("fopen($path, 'rb')"),'recording stream must read the retained private audio file');
 
-assert.ok(chat.includes("$transcriptionCanvasBuild = 'chat-transcription-canvas-v243-overlay-20260905'"),'Chat must own the current cache-busted transcription canvas build');
+assert.ok(chat.includes("$transcriptionCanvasBuild = 'chat-transcription-canvas-v243-layout-20260905'"),'Chat must own the current cache-busted transcription canvas build');
+assert.ok(chat.includes("$chatProfileMenuExcluded = ['account'=>true, 'profile_agent'=>true]"),'Chat account dropdown must retain the canonical View Profile item');
+assert.ok(!chat.includes("$chatProfileMenuExcluded = ['profile'=>true"),'Chat must not suppress View Profile');
 assert.ok(chat.includes('data-chat-transcription-canvas'),'Chat must load the canonical transcription canvas runtime');
 assert.ok(chat.includes('/chat-transcription-canvas.js?v='),'Chat must load the transcription canvas JS under Artist Listening access');
 assert.ok(chat.includes('/chat-transcription-canvas.css?v='),'Chat must load the transcription canvas stylesheet');
@@ -40,5 +42,8 @@ assert.ok(css.includes('background:#fff'),'transcription canvas must use the can
 assert.ok(!css.includes('#171411'),'transcription canvas must not reintroduce the recovered brown player surface');
 assert.match(css,/\.transcription-canvas-backdrop\{[^}]*z-index:20200/,'recording backdrop must sit above the app header layer');
 assert.match(css,/\.chat-transcription-canvas-v243\{[^}]*z-index:20210/,'recording drawer must sit above its backdrop');
-assert.ok(css.includes('.chat-transcription-canvas-v243{width:100vw;height:100vh;height:100dvh}'),'mobile recording drawer must occupy the dynamic viewport height');
+assert.match(css,/\.chat-transcription-canvas-v243\{[^}]*width:min\(760px,96vw\)/,'desktop transcription drawer must provide a wide recording workspace');
+assert.ok(css.includes('audio[data-transcription-audio]{display:block!important;width:100%!important;inline-size:100%!important;max-width:100%!important;min-width:320px'),'retained audio player must not collapse to a tiny intrinsic width');
+assert.ok(css.includes('.transcription-canvas-current{width:100%;min-width:0;display:grid;grid-template-columns:minmax(0,1fr)'),'recording content must own a full-width non-collapsing grid track');
+assert.ok(css.includes('.chat-transcription-canvas-v243{width:100vw;height:100vh;height:100dvh;border-left:0}'),'mobile recording drawer must occupy the dynamic viewport height');
 console.log('CHAT_TRANSCRIPTION_CANVAS_V243=PASS');
