@@ -9,6 +9,7 @@ const chat=read('chat.php');
 const canvas=read('chat-transcription-canvas.js');
 const css=read('chat-transcription-canvas.css');
 
+assert.doesNotThrow(()=>new Function(canvas),'transcription canvas JavaScript must parse as executable browser code');
 assert.ok(canonical.includes("require __DIR__ . '/artist-listening-v172.php'"),'canonical Artist Listening route must delegate to the surviving v172 implementation');
 assert.ok(versioned.includes("if ($action === 'recording')"),'versioned Artist Listening API must own recording delivery');
 assert.ok(versioned.includes('artist_listening_v197_stream_recording'),'recording delivery must call the private recording stream owner');
