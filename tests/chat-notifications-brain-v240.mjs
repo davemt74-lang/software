@@ -53,6 +53,8 @@ assert.match(brain, /agent_chat_archive/);
 assert.match(brain, /agent_memory_items/);
 
 assert.match(notifications, /function notification_requires_attention\(/, 'canonical notification domain classifies actionable attention');
+assert.match(notifications, /\$profileAgentAttention = \[[\s\S]*?'profile_view'[\s\S]*?'profile_conversation_started'/, 'Profile Agent views and conversation starts must be promoted into Agent Chat');
+assert.doesNotMatch(notifications, /\$informational = \[[\s\S]{0,220}'profile_view'/, 'Profile views must not be suppressed as routine informational notifications');
 assert.match(notifications, /function notification_attention_message\(/, 'canonical notification domain builds the Agent Chat attention turn');
 assert.match(notifications, /What do you want to do\?/, 'action-required notifications ask the user what to do next');
 assert.match(api, /action === 'present_attention'/, 'Activity Center persists actionable notifications into Agent Chat');
