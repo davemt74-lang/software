@@ -141,15 +141,15 @@ function contacts_stage_label(string $stage): string
                 </span>
                 <div class="contacts-person-copy">
                   <strong><?= e($label) ?></strong>
-                  <small><?= e($contactRef !== '' ? $contactRef : (!empty($contact['signed_in']) ? 'Signed-in member' : 'Guest')) ?><?php if ($relationship !== '' && $relationship !== 'none'): ?> · <?= e(str_replace('_',' ',$relationship)) ?><?php endif; ?></small>
+                  <small><?= e($contactRef !== '' ? $contactRef : (!empty($contact['signed_in']) ? 'Known member' : 'Guest')) ?><?php if ($relationship !== '' && $relationship !== 'none'): ?> · <?= e(str_replace('_',' ',$relationship)) ?><?php endif; ?></small>
                 </div>
               </div>
-              <div class="contacts-cell"><span class="contacts-stage <?= e($stage) ?>"><?= e(contacts_stage_label($stage)) ?></span></div>
-              <div class="contacts-cell"><strong><?= (int)($contact['visit_count'] ?? 0) ?></strong><small><?= (int)($contact['page_view_count'] ?? 0) ?> page views</small></div>
-              <div class="contacts-cell"><strong><?= (int)($contact['conversation_count'] ?? 0) ?></strong></div>
-              <div class="contacts-cell"><strong><?= (int)($contact['visitor_message_count'] ?? 0) ?></strong></div>
-              <div class="contacts-cell"><?= e(contacts_date_label((string)($contact['first_seen_at'] ?? ''))) ?></div>
-              <div class="contacts-cell"><?= e(contacts_date_label($lastActivity)) ?></div>
+              <div class="contacts-cell" data-label="Stage"><span class="contacts-stage <?= e($stage) ?>"><?= e(contacts_stage_label($stage)) ?></span></div>
+              <div class="contacts-cell" data-label="Visits"><strong><?= (int)($contact['visit_count'] ?? 0) ?></strong><small><?= (int)($contact['page_view_count'] ?? 0) ?> page views</small></div>
+              <div class="contacts-cell" data-label="Chats"><strong><?= (int)($contact['conversation_count'] ?? 0) ?></strong></div>
+              <div class="contacts-cell" data-label="Messages"><strong><?= (int)($contact['visitor_message_count'] ?? 0) ?></strong></div>
+              <div class="contacts-cell" data-label="First seen"><?= e(contacts_date_label((string)($contact['first_seen_at'] ?? ''))) ?></div>
+              <div class="contacts-cell" data-label="Last activity"><?= e(contacts_date_label($lastActivity)) ?></div>
             </article>
             <?php endforeach; ?>
           </div>
