@@ -45,9 +45,9 @@ function notification_recent(?array $user = null, int $limit = 8): array
 }
 
 /**
- * Deterministic attention gate for Agent Chat. Informational notifications stay
- * in Activity Center. Only notifications that reasonably require a user choice,
- * reply, approval, review or other action are promoted into the chat canvas.
+ * Deterministic attention gate for Agent Chat. Routine informational
+ * notifications stay in Activity Center, while user-action items and Profile
+ * Agent customer-service activity are promoted into the chat canvas.
  */
 function notification_requires_attention(array $notification): bool
 {
@@ -61,9 +61,17 @@ function notification_requires_attention(array $notification): bool
     $body = strtolower(trim((string)($notification['body'] ?? '')));
     $text = trim($title . ' ' . $body);
 
-    $informational = [
+    // Profile Agent activity is intentionally conversational. A new profile
+    // visitor or a visitor starting a Profile Agent conversation should reach
+    // the owner's Agent Chat immediately so the agent can speak the update,
+    // ask what to do next, and open the temporary response/listening window.
+    $profileAgentAttention = [
         'profile_view',
         'profile_conversation_started',
+    ];
+    if (in_array($type, $profileAgentAttention, true)) return true;
+
+    $informational = [
         'conversation_started',
         'new_track_release',
         'new_album_release',
