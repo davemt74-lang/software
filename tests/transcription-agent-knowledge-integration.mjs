@@ -18,8 +18,8 @@ assert.match(profileRuntime, /user_data_policy_can_use_v236\(\$pdo,\$principal,\
 assert.match(bridge, /memory_type='transcript_analysis'/, 'Profile Agent bridge must not expose the entire Agent Brain');
 assert.doesNotMatch(bridge, /agent_chat_archive|agent_edit_events|agent_tool_history/, 'Profile Agent bridge must not expose private Brain history ledgers');
 assert.match(bridge, /user_data_policy_can_use_v236[\s\S]*?'knowledge'[\s\S]*?\$brainResourceId[\s\S]*?false/, 'Transcript Brain context must use the existing Knowledge Access permission boundary');
-assert.match(bridge, /personal-' \ . sha1\('artist-listening-analysis:' \ . \$sessionId\)/, 'Bridge must recognize the canonical deterministic My Knowledge copy');
-assert.match(bridge, /continue;[\s\S]*?My Knowledge remains the shared/, 'Bridge must avoid duplicate Brain context when approved My Knowledge already owns the same summary');
+assert.ok(bridge.includes("'personal-' . sha1('artist-listening-analysis:' . $sessionId) . '.txt'"), 'Bridge must recognize the canonical deterministic My Knowledge copy');
+assert.ok(bridge.includes("if ($knowledgeId > 0 && user_data_policy_can_use_v236("), 'Bridge must policy-check an existing My Knowledge copy before deduping');
 
 // Public Profile Agent chat must explicitly add only the approved bridge context.
 assert.match(profileApi, /profile-agent-transcription-context\.php/, 'Profile Agent API must load the transcription integration bridge');
