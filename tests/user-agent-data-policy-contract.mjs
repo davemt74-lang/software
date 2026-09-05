@@ -9,6 +9,8 @@ const policy = read('includes/chat-agent-policy-v236.php');
 const settingsApi = read('api/user-agent-system-v236.php');
 const onboardingApi = read('api/chat-onboarding-v241.php');
 const chatApi = read('api/chat-v236.php');
+const chatStream = read('api/chat-stream-v121.php');
+const agentContext = read('agent-context-v131.js');
 const chatPage = read('chat.php');
 const chatIdentity = read('chat-agent-identity-v236.js');
 const account = read('account-agent-settings-v236.js');
@@ -50,6 +52,20 @@ assert.match(chatApi,/chat_v236_scope_sql/,'Chat API has one conversation-scope 
 assert.match(chatApi,/user_agent_id=\?/,'named-agent API conversations are scoped by agent ID');
 assert.match(chatApi,/user_agent_id IS NULL/,'system API conversations cannot leak into named-agent history');
 assert.match(chatApi,/chat_generate_answer_policy_v236\(\$query,\$history,\$user,\$principal,\$agentContext,\$conversationId\)/,'AI retrieval audit receives the active conversation ID');
+
+assert.match(agentContext,/user_agent_id:activeUserAgentId\(\)/,'shared Agent Context carries the selected named agent into voice transport');
+assert.match(agentContext,/STONEFELLOW_AGENT_IDENTITY_V236\?\.agentId/,'Agent Context reads the canonical selected agent identity');
+assert.match(chatStream,/function chat_v121_scope_sql\(/,'voice Chat has the same explicit conversation scope model as text Chat');
+assert.match(chatStream,/user_agent_id=\?/,'voice Chat can require a named-agent conversation');
+assert.match(chatStream,/user_agent_id IS NULL/,'voice Chat keeps system conversations isolated from named agents');
+assert.match(chatStream,/\$rawContext\['user_agent_id'\]/,'voice transport consumes the selected agent from canonical Agent Context');
+assert.match(chatStream,/user_agent_get_v236\(\$pdo,\$userId,\$requested\)/,'voice Chat validates selected agent ownership');
+assert.match(chatStream,/user_agent_principal_v236\(\$user,\$activeAgent\)/,'voice Chat uses the selected agent principal rather than forcing the system principal');
+assert.match(chatStream,/INSERT INTO chat_conversations \(user_id,user_agent_id,artist_workspace_id,title\)/,'new voice conversations persist the selected agent owner');
+assert.match(chatStream,/chat_v121_owned\(\$pdo,\$conversationId,\$userId,\$activeAgent\)/,'existing voice conversations are checked against selected-agent scope');
+assert.match(chatStream,/chat_v121_context\(\$query,\$user,\$principal,\$agentContext,\$conversationId\)/,'voice retrieval receives the selected agent principal');
+assert.match(chatStream,/'agent'=>\['id'=>\$agentScopeId/,'voice assistant messages persist their agent identity');
+assert.match(chatStream,/'agent_name'=\>\(string\)\$principal\['display_name'\]/,'voice responses report the selected agent name');
 
 assert.match(index,/CREATE TABLE IF NOT EXISTS shared_knowledge_index/,'shared knowledge has a dedicated discovery index');
 assert.match(index,/knowledge_id INT UNSIGNED NOT NULL PRIMARY KEY/,'shared index points to the authoritative knowledge item');
