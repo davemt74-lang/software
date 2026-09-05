@@ -31,7 +31,6 @@
   let attentionCursor = 0;
   let attentionTimer = 0;
   let attentionBusy = false;
-  let attentionQueue = Promise.resolve();
   let responseTimer = 0;
   let responseTemporaryVoice = false;
   let responseWindowActive = false;
@@ -239,7 +238,6 @@
   async function refresh(showError = false) {
     try {
       state = await request('state');
-      if (attentionCursor < 1) attentionCursor = Number(state?.attention_cursor || 0);
       render();
     } catch (error) {
       if (showError && drawer) {
@@ -360,7 +358,8 @@
 
   async function showAttentionConversation(conversationId, message) {
     const historyButton = ensureHistoryButton(conversationId);
-    historyButton?.click();
+    if (!historyButton) return false;
+    historyButton.click();
     const deadline = Date.now() + 5000;
     while (Date.now() < deadline) {
       const texts = [...document.querySelectorAll('#chatThread .message.assistant .message-text')];
@@ -387,7 +386,7 @@
   }
 
   function voiceIsOn() {
-    return Boolean(window.STONEFELLOW_CHAT_CONTINUITY?.isVoice?.());
+    return Boolean(continuity().isVoice?.());
   }
 
   function setVoiceMode(enabled) {
@@ -494,20 +493,26 @@
 
   async function presentAttention(item) {
     const notificationId = Number(item?.id || 0);
-    if (notificationId < 1) return;
+    if (notificationId < 1) return true;
     const data = await request('present_attention', {
       notification_id:notificationId,
       conversation_id:activeConversationId(),
       agent_id:activeAgentId()
     });
-    if (!data.handled || data.duplicate) return;
-    await showAttentionConversation(Number(data.conversation_id || 0), String(data.message || ''));
-    queueSpeech(String(data.message || ''));
-    void refresh(false);
-  }
+    if (!data.handled) return true;
 
-  function queueAttention(item) {
-    attentionQueue = attentionQueue.then(() => presentAttention(item)).catch(() => {});
+    const surfaced = await showAttentionConversation(
+      Number(data.conversation_id || 0),
+      String(data.message || '')
+    );
+    if (!surfaced) {
+      throw new Error('Actionable notification could not be surfaced in Agent Chat.');
+    }
+
+    queueSpeech(String(data.message || ''));
+    state = await request('mark_read', {notification_id:notificationId});
+    render();
+    return true;
   }
 
   async function pollAttention(bootstrap = false) {
@@ -516,9 +521,14 @@
     try {
       const data = await request('attention', null, {after_id:bootstrap ? 0 : attentionCursor});
       const items = Array.isArray(data.items) ? data.items : [];
+      const selected = bootstrap && items.length ? [items[items.length - 1]] : items;
+      for (const item of selected) {
+        await presentAttention(item);
+      }
       attentionCursor = Math.max(attentionCursor, Number(data.latest_id || 0));
-      items.forEach(queueAttention);
     } catch (_error) {
+      // Keep the cursor unchanged so a failed canvas presentation is retried
+      // instead of silently consuming an actionable notification.
     } finally {
       attentionBusy = false;
     }
