@@ -9,6 +9,15 @@ function release_v105_chat_intent(string $query): bool
 function release_v105_chat_tool(string $query, array $user, int $conversationId = 0): array
 {
     $empty=['handled'=>false,'answer'=>'','stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[]];
+
+    // This is the first synchronous tool gate used by both text Chat and the
+    // streaming voice path. Resolve deterministic account/capability questions
+    // here before any release work or LLM generation so they cost zero tokens.
+    if (function_exists('chat_onboarding_v241_tool')) {
+        $accountState = chat_onboarding_v241_tool($query, $user);
+        if (!empty($accountState['handled'])) return $accountState;
+    }
+
     if (!release_v105_schema_ready() || !permission_v105_has('release.manage',$user) || !release_v105_chat_intent($query)) return $empty;
 
     if (preg_match('/\b(open|show me|go to)\b.*\b(release|calendar)\b/i',$query)) {
