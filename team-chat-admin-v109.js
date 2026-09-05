@@ -1,9 +1,11 @@
 (() => {
   'use strict';
 
-  const BUILD = 'runtime-console-cleanup-v235-20260902';
+  const BUILD = 'team-chat-bootstrap-v236-20260905';
+  const ASSET_BUILD = 'team-chat-light-v116-20260905';
   const proof = window.STONEFELLOW_TEAM_CHAT_RUNTIME = {
     build: BUILD,
+    assetBuild: ASSET_BUILD,
     bootstrapLoaded: true,
     railCreated: false,
     runtimeLoaded: false,
@@ -65,8 +67,8 @@
     document.querySelectorAll('link[data-team-chat-runtime-style]').forEach(node => node.remove());
     const style = document.createElement('link');
     style.rel = 'stylesheet';
-    style.href = new URL('team-chat-v109.css?v=' + BUILD, assetBase).toString();
-    style.dataset.teamChatRuntimeStyle = BUILD;
+    style.href = new URL('team-chat-v109.css?v=' + ASSET_BUILD, assetBase).toString();
+    style.dataset.teamChatRuntimeStyle = ASSET_BUILD;
     document.head.appendChild(style);
 
     const rail = document.createElement('aside');
@@ -97,9 +99,9 @@
 
     document.querySelectorAll('script[data-team-chat-runtime-script]').forEach(node => node.remove());
     const script = document.createElement('script');
-    script.src = new URL('team-chat-v109.js?v=' + BUILD, assetBase).toString();
+    script.src = new URL('team-chat-v109.js?v=' + ASSET_BUILD, assetBase).toString();
     script.async = false;
-    script.dataset.teamChatRuntimeScript = BUILD;
+    script.dataset.teamChatRuntimeScript = ASSET_BUILD;
     script.addEventListener('load', () => { proof.runtimeLoaded = true; }, { once:true });
     document.body.appendChild(script);
   }
