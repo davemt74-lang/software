@@ -58,11 +58,15 @@ assert.match(contacts, /data-contact-filter="engaged"/, 'CRM dashboard can filte
 assert.match(contacts, /data-contact-filter="member"/, 'CRM dashboard can filter signed-in members');
 assert.match(contacts, /visit_count/, 'CRM table displays true visit-session count');
 assert.match(contacts, /page_view_count/, 'CRM table keeps page-view detail separate');
+assert.match(contacts, /data-label="Stage"[\s\S]*data-label="Visits"[\s\S]*data-label="Last activity"/, 'contact cells provide labels for the mobile card layout');
 assert.match(contacts, /Privacy-first guest continuity/, 'CRM explains the anonymous continuity model');
 assert.match(sidebar, /href="<\?= e\(url\('\/contacts\.php'\)\) \?>"[\s\S]*My Contacts/, 'left workspace sidebar exposes My Contacts');
 assert.match(sidebar, /workspaceSidebarActive==='contacts'/, 'My Contacts has a real active sidebar state');
 assert.match(memberNav, /'contacts','My Contacts',url\('\/contacts\.php'\)/, 'member navigation also exposes My Contacts');
 assert.match(contactsCss, /@media\(max-width:760px\)/, 'My Contacts has a dedicated mobile layout');
 assert.match(contactsCss, /grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/, 'mobile metrics remain compact without vertical sprawl');
+assert.match(contactsCss, /\.contacts-board-head\{display:none\}/, 'mobile layout removes the desktop-only table header');
+assert.match(contactsCss, /\.contacts-row\{min-width:0;grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/, 'mobile contact rows become two-column cards instead of a wide horizontal table');
+assert.match(contactsCss, /\.contacts-cell::before\{content:attr\(data-label\)/, 'mobile cards expose a label for each CRM value');
 
 console.log('PROFILE_VISITOR_CRM_V243_CONTRACT=PASS');
