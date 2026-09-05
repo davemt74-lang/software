@@ -36,12 +36,13 @@ assert.match(account,/Agent and its chat history deleted\./,'deletion success co
 assert.match(settingsApi,/DELETE FROM chat_conversations WHERE user_id=\? AND user_agent_id=\?/,'agent deletion removes scoped conversations before deleting the agent');
 assert.match(settingsApi,/beginTransaction\(\)/,'agent/history deletion is transactional');
 
-assert.match(identity,/requestedAgent!==['"]system['"]/,'explicit system-agent URL bypasses browser fallback selection');
-assert.match(identity,/const active=agents\.filter\(a=>Number\(a\.is_active\)\)/,'browser fallback ignores inactive agents');
-assert.match(identity,/active\.find\(a=>Number\(a\.is_default\)\)\|\|active\[0\]/,'normal Chat browser fallback uses the default active agent or first active renamed agent');
+assert.match(identity,/requestedAgent\s*!==\s*['"]system['"]/,'explicit system-agent URL bypasses browser fallback selection');
+assert.match(identity,/const active\s*=\s*agents\.filter\(agent\s*=>\s*Number\(agent\.is_active\)\)/,'browser fallback ignores inactive agents');
+assert.match(identity,/active\.find\(agent\s*=>\s*Number\(agent\.is_default\)\)\s*\|\|\s*active\[0\]\s*\|\|\s*null/,'normal Chat browser fallback uses the default active agent or first active renamed agent');
 assert.match(chatPage,/\$activeUserAgent = \$preferred \?: \$ownedAgents\[0\]/,'server-rendered normal Chat uses the default active agent or first active renamed agent before first paint');
 assert.match(chatPage,/\$explicitSystemAgent = strcasecmp\(\$requestedAgentRaw, 'system'\) === 0/,'explicit system-agent selection remains server authoritative');
-assert.match(identity,/window\.location\.assign\(agentUrl\(agent\.id\)\)/,'first-time naming opens the new named-agent chat immediately');
-assert.match(identity,/window\.history\.replaceState\(\{\},'',systemUrl\(\)\)/,'Keep System records an explicit system-agent Chat URL');
+assert.match(identity,/window\.location\.assign\(data\.chat_url\s*\|\|\s*agentUrl\(data\.agent_id\)\)/,'completed first-time onboarding opens the saved named-agent chat immediately');
+assert.match(identity,/data-keep-system/,'onboarding keeps the system name only as an explicit agent-name choice, not as a hidden system-chat bypass');
+assert.match(identity,/input\.value\s*=\s*cfg\.systemName\s*\|\|\s*['"]STONEFELLOW['"]/,'system-name shortcut writes the configured system name into the onboarding agent field');
 
 console.log('USER_AGENT_SHARED_KNOWLEDGE_HARDENING_CONTRACT=PASS');
