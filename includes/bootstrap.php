@@ -79,6 +79,7 @@ require_once __DIR__ . '/chat-engine.php';
 require_once __DIR__ . '/chat-agent-policy-v236.php';
 require_once __DIR__ . '/profile-agent.php';
 require_once __DIR__ . '/profile-agent-runtime.php';
+require_once __DIR__ . '/chat-onboarding-v241.php';
 require_once __DIR__ . '/member-navigation.php';
 require_once __DIR__ . '/release-chat-v105.php';
 
