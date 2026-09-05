@@ -8,7 +8,8 @@
   if(!cfg.userId)return;
 
   const userId=Number(cfg.userId||0);
-  const conversationKey=`stonefellow:conversation-id:${userId}`;
+  const selectedUserAgentId=Math.max(0,Number(window.STONEFELLOW_AGENT_IDENTITY_V236?.agentId||0));
+  const conversationKey=`stonefellow:conversation-id:${userId}:${selectedUserAgentId||'system'}`;
   const readStoredConversation=()=>{
     try{return Math.max(0,Number(localStorage.getItem(conversationKey)||0));}
     catch(error){return 0;}
@@ -63,7 +64,7 @@
       return value&&typeof value==='object'?value:null;
     }catch(error){return null;}
   };
-  const activeUserAgentId=()=>Math.max(0,Number(window.STONEFELLOW_AGENT_IDENTITY_V236?.agentId||0));
+  const activeUserAgentId=()=>selectedUserAgentId;
   function ensureEditorAgent(){
     if(String(cfg.surface||'chat')!=='chat'||window.StonefellowEditorAgent||editorAgentLoadRequested)return false;
     if(typeof document.createElement!=='function')return false;
