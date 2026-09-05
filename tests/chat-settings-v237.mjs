@@ -46,6 +46,7 @@ assert.match(settingsUi, /actions\.insertBefore\(notification, profile\)/);
 assert.match(settingsCss, /chat-now-playing-close/);
 assert.match(settingsCss, /chat-settings-modal/);
 
+assert.doesNotThrow(() => new Function(activity), 'Agent Activity / Chat Settings bootstrap must remain valid JavaScript');
 assert.match(activity, /chat-settings-v238-canonical-20260905/);
 assert.match(activity, /window\.STONEFELLOW_CHAT_SETTINGS=/);
 assert.match(activity, /chat-settings-v237\.php/);
