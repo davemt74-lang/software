@@ -19,7 +19,9 @@ jobs:
           ref: feature/transcription-canvas-playback-20260905
           fetch-depth: 0
       - name: Apply focused transcription canvas patch
-        run: python3 tools/patch_transcription_canvas_v243.py
+        run: |
+          python3 tools/patch_transcription_canvas_v243.py
+          python3 tools/fix_transcription_contract_v243.py
       - name: Validate focused contract
         run: |
           php -l api/artist-listening.php
