@@ -1,7 +1,6 @@
 <?php
 declare(strict_types=1);
 
-const STONEFELLOW_PROFILE_NAMESPACE = 'stonefellow';
 const STONEFELLOW_PROFILE_AGENT_BUILD = 'profile-agent-attention-20260903';
 const STONEFELLOW_PROFILE_VIEW_DEDUPE_SECONDS = 1800;
 
@@ -160,12 +159,12 @@ function profile_username_normalize(string $value): string
 function profile_username_valid(string $value): bool
 {
     return (bool)preg_match('/^[a-z0-9](?:[a-z0-9._-]{1,58}[a-z0-9])?$/', $value)
-        && !in_array($value, ['admin','api','account','login','logout','profile','stonefellow','system','support','settings'], true);
+        && !in_array($value, ['admin','api','account','artist-listening','assets','audio','chat','contact','images','index','knowledge','login','logout','notifications','private','profile','register','settings','signup','stonefellow','support','system','tests','tools','upgrade','uploads','video-editor','voice-profile'], true);
 }
 
 function profile_public_url(string $username): string
 {
-    return url('/' . STONEFELLOW_PROFILE_NAMESPACE . '/' . rawurlencode($username));
+    return url('/' . rawurlencode($username));
 }
 
 function profile_user_row(PDO $pdo, int $userId): ?array

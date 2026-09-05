@@ -16,6 +16,7 @@
   let current=null,selectedSampleId=0,recorder=null,stream=null,chunks=[],startedAt=0,timerHandle=0,recordingTimeout=0,audioContext=null,analyser=null,meterHandle=0,previewUrl='';
   const meters=Array.from(el.recorder?.querySelectorAll('.voice-meter i')||[]);
   const clean=(value,limit=220)=>String(value??'').replace(/\s+/g,' ').trim().slice(0,limit);
+  const systemName=clean(cfg.systemName||'System',80);
 
   function showNotice(message,type='success'){
     if(!el.notice)return;
@@ -79,7 +80,7 @@
     el.cloneVerifiedBadge.textContent=cloneReady?(cloneVerified?'Clone ready':'Verification pending'):'Not created';
     if(recognitionReady){el.recognitionDetail.textContent='Recognition ready';el.recognitionCopy.textContent='Your verified provider speaker identity can be used as conversational context within your selected privacy scope.';}
     else if(profile.recognition_consent){el.recognitionDetail.textContent='Consent enabled';el.recognitionCopy.textContent='Recognition privacy is configured. Provider speaker enrollment is still separate and has not been assumed from your clone.';}
-    else{el.recognitionDetail.textContent='Recognition off';el.recognitionCopy.textContent='Enable recognition consent when you want Stonefellow to associate a verified provider voice match with your conversational identity.';}
+    else{el.recognitionDetail.textContent='Recognition off';el.recognitionCopy.textContent=`Enable recognition consent when you want ${systemName} to associate a verified provider voice match with your conversational identity.`;}
     renderSamples(samples);renderSelected();
     el.createClone.disabled=cloneReady||!selectedSampleId||!profile.cloning_consent;
     el.revokeClone.disabled=!cloneReady;
@@ -145,12 +146,12 @@
     try{const data=await jsonRequest('save_privacy',{recognition_consent:recognition,cloning_consent:cloning,recognition_scope:el.scope.value});applyState(data.state);showNotice('Voice privacy settings saved.');}catch(error){applyState(current);showNotice(clean(error?.message||error),'error');}
   })());
   el.createClone?.addEventListener('click',()=>void (async()=>{
-    if(!selectedSampleId)return;const ok=window.confirm('I confirm this selected recording contains my own voice. Create my Stonefellow voice clone and send this sample to ElevenLabs?');if(!ok)return;
+    if(!selectedSampleId)return;const ok=window.confirm(`I confirm this selected recording contains my own voice. Create my ${systemName} voice clone and send this sample to ElevenLabs?`);if(!ok)return;
     el.createClone.disabled=true;el.createClone.textContent='Creating Voice Clone…';
-    try{const data=await jsonRequest('clone_from_sample',{sample_id:selectedSampleId,ownership_confirmed:true});applyState(data.state);showNotice('Your Stonefellow voice clone was created.');}catch(error){showNotice(clean(error?.message||error),'error');applyState(current);}finally{el.createClone.textContent='Create My Voice Clone';}
+    try{const data=await jsonRequest('clone_from_sample',{sample_id:selectedSampleId,ownership_confirmed:true});applyState(data.state);showNotice(`Your ${systemName} voice clone was created.`);}catch(error){showNotice(clean(error?.message||error),'error');applyState(current);}finally{el.createClone.textContent='Create My Voice Clone';}
   })());
   el.revokeClone?.addEventListener('click',()=>void (async()=>{
-    if(!window.confirm('Revoke and permanently delete your Stonefellow voice clone from ElevenLabs? Your private source samples will remain until you delete them.'))return;
+    if(!window.confirm(`Revoke and permanently delete your ${systemName} voice clone from ElevenLabs? Your private source samples will remain until you delete them.`))return;
     el.revokeClone.disabled=true;
     try{const data=await jsonRequest('revoke_clone');applyState(data.state);if(previewUrl){URL.revokeObjectURL(previewUrl);previewUrl='';}el.previewPlayer.pause();el.previewPlayer.hidden=true;showNotice('Voice clone revoked and deleted.');}catch(error){showNotice(clean(error?.message||error),'error');applyState(current);}
   })());

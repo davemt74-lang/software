@@ -1,9 +1,15 @@
 <IfModule mod_rewrite.c>
 RewriteEngine On
 RewriteRule ^private(?:/|$) - [F,L,NC]
-# Stable public profile namespace. The visible system-agent name may change
-# without changing or breaking user profile URLs.
-RewriteRule ^stonefellow/([A-Za-z0-9._-]+)/?$ profile.php?username=$1 [L,QSA,NC]
+
+# Legacy profile URLs permanently collapse to the canonical root username URL.
+RewriteRule ^stonefellow/([A-Za-z0-9._-]+)/?$ /$1 [R=301,L,NE]
+
+# Canonical public profiles live at /username. Existing files and directories
+# always win so application, admin, API, asset and upload paths remain intact.
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^([A-Za-z0-9][A-Za-z0-9._-]{1,58}[A-Za-z0-9])/?$ profile.php?username=$1 [L,QSA,NC]
 </IfModule>
 <FilesMatch "^(?:config\.php|config-example\.php|schema\.sql|upgrade-.*\.sql|\.env.*)$">
 Require all denied

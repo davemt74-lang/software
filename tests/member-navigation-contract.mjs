@@ -11,6 +11,14 @@ const header = read('includes/header.php');
 const knowledge = read('knowledge.php');
 const voiceProfile = read('voice-profile.php');
 const bootstrap = read('includes/bootstrap.php');
+const profileAgent = read('includes/profile-agent.php');
+const profileRuntime = read('includes/profile-agent-runtime.php');
+const profileDashboard = read('profile-dashboard.js');
+const accountAgentCss = read('account-agent-settings-v236.css');
+const profileDashboardCss = read('profile-dashboard.css');
+const accountCss = read('account.css');
+const htaccess = read('.htaccess');
+const voiceProfileJs = read('voice-profile.js');
 
 for (const [label, route] of [
   ['View Profile', 'profile_public_url'],
@@ -54,5 +62,23 @@ assert.ok(voiceProfile.includes('>View Profile</a>'), 'Voice Profile header shou
 assert.ok(knowledge.includes("has_permission('knowledge.manage'"), '/knowledge.php should forward managers to the real knowledge workspace');
 assert.ok(knowledge.includes("/admin/knowledge.php"), '/knowledge.php should resolve to the actual knowledge manager');
 assert.ok(bootstrap.includes("/member-navigation.php"), 'bootstrap should load the canonical member navigation helper');
+assert.ok(profileAgent.includes("return url('/' . rawurlencode($username));"), 'profile URLs should resolve at the domain root');
+assert.ok(!profileAgent.includes('const STONEFELLOW_PROFILE_NAMESPACE'), 'profile URL generation must not retain a Stonefellow namespace declaration');
+assert.ok(profileRuntime.includes("'profile_url_example'=>url('/username')"), 'profile owner state should expose a root URL example');
+assert.ok(htaccess.includes('RewriteRule ^stonefellow/([A-Za-z0-9._-]+)/?$ /$1 [R=301,L,NE]'), 'legacy namespaced profile URLs should redirect to root usernames');
+assert.ok(htaccess.includes('profile.php?username=$1 [L,QSA,NC]'), 'root usernames should rewrite to profile.php');
+assert.ok(account.includes('/account.css?v=account-light-20260904'), 'My Account should load the canonical light workspace theme');
+assert.ok(account.includes('system_agent_name()'), 'My Account should use the configured system name');
+assert.ok(profileDashboard.includes('state.system_agent_name'), 'Profile Agent dashboard should use the configured system name');
+assert.ok(!profileDashboard.includes('stonefellow.com/stonefellow/username'), 'Profile dashboard must not show the legacy namespaced URL');
+for (const css of [accountAgentCss, profileDashboardCss, accountCss]) { assert.ok(!css.includes('background:#11100f'), 'account surfaces must not contain legacy black card backgrounds'); }
+assert.ok(!account.includes('Stonefellow'), 'My Account user-facing copy should use the configured system name');
+assert.ok(profileDashboard.includes('profileDisplayUrl=new URL(profileUrl,window.location.origin).href'), 'profile dashboard should display the full canonical domain/username URL');
+assert.ok(!profileDashboard.includes('Stonefellow-powered'), 'Profile Agent copy should use the configured system name');
+assert.ok(voiceProfile.includes('systemName:<?= json_encode(system_agent_name()) ?>'), 'Voice Profile should expose the configured system name to its runtime');
+assert.ok(!voiceProfileJs.includes('Stonefellow voice clone'), 'Voice Profile runtime must not hardcode the system name');
+assert.ok(voiceProfileJs.includes('`Your ${systemName} voice clone was created.`'), 'Voice Profile dynamic system name must use template interpolation');
+assert.ok(!voiceProfileJs.includes("'Your ${systemName} voice clone was created.'"), 'Voice Profile must not render a literal ${systemName} token');
+assert.ok(accountCss.includes('#agent-brain .agent-brain-tool-grid>a'), 'Agent Brain tool cards should be explicitly covered by the light account theme');
 
 console.log('MEMBER_NAVIGATION_CONTRACT=PASS');

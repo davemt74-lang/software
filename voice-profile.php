@@ -26,7 +26,7 @@ $asset = 'studio-voice-profile-ui-20260903';
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="theme-color" content="#0d0d0d">
-<title>Stonefellow | Voice Profile</title>
+<title><?= e(system_agent_name()) ?> | Voice Profile</title>
 <link rel="stylesheet" href="<?= e(url('/chat.css?v=82')) ?>">
 <link rel="stylesheet" href="<?= e(url('/voice-profile.css?v='.$asset)) ?>">
 </head>
@@ -101,7 +101,7 @@ $asset = 'studio-voice-profile-ui-20260903';
 
               <div class="voice-prompt-box">
                 <small>Suggested reading</small>
-                <p>“I’m creating my Stonefellow voice profile. This recording contains my natural speaking voice, pace, tone and pronunciation.”</p>
+                <p>“I’m creating my <?= e(system_agent_name()) ?> voice profile. This recording contains my natural speaking voice, pace, tone and pronunciation.”</p>
               </div>
             </section>
 
@@ -120,7 +120,7 @@ $asset = 'studio-voice-profile-ui-20260903';
                 <div><small>03 · Voice Clone</small><h2>Create & preview your clone</h2></div>
                 <span id="cloneVerifiedBadge">Not created</span>
               </header>
-              <p class="voice-card-copy">Select one of your saved samples. Stonefellow only allows this account to create a clone for its own linked identity.</p>
+              <p class="voice-card-copy">Select one of your saved samples. <?= e(system_agent_name()) ?> only allows this account to create a clone for its own linked identity.</p>
               <div class="voice-selected-sample" id="selectedSampleBox">
                 <span>No sample selected</span>
                 <strong>Select a sample above</strong>
@@ -132,7 +132,7 @@ $asset = 'studio-voice-profile-ui-20260903';
               <div class="voice-preview-panel">
                 <label for="previewText">Preview phrase</label>
                 <div class="voice-preview-row">
-                  <input id="previewText" maxlength="360" value="This is my Stonefellow voice profile.">
+                  <input id="previewText" maxlength="360" value="This is my <?= e(system_agent_name()) ?> voice profile.">
                   <button type="button" class="voice-secondary-button" id="previewClone" disabled>Preview Voice</button>
                 </div>
                 <audio id="clonePreviewPlayer" controls hidden></audio>
@@ -186,7 +186,8 @@ window.STONEFELLOW_VOICE_PROFILE={
   userId:<?= (int)$user['id'] ?>,
   participantId:<?= (int)$self['id'] ?>,
   endpoint:<?= json_encode(url('/api/studio-voice-profile.php')) ?>,
-  csrf:<?= json_encode(csrf_token()) ?>
+  csrf:<?= json_encode(csrf_token()) ?>,
+  systemName:<?= json_encode(system_agent_name()) ?>
 };
 </script>
 <script src="<?= e(url('/voice-profile.js?v='.$asset)) ?>"></script>

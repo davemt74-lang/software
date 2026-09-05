@@ -78,7 +78,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if ($action === 'soul_reset') {
             agent_brain_reset_soul($user);
-            flash('account_notice', 'Agent SOUL.md reset to the Stonefellow default.');
+            flash('account_notice', 'Agent SOUL.md reset to the ' . system_agent_name() . ' default.');
             redirect(url('/account.php#agent-brain'));
         }
 
@@ -133,9 +133,10 @@ $accountBrainTools = agent_brain_tools($user);
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="theme-color" content="#0b0a09">
-<title>Stonefellow | My Account</title>
+<meta name="theme-color" content="#f4f5f7">
+<title><?= e(system_agent_name()) ?> | My Account</title>
 <link rel="stylesheet" href="<?= e(url('/chat.css?v=82')) ?>">
+<link rel="stylesheet" href="<?= e(url('/account.css?v=account-light-20260904')) ?>">
 </head>
 <body>
 <div class="chat-app">
@@ -307,7 +308,7 @@ $accountBrainTools = agent_brain_tools($user);
               <div class="account-panel-head">
                 <span>Profile</span>
                 <h2>Profile & Photo</h2>
-                <p>Update how your Stonefellow account appears inside the authenticated workspace.</p>
+                <p>Update how your <?= e(system_agent_name()) ?> account appears inside the authenticated workspace.</p>
               </div>
 
               <form method="post" enctype="multipart/form-data" class="account-form">
@@ -429,7 +430,7 @@ $accountBrainTools = agent_brain_tools($user);
               <div class="account-panel-head">
                 <span>Agent Brain</span>
                 <h2>Your SOUL.md & Memory</h2>
-                <p>Every Stonefellow account starts with the default soul. This private copy controls your agent's character, communication style and working preferences; server permissions always remain authoritative.</p>
+                <p>Every <?= e(system_agent_name()) ?> account starts with the default soul. This private copy controls your agent's character, communication style and working preferences; server permissions always remain authoritative.</p>
               </div>
 
               <div class="agent-brain-stats">
@@ -451,10 +452,10 @@ $accountBrainTools = agent_brain_tools($user);
                 </div>
               </form>
 
-              <form method="post" class="agent-soul-reset" onsubmit="return confirm('Reset your private SOUL.md to the Stonefellow default?');">
+              <form method="post" class="agent-soul-reset" onsubmit="return confirm(<?= e(json_encode('Reset your private SOUL.md to the ' . system_agent_name() . ' default?', JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)) ?>);">
                 <?= csrf_field() ?>
                 <input type="hidden" name="action" value="soul_reset">
-                <button type="submit">Reset to Stonefellow Default</button>
+                <button type="submit">Reset to <?= e(system_agent_name()) ?> Default</button>
               </form>
 
               <div class="agent-brain-memory-grid">
@@ -513,13 +514,13 @@ $accountBrainTools = agent_brain_tools($user);
                 <?php if (has_permission('chat.access', $user)): ?><a class="account-access-card" href="<?= e(url('/chat.php')) ?>">
                   <small>Assistant</small>
                   <strong>Agent Chat</strong>
-                  <p>Your default signed-in Stonefellow workspace.</p>
+                  <p>Your default signed-in <?= e(system_agent_name()) ?> workspace.</p>
                   <span>Open Agent Chat ↗</span>
                 </a>
 
                 <a class="account-access-card" href="<?= e(url('/chat.php?view=player')) ?>">
                   <small>Music</small>
-                  <strong>Stonefellow Player</strong>
+                  <strong><?= e(system_agent_name()) ?> Player</strong>
                   <p>Listen to tracks available to your account.</p>
                   <span>Open Player ↗</span>
                 </a><?php endif; ?>
@@ -537,7 +538,7 @@ $accountBrainTools = agent_brain_tools($user);
                   <a class="account-access-card" href="<?= e(url('/investor.php')) ?>">
                     <small>Private</small>
                     <strong>Investor Area</strong>
-                    <p>Open private Stonefellow investor information.</p>
+                    <p>Open private <?= e(system_agent_name()) ?> investor information.</p>
                     <span>Investor Access ↗</span>
                   </a>
                 <?php endif; ?>
