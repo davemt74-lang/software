@@ -51,6 +51,12 @@ if ($mainSidebarUser && table_exists('track_favorites')) {
           </a>
         <?php endif; ?>
 
+        <?php if (personal_capability_has_v242('personal_knowledge.access', $mainSidebarUser)): ?>
+          <a class="chat-sidebar-nav-link <?= $mainSidebarActive === 'knowledge' ? 'active' : '' ?>" href="<?= e(url('/knowledge.php')) ?>">
+            <span>◆</span><strong>My Knowledge</strong>
+          </a>
+        <?php endif; ?>
+
         <?php if (has_permission('chat.access', $mainSidebarUser)): ?>
           <a class="chat-sidebar-nav-link <?= $mainSidebarActive === 'player' ? 'active' : '' ?>" href="<?= e(url('/chat.php?view=player')) ?>">
             <span>▶</span><strong>Player</strong>
