@@ -8,9 +8,11 @@ const portal=read('profile-agent-portal.js');
 const publicProfile=read('profile.php');
 const profileCss=read('profile.css');
 
-assert.ok(profile.includes("created_by_user_id=? AND is_published=1"),'Profile Agent knowledge must be owner-scoped and published');
+assert.ok(profile.includes("SELECT id FROM knowledge_items WHERE created_by_user_id=? ORDER BY"),'Profile Agent must consider the owner personal Knowledge Base');
+assert.ok(!profile.includes("created_by_user_id=? AND is_published=1 ORDER BY"),'personal Knowledge retrieval must not be restricted to published rows');
 assert.ok(profile.includes('shared_knowledge_index_item_v236'),'Profile Agent must retrieve canonical indexed knowledge/chunks');
 assert.ok(profile.includes("user_data_policy_can_use_v236($pdo,$principal,$owner,'knowledge'"),'knowledge retrieval must pass canonical data policy');
+assert.ok(profile.includes("$legacy=!empty($item['is_published'])&&((string)($item['visibility']??'members')==='public')"),'inherit visibility must never make unpublished personal notes public');
 assert.ok(userAgents.includes("if($kind==='profile_agent')"),'data policy must distinguish the public Profile Agent principal');
 assert.ok(userAgents.includes("empty($p['profile_agent_allowed'])"),'Profile Agent access must require explicit profile_agent_allowed consent');
 assert.ok(api.includes('profile_agent_needs_owner'),'insufficient approved context must escalate instead of guessing');
