@@ -18,39 +18,6 @@
   timer=setInterval(()=>heartbeat('timer',true),30000);setTimeout(()=>heartbeat('load',true),250);
 
   if(String(cfg.surface||'')==='chat'){
-    const chatSettingsBuild='chat-settings-v238-canonical-20260905';
-    const ensureChatSettingsRuntime=()=>{
-      const sidebar=document.getElementById('chatSidebar');
-      const chatCfg=window.STONEFELLOW_CHAT||{};
-      if(!sidebar||!String(chatCfg.csrf||cfg.csrf||''))return false;
-      let activityUrl;
-      try{activityUrl=new URL(String(cfg.endpoint),window.location.href);}catch(e){return false;}
-      const settingsEndpoint=new URL('chat-settings-v237.php',activityUrl).toString();
-      const cssUrl=new URL('../chat-settings-v237.css',activityUrl).toString();
-      const jsUrl=new URL('../chat-settings-v237.js',activityUrl).toString();
-      window.STONEFELLOW_CHAT_SETTINGS={
-        endpoint:settingsEndpoint,
-        csrf:String(chatCfg.csrf||cfg.csrf),
-        build:chatSettingsBuild
-      };
-      if(!document.querySelector('link[data-chat-settings-v237],link[href*="chat-settings-v237.css"]')){
-        const style=document.createElement('link');
-        style.rel='stylesheet';
-        style.href=`${cssUrl}?v=${encodeURIComponent(chatSettingsBuild)}`;
-        style.dataset.chatSettingsV237=chatSettingsBuild;
-        document.head.appendChild(style);
-      }
-      if(!document.querySelector('script[data-chat-settings-v237],script[src*="chat-settings-v237.js"]')){
-        const script=document.createElement('script');
-        script.src=`${jsUrl}?v=${encodeURIComponent(chatSettingsBuild)}`;
-        script.async=false;
-        script.dataset.chatSettingsV237=chatSettingsBuild;
-        document.body.appendChild(script);
-      }
-      return true;
-    };
-    ensureChatSettingsRuntime();
-
     let meterStream=null,meterContext=null,meterSource=null,meterAnalyser=null,meterFrame=0,meterData=null,meterDeviceId='';
     const chatUserId=()=>Number(window.STONEFELLOW_CHAT?.userId||0);
     const voiceKey=()=>`stonefellow:voice-mode:${chatUserId()}`;
