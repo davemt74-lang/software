@@ -94,7 +94,7 @@ if ($workspaceSidebarUser && function_exists('profile_agent_schema_ready')) {
     if(!document.querySelector('.account-canvas-content')) return;
     if(document.querySelector('[data-account-agent-settings-loader]')) return;
     var s=document.createElement('script');
-    s.src=<?= json_encode(url('/account-agent-settings-loader-v236.js?v=profile-agent-portal-20260905'), JSON_UNESCAPED_SLASHES) ?>;
+    s.src=<?= json_encode(url('/account-agent-settings-loader-v236.js?v=account-light-shell-20260905'), JSON_UNESCAPED_SLASHES) ?>;
     s.dataset.accountAgentSettingsLoader='server';
     document.body.appendChild(s);
   }

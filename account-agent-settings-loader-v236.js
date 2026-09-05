@@ -6,13 +6,13 @@
   const endpoint=new URL('./api/user-agent-system-v236.php',window.location.href);
   const chatUrl=new URL('./chat.php',window.location.href);
   window.STONEFELLOW_ACCOUNT_AGENT_V236={endpoint:endpoint.pathname,chatUrl:chatUrl.pathname,csrf};
-  const build='profile-agent-portal-20260905';
+  const build='account-light-shell-20260905';
   const assets=[
-    ['link','data-account-agent-v236',new URL(`./account-agent-settings-v236.css?v=${build}`,window.location.href).href],
-    ['script','data-account-agent-v236',new URL(`./account-agent-settings-v236.js?v=${build}`,window.location.href).href],
+    ['link','data-account-agent-v236-css',new URL(`./account-shell.css?v=${build}`,window.location.href).href],
+    ['script','data-account-agent-v236-js',new URL(`./account-agent-settings-v236.js?v=${build}`,window.location.href).href],
   ];
   for(const [kind,attr,src] of assets){
-    const existing=document.querySelector(`[${attr}]`);
+    const existing=document.querySelector(`${kind}[${attr}]`);
     if(existing){
       const current=kind==='link'?existing.href:existing.src;
       if(current&&current.includes(build))continue;

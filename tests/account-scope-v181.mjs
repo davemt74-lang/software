@@ -12,6 +12,9 @@ const create = read('api/chat-create-v76.php');
 const header = read('includes/header.php');
 const sidebar = read('includes/workspace-sidebar-v82.php');
 const account = read('account.php');
+const accountAgentLoader = read('account-agent-settings-loader-v236.js');
+const accountShellCss = read('account-shell.css');
+const accountAgentCss = read('account-agent-settings-v236.css');
 const chatLegacy = read('chat-legacy-v108.php');
 const bootstrap = read('includes/bootstrap.php');
 const uiPermissions = read('api/ui-permissions-v187.php');
@@ -35,6 +38,30 @@ assert.match(sidebar, /has_permission\('account\.access', \$workspaceSidebarUser
 assert.match(account, /has_permission\('chat\.access', \$user\)/);
 assert.match(chatLegacy, /\$chatCanAccessAccount = has_permission\('account\.access', \$user\)/);
 assert.match(chatLegacy, /<\?php if \(\$chatCanAccessAccount\): \?>[\s\S]{0,120}<div class="chat-top-menu" id="chatNotificationMenu"/);
+
+// Account Agents & Data must keep both runtime assets mounted. Using one shared
+// marker makes the script lookup remove the stylesheet that was just inserted.
+assert.match(accountAgentLoader, /data-account-agent-v236-css/);
+assert.match(accountAgentLoader, /data-account-agent-v236-js/);
+assert.match(accountAgentLoader, /querySelector\(`\$\{kind\}\[\$\{attr\}\]`\)/);
+assert.doesNotMatch(accountAgentLoader, /\['link','data-account-agent-v236'/);
+assert.doesNotMatch(accountAgentLoader, /\['script','data-account-agent-v236'/);
+assert.match(accountAgentLoader, /account-shell\.css\?v=\$\{build\}/);
+assert.match(accountAgentLoader, /account-light-shell-20260905/);
+assert.match(sidebar, /account-agent-settings-loader-v236\.js\?v=account-light-shell-20260905/);
+
+// One late-loaded Account stylesheet owns the final light-theme cascade and
+// cache-busts both the base account layout and the injected Agents & Data UI.
+assert.match(accountShellCss, /@import url\('\.\/account\.css\?v=account-light-shell-20260905'\)/);
+assert.match(accountShellCss, /@import url\('\.\/account-agent-settings-v236\.css\?v=account-light-shell-20260905'\)/);
+assert.match(accountShellCss, /\.workspace-main-sidebar/);
+assert.match(accountShellCss, /\.account-panel/);
+assert.match(accountShellCss, /\.account-agent-v236/);
+assert.match(accountShellCss, /background:#fff!important/);
+assert.match(accountShellCss, /color:#111318!important/);
+assert.match(accountAgentCss, /\.account-agent-v236/);
+assert.match(accountAgentCss, /background:#fff/);
+assert.match(accountAgentCss, /color:#111318/);
 
 assert.match(permissionExt, /'playlists\.manage'=>\[/);
 assert.match(permissionExt, /'playlists\.manage'=>\['fan','artist','manager','producer','supervisor','investor','admin'\]/);
