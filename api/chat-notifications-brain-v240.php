@@ -156,6 +156,20 @@ function chat_notifications_v240_conversation(PDO $pdo, array $user, ?array $age
     return (int)$pdo->lastInsertId();
 }
 
+function chat_notifications_v240_contextual_decision(PDO $pdo, int $userId, array $notification): ?array
+{
+    if (!function_exists('profile_visitor_attention_decision_v243')) return null;
+    try {
+        $decision = profile_visitor_attention_decision_v243($pdo, $userId, $notification);
+        return is_array($decision) ? $decision : null;
+    } catch (Throwable $e) {
+        // Context is enrichment. The canonical notification must still become a
+        // chat turn even if visitor-history enrichment is temporarily unavailable.
+        error_log('Profile visitor attention enrichment failed: ' . $e->getMessage());
+        return null;
+    }
+}
+
 function chat_notifications_v240_present_attention(PDO $pdo, array $user, array $input): array
 {
     $userId = (int)$user['id'];
@@ -195,9 +209,7 @@ function chat_notifications_v240_present_attention(PDO $pdo, array $user, array 
 
     $agent = chat_notifications_v240_agent($pdo, $userId, max(0, (int)($input['agent_id'] ?? 0)));
     $conversationId = chat_notifications_v240_conversation($pdo, $user, $agent, max(0, (int)($input['conversation_id'] ?? 0)));
-    $decision = function_exists('profile_visitor_attention_decision_v243')
-        ? profile_visitor_attention_decision_v243($pdo, $userId, $notification)
-        : null;
+    $decision = chat_notifications_v240_contextual_decision($pdo, $userId, $notification);
     $message = is_array($decision) && trim((string)($decision['message'] ?? '')) !== ''
         ? trim((string)$decision['message'])
         : notification_attention_message($notification);
