@@ -26,6 +26,7 @@ NODE_TESTS = [
     'tests/chat-player-responsive-v205.mjs',
     'tests/chat-light-source-contract.mjs',
     'tests/chat-settings-v237.mjs',
+    'tests/chat-notifications-brain-v240.mjs',
     'tests/stem-transport-v200.mjs',
     'tests/stem-master-clock-v201.mjs',
     'tests/stem-buffer-scheduler-v202.mjs',
