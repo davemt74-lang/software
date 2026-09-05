@@ -14,18 +14,18 @@ if (!$pdo) {
 }
 
 seed_permission_catalog();
-$catalog = permission_v105_catalog_for_admin();
+personal_capability_seed_v242();
+$catalog = personal_capability_admin_catalog_v242(permission_v105_catalog_for_admin());
 $roles = user_roles();
 
-// v105 extends the legacy PHP catalog without rewriting its mature permission
-// subsystem. Keep the DB permission catalog synchronized so Admin can edit the
-// new Agent Operations permissions just like every existing permission.
+// Keep extension permissions synchronized so Admin can manage them alongside
+// the legacy permission catalog without changing their stable keys.
 $catalogUpsert = $pdo->prepare(
     'INSERT INTO permissions (permission_key,label,description,category,sort_order)
      VALUES (?,?,?,?,?)
      ON DUPLICATE KEY UPDATE label=VALUES(label),description=VALUES(description),category=VALUES(category),sort_order=VALUES(sort_order)'
 );
-foreach (permission_v105_catalog() as $key=>$permission) {
+foreach ($catalog as $key=>$permission) {
     $catalogUpsert->execute([$key,$permission['label'],$permission['description'],$permission['category'],$permission['sort_order']]);
 }
 
@@ -59,7 +59,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
 
-        // Admin always retains every permission, including v105 extensions.
+        // Admin always retains every permission, including personal capability
+        // controls and v105 extensions.
         $delete->execute(['admin']);
         foreach (array_keys($catalog) as $permission) {
             $insert->execute(['admin', $permission]);
@@ -89,7 +90,7 @@ require __DIR__ . '/_header.php';
 ?>
 <div class="panel">
   <h2>Account Type Permissions</h2>
-  <p class="muted">Choose which backend features each account type can access. Admin permissions are always enabled and cannot be removed.</p>
+  <p class="muted">Choose which capabilities each account type can use. Personal capabilities always operate on the signed-in member's own records; system/shared capabilities control access to platform-wide data. Admin permissions are always enabled.</p>
 
   <form method="post">
     <?= csrf_field() ?>
