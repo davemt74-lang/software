@@ -1,0 +1,77 @@
+name: Build Deploy Artifact
+
+on:
+  push:
+    branches:
+      - deploy/package-7babce7
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact release source
+        uses: actions/checkout@v4
+        with:
+          ref: 7babce7d7288fdf1908f3c784586e032abbfb205
+
+      - name: Build clean runtime ZIP
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf deploy-root software-deploy.zip
+          mkdir deploy-root
+          rsync -a ./ deploy-root/ \
+            --exclude='.git/' \
+            --exclude='.github/' \
+            --exclude='tests/' \
+            --exclude='tools/' \
+            --exclude='RECOVERY_RUNTIME_BASELINE.md' \
+            --exclude='recovery-inventory.generated.md' \
+            --exclude='recovery-inventory.generated.json' \
+            --exclude='admin/force-cache-repair-20260825.php' \
+            --exclude='config.php' \
+            --exclude='.env' \
+            --exclude='.env.*' \
+            --exclude='private/*' \
+            --exclude='uploads/*' \
+            --exclude='*.log' \
+            --exclude='*.tmp' \
+            --exclude='*.temp' \
+            --exclude='.cache/' \
+            --exclude='cache/' \
+            --exclude='tmp/' \
+            --exclude='.DS_Store' \
+            --exclude='Thumbs.db' \
+            --exclude='.idea/' \
+            --exclude='.vscode/' \
+            --exclude='coverage/'
+          # Restore the tracked runtime guards intentionally kept by .gitignore.
+          for f in .htaccess private/.htaccess private/README.txt uploads/.htaccess uploads/README.txt; do
+            if [ -f "$f" ]; then
+              mkdir -p "deploy-root/$(dirname "$f")"
+              cp -p "$f" "deploy-root/$f"
+            fi
+          done
+          printf '%s\n' '7babce7d7288fdf1908f3c784586e032abbfb205' > deploy-root/DEPLOY_SOURCE.txt
+          test -f deploy-root/.htaccess
+          test -f deploy-root/account-shell.css
+          test -f deploy-root/profile-agent.php
+          (cd deploy-root && zip -qr ../software-deploy.zip .)
+          unzip -tq software-deploy.zip
+          unzip -l software-deploy.zip | grep -q ' .htaccess$'
+          unzip -l software-deploy.zip | grep -q ' account-shell.css$'
+          unzip -l software-deploy.zip | grep -q ' profile-agent.php$'
+          sha256sum software-deploy.zip
+
+      - name: Upload deploy ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: software-deploy-7babce7
+          path: software-deploy.zip
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
