@@ -263,7 +263,7 @@ function profile_visitor_contact_list_v243(PDO $pdo, int $ownerUserId, int $limi
         "SELECT s.*,
           COUNT(DISTINCT c.id) AS conversation_count,
           COUNT(DISTINCT CASE WHEN e.event_type='profile_view' THEN e.id END) AS visit_count,
-          COALESCE(SUM(CASE WHEN m.sender_type='visitor' THEN 1 ELSE 0 END),0) AS visitor_message_count,
+          COUNT(DISTINCT CASE WHEN m.sender_type='visitor' THEN m.id END) AS visitor_message_count,
           MAX(c.last_message_at) AS conversation_last_at
          FROM profile_visit_sessions s
          LEFT JOIN profile_events e ON e.owner_user_id=s.owner_user_id AND e.profile_session_id=s.id
