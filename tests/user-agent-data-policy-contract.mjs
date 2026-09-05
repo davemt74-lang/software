@@ -9,6 +9,8 @@ const policy = read('includes/chat-agent-policy-v236.php');
 const settingsApi = read('api/user-agent-system-v236.php');
 const onboardingApi = read('api/chat-onboarding-v241.php');
 const chatApi = read('api/chat-v236.php');
+const chatStream = read('api/chat-stream-v121.php');
+const agentContext = read('agent-context-v131.js');
 const chatPage = read('chat.php');
 const chatIdentity = read('chat-agent-identity-v236.js');
 const account = read('account-agent-settings-v236.js');
@@ -51,6 +53,21 @@ assert.match(chatApi,/user_agent_id=\?/,'named-agent API conversations are scope
 assert.match(chatApi,/user_agent_id IS NULL/,'system API conversations cannot leak into named-agent history');
 assert.match(chatApi,/chat_generate_answer_policy_v236\(\$query,\$history,\$user,\$principal,\$agentContext,\$conversationId\)/,'AI retrieval audit receives the active conversation ID');
 
+assert.match(agentContext,/user_agent_id:activeUserAgentId\(\)/,'shared Agent Context carries the selected named agent into voice transport');
+assert.match(agentContext,/STONEFELLOW_AGENT_IDENTITY_V236\?\.agentId/,'Agent Context reads the canonical selected agent identity');
+assert.ok(agentContext.includes("const conversationKey=`stonefellow:conversation-id:${userId}:${selectedUserAgentId||'system'}`"),'stored conversation continuity is isolated by user and selected agent');
+assert.match(chatStream,/function chat_v121_scope_sql\(/,'voice Chat has the same explicit conversation scope model as text Chat');
+assert.match(chatStream,/user_agent_id=\?/,'voice Chat can require a named-agent conversation');
+assert.match(chatStream,/user_agent_id IS NULL/,'voice Chat keeps system conversations isolated from named agents');
+assert.match(chatStream,/\$rawContext\['user_agent_id'\]/,'voice transport consumes the selected agent from canonical Agent Context');
+assert.match(chatStream,/user_agent_get_v236\(\$pdo,\$userId,\$requested\)/,'voice Chat validates selected agent ownership');
+assert.match(chatStream,/user_agent_principal_v236\(\$user,\$activeAgent\)/,'voice Chat uses the selected agent principal rather than forcing the system principal');
+assert.match(chatStream,/INSERT INTO chat_conversations \(user_id,user_agent_id,artist_workspace_id,title\)/,'new voice conversations persist the selected agent owner');
+assert.match(chatStream,/chat_v121_owned\(\$pdo,\$conversationId,\$userId,\$activeAgent\)/,'existing voice conversations are checked against selected-agent scope');
+assert.match(chatStream,/chat_v121_context\(\$query,\$user,\$principal,\$agentContext,\$conversationId\)/,'voice retrieval receives the selected agent principal');
+assert.match(chatStream,/'agent'=>\['id'=>\$agentScopeId/,'voice assistant messages persist their agent identity');
+assert.match(chatStream,/'agent_name'=\>\(string\)\$principal\['display_name'\]/,'voice responses report the selected agent name');
+
 assert.match(index,/CREATE TABLE IF NOT EXISTS shared_knowledge_index/,'shared knowledge has a dedicated discovery index');
 assert.match(index,/knowledge_id INT UNSIGNED NOT NULL PRIMARY KEY/,'shared index points to the authoritative knowledge item');
 assert.match(index,/owner_user_id INT UNSIGNED NOT NULL/,'shared index retains source ownership');
@@ -66,7 +83,11 @@ assert.match(policy,/shared_knowledge_index_candidates_v236/,'cross-user knowled
 assert.match(policy,/shared_knowledge_index_item_v236/,'retrieval fetches the current authoritative source after discovery');
 assert.match(policy,/shared_knowledge_index_hash_v236/,'retrieval revalidates the source version');
 assert.match(policy,/chat_policy_can_use_v236/,'live authorization is checked again before context use');
-assert.match(policy,/Cross-user discovery MUST go through the pointer-only shared index/,'cross-user raw KB scans are explicitly forbidden by the canonical path');
+assert.match(policy,/WHERE created_by_user_id=\? AND knowledge_scope='personal'/,'direct personal Knowledge retrieval is owner-scoped');
+const sharedPersonalPolicy = policy.match(/function chat_policy_shared_personal_knowledge_v242\([\s\S]*?\n}\n\nfunction chat_policy_system_knowledge_v242/)?.[0] || '';
+assert.ok(sharedPersonalPolicy,'cross-user personal Knowledge policy is inspectable');
+assert.match(sharedPersonalPolicy,/shared_knowledge_index_candidates_v236/,'cross-user personal Knowledge discovery uses the shared pointer index');
+assert.doesNotMatch(sharedPersonalPolicy,/FROM knowledge_items|JOIN knowledge_items/,'cross-user personal Knowledge policy cannot raw-scan the Knowledge table');
 
 assert.match(usage,/CREATE TABLE IF NOT EXISTS user_data_retrieval_log/,'actual AI context use has a dedicated retrieval ledger');
 assert.match(usage,/owner_user_id/,'ledger records data owner');

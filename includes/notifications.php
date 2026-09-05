@@ -44,6 +44,115 @@ function notification_recent(?array $user = null, int $limit = 8): array
     }
 }
 
+/**
+ * Deterministic attention gate for Agent Chat. Informational notifications stay
+ * in Activity Center. Only notifications that reasonably require a user choice,
+ * reply, approval, review or other action are promoted into the chat canvas.
+ */
+function notification_requires_attention(array $notification): bool
+{
+    if (array_key_exists('requires_attention', $notification)) {
+        $explicit = (int)($notification['requires_attention'] ?? 0);
+        if ($explicit === 1) return true;
+    }
+
+    $type = strtolower(trim((string)($notification['type'] ?? '')));
+    $title = strtolower(trim((string)($notification['title'] ?? '')));
+    $body = strtolower(trim((string)($notification['body'] ?? '')));
+    $text = trim($title . ' ' . $body);
+
+    $informational = [
+        'profile_view',
+        'profile_conversation_started',
+        'conversation_started',
+        'new_track_release',
+        'new_album_release',
+        'artist_post',
+        'show_reminder',
+        'team_chat_message',
+        'direct_message',
+    ];
+    if (in_array($type, $informational, true)) return false;
+
+    $typePatterns = [
+        'needs_owner', 'needs_input', 'needs_attention', 'action_required',
+        'requires_action', 'approval_required', 'approval_request', 'review_request',
+        'access_request', 'connection_request', 'collaboration_request',
+        'collaborator_request', 'invite_request', 'invitation', 'assignment',
+        'release_action', 'security_action', 'response_required',
+    ];
+    foreach ($typePatterns as $pattern) {
+        if ($type === $pattern || str_contains($type, $pattern)) return true;
+    }
+
+    return (bool)preg_match(
+        '/\b(?:needs? your (?:input|approval|attention|response)|requires? your (?:input|approval|attention|response)|action required|response required|approval (?:needed|required)|please (?:review|approve|respond)|awaiting your response|requested (?:access|approval)|invited you|wants to connect|needs? a decision|choose (?:an option|what to do))\b/u',
+        $text
+    );
+}
+
+function notification_attention_prompt(array $notification): string
+{
+    $prompt = trim((string)($notification['attention_prompt'] ?? ''));
+    return $prompt !== '' ? mb_strimwidth($prompt, 0, 240, '…') : 'What do you want to do?';
+}
+
+function notification_attention_message(array $notification): string
+{
+    $parts = [];
+    $title = trim((string)($notification['title'] ?? ''));
+    $body = trim((string)($notification['body'] ?? ''));
+    if ($title !== '') $parts[] = $title;
+    if ($body !== '') $parts[] = $body;
+    $parts[] = notification_attention_prompt($notification);
+    return implode("\n\n", $parts);
+}
+
+function notification_attention_after(?array $user, int $afterId = 0, int $limit = 20): array
+{
+    $user ??= current_user();
+    $pdo = db();
+    if (!$user || !$pdo || !table_exists('notifications')) return [];
+
+    $limit = max(1, min(50, $limit));
+    try {
+        if ($afterId > 0) {
+            $stmt = $pdo->prepare(
+                "SELECT * FROM notifications WHERE user_id=? AND id>? ORDER BY id ASC LIMIT {$limit}"
+            );
+            $stmt->execute([(int)$user['id'], $afterId]);
+        } else {
+            // Bootstrap only recent unread attention so a page load cannot flood
+            // the conversation with stale historical notifications.
+            $stmt = $pdo->prepare(
+                "SELECT * FROM notifications
+                 WHERE user_id=? AND is_read=0 AND created_at>=DATE_SUB(NOW(),INTERVAL 10 MINUTE)
+                 ORDER BY id DESC LIMIT {$limit}"
+            );
+            $stmt->execute([(int)$user['id']]);
+        }
+        $rows = $stmt->fetchAll() ?: [];
+        if ($afterId < 1) $rows = array_reverse($rows);
+        return array_values(array_filter($rows, 'notification_requires_attention'));
+    } catch (Throwable $e) {
+        return [];
+    }
+}
+
+function notification_latest_id(?array $user = null): int
+{
+    $user ??= current_user();
+    $pdo = db();
+    if (!$user || !$pdo || !table_exists('notifications')) return 0;
+    try {
+        $stmt = $pdo->prepare('SELECT COALESCE(MAX(id),0) FROM notifications WHERE user_id=?');
+        $stmt->execute([(int)$user['id']]);
+        return (int)$stmt->fetchColumn();
+    } catch (Throwable $e) {
+        return 0;
+    }
+}
+
 function create_notification(
     int $userId,
     string $type,

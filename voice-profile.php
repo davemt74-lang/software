@@ -6,7 +6,7 @@ require_once __DIR__ . '/includes/studio-voice-profile.php';
 require_permission('account.access');
 $user = current_user();
 $pdo = db();
-if (!$user || !$pdo || !has_permission('chat.access',$user)) {
+if (!$user || !$pdo || !personal_capability_has_v242('voice_profile.access',$user)) {
     flash('account_error','Voice Profile access is unavailable for this account.');
     redirect(url('/account.php'));
 }
@@ -63,7 +63,7 @@ $asset = 'studio-voice-profile-ui-20260903';
               <?php if (user_avatar_url($user) !== ''): ?><img src="<?= e(user_avatar_url($user)) ?>" alt="<?= e((string)$user['display_name']) ?>"><?php else: ?><span><?= e(user_initials($user)) ?></span><?php endif; ?>
             </div>
             <div>
-              <small>Stonefellow Voice Identity</small>
+              <small><?= e(system_agent_name()) ?> Voice Identity</small>
               <h1><?= e((string)$user['display_name']) ?></h1>
               <p>Record or upload your own voice, create a private voice clone, and decide where voice recognition may identify you.</p>
             </div>
@@ -144,7 +144,7 @@ $asset = 'studio-voice-profile-ui-20260903';
             <section class="voice-card voice-privacy-card">
               <header class="voice-card-head"><div><small>Privacy</small><h2>Voice permissions</h2></div></header>
               <label class="voice-toggle-row">
-                <span><strong>Voice recognition</strong><small>Allow Stonefellow to associate a provider voice match with your conversational identity.</small></span>
+                <span><strong>Voice recognition</strong><small>Allow <?= e(system_agent_name()) ?> to associate a provider voice match with your conversational identity.</small></span>
                 <input type="checkbox" id="recognitionConsent"><i></i>
               </label>
               <label class="voice-toggle-row">
@@ -156,7 +156,7 @@ $asset = 'studio-voice-profile-ui-20260903';
                 <label for="recognitionScope">Who can recognize me?</label>
                 <select id="recognitionScope">
                   <option value="private">Only my private workspace</option>
-                  <option value="contacts">My Stonefellow contacts</option>
+                  <option value="contacts">My contacts</option>
                   <option value="collaborators">My collaborators</option>
                 </select>
               </div>

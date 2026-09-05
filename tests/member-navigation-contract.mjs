@@ -9,6 +9,7 @@ const account = read('account.php');
 const admin = read('admin/_header.php');
 const header = read('includes/header.php');
 const knowledge = read('knowledge.php');
+const systemKnowledge = read('admin/knowledge.php');
 const voiceProfile = read('voice-profile.php');
 const bootstrap = read('includes/bootstrap.php');
 const profileAgent = read('includes/profile-agent.php');
@@ -40,14 +41,16 @@ for (const [label, route] of [
   assert.ok(nav.includes(route), `canonical navigation should resolve ${route}`);
 }
 
-assert.ok(nav.includes("has_permission('knowledge.manage'"), 'My Knowledge must be permission gated');
-assert.ok(nav.includes("has_permission('artist_listening.access'"), 'My Transcriptions must be permission gated');
+assert.ok(nav.includes("personal_capability_has_v242('personal_knowledge.access'"), 'My Knowledge must use the personal Knowledge access permission');
+assert.ok(nav.includes("personal_capability_has_v242('profile_agent.access'"), 'Profile Agent navigation must use its personal capability permission');
+assert.ok(nav.includes("personal_capability_has_v242('voice_profile.access'"), 'Voice Profile navigation must use its personal capability permission');
+assert.ok(nav.includes("has_permission('artist_listening.access'"), 'My Transcriptions must remain permission gated');
 assert.ok(nav.includes("user_has_role('artist'"), 'Artist Workspace must require artist identity');
 assert.ok(nav.includes("has_permission('producer.access'"), 'Stem Studio must retain producer access');
 assert.ok(nav.includes("empty($profile['is_public'])") && nav.includes("'preview=1'"), 'unpublished owners should receive a usable profile preview URL');
 assert.ok(!nav.includes('My Library'), 'My Library is not a canonical user-dropdown destination');
 assert.ok(!nav.includes("'agent_settings'"), 'Agent Settings belongs inside My Account');
-assert.ok(nav.includes("'profile_agent', 'Profile Agent', url('/profile-agent.php')"), 'Profile Agent is a first-class customer-service destination');
+assert.ok(nav.includes("'profile_agent','Profile Agent',url('/profile-agent.php')"), 'Profile Agent is a first-class customer-service destination');
 assert.ok(!nav.includes("url('/account.php#profile-agent')"), 'canonical navigation must not route Profile Agent back into My Account');
 
 for (const [name, source] of [['account', account], ['admin', admin], ['site header', header]]) {
@@ -63,9 +66,17 @@ assert.ok(!listening.includes('artist-profile.php?user_id='), 'Artist Listening 
 assert.ok(voiceProfile.includes('member_navigation_profile_url($user)'), 'Voice Profile should resolve the canonical View Profile destination');
 assert.ok(voiceProfile.includes('chat-topbar-actions voice-profile-top-actions'), 'Voice Profile header actions should use the shared right-aligned topbar layout');
 assert.ok(voiceProfile.includes('>View Profile</a>'), 'Voice Profile header should expose View Profile');
-assert.ok(knowledge.includes("has_permission('knowledge.manage'"), '/knowledge.php should forward managers to the real knowledge workspace');
-assert.ok(knowledge.includes("/admin/knowledge.php"), '/knowledge.php should resolve to the actual knowledge manager');
-assert.ok(bootstrap.includes("/member-navigation.php"), 'bootstrap should load the canonical member navigation helper');
+
+assert.ok(knowledge.includes("personal_capability_has_v242('personal_knowledge.access'"), 'Personal Knowledge workspace must require personal Knowledge access');
+assert.ok(knowledge.includes("$canManage=personal_capability_has_v242('personal_knowledge.manage'"), 'Personal Knowledge workspace must separate view and manage permissions');
+assert.ok(knowledge.includes("if(!$canManage){http_response_code(403)"), 'Personal Knowledge writes must fail closed without manage permission');
+assert.ok(knowledge.includes("created_by_user_id=? AND i.knowledge_scope='personal'"), 'Personal Knowledge list must be owner-scoped and personal-only');
+assert.ok(knowledge.includes("created_by_user_id=? AND knowledge_scope='personal'"), 'Personal Knowledge item operations must be owner-scoped and personal-only');
+assert.ok(!knowledge.includes("redirect(url('/admin/knowledge.php'))"), 'Personal Knowledge must not redirect members into the system Knowledge manager');
+assert.ok(systemKnowledge.includes("knowledge_scope='system'"), 'Admin Knowledge must remain explicitly system-scoped');
+assert.ok(systemKnowledge.includes('Shared / System Knowledge'), 'Admin Knowledge must clearly identify the system/shared library');
+
+assert.ok(bootstrap.includes('/member-navigation.php'), 'bootstrap should load the canonical member navigation helper');
 assert.ok(profileAgent.includes("return url('/' . rawurlencode($username));"), 'profile URLs should resolve at the domain root');
 assert.ok(!profileAgent.includes('const STONEFELLOW_PROFILE_NAMESPACE'), 'profile URL generation must not retain a Stonefellow namespace declaration');
 assert.ok(profileRuntime.includes("'profile_url_example'=>url('/username')"), 'profile owner state should expose a root URL example');
@@ -80,6 +91,8 @@ assert.ok(!account.includes('Stonefellow'), 'My Account user-facing copy should 
 assert.ok(profileDashboard.includes('profileDisplayUrl=new URL(profileUrl,window.location.origin).href'), 'retained profile dashboard should display the full canonical domain/username URL');
 assert.ok(!profileDashboard.includes('Stonefellow-powered'), 'retained Profile Agent copy should use the configured system name');
 assert.ok(profileAgentPortal.includes('class="chat-sidebar profile-agent-sidebar"'), 'standalone Profile Agent portal should own a dedicated customer-service sidebar');
+assert.ok(profileAgentPortal.includes("personal_capability_has_v242('personal_knowledge.access'"), 'Profile Agent sidebar must honor the Personal Knowledge permission before showing My Knowledge');
+assert.ok(profileAgentPortal.includes("<?php if($personalKnowledgeAllowed):?><a href=\"<?= e(url('/knowledge.php')) ?>\">My Knowledge</a><?php endif;?>"), 'Profile Agent My Knowledge link must be permission-gated');
 assert.ok(!profileAgentPortal.includes('workspace-sidebar-v82.php'), 'standalone Profile Agent portal should not embed the generic workspace sidebar');
 assert.ok(!profileAgentPortal.includes('Customer service workspace'), 'standalone Profile Agent portal should not restore the removed intro hero');
 assert.ok(accountAgentLoader.includes('account-agent-settings-v236.js') && !accountAgentLoader.includes('profile-dashboard.js'), 'My Account should load agent settings without injecting the old Profile Agent dashboard');

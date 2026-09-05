@@ -6,12 +6,23 @@ require_login();
 $id = (int)($_GET['id'] ?? 0);
 $item = get_knowledge_item($id);
 $user = current_user();
+$userId=(int)($user['id']??0);
+$scope=column_exists('knowledge_items','knowledge_scope')?(string)($item['knowledge_scope']??'system'):'system';
+$allowed=false;
 
-if (
-    !$item ||
-    (int)$item['is_published'] !== 1 ||
-    (!knowledge_visibility_allowed((string)$item['visibility'], $user) && !has_permission('knowledge.manage', $user))
-) {
+if($item&&$user){
+    if($scope==='personal'){
+        $allowed=(int)($item['created_by_user_id']??0)===$userId
+            && personal_capability_has_v242('personal_knowledge.access',$user);
+    }else{
+        $allowed=has_permission('knowledge.manage',$user)
+            || (has_permission('knowledge.access',$user)
+                && (int)$item['is_published']===1
+                && knowledge_visibility_allowed((string)$item['visibility'],$user));
+    }
+}
+
+if (!$item || !$allowed) {
     http_response_code(404);
     exit('Knowledge file not found.');
 }
@@ -38,5 +49,6 @@ header('Content-Type: ' . $mime);
 header('Content-Length: ' . filesize($realFile));
 header('Content-Disposition: inline; filename="' . str_replace('"', '', $name) . '"');
 header('X-Content-Type-Options: nosniff');
+header('Cache-Control: private, no-store');
 readfile($realFile);
 exit;

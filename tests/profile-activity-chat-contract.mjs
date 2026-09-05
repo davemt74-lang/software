@@ -6,6 +6,9 @@ const profile=read('includes/profile-agent.php');
 const policy=read('includes/chat-agent-policy-v236.php');
 const chat=read('chat.php');
 const activity=read('profile-activity-chat.js');
+const notifications=read('includes/notifications.php');
+const attentionApi=read('api/chat-notifications-brain-v240.php');
+const attentionUi=read('chat-notifications-drawer-v240.js');
 const attention=read('agent-attention.js');
 const member=read('member-shell-v77.js');
 const notificationApi=read('api/member-notifications.php');
@@ -27,11 +30,37 @@ assert.ok(policy.includes('profile_runtime_visitor_descriptor'), 'Agent Chat pro
 assert.ok(chat.includes('profile-activity-chat.css'), 'Agent Chat should load the Profile Activity canvas stylesheet');
 assert.ok(chat.includes('profile-activity-chat.js'), 'Agent Chat should load the Profile Activity canvas runtime');
 assert.ok(chat.includes('profileAgentEndpoint'), 'Agent Chat identity config should expose the Profile Agent owner endpoint');
-assert.ok(activity.includes('setInterval(()=>{if(document.visibilityState===\'visible\')refresh();},15000)'), 'Profile Activity should refresh every 15 seconds while visible');
+assert.ok(activity.includes("setInterval(()=>{if(document.visibilityState==='visible')refresh();},15000)"), 'Profile Activity should refresh every 15 seconds while visible');
 assert.ok(activity.includes("req('conversation_messages'"), 'Profile Activity canvas should open Profile Agent threads');
 assert.ok(activity.includes("req('owner_reply'"), 'owner should be able to reply from the Agent Chat canvas');
 assert.ok(activity.includes('profile-activity:open'), 'Profile Activity should expose an event bridge for proactive attention');
-assert.ok(activity.includes('toastItem=item'), 'reused landing toast must track the newest activity event');
+assert.ok(activity.includes("'\"':'&quot;'"), 'Profile Activity must HTML-escape quotation marks correctly');
+assert.ok(!activity.includes('StonefellowPremiumVoiceV122'), 'Profile Activity must not own a duplicate voice/attention runtime');
+assert.ok(!activity.includes('profile-activity-chat-v242.php'), 'Profile Activity must not own a profile-only chat bridge');
+
+assert.ok(notifications.includes('notification_requires_attention'), 'notifications need one deterministic actionable-attention classifier');
+assert.ok(notifications.includes("'What do you want to do?'"), 'actionable notifications should end with the canonical user decision prompt');
+assert.ok(notifications.includes('notification_attention_after'), 'attention polling should be based on canonical notification storage');
+assert.ok(!/openai|anthropic|gemini|chat_remote_answer|chat_local_answer/i.test(notifications), 'attention classification must not use an LLM');
+
+assert.ok(attentionApi.includes("$action === 'attention'"), 'Activity Center API should expose actionable notification polling');
+assert.ok(attentionApi.includes("$action === 'present_attention'"), 'Activity Center API should persist actionable notifications into Agent Chat');
+assert.ok(attentionApi.includes("m.role='assistant'"), 'attention de-duplication should look for canonical assistant turns');
+assert.ok(attentionApi.includes("INSERT INTO chat_messages"), 'attention items must become canonical Agent Chat messages');
+assert.ok(attentionApi.includes("'response_timeout_ms'=>10000"), 'attention turns must carry the ten-second response window');
+assert.ok(attentionApi.includes('agent_brain_archive_and_parse'), 'attention turns should enter the personal Agent Brain when permitted');
+assert.ok(!/openai|anthropic|gemini|chat_remote_answer|chat_local_answer/i.test(attentionApi), 'attention presentation must be token-free and deterministic');
+
+assert.ok(attentionUi.includes("request('attention'"), 'Activity Center should poll actionable notifications');
+assert.ok(attentionUi.includes("request('present_attention'"), 'Activity Center should route an actionable notification into Agent Chat');
+assert.ok(attentionUi.includes('ensureHistoryButton'), 'new attention conversations must be activated through the existing chat history controller');
+assert.ok(attentionUi.includes('StonefellowPremiumVoiceV122'), 'attention turns should use the existing ElevenLabs voice runtime');
+assert.ok(attentionUi.includes('speechSynthesis'), 'attention speech must retain system voice fallback');
+assert.ok(attentionUi.includes('10000'), 'temporary notification listening must time out after ten seconds');
+assert.ok(attentionUi.includes("TRANSCRIPT_SUBMIT"), 'a voice reply must close the temporary attention response timeout');
+assert.ok(attentionUi.includes("getElementById('chatForm')"), 'a typed reply must close the temporary attention response timeout');
+assert.ok(attentionUi.includes('5000'), 'actionable notification polling should be near-real-time without busy polling');
+
 assert.ok(attention.includes('data-open-profile-activity'), 'Agent Attention should open the Profile Activity canvas');
 assert.ok(member.includes('api/member-notifications.php'), 'authenticated shell should poll persisted notifications');
 assert.ok(member.includes('15000'), 'authenticated notification polling should be near-real-time without busy polling');

@@ -269,7 +269,7 @@ function studio_voice_profile_revoke_clone(PDO $pdo, array $user): array
 }
 
 $user = current_user();
-if (!$user || !has_permission('account.access',$user) || !has_permission('chat.access',$user)) {
+if (!$user || !has_permission('account.access',$user) || !personal_capability_has_v242('voice_profile.access',$user)) {
     studio_voice_profile_json(false, ['error'=>'Voice Profile access unavailable.'], 403);
 }
 $pdo = db();

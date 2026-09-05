@@ -78,7 +78,9 @@ try {
 
     $presenceMode = strtolower(trim((string)($input['presence_mode'] ?? 'online')));
     if (!in_array($presenceMode, ['online','offline'], true)) $presenceMode = 'online';
-    $enableProfileAgent = !empty($input['profile_agent_enabled']);
+    $profileAgentAllowed = personal_capability_has_v242('profile_agent.access', $user);
+    $profileChatAllowed = personal_capability_has_v242('profile_chat.access', $user);
+    $enableProfileAgent = $profileAgentAllowed && $profileChatAllowed && !empty($input['profile_agent_enabled']);
     $profilePublic = !empty($input['profile_public']);
     $socialChat = !empty($input['social_chat_enabled']);
     $sound = !empty($input['sound_enabled']);
@@ -131,12 +133,14 @@ try {
             'sound_enabled' => $sound ? 1 : 0,
         ]);
 
-        profile_configure_agent($pdo, $user, [
-            'profile_agent_id' => (int)$agent['id'],
-            'profile_agent_enabled' => $enableProfileAgent ? 1 : 0,
-            'profile_agent_greeting' => $greeting,
-            'profile_agent_instructions' => (string)($profile['profile_agent_instructions'] ?? ''),
-        ]);
+        if ($profileAgentAllowed) {
+            profile_configure_agent($pdo, $user, [
+                'profile_agent_id' => (int)$agent['id'],
+                'profile_agent_enabled' => $enableProfileAgent ? 1 : 0,
+                'profile_agent_greeting' => $greeting,
+                'profile_agent_instructions' => (string)($profile['profile_agent_instructions'] ?? ''),
+            ]);
+        }
 
         user_agent_dismiss_onboarding_v236($pdo, (int)$user['id']);
         $pdo->commit();

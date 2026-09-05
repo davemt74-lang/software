@@ -28,10 +28,24 @@
   let button = null;
   let activeTab = 'notifications';
   let busy = false;
+  let attentionCursor = 0;
+  let attentionTimer = 0;
+  let attentionBusy = false;
+  let attentionQueue = Promise.resolve();
+  let responseTimer = 0;
+  let responseTemporaryVoice = false;
+  let responseWindowActive = false;
+  let speechQueue = Promise.resolve();
 
-  async function request(action = 'state', payload = null) {
+  async function request(action = 'state', payload = null, query = {}) {
     const post = payload !== null;
-    const url = post ? cfg.endpoint : `${cfg.endpoint}?action=${encodeURIComponent(action)}`;
+    let url = cfg.endpoint;
+    if (!post) {
+      const target = new URL(cfg.endpoint, window.location.href);
+      target.searchParams.set('action', action);
+      Object.entries(query || {}).forEach(([key,value]) => target.searchParams.set(key, String(value)));
+      url = target.toString();
+    }
     const options = post ? {
       method:'POST',
       credentials:'same-origin',
@@ -80,9 +94,7 @@
     oldButton.replaceWith(replacement);
     button = replacement;
 
-    if (menu.nextElementSibling !== profile) {
-      actions.insertBefore(menu, profile);
-    }
+    if (menu.nextElementSibling !== profile) actions.insertBefore(menu, profile);
     button.addEventListener('click', openDrawer);
     return true;
   }
@@ -147,6 +159,9 @@
 
   function brainView() {
     const brain = state?.brain || {};
+    if (brain.enabled === false) {
+      return '<section class="chat-activity-section"><div class="chat-activity-empty">Personal Agent Brain is not enabled for this account type.</div></section>';
+    }
     const activity = brain.activity || {};
     const events = Array.isArray(brain.events) ? brain.events : [];
     const recent = Array.isArray(brain.recent) ? brain.recent : [];
@@ -171,19 +186,14 @@
           ${events.length ? events.slice(0,30).map(event => `
             <article class="chat-brain-event">
               <span class="chat-brain-event-state ${esc(event.activity_state || 'idle')}"></span>
-              <div>
-                <strong>${esc(event.task_title || stateLabel(event.activity_state))}</strong>
-                <p>${esc(stateLabel(event.previous_state))} → ${esc(stateLabel(event.activity_state))}${event.reason ? ` · ${esc(String(event.reason).replaceAll('_',' '))}` : ''}</p>
-                <small>${esc(event.surface || 'chat')} · ${esc(relative(event.created_at))}</small>
-              </div>
+              <div><strong>${esc(event.task_title || stateLabel(event.activity_state))}</strong><p>${esc(stateLabel(event.previous_state))} → ${esc(stateLabel(event.activity_state))}${event.reason ? ` · ${esc(String(event.reason).replaceAll('_',' '))}` : ''}</p><small>${esc(event.surface || 'chat')} · ${esc(relative(event.created_at))}</small></div>
             </article>`).join('') : '<div class="chat-activity-empty">No Agent Brain activity history yet.</div>'}
         </div>
       </section>
       <section class="chat-activity-section">
         <div class="chat-activity-section-head"><div><strong>Recent Memory</strong><span>Structured facts and decisions the Agent Brain is retaining</span></div></div>
         <div class="chat-brain-memory-list">
-          ${recent.length ? recent.map(memory => `
-            <article><span>${esc(memory.memory_type || 'memory')}</span><strong>${esc(memory.subject || 'Memory')}</strong><p>${esc(memory.memory_text || '')}</p><small>${Number(memory.occurrence_count || 1)} occurrence${Number(memory.occurrence_count || 1) === 1 ? '' : 's'} · ${esc(relative(memory.last_seen_at))}</small></article>`).join('') : '<div class="chat-activity-empty">No structured memory yet.</div>'}
+          ${recent.length ? recent.map(memory => `<article><span>${esc(memory.memory_type || 'memory')}</span><strong>${esc(memory.subject || 'Memory')}</strong><p>${esc(memory.memory_text || '')}</p><small>${Number(memory.occurrence_count || 1)} occurrence${Number(memory.occurrence_count || 1) === 1 ? '' : 's'} · ${esc(relative(memory.last_seen_at))}</small></article>`).join('') : '<div class="chat-activity-empty">No structured memory yet.</div>'}
         </div>
         ${themes.length ? `<div class="chat-brain-themes"><strong>Recurring themes</strong><div>${themes.slice(0,10).map(theme => `<span>${esc(theme.subject || '')}<small>${Number(theme.occurrence_count || 0)}</small></span>`).join('')}</div></div>` : ''}
       </section>`;
@@ -201,11 +211,7 @@
             const day = Number.isNaN(date.getTime()) ? '' : date.toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'});
             const divider = day && day !== lastDay ? `<div class="chat-brain-history-day">${esc(day)}</div>` : '';
             lastDay = day || lastDay;
-            return `${divider}<article class="${esc(row.role || 'user')}">
-              <div><strong>${row.role === 'assistant' ? 'Agent' : 'You'}</strong><span>${esc(row.input_mode || 'text')}</span><small>${esc(relative(row.created_at))}</small></div>
-              <p>${esc(row.message || '')}</p>
-              <footer>Conversation ${Number(row.conversation_id || 0)}</footer>
-            </article>`;
+            return `${divider}<article class="${esc(row.role || 'user')}"><div><strong>${row.role === 'assistant' ? 'Agent' : 'You'}</strong><span>${esc(row.input_mode || 'text')}</span><small>${esc(relative(row.created_at))}</small></div><p>${esc(row.message || '')}</p><footer>Conversation ${Number(row.conversation_id || 0)}</footer></article>`;
           }).join('') : '<div class="chat-activity-empty">No Agent Brain conversation history yet.</div>'}
         </div>
       </section>`;
@@ -213,9 +219,7 @@
 
   function render() {
     if (!drawer) return;
-    drawer.querySelectorAll('[data-notification-tab]').forEach(tab => {
-      tab.classList.toggle('active', tab.dataset.notificationTab === activeTab);
-    });
+    drawer.querySelectorAll('[data-notification-tab]').forEach(tab => tab.classList.toggle('active', tab.dataset.notificationTab === activeTab));
     const count = drawer.querySelector('[data-notification-tab-count]');
     const unread = Number(state?.notifications?.unread || 0);
     if (count) {
@@ -235,6 +239,7 @@
   async function refresh(showError = false) {
     try {
       state = await request('state');
+      if (attentionCursor < 1) attentionCursor = Number(state?.attention_cursor || 0);
       render();
     } catch (error) {
       if (showError && drawer) {
@@ -305,9 +310,7 @@
       if (item.classList.contains('unread')) void request('mark_read', {notification_id:id}).catch(() => {});
       return;
     }
-    if (event.target.closest('[data-notification-read]') || item.classList.contains('unread')) {
-      void mutate('mark_read', {notification_id:id});
-    }
+    if (event.target.closest('[data-notification-read]') || item.classList.contains('unread')) void mutate('mark_read', {notification_id:id});
   }
 
   function keepBellNextToProfile() {
@@ -318,6 +321,215 @@
     if (menu.nextElementSibling !== profile) actions.insertBefore(menu, profile);
   }
 
+  function continuity() {
+    return window.STONEFELLOW_CHAT_CONTINUITY || window.STONEFELLOW_CHAT_CONTINUITY_V87 || {};
+  }
+
+  function activeConversationId() {
+    return Math.max(0, Number(continuity().conversationId?.() || 0));
+  }
+
+  function activeAgentId() {
+    return Math.max(0, Number(window.STONEFELLOW_AGENT_IDENTITY_V236?.agentId || 0));
+  }
+
+  function ensureHistoryButton(conversationId) {
+    const history = document.getElementById('chatHistory');
+    if (!history || conversationId < 1) return null;
+    let button = history.querySelector(`.chat-history-item[data-conversation-id="${conversationId}"]`);
+    if (button) return button;
+    const row = document.createElement('div');
+    row.className = 'chat-history-row';
+    row.dataset.conversationRow = String(conversationId);
+    button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'chat-history-item';
+    button.dataset.conversationId = String(conversationId);
+    button.innerHTML = '<span>Attention required</span><small>now</small>';
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'chat-history-delete';
+    remove.dataset.deleteConversation = String(conversationId);
+    remove.setAttribute('aria-label', 'Delete Attention required');
+    remove.title = 'Delete chat';
+    remove.textContent = '×';
+    row.append(button, remove);
+    history.prepend(row);
+    return button;
+  }
+
+  async function showAttentionConversation(conversationId, message) {
+    const historyButton = ensureHistoryButton(conversationId);
+    historyButton?.click();
+    const deadline = Date.now() + 5000;
+    while (Date.now() < deadline) {
+      const texts = [...document.querySelectorAll('#chatThread .message.assistant .message-text')];
+      if (texts.some(node => String(node.textContent || '').trim() === String(message || '').trim())) return true;
+      await new Promise(resolve => setTimeout(resolve, 80));
+    }
+    return false;
+  }
+
+  function clearResponseWindow() {
+    if (responseTimer) window.clearTimeout(responseTimer);
+    responseTimer = 0;
+    responseWindowActive = false;
+  }
+
+  function markUserResponse() {
+    if (!responseWindowActive) return;
+    clearResponseWindow();
+    responseTemporaryVoice = false;
+  }
+
+  function voiceButton() {
+    return document.getElementById('chatVoiceButton');
+  }
+
+  function voiceIsOn() {
+    return Boolean(window.STONEFELLOW_CHAT_CONTINUITY?.isVoice?.());
+  }
+
+  function setVoiceMode(enabled) {
+    const control = voiceButton();
+    if (!control || control.disabled) return false;
+    const current = voiceIsOn();
+    if (current !== Boolean(enabled)) control.click();
+    return voiceIsOn();
+  }
+
+  function waitForAgentIdle(timeoutMs = 30000) {
+    const deadline = Date.now() + timeoutMs;
+    return new Promise(resolve => {
+      const tick = () => {
+        const mode = String(document.body.dataset.stonefellowAgentState || 'idle');
+        if (!['processing','speaking'].includes(mode) || Date.now() >= deadline) {
+          resolve();
+          return;
+        }
+        window.setTimeout(tick, 120);
+      };
+      tick();
+    });
+  }
+
+  function browserSpeak(text) {
+    return new Promise(resolve => {
+      const message = String(text || '').trim();
+      if (!message || !('speechSynthesis' in window) || !window.SpeechSynthesisUtterance) {
+        resolve(false);
+        return;
+      }
+      const utterance = new window.SpeechSynthesisUtterance(message);
+      let done = false;
+      const finish = ok => {
+        if (done) return;
+        done = true;
+        resolve(ok);
+      };
+      utterance.onend = () => finish(true);
+      utterance.onerror = () => finish(false);
+      try {
+        window.speechSynthesis.cancel();
+        window.speechSynthesis.speak(utterance);
+      } catch (_error) {
+        finish(false);
+      }
+    });
+  }
+
+  async function speakWithExistingVoice(text) {
+    const message = String(text || '').trim();
+    if (!message) return;
+    await waitForAgentIdle();
+
+    const wasVoice = voiceIsOn();
+    if (wasVoice) setVoiceMode(false);
+
+    let spoken = false;
+    const PremiumVoice = window.StonefellowPremiumVoiceV122;
+    if (typeof PremiumVoice === 'function') {
+      try {
+        const premium = PremiumVoice({
+          agentEndpoint:String(window.STONEFELLOW_CHAT?.endpoint || '/api/chat-v236.php'),
+          csrf:String(cfg.csrf || '')
+        });
+        spoken = await new Promise(async resolve => {
+          let settled = false;
+          const finish = ok => {
+            if (settled) return;
+            settled = true;
+            resolve(ok);
+          };
+          try {
+            await premium.speak(message, {onEnd:() => finish(true), onError:() => finish(false)});
+          } catch (_error) {
+            finish(false);
+          }
+        });
+      } catch (_error) {
+        spoken = false;
+      }
+    }
+    if (!spoken) await browserSpeak(message);
+
+    const listening = setVoiceMode(true);
+    if (!listening) return;
+    responseTemporaryVoice = !wasVoice;
+    clearResponseWindow();
+    responseWindowActive = true;
+    responseTimer = window.setTimeout(() => {
+      responseTimer = 0;
+      responseWindowActive = false;
+      if (responseTemporaryVoice) {
+        responseTemporaryVoice = false;
+        setVoiceMode(false);
+      }
+    }, 10000);
+  }
+
+  function queueSpeech(text) {
+    speechQueue = speechQueue.then(() => speakWithExistingVoice(text)).catch(() => {});
+  }
+
+  async function presentAttention(item) {
+    const notificationId = Number(item?.id || 0);
+    if (notificationId < 1) return;
+    const data = await request('present_attention', {
+      notification_id:notificationId,
+      conversation_id:activeConversationId(),
+      agent_id:activeAgentId()
+    });
+    if (!data.handled || data.duplicate) return;
+    await showAttentionConversation(Number(data.conversation_id || 0), String(data.message || ''));
+    queueSpeech(String(data.message || ''));
+    void refresh(false);
+  }
+
+  function queueAttention(item) {
+    attentionQueue = attentionQueue.then(() => presentAttention(item)).catch(() => {});
+  }
+
+  async function pollAttention(bootstrap = false) {
+    if (attentionBusy || (document.hidden && !bootstrap)) return;
+    attentionBusy = true;
+    try {
+      const data = await request('attention', null, {after_id:bootstrap ? 0 : attentionCursor});
+      const items = Array.isArray(data.items) ? data.items : [];
+      attentionCursor = Math.max(attentionCursor, Number(data.latest_id || 0));
+      items.forEach(queueAttention);
+    } catch (_error) {
+    } finally {
+      attentionBusy = false;
+    }
+  }
+
+  function startAttentionPolling() {
+    void pollAttention(true);
+    if (attentionTimer) window.clearInterval(attentionTimer);
+    attentionTimer = window.setInterval(() => pollAttention(false), 5000);
+  }
+
   if (!ownNotificationButton()) return;
   ensureDrawer();
   keepBellNextToProfile();
@@ -326,6 +538,20 @@
   document.addEventListener('keydown', event => {
     if (event.key === 'Escape' && drawer?.classList.contains('open')) closeDrawer();
   });
-  window.STONEFELLOW_NOTIFICATION_CENTER = {open:openDrawer, close:closeDrawer, refresh};
+  document.getElementById('chatForm')?.addEventListener('submit', markUserResponse, true);
+  window.addEventListener('stonefellow:chat-voice', event => {
+    if (String(event.detail?.type || '') === 'TRANSCRIPT_SUBMIT') markUserResponse();
+  });
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) void pollAttention(false);
+  });
+  window.addEventListener('pagehide', () => {
+    if (attentionTimer) window.clearInterval(attentionTimer);
+    attentionTimer = 0;
+    clearResponseWindow();
+  }, {once:true});
+
+  window.STONEFELLOW_NOTIFICATION_CENTER = {open:openDrawer, close:closeDrawer, refresh, pollAttention};
   void refresh(false);
+  startAttentionPolling();
 })();

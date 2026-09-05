@@ -84,7 +84,7 @@ assert.match(profileCss,/\.profile-agent-widget\[hidden\]\{display:none\}/,'publ
 assert.doesNotMatch(loader,/profile-dashboard/,'My Account no longer injects the old Profile Agent dashboard');
 assert.doesNotMatch(agentSettings,/name="is_profile_agent"/,'My Agents no longer exposes a competing public Profile Agent checkbox');
 assert.match(userAgents,/array_key_exists\('is_profile_agent',\$input\)/,'ordinary agent edits preserve portal-managed Profile Agent designation');
-assert.match(memberNav,/Profile Agent', url\('\/profile-agent\.php'\)/,'avatar navigation exposes Profile Agent as a real destination');
+assert.match(memberNav,/personal_capability_has_v242\('profile_agent\.access',\$user\)[\s\S]*Profile Agent[\s\S]*url\('\/profile-agent\.php'\)/,'avatar navigation exposes Profile Agent only through its personal capability gate');
 assert.match(sidebar,/url\('\/profile-agent\.php'\)/,'workspace sidebar routes to the standalone Profile Agent portal');
 assert.doesNotMatch(sidebar,/account\.php#profile-agent/,'workspace sidebar no longer points at the removed account section');
 assert.match(page,/url\('\/profile-agent\.php'\)/,'public profile owner navigation returns to the Profile Agent portal');
