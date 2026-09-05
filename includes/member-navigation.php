@@ -36,6 +36,8 @@ function member_navigation_menu_links(?array $user = null): array
         $target[] = ['key'=>$key,'label'=>$label,'url'=>$href,'group'=>$group,'danger'=>$danger];
     };
 
+    if (has_permission('chat.access',$user)) $add($links,'chat','Main Feed',url('/chat.php'),'primary');
+
     $profileUrl = member_navigation_profile_url($user);
     if ($profileUrl !== '') $add($links,'profile','View Profile',$profileUrl,'identity');
 
@@ -47,7 +49,6 @@ function member_navigation_menu_links(?array $user = null): array
     if (personal_capability_has_v242('personal_knowledge.access',$user)) $add($links,'knowledge','My Knowledge',url('/knowledge.php'),'identity');
     if (has_permission('artist_listening.access',$user)) $add($links,'transcriptions','My Transcriptions',url('/artist-listening.php'),'identity');
 
-    if (has_permission('chat.access',$user)) $add($links,'chat','Agent Chat',url('/chat.php'),'agent');
     if (personal_capability_has_v242('voice_profile.access',$user)) $add($links,'voice_profile','Voice Profile',url('/voice-profile.php'),'agent');
 
     $artistWorkspaceAllowed = user_has_role('artist',$user)
@@ -55,10 +56,6 @@ function member_navigation_menu_links(?array $user = null): array
             || permission_v105_has('release.manage',$user));
     if ($artistWorkspaceAllowed) $add($links,'artist_workspace','Artist Workspace',url('/admin/artist.php'),'creator');
 
-    if (has_permission('tracks.manage',$user)||has_permission('track_notes.manage',$user)||has_permission('producer.access',$user)) {
-        $add($links,'stem_studio','Stem Studio',url('/admin/stems.php'),'creator');
-    }
-    if (has_permission('chat.access',$user)) $add($links,'video_editor','Video Editor',url('/video-editor.php'),'creator');
     if (has_permission('admin.access',$user)) $add($links,'admin','Admin Dashboard',url('/admin/index.php'),'admin');
 
     $add($links,'logout','Log Out',url('/logout.php'),'session',true);

@@ -25,9 +25,6 @@
   const openSidebar = document.getElementById('openChatSidebar');
   const closeSidebar = document.getElementById('closeChatSidebar');
   const backdrop = document.getElementById('chatSidebarBackdrop');
-  const liveUpdates = document.getElementById('chatLiveUpdates');
-  const liveUpdateList = document.getElementById('chatLiveUpdateList');
-  const liveStatus = document.getElementById('chatLiveStatus');
   const notificationCount = document.getElementById('chatNotificationCount');
   const notificationUnreadLabel = document.getElementById('chatNotificationUnreadLabel');
   const createMenu = document.getElementById('chatCreateMenu');
@@ -93,7 +90,6 @@
   let activityTimer = null;
   let activityCursor = 0;
   let pendingConversationSync = 0;
-  const renderedActivityIds = new Set();
   const audioState = new WeakMap();
   let activeAudio = null;
 
@@ -762,131 +758,6 @@
     return 'Update';
   }
 
-  function activityIcon(type) {
-    if (type === 'agent_supervisor_listen') {
-      return '▶';
-    }
-
-    if (
-      type === 'agent_track_share' ||
-      type === 'producer_track_share'
-    ) {
-      return '↗';
-    }
-
-    if (type === 'stem_region_note' || type === 'production_note' || type === 'stem_work_update') {
-      return 'N';
-    }
-
-    if (type === 'new_track_release') {
-      return '♪';
-    }
-
-    if (type === 'new_album_release') {
-      return 'A';
-    }
-
-    if (type === 'show_reminder') {
-      return '★';
-    }
-
-    if (type === 'artist_post') {
-      return 'N';
-    }
-
-    return '•';
-  }
-
-  function activityElement(update) {
-    const id = Number(update.id || 0);
-    const wrapper =
-      document.createElement('article');
-
-    wrapper.className =
-      `chat-live-update ${String(update.type || 'general')}`;
-    wrapper.dataset.agentUpdateId =
-      String(id);
-
-    const target = String(
-      update.target_url || ''
-    ).trim();
-
-    wrapper.innerHTML = `
-      <span class="chat-live-update-icon">${escapeHtml(
-        activityIcon(update.type)
-      )}</span>
-      <div class="chat-live-update-copy">
-        <div class="chat-live-update-meta">
-          <strong>${escapeHtml(
-            activityTypeLabel(update.type)
-          )}</strong>
-          <time>${escapeHtml(
-            String(update.created_at || '')
-              .replace(' ', ' · ')
-          )}</time>
-        </div>
-        <h3>${escapeHtml(update.title || 'Agent update')}</h3>
-        <p>${escapeHtml(update.body || '')}</p>
-      </div>
-      ${
-        target
-          ? `<a class="chat-live-update-action" href="${escapeHtml(target)}">Open</a>`
-          : ''
-      }
-    `;
-
-    return wrapper;
-  }
-
-  function renderActivityUpdates(updates) {
-    if (
-      !liveUpdates ||
-      !liveUpdateList ||
-      !Array.isArray(updates) ||
-      !updates.length
-    ) {
-      return;
-    }
-
-    updates.forEach(update => {
-      const id =
-        Number(update.id || 0);
-
-      if (
-        id < 1 ||
-        renderedActivityIds.has(id)
-      ) {
-        return;
-      }
-
-      renderedActivityIds.add(id);
-      liveUpdateList.appendChild(
-        activityElement(update)
-      );
-    });
-
-    while (
-      liveUpdateList.children.length >
-      12
-    ) {
-      const first =
-        liveUpdateList.firstElementChild;
-
-      if (first) {
-        renderedActivityIds.delete(
-          Number(
-            first.dataset.agentUpdateId ||
-            0
-          )
-        );
-        first.remove();
-      }
-    }
-
-    liveUpdates.hidden =
-      liveUpdateList.children.length < 1;
-  }
-
   async function pollAgentActivity(
     force = false
   ) {
@@ -913,10 +784,6 @@
         action:'activity',
         after_id:activityCursor
       });
-
-      renderActivityUpdates(
-        data.updates || []
-      );
 
       if(hadCursor&&Number(data.conversation_id||0)===conversationId&&Number(data.latest_message_id||0)>lastLoadedMessageId){
         pendingConversationSync=conversationId;
@@ -3231,10 +3098,25 @@
     } catch (error) {}
   }, true);
 
-  window.STONEFELLOW_CHAT_CONTINUITY_V87 = {
+  const canonicalChatContinuity = {
     isVoice:() => Boolean(voiceMode),
-    conversationId:() => Number(conversationId || 0)
+    conversationId:() => Number(conversationId || 0),
+    openConversation:async id => {
+      const target = Math.max(0, Number(id || 0));
+      if (target < 1) return false;
+      await loadConversation(target);
+      return Number(conversationId || 0) === target;
+    },
+    syncConversation:async id => {
+      const target = Math.max(0, Number(id || conversationId || 0));
+      if (target < 1) return false;
+      if (target !== Number(conversationId || 0)) await loadConversation(target);
+      else await syncConversationMessagesV101(target);
+      return true;
+    }
   };
+  window.STONEFELLOW_CHAT_CONTINUITY_V87 = canonicalChatContinuity;
+  window.STONEFELLOW_CHAT_CONTINUITY = canonicalChatContinuity;
 
   function speakIntroV101(text) {
     if (!('speechSynthesis' in window) || !window.SpeechSynthesisUtterance || !String(text || '').trim()) return;

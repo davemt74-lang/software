@@ -39,17 +39,6 @@ $html = preg_replace(
     $html
 ) ?? $html;
 
-if (has_permission('artist_listening.access', $user)) {
-    $recordingsNavLink = '<a class="chat-sidebar-nav-link chat-sidebar-recordings-link" href="'
-        . e(url('/artist-listening.php')) . '" aria-label="Open My Transcriptions">'
-        . '<span aria-hidden="true">●</span><strong>My Transcriptions</strong></a>';
-    $html = preg_replace_callback(
-        '~(\s*</nav>\s*</section>\s*<section class="chat-sidebar-history-section")~',
-        static fn(array $matches): string => "\n          " . $recordingsNavLink . $matches[1],
-        $html,
-        1
-    ) ?? $html;
-}
 
 $html = str_replace('chat.js?v=101', 'chat.js?v=' . $controlBuild, $html);
 
@@ -212,8 +201,8 @@ $html = preg_replace(
     1
 ) ?? $html;
 
-$hardening = '<style data-chat-overlay-removal-v206>#chatLiveUpdates,.chat-live-updates,.agent-update-overlay,.agent-updates-overlay,#chatRecordingsCanvas,.chat-recordings-canvas{display:none!important}</style>'
-    . '<script data-chat-ui-hardening-v206>(function(){"use strict";var selector="#agentNextMovesCanvas,.agent-next-canvas-v97,.agent-next-moves,.agent-proactive-panel,#chatLiveUpdates,.chat-live-updates,.agent-update-overlay,.agent-updates-overlay,#chatRecordingsCanvas,.chat-recordings-canvas";var purge=function(){document.querySelectorAll(selector).forEach(function(el){el.remove();});};purge();var o=new MutationObserver(purge);o.observe(document.documentElement,{childList:true,subtree:true});window.addEventListener("pagehide",function(){o.disconnect();},{once:true});})();</script>';
+$hardening = '<style data-chat-overlay-removal-v206>.agent-update-overlay,.agent-updates-overlay,#chatRecordingsCanvas,.chat-recordings-canvas{display:none!important}</style>'
+    . '<script data-chat-ui-hardening-v206>(function(){"use strict";var selector="#agentNextMovesCanvas,.agent-next-canvas-v97,.agent-next-moves,.agent-proactive-panel,.agent-update-overlay,.agent-updates-overlay,#chatRecordingsCanvas,.chat-recordings-canvas";var purge=function(){document.querySelectorAll(selector).forEach(function(el){el.remove();});};purge();var o=new MutationObserver(purge);o.observe(document.documentElement,{childList:true,subtree:true});window.addEventListener("pagehide",function(){o.disconnect();},{once:true});})();</script>';
 
 $composerControls = '<style data-chat-controls-v142>'
     . '.chat-composer .chat-video-editor-button{display:grid;place-items:center;flex:0 0 34px;width:34px;min-width:34px;height:34px;border:0;border-radius:9px;color:inherit;background:transparent;text-decoration:none;align-self:flex-end;box-sizing:border-box;}'

@@ -331,39 +331,18 @@
     return Math.max(0, Number(window.STONEFELLOW_AGENT_IDENTITY_V236?.agentId || 0));
   }
 
-  function ensureHistoryButton(conversationId) {
-    const history = document.getElementById('chatHistory');
-    if (!history || conversationId < 1) return null;
-    let button = history.querySelector(`.chat-history-item[data-conversation-id="${conversationId}"]`);
-    if (button) return button;
-    const row = document.createElement('div');
-    row.className = 'chat-history-row';
-    row.dataset.conversationRow = String(conversationId);
-    button = document.createElement('button');
-    button.type = 'button';
-    button.className = 'chat-history-item';
-    button.dataset.conversationId = String(conversationId);
-    button.innerHTML = '<span>Attention required</span><small>now</small>';
-    const remove = document.createElement('button');
-    remove.type = 'button';
-    remove.className = 'chat-history-delete';
-    remove.dataset.deleteConversation = String(conversationId);
-    remove.setAttribute('aria-label', 'Delete Attention required');
-    remove.title = 'Delete chat';
-    remove.textContent = '×';
-    row.append(button, remove);
-    history.prepend(row);
-    return button;
-  }
-
   async function showAttentionConversation(conversationId, message) {
-    const historyButton = ensureHistoryButton(conversationId);
-    if (!historyButton) return false;
-    historyButton.click();
+    const id = Math.max(0, Number(conversationId || 0));
+    const chat = continuity();
+    if (id < 1 || typeof chat.openConversation !== 'function') return false;
+    const opened = await chat.openConversation(id);
+    if (!opened) return false;
+    const expected = String(message || '').trim();
     const deadline = Date.now() + 5000;
     while (Date.now() < deadline) {
       const texts = [...document.querySelectorAll('#chatThread .message.assistant .message-text')];
-      if (texts.some(node => String(node.textContent || '').trim() === String(message || '').trim())) return true;
+      if (texts.some(node => String(node.textContent || '').trim() === expected)) return true;
+      if (typeof chat.syncConversation === 'function') await chat.syncConversation(id);
       await new Promise(resolve => setTimeout(resolve, 80));
     }
     return false;

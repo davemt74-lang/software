@@ -675,7 +675,7 @@ foreach ($chatPosts as $post) {
 <div class="chat-app">
   <aside class="chat-sidebar" id="chatSidebar">
     <div class="chat-sidebar-top">
-      <a class="chat-brand" href="<?= e(url('/chat.php')) ?>">Stonefellow</a>
+      <a class="chat-brand" href="<?= e(url('/')) ?>">Stonefellow</a>
       <button class="chat-icon-button mobile-only" id="closeChatSidebar" type="button" aria-label="Close chats">×</button>
     </div>
 
@@ -693,6 +693,27 @@ foreach ($chatPosts as $post) {
             <span>＋</span>
             <strong>New Chat</strong>
           </button>
+
+          <?php if (personal_capability_has_v242('profile_agent.access', $user)): ?>
+          <a class="chat-sidebar-nav-link" href="<?= e(url('/profile-agent.php')) ?>">
+            <span>◎</span>
+            <strong>Profile Agent</strong>
+          </a>
+          <?php endif; ?>
+
+          <?php if (has_permission('account.access', $user)): ?>
+          <a class="chat-sidebar-nav-link" href="<?= e(url('/contacts.php')) ?>">
+            <span>●</span>
+            <strong>My Contacts</strong>
+          </a>
+          <?php endif; ?>
+
+          <?php if (has_permission('artist_listening.access', $user)): ?>
+          <a class="chat-sidebar-nav-link chat-sidebar-recordings-link" href="<?= e(url('/artist-listening.php')) ?>">
+            <span>●</span>
+            <strong>My Transcriptions</strong>
+          </a>
+          <?php endif; ?>
 
           <button
             class="chat-sidebar-nav-link"
@@ -720,7 +741,7 @@ foreach ($chatPosts as $post) {
             data-chat-view-target="playlists"
           >
             <span>P</span>
-            <strong>Playlists</strong>
+            <strong>My Playlists</strong>
           </button>
 
         </nav>
@@ -893,21 +914,6 @@ foreach ($chatPosts as $post) {
     </header>
 
     <section class="chat-thread" id="chatThread">
-      <section
-        class="chat-live-updates"
-        id="chatLiveUpdates"
-        aria-live="polite"
-        hidden
-      >
-        <header>
-          <div>
-            <span class="chat-live-dot" aria-hidden="true"></span>
-            <strong>Agent Updates</strong>
-          </div>
-          <small id="chatLiveStatus">Live</small>
-        </header>
-        <div class="chat-live-update-list" id="chatLiveUpdateList"></div>
-      </section>
 
       <section
         class="chat-canvas-view chat-player-canvas"
