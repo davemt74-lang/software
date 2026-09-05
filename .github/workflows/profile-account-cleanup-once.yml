@@ -1,0 +1,103 @@
+name: Profile Account Cleanup Once
+
+on:
+  push:
+    branches:
+      - fix/profile-url-account-theme-20260904
+    paths:
+      - .github/workflows/profile-account-cleanup-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/profile-url-account-theme-20260904
+          fetch-depth: 0
+      - name: Apply canonical profile/account cleanup
+        shell: python
+        run: |
+          from pathlib import Path
+
+          def patch(path, replacements):
+              p = Path(path)
+              s = p.read_text()
+              for old, new in replacements:
+                  if old not in s:
+                      raise SystemExit(f"Missing expected text in {path}: {old[:120]!r}")
+                  s = s.replace(old, new)
+              p.write_text(s)
+
+          patch('includes/profile-agent.php', [
+              ("const STONEFELLOW_PROFILE_NAMESPACE = 'stonefellow';\n", ""),
+              ("&& !in_array($value, ['admin','api','account','login','logout','profile','stonefellow','system','support','settings'], true);",
+               "&& !in_array($value, ['admin','api','account','artist-listening','assets','audio','chat','contact','images','index','knowledge','login','logout','notifications','private','profile','register','settings','signup','stonefellow','support','system','tests','tools','upgrade','uploads','video-editor','voice-profile'], true);"),
+              ("return url('/' . STONEFELLOW_PROFILE_NAMESPACE . '/' . rawurlencode($username));",
+               "return url('/' . rawurlencode($username));"),
+          ])
+
+          patch('includes/profile-agent-runtime.php', [
+              ("'namespace'=>STONEFELLOW_PROFILE_NAMESPACE,", "'namespace'=>'',"),
+              ("'profile_url'=>!empty($profile['username'])?profile_public_url((string)$profile['username']):'',",
+               "'profile_url'=>!empty($profile['username'])?profile_public_url((string)$profile['username']):'',\n        'profile_url_example'=>url('/username'),"),
+          ])
+
+          patch('profile-dashboard.js', [
+              ("function render(){const p=state.profile||{},agents=state.agents||[],profileAgentId=Number(p.profile_agent_id||0);panel.innerHTML=",
+               "function render(){const p=state.profile||{},agents=state.agents||[],profileAgentId=Number(p.profile_agent_id||0),systemName=String(state.system_agent_name||'System');panel.innerHTML="),
+              ("Your Profile Agent is a public-facing extension of your Stonefellow-powered agent.",
+               "Your Profile Agent is a public-facing extension of your ${esc(systemName)}-powered agent."),
+              ("state.profile_url||'stonefellow.com/stonefellow/username'",
+               "state.profile_url||state.profile_url_example||'/username'"),
+          ])
+
+          patch('account-agent-settings-v236.js', [
+              ("opts that data into Stonefellow network knowledge.", "opts that data into system network knowledge."),
+              ("Stonefellow records the use here.", "The system records the use here."),
+              ("||'STONEFELLOW'", "||'System'"),
+          ])
+
+          patch('account.php', [
+              ("flash('account_notice', 'Agent SOUL.md reset to the Stonefellow default.');",
+               "flash('account_notice', 'Agent SOUL.md reset to the ' . system_agent_name() . ' default.');"),
+              ('<meta name="theme-color" content="#0b0a09">', '<meta name="theme-color" content="#f4f5f7">'),
+              ('<title>Stonefellow | My Account</title>', '<title><?= e(system_agent_name()) ?> | My Account</title>'),
+              ('<link rel="stylesheet" href="<?= e(url(\'/chat.css?v=82\')) ?>">', '<link rel="stylesheet" href="<?= e(url(\'/chat.css?v=82\')) ?>">\n<link rel="stylesheet" href="<?= e(url(\'/account.css?v=account-light-20260904\')) ?>">'),
+              ('Update how your Stonefellow account appears inside the authenticated workspace.', 'Update how your <?= e(system_agent_name()) ?> account appears inside the authenticated workspace.'),
+              ('Every Stonefellow account starts with the default soul.', 'Every <?= e(system_agent_name()) ?> account starts with the default soul.'),
+          ])
+
+          patch('profile.php', [
+              ("exit('Stonefellow profiles are not ready. Run /upgrade.php.');",
+               "exit(system_agent_name().' profiles are not ready. Run /upgrade.php.');"),
+          ])
+
+          patch('voice-profile.php', [
+              ('<title>Stonefellow | Voice Profile</title>', '<title><?= e(system_agent_name()) ?> | Voice Profile</title>'),
+              ('Stonefellow only allows this account to create a clone for its own linked identity.', '<?= e(system_agent_name()) ?> only allows this account to create a clone for its own linked identity.'),
+              ('Enable recognition consent when you want Stonefellow to associate a verified provider voice match with your conversational identity.', 'Enable recognition consent when you want <?= e(system_agent_name()) ?> to associate a verified provider voice match with your conversational identity.'),
+          ])
+
+          test = Path('tests/member-navigation-contract.mjs')
+          s = test.read_text()
+          s = s.replace("const bootstrap = read('includes/bootstrap.php');", "const bootstrap = read('includes/bootstrap.php');\nconst profileAgent = read('includes/profile-agent.php');\nconst profileRuntime = read('includes/profile-agent-runtime.php');\nconst profileDashboard = read('profile-dashboard.js');\nconst accountAgentCss = read('account-agent-settings-v236.css');\nconst profileDashboardCss = read('profile-dashboard.css');\nconst accountCss = read('account.css');\nconst htaccess = read('.htaccess');")
+          marker = "assert.ok(bootstrap.includes(\"/member-navigation.php\"), 'bootstrap should load the canonical member navigation helper');"
+          extra = marker + "\nassert.ok(profileAgent.includes(\"return url('/' . rawurlencode($username));\"), 'profile URLs should resolve at the domain root');\nassert.ok(!profileAgent.includes('STONEFELLOW_PROFILE_NAMESPACE'), 'profile URL generation must not retain a Stonefellow namespace');\nassert.ok(profileRuntime.includes(\"'profile_url_example'=>url('/username')\"), 'profile owner state should expose a root URL example');\nassert.ok(htaccess.includes('RewriteRule ^stonefellow/([A-Za-z0-9._-]+)/?$ /$1 [R=301,L,NE]'), 'legacy namespaced profile URLs should redirect to root usernames');\nassert.ok(htaccess.includes('profile.php?username=$1 [L,QSA,NC]'), 'root usernames should rewrite to profile.php');\nassert.ok(account.includes('/account.css?v=account-light-20260904'), 'My Account should load the canonical light workspace theme');\nassert.ok(account.includes('system_agent_name()'), 'My Account should use the configured system name');\nassert.ok(profileDashboard.includes('state.system_agent_name'), 'Profile Agent dashboard should use the configured system name');\nassert.ok(!profileDashboard.includes('stonefellow.com/stonefellow/username'), 'Profile dashboard must not show the legacy namespaced URL');\nfor (const css of [accountAgentCss, profileDashboardCss, accountCss]) { assert.ok(!css.includes('background:#11100f'), 'account surfaces must not contain legacy black card backgrounds'); }"
+          if marker not in s:
+              raise SystemExit('member navigation test marker missing')
+          s = s.replace(marker, extra)
+          test.write_text(s)
+      - name: Remove one-time workflow and commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/profile-account-cleanup-once.yml
+          git config user.name davemt74-lang
+          git config user.email davemt74@gmail.com
+          git add .htaccess account.php account.css account-agent-settings-v236.js account-agent-settings-v236.css profile-dashboard.js profile-dashboard.css profile.php voice-profile.php includes/profile-agent.php includes/profile-agent-runtime.php tests/member-navigation-contract.mjs
+          git commit -m "Consolidate profile URLs and account light theme"
+          git push origin HEAD:fix/profile-url-account-theme-20260904
