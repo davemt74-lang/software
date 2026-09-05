@@ -5,7 +5,7 @@
   const thread=document.getElementById('chatThread');
   const top=document.querySelector('.chat-topbar-title');
   const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
-  const build='live-wiring-20260903-2';
+  const build='profile-activity-20260905';
 
   async function settingsRequest(action='',payload={}){
     if(!cfg.endpoint)throw new Error('Agent settings are unavailable.');

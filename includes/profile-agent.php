@@ -303,8 +303,10 @@ function profile_visit_session(PDO $pdo,int $ownerUserId,?array $visitor): array
 
 function profile_visitor_label(PDO $pdo, array $session): string
 {
-    if(empty($session['identity_disclosed'])||(int)($session['visitor_user_id']??0)<1)return 'Someone';
-    $u=profile_user_row($pdo,(int)$session['visitor_user_id']);return trim((string)($u['display_name']??''))?:'A Stonefellow member';
+    $visitorId=(int)($session['visitor_user_id']??0);
+    if($visitorId<1)return 'Guest visitor';
+    if(empty($session['identity_disclosed']))return 'Signed-in member';
+    $u=profile_user_row($pdo,$visitorId);return trim((string)($u['display_name']??''))?:('A '.system_agent_name().' member');
 }
 
 function profile_event_create(PDO $pdo,int $ownerUserId,array $session,string $type,int $priority,?int $agentId=null,array $metadata=[],?string $dedupeKey=null): ?array
@@ -320,14 +322,15 @@ function profile_event_create(PDO $pdo,int $ownerUserId,array $session,string $t
 function profile_attention_from_event(PDO $pdo,array $event,array $session,?array $agent=null,?int $conversationId=null,string $summary=''): ?array
 {
     $owner=(int)$event['owner_user_id'];$label=profile_visitor_label($pdo,$session);$type=(string)$event['event_type'];$agentName=trim((string)($agent['display_name']??''))?:system_agent_name();
-    if($type==='profile_view'){$headline=$label.' viewed your profile';$summary=$summary?:'A visitor landed on your public Stonefellow profile.';$assessment='Profile interest detected.';$recommended='No response is required unless their activity becomes more meaningful.';$actions=['open_profile','ignore'];}
+    if($type==='profile_view'){$headline=$label.' viewed your profile';$summary=$summary?:('A visitor landed on your public '.system_agent_name().' profile.');$assessment='Profile interest detected.';$recommended='No response is required unless their activity becomes more meaningful.';$actions=['open_profile','ignore'];}
     elseif($type==='conversation_started'){$headline=$label.' started a conversation with '.$agentName;$summary=$summary?:'A visitor started talking with your Profile Agent.';$assessment='Direct profile-agent engagement.';$recommended='Review the conversation if you want to participate.';$actions=['open_conversation','ignore'];}
     else{$headline=$agentName.' needs your input';$summary=$summary?:'Your Profile Agent reached a question it cannot answer from approved information.';$assessment='Owner knowledge or approval is required.';$recommended='Answer the question so the visitor can receive an accurate response.';$actions=['reply','snooze','ignore'];}
     try{
         $stmt=$pdo->prepare('INSERT INTO agent_attention_items (owner_user_id,source_event_id,source_conversation_id,profile_agent_id,visitor_user_id,attention_type,priority,headline,summary,assessment,recommended_response,actions_json,context_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)');
         $stmt->execute([$owner,(int)$event['id'],$conversationId,$agent?(int)$agent['id']:null,(int)($event['visitor_user_id']??0)?:null,$type,(int)$event['priority'],$headline,$summary,$assessment,$recommended,json_encode($actions),json_encode(['profile_session_id'=>(int)$session['id'],'identity_disclosed'=>(bool)$session['identity_disclosed']],JSON_UNESCAPED_SLASHES)]);
         $id=(int)$pdo->lastInsertId();
-        create_notification($owner,'profile_'.$type,$headline,$summary,url('/account.php#profile-agent'),'profile_event',(int)$event['id']);
+        $target=$conversationId?url('/profile-agent.php?tab=inbox&conversation='.(int)$conversationId):url('/profile-agent.php?tab=visitors&session='.(int)$session['id']);
+        create_notification($owner,'profile_'.$type,$headline,$summary,$target,'profile_event',(int)$event['id']);
         $get=$pdo->prepare('SELECT * FROM agent_attention_items WHERE id=?');$get->execute([$id]);return $get->fetch()?:null;
     }catch(PDOException $e){if((string)$e->getCode()==='23000')return null;throw $e;}
 }

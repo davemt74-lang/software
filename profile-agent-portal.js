@@ -16,7 +16,7 @@ const agentHost=document.getElementById('profileAgentSettings');
 const knowledgeHost=document.getElementById('profileAgentKnowledge');
 const profileHost=document.getElementById('profileAgentProfileSettings');
 const analyticsHost=document.getElementById('profileAgentAnalytics');
-let state=null,selectedConversation=0,refreshTimer=null,requestBusy=false;
+let state=null,selectedConversation=0,selectedSession=0,refreshTimer=null,requestBusy=false;
 const setNotice=(message='',error=false)=>{notice.textContent=message;notice.className=`profile-agent-notice${error?' error':''}`;};
 async function req(action,payload=null){
   const post=payload!==null;
@@ -66,9 +66,11 @@ function renderInbox(){
   const rows=Array.isArray(state?.conversations)?state.conversations:[];
   conversationsHost.innerHTML=`<div class="profile-agent-subhead">Conversations</div>`+(rows.length?rows.map(c=>`<article class="profile-agent-conversation-row ${Number(c.id)===selectedConversation?'selected':''}" data-open-conversation="${Number(c.id)}"><div class="profile-agent-row-main"><strong>${esc(c.visitor_label||'Visitor')}</strong><p>${esc(c.last_summary||'Conversation')}</p><small>${relative(c.last_message_at)} · started ${relative(c.started_at)}</small></div><div class="profile-agent-row-actions"><span class="profile-agent-badge ${esc(c.status||'open')}">${esc(String(c.status||'open').replace('_',' '))}</span></div></article>`).join(''):`<div class="profile-agent-empty">No visitor conversations yet.</div>`);
 }
+function visitorAvatar(v){if(v?.identity_disclosed&&v.avatar_url)return `<img src="${esc(v.avatar_url)}" alt="">`;return `<span>${esc(String(v?.visitor_label||'Visitor').charAt(0).toUpperCase()||'?')}</span>`;}
+function visitorMeta(v){if(v?.identity_disclosed){const bits=[];if(v.username)bits.push(`@${v.username}`);if(v.role_label)bits.push(v.role_label);if(v.relationship_scope&&v.relationship_scope!=='none')bits.push(v.relationship_scope);return bits.join(' · ');}return v?.signed_in?'Signed-in member · identity private':'Guest visitor';}
 function renderVisitors(){
   const rows=Array.isArray(state?.visits)?state.visits:[];
-  visitorsHost.innerHTML=rows.length?rows.map(v=>{const live=recentlyActive(v.last_seen_at);return `<article class="profile-agent-visitor-row"><div class="profile-agent-row-main"><strong>${esc(v.visitor_label||'Visitor')}</strong><p>${Number(v.view_count||0)} profile view${Number(v.view_count||0)===1?'':'s'}${v.last_message_at?' · has chatted':''}</p><small>First seen ${relative(v.first_seen_at)} · last seen ${relative(v.last_seen_at)}</small></div><div class="profile-agent-presence ${live?'live':''}">${live?'Active now':'Recent'}</div></article>`;}).join(''):`<div class="profile-agent-empty">No profile visitors yet.</div>`;
+  visitorsHost.innerHTML=rows.length?rows.map(v=>{const live=!!v.active_now||recentlyActive(v.last_seen_at),selected=Number(v.profile_session_id||v.id)===selectedSession;return `<article class="profile-agent-visitor-row ${selected?'selected':''}" data-profile-session="${Number(v.profile_session_id||v.id||0)}"><div class="profile-agent-visitor-avatar">${visitorAvatar(v)}</div><div class="profile-agent-row-main"><strong>${esc(v.visitor_label||'Visitor')}</strong><p>${esc(visitorMeta(v))}</p><small>${Number(v.view_count||0)} profile view${Number(v.view_count||0)===1?'':'s'}${v.last_message_at?' · has chatted':''} · first seen ${relative(v.first_seen_at)} · last seen ${relative(v.last_seen_at)}</small>${v.profile_url?`<a href="${esc(v.profile_url)}" target="_blank" rel="noopener">View profile ↗</a>`:''}</div><div class="profile-agent-presence ${live?'live':''}">${live?'Active now':v.signed_in?'Member':'Guest'}</div></article>`;}).join(''):`<div class="profile-agent-empty">No profile visitors yet.</div>`;
 }
 function agentOptions(selected){
   const agents=Array.isArray(state?.agents)?state.agents:[];
@@ -94,7 +96,7 @@ function renderAnalytics(){
   const responsePct=Number(a.total_conversations||0)>0?Math.round((Number(a.owner_joined||0)/Number(a.total_conversations||1))*100):0;
   analyticsHost.innerHTML=`<div class="profile-agent-card"><h2>Profile Agent Analytics</h2><p>A service-level snapshot from your existing visitor, conversation, and attention records.</p><div class="profile-agent-analytics-grid"><article class="profile-agent-analytics-card"><strong>${Number(a.total_views||0).toLocaleString()}</strong><span>Total profile views</span></article><article class="profile-agent-analytics-card"><strong>${Number(a.visitor_sessions||0).toLocaleString()}</strong><span>Visitor sessions</span></article><article class="profile-agent-analytics-card"><strong>${Number(a.active_visitors||0).toLocaleString()}</strong><span>Active in last 5 minutes</span></article><article class="profile-agent-analytics-card"><strong>${Number(a.total_conversations||0).toLocaleString()}</strong><span>Total conversations</span></article><article class="profile-agent-analytics-card"><strong>${Number(a.open_conversations||0).toLocaleString()}</strong><span>Open conversations</span></article><article class="profile-agent-analytics-card"><strong>${responsePct}%</strong><span>Owner joined conversations</span></article></div></div>`;
 }
-function renderAll(){renderService();renderMetrics();renderInbox();renderVisitors();renderAgentSettings();renderKnowledge();renderProfileSettings();renderAnalytics();bindDynamic();}
+function renderAll(){renderService();renderMetrics();renderInbox();renderVisitors();renderAgentSettings();renderKnowledge();renderProfileSettings();renderAnalytics();const unread=Number(state?.notifications?.unread||0),bell=document.getElementById('chatNotificationButton');if(bell){let badge=bell.querySelector(':scope > span');if(unread>0){if(!badge){badge=document.createElement('span');bell.appendChild(badge);}badge.textContent=unread>99?'99+':String(unread);}else badge?.remove();}bindDynamic();}
 async function refresh(silent=false){
   if(requestBusy)return;requestBusy=true;
   try{const d=await req('owner_state');state=d.state;renderAll();if(!silent)setNotice('Profile Agent workspace refreshed.');}
@@ -120,8 +122,8 @@ app.addEventListener('click',async e=>{
   const attention=e.target.closest('[data-attention]');if(attention){try{const d=await req('attention_action',{attention_id:Number(attention.dataset.attention),attention_action:attention.dataset.attentionAction});state=d.state;renderAll();setNotice('Attention item updated.');}catch(err){setNotice(err.message,true);}return;}
 });
 document.getElementById('profileAgentRefresh')?.addEventListener('click',()=>refresh(false));
-try{activateTab(localStorage.getItem('profile-agent-portal-tab')||'inbox');}catch(e){activateTab('inbox');}
-refresh(true);
+const deepLink=new URLSearchParams(window.location.search);selectedConversation=Number(deepLink.get('conversation')||0);selectedSession=Number(deepLink.get('session')||0);let initialTab=deepLink.get('tab')||'';try{if(!initialTab)initialTab=localStorage.getItem('profile-agent-portal-tab')||'inbox';}catch(e){if(!initialTab)initialTab='inbox';}activateTab(initialTab);
+refresh(true).then(()=>{if(selectedConversation){activateTab('inbox');openConversation(selectedConversation);}else if(selectedSession){activateTab('visitors');renderVisitors();const row=visitorsHost.querySelector(`[data-profile-session="${selectedSession}"]`);row?.scrollIntoView({block:'center'});}});
 refreshTimer=setInterval(()=>{if(document.visibilityState==='visible')refresh(true);},15000);
 window.addEventListener('beforeunload',()=>clearInterval(refreshTimer));
 })();

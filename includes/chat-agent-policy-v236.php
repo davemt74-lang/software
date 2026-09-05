@@ -159,6 +159,26 @@ function chat_policy_knowledge_v236(PDO $pdo,array $principal,array $user,string
     return $context;
 }
 
+function chat_policy_profile_activity_v236(PDO $pdo,array $user,string $query): array
+{
+    if(!function_exists('profile_agent_schema_ready')||!profile_agent_schema_ready($pdo)||!function_exists('profile_runtime_visitor_descriptor'))return [];
+    if(!preg_match('/\b(profile(?:\s+agent)?|visitor|visitors|visited|visiting|profile\s+activity|on\s+my\s+profile|who(?:\x27s|\s+is)\s+on|asked\s+my\s+agent|profile\s+conversation)\b/i',$query))return [];
+    $uid=(int)($user['id']??0);if($uid<1)return [];
+    $lines=[];
+    $visits=$pdo->prepare('SELECT id,visitor_user_id,identity_disclosed,view_count,first_seen_at,last_seen_at,last_message_at FROM profile_visit_sessions WHERE owner_user_id=? AND view_count>0 ORDER BY last_seen_at DESC,id DESC LIMIT 12');
+    $visits->execute([$uid]);
+    foreach($visits->fetchAll()?:[] as $row){
+        $d=profile_runtime_visitor_descriptor($pdo,$uid,$row);$active=!empty($row['last_seen_at'])&&strtotime((string)$row['last_seen_at'])>=time()-300;
+        $identity=(string)$d['visitor_label'];if(!empty($d['username']))$identity.=' @'.(string)$d['username'];if(($d['relationship_scope']??'none')!=='none')$identity.=' · '.(string)$d['relationship_scope'];
+        $lines[]=$identity.' · '.((bool)$d['signed_in']?'signed in':'guest').' · '.($active?'active now':'last seen '.(string)$row['last_seen_at']).' · '.(int)$row['view_count'].' profile view'.((int)$row['view_count']===1?'':'s').(!empty($row['last_message_at'])?' · has chatted':'');
+    }
+    $conversations=$pdo->prepare('SELECT c.id,c.status,c.last_summary,c.last_message_at,s.identity_disclosed,s.visitor_user_id FROM profile_agent_conversations c INNER JOIN profile_visit_sessions s ON s.id=c.profile_session_id WHERE c.owner_user_id=? ORDER BY c.last_message_at DESC,c.id DESC LIMIT 10');
+    $conversations->execute([$uid]);$conversationLines=[];
+    foreach($conversations->fetchAll()?:[] as $row){$d=profile_runtime_visitor_descriptor($pdo,$uid,$row);$conversationLines[]='#'.(int)$row['id'].' · '.(string)$d['visitor_label'].' · '.(string)$row['status'].' · '.(string)$row['last_summary'].' · last message '.(string)$row['last_message_at'];}
+    $text="Current owner-only Profile Agent activity. Identity is included only where the visitor explicitly disclosed it.\nVisitors:\n".($lines?implode("\n",$lines):'No recent visitors.')."\nConversations:\n".($conversationLines?implode("\n",$conversationLines):'No Profile Agent conversations.');
+    return [['source'=>'profile:activity','title'=>'Your Profile Agent activity','text'=>mb_strimwidth($text,0,9000,'…')]];
+}
+
 function chat_policy_context_v236(string $query,array $user,array $principal,int $conversationId=0): array
 {
     $pdo=db();if(!$pdo)return [];$terms=chat_policy_terms_v236($query);$context=[];
@@ -177,6 +197,7 @@ function chat_policy_context_v236(string $query,array $user,array $principal,int
     }else{
       $context[]=['source'=>'agent:identity','title'=>'Universal system agent','text'=>'Respond as the universal system agent named '.system_agent_name().'. It powers optional user-owned agents. In the signed-in owner session it may use that owner’s private data without publishing it. Another user’s content enters network context only through explicit Share with System AI permission.'];
     }
+    foreach(chat_policy_profile_activity_v236($pdo,$user,$query) as $item)$context[]=$item;
     foreach(chat_policy_workspace_context_v236($pdo,$principal,$user,$query,$terms,$conversationId) as $item)$context[]=$item;
     foreach(chat_policy_legacy_context_v236($pdo,$principal,$user,$query,$terms,$conversationId) as $item)$context[]=$item;
     foreach(chat_policy_knowledge_v236($pdo,$principal,$user,$query,$terms,$conversationId) as $item)$context[]=$item;
