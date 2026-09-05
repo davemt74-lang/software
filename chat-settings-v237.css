@@ -1,8 +1,12 @@
 /* Stonefellow Chat Settings v237 */
+#chatSidebar{padding-bottom:66px!important}
 .chat-settings-launcher{
-  flex:0 0 auto;
-  padding:8px 2px 0;
-  margin-top:auto;
+  position:absolute;
+  z-index:3;
+  left:10px;
+  right:10px;
+  bottom:10px;
+  padding:7px 2px 0;
   border-top:1px solid #e5e7eb;
   background:#f8fafc;
 }

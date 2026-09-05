@@ -24,10 +24,10 @@ Header always set X-Frame-Options "SAMEORIGIN"
 Header always set Referrer-Policy "same-origin"
 Header always set Cross-Origin-Resource-Policy "same-origin"
 Header always set Permissions-Policy "microphone=(self), camera=(self)"
-<FilesMatch "^(?:premium-voice-v117|chat-voice-v117|editor-voice-barge-v117|voice-lease-v122|conversation-voice-v120|conversation-voice-v121|conversation-voice-v122|chat-conversation-v121|editor-agent-v114|stem-agent-v114|video-header-v92|agent-activity-v94)\.js$">
+<FilesMatch "^(?:premium-voice-v117|chat-voice-v117|editor-voice-barge-v117|voice-lease-v122|conversation-voice-v120|conversation-voice-v121|conversation-voice-v122|chat-conversation-v121|editor-agent-v114|stem-agent-v114|video-header-v92|agent-activity-v94|chat-notifications-drawer-v240)\.js$">
 Header always set Cache-Control "no-cache, must-revalidate"
 </FilesMatch>
-<FilesMatch "^chat-settings-v237\.(?:js|css)$">
+<FilesMatch "^(?:chat-settings-v237|chat-notifications-drawer-v240)\.(?:js|css)$">
 Header always set Cache-Control "no-cache, must-revalidate"
 </FilesMatch>
 </IfModule>

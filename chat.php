@@ -15,6 +15,8 @@ $agentIdentityBuild = 'profile-activity-20260905';
 $profileActivityBuild = 'profile-activity-overlay-20260905';
 $headerUiBuild = 'live-wiring-20260903-3';
 $teamChatAdminBuild = 'team-chat-bootstrap-v236-20260905';
+$chatSettingsBuild = 'chat-settings-v239-canonical-20260905';
+$notificationDrawerBuild = 'chat-notifications-brain-v240-20260905';
 
 if (!headers_sent()) {
     header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
@@ -279,11 +281,34 @@ $profileActivityRuntime = $agentFeatureReady && $pdoForAgent && profile_agent_sc
         . '<script data-profile-activity-chat src="' . e(url('/profile-activity-chat.js?v=' . $profileActivityBuild)) . '"></script>'
     : '';
 
+// Agent Chat itself owns its universal settings and Activity Center. These are
+// not gated by Team Chat roles or Profile Agent availability.
+$chatSettingsRuntime = '<link rel="stylesheet" data-chat-settings-canonical href="' . e(url('/chat-settings-v237.css?v=' . $chatSettingsBuild)) . '">'
+    . '<script data-chat-settings-config>window.STONEFELLOW_CHAT_SETTINGS='
+    . json_encode([
+        'endpoint'=>url('/api/chat-settings-v237.php'),
+        'csrf'=>csrf_token(),
+        'build'=>$chatSettingsBuild,
+    ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
+    . ';</script>'
+    . '<script data-chat-settings-canonical src="' . e(url('/chat-settings-v237.js?v=' . $chatSettingsBuild)) . '"></script>';
+
+$notificationDrawerRuntime = '<link rel="stylesheet" data-chat-notification-drawer href="' . e(url('/chat-notifications-drawer-v240.css?v=' . $notificationDrawerBuild)) . '">'
+    . '<script data-chat-notification-drawer-config>window.STONEFELLOW_NOTIFICATION_DRAWER='
+    . json_encode([
+        'endpoint'=>url('/api/chat-notifications-brain-v240.php'),
+        'csrf'=>csrf_token(),
+        'build'=>$notificationDrawerBuild,
+    ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
+    . ';</script>'
+    . '<script data-chat-notification-drawer src="' . e(url('/chat-notifications-drawer-v240.js?v=' . $notificationDrawerBuild)) . '"></script>';
+
 $runtime = $headerUiRuntime
          . $mediaOverlayRuntime
          . $hardening
          . $composerControls
          . $recordingLibraryRuntime
+         . $chatSettingsRuntime
          . '<script data-agent-updates-autodismiss-v173 data-agent-overlay-build="' . e($agentOverlayBuild) . '" src="' . e(url('/chat-agent-updates-autodismiss-v173.js?v=' . $agentOverlayBuild)) . '"></script>'
          . $voiceConfig
          . '<script data-premium-voice-v142 data-premium-audio-unlock="v147" src="' . e(url('/premium-voice-v117.js?v=' . $premiumVoiceBuild)) . '"></script>'
@@ -291,9 +316,10 @@ $runtime = $headerUiRuntime
          . '<script data-chat-voice data-chat-echo-guard="canonical" data-chat-streaming="enabled" data-chat-processed-input="enabled" data-chat-barge="speech-recognition" data-chat-turn-pause="1800" data-chat-lifecycle="canonical" src="' . e(url('/chat-voice.js?v=' . $voiceCacheBuild)) . '"></script>'
          . $agentIdentityRuntime
          . $profileActivityRuntime
+         . $notificationDrawerRuntime
          . '<script data-team-chat-admin-v109 data-team-chat-admin-build="' . e($teamChatAdminBuild) . '" src="' . e(url('/team-chat-admin-v109.js?v=' . $teamChatAdminBuild)) . '"></script>'
          . $railLayout
-         . '<span data-stonefellow-build="' . e($runtimeBuild) . '" data-chat-controls-build="' . e($controlBuild) . '" data-premium-voice-build="' . e($premiumVoiceBuild) . '" data-chat-voice-build="' . e($voiceAssetBuild) . '" data-chat-voice-feature-build="' . e($voiceCacheBuild) . '" data-recording-ui-build="' . e($recordingUiBuild) . '" data-recording-persistence-build="' . e($recordingPersistenceBuild) . '" data-transcription-canvas-build="' . e($transcriptionCanvasBuild) . '" data-team-chat-admin-build="' . e($teamChatAdminBuild) . '" data-agent-theme-build="' . e($agentThemeBuild) . '" data-chat-media-overlay-build="' . e($mediaOverlayBuild) . '" data-agent-overlay-build="' . e($agentOverlayBuild) . '" data-user-agent-build="' . e($agentIdentityBuild) . '" hidden></span>';
+         . '<span data-stonefellow-build="' . e($runtimeBuild) . '" data-chat-controls-build="' . e($controlBuild) . '" data-premium-voice-build="' . e($premiumVoiceBuild) . '" data-chat-voice-build="' . e($voiceAssetBuild) . '" data-chat-voice-feature-build="' . e($voiceCacheBuild) . '" data-recording-ui-build="' . e($recordingUiBuild) . '" data-recording-persistence-build="' . e($recordingPersistenceBuild) . '" data-transcription-canvas-build="' . e($transcriptionCanvasBuild) . '" data-team-chat-admin-build="' . e($teamChatAdminBuild) . '" data-agent-theme-build="' . e($agentThemeBuild) . '" data-chat-media-overlay-build="' . e($mediaOverlayBuild) . '" data-agent-overlay-build="' . e($agentOverlayBuild) . '" data-user-agent-build="' . e($agentIdentityBuild) . '" data-chat-settings-build="' . e($chatSettingsBuild) . '" data-notification-drawer-build="' . e($notificationDrawerBuild) . '" hidden></span>';
 
 $html = str_replace('</body>', $runtime . '</body>', $html);
 echo $html;
