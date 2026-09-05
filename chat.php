@@ -8,7 +8,7 @@ $voiceAssetBuild = 'chat-voice-canonical-20260903';
 $voiceCacheBuild = 'chat-voice-canonical-20260903-failover1';
 $recordingUiBuild = 'chat-recording-results-v206-20260901';
 $recordingPersistenceBuild = 'chat-recordings-v242-20260902';
-$transcriptionCanvasBuild = 'chat-transcription-canvas-v243-overlay-20260905';
+$transcriptionCanvasBuild = 'chat-transcription-canvas-v243-layout-20260905';
 $mediaOverlayBuild = 'chat-media-overlays-source-light-20260905';
 $agentOverlayBuild = 'agent-updates-hidden-v206-20260901';
 $agentIdentityBuild = 'profile-activity-20260905';
@@ -119,7 +119,7 @@ try {
 // Canonical account dropdown. Replace the legacy menu as one unit so Chat does
 // not inject parallel account.php hash links that drift from the other surfaces.
 $chatProfileLinks = '';
-$chatProfileMenuExcluded = ['profile'=>true, 'account'=>true, 'profile_agent'=>true];
+$chatProfileMenuExcluded = ['account'=>true, 'profile_agent'=>true];
 foreach (member_navigation_menu_links($user) as $menuLink) {
     if (isset($chatProfileMenuExcluded[(string)($menuLink['key'] ?? '')])) {
         continue;
