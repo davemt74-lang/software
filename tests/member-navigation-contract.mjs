@@ -79,7 +79,9 @@ for (const css of [accountAgentCss, profileDashboardCss, accountCss]) { assert.o
 assert.ok(!account.includes('Stonefellow'), 'My Account user-facing copy should use the configured system name');
 assert.ok(profileDashboard.includes('profileDisplayUrl=new URL(profileUrl,window.location.origin).href'), 'retained profile dashboard should display the full canonical domain/username URL');
 assert.ok(!profileDashboard.includes('Stonefellow-powered'), 'retained Profile Agent copy should use the configured system name');
-assert.ok(profileAgentPortal.includes('Customer service workspace'), 'standalone Profile Agent portal should own the customer-service experience');
+assert.ok(profileAgentPortal.includes('class="chat-sidebar profile-agent-sidebar"'), 'standalone Profile Agent portal should own a dedicated customer-service sidebar');
+assert.ok(!profileAgentPortal.includes('workspace-sidebar-v82.php'), 'standalone Profile Agent portal should not embed the generic workspace sidebar');
+assert.ok(!profileAgentPortal.includes('Customer service workspace'), 'standalone Profile Agent portal should not restore the removed intro hero');
 assert.ok(accountAgentLoader.includes('account-agent-settings-v236.js') && !accountAgentLoader.includes('profile-dashboard.js'), 'My Account should load agent settings without injecting the old Profile Agent dashboard');
 assert.ok(voiceProfile.includes('systemName:<?= json_encode(system_agent_name()) ?>'), 'Voice Profile should expose the configured system name to its runtime');
 assert.ok(!voiceProfileJs.includes('Stonefellow voice clone'), 'Voice Profile runtime must not hardcode the system name');
