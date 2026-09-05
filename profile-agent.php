@@ -30,7 +30,7 @@ $profileUrl = !empty($profile['username']) ? profile_public_url((string)$profile
 <title>Profile Agent | <?= e(system_agent_name()) ?></title>
 <link rel="stylesheet" href="<?= e(url('/chat.css?v=82')) ?>">
 <link rel="stylesheet" href="<?= e(url('/chat-header-ui.css?v=white-tech-20260904')) ?>">
-<link rel="stylesheet" href="<?= e(url('/profile-agent-portal.css?v=profile-activity-20260905')) ?>">
+<link rel="stylesheet" href="<?= e(url('/profile-agent-portal.css?v=profile-media-20260905')) ?>">
 </head>
 <body>
 <div class="chat-app profile-agent-app">
@@ -166,6 +166,6 @@ window.PROFILE_AGENT_PORTAL = <?= json_encode([
 ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>;
 </script>
 <script src="<?= e(url('/member-shell-v77.js?v=profile-activity-20260905')) ?>"></script>
-<script src="<?= e(url('/profile-agent-portal.js?v=profile-activity-20260905')) ?>"></script>
+<script src="<?= e(url('/profile-agent-portal.js?v=profile-media-20260905')) ?>"></script>
 </body>
 </html>

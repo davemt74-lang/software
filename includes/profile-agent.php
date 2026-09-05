@@ -399,9 +399,9 @@ function profile_agent_context(PDO $pdo,array $profile,array $agent,?array $view
     }
 
     if(table_exists('knowledge_items')&&table_exists('knowledge_chunks')&&count($context)<18){
-        $stmt=$pdo->prepare('SELECT id FROM knowledge_items WHERE created_by_user_id=? AND is_published=1 ORDER BY updated_at DESC,id DESC LIMIT 120');$stmt->execute([$owner]);
+        $stmt=$pdo->prepare('SELECT id FROM knowledge_items WHERE created_by_user_id=? ORDER BY updated_at DESC,id DESC LIMIT 120');$stmt->execute([$owner]);
         foreach($stmt->fetchAll(PDO::FETCH_COLUMN)?:[] as $kid){
-            $item=shared_knowledge_index_item_v236($pdo,(int)$kid);if(!$item)continue;$rid=(string)(int)$kid;$legacy=((string)($item['visibility']??'members')==='public');
+            $item=shared_knowledge_index_item_v236($pdo,(int)$kid);if(!$item)continue;$rid=(string)(int)$kid;$legacy=!empty($item['is_published'])&&((string)($item['visibility']??'members')==='public');
             if(!user_data_policy_can_use_v236($pdo,$principal,$owner,'knowledge',$rid,$legacy))continue;
             $text='';foreach((array)($item['chunk_texts']??[]) as $chunk){if(profile_context_match($query,(string)$item['title'].' '.(string)$chunk)){$text=trim((string)$chunk);break;}}
             if($text==='')$text=trim((string)($item['content_text']??''));if($text===''||!profile_context_match($query,(string)$item['title'].' '.$text))continue;

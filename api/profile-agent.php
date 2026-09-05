@@ -11,7 +11,7 @@ $pdo=db();if(!$pdo||!profile_agent_schema_ready($pdo))profile_agent_json(false,[
 $method=strtoupper((string)($_SERVER['REQUEST_METHOD']??'GET'));
 $input=$method==='POST'?json_decode((string)file_get_contents('php://input'),true):$_GET;if(!is_array($input))$input=$_POST;
 $action=trim((string)($input['action']??'state'));$user=current_user();
-$ownerActions=['owner_state','save_profile','save_profile_agent','save_profile_access','attention_action','conversation_messages','conversation_status','owner_reply'];
+$ownerActions=['owner_state','save_profile','save_profile_media','save_profile_agent','save_profile_access','attention_action','conversation_messages','conversation_status','owner_reply'];
 
 try{
 if(in_array($action,$ownerActions,true)){
@@ -19,6 +19,28 @@ if(in_array($action,$ownerActions,true)){
     $uid=(int)$user['id'];if($method==='POST')profile_agent_require_csrf($input);
     if($action==='owner_state')profile_agent_json(true,['state'=>profile_runtime_owner_state($pdo,$user)]);
     if($action==='save_profile'){profile_save($pdo,$user,$input);profile_agent_json(true,['state'=>profile_runtime_owner_state($pdo,$user)]);}
+    if($action==='save_profile_media'){
+        $mediaType=(string)($input['media_type']??'');
+        if(!in_array($mediaType,['avatar','cover'],true))throw new RuntimeException('Choose a profile image or cover image.');
+        global $config;
+        $maxBytes=(int)($config['uploads']['max_image_bytes']??5242880);
+        $subdir=$mediaType==='avatar'?'avatars':'profile-covers';
+        $newPath=upload_file($_FILES['media_file']??[],['jpg','jpeg','png','webp'],['image/jpeg','image/png','image/webp'],$maxBytes,$subdir);
+        if(!$newPath)throw new RuntimeException('Choose a JPG, PNG or WEBP image to upload.');
+        $profileRow=profile_for_user($pdo,$uid,true)?:throw new RuntimeException('Profile could not be loaded.');
+        $oldPath=$mediaType==='avatar'?(string)($user['avatar_path']??''):(string)($profileRow['cover_path']??'');
+        try{
+            if($mediaType==='avatar'){
+                $pdo->prepare('UPDATE users SET avatar_path=? WHERE id=?')->execute([$newPath,$uid]);
+                reset_current_user_cache();
+                $user=current_user()?:$user;
+            }else{
+                $pdo->prepare('UPDATE user_profiles SET cover_path=? WHERE user_id=?')->execute([$newPath,$uid]);
+            }
+        }catch(Throwable $e){delete_local_upload($newPath);throw $e;}
+        if($oldPath!==''&&$oldPath!==$newPath)delete_local_upload($oldPath);
+        profile_agent_json(true,['state'=>profile_runtime_owner_state($pdo,$user)]);
+    }
     if($action==='save_profile_agent'){profile_configure_agent($pdo,$user,$input);profile_agent_json(true,['state'=>profile_runtime_owner_state($pdo,$user)]);}
     if($action==='save_profile_access'){
         $type=(string)($input['resource_type']??'');if(!isset(user_agent_resource_catalog_v236()[$type]))throw new RuntimeException('Unknown profile data type.');
