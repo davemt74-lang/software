@@ -1,0 +1,54 @@
+name: Temporary Chat Final Neutralize
+
+on:
+  push:
+    branches:
+      - fix/chat-remove-brown-theme
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    if: ${{ !contains(github.event.head_commit.message, '[chat-neutral-final]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/chat-remove-brown-theme
+          fetch-depth: 0
+      - name: Remove remaining recovered warm presentation
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('chat.css')
+          s=p.read_text()
+          replacements={
+            'Stonefellow v70 — custom dark audio + persistent Now Playing':'Stonefellow v70 — custom audio + persistent Now Playing',
+            'filter:brightness(.72) sepia(.07);':'filter:brightness(.96) saturate(.94);',
+            'color:#d47762;\n  border-color:#70483e;':'color:#111827;\n  border-color:#d1d5db;',
+            'border-color:#57322d;\n  color:#bd7a6c;':'border-color:#fecaca;\n  color:#b91c1c;',
+          }
+          for old,new in replacements.items():
+            s=s.replace(old,new)
+          # The old palette must not survive in source or image filters.
+          for banned in ('#70483e','#57322d','sepia('):
+            if banned in s:
+              raise SystemExit(f'recovered warm presentation remains: {banned}')
+          p.write_text(s)
+          Path('.github/workflows/tmp-chat-final-neutralize.yml').unlink()
+          print('CHAT_FINAL_NEUTRALIZE=PASS')
+          PY
+      - name: Focused contracts
+        run: |
+          node tests/chat-light-source-contract.mjs
+          php -l chat.php
+          php -l chat-legacy-v108.php
+      - name: Commit final neutralization
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "Neutralize remaining Chat warm accents [chat-neutral-final]"
+          git push origin HEAD:fix/chat-remove-brown-theme
