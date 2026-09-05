@@ -6,7 +6,7 @@ on:
       - deploy/package-ab4d9aad
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   package:
@@ -37,7 +37,7 @@ jobs:
           unzip -t software-deploy-ab4d9aad.zip >/dev/null
           sha256sum software-deploy-ab4d9aad.zip > software-deploy-ab4d9aad.sha256
 
-      - name: Upload deploy ZIP
+      - name: Upload deploy artifact
         uses: actions/upload-artifact@v4
         with:
           name: software-deploy-ab4d9aad
@@ -46,3 +46,19 @@ jobs:
             software-deploy-ab4d9aad.sha256
           if-no-files-found: error
           retention-days: 90
+
+      - name: Publish deploy release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG='deploy-ab4d9aad'
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" software-deploy-ab4d9aad.zip software-deploy-ab4d9aad.sha256 --clobber
+          else
+            gh release create "$TAG" software-deploy-ab4d9aad.zip software-deploy-ab4d9aad.sha256 \
+              --target ab4d9aad972c27142bccf13233f3e526bec3f736 \
+              --title 'Deploy ab4d9aad' \
+              --notes 'Clean runtime deployment package for main commit ab4d9aad972c27142bccf13233f3e526bec3f736.'
+          fi
