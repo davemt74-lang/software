@@ -13,7 +13,11 @@ function profile_runtime_session(PDO $pdo,int $ownerUserId,?array $visitor,bool 
         ? profile_visitor_session_hash_v243($ownerUserId)
         : profile_session_hash($ownerUserId);
     $increment=$countView?1:0;
-    $stmt=$pdo->prepare('INSERT INTO profile_visit_sessions (owner_user_id,visitor_user_id,session_key,identity_disclosed,view_count) VALUES (?,?,?,?,?) ON DUPLICATE KEY UPDATE visitor_user_id=VALUES(visitor_user_id),identity_disclosed=VALUES(identity_disclosed),view_count=view_count+VALUES(view_count),last_seen_at=NOW()');
+    // Once a browser contact has been associated with a signed-in member, an
+    // anonymous return from that same browser must not erase the association.
+    // A later signed-in request remains authoritative and can refresh or revoke
+    // identity disclosure through the visitor's current profile setting.
+    $stmt=$pdo->prepare('INSERT INTO profile_visit_sessions (owner_user_id,visitor_user_id,session_key,identity_disclosed,view_count) VALUES (?,?,?,?,?) ON DUPLICATE KEY UPDATE visitor_user_id=COALESCE(VALUES(visitor_user_id),visitor_user_id),identity_disclosed=CASE WHEN VALUES(visitor_user_id) IS NULL THEN identity_disclosed ELSE VALUES(identity_disclosed) END,view_count=view_count+VALUES(view_count),last_seen_at=NOW()');
     $stmt->execute([$ownerUserId,$visitorId?:null,$hash,$identity?1:0,$increment]);
     $get=$pdo->prepare('SELECT * FROM profile_visit_sessions WHERE owner_user_id=? AND session_key=? LIMIT 1');
     $get->execute([$ownerUserId,$hash]);
