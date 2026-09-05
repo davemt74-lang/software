@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 const read = path => fs.readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
 const nav = read('includes/member-navigation.php');
 const chat = read('chat.php');
+const chatTemplate = read('chat-legacy-v108.php');
 const listening = read('artist-listening.php');
 const account = read('account.php');
 const admin = read('admin/_header.php');
@@ -24,16 +25,14 @@ const profileAgentPortal = read('profile-agent.php');
 const accountAgentLoader = read('account-agent-settings-loader-v236.js');
 
 for (const [label, route] of [
+  ['Main Feed', '/chat.php'],
   ['View Profile', 'profile_public_url'],
   ['My Account', '/account.php'],
   ['Profile Agent', '/profile-agent.php'],
   ['My Knowledge', '/knowledge.php'],
   ['My Transcriptions', '/artist-listening.php'],
-  ['Agent Chat', '/chat.php'],
   ['Voice Profile', '/voice-profile.php'],
   ['Artist Workspace', '/admin/artist.php'],
-  ['Stem Studio', '/admin/stems.php'],
-  ['Video Editor', '/video-editor.php'],
   ['Admin Dashboard', '/admin/index.php'],
   ['Log Out', '/logout.php'],
 ]) {
@@ -46,12 +45,14 @@ assert.ok(nav.includes("personal_capability_has_v242('profile_agent.access'"), '
 assert.ok(nav.includes("personal_capability_has_v242('voice_profile.access'"), 'Voice Profile navigation must use its personal capability permission');
 assert.ok(nav.includes("has_permission('artist_listening.access'"), 'My Transcriptions must remain permission gated');
 assert.ok(nav.includes("user_has_role('artist'"), 'Artist Workspace must require artist identity');
-assert.ok(nav.includes("has_permission('producer.access'"), 'Stem Studio must retain producer access');
 assert.ok(nav.includes("empty($profile['is_public'])") && nav.includes("'preview=1'"), 'unpublished owners should receive a usable profile preview URL');
 assert.ok(!nav.includes('My Library'), 'My Library is not a canonical user-dropdown destination');
 assert.ok(!nav.includes("'agent_settings'"), 'Agent Settings belongs inside My Account');
 assert.ok(nav.includes("'profile_agent','Profile Agent',url('/profile-agent.php')"), 'Profile Agent is a first-class customer-service destination');
 assert.ok(!nav.includes("url('/account.php#profile-agent')"), 'canonical navigation must not route Profile Agent back into My Account');
+assert.ok(!nav.includes('Stem Studio') && !nav.includes('/admin/stems.php'), 'Stem Studio must not appear in the user dropdown');
+assert.ok(!nav.includes('Video Editor') && !nav.includes('/video-editor.php'), 'Video Editor must not appear in the user dropdown');
+assert.ok(nav.indexOf("$add($links,'chat','Main Feed'") < nav.indexOf('$profileUrl = member_navigation_profile_url'), 'Main Feed must be the first canonical user-menu destination');
 
 for (const [name, source] of [['account', account], ['admin', admin], ['site header', header]]) {
   assert.ok(source.includes('member_navigation_menu_links'), `${name} should use canonical member navigation`);
@@ -59,7 +60,10 @@ for (const [name, source] of [['account', account], ['admin', admin], ['site hea
 assert.ok(chat.includes('member_navigation_menu_links($user)'), 'Chat should replace its legacy dropdown from the canonical map');
 assert.ok(!chat.includes('<span>Agent Settings</span>'), 'Chat must not inject Agent Settings into the dropdown');
 assert.ok(!chat.includes('<span>Profile Agent</span>'), 'Chat must not maintain a second hardcoded Profile Agent menu item');
-assert.ok(chat.includes('My Transcriptions'), 'Chat sidebar should use the My Transcriptions product name');
+assert.ok(!chat.includes('$recordingsNavLink'), 'Chat wrapper must not inject My Transcriptions into the sidebar');
+assert.ok(chatTemplate.includes('My Transcriptions'), 'Canonical Main Feed template should use the My Transcriptions product name');
+assert.ok(chatTemplate.includes('Profile Agent'), 'Canonical Main Feed sidebar should expose Profile Agent');
+assert.ok(chatTemplate.includes('My Contacts'), 'Canonical Main Feed sidebar should expose My Contacts');
 assert.ok(listening.includes("'userMenuLinks'=>member_navigation_menu_links($user)"), 'Artist Listening should receive canonical menu JSON');
 assert.ok(!listening.includes('my-library.php'), 'Artist Listening menu must not hardcode My Library');
 assert.ok(!listening.includes('artist-profile.php?user_id='), 'Artist Listening menu must not use the legacy artist profile route');
