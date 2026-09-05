@@ -31,6 +31,7 @@ require_once __DIR__ . '/agent-runtime-v125.php';
 require_once __DIR__ . '/agent-ops-v126.php';
 if (!headers_sent()) header('X-Stonefellow-Production: ' . STONEFELLOW_PRODUCTION_V126);
 require_once __DIR__ . '/permissions.php';
+require_once __DIR__ . '/chat-settings-v237.php';
 require_once __DIR__ . '/permissions-v105.php';
 require_once __DIR__ . '/user-agent-system-v236.php';
 require_once __DIR__ . '/user-data-usage-v236.php';

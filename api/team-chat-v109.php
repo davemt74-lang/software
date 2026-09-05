@@ -91,6 +91,8 @@ function team_chat_v109_touch(PDO $pdo, int $userId, string $page, string $conte
 function team_chat_v109_target(PDO $pdo, int $userId): ?array
 {
     if ($userId < 1) return null;
+    if (empty(chat_settings_get_v237($pdo, $userId)['social_chat_enabled'])) return null;
+
     $stmt = $pdo->prepare(
         "SELECT u.id,u.display_name,u.role,u.avatar_path,u.is_active
          FROM users u
@@ -132,9 +134,39 @@ $context = (string)($_POST['context'] ?? $_GET['context'] ?? '');
 
 try {
     team_chat_v109_touch($pdo, $currentId, $page, $context);
+    $currentSettings = chat_settings_get_v237($pdo, $currentId);
 
     if ($action === 'poll') {
         $since = max(0, (int)($_GET['since'] ?? 0));
+
+        if (empty($currentSettings['social_chat_enabled'])) {
+            $cursorStmt = $pdo->prepare(
+                'SELECT COALESCE(MAX(id),0)
+                 FROM team_direct_messages
+                 WHERE sender_user_id=? OR recipient_user_id=?'
+            );
+            $cursorStmt->execute([$currentId,$currentId]);
+            team_chat_v109_json([
+                'ok'=>true,
+                'cursor'=>(int)$cursorStmt->fetchColumn(),
+                'users'=>[],
+                'messages'=>[],
+                'settings'=>$currentSettings,
+                'poll_ms'=>3000,
+            ]);
+        }
+
+        $settingsReady = chat_settings_schema_ready_v237($pdo);
+        $onlineCondition = $settingsReady
+            ? "p.last_seen_at IS NOT NULL
+                   AND p.last_seen_at >= DATE_SUB(NOW(), INTERVAL 15 SECOND)
+                   AND COALESCE(p.presence_mode,'online')='online'"
+            : "p.last_seen_at IS NOT NULL
+                   AND p.last_seen_at >= DATE_SUB(NOW(), INTERVAL 15 SECOND)";
+        $peerChatCondition = $settingsReady
+            ? " AND COALESCE(p.social_chat_enabled,1)=1"
+            : '';
+
         $directoryStmt = $pdo->prepare(
             "SELECT
                 u.id,
@@ -143,11 +175,7 @@ try {
                 u.avatar_path,
                 COALESCE(p.page_key,'') AS page_key,
                 COALESCE(p.context_label,'') AS context_label,
-                CASE
-                  WHEN p.last_seen_at IS NOT NULL
-                   AND p.last_seen_at >= DATE_SUB(NOW(), INTERVAL 15 SECOND)
-                  THEN 1 ELSE 0
-                END AS online,
+                CASE WHEN {$onlineCondition} THEN 1 ELSE 0 END AS online,
                 (
                     SELECT COUNT(*)
                     FROM team_direct_messages dm
@@ -159,6 +187,7 @@ try {
              LEFT JOIN team_user_presence p ON p.user_id=u.id
              WHERE u.id<>?
                AND u.is_active=1
+               {$peerChatCondition}
                AND (
                  u.role IN ('artist','manager','producer','supervisor','admin')
                  OR EXISTS (
@@ -212,6 +241,7 @@ try {
             'cursor'=>$cursor,
             'users'=>$users,
             'messages'=>$messages,
+            'settings'=>$currentSettings,
             'poll_ms'=>3000,
         ]);
     }
@@ -255,9 +285,11 @@ try {
         );
         $presenceStmt->execute([$targetId]);
         $presence = $presenceStmt->fetch() ?: [];
+        $targetSettings = chat_settings_get_v237($pdo, $targetId);
         $target['page_key'] = (string)($presence['page_key'] ?? '');
         $target['context_label'] = (string)($presence['context_label'] ?? '');
-        $target['online'] = !empty($presence['last_seen_at'])
+        $target['online'] = ($targetSettings['presence_mode'] ?? 'online') === 'online'
+            && !empty($presence['last_seen_at'])
             && strtotime((string)$presence['last_seen_at']) >= (time() - 15);
         $target['unread_count'] = 0;
 
@@ -270,6 +302,9 @@ try {
 
     if ($action === 'send') {
         if (!verify_csrf()) team_chat_v109_json(['ok'=>false,'error'=>'csrf'], 419);
+        if (empty($currentSettings['social_chat_enabled'])) {
+            team_chat_v109_json(['ok'=>false,'error'=>'social_chat_disabled'], 409);
+        }
         $targetId = max(0, (int)($_POST['user_id'] ?? 0));
         $message = trim((string)($_POST['message'] ?? ''));
         $target = team_chat_v109_target($pdo, $targetId);

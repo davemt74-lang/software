@@ -29,10 +29,11 @@ assert.match(profileActivity, /actions\.insertBefore\(button,avatar\|\|null\)/, 
 
 assert.match(teamChatCss, /\.sf-online-rail-v109\{[^}]*background:#f8fafc/, 'Team Chat rail must be light at source');
 assert.match(teamChatCss, /\.sf-team-chat-windows-v109/, 'Team Chat popup window owner must remain in the canonical stylesheet');
-assert.match(teamChatAdmin, /const ASSET_BUILD = 'team-chat-light-v116-20260905'/, 'Team Chat bootstrap must own the current light asset build');
+assert.match(teamChatAdmin, /const ASSET_BUILD = 'team-chat-light-v117-20260905'/, 'Team Chat bootstrap must own the current light asset build');
 assert.match(teamChatAdmin, /team-chat-v109\.css\?v=' \+ ASSET_BUILD/, 'runtime-injected Team Chat CSS must use the light asset build rather than the bootstrap build');
 assert.match(teamChatAdmin, /team-chat-v109\.js\?v=' \+ ASSET_BUILD/, 'runtime-injected Team Chat JS must use the same canonical asset build');
-assert.match(teamChatWidget, /\$teamChatAssetBuild = 'team-chat-light-v116-20260905'/, 'server-rendered Team Chat widget must use the same canonical asset build');
+assert.match(teamChatAdmin, /configSource = 'existing-chat-widget'/, 'Agent Chat must reuse its server-rendered Team Chat widget instead of creating a second poller');
+assert.match(teamChatWidget, /\$teamChatAssetBuild = 'team-chat-light-v117-20260905'/, 'server-rendered Team Chat widget must use the same canonical asset build');
 assert.match(chatPhp, /\$teamChatAdminBuild = 'team-chat-bootstrap-v236-20260905'/, 'Agent Chat must cache-bust the Team Chat bootstrap owner');
 
 console.log('chat-light-source-contract=PASS');
