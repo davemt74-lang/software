@@ -1,0 +1,34 @@
+name: Patch Transcription Canvas v243
+
+on:
+  push:
+    branches:
+      - feature/transcription-canvas-playback-20260905
+    paths:
+      - .github/workflows/patch-transcription-canvas-v243.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/transcription-canvas-playback-20260905
+          fetch-depth: 0
+      - name: Apply focused transcription canvas patch
+        run: python3 tools/patch_transcription_canvas_v243.py
+      - name: Validate focused contract
+        run: |
+          php -l api/artist-listening.php
+          php -l chat.php
+          node tests/chat-transcription-canvas-v243.mjs
+      - name: Commit focused build
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Build canonical transcription canvas and recording playback" || exit 0
+          git push origin HEAD:feature/transcription-canvas-playback-20260905
