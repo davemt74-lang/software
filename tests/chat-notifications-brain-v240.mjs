@@ -14,8 +14,10 @@ const api = read('api/chat-notifications-brain-v240.php');
 const notifications = read('includes/notifications.php');
 const activity = read('includes/agent-activity-v94.php');
 const brain = read('includes/agent-brain-v82.php');
+const identity = read('chat-agent-identity-v236.js');
 
 assert.doesNotThrow(() => new Function(ui), 'Activity Center runtime must be valid JavaScript');
+assert.doesNotThrow(() => new Function(identity), 'Agent identity runtime must be valid JavaScript');
 assert.match(chat, /\$notificationDrawerBuild = 'chat-notifications-brain-v240-20260905'/);
 assert.match(chat, /window\.STONEFELLOW_NOTIFICATION_DRAWER=/);
 assert.match(chat, /chat-notifications-drawer-v240\.css\?v=/);
@@ -62,16 +64,26 @@ assert.match(api, /INSERT INTO chat_messages[\s\S]*?'assistant'/, 'actionable at
 assert.match(api, /response_timeout_ms'=>10000/, 'persisted attention context carries the 10-second response window');
 assert.match(api, /JSON_EXTRACT\(m\.context_json,'\$\.attention\.notification_id'\)/, 'attention dedupe compares the exact JSON notification id');
 assert.doesNotMatch(api, /notification_id[^\n]*LIKE|context_json LIKE/, 'attention dedupe must not use substring matching');
+assert.match(api, /c\.user_agent_id=\?/, 'named-agent attention dedupe stays inside the selected Agent Chat identity');
+assert.match(api, /c\.user_agent_id IS NULL/, 'system-agent attention dedupe stays inside the system Agent Chat identity');
 assert.match(api, /catch \(DomainException \$e\)/, 'expected attention validation errors remain user-readable');
 assert.match(api, /Activity Center is temporarily unavailable\./, 'unexpected endpoint failures return a generic safe error');
 assert.doesNotMatch(api, /catch \(Throwable \$e\)[\s\S]{0,220}error'=>\$e->getMessage\(\)/, 'unexpected endpoint failures must not expose raw exception details');
 assert.match(ui, /request\('attention', null, \{after_id:/, 'Activity Center polls the canonical actionable-attention feed');
 assert.match(ui, /request\('present_attention'/, 'client asks the server to persist actionable attention before presenting it');
 assert.match(ui, /showAttentionConversation/, 'new attention is surfaced inside the Agent Chat canvas');
+assert.doesNotMatch(ui, /if \(!data\.handled \|\| data\.duplicate\) return/, 'persisted duplicate attention must not be discarded before canvas presentation');
+assert.match(ui, /const surfaced = await showAttentionConversation/, 'canvas visibility is explicitly verified before notification delivery completes');
+assert.match(ui, /if \(!surfaced\)[\s\S]*throw new Error\('Actionable notification could not be surfaced in Agent Chat\.'\)/, 'failed canvas presentation remains retryable instead of being silently consumed');
+assert.match(ui, /state = await request\('mark_read', \{notification_id:notificationId\}\)/, 'actionable notification is marked read only after it is visible in Agent Chat');
+assert.match(ui, /const selected = bootstrap && items\.length \? \[items\[items\.length - 1\]\] : items/, 'bootstrap surfaces only the newest pending actionable item instead of replaying a stale burst');
+assert.match(ui, /Keep the cursor unchanged so a failed canvas presentation is retried/, 'failed canvas delivery must retain its polling position for retry');
+assert.doesNotMatch(identity, /agent-attention\.js|agent-attention\.css/, 'legacy Profile Agent top-banner runtime must not load in Agent Chat');
 assert.match(ui, /StonefellowPremiumVoiceV122/, 'attention uses the existing ElevenLabs voice runtime');
 assert.match(ui, /SpeechSynthesisUtterance/, 'attention speech retains system voice fallback');
 assert.match(ui, /responseTimer = window\.setTimeout\([\s\S]*?, 10000\)/, 'attention opens a 10-second response window');
 assert.match(ui, /setVoiceMode\(false\)/, 'temporary listening can be shut off when the response window expires');
+assert.match(ui, /return Boolean\(continuity\(\)\.isVoice\?\.\(\)\)/, 'attention reads voice state through the canonical continuity fallback');
 assert.match(ui, /TRANSCRIPT_SUBMIT/, 'spoken user responses cancel the temporary response timeout');
 assert.match(ui, /chatForm[\s\S]*markUserResponse/, 'typed user responses cancel the temporary response timeout');
 
