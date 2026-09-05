@@ -452,10 +452,10 @@ $accountBrainTools = agent_brain_tools($user);
                 </div>
               </form>
 
-              <form method="post" class="agent-soul-reset" onsubmit="return confirm('Reset your private SOUL.md to the Stonefellow default?');">
+              <form method="post" class="agent-soul-reset" onsubmit="return confirm('Reset your private SOUL.md to the <?= e(system_agent_name()) ?> default?');">
                 <?= csrf_field() ?>
                 <input type="hidden" name="action" value="soul_reset">
-                <button type="submit">Reset to Stonefellow Default</button>
+                <button type="submit">Reset to <?= e(system_agent_name()) ?> Default</button>
               </form>
 
               <div class="agent-brain-memory-grid">
@@ -514,13 +514,13 @@ $accountBrainTools = agent_brain_tools($user);
                 <?php if (has_permission('chat.access', $user)): ?><a class="account-access-card" href="<?= e(url('/chat.php')) ?>">
                   <small>Assistant</small>
                   <strong>Agent Chat</strong>
-                  <p>Your default signed-in Stonefellow workspace.</p>
+                  <p>Your default signed-in <?= e(system_agent_name()) ?> workspace.</p>
                   <span>Open Agent Chat ↗</span>
                 </a>
 
                 <a class="account-access-card" href="<?= e(url('/chat.php?view=player')) ?>">
                   <small>Music</small>
-                  <strong>Stonefellow Player</strong>
+                  <strong><?= e(system_agent_name()) ?> Player</strong>
                   <p>Listen to tracks available to your account.</p>
                   <span>Open Player ↗</span>
                 </a><?php endif; ?>
@@ -538,7 +538,7 @@ $accountBrainTools = agent_brain_tools($user);
                   <a class="account-access-card" href="<?= e(url('/investor.php')) ?>">
                     <small>Private</small>
                     <strong>Investor Area</strong>
-                    <p>Open private Stonefellow investor information.</p>
+                    <p>Open private <?= e(system_agent_name()) ?> investor information.</p>
                     <span>Investor Access ↗</span>
                   </a>
                 <?php endif; ?>

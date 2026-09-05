@@ -18,6 +18,7 @@ const accountAgentCss = read('account-agent-settings-v236.css');
 const profileDashboardCss = read('profile-dashboard.css');
 const accountCss = read('account.css');
 const htaccess = read('.htaccess');
+const voiceProfileJs = read('voice-profile.js');
 
 for (const [label, route] of [
   ['View Profile', 'profile_public_url'],
@@ -71,5 +72,11 @@ assert.ok(account.includes('system_agent_name()'), 'My Account should use the co
 assert.ok(profileDashboard.includes('state.system_agent_name'), 'Profile Agent dashboard should use the configured system name');
 assert.ok(!profileDashboard.includes('stonefellow.com/stonefellow/username'), 'Profile dashboard must not show the legacy namespaced URL');
 for (const css of [accountAgentCss, profileDashboardCss, accountCss]) { assert.ok(!css.includes('background:#11100f'), 'account surfaces must not contain legacy black card backgrounds'); }
+assert.ok(!account.includes('Stonefellow'), 'My Account user-facing copy should use the configured system name');
+assert.ok(profileDashboard.includes('profileDisplayUrl=new URL(profileUrl,window.location.origin).href'), 'profile dashboard should display the full canonical domain/username URL');
+assert.ok(!profileDashboard.includes('Stonefellow-powered'), 'Profile Agent copy should use the configured system name');
+assert.ok(voiceProfile.includes('systemName:<?= json_encode(system_agent_name()) ?>'), 'Voice Profile should expose the configured system name to its runtime');
+assert.ok(!voiceProfileJs.includes('Stonefellow voice clone'), 'Voice Profile runtime must not hardcode the system name');
+assert.ok(accountCss.includes('#agent-brain .agent-brain-tool-grid>a'), 'Agent Brain tool cards should be explicitly covered by the light account theme');
 
 console.log('MEMBER_NAVIGATION_CONTRACT=PASS');
