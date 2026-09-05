@@ -7,6 +7,7 @@ const usage = read('includes/user-data-usage-v236.php');
 const index = read('includes/shared-knowledge-index-v236.php');
 const policy = read('includes/chat-agent-policy-v236.php');
 const settingsApi = read('api/user-agent-system-v236.php');
+const onboardingApi = read('api/chat-onboarding-v241.php');
 const chatApi = read('api/chat-v236.php');
 const chatPage = read('chat.php');
 const chatIdentity = read('chat-agent-identity-v236.js');
@@ -26,10 +27,12 @@ assert.match(adminAi,/save_setting\('system_agent_name'/,'admin system-agent nam
 assert.match(domain,/function user_agents_list_v236/,'user agents are explicit stored account objects');
 assert.match(domain,/Enter a name for your agent/,'named user agents require the user to supply a name');
 assert.doesNotMatch(domain,/\$first\."'s Agent"|Dave's Agent|My Agent/,'canonical agent domain never invents a user-agent name');
-assert.match(domain,/onboarding_dismissed/,'user can keep the system agent without creating a named agent');
-assert.match(chatIdentity,/What would you like to name your agent\?/,'main Chat greeting asks the user to name an optional agent');
-assert.match(chatIdentity,/data-keep-system/,'Chat onboarding can keep the system agent instead');
-assert.match(chatIdentity,/create_agent/,'Chat onboarding creates an agent only after explicit input');
+assert.match(domain,/onboarding_dismissed/,'user-agent preferences retain canonical onboarding completion state');
+assert.match(chatIdentity,/Choose your onboarding experience/,'main Chat begins the complete deterministic onboarding flow');
+assert.match(chatIdentity,/Name your agent/,'Chat onboarding includes explicit agent naming');
+assert.match(chatIdentity,/data-keep-system/,'Chat onboarding offers the system name as an explicit naming choice');
+assert.match(chatIdentity,/chat-onboarding-v241\.php/,'Chat onboarding saves through its deterministic state owner');
+assert.match(onboardingApi,/user_agent_create_v236/,'final onboarding save creates the user agent through the canonical domain');
 assert.match(account,/\+ Name an Agent/,'Account Settings provides persistent agent creation');
 
 assert.match(domain,/engine_key VARCHAR\(40\) NOT NULL DEFAULT 'stonefellow'/,'named user agents are powered by Stonefellow');

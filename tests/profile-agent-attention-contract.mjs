@@ -93,7 +93,8 @@ assert.doesNotMatch(page,/on Stonefellow/,'public profile metadata does not hard
 assert.match(attention,/Answer your agent/,'main Agent Chat accepts proactive owner answers');
 assert.match(attention,/owner_reply/,'proactive answer routes back to Profile Agent conversation');
 assert.match(identity,/agent-attention\.js/,'main Agent Chat loads proactive attention runtime');
-assert.match(identity,/does not replace or wrap[\s\S]*voice/i,'attention integration explicitly preserves canonical voice transport');
+assert.doesNotMatch(attention,/StonefellowPremiumVoice|speechSynthesis|agent-voice|chatVoice/i,'Profile Agent attention runtime does not replace or wrap canonical voice transport');
+assert.match(identity,/StonefellowPremiumVoiceV122/,'voice-guided onboarding reuses the canonical premium voice transport');
 assert.match(legacy,/profile_public_url/,'legacy artist profile redirects to canonical profile');
 assert.match(legacy,/301/,'legacy profile redirect is permanent');
 assert.ok(legacy.length<1800,'legacy artist-profile renderer is reduced to a compatibility redirect');

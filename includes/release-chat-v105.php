@@ -6,9 +6,45 @@ function release_v105_chat_intent(string $query): bool
     return (bool)preg_match('/\b(release|launch|release calendar|deadline|campaign plan|rollout|distribution date|drop date)\b/i', $query);
 }
 
+function chat_account_state_intent_v241(string $query): bool
+{
+    $q = mb_strtolower(trim($query));
+    if ($q === '') return false;
+
+    if (preg_match(
+        '/\b(?:onboarding|setup status|set up status|what(?:\s+do\s+i|\s+am\s+i)?\s+(?:still\s+)?need(?:\s+to)?\s+set\s*up|what\s+setup\s+(?:am\s+i\s+)?missing|what(?:\'s| is)\s+missing|finish\s+(?:my\s+)?setup)\b/u',
+        $q
+    )) return true;
+
+    $subject = '(?:profile agent|voice clone|social chat|direct chat|user[- ]to[- ]user chat|online presence|chat presence|public profile|profile visibility|profile\s+(?:public|private|visible)|incoming chat sound|message sound|notification sound)';
+    if (!preg_match('/\b' . $subject . '\b/u', $q)) return false;
+
+    // Personal/state language is required. Do not use bare "on" or "off" here:
+    // generic explanatory questions often contain "on" (for example, "how does
+    // voice cloning work on mobile?") and must continue to normal Agent Chat.
+    if (preg_match(
+        '/\b(?:my|mine|am i|do i|have i|status|setup|set up|enabled|disabled|turned on|turned off|configured|ready|active|live|online|offline)\b/u',
+        $q
+    )) return true;
+
+    // Preserve natural status phrasing such as "is my Profile Agent on?" without
+    // making every sentence containing the preposition "on" a status request.
+    return (bool)preg_match('/\b(?:is|are)\s+(?:my\s+)?(?:the\s+)?' . $subject . '\s+(?:on|off)\b/u', $q);
+}
+
 function release_v105_chat_tool(string $query, array $user, int $conversationId = 0): array
 {
     $empty=['handled'=>false,'answer'=>'','stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[]];
+
+    // This is the first synchronous tool gate used by both text Chat and the
+    // streaming voice path. Resolve personal account/capability status here
+    // before any release work or LLM generation so those checks cost zero tokens.
+    // General questions such as "what is a Profile Agent?" continue to normal Chat.
+    if (chat_account_state_intent_v241($query) && function_exists('chat_onboarding_v241_tool')) {
+        $accountState = chat_onboarding_v241_tool($query, $user);
+        if (!empty($accountState['handled'])) return $accountState;
+    }
+
     if (!release_v105_schema_ready() || !permission_v105_has('release.manage',$user) || !release_v105_chat_intent($query)) return $empty;
 
     if (preg_match('/\b(open|show me|go to)\b.*\b(release|calendar)\b/i',$query)) {
