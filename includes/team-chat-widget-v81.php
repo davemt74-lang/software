@@ -21,7 +21,6 @@ $teamChatUiRole = in_array(
     true
 ) ? $teamChatPrimaryRole : 'manager';
 $teamChatAssetBuild = 'team-chat-light-v117-20260905';
-$teamChatSettingsBuild = STONEFELLOW_CHAT_SETTINGS_V237;
 $teamChatPdo = db();
 $teamChatSettings = $teamChatPdo
     ? chat_settings_get_v237($teamChatPdo, (int)$teamChatUser['id'])
@@ -29,9 +28,6 @@ $teamChatSettings = $teamChatPdo
 $teamChatSocialEnabled = !empty($teamChatSettings['social_chat_enabled']);
 ?>
 <link rel="stylesheet" href="<?= e(url('/team-chat-v109.css?v=' . $teamChatAssetBuild)) ?>">
-<?php if ($teamChatPageKey === 'agent_chat'): ?>
-<link rel="stylesheet" href="<?= e(url('/chat-settings-v237.css?v=' . $teamChatSettingsBuild)) ?>">
-<?php endif; ?>
 <aside class="sf-online-rail-v109" id="sfOnlineRailV109" aria-label="Stonefellow team chat"<?= $teamChatSocialEnabled ? '' : ' hidden' ?>>
   <div class="sf-online-users-v109" id="sfOnlineUsersV109"></div>
 </aside>
@@ -60,14 +56,4 @@ window.STONEFELLOW_TEAM_CHAT = <?= json_encode([
 <script src="<?= e(url('/team-chat-v109.js?v=' . $teamChatAssetBuild)) ?>"></script>
 <?php if ($teamChatSocialEnabled): ?>
 <script>document.body.classList.add('sf-team-rail-active');</script>
-<?php endif; ?>
-<?php if ($teamChatPageKey === 'agent_chat'): ?>
-<script>
-window.STONEFELLOW_CHAT_SETTINGS = <?= json_encode([
-    'endpoint'=>url('/api/chat-settings-v237.php'),
-    'csrf'=>csrf_token(),
-    'build'=>$teamChatSettingsBuild,
-], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>;
-</script>
-<script src="<?= e(url('/chat-settings-v237.js?v=' . $teamChatSettingsBuild)) ?>"></script>
 <?php endif; ?>
