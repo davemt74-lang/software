@@ -242,7 +242,7 @@ function profile_active_agent(PDO $pdo, array $profile): ?array
     if(empty($profile['profile_agent_enabled']))return null;
     $agentId=(int)($profile['profile_agent_id']??0);if($agentId<1)return null;
     $agent=user_agent_get_v236($pdo,(int)$profile['user_id'],$agentId);
-    if(!$agent||empty($agent['is_active'])||empty($agent['is_profile_agent']))return null;
+    if(!$agent||empty($agent['is_active']))return null;
     return $agent;
 }
 
