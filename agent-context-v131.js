@@ -63,6 +63,7 @@
       return value&&typeof value==='object'?value:null;
     }catch(error){return null;}
   };
+  const activeUserAgentId=()=>Math.max(0,Number(window.STONEFELLOW_AGENT_IDENTITY_V236?.agentId||0));
   function ensureEditorAgent(){
     if(String(cfg.surface||'chat')!=='chat'||window.StonefellowEditorAgent||editorAgentLoadRequested)return false;
     if(typeof document.createElement!=='function')return false;
@@ -103,6 +104,7 @@
     return {
       build:BUILD,
       surface:cleanText(cfg.surface||'chat',30),
+      user_agent_id:activeUserAgentId(),
       track_id:Math.max(0,Number(cfg.trackId||0)),
       project_id:Math.max(0,Number(cfg.projectId||0)),
       conversation_id:Math.max(0,Number(conversationId||0)),
