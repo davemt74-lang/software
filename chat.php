@@ -8,8 +8,7 @@ $voiceAssetBuild = 'chat-voice-canonical-20260903';
 $voiceCacheBuild = 'chat-voice-canonical-20260903-failover1';
 $recordingUiBuild = 'chat-recording-results-v206-20260901';
 $recordingPersistenceBuild = 'chat-recordings-v242-20260902';
-$agentThemeBuild = 'agent-theme-v242-20260902';
-$mediaOverlayBuild = 'chat-media-overlays-20260905';
+$mediaOverlayBuild = 'chat-media-overlays-source-light-20260905';
 $agentOverlayBuild = 'agent-updates-hidden-v206-20260901';
 $agentIdentityBuild = 'profile-activity-20260905';
 $profileActivityBuild = 'profile-activity-20260905';
@@ -118,7 +117,11 @@ try {
 // Canonical account dropdown. Replace the legacy menu as one unit so Chat does
 // not inject parallel account.php hash links that drift from the other surfaces.
 $chatProfileLinks = '';
+$chatProfileMenuExcluded = ['profile'=>true, 'account'=>true, 'profile_agent'=>true];
 foreach (member_navigation_menu_links($user) as $menuLink) {
+    if (isset($chatProfileMenuExcluded[(string)($menuLink['key'] ?? '')])) {
+        continue;
+    }
     $class = !empty($menuLink['danger']) ? ' class="logout"' : '';
     $chatProfileLinks .= '<a' . $class
         . ' data-chat-profile-link="' . e((string)$menuLink['key']) . '"'
@@ -188,7 +191,7 @@ if ($activeUserAgent && strcasecmp($agentDisplayName, $systemAgentName) !== 0) {
     ) ?? $introText;
 }
 
-$debugMarker = '<div id="chatRuntimeDebug" style="max-width:790px;margin:0 auto 12px;color:#8f877f;font:700 11px/1.2 ui-monospace,SFMono-Regular,Consolas,monospace;letter-spacing:.04em">LIVE RUNTIME · ' . e($voiceCacheBuild) . ' · ' . e($agentIdentityBuild) . '</div>';
+$debugMarker = '<div id="chatRuntimeDebug" style="max-width:790px;margin:0 auto 12px;color:#6b7280;font:700 11px/1.2 ui-monospace,SFMono-Regular,Consolas,monospace;letter-spacing:.04em">LIVE RUNTIME · ' . e($voiceCacheBuild) . ' · ' . e($agentIdentityBuild) . '</div>';
 $introMessage = $debugMarker
     . '<div class="message assistant" id="chatWelcome" hidden>'
     . '<div class="message-avatar" aria-hidden="true">' . e(mb_strtoupper(mb_substr($agentDisplayName, 0, 1))) . '</div>'
@@ -217,12 +220,12 @@ $composerControls = '<style data-chat-controls-v142>'
     . '.chat-sidebar-nav-link{min-height:28px;padding:3px 9px;line-height:1.05;}'
     . '.chat-sidebar-nav-link>span{height:18px;}'
     . '.chat-sidebar-nav-link strong{line-height:1.05;}'
-    . '.chat-recording-card{display:grid;gap:9px;min-height:44px;padding:9px 10px;border:1px solid rgba(255,255,255,.055);border-radius:8px;background:rgba(8,7,7,.28);color:inherit;}'
-    . '.chat-recording-card:hover,.chat-recording-card:focus-within{border-color:rgba(187,160,238,.34);background:rgba(187,160,238,.05);}'
+    . '.chat-recording-card{display:grid;gap:9px;min-height:44px;padding:9px 10px;border:1px solid #e5e7eb;border-radius:8px;background:#fff;color:inherit;}'
+    . '.chat-recording-card:hover,.chat-recording-card:focus-within{border-color:#d1d5db;background:#f9fafb;}'
     . '.chat-recording-card-head{display:flex;align-items:center;justify-content:space-between;gap:12px;min-width:0;}'
     . '.chat-recording-card-head>span{display:grid;min-width:0;gap:3px;}'
-    . '.chat-recording-card strong{overflow:hidden;color:#d8cec4;font-size:.72rem;text-overflow:ellipsis;white-space:nowrap;}'
-    . '.chat-recording-card small{color:#766e67;font-size:.59rem;}'
+    . '.chat-recording-card strong{overflow:hidden;color:#111827;font-size:.72rem;text-overflow:ellipsis;white-space:nowrap;}'
+    . '.chat-recording-card small{color:#6b7280;font-size:.59rem;}'
     . '.chat-transcription-audio{display:block;width:100%;min-width:0;height:34px;}'
     . '.chat-topbar{position:relative;isolation:isolate;}'
     . '.chat-topbar::after{content:"";position:absolute;inset:0;pointer-events:none;opacity:0;z-index:0;transition:opacity .16s ease,background .16s ease,box-shadow .16s ease;}'
@@ -243,8 +246,6 @@ $railLayout = '<style data-team-rail-layout-v111>'
     . '<script data-team-rail-anchor-v111>(function(){var setTop=function(){var h=document.querySelector(".chat-topbar");if(!h)return;document.documentElement.style.setProperty("--sf-chat-header-bottom",Math.ceil(h.getBoundingClientRect().bottom)+"px");};setTop();window.addEventListener("resize",setTop,{passive:true});})();</script>';
 
 $headerUiRuntime = '<link rel="stylesheet" data-chat-header-ui-server href="' . e(url('/chat-header-ui.css?v=' . $headerUiBuild)) . '">';
-$themeRuntime = '<link rel="stylesheet" data-agent-theme-v242 href="' . e(url('/agent-theme-v242.css?v=' . $agentThemeBuild)) . '">'
-    . '<script data-agent-theme-v242 src="' . e(url('/agent-theme-v242.js?v=' . $agentThemeBuild)) . '"></script>';
 $mediaOverlayRuntime = '<link rel="stylesheet" data-chat-media-overlays href="' . e(url('/chat-media-overlays.css?v=' . $mediaOverlayBuild)) . '">';
 
 $recordingLibraryRuntime = has_permission('artist_listening.access', $user)
@@ -275,7 +276,6 @@ $profileActivityRuntime = $agentFeatureReady && $pdoForAgent && profile_agent_sc
     : '';
 
 $runtime = $headerUiRuntime
-         . $themeRuntime
          . $mediaOverlayRuntime
          . $hardening
          . $composerControls

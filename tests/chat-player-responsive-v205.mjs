@@ -11,6 +11,6 @@ assert.match(v205, /\.chat-now-playing-transport\s*\{[\s\S]*?flex-flow:row nowra
 assert.match(v205, /@media\(max-width:760px\)[\s\S]*?grid-template-columns:38px minmax\(0,1fr\) auto 34px;/, 'Mobile player uses four explicit columns');
 assert.match(v205, /\.chat-now-playing-transport\s*\{[\s\S]*?grid-column:3;[\s\S]*?grid-row:1;/, 'Mobile transport remains on first row');
 assert.match(v205, /\.chat-now-playing-progress\s*\{[\s\S]*?grid-column:1 \/ -1;[\s\S]*?grid-row:2;/, 'Only progress occupies the second row');
-assert.match(page, /chat\.css\?v=205/, 'Page cache-busts the responsive CSS');
+assert.match(page, /chat\.css\?v=206-source-light-20260905/, 'Page cache-busts the canonical source-light responsive CSS');
 
 console.log('chat player responsive v205 contracts passed');
