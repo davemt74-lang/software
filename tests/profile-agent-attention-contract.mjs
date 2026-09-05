@@ -13,8 +13,10 @@ const identity=read('chat-agent-identity-v236.js');
 const upgrade=read('upgrade.php');
 const usage=read('includes/user-data-usage-v236.php');
 
-assert.match(domain,/STONEFELLOW_PROFILE_NAMESPACE\s*=\s*'stonefellow'/,'profile namespace is stable');
-assert.match(ht,/\^stonefellow\/\(\[A-Za-z0-9\._-\]\+\)/,'canonical human-readable route exists');
+assert.doesNotMatch(domain,/const STONEFELLOW_PROFILE_NAMESPACE/,'profile URL is no longer namespaced by the product name');
+assert.match(domain,/return url\('\/' \. rawurlencode\(\$username\)\)/,'canonical profile URL resolves at /username');
+assert.match(ht,/RewriteRule \^stonefellow\/[\s\S]*\/\$1 \[R=301,L,NE\]/,'legacy namespaced profile URLs permanently redirect to root usernames');
+assert.match(ht,/profile\.php\?username=\$1 \[L,QSA,NC\]/,'root username route resolves to the profile renderer');
 assert.doesNotMatch(ht,/system_agent_name/,'editable system-agent name does not control URL routing');
 assert.match(domain,/profile_username_valid/,'user chooses validated unique username');
 assert.match(domain,/user_agent_get_v236\(\$pdo,\$uid,\$agentId\)/,'profile agent must belong to owner');
