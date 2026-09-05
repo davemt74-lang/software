@@ -3,7 +3,7 @@
 const cfg=window.STONEFELLOW_AGENT_IDENTITY_V236||{};
 const endpoint=cfg.profileAgentEndpoint||'';
 if(!endpoint||!cfg.csrf)return;
-const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#039;'}[c]));
+const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
 const relative=value=>{if(!value)return '';const d=new Date(String(value).replace(' ','T'));if(Number.isNaN(d.getTime()))return String(value);const s=Math.max(0,Math.round((Date.now()-d.getTime())/1000));if(s<60)return 'just now';if(s<3600)return `${Math.max(1,Math.round(s/60))}m ago`;if(s<86400)return `${Math.round(s/3600)}h ago`;if(s<604800)return `${Math.round(s/86400)}d ago`;return d.toLocaleDateString();};
 const req=async(action,payload=null)=>{const post=payload!==null;const url=post?endpoint:`${endpoint}?action=${encodeURIComponent(action)}`;const options=post?{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,csrf_token:cfg.csrf,...payload})}:{credentials:'same-origin',cache:'no-store'};const r=await fetch(url,options),d=await r.json().catch(()=>null);if(!r.ok||!d?.ok)throw new Error(d?.error||'Profile activity is unavailable.');return d;};
 let state=null,timer=0,canvas=null,backdrop=null,button=null,badge=null,activeTab='activity',selectedConversation=0,bootstrapped=false,lastActivityId=0;
