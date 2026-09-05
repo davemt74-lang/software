@@ -5,11 +5,16 @@ const intelligence = readFileSync('api/artist-listening-intelligence-v254.php', 
 const profileApi = readFileSync('api/profile-agent.php', 'utf8');
 const bridge = readFileSync('includes/profile-agent-transcription-context.php', 'utf8');
 const profileRuntime = readFileSync('includes/profile-agent.php', 'utf8');
+const knowledgeRuntime = readFileSync('includes/knowledge.php', 'utf8');
 const knowledgeCss = readFileSync('personal-knowledge.css', 'utf8');
 
 // AI Summary must keep using the canonical owner stores that already exist.
 assert.match(intelligence, /agent_brain_v122_upsert_system_memory\(\$user,'transcript_analysis','artist-listening:' \./, 'AI Summary must save into the canonical Agent Brain');
 assert.match(intelligence, /personal_knowledge_store\(\$user,'artist-listening-analysis:' \./, 'AI Summary must save into canonical My Knowledge');
+
+// The canonical My Knowledge mutation path must enforce manage access and keep the sharing index synchronized.
+assert.match(knowledgeRuntime, /personal_capability_has_v242\('personal_knowledge\.manage', \$user\)/, 'Personal Knowledge writes must require the manage capability');
+assert.match(knowledgeRuntime, /shared_knowledge_index_sync_item_v236\(\$pdo, \$knowledgeId\)/, 'Personal Knowledge writes must synchronize the existing sharing index');
 
 // My Knowledge itself already participates in the Profile Agent policy boundary.
 assert.match(profileRuntime, /user_data_policy_can_use_v236\(\$pdo,\$principal,\$owner,'knowledge',\$rid,\$legacy\)/, 'Profile Agent My Knowledge retrieval must remain policy-gated');
