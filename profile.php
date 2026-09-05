@@ -3,7 +3,7 @@ declare(strict_types=1);
 require __DIR__ . '/includes/bootstrap.php';
 
 $pdo=db();
-if(!$pdo||!profile_agent_schema_ready($pdo)){http_response_code(503);exit('Stonefellow profiles are not ready. Run /upgrade.php.');}
+if(!$pdo||!profile_agent_schema_ready($pdo)){http_response_code(503);exit(system_agent_name().' profiles are not ready. Run /upgrade.php.');}
 $username=profile_username_normalize((string)($_GET['username']??''));
 $profile=profile_by_username($pdo,$username);$viewer=current_user();
 $isOwner=$profile&&$viewer&&(int)$viewer['id']===(int)$profile['user_id'];

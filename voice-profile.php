@@ -26,7 +26,7 @@ $asset = 'studio-voice-profile-ui-20260903';
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="theme-color" content="#0d0d0d">
-<title>Stonefellow | Voice Profile</title>
+<title><?= e(system_agent_name()) ?> | Voice Profile</title>
 <link rel="stylesheet" href="<?= e(url('/chat.css?v=82')) ?>">
 <link rel="stylesheet" href="<?= e(url('/voice-profile.css?v='.$asset)) ?>">
 </head>
@@ -120,7 +120,7 @@ $asset = 'studio-voice-profile-ui-20260903';
                 <div><small>03 · Voice Clone</small><h2>Create & preview your clone</h2></div>
                 <span id="cloneVerifiedBadge">Not created</span>
               </header>
-              <p class="voice-card-copy">Select one of your saved samples. Stonefellow only allows this account to create a clone for its own linked identity.</p>
+              <p class="voice-card-copy">Select one of your saved samples. <?= e(system_agent_name()) ?> only allows this account to create a clone for its own linked identity.</p>
               <div class="voice-selected-sample" id="selectedSampleBox">
                 <span>No sample selected</span>
                 <strong>Select a sample above</strong>

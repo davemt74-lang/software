@@ -78,10 +78,11 @@ function profile_runtime_owner_state(PDO $pdo,array $user): array
 
     return [
         'build'=>STONEFELLOW_PROFILE_AGENT_BUILD,
-        'namespace'=>STONEFELLOW_PROFILE_NAMESPACE,
+        'namespace'=>'',
         'system_agent_name'=>system_agent_name(),
         'profile'=>$profile,
         'profile_url'=>!empty($profile['username'])?profile_public_url((string)$profile['username']):'',
+        'profile_url_example'=>url('/username'),
         'agents'=>$agents,
         'visits'=>$visitRows,
         'conversations'=>$conversationRows,
