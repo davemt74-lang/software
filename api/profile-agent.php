@@ -11,7 +11,7 @@ $pdo=db();if(!$pdo||!profile_agent_schema_ready($pdo))profile_agent_json(false,[
 $method=strtoupper((string)($_SERVER['REQUEST_METHOD']??'GET'));
 $input=$method==='POST'?json_decode((string)file_get_contents('php://input'),true):$_GET;if(!is_array($input))$input=$_POST;
 $action=trim((string)($input['action']??'state'));$user=current_user();
-$ownerActions=['owner_state','save_profile','save_profile_agent','save_profile_access','attention_action','conversation_messages','owner_reply'];
+$ownerActions=['owner_state','save_profile','save_profile_agent','save_profile_access','attention_action','conversation_messages','conversation_status','owner_reply'];
 
 try{
 if(in_array($action,$ownerActions,true)){
@@ -26,10 +26,18 @@ if(in_array($action,$ownerActions,true)){
         user_data_policy_save_v236($pdo,$user,['resource_type'=>$type,'resource_id'=>'*','audience_scope'=>(string)($input['audience_scope']??$current['audience_scope']),'owner_agents_allowed'=>!empty($current['owner_agents_allowed']),'profile_agent_allowed'=>!empty($input['profile_agent_allowed']),'stonefellow_shared'=>!empty($current['stonefellow_shared'])]);
         profile_agent_json(true,['state'=>profile_runtime_owner_state($pdo,$user)]);
     }
-    if($action==='attention_action'){profile_attention_update($pdo,$uid,(int)($input['attention_id']??0),(string)($input['attention_action']??''));profile_agent_json(true,['attention'=>profile_runtime_attention_list($pdo,$uid,20)]);}
+    if($action==='attention_action'){profile_attention_update($pdo,$uid,(int)($input['attention_id']??0),(string)($input['attention_action']??''));profile_agent_json(true,['state'=>profile_runtime_owner_state($pdo,$user)]);}
     if($action==='conversation_messages'){
         $cid=max(0,(int)($input['conversation_id']??0));$conversation=profile_runtime_conversation_owner($pdo,$cid,$uid);if(!$conversation)profile_agent_json(false,['error'=>'Conversation not found.'],404);
         profile_agent_json(true,['conversation'=>$conversation,'messages'=>profile_agent_messages($pdo,$cid)]);
+    }
+    if($action==='conversation_status'){
+        $cid=max(0,(int)($input['conversation_id']??0));$status=(string)($input['status']??'');
+        if(!in_array($status,['open','owner_joined','resolved'],true))throw new RuntimeException('Unknown conversation status.');
+        $conversation=profile_runtime_conversation_owner($pdo,$cid,$uid);if(!$conversation)profile_agent_json(false,['error'=>'Conversation not found.'],404);
+        $pdo->prepare('UPDATE profile_agent_conversations SET status=?,updated_at=NOW() WHERE id=? AND owner_user_id=?')->execute([$status,$cid,$uid]);
+        if($status==='resolved')$pdo->prepare("UPDATE agent_attention_items SET status='handled',snoozed_until=NULL WHERE owner_user_id=? AND source_conversation_id=? AND status IN ('pending','seen','snoozed')")->execute([$uid,$cid]);
+        profile_agent_json(true,['state'=>profile_runtime_owner_state($pdo,$user)]);
     }
     if($action==='owner_reply'){
         $cid=max(0,(int)($input['conversation_id']??0));$reply=trim((string)($input['message']??''));if($reply===''||mb_strlen($reply)>4000)throw new RuntimeException('Enter a reply up to 4,000 characters.');
@@ -37,7 +45,7 @@ if(in_array($action,$ownerActions,true)){
         $pdo->prepare("INSERT INTO profile_agent_messages (conversation_id,sender_type,sender_user_id,message) VALUES (?,'owner',?,?)")->execute([$cid,$uid,$reply]);
         $pdo->prepare("UPDATE profile_agent_conversations SET status='owner_joined',last_summary=?,last_message_at=NOW() WHERE id=? AND owner_user_id=?")->execute([mb_strimwidth($reply,0,900,'…'),$cid,$uid]);
         $pdo->prepare("UPDATE agent_attention_items SET status='handled',snoozed_until=NULL WHERE owner_user_id=? AND source_conversation_id=? AND status IN ('pending','seen','snoozed')")->execute([$uid,$cid]);
-        profile_agent_json(true,['messages'=>profile_agent_messages($pdo,$cid),'attention'=>profile_runtime_attention_list($pdo,$uid,20)]);
+        profile_agent_json(true,['state'=>profile_runtime_owner_state($pdo,$user),'messages'=>profile_agent_messages($pdo,$cid)]);
     }
 }
 
