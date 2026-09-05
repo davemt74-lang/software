@@ -1,0 +1,34 @@
+name: Software Deploy
+
+on:
+  push:
+    branches:
+      - build/software-deploy
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build complete deployment tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p deploy
+          rsync -a ./ deploy/ \
+            --exclude='.git/' \
+            --exclude='.github/'
+
+      - name: Upload deployment
+        uses: actions/upload-artifact@v4
+        with:
+          name: software-deploy
+          path: deploy/
+          if-no-files-found: error
+          compression-level: 6
+          retention-days: 7
