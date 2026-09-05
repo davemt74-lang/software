@@ -79,7 +79,6 @@ jobs:
           patch('voice-profile.php', [
               ('<title>Stonefellow | Voice Profile</title>', '<title><?= e(system_agent_name()) ?> | Voice Profile</title>'),
               ('Stonefellow only allows this account to create a clone for its own linked identity.', '<?= e(system_agent_name()) ?> only allows this account to create a clone for its own linked identity.'),
-              ('Enable recognition consent when you want Stonefellow to associate a verified provider voice match with your conversational identity.', 'Enable recognition consent when you want <?= e(system_agent_name()) ?> to associate a verified provider voice match with your conversational identity.'),
           ])
 
           test = Path('tests/member-navigation-contract.mjs')
