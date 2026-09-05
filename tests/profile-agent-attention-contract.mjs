@@ -7,6 +7,8 @@ const api=read('api/profile-agent.php');
 const page=read('profile.php');
 const portalPage=read('profile-agent.php');
 const portal=read('profile-agent-portal.js');
+const portalCss=read('profile-agent-portal.css');
+const profileCss=read('profile.css');
 const loader=read('account-agent-settings-loader-v236.js');
 const agentSettings=read('account-agent-settings-v236.js');
 const userAgents=read('includes/user-agent-system-v236.php');
@@ -52,7 +54,10 @@ assert.match(api,/owner_reply/,'owner can answer Profile Agent conversations');
 assert.match(api,/conversation_status/,'owner can resolve and reopen Profile Agent conversations');
 assert.match(api,/I’ve asked .* for input rather than guessing/,'agent refuses to invent missing approved facts');
 
-assert.match(portalPage,/Customer service workspace/,'Profile Agent has a standalone service portal');
+assert.doesNotMatch(portalPage,/Customer service workspace|See who is visiting your profile/,'standalone portal starts directly in the working service UI');
+assert.match(portalPage,/class="chat-sidebar profile-agent-sidebar"/,'Profile Agent owns a dedicated customer-service sidebar');
+assert.doesNotMatch(portalPage,/workspace-sidebar-v82\.php/,'Profile Agent no longer embeds the generic workspace sidebar');
+assert.match(portalPage,/id="profileAgentServiceStatus"/,'dedicated sidebar exposes canonical service status');
 assert.match(portalPage,/data-pa-tab="inbox"/,'portal has an Inbox');
 assert.match(portalPage,/data-pa-tab="visitors"/,'portal has a Visitors view');
 assert.match(portalPage,/data-pa-tab="knowledge"/,'portal has Knowledge Access');
@@ -64,6 +69,17 @@ assert.match(portal,/15000/,'portal auto-refreshes as a customer-service workspa
 assert.match(portal,/Active now/,'portal exposes recent visitor presence');
 assert.match(portal,/save_profile_agent/,'portal is the public agent configuration owner');
 assert.match(portal,/save_profile_access/,'portal owns public knowledge-access controls');
+assert.match(portal,/document\.querySelectorAll\('\[data-pa-tab\]'\)/,'sidebar tabs are resolved at the service-app level');
+assert.match(portal,/app\.addEventListener\('click'/,'sidebar tab clicks delegate through the service shell');
+assert.match(portalCss,/\.profile-agent-main\{[^}]*grid-template-rows:58px minmax\(0,1fr\)[^}]*overflow:hidden/,'portal main owns a bounded viewport shell');
+assert.match(portalCss,/\.profile-agent-portal\{[^}]*min-height:0[^}]*overflow-y:auto/,'portal content is the vertical scroll owner');
+assert.match(portalCss,/\.profile-agent-sidebar-nav/,'portal has purpose-built service navigation');
+assert.match(page,/class="profile-agent-widget-root"/,'public profile mounts a fixed service-chat widget');
+assert.match(page,/class="profile-agent-launcher"/,'public profile exposes a lower-right chat launcher');
+assert.match(page,/data-close-profile-agent/,'public chat widget has an explicit close control');
+assert.doesNotMatch(page,/profile-primary-action/,'public profile no longer duplicates Profile Agent inside profile identity');
+assert.match(profileCss,/\.profile-agent-widget-root\{[^}]*position:fixed[^}]*right:24px[^}]*bottom:24px/,'public Profile Agent is fixed in the lower-right corner');
+assert.match(profileCss,/\.profile-agent-widget\[hidden\]\{display:none\}/,'public service panel is launcher-controlled');
 
 assert.doesNotMatch(loader,/profile-dashboard/,'My Account no longer injects the old Profile Agent dashboard');
 assert.doesNotMatch(agentSettings,/name="is_profile_agent"/,'My Agents no longer exposes a competing public Profile Agent checkbox');

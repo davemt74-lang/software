@@ -8,7 +8,6 @@
   const textarea=form?.querySelector('textarea');
   const submit=form?.querySelector('button[type=submit]');
   const status=shell.querySelector('[data-profile-agent-status]');
-  const openers=document.querySelectorAll('[data-open-profile-agent]');
   const storageKey=`stonefellow-profile-agent:${cfg.username}`;
   let conversationId=Math.max(0,Number(localStorage.getItem(storageKey)||0));
   let lastMessageId=0;
@@ -55,7 +54,6 @@
     }catch(_error){}
   }
   function startPolling(){clearInterval(pollTimer);pollTimer=window.setInterval(poll,10000);}
-  openers.forEach(button=>button.addEventListener('click',()=>{shell.scrollIntoView({behavior:'smooth',block:'center'});setTimeout(()=>textarea?.focus(),350);}));
   form?.addEventListener('submit',async event=>{
     event.preventDefault();const message=String(textarea.value||'').trim();if(!message)return;
     appendMessage('visitor',message);textarea.value='';textarea.disabled=true;submit.disabled=true;status.textContent=`${cfg.agentName} is thinking…`;

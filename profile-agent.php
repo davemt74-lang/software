@@ -29,16 +29,37 @@ $profileUrl = !empty($profile['username']) ? profile_public_url((string)$profile
 <meta name="theme-color" content="#f7f8fa">
 <title>Profile Agent | <?= e(system_agent_name()) ?></title>
 <link rel="stylesheet" href="<?= e(url('/chat.css?v=82')) ?>">
-<link rel="stylesheet" href="<?= e(url('/account.css?v=account-light-20260904')) ?>">
-<link rel="stylesheet" href="<?= e(url('/profile-agent-portal.css?v=profile-agent-portal-20260905')) ?>">
+<link rel="stylesheet" href="<?= e(url('/chat-header-ui.css?v=white-tech-20260904')) ?>">
+<link rel="stylesheet" href="<?= e(url('/profile-agent-portal.css?v=profile-agent-service-shell-20260905')) ?>">
 </head>
 <body>
 <div class="chat-app profile-agent-app">
-  <?php
-    $workspaceSidebarUser = $user;
-    $workspaceSidebarActive = 'profile_agent';
-    require __DIR__ . '/includes/workspace-sidebar-v82.php';
-  ?>
+  <aside class="chat-sidebar profile-agent-sidebar" id="chatSidebar">
+    <div class="profile-agent-sidebar-head">
+      <a class="profile-agent-sidebar-brand" href="<?= e(url('/profile-agent.php')) ?>"><?= e(system_agent_name()) ?></a>
+      <button class="chat-icon-button mobile-only" id="closeChatSidebar" type="button" aria-label="Close Profile Agent menu">×</button>
+    </div>
+
+    <div class="profile-agent-sidebar-service">
+      <span>Profile Agent</span>
+      <div class="profile-agent-service-status" id="profileAgentServiceStatus" aria-live="polite">Checking service…</div>
+    </div>
+
+    <nav class="profile-agent-sidebar-nav" aria-label="Profile Agent sections">
+      <button type="button" data-pa-tab="inbox" class="active"><span>01</span><strong>Inbox</strong></button>
+      <button type="button" data-pa-tab="visitors"><span>02</span><strong>Visitors</strong></button>
+      <button type="button" data-pa-tab="agent"><span>03</span><strong>Agent</strong></button>
+      <button type="button" data-pa-tab="knowledge"><span>04</span><strong>Knowledge Access</strong></button>
+      <button type="button" data-pa-tab="profile"><span>05</span><strong>Profile Settings</strong></button>
+      <button type="button" data-pa-tab="analytics"><span>06</span><strong>Analytics</strong></button>
+    </nav>
+
+    <div class="profile-agent-sidebar-footer">
+      <?php if ($profileUrl !== ''): ?><a href="<?= e($profileUrl) ?>" target="_blank" rel="noopener">View Profile ↗</a><?php endif; ?>
+      <a href="<?= e(url('/account.php')) ?>">My Account</a>
+      <?php if (has_permission('chat.access', $user)): ?><a href="<?= e(url('/chat.php')) ?>">Agent Chat</a><?php endif; ?>
+    </div>
+  </aside>
 
   <div class="chat-sidebar-backdrop" id="chatSidebarBackdrop"></div>
 
@@ -92,25 +113,9 @@ $profileUrl = !empty($profile['username']) ? profile_public_url((string)$profile
     </header>
 
     <section class="profile-agent-portal" id="profileAgentPortal">
-      <header class="profile-agent-hero">
-        <div>
-          <div class="profile-agent-eyebrow">Customer service workspace</div>
-          <h1>Profile Agent</h1>
-          <p>See who is visiting your profile, manage conversations, answer escalations, and control what your public agent can use.</p>
-        </div>
-        <div class="profile-agent-service-status" id="profileAgentServiceStatus" aria-live="polite">Checking service…</div>
-      </header>
 
       <div class="profile-agent-metrics" id="profileAgentMetrics" aria-label="Profile Agent metrics"></div>
 
-      <nav class="profile-agent-tabs" aria-label="Profile Agent sections">
-        <button type="button" data-pa-tab="inbox" class="active">Inbox</button>
-        <button type="button" data-pa-tab="visitors">Visitors</button>
-        <button type="button" data-pa-tab="agent">Agent</button>
-        <button type="button" data-pa-tab="knowledge">Knowledge Access</button>
-        <button type="button" data-pa-tab="profile">Profile Settings</button>
-        <button type="button" data-pa-tab="analytics">Analytics</button>
-      </nav>
 
       <div class="profile-agent-notice" id="profileAgentNotice" role="status" aria-live="polite"></div>
 
@@ -160,7 +165,7 @@ window.PROFILE_AGENT_PORTAL = <?= json_encode([
     'profileUrl' => $profileUrl,
 ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>;
 </script>
-<script src="<?= e(url('/member-shell-v77.js?v=profile-agent-portal-20260905')) ?>"></script>
-<script src="<?= e(url('/profile-agent-portal.js?v=profile-agent-portal-20260905')) ?>"></script>
+<script src="<?= e(url('/member-shell-v77.js?v=profile-agent-service-shell-20260905')) ?>"></script>
+<script src="<?= e(url('/profile-agent-portal.js?v=profile-agent-service-shell-20260905')) ?>"></script>
 </body>
 </html>

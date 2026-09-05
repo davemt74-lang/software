@@ -47,7 +47,7 @@ foreach($tracksByAlbum as &$group)usort($group,static fn(array $a,array $b):int=
 <meta name="theme-color" content="#f6f5f2">
 <link rel="canonical" href="<?= e(profile_public_url($username)) ?>">
 <title><?= e($displayName) ?> | <?= e(system_agent_name()) ?></title>
-<link rel="stylesheet" href="<?= e(url('/profile.css?v=profile-agent-attention-20260903')) ?>">
+<link rel="stylesheet" href="<?= e(url('/profile.css?v=profile-agent-widget-20260905')) ?>">
 </head>
 <body class="profile-page">
 <header class="profile-topbar">
@@ -62,7 +62,6 @@ foreach($tracksByAlbum as &$group)usort($group,static fn(array $a,array $b):int=
   <section class="profile-identity">
     <div class="profile-avatar"><?php if($avatar!==''): ?><img src="<?= e($avatar) ?>" alt="<?= e($displayName) ?>"><?php else: ?><span><?= e(mb_strtoupper(mb_substr($displayName,0,1))) ?></span><?php endif; ?></div>
     <div class="profile-name"><small><?= e($roleLabel) ?></small><h1><?= e($displayName) ?></h1><span>@<?= e($username) ?></span></div>
-    <?php if($agent): ?><button type="button" class="profile-primary-action" data-open-profile-agent>Ask <?= e((string)$agent['display_name']) ?></button><?php endif; ?>
   </section>
 
   <div class="profile-grid">
@@ -120,26 +119,46 @@ foreach($tracksByAlbum as &$group)usort($group,static fn(array $a,array $b):int=
       <?php endif; ?>
     </div>
 
-    <aside>
-      <?php if($agent): ?>
-      <section class="profile-card profile-agent-card" id="profileAgentShell">
-        <header class="profile-agent-head"><span class="profile-agent-avatar"><?= e(mb_strtoupper(mb_substr((string)$agent['display_name'],0,1))) ?></span><div><strong><?= e((string)$agent['display_name']) ?></strong><small><?= e($displayName) ?>’s Profile Agent · powered by <?= e(system_agent_name()) ?></small></div></header>
-        <div class="profile-agent-disclosure">AI representative — not the profile owner live. Answers use only information this profile has approved.</div>
-        <?php if($preview): ?>
-          <div class="profile-agent-preview"><p><?= e($agentGreeting) ?></p><strong>Visitor preview</strong><span>Conversation sending is disabled here so your own preview cannot create visitor events, notifications, or attention items.</span></div>
-        <?php else: ?>
-          <div class="profile-agent-thread" data-profile-agent-thread aria-live="polite"></div>
-          <form class="profile-agent-compose"><textarea maxlength="2000" placeholder="Ask about music, shows, projects…" aria-label="Message Profile Agent"></textarea><button type="submit">Send</button><div class="profile-agent-status" data-profile-agent-status role="status" aria-live="polite"></div></form>
-        <?php endif; ?>
-      </section>
-      <?php else: ?><section class="profile-card profile-no-agent"><strong>Profile Agent is off</strong><p>This user has not enabled a public Profile Agent.</p></section><?php endif; ?>
-    </aside>
   </div>
 </main>
+<?php if($agent): ?>
+<div class="profile-agent-widget-root" data-profile-agent-widget>
+  <section class="profile-agent-widget" id="profileAgentShell" hidden aria-label="Chat with <?= e((string)$agent['display_name']) ?>">
+    <header class="profile-agent-widget-head">
+      <span class="profile-agent-avatar"><?= e(mb_strtoupper(mb_substr((string)$agent['display_name'],0,1))) ?></span>
+      <div><strong><?= e((string)$agent['display_name']) ?></strong><small><?= e($displayName) ?>’s Profile Agent · powered by <?= e(system_agent_name()) ?></small></div>
+      <button type="button" class="profile-agent-widget-close" data-close-profile-agent aria-label="Close Profile Agent">×</button>
+    </header>
+    <div class="profile-agent-disclosure">AI representative — not the profile owner live. Answers use only information this profile has approved.</div>
+    <?php if($preview): ?>
+      <div class="profile-agent-preview"><p><?= e($agentGreeting) ?></p><strong>Visitor preview</strong><span>Conversation sending is disabled here so your own preview cannot create visitor events, notifications, or attention items.</span></div>
+    <?php else: ?>
+      <div class="profile-agent-thread" data-profile-agent-thread aria-live="polite"></div>
+      <form class="profile-agent-compose"><textarea maxlength="2000" placeholder="Ask about music, shows, projects…" aria-label="Message Profile Agent"></textarea><button type="submit">Send</button><div class="profile-agent-status" data-profile-agent-status role="status" aria-live="polite"></div></form>
+    <?php endif; ?>
+  </section>
+  <button type="button" class="profile-agent-launcher" data-open-profile-agent aria-controls="profileAgentShell" aria-expanded="false">
+    <span class="profile-agent-launcher-mark"><?= e(mb_strtoupper(mb_substr((string)$agent['display_name'],0,1))) ?></span>
+    <span>Ask <?= e((string)$agent['display_name']) ?></span>
+  </button>
+</div>
+<?php endif; ?>
 <script>
 window.STONEFELLOW_PROFILE_AGENT={username:<?= json_encode($username,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE) ?>,endpoint:<?= json_encode(url('/api/profile-agent.php'),JSON_UNESCAPED_SLASHES) ?>,profileToken:<?= json_encode($profileToken,JSON_UNESCAPED_SLASHES) ?>,agentName:<?= json_encode((string)($agent['display_name']??''),JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE) ?>,greeting:<?= json_encode($agentGreeting,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE) ?>};
 for(const tab of document.querySelectorAll('[data-profile-tab]'))tab.addEventListener('click',()=>{const key=tab.dataset.profileTab;document.querySelectorAll('[data-profile-tab]').forEach(t=>t.setAttribute('aria-selected',String(t===tab)));document.querySelectorAll('[data-profile-panel]').forEach(p=>p.hidden=p.dataset.profilePanel!==key);});
-document.querySelector('[data-open-profile-agent]')?.addEventListener('click',()=>document.getElementById('profileAgentShell')?.scrollIntoView({behavior:'smooth',block:'start'}));
+const profileAgentShell=document.getElementById('profileAgentShell');
+const profileAgentLauncher=document.querySelector('[data-open-profile-agent]');
+const profileAgentClose=document.querySelector('[data-close-profile-agent]');
+function setProfileAgentOpen(open){
+  if(!profileAgentShell||!profileAgentLauncher)return;
+  profileAgentShell.hidden=!open;
+  profileAgentLauncher.setAttribute('aria-expanded',String(open));
+  if(open){(profileAgentShell.querySelector('textarea')||profileAgentClose)?.focus();}
+  else{profileAgentLauncher.focus();}
+}
+profileAgentLauncher?.addEventListener('click',()=>setProfileAgentOpen(profileAgentShell?.hidden!==false));
+profileAgentClose?.addEventListener('click',()=>setProfileAgentOpen(false));
+document.addEventListener('keydown',event=>{if(event.key==='Escape'&&profileAgentShell&&!profileAgentShell.hidden)setProfileAgentOpen(false);});
 </script>
 <?php if($agent&&!$preview): ?><script src="<?= e(url('/profile-agent.js?v=profile-agent-attention-20260903')) ?>"></script><?php endif; ?>
 </body>

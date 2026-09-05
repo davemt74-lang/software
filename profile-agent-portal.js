@@ -2,7 +2,8 @@
 'use strict';
 const cfg=window.PROFILE_AGENT_PORTAL;
 const root=document.getElementById('profileAgentPortal');
-if(!cfg?.endpoint||!cfg?.csrf||!root)return;
+const app=document.querySelector('.profile-agent-app')||root;
+if(!cfg?.endpoint||!cfg?.csrf||!root||!app)return;
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
 const notice=document.getElementById('profileAgentNotice');
 const service=document.getElementById('profileAgentServiceStatus');
@@ -29,10 +30,11 @@ function parseDate(value){if(!value)return null;const iso=String(value).replace(
 function relative(value){const d=parseDate(value);if(!d)return String(value||'');const seconds=Math.round((Date.now()-d.getTime())/1000);if(seconds<60)return 'just now';if(seconds<3600)return `${Math.max(1,Math.round(seconds/60))}m ago`;if(seconds<86400)return `${Math.round(seconds/3600)}h ago`;if(seconds<604800)return `${Math.round(seconds/86400)}d ago`;return d.toLocaleDateString();}
 function recentlyActive(value){const d=parseDate(value);return !!d&&(Date.now()-d.getTime())<=5*60*1000;}
 function activateTab(name){
-  const tabs=[...root.querySelectorAll('[data-pa-tab]')],views=[...root.querySelectorAll('[data-pa-view]')];
+  const tabs=[...document.querySelectorAll('[data-pa-tab]')],views=[...root.querySelectorAll('[data-pa-view]')];
   if(!views.some(v=>v.dataset.paView===name))name='inbox';
   tabs.forEach(b=>b.classList.toggle('active',b.dataset.paTab===name));
   views.forEach(v=>v.classList.toggle('active',v.dataset.paView===name));
+  if(root.scrollTop>0)root.scrollTo({top:0,behavior:'auto'});
   try{localStorage.setItem('profile-agent-portal-tab',name);}catch(e){}
 }
 function renderService(){
@@ -112,7 +114,7 @@ function bindDynamic(){
   document.getElementById('paProfileForm')?.addEventListener('submit',async e=>{e.preventDefault();const f=new FormData(e.currentTarget);try{const d=await req('save_profile',{username:f.get('username'),bio:f.get('bio'),website_url:f.get('website_url'),instagram_url:f.get('instagram_url'),tiktok_url:f.get('tiktok_url'),youtube_url:f.get('youtube_url'),spotify_url:f.get('spotify_url'),apple_music_url:f.get('apple_music_url'),is_public:f.get('is_public')?1:0,share_visit_identity:f.get('share_visit_identity')?1:0});state=d.state;renderAll();setNotice('Public profile saved.');}catch(err){setNotice(err.message,true);}});
   knowledgeHost.querySelectorAll('[data-policy]').forEach(row=>{const allow=row.querySelector('[data-policy-allow]'),audience=row.querySelector('[data-policy-audience]');const save=async()=>{try{const d=await req('save_profile_access',{resource_type:row.dataset.policy,profile_agent_allowed:allow.checked?1:0,audience_scope:audience.value});state=d.state;renderAll();setNotice('Knowledge access updated.');}catch(err){setNotice(err.message,true);}};allow?.addEventListener('change',save);audience?.addEventListener('change',save);});
 }
-root.addEventListener('click',async e=>{
+app.addEventListener('click',async e=>{
   const tab=e.target.closest('[data-pa-tab]');if(tab){activateTab(tab.dataset.paTab);return;}
   const open=e.target.closest('[data-open-conversation]');if(open){activateTab('inbox');openConversation(Number(open.dataset.openConversation));return;}
   const attention=e.target.closest('[data-attention]');if(attention){try{const d=await req('attention_action',{attention_id:Number(attention.dataset.attention),attention_action:attention.dataset.attentionAction});state=d.state;renderAll();setNotice('Attention item updated.');}catch(err){setNotice(err.message,true);}return;}
