@@ -205,14 +205,14 @@ function chat_onboarding_v241_tool(string $query, array $user): array
     if ($q === '') return $empty;
 
     $generalSetup = (bool)preg_match(
-        '/\b(?:onboarding|setup status|set up status|what(?:\s+do\s+i|\s+am\s+i)?\s+(?:still\s+)?need(?:\s+to)?\s+set\s*up|what(?:\'s| is)\s+missing|finish\s+(?:my\s+)?setup)\b/u',
+        '/\b(?:onboarding|setup status|set up status|what(?:\s+do\s+i|\s+am\s+i)?\s+(?:still\s+)?need(?:\s+to)?\s+set\s*up|what\s+setup\s+(?:am\s+i\s+)?missing|what(?:\'s| is)\s+missing|finish\s+(?:my\s+)?setup)\b/u',
         $q
     );
     $profileAgentIntent = str_contains($q, 'profile agent');
     $voiceCloneIntent = (bool)preg_match('/\bvoice\s+clone\b/u', $q);
     $socialChatIntent = (bool)preg_match('/\b(?:user[- ]to[- ]user|social|direct)\s+chat\b|\bcan\s+(?:people|users|members)\s+(?:message|chat with)\s+me\b/u', $q);
     $presenceIntent = (bool)preg_match('/\b(?:am i|appear|show as)\s+(?:online|offline)\b|\bonline\s+(?:status|presence)\b/u', $q);
-    $profileViewIntent = (bool)preg_match('/\b(?:public|visible|show my)\s+profile\b|\bis\s+my\s+profile\s+(?:public|visible)\b/u', $q);
+    $profileViewIntent = (bool)preg_match('/\b(?:public|visible|show my)\s+profile\b|\bis\s+my\s+profile\s+(?:public|visible|private)\b/u', $q);
     $soundIntent = (bool)preg_match('/\b(?:incoming|chat|message)\s+(?:notification\s+)?sound\b/u', $q);
 
     if (!$generalSetup && !$profileAgentIntent && !$voiceCloneIntent && !$socialChatIntent
