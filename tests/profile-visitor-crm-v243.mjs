@@ -47,7 +47,10 @@ assert.match(crm, /relationship_scope/, 'known relationship state is part of the
 assert.match(notifications, /\$sourceType === 'profile_event'/, 'Profile Agent source events are promoted through the canonical notification gate');
 assert.match(notifications, /profile_profile_view/, 'legacy duplicate profile prefix remains readable during rollout');
 assert.match(notifications, /if \(\$type === 'profile_profile_view'\) \$type = 'profile_view';/, 'new profile-view notifications normalize to one canonical type');
+assert.match(attentionApi, /function chat_notifications_v240_contextual_decision\(/, 'contextual visitor enrichment has one isolated presentation boundary');
 assert.match(attentionApi, /profile_visitor_attention_decision_v243/, 'Agent Chat attention presentation must use visitor history context');
+assert.match(attentionApi, /catch \(Throwable \$e\)[\s\S]{0,320}return null;/, 'CRM enrichment failure must degrade to the canonical notification instead of dropping attention delivery');
+assert.match(attentionApi, /notification_attention_message\(\$notification\)/, 'canonical attention remains the delivery fallback when contextual enrichment is unavailable');
 assert.match(attentionApi, /'profile_contact'=>\$contact/, 'persisted assistant turn carries safe contact context');
 assert.match(attentionApi, /'response_timeout_ms'=>10000/, 'contextual visitor prompts retain the 10-second response window');
 
