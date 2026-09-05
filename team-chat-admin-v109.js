@@ -2,7 +2,7 @@
   'use strict';
 
   const BUILD = 'team-chat-bootstrap-v236-20260905';
-  const ASSET_BUILD = 'team-chat-light-v116-20260905';
+  const ASSET_BUILD = 'team-chat-light-v117-20260905';
   const proof = window.STONEFELLOW_TEAM_CHAT_RUNTIME = {
     build: BUILD,
     assetBuild: ASSET_BUILD,
