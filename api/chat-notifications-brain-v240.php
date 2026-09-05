@@ -94,10 +94,11 @@ function chat_notifications_v240_history(PDO $pdo, int $userId, int $limit = 50)
 function chat_notifications_v240_state(array $user, PDO $pdo): array
 {
     $userId = (int)($user['id'] ?? 0);
-    $brain = agent_brain_schema_ready() ? agent_brain_summary($user) : [
+    $brainAllowed = personal_capability_has_v242('agent_brain.access', $user);
+    $brain = $brainAllowed && agent_brain_schema_ready() ? agent_brain_summary($user) : [
         'archive_count'=>0,'memory_count'=>0,'themes'=>[],'dates'=>[],'files'=>[],'recent'=>[]
     ];
-    $activity = agent_activity_v94_snapshot($user, 'chat', []);
+    $activity = $brainAllowed ? agent_activity_v94_snapshot($user, 'chat', []) : [];
 
     return [
         'ok'=>true,
@@ -106,6 +107,7 @@ function chat_notifications_v240_state(array $user, PDO $pdo): array
             'items'=>notification_recent($user, 25),
         ],
         'brain'=>[
+            'enabled'=>$brainAllowed,
             'archive_count'=>(int)($brain['archive_count'] ?? 0),
             'memory_count'=>(int)($brain['memory_count'] ?? 0),
             'themes'=>array_values(is_array($brain['themes'] ?? null) ? $brain['themes'] : []),
@@ -113,9 +115,9 @@ function chat_notifications_v240_state(array $user, PDO $pdo): array
             'files'=>array_values(is_array($brain['files'] ?? null) ? $brain['files'] : []),
             'recent'=>array_values(is_array($brain['recent'] ?? null) ? $brain['recent'] : []),
             'activity'=>$activity,
-            'events'=>chat_notifications_v240_activity_events($pdo, $userId, 50),
+            'events'=>$brainAllowed ? chat_notifications_v240_activity_events($pdo, $userId, 50) : [],
         ],
-        'history'=>chat_notifications_v240_history($pdo, $userId, 60),
+        'history'=>$brainAllowed ? chat_notifications_v240_history($pdo, $userId, 60) : [],
     ];
 }
 
