@@ -14,6 +14,7 @@ const settingsCss = read('chat-settings-v237.css');
 const teamApi = read('api/team-chat-v109.php');
 const teamJs = read('team-chat-v109.js');
 const widget = read('includes/team-chat-widget-v81.php');
+const activity = read('agent-activity-v94.js');
 const upgrade = read('upgrade.php');
 const bootstrap = read('includes/bootstrap.php');
 
@@ -45,8 +46,14 @@ assert.match(settingsUi, /actions\.insertBefore\(notification, profile\)/);
 assert.match(settingsCss, /chat-now-playing-close/);
 assert.match(settingsCss, /chat-settings-modal/);
 
-assert.match(widget, /chat-settings-v237\.css/);
-assert.match(widget, /chat-settings-v237\.js/);
+assert.match(activity, /chat-settings-v238-canonical-20260905/);
+assert.match(activity, /window\.STONEFELLOW_CHAT_SETTINGS=/);
+assert.match(activity, /chat-settings-v237\.php/);
+assert.match(activity, /chat-settings-v237\.css/);
+assert.match(activity, /chat-settings-v237\.js/);
+assert.match(activity, /document\.getElementById\('chatSidebar'\)/);
+assert.equal(widget.includes('chat-settings-v237.css'), false, 'Team Chat widget must not own Agent Chat settings CSS');
+assert.equal(widget.includes('chat-settings-v237.js'), false, 'Team Chat widget must not own Agent Chat settings JS');
 assert.match(widget, /soundEnabled/);
 assert.match(widget, /socialChatEnabled/);
 
