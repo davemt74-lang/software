@@ -2,8 +2,6 @@
 declare(strict_types=1);
 
 require dirname(__DIR__) . '/includes/bootstrap.php';
-require_once dirname(__DIR__) . '/includes/studio-participants.php';
-require_once dirname(__DIR__) . '/includes/studio-voice-profile.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
@@ -27,97 +25,6 @@ function chat_onboarding_v241_require_csrf(array $input): void
     if ($token === '' || !hash_equals(csrf_token(), $token)) {
         chat_onboarding_v241_json(['ok'=>false,'error'=>'Session expired. Refresh and try again.'], 419);
     }
-}
-
-function chat_onboarding_v241_username(PDO $pdo, array $user, array $profile): string
-{
-    $existing = profile_username_normalize((string)($profile['username'] ?? ''));
-    if ($existing !== '') return $existing;
-
-    $base = profile_username_normalize((string)($user['display_name'] ?? 'member'));
-    if (mb_strlen($base) < 3 || !profile_username_valid($base)) $base = 'member-' . (int)$user['id'];
-    $candidate = $base;
-    $suffix = 1;
-    while (true) {
-        $stmt = $pdo->prepare('SELECT 1 FROM user_profiles WHERE username=? AND user_id<>? LIMIT 1');
-        $stmt->execute([$candidate, (int)$user['id']]);
-        if (!$stmt->fetchColumn()) return $candidate;
-        $suffix++;
-        $candidate = mb_strimwidth($base, 0, 52, '') . '-' . $suffix;
-    }
-}
-
-function chat_onboarding_v241_voice_state(PDO $pdo, array $user): array
-{
-    $out = [
-        'available' => false,
-        'clone_created' => false,
-        'clone_verified' => false,
-        'sample_count' => 0,
-        'url' => url('/voice-profile.php'),
-    ];
-    try {
-        if (!studio_participants_schema_ready() || !studio_voice_profile_schema_ready()) return $out;
-        $state = studio_voice_profile_state($pdo, $user);
-        $voice = is_array($state['voice'] ?? null) ? $state['voice'] : [];
-        $samples = is_array($state['samples'] ?? null) ? $state['samples'] : [];
-        $out['available'] = true;
-        $out['clone_created'] = trim((string)($voice['clone_provider_voice_id'] ?? '')) !== '';
-        $out['clone_verified'] = !empty($voice['clone_verified']);
-        $out['sample_count'] = count($samples);
-    } catch (Throwable $e) {
-        // Voice Profile remains optional during onboarding. Opening the canonical
-        // Voice Profile surface can initialize its own storage if needed.
-    }
-    return $out;
-}
-
-function chat_onboarding_v241_state(PDO $pdo, array $user): array
-{
-    $profileState = profile_runtime_owner_state($pdo, $user);
-    $profile = is_array($profileState['profile'] ?? null) ? $profileState['profile'] : [];
-    $agents = user_agents_list_v236($pdo, (int)$user['id'], true);
-    $defaultAgent = null;
-    foreach ($agents as $agent) {
-        if (!empty($agent['is_default'])) { $defaultAgent = $agent; break; }
-    }
-    $defaultAgent ??= $agents[0] ?? null;
-    $chat = chat_settings_get_v237($pdo, (int)$user['id']);
-    $publicAgent = is_array($profileState['public_agent_status'] ?? null) ? $profileState['public_agent_status'] : [];
-    $voice = chat_onboarding_v241_voice_state($pdo, $user);
-
-    $setup = [
-        'agent_named' => (bool)$defaultAgent,
-        'profile_username' => trim((string)($profile['username'] ?? '')) !== '',
-        'profile_public' => !empty($profile['is_public']),
-        'profile_agent_enabled' => !empty($publicAgent['enabled']) && (int)($publicAgent['agent_id'] ?? 0) > 0,
-        'online_chat' => (string)($chat['presence_mode'] ?? 'online') === 'online',
-        'social_chat_enabled' => !empty($chat['social_chat_enabled']),
-        'incoming_sound_enabled' => !empty($chat['sound_enabled']),
-        'voice_clone_created' => !empty($voice['clone_created']),
-        'voice_clone_verified' => !empty($voice['clone_verified']),
-    ];
-    $missing = [];
-    foreach ($setup as $key => $ready) if (!$ready) $missing[] = $key;
-
-    return [
-        'build' => 'chat-onboarding-v241-20260905',
-        'user' => [
-            'id' => (int)$user['id'],
-            'display_name' => (string)($user['display_name'] ?? ''),
-        ],
-        'system_agent_name' => system_agent_name(),
-        'agent' => $defaultAgent,
-        'profile' => $profile,
-        'profile_url' => (string)($profileState['profile_url'] ?? ''),
-        'suggested_username' => chat_onboarding_v241_username($pdo, $user, $profile),
-        'public_agent_status' => $publicAgent,
-        'chat' => $chat,
-        'voice' => $voice,
-        'setup' => $setup,
-        'missing' => $missing,
-        'onboarding_dismissed' => user_agent_onboarding_dismissed_v236($pdo, (int)$user['id']),
-    ];
 }
 
 $user = current_user();
@@ -162,7 +69,8 @@ try {
     if ($agentName === '') throw new RuntimeException('Choose a name for your agent.');
     $agentName = mb_strimwidth($agentName, 0, 190, '');
 
-    $profile = profile_for_user($pdo, (int)$user['id'], true) ?: throw new RuntimeException('Profile could not be loaded.');
+    $profile = profile_for_user($pdo, (int)$user['id'], true)
+        ?: throw new RuntimeException('Profile could not be loaded.');
     $username = profile_username_normalize((string)($input['username'] ?? ''));
     if ($username === '' || !profile_username_valid($username)) {
         throw new RuntimeException('Choose a username using 3–60 letters, numbers, dots, dashes or underscores.');
@@ -246,5 +154,8 @@ try {
     ]);
 } catch (Throwable $e) {
     error_log('Stonefellow chat onboarding v241 error: ' . $e->getMessage());
-    chat_onboarding_v241_json(['ok'=>false,'error'=>$e instanceof RuntimeException ? $e->getMessage() : 'Onboarding could not be completed.'], $e instanceof RuntimeException ? 422 : 500);
+    chat_onboarding_v241_json(
+        ['ok'=>false,'error'=>$e instanceof RuntimeException ? $e->getMessage() : 'Onboarding could not be completed.'],
+        $e instanceof RuntimeException ? 422 : 500
+    );
 }
