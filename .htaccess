@@ -2,6 +2,10 @@
 RewriteEngine On
 RewriteRule ^private(?:/|$) - [F,L,NC]
 
+# Profile images remain physically private under /uploads. Route only the
+# generated avatar/cover filenames through the visibility-aware PHP reader.
+RewriteRule ^uploads/(avatars|profile-covers)/([A-Fa-f0-9]{32}\.(?:jpe?g|png|webp))$ api/profile-media.php?bucket=$1&file=$2 [L,QSA,NC]
+
 # Legacy profile URLs permanently collapse to the canonical root username URL.
 RewriteRule ^stonefellow/([A-Za-z0-9._-]+)/?$ /$1 [R=301,L,NE]
 
