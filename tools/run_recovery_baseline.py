@@ -50,6 +50,7 @@ NODE_TESTS = [
     'tests/account-scope-v181.mjs',
     'tests/member-navigation-contract.mjs',
     'tests/main-feed-canonical-ui-contract.mjs',
+    'tests/site-settings-branding-contract.mjs',
 ]
 
 # These tests contain useful source assertions but also directly read the lost
