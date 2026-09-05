@@ -17,6 +17,7 @@ try {
 } catch (Throwable $e) {
     redirect(url('/upgrade.php'));
 }
+$voiceProfilePublicUrl = member_navigation_profile_url($user);
 $asset = 'studio-voice-profile-ui-20260903';
 ?>
 <!doctype html>
@@ -45,9 +46,10 @@ $asset = 'studio-voice-profile-ui-20260903';
         <strong>Voice Profile</strong>
         <span>Your voice identity, clone and recognition privacy</span>
       </div>
-      <div class="voice-profile-top-actions">
+      <div class="chat-topbar-actions voice-profile-top-actions">
+        <?php if ($voiceProfilePublicUrl !== ''): ?><a href="<?= e($voiceProfilePublicUrl) ?>">View Profile</a><?php endif; ?>
         <a href="<?= e(url('/account.php')) ?>">My Account</a>
-        <a class="voice-profile-avatar-link" href="<?= e(url('/account.php')) ?>" aria-label="My Account">
+        <a class="chat-top-avatar voice-profile-avatar-link" href="<?= e(url('/account.php')) ?>" aria-label="My Account">
           <?php if (user_avatar_url($user) !== ''): ?><img src="<?= e(user_avatar_url($user)) ?>" alt=""><?php else: ?><span><?= e(user_initials($user)) ?></span><?php endif; ?>
         </a>
       </div>
