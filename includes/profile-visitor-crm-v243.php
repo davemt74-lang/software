@@ -11,7 +11,7 @@ declare(strict_types=1);
  */
 const STONEFELLOW_PROFILE_VISITOR_COOKIE_V243 = 'sf_profile_visitor';
 const STONEFELLOW_PROFILE_VISITOR_COOKIE_MAX_AGE_V243 = 34560000; // 400 days.
-const STONEFELLOW_PROFILE_VISITOR_REENTRY_SECONDS_V243 = 300; // Do not alert on refresh spam.
+const STONEFELLOW_PROFILE_VISITOR_REENTRY_SECONDS_V243 = 1800; // 30-minute visit boundary.
 
 function profile_visitor_cookie_token_v243(int $ownerUserId): string
 {
@@ -55,6 +55,14 @@ function profile_visitor_contact_ref_v243(array $row): string
     return 'G-' . strtoupper(substr($key, 0, 6));
 }
 
+function profile_visitor_session_visit_count_v243(PDO $pdo, int $ownerUserId, int $profileSessionId): int
+{
+    if ($ownerUserId < 1 || $profileSessionId < 1) return 0;
+    $stmt = $pdo->prepare("SELECT COUNT(*) FROM profile_events WHERE owner_user_id=? AND profile_session_id=? AND event_type='profile_view'");
+    $stmt->execute([$ownerUserId, $profileSessionId]);
+    return (int)$stmt->fetchColumn();
+}
+
 function profile_visitor_request_context_v243(array $session): array
 {
     $referrerHost = '';
@@ -68,8 +76,7 @@ function profile_visitor_request_context_v243(array $session): array
     $path = trim((string)parse_url((string)($_SERVER['REQUEST_URI'] ?? ''), PHP_URL_PATH));
     $out = [
         'contact_ref' => profile_visitor_contact_ref_v243($session),
-        'visit_number' => max(0, (int)($session['view_count'] ?? 0)),
-        'returning' => (int)($session['view_count'] ?? 0) > 1,
+        'page_view_count' => max(0, (int)($session['view_count'] ?? 0)),
         'entry_path' => mb_strimwidth($path, 0, 255, ''),
         'referrer_host' => $referrerHost,
     ];
@@ -85,6 +92,8 @@ function profile_visitor_history_v243(PDO $pdo, int $ownerUserId, int $profileSe
     if ($ownerUserId < 1 || $profileSessionId < 1) return null;
     $stmt = $pdo->prepare(
         "SELECT s.*,
+          (SELECT COUNT(*) FROM profile_events e0
+             WHERE e0.owner_user_id=s.owner_user_id AND e0.profile_session_id=s.id AND e0.event_type='profile_view') AS visit_count,
           (SELECT COUNT(*) FROM profile_agent_conversations c
              WHERE c.owner_user_id=s.owner_user_id AND c.profile_session_id=s.id) AS conversation_count,
           (SELECT COUNT(*) FROM profile_agent_messages m
@@ -175,7 +184,8 @@ function profile_visitor_attention_decision_v243(PDO $pdo, int $ownerUserId, arr
     [$label, $descriptor, $contactRef] = profile_visitor_owner_label_v243($pdo, $ownerUserId, $history);
 
     $eventType = strtolower(trim((string)$event['event_type']));
-    $views = max(0, (int)($history['view_count'] ?? 0));
+    $visits = max(0, (int)($history['visit_count'] ?? 0));
+    $pageViews = max(0, (int)($history['view_count'] ?? 0));
     $conversations = max(0, (int)($history['conversation_count'] ?? 0));
     $messages = max(0, (int)($history['visitor_message_count'] ?? 0));
     $lastQuestion = profile_visitor_question_text_v243((string)($history['last_visitor_message'] ?? ''));
@@ -201,11 +211,11 @@ function profile_visitor_attention_decision_v243(PDO $pdo, int $ownerUserId, arr
             if ($lastQuestion !== '') $message .= ' Last time they asked “' . $lastQuestion . '”.';
             $message .= $relationshipPhrase . ' Would you like me to pick the conversation back up?';
             $prompt = 'Would you like me to pick the conversation back up?';
-        } elseif ($views <= 1) {
+        } elseif ($visits <= 1) {
             $message = $label . ' just landed on your profile. This looks like their first visit.' . $relationshipPhrase . ' Would you like me to say hello first?';
             $prompt = 'Would you like me to say hello first?';
         } else {
-            $message = $label . ' is back on your profile. This is visit ' . $views . '.' . $relationshipPhrase . ' Would you like me to say hello?';
+            $message = $label . ' is back on your profile. This is visit ' . $visits . '.' . $relationshipPhrase . ' Would you like me to say hello?';
             $prompt = 'Would you like me to say hello?';
         }
     } elseif ($eventType === 'conversation_started') {
@@ -234,7 +244,8 @@ function profile_visitor_attention_decision_v243(PDO $pdo, int $ownerUserId, arr
             'signed_in'=>!empty($descriptor['signed_in']),
             'identity_disclosed'=>!empty($descriptor['identity_disclosed']),
             'relationship_scope'=>$relationship !== '' ? $relationship : 'none',
-            'view_count'=>$views,
+            'visit_count'=>$visits,
+            'page_view_count'=>$pageViews,
             'conversation_count'=>$conversations,
             'visitor_message_count'=>$messages,
             'first_seen_at'=>(string)($history['first_seen_at'] ?? ''),
@@ -251,9 +262,11 @@ function profile_visitor_contact_list_v243(PDO $pdo, int $ownerUserId, int $limi
     $stmt = $pdo->prepare(
         "SELECT s.*,
           COUNT(DISTINCT c.id) AS conversation_count,
+          COUNT(DISTINCT CASE WHEN e.event_type='profile_view' THEN e.id END) AS visit_count,
           COALESCE(SUM(CASE WHEN m.sender_type='visitor' THEN 1 ELSE 0 END),0) AS visitor_message_count,
           MAX(c.last_message_at) AS conversation_last_at
          FROM profile_visit_sessions s
+         LEFT JOIN profile_events e ON e.owner_user_id=s.owner_user_id AND e.profile_session_id=s.id
          LEFT JOIN profile_agent_conversations c ON c.owner_user_id=s.owner_user_id AND c.profile_session_id=s.id
          LEFT JOIN profile_agent_messages m ON m.conversation_id=c.id
          WHERE s.owner_user_id=? AND (s.view_count>0 OR c.id IS NOT NULL)
@@ -270,13 +283,15 @@ function profile_visitor_contact_list_v243(PDO $pdo, int $ownerUserId, int $limi
         $row = array_merge($row, $descriptor);
         $row['contact_id'] = (int)$row['id'];
         $row['contact_ref'] = profile_visitor_contact_ref_v243($row);
-        $row['repeat_visitor'] = (int)($row['view_count'] ?? 0) > 1;
+        $row['visit_count'] = (int)($row['visit_count'] ?? 0);
+        $row['page_view_count'] = (int)($row['view_count'] ?? 0);
+        $row['repeat_visitor'] = $row['visit_count'] > 1;
         $row['conversation_count'] = (int)($row['conversation_count'] ?? 0);
         $row['visitor_message_count'] = (int)($row['visitor_message_count'] ?? 0);
         $row['stage'] = $row['conversation_count'] > 0
             ? (!empty($row['signed_in']) ? 'member_engaged' : 'guest_engaged')
-            : ((int)($row['view_count'] ?? 0) > 1 ? 'returning_visitor' : 'new_visitor');
-        unset($row['id'], $row['session_key'], $row['visitor_user_id']);
+            : ($row['visit_count'] > 1 ? 'returning_visitor' : 'new_visitor');
+        unset($row['id'], $row['session_key'], $row['visitor_user_id'], $row['view_count']);
     }
     unset($row);
     return $rows;
