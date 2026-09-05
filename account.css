@@ -1,0 +1,43 @@
+/* Canonical light theme for the authenticated Account workspace. */
+body:has(.account-chat-main){background:#f4f5f7;color:#111318}
+.account-chat-main{background:#f4f5f7!important;color:#111318}
+.account-chat-main .chat-topbar{background:rgba(255,255,255,.97);border-bottom:1px solid #d8dde3;box-shadow:0 1px 8px rgba(17,19,24,.04)}
+.account-chat-main .chat-topbar-title strong{color:#111318}
+.account-chat-main .chat-topbar-title span{color:#737b85}
+.account-chat-main .chat-topbar-actions>a:not(.chat-top-avatar){color:#4f5862}
+.account-chat-main .chat-top-avatar{background:#fff;border-color:#cfd5dc;color:#343a40;filter:grayscale(1)}
+.account-canvas{background:#f4f5f7;color:#111318}
+.account-canvas-hero{border:1px solid #d8dde3;background:#fff;box-shadow:none}
+.account-canvas-avatar{border:1px solid #cfd5dc;background:#eceff2;color:#343a40;filter:grayscale(1)}
+.account-canvas-user h1{color:#111318}
+.account-canvas-user>div>span,.account-canvas-meta{color:#737b85}
+.account-shell-button,.account-shell-button.primary{border:1px solid #cdd3d9;background:#fff;color:#343a40}
+.account-shell-button:hover,.account-shell-button.primary:hover{background:#f1f3f5;color:#111318;border-color:#aeb5bd}
+.account-alert{border:1px solid #d8dde3;background:#fff;color:#4f5862}
+.account-alert.success{border-color:#b7c8bc;color:#355f42;background:#fff}
+.account-alert.error{border-color:#d7b8b8;color:#874242;background:#fff}
+.account-canvas-nav{border:1px solid #d8dde3;background:#fff}
+.account-canvas-nav a{color:#626b75}
+.account-canvas-nav a:hover,.account-canvas-nav a.active{background:#f1f3f5;color:#111318}
+.account-panel{border:1px solid #d8dde3;background:#fff;color:#111318;box-shadow:none}
+.account-panel-head span{color:#737b85}
+.account-panel-head h2{color:#111318}
+.account-panel-head p{color:#68717b}
+.account-field label,.account-avatar-controls>div>label:first-child{color:#626b75}
+.account-field input{border:1px solid #ccd2d8;background:#fff;color:#111318}
+.account-field input:focus{border-color:#555d66;box-shadow:0 0 0 2px rgba(17,19,24,.08)}
+.account-avatar-controls small,.account-remove-photo{color:#737b85}
+.account-file-button,.account-submit{border:1px solid #ccd2d8;background:#fff;color:#343a40}
+.account-file-button:hover,.account-submit:hover{background:#f1f3f5;border-color:#adb5bd;color:#111318}
+.account-access-card{border:1px solid #d8dde3;background:#fff;color:#111318}
+.account-access-card small,.account-access-card p{color:#737b85}
+.account-access-card strong{color:#111318}
+.account-access-card>span{color:#4f5862}
+.account-access-card:hover{border-color:#aeb5bd;background:#f8f9fa}
+.account-sidebar-link.active{background:#f1f3f5;color:#111318!important}
+/* Agent Brain and server-rendered account cards stay in the same light system. */
+.account-panel article{background:#fff;color:#111318;border-color:#d8dde3}
+.account-panel article strong,.account-panel article h3,.account-panel article h4{color:#111318}
+.account-panel article p,.account-panel article span,.account-panel article small{color:#68717b}
+.account-panel textarea,.account-panel select{background:#fff;color:#111318;border-color:#ccd2d8}
+@media(max-width:760px){.account-canvas{padding:12px}}
