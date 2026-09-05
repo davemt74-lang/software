@@ -5,9 +5,15 @@ const domain=read('includes/profile-agent.php');
 const runtime=read('includes/profile-agent-runtime.php');
 const api=read('api/profile-agent.php');
 const page=read('profile.php');
+const portalPage=read('profile-agent.php');
+const portal=read('profile-agent-portal.js');
+const loader=read('account-agent-settings-loader-v236.js');
+const agentSettings=read('account-agent-settings-v236.js');
+const userAgents=read('includes/user-agent-system-v236.php');
+const memberNav=read('includes/member-navigation.php');
+const sidebar=read('includes/workspace-sidebar-v82.php');
 const legacy=read('artist-profile.php');
 const ht=read('.htaccess');
-const dashboard=read('profile-dashboard.js');
 const attention=read('agent-attention.js');
 const identity=read('chat-agent-identity-v236.js');
 const upgrade=read('upgrade.php');
@@ -20,8 +26,8 @@ assert.match(ht,/profile\.php\?username=\$1 \[L,QSA,NC\]/,'root username route r
 assert.doesNotMatch(ht,/system_agent_name/,'editable system-agent name does not control URL routing');
 assert.match(domain,/profile_username_valid/,'user chooses validated unique username');
 assert.match(domain,/user_agent_get_v236\(\$pdo,\$uid,\$agentId\)/,'profile agent must belong to owner');
-assert.match(domain,/is_profile_agent/,'designated profile agent is explicit');
 assert.match(domain,/profile_agent_enabled/,'public Profile Agent has explicit enable switch');
+assert.doesNotMatch(domain,/if\(!\$agent\|\|empty\(\$agent\['is_active'\]\)\|\|empty\(\$agent\['is_profile_agent'\]\)\)/,'public service does not fail because of a stale secondary profile-agent flag');
 assert.match(domain,/user_data_policy_can_use_v236/,'Profile Agent context uses central data policy authority');
 assert.match(domain,/user_data_usage_log_v236/,'Profile Agent retrieval is attributed in usage ledger');
 assert.match(domain,/profile_agent_conversations/,'visitor conversations use isolated storage');
@@ -31,16 +37,43 @@ assert.match(domain,/agent_attention_items/,'proactive attention queue is first-
 assert.match(domain,/needs_owner/,'insufficient knowledge escalates to owner');
 assert.match(domain,/share_visit_identity/,'visitor identity disclosure is opt-in');
 assert.doesNotMatch(domain,/REMOTE_ADDR|HTTP_USER_AGENT|fingerprint/i,'visitor tracking does not fingerprint devices or IPs');
+
 assert.match(runtime,/\$countView=false/,'session activity is distinct from page-view counting');
 assert.match(runtime,/view_count=view_count\+VALUES\(view_count\)/,'chat polling cannot inflate page views');
 assert.match(runtime,/s\.id AS profile_session_id/,'attention query uses real profile session id');
+assert.match(runtime,/public_agent_status/,'owner state exposes one canonical public-service status');
+assert.match(runtime,/profilePublished&&\$publicEnabled&&\$selectedActive/,'live status requires published profile, public enablement, and an active selected agent');
+assert.match(runtime,/active_visitors/,'owner state exposes recently active visitor analytics');
+assert.match(runtime,/last_message_at FROM profile_visit_sessions/,'visitor dashboard knows whether a visitor has chatted');
+
 assert.match(api,/profile_runtime_session\(\$pdo,\$owner,\$visitor,false\)/,'Profile Agent chat does not count as a view');
-assert.match(api,/profile_runtime_owner_state/,'owner API uses hardened dashboard state');
-assert.match(api,/owner_reply/,'owner can answer escalated Profile Agent conversations');
+assert.match(api,/profile_runtime_owner_state/,'owner API uses hardened portal state');
+assert.match(api,/owner_reply/,'owner can answer Profile Agent conversations');
+assert.match(api,/conversation_status/,'owner can resolve and reopen Profile Agent conversations');
 assert.match(api,/I’ve asked .* for input rather than guessing/,'agent refuses to invent missing approved facts');
-assert.match(dashboard,/What the Profile Agent may use/,'account dashboard exposes profile-agent data permissions');
-assert.match(dashboard,/share_visit_identity/,'account dashboard controls visitor identity privacy');
-assert.match(dashboard,/View as visitor/,'owner has visitor preview entry point');
+
+assert.match(portalPage,/Customer service workspace/,'Profile Agent has a standalone service portal');
+assert.match(portalPage,/data-pa-tab="inbox"/,'portal has an Inbox');
+assert.match(portalPage,/data-pa-tab="visitors"/,'portal has a Visitors view');
+assert.match(portalPage,/data-pa-tab="knowledge"/,'portal has Knowledge Access');
+assert.match(portalPage,/data-pa-tab="analytics"/,'portal has Analytics');
+assert.match(portal,/owner_state/,'portal refreshes canonical owner state');
+assert.match(portal,/owner_reply/,'portal supports owner replies');
+assert.match(portal,/conversation_status/,'portal supports resolve and reopen actions');
+assert.match(portal,/15000/,'portal auto-refreshes as a customer-service workspace');
+assert.match(portal,/Active now/,'portal exposes recent visitor presence');
+assert.match(portal,/save_profile_agent/,'portal is the public agent configuration owner');
+assert.match(portal,/save_profile_access/,'portal owns public knowledge-access controls');
+
+assert.doesNotMatch(loader,/profile-dashboard/,'My Account no longer injects the old Profile Agent dashboard');
+assert.doesNotMatch(agentSettings,/name="is_profile_agent"/,'My Agents no longer exposes a competing public Profile Agent checkbox');
+assert.match(userAgents,/array_key_exists\('is_profile_agent',\$input\)/,'ordinary agent edits preserve portal-managed Profile Agent designation');
+assert.match(memberNav,/Profile Agent', url\('\/profile-agent\.php'\)/,'avatar navigation exposes Profile Agent as a real destination');
+assert.match(sidebar,/url\('\/profile-agent\.php'\)/,'workspace sidebar routes to the standalone Profile Agent portal');
+assert.doesNotMatch(sidebar,/account\.php#profile-agent/,'workspace sidebar no longer points at the removed account section');
+assert.match(page,/url\('\/profile-agent\.php'\)/,'public profile owner navigation returns to the Profile Agent portal');
+assert.doesNotMatch(page,/on Stonefellow/,'public profile metadata does not hardcode the system name');
+
 assert.match(attention,/Answer your agent/,'main Agent Chat accepts proactive owner answers');
 assert.match(attention,/owner_reply/,'proactive answer routes back to Profile Agent conversation');
 assert.match(identity,/agent-attention\.js/,'main Agent Chat loads proactive attention runtime');
@@ -51,6 +84,6 @@ assert.ok(legacy.length<1800,'legacy artist-profile renderer is reduced to a com
 assert.match(upgrade,/profile_agent_ensure_schema/,'normal upgrade installs Profile Agent schema');
 assert.match(upgrade,/profile_agent_schema_ready/,'normal upgrade verifies Profile Agent schema');
 assert.match(usage,/user_data_retrieval_log/,'existing retrieval ledger remains the attribution source');
-for(const text of [domain,runtime,api,page,dashboard,attention])assert.doesNotMatch(text,/provider_speaker_id|clone_provider_voice_id/,'Profile Agent surface never exposes voice provider identifiers');
+for(const text of [domain,runtime,api,page,portalPage,portal,attention])assert.doesNotMatch(text,/provider_speaker_id|clone_provider_voice_id/,'Profile Agent surface never exposes voice provider identifiers');
 assert.equal(fs.existsSync('agent-data.php'),false,'superseded standalone agent-data page stays removed');
 console.log('PROFILE_AGENT_ATTENTION_CONTRACT=PASS');
