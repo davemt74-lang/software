@@ -53,7 +53,8 @@ assert.ok(!/openai|anthropic|gemini|chat_remote_answer|chat_local_answer/i.test(
 
 assert.ok(attentionUi.includes("request('attention'"), 'Activity Center should poll actionable notifications');
 assert.ok(attentionUi.includes("request('present_attention'"), 'Activity Center should route an actionable notification into Agent Chat');
-assert.ok(attentionUi.includes('ensureHistoryButton'), 'new attention conversations must be activated through the existing chat history controller');
+assert.ok(attentionUi.includes('await chat.openConversation(id)'), 'new attention conversations must open through the canonical Chat continuity API');
+assert.ok(!attentionUi.includes('ensureHistoryButton'), 'attention flow must not fabricate or depend on temporary chat-history UI');
 assert.ok(attentionUi.includes('StonefellowPremiumVoiceV122'), 'attention turns should use the existing ElevenLabs voice runtime');
 assert.ok(attentionUi.includes('speechSynthesis'), 'attention speech must retain system voice fallback');
 assert.ok(attentionUi.includes('10000'), 'temporary notification listening must time out after ten seconds');
