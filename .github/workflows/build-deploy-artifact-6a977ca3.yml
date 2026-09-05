@@ -1,0 +1,73 @@
+name: Build Deploy Artifact 6a977ca3
+
+on:
+  push:
+    branches:
+      - deploy/package-6a977ca3
+    paths:
+      - .github/workflows/build-deploy-artifact-6a977ca3.yml
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact deploy source
+        uses: actions/checkout@v4
+        with:
+          ref: 6a977ca3b5396a8ffb91256b46f744ecc9476c03
+          fetch-depth: 1
+
+      - name: Build clean deploy ZIP
+        shell: bash
+        run: |
+          set -euo pipefail
+          stage="/tmp/software-deploy-stage"
+          out="/tmp/software-deploy.zip"
+          rm -rf "$stage" "$out"
+          mkdir -p "$stage"
+          cp -a . "$stage/"
+          cd "$stage"
+
+          rm -rf .git .github tests tools
+          rm -f RECOVERY_RUNTIME_BASELINE.md
+          rm -f admin/force-cache-repair-20260825.php
+          rm -f config.php .env .env.*
+          rm -f RECOVERY_INVENTORY* recovery-inventory* recovery_inventory* 2>/dev/null || true
+          rm -rf logs tmp cache coverage editor 2>/dev/null || true
+
+          if [ -d private ]; then
+            find private -mindepth 1 -maxdepth 1 ! -name '.htaccess' ! -name 'README.txt' -exec rm -rf {} +
+          fi
+          if [ -d uploads ]; then
+            find uploads -mindepth 1 -maxdepth 1 ! -name '.htaccess' ! -name 'README.txt' -exec rm -rf {} +
+          fi
+
+          printf '%s\n' '6a977ca3b5396a8ffb91256b46f744ecc9476c03' > DEPLOY_SOURCE.txt
+          zip -qr "$out" .
+
+          unzip -t "$out"
+          test -f .htaccess
+          test -f api/artist-listening.php
+          test -f chat-transcription-canvas.js
+          test -f chat-transcription-canvas.css
+          test -f profile-agent.php
+          test ! -e config.php
+          test ! -d .github
+          test ! -d tests
+          test ! -d tools
+          test ! -e admin/force-cache-repair-20260825.php
+
+          echo "DEPLOY_ENTRY_COUNT=$(zipinfo -1 "$out" | wc -l)"
+          sha256sum "$out"
+
+      - name: Upload deploy artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: software-deploy-6a977ca3
+          path: /tmp/software-deploy.zip
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
