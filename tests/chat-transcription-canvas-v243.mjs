@@ -20,13 +20,14 @@ assert.ok(listening.includes("header('Content-Range: bytes '"),'partial recordin
 assert.ok(listening.includes("header('Content-Type: ' . (string)$recording['mime_type'])"),'recording stream must preserve the stored browser audio MIME');
 assert.ok(listening.includes("fopen($path, 'rb')"),'recording stream must read the retained private audio file');
 
-assert.ok(chat.includes("$transcriptionCanvasBuild = 'chat-transcription-canvas-v243-20260905'"),'Chat must own a cache-busted transcription canvas build');
+assert.ok(chat.includes("$transcriptionCanvasBuild = 'chat-transcription-canvas-v243-overlay-20260905'"),'Chat must own the current cache-busted transcription canvas build');
 assert.ok(chat.includes('data-chat-transcription-canvas'),'Chat must load the canonical transcription canvas runtime');
 assert.ok(chat.includes('/chat-transcription-canvas.js?v='),'Chat must load the transcription canvas JS under Artist Listening access');
 assert.ok(chat.includes('/chat-transcription-canvas.css?v='),'Chat must load the transcription canvas stylesheet');
 assert.ok(chat.includes('#chatRecordingsCanvas,.chat-recordings-canvas'),'the obsolete recovered recording canvas must remain suppressed');
 assert.ok(!canvas.includes('chatRecordingsCanvas'),'new canvas must not reuse the obsolete recovered canvas identity');
 assert.ok(canvas.includes("canvas.id='chatTranscriptionCanvas'"),'new canvas must have one canonical identity');
+assert.ok(canvas.includes('document.body.append(backdrop,canvas)'),'recording overlay must mount at body level so header stacking contexts cannot trap it');
 assert.ok(canvas.includes('STONEFELLOW_ARTIST_RECORDINGS_V198?.api'),'canvas must consume the existing recording library/action owner instead of duplicating its API');
 assert.ok(canvas.includes('.sf-v206-recording-message.is-new-recording'),'new recording notices must open the transcription canvas');
 assert.ok(canvas.includes('new MutationObserver'),'canvas must observe newly inserted Agent Chat recording results');
@@ -37,4 +38,7 @@ assert.ok(canvas.includes('data-transcription-audio controls preload="metadata"'
 assert.ok(canvas.includes('window.STONEFELLOW_TRANSCRIPTION_CANVAS'),'canvas must expose one integration API to Agent Chat');
 assert.ok(css.includes('background:#fff'),'transcription canvas must use the canonical light surface');
 assert.ok(!css.includes('#171411'),'transcription canvas must not reintroduce the recovered brown player surface');
+assert.match(css,/\.transcription-canvas-backdrop\{[^}]*z-index:20200/,'recording backdrop must sit above the app header layer');
+assert.match(css,/\.chat-transcription-canvas-v243\{[^}]*z-index:20210/,'recording drawer must sit above its backdrop');
+assert.match(css,/@media\(max-width:720px\)\{[^}]*\.chat-transcription-canvas-v243\{[^}]*height:100dvh/,'mobile recording drawer must occupy the dynamic viewport height');
 console.log('CHAT_TRANSCRIPTION_CANVAS_V243=PASS');
