@@ -91,6 +91,8 @@ assert.ok(!account.includes('Stonefellow'), 'My Account user-facing copy should 
 assert.ok(profileDashboard.includes('profileDisplayUrl=new URL(profileUrl,window.location.origin).href'), 'retained profile dashboard should display the full canonical domain/username URL');
 assert.ok(!profileDashboard.includes('Stonefellow-powered'), 'retained Profile Agent copy should use the configured system name');
 assert.ok(profileAgentPortal.includes('class="chat-sidebar profile-agent-sidebar"'), 'standalone Profile Agent portal should own a dedicated customer-service sidebar');
+assert.ok(profileAgentPortal.includes("personal_capability_has_v242('personal_knowledge.access'"), 'Profile Agent sidebar must honor the Personal Knowledge permission before showing My Knowledge');
+assert.ok(profileAgentPortal.includes("<?php if($personalKnowledgeAllowed):?><a href=\"<?= e(url('/knowledge.php')) ?>\">My Knowledge</a><?php endif;?>"), 'Profile Agent My Knowledge link must be permission-gated');
 assert.ok(!profileAgentPortal.includes('workspace-sidebar-v82.php'), 'standalone Profile Agent portal should not embed the generic workspace sidebar');
 assert.ok(!profileAgentPortal.includes('Customer service workspace'), 'standalone Profile Agent portal should not restore the removed intro hero');
 assert.ok(accountAgentLoader.includes('account-agent-settings-v236.js') && !accountAgentLoader.includes('profile-dashboard.js'), 'My Account should load agent settings without injecting the old Profile Agent dashboard');
