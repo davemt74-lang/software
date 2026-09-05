@@ -5,12 +5,8 @@ require_permission('account.access');
 
 $pdo = db();
 $user = current_user();
-if (!$pdo || !$user) {
-    redirect(url('/login.php'));
-}
-if (!profile_agent_schema_ready($pdo)) {
-    redirect(url('/upgrade.php'));
-}
+if (!$pdo || !$user) redirect(url('/login.php'));
+if (!profile_agent_schema_ready($pdo)) redirect(url('/upgrade.php'));
 
 $contacts = function_exists('profile_visitor_contact_list_v243')
     ? profile_visitor_contact_list_v243($pdo, (int)$user['id'], 250)
@@ -72,12 +68,11 @@ function contacts_stage_label(string $stage): string
     $workspaceSidebarActive = 'contacts';
     require __DIR__ . '/includes/workspace-sidebar-v82.php';
   ?>
-
   <div class="chat-sidebar-backdrop" id="chatSidebarBackdrop"></div>
 
   <main class="chat-main contacts-main">
     <header class="contacts-topbar">
-      <div style="display:flex;align-items:center;gap:10px">
+      <div class="contacts-topbar-left">
         <button class="chat-icon-button mobile-only" id="openChatSidebar" type="button" aria-label="Open menu">☰</button>
         <div class="contacts-topbar-title"><strong>My Contacts</strong><span>Visitors + conversations + relationships</span></div>
       </div>
@@ -104,9 +99,9 @@ function contacts_stage_label(string $stage): string
         </section>
 
         <section class="contacts-metrics" aria-label="Contact metrics">
-          <article class="contacts-metric"><span>Total contacts</span><strong><?= $totalContacts ?></strong><small>Known guest browsers + members</small></article>
+          <article class="contacts-metric"><span>Total contacts</span><strong><?= $totalContacts ?></strong><small>Guest browsers + known members</small></article>
           <article class="contacts-metric"><span>Active now</span><strong><?= $activeContacts ?></strong><small>Seen in the last 5 minutes</small></article>
-          <article class="contacts-metric"><span>Returning</span><strong><?= $repeatContacts ?></strong><small>More than one profile visit</small></article>
+          <article class="contacts-metric"><span>Returning</span><strong><?= $repeatContacts ?></strong><small>Two or more 30-minute visit sessions</small></article>
           <article class="contacts-metric"><span>Engaged</span><strong><?= $engagedContacts ?></strong><small>At least one Profile Agent chat</small></article>
           <article class="contacts-metric"><span>Known members</span><strong><?= $memberContacts ?></strong><small>Signed-in Stonefellow accounts</small></article>
           <article class="contacts-metric"><span>Conversations</span><strong><?= $totalConversations ?></strong><small>Profile Agent conversations</small></article>
@@ -136,13 +131,10 @@ function contacts_stage_label(string $stage): string
               $relationship = trim((string)($contact['relationship_scope'] ?? 'none'));
               $searchText = strtolower(trim($label . ' ' . $contactRef . ' ' . $stage . ' ' . $relationship));
               $lastActivity = (string)($contact['conversation_last_at'] ?? '');
-              if ($lastActivity === '' || strtotime($lastActivity) < strtotime((string)($contact['last_seen_at'] ?? ''))) $lastActivity = (string)($contact['last_seen_at'] ?? '');
+              $lastSeen = (string)($contact['last_seen_at'] ?? '');
+              if ($lastActivity === '' || (strtotime($lastSeen) !== false && strtotime($lastActivity) < strtotime($lastSeen))) $lastActivity = $lastSeen;
             ?>
-            <article class="contacts-row"
-              data-contact-row
-              data-stage="<?= e($stage) ?>"
-              data-member="<?= !empty($contact['signed_in']) ? '1' : '0' ?>"
-              data-search="<?= e($searchText) ?>">
+            <article class="contacts-row" data-contact-row data-stage="<?= e($stage) ?>" data-member="<?= !empty($contact['signed_in']) ? '1' : '0' ?>" data-search="<?= e($searchText) ?>">
               <div class="contacts-person">
                 <span class="contacts-person-avatar">
                   <?php if (!empty($contact['avatar_url'])): ?><img src="<?= e((string)$contact['avatar_url']) ?>" alt=""><?php else: ?><?= e(mb_strtoupper(mb_substr($label,0,1))) ?><?php endif; ?>
@@ -153,7 +145,7 @@ function contacts_stage_label(string $stage): string
                 </div>
               </div>
               <div class="contacts-cell"><span class="contacts-stage <?= e($stage) ?>"><?= e(contacts_stage_label($stage)) ?></span></div>
-              <div class="contacts-cell"><strong><?= (int)($contact['view_count'] ?? 0) ?></strong></div>
+              <div class="contacts-cell"><strong><?= (int)($contact['visit_count'] ?? 0) ?></strong><small><?= (int)($contact['page_view_count'] ?? 0) ?> page views</small></div>
               <div class="contacts-cell"><strong><?= (int)($contact['conversation_count'] ?? 0) ?></strong></div>
               <div class="contacts-cell"><strong><?= (int)($contact['visitor_message_count'] ?? 0) ?></strong></div>
               <div class="contacts-cell"><?= e(contacts_date_label((string)($contact['first_seen_at'] ?? ''))) ?></div>
@@ -169,7 +161,7 @@ function contacts_stage_label(string $stage): string
 
         <section class="contacts-privacy">
           <span aria-hidden="true">◉</span>
-          <div><strong>Privacy-first guest continuity</strong><p>Anonymous contacts use a random first-party browser identifier. Stonefellow stores only an owner-scoped hash and does not use IP address or browser fingerprinting to identify guests. A guest can later become a known member or relationship without losing the interaction history already collected for that browser.</p></div>
+          <div><strong>Privacy-first guest continuity</strong><p>Anonymous contacts use a random first-party browser identifier. Stonefellow stores only an owner-scoped hash and does not use IP address or browser fingerprinting to identify guests. If that browser later signs in, its existing profile interaction history can become associated with the signed-in member without exposing the anonymous token.</p></div>
         </section>
       </div>
     </section>
