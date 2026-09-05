@@ -132,7 +132,7 @@ function chat_notifications_v240_agent(PDO $pdo, int $userId, int $agentId): ?ar
 {
     if ($agentId < 1) return null;
     $agent = user_agent_get_v236($pdo, $userId, $agentId);
-    if (!$agent || empty($agent['is_active'])) throw new RuntimeException('The selected Agent Chat identity is unavailable.');
+    if (!$agent || empty($agent['is_active'])) throw new DomainException('The selected Agent Chat identity is unavailable.');
     return $agent;
 }
 
@@ -160,25 +160,27 @@ function chat_notifications_v240_present_attention(PDO $pdo, array $user, array 
 {
     $userId = (int)$user['id'];
     $notificationId = max(0, (int)($input['notification_id'] ?? 0));
-    if ($notificationId < 1) throw new RuntimeException('Notification is required.');
+    if ($notificationId < 1) throw new DomainException('Notification is required.');
 
     $stmt = $pdo->prepare('SELECT * FROM notifications WHERE id=? AND user_id=? LIMIT 1');
     $stmt->execute([$notificationId, $userId]);
     $notification = $stmt->fetch();
-    if (!$notification) throw new RuntimeException('Notification was not found.');
+    if (!$notification) throw new DomainException('Notification was not found.');
     if (!notification_requires_attention($notification)) {
         return ['ok'=>true,'handled'=>false,'notification_id'=>$notificationId];
     }
 
-    $fingerprint = '%"notification_id":' . $notificationId . '%';
     $existing = $pdo->prepare(
         "SELECT m.id,m.conversation_id,m.message,m.context_json
          FROM chat_messages m
          INNER JOIN chat_conversations c ON c.id=m.conversation_id
-         WHERE c.user_id=? AND m.role='assistant' AND m.context_json LIKE ?
+         WHERE c.user_id=?
+           AND m.role='assistant'
+           AND JSON_VALID(m.context_json)=1
+           AND CAST(JSON_UNQUOTE(JSON_EXTRACT(m.context_json,'$.attention.notification_id')) AS UNSIGNED)=?
          ORDER BY m.id DESC LIMIT 1"
     );
-    $existing->execute([$userId, $fingerprint]);
+    $existing->execute([$userId, $notificationId]);
     if ($row = $existing->fetch()) {
         $ctx = json_decode((string)($row['context_json'] ?? ''), true);
         return [
@@ -274,7 +276,9 @@ try {
     }
 
     chat_notifications_v240_json(['ok'=>false,'error'=>'unknown_action'], 400);
+} catch (DomainException $e) {
+    chat_notifications_v240_json(['ok'=>false,'error'=>$e->getMessage()], 400);
 } catch (Throwable $e) {
     error_log('Stonefellow notification brain drawer v240 error: ' . $e->getMessage());
-    chat_notifications_v240_json(['ok'=>false,'error'=>$e->getMessage()], 400);
+    chat_notifications_v240_json(['ok'=>false,'error'=>'Activity Center is temporarily unavailable.'], 500);
 }
