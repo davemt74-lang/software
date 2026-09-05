@@ -47,9 +47,8 @@ function member_navigation_profile_url(?array $user = null): string
 /**
  * One canonical account/avatar-menu definition for authenticated surfaces.
  *
- * Dropdowns are destinations, not settings tabs. Agent Settings, Profile Agent,
- * Agent Brain, Security, and data-policy controls intentionally stay inside
- * My Account rather than appearing as parallel top-level links.
+ * Dropdown entries are destinations, not settings tabs. Profile Agent is now
+ * a first-class customer-service workspace rather than a My Account section.
  */
 function member_navigation_menu_links(?array $user = null): array
 {
@@ -86,6 +85,9 @@ function member_navigation_menu_links(?array $user = null): array
 
     if (has_permission('account.access', $user)) {
         $add($links, 'account', 'My Account', url('/account.php'), 'identity');
+        if (has_permission('chat.access', $user)) {
+            $add($links, 'profile_agent', 'Profile Agent', url('/profile-agent.php'), 'identity');
+        }
     }
     if (has_permission('knowledge.manage', $user)) {
         $add($links, 'knowledge', 'My Knowledge', url('/knowledge.php'), 'identity');
