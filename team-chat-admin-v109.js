@@ -24,6 +24,19 @@
   }
 
   function boot() {
+    /* Agent Chat already renders the canonical Team Chat widget directly.
+       Reusing it avoids a second poller, duplicate incoming-message sounds and
+       losing Chat Settings state when this compatibility bootstrap runs later. */
+    const existingRail = document.getElementById('sfOnlineRailV109');
+    const existingWindows = document.getElementById('sfTeamChatWindowsV109');
+    if (window.STONEFELLOW_CHAT && window.STONEFELLOW_TEAM_CHAT && existingRail && existingWindows) {
+      proof.configSource = 'existing-chat-widget';
+      proof.railCreated = true;
+      proof.runtimeLoaded = true;
+      proof.endpoint = String(window.STONEFELLOW_TEAM_CHAT.endpoint || '');
+      return;
+    }
+
     removeExistingRail();
 
     /* Admin and Artist Admin are management workspaces, not Team Chat surfaces.
