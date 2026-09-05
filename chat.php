@@ -9,6 +9,7 @@ $voiceCacheBuild = 'chat-voice-canonical-20260903-failover1';
 $recordingUiBuild = 'chat-recording-results-v206-20260901';
 $recordingPersistenceBuild = 'chat-recordings-v242-20260902';
 $agentThemeBuild = 'agent-theme-v242-20260902';
+$mediaOverlayBuild = 'chat-media-overlays-20260905';
 $agentOverlayBuild = 'agent-updates-hidden-v206-20260901';
 $agentIdentityBuild = 'profile-activity-20260905';
 $profileActivityBuild = 'profile-activity-20260905';
@@ -244,6 +245,7 @@ $railLayout = '<style data-team-rail-layout-v111>'
 $headerUiRuntime = '<link rel="stylesheet" data-chat-header-ui-server href="' . e(url('/chat-header-ui.css?v=' . $headerUiBuild)) . '">';
 $themeRuntime = '<link rel="stylesheet" data-agent-theme-v242 href="' . e(url('/agent-theme-v242.css?v=' . $agentThemeBuild)) . '">'
     . '<script data-agent-theme-v242 src="' . e(url('/agent-theme-v242.js?v=' . $agentThemeBuild)) . '"></script>';
+$mediaOverlayRuntime = '<link rel="stylesheet" data-chat-media-overlays href="' . e(url('/chat-media-overlays.css?v=' . $mediaOverlayBuild)) . '">';
 
 $recordingLibraryRuntime = has_permission('artist_listening.access', $user)
     ? '<script>window.STONEFELLOW_CHAT_RECORDINGS_V242_CONFIG={persistEndpoint:'
@@ -274,6 +276,7 @@ $profileActivityRuntime = $agentFeatureReady && $pdoForAgent && profile_agent_sc
 
 $runtime = $headerUiRuntime
          . $themeRuntime
+         . $mediaOverlayRuntime
          . $hardening
          . $composerControls
          . $recordingLibraryRuntime
@@ -286,7 +289,7 @@ $runtime = $headerUiRuntime
          . $profileActivityRuntime
          . '<script data-team-chat-admin-v109 src="' . e(url('/team-chat-admin-v109.js?v=mobile-rail-v115-20260825')) . '"></script>'
          . $railLayout
-         . '<span data-stonefellow-build="' . e($runtimeBuild) . '" data-chat-controls-build="' . e($controlBuild) . '" data-premium-voice-build="' . e($premiumVoiceBuild) . '" data-chat-voice-build="' . e($voiceAssetBuild) . '" data-chat-voice-feature-build="' . e($voiceCacheBuild) . '" data-recording-ui-build="' . e($recordingUiBuild) . '" data-recording-persistence-build="' . e($recordingPersistenceBuild) . '" data-agent-theme-build="' . e($agentThemeBuild) . '" data-agent-overlay-build="' . e($agentOverlayBuild) . '" data-user-agent-build="' . e($agentIdentityBuild) . '" hidden></span>';
+         . '<span data-stonefellow-build="' . e($runtimeBuild) . '" data-chat-controls-build="' . e($controlBuild) . '" data-premium-voice-build="' . e($premiumVoiceBuild) . '" data-chat-voice-build="' . e($voiceAssetBuild) . '" data-chat-voice-feature-build="' . e($voiceCacheBuild) . '" data-recording-ui-build="' . e($recordingUiBuild) . '" data-recording-persistence-build="' . e($recordingPersistenceBuild) . '" data-agent-theme-build="' . e($agentThemeBuild) . '" data-chat-media-overlay-build="' . e($mediaOverlayBuild) . '" data-agent-overlay-build="' . e($agentOverlayBuild) . '" data-user-agent-build="' . e($agentIdentityBuild) . '" hidden></span>';
 
 $html = str_replace('</body>', $runtime . '</body>', $html);
 echo $html;

@@ -1,0 +1,273 @@
+/* Chat media overlays — canonical light-theme repair.
+ * Keeps Queue / playlist behavior owned by chat.js and only repairs presentation,
+ * stacking, viewport containment, and modal scroll behavior.
+ */
+
+body:has(.chat-player-overlay:not([hidden])),
+body:has(.chat-queue-overlay[data-open="true"]),
+body:has(.chat-playlist-overlay[data-open="true"]){
+  overflow:hidden;
+}
+
+/* Modern player/detail/queue/playlist overlays. */
+.chat-player-overlay{
+  z-index:4200;
+  overflow:hidden;
+}
+
+.chat-player-overlay-backdrop{
+  background:rgba(15,23,42,.28);
+  backdrop-filter:blur(2px);
+  -webkit-backdrop-filter:blur(2px);
+}
+
+body[data-agent-theme="light"] .chat-player-drawer{
+  border-color:#e5e7eb;
+  background:#fff;
+  color:#111827;
+  box-shadow:-24px 0 60px rgba(15,23,42,.16);
+}
+
+body[data-agent-theme="light"] .chat-player-drawer>header{
+  border-bottom-color:#e5e7eb;
+  background:#fff;
+}
+
+body[data-agent-theme="light"] .chat-player-drawer>header span,
+body[data-agent-theme="light"] .chat-editor-label,
+body[data-agent-theme="light"] .chat-playlist-editor-form>label>span{
+  color:#6b7280;
+}
+
+body[data-agent-theme="light"] .chat-player-drawer>header h2,
+body[data-agent-theme="light"] .chat-track-detail-copy h3,
+body[data-agent-theme="light"] .chat-album-detail h3,
+body[data-agent-theme="light"] .chat-drawer-track-list h3,
+body[data-agent-theme="light"] .chat-drawer-merch h3,
+body[data-agent-theme="light"] .chat-drawer-track-row strong,
+body[data-agent-theme="light"] .chat-drawer-merch strong,
+body[data-agent-theme="light"] .chat-playlist-editor-track strong,
+body[data-agent-theme="light"] .chat-playlist-available strong{
+  color:#111827;
+}
+
+body[data-agent-theme="light"] .chat-player-drawer>header button,
+body[data-agent-theme="light"] .chat-drawer-actions button,
+body[data-agent-theme="light"] .chat-drawer-actions a,
+body[data-agent-theme="light"] .chat-drawer-create-playlist,
+body[data-agent-theme="light"] .chat-drawer-track-row button,
+body[data-agent-theme="light"] .chat-playlist-editor-actions button{
+  border-color:#d1d5db;
+  background:#fff;
+  color:#374151;
+}
+
+body[data-agent-theme="light"] .chat-player-drawer>header button:hover,
+body[data-agent-theme="light"] .chat-drawer-actions button:hover,
+body[data-agent-theme="light"] .chat-drawer-actions a:hover,
+body[data-agent-theme="light"] .chat-drawer-create-playlist:hover,
+body[data-agent-theme="light"] .chat-drawer-track-row button:hover,
+body[data-agent-theme="light"] .chat-playlist-editor-actions button:hover{
+  border-color:#9ca3af;
+  background:#f9fafb;
+  color:#111827;
+}
+
+body[data-agent-theme="light"] .chat-drawer-empty{
+  border-color:#d1d5db;
+  color:#6b7280;
+  background:#f9fafb;
+}
+
+body[data-agent-theme="light"] .chat-track-detail-cover,
+body[data-agent-theme="light"] .chat-album-detail-cover{
+  border-color:#e5e7eb;
+  background:#f3f4f6;
+  color:#4b5563;
+}
+
+body[data-agent-theme="light"] .chat-track-detail-copy>span,
+body[data-agent-theme="light"] .chat-album-detail>div>span,
+body[data-agent-theme="light"] .chat-track-detail-copy p,
+body[data-agent-theme="light"] .chat-album-detail p,
+body[data-agent-theme="light"] .chat-track-detail-meta,
+body[data-agent-theme="light"] .chat-drawer-track-row>span,
+body[data-agent-theme="light"] .chat-drawer-track-row small,
+body[data-agent-theme="light"] .chat-drawer-merch span,
+body[data-agent-theme="light"] .chat-drawer-merch a,
+body[data-agent-theme="light"] .chat-playlist-editor-track small,
+body[data-agent-theme="light"] .chat-playlist-available small{
+  color:#6b7280!important;
+}
+
+body[data-agent-theme="light"] .chat-drawer-track-row{
+  border-top-color:#e5e7eb;
+}
+
+body[data-agent-theme="light"] .chat-drawer-merch article,
+body[data-agent-theme="light"] .chat-playlist-editor-track{
+  border-color:#e5e7eb;
+  background:#f9fafb;
+}
+
+/* Playlist editor is a modal, not a full-height side drawer. */
+.chat-player-overlay .chat-playlist-editor{
+  justify-self:center;
+  align-self:center;
+  width:min(680px,calc(100vw - 32px));
+  height:auto;
+  max-height:calc(100dvh - 32px);
+  margin:0;
+  overflow:hidden;
+  border-radius:16px;
+}
+
+.chat-player-overlay .chat-playlist-editor-form{
+  min-height:0;
+  max-height:calc(100dvh - 104px);
+  overflow:auto;
+  overscroll-behavior:contain;
+  scrollbar-gutter:stable;
+}
+
+body[data-agent-theme="light"] .chat-playlist-editor-form input,
+body[data-agent-theme="light"] .chat-playlist-editor-form select,
+body[data-agent-theme="light"] .chat-playlist-editor-form textarea{
+  border-color:#d1d5db;
+  background:#fff;
+  color:#111827;
+}
+
+body[data-agent-theme="light"] .chat-playlist-editor-form input:focus,
+body[data-agent-theme="light"] .chat-playlist-editor-form select:focus,
+body[data-agent-theme="light"] .chat-playlist-editor-form textarea:focus{
+  border-color:#6b7280;
+  box-shadow:0 0 0 3px rgba(17,24,39,.07);
+}
+
+body[data-agent-theme="light"] .chat-playlist-editor-actions button:first-child{
+  border-color:#111827;
+  background:#111827;
+  color:#fff;
+}
+
+body[data-agent-theme="light"] .chat-playlist-editor-actions button.danger{
+  border-color:#fecaca;
+  background:#fff;
+  color:#b91c1c;
+}
+
+/* Legacy queue / playlist surfaces remain supported because chat.js still owns
+ * both generations during recovery. Keep them above ordinary menus/popovers.
+ */
+.chat-queue-overlay{
+  z-index:4210;
+  background:rgba(15,23,42,.28);
+  backdrop-filter:blur(2px);
+  -webkit-backdrop-filter:blur(2px);
+}
+
+.chat-playlist-overlay{
+  z-index:4220;
+  background:rgba(15,23,42,.28);
+  backdrop-filter:blur(2px);
+  -webkit-backdrop-filter:blur(2px);
+}
+
+body[data-agent-theme="light"] .chat-queue-modal,
+body[data-agent-theme="light"] .chat-playlist-modal{
+  border-color:#e5e7eb;
+  background:#fff;
+  color:#111827;
+  box-shadow:0 24px 64px rgba(15,23,42,.18);
+}
+
+body[data-agent-theme="light"] .chat-queue-playlist,
+body[data-agent-theme="light"] .chat-playlist-header{
+  border-color:#e5e7eb;
+}
+
+body[data-agent-theme="light"] .chat-queue-playlist input,
+body[data-agent-theme="light"] .chat-playlist-field input{
+  border-color:#d1d5db;
+  background:#fff;
+  color:#111827;
+}
+
+body[data-agent-theme="light"] .chat-playlist-options{
+  border-color:#e5e7eb;
+  background:#f9fafb;
+}
+
+body[data-agent-theme="light"] .chat-playlist-option{
+  background:#fff;
+  color:#111827;
+}
+
+/* Queue and player drawers stay usable on narrow screens without covering the
+ * browser viewport with an off-screen full-height panel. */
+@media(max-width:760px){
+  .chat-player-overlay{
+    align-items:end;
+    justify-items:stretch;
+  }
+
+  .chat-player-drawer:not(.chat-playlist-editor){
+    justify-self:stretch;
+    align-self:end;
+    width:100%;
+    height:auto;
+    max-height:min(86dvh,760px);
+    border-left:0;
+    border-top:1px solid #e5e7eb;
+    border-radius:18px 18px 0 0;
+  }
+
+  .chat-player-drawer-body{
+    overscroll-behavior:contain;
+  }
+
+  .chat-player-overlay .chat-playlist-editor{
+    width:calc(100vw - 20px);
+    max-height:calc(100dvh - 20px);
+    border-radius:14px;
+  }
+
+  .chat-player-overlay .chat-playlist-editor-form{
+    grid-template-columns:1fr;
+    max-height:calc(100dvh - 92px);
+    padding:12px;
+  }
+
+  .chat-player-overlay .chat-playlist-editor-form .wide{
+    grid-column:1;
+  }
+
+  .chat-playlist-editor-actions{
+    position:sticky;
+    bottom:-12px;
+    z-index:2;
+    margin:4px -12px -12px;
+    padding:10px 12px calc(10px + env(safe-area-inset-bottom,0px));
+    border-top:1px solid #e5e7eb;
+    background:#fff;
+  }
+
+  .chat-queue-overlay,
+  .chat-playlist-overlay{
+    padding:max(10px,env(safe-area-inset-top,0px)) 10px max(10px,env(safe-area-inset-bottom,0px));
+  }
+
+  .chat-playlist-modal{
+    max-height:calc(100dvh - 20px);
+  }
+}
+
+@media(prefers-reduced-motion:reduce){
+  .chat-player-overlay-backdrop,
+  .chat-player-drawer,
+  .chat-queue-overlay,
+  .chat-playlist-overlay{
+    scroll-behavior:auto;
+  }
+}
