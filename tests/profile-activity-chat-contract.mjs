@@ -6,6 +6,7 @@ const profile=read('includes/profile-agent.php');
 const policy=read('includes/chat-agent-policy-v236.php');
 const chat=read('chat.php');
 const activity=read('profile-activity-chat.js');
+const bridge=read('api/profile-activity-chat-v242.php');
 const attention=read('agent-attention.js');
 const member=read('member-shell-v77.js');
 const notificationApi=read('api/member-notifications.php');
@@ -27,11 +28,28 @@ assert.ok(policy.includes('profile_runtime_visitor_descriptor'), 'Agent Chat pro
 assert.ok(chat.includes('profile-activity-chat.css'), 'Agent Chat should load the Profile Activity canvas stylesheet');
 assert.ok(chat.includes('profile-activity-chat.js'), 'Agent Chat should load the Profile Activity canvas runtime');
 assert.ok(chat.includes('profileAgentEndpoint'), 'Agent Chat identity config should expose the Profile Agent owner endpoint');
-assert.ok(activity.includes('setInterval(()=>{if(document.visibilityState===\'visible\')refresh();},15000)'), 'Profile Activity should refresh every 15 seconds while visible');
+assert.ok(activity.includes("setInterval(()=>{if(document.visibilityState==='visible')refresh();},15000)"), 'Profile Activity should refresh every 15 seconds while visible');
 assert.ok(activity.includes("req('conversation_messages'"), 'Profile Activity canvas should open Profile Agent threads');
 assert.ok(activity.includes("req('owner_reply'"), 'owner should be able to reply from the Agent Chat canvas');
 assert.ok(activity.includes('profile-activity:open'), 'Profile Activity should expose an event bridge for proactive attention');
-assert.ok(activity.includes('toastItem=item'), 'reused landing toast must track the newest activity event');
+assert.ok(activity.includes('profile-activity-chat-v242.php'), 'Profile Agent activity must bridge into canonical Agent Chat storage');
+assert.ok(activity.includes("['conversation_started','needs_owner']"), 'only conversational Profile Agent events should become Agent Chat replies');
+assert.ok(activity.includes('stonefellow:profile-agent-notification'), 'new Profile Agent messages should trigger the canonical response window event');
+assert.ok(activity.includes('StonefellowPremiumVoiceV122'), 'Profile Agent responses should use the existing ElevenLabs voice runtime');
+assert.ok(activity.includes('speechSynthesis'), 'Profile Agent speech must retain system-voice fallback');
+assert.ok(activity.includes('10000'), 'temporary listening response window must close after ten seconds');
+assert.ok(activity.includes("TRANSCRIPT_SUBMIT"), 'a spoken user response must cancel the ten-second timeout');
+assert.ok(!activity.includes('profileActivityToast'), 'Profile Agent notifications must not use a floating/top toast instead of the conversation stream');
+
+assert.ok(bridge.includes("personal_capability_has_v242('profile_agent.access'"), 'bridge must respect Profile Agent account permissions');
+assert.ok(bridge.includes('e.owner_user_id=?'), 'bridge must only read the signed-in owner\'s Profile Agent event');
+assert.ok(bridge.includes("['conversation_started','needs_owner']"), 'bridge must reject non-conversational profile activity');
+assert.ok(bridge.includes('profile_event_id'), 'bridge must persist a deterministic event fingerprint for de-duplication');
+assert.ok(bridge.includes("role='assistant'"), 'Profile Agent notification must persist as an Agent Chat assistant response');
+assert.ok(bridge.includes("INSERT INTO chat_messages"), 'Profile Agent notification must enter canonical chat history');
+assert.ok(bridge.includes('agent_brain_archive_and_parse'), 'persisted Profile Agent response may enter the owner Agent Brain only when permitted');
+assert.ok(!/chat_remote_answer|chat_local_answer|openai|anthropic|gemini/i.test(bridge), 'Profile Agent notification bridge must remain deterministic and token-free');
+
 assert.ok(attention.includes('data-open-profile-activity'), 'Agent Attention should open the Profile Activity canvas');
 assert.ok(member.includes('api/member-notifications.php'), 'authenticated shell should poll persisted notifications');
 assert.ok(member.includes('15000'), 'authenticated notification polling should be near-real-time without busy polling');
