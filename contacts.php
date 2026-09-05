@@ -78,9 +78,7 @@ function contacts_stage_label(string $stage): string
       </div>
       <div class="contacts-topbar-actions">
         <a class="contacts-button" href="<?= e(url('/profile-agent.php')) ?>">Profile Agent</a>
-        <span class="contacts-avatar" aria-label="<?= e((string)$user['display_name']) ?>">
-          <?php if (user_avatar_url($user) !== ''): ?><img src="<?= e(user_avatar_url($user)) ?>" alt=""><?php else: ?><?= e(user_initials($user)) ?><?php endif; ?>
-        </span>
+        <?php $memberMenuUser = $user; require __DIR__ . '/includes/member-user-menu.php'; ?>
       </div>
     </header>
 
@@ -204,5 +202,6 @@ function contacts_stage_label(string $stage): string
   backdrop?.addEventListener('click',()=>setSidebar(false));
 })();
 </script>
+<script src="<?= e(url('/member-shell-v77.js?v=contacts-canonical-shell-20260905')) ?>"></script>
 </body>
 </html>
