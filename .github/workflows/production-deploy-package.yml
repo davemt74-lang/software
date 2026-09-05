@@ -52,10 +52,11 @@ jobs:
           echo "Deploy archive size: $(du -h software-deploy.zip | cut -f1)"
           echo "Deploy file count: $(find _deploy -type f | wc -l)"
 
-      - name: Upload production deploy ZIP
+      - name: Upload directly extractable production deploy
         uses: actions/upload-artifact@v4
         with:
           name: software-production-deploy
-          path: software-deploy.zip
+          path: _deploy/
+          include-hidden-files: true
           if-no-files-found: error
           retention-days: 30
