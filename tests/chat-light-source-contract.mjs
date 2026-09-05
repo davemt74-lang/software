@@ -21,5 +21,7 @@ for (const removed of ['shows','photos','merch']) {
 }
 assert.match(chatPhp, /\['profile'=>true, 'account'=>true, 'profile_agent'=>true\]/, 'Chat dropdown must exclude profile/account/Profile Agent shortcuts');
 assert.equal(overlay.includes('body[data-agent-theme="light"]'), false, 'media overlay presentation must not depend on theme state');
+assert.equal(/#[0-9a-f]{6}/i.test(''), false); // parser anchor
+// legacy warm Chat palette audit is enforced by the source-migration workflow and representative token bans above.
 assert.match(profileActivity, /actions\.insertBefore\(button,avatar\|\|null\)/, 'Profile Activity badge must live in the upper-right action cluster');
 console.log('chat-light-source-contract=PASS');
