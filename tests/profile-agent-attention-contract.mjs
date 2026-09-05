@@ -16,8 +16,8 @@ const memberNav=read('includes/member-navigation.php');
 const sidebar=read('includes/workspace-sidebar-v82.php');
 const legacy=read('artist-profile.php');
 const ht=read('.htaccess');
-const attention=read('agent-attention.js');
 const identity=read('chat-agent-identity-v236.js');
+const notificationsUi=read('chat-notifications-drawer-v240.js');
 const upgrade=read('upgrade.php');
 const usage=read('includes/user-data-usage-v236.php');
 
@@ -35,8 +35,9 @@ assert.match(domain,/user_data_usage_log_v236/,'Profile Agent retrieval is attri
 assert.match(domain,/profile_agent_conversations/,'visitor conversations use isolated storage');
 assert.doesNotMatch(domain,/INSERT INTO chat_conversations/,'public Profile Agent never writes owner private chat history');
 assert.match(domain,/profile_events/,'profile activity is evented');
-assert.match(domain,/agent_attention_items/,'proactive attention queue is first-class');
+assert.match(domain,/agent_attention_items/,'proactive attention queue remains first-class Profile Agent domain data');
 assert.match(domain,/needs_owner/,'insufficient knowledge escalates to owner');
+assert.match(domain,/create_notification\(\$owner,'profile_'\.\$type/,'Profile Agent attention also enters the canonical notification domain');
 assert.match(domain,/share_visit_identity/,'visitor identity disclosure is opt-in');
 assert.doesNotMatch(domain,/REMOTE_ADDR|HTTP_USER_AGENT|fingerprint/i,'visitor tracking does not fingerprint devices or IPs');
 
@@ -91,10 +92,9 @@ assert.doesNotMatch(sidebar,/account\.php#profile-agent/,'workspace sidebar no l
 assert.match(page,/url\('\/profile-agent\.php'\)/,'public profile owner navigation returns to the Profile Agent portal');
 assert.doesNotMatch(page,/on Stonefellow/,'public profile metadata does not hardcode the system name');
 
-assert.match(attention,/Answer your agent/,'main Agent Chat accepts proactive owner answers');
-assert.match(attention,/owner_reply/,'proactive answer routes back to Profile Agent conversation');
-assert.match(identity,/agent-attention\.js/,'main Agent Chat loads proactive attention runtime');
-assert.doesNotMatch(attention,/StonefellowPremiumVoice|speechSynthesis|agent-voice|chatVoice/i,'Profile Agent attention runtime does not replace or wrap canonical voice transport');
+assert.doesNotMatch(identity,/agent-attention\.js|agent-attention\.css/,'main Agent Chat must not load the legacy Profile Agent top-banner runtime');
+assert.match(notificationsUi,/request\('present_attention'/,'Profile Agent notifications enter the canonical Agent Chat attention path');
+assert.match(notificationsUi,/showAttentionConversation/,'canonical attention opens its persisted Agent Chat conversation in the chat canvas');
 assert.match(identity,/StonefellowPremiumVoiceV122/,'voice-guided onboarding reuses the canonical premium voice transport');
 assert.match(legacy,/profile_public_url/,'legacy artist profile redirects to canonical profile');
 assert.match(legacy,/301/,'legacy profile redirect is permanent');
@@ -102,6 +102,6 @@ assert.ok(legacy.length<1800,'legacy artist-profile renderer is reduced to a com
 assert.match(upgrade,/profile_agent_ensure_schema/,'normal upgrade installs Profile Agent schema');
 assert.match(upgrade,/profile_agent_schema_ready/,'normal upgrade verifies Profile Agent schema');
 assert.match(usage,/user_data_retrieval_log/,'existing retrieval ledger remains the attribution source');
-for(const text of [domain,runtime,api,page,portalPage,portal,attention])assert.doesNotMatch(text,/provider_speaker_id|clone_provider_voice_id/,'Profile Agent surface never exposes voice provider identifiers');
+for(const text of [domain,runtime,api,page,portalPage,portal])assert.doesNotMatch(text,/provider_speaker_id|clone_provider_voice_id/,'Profile Agent surface never exposes voice provider identifiers');
 assert.equal(fs.existsSync('agent-data.php'),false,'superseded standalone agent-data page stays removed');
 console.log('PROFILE_AGENT_ATTENTION_CONTRACT=PASS');
