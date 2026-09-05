@@ -16,16 +16,20 @@ function chat_account_state_intent_v241(string $query): bool
         $q
     )) return true;
 
-    $accountSubject = (bool)preg_match(
-        '/\b(?:profile agent|voice clone|social chat|direct chat|user[- ]to[- ]user chat|online presence|chat presence|public profile|profile visibility|incoming chat sound|message sound|notification sound)\b/u',
-        $q
-    );
-    if (!$accountSubject) return false;
+    $subject = '(?:profile agent|voice clone|social chat|direct chat|user[- ]to[- ]user chat|online presence|chat presence|public profile|profile visibility|profile\s+(?:public|private|visible)|incoming chat sound|message sound|notification sound)';
+    if (!preg_match('/\b' . $subject . '\b/u', $q)) return false;
 
-    return (bool)preg_match(
-        '/\b(?:my|mine|am i|do i|have i|status|setup|set up|enabled|disabled|turned on|turned off|configured|ready|active|live|on|off|online|offline)\b/u',
+    // Personal/state language is required. Do not use bare "on" or "off" here:
+    // generic explanatory questions often contain "on" (for example, "how does
+    // voice cloning work on mobile?") and must continue to normal Agent Chat.
+    if (preg_match(
+        '/\b(?:my|mine|am i|do i|have i|status|setup|set up|enabled|disabled|turned on|turned off|configured|ready|active|live|online|offline)\b/u',
         $q
-    );
+    )) return true;
+
+    // Preserve natural status phrasing such as "is my Profile Agent on?" without
+    // making every sentence containing the preposition "on" a status request.
+    return (bool)preg_match('/\b(?:is|are)\s+(?:my\s+)?(?:the\s+)?' . $subject . '\s+(?:on|off)\b/u', $q);
 }
 
 function release_v105_chat_tool(string $query, array $user, int $conversationId = 0): array
