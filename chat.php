@@ -8,6 +8,7 @@ $voiceAssetBuild = 'chat-voice-canonical-20260903';
 $voiceCacheBuild = 'chat-voice-canonical-20260903-failover1';
 $recordingUiBuild = 'chat-recording-results-v206-20260901';
 $recordingPersistenceBuild = 'chat-recordings-v242-20260902';
+$transcriptionCanvasBuild = 'chat-transcription-canvas-v243-20260905';
 $mediaOverlayBuild = 'chat-media-overlays-source-light-20260905';
 $agentOverlayBuild = 'agent-updates-hidden-v206-20260901';
 $agentIdentityBuild = 'profile-activity-20260905';
@@ -259,8 +260,10 @@ $recordingLibraryRuntime = has_permission('artist_listening.access', $user)
         . ',artistListeningUrl:' . json_encode(url('/artist-listening.php'), JSON_UNESCAPED_SLASHES)
         . ',persistEndpoint:' . json_encode(url('/api/chat-recordings-v242.php'), JSON_UNESCAPED_SLASHES)
         . '};</script>'
+        . '<link rel="stylesheet" data-chat-transcription-canvas href="' . e(url('/chat-transcription-canvas.css?v=' . $transcriptionCanvasBuild)) . '">'
         . '<script data-chat-recordings-v242 data-recording-persistence-build="' . e($recordingPersistenceBuild) . '" src="' . e(url('/chat-recordings-v242.js?v=' . $recordingPersistenceBuild)) . '"></script>'
         . '<script data-artist-recordings-v198 data-recording-ui-build="' . e($recordingUiBuild) . '" src="' . e(url('/artist-listening-recordings.js?v=' . $recordingUiBuild)) . '"></script>'
+        . '<script data-chat-transcription-canvas data-transcription-canvas-build="' . e($transcriptionCanvasBuild) . '" src="' . e(url('/chat-transcription-canvas.js?v=' . $transcriptionCanvasBuild)) . '"></script>'
     : '';
 
 $voiceConfig = '<script data-chat-voice-config>window.STONEFELLOW_AGENT_CONTEXT={userId:' . (int)$user['id'] . ',surface:"chat",trackId:0,projectId:0,conversationId:' . (int)$agentInitialConversationId . ',taskTitle:"Agent Chat",taskKey:"chat",csrf:' . json_encode(csrf_token()) . ',proactiveEndpoint:' . json_encode(url('/api/agent-proactive-v93.php')) . '};</script>';
@@ -289,7 +292,7 @@ $runtime = $headerUiRuntime
          . $profileActivityRuntime
          . '<script data-team-chat-admin-v109 src="' . e(url('/team-chat-admin-v109.js?v=mobile-rail-v115-20260825')) . '"></script>'
          . $railLayout
-         . '<span data-stonefellow-build="' . e($runtimeBuild) . '" data-chat-controls-build="' . e($controlBuild) . '" data-premium-voice-build="' . e($premiumVoiceBuild) . '" data-chat-voice-build="' . e($voiceAssetBuild) . '" data-chat-voice-feature-build="' . e($voiceCacheBuild) . '" data-recording-ui-build="' . e($recordingUiBuild) . '" data-recording-persistence-build="' . e($recordingPersistenceBuild) . '" data-agent-theme-build="' . e($agentThemeBuild) . '" data-chat-media-overlay-build="' . e($mediaOverlayBuild) . '" data-agent-overlay-build="' . e($agentOverlayBuild) . '" data-user-agent-build="' . e($agentIdentityBuild) . '" hidden></span>';
+         . '<span data-stonefellow-build="' . e($runtimeBuild) . '" data-chat-controls-build="' . e($controlBuild) . '" data-premium-voice-build="' . e($premiumVoiceBuild) . '" data-chat-voice-build="' . e($voiceAssetBuild) . '" data-chat-voice-feature-build="' . e($voiceCacheBuild) . '" data-recording-ui-build="' . e($recordingUiBuild) . '" data-recording-persistence-build="' . e($recordingPersistenceBuild) . '" data-transcription-canvas-build="' . e($transcriptionCanvasBuild) . '" data-agent-theme-build="' . e($agentThemeBuild) . '" data-chat-media-overlay-build="' . e($mediaOverlayBuild) . '" data-agent-overlay-build="' . e($agentOverlayBuild) . '" data-user-agent-build="' . e($agentIdentityBuild) . '" hidden></span>';
 
 $html = str_replace('</body>', $runtime . '</body>', $html);
 echo $html;
