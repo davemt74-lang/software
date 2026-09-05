@@ -21,10 +21,13 @@ assert.match(crm, /'samesite'\s*=>\s*'Lax'/, 'guest continuity cookie must use S
 assert.match(crm, /hash\('sha256', profile_visitor_cookie_token_v243\(\$ownerUserId\) \. '\|' \. \$ownerUserId\)/, 'stored identity must be an owner-scoped hash, not the raw cookie');
 assert.doesNotMatch(crm, /REMOTE_ADDR|HTTP_USER_AGENT|device[_ -]?fingerprint|canvas[_ -]?fingerprint/i, 'guest continuity must not fingerprint IPs or devices');
 assert.match(crm, /contact_ref/, 'owner receives a stable pseudonymous contact reference');
-assert.match(crm, /G-' \. strtoupper\(substr\(\$key, 0, 6\)\)/, 'contact reference must derive from the owner-scoped hash');
+assert.match(crm, /STONEFELLOW_PROFILE_CONTACT_REF_HEX_V243\s*=\s*16/, 'CRM display references must use 64 bits of the owner-scoped hash');
+assert.match(crm, /G-' \. strtoupper\(substr\(\$key, 0, STONEFELLOW_PROFILE_CONTACT_REF_HEX_V243\)\)/, 'contact reference must derive from the owner-scoped hash');
 
 assert.match(profile, /profile_runtime_record_view\(\$pdo,\$profile,\$viewer\)/, 'public profile must use the canonical visitor runtime');
 assert.doesNotMatch(profile, /profile_record_view\(\$pdo,\$profile,\$viewer\)/, 'public profile must not use the legacy session-only visit path');
+assert.match(runtime, /visitor_user_id=COALESCE\(VALUES\(visitor_user_id\),visitor_user_id\)/, 'anonymous returns must preserve an established signed-in contact association');
+assert.match(runtime, /CASE WHEN VALUES\(visitor_user_id\) IS NULL THEN identity_disclosed ELSE VALUES\(identity_disclosed\) END/, 'anonymous returns must not silently erase established disclosure while signed-in visits remain authoritative');
 assert.match(runtime, /created_at>=DATE_SUB\(NOW\(\),INTERVAL 30 MINUTE\)/, 'refreshes within 30 minutes must not become separate return visits');
 assert.match(runtime, /profile_visitor_session_visit_count_v243[\s\S]*\+1/, 'new return events carry an actual visit number');
 assert.match(runtime, /\$metadata\['returning'\]=\$metadata\['visit_number'\]>1/, 'visit metadata explicitly records returning status');
