@@ -9,7 +9,7 @@ $profile=profile_by_username($pdo,$username);$viewer=current_user();
 $isOwner=$profile&&$viewer&&(int)$viewer['id']===(int)$profile['user_id'];
 $preview=$isOwner&&!empty($_GET['preview']);
 if(!$profile||empty($profile['is_active'])||(!$preview&&empty($profile['is_public']))){http_response_code(404);exit('Profile not found.');}
-if(!$preview)profile_record_view($pdo,$profile,$viewer);
+if(!$preview)profile_runtime_record_view($pdo,$profile,$viewer);
 $catalogViewer=$preview?null:$viewer;
 $catalog=profile_public_catalog($pdo,$profile,$catalogViewer);$workspace=$catalog['workspace'];
 $agent=profile_active_agent($pdo,$profile);

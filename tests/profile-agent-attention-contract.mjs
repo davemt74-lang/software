@@ -46,7 +46,8 @@ assert.match(runtime,/s\.id AS profile_session_id/,'attention query uses real pr
 assert.match(runtime,/public_agent_status/,'owner state exposes one canonical public-service status');
 assert.match(runtime,/profilePublished&&\$publicEnabled&&\$selectedActive/,'live status requires published profile, public enablement, and an active selected agent');
 assert.match(runtime,/active_visitors/,'owner state exposes recently active visitor analytics');
-assert.match(runtime,/last_message_at FROM profile_visit_sessions/,'visitor dashboard knows whether a visitor has chatted');
+assert.match(runtime,/s\.last_message_at[\s\S]*FROM profile_visit_sessions s/,'visitor dashboard retains the profile session last-message timeline');
+assert.match(runtime,/event_type='profile_view'\) AS visit_count/,'visitor dashboard distinguishes visit sessions from raw page views');
 
 assert.match(api,/profile_runtime_session\(\$pdo,\$owner,\$visitor,false\)/,'Profile Agent chat does not count as a view');
 assert.match(api,/profile_runtime_owner_state/,'owner API uses hardened portal state');

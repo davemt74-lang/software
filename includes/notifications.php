@@ -57,16 +57,19 @@ function notification_requires_attention(array $notification): bool
     }
 
     $type = strtolower(trim((string)($notification['type'] ?? '')));
+    $sourceType = strtolower(trim((string)($notification['source_type'] ?? '')));
     $title = strtolower(trim((string)($notification['title'] ?? '')));
     $body = strtolower(trim((string)($notification['body'] ?? '')));
     $text = trim($title . ' ' . $body);
 
-    // Profile Agent activity is intentionally conversational. A new profile
-    // visitor or a visitor starting a Profile Agent conversation should reach
-    // the owner's Agent Chat immediately so the agent can speak the update,
-    // ask what to do next, and open the temporary response/listening window.
+    // Profile Agent events are owner-facing customer-service activity. Source
+    // ownership is more reliable than matching a display type, and it also
+    // keeps compatibility with the historical profile_profile_view type.
+    if ($sourceType === 'profile_event' && str_starts_with($type, 'profile_')) return true;
+
     $profileAgentAttention = [
         'profile_view',
+        'profile_profile_view',
         'profile_conversation_started',
     ];
     if (in_array($type, $profileAgentAttention, true)) return true;
@@ -175,6 +178,11 @@ function create_notification(
     if (!$pdo || $userId < 1 || !table_exists('notifications')) {
         return;
     }
+
+    // profile_attention_from_event historically prefixes profile_ onto the
+    // already-prefixed profile_view event. Normalize new writes while the read
+    // path above remains backward-compatible with existing rows.
+    if ($type === 'profile_profile_view') $type = 'profile_view';
 
     try {
         if ($sourceType !== '' && $sourceId !== null) {

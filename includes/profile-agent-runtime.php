@@ -9,9 +9,15 @@ function profile_runtime_session(PDO $pdo,int $ownerUserId,?array $visitor,bool 
 {
     $visitorId=(int)($visitor['id']??0);
     $identity=$visitorId>0&&profile_visitor_discloses_identity($pdo,$visitor);
-    $hash=profile_session_hash($ownerUserId);
+    $hash=function_exists('profile_visitor_session_hash_v243')
+        ? profile_visitor_session_hash_v243($ownerUserId)
+        : profile_session_hash($ownerUserId);
     $increment=$countView?1:0;
-    $stmt=$pdo->prepare('INSERT INTO profile_visit_sessions (owner_user_id,visitor_user_id,session_key,identity_disclosed,view_count) VALUES (?,?,?,?,?) ON DUPLICATE KEY UPDATE visitor_user_id=VALUES(visitor_user_id),identity_disclosed=VALUES(identity_disclosed),view_count=view_count+VALUES(view_count),last_seen_at=NOW()');
+    // Once a browser contact has been associated with a signed-in member, an
+    // anonymous return from that same browser must not erase the association.
+    // A later signed-in request remains authoritative and can refresh or revoke
+    // identity disclosure through the visitor's current profile setting.
+    $stmt=$pdo->prepare('INSERT INTO profile_visit_sessions (owner_user_id,visitor_user_id,session_key,identity_disclosed,view_count) VALUES (?,?,?,?,?) ON DUPLICATE KEY UPDATE visitor_user_id=COALESCE(VALUES(visitor_user_id),visitor_user_id),identity_disclosed=CASE WHEN VALUES(visitor_user_id) IS NULL THEN identity_disclosed ELSE VALUES(identity_disclosed) END,view_count=view_count+VALUES(view_count),last_seen_at=NOW()');
     $stmt->execute([$ownerUserId,$visitorId?:null,$hash,$identity?1:0,$increment]);
     $get=$pdo->prepare('SELECT * FROM profile_visit_sessions WHERE owner_user_id=? AND session_key=? LIMIT 1');
     $get->execute([$ownerUserId,$hash]);
@@ -23,10 +29,27 @@ function profile_runtime_record_view(PDO $pdo,array $profile,?array $visitor): ?
     $owner=(int)$profile['user_id'];
     if((int)($visitor['id']??0)===$owner)return null;
     $session=profile_runtime_session($pdo,$owner,$visitor,true);
-    $bucket=(int)floor(time()/STONEFELLOW_PROFILE_VIEW_DEDUPE_SECONDS);
-    $dedupe=hash('sha256',$session['session_key'].'|profile_view|'.$bucket);
     $agent=profile_active_agent($pdo,$profile);
-    $event=profile_event_create($pdo,$owner,$session,'profile_view',10,$agent?(int)$agent['id']:null,[],$dedupe);
+
+    if(function_exists('profile_visitor_session_hash_v243')){
+        $recent=$pdo->prepare("SELECT id FROM profile_events WHERE owner_user_id=? AND profile_session_id=? AND event_type='profile_view' AND created_at>=DATE_SUB(NOW(),INTERVAL 30 MINUTE) ORDER BY id DESC LIMIT 1");
+        $recent->execute([$owner,(int)$session['id']]);
+        if($recent->fetchColumn())return $session;
+    }
+
+    $window=function_exists('profile_visitor_session_hash_v243')
+        ? STONEFELLOW_PROFILE_VISITOR_REENTRY_SECONDS_V243
+        : STONEFELLOW_PROFILE_VIEW_DEDUPE_SECONDS;
+    $bucket=(int)floor(time()/max(60,$window));
+    $dedupe=hash('sha256',$session['session_key'].'|profile_view|'.$bucket);
+    $metadata=function_exists('profile_visitor_request_context_v243')
+        ? profile_visitor_request_context_v243($session)
+        : [];
+    if(function_exists('profile_visitor_session_visit_count_v243')){
+        $metadata['visit_number']=profile_visitor_session_visit_count_v243($pdo,$owner,(int)$session['id'])+1;
+        $metadata['returning']=$metadata['visit_number']>1;
+    }
+    $event=profile_event_create($pdo,$owner,$session,'profile_view',10,$agent?(int)$agent['id']:null,$metadata,$dedupe);
     if($event)profile_attention_from_event($pdo,$event,$session,$agent);
     return $session;
 }
@@ -34,17 +57,20 @@ function profile_runtime_record_view(PDO $pdo,array $profile,?array $visitor): ?
 /**
  * Owner-safe visitor description. Signed-in status can be shown without exposing
  * identity. Name/avatar/profile/relationship are emitted only when the visitor
- * explicitly opted into visit identity sharing.
+ * explicitly opted into visit identity sharing. contact_ref is an owner-scoped
+ * pseudonymous identifier and never exposes the browser token itself.
  */
 function profile_runtime_visitor_descriptor(PDO $pdo,int $ownerUserId,array $row): array
 {
     $visitorId=(int)($row['visitor_user_id']??0);
     $signedIn=$visitorId>0;
     $disclosed=$signedIn&&!empty($row['identity_disclosed']);
+    $contactRef=function_exists('profile_visitor_contact_ref_v243')?profile_visitor_contact_ref_v243($row):'';
     $out=[
         'signed_in'=>$signedIn,
         'identity_disclosed'=>$disclosed,
-        'visitor_label'=>$signedIn?'Signed-in member':'Guest visitor',
+        'visitor_label'=>$signedIn?'Signed-in member':($contactRef!==''?'Guest '.substr($contactRef,2):'Guest visitor'),
+        'contact_ref'=>$contactRef,
         'username'=>'',
         'profile_url'=>'',
         'avatar_url'=>'',
@@ -73,13 +99,13 @@ function profile_runtime_visitor_descriptor(PDO $pdo,int $ownerUserId,array $row
 function profile_runtime_attention_list(PDO $pdo,int $ownerUserId,int $limit=20): array
 {
     $limit=max(1,min(50,$limit));
-    $stmt=$pdo->prepare("SELECT a.*,s.identity_disclosed,s.id AS profile_session_id,c.status AS conversation_status,c.last_message_at AS conversation_last_message FROM agent_attention_items a LEFT JOIN profile_agent_conversations c ON c.id=a.source_conversation_id LEFT JOIN profile_events e ON e.id=a.source_event_id LEFT JOIN profile_visit_sessions s ON s.id=e.profile_session_id WHERE a.owner_user_id=? AND a.status IN ('pending','seen','snoozed') AND (a.snoozed_until IS NULL OR a.snoozed_until<=NOW()) ORDER BY a.priority DESC,a.created_at DESC,a.id DESC LIMIT ".$limit);
+    $stmt=$pdo->prepare("SELECT a.*,s.identity_disclosed,s.session_key,s.id AS profile_session_id,c.status AS conversation_status,c.last_message_at AS conversation_last_message FROM agent_attention_items a LEFT JOIN profile_agent_conversations c ON c.id=a.source_conversation_id LEFT JOIN profile_events e ON e.id=a.source_event_id LEFT JOIN profile_visit_sessions s ON s.id=e.profile_session_id WHERE a.owner_user_id=? AND a.status IN ('pending','seen','snoozed') AND (a.snoozed_until IS NULL OR a.snoozed_until<=NOW()) ORDER BY a.priority DESC,a.created_at DESC,a.id DESC LIMIT ".$limit);
     $stmt->execute([$ownerUserId]);
     $rows=$stmt->fetchAll()?:[];
     foreach($rows as &$row){
         $row=array_merge($row,profile_runtime_visitor_descriptor($pdo,$ownerUserId,$row));
         $row['actions']=json_decode((string)($row['actions_json']??'[]'),true)?:[];
-        unset($row['visitor_user_id'],$row['actions_json'],$row['context_json']);
+        unset($row['visitor_user_id'],$row['session_key'],$row['actions_json'],$row['context_json']);
     }
     unset($row);
     return $rows;
@@ -110,26 +136,36 @@ function profile_runtime_owner_state(PDO $pdo,array $user): array
     elseif(!$selectedAgent)$publicReason='agent_missing';
     elseif(!$selectedActive)$publicReason='agent_inactive';
 
-    $visits=$pdo->prepare('SELECT id,visitor_user_id,identity_disclosed,view_count,first_seen_at,last_seen_at,last_message_at FROM profile_visit_sessions WHERE owner_user_id=? AND view_count>0 ORDER BY last_seen_at DESC,id DESC LIMIT 50');
+    $visits=$pdo->prepare("SELECT s.id,s.session_key,s.visitor_user_id,s.identity_disclosed,s.view_count,s.first_seen_at,s.last_seen_at,s.last_message_at,
+      (SELECT COUNT(*) FROM profile_events e0 WHERE e0.owner_user_id=s.owner_user_id AND e0.profile_session_id=s.id AND e0.event_type='profile_view') AS visit_count
+      FROM profile_visit_sessions s WHERE s.owner_user_id=? AND s.view_count>0 ORDER BY s.last_seen_at DESC,s.id DESC LIMIT 50");
     $visits->execute([$uid]);$visitRows=$visits->fetchAll()?:[];
     foreach($visitRows as &$v){
         $v=array_merge($v,profile_runtime_visitor_descriptor($pdo,$uid,$v));
         $v['profile_session_id']=(int)$v['id'];
+        $v['page_view_count']=(int)($v['view_count']??0);
+        $v['visit_count']=(int)($v['visit_count']??0);
+        $v['repeat_visitor']=$v['visit_count']>1;
         $v['active_now']=!empty($v['last_seen_at'])&&strtotime((string)$v['last_seen_at'])>=time()-300;
-        unset($v['visitor_user_id']);
+        unset($v['visitor_user_id'],$v['session_key']);
     }unset($v);
 
-    $convos=$pdo->prepare('SELECT c.id,c.profile_agent_id,c.profile_session_id,c.status,c.last_summary,c.started_at,c.last_message_at,s.identity_disclosed,s.visitor_user_id FROM profile_agent_conversations c INNER JOIN profile_visit_sessions s ON s.id=c.profile_session_id WHERE c.owner_user_id=? ORDER BY c.last_message_at DESC,c.id DESC LIMIT 100');
+    $convos=$pdo->prepare('SELECT c.id,c.profile_agent_id,c.profile_session_id,c.status,c.last_summary,c.started_at,c.last_message_at,s.session_key,s.identity_disclosed,s.visitor_user_id FROM profile_agent_conversations c INNER JOIN profile_visit_sessions s ON s.id=c.profile_session_id WHERE c.owner_user_id=? ORDER BY c.last_message_at DESC,c.id DESC LIMIT 100');
     $convos->execute([$uid]);$conversationRows=$convos->fetchAll()?:[];
-    foreach($conversationRows as &$c){$c=array_merge($c,profile_runtime_visitor_descriptor($pdo,$uid,$c));unset($c['visitor_user_id']);}unset($c);
+    foreach($conversationRows as &$c){$c=array_merge($c,profile_runtime_visitor_descriptor($pdo,$uid,$c));unset($c['visitor_user_id'],$c['session_key']);}unset($c);
 
-    $events=$pdo->prepare('SELECT e.id,e.profile_session_id,e.event_type,e.priority,e.metadata_json,e.created_at,s.identity_disclosed,s.visitor_user_id FROM profile_events e LEFT JOIN profile_visit_sessions s ON s.id=e.profile_session_id WHERE e.owner_user_id=? ORDER BY e.created_at DESC,e.id DESC LIMIT 100');
+    $events=$pdo->prepare('SELECT e.id,e.profile_session_id,e.event_type,e.priority,e.metadata_json,e.created_at,s.session_key,s.identity_disclosed,s.visitor_user_id FROM profile_events e LEFT JOIN profile_visit_sessions s ON s.id=e.profile_session_id WHERE e.owner_user_id=? ORDER BY e.created_at DESC,e.id DESC LIMIT 100');
     $events->execute([$uid]);$activityRows=$events->fetchAll()?:[];
     foreach($activityRows as &$event){
         $event=array_merge($event,profile_runtime_visitor_descriptor($pdo,$uid,$event));
         $metadata=json_decode((string)($event['metadata_json']??''),true);if(!is_array($metadata))$metadata=[];
         $event['conversation_id']=(int)($metadata['conversation_id']??0);
-        unset($event['visitor_user_id'],$event['metadata_json']);
+        $event['visit_number']=(int)($metadata['visit_number']??0);
+        $event['referrer_host']=(string)($metadata['referrer_host']??'');
+        $event['utm_source']=(string)($metadata['utm_source']??'');
+        $event['utm_medium']=(string)($metadata['utm_medium']??'');
+        $event['utm_campaign']=(string)($metadata['utm_campaign']??'');
+        unset($event['visitor_user_id'],$event['session_key'],$event['metadata_json']);
     }unset($event);
 
     $policies=[];
@@ -147,6 +183,7 @@ function profile_runtime_owner_state(PDO $pdo,array $user): array
     $profileCoverUrl=!empty($profile['cover_path'])&&str_starts_with((string)$profile['cover_path'],'/uploads/')?url((string)$profile['cover_path']):'';
 
     $attention=profile_runtime_attention_list($pdo,$uid,50);
+    $contacts=function_exists('profile_visitor_contact_list_v243')?profile_visitor_contact_list_v243($pdo,$uid,100):[];
     $visitStats=$pdo->prepare('SELECT COALESCE(SUM(view_count),0) AS total_views,COUNT(*) AS visitor_sessions,COALESCE(SUM(last_seen_at>=DATE_SUB(NOW(),INTERVAL 5 MINUTE)),0) AS active_visitors,COALESCE(SUM(visitor_user_id IS NOT NULL),0) AS signed_in_sessions FROM profile_visit_sessions WHERE owner_user_id=?');
     $visitStats->execute([$uid]);$visitStatRow=$visitStats->fetch()?:[];
     $conversationStats=$pdo->prepare("SELECT COUNT(*) AS total_conversations,COALESCE(SUM(status<>'resolved'),0) AS open_conversations,COALESCE(SUM(status='owner_joined'),0) AS owner_joined FROM profile_agent_conversations WHERE owner_user_id=?");
@@ -172,6 +209,7 @@ function profile_runtime_owner_state(PDO $pdo,array $user): array
             'suggested_agent_id'=>$suggestedAgentId,
         ],
         'visits'=>$visitRows,
+        'contacts'=>$contacts,
         'conversations'=>$conversationRows,
         'activity'=>$activityRows,
         'attention'=>$attention,
@@ -186,18 +224,19 @@ function profile_runtime_owner_state(PDO $pdo,array $user): array
             'open_conversations'=>(int)($conversationStatRow['open_conversations']??0),
             'owner_joined'=>(int)($conversationStatRow['owner_joined']??0),
             'needs_attention'=>count($attention),
+            'contacts'=>count($contacts),
         ],
     ];
 }
 
 function profile_runtime_conversation_owner(PDO $pdo,int $conversationId,int $ownerUserId): ?array
 {
-    $stmt=$pdo->prepare('SELECT c.*,s.identity_disclosed,s.visitor_user_id FROM profile_agent_conversations c INNER JOIN profile_visit_sessions s ON s.id=c.profile_session_id WHERE c.id=? AND c.owner_user_id=? LIMIT 1');
+    $stmt=$pdo->prepare('SELECT c.*,s.session_key,s.identity_disclosed,s.visitor_user_id FROM profile_agent_conversations c INNER JOIN profile_visit_sessions s ON s.id=c.profile_session_id WHERE c.id=? AND c.owner_user_id=? LIMIT 1');
     $stmt->execute([$conversationId,$ownerUserId]);
     $row=$stmt->fetch();
     if(!$row)return null;
     $row=array_merge($row,profile_runtime_visitor_descriptor($pdo,$ownerUserId,$row));
-    unset($row['visitor_user_id']);
+    unset($row['visitor_user_id'],$row['session_key']);
     return $row;
 }
 

@@ -41,6 +41,7 @@ if ($workspaceSidebarUser && function_exists('profile_agent_schema_ready')) {
       <?php if(has_permission('account.access',$workspaceSidebarUser)): ?>
         <a class="chat-sidebar-nav-link <?= $workspaceSidebarActive==='account'?'active':'' ?>" href="<?= e(url('/account.php')) ?>"><span>◉</span><strong>My Account</strong></a>
         <?php if($workspaceProfileUrl!==''):?><a class="chat-sidebar-nav-link" href="<?= e($workspaceProfileUrl) ?>"><span>◎</span><strong>My Profile</strong></a><?php endif;?>
+        <a class="chat-sidebar-nav-link <?= $workspaceSidebarActive==='contacts'?'active':'' ?>" href="<?= e(url('/contacts.php')) ?>"><span>◍</span><strong>My Contacts</strong></a>
         <?php if(personal_capability_has_v242('agent_brain.access',$workspaceSidebarUser)):?><a class="chat-sidebar-nav-link" href="<?= e(url('/account.php#agent-brain')) ?>"><span>◇</span><strong>Agent Brain</strong></a><?php endif;?>
         <?php if(personal_capability_has_v242('personal_knowledge.access',$workspaceSidebarUser)):?><a class="chat-sidebar-nav-link <?= $workspaceSidebarActive==='knowledge'?'active':'' ?>" href="<?= e(url('/knowledge.php')) ?>"><span>◆</span><strong>My Knowledge</strong></a><?php endif;?>
         <?php if(personal_capability_has_v242('profile_agent.access',$workspaceSidebarUser)):?><a class="chat-sidebar-nav-link <?= $workspaceSidebarActive==='profile_agent'?'active':'' ?>" href="<?= e(url('/profile-agent.php')) ?>"><span>◈</span><strong>Profile Agent</strong></a><?php endif;?>

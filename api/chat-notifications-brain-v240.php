@@ -156,6 +156,20 @@ function chat_notifications_v240_conversation(PDO $pdo, array $user, ?array $age
     return (int)$pdo->lastInsertId();
 }
 
+function chat_notifications_v240_contextual_decision(PDO $pdo, int $userId, array $notification): ?array
+{
+    if (!function_exists('profile_visitor_attention_decision_v243')) return null;
+    try {
+        $decision = profile_visitor_attention_decision_v243($pdo, $userId, $notification);
+        return is_array($decision) ? $decision : null;
+    } catch (Throwable $e) {
+        // Context is enrichment. The canonical notification must still become a
+        // chat turn even if visitor-history enrichment is temporarily unavailable.
+        error_log('Profile visitor attention enrichment failed: ' . $e->getMessage());
+        return null;
+    }
+}
+
 function chat_notifications_v240_present_attention(PDO $pdo, array $user, array $input): array
 {
     $userId = (int)$user['id'];
@@ -195,13 +209,26 @@ function chat_notifications_v240_present_attention(PDO $pdo, array $user, array 
 
     $agent = chat_notifications_v240_agent($pdo, $userId, max(0, (int)($input['agent_id'] ?? 0)));
     $conversationId = chat_notifications_v240_conversation($pdo, $user, $agent, max(0, (int)($input['conversation_id'] ?? 0)));
-    $message = notification_attention_message($notification);
+    $decision = chat_notifications_v240_contextual_decision($pdo, $userId, $notification);
+    $message = is_array($decision) && trim((string)($decision['message'] ?? '')) !== ''
+        ? trim((string)$decision['message'])
+        : notification_attention_message($notification);
+    $prompt = is_array($decision) && trim((string)($decision['prompt'] ?? '')) !== ''
+        ? trim((string)$decision['prompt'])
+        : notification_attention_prompt($notification);
+    $contact = is_array($decision) && is_array($decision['contact'] ?? null)
+        ? $decision['contact']
+        : [];
+
     $target = trim((string)($notification['target_url'] ?? ''));
     $actions = $target !== '' ? [[
         'type'=>'open_url','label'=>'Open','url'=>$target,
     ]] : [];
     $context = [
-        'sources'=>[['source'=>'notification:' . $notificationId,'title'=>'User attention notification']],
+        'sources'=>[[
+            'source'=>'notification:' . $notificationId,
+            'title'=>$contact ? 'Profile visitor attention' : 'User attention notification',
+        ]],
         'media'=>[],
         'stem_media'=>[],
         'playlist_title'=>'',
@@ -210,9 +237,10 @@ function chat_notifications_v240_present_attention(PDO $pdo, array $user, array 
             'required'=>true,
             'notification_id'=>$notificationId,
             'notification_type'=>(string)($notification['type'] ?? ''),
-            'prompt'=>notification_attention_prompt($notification),
+            'prompt'=>$prompt,
             'response_timeout_ms'=>10000,
             'target_url'=>$target,
+            'profile_contact'=>$contact,
         ],
     ];
     $contextJson = json_encode($context, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
@@ -231,7 +259,9 @@ function chat_notifications_v240_present_attention(PDO $pdo, array $user, array 
         'conversation_id'=>$conversationId,
         'message_id'=>$messageId,
         'message'=>$message,
+        'prompt'=>$prompt,
         'actions'=>$actions,
+        'profile_contact'=>$contact,
         'response_timeout_ms'=>10000,
     ];
 }
