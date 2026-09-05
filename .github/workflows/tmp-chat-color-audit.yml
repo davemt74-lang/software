@@ -1,0 +1,29 @@
+name: Temporary Chat Color Audit
+
+on:
+  push:
+    branches:
+      - fix/chat-remove-brown-theme
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/chat-remove-brown-theme
+      - name: List Chat CSS color tokens
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          css=Path('chat.css').read_text().lower()
+          tokens={}
+          for token in re.findall(r'#[0-9a-f]{3,8}\b|rgba?\([^)]*\)',css):
+              tokens[token]=tokens.get(token,0)+1
+          for token,count in sorted(tokens.items(),key=lambda x:(x[0])):
+              print(f'{count:4d} {token}')
+          PY
