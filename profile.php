@@ -18,8 +18,8 @@ $bio=trim((string)($profile['bio']??''));if($bio===''&&$workspace)$bio=trim((str
 $canSave=$catalogViewer&&has_permission('account.access',$catalogViewer);
 
 $avatar='';$cover='';
-if($workspace&&!empty($workspace['profile_image_path']))$avatar=url('/artist-profile-image.php?user_id='.(int)$profile['user_id'].'&type=profile');
-elseif(!empty($profile['avatar_path'])&&str_starts_with((string)$profile['avatar_path'],'/uploads/'))$avatar=url((string)$profile['avatar_path']);
+if(!empty($profile['avatar_path'])&&str_starts_with((string)$profile['avatar_path'],'/uploads/'))$avatar=url((string)$profile['avatar_path']);
+elseif($workspace&&!empty($workspace['profile_image_path']))$avatar=url('/artist-profile-image.php?user_id='.(int)$profile['user_id'].'&type=profile');
 if(!empty($profile['cover_path'])&&str_starts_with((string)$profile['cover_path'],'/uploads/'))$cover=url((string)$profile['cover_path']);
 elseif($workspace&&!empty($workspace['cover_image_path']))$cover=url('/artist-profile-image.php?user_id='.(int)$profile['user_id'].'&type=cover');
 $links=['Website'=>(string)($profile['website_url']??''),'Instagram'=>(string)($profile['instagram_url']??''),'TikTok'=>(string)($profile['tiktok_url']??''),'YouTube'=>(string)($profile['youtube_url']??''),'Spotify'=>(string)($profile['spotify_url']??''),'Apple Music'=>(string)($profile['apple_music_url']??'')];
@@ -47,7 +47,7 @@ foreach($tracksByAlbum as &$group)usort($group,static fn(array $a,array $b):int=
 <meta name="theme-color" content="#f6f5f2">
 <link rel="canonical" href="<?= e(profile_public_url($username)) ?>">
 <title><?= e($displayName) ?> | <?= e(system_agent_name()) ?></title>
-<link rel="stylesheet" href="<?= e(url('/profile.css?v=profile-agent-widget-20260905')) ?>">
+<link rel="stylesheet" href="<?= e(url('/profile.css?v=profile-media-20260905')) ?>">
 </head>
 <body class="profile-page">
 <header class="profile-topbar">
@@ -57,8 +57,8 @@ foreach($tracksByAlbum as &$group)usort($group,static fn(array $a,array $b):int=
   </nav>
 </header>
 <?php if($preview): ?><div class="profile-preview-banner"><span>Visitor preview — public visibility rules are active and this view is not being counted.</span><a href="<?= e(url('/profile-agent.php')) ?>">Back to Profile Agent</a></div><?php endif; ?>
+<section class="profile-cover profile-cover-full"><?php if($cover!==''): ?><img src="<?= e($cover) ?>" alt=""><?php endif; ?></section>
 <main class="profile-shell">
-  <section class="profile-cover"><?php if($cover!==''): ?><img src="<?= e($cover) ?>" alt=""><?php endif; ?></section>
   <section class="profile-identity">
     <div class="profile-avatar"><?php if($avatar!==''): ?><img src="<?= e($avatar) ?>" alt="<?= e($displayName) ?>"><?php else: ?><span><?= e(mb_strtoupper(mb_substr($displayName,0,1))) ?></span><?php endif; ?></div>
     <div class="profile-name"><small><?= e($roleLabel) ?></small><h1><?= e($displayName) ?></h1><span>@<?= e($username) ?></span></div>

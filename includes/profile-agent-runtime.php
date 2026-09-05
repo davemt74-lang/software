@@ -143,6 +143,9 @@ function profile_runtime_owner_state(PDO $pdo,array $user): array
         ];
     }
 
+    $profileAvatarUrl=!empty($profile['avatar_path'])&&str_starts_with((string)$profile['avatar_path'],'/uploads/')?url((string)$profile['avatar_path']):'';
+    $profileCoverUrl=!empty($profile['cover_path'])&&str_starts_with((string)$profile['cover_path'],'/uploads/')?url((string)$profile['cover_path']):'';
+
     $attention=profile_runtime_attention_list($pdo,$uid,50);
     $visitStats=$pdo->prepare('SELECT COALESCE(SUM(view_count),0) AS total_views,COUNT(*) AS visitor_sessions,COALESCE(SUM(last_seen_at>=DATE_SUB(NOW(),INTERVAL 5 MINUTE)),0) AS active_visitors,COALESCE(SUM(visitor_user_id IS NOT NULL),0) AS signed_in_sessions FROM profile_visit_sessions WHERE owner_user_id=?');
     $visitStats->execute([$uid]);$visitStatRow=$visitStats->fetch()?:[];
@@ -156,6 +159,7 @@ function profile_runtime_owner_state(PDO $pdo,array $user): array
         'profile'=>$profile,
         'profile_url'=>!empty($profile['username'])?profile_public_url((string)$profile['username']):'',
         'profile_url_example'=>url('/username'),
+        'profile_media'=>['avatar_url'=>$profileAvatarUrl,'cover_url'=>$profileCoverUrl],
         'agents'=>$agents,
         'public_agent_status'=>[
             'profile_published'=>$profilePublished,
