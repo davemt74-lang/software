@@ -25,15 +25,26 @@ function profile_runtime_record_view(PDO $pdo,array $profile,?array $visitor): ?
     $owner=(int)$profile['user_id'];
     if((int)($visitor['id']??0)===$owner)return null;
     $session=profile_runtime_session($pdo,$owner,$visitor,true);
+    $agent=profile_active_agent($pdo,$profile);
+
+    if(function_exists('profile_visitor_session_hash_v243')){
+        $recent=$pdo->prepare("SELECT id FROM profile_events WHERE owner_user_id=? AND profile_session_id=? AND event_type='profile_view' AND created_at>=DATE_SUB(NOW(),INTERVAL 30 MINUTE) ORDER BY id DESC LIMIT 1");
+        $recent->execute([$owner,(int)$session['id']]);
+        if($recent->fetchColumn())return $session;
+    }
+
     $window=function_exists('profile_visitor_session_hash_v243')
         ? STONEFELLOW_PROFILE_VISITOR_REENTRY_SECONDS_V243
         : STONEFELLOW_PROFILE_VIEW_DEDUPE_SECONDS;
     $bucket=(int)floor(time()/max(60,$window));
     $dedupe=hash('sha256',$session['session_key'].'|profile_view|'.$bucket);
-    $agent=profile_active_agent($pdo,$profile);
     $metadata=function_exists('profile_visitor_request_context_v243')
         ? profile_visitor_request_context_v243($session)
         : [];
+    if(function_exists('profile_visitor_session_visit_count_v243')){
+        $metadata['visit_number']=profile_visitor_session_visit_count_v243($pdo,$owner,(int)$session['id'])+1;
+        $metadata['returning']=$metadata['visit_number']>1;
+    }
     $event=profile_event_create($pdo,$owner,$session,'profile_view',10,$agent?(int)$agent['id']:null,$metadata,$dedupe);
     if($event)profile_attention_from_event($pdo,$event,$session,$agent);
     return $session;
