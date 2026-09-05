@@ -1,0 +1,264 @@
+from pathlib import Path
+import re
+
+
+def replace_once(text: str, old: str, new: str, label: str) -> str:
+    count = text.count(old)
+    if count != 1:
+        raise SystemExit(f'{label}: expected exactly one match, found {count}')
+    return text.replace(old, new, 1)
+
+
+# Public profile: move Profile Agent out of the content grid into a fixed service widget.
+p = Path('profile.php')
+text = p.read_text()
+text = replace_once(
+    text,
+    "<link rel=\"stylesheet\" href=\"<?= e(url('/profile.css?v=profile-agent-attention-20260903')) ?>\">",
+    "<link rel=\"stylesheet\" href=\"<?= e(url('/profile.css?v=profile-agent-widget-20260905')) ?>\">",
+    'profile css cache key',
+)
+text = replace_once(
+    text,
+    "    <?php if($agent): ?><button type=\"button\" class=\"profile-primary-action\" data-open-profile-agent>Ask <?= e((string)$agent['display_name']) ?></button><?php endif; ?>\n",
+    "",
+    'inline profile agent action',
+)
+side_pattern = re.compile(
+    r'\n    <aside>\n      <\?php if\(\$agent\): \?>\n      <section class="profile-card profile-agent-card" id="profileAgentShell">.*?</aside>\n  </div>',
+    re.S,
+)
+text, count = side_pattern.subn('\n  </div>', text, count=1)
+if count != 1:
+    raise SystemExit(f'inline profile agent aside: expected one match, found {count}')
+
+widget = '''<?php if($agent): ?>
+<div class="profile-agent-widget-root" data-profile-agent-widget>
+  <section class="profile-agent-widget" id="profileAgentShell" hidden aria-label="Chat with <?= e((string)$agent['display_name']) ?>">
+    <header class="profile-agent-widget-head">
+      <span class="profile-agent-avatar"><?= e(mb_strtoupper(mb_substr((string)$agent['display_name'],0,1))) ?></span>
+      <div><strong><?= e((string)$agent['display_name']) ?></strong><small><?= e($displayName) ?>’s Profile Agent · powered by <?= e(system_agent_name()) ?></small></div>
+      <button type="button" class="profile-agent-widget-close" data-close-profile-agent aria-label="Close Profile Agent">×</button>
+    </header>
+    <div class="profile-agent-disclosure">AI representative — not the profile owner live. Answers use only information this profile has approved.</div>
+    <?php if($preview): ?>
+      <div class="profile-agent-preview"><p><?= e($agentGreeting) ?></p><strong>Visitor preview</strong><span>Conversation sending is disabled here so your own preview cannot create visitor events, notifications, or attention items.</span></div>
+    <?php else: ?>
+      <div class="profile-agent-thread" data-profile-agent-thread aria-live="polite"></div>
+      <form class="profile-agent-compose"><textarea maxlength="2000" placeholder="Ask about music, shows, projects…" aria-label="Message Profile Agent"></textarea><button type="submit">Send</button><div class="profile-agent-status" data-profile-agent-status role="status" aria-live="polite"></div></form>
+    <?php endif; ?>
+  </section>
+  <button type="button" class="profile-agent-launcher" data-open-profile-agent aria-controls="profileAgentShell" aria-expanded="false">
+    <span class="profile-agent-launcher-mark"><?= e(mb_strtoupper(mb_substr((string)$agent['display_name'],0,1))) ?></span>
+    <span>Ask <?= e((string)$agent['display_name']) ?></span>
+  </button>
+</div>
+<?php endif; ?>
+'''
+text = replace_once(text, "</main>\n<script>\n", "</main>\n" + widget + "<script>\n", 'widget insertion')
+old_js = "document.querySelector('[data-open-profile-agent]')?.addEventListener('click',()=>document.getElementById('profileAgentShell')?.scrollIntoView({behavior:'smooth',block:'start'}));"
+new_js = '''const profileAgentShell=document.getElementById('profileAgentShell');
+const profileAgentLauncher=document.querySelector('[data-open-profile-agent]');
+const profileAgentClose=document.querySelector('[data-close-profile-agent]');
+function setProfileAgentOpen(open){
+  if(!profileAgentShell||!profileAgentLauncher)return;
+  profileAgentShell.hidden=!open;
+  profileAgentLauncher.setAttribute('aria-expanded',String(open));
+  if(open){(profileAgentShell.querySelector('textarea')||profileAgentClose)?.focus();}
+  else{profileAgentLauncher.focus();}
+}
+profileAgentLauncher?.addEventListener('click',()=>setProfileAgentOpen(profileAgentShell?.hidden!==false));
+profileAgentClose?.addEventListener('click',()=>setProfileAgentOpen(false));
+document.addEventListener('keydown',event=>{if(event.key==='Escape'&&profileAgentShell&&!profileAgentShell.hidden)setProfileAgentOpen(false);});'''
+text = replace_once(text, old_js, new_js, 'profile widget controller')
+p.write_text(text)
+
+
+# Canonical public profile CSS: single-column content + fixed lower-right service widget.
+p = Path('profile.css')
+css = p.read_text()
+css = replace_once(
+    css,
+    '.profile-grid{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:22px;margin-top:34px}',
+    '.profile-grid{display:grid;grid-template-columns:minmax(0,1fr);gap:22px;margin-top:34px}',
+    'profile content grid',
+)
+css, count = re.subn(r'\.profile-primary-action\{[^}]*\}', '', css, count=1)
+if count != 1:
+    raise SystemExit(f'profile primary action css: expected one match, found {count}')
+old_block = re.compile(
+    r'\.profile-agent-card\{position:sticky;top:86px;.*?\.profile-source\{display:block;margin-top:5px;color:var\(--profile-muted\);font-size:9px\}',
+    re.S,
+)
+widget_css = '''.profile-agent-widget-root{position:fixed;right:24px;bottom:24px;z-index:90;display:grid;justify-items:end;gap:12px;pointer-events:none}.profile-agent-launcher,.profile-agent-widget{pointer-events:auto}.profile-agent-launcher{display:flex;align-items:center;gap:9px;min-height:48px;padding:7px 16px 7px 8px;border:0;border-radius:999px;background:var(--profile-dark);color:#fff;box-shadow:0 12px 34px rgba(17,17,17,.24);font:800 12px/1 inherit;cursor:pointer}.profile-agent-launcher:hover{background:#292725}.profile-agent-launcher:focus-visible,.profile-agent-widget-close:focus-visible{outline:3px solid rgba(17,17,17,.18);outline-offset:3px}.profile-agent-launcher-mark{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;background:#fff;color:var(--profile-dark);font-size:11px;font-weight:900}.profile-agent-widget{width:min(390px,calc(100vw - 32px));height:min(620px,calc(100dvh - 108px));min-height:360px;display:flex;flex-direction:column;overflow:hidden;border:1px solid var(--profile-line);border-radius:18px;background:#fff;box-shadow:0 24px 70px rgba(17,17,17,.22)}.profile-agent-widget[hidden]{display:none}.profile-agent-widget-head{padding:15px 16px;border-bottom:1px solid var(--profile-line);display:grid;grid-template-columns:40px minmax(0,1fr) 32px;align-items:center;gap:10px;background:#fff}.profile-agent-avatar{width:40px;height:40px;border-radius:12px;background:var(--profile-dark);color:#fff;display:grid;place-items:center;font-weight:850}.profile-agent-widget-head div{min-width:0}.profile-agent-widget-head strong,.profile-agent-widget-head small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.profile-agent-widget-head small{color:var(--profile-muted);font-size:10px;margin-top:2px}.profile-agent-widget-close{width:32px;height:32px;border:1px solid var(--profile-line);border-radius:50%;background:#fff;color:var(--profile-text);font-size:20px;line-height:1;cursor:pointer}.profile-agent-widget-close:hover{background:var(--profile-soft)}.profile-agent-disclosure{padding:9px 16px;background:#f3f1ed;color:var(--profile-muted);font-size:10px;border-bottom:1px solid var(--profile-line)}.profile-agent-thread{flex:1;min-height:0;overflow:auto;padding:15px 18px;display:grid;align-content:start;gap:10px}.profile-agent-message{max-width:88%;padding:10px 12px;border-radius:13px;font-size:12px;line-height:1.55;white-space:pre-wrap}.profile-agent-message.agent,.profile-agent-message.owner{justify-self:start;background:var(--profile-soft)}.profile-agent-message.visitor{justify-self:end;background:var(--profile-dark);color:#fff}.profile-agent-message.owner::before{content:"Profile owner · ";font-weight:850}.profile-agent-compose{padding:14px;border-top:1px solid var(--profile-line);display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;background:#fff}.profile-agent-compose textarea{resize:none;min-height:42px;max-height:110px;border:1px solid var(--profile-line);border-radius:12px;padding:10px 11px;background:#fff;color:inherit;font:inherit;outline:none}.profile-agent-compose textarea:focus{border-color:#999}.profile-agent-compose button{border:0;border-radius:12px;background:var(--profile-dark);color:#fff;padding:0 14px;font-weight:800;cursor:pointer}.profile-agent-status{grid-column:1/-1;min-height:16px;color:var(--profile-muted);font-size:10px}.profile-agent-preview{padding:20px;display:grid;gap:12px;overflow:auto}.profile-agent-preview p{padding:12px;background:var(--profile-soft);border-radius:12px;color:var(--profile-text)}.profile-agent-preview strong{font-size:11px}.profile-agent-preview span{font-size:10px;line-height:1.5;color:var(--profile-muted)}.profile-preview-banner{width:min(1180px,calc(100% - 36px));margin:16px auto -10px;padding:10px 14px;border-radius:12px;background:#171513;color:#fff;font-size:12px;display:flex;justify-content:space-between;gap:12px;align-items:center}.profile-preview-banner a{color:#fff}.profile-source{display:block;margin-top:5px;color:var(--profile-muted);font-size:9px}'''
+css, count = old_block.subn(widget_css, css, count=1)
+if count != 1:
+    raise SystemExit(f'profile agent css block: expected one match, found {count}')
+for stale in [
+    '.profile-agent-card{position:relative;top:auto}',
+    '.profile-agent-thread{height:320px}',
+    '.profile-primary-action{grid-column:1/-1;justify-self:start;margin-left:144px;margin-top:-8px}',
+    '.profile-primary-action{margin-left:104px}',
+]:
+    css = css.replace(stale, '')
+css = css.replace(
+    '@media(max-width:600px){.profile-shell',
+    '@media(max-width:600px){.profile-agent-widget-root{right:10px;bottom:10px}.profile-agent-widget{width:calc(100vw - 20px);height:min(620px,calc(100dvh - 82px));border-radius:16px}.profile-agent-launcher{min-height:46px}.profile-shell',
+    1,
+)
+p.write_text(css)
+
+
+# Owner portal: custom customer-service rail and a real scroll container.
+p = Path('profile-agent.php')
+text = p.read_text()
+text = replace_once(
+    text,
+    "<link rel=\"stylesheet\" href=\"<?= e(url('/account.css?v=account-light-20260904')) ?>\">\n<link rel=\"stylesheet\" href=\"<?= e(url('/profile-agent-portal.css?v=profile-agent-portal-20260905')) ?>\">",
+    "<link rel=\"stylesheet\" href=\"<?= e(url('/chat-header-ui.css?v=white-tech-20260904')) ?>\">\n<link rel=\"stylesheet\" href=\"<?= e(url('/profile-agent-portal.css?v=profile-agent-service-shell-20260905')) ?>\">",
+    'portal css includes',
+)
+generic_sidebar = '''  <?php
+    $workspaceSidebarUser = $user;
+    $workspaceSidebarActive = 'profile_agent';
+    require __DIR__ . '/includes/workspace-sidebar-v82.php';
+  ?>'''
+custom_sidebar = '''  <aside class="chat-sidebar profile-agent-sidebar" id="chatSidebar">
+    <div class="profile-agent-sidebar-head">
+      <a class="profile-agent-sidebar-brand" href="<?= e(url('/profile-agent.php')) ?>"><?= e(system_agent_name()) ?></a>
+      <button class="chat-icon-button mobile-only" id="closeChatSidebar" type="button" aria-label="Close Profile Agent menu">×</button>
+    </div>
+
+    <div class="profile-agent-sidebar-service">
+      <span>Profile Agent</span>
+      <div class="profile-agent-service-status" id="profileAgentServiceStatus" aria-live="polite">Checking service…</div>
+    </div>
+
+    <nav class="profile-agent-sidebar-nav" aria-label="Profile Agent sections">
+      <button type="button" data-pa-tab="inbox" class="active"><span>01</span><strong>Inbox</strong></button>
+      <button type="button" data-pa-tab="visitors"><span>02</span><strong>Visitors</strong></button>
+      <button type="button" data-pa-tab="agent"><span>03</span><strong>Agent</strong></button>
+      <button type="button" data-pa-tab="knowledge"><span>04</span><strong>Knowledge Access</strong></button>
+      <button type="button" data-pa-tab="profile"><span>05</span><strong>Profile Settings</strong></button>
+      <button type="button" data-pa-tab="analytics"><span>06</span><strong>Analytics</strong></button>
+    </nav>
+
+    <div class="profile-agent-sidebar-footer">
+      <?php if ($profileUrl !== ''): ?><a href="<?= e($profileUrl) ?>" target="_blank" rel="noopener">View Profile ↗</a><?php endif; ?>
+      <a href="<?= e(url('/account.php')) ?>">My Account</a>
+      <?php if (has_permission('chat.access', $user)): ?><a href="<?= e(url('/chat.php')) ?>">Agent Chat</a><?php endif; ?>
+    </div>
+  </aside>'''
+text = replace_once(text, generic_sidebar, custom_sidebar, 'custom profile agent sidebar')
+hero_pattern = re.compile(r'\n      <header class="profile-agent-hero">.*?</header>\n', re.S)
+text, count = hero_pattern.subn('\n', text, count=1)
+if count != 1:
+    raise SystemExit(f'portal intro hero: expected one match, found {count}')
+tabs_pattern = re.compile(r'\n      <nav class="profile-agent-tabs" aria-label="Profile Agent sections">.*?</nav>\n', re.S)
+text, count = tabs_pattern.subn('\n', text, count=1)
+if count != 1:
+    raise SystemExit(f'portal tab strip: expected one match, found {count}')
+text = text.replace('profile-agent-portal-20260905', 'profile-agent-service-shell-20260905')
+p.write_text(text)
+
+
+# Portal CSS: make the main pane scroll and style the dedicated service sidebar.
+p = Path('profile-agent-portal.css')
+css = p.read_text()
+css = replace_once(
+    css,
+    '.profile-agent-app{background:#f7f8fa;color:#111318}',
+    '.profile-agent-app{height:100dvh;overflow:hidden;background:#f7f8fa;color:#111318}',
+    'portal app shell',
+)
+css = replace_once(
+    css,
+    '.profile-agent-main{background:#f7f8fa;min-width:0}',
+    '.profile-agent-main{height:100dvh;min-width:0;grid-template-rows:58px minmax(0,1fr);overflow:hidden;background:#f7f8fa}',
+    'portal main shell',
+)
+css = replace_once(
+    css,
+    '.profile-agent-portal{width:min(1480px,100%);margin:0 auto;padding:28px 30px 44px}',
+    '.profile-agent-portal{width:min(1480px,100%);height:100%;min-height:0;overflow-y:auto;overscroll-behavior:contain;margin:0 auto;padding:22px 30px 44px}',
+    'portal scroll owner',
+)
+sidebar_css = '''.profile-agent-sidebar{display:flex;flex-direction:column;overflow:hidden;padding:0;background:#fff!important;border-right:1px solid #e1e5e9!important}.profile-agent-sidebar-head{height:58px;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:0 16px;border-bottom:1px solid #e8ebee}.profile-agent-sidebar-brand{min-width:0;overflow:hidden;color:#111318;text-decoration:none;text-overflow:ellipsis;white-space:nowrap;font-size:.95rem;font-weight:900;letter-spacing:-.025em}.profile-agent-sidebar-service{display:grid;gap:8px;padding:18px 16px;border-bottom:1px solid #e8ebee}.profile-agent-sidebar-service>span{color:#737b85;font-size:.62rem;font-weight:850;text-transform:uppercase;letter-spacing:.1em}.profile-agent-sidebar .profile-agent-service-status{min-height:0;padding:0;border:0;background:transparent;white-space:normal;line-height:1.45}.profile-agent-sidebar .profile-agent-service-status:before{flex:0 0 auto}.profile-agent-sidebar-nav{display:grid;align-content:start;gap:3px;min-height:0;overflow:auto;padding:12px 10px}.profile-agent-sidebar-nav button{display:grid;grid-template-columns:28px minmax(0,1fr);align-items:center;gap:8px;width:100%;min-height:40px;padding:8px 10px;border:0;border-radius:7px;background:transparent;color:#5f6872;text-align:left;cursor:pointer}.profile-agent-sidebar-nav button>span{color:#9aa1a9;font:700 .58rem/1 ui-monospace,SFMono-Regular,Consolas,monospace}.profile-agent-sidebar-nav button>strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.72rem}.profile-agent-sidebar-nav button:hover,.profile-agent-sidebar-nav button.active{background:#f1f3f5;color:#111318}.profile-agent-sidebar-nav button.active>span{color:#111318}.profile-agent-sidebar-footer{margin-top:auto;display:grid;gap:2px;padding:12px 10px max(12px,env(safe-area-inset-bottom));border-top:1px solid #e8ebee}.profile-agent-sidebar-footer a{padding:9px 10px;border-radius:6px;color:#626b75;text-decoration:none;font-size:.68rem;font-weight:700}.profile-agent-sidebar-footer a:hover{background:#f1f3f5;color:#111318}'''
+css = sidebar_css + css
+css = re.sub(
+    r'\.profile-agent-hero\{[^}]*\}\.profile-agent-eyebrow\{[^}]*\}\.profile-agent-hero h1\{[^}]*\}\.profile-agent-hero p\{[^}]*\}',
+    '',
+    css,
+    count=1,
+)
+css = re.sub(
+    r'\.profile-agent-tabs\{[^}]*\}\.profile-agent-tabs button\{[^}]*\}\.profile-agent-tabs button:hover\{[^}]*\}\.profile-agent-tabs button\.active\{[^}]*\}',
+    '',
+    css,
+    count=1,
+)
+css = css.replace(
+    '@media(max-width:760px){.profile-agent-portal{padding:18px 14px 34px}.profile-agent-hero{display:grid}.profile-agent-service-status{justify-self:start}',
+    '@media(max-width:760px){.profile-agent-portal{padding:14px 12px 30px}.profile-agent-service-status{justify-self:start}',
+    1,
+)
+p.write_text(css)
+
+
+# Portal JS: tab ownership follows the whole service app so sidebar buttons work.
+p = Path('profile-agent-portal.js')
+js = p.read_text()
+js = replace_once(
+    js,
+    "const root=document.getElementById('profileAgentPortal');\nif(!cfg?.endpoint||!cfg?.csrf||!root)return;",
+    "const root=document.getElementById('profileAgentPortal');\nconst app=document.querySelector('.profile-agent-app')||root;\nif(!cfg?.endpoint||!cfg?.csrf||!root||!app)return;",
+    'portal app root',
+)
+js = replace_once(
+    js,
+    "const tabs=[...root.querySelectorAll('[data-pa-tab]')],views=[...root.querySelectorAll('[data-pa-view]')];",
+    "const tabs=[...document.querySelectorAll('[data-pa-tab]')],views=[...root.querySelectorAll('[data-pa-view]')];",
+    'portal tab scope',
+)
+js = replace_once(
+    js,
+    "  views.forEach(v=>v.classList.toggle('active',v.dataset.paView===name));\n  try{localStorage.setItem('profile-agent-portal-tab',name);}catch(e){}",
+    "  views.forEach(v=>v.classList.toggle('active',v.dataset.paView===name));\n  if(root.scrollTop>0)root.scrollTo({top:0,behavior:'auto'});\n  try{localStorage.setItem('profile-agent-portal-tab',name);}catch(e){}",
+    'portal scroll reset',
+)
+js = replace_once(js, "root.addEventListener('click',async e=>{", "app.addEventListener('click',async e=>{", 'portal click delegation')
+p.write_text(js)
+
+
+# Regression contract follows the new UX architecture.
+p = Path('tests/profile-agent-attention-contract.mjs')
+test = p.read_text()
+test = replace_once(
+    test,
+    "const portal=read('profile-agent-portal.js');",
+    "const portal=read('profile-agent-portal.js');\nconst portalCss=read('profile-agent-portal.css');\nconst profileCss=read('profile.css');",
+    'test css fixtures',
+)
+test = replace_once(
+    test,
+    "assert.match(portalPage,/Customer service workspace/,'Profile Agent has a standalone service portal');",
+    "assert.doesNotMatch(portalPage,/Customer service workspace|See who is visiting your profile/,'standalone portal starts directly in the working service UI');\nassert.match(portalPage,/class=\"chat-sidebar profile-agent-sidebar\"/,'Profile Agent owns a dedicated customer-service sidebar');\nassert.doesNotMatch(portalPage,/workspace-sidebar-v82\\.php/,'Profile Agent no longer embeds the generic workspace sidebar');\nassert.match(portalPage,/id=\"profileAgentServiceStatus\"/,'dedicated sidebar exposes canonical service status');",
+    'portal structure assertions',
+)
+needle = "assert.match(portal,/save_profile_access/,'portal owns public knowledge-access controls');"
+extra = """assert.match(portal,/save_profile_access/,'portal owns public knowledge-access controls');
+assert.match(portal,/document\\.querySelectorAll\\('\\[data-pa-tab\\]'\\)/,'sidebar tabs are resolved at the service-app level');
+assert.match(portal,/app\\.addEventListener\\('click'/,'sidebar tab clicks delegate through the service shell');
+assert.match(portalCss,/\\.profile-agent-main\\{[^}]*grid-template-rows:58px minmax\\(0,1fr\\)[^}]*overflow:hidden/,'portal main owns a bounded viewport shell');
+assert.match(portalCss,/\\.profile-agent-portal\\{[^}]*min-height:0[^}]*overflow-y:auto/,'portal content is the vertical scroll owner');
+assert.match(portalCss,/\\.profile-agent-sidebar-nav/,'portal has purpose-built service navigation');
+assert.match(page,/class=\"profile-agent-widget-root\"/,'public profile mounts a fixed service-chat widget');
+assert.match(page,/class=\"profile-agent-launcher\"/,'public profile exposes a lower-right chat launcher');
+assert.match(page,/data-close-profile-agent/,'public chat widget has an explicit close control');
+assert.doesNotMatch(page,/profile-primary-action/,'public profile no longer duplicates Profile Agent inside profile identity');
+assert.match(profileCss,/\\.profile-agent-widget-root\\{[^}]*position:fixed[^}]*right:24px[^}]*bottom:24px/,'public Profile Agent is fixed in the lower-right corner');
+assert.match(profileCss,/\\.profile-agent-widget\\[hidden\\]\\{display:none\\}/,'public service panel is launcher-controlled');"""
+test = replace_once(test, needle, extra, 'widget and portal regression assertions')
+p.write_text(test)
+
+print('PROFILE_AGENT_WIDGET_PORTAL_PATCH=PASS')
