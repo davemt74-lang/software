@@ -1,0 +1,61 @@
+name: Production Deploy Package
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Build production deploy archive
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          rm -rf _deploy software-deploy.zip
+          mkdir _deploy
+
+          rsync -a ./ _deploy/ \
+            --exclude='.git/' \
+            --exclude='.github/' \
+            --exclude='.gitignore' \
+            --exclude='tests/' \
+            --exclude='tools/' \
+            --exclude='_deploy/' \
+            --exclude='*.md' \
+            --exclude='*.zip'
+
+          test -f _deploy/chat.php
+          test -f _deploy/.htaccess
+
+          if find _deploy -type f \( -path '*/tests/*' -o -path '*/tools/*' -o -path '*/.github/*' \) | grep -q .; then
+            echo 'Development-only files leaked into the deploy package.' >&2
+            exit 1
+          fi
+
+          (
+            cd _deploy
+            zip -q -r ../software-deploy.zip .
+          )
+
+          unzip -t software-deploy.zip
+          echo "Deploy archive size: $(du -h software-deploy.zip | cut -f1)"
+          echo "Deploy file count: $(find _deploy -type f | wc -l)"
+
+      - name: Upload production deploy ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: software-production-deploy
+          path: software-deploy.zip
+          if-no-files-found: error
+          retention-days: 30
