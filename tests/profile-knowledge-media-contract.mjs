@@ -39,7 +39,7 @@ assert.ok(mediaApi.includes("p.cover_path=?"),'cover delivery must be tied to th
 assert.ok(mediaApi.includes("if (!$isPublic && !$isOwner && !$isAdmin && !$identityDisclosure)"),'private profile media must stay private unless an existing disclosure rule authorizes it');
 assert.ok(mediaApi.includes("identity_disclosed=1"),'visitor avatar access must preserve explicit identity-sharing privacy');
 assert.ok(mediaApi.includes("realpath(STONEFELLOW_ROOT . '/uploads/' . $bucket)"),'media reader must enforce filesystem containment');
-assert.ok(mediaApi.includes("['jpg' => 'image/jpeg'"),'media reader must enforce image MIME/extension boundaries');
+assert.match(mediaApi,/\$allowed\s*=\s*\[[\s\S]*?'jpg'\s*=>\s*'image\/jpeg'[\s\S]*?'png'\s*=>\s*'image\/png'[\s\S]*?'webp'\s*=>\s*'image\/webp'/,'media reader must enforce image MIME/extension boundaries');
 assert.ok(fs.existsSync(new URL('../uploads/avatars/.gitkeep',import.meta.url)),'avatar upload directory must ship in deploys');
 assert.ok(fs.existsSync(new URL('../uploads/profile-covers/.gitkeep',import.meta.url)),'cover upload directory must ship in deploys');
 
