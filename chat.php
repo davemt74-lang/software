@@ -11,12 +11,12 @@ $recordingPersistenceBuild = 'chat-recordings-v242-20260902';
 $transcriptionCanvasBuild = 'chat-transcription-canvas-v243-layout-20260905';
 $mediaOverlayBuild = 'chat-media-overlays-source-light-20260905';
 $agentOverlayBuild = 'agent-updates-hidden-v206-20260901';
-$agentIdentityBuild = 'profile-activity-20260905';
+$agentIdentityBuild = 'chat-attention-canvas-20260905';
 $profileActivityBuild = 'profile-activity-overlay-20260905';
 $headerUiBuild = 'live-wiring-20260903-3';
 $teamChatAdminBuild = 'team-chat-bootstrap-v236-20260905';
 $chatSettingsBuild = 'chat-settings-v239-canonical-20260905';
-$notificationDrawerBuild = 'chat-notifications-brain-v240-20260905';
+$notificationDrawerBuild = 'chat-notifications-canvas-v240-20260905';
 
 if (!headers_sent()) {
     header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');

@@ -184,17 +184,32 @@ function chat_notifications_v240_present_attention(PDO $pdo, array $user, array 
         return ['ok'=>true,'handled'=>false,'notification_id'=>$notificationId];
     }
 
-    $existing = $pdo->prepare(
-        "SELECT m.id,m.conversation_id,m.message,m.context_json
-         FROM chat_messages m
-         INNER JOIN chat_conversations c ON c.id=m.conversation_id
-         WHERE c.user_id=?
-           AND m.role='assistant'
-           AND JSON_VALID(m.context_json)=1
-           AND CAST(JSON_UNQUOTE(JSON_EXTRACT(m.context_json,'$.attention.notification_id')) AS UNSIGNED)=?
-         ORDER BY m.id DESC LIMIT 1"
-    );
-    $existing->execute([$userId, $notificationId]);
+    $agent = chat_notifications_v240_agent($pdo, $userId, max(0, (int)($input['agent_id'] ?? 0)));
+    if ($agent) {
+        $existing = $pdo->prepare(
+            "SELECT m.id,m.conversation_id,m.message,m.context_json
+             FROM chat_messages m
+             INNER JOIN chat_conversations c ON c.id=m.conversation_id
+             WHERE c.user_id=? AND c.user_agent_id=?
+               AND m.role='assistant'
+               AND JSON_VALID(m.context_json)=1
+               AND CAST(JSON_UNQUOTE(JSON_EXTRACT(m.context_json,'$.attention.notification_id')) AS UNSIGNED)=?
+             ORDER BY m.id DESC LIMIT 1"
+        );
+        $existing->execute([$userId, (int)$agent['id'], $notificationId]);
+    } else {
+        $existing = $pdo->prepare(
+            "SELECT m.id,m.conversation_id,m.message,m.context_json
+             FROM chat_messages m
+             INNER JOIN chat_conversations c ON c.id=m.conversation_id
+             WHERE c.user_id=? AND c.user_agent_id IS NULL
+               AND m.role='assistant'
+               AND JSON_VALID(m.context_json)=1
+               AND CAST(JSON_UNQUOTE(JSON_EXTRACT(m.context_json,'$.attention.notification_id')) AS UNSIGNED)=?
+             ORDER BY m.id DESC LIMIT 1"
+        );
+        $existing->execute([$userId, $notificationId]);
+    }
     if ($row = $existing->fetch()) {
         $ctx = json_decode((string)($row['context_json'] ?? ''), true);
         return [
@@ -207,7 +222,6 @@ function chat_notifications_v240_present_attention(PDO $pdo, array $user, array 
         ];
     }
 
-    $agent = chat_notifications_v240_agent($pdo, $userId, max(0, (int)($input['agent_id'] ?? 0)));
     $conversationId = chat_notifications_v240_conversation($pdo, $user, $agent, max(0, (int)($input['conversation_id'] ?? 0)));
     $decision = chat_notifications_v240_contextual_decision($pdo, $userId, $notification);
     $message = is_array($decision) && trim((string)($decision['message'] ?? '')) !== ''
