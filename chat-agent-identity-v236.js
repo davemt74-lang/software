@@ -9,7 +9,7 @@
   const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({
     '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#039;'
   }[char]));
-  const build = 'chat-onboarding-v241-20260905';
+  const build = 'chat-attention-canvas-20260905';
   const onboardingEndpoint = new URL('./api/chat-onboarding-v241.php', window.location.href).href;
 
   async function settingsRequest(action = '', payload = {}) {
@@ -120,18 +120,6 @@
   })));
   observer.observe(document.body, {childList:true, subtree:true});
   window.addEventListener('pagehide', () => observer.disconnect(), {once:true});
-
-  if (thread && !document.querySelector('[data-agent-attention-runtime]')) {
-    const css = document.createElement('link');
-    css.rel = 'stylesheet';
-    css.dataset.agentAttentionRuntime = '1';
-    css.href = new URL(`./agent-attention.css?v=${build}`, window.location.href).href;
-    document.head.appendChild(css);
-    const js = document.createElement('script');
-    js.dataset.agentAttentionRuntime = '1';
-    js.src = new URL(`./agent-attention.js?v=${build}`, window.location.href).href;
-    document.body.appendChild(js);
-  }
 
   const requestedAgent = new URLSearchParams(window.location.search).get('agent');
   if (Number(cfg.agentId) === 0 && requestedAgent !== 'system' && !cfg.showOnboarding && cfg.endpoint && cfg.chatBaseUrl) {
@@ -468,8 +456,8 @@
       renderStep(true);
     });
 
-    onboardingCard.querySelector('[data-refresh-voice]')?.addEventListener('click', async button => {
-      const target = button.currentTarget;
+    onboardingCard.querySelector('[data-refresh-voice]')?.addEventListener('click', async event => {
+      const target = event.currentTarget;
       target.disabled = true;
       setStatus('Checking Voice Profile…');
       try {
