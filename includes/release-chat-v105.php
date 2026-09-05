@@ -12,7 +12,7 @@ function chat_account_state_intent_v241(string $query): bool
     if ($q === '') return false;
 
     if (preg_match(
-        '/\b(?:onboarding|setup status|set up status|what(?:\s+do\s+i|\s+am\s+i)?\s+(?:still\s+)?need(?:\s+to)?\s+set\s*up|what(?:\'s| is)\s+missing|finish\s+(?:my\s+)?setup)\b/u',
+        '/\b(?:onboarding|setup status|set up status|what(?:\s+do\s+i|\s+am\s+i)?\s+(?:still\s+)?need(?:\s+to)?\s+set\s*up|what\s+setup\s+(?:am\s+i\s+)?missing|what(?:\'s| is)\s+missing|finish\s+(?:my\s+)?setup)\b/u',
         $q
     )) return true;
 
