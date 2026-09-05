@@ -35,9 +35,14 @@ body:has(.account-chat-main){background:#f4f5f7;color:#111318}
 .account-access-card>span{color:#4f5862}
 .account-access-card:hover{border-color:#aeb5bd;background:#f8f9fa}
 .account-sidebar-link.active{background:#f1f3f5;color:#111318!important}
-/* Agent Brain and server-rendered account cards stay in the same light system. */
-.account-panel article{background:#fff;color:#111318;border-color:#d8dde3}
-.account-panel article strong,.account-panel article h3,.account-panel article h4{color:#111318}
-.account-panel article p,.account-panel article span,.account-panel article small{color:#68717b}
 .account-panel textarea,.account-panel select{background:#fff;color:#111318;border-color:#ccd2d8}
+/* Agent Brain was authored inside the dark Chat theme. Keep every account-owned surface light. */
+#agent-brain .agent-brain-stats article,#agent-brain .agent-brain-memory-grid>section,#agent-brain .agent-brain-tool-grid>a,#agent-brain .agent-memory-row,#agent-brain .agent-memory-detail{background:#fff!important;color:#111318!important;border-color:#d8dde3!important;box-shadow:none!important}
+#agent-brain .agent-brain-stats strong,#agent-brain .agent-brain-memory-grid strong,#agent-brain .agent-brain-tools strong,#agent-brain .agent-brain-tools h3{color:#111318!important}
+#agent-brain .agent-brain-stats span,#agent-brain .agent-brain-memory-grid span,#agent-brain .agent-brain-tool-grid small,#agent-brain .agent-brain-tool-grid p,#agent-brain .agent-memory-empty{color:#68717b!important}
+#agent-brain .agent-brain-tools>header{border-color:#d8dde3!important}
+#agent-brain .agent-soul-form textarea{background:#fff!important;color:#111318!important;border-color:#ccd2d8!important}
+#agent-brain .agent-soul-form small{color:#737b85!important}
+#agent-brain .agent-soul-reset button{background:#fff!important;color:#343a40!important;border:1px solid #ccd2d8!important}
+#agent-brain .agent-soul-reset button:hover{background:#f1f3f5!important;border-color:#adb5bd!important;color:#111318!important}
 @media(max-width:760px){.account-canvas{padding:12px}}
