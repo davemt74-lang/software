@@ -42,6 +42,10 @@ jobs:
           p.write_text(s.replace(old,new))
 
           p=Path('tests/member-navigation-contract.mjs'); s=p.read_text()
+          old_namespace="assert.ok(!profileAgent.includes('STONEFELLOW_PROFILE_NAMESPACE'), 'profile URL generation must not retain a Stonefellow namespace');"
+          new_namespace="assert.ok(!profileAgent.includes('const STONEFELLOW_PROFILE_NAMESPACE'), 'profile URL generation must not retain a Stonefellow namespace declaration');"
+          if old_namespace not in s: raise SystemExit('Missing namespace regression assertion')
+          s=s.replace(old_namespace,new_namespace)
           marker="assert.ok(!voiceProfileJs.includes('Stonefellow voice clone'), 'Voice Profile runtime must not hardcode the system name');"
           extra=marker+"\nassert.ok(voiceProfileJs.includes('`Your ${systemName} voice clone was created.`'), 'Voice Profile dynamic system name must use template interpolation');\nassert.ok(!voiceProfileJs.includes(\"'Your ${systemName} voice clone was created.'\"), 'Voice Profile must not render a literal ${systemName} token');"
           if marker not in s: raise SystemExit('Missing Voice Profile branding test marker')
