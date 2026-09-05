@@ -15,6 +15,12 @@
   let cursor = 0;
   let polling = false;
   let stopped = false;
+  let soundEnabled = cfg.soundEnabled !== false;
+  let socialChatEnabled = cfg.socialChatEnabled !== false;
+  let notificationAudioContext = null;
+  let notificationSoundReady = false;
+
+  const AudioContextCtor = window.AudioContext || window.webkitAudioContext || null;
 
   const initials = name => String(name || '?')
     .trim()
@@ -22,6 +28,53 @@
     .slice(0, 2)
     .map(part => part.charAt(0).toUpperCase())
     .join('') || '?';
+
+  async function unlockNotificationSound() {
+    if (!AudioContextCtor) return;
+    try {
+      notificationAudioContext ||= new AudioContextCtor();
+      if (notificationAudioContext.state === 'suspended') {
+        await notificationAudioContext.resume();
+      }
+      notificationSoundReady = notificationAudioContext.state === 'running';
+    } catch (error) {
+      notificationSoundReady = false;
+    }
+  }
+
+  function playIncomingSound() {
+    if (!soundEnabled || !notificationSoundReady || !notificationAudioContext) return;
+    try {
+      const context = notificationAudioContext;
+      const now = context.currentTime;
+      const oscillator = context.createOscillator();
+      const gain = context.createGain();
+      oscillator.type = 'sine';
+      oscillator.frequency.setValueAtTime(880, now);
+      oscillator.frequency.setValueAtTime(660, now + 0.09);
+      gain.gain.setValueAtTime(0.0001, now);
+      gain.gain.exponentialRampToValueAtTime(0.11, now + 0.012);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.19);
+      oscillator.connect(gain);
+      gain.connect(context.destination);
+      oscillator.start(now);
+      oscillator.stop(now + 0.2);
+    } catch (error) {}
+  }
+
+  function applyRuntimeSettings(settings = {}) {
+    if (Object.prototype.hasOwnProperty.call(settings, 'sound_enabled')) {
+      soundEnabled = settings.sound_enabled !== false;
+      cfg.soundEnabled = soundEnabled;
+    }
+    if (Object.prototype.hasOwnProperty.call(settings, 'social_chat_enabled')) {
+      socialChatEnabled = settings.social_chat_enabled !== false;
+      cfg.socialChatEnabled = socialChatEnabled;
+      rail.hidden = !socialChatEnabled;
+      windows.hidden = !socialChatEnabled;
+      document.body.classList.toggle('sf-team-rail-active', socialChatEnabled);
+    }
+  }
 
   function avatar(user, compact = false) {
     const wrap = document.createElement('span');
@@ -222,7 +275,7 @@
     form.addEventListener('submit', async event => {
       event.preventDefault();
       const text = input.value.trim();
-      if (!text || send.disabled) return;
+      if (!text || send.disabled || !socialChatEnabled) return;
       send.disabled = true;
       const payload = new FormData();
       payload.set('action', 'send');
@@ -309,16 +362,21 @@
   }
 
   async function handleMessages(messages) {
+    let notifyIncoming = false;
     for (const message of messages) {
-      cursor = Math.max(cursor, Number(message.id || 0));
+      const messageId = Number(message.id || 0);
+      cursor = Math.max(cursor, messageId);
       const peer = peerFromMessage(message);
       if (!peer.id) continue;
       const incoming = Number(message.sender_id) !== Number(cfg.userId);
+      const shouldNotify = incoming && messageId > 0 && !seen.has(messageId);
+      if (shouldNotify) notifyIncoming = true;
       let chat = chats.get(peer.id);
       if (incoming && !chat) chat = await openChat(peer);
       if (chat) appendMessage(chat, message);
       if (incoming) void markRead(peer.id);
     }
+    if (notifyIncoming) playIncomingSound();
   }
 
   async function poll() {
@@ -326,6 +384,7 @@
     polling = true;
     try {
       const data = await request(endpoint('poll', { since:cursor }));
+      if (data.settings) applyRuntimeSettings(data.settings);
       renderDirectory(Array.isArray(data.users) ? data.users : []);
       if (Array.isArray(data.messages) && data.messages.length) await handleMessages(data.messages);
       cursor = Math.max(cursor, Number(data.cursor || 0));
@@ -342,9 +401,18 @@
     }
   }
 
+  document.addEventListener('pointerdown', unlockNotificationSound, { once:true, capture:true });
+  document.addEventListener('keydown', unlockNotificationSound, { once:true, capture:true });
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden && !stopped) void poll();
   });
+  window.addEventListener('stonefellow:chat-settings-updated', event => {
+    applyRuntimeSettings(event.detail || {});
+  });
 
+  applyRuntimeSettings({
+    sound_enabled:cfg.soundEnabled !== false,
+    social_chat_enabled:cfg.socialChatEnabled !== false
+  });
   void poll();
 })();
