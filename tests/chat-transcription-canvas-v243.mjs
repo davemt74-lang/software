@@ -8,8 +8,11 @@ const recordings=read('api/artist-recordings-v198.php');
 const chat=read('chat.php');
 const canvas=read('chat-transcription-canvas.js');
 const css=read('chat-transcription-canvas.css');
+const profileActivity=read('profile-activity-chat.js');
+const profileActivityCss=read('profile-activity-chat.css');
 
 assert.doesNotThrow(()=>new Function(canvas),'transcription canvas JavaScript must parse as executable browser code');
+assert.doesNotThrow(()=>new Function(profileActivity),'Profile Activity JavaScript must parse as executable browser code');
 assert.ok(canonical.includes("require __DIR__ . '/artist-listening-v172.php'"),'canonical Artist Listening route must delegate to the surviving v172 implementation');
 assert.ok(versioned.includes("if ($action === 'recording')"),'versioned Artist Listening API must own recording delivery');
 assert.ok(versioned.includes('artist_listening_v197_stream_recording'),'recording delivery must call the private recording stream owner');
@@ -20,7 +23,10 @@ assert.ok(listening.includes("header('Content-Range: bytes '"),'partial recordin
 assert.ok(listening.includes("header('Content-Type: ' . (string)$recording['mime_type'])"),'recording stream must preserve the stored browser audio MIME');
 assert.ok(listening.includes("fopen($path, 'rb')"),'recording stream must read the retained private audio file');
 
-assert.ok(chat.includes("$transcriptionCanvasBuild = 'chat-transcription-canvas-v243-overlay-20260905'"),'Chat must own the current cache-busted transcription canvas build');
+assert.ok(chat.includes("$transcriptionCanvasBuild = 'chat-transcription-canvas-v243-layout-20260905'"),'Chat must own the current cache-busted transcription canvas build');
+assert.ok(chat.includes("$profileActivityBuild = 'profile-activity-overlay-20260905'"),'Chat must cache-bust the corrected Profile Activity overlay runtime');
+assert.ok(chat.includes("$chatProfileMenuExcluded = ['account'=>true, 'profile_agent'=>true]"),'Chat account dropdown must retain the canonical View Profile item');
+assert.ok(!chat.includes("$chatProfileMenuExcluded = ['profile'=>true"),'Chat must not suppress View Profile');
 assert.ok(chat.includes('data-chat-transcription-canvas'),'Chat must load the canonical transcription canvas runtime');
 assert.ok(chat.includes('/chat-transcription-canvas.js?v='),'Chat must load the transcription canvas JS under Artist Listening access');
 assert.ok(chat.includes('/chat-transcription-canvas.css?v='),'Chat must load the transcription canvas stylesheet');
@@ -40,5 +46,14 @@ assert.ok(css.includes('background:#fff'),'transcription canvas must use the can
 assert.ok(!css.includes('#171411'),'transcription canvas must not reintroduce the recovered brown player surface');
 assert.match(css,/\.transcription-canvas-backdrop\{[^}]*z-index:20200/,'recording backdrop must sit above the app header layer');
 assert.match(css,/\.chat-transcription-canvas-v243\{[^}]*z-index:20210/,'recording drawer must sit above its backdrop');
-assert.ok(css.includes('.chat-transcription-canvas-v243{width:100vw;height:100vh;height:100dvh}'),'mobile recording drawer must occupy the dynamic viewport height');
+assert.match(css,/\.chat-transcription-canvas-v243\{[^}]*width:min\(760px,96vw\)/,'desktop transcription drawer must provide a wide recording workspace');
+assert.ok(css.includes('audio[data-transcription-audio]{display:block!important;width:100%!important;inline-size:100%!important;max-width:100%!important;min-width:320px'),'retained audio player must not collapse to a tiny intrinsic width');
+assert.ok(css.includes('.transcription-canvas-current{width:100%;min-width:0;display:grid;grid-template-columns:minmax(0,1fr)'),'recording content must own a full-width non-collapsing grid track');
+assert.ok(css.includes('.chat-transcription-canvas-v243{width:100vw;height:100vh;height:100dvh;border-left:0}'),'mobile recording drawer must occupy the dynamic viewport height');
+
+assert.ok(profileActivity.includes('document.body.append(backdrop,canvas)'),'Profile Activity overlay must mount at body level so Chat stacking contexts cannot trap it');
+assert.match(profileActivityCss,/\.profile-activity-backdrop\{[^}]*z-index:20300/,'Profile Activity backdrop must cover the Chat header');
+assert.match(profileActivityCss,/\.profile-activity-canvas\{[^}]*z-index:20310/,'Profile Activity drawer must sit above its backdrop');
+assert.match(profileActivityCss,/\.profile-activity-canvas\{[^}]*width:min\(760px,96vw\)/,'Profile Activity desktop drawer must match the wide overlay workspace');
+assert.ok(profileActivityCss.includes('.profile-activity-canvas{width:100vw;height:100vh;height:100dvh;border-left:0}'),'Profile Activity mobile drawer must fill the dynamic viewport');
 console.log('CHAT_TRANSCRIPTION_CANVAS_V243=PASS');

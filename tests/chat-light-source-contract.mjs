@@ -22,7 +22,8 @@ assert.match(legacy, /data-chat-view-target="playlists"/, 'Playlists must stay i
 for (const removed of ['shows','photos','merch']) {
   assert.equal(legacy.includes(`data-chat-view-target="${removed}"`), false, `${removed} must be removed from the main sidebar`);
 }
-assert.match(chatPhp, /\['profile'=>true, 'account'=>true, 'profile_agent'=>true\]/, 'Chat dropdown must exclude profile/account/Profile Agent shortcuts');
+assert.match(chatPhp, /\['account'=>true, 'profile_agent'=>true\]/, 'Chat dropdown must retain View Profile while excluding duplicate account/Profile Agent shortcuts');
+assert.equal(chatPhp.includes("['profile'=>true, 'account'=>true, 'profile_agent'=>true]"), false, 'Chat dropdown must never suppress the canonical View Profile item');
 assert.equal(overlay.includes('body[data-agent-theme="light"]'), false, 'media overlay presentation must not depend on theme state');
 assert.match(profileActivity, /actions\.insertBefore\(button,avatar\|\|null\)/, 'Profile Activity badge must live in the upper-right action cluster');
 
