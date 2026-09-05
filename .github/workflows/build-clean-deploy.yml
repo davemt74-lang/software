@@ -32,6 +32,7 @@ jobs:
             --exclude='recovery-inventory.generated.json' \
             --exclude='admin/force-cache-repair-20260825.php'
           printf '%s\n' 'Source commit: 4eecaddcca85238271c0a590867ea4d9167275b0' > deploy/DEPLOY_SOURCE.txt
+          test -f deploy/.htaccess
 
       - name: Upload clean deploy ZIP
         uses: actions/upload-artifact@v4
@@ -39,4 +40,5 @@ jobs:
           name: software-deploy
           path: deploy/
           if-no-files-found: error
+          include-hidden-files: true
           compression-level: 6
