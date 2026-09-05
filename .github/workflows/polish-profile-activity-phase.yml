@@ -1,0 +1,32 @@
+name: Polish Profile Activity Phase
+on:
+  push:
+    branches: [feature/profile-activity-chat-canvas-20260905]
+    paths:
+      - .github/workflows/polish-profile-activity-phase.yml
+permissions:
+  contents: write
+jobs:
+  polish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/profile-activity-chat-canvas-20260905
+      - name: Apply review fixes
+        run: python3 tools/polish_profile_activity_phase.py
+      - name: Focused validation
+        run: |
+          php -l profile.php
+          node tests/profile-activity-chat-contract.mjs
+          node tests/profile-agent-attention-contract.mjs
+      - name: Commit review fixes and remove one-time patcher
+        run: |
+          rm tools/polish_profile_activity_phase.py
+          rm .github/workflows/polish-profile-activity-phase.yml
+          git config user.name "davemt74-lang"
+          git config user.email "davemt74@gmail.com"
+          git add -A
+          git commit -m "Harden Profile Activity presence and visitor UI"
+          git push origin HEAD:feature/profile-activity-chat-canvas-20260905
