@@ -66,7 +66,11 @@ assert.match(policy,/shared_knowledge_index_candidates_v236/,'cross-user knowled
 assert.match(policy,/shared_knowledge_index_item_v236/,'retrieval fetches the current authoritative source after discovery');
 assert.match(policy,/shared_knowledge_index_hash_v236/,'retrieval revalidates the source version');
 assert.match(policy,/chat_policy_can_use_v236/,'live authorization is checked again before context use');
-assert.match(policy,/Cross-user discovery MUST go through the pointer-only shared index/,'cross-user raw KB scans are explicitly forbidden by the canonical path');
+assert.match(policy,/WHERE created_by_user_id=\? AND knowledge_scope='personal'/,'direct personal Knowledge retrieval is owner-scoped');
+const sharedPersonalPolicy = policy.match(/function chat_policy_shared_personal_knowledge_v242\([\s\S]*?\n}\n\nfunction chat_policy_system_knowledge_v242/)?.[0] || '';
+assert.ok(sharedPersonalPolicy,'cross-user personal Knowledge policy is inspectable');
+assert.match(sharedPersonalPolicy,/shared_knowledge_index_candidates_v236/,'cross-user personal Knowledge discovery uses the shared pointer index');
+assert.doesNotMatch(sharedPersonalPolicy,/FROM knowledge_items|JOIN knowledge_items/,'cross-user personal Knowledge policy cannot raw-scan the Knowledge table');
 
 assert.match(usage,/CREATE TABLE IF NOT EXISTS user_data_retrieval_log/,'actual AI context use has a dedicated retrieval ledger');
 assert.match(usage,/owner_user_id/,'ledger records data owner');
