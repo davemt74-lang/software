@@ -1,0 +1,48 @@
+name: Build Clean Deploy ab4d9aad
+
+on:
+  push:
+    branches:
+      - deploy/package-ab4d9aad
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build clean runtime package
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p deploy
+          rsync -a ./ deploy/ \
+            --exclude='.git/' \
+            --exclude='.github/' \
+            --exclude='tests/' \
+            --exclude='tools/' \
+            --exclude='RECOVERY_RUNTIME_BASELINE.md' \
+            --exclude='RECOVERY_INVENTORY.md' \
+            --exclude='RECOVERY_INVENTORY.json' \
+            --exclude='admin/force-cache-repair-20260825.php' \
+            --exclude='deploy/' \
+            --exclude='software-deploy-*.zip'
+          printf '%s\n' 'ab4d9aad972c27142bccf13233f3e526bec3f736' > deploy/DEPLOY_SOURCE.txt
+          zip -qr software-deploy-ab4d9aad.zip deploy
+          unzip -t software-deploy-ab4d9aad.zip >/dev/null
+          sha256sum software-deploy-ab4d9aad.zip > software-deploy-ab4d9aad.sha256
+
+      - name: Upload deploy ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: software-deploy-ab4d9aad
+          path: |
+            software-deploy-ab4d9aad.zip
+            software-deploy-ab4d9aad.sha256
+          if-no-files-found: error
+          retention-days: 90
