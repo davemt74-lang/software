@@ -64,11 +64,13 @@ function profile_runtime_owner_state(PDO $pdo,array $user): array
     foreach($agents as $agent){
         if(!empty($agent['is_profile_agent'])){$suggestedAgentId=(int)$agent['id'];break;}
     }
+    $profilePublished=!empty($profile['is_public']);
     $publicEnabled=!empty($profile['profile_agent_enabled']);
     $selectedActive=(bool)($selectedAgent&&!empty($selectedAgent['is_active']));
-    $publicLive=$publicEnabled&&$selectedActive;
+    $publicLive=$profilePublished&&$publicEnabled&&$selectedActive;
     $publicReason='live';
-    if(!$publicEnabled)$publicReason='public_disabled';
+    if(!$profilePublished)$publicReason='profile_private';
+    elseif(!$publicEnabled)$publicReason='public_disabled';
     elseif($selectedAgentId<1)$publicReason='no_agent_selected';
     elseif(!$selectedAgent)$publicReason='agent_missing';
     elseif(!$selectedActive)$publicReason='agent_inactive';
@@ -107,6 +109,7 @@ function profile_runtime_owner_state(PDO $pdo,array $user): array
         'profile_url_example'=>url('/username'),
         'agents'=>$agents,
         'public_agent_status'=>[
+            'profile_published'=>$profilePublished,
             'enabled'=>$publicEnabled,
             'agent_id'=>$selectedAgentId,
             'agent_name'=>(string)($selectedAgent['display_name']??''),
