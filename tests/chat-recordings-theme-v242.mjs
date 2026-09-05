@@ -2,18 +2,27 @@ import fs from 'node:fs';
 import assert from 'node:assert/strict';
 
 const page = fs.readFileSync('chat.php','utf8');
+const legacy = fs.readFileSync('chat-legacy-v108.php','utf8');
+const chatCss = fs.readFileSync('chat.css','utf8');
 const persistence = fs.readFileSync('chat-recordings-v242.js','utf8');
 const api = fs.readFileSync('api/chat-recordings-v242.php','utf8');
-const theme = fs.readFileSync('agent-theme-v242.js','utf8');
-const themeCss = fs.readFileSync('agent-theme-v242.css','utf8');
 
 assert.match(page,/chat-recordings-v242-20260902/);
-assert.match(page,/agent-theme-v242-20260902/);
 assert.match(page,/STONEFELLOW_CHAT_RECORDINGS_V242_CONFIG/);
 assert.match(page,/api\/chat-recordings-v242\.php/);
-assert.match(page,/agent-theme-v242\.css/);
-assert.match(page,/agent-theme-v242\.js/);
 assert.ok(page.indexOf('chat-recordings-v242.js?v=') < page.indexOf('artist-listening-recordings.js?v='),'persistence listener must register before the existing recording command interceptor');
+
+// Chat is now permanently light at the canonical source. The old v242 theme
+// files may remain for other historical surfaces, but /chat.php must not load
+// them or restore a saved dark preference on reload.
+assert.doesNotMatch(page,/agent-theme-v242\.css/);
+assert.doesNotMatch(page,/agent-theme-v242\.js/);
+assert.doesNotMatch(page,/agent-theme-v242-20260902/);
+assert.match(legacy,/chat\.css\?v=206-source-light-20260905/);
+assert.match(chatCss,/:root\{--bg:#ffffff;--side:#f8fafc;--panel:#ffffff;--panel2:#f3f4f6;--cream:#111827;/);
+for (const token of ['#0b0a09','#11100e','#171411','#1d1915','#ddc4a4','rgba(190,155,111']) {
+  assert.equal(chatCss.includes(token), false, `recovered brown Chat token must stay removed: ${token}`);
+}
 
 assert.match(api,/hash_equals\(csrf_token\(\), \$csrf\)/);
 assert.match(api,/chat_recordings_v242_owned_conversation/);
@@ -36,16 +45,5 @@ assert.match(persistence,/transcript_excerpt/);
 assert.match(persistence,/Open transcript/);
 assert.match(persistence,/MutationObserver\(queueScan\)/,'persisted cards must be restored after canonical chat reload/sync DOM rebuilds');
 assert.doesNotMatch(persistence,/MediaRecorder/);
-
-assert.match(themeCss,/--bg:#050914/,'dark Agent theme must use near-black navy, not brown');
-assert.match(themeCss,/--side:#070d1a/);
-assert.match(themeCss,/body\[data-agent-theme="light"\]/);
-assert.match(themeCss,/--bg:#fff/);
-assert.match(theme,/stonefellow:agent-theme:v242/);
-assert.match(theme,/dataset\.v242ThemeToggle/);
-assert.match(theme,/Use white theme/);
-assert.match(theme,/Use dark theme/);
-assert.match(theme,/localStorage\.setItem\(key, next\)/);
-assert.doesNotMatch(theme,/chat-voice-v142|premium-voice-v117|conversation-voice/);
 
 console.log('CHAT_RECORDINGS_THEME_V242=PASS');
