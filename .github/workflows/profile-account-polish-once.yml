@@ -52,7 +52,6 @@ jobs:
 
           patch('voice-profile.js',[
               ("const clean=(value,limit=220)=>String(value??'').replace(/\\s+/g,' ').trim().slice(0,limit);","const clean=(value,limit=220)=>String(value??'').replace(/\\s+/g,' ').trim().slice(0,limit);\n  const systemName=clean(cfg.systemName||'System',80);"),
-              ("Recognition consent can be configured now. Provider speaker enrollment remains a separate identity step.","Recognition consent can be configured now. Provider speaker enrollment remains a separate identity step."),
               ("Enable recognition consent when you want Stonefellow to associate a verified provider voice match with your conversational identity.","Enable recognition consent when you want ${systemName} to associate a verified provider voice match with your conversational identity."),
               ("I confirm this selected recording contains my own voice. Create my Stonefellow voice clone and send this sample to ElevenLabs?","I confirm this selected recording contains my own voice. Create my ${systemName} voice clone and send this sample to ElevenLabs?"),
               ("Your Stonefellow voice clone was created.","Your ${systemName} voice clone was created."),
