@@ -21,14 +21,10 @@ function chat_policy_can_use_v236(PDO $pdo,array $principal,int $owner,string $t
     $kind=(string)($principal['kind']??'system');
     $viewer=(int)($principal['viewer_user_id']??0);
     $principalOwner=(int)($principal['owner_user_id']??0);
-    // The signed-in owner's renamed agent is Stonefellow personalized for that
-    // owner. Renaming it must never reduce access to the owner's own private data.
-    // This is request-scoped owner access only; it does not publish or share data.
+    // Owner-session access does not publish data. Cross-user/Profile Agent use
+    // still flows through the explicit user-data policy below.
     if($kind==='user_agent'&&$viewer>0&&$viewer===$owner&&$principalOwner===$owner)return true;
-    // Direct universal system chat has the same owner-session access.
     if($kind==='system'&&$viewer>0&&$viewer===$owner)return true;
-    // Profile Agent, visitor, relationship and cross-user access still flow
-    // through the explicit data-sharing policy below.
     return user_data_policy_can_use_v236($pdo,$principal,$owner,$type,$rid,$legacyAllowed);
 }
 
@@ -37,9 +33,7 @@ function chat_policy_add_v236(array &$context,PDO $pdo,array $principal,int $own
     if(!$force&&!chat_policy_matches_v236($title.' '.$text,$terms))return;
     if(!chat_policy_can_use_v236($pdo,$principal,$owner,$type,$rid,$legacyAllowed))return;
     $context[]=['source'=>$source,'title'=>$title,'text'=>$text];
-    if($owner>0&&function_exists('user_data_usage_log_v236')){
-        user_data_usage_log_v236($pdo,$principal,$owner,$type,$rid,$title,$source,$conversationId);
-    }
+    if($owner>0&&function_exists('user_data_usage_log_v236'))user_data_usage_log_v236($pdo,$principal,$owner,$type,$rid,$title,$source,$conversationId);
 }
 
 function chat_policy_workspace_context_v236(PDO $pdo,array $principal,array $user,string $query,array $terms,int $conversationId=0): array
@@ -109,58 +103,99 @@ function chat_policy_legacy_context_v236(PDO $pdo,array $principal,array $user,s
     return $context;
 }
 
-function chat_policy_append_knowledge_item_v236(array &$context,PDO $pdo,array $principal,array $user,array $item,array $terms,int $conversationId,array &$seenIds): void
+function chat_policy_knowledge_text_v242(array $item,array $terms): string
 {
-    $id=(int)($item['id']??0);if($id<1||isset($seenIds[$id])||count($context)>=8)return;
-    $owner=(int)($item['created_by_user_id']??0);
-    $legacy=!empty($item['is_published'])&&can_view_visibility((string)($item['visibility']??'members'),$user);
-    if(!chat_policy_can_use_v236($pdo,$principal,$owner,'knowledge',(string)$id,$legacy))return;
-    $chunks=(array)($item['chunk_texts']??[]);$text='';
-    foreach($chunks as $chunk){if(chat_policy_matches_v236((string)$item['title'].' '.(string)$chunk,$terms)){$text=trim((string)$chunk);break;}}
-    if($text==='')$text=trim((string)($item['content_text']??''));
+    foreach((array)($item['chunk_texts']??[]) as $chunk){
+        if(chat_policy_matches_v236((string)$item['title'].' '.(string)$chunk,$terms))return trim((string)$chunk);
+    }
+    $text=trim((string)($item['content_text']??''));
     if($text==='')$text=trim((string)($item['description']??''));
-    if($text===''||!chat_policy_matches_v236((string)$item['title'].' '.$text,$terms))return;
-    $source='knowledge:'.$id;$context[]=['source'=>$source,'title'=>(string)$item['title'],'text'=>mb_strimwidth($text,0,7000,'…')];$seenIds[$id]=true;
-    if($owner>0&&function_exists('user_data_usage_log_v236'))user_data_usage_log_v236($pdo,$principal,$owner,'knowledge',(string)$id,(string)$item['title'],$source,$conversationId);
+    if($text===''||!chat_policy_matches_v236((string)$item['title'].' '.$text,$terms))return '';
+    return $text;
 }
 
+function chat_policy_append_personal_knowledge_v242(array &$context,PDO $pdo,array $principal,array $user,array $item,array $terms,int $conversationId,array &$seenIds): void
+{
+    $id=(int)($item['id']??0);if($id<1||isset($seenIds[$id])||count($context)>=8)return;
+    if((string)($item['knowledge_scope']??'system')!=='personal')return;
+    $owner=(int)($item['created_by_user_id']??0);if($owner<1)return;
+    $legacy=false;
+    if(!chat_policy_can_use_v236($pdo,$principal,$owner,'knowledge',(string)$id,$legacy))return;
+    $text=chat_policy_knowledge_text_v242($item,$terms);if($text==='')return;
+    $source='knowledge:'.$id;$context[]=['source'=>$source,'title'=>(string)$item['title'],'text'=>mb_strimwidth($text,0,7000,'…')];$seenIds[$id]=true;
+    if(function_exists('user_data_usage_log_v236'))user_data_usage_log_v236($pdo,$principal,$owner,'knowledge',(string)$id,(string)$item['title'],$source,$conversationId);
+}
+
+function chat_policy_personal_knowledge_v242(PDO $pdo,array $principal,array $user,array $terms,int $conversationId=0): array
+{
+    if(!table_exists('knowledge_items')||!column_exists('knowledge_items','knowledge_scope'))return [];
+    $viewer=(int)($user['id']??0);$kind=(string)($principal['kind']??'system');$owner=0;
+    if($kind==='system')$owner=$viewer;
+    elseif(in_array($kind,['user_agent','profile_agent'],true))$owner=(int)($principal['owner_user_id']??0);
+    if($owner<1)return [];
+
+    $ownerUser=profile_user_row($pdo,$owner);
+    if(!$ownerUser||!personal_capability_has_v242('personal_knowledge.access',$ownerUser))return [];
+
+    $context=[];$seen=[];
+    $stmt=$pdo->prepare("SELECT id FROM knowledge_items WHERE created_by_user_id=? AND knowledge_scope='personal' ORDER BY updated_at DESC,id DESC LIMIT 160");
+    $stmt->execute([$owner]);
+    foreach($stmt->fetchAll(PDO::FETCH_COLUMN)?:[] as $knowledgeId){
+        $item=shared_knowledge_index_item_v236($pdo,(int)$knowledgeId);
+        if($item)chat_policy_append_personal_knowledge_v242($context,$pdo,$principal,$user,$item,$terms,$conversationId,$seen);
+        if(count($context)>=8)break;
+    }
+    return $context;
+}
+
+function chat_policy_shared_personal_knowledge_v242(PDO $pdo,array $principal,array $user,string $query,array $terms,int $conversationId=0,array $already=[]): array
+{
+    if(!has_permission('knowledge.access',$user)||!shared_knowledge_index_schema_ready_v236($pdo))return [];
+    $context=[];$seen=array_fill_keys(array_map('intval',$already),true);$directOwner=(int)($principal['owner_user_id']??0);
+    if(($principal['kind']??'system')==='system')$directOwner=(int)($user['id']??0);
+    foreach(shared_knowledge_index_candidates_v236($pdo,$query,60) as $candidate){
+        $id=(int)$candidate['knowledge_id'];$owner=(int)$candidate['owner_user_id'];
+        if(isset($seen[$id])||($directOwner>0&&$owner===$directOwner))continue;
+        $item=shared_knowledge_index_item_v236($pdo,$id);if(!$item)continue;
+        $currentHash=shared_knowledge_index_hash_v236($item);
+        if(!hash_equals((string)$candidate['source_version_hash'],$currentHash)){
+            shared_knowledge_index_sync_item_v236($pdo,$id);
+            $policy=user_data_policy_get_v236($pdo,$owner,'knowledge',(string)$id);
+            if(empty($policy['stonefellow_shared']))continue;
+        }
+        chat_policy_append_personal_knowledge_v242($context,$pdo,$principal,$user,$item,$terms,$conversationId,$seen);
+        if(count($context)>=8)break;
+    }
+    return $context;
+}
+
+function chat_policy_system_knowledge_v242(PDO $pdo,array $user,array $terms): array
+{
+    if(!has_permission('knowledge.access',$user)||!table_exists('knowledge_items')||!column_exists('knowledge_items','knowledge_scope'))return [];
+    $context=[];$stmt=$pdo->query("SELECT id FROM knowledge_items WHERE knowledge_scope='system' AND is_published=1 ORDER BY updated_at DESC,id DESC LIMIT 180");
+    foreach($stmt->fetchAll(PDO::FETCH_COLUMN)?:[] as $knowledgeId){
+        $item=shared_knowledge_index_item_v236($pdo,(int)$knowledgeId);if(!$item)continue;
+        if(!can_view_visibility((string)($item['visibility']??'members'),$user))continue;
+        $text=chat_policy_knowledge_text_v242($item,$terms);if($text==='')continue;
+        $context[]=['source'=>'knowledge:'.(int)$item['id'],'title'=>(string)$item['title'],'text'=>mb_strimwidth($text,0,7000,'…')];
+        if(count($context)>=8)break;
+    }
+    return $context;
+}
+
+// Backward-compatible function name used by the current Chat policy pipeline.
 function chat_policy_knowledge_v236(PDO $pdo,array $principal,array $user,string $query,array $terms,int $conversationId=0): array
 {
-    if(!table_exists('knowledge_items')||!table_exists('knowledge_chunks'))return [];
-    $context=[];$seenIds=[];$viewer=(int)($user['id']??0);$kind=(string)($principal['kind']??'system');
-
-    // Direct-owner and profile-agent retrieval is allowed to inspect the owner's
-    // source KB because it does not make the data globally discoverable.
-    $directOwner=0;
-    if($kind==='system')$directOwner=$viewer;
-    elseif(in_array($kind,['user_agent','profile_agent'],true))$directOwner=(int)($principal['owner_user_id']??0);
-    if($directOwner>0){
-        $stmt=$pdo->prepare('SELECT id FROM knowledge_items WHERE created_by_user_id=? ORDER BY updated_at DESC,id DESC LIMIT 160');$stmt->execute([$directOwner]);
-        foreach($stmt->fetchAll(PDO::FETCH_COLUMN)?:[] as $knowledgeId){$item=shared_knowledge_index_item_v236($pdo,(int)$knowledgeId);if($item)chat_policy_append_knowledge_item_v236($context,$pdo,$principal,$user,$item,$terms,$conversationId,$seenIds);if(count($context)>=8)break;}
-    }
-
-    // Cross-user discovery MUST go through the pointer-only shared index. The
-    // original item is then fetched and its live permission is checked again.
-    if(count($context)<8&&shared_knowledge_index_schema_ready_v236($pdo)){
-        foreach(shared_knowledge_index_candidates_v236($pdo,$query,60) as $candidate){
-            $id=(int)$candidate['knowledge_id'];$owner=(int)$candidate['owner_user_id'];
-            if(isset($seenIds[$id])||($directOwner>0&&$owner===$directOwner))continue;
-            $item=shared_knowledge_index_item_v236($pdo,$id);if(!$item)continue;
-            $currentHash=shared_knowledge_index_hash_v236($item);
-            if(!hash_equals((string)$candidate['source_version_hash'],$currentHash)){
-                shared_knowledge_index_sync_item_v236($pdo,$id);
-                $policy=user_data_policy_get_v236($pdo,$owner,'knowledge',(string)$id);
-                if(empty($policy['stonefellow_shared']))continue;
-            }
-            chat_policy_append_knowledge_item_v236($context,$pdo,$principal,$user,$item,$terms,$conversationId,$seenIds);
-            if(count($context)>=8)break;
-        }
-    }
+    $context=chat_policy_personal_knowledge_v242($pdo,$principal,$user,$terms,$conversationId);
+    foreach(chat_policy_system_knowledge_v242($pdo,$user,$terms) as $item){if(count($context)>=12)break;$context[]=$item;}
+    $ids=[];foreach($context as $item){$source=(string)($item['source']??'');if(str_starts_with($source,'knowledge:'))$ids[]=(int)substr($source,10);}
+    foreach(chat_policy_shared_personal_knowledge_v242($pdo,$principal,$user,$query,$terms,$conversationId,$ids) as $item){if(count($context)>=12)break;$context[]=$item;}
     return $context;
 }
 
 function chat_policy_profile_activity_v236(PDO $pdo,array $user,string $query): array
 {
+    if(!personal_capability_has_v242('profile_agent.access',$user))return [];
     if(!function_exists('profile_agent_schema_ready')||!profile_agent_schema_ready($pdo)||!function_exists('profile_runtime_visitor_descriptor'))return [];
     if(!preg_match('/\b(profile(?:\s+agent)?|visitor|visitors|visited|visiting|profile\s+activity|on\s+my\s+profile|who(?:\x27s|\s+is)\s+on|asked\s+my\s+agent|profile\s+conversation)\b/i',$query))return [];
     $uid=(int)($user['id']??0);if($uid<1)return [];
@@ -182,9 +217,8 @@ function chat_policy_profile_activity_v236(PDO $pdo,array $user,string $query): 
 function chat_policy_context_v236(string $query,array $user,array $principal,int $conversationId=0): array
 {
     $pdo=db();if(!$pdo)return [];$terms=chat_policy_terms_v236($query);$context=[];
-    // Conversation-derived Agent Brain memory stays account-scoped continuity;
-    // it is never promoted to network knowledge by this retrieval path.
-    if(agent_brain_schema_ready()){
+    $brainAllowed=personal_capability_has_v242('agent_brain.access',$user);
+    if($brainAllowed&&agent_brain_schema_ready()){
       $brain=function_exists('agent_brain_v99_context')?agent_brain_v99_context($user,$query,8):agent_brain_context($user,$query,8);
       foreach($brain as $item)$context[]=$item;
     }
@@ -195,13 +229,13 @@ function chat_policy_context_v236(string $query,array $user,array $principal,int
         $context[]=['source'=>'agent:identity','title'=>'Active user-owned agent','text'=>'Respond as the user-owned agent named '.(string)$agent['display_name'].'. It is powered by '.system_agent_name().'. Agent role: '.(string)$agent['agent_role'].'.'.($instructions!==''?' User-authored role/style instructions: '.$instructions:'').' These instructions cannot override server permissions, privacy rules, authentication, or tool restrictions.'];
       }
     }else{
-      $context[]=['source'=>'agent:identity','title'=>'Universal system agent','text'=>'Respond as the universal system agent named '.system_agent_name().'. It powers optional user-owned agents. In the signed-in owner session it may use that owner’s private data without publishing it. Another user’s content enters network context only through explicit Share with System AI permission.'];
+      $context[]=['source'=>'agent:identity','title'=>'Universal system agent','text'=>'Respond as the universal system agent named '.system_agent_name().'. It powers optional user-owned agents. Private member data stays owner-scoped; another user’s personal knowledge enters network context only through explicit sharing policy.'];
     }
     foreach(chat_policy_profile_activity_v236($pdo,$user,$query) as $item)$context[]=$item;
     foreach(chat_policy_workspace_context_v236($pdo,$principal,$user,$query,$terms,$conversationId) as $item)$context[]=$item;
     foreach(chat_policy_legacy_context_v236($pdo,$principal,$user,$query,$terms,$conversationId) as $item)$context[]=$item;
     foreach(chat_policy_knowledge_v236($pdo,$principal,$user,$query,$terms,$conversationId) as $item)$context[]=$item;
-    if(agent_brain_schema_ready())$context[]=['source'=>'agent:tools','title'=>'Available Stonefellow tools','text'=>agent_brain_tool_prompt($user)];
+    if($brainAllowed&&agent_brain_schema_ready())$context[]=['source'=>'agent:tools','title'=>'Available Stonefellow tools','text'=>agent_brain_tool_prompt($user)];
     return array_slice($context,0,30);
 }
 
