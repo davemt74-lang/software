@@ -1,5 +1,6 @@
 (() => {
   const build='profile-activity-20260905';
+  const memberBase=new URL('.',document.currentScript?.src||window.location.href);
   const openSidebar = document.getElementById('openChatSidebar');
   const closeSidebar = document.getElementById('closeChatSidebar');
   const backdrop = document.getElementById('chatSidebarBackdrop');
@@ -12,7 +13,7 @@
   let notificationTimer=0;
 
   if((notificationMenu||profileMenu)&&!document.querySelector('link[data-member-header-ui]')){
-    const css=document.createElement('link');css.rel='stylesheet';css.dataset.memberHeaderUi='1';css.href=new URL(`./chat-header-ui.css?v=${build}`,window.location.href).href;document.head.appendChild(css);
+    const css=document.createElement('link');css.rel='stylesheet';css.dataset.memberHeaderUi='1';css.href=new URL(`chat-header-ui.css?v=${build}`,memberBase).href;document.head.appendChild(css);
   }
 
   const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
@@ -38,7 +39,7 @@
   }
   async function refreshNotifications(){
     if(!notificationButton||document.visibilityState!=='visible')return;
-    try{const endpoint=new URL('./api/member-notifications.php',window.location.href).pathname,r=await fetch(endpoint,{credentials:'same-origin',cache:'no-store'}),d=await r.json().catch(()=>null);if(r.ok)renderNotificationState(d);}catch(_e){}
+    try{const endpoint=new URL('api/member-notifications.php',memberBase).pathname,r=await fetch(endpoint,{credentials:'same-origin',cache:'no-store'}),d=await r.json().catch(()=>null);if(r.ok)renderNotificationState(d);}catch(_e){}
   }
 
   openSidebar?.addEventListener('click',() => { closeNotifications(); closeProfile(); document.body.classList.add('chat-nav-open'); });
@@ -73,7 +74,7 @@
   if (document.querySelector('.account-canvas-content')) {
     if(!document.querySelector('[data-account-agent-settings-loader]')){
       const loader = document.createElement('script');
-      loader.src = new URL(`./account-agent-settings-loader-v236.js?v=${build}`,window.location.href).href;
+      loader.src = new URL(`account-agent-settings-loader-v236.js?v=${build}`,memberBase).href;
       loader.dataset.accountAgentSettingsLoader = 'member-shell';
       document.body.appendChild(loader);
     }
