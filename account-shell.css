@@ -1,0 +1,204 @@
+@import url('./account.css?v=account-light-shell-20260905');
+@import url('./account-agent-settings-v236.css?v=account-light-shell-20260905');
+
+/* Canonical Account workspace surface.
+   Loaded only by the Account runtime after the shared authenticated shell. */
+html,
+body,
+.chat-app,
+.account-chat-main,
+.account-canvas{
+  background:#fff!important;
+  color:#111318!important;
+}
+
+.account-chat-main{
+  min-width:0;
+}
+
+.account-chat-main .chat-topbar,
+.account-chat-main .chat-sidebar,
+.account-chat-main ~ .chat-sidebar,
+.workspace-main-sidebar{
+  background:#fff!important;
+  color:#111318!important;
+  border-color:#d8dde3!important;
+  box-shadow:none!important;
+}
+
+.workspace-main-sidebar .chat-sidebar-nav-link,
+.workspace-main-sidebar .chat-sidebar-footer>a,
+.workspace-main-sidebar .chat-history-label,
+.workspace-main-sidebar .chat-brand{
+  color:#4f5862!important;
+}
+
+.workspace-main-sidebar .chat-brand,
+.workspace-main-sidebar .chat-sidebar-nav-link strong{
+  color:#111318!important;
+}
+
+.workspace-main-sidebar .chat-sidebar-nav-link:hover,
+.workspace-main-sidebar .chat-sidebar-nav-link.active{
+  background:#f1f3f5!important;
+  color:#111318!important;
+}
+
+.workspace-main-sidebar .chat-sidebar-nav-link>span{
+  color:#68717b!important;
+}
+
+.account-canvas{
+  min-height:0;
+  overflow:auto;
+  padding:24px;
+}
+
+.account-canvas-inner{
+  width:min(1120px,100%);
+  margin:0 auto;
+}
+
+.account-canvas-hero,
+.account-canvas-nav,
+.account-panel,
+.account-access-card,
+#agent-brain .agent-brain-stats article,
+#agent-brain .agent-brain-memory-grid>section,
+#agent-brain .agent-brain-tool-grid>a,
+.account-agent-v236 .sf-agent-system,
+.account-agent-v236 .sf-agent-card,
+.account-agent-v236 .sf-agent-form,
+.account-agent-v236 .sf-policy-table,
+.account-agent-v236 .sf-policy-row,
+.account-agent-v236 .sf-shared-index-card,
+.account-agent-v236 .sf-usage-summary article,
+.account-agent-v236 .sf-usage-row,
+.account-agent-v236 .sf-rule-card,
+.account-agent-v236 .sf-agent-empty{
+  background:#fff!important;
+  color:#111318!important;
+  border-color:#d8dde3!important;
+  box-shadow:none!important;
+}
+
+.account-canvas-grid{
+  grid-template-columns:210px minmax(0,1fr);
+  gap:18px;
+}
+
+.account-canvas-content{
+  min-width:0;
+  gap:16px;
+}
+
+.account-panel{
+  overflow:hidden;
+}
+
+.account-panel-head h2,
+.account-canvas-user h1,
+.account-access-card strong,
+.account-agent-v236 h3,
+.account-agent-v236 strong,
+#agent-brain strong,
+#agent-brain h3{
+  color:#111318!important;
+}
+
+.account-panel-head p,
+.account-panel-head span,
+.account-canvas-meta,
+.account-canvas-user>div>span,
+.account-access-card p,
+.account-access-card small,
+.account-agent-v236 p,
+.account-agent-v236 small,
+.account-agent-v236 span,
+#agent-brain p,
+#agent-brain span,
+#agent-brain small{
+  color:#68717b!important;
+}
+
+.account-field input,
+.account-field textarea,
+.account-field select,
+.account-agent-v236 input,
+.account-agent-v236 textarea,
+.account-agent-v236 select{
+  background:#fff!important;
+  color:#111318!important;
+  border-color:#ccd2d8!important;
+  box-shadow:none!important;
+}
+
+.account-field input:focus,
+.account-field textarea:focus,
+.account-field select:focus,
+.account-agent-v236 input:focus,
+.account-agent-v236 textarea:focus,
+.account-agent-v236 select:focus{
+  border-color:#555d66!important;
+  box-shadow:0 0 0 2px rgba(17,19,24,.08)!important;
+  outline:none!important;
+}
+
+.account-submit,
+.account-shell-button.primary{
+  background:#111318!important;
+  color:#fff!important;
+  border-color:#111318!important;
+}
+
+.account-shell-button,
+.account-file-button,
+#agent-brain .agent-soul-reset button,
+.account-agent-v236 button,
+.account-agent-v236 a.sf-agent-system-link{
+  background:#fff!important;
+  color:#343a40!important;
+  border-color:#ccd2d8!important;
+}
+
+.account-shell-button:hover,
+.account-file-button:hover,
+#agent-brain .agent-soul-reset button:hover,
+.account-agent-v236 button:hover,
+.account-agent-v236 a.sf-agent-system-link:hover{
+  background:#f1f3f5!important;
+  color:#111318!important;
+  border-color:#adb5bd!important;
+}
+
+.chat-top-dropdown,
+.chat-profile-summary,
+.chat-notification-dropdown>header{
+  background:#fff!important;
+  color:#111318!important;
+  border-color:#d8dde3!important;
+}
+
+@media(max-width:820px){
+  .account-canvas{padding:14px}
+  .account-canvas-grid{grid-template-columns:1fr}
+  .account-canvas-nav{
+    position:static;
+    display:flex;
+    gap:4px;
+    overflow-x:auto;
+    white-space:nowrap;
+  }
+  .account-canvas-nav a{flex:0 0 auto}
+}
+
+@media(max-width:560px){
+  .account-canvas{padding:10px}
+  .account-canvas-hero{padding:14px}
+  .account-panel{padding:14px}
+  .account-fields,
+  .account-access-grid{grid-template-columns:1fr}
+  .account-agent-v236 .sf-agent-list,
+  .account-agent-v236 .sf-rule-grid,
+  .account-agent-v236 .sf-usage-summary{grid-template-columns:1fr}
+}
