@@ -452,7 +452,7 @@ $accountBrainTools = agent_brain_tools($user);
                 </div>
               </form>
 
-              <form method="post" class="agent-soul-reset" onsubmit="return confirm('Reset your private SOUL.md to the <?= e(system_agent_name()) ?> default?');">
+              <form method="post" class="agent-soul-reset" onsubmit="return confirm(<?= e(json_encode('Reset your private SOUL.md to the ' . system_agent_name() . ' default?', JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)) ?>);">
                 <?= csrf_field() ?>
                 <input type="hidden" name="action" value="soul_reset">
                 <button type="submit">Reset to <?= e(system_agent_name()) ?> Default</button>

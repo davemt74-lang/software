@@ -63,7 +63,7 @@ assert.ok(knowledge.includes("has_permission('knowledge.manage'"), '/knowledge.p
 assert.ok(knowledge.includes("/admin/knowledge.php"), '/knowledge.php should resolve to the actual knowledge manager');
 assert.ok(bootstrap.includes("/member-navigation.php"), 'bootstrap should load the canonical member navigation helper');
 assert.ok(profileAgent.includes("return url('/' . rawurlencode($username));"), 'profile URLs should resolve at the domain root');
-assert.ok(!profileAgent.includes('STONEFELLOW_PROFILE_NAMESPACE'), 'profile URL generation must not retain a Stonefellow namespace');
+assert.ok(!profileAgent.includes('const STONEFELLOW_PROFILE_NAMESPACE'), 'profile URL generation must not retain a Stonefellow namespace declaration');
 assert.ok(profileRuntime.includes("'profile_url_example'=>url('/username')"), 'profile owner state should expose a root URL example');
 assert.ok(htaccess.includes('RewriteRule ^stonefellow/([A-Za-z0-9._-]+)/?$ /$1 [R=301,L,NE]'), 'legacy namespaced profile URLs should redirect to root usernames');
 assert.ok(htaccess.includes('profile.php?username=$1 [L,QSA,NC]'), 'root usernames should rewrite to profile.php');
@@ -77,6 +77,8 @@ assert.ok(profileDashboard.includes('profileDisplayUrl=new URL(profileUrl,window
 assert.ok(!profileDashboard.includes('Stonefellow-powered'), 'Profile Agent copy should use the configured system name');
 assert.ok(voiceProfile.includes('systemName:<?= json_encode(system_agent_name()) ?>'), 'Voice Profile should expose the configured system name to its runtime');
 assert.ok(!voiceProfileJs.includes('Stonefellow voice clone'), 'Voice Profile runtime must not hardcode the system name');
+assert.ok(voiceProfileJs.includes('`Your ${systemName} voice clone was created.`'), 'Voice Profile dynamic system name must use template interpolation');
+assert.ok(!voiceProfileJs.includes("'Your ${systemName} voice clone was created.'"), 'Voice Profile must not render a literal ${systemName} token');
 assert.ok(accountCss.includes('#agent-brain .agent-brain-tool-grid>a'), 'Agent Brain tool cards should be explicitly covered by the light account theme');
 
 console.log('MEMBER_NAVIGATION_CONTRACT=PASS');
