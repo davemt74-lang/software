@@ -1,0 +1,35 @@
+name: Temporary Chat Light Source Migration
+
+on:
+  push:
+    branches:
+      - fix/chat-remove-brown-theme
+
+permissions:
+  contents: write
+
+jobs:
+  migrate:
+    if: ${{ !contains(github.event.head_commit.message, '[chat-light-migrated]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/chat-remove-brown-theme
+          fetch-depth: 0
+      - name: Apply source migration
+        run: python3 tools/tmp_chat_light_source_migration.py
+      - name: Focused source contract
+        run: node tests/chat-light-source-contract.mjs
+      - name: PHP lint current Chat shell
+        run: |
+          php -l chat.php
+          php -l chat-legacy-v108.php
+      - name: Commit migration
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "Canonicalize Chat light source and navigation [chat-light-migrated]"
+          git push origin HEAD:fix/chat-remove-brown-theme
