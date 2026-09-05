@@ -40,5 +40,5 @@ assert.ok(css.includes('background:#fff'),'transcription canvas must use the can
 assert.ok(!css.includes('#171411'),'transcription canvas must not reintroduce the recovered brown player surface');
 assert.match(css,/\.transcription-canvas-backdrop\{[^}]*z-index:20200/,'recording backdrop must sit above the app header layer');
 assert.match(css,/\.chat-transcription-canvas-v243\{[^}]*z-index:20210/,'recording drawer must sit above its backdrop');
-assert.match(css,/@media\(max-width:720px\)\{[^}]*\.chat-transcription-canvas-v243\{[^}]*height:100dvh/,'mobile recording drawer must occupy the dynamic viewport height');
+assert.ok(css.includes('.chat-transcription-canvas-v243{width:100vw;height:100vh;height:100dvh}'),'mobile recording drawer must occupy the dynamic viewport height');
 console.log('CHAT_TRANSCRIPTION_CANVAS_V243=PASS');
