@@ -17,6 +17,18 @@ jobs:
         with:
           ref: fix/chat-remove-brown-theme
           fetch-depth: 0
+      - name: Harden migration for all recovered brown border alphas
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('tools/tmp_chat_light_source_migration.py')
+          s = p.read_text()
+          needle = "for old, new in rgba_replacements.items():\n    css = css.replace(old, new)\n"
+          insert = needle + "css = re.sub(r'rgba\\(190,155,111,([.0-9]+)\\)', r'rgba(17,24,39,\\1)', css)\n"
+          if needle not in s:
+              raise SystemExit('migration insertion point missing')
+          p.write_text(s.replace(needle, insert, 1))
+          PY
       - name: Apply source migration
         run: python3 tools/tmp_chat_light_source_migration.py
       - name: Focused source contract
