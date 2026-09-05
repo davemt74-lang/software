@@ -132,12 +132,16 @@ function profile_runtime_owner_state(PDO $pdo,array $user): array
     elseif(!$selectedAgent)$publicReason='agent_missing';
     elseif(!$selectedActive)$publicReason='agent_inactive';
 
-    $visits=$pdo->prepare('SELECT id,session_key,visitor_user_id,identity_disclosed,view_count,first_seen_at,last_seen_at,last_message_at FROM profile_visit_sessions WHERE owner_user_id=? AND view_count>0 ORDER BY last_seen_at DESC,id DESC LIMIT 50');
+    $visits=$pdo->prepare("SELECT s.id,s.session_key,s.visitor_user_id,s.identity_disclosed,s.view_count,s.first_seen_at,s.last_seen_at,s.last_message_at,
+      (SELECT COUNT(*) FROM profile_events e0 WHERE e0.owner_user_id=s.owner_user_id AND e0.profile_session_id=s.id AND e0.event_type='profile_view') AS visit_count
+      FROM profile_visit_sessions s WHERE s.owner_user_id=? AND s.view_count>0 ORDER BY s.last_seen_at DESC,s.id DESC LIMIT 50");
     $visits->execute([$uid]);$visitRows=$visits->fetchAll()?:[];
     foreach($visitRows as &$v){
         $v=array_merge($v,profile_runtime_visitor_descriptor($pdo,$uid,$v));
         $v['profile_session_id']=(int)$v['id'];
-        $v['repeat_visitor']=(int)($v['view_count']??0)>1;
+        $v['page_view_count']=(int)($v['view_count']??0);
+        $v['visit_count']=(int)($v['visit_count']??0);
+        $v['repeat_visitor']=$v['visit_count']>1;
         $v['active_now']=!empty($v['last_seen_at'])&&strtotime((string)$v['last_seen_at'])>=time()-300;
         unset($v['visitor_user_id'],$v['session_key']);
     }unset($v);
