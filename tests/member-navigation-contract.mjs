@@ -9,6 +9,7 @@ const account = read('account.php');
 const admin = read('admin/_header.php');
 const header = read('includes/header.php');
 const knowledge = read('knowledge.php');
+const voiceProfile = read('voice-profile.php');
 const bootstrap = read('includes/bootstrap.php');
 
 for (const [label, route] of [
@@ -47,6 +48,9 @@ assert.ok(chat.includes('My Transcriptions'), 'Chat sidebar should use the My Tr
 assert.ok(listening.includes("'userMenuLinks'=>member_navigation_menu_links($user)"), 'Artist Listening should receive canonical menu JSON');
 assert.ok(!listening.includes('my-library.php'), 'Artist Listening menu must not hardcode My Library');
 assert.ok(!listening.includes('artist-profile.php?user_id='), 'Artist Listening menu must not use the legacy artist profile route');
+assert.ok(voiceProfile.includes('member_navigation_profile_url($user)'), 'Voice Profile should resolve the canonical View Profile destination');
+assert.ok(voiceProfile.includes('chat-topbar-actions voice-profile-top-actions'), 'Voice Profile header actions should use the shared right-aligned topbar layout');
+assert.ok(voiceProfile.includes('>View Profile</a>'), 'Voice Profile header should expose View Profile');
 assert.ok(knowledge.includes("has_permission('knowledge.manage'"), '/knowledge.php should forward managers to the real knowledge workspace');
 assert.ok(knowledge.includes("/admin/knowledge.php"), '/knowledge.php should resolve to the actual knowledge manager');
 assert.ok(bootstrap.includes("/member-navigation.php"), 'bootstrap should load the canonical member navigation helper');
