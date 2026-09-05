@@ -71,16 +71,13 @@ function contacts_stage_label(string $stage): string
   <div class="chat-sidebar-backdrop" id="chatSidebarBackdrop"></div>
 
   <main class="chat-main contacts-main">
-    <header class="contacts-topbar">
-      <div class="contacts-topbar-left">
-        <button class="chat-icon-button mobile-only" id="openChatSidebar" type="button" aria-label="Open menu">☰</button>
-        <div class="contacts-topbar-title"><strong>My Contacts</strong><span>Visitors + conversations + relationships</span></div>
-      </div>
-      <div class="contacts-topbar-actions">
-        <a class="contacts-button" href="<?= e(url('/profile-agent.php')) ?>">Profile Agent</a>
-        <?php $memberMenuUser = $user; require __DIR__ . '/includes/member-user-menu.php'; ?>
-      </div>
-    </header>
+    <?php
+      $memberHeaderUser = $user;
+      $memberHeaderTitle = 'My Contacts';
+      $memberHeaderSubtitle = 'Visitors + conversations + relationships';
+      $memberHeaderActions = '<a class="contacts-button" href="' . e(url('/profile-agent.php')) . '">Profile Agent</a>';
+      require __DIR__ . '/includes/member-header.php';
+    ?>
 
     <section class="contacts-canvas">
       <div class="contacts-inner">
@@ -192,16 +189,8 @@ function contacts_stage_label(string $stage): string
     for(const button of filters)button.classList.toggle('active',button===filter);
     apply();
   });
-  const sidebar=document.getElementById('chatSidebar');
-  const backdrop=document.getElementById('chatSidebarBackdrop');
-  const open=document.getElementById('openChatSidebar');
-  const close=document.getElementById('closeChatSidebar');
-  const setSidebar=value=>{document.body.classList.toggle('chat-sidebar-open',value);sidebar?.classList.toggle('open',value);backdrop?.classList.toggle('open',value);};
-  open?.addEventListener('click',()=>setSidebar(true));
-  close?.addEventListener('click',()=>setSidebar(false));
-  backdrop?.addEventListener('click',()=>setSidebar(false));
 })();
 </script>
-<script src="<?= e(url('/member-shell-v77.js?v=contacts-canonical-shell-20260905')) ?>"></script>
+<script src="<?= e(url('/member-shell-v77.js?v=universal-member-header-20260905')) ?>"></script>
 </body>
 </html>
