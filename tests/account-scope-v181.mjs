@@ -13,6 +13,7 @@ const header = read('includes/header.php');
 const sidebar = read('includes/workspace-sidebar-v82.php');
 const account = read('account.php');
 const accountAgentLoader = read('account-agent-settings-loader-v236.js');
+const accountShellCss = read('account-shell.css');
 const accountAgentCss = read('account-agent-settings-v236.css');
 const chatLegacy = read('chat-legacy-v108.php');
 const bootstrap = read('includes/bootstrap.php');
@@ -45,8 +46,19 @@ assert.match(accountAgentLoader, /data-account-agent-v236-js/);
 assert.match(accountAgentLoader, /querySelector\(`\$\{kind\}\[\$\{attr\}\]`\)/);
 assert.doesNotMatch(accountAgentLoader, /\['link','data-account-agent-v236'/);
 assert.doesNotMatch(accountAgentLoader, /\['script','data-account-agent-v236'/);
+assert.match(accountAgentLoader, /account-shell\.css\?v=\$\{build\}/);
 assert.match(accountAgentLoader, /account-light-shell-20260905/);
 assert.match(sidebar, /account-agent-settings-loader-v236\.js\?v=account-light-shell-20260905/);
+
+// One late-loaded Account stylesheet owns the final light-theme cascade and
+// cache-busts both the base account layout and the injected Agents & Data UI.
+assert.match(accountShellCss, /@import url\('\.\/account\.css\?v=account-light-shell-20260905'\)/);
+assert.match(accountShellCss, /@import url\('\.\/account-agent-settings-v236\.css\?v=account-light-shell-20260905'\)/);
+assert.match(accountShellCss, /\.workspace-main-sidebar/);
+assert.match(accountShellCss, /\.account-panel/);
+assert.match(accountShellCss, /\.account-agent-v236/);
+assert.match(accountShellCss, /background:#fff!important/);
+assert.match(accountShellCss, /color:#111318!important/);
 assert.match(accountAgentCss, /\.account-agent-v236/);
 assert.match(accountAgentCss, /background:#fff/);
 assert.match(accountAgentCss, /color:#111318/);
