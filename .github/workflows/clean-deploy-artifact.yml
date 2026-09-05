@@ -1,0 +1,41 @@
+name: Clean Deploy Artifact
+
+on:
+  push:
+    branches:
+      - build/clean-deploy-artifact
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build runtime-only tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p deploy
+          rsync -a ./ deploy/ \
+            --exclude='.git/' \
+            --exclude='.github/' \
+            --exclude='.gitignore' \
+            --exclude='tests/' \
+            --exclude='tools/' \
+            --exclude='*.md' \
+            --exclude='CODE_REVIEW_*' \
+            --exclude='V*_QA.txt'
+
+      - name: Upload deployment
+        uses: actions/upload-artifact@v4
+        with:
+          name: software-clean-deploy
+          path: deploy/
+          if-no-files-found: error
+          compression-level: 6
+          retention-days: 7
