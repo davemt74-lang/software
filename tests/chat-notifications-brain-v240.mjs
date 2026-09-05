@@ -11,6 +11,7 @@ const chat = read('chat.php');
 const ui = read('chat-notifications-drawer-v240.js');
 const css = read('chat-notifications-drawer-v240.css');
 const api = read('api/chat-notifications-brain-v240.php');
+const notifications = read('includes/notifications.php');
 const activity = read('includes/agent-activity-v94.php');
 const brain = read('includes/agent-brain-v82.php');
 
@@ -50,5 +51,26 @@ assert.equal(api.includes('CREATE TABLE'), false, 'Activity Center must reuse ex
 assert.match(activity, /table_exists\('agent_activity_events'\)/);
 assert.match(brain, /agent_chat_archive/);
 assert.match(brain, /agent_memory_items/);
+
+assert.match(notifications, /function notification_requires_attention\(/, 'canonical notification domain classifies actionable attention');
+assert.match(notifications, /function notification_attention_message\(/, 'canonical notification domain builds the Agent Chat attention turn');
+assert.match(notifications, /What do you want to do\?/, 'action-required notifications ask the user what to do next');
+assert.match(api, /action === 'present_attention'/, 'Activity Center persists actionable notifications into Agent Chat');
+assert.match(api, /INSERT INTO chat_messages[\s\S]*?'assistant'/, 'actionable attention is stored as a normal assistant chat message');
+assert.match(api, /response_timeout_ms'=>10000/, 'persisted attention context carries the 10-second response window');
+assert.match(api, /JSON_EXTRACT\(m\.context_json,'\$\.attention\.notification_id'\)/, 'attention dedupe compares the exact JSON notification id');
+assert.doesNotMatch(api, /notification_id[^\n]*LIKE|context_json LIKE/, 'attention dedupe must not use substring matching');
+assert.match(api, /catch \(DomainException \$e\)/, 'expected attention validation errors remain user-readable');
+assert.match(api, /Activity Center is temporarily unavailable\./, 'unexpected endpoint failures return a generic safe error');
+assert.doesNotMatch(api, /catch \(Throwable \$e\)[\s\S]{0,220}error'=>\$e->getMessage\(\)/, 'unexpected endpoint failures must not expose raw exception details');
+assert.match(ui, /request\('attention', null, \{after_id:/, 'Activity Center polls the canonical actionable-attention feed');
+assert.match(ui, /request\('present_attention'/, 'client asks the server to persist actionable attention before presenting it');
+assert.match(ui, /showAttentionConversation/, 'new attention is surfaced inside the Agent Chat canvas');
+assert.match(ui, /StonefellowPremiumVoiceV122/, 'attention uses the existing ElevenLabs voice runtime');
+assert.match(ui, /SpeechSynthesisUtterance/, 'attention speech retains system voice fallback');
+assert.match(ui, /responseTimer = window\.setTimeout\([\s\S]*?, 10000\)/, 'attention opens a 10-second response window');
+assert.match(ui, /setVoiceMode\(false\)/, 'temporary listening can be shut off when the response window expires');
+assert.match(ui, /TRANSCRIPT_SUBMIT/, 'spoken user responses cancel the temporary response timeout');
+assert.match(ui, /chatForm[\s\S]*markUserResponse/, 'typed user responses cancel the temporary response timeout');
 
 console.log('chat-notifications-brain-v240 contract: PASS');
