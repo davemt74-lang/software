@@ -71,3 +71,17 @@
     setTimeout(renderChatDevices,100);setTimeout(renderChatDevices,1500);
   }
 })();
+
+(() => {
+  'use strict';
+  if(String(window.STONEFELLOW_ACTIVITY?.surface||'')!=='chat')return;
+  const nav=document.querySelector('.chat-sidebar-nav');
+  if(!nav||nav.querySelector('a[href$="/knowledge.php"],a[href*="/knowledge.php?"]'))return;
+  const link=document.createElement('a');
+  link.className='chat-sidebar-nav-link';
+  link.href=new URL('knowledge.php',window.location.href).toString();
+  link.innerHTML='<span>◆</span><strong>My Knowledge</strong>';
+  const contacts=[...nav.querySelectorAll('a')].find(a=>/\/contacts\.php(?:[?#]|$)/.test(a.getAttribute('href')||''));
+  const transcriptions=[...nav.querySelectorAll('a')].find(a=>/\/artist-listening\.php(?:[?#]|$)/.test(a.getAttribute('href')||''));
+  if(contacts)contacts.insertAdjacentElement('afterend',link);else if(transcriptions)nav.insertBefore(link,transcriptions);else nav.appendChild(link);
+})();
