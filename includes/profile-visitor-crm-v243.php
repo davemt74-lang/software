@@ -12,6 +12,7 @@ declare(strict_types=1);
 const STONEFELLOW_PROFILE_VISITOR_COOKIE_V243 = 'sf_profile_visitor';
 const STONEFELLOW_PROFILE_VISITOR_COOKIE_MAX_AGE_V243 = 34560000; // 400 days.
 const STONEFELLOW_PROFILE_VISITOR_REENTRY_SECONDS_V243 = 1800; // 30-minute visit boundary.
+const STONEFELLOW_PROFILE_CONTACT_REF_HEX_V243 = 16; // 64-bit display reference.
 
 function profile_visitor_cookie_token_v243(int $ownerUserId): string
 {
@@ -52,7 +53,7 @@ function profile_visitor_contact_ref_v243(array $row): string
 {
     $key = strtolower(trim((string)($row['session_key'] ?? '')));
     if (!(bool)preg_match('/^[a-f0-9]{64}$/D', $key)) return '';
-    return 'G-' . strtoupper(substr($key, 0, 6));
+    return 'G-' . strtoupper(substr($key, 0, STONEFELLOW_PROFILE_CONTACT_REF_HEX_V243));
 }
 
 function profile_visitor_session_visit_count_v243(PDO $pdo, int $ownerUserId, int $profileSessionId): int
