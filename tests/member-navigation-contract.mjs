@@ -19,10 +19,13 @@ const profileDashboardCss = read('profile-dashboard.css');
 const accountCss = read('account.css');
 const htaccess = read('.htaccess');
 const voiceProfileJs = read('voice-profile.js');
+const profileAgentPortal = read('profile-agent.php');
+const accountAgentLoader = read('account-agent-settings-loader-v236.js');
 
 for (const [label, route] of [
   ['View Profile', 'profile_public_url'],
   ['My Account', '/account.php'],
+  ['Profile Agent', '/profile-agent.php'],
   ['My Knowledge', '/knowledge.php'],
   ['My Transcriptions', '/artist-listening.php'],
   ['Agent Chat', '/chat.php'],
@@ -44,14 +47,15 @@ assert.ok(nav.includes("has_permission('producer.access'"), 'Stem Studio must re
 assert.ok(nav.includes("empty($profile['is_public'])") && nav.includes("'preview=1'"), 'unpublished owners should receive a usable profile preview URL');
 assert.ok(!nav.includes('My Library'), 'My Library is not a canonical user-dropdown destination');
 assert.ok(!nav.includes("'agent_settings'"), 'Agent Settings belongs inside My Account');
-assert.ok(!nav.includes("'profile_agent'"), 'Profile Agent belongs inside My Account');
+assert.ok(nav.includes("'profile_agent', 'Profile Agent', url('/profile-agent.php')"), 'Profile Agent is a first-class customer-service destination');
+assert.ok(!nav.includes("url('/account.php#profile-agent')"), 'canonical navigation must not route Profile Agent back into My Account');
 
 for (const [name, source] of [['account', account], ['admin', admin], ['site header', header]]) {
   assert.ok(source.includes('member_navigation_menu_links'), `${name} should use canonical member navigation`);
 }
 assert.ok(chat.includes('member_navigation_menu_links($user)'), 'Chat should replace its legacy dropdown from the canonical map');
 assert.ok(!chat.includes('<span>Agent Settings</span>'), 'Chat must not inject Agent Settings into the dropdown');
-assert.ok(!chat.includes('<span>Profile Agent</span>'), 'Chat must not inject Profile Agent into the dropdown');
+assert.ok(!chat.includes('<span>Profile Agent</span>'), 'Chat must not maintain a second hardcoded Profile Agent menu item');
 assert.ok(chat.includes('My Transcriptions'), 'Chat sidebar should use the My Transcriptions product name');
 assert.ok(listening.includes("'userMenuLinks'=>member_navigation_menu_links($user)"), 'Artist Listening should receive canonical menu JSON');
 assert.ok(!listening.includes('my-library.php'), 'Artist Listening menu must not hardcode My Library');
@@ -69,12 +73,14 @@ assert.ok(htaccess.includes('RewriteRule ^stonefellow/([A-Za-z0-9._-]+)/?$ /$1 [
 assert.ok(htaccess.includes('profile.php?username=$1 [L,QSA,NC]'), 'root usernames should rewrite to profile.php');
 assert.ok(account.includes('/account.css?v=account-light-20260904'), 'My Account should load the canonical light workspace theme');
 assert.ok(account.includes('system_agent_name()'), 'My Account should use the configured system name');
-assert.ok(profileDashboard.includes('state.system_agent_name'), 'Profile Agent dashboard should use the configured system name');
-assert.ok(!profileDashboard.includes('stonefellow.com/stonefellow/username'), 'Profile dashboard must not show the legacy namespaced URL');
+assert.ok(profileDashboard.includes('state.system_agent_name'), 'legacy Profile Agent dashboard source should still use the configured system name while retained for compatibility');
+assert.ok(!profileDashboard.includes('stonefellow.com/stonefellow/username'), 'retained profile dashboard source must not show the legacy namespaced URL');
 for (const css of [accountAgentCss, profileDashboardCss, accountCss]) { assert.ok(!css.includes('background:#11100f'), 'account surfaces must not contain legacy black card backgrounds'); }
 assert.ok(!account.includes('Stonefellow'), 'My Account user-facing copy should use the configured system name');
-assert.ok(profileDashboard.includes('profileDisplayUrl=new URL(profileUrl,window.location.origin).href'), 'profile dashboard should display the full canonical domain/username URL');
-assert.ok(!profileDashboard.includes('Stonefellow-powered'), 'Profile Agent copy should use the configured system name');
+assert.ok(profileDashboard.includes('profileDisplayUrl=new URL(profileUrl,window.location.origin).href'), 'retained profile dashboard should display the full canonical domain/username URL');
+assert.ok(!profileDashboard.includes('Stonefellow-powered'), 'retained Profile Agent copy should use the configured system name');
+assert.ok(profileAgentPortal.includes('Customer service workspace'), 'standalone Profile Agent portal should own the customer-service experience');
+assert.ok(accountAgentLoader.includes('account-agent-settings-v236.js') && !accountAgentLoader.includes('profile-dashboard.js'), 'My Account should load agent settings without injecting the old Profile Agent dashboard');
 assert.ok(voiceProfile.includes('systemName:<?= json_encode(system_agent_name()) ?>'), 'Voice Profile should expose the configured system name to its runtime');
 assert.ok(!voiceProfileJs.includes('Stonefellow voice clone'), 'Voice Profile runtime must not hardcode the system name');
 assert.ok(voiceProfileJs.includes('`Your ${systemName} voice clone was created.`'), 'Voice Profile dynamic system name must use template interpolation');

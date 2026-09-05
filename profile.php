@@ -43,7 +43,7 @@ foreach($tracksByAlbum as &$group)usort($group,static fn(array $a,array $b):int=
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="description" content="<?= e(mb_strimwidth($bio!==''?$bio:$displayName.' on Stonefellow',0,155,'…')) ?>">
+<meta name="description" content="<?= e(mb_strimwidth($bio!==''?$bio:$displayName.' on '.system_agent_name(),0,155,'…')) ?>">
 <meta name="theme-color" content="#f6f5f2">
 <link rel="canonical" href="<?= e(profile_public_url($username)) ?>">
 <title><?= e($displayName) ?> | <?= e(system_agent_name()) ?></title>
@@ -51,12 +51,12 @@ foreach($tracksByAlbum as &$group)usort($group,static fn(array $a,array $b):int=
 </head>
 <body class="profile-page">
 <header class="profile-topbar">
-  <a class="profile-brand" href="<?= e(url('/')) ?>"><span class="profile-brand-mark">S</span><span><?= e(system_agent_name()) ?></span></a>
+  <a class="profile-brand" href="<?= e(url('/')) ?>"><span class="profile-brand-mark"><?= e(mb_strtoupper(mb_substr(system_agent_name(),0,1))) ?></span><span><?= e(system_agent_name()) ?></span></a>
   <nav class="profile-top-actions">
-    <?php if($viewer): ?><a href="<?= e(url('/chat.php')) ?>">Agent Chat</a><a href="<?= e(url('/account.php#profile-agent')) ?>">My Account</a><?php else: ?><a href="<?= e(url('/login.php')) ?>">Sign in</a><?php endif; ?>
+    <?php if($viewer): ?><a href="<?= e(url('/chat.php')) ?>">Agent Chat</a><a href="<?= e(url('/profile-agent.php')) ?>">Profile Agent</a><?php else: ?><a href="<?= e(url('/login.php')) ?>">Sign in</a><?php endif; ?>
   </nav>
 </header>
-<?php if($preview): ?><div class="profile-preview-banner"><span>Visitor preview — public visibility rules are active and this view is not being counted.</span><a href="<?= e(url('/account.php#profile-agent')) ?>">Back to Profile Agent settings</a></div><?php endif; ?>
+<?php if($preview): ?><div class="profile-preview-banner"><span>Visitor preview — public visibility rules are active and this view is not being counted.</span><a href="<?= e(url('/profile-agent.php')) ?>">Back to Profile Agent</a></div><?php endif; ?>
 <main class="profile-shell">
   <section class="profile-cover"><?php if($cover!==''): ?><img src="<?= e($cover) ?>" alt=""><?php endif; ?></section>
   <section class="profile-identity">

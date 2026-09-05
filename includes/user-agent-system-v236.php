@@ -193,7 +193,7 @@ function user_agent_update_v236(PDO $pdo,array $user,array $input): array
     $uid=(int)($user['id']??0);$id=(int)($input['id']??0);$before=user_agent_get_v236($pdo,$uid,$id);if(!$before)throw new RuntimeException('Agent not found.');
     $name=trim(preg_replace('/\s+/u',' ',(string)($input['display_name']??$before['display_name']))??'');if($name==='')throw new RuntimeException('Enter a name for your agent.');
     $role=(string)($input['agent_role']??$before['agent_role']);if(!isset(user_agent_roles_v236()[$role]))$role='custom';
-    $isDefault=!empty($input['is_default']);$isProfile=!empty($input['is_profile_agent']);
+    $isDefault=!empty($input['is_default']);$isProfile=array_key_exists('is_profile_agent',$input)?!empty($input['is_profile_agent']):!empty($before['is_profile_agent']);
     if($isDefault)$pdo->prepare('UPDATE user_agents SET is_default=0 WHERE owner_user_id=?')->execute([$uid]);
     if($isProfile)$pdo->prepare('UPDATE user_agents SET is_profile_agent=0 WHERE owner_user_id=?')->execute([$uid]);
     $stmt=$pdo->prepare('UPDATE user_agents SET display_name=?,agent_role=?,instructions=?,is_default=?,is_profile_agent=?,is_active=?,voice_enabled=? WHERE id=? AND owner_user_id=?');

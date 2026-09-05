@@ -34,12 +34,12 @@ if ($workspaceSidebarUser && function_exists('profile_agent_schema_ready')) {
 
 <aside class="chat-sidebar workspace-main-sidebar" id="chatSidebar">
   <div class="chat-sidebar-top">
-    <a class="chat-brand" href="<?= e(url(has_permission('chat.access', $workspaceSidebarUser) ? '/chat.php' : '/index.php')) ?>">Stonefellow</a>
+    <a class="chat-brand" href="<?= e(url(has_permission('chat.access', $workspaceSidebarUser) ? '/chat.php' : '/index.php')) ?>"><?= e(system_agent_name()) ?></a>
     <button class="chat-icon-button mobile-only" id="closeChatSidebar" type="button" aria-label="Close menu">×</button>
   </div>
 
   <div class="chat-sidebar-sections">
-    <section class="chat-sidebar-nav-section" aria-label="Stonefellow workspace">
+    <section class="chat-sidebar-nav-section" aria-label="<?= e(system_agent_name()) ?> workspace">
       <div class="chat-history-label">Explore</div>
       <nav class="chat-sidebar-nav">
         <?php if (has_permission('chat.access', $workspaceSidebarUser)): ?>
@@ -66,7 +66,7 @@ if ($workspaceSidebarUser && function_exists('profile_agent_schema_ready')) {
           <?php endif; ?>
           <?php if (has_permission('chat.access', $workspaceSidebarUser)): ?>
             <a class="chat-sidebar-nav-link" href="<?= e(url('/account.php#agents-data')) ?>"><span>◇</span><strong>My Agent</strong></a>
-            <a class="chat-sidebar-nav-link" href="<?= e(url('/account.php#profile-agent')) ?>"><span>◈</span><strong>Profile Agent</strong></a>
+            <a class="chat-sidebar-nav-link <?= $workspaceSidebarActive === 'profile_agent' ? 'active' : '' ?>" href="<?= e(url('/profile-agent.php')) ?>"><span>◈</span><strong>Profile Agent</strong></a>
             <a class="chat-sidebar-nav-link <?= $workspaceSidebarActive === 'voice_profile' ? 'active' : '' ?>" href="<?= e(url('/voice-profile.php')) ?>"><span>◌</span><strong>Voice Profile</strong></a>
           <?php endif; ?>
           <a class="chat-sidebar-nav-link" href="<?= e(url('/notifications.php')) ?>"><span>●</span><strong>Notifications</strong></a>
@@ -94,7 +94,7 @@ if ($workspaceSidebarUser && function_exists('profile_agent_schema_ready')) {
     if(!document.querySelector('.account-canvas-content')) return;
     if(document.querySelector('[data-account-agent-settings-loader]')) return;
     var s=document.createElement('script');
-    s.src=<?= json_encode(url('/account-agent-settings-loader-v236.js?v=white-tech-20260904'), JSON_UNESCAPED_SLASHES) ?>;
+    s.src=<?= json_encode(url('/account-agent-settings-loader-v236.js?v=profile-agent-portal-20260905'), JSON_UNESCAPED_SLASHES) ?>;
     s.dataset.accountAgentSettingsLoader='server';
     document.body.appendChild(s);
   }

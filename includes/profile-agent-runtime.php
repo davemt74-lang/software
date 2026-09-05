@@ -57,11 +57,29 @@ function profile_runtime_owner_state(PDO $pdo,array $user): array
     if(empty($profile['username']))$profile=profile_migrate_artist_identity($pdo,$user);
     $agents=user_agents_list_v236($pdo,$uid,true);
 
-    $visits=$pdo->prepare('SELECT id,visitor_user_id,identity_disclosed,view_count,first_seen_at,last_seen_at FROM profile_visit_sessions WHERE owner_user_id=? AND view_count>0 ORDER BY last_seen_at DESC,id DESC LIMIT 20');
+    $selectedAgent=null;
+    $selectedAgentId=(int)($profile['profile_agent_id']??0);
+    if($selectedAgentId>0)$selectedAgent=user_agent_get_v236($pdo,$uid,$selectedAgentId);
+    $suggestedAgentId=0;
+    foreach($agents as $agent){
+        if(!empty($agent['is_profile_agent'])){$suggestedAgentId=(int)$agent['id'];break;}
+    }
+    $profilePublished=!empty($profile['is_public']);
+    $publicEnabled=!empty($profile['profile_agent_enabled']);
+    $selectedActive=(bool)($selectedAgent&&!empty($selectedAgent['is_active']));
+    $publicLive=$profilePublished&&$publicEnabled&&$selectedActive;
+    $publicReason='live';
+    if(!$profilePublished)$publicReason='profile_private';
+    elseif(!$publicEnabled)$publicReason='public_disabled';
+    elseif($selectedAgentId<1)$publicReason='no_agent_selected';
+    elseif(!$selectedAgent)$publicReason='agent_missing';
+    elseif(!$selectedActive)$publicReason='agent_inactive';
+
+    $visits=$pdo->prepare('SELECT id,visitor_user_id,identity_disclosed,view_count,first_seen_at,last_seen_at,last_message_at FROM profile_visit_sessions WHERE owner_user_id=? AND view_count>0 ORDER BY last_seen_at DESC,id DESC LIMIT 50');
     $visits->execute([$uid]);$visitRows=$visits->fetchAll()?:[];
     foreach($visitRows as &$v){$v['visitor_label']=profile_visitor_label($pdo,$v);unset($v['visitor_user_id']);}unset($v);
 
-    $convos=$pdo->prepare('SELECT c.id,c.profile_agent_id,c.status,c.last_summary,c.started_at,c.last_message_at,s.identity_disclosed,s.visitor_user_id FROM profile_agent_conversations c INNER JOIN profile_visit_sessions s ON s.id=c.profile_session_id WHERE c.owner_user_id=? ORDER BY c.last_message_at DESC,c.id DESC LIMIT 30');
+    $convos=$pdo->prepare('SELECT c.id,c.profile_agent_id,c.status,c.last_summary,c.started_at,c.last_message_at,s.identity_disclosed,s.visitor_user_id FROM profile_agent_conversations c INNER JOIN profile_visit_sessions s ON s.id=c.profile_session_id WHERE c.owner_user_id=? ORDER BY c.last_message_at DESC,c.id DESC LIMIT 100');
     $convos->execute([$uid]);$conversationRows=$convos->fetchAll()?:[];
     foreach($conversationRows as &$c){$c['visitor_label']=profile_visitor_label($pdo,$c);unset($c['visitor_user_id']);}unset($c);
 
@@ -76,6 +94,12 @@ function profile_runtime_owner_state(PDO $pdo,array $user): array
         ];
     }
 
+    $attention=profile_runtime_attention_list($pdo,$uid,50);
+    $visitStats=$pdo->prepare('SELECT COALESCE(SUM(view_count),0) AS total_views,COUNT(*) AS visitor_sessions,COALESCE(SUM(last_seen_at>=DATE_SUB(NOW(),INTERVAL 5 MINUTE)),0) AS active_visitors FROM profile_visit_sessions WHERE owner_user_id=?');
+    $visitStats->execute([$uid]);$visitStatRow=$visitStats->fetch()?:[];
+    $conversationStats=$pdo->prepare("SELECT COUNT(*) AS total_conversations,COALESCE(SUM(status<>'resolved'),0) AS open_conversations,COALESCE(SUM(status='owner_joined'),0) AS owner_joined FROM profile_agent_conversations WHERE owner_user_id=?");
+    $conversationStats->execute([$uid]);$conversationStatRow=$conversationStats->fetch()?:[];
+
     return [
         'build'=>STONEFELLOW_PROFILE_AGENT_BUILD,
         'namespace'=>'',
@@ -84,10 +108,29 @@ function profile_runtime_owner_state(PDO $pdo,array $user): array
         'profile_url'=>!empty($profile['username'])?profile_public_url((string)$profile['username']):'',
         'profile_url_example'=>url('/username'),
         'agents'=>$agents,
+        'public_agent_status'=>[
+            'profile_published'=>$profilePublished,
+            'enabled'=>$publicEnabled,
+            'agent_id'=>$selectedAgentId,
+            'agent_name'=>(string)($selectedAgent['display_name']??''),
+            'agent_active'=>$selectedActive,
+            'live'=>$publicLive,
+            'reason'=>$publicReason,
+            'suggested_agent_id'=>$suggestedAgentId,
+        ],
         'visits'=>$visitRows,
         'conversations'=>$conversationRows,
-        'attention'=>profile_runtime_attention_list($pdo,$uid,20),
+        'attention'=>$attention,
         'policies'=>$policies,
+        'analytics'=>[
+            'total_views'=>(int)($visitStatRow['total_views']??0),
+            'visitor_sessions'=>(int)($visitStatRow['visitor_sessions']??0),
+            'active_visitors'=>(int)($visitStatRow['active_visitors']??0),
+            'total_conversations'=>(int)($conversationStatRow['total_conversations']??0),
+            'open_conversations'=>(int)($conversationStatRow['open_conversations']??0),
+            'owner_joined'=>(int)($conversationStatRow['owner_joined']??0),
+            'needs_attention'=>count($attention),
+        ],
     ];
 }
 
