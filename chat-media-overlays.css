@@ -1,4 +1,4 @@
-/* Chat media overlays — canonical light-theme repair.
+/* Chat media overlays — canonical presentation.
  * Keeps Queue / playlist behavior owned by chat.js and only repairs presentation,
  * stacking, viewport containment, and modal scroll behavior.
  */
@@ -21,91 +21,91 @@ body:has(.chat-playlist-overlay[data-open="true"]){
   -webkit-backdrop-filter:blur(2px);
 }
 
-body[data-agent-theme="light"] .chat-player-drawer{
+.chat-player-drawer{
   border-color:#e5e7eb;
   background:#fff;
   color:#111827;
   box-shadow:-24px 0 60px rgba(15,23,42,.16);
 }
 
-body[data-agent-theme="light"] .chat-player-drawer>header{
+.chat-player-drawer>header{
   border-bottom-color:#e5e7eb;
   background:#fff;
 }
 
-body[data-agent-theme="light"] .chat-player-drawer>header span,
-body[data-agent-theme="light"] .chat-editor-label,
-body[data-agent-theme="light"] .chat-playlist-editor-form>label>span{
+.chat-player-drawer>header span,
+.chat-editor-label,
+.chat-playlist-editor-form>label>span{
   color:#6b7280;
 }
 
-body[data-agent-theme="light"] .chat-player-drawer>header h2,
-body[data-agent-theme="light"] .chat-track-detail-copy h3,
-body[data-agent-theme="light"] .chat-album-detail h3,
-body[data-agent-theme="light"] .chat-drawer-track-list h3,
-body[data-agent-theme="light"] .chat-drawer-merch h3,
-body[data-agent-theme="light"] .chat-drawer-track-row strong,
-body[data-agent-theme="light"] .chat-drawer-merch strong,
-body[data-agent-theme="light"] .chat-playlist-editor-track strong,
-body[data-agent-theme="light"] .chat-playlist-available strong{
+.chat-player-drawer>header h2,
+.chat-track-detail-copy h3,
+.chat-album-detail h3,
+.chat-drawer-track-list h3,
+.chat-drawer-merch h3,
+.chat-drawer-track-row strong,
+.chat-drawer-merch strong,
+.chat-playlist-editor-track strong,
+.chat-playlist-available strong{
   color:#111827;
 }
 
-body[data-agent-theme="light"] .chat-player-drawer>header button,
-body[data-agent-theme="light"] .chat-drawer-actions button,
-body[data-agent-theme="light"] .chat-drawer-actions a,
-body[data-agent-theme="light"] .chat-drawer-create-playlist,
-body[data-agent-theme="light"] .chat-drawer-track-row button,
-body[data-agent-theme="light"] .chat-playlist-editor-actions button{
+.chat-player-drawer>header button,
+.chat-drawer-actions button,
+.chat-drawer-actions a,
+.chat-drawer-create-playlist,
+.chat-drawer-track-row button,
+.chat-playlist-editor-actions button{
   border-color:#d1d5db;
   background:#fff;
   color:#374151;
 }
 
-body[data-agent-theme="light"] .chat-player-drawer>header button:hover,
-body[data-agent-theme="light"] .chat-drawer-actions button:hover,
-body[data-agent-theme="light"] .chat-drawer-actions a:hover,
-body[data-agent-theme="light"] .chat-drawer-create-playlist:hover,
-body[data-agent-theme="light"] .chat-drawer-track-row button:hover,
-body[data-agent-theme="light"] .chat-playlist-editor-actions button:hover{
+.chat-player-drawer>header button:hover,
+.chat-drawer-actions button:hover,
+.chat-drawer-actions a:hover,
+.chat-drawer-create-playlist:hover,
+.chat-drawer-track-row button:hover,
+.chat-playlist-editor-actions button:hover{
   border-color:#9ca3af;
   background:#f9fafb;
   color:#111827;
 }
 
-body[data-agent-theme="light"] .chat-drawer-empty{
+.chat-drawer-empty{
   border-color:#d1d5db;
   color:#6b7280;
   background:#f9fafb;
 }
 
-body[data-agent-theme="light"] .chat-track-detail-cover,
-body[data-agent-theme="light"] .chat-album-detail-cover{
+.chat-track-detail-cover,
+.chat-album-detail-cover{
   border-color:#e5e7eb;
   background:#f3f4f6;
   color:#4b5563;
 }
 
-body[data-agent-theme="light"] .chat-track-detail-copy>span,
-body[data-agent-theme="light"] .chat-album-detail>div>span,
-body[data-agent-theme="light"] .chat-track-detail-copy p,
-body[data-agent-theme="light"] .chat-album-detail p,
-body[data-agent-theme="light"] .chat-track-detail-meta,
-body[data-agent-theme="light"] .chat-drawer-track-row>span,
-body[data-agent-theme="light"] .chat-drawer-track-row small,
-body[data-agent-theme="light"] .chat-drawer-merch span,
-body[data-agent-theme="light"] .chat-drawer-merch a,
-body[data-agent-theme="light"] .chat-playlist-editor-track small,
-body[data-agent-theme="light"] .chat-playlist-available small{
+.chat-track-detail-copy>span,
+.chat-album-detail>div>span,
+.chat-track-detail-copy p,
+.chat-album-detail p,
+.chat-track-detail-meta,
+.chat-drawer-track-row>span,
+.chat-drawer-track-row small,
+.chat-drawer-merch span,
+.chat-drawer-merch a,
+.chat-playlist-editor-track small,
+.chat-playlist-available small{
   color:#6b7280!important;
 }
 
-body[data-agent-theme="light"] .chat-drawer-track-row{
+.chat-drawer-track-row{
   border-top-color:#e5e7eb;
 }
 
-body[data-agent-theme="light"] .chat-drawer-merch article,
-body[data-agent-theme="light"] .chat-playlist-editor-track{
+.chat-drawer-merch article,
+.chat-playlist-editor-track{
   border-color:#e5e7eb;
   background:#f9fafb;
 }
@@ -130,28 +130,28 @@ body[data-agent-theme="light"] .chat-playlist-editor-track{
   scrollbar-gutter:stable;
 }
 
-body[data-agent-theme="light"] .chat-playlist-editor-form input,
-body[data-agent-theme="light"] .chat-playlist-editor-form select,
-body[data-agent-theme="light"] .chat-playlist-editor-form textarea{
+.chat-playlist-editor-form input,
+.chat-playlist-editor-form select,
+.chat-playlist-editor-form textarea{
   border-color:#d1d5db;
   background:#fff;
   color:#111827;
 }
 
-body[data-agent-theme="light"] .chat-playlist-editor-form input:focus,
-body[data-agent-theme="light"] .chat-playlist-editor-form select:focus,
-body[data-agent-theme="light"] .chat-playlist-editor-form textarea:focus{
+.chat-playlist-editor-form input:focus,
+.chat-playlist-editor-form select:focus,
+.chat-playlist-editor-form textarea:focus{
   border-color:#6b7280;
   box-shadow:0 0 0 3px rgba(17,24,39,.07);
 }
 
-body[data-agent-theme="light"] .chat-playlist-editor-actions button:first-child{
+.chat-playlist-editor-actions button:first-child{
   border-color:#111827;
   background:#111827;
   color:#fff;
 }
 
-body[data-agent-theme="light"] .chat-playlist-editor-actions button.danger{
+.chat-playlist-editor-actions button.danger{
   border-color:#fecaca;
   background:#fff;
   color:#b91c1c;
@@ -174,32 +174,32 @@ body[data-agent-theme="light"] .chat-playlist-editor-actions button.danger{
   -webkit-backdrop-filter:blur(2px);
 }
 
-body[data-agent-theme="light"] .chat-queue-modal,
-body[data-agent-theme="light"] .chat-playlist-modal{
+.chat-queue-modal,
+.chat-playlist-modal{
   border-color:#e5e7eb;
   background:#fff;
   color:#111827;
   box-shadow:0 24px 64px rgba(15,23,42,.18);
 }
 
-body[data-agent-theme="light"] .chat-queue-playlist,
-body[data-agent-theme="light"] .chat-playlist-header{
+.chat-queue-playlist,
+.chat-playlist-header{
   border-color:#e5e7eb;
 }
 
-body[data-agent-theme="light"] .chat-queue-playlist input,
-body[data-agent-theme="light"] .chat-playlist-field input{
+.chat-queue-playlist input,
+.chat-playlist-field input{
   border-color:#d1d5db;
   background:#fff;
   color:#111827;
 }
 
-body[data-agent-theme="light"] .chat-playlist-options{
+.chat-playlist-options{
   border-color:#e5e7eb;
   background:#f9fafb;
 }
 
-body[data-agent-theme="light"] .chat-playlist-option{
+.chat-playlist-option{
   background:#fff;
   color:#111827;
 }

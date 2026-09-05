@@ -662,9 +662,9 @@ foreach ($chatPosts as $post) {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="theme-color" content="#0b0a09">
+<meta name="theme-color" content="#ffffff">
 <title>Stonefellow Chat</title>
-<link rel="stylesheet" href="<?= e(url('/chat.css?v=205')) ?>">
+<link rel="stylesheet" href="<?= e(url('/chat.css?v=206-source-light-20260905')) ?>">
 <link rel="stylesheet" href="<?= e(url('/chat-media-v86.css?v=86')) ?>">
 <link rel="stylesheet" href="<?= e(url('/chat-media-v91.css?v=95')) ?>">
 <link rel="stylesheet" href="<?= e(url('/chat-media-v93.css?v=93')) ?>">
@@ -721,33 +721,6 @@ foreach ($chatPosts as $post) {
           >
             <span>P</span>
             <strong>Playlists</strong>
-          </button>
-
-          <button
-            class="chat-sidebar-nav-link"
-            type="button"
-            data-chat-view-target="shows"
-          >
-            <span>★</span>
-            <strong>Shows</strong>
-          </button>
-
-          <button
-            class="chat-sidebar-nav-link"
-            type="button"
-            data-chat-view-target="photos"
-          >
-            <span>▣</span>
-            <strong>Photos</strong>
-          </button>
-
-          <button
-            class="chat-sidebar-nav-link"
-            type="button"
-            data-chat-view-target="merch"
-          >
-            <span>M</span>
-            <strong>Merch</strong>
           </button>
 
         </nav>
