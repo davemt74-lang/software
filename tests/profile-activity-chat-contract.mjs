@@ -10,6 +10,8 @@ const attention=read('agent-attention.js');
 const member=read('member-shell-v77.js');
 const notificationApi=read('api/member-notifications.php');
 const portal=read('profile-agent-portal.js');
+const publicAgent=read('profile-agent.js');
+const portalCss=read('profile-agent-portal.css');
 
 assert.ok(runtime.includes('profile_runtime_visitor_descriptor'), 'owner state needs one privacy-aware visitor descriptor');
 assert.ok(runtime.includes("'signed_in'"), 'visitor state should distinguish signed-in members from guests');
@@ -29,6 +31,7 @@ assert.ok(activity.includes('setInterval(()=>{if(document.visibilityState===\'vi
 assert.ok(activity.includes("req('conversation_messages'"), 'Profile Activity canvas should open Profile Agent threads');
 assert.ok(activity.includes("req('owner_reply'"), 'owner should be able to reply from the Agent Chat canvas');
 assert.ok(activity.includes('profile-activity:open'), 'Profile Activity should expose an event bridge for proactive attention');
+assert.ok(activity.includes('toastItem=item'), 'reused landing toast must track the newest activity event');
 assert.ok(attention.includes('data-open-profile-activity'), 'Agent Attention should open the Profile Activity canvas');
 assert.ok(member.includes('api/member-notifications.php'), 'authenticated shell should poll persisted notifications');
 assert.ok(member.includes('15000'), 'authenticated notification polling should be near-real-time without busy polling');
@@ -36,4 +39,6 @@ assert.ok(notificationApi.includes('notification_unread_count'), 'notification e
 assert.ok(notificationApi.includes('notification_recent'), 'notification endpoint should return canonical recent notifications');
 assert.ok(portal.includes('URLSearchParams'), 'Profile Agent portal should honor notification deep links');
 assert.ok(portal.includes('identity_disclosed'), 'Profile Agent portal should render enriched disclosed visitor identity');
+assert.ok(publicAgent.includes('presenceTimer=window.setInterval(heartbeat,60000)'), 'public profile should heartbeat presence without adding views');
+assert.ok(portalCss.includes('.profile-agent-visitor-row{grid-template-columns:38px minmax(0,1fr) auto}'), 'enriched visitor cards need a dedicated avatar/content/status grid');
 console.log('PROFILE_ACTIVITY_CHAT_CONTRACT=PASS');

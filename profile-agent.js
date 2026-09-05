@@ -11,7 +11,7 @@
   const storageKey=`stonefellow-profile-agent:${cfg.username}`;
   let conversationId=Math.max(0,Number(localStorage.getItem(storageKey)||0));
   let lastMessageId=0;
-  let pollTimer=0;
+  let pollTimer=0,presenceTimer=0;
   const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
 
   function messageNode(type,text,id=0){
@@ -54,6 +54,7 @@
     }catch(_error){}
   }
   function startPolling(){clearInterval(pollTimer);pollTimer=window.setInterval(poll,10000);}
+  async function heartbeat(){if(document.visibilityState!=='visible')return;try{await request('state',{},'GET');}catch(_error){}}
   form?.addEventListener('submit',async event=>{
     event.preventDefault();const message=String(textarea.value||'').trim();if(!message)return;
     appendMessage('visitor',message);textarea.value='';textarea.disabled=true;submit.disabled=true;status.textContent=`${cfg.agentName} is thinking…`;
@@ -64,6 +65,6 @@
     finally{textarea.disabled=false;submit.disabled=false;textarea.focus();}
   });
   textarea?.addEventListener('keydown',event=>{if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();form.requestSubmit();}});
-  window.addEventListener('pagehide',()=>clearInterval(pollTimer),{once:true});
-  loadState();
+  window.addEventListener('pagehide',()=>{clearInterval(pollTimer);clearInterval(presenceTimer);},{once:true});
+  loadState();presenceTimer=window.setInterval(heartbeat,60000);
 })();
