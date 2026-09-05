@@ -1,3 +1,5 @@
+@import url("site-branding.css?v=1");
+
 /* Stonefellow v99 — Agent Chat composer + discreet device registry */
 .chat-composer{display:flex!important;flex-flow:row nowrap!important;align-items:flex-end!important;width:100%!important;min-width:0!important;gap:6px!important}
 .chat-composer textarea{flex:1 1 auto!important;min-width:0!important;width:auto!important;margin:0!important}
