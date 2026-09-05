@@ -12,7 +12,7 @@ $transcriptionCanvasBuild = 'chat-transcription-canvas-v243-layout-20260905';
 $mediaOverlayBuild = 'chat-media-overlays-source-light-20260905';
 $agentOverlayBuild = 'agent-updates-hidden-v206-20260901';
 $agentIdentityBuild = 'profile-activity-20260905';
-$profileActivityBuild = 'profile-activity-20260905';
+$profileActivityBuild = 'profile-activity-overlay-20260905';
 $headerUiBuild = 'live-wiring-20260903-3';
 $teamChatAdminBuild = 'team-chat-bootstrap-v236-20260905';
 
