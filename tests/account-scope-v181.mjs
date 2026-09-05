@@ -45,6 +45,8 @@ assert.match(accountAgentLoader, /data-account-agent-v236-js/);
 assert.match(accountAgentLoader, /querySelector\(`\$\{kind\}\[\$\{attr\}\]`\)/);
 assert.doesNotMatch(accountAgentLoader, /\['link','data-account-agent-v236'/);
 assert.doesNotMatch(accountAgentLoader, /\['script','data-account-agent-v236'/);
+assert.match(accountAgentLoader, /account-light-shell-20260905/);
+assert.match(sidebar, /account-agent-settings-loader-v236\.js\?v=account-light-shell-20260905/);
 assert.match(accountAgentCss, /\.account-agent-v236/);
 assert.match(accountAgentCss, /background:#fff/);
 assert.match(accountAgentCss, /color:#111318/);
