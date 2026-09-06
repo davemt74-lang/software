@@ -18,7 +18,7 @@ $vp3LoginUrl = url('/login.php');
 <link rel="stylesheet" href="<?= e(url('/vp3-public.css?v=vp3-public-20260906')) ?>">
 <link rel="stylesheet" href="<?= e(url('/vp3-public-nav.css?v=vp3-public-20260906')) ?>">
 <link rel="stylesheet" href="<?= e(url('/vp3-home.css?v=vp3-home-20260906-how-it-works')) ?>">
-<link rel="stylesheet" href="<?= e(url('/vp3-index-refresh.css?v=vp3-index-refresh-20260906')) ?>">
+<link rel="stylesheet" href="<?= e(url('/vp3-index-refresh.css?v=vp3-index-refresh-20260906-v2')) ?>">
 </head>
 <body class="vp3-home">
 <header class="vp3-public-header vp3-home-header">
@@ -68,7 +68,7 @@ $vp3LoginUrl = url('/login.php');
       </div>
       <a class="vp3-browser-link" href="<?= e($vp3LoginUrl) ?>">Already have an account? Sign in <span aria-hidden="true">→</span></a>
 
-      <div class="vp3-device-stage" aria-label="VP3 desktop and mobile assistant interface preview">
+      <div class="vp3-device-stage" id="transcriptions" aria-label="VP3 desktop and mobile assistant interface preview">
         <div class="vp3-laptop">
           <div class="vp3-laptop-camera"></div>
           <div class="vp3-laptop-screen">
@@ -136,44 +136,12 @@ $vp3LoginUrl = url('/login.php');
     </div>
   </section>
 
-  <section class="vp3-features vp3-how-it-works" id="features" aria-labelledby="vp3HowTitle">
-    <div class="vp3-section-head">
-      <div class="vp3-kicker">How it works</div>
-      <h2 id="vp3HowTitle">From recording to action in four steps.</h2>
-      <p>Capture the conversation once. VP3 turns it into searchable context and a clear next step.</p>
-    </div>
-
-    <div class="vp3-feature-grid vp3-step-grid">
-      <article class="vp3-feature-card vp3-step-card">
-        <span class="vp3-step-number">01</span>
-        <h3>Record</h3>
-        <p>Capture conversations, meetings, ideas, or voice notes directly into your VP3 workspace.</p>
-      </article>
-      <article class="vp3-feature-card vp3-step-card" id="transcriptions">
-        <span class="vp3-step-number">02</span>
-        <h3>Transcribe</h3>
-        <p>Turn your recording into accurate, searchable text you can review, save, and reuse.</p>
-      </article>
-      <article class="vp3-feature-card vp3-step-card">
-        <span class="vp3-step-number">03</span>
-        <h3>AI Analysis</h3>
-        <p>Let VP3 identify the key ideas, decisions, questions, opportunities, and next steps in the conversation.</p>
-      </article>
-      <article class="vp3-feature-card vp3-step-card">
-        <span class="vp3-step-number">04</span>
-        <h3>Summary or Action Plan</h3>
-        <p>Receive a clear summary or practical action plan that helps you move forward.</p>
-      </article>
-    </div>
-  </section>
-
   <section class="vp3-results" id="teams" aria-labelledby="vp3ResultsTitle">
     <div class="vp3-results-bg" aria-hidden="true"></div>
     <div class="vp3-results-content">
       <div class="vp3-kicker">From conversations to action</div>
       <h2 id="vp3ResultsTitle">Turn Your Thoughts<br>Into Results.</h2>
       <p>Capture ideas, organize your knowledge, collaborate with your team, and take action — all in one private, personal AI assistant.</p>
-      <a class="vp3-get-started dark" href="<?= e($vp3SignupUrl) ?>">Get Started <span aria-hidden="true">→</span></a>
     </div>
   </section>
 
@@ -190,7 +158,7 @@ $vp3LoginUrl = url('/login.php');
 <footer class="vp3-footer">
   <div class="vp3-footer-brand"><span class="vp3-brand-mark small" aria-hidden="true"><i></i><i></i><i></i><i></i></span><strong>VP3</strong><span>A Private Future. On Your Terms.</span></div>
   <nav class="vp3-footer-links" aria-label="VP3 footer navigation">
-    <a href="#features">Features</a><a href="#transcriptions">Transcriptions</a><a href="#teams">Teams</a><a href="<?= e(url('/pricing.php')) ?>">Pricing</a><a href="<?= e(url('/about.php')) ?>">About</a>
+    <a href="#transcriptions">Transcriptions</a><a href="#teams">Teams</a><a href="<?= e(url('/pricing.php')) ?>">Pricing</a><a href="<?= e(url('/about.php')) ?>">About</a>
     <span class="vp3-footer-divider"></span><a href="<?= e(url('/privacy.php')) ?>">Privacy</a><a href="<?= e(url('/terms.php')) ?>">Terms</a><a href="<?= e(url('/contact.php')) ?>">Contact</a>
   </nav>
 </footer>
