@@ -3,7 +3,9 @@ declare(strict_types=1);
 require __DIR__ . '/includes/bootstrap.php';
 redirect_logged_in_public_page();
 
-$vp3BrowserUrl = url('/login.php');
+$vp3SignupUrl = url('/signup.php');
+$vp3DemoUrl = url('/book-demo.php');
+$vp3LoginUrl = url('/login.php');
 ?>
 <!doctype html>
 <html lang="en">
@@ -22,8 +24,8 @@ $vp3BrowserUrl = url('/login.php');
     <strong>VP3</strong>
   </a>
   <div class="vp3-topbar-actions">
-    <a class="vp3-get-started" href="<?= e($vp3BrowserUrl) ?>">Get Started <span aria-hidden="true">→</span></a>
-    <a class="vp3-account" href="<?= e(url('/login.php')) ?>" aria-label="Sign in">
+    <a class="vp3-get-started" href="<?= e($vp3SignupUrl) ?>">Get Started <span aria-hidden="true">→</span></a>
+    <a class="vp3-account" href="<?= e($vp3LoginUrl) ?>" aria-label="Sign in">
       <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4.5 21c.8-4.2 3.3-6.3 7.5-6.3s6.7 2.1 7.5 6.3"/></svg>
     </a>
   </div>
@@ -37,17 +39,15 @@ $vp3BrowserUrl = url('/login.php');
       <h1 id="vp3HeroTitle">Capture. Understand.<br>Take Action.</h1>
       <p class="vp3-hero-copy">Your personal AI assistant with a private URL, transcriptions, AI summaries, and a connected knowledge base — so nothing gets lost and you can move forward faster.</p>
 
-      <div class="vp3-downloads" id="downloads" aria-label="VP3 app downloads">
-        <a class="vp3-store-badge" href="#vp3-download-note" aria-label="VP3 for iPhone and iPad">
-          <span class="vp3-store-symbol apple" aria-hidden="true">●</span>
-          <span><small>Download on the</small><strong>App Store</strong></span>
+      <div class="vp3-downloads" id="downloads" aria-label="VP3 account and demo actions">
+        <a class="vp3-store-badge" href="<?= e($vp3SignupUrl) ?>" aria-label="Create your VP3 account">
+          <span><strong>Create account</strong></span>
         </a>
-        <a class="vp3-store-badge" href="#vp3-download-note" aria-label="VP3 for Android">
-          <span class="vp3-store-symbol play" aria-hidden="true">▶</span>
-          <span><small>GET IT ON</small><strong>Google Play</strong></span>
+        <a class="vp3-store-badge" href="<?= e($vp3DemoUrl) ?>" aria-label="Book a VP3 demo">
+          <span><strong>Book demo</strong></span>
         </a>
       </div>
-      <a class="vp3-browser-link" href="<?= e($vp3BrowserUrl) ?>">Or use it in your browser <span aria-hidden="true">→</span></a>
+      <a class="vp3-browser-link" href="<?= e($vp3LoginUrl) ?>">Already have an account? Sign in <span aria-hidden="true">→</span></a>
 
       <div class="vp3-device-stage" aria-label="VP3 desktop and mobile assistant interface preview">
         <div class="vp3-laptop">
@@ -142,17 +142,17 @@ $vp3BrowserUrl = url('/login.php');
       <div class="vp3-kicker">From conversations to action</div>
       <h2 id="vp3ResultsTitle">Turn Your Thoughts<br>Into Results.</h2>
       <p>Capture ideas, organize your knowledge, collaborate with your team, and take action — all in one private, personal AI assistant.</p>
-      <a class="vp3-get-started dark" href="<?= e($vp3BrowserUrl) ?>">Get Started <span aria-hidden="true">→</span></a>
+      <a class="vp3-get-started dark" href="<?= e($vp3SignupUrl) ?>">Get Started <span aria-hidden="true">→</span></a>
     </div>
   </section>
 
   <section class="vp3-download-strip" id="vp3-download-note">
-    <div class="vp3-kicker">Available on all your devices</div>
-    <div class="vp3-downloads">
-      <a class="vp3-store-badge" href="<?= e($vp3BrowserUrl) ?>"><span class="vp3-store-symbol apple" aria-hidden="true">●</span><span><small>Download on the</small><strong>App Store</strong></span></a>
-      <a class="vp3-store-badge" href="<?= e($vp3BrowserUrl) ?>"><span class="vp3-store-symbol play" aria-hidden="true">▶</span><span><small>GET IT ON</small><strong>Google Play</strong></span></a>
+    <div class="vp3-kicker">Ready to get started</div>
+    <div class="vp3-downloads" aria-label="VP3 account and demo actions">
+      <a class="vp3-store-badge" href="<?= e($vp3SignupUrl) ?>" aria-label="Create your VP3 account"><span><strong>Create account</strong></span></a>
+      <a class="vp3-store-badge" href="<?= e($vp3DemoUrl) ?>" aria-label="Book a VP3 demo"><span><strong>Book demo</strong></span></a>
     </div>
-    <a class="vp3-browser-link" href="<?= e($vp3BrowserUrl) ?>">Or use it in your browser <span aria-hidden="true">→</span></a>
+    <a class="vp3-browser-link" href="<?= e($vp3LoginUrl) ?>">Already have an account? Sign in <span aria-hidden="true">→</span></a>
   </section>
 </main>
 
