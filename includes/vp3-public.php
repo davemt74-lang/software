@@ -25,6 +25,7 @@ function vp3_public_header(string $title, string $description = '', array $optio
 <meta name="theme-color" content="#f7f9fc">
 <title><?= e($title) ?></title>
 <link rel="stylesheet" href="<?= e(url('/vp3-public.css?v=vp3-public-20260906')) ?>">
+<link rel="stylesheet" href="<?= e(url('/vp3-public-nav.css?v=vp3-public-20260906')) ?>">
 </head>
 <body class="vp3-public<?= $bodyClass !== '' ? ' ' . e($bodyClass) : '' ?>">
 <header class="vp3-public-header<?= $compact ? ' compact' : '' ?>">
