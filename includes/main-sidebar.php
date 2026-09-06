@@ -4,6 +4,7 @@ declare(strict_types=1);
 $mainSidebarUser = $mainSidebarUser ?? $workspaceSidebarUser ?? current_user();
 $mainSidebarActive = $mainSidebarActive ?? $workspaceSidebarActive ?? '';
 $mainSidebarSavedCount = 0;
+$mainSidebarTokenCommerceReady = function_exists('token_pack_schema_ready') && token_pack_schema_ready();
 
 if ($mainSidebarUser && table_exists('track_favorites')) {
     try {
@@ -74,5 +75,21 @@ if ($mainSidebarUser && table_exists('track_favorites')) {
         <?php endif; ?>
       </nav>
     </section>
+
+    <?php if (has_permission('account.access', $mainSidebarUser)): ?>
+      <section class="chat-sidebar-nav-section" aria-label="Account and plan">
+        <div class="chat-history-label">Account</div>
+        <nav class="chat-sidebar-nav">
+          <a class="chat-sidebar-nav-link <?= $mainSidebarActive === 'subscription' ? 'active' : '' ?>" href="<?= e(url('/subscription.php')) ?>">
+            <span>◫</span><strong>Plan &amp; Usage</strong>
+          </a>
+          <?php if ($mainSidebarTokenCommerceReady): ?>
+            <a class="chat-sidebar-nav-link <?= $mainSidebarActive === 'token-packs' ? 'active' : '' ?>" href="<?= e(url('/token-packs.php')) ?>">
+              <span>＋</span><strong>Buy AI Tokens</strong>
+            </a>
+          <?php endif; ?>
+        </nav>
+      </section>
+    <?php endif; ?>
   </div>
 </aside>

@@ -18,7 +18,9 @@ if(!is_array($event)){
     http_response_code(400);header('Content-Type: application/json; charset=utf-8');echo json_encode(['ok'=>false,'error'=>'invalid_json']);exit;
 }
 try{
-    $result=billing_process_stripe_event($event,$payload);
+    $result=token_pack_schema_ready()&&token_pack_is_stripe_event($event)
+        ?token_pack_process_stripe_event($event,$payload)
+        :billing_process_stripe_event($event,$payload);
     http_response_code(200);header('Content-Type: application/json; charset=utf-8');echo json_encode(['ok'=>true,'result'=>$result],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
 }catch(Throwable $e){
     error_log('VP3 Stripe webhook failed: '.$e->getMessage());

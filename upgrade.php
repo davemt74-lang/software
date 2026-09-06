@@ -15,6 +15,7 @@ function vp3_upgrade_complete(): bool
         && subscription_schema_ready()
         && subscription_self_service_schema_ready()
         && billing_schema_ready()
+        && token_pack_schema_ready()
         && password_reset_schema_ready()
         && chat_settings_schema_ready_v237()
         && permission_v105_playlist_permission_ready()
@@ -51,6 +52,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             subscription_ensure_schema();
             subscription_self_service_ensure_schema();
             billing_ensure_schema();
+            token_pack_ensure_schema();
             password_reset_ensure_schema();
             chat_settings_ensure_schema_v237();
             permission_v105_seed_playlist_permission();
@@ -75,7 +77,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $complete = vp3_upgrade_complete();
 
             if ($complete) {
-                flash('notice', 'VP3 database upgrade complete: subscriptions, self-service plan management, Stripe billing, verified webhooks, AI quotas, persistent onboarding, trial intelligence, recovery, Agent Brain, Knowledge, Profile Agent, transcriptions, CRM, and Studio capabilities are ready.');
+                flash('notice', 'VP3 database upgrade complete: subscriptions, self-service plan management, Stripe billing, verified webhooks, AI quotas, purchasable AI token packs, persistent onboarding, trial intelligence, recovery, Agent Brain, Knowledge, Profile Agent, transcriptions, CRM, and Studio capabilities are ready.');
                 redirect(url('/admin/users.php'));
             }
         } catch (Throwable $e) {
@@ -91,7 +93,7 @@ vp3_public_header('Database Upgrade — VP3', 'Upgrade the VP3 database and appl
     <div class="vp3-auth-visual-content">
       <div class="vp3-kicker">System maintenance</div>
       <h1>Keep VP3 capabilities current.</h1>
-      <p>The upgrade process adds the current subscription, billing, AI quota, onboarding, assistant, knowledge, collaboration, CRM, and Studio schema without replacing existing user content.</p>
+      <p>The upgrade process adds the current subscription, billing, AI quota, token-commerce, onboarding, assistant, knowledge, collaboration, CRM, and Studio schema without replacing existing user content.</p>
     </div>
   </section>
   <section class="vp3-auth-form-side">
@@ -100,10 +102,10 @@ vp3_public_header('Database Upgrade — VP3', 'Upgrade the VP3 database and appl
       <h1>VP3 Database Upgrade</h1>
       <?php if ($complete): ?>
         <div class="vp3-alert success">The current VP3 schema is installed and ready.</div>
-        <p class="vp3-auth-intro">Subscription packages, Stripe billing, AI quota accounting, persistent onboarding and trial intelligence, token top-ups, password recovery, Agent Brain, private Knowledge, Profile Agent, voice identity, transcriptions, shared knowledge, CRM, and Studio capabilities are available.</p>
+        <p class="vp3-auth-intro">Subscription packages, Stripe billing, AI quota accounting, Admin token top-ups, one-time AI token pack purchases, persistent onboarding and trial intelligence, password recovery, Agent Brain, private Knowledge, Profile Agent, voice identity, transcriptions, shared knowledge, CRM, and Studio capabilities are available.</p>
         <a class="vp3-btn primary" href="<?= e(url('/admin/users.php')) ?>">Manage Users →</a>
       <?php else: ?>
-        <p class="vp3-auth-intro">Run the current schema upgrade while preserving existing content and access. Existing accounts are migrated safely and onboarding progress is preserved.</p>
+        <p class="vp3-auth-intro">Run the current schema upgrade while preserving existing content and access. Existing accounts, package assignments, token balances and onboarding progress are preserved.</p>
         <?php if ($error): ?><div class="vp3-alert error" role="alert"><?= e($error) ?></div><?php endif; ?>
         <form method="post">
           <?= csrf_field() ?>
