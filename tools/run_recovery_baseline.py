@@ -52,6 +52,7 @@ NODE_TESTS = [
     'tests/self-service-plan-management-contract.mjs',
     'tests/stripe-billing-phase2-contract.mjs',
     'tests/ai-token-pack-purchase-contract.mjs',
+    'tests/subscription-intelligence-contract.mjs',
     'tests/team-workspace-scope-contract.mjs',
     'tests/member-navigation-contract.mjs',
     'tests/main-feed-canonical-ui-contract.mjs',
