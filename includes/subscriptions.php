@@ -16,3 +16,4 @@ require_once __DIR__ . '/subscription-self-service.php';
 require_once __DIR__ . '/billing-schema.php';
 require_once __DIR__ . '/billing-stripe.php';
 require_once __DIR__ . '/billing-runtime.php';
+require_once __DIR__ . '/token-packs.php';
