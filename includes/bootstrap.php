@@ -40,6 +40,7 @@ require_once __DIR__ . '/user-data-usage-v236.php';
 require_once __DIR__ . '/midi-v217.php';
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/notifications.php';
+require_once __DIR__ . '/agent-chat-activity.php';
 require_once __DIR__ . '/artist-workspaces-v104.php';
 require_once __DIR__ . '/artist-workspace-v181.php';
 require_once __DIR__ . '/artist-media-v182.php';

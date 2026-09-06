@@ -9,8 +9,8 @@ $memberHeaderSubtitle = trim((string)($memberHeaderSubtitle ?? ''));
 $memberHeaderActions = (string)($memberHeaderActions ?? '');
 $memberHeaderClass = trim((string)($memberHeaderClass ?? ''));
 $memberHeaderShowSidebarToggle = (bool)($memberHeaderShowSidebarToggle ?? true);
-$memberHeaderNotificationCount = notification_unread_count($memberHeaderUser);
 $memberHeaderNotifications = notification_recent($memberHeaderUser, 6);
+$memberHeaderNotificationCount = notification_unread_count($memberHeaderUser);
 $memberHeaderCanChat = has_permission('chat.access', $memberHeaderUser);
 $memberHeaderAgentVoiceEnabled = $memberHeaderCanChat ? member_agent_voice_enabled($memberHeaderUser) : true;
 ?>

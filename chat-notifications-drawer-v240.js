@@ -483,7 +483,7 @@
     speechQueue = speechQueue.then(() => speakWithExistingVoice(text)).catch(() => {});
   }
 
-  async function presentAttention(item) {
+  async function presentAttention(item, speak = true) {
     const notificationId = Number(item?.id || 0);
     if (notificationId < 1) return true;
     const data = await request('present_attention', {
@@ -501,7 +501,7 @@
       throw new Error('Actionable notification could not be surfaced in Agent Chat.');
     }
 
-    queueSpeech(String(data.message || ''));
+    if (speak) queueSpeech(String(data.message || ''));
     state = await request('mark_read', {notification_id:notificationId});
     render();
     return true;
@@ -514,9 +514,12 @@
     try {
       const data = await request('attention', null, {after_id:bootstrap ? 0 : attentionCursor});
       const items = Array.isArray(data.items) ? data.items : [];
-      const selected = bootstrap && items.length ? [items[items.length - 1]] : items;
-      for (const item of selected) {
-        await presentAttention(item);
+      for (let index = 0; index < items.length; index += 1) {
+        // Reconcile the entire durable backlog into Chat, but do not read a
+        // historical queue aloud. On initial load only the newest item speaks;
+        // subsequent live items are all verbal when Agent Voice is enabled.
+        const speak = !bootstrap || index === items.length - 1;
+        await presentAttention(items[index], speak);
       }
       attentionCursor = Math.max(attentionCursor, Number(data.latest_id || 0));
     } catch (_error) {

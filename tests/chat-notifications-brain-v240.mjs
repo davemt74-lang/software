@@ -77,7 +77,9 @@ assert.doesNotMatch(ui, /if \(!data\.handled \|\| data\.duplicate\) return/, 'pe
 assert.match(ui, /const surfaced = await showAttentionConversation/, 'canvas visibility is explicitly verified before notification delivery completes');
 assert.match(ui, /if \(!surfaced\)[\s\S]*throw new Error\('Actionable notification could not be surfaced in Agent Chat\.'\)/, 'failed canvas presentation remains retryable instead of being silently consumed');
 assert.match(ui, /state = await request\('mark_read', \{notification_id:notificationId\}\)/, 'actionable notification is marked read only after it is visible in Agent Chat');
-assert.match(ui, /const selected = bootstrap && items\.length \? \[items\[items\.length - 1\]\] : items/, 'bootstrap surfaces only the newest pending actionable item instead of replaying a stale burst');
+assert.match(ui, /for \(let index = 0; index < items\.length; index \+= 1\)/, 'bootstrap must persist every returned unsurfaced operational item');
+assert.match(ui, /const speak = !bootstrap \|\| index === items\.length - 1/, 'historical bootstrap backlog must only verbalize the newest item');
+assert.doesNotMatch(ui, /const selected = bootstrap && items\.length \? \[items\[items\.length - 1\]\] : items/, 'old newest-only bootstrap must stay removed');
 assert.match(ui, /Keep the cursor unchanged so a failed canvas presentation is retried/, 'failed canvas delivery must retain its polling position for retry');
 assert.doesNotMatch(identity, /agent-attention\.js|agent-attention\.css/, 'legacy Profile Agent top-banner runtime must not load in Agent Chat');
 assert.match(ui, /StonefellowPremiumVoiceV122/, 'attention uses the existing ElevenLabs voice runtime');
