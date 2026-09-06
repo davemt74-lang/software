@@ -19,16 +19,28 @@ assert.match(bridge, /memory_type='transcript_analysis'/, 'transcription saves t
 assert.match(bridge, /Personal Artist Listening analysis%/, 'transcription saves to My Knowledge must feed Agent Chat');
 assert.match(bridge, /agent_proactive_events/, 'proactive agent opportunities must feed Agent Chat');
 assert.match(bridge, /agent_chat_activity_tool_is_meaningful/, 'read-only tool noise must be filtered before Chat promotion');
+assert.match(bridge, /skill\|workflow\|automation/, 'canonical tool ledger must also recognize skill/workflow execution names');
+assert.match(bridge, /agent_chat_activity_safe_target/, 'activity actions must validate target protocols');
+assert.match(bridge, /NOT EXISTS[\s\S]*source_type='agent_tool_history'/, 'tool reconciliation must query only unpromoted source rows');
+assert.match(bridge, /NOT EXISTS[\s\S]*source_type='agent_edit_event'/, 'Stem reconciliation must query only unpromoted source rows');
+assert.match(bridge, /NOT EXISTS[\s\S]*source_type='transcript_analysis'/, 'transcription reconciliation must query only unpromoted source rows');
 assert.doesNotMatch(bridge, /CREATE TABLE|ALTER TABLE/, 'activity bridge must reuse existing ledgers instead of creating a parallel store');
 
 assert.match(notifications, /str_starts_with\(\$type, 'agent_activity_'\)/, 'canonical operational activity notifications must require Chat attention');
-assert.match(notifications, /agent_chat_activity_reconcile\(\$user\)/, 'notification reads must reconcile existing subsystem ledgers');
+assert.match(notifications, /agent_chat_activity_reconcile\(\$user\)/, 'notification attention/recent reads must reconcile existing subsystem ledgers');
 assert.match(notifications, /NOT EXISTS[\s\S]*\$\.attention\.notification_id/, 'bootstrap must select durable unsurfaced items, not a temporary unread window');
 assert.doesNotMatch(notifications, /created_at>=DATE_SUB\(NOW\(\),INTERVAL 10 MINUTE\)/, 'Agent Chat bootstrap must not discard attention after ten minutes');
 assert.match(notifications, /\?string \$createdAt = null/, 'notifications must preserve source event time when bridging activity');
 
 assert.match(attentionApi, /\$notification\['created_at'\]/, 'Chat persistence must preserve the source notification timestamp');
+assert.match(attentionApi, /chat_notifications_v240_source_title/, 'operational Chat context must retain a human-readable source');
+assert.match(attentionApi, /chat_notifications_v240_action_label/, 'operational Chat actions must be source-aware');
+assert.match(attentionApi, /'activity'=>\$activity/, 'operational messages must persist structured activity metadata');
 assert.match(attentionApi, /'actions'=>\$actions/, 'operational messages must retain actionable Chat context');
+assert.match(attentionApi, /Open Stem Editor/, 'Stem activity must provide a direct Stem Editor action');
+assert.match(attentionApi, /Open Transcription/, 'transcription activity must provide a direct transcription action');
+assert.match(attentionApi, /Open My Knowledge/, 'knowledge-save activity must provide a direct knowledge action');
+
 assert.match(attentionJs, /async function presentAttention\(item, speak = true\)/, 'attention presentation must separate persistence from optional speech');
 assert.match(attentionJs, /for \(let index = 0; index < items\.length; index \+= 1\)/, 'bootstrap must reconcile the complete returned durable backlog');
 assert.match(attentionJs, /const speak = !bootstrap \|\| index === items\.length - 1/, 'initial backlog must only verbalize its newest item');
