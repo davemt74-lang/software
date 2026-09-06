@@ -42,21 +42,27 @@ assert.ok(stripe.includes("'vp3_plan_request_id'"), 'Checkout and Stripe subscri
 assert.ok(stripe.includes("'subscription_update_confirm'"), 'existing paid plan changes must use Stripe hosted update confirmation');
 assert.ok(stripe.includes("'payment_method_update'=>['enabled'=>true]"), 'billing portal must support payment-method management');
 assert.ok(stripe.includes("'subscription_cancel'=>['enabled'=>true,'mode'=>'at_period_end'"), 'billing portal cancellation must preserve paid access through period end');
+assert.ok(stripe.includes("checkout/sessions/'.rawurlencode($sessionId).'/expire"), 'stale Checkout sessions must be explicitly expired at Stripe');
+assert.match(stripe, /billing_checkout_sessions[\s\S]*VALUES \(\?,\?\?,?/, 'billing checkout persistence must remain server-side');
 
 assert.ok(runtime.includes("in_array($status,['active','trialing'],true)"), 'only active/trialing provider subscriptions can activate entitlements');
 assert.ok(runtime.includes("$pending=$subscription['pending_update']??null"), 'Stripe pending updates must not activate a target package early');
 assert.ok(runtime.includes('billing_price_mapping_by_provider_price'), 'provider Price ID must map back to an Admin-defined package');
-assert.ok(runtime.includes('entitlements were not changed'), 'unknown Stripe prices must fail closed');
+assert.ok(runtime.includes('entitlements were not changed'), 'unknown/stale provider state must fail closed');
 assert.ok(runtime.includes("assignment_source='stripe'"), 'paid local subscriptions must be explicitly provider-owned');
 assert.ok(runtime.includes('billing_fallback'), 'ended Stripe subscriptions must use a controlled free-package fallback when configured');
 assert.ok(runtime.indexOf("billing_stripe_request('POST','subscriptions/'") < runtime.indexOf('billing_reconcile_stripe_subscription($provider,$pdo)'), 'provider cancellation must occur before local cancellation reconciliation');
-assert.ok(runtime.includes('billing_expire_request_checkout'), 'cancelled/superseded plan requests must expire open Stripe Checkout sessions');
+assert.ok(runtime.includes('billing_expire_request_checkout') && runtime.includes('billing_expire_superseded_checkouts'), 'cancelled/superseded plan requests must expire open Stripe Checkout sessions');
+assert.match(runtime, /function billing_cancel_request[\s\S]*billing_expire_request_checkout[\s\S]*subscription_self_service_cancel_request/, 'pending checkout must expire before its VP3 request is cancelled');
+assert.ok(runtime.includes("in_array((string)$candidate['status'],['pending_billing','applied'],true)"), 'superseded/cancelled requests must not authorize entitlement activation');
 
 assert.ok(webhook.includes("file_get_contents('php://input')"), 'webhook must verify the exact raw request body');
 assert.ok(webhook.includes("$_SERVER['HTTP_STRIPE_SIGNATURE']"), 'webhook must read Stripe-Signature');
 assert.ok(webhook.indexOf('billing_stripe_verify_webhook') < webhook.indexOf('json_decode($payload,true)'), 'signature must be verified before trusting webhook JSON');
-assert.ok(webhook.includes("status='failed'"), 'failed webhook events must be made retryable before idempotent processing');
 assert.ok(!webhook.includes('verify_csrf()'), 'Stripe webhook must not depend on browser CSRF tokens');
+assert.ok(runtime.includes("$status==='failed'||$stale"), 'failed/stale webhook work must be reclaimable for Stripe retries');
+assert.ok(runtime.includes("status='processing',error_message='',processed_at=NULL"), 'reclaimed webhook work must reset processing state atomically');
+assert.ok(runtime.includes("hash_equals((string)$existing['payload_sha256'],$hash)"), 'duplicate webhook IDs must match the original payload before retry');
 
 assert.ok(page.includes("$billingReady=billing_stripe_configured()&&billing_stripe_webhook_secret()!==''"), 'paid checkout must require both Stripe API and webhook configuration');
 assert.ok(page.includes("$action==='resume_checkout'"), 'users must be able to resume an incomplete Checkout/plan-change flow');
