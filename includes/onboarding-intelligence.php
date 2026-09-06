@@ -7,7 +7,7 @@ declare(strict_types=1);
  * This extends the existing user_agent_preferences record. It does not create
  * a parallel onboarding identity or entitlement system.
  */
-const VP3_ONBOARDING_INTELLIGENCE_BUILD='onboarding-intelligence-20260906';
+const VP3_ONBOARDING_INTELLIGENCE_BUILD='onboarding-intelligence-20260906-v2';
 
 function onboarding_intelligence_schema_ready(?PDO $pdo=null): bool
 {
@@ -38,17 +38,38 @@ function onboarding_intelligence_ensure_schema(?PDO $pdo=null): void
     foreach($adds as $column=>$sql){if(!column_exists('user_agent_preferences',$column))$pdo->exec($sql);}
 }
 
+function onboarding_intelligence_default_preferences(int $userId): array
+{
+    return [
+        'user_id'=>$userId,'onboarding_dismissed'=>0,'voice_preference'=>null,'onboarding_step'=>'voice',
+        'onboarding_draft_json'=>null,'feature_interest_json'=>null,'last_trial_notice_threshold'=>null,'last_trial_notice_at'=>null,
+        'draft'=>[],'feature_interests'=>[],
+    ];
+}
+
+/** Read-only state lookup. Schema mutation is deliberately reserved for upgrade/write paths. */
 function onboarding_intelligence_preferences(PDO $pdo,int $userId,bool $forUpdate=false): array
 {
-    if($userId<1)return [];
-    onboarding_intelligence_ensure_schema($pdo);
-    $pdo->prepare("INSERT IGNORE INTO user_agent_preferences (user_id,onboarding_dismissed,onboarding_step) VALUES (?,0,'voice')")->execute([$userId]);
+    if($userId<1)return onboarding_intelligence_default_preferences($userId);
+    if(!onboarding_intelligence_schema_ready($pdo)){
+        $defaults=onboarding_intelligence_default_preferences($userId);
+        if(table_exists('user_agent_preferences')){
+            try{$s=$pdo->prepare('SELECT onboarding_dismissed FROM user_agent_preferences WHERE user_id=? LIMIT 1');$s->execute([$userId]);$row=$s->fetch();if($row)$defaults['onboarding_dismissed']=(int)($row['onboarding_dismissed']??0);}catch(Throwable $e){}
+        }
+        return $defaults;
+    }
     $stmt=$pdo->prepare('SELECT * FROM user_agent_preferences WHERE user_id=? LIMIT 1'.($forUpdate?' FOR UPDATE':''));
-    $stmt->execute([$userId]);$row=$stmt->fetch()?:[];
+    $stmt->execute([$userId]);$row=$stmt->fetch();if(!$row)return onboarding_intelligence_default_preferences($userId);
     foreach(['onboarding_draft_json'=>'draft','feature_interest_json'=>'feature_interests'] as $column=>$key){
         $decoded=json_decode((string)($row[$column]??''),true);$row[$key]=is_array($decoded)?$decoded:[];
     }
     return $row;
+}
+
+function onboarding_intelligence_ensure_preference_row(PDO $pdo,int $userId): void
+{
+    onboarding_intelligence_ensure_schema($pdo);
+    $pdo->prepare("INSERT IGNORE INTO user_agent_preferences (user_id,onboarding_dismissed,onboarding_step) VALUES (?,0,'voice')")->execute([$userId]);
 }
 
 function onboarding_intelligence_valid_step(string $step): string
@@ -60,13 +81,17 @@ function onboarding_intelligence_valid_step(string $step): string
 function onboarding_intelligence_save_progress(PDO $pdo,array $user,string $step,array $draft=[],?string $voicePreference=null,array $featureInterests=[]): array
 {
     $uid=(int)($user['id']??0);if($uid<1)throw new RuntimeException('A signed-in account is required.');
-    onboarding_intelligence_ensure_schema($pdo);
+    onboarding_intelligence_ensure_preference_row($pdo,$uid);
     $step=onboarding_intelligence_valid_step($step);
     if($voicePreference!==null&&!in_array($voicePreference,['on','off'],true))throw new RuntimeException('Unknown voice preference.');
     $current=onboarding_intelligence_preferences($pdo,$uid);
     $mergedDraft=array_replace(is_array($current['draft']??null)?$current['draft']:[],$draft);
     $mergedInterests=array_replace(is_array($current['feature_interests']??null)?$current['feature_interests']:[],$featureInterests);
     $voice=$voicePreference??($current['voice_preference']??null);
+    // Voice preference is authoritative. Turning Voice off must also clear the
+    // upgrade-interest signal so plan recommendations do not remain stale.
+    if($voicePreference==='on')$mergedInterests['voice.access']=true;
+    elseif($voicePreference==='off')$mergedInterests['voice.access']=false;
     $stmt=$pdo->prepare('UPDATE user_agent_preferences SET voice_preference=?,onboarding_step=?,onboarding_draft_json=?,feature_interest_json=?,updated_at=NOW() WHERE user_id=?');
     $stmt->execute([
         $voice,$step,
@@ -80,7 +105,7 @@ function onboarding_intelligence_save_progress(PDO $pdo,array $user,string $step
 function onboarding_intelligence_mark_complete(PDO $pdo,int $userId): void
 {
     if($userId<1)return;
-    onboarding_intelligence_ensure_schema($pdo);
+    onboarding_intelligence_ensure_preference_row($pdo,$userId);
     $pdo->prepare("UPDATE user_agent_preferences SET onboarding_dismissed=1,onboarding_step='complete',onboarding_draft_json=NULL,updated_at=NOW() WHERE user_id=?")->execute([$userId]);
 }
 
@@ -127,7 +152,7 @@ function onboarding_intelligence_package_recommendation(PDO $pdo,array $user,arr
 {
     if(!function_exists('subscription_packages')||!subscription_schema_ready($pdo))return null;
     $usage=onboarding_intelligence_usage_signals($pdo,(int)$user['id']);$needs=$usage;$reasons=[];
-    foreach($usage as $key=>$signal){$reasons[]='Recent '.implode(', ',array_slice(array_unique($signal['scopes']),0,2)).' usage';}
+    foreach($usage as $signal){$reasons[]='Recent '.implode(', ',array_slice(array_unique($signal['scopes']),0,2)).' usage';}
     $voice=(string)($preferences['voice_preference']??'');
     if($voice==='on'){$needs['voice.access']=$needs['voice.access']??['requests'=>0,'tokens'=>0,'scopes'=>['voice preference']];$reasons[]='Voice integration selected';}
     foreach((array)($preferences['feature_interests']??[]) as $key=>$enabled){if(!$enabled)continue;if(isset(subscription_capability_catalog()[$key])){$needs[$key]=$needs[$key]??['requests'=>0,'tokens'=>0,'scopes'=>['feature interest']];$reasons[]='Interest in '.(subscription_capability_catalog()[$key]['label']??$key);}}
@@ -171,12 +196,15 @@ function onboarding_intelligence_trial_notice(PDO $pdo,array $user,array $prefer
 function onboarding_intelligence_ack_trial_notice(PDO $pdo,int $userId,int $threshold): void
 {
     if($userId<1||!in_array($threshold,[0,1,3,7],true))return;
-    onboarding_intelligence_ensure_schema($pdo);
+    onboarding_intelligence_ensure_preference_row($pdo,$userId);
     $pdo->prepare('UPDATE user_agent_preferences SET last_trial_notice_threshold=?,last_trial_notice_at=NOW(),updated_at=NOW() WHERE user_id=?')->execute([$threshold,$userId]);
 }
 
 function onboarding_intelligence_state(PDO $pdo,array $user): array
 {
+    if(!onboarding_intelligence_schema_ready($pdo)){
+        return ['build'=>VP3_ONBOARDING_INTELLIGENCE_BUILD,'voice_preference'=>null,'current_step'=>'voice','draft'=>[],'feature_interests'=>[],'trial_notice'=>null,'package_recommendation'=>null,'schema_ready'=>false];
+    }
     $prefs=onboarding_intelligence_preferences($pdo,(int)$user['id']);
     $dismissed=!empty($prefs['onboarding_dismissed']);$agents=user_agents_list_v236($pdo,(int)$user['id'],true);$draft=(array)($prefs['draft']??[]);
     $step=$dismissed?'complete':onboarding_intelligence_valid_step((string)($prefs['onboarding_step']??'voice'));
@@ -187,6 +215,6 @@ function onboarding_intelligence_state(PDO $pdo,array $user): array
     return [
         'build'=>VP3_ONBOARDING_INTELLIGENCE_BUILD,'voice_preference'=>$prefs['voice_preference']??null,'current_step'=>$step,
         'draft'=>$draft,'feature_interests'=>(array)($prefs['feature_interests']??[]),'trial_notice'=>onboarding_intelligence_trial_notice($pdo,$user,$prefs),
-        'package_recommendation'=>onboarding_intelligence_package_recommendation($pdo,$user,$prefs),
+        'package_recommendation'=>onboarding_intelligence_package_recommendation($pdo,$user,$prefs),'schema_ready'=>true,
     ];
 }
