@@ -2,36 +2,41 @@
 declare(strict_types=1);
 
 /**
- * Agent Brain activity is not a user-facing system notification. Some of these
- * rows still act as the existing durable Chat bridge for memory/knowledge work,
- * but they must not inflate the Notifications badge or list. Proactive Agent
- * opportunities no longer use Notifications as a transport at all.
+ * Operational Agent activity uses the existing notifications table as a durable,
+ * deduplicated carrier, but it belongs to the Agent Brain tab rather than the
+ * user-facing Notifications surface or Agent Chat attention pipeline.
  */
-function notification_is_brain_internal(array $notification): bool
+function notification_is_agent_brain_activity(array $notification): bool
 {
     $type = strtolower(trim((string)($notification['type'] ?? '')));
     $sourceType = strtolower(trim((string)($notification['source_type'] ?? '')));
 
-    if (in_array($sourceType, ['agent_proactive_event','agent_memory_item','personal_knowledge_item'], true)) {
-        return true;
-    }
+    if (str_starts_with($type, 'agent_activity_')) return true;
 
-    return in_array($type, [
-        'agent_activity_opportunity',
-        'agent_activity_brain_saved',
-        'agent_activity_knowledge_saved',
+    return in_array($sourceType, [
+        'agent_tool_history',
+        'agent_edit_event',
+        'agent_memory_item',
+        'personal_knowledge_item',
+        'transcript_analysis',
+        'agent_proactive_event',
     ], true);
 }
 
-function notification_system_sql_predicate(string $alias = ''): string
+function notification_agent_brain_sql_predicate(string $alias = ''): string
 {
     $prefix = trim($alias);
     if ($prefix !== '' && !str_ends_with($prefix, '.')) $prefix .= '.';
 
-    return "NOT (\n"
-        . "  {$prefix}source_type IN ('agent_proactive_event','agent_memory_item','personal_knowledge_item')\n"
-        . "  OR {$prefix}type IN ('agent_activity_opportunity','agent_activity_brain_saved','agent_activity_knowledge_saved')\n"
+    return "(\n"
+        . "  {$prefix}type LIKE 'agent_activity_%'\n"
+        . "  OR {$prefix}source_type IN ('agent_tool_history','agent_edit_event','agent_memory_item','personal_knowledge_item','transcript_analysis','agent_proactive_event')\n"
         . ')';
+}
+
+function notification_system_sql_predicate(string $alias = ''): string
+{
+    return 'NOT ' . notification_agent_brain_sql_predicate($alias);
 }
 
 function notification_unread_count(?array $user = null): int
@@ -82,13 +87,55 @@ function notification_recent(?array $user = null, int $limit = 8): array
 }
 
 /**
- * Deterministic attention gate for Agent Chat. Notifications represent system
- * events that affect the user. Internal Agent Brain memory/knowledge rows may
- * still bridge durable operational context into Chat, while proactive reasoning
- * is owned by Agent Brain and must never be promoted from Notifications.
+ * Return the durable operational feed for the existing Activity Center Agent
+ * Brain tab. Authoritative subsystem ledgers are reconciled first; notification
+ * rows are only the existing deduplicated delivery/index carrier.
+ */
+function notification_agent_brain_activity_after(?array $user, int $afterId = 0, int $limit = 50): array
+{
+    $user ??= current_user();
+    $pdo = db();
+    if (!$user || !$pdo || !table_exists('notifications')) return [];
+
+    if (function_exists('agent_chat_activity_reconcile')) {
+        agent_chat_activity_reconcile($user);
+    }
+
+    $limit = max(1, min(100, $limit));
+    try {
+        if ($afterId > 0) {
+            $stmt = $pdo->prepare(
+                "SELECT n.* FROM notifications n
+                 WHERE n.user_id=? AND n.id>? AND " . notification_agent_brain_sql_predicate('n') . "
+                 ORDER BY n.id ASC LIMIT {$limit}"
+            );
+            $stmt->execute([(int)$user['id'], $afterId]);
+            return $stmt->fetchAll() ?: [];
+        }
+
+        $stmt = $pdo->prepare(
+            "SELECT n.* FROM notifications n
+             WHERE n.user_id=?
+               AND " . notification_agent_brain_sql_predicate('n') . "
+               AND n.created_at>=DATE_SUB(NOW(),INTERVAL 14 DAY)
+             ORDER BY n.created_at DESC,n.id DESC LIMIT {$limit}"
+        );
+        $stmt->execute([(int)$user['id']]);
+        return $stmt->fetchAll() ?: [];
+    } catch (Throwable $e) {
+        return [];
+    }
+}
+
+/**
+ * Deterministic attention gate for Agent Chat. Agent Brain activity is excluded
+ * before any explicit or heuristic attention checks; only user-facing events
+ * that genuinely need a response may enter the conversation canvas.
  */
 function notification_requires_attention(array $notification): bool
 {
+    if (notification_is_agent_brain_activity($notification)) return false;
+
     if (array_key_exists('requires_attention', $notification)) {
         $explicit = (int)($notification['requires_attention'] ?? 0);
         if ($explicit === 1) return true;
@@ -99,22 +146,6 @@ function notification_requires_attention(array $notification): bool
     $title = strtolower(trim((string)($notification['title'] ?? '')));
     $body = strtolower(trim((string)($notification['body'] ?? '')));
     $text = trim($title . ' ' . $body);
-
-    // Proactive reasoning belongs to Agent Brain. Historical opportunity rows
-    // are intentionally ignored so an upgrade cannot replay them into Chat.
-    if ($sourceType === 'agent_proactive_event' || $type === 'agent_activity_opportunity') return false;
-
-    // Durable operational inbox events generated from authoritative ledgers.
-    // Memory/Knowledge rows are hidden from Notifications UI but can still be
-    // persisted to Agent Chat because Chat is the operational inbox.
-    if (str_starts_with($type, 'agent_activity_')) return true;
-    if (in_array($sourceType, [
-        'agent_tool_history',
-        'agent_edit_event',
-        'agent_memory_item',
-        'personal_knowledge_item',
-        'transcript_analysis',
-    ], true)) return true;
 
     // Profile Agent events are owner-facing customer-service activity. Source
     // ownership is more reliable than matching a display type, and it also
@@ -160,10 +191,6 @@ function notification_attention_prompt(array $notification): string
 {
     $prompt = trim((string)($notification['attention_prompt'] ?? ''));
     if ($prompt !== '') return mb_strimwidth($prompt, 0, 240, '…');
-    $type = strtolower(trim((string)($notification['type'] ?? '')));
-    if (str_starts_with($type, 'agent_activity_')) {
-        return 'Open the related work or tell me what you want to do next.';
-    }
     return 'What do you want to do?';
 }
 
@@ -174,13 +201,7 @@ function notification_attention_message(array $notification): string
     $body = trim((string)($notification['body'] ?? ''));
     if ($title !== '') $parts[] = $title;
     if ($body !== '') $parts[] = $body;
-
-    // Completed operational work is itself the inbox item; do not append an
-    // artificial question to every tool/memory/transcription update.
-    $type = strtolower(trim((string)($notification['type'] ?? '')));
-    if (!str_starts_with($type, 'agent_activity_')) {
-        $parts[] = notification_attention_prompt($notification);
-    }
+    $parts[] = notification_attention_prompt($notification);
     return implode("\n\n", $parts);
 }
 
@@ -197,28 +218,24 @@ function notification_attention_after(?array $user, int $afterId = 0, int $limit
     $limit = max(1, min(50, $limit));
     try {
         if ($afterId > 0) {
+            // Filter Brain rows in SQL, not after LIMIT, so high-volume agent
+            // activity can never starve a real user-attention notification.
             $stmt = $pdo->prepare(
                 "SELECT n.* FROM notifications n
-                 WHERE n.user_id=? AND n.id>?
+                 WHERE n.user_id=? AND n.id>? AND " . notification_system_sql_predicate('n') . "
                  ORDER BY n.id ASC LIMIT {$limit}"
             );
             $stmt->execute([(int)$user['id'], $afterId]);
         } else {
-            // Bootstrap unsurfaced actionable events rather than only unread
-            // items from the last few minutes. Agent operational activity gets
-            // a durable 14-day catch-up window; legacy/Profile Agent attention
-            // is limited to 24 hours so an upgrade cannot flood Chat with old
-            // historical notifications. Proactive Brain opportunities are
-            // filtered by notification_requires_attention().
+            // Bootstrap only recent, unsurfaced user-facing attention. Agent
+            // Brain has its own durable 14-day feed and never replays into Chat.
             if (table_exists('chat_messages') && table_exists('chat_conversations')) {
                 $stmt = $pdo->prepare(
                     "SELECT n.*
                      FROM notifications n
                      WHERE n.user_id=?
-                       AND (
-                         (n.type LIKE 'agent_activity_%' AND n.created_at>=DATE_SUB(NOW(),INTERVAL 14 DAY))
-                         OR (n.type NOT LIKE 'agent_activity_%' AND n.created_at>=DATE_SUB(NOW(),INTERVAL 24 HOUR))
-                       )
+                       AND " . notification_system_sql_predicate('n') . "
+                       AND n.created_at>=DATE_SUB(NOW(),INTERVAL 24 HOUR)
                        AND NOT EXISTS (
                          SELECT 1
                          FROM chat_messages m
@@ -236,6 +253,7 @@ function notification_attention_after(?array $user, int $afterId = 0, int $limit
                 $stmt = $pdo->prepare(
                     "SELECT n.* FROM notifications n
                      WHERE n.user_id=? AND n.is_read=0
+                       AND " . notification_system_sql_predicate('n') . "
                        AND n.created_at>=DATE_SUB(NOW(),INTERVAL 24 HOUR)
                      ORDER BY n.created_at DESC,n.id DESC LIMIT {$limit}"
                 );
@@ -394,7 +412,7 @@ function mark_notification_read(int $notificationId, int $userId): void
     $stmt = $pdo->prepare(
         'UPDATE notifications
          SET is_read=1,read_at=COALESCE(read_at,NOW())
-         WHERE id=? AND user_id=?'
+         WHERE id=? AND user_id=? AND ' . notification_system_sql_predicate()
     );
     $stmt->execute([$notificationId, $userId]);
 }
@@ -409,7 +427,7 @@ function mark_all_notifications_read(int $userId): void
     $stmt = $pdo->prepare(
         'UPDATE notifications
          SET is_read=1,read_at=COALESCE(read_at,NOW())
-         WHERE user_id=? AND is_read=0'
+         WHERE user_id=? AND is_read=0 AND ' . notification_system_sql_predicate()
     );
     $stmt->execute([$userId]);
 }
