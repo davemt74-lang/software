@@ -312,10 +312,7 @@ function chat_notifications_v240_present_attention(PDO $pdo, array $user, array 
         $attentionCreatedAt = date('Y-m-d H:i:s');
     }
 
-    $insert = $pdo->prepare(
-        "INSERT INTO chat_messages (conversation_id,user_id,role,message,context_json,created_at)
-         VALUES (?,NULL,'assistant',?,?,?)"
-    );
+    $insert = $pdo->prepare("INSERT INTO chat_messages (conversation_id,user_id,role,message,context_json,created_at) VALUES (?,NULL,'assistant',?,?,?)");
     $insert->execute([
         $conversationId,
         $message,
