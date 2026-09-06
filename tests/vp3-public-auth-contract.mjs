@@ -17,6 +17,8 @@ const terms = read('terms.php');
 const demo = read('book-demo.php');
 const setup = read('setup.php');
 const upgrade = read('upgrade.php');
+const configExample = read('config-example.php');
+const resetSql = read('sql/vp3-password-reset.sql');
 
 assert.match(shell, /function vp3_public_header/, 'VP3 must own one canonical public header');
 assert.match(shell, /function vp3_public_footer/, 'VP3 must own one canonical public footer');
@@ -49,16 +51,22 @@ assert.match(auth, /used_at IS NULL/, 'reset links must be single-use');
 assert.match(auth, /password_hash\(\$password, PASSWORD_DEFAULT\)/, 'reset completion must hash the replacement password');
 assert.match(forgot, /If an active VP3 account matches that email/, 'forgot-password response must avoid account enumeration');
 assert.match(reset, /noindex,nofollow/, 'token-bearing reset page must not be indexed');
+assert.match(resetSql, /CREATE TABLE IF NOT EXISTS password_reset_tokens/, 'manual deploy SQL must include the password-reset table');
 assert.match(upgrade, /password_reset_ensure_schema\(\)/, 'existing installs must receive password recovery schema through upgrade');
 assert.match(setup, /password_reset_ensure_schema\(\)/, 'fresh installs must receive password recovery schema');
+assert.match(configExample, /'name' => 'VP3'/, 'fresh configuration must present the public product as VP3');
+assert.match(configExample, /'send_password_reset_email' => false/, 'password-reset email configuration must be explicit');
 
 assert.match(pricing, /data-monthly="29" data-annual="23"/, 'Professional pricing must remain $29 monthly / $23 annual');
 assert.match(pricing, /data-monthly="59" data-annual="47"/, 'Team pricing must remain $59 monthly / $47 annual');
 assert.match(pricing, /Personal URL/, 'pricing must reflect the new VP3 product');
 assert.match(about, /Capture[\s\S]*Understand[\s\S]*Take action/i, 'About must explain the VP3 capture-understand-action model');
 assert.match(contact, /Account \/ Support/, 'Contact must support VP3 account inquiries');
+assert.doesNotMatch(contact, /mailto:<\?=/, 'VP3 public Contact must not expose a legacy-branded configured email address');
 assert.match(privacy, /We do not sell your personal information/, 'privacy no-sale commitment must be preserved');
+assert.match(privacy, /VP3 contact page/, 'privacy requests must route through the VP3 public contact surface');
 assert.match(terms, /You retain ownership of content you submit to VP3/, 'terms must preserve user content ownership');
+assert.match(terms, /VP3 contact page/, 'terms questions must route through the VP3 public contact surface');
 assert.match(demo, /Transcriptions & AI summaries/, 'demo request must reflect VP3 capabilities');
 
 console.log('vp3-public-auth contract: PASS');
