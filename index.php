@@ -15,19 +15,37 @@ $vp3LoginUrl = url('/login.php');
 <meta name="description" content="VP3 is your personal AI assistant for transcriptions, AI summaries, knowledge, teams, and a private personal URL.">
 <meta name="theme-color" content="#f7f9fc">
 <title>VP3 — Capture. Understand. Take Action.</title>
-<link rel="stylesheet" href="<?= e(url('/vp3-home.css?v=vp3-home-20260906')) ?>">
+<link rel="stylesheet" href="<?= e(url('/vp3-public.css?v=vp3-public-20260906')) ?>">
+<link rel="stylesheet" href="<?= e(url('/vp3-public-nav.css?v=vp3-public-20260906')) ?>">
+<link rel="stylesheet" href="<?= e(url('/vp3-home.css?v=vp3-home-20260906-how-it-works')) ?>">
 </head>
 <body class="vp3-home">
-<header class="vp3-topbar">
-  <a class="vp3-brand" href="<?= e(url('/')) ?>" aria-label="VP3 home">
-    <span class="vp3-brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
-    <strong>VP3</strong>
-  </a>
-  <div class="vp3-topbar-actions">
-    <a class="vp3-get-started" href="<?= e($vp3SignupUrl) ?>">Get Started <span aria-hidden="true">→</span></a>
-    <a class="vp3-account" href="<?= e($vp3LoginUrl) ?>" aria-label="Sign in">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4.5 21c.8-4.2 3.3-6.3 7.5-6.3s6.7 2.1 7.5 6.3"/></svg>
+<header class="vp3-public-header vp3-home-header">
+  <div class="vp3-public-nav">
+    <a class="vp3-public-brand" href="<?= e(url('/index.php')) ?>" aria-label="VP3 home">
+      <span class="vp3-public-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span><strong>VP3</strong>
     </a>
+    <nav class="vp3-public-links" aria-label="Primary navigation">
+      <a href="<?= e(url('/index.php#transcriptions')) ?>">Transcriptions</a>
+      <a href="<?= e(url('/index.php#teams')) ?>">Teams</a>
+      <a href="<?= e(url('/pricing.php')) ?>">Pricing</a>
+      <a href="<?= e(url('/about.php')) ?>">About</a>
+    </nav>
+    <div class="vp3-public-actions">
+      <a class="vp3-public-signin" href="<?= e($vp3LoginUrl) ?>">Sign in</a>
+      <a class="vp3-public-primary" href="<?= e($vp3DemoUrl) ?>">BOOK DEMO</a>
+      <details class="vp3-public-mobile-menu">
+        <summary aria-label="Open navigation"><span></span><span></span><span></span></summary>
+        <nav aria-label="Mobile navigation">
+          <a href="<?= e(url('/index.php#transcriptions')) ?>">Transcriptions</a>
+          <a href="<?= e(url('/index.php#teams')) ?>">Teams</a>
+          <a href="<?= e(url('/pricing.php')) ?>">Pricing</a>
+          <a href="<?= e(url('/about.php')) ?>">About</a>
+          <a href="<?= e($vp3DemoUrl) ?>">Book a Demo</a>
+          <a href="<?= e(url('/contact.php')) ?>">Contact</a>
+        </nav>
+      </details>
+    </div>
   </div>
 </header>
 
@@ -117,26 +135,38 @@ $vp3LoginUrl = url('/login.php');
     </div>
   </section>
 
-  <section class="vp3-features" id="features" aria-labelledby="vp3FeaturesTitle">
+  <section class="vp3-features vp3-how-it-works" id="features" aria-labelledby="vp3HowTitle">
     <div class="vp3-section-head">
-      <div class="vp3-kicker">Built for what matters</div>
-      <h2 id="vp3FeaturesTitle">Everything you need. All in one place.</h2>
-      <p>A private, capable workspace for your thoughts, content, people, and next steps.</p>
+      <div class="vp3-kicker">How it works</div>
+      <h2 id="vp3HowTitle">From recording to action in four steps.</h2>
+      <p>Capture the conversation once. VP3 turns it into searchable context and a clear next step.</p>
     </div>
 
-    <div class="vp3-feature-grid">
-      <article class="vp3-feature-card"><span class="vp3-feature-icon"><svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.1 0l2.1-2.1a5 5 0 0 0-7.1-7.1L11 5"/><path d="M14 11a5 5 0 0 0-7.1 0l-2.1 2.1a5 5 0 0 0 7.1 7.1L13 19"/></svg></span><h3>Personal URL</h3><p>Share your public profile, portfolio, or agent. You control what’s public and what stays private.</p></article>
-      <article class="vp3-feature-card" id="transcriptions"><span class="vp3-feature-icon"><svg viewBox="0 0 24 24"><path d="M3 12v2M7 8v10M11 4v16M15 7v10M19 10v4M23 12v1"/></svg></span><h3>Transcriptions</h3><p>Turn audio and video into searchable text with accurate transcripts and AI-assisted context.</p></article>
-      <article class="vp3-feature-card"><span class="vp3-feature-icon"><svg viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 12h7M9 16h7"/></svg></span><h3>AI Summaries</h3><p>Get concise summaries, key decisions, action items, and next steps from your conversations.</p></article>
-      <article class="vp3-feature-card" id="teams"><span class="vp3-feature-icon"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"/><circle cx="17" cy="9" r="2"/><path d="M3 20c.6-4 2.6-6 6-6s5.4 2 6 6M14 15c3.7 0 5.8 1.7 6.5 5"/></svg></span><h3>Teams &amp; Team Management</h3><p>Collaborate with your team, share knowledge, manage access, and keep work aligned.</p></article>
-      <article class="vp3-feature-card"><span class="vp3-feature-icon"><svg viewBox="0 0 24 24"><path d="m4 7 8-4 8 4-8 4zM4 12l8 4 8-4M4 17l8 4 8-4"/></svg></span><h3>Second Brain</h3><p>Keep notes, files, ideas, memories, and relationships in one connected knowledge system that grows with you.</p></article>
-      <article class="vp3-feature-card"><span class="vp3-feature-icon"><svg viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4z"/><path d="M8 9h8M8 12h5"/></svg></span><h3>Profile Chat Widget</h3><p>Add your agent to your profile so visitors can ask questions, connect, and start useful conversations.</p></article>
-      <article class="vp3-feature-card" id="security"><span class="vp3-feature-icon"><svg viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3M12 14v3"/></svg></span><h3>Secure &amp; Private</h3><p>Your data stays yours. Built around private knowledge, permission-aware access, and user control.</p></article>
-      <article class="vp3-feature-card"><span class="vp3-feature-icon"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="13" height="10" rx="1"/><rect x="14" y="10" width="7" height="10" rx="1"/><path d="M8 18h4"/></svg></span><h3>Works Everywhere</h3><p>Use VP3 on desktop, mobile, and the web so your assistant and knowledge stay close wherever you work.</p></article>
+    <div class="vp3-feature-grid vp3-step-grid">
+      <article class="vp3-feature-card vp3-step-card">
+        <span class="vp3-step-number">01</span>
+        <h3>Record</h3>
+        <p>Capture conversations, meetings, ideas, or voice notes directly into your VP3 workspace.</p>
+      </article>
+      <article class="vp3-feature-card vp3-step-card" id="transcriptions">
+        <span class="vp3-step-number">02</span>
+        <h3>Transcribe</h3>
+        <p>Turn your recording into accurate, searchable text you can review, save, and reuse.</p>
+      </article>
+      <article class="vp3-feature-card vp3-step-card">
+        <span class="vp3-step-number">03</span>
+        <h3>AI Analysis</h3>
+        <p>Let VP3 identify the key ideas, decisions, questions, opportunities, and next steps in the conversation.</p>
+      </article>
+      <article class="vp3-feature-card vp3-step-card">
+        <span class="vp3-step-number">04</span>
+        <h3>Summary or Action Plan</h3>
+        <p>Receive a clear summary or practical action plan that helps you move forward.</p>
+      </article>
     </div>
   </section>
 
-  <section class="vp3-results" aria-labelledby="vp3ResultsTitle">
+  <section class="vp3-results" id="teams" aria-labelledby="vp3ResultsTitle">
     <div class="vp3-results-bg" aria-hidden="true"></div>
     <div class="vp3-results-content">
       <div class="vp3-kicker">From conversations to action</div>
@@ -159,7 +189,7 @@ $vp3LoginUrl = url('/login.php');
 <footer class="vp3-footer">
   <div class="vp3-footer-brand"><span class="vp3-brand-mark small" aria-hidden="true"><i></i><i></i><i></i><i></i></span><strong>VP3</strong><span>A Private Future. On Your Terms.</span></div>
   <nav class="vp3-footer-links" aria-label="VP3 footer navigation">
-    <a href="#features">Features</a><a href="#transcriptions">Transcriptions</a><a href="#teams">Teams</a><a href="#security">Security</a><a href="<?= e(url('/pricing.php')) ?>">Pricing</a><a href="<?= e(url('/about.php')) ?>">About</a>
+    <a href="#features">Features</a><a href="#transcriptions">Transcriptions</a><a href="#teams">Teams</a><a href="<?= e(url('/pricing.php')) ?>">Pricing</a><a href="<?= e(url('/about.php')) ?>">About</a>
     <span class="vp3-footer-divider"></span><a href="<?= e(url('/privacy.php')) ?>">Privacy</a><a href="<?= e(url('/terms.php')) ?>">Terms</a><a href="<?= e(url('/contact.php')) ?>">Contact</a>
   </nav>
 </footer>
