@@ -39,7 +39,7 @@
     host.id = 'chatSettingsLauncher';
     host.innerHTML = `
       <button class="chat-settings-button" id="chatSettingsButton" type="button" aria-haspopup="dialog" aria-controls="chatSettingsModal" data-presence="online">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.83 2.83-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.03 1.56V21h-4v-.09A1.7 1.7 0 0 0 9 19.35a1.7 1.7 0 0 0-1.88.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.63 15 1.7 1.7 0 0 0 3.07 14H3v-4h.07A1.7 1.7 0 0 0 4.63 9a1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.83-2.83.06.06A1.7 1.7 0 0 0 9 4.63 1.7 1.7 0 0 0 10 3.07V3h4v.07A1.7 1.7 0 0 0 15 4.63 1.7 1.7 0 0 0 1.88-.34l.06-.06 2.83 2.83-.06.06A1.7 1.7 0 0 0 19.37 9 1.7 1.7 0 0 0 20.93 10H21v4h-.07A1.7 1.7 0 0 0-1.53 1z"></path></svg>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.83 2.83-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.03 1.56V21h-4v-.09A1.7 1.7 0 0 0 9 19.35a1.7 1.7 0 0 0-1.88.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.63 15 1.7 1.7 0 0 0 3.07 14H3v-4h.07A1.7 1.7 0 0 0 4.63 9a1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.83-2.83.06.06A1.7 1.7 0 0 0 9 4.63 1.7 1.7 0 0 0 10 3.07V3h4v.07A1.7 1.7 0 0 0 15 4.63a1.7 1.7 0 0 0 1.88-.34l.06-.06 2.83 2.83-.06.06A1.7 1.7 0 0 0 19.37 9 1.7 1.7 0 0 0 20.93 10H21v4h-.07A1.7 1.7 0 0 0 19.4 15z"></path></svg>
         <span>Chat Settings</span>
         <small id="chatSettingsPresenceLabel">Online</small>
       </button>`;
@@ -131,8 +131,22 @@
       <label class="chat-settings-field"><span>Public agent instructions</span><textarea name="profile_agent_instructions" maxlength="4000">${esc(profile.profile_agent_instructions || '')}</textarea></label>`;
   }
 
+  function ensureAgentVoiceToggle() {
+    const existing = document.querySelector('[data-agent-voice-toggle]');
+    if (existing) return existing;
+    const summary = document.querySelector('#chatProfileDropdown .chat-profile-summary');
+    if (!summary) return null;
+    const host = document.createElement('label');
+    host.className = 'member-agent-voice-toggle';
+    host.title = 'Speak proactive and Profile Agent messages';
+    host.innerHTML = '<span class="member-agent-voice-label">Agent Voice</span><input type="checkbox" data-agent-voice-toggle aria-label="Agent Voice"><span class="member-agent-voice-switch" aria-hidden="true"><span></span></span>';
+    summary.appendChild(host);
+    return host.querySelector('[data-agent-voice-toggle]');
+  }
+
   function applyAgentVoice(enabled) {
     const active = enabled !== false;
+    ensureAgentVoiceToggle();
     document.querySelectorAll('[data-agent-voice-toggle]').forEach(toggle => {
       toggle.checked = active;
       toggle.closest('.member-agent-voice-toggle')?.setAttribute('data-enabled', active ? 'true' : 'false');
@@ -334,9 +348,13 @@
     if (event.key === 'Escape' && !modal.hidden) closeModal();
   });
 
+  ensureAgentVoiceToggle();
   ensureNotificationNextToProfile();
   const topbar = document.querySelector('.chat-topbar-actions');
-  if (topbar) new MutationObserver(ensureNotificationNextToProfile).observe(topbar, { childList:true });
+  if (topbar) new MutationObserver(() => {
+    ensureAgentVoiceToggle();
+    ensureNotificationNextToProfile();
+  }).observe(topbar, { childList:true, subtree:true });
   installPlayerClose();
   void syncState(false);
 })();
