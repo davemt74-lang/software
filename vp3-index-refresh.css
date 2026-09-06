@@ -1,6 +1,7 @@
 .vp3-home-header{position:absolute;top:0;left:0;right:0;background:rgba(255,255,255,.92);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}
 .vp3-home-header .vp3-public-primary{color:#fff;background:#07101f;border-color:#07101f;letter-spacing:.02em}
 .vp3-home-header .vp3-public-primary:visited,.vp3-home-header .vp3-public-primary:hover,.vp3-home-header .vp3-public-primary:focus{color:#fff}
+.vp3-hero h1{font-family:"Iowan Old Style","Palatino Linotype","Book Antiqua",Palatino,Georgia,serif;font-weight:500;letter-spacing:-.045em;line-height:.98}
 .vp3-steps-only{padding:64px 24px 72px;background:#fff}
 .vp3-step-grid{width:min(var(--vp3-max),100%);margin:0 auto;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));border-top:1px solid var(--vp3-line);border-left:1px solid var(--vp3-line)}
 .vp3-step-card{min-height:240px;padding:30px 28px;border-right:1px solid var(--vp3-line);border-bottom:1px solid var(--vp3-line);background:#fff}
