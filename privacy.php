@@ -2,7 +2,6 @@
 declare(strict_types=1);
 require __DIR__ . '/includes/bootstrap.php';
 require_once __DIR__ . '/includes/vp3-public.php';
-$contactEmail = (string)setting('contact_email', (string)site_config('email', 'stonefellow74@gmail.com'));
 vp3_public_header('Privacy Policy — VP3', 'How VP3 handles account, assistant, knowledge, workflow, and service information.');
 ?>
 <section class="vp3-public-hero"><div class="vp3-kicker">VP3 legal</div><h1>Privacy Policy</h1><p>How VP3 handles account, assistant, knowledge, workflow, and service information.</p></section>
@@ -17,6 +16,6 @@ vp3_public_header('Privacy Policy — VP3', 'How VP3 handles account, assistant,
 <h2>8. Security</h2><p>We use reasonable administrative and technical safeguards intended to protect account and workspace information. No internet service can guarantee absolute security, so users should also protect passwords and account access.</p>
 <h2>9. Cookies and local storage</h2><p>VP3 may use cookies, sessions, and browser storage required for authentication, preferences, security, and core product functionality.</p>
 <h2>10. Children</h2><p>VP3 is not directed to children under 13, and we do not knowingly collect personal information from children under 13.</p>
-<h2>11. Changes and contact</h2><p>We may update this Privacy Policy as VP3 evolves. Material changes will be reflected by an updated date on this page. Questions or privacy requests can be sent to <a href="mailto:<?= e($contactEmail) ?>"><?= e($contactEmail) ?></a>.</p>
+<h2>11. Changes and contact</h2><p>We may update this Privacy Policy as VP3 evolves. Material changes will be reflected by an updated date on this page. Questions, access requests, correction requests, or deletion requests can be submitted through the <a href="<?= e(url('/contact.php')) ?>">VP3 contact page</a>.</p>
 </main>
 <?php vp3_public_footer(); ?>
