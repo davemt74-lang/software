@@ -1,0 +1,11 @@
+.vp3-home-header{position:absolute;top:0;left:0;right:0;background:rgba(255,255,255,.92);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}
+.vp3-home-header .vp3-public-primary{color:#fff;background:#07101f;border-color:#07101f;letter-spacing:.02em}
+.vp3-home-header .vp3-public-primary:visited,.vp3-home-header .vp3-public-primary:hover,.vp3-home-header .vp3-public-primary:focus{color:#fff}
+.vp3-how-it-works .vp3-section-head{max-width:780px}
+.vp3-step-grid{grid-template-columns:repeat(4,1fr)}
+.vp3-step-card{min-height:250px;padding-top:28px}
+.vp3-step-number{display:inline-flex;align-items:center;justify-content:center;width:44px;height:44px;margin-bottom:24px;border:1px solid #dbe2ea;border-radius:50%;background:#f8fafc;color:#07101f;font-size:12px;font-weight:850;letter-spacing:.08em}
+.vp3-step-card h3{font-size:21px;margin-bottom:10px}
+.vp3-step-card p{font-size:14px;line-height:1.65}
+@media(max-width:920px){.vp3-step-grid{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:620px){.vp3-home-header{height:72px}.vp3-step-grid{grid-template-columns:1fr}.vp3-step-card{min-height:0}.vp3-step-number{margin-bottom:18px}}
