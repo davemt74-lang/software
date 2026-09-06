@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import assert from 'node:assert/strict';
 
 const header = fs.readFileSync('includes/member-header.php', 'utf8');
+const headerUi = fs.readFileSync('chat-header-ui.css', 'utf8');
 const menu = fs.readFileSync('includes/member-user-menu.php', 'utf8');
 const contacts = fs.readFileSync('contacts.php', 'utf8');
 const knowledge = fs.readFileSync('knowledge.php', 'utf8');
@@ -11,6 +12,13 @@ assert.match(header, /data-member-header/, 'canonical member header must expose 
 assert.match(header, /chatNotificationMenu/, 'canonical member header must own notifications');
 assert.match(header, /member-user-menu\.php/, 'canonical member header must own the shared user menu');
 assert.match(header, /memberHeaderShowSidebarToggle/, 'canonical member header must support pages without a sidebar toggle');
+assert.match(header, /\$memberHeaderUiBuild\s*=\s*'universal-member-header-layout-20260906'/, 'canonical member header must cache-bust the portable layout build');
+assert.match(header, /chat-header-ui\.css\?v='\s*\.\s*\$memberHeaderUiBuild/, 'canonical member header must load its own layout stylesheet');
+assert.match(headerUi, /\.member-header\s*\{[\s\S]*?height:58px;[\s\S]*?display:flex;[\s\S]*?align-items:center;/, 'shared member header CSS must own its structural height and flex layout');
+assert.match(headerUi, /\.member-header \.chat-topbar-actions\s*\{[\s\S]*?margin-left:auto;[\s\S]*?display:flex;[\s\S]*?align-items:center;/, 'shared member header CSS must keep actions right-aligned without depending on chat.css');
+assert.match(headerUi, /\.member-header \.chat-notification-link\s*\{[\s\S]*?width:34px;[\s\S]*?display:grid;[\s\S]*?border-radius:50%/, 'shared member header CSS must own notification bell sizing and layout');
+assert.match(headerUi, /\.chat-top-dropdown\s*\{[\s\S]*?position:absolute;[\s\S]*?top:calc\(100% \+ 10px\);[\s\S]*?right:0;/, 'shared member header CSS must own desktop dropdown positioning');
+assert.match(headerUi, /\.chat-profile-summary\s*\{[\s\S]*?display:grid;[\s\S]*?grid-template-columns:42px minmax\(0,1fr\) auto!important;/, 'shared member header CSS must own profile summary layout');
 assert.match(menu, /user_avatar_url\(\$memberMenuUser\)/, 'shared user menu must render the profile image');
 assert.match(menu, /id="chatProfileButton"/, 'shared user menu must expose the profile dropdown button');
 
