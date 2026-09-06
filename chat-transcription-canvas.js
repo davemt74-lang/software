@@ -3,7 +3,6 @@
 
 const BUILD='chat-transcription-canvas-v243-20260905';
 const thread=document.getElementById('chatThread');
-if(!thread)return;
 
 const cfg=window.STONEFELLOW_RECORDINGS_V198_CONFIG||{};
 const intelligenceEndpoint=String(cfg.intelligenceEndpoint||'/api/artist-listening-intelligence-v254.php');
@@ -197,6 +196,7 @@ function handleCanvasPlay(event){
   const api=recordingApi();if(api)void api.select({sessionId:current.session_id,key:current.key}).catch(()=>{});
 }
 function detectNewCards(root=document){
+  if(!root)return;
   const candidates=[];
   if(root.nodeType===1&&root.matches?.('.sf-v206-recording-message.is-new-recording'))candidates.push(root);
   if(root.querySelectorAll)candidates.push(...root.querySelectorAll('.sf-v206-recording-message.is-new-recording'));
@@ -220,10 +220,12 @@ async function bootstrap(){
   const hadSeen=loadSeen();
   try{await refreshLibrary(true);if(!hadSeen){library.forEach(item=>seen.add(itemId(item)));saveSeen();updateBadge();}}
   catch(error){proof.lastError=String(error?.message||error);}
-  detectNewCards(thread);
-  observer=new MutationObserver(records=>{for(const record of records){for(const node of record.addedNodes){if(node.nodeType===1)detectNewCards(node);}}});
-  observer.observe(thread,{childList:true,subtree:true});
-  window.addEventListener('stonefellow:recording-saved',()=>setTimeout(()=>void refreshLibrary(true).then(()=>detectNewCards(thread)).catch(()=>{}),80));
+  if(thread){
+    detectNewCards(thread);
+    observer=new MutationObserver(records=>{for(const record of records){for(const node of record.addedNodes){if(node.nodeType===1)detectNewCards(node);}}});
+    observer.observe(thread,{childList:true,subtree:true});
+  }
+  window.addEventListener('stonefellow:recording-saved',()=>setTimeout(()=>void refreshLibrary(true).then(()=>detectNewCards(thread||document)).catch(()=>{}),80));
   document.addEventListener('keydown',event=>{if(event.key==='Escape'&&canvas?.classList.contains('open'))closeCanvas();});
 }
 
