@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require dirname(__DIR__) . '/includes/bootstrap.php';
+require_once dirname(__DIR__) . '/includes/onboarding-intelligence.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
@@ -27,6 +28,12 @@ function chat_onboarding_v241_require_csrf(array $input): void
     }
 }
 
+function chat_onboarding_v241_full_state(PDO $pdo,array $user): array
+{
+    // The canonical domain state already includes onboarding intelligence.
+    return chat_onboarding_v241_state($pdo,$user);
+}
+
 $user = current_user();
 if (!$user || !has_permission('account.access', $user) || !has_permission('chat.access', $user)) {
     chat_onboarding_v241_json(['ok'=>false,'error'=>'Agent onboarding is unavailable for this account.'], 403);
@@ -36,6 +43,7 @@ if (!$pdo) chat_onboarding_v241_json(['ok'=>false,'error'=>'Database unavailable
 
 try {
     if (!user_agent_system_schema_ready_v236($pdo)) user_agent_system_ensure_schema_v236($pdo);
+    onboarding_intelligence_ensure_schema($pdo);
     if (!profile_agent_schema_ready($pdo)) profile_agent_ensure_schema($pdo);
     if (!chat_settings_schema_ready_v237($pdo)) chat_settings_ensure_schema_v237($pdo);
 } catch (Throwable $e) {
@@ -45,7 +53,7 @@ try {
 $method = strtoupper((string)($_SERVER['REQUEST_METHOD'] ?? 'GET'));
 if ($method === 'GET') {
     try {
-        chat_onboarding_v241_json(['ok'=>true,'state'=>chat_onboarding_v241_state($pdo, $user)]);
+        chat_onboarding_v241_json(['ok'=>true,'state'=>chat_onboarding_v241_full_state($pdo, $user)]);
     } catch (Throwable $e) {
         chat_onboarding_v241_json(['ok'=>false,'error'=>'Onboarding state could not be loaded.'], 500);
     }
@@ -58,33 +66,54 @@ $action = trim((string)($input['action'] ?? ''));
 
 try {
     if ($action === 'state') {
-        chat_onboarding_v241_json(['ok'=>true,'state'=>chat_onboarding_v241_state($pdo, $user)]);
+        chat_onboarding_v241_json(['ok'=>true,'state'=>chat_onboarding_v241_full_state($pdo, $user)]);
+    }
+
+    if($action==='save_progress'){
+        $step=onboarding_intelligence_valid_step((string)($input['step']??'voice'));
+        $draft=is_array($input['draft']??null)?$input['draft']:[];
+        $voice=array_key_exists('voice_preference',$input)?(string)$input['voice_preference']:null;
+        $interests=is_array($input['feature_interests']??null)?$input['feature_interests']:[];
+        onboarding_intelligence_save_progress($pdo,$user,$step,$draft,$voice,$interests);
+        chat_onboarding_v241_json(['ok'=>true,'state'=>chat_onboarding_v241_full_state($pdo,$user)]);
+    }
+
+    if($action==='ack_trial_notice'){
+        onboarding_intelligence_ack_trial_notice($pdo,(int)$user['id'],(int)($input['threshold']??-1));
+        chat_onboarding_v241_json(['ok'=>true,'state'=>chat_onboarding_v241_full_state($pdo,$user)]);
     }
 
     if ($action !== 'finish') {
         chat_onboarding_v241_json(['ok'=>false,'error'=>'Unknown onboarding action.'], 422);
     }
 
-    $agentName = trim(preg_replace('/\s+/u', ' ', (string)($input['agent_name'] ?? '')) ?? '');
+    $prefs=onboarding_intelligence_preferences($pdo,(int)$user['id']);
+    $savedDraft=is_array($prefs['draft']??null)?$prefs['draft']:[];
+    $merged=array_replace($savedDraft,$input);
+    $agentName = trim(preg_replace('/\s+/u', ' ', (string)($merged['agent_name'] ?? '')) ?? '');
     if ($agentName === '') throw new RuntimeException('Choose a name for your agent.');
     $agentName = mb_strimwidth($agentName, 0, 190, '');
 
     $profile = profile_for_user($pdo, (int)$user['id'], true)
         ?: throw new RuntimeException('Profile could not be loaded.');
-    $username = profile_username_normalize((string)($input['username'] ?? ''));
+    $username = profile_username_normalize((string)($merged['username'] ?? ''));
     if ($username === '' || !profile_username_valid($username)) {
         throw new RuntimeException('Choose a username using 3–60 letters, numbers, dots, dashes or underscores.');
     }
 
-    $presenceMode = strtolower(trim((string)($input['presence_mode'] ?? 'online')));
+    $presenceMode = strtolower(trim((string)($merged['presence_mode'] ?? 'online')));
     if (!in_array($presenceMode, ['online','offline'], true)) $presenceMode = 'online';
-    $profileAgentAllowed = personal_capability_has_v242('profile_agent.access', $user);
-    $profileChatAllowed = personal_capability_has_v242('profile_chat.access', $user);
-    $enableProfileAgent = $profileAgentAllowed && $profileChatAllowed && !empty($input['profile_agent_enabled']);
-    $profilePublic = !empty($input['profile_public']);
-    $socialChat = !empty($input['social_chat_enabled']);
-    $sound = !empty($input['sound_enabled']);
-    $greeting = mb_strimwidth(trim((string)($input['profile_agent_greeting'] ?? '')), 0, 500, '…');
+    $permissions=chat_onboarding_v241_permission_state($user);
+    $profileAgentAllowed=!empty($permissions['profile_agent']);
+    $profileChatAllowed=!empty($permissions['profile_chat']);
+    $voiceAllowed=!empty($permissions['voice_profile']);
+    $voiceRequested=(string)($prefs['voice_preference']??'off')==='on';
+    $voiceEnabled=$voiceRequested&&$voiceAllowed;
+    $enableProfileAgent = $profileAgentAllowed && $profileChatAllowed && !empty($merged['profile_agent_enabled']);
+    $profilePublic = !empty($merged['profile_public']);
+    $socialChat = !empty($merged['social_chat_enabled']);
+    $sound = !empty($merged['sound_enabled']);
+    $greeting = mb_strimwidth(trim((string)($merged['profile_agent_greeting'] ?? '')), 0, 500, '…');
     if ($greeting === '') {
         $ownerName = trim((string)($user['display_name'] ?? 'this member'));
         $greeting = 'Hi — I’m ' . $agentName . ', ' . $ownerName . '’s profile agent. What would you like to know?';
@@ -99,9 +128,9 @@ try {
                 'display_name' => $agentName,
                 'agent_role' => 'personal',
                 'is_default' => 1,
-                'voice_enabled' => 1,
+                'voice_enabled' => $voiceEnabled ? 1 : 0,
             ]);
-        } elseif ((string)$agent['display_name'] !== $agentName) {
+        } else {
             $agent = user_agent_update_v236($pdo, $user, [
                 'id' => (int)$agent['id'],
                 'display_name' => $agentName,
@@ -110,7 +139,7 @@ try {
                 'is_default' => 1,
                 'is_profile_agent' => $enableProfileAgent ? 1 : (int)($agent['is_profile_agent'] ?? 0),
                 'is_active' => 1,
-                'voice_enabled' => 1,
+                'voice_enabled' => $voiceEnabled ? 1 : 0,
             ]);
         }
 
@@ -142,14 +171,14 @@ try {
             ]);
         }
 
-        user_agent_dismiss_onboarding_v236($pdo, (int)$user['id']);
+        onboarding_intelligence_mark_complete($pdo,(int)$user['id']);
         $pdo->commit();
     } catch (Throwable $e) {
         if ($pdo->inTransaction()) $pdo->rollBack();
         throw $e;
     }
 
-    $state = chat_onboarding_v241_state($pdo, $user);
+    $state = chat_onboarding_v241_full_state($pdo, $user);
     chat_onboarding_v241_json([
         'ok' => true,
         'state' => $state,
