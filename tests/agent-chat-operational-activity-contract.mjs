@@ -29,9 +29,12 @@ assert.doesNotMatch(bridge, /CREATE TABLE|ALTER TABLE/, 'activity bridge must re
 assert.match(notifications, /str_starts_with\(\$type, 'agent_activity_'\)/, 'canonical operational activity notifications must require Chat attention');
 assert.match(notifications, /agent_chat_activity_reconcile\(\$user\)/, 'notification attention/recent reads must reconcile existing subsystem ledgers');
 assert.match(notifications, /NOT EXISTS[\s\S]*\$\.attention\.notification_id/, 'bootstrap must select durable unsurfaced items, not a temporary unread window');
+assert.match(notifications, /n\.type LIKE 'agent_activity_%'[\s\S]*INTERVAL 14 DAY/, 'operational activity keeps a durable bounded catch-up window');
+assert.match(notifications, /n\.type NOT LIKE 'agent_activity_%'[\s\S]*INTERVAL 24 HOUR/, 'legacy and Profile Agent bootstrap attention must not replay an old historical backlog');
 assert.doesNotMatch(notifications, /created_at>=DATE_SUB\(NOW\(\),INTERVAL 10 MINUTE\)/, 'Agent Chat bootstrap must not discard attention after ten minutes');
 assert.match(notifications, /\?string \$createdAt = null/, 'notifications must preserve source event time when bridging activity');
 
+assert.match(attentionApi, /function chat_notifications_v240_state[\s\S]*agent_chat_activity_reconcile\(\$user\)/, 'Activity Center state must reconcile before counting/rendering notifications');
 assert.match(attentionApi, /\$notification\['created_at'\]/, 'Chat persistence must preserve the source notification timestamp');
 assert.match(attentionApi, /chat_notifications_v240_source_title/, 'operational Chat context must retain a human-readable source');
 assert.match(attentionApi, /chat_notifications_v240_action_label/, 'operational Chat actions must be source-aware');
