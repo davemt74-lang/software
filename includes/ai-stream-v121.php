@@ -136,6 +136,22 @@ function ai_v121_stream_chat_response(
             $messages=ai_history_messages($history);$messages[]=['role'=>'user','content'=>$current];
             $payload=['model'=>$model,'max_tokens'=>$budget,'system'=>ai_system_prompt($context,$user),'messages'=>$messages];
         }
+
+        $quota=['reservation_id'=>0,'max_output_tokens'=>$budget,'unlimited'=>true];
+        if(function_exists('subscription_ai_preflight')){
+            $encodedForEstimate=json_encode($payload,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
+            $estimatedInput=function_exists('subscription_estimate_tokens_from_chars')
+                ? subscription_estimate_tokens_from_chars(is_string($encodedForEstimate)?mb_strlen($encodedForEstimate):mb_strlen($current))
+                : max(1,(int)ceil(mb_strlen($current)/3.5));
+            try{
+                $quota=subscription_ai_preflight($user,'chat',$estimatedInput,$budget);
+            }catch(Throwable $e){
+                return ['ok'=>false,'provider'=>$provider,'answer'=>'','error'=>ai_v100_safe_exception($e),'quota_exhausted'=>true];
+            }
+            $budgetForCall=max(64,(int)($quota['max_output_tokens']??$budget));
+            if($provider==='openai')$payload['max_output_tokens']=$budgetForCall;else $payload['max_tokens']=$budgetForCall;
+        }
+
         $service='ai-stream-'.$provider.'-'.$model;
         try{
             if(function_exists('agent_runtime_v125_resilient_call')){
@@ -163,6 +179,17 @@ function ai_v121_stream_chat_response(
             'input_chars'=>mb_strlen($current),'output_chars'=>mb_strlen((string)($result['answer']??'')),'complexity'=>$complexity,
             'attempts'=>(int)($result['attempts']??1),'error_class'=>(string)($result['error_class']??'')
         ]+$usage);
+
+        if(function_exists('subscription_ai_commit_usage')){
+            $total=max(0,(int)($usage['total_tokens']??((int)($usage['input_tokens']??0)+(int)($usage['output_tokens']??0))));
+            if($total>0){
+                $requestKey='stream:'.(function_exists('agent_runtime_v125_trace_id')?(string)agent_runtime_v125_trace_id():bin2hex(random_bytes(8))).':'.$model.':'.(int)($result['attempts']??1);
+                subscription_ai_commit_usage((int)($quota['reservation_id']??0),$user,'chat',$provider,$model,$usage,$requestKey);
+            }elseif(function_exists('subscription_ai_release_reservation')){
+                subscription_ai_release_reservation((int)($quota['reservation_id']??0));
+            }
+        }
+
         $result['provider']=$provider;$result['model']=$model;$result['complexity']=$complexity;$result['trace_id']=function_exists('agent_runtime_v125_trace_id')?agent_runtime_v125_trace_id():'';
         if(!empty($result['ok'])||!empty($result['partial']))return $result;
         $last=$result;

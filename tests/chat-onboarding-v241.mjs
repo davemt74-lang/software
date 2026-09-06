@@ -19,7 +19,6 @@ const voiceChat = read('api/chat-stream-v121.php');
 const htaccess = read('.htaccess');
 
 assert.doesNotThrow(() => new Function(ui), 'Agent onboarding runtime must remain valid JavaScript');
-
 assert.match(ui, /chat-onboarding-v241\.php/);
 assert.match(ui, /Choose your onboarding experience/);
 assert.match(ui, /Turn on voice/);
@@ -41,8 +40,6 @@ assert.match(css, /\.chat-agent-field-v241 input[^\{]*\{[^}]*background:#fff!imp
 assert.equal(css.includes('background:#11100f'), false, 'Legacy black onboarding input must stay removed');
 assert.equal(css.includes('color:#eee8e2'), false, 'Legacy dark-theme onboarding text must stay removed');
 
-// The HTTP endpoint owns validation/atomic writes. Read-only setup/capability
-// state lives in a shared domain service so Agent Chat can reuse it without AI.
 assert.match(api, /chat_onboarding_v241_state/);
 assert.match(api, /beginTransaction\(\)/);
 assert.match(api, /rollBack\(\)/);
@@ -63,14 +60,17 @@ assert.match(domain, /'required_setup_complete'/);
 assert.match(domain, /function chat_onboarding_v241_tool/);
 assert.match(domain, /account:onboarding-state/);
 assert.match(domain, /profile agent/i);
-assert.match(domain, /voice\\s\+clone/);
-assert.match(domain, /setup status/);
-assert.match(domain, /what\\s\+setup\\s\+/);
-assert.match(domain, /public\|visible\|private/);
+assert.match(domain, /voice clone/i);
+assert.match(domain, /stem editor/i);
+assert.match(domain, /video editor/i);
+assert.match(domain, /subscription_current/);
+assert.match(domain, /subscription_ai_balance/);
+assert.match(domain, /subscription_has_entitlement/);
+assert.match(domain, /completion_percent/);
+assert.match(domain, /locked/);
+assert.match(domain, /do not count against completion/i);
+assert.match(domain, /View Plan & AI Usage/);
 
-// Both text and streaming Chat already enter release_v105_chat_tool before any
-// model generation. That shared synchronous gate must delegate setup/capability
-// intents first, and only continue to release/AI work when it did not handle one.
 const capabilityGate = releaseChat.indexOf('chat_onboarding_v241_tool');
 const releaseGate = releaseChat.indexOf('release_v105_schema_ready');
 assert.ok(capabilityGate >= 0 && releaseGate > capabilityGate, 'Capability state must short-circuit before release work');
@@ -81,8 +81,6 @@ assert.match(voiceChat, /release_v105_chat_tool/);
 assert.match(textChat, /empty\(\$toolResult\['handled'\]\)[\s\S]*chat_generate_answer_policy_v236/);
 assert.match(voiceChat, /if\(!empty\(\$toolResult\['handled'\]\)\)[\s\S]*else\{[\s\S]*ai_v121_stream_chat_response/);
 
-// Execute the real PHP intent guard, rather than only checking its source.
-// Personal saved-state questions must short-circuit; explanatory questions must not.
 const intentProbe = spawnSync('php', ['-r', String.raw`
 require 'includes/release-chat-v105.php';
 $cases = [
@@ -117,5 +115,4 @@ for (const deterministic of [api, domain]) {
 
 assert.match(htaccess, /chat-agent-identity-v236/);
 assert.match(htaccess, /no-cache, must-revalidate/);
-
-console.log('chat-onboarding-v241 contract: PASS');
+console.log('chat-onboarding-v241 package-aware contract: PASS');

@@ -2,8 +2,28 @@
 declare(strict_types=1);
 
 $teamChatUser = current_user();
+$teamChatPdo = db();
+$teamChatMemberships = [];
+$teamChatEligible = false;
 
-if (!$teamChatUser || !team_chat_role_allowed($teamChatUser)) {
+if ($teamChatUser) {
+    $teamChatRoles = user_roles_for_user($teamChatUser);
+    $teamChatEligible = (bool)array_intersect($teamChatRoles, ['artist', 'supervisor', 'admin']);
+
+    if (
+        !$teamChatEligible
+        && $teamChatPdo
+        && function_exists('artist_workspace_v104_memberships_for_user')
+    ) {
+        $teamChatMemberships = artist_workspace_v104_memberships_for_user(
+            $teamChatPdo,
+            (int)($teamChatUser['id'] ?? 0)
+        );
+        $teamChatEligible = $teamChatMemberships !== [];
+    }
+}
+
+if (!$teamChatUser || !$teamChatEligible) {
     return;
 }
 
@@ -15,13 +35,16 @@ $teamChatContextLabel = isset($teamChatContextLabel)
     : '';
 
 $teamChatPrimaryRole = (string)($teamChatUser['role'] ?? '');
-$teamChatUiRole = in_array(
-    $teamChatPrimaryRole,
-    ['manager', 'producer', 'supervisor'],
-    true
-) ? $teamChatPrimaryRole : 'manager';
+$teamChatUiRole = in_array($teamChatPrimaryRole, ['supervisor'], true)
+    ? $teamChatPrimaryRole
+    : 'manager';
+if ($teamChatMemberships) {
+    $contextualRole = (string)($teamChatMemberships[0]['team_role'] ?? '');
+    if (in_array($contextualRole, ['manager', 'producer'], true)) {
+        $teamChatUiRole = $contextualRole;
+    }
+}
 $teamChatAssetBuild = 'team-chat-light-v117-20260905';
-$teamChatPdo = db();
 $teamChatSettings = $teamChatPdo
     ? chat_settings_get_v237($teamChatPdo, (int)$teamChatUser['id'])
     : chat_settings_defaults_v237();

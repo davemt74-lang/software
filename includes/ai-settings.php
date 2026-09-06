@@ -345,13 +345,36 @@ function ai_anthropic_response(string $query,array $history,array $context,?arra
     return $last;
 }
 
+function ai_subscription_scope_from_request(): string
+{
+    $path=(string)(parse_url((string)($_SERVER['REQUEST_URI']??''),PHP_URL_PATH)??'');
+    if(str_contains($path,'video-editor')||str_contains($path,'video-agent')||str_contains($path,'/api/video-'))return 'video_editor';
+    if(str_contains($path,'stems')||str_contains($path,'stem-agent')||str_contains($path,'/api/stem-'))return 'stem_editor';
+    if(str_contains($path,'profile-agent'))return 'profile_agent';
+    if(str_contains($path,'artist-listening')||str_contains($path,'transcription'))return 'transcription';
+    return 'chat';
+}
+
+function ai_subscription_estimated_input_tokens(string $query,array $history,array $context,?array $user): int
+{
+    if(!function_exists('subscription_estimate_tokens_from_chars'))return 1;
+    $historyJson=json_encode(ai_history_messages($history),JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
+    $chars=mb_strlen($query)
+        +mb_strlen(ai_context_prompt($context))
+        +mb_strlen(is_string($historyJson)?$historyJson:'')
+        +mb_strlen(ai_system_prompt($context,$user));
+    return subscription_estimate_tokens_from_chars($chars);
+}
+
 function ai_generate_chat_response(
     string $query,
     array $history,
     array $context,
-    ?array $user = null
+    ?array $user = null,
+    ?string $usageScope = null
 ): array {
     $provider = ai_active_provider();
+    $user??=function_exists('current_user')?current_user():null;
     try { ai_v100_rate_limit('chat',$user); } catch (Throwable $e) { return ['ok'=>false,'provider'=>$provider,'error'=>ai_v100_safe_exception($e)]; }
 
     if ($provider === 'local') {
@@ -378,12 +401,33 @@ function ai_generate_chat_response(
         ];
     }
 
-    $result = $provider === 'openai'
-        ? ai_openai_response($query, $history, $context, $user)
-        : ai_anthropic_response($query, $history, $context, $user);
+    $scope=trim((string)$usageScope)!==''?mb_strimwidth(trim((string)$usageScope),0,60,''):ai_subscription_scope_from_request();
+    $reservationId=0;
+    if($user&&function_exists('subscription_ai_preflight')){
+        try{
+            $preflight=subscription_ai_preflight($user,$scope,ai_subscription_estimated_input_tokens($query,$history,$context,$user),3200);
+            $reservationId=(int)($preflight['reservation_id']??0);
+        }catch(Throwable $e){
+            return ['ok'=>false,'provider'=>$provider,'error'=>ai_v100_safe_exception($e),'quota_exhausted'=>true];
+        }
+    }
 
-    $result['provider'] = $provider;
-    return $result;
+    try{
+        $result = $provider === 'openai'
+            ? ai_openai_response($query, $history, $context, $user)
+            : ai_anthropic_response($query, $history, $context, $user);
+
+        $result['provider'] = $provider;
+        if(!empty($result['ok'])&&function_exists('subscription_ai_commit_usage')){
+            $trace=function_exists('agent_runtime_v125_trace_id')?(string)agent_runtime_v125_trace_id():'';
+            $requestKey=$trace!==''?'nonstream:'.$scope.':'.$trace:'';
+            subscription_ai_commit_usage($reservationId,$user,$scope,$provider,(string)($result['model']??ai_provider_model($provider)),is_array($result['usage']??null)?$result['usage']:[],$requestKey);
+            $reservationId=0;
+        }
+        return $result;
+    }finally{
+        if($reservationId>0&&function_exists('subscription_ai_release_reservation'))subscription_ai_release_reservation($reservationId);
+    }
 }
 
 function ai_test_provider(string $provider): array

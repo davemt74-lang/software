@@ -42,9 +42,10 @@ assert.doesNotMatch(login, /Need help signing in\?[\s\S]*contact\.php/, 'Sign in
 assert.match(signup, /verify_csrf\(\)/, 'Signup must retain CSRF protection');
 assert.match(signup, /password_hash\(\$password, PASSWORD_DEFAULT\)/, 'Signup must retain strong password hashing');
 assert.match(signup, /accept_terms/, 'Signup must retain explicit legal acceptance');
-assert.match(signup, /\['artist','producer','supervisor','manager'\]/, 'signup must preserve canonical role-interest values for existing onboarding integrations');
-assert.match(signup, /\['artist'=>'Personal','producer'=>'Creator','supervisor'=>'Professional','manager'=>'Team'\]/, 'VP3 may relabel role interests without changing their stored contract');
-assert.match(signup, /\$_SESSION\['signup_role_interest'\] = \$roleInterest/, 'signup must preserve the downstream onboarding session contract');
+assert.match(signup, /subscription_assign_default_trial\(\$userId\)/, 'signup must automatically assign the configured default trial');
+assert.match(signup, /\$_SESSION\['subscription_onboarding'\]\s*=\s*1/, 'signup must hand the new account into package-aware onboarding');
+assert.match(signup, /\$insert->execute\(\[\$email, password_hash\(\$password, PASSWORD_DEFAULT\), \$displayName, 'fan'\]\)/, 'signup must create one neutral compatibility identity before package assignment');
+assert.doesNotMatch(signup, /signup_role_interest|How will you use VP3\?|\['artist','producer','supervisor','manager'\]/, 'public signup must not self-assign Artist or contextual Team roles');
 
 assert.match(auth, /CREATE TABLE IF NOT EXISTS password_reset_tokens/, 'password recovery must have a canonical schema helper');
 assert.match(auth, /random_bytes\(32\)/, 'reset tokens must use cryptographically secure randomness');
@@ -74,9 +75,12 @@ assert.match(configExample, /'send_password_reset_email' => false/, 'password-re
 assert.match(configExample, /dbname=vp3/, 'fresh database example must use VP3 naming');
 assert.match(configExample, /'user' => 'vp3_user'/, 'fresh database user example must use VP3 naming');
 
-assert.match(pricing, /data-monthly="29" data-annual="23"/, 'Professional pricing must remain $29 monthly / $23 annual');
-assert.match(pricing, /data-monthly="59" data-annual="47"/, 'Team pricing must remain $59 monthly / $47 annual');
-assert.match(pricing, /Personal URL/, 'pricing must reflect the new VP3 product');
+assert.match(pricing, /subscription_packages\(true\)/, 'public pricing must read the live public package catalog');
+assert.match(pricing, /subscription_package\(\(int\)\$package\['id'\]\)/, 'public pricing must load package entitlements from the canonical subscription runtime');
+assert.match(pricing, /monthly_price_cents/, 'public pricing must render Admin-configured monthly prices');
+assert.match(pricing, /annual_price_cents/, 'public pricing must render Admin-configured annual prices');
+assert.doesNotMatch(pricing, /data-monthly="29"|data-monthly="59"|<h2>Professional<\/h2>|<h2>Team<\/h2>/, 'public pricing must not maintain a second hard-coded plan catalog');
+assert.doesNotMatch(pricing, /subscription_ensure_schema\(/, 'public pricing must remain read-only and never perform subscription DDL');
 assert.match(about, /Capture[\s\S]*Understand[\s\S]*Take action/i, 'About must explain the VP3 capture-understand-action model');
 assert.match(contact, /Account \/ Support/, 'Contact must support VP3 account inquiries');
 assert.doesNotMatch(contact, /stonefellow74@gmail\.com/, 'VP3 public Contact must not retain the legacy contact fallback');
