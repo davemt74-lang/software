@@ -34,7 +34,7 @@ assert.ok(subscriptions.includes("'team_seats'"), 'Team seats must be package-co
 assert.ok(subscriptions.includes('subscription_add_token_credit'), 'token top-ups must be first-class credits');
 assert.ok(subscriptions.includes('subscription_ai_preflight'), 'AI requests need a quota preflight');
 assert.ok(subscriptions.includes('subscription_ai_commit_usage'), 'actual provider usage must be committed');
-assert.ok(lifecycle.includes('subscription_snapshot'), 'subscription history must retain an immutable package snapshot');
+assert.ok(lifecycle.includes('package_snapshot_json') && lifecycle.includes('subscription_lifecycle_snapshot_subscription'), 'subscription history must retain an immutable package snapshot');
 assert.ok(lifecycle.includes('current_period_start') && lifecycle.includes('current_period_end'), 'monthly periods must roll independently of package edits');
 
 assert.ok(signup.includes('subscription_assign_default_trial'), 'new public accounts must receive the configured default trial');
