@@ -50,12 +50,22 @@ foreach($tracksByAlbum as &$group)usort($group,static fn(array $a,array $b):int=
 <link rel="stylesheet" href="<?= e(url('/profile.css?v=profile-media-20260905')) ?>">
 </head>
 <body class="profile-page">
-<header class="profile-topbar">
-  <a class="profile-brand" href="<?= e(url('/')) ?>"><span class="profile-brand-mark"><?= e(mb_strtoupper(mb_substr(system_agent_name(),0,1))) ?></span><span><?= e(system_agent_name()) ?></span></a>
-  <nav class="profile-top-actions">
-    <?php if($viewer): ?><a href="<?= e(url('/chat.php')) ?>">Agent Chat</a><a href="<?= e(url('/profile-agent.php')) ?>">Profile Agent</a><?php else: ?><a href="<?= e(url('/login.php')) ?>">Sign in</a><?php endif; ?>
-  </nav>
-</header>
+<?php if($viewer): ?>
+  <?php
+    $memberHeaderUser=$viewer;
+    $memberHeaderTitle='Profile';
+    $memberHeaderSubtitle='@'.$username;
+    $memberHeaderClass='profile-member-header';
+    $memberHeaderShowSidebarToggle=false;
+    $memberHeaderActions='';
+    require __DIR__.'/includes/member-header.php';
+  ?>
+<?php else: ?>
+  <header class="profile-topbar profile-guest-topbar">
+    <a class="profile-brand" href="<?= e(url('/')) ?>"><span class="profile-brand-mark"><?= e(mb_strtoupper(mb_substr(system_agent_name(),0,1))) ?></span><span><?= e(system_agent_name()) ?></span></a>
+    <nav class="profile-top-actions"><a href="<?= e(url('/login.php')) ?>">Sign in</a></nav>
+  </header>
+<?php endif; ?>
 <?php if($preview): ?><div class="profile-preview-banner"><span>Visitor preview — public visibility rules are active and this view is not being counted.</span><a href="<?= e(url('/profile-agent.php')) ?>">Back to Profile Agent</a></div><?php endif; ?>
 <section class="profile-cover profile-cover-full"><?php if($cover!==''): ?><img src="<?= e($cover) ?>" alt=""><?php endif; ?></section>
 <main class="profile-shell">
@@ -160,6 +170,7 @@ profileAgentLauncher?.addEventListener('click',()=>setProfileAgentOpen(profileAg
 profileAgentClose?.addEventListener('click',()=>setProfileAgentOpen(false));
 document.addEventListener('keydown',event=>{if(event.key==='Escape'&&profileAgentShell&&!profileAgentShell.hidden)setProfileAgentOpen(false);});
 </script>
+<?php if($viewer): ?><script src="<?= e(url('/member-shell-v77.js?v=universal-member-header-20260905')) ?>"></script><?php endif; ?>
 <?php if($agent&&!$preview): ?><script src="<?= e(url('/profile-agent.js?v=profile-activity-20260905')) ?>"></script><?php endif; ?>
 </body>
 </html>
