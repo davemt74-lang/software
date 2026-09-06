@@ -39,9 +39,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
 
-            $recipient = (string)setting('contact_email', (string)site_config('email', 'stonefellow74@gmail.com'));
+            $recipient = (string)setting('contact_email', (string)site_config('email', ''));
             $mailed = false;
-            if ((bool)site_config('send_contact_email', false)) {
+            if ((bool)site_config('send_contact_email', false) && filter_var($recipient, FILTER_VALIDATE_EMAIL)) {
                 $subject = 'VP3 — ' . preg_replace('/[\r\n]+/', ' ', $topic);
                 $body = "Name: {$name}\nEmail: {$email}\n\n{$message}";
                 $headers = ['From: ' . $recipient,'Reply-To: ' . $email,'Content-Type: text/plain; charset=UTF-8'];
