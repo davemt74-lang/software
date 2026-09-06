@@ -66,7 +66,7 @@ function member_navigation_menu_links(?array $user = null): array
     $accountAllowed=member_navigation_package_permission($user,'account.access',has_permission('account.access',$user));
     if($chatAllowed)$add($links,'chat','Main Feed',url('/chat.php'),'primary');
 
-    $profileUrl=member_navigation_profile_url($user);if($profileUrl!=='')$add($links,'profile','View Profile',$profileUrl,'identity');
+    $profileUrl = member_navigation_profile_url($user);if($profileUrl!=='')$add($links,'profile','View Profile',$profileUrl,'identity');
     if($accountAllowed){$add($links,'account','My Account',url('/account.php'),'identity');$add($links,'subscription','Plan & AI Usage',url('/subscription.php'),'identity');$add($links,'contacts','My Contacts',url('/contacts.php'),'identity');}
     if(member_navigation_entitled($user,'profile_agent.access',personal_capability_has_v242('profile_agent.access',$user)))$add($links,'profile_agent','Profile Agent',url('/profile-agent.php'),'identity');
     if(member_navigation_entitled($user,'knowledge.access',personal_capability_has_v242('personal_knowledge.access',$user)))$add($links,'knowledge','My Knowledge',url('/knowledge.php'),'identity');
