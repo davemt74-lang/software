@@ -17,8 +17,8 @@ return [
         'name' => 'VP3',
         'email' => '',
 
-        // Public origin used for security-sensitive outbound links such as
-        // password recovery. Use scheme + host only, with no trailing slash.
+        // Public origin used for security-sensitive outbound links and Stripe
+        // Checkout/Portal callbacks. Use scheme + host only, no trailing slash.
         // Example: 'https://vp3.example.com'
         'base_url' => '',
 
@@ -41,6 +41,21 @@ return [
         'endpoint' => '',
         'api_key' => '',
         'model' => '',
+    ],
+
+    // Phase 2 billing. VP3 treats Admin package prices as the source of truth
+    // and creates/syncs Stripe Products and recurring Prices automatically.
+    // Secret values may instead be supplied as STRIPE_SECRET_KEY and
+    // STRIPE_WEBHOOK_SECRET environment variables.
+    'billing' => [
+        'provider' => 'stripe',
+        'currency' => 'usd',
+        'stripe' => [
+            'secret_key' => '',
+            'webhook_secret' => '',
+            'allow_promotion_codes' => true,
+            'automatic_tax' => false,
+        ],
     ],
 
     'uploads' => [
