@@ -27,8 +27,8 @@ $vp3LoginUrl = url('/login.php');
       <span class="vp3-public-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span><strong>VP3</strong>
     </a>
     <nav class="vp3-public-links" aria-label="Primary navigation">
-      <a href="<?= e(url('/index.php#transcriptions')) ?>">Transcriptions</a>
-      <a href="<?= e(url('/index.php#teams')) ?>">Teams</a>
+      <a href="<?= e(url('/transcriptions.php')) ?>">Transcriptions</a>
+      <a href="<?= e(url('/teams.php')) ?>">Teams</a>
       <a href="<?= e(url('/pricing.php')) ?>">Pricing</a>
       <a href="<?= e(url('/about.php')) ?>">About</a>
     </nav>
@@ -38,8 +38,8 @@ $vp3LoginUrl = url('/login.php');
       <details class="vp3-public-mobile-menu">
         <summary aria-label="Open navigation"><span></span><span></span><span></span></summary>
         <nav aria-label="Mobile navigation">
-          <a href="<?= e(url('/index.php#transcriptions')) ?>">Transcriptions</a>
-          <a href="<?= e(url('/index.php#teams')) ?>">Teams</a>
+          <a href="<?= e(url('/transcriptions.php')) ?>">Transcriptions</a>
+          <a href="<?= e(url('/teams.php')) ?>">Teams</a>
           <a href="<?= e(url('/pricing.php')) ?>">Pricing</a>
           <a href="<?= e(url('/about.php')) ?>">About</a>
           <a href="<?= e($vp3DemoUrl) ?>">Book a Demo</a>
@@ -68,7 +68,7 @@ $vp3LoginUrl = url('/login.php');
       </div>
       <a class="vp3-browser-link" href="<?= e($vp3LoginUrl) ?>">Already have an account? Sign in <span aria-hidden="true">→</span></a>
 
-      <div class="vp3-device-stage" id="transcriptions" aria-label="VP3 desktop and mobile assistant interface preview">
+      <div class="vp3-device-stage" aria-label="VP3 desktop and mobile assistant interface preview">
         <div class="vp3-laptop">
           <div class="vp3-laptop-camera"></div>
           <div class="vp3-laptop-screen">
@@ -136,7 +136,7 @@ $vp3LoginUrl = url('/login.php');
     </div>
   </section>
 
-  <section class="vp3-results" id="teams" aria-labelledby="vp3ResultsTitle">
+  <section class="vp3-results" aria-labelledby="vp3ResultsTitle">
     <div class="vp3-results-bg" aria-hidden="true"></div>
     <div class="vp3-results-content">
       <div class="vp3-kicker">From conversations to action</div>
@@ -158,7 +158,7 @@ $vp3LoginUrl = url('/login.php');
 <footer class="vp3-footer">
   <div class="vp3-footer-brand"><span class="vp3-brand-mark small" aria-hidden="true"><i></i><i></i><i></i><i></i></span><strong>VP3</strong><span>A Private Future. On Your Terms.</span></div>
   <nav class="vp3-footer-links" aria-label="VP3 footer navigation">
-    <a href="#transcriptions">Transcriptions</a><a href="#teams">Teams</a><a href="<?= e(url('/pricing.php')) ?>">Pricing</a><a href="<?= e(url('/about.php')) ?>">About</a>
+    <a href="<?= e(url('/transcriptions.php')) ?>">Transcriptions</a><a href="<?= e(url('/teams.php')) ?>">Teams</a><a href="<?= e(url('/pricing.php')) ?>">Pricing</a><a href="<?= e(url('/about.php')) ?>">About</a>
     <span class="vp3-footer-divider"></span><a href="<?= e(url('/privacy.php')) ?>">Privacy</a><a href="<?= e(url('/terms.php')) ?>">Terms</a><a href="<?= e(url('/contact.php')) ?>">Contact</a>
   </nav>
 </footer>
