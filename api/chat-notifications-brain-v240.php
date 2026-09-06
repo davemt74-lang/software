@@ -169,6 +169,46 @@ function chat_notifications_v240_contextual_decision(PDO $pdo, int $userId, arra
     }
 }
 
+function chat_notifications_v240_source_title(array $notification, bool $profileContact = false): string
+{
+    if ($profileContact) return 'Profile visitor attention';
+    return match ((string)($notification['source_type'] ?? '')) {
+        'agent_edit_event' => 'Stem Editor activity',
+        'transcript_analysis' => 'Transcription activity',
+        'agent_memory_item' => 'Agent Brain activity',
+        'personal_knowledge_item' => 'My Knowledge activity',
+        'agent_tool_history' => 'Agent tool / skill activity',
+        'agent_proactive_event' => 'Agent opportunity',
+        default => 'User attention notification',
+    };
+}
+
+function chat_notifications_v240_action_label(array $notification): string
+{
+    $type = strtolower((string)($notification['type'] ?? ''));
+    $source = (string)($notification['source_type'] ?? '');
+    if ($source === 'agent_edit_event') return 'Open Stem Editor';
+    if ($source === 'transcript_analysis' || $source === 'agent_memory_item') return 'Open Transcription';
+    if ($source === 'personal_knowledge_item') return 'Open My Knowledge';
+    if ($source === 'agent_proactive_event') return 'Review';
+    if (str_contains($type, 'failed')) return 'Review';
+    return 'Open';
+}
+
+function chat_notifications_v240_activity_context(array $notification): array
+{
+    $type = strtolower(trim((string)($notification['type'] ?? '')));
+    $status = str_contains($type, 'failed') ? 'needs_review'
+        : (str_contains($type, 'opportunity') ? 'proposed' : 'completed');
+    return [
+        'kind'=>$type,
+        'status'=>$status,
+        'source_type'=>(string)($notification['source_type'] ?? ''),
+        'source_id'=>max(0, (int)($notification['source_id'] ?? 0)),
+        'occurred_at'=>(string)($notification['created_at'] ?? ''),
+    ];
+}
+
 function chat_notifications_v240_present_attention(PDO $pdo, array $user, array $input): array
 {
     $userId = (int)$user['id'];
@@ -218,6 +258,7 @@ function chat_notifications_v240_present_attention(PDO $pdo, array $user, array 
             'message_id'=>(int)$row['id'],
             'message'=>(string)$row['message'],
             'actions'=>is_array($ctx['actions'] ?? null) ? $ctx['actions'] : [],
+            'activity'=>is_array($ctx['activity'] ?? null) ? $ctx['activity'] : [],
         ];
     }
 
@@ -235,17 +276,19 @@ function chat_notifications_v240_present_attention(PDO $pdo, array $user, array 
 
     $target = trim((string)($notification['target_url'] ?? ''));
     $actions = $target !== '' ? [[
-        'type'=>'open_url','label'=>'Open','url'=>$target,
+        'type'=>'open_url','label'=>chat_notifications_v240_action_label($notification),'url'=>$target,
     ]] : [];
+    $activity = chat_notifications_v240_activity_context($notification);
     $context = [
         'sources'=>[[
             'source'=>'notification:' . $notificationId,
-            'title'=>$contact ? 'Profile visitor attention' : 'User attention notification',
+            'title'=>chat_notifications_v240_source_title($notification, (bool)$contact),
         ]],
         'media'=>[],
         'stem_media'=>[],
         'playlist_title'=>'',
         'actions'=>$actions,
+        'activity'=>$activity,
         'attention'=>[
             'required'=>true,
             'notification_id'=>$notificationId,
@@ -278,6 +321,7 @@ function chat_notifications_v240_present_attention(PDO $pdo, array $user, array 
         'message'=>$message,
         'prompt'=>$prompt,
         'actions'=>$actions,
+        'activity'=>$activity,
         'profile_contact'=>$contact,
         'response_timeout_ms'=>10000,
     ];
