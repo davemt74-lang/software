@@ -40,9 +40,23 @@ assert.doesNotMatch(index, /App Store|Google Play|VP3 for iPhone|VP3 for Android
 assert.match(index, /My Contacts[\s\S]*My Knowledge[\s\S]*My Transcriptions/, 'desktop mockup must reflect the existing Agent Chat navigation');
 assert.match(index, /Good morning, Dave\./, 'desktop and mobile previews must use the assistant interaction pattern');
 
-assert.doesNotMatch(index, /How it works|From recording to action in four steps\.|Capture the conversation once\. VP3 turns it into searchable context/, 'removed How It Works section must not remain on the homepage');
-assert.doesNotMatch(index, /vp3-step-grid|vp3-step-card|vp3-step-number/, 'removed four-step cards must not remain on the homepage');
+assert.doesNotMatch(index, /How it works|From recording to action in four steps\.|Capture the conversation once\. VP3 turns it into searchable context/, 'homepage must not restore the removed workflow heading or intro copy');
 assert.doesNotMatch(index, /Everything you need\. All in one place\./, 'legacy Everything You Need section must remain removed');
+assert.match(index, /<section class="vp3-steps-only"[^>]*>/, 'homepage must keep the four-step workflow as a standalone card section');
+for (const step of ['Record', 'Transcribe', 'AI Analysis', 'Summary or Action Plan']) {
+  assert.match(index, new RegExp(`<h3>${step}<\\/h3>`), `homepage workflow must include ${step}`);
+}
+for (const copy of [
+  'Capture conversations, meetings, ideas, or voice notes directly into your VP3 workspace.',
+  'Turn your recording into accurate, searchable text you can review, save, and reuse.',
+  'Let VP3 identify the key ideas, decisions, questions, opportunities, and next steps in the conversation.',
+  'Receive a clear summary or practical action plan that helps you move forward.'
+]) {
+  assert.ok(index.includes(copy), `homepage workflow must include: ${copy}`);
+}
+assert.match(index, /vp3-step-number">01<[\s\S]*vp3-step-number">02<[\s\S]*vp3-step-number">03<[\s\S]*vp3-step-number">04</, 'workflow steps must remain explicitly ordered');
+assert.match(refreshCss, /\.vp3-step-grid\{[^}]*grid-template-columns:repeat\(4,minmax\(0,1fr\)\)/, 'desktop workflow must use four columns');
+assert.match(refreshCss, /@media\(max-width:620px\)[\s\S]*\.vp3-step-grid\{grid-template-columns:1fr\}/, 'workflow cards must collapse to one column on small screens');
 
 const results = index.match(/<section class="vp3-results"[\s\S]*?<\/section>/)?.[0] || '';
 assert.ok(results, 'homepage must keep the Turn Your Thoughts Into Results section');
