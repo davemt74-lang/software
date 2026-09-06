@@ -21,6 +21,14 @@
   const stateLabel = value => ({
     working:'Working', paused:'Paused', idle:'Idle', logged_out:'Logged out'
   }[String(value || '')] || String(value || 'Activity').replaceAll('_', ' '));
+  const brainSourceLabel = value => ({
+    agent_tool_history:'Agent tool / skill',
+    agent_edit_event:'Stem Editor',
+    transcript_analysis:'Transcription',
+    agent_memory_item:'Agent Brain memory',
+    personal_knowledge_item:'My Knowledge',
+    agent_proactive_event:'Agent opportunity'
+  }[String(value || '')] || 'Agent activity');
 
   let state = null;
   let drawer = null;
@@ -163,10 +171,12 @@
       return '<section class="chat-activity-section"><div class="chat-activity-empty">Personal Agent Brain is not enabled for this account type.</div></section>';
     }
     const activity = brain.activity || {};
+    const operations = Array.isArray(brain.operations) ? brain.operations : [];
     const events = Array.isArray(brain.events) ? brain.events : [];
     const recent = Array.isArray(brain.recent) ? brain.recent : [];
     const themes = Array.isArray(brain.themes) ? brain.themes : [];
     const currentState = stateLabel(activity.state || 'idle');
+
     return `
       <section class="chat-activity-section chat-brain-overview">
         <div class="chat-brain-status ${esc(String(activity.state || 'idle'))}">
@@ -177,19 +187,39 @@
         <div class="chat-brain-metrics">
           ${brainMetric('Memories', Number(brain.memory_count || 0))}
           ${brainMetric('Archived messages', Number(brain.archive_count || 0))}
-          ${brainMetric('Activity events', events.length)}
+          ${brainMetric('Operations', operations.length)}
         </div>
       </section>
+
       <section class="chat-activity-section">
-        <div class="chat-activity-section-head"><div><strong>Live Brain Activity</strong><span>What the agent has been doing across Stonefellow</span></div></div>
+        <div class="chat-activity-section-head">
+          <div><strong>Operational Activity</strong><span>Tools, edits, transcriptions, knowledge saves and agent opportunities</span></div>
+        </div>
+        <div class="chat-notification-list chat-brain-operation-list">
+          ${operations.length ? operations.map(item => `
+            <article class="chat-notification-item chat-brain-operation">
+              <span class="chat-notification-dot" aria-hidden="true"></span>
+              <div>
+                <strong>${esc(item.title || 'Agent activity')}</strong>
+                ${item.body ? `<p>${esc(item.body)}</p>` : ''}
+                <small>${esc(brainSourceLabel(item.source_type))} · ${esc(relative(item.created_at))}</small>
+              </div>
+              ${item.target_url ? `<a href="${esc(item.target_url)}">Open</a>` : ''}
+            </article>`).join('') : '<div class="chat-activity-empty">No operational Agent Brain activity in the last 14 days.</div>'}
+        </div>
+      </section>
+
+      <section class="chat-activity-section">
+        <div class="chat-activity-section-head"><div><strong>Agent State Timeline</strong><span>Working, paused and idle state transitions across Stonefellow</span></div></div>
         <div class="chat-brain-timeline">
           ${events.length ? events.slice(0,30).map(event => `
             <article class="chat-brain-event">
               <span class="chat-brain-event-state ${esc(event.activity_state || 'idle')}"></span>
               <div><strong>${esc(event.task_title || stateLabel(event.activity_state))}</strong><p>${esc(stateLabel(event.previous_state))} → ${esc(stateLabel(event.activity_state))}${event.reason ? ` · ${esc(String(event.reason).replaceAll('_',' '))}` : ''}</p><small>${esc(event.surface || 'chat')} · ${esc(relative(event.created_at))}</small></div>
-            </article>`).join('') : '<div class="chat-activity-empty">No Agent Brain activity history yet.</div>'}
+            </article>`).join('') : '<div class="chat-activity-empty">No Agent state history yet.</div>'}
         </div>
       </section>
+
       <section class="chat-activity-section">
         <div class="chat-activity-section-head"><div><strong>Recent Memory</strong><span>Structured facts and decisions the Agent Brain is retaining</span></div></div>
         <div class="chat-brain-memory-list">
@@ -515,9 +545,8 @@
       const data = await request('attention', null, {after_id:bootstrap ? 0 : attentionCursor});
       const items = Array.isArray(data.items) ? data.items : [];
       for (let index = 0; index < items.length; index += 1) {
-        // Reconcile the entire durable backlog into Chat, but do not read a
-        // historical queue aloud. On initial load only the newest item speaks;
-        // subsequent live items are all verbal when Agent Voice is enabled.
+        // Only genuine user-attention notifications reach this path. Agent
+        // Brain operational activity is rendered in the Brain tab instead.
         const speak = !bootstrap || index === items.length - 1;
         await presentAttention(items[index], speak);
       }
