@@ -12,13 +12,33 @@ function team_chat_v109_json(array $payload, int $status = 200): never
     exit;
 }
 
+function team_chat_v109_contextual_member(PDO $pdo, int $userId): bool
+{
+    if ($userId < 1 || !table_exists('artist_team_members')) return false;
+
+    try {
+        $stmt = $pdo->prepare(
+            'SELECT 1 FROM artist_team_members WHERE member_user_id=? LIMIT 1'
+        );
+        $stmt->execute([$userId]);
+        return (bool)$stmt->fetchColumn();
+    } catch (Throwable $e) {
+        return false;
+    }
+}
+
 function team_chat_v109_role_allowed(?array $user = null): bool
 {
     $user = $user ?? current_user();
-    return $user && (bool)array_intersect(
-        user_roles_for_user($user),
-        ['artist', 'manager', 'producer', 'supervisor', 'admin']
-    );
+    if (!$user) return false;
+
+    if ((bool)array_intersect(user_roles_for_user($user), ['artist', 'supervisor', 'admin'])) {
+        return true;
+    }
+
+    $pdo = db();
+    return $pdo
+        && team_chat_v109_contextual_member($pdo, (int)($user['id'] ?? 0));
 }
 
 function team_chat_v109_avatar_url(string $path): string
@@ -93,18 +113,26 @@ function team_chat_v109_target(PDO $pdo, int $userId): ?array
     if ($userId < 1) return null;
     if (empty(chat_settings_get_v237($pdo, $userId)['social_chat_enabled'])) return null;
 
+    $contextualSql = table_exists('artist_team_members')
+        ? " OR EXISTS (
+               SELECT 1 FROM artist_team_members atm
+               WHERE atm.member_user_id=u.id
+             )"
+        : '';
+
     $stmt = $pdo->prepare(
         "SELECT u.id,u.display_name,u.role,u.avatar_path,u.is_active
          FROM users u
          WHERE u.id=?
            AND u.is_active=1
            AND (
-             u.role IN ('artist','manager','producer','supervisor','admin')
+             u.role IN ('artist','supervisor','admin')
              OR EXISTS (
                SELECT 1 FROM user_account_types uat
                WHERE uat.user_id=u.id
-                 AND uat.role IN ('artist','manager','producer','supervisor','admin')
+                 AND uat.role IN ('artist','supervisor','admin')
              )
+             {$contextualSql}
            )
          LIMIT 1"
     );
@@ -166,6 +194,12 @@ try {
         $peerChatCondition = $settingsReady
             ? " AND COALESCE(p.social_chat_enabled,1)=1"
             : '';
+        $contextualDirectorySql = table_exists('artist_team_members')
+            ? " OR EXISTS (
+                   SELECT 1 FROM artist_team_members atm
+                   WHERE atm.member_user_id=u.id
+                 )"
+            : '';
 
         $directoryStmt = $pdo->prepare(
             "SELECT
@@ -189,12 +223,13 @@ try {
                AND u.is_active=1
                {$peerChatCondition}
                AND (
-                 u.role IN ('artist','manager','producer','supervisor','admin')
+                 u.role IN ('artist','supervisor','admin')
                  OR EXISTS (
                    SELECT 1 FROM user_account_types uat
                    WHERE uat.user_id=u.id
-                     AND uat.role IN ('artist','manager','producer','supervisor','admin')
+                     AND uat.role IN ('artist','supervisor','admin')
                  )
+                 {$contextualDirectorySql}
                )
              ORDER BY online DESC,unread_count DESC,u.display_name,u.id
              LIMIT 100"
