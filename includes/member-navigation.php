@@ -25,6 +25,32 @@ function member_navigation_profile_url(?array $user = null): string
     return '';
 }
 
+function member_agent_voice_enabled(?array $user = null): bool
+{
+    $user ??= current_user();
+    if (!$user || (int)($user['id'] ?? 0) < 1) return true;
+    $pdo = db();
+    if (!$pdo || !function_exists('chat_settings_get_v237')) return true;
+    try {
+        $settings = chat_settings_get_v237($pdo, (int)$user['id']);
+        return ($settings['agent_voice_enabled'] ?? true) !== false;
+    } catch (Throwable $e) {
+        return true;
+    }
+}
+
+function member_agent_voice_toggle_html(?array $user = null): string
+{
+    $user ??= current_user();
+    if (!$user || !has_permission('chat.access', $user)) return '';
+    $checked = member_agent_voice_enabled($user) ? ' checked' : '';
+    return '<label class="member-agent-voice-toggle" title="Speak proactive and Profile Agent messages">'
+        . '<span class="member-agent-voice-label">Agent Voice</span>'
+        . '<input type="checkbox" data-agent-voice-toggle aria-label="Agent Voice"' . $checked . '>'
+        . '<span class="member-agent-voice-switch" aria-hidden="true"><span></span></span>'
+        . '</label>';
+}
+
 function member_navigation_menu_links(?array $user = null): array
 {
     $user ??= current_user();

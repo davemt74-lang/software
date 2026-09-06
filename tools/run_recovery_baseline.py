@@ -54,6 +54,7 @@ NODE_TESTS = [
     'tests/member-sidebar-shell-contract.mjs',
     'tests/member-header-contract.mjs',
     'tests/transcription-agent-knowledge-integration.mjs',
+    'tests/profile-agent-chat-order-voice-contract.mjs',
 ]
 
 # These tests contain useful source assertions but also directly read the lost

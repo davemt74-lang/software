@@ -3,10 +3,11 @@
 
   const cfg = window.STONEFELLOW_CHAT_SETTINGS;
   const sidebar = document.getElementById('chatSidebar');
-  if (!cfg?.endpoint || !cfg?.csrf || !sidebar) return;
+  if (!cfg?.endpoint || !cfg?.csrf) return;
 
   let state = null;
   let busy = false;
+  let voiceBusy = false;
   let lastFocus = null;
 
   const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({
@@ -30,6 +31,7 @@
   }
 
   function installLauncher() {
+    if (!sidebar) return null;
     let host = document.getElementById('chatSettingsLauncher');
     if (host) return host;
     host = document.createElement('div');
@@ -70,6 +72,7 @@
               <div class="chat-settings-section-title"><strong>Social Chat</strong><span>Control direct user-to-user conversations and incoming message alerts.</span></div>
               <label class="chat-settings-toggle"><span><strong>Allow user-to-user chat</strong><small>Other eligible users can find you and send direct messages.</small></span><input type="checkbox" name="social_chat_enabled"></label>
               <label class="chat-settings-toggle"><span><strong>Incoming message sound</strong><small>Play one notification sound when a new direct message arrives.</small></span><input type="checkbox" name="sound_enabled"></label>
+              <label class="chat-settings-toggle"><span><strong>Agent Voice</strong><small>Speak proactive and Profile Agent attention messages aloud.</small></span><input type="checkbox" name="agent_voice_enabled"></label>
             </section>
             <section class="chat-settings-section" id="chatSettingsProfileAgentSection">
               <div class="chat-settings-section-title"><strong>Profile Agent Chat</strong><span>Use the same public Profile Agent controls already owned by your profile.</span></div>
@@ -128,11 +131,38 @@
       <label class="chat-settings-field"><span>Public agent instructions</span><textarea name="profile_agent_instructions" maxlength="4000">${esc(profile.profile_agent_instructions || '')}</textarea></label>`;
   }
 
+  function ensureAgentVoiceToggle() {
+    const existing = document.querySelector('[data-agent-voice-toggle]');
+    if (existing) return existing;
+    const summary = document.querySelector('#chatProfileDropdown .chat-profile-summary');
+    if (!summary) return null;
+    const host = document.createElement('label');
+    host.className = 'member-agent-voice-toggle';
+    host.title = 'Speak proactive and Profile Agent messages';
+    host.innerHTML = '<span class="member-agent-voice-label">Agent Voice</span><input type="checkbox" data-agent-voice-toggle aria-label="Agent Voice"><span class="member-agent-voice-switch" aria-hidden="true"><span></span></span>';
+    summary.appendChild(host);
+    return host.querySelector('[data-agent-voice-toggle]');
+  }
+
+  function applyAgentVoice(enabled) {
+    const active = enabled !== false;
+    ensureAgentVoiceToggle();
+    document.querySelectorAll('[data-agent-voice-toggle]').forEach(toggle => {
+      toggle.checked = active;
+      toggle.closest('.member-agent-voice-toggle')?.setAttribute('data-enabled', active ? 'true' : 'false');
+    });
+    window.dispatchEvent(new CustomEvent('stonefellow:agent-voice', {
+      detail:{enabled:active}
+    }));
+    return active;
+  }
+
   function applyRuntimeSettings(chat) {
-    const settings = chat || { presence_mode:'online', social_chat_enabled:true, sound_enabled:true };
+    const settings = chat || { presence_mode:'online', social_chat_enabled:true, sound_enabled:true, agent_voice_enabled:true };
     const online = String(settings.presence_mode || 'online') === 'online';
     const social = settings.social_chat_enabled !== false;
     const sound = settings.sound_enabled !== false;
+    const agentVoice = applyAgentVoice(settings.agent_voice_enabled !== false);
 
     if (button) button.dataset.presence = online ? 'online' : 'offline';
     if (presenceLabel) presenceLabel.textContent = online ? 'Online' : 'Offline';
@@ -150,20 +180,23 @@
       detail:{
         presence_mode:online ? 'online' : 'offline',
         social_chat_enabled:social,
-        sound_enabled:sound
+        sound_enabled:sound,
+        agent_voice_enabled:agentVoice
       }
     }));
   }
 
   function renderState() {
-    const chat = state?.chat || { presence_mode:'online', social_chat_enabled:true, sound_enabled:true };
+    const chat = state?.chat || { presence_mode:'online', social_chat_enabled:true, sound_enabled:true, agent_voice_enabled:true };
     if (form) {
       const mode = form.elements.namedItem('presence_mode');
       const social = form.elements.namedItem('social_chat_enabled');
       const sound = form.elements.namedItem('sound_enabled');
+      const voice = form.elements.namedItem('agent_voice_enabled');
       if (mode) mode.value = String(chat.presence_mode || 'online');
       if (social) social.checked = chat.social_chat_enabled !== false;
       if (sound) sound.checked = chat.sound_enabled !== false;
+      if (voice) voice.checked = chat.agent_voice_enabled !== false;
     }
     renderProfileAgent(state?.profile_agent || null);
     applyRuntimeSettings(chat);
@@ -211,12 +244,14 @@
     const presence = form.elements.namedItem('presence_mode');
     const social = form.elements.namedItem('social_chat_enabled');
     const sound = form.elements.namedItem('sound_enabled');
+    const voice = form.elements.namedItem('agent_voice_enabled');
 
     try {
       const chatResponse = await request('save_chat', {
         presence_mode:String(presence?.value || 'online'),
         social_chat_enabled:Boolean(social?.checked),
-        sound_enabled:Boolean(sound?.checked)
+        sound_enabled:Boolean(sound?.checked),
+        agent_voice_enabled:Boolean(voice?.checked)
       });
 
       let profileAgent = state?.profile_agent || null;
@@ -244,6 +279,30 @@
       busy = false;
       saveButton.disabled = false;
       saveButton.textContent = 'Save settings';
+    }
+  }
+
+  async function saveAgentVoiceToggle(toggle) {
+    if (voiceBusy) {
+      toggle.checked = !toggle.checked;
+      return;
+    }
+    voiceBusy = true;
+    const host = toggle.closest('.member-agent-voice-toggle');
+    host?.setAttribute('data-saving', 'true');
+    const requested = Boolean(toggle.checked);
+    try {
+      const response = await request('save_agent_voice', {agent_voice_enabled:requested});
+      state = {...(state || {}), ok:true, chat:response.chat || state?.chat || {}};
+      applyRuntimeSettings(response.chat || {agent_voice_enabled:requested});
+    } catch (error) {
+      applyAgentVoice(!requested);
+      window.dispatchEvent(new CustomEvent('stonefellow:agent-voice-error', {
+        detail:{message:error instanceof Error ? error.message : 'Could not save Agent Voice.'}
+      }));
+    } finally {
+      host?.removeAttribute('data-saving');
+      voiceBusy = false;
     }
   }
 
@@ -281,13 +340,21 @@
   button?.addEventListener('click', openModal);
   modal.querySelectorAll('[data-close-chat-settings]').forEach(node => node.addEventListener('click', closeModal));
   form?.addEventListener('submit', saveSettings);
+  document.addEventListener('change', event => {
+    const toggle = event.target.closest?.('[data-agent-voice-toggle]');
+    if (toggle) void saveAgentVoiceToggle(toggle);
+  });
   document.addEventListener('keydown', event => {
     if (event.key === 'Escape' && !modal.hidden) closeModal();
   });
 
+  ensureAgentVoiceToggle();
   ensureNotificationNextToProfile();
   const topbar = document.querySelector('.chat-topbar-actions');
-  if (topbar) new MutationObserver(ensureNotificationNextToProfile).observe(topbar, { childList:true });
+  if (topbar) new MutationObserver(() => {
+    ensureAgentVoiceToggle();
+    ensureNotificationNextToProfile();
+  }).observe(topbar, { childList:true, subtree:true });
   installPlayerClose();
   void syncState(false);
 })();

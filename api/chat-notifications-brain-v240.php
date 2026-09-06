@@ -94,6 +94,7 @@ function chat_notifications_v240_state(array $user, PDO $pdo): array
 
     return [
         'ok'=>true,
+        'agent_voice_enabled'=>member_agent_voice_enabled($user),
         'notifications'=>[
             'unread'=>notification_unread_count($user),
             'items'=>notification_recent($user, 25),
@@ -163,8 +164,6 @@ function chat_notifications_v240_contextual_decision(PDO $pdo, int $userId, arra
         $decision = profile_visitor_attention_decision_v243($pdo, $userId, $notification);
         return is_array($decision) ? $decision : null;
     } catch (Throwable $e) {
-        // Context is enrichment. The canonical notification must still become a
-        // chat turn even if visitor-history enrichment is temporarily unavailable.
         error_log('Profile visitor attention enrichment failed: ' . $e->getMessage());
         return null;
     }
@@ -258,8 +257,12 @@ function chat_notifications_v240_present_attention(PDO $pdo, array $user, array 
         ],
     ];
     $contextJson = json_encode($context, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
-    $insert = $pdo->prepare("INSERT INTO chat_messages (conversation_id,user_id,role,message,context_json) VALUES (?,NULL,'assistant',?,?)");
-    $insert->execute([$conversationId, $message, is_string($contextJson) ? $contextJson : '{}']);
+    $attentionCreatedAt = trim((string)($notification['created_at'] ?? ''));
+    if ($attentionCreatedAt === '' || strtotime($attentionCreatedAt) === false) {
+        $attentionCreatedAt = date('Y-m-d H:i:s');
+    }
+    $insert = $pdo->prepare("INSERT INTO chat_messages (conversation_id,user_id,role,message,context_json,created_at) VALUES (?,NULL,'assistant',?,?,?)");
+    $insert->execute([$conversationId, $message, is_string($contextJson) ? $contextJson : '{}', $attentionCreatedAt]);
     $messageId = (int)$pdo->lastInsertId();
     $pdo->prepare('UPDATE chat_conversations SET updated_at=NOW() WHERE id=? AND user_id=?')->execute([$conversationId, $userId]);
 

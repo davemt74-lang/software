@@ -35,6 +35,7 @@
   let responseTemporaryVoice = false;
   let responseWindowActive = false;
   let speechQueue = Promise.resolve();
+  let agentVoicePreference = cfg.agentVoiceEnabled !== false;
 
   async function request(action = 'state', payload = null, query = {}) {
     const post = payload !== null;
@@ -238,6 +239,9 @@
   async function refresh(showError = false) {
     try {
       state = await request('state');
+      if (Object.prototype.hasOwnProperty.call(state, 'agent_voice_enabled')) {
+        agentVoicePreference = state.agent_voice_enabled !== false;
+      }
       render();
     } catch (error) {
       if (showError && drawer) {
@@ -323,6 +327,10 @@
     return window.STONEFELLOW_CHAT_CONTINUITY || window.STONEFELLOW_CHAT_CONTINUITY_V87 || {};
   }
 
+  function chatCanvasAvailable() {
+    return typeof continuity().openConversation === 'function';
+  }
+
   function activeConversationId() {
     return Math.max(0, Number(continuity().conversationId?.() || 0));
   }
@@ -376,6 +384,10 @@
     return voiceIsOn();
   }
 
+  function agentVoiceEnabled() {
+    return agentVoicePreference !== false;
+  }
+
   function waitForAgentIdle(timeoutMs = 30000) {
     const deadline = Date.now() + timeoutMs;
     return new Promise(resolve => {
@@ -417,6 +429,7 @@
   }
 
   async function speakWithExistingVoice(text) {
+    if (!agentVoiceEnabled()) return;
     const message = String(text || '').trim();
     if (!message) return;
     await waitForAgentIdle();
@@ -495,6 +508,7 @@
   }
 
   async function pollAttention(bootstrap = false) {
+    if (!chatCanvasAvailable()) return;
     if (attentionBusy || (document.hidden && !bootstrap)) return;
     attentionBusy = true;
     try {
@@ -514,6 +528,7 @@
   }
 
   function startAttentionPolling() {
+    if (!chatCanvasAvailable()) return;
     void pollAttention(true);
     if (attentionTimer) window.clearInterval(attentionTimer);
     attentionTimer = window.setInterval(() => pollAttention(false), 5000);
@@ -531,8 +546,11 @@
   window.addEventListener('stonefellow:chat-voice', event => {
     if (String(event.detail?.type || '') === 'TRANSCRIPT_SUBMIT') markUserResponse();
   });
+  window.addEventListener('stonefellow:agent-voice', event => {
+    agentVoicePreference = event.detail?.enabled !== false;
+  });
   document.addEventListener('visibilitychange', () => {
-    if (!document.hidden) void pollAttention(false);
+    if (!document.hidden && chatCanvasAvailable()) void pollAttention(false);
   });
   window.addEventListener('pagehide', () => {
     if (attentionTimer) window.clearInterval(attentionTimer);
@@ -541,6 +559,5 @@
   }, {once:true});
 
   window.STONEFELLOW_NOTIFICATION_CENTER = {open:openDrawer, close:closeDrawer, refresh, pollAttention};
-  void refresh(false);
-  startAttentionPolling();
+  void refresh(false).finally(startAttentionPolling);
 })();
