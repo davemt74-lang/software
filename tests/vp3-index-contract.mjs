@@ -11,6 +11,7 @@ assert.match(index, /redirect_logged_in_public_page\(\)/, 'homepage must preserv
 assert.match(index, /<title>VP3 — Capture\. Understand\. Take Action\.<\/title>/, 'public homepage must use VP3 positioning');
 assert.match(index, /Capture\. Understand\.[\s\S]*Take Action\./, 'hero must use the approved headline');
 assert.doesNotMatch(index, /<h1[^>]*>\s*VP3\s*<\/h1>/, 'homepage must not repeat VP3 as a second hero title');
+assert.match(refreshCss, /\.vp3-hero h1\{[^}]*font-family:[^}]*Georgia,serif[^}]*font-weight:500/, 'hero title must use the refined serif treatment');
 
 assert.match(index, /vp3-public-header vp3-home-header/, 'homepage must use the canonical public-header structure');
 const homePrimaryNav = index.match(/<nav class="vp3-public-links"[\s\S]*?<\/nav>/)?.[0] || '';
