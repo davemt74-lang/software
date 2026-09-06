@@ -22,6 +22,10 @@ for (const table of ['package_billing_prices','billing_customers','billing_subsc
 }
 assert.ok(upgrade.includes('billing_schema_ready()') && upgrade.includes('billing_ensure_schema();'), 'database upgrade must install and verify Phase 2 billing storage');
 
+assert.ok(schema.includes('id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY') && schema.includes('idx_billing_prices_active'), 'Stripe price mappings must support historical rows instead of one mutable row per package interval');
+assert.ok(!schema.includes('PRIMARY KEY (package_id,provider,billing_interval)'), 'package/interval must not be the Stripe price primary key');
+assert.ok(sql.includes('idx_billing_prices_active') && !sql.includes('PRIMARY KEY (package_id,provider,billing_interval)'), 'manual SQL must preserve historical Stripe Prices too');
+
 assert.ok(config.includes("'billing' =>") && config.includes("'provider' => 'stripe'"), 'config example must expose a Stripe billing section');
 assert.ok(config.includes('STRIPE_SECRET_KEY') && config.includes('STRIPE_WEBHOOK_SECRET'), 'billing secrets must support environment variables');
 assert.ok(!config.includes('sk_live_') && !config.includes('whsec_'), 'example config must never contain real-looking billing secrets');
@@ -34,6 +38,12 @@ assert.ok(stripe.includes("hash_hmac('sha256',$timestamp.'.'.$payload,$secret)")
 assert.ok(stripe.includes('hash_equals($expected,$signature)'), 'webhook signature comparison must be constant-time');
 assert.ok(stripe.includes('abs(time()-$timestamp)>'), 'webhook signatures must enforce a replay tolerance');
 
+assert.ok(stripe.includes("AND is_active=1 ORDER BY id DESC LIMIT 1"), 'new Checkout must resolve only the active package Price');
+assert.ok(stripe.includes('billing_price_mapping_latest'), 'price sync must be able to reuse the existing Stripe Product after a price change');
+assert.ok(stripe.includes("UPDATE package_billing_prices SET is_active=0"), 'new package pricing must deactivate—not overwrite—previous Stripe Price mappings');
+assert.ok(stripe.includes("WHERE bp.provider='stripe' AND bp.provider_price_id=? LIMIT 1"), 'reconciliation must resolve historical Stripe Price IDs without an active-only filter');
+assert.ok(stripe.includes("ON DUPLICATE KEY UPDATE package_id=VALUES(package_id)"), 'reverting to historical commercial terms must be able to reactivate the existing immutable Stripe Price');
+
 assert.ok(stripe.includes("'mode'=>'subscription'"), 'first paid activation must use Stripe Checkout subscription mode');
 assert.ok(stripe.includes("'line_items'=>[['price'=>(string)$price['provider_price_id']"), 'Checkout price must come from a server-side package mapping');
 assert.ok(stripe.includes('billing_stripe_ensure_package_price'), 'VP3 package prices must be synchronized to Stripe server-side');
@@ -44,6 +54,9 @@ assert.ok(stripe.includes("'payment_method_update'=>['enabled'=>true]"), 'billin
 assert.ok(stripe.includes("'subscription_cancel'=>['enabled'=>true,'mode'=>'at_period_end'"), 'billing portal cancellation must preserve paid access through period end');
 assert.ok(stripe.includes("checkout/sessions/'.rawurlencode($sessionId).'/expire"), 'stale Checkout sessions must be explicitly expired at Stripe');
 assert.ok(stripe.includes("VALUES (?,?,?,'stripe','checkout',?,?,?,?,'open',?,?,?)"), 'Checkout persistence placeholder count must match its ten bound values');
+assert.ok(stripe.includes('billing_stripe_checkout_attempt_state'), 'Checkout resume must inspect prior provider sessions');
+assert.ok(stripe.includes("if($status==='open'"), 'an existing open Checkout must be reused instead of duplicated');
+assert.ok(stripe.includes(".'-'.$attempt"), 'an expired Checkout must advance the idempotency attempt for a fresh Session');
 
 assert.ok(runtime.includes("in_array($status,['active','trialing'],true)"), 'only active/trialing provider subscriptions can activate entitlements');
 assert.ok(runtime.includes("$pending=$subscription['pending_update']??null"), 'Stripe pending updates must not activate a target package early');
@@ -72,6 +85,8 @@ assert.ok(page.includes('billing_cancel_request'), 'undo/cancel requests must ro
 
 assert.ok(admin.includes('Sync Stripe Catalog') && admin.includes('Test Stripe Connection'), 'Admin needs billing connection and catalog controls');
 assert.ok(admin.includes('Webhook Events') && admin.includes('Billing Subscriptions'), 'Admin needs provider reconciliation visibility');
-assert.ok(!admin.includes('STRIPE_SECRET_KEY') && !admin.includes('STRIPE_WEBHOOK_SECRET'), 'Admin UI must not render secret values');
+assert.ok(admin.includes("billing_stripe_secret_key()!==''?'Configured':'Missing'"), 'Admin may expose only whether the Stripe secret is configured');
+assert.ok(admin.includes("billing_stripe_webhook_secret()!==''?'Configured':'Missing'"), 'Admin may expose only whether the webhook secret is configured');
+assert.ok(!admin.includes('e(billing_stripe_secret_key())') && !admin.includes('e(billing_stripe_webhook_secret())'), 'Admin UI must never render Stripe secret values');
 
 console.log('STRIPE_BILLING_PHASE2_CONTRACT=PASS');
