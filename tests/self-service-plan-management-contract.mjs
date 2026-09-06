@@ -30,10 +30,14 @@ assert.ok(runtime.includes('subscription_self_service_cancel_request'), 'pending
 assert.ok(runtime.includes('subscription_audit'), 'self-service plan mutations must be audited');
 assert.ok(runtime.includes("SELECT id FROM users WHERE id=? LIMIT 1 FOR UPDATE"), 'plan mutations must serialize on the user account');
 
-assert.ok(lifecycle.indexOf('subscription_self_service_apply_due_for_user') < lifecycle.indexOf('subscription_lifecycle_refresh_user_period($userId,$pdo)'), 'scheduled changes must execute before recurring period rollover');
+assert.match(
+  lifecycle,
+  /function subscription_lifecycle_boot\(\): void[\s\S]*subscription_self_service_apply_due_for_user\(\$userId,\$pdo\)[\s\S]*subscription_lifecycle_refresh_user_period\(\$userId,\$pdo\)/,
+  'scheduled changes must execute before recurring period rollover'
+);
 assert.ok(runtime.includes("SELECT * FROM user_subscriptions WHERE id=? AND user_id=? LIMIT 1 FOR UPDATE"), 'period-end actions must bind to the exact subscription even after a trial expires');
 
-assert.ok(page.includes("action\" value=\"select_plan") || page.includes('value="select_plan"'), 'plan page must expose self-service plan selection');
+assert.ok(page.includes('value="select_plan"'), 'plan page must expose self-service plan selection');
 assert.ok(page.includes('value="cancel_request"'), 'plan page must allow reversing a pending change');
 assert.ok(page.includes('value="schedule_cancel"'), 'plan page must support period-end cancellation for billable subscriptions');
 assert.ok(page.includes('csrf_field()'), 'all plan mutations must remain CSRF protected');
