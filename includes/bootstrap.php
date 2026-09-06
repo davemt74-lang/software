@@ -85,6 +85,7 @@ require_once __DIR__.'/member-navigation.php';
 require_once __DIR__.'/release-chat-v105.php';
 
 subscription_lifecycle_boot();
+artist_workspace_v104_boot_contextual_roles();
 subscription_request_gate();
 permission_v105_enforce_request_gates();
 artist_admin_routing_v185_apply();
