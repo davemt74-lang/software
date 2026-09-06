@@ -32,8 +32,11 @@ assert.ok(runtime.includes("This package is managed by an administrator and cann
 assert.ok(runtime.includes('subscription_self_service_cancel_request'), 'pending/scheduled changes must be reversible');
 assert.ok(runtime.includes('subscription_audit'), 'self-service plan mutations must be audited');
 assert.ok(runtime.includes("SELECT id FROM users WHERE id=? LIMIT 1 FOR UPDATE"), 'plan mutations must serialize on the user account');
+assert.ok(runtime.includes("SELECT * FROM subscription_packages WHERE id=? LIMIT 1 FOR UPDATE"), 'package price/visibility terms must be locked before recording customer intent');
+assert.match(runtime, /function subscription_self_service_select_plan[\s\S]*SELECT id FROM users WHERE id=\? LIMIT 1 FOR UPDATE[\s\S]*subscription_self_service_package_for_update[\s\S]*subscription_self_service_price_cents/, 'self-service selection must revalidate package terms inside the customer transaction');
 assert.match(runtime, /function subscription_self_service_cancel_request[\s\S]*SELECT id FROM users WHERE id=\? LIMIT 1 FOR UPDATE[\s\S]*SELECT \* FROM subscription_plan_requests/, 'cancelling a request must lock user before plan request');
 assert.match(runtime, /function subscription_self_service_apply_due_for_user[\s\S]*SELECT id FROM users WHERE id=\? LIMIT 1 FOR UPDATE[\s\S]*SELECT \* FROM subscription_plan_requests[\s\S]*SELECT \* FROM user_subscriptions/, 'due processing must preserve user -> request -> subscription lock order');
+assert.match(runtime, /function subscription_self_service_effective_at[\s\S]*current_period_end[\s\S]*ends_at/, 'period-end plan changes must prefer the next billing-period boundary over a later fixed-term end');
 
 assert.match(
   lifecycle,
