@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-const VP3_TOKEN_PACK_BUILD='ai-token-packs-20260906-v2';
+const VP3_TOKEN_PACK_BUILD='ai-token-packs-20260906-v3';
 
 function token_pack_schema_ready(?PDO $pdo=null): bool
 {
@@ -32,9 +32,6 @@ function token_pack_ensure_schema(?PDO $pdo=null): void
       INDEX idx_ai_token_pack_public (is_active,is_public,sort_order,id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 
-    // Checkout session identity starts NULL. A blank string under the unique
-    // provider/session index would allow one failed initialization to block all
-    // future purchases before Stripe has even returned a Session ID.
     $pdo->exec("CREATE TABLE IF NOT EXISTS ai_token_pack_purchases (
       id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
       user_id INT UNSIGNED NOT NULL,
@@ -60,7 +57,6 @@ function token_pack_ensure_schema(?PDO $pdo=null): void
       CONSTRAINT fk_ai_token_purchase_credit FOREIGN KEY (credit_id) REFERENCES ai_token_credits(id) ON DELETE SET NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 
-    // Harden an earlier pre-release version that used NOT NULL DEFAULT ''.
     try{$pdo->exec('ALTER TABLE ai_token_pack_purchases MODIFY provider_session_id VARCHAR(160) NULL DEFAULT NULL');}catch(Throwable $e){}
     try{$pdo->exec("UPDATE ai_token_pack_purchases SET provider_session_id=NULL WHERE provider_session_id=''");}catch(Throwable $e){}
     try{$pdo->exec('ALTER TABLE ai_token_pack_purchases MODIFY provider_payment_intent_id VARCHAR(160) NULL DEFAULT NULL');}catch(Throwable $e){}
@@ -189,7 +185,10 @@ function token_pack_begin_purchase(array $user,int $packId): array
             'vp3_user_id'=>(string)$userId,
         ];
         $session=billing_stripe_request('POST','checkout/sessions',[
-            'mode'=>'payment','customer'=>$customerId,'client_reference_id'=>(string)$userId,
+            'mode'=>'payment',
+            'payment_method_types'=>['card'],
+            'customer'=>$customerId,
+            'client_reference_id'=>(string)$userId,
             'line_items'=>[[
                 'price_data'=>[
                     'currency'=>(string)$purchase['currency'],
