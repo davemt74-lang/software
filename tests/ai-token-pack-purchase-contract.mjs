@@ -39,7 +39,7 @@ assert.match(runtime, /amount_total/);
 assert.match(runtime, /hash_equals\(\$storedSession,\$sessionId\)/);
 assert.match(runtime, /Stripe token purchase total does not match the VP3 purchase snapshot/);
 assert.match(runtime, /FOR UPDATE/);
-assert.match(runtime, /status==='credited'/);
+assert.match(runtime, /\(string\)\$purchase\['status'\]===\s*'credited'/);
 assert.match(runtime, /'purchased_topup'/);
 assert.match(runtime, /subscription_add_token_credit/);
 assert.match(runtime, /token checkout is already being prepared/i);
