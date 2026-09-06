@@ -8,14 +8,19 @@ declare(strict_types=1);
 return [
     'db' => [
         // Existing deployments may keep their current database/schema names.
-        'dsn'  => 'mysql:host=localhost;dbname=stonefellow;charset=utf8mb4',
-        'user' => 'stonefellow_user',
+        'dsn'  => 'mysql:host=localhost;dbname=vp3;charset=utf8mb4',
+        'user' => 'vp3_user',
         'pass' => 'change-me',
     ],
 
     'site' => [
         'name' => 'VP3',
-        'email' => 'stonefellow74@gmail.com',
+        'email' => '',
+
+        // Public origin used for security-sensitive outbound links such as
+        // password recovery. Use scheme + host only, with no trailing slash.
+        // Example: 'https://vp3.example.com'
+        'base_url' => '',
 
         // Leave blank when the site lives at the domain root.
         // Example subfolder: '/vp3'
