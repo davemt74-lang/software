@@ -32,6 +32,14 @@ function subscription_self_service_price_cents(array $package,string $interval):
     return $monthly;
 }
 
+function subscription_self_service_package_for_update(PDO $pdo,int $packageId): ?array
+{
+    if($packageId<1)return null;
+    $stmt=$pdo->prepare('SELECT * FROM subscription_packages WHERE id=? LIMIT 1 FOR UPDATE');
+    $stmt->execute([$packageId]);$row=$stmt->fetch();
+    return $row?:null;
+}
+
 function subscription_self_service_open_request(int $userId,?PDO $pdo=null,bool $forUpdate=false): ?array
 {
     $pdo??=db();
@@ -93,9 +101,11 @@ function subscription_self_service_insert_request(
 function subscription_self_service_effective_at(?array $subscription): ?string
 {
     if(!$subscription)return null;
+    // A customer-facing change takes effect at the next billing-period boundary.
+    // ends_at is a fallback for trials or fixed-term access without a period end.
     $candidates=[
-        trim((string)($subscription['ends_at']??'')),
         trim((string)($subscription['current_period_end']??'')),
+        trim((string)($subscription['ends_at']??'')),
     ];
     foreach($candidates as $value){
         if($value===''||strtotime($value)===false)continue;
@@ -109,15 +119,18 @@ function subscription_self_service_select_plan(array $user,int $packageId,string
     $userId=(int)($user['id']??0);if($userId<1)throw new RuntimeException('Sign in to manage your plan.');
     $pdo=db();if(!$pdo||!subscription_self_service_storage_ready($pdo))throw new RuntimeException('Plan management is unavailable until the database upgrade is complete.');
     $interval=subscription_self_service_interval($interval);
-    $package=subscription_package($packageId);
-    if(!$package||(int)$package['is_active']!==1||(int)$package['is_public']!==1)throw new RuntimeException('That package is not available for self-service selection.');
-    if((int)$package['is_trial']===1)throw new RuntimeException('Trial packages cannot be restarted or selected manually.');
-    $price=subscription_self_service_price_cents($package,$interval);
-    if($price===null)throw new RuntimeException('Annual billing is not available for that package.');
 
     $ownsTransaction=!$pdo->inTransaction();if($ownsTransaction)$pdo->beginTransaction();
     try{
         $lock=$pdo->prepare('SELECT id FROM users WHERE id=? LIMIT 1 FOR UPDATE');$lock->execute([$userId]);if(!$lock->fetchColumn())throw new RuntimeException('Account not found.');
+        // Price, visibility and trial status are commercial terms. Lock and
+        // validate them in the same transaction that records the customer intent.
+        $package=subscription_self_service_package_for_update($pdo,$packageId);
+        if(!$package||(int)$package['is_active']!==1||(int)$package['is_public']!==1)throw new RuntimeException('That package is not available for self-service selection.');
+        if((int)$package['is_trial']===1)throw new RuntimeException('Trial packages cannot be restarted or selected manually.');
+        $price=subscription_self_service_price_cents($package,$interval);
+        if($price===null)throw new RuntimeException('Annual billing is not available for that package.');
+
         $current=subscription_current_for_user_id($userId,$pdo,true);
         if($current&&(int)$current['package_id']===$packageId){
             if($ownsTransaction)$pdo->commit();
@@ -233,7 +246,7 @@ function subscription_self_service_apply_due_for_user(int $userId,?PDO $pdo=null
                 subscription_audit($pdo,$userId,$userId,'self_service_cancel_applied',(int)($request['from_package_id']??0)?:null,null,'Scheduled plan cancellation applied.',['request_id'=>$requestId]);
                 $applied++;
             }elseif((string)$request['action']==='change'&&(int)($request['target_package_id']??0)>0){
-                $target=subscription_package((int)$request['target_package_id']);
+                $target=subscription_self_service_package_for_update($pdo,(int)$request['target_package_id']);
                 $price=$target?subscription_self_service_price_cents($target,(string)$request['billing_interval']):null;
                 if(!$target||(int)$target['is_active']!==1||(int)$target['is_public']!==1||(int)$target['is_trial']===1||$price!==0){
                     $pdo->prepare("UPDATE subscription_plan_requests SET status='failed',resolved_at=NOW(),updated_at=NOW() WHERE id=?")->execute([$requestId]);
