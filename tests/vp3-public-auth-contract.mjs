@@ -35,11 +35,16 @@ assert.doesNotMatch(login, /Need help signing in\?[\s\S]*contact\.php/, 'Sign in
 assert.match(signup, /verify_csrf\(\)/, 'Signup must retain CSRF protection');
 assert.match(signup, /password_hash\(\$password, PASSWORD_DEFAULT\)/, 'Signup must retain strong password hashing');
 assert.match(signup, /accept_terms/, 'Signup must retain explicit legal acceptance');
+assert.match(signup, /\['artist','producer','supervisor','manager'\]/, 'signup must preserve canonical role-interest values for existing onboarding integrations');
+assert.match(signup, /\['artist'=>'Personal','producer'=>'Creator','supervisor'=>'Professional','manager'=>'Team'\]/, 'VP3 may relabel role interests without changing their stored contract');
+assert.match(signup, /\$_SESSION\['signup_role_interest'\] = \$roleInterest/, 'signup must preserve the downstream onboarding session contract');
 
 assert.match(auth, /CREATE TABLE IF NOT EXISTS password_reset_tokens/, 'password recovery must have a canonical schema helper');
 assert.match(auth, /random_bytes\(32\)/, 'reset tokens must use cryptographically secure randomness');
 assert.match(auth, /hash\('sha256', \$token\)/, 'raw reset tokens must not be stored');
 assert.match(auth, /INTERVAL 60 MINUTE/, 'reset links must expire');
+assert.match(auth, /INTERVAL 5 MINUTE/, 'password-reset requests must have a database-backed per-account cooldown');
+assert.match(auth, /created_at>=DATE_SUB\(NOW\(\),INTERVAL 5 MINUTE\)/, 'cooldown must be enforced from durable reset state');
 assert.match(auth, /used_at IS NULL/, 'reset links must be single-use');
 assert.match(auth, /password_hash\(\$password, PASSWORD_DEFAULT\)/, 'reset completion must hash the replacement password');
 assert.match(forgot, /If an active VP3 account matches that email/, 'forgot-password response must avoid account enumeration');
