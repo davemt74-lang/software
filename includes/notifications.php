@@ -10,10 +10,6 @@ function notification_unread_count(?array $user = null): int
         return 0;
     }
 
-    if (function_exists('agent_chat_activity_reconcile')) {
-        agent_chat_activity_reconcile($user);
-    }
-
     try {
         $stmt = $pdo->prepare(
             'SELECT COUNT(*) FROM notifications WHERE user_id=? AND is_read=0'
