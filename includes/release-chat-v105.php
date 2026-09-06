@@ -16,6 +16,13 @@ function chat_account_state_intent_v241(string $query): bool
         $q
     )) return true;
 
+    // Personal commercial-state and recommendation questions are deterministic
+    // account queries. Keep them out of LLM Chat so plan advice is based on the
+    // live package catalog, entitlements, usage and Team-seat demand.
+    if (preg_match('/\b(?:my|current)\s+(?:plan|package|subscription|trial)\b/u',$q)) return true;
+    if (preg_match('/\b(?:what|which)\s+(?:plan|package)\s+(?:should|would|do)\b|\b(?:recommend|suggest)\s+(?:a\s+|the\s+)?(?:plan|package)\b|\bbest\s+(?:plan|package)\b/u',$q)) return true;
+    if (preg_match('/\bwhat\s+(?:plan|package)\s+am\s+i\s+on\b/u',$q)) return true;
+
     $subject = '(?:profile agent|voice clone|social chat|direct chat|user[- ]to[- ]user chat|online presence|chat presence|public profile|profile visibility|profile\s+(?:public|private|visible)|incoming chat sound|message sound|notification sound)';
     if (!preg_match('/\b' . $subject . '\b/u', $q)) return false;
 
