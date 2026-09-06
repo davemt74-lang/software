@@ -94,6 +94,7 @@ function chat_notifications_v240_state(array $user, PDO $pdo): array
 
     return [
         'ok'=>true,
+        'agent_voice_enabled'=>member_agent_voice_enabled($user),
         'notifications'=>[
             'unread'=>notification_unread_count($user),
             'items'=>notification_recent($user, 25),
