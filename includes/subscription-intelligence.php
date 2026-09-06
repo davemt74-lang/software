@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-const VP3_SUBSCRIPTION_INTELLIGENCE_BUILD='subscription-intelligence-20260906-v2';
+const VP3_SUBSCRIPTION_INTELLIGENCE_BUILD='subscription-intelligence-20260906-v3';
 
 function subscription_intelligence_ready(?PDO $pdo=null): bool
 {
@@ -20,6 +20,7 @@ function subscription_intelligence_paid_where(string $billingAlias='bs',string $
 {
     return $billingAlias.".provider='stripe' AND ".$billingAlias.".status='active'"
         .' AND '.$localAlias.".status='active'"
+        .' AND '.$localAlias.'.billing_required=1'
         .' AND '.$localAlias.'.starts_at<=NOW()'
         .' AND ('.$localAlias.'.ends_at IS NULL OR '.$localAlias.'.ends_at>NOW())';
 }
@@ -40,9 +41,9 @@ function subscription_intelligence_summary(?PDO $pdo=null): array
     $paidWhere=subscription_intelligence_paid_where('bs','ls');
     $paid=$pdo->query("SELECT
       COUNT(DISTINCT bs.user_id) paid_accounts,
-      COALESCE(SUM(CASE
-        WHEN bp.billing_interval='annual' THEN ROUND(bp.unit_amount_cents/12)
-        ELSE bp.unit_amount_cents END),0) mrr_cents
+      COALESCE(ROUND(SUM(CASE
+        WHEN bp.billing_interval='annual' THEN bp.unit_amount_cents/12
+        ELSE bp.unit_amount_cents END)),0) mrr_cents
       FROM billing_subscriptions bs
       INNER JOIN user_subscriptions ls ON ls.id=bs.user_subscription_id AND ls.user_id=bs.user_id
       INNER JOIN package_billing_prices bp ON bp.provider=bs.provider AND bp.provider_price_id=bs.provider_price_id
@@ -53,8 +54,16 @@ function subscription_intelligence_summary(?PDO $pdo=null): array
       FROM user_subscriptions s INNER JOIN subscription_packages p ON p.id=s.package_id
       WHERE p.is_trial=1")->fetchColumn();
     $trialConverted=(int)$pdo->query("SELECT COUNT(DISTINCT t.user_id)
-      FROM (SELECT DISTINCT s.user_id FROM user_subscriptions s INNER JOIN subscription_packages p ON p.id=s.package_id WHERE p.is_trial=1) t
-      INNER JOIN billing_subscriptions bs ON bs.user_id=t.user_id AND bs.provider='stripe'")->fetchColumn();
+      FROM (
+        SELECT s.user_id,MIN(s.starts_at) first_trial_at
+        FROM user_subscriptions s
+        INNER JOIN subscription_packages p ON p.id=s.package_id
+        WHERE p.is_trial=1
+        GROUP BY s.user_id
+      ) t
+      INNER JOIN billing_subscriptions bs ON bs.user_id=t.user_id AND bs.provider='stripe'
+      WHERE bs.status NOT IN ('trialing','incomplete','incomplete_expired')
+        AND bs.created_at>=t.first_trial_at")->fetchColumn();
 
     $ai30=$pdo->query("SELECT COUNT(*) requests,COALESCE(SUM(total_tokens),0) tokens,
       COALESCE(SUM(input_tokens),0) input_tokens,COALESCE(SUM(output_tokens),0) output_tokens
@@ -123,7 +132,7 @@ function subscription_intelligence_trials_ending(int $days=7,?PDO $pdo=null): ar
 {
     $pdo??=db();if(!$pdo||!subscription_intelligence_ready($pdo))return [];$days=max(1,min(90,$days));
     $stmt=$pdo->prepare("SELECT s.id subscription_id,s.user_id,s.starts_at,s.ends_at,s.current_period_end,
-      u.display_name,u.email,p.name package_name,p.trial_tokens,
+      u.display_name,u.email,p.name package_name,COALESCE(s.ai_token_override,p.trial_tokens,0) token_allowance,
       COALESCE((SELECT SUM(l.total_tokens) FROM ai_usage_ledger l WHERE l.subscription_id=s.id),0) tokens_used
       FROM user_subscriptions s
       INNER JOIN users u ON u.id=s.user_id
@@ -196,7 +205,7 @@ function subscription_intelligence_run_rate_by_package(?PDO $pdo=null): array
     $paidWhere=subscription_intelligence_paid_where('bs','ls');
     return $pdo->query("SELECT COALESCE(p.name,'Unmapped') package_name,
       COUNT(DISTINCT bs.user_id) paid_accounts,
-      COALESCE(SUM(CASE WHEN bp.billing_interval='annual' THEN ROUND(bp.unit_amount_cents/12) ELSE bp.unit_amount_cents END),0) mrr_cents
+      COALESCE(ROUND(SUM(CASE WHEN bp.billing_interval='annual' THEN bp.unit_amount_cents/12 ELSE bp.unit_amount_cents END)),0) mrr_cents
       FROM billing_subscriptions bs
       INNER JOIN user_subscriptions ls ON ls.id=bs.user_subscription_id AND ls.user_id=bs.user_id
       LEFT JOIN subscription_packages p ON p.id=bs.package_id
