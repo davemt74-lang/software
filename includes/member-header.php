@@ -54,7 +54,7 @@ if (empty($GLOBALS['STONEFELLOW_MEMBER_HEADER_RUNTIME_RENDERED'])):
     $GLOBALS['STONEFELLOW_MEMBER_HEADER_RUNTIME_RENDERED'] = true;
     $memberHeaderUiBuild = 'universal-member-header-layout-20260906';
     $memberHeaderSettingsBuild = 'chat-settings-v239-canonical-20260905';
-    $memberHeaderNotificationBuild = 'chat-notifications-canvas-v240-20260905';
+    $memberHeaderNotificationBuild = 'activity-center-brain-routing-20260906';
     $memberHeaderTranscriptionBuild = 'chat-transcription-canvas-v243-layout-20260905';
     $memberHeaderRecordingUiBuild = 'chat-recording-results-v206-20260901';
 ?>

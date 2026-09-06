@@ -14,7 +14,7 @@ if (!$pdo || !table_exists('notifications')) {
 $openId = (int)($_GET['open'] ?? 0);
 if ($openId > 0) {
     $stmt = $pdo->prepare(
-        'SELECT * FROM notifications WHERE id=? AND user_id=? LIMIT 1'
+        'SELECT * FROM notifications WHERE id=? AND user_id=? AND ' . notification_system_sql_predicate() . ' LIMIT 1'
     );
     $stmt->execute([$openId, (int)$user['id']]);
     $notification = $stmt->fetch();
@@ -49,8 +49,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 $stmt = $pdo->prepare(
     'SELECT * FROM notifications
-     WHERE user_id=?
-     ORDER BY created_at DESC
+     WHERE user_id=? AND ' . notification_system_sql_predicate() . '
+     ORDER BY created_at DESC,id DESC
      LIMIT 200'
 );
 $stmt->execute([(int)$user['id']]);
