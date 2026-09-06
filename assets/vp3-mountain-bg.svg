@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f9fcff"/><stop offset=".5" stop-color="#eaf3f9"/><stop offset="1" stop-color="#dbe8f1"/></linearGradient>
+    <linearGradient id="far" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#c5d7e5"/><stop offset="1" stop-color="#8da6ba"/></linearGradient>
+    <linearGradient id="mid" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#a8bdcd"/><stop offset="1" stop-color="#6f8b9e"/></linearGradient>
+    <linearGradient id="near" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#7d97a6"/><stop offset="1" stop-color="#405b69"/></linearGradient>
+    <linearGradient id="lake" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#d6e8f0"/><stop offset="1" stop-color="#f3f8fb"/></linearGradient>
+    <filter id="blur"><feGaussianBlur stdDeviation="7"/></filter>
+  </defs>
+  <rect width="1600" height="900" fill="url(#sky)"/>
+  <g opacity=".26" filter="url(#blur)"><ellipse cx="1220" cy="140" rx="370" ry="120" fill="#fff"/><ellipse cx="340" cy="180" rx="320" ry="90" fill="#fff"/></g>
+  <path d="M0 535L165 350 275 440 410 280 530 455 675 300 790 420 910 250 1030 440 1160 305 1285 405 1430 225 1600 445V670H0Z" fill="url(#far)" opacity=".72"/>
+  <path d="M0 590L215 420 355 535 520 365 670 540 835 355 1010 530 1180 390 1350 520 1510 360 1600 440V720H0Z" fill="url(#mid)" opacity=".76"/>
+  <g fill="#f7fbfd" opacity=".88"><path d="M331 471l79-191 57 174-53-88z"/><path d="M825 426l85-176 74 199-76-113z"/><path d="M1374 365l56-140 73 177-66-98z"/></g>
+  <path d="M0 650L240 520 380 620 565 500 735 620 920 505 1110 625 1310 500 1600 620V820H0Z" fill="url(#near)" opacity=".7"/>
+  <path d="M0 682c250-28 410-10 585 12 230 29 431 25 608 3 154-19 282-17 407-4v207H0z" fill="url(#lake)" opacity=".94"/>
+  <g fill="#385666" opacity=".52"><path d="M72 660l18-96 18 96zM98 660l14-73 15 73zM125 660l19-105 20 105zM1460 670l18-95 19 95zM1490 670l13-74 14 74zM1518 670l18-101 19 101z"/></g>
+  <rect y="690" width="1600" height="210" fill="#fff" opacity=".16"/>
+</svg>
