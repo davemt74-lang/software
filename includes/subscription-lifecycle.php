@@ -93,7 +93,14 @@ function subscription_lifecycle_boot(): void
     try{
         subscription_lifecycle_ensure_schema($pdo);
         if(function_exists('current_user')){
-            $user=current_user();if($user)subscription_lifecycle_refresh_user_period((int)($user['id']??0),$pdo);
+            $user=current_user();
+            if($user){
+                $userId=(int)($user['id']??0);
+                // Apply a period-end cancellation/free-plan transition before
+                // recurring-period maintenance can advance the renewal window.
+                if($userId>0&&subscription_self_service_schema_ready($pdo))subscription_self_service_apply_due_for_user($userId,$pdo);
+                if($userId>0)subscription_lifecycle_refresh_user_period($userId,$pdo);
+            }
         }
         // Small bounded backfill keeps upgrades cheap while eventually covering history.
         subscription_lifecycle_backfill_snapshots($pdo,25);
