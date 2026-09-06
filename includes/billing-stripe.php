@@ -121,7 +121,15 @@ function billing_price_mapping(int $packageId,string $interval,?PDO $pdo=null): 
 {
     $pdo??=db();$interval=subscription_self_service_interval($interval);
     if(!$pdo||$packageId<1||!billing_schema_ready($pdo))return null;
-    $stmt=$pdo->prepare("SELECT * FROM package_billing_prices WHERE package_id=? AND provider='stripe' AND billing_interval=? LIMIT 1");
+    $stmt=$pdo->prepare("SELECT * FROM package_billing_prices WHERE package_id=? AND provider='stripe' AND billing_interval=? AND is_active=1 ORDER BY id DESC LIMIT 1");
+    $stmt->execute([$packageId,$interval]);$row=$stmt->fetch();return $row?:null;
+}
+
+function billing_price_mapping_latest(int $packageId,string $interval,?PDO $pdo=null): ?array
+{
+    $pdo??=db();$interval=subscription_self_service_interval($interval);
+    if(!$pdo||$packageId<1||!billing_schema_ready($pdo))return null;
+    $stmt=$pdo->prepare("SELECT * FROM package_billing_prices WHERE package_id=? AND provider='stripe' AND billing_interval=? ORDER BY is_active DESC,id DESC LIMIT 1");
     $stmt->execute([$packageId,$interval]);$row=$stmt->fetch();return $row?:null;
 }
 
@@ -129,6 +137,8 @@ function billing_price_mapping_by_provider_price(string $priceId,?PDO $pdo=null)
 {
     $pdo??=db();$priceId=trim($priceId);
     if(!$pdo||$priceId===''||!billing_schema_ready($pdo))return null;
+    // Intentionally includes inactive historical Prices: existing Stripe
+    // subscriptions remain valid after an Admin changes the package price.
     $stmt=$pdo->prepare("SELECT bp.*,p.name package_name,p.slug package_slug FROM package_billing_prices bp INNER JOIN subscription_packages p ON p.id=bp.package_id WHERE bp.provider='stripe' AND bp.provider_price_id=? LIMIT 1");
     $stmt->execute([$priceId]);$row=$stmt->fetch();return $row?:null;
 }
@@ -174,10 +184,11 @@ function billing_stripe_ensure_package_price(array $package,string $interval,?PD
     $pdo??=db();if(!$pdo||!billing_schema_ready($pdo))throw new RuntimeException('Billing schema is unavailable.');
     $packageId=(int)($package['id']??0);$interval=subscription_self_service_interval($interval);$amount=billing_stripe_package_amount($package,$interval);
     if($packageId<1||$amount===null||$amount<1||(int)($package['is_trial']??0)===1)throw new RuntimeException('This package does not have a billable '.$interval.' price.');
-    $currency=billing_currency();$existing=billing_price_mapping($packageId,$interval,$pdo);
-    if($existing&&(int)$existing['is_active']===1&&(int)$existing['unit_amount_cents']===$amount&&(string)$existing['currency']===$currency)return $existing;
+    $currency=billing_currency();$active=billing_price_mapping($packageId,$interval,$pdo);
+    if($active&&(int)$active['unit_amount_cents']===$amount&&(string)$active['currency']===$currency)return $active;
 
-    $productId=trim((string)($existing['provider_product_id']??''));
+    $latest=$active?:billing_price_mapping_latest($packageId,$interval,$pdo);
+    $productId=trim((string)($latest['provider_product_id']??''));
     if($productId===''){
         $product=billing_stripe_request('POST','products',[
             'name'=>(string)$package['name'],
@@ -203,8 +214,15 @@ function billing_stripe_ensure_package_price(array $package,string $interval,?PD
         'metadata'=>['vp3_package_id'=>(string)$packageId,'vp3_interval'=>$interval],
     ],'vp3-price-'.$termsHash);
     $priceId=trim((string)($price['id']??''));if($priceId==='')throw new RuntimeException('Stripe did not return a Price ID.');
-    $stmt=$pdo->prepare("INSERT INTO package_billing_prices (package_id,provider,billing_interval,provider_product_id,provider_price_id,currency,unit_amount_cents,is_active,metadata_json) VALUES (?,'stripe',?,?,?,?,?,1,?) ON DUPLICATE KEY UPDATE provider_product_id=VALUES(provider_product_id),provider_price_id=VALUES(provider_price_id),currency=VALUES(currency),unit_amount_cents=VALUES(unit_amount_cents),is_active=1,metadata_json=VALUES(metadata_json),updated_at=NOW()");
-    $stmt->execute([$packageId,$interval,$productId,$priceId,$currency,$amount,json_encode(['stripe_interval'=>$stripeInterval,'terms_hash'=>$termsHash],JSON_UNESCAPED_SLASHES)]);
+
+    $ownsTransaction=!$pdo->inTransaction();if($ownsTransaction)$pdo->beginTransaction();
+    try{
+        $lock=$pdo->prepare('SELECT id FROM subscription_packages WHERE id=? LIMIT 1 FOR UPDATE');$lock->execute([$packageId]);if(!$lock->fetchColumn())throw new RuntimeException('Package no longer exists.');
+        $pdo->prepare("UPDATE package_billing_prices SET is_active=0,updated_at=NOW() WHERE package_id=? AND provider='stripe' AND billing_interval=? AND is_active=1")->execute([$packageId,$interval]);
+        $stmt=$pdo->prepare("INSERT INTO package_billing_prices (package_id,provider,billing_interval,provider_product_id,provider_price_id,currency,unit_amount_cents,is_active,metadata_json) VALUES (?,'stripe',?,?,?,?,?,1,?) ON DUPLICATE KEY UPDATE package_id=VALUES(package_id),billing_interval=VALUES(billing_interval),provider_product_id=VALUES(provider_product_id),currency=VALUES(currency),unit_amount_cents=VALUES(unit_amount_cents),is_active=1,metadata_json=VALUES(metadata_json),updated_at=NOW()");
+        $stmt->execute([$packageId,$interval,$productId,$priceId,$currency,$amount,json_encode(['stripe_interval'=>$stripeInterval,'terms_hash'=>$termsHash],JSON_UNESCAPED_SLASHES)]);
+        if($ownsTransaction)$pdo->commit();
+    }catch(Throwable $e){if($ownsTransaction&&$pdo->inTransaction())$pdo->rollBack();throw $e;}
     return billing_price_mapping($packageId,$interval,$pdo)??throw new RuntimeException('Billing price mapping could not be saved.');
 }
 
@@ -257,11 +275,39 @@ function billing_stripe_period(array $subscription): array
     ];
 }
 
+function billing_stripe_checkout_attempt_state(int $userId,int $requestId,?PDO $pdo=null): array
+{
+    $pdo??=db();if(!$pdo||$userId<1||$requestId<1)return ['attempt'=>1,'reusable'=>null];
+    $stmt=$pdo->prepare("SELECT * FROM billing_checkout_sessions WHERE user_id=? AND plan_request_id=? AND provider='stripe' AND session_type='checkout' ORDER BY id DESC");
+    $stmt->execute([$userId,$requestId]);$rows=$stmt->fetchAll()?:[];
+    foreach($rows as $row){
+        if((string)$row['status']!=='open')continue;
+        $sessionId=trim((string)$row['provider_session_id']);if($sessionId==='')continue;
+        try{
+            $remote=billing_stripe_checkout_session($sessionId);$status=(string)($remote['status']??'');
+            if($status==='open'&&trim((string)($remote['url']??$row['checkout_url']??''))!=='')return ['attempt'=>count($rows)+1,'reusable'=>$remote];
+            if($status==='complete'){
+                billing_process_checkout_session($remote,$pdo);
+                throw new RuntimeException('Stripe Checkout already completed. Billing status was synchronized; refresh your plan page.');
+            }
+            $pdo->prepare("UPDATE billing_checkout_sessions SET status='expired',updated_at=NOW() WHERE id=?")->execute([(int)$row['id']]);
+        }catch(RuntimeException $e){throw $e;}
+        catch(Throwable $e){error_log('VP3 Checkout resume inspection failed: '.$e->getMessage());}
+    }
+    return ['attempt'=>count($rows)+1,'reusable'=>null];
+}
+
 function billing_stripe_create_checkout(array $user,array $request,array $package,string $interval,?PDO $pdo=null): array
 {
     $pdo??=db();if(!$pdo||!billing_schema_ready($pdo))throw new RuntimeException('Billing storage is unavailable.');
     $userId=(int)($user['id']??0);$requestId=(int)($request['id']??0);if($userId<1||$requestId<1)throw new RuntimeException('Plan request is invalid.');
     $price=billing_stripe_ensure_package_price($package,$interval,$pdo);$customerId=billing_stripe_ensure_customer($user,$pdo);
+    $attemptState=billing_stripe_checkout_attempt_state($userId,$requestId,$pdo);
+    if(is_array($attemptState['reusable'])){
+        $existing=$attemptState['reusable'];$existingUrl=trim((string)($existing['url']??''));$existingId=trim((string)($existing['id']??''));
+        if($existingUrl!==''&&$existingId!=='')return ['type'=>'checkout','url'=>$existingUrl,'session_id'=>$existingId,'price'=>$price,'reused'=>true];
+    }
+    $attempt=max(1,(int)$attemptState['attempt']);
     $returnBase='/subscription.php?billing='.rawurlencode(subscription_self_service_interval($interval));
     $params=[
         'mode'=>'subscription',
@@ -279,13 +325,13 @@ function billing_stripe_create_checkout(array $user,array $request,array $packag
         ]],
     ];
     if((bool)billing_stripe_config('automatic_tax',false))$params['automatic_tax']=['enabled'=>true];
-    $session=billing_stripe_request('POST','checkout/sessions',$params,'vp3-checkout-'.$requestId.'-'.(string)$price['provider_price_id']);
+    $session=billing_stripe_request('POST','checkout/sessions',$params,'vp3-checkout-'.$requestId.'-'.(string)$price['provider_price_id'].'-'.$attempt);
     $sessionId=trim((string)($session['id']??''));$checkoutUrl=trim((string)($session['url']??''));
     if($sessionId===''||$checkoutUrl==='')throw new RuntimeException('Stripe did not return a checkout URL.');
     $expires=(int)($session['expires_at']??0);
     $stmt=$pdo->prepare("INSERT INTO billing_checkout_sessions (user_id,plan_request_id,package_id,provider,session_type,provider_session_id,provider_customer_id,billing_interval,amount_cents,status,checkout_url,expires_at,metadata_json) VALUES (?,?,?,'stripe','checkout',?,?,?,?,'open',?,?,?) ON DUPLICATE KEY UPDATE status='open',checkout_url=VALUES(checkout_url),expires_at=VALUES(expires_at),updated_at=NOW()");
-    $stmt->execute([$userId,$requestId,(int)$package['id'],$sessionId,$customerId,subscription_self_service_interval($interval),(int)$price['unit_amount_cents'],$checkoutUrl,$expires>0?gmdate('Y-m-d H:i:s',$expires):null,json_encode(['provider_price_id'=>$price['provider_price_id']],JSON_UNESCAPED_SLASHES)]);
-    return ['type'=>'checkout','url'=>$checkoutUrl,'session_id'=>$sessionId,'price'=>$price];
+    $stmt->execute([$userId,$requestId,(int)$package['id'],$sessionId,$customerId,subscription_self_service_interval($interval),(int)$price['unit_amount_cents'],$checkoutUrl,$expires>0?gmdate('Y-m-d H:i:s',$expires):null,json_encode(['provider_price_id'=>$price['provider_price_id'],'attempt'=>$attempt],JSON_UNESCAPED_SLASHES)]);
+    return ['type'=>'checkout','url'=>$checkoutUrl,'session_id'=>$sessionId,'price'=>$price,'attempt'=>$attempt];
 }
 
 function billing_stripe_portal_config(array $products,?PDO $pdo=null): string
