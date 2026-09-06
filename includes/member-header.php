@@ -8,13 +8,14 @@ $memberHeaderTitle = trim((string)($memberHeaderTitle ?? ''));
 $memberHeaderSubtitle = trim((string)($memberHeaderSubtitle ?? ''));
 $memberHeaderActions = (string)($memberHeaderActions ?? '');
 $memberHeaderClass = trim((string)($memberHeaderClass ?? ''));
+$memberHeaderShowSidebarToggle = (bool)($memberHeaderShowSidebarToggle ?? true);
 $memberHeaderNotificationCount = notification_unread_count($memberHeaderUser);
 $memberHeaderNotifications = notification_recent($memberHeaderUser, 6);
 $memberHeaderCanChat = has_permission('chat.access', $memberHeaderUser);
 $memberHeaderAgentVoiceEnabled = $memberHeaderCanChat ? member_agent_voice_enabled($memberHeaderUser) : true;
 ?>
 <header class="chat-topbar member-header<?= $memberHeaderClass !== '' ? ' ' . e($memberHeaderClass) : '' ?>" data-member-header>
-  <button class="chat-icon-button mobile-only" id="openChatSidebar" type="button" aria-label="Open menu">☰</button>
+  <?php if ($memberHeaderShowSidebarToggle): ?><button class="chat-icon-button mobile-only" id="openChatSidebar" type="button" aria-label="Open menu">☰</button><?php endif; ?>
 
   <div class="chat-topbar-title member-header-title">
     <?php if ($memberHeaderTitle !== ''): ?><strong><?= e($memberHeaderTitle) ?></strong><?php endif; ?>
