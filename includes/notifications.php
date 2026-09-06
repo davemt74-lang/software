@@ -168,14 +168,19 @@ function notification_attention_after(?array $user, int $afterId = 0, int $limit
             $stmt->execute([(int)$user['id'], $afterId]);
         } else {
             // Bootstrap unsurfaced actionable events rather than only unread
-            // items from the last few minutes. This makes Agent Chat a durable
-            // inbox across reloads/devices while the NOT EXISTS guard prevents
-            // previously persisted chat activity from being replayed forever.
+            // items from the last few minutes. Agent operational activity gets
+            // a durable 14-day catch-up window; legacy/Profile Agent attention
+            // is limited to 24 hours so an upgrade cannot flood Chat with old
+            // historical notifications. The NOT EXISTS guard prevents replay.
             if (table_exists('chat_messages') && table_exists('chat_conversations')) {
                 $stmt = $pdo->prepare(
                     "SELECT n.*
                      FROM notifications n
                      WHERE n.user_id=?
+                       AND (
+                         (n.type LIKE 'agent_activity_%' AND n.created_at>=DATE_SUB(NOW(),INTERVAL 14 DAY))
+                         OR (n.type NOT LIKE 'agent_activity_%' AND n.created_at>=DATE_SUB(NOW(),INTERVAL 24 HOUR))
+                       )
                        AND NOT EXISTS (
                          SELECT 1
                          FROM chat_messages m
@@ -193,6 +198,7 @@ function notification_attention_after(?array $user, int $afterId = 0, int $limit
                 $stmt = $pdo->prepare(
                     "SELECT n.* FROM notifications n
                      WHERE n.user_id=? AND n.is_read=0
+                       AND n.created_at>=DATE_SUB(NOW(),INTERVAL 24 HOUR)
                      ORDER BY n.created_at DESC,n.id DESC LIMIT {$limit}"
                 );
                 $stmt->execute([(int)$user['id']]);
