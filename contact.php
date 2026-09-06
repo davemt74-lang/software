@@ -52,17 +52,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 flash('success','Thanks. Your message has been received.');
                 redirect(url('/contact.php'));
             }
-            $error = 'The message could not be submitted because the backend is not configured yet. You can use the email address shown on this page.';
+            $error = 'The message could not be submitted because contact delivery is not configured yet. Please try again later.';
         }
     }
 }
 
-$contactEmail = (string)setting('contact_email', (string)site_config('email', 'stonefellow74@gmail.com'));
 vp3_public_header('Contact — VP3', 'Contact VP3 for support, teams, demos, privacy, or general questions.');
 ?>
 <section class="vp3-public-hero"><div class="vp3-kicker">Connect with VP3</div><h1>How can we help?</h1><p>Questions about your account, a team setup, a demo, privacy, or the product itself can all start here.</p></section>
 <main><section class="vp3-section"><div class="vp3-wrap vp3-contact-grid">
-  <aside class="vp3-card"><div class="vp3-kicker">Contact</div><h2>Talk to the VP3 team.</h2><p>Use the form for product questions, account support, team and organization inquiries, demos, or privacy requests.</p><p><a class="vp3-text-link" href="mailto:<?= e($contactEmail) ?>"><?= e($contactEmail) ?></a></p><p><a class="vp3-btn" href="<?= e(url('/book-demo.php')) ?>">Book a demo →</a></p></aside>
+  <aside class="vp3-card"><div class="vp3-kicker">Contact</div><h2>Talk to the VP3 team.</h2><p>Use the form for product questions, account support, team and organization inquiries, demos, or privacy requests.</p><p><a class="vp3-btn" href="<?= e(url('/book-demo.php')) ?>">Book a demo →</a></p></aside>
   <div class="vp3-card">
     <?php if ($success): ?><div class="vp3-alert success"><?= e((string)$success) ?></div><?php endif; ?>
     <?php if ($error): ?><div class="vp3-alert error" role="alert"><?= e($error) ?></div><?php endif; ?>
