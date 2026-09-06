@@ -218,6 +218,12 @@ function billing_stripe_checkout_session(string $sessionId): array
     return billing_stripe_request('GET','checkout/sessions/'.rawurlencode($sessionId),[]);
 }
 
+function billing_stripe_expire_checkout_session(string $sessionId): array
+{
+    $sessionId=trim($sessionId);if($sessionId==='')throw new RuntimeException('Stripe Checkout Session ID is missing.');
+    return billing_stripe_request('POST','checkout/sessions/'.rawurlencode($sessionId).'/expire',[],'vp3-expire-checkout-'.$sessionId);
+}
+
 function billing_stripe_subscription_item(array $subscription): ?array
 {
     $items=$subscription['items']['data']??[];return is_array($items)&&isset($items[0])&&is_array($items[0])?$items[0]:null;
@@ -277,7 +283,7 @@ function billing_stripe_create_checkout(array $user,array $request,array $packag
     $sessionId=trim((string)($session['id']??''));$checkoutUrl=trim((string)($session['url']??''));
     if($sessionId===''||$checkoutUrl==='')throw new RuntimeException('Stripe did not return a checkout URL.');
     $expires=(int)($session['expires_at']??0);
-    $stmt=$pdo->prepare("INSERT INTO billing_checkout_sessions (user_id,plan_request_id,package_id,provider,session_type,provider_session_id,provider_customer_id,billing_interval,amount_cents,status,checkout_url,expires_at,metadata_json) VALUES (?,?,?,'stripe','checkout',?,?,?,?,?,'open',?,?,?) ON DUPLICATE KEY UPDATE status='open',checkout_url=VALUES(checkout_url),expires_at=VALUES(expires_at),updated_at=NOW()");
+    $stmt=$pdo->prepare("INSERT INTO billing_checkout_sessions (user_id,plan_request_id,package_id,provider,session_type,provider_session_id,provider_customer_id,billing_interval,amount_cents,status,checkout_url,expires_at,metadata_json) VALUES (?,?,?,'stripe','checkout',?,?,?,?,'open',?,?,?) ON DUPLICATE KEY UPDATE status='open',checkout_url=VALUES(checkout_url),expires_at=VALUES(expires_at),updated_at=NOW()");
     $stmt->execute([$userId,$requestId,(int)$package['id'],$sessionId,$customerId,subscription_self_service_interval($interval),(int)$price['unit_amount_cents'],$checkoutUrl,$expires>0?gmdate('Y-m-d H:i:s',$expires):null,json_encode(['provider_price_id'=>$price['provider_price_id']],JSON_UNESCAPED_SLASHES)]);
     return ['type'=>'checkout','url'=>$checkoutUrl,'session_id'=>$sessionId,'price'=>$price];
 }
