@@ -3,7 +3,11 @@ import assert from 'node:assert/strict';
 
 const read = path => fs.readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
 
-const subscriptions = read('includes/subscriptions.php');
+const loader = read('includes/subscriptions.php');
+const schema = read('includes/subscription-schema.php');
+const access = read('includes/subscription-access.php');
+const quota = read('includes/subscription-quota.php');
+const subscriptions = [schema, access, quota].join('\n');
 const lifecycle = read('includes/subscription-lifecycle.php');
 const gates = read('includes/subscription-request-gates.php');
 const ai = read('includes/ai-settings.php');
@@ -14,6 +18,11 @@ const teamPage = read('admin/team.php');
 const nav = read('includes/member-navigation.php');
 const bootstrap = read('includes/bootstrap.php');
 
+assert.ok(loader.includes("require_once __DIR__ . '/subscription-schema.php';"), 'subscription entry point must load canonical schema module');
+assert.ok(loader.includes("require_once __DIR__ . '/subscription-access.php';"), 'subscription entry point must load canonical access module');
+assert.ok(loader.includes("require_once __DIR__ . '/subscription-quota.php';"), 'subscription entry point must load canonical quota module');
+assert.ok(!loader.includes('function subscription_'), 'subscription entry point must remain a thin loader with no duplicate runtime definitions');
+
 for (const table of [
   'subscription_packages',
   'package_entitlements',
@@ -23,20 +32,32 @@ for (const table of [
   'ai_token_reservations',
   'subscription_audit_log',
 ]) {
-  assert.ok(subscriptions.includes(table), `subscription runtime must own ${table}`);
+  assert.ok(schema.includes(table), `subscription schema must own ${table}`);
 }
 
-assert.ok(subscriptions.includes("'free-trial'"), 'a configurable Free Trial seed must exist');
-assert.ok(subscriptions.includes("'legacy-access'"), 'existing accounts need a non-breaking Legacy Access migration');
-assert.ok(subscriptions.includes("'legacy.permissions'"), 'legacy compatibility must be explicit rather than implicit');
-assert.ok(subscriptions.includes("'stem_editor.access'"), 'Stem Editor must be a package entitlement');
-assert.ok(subscriptions.includes("'video_editor.access'"), 'Video Editor must be a package entitlement');
-assert.ok(subscriptions.includes("'team_seats'"), 'Team seats must be package-controlled');
-assert.ok(subscriptions.includes('subscription_add_token_credit'), 'token top-ups must be first-class credits');
-assert.ok(subscriptions.includes('subscription_ai_preflight'), 'AI requests need a quota preflight');
-assert.ok(subscriptions.includes('subscription_ai_commit_usage'), 'actual provider usage must be committed');
+assert.ok(schema.includes("'free-trial'"), 'a configurable Free Trial seed must exist');
+assert.ok(schema.includes("'legacy-access'"), 'existing accounts need a non-breaking Legacy Access migration');
+assert.ok(schema.includes("'legacy.permissions'"), 'legacy compatibility must be explicit rather than implicit');
+assert.ok(schema.includes("'stem_editor.access'"), 'Stem Editor must be a package entitlement');
+assert.ok(schema.includes("'video_editor.access'"), 'Video Editor must be a package entitlement');
+assert.ok(schema.includes("'team_seats'"), 'Team seats must be package-controlled');
+assert.ok(access.includes('subscription_add_token_credit'), 'token top-ups must be first-class credits');
+assert.ok(quota.includes('subscription_ai_preflight'), 'AI requests need a quota preflight');
+assert.ok(quota.includes('subscription_ai_commit_usage'), 'actual provider usage must be committed');
 assert.ok(lifecycle.includes('package_snapshot_json') && lifecycle.includes('subscription_lifecycle_snapshot_subscription'), 'subscription history must retain an immutable package snapshot');
 assert.ok(lifecycle.includes('current_period_start') && lifecycle.includes('current_period_end'), 'monthly periods must roll independently of package edits');
+
+assert.ok(
+  quota.includes('$ownsTransaction=!$pdo->inTransaction()')
+  && quota.includes('subscription_ai_balance($user,$pdo,true)')
+  && quota.includes("INSERT INTO ai_token_reservations"),
+  'AI preflight must lock the active subscription and create its reservation inside one transaction'
+);
+assert.ok(
+  quota.indexOf('$packageAvailable=max(0,$allowance-$alreadyUsed)') < quota.indexOf('SELECT id,remaining_amount FROM ai_token_credits'),
+  'included package tokens must be consumed before purchased/admin token credits'
+);
+assert.ok(quota.includes('if($remaining>0){$packageUsed+=$remaining;$remaining=0;}'), 'provider-reported quota overruns must still be recorded exactly');
 
 assert.ok(signup.includes('subscription_assign_default_trial'), 'new public accounts must receive the configured default trial');
 assert.ok(!signup.includes('How will you use VP3?'), 'signup must not restore the old public role picker');
