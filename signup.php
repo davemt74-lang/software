@@ -8,9 +8,9 @@ if (is_logged_in()) redirect(login_destination());
 $error = '';
 $displayName = trim((string)($_POST['display_name'] ?? ''));
 $email = strtolower(trim((string)($_POST['email'] ?? '')));
-$roleInterest = trim((string)($_POST['role_interest'] ?? 'personal'));
-$allowedRoleInterests = ['personal','creator','professional','team'];
-if (!in_array($roleInterest, $allowedRoleInterests, true)) $roleInterest = 'personal';
+$roleInterest = trim((string)($_POST['role_interest'] ?? 'artist'));
+$allowedRoleInterests = ['artist','producer','supervisor','manager'];
+if (!in_array($roleInterest, $allowedRoleInterests, true)) $roleInterest = 'artist';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!verify_csrf()) {
@@ -52,6 +52,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $pdo->commit();
                     session_regenerate_id(true);
                     $_SESSION['user_id'] = $userId;
+                    // Keep historical role-interest values stable for onboarding and
+                    // downstream integrations while the public labels evolve with VP3.
                     $_SESSION['signup_role_interest'] = $roleInterest;
                     reset_current_user_cache();
                     flash('notice', 'Welcome to VP3. Your account is ready.');
@@ -92,7 +94,7 @@ vp3_public_header('Create account — VP3', 'Create your VP3 personal AI assista
         <?= csrf_field() ?>
         <div style="position:absolute;left:-9999px" aria-hidden="true"><label for="website">Website</label><input id="website" name="website" type="text" tabindex="-1" autocomplete="off"></div>
         <div class="vp3-field"><label>How will you use VP3?</label><div class="vp3-role-grid">
-          <?php foreach (['personal'=>'Personal','creator'=>'Creator','professional'=>'Professional','team'=>'Team'] as $value=>$label): ?><div class="vp3-role-choice"><input id="role-<?= e($value) ?>" type="radio" name="role_interest" value="<?= e($value) ?>" <?= $roleInterest === $value ? 'checked' : '' ?>><label for="role-<?= e($value) ?>"><?= e($label) ?></label></div><?php endforeach; ?>
+          <?php foreach (['artist'=>'Personal','producer'=>'Creator','supervisor'=>'Professional','manager'=>'Team'] as $value=>$label): ?><div class="vp3-role-choice"><input id="role-<?= e($value) ?>" type="radio" name="role_interest" value="<?= e($value) ?>" <?= $roleInterest === $value ? 'checked' : '' ?>><label for="role-<?= e($value) ?>"><?= e($label) ?></label></div><?php endforeach; ?>
         </div></div>
         <div class="vp3-field"><label for="display_name">Full name</label><input id="display_name" name="display_name" maxlength="120" autocomplete="name" required placeholder="Your name" value="<?= e($displayName) ?>"></div>
         <div class="vp3-field"><label for="email">Email address</label><input id="email" name="email" type="email" maxlength="190" autocomplete="email" required placeholder="you@example.com" value="<?= e($email) ?>"></div>
