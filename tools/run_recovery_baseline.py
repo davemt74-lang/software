@@ -57,11 +57,9 @@ NODE_TESTS = [
     'tests/profile-agent-chat-order-voice-contract.mjs',
     'tests/agent-chat-operational-activity-contract.mjs',
     'tests/vp3-index-contract.mjs',
+    'tests/vp3-public-auth-contract.mjs',
 ]
 
-# These tests contain useful source assertions but also directly read the lost
-# PR82 GitHub workflow. Preserve them as historical evidence; do not recreate an
-# obsolete workflow file merely to make a recovery baseline appear green.
 HISTORICAL_WORKFLOW_COUPLED_TESTS = [
     'tests/artist-profile-v181.mjs',
     'tests/artist-cms-v186.mjs',

@@ -26,7 +26,6 @@ function current_user(): ?array
     }
 
     try {
-        // SELECT * keeps this compatible with installations that have not run upgrade.php yet.
         $stmt = $pdo->prepare('SELECT * FROM users WHERE id = ? LIMIT 1');
         $stmt->execute([$userId]);
         $user = $stmt->fetch();
@@ -61,6 +60,7 @@ function current_user(): ?array
         return null;
     }
 }
+
 function is_logged_in(): bool
 {
     return current_user() !== null;
@@ -77,31 +77,22 @@ function require_login(): void
 function login_attempt(string $email, string $password): bool
 {
     $email = strtolower(trim($email));
-    if ($email === '' || $password === '') {
-        return false;
-    }
+    if ($email === '' || $password === '') return false;
 
     $now = time();
     $attempts = $_SESSION['login_attempts'] ?? [];
-    $attempts = array_values(array_filter(
-        $attempts,
-        static fn($time): bool => is_int($time) && $time > ($now - 900)
-    ));
-
+    $attempts = array_values(array_filter($attempts, static fn($time): bool => is_int($time) && $time > ($now - 900)));
     if (count($attempts) >= 5) {
         $_SESSION['login_attempts'] = $attempts;
         return false;
     }
 
     $pdo = db();
-    if (!$pdo) {
-        return false;
-    }
+    if (!$pdo) return false;
 
     $stmt = $pdo->prepare('SELECT * FROM users WHERE email = ? LIMIT 1');
     $stmt->execute([$email]);
     $user = $stmt->fetch();
-
     $inactive = $user && array_key_exists('is_active', $user) && (int)$user['is_active'] !== 1;
 
     if (!$user || $inactive || !password_verify($password, (string)$user['password_hash'])) {
@@ -120,68 +111,203 @@ function login_attempt(string $email, string $password): bool
             $stmt = $pdo->prepare('UPDATE users SET last_login_at = NOW() WHERE id = ?');
             $stmt->execute([(int)$user['id']]);
         } catch (Throwable $e) {
-            error_log('Stonefellow last login update failed: ' . $e->getMessage());
+            error_log('VP3 last login update failed: ' . $e->getMessage());
         }
     }
-
     return true;
 }
 
 function login_destination(): string
 {
     $user = current_user();
-
-    if (!$user) {
-        return url('/index.php');
-    }
-
-    /*
-     * Agent Chat is the authenticated home screen. Account-type workspaces
-     * remain available from the profile menu/sidebar after login.
-     */
-    if (has_permission('chat.access', $user)) {
-        return url('/chat.php');
-    }
-
-    if (
-        user_has_role('producer', $user) &&
-        has_permission('producer.access', $user)
-    ) {
-        return url('/admin/producer-tracks.php');
-    }
-
-    if (has_permission('admin.access', $user)) {
-        return url('/admin/index.php');
-    }
-
-    if (has_permission('investor.access', $user)) {
-        return url('/investor.php');
-    }
-
-    if (has_permission('account.access', $user)) {
-        return url('/account.php');
-    }
-
+    if (!$user) return url('/index.php');
+    if (has_permission('chat.access', $user)) return url('/chat.php');
+    if (user_has_role('producer', $user) && has_permission('producer.access', $user)) return url('/admin/producer-tracks.php');
+    if (has_permission('admin.access', $user)) return url('/admin/index.php');
+    if (has_permission('investor.access', $user)) return url('/investor.php');
+    if (has_permission('account.access', $user)) return url('/account.php');
     return url('/chat.php');
 }
 
 function redirect_logged_in_public_page(): void
 {
-    if (!is_logged_in()) {
-        return;
-    }
-
-    redirect(login_destination());
+    if (is_logged_in()) redirect(login_destination());
 }
-
 
 function logout_user(): void
 {
     $user = current_user();
-    if ($user && function_exists('agent_activity_v101_logout')) {
-        agent_activity_v101_logout($user);
-    }
+    if ($user && function_exists('agent_activity_v101_logout')) agent_activity_v101_logout($user);
     unset($_SESSION['user_id']);
     reset_current_user_cache();
     session_regenerate_id(true);
+}
+
+function password_reset_schema_ready(): bool
+{
+    return table_exists('password_reset_tokens');
+}
+
+function password_reset_ensure_schema(): void
+{
+    $pdo = db();
+    if (!$pdo) throw new RuntimeException('Database unavailable.');
+    $pdo->exec(
+        "CREATE TABLE IF NOT EXISTS password_reset_tokens (
+            id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            user_id INT UNSIGNED NOT NULL,
+            token_hash CHAR(64) NOT NULL UNIQUE,
+            expires_at DATETIME NOT NULL,
+            used_at DATETIME NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            request_ip VARCHAR(45) NOT NULL DEFAULT '',
+            INDEX idx_password_reset_user (user_id, created_at),
+            INDEX idx_password_reset_expiry (expires_at, used_at),
+            CONSTRAINT fk_password_reset_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+    );
+}
+
+function password_reset_absolute_url(string $token): string
+{
+    $path = url('/reset-password.php?token=' . rawurlencode($token));
+    $baseUrl = rtrim(trim((string)site_config('base_url', '')), '/');
+    if ($baseUrl !== '') {
+        $scheme = strtolower((string)parse_url($baseUrl, PHP_URL_SCHEME));
+        if (in_array($scheme, ['http', 'https'], true) && filter_var($baseUrl, FILTER_VALIDATE_URL)) {
+            return $baseUrl . $path;
+        }
+    }
+
+    // Fall back to the server-configured name, never the request Host header,
+    // so a hostile Host value cannot be reflected into a password-reset email.
+    $host = strtolower(trim((string)($_SERVER['SERVER_NAME'] ?? '')));
+    if ($host === '' || !preg_match('/^(?:localhost|[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?)$/', $host)) {
+        return '';
+    }
+    $https = isset($_SERVER['HTTPS']) && strtolower((string)$_SERVER['HTTPS']) !== 'off' && (string)$_SERVER['HTTPS'] !== '';
+    $scheme = $https ? 'https' : 'http';
+    $port = (int)($_SERVER['SERVER_PORT'] ?? 0);
+    $portSuffix = ($port > 0 && !(($scheme === 'https' && $port === 443) || ($scheme === 'http' && $port === 80))) ? ':' . $port : '';
+    return $scheme . '://' . $host . $portSuffix . $path;
+}
+
+function password_reset_request(string $email): void
+{
+    $email = strtolower(trim($email));
+    if (!filter_var($email, FILTER_VALIDATE_EMAIL) || !password_reset_schema_ready()) return;
+
+    $now = time();
+    $attempts = $_SESSION['password_reset_attempts'] ?? [];
+    $attempts = array_values(array_filter($attempts, static fn($time): bool => is_int($time) && $time > ($now - 3600)));
+    if (count($attempts) >= 5) {
+        $_SESSION['password_reset_attempts'] = $attempts;
+        return;
+    }
+    $attempts[] = $now;
+    $_SESSION['password_reset_attempts'] = $attempts;
+
+    $pdo = db();
+    if (!$pdo) return;
+    $stmt = $pdo->prepare('SELECT id,email,is_active FROM users WHERE email=? LIMIT 1');
+    $stmt->execute([$email]);
+    $user = $stmt->fetch();
+    if (!$user || (array_key_exists('is_active', $user) && (int)$user['is_active'] !== 1)) return;
+
+    try {
+        // A database-backed per-account cooldown complements the anonymous
+        // session throttle. Repeated requests cannot invalidate a reset email
+        // that may already be in flight or flood the same account with links.
+        $cooldown = $pdo->prepare(
+            'SELECT id FROM password_reset_tokens
+             WHERE user_id=? AND used_at IS NULL
+               AND created_at>=DATE_SUB(NOW(),INTERVAL 5 MINUTE)
+             ORDER BY id DESC LIMIT 1'
+        );
+        $cooldown->execute([(int)$user['id']]);
+        if ($cooldown->fetchColumn()) return;
+
+        $token = bin2hex(random_bytes(32));
+        $hash = hash('sha256', $token);
+        $pdo->prepare('UPDATE password_reset_tokens SET used_at=NOW() WHERE user_id=? AND used_at IS NULL')->execute([(int)$user['id']]);
+        $insert = $pdo->prepare(
+            'INSERT INTO password_reset_tokens (user_id,token_hash,expires_at,request_ip) VALUES (?,?,DATE_ADD(NOW(),INTERVAL 60 MINUTE),?)'
+        );
+        $insert->execute([(int)$user['id'], $hash, substr((string)($_SERVER['REMOTE_ADDR'] ?? ''), 0, 45)]);
+    } catch (Throwable $e) {
+        error_log('VP3 password reset token creation failed: ' . $e->getMessage());
+        return;
+    }
+
+    $sender = (string)setting('contact_email', (string)site_config('email', ''));
+    $enabled = (bool)site_config('send_password_reset_email', (bool)site_config('send_contact_email', false));
+    if (!$enabled || !filter_var($sender, FILTER_VALIDATE_EMAIL)) return;
+
+    $resetUrl = password_reset_absolute_url($token);
+    if ($resetUrl === '') {
+        error_log('VP3 password reset email skipped: configure site.base_url or SERVER_NAME.');
+        return;
+    }
+    $subject = 'VP3 password reset';
+    $body = "A password reset was requested for your VP3 account.\n\nReset your password within 60 minutes:\n{$resetUrl}\n\nIf you did not request this, you can ignore this email.";
+    $headers = ['From: ' . $sender, 'Reply-To: ' . $sender, 'Content-Type: text/plain; charset=UTF-8'];
+    if (!@mail((string)$user['email'], $subject, $body, implode("\r\n", $headers))) {
+        error_log('VP3 password reset email delivery failed.');
+    }
+}
+
+function password_reset_token_record(string $token): ?array
+{
+    if (!password_reset_schema_ready() || !preg_match('/^[a-f0-9]{64}$/', $token)) return null;
+    $pdo = db();
+    if (!$pdo) return null;
+    try {
+        $stmt = $pdo->prepare(
+            'SELECT prt.id,prt.user_id,prt.expires_at,u.email
+             FROM password_reset_tokens prt
+             INNER JOIN users u ON u.id=prt.user_id
+             WHERE prt.token_hash=? AND prt.used_at IS NULL AND prt.expires_at>NOW() AND u.is_active=1
+             LIMIT 1'
+        );
+        $stmt->execute([hash('sha256', $token)]);
+        $row = $stmt->fetch();
+        return is_array($row) ? $row : null;
+    } catch (Throwable $e) {
+        return null;
+    }
+}
+
+function password_reset_complete(string $token, string $password): bool
+{
+    if (strlen($password) < 12 || strlen($password) > 4096) return false;
+    $record = password_reset_token_record($token);
+    if (!$record) return false;
+    $pdo = db();
+    if (!$pdo) return false;
+
+    try {
+        $pdo->beginTransaction();
+        $consume = $pdo->prepare(
+            'UPDATE password_reset_tokens
+             SET used_at=NOW()
+             WHERE id=? AND user_id=? AND token_hash=? AND used_at IS NULL AND expires_at>NOW()'
+        );
+        $consume->execute([(int)$record['id'], (int)$record['user_id'], hash('sha256', $token)]);
+        if ($consume->rowCount() !== 1) {
+            $pdo->rollBack();
+            return false;
+        }
+
+        $pdo->prepare('UPDATE users SET password_hash=?,updated_at=NOW() WHERE id=?')->execute([
+            password_hash($password, PASSWORD_DEFAULT),
+            (int)$record['user_id'],
+        ]);
+        $pdo->prepare('UPDATE password_reset_tokens SET used_at=NOW() WHERE user_id=? AND used_at IS NULL')->execute([(int)$record['user_id']]);
+        $pdo->commit();
+        return true;
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        error_log('VP3 password reset failed: ' . $e->getMessage());
+        return false;
+    }
 }

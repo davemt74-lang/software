@@ -7,26 +7,36 @@ declare(strict_types=1);
  */
 return [
     'db' => [
-        'dsn'  => 'mysql:host=localhost;dbname=stonefellow;charset=utf8mb4',
-        'user' => 'stonefellow_user',
+        // Existing deployments may keep their current database/schema names.
+        'dsn'  => 'mysql:host=localhost;dbname=vp3;charset=utf8mb4',
+        'user' => 'vp3_user',
         'pass' => 'change-me',
     ],
 
     'site' => [
-        'name' => 'Stonefellow',
-        'email' => 'stonefellow74@gmail.com',
+        'name' => 'VP3',
+        'email' => '',
+
+        // Public origin used for security-sensitive outbound links such as
+        // password recovery. Use scheme + host only, with no trailing slash.
+        // Example: 'https://vp3.example.com'
+        'base_url' => '',
 
         // Leave blank when the site lives at the domain root.
-        // Example subfolder: '/stonefellow'
+        // Example subfolder: '/vp3'
         'base_path' => '',
 
-        // If true, contact submissions are stored in the database AND PHP mail()
-        // is attempted. Most production sites should use SMTP instead.
+        // If true, contact/demo submissions are stored in the database AND
+        // PHP mail() is attempted. Most production sites should use SMTP.
         'send_contact_email' => false,
+
+        // Enables one-time VP3 password-reset emails. If omitted, the runtime
+        // falls back to send_contact_email for backward compatibility.
+        'send_password_reset_email' => false,
     ],
 
     // Optional OpenAI-compatible chat endpoint. Leave blank to use
-    // Stonefellow's built-in database/knowledge retrieval responses.
+    // VP3's built-in database/knowledge retrieval responses.
     'ai' => [
         'endpoint' => '',
         'api_key' => '',
