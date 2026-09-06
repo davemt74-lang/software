@@ -2,7 +2,6 @@
 declare(strict_types=1);
 require __DIR__ . '/includes/bootstrap.php';
 require_once __DIR__ . '/includes/vp3-public.php';
-$contactEmail = (string)setting('contact_email', (string)site_config('email', 'stonefellow74@gmail.com'));
 vp3_public_header('Terms of Service — VP3', 'Terms for using VP3 and its personal AI assistant, transcription, knowledge, profile, and team features.');
 ?>
 <section class="vp3-public-hero"><div class="vp3-kicker">VP3 legal</div><h1>Terms of Service</h1><p>Terms for using VP3 and its personal AI assistant, transcription, knowledge, profile, and team features.</p></section>
@@ -19,6 +18,6 @@ vp3_public_header('Terms of Service — VP3', 'Terms for using VP3 and its perso
 <h2>10. Suspension and termination</h2><p>We may suspend or terminate access when reasonably necessary to protect users or the service, address security or abuse, comply with law, or respond to a material breach of these terms. You may stop using VP3 at any time.</p>
 <h2>11. Disclaimers</h2><p>VP3 is provided on an “as available” basis to the extent permitted by law. We do not guarantee uninterrupted operation, error-free AI output, or that every feature will meet every professional or regulatory requirement.</p>
 <h2>12. Limitation of liability</h2><p>To the fullest extent permitted by applicable law, VP3 and its operators will not be liable for indirect, incidental, special, consequential, or punitive damages arising from use of the service. Any liability that cannot legally be excluded remains subject to applicable law and any separate written agreement.</p>
-<h2>13. Changes and contact</h2><p>We may update these terms as VP3 evolves. Continued use after updated terms become effective constitutes acceptance where permitted by law. Questions can be sent to <a href="mailto:<?= e($contactEmail) ?>"><?= e($contactEmail) ?></a>.</p>
+<h2>13. Changes and contact</h2><p>We may update these terms as VP3 evolves. Continued use after updated terms become effective constitutes acceptance where permitted by law. Questions about these terms can be submitted through the <a href="<?= e(url('/contact.php')) ?>">VP3 contact page</a>.</p>
 </main>
 <?php vp3_public_footer(); ?>
