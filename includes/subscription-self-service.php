@@ -193,6 +193,7 @@ function subscription_self_service_cancel_request(array $user,int $requestId): v
     $pdo=db();if(!$pdo||!subscription_self_service_storage_ready($pdo))throw new RuntimeException('Plan management is unavailable.');
     $ownsTransaction=!$pdo->inTransaction();if($ownsTransaction)$pdo->beginTransaction();
     try{
+        $userLock=$pdo->prepare('SELECT id FROM users WHERE id=? LIMIT 1 FOR UPDATE');$userLock->execute([$userId]);if(!$userLock->fetchColumn())throw new RuntimeException('Account not found.');
         $stmt=$pdo->prepare("SELECT * FROM subscription_plan_requests WHERE id=? AND user_id=? AND status IN ('pending_billing','scheduled') LIMIT 1 FOR UPDATE");
         $stmt->execute([$requestId,$userId]);$request=$stmt->fetch();if(!$request)throw new RuntimeException('That plan request is no longer active.');
         $pdo->prepare("UPDATE subscription_plan_requests SET status='cancelled',resolved_at=NOW(),updated_at=NOW() WHERE id=? AND user_id=?")->execute([$requestId,$userId]);
@@ -211,6 +212,10 @@ function subscription_self_service_apply_due_for_user(int $userId,?PDO $pdo=null
     foreach($ids as $requestId){
         $ownsTransaction=!$pdo->inTransaction();if($ownsTransaction)$pdo->beginTransaction();
         try{
+            // Match interactive plan mutations: lock the account first, then
+            // request/subscription rows. A single lock order avoids deadlocks.
+            $userLock=$pdo->prepare('SELECT id FROM users WHERE id=? LIMIT 1 FOR UPDATE');$userLock->execute([$userId]);
+            if(!$userLock->fetchColumn()){if($ownsTransaction)$pdo->commit();continue;}
             $stmt=$pdo->prepare("SELECT * FROM subscription_plan_requests WHERE id=? AND user_id=? AND status='scheduled' AND effective_at<=NOW() LIMIT 1 FOR UPDATE");
             $stmt->execute([$requestId,$userId]);$request=$stmt->fetch();if(!$request){if($ownsTransaction)$pdo->commit();continue;}
             $requestSubscription=null;
