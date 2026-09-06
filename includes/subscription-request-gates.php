@@ -43,11 +43,13 @@ function subscription_request_json_error(string $code,string $message,array $ext
  * Manager/Producer compatibility roles are derived from Artist Team
  * relationships and deliberately carry only minimal permissions. Admin routes
  * still fail closed except for the relationship-scoped workspaces that perform
- * their own Artist/track ownership checks.
+ * their own Artist/track ownership checks. A stronger Artist/Supervisor/Admin
+ * identity is never reduced merely because the same person also collaborates
+ * on another Artist's Team.
  */
 function subscription_request_guard_legacy_team_role(string $path,array $user): void
 {
-    if(user_has_role('admin',$user))return;
+    if(user_has_role('admin',$user)||user_has_role('artist',$user)||user_has_role('supervisor',$user))return;
     $legacyManager=user_has_role('manager',$user);
     $legacyProducer=user_has_role('producer',$user);
     if(!$legacyManager&&!$legacyProducer)return;
