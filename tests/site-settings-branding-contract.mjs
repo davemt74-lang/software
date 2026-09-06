@@ -12,8 +12,9 @@ const runtimeBranding = read('site-branding-runtime.php');
 const chatCss = read('chat-v97.css');
 const chatTemplate = read('chat-legacy-v108.php');
 
-assert.ok(
-  bootstrap.includes("require_once __DIR__ . '/site-settings.php';"),
+assert.match(
+  bootstrap,
+  /require_once\s+__DIR__\s*\.\s*['"]\/site-settings\.php['"]\s*;/,
   'bootstrap must load one canonical site-settings helper layer'
 );
 
