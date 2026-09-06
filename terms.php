@@ -5,7 +5,7 @@ require_once __DIR__ . '/includes/vp3-public.php';
 vp3_public_header('Terms of Service — VP3', 'Terms for using VP3 and its personal AI assistant, transcription, knowledge, profile, and team features.');
 ?>
 <section class="vp3-public-hero"><div class="vp3-kicker">VP3 legal</div><h1>Terms of Service</h1><p>Terms for using VP3 and its personal AI assistant, transcription, knowledge, profile, and team features.</p></section>
-<main class="vp3-legal-wrap"><span class="vp3-updated">Last updated August 31, 2026</span>
+<main class="vp3-legal-wrap"><span class="vp3-updated">Last updated September 6, 2026</span>
 <h2>1. Acceptance</h2><p>By accessing or using VP3, you agree to these Terms of Service. If you use VP3 for an organization, you represent that you have authority to act for that organization. A separate signed agreement may supplement or replace portions of these terms for paid, enterprise, or partner accounts.</p>
 <h2>2. The service</h2><p>VP3 provides personal AI-assistant tools that may include conversations, transcriptions, AI summaries, private knowledge and memory, public profiles and Profile Agent features, contacts, projects, collaboration, team management, and approved tools or workflow integrations. Features may change as the service develops.</p>
 <h2>3. Accounts</h2><p>You are responsible for accurate account information, safeguarding credentials, and activity performed through your account. You may not share access in a way that bypasses account permissions or security controls.</p>
