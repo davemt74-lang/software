@@ -168,6 +168,30 @@ function password_reset_ensure_schema(): void
     );
 }
 
+function password_reset_absolute_url(string $token): string
+{
+    $path = url('/reset-password.php?token=' . rawurlencode($token));
+    $baseUrl = rtrim(trim((string)site_config('base_url', '')), '/');
+    if ($baseUrl !== '') {
+        $scheme = strtolower((string)parse_url($baseUrl, PHP_URL_SCHEME));
+        if (in_array($scheme, ['http', 'https'], true) && filter_var($baseUrl, FILTER_VALIDATE_URL)) {
+            return $baseUrl . $path;
+        }
+    }
+
+    // Fall back to the server-configured name, never the request Host header,
+    // so a hostile Host value cannot be reflected into a password-reset email.
+    $host = strtolower(trim((string)($_SERVER['SERVER_NAME'] ?? '')));
+    if ($host === '' || !preg_match('/^(?:localhost|[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?)$/', $host)) {
+        return '';
+    }
+    $https = isset($_SERVER['HTTPS']) && strtolower((string)$_SERVER['HTTPS']) !== 'off' && (string)$_SERVER['HTTPS'] !== '';
+    $scheme = $https ? 'https' : 'http';
+    $port = (int)($_SERVER['SERVER_PORT'] ?? 0);
+    $portSuffix = ($port > 0 && !(($scheme === 'https' && $port === 443) || ($scheme === 'http' && $port === 80))) ? ':' . $port : '';
+    return $scheme . '://' . $host . $portSuffix . $path;
+}
+
 function password_reset_request(string $email): void
 {
     $email = strtolower(trim($email));
@@ -219,11 +243,17 @@ function password_reset_request(string $email): void
     $enabled = (bool)site_config('send_password_reset_email', (bool)site_config('send_contact_email', false));
     if (!$enabled || !filter_var($sender, FILTER_VALIDATE_EMAIL)) return;
 
-    $resetUrl = url('/reset-password.php?token=' . rawurlencode($token));
+    $resetUrl = password_reset_absolute_url($token);
+    if ($resetUrl === '') {
+        error_log('VP3 password reset email skipped: configure site.base_url or SERVER_NAME.');
+        return;
+    }
     $subject = 'VP3 password reset';
     $body = "A password reset was requested for your VP3 account.\n\nReset your password within 60 minutes:\n{$resetUrl}\n\nIf you did not request this, you can ignore this email.";
     $headers = ['From: ' . $sender, 'Reply-To: ' . $sender, 'Content-Type: text/plain; charset=UTF-8'];
-    @mail((string)$user['email'], $subject, $body, implode("\r\n", $headers));
+    if (!@mail((string)$user['email'], $subject, $body, implode("\r\n", $headers))) {
+        error_log('VP3 password reset email delivery failed.');
+    }
 }
 
 function password_reset_token_record(string $token): ?array
@@ -254,8 +284,20 @@ function password_reset_complete(string $token, string $password): bool
     if (!$record) return false;
     $pdo = db();
     if (!$pdo) return false;
+
     try {
         $pdo->beginTransaction();
+        $consume = $pdo->prepare(
+            'UPDATE password_reset_tokens
+             SET used_at=NOW()
+             WHERE id=? AND user_id=? AND token_hash=? AND used_at IS NULL AND expires_at>NOW()'
+        );
+        $consume->execute([(int)$record['id'], (int)$record['user_id'], hash('sha256', $token)]);
+        if ($consume->rowCount() !== 1) {
+            $pdo->rollBack();
+            return false;
+        }
+
         $pdo->prepare('UPDATE users SET password_hash=?,updated_at=NOW() WHERE id=?')->execute([
             password_hash($password, PASSWORD_DEFAULT),
             (int)$record['user_id'],
