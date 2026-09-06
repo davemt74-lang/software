@@ -27,6 +27,7 @@ assert.match(runtime, /price_cents INT UNSIGNED NOT NULL/);
 assert.match(runtime, /expires_days SMALLINT UNSIGNED NULL/);
 assert.match(runtime, /billing_stripe_webhook_secret\(\)/);
 assert.match(runtime, /'mode'=>'payment'/);
+assert.match(runtime, /'payment_method_types'=>\['card'\]/);
 assert.match(runtime, /'price_data'=>/);
 assert.match(runtime, /\(int\)\$purchase\['price_cents'\]/);
 assert.match(runtime, /vp3_purchase_type.*ai_token_pack/s);
@@ -60,6 +61,7 @@ assert.match(customer, /token_pack_purchase_history/);
 assert.match(customer, /subscription_ai_balance/);
 assert.match(customer, /Token packs do not extend trials or change package entitlements/);
 assert.match(customer, /name="pack_id"/);
+assert.match(customer, /Manage Token Packs/);
 assert.equal(/name="(?:token_amount|price_cents|price_dollars)"/.test(customer), false, 'Customer Checkout must not accept token quantity or price from the browser');
 
 assert.match(admin, /require_permission\('users\.manage'\)/);
