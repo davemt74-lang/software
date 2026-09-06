@@ -7,6 +7,15 @@ require_permission('users.manage');
 $pdo=db();if(!$pdo)throw new RuntimeException('Database connection is unavailable.');
 if(!token_pack_schema_ready($pdo))token_pack_ensure_schema($pdo);
 
+function admin_token_pack_price_cents(string $value): int
+{
+    $value=trim($value);
+    if(!preg_match('/^(\d+)(?:\.(\d{1,2}))?$/',$value,$m))throw new RuntimeException('Enter a valid price with no more than two decimal places.');
+    $whole=(int)$m[1];$fraction=str_pad((string)($m[2]??''),2,'0');
+    if($whole>999999)throw new RuntimeException('Token pack price is too large.');
+    return ($whole*100)+(int)$fraction;
+}
+
 $error='';$editId=max(0,(int)($_GET['edit']??$_POST['pack_id']??0));
 if($_SERVER['REQUEST_METHOD']==='POST'){
     if(!verify_csrf())$error='Session expired. Please try again.';
@@ -14,16 +23,13 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
         try{
             $action=(string)($_POST['action']??'save');
             if($action==='save'){
-                $priceText=trim((string)($_POST['price_dollars']??'0'));
-                if(!preg_match('/^\d+(?:\.\d{1,2})?$/',$priceText))throw new RuntimeException('Enter a valid price with no more than two decimal places.');
-                $priceCents=(int)round(((float)$priceText)*100);
                 $id=token_pack_save([
                     'id'=>$editId,
                     'name'=>(string)($_POST['name']??''),
                     'slug'=>(string)($_POST['slug']??''),
                     'description'=>(string)($_POST['description']??''),
                     'token_amount'=>(int)($_POST['token_amount']??0),
-                    'price_cents'=>$priceCents,
+                    'price_cents'=>admin_token_pack_price_cents((string)($_POST['price_dollars']??'0')),
                     'expires_days'=>(string)($_POST['expires_days']??''),
                     'sort_order'=>(int)($_POST['sort_order']??100),
                     'is_public'=>!empty($_POST['is_public'])?1:0,
@@ -33,8 +39,12 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
             }
             if($action==='archive'){
                 if($editId<1)throw new RuntimeException('Token pack not found.');
-                $pack=token_pack_find($editId,$pdo,false,true);if(!$pack)throw new RuntimeException('Token pack not found.');
-                $pdo->prepare('UPDATE ai_token_packs SET is_active=0,is_public=0,updated_at=NOW() WHERE id=?')->execute([$editId]);
+                $pdo->beginTransaction();
+                try{
+                    $pack=token_pack_find($editId,$pdo,false,true);if(!$pack)throw new RuntimeException('Token pack not found.');
+                    $pdo->prepare('UPDATE ai_token_packs SET is_active=0,is_public=0,updated_at=NOW() WHERE id=?')->execute([$editId]);
+                    $pdo->commit();
+                }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();throw $e;}
                 flash('notice','AI token pack archived. Historical purchases were preserved.');redirect(url('/admin/token-packs.php'));
             }
         }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();$error=$e->getMessage();}
