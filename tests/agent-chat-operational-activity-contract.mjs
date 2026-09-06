@@ -57,8 +57,8 @@ assert.match(activityJs, /brainSourceLabel\(item\.source_type\)/, 'operational r
 assert.match(activityJs, /Only genuine user-attention notifications reach this path/, 'Chat polling must document the new attention boundary');
 assert.match(activityJs, /async function presentAttention\(item, speak = true\)/, 'genuine actionable notifications must retain Chat presentation and optional speech');
 
-assert.match(notificationsPage, /WHERE user_id=\? AND ' \+ notification_system_sql_predicate\(\)/, 'standalone Notifications page must exclude Agent Brain activity');
-assert.match(notificationsPage, /id=\? AND user_id=\? AND ' \+ notification_system_sql_predicate\(\)/, 'direct notification opens must not expose Agent Brain carrier rows');
+assert.match(notificationsPage, /WHERE user_id=\? AND '\s*\.\s*notification_system_sql_predicate\(\)/, 'standalone Notifications page must exclude Agent Brain activity');
+assert.match(notificationsPage, /id=\? AND user_id=\? AND '\s*\.\s*notification_system_sql_predicate\(\)/, 'direct notification opens must not expose Agent Brain carrier rows');
 assert.match(memberHeader, /activity-center-brain-routing-20260906/, 'member header must cache-bust the new Activity Center routing build');
 
 console.log('agent-brain-notification-routing contract: PASS');
