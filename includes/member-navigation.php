@@ -25,16 +25,24 @@ function member_agent_voice_enabled(?array $user = null): bool
 function member_navigation_entitled(?array $user,string $capability,bool $legacyFallback=true): bool
 {
     $user??=current_user();if(!$user)return false;
+    if(user_has_role('admin',$user))return true;
     if(!function_exists('subscription_schema_ready')||!subscription_schema_ready())return $legacyFallback;
     $sub=subscription_current($user);if(!$sub)return false;
     if(subscription_has_entitlement($user,'legacy.permissions'))return $legacyFallback;
     return subscription_has_entitlement($user,$capability);
 }
 
+/**
+ * Packages are a commercial ceiling, never an authorization source.
+ * The persisted permission must already be allowed before a package can expose it.
+ */
 function member_navigation_package_permission(?array $user,string $permission,bool $legacyFallback): bool
 {
     $user??=current_user();if(!$user)return false;
+    $authorized=has_permission($permission,$user);
+    if(!$authorized)return false;
     if(user_has_role('admin',$user))return true;
+    if($permission==='account.access')return true;
     if(!function_exists('subscription_schema_ready')||!subscription_schema_ready())return $legacyFallback;
     $sub=subscription_current($user);if(!$sub)return false;
     if(subscription_has_entitlement($user,'legacy.permissions'))return $legacyFallback;
@@ -65,13 +73,16 @@ function member_navigation_menu_links(?array $user = null): array
     if(member_navigation_entitled($user,'transcription.access',has_permission('artist_listening.access',$user)))$add($links,'transcriptions','My Transcriptions',url('/artist-listening.php'),'identity');
     if(member_navigation_entitled($user,'voice.access',personal_capability_has_v242('voice_profile.access',$user)))$add($links,'voice_profile','Voice Profile',url('/voice-profile.php'),'agent');
 
-    $artistPermissionFallback=has_any_permission(['tracks.manage','albums.manage','shows.manage','photos.manage','merch.manage','posts.manage'],$user)||permission_v105_has('release.manage',$user);
-    $artistWorkspaceAllowed=$artistPermissionFallback;
-    if(function_exists('subscription_permissions_authoritative')&&subscription_permissions_authoritative($user)){
-        $artistWorkspaceAllowed=false;
-        foreach(['tracks.manage','albums.manage','shows.manage','photos.manage','merch.manage','posts.manage','team.manage'] as $permission){if(subscription_package_grants_permission($user,$permission)){$artistWorkspaceAllowed=true;break;}}
-    }
-    if($artistWorkspaceAllowed)$add($links,'artist_workspace','Creator Workspace',url('/admin/artist.php'),'creator');
+    $artistWorkspaceAllowed=user_has_role('artist',$user)&&(
+        member_navigation_package_permission($user,'tracks.manage',has_permission('tracks.manage',$user))||
+        member_navigation_package_permission($user,'albums.manage',has_permission('albums.manage',$user))||
+        member_navigation_package_permission($user,'shows.manage',has_permission('shows.manage',$user))||
+        member_navigation_package_permission($user,'photos.manage',has_permission('photos.manage',$user))||
+        member_navigation_package_permission($user,'merch.manage',has_permission('merch.manage',$user))||
+        member_navigation_package_permission($user,'posts.manage',has_permission('posts.manage',$user))||
+        permission_v105_has('release.manage',$user)
+    );
+    if($artistWorkspaceAllowed)$add($links,'artist_workspace','Artist Workspace',url('/admin/artist.php'),'creator');
 
     $memberships=[];$pdo=db();if($pdo&&function_exists('artist_workspace_v104_memberships_for_user')){try{$memberships=artist_workspace_v104_memberships_for_user($pdo,(int)$user['id']);}catch(Throwable $e){}}
     if($memberships)$add($links,'team_workspaces','Team Workspaces',url('/admin/producer-tracks.php'),'creator');
