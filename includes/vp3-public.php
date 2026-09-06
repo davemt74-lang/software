@@ -12,6 +12,8 @@ function vp3_public_header(string $title, string $description = '', array $optio
     $active = trim((string)($options['active'] ?? ''));
     $compact = !empty($options['compact']);
     $robots = trim((string)($options['robots'] ?? ''));
+    $publicUser = current_user();
+    $openUrl = $publicUser ? login_destination() : '';
     ?>
 <!doctype html>
 <html lang="en">
@@ -38,13 +40,29 @@ function vp3_public_header(string $title, string $description = '', array $optio
     </nav>
     <?php endif; ?>
     <div class="vp3-public-actions">
-      <?php if ($active === 'login'): ?>
+      <?php if ($publicUser): ?>
+        <a class="vp3-public-primary" href="<?= e($openUrl) ?>">Open VP3 <span aria-hidden="true">→</span></a>
+      <?php elseif ($active === 'login'): ?>
         <a class="vp3-public-secondary" href="<?= e(url('/signup.php')) ?>">Create account</a>
       <?php elseif ($active === 'signup'): ?>
         <a class="vp3-public-secondary" href="<?= e(url('/login.php')) ?>">Sign in</a>
       <?php else: ?>
         <a class="vp3-public-signin" href="<?= e(url('/login.php')) ?>">Sign in</a>
         <a class="vp3-public-primary" href="<?= e(url('/signup.php')) ?>">Get Started <span aria-hidden="true">→</span></a>
+      <?php endif; ?>
+      <?php if (!$compact): ?>
+      <details class="vp3-public-mobile-menu">
+        <summary aria-label="Open navigation"><span></span><span></span><span></span></summary>
+        <nav aria-label="Mobile navigation">
+          <a href="<?= e(url('/index.php#features')) ?>">Features</a>
+          <a href="<?= e(url('/index.php#transcriptions')) ?>">Transcriptions</a>
+          <a href="<?= e(url('/index.php#teams')) ?>">Teams</a>
+          <a href="<?= e(url('/pricing.php')) ?>">Pricing</a>
+          <a href="<?= e(url('/about.php')) ?>">About</a>
+          <a href="<?= e(url('/book-demo.php')) ?>">Book a Demo</a>
+          <a href="<?= e(url('/contact.php')) ?>">Contact</a>
+        </nav>
+      </details>
       <?php endif; ?>
     </div>
   </div>
