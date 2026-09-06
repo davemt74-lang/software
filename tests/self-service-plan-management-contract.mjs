@@ -29,6 +29,8 @@ assert.ok(runtime.includes("This package is managed by an administrator and cann
 assert.ok(runtime.includes('subscription_self_service_cancel_request'), 'pending/scheduled changes must be reversible');
 assert.ok(runtime.includes('subscription_audit'), 'self-service plan mutations must be audited');
 assert.ok(runtime.includes("SELECT id FROM users WHERE id=? LIMIT 1 FOR UPDATE"), 'plan mutations must serialize on the user account');
+assert.match(runtime, /function subscription_self_service_cancel_request[\s\S]*SELECT id FROM users WHERE id=\? LIMIT 1 FOR UPDATE[\s\S]*SELECT \* FROM subscription_plan_requests/, 'cancelling a request must lock user before plan request');
+assert.match(runtime, /function subscription_self_service_apply_due_for_user[\s\S]*SELECT id FROM users WHERE id=\? LIMIT 1 FOR UPDATE[\s\S]*SELECT \* FROM subscription_plan_requests[\s\S]*SELECT \* FROM user_subscriptions/, 'due processing must preserve user -> request -> subscription lock order');
 
 assert.match(
   lifecycle,
@@ -47,5 +49,8 @@ assert.ok(page.includes('billing=monthly') && page.includes('billing=annual'), '
 assert.ok(page.includes('Plan Activity'), 'customer must be able to review self-service plan history');
 assert.ok(page.includes('AI Usage by Feature') && page.includes('Token Credits'), 'plan management must retain quota and top-up visibility');
 assert.ok(!page.includes('subscription_self_service_ensure_schema'), 'customer GET/POST must never perform schema DDL');
+assert.match(page, /if\(has_permission\('users\.manage',\$user\)\)redirect\(url\('\/upgrade\.php'\)\)/, 'only an authorized administrator may be routed to the database upgrade');
+assert.ok(page.includes("redirect(url('/account.php'))"), 'ordinary members must return safely to My Account when plan schema is unavailable');
+assert.ok(page.includes('Features not included in the new package may become unavailable.'), 'free-plan changes must explicitly warn about possible entitlement loss');
 
 console.log('SELF_SERVICE_PLAN_MANAGEMENT_CONTRACT=PASS');
