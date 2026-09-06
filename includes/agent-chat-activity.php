@@ -92,10 +92,14 @@ function agent_chat_activity_reconcile_tools(PDO $pdo, array $user): void
     $uid = (int)$user['id'];
     try {
         $stmt = $pdo->prepare(
-            "SELECT id,tool_key,request_text,status,result_json,created_at
-             FROM agent_tool_history
-             WHERE user_id=? AND created_at>=DATE_SUB(NOW(),INTERVAL 14 DAY)
-             ORDER BY id DESC LIMIT 8"
+            "SELECT h.id,h.tool_key,h.request_text,h.status,h.result_json,h.created_at
+             FROM agent_tool_history h
+             WHERE h.user_id=? AND h.created_at>=DATE_SUB(NOW(),INTERVAL 14 DAY)
+               AND NOT EXISTS (
+                 SELECT 1 FROM notifications n
+                 WHERE n.user_id=h.user_id AND n.source_type='agent_tool_history' AND n.source_id=h.id
+               )
+             ORDER BY h.id DESC LIMIT 8"
         );
         $stmt->execute([$uid]);
         foreach ($stmt->fetchAll() ?: [] as $row) {
@@ -133,11 +137,15 @@ function agent_chat_activity_reconcile_stem(PDO $pdo, array $user): void
     $uid = (int)$user['id'];
     try {
         $stmt = $pdo->prepare(
-            "SELECT id,project_id,action_key,request_text,model_provider,model_name,changes_json,created_at
-             FROM agent_edit_events
-             WHERE user_id=? AND editor_kind='stem' AND source_kind='agent'
-               AND created_at>=DATE_SUB(NOW(),INTERVAL 14 DAY)
-             ORDER BY id DESC LIMIT 10"
+            "SELECT e.id,e.project_id,e.action_key,e.request_text,e.model_provider,e.model_name,e.changes_json,e.created_at
+             FROM agent_edit_events e
+             WHERE e.user_id=? AND e.editor_kind='stem' AND e.source_kind='agent'
+               AND e.created_at>=DATE_SUB(NOW(),INTERVAL 14 DAY)
+               AND NOT EXISTS (
+                 SELECT 1 FROM notifications n
+                 WHERE n.user_id=e.user_id AND n.source_type='agent_edit_event' AND n.source_id=e.id
+               )
+             ORDER BY e.id DESC LIMIT 10"
         );
         $stmt->execute([$uid]);
         foreach ($stmt->fetchAll() ?: [] as $row) {
@@ -185,6 +193,10 @@ function agent_chat_activity_reconcile_transcriptions(PDO $pdo, array $user): vo
                  FROM artist_transcript_master_analysis_v237 a
                  INNER JOIN artist_transcript_sessions_v172 s ON s.id=a.session_id
                  WHERE s.created_by_user_id=? AND a.generated_at>=DATE_SUB(NOW(),INTERVAL 14 DAY)
+                   AND NOT EXISTS (
+                     SELECT 1 FROM notifications n
+                     WHERE n.user_id=s.created_by_user_id AND n.source_type='transcript_analysis' AND n.source_id=a.session_id
+                   )
                  ORDER BY a.generated_at DESC LIMIT 6"
             );
             $stmt->execute([$uid]);
@@ -217,11 +229,15 @@ function agent_chat_activity_reconcile_transcriptions(PDO $pdo, array $user): vo
     if (table_exists('agent_memory_items')) {
         try {
             $stmt = $pdo->prepare(
-                "SELECT id,subject,metadata_json,last_seen_at
-                 FROM agent_memory_items
-                 WHERE user_id=? AND is_active=1 AND memory_type='transcript_analysis'
-                   AND last_seen_at>=DATE_SUB(NOW(),INTERVAL 14 DAY)
-                 ORDER BY last_seen_at DESC,id DESC LIMIT 6"
+                "SELECT m.id,m.subject,m.metadata_json,m.last_seen_at
+                 FROM agent_memory_items m
+                 WHERE m.user_id=? AND m.is_active=1 AND m.memory_type='transcript_analysis'
+                   AND m.last_seen_at>=DATE_SUB(NOW(),INTERVAL 14 DAY)
+                   AND NOT EXISTS (
+                     SELECT 1 FROM notifications n
+                     WHERE n.user_id=m.user_id AND n.source_type='agent_memory_item' AND n.source_id=m.id
+                   )
+                 ORDER BY m.last_seen_at DESC,m.id DESC LIMIT 6"
             );
             $stmt->execute([$uid]);
             foreach ($stmt->fetchAll() ?: [] as $row) {
@@ -248,12 +264,16 @@ function agent_chat_activity_reconcile_transcriptions(PDO $pdo, array $user): vo
     if (table_exists('knowledge_items') && column_exists('knowledge_items', 'created_by_user_id') && column_exists('knowledge_items', 'knowledge_scope')) {
         try {
             $stmt = $pdo->prepare(
-                "SELECT id,title,description,updated_at
-                 FROM knowledge_items
-                 WHERE created_by_user_id=? AND knowledge_scope='personal'
-                   AND description LIKE 'Personal Artist Listening analysis%'
-                   AND updated_at>=DATE_SUB(NOW(),INTERVAL 14 DAY)
-                 ORDER BY updated_at DESC,id DESC LIMIT 6"
+                "SELECT k.id,k.title,k.description,k.updated_at
+                 FROM knowledge_items k
+                 WHERE k.created_by_user_id=? AND k.knowledge_scope='personal'
+                   AND k.description LIKE 'Personal Artist Listening analysis%'
+                   AND k.updated_at>=DATE_SUB(NOW(),INTERVAL 14 DAY)
+                   AND NOT EXISTS (
+                     SELECT 1 FROM notifications n
+                     WHERE n.user_id=k.created_by_user_id AND n.source_type='personal_knowledge_item' AND n.source_id=k.id
+                   )
+                 ORDER BY k.updated_at DESC,k.id DESC LIMIT 6"
             );
             $stmt->execute([$uid]);
             foreach ($stmt->fetchAll() ?: [] as $row) {
@@ -281,10 +301,14 @@ function agent_chat_activity_reconcile_proactive(PDO $pdo, array $user): void
     $uid = (int)$user['id'];
     try {
         $stmt = $pdo->prepare(
-            "SELECT id,event_type,title,prompt,source_kind,context_json,created_at
-             FROM agent_proactive_events
-             WHERE user_id=? AND event_type='shown' AND created_at>=DATE_SUB(NOW(),INTERVAL 7 DAY)
-             ORDER BY id DESC LIMIT 8"
+            "SELECT p.id,p.event_type,p.title,p.prompt,p.source_kind,p.context_json,p.created_at
+             FROM agent_proactive_events p
+             WHERE p.user_id=? AND p.event_type='shown' AND p.created_at>=DATE_SUB(NOW(),INTERVAL 7 DAY)
+               AND NOT EXISTS (
+                 SELECT 1 FROM notifications n
+                 WHERE n.user_id=p.user_id AND n.source_type='agent_proactive_event' AND n.source_id=p.id
+               )
+             ORDER BY p.id DESC LIMIT 8"
         );
         $stmt->execute([$uid]);
         foreach ($stmt->fetchAll() ?: [] as $row) {
@@ -320,7 +344,8 @@ function agent_chat_activity_reconcile(?array $user = null): void
     if (!$pdo || !table_exists('notifications')) return;
 
     // Reconcile authoritative ledgers into the one existing notification → Chat
-    // delivery path. Each source row is deduped by notification source id.
+    // delivery path. Each query excludes source rows already promoted, so the
+    // 5-second Chat poll stays cheap after the initial catch-up.
     agent_chat_activity_reconcile_stem($pdo, $user);
     agent_chat_activity_reconcile_transcriptions($pdo, $user);
     agent_chat_activity_reconcile_tools($pdo, $user);
