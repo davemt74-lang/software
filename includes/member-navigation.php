@@ -85,7 +85,7 @@ function member_navigation_menu_links(?array $user = null): array
     if($artistWorkspaceAllowed)$add($links,'artist_workspace','Artist Workspace',url('/admin/artist.php'),'creator');
 
     $memberships=[];$pdo=db();if($pdo&&function_exists('artist_workspace_v104_memberships_for_user')){try{$memberships=artist_workspace_v104_memberships_for_user($pdo,(int)$user['id']);}catch(Throwable $e){}}
-    if($memberships)$add($links,'team_workspaces','Team Workspaces',url('/admin/producer-tracks.php'),'creator');
+    if($memberships)$add($links,'team_workspaces','Team Workspaces',url('/admin/team-workspaces.php'),'creator');
 
     $adminAllowed=member_navigation_package_permission($user,'admin.access',has_permission('admin.access',$user));
     if($adminAllowed)$add($links,'admin','Admin Dashboard',url('/admin/index.php'),'admin');
