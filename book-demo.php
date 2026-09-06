@@ -24,11 +24,14 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
         if($pdo&&table_exists('contact_messages'))try{
             $stmt=$pdo->prepare('INSERT INTO contact_messages (name,email,topic,message,ip_address,user_agent,created_at) VALUES (?,?,?,?,?,?,NOW())');
             $stmt->execute([$name,$email,'Book a Demo',$message,substr((string)($_SERVER['REMOTE_ADDR']??''),0,45),substr((string)($_SERVER['HTTP_USER_AGENT']??''),0,500)]);$messageId=(int)$pdo->lastInsertId();$stored=true;
+            // Public requests never perform schema DDL. The Admin CRM creates
+            // its tables on first admin access and quietly imports requests
+            // collected before that point.
             if(function_exists('crm_v180_create_demo_lead')&&function_exists('crm_v180_schema_ready')&&crm_v180_schema_ready($pdo))try{$leadId=crm_v180_create_demo_lead(['name'=>$name,'email'=>$email,'company'=>$company,'phone'=>$phone,'role'=>$role,'team_size'=>$teamSize,'workflows'=>array_map(static fn(string $item):string=>$labels[$item]??$item,$workflows),'notes'=>$notes],$messageId,$pdo);$crmStored=$leadId>0;}catch(Throwable $e){error_log('VP3 CRM lead creation failed: '.$e->getMessage());}
             if(!$crmStored)create_notification_for_permission('messages.manage','contact_message','New demo request',$name.' — Book a Demo',url('/admin/messages.php?view='.$messageId),'contact_message',$messageId);
         }catch(Throwable $e){error_log('VP3 demo request save failed: '.$e->getMessage());}
-        $recipient=(string)setting('contact_email',(string)site_config('email','stonefellow74@gmail.com'));$mailed=false;
-        if((bool)site_config('send_contact_email',false)){$subject='VP3 — Book a Demo';$headers=['From: '.$recipient,'Reply-To: '.$email,'Content-Type: text/plain; charset=UTF-8'];$mailed=@mail($recipient,$subject,"Name: {$name}\nEmail: {$email}\n\n{$message}",implode("\r\n",$headers));}
+        $recipient=(string)setting('contact_email',(string)site_config('email',''));$mailed=false;
+        if((bool)site_config('send_contact_email',false)&&filter_var($recipient,FILTER_VALIDATE_EMAIL)){$subject='VP3 — Book a Demo';$headers=['From: '.$recipient,'Reply-To: '.$email,'Content-Type: text/plain; charset=UTF-8'];$mailed=@mail($recipient,$subject,"Name: {$name}\nEmail: {$email}\n\n{$message}",implode("\r\n",$headers));}
         if($stored||$mailed){flash('success','Thanks. Your demo request has been received. We will follow up with you soon.');redirect(url('/book-demo.php'));}
         $error='The demo request could not be submitted because the backend is not configured yet. Please use the contact page instead.';
     }
