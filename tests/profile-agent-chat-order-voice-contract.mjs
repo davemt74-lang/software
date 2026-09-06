@@ -24,7 +24,7 @@ assert.match(settings, /agent_voice_enabled/, 'Agent Voice must live in canonica
 assert.match(settingsApi, /save_agent_voice/, 'Agent Voice must support a focused settings mutation');
 assert.match(memberMenu, /member_agent_voice_toggle_html\(\$memberMenuUser\)/, 'shared member menu must render the canonical Agent Voice control');
 assert.match(memberNavigation, /data-agent-voice-toggle/, 'canonical navigation helper must own the Agent Voice toggle markup');
-assert.match(memberNavigation, /has_permission\('chat\.access', \$user\)/, 'Agent Voice toggle must remain Chat-permission gated');
+assert.match(memberNavigation, /has_permission\('chat\.access',\s*\$user\)/, 'Agent Voice toggle must remain Chat-permission gated');
 assert.match(settingsJs, /ensureAgentVoiceToggle/, 'legacy Main Feed profile menu receives the same Agent Voice control');
 assert.match(settingsJs, /stonefellow:agent-voice/, 'Agent Voice changes are broadcast to active Chat runtime');
 assert.match(attentionApi, /'agent_voice_enabled'=>member_agent_voice_enabled\(\$user\)/, 'Activity Center state must include persisted Agent Voice preference');
@@ -45,7 +45,7 @@ assert.doesNotMatch(profileAgent, /<header class="chat-topbar profile-agent-topb
 assert.match(memberHeader, /chat-notifications-drawer-v240\.js/, 'universal member header loads tabbed Activity Center');
 assert.match(memberHeader, /chat-transcription-canvas\.js/, 'universal member header loads Transcription Activity');
 assert.match(memberHeader, /STONEFELLOW_NOTIFICATION_DRAWER/, 'universal header configures notification UI');
-assert.match(memberHeader, /has_permission\('chat\.access', \$memberHeaderUser\)/, 'Chat-only member-header runtimes remain capability gated');
+assert.match(memberHeader, /has_permission\('chat\.access',\s*\$memberHeaderUser\)/, 'Chat-only member-header runtimes remain capability gated');
 assert.doesNotMatch(transcriptionCanvas, /if\(!thread\)return/, 'Transcription Activity must work outside Main Feed');
 assert.match(transcriptionCanvas, /if\(thread\)\{/, 'Chat-specific transcription observation remains guarded');
 
