@@ -36,10 +36,11 @@ $memberMenuRoleSummary = implode(' · ', user_role_labels($memberMenuUser));
           <span><?= e(user_initials($memberMenuUser)) ?></span>
         <?php endif; ?>
       </span>
-      <div>
+      <div class="chat-profile-summary-copy">
         <strong><?= e((string)($memberMenuUser['display_name'] ?? '')) ?></strong>
         <?php if ($memberMenuRoleSummary !== ''): ?><small><?= e($memberMenuRoleSummary) ?></small><?php endif; ?>
       </div>
+      <?= member_agent_voice_toggle_html($memberMenuUser) ?>
     </div>
 
     <nav class="chat-profile-links" aria-label="User menu">
