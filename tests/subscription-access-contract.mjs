@@ -59,7 +59,12 @@ assert.ok(
 );
 assert.ok(quota.includes('if($remaining>0){$packageUsed+=$remaining;$remaining=0;}'), 'provider-reported quota overruns must still be recorded exactly');
 
+assert.ok(access.includes("$ownsTransaction=!$pdo->inTransaction()"), 'package mutations must participate safely in caller-owned transactions');
+assert.ok(access.includes("SELECT id FROM users WHERE id=? LIMIT 1 FOR UPDATE"), 'package assignment must serialize concurrent changes on the target account');
+assert.ok(access.includes("SELECT amount,remaining_amount FROM ai_token_credits WHERE id=? AND user_id=? LIMIT 1 FOR UPDATE"), 'token credit removal must lock the credit before mutation and audit');
 assert.ok(signup.includes('subscription_assign_default_trial'), 'new public accounts must receive the configured default trial');
+assert.ok(signup.indexOf('subscription_assign_default_trial($userId)') < signup.indexOf('$pdo->commit();'), 'signup must assign the Free Trial before committing the new account');
+assert.ok(signup.includes("if ($trialSubscriptionId < 1)"), 'signup must fail closed if the configured trial cannot be assigned');
 assert.ok(!signup.includes('How will you use VP3?'), 'signup must not restore the old public role picker');
 assert.ok(!signup.includes('manager') && !signup.includes('producer'), 'signup must not create Team roles');
 
