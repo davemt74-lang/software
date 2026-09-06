@@ -76,6 +76,12 @@ try {
         chat_settings_json_v237(['ok'=>true,'chat'=>$settings]);
     }
 
+    if ($action === 'save_agent_voice') {
+        $enabled = !empty($input['agent_voice_enabled']);
+        $settings = chat_settings_save_agent_voice_v237($pdo, $user, $enabled);
+        chat_settings_json_v237(['ok'=>true,'chat'=>$settings]);
+    }
+
     if ($action === 'save_profile_agent') {
         if (!has_permission('account.access', $user)) {
             chat_settings_json_v237(['ok'=>false,'error'=>'Profile Agent settings are not available to this account.'], 403);
