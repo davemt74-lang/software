@@ -4,6 +4,7 @@ import fs from 'node:fs';
 const read = path => fs.readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
 const loader = read('includes/subscriptions.php');
 const schema = read('includes/subscription-self-service-schema.php');
+const manualSql = read('sql/subscription-self-service.sql');
 const runtime = read('includes/subscription-self-service.php');
 const lifecycle = read('includes/subscription-lifecycle.php');
 const page = read('subscription.php');
@@ -11,8 +12,10 @@ const upgrade = read('upgrade.php');
 
 assert.ok(loader.includes("subscription-self-service-schema.php") && loader.includes("subscription-self-service.php"), 'canonical subscription loader must include self-service modules');
 assert.ok(schema.includes('CREATE TABLE IF NOT EXISTS subscription_plan_requests'), 'self-service plan intents need durable storage');
+assert.ok(manualSql.includes('CREATE TABLE IF NOT EXISTS subscription_plan_requests'), 'manual deployment SQL must create self-service plan storage');
 for (const field of ['subscription_id','from_package_id','target_package_id','billing_interval','status','amount_cents','effective_at','resolved_at']) {
   assert.ok(schema.includes(field), `plan request schema must preserve ${field}`);
+  assert.ok(manualSql.includes(field), `manual deployment SQL must preserve ${field}`);
 }
 assert.ok(upgrade.includes('subscription_self_service_schema_ready()'), 'database upgrade readiness must include self-service plan storage');
 assert.ok(upgrade.includes('subscription_self_service_ensure_schema();'), 'database upgrade must create self-service plan storage explicitly');
