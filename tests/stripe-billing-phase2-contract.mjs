@@ -9,6 +9,7 @@ const runtime = read('includes/billing-runtime.php');
 const webhook = read('billing-webhook.php');
 const page = read('subscription.php');
 const admin = read('admin/billing.php');
+const adminHeader = read('admin/_header.php');
 const config = read('config-example.php');
 const upgrade = read('upgrade.php');
 const sql = read('sql/billing-phase2.sql');
@@ -88,5 +89,8 @@ assert.ok(admin.includes('Webhook Events') && admin.includes('Billing Subscripti
 assert.ok(admin.includes("billing_stripe_secret_key()!==''?'Configured':'Missing'"), 'Admin may expose only whether the Stripe secret is configured');
 assert.ok(admin.includes("billing_stripe_webhook_secret()!==''?'Configured':'Missing'"), 'Admin may expose only whether the webhook secret is configured');
 assert.ok(!admin.includes('e(billing_stripe_secret_key())') && !admin.includes('e(billing_stripe_webhook_secret())'), 'Admin UI must never render Stripe secret values');
+assert.ok(adminHeader.includes("url('/admin/packages.php')") && adminHeader.includes('<span>Packages</span>'), 'Admin sidebar must expose Packages');
+assert.ok(adminHeader.includes("url('/admin/billing.php')") && adminHeader.includes('<span>Billing</span>'), 'Admin sidebar must expose Billing');
+assert.ok(adminHeader.includes("has_permission('users.manage')"), 'Monetization navigation must remain behind users.manage authority');
 
 console.log('STRIPE_BILLING_PHASE2_CONTRACT=PASS');
