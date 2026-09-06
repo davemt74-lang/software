@@ -4,9 +4,9 @@ declare(strict_types=1);
 /**
  * Artist workspace delegation.
  *
- * Subscription packages are the account/commercial type. Manager and Producer
- * are contextual roles on an Artist workspace membership, never a reason to
- * replace a person's account or subscription.
+ * Subscription packages control commercial capacity. Artist is an internal
+ * workspace-owner identity. Manager and Producer are contextual roles on an
+ * Artist workspace membership and never replace a person's base account.
  */
 
 function artist_workspace_v104_artist_permissions(): array
@@ -30,17 +30,14 @@ function artist_workspace_v104_team_limit(?array $artist = null): int
         $limit = subscription_entitlement_limit($artist,'team_seats',null);
         if ($limit !== null) return max(0,$limit);
     }
-    return 2; // legacy compatibility before package migration is installed.
+    return 2;
 }
 
 function artist_workspace_v104_is_artist(?array $user = null): bool
 {
     $user ??= current_user();
     if (!$user) return false;
-    if (user_has_role('admin',$user)) return true;
-    if (user_has_role('artist',$user)) return true; // Legacy Access compatibility.
-    return function_exists('subscription_package_grants_permission')
-        && subscription_package_grants_permission($user,'team.manage');
+    return user_has_role('admin',$user) || user_has_role('artist',$user);
 }
 
 function artist_workspace_v104_valid_team_role(string $role): bool
@@ -52,6 +49,34 @@ function artist_workspace_v104_valid_team_role(string $role): bool
 function artist_workspace_v104_sync_account_types(PDO $pdo,int $userId,array $roles,string $primaryRole): void
 {
     sync_user_account_types($pdo,$userId,$roles,$primaryRole);
+}
+
+/**
+ * Normalize old v104 team accounts after the membership table becomes authoritative.
+ * Only users already linked to an Artist are migrated. Their login, package,
+ * profile and user id remain intact; only the obsolete global Manager/Producer
+ * authority is removed.
+ */
+function artist_workspace_v104_migrate_contextual_roles(PDO $pdo): void
+{
+    if(!table_exists('artist_team_members')||!table_exists('user_account_types'))return;
+    try{
+        $linked=$pdo->query("SELECT DISTINCT u.id,u.role
+            FROM users u
+            INNER JOIN artist_team_members atm ON atm.member_user_id=u.id
+            WHERE u.role IN ('manager','producer')")->fetchAll()?:[];
+        $delete=$pdo->prepare("DELETE FROM user_account_types WHERE user_id=? AND role IN ('manager','producer')");
+        $fan=$pdo->prepare("INSERT INTO user_account_types (user_id,role,assigned_explicitly_at) VALUES (?,'fan',NOW()) ON DUPLICATE KEY UPDATE assigned_explicitly_at=COALESCE(assigned_explicitly_at,NOW())");
+        $primary=$pdo->prepare("UPDATE users SET role='fan' WHERE id=? AND role IN ('manager','producer')");
+        foreach($linked as $row){
+            $uid=(int)($row['id']??0);if($uid<1)continue;
+            $delete->execute([$uid]);
+            $fan->execute([$uid]);
+            $primary->execute([$uid]);
+        }
+    }catch(Throwable $e){
+        error_log('VP3 contextual team-role migration failed: '.$e->getMessage());
+    }
 }
 
 function artist_workspace_v104_ensure_schema(): void
@@ -72,10 +97,9 @@ function artist_workspace_v104_ensure_schema(): void
         CONSTRAINT fk_artist_team_member FOREIGN KEY (member_user_id) REFERENCES users(id) ON DELETE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 
-    // v104 originally allowed one Artist per member. Delegation is now truly
-    // many-to-many, so a Manager/Producer may work with multiple Artists.
     try{$pdo->exec('ALTER TABLE artist_team_members DROP INDEX uq_artist_team_member');}catch(Throwable $e){}
     try{$pdo->exec('ALTER TABLE artist_team_members ADD INDEX idx_artist_team_member (member_user_id,artist_user_id,team_role)');}catch(Throwable $e){}
+    artist_workspace_v104_migrate_contextual_roles($pdo);
 }
 
 function artist_workspace_v104_seed_artist_permissions(): void
@@ -135,14 +159,15 @@ function artist_workspace_v104_can_access(int $artistUserId,?array $user=null): 
 {
     $user??=current_user();if(!$user||$artistUserId<1)return false;
     if(user_has_role('admin',$user))return true;
-    if((int)($user['id']??0)===$artistUserId)return true;
+    if((int)($user['id']??0)===$artistUserId&&user_has_role('artist',$user))return true;
     return artist_workspace_v104_member_role($artistUserId,$user)!=='';
 }
 
 function artist_workspace_v104_can_manage(int $artistUserId,string $capability,?array $user=null): bool
 {
     $user??=current_user();if(!$user)return false;
-    if(user_has_role('admin',$user)||(int)($user['id']??0)===$artistUserId)return true;
+    if(user_has_role('admin',$user))return true;
+    if((int)($user['id']??0)===$artistUserId&&user_has_role('artist',$user))return true;
     $role=artist_workspace_v104_member_role($artistUserId,$user);
     if($role==='manager')return in_array($capability,['tracks','albums','shows','photos','merch','posts','profile','knowledge','listening'],true);
     if($role==='producer')return in_array($capability,['production','track_notes'],true);
@@ -155,6 +180,7 @@ function artist_workspace_v104_attach_member(PDO $pdo,int $artistUserId,int $mem
     if($artistUserId<1||$memberUserId<1||$artistUserId===$memberUserId)throw new RuntimeException('Select another user for this team seat.');
     $stmt=$pdo->prepare('INSERT INTO artist_team_members (artist_user_id,member_user_id,team_role) VALUES (?,?,?) ON DUPLICATE KEY UPDATE team_role=VALUES(team_role),updated_at=NOW()');
     $stmt->execute([$artistUserId,$memberUserId,$teamRole]);
+    artist_workspace_v104_migrate_contextual_roles($pdo);
 }
 
 function artist_workspace_v104_detach_member(PDO $pdo,int $artistUserId,int $memberUserId): void
