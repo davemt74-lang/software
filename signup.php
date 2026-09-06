@@ -49,8 +49,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $type = $pdo->prepare('INSERT IGNORE INTO user_account_types (user_id,role) VALUES (?,?)');
                         $type->execute([$userId, 'fan']);
                     }
+                    $trialSubscriptionId = subscription_assign_default_trial($userId);
+                    if ($trialSubscriptionId < 1) throw new RuntimeException('The Free Trial package is unavailable. Please try again later.');
                     $pdo->commit();
-                    subscription_assign_default_trial($userId);
                     session_regenerate_id(true);
                     $_SESSION['user_id'] = $userId;
                     $_SESSION['subscription_onboarding'] = 1;
