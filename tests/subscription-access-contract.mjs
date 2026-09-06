@@ -12,6 +12,7 @@ const signup = read('signup.php');
 const teamDomain = read('includes/artist-workspaces-v104.php');
 const teamPage = read('admin/team.php');
 const nav = read('includes/member-navigation.php');
+const bootstrap = read('includes/bootstrap.php');
 
 for (const table of [
   'subscription_packages',
@@ -54,15 +55,22 @@ assert.ok(ai.indexOf('subscription_ai_preflight') < ai.indexOf("ai_openai_respon
 
 assert.ok(gates.includes('function subscription_effective_permission'), 'commercial permission ceilings need one canonical effective-permission helper');
 assert.ok(gates.includes("!has_permission($permission,$user)"), 'a package must never grant a missing security permission');
-assert.ok(gates.includes('subscription_request_guard_legacy_team_role'), 'legacy broad Team roles must be fail-closed');
-assert.ok(gates.includes('Legacy Manager authority has been retired'), 'orphaned Manager accounts must not enter global Admin');
+assert.ok(gates.includes('subscription_request_guard_legacy_team_role'), 'legacy/contextual Team compatibility roles must fail closed on global Admin');
+assert.ok(gates.includes("'/admin/team-workspaces.php'"), 'Manager compatibility role may enter only the relationship-scoped Team selector');
+assert.ok(gates.includes("'/admin/team-workspace.php'"), 'Manager compatibility role may enter only the relationship-scoped Manager workspace');
+assert.ok(gates.includes('Legacy Manager authority has been retired'), 'global Manager authority must remain retired');
 
 assert.ok(teamDomain.includes('DROP INDEX uq_artist_team_member'), 'Team membership must allow a person to collaborate with more than one Artist');
-assert.ok(teamDomain.includes('artist_workspace_v104_migrate_contextual_roles'), 'legacy Manager/Producer identities must migrate to contextual membership');
-assert.match(teamDomain, /DELETE FROM user_account_types WHERE user_id=\? AND role IN \('manager','producer'\)/, 'contextual migration must remove obsolete global Team roles');
+assert.ok(teamDomain.includes('artist_workspace_v104_migrate_contextual_roles'), 'legacy Team identities must migrate to relationship-derived roles');
+assert.ok(teamDomain.includes('artist_workspace_v104_context_role_permissions'), 'Team compatibility roles need an explicit minimal permission catalog');
+assert.ok(teamDomain.includes("'manager'=>['account.access','chat.access','artist_listening.access','knowledge.access']"), 'Manager compatibility role must not regain global CMS permissions');
+assert.ok(teamDomain.includes("'producer'=>['account.access','chat.access','artist_listening.access','producer.access']"), 'Producer compatibility role must remain narrow and production-specific');
+assert.match(teamDomain, /DELETE FROM user_account_types WHERE user_id=\? AND role IN \('manager','producer'\)/, 'contextual migration must rebuild old Team roles from relationships');
 assert.ok(teamDomain.includes("UPDATE users SET role='fan'"), 'linked legacy Team accounts must return to a normal base identity');
-assert.ok(teamDomain.includes("$role==='manager'"), 'Manager capability must live on the Team relationship');
-assert.ok(teamDomain.includes("$role==='producer'"), 'Producer capability must live on the Team relationship');
+assert.ok(teamDomain.includes('SELECT DISTINCT member_user_id,team_role'), 'derived Team markers must be rebuilt from artist_team_members');
+assert.ok(teamDomain.includes('artist_workspace_v104_revoke_producer_assignments'), 'Team changes must revoke stale direct production assignments');
+assert.ok(teamDomain.includes('UPDATE tracks SET producer_user_id=NULL WHERE owner_user_id=? AND producer_user_id=?'), 'producer revocation must be Artist + member scoped');
+assert.ok(bootstrap.includes('artist_workspace_v104_boot_contextual_roles();') && bootstrap.indexOf('artist_workspace_v104_boot_contextual_roles();') < bootstrap.indexOf('subscription_request_gate();'), 'Team migration must run before request authorization');
 
 assert.ok(teamPage.includes("user_has_role('artist',$user)"), 'only an actual Artist identity may own/manage an Artist Team');
 assert.ok(teamPage.includes('artist_workspace_v104_detach_member'), 'removing a collaborator must detach the relationship');
