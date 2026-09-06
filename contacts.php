@@ -81,18 +81,6 @@ function contacts_stage_label(string $stage): string
 
     <section class="contacts-canvas">
       <div class="contacts-inner">
-        <section class="contacts-hero">
-          <div>
-            <span class="contacts-eyebrow">Personal relationship CRM</span>
-            <h1>My Contacts</h1>
-            <p>A living list of people and guest browsers interacting with your public profile. Repeat visits and Profile Agent conversations stay attached to the same owner-scoped contact whenever the same browser returns.</p>
-          </div>
-          <div class="contacts-hero-actions">
-            <a class="contacts-button" href="<?= e(url('/profile-agent.php?tab=visitors')) ?>">Visitor activity</a>
-            <a class="contacts-button primary" href="<?= e(url('/chat.php')) ?>">Open Agent Chat</a>
-          </div>
-        </section>
-
         <section class="contacts-metrics" aria-label="Contact metrics">
           <article class="contacts-metric"><span>Total contacts</span><strong><?= $totalContacts ?></strong><small>Guest browsers + known members</small></article>
           <article class="contacts-metric"><span>Active now</span><strong><?= $activeContacts ?></strong><small>Seen in the last 5 minutes</small></article>
