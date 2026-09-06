@@ -17,7 +17,8 @@ assert.match(index, /vp3-public-links[\s\S]*Transcriptions[\s\S]*Teams[\s\S]*Pri
 const homePrimaryNav = index.match(/<nav class="vp3-public-links"[\s\S]*?<\/nav>/)?.[0] || '';
 assert.ok(homePrimaryNav, 'homepage must expose a primary navigation block');
 assert.doesNotMatch(homePrimaryNav, />Features</, 'Features must not appear in the homepage primary navigation');
-assert.match(index, /class="vp3-public-primary"[^>]*book-demo[^>]*>BOOK DEMO<\/a>/, 'homepage dark primary CTA must be BOOK DEMO');
+assert.match(index, /\$vp3DemoUrl\s*=\s*url\('\/book-demo\.php'\)/, 'homepage must derive the demo CTA from the canonical demo URL');
+assert.match(index, /class="vp3-public-primary"[^>]*href="<\?= e\(\$vp3DemoUrl\) \?>"[^>]*>BOOK DEMO<\/a>/, 'homepage dark primary CTA must be BOOK DEMO');
 assert.match(refreshCss, /\.vp3-home-header \.vp3-public-primary\{[^}]*color:#fff/, 'BOOK DEMO text must remain white');
 
 const sharedPrimaryNav = publicShell.match(/<nav class="vp3-public-links"[\s\S]*?<\/nav>/)?.[0] || '';
