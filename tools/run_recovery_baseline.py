@@ -56,6 +56,7 @@ NODE_TESTS = [
     'tests/transcription-agent-knowledge-integration.mjs',
     'tests/profile-agent-chat-order-voice-contract.mjs',
     'tests/agent-chat-operational-activity-contract.mjs',
+    'tests/vp3-index-contract.mjs',
 ]
 
 # These tests contain useful source assertions but also directly read the lost
