@@ -5,7 +5,7 @@ require_once __DIR__ . '/includes/vp3-public.php';
 vp3_public_header('Privacy Policy — VP3', 'How VP3 handles account, assistant, knowledge, workflow, and service information.');
 ?>
 <section class="vp3-public-hero"><div class="vp3-kicker">VP3 legal</div><h1>Privacy Policy</h1><p>How VP3 handles account, assistant, knowledge, workflow, and service information.</p></section>
-<main class="vp3-legal-wrap"><span class="vp3-updated">Last updated August 31, 2026</span>
+<main class="vp3-legal-wrap"><span class="vp3-updated">Last updated September 6, 2026</span>
 <h2>1. Information we collect</h2><p>VP3 may collect information you provide directly, including account details, contact and demo-request information, profile details, and content you choose to upload, record, connect, or enter. We may also collect technical information needed to operate and secure the service, such as IP address, browser or device information, timestamps, and service activity.</p>
 <h2>2. How we use information</h2><p>We use information to provide and secure VP3, authenticate accounts, operate your assistant, organize your knowledge and workflow data, respond to support and demo requests, improve reliability, prevent abuse, and communicate about the service.</p>
 <h2>3. Files, recordings, knowledge and workspace content</h2><p>You retain ownership of the recordings, transcripts, notes, files, profile content, documents, knowledge, and other content you submit. VP3 processes that content only as needed to provide the features you request, subject to these terms and any additional agreement that applies to your account.</p>
