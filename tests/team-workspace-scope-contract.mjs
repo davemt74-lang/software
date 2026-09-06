@@ -9,6 +9,8 @@ const users = read('admin/users.php');
 const team = read('admin/team.php');
 const domain = read('includes/artist-workspaces-v104.php');
 const gates = read('includes/subscription-request-gates.php');
+const teamChatApi = read('api/team-chat-v109.php');
+const teamChatWidget = read('includes/team-chat-widget-v81.php');
 
 assert.ok(selector.includes('artist_workspace_v104_memberships_for_user'), 'Team selector must derive workspaces from relationships');
 assert.ok(selector.includes("$role==='manager'"), 'Manager memberships need a scoped Manager destination');
@@ -55,5 +57,10 @@ assert.ok(domain.includes('artist_workspace_v104_revoke_producer_assignments'), 
 assert.ok(domain.includes('UPDATE tracks SET producer_user_id=NULL WHERE owner_user_id=? AND producer_user_id=?'), 'producer revocation must be scoped to the owning Artist and member');
 assert.ok(gates.includes("$managerSafe=['/admin/team-workspaces.php','/admin/team-workspace.php']"), 'Manager compatibility marker must only pass relationship-scoped Admin routes');
 assert.ok(gates.includes("$producerSafe=['/admin/producer-tracks.php','/admin/stems.php','/admin/stems-legacy-v108.php']"), 'Producer compatibility marker must only pass direct production Admin routes');
+
+assert.ok(teamChatApi.includes('team_chat_v109_contextual_member'), 'Team Chat API must recognize contextual Artist Team membership');
+assert.ok(teamChatApi.includes('FROM artist_team_members WHERE member_user_id=?'), 'Team Chat API eligibility must come from the Team relationship table');
+assert.ok(teamChatApi.includes('WHERE atm.member_user_id=u.id'), 'Team Chat directory must include relationship-scoped Team members after base-role migration');
+assert.ok(teamChatWidget.includes('artist_workspace_v104_memberships_for_user'), 'Team Chat widget must remain visible to contextual Managers and Producers');
 
 console.log('TEAM_WORKSPACE_SCOPE_CONTRACT=PASS');
