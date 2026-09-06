@@ -40,9 +40,10 @@ function subscription_request_json_error(string $code,string $message,array $ext
 }
 
 /**
- * Old Manager/Producer account types used broad global permissions. New Team
- * memberships are relationship-scoped and are migrated away from those roles.
- * Any orphaned legacy role therefore fails closed on global Admin surfaces.
+ * Manager/Producer compatibility roles are derived from Artist Team
+ * relationships and deliberately carry only minimal permissions. Admin routes
+ * still fail closed except for the relationship-scoped workspaces that perform
+ * their own Artist/track ownership checks.
  */
 function subscription_request_guard_legacy_team_role(string $path,array $user): void
 {
@@ -51,18 +52,24 @@ function subscription_request_guard_legacy_team_role(string $path,array $user): 
     $legacyProducer=user_has_role('producer',$user);
     if(!$legacyManager&&!$legacyProducer)return;
 
+    $managerSafe=['/admin/team-workspaces.php','/admin/team-workspace.php'];
+    $producerSafe=['/admin/producer-tracks.php','/admin/stems.php','/admin/stems-legacy-v108.php'];
+
+    if($legacyManager){
+        foreach($managerSafe as $allowed)if($path===$allowed)return;
+    }
+    if($legacyProducer){
+        foreach($producerSafe as $allowed)if($path===$allowed)return;
+    }
+
     if($legacyManager&&str_starts_with($path,'/admin/')){
         http_response_code(403);
-        exit('Legacy Manager authority has been retired. Link this account through an Artist Team workspace instead.');
+        exit('Legacy Manager authority has been retired. Use the Artist Team workspace for relationship-scoped management.');
     }
 
     if($legacyProducer&&str_starts_with($path,'/admin/')){
-        $safe=[
-            '/admin/producer-tracks.php','/admin/stems.php','/admin/stems-legacy-v108.php',
-        ];
-        foreach($safe as $allowed)if($path===$allowed)return;
         http_response_code(403);
-        exit('Legacy Producer authority is limited to explicitly shared production tracks.');
+        exit('Producer authority is limited to explicitly assigned production tracks.');
     }
 }
 
