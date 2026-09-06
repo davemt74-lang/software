@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-const VP3_SUBSCRIPTION_INTELLIGENCE_BUILD='subscription-intelligence-20260906-v1';
+const VP3_SUBSCRIPTION_INTELLIGENCE_BUILD='subscription-intelligence-20260906-v2';
 
 function subscription_intelligence_ready(?PDO $pdo=null): bool
 {
@@ -14,6 +14,14 @@ function subscription_intelligence_current_where(string $alias='s'): string
     return $alias.".status IN ('trialing','active','complimentary')"
         .' AND '.$alias.'.starts_at<=NOW()'
         .' AND ('.$alias.'.ends_at IS NULL OR '.$alias.'.ends_at>NOW())';
+}
+
+function subscription_intelligence_paid_where(string $billingAlias='bs',string $localAlias='ls'): string
+{
+    return $billingAlias.".provider='stripe' AND ".$billingAlias.".status='active'"
+        .' AND '.$localAlias.".status='active'"
+        .' AND '.$localAlias.'.starts_at<=NOW()'
+        .' AND ('.$localAlias.'.ends_at IS NULL OR '.$localAlias.'.ends_at>NOW())';
 }
 
 function subscription_intelligence_summary(?PDO $pdo=null): array
@@ -29,14 +37,16 @@ function subscription_intelligence_summary(?PDO $pdo=null): array
       COUNT(DISTINCT s.user_id) current_accounts
       FROM user_subscriptions s WHERE {$currentWhere}")->fetch()?:[];
 
+    $paidWhere=subscription_intelligence_paid_where('bs','ls');
     $paid=$pdo->query("SELECT
       COUNT(DISTINCT bs.user_id) paid_accounts,
       COALESCE(SUM(CASE
         WHEN bp.billing_interval='annual' THEN ROUND(bp.unit_amount_cents/12)
         ELSE bp.unit_amount_cents END),0) mrr_cents
       FROM billing_subscriptions bs
+      INNER JOIN user_subscriptions ls ON ls.id=bs.user_subscription_id AND ls.user_id=bs.user_id
       INNER JOIN package_billing_prices bp ON bp.provider=bs.provider AND bp.provider_price_id=bs.provider_price_id
-      WHERE bs.provider='stripe' AND bs.status='active'")->fetch()?:[];
+      WHERE {$paidWhere}")->fetch()?:[];
     $mrr=max(0,(int)($paid['mrr_cents']??0));
 
     $trialHistory=(int)$pdo->query("SELECT COUNT(DISTINCT s.user_id)
@@ -183,12 +193,14 @@ function subscription_intelligence_credit_sources(int $days=30,?PDO $pdo=null): 
 function subscription_intelligence_run_rate_by_package(?PDO $pdo=null): array
 {
     $pdo??=db();if(!$pdo||!subscription_intelligence_ready($pdo))return [];
+    $paidWhere=subscription_intelligence_paid_where('bs','ls');
     return $pdo->query("SELECT COALESCE(p.name,'Unmapped') package_name,
       COUNT(DISTINCT bs.user_id) paid_accounts,
       COALESCE(SUM(CASE WHEN bp.billing_interval='annual' THEN ROUND(bp.unit_amount_cents/12) ELSE bp.unit_amount_cents END),0) mrr_cents
       FROM billing_subscriptions bs
+      INNER JOIN user_subscriptions ls ON ls.id=bs.user_subscription_id AND ls.user_id=bs.user_id
       LEFT JOIN subscription_packages p ON p.id=bs.package_id
       INNER JOIN package_billing_prices bp ON bp.provider=bs.provider AND bp.provider_price_id=bs.provider_price_id
-      WHERE bs.provider='stripe' AND bs.status='active'
+      WHERE {$paidWhere}
       GROUP BY p.id,p.name ORDER BY mrr_cents DESC,paid_accounts DESC")->fetchAll()?:[];
 }
