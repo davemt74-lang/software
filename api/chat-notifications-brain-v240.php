@@ -85,6 +85,9 @@ function chat_notifications_v240_history(PDO $pdo, int $userId, int $limit = 50)
 
 function chat_notifications_v240_state(array $user, PDO $pdo): array
 {
+    if (function_exists('agent_chat_activity_reconcile')) {
+        agent_chat_activity_reconcile($user);
+    }
     $userId = (int)($user['id'] ?? 0);
     $brainAllowed = personal_capability_has_v242('agent_brain.access', $user);
     $brain = $brainAllowed && agent_brain_schema_ready() ? agent_brain_summary($user) : [
