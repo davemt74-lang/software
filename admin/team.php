@@ -6,12 +6,21 @@ $user=current_user();
 if(!$user){flash('error','Please sign in to continue.');redirect(url('/login.php'));}
 artist_workspace_v104_ensure_schema();
 
-$isInternalAdmin=user_has_role('admin',$user);
-$isLegacyArtist=user_has_role('artist',$user);
-$packageTeamManage=function_exists('subscription_package_grants_permission')&&subscription_package_grants_permission($user,'team.manage');
-$packageAdminAccess=function_exists('subscription_package_grants_permission')&&subscription_package_grants_permission($user,'admin.access');
-if(!$isInternalAdmin&&!$isLegacyArtist&&!($packageTeamManage&&$packageAdminAccess)){
-    http_response_code(403);exit('Team management is not included in your current package.');
+// Team is owned by an Artist identity. A package can limit the feature but can
+// never turn an ordinary member into an Artist or grant management authority.
+if(!user_has_role('artist',$user)){
+    http_response_code(403);exit('Artist workspace ownership is required to manage a team.');
+}
+if(!has_permission('admin.access',$user)||!has_permission('team.manage',$user)){
+    http_response_code(403);exit('Your Artist identity does not have Team management permission.');
+}
+if(!subscription_is_internal_admin($user)&&subscription_schema_ready()){
+    $sub=subscription_current($user);
+    if($sub&&!subscription_has_entitlement($user,'legacy.permissions')){
+        if(!subscription_package_grants_permission($user,'admin.access')||!subscription_package_grants_permission($user,'team.manage')){
+            http_response_code(403);exit('Team management is not included in your current package.');
+        }
+    }
 }
 
 $pdo=db();if(!$pdo){flash('error','Database unavailable.');redirect(url('/account.php'));}
@@ -48,7 +57,6 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
 
         $pdo->beginTransaction();
         try{
-            // Serialize seat allocation so concurrent requests cannot exceed the package limit.
             $lock=$pdo->prepare('SELECT id FROM users WHERE id=? FOR UPDATE');$lock->execute([$artistUserId]);
             if(!(int)$lock->fetchColumn())throw new RuntimeException('Workspace owner is unavailable.');
             $count=artist_workspace_v104_team_count($pdo,$artistUserId);
@@ -71,10 +79,12 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
             $insert=$pdo->prepare("INSERT INTO users (email,password_hash,display_name,role,avatar_path,is_active) VALUES (?,?,?,'fan','',1)");
             $insert->execute([$email,password_hash($password,PASSWORD_DEFAULT),$displayName]);
             $newMemberId=(int)$pdo->lastInsertId();
-            if(table_exists('user_account_types'))$pdo->prepare("INSERT IGNORE INTO user_account_types (user_id,role) VALUES (?,'fan')")->execute([$newMemberId]);
+            if(table_exists('user_account_types')){
+                if(column_exists('user_account_types','assigned_explicitly_at'))$pdo->prepare("INSERT IGNORE INTO user_account_types (user_id,role,assigned_explicitly_at) VALUES (?,'fan',NOW())")->execute([$newMemberId]);
+                else $pdo->prepare("INSERT IGNORE INTO user_account_types (user_id,role) VALUES (?,'fan')")->execute([$newMemberId]);
+            }
             artist_workspace_v104_attach_member($pdo,$artistUserId,$newMemberId,$teamRole);
             $pdo->commit();
-            // New identity receives the same default trial as any other signup.
             if(function_exists('subscription_assign_default_trial'))subscription_assign_default_trial($newMemberId);
             flash('notice','New VP3 account created and linked to your workspace. Manager/Producer access exists only inside this workspace.');
             redirect(url('/admin/team.php'));
