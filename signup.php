@@ -8,9 +8,6 @@ if (is_logged_in()) redirect(login_destination());
 $error = '';
 $displayName = trim((string)($_POST['display_name'] ?? ''));
 $email = strtolower(trim((string)($_POST['email'] ?? '')));
-$roleInterest = trim((string)($_POST['role_interest'] ?? 'artist'));
-$allowedRoleInterests = ['artist','producer','supervisor','manager'];
-if (!in_array($roleInterest, $allowedRoleInterests, true)) $roleInterest = 'artist';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!verify_csrf()) {
@@ -38,25 +35,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $error = 'Account registration is unavailable until the database is configured.';
             } else {
                 try {
+                    if (!subscription_schema_ready($pdo)) subscription_ensure_schema($pdo);
                     $exists = $pdo->prepare('SELECT id FROM users WHERE email=? LIMIT 1');
                     $exists->execute([$email]);
                     if ($exists->fetchColumn()) throw new RuntimeException('An account with that email already exists.');
                     $pdo->beginTransaction();
+                    // users.role remains a compatibility identity column while packages become
+                    // the public account type and commercial permission source.
                     $insert = $pdo->prepare("INSERT INTO users (email,password_hash,display_name,role,is_active,created_at,updated_at) VALUES (?,?,?,?,1,NOW(),NOW())");
                     $insert->execute([$email, password_hash($password, PASSWORD_DEFAULT), $displayName, 'fan']);
                     $userId = (int)$pdo->lastInsertId();
                     if (table_exists('user_account_types')) {
-                        $type = $pdo->prepare('INSERT INTO user_account_types (user_id,role) VALUES (?,?)');
+                        $type = $pdo->prepare('INSERT IGNORE INTO user_account_types (user_id,role) VALUES (?,?)');
                         $type->execute([$userId, 'fan']);
                     }
                     $pdo->commit();
+                    subscription_assign_default_trial($userId);
                     session_regenerate_id(true);
                     $_SESSION['user_id'] = $userId;
-                    // Keep historical role-interest values stable for onboarding and
-                    // downstream integrations while the public labels evolve with VP3.
-                    $_SESSION['signup_role_interest'] = $roleInterest;
+                    $_SESSION['subscription_onboarding'] = 1;
                     reset_current_user_cache();
-                    flash('notice', 'Welcome to VP3. Your account is ready.');
+                    $trial = subscription_current_for_user_id($userId);
+                    $tokens = $trial ? subscription_package_allowance($trial) : 0;
+                    flash('notice', $tokens > 0
+                        ? 'Welcome to VP3. Your Free Trial includes ' . number_format($tokens) . ' AI tokens.'
+                        : 'Welcome to VP3. Your Free Trial is ready.');
                     redirect(login_destination());
                 } catch (Throwable $e) {
                     if ($pdo->inTransaction()) $pdo->rollBack();
@@ -75,33 +78,30 @@ vp3_public_header('Create account — VP3', 'Create your VP3 personal AI assista
     <div class="vp3-auth-visual-content">
       <div class="vp3-kicker">Capture. Understand. Take action.</div>
       <h1>Build an assistant around your life and work.</h1>
-      <p>Start with a private personal workspace for conversations, transcriptions, AI summaries, knowledge, projects, contacts, and collaboration.</p>
+      <p>Create your account and start with a Free Trial. Your assistant will guide setup and recommend the right package as you use VP3.</p>
       <div class="vp3-auth-points">
-        <div class="vp3-auth-point"><b>Your personal URL</b>Choose what visitors can see and let your Profile Agent handle useful conversations.</div>
-        <div class="vp3-auth-point"><b>Your second brain</b>Keep notes, files, summaries, memories, and relationships connected.</div>
-        <div class="vp3-auth-point"><b>Your assistant</b>Use one conversational surface for tools, skills, memory, and proactive work.</div>
+        <div class="vp3-auth-point"><b>Start free</b>No package decision is required before you can explore VP3.</div>
+        <div class="vp3-auth-point"><b>Included AI tokens</b>Your Free Trial includes a limited AI token balance so you can use the assistant immediately.</div>
+        <div class="vp3-auth-point"><b>Guided onboarding</b>Your assistant helps configure the features included in your package and explains upgrades only when relevant.</div>
       </div>
     </div>
   </section>
   <section class="vp3-auth-form-side">
     <div class="vp3-auth-card">
       <div class="vp3-kicker">Create your account</div>
-      <h1>Start with what you need.</h1>
-      <p class="vp3-auth-intro">This selection personalizes onboarding. It does not grant elevated permissions.</p>
+      <h1>Get started.</h1>
+      <p class="vp3-auth-intro">Create one VP3 account. Your Free Trial is assigned automatically.</p>
       <?php if (!db_ready()): ?><div class="vp3-alert">Account registration is unavailable until the database is configured.</div><?php endif; ?>
       <?php if ($error): ?><div class="vp3-alert error" role="alert"><?= e($error) ?></div><?php endif; ?>
       <form class="vp3-auth-form" method="post" action="<?= e(url('/signup.php')) ?>">
         <?= csrf_field() ?>
         <div style="position:absolute;left:-9999px" aria-hidden="true"><label for="website">Website</label><input id="website" name="website" type="text" tabindex="-1" autocomplete="off"></div>
-        <div class="vp3-field"><label>How will you use VP3?</label><div class="vp3-role-grid">
-          <?php foreach (['artist'=>'Personal','producer'=>'Creator','supervisor'=>'Professional','manager'=>'Team'] as $value=>$label): ?><div class="vp3-role-choice"><input id="role-<?= e($value) ?>" type="radio" name="role_interest" value="<?= e($value) ?>" <?= $roleInterest === $value ? 'checked' : '' ?>><label for="role-<?= e($value) ?>"><?= e($label) ?></label></div><?php endforeach; ?>
-        </div></div>
         <div class="vp3-field"><label for="display_name">Full name</label><input id="display_name" name="display_name" maxlength="120" autocomplete="name" required placeholder="Your name" value="<?= e($displayName) ?>"></div>
         <div class="vp3-field"><label for="email">Email address</label><input id="email" name="email" type="email" maxlength="190" autocomplete="email" required placeholder="you@example.com" value="<?= e($email) ?>"></div>
         <div class="vp3-field"><label for="password">Create password</label><div class="vp3-password-wrap"><input id="password" name="password" type="password" minlength="12" maxlength="4096" autocomplete="new-password" required placeholder="12+ characters"><button class="vp3-password-toggle" type="button" data-password-toggle="password">Show</button></div><p class="vp3-form-note">Use at least 12 characters.</p></div>
         <div class="vp3-field"><label for="password_confirmation">Confirm password</label><div class="vp3-password-wrap"><input id="password_confirmation" name="password_confirmation" type="password" minlength="12" maxlength="4096" autocomplete="new-password" required placeholder="Repeat your password"><button class="vp3-password-toggle" type="button" data-password-toggle="password_confirmation">Show</button></div></div>
         <label class="vp3-check"><input type="checkbox" name="accept_terms" value="1" required><span>I agree to the <a class="vp3-text-link" href="<?= e(url('/terms.php')) ?>">Terms of Service</a> and <a class="vp3-text-link" href="<?= e(url('/privacy.php')) ?>">Privacy Policy</a>.</span></label>
-        <button class="vp3-btn primary full" type="submit">Create my VP3 account →</button>
+        <button class="vp3-btn primary full" type="submit">Create account →</button>
       </form>
       <div class="vp3-auth-foot">Already have an account? <a class="vp3-text-link" href="<?= e(url('/login.php')) ?>">Sign in</a></div>
     </div>
