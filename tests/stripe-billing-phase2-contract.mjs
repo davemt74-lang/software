@@ -43,7 +43,7 @@ assert.ok(stripe.includes("'subscription_update_confirm'"), 'existing paid plan 
 assert.ok(stripe.includes("'payment_method_update'=>['enabled'=>true]"), 'billing portal must support payment-method management');
 assert.ok(stripe.includes("'subscription_cancel'=>['enabled'=>true,'mode'=>'at_period_end'"), 'billing portal cancellation must preserve paid access through period end');
 assert.ok(stripe.includes("checkout/sessions/'.rawurlencode($sessionId).'/expire"), 'stale Checkout sessions must be explicitly expired at Stripe');
-assert.match(stripe, /billing_checkout_sessions[\s\S]*VALUES \(\?,\?\?,?/, 'billing checkout persistence must remain server-side');
+assert.ok(stripe.includes("VALUES (?,?,?,'stripe','checkout',?,?,?,?,'open',?,?,?)"), 'Checkout persistence placeholder count must match its ten bound values');
 
 assert.ok(runtime.includes("in_array($status,['active','trialing'],true)"), 'only active/trialing provider subscriptions can activate entitlements');
 assert.ok(runtime.includes("$pending=$subscription['pending_update']??null"), 'Stripe pending updates must not activate a target package early');
