@@ -190,9 +190,21 @@ function password_reset_request(string $email): void
     $user = $stmt->fetch();
     if (!$user || (array_key_exists('is_active', $user) && (int)$user['is_active'] !== 1)) return;
 
-    $token = bin2hex(random_bytes(32));
-    $hash = hash('sha256', $token);
     try {
+        // A database-backed per-account cooldown complements the anonymous
+        // session throttle. Repeated requests cannot invalidate a reset email
+        // that may already be in flight or flood the same account with links.
+        $cooldown = $pdo->prepare(
+            'SELECT id FROM password_reset_tokens
+             WHERE user_id=? AND used_at IS NULL
+               AND created_at>=DATE_SUB(NOW(),INTERVAL 5 MINUTE)
+             ORDER BY id DESC LIMIT 1'
+        );
+        $cooldown->execute([(int)$user['id']]);
+        if ($cooldown->fetchColumn()) return;
+
+        $token = bin2hex(random_bytes(32));
+        $hash = hash('sha256', $token);
         $pdo->prepare('UPDATE password_reset_tokens SET used_at=NOW() WHERE user_id=? AND used_at IS NULL')->execute([(int)$user['id']]);
         $insert = $pdo->prepare(
             'INSERT INTO password_reset_tokens (user_id,token_hash,expires_at,request_ip) VALUES (?,?,DATE_ADD(NOW(),INTERVAL 60 MINUTE),?)'
