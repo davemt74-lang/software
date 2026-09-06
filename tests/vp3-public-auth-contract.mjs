@@ -52,7 +52,12 @@ assert.match(auth, /hash\('sha256', \$token\)/, 'raw reset tokens must not be st
 assert.match(auth, /INTERVAL 60 MINUTE/, 'reset links must expire');
 assert.match(auth, /INTERVAL 5 MINUTE/, 'password-reset requests must have a database-backed per-account cooldown');
 assert.match(auth, /created_at>=DATE_SUB\(NOW\(\),INTERVAL 5 MINUTE\)/, 'cooldown must be enforced from durable reset state');
-assert.match(auth, /used_at IS NULL/, 'reset links must be single-use');
+assert.match(auth, /function password_reset_absolute_url/, 'password-reset email must build an absolute public URL');
+assert.match(auth, /site_config\('base_url', ''\)/, 'password-reset origin must support explicit trusted configuration');
+assert.match(auth, /\$_SERVER\['SERVER_NAME'\]/, 'fallback reset origin must use the server-configured name');
+assert.doesNotMatch(auth, /HTTP_HOST/, 'password-reset links must not trust the request Host header');
+assert.match(auth, /\$consume->rowCount\(\) !== 1/, 'single-use reset consumption must be atomic');
+assert.match(auth, /WHERE id=\? AND user_id=\? AND token_hash=\? AND used_at IS NULL AND expires_at>NOW\(\)/, 'reset completion must revalidate the token during atomic consumption');
 assert.match(auth, /password_hash\(\$password, PASSWORD_DEFAULT\)/, 'reset completion must hash the replacement password');
 assert.match(forgot, /If an active VP3 account matches that email/, 'forgot-password response must avoid account enumeration');
 assert.match(reset, /noindex,nofollow/, 'token-bearing reset page must not be indexed');
@@ -63,16 +68,23 @@ assert.match(upgrade, /vp3_public_footer\(\)/, 'database upgrade must close with
 assert.doesNotMatch(upgrade, /includes\/header\.php|includes\/footer\.php/, 'database upgrade must not render the legacy site shell');
 assert.match(setup, /password_reset_ensure_schema\(\)/, 'fresh installs must receive password recovery schema');
 assert.match(configExample, /'name' => 'VP3'/, 'fresh configuration must present the public product as VP3');
+assert.match(configExample, /'email' => ''/, 'fresh VP3 configuration must not ship a legacy personal contact address');
+assert.match(configExample, /'base_url' => ''/, 'fresh configuration must expose a trusted public origin for recovery links');
 assert.match(configExample, /'send_password_reset_email' => false/, 'password-reset email configuration must be explicit');
+assert.match(configExample, /dbname=vp3/, 'fresh database example must use VP3 naming');
+assert.match(configExample, /'user' => 'vp3_user'/, 'fresh database user example must use VP3 naming');
 
 assert.match(pricing, /data-monthly="29" data-annual="23"/, 'Professional pricing must remain $29 monthly / $23 annual');
 assert.match(pricing, /data-monthly="59" data-annual="47"/, 'Team pricing must remain $59 monthly / $47 annual');
 assert.match(pricing, /Personal URL/, 'pricing must reflect the new VP3 product');
 assert.match(about, /Capture[\s\S]*Understand[\s\S]*Take action/i, 'About must explain the VP3 capture-understand-action model');
 assert.match(contact, /Account \/ Support/, 'Contact must support VP3 account inquiries');
+assert.doesNotMatch(contact, /stonefellow74@gmail\.com/, 'VP3 public Contact must not retain the legacy contact fallback');
 assert.doesNotMatch(contact, /mailto:<\?=/, 'VP3 public Contact must not expose a legacy-branded configured email address');
+assert.match(privacy, /Last updated September 6, 2026/, 'privacy revision date must reflect the VP3 rewrite');
 assert.match(privacy, /We do not sell your personal information/, 'privacy no-sale commitment must be preserved');
 assert.match(privacy, /VP3 contact page/, 'privacy requests must route through the VP3 public contact surface');
+assert.match(terms, /Last updated September 6, 2026/, 'terms revision date must reflect the VP3 rewrite');
 assert.match(terms, /You retain ownership of content you submit to VP3/, 'terms must preserve user content ownership');
 assert.match(terms, /VP3 contact page/, 'terms questions must route through the VP3 public contact surface');
 assert.match(demo, /Transcriptions & AI summaries/, 'demo request must reflect VP3 capabilities');
