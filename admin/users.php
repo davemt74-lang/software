@@ -20,6 +20,11 @@ function admin_user_internal_admin(PDO $pdo,int $userId,string $fallbackRole='fa
     return in_array('admin',user_account_types_for_user_id($userId,$fallbackRole),true);
 }
 
+function admin_user_workspace_artist(PDO $pdo,int $userId,string $fallbackRole='fan'): bool
+{
+    return in_array('artist',user_account_types_for_user_id($userId,$fallbackRole),true);
+}
+
 function admin_user_require_reason(string $value): string
 {
     $value=trim($value);
@@ -71,6 +76,7 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
         $password=(string)($_POST['password']??'');
         $isActive=isset($_POST['is_active'])?1:0;
         $internalAdmin=isset($_POST['internal_admin']);
+        $workspaceArtist=isset($_POST['workspace_artist']);
         $avatarPath=trim((string)($_POST['existing_avatar_path']??''));
         if($displayName==='')throw new RuntimeException('Display name is required.');
         if(!filter_var($email,FILTER_VALIDATE_EMAIL))throw new RuntimeException('Enter a valid email address.');
@@ -82,6 +88,11 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
             $stmt=$pdo->prepare('SELECT id,role,is_active FROM users WHERE id=? LIMIT 1');$stmt->execute([$id]);$existing=$stmt->fetch();if(!$existing)throw new RuntimeException('User account not found.');
             $existingRoles=user_account_types_for_user_id($id,(string)$existing['role']);
             if(in_array('admin',$existingRoles,true)&&(int)$existing['is_active']===1&&!$internalAdmin&&active_admin_user_count($pdo,$id)<1)throw new RuntimeException('Create another active Admin before removing Admin access from the last Admin.');
+            if(in_array('artist',$existingRoles,true)&&!$workspaceArtist){
+                $teamCount=table_exists('artist_team_members')?(int)$pdo->query('SELECT COUNT(*) FROM artist_team_members WHERE artist_user_id='.(int)$id)->fetchColumn():0;
+                $workspaceCount=table_exists('artist_workspaces_v181')?(int)$pdo->query('SELECT COUNT(*) FROM artist_workspaces_v181 WHERE artist_user_id='.(int)$id)->fetchColumn():0;
+                if($teamCount>0||$workspaceCount>0)throw new RuntimeException('This user owns an Artist workspace. Move/archive the workspace and Team relationships before removing Artist identity.');
+            }
         }
         if(!empty($_POST['remove_avatar'])){delete_local_upload($avatarPath);$avatarPath='';}
         global $config;
@@ -90,11 +101,14 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
 
         if($id>0){
             if($password!==''&&strlen($password)<12)throw new RuntimeException('New passwords must contain at least 12 characters.');
-            $roles=array_values(array_unique(array_filter($existingRoles,static fn(string $role): bool=>$role!=='admin')));
+            // Packages never create identity. Manager/Producer are contextual Team
+            // relationships and are deliberately stripped from global account roles.
+            $roles=array_values(array_unique(array_filter($existingRoles,static fn(string $role): bool=>!in_array($role,['admin','artist','manager','producer'],true))));
+            if($workspaceArtist)$roles[]='artist';
             if($internalAdmin)$roles[]='admin';
             if(!$roles)$roles=['fan'];
-            $primary=(string)($existing['role']??'fan');
-            if($internalAdmin)$primary='admin';elseif($primary==='admin')$primary=(string)($roles[0]??'fan');
+            $roles=array_values(array_unique($roles));
+            $primary=$internalAdmin?'admin':($workspaceArtist?'artist':((string)($roles[0]??'fan')));
             $pdo->beginTransaction();
             try{
                 if($password!==''){$stmt=$pdo->prepare('UPDATE users SET display_name=?,email=?,avatar_path=?,is_active=?,password_hash=? WHERE id=?');$stmt->execute([$displayName,$email,$avatarPath,$isActive,password_hash($password,PASSWORD_DEFAULT),$id]);}
@@ -102,19 +116,20 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
                 sync_user_account_types($pdo,$id,$roles,$primary);$pdo->commit();
             }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();throw $e;}
             if($id===(int)$current['id'])reset_current_user_cache();
-            flash('notice','User updated.');redirect(url('/admin/users.php?edit='.$id.'#user-form'));
+            flash('notice','User identity updated. Package and Team memberships were not changed.');redirect(url('/admin/users.php?edit='.$id.'#user-form'));
         }
 
         if(strlen($password)<12)throw new RuntimeException('New accounts require a password with at least 12 characters.');
         $packageId=(int)($_POST['new_package_id']??0);if($packageId<1)throw new RuntimeException('Select a package for the new user.');
-        $primary=$internalAdmin?'admin':'fan';$roles=[$primary];
+        $primary=$internalAdmin?'admin':($workspaceArtist?'artist':'fan');
+        $roles=$workspaceArtist?['fan','artist']:['fan'];if($internalAdmin)$roles[]='admin';$roles=array_values(array_unique($roles));
         $pdo->beginTransaction();
         try{
             $stmt=$pdo->prepare('INSERT INTO users (email,password_hash,display_name,role,avatar_path,is_active) VALUES (?,?,?,?,?,?)');$stmt->execute([$email,password_hash($password,PASSWORD_DEFAULT),$displayName,$primary,$avatarPath,$isActive]);
             $newId=(int)$pdo->lastInsertId();sync_user_account_types($pdo,$newId,$roles,$primary);$pdo->commit();
         }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();throw $e;}
         subscription_assign_package($newId,$packageId,'admin_assigned',(int)$current['id'],null,null,false,'Account created by Admin');
-        flash('notice','User created and package assigned.');redirect(url('/admin/users.php?edit='.$newId));
+        flash('notice','User created with separate identity and package settings.');redirect(url('/admin/users.php?edit='.$newId));
     }catch(Throwable $e){flash('error',$e->getMessage());redirect(url('/admin/users.php'.($id>0?'?edit='.$id:'')));}
 }
 
@@ -125,6 +140,7 @@ $users=$pdo->query('SELECT id,email,display_name,role,avatar_path,is_active,last
 foreach($users as &$row){
     $sub=subscription_current_for_user_id((int)$row['id'],$pdo);$row['subscription']=$sub;
     $row['internal_admin']=admin_user_internal_admin($pdo,(int)$row['id'],(string)$row['role']);
+    $row['workspace_artist']=admin_user_workspace_artist($pdo,(int)$row['id'],(string)$row['role']);
     $row['ai_balance']=subscription_ai_balance($row,$pdo);
 }unset($row);
 
@@ -138,15 +154,16 @@ if($editing){$stmt=$pdo->prepare('SELECT a.*,op.name old_package_name,np.name ne
 $adminTitle='Users';$adminActive='users';require __DIR__.'/_header.php';
 ?>
 <div class="panel">
-  <div class="content-library-heading"><div><span class="status">Account Management</span><h2>Users</h2><p class="muted">Packages are the commercial account type. Team roles are managed inside the owning workspace; Admin is internal authority.</p></div><div class="actions"><a class="btn" href="<?= e(url('/admin/packages.php')) ?>">Packages</a><a class="btn primary" href="<?= e(url('/admin/users.php?new=1#user-form')) ?>">+ Add User</a></div></div>
-  <div class="table-wrap"><table><thead><tr><th>User</th><th>Package</th><th>AI Remaining</th><th>Status</th><th>Last Login</th><th>Actions</th></tr></thead><tbody>
+  <div class="content-library-heading"><div><span class="status">Account Management</span><h2>Users</h2><p class="muted">Identity, package and Team relationships are separate. Artist/Admin are internal authority; Manager/Producer are assigned only inside Artist Team workspaces.</p></div><div class="actions"><a class="btn" href="<?= e(url('/admin/packages.php')) ?>">Packages</a><a class="btn primary" href="<?= e(url('/admin/users.php?new=1#user-form')) ?>">+ Add User</a></div></div>
+  <div class="table-wrap"><table><thead><tr><th>User</th><th>Identity</th><th>Package</th><th>AI Remaining</th><th>Status</th><th>Last Login</th><th>Actions</th></tr></thead><tbody>
   <?php foreach($users as $row): $sub=$row['subscription'];$balance=$row['ai_balance']; ?>
-    <tr><td><div class="admin-user-cell"><span class="admin-user-avatar admin-user-avatar-sm"><?php if(!empty($row['avatar_path'])):?><img src="<?= e(user_avatar_url($row)) ?>" alt=""><?php else:?><span><?= e(user_initials($row)) ?></span><?php endif;?></span><div><strong><?= e((string)$row['display_name']) ?></strong><br><span class="muted"><?= e((string)$row['email']) ?><?= $row['internal_admin']?' · Internal Admin':'' ?></span></div></div></td>
+    <tr><td><div class="admin-user-cell"><span class="admin-user-avatar admin-user-avatar-sm"><?php if(!empty($row['avatar_path'])):?><img src="<?= e(user_avatar_url($row)) ?>" alt=""><?php else:?><span><?= e(user_initials($row)) ?></span><?php endif;?></span><div><strong><?= e((string)$row['display_name']) ?></strong><br><span class="muted"><?= e((string)$row['email']) ?></span></div></div></td>
+    <td><?= $row['internal_admin']?'<span class="status">Admin</span>':'' ?> <?= $row['workspace_artist']?'<span class="status">Artist</span>':'' ?><?= !$row['internal_admin']&&!$row['workspace_artist']?'<span class="muted">Member</span>':'' ?></td>
     <td><strong><?= e((string)($sub['package_name']??'No package')) ?></strong><br><span class="muted"><?= e((string)($sub['status']??'unassigned')) ?></span></td>
     <td><?= !empty($balance['unlimited'])?'Unlimited':number_format((int)($balance['remaining']??0)) ?></td><td><span class="status"><?= (int)$row['is_active']===1?'Active':'Disabled' ?></span></td><td><?= $row['last_login_at']?e(date('M j, Y g:i A',strtotime((string)$row['last_login_at']))):'Never' ?></td>
     <td class="actions"><a class="btn" href="<?= e(url('/admin/users.php?edit='.(int)$row['id'].'#user-form')) ?>">Manage</a><?php if((int)$row['id']!==(int)$current['id']):?><form class="inline-form" method="post" onsubmit="return confirm('Delete this user account?')"><?= csrf_field() ?><input type="hidden" name="action" value="delete"><input type="hidden" name="id" value="<?= (int)$row['id'] ?>"><button class="btn danger" type="submit">Delete</button></form><?php endif;?></td></tr>
   <?php endforeach;?>
-  <?php if(!$users):?><tr><td colspan="6" class="muted">No user accounts have been added yet.</td></tr><?php endif;?>
+  <?php if(!$users):?><tr><td colspan="7" class="muted">No user accounts have been added yet.</td></tr><?php endif;?>
   </tbody></table></div>
 </div>
 
@@ -155,16 +172,17 @@ $adminTitle='Users';$adminActive='users';require __DIR__.'/_header.php';
 <form class="grid-form" method="post" enctype="multipart/form-data"><?= csrf_field() ?><input type="hidden" name="action" value="save"><input type="hidden" name="id" value="<?= (int)($editing['id']??0) ?>"><input type="hidden" name="existing_avatar_path" value="<?= e((string)($editing['avatar_path']??'')) ?>">
 <div class="field"><label>Display Name</label><input name="display_name" maxlength="120" required value="<?= e((string)($editing['display_name']??'')) ?>"></div>
 <div class="field"><label>Email</label><input name="email" type="email" maxlength="190" required value="<?= e((string)($editing['email']??'')) ?>"></div>
-<?php if(!$editing):?><div class="field"><label>Package</label><select name="new_package_id" required><option value="">Select package</option><?php foreach($packages as $packageRow):if(!(int)$packageRow['is_active'])continue;?><option value="<?= (int)$packageRow['id'] ?>" <?= (int)$packageRow['is_default']===1?'selected':'' ?>><?= e((string)$packageRow['name']) ?></option><?php endforeach;?></select><small>The package is the user's account type and controls commercial access.</small></div><?php endif;?>
+<?php if(!$editing):?><div class="field"><label>Package</label><select name="new_package_id" required><option value="">Select package</option><?php foreach($packages as $packageRow):if(!(int)$packageRow['is_active'])continue;?><option value="<?= (int)$packageRow['id'] ?>" <?= (int)$packageRow['is_default']===1?'selected':'' ?>><?= e((string)$packageRow['name']) ?></option><?php endforeach;?></select><small>Package controls commercial feature access and capacity. It does not grant identity or workspace authority.</small></div><?php endif;?>
 <div class="field"><label><?= $editing?'New Password (optional)':'Password' ?></label><input name="password" type="password" minlength="12" <?= $editing?'':'required' ?> autocomplete="new-password"><small><?= $editing?'Leave blank to keep the current password.':'Minimum 12 characters.' ?></small></div>
 <div class="field full"><label>User Photo</label><div class="admin-avatar-editor"><span class="admin-user-avatar"><?php if(!empty($editing['avatar_path'])):?><img src="<?= e(user_avatar_url($editing)) ?>" alt=""><?php else:?><span><?= e($editing?user_initials($editing):'+') ?></span><?php endif;?></span><div><input name="avatar_file" type="file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"><small>JPG, PNG or WEBP, up to 5 MB.</small><?php if(!empty($editing['avatar_path'])):?><label class="admin-inline-check" style="margin-top:8px"><input type="checkbox" name="remove_avatar" value="1"> Remove current photo</label><?php endif;?></div></div></div>
+<div class="field full"><label>Internal Identity</label><label class="admin-inline-check"><input name="workspace_artist" type="checkbox" <?= $editing&&admin_user_workspace_artist($pdo,(int)$editing['id'],(string)$editing['role'])?'checked':'' ?>> Artist workspace owner</label><small>Artist is an identity/authorization role. It enables ownership of an Artist workspace but does not select a paid package.</small></div>
+<div class="field full"><label class="admin-inline-check"><input name="internal_admin" type="checkbox" <?= $editing&&admin_user_internal_admin($pdo,(int)$editing['id'],(string)$editing['role'])?'checked':'' ?>> Internal Admin authority</label><small>Admin is internal system authority, not a subscription package. Manager/Producer never appear here; assign them through Artist → Team.</small></div>
 <div class="field full"><label class="admin-inline-check"><input name="is_active" type="checkbox" <?= !isset($editing['is_active'])||(int)$editing['is_active']===1?'checked':'' ?>> Active account</label></div>
-<div class="field full"><label class="admin-inline-check"><input name="internal_admin" type="checkbox" <?= $editing&&admin_user_internal_admin($pdo,(int)$editing['id'],(string)$editing['role'])?'checked':'' ?>> Internal Admin authority</label><small>Admin is internal system authority, not a subscription package. Team Manager/Producer roles are assigned in workspace Team management.</small></div>
 <div class="field full actions"><button class="btn primary" type="submit"><?= $editing?'Save User':'Add User' ?></button><a class="btn" href="<?= e(url('/admin/users.php')) ?>">Cancel</a></div></form></div>
 <?php endif;?>
 
 <?php if($editing): ?>
-<div class="panel" id="subscription-panel"><div class="content-form-heading"><div><span class="status">Subscription</span><h2><?= e((string)($editingSubscription['package_name']??'No Package')) ?></h2><p class="muted">Assign packages, inspect effective AI capacity, and grant token top-ups without changing the package.</p></div><a class="btn" href="<?= e(url('/admin/packages.php')) ?>">Manage Packages</a></div>
+<div class="panel" id="subscription-panel"><div class="content-form-heading"><div><span class="status">Subscription</span><h2><?= e((string)($editingSubscription['package_name']??'No Package')) ?></h2><p class="muted">Assign packages, inspect effective AI capacity, and grant token top-ups without changing identity or Team relationships.</p></div><a class="btn" href="<?= e(url('/admin/packages.php')) ?>">Manage Packages</a></div>
 <div class="stats-grid">
 <div class="stat"><span>Package allowance</span><strong><?= !empty($editingBalance['unlimited'])?'Unlimited':number_format((int)($editingBalance['package_allowance']??0)) ?></strong></div>
 <div class="stat"><span>Top-up balance</span><strong><?= number_format((int)($editingBalance['credits_remaining']??0)) ?></strong></div>
