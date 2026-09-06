@@ -23,6 +23,8 @@ assert.match(contacts, /includes\/workspace-sidebar-v82\.php/, 'Contacts must us
 assert.match(contacts, /includes\/member-header\.php/, 'Contacts must use the shared member header');
 assert.match(contacts, /member-shell-v77\.js/, 'Contacts must load the shared member menu controller');
 assert.doesNotMatch(contacts, /<span class="contacts-avatar"/, 'Contacts must not render the old oversized inert avatar');
+assert.doesNotMatch(contacts, /contacts-hero|Personal relationship CRM|A living list of people and guest browsers|Visitor activity|Open Agent Chat/, 'Contacts must start with working CRM content instead of the removed duplicate hero');
+assert.match(contacts, /<section class="contacts-metrics"/, 'Contacts metrics must be the first page content after the shared header');
 
 assert.match(knowledge, /workspaceSidebarActive='knowledge'/, 'Knowledge must identify its active canonical sidebar item');
 assert.match(knowledge, /includes\/workspace-sidebar-v82\.php/, 'Knowledge must use the canonical sidebar wrapper');
