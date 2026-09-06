@@ -18,6 +18,7 @@ $vp3LoginUrl = url('/login.php');
 <link rel="stylesheet" href="<?= e(url('/vp3-public.css?v=vp3-public-20260906')) ?>">
 <link rel="stylesheet" href="<?= e(url('/vp3-public-nav.css?v=vp3-public-20260906')) ?>">
 <link rel="stylesheet" href="<?= e(url('/vp3-home.css?v=vp3-home-20260906-how-it-works')) ?>">
+<link rel="stylesheet" href="<?= e(url('/vp3-index-refresh.css?v=vp3-index-refresh-20260906')) ?>">
 </head>
 <body class="vp3-home">
 <header class="vp3-public-header vp3-home-header">
