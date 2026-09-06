@@ -20,13 +20,23 @@ $adminTitle='Team Workspaces';$adminActive='team-workspaces';require __DIR__.'/_
   <div class="admin-card-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px">
     <?php foreach($memberships as $membership):
       $artistId=(int)$membership['artist_user_id'];$role=(string)$membership['team_role'];
-      $open=$role==='manager'?url('/admin/team-workspace.php?artist_id='.$artistId):url('/admin/producer-tracks.php?artist_id='.$artistId);
+      if($role==='manager'){
+          $open=url('/admin/team-workspace.php?artist_id='.$artistId);
+          $description='Manage this Artist’s private catalog and profile within the relationship scope.';
+      }elseif($role==='producer'){
+          $open=url('/admin/producer-tracks.php?artist_id='.$artistId);
+          $description='Open tracks explicitly assigned to you for production.';
+      }else{
+          // Relationship roles are intentionally fail-closed. Never turn an
+          // unknown future/corrupt Team role into Producer authority.
+          continue;
+      }
     ?>
       <article class="panel" style="margin:0">
         <span class="status"><?= e(ucfirst($role)) ?></span>
         <h3 style="margin:10px 0 4px"><?= e((string)$membership['artist_name']) ?></h3>
         <p class="muted"><?= e((string)$membership['artist_email']) ?></p>
-        <p class="muted"><?= $role==='manager'?'Manage this Artist’s private catalog and profile within the relationship scope.':'Open tracks explicitly assigned to you for production.' ?></p>
+        <p class="muted"><?= e($description) ?></p>
         <a class="btn primary" href="<?= e($open) ?>">Open Workspace</a>
       </article>
     <?php endforeach;?>
