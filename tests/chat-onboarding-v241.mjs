@@ -12,17 +12,22 @@ const ui = read('chat-agent-identity-v236.js');
 const css = read('chat-agent-identity-v236.css');
 const api = read('api/chat-onboarding-v241.php');
 const domain = read('includes/chat-onboarding-v241.php');
+const intelligence = read('includes/onboarding-intelligence.php');
 const bootstrap = read('includes/bootstrap.php');
 const releaseChat = read('includes/release-chat-v105.php');
 const textChat = read('api/chat-v236.php');
 const voiceChat = read('api/chat-stream-v121.php');
+const upgrade = read('upgrade.php');
+const migration = read('sql/onboarding-trial-intelligence.sql');
 const htaccess = read('.htaccess');
 
 assert.doesNotThrow(() => new Function(ui), 'Agent onboarding runtime must remain valid JavaScript');
 assert.match(ui, /chat-onboarding-v241\.php/);
 assert.match(ui, /Choose your onboarding experience/);
 assert.match(ui, /Turn on voice/);
-assert.match(ui, /Continue with text/);
+assert.match(ui, /Keep voice off/);
+assert.match(ui, /Name your agent/);
+assert.ok(ui.indexOf("key:'voice'") < ui.indexOf("key:'agent'"), 'Voice must remain the first onboarding question and agent name second');
 assert.match(ui, /StonefellowPremiumVoiceV122/);
 assert.match(ui, /speechSynthesis/);
 assert.match(ui, /Enable Profile Agent/);
@@ -32,6 +37,12 @@ assert.match(ui, /Incoming chat sound/);
 assert.match(ui, /Make a Voice Clone/);
 assert.match(ui, /window\.STONEFELLOW_ONBOARDING_STATE/);
 assert.match(ui, /stonefellow:onboarding-state/);
+assert.match(ui, /onboardingRequest\('save_progress'/);
+assert.match(ui, /serverIntelligence\(\)\.draft/);
+assert.match(ui, /intelligence\?\.current_step/);
+assert.match(ui, /renderTrialNotice/);
+assert.match(ui, /ack_trial_notice/);
+assert.match(ui, /package_recommendation/);
 assert.match(ui, /onboardingRequest\('finish'/);
 assert.equal(ui.includes("settingsRequest('create_agent'"), false, 'Name step must not partially create an agent before final onboarding save');
 
@@ -40,15 +51,20 @@ assert.match(css, /\.chat-agent-field-v241 input[^\{]*\{[^}]*background:#fff!imp
 assert.equal(css.includes('background:#11100f'), false, 'Legacy black onboarding input must stay removed');
 assert.equal(css.includes('color:#eee8e2'), false, 'Legacy dark-theme onboarding text must stay removed');
 
-assert.match(api, /chat_onboarding_v241_state/);
+assert.match(api, /chat_onboarding_v241_full_state/);
+assert.match(api, /onboarding_intelligence_ensure_schema/);
+assert.match(api, /save_progress/);
+assert.match(api, /ack_trial_notice/);
 assert.match(api, /beginTransaction\(\)/);
 assert.match(api, /rollBack\(\)/);
 assert.match(api, /user_agent_create_v236/);
+assert.match(api, /'voice_enabled' => \$voiceEnabled \? 1 : 0/);
 assert.match(api, /profile_save/);
 assert.match(api, /chat_settings_save_v237/);
 assert.match(api, /profile_configure_agent/);
-assert.match(api, /user_agent_dismiss_onboarding_v236/);
+assert.match(api, /onboarding_intelligence_mark_complete/);
 assert.match(bootstrap, /chat-onboarding-v241\.php/);
+assert.match(domain, /onboarding-intelligence\.php/);
 assert.match(domain, /function chat_onboarding_v241_state/);
 assert.match(domain, /profile_runtime_owner_state/);
 assert.match(domain, /chat_settings_get_v237/);
@@ -66,10 +82,30 @@ assert.match(domain, /video editor/i);
 assert.match(domain, /subscription_current/);
 assert.match(domain, /subscription_ai_balance/);
 assert.match(domain, /subscription_has_entitlement/);
+assert.match(domain, /package_recommendation/);
+assert.match(domain, /lowest available package that matches what you are using/);
 assert.match(domain, /completion_percent/);
 assert.match(domain, /locked/);
 assert.match(domain, /do not count against completion/i);
-assert.match(domain, /View Plan & AI Usage/);
+assert.match(domain, /View Plan & AI Usage|View Plans/);
+
+for (const column of ['voice_preference','onboarding_step','onboarding_draft_json','feature_interest_json','last_trial_notice_threshold','last_trial_notice_at']) {
+  assert.match(intelligence, new RegExp(column), `persistent onboarding storage must include ${column}`);
+  assert.match(migration, new RegExp(column), `manual migration must include ${column}`);
+}
+assert.match(intelligence, /function onboarding_intelligence_trial_notice/);
+assert.match(intelligence, /\$days<=3\?3/);
+assert.match(intelligence, /\$days<=7\?7/);
+assert.match(intelligence, /Your trial ends/);
+assert.match(intelligence, /subscription_ai_balance/);
+assert.match(intelligence, /function onboarding_intelligence_package_recommendation/);
+assert.match(intelligence, /ai_usage_ledger/);
+assert.match(intelligence, /DATE_SUB\(NOW\(\),INTERVAL 90 DAY\)/);
+assert.match(intelligence, /artist_team_members/);
+assert.match(intelligence, /subscription_packages\(true\)/);
+assert.match(intelligence, /onboarding_intelligence_package_supports/);
+assert.match(upgrade, /onboarding_intelligence_schema_ready/);
+assert.match(upgrade, /onboarding_intelligence_ensure_schema/);
 
 const capabilityGate = releaseChat.indexOf('chat_onboarding_v241_tool');
 const releaseGate = releaseChat.indexOf('release_v105_schema_ready');
@@ -91,6 +127,8 @@ $cases = [
     ['is my profile public?', true],
     ['is my profile private?', true],
     ['is my Profile Agent on?', true],
+    ['what plan should I use?', true],
+    ['recommend a plan for me', true],
     ['what is a Profile Agent?', false],
     ['how does a voice clone work on mobile?', false],
     ['explain social chat', false],
@@ -107,7 +145,7 @@ echo "ACCOUNT_STATE_INTENT_V241=PASS\n";
 assert.equal(intentProbe.status, 0, intentProbe.stderr || 'Account-state intent routing probe failed');
 assert.match(intentProbe.stdout, /ACCOUNT_STATE_INTENT_V241=PASS/);
 
-for (const deterministic of [api, domain]) {
+for (const deterministic of [api, domain, intelligence]) {
   assert.equal(deterministic.includes('chat_remote_answer'), false, 'Deterministic onboarding/state code must not invoke remote LLM chat');
   assert.equal(deterministic.includes('chat_local_answer'), false, 'Deterministic onboarding/state code must not invoke chat answer generation');
   assert.equal(/openai|anthropic|gemini/i.test(deterministic), false, 'Deterministic onboarding/state code must not call an LLM provider');
@@ -115,4 +153,4 @@ for (const deterministic of [api, domain]) {
 
 assert.match(htaccess, /chat-agent-identity-v236/);
 assert.match(htaccess, /no-cache, must-revalidate/);
-console.log('chat-onboarding-v241 package-aware contract: PASS');
+console.log('chat-onboarding-v241 persistent trial-intelligence contract: PASS');
