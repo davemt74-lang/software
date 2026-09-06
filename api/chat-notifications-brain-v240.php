@@ -83,11 +83,26 @@ function chat_notifications_v240_history(PDO $pdo, int $userId, int $limit = 50)
     }
 }
 
+function chat_notifications_v240_brain_operations(array $user, int $limit = 60): array
+{
+    return array_map(static fn(array $row): array => [
+        'id'=>(int)($row['id'] ?? 0),
+        'type'=>(string)($row['type'] ?? ''),
+        'title'=>(string)($row['title'] ?? ''),
+        'body'=>(string)($row['body'] ?? ''),
+        'target_url'=>(string)($row['target_url'] ?? ''),
+        'source_type'=>(string)($row['source_type'] ?? ''),
+        'source_id'=>max(0, (int)($row['source_id'] ?? 0)),
+        'created_at'=>(string)($row['created_at'] ?? ''),
+    ], notification_agent_brain_activity_after($user, 0, $limit));
+}
+
 function chat_notifications_v240_state(array $user, PDO $pdo): array
 {
     if (function_exists('agent_chat_activity_reconcile')) {
         agent_chat_activity_reconcile($user);
     }
+
     $userId = (int)($user['id'] ?? 0);
     $brainAllowed = personal_capability_has_v242('agent_brain.access', $user);
     $brain = $brainAllowed && agent_brain_schema_ready() ? agent_brain_summary($user) : [
@@ -112,6 +127,7 @@ function chat_notifications_v240_state(array $user, PDO $pdo): array
             'files'=>array_values(is_array($brain['files'] ?? null) ? $brain['files'] : []),
             'recent'=>array_values(is_array($brain['recent'] ?? null) ? $brain['recent'] : []),
             'activity'=>$activity,
+            'operations'=>$brainAllowed ? chat_notifications_v240_brain_operations($user, 60) : [],
             'events'=>$brainAllowed ? chat_notifications_v240_activity_events($pdo, $userId, 50) : [],
         ],
         'history'=>$brainAllowed ? chat_notifications_v240_history($pdo, $userId, 60) : [],
@@ -136,7 +152,9 @@ function chat_notifications_v240_agent(PDO $pdo, int $userId, int $agentId): ?ar
 {
     if ($agentId < 1) return null;
     $agent = user_agent_get_v236($pdo, $userId, $agentId);
-    if (!$agent || empty($agent['is_active'])) throw new DomainException('The selected Agent Chat identity is unavailable.');
+    if (!$agent || empty($agent['is_active'])) {
+        throw new DomainException('The selected Agent Chat identity is unavailable.');
+    }
     return $agent;
 }
 
@@ -172,40 +190,18 @@ function chat_notifications_v240_contextual_decision(PDO $pdo, int $userId, arra
     }
 }
 
-function chat_notifications_v240_source_title(array $notification, bool $profileContact = false): string
-{
-    if ($profileContact) return 'Profile visitor attention';
-    return match ((string)($notification['source_type'] ?? '')) {
-        'agent_edit_event' => 'Stem Editor activity',
-        'transcript_analysis' => 'Transcription activity',
-        'agent_memory_item' => 'Agent Brain activity',
-        'personal_knowledge_item' => 'My Knowledge activity',
-        'agent_tool_history' => 'Agent tool / skill activity',
-        'agent_proactive_event' => 'Agent opportunity',
-        default => 'User attention notification',
-    };
-}
-
 function chat_notifications_v240_action_label(array $notification): string
 {
-    $type = strtolower((string)($notification['type'] ?? ''));
-    $source = (string)($notification['source_type'] ?? '');
-    if ($source === 'agent_edit_event') return 'Open Stem Editor';
-    if ($source === 'transcript_analysis' || $source === 'agent_memory_item') return 'Open Transcription';
-    if ($source === 'personal_knowledge_item') return 'Open My Knowledge';
-    if ($source === 'agent_proactive_event') return 'Review';
-    if (str_contains($type, 'failed')) return 'Review';
+    $type = strtolower(trim((string)($notification['type'] ?? '')));
+    if (preg_match('/approval|review|request|needs_|required/', $type)) return 'Review';
     return 'Open';
 }
 
 function chat_notifications_v240_activity_context(array $notification): array
 {
-    $type = strtolower(trim((string)($notification['type'] ?? '')));
-    $status = str_contains($type, 'failed') ? 'needs_review'
-        : (str_contains($type, 'opportunity') ? 'proposed' : 'completed');
     return [
-        'kind'=>$type,
-        'status'=>$status,
+        'kind'=>'user_attention',
+        'status'=>'needs_response',
         'source_type'=>(string)($notification['source_type'] ?? ''),
         'source_id'=>max(0, (int)($notification['source_id'] ?? 0)),
         'occurred_at'=>(string)($notification['created_at'] ?? ''),
@@ -252,6 +248,7 @@ function chat_notifications_v240_present_attention(PDO $pdo, array $user, array 
         );
         $existing->execute([$userId, $notificationId]);
     }
+
     if ($row = $existing->fetch()) {
         $ctx = json_decode((string)($row['context_json'] ?? ''), true);
         return [
@@ -265,7 +262,12 @@ function chat_notifications_v240_present_attention(PDO $pdo, array $user, array 
         ];
     }
 
-    $conversationId = chat_notifications_v240_conversation($pdo, $user, $agent, max(0, (int)($input['conversation_id'] ?? 0)));
+    $conversationId = chat_notifications_v240_conversation(
+        $pdo,
+        $user,
+        $agent,
+        max(0, (int)($input['conversation_id'] ?? 0))
+    );
     $decision = chat_notifications_v240_contextual_decision($pdo, $userId, $notification);
     $message = is_array($decision) && trim((string)($decision['message'] ?? '')) !== ''
         ? trim((string)$decision['message'])
@@ -279,13 +281,15 @@ function chat_notifications_v240_present_attention(PDO $pdo, array $user, array 
 
     $target = trim((string)($notification['target_url'] ?? ''));
     $actions = $target !== '' ? [[
-        'type'=>'open_url','label'=>chat_notifications_v240_action_label($notification),'url'=>$target,
+        'type'=>'open_url',
+        'label'=>chat_notifications_v240_action_label($notification),
+        'url'=>$target,
     ]] : [];
     $activity = chat_notifications_v240_activity_context($notification);
     $context = [
         'sources'=>[[
             'source'=>'notification:' . $notificationId,
-            'title'=>chat_notifications_v240_source_title($notification, (bool)$contact),
+            'title'=>$contact ? 'Profile visitor attention' : 'User attention notification',
         ]],
         'media'=>[],
         'stem_media'=>[],
@@ -307,10 +311,17 @@ function chat_notifications_v240_present_attention(PDO $pdo, array $user, array 
     if ($attentionCreatedAt === '' || strtotime($attentionCreatedAt) === false) {
         $attentionCreatedAt = date('Y-m-d H:i:s');
     }
+
     $insert = $pdo->prepare("INSERT INTO chat_messages (conversation_id,user_id,role,message,context_json,created_at) VALUES (?,NULL,'assistant',?,?,?)");
-    $insert->execute([$conversationId, $message, is_string($contextJson) ? $contextJson : '{}', $attentionCreatedAt]);
+    $insert->execute([
+        $conversationId,
+        $message,
+        is_string($contextJson) ? $contextJson : '{}',
+        $attentionCreatedAt,
+    ]);
     $messageId = (int)$pdo->lastInsertId();
-    $pdo->prepare('UPDATE chat_conversations SET updated_at=NOW() WHERE id=? AND user_id=?')->execute([$conversationId, $userId]);
+    $pdo->prepare('UPDATE chat_conversations SET updated_at=NOW() WHERE id=? AND user_id=?')
+        ->execute([$conversationId, $userId]);
 
     if (personal_capability_has_v242('agent_brain.access', $user)) {
         agent_brain_archive_and_parse($user, $conversationId, $messageId, 'assistant', $message, 'text');
@@ -352,7 +363,9 @@ try {
             'items'=>chat_notifications_v240_attention_rows($user, $afterId),
         ]);
     }
-    if ($method !== 'POST') chat_notifications_v240_json(['ok'=>false,'error'=>'POST is required.'], 405);
+    if ($method !== 'POST') {
+        chat_notifications_v240_json(['ok'=>false,'error'=>'POST is required.'], 405);
+    }
     chat_notifications_v240_require_csrf($input);
 
     if ($action === 'present_attention') {
@@ -360,7 +373,9 @@ try {
     }
     if ($action === 'mark_read') {
         $id = max(0, (int)($input['notification_id'] ?? 0));
-        if ($id < 1) chat_notifications_v240_json(['ok'=>false,'error'=>'notification_required'], 400);
+        if ($id < 1) {
+            chat_notifications_v240_json(['ok'=>false,'error'=>'notification_required'], 400);
+        }
         mark_notification_read($id, (int)$user['id']);
         chat_notifications_v240_json(chat_notifications_v240_state($user, $pdo));
     }
