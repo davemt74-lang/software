@@ -62,10 +62,15 @@ assert.match(customer, /subscription_ai_balance/);
 assert.match(customer, /Token packs do not extend trials or change package entitlements/);
 assert.match(customer, /name="pack_id"/);
 assert.match(customer, /Manage Token Packs/);
+assert.match(customer, /\$notice=flash\('notice'\)/);
+assert.match(customer, /\$errorNotice=flash\('error'\)/);
+assert.match(customer, /class="token-notice" role="status"/);
+assert.match(customer, /class="token-notice error" role="alert"/);
 assert.equal(/name="(?:token_amount|price_cents|price_dollars)"/.test(customer), false, 'Customer Checkout must not accept token quantity or price from the browser');
 
 assert.match(admin, /require_permission\('users\.manage'\)/);
 assert.match(admin, /token_pack_save/);
+assert.match(admin, /function admin_token_pack_price_cents/);
 assert.match(admin, /credited_revenue_cents/);
 assert.match(admin, /Recent Token Purchases/);
 assert.match(admin, /Archive Pack/);
@@ -77,6 +82,7 @@ assert.match(migration, /provider_session_id VARCHAR\(160\) NULL DEFAULT NULL/);
 assert.match(migration, /FOREIGN KEY \(credit_id\) REFERENCES ai_token_credits/);
 assert.match(sidebar, /Plan &amp; Usage/);
 assert.match(sidebar, /Buy AI Tokens/);
+assert.match(sidebar, /mainSidebarTokenCommerceReady/);
 
 for (const source of [runtime, customer, admin]) {
   assert.equal(/openai|anthropic|gemini/i.test(source), false, 'Token commerce must not invoke an LLM provider');
