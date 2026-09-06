@@ -100,10 +100,8 @@ function subscription_assign_package(
 ): int {
     $pdo=db();if(!$pdo||!subscription_schema_ready($pdo))throw new RuntimeException('Subscription storage is unavailable.');
     $package=subscription_package($packageId);if(!$package||!(int)$package['is_active'])throw new RuntimeException('Select an active package.');
-    $userStmt=$pdo->prepare('SELECT id FROM users WHERE id=? LIMIT 1');$userStmt->execute([$userId]);if(!$userStmt->fetchColumn())throw new RuntimeException('User account not found.');
     $source=substr(preg_replace('/[^a-z0-9_-]+/i','_',trim($source))??'admin_assigned',0,40);
     if($source==='')$source='admin_assigned';
-    $old=subscription_current_for_user_id($userId,$pdo);
     $status=(int)$package['is_trial']===1?'trialing':($source==='complimentary'?'complimentary':'active');
     $now=new DateTimeImmutable('now');
     if($endsAt!==null&&trim($endsAt)!==''){
@@ -113,8 +111,14 @@ function subscription_assign_package(
     }else{$end=null;}
     $periodEnd=$status==='trialing'?$end:$now->modify('+1 month');
 
-    $pdo->beginTransaction();
+    $ownsTransaction=!$pdo->inTransaction();
+    if($ownsTransaction)$pdo->beginTransaction();
     try{
+        // Lock the account so concurrent package changes serialize. This also
+        // allows signup to create the user and package atomically in one outer transaction.
+        $userStmt=$pdo->prepare('SELECT id FROM users WHERE id=? LIMIT 1 FOR UPDATE');
+        $userStmt->execute([$userId]);if(!$userStmt->fetchColumn())throw new RuntimeException('User account not found.');
+        $old=subscription_current_for_user_id($userId,$pdo,true);
         $pdo->prepare("UPDATE user_subscriptions SET status='replaced',ends_at=COALESCE(ends_at,NOW()),updated_at=NOW() WHERE user_id=? AND status IN ('trialing','active','complimentary')")->execute([$userId]);
         $stmt=$pdo->prepare("INSERT INTO user_subscriptions
           (user_id,package_id,status,assignment_source,billing_required,starts_at,ends_at,current_period_start,current_period_end,ai_token_override,assigned_by,metadata_json)
@@ -130,9 +134,12 @@ function subscription_assign_package(
         subscription_audit($pdo,$actorUserId,$userId,'package_assigned',(int)($old['package_id']??0)?:null,$packageId,$reason,[
           'source'=>$source,'status'=>$status,'ends_at'=>$end?$end->format('c'):null,'ai_token_override'=>$aiTokenOverride,'billing_required'=>$billingRequired,
         ]);
-        $pdo->commit();
+        if($ownsTransaction)$pdo->commit();
         return $subscriptionId;
-    }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();throw $e;}
+    }catch(Throwable $e){
+        if($ownsTransaction&&$pdo->inTransaction())$pdo->rollBack();
+        throw $e;
+    }
 }
 
 function subscription_assign_default_trial(int $userId): int
@@ -145,13 +152,14 @@ function subscription_assign_default_trial(int $userId): int
 function subscription_remove_package(int $userId,?int $actorUserId=null,string $reason=''): void
 {
     $pdo=db();if(!$pdo||!subscription_schema_ready($pdo))throw new RuntimeException('Subscription storage is unavailable.');
-    $old=subscription_current_for_user_id($userId,$pdo);
-    $pdo->beginTransaction();
+    $ownsTransaction=!$pdo->inTransaction();if($ownsTransaction)$pdo->beginTransaction();
     try{
+        $userStmt=$pdo->prepare('SELECT id FROM users WHERE id=? LIMIT 1 FOR UPDATE');$userStmt->execute([$userId]);if(!$userStmt->fetchColumn())throw new RuntimeException('User account not found.');
+        $old=subscription_current_for_user_id($userId,$pdo,true);
         $pdo->prepare("UPDATE user_subscriptions SET status='cancelled',ends_at=COALESCE(ends_at,NOW()),updated_at=NOW() WHERE user_id=? AND status IN ('trialing','active','complimentary')")->execute([$userId]);
         subscription_audit($pdo,$actorUserId,$userId,'package_removed',(int)($old['package_id']??0)?:null,null,$reason,[]);
-        $pdo->commit();
-    }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();throw $e;}
+        if($ownsTransaction)$pdo->commit();
+    }catch(Throwable $e){if($ownsTransaction&&$pdo->inTransaction())$pdo->rollBack();throw $e;}
 }
 
 function subscription_audit(PDO $pdo,?int $actor,int $target,string $action,?int $oldPackage,?int $newPackage,string $reason,array $details): void
@@ -165,17 +173,26 @@ function subscription_add_token_credit(int $userId,int $amount,string $source='a
     if($amount<1)throw new RuntimeException('Token top-up must be greater than zero.');
     $pdo=db();if(!$pdo||!subscription_schema_ready($pdo))throw new RuntimeException('Token credit storage is unavailable.');
     $source=substr(preg_replace('/[^a-z0-9_-]+/i','_',trim($source))??'admin_topup',0,40);if($source==='')$source='admin_topup';
-    $stmt=$pdo->prepare('INSERT INTO ai_token_credits (user_id,amount,remaining_amount,source,reason,expires_at,created_by) VALUES (?,?,?,?,?,?,?)');
-    $stmt->execute([$userId,$amount,$amount,$source,mb_strimwidth(trim($reason),0,500,''),$expiresAt?:null,$actorUserId&&$actorUserId>0?$actorUserId:null]);
-    $id=(int)$pdo->lastInsertId();
-    subscription_audit($pdo,$actorUserId,$userId,'tokens_added',null,null,$reason,['credit_id'=>$id,'amount'=>$amount,'source'=>$source,'expires_at'=>$expiresAt]);
-    return $id;
+    $ownsTransaction=!$pdo->inTransaction();if($ownsTransaction)$pdo->beginTransaction();
+    try{
+        $userStmt=$pdo->prepare('SELECT id FROM users WHERE id=? LIMIT 1 FOR UPDATE');$userStmt->execute([$userId]);if(!$userStmt->fetchColumn())throw new RuntimeException('User account not found.');
+        $stmt=$pdo->prepare('INSERT INTO ai_token_credits (user_id,amount,remaining_amount,source,reason,expires_at,created_by) VALUES (?,?,?,?,?,?,?)');
+        $stmt->execute([$userId,$amount,$amount,$source,mb_strimwidth(trim($reason),0,500,''),$expiresAt?:null,$actorUserId&&$actorUserId>0?$actorUserId:null]);
+        $id=(int)$pdo->lastInsertId();
+        subscription_audit($pdo,$actorUserId,$userId,'tokens_added',null,null,$reason,['credit_id'=>$id,'amount'=>$amount,'source'=>$source,'expires_at'=>$expiresAt]);
+        if($ownsTransaction)$pdo->commit();
+        return $id;
+    }catch(Throwable $e){if($ownsTransaction&&$pdo->inTransaction())$pdo->rollBack();throw $e;}
 }
 
 function subscription_remove_token_credit(int $creditId,int $userId,?int $actorUserId=null,string $reason=''): void
 {
     $pdo=db();if(!$pdo||!subscription_schema_ready($pdo))throw new RuntimeException('Token credit storage is unavailable.');
-    $stmt=$pdo->prepare('SELECT amount,remaining_amount FROM ai_token_credits WHERE id=? AND user_id=? LIMIT 1');$stmt->execute([$creditId,$userId]);$row=$stmt->fetch();if(!$row)throw new RuntimeException('Token credit not found.');
-    $pdo->prepare('UPDATE ai_token_credits SET remaining_amount=0,updated_at=NOW() WHERE id=? AND user_id=?')->execute([$creditId,$userId]);
-    subscription_audit($pdo,$actorUserId,$userId,'tokens_removed',null,null,$reason,['credit_id'=>$creditId,'previous_remaining'=>(int)$row['remaining_amount']]);
+    $ownsTransaction=!$pdo->inTransaction();if($ownsTransaction)$pdo->beginTransaction();
+    try{
+        $stmt=$pdo->prepare('SELECT amount,remaining_amount FROM ai_token_credits WHERE id=? AND user_id=? LIMIT 1 FOR UPDATE');$stmt->execute([$creditId,$userId]);$row=$stmt->fetch();if(!$row)throw new RuntimeException('Token credit not found.');
+        $pdo->prepare('UPDATE ai_token_credits SET remaining_amount=0,updated_at=NOW() WHERE id=? AND user_id=?')->execute([$creditId,$userId]);
+        subscription_audit($pdo,$actorUserId,$userId,'tokens_removed',null,null,$reason,['credit_id'=>$creditId,'previous_remaining'=>(int)$row['remaining_amount']]);
+        if($ownsTransaction)$pdo->commit();
+    }catch(Throwable $e){if($ownsTransaction&&$pdo->inTransaction())$pdo->rollBack();throw $e;}
 }
