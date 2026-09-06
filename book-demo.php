@@ -28,7 +28,7 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
             // its tables on first admin access and quietly imports requests
             // collected before that point.
             if(function_exists('crm_v180_create_demo_lead')&&function_exists('crm_v180_schema_ready')&&crm_v180_schema_ready($pdo))try{$leadId=crm_v180_create_demo_lead(['name'=>$name,'email'=>$email,'company'=>$company,'phone'=>$phone,'role'=>$role,'team_size'=>$teamSize,'workflows'=>array_map(static fn(string $item):string=>$labels[$item]??$item,$workflows),'notes'=>$notes],$messageId,$pdo);$crmStored=$leadId>0;}catch(Throwable $e){error_log('VP3 CRM lead creation failed: '.$e->getMessage());}
-            if(!$crmStored)create_notification_for_permission('messages.manage','contact_message','New demo request',$name.' — Book a Demo',url('/admin/messages.php?view='.$messageId),'contact_message',$messageId);
+            if (!$crmStored) create_notification_for_permission('messages.manage','contact_message','New demo request',$name.' — Book a Demo',url('/admin/messages.php?view='.$messageId),'contact_message',$messageId);
         }catch(Throwable $e){error_log('VP3 demo request save failed: '.$e->getMessage());}
         $recipient=(string)setting('contact_email',(string)site_config('email',''));$mailed=false;
         if((bool)site_config('send_contact_email',false)&&filter_var($recipient,FILTER_VALIDATE_EMAIL)){$subject='VP3 — Book a Demo';$headers=['From: '.$recipient,'Reply-To: '.$email,'Content-Type: text/plain; charset=UTF-8'];$mailed=@mail($recipient,$subject,"Name: {$name}\nEmail: {$email}\n\n{$message}",implode("\r\n",$headers));}
