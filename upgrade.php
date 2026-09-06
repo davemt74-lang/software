@@ -12,6 +12,7 @@ function vp3_upgrade_complete(): bool
 {
     return access_schema_ready()
         && subscription_schema_ready()
+        && subscription_self_service_schema_ready()
         && password_reset_schema_ready()
         && chat_settings_schema_ready_v237()
         && permission_v105_playlist_permission_ready()
@@ -45,6 +46,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         try {
             ensure_access_schema();
             subscription_ensure_schema();
+            subscription_self_service_ensure_schema();
             password_reset_ensure_schema();
             chat_settings_ensure_schema_v237();
             permission_v105_seed_playlist_permission();
@@ -68,7 +70,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $complete = vp3_upgrade_complete();
 
             if ($complete) {
-                flash('notice', 'VP3 database upgrade complete: subscriptions, trial packages, AI quotas, token credits, onboarding, recovery, Agent Brain, Knowledge, Profile Agent, transcriptions, CRM, and Studio capabilities are ready.');
+                flash('notice', 'VP3 database upgrade complete: subscriptions, self-service plan management, trial packages, AI quotas, token credits, onboarding, recovery, Agent Brain, Knowledge, Profile Agent, transcriptions, CRM, and Studio capabilities are ready.');
                 redirect(url('/admin/users.php'));
             }
         } catch (Throwable $e) {
@@ -84,7 +86,7 @@ vp3_public_header('Database Upgrade — VP3', 'Upgrade the VP3 database and appl
     <div class="vp3-auth-visual-content">
       <div class="vp3-kicker">System maintenance</div>
       <h1>Keep VP3 capabilities current.</h1>
-      <p>The upgrade process adds the current subscription, AI quota, account, assistant, knowledge, transcription, collaboration, CRM, and recovery schema without replacing existing user content.</p>
+      <p>The upgrade process adds the current subscription, plan management, AI quota, account, assistant, knowledge, transcription, collaboration, CRM, and recovery schema without replacing existing user content.</p>
     </div>
   </section>
   <section class="vp3-auth-form-side">
@@ -93,7 +95,7 @@ vp3_public_header('Database Upgrade — VP3', 'Upgrade the VP3 database and appl
       <h1>VP3 Database Upgrade</h1>
       <?php if ($complete): ?>
         <div class="vp3-alert success">The current VP3 schema is installed and ready.</div>
-        <p class="vp3-auth-intro">Subscription packages, Free Trial assignment, AI quota accounting, token top-ups, password recovery, Agent Brain, private Knowledge, Profile Agent, voice identity, transcriptions, shared knowledge, CRM, and Studio capabilities are available.</p>
+        <p class="vp3-auth-intro">Subscription packages, self-service plan management, Free Trial assignment, AI quota accounting, token top-ups, password recovery, Agent Brain, private Knowledge, Profile Agent, voice identity, transcriptions, shared knowledge, CRM, and Studio capabilities are available.</p>
         <a class="vp3-btn primary" href="<?= e(url('/admin/users.php')) ?>">Manage Users →</a>
       <?php else: ?>
         <p class="vp3-auth-intro">Run the current schema upgrade while preserving existing content and access. Existing accounts are migrated to hidden Legacy Access until an admin assigns a new package.</p>
