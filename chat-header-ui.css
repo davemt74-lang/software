@@ -1,5 +1,132 @@
 @import url('./stonefellow-ui.css?v=white-tech-20260904');
 
+/* Canonical member header layout must travel with the shared header itself.
+   Pages such as the public profile do not load the full Chat shell, so relying
+   on chat.css for these primitives leaves the shared header visually broken. */
+.member-header{
+  width:100%;
+  min-width:0;
+  height:58px;
+  min-height:58px;
+  flex:0 0 58px;
+  display:flex;
+  align-items:center;
+  gap:12px;
+  padding:0 18px;
+  border-bottom:1px solid var(--sf-line,#d8dde3);
+  background:rgba(255,255,255,.97);
+  color:var(--sf-ink,#111318);
+}
+.member-header .chat-topbar-title{
+  display:grid;
+  min-width:0;
+}
+.member-header .chat-topbar-title strong{
+  overflow:hidden;
+  color:var(--sf-ink,#111318);
+  font-size:.82rem;
+  line-height:1.15;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.member-header .chat-topbar-title span{
+  margin-top:2px;
+  overflow:hidden;
+  color:var(--sf-muted,#737b85);
+  font-size:.61rem;
+  line-height:1.15;
+  letter-spacing:.08em;
+  text-overflow:ellipsis;
+  text-transform:uppercase;
+  white-space:nowrap;
+}
+.member-header .chat-topbar-actions{
+  margin-left:auto;
+  display:flex;
+  align-items:center;
+  gap:12px;
+  min-width:0;
+}
+.member-header .chat-top-menu{
+  position:relative;
+  flex:0 0 auto;
+}
+.member-header .chat-notification-link,
+.member-header .chat-top-avatar{
+  appearance:none;
+  padding:0;
+  cursor:pointer;
+  font-family:inherit;
+}
+.member-header .chat-notification-link{
+  position:relative;
+  width:34px;
+  height:34px;
+  display:grid;
+  place-items:center;
+  flex:0 0 34px;
+  border:1px solid var(--sf-line,#d8dde3);
+  border-radius:50%;
+  background:transparent;
+  color:var(--sf-muted,#6b7280);
+  text-decoration:none;
+  box-shadow:none;
+}
+.member-header .chat-notification-link svg{
+  width:15px;
+  height:15px;
+  fill:none;
+  stroke:currentColor;
+  stroke-width:1.7;
+  stroke-linecap:round;
+  stroke-linejoin:round;
+}
+.member-header .chat-notification-link>span{
+  position:absolute;
+  top:-5px;
+  right:-6px;
+  min-width:17px;
+  height:17px;
+  display:grid;
+  place-items:center;
+  padding:0 4px;
+  border:2px solid #fff;
+  border-radius:999px;
+  background:#111827;
+  color:#fff!important;
+  font-size:.48rem;
+  font-weight:900;
+}
+.member-header .chat-top-avatar{
+  width:34px;
+  height:34px;
+  display:grid;
+  place-items:center;
+  overflow:hidden;
+  border:1px solid rgba(17,24,39,.10);
+  border-radius:50%;
+  background:linear-gradient(145deg,#e5e7eb,#f3f4f6);
+  color:#374151;
+  font-size:.65rem;
+  font-weight:900;
+  text-decoration:none;
+}
+.member-header .chat-top-avatar img{
+  width:100%;
+  height:100%;
+  object-fit:cover;
+}
+.member-header .chat-icon-button{
+  width:38px;
+  height:38px;
+  flex:0 0 38px;
+  border:1px solid var(--sf-line,#d8dde3);
+  border-radius:9px;
+  background:#fff;
+  color:#374151;
+  cursor:pointer;
+}
+
 /* Canonical Agent Chat header menus — white technical surface, above Team Chat. */
 .chat-topbar{
   position:relative;
@@ -13,12 +140,19 @@
   overflow:visible!important;
 }
 .chat-top-dropdown{
+  position:absolute;
+  top:calc(100% + 10px);
+  right:0;
+  width:min(340px,calc(100vw - 22px));
+  overflow:hidden;
   z-index:20100!important;
   border:1px solid #d8dde3!important;
+  border-radius:10px;
   background:#fff!important;
   color:#111318!important;
   box-shadow:0 18px 48px rgba(17,19,24,.16)!important;
 }
+.chat-profile-dropdown{width:270px}
 .chat-top-dropdown[hidden]{display:none!important}
 .chat-top-dropdown,
 .chat-top-dropdown a,
@@ -44,10 +178,72 @@
   border-color:#d8dde3!important;
   color:#111318!important;
 }
+.chat-notification-dropdown>header{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:8px;
+  padding:11px 12px;
+}
 .chat-profile-summary{
+  display:grid;
   grid-template-columns:42px minmax(0,1fr) auto!important;
+  gap:10px;
+  align-items:center;
+  padding:12px;
+  border-bottom:1px solid #d8dde3;
+}
+.chat-profile-summary .chat-avatar{
+  width:42px;
+  height:42px;
+  display:grid;
+  place-items:center;
+  overflow:hidden;
+  border:1px solid rgba(17,24,39,.10);
+  border-radius:50%;
+  background:linear-gradient(145deg,#e5e7eb,#f3f4f6);
+  color:#374151;
+  font-size:.65rem;
+  font-weight:900;
+}
+.chat-profile-summary .chat-avatar img{
+  width:100%;
+  height:100%;
+  object-fit:cover;
+}
+.chat-profile-summary>div{min-width:0}
+.chat-profile-summary strong,
+.chat-profile-summary small{
+  display:block;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.chat-profile-summary strong{
+  color:#111827!important;
+  font-size:.71rem;
 }
 .chat-profile-summary-copy{min-width:0}
+.chat-profile-links{
+  display:grid;
+  padding:6px;
+}
+.chat-profile-links a{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  padding:9px;
+  border-radius:6px;
+  color:#6b7280!important;
+  font-size:.64rem;
+  text-decoration:none;
+}
+.chat-profile-links a.logout{
+  margin-top:4px;
+  border-top:1px solid #d8dde3;
+  border-radius:0 0 6px 6px;
+}
 .member-agent-voice-toggle{
   display:flex!important;
   align-items:center;
@@ -125,6 +321,7 @@
 .sf-team-chat-windows-v109{z-index:9950!important}
 
 @media(max-width:760px){
+  .member-header{padding:0 10px}
   /* backdrop-filter/filter/transform can turn a fixed descendant into a header-
      relative containing block. Remove those on mobile so sheets use the viewport. */
   .chat-topbar{
