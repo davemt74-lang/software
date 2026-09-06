@@ -9,9 +9,12 @@ assert.match(index, /redirect_logged_in_public_page\(\)/, 'homepage must preserv
 assert.match(index, /<title>VP3 — Capture\. Understand\. Take Action\.<\/title>/, 'public homepage must use VP3 positioning');
 assert.match(index, /Capture\. Understand\.[\s\S]*Take Action\./, 'hero must use the approved headline');
 assert.doesNotMatch(index, /<h1[^>]*>\s*VP3\s*<\/h1>/, 'homepage must not repeat VP3 as a second hero title');
-assert.match(index, /App Store/, 'homepage must expose an iOS download surface');
-assert.match(index, /Google Play/, 'homepage must expose an Android download surface');
-assert.match(index, /Or use it in your browser/, 'homepage must keep the browser path visible');
+assert.match(index, /url\('\/signup\.php'\)/, 'homepage must route account creation to the canonical signup page');
+assert.match(index, /Create account/, 'homepage must expose a create-account CTA');
+assert.match(index, /url\('\/book-demo\.php'\)/, 'homepage must route demos to the CRM-backed booking page');
+assert.match(index, /Book demo/, 'homepage must expose a book-demo CTA');
+assert.match(index, /Already have an account\? Sign in/, 'homepage must keep the sign-in path visible');
+assert.doesNotMatch(index, /App Store|Google Play|VP3 for iPhone|VP3 for Android/, 'homepage must not expose obsolete mobile-store CTAs');
 assert.match(index, /My Contacts[\s\S]*My Knowledge[\s\S]*My Transcriptions/, 'desktop mockup must reflect the existing Agent Chat navigation');
 assert.match(index, /Good morning, Dave\./, 'desktop and mobile previews must use the assistant interaction pattern');
 
