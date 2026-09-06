@@ -24,8 +24,11 @@ assert.match(settingsApi, /save_agent_voice/, 'Agent Voice must support a focuse
 assert.match(memberMenu, /data-agent-voice-toggle/, 'shared member menu exposes Agent Voice toggle');
 assert.match(settingsJs, /ensureAgentVoiceToggle/, 'legacy Main Feed profile menu receives the same Agent Voice control');
 assert.match(settingsJs, /stonefellow:agent-voice/, 'Agent Voice changes are broadcast to active Chat runtime');
+assert.match(attentionApi, /'agent_voice_enabled'=>member_agent_voice_enabled\(\$user\)/, 'Activity Center state must include persisted Agent Voice preference');
 assert.match(attentionJs, /function agentVoiceEnabled\(/, 'attention speech must read Agent Voice preference');
 assert.match(attentionJs, /if \(!agentVoiceEnabled\(\)\) return/, 'voice-off attention stays visual without speaking');
+assert.match(attentionJs, /state = await request\('state'\)[\s\S]*agent_voice_enabled[\s\S]*agentVoicePreference = state\.agent_voice_enabled !== false/, 'Activity Center must apply persisted Agent Voice before polling');
+assert.match(attentionJs, /refresh\(false\)\.finally\(startAttentionPolling\)/, 'initial attention polling waits for the voice preference state request');
 assert.match(attentionJs, /function chatCanvasAvailable\(/, 'Activity Center can run on member pages without pretending they are Chat canvases');
 assert.match(attentionJs, /if \(!chatCanvasAvailable\(\)\) return/, 'non-Chat pages must not retry Chat presentation forever');
 
@@ -39,6 +42,7 @@ assert.doesNotMatch(profileAgent, /<header class="chat-topbar profile-agent-topb
 assert.match(memberHeader, /chat-notifications-drawer-v240\.js/, 'universal member header loads tabbed Activity Center');
 assert.match(memberHeader, /chat-transcription-canvas\.js/, 'universal member header loads Transcription Activity');
 assert.match(memberHeader, /STONEFELLOW_NOTIFICATION_DRAWER/, 'universal header configures notification UI');
+assert.match(memberHeader, /has_permission\('chat\.access', \$memberHeaderUser\)/, 'Chat-only member-header runtimes remain capability gated');
 assert.doesNotMatch(transcriptionCanvas, /if\(!thread\)return/, 'Transcription Activity must work outside Main Feed');
 assert.match(transcriptionCanvas, /if\(thread\)\{/, 'Chat-specific transcription observation remains guarded');
 
