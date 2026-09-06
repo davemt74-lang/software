@@ -18,7 +18,7 @@ $vp3LoginUrl = url('/login.php');
 <link rel="stylesheet" href="<?= e(url('/vp3-public.css?v=vp3-public-20260906')) ?>">
 <link rel="stylesheet" href="<?= e(url('/vp3-public-nav.css?v=vp3-public-20260906')) ?>">
 <link rel="stylesheet" href="<?= e(url('/vp3-home.css?v=vp3-home-20260906-how-it-works')) ?>">
-<link rel="stylesheet" href="<?= e(url('/vp3-index-refresh.css?v=vp3-index-refresh-20260906-v2')) ?>">
+<link rel="stylesheet" href="<?= e(url('/vp3-index-refresh.css?v=vp3-index-refresh-20260906-v3')) ?>">
 </head>
 <body class="vp3-home">
 <header class="vp3-public-header vp3-home-header">
@@ -133,6 +133,31 @@ $vp3LoginUrl = url('/login.php');
           </div>
         </div>
       </div>
+    </div>
+  </section>
+
+  <section class="vp3-steps-only" aria-label="VP3 workflow">
+    <div class="vp3-step-grid">
+      <article class="vp3-step-card">
+        <span class="vp3-step-number">01</span>
+        <h3>Record</h3>
+        <p>Capture conversations, meetings, ideas, or voice notes directly into your VP3 workspace.</p>
+      </article>
+      <article class="vp3-step-card">
+        <span class="vp3-step-number">02</span>
+        <h3>Transcribe</h3>
+        <p>Turn your recording into accurate, searchable text you can review, save, and reuse.</p>
+      </article>
+      <article class="vp3-step-card">
+        <span class="vp3-step-number">03</span>
+        <h3>AI Analysis</h3>
+        <p>Let VP3 identify the key ideas, decisions, questions, opportunities, and next steps in the conversation.</p>
+      </article>
+      <article class="vp3-step-card">
+        <span class="vp3-step-number">04</span>
+        <h3>Summary or Action Plan</h3>
+        <p>Receive a clear summary or practical action plan that helps you move forward.</p>
+      </article>
     </div>
   </section>
 
