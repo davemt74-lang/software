@@ -47,7 +47,9 @@
       url = target.toString();
     }
     const options = post ? {
-      method:'POST', credentials:'same-origin', cache:'no-store',
+      method:'POST',
+      credentials:'same-origin',
+      cache:'no-store',
       headers:{'Content-Type':'application/json'},
       body:JSON.stringify({action, csrf_token:cfg.csrf, ...payload})
     } : {credentials:'same-origin', cache:'no-store'};
@@ -62,7 +64,10 @@
     if (!button) return;
     let badge = button.querySelector(':scope > span');
     if (count > 0) {
-      if (!badge) { badge = document.createElement('span'); button.appendChild(badge); }
+      if (!badge) {
+        badge = document.createElement('span');
+        button.appendChild(badge);
+      }
       badge.textContent = count > 99 ? '99+' : String(count);
       badge.hidden = false;
     } else if (badge) {
@@ -78,14 +83,17 @@
     const actions = document.querySelector('.chat-topbar-actions');
     const profile = document.getElementById('chatProfileMenu');
     if (!menu || !oldButton || !actions || !profile) return false;
+
     const oldDropdown = document.getElementById('chatNotificationDropdown');
     if (oldDropdown) oldDropdown.remove();
+
     const replacement = oldButton.cloneNode(true);
     replacement.setAttribute('aria-controls', 'chatNotificationDrawer');
     replacement.setAttribute('aria-haspopup', 'dialog');
     replacement.setAttribute('aria-expanded', 'false');
     oldButton.replaceWith(replacement);
     button = replacement;
+
     if (menu.nextElementSibling !== profile) actions.insertBefore(menu, profile);
     button.addEventListener('click', openDrawer);
     return true;
@@ -96,6 +104,7 @@
     backdrop = document.createElement('div');
     backdrop.className = 'chat-notification-drawer-backdrop';
     backdrop.hidden = true;
+
     drawer = document.createElement('aside');
     drawer.className = 'chat-notification-drawer';
     drawer.id = 'chatNotificationDrawer';
@@ -113,6 +122,7 @@
       </nav>
       <div class="chat-notification-drawer-body" data-notification-drawer-body></div>`;
     document.body.append(backdrop, drawer);
+
     backdrop.addEventListener('click', closeDrawer);
     drawer.querySelector('[data-notification-drawer-close]')?.addEventListener('click', closeDrawer);
     drawer.addEventListener('click', handleDrawerClick);
@@ -132,7 +142,11 @@
           ${items.length ? items.map(item => `
             <article class="chat-notification-item${Number(item.is_read || 0) ? '' : ' unread'}" data-notification-id="${Number(item.id || 0)}">
               <span class="chat-notification-dot" aria-hidden="true"></span>
-              <div><strong>${esc(item.title || 'Notification')}</strong>${item.body ? `<p>${esc(item.body)}</p>` : ''}<small>${esc(relative(item.created_at))}${item.type ? ` · ${esc(String(item.type).replaceAll('_',' '))}` : ''}</small></div>
+              <div>
+                <strong>${esc(item.title || 'Notification')}</strong>
+                ${item.body ? `<p>${esc(item.body)}</p>` : ''}
+                <small>${esc(relative(item.created_at))}${item.type ? ` · ${esc(String(item.type).replaceAll('_',' '))}` : ''}</small>
+              </div>
               ${item.target_url ? `<a href="${esc(item.target_url)}" data-notification-open>Open</a>` : (!Number(item.is_read || 0) ? '<button type="button" data-notification-read>Read</button>' : '')}
             </article>`).join('') : '<div class="chat-activity-empty">No notifications yet.</div>'}
         </div>
@@ -145,7 +159,9 @@
 
   function brainView() {
     const brain = state?.brain || {};
-    if (brain.enabled === false) return '<section class="chat-activity-section"><div class="chat-activity-empty">Personal Agent Brain is not enabled for this account type.</div></section>';
+    if (brain.enabled === false) {
+      return '<section class="chat-activity-section"><div class="chat-activity-empty">Personal Agent Brain is not enabled for this account type.</div></section>';
+    }
     const activity = brain.activity || {};
     const events = Array.isArray(brain.events) ? brain.events : [];
     const recent = Array.isArray(brain.recent) ? brain.recent : [];
@@ -153,16 +169,32 @@
     const currentState = stateLabel(activity.state || 'idle');
     return `
       <section class="chat-activity-section chat-brain-overview">
-        <div class="chat-brain-status ${esc(String(activity.state || 'idle'))}"><span></span><div><small>Current Agent State</small><strong>${esc(currentState)}</strong><p>${esc(activity.task_title || 'Agent Chat')}</p></div><em>${esc(activity.surface || 'chat')}</em></div>
-        <div class="chat-brain-metrics">${brainMetric('Memories', Number(brain.memory_count || 0))}${brainMetric('Archived messages', Number(brain.archive_count || 0))}${brainMetric('Activity events', events.length)}</div>
+        <div class="chat-brain-status ${esc(String(activity.state || 'idle'))}">
+          <span></span>
+          <div><small>Current Agent State</small><strong>${esc(currentState)}</strong><p>${esc(activity.task_title || 'Agent Chat')}</p></div>
+          <em>${esc(activity.surface || 'chat')}</em>
+        </div>
+        <div class="chat-brain-metrics">
+          ${brainMetric('Memories', Number(brain.memory_count || 0))}
+          ${brainMetric('Archived messages', Number(brain.archive_count || 0))}
+          ${brainMetric('Activity events', events.length)}
+        </div>
       </section>
       <section class="chat-activity-section">
         <div class="chat-activity-section-head"><div><strong>Live Brain Activity</strong><span>What the agent has been doing across Stonefellow</span></div></div>
-        <div class="chat-brain-timeline">${events.length ? events.slice(0,30).map(event => `<article class="chat-brain-event"><span class="chat-brain-event-state ${esc(event.activity_state || 'idle')}"></span><div><strong>${esc(event.task_title || stateLabel(event.activity_state))}</strong><p>${esc(stateLabel(event.previous_state))} → ${esc(stateLabel(event.activity_state))}${event.reason ? ` · ${esc(String(event.reason).replaceAll('_',' '))}` : ''}</p><small>${esc(event.surface || 'chat')} · ${esc(relative(event.created_at))}</small></div></article>`).join('') : '<div class="chat-activity-empty">No Agent Brain activity history yet.</div>'}</div>
+        <div class="chat-brain-timeline">
+          ${events.length ? events.slice(0,30).map(event => `
+            <article class="chat-brain-event">
+              <span class="chat-brain-event-state ${esc(event.activity_state || 'idle')}"></span>
+              <div><strong>${esc(event.task_title || stateLabel(event.activity_state))}</strong><p>${esc(stateLabel(event.previous_state))} → ${esc(stateLabel(event.activity_state))}${event.reason ? ` · ${esc(String(event.reason).replaceAll('_',' '))}` : ''}</p><small>${esc(event.surface || 'chat')} · ${esc(relative(event.created_at))}</small></div>
+            </article>`).join('') : '<div class="chat-activity-empty">No Agent Brain activity history yet.</div>'}
+        </div>
       </section>
       <section class="chat-activity-section">
         <div class="chat-activity-section-head"><div><strong>Recent Memory</strong><span>Structured facts and decisions the Agent Brain is retaining</span></div></div>
-        <div class="chat-brain-memory-list">${recent.length ? recent.map(memory => `<article><span>${esc(memory.memory_type || 'memory')}</span><strong>${esc(memory.subject || 'Memory')}</strong><p>${esc(memory.memory_text || '')}</p><small>${Number(memory.occurrence_count || 1)} occurrence${Number(memory.occurrence_count || 1) === 1 ? '' : 's'} · ${esc(relative(memory.last_seen_at))}</small></article>`).join('') : '<div class="chat-activity-empty">No structured memory yet.</div>'}</div>
+        <div class="chat-brain-memory-list">
+          ${recent.length ? recent.map(memory => `<article><span>${esc(memory.memory_type || 'memory')}</span><strong>${esc(memory.subject || 'Memory')}</strong><p>${esc(memory.memory_text || '')}</p><small>${Number(memory.occurrence_count || 1)} occurrence${Number(memory.occurrence_count || 1) === 1 ? '' : 's'} · ${esc(relative(memory.last_seen_at))}</small></article>`).join('') : '<div class="chat-activity-empty">No structured memory yet.</div>'}
+        </div>
         ${themes.length ? `<div class="chat-brain-themes"><strong>Recurring themes</strong><div>${themes.slice(0,10).map(theme => `<span>${esc(theme.subject || '')}<small>${Number(theme.occurrence_count || 0)}</small></span>`).join('')}</div></div>` : ''}
       </section>`;
   }
@@ -170,13 +202,19 @@
   function historyView() {
     const rows = Array.isArray(state?.history) ? state.history : [];
     let lastDay = '';
-    return `<section class="chat-activity-section"><div class="chat-activity-section-head"><div><strong>Agent History</strong><span>Chronological conversation archive used by the Agent Brain</span></div></div><div class="chat-brain-history">${rows.length ? rows.map(row => {
-      const date = new Date(String(row.created_at || '').replace(' ', 'T'));
-      const day = Number.isNaN(date.getTime()) ? '' : date.toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'});
-      const divider = day && day !== lastDay ? `<div class="chat-brain-history-day">${esc(day)}</div>` : '';
-      lastDay = day || lastDay;
-      return `${divider}<article class="${esc(row.role || 'user')}"><div><strong>${row.role === 'assistant' ? 'Agent' : 'You'}</strong><span>${esc(row.input_mode || 'text')}</span><small>${esc(relative(row.created_at))}</small></div><p>${esc(row.message || '')}</p><footer>Conversation ${Number(row.conversation_id || 0)}</footer></article>`;
-    }).join('') : '<div class="chat-activity-empty">No Agent Brain conversation history yet.</div>'}</div></section>`;
+    return `
+      <section class="chat-activity-section">
+        <div class="chat-activity-section-head"><div><strong>Agent History</strong><span>Chronological conversation archive used by the Agent Brain</span></div></div>
+        <div class="chat-brain-history">
+          ${rows.length ? rows.map(row => {
+            const date = new Date(String(row.created_at || '').replace(' ', 'T'));
+            const day = Number.isNaN(date.getTime()) ? '' : date.toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'});
+            const divider = day && day !== lastDay ? `<div class="chat-brain-history-day">${esc(day)}</div>` : '';
+            lastDay = day || lastDay;
+            return `${divider}<article class="${esc(row.role || 'user')}"><div><strong>${row.role === 'assistant' ? 'Agent' : 'You'}</strong><span>${esc(row.input_mode || 'text')}</span><small>${esc(relative(row.created_at))}</small></div><p>${esc(row.message || '')}</p><footer>Conversation ${Number(row.conversation_id || 0)}</footer></article>`;
+          }).join('') : '<div class="chat-activity-empty">No Agent Brain conversation history yet.</div>'}
+        </div>
+      </section>`;
   }
 
   function render() {
@@ -184,10 +222,16 @@
     drawer.querySelectorAll('[data-notification-tab]').forEach(tab => tab.classList.toggle('active', tab.dataset.notificationTab === activeTab));
     const count = drawer.querySelector('[data-notification-tab-count]');
     const unread = Number(state?.notifications?.unread || 0);
-    if (count) { count.hidden = unread < 1; count.textContent = unread > 99 ? '99+' : String(unread); }
+    if (count) {
+      count.hidden = unread < 1;
+      count.textContent = unread > 99 ? '99+' : String(unread);
+    }
     const body = drawer.querySelector('[data-notification-drawer-body]');
     if (!body) return;
-    if (!state) { body.innerHTML = '<div class="chat-activity-loading">Loading Activity Center…</div>'; return; }
+    if (!state) {
+      body.innerHTML = '<div class="chat-activity-loading">Loading Activity Center…</div>';
+      return;
+    }
     body.innerHTML = activeTab === 'brain' ? brainView() : activeTab === 'history' ? historyView() : notificationView();
     updateUnread();
   }
@@ -208,47 +252,101 @@
   }
 
   function openDrawer() {
-    ensureDrawer(); drawer.hidden = false; backdrop.hidden = false;
-    requestAnimationFrame(() => { drawer.classList.add('open'); backdrop.classList.add('open'); });
-    button?.setAttribute('aria-expanded', 'true'); document.body.classList.add('chat-notification-drawer-open'); render(); void refresh(true);
+    ensureDrawer();
+    drawer.hidden = false;
+    backdrop.hidden = false;
+    requestAnimationFrame(() => {
+      drawer.classList.add('open');
+      backdrop.classList.add('open');
+    });
+    button?.setAttribute('aria-expanded', 'true');
+    document.body.classList.add('chat-notification-drawer-open');
+    render();
+    void refresh(true);
   }
+
   function closeDrawer() {
     if (!drawer) return;
-    drawer.classList.remove('open'); backdrop.classList.remove('open'); button?.setAttribute('aria-expanded', 'false'); document.body.classList.remove('chat-notification-drawer-open');
-    window.setTimeout(() => { if (!drawer?.classList.contains('open')) { drawer.hidden = true; backdrop.hidden = true; } }, 180);
+    drawer.classList.remove('open');
+    backdrop.classList.remove('open');
+    button?.setAttribute('aria-expanded', 'false');
+    document.body.classList.remove('chat-notification-drawer-open');
+    window.setTimeout(() => {
+      if (!drawer?.classList.contains('open')) {
+        drawer.hidden = true;
+        backdrop.hidden = true;
+      }
+    }, 180);
   }
 
   async function mutate(action, payload = {}) {
-    if (busy) return; busy = true;
-    try { state = await request(action, payload); render(); }
-    catch (error) { const body = drawer?.querySelector('[data-notification-drawer-body]'); if (body) body.insertAdjacentHTML('afterbegin', `<div class="chat-activity-inline-error">${esc(error instanceof Error ? error.message : 'Could not update notification.')}</div>`); }
-    finally { busy = false; }
+    if (busy) return;
+    busy = true;
+    try {
+      state = await request(action, payload);
+      render();
+    } catch (error) {
+      const body = drawer?.querySelector('[data-notification-drawer-body]');
+      if (body) body.insertAdjacentHTML('afterbegin', `<div class="chat-activity-inline-error">${esc(error instanceof Error ? error.message : 'Could not update notification.')}</div>`);
+    } finally {
+      busy = false;
+    }
   }
 
   function handleDrawerClick(event) {
     const tab = event.target.closest('[data-notification-tab]');
-    if (tab) { activeTab = tab.dataset.notificationTab || 'notifications'; render(); return; }
-    if (event.target.closest('[data-notification-mark-all]')) { void mutate('mark_all_read'); return; }
-    const item = event.target.closest('[data-notification-id]'); if (!item) return;
-    const id = Number(item.dataset.notificationId || 0); if (id < 1) return;
-    if (event.target.closest('[data-notification-open]')) { if (item.classList.contains('unread')) void request('mark_read', {notification_id:id}).catch(() => {}); return; }
+    if (tab) {
+      activeTab = tab.dataset.notificationTab || 'notifications';
+      render();
+      return;
+    }
+    if (event.target.closest('[data-notification-mark-all]')) {
+      void mutate('mark_all_read');
+      return;
+    }
+    const item = event.target.closest('[data-notification-id]');
+    if (!item) return;
+    const id = Number(item.dataset.notificationId || 0);
+    if (id < 1) return;
+    if (event.target.closest('[data-notification-open]')) {
+      if (item.classList.contains('unread')) void request('mark_read', {notification_id:id}).catch(() => {});
+      return;
+    }
     if (event.target.closest('[data-notification-read]') || item.classList.contains('unread')) void mutate('mark_read', {notification_id:id});
   }
 
   function keepBellNextToProfile() {
-    const menu = document.getElementById('chatNotificationMenu'); const profile = document.getElementById('chatProfileMenu'); const actions = document.querySelector('.chat-topbar-actions');
-    if (!menu || !profile || !actions) return; if (menu.nextElementSibling !== profile) actions.insertBefore(menu, profile);
+    const menu = document.getElementById('chatNotificationMenu');
+    const profile = document.getElementById('chatProfileMenu');
+    const actions = document.querySelector('.chat-topbar-actions');
+    if (!menu || !profile || !actions) return;
+    if (menu.nextElementSibling !== profile) actions.insertBefore(menu, profile);
   }
-  function continuity() { return window.STONEFELLOW_CHAT_CONTINUITY || window.STONEFELLOW_CHAT_CONTINUITY_V87 || {}; }
-  function chatCanvasAvailable() { return typeof continuity().openConversation === 'function'; }
-  function activeConversationId() { return Math.max(0, Number(continuity().conversationId?.() || 0)); }
-  function activeAgentId() { return Math.max(0, Number(window.STONEFELLOW_AGENT_IDENTITY_V236?.agentId || 0)); }
+
+  function continuity() {
+    return window.STONEFELLOW_CHAT_CONTINUITY || window.STONEFELLOW_CHAT_CONTINUITY_V87 || {};
+  }
+
+  function chatCanvasAvailable() {
+    return typeof continuity().openConversation === 'function';
+  }
+
+  function activeConversationId() {
+    return Math.max(0, Number(continuity().conversationId?.() || 0));
+  }
+
+  function activeAgentId() {
+    return Math.max(0, Number(window.STONEFELLOW_AGENT_IDENTITY_V236?.agentId || 0));
+  }
 
   async function showAttentionConversation(conversationId, message) {
-    const id = Math.max(0, Number(conversationId || 0)); const chat = continuity();
+    const id = Math.max(0, Number(conversationId || 0));
+    const chat = continuity();
     if (id < 1 || typeof chat.openConversation !== 'function') return false;
-    const opened = await chat.openConversation(id); if (!opened) return false;
-    const expected = String(message || '').trim(); const deadline = Date.now() + 5000;
+    const opened = await chat.openConversation(id);
+    if (!opened) return false;
+    const expected = String(message || '').trim();
+    const deadline = Date.now() + 5000;
     while (Date.now() < deadline) {
       const texts = [...document.querySelectorAll('#chatThread .message.assistant .message-text')];
       if (texts.some(node => String(node.textContent || '').trim() === expected)) return true;
@@ -258,59 +356,155 @@
     return false;
   }
 
-  function clearResponseWindow() { if (responseTimer) window.clearTimeout(responseTimer); responseTimer = 0; responseWindowActive = false; }
-  function markUserResponse() { if (!responseWindowActive) return; clearResponseWindow(); responseTemporaryVoice = false; }
-  function voiceButton() { return document.getElementById('chatVoiceButton'); }
-  function voiceIsOn() { return Boolean(continuity().isVoice?.()); }
-  function setVoiceMode(enabled) { const control = voiceButton(); if (!control || control.disabled) return false; const current = voiceIsOn(); if (current !== Boolean(enabled)) control.click(); return voiceIsOn(); }
-  function agentVoiceEnabled() { return agentVoicePreference !== false; }
+  function clearResponseWindow() {
+    if (responseTimer) window.clearTimeout(responseTimer);
+    responseTimer = 0;
+    responseWindowActive = false;
+  }
+
+  function markUserResponse() {
+    if (!responseWindowActive) return;
+    clearResponseWindow();
+    responseTemporaryVoice = false;
+  }
+
+  function voiceButton() {
+    return document.getElementById('chatVoiceButton');
+  }
+
+  function voiceIsOn() {
+    return Boolean(continuity().isVoice?.());
+  }
+
+  function setVoiceMode(enabled) {
+    const control = voiceButton();
+    if (!control || control.disabled) return false;
+    const current = voiceIsOn();
+    if (current !== Boolean(enabled)) control.click();
+    return voiceIsOn();
+  }
+
+  function agentVoiceEnabled() {
+    return agentVoicePreference !== false;
+  }
 
   function waitForAgentIdle(timeoutMs = 30000) {
     const deadline = Date.now() + timeoutMs;
-    return new Promise(resolve => { const tick = () => { const mode = String(document.body.dataset.stonefellowAgentState || 'idle'); if (!['processing','speaking'].includes(mode) || Date.now() >= deadline) { resolve(); return; } window.setTimeout(tick, 120); }; tick(); });
+    return new Promise(resolve => {
+      const tick = () => {
+        const mode = String(document.body.dataset.stonefellowAgentState || 'idle');
+        if (!['processing','speaking'].includes(mode) || Date.now() >= deadline) {
+          resolve();
+          return;
+        }
+        window.setTimeout(tick, 120);
+      };
+      tick();
+    });
   }
 
   function browserSpeak(text) {
     return new Promise(resolve => {
       const message = String(text || '').trim();
-      if (!message || !('speechSynthesis' in window) || !window.SpeechSynthesisUtterance) { resolve(false); return; }
-      const utterance = new window.SpeechSynthesisUtterance(message); let done = false;
-      const finish = ok => { if (done) return; done = true; resolve(ok); };
-      utterance.onend = () => finish(true); utterance.onerror = () => finish(false);
-      try { window.speechSynthesis.cancel(); window.speechSynthesis.speak(utterance); } catch (_error) { finish(false); }
+      if (!message || !('speechSynthesis' in window) || !window.SpeechSynthesisUtterance) {
+        resolve(false);
+        return;
+      }
+      const utterance = new window.SpeechSynthesisUtterance(message);
+      let done = false;
+      const finish = ok => {
+        if (done) return;
+        done = true;
+        resolve(ok);
+      };
+      utterance.onend = () => finish(true);
+      utterance.onerror = () => finish(false);
+      try {
+        window.speechSynthesis.cancel();
+        window.speechSynthesis.speak(utterance);
+      } catch (_error) {
+        finish(false);
+      }
     });
   }
 
   async function speakWithExistingVoice(text) {
     if (!agentVoiceEnabled()) return;
-    const message = String(text || '').trim(); if (!message) return; await waitForAgentIdle();
-    const wasVoice = voiceIsOn(); if (wasVoice) setVoiceMode(false);
-    let spoken = false; const PremiumVoice = window.StonefellowPremiumVoiceV122;
+    const message = String(text || '').trim();
+    if (!message) return;
+    await waitForAgentIdle();
+
+    const wasVoice = voiceIsOn();
+    if (wasVoice) setVoiceMode(false);
+
+    let spoken = false;
+    const PremiumVoice = window.StonefellowPremiumVoiceV122;
     if (typeof PremiumVoice === 'function') {
       try {
-        const premium = PremiumVoice({agentEndpoint:String(window.STONEFELLOW_CHAT?.endpoint || '/api/chat-v236.php'), csrf:String(cfg.csrf || '')});
-        spoken = await new Promise(async resolve => {
-          let settled = false; const finish = ok => { if (settled) return; settled = true; resolve(ok); };
-          try { await premium.speak(message, {onEnd:() => finish(true), onError:() => finish(false)}); } catch (_error) { finish(false); }
+        const premium = PremiumVoice({
+          agentEndpoint:String(window.STONEFELLOW_CHAT?.endpoint || '/api/chat-v236.php'),
+          csrf:String(cfg.csrf || '')
         });
-      } catch (_error) { spoken = false; }
+        spoken = await new Promise(async resolve => {
+          let settled = false;
+          const finish = ok => {
+            if (settled) return;
+            settled = true;
+            resolve(ok);
+          };
+          try {
+            await premium.speak(message, {onEnd:() => finish(true), onError:() => finish(false)});
+          } catch (_error) {
+            finish(false);
+          }
+        });
+      } catch (_error) {
+        spoken = false;
+      }
     }
     if (!spoken) await browserSpeak(message);
-    const listening = setVoiceMode(true); if (!listening) return;
-    responseTemporaryVoice = !wasVoice; clearResponseWindow(); responseWindowActive = true;
-    responseTimer = window.setTimeout(() => { responseTimer = 0; responseWindowActive = false; if (responseTemporaryVoice) { responseTemporaryVoice = false; setVoiceMode(false); } }, 10000);
+
+    const listening = setVoiceMode(true);
+    if (!listening) return;
+    responseTemporaryVoice = !wasVoice;
+    clearResponseWindow();
+    responseWindowActive = true;
+    responseTimer = window.setTimeout(() => {
+      responseTimer = 0;
+      responseWindowActive = false;
+      if (responseTemporaryVoice) {
+        responseTemporaryVoice = false;
+        setVoiceMode(false);
+      }
+    }, 10000);
   }
 
-  function queueSpeech(text) { speechQueue = speechQueue.then(() => speakWithExistingVoice(text)).catch(() => {}); }
+  function queueSpeech(text) {
+    speechQueue = speechQueue.then(() => speakWithExistingVoice(text)).catch(() => {});
+  }
 
   async function presentAttention(item) {
-    const notificationId = Number(item?.id || 0); if (notificationId < 1) return true;
-    const data = await request('present_attention', {notification_id:notificationId, conversation_id:activeConversationId(), agent_id:activeAgentId()});
+    const notificationId = Number(item?.id || 0);
+    if (notificationId < 1) return true;
+    const data = await request('present_attention', {
+      notification_id:notificationId,
+      conversation_id:activeConversationId(),
+      agent_id:activeAgentId()
+    });
     if (!data.handled) return true;
-    const surfaced = await showAttentionConversation(Number(data.conversation_id || 0), String(data.message || ''));
-    if (!surfaced) throw new Error('Actionable notification could not be surfaced in Agent Chat.');
+
+    const surfaced = await showAttentionConversation(
+      Number(data.conversation_id || 0),
+      String(data.message || '')
+    );
+    if (!surfaced) {
+      throw new Error('Actionable notification could not be surfaced in Agent Chat.');
+    }
+
     queueSpeech(String(data.message || ''));
-    state = await request('mark_read', {notification_id:notificationId}); render(); return true;
+    state = await request('mark_read', {notification_id:notificationId});
+    render();
+    return true;
   }
 
   async function pollAttention(bootstrap = false) {
@@ -321,11 +515,16 @@
       const data = await request('attention', null, {after_id:bootstrap ? 0 : attentionCursor});
       const items = Array.isArray(data.items) ? data.items : [];
       const selected = bootstrap && items.length ? [items[items.length - 1]] : items;
-      for (const item of selected) await presentAttention(item);
+      for (const item of selected) {
+        await presentAttention(item);
+      }
       attentionCursor = Math.max(attentionCursor, Number(data.latest_id || 0));
     } catch (_error) {
-      // Keep the cursor unchanged so a failed canvas presentation is retried.
-    } finally { attentionBusy = false; }
+      // Keep the cursor unchanged so a failed canvas presentation is retried
+      // instead of silently consuming an actionable notification.
+    } finally {
+      attentionBusy = false;
+    }
   }
 
   function startAttentionPolling() {
@@ -336,15 +535,28 @@
   }
 
   if (!ownNotificationButton()) return;
-  ensureDrawer(); keepBellNextToProfile();
+  ensureDrawer();
+  keepBellNextToProfile();
   const actions = document.querySelector('.chat-topbar-actions');
   if (actions) new MutationObserver(keepBellNextToProfile).observe(actions, {childList:true});
-  document.addEventListener('keydown', event => { if (event.key === 'Escape' && drawer?.classList.contains('open')) closeDrawer(); });
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && drawer?.classList.contains('open')) closeDrawer();
+  });
   document.getElementById('chatForm')?.addEventListener('submit', markUserResponse, true);
-  window.addEventListener('stonefellow:chat-voice', event => { if (String(event.detail?.type || '') === 'TRANSCRIPT_SUBMIT') markUserResponse(); });
-  window.addEventListener('stonefellow:agent-voice', event => { agentVoicePreference = event.detail?.enabled !== false; });
-  document.addEventListener('visibilitychange', () => { if (!document.hidden && chatCanvasAvailable()) void pollAttention(false); });
-  window.addEventListener('pagehide', () => { if (attentionTimer) window.clearInterval(attentionTimer); attentionTimer = 0; clearResponseWindow(); }, {once:true});
+  window.addEventListener('stonefellow:chat-voice', event => {
+    if (String(event.detail?.type || '') === 'TRANSCRIPT_SUBMIT') markUserResponse();
+  });
+  window.addEventListener('stonefellow:agent-voice', event => {
+    agentVoicePreference = event.detail?.enabled !== false;
+  });
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && chatCanvasAvailable()) void pollAttention(false);
+  });
+  window.addEventListener('pagehide', () => {
+    if (attentionTimer) window.clearInterval(attentionTimer);
+    attentionTimer = 0;
+    clearResponseWindow();
+  }, {once:true});
 
   window.STONEFELLOW_NOTIFICATION_CENTER = {open:openDrawer, close:closeDrawer, refresh, pollAttention};
   void refresh(false).finally(startAttentionPolling);
