@@ -1,5 +1,77 @@
 @import url('./stonefellow-ui.css?v=white-tech-20260904');
 
+/* Canonical member header layout must travel with the shared header itself.
+   Pages such as the public profile do not load the full Chat shell, so relying
+   on chat.css for these primitives leaves the shared header visually broken. */
+.member-header{
+  width:100%;
+  min-width:0;
+  height:58px;
+  min-height:58px;
+  flex:0 0 58px;
+  display:flex;
+  align-items:center;
+  gap:12px;
+  padding:0 18px;
+  border-bottom:1px solid var(--sf-line,#d8dde3);
+  background:rgba(255,255,255,.97);
+  color:var(--sf-ink,#111318);
+}
+.member-header .chat-topbar-title{
+  display:grid;
+  min-width:0;
+}
+.member-header .chat-topbar-title strong{
+  overflow:hidden;
+  color:var(--sf-ink,#111318);
+  font-size:.82rem;
+  line-height:1.15;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.member-header .chat-topbar-title span{
+  margin-top:2px;
+  overflow:hidden;
+  color:var(--sf-muted,#737b85);
+  font-size:.61rem;
+  line-height:1.15;
+  letter-spacing:.08em;
+  text-overflow:ellipsis;
+  text-transform:uppercase;
+  white-space:nowrap;
+}
+.member-header .chat-topbar-actions{
+  margin-left:auto;
+  display:flex;
+  align-items:center;
+  gap:12px;
+  min-width:0;
+}
+.member-header .chat-top-menu{
+  flex:0 0 auto;
+}
+.member-header .chat-top-avatar{
+  width:34px;
+  height:34px;
+  display:grid;
+  place-items:center;
+  overflow:hidden;
+  padding:0;
+  border-radius:50%;
+  cursor:pointer;
+}
+.member-header .chat-top-avatar img{
+  width:100%;
+  height:100%;
+  object-fit:cover;
+}
+.member-header .chat-icon-button{
+  width:38px;
+  height:38px;
+  flex:0 0 38px;
+  cursor:pointer;
+}
+
 /* Canonical Agent Chat header menus — white technical surface, above Team Chat. */
 .chat-topbar{
   position:relative;
@@ -125,6 +197,7 @@
 .sf-team-chat-windows-v109{z-index:9950!important}
 
 @media(max-width:760px){
+  .member-header{padding:0 10px}
   /* backdrop-filter/filter/transform can turn a fixed descendant into a header-
      relative containing block. Remove those on mobile so sheets use the viewport. */
   .chat-topbar{
