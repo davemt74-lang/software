@@ -28,7 +28,10 @@ function billing_ensure_schema(?PDO $pdo=null): void
         throw new RuntimeException('Install the subscription and self-service schemas before billing.');
     }
 
+    // Stripe Prices are immutable. Preserve every historical Price mapping so
+    // existing subscriptions continue to reconcile after an Admin changes price.
     $pdo->exec("CREATE TABLE IF NOT EXISTS package_billing_prices (
+      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
       package_id INT UNSIGNED NOT NULL,
       provider VARCHAR(20) NOT NULL DEFAULT 'stripe',
       billing_interval VARCHAR(20) NOT NULL,
@@ -40,9 +43,9 @@ function billing_ensure_schema(?PDO $pdo=null): void
       metadata_json LONGTEXT NULL,
       created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-      PRIMARY KEY (package_id,provider,billing_interval),
       UNIQUE KEY uq_billing_provider_price (provider,provider_price_id),
-      INDEX idx_billing_prices_provider (provider,is_active,package_id),
+      INDEX idx_billing_prices_active (package_id,provider,billing_interval,is_active,id),
+      INDEX idx_billing_prices_provider (provider,is_active,package_id,id),
       CONSTRAINT fk_billing_price_package FOREIGN KEY (package_id) REFERENCES subscription_packages(id) ON DELETE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 
