@@ -33,8 +33,8 @@ function vp3_public_header(string $title, string $description = '', array $optio
     <a class="vp3-public-brand" href="<?= e(url('/index.php')) ?>" aria-label="VP3 home"><?= vp3_public_brand() ?></a>
     <?php if (!$compact): ?>
     <nav class="vp3-public-links" aria-label="Primary navigation">
-      <a<?= $active === 'transcriptions' ? ' class="active"' : '' ?> href="<?= e(url('/index.php#transcriptions')) ?>">Transcriptions</a>
-      <a<?= $active === 'teams' ? ' class="active"' : '' ?> href="<?= e(url('/index.php#teams')) ?>">Teams</a>
+      <a<?= $active === 'transcriptions' ? ' class="active"' : '' ?> href="<?= e(url('/transcriptions.php')) ?>">Transcriptions</a>
+      <a<?= $active === 'teams' ? ' class="active"' : '' ?> href="<?= e(url('/teams.php')) ?>">Teams</a>
       <a<?= $active === 'pricing' ? ' class="active"' : '' ?> href="<?= e(url('/pricing.php')) ?>">Pricing</a>
       <a<?= $active === 'about' ? ' class="active"' : '' ?> href="<?= e(url('/about.php')) ?>">About</a>
     </nav>
@@ -54,8 +54,8 @@ function vp3_public_header(string $title, string $description = '', array $optio
       <details class="vp3-public-mobile-menu">
         <summary aria-label="Open navigation"><span></span><span></span><span></span></summary>
         <nav aria-label="Mobile navigation">
-          <a href="<?= e(url('/index.php#transcriptions')) ?>">Transcriptions</a>
-          <a href="<?= e(url('/index.php#teams')) ?>">Teams</a>
+          <a href="<?= e(url('/transcriptions.php')) ?>">Transcriptions</a>
+          <a href="<?= e(url('/teams.php')) ?>">Teams</a>
           <a href="<?= e(url('/pricing.php')) ?>">Pricing</a>
           <a href="<?= e(url('/about.php')) ?>">About</a>
           <a href="<?= e(url('/book-demo.php')) ?>">Book a Demo</a>
@@ -79,9 +79,8 @@ function vp3_public_footer(): void
       <span>A Private Future. On Your Terms.</span>
     </div>
     <nav class="vp3-public-footer-links" aria-label="Footer navigation">
-      <a href="<?= e(url('/index.php#features')) ?>">Features</a>
-      <a href="<?= e(url('/index.php#transcriptions')) ?>">Transcriptions</a>
-      <a href="<?= e(url('/index.php#teams')) ?>">Teams</a>
+      <a href="<?= e(url('/transcriptions.php')) ?>">Transcriptions</a>
+      <a href="<?= e(url('/teams.php')) ?>">Teams</a>
       <a href="<?= e(url('/pricing.php')) ?>">Pricing</a>
       <a href="<?= e(url('/about.php')) ?>">About</a>
       <a href="<?= e(url('/contact.php')) ?>">Contact</a>

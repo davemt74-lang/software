@@ -13,19 +13,24 @@ assert.match(index, /Capture\. Understand\.[\s\S]*Take Action\./, 'hero must use
 assert.doesNotMatch(index, /<h1[^>]*>\s*VP3\s*<\/h1>/, 'homepage must not repeat VP3 as a second hero title');
 
 assert.match(index, /vp3-public-header vp3-home-header/, 'homepage must use the canonical public-header structure');
-assert.match(index, /vp3-public-links[\s\S]*Transcriptions[\s\S]*Teams[\s\S]*Pricing[\s\S]*About/, 'homepage primary nav must match the public-site navigation');
 const homePrimaryNav = index.match(/<nav class="vp3-public-links"[\s\S]*?<\/nav>/)?.[0] || '';
 assert.ok(homePrimaryNav, 'homepage must expose a primary navigation block');
-assert.doesNotMatch(homePrimaryNav, />Features</, 'Features must not appear in the homepage primary navigation');
+assert.match(homePrimaryNav, /url\('\/transcriptions\.php'\)[\s\S]*>Transcriptions</, 'homepage primary nav must link to the standalone Transcriptions page');
+assert.match(homePrimaryNav, /url\('\/teams\.php'\)[\s\S]*>Teams</, 'homepage primary nav must link to the standalone Teams page');
+assert.doesNotMatch(homePrimaryNav, /index\.php#transcriptions|index\.php#teams|>Features</, 'homepage primary nav must not use removed homepage product anchors');
 assert.match(index, /\$vp3DemoUrl\s*=\s*url\('\/book-demo\.php'\)/, 'homepage must derive the demo CTA from the canonical demo URL');
 assert.match(index, /class="vp3-public-primary"[^>]*href="<\?= e\(\$vp3DemoUrl\) \?>"[^>]*>BOOK DEMO<\/a>/, 'homepage dark primary CTA must be BOOK DEMO');
 assert.match(refreshCss, /\.vp3-home-header \.vp3-public-primary\{[^}]*color:#fff/, 'BOOK DEMO text must remain white');
 
 const sharedPrimaryNav = publicShell.match(/<nav class="vp3-public-links"[\s\S]*?<\/nav>/)?.[0] || '';
 assert.ok(sharedPrimaryNav, 'shared public shell must expose a primary navigation block');
-assert.doesNotMatch(sharedPrimaryNav, />Features</, 'Features must be removed from the shared public primary navigation');
+assert.match(sharedPrimaryNav, /url\('\/transcriptions\.php'\)/, 'shared public nav must link to standalone Transcriptions');
+assert.match(sharedPrimaryNav, /url\('\/teams\.php'\)/, 'shared public nav must link to standalone Teams');
+assert.doesNotMatch(sharedPrimaryNav, /index\.php#transcriptions|index\.php#teams|>Features</, 'shared public nav must not use removed homepage product anchors');
 const sharedMobileNav = publicShell.match(/<nav aria-label="Mobile navigation">[\s\S]*?<\/nav>/)?.[0] || '';
-assert.doesNotMatch(sharedMobileNav, />Features</, 'Features must be removed from the shared public mobile navigation');
+assert.match(sharedMobileNav, /url\('\/transcriptions\.php'\)/, 'shared mobile nav must link to standalone Transcriptions');
+assert.match(sharedMobileNav, /url\('\/teams\.php'\)/, 'shared mobile nav must link to standalone Teams');
+assert.doesNotMatch(sharedMobileNav, /index\.php#transcriptions|index\.php#teams|>Features</, 'shared mobile nav must not use removed homepage product anchors');
 
 assert.match(index, /url\('\/signup\.php'\)/, 'homepage must route account creation to the canonical signup page');
 assert.match(index, /Create account/, 'homepage must expose a create-account CTA');
@@ -34,7 +39,6 @@ assert.match(index, /Already have an account\? Sign in/, 'homepage must keep the
 assert.doesNotMatch(index, /App Store|Google Play|VP3 for iPhone|VP3 for Android/, 'homepage must not expose obsolete mobile-store CTAs');
 assert.match(index, /My Contacts[\s\S]*My Knowledge[\s\S]*My Transcriptions/, 'desktop mockup must reflect the existing Agent Chat navigation');
 assert.match(index, /Good morning, Dave\./, 'desktop and mobile previews must use the assistant interaction pattern');
-assert.match(index, /class="vp3-device-stage" id="transcriptions"/, 'Transcriptions navigation must retain a real homepage anchor');
 
 assert.doesNotMatch(index, /How it works|From recording to action in four steps\.|Capture the conversation once\. VP3 turns it into searchable context/, 'removed How It Works section must not remain on the homepage');
 assert.doesNotMatch(index, /vp3-step-grid|vp3-step-card|vp3-step-number/, 'removed four-step cards must not remain on the homepage');
@@ -49,7 +53,9 @@ assert.match(refreshCss, /\.vp3-results:after\{[^}]*linear-gradient/, 'centered 
 
 const footerNav = index.match(/<nav class="vp3-footer-links"[\s\S]*?<\/nav>/)?.[0] || '';
 assert.ok(footerNav, 'marketing navigation must remain available in the footer');
-assert.doesNotMatch(footerNav, />Features</, 'footer must not link to the removed feature section');
+assert.match(footerNav, /url\('\/transcriptions\.php'\)/, 'homepage footer must link to standalone Transcriptions');
+assert.match(footerNav, /url\('\/teams\.php'\)/, 'homepage footer must link to standalone Teams');
+assert.doesNotMatch(footerNav, /#transcriptions|#teams|>Features</, 'homepage footer must not link to removed homepage product anchors');
 assert.match(css, /@media\(max-width:620px\)/, 'homepage must include a dedicated small-screen layout');
 assert.match(css, /url\('\/assets\/vp3-mountain-bg\.svg'\)/, 'hero and CTA must use the reusable mountain background asset');
 assert.match(mountain, /<svg[\s\S]*viewBox="0 0 1600 900"/, 'mountain background must be a scalable SVG asset');
