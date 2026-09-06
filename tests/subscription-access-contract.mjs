@@ -67,7 +67,12 @@ assert.ok(teamDomain.includes("'manager'=>['account.access','chat.access','artis
 assert.ok(teamDomain.includes("'producer'=>['account.access','chat.access','artist_listening.access','producer.access']"), 'Producer compatibility role must remain narrow and production-specific');
 assert.match(teamDomain, /DELETE FROM user_account_types WHERE user_id=\? AND role IN \('manager','producer'\)/, 'contextual migration must rebuild old Team roles from relationships');
 assert.ok(teamDomain.includes("UPDATE users SET role='fan'"), 'linked legacy Team accounts must return to a normal base identity');
-assert.ok(teamDomain.includes('SELECT DISTINCT member_user_id,team_role'), 'derived Team markers must be rebuilt from artist_team_members');
+assert.ok(
+  teamDomain.includes("SELECT DISTINCT team_role FROM artist_team_members WHERE member_user_id=?")
+  && teamDomain.includes('artist_workspace_v104_sync_member_context_roles'),
+  'derived Team markers must be rebuilt from artist_team_members'
+);
+assert.ok(teamDomain.includes('if(!$retiredPrimary&&$desired===$existing)return;'), 'steady-state Team reconciliation should avoid unnecessary writes');
 assert.ok(teamDomain.includes('artist_workspace_v104_revoke_producer_assignments'), 'Team changes must revoke stale direct production assignments');
 assert.ok(teamDomain.includes('UPDATE tracks SET producer_user_id=NULL WHERE owner_user_id=? AND producer_user_id=?'), 'producer revocation must be Artist + member scoped');
 assert.ok(bootstrap.includes('artist_workspace_v104_boot_contextual_roles();') && bootstrap.indexOf('artist_workspace_v104_boot_contextual_roles();') < bootstrap.indexOf('subscription_request_gate();'), 'Team migration must run before request authorization');
