@@ -34,26 +34,22 @@ assert.match(index, /Already have an account\? Sign in/, 'homepage must keep the
 assert.doesNotMatch(index, /App Store|Google Play|VP3 for iPhone|VP3 for Android/, 'homepage must not expose obsolete mobile-store CTAs');
 assert.match(index, /My Contacts[\s\S]*My Knowledge[\s\S]*My Transcriptions/, 'desktop mockup must reflect the existing Agent Chat navigation');
 assert.match(index, /Good morning, Dave\./, 'desktop and mobile previews must use the assistant interaction pattern');
+assert.match(index, /class="vp3-device-stage" id="transcriptions"/, 'Transcriptions navigation must retain a real homepage anchor');
 
-assert.match(index, /How it works/, 'homepage must replace the old feature catalog with How It Works');
-assert.match(index, /From recording to action in four steps\./, 'How It Works must explain the four-step flow');
-assert.doesNotMatch(index, /Everything you need\. All in one place\./, 'old Everything You Need section must be removed');
-for (const step of ['Record', 'Transcribe', 'AI Analysis', 'Summary or Action Plan']) {
-  assert.match(index, new RegExp(`<h3>${step}<\\/h3>`), `How It Works must include ${step}`);
-}
-for (const copy of [
-  'Capture conversations, meetings, ideas, or voice notes directly into your VP3 workspace.',
-  'Turn your recording into accurate, searchable text you can review, save, and reuse.',
-  'Let VP3 identify the key ideas, decisions, questions, opportunities, and next steps in the conversation.',
-  'Receive a clear summary or practical action plan that helps you move forward.'
-]) {
-  assert.ok(index.includes(copy), `How It Works copy must include: ${copy}`);
-}
-assert.match(index, /vp3-step-number">01<[\s\S]*vp3-step-number">02<[\s\S]*vp3-step-number">03<[\s\S]*vp3-step-number">04</, 'How It Works steps must remain explicitly ordered');
-assert.match(refreshCss, /\.vp3-step-grid\{grid-template-columns:repeat\(4,1fr\)\}/, 'desktop How It Works flow must use four columns');
-assert.match(refreshCss, /@media\(max-width:620px\)[\s\S]*\.vp3-step-grid\{grid-template-columns:1fr\}/, 'How It Works must collapse to one column on small screens');
+assert.doesNotMatch(index, /How it works|From recording to action in four steps\.|Capture the conversation once\. VP3 turns it into searchable context/, 'removed How It Works section must not remain on the homepage');
+assert.doesNotMatch(index, /vp3-step-grid|vp3-step-card|vp3-step-number/, 'removed four-step cards must not remain on the homepage');
+assert.doesNotMatch(index, /Everything you need\. All in one place\./, 'legacy Everything You Need section must remain removed');
 
-assert.match(index, /vp3-footer-links/, 'marketing navigation must remain available in the footer');
+const results = index.match(/<section class="vp3-results"[\s\S]*?<\/section>/)?.[0] || '';
+assert.ok(results, 'homepage must keep the Turn Your Thoughts Into Results section');
+assert.match(results, /Turn Your Thoughts[\s\S]*Into Results\./, 'results section must keep its approved headline');
+assert.doesNotMatch(results, /vp3-get-started|>Get Started</, 'results section must not include a Get Started button');
+assert.match(refreshCss, /\.vp3-results-content\{[^}]*text-align:center[^}]*align-items:center/, 'results section content must be centered');
+assert.match(refreshCss, /\.vp3-results:after\{[^}]*linear-gradient/, 'centered results copy must keep a readable centered overlay');
+
+const footerNav = index.match(/<nav class="vp3-footer-links"[\s\S]*?<\/nav>/)?.[0] || '';
+assert.ok(footerNav, 'marketing navigation must remain available in the footer');
+assert.doesNotMatch(footerNav, />Features</, 'footer must not link to the removed feature section');
 assert.match(css, /@media\(max-width:620px\)/, 'homepage must include a dedicated small-screen layout');
 assert.match(css, /url\('\/assets\/vp3-mountain-bg\.svg'\)/, 'hero and CTA must use the reusable mountain background asset');
 assert.match(mountain, /<svg[\s\S]*viewBox="0 0 1600 900"/, 'mountain background must be a scalable SVG asset');
