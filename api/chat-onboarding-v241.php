@@ -30,9 +30,8 @@ function chat_onboarding_v241_require_csrf(array $input): void
 
 function chat_onboarding_v241_full_state(PDO $pdo,array $user): array
 {
-    $state=chat_onboarding_v241_state($pdo,$user);
-    $state['intelligence']=onboarding_intelligence_state($pdo,$user);
-    return $state;
+    // The canonical domain state already includes onboarding intelligence.
+    return chat_onboarding_v241_state($pdo,$user);
 }
 
 $user = current_user();
