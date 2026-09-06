@@ -24,10 +24,10 @@ function agent_chat_activity_tool_is_meaningful(string $toolKey, string $status)
     if ($toolKey === '') return false;
 
     // Read-only searches remain available in Agent Brain history without
-    // flooding the operational inbox. Mutations, generated work and external
-    // effects are durable Chat activity.
+    // flooding the operational inbox. Mutations, generated work, skill/workflow
+    // execution and external effects are durable Chat activity.
     return (bool)preg_match(
-        '/(?:edit|create|update|save|publish|release|book|send|message|upload|import|restore|render|export|transcrib|summar|knowledge|memory|profile|crm|contact|collab|invite|approve|delete|remove|record|capture|generate|write)/',
+        '/(?:edit|create|update|save|publish|release|book|send|message|upload|import|restore|render|export|transcrib|summar|knowledge|memory|profile|crm|contact|collab|invite|approve|delete|remove|record|capture|generate|write|skill|workflow|automation)/',
         $toolKey
     );
 }
@@ -58,10 +58,20 @@ function agent_chat_activity_notify(
     );
 }
 
+function agent_chat_activity_safe_target(string $candidate): string
+{
+    $candidate = trim($candidate);
+    if ($candidate === '') return '';
+    if (str_starts_with($candidate, '/') && !str_starts_with($candidate, '//')) return $candidate;
+    if (!filter_var($candidate, FILTER_VALIDATE_URL)) return '';
+    $scheme = strtolower((string)parse_url($candidate, PHP_URL_SCHEME));
+    return in_array($scheme, ['http','https'], true) ? $candidate : '';
+}
+
 function agent_chat_activity_tool_target(string $toolKey, array $result): string
 {
     foreach (['open_url','target_url','url'] as $field) {
-        $candidate = trim((string)($result[$field] ?? ''));
+        $candidate = agent_chat_activity_safe_target((string)($result[$field] ?? ''));
         if ($candidate !== '') return $candidate;
     }
 
@@ -84,8 +94,8 @@ function agent_chat_activity_reconcile_tools(PDO $pdo, array $user): void
         $stmt = $pdo->prepare(
             "SELECT id,tool_key,request_text,status,result_json,created_at
              FROM agent_tool_history
-             WHERE user_id=? AND created_at>=DATE_SUB(NOW(),INTERVAL 30 DAY)
-             ORDER BY id DESC LIMIT 80"
+             WHERE user_id=? AND created_at>=DATE_SUB(NOW(),INTERVAL 14 DAY)
+             ORDER BY id DESC LIMIT 8"
         );
         $stmt->execute([$uid]);
         foreach ($stmt->fetchAll() ?: [] as $row) {
@@ -126,8 +136,8 @@ function agent_chat_activity_reconcile_stem(PDO $pdo, array $user): void
             "SELECT id,project_id,action_key,request_text,model_provider,model_name,changes_json,created_at
              FROM agent_edit_events
              WHERE user_id=? AND editor_kind='stem' AND source_kind='agent'
-               AND created_at>=DATE_SUB(NOW(),INTERVAL 30 DAY)
-             ORDER BY id DESC LIMIT 60"
+               AND created_at>=DATE_SUB(NOW(),INTERVAL 14 DAY)
+             ORDER BY id DESC LIMIT 10"
         );
         $stmt->execute([$uid]);
         foreach ($stmt->fetchAll() ?: [] as $row) {
@@ -174,8 +184,8 @@ function agent_chat_activity_reconcile_transcriptions(PDO $pdo, array $user): vo
                         s.title,s.status
                  FROM artist_transcript_master_analysis_v237 a
                  INNER JOIN artist_transcript_sessions_v172 s ON s.id=a.session_id
-                 WHERE s.created_by_user_id=? AND a.generated_at>=DATE_SUB(NOW(),INTERVAL 30 DAY)
-                 ORDER BY a.generated_at DESC LIMIT 40"
+                 WHERE s.created_by_user_id=? AND a.generated_at>=DATE_SUB(NOW(),INTERVAL 14 DAY)
+                 ORDER BY a.generated_at DESC LIMIT 6"
             );
             $stmt->execute([$uid]);
             foreach ($stmt->fetchAll() ?: [] as $row) {
@@ -210,8 +220,8 @@ function agent_chat_activity_reconcile_transcriptions(PDO $pdo, array $user): vo
                 "SELECT id,subject,metadata_json,last_seen_at
                  FROM agent_memory_items
                  WHERE user_id=? AND is_active=1 AND memory_type='transcript_analysis'
-                   AND last_seen_at>=DATE_SUB(NOW(),INTERVAL 30 DAY)
-                 ORDER BY last_seen_at DESC,id DESC LIMIT 40"
+                   AND last_seen_at>=DATE_SUB(NOW(),INTERVAL 14 DAY)
+                 ORDER BY last_seen_at DESC,id DESC LIMIT 6"
             );
             $stmt->execute([$uid]);
             foreach ($stmt->fetchAll() ?: [] as $row) {
@@ -242,8 +252,8 @@ function agent_chat_activity_reconcile_transcriptions(PDO $pdo, array $user): vo
                  FROM knowledge_items
                  WHERE created_by_user_id=? AND knowledge_scope='personal'
                    AND description LIKE 'Personal Artist Listening analysis%'
-                   AND updated_at>=DATE_SUB(NOW(),INTERVAL 30 DAY)
-                 ORDER BY updated_at DESC,id DESC LIMIT 40"
+                   AND updated_at>=DATE_SUB(NOW(),INTERVAL 14 DAY)
+                 ORDER BY updated_at DESC,id DESC LIMIT 6"
             );
             $stmt->execute([$uid]);
             foreach ($stmt->fetchAll() ?: [] as $row) {
@@ -274,7 +284,7 @@ function agent_chat_activity_reconcile_proactive(PDO $pdo, array $user): void
             "SELECT id,event_type,title,prompt,source_kind,context_json,created_at
              FROM agent_proactive_events
              WHERE user_id=? AND event_type='shown' AND created_at>=DATE_SUB(NOW(),INTERVAL 7 DAY)
-             ORDER BY id DESC LIMIT 35"
+             ORDER BY id DESC LIMIT 8"
         );
         $stmt->execute([$uid]);
         foreach ($stmt->fetchAll() ?: [] as $row) {
