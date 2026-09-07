@@ -2,7 +2,7 @@
   'use strict';
 
   const cfg = window.STONEFELLOW_ARTIST_LISTENING_V172 || {};
-  const BUILD = 'transcription-intelligence-v302-20260906';
+  const BUILD = 'transcription-intelligence-v303-20260906';
   const userId = Math.max(0, Number(cfg.userId || 0));
   const reportEndpoint = String(cfg.endpoint || '').replace(/artist-listening-v172\.php(?:\?.*)?$/i, 'artist-listening-intelligence-v300.php');
   const researchKey = `stonefellow:artist-listening:ai-summary:${userId}`;
@@ -20,6 +20,7 @@
     report: null,
     appStatus: {},
     permissions: {},
+    operations: {},
     busy: false,
     busyApp: '',
     editingItemId: '',
@@ -42,6 +43,7 @@
     knowledgeSaves: 0,
     itemReviews: 0,
     itemEdits: 0,
+    itemActions: 0,
     evidenceJumps: 0,
     isOpen: () => state.open,
     open: () => setOpen(true),
@@ -166,6 +168,51 @@
     return parts.length ? `<div class="sf-listening-ai-item-meta">${parts.join('')}</div>` : '';
   }
 
+  function actionReceipt(item, action, targetId = 0) {
+    const key = `${action}${Number(targetId || 0) > 0 ? `:${Number(targetId)}` : ''}`;
+    const receipt = item?.actions?.[key];
+    return receipt && typeof receipt === 'object' ? receipt : null;
+  }
+
+  function actionButtonHtml(item, action, label, targetId = 0) {
+    const receipt = actionReceipt(item, action, targetId);
+    if (receipt) {
+      const text = clean(receipt.label || label);
+      const link = clean(receipt.target_url || '');
+      return link
+        ? `<a class="sf-listening-ai-action-receipt" href="${esc(link)}">✓ ${esc(text)}</a>`
+        : `<span class="sf-listening-ai-action-receipt">✓ ${esc(text)}</span>`;
+    }
+    return `<button type="button" data-listening-ai-item-action="${esc(action)}" data-listening-ai-action-item="${esc(item.item_id)}" data-listening-ai-action-target="${Number(targetId || 0)}">${esc(label)}</button>`;
+  }
+
+  function operationalActionsHtml(item, appId) {
+    if (!item || typeof item !== 'object' || item.review_state !== 'accepted') return '';
+    const options = [];
+    if (state.operations?.main_chat?.available) options.push(actionButtonHtml(item,'main_chat','Main Chat'));
+    if (state.operations?.agent_brain?.available) options.push(actionButtonHtml(item,'agent_brain','Agent Brain'));
+    if (state.operations?.agent_task?.available) {
+      const commitment = appId === 'decisions' && String(item.section_key || '') === 'commitments';
+      options.push(actionButtonHtml(item,'agent_task',commitment ? 'Create Commitment' : 'Create Task'));
+    }
+    if (state.operations?.personal_knowledge?.available) options.push(actionButtonHtml(item,'personal_knowledge','Knowledge'));
+    if (state.operations?.project_note?.available) {
+      const title = clean(state.operations.project_note.title || '');
+      options.push(actionButtonHtml(item,'project_note',title ? `Project Note · ${title}` : 'Project Note'));
+    }
+    if (state.operations?.crm?.available) {
+      (Array.isArray(state.operations.crm.targets) ? state.operations.crm.targets : []).forEach(target => {
+        const leadId = Math.max(0, Number(target?.lead_id || 0));
+        if (!leadId) return;
+        const label = clean(target?.name || target?.company || `Lead ${leadId}`);
+        options.push(actionButtonHtml(item,'crm_note',`CRM Note · ${label}`,leadId));
+        options.push(actionButtonHtml(item,'crm_task',`CRM Task · ${label}`,leadId));
+      });
+    }
+    if (!options.length) return '';
+    return `<details class="sf-listening-ai-operational"><summary>Actions</summary><div class="sf-listening-ai-operational-menu">${options.join('')}</div></details>`;
+  }
+
   function itemActionsHtml(item, appId) {
     if (!item || typeof item !== 'object' || !clean(item.item_id)) return '';
     const itemId = String(item.item_id);
@@ -179,7 +226,7 @@
     if (state.editingItemId === itemId) {
       return `<div class="sf-listening-ai-item-actions" data-listening-ai-item-actions>${evidence}<button type="button" data-listening-ai-edit-save="${esc(itemId)}">Save edit</button><button type="button" data-listening-ai-edit-cancel="${esc(itemId)}">Cancel</button></div>`;
     }
-    return `<div class="sf-listening-ai-item-actions" data-listening-ai-item-actions>${evidence}<button type="button" data-listening-ai-review="accepted" data-listening-ai-item="${esc(itemId)}" class="${review === 'accepted' ? 'active' : ''}">Accept</button><button type="button" data-listening-ai-edit="${esc(itemId)}">Edit</button><button type="button" data-listening-ai-review="rejected" data-listening-ai-item="${esc(itemId)}" class="${review === 'rejected' ? 'active' : ''}">Reject</button><small>${esc(review === 'unreviewed' ? 'Unreviewed' : review)}</small></div>`;
+    return `<div class="sf-listening-ai-item-actions" data-listening-ai-item-actions>${evidence}<button type="button" data-listening-ai-review="accepted" data-listening-ai-item="${esc(itemId)}" class="${review === 'accepted' ? 'active' : ''}">Accept</button><button type="button" data-listening-ai-edit="${esc(itemId)}">Edit</button><button type="button" data-listening-ai-review="rejected" data-listening-ai-item="${esc(itemId)}" class="${review === 'rejected' ? 'active' : ''}">Reject</button><small>${esc(review === 'unreviewed' ? 'Unreviewed' : review)}</small></div>${operationalActionsHtml(item,appId)}`;
   }
 
   function sectionHtml(section, result, appId) {
@@ -248,6 +295,7 @@
     state.report = data.master || state.report;
     state.appStatus = data.app_status || state.appStatus;
     state.permissions = data.permissions || state.permissions;
+    state.operations = data.operations || state.operations;
   }
 
   function ensurePanel() {
@@ -303,6 +351,15 @@
       if (evidence) { void focusEvidence(Number(evidence.dataset.listeningAiEvidence || 0)); return; }
       const review = event.target.closest('[data-listening-ai-review]');
       if (review) { void reviewItem(String(review.dataset.listeningAiItem || ''), String(review.dataset.listeningAiReview || 'unreviewed')); return; }
+      const itemAction = event.target.closest('[data-listening-ai-item-action]');
+      if (itemAction) {
+        void performItemAction(
+          String(itemAction.dataset.listeningAiActionItem || ''),
+          String(itemAction.dataset.listeningAiItemAction || ''),
+          Number(itemAction.dataset.listeningAiActionTarget || 0)
+        );
+        return;
+      }
       const edit = event.target.closest('[data-listening-ai-edit]');
       if (edit) { state.editingItemId = String(edit.dataset.listeningAiEdit || ''); renderReport(); return; }
       const cancel = event.target.closest('[data-listening-ai-edit-cancel]');
@@ -478,6 +535,7 @@
       state.report = null;
       state.appStatus = {};
       state.permissions = {};
+      state.operations = {};
       state.liveWords = 0;
       state.lastReportedWords = 0;
       render();
@@ -577,6 +635,38 @@
     }
   }
 
+  async function performItemAction(itemId, itemAction, targetId = 0) {
+    const sessionId = currentSessionId();
+    itemId = clean(itemId);
+    itemAction = clean(itemAction);
+    targetId = Math.max(0, Number(targetId || 0));
+    if (!sessionId || !itemId || !itemAction || state.busy) return;
+    state.busy = true;
+    state.busyApp = state.activeApp;
+    state.lastError = '';
+    state.actionMessage = '';
+    render();
+    try {
+      const data = await request('item_action', {
+        session_id:sessionId,app_id:state.activeApp,item_id:itemId,item_action:itemAction,target_id:targetId
+      });
+      applyServerView(data);
+      const receipt = data.receipt || {};
+      state.actionMessage = data.existing
+        ? `Already completed${receipt.label ? ` · ${receipt.label}` : ''}.`
+        : `${receipt.label || 'Action completed'}.`;
+      if (!data.existing) proof.itemActions += 1;
+      proof.lastError = '';
+    } catch (error) {
+      state.lastError = String(error?.message || error);
+      proof.lastError = state.lastError;
+    } finally {
+      state.busy = false;
+      state.busyApp = '';
+      render();
+    }
+  }
+
   async function focusEvidence(page) {
     page = Math.max(0, Number(page || 0));
     if (!page) return;
@@ -637,7 +727,8 @@
       sessionId:currentSessionId(),open:!!state.open,settingsOpen:!!state.settingsOpen,researchEnabled:!!state.researchEnabled,
       selectedApps:[...state.selectedApps],activeApp:String(state.activeApp||''),busy:!!state.busy,busyApp:String(state.busyApp||''),
       report:state.report?JSON.parse(JSON.stringify(state.report)):null,appStatus:JSON.parse(JSON.stringify(state.appStatus||{})),
-      registry:JSON.parse(JSON.stringify(state.registry||[])),permissions:{...state.permissions},liveWords:Math.max(0,Number(state.liveWords||0)),lastError:String(state.lastError||''),
+      registry:JSON.parse(JSON.stringify(state.registry||[])),permissions:{...state.permissions},operations:JSON.parse(JSON.stringify(state.operations||{})),
+      liveWords:Math.max(0,Number(state.liveWords||0)),lastError:String(state.lastError||''),
     };
   }
 
@@ -660,6 +751,7 @@
     analyzePlugin:async(appId,mode='manual')=>{await analyzeApps([String(appId||state.activeApp)],mode);if(state.lastError)throw new Error(state.lastError);return state.report;},
     reviewItem:async(itemId,reviewState)=>{await reviewItem(String(itemId||''),String(reviewState||'unreviewed'));if(state.lastError)throw new Error(state.lastError);return state.report;},
     editItem:async(itemId,text)=>{await editItem(String(itemId||''),String(text||''));if(state.lastError)throw new Error(state.lastError);return state.report;},
+    performItemAction:async(itemId,itemAction,targetId=0)=>{await performItemAction(String(itemId||''),String(itemAction||''),Number(targetId||0));if(state.lastError)throw new Error(state.lastError);return state.report;},
     focusEvidence:async page=>{await focusEvidence(page);if(state.lastError)throw new Error(state.lastError);return true;},
     saveBrain:async()=>{await saveResult('save_brain');if(state.lastError)throw new Error(state.lastError);return true;},
     saveKnowledge:async()=>{await saveResult('save_knowledge');if(state.lastError)throw new Error(state.lastError);return true;},

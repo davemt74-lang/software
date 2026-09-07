@@ -5,7 +5,7 @@ declare(strict_types=1);
  * VP3 transcription intelligence item layer v302.
  *
  * Converts plugin array rows into durable intelligence objects without adding
- * another database table. Item review/edit state lives inside the existing
+ * another database table. Item review/edit/action state lives inside the existing
  * master-analysis module JSON and survives equivalent plugin reruns.
  */
 const VP3_TRANSCRIPTION_INTELLIGENCE_ITEMS_V302 = 'transcription-intelligence-items-v302-20260906';
@@ -86,12 +86,14 @@ function transcription_intelligence_review_index_v302(?array $master): array
             foreach ((array)($result[$sectionKey] ?? []) as $item) {
                 if (!is_array($item)) continue;
                 $fingerprint = transcription_intelligence_source_fingerprint_v302($appId,$sectionKey,$item,$primary);
+                $actions = is_array($item['actions'] ?? null) ? transcription_app_sanitize_value_v300($item['actions']) : [];
                 $index[$fingerprint] = [
                     'item_id'=>(string)($item['item_id'] ?? ''),
                     'review_state'=>(string)($item['review_state'] ?? 'unreviewed'),
                     'reviewed_at'=>(string)($item['reviewed_at'] ?? ''),
                     'user_edited'=>!empty($item['user_edited']),
                     'edited_text'=>(string)($item['edited_text'] ?? ''),
+                    'actions'=>is_array($actions) ? $actions : [],
                 ];
             }
         }
@@ -132,6 +134,9 @@ function transcription_intelligence_normalize_modules_v302(array $modules, array
                 } else {
                     unset($item['edited_text']);
                 }
+                $actions = is_array($item['actions'] ?? null) ? $item['actions'] : (is_array($prior['actions'] ?? null) ? $prior['actions'] : []);
+                if ($actions) $item['actions'] = transcription_app_sanitize_value_v300($actions);
+                else unset($item['actions']);
                 $item['evidence_refs'] = transcription_intelligence_evidence_refs_v302($item);
                 $result[$sectionKey][$offset] = $item;
             }
@@ -231,6 +236,8 @@ function transcription_intelligence_edit_item_v302(
     $modules = transcription_intelligence_normalize_modules_v302($modules);
     [$sectionKey,$offset,$primary] = transcription_intelligence_find_item_v302($modules,$appId,$itemId);
     $item =& $modules[$appId]['result'][$sectionKey][$offset];
+    $previousText = transcription_app_clean_v300((string)($item[$primary] ?? ''),1400);
+    if ($previousText !== $text) unset($item['actions']);
     $item[$primary] = $text;
     $item['edited_text'] = $text;
     $item['user_edited'] = true;
@@ -247,6 +254,7 @@ function transcription_intelligence_export_result_v302(mixed $value): mixed
     $out = [];
     foreach ($value as $key=>$item) {
         if (is_array($item) && ($item['review_state'] ?? '') === 'rejected') continue;
+        if (!$isList && in_array((string)$key,['source_fingerprint','edited_text','actions'],true)) continue;
         $clean = transcription_intelligence_export_result_v302($item);
         if ($isList) $out[] = $clean;
         else $out[$key] = $clean;

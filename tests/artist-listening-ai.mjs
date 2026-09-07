@@ -9,6 +9,7 @@ const api = readFileSync('api/artist-listening-intelligence-v300.php', 'utf8');
 const registry = readFileSync('includes/transcription-app-registry.php', 'utf8');
 const wave2 = readFileSync('includes/transcription-apps-wave2.php', 'utf8');
 const items = readFileSync('includes/transcription-intelligence-items.php', 'utf8');
+const actions = readFileSync('includes/transcription-intelligence-actions.php', 'utf8');
 const legacyApi = readFileSync('api/artist-listening-intelligence-v254.php', 'utf8');
 
 const asset = 'artist-listening-ai.js?v=transcription-app-registry-v300-20260906';
@@ -22,7 +23,7 @@ assert.ok(!existsSync('artist-listening-intelligence-v236.js'), 'legacy v236 bro
 assert.ok(!existsSync('artist-listening-intelligence-v254.js'), 'legacy v254 browser file must stay deleted');
 
 assert.ok(workspace.includes('data-listening-ai-toggle'), 'workspace must source-own the one AI Summary button');
-assert.ok(client.includes("const BUILD = 'transcription-intelligence-v302-20260906'"), 'controller must identify the durable intelligence build');
+assert.ok(client.includes("const BUILD = 'transcription-intelligence-v303-20260906'"), 'controller must identify the operational intelligence build');
 assert.ok(client.includes("document.querySelector('[data-listening-ai-toggle]')"), 'controller must resolve the existing workspace button directly');
 assert.ok(client.includes("button.addEventListener('click'"), 'existing button must receive a direct click listener');
 assert.ok(!client.includes("document.addEventListener('click'"), 'no delegated document click owner is allowed');
@@ -49,7 +50,7 @@ assert.ok(client.includes('External Research'), 'Basic Analysis must preserve vi
 assert.ok(page.includes('.sf-listening-ai-structured-list{display:grid'), 'registry reports must have canonical structured-list styling');
 assert.ok(page.includes('.sf-listening-ai-item-meta{display:flex'), 'structured report metadata must remain readable');
 
-/* Canonical v300 registry remains intact while wave two and v302 item semantics extend it. */
+/* Canonical registries remain intact while durable item and action semantics extend them. */
 for (const id of ['basic','stats','actions','responses','decisions','moments','studio','knowledge','topics','entities','risks','timeline']) {
   assert.ok(registry.includes(`'${id}' => [`), `${id} transcription app must remain registered`);
 }
@@ -61,7 +62,8 @@ assert.ok(registry.includes("'execution'=>'ai'"), 'registry must support AI apps
 assert.ok(registry.includes('function transcription_app_registry_public_v300'), 'registry must expose safe browser metadata');
 assert.ok(registry.includes('function transcription_app_ids_v300'), 'server must validate requested app IDs from the registry');
 assert.ok(wave2.includes('function transcription_app_registry_v301'), 'wave two must extend the canonical registry');
-assert.ok(items.includes('function transcription_intelligence_normalize_modules_v302'), 'v302 must add durable item semantics without duplicating the app registry');
+assert.ok(items.includes('function transcription_intelligence_normalize_modules_v302'), 'v302 durable item semantics must remain available');
+assert.ok(actions.includes('function transcription_intelligence_execute_action_v303'), 'v303 must add bounded operational actions without duplicating the plugin registry');
 
 /* Each app owns its result and selected runs cannot erase other modules. */
 assert.ok(registry.includes("'modules'=>$modules"), 'master analysis must persist independent modules');
@@ -93,13 +95,15 @@ assert.ok(client.includes('sf-listening-ai-stat-grid'), 'Stats tab must render s
 assert.ok(client.includes('sf-listening-ai-chart-track'), 'Stats tab must render speaker-share charts');
 assert.ok(page.includes('.sf-listening-ai-chart-track{height:7px'), 'speaker-share chart must retain visible geometry');
 
-/* Stable v300 URL delegates through v301 plugins and the v302 item layer; v254 stays compatibility-only. */
+/* Stable v300 URL delegates through v301 plugins, v302 items and v303 actions; v254 stays compatibility-only. */
 assert.ok(api.includes("require_once dirname(__DIR__) . '/includes/transcription-app-registry.php'"), 'stable API must load the canonical registry');
 assert.ok(api.includes("require_once dirname(__DIR__) . '/includes/transcription-apps-wave2.php'"), 'stable API must load wave two');
 assert.ok(api.includes("require_once dirname(__DIR__) . '/includes/transcription-intelligence-items.php'"), 'stable API must load durable item semantics');
+assert.ok(api.includes("require_once dirname(__DIR__) . '/includes/transcription-intelligence-actions.php'"), 'stable API must load operational action semantics');
 assert.ok(api.includes("$action === 'analyze'"), 'stable API URL must continue to own app analysis');
 assert.ok(api.includes('transcription_app_analyze_v301'), 'stable endpoint must delegate plugin execution to v301');
-assert.ok(api.includes("['save_brain','save_knowledge']"), 'stable API must preserve explicit save actions');
+assert.ok(api.includes("$action === 'item_action'"), 'stable endpoint must own explicit operational item actions');
+assert.ok(api.includes("['save_brain','save_knowledge']"), 'stable API must preserve explicit whole-report save actions');
 assert.ok(api.includes('transcription_intelligence_report_text_v302'), 'Brain/Knowledge saves must use review-aware current intelligence');
 assert.ok(client.includes('artist-listening-intelligence-v300.php'), 'browser must keep the stable registry API URL');
 assert.ok(legacyApi.includes('artist_listening_v254_analyze'), 'legacy v254 endpoint must remain available during migration');
@@ -113,6 +117,12 @@ assert.ok(client.includes("scheduleLive('words')"), 'Research ON must retain bou
 assert.ok(client.includes('state.liveWords < 120'), 'live analysis must preserve minimum transcript threshold');
 assert.ok(client.includes('delta < 250'), 'live analysis must avoid repeated low-delta requests');
 assert.ok(registry.includes('function transcription_app_research_gate_v300'), 'server must retain bounded research gating');
+
+/* Accepted items expose explicit operational actions, still inside the canonical controller. */
+assert.ok(client.includes('sf-listening-ai-operational'), 'accepted items must expose a compact action menu');
+assert.ok(client.includes("request('item_action'"), 'item actions must use the stable intelligence API');
+assert.ok(client.includes('performItemAction:'), 'controller API must expose explicit item actions');
+assert.ok(client.includes('state.operations'), 'server-side permission/target context must control available actions');
 
 /* Ownership boundaries remain clean. */
 assert.ok(client.includes('sf-listening-ai-footer-actions'), 'AI footer must expose one canonical action row');
