@@ -2,7 +2,7 @@
   'use strict';
 
   const cfg = window.STONEFELLOW_ARTIST_LISTENING_V172 || {};
-  const BUILD = 'transcription-relations-v305-20260906';
+  const BUILD = 'transcription-deeper-v307-20260907';
   const userId = Math.max(0, Number(cfg.userId || 0));
   const reportEndpoint = String(cfg.endpoint || '').replace(/artist-listening-v172\.php(?:\?.*)?$/i, 'artist-listening-intelligence-v300.php');
   const legacyResearchKey = `stonefellow:artist-listening:ai-summary:${userId}`;
@@ -17,6 +17,7 @@
     focus: '',
     context_mode: 'authorized',
   };
+  const defaultComparison = () => ({id:'project_history',label:'Project / conversation history',mode:'project_history',session_id:0});
 
   const state = {
     open: false,
@@ -35,6 +36,8 @@
     runPlan: null,
     pluginErrors: {},
     relationsSummary: {total:0,accepted:0,rejected:0,unreviewed:0,types:{}},
+    comparisonTargets: [],
+    comparison: defaultComparison(),
     busy: false,
     busyApp: '',
     busyRelations: false,
@@ -63,6 +66,7 @@
     relationReviews: 0,
     evidenceJumps: 0,
     presetChanges: 0,
+    comparisonChanges: 0,
     isOpen: () => state.open,
     open: () => setOpen(true),
     close: () => setOpen(false),
@@ -75,6 +79,7 @@
     isSettingsOpen: () => state.settingsOpen,
     selectedApps: () => [...state.selectedApps],
     activeApp: () => state.activeApp,
+    comparison: () => ({...state.comparison}),
   };
 
   const clean = value => String(value || '').replace(/\s+/g, ' ').trim();
@@ -159,6 +164,49 @@
       cfg.initialSessionId ||
       0
     ));
+  }
+
+  function comparisonTarget(mode, sessionId = 0) {
+    mode = clean(mode || 'project_history');
+    sessionId = Math.max(0, Number(sessionId || 0));
+    return state.comparisonTargets.find(row => clean(row?.mode) === mode && Math.max(0,Number(row?.session_id || 0)) === sessionId) || null;
+  }
+
+  function setComparisonTargets(targets) {
+    state.comparisonTargets = Array.isArray(targets)
+      ? targets.filter(row => row && clean(row.id) && clean(row.mode) && clean(row.label)).map(row => ({
+          id:clean(row.id),label:clean(row.label),mode:clean(row.mode),session_id:Math.max(0,Number(row.session_id || 0)),updated_at:clean(row.updated_at || '')
+        }))
+      : [];
+    const selected = state.comparisonTargets.find(row => row.id === state.comparison.id)
+      || comparisonTarget(state.comparison.mode,state.comparison.session_id)
+      || state.comparisonTargets.find(row => row.id === 'project_history')
+      || state.comparisonTargets[0]
+      || defaultComparison();
+    state.comparison = {...selected};
+  }
+
+  function setComparisonTarget(id, userChange = true) {
+    const target = state.comparisonTargets.find(row => row.id === String(id || ''));
+    if (!target) return {...state.comparison};
+    state.comparison = {...target};
+    state.actionMessage = `Comparison · ${target.label}.`;
+    if (userChange) proof.comparisonChanges += 1;
+    render();
+    return {...state.comparison};
+  }
+
+  function syncComparison(value) {
+    if (!value || typeof value !== 'object') return;
+    const target = comparisonTarget(String(value.mode || ''),Number(value.session_id || 0));
+    state.comparison = target ? {...target} : {
+      id:String(value.mode || 'project_history'),label:clean(value.label || 'Project / conversation history'),
+      mode:String(value.mode || 'project_history'),session_id:Math.max(0,Number(value.session_id || 0))
+    };
+  }
+
+  function comparisonPayload() {
+    return {mode:String(state.comparison.mode || 'project_history'),session_id:Math.max(0,Number(state.comparison.session_id || 0))};
   }
 
   function transcriptWordCount(segments = []) {
@@ -247,12 +295,13 @@
     if (deterministic) pieces.push(`${deterministic} token-free`);
     pieces.push(`${String(plan.estimated_ai_cost || 'none')} cost`);
     if (state.workflow.web_research) pieces.push('web research');
+    if (state.workflow.depth === 'deep' && state.selectedApps.includes('changes')) pieces.push(`compare ${state.comparison.label}`);
     return pieces.join(' · ');
   }
 
   function itemText(item, primary = 'text') {
     if (!item || typeof item !== 'object') return clean(item);
-    return clean(item[primary] ?? item.text ?? item.value ?? item.note ?? item.action ?? item.response ?? item.decision ?? item.commitment ?? item.moment ?? item.topic ?? item.name ?? item.risk ?? item.event ?? item.question ?? item.follow_up ?? item.opportunity ?? item.change ?? item.position ?? item.constraint ?? item.requirement ?? item.item ?? '');
+    return clean(item[primary] ?? item.text ?? item.value ?? item.note ?? item.action ?? item.response ?? item.decision ?? item.commitment ?? item.moment ?? item.topic ?? item.name ?? item.risk ?? item.event ?? item.question ?? item.follow_up ?? item.opportunity ?? item.change ?? item.position ?? item.constraint ?? item.requirement ?? item.item ?? item.claim ?? item.objection ?? item.promise ?? '');
   }
 
   function metaHtml(item, fields = []) {
@@ -432,6 +481,8 @@
       state.workflow = normalizeWorkflow(data.workflow);
       persistWorkflow();
     }
+    if (Array.isArray(data.comparison_targets)) setComparisonTargets(data.comparison_targets);
+    if (data.comparison && typeof data.comparison === 'object') syncComparison(data.comparison);
     state.report = data.master || state.report;
     state.appStatus = data.app_status || state.appStatus;
     state.permissions = data.permissions || state.permissions;
@@ -467,6 +518,7 @@
         <div class="sf-listening-ai-workflow-grid">
           <label><span>Depth</span><select data-listening-ai-depth></select></label>
           <label><span>Context</span><select data-listening-ai-context></select></label>
+          <label data-listening-ai-comparison-wrap hidden><span>Compare</span><select data-listening-ai-comparison></select></label>
           <label class="sf-listening-ai-focus"><span>Focus</span><input type="text" maxlength="240" data-listening-ai-focus placeholder="Optional analysis focus"></label>
         </div>
         <div class="sf-listening-ai-run-plan" data-listening-ai-run-plan></div>
@@ -501,6 +553,7 @@
     });
     panel.querySelector('[data-listening-ai-depth]')?.addEventListener('change', event => setWorkflowField('depth', String(event.target.value || 'standard')));
     panel.querySelector('[data-listening-ai-context]')?.addEventListener('change', event => setWorkflowField('context_mode', String(event.target.value || 'authorized')));
+    panel.querySelector('[data-listening-ai-comparison]')?.addEventListener('change', event => setComparisonTarget(String(event.target.value || 'project_history'), true));
     panel.querySelector('[data-listening-ai-focus]')?.addEventListener('change', event => setWorkflowField('focus', String(event.target.value || '')));
     panel.querySelector('[data-listening-ai-app-options]')?.addEventListener('change', event => {
       const input = event.target.closest('[data-listening-ai-app]');
@@ -563,6 +616,8 @@
   function renderWorkflowControls() {
     const depth = document.querySelector('[data-listening-ai-depth]');
     const context = document.querySelector('[data-listening-ai-context]');
+    const compareWrap = document.querySelector('[data-listening-ai-comparison-wrap]');
+    const compare = document.querySelector('[data-listening-ai-comparison]');
     const focus = document.querySelector('[data-listening-ai-focus]');
     const plan = document.querySelector('[data-listening-ai-run-plan]');
     if (depth) {
@@ -572,6 +627,12 @@
     if (context) {
       const rows = Array.isArray(state.workflowConfig?.context_options) ? state.workflowConfig.context_options : [];
       context.innerHTML = rows.map(row => `<option value="${esc(row.id)}" ${state.workflow.context_mode === row.id ? 'selected' : ''}>${esc(row.title || row.id)}</option>`).join('');
+    }
+    const comparisonActive = state.selectedApps.includes('changes');
+    if (compareWrap) compareWrap.hidden = !comparisonActive;
+    if (compare) {
+      compare.disabled = !comparisonActive || !state.comparisonTargets.length;
+      compare.innerHTML = state.comparisonTargets.map(row => `<option value="${esc(row.id)}" ${row.id === state.comparison.id ? 'selected' : ''}>${esc(row.label)}</option>`).join('');
     }
     if (focus && focus.value !== state.workflow.focus) focus.value = state.workflow.focus;
     if (plan) plan.textContent = `Run plan · ${planText(localRunPlan())}`;
@@ -793,6 +854,8 @@
       state.operations = {};
       state.runPlan = null;
       state.relationsSummary = {total:0,accepted:0,rejected:0,unreviewed:0,types:{}};
+      state.comparisonTargets = [];
+      state.comparison = defaultComparison();
       state.liveWords = 0;
       state.lastReportedWords = 0;
       render();
@@ -826,7 +889,7 @@
     state.pluginErrors = {};
     render();
     try {
-      const data = await request('analyze', {session_id:sessionId,mode,apps:requested,workflow:{...state.workflow}});
+      const data = await request('analyze', {session_id:sessionId,mode,apps:requested,workflow:{...state.workflow},comparison:comparisonPayload()});
       if (currentSessionId() !== sessionId) return;
       applyServerView(data);
       state.lastReportedWords = Number(state.report?.word_count || state.liveWords || state.lastReportedWords);
@@ -1039,6 +1102,7 @@
       researchEnabled:!!state.workflow.web_research,liveAnalysisEnabled:!!state.workflow.live_analysis,
       workflow:{...state.workflow},workflowConfig:JSON.parse(JSON.stringify(state.workflowConfig||{})),runPlan:JSON.parse(JSON.stringify(state.runPlan||localRunPlan())),
       pluginErrors:{...state.pluginErrors},relationsSummary:JSON.parse(JSON.stringify(state.relationsSummary||{})),
+      comparison:{...state.comparison},comparisonTargets:JSON.parse(JSON.stringify(state.comparisonTargets||[])),
       selectedApps:[...state.selectedApps],activeApp:String(state.activeApp||''),busy:!!state.busy,busyApp:String(state.busyApp||''),
       report:state.report?JSON.parse(JSON.stringify(state.report)):null,appStatus:JSON.parse(JSON.stringify(state.appStatus||{})),
       registry:JSON.parse(JSON.stringify(state.registry||[])),permissions:{...state.permissions},operations:JSON.parse(JSON.stringify(state.operations||{})),
@@ -1063,6 +1127,7 @@
   proof.api = {
     getState:transcriptionAiState,open:()=>setOpen(true),close:()=>setOpen(false),setResearchEnabled,setLiveAnalysisEnabled,
     setWorkflow:workflow=>setWorkflow(workflow,true),applyPreset:presetId=>applyPreset(String(presetId||'')),setApps:transcriptionSetApps,
+    setComparison:targetId=>setComparisonTarget(String(targetId||'project_history'),true),
     setActiveApp:appId=>{setActiveApp(String(appId||''));return state.activeApp;},
     analyze:async(mode='manual')=>{await analyze(mode);if(state.lastError)throw new Error(state.lastError);return state.report;},
     analyzePlugin:async(appId,mode='manual')=>{await analyzeApps([String(appId||state.activeApp)],mode);if(state.lastError)throw new Error(state.lastError);return state.report;},
