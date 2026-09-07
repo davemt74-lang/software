@@ -6,7 +6,7 @@ declare(strict_types=1);
  *
  * Keep the public function surface stable while separating storage/bootstrap,
  * package access/assignment, AI quota accounting, customer plan management,
- * and external billing-provider reconciliation into focused modules.
+ * external billing-provider reconciliation, and read-only business intelligence.
  */
 require_once __DIR__ . '/subscription-schema.php';
 require_once __DIR__ . '/subscription-access.php';
@@ -17,3 +17,4 @@ require_once __DIR__ . '/billing-schema.php';
 require_once __DIR__ . '/billing-stripe.php';
 require_once __DIR__ . '/billing-runtime.php';
 require_once __DIR__ . '/token-packs.php';
+require_once __DIR__ . '/subscription-intelligence.php';
