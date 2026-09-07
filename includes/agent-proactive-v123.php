@@ -45,7 +45,7 @@ function agent_proactive_v123_score(array $candidate,array $activity,array $task
 function agent_proactive_v123_event(array $candidate,?array $task=null): array
 {
     $source=(string)($candidate['source']??'agent_brain');$key=(string)($candidate['key']??$candidate['hash']??sha1(json_encode($candidate)));$eventId='event-'.sha1($source.'|'.$key);$kind=is_array($task)?'task_state':'ecosystem_change';
-    return ['id'=>$eventId,'type'=>'event','event_kind'=>$kind,'source'=>$source,'title'=>(string)($candidate['reason']??$candidate['title']??'Stonefellow observed a change.'),'summary'=>(string)($candidate['reason']??''),'occurred_at'=>(string)($task['last_seen_at']??$candidate['_occurred_at']??date('Y-m-d H:i:s')),'evidence'=>is_array($task)?['task_key'=>$task['task_key'],'status'=>$task['status'],'confidence'=>$task['confidence']]:['candidate_key'=>$key]];
+    return ['id'=>$eventId,'type'=>'event','event_kind'=>$kind,'source'=>$source,'title'=>(string)($candidate['reason']??$candidate['title']??'Stonefellow observed a change.'),'summary'=>(string)($candidate['reason']??''),'occurred_at'=>(string)($task['last_seen_at']??$candidate['_occurred_at']??date('Y-m-d H:i:s')),'evidence'=>is_array($task)?['task_key'=>$task['task_key'],'status'=>$task['status'],'confidence'=>$task['confidence'],'source_label'=>(string)($task['source_label']??''),'source_url'=>(string)($task['source_url']??'')]:['candidate_key'=>$key]];
 }
 function agent_proactive_v123_action(array $candidate,array $event,array $rank): array
 {
@@ -54,7 +54,12 @@ function agent_proactive_v123_action(array $candidate,array $event,array $rank):
 }
 function agent_proactive_v123_task_candidates(array $user,string $surface,array $activity): array
 {
-    $out=[];foreach(agent_memory_v123_tasks($user,false) as $task){$status=(string)$task['status'];$title=trim((string)$task['title'])?:'Open task';$text=(string)$task['text'];$reason=ucwords(str_replace('_',' ',$status)).' task from Agent Brain';if($task['due_at']!=='')$reason.=' · '.$task['due_at'];$out[]=['hash'=>sha1('task|'.$task['task_key']),'key'=>'task:'.$task['task_key'],'title'=>($status==='waiting'?'Check ':'Continue ').$title,'prompt'=>'Review this Agent Brain task, its current state and related project context, then help me take the next useful step: '.$text,'reason'=>$reason,'source'=>'task_lifecycle','url'=>'','_task'=>$task,'_confidence'=>$task['confidence'],'_occurred_at'=>$task['last_seen_at']];}return $out;
+    $out=[];foreach(agent_memory_v123_tasks($user,false) as $task){
+        $status=(string)$task['status'];$title=trim((string)$task['title'])?:'Open task';$text=(string)$task['text'];
+        $sourceLabel=trim((string)($task['source_label']??''));$sourceUrl=trim((string)($task['source_url']??''));
+        $reason=ucwords(str_replace('_',' ',$status)).' task from Agent Brain';if($sourceLabel!=='')$reason.=' · Source: '.$sourceLabel;if($task['due_at']!=='')$reason.=' · '.$task['due_at'];
+        $out[]=['hash'=>sha1('task|'.$task['task_key']),'key'=>'task:'.$task['task_key'],'title'=>($status==='waiting'?'Check ':'Continue ').$title,'prompt'=>'Review this Agent Brain task, its current state and related project context, then help me take the next useful step: '.$text,'reason'=>$reason,'source'=>'task_lifecycle','url'=>$sourceUrl,'_task'=>$task,'_confidence'=>$task['confidence'],'_occurred_at'=>$task['last_seen_at']];
+    }return $out;
 }
 function agent_proactive_v123_evidence_candidates(array $user,string $surface,array $context,array $activity): array
 {
