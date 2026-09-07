@@ -64,7 +64,16 @@ function vp3_radar_access_profile_catalog(): array
 function vp3_radar_access_profile_public_catalog(): array
 {
     $out=[];
-    foreach(vp3_radar_access_profile_catalog() as $slug=>$profile)$out[$slug]=['slug'=>$slug,'label'=>$profile['label'],'description'=>$profile['description']];
+    foreach(vp3_radar_access_profile_catalog() as $slug=>$profile){
+        $rules=[];
+        foreach($profile['rules'] as $rule)$rules[]=['visitor_class'=>(string)$rule['visitor_class'],'action'=>(string)$rule['action']];
+        $out[$slug]=[
+            'slug'=>$slug,
+            'label'=>$profile['label'],
+            'description'=>$profile['description'],
+            'rules'=>$rules,
+        ];
+    }
     return array_values($out);
 }
 
