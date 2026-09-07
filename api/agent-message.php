@@ -36,6 +36,15 @@ try{
     vp3_agent_message_json(200,['ok'=>true,'answer'=>$result['answer'],'sources'=>$result['sources'],'agent'=>$result['agent'],'grant'=>['status'=>(string)$grant['status']==='approved_once'?'consumed':'approved']]);
 }catch(Throwable $e){
     if((string)$grant['status']==='approved_once')vp3_agent_access_restore_once($pdo,$owner,(int)$grant['id']);
-    $public=str_contains(mb_strtolower($e->getMessage()),'rate limit')?'Agent messaging rate limit reached.':'The Profile Agent could not complete this message.';
-    vp3_agent_message_json(429,['ok'=>false,'error'=>$public]);
+    $messageText=(string)$e->getMessage();$lower=mb_strtolower($messageText);
+    if(str_contains($lower,'rate limit')||str_contains($lower,'please wait')){
+        header('Retry-After: 10');
+        vp3_agent_message_json(429,['ok'=>false,'error'=>'Agent messaging rate limit reached.']);
+    }
+    if($messageText==='VP3_AGENT_MESSAGE_QUOTA')vp3_agent_message_json(402,['ok'=>false,'error'=>'The profile owner’s VP3 AI token balance cannot currently fund Agent Messaging.']);
+    if($messageText==='VP3_AGENT_MESSAGE_PROVIDER')vp3_agent_message_json(503,['ok'=>false,'error'=>'The Profile Agent AI service is temporarily unavailable.']);
+    if(str_contains($lower,'gateway denies'))vp3_agent_message_json(403,['ok'=>false,'error'=>'Agent Gateway denies messaging for this contact.']);
+    if(str_contains($lower,'enter an agent message'))vp3_agent_message_json(422,['ok'=>false,'error'=>'Enter an agent message up to 2,000 characters.']);
+    error_log('VP3 Agent Messaging failed: '.get_class($e).' '.mb_strimwidth($messageText,0,500,'…'));
+    vp3_agent_message_json(500,['ok'=>false,'error'=>'The Profile Agent could not complete this message.']);
 }
