@@ -27,6 +27,7 @@ function profile_runtime_session(PDO $pdo,int $ownerUserId,?array $visitor,bool 
 function profile_runtime_record_view(PDO $pdo,array $profile,?array $visitor): ?array
 {
     $owner=(int)$profile['user_id'];
+    if(function_exists('vp3_radar_record_native_profile_request')&&vp3_radar_record_native_profile_request($pdo,$profile,$visitor))return null;
     if((int)($visitor['id']??0)===$owner)return null;
     $session=profile_runtime_session($pdo,$owner,$visitor,true);
     $agent=profile_active_agent($pdo,$profile);
@@ -184,6 +185,8 @@ function profile_runtime_owner_state(PDO $pdo,array $user): array
 
     $attention=profile_runtime_attention_list($pdo,$uid,50);
     $contacts=function_exists('profile_visitor_contact_list_v243')?profile_visitor_contact_list_v243($pdo,$uid,100):[];
+    $agentContacts=function_exists('vp3_radar_agent_contacts')?vp3_radar_agent_contacts($pdo,$uid,100):[];
+    $radarStats=function_exists('vp3_radar_owner_stats')?vp3_radar_owner_stats($pdo,$uid):['agent_contacts'=>0,'events_24h'=>0,'high_risk_24h'=>0];
     $visitStats=$pdo->prepare('SELECT COALESCE(SUM(view_count),0) AS total_views,COUNT(*) AS visitor_sessions,COALESCE(SUM(last_seen_at>=DATE_SUB(NOW(),INTERVAL 5 MINUTE)),0) AS active_visitors,COALESCE(SUM(visitor_user_id IS NOT NULL),0) AS signed_in_sessions FROM profile_visit_sessions WHERE owner_user_id=?');
     $visitStats->execute([$uid]);$visitStatRow=$visitStats->fetch()?:[];
     $conversationStats=$pdo->prepare("SELECT COUNT(*) AS total_conversations,COALESCE(SUM(status<>'resolved'),0) AS open_conversations,COALESCE(SUM(status='owner_joined'),0) AS owner_joined FROM profile_agent_conversations WHERE owner_user_id=?");
@@ -210,6 +213,7 @@ function profile_runtime_owner_state(PDO $pdo,array $user): array
         ],
         'visits'=>$visitRows,
         'contacts'=>$contacts,
+        'agent_contacts'=>$agentContacts,
         'conversations'=>$conversationRows,
         'activity'=>$activityRows,
         'attention'=>$attention,
@@ -225,6 +229,9 @@ function profile_runtime_owner_state(PDO $pdo,array $user): array
             'owner_joined'=>(int)($conversationStatRow['owner_joined']??0),
             'needs_attention'=>count($attention),
             'contacts'=>count($contacts),
+            'agent_contacts'=>(int)$radarStats['agent_contacts'],
+            'agent_events_24h'=>(int)$radarStats['events_24h'],
+            'agent_high_risk_24h'=>(int)$radarStats['high_risk_24h'],
         ],
     ];
 }
