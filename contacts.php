@@ -90,6 +90,47 @@ function contacts_agent_messaging_label(string $status): string
         default=>'Messaging · none',
     };
 }
+
+function contacts_agent_client_record(array $contact): array
+{
+    $name=trim((string)($contact['display_name']??''))?:'Automated agent';
+    $class=(string)($contact['visitor_class']??'automated_unknown');
+    $stage=(string)($contact['relationship_status']??'observed');
+    $analytics=is_array($contact['analytics']??null)?$contact['analytics']:[];
+    $recent=[];
+    foreach(array_slice((array)($contact['recent_activity']??[]),0,8) as $event){
+        if(!is_array($event))continue;
+        $recent[]=[
+            'id'=>(int)($event['id']??0),'event_type'=>(string)($event['event_type']??''),'severity'=>(string)($event['severity']??''),
+            'path'=>(string)($event['path']??''),'summary'=>(string)($event['summary']??''),'occurred_at'=>(string)($event['occurred_at']??''),
+            'property_label'=>(string)($event['property_label']??''),
+        ];
+    }
+    return [
+        'id'=>(int)($contact['id']??0),'name'=>$name,'operator'=>trim((string)($contact['operator_name']??'')),
+        'class'=>$class,'class_label'=>contacts_agent_class_label($class),'stage'=>$stage,'stage_label'=>contacts_agent_stage_label($stage),
+        'verification_status'=>(string)($contact['verification_status']??'unverified'),'confidence_score'=>(int)($contact['confidence_score']??0),
+        'first_seen_at'=>(string)($contact['first_seen_at']??''),'last_seen_at'=>(string)($contact['last_seen_at']??''),
+        'session_count'=>(int)($contact['session_count']??0),'page_view_count'=>(int)($contact['page_view_count']??0),'request_count'=>(int)($contact['request_count']??0),
+        'conversion_count'=>(int)($contact['conversion_count']??0),'referral_count'=>(int)($contact['referral_count']??0),
+        'value_score'=>(int)($contact['value_score']??0),'opportunity_score'=>(int)($contact['opportunity_score']??0),'trust_score'=>(int)($contact['trust_score']??0),
+        'risk_score'=>(int)($contact['risk_score']??0),'cost_score'=>(int)($contact['cost_score']??0),'engagement_score'=>(int)($contact['engagement_score']??0),
+        'intent'=>trim((string)($contact['inferred_intent']??'')),'intent_confidence'=>(int)($contact['intent_confidence']??0),
+        'recommendation'=>trim((string)($contact['recommendation']??'')),'registry_purpose'=>trim((string)($contact['registry_purpose']??'')),
+        'registry_slug'=>(string)($contact['registry_slug']??''),'verification_method'=>(string)($contact['verification_method']??''),
+        'watch_enabled'=>!empty($contact['watch_enabled']),'gateway_action'=>(string)($contact['gateway_action']??'profile_default'),
+        'gateway_limit_30m'=>(int)($contact['gateway_limit_30m']??30),'policy_label'=>contacts_agent_policy_label($contact),
+        'messaging_status'=>(string)($contact['messaging_access_status']??'none'),'messaging_label'=>contacts_agent_messaging_label((string)($contact['messaging_access_status']??'none')),
+        'messaging_request_id'=>(int)($contact['messaging_request_id']??0),'messaging_purpose'=>(string)($contact['messaging_purpose']??''),
+        'analytics'=>$analytics,'recent_activity'=>$recent,
+    ];
+}
+
+$agentClientContacts=[];
+foreach($agentContacts as $agentContact){
+    $record=contacts_agent_client_record($agentContact);
+    if((int)$record['id']>0)$agentClientContacts[(string)$record['id']]=$record;
+}
 ?>
 <!doctype html>
 <html lang="en">
@@ -99,7 +140,7 @@ function contacts_agent_messaging_label(string $status): string
 <meta name="theme-color" content="#f6f7f8">
 <title><?= e(system_agent_name()) ?> | My Contacts</title>
 <link rel="stylesheet" href="<?= e(url('/chat.css?v=82')) ?>">
-<link rel="stylesheet" href="<?= e(url('/contacts.css?v=agent-crm-watchlist-20260906')) ?>">
+<link rel="stylesheet" href="<?= e(url('/contacts.css?v=agent-crm-detail-v312-20260907')) ?>">
 </head>
 <body class="contacts-page">
 <div class="chat-app">
@@ -183,9 +224,9 @@ function contacts_agent_messaging_label(string $status): string
 
             <?php foreach ($agentContacts as $contact):
               $contactId=(int)$contact['id'];$risk=(int)$contact['risk_score'];$opp=(int)$contact['opportunity_score'];$value=(int)$contact['value_score'];$cost=(int)$contact['cost_score'];$trust=(int)$contact['trust_score'];$engagement=(int)$contact['engagement_score'];$watched=!empty($contact['watch_enabled']);
-              $name=trim((string)$contact['display_name'])?:'Automated agent';$operator=trim((string)$contact['operator_name']);$class=(string)$contact['visitor_class'];$stage=(string)$contact['relationship_status'];$intent=trim((string)$contact['inferred_intent']);$recommendation=trim((string)$contact['recommendation']);
+              $name=trim((string)$contact['display_name'])?:'Automated agent';$operator=trim((string)$contact['operator_name']);$class=(string)$contact['visitor_class'];$stage=(string)$contact['relationship_status'];$intent=trim((string)$contact['inferred_intent']);
               $searchText=strtolower(trim($name.' '.$operator.' '.$class.' '.$stage.' '.$intent.' agent automated '.(string)$contact['verification_status'].($watched?' watched watchlist':'')));
-              $messagingStatus=(string)$contact['messaging_access_status'];$requestId=(int)$contact['messaging_request_id'];
+              $messagingStatus=(string)$contact['messaging_access_status'];
             ?>
             <article id="agent-contact-<?= $contactId ?>" class="contacts-row contacts-agent-row<?= $risk>=70?' high-risk':'' ?><?= $opp>=80&&$risk<40?' opportunity':'' ?><?= $watched?' watched':'' ?>" data-contact-row data-kind="agent" data-stage="<?= e($stage) ?>" data-member="0" data-risk="<?= $risk ?>" data-opportunity="<?= $opp ?>" data-watch="<?= $watched?'1':'0' ?>" data-search="<?= e($searchText) ?>" data-agent-contact-id="<?= $contactId ?>">
               <div class="contacts-person">
@@ -193,6 +234,7 @@ function contacts_agent_messaging_label(string $status): string
                 <div class="contacts-person-copy">
                   <strong><?= e($name) ?><?php if($watched): ?> <span class="contacts-watch-badge">Watched</span><?php endif; ?></strong>
                   <small><?= e($operator!==''?$operator:'Unidentified operator') ?> · <?= e(contacts_agent_class_label($class)) ?></small>
+                  <button class="contacts-agent-open" type="button" data-agent-detail-open="<?= $contactId ?>">Open relationship</button>
                 </div>
               </div>
               <div class="contacts-cell" data-label="Type / stage"><span class="contacts-stage agent <?= e($stage) ?>"><?= e(contacts_agent_stage_label($stage)) ?></span><small><?= e((string)$contact['verification_status']) ?> · <?= (int)$contact['confidence_score'] ?>%</small></div>
@@ -201,35 +243,6 @@ function contacts_agent_messaging_label(string $status): string
               <div class="contacts-cell" data-label="Outcomes"><strong><?= (int)$contact['conversion_count'] ?> conversions</strong><small><?= (int)$contact['referral_count'] ?> referrals · <?= e(contacts_agent_messaging_label($messagingStatus)) ?></small></div>
               <div class="contacts-cell" data-label="First seen"><?= e(contacts_date_label((string)$contact['first_seen_at'])) ?></div>
               <div class="contacts-cell" data-label="Last activity"><?= e(contacts_date_label((string)$contact['last_seen_at'])) ?></div>
-              <details class="contacts-agent-manage">
-                <summary><span>Manage contact</span><b><?= e(contacts_agent_policy_label($contact)) ?></b></summary>
-                <div class="contacts-agent-manage-body">
-                  <div class="contacts-agent-intelligence">
-                    <div><span>Inferred intent</span><strong><?= e($intent!==''?str_replace('_',' ',$intent):'Not enough evidence') ?></strong><small><?= $intent!==''?(int)$contact['intent_confidence'].'% confidence':'Keep monitoring this relationship.' ?></small></div>
-                    <div><span>Recommended next step</span><strong><?= e($recommendation!==''?$recommendation:'Continue monitoring this recurring agent contact.') ?></strong></div>
-                  </div>
-                  <div class="contacts-agent-actions attention" aria-label="Agent CRM attention controls">
-                    <span>Attention</span>
-                    <button type="button" data-agent-watch data-contact-id="<?= $contactId ?>" data-watch-enabled="<?= $watched?'1':'0' ?>"><?= $watched?'Stop watching':'Watch this agent' ?></button>
-                    <small>Watched contacts surface their next new session in your notification/Main Feed flow.</small>
-                  </div>
-                  <div class="contacts-agent-actions" aria-label="Agent Gateway contact controls">
-                    <span>Website access</span>
-                    <button type="button" data-agent-policy="allow" data-contact-id="<?= $contactId ?>">Allow</button>
-                    <button type="button" data-agent-policy="monitor" data-contact-id="<?= $contactId ?>">Monitor</button>
-                    <label class="contacts-agent-limit"><button type="button" data-agent-policy="limit" data-contact-id="<?= $contactId ?>">Limit</button><input type="number" min="1" max="10000" value="<?= (int)($contact['gateway_limit_30m']??30) ?>" data-agent-limit="<?= $contactId ?>" aria-label="Requests per 30 minutes"><small>/ 30m</small></label>
-                    <button type="button" data-agent-policy="block" data-contact-id="<?= $contactId ?>" class="danger">Block</button>
-                  </div>
-                  <?php if($requestId>0): ?>
-                  <div class="contacts-agent-actions messaging" aria-label="Agent Messaging controls">
-                    <span><?= e(contacts_agent_messaging_label($messagingStatus)) ?><?php if(trim((string)$contact['messaging_purpose'])!==''): ?> · <?= e((string)$contact['messaging_purpose']) ?><?php endif; ?></span>
-                    <?php if($messagingStatus==='pending'): ?><button type="button" data-agent-message-decision="allow_once" data-request-id="<?= $requestId ?>">Allow once</button><button type="button" data-agent-message-decision="allow" data-request-id="<?= $requestId ?>">Always allow</button><?php endif; ?>
-                    <button type="button" data-agent-message-decision="deny" data-request-id="<?= $requestId ?>" class="danger"><?= $messagingStatus==='pending'?'Deny':'Revoke' ?></button>
-                  </div>
-                  <?php endif; ?>
-                  <?php if(!empty($contact['recent_activity'])): ?><div class="contacts-agent-recent"><span>Recent activity</span><?php foreach(array_slice($contact['recent_activity'],0,4) as $activity): ?><div><strong><?= e(str_replace('_',' ',(string)$activity['event_type'])) ?></strong><code><?= e((string)$activity['path']) ?></code><small><?= e(contacts_date_label((string)$activity['occurred_at'])) ?><?= !empty($activity['property_label'])?' · '.e((string)$activity['property_label']):'' ?></small></div><?php endforeach; ?></div><?php endif; ?>
-                </div>
-              </details>
             </article>
             <?php endforeach; ?>
           </div>
@@ -247,7 +260,33 @@ function contacts_agent_messaging_label(string $status): string
     </section>
   </main>
 </div>
-<script>window.VP3_CONTACTS=<?= json_encode(['policyEndpoint'=>url('/api/agent-radar-policy.php'),'csrf'=>csrf_token()],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE) ?>;</script>
+
+<div class="contacts-agent-modal" id="agentRelationshipModal" hidden aria-hidden="true">
+  <div class="contacts-agent-modal-backdrop" data-agent-detail-close></div>
+  <section class="contacts-agent-modal-panel" role="dialog" aria-modal="true" aria-labelledby="agentRelationshipTitle" tabindex="-1">
+    <header class="contacts-agent-modal-head">
+      <div class="contacts-agent-modal-identity">
+        <span class="contacts-person-avatar agent" id="agentRelationshipAvatar">A</span>
+        <div><small id="agentRelationshipKicker">Agent CRM relationship</small><h2 id="agentRelationshipTitle">Automated agent</h2><p id="agentRelationshipMeta"></p></div>
+      </div>
+      <button class="contacts-agent-modal-close" type="button" data-agent-detail-close aria-label="Close relationship detail">×</button>
+    </header>
+    <nav class="contacts-agent-tabs" id="agentRelationshipTabs" aria-label="Agent relationship detail tabs">
+      <button type="button" data-agent-detail-tab="overview" class="active">Overview</button>
+      <button type="button" data-agent-detail-tab="analytics">Analytics</button>
+      <button type="button" data-agent-detail-tab="activity">Activity</button>
+      <button type="button" data-agent-detail-tab="permissions">Permissions</button>
+      <button type="button" data-agent-detail-tab="intelligence">Intelligence</button>
+    </nav>
+    <div class="contacts-agent-modal-body" id="agentRelationshipBody"></div>
+  </section>
+</div>
+
+<script>window.VP3_CONTACTS=<?= json_encode([
+    'policyEndpoint'=>url('/api/agent-radar-policy.php'),
+    'csrf'=>csrf_token(),
+    'agents'=>$agentClientContacts,
+],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE|JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT) ?>;</script>
 <script>
 (() => {
   'use strict';
@@ -257,7 +296,25 @@ function contacts_agent_messaging_label(string $status): string
   const empty=document.getElementById('contactsEmpty');
   const notice=document.getElementById('contactsActionNotice');
   const cfg=window.VP3_CONTACTS||{};
-  let active='all',busy=false;
+  const agents=cfg.agents&&typeof cfg.agents==='object'?cfg.agents:{};
+  const modal=document.getElementById('agentRelationshipModal');
+  const modalPanel=modal?.querySelector('.contacts-agent-modal-panel');
+  const modalTitle=document.getElementById('agentRelationshipTitle');
+  const modalKicker=document.getElementById('agentRelationshipKicker');
+  const modalMeta=document.getElementById('agentRelationshipMeta');
+  const modalAvatar=document.getElementById('agentRelationshipAvatar');
+  const modalBody=document.getElementById('agentRelationshipBody');
+  const modalTabs=[...document.querySelectorAll('[data-agent-detail-tab]')];
+  let active='all',busy=false,activeAgent=null,activeTab='overview',modalOpener=null;
+
+  const esc=value=>String(value??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#039;');
+  const number=value=>new Intl.NumberFormat().format(Math.max(0,Number(value||0)));
+  const words=value=>String(value||'').replaceAll('_',' ').replace(/\b\w/g,m=>m.toUpperCase());
+  function dateLabel(value){
+    const raw=String(value||'').trim();if(!raw)return '—';
+    const date=new Date(raw.includes('T')?raw:raw.replace(' ','T'));if(Number.isNaN(date.getTime()))return raw;
+    return new Intl.DateTimeFormat(undefined,{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'}).format(date);
+  }
   function apply(){
     const q=String(search?.value||'').trim().toLowerCase();
     let shown=0;
@@ -276,9 +333,101 @@ function contacts_agent_messaging_label(string $status): string
     const r=await fetch(cfg.policyEndpoint,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({csrf_token:cfg.csrf,...payload})});
     const d=await r.json().catch(()=>null);if(!r.ok||!d?.ok)throw new Error(d?.error||'Agent contact update failed.');return d;
   }
+  function metric(label,value,detail=''){
+    return `<article class="contacts-detail-metric"><span>${esc(label)}</span><strong>${esc(value)}</strong>${detail?`<small>${esc(detail)}</small>`:''}</article>`;
+  }
+  function scoreGrid(agent){
+    return `<div class="contacts-detail-metrics scores">${[
+      ['Opportunity',agent.opportunity_score],['Value',agent.value_score],['Trust',agent.trust_score],['Risk',agent.risk_score],['Engagement',agent.engagement_score],['Cost',agent.cost_score]
+    ].map(([label,value])=>metric(label,`${number(value)}/100`)).join('')}</div>`;
+  }
+  function renderOverview(agent){
+    const analytics=agent.analytics||{};
+    return `<div class="contacts-detail-stack">
+      <div class="contacts-detail-metrics">${metric('All sessions',number(agent.session_count),'Lifetime Agent Radar relationship')}${metric('Page views',number(agent.page_view_count),'Lifetime')}${metric('Requests',number(agent.request_count),'Lifetime')}${metric('Conversions',number(agent.conversion_count),`${number(agent.referral_count)} attributed referrals`)}</div>
+      <section class="contacts-detail-section"><div class="contacts-detail-section-head"><div><span>Relationship</span><strong>${esc(agent.stage_label||'Observed')}</strong></div><span class="contacts-detail-pill">${esc(agent.policy_label||'Profile default')}</span></div>
+        <div class="contacts-detail-facts"><div><span>Operator</span><strong>${esc(agent.operator||'Unidentified operator')}</strong></div><div><span>Agent type</span><strong>${esc(agent.class_label||'Automated agent')}</strong></div><div><span>Verification</span><strong>${esc(agent.verification_status||'unverified')} · ${number(agent.confidence_score)}%</strong></div><div><span>First seen</span><strong>${esc(dateLabel(agent.first_seen_at))}</strong></div><div><span>Last seen</span><strong>${esc(dateLabel(agent.last_seen_at))}</strong></div><div><span>30-day properties</span><strong>${number(analytics.property_count||0)}</strong></div></div>
+      </section>
+      ${scoreGrid(agent)}
+    </div>`;
+  }
+  function trendLabel(current,previous,pct){
+    current=Number(current||0);previous=Number(previous||0);
+    if(previous===0)return current>0?'New activity this week':'No activity in either week';
+    const delta=current-previous;const signed=delta>0?`+${number(delta)}`:String(delta);
+    return `${signed} vs prior 7d${pct===null||pct===undefined?'':` · ${Number(pct)>0?'+':''}${Number(pct)}%`}`;
+  }
+  function analyticsTable(title,rowsHtml,emptyText){
+    return `<section class="contacts-detail-section"><div class="contacts-detail-section-head"><div><span>Analytics</span><strong>${esc(title)}</strong></div></div>${rowsHtml||`<div class="contacts-detail-empty">${esc(emptyText)}</div>`}</section>`;
+  }
+  function renderAnalytics(agent){
+    const a=agent.analytics||{};
+    const properties=Array.isArray(a.properties)?a.properties:[];
+    const paths=Array.isArray(a.top_paths)?a.top_paths:[];
+    const timeline=Array.isArray(a.timeline)?a.timeline:[];
+    const maxViews=Math.max(1,...timeline.map(row=>Number(row.views||0)));
+    const propertyRows=properties.map(row=>`<div class="contacts-detail-table-row"><div><strong>${esc(row.label||row.domain||(row.property_type==='native'?'VP3 Profile':'Property'))}</strong><small>${esc(row.property_type==='native'?'VP3 profile':row.domain||'Connected website')} · last ${esc(dateLabel(row.last_seen_at))}</small></div><b>${number(row.sessions)} sessions</b><b>${number(row.views)} views</b><b>${number(row.requests)} requests</b></div>`).join('');
+    const pathRows=paths.map(row=>`<div class="contacts-detail-table-row paths"><code>${esc(row.path||'/')}</code><b>${number(row.events)} events</b><small>${esc(dateLabel(row.last_seen_at))}</small></div>`).join('');
+    const timelineRows=timeline.map(row=>`<div class="contacts-timeline-row"><span>${esc(String(row.day||'').slice(5))}</span><div class="contacts-timeline-track"><i style="width:${Math.max(3,Math.round(Number(row.views||0)/maxViews*100))}%"></i></div><strong>${number(row.views)} views</strong><small>${number(row.sessions)} sessions</small></div>`).join('');
+    return `<div class="contacts-detail-stack">
+      <div class="contacts-detail-metrics">${metric('30d sessions',number(a.sessions_30d||0),`${number(a.active_days_30d||0)} active days`)}${metric('30d views',number(a.views_30d||0),`${number(a.requests_30d||0)} requests`)}${metric('7d sessions',number(a.sessions_7d||0),trendLabel(a.sessions_7d,a.sessions_previous_7d,a.session_change_pct))}${metric('7d views',number(a.views_7d||0),trendLabel(a.views_7d,a.views_previous_7d,a.view_change_pct))}</div>
+      ${analyticsTable('Properties / sites',propertyRows,'No property activity in the last 30 days.')}
+      ${analyticsTable('Top paths',pathRows,'No path-level activity in the last 30 days.')}
+      <section class="contacts-detail-section"><div class="contacts-detail-section-head"><div><span>Last 14 days</span><strong>Relationship activity timeline</strong></div></div><div class="contacts-timeline">${timelineRows||'<div class="contacts-detail-empty">No sessions in the last 14 days.</div>'}</div></section>
+    </div>`;
+  }
+  function renderActivity(agent){
+    const activity=Array.isArray(agent.recent_activity)?agent.recent_activity:[];
+    const rowsHtml=activity.map(item=>`<article class="contacts-activity-card"><div><strong>${esc(words(item.event_type||'activity'))}</strong><span class="contacts-detail-pill">${esc(item.severity||'low')}</span></div><p>${esc(item.summary||'Agent Radar activity')}</p><footer><code>${esc(item.path||'/')}</code><span>${esc(item.property_label||'VP3 property')}</span><time>${esc(dateLabel(item.occurred_at))}</time></footer></article>`).join('');
+    return `<div class="contacts-detail-stack"><section class="contacts-detail-section"><div class="contacts-detail-section-head"><div><span>Agent Radar ledger</span><strong>Recent activity</strong></div></div><div class="contacts-activity-list">${rowsHtml||'<div class="contacts-detail-empty">No recent Agent Radar activity.</div>'}</div></section></div>`;
+  }
+  function renderPermissions(agent){
+    const requestId=Number(agent.messaging_request_id||0),status=String(agent.messaging_status||'none');
+    const messaging=requestId>0?`<section class="contacts-detail-section"><div class="contacts-detail-section-head"><div><span>Agent Messaging</span><strong>${esc(agent.messaging_label||'Messaging')}</strong>${agent.messaging_purpose?`<small>${esc(agent.messaging_purpose)}</small>`:''}</div></div><div class="contacts-agent-actions messaging">${status==='pending'?`<button type="button" data-agent-message-decision="allow_once" data-request-id="${requestId}">Allow once</button><button type="button" data-agent-message-decision="allow" data-request-id="${requestId}">Always allow</button>`:''}<button type="button" data-agent-message-decision="deny" data-request-id="${requestId}" class="danger">${status==='pending'?'Deny':'Revoke'}</button></div></section>`:'';
+    return `<div class="contacts-detail-stack">
+      <section class="contacts-detail-section"><div class="contacts-detail-section-head"><div><span>Attention</span><strong>${agent.watch_enabled?'Watched relationship':'Standard monitoring'}</strong></div><span class="contacts-detail-pill">${agent.watch_enabled?'Watchlist on':'Watchlist off'}</span></div><p class="contacts-detail-copy">Watched Agent contacts surface their next new session through the existing notification and Main Feed flow.</p><div class="contacts-agent-actions attention"><button type="button" data-agent-watch data-contact-id="${Number(agent.id)}" data-watch-enabled="${agent.watch_enabled?'1':'0'}">${agent.watch_enabled?'Stop watching':'Watch this agent'}</button></div></section>
+      <section class="contacts-detail-section"><div class="contacts-detail-section-head"><div><span>Agent Gateway</span><strong>Website access</strong><small>Current: ${esc(agent.policy_label||'Profile default')}</small></div></div><p class="contacts-detail-copy">These controls use the canonical Agent Gateway contact policy; they do not create a separate CRM permission system.</p><div class="contacts-agent-actions"><button type="button" data-agent-policy="allow" data-contact-id="${Number(agent.id)}">Allow</button><button type="button" data-agent-policy="monitor" data-contact-id="${Number(agent.id)}">Monitor</button><label class="contacts-agent-limit"><button type="button" data-agent-policy="limit" data-contact-id="${Number(agent.id)}">Limit</button><input type="number" min="1" max="10000" value="${Math.max(1,Number(agent.gateway_limit_30m||30))}" data-agent-limit="${Number(agent.id)}" aria-label="Requests per 30 minutes"><small>/ 30m</small></label><button type="button" data-agent-policy="block" data-contact-id="${Number(agent.id)}" class="danger">Block</button></div></section>
+      ${messaging}
+    </div>`;
+  }
+  function renderIntelligence(agent){
+    const intent=agent.intent?words(agent.intent):'Not enough evidence';
+    let brain='Continue monitoring this recurring Agent relationship.';
+    if(Number(agent.risk_score||0)>=70)brain='Risk is elevated. Keep the relationship restricted or monitored until the underlying evidence improves.';
+    else if(Number(agent.opportunity_score||0)>=80)brain='This relationship currently qualifies as a high-opportunity, lower-risk Agent Brain signal.';
+    return `<div class="contacts-detail-stack">
+      <section class="contacts-detail-section"><div class="contacts-detail-section-head"><div><span>Relationship intelligence</span><strong>${esc(intent)}</strong><small>${agent.intent?`${number(agent.intent_confidence)}% confidence`:'No unsupported intent is inferred.'}</small></div></div><p class="contacts-detail-copy">${esc(agent.recommendation||'Continue monitoring this recurring agent contact.')}</p></section>
+      ${scoreGrid(agent)}
+      <section class="contacts-detail-section"><div class="contacts-detail-section-head"><div><span>Agent Brain</span><strong>Current relationship interpretation</strong></div></div><p class="contacts-detail-copy">${esc(brain)}</p><div class="contacts-detail-facts"><div><span>Registry purpose</span><strong>${esc(agent.registry_purpose||'Not declared')}</strong></div><div><span>Registry identity</span><strong>${esc(agent.registry_slug||'Unknown')}</strong></div><div><span>Verification method</span><strong>${esc(agent.verification_method||'Not verified')}</strong></div><div><span>Messaging</span><strong>${esc(agent.messaging_label||'Messaging · none')}</strong></div></div></section>
+    </div>`;
+  }
+  function renderTab(tab){
+    if(!activeAgent||!modalBody)return;
+    activeTab=tab;
+    for(const button of modalTabs){const on=button.dataset.agentDetailTab===tab;button.classList.toggle('active',on);button.setAttribute('aria-selected',on?'true':'false');}
+    modalBody.innerHTML=tab==='analytics'?renderAnalytics(activeAgent):tab==='activity'?renderActivity(activeAgent):tab==='permissions'?renderPermissions(activeAgent):tab==='intelligence'?renderIntelligence(activeAgent):renderOverview(activeAgent);
+  }
+  function openAgentDetail(id,opener=null){
+    const agent=agents[String(Number(id||0))];if(!agent||!modal)return;
+    activeAgent=agent;modalOpener=opener;
+    if(modalTitle)modalTitle.textContent=agent.name||'Automated agent';
+    if(modalKicker)modalKicker.textContent=`Agent CRM · ${agent.stage_label||'Observed'}`;
+    if(modalMeta)modalMeta.textContent=`${agent.operator||'Unidentified operator'} · ${agent.class_label||'Automated agent'} · ${agent.verification_status||'unverified'} ${number(agent.confidence_score)}%`;
+    if(modalAvatar)modalAvatar.textContent=String(agent.name||'A').slice(0,1).toUpperCase();
+    renderTab('overview');
+    modal.hidden=false;modal.setAttribute('aria-hidden','false');document.body.classList.add('contacts-agent-modal-open');
+    requestAnimationFrame(()=>modalPanel?.focus());
+  }
+  function closeAgentDetail(){
+    if(!modal||modal.hidden)return;modal.hidden=true;modal.setAttribute('aria-hidden','true');document.body.classList.remove('contacts-agent-modal-open');activeAgent=null;modalOpener?.focus?.();modalOpener=null;
+  }
+
   search?.addEventListener('input',apply);
   for(const filter of filters)filter.addEventListener('click',()=>{active=String(filter.dataset.contactFilter||'all');for(const button of filters)button.classList.toggle('active',button===filter);apply();});
   document.addEventListener('click',async e=>{
+    const open=e.target.closest('[data-agent-detail-open]');if(open){openAgentDetail(open.dataset.agentDetailOpen,open);return;}
+    if(e.target.closest('[data-agent-detail-close]')){closeAgentDetail();return;}
+    const tab=e.target.closest('[data-agent-detail-tab]');if(tab&&activeAgent){renderTab(String(tab.dataset.agentDetailTab||'overview'));return;}
     const gateway=e.target.closest('[data-agent-policy]');const messaging=e.target.closest('[data-agent-message-decision]');const watch=e.target.closest('[data-agent-watch]');if((!gateway&&!messaging&&!watch)||busy)return;
     busy=true;const button=gateway||messaging||watch;button.disabled=true;
     try{
@@ -288,6 +437,7 @@ function contacts_agent_messaging_label(string $status): string
       window.setTimeout(()=>window.location.reload(),350);
     }catch(err){setNotice(err.message,true);button.disabled=false;}finally{busy=false;}
   });
+  document.addEventListener('keydown',event=>{if(event.key==='Escape'&&modal&&!modal.hidden)closeAgentDetail();});
   apply();
 })();
 </script>
