@@ -68,7 +68,7 @@ function vp3_agent_operator_policy(PDO $pdo,int $ownerUserId,string $operator): 
 function vp3_agent_operator_chat_intent(string $query): bool
 {
     $q=mb_strtolower(trim($query));
-    foreach(['agent operators','operator summary','operator summaries','agent organizations','ai organizations','ai companies','which operators','operator activity','operator reputation','private reputation','reputation of'] as $needle)if(str_contains($q,$needle))return true;
+    foreach(['agent operators','operator summary','operator summaries','agent organizations','ai organizations','ai companies','which operators','operator activity','operator reputation','private reputation','reputation of','what has'] as $needle)if(str_contains($q,$needle))return true;
     if(preg_match('/\b(?:what has|show|review)\s+.+?\s+(?:been doing|agents?|activity|reputation)\b/i',$q))return true;
     return false;
 }
