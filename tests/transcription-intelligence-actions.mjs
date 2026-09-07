@@ -75,11 +75,11 @@ assert.match(actions,/function transcription_intelligence_record_receipt_v303/);
 assert.match(actions,/\$actions\[\$actionKey\]/);
 assert.match(items,/'actions'=>is_array\(\$actions\) \? \$actions : \[\]/,'review index must preserve action receipts across reruns');
 assert.match(items,/\$prior\['actions'\]/,'module normalization must restore prior receipts');
-assert.match(items,/if \(\$previousText !== \$text\) unset\(\$item\['actions'\]\)/,'editing actionable text must invalidate stale action receipts');
-assert.match(items,/in_array\(\(string\)\$key,\['source_fingerprint','edited_text','actions'\]/,'internal action receipts must not pollute compiled Brain/Knowledge report text');
+assert.match(items,/if \(\$previousText !== \$text\) \{[\s\S]*unset\(\$item\['actions'\]\)/,'editing actionable text must invalidate stale action receipts');
+assert.match(items,/in_array\(\(string\)\$key,\['source_fingerprint','edited_text','actions','relations'\],true\)/,'internal action receipts and relation adjacency must not pollute compiled Brain/Knowledge report text');
 
-/* Accepted items expose one compact operational menu; v304 must preserve it. */
-assert.match(client,/const BUILD = 'transcription-workflow-v304-20260906'/);
+/* Accepted items expose one compact operational menu; v305 must preserve it. */
+assert.match(client,/const BUILD = 'transcription-relations-v305-20260906'/);
 assert.match(client,/item\.review_state !== 'accepted'/,'operational menu must be hidden until human acceptance');
 assert.match(client,/class="sf-listening-ai-operational"/);
 assert.match(client,/data-listening-ai-item-action=/);
@@ -89,6 +89,7 @@ assert.match(client,/sf-listening-ai-action-receipt/,'completed operations must 
 assert.match(client,/request\('item_action'/);
 assert.match(client,/performItemAction:/,'public AI controller API must expose explicit item actions');
 assert.match(client,/state\.operations = data\.operations \|\| state\.operations/,'server permissions/targets must own available operations');
+assert.match(client,/buildRelations:/,'v305 relationship controls must coexist in the same canonical controller');
 
 /* Canonical frontend ownership remains singular. */
 assert.doesNotMatch(client,/document\.addEventListener\('click'/,'no delegated document click owner is allowed');
