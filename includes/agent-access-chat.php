@@ -58,6 +58,10 @@ function vp3_agent_access_chat_tool(string $query,array $user,int $conversationI
 {
     $empty=['handled'=>false,'answer'=>'','stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[]];
     if(!personal_capability_has_v242('profile_agent.access',$user))return $empty;
+    if(function_exists('vp3_agent_crm_chat_tool')){
+        $crm=vp3_agent_crm_chat_tool($query,$user,$conversationId);
+        if(!empty($crm['handled']))return $crm;
+    }
     if(!vp3_agent_access_chat_intent($query)){
         return function_exists('vp3_agent_relationship_chat_tool')
             ? vp3_agent_relationship_chat_tool($query,$user,$conversationId)
