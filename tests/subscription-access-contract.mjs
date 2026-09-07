@@ -15,7 +15,7 @@ const stream = read('includes/ai-stream-v121.php');
 const signup = read('signup.php');
 const teamDomain = read('includes/artist-workspaces-v104.php');
 const teamSubscription = read('includes/team-subscription.php');
-const teamPage = read('admin/team.php');
+const teamPage = read('team.php');
 const nav = read('includes/member-navigation.php');
 const bootstrap = read('includes/bootstrap.php');
 

@@ -27,16 +27,11 @@ assert.match(endpoint, /personal_capability_has_v242\('agent_brain\.access'/, 'L
 assert.match(endpoint, /agent_learning_history_v317_state\(\$user,100\)/, 'endpoint must expose the owner-scoped canonical projection');
 assert.doesNotMatch(endpoint, /INSERT INTO|UPDATE |DELETE FROM|CREATE TABLE|ALTER TABLE/, 'Learning History endpoint must remain read-only');
 
-assert.ok(ui.includes("tab.dataset.notificationTab = 'learning';"), 'Activity Center must add a Brain Learning tab');
-assert.match(ui, /Brain Learning History/, 'Learning tab must identify the audit clearly');
-assert.match(ui, /Current Source Weights/, 'Learning tab must show current learned source weighting');
-assert.match(ui, /Recommendation Audit/, 'Learning tab must show surfaced recommendation outcomes');
-assert.match(ui, /factor_before/, 'Learning UI must render before/after weighting');
-assert.match(ui, /factor_after/, 'Learning UI must render before/after weighting');
-assert.match(ui, /target\.origin === window\.location\.origin/, 'evidence links must remain same-origin');
-
-// Brain Learning is now single-purpose. Navigation belongs only to the shared
-// server-rendered sidebar and must never be repaired by this client runtime.
+// Keep the backend/audit projection, but do not expose a duplicate/incomplete
+// explainability tab until real production prioritization data is available.
+assert.match(ui, /VP3_BRAIN_LEARNING_HISTORY/);
+assert.match(ui, /enabled:false/, 'Brain Learning tab must remain hidden for now');
+assert.doesNotMatch(ui, /notificationTab\s*=\s*['"]learning['"]|Brain Learning History|Current Source Weights|Recommendation Audit/, 'hidden runtime must not create/render the Brain Learning tab');
 assert.doesNotMatch(ui, /cleanupMainSidebar|data-chat-view-target="player"|data-chat-view-target="saved"|data-chat-view-target="playlists"|data-chat-profile-link="my_team"|chatMyTeam/, 'Brain Learning must not mutate Main Feed navigation');
 assert.doesNotMatch(activity, /chat-brain-learning-history-v317\.js|data-brain-learning-history-v317/, 'Agent Activity must not load Brain Learning as a compatibility layer');
 assert.doesNotMatch(activity, /chat-sidebar-nav|insertAdjacentElement|knowledge\.php/, 'Agent Activity must not mutate the canonical sidebar');
@@ -47,14 +42,11 @@ assert.match(chat, /\$mainSidebarHistoryRows = isset\(\$recent\)/, 'Main Feed mu
 assert.doesNotMatch(chat, /chatMyTeamSidebarLink|data-chat-my-team|data-chat-view-target="\(\?:player\|saved\|playlists\)"/, 'Main Feed wrapper must not patch individual navigation items');
 assert.match(mainSidebar, /<strong>My Team<\/strong>/, 'canonical shared sidebar must own My Team navigation');
 assert.doesNotMatch(mainSidebar, /<strong>Player<\/strong>|<strong>Saved Songs<\/strong>|<strong>My Playlists<\/strong>/, 'canonical shared sidebar must not expose retired music navigation');
-assert.match(chat, /data-brain-learning-history-v317 href=/, 'Main Feed must directly load Brain Learning styles from the Activity Center runtime');
-assert.match(chat, /data-brain-learning-history-v317 src=/, 'Main Feed must directly load Brain Learning runtime exactly through Activity Center');
-assert.match(chat, /brain-learning-history-v317-20260907-pr81-hotfix1/, 'Brain Learning direct runtime must use an explicit cache key');
-assert.match(chat, /chat-notifications-canvas-v240-20260907-pr81-hotfix1/, 'Activity Center itself must use an explicit cache key');
+assert.match(chat, /data-brain-learning-history-v317 src=/, 'Main Feed may retain the inert Brain Learning asset without exposing a tab');
 
-assert.match(css, /chat-learning-metrics/, 'Learning History must have dedicated light UI styling');
-assert.match(css, /@media\(max-width:520px\)/, 'Learning History must remain usable on narrow screens');
-assert.ok(bootstrap.includes("require_once __DIR__.'/agent-learning-history-v317.php';"), 'bootstrap must load the canonical Learning History projection');
-assert.match(nav, /'my_team','My Team',url\('\/admin\/team\.php'\)/, 'canonical member navigation must own My Team');
+assert.match(css, /chat-learning-metrics/, 'Learning History styling may remain available for a future explainability UI');
+assert.match(css, /@media\(max-width:520px\)/, 'retained Learning History styling must remain narrow-screen capable');
+assert.ok(bootstrap.includes("require_once __DIR__.'/agent-learning-history-v317.php';"), 'bootstrap must retain the canonical Learning History projection');
+assert.doesNotMatch(nav, /'my_team','My Team'/, 'My Team must not be duplicated in the profile/dropdown navigation');
 
 console.log('AGENT_BRAIN_LEARNING_HISTORY_V317=PASS');

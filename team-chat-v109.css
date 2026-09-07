@@ -1,4 +1,4 @@
-/* Stonefellow Team Chat — canonical light UI aligned with Agent Chat */
+/* VP3 Team Chat — canonical light UI aligned with Agent Chat */
 .sf-online-rail-v109,
 .sf-team-chat-windows-v109,
 .sf-team-chat-windows-v109 *{box-sizing:border-box}
@@ -27,7 +27,7 @@
   flex-direction:column;
   align-items:center;
   gap:8px;
-  padding:10px 4px;
+  padding:10px 4px 62px;
   overflow-y:auto;
   overflow-x:hidden;
   scrollbar-width:none;

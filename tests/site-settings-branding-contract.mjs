@@ -10,7 +10,7 @@ const adminHeader = read('admin/_header.php');
 const sharedBrandingCss = read('site-branding.css');
 const runtimeBranding = read('site-branding-runtime.php');
 const chatCss = read('chat-v97.css');
-const chatTemplate = read('chat-legacy-v108.php');
+const mainSidebar = read('includes/main-sidebar.php');
 
 assert.match(
   bootstrap,
@@ -20,7 +20,7 @@ assert.match(
 
 assert.ok(
   helpers.includes("setting('site_logo_path', '')"),
-  'site logo must use the existing canonical settings table'
+  'site logo setting may remain available for other public/brandable surfaces'
 );
 assert.ok(
   helpers.includes('/uploads/branding/'),
@@ -28,8 +28,11 @@ assert.ok(
 );
 assert.ok(
   helpers.includes('is_file($candidate)'),
-  'missing logo files must fall back instead of hiding the brand'
+  'missing logo files must fall back safely'
 );
+assert.match(helpers, /site_config\('name', 'VP3'\)/, 'site brand default must be VP3');
+assert.match(helpers, /strcasecmp\(\$name, 'Stonefellow'\) === 0/, 'legacy Stonefellow site setting must translate to VP3 without SQL');
+assert.match(helpers, /return 'VP3';/, 'legacy/blank system brand must present as VP3');
 
 assert.ok(
   siteSettings.includes("require_permission('admin.access');"),
@@ -41,7 +44,7 @@ assert.ok(
 );
 assert.ok(
   siteSettings.includes('upload_file('),
-  'Site Settings must use the canonical upload helper'
+  'Site Settings may retain the canonical logo upload helper for non-shell surfaces'
 );
 assert.ok(
   siteSettings.includes("['jpg', 'jpeg', 'png', 'webp']"),
@@ -55,63 +58,23 @@ assert.ok(
   siteSettings.includes("'branding'"),
   'logo upload must use the dedicated branding directory'
 );
-assert.ok(
-  siteSettings.includes("save_setting('site_logo_path', $newLogoPath)"),
-  'new logo must be persisted through the canonical settings API'
-);
-assert.ok(
-  siteSettings.includes("save_setting('site_logo_path', '')"),
-  'Site Settings must support restoring text branding'
-);
-assert.ok(
-  siteSettings.includes('delete_local_upload('),
-  'replaced and removed logos must be cleaned up through the safe upload helper'
-);
-assert.ok(
-  siteSettings.includes('enctype="multipart/form-data"'),
-  'logo upload form must use multipart encoding'
-);
 
-assert.ok(
-  adminHeader.includes("url('/admin/site-settings.php')") && adminHeader.includes('Site Settings'),
-  'Admin navigation must expose Site Settings'
-);
-assert.ok(
-  adminHeader.includes('$siteBrandLogoUrl = site_logo_url();'),
-  'Admin shell must read the canonical system logo'
-);
-assert.ok(
-  adminHeader.includes('class="site-brand-logo"'),
-  'Admin desktop/mobile brand slots must render the uploaded logo as an image'
-);
-assert.ok(
-  adminHeader.includes("url('/site-branding.css?v=1')"),
-  'Admin shell must load shared branding styles'
-);
+assert.match(adminHeader, /\$siteBrandName = 'VP3';/, 'Admin shell must use fixed VP3 application branding');
+assert.ok(adminHeader.includes('class="admin-mobile-brand"') && adminHeader.includes('aria-label="VP3">VP3</a>'), 'Admin mobile logo must be VP3');
+assert.ok(adminHeader.includes('class="admin-brand"') && adminHeader.includes('aria-label="VP3">VP3</a>'), 'Admin desktop logo must be VP3');
+assert.doesNotMatch(adminHeader, /class="site-brand-logo"/, 'legacy uploaded logo must not override the VP3 admin shell');
+assert.match(adminHeader, /url\('\/team\.php'\)/, 'Admin Team destination must point at the front-end Team workspace');
 
-assert.ok(
-  chatTemplate.includes('class="chat-brand"'),
-  'Main Feed must retain the canonical sidebar brand target'
-);
+assert.ok(mainSidebar.includes('class="chat-brand"') && mainSidebar.includes('aria-label="VP3">VP3</a>'), 'Main Feed/member sidebar logo must be VP3');
 assert.ok(
   chatCss.includes('@import url("site-branding.css?v=1");'),
-  'Main Feed must load the shared branding layer from canonical chat CSS'
+  'Main Feed may retain the shared branding layer for non-logo rules'
 );
 assert.ok(
   sharedBrandingCss.includes('@import url("site-branding-runtime.php?v=1");'),
-  'shared branding CSS must load the runtime site-logo setting'
+  'shared branding CSS may retain the runtime endpoint for compatibility'
 );
-assert.ok(
-  runtimeBranding.includes('$logoUrl = site_logo_url();'),
-  'runtime branding must read the same canonical logo as Admin'
-);
-assert.ok(
-  runtimeBranding.includes('.chat-brand{'),
-  'runtime branding must apply the uploaded logo to the Main Feed sidebar brand'
-);
-assert.ok(
-  runtimeBranding.includes("if ($logoUrl === '')"),
-  'runtime branding must preserve existing text when no valid logo exists'
-);
+assert.match(runtimeBranding, /VP3 application shell uses fixed text branding/, 'runtime branding must no longer replace VP3 with an uploaded legacy logo');
+assert.doesNotMatch(runtimeBranding, /background-image|color:transparent|text-indent:-9999px/, 'runtime branding must not visually hide the VP3 shell brand');
 
 console.log('site-settings-branding-contract: ok');

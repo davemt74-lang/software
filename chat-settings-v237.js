@@ -2,7 +2,6 @@
   'use strict';
 
   const cfg = window.STONEFELLOW_CHAT_SETTINGS;
-  const sidebar = document.getElementById('chatSidebar');
   if (!cfg?.endpoint || !cfg?.csrf) return;
 
   let state = null;
@@ -31,19 +30,18 @@
   }
 
   function installLauncher() {
-    if (!sidebar) return null;
     let host = document.getElementById('chatSettingsLauncher');
     if (host) return host;
     host = document.createElement('div');
-    host.className = 'chat-settings-launcher';
+    host.className = 'chat-settings-launcher chat-settings-rail-launcher';
     host.id = 'chatSettingsLauncher';
     host.innerHTML = `
-      <button class="chat-settings-button" id="chatSettingsButton" type="button" aria-haspopup="dialog" aria-controls="chatSettingsModal" data-presence="online">
+      <button class="chat-settings-button" id="chatSettingsButton" type="button" aria-haspopup="dialog" aria-controls="chatSettingsModal" aria-label="Chat settings · Online" title="Chat settings · Online" data-presence="online">
         <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.83 2.83-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.03 1.56V21h-4v-.09A1.7 1.7 0 0 0 9 19.35a1.7 1.7 0 0 0-1.88.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.63 15 1.7 1.7 0 0 0 3.07 14H3v-4h.07A1.7 1.7 0 0 0 4.63 9a1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.83-2.83.06.06A1.7 1.7 0 0 0 9 4.63 1.7 1.7 0 0 0 10 3.07V3h4v.07A1.7 1.7 0 0 0 15 4.63a1.7 1.7 0 0 0 1.88-.34l.06-.06 2.83 2.83-.06.06A1.7 1.7 0 0 0 19.37 9 1.7 1.7 0 0 0 20.93 10H21v4h-.07A1.7 1.7 0 0 0 19.4 15z"></path></svg>
-        <span>Chat Settings</span>
-        <small id="chatSettingsPresenceLabel">Online</small>
+        <i class="chat-settings-presence-dot" aria-hidden="true"></i>
+        <span class="chat-settings-presence-label" id="chatSettingsPresenceLabel">Online</span>
       </button>`;
-    sidebar.appendChild(host);
+    document.body.appendChild(host);
     return host;
   }
 
@@ -65,7 +63,7 @@
         <form id="chatSettingsForm">
           <div class="chat-settings-body">
             <section class="chat-settings-section">
-              <div class="chat-settings-section-title"><strong>Availability</strong><span>Choose whether other Stonefellow users see you as online.</span></div>
+              <div class="chat-settings-section-title"><strong>Availability</strong><span>Choose whether other VP3 users see you as online.</span></div>
               <label class="chat-settings-field"><span>Status</span><select name="presence_mode"><option value="online">Online</option><option value="offline">Offline</option></select></label>
             </section>
             <section class="chat-settings-section">
@@ -164,7 +162,11 @@
     const sound = settings.sound_enabled !== false;
     const agentVoice = applyAgentVoice(settings.agent_voice_enabled !== false);
 
-    if (button) button.dataset.presence = online ? 'online' : 'offline';
+    if (button) {
+      button.dataset.presence = online ? 'online' : 'offline';
+      button.setAttribute('aria-label', `Chat settings · ${online ? 'Online' : 'Offline'}`);
+      button.title = `Chat settings · ${online ? 'Online' : 'Offline'}`;
+    }
     if (presenceLabel) presenceLabel.textContent = online ? 'Online' : 'Offline';
 
     const teamCfg = window.STONEFELLOW_TEAM_CHAT;

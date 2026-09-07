@@ -3,8 +3,10 @@ import assert from 'node:assert/strict';
 
 const read = path => fs.readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
 const state = read('includes/team-subscription.php');
-const team = read('admin/team.php');
+const team = read('team.php');
+const legacyAdminTeam = read('admin/team.php');
 const sidebar = read('includes/main-sidebar.php');
+const memberNav = read('includes/member-navigation.php');
 const bootstrap = read('includes/bootstrap.php');
 
 assert.ok(bootstrap.includes("require_once __DIR__.'/team-subscription.php';"), 'canonical Team package state must load globally');
@@ -19,7 +21,7 @@ assert.ok(state.includes("$state['authorized']=$isInternalAdmin||(user_has_role(
 assert.ok(state.indexOf("if($isInternalAdmin){") < state.indexOf("subscription_schema_ready($pdo)"), 'internal admin unlimited Team access must not depend on subscription schema/package assignment');
 assert.ok(state.includes("$state['package_name']='Internal Admin'"), 'internal admin Team state must be explicit');
 
-assert.ok(team.includes("$teamState=team_subscription_state($user,$pdo)"), 'My Team must render from canonical package state');
+assert.ok(team.includes("$teamState=team_subscription_state($user,$pdo)"), 'front-end My Team must render from canonical package state');
 assert.ok(team.includes("$lockedTeamState=team_subscription_state($user,$pdo)"), 'add-member requests must re-read package capacity after the owner lock');
 assert.ok(team.indexOf("SELECT id FROM users WHERE id=? FOR UPDATE") < team.indexOf("$lockedTeamState=team_subscription_state($user,$pdo)"), 'package capacity must be refreshed after acquiring the account lock');
 assert.ok(!team.includes("subscription_package_grants_permission($user,'team.manage')"), 'Team seats, not a duplicate package permission flag, must be the commercial Team authority');
@@ -30,10 +32,18 @@ assert.ok(team.includes("Existing relationships remain intact"), 'downgrade UI m
 assert.ok(team.includes("No one was removed by the package change"), 'over-limit downgrade UI must be non-destructive');
 assert.ok(team.includes("url('/subscription.php')"), 'limit/locked states must link to plan management');
 assert.ok(team.includes("$teamCanAdd=!empty($teamState['can_add'])"), 'add form and CTA must use the canonical can_add state');
-assert.ok(team.includes("$adminTitle='My Team'"), 'Team management must use the My Team product label');
+assert.ok(team.includes("$workspaceSidebarActive='team'"), 'My Team must render inside the member/front-end workspace shell');
+assert.ok(team.includes("$memberHeaderTitle='My Team'"), 'My Team must use the shared member header instead of the admin shell');
+assert.doesNotMatch(team, /admin\/_header\.php|admin-card|admin-grid/, 'front-end My Team must not render the admin Team interface');
 
-assert.ok(sidebar.includes("team_subscription_state($mainSidebarUser)"), 'member navigation must use canonical Team package state');
-assert.ok(sidebar.includes('<strong>My Team</strong>'), 'authorized Team owners must have a My Team entry in the account navigation');
-assert.ok(sidebar.includes("$mainSidebarActive === 'team'"), 'My Team must participate in canonical active navigation state');
+assert.ok(legacyAdminTeam.includes("$target=url('/team.php')"), 'legacy admin Team route must resolve the canonical front-end My Team target');
+assert.ok(legacyAdminTeam.includes("header('Location: '.$target,true,307)"), 'legacy admin Team route must issue a method-preserving redirect to the canonical target');
+assert.match(legacyAdminTeam, /307/, 'legacy Team redirect must preserve stale POST methods/bodies');
+
+assert.ok(sidebar.includes("team_subscription_state($mainSidebarUser)"), 'member sidebar must use canonical Team package state');
+assert.ok(sidebar.includes('<strong>My Team</strong>'), 'authorized Team owners must have a My Team entry in the canonical sidebar');
+assert.ok(sidebar.includes("url('/team.php')"), 'canonical My Team sidebar link must open the front-end workspace');
+assert.equal((sidebar.match(/<strong>My Team<\/strong>/g) || []).length, 1, 'canonical sidebar must render exactly one My Team navigation item');
+assert.doesNotMatch(memberNav, /'my_team','My Team'/, 'profile/dropdown navigation must not add a second My Team item');
 
 console.log('TEAM_SUBSCRIPTION_CONTRACT=PASS');

@@ -12,12 +12,12 @@ $mainSidebarHistoryRows = isset($mainSidebarHistoryRows) && is_array($mainSideba
 <link rel="stylesheet" href="<?= e(url('/site-branding.css?v=1')) ?>">
 <aside class="chat-sidebar workspace-main-sidebar" id="chatSidebar">
   <div class="chat-sidebar-top">
-    <a class="chat-brand" href="<?= e(url('/')) ?>"><?= e(site_brand_name()) ?></a>
+    <a class="chat-brand" href="<?= e(url('/')) ?>" aria-label="VP3">VP3</a>
     <button class="chat-icon-button mobile-only" id="closeChatSidebar" type="button" aria-label="Close menu">×</button>
   </div>
 
   <div class="chat-sidebar-sections">
-    <section class="chat-sidebar-nav-section" aria-label="<?= e(site_brand_name()) ?> workspace">
+    <section class="chat-sidebar-nav-section" aria-label="VP3 workspace">
       <div class="chat-history-label">Explore</div>
       <nav class="chat-sidebar-nav">
         <?php if (has_permission('chat.access', $mainSidebarUser)): ?>
@@ -57,7 +57,7 @@ $mainSidebarHistoryRows = isset($mainSidebarHistoryRows) && is_array($mainSideba
         <?php endif; ?>
 
         <?php if (!empty($mainSidebarTeamState['authorized'])): ?>
-          <a class="chat-sidebar-nav-link <?= $mainSidebarActive === 'team' ? 'active' : '' ?>" href="<?= e(url('/admin/team.php')) ?>">
+          <a class="chat-sidebar-nav-link <?= $mainSidebarActive === 'team' ? 'active' : '' ?>" href="<?= e(url('/team.php')) ?>" data-main-sidebar-team>
             <span>◎</span><strong>My Team</strong>
           </a>
         <?php endif; ?>
