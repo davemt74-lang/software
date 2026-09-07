@@ -6,7 +6,7 @@ function vp3_analytics_chat_intent(string $query): bool
     $q=mb_strtolower(trim($query));
     // Explicit Agent/Radar/Gateway requests belong to the dedicated Radar tool.
     if(preg_match('/\b(?:agent radar|agent gateway|ai agent|bot|crawler|block agent|allow agent|limit agent)\b/',$q))return false;
-    foreach(['analytics','my traffic','website traffic','profile traffic','page views','pageviews','visitors this','sessions this','traffic this','traffic today','traffic yesterday','which website','which site','top page','top pages','referrers','referral traffic','conversions','conversion rate','device mix','browser mix'] as $needle){
+    foreach(['analytics','my traffic','website traffic','profile traffic','page views','pageviews','visitors this','sessions this','traffic this','traffic today','which website','which site','top page','top pages','referrers','referral traffic','conversions','conversion rate','device mix','browser mix'] as $needle){
         if(str_contains($q,$needle))return true;
     }
     return false;
@@ -16,7 +16,6 @@ function vp3_analytics_chat_days(string $query): int
 {
     $q=mb_strtolower($query);
     if(str_contains($q,'today'))return 1;
-    if(str_contains($q,'yesterday'))return 2;
     if(str_contains($q,'week')||str_contains($q,'7 day'))return 7;
     if(str_contains($q,'90 day')||str_contains($q,'quarter'))return 90;
     return 30;
@@ -33,7 +32,7 @@ function vp3_analytics_chat_summary(PDO $pdo,array $user,string $query): string
     $sessions=(int)($s['sessions']??0);$views=(int)($s['page_views']??0);$human=(int)($s['human_sessions']??0);$agents=(int)($s['agent_sessions']??0);$conversions=(int)($s['conversions']??0);
     $label=$days===1?'today':($days===7?'the last 7 days':($days===90?'the last 90 days':'the last 30 days'));
     $lines=['VP3 Analytics for '.$label.': '.$sessions.' sessions and '.$views.' page views.'];
-    $lines[]=$human.' human sessions and '.$agents.' Agent Radar sessions'.($sessions>0?' ('.round($agents/$sessions*100).'‌% agent share).':'.');
+    $lines[]=$human.' human sessions and '.$agents.' Agent Radar sessions'.($sessions>0?' ('.round($agents/$sessions*100).'% agent share).':'.');
     if($conversions>0)$lines[]=$conversions.' tracked conversion'.($conversions===1?'':'s').' from connected-site custom events.';
     $properties=array_values(array_filter($state['property_stats']??[],static fn(array $r):bool=>(int)($r['sessions']??0)>0||(int)($r['page_views']??0)>0));
     usort($properties,static fn(array $a,array $b):int=>((int)($b['page_views']??0)<=>(int)($a['page_views']??0))?:((int)($b['sessions']??0)<=>(int)($a['sessions']??0)));
