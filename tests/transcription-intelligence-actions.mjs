@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 const read = path => fs.readFileSync(path, 'utf8');
 const actions = read('includes/transcription-intelligence-actions.php');
+const deepItems = read('includes/transcription-deeper-items.php');
 const items = read('includes/transcription-intelligence-items.php');
 const api = read('api/artist-listening-intelligence-v300.php');
 const client = read('artist-listening-ai.js');
@@ -15,8 +16,9 @@ const baseline = read('tools/run_recovery_baseline.py');
 assert.match(actions,/function transcription_intelligence_require_accepted_v303/);
 assert.match(actions,/review_state.*accepted/s,'operational actions must require an accepted intelligence item');
 assert.match(actions,/Accept or edit this intelligence item before taking an operational action/);
-assert.match(api,/\$action === 'item_action'/,'stable transcription API must expose one explicit item-action endpoint');
-assert.match(api,/transcription_intelligence_execute_action_v303/);
+assert.ok(api.includes("$action==='item_action'"),'stable transcription API must expose one explicit item-action endpoint');
+assert.match(api,/transcription_deeper_execute_action_v307/,'v307 adapter must own the stable item-action route');
+assert.match(deepItems,/transcription_intelligence_require_accepted_v303/,'v307 adapter must preserve the v303 acceptance gate');
 assert.doesNotMatch(api,/item_action.*analyze/s,'analysis itself must not implicitly execute operational actions');
 
 /* Action surface is bounded and uses existing product systems. */
@@ -25,6 +27,7 @@ assert.match(actions,/agent_chat_v101_append_ecosystem_message/,'Main Chat actio
 assert.match(chat,/INSERT INTO chat_messages/,'canonical chat bridge must remain the persisted canvas writer');
 assert.match(chat,/agent_brain_archive_and_parse/,'canonical chat bridge must continue archiving operational messages into Agent Brain');
 assert.doesNotMatch(actions,/CREATE TABLE|ALTER TABLE/,'operational intelligence must not introduce a parallel action schema');
+assert.doesNotMatch(deepItems,/CREATE TABLE|ALTER TABLE/,'v307 action adaptation must not introduce a parallel action schema');
 
 /* Agent follow-ups use the existing Agent Brain task/commitment lifecycle. */
 assert.match(actions,/memory_type,subject,memory_text,memory_hash/);
@@ -47,13 +50,14 @@ assert.match(actions,/'transcription-intelligence-item:'\.\$itemId/);
 assert.match(actions,/'evidence_refs'/);
 assert.match(actions,/'review_state'=>'accepted'/);
 assert.match(actions,/transcription_app_permissions_v300\(\$user\)/,'operational Brain/Knowledge availability must reuse canonical transcription write permissions');
+assert.match(deepItems,/in_array\(\$action,\['agent_brain','personal_knowledge'\],true\)/,'v307 must preflight both long-term knowledge destinations');
 
 /* Project notes only target an explicitly linked writable track. */
 assert.match(actions,/project_track_id/);
 assert.match(actions,/artist_listening_v172_track_allowed/);
 assert.match(actions,/track_notes\.manage/);
 assert.match(actions,/INSERT INTO track_notes/);
-assert.match(actions,/\$actionKey=transcription_intelligence_action_key_v303\(\$action,\$action === 'project_note' \? 0 : \$targetId\)/,'project-note receipt key must match the untargeted browser action identity');
+assert.match(actions,/\$actionKey=transcription_intelligence_action_key_v303\(\$action,\$action === 'project_note' \? 0 : \$targetId\)/,'v303 project-note receipt identity must remain stable');
 assert.match(actions,/\$action !== 'project_note' \|\| \(int\)\(\$existing\['target_id'\] \?\? 0\) === \$targetId/,'a project-note receipt is reusable only for the currently linked track');
 assert.doesNotMatch(actions,/INSERT INTO tracks/,'transcription intelligence must not create projects/tracks implicitly');
 
@@ -77,9 +81,10 @@ assert.match(items,/'actions'=>is_array\(\$actions\) \? \$actions : \[\]/,'revie
 assert.match(items,/\$prior\['actions'\]/,'module normalization must restore prior receipts');
 assert.match(items,/if \(\$previousText !== \$text\) \{[\s\S]*unset\(\$item\['actions'\]\)/,'editing actionable text must invalidate stale action receipts');
 assert.match(items,/in_array\(\(string\)\$key,\['source_fingerprint','edited_text','actions','relations'\],true\)/,'internal action receipts and relation adjacency must not pollute compiled Brain/Knowledge report text');
+assert.match(deepItems,/function transcription_deeper_record_receipt_v307/,'v307 must preserve receipts on extension-aware sections');
 
-/* Accepted items expose one compact operational menu; v305 must preserve it. */
-assert.match(client,/const BUILD = 'transcription-relations-v305-20260906'/);
+/* Accepted items expose one compact operational menu inside the current canonical controller. */
+assert.match(client,/const BUILD = 'transcription-deeper-v307-20260907'/);
 assert.match(client,/item\.review_state !== 'accepted'/,'operational menu must be hidden until human acceptance');
 assert.match(client,/class="sf-listening-ai-operational"/);
 assert.match(client,/data-listening-ai-item-action=/);
