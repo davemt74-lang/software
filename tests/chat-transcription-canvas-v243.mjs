@@ -59,6 +59,11 @@ assert.ok(canvas.includes("opportunities:mergeItems"),'Home must aggregate oppor
 assert.ok(canvas.includes("crm:mergeItems"),'Home must surface CRM relationship signals when generated');
 assert.ok(canvas.includes("knowledge:mergeItems"),'Home must surface knowledge intelligence when generated');
 assert.ok(canvas.includes("research:mergeItems"),'Home must surface claims needing verification when generated');
+assert.ok(canvas.includes("qa?collectSection(qa,'unanswered',5)"),'Home must surface unresolved Q&A from the real unanswered section');
+assert.ok(canvas.includes("qa?collectSection(qa,'answered',5)"),'Home must also include answered Q&A in the overall synopsis');
+assert.ok(!canvas.includes("qa?collectSection(qa,'questions',5)"),'Home must not depend on a nonexistent generic Q&A section');
+assert.ok(canvas.includes('function allPluginHighlights(active)'),'Home must derive one compact highlight from every generated plugin');
+assert.ok(canvas.includes("overviewCard('All plugin highlights',model.highlights,sid)"),'Home must visibly include the all-plugin synopsis layer');
 assert.ok(canvas.includes('function pluginMarkup(data,session,appId)'),'the same slideout must provide per-plugin detail drill-down');
 assert.ok(canvas.includes('data-intel-view="home"'),'plugin navigation must retain an explicit Home tab');
 assert.ok(canvas.includes('function evidencePages(row)'),'overview/detail items must understand transcript evidence pages');
