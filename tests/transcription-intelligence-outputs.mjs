@@ -8,6 +8,7 @@ const client = read('artist-listening-ai.js');
 const page = read('artist-listening.php');
 const items = read('includes/transcription-intelligence-items.php');
 const relations = read('includes/transcription-intelligence-relations.php');
+const deep = read('includes/transcription-deeper-intelligence.php');
 const baseline = read('tools/run_recovery_baseline.py');
 
 /* v306 adds final outputs without a new persistence or frontend layer. */
@@ -66,11 +67,7 @@ assert.ok(generateStart>=0 && generateEnd>generateStart,'output generator must b
 assert.ok(noExecutedGuard>=0 && generatedPersist>noExecutedGuard,'a fully invalid output response must fail before persistence');
 assert.match(outputs,/function transcription_output_only_modules_v306/);
 assert.match(outputs,/function transcription_output_restore_v306/);
-for (const action of ['build_relations','review_relation','review_item','edit_item','item_action']) {
-  assert.ok(api.includes(action),`${action} API path must exist`);
-}
-assert.ok((api.match(/transcription_output_restore_v306/g)||[]).length>=4,'legacy relation/item/action writes must restore preserved output modules');
-assert.match(api,/transcription_output_normalize_master_v306/,'status/loading must normalize durable items without dropping v306 outputs');
+for (const action of ['build_relations','review_relation','review_item','edit_item','item_action']) assert.ok(api.includes(action),`${action} API path must exist`);
 
 /* Output modules are manual-only even when Live Analysis is on. */
 assert.match(outputs,/\$requestedOutputIds=array_values\(array_intersect\(\$requested,transcription_output_ids_v306\(\)\)\)/);
@@ -79,25 +76,26 @@ assert.match(outputs,/if \(\$mode==='live' && !\$baseIds && \$requestedOutputIds
 assert.match(outputs,/'reason'=>'selected_outputs_manual_only'/,'output-only live requests must report a truthful manual-only skip');
 assert.match(outputs,/'skipped'=>true/);
 
-/* Stable API routes analysis/status/registry through v306 while browser remains the proven registry-driven v305 owner. */
+/* v306 remains the output engine; the stable runtime now wraps it with v307 deeper intelligence. */
 assert.match(api,/transcription-intelligence-outputs\.php/);
-assert.match(api,/vp3-transcription-intelligence-v306-20260906/);
-assert.match(api,/transcription_app_registry_public_v306\(\)/);
-assert.match(api,/transcription_app_status_v306\(/);
-assert.match(api,/transcription_app_analyze_v306\(/);
-assert.doesNotMatch(api,/\$result = transcription_app_analyze_v304\(/,'stable API must not bypass the v306 output wrapper');
-assert.match(api,/'source'=>'transcription-intelligence-v306'/,'whole-report Brain provenance must identify the current runtime');
-assert.match(client,/const BUILD = 'transcription-relations-v305-20260906'/,'Section 5 must not replace the stable browser controller unnecessarily');
-assert.match(page,/artist-listening-ai\.js\?v=transcription-relations-v305-20260906/,'Section 5 must not churn the proven AI Summary cache identity');
+assert.match(api,/vp3-transcription-intelligence-v307-20260907/);
+assert.match(api,/transcription_app_registry_public_v307\(\)/);
+assert.match(api,/transcription_deeper_advanced_status_v307\(/);
+assert.match(api,/transcription_app_analyze_v307\(/);
+assert.match(deep,/transcription_app_analyze_v306\(/,'v307 must delegate base output generation through v306');
+assert.doesNotMatch(api,/\$result\s*=\s*transcription_app_analyze_v304\(/,'stable API must not bypass v307/v306 output wrappers');
+assert.match(api,/'source'=>'transcription-intelligence-v307'/,'whole-report Brain provenance must identify the current runtime');
+assert.match(client,/const BUILD = 'transcription-deeper-v307-20260907'/,'the canonical browser controller must identify the current v307 runtime');
+assert.match(page,/artist-listening-ai\.js\?v=transcription-deeper-v307-20260907/,'page must cache-bust the same canonical controller for v307');
 assert.match(client,/state\.registry/);
 assert.match(client,/app\.sections/);
-assert.match(client,/analyzeApps\(state\.selectedApps/,'new output modules must use the existing generic registry/tab/analyze path');
+assert.match(client,/analyzeApps\(state\.selectedApps/,'output modules must still use the generic registry/tab/analyze path');
 assert.doesNotMatch(client,/summary_output|action_plan/,'browser must not hardcode v306 output IDs');
-assert.doesNotMatch(client,/MutationObserver|sfListeningTranscriptNav|MediaRecorder/,'v306 must not add a frontend fallback/ownership layer');
+assert.doesNotMatch(client,/MutationObserver|sfListeningTranscriptNav|MediaRecorder/,'v307 must not add a frontend fallback/ownership layer');
 
 /* Source intelligence export remains source-only; derived output modules do not recursively feed whole-report saves. */
 assert.match(items,/function transcription_intelligence_report_text_v302/);
-assert.match(items,/transcription_app_modules_v301/,'whole-report compiler intentionally reads source intelligence registry modules, not derived v306 outputs');
+assert.match(items,/transcription_app_modules_v301/,'source compiler intentionally remains tied to source intelligence registry modules');
 assert.match(relations,/transcription_intelligence_build_relations_v305/,'accepted relation context remains the existing v305 graph');
 
 assert.match(baseline,/tests\/transcription-intelligence-outputs\.mjs/,'v306 output contract must run in Recovery Baseline');

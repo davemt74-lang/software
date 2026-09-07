@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 const read = path => fs.readFileSync(path, 'utf8');
 const workflow = read('includes/transcription-workflow-config.php');
 const outputs = read('includes/transcription-intelligence-outputs.php');
+const deep = read('includes/transcription-deeper-intelligence.php');
 const api = read('api/artist-listening-intelligence-v300.php');
 const client = read('artist-listening-ai.js');
 const page = read('artist-listening.php');
@@ -93,20 +94,23 @@ assert.match(client,/state\.pluginErrors/);
 assert.match(client,/needs a retry/);
 assert.match(client,/analyzeApps\(\[state\.activeApp\], 'manual'\)/,'retry remains isolated to the active plugin');
 
-/* Stable API preserves v304 workflow execution under v306 server outputs and the proven v305 browser. */
+/* Stable API preserves v304 workflow under v306 outputs and v307 deeper wrapping. */
 assert.match(api,/transcription-workflow-config\.php/);
 assert.match(api,/transcription-intelligence-outputs\.php/);
-assert.match(api,/transcription_app_analyze_v306\(/,'stable API must route analysis through v306');
+assert.match(api,/transcription-deeper-intelligence\.php/);
+assert.match(api,/transcription_app_analyze_v307\(/,'stable API must route analysis through v307');
+assert.match(deep,/transcription_app_analyze_v306\(/,'v307 must delegate base analysis through v306');
 assert.match(outputs,/transcription_app_analyze_v304\(/,'v306 must preserve v304 as the source-analysis workflow engine');
-assert.doesNotMatch(api,/\$result = transcription_app_analyze_v301\(/,'stable API must no longer execute the v301 analyzer directly');
+assert.doesNotMatch(api,/\$result\s*=\s*transcription_app_analyze_v301\(/,'stable API must no longer execute the v301 analyzer directly');
 assert.match(api,/workflow_config/);
-assert.match(api,/vp3-transcription-intelligence-v306-20260906/);
-const asset='artist-listening-ai.js?v=transcription-relations-v305-20260906';
-assert.ok(page.includes(asset),'page must keep the proven v305 canonical AI controller');
+assert.match(api,/vp3-transcription-intelligence-v307-20260907/);
+const asset='artist-listening-ai.js?v=transcription-deeper-v307-20260907';
+assert.ok(page.includes(asset),'page must load the current canonical v307 AI controller');
 assert.equal(page.split('artist-listening-ai.js?').length-1,1,'page must load exactly one AI controller');
+assert.ok(!page.includes('artist-listening-ai.js?v=transcription-relations-v305-20260906'),'v305 cache identity must stay retired');
 assert.ok(!page.includes('artist-listening-ai.js?v=transcription-workflow-v304-20260906'),'v304 cache identity must stay retired');
 assert.ok(!page.includes('artist-listening-ai.js?v=transcription-app-registry-v300-20260906'),'v300 cache identity must stay retired');
-assert.match(client,/const BUILD = 'transcription-relations-v305-20260906'/);
+assert.match(client,/const BUILD = 'transcription-deeper-v307-20260907'/);
 
 /* Existing ownership and bounded-live safeguards remain intact. */
 assert.match(client,/state\.liveWords < 120/);

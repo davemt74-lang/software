@@ -16,8 +16,8 @@ for (const asset of [
   'artist-listening-workspace.js','artist-listening.js','artist-listening-recordings.js','artist-listening-naming.js','artist-listening-ai.js','artist-listening-ui.js',
 ]) assert.ok(page.includes(asset), `${asset} must be loaded by the canonical page`);
 assert.match(page,/artist-listening\.js\?v=9ac023be/,'capture controller must use the fixed source blob cache key');
-assert.match(page,/artist-listening-ai\.js\?v=transcription-relations-v305-20260906/,'AI controller must use the current v305 cache identity');
-assert.doesNotMatch(page,/artist-listening-ai\.js\?v=transcription-workflow-v304-20260906|artist-listening-ai\.js\?v=transcription-app-registry-v300-20260906|artist-listening-ai\.js\?v=c18c3dc8|&b=1d511bb5/,'retired AI cache identities must stay removed');
+assert.match(page,/artist-listening-ai\.js\?v=transcription-deeper-v307-20260907/,'AI controller must use the current v307 cache identity');
+assert.doesNotMatch(page,/artist-listening-ai\.js\?v=transcription-relations-v305-20260906|artist-listening-ai\.js\?v=transcription-workflow-v304-20260906|artist-listening-ai\.js\?v=transcription-app-registry-v300-20260906|artist-listening-ai\.js\?v=c18c3dc8|&b=1d511bb5/,'retired AI cache identities must stay removed');
 assert.doesNotMatch(page,/artist-listening[^"']*-v\d+[^"']*\.(?:js|css)/,'Artist Listening page must not load numbered frontend layers');
 assert.equal((page.match(/artist-listening-ai\.js\?/g) || []).length, 1, 'AI controller must load exactly once');
 assert.equal((page.match(/artist-listening\.css\?/g) || []).length, 1, 'one canonical stylesheet must load exactly once');
@@ -37,8 +37,8 @@ assert.match(workspace,/data-listening-workspace-save>Save<\/button>/);
 assert.match(workspace,/data-listening-ai-toggle aria-expanded="false"/);
 assert.doesNotMatch(workspace,/>Copy<\/button>|>Download<\/button>|copyDocument|downloadDocument/);
 
-/* AI Summary keeps one direct owner while workflow and relation controls live inside it. */
-assert.match(ai,/const BUILD = 'transcription-relations-v305-20260906'/);
+/* AI Summary keeps one direct owner while workflow, relation and comparison controls live inside it. */
+assert.match(ai,/const BUILD = 'transcription-deeper-v307-20260907'/);
 assert.match(ai,/function getButton\(\)/);
 assert.match(ai,/document\.querySelector\('\[data-listening-ai-toggle\]'\)/);
 assert.match(ai,/button\.addEventListener\('click'/);
@@ -53,11 +53,13 @@ assert.match(ai,/data-listening-ai-live/);
 assert.match(ai,/data-listening-ai-app-options/);
 assert.match(ai,/data-listening-ai-tabs/);
 assert.match(ai,/data-listening-ai-relations/,'relation graph must stay inside the canonical AI Summary controller');
+assert.match(ai,/data-listening-ai-comparison/,'explicit comparison selection must stay inside the canonical AI Summary controller');
 assert.match(ai,/function buildRelations\(\)/);
 assert.match(ai,/function reviewRelation\(relationId, reviewState\)/);
 assert.match(ai,/function analyzeApps\(appIds, mode = 'manual'\)/,'analysis must support explicit plugin request sets');
 assert.match(ai,/apps:requested/,'analyze requests must send the explicit plugin set');
 assert.match(ai,/workflow:\{\.\.\.state\.workflow\}/,'analyze requests must send the run profile');
+assert.match(ai,/comparison:comparisonPayload\(\)/,'analyze requests must send the explicit comparison baseline');
 assert.match(ai,/analyzeApps\(state\.selectedApps, mode\)/,'full Analyze must still execute the complete selected plugin set');
 assert.match(ai,/request\('analyze'/);
 assert.match(ai,/request\('build_relations'/);

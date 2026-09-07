@@ -15,6 +15,7 @@ NODE_TESTS = [
     'tests/transcription-intelligence-actions.mjs',
     'tests/transcription-intelligence-relations.mjs',
     'tests/transcription-intelligence-outputs.mjs',
+    'tests/transcription-deeper-intelligence.mjs',
     'tests/transcription-workflow-config.mjs',
     'tests/artist-listening-edit.mjs',
     'tests/artist-listening-runtime.mjs',

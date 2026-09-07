@@ -13,11 +13,13 @@ const relations = readFileSync('includes/transcription-intelligence-relations.ph
 const actions = readFileSync('includes/transcription-intelligence-actions.php', 'utf8');
 const workflow = readFileSync('includes/transcription-workflow-config.php', 'utf8');
 const outputs = readFileSync('includes/transcription-intelligence-outputs.php', 'utf8');
+const deep = readFileSync('includes/transcription-deeper-intelligence.php', 'utf8');
 const legacyApi = readFileSync('api/artist-listening-intelligence-v254.php', 'utf8');
 
-const asset = 'artist-listening-ai.js?v=transcription-relations-v305-20260906';
-assert.ok(page.includes(asset), 'Artist Listening must keep the canonical v305 AI controller exactly once');
+const asset = 'artist-listening-ai.js?v=transcription-deeper-v307-20260907';
+assert.ok(page.includes(asset), 'Artist Listening must load the canonical v307 AI controller exactly once');
 assert.equal(page.split(asset).length - 1, 1, 'AI Summary controller must load exactly once');
+assert.ok(!page.includes('artist-listening-ai.js?v=transcription-relations-v305-20260906'), 'retired v305 AI cache identity must stay removed');
 assert.ok(!page.includes('artist-listening-ai.js?v=transcription-workflow-v304-20260906'), 'retired v304 AI cache identity must stay removed');
 assert.ok(!page.includes('artist-listening-ai.js?v=transcription-app-registry-v300-20260906'), 'retired v300 AI cache identity must stay removed');
 assert.ok(!page.includes('artist-listening-ai.js?v=c18c3dc8'), 'old AI controller cache identity must stay retired');
@@ -28,7 +30,7 @@ assert.ok(!existsSync('artist-listening-intelligence-v236.js'), 'legacy v236 bro
 assert.ok(!existsSync('artist-listening-intelligence-v254.js'), 'legacy v254 browser file must stay deleted');
 
 assert.ok(workspace.includes('data-listening-ai-toggle'), 'workspace must source-own the one AI Summary button');
-assert.ok(client.includes("const BUILD = 'transcription-relations-v305-20260906'"), 'controller must remain the proven v305 relationships build');
+assert.ok(client.includes("const BUILD = 'transcription-deeper-v307-20260907'"), 'controller must identify the current v307 build');
 assert.ok(client.includes("document.querySelector('[data-listening-ai-toggle]')"), 'controller must resolve the existing workspace button directly');
 assert.ok(client.includes("button.addEventListener('click'"), 'existing button must receive a direct click listener');
 assert.ok(!client.includes("document.addEventListener('click'"), 'no delegated document click owner is allowed');
@@ -52,30 +54,32 @@ assert.ok(client.includes('localStorage.setItem(workflowKey'), 'workflow setting
 assert.ok(client.includes('analyzeApps(state.selectedApps'), 'full Analyze must run the selected plugin set');
 assert.ok(client.includes('apps:requested'), 'analysis requests must send only explicitly requested plugin IDs');
 assert.ok(client.includes('workflow:{...state.workflow}'), 'analysis requests must send the current workflow profile');
+assert.ok(client.includes('comparison:comparisonPayload()'), 'analysis requests must send the explicit v307 comparison target');
+assert.ok(client.includes('data-listening-ai-comparison'), 'v307 comparison selection must live inside the canonical controller');
 assert.ok(client.includes('appStatus'), 'browser must track independent app status');
 assert.ok(client.includes('Needs refresh'), 'stale app results must be visible to the user');
 assert.ok(client.includes('External Research'), 'Basic Analysis must preserve visible external research');
 assert.ok(page.includes('.sf-listening-ai-structured-list{display:grid'), 'registry reports must have canonical structured-list styling');
 assert.ok(page.includes('.sf-listening-ai-item-meta{display:flex'), 'structured report metadata must remain readable');
-assert.ok(!client.includes('summary_output') && !client.includes('action_plan'), 'v306 outputs must require no new hardcoded browser behavior');
+assert.ok(!client.includes('summary_output') && !client.includes('action_plan'), 'v306 outputs must require no hardcoded browser behavior');
 
-/* Canonical registries remain intact while v302 items, v303 actions, v304 workflow, v305 relationships and v306 outputs extend them. */
+/* Canonical registries remain intact while v302-v307 layers extend them. */
 for (const id of ['basic','stats','actions','responses','decisions','moments','studio','knowledge','topics','entities','risks','timeline']) {
   assert.ok(registry.includes(`'${id}' => [`), `${id} transcription app must remain registered`);
 }
-for (const title of ['Topics & Themes','Entities & Data','Risks & Blockers','Timeline & Milestones']) {
-  assert.ok(registry.includes(`'title'=>'${title}'`), `${title} must remain available as a transcription app`);
-}
+for (const title of ['Topics & Themes','Entities & Data','Risks & Blockers','Timeline & Milestones']) assert.ok(registry.includes(`'title'=>'${title}'`), `${title} must remain available as a transcription app`);
 assert.ok(registry.includes("'execution'=>'deterministic'"), 'registry must support deterministic apps');
 assert.ok(registry.includes("'execution'=>'ai'"), 'registry must support AI apps');
 assert.ok(wave2.includes('function transcription_app_registry_v301'), 'wave two must extend the canonical registry');
 assert.ok(items.includes('function transcription_intelligence_normalize_modules_v302'), 'v302 durable item semantics must remain available');
 assert.ok(actions.includes('function transcription_intelligence_execute_action_v303'), 'v303 operational actions must remain available');
-assert.ok(workflow.includes('function transcription_app_analyze_v304'), 'v304 workflow execution must extend the existing registry rather than duplicate it');
+assert.ok(workflow.includes('function transcription_app_analyze_v304'), 'v304 workflow execution must remain available');
 assert.ok(relations.includes('VP3_TRANSCRIPTION_INTELLIGENCE_RELATIONS_V305'), 'v305 relationship semantics must extend durable intelligence items');
 assert.ok(relations.includes('function transcription_intelligence_build_relations_v305'), 'v305 must expose explicit relationship building');
 assert.ok(outputs.includes('VP3_TRANSCRIPTION_INTELLIGENCE_OUTPUTS_V306'), 'v306 must add reviewed Summary/Action Plan outputs');
 assert.ok(outputs.includes('function transcription_app_registry_v306'), 'v306 must extend the registry for output tabs');
+assert.ok(deep.includes('VP3_TRANSCRIPTION_DEEPER_V307'), 'v307 must deepen the existing intelligence registry');
+assert.ok(deep.includes('function transcription_app_registry_v307'), 'v307 registry extension must remain server-owned');
 
 /* Each source app owns its result and selected runs cannot erase other modules. */
 assert.ok(registry.includes("'modules'=>$modules"), 'master analysis must persist independent modules');
@@ -90,9 +94,7 @@ assert.ok(workflow.includes('plugin_errors'), 'v304 must isolate per-plugin run 
 assert.ok(outputs.includes('transcription_output_restore_v306'), 'v306 must preserve derived output modules across older source write paths');
 
 /* Existing app reports stay evidence-aware. */
-for (const field of ['evidence','confidence','owner','timing','priority','rationale','audience','purpose','why_it_matters','category','conflict']) {
-  assert.ok(registry.includes(`'${field}'`), `upgraded reports must support ${field}`);
-}
+for (const field of ['evidence','confidence','owner','timing','priority','rationale','audience','purpose','why_it_matters','category','conflict']) assert.ok(registry.includes(`'${field}'`), `upgraded reports must support ${field}`);
 assert.ok(registry.includes('Confidence must be high, medium or low'), 'analysis contracts must explicitly calibrate confidence');
 assert.ok(registry.includes('unknown when owner or timing is not supported'), 'action reports must not invent owner/timing');
 assert.ok(registry.includes('A decision must be a concluded choice, not an idea'), 'decision reports must distinguish decisions from suggestions');
@@ -100,32 +102,25 @@ assert.ok(registry.includes('Never treat external research as a private user fac
 
 /* Stats remain deterministic and token-free. */
 assert.ok(registry.includes('function transcription_app_stats_v300'), 'server must calculate deterministic transcript stats');
-for (const key of ['total_words','duration_ms','transcript_turns','speaker_count','question_count','questions_per_1000_words','avg_words_per_turn','longest_turn_words','turn_share','speakers']) {
-  assert.ok(registry.includes(`'${key}'`), `stats output must include ${key}`);
-}
+for (const key of ['total_words','duration_ms','transcript_turns','speaker_count','question_count','questions_per_1000_words','avg_words_per_turn','longest_turn_words','turn_share','speakers']) assert.ok(registry.includes(`'${key}'`), `stats output must include ${key}`);
 assert.ok(client.includes('sf-listening-ai-stat-grid'), 'Stats tab must render stat cards');
 assert.ok(client.includes('sf-listening-ai-chart-track'), 'Stats tab must render speaker-share charts');
 assert.ok(page.includes('.sf-listening-ai-chart-track{height:7px'), 'speaker-share chart must retain visible geometry');
 
-/* Stable v300 URL now delegates through v306 while preserving v302-v305 contracts. */
-assert.ok(api.includes("require_once dirname(__DIR__) . '/includes/transcription-app-registry.php'"), 'stable API must load the canonical registry');
-assert.ok(api.includes("require_once dirname(__DIR__) . '/includes/transcription-apps-wave2.php'"), 'stable API must load wave two');
-assert.ok(api.includes("require_once dirname(__DIR__) . '/includes/transcription-intelligence-items.php'"), 'stable API must load durable item semantics');
-assert.ok(api.includes("require_once dirname(__DIR__) . '/includes/transcription-intelligence-relations.php'"), 'stable API must load v305 relationship semantics');
-assert.ok(api.includes("require_once dirname(__DIR__) . '/includes/transcription-intelligence-actions.php'"), 'stable API must load operational action semantics');
-assert.ok(api.includes("require_once dirname(__DIR__) . '/includes/transcription-workflow-config.php'"), 'stable API must load v304 workflow configuration');
-assert.ok(api.includes("require_once dirname(__DIR__) . '/includes/transcription-intelligence-outputs.php'"), 'stable API must load v306 output semantics');
-assert.ok(api.includes("$action === 'analyze'"), 'stable API URL must continue to own app analysis');
-assert.ok(api.includes('transcription_app_analyze_v306'), 'stable endpoint must execute analysis through v306');
+/* Stable v300 URL now delegates through v307 while preserving v302-v306 contracts. */
+for (const include of ['transcription-app-registry.php','transcription-apps-wave2.php','transcription-intelligence-items.php','transcription-intelligence-relations.php','transcription-intelligence-actions.php','transcription-workflow-config.php','transcription-intelligence-outputs.php','transcription-deeper-intelligence.php']) assert.ok(api.includes(include), `stable API must load ${include}`);
+assert.ok(api.includes("$action==='analyze'"), 'stable API URL must continue to own app analysis');
+assert.ok(api.includes('transcription_app_analyze_v307'), 'stable endpoint must execute analysis through v307');
+assert.ok(deep.includes('transcription_app_analyze_v306'), 'v307 must delegate ordinary/base analysis to v306');
 assert.ok(outputs.includes('transcription_app_analyze_v304'), 'v306 must delegate ordinary analysis to v304');
 assert.ok(!api.includes('$result = transcription_app_analyze_v301('), 'stable endpoint must not execute the old v301 analyzer directly');
-assert.ok(api.includes("$action === 'build_relations'"), 'stable endpoint must expose explicit v305 relationship building');
-assert.ok(api.includes("$action === 'review_relation'"), 'stable endpoint must expose explicit relationship review');
-assert.ok(api.includes("$action === 'item_action'"), 'stable endpoint must preserve explicit operational item actions');
+assert.ok(api.includes("$action==='build_relations'"), 'stable endpoint must expose explicit v305 relationship building');
+assert.ok(api.includes("$action==='review_relation'"), 'stable endpoint must expose explicit relationship review');
+assert.ok(api.includes("$action==='item_action'"), 'stable endpoint must preserve explicit operational item actions');
 assert.ok(api.includes("['save_brain','save_knowledge']"), 'stable API must preserve explicit whole-report save actions');
-assert.ok(api.includes('transcription_intelligence_report_text_v302'), 'Brain/Knowledge saves must use review-aware current source intelligence');
-assert.ok(api.includes("'source'=>'transcription-intelligence-v306'"), 'Agent Brain provenance must identify the v306 runtime');
-assert.ok(api.includes('vp3-transcription-intelligence-v306-20260906'), 'stable API build must identify v306');
+assert.ok(api.includes('transcription_deeper_report_text_v307'), 'Brain/Knowledge saves must use review-aware v307 source intelligence filtering');
+assert.ok(api.includes("'source'=>'transcription-intelligence-v307'"), 'Agent Brain provenance must identify the v307 runtime');
+assert.ok(api.includes('vp3-transcription-intelligence-v307-20260907'), 'stable API build must identify v307');
 assert.ok(client.includes('artist-listening-intelligence-v300.php'), 'browser must keep the stable registry API URL');
 assert.ok(legacyApi.includes('artist_listening_v254_analyze'), 'legacy v254 endpoint must remain available during migration');
 
