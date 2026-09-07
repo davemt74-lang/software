@@ -66,9 +66,12 @@ try {
     if ($action === 'analyze') {
         $mode = strtolower((string)($input['mode'] ?? 'manual'));
         if (!in_array($mode,['manual','live'],true)) $mode = 'manual';
-        transcription_intelligence_json_v300(true,transcription_app_analyze_v301(
-            $pdo,$user,$sessionId,$mode,!empty($input['research']),$input['apps'] ?? ['basic']
-        ));
+        $researchOn = !empty($input['research']);
+        $result = transcription_app_analyze_v301(
+            $pdo,$user,$sessionId,$mode,$researchOn,$input['apps'] ?? ['basic']
+        );
+        $result = transcription_app_finalize_research_brief_v301($pdo,$user,$session,$result,$researchOn);
+        transcription_intelligence_json_v300(true,$result);
     }
 
     $segments = artist_listening_v172_segments($pdo,$sessionId);
