@@ -27,9 +27,13 @@ function serverEndpoint(site){
 function phpSnippet(site,token){
   const endpoint=serverEndpoint(site);
   return `<?php
-register_shutdown_function(static function (): void {
+(static function (): void {
     $ua = trim((string)($_SERVER['HTTP_USER_AGENT'] ?? ''));
     if ($ua === '') return;
+
+    // Keep normal human requests entirely local. Only likely automation asks
+    // VP3 for a Radar/Gateway decision.
+    if (!preg_match('/(?:chatgpt-user|oai-searchbot|gptbot|claude-user|claudebot|claude-searchbot|perplexity-user|perplexitybot|\\bbot\\b|crawler|spider|slurp|scrapy|headless|python-requests|curl\\/|wget\\/|httpclient)/i', $ua)) return;
 
     $path = (string)(parse_url((string)($_SERVER['REQUEST_URI'] ?? '/'), PHP_URL_PATH) ?: '/');
     $referer = trim((string)($_SERVER['HTTP_REFERER'] ?? ''));
@@ -37,7 +41,6 @@ register_shutdown_function(static function (): void {
     $payload = json_encode([
         'path' => $path,
         'method' => (string)($_SERVER['REQUEST_METHOD'] ?? 'GET'),
-        'status_code' => http_response_code(),
         'referrer_host' => $referrerHost,
         'user_agent' => $ua,
     ], JSON_UNESCAPED_SLASHES);
@@ -45,31 +48,51 @@ register_shutdown_function(static function (): void {
 
     $url = '${endpoint}';
     $token = '${token}';
+    $raw = null;
     if (function_exists('curl_init')) {
         $ch = curl_init($url);
-        if ($ch === false) return;
-        curl_setopt_array($ch, [
-            CURLOPT_POST => true,
-            CURLOPT_POSTFIELDS => $payload,
-            CURLOPT_HTTPHEADER => ['Content-Type: application/json', 'X-VP3-Radar-Token: '.$token],
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_CONNECTTIMEOUT_MS => 250,
-            CURLOPT_TIMEOUT_MS => 500,
-        ]);
-        @curl_exec($ch);
-        curl_close($ch);
-        return;
+        if ($ch !== false) {
+            curl_setopt_array($ch, [
+                CURLOPT_POST => true,
+                CURLOPT_POSTFIELDS => $payload,
+                CURLOPT_HTTPHEADER => ['Content-Type: application/json', 'X-VP3-Radar-Token: '.$token],
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_CONNECTTIMEOUT_MS => 250,
+                CURLOPT_TIMEOUT_MS => 500,
+            ]);
+            $result = @curl_exec($ch);
+            if (is_string($result)) $raw = $result;
+            curl_close($ch);
+        }
+    } else {
+        $context = stream_context_create(['http' => [
+            'method' => 'POST',
+            'header' => "Content-Type: application/json\\r\\nX-VP3-Radar-Token: ".$token."\\r\\n",
+            'content' => $payload,
+            'timeout' => 0.5,
+            'ignore_errors' => true,
+        ]]);
+        $result = @file_get_contents($url, false, $context);
+        if (is_string($result)) $raw = $result;
     }
 
-    $context = stream_context_create(['http' => [
-        'method' => 'POST',
-        'header' => "Content-Type: application/json\r\nX-VP3-Radar-Token: ".$token."\r\n",
-        'content' => $payload,
-        'timeout' => 0.5,
-        'ignore_errors' => true,
-    ]]);
-    @file_get_contents($url, false, $context);
-});
+    // Fail open if VP3 is unreachable or returns an invalid response.
+    if (!is_string($raw) || $raw === '') return;
+    $decoded = json_decode($raw, true);
+    $decision = is_array($decoded) && is_array($decoded['decision'] ?? null) ? $decoded['decision'] : null;
+    if (!is_array($decision) || !array_key_exists('allowed', $decision) || $decision['allowed'] !== false) return;
+
+    $status = (int)($decision['status_code'] ?? 403);
+    if ($status < 400 || $status > 599) $status = 403;
+    http_response_code($status);
+    header('X-VP3-Agent-Gateway: '.preg_replace('/[^a-z_-]/i', '', (string)($decision['action'] ?? 'block')));
+    if ($status === 429) {
+        $retry = max(60, min(3600, (int)($decision['retry_after'] ?? 1800)));
+        header('Retry-After: '.$retry);
+        exit('Too many automated requests.');
+    }
+    exit('Automated access denied.');
+})();
 `;
 }
 function capacityLabel(){
@@ -88,7 +111,7 @@ function ensureShell(){
 }
 function serverSetup(site){
   const id=Number(site.id||0),configured=!!site.server_token_configured,token=serverTokens.get(id)||'';
-  return `<div class="profile-agent-radar-server"><div class="profile-agent-radar-server-head"><div><span>Server-side Radar</span><p>Captures known agents and bounded unknown automation even when the crawler never runs JavaScript.</p></div><div class="profile-agent-radar-server-actions"><b class="${configured?'configured':'off'}">${configured?'Token configured':'Not configured'}</b><button type="button" data-server-rotate="${id}">${configured?'Rotate Token':'Create Server Token'}</button>${configured?`<button type="button" data-server-revoke="${id}">Revoke</button>`:''}</div></div>${token?`<div class="profile-agent-radar-server-secret"><strong>New token created — copy this server snippet now.</strong><p>The token is shown only in this browser session after creation/rotation. Put this code in a server-side PHP bootstrap or shared template. Never place the token in HTML or client JavaScript.</p><code>${esc(phpSnippet(site,token))}</code><button type="button" data-copy-server="${id}">Copy PHP Snippet</button></div>`:configured?`<div class="profile-agent-radar-server-configured">Server-side Radar is configured. VP3 stores only the token hash, so the existing plaintext token cannot be shown again. Rotate it if you need a new install snippet.</div>`:`<div class="profile-agent-radar-server-configured">Create a token to reveal the one-time PHP server integration snippet.</div>`}</div>`;
+  return `<div class="profile-agent-radar-server"><div class="profile-agent-radar-server-head"><div><span>Server-side Radar + Gateway</span><p>Captures known agents and bounded unknown automation before page output, including crawlers that never run JavaScript. Contact policies can allow, monitor, limit or block the request.</p></div><div class="profile-agent-radar-server-actions"><b class="${configured?'configured':'off'}">${configured?'Token configured':'Not configured'}</b><button type="button" data-server-rotate="${id}">${configured?'Rotate Token':'Create Server Token'}</button>${configured?`<button type="button" data-server-revoke="${id}">Revoke</button>`:''}</div></div>${token?`<div class="profile-agent-radar-server-secret"><strong>New token created — copy this server gate now.</strong><p>The token is shown only in this browser session after creation/rotation. Put this code at the top of a shared PHP bootstrap before output. Never place the token in HTML or client JavaScript. The gate fails open if VP3 cannot be reached.</p><code>${esc(phpSnippet(site,token))}</code><button type="button" data-copy-server="${id}">Copy PHP Gate</button></div>`:configured?`<div class="profile-agent-radar-server-configured">Server-side Radar + Gateway is configured. VP3 stores only the token hash, so the existing plaintext token cannot be shown again. Rotate it if you need a new install snippet.</div>`:`<div class="profile-agent-radar-server-configured">Create a token to reveal the one-time PHP server gate.</div>`}</div>`;
 }
 function siteCard(site){
   const active=Number(site.is_active)===1,verified=!!site.verified_at;
@@ -100,7 +123,7 @@ function render(){
   if(!sitesState){shell.innerHTML='<div class="profile-agent-radar-sites-loading">Loading connected sites…</div>';return;}
   const sites=Array.isArray(sitesState.sites)?sitesState.sites:[];
   for(const id of [...serverTokens.keys()])if(!sites.some(s=>Number(s.id)===id&&s.server_token_configured))serverTokens.delete(id);
-  shell.innerHTML=`<div class="profile-agent-radar-sites-head"><div><span>Connected Sites</span><h2>Extend Agent Radar to your websites</h2><p>Use the browser collector for JavaScript-capable agents and the authenticated server collector for crawlers that never render the page. Both feed the same Agent CRM and Radar timeline.</p></div><div class="profile-agent-radar-site-capacity">${esc(capacityLabel())}</div></div><form class="profile-agent-radar-site-form" data-radar-site-form><label><span>Website domain</span><input name="domain" placeholder="example.com" autocomplete="url" required></label><label><span>Label</span><input name="label" placeholder="Main website" maxlength="190"></label><button type="submit"${sitesState.can_add?'':' disabled'}>${sitesState.can_add?'Add Site':'Site Limit Reached'}</button></form>${!sitesState.can_add&&sitesState.limit!==null?'<div class="profile-agent-radar-sites-limit">Pause an active site or change the package entitlement before adding another site.</div>':''}<div class="profile-agent-radar-site-list">${sites.length?sites.map(siteCard).join(''):'<div class="profile-agent-radar-sites-empty">No external websites are connected yet.</div>'}</div><div class="profile-agent-radar-sites-privacy">Browser collection sends pathname and referrer host only and uses no cookies or fingerprinting. Server-side collection additionally transmits the incoming User-Agent transiently for classification plus method/status; raw User-Agent values are not stored. Human traffic is discarded by both collectors.</div>`;
+  shell.innerHTML=`<div class="profile-agent-radar-sites-head"><div><span>Connected Sites</span><h2>Extend Agent Radar to your websites</h2><p>Use the browser collector for JavaScript-capable agents and the authenticated server gate for crawlers that never render the page. Both feed the same Agent CRM and Radar timeline.</p></div><div class="profile-agent-radar-site-capacity">${esc(capacityLabel())}</div></div><form class="profile-agent-radar-site-form" data-radar-site-form><label><span>Website domain</span><input name="domain" placeholder="example.com" autocomplete="url" required></label><label><span>Label</span><input name="label" placeholder="Main website" maxlength="190"></label><button type="submit"${sitesState.can_add?'':' disabled'}>${sitesState.can_add?'Add Site':'Site Limit Reached'}</button></form>${!sitesState.can_add&&sitesState.limit!==null?'<div class="profile-agent-radar-sites-limit">Pause an active site or change the package entitlement before adding another site.</div>':''}<div class="profile-agent-radar-site-list">${sites.length?sites.map(siteCard).join(''):'<div class="profile-agent-radar-sites-empty">No external websites are connected yet.</div>'}</div><div class="profile-agent-radar-sites-privacy">Browser collection sends pathname and referrer host only and uses no cookies or fingerprinting. Server-side collection additionally transmits the incoming User-Agent transiently for classification plus request method; raw User-Agent values are not stored. Human traffic is discarded by both collectors.</div>`;
 }
 async function load(silent=true){
   if(busy)return;busy=true;
@@ -119,11 +142,11 @@ host.addEventListener('click',async e=>{
   const copy=e.target.closest('[data-copy-site]');
   if(copy){const site=(sitesState?.sites||[]).find(s=>Number(s.id)===Number(copy.dataset.copySite));if(!site)return;try{await navigator.clipboard.writeText(browserSnippet(site));copy.textContent='Copied';setTimeout(()=>{if(copy.isConnected)copy.textContent='Copy';},1200);}catch(err){setNotice('Copy failed. Select the browser install snippet manually.',true);}return;}
   const rotate=e.target.closest('[data-server-rotate]');
-  if(rotate){const id=Number(rotate.dataset.serverRotate||0);rotate.disabled=true;try{const d=await request({action:'rotate_server_token',property_id:id});sitesState=d.state;serverTokens.set(id,String(d.server_token||''));render();setNotice('Server token created. Copy the PHP snippet now; VP3 will not store the plaintext token.');}catch(err){setNotice(err.message,true);rotate.disabled=false;}return;}
+  if(rotate){const id=Number(rotate.dataset.serverRotate||0);rotate.disabled=true;try{const d=await request({action:'rotate_server_token',property_id:id});sitesState=d.state;serverTokens.set(id,String(d.server_token||''));render();setNotice('Server token created. Copy the PHP gate now; VP3 will not store the plaintext token.');}catch(err){setNotice(err.message,true);rotate.disabled=false;}return;}
   const revoke=e.target.closest('[data-server-revoke]');
   if(revoke){const id=Number(revoke.dataset.serverRevoke||0);revoke.disabled=true;try{const d=await request({action:'revoke_server_token',property_id:id});sitesState=d.state;serverTokens.delete(id);render();setNotice('Server token revoked. Requests using the old token will no longer be accepted.');}catch(err){setNotice(err.message,true);revoke.disabled=false;}return;}
   const copyServer=e.target.closest('[data-copy-server]');
-  if(copyServer){const id=Number(copyServer.dataset.copyServer||0),site=(sitesState?.sites||[]).find(s=>Number(s.id)===id),token=serverTokens.get(id)||'';if(!site||!token)return;try{await navigator.clipboard.writeText(phpSnippet(site,token));copyServer.textContent='Copied';setTimeout(()=>{if(copyServer.isConnected)copyServer.textContent='Copy PHP Snippet';},1200);}catch(err){setNotice('Copy failed. Select the PHP snippet manually.',true);}return;}
+  if(copyServer){const id=Number(copyServer.dataset.copyServer||0),site=(sitesState?.sites||[]).find(s=>Number(s.id)===id),token=serverTokens.get(id)||'';if(!site||!token)return;try{await navigator.clipboard.writeText(phpSnippet(site,token));copyServer.textContent='Copied';setTimeout(()=>{if(copyServer.isConnected)copyServer.textContent='Copy PHP Gate';},1200);}catch(err){setNotice('Copy failed. Select the PHP gate manually.',true);}return;}
 });
 const observer=new MutationObserver(()=>ensureShell());
 observer.observe(host,{childList:true});
