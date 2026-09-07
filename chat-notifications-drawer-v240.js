@@ -51,6 +51,10 @@
   let responseWindowActive = false;
   let speechQueue = Promise.resolve();
   let agentVoicePreference = cfg.agentVoiceEnabled !== false;
+  let mainFeedOutcomeBusy = false;
+  let mainFeedObserver = null;
+  let mainFeedSyncQueued = false;
+  let mainFeedRefreshTimer = 0;
 
   async function request(action = 'state', payload = null, query = {}) {
     const post = payload !== null;
@@ -212,6 +216,135 @@
     </article>`;
   }
 
+  function mainFeedPriorities() {
+    return Array.isArray(state?.brain?.priorities) ? state.brain.priorities : [];
+  }
+
+  function mainFeedBrainPriorityMessage(priorities) {
+    const titles = priorities
+      .map(priority => String(priority?.title || '').trim())
+      .filter(Boolean);
+    if (!titles.length) return null;
+    const messages = [...document.querySelectorAll('#chatThread .message.assistant')].reverse();
+    return messages.find(message => {
+      const text = String(message.querySelector('.message-text')?.textContent || '').trim();
+      if (!text.startsWith('Agent Brain priority update')) return false;
+      return titles.some(title => text.includes(title));
+    }) || null;
+  }
+
+  function syncMainFeedBrainOutcomeControls() {
+    mainFeedSyncQueued = false;
+    const priorities = mainFeedPriorities();
+    const targetMessage = mainFeedBrainPriorityMessage(priorities);
+    document.querySelectorAll('#chatThread .chat-main-feed-brain-outcomes').forEach(node => {
+      if (!targetMessage || !targetMessage.contains(node)) node.remove();
+    });
+    if (!targetMessage) return;
+
+    const messageText = String(targetMessage.querySelector('.message-text')?.textContent || '');
+    const matched = priorities
+      .filter(priority => {
+        const title = String(priority?.title || '').trim();
+        return title !== '' && messageText.includes(title);
+      })
+      .slice(0, 3);
+    if (!matched.length) return;
+
+    const signature = matched.map(priority => [
+      String(priority?.outcome_hash || ''),
+      String(priority?.outcome || ''),
+      Number(priority?.rank || 0),
+      Number(priority?.score || 0)
+    ].join(':')).join('|');
+    const body = targetMessage.querySelector('.message-body') || targetMessage;
+    let container = body.querySelector(':scope > .chat-main-feed-brain-outcomes');
+    if (container?.dataset.brainOutcomeSignature === signature) return;
+    if (!container) {
+      container = document.createElement('section');
+      container.className = 'chat-main-feed-brain-outcomes chat-activity-section';
+      const sources = body.querySelector(':scope > .message-sources');
+      if (sources) body.insertBefore(container, sources);
+      else body.appendChild(container);
+    }
+    container.dataset.brainOutcomeSignature = signature;
+    container.innerHTML = `
+      <div class="chat-activity-section-head">
+        <div><strong>Record the result</strong><span>Teach Agent Brain what actually happened.</span></div>
+      </div>
+      <div class="chat-brain-priority-list">${matched.map(brainPriorityCard).join('')}</div>`;
+  }
+
+  function scheduleMainFeedBrainOutcomeSync() {
+    if (mainFeedSyncQueued) return;
+    mainFeedSyncQueued = true;
+    queueMicrotask(syncMainFeedBrainOutcomeControls);
+  }
+
+  async function recordMainFeedBrainOutcome(hash, outcome, buttonNode) {
+    if (mainFeedOutcomeBusy) return;
+    if (!/^[a-f0-9]{40}$/.test(hash) || !['successful','resolved','unsuccessful','ignored'].includes(outcome)) return;
+    mainFeedOutcomeBusy = true;
+    const container = buttonNode?.closest('.chat-main-feed-brain-outcomes');
+    const controls = container ? [...container.querySelectorAll('button[data-brain-outcome]')] : [];
+    controls.forEach(control => { control.disabled = true; });
+    container?.querySelector('.chat-activity-inline-error')?.remove();
+    try {
+      state = await request('brain_outcome', {hash, outcome});
+      render();
+      syncMainFeedBrainOutcomeControls();
+    } catch (error) {
+      if (container) {
+        container.insertAdjacentHTML('afterbegin', `<div class="chat-activity-inline-error">${esc(error instanceof Error ? error.message : 'Could not record Brain outcome.')}</div>`);
+      }
+      controls.forEach(control => { control.disabled = false; });
+    } finally {
+      mainFeedOutcomeBusy = false;
+    }
+  }
+
+  function handleMainFeedOutcomeClick(event) {
+    const outcomeButton = event.target.closest('[data-brain-outcome]');
+    if (!outcomeButton || !outcomeButton.closest('.chat-main-feed-brain-outcomes')) return;
+    event.preventDefault();
+    const hash = String(outcomeButton.dataset.brainOutcomeHash || '');
+    const outcome = String(outcomeButton.dataset.brainOutcome || '');
+    void recordMainFeedBrainOutcome(hash, outcome, outcomeButton);
+  }
+
+  function observeMainFeedBrainPriorities() {
+    const thread = document.getElementById('chatThread');
+    if (!thread) return;
+    thread.addEventListener('click', handleMainFeedOutcomeClick);
+    mainFeedObserver = new MutationObserver(records => {
+      let cognitiveMessageAdded = false;
+      for (const record of records) {
+        for (const node of record.addedNodes) {
+          if (!(node instanceof Element)) continue;
+          const texts = [];
+          if (node.matches('.message-text')) texts.push(node);
+          node.querySelectorAll?.('.message-text').forEach(textNode => texts.push(textNode));
+          if (texts.some(textNode => String(textNode.textContent || '').trim().startsWith('Agent Brain priority update'))) {
+            cognitiveMessageAdded = true;
+            break;
+          }
+        }
+        if (cognitiveMessageAdded) break;
+      }
+      if (cognitiveMessageAdded) {
+        if (mainFeedRefreshTimer) window.clearTimeout(mainFeedRefreshTimer);
+        mainFeedRefreshTimer = window.setTimeout(() => {
+          mainFeedRefreshTimer = 0;
+          void refresh(false);
+        }, 80);
+        return;
+      }
+      scheduleMainFeedBrainOutcomeSync();
+    });
+    mainFeedObserver.observe(thread, {childList:true, subtree:true});
+    scheduleMainFeedBrainOutcomeSync();
+  }
+
   function brainView() {
     const brain = state?.brain || {};
     if (brain.enabled === false) {
@@ -330,6 +463,7 @@
         agentVoicePreference = state.agent_voice_enabled !== false;
       }
       render();
+      syncMainFeedBrainOutcomeControls();
     } catch (error) {
       if (showError && drawer) {
         const body = drawer.querySelector('[data-notification-drawer-body]');
@@ -372,6 +506,7 @@
     try {
       state = await request(action, payload);
       render();
+      syncMainFeedBrainOutcomeControls();
     } catch (error) {
       const body = drawer?.querySelector('[data-notification-drawer-body]');
       const fallback = action === 'brain_outcome' ? 'Could not record Brain outcome.' : 'Could not update notification.';
@@ -601,6 +736,7 @@
     if (speak) queueSpeech(String(data.message || ''));
     state = await request('mark_read', {notification_id:notificationId});
     render();
+    syncMainFeedBrainOutcomeControls();
     return true;
   }
 
@@ -636,6 +772,7 @@
   if (!ownNotificationButton()) return;
   ensureDrawer();
   keepBellNextToProfile();
+  observeMainFeedBrainPriorities();
   const actions = document.querySelector('.chat-topbar-actions');
   if (actions) new MutationObserver(keepBellNextToProfile).observe(actions, {childList:true});
   document.addEventListener('keydown', event => {
@@ -654,9 +791,19 @@
   window.addEventListener('pagehide', () => {
     if (attentionTimer) window.clearInterval(attentionTimer);
     attentionTimer = 0;
+    if (mainFeedRefreshTimer) window.clearTimeout(mainFeedRefreshTimer);
+    mainFeedRefreshTimer = 0;
+    mainFeedObserver?.disconnect();
+    mainFeedObserver = null;
     clearResponseWindow();
   }, {once:true});
 
-  window.STONEFELLOW_NOTIFICATION_CENTER = {open:openDrawer, close:closeDrawer, refresh, pollAttention};
+  window.STONEFELLOW_NOTIFICATION_CENTER = {
+    open:openDrawer,
+    close:closeDrawer,
+    refresh,
+    pollAttention,
+    syncMainFeedOutcomes:syncMainFeedBrainOutcomeControls
+  };
   void refresh(false).finally(startAttentionPolling);
 })();
