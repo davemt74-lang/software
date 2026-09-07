@@ -139,6 +139,7 @@ function contacts_agent_messaging_label(string $status): string
             <button class="contacts-filter" type="button" data-contact-filter="watched">Watched</button>
             <button class="contacts-filter" type="button" data-contact-filter="returning_visitor">Returning</button>
             <button class="contacts-filter" type="button" data-contact-filter="engaged">Engaged</button>
+            <button class="contacts-filter" type="button" data-contact-filter="member">Members</button>
             <button class="contacts-filter" type="button" data-contact-filter="high_risk">High risk</button>
             <button class="contacts-filter" type="button" data-contact-filter="opportunity">Opportunities</button>
           </div>
@@ -171,10 +172,10 @@ function contacts_agent_messaging_label(string $status): string
                   <small><?= e($contactRef !== '' ? $contactRef : (!empty($contact['signed_in']) ? 'Known member' : 'Guest')) ?><?php if ($relationship !== '' && $relationship !== 'none'): ?> · <?= e(str_replace('_',' ',$relationship)) ?><?php endif; ?></small>
                 </div>
               </div>
-              <div class="contacts-cell" data-label="Type / stage"><span class="contacts-stage <?= e($stage) ?>"><?= e(contacts_stage_label($stage)) ?></span><small>Human</small></div>
-              <div class="contacts-cell" data-label="Activity"><strong><?= (int)($contact['visit_count'] ?? 0) ?> visits</strong><small><?= (int)($contact['page_view_count'] ?? 0) ?> profile views</small></div>
-              <div class="contacts-cell" data-label="Relationship"><strong><?= (int)($contact['conversation_count'] ?? 0) ?> chats</strong><small><?= (int)($contact['visitor_message_count'] ?? 0) ?> messages</small></div>
-              <div class="contacts-cell" data-label="Outcomes"><strong><?= !empty($contact['signed_in']) ? 'Known member' : (!empty($contact['repeat_visitor'])?'Returning guest':'Guest') ?></strong></div>
+              <div class="contacts-cell" data-label="Stage"><span class="contacts-stage <?= e($stage) ?>"><?= e(contacts_stage_label($stage)) ?></span><small>Human</small></div>
+              <div class="contacts-cell" data-label="Visits"><strong><?= (int)($contact['visit_count'] ?? 0) ?> visits</strong><small><?= (int)($contact['page_view_count'] ?? 0) ?> profile views</small></div>
+              <div class="contacts-cell" data-label="Chats"><strong><?= (int)($contact['conversation_count'] ?? 0) ?> chats</strong><small><?= (int)($contact['visitor_message_count'] ?? 0) ?> messages</small></div>
+              <div class="contacts-cell" data-label="Messages"><strong><?= (int)($contact['visitor_message_count'] ?? 0) ?> messages</strong><small><?= !empty($contact['signed_in']) ? 'Known member' : (!empty($contact['repeat_visitor'])?'Returning guest':'Guest') ?></small></div>
               <div class="contacts-cell" data-label="First seen"><?= e(contacts_date_label((string)($contact['first_seen_at'] ?? ''))) ?></div>
               <div class="contacts-cell" data-label="Last activity"><?= e(contacts_date_label($lastActivity)) ?></div>
             </article>
@@ -240,7 +241,7 @@ function contacts_agent_messaging_label(string $status): string
 
         <section class="contacts-privacy">
           <span aria-hidden="true">◉</span>
-          <div><strong>One CRM, separate privacy boundaries</strong><p>Human contacts use the existing privacy-preserving visitor relationship system. Automated visitors use Agent Radar identities. VP3 does not merge an AI agent into a human contact, and explicit AI referral attribution uses first-party token hashes rather than IP addresses or cross-customer tracking.</p></div>
+          <div><strong>Privacy-first guest continuity</strong><p><b>One CRM, separate privacy boundaries.</b> Human contacts use the existing privacy-preserving visitor relationship system. Automated visitors use Agent Radar identities. VP3 does not merge an AI agent into a human contact, and explicit AI referral attribution uses first-party token hashes rather than IP addresses or cross-customer tracking.</p></div>
         </section>
       </div>
     </section>
@@ -261,8 +262,8 @@ function contacts_agent_messaging_label(string $status): string
     const q=String(search?.value||'').trim().toLowerCase();
     let shown=0;
     for(const row of rows){
-      const kind=String(row.dataset.kind||'human'),stage=String(row.dataset.stage||''),risk=Number(row.dataset.risk||0),opp=Number(row.dataset.opportunity||0),watched=row.dataset.watch==='1';
-      const matchesFilter=active==='all'||active===kind||(active==='watched'&&kind==='agent'&&watched)||(active==='returning_visitor'&&(stage==='returning_visitor'||stage==='returning'))||(active==='engaged'&&['guest_engaged','member_engaged','engaged','converted','trusted'].includes(stage))||(active==='high_risk'&&kind==='agent'&&risk>=70)||(active==='opportunity'&&kind==='agent'&&opp>=80&&risk<40);
+      const kind=String(row.dataset.kind||'human'),stage=String(row.dataset.stage||''),member=row.dataset.member==='1',risk=Number(row.dataset.risk||0),opp=Number(row.dataset.opportunity||0),watched=row.dataset.watch==='1';
+      const matchesFilter=active==='all'||active===kind||(active==='watched'&&kind==='agent'&&watched)||(active==='returning_visitor'&&(stage==='returning_visitor'||stage==='returning'))||(active==='engaged'&&['guest_engaged','member_engaged','engaged','converted','trusted'].includes(stage))||(active==='member'&&kind==='human'&&member)||(active==='high_risk'&&kind==='agent'&&risk>=70)||(active==='opportunity'&&kind==='agent'&&opp>=80&&risk<40);
       const matchesSearch=!q||String(row.dataset.search||'').includes(q);
       row.classList.toggle('contacts-hidden',!(matchesFilter&&matchesSearch));
       if(matchesFilter&&matchesSearch)shown++;
