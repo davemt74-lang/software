@@ -11,6 +11,12 @@ function vp3_radar_sites_json(bool $ok,array $payload=[],int $status=200): never
     exit;
 }
 
+function vp3_radar_sites_state(PDO $pdo,array $user,array $state): array
+{
+    $state=vp3_radar_server_enrich_site_state($pdo,$user,$state);
+    return vp3_analytics_enrich_site_state($pdo,$user,$state);
+}
+
 $pdo=db();$user=current_user();
 if(!$pdo||!$user||!has_permission('account.access',$user))vp3_radar_sites_json(false,['error'=>'Sign in to manage connected sites.'],401);
 if(!personal_capability_has_v242('profile_agent.access',$user))vp3_radar_sites_json(false,['error'=>'Agent Radar is unavailable for this account.'],403);
@@ -18,7 +24,7 @@ if(!vp3_radar_schema_ready($pdo))vp3_radar_sites_json(false,['error'=>'Agent Rad
 
 $method=strtoupper((string)($_SERVER['REQUEST_METHOD']??'GET'));
 if($method==='GET'){
-    $state=vp3_radar_server_enrich_site_state($pdo,$user,vp3_radar_external_site_state($pdo,$user));
+    $state=vp3_radar_sites_state($pdo,$user,vp3_radar_external_site_state($pdo,$user));
     vp3_radar_sites_json(true,['state'=>$state]);
 }
 if($method!=='POST')vp3_radar_sites_json(false,['error'=>'Method not allowed.'],405);
@@ -30,19 +36,20 @@ $action=trim((string)($input['action']??''));
 try{
     if($action==='create'){
         $state=vp3_radar_external_site_create($pdo,$user,(string)($input['domain']??''),(string)($input['label']??''));
-        vp3_radar_sites_json(true,['state'=>vp3_radar_server_enrich_site_state($pdo,$user,$state)]);
+        vp3_radar_sites_json(true,['state'=>vp3_radar_sites_state($pdo,$user,$state)]);
     }
     if($action==='set_active'){
         $state=vp3_radar_external_site_set_active($pdo,$user,max(0,(int)($input['property_id']??0)),!empty($input['is_active']));
-        vp3_radar_sites_json(true,['state'=>vp3_radar_server_enrich_site_state($pdo,$user,$state)]);
+        vp3_radar_sites_json(true,['state'=>vp3_radar_sites_state($pdo,$user,$state)]);
     }
     if($action==='rotate_server_token'){
         $result=vp3_radar_server_token_rotate($pdo,$user,max(0,(int)($input['property_id']??0)));
+        $result['state']=vp3_analytics_enrich_site_state($pdo,$user,$result['state']);
         vp3_radar_sites_json(true,$result);
     }
     if($action==='revoke_server_token'){
         $state=vp3_radar_server_token_revoke($pdo,$user,max(0,(int)($input['property_id']??0)));
-        vp3_radar_sites_json(true,['state'=>$state]);
+        vp3_radar_sites_json(true,['state'=>vp3_analytics_enrich_site_state($pdo,$user,$state)]);
     }
     vp3_radar_sites_json(false,['error'=>'Unknown connected-site action.'],404);
 }catch(Throwable $e){vp3_radar_sites_json(false,['error'=>$e->getMessage()],400);}
