@@ -136,10 +136,10 @@
     return `Saved ${date.toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})}`;
   }
 
-  function freshnessHtml(appId) {
+  function freshnessText(appId) {
     const status = state.appStatus?.[appId] || {};
-    if (!status.generated) return '<span class="sf-listening-ai-module-state">Not generated</span>';
-    return `<span class="sf-listening-ai-module-state ${status.fresh ? 'fresh' : 'stale'}">${status.fresh ? 'Current' : 'Needs refresh'}${status.generated_at ? ` · ${esc(formatSaved(status.generated_at))}` : ''}</span>`;
+    if (!status.generated) return 'Not generated';
+    return `${status.fresh ? 'Current' : 'Needs refresh'}${status.generated_at ? ` · ${formatSaved(status.generated_at)}` : ''}`;
   }
 
   function itemText(item, primary = 'text') {
@@ -164,10 +164,18 @@
   function sectionHtml(section, result) {
     const rows = Array.isArray(result?.[section.key]) ? result[section.key] : [];
     if (!rows.length) return '';
-    return `<section><h4>${esc(section.title || section.key)}</h4><div class="sf-listening-ai-structured-list">${rows.map(item => {
+    return `<section><h4>${esc(section.title || section.key)}</h4><ul class="sf-listening-ai-structured-list">${rows.map(item => {
       const text = itemText(item, String(section.primary || 'text'));
-      return text ? `<article class="sf-listening-ai-structured-item"><p>${esc(text)}</p>${metaHtml(item, Array.isArray(section.meta) ? section.meta : [])}</article>` : '';
-    }).join('')}</div></section>`;
+      return text ? `<li class="sf-listening-ai-structured-item"><p>${esc(text)}</p>${metaHtml(item, Array.isArray(section.meta) ? section.meta : [])}</li>` : '';
+    }).join('')}</ul></section>`;
+  }
+
+  function researchHtml() {
+    const research = state.report?.research || {};
+    const text = clean(research.text || '');
+    const sources = Array.isArray(research.sources) ? research.sources : [];
+    if (!text && !sources.length) return '';
+    return `<section><h4>External Research</h4>${text ? `<p>${esc(research.text || '').replace(/\n/g, '<br>')}</p>` : ''}${sources.length ? `<div class="sf-listening-ai-sources">${sources.map(source => `<a href="${esc(source.url)}" target="_blank" rel="noopener noreferrer">${esc(source.title || source.url)} ↗</a>`).join('')}</div>` : ''}</section>`;
   }
 
   function statsHtml(stats = {}) {
@@ -198,7 +206,8 @@
       ? `${result.summary ? `<p class="sf-listening-ai-report-copy">${esc(result.summary)}</p>` : ''}${result.analysis ? `<section><h4>Interpretation</h4><p>${esc(result.analysis)}</p></section>` : ''}`
       : '';
     const sections = (Array.isArray(app.sections) ? app.sections : []).map(section => sectionHtml(section, result)).join('');
-    return header || sections ? `${header}${sections}` : `<p class="sf-listening-ai-empty">No supported findings were identified for ${esc(app.title)}.</p>`;
+    const research = app.id === 'basic' ? researchHtml() : '';
+    return header || sections || research ? `${header}${sections}${research}` : `<p class="sf-listening-ai-empty">No supported findings were identified for ${esc(app.title)}.</p>`;
   }
 
   function activeResult() {
@@ -293,7 +302,7 @@
     if (!node) return;
     const app = appById(state.activeApp);
     const action = clean(state.actionMessage);
-    const meta = `<div class="sf-listening-ai-report-state"><strong>${app ? esc(app.title) : 'Transcription App'}</strong><span>${action ? esc(action) : freshnessHtml(state.activeApp)}</span></div>`;
+    const meta = `<div class="sf-listening-ai-report-state"><strong>${app ? esc(app.title) : 'Transcription App'}</strong><span>${esc(action || freshnessText(state.activeApp))}</span></div>`;
     node.innerHTML = `${meta}${appResultHtml(app, activeResult())}`;
   }
 
