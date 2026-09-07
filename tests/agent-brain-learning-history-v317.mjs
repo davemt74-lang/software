@@ -18,7 +18,7 @@ assert.match(helper, /VP3_AGENT_LEARNING_HISTORY_WINDOW_DAYS_V317=60/, 'historic
 assert.match(helper, /factor_before/, 'audit rows must expose source weight before the outcome');
 assert.match(helper, /factor_after/, 'audit rows must expose source weight after the outcome');
 assert.match(helper, /factor_delta/, 'audit rows must expose the learned weight change');
-assert.match(helper, /'outcome'=>(string)\(\$exposure\['stage'\]/, 'open recommendation cycles must remain visible before final closure');
+assert.ok(helper.includes("'outcome'=>(string)($exposure['stage']??'shown')==='acted'?'acted':'awaiting'"), 'open recommendation cycles must remain visible before final closure');
 assert.doesNotMatch(helper, /CREATE TABLE|ALTER TABLE/, 'Learning History must not create parallel persistence');
 
 assert.match(endpoint, /personal_capability_has_v242\('agent_brain\.access'/, 'Learning History endpoint must enforce Agent Brain entitlement');
