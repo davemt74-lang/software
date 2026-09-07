@@ -13,6 +13,7 @@ NODE_TESTS = [
     'tests/transcription-apps-wave2.mjs',
     'tests/transcription-intelligence-items.mjs',
     'tests/transcription-intelligence-actions.mjs',
+    'tests/transcription-intelligence-relations.mjs',
     'tests/transcription-workflow-config.mjs',
     'tests/artist-listening-edit.mjs',
     'tests/artist-listening-runtime.mjs',
