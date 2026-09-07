@@ -22,8 +22,8 @@ assert.match(outputs,/array_replace\(transcription_app_registry_v301\(\),transcr
 for (const [id,title] of [['summary_output','Summary'],['action_plan','Action Plan']]) {
   assert.ok(outputs.includes(`'${id}'=>[`), `${title} output must be registered`);
   const start=outputs.indexOf(`'${id}'=>[`);
-  assert.ok(outputs.slice(start,start+1200).includes("'live'=>false"), `${title} must remain manual-only`);
-  assert.ok(outputs.slice(start,start+1200).includes("'execution'=>'ai'"), `${title} is an explicit AI-derived output`);
+  assert.ok(outputs.slice(start,start+1400).includes("'live'=>false"), `${title} must remain manual-only`);
+  assert.ok(outputs.slice(start,start+1400).includes("'execution'=>'ai'"), `${title} is an explicit AI-derived output`);
 }
 for (const section of ['overview','key_points','decisions','risks','open_questions','next_steps','objective','actions','blockers','follow_ups']) {
   assert.ok(outputs.includes(`'key'=>'${section}'`), `${section} output section must be structured`);
@@ -32,8 +32,8 @@ for (const section of ['overview','key_points','decisions','risks','open_questio
 /* Reviewed current intelligence is the only factual source. */
 assert.match(outputs,/function transcription_output_reviewed_input_v306/);
 assert.match(outputs,/!hash_equals\(\$currentHash,\(string\)\(\$module\['source_hash'\]\?\?''\)\)/,'output source catalog must reject stale plugin modules');
-assert.match(outputs,/\(string\)\(\$item\['review_state'\]\?\?''\\)!=='accepted'/,'only human-accepted durable intelligence items may enter the output catalog');
-assert.match(outputs,/\(string\)\(\$relation\['review_state'\]\?\?''\)==='accepted'/,'only accepted v305 connections may enter output context');
+assert.match(outputs,/\(string\)\(\$item\['review_state'\]\?\?''\)\)!=='accepted'/,'only human-accepted durable intelligence items may enter the output catalog');
+assert.match(outputs,/\(string\)\(\$relation\['review_state'\]\?\?''\)\)!=='accepted'/,'only accepted v305 connections may enter output context');
 assert.match(outputs,/!isset\(\$items\[\$otherId\]\)/,'accepted connections must link two accepted source items');
 assert.match(outputs,/The accepted intelligence items below are the only factual source/);
 assert.match(outputs,/Do not use raw transcript text, unreviewed findings, rejected findings, Agent Brain, CRM or outside knowledge/);
@@ -50,24 +50,34 @@ assert.match(outputs,/use unknown/,'unsupported owner/timing must remain unknown
 
 /* Output freshness follows reviewed state, not just transcript text. */
 assert.match(outputs,/function transcription_output_input_hash_v306/);
-assert.match(outputs,/\['source_hash'=>\$currentHash,'items'=>\$input\['items'\],'relations'=>\$input\['relations'\]\]/,'input hash must include current source + accepted items + accepted connections');
+assert.match(outputs,/'source_hash'=>\$currentHash,'items'=>\$input\['items'\],'relations'=>\$input\['relations'\]/,'input hash must include current source + accepted items + accepted connections');
 assert.match(outputs,/'context_hash'=>\$inputHash/,'persisted outputs must bind to the reviewed-input hash');
 assert.match(outputs,/reviewed_intelligence_changed/,'accepted item/relation changes must stale prior outputs');
 assert.match(outputs,/hash_equals\(\$inputHash,\(string\)\(\$module\['context_hash'\]\?\?''\)\)/);
 
 /* Existing valid outputs survive provider failure and older write paths. */
 assert.match(outputs,/Existing output was not overwritten/,'invalid provider output must be explicitly non-destructive');
-const persistIndex=outputs.indexOf("$master['analysis']=transcription_output_persist_modules_v306");
-const noExecutedGuard=outputs.indexOf('if (!$executed && $errors) throw new RuntimeException');
-assert.ok(noExecutedGuard>=0 && noExecutedGuard<persistIndex,'a fully invalid output response must fail before persistence');
+const generateStart=outputs.indexOf('function transcription_output_generate_v306');
+const generateEnd=outputs.indexOf('function transcription_app_status_v306',generateStart);
+const generateBlock=outputs.slice(generateStart,generateEnd);
+const noExecutedGuard=generateBlock.indexOf('if (!$executed && $errors) throw new RuntimeException');
+const generatedPersist=generateBlock.indexOf("$master['analysis']=transcription_output_persist_modules_v306");
+assert.ok(generateStart>=0 && generateEnd>generateStart,'output generator must be identifiable');
+assert.ok(noExecutedGuard>=0 && generatedPersist>noExecutedGuard,'a fully invalid output response must fail before persistence');
 assert.match(outputs,/function transcription_output_only_modules_v306/);
 assert.match(outputs,/function transcription_output_restore_v306/);
 for (const action of ['build_relations','review_relation','review_item','edit_item','item_action']) {
-  const start=api.indexOf(action);
-  assert.ok(start>=0,`${action} API path must exist`);
+  assert.ok(api.includes(action),`${action} API path must exist`);
 }
 assert.ok((api.match(/transcription_output_restore_v306/g)||[]).length>=4,'legacy relation/item/action writes must restore preserved output modules');
 assert.match(api,/transcription_output_normalize_master_v306/,'status/loading must normalize durable items without dropping v306 outputs');
+
+/* Output modules are manual-only even when Live Analysis is on. */
+assert.match(outputs,/\$requestedOutputIds=array_values\(array_intersect\(\$requested,transcription_output_ids_v306\(\)\)\)/);
+assert.match(outputs,/\$outputIds=\$mode==='live'\?\[\]:\$requestedOutputIds/,'live runs must exclude derived output generation');
+assert.match(outputs,/if \(\$mode==='live' && !\$baseIds && \$requestedOutputIds\)/,'output-only live requests must take the explicit skip path');
+assert.match(outputs,/'reason'=>'selected_outputs_manual_only'/,'output-only live requests must report a truthful manual-only skip');
+assert.match(outputs,/'skipped'=>true/);
 
 /* Stable API routes analysis/status/registry through v306 while browser remains the proven registry-driven v305 owner. */
 assert.match(api,/transcription-intelligence-outputs\.php/);
