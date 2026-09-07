@@ -5,6 +5,7 @@ $mainSidebarUser = $mainSidebarUser ?? $workspaceSidebarUser ?? current_user();
 $mainSidebarActive = $mainSidebarActive ?? $workspaceSidebarActive ?? '';
 $mainSidebarSavedCount = 0;
 $mainSidebarTokenCommerceReady = function_exists('token_pack_schema_ready') && token_pack_schema_ready();
+$mainSidebarTeamState = function_exists('team_subscription_state') ? team_subscription_state($mainSidebarUser) : ['authorized'=>false];
 
 if ($mainSidebarUser && table_exists('track_favorites')) {
     try {
@@ -80,6 +81,11 @@ if ($mainSidebarUser && table_exists('track_favorites')) {
       <section class="chat-sidebar-nav-section" aria-label="Account and plan">
         <div class="chat-history-label">Account</div>
         <nav class="chat-sidebar-nav">
+          <?php if (!empty($mainSidebarTeamState['authorized'])): ?>
+            <a class="chat-sidebar-nav-link <?= $mainSidebarActive === 'team' ? 'active' : '' ?>" href="<?= e(url('/admin/team.php')) ?>">
+              <span>◎</span><strong>My Team</strong>
+            </a>
+          <?php endif; ?>
           <a class="chat-sidebar-nav-link <?= $mainSidebarActive === 'subscription' ? 'active' : '' ?>" href="<?= e(url('/subscription.php')) ?>">
             <span>◫</span><strong>Plan &amp; Usage</strong>
           </a>
