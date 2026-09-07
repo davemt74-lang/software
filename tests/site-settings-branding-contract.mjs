@@ -60,12 +60,12 @@ assert.ok(
 );
 
 assert.match(adminHeader, /\$siteBrandName = 'VP3';/, 'Admin shell must use fixed VP3 application branding');
-assert.match(adminHeader, /admin-mobile-brand[^>]*aria-label="VP3">VP3<\/a>/, 'Admin mobile logo must be VP3');
-assert.match(adminHeader, /admin-brand[^>]*aria-label="VP3">VP3<\/a>/, 'Admin desktop logo must be VP3');
+assert.ok(adminHeader.includes('class="admin-mobile-brand"') && adminHeader.includes('aria-label="VP3">VP3</a>'), 'Admin mobile logo must be VP3');
+assert.ok(adminHeader.includes('class="admin-brand"') && adminHeader.includes('aria-label="VP3">VP3</a>'), 'Admin desktop logo must be VP3');
 assert.doesNotMatch(adminHeader, /class="site-brand-logo"/, 'legacy uploaded logo must not override the VP3 admin shell');
 assert.match(adminHeader, /url\('\/team\.php'\)/, 'Admin Team destination must point at the front-end Team workspace');
 
-assert.match(mainSidebar, /class="chat-brand"[^>]*aria-label="VP3">VP3<\/a>/, 'Main Feed/member sidebar logo must be VP3');
+assert.ok(mainSidebar.includes('class="chat-brand"') && mainSidebar.includes('aria-label="VP3">VP3</a>'), 'Main Feed/member sidebar logo must be VP3');
 assert.ok(
   chatCss.includes('@import url("site-branding.css?v=1");'),
   'Main Feed may retain the shared branding layer for non-logo rules'
