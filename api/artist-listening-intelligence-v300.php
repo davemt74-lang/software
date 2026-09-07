@@ -12,8 +12,10 @@ require_once dirname(__DIR__) . '/includes/transcription-intelligence-relations.
 require_once dirname(__DIR__) . '/includes/transcription-intelligence-actions.php';
 require_once dirname(__DIR__) . '/includes/transcription-workflow-config.php';
 require_once dirname(__DIR__) . '/includes/transcription-intelligence-outputs.php';
+require_once dirname(__DIR__) . '/includes/transcription-deeper-intelligence.php';
+require_once dirname(__DIR__) . '/includes/transcription-deeper-items.php';
 
-const VP3_TRANSCRIPTION_INTELLIGENCE_V300 = 'vp3-transcription-intelligence-v306-20260906';
+const VP3_TRANSCRIPTION_INTELLIGENCE_V300 = 'vp3-transcription-intelligence-v307-20260907';
 
 function transcription_intelligence_json_v300(bool $ok, array $data = [], int $status = 200): never
 {
@@ -47,7 +49,7 @@ try {
 
     if ($method === 'GET' && $action === 'registry') {
         transcription_intelligence_json_v300(true,[
-            'registry'=>transcription_app_registry_public_v306(),
+            'registry'=>transcription_app_registry_public_v307(),
             'workflow_config'=>$workflowConfig,
         ]);
     }
@@ -56,25 +58,40 @@ try {
         transcription_intelligence_json_v300(true,['workflow_config'=>$workflowConfig]);
     }
 
+    if ($method === 'GET' && $action === 'comparison_targets') {
+        if (!$session) transcription_intelligence_json_v300(true,['comparison_targets'=>[]]);
+        transcription_intelligence_json_v300(true,[
+            'comparison_targets'=>transcription_deeper_comparison_targets_v307($pdo,$user,$session),
+        ]);
+    }
+
     if ($method === 'GET' && $action === 'status') {
         if (!$session) transcription_intelligence_json_v300(true,[
-            'master'=>null,'app_status'=>[],'registry'=>transcription_app_registry_public_v306(),
+            'master'=>null,'app_status'=>[],'registry'=>transcription_app_registry_public_v307(),
             'tags'=>[],'permissions'=>transcription_app_permissions_v300($user),'operations'=>[],
             'workflow_config'=>$workflowConfig,'relations_summary'=>transcription_intelligence_relations_summary_v305(null),
             'output_input'=>['accepted_items'=>0,'accepted_connections'=>0,'input_hash'=>''],
+            'comparison_targets'=>[],
+            'deeper_intelligence'=>['version'=>307,'enabled'=>true],
         ]);
         $segments = artist_listening_v172_segments($pdo,$sessionId);
         $map = artist_listening_transcript_page_map($segments);
         $status = artist_listening_v237_analysis_status($pdo,$sessionId,$map);
         $master = is_array($status['master'] ?? null) ? $status['master'] : null;
-        if ($master) $master = transcription_output_normalize_master_v306($pdo,$sessionId,$master,[],true);
+        if ($master) {
+            $master=transcription_output_normalize_master_v306($pdo,$sessionId,$master,[],false);
+            $modules=transcription_app_modules_v306(is_array($master['analysis']??null)?$master['analysis']:[],$master);
+            $modules=transcription_deeper_normalize_modules_v307($modules,transcription_deeper_review_index_v307($master));
+            $master['analysis']=transcription_deeper_persist_modules_v307($pdo,$sessionId,$modules);
+        }
         transcription_intelligence_json_v300(true,
-            transcription_app_status_v306($pdo,$user,$session,$master,$map) + [
+            transcription_app_status_v307($pdo,$user,$session,$master,$map) + [
                 'tags'=>transcription_app_tags_v300($session),
                 'permissions'=>transcription_app_permissions_v300($user),
                 'operations'=>transcription_intelligence_operational_context_v303($pdo,$user,$session),
                 'workflow_config'=>$workflowConfig,
                 'relations_summary'=>transcription_intelligence_relations_summary_v305($master),
+                'comparison_targets'=>transcription_deeper_comparison_targets_v307($pdo,$user,$session),
             ]
         );
     }
@@ -87,7 +104,6 @@ try {
         $mode = strtolower((string)($input['mode'] ?? 'manual'));
         if (!in_array($mode,['manual','live'],true)) $mode = 'manual';
         $workflowInput = is_array($input['workflow'] ?? null) ? $input['workflow'] : [];
-        // Compatibility for older clients while the stable API evolves internally.
         if (!array_key_exists('web_research',$workflowInput) && array_key_exists('research',$input)) {
             $workflowInput['web_research'] = !empty($input['research']);
         }
@@ -95,8 +111,9 @@ try {
             $workflowInput['live_analysis'] = true;
         }
         $workflow = transcription_workflow_normalize_v304($workflowInput);
-        $result = transcription_app_analyze_v306(
-            $pdo,$user,$sessionId,$mode,$input['apps'] ?? ['basic'],$workflow
+        $comparison=is_array($input['comparison']??null)?$input['comparison']:[];
+        $result = transcription_app_analyze_v307(
+            $pdo,$user,$sessionId,$mode,$input['apps'] ?? ['basic'],$workflow,$comparison
         );
         $master = is_array($result['master'] ?? null) ? $result['master'] : null;
         $result['workflow'] = $workflow;
@@ -110,7 +127,12 @@ try {
     $map = artist_listening_transcript_page_map($segments);
     $status = artist_listening_v237_analysis_status($pdo,$sessionId,$map);
     $master = is_array($status['master'] ?? null) ? $status['master'] : null;
-    if ($master) $master = transcription_output_normalize_master_v306($pdo,$sessionId,$master,[],true);
+    if ($master) {
+        $master=transcription_output_normalize_master_v306($pdo,$sessionId,$master,[],false);
+        $modules=transcription_app_modules_v306(is_array($master['analysis']??null)?$master['analysis']:[],$master);
+        $modules=transcription_deeper_normalize_modules_v307($modules,transcription_deeper_review_index_v307($master));
+        $master['analysis']=transcription_deeper_persist_modules_v307($pdo,$sessionId,$modules);
+    }
 
     if ($action === 'build_relations') {
         if (!$master) throw new RuntimeException('Analyze this transcript before building intelligence connections.');
@@ -118,13 +140,14 @@ try {
         $built=transcription_intelligence_build_relations_v305($pdo,$user,$session,$master,(string)$map['source_hash']);
         $master=is_array($built['master']??null)?$built['master']:$master;
         if ($outputs) $master=transcription_output_restore_v306($pdo,$sessionId,$master,$outputs);
-        $view=transcription_app_status_v306($pdo,$user,$session,$master,$map);
+        $view=transcription_app_status_v307($pdo,$user,$session,$master,$map);
         transcription_intelligence_json_v300(true,$view + [
             'relations_summary'=>$built['relations_summary']??transcription_intelligence_relations_summary_v305($master),
             'relation_provider'=>(string)($built['provider']??''),'relation_model'=>(string)($built['model']??''),
             'relation_catalog_items'=>max(0,(int)($built['catalog_items']??0)),
             'operations'=>transcription_intelligence_operational_context_v303($pdo,$user,$session),
             'workflow_config'=>$workflowConfig,
+            'comparison_targets'=>transcription_deeper_comparison_targets_v307($pdo,$user,$session),
         ]);
     }
 
@@ -137,11 +160,12 @@ try {
             $pdo,$sessionId,$master,$relationId,(string)($input['review_state']??'unreviewed')
         );
         if ($outputs) $master=transcription_output_restore_v306($pdo,$sessionId,$master,$outputs);
-        $view=transcription_app_status_v306($pdo,$user,$session,$master,$map);
+        $view=transcription_app_status_v307($pdo,$user,$session,$master,$map);
         transcription_intelligence_json_v300(true,$view + [
             'relations_summary'=>transcription_intelligence_relations_summary_v305($master),
             'operations'=>transcription_intelligence_operational_context_v303($pdo,$user,$session),
             'workflow_config'=>$workflowConfig,
+            'comparison_targets'=>transcription_deeper_comparison_targets_v307($pdo,$user,$session),
         ]);
     }
 
@@ -150,25 +174,23 @@ try {
         $appId = strtolower(trim((string)($input['app_id'] ?? '')));
         $itemId = trim((string)($input['item_id'] ?? ''));
         if ($appId === '' || $itemId === '') throw new RuntimeException('Choose a transcription intelligence item.');
-        $outputs=transcription_output_only_modules_v306(is_array($master['analysis']??null)?$master['analysis']:[],$master);
-
         if ($action === 'review_item') {
-            $master = transcription_intelligence_review_item_v302(
+            $master = transcription_deeper_review_item_v307(
                 $pdo,$sessionId,$master,$appId,$itemId,(string)($input['review_state'] ?? 'unreviewed')
             );
         } else {
-            $master = transcription_intelligence_edit_item_v302(
+            $master = transcription_deeper_edit_item_v307(
                 $pdo,$sessionId,$master,$appId,$itemId,(string)($input['text'] ?? '')
             );
         }
-        if ($outputs) $master=transcription_output_restore_v306($pdo,$sessionId,$master,$outputs);
-        $view = transcription_app_status_v306($pdo,$user,$session,$master,$map);
+        $view = transcription_app_status_v307($pdo,$user,$session,$master,$map);
         transcription_intelligence_json_v300(true,$view + [
             'tags'=>transcription_app_tags_v300($session),
             'permissions'=>transcription_app_permissions_v300($user),
             'operations'=>transcription_intelligence_operational_context_v303($pdo,$user,$session),
             'workflow_config'=>$workflowConfig,
             'relations_summary'=>transcription_intelligence_relations_summary_v305($master),
+            'comparison_targets'=>transcription_deeper_comparison_targets_v307($pdo,$user,$session),
         ]);
     }
 
@@ -179,22 +201,21 @@ try {
         $actionId=strtolower(trim((string)($input['item_action'] ?? '')));
         $targetId=max(0,(int)($input['target_id'] ?? 0));
         if ($appId === '' || $itemId === '' || $actionId === '') throw new RuntimeException('Choose an accepted intelligence item and action.');
-        $outputs=transcription_output_only_modules_v306(is_array($master['analysis']??null)?$master['analysis']:[],$master);
-        $operation=transcription_intelligence_execute_action_v303($pdo,$user,$session,$master,$appId,$itemId,$actionId,$targetId);
+        $operation=transcription_deeper_execute_action_v307($pdo,$user,$session,$master,$appId,$itemId,$actionId,$targetId);
         $master=is_array($operation['master'] ?? null) ? $operation['master'] : $master;
-        if ($outputs) $master=transcription_output_restore_v306($pdo,$sessionId,$master,$outputs);
-        $view=transcription_app_status_v306($pdo,$user,$session,$master,$map);
+        $view=transcription_app_status_v307($pdo,$user,$session,$master,$map);
         transcription_intelligence_json_v300(true,$view + [
             'receipt'=>$operation['receipt'] ?? [],'existing'=>!empty($operation['existing']),
             'operations'=>$operation['operations'] ?? transcription_intelligence_operational_context_v303($pdo,$user,$session),
             'tags'=>transcription_app_tags_v300($session),'permissions'=>transcription_app_permissions_v300($user),
             'workflow_config'=>$workflowConfig,'relations_summary'=>transcription_intelligence_relations_summary_v305($master),
+            'comparison_targets'=>transcription_deeper_comparison_targets_v307($pdo,$user,$session),
         ]);
     }
 
     if (in_array($action,['save_brain','save_knowledge'],true) && !$master) throw new RuntimeException('Analyze this transcript before saving the report.');
     $tags = transcription_app_tags_v300($session);
-    $view = $master ? transcription_app_status_v306($pdo,$user,$session,$master,$map) : ['app_status'=>[]];
+    $view = $master ? transcription_app_status_v307($pdo,$user,$session,$master,$map) : ['app_status'=>[]];
     $text = $master ? transcription_intelligence_report_text_v302($master,$session,$tags,(string)$map['source_hash'],$view['app_status'] ?? []) : '';
     if ($text === '') throw new RuntimeException('No current transcription plugin results are available to save. Refresh any stale plugins and try again.');
 
@@ -203,7 +224,7 @@ try {
         if (!$permissions['agent_brain_write']) throw new RuntimeException('Agent Brain storage is not available for this account.');
         $id = agent_brain_v122_upsert_system_memory(
             $user,'transcript_analysis','artist-listening:'.$sessionId,mb_strimwidth($text,0,18000,'…'),
-            ['source'=>'transcription-intelligence-v306','session_id'=>$sessionId,'title'=>(string)($session['title']??''),'tags'=>$tags,'source_hash'=>(string)$map['source_hash'],'saved_at'=>gmdate('c')],0.98
+            ['source'=>'transcription-intelligence-v307','session_id'=>$sessionId,'title'=>(string)($session['title']??''),'tags'=>$tags,'source_hash'=>(string)$map['source_hash'],'saved_at'=>gmdate('c')],0.98
         );
         if ($id < 1) throw new RuntimeException('Could not save the transcription intelligence to Agent Brain.');
         transcription_intelligence_json_v300(true,['saved'=>true,'memory_id'=>$id,'saved_at'=>gmdate('c')]);
@@ -213,7 +234,7 @@ try {
         $permissions = transcription_app_permissions_v300($user);
         if (!$permissions['personal_knowledge_write']) throw new RuntimeException('Personal Knowledge Base storage is not available for this account.');
         $title = mb_strimwidth('Transcript Intelligence · '.((string)($session['title']??'')?:('Session '.$sessionId)),0,190,'…');
-        $id = personal_knowledge_store($user,'artist-listening-analysis:'.$sessionId,$title,$text,'Personal transcription intelligence · session #'.$sessionId);
+        $id = personal_knowledge_store($user,'artist-listening-analysis:'.$sessionId,$title,$text,'Personal transcription intelligence · session #'.$sessionId.' · v307');
         transcription_intelligence_json_v300(true,['saved'=>true,'knowledge_id'=>$id,'scope'=>'personal','published'=>false,'saved_at'=>gmdate('c')]);
     }
 
