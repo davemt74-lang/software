@@ -17,7 +17,9 @@ function transcription_output_registry_v306(): array
 {
     return [
         'summary_output'=>[
-            'id'=>'summary_output','label'=>'Summary','title'=>'Summary','description'=>'Creates a reviewed executive summary from accepted transcription intelligence and accepted connections.','execution'=>'ai','live'=>false,'view'=>'sections',
+            'id'=>'summary_output','label'=>'Summary','title'=>'Summary',
+            'description'=>'Creates a reviewed executive summary from accepted transcription intelligence and accepted connections.',
+            'execution'=>'ai','live'=>false,'view'=>'sections',
             'sections'=>[
                 ['key'=>'overview','title'=>'Executive summary','primary'=>'summary','meta'=>['source_plugins','evidence','confidence']],
                 ['key'=>'key_points','title'=>'Key points','primary'=>'point','meta'=>['source_plugins','evidence','confidence']],
@@ -30,7 +32,9 @@ function transcription_output_registry_v306(): array
             'prompt'=>'Derived output generated only from reviewed intelligence. It is not a raw-transcript analysis plugin.',
         ],
         'action_plan'=>[
-            'id'=>'action_plan','label'=>'Action Plan','title'=>'Action Plan','description'=>'Builds a grounded action plan from accepted actions, commitments, requirements, follow-ups, blockers and accepted connections.','execution'=>'ai','live'=>false,'view'=>'sections',
+            'id'=>'action_plan','label'=>'Action Plan','title'=>'Action Plan',
+            'description'=>'Builds a grounded action plan from accepted actions, commitments, requirements, follow-ups, blockers and accepted connections.',
+            'execution'=>'ai','live'=>false,'view'=>'sections',
             'sections'=>[
                 ['key'=>'objective','title'=>'Objective','primary'=>'objective','meta'=>['source_plugins','evidence','confidence']],
                 ['key'=>'actions','title'=>'Actions','primary'=>'action','meta'=>['owner','timing','priority','status','dependency','source_plugins','evidence','confidence']],
@@ -86,11 +90,14 @@ function transcription_output_only_modules_v306(array $analysis, ?array $master=
         if (!is_array($module)) continue;
         $result=is_array($module['result']??null)?transcription_app_sanitize_value_v300($module['result']):[];
         $out[$id]=[
-            'app_id'=>$id,'source_hash'=>(string)($module['source_hash']??$master['source_hash']??''),
+            'app_id'=>$id,
+            'source_hash'=>(string)($module['source_hash']??$master['source_hash']??''),
             'source_word_count'=>max(0,(int)($module['source_word_count']??$master['word_count']??0)),
             'generated_at'=>(string)($module['generated_at']??$master['generated_at']??''),
-            'provider'=>(string)($module['provider']??$master['provider']??''),'model'=>(string)($module['model']??$master['model']??''),
-            'contract_version'=>max(1,(int)($module['contract_version']??1)),'context_hash'=>(string)($module['context_hash']??''),
+            'provider'=>(string)($module['provider']??$master['provider']??''),
+            'model'=>(string)($module['model']??$master['model']??''),
+            'contract_version'=>max(1,(int)($module['contract_version']??1)),
+            'context_hash'=>(string)($module['context_hash']??''),
             'result'=>is_array($result)?$result:[],
         ];
     }
@@ -146,8 +153,7 @@ function transcription_output_restore_v306(PDO $pdo,int $sessionId,array $master
 {
     if (!$outputs) return $master;
     $base=transcription_app_modules_v301(is_array($master['analysis']??null)?$master['analysis']:[],$master);
-    $modules=$base+$outputs;
-    $master['analysis']=transcription_output_persist_modules_v306($pdo,$sessionId,$modules);
+    $master['analysis']=transcription_output_persist_modules_v306($pdo,$sessionId,$base+$outputs);
     return $master;
 }
 
@@ -180,8 +186,12 @@ function transcription_output_reviewed_input_v306(array $modules,string $current
                 }
                 ksort($refs);
                 $items[$itemId]=[
-                    'item_id'=>$itemId,'plugin_id'=>$appId,'plugin_title'=>(string)($registry[$appId]['title']??$appId),
-                    'section_key'=>$sectionKey,'text'=>$text,'evidence_refs'=>array_values($refs),
+                    'item_id'=>$itemId,
+                    'plugin_id'=>$appId,
+                    'plugin_title'=>(string)($registry[$appId]['title']??$appId),
+                    'section_key'=>$sectionKey,
+                    'text'=>$text,
+                    'evidence_refs'=>array_values($refs),
                 ];
                 if (count($items)>=VP3_TRANSCRIPTION_OUTPUT_MAX_SOURCE_ITEMS_V306) break 3;
             }
@@ -196,7 +206,12 @@ function transcription_output_reviewed_input_v306(array $modules,string $current
         $result=is_array($module['result']??null)?$module['result']:[];
         $rows=(array)($result[(string)$source['section_key']]??[]);
         $sourceItem=null;
-        foreach ($rows as $row) if (is_array($row) && (string)($row['item_id']??'')===$itemId) {$sourceItem=$row;break;}
+        foreach ($rows as $row) {
+            if (is_array($row) && (string)($row['item_id']??'')===$itemId) {
+                $sourceItem=$row;
+                break;
+            }
+        }
         if (!is_array($sourceItem)) continue;
         foreach ((array)($sourceItem['relations']??[]) as $relation) {
             if (!is_array($relation) || (string)($relation['review_state']??'')!=='accepted') continue;
@@ -205,11 +220,22 @@ function transcription_output_reviewed_input_v306(array $modules,string $current
             if ($relationId==='' || !isset($items[$otherId]) || isset($relations[$relationId])) continue;
             if (!hash_equals($currentHash,(string)($relation['source_hash']??''))) continue;
             $direction=(string)($relation['direction']??'peer');
-            if ($direction==='outgoing') {$from=$itemId;$to=$otherId;}
-            elseif ($direction==='incoming') {$from=$otherId;$to=$itemId;}
-            else { $pair=[$itemId,$otherId];sort($pair,SORT_STRING);[$from,$to]=$pair; }
+            if ($direction==='outgoing') {
+                $from=$itemId;
+                $to=$otherId;
+            } elseif ($direction==='incoming') {
+                $from=$otherId;
+                $to=$itemId;
+            } else {
+                $pair=[$itemId,$otherId];
+                sort($pair,SORT_STRING);
+                [$from,$to]=$pair;
+            }
             $relations[$relationId]=[
-                'relation_id'=>$relationId,'type'=>(string)($relation['type']??'related'),'source_item_id'=>$from,'target_item_id'=>$to,
+                'relation_id'=>$relationId,
+                'type'=>(string)($relation['type']??'related'),
+                'source_item_id'=>$from,
+                'target_item_id'=>$to,
                 'rationale'=>transcription_app_clean_v300((string)($relation['rationale']??''),420),
                 'confidence'=>(string)($relation['confidence']??'medium'),
             ];
@@ -223,7 +249,10 @@ function transcription_output_reviewed_input_v306(array $modules,string $current
 function transcription_output_input_hash_v306(array $input,string $currentHash): string
 {
     if (!$input['items']) return '';
-    $json=json_encode(['source_hash'=>$currentHash,'items'=>$input['items'],'relations'=>$input['relations']],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
+    $json=json_encode(
+        ['source_hash'=>$currentHash,'items'=>$input['items'],'relations'=>$input['relations']],
+        JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE
+    );
     return hash('sha256',is_string($json)?$json:'');
 }
 
@@ -244,28 +273,48 @@ function transcription_output_validate_result_v306(string $id,mixed $value,array
     $registry=transcription_output_registry_v306();
     if (!isset($registry[$id]) || !is_array($value)) return [];
     $sources=[];
-    foreach ($input['items'] as $item) if (is_array($item) && trim((string)($item['item_id']??''))!=='') $sources[(string)$item['item_id']]=$item;
-    $result=[];$total=0;
+    foreach ($input['items'] as $item) {
+        if (!is_array($item)) continue;
+        $itemId=trim((string)($item['item_id']??''));
+        if ($itemId!=='') $sources[$itemId]=$item;
+    }
+
+    $result=[];
+    $total=0;
     foreach ((array)$registry[$id]['sections'] as $section) {
-        $key=(string)$section['key'];$primary=(string)$section['primary'];$rows=[];
+        $key=(string)$section['key'];
+        $primary=(string)$section['primary'];
+        $rows=[];
         foreach ((array)($value[$key]??[]) as $row) {
             if (!is_array($row)) continue;
             $text=transcription_app_clean_v300((string)($row[$primary]??''),1600);
             if ($text==='') continue;
+
             $sourceIds=[];
             foreach ((array)($row['source_item_ids']??[]) as $sourceId) {
                 $sourceId=trim((string)$sourceId);
-                if ($sourceId!=='' && isset($sources[$sourceId]) && !in_array($sourceId,$sourceIds,true)) $sourceIds[]=$sourceId;
+                if ($sourceId!=='' && isset($sources[$sourceId]) && !in_array($sourceId,$sourceIds,true)) {
+                    $sourceIds[]=$sourceId;
+                }
                 if (count($sourceIds)>=12) break;
             }
             if (!$sourceIds) continue;
-            $pages=[];$plugins=[];
+
+            $pages=[];
+            $plugins=[];
             foreach ($sourceIds as $sourceId) {
                 $source=$sources[$sourceId];
-                $plugins[(string)$source['plugin_title']]=(string)$source['plugin_title'];
-                foreach ((array)$source['evidence_refs'] as $ref) if (is_array($ref) && (int)($ref['page']??0)>0) $pages[(int)$ref['page']='Page '.(int)$ref['page'];
+                $pluginTitle=(string)($source['plugin_title']??'');
+                if ($pluginTitle!=='') $plugins[$pluginTitle]=$pluginTitle;
+                foreach ((array)($source['evidence_refs']??[]) as $ref) {
+                    if (!is_array($ref)) continue;
+                    $page=max(0,(int)($ref['page']??0));
+                    if ($page>0) $pages[$page]='Page '.$page;
+                }
             }
-            ksort($pages);ksort($plugins);
+            ksort($pages);
+            ksort($plugins);
+
             $clean=transcription_app_sanitize_value_v300($row);
             if (!is_array($clean)) $clean=[];
             $clean[$primary]=$text;
@@ -274,8 +323,11 @@ function transcription_output_validate_result_v306(string $id,mixed $value,array
             $clean['evidence']=implode(', ',array_values($pages));
             $confidence=strtolower(trim((string)($clean['confidence']??'medium')));
             $clean['confidence']=in_array($confidence,['high','medium','low'],true)?$confidence:'medium';
-            foreach (['owner','timing','priority','status','dependency','impact'] as $field) if (isset($clean[$field])) $clean[$field]=transcription_app_clean_v300((string)$clean[$field],300);
-            $rows[]=$clean;$total++;
+            foreach (['owner','timing','priority','status','dependency','impact'] as $field) {
+                if (isset($clean[$field])) $clean[$field]=transcription_app_clean_v300((string)$clean[$field],300);
+            }
+            $rows[]=$clean;
+            $total++;
             if (count($rows)>=12) break;
         }
         $result[$key]=$rows;
@@ -288,28 +340,49 @@ function transcription_output_generate_v306(
 ): array {
     $ids=array_values(array_intersect(transcription_output_ids_v306(),$ids));
     if (!$ids) return ['master'=>$master,'executed_apps'=>[],'plugin_errors'=>[]];
+
     $modules=transcription_app_modules_v306(is_array($master['analysis']??null)?$master['analysis']:[],$master);
     $input=transcription_output_reviewed_input_v306($modules,$currentHash);
     $inputHash=transcription_output_input_hash_v306($input,$currentHash);
-    if ($inputHash==='') throw new RuntimeException('Accept at least one current intelligence finding before generating Summary or Action Plan.');
+    if ($inputHash==='') {
+        throw new RuntimeException('Accept at least one current intelligence finding before generating Summary or Action Plan.');
+    }
 
     $ai=artist_listening_v237_ai(transcription_output_prompt_v306($ids,$input,$session),$user,4200);
     $decoded=transcription_app_decode_json_v300((string)$ai['answer']);
     $returned=is_array($decoded['apps']??null)?$decoded['apps']:[];
-    $errors=[];$executed=[];
+    $errors=[];
+    $executed=[];
     foreach ($ids as $id) {
-        $result=transcription_output_validate_result_v306($id,$returned[$id]??null,$input);
-        if (!$result) {$errors[$id]='The AI provider returned no grounded '.$id.' output. Existing output was not overwritten.';continue;}
+        $validated=transcription_output_validate_result_v306($id,$returned[$id]??null,$input);
+        if (!$validated) {
+            $errors[$id]='The AI provider returned no grounded '.$id.' output. Existing output was not overwritten.';
+            continue;
+        }
         $modules[$id]=[
-            'app_id'=>$id,'source_hash'=>$currentHash,'source_word_count'=>max(0,(int)($master['word_count']??0)),
-            'generated_at'=>gmdate('c'),'provider'=>(string)($ai['provider']??''),'model'=>(string)($ai['model']??''),
-            'contract_version'=>1,'context_hash'=>$inputHash,'result'=>$result,
+            'app_id'=>$id,
+            'source_hash'=>$currentHash,
+            'source_word_count'=>max(0,(int)($master['word_count']??0)),
+            'generated_at'=>gmdate('c'),
+            'provider'=>(string)($ai['provider']??''),
+            'model'=>(string)($ai['model']??''),
+            'contract_version'=>1,
+            'context_hash'=>$inputHash,
+            'result'=>$validated,
         ];
         $executed[]=$id;
     }
     if (!$executed && $errors) throw new RuntimeException((string)reset($errors));
+
     $master['analysis']=transcription_output_persist_modules_v306($pdo,(int)$session['id'],$modules);
-    return ['master'=>$master,'executed_apps'=>$executed,'plugin_errors'=>$errors,'input_hash'=>$inputHash,'source_items'=>count($input['items']),'accepted_connections'=>count($input['relations'])];
+    return [
+        'master'=>$master,
+        'executed_apps'=>$executed,
+        'plugin_errors'=>$errors,
+        'input_hash'=>$inputHash,
+        'source_items'=>count($input['items']),
+        'accepted_connections'=>count($input['relations']),
+    ];
 }
 
 function transcription_app_status_v306(PDO $pdo,array $user,?array $session,?array $master,array $map): array
@@ -318,64 +391,118 @@ function transcription_app_status_v306(PDO $pdo,array $user,?array $session,?arr
     $analysis=is_array($master['analysis']??null)?$master['analysis']:[];
     $modules=transcription_app_modules_v306($analysis,$master);
     if ($master) $master['analysis']=transcription_output_projection_v306($modules);
+
     $currentHash=(string)($map['source_hash']??'');
     $input=transcription_output_reviewed_input_v306($modules,$currentHash);
     $inputHash=transcription_output_input_hash_v306($input,$currentHash);
     $status=$base['app_status']??[];
     foreach (transcription_output_registry_v306() as $id=>$app) {
-        $module=$modules[$id]??null;$fresh=false;$reason='not_generated';
+        $module=$modules[$id]??null;
+        $fresh=false;
+        $reason='not_generated';
         if (is_array($module)) {
-            if ($currentHash==='' || !hash_equals($currentHash,(string)($module['source_hash']??''))) $reason='transcript_changed';
-            elseif ($inputHash==='' || !hash_equals($inputHash,(string)($module['context_hash']??''))) $reason='reviewed_intelligence_changed';
-            else {$fresh=true;$reason='current';}
+            if ($currentHash==='' || !hash_equals($currentHash,(string)($module['source_hash']??''))) {
+                $reason='transcript_changed';
+            } elseif ($inputHash==='' || !hash_equals($inputHash,(string)($module['context_hash']??''))) {
+                $reason='reviewed_intelligence_changed';
+            } else {
+                $fresh=true;
+                $reason='current';
+            }
         }
         $status[$id]=[
-            'generated'=>is_array($module),'fresh'=>$fresh,'fresh_reason'=>$reason,
-            'generated_at'=>(string)($module['generated_at']??''),'provider'=>(string)($module['provider']??''),'model'=>(string)($module['model']??''),
+            'generated'=>is_array($module),
+            'fresh'=>$fresh,
+            'fresh_reason'=>$reason,
+            'generated_at'=>(string)($module['generated_at']??''),
+            'provider'=>(string)($module['provider']??''),
+            'model'=>(string)($module['model']??''),
             'word_count'=>max(0,(int)($module['source_word_count']??0)),
         ];
     }
-    return ['master'=>$master,'app_status'=>$status,'registry'=>transcription_app_registry_public_v306(),'output_input'=>['accepted_items'=>count($input['items']),'accepted_connections'=>count($input['relations']),'input_hash'=>$inputHash]];
+    return [
+        'master'=>$master,
+        'app_status'=>$status,
+        'registry'=>transcription_app_registry_public_v306(),
+        'output_input'=>[
+            'accepted_items'=>count($input['items']),
+            'accepted_connections'=>count($input['relations']),
+            'input_hash'=>$inputHash,
+        ],
+    ];
 }
 
 function transcription_app_analyze_v306(
     PDO $pdo,array $user,int $sessionId,string $mode,array $requestedApps,mixed $workflowInput=[]
 ): array {
     $requested=transcription_app_ids_v306($requestedApps);
-    $outputIds=array_values(array_intersect($requested,transcription_output_ids_v306()));
-    $baseIds=array_values(array_diff($requested,$outputIds));
-    if ($mode==='live' && $outputIds) $outputIds=[];
+    $requestedOutputIds=array_values(array_intersect($requested,transcription_output_ids_v306()));
+    $baseIds=array_values(array_diff($requested,$requestedOutputIds));
+    $outputIds=$mode==='live'?[]:$requestedOutputIds;
+    $workflow=transcription_workflow_normalize_v304($workflowInput);
 
     $session=artist_listening_v172_session($pdo,$user,$sessionId);
     $segments=artist_listening_v172_segments($pdo,$sessionId);
     $map=artist_listening_transcript_page_map($segments);
     $beforeStatus=artist_listening_v237_analysis_status($pdo,$sessionId,$map);
     $beforeMaster=is_array($beforeStatus['master']??null)?$beforeStatus['master']:null;
-    $priorOutputs=$beforeMaster?transcription_output_only_modules_v306(is_array($beforeMaster['analysis']??null)?$beforeMaster['analysis']:[],$beforeMaster):[];
+    $priorOutputs=$beforeMaster
+        ? transcription_output_only_modules_v306(is_array($beforeMaster['analysis']??null)?$beforeMaster['analysis']:[],$beforeMaster)
+        : [];
     $reviewIndex=transcription_intelligence_review_index_v302($beforeMaster);
 
-    $result=['skipped'=>false,'requested_apps'=>$requested,'executed_apps'=>[],'plugin_errors'=>[],'workflow'=>transcription_workflow_normalize_v304($workflowInput)];
+    if ($mode==='live' && !$baseIds && $requestedOutputIds) {
+        $master=$beforeMaster;
+        if ($master) $master=transcription_output_normalize_master_v306($pdo,$sessionId,$master,$reviewIndex,true);
+        return [
+            'skipped'=>true,
+            'reason'=>'selected_outputs_manual_only',
+            'requested_apps'=>$requested,
+            'executed_apps'=>[],
+            'plugin_errors'=>[],
+            'workflow'=>$workflow,
+        ] + transcription_app_status_v306($pdo,$user,$session,$master,$map);
+    }
+
+    $result=[
+        'skipped'=>false,
+        'requested_apps'=>$requested,
+        'executed_apps'=>[],
+        'plugin_errors'=>[],
+        'workflow'=>$workflow,
+    ];
     if ($baseIds) {
-        $result=transcription_app_analyze_v304($pdo,$user,$sessionId,$mode,$baseIds,$workflowInput);
+        $result=transcription_app_analyze_v304($pdo,$user,$sessionId,$mode,$baseIds,$workflow);
         $result['requested_apps']=$requested;
     }
 
     $latest=artist_listening_v237_analysis_status($pdo,$sessionId,$map);
     $master=is_array($latest['master']??null)?$latest['master']:null;
     if (!$master) {
-        $result += transcription_app_status_v306($pdo,$user,$session,null,$map);
-        return $result;
+        return $result + transcription_app_status_v306($pdo,$user,$session,null,$map);
     }
-    $master=transcription_output_normalize_master_v306($pdo,$sessionId,$master,$reviewIndex,false);
-    if ($priorOutputs) $master=transcription_output_restore_v306($pdo,$sessionId,$master,$priorOutputs);
-    else $master['analysis']=transcription_output_persist_modules_v306($pdo,$sessionId,transcription_app_modules_v306((array)$master['analysis'],$master));
 
-    if ($outputIds && $mode!=='live') {
+    $master=transcription_output_normalize_master_v306($pdo,$sessionId,$master,$reviewIndex,false);
+    if ($priorOutputs) {
+        $master=transcription_output_restore_v306($pdo,$sessionId,$master,$priorOutputs);
+    } else {
+        $master['analysis']=transcription_output_persist_modules_v306(
+            $pdo,$sessionId,transcription_app_modules_v306((array)$master['analysis'],$master)
+        );
+    }
+
+    if ($outputIds) {
         try {
-            $generated=transcription_output_generate_v306($pdo,$user,$session,$master,(string)$map['source_hash'],$outputIds);
+            $generated=transcription_output_generate_v306(
+                $pdo,$user,$session,$master,(string)$map['source_hash'],$outputIds
+            );
             $master=$generated['master'];
-            $result['executed_apps']=array_values(array_unique(array_merge((array)($result['executed_apps']??[]),(array)$generated['executed_apps'])));
-            $result['plugin_errors']=array_replace((array)($result['plugin_errors']??[]),(array)$generated['plugin_errors']);
+            $result['executed_apps']=array_values(array_unique(array_merge(
+                (array)($result['executed_apps']??[]),(array)$generated['executed_apps']
+            )));
+            $result['plugin_errors']=array_replace(
+                (array)($result['plugin_errors']??[]),(array)$generated['plugin_errors']
+            );
             $result['output_source_items']=$generated['source_items']??0;
             $result['output_accepted_connections']=$generated['accepted_connections']??0;
         } catch (Throwable $e) {
@@ -386,6 +513,9 @@ function transcription_app_analyze_v306(
     }
 
     $view=transcription_app_status_v306($pdo,$user,$session,$master,$map);
-    $result['master']=$view['master'];$result['app_status']=$view['app_status'];$result['registry']=$view['registry'];$result['output_input']=$view['output_input'];
+    $result['master']=$view['master'];
+    $result['app_status']=$view['app_status'];
+    $result['registry']=$view['registry'];
+    $result['output_input']=$view['output_input'];
     return $result;
 }
