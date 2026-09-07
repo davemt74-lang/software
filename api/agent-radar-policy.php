@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 require dirname(__DIR__).'/includes/bootstrap.php';
+require_once dirname(__DIR__).'/includes/agent-radar-access-profiles.php';
 header('Content-Type: application/json; charset=UTF-8');
 header('Cache-Control: no-store');
 
@@ -22,7 +23,11 @@ if($method==='GET'){
     $stmt=$pdo->prepare('SELECT id FROM vp3_agent_contacts WHERE owner_user_id=? ORDER BY last_seen_at DESC,id DESC LIMIT 250');
     $stmt->execute([$uid]);
     $ids=array_map('intval',$stmt->fetchAll(PDO::FETCH_COLUMN)?:[]);
-    vp3_radar_policy_json(true,['policies'=>vp3_radar_gateway_contact_policy_map($pdo,$uid,$ids)]);
+    vp3_radar_policy_json(true,[
+        'policies'=>vp3_radar_gateway_contact_policy_map($pdo,$uid,$ids),
+        'access_profile'=>vp3_radar_access_profile_current($pdo,$uid),
+        'access_profiles'=>vp3_radar_access_profile_public_catalog(),
+    ]);
 }
 if($method!=='POST')vp3_radar_policy_json(false,['error'=>'Method not allowed.'],405);
 
@@ -40,6 +45,9 @@ try{
             max(1,(int)($input['limit_30m']??VP3_RADAR_GATEWAY_DEFAULT_LIMIT_30M))
         );
         vp3_radar_policy_json(true,$result);
+    }
+    if($action==='apply_access_profile'){
+        vp3_radar_policy_json(true,vp3_radar_access_profile_apply($pdo,$user,(string)($input['profile_slug']??'')));
     }
     vp3_radar_policy_json(false,['error'=>'Unknown Agent Gateway action.'],404);
 }catch(Throwable $e){vp3_radar_policy_json(false,['error'=>$e->getMessage()],400);}
