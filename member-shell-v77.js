@@ -80,5 +80,14 @@
     }
   }
 
+  if (document.body.classList.contains('contacts-page')) {
+    if(!document.querySelector('[data-contacts-intelligence-outcomes-loader]')){
+      const loader = document.createElement('script');
+      loader.src = new URL('contacts-intelligence-outcomes-v316.js?v=agent-brain-learning-20260907',memberBase).href;
+      loader.dataset.contactsIntelligenceOutcomesLoader = 'member-shell';
+      document.body.appendChild(loader);
+    }
+  }
+
   if(notificationButton){refreshNotifications();notificationTimer=window.setInterval(refreshNotifications,15000);window.addEventListener('pagehide',()=>clearInterval(notificationTimer),{once:true});}
 })();
