@@ -17,7 +17,16 @@ if(!personal_capability_has_v242('profile_agent.access',$user)){
     exit;
 }
 
+$relationshipMetrics=[];
+try{
+    $relationshipMetrics=vp3_agent_relationship_refresh_owner($pdo,$user,120,true);
+}catch(Throwable $e){
+    error_log('Agent Relationship intelligence refresh failed: '.$e->getMessage());
+}
+$radar=vp3_radar_portal_state($pdo,(int)$user['id']);
+$radar=vp3_agent_relationship_enrich_portal($radar,$relationshipMetrics);
+
 echo json_encode([
     'ok'=>true,
-    'radar'=>vp3_radar_portal_state($pdo,(int)$user['id']),
+    'radar'=>$radar,
 ],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);

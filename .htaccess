@@ -2,6 +2,9 @@
 RewriteEngine On
 RewriteRule ^private(?:/|$) - [F,L,NC]
 
+# Public machine-readable VP3 Agent Manifest for a native /username profile.
+RewriteRule ^\.well-known/vp3-agent/([A-Za-z0-9][A-Za-z0-9._-]{1,58}[A-Za-z0-9])/?$ api/agent-manifest.php?username=$1 [L,QSA,NC]
+
 # Profile images remain physically private under /uploads. Route only the
 # generated avatar/cover filenames through the visibility-aware PHP reader.
 RewriteRule ^uploads/(avatars|profile-covers)/([A-Fa-f0-9]{32}\.(?:jpe?g|png|webp))$ api/profile-media.php?bucket=$1&file=$2 [L,QSA,NC]

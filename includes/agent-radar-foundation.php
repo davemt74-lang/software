@@ -17,7 +17,7 @@ function vp3_radar_schema_ready(?PDO $pdo=null): bool
 {
     $pdo ??= db();
     if(!$pdo)return false;
-    foreach(['vp3_radar_properties','vp3_agent_registry','vp3_agent_contacts','vp3_radar_sessions','vp3_radar_events','vp3_agent_policies'] as $table){
+    foreach(['vp3_radar_properties','vp3_agent_registry','vp3_agent_contacts','vp3_radar_sessions','vp3_radar_events','vp3_agent_policies','vp3_agent_access_requests'] as $table){
         if(!table_exists($table))return false;
     }
     return true;
@@ -173,6 +173,28 @@ function vp3_radar_ensure_schema(?PDO $pdo=null): void
       CONSTRAINT fk_vp3_policy_owner FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE,
       CONSTRAINT fk_vp3_policy_property FOREIGN KEY (property_id) REFERENCES vp3_radar_properties(id) ON DELETE CASCADE,
       CONSTRAINT fk_vp3_policy_contact FOREIGN KEY (agent_contact_id) REFERENCES vp3_agent_contacts(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+    $pdo->exec("CREATE TABLE IF NOT EXISTS vp3_agent_access_requests (
+      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+      owner_user_id INT UNSIGNED NOT NULL,
+      agent_contact_id BIGINT UNSIGNED NOT NULL,
+      property_id BIGINT UNSIGNED NULL,
+      capability VARCHAR(80) NOT NULL,
+      status VARCHAR(24) NOT NULL DEFAULT 'pending',
+      request_token_hash CHAR(64) NOT NULL,
+      purpose VARCHAR(500) NOT NULL DEFAULT '',
+      approved_until DATETIME NULL,
+      last_used_at DATETIME NULL,
+      use_count INT UNSIGNED NOT NULL DEFAULT 0,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY uq_vp3_agent_access_token (request_token_hash),
+      INDEX idx_vp3_agent_access_owner_status (owner_user_id,status,created_at,id),
+      INDEX idx_vp3_agent_access_contact_capability (agent_contact_id,capability,status,updated_at,id),
+      CONSTRAINT fk_vp3_agent_access_owner FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE,
+      CONSTRAINT fk_vp3_agent_access_contact FOREIGN KEY (agent_contact_id) REFERENCES vp3_agent_contacts(id) ON DELETE CASCADE,
+      CONSTRAINT fk_vp3_agent_access_property FOREIGN KEY (property_id) REFERENCES vp3_radar_properties(id) ON DELETE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 
     vp3_radar_seed_registry($pdo);
