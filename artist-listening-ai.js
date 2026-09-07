@@ -2,7 +2,7 @@
   'use strict';
 
   const cfg = window.STONEFELLOW_ARTIST_LISTENING_V172 || {};
-  const BUILD = 'transcription-workflow-v304-20260906';
+  const BUILD = 'transcription-relations-v305-20260906';
   const userId = Math.max(0, Number(cfg.userId || 0));
   const reportEndpoint = String(cfg.endpoint || '').replace(/artist-listening-v172\.php(?:\?.*)?$/i, 'artist-listening-intelligence-v300.php');
   const legacyResearchKey = `stonefellow:artist-listening:ai-summary:${userId}`;
@@ -34,8 +34,10 @@
     workflow: readWorkflow(),
     runPlan: null,
     pluginErrors: {},
+    relationsSummary: {total:0,accepted:0,rejected:0,unreviewed:0,types:{}},
     busy: false,
     busyApp: '',
+    busyRelations: false,
     editingItemId: '',
     liveWords: 0,
     lastReportedWords: 0,
@@ -57,6 +59,8 @@
     itemReviews: 0,
     itemEdits: 0,
     itemActions: 0,
+    relationBuilds: 0,
+    relationReviews: 0,
     evidenceJumps: 0,
     presetChanges: 0,
     isOpen: () => state.open,
@@ -96,7 +100,6 @@
   function persistWorkflow() {
     try {
       localStorage.setItem(workflowKey, JSON.stringify(state.workflow));
-      // Keep the old research key synchronized for backward-compatible clients only.
       localStorage.setItem(legacyResearchKey, state.workflow.web_research ? '1' : '0');
     } catch (error) {}
   }
@@ -311,6 +314,34 @@
     return `<details class="sf-listening-ai-operational"><summary>Actions</summary><div class="sf-listening-ai-operational-menu">${options.join('')}</div></details>`;
   }
 
+  function relationTypeLabel(type, direction) {
+    const key = `${String(type || '')}:${String(direction || '')}`;
+    return ({
+      'supports:outgoing':'supports','supports:incoming':'supported by',
+      'contradicts:outgoing':'contradicts','contradicts:incoming':'contradicted by',
+      'depends_on:outgoing':'depends on','depends_on:incoming':'dependency for',
+      'answers:outgoing':'answers','answers:incoming':'answered by',
+      'follows_from:outgoing':'follows from','follows_from:incoming':'leads to',
+      'blocks:outgoing':'blocks','blocks:incoming':'blocked by',
+      'duplicates:peer':'duplicates','related:peer':'related to',
+    })[key] || String(type || 'related').replaceAll('_',' ');
+  }
+
+  function relationsHtml(item) {
+    const rows = Array.isArray(item?.relations) ? item.relations : [];
+    if (!rows.length) return '';
+    return `<details class="sf-listening-ai-relations"><summary>Connections ${rows.length}</summary><div class="sf-listening-ai-relations-list">${rows.map(relation => {
+      const id = clean(relation?.relation_id || '');
+      if (!id) return '';
+      const review = clean(relation?.review_state || 'unreviewed');
+      const evidence = (Array.isArray(relation?.evidence_refs) ? relation.evidence_refs : []).map(ref => {
+        const page = Math.max(0, Number(ref?.page || 0));
+        return page ? `<button type="button" data-listening-ai-evidence="${page}">${esc(ref.label || `Page ${page}`)}</button>` : '';
+      }).join('');
+      return `<article class="sf-listening-ai-relation relation-${esc(review)}"><div class="sf-listening-ai-relation-head"><b>${esc(relationTypeLabel(relation.type,relation.direction))}</b><span>${esc(relation.other_plugin_title || relation.other_plugin_id || 'Intelligence')} · ${esc(relation.confidence || 'medium')}</span></div><p>${esc(relation.other_text || '')}</p>${relation.rationale ? `<small>${esc(relation.rationale)}</small>` : ''}<div class="sf-listening-ai-relation-actions">${evidence}<button type="button" data-listening-ai-relation-review="accepted" data-listening-ai-relation="${esc(id)}" class="${review === 'accepted' ? 'active' : ''}">Accept</button><button type="button" data-listening-ai-relation-review="rejected" data-listening-ai-relation="${esc(id)}" class="${review === 'rejected' ? 'active' : ''}">Reject</button><em>${esc(review)}</em></div></article>`;
+    }).join('')}</div></details>`;
+  }
+
   function itemActionsHtml(item, appId) {
     if (!item || typeof item !== 'object' || !clean(item.item_id)) return '';
     const itemId = String(item.item_id);
@@ -324,7 +355,7 @@
     if (state.editingItemId === itemId) {
       return `<div class="sf-listening-ai-item-actions" data-listening-ai-item-actions>${evidence}<button type="button" data-listening-ai-edit-save="${esc(itemId)}">Save edit</button><button type="button" data-listening-ai-edit-cancel="${esc(itemId)}">Cancel</button></div>`;
     }
-    return `<div class="sf-listening-ai-item-actions" data-listening-ai-item-actions>${evidence}<button type="button" data-listening-ai-review="accepted" data-listening-ai-item="${esc(itemId)}" class="${review === 'accepted' ? 'active' : ''}">Accept</button><button type="button" data-listening-ai-edit="${esc(itemId)}">Edit</button><button type="button" data-listening-ai-review="rejected" data-listening-ai-item="${esc(itemId)}" class="${review === 'rejected' ? 'active' : ''}">Reject</button><small>${esc(review === 'unreviewed' ? 'Unreviewed' : review)}</small></div>${operationalActionsHtml(item,appId)}`;
+    return `<div class="sf-listening-ai-item-actions" data-listening-ai-item-actions>${evidence}<button type="button" data-listening-ai-review="accepted" data-listening-ai-item="${esc(itemId)}" class="${review === 'accepted' ? 'active' : ''}">Accept</button><button type="button" data-listening-ai-edit="${esc(itemId)}">Edit</button><button type="button" data-listening-ai-review="rejected" data-listening-ai-item="${esc(itemId)}" class="${review === 'rejected' ? 'active' : ''}">Reject</button><small>${esc(review === 'unreviewed' ? 'Unreviewed' : review)}</small></div>${relationsHtml(item)}${operationalActionsHtml(item,appId)}`;
   }
 
   function sectionHtml(section, result, appId) {
@@ -407,6 +438,7 @@
     state.operations = data.operations || state.operations;
     state.runPlan = data.run_plan || state.runPlan;
     state.pluginErrors = data.plugin_errors || {};
+    state.relationsSummary = data.relations_summary || state.relationsSummary;
   }
 
   function ensurePanel() {
@@ -445,6 +477,7 @@
       <div class="sf-listening-ai-scroll"><section class="sf-listening-ai-report" data-listening-ai-report></section></div>
       <footer class="sf-listening-ai-footer"><div class="sf-listening-ai-footer-actions">
         <button type="button" data-listening-ai-analyze>Analyze</button>
+        <button type="button" data-listening-ai-relations>Connections</button>
         <button type="button" data-listening-ai-brain>Add to Agent Brain</button>
         <button type="button" data-listening-ai-knowledge>Add to Knowledge Base</button>
       </div></footer>`;
@@ -455,6 +488,7 @@
     panel.querySelector('[data-listening-ai-research]')?.addEventListener('click', () => setResearchEnabled(!state.workflow.web_research));
     panel.querySelector('[data-listening-ai-settings]')?.addEventListener('click', () => setSettingsOpen(!state.settingsOpen));
     panel.querySelector('[data-listening-ai-analyze]')?.addEventListener('click', () => void analyze('manual'));
+    panel.querySelector('[data-listening-ai-relations]')?.addEventListener('click', () => void buildRelations());
     panel.querySelector('[data-listening-ai-brain]')?.addEventListener('click', () => void saveResult('save_brain'));
     panel.querySelector('[data-listening-ai-knowledge]')?.addEventListener('click', () => void saveResult('save_knowledge'));
     panel.querySelector('[data-listening-ai-tabs]')?.addEventListener('click', event => {
@@ -477,6 +511,11 @@
       if (rerun) { void analyzeApps([state.activeApp], 'manual'); return; }
       const evidence = event.target.closest('[data-listening-ai-evidence]');
       if (evidence) { void focusEvidence(Number(evidence.dataset.listeningAiEvidence || 0)); return; }
+      const relationReview = event.target.closest('[data-listening-ai-relation-review]');
+      if (relationReview) {
+        void reviewRelation(String(relationReview.dataset.listeningAiRelation || ''),String(relationReview.dataset.listeningAiRelationReview || 'unreviewed'));
+        return;
+      }
       const review = event.target.closest('[data-listening-ai-review]');
       if (review) { void reviewItem(String(review.dataset.listeningAiItem || ''), String(review.dataset.listeningAiReview || 'unreviewed')); return; }
       const itemAction = event.target.closest('[data-listening-ai-item-action]');
@@ -605,7 +644,13 @@
     const analyzeButton = panel.querySelector('[data-listening-ai-analyze]');
     if (analyzeButton) {
       analyzeButton.disabled = state.busy || !currentSessionId() || !state.selectedApps.length;
-      analyzeButton.textContent = state.busy ? 'Analyzing…' : `Analyze ${state.selectedApps.length}`;
+      analyzeButton.textContent = state.busy && !state.busyRelations ? 'Analyzing…' : `Analyze ${state.selectedApps.length}`;
+    }
+    const relations = panel.querySelector('[data-listening-ai-relations]');
+    if (relations) {
+      relations.disabled = state.busy || !currentSessionId() || !state.report;
+      const count = Math.max(0,Number(state.relationsSummary?.total || 0));
+      relations.textContent = state.busyRelations ? 'Connecting…' : `Connections${count ? ` ${count}` : ''}`;
     }
     const brain = panel.querySelector('[data-listening-ai-brain]');
     const knowledge = panel.querySelector('[data-listening-ai-knowledge]');
@@ -614,9 +659,10 @@
     const status = panel.querySelector('[data-listening-ai-status]');
     if (status) {
       if (state.lastError) status.textContent = state.lastError;
+      else if (state.busyRelations) status.textContent = 'Building cross-plugin intelligence connections…';
       else if (state.busy) status.textContent = state.busyApp ? `Running ${appById(state.busyApp)?.title || 'transcription plugin'}…` : `Running ${state.selectedApps.length} transcription app${state.selectedApps.length === 1 ? '' : 's'}…`;
       else if (!currentSessionId()) status.textContent = 'Open a transcription to use AI Summary.';
-      else status.textContent = `${state.workflow.live_analysis ? 'Live ON' : 'Live OFF'} · ${state.workflow.web_research ? 'Research ON' : 'Research OFF'} · ${state.liveWords.toLocaleString()} words · ${planText(localRunPlan())}`;
+      else status.textContent = `${state.workflow.live_analysis ? 'Live ON' : 'Live OFF'} · ${state.workflow.web_research ? 'Research ON' : 'Research OFF'} · ${state.liveWords.toLocaleString()} words · ${Math.max(0,Number(state.relationsSummary?.total||0))} connections · ${planText(localRunPlan())}`;
     }
     renderPresets();
     renderWorkflowControls();
@@ -660,7 +706,6 @@
   }
 
   function setResearchEnabled(enabled) {
-    // Compatibility name retained; Web Research no longer controls live analysis.
     return setWorkflow({web_research:Boolean(enabled)}, true).web_research;
   }
 
@@ -747,6 +792,7 @@
       state.permissions = {};
       state.operations = {};
       state.runPlan = null;
+      state.relationsSummary = {total:0,accepted:0,rejected:0,unreviewed:0,types:{}};
       state.liveWords = 0;
       state.lastReportedWords = 0;
       render();
@@ -809,6 +855,53 @@
     return analyzeApps(state.selectedApps, mode);
   }
 
+  async function buildRelations() {
+    const sessionId = currentSessionId();
+    if (!sessionId || !state.report || state.busy) return;
+    state.busy = true;
+    state.busyRelations = true;
+    state.lastError = '';
+    state.actionMessage = '';
+    render();
+    try {
+      const data = await request('build_relations',{session_id:sessionId});
+      if (currentSessionId() !== sessionId) return;
+      applyServerView(data);
+      const count = Math.max(0,Number(data.relations_summary?.total || 0));
+      state.actionMessage = `${count} cross-plugin connection${count === 1 ? '' : 's'} built.`;
+      proof.relationBuilds += 1;
+      proof.lastError = '';
+    } catch (error) {
+      state.lastError = String(error?.message || error);
+      proof.lastError = state.lastError;
+    } finally {
+      state.busy = false;
+      state.busyRelations = false;
+      render();
+    }
+  }
+
+  async function reviewRelation(relationId, reviewState) {
+    const sessionId = currentSessionId();
+    relationId = clean(relationId);
+    if (!sessionId || !relationId || state.busy) return;
+    state.busy = true;
+    state.lastError = '';
+    try {
+      const data = await request('review_relation',{session_id:sessionId,relation_id:relationId,review_state:reviewState});
+      applyServerView(data);
+      state.actionMessage = reviewState === 'accepted' ? 'Connection accepted.' : (reviewState === 'rejected' ? 'Connection rejected.' : 'Connection review cleared.');
+      proof.relationReviews += 1;
+      proof.lastError = '';
+    } catch (error) {
+      state.lastError = String(error?.message || error);
+      proof.lastError = state.lastError;
+    } finally {
+      state.busy = false;
+      render();
+    }
+  }
+
   async function reviewItem(itemId, reviewState) {
     const sessionId = currentSessionId();
     if (!sessionId || !itemId || state.busy) return;
@@ -841,7 +934,7 @@
       const data = await request('edit_item', {session_id:sessionId,app_id:state.activeApp,item_id:itemId,text});
       applyServerView(data);
       state.editingItemId = '';
-      state.actionMessage = 'Item edited and accepted.';
+      state.actionMessage = 'Item edited and accepted. Connections touching it were invalidated.';
       proof.itemEdits += 1;
     } catch (error) {
       state.lastError = String(error?.message || error);
@@ -945,7 +1038,8 @@
       sessionId:currentSessionId(),open:!!state.open,settingsOpen:!!state.settingsOpen,
       researchEnabled:!!state.workflow.web_research,liveAnalysisEnabled:!!state.workflow.live_analysis,
       workflow:{...state.workflow},workflowConfig:JSON.parse(JSON.stringify(state.workflowConfig||{})),runPlan:JSON.parse(JSON.stringify(state.runPlan||localRunPlan())),
-      pluginErrors:{...state.pluginErrors},selectedApps:[...state.selectedApps],activeApp:String(state.activeApp||''),busy:!!state.busy,busyApp:String(state.busyApp||''),
+      pluginErrors:{...state.pluginErrors},relationsSummary:JSON.parse(JSON.stringify(state.relationsSummary||{})),
+      selectedApps:[...state.selectedApps],activeApp:String(state.activeApp||''),busy:!!state.busy,busyApp:String(state.busyApp||''),
       report:state.report?JSON.parse(JSON.stringify(state.report)):null,appStatus:JSON.parse(JSON.stringify(state.appStatus||{})),
       registry:JSON.parse(JSON.stringify(state.registry||[])),permissions:{...state.permissions},operations:JSON.parse(JSON.stringify(state.operations||{})),
       liveWords:Math.max(0,Number(state.liveWords||0)),lastError:String(state.lastError||''),
@@ -972,6 +1066,8 @@
     setActiveApp:appId=>{setActiveApp(String(appId||''));return state.activeApp;},
     analyze:async(mode='manual')=>{await analyze(mode);if(state.lastError)throw new Error(state.lastError);return state.report;},
     analyzePlugin:async(appId,mode='manual')=>{await analyzeApps([String(appId||state.activeApp)],mode);if(state.lastError)throw new Error(state.lastError);return state.report;},
+    buildRelations:async()=>{await buildRelations();if(state.lastError)throw new Error(state.lastError);return transcriptionAiState();},
+    reviewRelation:async(relationId,reviewState)=>{await reviewRelation(String(relationId||''),String(reviewState||'unreviewed'));if(state.lastError)throw new Error(state.lastError);return state.report;},
     reviewItem:async(itemId,reviewState)=>{await reviewItem(String(itemId||''),String(reviewState||'unreviewed'));if(state.lastError)throw new Error(state.lastError);return state.report;},
     editItem:async(itemId,text)=>{await editItem(String(itemId||''),String(text||''));if(state.lastError)throw new Error(state.lastError);return state.report;},
     performItemAction:async(itemId,itemAction,targetId=0)=>{await performItemAction(String(itemId||''),String(itemAction||''),Number(targetId||0));if(state.lastError)throw new Error(state.lastError);return state.report;},

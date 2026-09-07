@@ -87,6 +87,7 @@ function transcription_intelligence_review_index_v302(?array $master): array
                 if (!is_array($item)) continue;
                 $fingerprint = transcription_intelligence_source_fingerprint_v302($appId,$sectionKey,$item,$primary);
                 $actions = is_array($item['actions'] ?? null) ? transcription_app_sanitize_value_v300($item['actions']) : [];
+                $relations = is_array($item['relations'] ?? null) ? transcription_app_sanitize_value_v300($item['relations']) : [];
                 $index[$fingerprint] = [
                     'item_id'=>(string)($item['item_id'] ?? ''),
                     'review_state'=>(string)($item['review_state'] ?? 'unreviewed'),
@@ -94,6 +95,7 @@ function transcription_intelligence_review_index_v302(?array $master): array
                     'user_edited'=>!empty($item['user_edited']),
                     'edited_text'=>(string)($item['edited_text'] ?? ''),
                     'actions'=>is_array($actions) ? $actions : [],
+                    'relations'=>is_array($relations) ? $relations : [],
                 ];
             }
         }
@@ -137,6 +139,9 @@ function transcription_intelligence_normalize_modules_v302(array $modules, array
                 $actions = is_array($item['actions'] ?? null) ? $item['actions'] : (is_array($prior['actions'] ?? null) ? $prior['actions'] : []);
                 if ($actions) $item['actions'] = transcription_app_sanitize_value_v300($actions);
                 else unset($item['actions']);
+                $relations = is_array($item['relations'] ?? null) ? $item['relations'] : (is_array($prior['relations'] ?? null) ? $prior['relations'] : []);
+                if ($relations) $item['relations'] = transcription_app_sanitize_value_v300($relations);
+                else unset($item['relations']);
                 $item['evidence_refs'] = transcription_intelligence_evidence_refs_v302($item);
                 $result[$sectionKey][$offset] = $item;
             }
@@ -145,6 +150,7 @@ function transcription_intelligence_normalize_modules_v302(array $modules, array
         $module['result'] = $result;
     }
     unset($module);
+    if (function_exists('transcription_intelligence_prune_relations_v305')) transcription_intelligence_prune_relations_v305($modules);
     return $modules;
 }
 
@@ -216,6 +222,9 @@ function transcription_intelligence_review_item_v302(
     $modules = transcription_app_modules_v301(is_array($master['analysis'] ?? null)?$master['analysis']:[],$master);
     $modules = transcription_intelligence_normalize_modules_v302($modules);
     [$sectionKey,$offset] = transcription_intelligence_find_item_v302($modules,$appId,$itemId);
+    if ($reviewState === 'rejected' && function_exists('transcription_intelligence_remove_item_relations_v305')) {
+        transcription_intelligence_remove_item_relations_v305($modules,$itemId);
+    }
     $modules[$appId]['result'][$sectionKey][$offset]['review_state'] = $reviewState;
     $modules[$appId]['result'][$sectionKey][$offset]['reviewed_at'] = $reviewState === 'unreviewed' ? '' : gmdate('c');
     $master['analysis'] = transcription_intelligence_persist_modules_v302($pdo,$sessionId,$modules);
@@ -237,7 +246,10 @@ function transcription_intelligence_edit_item_v302(
     [$sectionKey,$offset,$primary] = transcription_intelligence_find_item_v302($modules,$appId,$itemId);
     $item =& $modules[$appId]['result'][$sectionKey][$offset];
     $previousText = transcription_app_clean_v300((string)($item[$primary] ?? ''),1400);
-    if ($previousText !== $text) unset($item['actions']);
+    if ($previousText !== $text) {
+        unset($item['actions']);
+        if (function_exists('transcription_intelligence_remove_item_relations_v305')) transcription_intelligence_remove_item_relations_v305($modules,$itemId);
+    }
     $item[$primary] = $text;
     $item['edited_text'] = $text;
     $item['user_edited'] = true;
@@ -254,7 +266,7 @@ function transcription_intelligence_export_result_v302(mixed $value): mixed
     $out = [];
     foreach ($value as $key=>$item) {
         if (is_array($item) && ($item['review_state'] ?? '') === 'rejected') continue;
-        if (!$isList && in_array((string)$key,['source_fingerprint','edited_text','actions'],true)) continue;
+        if (!$isList && in_array((string)$key,['source_fingerprint','edited_text','actions','relations'],true)) continue;
         $clean = transcription_intelligence_export_result_v302($item);
         if ($isList) $out[] = $clean;
         else $out[$key] = $clean;

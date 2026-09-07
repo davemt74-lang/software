@@ -18,6 +18,7 @@ assert.match(items,/\$priorReviewIndex\[\$fingerprint\]/,'normalization must rea
 assert.match(items,/edited_text/,'user edits must persist separately from the source fingerprint');
 assert.match(items,/intelligence_items_version'\] = 302/,'persisted analysis must advertise the durable item contract');
 assert.match(items,/'actions'/,'durable items must preserve operational action receipts');
+assert.match(items,/'relations'/,'durable items must preserve v305 relation adjacency across equivalent reruns');
 assert.doesNotMatch(items,/CREATE TABLE|ALTER TABLE/,'item persistence must reuse the existing master-analysis JSON container');
 
 /* Evidence stays bounded to transcript locations and is navigable by page. */
@@ -47,18 +48,21 @@ assert.match(client,/data-listening-ai-edit=/);
 assert.match(client,/data-listening-ai-edit-save=/);
 assert.match(items,/review_state.*accepted.*rejected/s,'review state must be constrained to explicit human states');
 assert.match(items,/\$item\['review_state'\] = 'accepted'/,'editing an item must explicitly accept the edited result');
+assert.match(items,/\$reviewState === 'rejected'[\s\S]*transcription_intelligence_remove_item_relations_v305/,'rejecting an item must invalidate v305 relations touching it');
+assert.match(items,/\$previousText !== \$text[\s\S]*transcription_intelligence_remove_item_relations_v305/,'editing an item must invalidate v305 relations touching it');
 
-/* Rejected intelligence and internal receipts cannot leak into compiled Brain/Knowledge reports. */
+/* Rejected intelligence and internal receipts/relations cannot leak into compiled Brain/Knowledge reports. */
 assert.match(items,/function transcription_intelligence_export_result_v302/);
 assert.match(items,/\(\$item\['review_state'\] \?\? ''\) === 'rejected'/);
-assert.match(items,/\['source_fingerprint','edited_text','actions'\]/,'internal metadata must stay out of compiled report text');
+assert.match(items,/\['source_fingerprint','edited_text','actions','relations'\]/,'internal metadata must stay out of compiled report text');
 assert.match(api,/transcription_intelligence_report_text_v302/,'Brain/Knowledge export must use the review-aware compiler');
-assert.match(api,/source'=>'transcription-intelligence-v304'/,'whole-report Agent Brain provenance must identify the current workflow layer');
+assert.match(api,/source'=>'transcription-intelligence-v305'/,'whole-report Agent Brain provenance must identify the current intelligence layer');
 
-/* Canonical ownership stays singular while v304 preserves v302 review and v303 actions. */
-assert.match(client,/const BUILD = 'transcription-workflow-v304-20260906'/);
+/* Canonical ownership stays singular while v305 extends v304 workflow, v303 actions and v302 items. */
+assert.match(client,/const BUILD = 'transcription-relations-v305-20260906'/);
 assert.match(api,/transcription_app_analyze_v304\(/,'stable analysis must execute through v304 without replacing durable item semantics');
 assert.match(client,/performItemAction:/,'controller API must expose explicit item actions');
+assert.match(client,/buildRelations:/,'controller API must expose explicit v305 relationship building');
 assert.doesNotMatch(client,/document\.addEventListener\('click'/,'no delegated document click owner is allowed');
 assert.doesNotMatch(client,/MutationObserver/,'AI controller must not observe/rewrite the page runtime');
 assert.doesNotMatch(client,/MediaRecorder/,'AI controller must never own recording');
