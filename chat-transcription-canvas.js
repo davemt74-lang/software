@@ -8,7 +8,7 @@ const listeningEndpoint=String(cfg.listeningEndpoint||'/api/artist-listening.php
 const intelligenceEndpoint=String(cfg.intelligenceEndpoint||'/api/artist-listening-intelligence-v300.php');
 const artistListeningUrl=String(cfg.artistListeningUrl||'/artist-listening.php');
 const SEEN_KEY='stonefellow.transcription-canvas.v308.seen';
-const esc=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#039;'}[char]));
+const esc=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[char]));
 const clean=value=>String(value||'').replace(/\s+/g,' ').trim();
 const asArray=value=>Array.isArray(value)?value:[];
 const itemId=item=>`${Math.max(0,Number(item?.session_id||0))}:${String(item?.key||'')}`;
