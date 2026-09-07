@@ -17,7 +17,10 @@ if(!personal_capability_has_v242('profile_agent.access',$user))vp3_radar_sites_j
 if(!vp3_radar_schema_ready($pdo))vp3_radar_sites_json(false,['error'=>'Agent Radar is not ready. Run /upgrade.php.'],503);
 
 $method=strtoupper((string)($_SERVER['REQUEST_METHOD']??'GET'));
-if($method==='GET')vp3_radar_sites_json(true,['state'=>vp3_radar_external_site_state($pdo,$user)]);
+if($method==='GET'){
+    $state=vp3_radar_server_enrich_site_state($pdo,$user,vp3_radar_external_site_state($pdo,$user));
+    vp3_radar_sites_json(true,['state'=>$state]);
+}
 if($method!=='POST')vp3_radar_sites_json(false,['error'=>'Method not allowed.'],405);
 
 $input=json_decode((string)file_get_contents('php://input'),true);if(!is_array($input))$input=[];
@@ -27,10 +30,18 @@ $action=trim((string)($input['action']??''));
 try{
     if($action==='create'){
         $state=vp3_radar_external_site_create($pdo,$user,(string)($input['domain']??''),(string)($input['label']??''));
-        vp3_radar_sites_json(true,['state'=>$state]);
+        vp3_radar_sites_json(true,['state'=>vp3_radar_server_enrich_site_state($pdo,$user,$state)]);
     }
     if($action==='set_active'){
         $state=vp3_radar_external_site_set_active($pdo,$user,max(0,(int)($input['property_id']??0)),!empty($input['is_active']));
+        vp3_radar_sites_json(true,['state'=>vp3_radar_server_enrich_site_state($pdo,$user,$state)]);
+    }
+    if($action==='rotate_server_token'){
+        $result=vp3_radar_server_token_rotate($pdo,$user,max(0,(int)($input['property_id']??0)));
+        vp3_radar_sites_json(true,$result);
+    }
+    if($action==='revoke_server_token'){
+        $state=vp3_radar_server_token_revoke($pdo,$user,max(0,(int)($input['property_id']??0)));
         vp3_radar_sites_json(true,['state'=>$state]);
     }
     vp3_radar_sites_json(false,['error'=>'Unknown connected-site action.'],404);
