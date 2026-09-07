@@ -24,7 +24,7 @@ function session(){
 }
 function referral(){
   let token='';
-  try{token=String(new URL(location.href).searchParams.get('vp3_ref')||'').toLowerCase().trim();}catch(e){}
+  try{token=String(new URL(document.URL).searchParams.get('vp3_ref')||'').toLowerCase().trim();}catch(e){}
   if(/^[a-f0-9]{48}$/.test(token)){try{sessionStorage.setItem(referralKey,token);}catch(e){}return token;}
   try{token=String(sessionStorage.getItem(referralKey)||'').toLowerCase().trim();}catch(e){token='';}
   return /^[a-f0-9]{48}$/.test(token)?token:'';
