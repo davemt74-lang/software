@@ -5,7 +5,7 @@ require_once __DIR__.'/vp3-analytics-chat.php';
 function vp3_radar_chat_intent(string $query): bool
 {
     $q=mb_strtolower(trim($query));
-    foreach(['agent radar','agent gateway','ai agent','ai agents','bot','bots','crawler','crawlers','automated visitor','automated visitors','high risk agent','high-risk agent','who visited','visited my profile','website traffic','agent traffic','block this agent','block agent','allow agent','limit agent','access profile','search friendly','agent friendly','open web','locked down','lock down agent','private profile','monitor all'] as $needle){
+    foreach(['agent radar','agent gateway','ai agent','ai agents','bot','bots','crawler','crawlers','automated visitor','automated visitors','high risk agent','high-risk agent','who visited','visited my profile','website traffic','agent traffic','block this agent','block agent','allow agent','limit agent','access profile','search friendly','agent friendly','open web','locked down','lock down agent','private profile','monitor all','block operator','allow operator','block all crawlers','allow all crawlers','unknown automation','advanced rules','gateway rules','/admin/'] as $needle){
         if(str_contains($q,$needle))return true;
     }
     return false;
@@ -89,6 +89,44 @@ function vp3_radar_chat_access_profile_action(PDO $pdo,array $user,string $query
     return ['handled'=>true,'answer'=>'Your current Agent Gateway access profile is '.(string)$current['label'].'. '.(string)$current['description'].' Per-contact policies override the profile when you set one.','stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[['source'=>'agent-gateway:access-profile','title'=>'Agent Gateway Access Profile']]];
 }
 
+function vp3_radar_chat_class_slug(string $value): string
+{
+    $q=mb_strtolower(trim($value));
+    if(str_contains($q,'unknown'))return 'automated_unknown';
+    if(str_contains($q,'search'))return 'ai_search';
+    if(str_contains($q,'crawler')||str_contains($q,'training'))return 'ai_crawler';
+    if(str_contains($q,'user agent')||str_contains($q,'user-directed')||str_contains($q,'assistant agent'))return 'ai_user_agent';
+    return '';
+}
+
+function vp3_radar_chat_scoped_action(PDO $pdo,array $user,string $query): ?array
+{
+    $q=trim($query);$action='';$scopeType='';$scopeValue='';
+    if(preg_match('/\b(block|allow|monitor)\s+operator\s+(.+?)[.!?]*$/i',$q,$m)){
+        $action=strtolower((string)$m[1]);$scopeType='operator';$scopeValue=vp3_radar_chat_clean_subject((string)$m[2]);
+    }elseif(preg_match('/\b(block|allow|monitor)\s+all\s+(.+?)\s+agents?[.!?]*$/i',$q,$m)){
+        $action=strtolower((string)$m[1]);$scopeType='operator';$scopeValue=vp3_radar_chat_clean_subject((string)$m[2]);
+    }elseif(preg_match('/\b(block|allow|monitor)\s+(?:all\s+)?(crawlers?|training crawlers?|ai search|search agents?|unknown automation|user-directed agents?)[.!?]*$/i',$q,$m)){
+        $action=strtolower((string)$m[1]);$scopeType='class';$scopeValue=vp3_radar_chat_class_slug((string)$m[2]);
+    }elseif(preg_match('/\b(block|allow|monitor)\s+(?:agents?|bots?|automation)\s+(?:on|from)\s+(\/[^\s?#]+\*?)[.!?]*$/i',$q,$m)){
+        $action=strtolower((string)$m[1]);$scopeType='path';$scopeValue=(string)$m[2];
+    }else return null;
+    if($scopeValue==='')return null;
+    vp3_radar_gateway_set_scoped_rule($pdo,$user,$scopeType,$scopeValue,$action,0,VP3_RADAR_GATEWAY_DEFAULT_LIMIT_30M);
+    $label=$scopeType==='class'?str_replace('_',' ',$scopeValue):$scopeValue;
+    return ['handled'=>true,'answer'=>'Agent Gateway advanced rule saved: '.$action.' '.$scopeType.' '.$label.' across connected sites. Contact-specific overrides still take precedence.','stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[['source'=>'agent-gateway:scoped-rule','title'=>'Agent Gateway Advanced Rule']]];
+}
+
+function vp3_radar_chat_scoped_summary(PDO $pdo,array $user,string $query): ?array
+{
+    $q=mb_strtolower($query);if(!str_contains($q,'advanced rules')&&!str_contains($q,'gateway rules'))return null;
+    $rules=vp3_radar_gateway_scoped_rules($pdo,(int)$user['id']);
+    if(!$rules)return ['handled'=>true,'answer'=>'Agent Gateway has no advanced operator, class, or path rules. Your Access Profile and contact overrides remain active.','stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[['source'=>'agent-gateway:scoped-rule','title'=>'Agent Gateway Advanced Rules']]];
+    $lines=['Agent Gateway advanced rules:'];
+    foreach(array_slice($rules,0,20) as $rule){$site=(int)($rule['property_id']??0)>0?' on '.((string)($rule['property_label']??$rule['property_domain']??'connected site')):' across all connected sites';$lines[]='• '.(string)$rule['action'].' '.(string)$rule['scope_type'].' '.(string)$rule['scope_value'].$site.'.';}
+    return ['handled'=>true,'answer'=>implode("\n",$lines),'stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[['source'=>'agent-gateway:scoped-rule','title'=>'Agent Gateway Advanced Rules']]];
+}
+
 function vp3_radar_chat_recent_summary(PDO $pdo,array $user,string $query): string
 {
     $uid=(int)$user['id'];$q=mb_strtolower($query);
@@ -151,6 +189,8 @@ function vp3_radar_chat_tool(string $query,array $user,int $conversationId=0): a
     $pdo=db();if(!$pdo||!vp3_radar_schema_ready($pdo))return $empty;
     $profile=vp3_radar_chat_access_profile_action($pdo,$user,$query);
     if($profile){if(function_exists('agent_tool_log'))agent_tool_log($user,'agent_radar.access_profile',$query,'success',['handled'=>'profile'],$conversationId);return $profile;}
+    $scoped=vp3_radar_chat_scoped_action($pdo,$user,$query)??vp3_radar_chat_scoped_summary($pdo,$user,$query);
+    if($scoped){if(function_exists('agent_tool_log'))agent_tool_log($user,'agent_radar.scoped_rule',$query,'success',['handled'=>'scoped'],$conversationId);return $scoped;}
     $action=vp3_radar_chat_action($pdo,$user,$query);
     if($action){
         if(function_exists('agent_tool_log'))agent_tool_log($user,'agent_radar.gateway',$query,'success',['handled'=>'write'],$conversationId);
