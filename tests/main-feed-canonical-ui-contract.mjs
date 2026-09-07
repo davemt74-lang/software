@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import assert from 'node:assert/strict';
 
 const template = fs.readFileSync('chat-legacy-v108.php', 'utf8');
+const wrapper = fs.readFileSync('chat.php', 'utf8');
 const chat = fs.readFileSync('chat.js', 'utf8');
 const notifications = fs.readFileSync('chat-notifications-drawer-v240.js', 'utf8');
 const learning = fs.readFileSync('chat-brain-learning-history-v317.js', 'utf8');
@@ -16,10 +17,18 @@ assert.match(mainSidebar, /href="<\?= e\(url\('\/knowledge\.php'\)\) \?>"[\s\S]*
 assert.match(mainSidebar, /href="<\?= e\(url\('\/admin\/team\.php'\)\) \?>"[\s\S]*?<strong>My Team<\/strong>/, 'Canonical member sidebar must expose My Team for authorized owners');
 assert.match(activity, /<strong>My Knowledge<\/strong>/, 'Main Feed runtime must expose My Knowledge in its visible sidebar');
 assert.match(activity, /contacts\.insertAdjacentElement\('afterend',link\)/, 'Main Feed must place My Knowledge directly after My Contacts');
-assert.match(activity, /chat-brain-learning-history-v317\.js/, 'Main Feed activity runtime must load the Brain Learning / navigation enhancement');
-assert.match(learning, /data-chat-view-target="player".*data-chat-view-target="saved".*data-chat-view-target="playlists"/s, 'Main Feed enhancement must remove Player, Saved Songs and My Playlists buttons');
-assert.match(learning, /data-chat-profile-link="my_team"/, 'Main Feed My Team link must be sourced from canonical authorized member navigation');
-assert.match(learning, /link\.dataset\.chatMyTeam/, 'Main Feed must add the canonical My Team destination to the visible sidebar');
+
+assert.ok(wrapper.includes('data-chat-view-target="(?:player|saved|playlists)"'), 'canonical Main Feed wrapper must strip Player, Saved Songs and My Playlists before response output');
+assert.match(wrapper, /data-chat-my-team/, 'canonical Main Feed wrapper must render My Team from member navigation');
+assert.ok(wrapper.includes("$html = str_replace('agent-activity-v94.js?v=101', 'agent-activity-v94.js?v=' . $activityBuild, $html);"), 'Main Feed must invalidate the stale Agent Activity asset URL');
+assert.match(wrapper, /data-brain-learning-history-v317 src=/, 'Brain Learning must load directly from the Main Feed Activity Center runtime');
+assert.match(wrapper, /chat-notifications-canvas-v240-20260907-pr81-hotfix1/, 'notification drawer cache key must move when PR81 runtime wiring changes');
+assert.match(wrapper, /brain-learning-history-v317-20260907-pr81-hotfix1/, 'Brain Learning must have its own fresh cache key');
+
+assert.match(activity, /chat-brain-learning-history-v317\.js/, 'Agent Activity retains compatibility loading for older Main Feed wrappers');
+assert.match(learning, /data-chat-view-target="player".*data-chat-view-target="saved".*data-chat-view-target="playlists"/s, 'Brain Learning compatibility enhancement must still remove retired music navigation on older wrappers');
+assert.match(learning, /data-chat-profile-link="my_team"/, 'compatibility My Team link must be sourced from canonical authorized member navigation');
+assert.match(learning, /link\.dataset\.chatMyTeam/, 'compatibility runtime must add the canonical My Team destination when needed');
 assert.doesNotMatch(mainSidebar, /<strong>Player<\/strong>|<strong>Saved Songs<\/strong>|<strong>My Playlists<\/strong>/, 'canonical sidebar must not retain removed music navigation');
 assert.doesNotMatch(template, /id="chatLiveUpdates"/, 'Canonical template must not contain the parallel Agent Updates panel');
 assert.doesNotMatch(chat, /renderActivityUpdates|chatLiveUpdateList|chatLiveStatus/, 'Canonical chat runtime must not render parallel activity cards');
