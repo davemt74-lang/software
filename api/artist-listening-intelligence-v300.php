@@ -5,8 +5,10 @@ require_once dirname(__DIR__) . '/includes/bootstrap.php';
 require_once dirname(__DIR__) . '/includes/artist-listening.php';
 require_once dirname(__DIR__) . '/includes/artist-listening-transcript.php';
 require_once dirname(__DIR__) . '/includes/transcription-app-registry.php';
+require_once dirname(__DIR__) . '/includes/transcription-apps-wave2.php';
+require_once dirname(__DIR__) . '/includes/transcription-apps-wave2-save.php';
 
-const VP3_TRANSCRIPTION_INTELLIGENCE_V300 = 'vp3-transcription-app-registry-v300-20260906';
+const VP3_TRANSCRIPTION_INTELLIGENCE_V300 = 'vp3-transcription-apps-v301-20260906';
 
 function transcription_intelligence_json_v300(bool $ok, array $data = [], int $status = 200): never
 {
@@ -38,18 +40,19 @@ try {
     $session = $sessionId ? artist_listening_v172_session($pdo,$user,$sessionId) : null;
 
     if ($method === 'GET' && $action === 'registry') {
-        transcription_intelligence_json_v300(true,['registry'=>transcription_app_registry_public_v300()]);
+        transcription_intelligence_json_v300(true,['registry'=>transcription_app_registry_public_v301()]);
     }
 
     if ($method === 'GET' && $action === 'status') {
         if (!$session) transcription_intelligence_json_v300(true,[
-            'master'=>null,'app_status'=>[],'registry'=>transcription_app_registry_public_v300(),
+            'master'=>null,'app_status'=>[],'registry'=>transcription_app_registry_public_v301(),
             'tags'=>[],'permissions'=>transcription_app_permissions_v300($user),
         ]);
-        $map = artist_listening_transcript_page_map(artist_listening_v172_segments($pdo,$sessionId));
+        $segments = artist_listening_v172_segments($pdo,$sessionId);
+        $map = artist_listening_transcript_page_map($segments);
         $status = artist_listening_v237_analysis_status($pdo,$sessionId,$map);
         transcription_intelligence_json_v300(true,
-            transcription_app_status_v300($status['master'] ?? null,(string)$map['source_hash']) + [
+            transcription_app_status_v301($pdo,$user,$session,$status['master'] ?? null,$map) + [
                 'tags'=>transcription_app_tags_v300($session),
                 'permissions'=>transcription_app_permissions_v300($user),
             ]
@@ -63,34 +66,39 @@ try {
     if ($action === 'analyze') {
         $mode = strtolower((string)($input['mode'] ?? 'manual'));
         if (!in_array($mode,['manual','live'],true)) $mode = 'manual';
-        transcription_intelligence_json_v300(true,transcription_app_analyze_v300(
-            $pdo,$user,$sessionId,$mode,!empty($input['research']),$input['apps'] ?? ['basic']
-        ));
+        $researchOn = !empty($input['research']);
+        $result = transcription_app_analyze_v301(
+            $pdo,$user,$sessionId,$mode,$researchOn,$input['apps'] ?? ['basic']
+        );
+        $result = transcription_app_finalize_research_brief_v301($pdo,$user,$session,$result,$researchOn);
+        transcription_intelligence_json_v300(true,$result);
     }
 
-    $map = artist_listening_transcript_page_map(artist_listening_v172_segments($pdo,$sessionId));
+    $segments = artist_listening_v172_segments($pdo,$sessionId);
+    $map = artist_listening_transcript_page_map($segments);
     $status = artist_listening_v237_analysis_status($pdo,$sessionId,$map);
     $master = is_array($status['master'] ?? null) ? $status['master'] : null;
     if (in_array($action,['save_brain','save_knowledge'],true) && !$master) throw new RuntimeException('Analyze this transcript before saving the report.');
     $tags = transcription_app_tags_v300($session);
-    $text = $master ? transcription_app_report_text_v300($master,$session,$tags,(string)$map['source_hash']) : '';
-    if ($text === '') throw new RuntimeException('No current transcription app results are available to save.');
+    $view = $master ? transcription_app_status_v301($pdo,$user,$session,$master,$map) : ['app_status'=>[]];
+    $text = $master ? transcription_app_report_text_current_v301($master,$session,$tags,(string)$map['source_hash'],$view['app_status'] ?? []) : '';
+    if ($text === '') throw new RuntimeException('No current transcription plugin results are available to save. Refresh any stale plugins and try again.');
 
     if ($action === 'save_brain') {
         $permissions = transcription_app_permissions_v300($user);
         if (!$permissions['agent_brain_write']) throw new RuntimeException('Agent Brain storage is not available for this account.');
         $id = agent_brain_v122_upsert_system_memory(
-            $user,'transcript_analysis','artist-listening:'.$sessionId,mb_strimwidth($text,0,12000,'…'),
-            ['source'=>'transcription-app-registry-v300','session_id'=>$sessionId,'title'=>(string)($session['title']??''),'tags'=>$tags,'source_hash'=>(string)$map['source_hash'],'saved_at'=>gmdate('c')],0.98
+            $user,'transcript_analysis','artist-listening:'.$sessionId,mb_strimwidth($text,0,18000,'…'),
+            ['source'=>'transcription-apps-v301','session_id'=>$sessionId,'title'=>(string)($session['title']??''),'tags'=>$tags,'source_hash'=>(string)$map['source_hash'],'saved_at'=>gmdate('c')],0.98
         );
-        if ($id < 1) throw new RuntimeException('Could not save the transcription analysis to Agent Brain.');
+        if ($id < 1) throw new RuntimeException('Could not save the transcription intelligence to Agent Brain.');
         transcription_intelligence_json_v300(true,['saved'=>true,'memory_id'=>$id,'saved_at'=>gmdate('c')]);
     }
 
     if ($action === 'save_knowledge') {
         $permissions = transcription_app_permissions_v300($user);
         if (!$permissions['personal_knowledge_write']) throw new RuntimeException('Personal Knowledge Base storage is not available for this account.');
-        $title = mb_strimwidth('Transcript Analysis · '.((string)($session['title']??'')?:('Session '.$sessionId)),0,190,'…');
+        $title = mb_strimwidth('Transcript Intelligence · '.((string)($session['title']??'')?:('Session '.$sessionId)),0,190,'…');
         $id = personal_knowledge_store($user,'artist-listening-analysis:'.$sessionId,$title,$text,'Personal transcription intelligence · session #'.$sessionId);
         transcription_intelligence_json_v300(true,['saved'=>true,'knowledge_id'=>$id,'scope'=>'personal','published'=>false,'saved_at'=>gmdate('c')]);
     }
