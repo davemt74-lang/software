@@ -3,7 +3,6 @@
 
   const cfg = window.STONEFELLOW_ARTIST_LISTENING_V172 || {};
   const BUILD = 'transcription-workflow-v304-20260906';
-  const BATCH_SIZE = 4;
   const userId = Math.max(0, Number(cfg.userId || 0));
   const reportEndpoint = String(cfg.endpoint || '').replace(/artist-listening-v172\.php(?:\?.*)?$/i, 'artist-listening-intelligence-v300.php');
   const legacyResearchKey = `stonefellow:artist-listening:ai-summary:${userId}`;
@@ -225,11 +224,12 @@
     const aiApps = effective.filter(id => appById(id)?.execution === 'ai');
     const deterministic = effective.filter(id => appById(id)?.execution === 'deterministic');
     const manualOnly = requested.filter(id => !appById(id)?.live);
-    const batches = Math.ceil(aiApps.length / BATCH_SIZE);
+    const batchSize = Math.max(1, Number(state.workflowConfig?.batch_size || 1));
+    const batches = Math.ceil(aiApps.length / batchSize);
     const cost = batches >= 4 ? 'high' : (batches >= 2 ? 'medium' : (batches === 1 ? 'low' : 'none'));
     return {
       requested_apps:requested,effective_apps:effective,ai_apps:aiApps,deterministic_apps:deterministic,
-      ai_batches:batches,batch_size:BATCH_SIZE,manual_only_apps:manualOnly,estimated_ai_cost:cost,
+      ai_batches:batches,batch_size:batchSize,manual_only_apps:manualOnly,estimated_ai_cost:cost,
       web_research:!!state.workflow.web_research,live_analysis:!!state.workflow.live_analysis,
       depth:String(state.workflow.depth||'standard'),context_mode:String(state.workflow.context_mode||'authorized'),focus:String(state.workflow.focus||''),
     };
