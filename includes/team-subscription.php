@@ -27,9 +27,10 @@ function team_subscription_state(?array $user=null,?PDO $pdo=null): array
     ];
     if(!$user||(int)($user['id']??0)<1)return $state;
 
-    $state['authorized']=user_has_role('artist',$user)
+    $isInternalAdmin=function_exists('subscription_is_internal_admin')&&subscription_is_internal_admin($user);
+    $state['authorized']=$isInternalAdmin||(user_has_role('artist',$user)
         &&has_permission('admin.access',$user)
-        &&has_permission('team.manage',$user);
+        &&has_permission('team.manage',$user));
 
     if($state['authorized']&&$pdo&&table_exists('artist_team_members')&&function_exists('artist_workspace_v104_team_count')){
         try{$state['used']=artist_workspace_v104_team_count($pdo,(int)$user['id']);}catch(Throwable $e){$state['used']=0;}
@@ -37,15 +38,15 @@ function team_subscription_state(?array $user=null,?PDO $pdo=null): array
 
     // Before the subscription migration, preserve the historical two-seat
     // behavior. Once package storage exists, package data is authoritative.
-    if(!$pdo||!function_exists('subscription_schema_ready')||!subscription_schema_ready($pdo)){
-        $state['package_name']='Legacy access';
-        $state['included']=true;
-        $state['limit']=2;
-    }elseif(subscription_is_internal_admin($user)){
+    if($isInternalAdmin){
         $state['package_name']='Internal Admin';
         $state['included']=true;
         $state['limit']=null;
         $state['unlimited']=true;
+    }elseif(!$pdo||!function_exists('subscription_schema_ready')||!subscription_schema_ready($pdo)){
+        $state['package_name']='Legacy access';
+        $state['included']=true;
+        $state['limit']=2;
     }else{
         $subscription=subscription_current_for_user_id((int)$user['id'],$pdo);
         if($subscription){
