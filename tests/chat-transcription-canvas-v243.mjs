@@ -39,7 +39,7 @@ assert.ok(canvas.includes("const BUILD='transcription-intelligence-home-v308-202
 assert.ok(!canvas.includes('chatRecordingsCanvas'),'v308 must not reuse the obsolete recovered canvas identity');
 assert.ok(canvas.includes("canvas.id='chatTranscriptionCanvas'"),'v308 must retain one canonical canvas identity');
 assert.ok(canvas.includes("canvas.setAttribute('aria-label','Transcription Intelligence')"),'the slideout must be presented as the Transcription Intelligence workspace');
-assert.ok(canvas.includes("'\\"':'&quot;'"),'v308 must use a complete quoted HTML entity when escaping dynamic content');
+assert.ok(canvas.includes(`'"':'&quot;'`),'v308 must use a complete quoted HTML entity when escaping dynamic content');
 assert.ok(canvas.includes('document.body.append(backdrop,canvas)'),'transcription overlay must mount at body level so header stacking contexts cannot trap it');
 assert.ok(canvas.includes("url.searchParams.set('action','bootstrap')"),'canvas must load the user transcription list from Artist Listening bootstrap');
 assert.ok(canvas.includes('data-transcription-session-select'),'canvas must render a transcription dropdown selector');
