@@ -57,7 +57,12 @@ function vp3_agent_access_chat_decision(PDO $pdo,array $user,string $query): ?ar
 function vp3_agent_access_chat_tool(string $query,array $user,int $conversationId=0): array
 {
     $empty=['handled'=>false,'answer'=>'','stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[]];
-    if(!vp3_agent_access_chat_intent($query)||!personal_capability_has_v242('profile_agent.access',$user))return $empty;
+    if(!personal_capability_has_v242('profile_agent.access',$user))return $empty;
+    if(!vp3_agent_access_chat_intent($query)){
+        return function_exists('vp3_agent_relationship_chat_tool')
+            ? vp3_agent_relationship_chat_tool($query,$user,$conversationId)
+            : $empty;
+    }
     $pdo=db();if(!$pdo||!vp3_radar_schema_ready($pdo))return $empty;
     $action=vp3_agent_access_chat_decision($pdo,$user,$query);
     $result=$action?:vp3_agent_access_chat_list($pdo,$user);
