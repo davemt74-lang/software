@@ -188,3 +188,32 @@ function vp3_radar_gateway_contact_policy_map(PDO $pdo,int $ownerUserId,array $c
     }
     return $map;
 }
+
+function vp3_radar_gateway_server_collect(PDO $pdo,array $property,array $payload): array
+{
+    $userAgent=mb_strimwidth(trim((string)($payload['user_agent']??'')),0,1000,'');
+    $identity=vp3_radar_server_identity($pdo,$property,$userAgent);
+    if(!$identity){
+        return ['action'=>'ignore','allowed'=>true,'status_code'=>200,'policy_id'=>null,'reason'=>'not_automated','recorded'=>false];
+    }
+    $contact=$identity['contact'];
+    $path=vp3_radar_external_path((string)($payload['path']??'/'));
+    $method=vp3_radar_server_method((string)($payload['method']??'GET'));
+    $decision=vp3_radar_gateway_decision($pdo,$property,$contact,$path);
+    $decision=vp3_radar_gateway_apply_limit($pdo,$property,$contact,$decision);
+    $decision['contact_id']=(int)$contact['id'];
+    $decision['contact_name']=(string)$contact['display_name'];
+    $decision['recorded']=false;
+
+    if(empty($decision['allowed'])){
+        vp3_radar_gateway_log_denial($pdo,$property,$contact,$path,$method,$decision);
+        return $decision;
+    }
+
+    $decision['recorded']=vp3_radar_server_collect($pdo,$property,$payload);
+    if(($decision['action']??'')==='limit'){
+        $decision['used_30m']=((int)($decision['used_30m']??0))+($decision['recorded']?1:0);
+        $decision['remaining_30m']=max(0,(int)$decision['limit_30m']-(int)$decision['used_30m']);
+    }
+    return $decision;
+}
