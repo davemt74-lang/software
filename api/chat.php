@@ -80,7 +80,7 @@ try {
         }
 
         $afterId = max(0,(int)($input['after_id'] ?? 0));
-        $activityTypes = "'agent_track_share','producer_track_share','agent_supervisor_listen','stem_region_note','production_note','new_track_release','new_album_release','show_reminder','artist_post','release_deadline','release_action','radar_security_action','radar_agent_visit_needs_attention','radar_external_security_action','radar_external_visit_needs_attention','agent_activity_radar_rate_limited','radar_agent_access_request','radar_agent_opportunity'";
+        $activityTypes = "'agent_track_share','producer_track_share','agent_supervisor_listen','stem_region_note','production_note','new_track_release','new_album_release','show_reminder','artist_post','release_deadline','release_action','radar_security_action','radar_agent_visit_needs_attention','radar_external_security_action','radar_external_visit_needs_attention','agent_activity_radar_rate_limited','radar_agent_access_request','radar_agent_opportunity','radar_agent_conversion'";
 
         if ($afterId > 0) {
             $stmt = $pdo->prepare(
