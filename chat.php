@@ -292,7 +292,7 @@ $notificationDrawerRuntime = '<link rel="stylesheet" data-chat-notification-draw
         'build'=>$notificationDrawerBuild,
     ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
     . ';</script>'
-    . '<script data-chat-notification-drawer src="' . e(url('/chat-notifications-drawer-v240.js?v=' . $chatSettingsBuild)) . '"></script>';
+    . '<script data-chat-notification-drawer src="' . e(url('/chat-notifications-drawer-v240.js?v=' . $notificationDrawerBuild)) . '"></script>';
 
 $runtime = $headerUiRuntime
          . $mediaOverlayRuntime
