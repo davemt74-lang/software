@@ -59,6 +59,11 @@ try {
 
     if ($action === 'activity') {
         player_process_show_reminders($user);
+        $watchRefreshAt=(int)($_SESSION['vp3_agent_crm_watch_refresh'][$userId]??0);
+        if(function_exists('vp3_agent_crm_watchlist_refresh')&&$watchRefreshAt<time()-60){
+            $_SESSION['vp3_agent_crm_watch_refresh'][$userId]=time();
+            try{vp3_agent_crm_watchlist_refresh($pdo,$user,7);}catch(Throwable $e){error_log('Agent CRM watchlist refresh failed: '.$e->getMessage());}
+        }
         $activeConversationId = agent_chat_v101_latest_conversation_id($pdo,$userId);
         $activeMessageId = 0;
         if ($activeConversationId > 0) {
@@ -80,7 +85,7 @@ try {
         }
 
         $afterId = max(0,(int)($input['after_id'] ?? 0));
-        $activityTypes = "'agent_track_share','producer_track_share','agent_supervisor_listen','stem_region_note','production_note','new_track_release','new_album_release','show_reminder','artist_post','release_deadline','release_action','radar_security_action','radar_agent_visit_needs_attention','radar_external_security_action','radar_external_visit_needs_attention','agent_activity_radar_rate_limited','radar_agent_access_request','radar_agent_opportunity','radar_agent_conversion'";
+        $activityTypes = "'agent_track_share','producer_track_share','agent_supervisor_listen','stem_region_note','production_note','new_track_release','new_album_release','show_reminder','artist_post','release_deadline','release_action','radar_security_action','radar_agent_visit_needs_attention','radar_external_security_action','radar_external_visit_needs_attention','agent_activity_radar_rate_limited','radar_agent_access_request','radar_agent_opportunity','radar_agent_conversion','radar_agent_watchlist'";
 
         if ($afterId > 0) {
             $stmt = $pdo->prepare(
