@@ -222,6 +222,9 @@ function transcription_intelligence_review_item_v302(
     $modules = transcription_app_modules_v301(is_array($master['analysis'] ?? null)?$master['analysis']:[],$master);
     $modules = transcription_intelligence_normalize_modules_v302($modules);
     [$sectionKey,$offset] = transcription_intelligence_find_item_v302($modules,$appId,$itemId);
+    if ($reviewState === 'rejected' && function_exists('transcription_intelligence_remove_item_relations_v305')) {
+        transcription_intelligence_remove_item_relations_v305($modules,$itemId);
+    }
     $modules[$appId]['result'][$sectionKey][$offset]['review_state'] = $reviewState;
     $modules[$appId]['result'][$sectionKey][$offset]['reviewed_at'] = $reviewState === 'unreviewed' ? '' : gmdate('c');
     $master['analysis'] = transcription_intelligence_persist_modules_v302($pdo,$sessionId,$modules);
