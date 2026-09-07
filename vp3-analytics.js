@@ -7,6 +7,7 @@ if(!/^[a-f0-9]{40}$/i.test(key))return;
 let endpoint;
 try{endpoint=new URL('api/analytics-collect.php',script.src);endpoint.searchParams.set('key',key);}catch(e){return;}
 const sessionKey=`vp3-analytics:${key}`;
+const referralKey=`vp3-agent-referral:${key}`;
 const ttl=30*60*1000;
 function randomToken(){
   try{if(globalThis.crypto?.randomUUID)return crypto.randomUUID().replaceAll('-','');}catch(e){}
@@ -21,11 +22,19 @@ function session(){
   try{sessionStorage.setItem(sessionKey,JSON.stringify(row));}catch(e){}
   return row.id;
 }
+function referral(){
+  let token='';
+  try{token=String(new URL(location.href).searchParams.get('vp3_ref')||'').toLowerCase().trim();}catch(e){}
+  if(/^[a-f0-9]{48}$/.test(token)){try{sessionStorage.setItem(referralKey,token);}catch(e){}return token;}
+  try{token=String(sessionStorage.getItem(referralKey)||'').toLowerCase().trim();}catch(e){token='';}
+  return /^[a-f0-9]{48}$/.test(token)?token:'';
+}
 function referrerHost(){try{return document.referrer?new URL(document.referrer).hostname:'';}catch(e){return '';}}
 function eventName(value){return String(value||'').toLowerCase().trim().replace(/[^a-z0-9_.:-]+/g,'_').replace(/^_+|_+$/g,'').slice(0,64);}
 function send(name='page_view',options={}){
   const event=eventName(name)||'page_view';
   const payload={session:session(),event,path:location.pathname||'/',referrer_host:referrerHost()};
+  const agentReferral=referral();if(agentReferral)payload.agent_referral=agentReferral;
   if(options&&Number.isFinite(Number(options.value)))payload.value=Math.max(-1e9,Math.min(1e9,Number(options.value)));
   if(options&&typeof options.label==='string'&&options.label.trim())payload.label=options.label.trim().slice(0,120);
   try{fetch(endpoint.href,{method:'POST',mode:'cors',credentials:'omit',keepalive:true,headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).catch(()=>{});}catch(e){}
