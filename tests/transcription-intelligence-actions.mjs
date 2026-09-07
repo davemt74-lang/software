@@ -55,6 +55,8 @@ assert.match(actions,/project_track_id/);
 assert.match(actions,/artist_listening_v172_track_allowed/);
 assert.match(actions,/track_notes\.manage/);
 assert.match(actions,/INSERT INTO track_notes/);
+assert.match(actions,/\$actionKey=transcription_intelligence_action_key_v303\(\$action,\$action === 'project_note' \? 0 : \$targetId\)/,'project-note receipt key must match the untargeted browser action identity');
+assert.match(actions,/\$action !== 'project_note' \|\| \(int\)\(\$existing\['target_id'\] \?\? 0\) === \$targetId/,'a project-note receipt is reusable only for the currently linked track');
 assert.doesNotMatch(actions,/INSERT INTO tracks/,'transcription intelligence must not create projects/tracks implicitly');
 
 /* CRM writes revalidate explicit matched CRM context and reuse the canonical CRM APIs. */
@@ -70,7 +72,7 @@ assert.doesNotMatch(actions,/crm_v180_upsert_contact|crm_v180_create_demo_lead/,
 /* Receipts make actions idempotent and survive equivalent plugin reruns. */
 assert.match(actions,/function transcription_intelligence_action_key_v303/);
 assert.match(actions,/function transcription_intelligence_existing_receipt_v303/);
-assert.match(actions,/if \(\$existing\)/,'existing action receipt must short-circuit duplicate writes');
+assert.match(actions,/if \(\$existing &&/,'existing action receipt must short-circuit duplicate writes only after target revalidation');
 assert.match(actions,/function transcription_intelligence_record_receipt_v303/);
 assert.match(actions,/\$actions\[\$actionKey\]/);
 assert.match(items,/'actions'=>is_array\(\$actions\) \? \$actions : \[\]/,'review index must preserve action receipts across reruns');
