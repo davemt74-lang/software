@@ -9,6 +9,7 @@ declare(strict_types=1);
  * Agent Brain, task lifecycle, Personal Knowledge, CRM or project notes.
  */
 const VP3_TRANSCRIPTION_INTELLIGENCE_ACTIONS_V303 = 'transcription-intelligence-actions-v303-20260906';
+const VP3_TRANSCRIPTION_PROVENANCE_V309 = 'transcription-provenance-v309-20260907';
 
 function transcription_intelligence_item_snapshot_v303(array $master, string $appId, string $itemId): array
 {
@@ -41,6 +42,37 @@ function transcription_intelligence_evidence_label_v303(array $item): string
         if ($label !== '') $labels[$label] = $label;
     }
     return implode(', ', array_values($labels));
+}
+
+function transcription_intelligence_origin_v309(array $session, string $appId, string $sectionKey, array $item): array
+{
+    $sessionId=max(0,(int)($session['id'] ?? 0));
+    $itemId=transcription_app_clean_v300((string)($item['item_id'] ?? ''),190);
+    $sourceTitle=transcription_app_clean_v300((string)($session['title'] ?? 'Transcript'),190) ?: 'Transcript';
+    $refs=[];$page=0;
+    foreach ((array)($item['evidence_refs'] ?? []) as $ref) {
+        if (!is_array($ref)) continue;
+        $candidate=max(0,(int)($ref['page'] ?? 0));
+        if ($page<1 && $candidate>0) $page=$candidate;
+        $refs[]=transcription_app_sanitize_value_v300($ref);
+    }
+    $query=['session'=>$sessionId,'plugin'=>$appId,'section'=>$sectionKey,'item'=>$itemId];
+    if ($page>0) $query['page']=$page;
+    $sourceUrl=url('/artist-listening-evidence.php?'.http_build_query($query,'','&',PHP_QUERY_RFC3986));
+    $workspaceUrl=url('/artist-listening.php?session='.$sessionId);
+    return [
+        'source'=>'artist_listening','label'=>'Artist Listening','session_id'=>$sessionId,'session_title'=>$sourceTitle,
+        'plugin_id'=>$appId,'section_key'=>$sectionKey,'item_id'=>$itemId,'evidence_page'=>$page,'evidence_refs'=>$refs,
+        'source_url'=>$sourceUrl,'workspace_url'=>$workspaceUrl,'review_state'=>'accepted','version'=>309,
+    ];
+}
+
+function transcription_intelligence_origin_line_v309(array $origin): string
+{
+    $title=trim((string)($origin['session_title'] ?? ''));
+    $line='Source: Artist Listening'.($title!==''?' · '.$title:'');
+    $url=trim((string)($origin['source_url'] ?? ''));
+    return $line.($url!==''?"\nEvidence: ".$url:'');
 }
 
 function transcription_intelligence_action_key_v303(string $action, int $targetId = 0): string
@@ -165,7 +197,8 @@ function transcription_intelligence_upsert_task_v303(
     $existingRow=$find->fetch()?:null;
 
     $evidence=transcription_intelligence_evidence_label_v303($item);
-    $body=$text . ($evidence !== '' ? "\nEvidence: ".$evidence : '');
+    $origin=transcription_intelligence_origin_v309($session,$appId,$sectionKey,$item);
+    $body=$text . ($evidence !== '' ? "\nEvidence refs: ".$evidence : '') . "\n\n" . transcription_intelligence_origin_line_v309($origin);
     $priorMeta=is_array($existingRow) ? json_decode((string)($existingRow['metadata_json'] ?? ''),true) : [];
     if (!is_array($priorMeta)) $priorMeta=[];
     $priorStatus=(string)($priorMeta['task_status'] ?? 'open');
@@ -176,13 +209,15 @@ function transcription_intelligence_upsert_task_v303(
         'evidence_refs'=>(array)($item['evidence_refs'] ?? []),'task_status'=>$priorStatus,'task_kind'=>$kind,
         'task_key'=>sha1('transcription-intelligence|'.$itemId),'timing'=>(string)($item['timing'] ?? ''),
         'priority'=>(string)($item['priority'] ?? ''),'source_title'=>(string)($session['title'] ?? ''),
+        'origin'=>$origin,'source_label'=>'Artist Listening','source_url'=>(string)$origin['source_url'],
         'created_from_reviewed_item'=>true,'created_at'=>gmdate('c'),
     ];
     foreach ([
         'source_kind'=>'transcription_intelligence','source_session_id'=>(int)$session['id'],'plugin_id'=>$appId,
         'section_key'=>$sectionKey,'item_id'=>$itemId,'evidence_refs'=>(array)($item['evidence_refs'] ?? []),
         'task_kind'=>$kind,'timing'=>(string)($item['timing'] ?? ''),'priority'=>(string)($item['priority'] ?? ''),
-        'source_title'=>(string)($session['title'] ?? ''),'created_from_reviewed_item'=>true,
+        'source_title'=>(string)($session['title'] ?? ''),'origin'=>$origin,'source_label'=>'Artist Listening','source_url'=>(string)$origin['source_url'],
+        'created_from_reviewed_item'=>true,
     ] as $key=>$value) $meta[$key]=$value;
     $meta['task_status']=$priorStatus;
     $meta['updated_from_reviewed_item']=true;
@@ -254,25 +289,29 @@ function transcription_intelligence_execute_action_v303(
     $appTitle=(string)($registry[$appId]['title'] ?? $appId);
     $evidence=transcription_intelligence_evidence_label_v303($item);
     $sourceLabel=trim((string)($session['title'] ?? 'Transcript')) ?: 'Transcript';
-    $receipt=['action'=>$action,'record_id'=>0,'target_id'=>$targetId,'label'=>'','target_url'=>'','performed_at'=>gmdate('c')];
+    $origin=transcription_intelligence_origin_v309($session,$appId,$sectionKey,$item);
+    $sourceLine=transcription_intelligence_origin_line_v309($origin);
+    $receipt=['action'=>$action,'record_id'=>0,'target_id'=>$targetId,'label'=>'','target_url'=>'','source'=>$origin,'performed_at'=>gmdate('c')];
 
     if ($action === 'main_chat') {
         if (empty($operations['main_chat']['available'])) throw new RuntimeException('Main AI Chat is unavailable for this account.');
         $message='Reviewed transcription intelligence from “'.$sourceLabel.'”. '.$appTitle.': '.$text;
-        if ($evidence !== '') $message .= ' Evidence: '.$evidence.'.';
+        if ($evidence !== '') $message .= ' Evidence refs: '.$evidence.'.';
+        $message .= "\n\n".$sourceLine;
         $conversationId=agent_chat_v101_append_ecosystem_message($user,$message,[
-            'source'=>'transcription_intelligence','session_id'=>(int)$session['id'],'plugin_id'=>$appId,
+            'source'=>'transcription_intelligence','source_label'=>'Artist Listening','session_id'=>(int)$session['id'],'plugin_id'=>$appId,
             'section_key'=>$sectionKey,'item_id'=>$itemId,'evidence_refs'=>(array)($item['evidence_refs'] ?? []),
-            'review_state'=>'accepted','target_url'=>url('/artist-listening.php'),
+            'review_state'=>'accepted','origin'=>$origin,'target_url'=>(string)$origin['source_url'],
         ]);
         if ($conversationId < 1) throw new RuntimeException('Could not send this intelligence item to Main AI Chat.');
         $receipt['record_id']=$conversationId;$receipt['label']='Sent to Main Chat';$receipt['target_url']=(string)$operations['main_chat']['url'];
     } elseif ($action === 'agent_brain') {
         if (empty($operations['agent_brain']['available'])) throw new RuntimeException('Agent Brain is unavailable for this account.');
+        $brainText=$text."\n\n".$sourceLine;
         $memoryId=agent_brain_v122_upsert_system_memory(
-            $user,'transcript_intelligence','transcription-item:'.$itemId,$text,
-            ['source'=>'transcription_intelligence','session_id'=>(int)$session['id'],'plugin_id'=>$appId,'section_key'=>$sectionKey,
-             'item_id'=>$itemId,'evidence_refs'=>(array)($item['evidence_refs'] ?? []),'review_state'=>'accepted','source_title'=>$sourceLabel,'saved_at'=>gmdate('c')],
+            $user,'transcript_intelligence','transcription-item:'.$itemId,$brainText,
+            ['source'=>'transcription_intelligence','source_label'=>'Artist Listening','source_url'=>(string)$origin['source_url'],'session_id'=>(int)$session['id'],'plugin_id'=>$appId,'section_key'=>$sectionKey,
+             'item_id'=>$itemId,'evidence_refs'=>(array)($item['evidence_refs'] ?? []),'origin'=>$origin,'review_state'=>'accepted','source_title'=>$sourceLabel,'saved_at'=>gmdate('c')],
             0.99
         );
         if ($memoryId < 1) throw new RuntimeException('Could not save this item to Agent Brain.');
@@ -284,17 +323,19 @@ function transcription_intelligence_execute_action_v303(
         $receipt['record_id']=$memoryId;$receipt['label']=$kind === 'commitment' ? 'Created Agent commitment' : 'Created Agent task';
     } elseif ($action === 'personal_knowledge') {
         if (empty($operations['personal_knowledge']['available'])) throw new RuntimeException('Personal Knowledge is unavailable for this account.');
+        $knowledgeText=$text."\n\n".$sourceLine;
         $knowledgeId=personal_knowledge_store(
             $user,'transcription-intelligence-item:'.$itemId,
-            mb_strimwidth($appTitle.' · '.$sourceLabel,0,190,'…'),$text,
-            'Reviewed transcription intelligence · '.$appTitle.' · '.($evidence !== '' ? $evidence : 'source transcript')
+            mb_strimwidth($appTitle.' · '.$sourceLabel,0,190,'…'),$knowledgeText,
+            'Reviewed transcription intelligence · '.$appTitle.' · Source: Artist Listening'
         );
-        $receipt['record_id']=$knowledgeId;$receipt['label']='Saved to Personal Knowledge';
+        $receipt['record_id']=$knowledgeId;$receipt['label']='Saved to Personal Knowledge';$receipt['target_url']=url('/knowledge.php?source=artist-listening#knowledge-'.$knowledgeId);
     } elseif ($action === 'project_note') {
         $project=$operations['project_note'] ?? [];
         if (empty($project['available']) || $targetId < 1) throw new RuntimeException('No writable project track is linked to this transcript.');
         $note='[Reviewed transcription intelligence · '.$appTitle."]\n".$text;
-        if ($evidence !== '') $note .= "\nEvidence: ".$evidence;
+        if ($evidence !== '') $note .= "\nEvidence refs: ".$evidence;
+        $note .= "\n".$sourceLine;
         $stmt=$pdo->prepare('INSERT INTO track_notes (track_id,user_id,note) VALUES (?,?,?)');
         $stmt->execute([$targetId,(int)$user['id'],mb_strimwidth($note,0,65000,'…')]);
         $noteId=(int)$pdo->lastInsertId();
@@ -305,18 +346,20 @@ function transcription_intelligence_execute_action_v303(
         $targets=(array)($operations['crm']['targets'] ?? []);
         $target=transcription_intelligence_validate_crm_target_v303($targets,$targetId);
         $leadId=(int)$target['lead_id'];
+        $crmDetails=[
+            'source'=>'transcription_intelligence','source_label'=>'Artist Listening','source_url'=>(string)$origin['source_url'],'source_session_id'=>(int)$session['id'],
+            'plugin_id'=>$appId,'section_key'=>$sectionKey,'item_id'=>$itemId,'evidence_refs'=>(array)($item['evidence_refs'] ?? []),'origin'=>$origin,'review_state'=>'accepted',
+        ];
         if ($action === 'crm_note') {
-            $activityId=crm_v180_activity($pdo,$leadId,'transcript_intelligence',$text,(int)$user['id'],[
-                'source_session_id'=>(int)$session['id'],'plugin_id'=>$appId,'section_key'=>$sectionKey,
-                'item_id'=>$itemId,'evidence_refs'=>(array)($item['evidence_refs'] ?? []),'review_state'=>'accepted',
-            ]);
+            $activityId=crm_v180_activity($pdo,$leadId,'transcript_intelligence',$text,(int)$user['id'],$crmDetails);
             if ($activityId < 1) throw new RuntimeException('Could not add the CRM note.');
             $receipt['record_id']=$activityId;$receipt['label']='Added CRM note';
         } else {
             $taskId=crm_v180_create_task($pdo,$leadId,[
-                'title'=>$text,'task_type'=>'follow_up','assigned_user_id'=>0,'due_at'=>'',
+                'title'=>'[Artist Listening] '.$text,'task_type'=>'follow_up','assigned_user_id'=>0,'due_at'=>'',
             ],(int)$user['id']);
             if ($taskId < 1) throw new RuntimeException('Could not create the CRM follow-up task.');
+            crm_v180_activity($pdo,$leadId,'transcript_intelligence_task_source','Source: Artist Listening · '.$text,(int)$user['id'],$crmDetails+['task_id'=>$taskId]);
             $receipt['record_id']=$taskId;$receipt['label']='Created CRM task';
         }
         $receipt['target_id']=$leadId;$receipt['target_url']=url('/admin/crm-lead.php?id='.$leadId);
