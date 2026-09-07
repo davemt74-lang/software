@@ -48,7 +48,10 @@ function agent_chat_v101_append_ecosystem_message(array $recipient, string $mess
     $stmt->execute([$conversationId,'assistant',$message,is_string($contextJson)?$contextJson:'{}']);
     $messageId=(int)$pdo->lastInsertId();
     $pdo->prepare('UPDATE chat_conversations SET updated_at=NOW() WHERE id=? AND user_id=?')->execute([$conversationId,$userId]);
-    if (function_exists('agent_brain_archive_and_parse')) {
+    // Brain-generated cognitive summaries are already durable Agent Brain state;
+    // do not parse the Brain's own briefing back into itself and create a
+    // feedback loop. All other ecosystem messages keep canonical archiving.
+    if (empty($context['skip_brain_archive']) && function_exists('agent_brain_archive_and_parse')) {
         agent_brain_archive_and_parse($recipient,$conversationId,$messageId,'assistant',$message,'text');
     }
     return $conversationId;
@@ -200,7 +203,11 @@ function agent_chat_v101_intro(array $user): array
     }
 
     $missedCount=count($updates);
-    $opportunities=function_exists('agent_ecosystem_v118_scan')?agent_ecosystem_v118_scan($user,$since):[];
+    // Main Feed consumes the Agent Brain's already-correlated priority state.
+    // The legacy ecosystem scan remains only as a cold-start fallback until the
+    // first cognitive cycle has completed.
+    $brainPriorities=function_exists('agent_cognitive_loop_v310_priority_items')?agent_cognitive_loop_v310_priority_items($user,8):[];
+    $opportunities=$brainPriorities?:((function_exists('agent_ecosystem_v118_scan'))?agent_ecosystem_v118_scan($user,$since):[]);
     $opportunityCount=count($opportunities);
     $meaningfulCount=$missedCount+$opportunityCount;
 
@@ -272,14 +279,21 @@ function agent_chat_v101_intro(array $user): array
         ];
     },$combined);
     $itemToken=json_encode($tokenItems,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
+    $voiceSummary=$opening.$summary;
+    if($brainPriorities&&isset($brainPriorities[0])){
+        $top=$brainPriorities[0];$voiceSummary.=' Your top priority is '.(string)($top['title']??'the highest-ranked Agent Brain item').'.';
+        $body=trim((string)($top['body']??''));if($body!=='')$voiceSummary.=' '.mb_strimwidth($body,0,260,'…');
+    }
 
     return [
         'first_name'=>$first,
         'greeting'=>$opening.$summary,
+        'voice_summary'=>$voiceSummary,
         'updates'=>$combined,
         'since'=>$since,
         'missed_count'=>$missedCount,
         'opportunity_count'=>$opportunityCount,
+        'brain_priorities'=>count($brainPriorities),
         'relationship_depth'=>$depth,
         'introduced'=>$introduce,
         'token'=>hash('sha256',$userId.'|'.(string)($user['last_login_at']??'').'|'.$since.'|'.(string)$itemToken),
