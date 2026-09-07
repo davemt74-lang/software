@@ -181,7 +181,7 @@ function contacts_agent_messaging_label(string $status): string
 
             <?php foreach ($agentContacts as $contact):
               $contactId=(int)$contact['id'];$risk=(int)$contact['risk_score'];$opp=(int)$contact['opportunity_score'];$value=(int)$contact['value_score'];$cost=(int)$contact['cost_score'];$trust=(int)$contact['trust_score'];$engagement=(int)$contact['engagement_score'];
-              $name=trim((string)$contact['display_name'])?:'Automated agent';$operator=trim((string)$contact['operator_name']);$class=(string)$contact['visitor_class'];$stage=(string)$contact['relationship_status'];$intent=trim((string)$contact['inferred_intent'];$recommendation=trim((string)$contact['recommendation'];
+              $name=trim((string)$contact['display_name'])?:'Automated agent';$operator=trim((string)$contact['operator_name']);$class=(string)$contact['visitor_class'];$stage=(string)$contact['relationship_status'];$intent=trim((string)$contact['inferred_intent']);$recommendation=trim((string)$contact['recommendation']);
               $searchText=strtolower(trim($name.' '.$operator.' '.$class.' '.$stage.' '.$intent.' agent automated '.(string)$contact['verification_status']));
               $messagingStatus=(string)$contact['messaging_access_status'];$requestId=(int)$contact['messaging_request_id'];
             ?>
