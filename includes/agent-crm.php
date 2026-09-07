@@ -87,6 +87,44 @@ function vp3_agent_crm_watch_notify(PDO $pdo,array $property,array $contact,arra
     return true;
 }
 
+/**
+ * Materialize one notification per watched Agent Radar session. This is called
+ * from user-facing polling/read surfaces rather than request collectors, so a
+ * watchlist can never add latency or failure risk to the tracked website.
+ */
+function vp3_agent_crm_watchlist_refresh(PDO $pdo,array $user,int $lookbackDays=7): int
+{
+    $owner=(int)($user['id']??0);$lookbackDays=max(1,min(30,$lookbackDays));
+    if($owner<1||!vp3_radar_schema_ready($pdo)||!table_exists('notifications'))return 0;
+    $stmt=$pdo->prepare('SELECT id,display_name,operator_name,risk_score,metadata_json FROM vp3_agent_contacts WHERE owner_user_id=? ORDER BY last_seen_at DESC,id DESC LIMIT 250');
+    $stmt->execute([$owner]);$watched=[];
+    foreach($stmt->fetchAll()?:[] as $contact){
+        if((int)($contact['risk_score']??0)>=70)continue;
+        if(vp3_agent_crm_watch_from_metadata(vp3_agent_crm_metadata((string)($contact['metadata_json']??''))))$watched[(int)$contact['id']]=$contact;
+    }
+    if(!$watched)return 0;
+    $ids=array_keys($watched);$placeholders=implode(',',array_fill(0,count($ids),'?'));
+    $sessions=$pdo->prepare("SELECT s.id,s.agent_contact_id,s.entry_path,s.started_at,s.last_seen_at,p.label AS property_label,p.domain AS property_domain
+      FROM vp3_radar_sessions s INNER JOIN vp3_radar_properties p ON p.id=s.property_id
+      WHERE s.owner_user_id=? AND s.agent_contact_id IN ({$placeholders}) AND s.started_at>=DATE_SUB(NOW(),INTERVAL {$lookbackDays} DAY)
+      ORDER BY s.started_at DESC,s.id DESC");
+    $sessions->execute(array_merge([$owner],$ids));$latest=[];
+    foreach($sessions->fetchAll()?:[] as $session){$contactId=(int)$session['agent_contact_id'];if(!isset($latest[$contactId]))$latest[$contactId]=$session;}
+    if(!$latest)return 0;
+    $check=$pdo->prepare("SELECT id FROM notifications WHERE user_id=? AND type='radar_agent_watchlist' AND source_type='radar_session' AND source_id=? LIMIT 1");
+    $created=0;
+    foreach($latest as $contactId=>$session){
+        $check->execute([$owner,(int)$session['id']]);if($check->fetchColumn())continue;
+        $contact=$watched[$contactId];$name=(trim((string)$contact['operator_name'])!==''?trim((string)$contact['operator_name']).' · ':'').trim((string)$contact['display_name']);
+        $site=trim((string)$session['property_label'])?:trim((string)$session['property_domain']);if($site==='')$site='your VP3 property';
+        $path=trim((string)$session['entry_path']);
+        $body=$name.' started a new session on '.$site.($path!==''?' Entry path: '.$path.'.':'').' Risk '.(int)$contact['risk_score'].'/100.';
+        create_notification($owner,'radar_agent_watchlist','Agent watchlist · '.trim((string)$contact['display_name']),$body,url('/contacts.php#agent-contact-'.$contactId),'radar_session',(int)$session['id']);
+        $created++;
+    }
+    return $created;
+}
+
 function vp3_agent_crm_contacts(PDO $pdo,array $user,int $limit=250): array
 {
     $owner=(int)($user['id']??0);
