@@ -5,6 +5,8 @@ $mainSidebarUser = $mainSidebarUser ?? $workspaceSidebarUser ?? current_user();
 $mainSidebarActive = $mainSidebarActive ?? $workspaceSidebarActive ?? '';
 $mainSidebarTokenCommerceReady = function_exists('token_pack_schema_ready') && token_pack_schema_ready();
 $mainSidebarTeamState = function_exists('team_subscription_state') ? team_subscription_state($mainSidebarUser) : ['authorized'=>false];
+$mainSidebarUseNewChatButton = !empty($mainSidebarUseNewChatButton);
+$mainSidebarHistoryRows = isset($mainSidebarHistoryRows) && is_array($mainSidebarHistoryRows) ? $mainSidebarHistoryRows : [];
 ?>
 <link rel="stylesheet" data-workspace-header-ui href="<?= e(url('/chat-header-ui.css?v=white-tech-20260904')) ?>">
 <link rel="stylesheet" href="<?= e(url('/site-branding.css?v=1')) ?>">
@@ -19,9 +21,15 @@ $mainSidebarTeamState = function_exists('team_subscription_state') ? team_subscr
       <div class="chat-history-label">Explore</div>
       <nav class="chat-sidebar-nav">
         <?php if (has_permission('chat.access', $mainSidebarUser)): ?>
-          <a class="chat-sidebar-nav-link <?= $mainSidebarActive === 'chat' ? 'active' : '' ?>" href="<?= e(url('/chat.php')) ?>">
-            <span>＋</span><strong>New Chat</strong>
-          </a>
+          <?php if ($mainSidebarUseNewChatButton): ?>
+            <button class="chat-sidebar-nav-link <?= $mainSidebarActive === 'chat' ? 'active' : '' ?>" id="newChatButton" type="button" data-chat-view-target="chat">
+              <span>＋</span><strong>New Chat</strong>
+            </button>
+          <?php else: ?>
+            <a class="chat-sidebar-nav-link <?= $mainSidebarActive === 'chat' ? 'active' : '' ?>" href="<?= e(url('/chat.php')) ?>">
+              <span>＋</span><strong>New Chat</strong>
+            </a>
+          <?php endif; ?>
         <?php endif; ?>
 
         <?php if (personal_capability_has_v242('profile_agent.access', $mainSidebarUser)): ?>
@@ -55,6 +63,23 @@ $mainSidebarTeamState = function_exists('team_subscription_state') ? team_subscr
         <?php endif; ?>
       </nav>
     </section>
+
+    <?php if ($mainSidebarHistoryRows): ?>
+      <section class="chat-sidebar-history-section" aria-label="Recent chats">
+        <div class="chat-history-label">Chats</div>
+        <nav class="chat-history" id="chatHistory">
+          <?php foreach ($mainSidebarHistoryRows as $conversation): ?>
+            <div class="chat-history-row" data-conversation-row="<?= (int)($conversation['id'] ?? 0) ?>">
+              <button class="chat-history-item" type="button" data-conversation-id="<?= (int)($conversation['id'] ?? 0) ?>">
+                <span><?= e((string)($conversation['title'] ?? 'Untitled chat')) ?></span>
+                <small><?= !empty($conversation['updated_at']) ? e(date('M j', strtotime((string)$conversation['updated_at']))) : '' ?></small>
+              </button>
+              <button class="chat-history-delete" type="button" data-delete-conversation="<?= (int)($conversation['id'] ?? 0) ?>" aria-label="Delete <?= e((string)($conversation['title'] ?? 'chat')) ?>" title="Delete chat">×</button>
+            </div>
+          <?php endforeach; ?>
+        </nav>
+      </section>
+    <?php endif; ?>
 
     <?php if (has_permission('account.access', $mainSidebarUser)): ?>
       <section class="chat-sidebar-nav-section" aria-label="Account and plan">
