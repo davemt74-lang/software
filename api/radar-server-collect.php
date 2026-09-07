@@ -9,7 +9,7 @@ header('X-Content-Type-Options: nosniff');
 function vp3_radar_server_collect_json(int $status,array $payload=[]): never
 {
     http_response_code($status);
-    if($status!==204)echo json_encode($payload,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
+    echo json_encode($payload,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
     exit;
 }
 
@@ -25,5 +25,11 @@ $raw=(string)file_get_contents('php://input');
 if(strlen($raw)>16384)vp3_radar_server_collect_json(413,['ok'=>false,'error'=>'Payload too large.']);
 $payload=json_decode($raw,true);
 if(!is_array($payload))vp3_radar_server_collect_json(400,['ok'=>false,'error'=>'Invalid JSON payload.']);
-try{vp3_radar_server_collect($pdo,$property,$payload);}catch(Throwable $e){error_log('Server Agent Radar collect failed: '.$e->getMessage());}
-vp3_radar_server_collect_json(204);
+try{
+    $decision=vp3_radar_gateway_server_collect($pdo,$property,$payload);
+    vp3_radar_server_collect_json(200,['ok'=>true,'decision'=>$decision]);
+}catch(Throwable $e){
+    error_log('Server Agent Radar collect failed: '.$e->getMessage());
+    // The remote integration must fail open if VP3 cannot make a decision.
+    vp3_radar_server_collect_json(200,['ok'=>true,'decision'=>['action'=>'monitor','allowed'=>true,'status_code'=>200,'reason'=>'collector_error','recorded'=>false]]);
+}
