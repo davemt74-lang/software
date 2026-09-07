@@ -9,6 +9,7 @@ declare(strict_types=1);
  * - conversion identity comes from vp3_agent_referral_events;
  * - opportunity identity comes from the owner notification -> Radar event;
  * - both sides must resolve to the same agent_contact_id;
+ * - only the newest pre-conversion opportunity is eligible for attribution;
  * - the exact notification-hash recommendation must have been surfaced;
  * - an already-finalized exposure cycle is never counted again.
  *
@@ -131,62 +132,70 @@ function agent_radar_outcome_v315_close_conversion(PDO $pdo,array $user,array $c
     $candidates=agent_radar_outcome_v315_opportunity_candidates($pdo,$userId,$agentContactId,$conversionAt);
     if(!$candidates)return ['recorded'=>false,'reason'=>'no-agent-opportunity'];
 
-    foreach($candidates as $candidate){
-        $notificationId=max(0,(int)($candidate['notification_id']??0));
-        $hash=agent_radar_outcome_v315_notification_hash($notificationId);
-        if($hash==='')continue;
-        $cycle=agent_radar_outcome_v315_cycle_state($userId,$hash,$conversionAt);
-        if(empty($cycle['eligible']))continue;
+    // The newest opportunity before this conversion owns attribution. Do not
+    // skip an unsurfaced/already-final latest opportunity and backfill success
+    // onto an older recommendation merely because it happens to be eligible.
+    $candidate=$candidates[0];
+    $notificationId=max(0,(int)($candidate['notification_id']??0));
+    $hash=agent_radar_outcome_v315_notification_hash($notificationId);
+    if($hash==='')return ['recorded'=>false,'reason'=>'latest-opportunity-identity-invalid'];
+    $cycle=agent_radar_outcome_v315_cycle_state($userId,$hash,$conversionAt);
+    if(empty($cycle['eligible'])){
+        return [
+            'recorded'=>false,
+            'reason'=>'latest-opportunity-'.(string)($cycle['reason']??'not-eligible'),
+            'cycle'=>$cycle,
+            'agent_contact_id'=>$agentContactId,
+            'opportunity_notification_id'=>$notificationId,
+        ];
+    }
 
-        $opportunityDetails=json_decode((string)($candidate['opportunity_details_json']??''),true);
-        if(!is_array($opportunityDetails))$opportunityDetails=[];
-        $context=[
-            'automatic'=>true,
-            'trigger'=>'first_party_agent_conversion',
-            'attribution'=>'first_party_token',
+    $opportunityDetails=json_decode((string)($candidate['opportunity_details_json']??''),true);
+    if(!is_array($opportunityDetails))$opportunityDetails=[];
+    $context=[
+        'automatic'=>true,
+        'trigger'=>'first_party_agent_conversion',
+        'attribution'=>'first_party_token',
+        'agent_contact_id'=>$agentContactId,
+        'referral_id'=>$referralId,
+        'conversion_referral_event_id'=>$referralEventId,
+        'conversion_event_name'=>$eventName,
+        'conversion_value'=>is_numeric($conversion['value']??null)?(float)$conversion['value']:null,
+        'conversion_at'=>$conversionAt,
+        'opportunity_notification_id'=>$notificationId,
+        'opportunity_radar_event_id'=>max(0,(int)($candidate['opportunity_radar_event_id']??0)),
+        'opportunity_at'=>(string)($candidate['opportunity_at']??''),
+        'opportunity_score'=>max(0,(int)($opportunityDetails['opportunity_score']??0)),
+        'exposure_at'=>(string)($cycle['exposure_at']??''),
+        'source_label'=>'Agent Radar',
+        'source_url'=>url('/contacts.php#agent-contact-'.$agentContactId),
+        'closure_build'=>VP3_AGENT_RADAR_CONVERSION_OUTCOME_V315,
+    ];
+    $result=agent_action_v124_record_outcome($user,$hash,'successful','agent_radar_conversion_auto',[
+        'source'=>'radar_agent_opportunity',
+        'outcome'=>'successful',
+        'context'=>$context,
+    ]);
+    $result['cycle']=$cycle;
+    $result['agent_contact_id']=$agentContactId;
+    $result['referral_id']=$referralId;
+    $result['conversion_referral_event_id']=$referralEventId;
+    $result['opportunity_notification_id']=$notificationId;
+    $result['automatic']=true;
+    $result['closure_build']=VP3_AGENT_RADAR_CONVERSION_OUTCOME_V315;
+
+    if(!empty($result['recorded'])&&function_exists('agent_runtime_v125_trace')){
+        agent_runtime_v125_trace('brain.radar_conversion_outcome_auto_closed',[
+            'user_id'=>$userId,
             'agent_contact_id'=>$agentContactId,
             'referral_id'=>$referralId,
             'conversion_referral_event_id'=>$referralEventId,
-            'conversion_event_name'=>$eventName,
-            'conversion_value'=>is_numeric($conversion['value']??null)?(float)$conversion['value']:null,
-            'conversion_at'=>$conversionAt,
             'opportunity_notification_id'=>$notificationId,
-            'opportunity_radar_event_id'=>max(0,(int)($candidate['opportunity_radar_event_id']??0)),
-            'opportunity_at'=>(string)($candidate['opportunity_at']??''),
-            'opportunity_score'=>max(0,(int)($opportunityDetails['opportunity_score']??0)),
-            'exposure_at'=>(string)($cycle['exposure_at']??''),
-            'source_label'=>'Agent Radar',
-            'source_url'=>url('/contacts.php#agent-contact-'.$agentContactId),
-            'closure_build'=>VP3_AGENT_RADAR_CONVERSION_OUTCOME_V315,
-        ];
-        $result=agent_action_v124_record_outcome($user,$hash,'successful','agent_radar_conversion_auto',[
-            'source'=>'radar_agent_opportunity',
+            'event_name'=>$eventName,
             'outcome'=>'successful',
-            'context'=>$context,
         ]);
-        $result['cycle']=$cycle;
-        $result['agent_contact_id']=$agentContactId;
-        $result['referral_id']=$referralId;
-        $result['conversion_referral_event_id']=$referralEventId;
-        $result['opportunity_notification_id']=$notificationId;
-        $result['automatic']=true;
-        $result['closure_build']=VP3_AGENT_RADAR_CONVERSION_OUTCOME_V315;
-
-        if(!empty($result['recorded'])&&function_exists('agent_runtime_v125_trace')){
-            agent_runtime_v125_trace('brain.radar_conversion_outcome_auto_closed',[
-                'user_id'=>$userId,
-                'agent_contact_id'=>$agentContactId,
-                'referral_id'=>$referralId,
-                'conversion_referral_event_id'=>$referralEventId,
-                'opportunity_notification_id'=>$notificationId,
-                'event_name'=>$eventName,
-                'outcome'=>'successful',
-            ]);
-        }
-        return $result;
     }
-
-    return ['recorded'=>false,'reason'=>'no-open-surfaced-opportunity'];
+    return $result;
 }
 
 function agent_radar_outcome_v315_recent_conversions(PDO $pdo,int $userId,int $limit=100): array
