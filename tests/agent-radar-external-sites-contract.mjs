@@ -19,14 +19,18 @@ assert.ok(foundation.includes("const VP3_RADAR_SITE_CAPABILITY = 'analytics.site
 assert.ok(external.includes("property_type='external'"), 'external websites must use canonical Radar properties');
 assert.ok(external.includes('bin2hex(random_bytes(20))'), 'external sites must receive unguessable 40-hex public keys');
 assert.ok(external.includes('VP3_RADAR_EXTERNAL_SESSION_SECONDS = 1800'), 'external agent sessions must use coarse 30-minute grouping');
+assert.ok(external.includes('VP3_RADAR_EXTERNAL_SESSION_EVENT_CAP = 120'), 'public browser collection must have a bounded per-agent session cap');
 assert.ok(external.includes("hash('sha256',$propertyId.'|'.$contactId.'|'.$bucket)"), 'external sessions must aggregate by property/contact/time without fingerprinting');
+assert.ok(external.includes('vp3_radar_external_session_at_cap'), 'collector must stop writes after the bounded session cap');
 assert.ok(external.includes('vp3_radar_native_identity($pdo'), 'external traffic must reuse the same Agent CRM identities as the native VP3 profile');
 assert.ok(external.includes('vp3_radar_risk_score($signals)'), 'external traffic must use canonical deterministic risk scoring');
 assert.ok(external.includes('vp3_radar_sync_agent_memory'), 'meaningful external activity must flow into canonical Agent Brain memory');
 assert.ok(external.includes("'radar_external_security_action'"), 'high-risk external activity must use Main Feed attention');
 assert.ok(external.includes("'radar_external_visit_needs_attention'"), 'meaningful external AI/search visits must use Main Feed attention');
 assert.ok(external.includes("'agent_activity_radar_external_visit'"), 'routine external crawler activity must use Agent Brain operational activity');
-assert.ok(external.includes("if(!vp3_radar_looks_automated($userAgent))return false;"), 'normal human browsers must be discarded before Radar persistence');
+assert.ok(external.includes('$registry=vp3_radar_match_agent($userAgent,$pdo)'), 'public browser collector must accept maintained Radar signatures only');
+assert.ok(external.includes('if(!$registry)return false;'), 'normal browsers and arbitrary spoofed unknown agents must be discarded before persistence');
+assert.ok(external.includes("'collector'=>'browser'"), 'external events must identify the browser collector source');
 assert.ok(!external.includes('REMOTE_ADDR'), 'external Radar runtime must not use raw IP addresses');
 
 assert.ok(sitesApi.includes("has_permission('account.access',$user)"), 'connected-site management must require account access');
@@ -60,6 +64,7 @@ assert.ok(sitesUi.includes('MutationObserver'), 'Connected Sites shell must surv
 assert.ok(sitesUi.includes("action:'set_active'"), 'Connected Sites UI must support pause/reactivate');
 assert.ok(sitesUi.includes('navigator.clipboard.writeText'), 'Connected Sites UI must offer copyable install snippet');
 assert.ok(sitesUi.includes('uses no cookies, local storage, account identity or fingerprinting'), 'Connected Sites UI must disclose privacy behavior');
+assert.ok(sitesUi.includes('non-JavaScript crawlers require the server-side Radar layer'), 'UI must not overstate browser collector coverage');
 assert.ok(sitesCss.includes('@media(max-width:620px)'), 'Connected Sites UI must have small-screen behavior');
 
 console.log('AGENT_RADAR_EXTERNAL_SITES_CONTRACT=PASS');
