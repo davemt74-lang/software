@@ -9,8 +9,11 @@ const api = readFileSync('api/artist-listening-intelligence-v300.php', 'utf8');
 const registry = readFileSync('includes/transcription-app-registry.php', 'utf8');
 const legacyApi = readFileSync('api/artist-listening-intelligence-v254.php', 'utf8');
 
-assert.ok(page.includes('/artist-listening-ai.js?'), 'Artist Listening must load the canonical AI controller');
-assert.equal(page.split('/artist-listening-ai.js?').length - 1, 1, 'AI Summary controller must load exactly once');
+const asset = 'artist-listening-ai.js?v=transcription-app-registry-v300-20260906';
+assert.ok(page.includes(asset), 'Artist Listening must load the v300 registry controller cache identity');
+assert.equal(page.split(asset).length - 1, 1, 'AI Summary controller must load exactly once');
+assert.ok(!page.includes('artist-listening-ai.js?v=c18c3dc8'), 'old AI controller cache identity must stay retired');
+assert.ok(!page.includes('&b=1d511bb5'), 'old secondary AI cache identity must stay retired');
 assert.ok(!page.includes('artist-listening-intelligence-v236.js'), 'legacy v236 browser controller must stay removed');
 assert.ok(!page.includes('artist-listening-intelligence-v254.js'), 'legacy v254 browser controller must stay removed');
 assert.ok(!existsSync('artist-listening-intelligence-v236.js'), 'legacy v236 browser file must stay deleted');
@@ -39,6 +42,9 @@ assert.ok(client.includes('localStorage.setItem(appsKey'), 'selected apps must p
 assert.ok(client.includes('apps:state.selectedApps'), 'Analyze must send only selected apps');
 assert.ok(client.includes('appStatus'), 'browser must track independent app status');
 assert.ok(client.includes('Needs refresh'), 'stale app results must be visible to the user');
+assert.ok(client.includes('External Research'), 'Basic Analysis must preserve visible external research');
+assert.ok(page.includes('.sf-listening-ai-structured-list{display:grid'), 'registry reports must have canonical structured-list styling');
+assert.ok(page.includes('.sf-listening-ai-item-meta{display:flex'), 'structured report metadata must remain readable');
 
 /* Canonical registry contains current apps plus high-value analysis additions. */
 for (const id of ['basic','stats','actions','responses','decisions','moments','studio','knowledge','topics','entities','risks','timeline']) {
