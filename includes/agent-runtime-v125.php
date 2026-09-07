@@ -127,6 +127,7 @@ function agent_background_v125_handle(array $job): bool
     $kind=(string)($job['kind']??'');$payload=is_array($job['payload']??null)?$job['payload']:[];
     if($kind==='memory-reconcile'&&function_exists('agent_memory_v123_reconcile_user')){$user=['id'=>(int)($payload['user_id']??0)];if($user['id']>0){agent_memory_v123_reconcile_user($user);return true;}}
     if($kind==='conversation-summary'&&function_exists('agent_brain_v122_refresh_conversation')){$user=['id'=>(int)($payload['user_id']??0)];$cid=(int)($payload['conversation_id']??0);if($user['id']>0&&$cid>0){agent_brain_v122_refresh_conversation($user,$cid);return true;}}
+    if($kind==='cognitive-loop'&&function_exists('agent_cognitive_loop_v310_run')&&function_exists('agent_cognitive_loop_v310_user')){$uid=(int)($payload['user_id']??0);$user=$uid>0?agent_cognitive_loop_v310_user($uid):null;if($user){agent_cognitive_loop_v310_run($user);return true;}}
     return false;
 }
 function agent_background_v125_recover_orphans(string $dir): void

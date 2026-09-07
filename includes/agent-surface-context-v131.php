@@ -131,6 +131,29 @@ function agent_surface_v131_enrich(array $user,string $surface,array $raw): arra
 {
     $raw['surface']=$surface;
     $context=agent_surface_v131_sanitize($raw);
+
+    // Agent Brain owns the current priority state. Every surface, including
+    // Chat and Voice, consumes that state first instead of independently
+    // re-running its own prioritization logic.
+    if(!$context['proactive']&&function_exists('agent_cognitive_loop_v310_state')){
+        try{
+            $brain=agent_cognitive_loop_v310_state($user);
+            if(function_exists('agent_cognitive_loop_v310_state_fresh')&&agent_cognitive_loop_v310_state_fresh($brain)){
+                foreach(array_slice((array)($brain['priorities']??[]),0,6) as $row){
+                    if(!is_array($row))continue;$title=agent_surface_v131_text($row['title']??'',180);if($title==='')continue;
+                    $context['proactive'][]=[
+                        'hash'=>agent_surface_v131_text('brain:'.($row['key']??sha1($title)),120),
+                        'title'=>$title,'prompt'=>agent_surface_v131_text($row['prompt']??'',600),
+                        'reason'=>agent_surface_v131_text($row['reason']??'',360),'source'=>'agent_brain_cognitive',
+                        'url'=>agent_surface_v131_text($row['url']??'',500),'score'=>max(0.0,min(1.0,(float)($row['score']??0))),
+                    ];
+                }
+            }
+        }catch(Throwable $e){}
+    }
+
+    // Cold-start fallback only. Once the cognitive state exists, the surface
+    // should consume the Brain rather than becoming a second cognitive loop.
     if(!$context['proactive']&&function_exists('agent_proactive_v123_suggestions')){
         try{
             $result=agent_proactive_v123_suggestions($user,$context['surface'],$context);
