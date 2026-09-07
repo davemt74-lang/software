@@ -8,6 +8,7 @@ const baseRegistry = read('includes/transcription-app-registry.php');
 const wave2 = read('includes/transcription-apps-wave2.php');
 const workflow = read('includes/transcription-workflow-config.php');
 const outputs = read('includes/transcription-intelligence-outputs.php');
+const deep = read('includes/transcription-deeper-intelligence.php');
 const save = read('includes/transcription-apps-wave2-save.php');
 const items = read('includes/transcription-intelligence-items.php');
 
@@ -29,10 +30,11 @@ for (const [id,title] of plugins) {
 assert.match(wave2,/function transcription_app_registry_v301\(\)/,'wave two must merge with the stable v300 registry');
 assert.match(wave2,/array_replace\(transcription_app_registry_v300\(\), transcription_app_wave2_registry_v301\(\)\)/);
 assert.match(api,/transcription-apps-wave2\.php/,'the production intelligence endpoint must load wave two');
-assert.match(api,/transcription_app_registry_public_v306\(\)/,'the browser registry must receive wave-two plugins through the current v306 registry');
-assert.match(api,/transcription_app_analyze_v306\(/,'stable analysis must execute through the current v306 wrapper');
+assert.match(api,/transcription_app_registry_public_v307\(\)/,'the browser registry must receive wave-two plugins through the current v307 registry');
+assert.match(api,/transcription_app_analyze_v307\(/,'stable analysis must execute through the current v307 wrapper');
+assert.match(deep,/transcription_app_analyze_v306\(/,'v307 must delegate base analysis through v306');
 assert.match(outputs,/transcription_app_analyze_v304\(/,'v306 must delegate ordinary analysis plugins to the v304 workflow engine');
-assert.doesNotMatch(api,/\$result = transcription_app_analyze_v304\(/,'stable endpoint must not bypass v306 output semantics');
+assert.doesNotMatch(api,/\$result\s*=\s*transcription_app_analyze_v304\(/,'stable endpoint must not bypass v307/v306 output semantics');
 
 /* One enabled plugin = one tab; a tab renders only that plugin result. */
 assert.match(client,/state\.selectedApps\.map\(id => \{/,'each enabled plugin must receive an independent result tab');
@@ -45,9 +47,7 @@ assert.match(client,/appResultHtml\(app, activeResult\(\)\)/,'the active tab mus
 assert.doesNotMatch(client,/Object\.values\(modules\)|Object\.entries\(modules\)/,'the browser must not blend all plugin results into one master canvas');
 
 /* Plugin output contracts stay structured and evidence-aware. */
-for (const field of ['asked_by','answer','acceptance_criteria','dependency','source_type','validation_step','compared_to','matched_contacts','verification','source_numbers','stance']) {
-  assert.ok(wave2.includes(field), `wave-two contracts must include ${field}`);
-}
+for (const field of ['asked_by','answer','acceptance_criteria','dependency','source_type','validation_step','compared_to','matched_contacts','verification','source_numbers','stance']) assert.ok(wave2.includes(field), `wave-two contracts must include ${field}`);
 assert.match(wave2,/Only classify a question as answered when the transcript contains a responsive answer/);
 assert.match(wave2,/Never convert a suggestion into a requirement/);
 assert.match(wave2,/do not invent deadlines or owners/);
@@ -65,7 +65,7 @@ for (const id of ['changes','crm','research_brief']) {
 assert.match(workflow,/selected_plugins_manual_only/);
 assert.match(workflow,/array_filter\(\$requested,static fn\(string \$id\):bool=>!empty\(\$registry\[\$id\]\['live'\]\)\)/,'v304 must apply registry live/manual eligibility');
 
-/* Large selections still use the canonical wave-two batch size, through v304 under v306. */
+/* Large selections still use the canonical wave-two batch size, through v304 under v306/v307. */
 assert.match(wave2,/VP3_TRANSCRIPTION_APP_BATCH_SIZE_V301 = 4/);
 assert.match(workflow,/array_chunk\(\$aiApps,VP3_TRANSCRIPTION_APP_BATCH_SIZE_V301\)/);
 assert.match(workflow,/\$pending\[\$id\]/,'AI results must stage independently before persistence');
@@ -73,13 +73,13 @@ assert.match(workflow,/\$pluginErrors\[\$id\]/,'failed plugin results must be is
 assert.match(workflow,/foreach \(\$pending as \$id=>\$module\) \$modules\[\$id\]=\$module/,'successful batches must persist independently');
 assert.doesNotMatch(workflow,/array_replace\(\$report/,'v304 must not reintroduce destructive master-report replacement');
 
-/* Comparison uses explicit related-session context only. */
+/* Original comparison context remains explicit; v307 adds an explicit target resolver above it. */
 assert.match(wave2,/s\.project_track_id=\?/);
 assert.match(wave2,/s\.conversation_id=\?/);
 assert.match(wave2,/same_project/);
 assert.match(wave2,/same_conversation/);
 assert.match(wave2,/RELATED PRIOR TRANSCRIPTS/);
-assert.match(wave2,/related_context_changed/,'comparison freshness must invalidate when its prior context changes');
+assert.match(wave2,/related_context_changed/,'original comparison freshness must invalidate when its prior context changes');
 
 /* CRM Intelligence is read-only and requires explicit matching. */
 assert.match(wave2,/crm_v180_can_manage\(\$user\)/);
@@ -98,20 +98,19 @@ assert.match(wave2,/research_age/);
 assert.match(workflow,/Turn Web Research ON and run Analyze/,'v304 Research Brief must explain when public research is disabled');
 assert.match(workflow,/\$researchOn=!empty\(\$workflow\['web_research'\]\)/,'only Web Research may trigger public research');
 
-/* Existing v300/v301 registries remain intact while v304 owns base execution and v306 adds derived outputs. */
-for (const id of ['basic','stats','actions','responses','decisions','moments','studio','knowledge','topics','entities','risks','timeline']) {
-  assert.ok(baseRegistry.includes(`'${id}' => [`), `${id} v300 plugin must remain intact`);
-}
+/* Existing v300/v301 registries remain intact while v304 owns base execution, v306 outputs, and v307 deepens them. */
+for (const id of ['basic','stats','actions','responses','decisions','moments','studio','knowledge','topics','entities','risks','timeline']) assert.ok(baseRegistry.includes(`'${id}' => [`), `${id} v300 plugin must remain intact`);
 assert.match(wave2,/transcription_app_modules_v301/);
 assert.match(workflow,/transcription_app_compat_projection_v300\(\$modules\)/,'v304 persistence must still generate legacy projections from independent modules');
 assert.match(workflow,/\$projection\['registry_version'\]=304/);
 assert.match(workflow,/\$projection\['workflow_version'\]=304/);
 assert.match(outputs,/array_replace\(transcription_app_registry_v301\(\),transcription_output_registry_v306\(\)\)/,'v306 output registry must preserve every v301 plugin');
+assert.match(deep,/\$registry=transcription_app_registry_v306\(\)/,'v307 must extend, not replace, v306/wave-two registry entries');
 
 /* Brain / Knowledge export still honors freshness plus human review and remains source-intelligence only. */
 assert.match(api,/transcription-apps-wave2-save\.php/,'v301 compatibility helpers must remain loadable');
-assert.match(api,/transcription_app_status_v306\(/,'save path must calculate current v306 status before exporting');
-assert.match(api,/transcription_intelligence_report_text_v302/,'v302 must compile review-aware current source intelligence');
+assert.match(api,/transcription_deeper_advanced_status_v307\(/,'save path must calculate current v307 status before exporting');
+assert.match(api,/transcription_deeper_report_text_v307/,'v307 must compile review-aware current source intelligence with deep memory filtering');
 assert.match(items,/empty\(\$appStatus\[\$id\]\['fresh'\]\)/,'v302 export must exclude stale plugin results');
 assert.match(items,/\(\$item\['review_state'\] \?\? ''\) === 'rejected'/,'v302 export must exclude rejected items');
 assert.match(items,/research_brief'\]\['fresh'\]/,'public research must only export with a current Research Brief');
