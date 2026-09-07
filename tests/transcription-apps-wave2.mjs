@@ -6,6 +6,7 @@ const client = read('artist-listening-ai.js');
 const api = read('api/artist-listening-intelligence-v300.php');
 const baseRegistry = read('includes/transcription-app-registry.php');
 const wave2 = read('includes/transcription-apps-wave2.php');
+const save = read('includes/transcription-apps-wave2-save.php');
 
 /* Eight wave-two plugins are first-class registry entries. */
 const plugins = [
@@ -97,6 +98,12 @@ for (const id of ['basic','stats','actions','responses','decisions','moments','s
 assert.match(wave2,/transcription_app_modules_v301/);
 assert.match(wave2,/transcription_app_compat_projection_v300\(\$modules\)/,'legacy projections must be generated from independent module results');
 assert.match(wave2,/\$projection\['registry_version'\] = 301/);
-assert.match(api,/transcription_app_report_text_v301/,'Brain/Knowledge saves must include current wave-two plugin output');
+
+/* Brain / Knowledge export must honor the same freshness shown in each plugin tab. */
+assert.match(api,/transcription-apps-wave2-save\.php/);
+assert.match(api,/transcription_app_status_v301\(/,'save path must calculate plugin freshness before exporting');
+assert.match(api,/transcription_app_report_text_current_v301/);
+assert.match(save,/empty\(\$appStatus\[\$id\]\['fresh'\]\)/,'stale plugin results must be excluded from exported intelligence');
+assert.match(save,/researchBriefCurrent/,'public research must only export with a current Research Brief');
 
 console.log('VP3 transcription apps wave two contract: PASS');
