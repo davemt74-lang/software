@@ -1,5 +1,6 @@
 <?php
 declare(strict_types=1);
+require_once __DIR__.'/vp3-analytics-chat.php';
 
 function vp3_radar_chat_intent(string $query): bool
 {
@@ -94,7 +95,7 @@ function vp3_radar_chat_action(PDO $pdo,array $user,string $query): ?array
     if(!$contact){
         return ['handled'=>true,'answer'=>'I could not match that name to one Agent Radar contact. Open Agent Radar or use the exact agent name, such as GPTBot or ChatGPT-User.','stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[['source'=>'agent-radar','title'=>'Agent Radar']]];
     }
-    $result=vp3_radar_gateway_set_contact_policy($pdo,$user,(int)$contact['id'],$action,$limit);
+    vp3_radar_gateway_set_contact_policy($pdo,$user,(int)$contact['id'],$action,$limit);
     $name=((string)$contact['operator_name']!==''?(string)$contact['operator_name'].' · ':'').(string)$contact['display_name'];
     $answer=match($action){
         'block'=>$name.' is now blocked across connected sites that have the server-side Agent Gateway installed.',
@@ -103,13 +104,16 @@ function vp3_radar_chat_action(PDO $pdo,array $user,string $query): ?array
         'limit'=>$name.' is now limited to '.$limit.' requests per 30 minutes on each connected site with the server-side Gateway installed.',
         default=>$name.' policy updated.',
     };
-    if(function_exists('agent_tool_log'))agent_tool_log($user,'agent_radar.gateway',$query,'success',['contact_id'=>(int)$contact['id'],'action'=>$action,'limit_30m'=>$action==='limit'?$limit:null],null);
     return ['handled'=>true,'answer'=>$answer,'stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[['source'=>'agent-radar:contact:'.(int)$contact['id'],'title'=>$name]]];
 }
 
 function vp3_radar_chat_tool(string $query,array $user,int $conversationId=0): array
 {
     $empty=['handled'=>false,'answer'=>'','stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[]];
+    if(function_exists('vp3_analytics_chat_tool')){
+        $analytics=vp3_analytics_chat_tool($query,$user,$conversationId);
+        if(!empty($analytics['handled']))return $analytics;
+    }
     if(!vp3_radar_chat_intent($query)||!personal_capability_has_v242('profile_agent.access',$user))return $empty;
     $pdo=db();if(!$pdo||!vp3_radar_schema_ready($pdo))return $empty;
     $action=vp3_radar_chat_action($pdo,$user,$query);
