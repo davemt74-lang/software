@@ -39,7 +39,7 @@ assert.ok(contacts.includes('data-contact-filter="watched"'), 'My Contacts must 
 assert.ok(contacts.includes('data-agent-watch'), 'each Agent CRM contact must expose Watch/Stop watching');
 assert.ok(contacts.includes("action:'set_contact_watch'"), 'CRM watch controls must use the canonical CSRF-protected policy API');
 assert.ok(contacts.includes('id="agent-contact-'), 'Agent CRM contacts must have stable notification anchors');
-assert.ok(contacts.includes('Watched contacts surface their next new session'), 'watch behavior must be explained in the contact UI');
+assert.ok(contacts.includes('Watched contacts surface their next new session') || contacts.includes('Watched Agent contacts surface their next new session'), 'watch behavior must be explained in the contact UI');
 
 assert.ok(mainFeed.includes('vp3_agent_crm_watchlist_refresh'), 'Main Feed polling must materialize watched-session alerts');
 assert.ok(mainFeed.includes("time()-60"), 'watchlist polling must be session-throttled');
