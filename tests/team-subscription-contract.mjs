@@ -36,7 +36,8 @@ assert.ok(team.includes("$workspaceSidebarActive='team'"), 'My Team must render 
 assert.ok(team.includes("$memberHeaderTitle='My Team'"), 'My Team must use the shared member header instead of the admin shell');
 assert.doesNotMatch(team, /admin\/_header\.php|admin-card|admin-grid/, 'front-end My Team must not render the admin Team interface');
 
-assert.match(legacyAdminTeam, /Location:.*team\.php/s, 'legacy admin Team route must redirect to front-end My Team');
+assert.ok(legacyAdminTeam.includes("$target=url('/team.php')"), 'legacy admin Team route must resolve the canonical front-end My Team target');
+assert.ok(legacyAdminTeam.includes("header('Location: '.$target,true,307)"), 'legacy admin Team route must issue a method-preserving redirect to the canonical target');
 assert.match(legacyAdminTeam, /307/, 'legacy Team redirect must preserve stale POST methods/bodies');
 
 assert.ok(sidebar.includes("team_subscription_state($mainSidebarUser)"), 'member sidebar must use canonical Team package state');
