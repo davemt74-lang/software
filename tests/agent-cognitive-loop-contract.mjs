@@ -42,7 +42,7 @@ assert.ok(loop.includes("'outcome_factor'=>"), 'priority evidence must expose le
 assert.ok(loop.includes("'score_delta'=>"), 'priority state must compare score changes to the prior cycle');
 assert.ok(loop.includes("'rank_delta'=>"), 'priority state must compare rank changes to the prior cycle');
 assert.ok(loop.includes("'movement'=>"), 'priority state must label new/up/down/same movement');
-assert.ok(loop.includes("'previous_score'=>$old?round((float)$old['score'],4):null"), 'new priorities must explicitly have no prior score');
+assert.ok(loop.includes("'previous_score']=$old?round((float)$old['score'],4):null"), 'new priorities must explicitly have no prior score');
 assert.ok(loop.includes("'score_delta']=$old?round($currentScore-(float)$old['score'],4):0.0"), 'new priorities must not manufacture an increase from zero');
 assert.ok(loop.includes("$movement==='new'"), 'explainability must special-case genuinely new priorities');
 assert.ok(loop.includes("'new this cycle'"), 'new priorities must be described as new rather than as an artificial percentage increase');
