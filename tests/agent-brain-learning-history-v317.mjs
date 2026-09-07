@@ -40,7 +40,7 @@ assert.match(activity, /chat-brain-learning-history-v317\.js\?v=317-20260907/, '
 assert.match(activity, /data-brain-learning-history-v317/, 'Learning enhancement must be single-owner loaded');
 assert.match(css, /chat-learning-metrics/, 'Learning History must have dedicated light UI styling');
 assert.match(css, /@media\(max-width:520px\)/, 'Learning History must remain usable on narrow screens');
-assert.match(bootstrap, /require_once __DIR__\.\/agent-learning-history-v317\.php/, 'bootstrap must load the canonical Learning History projection');
+assert.ok(bootstrap.includes("require_once __DIR__.'/agent-learning-history-v317.php';"), 'bootstrap must load the canonical Learning History projection');
 assert.match(nav, /'my_team','My Team',url\('\/admin\/team\.php'\)/, 'canonical member navigation must own My Team');
 
 console.log('AGENT_BRAIN_LEARNING_HISTORY_V317=PASS');
