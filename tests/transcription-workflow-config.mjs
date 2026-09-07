@@ -67,14 +67,18 @@ assert.match(client,/workflow:\{\.\.\.state\.workflow\}/,'Analyze must send the 
 
 /* Run planning exposes batching/cost before Analyze and preserves manual-only rules. */
 assert.match(workflow,/function transcription_workflow_run_plan_v304/);
+assert.match(workflow,/'batch_size'=>VP3_TRANSCRIPTION_APP_BATCH_SIZE_V301/,'public workflow config must publish the canonical batch size');
 assert.match(workflow,/VP3_TRANSCRIPTION_APP_BATCH_SIZE_V301/,'server run plans must use the canonical batch-size constant');
 assert.match(workflow,/'estimated_ai_cost'=>\$cost/);
 assert.match(workflow,/'manual_only_apps'=>\$manualOnly/);
 assert.match(client,/function localRunPlan\(/);
+assert.match(client,/state\.workflowConfig\?\.batch_size/,'browser preflight must consume the server-published batch size');
+assert.doesNotMatch(client,/const BATCH_SIZE\s*=\s*4/,'browser must not duplicate the backend batch-size constant');
+assert.match(client,/batch_size:batchSize/,'local preview must expose the resolved server-owned batch size');
 assert.match(client,/function planText\(/);
 assert.match(client,/data-listening-ai-run-plan/);
 assert.match(client,/Run plan ·/);
-assert.match(wave2,/VP3_TRANSCRIPTION_APP_BATCH_SIZE_V301 = 4/,'existing batch limit remains canonical');
+assert.match(wave2,/VP3_TRANSCRIPTION_APP_BATCH_SIZE_V301 = 4/,'existing backend batch limit remains canonical');
 
 /* Batch failures are isolated: good plugin results persist, failed ones become retryable. */
 assert.match(workflow,/\$pluginErrors=\[\]/);
