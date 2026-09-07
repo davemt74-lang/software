@@ -122,6 +122,9 @@ assert.match(api,/comparison_targets/);
 assert.match(api,/transcription_deeper_report_text_v307\(/,'whole-report saves must use the v307 knowledge filter');
 assert.match(api,/'source'=>'transcription-intelligence-v307'/);
 assert.doesNotMatch(api,/\$result\s*=\s*transcription_app_analyze_v306\(/,'stable API must not bypass the v307 wrapper');
+assert.match(api,/function transcription_intelligence_normalize_v307\(/,'all stable API write/read paths must have one canonical v307 reprojection helper');
+assert.ok((api.match(/transcription_intelligence_normalize_v307\(\$pdo,\$sessionId,\$master\)/g)||[]).length>=4,'status, mutation loading and relationship writes must immediately restore the v307 projection');
+assert.doesNotMatch(api,/transcription_deeper_write_agent_memory_v307\(/,'stable API must not duplicate the deep analyzer Agent Brain upsert');
 
 /* Canonical frontend owns comparison selection without a second controller/catalog. */
 assert.match(client,/const BUILD = 'transcription-deeper-v307-20260907'/);
