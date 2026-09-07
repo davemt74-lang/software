@@ -29,6 +29,15 @@ function transcription_intelligence_json_v300(bool $ok,array $data=[],int $statu
     exit;
 }
 
+function transcription_intelligence_normalize_v307(PDO $pdo,int $sessionId,array $master): array
+{
+    $master=transcription_output_normalize_master_v306($pdo,$sessionId,$master,[],false);
+    $modules=transcription_app_modules_v306(is_array($master['analysis']??null)?$master['analysis']:[],$master);
+    $modules=transcription_deeper_normalize_modules_v307($modules,transcription_deeper_review_index_v307($master));
+    $master['analysis']=transcription_deeper_persist_modules_v307($pdo,$sessionId,$modules);
+    return $master;
+}
+
 $user=current_user();
 if(!$user)transcription_intelligence_json_v300(false,['error'=>'Sign in to use transcription intelligence.'],401);
 if(!has_permission('artist_listening.access',$user))transcription_intelligence_json_v300(false,['error'=>'Transcription access is required.'],403);
@@ -61,12 +70,7 @@ try{
         ]);
         $segments=artist_listening_v172_segments($pdo,$sessionId);$map=artist_listening_transcript_page_map($segments);
         $status=artist_listening_v237_analysis_status($pdo,$sessionId,$map);$master=is_array($status['master']??null)?$status['master']:null;
-        if($master){
-            $master=transcription_output_normalize_master_v306($pdo,$sessionId,$master,[],false);
-            $modules=transcription_app_modules_v306(is_array($master['analysis']??null)?$master['analysis']:[],$master);
-            $modules=transcription_deeper_normalize_modules_v307($modules,transcription_deeper_review_index_v307($master));
-            $master['analysis']=transcription_deeper_persist_modules_v307($pdo,$sessionId,$modules);
-        }
+        if($master)$master=transcription_intelligence_normalize_v307($pdo,$sessionId,$master);
         transcription_intelligence_json_v300(true,transcription_deeper_advanced_status_v307($pdo,$user,$session,$master,$map)+[
             'tags'=>transcription_app_tags_v300($session),'permissions'=>transcription_app_permissions_v300($user),
             'operations'=>transcription_intelligence_operational_context_v303($pdo,$user,$session),'workflow_config'=>$workflowConfig,
@@ -93,7 +97,6 @@ try{
             $master=$advanced['master'];$result['master']=$master;
             $result['plugin_errors']=array_replace((array)($result['plugin_errors']??[]),(array)$advanced['errors']);
             $result['deeper_intelligence']=array_replace((array)($result['deeper_intelligence']??[]),(array)$advanced['stats']);
-            $result['agent_memory_id']=transcription_deeper_write_agent_memory_v307($user,$session,transcription_app_modules_v306((array)$master['analysis'],$master));
             $result['main_chat_notice']=transcription_deeper_chat_notify_v307($user,$session,$master);
             $segments=artist_listening_v172_segments($pdo,$sessionId);$map=artist_listening_transcript_page_map($segments);
             $deepView=transcription_deeper_advanced_status_v307($pdo,$user,$session,$master,$map);
@@ -109,18 +112,14 @@ try{
 
     $segments=artist_listening_v172_segments($pdo,$sessionId);$map=artist_listening_transcript_page_map($segments);
     $status=artist_listening_v237_analysis_status($pdo,$sessionId,$map);$master=is_array($status['master']??null)?$status['master']:null;
-    if($master){
-        $master=transcription_output_normalize_master_v306($pdo,$sessionId,$master,[],false);
-        $modules=transcription_app_modules_v306(is_array($master['analysis']??null)?$master['analysis']:[],$master);
-        $modules=transcription_deeper_normalize_modules_v307($modules,transcription_deeper_review_index_v307($master));
-        $master['analysis']=transcription_deeper_persist_modules_v307($pdo,$sessionId,$modules);
-    }
+    if($master)$master=transcription_intelligence_normalize_v307($pdo,$sessionId,$master);
 
     if($action==='build_relations'){
         if(!$master)throw new RuntimeException('Analyze this transcript before building intelligence connections.');
         $outputs=transcription_output_only_modules_v306(is_array($master['analysis']??null)?$master['analysis']:[],$master);
         $built=transcription_intelligence_build_relations_v305($pdo,$user,$session,$master,(string)$map['source_hash']);$master=is_array($built['master']??null)?$built['master']:$master;
         if($outputs)$master=transcription_output_restore_v306($pdo,$sessionId,$master,$outputs);
+        $master=transcription_intelligence_normalize_v307($pdo,$sessionId,$master);
         $view=transcription_deeper_advanced_status_v307($pdo,$user,$session,$master,$map);
         transcription_intelligence_json_v300(true,$view+[
             'relations_summary'=>$built['relations_summary']??transcription_intelligence_relations_summary_v305($master),
@@ -136,6 +135,7 @@ try{
         $outputs=transcription_output_only_modules_v306(is_array($master['analysis']??null)?$master['analysis']:[],$master);
         $master=transcription_intelligence_review_relation_v305($pdo,$sessionId,$master,$relationId,(string)($input['review_state']??'unreviewed'));
         if($outputs)$master=transcription_output_restore_v306($pdo,$sessionId,$master,$outputs);
+        $master=transcription_intelligence_normalize_v307($pdo,$sessionId,$master);
         $view=transcription_deeper_advanced_status_v307($pdo,$user,$session,$master,$map);
         transcription_intelligence_json_v300(true,$view+[
             'relations_summary'=>transcription_intelligence_relations_summary_v305($master),'operations'=>transcription_intelligence_operational_context_v303($pdo,$user,$session),
