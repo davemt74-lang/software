@@ -33,6 +33,7 @@ $personalKnowledgeAllowed = personal_capability_has_v242('personal_knowledge.acc
 <link rel="stylesheet" href="<?= e(url('/profile-agent-radar.css?v=agent-radar-interface-20260906')) ?>">
 <link rel="stylesheet" href="<?= e(url('/profile-agent-radar-sites.css?v=agent-radar-gateway-20260906')) ?>">
 <link rel="stylesheet" href="<?= e(url('/profile-agent-radar-gateway.css?v=agent-radar-gateway-20260906')) ?>">
+<link rel="stylesheet" href="<?= e(url('/profile-agent-analytics.css?v=vp3-analytics-20260906')) ?>">
 </head>
 <body>
 <div class="chat-app profile-agent-app">
@@ -157,7 +158,9 @@ $personalKnowledgeAllowed = personal_capability_has_v242('personal_knowledge.acc
   'radarEndpoint'=>url('/api/agent-radar.php'),
   'radarSitesEndpoint'=>url('/api/agent-radar-sites.php'),
   'radarPolicyEndpoint'=>url('/api/agent-radar-policy.php'),
+  'analyticsEndpoint'=>url('/api/vp3-analytics.php'),
   'radarScriptUrl'=>url('/vp3-radar.js?v=agent-radar-external-sites-20260906'),
+  'analyticsScriptUrl'=>url('/vp3-analytics.js?v=vp3-analytics-20260906'),
   'csrf'=>csrf_token(),
   'profileUrl'=>$profileUrl,
   'profileChatAllowed'=>$profileChatAllowed,
@@ -165,8 +168,10 @@ $personalKnowledgeAllowed = personal_capability_has_v242('personal_knowledge.acc
 ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>;</script>
 <script src="<?= e(url('/member-shell-v77.js?v=universal-member-header-20260905')) ?>"></script>
 <script src="<?= e(url('/profile-agent-portal.js?v=agent-radar-interface-20260906')) ?>"></script>
-<script src="<?= e(url('/profile-agent-radar-sites.js?v=agent-radar-gateway-20260906')) ?>"></script>
+<script src="<?= e(url('/profile-agent-radar-sites.js?v=vp3-analytics-20260906')) ?>"></script>
 <script src="<?= e(url('/profile-agent-radar-gateway.js?v=agent-radar-gateway-20260906')) ?>"></script>
+<script src="<?= e(url('/profile-agent-analytics-bridge.js?v=vp3-analytics-20260906')) ?>"></script>
+<script src="<?= e(url('/profile-agent-analytics.js?v=vp3-analytics-20260906')) ?>"></script>
 <script src="<?= e(url('/profile-personal-settings-v242.js?v=profile-owner-v242-20260905')) ?>"></script>
 </body>
 </html>
