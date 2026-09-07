@@ -30,6 +30,7 @@ $personalKnowledgeAllowed = personal_capability_has_v242('personal_knowledge.acc
 <title>Profile Agent | <?= e(system_agent_name()) ?></title>
 <link rel="stylesheet" href="<?= e(url('/chat.css?v=82')) ?>">
 <link rel="stylesheet" href="<?= e(url('/profile-agent-portal.css?v=agent-radar-interface-20260906')) ?>">
+<link rel="stylesheet" href="<?= e(url('/profile-agent-radar.css?v=agent-radar-interface-20260906')) ?>">
 </head>
 <body>
 <div class="chat-app profile-agent-app">
