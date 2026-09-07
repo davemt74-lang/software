@@ -17,9 +17,7 @@ assert.doesNotMatch(relations,/CREATE TABLE|ALTER TABLE|INSERT INTO|DELETE FROM/
 assert.match(relations,/transcription_intelligence_persist_modules_v302/,'relationships must persist through the existing durable item master JSON');
 
 /* Relationship vocabulary and IDs are bounded and deterministic. */
-for (const type of ['supports','contradicts','depends_on','answers','follows_from','blocks','duplicates','related']) {
-  assert.ok(relations.includes(`'${type}'`), `${type} relationship must remain supported`);
-}
+for (const type of ['supports','contradicts','depends_on','answers','follows_from','blocks','duplicates','related']) assert.ok(relations.includes(`'${type}'`), `${type} relationship must remain supported`);
 assert.match(relations,/function transcription_intelligence_relation_id_v305/);
 assert.match(relations,/hash\('sha256',\$sourceId\.'\|'\.\$type\.'\|'\.\$targetId\)/,'relation IDs must be deterministic from endpoint IDs + type');
 assert.match(relations,/transcription_intelligence_relation_symmetric_v305\(\$type\) && strcmp\(\$sourceId,\$targetId\)>0/,'symmetric relation IDs must normalize endpoint order');
@@ -47,8 +45,8 @@ assert.match(relations,/transcription_intelligence_relation_review_index_v305/,'
 assert.match(relations,/function transcription_intelligence_prune_relations_v305/);
 assert.match(relations,/!isset\(\$map\[\$otherId\]\)/,'pruning must remove links whose other endpoint disappeared');
 assert.match(relations,/!hash_equals\(\$hash,\(string\)\$entry\['source_hash'\]\) \|\| !hash_equals\(\$hash,\(string\)\$map\[\$otherId\]\['source_hash'\]\)/,'pruning must require both endpoints to remain on the relation source hash');
-assert.match(items,/\$reviewState === 'rejected'[\s\S]*transcription_intelligence_remove_item_relations_v305\(\$modules,\$itemId\)/,'rejecting an item must remove every reciprocal relation touching it');
-assert.match(items,/if \(\$previousText !== \$text\) \{[\s\S]*transcription_intelligence_remove_item_relations_v305\(\$modules,\$itemId\)/,'editing item meaning must invalidate every relation touching it');
+assert.match(items,/\$reviewState === 'rejected'[\s\S]*transcription_intelligence_remove_item_relations_v305\(\$modules,\$itemId\)/,'base v302 rejecting an item must remove every reciprocal relation touching it');
+assert.match(items,/if \(\$previousText !== \$text\) \{[\s\S]*transcription_intelligence_remove_item_relations_v305\(\$modules,\$itemId\)/,'base v302 editing item meaning must invalidate every relation touching it');
 assert.match(items,/function_exists\('transcription_intelligence_prune_relations_v305'\)/,'item normalization must prune stale preserved adjacency after reruns');
 
 /* Equivalent reruns preserve adjacency, but Brain/Knowledge exports do not expose graph internals. */
@@ -65,11 +63,11 @@ assert.ok(invalidGraphGuard >= 0 && invalidGraphGuard < clearGraph,'non-empty bu
 assert.match(relations,/Existing connections were not overwritten/,'provider failure must communicate non-destructive behavior');
 
 /* Graph generation is explicit. Analyze never silently spends the extra relationship AI call. */
-assert.match(api,/\$action === 'build_relations'/);
+assert.ok(api.includes("$action==='build_relations'"),'stable API must expose explicit relationship building');
 assert.match(api,/transcription_intelligence_build_relations_v305/);
-assert.match(api,/\$action === 'review_relation'/);
-const apiAnalyzeStart = api.indexOf("if ($action === 'analyze') {");
-const apiAnalyzeEnd = api.indexOf("\n    $segments = artist_listening_v172_segments",apiAnalyzeStart);
+assert.ok(api.includes("$action==='review_relation'"),'stable API must expose relationship review');
+const apiAnalyzeStart = api.indexOf("if($action==='analyze'){");
+const apiAnalyzeEnd = api.indexOf("\n    $segments=artist_listening_v172_segments",apiAnalyzeStart);
 const apiAnalyzeBlock = api.slice(apiAnalyzeStart,apiAnalyzeEnd);
 assert.ok(apiAnalyzeStart >= 0 && apiAnalyzeEnd > apiAnalyzeStart,'Analyze API block must be identifiable');
 assert.doesNotMatch(apiAnalyzeBlock,/build_relations|transcription_intelligence_build_relations_v305/,'Analyze API path must not automatically build the relationship graph');
@@ -92,14 +90,14 @@ assert.match(client,/data-listening-ai-evidence/,'relationship evidence must reu
 assert.match(client,/buildRelations:async/);
 assert.match(client,/reviewRelation:async/);
 assert.match(page,/\.sf-listening-ai-relations\{/,'relationship UI must be styled in the canonical page');
-assert.match(page,/artist-listening-ai\.js\?v=transcription-relations-v305-20260906/,'page must keep v305 browser cache identity');
-assert.match(client,/const BUILD = 'transcription-relations-v305-20260906'/);
+assert.match(page,/artist-listening-ai\.js\?v=transcription-deeper-v307-20260907/,'page must use the current canonical v307 controller cache identity');
+assert.match(client,/const BUILD = 'transcription-deeper-v307-20260907'/);
 assert.doesNotMatch(client,/MutationObserver|sfListeningTranscriptNav|MediaRecorder/,'relationship UI must not take transcript, recording or page-runtime ownership');
 
-/* v305 relationship semantics remain active under the current v306 server runtime. */
-assert.match(api,/vp3-transcription-intelligence-v306-20260906/,'stable API build may advance without replacing v305 relationship semantics');
-assert.match(api,/'source'=>'transcription-intelligence-v306'/,'whole-report Brain provenance must follow the current server runtime');
-assert.match(api,/transcription_intelligence_build_relations_v305/,'v306 API must continue using the v305 graph engine');
+/* v305 relationship semantics remain active under the current v307 server runtime. */
+assert.match(api,/vp3-transcription-intelligence-v307-20260907/,'stable API may advance without replacing v305 relationship semantics');
+assert.match(api,/'source'=>'transcription-intelligence-v307'/,'whole-report Brain provenance must follow the current server runtime');
+assert.match(api,/transcription_intelligence_build_relations_v305/,'v307 API must continue using the v305 graph engine');
 assert.match(baseline,/tests\/transcription-intelligence-relations\.mjs/,'v305 relationship contract must run in Recovery Baseline');
 
 console.log('VP3 transcription intelligence relationships contract: PASS');
