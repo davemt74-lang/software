@@ -73,6 +73,7 @@ NODE_TESTS = [
     'tests/agent-messaging-contract.mjs',
     'tests/agent-relationship-intelligence-contract.mjs',
     'tests/agent-referral-attribution-contract.mjs',
+    'tests/agent-radar-conversion-outcome-contract.mjs',
     'tests/agent-crm-integration-contract.mjs',
     'tests/agent-crm-watchlist-audit-contract.mjs',
     'tests/agent-operator-intelligence-contract.mjs',
@@ -104,6 +105,7 @@ PHP_TESTS = [
     'tests/agent-brain-vector-crc-v142.php',
     'tests/agent-outcome-factor-v313.php',
     'tests/agent-task-outcome-closure-v314.php',
+    'tests/agent-radar-conversion-outcome-v315.php',
 ]
 
 
