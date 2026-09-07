@@ -24,7 +24,7 @@ assert.ok(gateway.includes('vp3_radar_gateway_policy_specificity'), 'Gateway mus
 assert.ok(gateway.includes("'action'=>'monitor'"), 'default Gateway behavior must be monitor, not implicit block');
 assert.ok(gateway.includes("'status_code'=>$action==='block'?403:200"), 'block policy must produce 403 enforcement');
 assert.ok(gateway.includes("$decision['status_code']=429"), 'limit policy must produce 429 when its budget is exhausted');
-assert.ok(gateway.includes("'retry_after'=>1800"), 'rate-limited agents must receive a bounded retry window');
+assert.ok(gateway.includes("'retry_after'=>1800") || gateway.includes("$decision['retry_after']=1800"), 'rate-limited agents must receive an exact bounded 1800-second retry window');
 assert.ok(gateway.includes("'agent_policy_blocked'"), 'blocked/rate-limited attempts must be recorded in the canonical Radar event stream');
 assert.ok(gateway.includes("'radar_security_action'"), 'blocked requests must surface through the existing high-attention notification channel');
 assert.ok(gateway.includes('vp3_radar_gateway_set_contact_policy'), 'contact-level policy write service must exist');
