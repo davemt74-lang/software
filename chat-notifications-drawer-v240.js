@@ -29,6 +29,13 @@
     personal_knowledge_item:'My Knowledge',
     agent_proactive_event:'Agent opportunity'
   }[String(value || '')] || 'Agent activity');
+  const brainOutcomeLabel = value => ({
+    successful:'Worked',
+    resolved:'Resolved',
+    unsuccessful:"Didn't work",
+    ignored:'Ignored',
+    acted:'In progress'
+  }[String(value || '')] || '');
 
   let state = null;
   let drawer = null;
@@ -165,12 +172,53 @@
     return `<article class="chat-brain-metric"><strong>${esc(value)}</strong><span>${esc(label)}</span>${detail ? `<small>${esc(detail)}</small>` : ''}</article>`;
   }
 
+  function brainPriorityMovement(priority) {
+    const movement = String(priority?.movement || 'same');
+    const delta = Number(priority?.score_delta || 0);
+    if (movement === 'new') return 'New this cycle';
+    if (movement === 'up') return `Moved up · ${delta > 0 ? '+' : ''}${Math.round(delta * 100)}% score`;
+    if (movement === 'down') return `Moved down · ${Math.round(delta * 100)}% score`;
+    return `${delta > 0 ? '+' : ''}${Math.round(delta * 100)}% vs prior cycle`;
+  }
+
+  function brainPriorityCard(priority) {
+    const finalOutcomes = ['successful','resolved','unsuccessful','ignored'];
+    const outcome = String(priority?.outcome || '');
+    const closed = finalOutcomes.includes(outcome);
+    const hash = String(priority?.outcome_hash || '');
+    const canClose = /^[a-f0-9]{40}$/.test(hash) && !closed;
+    const source = String(priority?.source || 'agent_brain').replaceAll('_', ' ');
+    const score = Math.max(0, Math.min(100, Math.round(Number(priority?.score || 0) * 100)));
+    const factor = Number(priority?.outcome_factor || 1).toFixed(2);
+    const outcomeStatus = closed
+      ? `<div class="chat-brain-priority-outcome recorded"><strong>Recorded: ${esc(brainOutcomeLabel(outcome))}</strong><span>${priority.outcome_at ? esc(relative(priority.outcome_at)) : 'Saved to Brain learning'}</span></div>`
+      : outcome === 'acted'
+        ? '<div class="chat-brain-priority-outcome"><strong>In progress</strong><span>Record the final result when you know it.</span></div>'
+        : '';
+    const controls = canClose ? `
+      <div class="chat-brain-priority-actions" aria-label="Record outcome for ${esc(priority.title || 'Agent Brain priority')}">
+        <button type="button" data-brain-outcome="successful" data-brain-outcome-hash="${esc(hash)}">Worked</button>
+        <button type="button" data-brain-outcome="resolved" data-brain-outcome-hash="${esc(hash)}">Resolved</button>
+        <button type="button" data-brain-outcome="unsuccessful" data-brain-outcome-hash="${esc(hash)}">Didn't work</button>
+        <button type="button" data-brain-outcome="ignored" data-brain-outcome-hash="${esc(hash)}">Ignore</button>
+      </div>` : (!closed && hash === '' ? '<small class="chat-brain-priority-unavailable">Outcome controls are unavailable for this priority type.</small>' : '');
+
+    return `<article class="chat-brain-priority${closed ? ' closed' : ''}">
+      <header><span>#${Math.max(1, Number(priority?.rank || 1))}</span><div><strong>${esc(priority?.title || 'Agent Brain priority')}</strong><small>${esc(source)} · score ${score}% · learned factor ${esc(factor)}</small></div><em class="risk-${esc(priority?.risk_level || 'low')}">${esc(priority?.risk_level || 'low')} risk</em></header>
+      ${priority?.reason ? `<p>${esc(priority.reason)}</p>` : ''}
+      <footer><span>${esc(brainPriorityMovement(priority))}${priority?.requires_approval ? ' · approval required' : ''}</span>${priority?.url ? `<a href="${esc(priority.url)}">Open</a>` : ''}</footer>
+      ${outcomeStatus}
+      ${controls}
+    </article>`;
+  }
+
   function brainView() {
     const brain = state?.brain || {};
     if (brain.enabled === false) {
       return '<section class="chat-activity-section"><div class="chat-activity-empty">Personal Agent Brain is not enabled for this account type.</div></section>';
     }
     const activity = brain.activity || {};
+    const priorities = Array.isArray(brain.priorities) ? brain.priorities : [];
     const operations = Array.isArray(brain.operations) ? brain.operations : [];
     const events = Array.isArray(brain.events) ? brain.events : [];
     const recent = Array.isArray(brain.recent) ? brain.recent : [];
@@ -188,6 +236,15 @@
           ${brainMetric('Memories', Number(brain.memory_count || 0))}
           ${brainMetric('Archived messages', Number(brain.archive_count || 0))}
           ${brainMetric('Operations', operations.length)}
+        </div>
+      </section>
+
+      <section class="chat-activity-section chat-brain-priorities-section">
+        <div class="chat-activity-section-head">
+          <div><strong>Current Priorities</strong><span>Ranked by Agent Brain. Record the real outcome so future priorities learn from what happened.</span></div>
+        </div>
+        <div class="chat-brain-priority-list">
+          ${priorities.length ? priorities.map(brainPriorityCard).join('') : '<div class="chat-activity-empty">No fresh high-value Brain priorities right now.</div>'}
         </div>
       </section>
 
@@ -317,7 +374,8 @@
       render();
     } catch (error) {
       const body = drawer?.querySelector('[data-notification-drawer-body]');
-      if (body) body.insertAdjacentHTML('afterbegin', `<div class="chat-activity-inline-error">${esc(error instanceof Error ? error.message : 'Could not update notification.')}</div>`);
+      const fallback = action === 'brain_outcome' ? 'Could not record Brain outcome.' : 'Could not update notification.';
+      if (body) body.insertAdjacentHTML('afterbegin', `<div class="chat-activity-inline-error">${esc(error instanceof Error ? error.message : fallback)}</div>`);
     } finally {
       busy = false;
     }
@@ -328,6 +386,15 @@
     if (tab) {
       activeTab = tab.dataset.notificationTab || 'notifications';
       render();
+      return;
+    }
+    const outcomeButton = event.target.closest('[data-brain-outcome]');
+    if (outcomeButton) {
+      const hash = String(outcomeButton.dataset.brainOutcomeHash || '');
+      const outcome = String(outcomeButton.dataset.brainOutcome || '');
+      if (/^[a-f0-9]{40}$/.test(hash) && ['successful','resolved','unsuccessful','ignored'].includes(outcome)) {
+        void mutate('brain_outcome', {hash, outcome});
+      }
       return;
     }
     if (event.target.closest('[data-notification-mark-all]')) {

@@ -97,6 +97,198 @@ function chat_notifications_v240_brain_operations(array $user, int $limit = 60):
     ], notification_agent_brain_activity_after($user, 0, $limit));
 }
 
+/**
+ * Resolve exact hashes for the current v123 proactive candidate set. This is
+ * intentionally server-side: Brain display titles are bounded/truncated, so
+ * reconstructing identity from presentation text would be unsafe.
+ */
+function chat_notifications_v313_base_priority_hash_map(array $user): array
+{
+    if (!function_exists('agent_cognitive_loop_v310_base_candidates')) return [];
+    $context = function_exists('agent_brain_v122_activity_context')
+        ? agent_brain_v122_activity_context($user)
+        : [];
+    try {
+        $map = [];
+        foreach (agent_cognitive_loop_v310_base_candidates($user, $context) as $candidate) {
+            if (!is_array($candidate)) continue;
+            $key = trim((string)($candidate['key'] ?? $candidate['hash'] ?? ''));
+            $hash = strtolower(trim((string)($candidate['hash'] ?? '')));
+            if ($key !== '' && preg_match('/^[a-f0-9]{40}$/', $hash)) $map[$key] = $hash;
+        }
+        return $map;
+    } catch (Throwable $e) {
+        error_log('Activity Center Brain priority hash map failed: ' . $e->getMessage());
+        return [];
+    }
+}
+
+/**
+ * Map the current cognitive priority identity back to the canonical proactive
+ * suggestion hash. Proactive priorities come from the exact current candidate
+ * map; notification and Analytics identities are deterministic. Unknown or
+ * stale future key families are deliberately non-actionable rather than guessed.
+ */
+function chat_notifications_v313_priority_outcome_hash(array $priority, array $baseHashes = []): string
+{
+    $key = trim((string)($priority['key'] ?? ''));
+    $source = trim((string)($priority['source'] ?? ''));
+    $title = trim((string)($priority['title'] ?? ''));
+    if ($key === '') return '';
+
+    $mapped = strtolower(trim((string)($baseHashes[$key] ?? '')));
+    if (preg_match('/^[a-f0-9]{40}$/', $mapped)) return $mapped;
+
+    if (preg_match('/^notification:(\d+)$/', $key, $match)) {
+        return sha1('notification|' . (int)$match[1]);
+    }
+    if ($source === 'analytics' && $title !== '' && !str_ends_with($title, '…')) {
+        return sha1('analytics|' . $key . '|' . $title);
+    }
+    if (preg_match('/^[a-f0-9]{40}$/', $key)) return $key;
+    return '';
+}
+
+function chat_notifications_v313_priority_outcome_map(PDO $pdo, int $userId, array $hashes): array
+{
+    $hashes = array_values(array_unique(array_filter(array_map(
+        static fn(mixed $hash): string => preg_match('/^[a-f0-9]{40}$/', (string)$hash) ? (string)$hash : '',
+        $hashes
+    ))));
+    if ($userId < 1 || !$hashes || !table_exists('agent_proactive_events')) return [];
+
+    $placeholders = implode(',', array_fill(0, count($hashes), '?'));
+    try {
+        $stmt = $pdo->prepare(
+            "SELECT suggestion_hash,event_type,context_json,created_at
+             FROM agent_proactive_events
+             WHERE user_id=? AND suggestion_hash IN ({$placeholders})
+               AND event_type IN ('acted','dismissed')
+             ORDER BY id DESC LIMIT 300"
+        );
+        $stmt->execute(array_merge([$userId], $hashes));
+        $out = [];
+        foreach ($stmt->fetchAll() ?: [] as $row) {
+            $hash = (string)($row['suggestion_hash'] ?? '');
+            if ($hash === '' || isset($out[$hash])) continue;
+            $context = function_exists('agent_action_v313_feedback_context')
+                ? agent_action_v313_feedback_context((string)($row['context_json'] ?? ''))
+                : (json_decode((string)($row['context_json'] ?? ''), true) ?: []);
+            $outcome = function_exists('agent_action_v313_normalize_outcome')
+                ? agent_action_v313_normalize_outcome((string)($context['outcome'] ?? ''), (string)($row['event_type'] ?? ''))
+                : ((string)($row['event_type'] ?? '') === 'dismissed' ? 'ignored' : 'acted');
+            $out[$hash] = [
+                'outcome'=>$outcome,
+                'created_at'=>(string)($row['created_at'] ?? ''),
+            ];
+        }
+        return $out;
+    } catch (Throwable $e) {
+        error_log('Activity Center Brain outcome lookup failed: ' . $e->getMessage());
+        return [];
+    }
+}
+
+function chat_notifications_v313_brain_priorities(array $user, PDO $pdo): array
+{
+    if (!function_exists('agent_cognitive_loop_v310_state') || !function_exists('agent_cognitive_loop_v310_state_fresh')) return [];
+    $state = agent_cognitive_loop_v310_state($user);
+    if (!agent_cognitive_loop_v310_state_fresh($state)) return [];
+
+    $baseHashes = chat_notifications_v313_base_priority_hash_map($user);
+    $rows = [];
+    $hashes = [];
+    foreach (array_slice((array)($state['priorities'] ?? []), 0, 6) as $priority) {
+        if (!is_array($priority)) continue;
+        $hash = chat_notifications_v313_priority_outcome_hash($priority, $baseHashes);
+        if ($hash !== '') $hashes[] = $hash;
+        $rows[] = [
+            'key'=>(string)($priority['key'] ?? ''),
+            'title'=>(string)($priority['title'] ?? 'Agent Brain priority'),
+            'reason'=>(string)($priority['reason'] ?? ''),
+            'source'=>(string)($priority['source'] ?? 'agent_brain'),
+            'url'=>(string)($priority['url'] ?? ''),
+            'rank'=>max(1, (int)($priority['rank'] ?? count($rows) + 1)),
+            'score'=>round((float)($priority['score'] ?? 0), 4),
+            'score_delta'=>round((float)($priority['score_delta'] ?? 0), 4),
+            'movement'=>(string)($priority['movement'] ?? 'same'),
+            'outcome_factor'=>round((float)($priority['outcome_factor'] ?? 1), 4),
+            'risk_level'=>(string)($priority['risk_level'] ?? 'low'),
+            'requires_approval'=>!empty($priority['requires_approval']),
+            'outcome_hash'=>$hash,
+            'outcome'=>'',
+            'outcome_at'=>'',
+        ];
+    }
+    if (!$rows) return [];
+
+    $outcomes = chat_notifications_v313_priority_outcome_map($pdo, (int)($user['id'] ?? 0), $hashes);
+    foreach ($rows as &$row) {
+        $hash = (string)$row['outcome_hash'];
+        if ($hash !== '' && isset($outcomes[$hash])) {
+            $row['outcome'] = (string)($outcomes[$hash]['outcome'] ?? '');
+            $row['outcome_at'] = (string)($outcomes[$hash]['created_at'] ?? '');
+        }
+    }
+    unset($row);
+    return $rows;
+}
+
+function chat_notifications_v313_record_brain_outcome(PDO $pdo, array $user, array $input): array
+{
+    if (!personal_capability_has_v242('agent_brain.access', $user)) {
+        throw new DomainException('Agent Brain is not enabled for this account type.');
+    }
+    if (!function_exists('agent_action_v124_record_outcome')) {
+        throw new DomainException('Agent Brain outcome learning is unavailable.');
+    }
+
+    $hash = strtolower(trim((string)($input['hash'] ?? '')));
+    $outcome = strtolower(trim((string)($input['outcome'] ?? '')));
+    if (!preg_match('/^[a-f0-9]{40}$/', $hash)) throw new DomainException('Priority identity is invalid.');
+    if (!in_array($outcome, ['successful','resolved','unsuccessful','ignored'], true)) {
+        throw new DomainException('Outcome is invalid.');
+    }
+
+    $priority = null;
+    foreach (chat_notifications_v313_brain_priorities($user, $pdo) as $candidate) {
+        $candidateHash = (string)($candidate['outcome_hash'] ?? '');
+        if ($candidateHash !== '' && hash_equals($candidateHash, $hash)) {
+            $priority = $candidate;
+            break;
+        }
+    }
+    if (!$priority) throw new DomainException('That priority is no longer active. Refresh Agent Brain and try again.');
+
+    $current = (string)($priority['outcome'] ?? '');
+    $final = ['successful','resolved','unsuccessful','ignored'];
+    if (in_array($current, $final, true)) {
+        if ($current !== $outcome) throw new DomainException('This priority already has a final outcome.');
+        $state = chat_notifications_v240_state($user, $pdo);
+        $state['outcome_result'] = ['recorded'=>false,'duplicate'=>true,'outcome'=>$current];
+        return $state;
+    }
+
+    $result = agent_action_v124_record_outcome($user, $hash, $outcome, 'brain', [
+        'outcome'=>$outcome,
+        'title'=>(string)($priority['title'] ?? ''),
+        'source'=>(string)($priority['source'] ?? ''),
+        'context'=>[
+            'surface'=>'activity_center',
+            'priority_key'=>(string)($priority['key'] ?? ''),
+            'rank'=>(int)($priority['rank'] ?? 0),
+            'score'=>(float)($priority['score'] ?? 0),
+        ],
+    ]);
+    if (empty($result['recorded']) && empty($result['duplicate'])) {
+        throw new DomainException('The outcome could not be recorded.');
+    }
+
+    $state = chat_notifications_v240_state($user, $pdo);
+    $state['outcome_result'] = $result;
+    return $state;
+}
+
 function chat_notifications_v240_state(array $user, PDO $pdo): array
 {
     if (function_exists('agent_chat_activity_reconcile')) {
@@ -127,6 +319,7 @@ function chat_notifications_v240_state(array $user, PDO $pdo): array
             'files'=>array_values(is_array($brain['files'] ?? null) ? $brain['files'] : []),
             'recent'=>array_values(is_array($brain['recent'] ?? null) ? $brain['recent'] : []),
             'activity'=>$activity,
+            'priorities'=>$brainAllowed ? chat_notifications_v313_brain_priorities($user, $pdo) : [],
             'operations'=>$brainAllowed ? chat_notifications_v240_brain_operations($user, 60) : [],
             'events'=>$brainAllowed ? chat_notifications_v240_activity_events($pdo, $userId, 50) : [],
         ],
@@ -370,6 +563,9 @@ try {
 
     if ($action === 'present_attention') {
         chat_notifications_v240_json(chat_notifications_v240_present_attention($pdo, $user, $input));
+    }
+    if ($action === 'brain_outcome') {
+        chat_notifications_v240_json(chat_notifications_v313_record_brain_outcome($pdo, $user, $input));
     }
     if ($action === 'mark_read') {
         $id = max(0, (int)($input['notification_id'] ?? 0));
