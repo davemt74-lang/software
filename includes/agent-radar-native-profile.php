@@ -137,7 +137,7 @@ function vp3_radar_native_session(PDO $pdo, array $property, array $contact): ?a
 
     $stmt = $pdo->prepare("INSERT INTO vp3_radar_sessions
       (property_id,owner_user_id,agent_contact_id,session_key,visitor_type,entry_path,exit_path,referrer_host,request_count,page_view_count,event_count,started_at,last_seen_at)
-      VALUES (?,?,?,?,?,?,?, ?,1,1,0,NOW(),NOW())
+      VALUES (?,?,?,?,?,?,?,?,1,1,0,NOW(),NOW())
       ON DUPLICATE KEY UPDATE exit_path=VALUES(exit_path),referrer_host=CASE WHEN referrer_host='' THEN VALUES(referrer_host) ELSE referrer_host END,
         request_count=request_count+1,page_view_count=page_view_count+1,last_seen_at=NOW(),id=LAST_INSERT_ID(id)");
     $stmt->execute([
@@ -213,7 +213,7 @@ function vp3_radar_native_event(PDO $pdo, array $property, array $contact, array
     ];
     $stmt = $pdo->prepare("INSERT INTO vp3_radar_events
       (owner_user_id,property_id,session_id,agent_contact_id,event_type,severity,path,method,status_code,significance_score,risk_score,summary,details_json,occurred_at)
-      VALUES (?,?,?,?,'agent_profile_view',?,?,?,?,?,?,?, ?,NOW())");
+      VALUES (?,?,?,?,'agent_profile_view',?,?,?,?,?,?,?,?,NOW())");
     $stmt->execute([
         (int)$property['owner_user_id'],(int)$property['id'],(int)$session['id'],(int)$contact['id'],$severity,$path,
         mb_strimwidth(strtoupper((string)($_SERVER['REQUEST_METHOD'] ?? 'GET')),0,12,''),200,$significance,$risk,
@@ -239,6 +239,41 @@ function vp3_radar_owner_user(PDO $pdo, int $ownerUserId): ?array
     return $stmt->fetch() ?: null;
 }
 
+function vp3_radar_sync_agent_memory(PDO $pdo, int $ownerUserId, array $contact, array $event): void
+{
+    if (!function_exists('agent_brain_v122_upsert_system_memory')) return;
+    $user = vp3_radar_owner_user($pdo,$ownerUserId);
+    if (!$user) return;
+
+    $stmt=$pdo->prepare('SELECT * FROM vp3_agent_contacts WHERE id=? AND owner_user_id=? LIMIT 1');
+    $stmt->execute([(int)$contact['id'],$ownerUserId]);
+    $fresh=$stmt->fetch()?:$contact;
+    $name=trim((string)$fresh['display_name'])?:'Automated agent';
+    $operator=trim((string)$fresh['operator_name']);
+    $identity=($operator!==''?$operator.' · ':'').$name;
+    $text=$identity.' is an Agent Radar contact. Classification: '.str_replace('_',' ',(string)$fresh['visitor_class'])
+        .'. Verification: '.(string)$fresh['verification_status'].' at '.(int)$fresh['confidence_score'].'% confidence.'
+        .' Seen '.(int)$fresh['session_count'].' session'.((int)$fresh['session_count']===1?'':'s')
+        .' and '.(int)$fresh['page_view_count'].' page view'.((int)$fresh['page_view_count']===1?'':'s')
+        .'. Current trust '.(int)$fresh['trust_score'].'/100, risk '.(int)$fresh['risk_score'].'/100, value '.(int)$fresh['value_score'].'/100.'
+        .' Last activity: '.(string)$event['occurred_at'].' on '.(string)$event['path'].'.';
+    agent_brain_v122_upsert_system_memory(
+        $user,'agent_radar','agent-radar-contact:'.(int)$fresh['id'],$text,
+        [
+            'agent_contact_id'=>(int)$fresh['id'],
+            'operator_name'=>(string)$fresh['operator_name'],
+            'agent_name'=>(string)$fresh['display_name'],
+            'visitor_class'=>(string)$fresh['visitor_class'],
+            'verification_status'=>(string)$fresh['verification_status'],
+            'risk_score'=>(int)$fresh['risk_score'],
+            'last_event_id'=>(int)$event['id'],
+            'last_seen_at'=>(string)$fresh['last_seen_at'],
+            'source'=>'agent_radar',
+        ],
+        (string)$fresh['verification_status']==='known' ? 0.82 : 0.58
+    );
+}
+
 function vp3_radar_native_notify(PDO $pdo, array $profile, array $contact, ?array $registry, array $session, array $event): void
 {
     $owner = (int)$profile['user_id'];
@@ -249,9 +284,11 @@ function vp3_radar_native_notify(PDO $pdo, array $profile, array $contact, ?arra
     $target = url('/profile-agent.php?tab=visitors');
     $sourceId = (int)$event['id'];
 
+    if (!empty($session['is_new']) || $risk >= 70) vp3_radar_sync_agent_memory($pdo,$owner,$contact,$event);
+
     if ($risk >= 70) {
         create_notification(
-            $owner,'radar_security_alert','Agent Radar · High-risk automated activity',
+            $owner,'radar_security_action','Agent Radar · High-risk automated activity',
             $name . ' produced a risk score of ' . $risk . '/100 on your public profile. Review the Radar activity before allowing any broader access.',
             $target,'radar_event',$sourceId
         );
@@ -260,9 +297,9 @@ function vp3_radar_native_notify(PDO $pdo, array $profile, array $contact, ?arra
 
     if (empty($session['is_new'])) return;
     if (in_array($class, ['ai_user_agent','ai_search'], true)) {
-        $body = ($operator !== '' ? $operator . ' · ' : '') . $class . ' visited your public profile. ';
+        $body = ($operator !== '' ? $operator . ' · ' : '') . str_replace('_',' ',$class) . ' visited your public profile. ';
         $body .= $registry ? 'The signature is known, but has not been cryptographically verified.' : 'The traffic is automated but not yet identified.';
-        create_notification($owner,'radar_agent_visit','Agent Radar · ' . $name . ' visited your profile',$body,$target,'radar_event',$sourceId);
+        create_notification($owner,'radar_agent_visit_needs_attention','Agent Radar · ' . $name . ' visited your profile',$body,$target,'radar_event',$sourceId);
         return;
     }
 
