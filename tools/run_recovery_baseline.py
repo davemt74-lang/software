@@ -10,6 +10,10 @@ ROOT = Path(__file__).resolve().parents[1]
 NODE_TESTS = [
     'tests/runtime-root-cause.mjs',
     'tests/artist-listening-ai.mjs',
+    'tests/transcription-apps-wave2.mjs',
+    'tests/transcription-intelligence-items.mjs',
+    'tests/transcription-intelligence-actions.mjs',
+    'tests/transcription-workflow-config.mjs',
     'tests/artist-listening-edit.mjs',
     'tests/artist-listening-runtime.mjs',
     'tests/artist-listening-transcript.mjs',
