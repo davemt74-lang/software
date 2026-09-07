@@ -16,7 +16,9 @@ $profileActivityBuild = 'profile-activity-overlay-20260905';
 $headerUiBuild = 'live-wiring-20260903-3';
 $teamChatAdminBuild = 'team-chat-bootstrap-v236-20260905';
 $chatSettingsBuild = 'chat-settings-v239-canonical-20260905';
-$notificationDrawerBuild = 'chat-notifications-canvas-v240-20260905';
+$notificationDrawerBuild = 'chat-notifications-canvas-v240-20260907-pr81-hotfix1';
+$activityBuild = 'agent-activity-v94-20260907-pr81-hotfix1';
+$brainLearningBuild = 'brain-learning-history-v317-20260907-pr81-hotfix1';
 
 if (!headers_sent()) {
     header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
@@ -39,8 +41,17 @@ $html = preg_replace(
     $html
 ) ?? $html;
 
-
 $html = str_replace('chat.js?v=101', 'chat.js?v=' . $controlBuild, $html);
+$html = str_replace('agent-activity-v94.js?v=101', 'agent-activity-v94.js?v=' . $activityBuild, $html);
+
+// The current Main Feed still comes from chat-legacy-v108.php. Remove the
+// retired music-navigation controls here, before the HTML reaches the browser,
+// rather than depending on a cached client-side cleanup pass.
+$html = preg_replace(
+    '~\s*<button\b(?=[^>]*\bdata-chat-view-target="(?:player|saved|playlists)")[^>]*>.*?</button>~si',
+    '',
+    $html
+) ?? $html;
 
 $agentFeatureReady = false;
 $activeUserAgent = null;
@@ -110,14 +121,20 @@ try {
 // Canonical account dropdown. Replace the legacy menu as one unit so Chat does
 // not inject parallel account.php hash links that drift from the other surfaces.
 $chatProfileLinks = '';
+$chatMyTeamSidebarLink = '';
 $chatProfileMenuExcluded = ['account'=>true, 'profile_agent'=>true];
 foreach (member_navigation_menu_links($user) as $menuLink) {
-    if (isset($chatProfileMenuExcluded[(string)($menuLink['key'] ?? '')])) {
+    $menuKey = (string)($menuLink['key'] ?? '');
+    if ($menuKey === 'my_team') {
+        $chatMyTeamSidebarLink = '<a class="chat-sidebar-nav-link" data-chat-my-team href="' . e((string)$menuLink['url']) . '">'
+            . '<span>◎</span><strong>My Team</strong></a>';
+    }
+    if (isset($chatProfileMenuExcluded[$menuKey])) {
         continue;
     }
     $class = !empty($menuLink['danger']) ? ' class="logout"' : '';
     $chatProfileLinks .= '<a' . $class
-        . ' data-chat-profile-link="' . e((string)$menuLink['key']) . '"'
+        . ' data-chat-profile-link="' . e($menuKey) . '"'
         . ' href="' . e((string)$menuLink['url']) . '">'
         . '<span>' . e((string)$menuLink['label']) . '</span><span>↗</span></a>';
 }
@@ -127,6 +144,19 @@ $html = preg_replace(
     $html,
     1
 ) ?? $html;
+
+// My Team comes from the same canonical member-navigation authority used by the
+// rest of the product, including its subscription/authorization checks.
+if ($chatMyTeamSidebarLink !== '' && !str_contains($html, 'data-chat-my-team')) {
+    $html = preg_replace_callback(
+        '~<nav class="chat-sidebar-nav">(.*?)</nav>~s',
+        static function (array $matches) use ($chatMyTeamSidebarLink): string {
+            return '<nav class="chat-sidebar-nav">' . $matches[1] . $chatMyTeamSidebarLink . '</nav>';
+        },
+        $html,
+        1
+    ) ?? $html;
+}
 
 $chatApiEndpoint = $agentFeatureReady
     ? url('/api/chat-v236.php') . ($activeUserAgent ? '?agent=' . (int)$activeUserAgent['id'] : '')
@@ -285,14 +315,17 @@ $chatSettingsRuntime = '<link rel="stylesheet" data-chat-settings-canonical href
     . '<script data-chat-settings-canonical src="' . e(url('/chat-settings-v237.js?v=' . $chatSettingsBuild)) . '"></script>';
 
 $notificationDrawerRuntime = '<link rel="stylesheet" data-chat-notification-drawer href="' . e(url('/chat-notifications-drawer-v240.css?v=' . $notificationDrawerBuild)) . '">'
+    . '<link rel="stylesheet" data-brain-learning-history-v317 href="' . e(url('/chat-brain-learning-history-v317.css?v=' . $brainLearningBuild)) . '">'
     . '<script data-chat-notification-drawer-config>window.STONEFELLOW_NOTIFICATION_DRAWER='
     . json_encode([
         'endpoint'=>url('/api/chat-notifications-brain-v240.php'),
         'csrf'=>csrf_token(),
         'build'=>$notificationDrawerBuild,
+        'learningEndpoint'=>url('/api/agent-learning-history-v317.php'),
     ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
     . ';</script>'
-    . '<script data-chat-notification-drawer src="' . e(url('/chat-notifications-drawer-v240.js?v=' . $notificationDrawerBuild)) . '"></script>';
+    . '<script data-chat-notification-drawer src="' . e(url('/chat-notifications-drawer-v240.js?v=' . $notificationDrawerBuild)) . '"></script>'
+    . '<script data-brain-learning-history-v317 src="' . e(url('/chat-brain-learning-history-v317.js?v=' . $brainLearningBuild)) . '"></script>';
 
 $runtime = $headerUiRuntime
          . $mediaOverlayRuntime
@@ -310,7 +343,7 @@ $runtime = $headerUiRuntime
          . $notificationDrawerRuntime
          . '<script data-team-chat-admin-v109 data-team-chat-admin-build="' . e($teamChatAdminBuild) . '" src="' . e(url('/team-chat-admin-v109.js?v=' . $teamChatAdminBuild)) . '"></script>'
          . $railLayout
-         . '<span data-stonefellow-build="' . e($runtimeBuild) . '" data-chat-controls-build="' . e($controlBuild) . '" data-premium-voice-build="' . e($premiumVoiceBuild) . '" data-chat-voice-build="' . e($voiceAssetBuild) . '" data-chat-voice-feature-build="' . e($voiceCacheBuild) . '" data-recording-ui-build="' . e($recordingUiBuild) . '" data-recording-persistence-build="' . e($recordingPersistenceBuild) . '" data-transcription-canvas-build="' . e($transcriptionCanvasBuild) . '" data-team-chat-admin-build="' . e($teamChatAdminBuild) . '" data-agent-theme-build="' . e($agentThemeBuild) . '" data-chat-media-overlay-build="' . e($mediaOverlayBuild) . '" data-agent-overlay-build="' . e($agentOverlayBuild) . '" data-user-agent-build="' . e($agentIdentityBuild) . '" data-chat-settings-build="' . e($chatSettingsBuild) . '" data-notification-drawer-build="' . e($notificationDrawerBuild) . '" hidden></span>';
+         . '<span data-stonefellow-build="' . e($runtimeBuild) . '" data-chat-controls-build="' . e($controlBuild) . '" data-premium-voice-build="' . e($premiumVoiceBuild) . '" data-chat-voice-build="' . e($voiceAssetBuild) . '" data-chat-voice-feature-build="' . e($voiceCacheBuild) . '" data-recording-ui-build="' . e($recordingUiBuild) . '" data-recording-persistence-build="' . e($recordingPersistenceBuild) . '" data-transcription-canvas-build="' . e($transcriptionCanvasBuild) . '" data-team-chat-admin-build="' . e($teamChatAdminBuild) . '" data-agent-theme-build="' . e($agentThemeBuild) . '" data-chat-media-overlay-build="' . e($mediaOverlayBuild) . '" data-agent-overlay-build="' . e($agentOverlayBuild) . '" data-user-agent-build="' . e($agentIdentityBuild) . '" data-chat-settings-build="' . e($chatSettingsBuild) . '" data-notification-drawer-build="' . e($notificationDrawerBuild) . '" data-agent-activity-build="' . e($activityBuild) . '" data-brain-learning-build="' . e($brainLearningBuild) . '" hidden></span>';
 
 $html = str_replace('</body>', $runtime . '</body>', $html);
 echo $html;
