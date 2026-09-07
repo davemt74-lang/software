@@ -8,7 +8,7 @@ $voiceAssetBuild = 'chat-voice-canonical-20260903';
 $voiceCacheBuild = 'chat-voice-canonical-20260903-failover1';
 $recordingUiBuild = 'chat-recording-results-v206-20260901';
 $recordingPersistenceBuild = 'chat-recordings-v242-20260902';
-$transcriptionCanvasBuild = 'chat-transcription-canvas-v243-layout-20260905';
+$transcriptionCanvasBuild = 'transcription-intelligence-home-v308-20260907';
 $mediaOverlayBuild = 'chat-media-overlays-source-light-20260905';
 $agentOverlayBuild = 'agent-updates-hidden-v206-20260901';
 $agentIdentityBuild = 'chat-attention-canvas-20260905';
@@ -250,6 +250,8 @@ $recordingLibraryRuntime = has_permission('artist_listening.access', $user)
         . json_encode(url('/api/artist-recordings-v198.php'), JSON_UNESCAPED_SLASHES)
         . ',csrf:' . json_encode(csrf_token(), JSON_UNESCAPED_SLASHES)
         . ',artistListeningUrl:' . json_encode(url('/artist-listening.php'), JSON_UNESCAPED_SLASHES)
+        . ',listeningEndpoint:' . json_encode(url('/api/artist-listening.php'), JSON_UNESCAPED_SLASHES)
+        . ',intelligenceEndpoint:' . json_encode(url('/api/artist-listening-intelligence-v300.php'), JSON_UNESCAPED_SLASHES)
         . ',persistEndpoint:' . json_encode(url('/api/chat-recordings-v242.php'), JSON_UNESCAPED_SLASHES)
         . '};</script>'
         . '<link rel="stylesheet" data-chat-transcription-canvas href="' . e(url('/chat-transcription-canvas.css?v=' . $transcriptionCanvasBuild)) . '">'
