@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 const VP3_RADAR_GATEWAY_ACTIONS = ['allow','monitor','limit','block'];
 const VP3_RADAR_GATEWAY_DEFAULT_LIMIT_30M = 30;
+const VP3_RADAR_GATEWAY_CLASSES = ['ai_user_agent','ai_search','ai_crawler','automated_unknown'];
 
 function vp3_radar_gateway_path_matches(string $pattern,string $path): bool
 {
@@ -29,7 +30,7 @@ function vp3_radar_gateway_policy_specificity(array $policy,array $property,arra
     if(trim((string)($policy['operator_name']??''))!==''&&strcasecmp((string)$policy['operator_name'],(string)($contact['operator_name']??''))===0)$score+=150;
     if(trim((string)($policy['visitor_class']??''))!==''&&(string)$policy['visitor_class']===(string)($contact['visitor_class']??''))$score+=100;
     $pathPattern=trim((string)($policy['path_pattern']??'*'));
-    if($pathPattern!==''&&$pathPattern!=='*')$score+=min(80,strlen($pathPattern));
+    if($pathPattern!==''&&$pathPattern!=='*')$score+=400+min(80,strlen($pathPattern));
     return $score;
 }
 
@@ -187,6 +188,85 @@ function vp3_radar_gateway_contact_policy_map(PDO $pdo,int $ownerUserId,array $c
         if($policy)$map[$id]=$policy;
     }
     return $map;
+}
+
+function vp3_radar_gateway_scope_value(string $scopeType,string $value): string
+{
+    $value=trim($value);
+    if($scopeType==='operator'){
+        $value=preg_replace('/\s+/',' ',$value)??$value;
+        return mb_strimwidth($value,0,120,'');
+    }
+    if($scopeType==='class')return in_array($value,VP3_RADAR_GATEWAY_CLASSES,true)?$value:'';
+    if($scopeType==='path'){
+        if($value===''||$value[0]!=='/')return '';
+        $value=preg_replace('/[?#].*$/','',$value)??$value;
+        return mb_strimwidth($value,0,500,'');
+    }
+    return '';
+}
+
+function vp3_radar_gateway_scoped_rules(PDO $pdo,int $ownerUserId): array
+{
+    if($ownerUserId<1)return [];
+    $stmt=$pdo->prepare("SELECT p.id,p.property_id,p.operator_name,p.visitor_class,p.path_pattern,p.action,p.priority,p.expires_at,p.metadata_json,p.updated_at,r.label AS property_label,r.domain AS property_domain
+      FROM vp3_agent_policies p LEFT JOIN vp3_radar_properties r ON r.id=p.property_id
+      WHERE p.owner_user_id=? AND p.agent_contact_id IS NULL AND p.is_active=1
+        AND p.metadata_json LIKE '%\"source\":\"scoped_rule\"%'
+        AND (p.expires_at IS NULL OR p.expires_at>NOW())
+      ORDER BY p.updated_at DESC,p.id DESC LIMIT 100");
+    $stmt->execute([$ownerUserId]);$out=[];
+    foreach($stmt->fetchAll()?:[] as $row){
+        $meta=vp3_radar_gateway_policy_metadata((string)$row['metadata_json']);
+        $row['scope_type']=(string)($meta['scope_type']??'');
+        $row['scope_value']=(string)($meta['scope_value']??'');
+        $row['limit_30m']=(int)($meta['requests_per_30m']??0);
+        unset($row['metadata_json']);$out[]=$row;
+    }
+    return $out;
+}
+
+function vp3_radar_gateway_set_scoped_rule(PDO $pdo,array $user,string $scopeType,string $scopeValue,string $action,int $propertyId=0,int $limit30m=30): array
+{
+    $owner=(int)($user['id']??0);$scopeType=strtolower(trim($scopeType));$action=strtolower(trim($action));
+    if($owner<1)throw new RuntimeException('Sign in to manage Agent Gateway.');
+    if(!in_array($scopeType,['operator','class','path'],true))throw new RuntimeException('Choose Operator, Agent Class or Path.');
+    if(!in_array($action,VP3_RADAR_GATEWAY_ACTIONS,true))throw new RuntimeException('Choose Allow, Monitor, Limit or Block.');
+    $scopeValue=vp3_radar_gateway_scope_value($scopeType,$scopeValue);
+    if($scopeValue==='')throw new RuntimeException($scopeType==='path'?'Paths must start with /.':'Enter a valid rule target.');
+    if($propertyId>0){
+        $property=vp3_radar_server_property_for_owner($pdo,$owner,$propertyId);
+        if(!$property)throw new RuntimeException('Connected site not found.');
+    }
+    $operator=$scopeType==='operator'?$scopeValue:'';
+    $class=$scopeType==='class'?$scopeValue:'';
+    $path=$scopeType==='path'?$scopeValue:'*';
+    $limit30m=max(1,min(10000,$limit30m));
+    $meta=['source'=>'scoped_rule','scope_type'=>$scopeType,'scope_value'=>$scopeValue];
+    if($action==='limit')$meta['requests_per_30m']=$limit30m;
+    $json=json_encode($meta,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
+    $pdo->beginTransaction();
+    try{
+        $deactivate=$pdo->prepare("UPDATE vp3_agent_policies SET is_active=0,updated_at=NOW()
+          WHERE owner_user_id=? AND agent_contact_id IS NULL AND COALESCE(property_id,0)=? AND operator_name=? AND visitor_class=? AND path_pattern=?
+            AND metadata_json LIKE '%\"source\":\"scoped_rule\"%' AND is_active=1");
+        $deactivate->execute([$owner,$propertyId,$operator,$class,$path]);
+        $insert=$pdo->prepare("INSERT INTO vp3_agent_policies
+          (owner_user_id,property_id,agent_contact_id,operator_name,visitor_class,path_pattern,action,priority,expires_at,metadata_json,is_active)
+          VALUES (?,?,NULL,?,?,?,?,50,NULL,?,1)");
+        $insert->execute([$owner,$propertyId>0?$propertyId:null,$operator,$class,$path,$action,$json]);
+        $pdo->commit();
+    }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();throw $e;}
+    return ['rules'=>vp3_radar_gateway_scoped_rules($pdo,$owner)];
+}
+
+function vp3_radar_gateway_delete_scoped_rule(PDO $pdo,array $user,int $policyId): array
+{
+    $owner=(int)($user['id']??0);if($owner<1||$policyId<1)throw new RuntimeException('Gateway rule not found.');
+    $stmt=$pdo->prepare("UPDATE vp3_agent_policies SET is_active=0,updated_at=NOW() WHERE id=? AND owner_user_id=? AND agent_contact_id IS NULL AND metadata_json LIKE '%\"source\":\"scoped_rule\"%' AND is_active=1");
+    $stmt->execute([$policyId,$owner]);
+    if($stmt->rowCount()<1)throw new RuntimeException('Gateway rule not found.');
+    return ['rules'=>vp3_radar_gateway_scoped_rules($pdo,$owner)];
 }
 
 function vp3_radar_gateway_server_collect(PDO $pdo,array $property,array $payload): array
