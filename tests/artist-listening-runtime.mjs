@@ -26,7 +26,8 @@ for (const asset of [
   assert.ok(page.includes(asset), `${asset} must be loaded by the canonical page`);
 }
 assert.match(page,/artist-listening\.js\?v=9ac023be/,'capture controller must use the fixed source blob cache key');
-assert.match(page,/artist-listening-ai\.js\?v=c18c3dc8/,'AI controller must use the current source blob cache key');
+assert.match(page,/artist-listening-ai\.js\?v=transcription-app-registry-v300-20260906/,'AI controller must use the v300 registry cache identity');
+assert.doesNotMatch(page,/artist-listening-ai\.js\?v=c18c3dc8|&b=1d511bb5/,'retired AI cache identities must stay removed');
 assert.doesNotMatch(page,/artist-listening[^"']*-v\d+[^"']*\.(?:js|css)/,'Artist Listening page must not load numbered frontend layers');
 assert.equal((page.match(/artist-listening-ai\.js\?/g) || []).length, 1, 'AI controller must load exactly once');
 assert.equal((page.match(/artist-listening\.css\?/g) || []).length, 1, 'one canonical stylesheet must load exactly once');
