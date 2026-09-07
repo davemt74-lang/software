@@ -9,14 +9,22 @@ $input=json_decode((string)file_get_contents('php://input'),true);if(!is_array($
 if(!hash_equals(csrf_token(),(string)($input['csrf_token']??''))){http_response_code(419);echo json_encode(['ok'=>false,'error'=>'Session expired.']);exit;}
 try{
     $action=(string)($input['action']??'list');$surface=preg_replace('/[^a-z0-9_-]/','',strtolower((string)($input['surface']??'chat')))?:'chat';
-    if(in_array($action,['acted','dismissed'],true)){
+    $outcomeActions=['acted','dismissed','successful','resolved','unsuccessful','ignored','outcome'];
+    if(in_array($action,$outcomeActions,true)){
+        $requestedOutcome=$action==='outcome'?(string)($input['outcome']??''):$action;
         $payload=[
             'title'=>(string)($input['title']??''),'prompt'=>(string)($input['prompt']??''),'source'=>(string)($input['source']??''),
             'context'=>is_array($input['context']??null)?$input['context']:[],
             'memory_id'=>(int)($input['memory_id']??0),'task_status'=>(string)($input['task_status']??''),
+            'outcome'=>$requestedOutcome,
         ];
-        if(function_exists('agent_action_v124_record_outcome'))agent_action_v124_record_outcome($user,(string)($input['hash']??''),$action,$surface,$payload);
-        else agent_proactive_v93_event($user,(string)($input['hash']??''),$action,$surface,$payload);
+        if(function_exists('agent_action_v124_record_outcome')){
+            $result=agent_action_v124_record_outcome($user,(string)($input['hash']??''),$action,$surface,$payload);
+            if(empty($result['recorded'])&&empty($result['duplicate']))throw new RuntimeException('Outcome was not accepted.');
+            echo json_encode(['ok'=>true,'runtime'=>'outcome-closure-v313','outcome'=>$result],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);exit;
+        }
+        if(!in_array($action,['acted','dismissed'],true))throw new RuntimeException('Final outcome tracking is unavailable.');
+        agent_proactive_v93_event($user,(string)($input['hash']??''),$action,$surface,$payload);
         echo json_encode(['ok'=>true,'runtime'=>'phase4-v124']);exit;
     }
     if($action==='task_update'){
