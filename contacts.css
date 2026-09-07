@@ -1,3 +1,4 @@
+@import url('contacts-agent-detail-v312.css');
 :root{--contacts-bg:#f6f7f8;--contacts-card:#fff;--contacts-line:#e5e7eb;--contacts-text:#111827;--contacts-muted:#6b7280;--contacts-soft:#f3f4f6;--contacts-strong:#111827}
 *{box-sizing:border-box}
 body.contacts-page{margin:0;background:var(--contacts-bg);color:var(--contacts-text);font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
