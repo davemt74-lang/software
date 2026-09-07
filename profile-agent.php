@@ -31,8 +31,9 @@ $personalKnowledgeAllowed = personal_capability_has_v242('personal_knowledge.acc
 <link rel="stylesheet" href="<?= e(url('/chat.css?v=82')) ?>">
 <link rel="stylesheet" href="<?= e(url('/profile-agent-portal.css?v=agent-radar-interface-20260906')) ?>">
 <link rel="stylesheet" href="<?= e(url('/profile-agent-radar.css?v=agent-radar-interface-20260906')) ?>">
-<link rel="stylesheet" href="<?= e(url('/profile-agent-radar-sites.css?v=agent-radar-gateway-20260906')) ?>">
-<link rel="stylesheet" href="<?= e(url('/profile-agent-radar-gateway.css?v=agent-radar-gateway-20260906')) ?>">
+<link rel="stylesheet" href="<?= e(url('/profile-agent-radar-sites.css?v=agent-manifest-messaging-20260906')) ?>">
+<link rel="stylesheet" href="<?= e(url('/profile-agent-radar-gateway.css?v=agent-access-controls-20260906')) ?>">
+<link rel="stylesheet" href="<?= e(url('/profile-agent-access-requests.css?v=agent-messaging-20260906')) ?>">
 <link rel="stylesheet" href="<?= e(url('/profile-agent-analytics.css?v=vp3-analytics-20260906')) ?>">
 </head>
 <body>
@@ -168,8 +169,9 @@ $personalKnowledgeAllowed = personal_capability_has_v242('personal_knowledge.acc
 ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>;</script>
 <script src="<?= e(url('/member-shell-v77.js?v=universal-member-header-20260905')) ?>"></script>
 <script src="<?= e(url('/profile-agent-portal.js?v=agent-radar-interface-20260906')) ?>"></script>
-<script src="<?= e(url('/profile-agent-radar-sites.js?v=vp3-analytics-20260906')) ?>"></script>
-<script src="<?= e(url('/profile-agent-radar-gateway.js?v=agent-radar-gateway-20260906')) ?>"></script>
+<script src="<?= e(url('/profile-agent-radar-sites.js?v=agent-manifest-messaging-20260906')) ?>"></script>
+<script src="<?= e(url('/profile-agent-radar-gateway.js?v=agent-access-controls-20260906')) ?>"></script>
+<script src="<?= e(url('/profile-agent-access-requests.js?v=agent-messaging-20260906')) ?>"></script>
 <script src="<?= e(url('/profile-agent-analytics-bridge.js?v=vp3-analytics-20260906')) ?>"></script>
 <script src="<?= e(url('/profile-agent-analytics.js?v=vp3-analytics-20260906')) ?>"></script>
 <script src="<?= e(url('/profile-personal-settings-v242.js?v=profile-owner-v242-20260905')) ?>"></script>
