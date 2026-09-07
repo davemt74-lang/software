@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 const read = path => fs.readFileSync(path, 'utf8');
 const items = read('includes/transcription-intelligence-items.php');
+const outputs = read('includes/transcription-intelligence-outputs.php');
 const api = read('api/artist-listening-intelligence-v300.php');
 const client = read('artist-listening-ai.js');
 const transcript = read('artist-listening-transcript.js');
@@ -56,13 +57,15 @@ assert.match(items,/function transcription_intelligence_export_result_v302/);
 assert.match(items,/\(\$item\['review_state'\] \?\? ''\) === 'rejected'/);
 assert.match(items,/\['source_fingerprint','edited_text','actions','relations'\]/,'internal metadata must stay out of compiled report text');
 assert.match(api,/transcription_intelligence_report_text_v302/,'Brain/Knowledge export must use the review-aware compiler');
-assert.match(api,/source'=>'transcription-intelligence-v305'/,'whole-report Agent Brain provenance must identify the current intelligence layer');
+assert.match(api,/source'=>'transcription-intelligence-v306'/,'whole-report Agent Brain provenance must identify the current server runtime');
 
-/* Canonical ownership stays singular while v305 extends v304 workflow, v303 actions and v302 items. */
+/* Canonical ownership stays singular while v306 wraps v305 relationships, v304 workflow, v303 actions and v302 items. */
 assert.match(client,/const BUILD = 'transcription-relations-v305-20260906'/);
-assert.match(api,/transcription_app_analyze_v304\(/,'stable analysis must execute through v304 without replacing durable item semantics');
+assert.match(api,/transcription_app_analyze_v306\(/,'stable analysis must execute through v306');
+assert.match(outputs,/transcription_app_analyze_v304\(/,'v306 must preserve v304 source analysis without replacing durable item semantics');
 assert.match(client,/performItemAction:/,'controller API must expose explicit item actions');
 assert.match(client,/buildRelations:/,'controller API must expose explicit v305 relationship building');
+assert.match(outputs,/transcription_output_normalize_master_v306/,'v306 must normalize v302 items while preserving output modules');
 assert.doesNotMatch(client,/document\.addEventListener\('click'/,'no delegated document click owner is allowed');
 assert.doesNotMatch(client,/MutationObserver/,'AI controller must not observe/rewrite the page runtime');
 assert.doesNotMatch(client,/MediaRecorder/,'AI controller must never own recording');
