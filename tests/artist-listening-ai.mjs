@@ -7,6 +7,7 @@ const workspace = readFileSync('artist-listening-workspace.js', 'utf8');
 const css = readFileSync('artist-listening.css', 'utf8');
 const api = readFileSync('api/artist-listening-intelligence-v300.php', 'utf8');
 const registry = readFileSync('includes/transcription-app-registry.php', 'utf8');
+const wave2 = readFileSync('includes/transcription-apps-wave2.php', 'utf8');
 const legacyApi = readFileSync('api/artist-listening-intelligence-v254.php', 'utf8');
 
 const asset = 'artist-listening-ai.js?v=transcription-app-registry-v300-20260906';
@@ -46,17 +47,18 @@ assert.ok(client.includes('External Research'), 'Basic Analysis must preserve vi
 assert.ok(page.includes('.sf-listening-ai-structured-list{display:grid'), 'registry reports must have canonical structured-list styling');
 assert.ok(page.includes('.sf-listening-ai-item-meta{display:flex'), 'structured report metadata must remain readable');
 
-/* Canonical registry contains current apps plus high-value analysis additions. */
+/* Canonical v300 registry remains intact while wave two extends it. */
 for (const id of ['basic','stats','actions','responses','decisions','moments','studio','knowledge','topics','entities','risks','timeline']) {
-  assert.ok(registry.includes(`'${id}' => [`), `${id} transcription app must be registered`);
+  assert.ok(registry.includes(`'${id}' => [`), `${id} transcription app must remain registered`);
 }
 for (const title of ['Topics & Themes','Entities & Data','Risks & Blockers','Timeline & Milestones']) {
-  assert.ok(registry.includes(`'title'=>'${title}'`), `${title} must be available as a transcription app`);
+  assert.ok(registry.includes(`'title'=>'${title}'`), `${title} must remain available as a transcription app`);
 }
 assert.ok(registry.includes("'execution'=>'deterministic'"), 'registry must support deterministic apps');
 assert.ok(registry.includes("'execution'=>'ai'"), 'registry must support AI apps');
 assert.ok(registry.includes('function transcription_app_registry_public_v300'), 'registry must expose safe browser metadata');
 assert.ok(registry.includes('function transcription_app_ids_v300'), 'server must validate requested app IDs from the registry');
+assert.ok(wave2.includes('function transcription_app_registry_v301'), 'wave two must extend the canonical registry');
 
 /* Each app owns its result and freshness; selected runs cannot erase other modules. */
 assert.ok(registry.includes("'modules'=>$modules"), 'master analysis must persist independent modules');
@@ -70,7 +72,7 @@ assert.ok(registry.includes('function transcription_app_status_v300'), 'server m
 assert.ok(registry.includes("'fresh'=>is_array($module)"), 'app freshness must compare its own source hash');
 assert.ok(registry.includes('No transcription app results were overwritten.'), 'missing AI app output must fail safely before persistence');
 
-/* Existing app reports are upgraded from flat strings to evidence-aware structures. */
+/* Existing app reports stay evidence-aware. */
 for (const field of ['evidence','confidence','owner','timing','priority','rationale','audience','purpose','why_it_matters','category','conflict']) {
   assert.ok(registry.includes(`'${field}'`), `upgraded reports must support ${field}`);
 }
@@ -79,7 +81,7 @@ assert.ok(registry.includes('unknown when owner or timing is not supported'), 'a
 assert.ok(registry.includes('A decision must be a concluded choice, not an idea'), 'decision reports must distinguish decisions from suggestions');
 assert.ok(registry.includes('Never treat external research as a private user fact'), 'knowledge extraction must keep research provenance separate');
 
-/* Stats remain deterministic and now expose deeper conversation measurements. */
+/* Stats remain deterministic and token-free. */
 assert.ok(registry.includes('function transcription_app_stats_v300'), 'server must calculate deterministic transcript stats');
 for (const key of ['total_words','duration_ms','transcript_turns','speaker_count','question_count','questions_per_1000_words','avg_words_per_turn','longest_turn_words','turn_share','speakers']) {
   assert.ok(registry.includes(`'${key}'`), `stats output must include ${key}`);
@@ -88,13 +90,14 @@ assert.ok(client.includes('sf-listening-ai-stat-grid'), 'Stats tab must render s
 assert.ok(client.includes('sf-listening-ai-chart-track'), 'Stats tab must render speaker-share charts');
 assert.ok(page.includes('.sf-listening-ai-chart-track{height:7px'), 'speaker-share chart must retain visible geometry');
 
-/* v300 owns execution while v254 remains untouched for compatibility. */
+/* Stable v300 URL delegates to the v301 plugin engine; v254 remains compatibility-only. */
 assert.ok(api.includes("require_once dirname(__DIR__) . '/includes/transcription-app-registry.php'"), 'v300 API must load the canonical registry');
-assert.ok(api.includes("$action === 'analyze'"), 'v300 API must own app analysis');
-assert.ok(api.includes('transcription_app_analyze_v300'), 'v300 API must delegate execution to registry service');
+assert.ok(api.includes("require_once dirname(__DIR__) . '/includes/transcription-apps-wave2.php'"), 'v300 API must load the wave-two extension');
+assert.ok(api.includes("$action === 'analyze'"), 'v300 API URL must continue to own app analysis');
+assert.ok(api.includes('transcription_app_analyze_v301'), 'stable endpoint must delegate execution to the v301 plugin engine');
 assert.ok(api.includes("['save_brain','save_knowledge']"), 'v300 API must preserve explicit save actions');
-assert.ok(api.includes('transcription_app_report_text_v300'), 'Brain/Knowledge saves must use current module results');
-assert.ok(client.includes('artist-listening-intelligence-v300.php'), 'browser must use the registry API');
+assert.ok(api.includes('transcription_app_report_text_current_v301'), 'Brain/Knowledge saves must use current plugin results only');
+assert.ok(client.includes('artist-listening-intelligence-v300.php'), 'browser must keep the stable registry API URL');
 assert.ok(legacyApi.includes('artist_listening_v254_analyze'), 'legacy v254 endpoint must remain available during migration');
 
 /* Research remains bounded and independent from panel visibility. */
