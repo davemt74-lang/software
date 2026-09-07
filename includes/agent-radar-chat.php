@@ -162,12 +162,21 @@ function vp3_radar_chat_action(PDO $pdo,array $user,string $query): ?array
         $action=mb_strtolower((string)$m[1]);$subject=(string)$m[2];
     }else return null;
 
-    $contact=vp3_radar_chat_find_contact($pdo,(int)$user['id'],$subject);
+    $owner=(int)$user['id'];$contact=vp3_radar_chat_find_contact($pdo,$owner,$subject);
     if(!$contact){
         return ['handled'=>true,'answer'=>'I could not match that name to one Agent Radar contact. Open Agent Radar or use the exact agent name, such as GPTBot or ChatGPT-User.','stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[['source'=>'agent-radar','title'=>'Agent Radar']]];
     }
-    vp3_radar_gateway_set_contact_policy($pdo,$user,(int)$contact['id'],$action,$limit);
+    $contactId=(int)$contact['id'];$before=vp3_radar_gateway_contact_policy($pdo,$owner,$contactId);
+    $result=vp3_radar_gateway_set_contact_policy($pdo,$user,$contactId,$action,$limit);$after=is_array($result['policy']??null)?$result['policy']:null;
     $name=((string)$contact['operator_name']!==''?(string)$contact['operator_name'].' · ':'').(string)$contact['display_name'];
+    $beforeAction=(string)($before['action']??'profile_default');$afterAction=(string)($after['action']??$action);
+    $beforeLimit=$beforeAction==='limit'?(int)($before['metadata']['requests_per_30m']??VP3_RADAR_GATEWAY_DEFAULT_LIMIT_30M):null;
+    $afterLimit=$afterAction==='limit'?(int)($after['metadata']['requests_per_30m']??$limit):null;
+    if(function_exists('vp3_agent_crm_audit_event')&&($beforeAction!==$afterAction||$beforeLimit!==$afterLimit)){
+        vp3_agent_crm_audit_event($pdo,$owner,$contactId,'agent_policy_changed',$name.' Agent Gateway policy changed from '.$beforeAction.' to '.$afterAction.'.',[
+            'previous_action'=>$beforeAction,'new_action'=>$afterAction,'previous_limit_30m'=>$beforeLimit,'new_limit_30m'=>$afterLimit,'surface'=>'main_feed',
+        ]);
+    }
     $answer=match($action){
         'block'=>$name.' is now blocked across connected sites that have the server-side Agent Gateway installed.',
         'allow'=>$name.' is now allowed across connected sites. Radar will continue recording its activity.',
@@ -175,7 +184,7 @@ function vp3_radar_chat_action(PDO $pdo,array $user,string $query): ?array
         'limit'=>$name.' is now limited to '.$limit.' requests per 30 minutes on each connected site with the server-side Gateway installed.',
         default=>$name.' policy updated.',
     };
-    return ['handled'=>true,'answer'=>$answer,'stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[['source'=>'agent-radar:contact:'.(int)$contact['id'],'title'=>$name]]];
+    return ['handled'=>true,'answer'=>$answer,'stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[['source'=>'agent-radar:contact:'.$contactId,'title'=>$name]]];
 }
 
 function vp3_radar_chat_tool(string $query,array $user,int $conversationId=0): array
