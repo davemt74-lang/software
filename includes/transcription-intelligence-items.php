@@ -236,6 +236,8 @@ function transcription_intelligence_edit_item_v302(
     $modules = transcription_intelligence_normalize_modules_v302($modules);
     [$sectionKey,$offset,$primary] = transcription_intelligence_find_item_v302($modules,$appId,$itemId);
     $item =& $modules[$appId]['result'][$sectionKey][$offset];
+    $previousText = transcription_app_clean_v300((string)($item[$primary] ?? ''),1400);
+    if ($previousText !== $text) unset($item['actions']);
     $item[$primary] = $text;
     $item['edited_text'] = $text;
     $item['user_edited'] = true;
