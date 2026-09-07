@@ -181,6 +181,10 @@ function vp3_radar_chat_action(PDO $pdo,array $user,string $query): ?array
 function vp3_radar_chat_tool(string $query,array $user,int $conversationId=0): array
 {
     $empty=['handled'=>false,'answer'=>'','stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[]];
+    if(function_exists('vp3_agent_access_chat_tool')){
+        $messaging=vp3_agent_access_chat_tool($query,$user,$conversationId);
+        if(!empty($messaging['handled']))return $messaging;
+    }
     if(function_exists('vp3_analytics_chat_tool')){
         $analytics=vp3_analytics_chat_tool($query,$user,$conversationId);
         if(!empty($analytics['handled']))return $analytics;
