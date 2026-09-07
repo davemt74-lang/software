@@ -83,6 +83,7 @@ require_once __DIR__.'/agent-task-lifecycle-v123.php';
 require_once __DIR__.'/agent-brain-context-v142.php';
 require_once __DIR__.'/agent-proactive-v93.php';
 require_once __DIR__.'/agent-action-system-v124.php';
+require_once __DIR__.'/agent-learning-history-v317.php';
 require_once __DIR__.'/agent-task-outcome-closure-v314.php';
 require_once __DIR__.'/agent-radar-conversion-outcome-v315.php';
 require_once __DIR__.'/agent-proactive-v123.php';
