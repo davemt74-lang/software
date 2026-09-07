@@ -200,7 +200,10 @@ function transcription_intelligence_build_relations_v305(
     foreach ($catalog as $row) $byId[(string)$row['item_id']]=$row;
     $ai=artist_listening_v237_ai(transcription_intelligence_relation_prompt_v305($catalog),$user,3200);
     $decoded=transcription_app_decode_json_v300((string)$ai['answer']);
-    $raw=is_array($decoded['relations']??null)?$decoded['relations']:[];
+    if (!array_key_exists('relations',$decoded) || !is_array($decoded['relations'])) {
+        throw new RuntimeException('The AI provider omitted the relationship graph. Existing connections were not overwritten.');
+    }
+    $raw=$decoded['relations'];
     $relations=[];
     foreach ($raw as $candidate) {
         if (!is_array($candidate)) continue;
@@ -224,6 +227,9 @@ function transcription_intelligence_build_relations_v305(
             'evidence_refs'=>transcription_intelligence_relation_evidence_v305($byId[$source],$byId[$target]),
         ];
         if (count($relations)>=VP3_TRANSCRIPTION_RELATION_MAX_EDGES_V305) break;
+    }
+    if ($raw && !$relations) {
+        throw new RuntimeException('The AI provider returned no valid intelligence connections. Existing connections were not overwritten.');
     }
 
     transcription_intelligence_clear_relations_v305($modules);
@@ -277,7 +283,7 @@ function transcription_intelligence_review_relation_v305(
         unset($relation);
     }
     unset($entry);
-    if ($found<1) throw new RuntimeException('Intelligence relationship not found.');
+    if ($found !== 2) throw new RuntimeException('This intelligence connection is incomplete. Rebuild Connections before reviewing it.');
     $master['analysis']=transcription_intelligence_persist_modules_v302($pdo,$sessionId,$modules);
     return $master;
 }
