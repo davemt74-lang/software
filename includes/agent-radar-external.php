@@ -2,7 +2,7 @@
 declare(strict_types=1);
 
 const VP3_RADAR_EXTERNAL_SESSION_SECONDS = 1800;
-const VP3_RADAR_EXTERNAL_SESSION_EVENT_CAP = 1200;
+const VP3_RADAR_EXTERNAL_SESSION_EVENT_CAP = 120;
 
 function vp3_radar_external_domain_normalize(string $value): string
 {
@@ -52,7 +52,7 @@ function vp3_radar_external_site_create(PDO $pdo,array $user,string $domain,stri
     $find=$pdo->prepare("SELECT * FROM vp3_radar_properties WHERE owner_user_id=? AND property_type='external' AND domain=? LIMIT 1");
     $find->execute([$uid,$domain]);
     $existing=$find->fetch();
-    if($existing&& !empty($existing['is_active']))return vp3_radar_external_site_state($pdo,$user);
+    if($existing&&!empty($existing['is_active']))return vp3_radar_external_site_state($pdo,$user);
     if(!vp3_radar_can_add_external_site($user,$pdo))throw new RuntimeException('Your current package has reached its connected-site limit.');
 
     if($existing){
@@ -131,12 +131,27 @@ function vp3_radar_external_referrer_host(string $value,string $siteDomain): str
     return vp3_radar_external_origin_allowed($siteDomain,$host)?'':mb_strimwidth($host,0,190,'');
 }
 
+function vp3_radar_external_session_key(int $propertyId,int $contactId): string
+{
+    $bucket=(int)floor(time()/VP3_RADAR_EXTERNAL_SESSION_SECONDS);
+    return hash('sha256',$propertyId.'|'.$contactId.'|'.$bucket);
+}
+
+function vp3_radar_external_session_at_cap(PDO $pdo,int $propertyId,int $contactId): bool
+{
+    if($propertyId<1||$contactId<1)return true;
+    $sessionKey=vp3_radar_external_session_key($propertyId,$contactId);
+    $stmt=$pdo->prepare('SELECT request_count FROM vp3_radar_sessions WHERE property_id=? AND session_key=? LIMIT 1');
+    $stmt->execute([$propertyId,$sessionKey]);
+    $count=$stmt->fetchColumn();
+    return $count!==false&&(int)$count>=VP3_RADAR_EXTERNAL_SESSION_EVENT_CAP;
+}
+
 function vp3_radar_external_session(PDO $pdo,array $property,array $contact,string $path,string $referrerHost): ?array
 {
     $propertyId=(int)($property['id']??0);$owner=(int)($property['owner_user_id']??0);$contactId=(int)($contact['id']??0);
     if($propertyId<1||$owner<1||$contactId<1)return null;
-    $bucket=(int)floor(time()/VP3_RADAR_EXTERNAL_SESSION_SECONDS);
-    $sessionKey=hash('sha256',$propertyId.'|'.$contactId.'|'.$bucket);
+    $sessionKey=vp3_radar_external_session_key($propertyId,$contactId);
     $stmt=$pdo->prepare("INSERT INTO vp3_radar_sessions
       (property_id,owner_user_id,agent_contact_id,session_key,visitor_type,entry_path,exit_path,referrer_host,request_count,page_view_count,event_count,started_at,last_seen_at)
       VALUES (?,?,?,?,?,?,?,?,1,1,0,NOW(),NOW())
@@ -172,9 +187,8 @@ function vp3_radar_external_signals(array $session,string $path): array
 
 function vp3_radar_external_event(PDO $pdo,array $property,array $contact,array $session,string $path,string $referrerHost): ?array
 {
-    if((int)($session['request_count']??0)>VP3_RADAR_EXTERNAL_SESSION_EVENT_CAP)return null;
     $signals=vp3_radar_external_signals($session,$path);
-    $risk=max((string)$contact['verification_status']==='known'?5:15,vp3_radar_risk_score($signals));
+    $risk=max(5,vp3_radar_risk_score($signals));
     $severity=vp3_radar_severity($risk);
     $class=(string)$contact['visitor_class'];
     $significance=match($class){'ai_user_agent'=>80,'ai_search'=>60,'ai_crawler'=>45,default=>35};
@@ -190,7 +204,8 @@ function vp3_radar_external_event(PDO $pdo,array $property,array $contact,array 
         'verification_status'=>(string)$contact['verification_status'],
         'confidence_score'=>(int)$contact['confidence_score'],
         'referrer_host'=>$referrerHost,
-        'known_agent'=>(string)$contact['verification_status']==='known',
+        'known_agent'=>true,
+        'collector'=>'browser',
         'signals'=>$signals,
     ];
     $stmt=$pdo->prepare("INSERT INTO vp3_radar_events
@@ -229,15 +244,20 @@ function vp3_radar_external_notify(PDO $pdo,array $property,array $contact,array
 }
 
 /**
- * Returns true when an automated request was recorded, false for normal human
- * browser traffic or a request that should not be persisted.
+ * Browser collection intentionally accepts only maintained Radar signatures.
+ * The public install key is visible in page source, so allowing arbitrary
+ * user-agent strings here would permit unbounded spoofed Agent CRM identities.
+ * Unknown/non-JavaScript crawler discovery belongs to the server-side layer.
  */
 function vp3_radar_external_collect(PDO $pdo,array $property,array $payload,string $userAgent): bool
 {
-    if(!vp3_radar_looks_automated($userAgent))return false;
+    $registry=vp3_radar_match_agent($userAgent,$pdo);
+    if(!$registry)return false;
     $identity=vp3_radar_native_identity($pdo,(int)$property['owner_user_id'],$userAgent);
     if(!$identity)return false;
     $contact=$identity['contact'];
+    $propertyId=(int)($property['id']??0);$contactId=(int)($contact['id']??0);
+    if(vp3_radar_external_session_at_cap($pdo,$propertyId,$contactId))return false;
     $path=vp3_radar_external_path((string)($payload['path']??'/'));
     $referrer=vp3_radar_external_referrer_host((string)($payload['referrer_host']??''),(string)$property['domain']);
     $session=vp3_radar_external_session($pdo,$property,$contact,$path,$referrer);
