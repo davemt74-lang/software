@@ -244,9 +244,9 @@ function transcription_intelligence_execute_action_v303(
     $text=(string)$snapshot['text'];
     $operations=transcription_intelligence_operational_context_v303($pdo,$user,$session);
     if ($action === 'project_note') $targetId=max(0,(int)($operations['project_note']['track_id'] ?? 0));
-    $actionKey=transcription_intelligence_action_key_v303($action,$targetId);
+    $actionKey=transcription_intelligence_action_key_v303($action,$action === 'project_note' ? 0 : $targetId);
     $existing=transcription_intelligence_existing_receipt_v303($item,$actionKey);
-    if ($existing) {
+    if ($existing && ($action !== 'project_note' || (int)($existing['target_id'] ?? 0) === $targetId)) {
         return ['master'=>$master,'receipt'=>$existing,'existing'=>true,'operations'=>$operations];
     }
 
