@@ -5,7 +5,7 @@ require_once __DIR__.'/vp3-analytics-chat.php';
 function vp3_radar_chat_intent(string $query): bool
 {
     $q=mb_strtolower(trim($query));
-    foreach(['agent radar','agent gateway','ai agent','ai agents','bot','bots','crawler','crawlers','automated visitor','automated visitors','high risk agent','high-risk agent','who visited','visited my profile','website traffic','agent traffic','block this agent','block agent','allow agent','limit agent'] as $needle){
+    foreach(['agent radar','agent gateway','ai agent','ai agents','bot','bots','crawler','crawlers','automated visitor','automated visitors','high risk agent','high-risk agent','who visited','visited my profile','website traffic','agent traffic','block this agent','block agent','allow agent','limit agent','access profile','search friendly','agent friendly','open web','locked down','lock down agent','private profile','monitor all'] as $needle){
         if(str_contains($q,$needle))return true;
     }
     return false;
@@ -50,10 +50,43 @@ function vp3_radar_chat_find_contact(PDO $pdo,int $ownerUserId,string $subject):
 
 function vp3_radar_chat_policy_label(?array $policy): string
 {
-    if(!$policy)return 'monitor';
+    if(!$policy)return 'profile default';
     $action=(string)($policy['action']??'monitor');
     if($action==='limit')return 'limit '.(int)($policy['metadata']['requests_per_30m']??30).'/30m';
     return $action;
+}
+
+function vp3_radar_chat_access_profile_slug(string $query): string
+{
+    $q=mb_strtolower($query);
+    $map=[
+        'search friendly'=>'search_friendly',
+        'agent friendly'=>'agent_friendly',
+        'open web'=>'open_web',
+        'locked down'=>'locked_down',
+        'lock down'=>'locked_down',
+        'private profile'=>'private',
+        'private access'=>'private',
+        'monitor all'=>'monitor_all',
+    ];
+    foreach($map as $needle=>$slug)if(str_contains($q,$needle))return $slug;
+    return '';
+}
+
+function vp3_radar_chat_access_profile_action(PDO $pdo,array $user,string $query): ?array
+{
+    $q=mb_strtolower(trim($query));
+    $slug=vp3_radar_chat_access_profile_slug($query);
+    $mentionsProfile=str_contains($q,'access profile')||str_contains($q,'gateway profile')||$slug!=='';
+    if(!$mentionsProfile)return null;
+    $isWrite=(bool)preg_match('/\b(?:use|set|apply|switch|change|make|enable|lock down)\b/i',$query);
+    if($slug!==''&&$isWrite){
+        $result=vp3_radar_access_profile_apply($pdo,$user,$slug);$profile=$result['profile']??null;
+        return ['handled'=>true,'answer'=>'Agent Gateway default access profile is now '.(string)($profile['label']??$slug).'. '.(string)($profile['description']??'').' Existing per-contact overrides remain in place.','stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[['source'=>'agent-gateway:access-profile','title'=>'Agent Gateway Access Profile']]];
+    }
+    $current=vp3_radar_access_profile_current($pdo,(int)$user['id']);
+    if(!$current)return ['handled'=>true,'answer'=>'Agent Gateway is currently using its implicit Monitor default. You can choose Open Web, Search Friendly, Agent Friendly, Private, Locked Down, or Monitor All.','stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[['source'=>'agent-gateway:access-profile','title'=>'Agent Gateway Access Profile']]];
+    return ['handled'=>true,'answer'=>'Your current Agent Gateway access profile is '.(string)$current['label'].'. '.(string)$current['description'].' Per-contact policies override the profile when you set one.','stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[['source'=>'agent-gateway:access-profile','title'=>'Agent Gateway Access Profile']]];
 }
 
 function vp3_radar_chat_recent_summary(PDO $pdo,array $user,string $query): string
@@ -70,8 +103,8 @@ function vp3_radar_chat_recent_summary(PDO $pdo,array $user,string $query): stri
     if(str_contains($q,'blocked')||str_contains($q,'policies')||str_contains($q,'gateway')){
         $stmt=$pdo->prepare("SELECT c.id,c.display_name,c.operator_name,p.action,p.metadata_json,p.updated_at FROM vp3_agent_policies p INNER JOIN vp3_agent_contacts c ON c.id=p.agent_contact_id WHERE p.owner_user_id=? AND p.is_active=1 AND p.agent_contact_id IS NOT NULL AND p.property_id IS NULL AND p.path_pattern='*' ORDER BY p.updated_at DESC,p.id DESC LIMIT 20");
         $stmt->execute([$uid]);$rows=$stmt->fetchAll()?:[];
-        if(!$rows)return 'Agent Gateway has no explicit contact policies yet. New agent contacts default to Monitor.';
-        $lines=['Current Agent Gateway contact policies:'];
+        if(!$rows)return 'Agent Gateway has no explicit contact overrides yet. New agent contacts use the current default access profile.';
+        $lines=['Current Agent Gateway contact overrides:'];
         foreach($rows as $row){$meta=vp3_radar_gateway_policy_metadata((string)$row['metadata_json']);$label=(string)$row['action'];if($label==='limit')$label.=' '.(int)($meta['requests_per_30m']??30).'/30m';$lines[]='• '.((string)$row['operator_name']!==''?(string)$row['operator_name'].' · ':'').(string)$row['display_name'].' — '.$label.'.';}
         return implode("\n",$lines);
     }
@@ -116,6 +149,8 @@ function vp3_radar_chat_tool(string $query,array $user,int $conversationId=0): a
     }
     if(!vp3_radar_chat_intent($query)||!personal_capability_has_v242('profile_agent.access',$user))return $empty;
     $pdo=db();if(!$pdo||!vp3_radar_schema_ready($pdo))return $empty;
+    $profile=vp3_radar_chat_access_profile_action($pdo,$user,$query);
+    if($profile){if(function_exists('agent_tool_log'))agent_tool_log($user,'agent_radar.access_profile',$query,'success',['handled'=>'profile'],$conversationId);return $profile;}
     $action=vp3_radar_chat_action($pdo,$user,$query);
     if($action){
         if(function_exists('agent_tool_log'))agent_tool_log($user,'agent_radar.gateway',$query,'success',['handled'=>'write'],$conversationId);
