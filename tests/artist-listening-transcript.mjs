@@ -14,8 +14,8 @@ const upgrade=fs.readFileSync('upgrade.php','utf8');
 assert.match(page,/artist-listening-transcript\.js\?v=artist-listening-normalized-20260903/);
 assert.match(page,/artist-listening-workspace\.js\?v=artist-listening-normalized-20260903/);
 assert.match(page,/artist-listening\.js\?v=9ac023be/);
-assert.match(page,/artist-listening-ai\.js\?v=transcription-relations-v305-20260906/);
-assert.doesNotMatch(page,/artist-listening-ai\.js\?v=transcription-workflow-v304-20260906|artist-listening-ai\.js\?v=transcription-app-registry-v300-20260906|artist-listening-ai\.js\?v=c18c3dc8|&b=1d511bb5/);
+assert.match(page,/artist-listening-ai\.js\?v=transcription-deeper-v307-20260907/);
+assert.doesNotMatch(page,/artist-listening-ai\.js\?v=transcription-relations-v305-20260906|artist-listening-ai\.js\?v=transcription-workflow-v304-20260906|artist-listening-ai\.js\?v=transcription-app-registry-v300-20260906|artist-listening-ai\.js\?v=c18c3dc8|&b=1d511bb5/);
 assert.doesNotMatch(page,/artist-listening-long-v237\.js|artist-listening-ui-v242\.js|artist-listening-ai-toggle-v256\.js|artist-listening-intelligence-v236\.js/);
 assert.ok(page.indexOf('artist-listening-transcript.js') < page.indexOf('artist-listening-workspace.js'), 'transcript adapter must be available before workspace session loading');
 assert.match(page,/#sfListeningTranscriptNav\{[\s\S]*left:var\(--sf-listening-sidebar-width\)!important;[\s\S]*right:0!important;[\s\S]*bottom:var\(--sf-listening-player-height\)!important;/);
@@ -70,7 +70,7 @@ assert.match(css,/\.sf-listening-workspace-listening-player\{position:fixed!impo
 assert.match(page,/\.sf-listening-workspace-listening-player\{[\s\S]*padding:8px 16px 8px calc\(var\(--sf-listening-sidebar-width\) \+ 16px\)!important/);
 
 /* AI intelligence remains separate from transcript view ownership. */
-assert.match(ai,/const BUILD = 'transcription-relations-v305-20260906'/);
+assert.match(ai,/const BUILD = 'transcription-deeper-v307-20260907'/);
 assert.match(ai,/sfListeningAiPanel/);
 assert.match(ai,/AI Summary/);
 assert.match(ai,/button\.addEventListener\('click'/);
@@ -82,6 +82,7 @@ assert.match(ai,/Research OFF/);
 assert.match(ai,/data-listening-ai-live/);
 assert.match(ai,/data-listening-ai-research/);
 assert.match(ai,/data-listening-ai-relations/);
+assert.match(ai,/data-listening-ai-comparison/);
 assert.match(ai,/request\('analyze'/);
 assert.match(ai,/request\('build_relations'/);
 assert.match(ai,/sf-listening-ai-footer-actions/);
