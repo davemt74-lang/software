@@ -32,8 +32,8 @@ for (const section of ['overview','key_points','decisions','risks','open_questio
 /* Reviewed current intelligence is the only factual source. */
 assert.match(outputs,/function transcription_output_reviewed_input_v306/);
 assert.match(outputs,/!hash_equals\(\$currentHash,\(string\)\(\$module\['source_hash'\]\?\?''\)\)/,'output source catalog must reject stale plugin modules');
-assert.match(outputs,/\(string\)\(\$item\['review_state'\]\?\?''\)\)!=='accepted'/,'only human-accepted durable intelligence items may enter the output catalog');
-assert.match(outputs,/\(string\)\(\$relation\['review_state'\]\?\?''\)\)!=='accepted'/,'only accepted v305 connections may enter output context');
+assert.match(outputs,/\(string\)\(\$item\['review_state'\]\?\?''\)!=='accepted'/,'only human-accepted durable intelligence items may enter the output catalog');
+assert.match(outputs,/\(string\)\(\$relation\['review_state'\]\?\?''\)!=='accepted'/,'only accepted v305 connections may enter output context');
 assert.match(outputs,/!isset\(\$items\[\$otherId\]\)/,'accepted connections must link two accepted source items');
 assert.match(outputs,/The accepted intelligence items below are the only factual source/);
 assert.match(outputs,/Do not use raw transcript text, unreviewed findings, rejected findings, Agent Brain, CRM or outside knowledge/);
