@@ -14,6 +14,8 @@ require_once dirname(__DIR__) . '/includes/transcription-workflow-config.php';
 require_once dirname(__DIR__) . '/includes/transcription-intelligence-outputs.php';
 require_once dirname(__DIR__) . '/includes/transcription-deeper-intelligence.php';
 require_once dirname(__DIR__) . '/includes/transcription-deeper-items.php';
+require_once dirname(__DIR__) . '/includes/transcription-deeper-chat.php';
+require_once dirname(__DIR__) . '/includes/transcription-deeper-report.php';
 
 const VP3_TRANSCRIPTION_INTELLIGENCE_V300 = 'vp3-transcription-intelligence-v307-20260907';
 
@@ -116,6 +118,9 @@ try {
             $pdo,$user,$sessionId,$mode,$input['apps'] ?? ['basic'],$workflow,$comparison
         );
         $master = is_array($result['master'] ?? null) ? $result['master'] : null;
+        if (($workflow['depth']??'standard')==='deep' && $mode==='manual' && $master && empty($result['skipped'])) {
+            $result['main_chat_notice']=transcription_deeper_chat_notify_v307($user,$session,$master);
+        }
         $result['workflow'] = $workflow;
         $result['workflow_config'] = $workflowConfig;
         $result['operations'] = transcription_intelligence_operational_context_v303($pdo,$user,$session);
@@ -216,7 +221,7 @@ try {
     if (in_array($action,['save_brain','save_knowledge'],true) && !$master) throw new RuntimeException('Analyze this transcript before saving the report.');
     $tags = transcription_app_tags_v300($session);
     $view = $master ? transcription_app_status_v307($pdo,$user,$session,$master,$map) : ['app_status'=>[]];
-    $text = $master ? transcription_intelligence_report_text_v302($master,$session,$tags,(string)$map['source_hash'],$view['app_status'] ?? []) : '';
+    $text = $master ? transcription_deeper_report_text_v307($master,$session,$tags,(string)$map['source_hash'],$view['app_status'] ?? []) : '';
     if ($text === '') throw new RuntimeException('No current transcription plugin results are available to save. Refresh any stale plugins and try again.');
 
     if ($action === 'save_brain') {
@@ -234,7 +239,7 @@ try {
         $permissions = transcription_app_permissions_v300($user);
         if (!$permissions['personal_knowledge_write']) throw new RuntimeException('Personal Knowledge Base storage is not available for this account.');
         $title = mb_strimwidth('Transcript Intelligence · '.((string)($session['title']??'')?:('Session '.$sessionId)),0,190,'…');
-        $id = personal_knowledge_store($user,'artist-listening-analysis:'.$sessionId,$title,$text,'Personal transcription intelligence · session #'.$sessionId.' · v307');
+        $id = personal_knowledge_store($user,'artist-listening-analysis:'.$sessionId,$title,$text,'Personal transcription intelligence · session #'.$sessionId.' · v307 filtered');
         transcription_intelligence_json_v300(true,['saved'=>true,'knowledge_id'=>$id,'scope'=>'personal','published'=>false,'saved_at'=>gmdate('c')]);
     }
 
