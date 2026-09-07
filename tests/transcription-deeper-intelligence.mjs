@@ -95,7 +95,7 @@ assert.match(advanced,/comparison_context_changed|comparison_hash/);
 /* Main Chat receives only accepted, high-value deep signals through the existing persisted chat path. */
 assert.match(chat,/function transcription_deeper_chat_signals_v307/);
 assert.ok(chat.includes("(string)($item['review_state']??'')!=='accepted'"),'deep chat signals must be review-gated');
-for (const signal of ['knowledge_','crm_buying_signal','crm_objection','crm_promise','crm_next_action','risk_high','follow_up_open','ranked_opportunity','claim_']) {
+for (const signal of ['knowledge_','crm_buying_signal','crm_objection','crm_promise','crm_next_action','high_risk','open_followup','ranked_opportunity','claim_']) {
   assert.ok(chat.includes(signal),`Main Chat bridge must support ${signal}`);
 }
 assert.match(chat,/agent_chat_v101_append_ecosystem_message\(/,'deep notices must use canonical Main Chat persistence');
