@@ -217,10 +217,19 @@ $config = [
     .sf-listening-ai-app-options label:has(input:checked){border-color:#bdbdbd;background:#f2f2f2;color:#171717;font-weight:750}
     .sf-listening-ai-app-options input{flex:0 0 auto;margin:1px 0 0;accent-color:#171717}
     .sf-listening-ai-app-options span{min-width:0}
+    .sf-listening-ai-app-options span b{display:block;color:#282828;font-size:9px}
+    .sf-listening-ai-app-options span small{display:block;margin-top:2px;color:#858585;font-size:8px;font-weight:600;line-height:1.25}
     .sf-listening-ai-tabs{display:flex;align-items:center;gap:4px;min-height:38px;padding:5px 8px;border-bottom:1px solid #e8e8e8;background:#fafafa;overflow-x:auto;overflow-y:hidden;white-space:nowrap}
     .sf-listening-ai-tabs button{flex:0 0 auto;min-height:27px;padding:5px 9px;border:1px solid transparent;border-radius:6px;background:transparent;color:#777;font-size:9px;font-weight:750;cursor:pointer}
     .sf-listening-ai-tabs button:hover{background:#f0f0f0;color:#222}
     .sf-listening-ai-tabs button.active{border-color:#d4d4d4;background:#fff;color:#171717;box-shadow:0 1px 2px rgba(0,0,0,.04)}
+    .sf-listening-ai-tabs button.stale{color:#7a5c14}
+    .sf-listening-ai-structured-list{display:grid;gap:7px;margin:0;padding:0;list-style:none}
+    .sf-listening-ai-structured-item{padding:8px 9px;border:1px solid #e7e7e7;border-radius:8px;background:#fafafa}
+    .sf-listening-ai-structured-item p{margin:0;color:#333;font-size:10px;line-height:1.5}
+    .sf-listening-ai-item-meta{display:flex;flex-wrap:wrap;gap:5px 9px;margin-top:6px;color:#777;font-size:8px;line-height:1.35}
+    .sf-listening-ai-item-meta span{margin:0!important;text-align:left!important}
+    .sf-listening-ai-item-meta b{color:#555;font-weight:800;text-transform:capitalize}
     .sf-listening-ai-stat-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;margin:0 0 14px}
     .sf-listening-ai-stat-grid>div{padding:10px;border:1px solid #e7e7e7;border-radius:8px;background:#fafafa}
     .sf-listening-ai-stat-grid small{display:block;margin-bottom:4px;color:#858585;font-size:8px;font-weight:750;letter-spacing:.05em;text-transform:uppercase}
@@ -350,7 +359,7 @@ $config = [
   <script src="<?= e(url('/artist-listening-recordings.js?v=artist-listening-normalized-20260903')) ?>"></script>
   <script src="<?= e(url('/artist-listening-naming.js?v=artist-listening-normalized-20260903')) ?>"></script>
   <script>window.STONEFELLOW_ARTIST_LISTENING_V172=Object.assign(window.STONEFELLOW_ARTIST_LISTENING_V172||{},window.STONEFELLOW_ARTIST_LISTENING_CONFIG||{});</script>
-  <script src="<?= e(url('/artist-listening-ai.js?v=c18c3dc8&b=1d511bb5')) ?>"></script>
+  <script src="<?= e(url('/artist-listening-ai.js?v=transcription-app-registry-v300-20260906')) ?>"></script>
   <script src="<?= e(url('/artist-listening-ui.js?v=artist-listening-normalized-20260903')) ?>"></script>
   <script src="<?= e(url('/transcription-editor.js?v=transcription-editor-api-20260903')) ?>"></script>
   <script>
