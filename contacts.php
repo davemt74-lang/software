@@ -137,7 +137,7 @@ function contacts_agent_messaging_label(string $status): string
             <button class="contacts-filter" type="button" data-contact-filter="human">People</button>
             <button class="contacts-filter" type="button" data-contact-filter="agent">Agents</button>
             <button class="contacts-filter" type="button" data-contact-filter="watched">Watched</button>
-            <button class="contacts-filter" type="button" data-contact-filter="returning">Returning</button>
+            <button class="contacts-filter" type="button" data-contact-filter="returning_visitor">Returning</button>
             <button class="contacts-filter" type="button" data-contact-filter="engaged">Engaged</button>
             <button class="contacts-filter" type="button" data-contact-filter="high_risk">High risk</button>
             <button class="contacts-filter" type="button" data-contact-filter="opportunity">Opportunities</button>
@@ -262,7 +262,7 @@ function contacts_agent_messaging_label(string $status): string
     let shown=0;
     for(const row of rows){
       const kind=String(row.dataset.kind||'human'),stage=String(row.dataset.stage||''),risk=Number(row.dataset.risk||0),opp=Number(row.dataset.opportunity||0),watched=row.dataset.watch==='1';
-      const matchesFilter=active==='all'||active===kind||(active==='watched'&&kind==='agent'&&watched)||(active==='returning'&&(stage==='returning_visitor'||stage==='returning'))||(active==='engaged'&&['guest_engaged','member_engaged','engaged','converted','trusted'].includes(stage))||(active==='high_risk'&&kind==='agent'&&risk>=70)||(active==='opportunity'&&kind==='agent'&&opp>=80&&risk<40);
+      const matchesFilter=active==='all'||active===kind||(active==='watched'&&kind==='agent'&&watched)||(active==='returning_visitor'&&(stage==='returning_visitor'||stage==='returning'))||(active==='engaged'&&['guest_engaged','member_engaged','engaged','converted','trusted'].includes(stage))||(active==='high_risk'&&kind==='agent'&&risk>=70)||(active==='opportunity'&&kind==='agent'&&opp>=80&&risk<40);
       const matchesSearch=!q||String(row.dataset.search||'').includes(q);
       row.classList.toggle('contacts-hidden',!(matchesFilter&&matchesSearch));
       if(matchesFilter&&matchesSearch)shown++;
