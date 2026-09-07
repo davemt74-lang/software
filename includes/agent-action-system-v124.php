@@ -36,7 +36,7 @@ function agent_action_v124_advance_scan(array $user,string $surface,string $star
 function agent_action_v313_normalize_outcome(string $value,string $eventType=''): string
 {
     $value=mb_strtolower(trim($value));
-    $value=str_replace([' ','-'],['_','_'],$value);
+    $value=str_replace([' ','-'],'_',$value);
     $map=[
         'success'=>'successful','succeeded'=>'successful','successful'=>'successful','completed'=>'successful','complete'=>'successful','worked'=>'successful',
         'resolved'=>'resolved','done'=>'resolved','closed'=>'resolved','fixed'=>'resolved',
@@ -70,14 +70,22 @@ function agent_action_v124_feedback_rows(int $uid,string $where,array $params): 
     $rows=agent_action_v124_query("SELECT event_type,COUNT(*) c,MAX(created_at) latest FROM agent_proactive_events WHERE user_id=? AND {$where} AND created_at>=DATE_SUB(NOW(),INTERVAL 60 DAY) GROUP BY event_type",$queryParams);
     foreach($rows as $row){$kind=(string)$row['event_type'];if(isset($out[$kind])){$out[$kind]=(int)$row['c'];$out['last_'.$kind]=(string)$row['latest'];}}
 
-    $outcomeRows=agent_action_v124_query("SELECT event_type,context_json,created_at FROM agent_proactive_events WHERE user_id=? AND {$where} AND event_type IN ('acted','dismissed') AND created_at>=DATE_SUB(NOW(),INTERVAL 60 DAY) ORDER BY id DESC LIMIT 500",$queryParams);
+    $outcomeRows=agent_action_v124_query("SELECT suggestion_hash,event_type,context_json,created_at FROM agent_proactive_events WHERE user_id=? AND {$where} AND event_type IN ('acted','dismissed') AND created_at>=DATE_SUB(NOW(),INTERVAL 60 DAY) ORDER BY id DESC LIMIT 500",$queryParams);
+    $finalized=[];$unresolvedCounted=[];
     foreach($outcomeRows as $row){
+        $hash=(string)($row['suggestion_hash']??'');
         $eventType=(string)($row['event_type']??'');
         $context=agent_action_v313_feedback_context((string)($row['context_json']??''));
         $outcome=agent_action_v313_normalize_outcome((string)($context['outcome']??$context['result']??''),$eventType);
-        if($outcome==='acted'){$out['acted_unresolved']++;continue;}
+        if($outcome==='acted'){
+            if($hash!==''&&(isset($finalized[$hash])||isset($unresolvedCounted[$hash])))continue;
+            $out['acted_unresolved']++;
+            if($hash!=='')$unresolvedCounted[$hash]=true;
+            continue;
+        }
         if(!isset($out[$outcome]))continue;
         $out[$outcome]++;
+        if($hash!=='')$finalized[$hash]=true;
         $latestKey='last_'.$outcome;
         if(($out[$latestKey]??'')==='')$out[$latestKey]=(string)($row['created_at']??'');
     }
@@ -213,10 +221,18 @@ function agent_action_v313_recent_outcome_exists(int $uid,string $hash,string $o
     return false;
 }
 
+function agent_action_v313_recover_source(int $uid,string $hash): string
+{
+    if($uid<1||$hash===''||!table_exists('agent_proactive_events'))return '';
+    $rows=agent_action_v124_query("SELECT source_kind FROM agent_proactive_events WHERE user_id=? AND suggestion_hash=? AND source_kind<>'' ORDER BY id DESC LIMIT 1",[$uid,$hash]);
+    return trim((string)($rows[0]['source_kind']??''));
+}
+
 function agent_action_v124_record_outcome(array $user,string $hash,string $eventType,string $surface,array $payload=[]): array
 {
     if(!function_exists('agent_proactive_v93_event'))return ['recorded'=>false,'reason'=>'event-ledger-unavailable'];
     $uid=(int)($user['id']??0);if($uid<1)return ['recorded'=>false,'reason'=>'user-unavailable'];
+    $hash=trim($hash);if($hash==='')return ['recorded'=>false,'reason'=>'missing-hash'];
     $hash=preg_match('/^[a-f0-9]{40}$/',$hash)?$hash:sha1($hash);
     $requestedOutcome=(string)($payload['outcome']??$eventType);
     $outcome=agent_action_v313_normalize_outcome($requestedOutcome,$eventType);
@@ -230,6 +246,7 @@ function agent_action_v124_record_outcome(array $user,string $hash,string $event
     if(!empty($payload['memory_id']))$context['memory_id']=(int)$payload['memory_id'];
     if(!empty($payload['task_status']))$context['task_status']=(string)$payload['task_status'];
     $payload['context']=$context;
+    if(trim((string)($payload['source']??''))==='')$payload['source']=agent_action_v313_recover_source($uid,$hash);
 
     $duplicate=agent_action_v313_recent_outcome_exists($uid,$hash,$outcome,300);
     if(!$duplicate)agent_proactive_v93_event($user,$hash,$canonicalEvent,$surface,$payload);
@@ -243,6 +260,7 @@ function agent_action_v124_record_outcome(array $user,string $hash,string $event
         'duplicate'=>$duplicate,
         'outcome'=>$outcome,
         'event_type'=>$canonicalEvent,
+        'source'=>(string)($payload['source']??''),
         'task'=>$task,
         'build'=>STONEFELLOW_AGENT_OUTCOME_CLOSURE_V313,
     ];
