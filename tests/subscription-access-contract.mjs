@@ -14,6 +14,7 @@ const ai = read('includes/ai-settings.php');
 const stream = read('includes/ai-stream-v121.php');
 const signup = read('signup.php');
 const teamDomain = read('includes/artist-workspaces-v104.php');
+const teamSubscription = read('includes/team-subscription.php');
 const teamPage = read('admin/team.php');
 const nav = read('includes/member-navigation.php');
 const bootstrap = read('includes/bootstrap.php');
@@ -107,7 +108,9 @@ assert.ok(teamPage.includes("user_has_role('artist',$user)"), 'only an actual Ar
 assert.ok(teamPage.includes('artist_workspace_v104_detach_member'), 'removing a collaborator must detach the relationship');
 assert.ok(!teamPage.includes('DELETE FROM users'), 'removing a Team member must never delete their VP3 account');
 assert.ok(teamPage.includes('subscription_assign_default_trial'), 'new Team-created accounts must enter the ordinary trial flow');
-assert.ok(teamPage.includes('artist_workspace_v104_team_limit'), 'Team capacity must come from package seats');
+assert.ok(teamPage.includes('team_subscription_state'), 'Team page must consume canonical package seat state');
+assert.ok(teamSubscription.includes("subscription_entitlement_row((int)$subscription['package_id'],'team_seats')"), 'Team capacity must come from the package team_seats entitlement');
+assert.ok(teamSubscription.includes("$state['can_add']"), 'canonical Team state must own add-member capacity decisions');
 
 assert.ok(nav.includes("$authorized=has_permission($permission,$user)"), 'navigation must authorize before evaluating package permission ceilings');
 assert.ok(nav.includes("user_has_role('artist',$user)"), 'a package must not manufacture Artist workspace identity in navigation');

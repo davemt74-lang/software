@@ -3,18 +3,8 @@ declare(strict_types=1);
 
 $mainSidebarUser = $mainSidebarUser ?? $workspaceSidebarUser ?? current_user();
 $mainSidebarActive = $mainSidebarActive ?? $workspaceSidebarActive ?? '';
-$mainSidebarSavedCount = 0;
 $mainSidebarTokenCommerceReady = function_exists('token_pack_schema_ready') && token_pack_schema_ready();
-
-if ($mainSidebarUser && table_exists('track_favorites')) {
-    try {
-        $mainSidebarStmt = db()?->prepare('SELECT COUNT(*) FROM track_favorites WHERE user_id=?');
-        if ($mainSidebarStmt) {
-            $mainSidebarStmt->execute([(int)$mainSidebarUser['id']]);
-            $mainSidebarSavedCount = (int)$mainSidebarStmt->fetchColumn();
-        }
-    } catch (Throwable $e) {}
-}
+$mainSidebarTeamState = function_exists('team_subscription_state') ? team_subscription_state($mainSidebarUser) : ['authorized'=>false];
 ?>
 <link rel="stylesheet" data-workspace-header-ui href="<?= e(url('/chat-header-ui.css?v=white-tech-20260904')) ?>">
 <link rel="stylesheet" href="<?= e(url('/site-branding.css?v=1')) ?>">
@@ -58,19 +48,9 @@ if ($mainSidebarUser && table_exists('track_favorites')) {
           </a>
         <?php endif; ?>
 
-        <?php if (has_permission('chat.access', $mainSidebarUser)): ?>
-          <a class="chat-sidebar-nav-link <?= $mainSidebarActive === 'player' ? 'active' : '' ?>" href="<?= e(url('/chat.php?view=player')) ?>">
-            <span>▶</span><strong>Player</strong>
-          </a>
-
-          <?php if ($mainSidebarSavedCount > 0): ?>
-            <a class="chat-sidebar-nav-link <?= $mainSidebarActive === 'saved' ? 'active' : '' ?>" href="<?= e(url('/chat.php?view=saved')) ?>">
-              <span>♥</span><strong>Saved Songs</strong>
-            </a>
-          <?php endif; ?>
-
-          <a class="chat-sidebar-nav-link <?= $mainSidebarActive === 'playlists' ? 'active' : '' ?>" href="<?= e(url('/chat.php?view=playlists')) ?>">
-            <span>P</span><strong>My Playlists</strong>
+        <?php if (!empty($mainSidebarTeamState['authorized'])): ?>
+          <a class="chat-sidebar-nav-link <?= $mainSidebarActive === 'team' ? 'active' : '' ?>" href="<?= e(url('/admin/team.php')) ?>">
+            <span>◎</span><strong>My Team</strong>
           </a>
         <?php endif; ?>
       </nav>

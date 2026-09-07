@@ -11,12 +11,17 @@ const knowledge = readFileSync('knowledge.php', 'utf8');
 assert.match(legacyWrapper, /require __DIR__ \. '\/main-sidebar\.php';/, 'legacy workspace sidebar must route to one canonical member sidebar');
 assert.doesNotMatch(legacyWrapper, /Stem Studio|Video Editor|workspace-main-sidebar/, 'legacy wrapper must not own duplicate navigation markup');
 
-for (const label of ['New Chat', 'Profile Agent', 'My Contacts', 'My Knowledge', 'Player', 'My Playlists']) {
+for (const label of ['New Chat', 'Profile Agent', 'My Contacts', 'My Knowledge', 'My Team']) {
   assert.ok(mainSidebar.includes(`<strong>${label}</strong>`), `canonical main sidebar must include ${label}`);
+}
+for (const removed of ['Player', 'Saved Songs', 'My Playlists']) {
+  assert.ok(!mainSidebar.includes(`<strong>${removed}</strong>`), `canonical main sidebar must not include removed ${removed} navigation`);
 }
 assert.doesNotMatch(mainSidebar, /Stem Studio|Video Editor/, 'canonical member sidebar must not expose editor/admin workspaces');
 assert.match(mainSidebar, /personal_knowledge\.access/, 'My Knowledge must remain permission-aware');
 assert.match(mainSidebar, /mainSidebarActive === 'knowledge'/, 'My Knowledge must support the active-page state');
+assert.match(mainSidebar, /team_subscription_state/, 'My Team must use the canonical subscription-aware Team state');
+assert.match(mainSidebar, /mainSidebarActive === 'team'/, 'My Team must support the active-page state');
 
 assert.match(contacts, /workspaceSidebarActive = 'contacts'/, 'Contacts must identify its active canonical sidebar item');
 assert.match(contacts, /includes\/workspace-sidebar-v82\.php/, 'Contacts must use the canonical sidebar wrapper');

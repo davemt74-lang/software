@@ -85,3 +85,14 @@
   const transcriptions=[...nav.querySelectorAll('a')].find(a=>/\/artist-listening\.php(?:[?#]|$)/.test(a.getAttribute('href')||''));
   if(contacts)contacts.insertAdjacentElement('afterend',link);else if(transcriptions)nav.insertBefore(link,transcriptions);else nav.appendChild(link);
 })();
+
+(() => {
+  'use strict';
+  if(String(window.STONEFELLOW_ACTIVITY?.surface||'')!=='chat')return;
+  if(document.querySelector('script[data-brain-learning-history-v317]'))return;
+  const script=document.createElement('script');
+  script.src=new URL('chat-brain-learning-history-v317.js?v=317-20260907',window.location.href).toString();
+  script.defer=true;
+  script.dataset.brainLearningHistoryV317='1';
+  document.body.appendChild(script);
+})();
