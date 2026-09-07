@@ -14,7 +14,7 @@ $contacts = function_exists('profile_visitor_contact_list_v243')
 $agentContacts = personal_capability_has_v242('profile_agent.access',$user) && vp3_radar_schema_ready($pdo) && function_exists('vp3_agent_crm_contacts')
     ? vp3_agent_crm_contacts($pdo,$user,250)
     : [];
-$agentStats = function_exists('vp3_agent_crm_stats') ? vp3_agent_crm_stats($agentContacts) : ['total'=>count($agentContacts),'high_risk'=>0,'opportunities'=>0,'messaging'=>0,'referrals'=>0,'conversions'=>0];
+$agentStats = function_exists('vp3_agent_crm_stats') ? vp3_agent_crm_stats($agentContacts) : ['total'=>count($agentContacts),'high_risk'=>0,'opportunities'=>0,'messaging'=>0,'watched'=>0,'referrals'=>0,'conversions'=>0];
 
 $totalContacts = count($contacts);
 $repeatContacts = 0;
@@ -99,7 +99,7 @@ function contacts_agent_messaging_label(string $status): string
 <meta name="theme-color" content="#f6f7f8">
 <title><?= e(system_agent_name()) ?> | My Contacts</title>
 <link rel="stylesheet" href="<?= e(url('/chat.css?v=82')) ?>">
-<link rel="stylesheet" href="<?= e(url('/contacts.css?v=agent-crm-20260906')) ?>">
+<link rel="stylesheet" href="<?= e(url('/contacts.css?v=agent-crm-watchlist-20260906')) ?>">
 </head>
 <body class="contacts-page">
 <div class="chat-app">
@@ -124,7 +124,7 @@ function contacts_agent_messaging_label(string $status): string
         <section class="contacts-metrics" aria-label="Contact metrics">
           <article class="contacts-metric"><span>Total relationships</span><strong><?= $totalRelationships ?></strong><small>People + recurring automated agents</small></article>
           <article class="contacts-metric"><span>People</span><strong><?= $totalContacts ?></strong><small><?= $repeatContacts ?> returning · <?= $engagedContacts ?> engaged</small></article>
-          <article class="contacts-metric"><span>AI / automated</span><strong><?= (int)$agentStats['total'] ?></strong><small>Agent Radar CRM contacts</small></article>
+          <article class="contacts-metric"><span>AI / automated</span><strong><?= (int)$agentStats['total'] ?></strong><small><?= (int)$agentStats['watched'] ?> watched · Agent Radar contacts</small></article>
           <article class="contacts-metric<?= (int)$agentStats['high_risk']>0?' alert':'' ?>"><span>High risk agents</span><strong><?= (int)$agentStats['high_risk'] ?></strong><small>Risk score 70 or higher</small></article>
           <article class="contacts-metric"><span>Agent opportunities</span><strong><?= (int)$agentStats['opportunities'] ?></strong><small>High opportunity · low risk</small></article>
           <article class="contacts-metric"><span>AI conversions</span><strong><?= (int)$agentStats['conversions'] ?></strong><small><?= (int)$agentStats['referrals'] ?> explicitly attributed referrals</small></article>
@@ -136,6 +136,7 @@ function contacts_agent_messaging_label(string $status): string
             <button class="contacts-filter active" type="button" data-contact-filter="all">All</button>
             <button class="contacts-filter" type="button" data-contact-filter="human">People</button>
             <button class="contacts-filter" type="button" data-contact-filter="agent">Agents</button>
+            <button class="contacts-filter" type="button" data-contact-filter="watched">Watched</button>
             <button class="contacts-filter" type="button" data-contact-filter="returning">Returning</button>
             <button class="contacts-filter" type="button" data-contact-filter="engaged">Engaged</button>
             <button class="contacts-filter" type="button" data-contact-filter="high_risk">High risk</button>
@@ -160,7 +161,7 @@ function contacts_agent_messaging_label(string $status): string
               $lastSeen = (string)($contact['last_seen_at'] ?? '');
               if ($lastActivity === '' || (strtotime($lastSeen) !== false && strtotime($lastActivity) < strtotime($lastSeen))) $lastActivity = $lastSeen;
             ?>
-            <article class="contacts-row" data-contact-row data-kind="human" data-stage="<?= e($stage) ?>" data-member="<?= !empty($contact['signed_in']) ? '1' : '0' ?>" data-risk="0" data-opportunity="0" data-search="<?= e($searchText) ?>">
+            <article class="contacts-row" data-contact-row data-kind="human" data-stage="<?= e($stage) ?>" data-member="<?= !empty($contact['signed_in']) ? '1' : '0' ?>" data-risk="0" data-opportunity="0" data-watch="0" data-search="<?= e($searchText) ?>">
               <div class="contacts-person">
                 <span class="contacts-person-avatar">
                   <?php if (!empty($contact['avatar_url'])): ?><img src="<?= e((string)$contact['avatar_url']) ?>" alt=""><?php else: ?><?= e(mb_strtoupper(mb_substr($label,0,1))) ?><?php endif; ?>
@@ -180,16 +181,16 @@ function contacts_agent_messaging_label(string $status): string
             <?php endforeach; ?>
 
             <?php foreach ($agentContacts as $contact):
-              $contactId=(int)$contact['id'];$risk=(int)$contact['risk_score'];$opp=(int)$contact['opportunity_score'];$value=(int)$contact['value_score'];$cost=(int)$contact['cost_score'];$trust=(int)$contact['trust_score'];$engagement=(int)$contact['engagement_score'];
+              $contactId=(int)$contact['id'];$risk=(int)$contact['risk_score'];$opp=(int)$contact['opportunity_score'];$value=(int)$contact['value_score'];$cost=(int)$contact['cost_score'];$trust=(int)$contact['trust_score'];$engagement=(int)$contact['engagement_score'];$watched=!empty($contact['watch_enabled']);
               $name=trim((string)$contact['display_name'])?:'Automated agent';$operator=trim((string)$contact['operator_name']);$class=(string)$contact['visitor_class'];$stage=(string)$contact['relationship_status'];$intent=trim((string)$contact['inferred_intent']);$recommendation=trim((string)$contact['recommendation']);
-              $searchText=strtolower(trim($name.' '.$operator.' '.$class.' '.$stage.' '.$intent.' agent automated '.(string)$contact['verification_status']));
+              $searchText=strtolower(trim($name.' '.$operator.' '.$class.' '.$stage.' '.$intent.' agent automated '.(string)$contact['verification_status'].($watched?' watched watchlist':'')));
               $messagingStatus=(string)$contact['messaging_access_status'];$requestId=(int)$contact['messaging_request_id'];
             ?>
-            <article class="contacts-row contacts-agent-row<?= $risk>=70?' high-risk':'' ?><?= $opp>=80&&$risk<40?' opportunity':'' ?>" data-contact-row data-kind="agent" data-stage="<?= e($stage) ?>" data-member="0" data-risk="<?= $risk ?>" data-opportunity="<?= $opp ?>" data-search="<?= e($searchText) ?>" data-agent-contact-id="<?= $contactId ?>">
+            <article id="agent-contact-<?= $contactId ?>" class="contacts-row contacts-agent-row<?= $risk>=70?' high-risk':'' ?><?= $opp>=80&&$risk<40?' opportunity':'' ?><?= $watched?' watched':'' ?>" data-contact-row data-kind="agent" data-stage="<?= e($stage) ?>" data-member="0" data-risk="<?= $risk ?>" data-opportunity="<?= $opp ?>" data-watch="<?= $watched?'1':'0' ?>" data-search="<?= e($searchText) ?>" data-agent-contact-id="<?= $contactId ?>">
               <div class="contacts-person">
                 <span class="contacts-person-avatar agent"><?= e(mb_strtoupper(mb_substr($name,0,1))) ?></span>
                 <div class="contacts-person-copy">
-                  <strong><?= e($name) ?></strong>
+                  <strong><?= e($name) ?><?php if($watched): ?> <span class="contacts-watch-badge">Watched</span><?php endif; ?></strong>
                   <small><?= e($operator!==''?$operator:'Unidentified operator') ?> · <?= e(contacts_agent_class_label($class)) ?></small>
                 </div>
               </div>
@@ -205,6 +206,11 @@ function contacts_agent_messaging_label(string $status): string
                   <div class="contacts-agent-intelligence">
                     <div><span>Inferred intent</span><strong><?= e($intent!==''?str_replace('_',' ',$intent):'Not enough evidence') ?></strong><small><?= $intent!==''?(int)$contact['intent_confidence'].'% confidence':'Keep monitoring this relationship.' ?></small></div>
                     <div><span>Recommended next step</span><strong><?= e($recommendation!==''?$recommendation:'Continue monitoring this recurring agent contact.') ?></strong></div>
+                  </div>
+                  <div class="contacts-agent-actions attention" aria-label="Agent CRM attention controls">
+                    <span>Attention</span>
+                    <button type="button" data-agent-watch data-contact-id="<?= $contactId ?>" data-watch-enabled="<?= $watched?'1':'0' ?>"><?= $watched?'Stop watching':'Watch this agent' ?></button>
+                    <small>Watched contacts surface their next new session in your notification/Main Feed flow.</small>
                   </div>
                   <div class="contacts-agent-actions" aria-label="Agent Gateway contact controls">
                     <span>Website access</span>
@@ -255,8 +261,8 @@ function contacts_agent_messaging_label(string $status): string
     const q=String(search?.value||'').trim().toLowerCase();
     let shown=0;
     for(const row of rows){
-      const kind=String(row.dataset.kind||'human'),stage=String(row.dataset.stage||''),risk=Number(row.dataset.risk||0),opp=Number(row.dataset.opportunity||0);
-      const matchesFilter=active==='all'||active===kind||(active==='returning'&&(stage==='returning_visitor'||stage==='returning'))||(active==='engaged'&&['guest_engaged','member_engaged','engaged','converted','trusted'].includes(stage))||(active==='high_risk'&&kind==='agent'&&risk>=70)||(active==='opportunity'&&kind==='agent'&&opp>=80&&risk<40);
+      const kind=String(row.dataset.kind||'human'),stage=String(row.dataset.stage||''),risk=Number(row.dataset.risk||0),opp=Number(row.dataset.opportunity||0),watched=row.dataset.watch==='1';
+      const matchesFilter=active==='all'||active===kind||(active==='watched'&&kind==='agent'&&watched)||(active==='returning'&&(stage==='returning_visitor'||stage==='returning'))||(active==='engaged'&&['guest_engaged','member_engaged','engaged','converted','trusted'].includes(stage))||(active==='high_risk'&&kind==='agent'&&risk>=70)||(active==='opportunity'&&kind==='agent'&&opp>=80&&risk<40);
       const matchesSearch=!q||String(row.dataset.search||'').includes(q);
       row.classList.toggle('contacts-hidden',!(matchesFilter&&matchesSearch));
       if(matchesFilter&&matchesSearch)shown++;
@@ -272,10 +278,11 @@ function contacts_agent_messaging_label(string $status): string
   search?.addEventListener('input',apply);
   for(const filter of filters)filter.addEventListener('click',()=>{active=String(filter.dataset.contactFilter||'all');for(const button of filters)button.classList.toggle('active',button===filter);apply();});
   document.addEventListener('click',async e=>{
-    const gateway=e.target.closest('[data-agent-policy]');const messaging=e.target.closest('[data-agent-message-decision]');if((!gateway&&!messaging)||busy)return;
-    busy=true;const button=gateway||messaging;button.disabled=true;
+    const gateway=e.target.closest('[data-agent-policy]');const messaging=e.target.closest('[data-agent-message-decision]');const watch=e.target.closest('[data-agent-watch]');if((!gateway&&!messaging&&!watch)||busy)return;
+    busy=true;const button=gateway||messaging||watch;button.disabled=true;
     try{
-      if(gateway){const contactId=Number(gateway.dataset.contactId||0),action=String(gateway.dataset.agentPolicy||'monitor'),limit=Math.max(1,Number(document.querySelector(`[data-agent-limit="${contactId}"]`)?.value||30));await policy({action:'set_contact_policy',contact_id:contactId,policy_action:action,limit_30m:limit});setNotice(`Agent Gateway contact policy updated to ${action}${action==='limit'?` ${limit}/30m`:''}.`);}
+      if(watch){const enabled=watch.dataset.watchEnabled!=='1';await policy({action:'set_contact_watch',contact_id:Number(watch.dataset.contactId||0),watch_enabled:enabled});setNotice(enabled?'Agent added to your watchlist. Its next new session will be surfaced.':'Agent removed from your watchlist.');}
+      else if(gateway){const contactId=Number(gateway.dataset.contactId||0),action=String(gateway.dataset.agentPolicy||'monitor'),limit=Math.max(1,Number(document.querySelector(`[data-agent-limit="${contactId}"]`)?.value||30));await policy({action:'set_contact_policy',contact_id:contactId,policy_action:action,limit_30m:limit});setNotice(`Agent Gateway contact policy updated to ${action}${action==='limit'?` ${limit}/30m`:''}.`);}
       else{const decision=String(messaging.dataset.agentMessageDecision||'deny');await policy({action:'access_request_decision',request_id:Number(messaging.dataset.requestId||0),decision});setNotice(decision==='allow_once'?'Agent Messaging allowed once for 30 minutes.':decision==='allow'?'Agent Messaging is now always allowed for this contact.':'Agent Messaging access denied or revoked.');}
       window.setTimeout(()=>window.location.reload(),350);
     }catch(err){setNotice(err.message,true);button.disabled=false;}finally{busy=false;}
