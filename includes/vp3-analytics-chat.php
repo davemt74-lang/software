@@ -23,7 +23,9 @@ function vp3_analytics_chat_days(string $query): int
 
 function vp3_analytics_chat_property_name(array $row): string
 {
-    return (string)($row['property_type']??'')==='native'?'VP3 Profile':trim((string)($row['label']??''))?:trim((string)($row['domain']??''))?:'Connected site';
+    return (string)($row['property_type']??'')==='native'
+        ? 'VP3 Profile'
+        : (trim((string)($row['label']??'')) ?: (trim((string)($row['domain']??'')) ?: 'Connected site'));
 }
 
 function vp3_analytics_chat_summary(PDO $pdo,array $user,string $query): string
