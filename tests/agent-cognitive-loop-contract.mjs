@@ -10,6 +10,7 @@ const analytics = read('includes/vp3-analytics-intelligence.php');
 const continuity = read('includes/agent-chat-continuity-v101.php');
 const surface = read('includes/agent-surface-context-v131.php');
 const voice = read('chat-voice.js');
+const brainDrawer = read('chat-notifications-drawer-v240.js');
 
 /* One explicit Agent Brain cognitive loop is loaded and activated. */
 assert.ok(bootstrap.includes("require_once __DIR__.'/agent-cognitive-loop-v310.php';"), 'bootstrap must load the canonical cognitive loop');
@@ -33,6 +34,39 @@ assert.ok(loop.includes('agent_action_v124_suppression'), 'loop must reuse sugge
 assert.ok(loop.includes('agent_action_v124_risk'), 'loop must reuse canonical action risk classification');
 assert.ok(loop.includes('agent_action_v124_plan'), 'loop must reuse canonical action planning');
 
+/* Explainability belongs to the canonical Brain state, not a separate dashboard cache. */
+assert.ok(loop.includes("VP3_AGENT_COGNITIVE_EXPLAINABILITY_V311 = 'agent-brain-explainability-v311-20260907'"), 'Brain explainability must be versioned');
+assert.ok(loop.includes("'explainability_build'=>VP3_AGENT_COGNITIVE_EXPLAINABILITY_V311"), 'persisted state must identify its explainability contract');
+assert.ok(loop.includes("'base_score'=>"), 'priority evidence must retain the pre-learning base score');
+assert.ok(loop.includes("'outcome_factor'=>"), 'priority evidence must expose learned source weighting');
+assert.ok(loop.includes("'score_delta'=>"), 'priority state must compare score changes to the prior cycle');
+assert.ok(loop.includes("'rank_delta'=>"), 'priority state must compare rank changes to the prior cycle');
+assert.ok(loop.includes("'movement'=>"), 'priority state must label new/up/down/same movement');
+assert.ok(loop.includes("'previous_score']=$old?round((float)$old['score'],4):null"), 'new priorities must explicitly have no prior score');
+assert.ok(loop.includes("'score_delta']=$old?round($currentScore-(float)$old['score'],4):0.0"), 'new priorities must not manufacture an increase from zero');
+assert.ok(loop.includes("$movement==='new'"), 'explainability must special-case genuinely new priorities');
+assert.ok(loop.includes("'new this cycle'"), 'new priorities must be described as new rather than as an artificial percentage increase');
+assert.ok(loop.includes('if(!is_scalar($raw))continue;'), 'explainability metadata must ignore structured values rather than trigger array-to-string warnings');
+assert.ok(loop.includes("'suppression_reasons'=>[]"), 'cycle diagnostics must retain suppression reasons');
+assert.ok(loop.includes("'ignored_noise'=>0"), 'cycle diagnostics must count low-value/noise candidates');
+assert.ok(loop.includes("'deduped'=>0"), 'cycle diagnostics must count duplicate signals');
+assert.ok(loop.includes("'trimmed'=>0"), 'cycle diagnostics must count valid priorities below the visible working-set limit');
+assert.ok(loop.includes('agent_cognitive_loop_v311_explainability_summary'), 'Brain must persist a human-readable explanation of the current ranking');
+assert.ok(loop.includes('Last cognitive cycle:'), 'explanation must identify the latest cycle and its counts');
+assert.ok(loop.includes("'diagnostics'=>$diagnostics"), 'machine-readable cycle diagnostics must live beside priorities in Brain memory');
+assert.ok(loop.includes("'source_counts'=>agent_cognitive_loop_v311_source_counts($candidates)"), 'Brain must expose which canonical subsystems supplied the observed candidates');
+assert.ok(loop.includes("'risk_level'=>"), 'ranked priorities must retain canonical risk classification');
+assert.ok(loop.includes("'requires_approval'=>"), 'ranked priorities must retain approval requirements');
+assert.ok(loop.includes("'evidence'=>["), 'ranked priorities must retain source/event evidence identifiers');
+assert.ok(loop.includes('Activity Center already renders this memory'), 'explainability must intentionally use the existing Agent Brain surface');
+assert.ok(brainDrawer.includes('const recent = Array.isArray(brain.recent)'), 'Activity Center must consume recent Agent Brain memory');
+assert.ok(brainDrawer.includes("memory.memory_text || ''"), 'Activity Center must visibly render the cognitive explanation text');
+
+/* Explainability never becomes a second surfacing authority. */
+assert.ok(loop.includes("$parts[]=(string)($item['key']??'').'|'.(string)($item['risk_level']??'');"), 'surface signature must stay limited to ordered priority identity + canonical risk');
+assert.ok(!/score_delta[^\n]{0,120}signature|signature[^\n]{0,120}score_delta/.test(loop), 'score movement must not itself trigger Main Feed interruption');
+assert.ok(!/rank_delta[^\n]{0,120}signature|signature[^\n]{0,120}rank_delta/.test(loop), 'rank diagnostics must remain descriptive rather than a parallel trigger');
+
 /* Analytics becomes Brain evidence, including profile + website traffic spikes. */
 assert.ok(bootstrap.includes("require_once __DIR__.'/vp3-analytics-intelligence.php';"), 'bootstrap must load Analytics intelligence');
 assert.ok(analytics.includes('profile_visit_sessions'), 'native profile traffic must feed Analytics intelligence');
@@ -51,6 +85,8 @@ assert.ok(surface.includes("'source'=>'agent_brain_cognitive'"), 'surface contex
 assert.ok(continuity.includes('agent_cognitive_loop_v310_priority_items'), 'Main Feed return briefing must consume Agent Brain priorities');
 assert.ok(continuity.includes('$brainPriorities?:'), 'legacy ecosystem scan must be a cold-start fallback only');
 assert.ok(continuity.includes("'voice_summary'=>"), 'return briefing must expose a voice summary of the same Brain priorities');
+assert.ok(loop.includes("'score_delta'=>(float)($priority['score_delta']??0)"), 'surface priority items must carry score movement from the same Brain state');
+assert.ok(loop.includes("'evidence_source'=>(string)($priority['source']??'agent_brain')"), 'surface priorities must retain the subsystem that supplied the evidence');
 
 /* Priority changes use the normal conversation instead of a parallel updates panel. */
 assert.ok(loop.includes('agent_chat_v101_append_ecosystem_message'), 'material priority changes must use the canonical Main Feed writer');
