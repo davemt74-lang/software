@@ -4,6 +4,8 @@ import assert from 'node:assert/strict';
 const read = path => fs.readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
 
 const actionSystem = read('includes/agent-action-system-v124.php');
+const taskClosure = read('includes/agent-task-outcome-closure-v314.php');
+const bootstrap = read('includes/bootstrap.php');
 const api = read('api/agent-proactive-v93.php');
 const cognitive = read('includes/agent-cognitive-loop-v310.php');
 const ledger = read('includes/agent-proactive-v93.php');
@@ -60,5 +62,30 @@ assert.ok(api.includes("if(empty($result['recorded'])&&empty($result['duplicate'
 assert.ok(actionSystem.includes("!empty($payload['task_status'])"), 'linked task mutation must require an explicit task status');
 assert.ok(!/outcome==='successful'[^\n]{0,180}agent_task_v123_update/.test(actionSystem), 'success must not silently complete a linked task');
 assert.ok(!/outcome==='ignored'[^\n]{0,180}agent_task_v123_update/.test(actionSystem), 'ignored must not silently cancel a linked task');
+
+/* v314 closes the opposite direction: explicit task lifecycle results may close an exposed recommendation. */
+assert.ok(taskClosure.includes("STONEFELLOW_AGENT_TASK_OUTCOME_CLOSURE_V314='agent-task-outcome-closure-v314-20260907'"), 'automatic task closure must be versioned');
+assert.ok(taskClosure.includes("'completed'=>'resolved'"), 'completed task lifecycle must map to resolved rather than assumed business success');
+assert.ok(taskClosure.includes("'cancelled'=>'ignored'"), 'cancelled task lifecycle must map to ignored rather than assumed recommendation failure');
+assert.ok(!taskClosure.includes("'completed'=>'successful'"), 'task completion must not overclaim a successful external result');
+assert.ok(!taskClosure.includes("'cancelled'=>'unsuccessful'"), 'task cancellation must not overclaim recommendation failure');
+assert.ok(taskClosure.includes("sha1('task|'.$taskKey)"), 'automatic closure must use the exact proactive task suggestion identity');
+assert.ok(taskClosure.includes("source_kind='task_lifecycle'"), 'only canonical task-lifecycle recommendation exposures may auto-close');
+assert.ok(taskClosure.includes("event_type IN ('shown','acted','dismissed')"), 'cycle detection must inspect canonical exposure/final event vocabulary');
+assert.ok(taskClosure.includes("in_array($outcome,['successful','resolved','unsuccessful','ignored'],true)"), 'cycle detection must stop at the newest prior final outcome');
+assert.ok(taskClosure.includes("'reason'=>'new-exposure-after-final'"), 'a reopened/re-surfaced task must be able to form a new learning cycle');
+assert.ok(taskClosure.includes("'reason'=>'already-final'"), 'a task with no newer exposure must not be finalized twice');
+assert.ok(taskClosure.includes("agent_action_v124_record_outcome($user,$hash,$outcome,'task_lifecycle_auto'"), 'automatic closure must reuse the canonical v313 writer');
+assert.ok(taskClosure.includes("'automatic'=>true"), 'automatic lifecycle closure must retain explicit provenance');
+assert.ok(taskClosure.includes("'trigger'=>'task_lifecycle'"), 'automatic closure must identify the lifecycle trigger');
+assert.ok(taskClosure.includes("'source_label'=>trim((string)($task['source_label']??''))"), 'task source provenance must survive automatic closure');
+assert.ok(taskClosure.includes("'source_url'=>trim((string)($task['source_url']??''))"), 'exact task evidence URL must survive automatic closure');
+assert.ok(taskClosure.includes("'source'=>'task_lifecycle',\n        'outcome'=>$outcome,\n        'context'=>$context"), 'automatic closure writer payload must not request a task-status mutation');
+assert.ok(!/agent_action_v124_record_outcome\([^;]+?'task_status'\s*=>/s.test(taskClosure), 'automatic learning must never write task status back through Outcome Closure');
+assert.ok(!/CREATE TABLE|ALTER TABLE/.test(taskClosure), 'automatic closure must not add a second persistence schema');
+assert.ok(bootstrap.includes("require_once __DIR__.'/agent-task-outcome-closure-v314.php';"), 'bootstrap must load the lifecycle closure bridge after the canonical action system');
+assert.ok(bootstrap.includes('agent_task_outcome_v314_boot();'), 'bounded automatic closure scan must be part of the authenticated runtime');
+assert.ok(taskClosure.includes('STONEFELLOW_AGENT_TASK_OUTCOME_SCAN_SECONDS_V314=60'), 'automatic closure must be cadence-bounded');
+assert.ok(taskClosure.includes("if(PHP_SAPI==='cli'"), 'automatic boot must stay dormant during CLI tests/jobs unless explicitly invoked');
 
 console.log('AGENT_OUTCOME_CLOSURE_CONTRACT=PASS');

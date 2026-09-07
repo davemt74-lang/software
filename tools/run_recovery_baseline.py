@@ -103,6 +103,7 @@ HISTORICAL_WORKFLOW_COUPLED_TESTS = [
 PHP_TESTS = [
     'tests/agent-brain-vector-crc-v142.php',
     'tests/agent-outcome-factor-v313.php',
+    'tests/agent-task-outcome-closure-v314.php',
 ]
 
 

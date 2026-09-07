@@ -293,6 +293,7 @@ function agent_cognitive_loop_v310_public_priority(array $item): array
     $score=round((float)($item['score']??0),4);
     return [
         'key'=>(string)($item['key']??''),
+        'suggestion_hash'=>(string)($item['hash']??''),
         'title'=>mb_strimwidth((string)($item['title']??''),0,140,'…'),
         'reason'=>mb_strimwidth((string)($item['reason']??''),0,420,'…'),
         'prompt'=>mb_strimwidth((string)($item['prompt']??''),0,900,'…'),
@@ -311,6 +312,7 @@ function agent_cognitive_loop_v310_public_priority(array $item): array
         'plan_summary'=>agent_cognitive_loop_v311_plan_summary($item['plan']??null),
         'evidence'=>[
             'source'=>$source,
+            'suggestion_hash'=>(string)($item['hash']??''),
             'notification_id'=>max(0,(int)($item['notification_id']??0)),
             'event_id'=>(string)($item['event_id']??''),
             'action_id'=>(string)($item['action_id']??''),
@@ -475,6 +477,27 @@ function agent_cognitive_loop_v310_surface(array $user,array $prior,array &$stat
         'generated_at'=>gmdate('c'),
     ]);
     if($conversationId<1)return false;
+
+    // A recommendation becomes learning evidence only after the cognitive
+    // priority turn was successfully persisted to Main Feed. Reuse the same
+    // proactive-event ledger and shown-event semantics as every other surface.
+    if(function_exists('agent_action_v124_mark_shown')){
+        foreach(array_slice($priorities,0,3) as $item){
+            if(!is_array($item))continue;
+            $hash=trim((string)($item['suggestion_hash']??''));
+            if(!preg_match('/^[a-f0-9]{40}$/',$hash))continue;
+            agent_action_v124_mark_shown($user,[
+                'hash'=>$hash,
+                'title'=>(string)($item['title']??'Agent Brain priority'),
+                'prompt'=>(string)($item['prompt']??''),
+                'source'=>(string)($item['source']??'agent_brain'),
+                'action_id'=>(string)($item['action_id']??''),
+                'event_id'=>(string)($item['event_id']??''),
+                'score'=>(float)($item['score']??0),
+            ],'brain');
+        }
+    }
+
     $state['last_surface_at']=gmdate('c');
     $state['last_surface_signature']=$signature;
     $state['last_surface_conversation_id']=$conversationId;
