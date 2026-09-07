@@ -12,22 +12,12 @@ const ui = fs.readFileSync('artist-listening-ui.js','utf8');
 
 /* One canonical frontend layer per concern. */
 for (const asset of [
-  'artist-listening.css',
-  'artist-listening-realtime.js',
-  'artist-listening-recognition.js',
-  'artist-listening-transcript.js',
-  'artist-listening-workspace.js',
-  'artist-listening.js',
-  'artist-listening-recordings.js',
-  'artist-listening-naming.js',
-  'artist-listening-ai.js',
-  'artist-listening-ui.js',
-]) {
-  assert.ok(page.includes(asset), `${asset} must be loaded by the canonical page`);
-}
+  'artist-listening.css','artist-listening-realtime.js','artist-listening-recognition.js','artist-listening-transcript.js',
+  'artist-listening-workspace.js','artist-listening.js','artist-listening-recordings.js','artist-listening-naming.js','artist-listening-ai.js','artist-listening-ui.js',
+]) assert.ok(page.includes(asset), `${asset} must be loaded by the canonical page`);
 assert.match(page,/artist-listening\.js\?v=9ac023be/,'capture controller must use the fixed source blob cache key');
-assert.match(page,/artist-listening-ai\.js\?v=transcription-app-registry-v300-20260906/,'AI controller must use the current canonical cache identity');
-assert.doesNotMatch(page,/artist-listening-ai\.js\?v=c18c3dc8|&b=1d511bb5/,'retired AI cache identities must stay removed');
+assert.match(page,/artist-listening-ai\.js\?v=transcription-workflow-v304-20260906/,'AI controller must use the current v304 cache identity');
+assert.doesNotMatch(page,/artist-listening-ai\.js\?v=transcription-app-registry-v300-20260906|artist-listening-ai\.js\?v=c18c3dc8|&b=1d511bb5/,'retired AI cache identities must stay removed');
 assert.doesNotMatch(page,/artist-listening[^"']*-v\d+[^"']*\.(?:js|css)/,'Artist Listening page must not load numbered frontend layers');
 assert.equal((page.match(/artist-listening-ai\.js\?/g) || []).length, 1, 'AI controller must load exactly once');
 assert.equal((page.match(/artist-listening\.css\?/g) || []).length, 1, 'one canonical stylesheet must load exactly once');
@@ -41,13 +31,13 @@ assert.doesNotMatch(naming,/data-listening-workspace-new|data-listening-workspac
 assert.doesNotMatch(naming,/stopImmediatePropagation/);
 assert.match(naming,/data-v196-rename/);
 
-/* Header ownership: EXIT + Save + AI Summary. Copy/Download do not exist. */
+/* Header ownership: EXIT + Save + AI Summary. */
 assert.match(workspace,/data-listening-workspace-exit/);
 assert.match(workspace,/data-listening-workspace-save>Save<\/button>/);
 assert.match(workspace,/data-listening-ai-toggle aria-expanded="false"/);
 assert.doesNotMatch(workspace,/>Copy<\/button>|>Download<\/button>|copyDocument|downloadDocument/);
 
-/* AI Summary keeps one direct owner while transcription apps live inside it. */
+/* AI Summary keeps one direct owner while workflow controls live inside it. */
 assert.match(ai,/function getButton\(\)/);
 assert.match(ai,/document\.querySelector\('\[data-listening-ai-toggle\]'\)/);
 assert.match(ai,/button\.addEventListener\('click'/);
@@ -56,11 +46,14 @@ assert.match(ai,/function setOpen\(open\)/);
 assert.match(ai,/setOpen\(!state\.open\)/);
 assert.match(ai,/panel\.classList\.toggle\('open', state\.open\)/);
 assert.match(ai,/function setResearchEnabled\(enabled\)/);
+assert.match(ai,/function setLiveAnalysisEnabled\(enabled\)/);
 assert.match(ai,/data-listening-ai-research/);
+assert.match(ai,/data-listening-ai-live/);
 assert.match(ai,/data-listening-ai-app-options/);
 assert.match(ai,/data-listening-ai-tabs/);
 assert.match(ai,/function analyzeApps\(appIds, mode = 'manual'\)/,'analysis must support explicit plugin request sets');
-assert.match(ai,/apps:requested/,'analyze requests must send the explicit plugin set, enabling one-plugin reruns without changing selection');
+assert.match(ai,/apps:requested/,'analyze requests must send the explicit plugin set');
+assert.match(ai,/workflow:\{\.\.\.state\.workflow\}/,'analyze requests must send the run profile');
 assert.match(ai,/analyzeApps\(state\.selectedApps, mode\)/,'full Analyze must still execute the complete selected plugin set');
 assert.match(ai,/request\('analyze'/);
 assert.match(ai,/save_brain/);
@@ -87,21 +80,16 @@ assert.match(transcript,/stonefellow:artist-listening-view-changed/);
 assert.doesNotMatch(transcript,/ensureAiUi|analyze_page|analyze_master|window\.fetch\s*=/);
 assert.doesNotMatch(page,/left:292px!important|left:238px!important/);
 
-/* Realtime may reconcile speech, but it may never inject another runtime. */
 assert.doesNotMatch(realtime,/createElement\('script'\)|artist-listening-intelligence-v236\.js/);
-
-/* Temporary diagnostics stay removed; product state belongs in the report canvas. */
 assert.doesNotMatch(ai,/sfListeningAiDebug|AI SUMMARY DEBUG|renderDebug|ensureDebug/);
 assert.match(ai,/return 'Not analyzed yet'/);
 assert.match(ai,/class="sf-listening-ai-report-state"/);
 assert.match(page,/\.sf-listening-ai-footer-actions\{[\s\S]*flex-wrap:nowrap!important/);
 assert.match(page,/\.sf-listening-ai-tabs\{display:flex/);
 
-/* Sidebar remains interactive unless this browser is actually transcribing. */
 assert.match(workspace,/function browserListeningActive\(\)/);
 assert.match(workspace,/if \(listeningActive && activeSessionId && id !== activeSessionId\)/);
 assert.match(workspace,/api174\('session', \{session_id:id\}\)/);
-
 assert.doesNotMatch(ai,/MediaRecorder|chat-voice-v142|premium-voice-v117|conversation-voice/);
 assert.doesNotMatch(workspace,/MediaRecorder/);
 

@@ -53,10 +53,11 @@ assert.match(items,/function transcription_intelligence_export_result_v302/);
 assert.match(items,/\(\$item\['review_state'\] \?\? ''\) === 'rejected'/);
 assert.match(items,/\['source_fingerprint','edited_text','actions'\]/,'internal metadata must stay out of compiled report text');
 assert.match(api,/transcription_intelligence_report_text_v302/,'Brain/Knowledge export must use the review-aware compiler');
-assert.match(api,/source'=>'transcription-intelligence-v303'/,'Agent Brain report provenance must identify the operational intelligence layer');
+assert.match(api,/source'=>'transcription-intelligence-v304'/,'whole-report Agent Brain provenance must identify the current workflow layer');
 
-/* Canonical ownership stays singular while v303 extends item actions. */
-assert.match(client,/const BUILD = 'transcription-intelligence-v303-20260906'/);
+/* Canonical ownership stays singular while v304 preserves v302 review and v303 actions. */
+assert.match(client,/const BUILD = 'transcription-workflow-v304-20260906'/);
+assert.match(api,/transcription_app_analyze_v304\(/,'stable analysis must execute through v304 without replacing durable item semantics');
 assert.match(client,/performItemAction:/,'controller API must expose explicit item actions');
 assert.doesNotMatch(client,/document\.addEventListener\('click'/,'no delegated document click owner is allowed');
 assert.doesNotMatch(client,/MutationObserver/,'AI controller must not observe/rewrite the page runtime');
