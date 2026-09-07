@@ -54,6 +54,7 @@ NODE_TESTS = [
     'tests/ai-token-pack-purchase-contract.mjs',
     'tests/subscription-intelligence-contract.mjs',
     'tests/agent-radar-foundation-contract.mjs',
+    'tests/agent-radar-native-profile-contract.mjs',
     'tests/team-workspace-scope-contract.mjs',
     'tests/member-navigation-contract.mjs',
     'tests/main-feed-canonical-ui-contract.mjs',
