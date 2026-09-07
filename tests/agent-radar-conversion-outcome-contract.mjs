@@ -17,6 +17,9 @@ assert.ok(closure.includes("n.source_type='radar_event'"), 'opportunity notifica
 assert.ok(closure.includes("e.agent_contact_id=?"), 'opportunity correlation must be scoped to the exact Agent CRM contact');
 assert.ok(closure.includes("e.event_type='agent_opportunity_detected'"), 'opportunity source event must be the canonical Radar opportunity event');
 assert.ok(closure.includes("e.owner_user_id=?"), 'Radar opportunity must be owner scoped');
+assert.ok(closure.includes('ORDER BY e.occurred_at DESC,e.id DESC'), 'opportunity candidates must be deterministically newest first');
+assert.ok(closure.includes('$candidate=$candidates[0];'), 'only the newest pre-conversion opportunity may own automatic conversion attribution');
+assert.ok(closure.includes("'reason'=>'latest-opportunity-'.(string)($cycle['reason']??'not-eligible')"), 'an unsurfaced/final latest opportunity must fail closed instead of falling back to an older recommendation');
 assert.ok(!/display_name|operator_name/.test(closure), 'conversion closure must never correlate by contact/operator display names');
 
 /* Conversion evidence is first-party and comes from the existing attribution ledger. */
