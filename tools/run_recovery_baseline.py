@@ -79,6 +79,7 @@ NODE_TESTS = [
     'tests/vp3-analytics-contract.mjs',
     'tests/agent-cognitive-loop-contract.mjs',
     'tests/agent-crm-relationship-detail-contract.mjs',
+    'tests/agent-outcome-closure-contract.mjs',
     'tests/team-workspace-scope-contract.mjs',
     'tests/member-navigation-contract.mjs',
     'tests/main-feed-canonical-ui-contract.mjs',
@@ -100,6 +101,7 @@ HISTORICAL_WORKFLOW_COUPLED_TESTS = [
 
 PHP_TESTS = [
     'tests/agent-brain-vector-crc-v142.php',
+    'tests/agent-outcome-factor-v313.php',
 ]
 
 
