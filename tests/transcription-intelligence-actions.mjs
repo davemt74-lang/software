@@ -9,6 +9,7 @@ const client = read('artist-listening-ai.js');
 const chat = read('includes/agent-chat-continuity-v101.php');
 const lifecycle = read('includes/agent-memory-lifecycle-v123.php');
 const crm = read('includes/crm-v180.php');
+const baseline = read('tools/run_recovery_baseline.py');
 
 /* Operational writes are explicit and require human acceptance. */
 assert.match(actions,/function transcription_intelligence_require_accepted_v303/);
@@ -31,9 +32,11 @@ assert.doesNotMatch(actions,/CREATE TABLE|ALTER TABLE/,'operational intelligence
 assert.match(actions,/memory_type,subject,memory_text,memory_hash/);
 assert.match(actions,/\$kind=transcription_intelligence_task_kind_v303/);
 assert.match(actions,/\? 'commitment' : 'task'/,'decisions/commitments must create commitment memories; other promoted items create tasks');
-assert.match(actions,/'task_status'=>'open'/);
+assert.match(actions,/'task_status'=>\$priorStatus/,'task refreshes must preserve the existing lifecycle status');
 assert.match(actions,/'source_kind'=>'transcription_intelligence'/);
 assert.match(actions,/created_from_reviewed_item'=>true/);
+assert.match(actions,/UPDATE agent_memory_items SET subject=\?,memory_text=\?/,'editing a reviewed source item must refresh an existing promoted Agent task in place');
+assert.match(actions,/updated_from_reviewed_item/,'updated task provenance must be explicit');
 assert.match(lifecycle,/\['open','in_progress','waiting','completed','cancelled'\]/,'promoted transcription tasks must participate in the existing task lifecycle');
 assert.match(lifecycle,/memory_type IN \('task','commitment'\)/);
 
@@ -45,6 +48,7 @@ assert.match(actions,/personal_knowledge_store/);
 assert.match(actions,/'transcription-intelligence-item:'\.\$itemId/);
 assert.match(actions,/'evidence_refs'/);
 assert.match(actions,/'review_state'=>'accepted'/);
+assert.match(actions,/transcription_app_permissions_v300\(\$user\)/,'operational Brain/Knowledge availability must reuse canonical transcription write permissions');
 
 /* Project notes only target an explicitly linked writable track. */
 assert.match(actions,/project_track_id/);
@@ -60,6 +64,7 @@ assert.match(actions,/Choose an explicitly matched CRM lead for this transcript/
 assert.match(actions,/crm_v180_activity/,'CRM Note must use canonical CRM activity history');
 assert.match(actions,/crm_v180_create_task/,'CRM Task must use canonical CRM task creation');
 assert.match(crm,/CRM tasks can only be assigned to an Admin account/,'canonical CRM assignment guard must remain in force');
+assert.match(actions,/'assigned_user_id'=>0/,'transcript CRM follow-ups must not assume the acting manager is an assignable Admin');
 assert.doesNotMatch(actions,/crm_v180_upsert_contact|crm_v180_create_demo_lead/,'transcript actions must never create or infer CRM contacts/leads');
 
 /* Receipts make actions idempotent and survive equivalent plugin reruns. */
@@ -70,6 +75,7 @@ assert.match(actions,/function transcription_intelligence_record_receipt_v303/);
 assert.match(actions,/\$actions\[\$actionKey\]/);
 assert.match(items,/'actions'=>is_array\(\$actions\) \? \$actions : \[\]/,'review index must preserve action receipts across reruns');
 assert.match(items,/\$prior\['actions'\]/,'module normalization must restore prior receipts');
+assert.match(items,/if \(\$previousText !== \$text\) unset\(\$item\['actions'\]\)/,'editing actionable text must invalidate stale action receipts');
 assert.match(items,/in_array\(\(string\)\$key,\['source_fingerprint','edited_text','actions'\]/,'internal action receipts must not pollute compiled Brain/Knowledge report text');
 
 /* Accepted items expose one compact operational menu; completed actions render receipts. */
@@ -89,5 +95,8 @@ assert.doesNotMatch(client,/document\.addEventListener\('click'/,'no delegated d
 assert.doesNotMatch(client,/MutationObserver/,'AI Summary must not add a runtime observer/fallback');
 assert.doesNotMatch(client,/MediaRecorder/,'AI Summary must not own recording');
 assert.doesNotMatch(client,/INSERT INTO|UPDATE crm_/,'browser must never own persistence');
+
+/* The new operational contract must actually run in the recovery baseline. */
+assert.match(baseline,/tests\/transcription-intelligence-actions\.mjs/);
 
 console.log('VP3 transcription intelligence operational actions contract: PASS');
