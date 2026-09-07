@@ -11,8 +11,11 @@ declare(strict_types=1);
 
 function site_brand_name(): string
 {
-    $name = trim((string)site_config('name', 'Stonefellow'));
-    return $name !== '' ? $name : 'Stonefellow';
+    $name = trim((string)site_config('name', 'VP3'));
+    if ($name === '' || strcasecmp($name, 'Stonefellow') === 0) {
+        return 'VP3';
+    }
+    return $name;
 }
 
 function site_logo_path(): string
