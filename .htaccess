@@ -2,6 +2,10 @@
 RewriteEngine On
 RewriteRule ^private(?:/|$) - [F,L,NC]
 
+# Chat has one public render path. The retained legacy implementation is an
+# internal source file only and must never be served as a second UI surface.
+RewriteRule ^chat-legacy-v108\.php$ /chat.php [R=302,L,NE]
+
 # Public machine-readable VP3 Agent Manifest for a native /username profile.
 RewriteRule ^\.well-known/vp3-agent/([A-Za-z0-9][A-Za-z0-9._-]{1,58}[A-Za-z0-9])/?$ api/agent-manifest.php?username=$1 [L,QSA,NC]
 

@@ -10,27 +10,37 @@ const memberNav = fs.readFileSync('includes/member-navigation.php', 'utf8');
 const profileAgent = fs.readFileSync('profile-agent.php', 'utf8');
 const mainSidebar = fs.readFileSync('includes/main-sidebar.php', 'utf8');
 const activity = fs.readFileSync('agent-activity-v94.js', 'utf8');
+const htaccess = fs.readFileSync('.htaccess', 'utf8');
 
-assert.match(template, /href="<\?= e\(url\('\/contacts\.php'\)\) \?>"[\s\S]*?<strong>My Contacts<\/strong>/, 'Main Feed sidebar must expose My Contacts');
-assert.match(template, /href="<\?= e\(url\('\/profile-agent\.php'\)\) \?>"[\s\S]*?<strong>Profile Agent<\/strong>/, 'Main Feed sidebar must expose Profile Agent');
-assert.match(mainSidebar, /href="<\?= e\(url\('\/knowledge\.php'\)\) \?>"[\s\S]*?<strong>My Knowledge<\/strong>/, 'Canonical member sidebar must expose My Knowledge');
-assert.match(mainSidebar, /href="<\?= e\(url\('\/admin\/team\.php'\)\) \?>"[\s\S]*?<strong>My Team<\/strong>/, 'Canonical member sidebar must expose My Team for authorized owners');
-assert.match(activity, /<strong>My Knowledge<\/strong>/, 'Main Feed runtime must expose My Knowledge in its visible sidebar');
-assert.match(activity, /contacts\.insertAdjacentElement\('afterend',link\)/, 'Main Feed must place My Knowledge directly after My Contacts');
+// The shared sidebar is the only visible navigation authority. Chat contributes
+// behavior/history data to it rather than owning a second navigation tree.
+assert.match(wrapper, /require __DIR__ \. '\/includes\/main-sidebar\.php'/, 'Main Feed must render the canonical shared sidebar');
+assert.match(wrapper, /\$mainSidebarUseNewChatButton = true;/, 'Chat must ask the canonical sidebar for the New Chat button behavior');
+assert.match(wrapper, /\$mainSidebarHistoryRows = isset\(\$recent\)/, 'Chat must pass recent conversation rows into the canonical sidebar');
+assert.match(wrapper, /<aside class=\"chat-sidebar\" id=\"chatSidebar\">\.\*\?<\/aside>/, 'Main Feed must replace the complete legacy sidebar as one unit');
+assert.doesNotMatch(wrapper, /data-chat-view-target=\"\(\?:player\|saved\|playlists\)\"|chatMyTeamSidebarLink|data-chat-my-team/, 'Main Feed must not strip/inject individual sidebar items after render');
 
-assert.ok(wrapper.includes('data-chat-view-target="(?:player|saved|playlists)"'), 'canonical Main Feed wrapper must strip Player, Saved Songs and My Playlists before response output');
-assert.match(wrapper, /data-chat-my-team/, 'canonical Main Feed wrapper must render My Team from member navigation');
-assert.ok(wrapper.includes("$html = str_replace('agent-activity-v94.js?v=101', 'agent-activity-v94.js?v=' . $activityBuild, $html);"), 'Main Feed must invalidate the stale Agent Activity asset URL');
-assert.match(wrapper, /data-brain-learning-history-v317 src=/, 'Brain Learning must load directly from the Main Feed Activity Center runtime');
-assert.match(wrapper, /chat-notifications-canvas-v240-20260907-pr81-hotfix1/, 'notification drawer cache key must move when PR81 runtime wiring changes');
-assert.match(wrapper, /brain-learning-history-v317-20260907-pr81-hotfix1/, 'Brain Learning must have its own fresh cache key');
+assert.match(mainSidebar, /href="<\?= e\(url\('\/contacts\.php'\)\) \?>"[\s\S]*?<strong>My Contacts<\/strong>/, 'Canonical sidebar must expose My Contacts');
+assert.match(mainSidebar, /href="<\?= e\(url\('\/profile-agent\.php'\)\) \?>"[\s\S]*?<strong>Profile Agent<\/strong>/, 'Canonical sidebar must expose Profile Agent');
+assert.match(mainSidebar, /href="<\?= e\(url\('\/knowledge\.php'\)\) \?>"[\s\S]*?<strong>My Knowledge<\/strong>/, 'Canonical sidebar must expose My Knowledge');
+assert.match(mainSidebar, /href="<\?= e\(url\('\/admin\/team\.php'\)\) \?>"[\s\S]*?<strong>My Team<\/strong>/, 'Canonical sidebar must expose My Team for authorized owners/admins');
+assert.match(mainSidebar, /id="newChatButton"[\s\S]*data-chat-view-target="chat"/, 'Canonical sidebar must preserve Main Feed New Chat behavior');
+assert.match(mainSidebar, /id="chatHistory"[\s\S]*data-conversation-id/, 'Canonical sidebar must own recent Chat history rendering when supplied');
+assert.doesNotMatch(mainSidebar, /<strong>Player<\/strong>|<strong>Saved Songs<\/strong>|<strong>My Playlists<\/strong>/, 'Canonical sidebar must not contain retired music navigation');
 
-assert.match(activity, /chat-brain-learning-history-v317\.js/, 'Agent Activity retains compatibility loading for older Main Feed wrappers');
-assert.match(learning, /data-chat-view-target="player".*data-chat-view-target="saved".*data-chat-view-target="playlists"/s, 'Brain Learning compatibility enhancement must still remove retired music navigation on older wrappers');
-assert.match(learning, /data-chat-profile-link="my_team"/, 'compatibility My Team link must be sourced from canonical authorized member navigation');
-assert.match(learning, /link\.dataset\.chatMyTeam/, 'compatibility runtime must add the canonical My Team destination when needed');
-assert.doesNotMatch(mainSidebar, /<strong>Player<\/strong>|<strong>Saved Songs<\/strong>|<strong>My Playlists<\/strong>/, 'canonical sidebar must not retain removed music navigation');
-assert.doesNotMatch(template, /id="chatLiveUpdates"/, 'Canonical template must not contain the parallel Agent Updates panel');
+assert.ok(wrapper.includes("$html = str_replace('agent-activity-v94.js?v=101', 'agent-activity-v94.js?v=' . $activityBuild, $html);"), 'Main Feed must use an explicit current Agent Activity asset URL');
+assert.match(wrapper, /agent-activity-v94-canonical-runtime-20260907/, 'Main Feed must cache-bust the simplified Agent Activity runtime');
+assert.match(wrapper, /id=\"chatCreateMenu\"', 'id=\"chatCreateMenu\" hidden/, 'Create + menu must be hidden server-side while retained for later re-enable');
+assert.match(wrapper, /data-brain-learning-history-v317 src=/, 'Brain Learning must load once from the Main Feed Activity Center runtime');
+assert.match(wrapper, /brain-learning-history-v317-20260907-pr81-hotfix1/, 'Brain Learning must keep its explicit cache key');
+
+assert.doesNotMatch(activity, /<strong>My Knowledge<\/strong>|chat-sidebar-nav|insertAdjacentElement|chatCreateMenu|chat-device-registry-v94|Audio input status|videoinput|getUserMedia|chat-brain-learning-history-v317\.js/, 'Agent Activity must not own sidebar/header/device/Brain Learning UI');
+assert.doesNotMatch(learning, /cleanupMainSidebar|data-chat-view-target="player"|data-chat-view-target="saved"|data-chat-view-target="playlists"|data-chat-profile-link="my_team"|chatMyTeam/, 'Brain Learning must not own compatibility navigation mutations');
+assert.match(htaccess, /RewriteRule \^chat-legacy-v108\\\.php\$ \/chat\.php \[R=302,L,NE\]/, 'legacy Chat template must redirect to the one canonical public Chat path');
+
+// The retained source template may still contain legacy media canvas markup for
+// compatibility, but it must never be independently addressable or authoritative.
+assert.doesNotMatch(template, /id="chatLiveUpdates"/, 'Canonical template source must not contain the parallel Agent Updates panel');
 assert.doesNotMatch(chat, /renderActivityUpdates|chatLiveUpdateList|chatLiveStatus/, 'Canonical chat runtime must not render parallel activity cards');
 assert.match(chat, /openConversation:async id =>/, 'Canonical chat continuity API must expose conversation opening');
 assert.match(chat, /syncConversation:async id =>/, 'Canonical chat continuity API must expose message synchronization');
