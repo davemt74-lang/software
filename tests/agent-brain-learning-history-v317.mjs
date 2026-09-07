@@ -7,6 +7,7 @@ const endpoint = read('api/agent-learning-history-v317.php');
 const ui = read('chat-brain-learning-history-v317.js');
 const css = read('chat-brain-learning-history-v317.css');
 const activity = read('agent-activity-v94.js');
+const chat = read('chat.php');
 const bootstrap = read('includes/bootstrap.php');
 const nav = read('includes/member-navigation.php');
 
@@ -32,12 +33,21 @@ assert.match(ui, /Recommendation Audit/, 'Learning tab must show surfaced recomm
 assert.match(ui, /factor_before/, 'Learning UI must render before/after weighting');
 assert.match(ui, /factor_after/, 'Learning UI must render before/after weighting');
 assert.match(ui, /target\.origin === window\.location\.origin/, 'evidence links must remain same-origin');
-assert.match(ui, /data-chat-view-target="player"/, 'Main Feed enhancement must remove Player navigation');
-assert.match(ui, /data-chat-view-target="saved"/, 'Main Feed enhancement must remove Saved Songs navigation');
-assert.match(ui, /data-chat-view-target="playlists"/, 'Main Feed enhancement must remove My Playlists navigation');
-assert.match(ui, /data-chat-profile-link="my_team"/, 'Main Feed My Team link must come from canonical authorized member navigation');
-assert.match(activity, /chat-brain-learning-history-v317\.js\?v=317-20260907/, 'Main Feed activity runtime must load the Brain Learning enhancement');
+assert.match(ui, /data-chat-view-target="player"/, 'Main Feed enhancement retains a compatibility cleanup for Player navigation');
+assert.match(ui, /data-chat-view-target="saved"/, 'Main Feed enhancement retains a compatibility cleanup for Saved Songs navigation');
+assert.match(ui, /data-chat-view-target="playlists"/, 'Main Feed enhancement retains a compatibility cleanup for My Playlists navigation');
+assert.match(ui, /data-chat-profile-link="my_team"/, 'compatibility enhancement must source My Team from canonical authorized member navigation');
+assert.match(activity, /chat-brain-learning-history-v317\.js\?v=317-20260907/, 'Agent Activity may still load the compatibility Brain Learning enhancement');
 assert.match(activity, /data-brain-learning-history-v317/, 'Learning enhancement must be single-owner loaded');
+
+assert.match(chat, /agent-activity-v94\.js\?v=101', 'agent-activity-v94\.js\?v=' \. \$activityBuild/, 'Main Feed must cache-bust the Agent Activity runtime that owns the PR81 compatibility behavior');
+assert.match(chat, /data-chat-view-target=\"\(\?:player\|saved\|playlists\)\"/, 'Main Feed server wrapper must remove retired music navigation before HTML is sent');
+assert.match(chat, /data-chat-my-team/, 'Main Feed server wrapper must inject canonical My Team navigation');
+assert.match(chat, /data-brain-learning-history-v317 href=/, 'Main Feed must directly load Brain Learning styles from the Activity Center runtime');
+assert.match(chat, /data-brain-learning-history-v317 src=/, 'Main Feed must directly load Brain Learning runtime instead of relying on Agent Activity cache state');
+assert.match(chat, /brain-learning-history-v317-20260907-pr81-hotfix1/, 'Brain Learning direct runtime must use a fresh cache key');
+assert.match(chat, /chat-notifications-canvas-v240-20260907-pr81-hotfix1/, 'Activity Center itself must use a fresh cache key');
+
 assert.match(css, /chat-learning-metrics/, 'Learning History must have dedicated light UI styling');
 assert.match(css, /@media\(max-width:520px\)/, 'Learning History must remain usable on narrow screens');
 assert.ok(bootstrap.includes("require_once __DIR__.'/agent-learning-history-v317.php';"), 'bootstrap must load the canonical Learning History projection');
