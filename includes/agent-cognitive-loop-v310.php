@@ -170,7 +170,9 @@ function agent_cognitive_loop_v310_base_candidates(array $user,array $context=[]
 function agent_cognitive_loop_v311_diagnostic_reason(array $suppression): string
 {
     foreach(['reason','status','event_type','source'] as $key){
-        $value=trim((string)($suppression[$key]??''));
+        $raw=$suppression[$key]??null;
+        if(!is_scalar($raw))continue;
+        $value=trim((string)$raw);
         if($value!=='')return mb_strimwidth($value,0,120,'…');
     }
     return 'policy_or_cooldown';
@@ -275,7 +277,9 @@ function agent_cognitive_loop_v311_plan_summary(mixed $plan): string
 {
     if(!is_array($plan))return '';
     foreach(['summary','reason','description','action','label','title'] as $key){
-        $value=trim((string)($plan[$key]??''));
+        $raw=$plan[$key]??null;
+        if(!is_scalar($raw))continue;
+        $value=trim((string)$raw);
         if($value!=='')return mb_strimwidth($value,0,280,'…');
     }
     return '';
@@ -331,10 +335,12 @@ function agent_cognitive_loop_v311_compare_priorities(array $priorities,array $p
         $rank=$index+1;
         $key=(string)($item['key']??'');
         $old=$previous[$key]??null;
+        $currentScore=(float)($item['score']??0);
         $item['rank']=$rank;
         $item['previous_rank']=$old?(int)$old['rank']:0;
+        $item['previous_score']=$old?round((float)$old['score'],4):null;
         $item['rank_delta']=$old?((int)$old['rank']-$rank):0;
-        $item['score_delta']=round((float)($item['score']??0)-(float)($old['score']??0),4);
+        $item['score_delta']=$old?round($currentScore-(float)$old['score'],4):0.0;
         $item['movement']=!$old?'new':($item['rank_delta']>0?'up':($item['rank_delta']<0?'down':'same'));
     }
     unset($item);
@@ -380,13 +386,16 @@ function agent_cognitive_loop_v311_explainability_summary(array $state): string
             $movementText=$movement==='new'?'new':($movement==='up'?'up '.abs((int)($item['rank_delta']??0)):($movement==='down'?'down '.abs((int)($item['rank_delta']??0)):'unchanged'));
             $score=(float)($item['score']??0);
             $scoreDelta=(float)($item['score_delta']??0);
+            $scoreChangeText=$movement==='new'
+                ? 'new this cycle'
+                : agent_cognitive_loop_v311_percent($scoreDelta,true).' vs prior cycle';
             $source=str_replace('_',' ',(string)($item['source']??'agent brain'));
             $risk=(string)($item['risk_level']??'low');
             $approval=!empty($item['requires_approval'])?'approval required':'no approval required';
             $factor=(float)($item['outcome_factor']??1);
             $lines[]='#'.$rank.' '.(string)($item['title']??'Priority')
                 .' | score '.agent_cognitive_loop_v311_percent($score)
-                .' ('.agent_cognitive_loop_v311_percent($scoreDelta,true).' vs prior cycle)'
+                .' ('.$scoreChangeText.')'
                 .' | '.$movementText
                 .' | source '.$source
                 .' | risk '.$risk
