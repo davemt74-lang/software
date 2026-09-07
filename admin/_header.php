@@ -7,8 +7,8 @@ $adminTitle = $adminTitle ?? 'Dashboard';
 $adminActive = $adminActive ?? '';
 $adminCanvasMode = !empty($adminCanvasMode);
 $user = current_user();
-$siteBrandName = site_brand_name();
-$siteBrandLogoUrl = site_logo_url();
+$siteBrandName = 'VP3';
+$siteBrandLogoUrl = '';
 $adminShellLabel = user_has_role('admin', $user)
     ? $siteBrandName . ' Admin'
     : (user_has_role('artist', $user) ? $siteBrandName . ' Artist' : $siteBrandName . ' Admin');
@@ -45,9 +45,7 @@ $adminUserMenuLinks = member_navigation_menu_links($user);
 <?php if (!$adminCanvasMode): ?>
 <header class="admin-mobile-bar">
   <button class="admin-mobile-menu" id="adminMenuToggle" type="button" aria-label="Open admin navigation" aria-expanded="false">☰</button>
-  <a class="admin-mobile-brand" href="<?= e(url('/index.php')) ?>" aria-label="<?= e($siteBrandName) ?>">
-    <?php if ($siteBrandLogoUrl !== ''): ?><img class="site-brand-logo" src="<?= e($siteBrandLogoUrl) ?>" alt="<?= e($siteBrandName) ?>"><?php else: ?><?= e($siteBrandName) ?><?php endif; ?>
-  </a>
+  <a class="admin-mobile-brand" href="<?= e(url('/index.php')) ?>" aria-label="VP3">VP3</a>
   <button class="admin-mobile-user" id="adminMobileUserButton" type="button" aria-label="Open user menu">
     <?php if (user_avatar_url($user) !== ''): ?><img src="<?= e(user_avatar_url($user)) ?>" alt=""><?php else: ?><span><?= e(user_initials($user)) ?></span><?php endif; ?>
   </button>
@@ -58,7 +56,7 @@ $adminUserMenuLinks = member_navigation_menu_links($user);
 <div class="admin-layout<?= $adminCanvasMode ? ' admin-layout-canvas' : '' ?>">
   <?php if (!$adminCanvasMode): ?>
   <aside class="admin-sidebar" id="adminSidebar">
-    <div class="admin-sidebar-head"><a class="admin-brand" href="<?= e(url('/index.php')) ?>" aria-label="<?= e($siteBrandName) ?>"><?php if ($siteBrandLogoUrl !== ''): ?><img class="site-brand-logo" src="<?= e($siteBrandLogoUrl) ?>" alt="<?= e($siteBrandName) ?>"><?php else: ?><?= e($siteBrandName) ?><?php endif; ?></a><button class="admin-sidebar-close" id="adminSidebarClose" type="button" aria-label="Close navigation">×</button></div>
+    <div class="admin-sidebar-head"><a class="admin-brand" href="<?= e(url('/index.php')) ?>" aria-label="VP3">VP3</a><button class="admin-sidebar-close" id="adminSidebarClose" type="button" aria-label="Close navigation">×</button></div>
     <div class="admin-user-summary"><span class="admin-avatar admin-avatar-md"><?php if (user_avatar_url($user) !== ''): ?><img src="<?= e(user_avatar_url($user)) ?>" alt=""><?php else: ?><span><?= e(user_initials($user)) ?></span><?php endif; ?></span><div><strong><?= e($user['display_name'] ?? '') ?></strong><span><?= e($adminRoleSummary) ?></span></div></div>
     <?php if (has_permission('chat.access')): ?><a class="admin-agent-button" href="<?= e(url('/chat.php')) ?>"><span class="admin-agent-icon">✦</span><span><strong>Agent Chat</strong><small>Database + knowledge</small></span><span class="admin-agent-arrow">↗</span></a><?php endif; ?>
     <div class="admin-nav-label">Management</div>
@@ -80,13 +78,13 @@ $adminUserMenuLinks = member_navigation_menu_links($user);
       <?php if ($adminCrmVisible): ?><a class="<?= $adminActive === 'crm' ? 'active' : '' ?>" href="<?= e(url('/admin/crm.php')) ?>"><span>CRM</span><?php if ($adminCrmNew > 0): ?><span class="admin-nav-count"><?= $adminCrmNew > 99 ? '99+' : (int)$adminCrmNew ?></span><?php endif; ?></a><?php endif; ?>
       <?php if (has_permission('messages.manage')): ?><a class="<?= $adminActive === 'messages' ? 'active' : '' ?>" href="<?= e(url('/admin/messages.php')) ?>"><span>Messages</span><?php if ($adminUnreadMessages > 0): ?><span class="admin-nav-count"><?= $adminUnreadMessages > 99 ? '99+' : (int)$adminUnreadMessages ?></span><?php endif; ?></a><?php endif; ?>
       <?php if (has_permission('profile.manage')): ?><a class="<?= $adminActive === 'profile' ? 'active' : '' ?>" href="<?= e(url('/admin/profile.php')) ?>"><span>Artist / Links</span></a><?php endif; ?>
-      <?php if ($isArtistAdmin && has_permission('team.manage', $user)): ?><a class="<?= $adminActive === 'team' ? 'active' : '' ?>" href="<?= e(url('/admin/team.php')) ?>"><span>Team</span></a><?php endif; ?>
+      <?php if ($isArtistAdmin && has_permission('team.manage', $user)): ?><a class="<?= $adminActive === 'team' ? 'active' : '' ?>" href="<?= e(url('/team.php')) ?>"><span>Team</span></a><?php endif; ?>
       <?php if (has_permission('users.manage')): ?><a class="<?= $adminActive === 'users' ? 'active' : '' ?>" href="<?= e(url('/admin/users.php')) ?>"><span>Users</span></a><a class="<?= $adminActive === 'packages' ? 'active' : '' ?>" href="<?= e(url('/admin/packages.php')) ?>"><span>Packages</span></a><a class="<?= $adminActive === 'billing' ? 'active' : '' ?>" href="<?= e(url('/admin/billing.php')) ?>"><span>Billing</span></a><?php endif; ?>
       <?php if (has_permission('ai.manage')): ?><a class="<?= $adminActive === 'ai' ? 'active' : '' ?>" href="<?= e(url('/admin/ai.php')) ?>"><span>AI / API</span></a><a class="<?= $adminActive === 'ai-data-usage' ? 'active' : '' ?>" href="<?= e(url('/admin/ai-data-usage-v236.php')) ?>"><span>AI Data Usage</span></a><?php endif; ?>
       <?php if (has_permission('permissions.manage')): ?><a class="<?= $adminActive === 'permissions' ? 'active' : '' ?>" href="<?= e(url('/admin/permissions.php')) ?>"><span>Permissions</span></a><?php endif; ?>
       <?php if (has_permission('admin.access')): ?><a class="<?= $adminActive === 'site-settings' ? 'active' : '' ?>" href="<?= e(url('/admin/site-settings.php')) ?>"><span>Site Settings</span></a><?php endif; ?>
     </nav>
-    <div class="admin-sidebar-bottom"><?php if (has_permission('chat.access', $user)): ?><a href="<?= e(url('/chat.php?view=player')) ?>">Player</a><?php endif; ?><a href="<?= e(url('/index.php')) ?>">View Website</a></div>
+    <div class="admin-sidebar-bottom"><a href="<?= e(url('/index.php')) ?>">View Website</a></div>
   </aside>
   <?php endif; ?>
 
