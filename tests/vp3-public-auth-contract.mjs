@@ -31,6 +31,11 @@ assert.doesNotMatch(shell, /index\.php#features|index\.php#transcriptions|index\
 assert.match(shell, /vp3-public-mobile-menu/, 'canonical public shell must expose responsive navigation');
 assert.match(shell, /Open VP3/, 'authenticated visitors must get a product entry action instead of Sign in');
 assert.match(navCss, /@media\(max-width:980px\)[\s\S]*vp3-public-mobile-menu/, 'responsive public navigation must activate below the desktop breakpoint');
+for (const state of ['', ':visited', ':hover', ':focus']) {
+  assert.ok(navCss.includes(`body.vp3-public a.vp3-public-primary${state}`), `public primary CTA must explicitly own white text in ${state || 'default'} state`);
+}
+assert.match(navCss, /body\.vp3-public a\.vp3-public-primary[\s\S]*\{color:#fff\}/, 'public primary CTA must override inherited anchor color with white text');
+assert.match(shell, /vp3-public-nav\.css\?v=vp3-public-20260906-v2/, 'public shell must cache-bust the corrected CTA navigation styles');
 assert.match(css, /\.vp3-auth-shell/, 'auth surfaces must share the VP3 design system');
 assert.match(css, /vp3-mountain-bg\.svg/, 'public/auth system must reuse the VP3 mountain visual');
 
