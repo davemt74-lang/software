@@ -59,8 +59,8 @@ $notifications = $stmt->fetchAll();
 $notice = flash('notification_notice');
 $error = flash('notification_error');
 
-$pageTitle = 'Stonefellow | Notifications';
-$pageDescription = 'Stonefellow notifications.';
+$pageTitle = 'VP3 | Notifications';
+$pageDescription = 'VP3 notifications.';
 $activePage = '';
 require __DIR__ . '/includes/header.php';
 ?>
@@ -107,7 +107,7 @@ require __DIR__ . '/includes/header.php';
         <?php if (!$notifications): ?>
           <div class="notification-empty">
             <h2>No notifications yet.</h2>
-            <p>New Stonefellow activity for your account will appear here.</p>
+            <p>New VP3 activity for your account will appear here.</p>
           </div>
         <?php endif; ?>
       </div>
