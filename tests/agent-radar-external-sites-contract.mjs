@@ -63,8 +63,9 @@ assert.ok(sitesUi.includes('sitesState.can_add'), 'Connected Sites UI must honor
 assert.ok(sitesUi.includes('MutationObserver'), 'Connected Sites shell must survive the parent Radar 15-second rerender');
 assert.ok(sitesUi.includes("action:'set_active'"), 'Connected Sites UI must support pause/reactivate');
 assert.ok(sitesUi.includes('navigator.clipboard.writeText'), 'Connected Sites UI must offer copyable install snippet');
-assert.ok(sitesUi.includes('uses no cookies, local storage, account identity or fingerprinting'), 'Connected Sites UI must disclose privacy behavior');
-assert.ok(sitesUi.includes('non-JavaScript crawlers require the server-side Radar layer'), 'UI must not overstate browser collector coverage');
+assert.ok(sitesUi.includes('Browser collection sends pathname and referrer host only'), 'Connected Sites UI must disclose browser collector data scope');
+assert.ok(sitesUi.includes('Human traffic is discarded by both collectors'), 'Connected Sites UI must retain the human-traffic privacy boundary');
+assert.ok(sitesUi.includes('crawlers that never render the page'), 'UI must not overstate browser collector coverage');
 assert.ok(sitesCss.includes('@media(max-width:620px)'), 'Connected Sites UI must have small-screen behavior');
 
 console.log('AGENT_RADAR_EXTERNAL_SITES_CONTRACT=PASS');
