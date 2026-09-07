@@ -27,6 +27,8 @@ if($method==='GET'){
         'policies'=>vp3_radar_gateway_contact_policy_map($pdo,$uid,$ids),
         'access_profile'=>vp3_radar_access_profile_current($pdo,$uid),
         'access_profiles'=>vp3_radar_access_profile_public_catalog(),
+        'access_requests'=>vp3_agent_access_owner_list($pdo,$uid,50),
+        'agent_messaging_enabled'=>vp3_agent_messaging_allowed($user),
         'scoped_rules'=>vp3_radar_gateway_scoped_rules($pdo,$uid),
         'sites'=>$siteState['sites']??[],
         'agent_classes'=>VP3_RADAR_GATEWAY_CLASSES,
@@ -51,6 +53,11 @@ try{
     }
     if($action==='apply_access_profile'){
         vp3_radar_policy_json(true,vp3_radar_access_profile_apply($pdo,$user,(string)($input['profile_slug']??'')));
+    }
+    if($action==='access_request_decision'){
+        vp3_radar_policy_json(true,vp3_agent_access_owner_decide(
+            $pdo,$user,max(0,(int)($input['request_id']??0)),(string)($input['decision']??'deny')
+        ));
     }
     if($action==='set_scoped_rule'){
         vp3_radar_policy_json(true,vp3_radar_gateway_set_scoped_rule(
