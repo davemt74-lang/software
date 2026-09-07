@@ -25,6 +25,8 @@ function vp3_agent_relationship_recommendation(array $contact,array $metrics): s
 {
     $risk=(int)($contact['risk_score']??0);$opportunity=(int)($metrics['opportunity_score']??0);$intent=(string)($metrics['intent']??'');
     if($risk>=70)return 'Review this contact before granting broader access. Keep private capabilities blocked and consider a stricter Gateway rule.';
+    if((int)($metrics['conversions_total']??0)>0)return 'This agent has produced attributed human conversions. Keep its public conversion path current, review value versus token/request cost, and expand permissions only when the trust evidence supports it.';
+    if((int)($metrics['referrals_total']??0)>0)return 'This agent has produced attributed human visits. Keep the linked public content current and monitor whether those visits become conversions before expanding access.';
     if($opportunity>=80&&$intent==='commercial_interest')return 'High-value commercial interest detected. Keep structured offers, pricing and contact actions current and consider a trusted Agent Messaging relationship.';
     if($opportunity>=80&&$intent==='structured_research')return 'High-value structured research detected. Keep the Agent Manifest and public structured content current and review whether trusted messaging would help.';
     if((int)($metrics['message_inbound']??0)>0)return 'This agent has entered an approved conversation. Review the CRM timeline, token cost and relationship value before expanding permissions.';
@@ -38,6 +40,8 @@ function vp3_agent_relationship_calculate(array $contact,array $sessionMetrics,a
     $class=(string)($contact['visitor_class']??'unknown');
     $baseValue=match($class){'ai_user_agent'=>55,'ai_search'=>42,'ai_crawler'=>20,'automated_unknown'=>10,default=>15};
     $sessions30=(int)($sessionMetrics['sessions_30d']??0);$views30=(int)($sessionMetrics['views_30d']??0);$requests30=(int)($sessionMetrics['requests_30d']??0);$properties30=(int)($sessionMetrics['properties_30d']??0);
+    $referrals30=(int)($sessionMetrics['referrals_30d']??0);$conversions30=(int)($sessionMetrics['conversions_30d']??0);$conversionValue30=(float)($sessionMetrics['conversion_value_30d']??0);
+    $referralsTotal=(int)($sessionMetrics['referrals_total']??0);$conversionsTotal=(int)($sessionMetrics['conversions_total']??0);$attributionReady=!empty($sessionMetrics['attribution_ready']);
     $messageInbound=0;$messageOutbound=0;$accessRequests=0;$commercialHits=0;$structuredHits=0;$tokenUsage=0;$bestIntent='';$bestIntentWeight=0;$lastPropertyId=0;
     foreach($eventRows as $row){
         $type=(string)($row['event_type']??'');$lastPropertyId=$lastPropertyId?:max(0,(int)($row['property_id']??0));
@@ -52,29 +56,32 @@ function vp3_agent_relationship_calculate(array $contact,array $sessionMetrics,a
         if((int)$signal['weight']>$bestIntentWeight){$bestIntent=(string)$signal['intent'];$bestIntentWeight=(int)$signal['weight'];}
     }
     if((int)($contact['risk_score']??0)>=70){$bestIntent='restricted_probe';$bestIntentWeight=100;}
+    elseif($conversions30>0){$bestIntent='conversion';$bestIntentWeight=max($bestIntentWeight,90);}
+    elseif($referrals30>0){$bestIntent='human_referral';$bestIntentWeight=max($bestIntentWeight,85);}
     elseif($commercialHits>0){$bestIntent='commercial_interest';$bestIntentWeight=max($bestIntentWeight,70+min(25,$commercialHits*5));}
     elseif($messageInbound>0){$bestIntent='conversation';$bestIntentWeight=max($bestIntentWeight,70+min(20,$messageInbound*5));}
     elseif($structuredHits>0){$bestIntent='structured_research';$bestIntentWeight=max($bestIntentWeight,65+min(25,$structuredHits*5));}
     elseif($bestIntent===''){$bestIntent='general_research';$bestIntentWeight=$sessions30>1?60:45;}
 
     $engagement=vp3_agent_relationship_clamp(
-        min(32,$sessions30*8)+min(24,$views30*2)+min(24,$messageInbound*10)+min(12,$commercialHits*4)+min(8,max(0,$properties30-1)*4)
+        min(32,$sessions30*8)+min(24,$views30*2)+min(24,$messageInbound*10)+min(12,$commercialHits*4)+min(8,max(0,$properties30-1)*4)+min(20,$referrals30*8)+min(20,$conversions30*12)
     );
     $value=vp3_agent_relationship_clamp(
-        $baseValue+min(18,$sessions30*4)+min(12,$views30)+min(20,$messageInbound*5)+min(18,$commercialHits*4)+min(8,$structuredHits*2)+min(30,(int)($contact['conversion_count']??0)*15)+($pendingMessaging?5:0)
+        $baseValue+min(18,$sessions30*4)+min(12,$views30)+min(20,$messageInbound*5)+min(18,$commercialHits*4)+min(8,$structuredHits*2)+min(24,$referrals30*8)+min(40,$conversions30*20)+min(10,max(0,$conversionValue30)/50)+($pendingMessaging?5:0)
     );
     $cost=vp3_agent_relationship_clamp(min(40,$requests30/3)+min(45,$tokenUsage/400)+min(15,$messageOutbound*3));
     $risk=(int)($contact['risk_score']??0);$trust=(int)($contact['trust_score']??0);
     $opportunity=vp3_agent_relationship_clamp(($value*.55)+($engagement*.35)+($trust*.20)-($risk*.60)-($cost*.15));
     $status='new';
     if($risk>=70)$status='restricted';
-    elseif((int)($contact['conversion_count']??0)>0)$status='converted';
-    elseif($messageInbound>=2||$commercialHits>=2||$sessions30>=3)$status='engaged';
+    elseif($conversionsTotal>0)$status='converted';
+    elseif($messageInbound>=2||$commercialHits>=2||$sessions30>=3||$referralsTotal>0)$status='engaged';
     elseif((int)($contact['session_count']??0)>=2)$status='returning';
     elseif((string)($contact['verification_status']??'')==='known')$status='observed';
     $metrics=[
         'window_days'=>VP3_AGENT_RELATIONSHIP_WINDOW_DAYS,'sessions_30d'=>$sessions30,'views_30d'=>$views30,'requests_30d'=>$requests30,'properties_30d'=>$properties30,
         'message_inbound'=>$messageInbound,'message_outbound'=>$messageOutbound,'messaging_tokens'=>$tokenUsage,'access_requests'=>$accessRequests,
+        'referrals_30d'=>$referrals30,'conversions_30d'=>$conversions30,'conversion_value_30d'=>$conversionValue30,'referrals_total'=>$referralsTotal,'conversions_total'=>$conversionsTotal,'attribution_ready'=>$attributionReady,
         'commercial_hits'=>$commercialHits,'structured_hits'=>$structuredHits,'intent'=>$bestIntent,'intent_confidence'=>vp3_agent_relationship_clamp($bestIntentWeight),
         'engagement_score'=>$engagement,'value_score'=>$value,'cost_score'=>$cost,'opportunity_score'=>$opportunity,'relationship_status'=>$status,'pending_messaging'=>$pendingMessaging,
         'last_property_id'=>$lastPropertyId,
@@ -90,13 +97,21 @@ function vp3_agent_relationship_store(PDO $pdo,array $contact,array $metrics): a
         'window_days'=>(int)$metrics['window_days'],'opportunity_score'=>(int)$metrics['opportunity_score'],'recommendation'=>(string)$metrics['recommendation'],
         'sessions_30d'=>(int)$metrics['sessions_30d'],'views_30d'=>(int)$metrics['views_30d'],'requests_30d'=>(int)$metrics['requests_30d'],'properties_30d'=>(int)$metrics['properties_30d'],
         'message_inbound'=>(int)$metrics['message_inbound'],'message_outbound'=>(int)$metrics['message_outbound'],'messaging_tokens'=>(int)$metrics['messaging_tokens'],
+        'referrals_30d'=>(int)$metrics['referrals_30d'],'conversions_30d'=>(int)$metrics['conversions_30d'],'conversion_value_30d'=>(float)$metrics['conversion_value_30d'],'referrals_total'=>(int)$metrics['referrals_total'],'conversions_total'=>(int)$metrics['conversions_total'],'attribution_ready'=>(bool)$metrics['attribution_ready'],
         'commercial_hits'=>(int)$metrics['commercial_hits'],'structured_hits'=>(int)$metrics['structured_hits'],'updated_at'=>gmdate('c'),
     ];
-    $encoded=json_encode($metadata,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
-    $pdo->prepare('UPDATE vp3_agent_contacts SET engagement_score=?,value_score=?,cost_score=?,relationship_status=?,inferred_intent=?,intent_confidence=?,metadata_json=?,updated_at=NOW() WHERE id=? AND owner_user_id=?')->execute([
-        (int)$metrics['engagement_score'],(int)$metrics['value_score'],(int)$metrics['cost_score'],mb_strimwidth((string)$metrics['relationship_status'],0,30,''),
-        mb_strimwidth((string)$metrics['intent'],0,120,''),(int)$metrics['intent_confidence'],$encoded,(int)$contact['id'],(int)$contact['owner_user_id'],
-    ]);
+    $encoded=json_encode($metadata,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);if(!is_string($encoded))$encoded='{}';
+    if(!empty($metrics['attribution_ready'])){
+        $pdo->prepare('UPDATE vp3_agent_contacts SET engagement_score=?,value_score=?,cost_score=?,relationship_status=?,inferred_intent=?,intent_confidence=?,referral_count=?,conversion_count=?,metadata_json=?,updated_at=NOW() WHERE id=? AND owner_user_id=?')->execute([
+            (int)$metrics['engagement_score'],(int)$metrics['value_score'],(int)$metrics['cost_score'],mb_strimwidth((string)$metrics['relationship_status'],0,30,''),
+            mb_strimwidth((string)$metrics['intent'],0,120,''),(int)$metrics['intent_confidence'],(int)$metrics['referrals_total'],(int)$metrics['conversions_total'],$encoded,(int)$contact['id'],(int)$contact['owner_user_id'],
+        ]);
+    }else{
+        $pdo->prepare('UPDATE vp3_agent_contacts SET engagement_score=?,value_score=?,cost_score=?,relationship_status=?,inferred_intent=?,intent_confidence=?,metadata_json=?,updated_at=NOW() WHERE id=? AND owner_user_id=?')->execute([
+            (int)$metrics['engagement_score'],(int)$metrics['value_score'],(int)$metrics['cost_score'],mb_strimwidth((string)$metrics['relationship_status'],0,30,''),
+            mb_strimwidth((string)$metrics['intent'],0,120,''),(int)$metrics['intent_confidence'],$encoded,(int)$contact['id'],(int)$contact['owner_user_id'],
+        ]);
+    }
     return $metadata;
 }
 
@@ -106,17 +121,17 @@ function vp3_agent_relationship_opportunity_notify(PDO $pdo,array $user,array $c
     $recent=$pdo->prepare("SELECT id FROM vp3_radar_events WHERE owner_user_id=? AND agent_contact_id=? AND event_type='agent_opportunity_detected' AND occurred_at>=DATE_SUB(NOW(),INTERVAL ".VP3_AGENT_OPPORTUNITY_COOLDOWN_DAYS." DAY) LIMIT 1");
     $recent->execute([(int)$user['id'],(int)$contact['id']]);if($recent->fetchColumn())return;
     $propertyId=max(0,(int)($metrics['last_property_id']??0));
-    if($propertyId<1){$p=$pdo->prepare('SELECT id FROM vp3_radar_properties WHERE owner_user_id=? ORDER BY property_type=\'native\' DESC,id LIMIT 1');$p->execute([(int)$user['id']]);$propertyId=(int)($p->fetchColumn()?:0);}
+    if($propertyId<1){$p=$pdo->prepare("SELECT id FROM vp3_radar_properties WHERE owner_user_id=? ORDER BY (property_type='native') DESC,id LIMIT 1");$p->execute([(int)$user['id']]);$propertyId=(int)($p->fetchColumn()?:0);}
     if($propertyId<1)return;
     $name=(trim((string)$contact['operator_name'])!==''?trim((string)$contact['operator_name']).' · ':'').trim((string)$contact['display_name']);
     $summary=$name.' reached an Agent Relationship opportunity score of '.(int)$metrics['opportunity_score'].'/100. '.(string)$metrics['recommendation'];
-    $stmt=$pdo->prepare("INSERT INTO vp3_radar_events (owner_user_id,property_id,session_id,agent_contact_id,event_type,severity,path,method,status_code,significance_score,risk_score,summary,details_json,occurred_at) VALUES (?,?,NULL,?,'agent_opportunity_detected','low','/profile-agent.php','SYSTEM',NULL,?,?,?, ?,NOW())");
-    $stmt->execute([(int)$user['id'],$propertyId,(int)$contact['id'],(int)$metrics['opportunity_score'],(int)$contact['risk_score'],mb_strimwidth($summary,0,500,'…'),json_encode(['opportunity_score'=>(int)$metrics['opportunity_score'],'intent'=>(string)$metrics['intent'],'recommendation'=>(string)$metrics['recommendation']],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE)]);
+    $stmt=$pdo->prepare("INSERT INTO vp3_radar_events (owner_user_id,property_id,session_id,agent_contact_id,event_type,severity,path,method,status_code,significance_score,risk_score,summary,details_json,occurred_at) VALUES (?,?,NULL,?,'agent_opportunity_detected','low','/profile-agent.php','SYSTEM',NULL,?,?,?,?,NOW())");
+    $stmt->execute([(int)$user['id'],$propertyId,(int)$contact['id'],(int)$metrics['opportunity_score'],(int)$contact['risk_score'],mb_strimwidth($summary,0,500,'…'),json_encode(['opportunity_score'=>(int)$metrics['opportunity_score'],'intent'=>(string)$metrics['intent'],'recommendation'=>(string)$metrics['recommendation'],'referrals_total'=>(int)$metrics['referrals_total'],'conversions_total'=>(int)$metrics['conversions_total']],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE)]);
     $eventId=(int)$pdo->lastInsertId();
     create_notification((int)$user['id'],'radar_agent_opportunity','Agent opportunity · '.trim((string)$contact['display_name']),$summary,url('/profile-agent.php?tab=radar'),'radar_event',$eventId);
     if(function_exists('agent_brain_v122_upsert_system_memory')){
         agent_brain_v122_upsert_system_memory($user,'agent_radar','agent-radar-opportunity:'.(int)$contact['id'],$summary,[
-            'agent_contact_id'=>(int)$contact['id'],'opportunity_score'=>(int)$metrics['opportunity_score'],'intent'=>(string)$metrics['intent'],'recommendation'=>(string)$metrics['recommendation'],'source'=>'agent_radar_opportunity',
+            'agent_contact_id'=>(int)$contact['id'],'opportunity_score'=>(int)$metrics['opportunity_score'],'intent'=>(string)$metrics['intent'],'recommendation'=>(string)$metrics['recommendation'],'referrals_total'=>(int)$metrics['referrals_total'],'conversions_total'=>(int)$metrics['conversions_total'],'source'=>'agent_radar_opportunity',
         ],0.86);
     }
 }
@@ -131,15 +146,31 @@ function vp3_agent_relationship_refresh_owner(PDO $pdo,array $user,int $limit=12
     $eventSql="SELECT id,agent_contact_id,property_id,event_type,path,details_json,occurred_at FROM vp3_radar_events WHERE owner_user_id=? AND agent_contact_id IN ({$placeholders}) AND occurred_at>=DATE_SUB(NOW(),INTERVAL ".VP3_AGENT_RELATIONSHIP_WINDOW_DAYS." DAY) ORDER BY occurred_at DESC,id DESC LIMIT 5000";
     $e=$pdo->prepare($eventSql);$e->execute(array_merge([$uid],$ids));$eventMap=[];foreach($e->fetchAll()?:[] as $row)$eventMap[(int)$row['agent_contact_id']][]=$row;
     $pending=$pdo->prepare("SELECT DISTINCT agent_contact_id FROM vp3_agent_access_requests WHERE owner_user_id=? AND status='pending'");$pending->execute([$uid]);$pendingMap=array_fill_keys(array_map('intval',$pending->fetchAll(PDO::FETCH_COLUMN)?:[]),true);
+
+    $attributionReady=function_exists('vp3_agent_referral_schema_ready')&&vp3_agent_referral_schema_ready($pdo);$attributionRecent=[];$attributionTotal=[];
+    if($attributionReady){
+        $recentSql="SELECT agent_contact_id,SUM(event_type='referral') referrals_30d,SUM(event_type LIKE 'conversion:%') conversions_30d,COALESCE(SUM(CASE WHEN event_type LIKE 'conversion:%' THEN value_amount ELSE 0 END),0) conversion_value_30d FROM vp3_agent_referral_events WHERE owner_user_id=? AND agent_contact_id IN ({$placeholders}) AND occurred_at>=DATE_SUB(NOW(),INTERVAL ".VP3_AGENT_RELATIONSHIP_WINDOW_DAYS." DAY) GROUP BY agent_contact_id";
+        $ar=$pdo->prepare($recentSql);$ar->execute(array_merge([$uid],$ids));foreach($ar->fetchAll()?:[] as $row)$attributionRecent[(int)$row['agent_contact_id']]=$row;
+        $totalSql="SELECT agent_contact_id,COALESCE(SUM(click_count),0) referrals_total,COALESCE(SUM(conversion_count),0) conversions_total FROM vp3_agent_referrals WHERE owner_user_id=? AND agent_contact_id IN ({$placeholders}) GROUP BY agent_contact_id";
+        $at=$pdo->prepare($totalSql);$at->execute(array_merge([$uid],$ids));foreach($at->fetchAll()?:[] as $row)$attributionTotal[(int)$row['agent_contact_id']]=$row;
+    }
+
     $out=[];
-    foreach($contacts as $contact){$id=(int)$contact['id'];$metrics=vp3_agent_relationship_calculate($contact,$sessionMap[$id]??[],$eventMap[$id]??[],isset($pendingMap[$id]));vp3_agent_relationship_store($pdo,$contact,$metrics);if($notify)vp3_agent_relationship_opportunity_notify($pdo,$user,$contact,$metrics);$out[$id]=$metrics;}
+    foreach($contacts as $contact){
+        $id=(int)$contact['id'];$sessionMetrics=$sessionMap[$id]??[];
+        if($attributionReady){
+            $sessionMetrics=array_merge($sessionMetrics,$attributionRecent[$id]??[],$attributionTotal[$id]??[],['attribution_ready'=>true]);
+        }
+        $metrics=vp3_agent_relationship_calculate($contact,$sessionMetrics,$eventMap[$id]??[],isset($pendingMap[$id]));
+        vp3_agent_relationship_store($pdo,$contact,$metrics);if($notify)vp3_agent_relationship_opportunity_notify($pdo,$user,$contact,$metrics);$out[$id]=$metrics;
+    }
     return $out;
 }
 
 function vp3_agent_relationship_enrich_portal(array $portal,array $metrics): array
 {
     if(empty($portal['contacts'])||!is_array($portal['contacts']))return $portal;
-    foreach($portal['contacts'] as &$contact){$id=(int)($contact['id']??0);if(isset($metrics[$id])){$contact['opportunity_score']=(int)$metrics[$id]['opportunity_score'];$contact['recommendation']=(string)$metrics[$id]['recommendation'];$contact['relationship_metrics']=$metrics[$id];}}
+    foreach($portal['contacts'] as &$contact){$id=(int)($contact['id']??0);if(isset($metrics[$id])){$contact['opportunity_score']=(int)$metrics[$id]['opportunity_score'];$contact['recommendation']=(string)$metrics[$id]['recommendation'];$contact['relationship_metrics']=$metrics[$id];$contact['referral_count']=(int)$metrics[$id]['referrals_total'];$contact['conversion_count']=(int)$metrics[$id]['conversions_total'];}}
     unset($contact);
     return $portal;
 }
