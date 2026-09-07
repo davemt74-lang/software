@@ -44,11 +44,19 @@ if($csrf===''||!hash_equals(csrf_token(),$csrf))vp3_radar_policy_json(false,['er
 $action=trim((string)($input['action']??''));
 try{
     if($action==='set_contact_policy'){
-        $result=vp3_radar_gateway_set_contact_policy(
-            $pdo,$user,max(0,(int)($input['contact_id']??0)),
-            (string)($input['policy_action']??'monitor'),
-            max(1,(int)($input['limit_30m']??VP3_RADAR_GATEWAY_DEFAULT_LIMIT_30M))
-        );
+        $contactId=max(0,(int)($input['contact_id']??0));$requestedAction=(string)($input['policy_action']??'monitor');$requestedLimit=max(1,(int)($input['limit_30m']??VP3_RADAR_GATEWAY_DEFAULT_LIMIT_30M));
+        $before=vp3_radar_gateway_contact_policy($pdo,$uid,$contactId);
+        $result=vp3_radar_gateway_set_contact_policy($pdo,$user,$contactId,$requestedAction,$requestedLimit);
+        $after=is_array($result['policy']??null)?$result['policy']:null;
+        $beforeAction=(string)($before['action']??'profile_default');$afterAction=(string)($after['action']??$requestedAction);
+        $beforeLimit=$beforeAction==='limit'?(int)($before['metadata']['requests_per_30m']??VP3_RADAR_GATEWAY_DEFAULT_LIMIT_30M):null;
+        $afterLimit=$afterAction==='limit'?(int)($after['metadata']['requests_per_30m']??$requestedLimit):null;
+        if($beforeAction!==$afterAction||$beforeLimit!==$afterLimit){
+            $name=trim((string)($result['display_name']??'Agent contact'));
+            vp3_agent_crm_audit_event($pdo,$uid,$contactId,'agent_policy_changed',$name.' Agent Gateway policy changed from '.$beforeAction.' to '.$afterAction.'.',[
+                'previous_action'=>$beforeAction,'new_action'=>$afterAction,'previous_limit_30m'=>$beforeLimit,'new_limit_30m'=>$afterLimit,'surface'=>'agent_gateway_api',
+            ]);
+        }
         vp3_radar_policy_json(true,$result);
     }
     if($action==='set_contact_watch'){
