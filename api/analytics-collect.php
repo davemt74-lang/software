@@ -37,5 +37,8 @@ $raw=(string)file_get_contents('php://input');
 if(strlen($raw)>8192)vp3_analytics_collect_json(413,['ok'=>false,'error'=>'Payload too large.']);
 $payload=json_decode($raw,true);if(!is_array($payload))vp3_analytics_collect_json(400,['ok'=>false,'error'=>'Invalid JSON payload.']);
 $userAgent=mb_strimwidth(trim((string)($_SERVER['HTTP_USER_AGENT']??'')),0,1000,'');
-try{vp3_analytics_external_collect($pdo,$property,$payload,$userAgent);}catch(Throwable $e){error_log('VP3 Analytics collect failed: '.$e->getMessage());}
+try{
+    vp3_analytics_external_collect($pdo,$property,$payload,$userAgent);
+    if(function_exists('vp3_agent_referral_external_collect'))vp3_agent_referral_external_collect($pdo,$property,$payload,$userAgent);
+}catch(Throwable $e){error_log('VP3 Analytics collect failed: '.$e->getMessage());}
 vp3_analytics_collect_json(200,['ok'=>true]);
