@@ -6,13 +6,17 @@ $user=current_user();
 if(!$user){flash('error','Please sign in to continue.');redirect(url('/login.php'));}
 artist_workspace_v104_ensure_schema();
 
-// Team authority is identity + persisted permission. The package controls only
-// commercial Team availability/capacity and never grants Artist authority.
-if(!user_has_role('artist',$user)){
-    http_response_code(403);exit('Artist workspace ownership is required to manage a team.');
-}
-if(!has_permission('admin.access',$user)||!has_permission('team.manage',$user)){
-    http_response_code(403);exit('Your Artist identity does not have Team management permission.');
+// Internal admins may manage My Team without a commercial package or Artist
+// role. Regular users still require Artist identity + persisted Team authority;
+// their package controls only commercial Team availability/capacity.
+$teamInternalAdmin=function_exists('subscription_is_internal_admin')&&subscription_is_internal_admin($user);
+if(!$teamInternalAdmin){
+    if(!user_has_role('artist',$user)){
+        http_response_code(403);exit('Artist workspace ownership is required to manage a team.');
+    }
+    if(!has_permission('admin.access',$user)||!has_permission('team.manage',$user)){
+        http_response_code(403);exit('Your Artist identity does not have Team management permission.');
+    }
 }
 
 $pdo=db();if(!$pdo){flash('error','Database unavailable.');redirect(url('/account.php'));}

@@ -7,6 +7,7 @@ const bridge = read('includes/agent-chat-activity.php');
 const notifications = read('includes/notifications.php');
 const activityApi = read('api/chat-notifications-brain-v240.php');
 const activityJs = read('chat-notifications-drawer-v240.js');
+const activityRuntime = read('agent-activity-v94.js');
 const notificationsPage = read('notifications.php');
 const memberHeader = read('includes/member-header.php');
 
@@ -56,6 +57,13 @@ assert.match(activityJs, /<strong>Operational Activity<\/strong>/, 'Agent Brain 
 assert.match(activityJs, /brainSourceLabel\(item\.source_type\)/, 'operational rows must show their human-readable source');
 assert.match(activityJs, /Only genuine user-attention notifications reach this path/, 'Chat polling must document the new attention boundary');
 assert.match(activityJs, /async function presentAttention\(item, speak = true\)/, 'genuine actionable notifications must retain Chat presentation and optional speech');
+
+assert.match(activityRuntime, /const SHOW_CHAT_INPUT_STATUS=false;/, 'Agent Chat Audio/Video input status controls must remain disabled while hidden');
+assert.match(activityRuntime, /if\(String\(cfg\.surface\|\|''\)==='chat'&&SHOW_CHAT_INPUT_STATUS\)/, 'device-status implementation must remain behind the reversible visibility flag');
+assert.match(activityRuntime, /Audio input status/, 'hidden Audio Input implementation must remain available for later re-enable');
+assert.match(activityRuntime, /videoinput/, 'hidden Video Input implementation must remain available for later re-enable');
+assert.match(activityRuntime, /getElementById\('chatCreateMenu'\)/, 'Agent Chat runtime must target the existing Create menu rather than deleting it');
+assert.match(activityRuntime, /createMenu\.hidden=true/, 'Agent Chat header + Create menu must be hidden for now');
 
 assert.match(notificationsPage, /WHERE user_id=\? AND '\s*\.\s*notification_system_sql_predicate\(\)/, 'standalone Notifications page must exclude Agent Brain activity');
 assert.match(notificationsPage, /id=\? AND user_id=\? AND '\s*\.\s*notification_system_sql_predicate\(\)/, 'direct notification opens must not expose Agent Brain carrier rows');
