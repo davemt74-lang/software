@@ -6,6 +6,7 @@ require_once dirname(__DIR__) . '/includes/artist-listening.php';
 require_once dirname(__DIR__) . '/includes/artist-listening-transcript.php';
 require_once dirname(__DIR__) . '/includes/transcription-app-registry.php';
 require_once dirname(__DIR__) . '/includes/transcription-apps-wave2.php';
+require_once dirname(__DIR__) . '/includes/transcription-apps-wave2-save.php';
 
 const VP3_TRANSCRIPTION_INTELLIGENCE_V300 = 'vp3-transcription-apps-v301-20260906';
 
@@ -76,8 +77,9 @@ try {
     $master = is_array($status['master'] ?? null) ? $status['master'] : null;
     if (in_array($action,['save_brain','save_knowledge'],true) && !$master) throw new RuntimeException('Analyze this transcript before saving the report.');
     $tags = transcription_app_tags_v300($session);
-    $text = $master ? transcription_app_report_text_v301($master,$session,$tags,(string)$map['source_hash']) : '';
-    if ($text === '') throw new RuntimeException('No current transcription plugin results are available to save.');
+    $view = $master ? transcription_app_status_v301($pdo,$user,$session,$master,$map) : ['app_status'=>[]];
+    $text = $master ? transcription_app_report_text_current_v301($master,$session,$tags,(string)$map['source_hash'],$view['app_status'] ?? []) : '';
+    if ($text === '') throw new RuntimeException('No current transcription plugin results are available to save. Refresh any stale plugins and try again.');
 
     if ($action === 'save_brain') {
         $permissions = transcription_app_permissions_v300($user);
