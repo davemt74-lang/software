@@ -80,13 +80,14 @@ try {
         }
 
         $afterId = max(0,(int)($input['after_id'] ?? 0));
+        $activityTypes = "'agent_track_share','producer_track_share','agent_supervisor_listen','stem_region_note','production_note','new_track_release','new_album_release','show_reminder','artist_post','release_deadline','release_action','radar_security_action','radar_agent_visit_needs_attention','radar_external_security_action','radar_external_visit_needs_attention','agent_activity_radar_rate_limited'";
 
         if ($afterId > 0) {
             $stmt = $pdo->prepare(
                 "SELECT id,type,title,body,target_url,created_at
                  FROM notifications
                  WHERE user_id=? AND id>?
-                   AND type IN ('agent_track_share','producer_track_share','agent_supervisor_listen','stem_region_note','production_note','new_track_release','new_album_release','show_reminder','artist_post','release_deadline','release_action')
+                   AND type IN ({$activityTypes})
                  ORDER BY id ASC LIMIT 30"
             );
             $stmt->execute([$userId,$afterId]);
@@ -96,7 +97,7 @@ try {
                 "SELECT id,type,title,body,target_url,created_at
                  FROM notifications
                  WHERE user_id=?
-                   AND type IN ('agent_track_share','producer_track_share','agent_supervisor_listen','stem_region_note','production_note','new_track_release','new_album_release','show_reminder','artist_post','release_deadline','release_action')
+                   AND type IN ({$activityTypes})
                    AND created_at>=DATE_SUB(NOW(),INTERVAL 7 DAY)
                  ORDER BY id DESC LIMIT 10"
             );
@@ -107,7 +108,7 @@ try {
         $latestStmt = $pdo->prepare(
             "SELECT COALESCE(MAX(id),0) FROM notifications
              WHERE user_id=?
-               AND type IN ('agent_track_share','producer_track_share','agent_supervisor_listen','stem_region_note','production_note','new_track_release','new_album_release','show_reminder','artist_post','release_deadline','release_action')"
+               AND type IN ({$activityTypes})"
         );
         $latestStmt->execute([$userId]);
         $latestId = (int)$latestStmt->fetchColumn();
@@ -189,9 +190,14 @@ try {
         $userMessageId = (int)$pdo->lastInsertId();
         agent_brain_archive_and_parse($user, $conversationId, $userMessageId, 'user', $query, $inputMode);
 
-        $toolResult = function_exists('release_v105_chat_tool')
-            ? release_v105_chat_tool($query, $user, $conversationId)
+        $toolResult = function_exists('vp3_radar_chat_tool')
+            ? vp3_radar_chat_tool($query, $user, $conversationId)
             : ['handled'=>false,'answer'=>'','stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[]];
+        if (empty($toolResult['handled'])) {
+            $toolResult = function_exists('release_v105_chat_tool')
+                ? release_v105_chat_tool($query, $user, $conversationId)
+                : ['handled'=>false,'answer'=>'','stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[]];
+        }
         if (empty($toolResult['handled'])) {
             $toolResult = agent_tool_execute_query($query, $user, $conversationId);
         }
