@@ -8,7 +8,7 @@ const listeningEndpoint=String(cfg.listeningEndpoint||'/api/artist-listening.php
 const intelligenceEndpoint=String(cfg.intelligenceEndpoint||'/api/artist-listening-intelligence-v300.php');
 const artistListeningUrl=String(cfg.artistListeningUrl||'/artist-listening.php');
 const SEEN_KEY='stonefellow.transcription-canvas.v308.seen';
-const esc=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[char]));
+const esc=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#039;'}[char]));
 const clean=value=>String(value||'').replace(/\s+/g,' ').trim();
 const asArray=value=>Array.isArray(value)?value:[];
 const itemId=item=>`${Math.max(0,Number(item?.session_id||0))}:${String(item?.key||'')}`;
@@ -225,6 +225,14 @@ function synopsisText(active){
   const first=active.flatMap(row=>asArray(row.app.sections).flatMap(section=>collectSection(row,section.key,1))).find(Boolean);
   return first?.text||'';
 }
+function allPluginHighlights(active){
+  const out=[];
+  for(const app of active){
+    const first=asArray(app.app.sections).flatMap(section=>collectSection(app,section.key,1)).find(Boolean);
+    if(first)out.push(first);
+  }
+  return out.slice(0,12);
+}
 function overviewModel(data){
   const active=activeModules(data);const by=id=>activeById(active,id);
   let total=0,accepted=0,rejected=0,unreviewed=0;
@@ -235,13 +243,13 @@ function overviewModel(data){
     actions:mergeItems([actionPlan?collectSection(actionPlan,'actions',5):[],actionPlan?collectSection(actionPlan,'follow_ups',5):[],actions?collectSection(actions,'items',5):[],followup?collectSection(followup,'items',5):[]],5),
     decisions:mergeItems([summary?collectSection(summary,'decisions',5):[],decisions?collectSection(decisions,'decisions',5):[],decisions?collectSection(decisions,'commitments',5):[]],5),
     risks:mergeItems([summary?collectSection(summary,'risks',5):[],actionPlan?collectSection(actionPlan,'blockers',5):[],risks?collectSection(risks,'items',5):[]],5),
-    questions:mergeItems([summary?collectSection(summary,'open_questions',5):[],basic?collectSection(basic,'open_questions',5):[],qa?collectSection(qa,'questions',5):[]],5),
+    questions:mergeItems([summary?collectSection(summary,'open_questions',5):[],basic?collectSection(basic,'open_questions',5):[],qa?collectSection(qa,'unanswered',5):[],qa?collectSection(qa,'answered',5):[]],5),
     opportunities:mergeItems([opps?collectSection(opps,'items',5):[]],5),
     crm:mergeItems([crm?collectSection(crm,'buying_signals',3):[],crm?collectSection(crm,'objections',3):[],crm?collectSection(crm,'relationship_changes',3):[],crm?collectSection(crm,'next_best_actions',3):[]],5),
     knowledge:mergeItems([knowledge?collectSection(knowledge,'items',5,{filter:row=>['conflicting','updates_existing','more_specific','new'].includes(clean(row?.knowledge_state).toLowerCase())}):[]],5),
     research:mergeItems([research?collectSection(research,'claims',5,{filter:row=>['mixed','unsupported','unresolved'].includes(clean(row?.verification).toLowerCase())}):[]],5),
   };
-  return {active,total,accepted,rejected,unreviewed,synopsis:synopsisText(active),groups};
+  return {active,total,accepted,rejected,unreviewed,synopsis:synopsisText(active),groups,highlights:allPluginHighlights(active)};
 }
 function itemMarkup(item,sessionId){
   const pages=evidencePages(item.row);const state=reviewState(item.row);
@@ -277,6 +285,7 @@ function homeMarkup(data,session){
       ${groups.crm.length?overviewCard('CRM relationship signals',groups.crm,sid):''}
       ${groups.knowledge.length?overviewCard('Knowledge intelligence',groups.knowledge,sid):''}
       ${groups.research.length?overviewCard('Claims to verify',groups.research,sid):''}
+      ${overviewCard('All plugin highlights',model.highlights,sid)}
     </div>
     ${pluginCoverage(model.active)}
   </section>`;
