@@ -2,7 +2,7 @@
   'use strict';
 
   const cfg = window.STONEFELLOW_ARTIST_LISTENING_V172 || {};
-  const BUILD = 'transcription-app-registry-v300-20260906';
+  const BUILD = 'transcription-intelligence-v302-20260906';
   const userId = Math.max(0, Number(cfg.userId || 0));
   const reportEndpoint = String(cfg.endpoint || '').replace(/artist-listening-v172\.php(?:\?.*)?$/i, 'artist-listening-intelligence-v300.php');
   const researchKey = `stonefellow:artist-listening:ai-summary:${userId}`;
@@ -21,6 +21,8 @@
     appStatus: {},
     permissions: {},
     busy: false,
+    busyApp: '',
+    editingItemId: '',
     liveWords: 0,
     lastReportedWords: 0,
     liveTimer: 0,
@@ -38,6 +40,9 @@
     liveReports: 0,
     brainSaves: 0,
     knowledgeSaves: 0,
+    itemReviews: 0,
+    itemEdits: 0,
+    evidenceJumps: 0,
     isOpen: () => state.open,
     open: () => setOpen(true),
     close: () => setOpen(false),
@@ -144,7 +149,7 @@
 
   function itemText(item, primary = 'text') {
     if (!item || typeof item !== 'object') return clean(item);
-    return clean(item[primary] ?? item.text ?? item.value ?? item.note ?? item.action ?? item.response ?? item.decision ?? item.commitment ?? item.moment ?? item.topic ?? item.name ?? item.risk ?? item.event ?? '');
+    return clean(item[primary] ?? item.text ?? item.value ?? item.note ?? item.action ?? item.response ?? item.decision ?? item.commitment ?? item.moment ?? item.topic ?? item.name ?? item.risk ?? item.event ?? item.question ?? item.follow_up ?? item.opportunity ?? item.change ?? item.position ?? item.constraint ?? item.requirement ?? item.item ?? '');
   }
 
   function metaHtml(item, fields = []) {
@@ -161,12 +166,35 @@
     return parts.length ? `<div class="sf-listening-ai-item-meta">${parts.join('')}</div>` : '';
   }
 
-  function sectionHtml(section, result) {
+  function itemActionsHtml(item, appId) {
+    if (!item || typeof item !== 'object' || !clean(item.item_id)) return '';
+    const itemId = String(item.item_id);
+    const review = String(item.review_state || 'unreviewed');
+    const refs = Array.isArray(item.evidence_refs) ? item.evidence_refs : [];
+    const evidence = refs.map(ref => {
+      const page = Math.max(0, Number(ref?.page || 0));
+      if (!page) return '';
+      return `<button type="button" data-listening-ai-evidence="${page}" title="Open transcript evidence">${esc(ref.label || `Page ${page}`)}</button>`;
+    }).join('');
+    if (state.editingItemId === itemId) {
+      return `<div class="sf-listening-ai-item-actions" data-listening-ai-item-actions>${evidence}<button type="button" data-listening-ai-edit-save="${esc(itemId)}">Save edit</button><button type="button" data-listening-ai-edit-cancel="${esc(itemId)}">Cancel</button></div>`;
+    }
+    return `<div class="sf-listening-ai-item-actions" data-listening-ai-item-actions>${evidence}<button type="button" data-listening-ai-review="accepted" data-listening-ai-item="${esc(itemId)}" class="${review === 'accepted' ? 'active' : ''}">Accept</button><button type="button" data-listening-ai-edit="${esc(itemId)}">Edit</button><button type="button" data-listening-ai-review="rejected" data-listening-ai-item="${esc(itemId)}" class="${review === 'rejected' ? 'active' : ''}">Reject</button><small>${esc(review === 'unreviewed' ? 'Unreviewed' : review)}</small></div>`;
+  }
+
+  function sectionHtml(section, result, appId) {
     const rows = Array.isArray(result?.[section.key]) ? result[section.key] : [];
     if (!rows.length) return '';
     return `<section><h4>${esc(section.title || section.key)}</h4><ul class="sf-listening-ai-structured-list">${rows.map(item => {
       const text = itemText(item, String(section.primary || 'text'));
-      return text ? `<li class="sf-listening-ai-structured-item"><p>${esc(text)}</p>${metaHtml(item, Array.isArray(section.meta) ? section.meta : [])}</li>` : '';
+      if (!text) return '';
+      const itemId = clean(item?.item_id || '');
+      const review = clean(item?.review_state || 'unreviewed');
+      const editing = itemId && state.editingItemId === itemId;
+      const body = editing
+        ? `<textarea data-listening-ai-edit-input="${esc(itemId)}" rows="4">${esc(text)}</textarea>`
+        : `<p>${esc(text)}</p>`;
+      return `<li class="sf-listening-ai-structured-item review-${esc(review)}" data-listening-ai-item-row="${esc(itemId)}" data-listening-ai-app-id="${esc(appId)}">${body}${metaHtml(item, Array.isArray(section.meta) ? section.meta : [])}${itemActionsHtml(item, appId)}</li>`;
     }).join('')}</ul></section>`;
   }
 
@@ -205,7 +233,7 @@
     const header = app.id === 'basic'
       ? `${result.summary ? `<p class="sf-listening-ai-report-copy">${esc(result.summary)}</p>` : ''}${result.analysis ? `<section><h4>Interpretation</h4><p>${esc(result.analysis)}</p></section>` : ''}`
       : '';
-    const sections = (Array.isArray(app.sections) ? app.sections : []).map(section => sectionHtml(section, result)).join('');
+    const sections = (Array.isArray(app.sections) ? app.sections : []).map(section => sectionHtml(section, result, String(app.id))).join('');
     const research = app.id === 'basic' ? researchHtml() : '';
     return header || sections || research ? `${header}${sections}${research}` : `<p class="sf-listening-ai-empty">No supported findings were identified for ${esc(app.title)}.</p>`;
   }
@@ -213,6 +241,13 @@
   function activeResult() {
     const modules = state.report?.analysis?.modules || {};
     return modules?.[state.activeApp]?.result || {};
+  }
+
+  function applyServerView(data) {
+    if (Array.isArray(data.registry) && data.registry.length) setRegistry(data.registry);
+    state.report = data.master || state.report;
+    state.appStatus = data.app_status || state.appStatus;
+    state.permissions = data.permissions || state.permissions;
   }
 
   function ensurePanel() {
@@ -261,6 +296,25 @@
       const input = event.target.closest('[data-listening-ai-app]');
       if (input) setAppSelected(String(input.dataset.listeningAiApp || ''), input.checked);
     });
+    panel.querySelector('[data-listening-ai-report]')?.addEventListener('click', event => {
+      const rerun = event.target.closest('[data-listening-ai-rerun]');
+      if (rerun) { void analyzeApps([state.activeApp], 'manual'); return; }
+      const evidence = event.target.closest('[data-listening-ai-evidence]');
+      if (evidence) { void focusEvidence(Number(evidence.dataset.listeningAiEvidence || 0)); return; }
+      const review = event.target.closest('[data-listening-ai-review]');
+      if (review) { void reviewItem(String(review.dataset.listeningAiItem || ''), String(review.dataset.listeningAiReview || 'unreviewed')); return; }
+      const edit = event.target.closest('[data-listening-ai-edit]');
+      if (edit) { state.editingItemId = String(edit.dataset.listeningAiEdit || ''); renderReport(); return; }
+      const cancel = event.target.closest('[data-listening-ai-edit-cancel]');
+      if (cancel) { state.editingItemId = ''; renderReport(); return; }
+      const save = event.target.closest('[data-listening-ai-edit-save]');
+      if (save) {
+        const itemId = String(save.dataset.listeningAiEditSave || '');
+        const row = save.closest('[data-listening-ai-item-row]');
+        const input = row?.querySelector('[data-listening-ai-edit-input]');
+        void editItem(itemId, String(input?.value || ''));
+      }
+    });
 
     let shade = document.querySelector('[data-listening-ai-shade]');
     if (!shade) {
@@ -302,7 +356,8 @@
     if (!node) return;
     const app = appById(state.activeApp);
     const action = clean(state.actionMessage);
-    const meta = `<div class="sf-listening-ai-report-state"><strong>${app ? esc(app.title) : 'Transcription App'}</strong><span>${esc(action || freshnessText(state.activeApp))}</span></div>`;
+    const canRun = !!app && !state.busy;
+    const meta = `<div class="sf-listening-ai-report-state"><div><strong>${app ? esc(app.title) : 'Transcription App'}</strong><span>${esc(action || freshnessText(state.activeApp))}</span></div>${app ? `<button type="button" data-listening-ai-rerun ${canRun ? '' : 'disabled'}>${state.busyApp === state.activeApp ? 'Running…' : 'Run Again'}</button>` : ''}</div>`;
     node.innerHTML = `${meta}${appResultHtml(app, activeResult())}`;
   }
 
@@ -342,7 +397,7 @@
     const status = panel.querySelector('[data-listening-ai-status]');
     if (status) {
       if (state.lastError) status.textContent = state.lastError;
-      else if (state.busy) status.textContent = `Running ${state.selectedApps.length} transcription app${state.selectedApps.length === 1 ? '' : 's'}…`;
+      else if (state.busy) status.textContent = state.busyApp ? `Running ${appById(state.busyApp)?.title || 'transcription plugin'}…` : `Running ${state.selectedApps.length} transcription app${state.selectedApps.length === 1 ? '' : 's'}…`;
       else if (!currentSessionId()) status.textContent = 'Open a transcription to use AI Summary.';
       else status.textContent = `${state.researchEnabled ? 'Research ON' : 'Research OFF'} · ${state.liveWords.toLocaleString()} transcript words · ${state.selectedApps.length} app${state.selectedApps.length === 1 ? '' : 's'} selected.`;
     }
@@ -392,6 +447,7 @@
     if (!next.size) next.add('basic');
     state.selectedApps = state.registry.map(app => String(app.id)).filter(id => next.has(id));
     if (!state.selectedApps.includes(state.activeApp)) state.activeApp = state.selectedApps[0];
+    state.editingItemId = '';
     state.actionMessage = '';
     persistApps();
     render();
@@ -400,6 +456,7 @@
   function setActiveApp(appId) {
     if (!state.selectedApps.includes(appId)) return;
     state.activeApp = appId;
+    state.editingItemId = '';
     state.actionMessage = '';
     renderTabs();
     renderReport();
@@ -416,6 +473,7 @@
     state.sessionId = sessionId;
     state.lastError = '';
     state.actionMessage = '';
+    state.editingItemId = '';
     if (!sessionId) {
       state.report = null;
       state.appStatus = {};
@@ -428,10 +486,7 @@
     try {
       const data = await request('status', {session_id:sessionId}, 'GET');
       if (currentSessionId() !== sessionId) return;
-      if (Array.isArray(data.registry) && data.registry.length) setRegistry(data.registry);
-      state.report = data.master || null;
-      state.appStatus = data.app_status || {};
-      state.permissions = data.permissions || {};
+      applyServerView(data);
       state.liveWords = Math.max(state.liveWords, Number(state.report?.word_count || 0));
       state.lastReportedWords = Number(state.report?.word_count || 0);
       proof.lastError = '';
@@ -442,32 +497,111 @@
     render();
   }
 
-  async function analyze(mode = 'manual') {
+  async function analyzeApps(appIds, mode = 'manual') {
     const sessionId = currentSessionId();
-    if (!sessionId || state.busy || !state.selectedApps.length) return;
+    const requested = [...new Set((Array.isArray(appIds) ? appIds : []).map(String).filter(id => appById(id)))];
+    if (!sessionId || state.busy || !requested.length) return;
     state.busy = true;
+    state.busyApp = requested.length === 1 ? requested[0] : '';
     state.lastError = '';
     state.actionMessage = '';
+    state.editingItemId = '';
     render();
     try {
-      const data = await request('analyze', {session_id:sessionId,mode,research:state.researchEnabled,apps:state.selectedApps});
+      const data = await request('analyze', {session_id:sessionId,mode,research:state.researchEnabled,apps:requested});
       if (currentSessionId() !== sessionId) return;
-      if (Array.isArray(data.registry) && data.registry.length) setRegistry(data.registry);
-      state.report = data.master || state.report;
-      state.appStatus = data.app_status || state.appStatus;
-      state.permissions = data.permissions || state.permissions;
+      applyServerView(data);
       state.lastReportedWords = Number(state.report?.word_count || state.liveWords || state.lastReportedWords);
       if (!data.skipped) {
         proof.reports += 1;
         if (mode === 'live') proof.liveReports += 1;
       }
-      state.actionMessage = data.skipped ? 'Selected analysis is current.' : 'Selected apps analyzed.';
+      const label = requested.length === 1 ? (appById(requested[0])?.title || 'Plugin') : `${requested.length} plugins`;
+      state.actionMessage = data.skipped ? `${label} is current.` : `${label} analyzed.`;
       proof.lastError = '';
     } catch (error) {
       state.lastError = String(error?.message || error);
       proof.lastError = state.lastError;
     } finally {
       state.busy = false;
+      state.busyApp = '';
+      render();
+    }
+  }
+
+  async function analyze(mode = 'manual') {
+    return analyzeApps(state.selectedApps, mode);
+  }
+
+  async function reviewItem(itemId, reviewState) {
+    const sessionId = currentSessionId();
+    if (!sessionId || !itemId || state.busy) return;
+    state.busy = true;
+    state.busyApp = state.activeApp;
+    state.lastError = '';
+    try {
+      const data = await request('review_item', {session_id:sessionId,app_id:state.activeApp,item_id:itemId,review_state:reviewState});
+      applyServerView(data);
+      state.actionMessage = reviewState === 'accepted' ? 'Item accepted.' : (reviewState === 'rejected' ? 'Item rejected.' : 'Review cleared.');
+      proof.itemReviews += 1;
+    } catch (error) {
+      state.lastError = String(error?.message || error);
+      proof.lastError = state.lastError;
+    } finally {
+      state.busy = false;
+      state.busyApp = '';
+      render();
+    }
+  }
+
+  async function editItem(itemId, text) {
+    const sessionId = currentSessionId();
+    text = clean(text);
+    if (!sessionId || !itemId || !text || state.busy) return;
+    state.busy = true;
+    state.busyApp = state.activeApp;
+    state.lastError = '';
+    try {
+      const data = await request('edit_item', {session_id:sessionId,app_id:state.activeApp,item_id:itemId,text});
+      applyServerView(data);
+      state.editingItemId = '';
+      state.actionMessage = 'Item edited and accepted.';
+      proof.itemEdits += 1;
+    } catch (error) {
+      state.lastError = String(error?.message || error);
+      proof.lastError = state.lastError;
+    } finally {
+      state.busy = false;
+      state.busyApp = '';
+      render();
+    }
+  }
+
+  async function focusEvidence(page) {
+    page = Math.max(0, Number(page || 0));
+    if (!page) return;
+    const transcript = window.STONEFELLOW_ARTIST_LISTENING_TRANSCRIPT?.api;
+    if (!transcript?.goPage) {
+      state.lastError = 'Transcript evidence navigation is unavailable.';
+      render();
+      return;
+    }
+    try {
+      const transcriptState = transcript.getState?.() || {};
+      if (transcriptState.view === 'continuous' && transcript.setView) transcript.setView('page');
+      transcript.goPage(page);
+      proof.evidenceJumps += 1;
+      setOpen(false);
+      window.dispatchEvent(new CustomEvent('stonefellow:artist-listening-evidence-requested', {
+        detail:{sessionId:currentSessionId(),page,pluginId:state.activeApp,source:'transcription-intelligence'}
+      }));
+      setTimeout(() => {
+        const target = document.querySelector('.sf-listening-workspace-document-area');
+        target?.scrollIntoView({behavior:'smooth',block:'start'});
+      }, 180);
+    } catch (error) {
+      state.lastError = String(error?.message || error);
+      proof.lastError = state.lastError;
       render();
     }
   }
@@ -483,10 +617,10 @@
       const data = await request(action, {session_id:sessionId});
       if (action === 'save_brain') {
         proof.brainSaves += 1;
-        state.actionMessage = `Added current app results to Agent Brain${data.saved_at ? ` · ${formatSaved(data.saved_at)}` : ''}.`;
+        state.actionMessage = `Added current reviewed intelligence to Agent Brain${data.saved_at ? ` · ${formatSaved(data.saved_at)}` : ''}.`;
       } else {
         proof.knowledgeSaves += 1;
-        state.actionMessage = `Added current app results to Personal Knowledge Base${data.saved_at ? ` · ${formatSaved(data.saved_at)}` : ''}.`;
+        state.actionMessage = `Added current reviewed intelligence to Personal Knowledge Base${data.saved_at ? ` · ${formatSaved(data.saved_at)}` : ''}.`;
       }
       proof.lastError = '';
     } catch (error) {
@@ -501,7 +635,7 @@
   function transcriptionAiState() {
     return {
       sessionId:currentSessionId(),open:!!state.open,settingsOpen:!!state.settingsOpen,researchEnabled:!!state.researchEnabled,
-      selectedApps:[...state.selectedApps],activeApp:String(state.activeApp||''),busy:!!state.busy,
+      selectedApps:[...state.selectedApps],activeApp:String(state.activeApp||''),busy:!!state.busy,busyApp:String(state.busyApp||''),
       report:state.report?JSON.parse(JSON.stringify(state.report)):null,appStatus:JSON.parse(JSON.stringify(state.appStatus||{})),
       registry:JSON.parse(JSON.stringify(state.registry||[])),permissions:{...state.permissions},liveWords:Math.max(0,Number(state.liveWords||0)),lastError:String(state.lastError||''),
     };
@@ -523,6 +657,10 @@
     getState:transcriptionAiState,open:()=>setOpen(true),close:()=>setOpen(false),setResearchEnabled,setApps:transcriptionSetApps,
     setActiveApp:appId=>{setActiveApp(String(appId||''));return state.activeApp;},
     analyze:async(mode='manual')=>{await analyze(mode);if(state.lastError)throw new Error(state.lastError);return state.report;},
+    analyzePlugin:async(appId,mode='manual')=>{await analyzeApps([String(appId||state.activeApp)],mode);if(state.lastError)throw new Error(state.lastError);return state.report;},
+    reviewItem:async(itemId,reviewState)=>{await reviewItem(String(itemId||''),String(reviewState||'unreviewed'));if(state.lastError)throw new Error(state.lastError);return state.report;},
+    editItem:async(itemId,text)=>{await editItem(String(itemId||''),String(text||''));if(state.lastError)throw new Error(state.lastError);return state.report;},
+    focusEvidence:async page=>{await focusEvidence(page);if(state.lastError)throw new Error(state.lastError);return true;},
     saveBrain:async()=>{await saveResult('save_brain');if(state.lastError)throw new Error(state.lastError);return true;},
     saveKnowledge:async()=>{await saveResult('save_knowledge');if(state.lastError)throw new Error(state.lastError);return true;},
     loadStatus:async sessionId=>{await loadStatus(sessionId);if(state.lastError)throw new Error(state.lastError);return transcriptionAiState();},

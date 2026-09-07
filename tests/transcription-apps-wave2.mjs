@@ -7,6 +7,7 @@ const api = read('api/artist-listening-intelligence-v300.php');
 const baseRegistry = read('includes/transcription-app-registry.php');
 const wave2 = read('includes/transcription-apps-wave2.php');
 const save = read('includes/transcription-apps-wave2-save.php');
+const items = read('includes/transcription-intelligence-items.php');
 
 /* Eight wave-two plugins are first-class registry entries. */
 const plugins = [
@@ -99,11 +100,13 @@ assert.match(wave2,/transcription_app_modules_v301/);
 assert.match(wave2,/transcription_app_compat_projection_v300\(\$modules\)/,'legacy projections must be generated from independent module results');
 assert.match(wave2,/\$projection\['registry_version'\] = 301/);
 
-/* Brain / Knowledge export must honor the same freshness shown in each plugin tab. */
-assert.match(api,/transcription-apps-wave2-save\.php/);
+/* Brain / Knowledge export must honor freshness plus human review. */
+assert.match(api,/transcription-apps-wave2-save\.php/,'v301 compatibility helpers must remain loadable');
 assert.match(api,/transcription_app_status_v301\(/,'save path must calculate plugin freshness before exporting');
-assert.match(api,/transcription_app_report_text_current_v301/);
-assert.match(save,/empty\(\$appStatus\[\$id\]\['fresh'\]\)/,'stale plugin results must be excluded from exported intelligence');
-assert.match(save,/researchBriefCurrent/,'public research must only export with a current Research Brief');
+assert.match(api,/transcription_intelligence_report_text_v302/,'v302 must compile review-aware current intelligence');
+assert.match(items,/empty\(\$appStatus\[\$id\]\['fresh'\]\)/,'v302 export must exclude stale plugin results');
+assert.match(items,/\(\$item\['review_state'\] \?\? ''\) === 'rejected'/,'v302 export must exclude rejected items');
+assert.match(items,/research_brief'\]\['fresh'\]/,'public research must only export with a current Research Brief');
+assert.match(save,/researchBriefCurrent/,'v301 compatibility helper must retain its original public-research freshness contract');
 
 console.log('VP3 transcription apps wave two contract: PASS');
