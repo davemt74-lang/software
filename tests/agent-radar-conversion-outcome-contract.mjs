@@ -8,6 +8,8 @@ const bootstrap = read('includes/bootstrap.php');
 const relationship = read('includes/agent-relationship-intelligence.php');
 const referral = read('includes/agent-referral-attribution.php');
 const cognitive = read('includes/agent-cognitive-loop-v310.php');
+const crm = read('includes/agent-crm.php');
+const contacts = read('contacts.php');
 
 /* Exact identity chain: opportunity notification -> Radar event -> same agent contact. */
 assert.ok(closure.includes("VP3_AGENT_RADAR_CONVERSION_OUTCOME_V315='agent-radar-conversion-outcome-v315-20260907'"), 'Radar conversion closure must be versioned');
@@ -52,6 +54,18 @@ assert.ok(closure.includes("'automatic'=>true"), 'automatic result must be expli
 assert.ok(!/CREATE TABLE|ALTER TABLE/.test(closure), 'conversion closure must not create another persistence schema');
 assert.ok(!/agent_task_v123_update|UPDATE\s+agent_memory_items/i.test(closure), 'conversion learning must not mutate Agent Brain tasks');
 assert.ok(!/REMOTE_ADDR|HTTP_X_FORWARDED_FOR|document\.cookie|localStorage|sessionStorage/.test(closure), 'conversion closure must not add identity/fingerprinting collection');
+
+/* A recorded learning result becomes visible in the existing CRM Activity ledger. */
+assert.ok(closure.includes('function agent_radar_outcome_v315_crm_audit('), 'recorded Radar outcomes must have one CRM/Radar audit bridge');
+assert.ok(closure.includes("'agent_brain_outcome_learned'"), 'learned outcome must use a dedicated Radar activity event type');
+assert.ok(closure.includes("'low','','SYSTEM'"), 'learning audit must use an empty path and SYSTEM method so it cannot alter path intent or top-path Analytics');
+assert.ok(closure.includes("'source_label'=>'Agent Radar'"), 'learning audit must retain Agent Radar source label');
+assert.ok(closure.includes("$result['crm_activity_event_id']=agent_radar_outcome_v315_crm_audit"), 'CRM activity receipt must only be created after canonical outcome persistence succeeds');
+assert.ok(crm.includes("FROM vp3_radar_events e"), 'Agent CRM Activity must remain a projection of the canonical Radar ledger');
+assert.ok(crm.includes("$row['recent_activity']=$recent[$id]??[];"), 'Agent CRM rows must expose recent Radar activity');
+assert.ok(contacts.includes('function renderActivity(agent)'), 'CRM relationship modal must render the existing activity projection');
+assert.ok(contacts.includes("words(item.event_type||'activity')"), 'learned outcome event type must be visibly labeled in CRM Activity');
+assert.ok(contacts.includes("item.summary||'Agent Radar activity'"), 'learned outcome summary must be visible in CRM Activity');
 
 /* Runtime is bounded and integrated into existing bootstrap. */
 assert.ok(bootstrap.includes("require_once __DIR__.'/agent-radar-conversion-outcome-v315.php';"), 'bootstrap must load the conversion closure after canonical action system');

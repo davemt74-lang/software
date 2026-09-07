@@ -116,6 +116,63 @@ function agent_radar_outcome_v315_opportunity_candidates(PDO $pdo,int $userId,in
     }
 }
 
+/**
+ * Mirror a recorded Brain learning result into the canonical Radar activity
+ * ledger so the existing CRM Activity tab can show it. The path is deliberately
+ * empty and the method is SYSTEM: this audit receipt must never influence path
+ * intent scoring or top-path Analytics.
+ */
+function agent_radar_outcome_v315_crm_audit(PDO $pdo,array $user,array $context): int
+{
+    $userId=(int)($user['id']??0);
+    $contactId=max(0,(int)($context['agent_contact_id']??0));
+    if($userId<1||$contactId<1||!table_exists('vp3_radar_events')||!table_exists('vp3_agent_contacts'))return 0;
+
+    try{
+        $property=function_exists('vp3_agent_crm_primary_property')?vp3_agent_crm_primary_property($pdo,$userId):null;
+        if(!$property){
+            $stmt=$pdo->prepare("SELECT id FROM vp3_radar_properties WHERE owner_user_id=? ORDER BY (property_type='native') DESC,is_active DESC,id LIMIT 1");
+            $stmt->execute([$userId]);
+            $propertyId=(int)($stmt->fetchColumn()?:0);
+        }else{
+            $propertyId=(int)($property['id']??0);
+        }
+        if($propertyId<1)return 0;
+
+        $contact=$pdo->prepare('SELECT risk_score FROM vp3_agent_contacts WHERE id=? AND owner_user_id=? LIMIT 1');
+        $contact->execute([$contactId,$userId]);
+        $risk=max(0,min(100,(int)($contact->fetchColumn()?:0)));
+        $eventName=trim((string)($context['conversion_event_name']??''));
+        $summary='Agent Brain learned a successful Agent Radar opportunity outcome from a first-party attributed'.($eventName!==''?' '.$eventName:'').' conversion.';
+        $details=[
+            'outcome'=>'successful',
+            'automatic'=>true,
+            'source'=>'agent_radar_opportunity',
+            'source_label'=>'Agent Radar',
+            'agent_contact_id'=>$contactId,
+            'referral_id'=>max(0,(int)($context['referral_id']??0)),
+            'conversion_referral_event_id'=>max(0,(int)($context['conversion_referral_event_id']??0)),
+            'opportunity_notification_id'=>max(0,(int)($context['opportunity_notification_id']??0)),
+            'opportunity_radar_event_id'=>max(0,(int)($context['opportunity_radar_event_id']??0)),
+            'conversion_event_name'=>$eventName,
+            'conversion_value'=>$context['conversion_value']??null,
+            'conversion_at'=>(string)($context['conversion_at']??''),
+            'exposure_at'=>(string)($context['exposure_at']??''),
+            'closure_build'=>VP3_AGENT_RADAR_CONVERSION_OUTCOME_V315,
+        ];
+        $stmt=$pdo->prepare("INSERT INTO vp3_radar_events
+          (owner_user_id,property_id,session_id,agent_contact_id,event_type,severity,path,method,status_code,significance_score,risk_score,summary,details_json,occurred_at)
+          VALUES (?,?,NULL,?,'agent_brain_outcome_learned','low','','SYSTEM',NULL,92,?,?,?,NOW())");
+        $stmt->execute([
+            $userId,$propertyId,$contactId,$risk,mb_strimwidth($summary,0,500,'…'),
+            json_encode($details,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE),
+        ]);
+        return (int)$pdo->lastInsertId();
+    }catch(Throwable $e){
+        return 0;
+    }
+}
+
 function agent_radar_outcome_v315_close_conversion(PDO $pdo,array $user,array $conversion): array
 {
     $userId=(int)($user['id']??0);
@@ -184,16 +241,20 @@ function agent_radar_outcome_v315_close_conversion(PDO $pdo,array $user,array $c
     $result['automatic']=true;
     $result['closure_build']=VP3_AGENT_RADAR_CONVERSION_OUTCOME_V315;
 
-    if(!empty($result['recorded'])&&function_exists('agent_runtime_v125_trace')){
-        agent_runtime_v125_trace('brain.radar_conversion_outcome_auto_closed',[
-            'user_id'=>$userId,
-            'agent_contact_id'=>$agentContactId,
-            'referral_id'=>$referralId,
-            'conversion_referral_event_id'=>$referralEventId,
-            'opportunity_notification_id'=>$notificationId,
-            'event_name'=>$eventName,
-            'outcome'=>'successful',
-        ]);
+    if(!empty($result['recorded'])){
+        $result['crm_activity_event_id']=agent_radar_outcome_v315_crm_audit($pdo,$user,$context);
+        if(function_exists('agent_runtime_v125_trace')){
+            agent_runtime_v125_trace('brain.radar_conversion_outcome_auto_closed',[
+                'user_id'=>$userId,
+                'agent_contact_id'=>$agentContactId,
+                'referral_id'=>$referralId,
+                'conversion_referral_event_id'=>$referralEventId,
+                'opportunity_notification_id'=>$notificationId,
+                'crm_activity_event_id'=>(int)($result['crm_activity_event_id']??0),
+                'event_name'=>$eventName,
+                'outcome'=>'successful',
+            ]);
+        }
     }
     return $result;
 }
