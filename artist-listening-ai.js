@@ -2,18 +2,28 @@
   'use strict';
 
   const cfg = window.STONEFELLOW_ARTIST_LISTENING_V172 || {};
-  const BUILD = 'transcription-intelligence-v303-20260906';
+  const BUILD = 'transcription-workflow-v304-20260906';
+  const BATCH_SIZE = 4;
   const userId = Math.max(0, Number(cfg.userId || 0));
   const reportEndpoint = String(cfg.endpoint || '').replace(/artist-listening-v172\.php(?:\?.*)?$/i, 'artist-listening-intelligence-v300.php');
-  const researchKey = `stonefellow:artist-listening:ai-summary:${userId}`;
+  const legacyResearchKey = `stonefellow:artist-listening:ai-summary:${userId}`;
   const appsKey = `stonefellow:artist-listening:ai-apps:${userId}`;
+  const workflowKey = `stonefellow:artist-listening:workflow:${userId}`;
+
+  const fallbackWorkflow = {
+    preset: 'custom',
+    live_analysis: false,
+    web_research: readLegacyResearchEnabled(),
+    depth: 'standard',
+    focus: '',
+    context_mode: 'authorized',
+  };
 
   const state = {
     open: false,
     settingsOpen: false,
     bound: false,
     sessionId: 0,
-    researchEnabled: readResearchEnabled(),
     registry: [],
     selectedApps: [],
     activeApp: 'basic',
@@ -21,6 +31,10 @@
     appStatus: {},
     permissions: {},
     operations: {},
+    workflowConfig: {},
+    workflow: readWorkflow(),
+    runPlan: null,
+    pluginErrors: {},
     busy: false,
     busyApp: '',
     editingItemId: '',
@@ -45,12 +59,15 @@
     itemEdits: 0,
     itemActions: 0,
     evidenceJumps: 0,
+    presetChanges: 0,
     isOpen: () => state.open,
     open: () => setOpen(true),
     close: () => setOpen(false),
     toggle: () => setOpen(!state.open),
     setResearchEnabled: enabled => setResearchEnabled(enabled),
-    isResearchEnabled: () => state.researchEnabled,
+    isResearchEnabled: () => !!state.workflow.web_research,
+    setLiveAnalysisEnabled: enabled => setLiveAnalysisEnabled(enabled),
+    isLiveAnalysisEnabled: () => !!state.workflow.live_analysis,
     setSettingsOpen: open => setSettingsOpen(open),
     isSettingsOpen: () => state.settingsOpen,
     selectedApps: () => [...state.selectedApps],
@@ -64,8 +81,49 @@
     return text ? text.split(' ').length : 0;
   };
 
-  function readResearchEnabled() {
-    try { return localStorage.getItem(researchKey) === '1'; } catch (error) { return false; }
+  function readLegacyResearchEnabled() {
+    try { return localStorage.getItem(legacyResearchKey) === '1'; } catch (error) { return false; }
+  }
+
+  function readWorkflow() {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(workflowKey) || 'null');
+      return parsed && typeof parsed === 'object' ? {...fallbackWorkflow, ...parsed} : {...fallbackWorkflow};
+    } catch (error) {
+      return {...fallbackWorkflow};
+    }
+  }
+
+  function persistWorkflow() {
+    try {
+      localStorage.setItem(workflowKey, JSON.stringify(state.workflow));
+      // Keep the old research key synchronized for backward-compatible clients only.
+      localStorage.setItem(legacyResearchKey, state.workflow.web_research ? '1' : '0');
+    } catch (error) {}
+  }
+
+  function workflowDefaults() {
+    const defaults = state.workflowConfig?.defaults;
+    return defaults && typeof defaults === 'object' ? {...fallbackWorkflow, ...defaults} : {...fallbackWorkflow};
+  }
+
+  function normalizeWorkflow(value = state.workflow) {
+    const defaults = workflowDefaults();
+    const raw = value && typeof value === 'object' ? value : {};
+    const depths = new Set((state.workflowConfig?.depth_options || []).map(row => String(row?.id || '')));
+    const contexts = new Set((state.workflowConfig?.context_options || []).map(row => String(row?.id || '')));
+    const presetIds = new Set((state.workflowConfig?.presets || []).map(row => String(row?.id || '')));
+    const depth = String(raw.depth || defaults.depth || 'standard');
+    const context = String(raw.context_mode || defaults.context_mode || 'authorized');
+    const preset = String(raw.preset || defaults.preset || 'custom');
+    return {
+      preset: preset === 'custom' || presetIds.has(preset) ? preset : 'custom',
+      live_analysis: Boolean(raw.live_analysis),
+      web_research: Boolean(raw.web_research),
+      depth: depths.size ? (depths.has(depth) ? depth : 'standard') : (['concise','standard','deep'].includes(depth) ? depth : 'standard'),
+      focus: clean(raw.focus || '').slice(0, 240),
+      context_mode: contexts.size ? (contexts.has(context) ? context : 'authorized') : (['transcript','authorized'].includes(context) ? context : 'authorized'),
+    };
   }
 
   function readSelectedApps(available = []) {
@@ -85,6 +143,11 @@
 
   function appById(id) {
     return state.registry.find(app => String(app.id || '') === String(id || '')) || null;
+  }
+
+  function presetById(id) {
+    return (Array.isArray(state.workflowConfig?.presets) ? state.workflowConfig.presets : [])
+      .find(row => String(row?.id || '') === String(id || '')) || null;
   }
 
   function currentSessionId() {
@@ -135,6 +198,13 @@
     if (!state.selectedApps.includes(state.activeApp)) state.activeApp = state.selectedApps[0] || 'basic';
   }
 
+  function setWorkflowConfig(config) {
+    if (!config || typeof config !== 'object') return;
+    state.workflowConfig = config;
+    state.workflow = normalizeWorkflow(state.workflow);
+    persistWorkflow();
+  }
+
   function formatSaved(value) {
     const raw = String(value || '').trim();
     if (!raw) return 'Not analyzed yet';
@@ -147,6 +217,34 @@
     const status = state.appStatus?.[appId] || {};
     if (!status.generated) return 'Not generated';
     return `${status.fresh ? 'Current' : 'Needs refresh'}${status.generated_at ? ` · ${formatSaved(status.generated_at)}` : ''}`;
+  }
+
+  function localRunPlan(appIds = state.selectedApps, mode = 'manual') {
+    const requested = [...new Set((Array.isArray(appIds) ? appIds : []).map(String).filter(id => appById(id)))];
+    const effective = mode === 'live' ? requested.filter(id => !!appById(id)?.live) : requested;
+    const aiApps = effective.filter(id => appById(id)?.execution === 'ai');
+    const deterministic = effective.filter(id => appById(id)?.execution === 'deterministic');
+    const manualOnly = requested.filter(id => !appById(id)?.live);
+    const batches = Math.ceil(aiApps.length / BATCH_SIZE);
+    const cost = batches >= 4 ? 'high' : (batches >= 2 ? 'medium' : (batches === 1 ? 'low' : 'none'));
+    return {
+      requested_apps:requested,effective_apps:effective,ai_apps:aiApps,deterministic_apps:deterministic,
+      ai_batches:batches,batch_size:BATCH_SIZE,manual_only_apps:manualOnly,estimated_ai_cost:cost,
+      web_research:!!state.workflow.web_research,live_analysis:!!state.workflow.live_analysis,
+      depth:String(state.workflow.depth||'standard'),context_mode:String(state.workflow.context_mode||'authorized'),focus:String(state.workflow.focus||''),
+    };
+  }
+
+  function planText(plan = localRunPlan()) {
+    const ai = Array.isArray(plan.ai_apps) ? plan.ai_apps.length : 0;
+    const deterministic = Array.isArray(plan.deterministic_apps) ? plan.deterministic_apps.length : 0;
+    const batches = Math.max(0, Number(plan.ai_batches || 0));
+    const pieces = [];
+    if (ai) pieces.push(`${ai} AI app${ai === 1 ? '' : 's'} · ${batches} batch${batches === 1 ? '' : 'es'}`);
+    if (deterministic) pieces.push(`${deterministic} token-free`);
+    pieces.push(`${String(plan.estimated_ai_cost || 'none')} cost`);
+    if (state.workflow.web_research) pieces.push('web research');
+    return pieces.join(' · ');
   }
 
   function itemText(item, primary = 'text') {
@@ -275,14 +373,20 @@
 
   function appResultHtml(app, result = {}) {
     if (!app) return '<p class="sf-listening-ai-empty">Unknown transcription app.</p>';
-    if (!state.appStatus?.[app.id]?.generated) return `<p class="sf-listening-ai-empty">Run Analyze to generate ${esc(app.title)}.</p>`;
+    const pluginError = clean(state.pluginErrors?.[app.id] || '');
+    if (!state.appStatus?.[app.id]?.generated) {
+      return pluginError
+        ? `<div class="sf-listening-ai-plugin-error"><strong>${esc(app.title)} needs a retry.</strong><p>${esc(pluginError)}</p></div>`
+        : `<p class="sf-listening-ai-empty">Run Analyze to generate ${esc(app.title)}.</p>`;
+    }
     if (app.view === 'stats') return statsHtml(result);
+    const error = pluginError ? `<div class="sf-listening-ai-plugin-error"><strong>Latest run needs a retry.</strong><p>${esc(pluginError)}</p></div>` : '';
     const header = app.id === 'basic'
       ? `${result.summary ? `<p class="sf-listening-ai-report-copy">${esc(result.summary)}</p>` : ''}${result.analysis ? `<section><h4>Interpretation</h4><p>${esc(result.analysis)}</p></section>` : ''}`
       : '';
     const sections = (Array.isArray(app.sections) ? app.sections : []).map(section => sectionHtml(section, result, String(app.id))).join('');
     const research = app.id === 'basic' ? researchHtml() : '';
-    return header || sections || research ? `${header}${sections}${research}` : `<p class="sf-listening-ai-empty">No supported findings were identified for ${esc(app.title)}.</p>`;
+    return header || sections || research || error ? `${error}${header}${sections}${research}` : `<p class="sf-listening-ai-empty">No supported findings were identified for ${esc(app.title)}.</p>`;
   }
 
   function activeResult() {
@@ -292,10 +396,17 @@
 
   function applyServerView(data) {
     if (Array.isArray(data.registry) && data.registry.length) setRegistry(data.registry);
+    if (data.workflow_config) setWorkflowConfig(data.workflow_config);
+    if (data.workflow && typeof data.workflow === 'object') {
+      state.workflow = normalizeWorkflow(data.workflow);
+      persistWorkflow();
+    }
     state.report = data.master || state.report;
     state.appStatus = data.app_status || state.appStatus;
     state.permissions = data.permissions || state.permissions;
     state.operations = data.operations || state.operations;
+    state.runPlan = data.run_plan || state.runPlan;
+    state.pluginErrors = data.plugin_errors || {};
   }
 
   function ensurePanel() {
@@ -309,16 +420,25 @@
       <header class="sf-listening-ai-head">
         <div><small>AI AGENT</small><h2>AI Summary</h2></div>
         <div class="sf-listening-ai-head-actions">
+          <button type="button" class="sf-listening-ai-power" data-listening-ai-live aria-pressed="false">Live OFF</button>
           <button type="button" class="sf-listening-ai-power" data-listening-ai-research aria-pressed="false">Research OFF</button>
           <button type="button" data-listening-ai-close aria-label="Close AI Summary">×</button>
         </div>
       </header>
       <div class="sf-listening-ai-status sf-listening-ai-status-row">
         <span data-listening-ai-status>AI Summary ready.</span>
-        <button type="button" class="sf-listening-ai-settings" data-listening-ai-settings aria-expanded="false" aria-controls="sfListeningAiApps" aria-label="Toggle transcription app settings" title="Transcription app settings"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.8 1.8 0 0 0 .36 1.98l.06.06-2.78 2.78-.06-.06A1.8 1.8 0 0 0 15 19.4a1.8 1.8 0 0 0-1.08 1.65V21h-3.84v-.09A1.8 1.8 0 0 0 9 19.4a1.8 1.8 0 0 0-1.98.36l-.06.06-2.78-2.78.06-.06A1.8 1.8 0 0 0 4.6 15a1.8 1.8 0 0 0-1.65-1.08H3v-3.84h.09A1.8 1.8 0 0 0 4.6 9a1.8 1.8 0 0 0-.36-1.98l-.06-.06 2.78-2.78.06.06A1.8 1.8 0 0 0 9 4.6a1.8 1.8 0 0 0 1.08-1.65V3h3.84v.09A1.8 1.8 0 0 0 15 4.6a1.8 1.8 0 0 0 1.98-.36l.06-.06 2.78 2.78-.06.06A1.8 1.8 0 0 0 19.4 9a1.8 1.8 0 0 0 1.65 1.08H21v3.84h-.09A1.8 1.8 0 0 0 19.4 15Z"></path></svg></button>
+        <button type="button" class="sf-listening-ai-settings" data-listening-ai-settings aria-expanded="false" aria-controls="sfListeningAiApps" aria-label="Toggle transcription workflow settings" title="Transcription workflow settings"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.8 1.8 0 0 0 .36 1.98l.06.06-2.78 2.78-.06-.06A1.8 1.8 0 0 0 15 19.4a1.8 1.8 0 0 0-1.08 1.65V21h-3.84v-.09A1.8 1.8 0 0 0 9 19.4a1.8 1.8 0 0 0-1.98.36l-.06.06-2.78-2.78.06-.06A1.8 1.8 0 0 0 4.6 15a1.8 1.8 0 0 0-1.65-1.08H3v-3.84h.09A1.8 1.8 0 0 0 4.6 9a1.8 1.8 0 0 0-.36-1.98l-.06-.06 2.78-2.78.06.06A1.8 1.8 0 0 0 9 4.6a1.8 1.8 0 0 0 1.08-1.65V3h3.84v.09A1.8 1.8 0 0 0 15 4.6a1.8 1.8 0 0 0 1.98-.36l.06-.06 2.78 2.78-.06.06A1.8 1.8 0 0 0 19.4 9a1.8 1.8 0 0 0 1.65 1.08H21v3.84h-.09A1.8 1.8 0 0 0 19.4 15Z"></path></svg></button>
       </div>
       <section class="sf-listening-ai-apps" id="sfListeningAiApps" hidden>
-        <div class="sf-listening-ai-apps-head"><strong>Transcription apps</strong><span>Select what Analyze should run</span></div>
+        <div class="sf-listening-ai-apps-head"><strong>Workflow</strong><span>Preset + run profile</span></div>
+        <div class="sf-listening-ai-presets" data-listening-ai-presets></div>
+        <div class="sf-listening-ai-workflow-grid">
+          <label><span>Depth</span><select data-listening-ai-depth></select></label>
+          <label><span>Context</span><select data-listening-ai-context></select></label>
+          <label class="sf-listening-ai-focus"><span>Focus</span><input type="text" maxlength="240" data-listening-ai-focus placeholder="Optional analysis focus"></label>
+        </div>
+        <div class="sf-listening-ai-run-plan" data-listening-ai-run-plan></div>
+        <div class="sf-listening-ai-apps-head sf-listening-ai-apps-head-secondary"><strong>Transcription apps</strong><span>Select what Analyze should run</span></div>
         <div class="sf-listening-ai-app-options" data-listening-ai-app-options></div>
       </section>
       <nav class="sf-listening-ai-tabs" data-listening-ai-tabs aria-label="AI result tabs"></nav>
@@ -331,7 +451,8 @@
     document.body.appendChild(panel);
 
     panel.querySelector('[data-listening-ai-close]')?.addEventListener('click', () => setOpen(false));
-    panel.querySelector('[data-listening-ai-research]')?.addEventListener('click', () => setResearchEnabled(!state.researchEnabled));
+    panel.querySelector('[data-listening-ai-live]')?.addEventListener('click', () => setLiveAnalysisEnabled(!state.workflow.live_analysis));
+    panel.querySelector('[data-listening-ai-research]')?.addEventListener('click', () => setResearchEnabled(!state.workflow.web_research));
     panel.querySelector('[data-listening-ai-settings]')?.addEventListener('click', () => setSettingsOpen(!state.settingsOpen));
     panel.querySelector('[data-listening-ai-analyze]')?.addEventListener('click', () => void analyze('manual'));
     panel.querySelector('[data-listening-ai-brain]')?.addEventListener('click', () => void saveResult('save_brain'));
@@ -340,6 +461,13 @@
       const button = event.target.closest('[data-listening-ai-tab]');
       if (button) setActiveApp(String(button.dataset.listeningAiTab || ''));
     });
+    panel.querySelector('[data-listening-ai-presets]')?.addEventListener('click', event => {
+      const button = event.target.closest('[data-listening-ai-preset]');
+      if (button) applyPreset(String(button.dataset.listeningAiPreset || ''));
+    });
+    panel.querySelector('[data-listening-ai-depth]')?.addEventListener('change', event => setWorkflowField('depth', String(event.target.value || 'standard')));
+    panel.querySelector('[data-listening-ai-context]')?.addEventListener('change', event => setWorkflowField('context_mode', String(event.target.value || 'authorized')));
+    panel.querySelector('[data-listening-ai-focus]')?.addEventListener('change', event => setWorkflowField('focus', String(event.target.value || '')));
     panel.querySelector('[data-listening-ai-app-options]')?.addEventListener('change', event => {
       const input = event.target.closest('[data-listening-ai-app]');
       if (input) setAppSelected(String(input.dataset.listeningAiApp || ''), input.checked);
@@ -386,13 +514,38 @@
     return panel;
   }
 
+  function renderPresets() {
+    const box = document.querySelector('[data-listening-ai-presets]');
+    if (!box) return;
+    const presets = Array.isArray(state.workflowConfig?.presets) ? state.workflowConfig.presets : [];
+    box.innerHTML = presets.map(preset => `<button type="button" data-listening-ai-preset="${esc(preset.id)}" class="${state.workflow.preset === preset.id ? 'active' : ''}" title="${esc(preset.description || '')}">${esc(preset.title || preset.id)}</button>`).join('');
+  }
+
+  function renderWorkflowControls() {
+    const depth = document.querySelector('[data-listening-ai-depth]');
+    const context = document.querySelector('[data-listening-ai-context]');
+    const focus = document.querySelector('[data-listening-ai-focus]');
+    const plan = document.querySelector('[data-listening-ai-run-plan]');
+    if (depth) {
+      const rows = Array.isArray(state.workflowConfig?.depth_options) ? state.workflowConfig.depth_options : [];
+      depth.innerHTML = rows.map(row => `<option value="${esc(row.id)}" ${state.workflow.depth === row.id ? 'selected' : ''}>${esc(row.title || row.id)}</option>`).join('');
+    }
+    if (context) {
+      const rows = Array.isArray(state.workflowConfig?.context_options) ? state.workflowConfig.context_options : [];
+      context.innerHTML = rows.map(row => `<option value="${esc(row.id)}" ${state.workflow.context_mode === row.id ? 'selected' : ''}>${esc(row.title || row.id)}</option>`).join('');
+    }
+    if (focus && focus.value !== state.workflow.focus) focus.value = state.workflow.focus;
+    if (plan) plan.textContent = `Run plan · ${planText(localRunPlan())}`;
+  }
+
   function renderApps() {
     const box = document.querySelector('[data-listening-ai-app-options]');
     if (!box) return;
     box.innerHTML = state.registry.map(app => {
       const checked = state.selectedApps.includes(String(app.id));
       const status = state.appStatus?.[app.id] || {};
-      return `<label title="${esc(app.description || '')}"><input type="checkbox" data-listening-ai-app="${esc(app.id)}" ${checked ? 'checked' : ''}><span><b>${esc(app.title)}</b><small>${esc(app.execution === 'deterministic' ? 'No AI tokens' : (app.description || ''))}${status.generated ? ` · ${status.fresh ? 'current' : 'refresh'}` : ''}</small></span></label>`;
+      const manual = app.live ? '' : ' · manual only';
+      return `<label title="${esc(app.description || '')}"><input type="checkbox" data-listening-ai-app="${esc(app.id)}" ${checked ? 'checked' : ''}><span><b>${esc(app.title)}</b><small>${esc(app.execution === 'deterministic' ? 'No AI tokens' : (app.description || ''))}${manual}${status.generated ? ` · ${status.fresh ? 'current' : 'refresh'}` : ''}</small></span></label>`;
     }).join('');
   }
 
@@ -404,7 +557,8 @@
       if (!app) return '';
       const active = id === state.activeApp;
       const status = state.appStatus?.[id] || {};
-      return `<button type="button" data-listening-ai-tab="${esc(id)}" class="${active ? 'active' : ''} ${status.generated && !status.fresh ? 'stale' : ''}" aria-selected="${active ? 'true' : 'false'}">${esc(app.label)}${status.generated && !status.fresh ? ' •' : ''}</button>`;
+      const error = clean(state.pluginErrors?.[id] || '');
+      return `<button type="button" data-listening-ai-tab="${esc(id)}" class="${active ? 'active' : ''} ${status.generated && !status.fresh ? 'stale' : ''} ${error ? 'error' : ''}" aria-selected="${active ? 'true' : 'false'}">${esc(app.label)}${error ? ' !' : (status.generated && !status.fresh ? ' •' : '')}</button>`;
     }).join('');
   }
 
@@ -425,15 +579,21 @@
     document.body.classList.toggle('sf-listening-ai-open', state.open);
     if (button) {
       button.setAttribute('aria-expanded', state.open ? 'true' : 'false');
-      button.classList.toggle('on', state.researchEnabled);
+      button.classList.toggle('on', state.workflow.live_analysis || state.workflow.web_research);
       const badge = button.querySelector('[data-listening-ai-badge]');
-      if (badge) badge.textContent = state.researchEnabled ? 'ON' : 'OFF';
+      if (badge) badge.textContent = state.workflow.live_analysis ? 'LIVE' : (state.workflow.web_research ? 'WEB' : 'OFF');
     }
-    const power = panel.querySelector('[data-listening-ai-research]');
-    if (power) {
-      power.textContent = state.researchEnabled ? 'Research ON' : 'Research OFF';
-      power.setAttribute('aria-pressed', state.researchEnabled ? 'true' : 'false');
-      power.classList.toggle('on', state.researchEnabled);
+    const live = panel.querySelector('[data-listening-ai-live]');
+    if (live) {
+      live.textContent = state.workflow.live_analysis ? 'Live ON' : 'Live OFF';
+      live.setAttribute('aria-pressed', state.workflow.live_analysis ? 'true' : 'false');
+      live.classList.toggle('on', state.workflow.live_analysis);
+    }
+    const research = panel.querySelector('[data-listening-ai-research]');
+    if (research) {
+      research.textContent = state.workflow.web_research ? 'Research ON' : 'Research OFF';
+      research.setAttribute('aria-pressed', state.workflow.web_research ? 'true' : 'false');
+      research.classList.toggle('on', state.workflow.web_research);
     }
     const settings = panel.querySelector('[data-listening-ai-settings]');
     if (settings) {
@@ -456,8 +616,10 @@
       if (state.lastError) status.textContent = state.lastError;
       else if (state.busy) status.textContent = state.busyApp ? `Running ${appById(state.busyApp)?.title || 'transcription plugin'}…` : `Running ${state.selectedApps.length} transcription app${state.selectedApps.length === 1 ? '' : 's'}…`;
       else if (!currentSessionId()) status.textContent = 'Open a transcription to use AI Summary.';
-      else status.textContent = `${state.researchEnabled ? 'Research ON' : 'Research OFF'} · ${state.liveWords.toLocaleString()} transcript words · ${state.selectedApps.length} app${state.selectedApps.length === 1 ? '' : 's'} selected.`;
+      else status.textContent = `${state.workflow.live_analysis ? 'Live ON' : 'Live OFF'} · ${state.workflow.web_research ? 'Research ON' : 'Research OFF'} · ${state.liveWords.toLocaleString()} words · ${planText(localRunPlan())}`;
     }
+    renderPresets();
+    renderWorkflowControls();
     renderApps();
     renderTabs();
     renderReport();
@@ -478,17 +640,59 @@
     return state.open;
   }
 
-  function setResearchEnabled(enabled) {
-    state.researchEnabled = Boolean(enabled);
-    try { localStorage.setItem(researchKey, state.researchEnabled ? '1' : '0'); } catch (error) {}
+  function setWorkflow(next, markCustom = true) {
+    const merged = normalizeWorkflow({...state.workflow, ...(next || {})});
+    if (markCustom) merged.preset = 'custom';
+    state.workflow = merged;
     state.actionMessage = '';
-    if (!state.researchEnabled && state.liveTimer) {
+    persistWorkflow();
+    if (!state.workflow.live_analysis && state.liveTimer) {
       clearTimeout(state.liveTimer);
       state.liveTimer = 0;
     }
     render();
-    if (state.researchEnabled) scheduleLive('toggle');
-    return state.researchEnabled;
+    return {...state.workflow};
+  }
+
+  function setWorkflowField(key, value) {
+    if (!['depth','focus','context_mode'].includes(key)) return {...state.workflow};
+    return setWorkflow({[key]:value}, true);
+  }
+
+  function setResearchEnabled(enabled) {
+    // Compatibility name retained; Web Research no longer controls live analysis.
+    return setWorkflow({web_research:Boolean(enabled)}, true).web_research;
+  }
+
+  function setLiveAnalysisEnabled(enabled) {
+    const live = setWorkflow({live_analysis:Boolean(enabled)}, true).live_analysis;
+    if (live) scheduleLive('toggle');
+    return live;
+  }
+
+  function applyPreset(presetId) {
+    const preset = presetById(presetId);
+    if (!preset) return false;
+    const allowed = new Set(state.registry.map(app => String(app.id)));
+    const apps = (Array.isArray(preset.apps) ? preset.apps : []).map(String).filter(id => allowed.has(id));
+    if (apps.length) {
+      state.selectedApps = state.registry.map(app => String(app.id)).filter(id => apps.includes(id));
+      if (!state.selectedApps.includes(state.activeApp)) state.activeApp = state.selectedApps[0];
+      persistApps();
+    }
+    state.workflow = normalizeWorkflow({...preset.workflow, preset:String(preset.id)});
+    state.workflow.preset = String(preset.id);
+    state.pluginErrors = {};
+    state.actionMessage = `${preset.title || preset.id} preset selected.`;
+    persistWorkflow();
+    proof.presetChanges += 1;
+    if (!state.workflow.live_analysis && state.liveTimer) {
+      clearTimeout(state.liveTimer);
+      state.liveTimer = 0;
+    }
+    render();
+    if (state.workflow.live_analysis) scheduleLive('preset');
+    return true;
   }
 
   function setSettingsOpen(open) {
@@ -504,9 +708,12 @@
     if (!next.size) next.add('basic');
     state.selectedApps = state.registry.map(app => String(app.id)).filter(id => next.has(id));
     if (!state.selectedApps.includes(state.activeApp)) state.activeApp = state.selectedApps[0];
+    state.workflow = normalizeWorkflow({...state.workflow,preset:'custom'});
     state.editingItemId = '';
     state.actionMessage = '';
+    state.pluginErrors = {};
     persistApps();
+    persistWorkflow();
     render();
   }
 
@@ -522,7 +729,9 @@
   async function loadRegistry() {
     const data = await request('registry', {}, 'GET');
     setRegistry(data.registry || []);
+    if (data.workflow_config) setWorkflowConfig(data.workflow_config);
     persistApps();
+    persistWorkflow();
   }
 
   async function loadStatus(sessionId = currentSessionId()) {
@@ -531,11 +740,13 @@
     state.lastError = '';
     state.actionMessage = '';
     state.editingItemId = '';
+    state.pluginErrors = {};
     if (!sessionId) {
       state.report = null;
       state.appStatus = {};
       state.permissions = {};
       state.operations = {};
+      state.runPlan = null;
       state.liveWords = 0;
       state.lastReportedWords = 0;
       render();
@@ -559,14 +770,17 @@
     const sessionId = currentSessionId();
     const requested = [...new Set((Array.isArray(appIds) ? appIds : []).map(String).filter(id => appById(id)))];
     if (!sessionId || state.busy || !requested.length) return;
+    if (mode === 'live' && !state.workflow.live_analysis) return;
     state.busy = true;
     state.busyApp = requested.length === 1 ? requested[0] : '';
     state.lastError = '';
     state.actionMessage = '';
     state.editingItemId = '';
+    state.runPlan = localRunPlan(requested,mode);
+    state.pluginErrors = {};
     render();
     try {
-      const data = await request('analyze', {session_id:sessionId,mode,research:state.researchEnabled,apps:requested});
+      const data = await request('analyze', {session_id:sessionId,mode,apps:requested,workflow:{...state.workflow}});
       if (currentSessionId() !== sessionId) return;
       applyServerView(data);
       state.lastReportedWords = Number(state.report?.word_count || state.liveWords || state.lastReportedWords);
@@ -574,8 +788,12 @@
         proof.reports += 1;
         if (mode === 'live') proof.liveReports += 1;
       }
+      const executed = Array.isArray(data.executed_apps) ? data.executed_apps.length : 0;
+      const errors = Object.keys(data.plugin_errors || {}).length;
       const label = requested.length === 1 ? (appById(requested[0])?.title || 'Plugin') : `${requested.length} plugins`;
-      state.actionMessage = data.skipped ? `${label} is current.` : `${label} analyzed.`;
+      if (data.skipped) state.actionMessage = `${label} is current.`;
+      else if (errors) state.actionMessage = `${executed} completed · ${errors} need retry.`;
+      else state.actionMessage = `${label} analyzed.`;
       proof.lastError = '';
     } catch (error) {
       state.lastError = String(error?.message || error);
@@ -724,8 +942,10 @@
 
   function transcriptionAiState() {
     return {
-      sessionId:currentSessionId(),open:!!state.open,settingsOpen:!!state.settingsOpen,researchEnabled:!!state.researchEnabled,
-      selectedApps:[...state.selectedApps],activeApp:String(state.activeApp||''),busy:!!state.busy,busyApp:String(state.busyApp||''),
+      sessionId:currentSessionId(),open:!!state.open,settingsOpen:!!state.settingsOpen,
+      researchEnabled:!!state.workflow.web_research,liveAnalysisEnabled:!!state.workflow.live_analysis,
+      workflow:{...state.workflow},workflowConfig:JSON.parse(JSON.stringify(state.workflowConfig||{})),runPlan:JSON.parse(JSON.stringify(state.runPlan||localRunPlan())),
+      pluginErrors:{...state.pluginErrors},selectedApps:[...state.selectedApps],activeApp:String(state.activeApp||''),busy:!!state.busy,busyApp:String(state.busyApp||''),
       report:state.report?JSON.parse(JSON.stringify(state.report)):null,appStatus:JSON.parse(JSON.stringify(state.appStatus||{})),
       registry:JSON.parse(JSON.stringify(state.registry||[])),permissions:{...state.permissions},operations:JSON.parse(JSON.stringify(state.operations||{})),
       liveWords:Math.max(0,Number(state.liveWords||0)),lastError:String(state.lastError||''),
@@ -738,14 +958,17 @@
     if (!requested.size) throw new Error('Select at least one transcription analysis app.');
     state.selectedApps = state.registry.map(app => String(app.id)).filter(id => requested.has(id));
     if (!state.selectedApps.includes(state.activeApp)) state.activeApp = state.selectedApps[0];
+    state.workflow = normalizeWorkflow({...state.workflow,preset:'custom'});
     state.actionMessage = '';
     persistApps();
+    persistWorkflow();
     render();
     return [...state.selectedApps];
   }
 
   proof.api = {
-    getState:transcriptionAiState,open:()=>setOpen(true),close:()=>setOpen(false),setResearchEnabled,setApps:transcriptionSetApps,
+    getState:transcriptionAiState,open:()=>setOpen(true),close:()=>setOpen(false),setResearchEnabled,setLiveAnalysisEnabled,
+    setWorkflow:workflow=>setWorkflow(workflow,true),applyPreset:presetId=>applyPreset(String(presetId||'')),setApps:transcriptionSetApps,
     setActiveApp:appId=>{setActiveApp(String(appId||''));return state.activeApp;},
     analyze:async(mode='manual')=>{await analyze(mode);if(state.lastError)throw new Error(state.lastError);return state.report;},
     analyzePlugin:async(appId,mode='manual')=>{await analyzeApps([String(appId||state.activeApp)],mode);if(state.lastError)throw new Error(state.lastError);return state.report;},
@@ -759,14 +982,14 @@
   };
 
   function scheduleLive(reason = 'words') {
-    if (!state.researchEnabled || !currentSessionId() || state.busy) return;
+    if (!state.workflow.live_analysis || !currentSessionId() || state.busy) return;
     if (!state.report && state.liveWords < 120) return;
     const delta = Math.max(0, state.liveWords - state.lastReportedWords);
     if (reason === 'words' && state.report && delta < 250) return;
     if (state.liveTimer) clearTimeout(state.liveTimer);
     state.liveTimer = setTimeout(() => {
       state.liveTimer = 0;
-      if (state.researchEnabled && currentSessionId()) void analyze('live');
+      if (state.workflow.live_analysis && currentSessionId()) void analyze('live');
     }, reason === 'metadata' ? 450 : 1200);
   }
 
