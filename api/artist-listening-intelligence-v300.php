@@ -85,7 +85,7 @@ try {
         $mode = strtolower((string)($input['mode'] ?? 'manual'));
         if (!in_array($mode,['manual','live'],true)) $mode = 'manual';
         $workflowInput = is_array($input['workflow'] ?? null) ? $input['workflow'] : [];
-        // Compatibility for the v303 browser while the v304 UI is deployed in this same branch.
+        // Compatibility for older clients while the current v305 controller remains on the stable API URL.
         if (!array_key_exists('web_research',$workflowInput) && array_key_exists('research',$input)) {
             $workflowInput['web_research'] = !empty($input['research']);
         }
@@ -206,7 +206,7 @@ try {
         if (!$permissions['agent_brain_write']) throw new RuntimeException('Agent Brain storage is not available for this account.');
         $id = agent_brain_v122_upsert_system_memory(
             $user,'transcript_analysis','artist-listening:'.$sessionId,mb_strimwidth($text,0,18000,'…'),
-            ['source'=>'transcription-intelligence-v304','session_id'=>$sessionId,'title'=>(string)($session['title']??''),'tags'=>$tags,'source_hash'=>(string)$map['source_hash'],'saved_at'=>gmdate('c')],0.98
+            ['source'=>'transcription-intelligence-v305','session_id'=>$sessionId,'title'=>(string)($session['title']??''),'tags'=>$tags,'source_hash'=>(string)$map['source_hash'],'saved_at'=>gmdate('c')],0.98
         );
         if ($id < 1) throw new RuntimeException('Could not save the transcription intelligence to Agent Brain.');
         transcription_intelligence_json_v300(true,['saved'=>true,'memory_id'=>$id,'saved_at'=>gmdate('c')]);
