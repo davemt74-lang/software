@@ -23,6 +23,29 @@ function transcription_deeper_chat_signals_v307(array $master): array
         if (!is_array($item) || (string)($item['review_state']??'')!=='accepted') continue;
         $signals[]=['priority'=>154,'kind'=>'crm_objection','text'=>'CRM objection'.(trim((string)($item['contact']??''))!==''?' for '.(string)$item['contact']:'').': '.(string)($item['objection']??''),'item_id'=>(string)($item['item_id']??'')];
     }
+    foreach ((array)($modules['crm']['result']['promises']??[]) as $item) {
+        if (!is_array($item) || (string)($item['review_state']??'')!=='accepted') continue;
+        $signals[]=['priority'=>146,'kind'=>'crm_promise','text'=>'CRM commitment'.(trim((string)($item['contact']??''))!==''?' for '.(string)$item['contact']:'').': '.(string)($item['promise']??''),'item_id'=>(string)($item['item_id']??'')];
+    }
+    foreach ((array)($modules['crm']['result']['next_best_actions']??[]) as $item) {
+        if (!is_array($item) || (string)($item['review_state']??'')!=='accepted') continue;
+        $priority=(string)($item['priority']??'medium');
+        $signals[]=['priority'=>$priority==='high'?152:128,'kind'=>'crm_next_action','text'=>'CRM next action'.(trim((string)($item['contact']??''))!==''?' for '.(string)$item['contact']:'').': '.(string)($item['action']??''),'item_id'=>(string)($item['item_id']??'')];
+    }
+
+    foreach ((array)($modules['risks']['result']['items']??[]) as $item) {
+        if (!is_array($item) || (string)($item['review_state']??'')!=='accepted') continue;
+        $impact=mb_strtolower(trim((string)($item['impact']??'')));$likelihood=mb_strtolower(trim((string)($item['likelihood']??'')));
+        if ($impact!=='high' && $likelihood!=='high' && !str_contains($impact,'high')) continue;
+        $signals[]=['priority'=>150,'kind'=>'high_risk','text'=>'High-priority risk: '.(string)($item['risk']??'').(trim((string)($item['mitigation']??''))!==''?' Mitigation: '.(string)$item['mitigation']:''),'item_id'=>(string)($item['item_id']??'')];
+    }
+
+    foreach ((array)($modules['followup']['result']['items']??[]) as $item) {
+        if (!is_array($item) || (string)($item['review_state']??'')!=='accepted') continue;
+        $status=mb_strtolower(trim((string)($item['status']??'open')));
+        if (in_array($status,['completed','done','closed','cancelled'],true)) continue;
+        $signals[]=['priority'=>142,'kind'=>'open_followup','text'=>'Open follow-up: '.(string)($item['follow_up']??$item['item']??'').(trim((string)($item['timing']??''))!==''?' Timing: '.(string)$item['timing']:''),'item_id'=>(string)($item['item_id']??'')];
+    }
 
     foreach ((array)($modules['opportunities']['result']['items']??[]) as $item) {
         if (!is_array($item) || (string)($item['review_state']??'')!=='accepted') continue;
