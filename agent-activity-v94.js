@@ -18,6 +18,11 @@
   window.StonefellowAgentActivity={markTask:(title,key='')=>{taskTitle=String(title||taskTitle);taskKey=String(key||taskKey);meaningful('task_mark');},snapshot:()=>({state:classify(),taskTitle,taskKey})};
   timer=setInterval(()=>heartbeat('timer',true),30000);setTimeout(()=>heartbeat('load',true),250);
 
+  if(String(cfg.surface||'')==='chat'){
+    const createMenu=document.getElementById('chatCreateMenu');
+    if(createMenu)createMenu.hidden=true;
+  }
+
   if(String(cfg.surface||'')==='chat'&&SHOW_CHAT_INPUT_STATUS){
     let meterStream=null,meterContext=null,meterSource=null,meterAnalyser=null,meterFrame=0,meterData=null,meterDeviceId='';
     const chatUserId=()=>Number(window.STONEFELLOW_CHAT?.userId||0);
