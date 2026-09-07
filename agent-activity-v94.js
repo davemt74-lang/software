@@ -1,6 +1,7 @@
 (() => {
   'use strict';
   const cfg=window.STONEFELLOW_ACTIVITY||{};if(!cfg.endpoint||!cfg.csrf)return;
+  const SHOW_CHAT_INPUT_STATUS=false; // Preserve device-status implementation while hidden from Agent Chat.
   let lastMeaningful=Date.now(),hiddenAt=document.hidden?Date.now():0,lastState='',taskTitle=String(cfg.taskTitle||''),taskKey=String(cfg.taskKey||'');
   let timer=0,sending=false;
   const linkedConversation=()=>Number(window.STONEFELLOW_CHAT_CONTINUITY?.conversationId?.()||cfg.conversationId||new URLSearchParams(location.search).get('conversation_id')||0);
@@ -17,7 +18,7 @@
   window.StonefellowAgentActivity={markTask:(title,key='')=>{taskTitle=String(title||taskTitle);taskKey=String(key||taskKey);meaningful('task_mark');},snapshot:()=>({state:classify(),taskTitle,taskKey})};
   timer=setInterval(()=>heartbeat('timer',true),30000);setTimeout(()=>heartbeat('load',true),250);
 
-  if(String(cfg.surface||'')==='chat'){
+  if(String(cfg.surface||'')==='chat'&&SHOW_CHAT_INPUT_STATUS){
     let meterStream=null,meterContext=null,meterSource=null,meterAnalyser=null,meterFrame=0,meterData=null,meterDeviceId='';
     const chatUserId=()=>Number(window.STONEFELLOW_CHAT?.userId||0);
     const voiceKey=()=>`stonefellow:voice-mode:${chatUserId()}`;
