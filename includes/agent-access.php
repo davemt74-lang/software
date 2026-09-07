@@ -177,8 +177,11 @@ function vp3_agent_message_generate(PDO $pdo,array $context,array $grant,string 
     elseif($greeting)$answer=trim((string)($profile['profile_agent_greeting']??''))?:'Hello — I am '.(string)$agent['display_name'].', '.(string)$profile['display_name'].'’s AI representative.';
     else{
         $result=ai_generate_chat_response($query,$history,$approvedContext,$ownerUser,'agent.messaging');
-        if(empty($result['ok']))throw new RuntimeException('The Profile Agent could not complete this agent message.');
-        $answer=trim((string)($result['answer']??''));if($answer==='')throw new RuntimeException('The Profile Agent returned no message.');
+        if(empty($result['ok'])){
+            if(!empty($result['quota_exhausted']))throw new RuntimeException('VP3_AGENT_MESSAGE_QUOTA');
+            throw new RuntimeException('VP3_AGENT_MESSAGE_PROVIDER');
+        }
+        $answer=trim((string)($result['answer']??''));if($answer==='')throw new RuntimeException('VP3_AGENT_MESSAGE_PROVIDER');
         $usage=is_array($result['usage']??null)?$result['usage']:[];$provider=(string)($result['provider']??'');$model=(string)($result['model']??'');
     }
     $sources=[];foreach($approvedContext as $item){$source=(string)($item['source']??'');if(!in_array($source,['profile:identity','profile:rules'],true))$sources[]=['source'=>$source,'title'=>(string)($item['title']??'')];}
