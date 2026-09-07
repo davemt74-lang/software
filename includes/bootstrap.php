@@ -27,6 +27,7 @@ require_once __DIR__.'/agent-ops-v126.php';
 if(!headers_sent())header('X-Stonefellow-Production: '.STONEFELLOW_PRODUCTION_V126);
 require_once __DIR__.'/permissions.php';
 require_once __DIR__.'/subscriptions.php';
+require_once __DIR__.'/agent-radar-foundation.php';
 require_once __DIR__.'/subscription-lifecycle.php';
 require_once __DIR__.'/chat-settings-v237.php';
 require_once __DIR__.'/permissions-v105.php';
