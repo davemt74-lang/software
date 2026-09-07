@@ -20,9 +20,7 @@ assert.match(api,/transcription_intelligence_execute_action_v303/);
 assert.doesNotMatch(api,/item_action.*analyze/s,'analysis itself must not implicitly execute operational actions');
 
 /* Action surface is bounded and uses existing product systems. */
-for (const action of ['main_chat','agent_brain','agent_task','personal_knowledge','project_note','crm_note','crm_task']) {
-  assert.ok(actions.includes(`'${action}'`), `${action} must be an explicit supported action`);
-}
+for (const action of ['main_chat','agent_brain','agent_task','personal_knowledge','project_note','crm_note','crm_task']) assert.ok(actions.includes(`'${action}'`), `${action} must be an explicit supported action`);
 assert.match(actions,/agent_chat_v101_append_ecosystem_message/,'Main Chat action must use the canonical chat bridge');
 assert.match(chat,/INSERT INTO chat_messages/,'canonical chat bridge must remain the persisted canvas writer');
 assert.match(chat,/agent_brain_archive_and_parse/,'canonical chat bridge must continue archiving operational messages into Agent Brain');
@@ -59,7 +57,7 @@ assert.match(actions,/\$actionKey=transcription_intelligence_action_key_v303\(\$
 assert.match(actions,/\$action !== 'project_note' \|\| \(int\)\(\$existing\['target_id'\] \?\? 0\) === \$targetId/,'a project-note receipt is reusable only for the currently linked track');
 assert.doesNotMatch(actions,/INSERT INTO tracks/,'transcription intelligence must not create projects/tracks implicitly');
 
-/* CRM writes revalidate explicit matched CRM context and reuse the canonical CRM APIs. */
+/* CRM writes revalidate explicit matched CRM context and reuse canonical CRM APIs. */
 assert.match(actions,/transcription_app_crm_context_v301/);
 assert.match(actions,/transcription_intelligence_validate_crm_target_v303/);
 assert.match(actions,/Choose an explicitly matched CRM lead for this transcript/);
@@ -80,8 +78,8 @@ assert.match(items,/\$prior\['actions'\]/,'module normalization must restore pri
 assert.match(items,/if \(\$previousText !== \$text\) unset\(\$item\['actions'\]\)/,'editing actionable text must invalidate stale action receipts');
 assert.match(items,/in_array\(\(string\)\$key,\['source_fingerprint','edited_text','actions'\]/,'internal action receipts must not pollute compiled Brain/Knowledge report text');
 
-/* Accepted items expose one compact operational menu; completed actions render receipts. */
-assert.match(client,/const BUILD = 'transcription-intelligence-v303-20260906'/);
+/* Accepted items expose one compact operational menu; v304 must preserve it. */
+assert.match(client,/const BUILD = 'transcription-workflow-v304-20260906'/);
 assert.match(client,/item\.review_state !== 'accepted'/,'operational menu must be hidden until human acceptance');
 assert.match(client,/class="sf-listening-ai-operational"/);
 assert.match(client,/data-listening-ai-item-action=/);
@@ -97,8 +95,6 @@ assert.doesNotMatch(client,/document\.addEventListener\('click'/,'no delegated d
 assert.doesNotMatch(client,/MutationObserver/,'AI Summary must not add a runtime observer/fallback');
 assert.doesNotMatch(client,/MediaRecorder/,'AI Summary must not own recording');
 assert.doesNotMatch(client,/INSERT INTO|UPDATE crm_/,'browser must never own persistence');
-
-/* The new operational contract must actually run in the recovery baseline. */
 assert.match(baseline,/tests\/transcription-intelligence-actions\.mjs/);
 
 console.log('VP3 transcription intelligence operational actions contract: PASS');
