@@ -100,6 +100,7 @@ function transcription_workflow_public_v304(): array
     }
     return [
         'version'=>304,
+        'batch_size'=>VP3_TRANSCRIPTION_APP_BATCH_SIZE_V301,
         'presets'=>$presets,
         'defaults'=>transcription_workflow_defaults_v304(),
         'depth_options'=>[
