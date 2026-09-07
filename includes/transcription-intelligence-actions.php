@@ -122,11 +122,11 @@ function transcription_intelligence_project_context_v303(PDO $pdo, array $user, 
 
 function transcription_intelligence_operational_context_v303(PDO $pdo, array $user, array $session): array
 {
-    $account = has_permission('account.access',$user);
+    $permissions = transcription_app_permissions_v300($user);
     $chat = has_permission('chat.access',$user) && function_exists('agent_chat_v101_append_ecosystem_message');
-    $brain = $account && agent_brain_schema_ready() && function_exists('agent_brain_v122_upsert_system_memory');
-    $knowledge = $account && function_exists('personal_knowledge_available') && personal_knowledge_available($user)
-        && function_exists('personal_knowledge_store');
+    $brain = !empty($permissions['agent_brain_write']) && agent_brain_schema_ready() && function_exists('agent_brain_v122_upsert_system_memory');
+    $knowledge = !empty($permissions['personal_knowledge_write']) && function_exists('personal_knowledge_available')
+        && personal_knowledge_available($user) && function_exists('personal_knowledge_store');
     $project = transcription_intelligence_project_context_v303($pdo,$user,$session);
     $crmTargets = function_exists('crm_v180_can_manage') && crm_v180_can_manage($user) && function_exists('crm_v180_schema_ready') && crm_v180_schema_ready($pdo)
         ? transcription_intelligence_crm_targets_v303($pdo,$user,$session) : [];
@@ -160,22 +160,47 @@ function transcription_intelligence_upsert_task_v303(
     $kind=transcription_intelligence_task_kind_v303($appId,$sectionKey);
     $itemId=(string)($item['item_id'] ?? '');
     $memoryHash=sha1('transcription-intelligence|'.$uid.'|'.$kind.'|'.$itemId);
-    $find=$pdo->prepare('SELECT id FROM agent_memory_items WHERE user_id=? AND memory_hash=? LIMIT 1');
+    $find=$pdo->prepare('SELECT id,metadata_json FROM agent_memory_items WHERE user_id=? AND memory_hash=? LIMIT 1');
     $find->execute([$uid,$memoryHash]);
-    $existing=(int)$find->fetchColumn();
-    if ($existing > 0) return $existing;
+    $existingRow=$find->fetch()?:null;
 
     $evidence=transcription_intelligence_evidence_label_v303($item);
     $body=$text . ($evidence !== '' ? "\nEvidence: ".$evidence : '');
-    $meta=[
+    $priorMeta=is_array($existingRow) ? json_decode((string)($existingRow['metadata_json'] ?? ''),true) : [];
+    if (!is_array($priorMeta)) $priorMeta=[];
+    $priorStatus=(string)($priorMeta['task_status'] ?? 'open');
+    if (!in_array($priorStatus,['open','in_progress','waiting','completed','cancelled'],true)) $priorStatus='open';
+    $meta=$priorMeta + [
         'source_kind'=>'transcription_intelligence','source_session_id'=>(int)$session['id'],
         'plugin_id'=>$appId,'section_key'=>$sectionKey,'item_id'=>$itemId,
-        'evidence_refs'=>(array)($item['evidence_refs'] ?? []),'task_status'=>'open','task_kind'=>$kind,
+        'evidence_refs'=>(array)($item['evidence_refs'] ?? []),'task_status'=>$priorStatus,'task_kind'=>$kind,
         'task_key'=>sha1('transcription-intelligence|'.$itemId),'timing'=>(string)($item['timing'] ?? ''),
         'priority'=>(string)($item['priority'] ?? ''),'source_title'=>(string)($session['title'] ?? ''),
         'created_from_reviewed_item'=>true,'created_at'=>gmdate('c'),
     ];
+    foreach ([
+        'source_kind'=>'transcription_intelligence','source_session_id'=>(int)$session['id'],'plugin_id'=>$appId,
+        'section_key'=>$sectionKey,'item_id'=>$itemId,'evidence_refs'=>(array)($item['evidence_refs'] ?? []),
+        'task_kind'=>$kind,'timing'=>(string)($item['timing'] ?? ''),'priority'=>(string)($item['priority'] ?? ''),
+        'source_title'=>(string)($session['title'] ?? ''),'created_from_reviewed_item'=>true,
+    ] as $key=>$value) $meta[$key]=$value;
+    $meta['task_status']=$priorStatus;
+    $meta['updated_from_reviewed_item']=true;
+    $meta['updated_at']=gmdate('c');
     $json=json_encode($meta,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
+
+    if (is_array($existingRow) && (int)($existingRow['id'] ?? 0) > 0) {
+        $id=(int)$existingRow['id'];
+        $update=$pdo->prepare(
+            'UPDATE agent_memory_items SET subject=?,memory_text=?,confidence=GREATEST(confidence,?),last_seen_at=NOW(),is_active=1,metadata_json=? WHERE id=? AND user_id=?'
+        );
+        $update->execute([
+            mb_strimwidth($text,0,190,'…'),mb_strimwidth($body,0,6000,'…'),0.99,
+            is_string($json)?$json:'{}',$id,$uid
+        ]);
+        return $id;
+    }
+
     $stmt=$pdo->prepare(
         'INSERT INTO agent_memory_items
          (user_id,memory_type,subject,memory_text,memory_hash,source_archive_id,confidence,occurrence_count,first_seen_at,last_seen_at,is_active,metadata_json)
@@ -217,13 +242,14 @@ function transcription_intelligence_execute_action_v303(
     transcription_intelligence_require_accepted_v303($item);
     $sectionKey=(string)$snapshot['section_key'];
     $text=(string)$snapshot['text'];
+    $operations=transcription_intelligence_operational_context_v303($pdo,$user,$session);
+    if ($action === 'project_note') $targetId=max(0,(int)($operations['project_note']['track_id'] ?? 0));
     $actionKey=transcription_intelligence_action_key_v303($action,$targetId);
     $existing=transcription_intelligence_existing_receipt_v303($item,$actionKey);
     if ($existing) {
-        return ['master'=>$master,'receipt'=>$existing,'existing'=>true,'operations'=>transcription_intelligence_operational_context_v303($pdo,$user,$session)];
+        return ['master'=>$master,'receipt'=>$existing,'existing'=>true,'operations'=>$operations];
     }
 
-    $operations=transcription_intelligence_operational_context_v303($pdo,$user,$session);
     $registry=transcription_app_registry_v301();
     $appTitle=(string)($registry[$appId]['title'] ?? $appId);
     $evidence=transcription_intelligence_evidence_label_v303($item);
@@ -266,15 +292,14 @@ function transcription_intelligence_execute_action_v303(
         $receipt['record_id']=$knowledgeId;$receipt['label']='Saved to Personal Knowledge';
     } elseif ($action === 'project_note') {
         $project=$operations['project_note'] ?? [];
-        if (empty($project['available'])) throw new RuntimeException('No writable project track is linked to this transcript.');
-        $trackId=max(0,(int)($project['track_id'] ?? 0));
+        if (empty($project['available']) || $targetId < 1) throw new RuntimeException('No writable project track is linked to this transcript.');
         $note='[Reviewed transcription intelligence · '.$appTitle."]\n".$text;
         if ($evidence !== '') $note .= "\nEvidence: ".$evidence;
         $stmt=$pdo->prepare('INSERT INTO track_notes (track_id,user_id,note) VALUES (?,?,?)');
-        $stmt->execute([$trackId,(int)$user['id'],mb_strimwidth($note,0,65000,'…')]);
+        $stmt->execute([$targetId,(int)$user['id'],mb_strimwidth($note,0,65000,'…')]);
         $noteId=(int)$pdo->lastInsertId();
         if ($noteId < 1) throw new RuntimeException('Could not create the project note.');
-        $receipt['record_id']=$noteId;$receipt['target_id']=$trackId;$receipt['label']='Added project note';
+        $receipt['record_id']=$noteId;$receipt['label']='Added project note';
     } elseif ($action === 'crm_note' || $action === 'crm_task') {
         if (empty($operations['crm']['available'])) throw new RuntimeException('No explicitly matched CRM lead is available for this transcript.');
         $targets=(array)($operations['crm']['targets'] ?? []);
@@ -289,7 +314,7 @@ function transcription_intelligence_execute_action_v303(
             $receipt['record_id']=$activityId;$receipt['label']='Added CRM note';
         } else {
             $taskId=crm_v180_create_task($pdo,$leadId,[
-                'title'=>$text,'task_type'=>'follow_up','assigned_user_id'=>(int)$user['id'],'due_at'=>'',
+                'title'=>$text,'task_type'=>'follow_up','assigned_user_id'=>0,'due_at'=>'',
             ],(int)$user['id']);
             if ($taskId < 1) throw new RuntimeException('Could not create the CRM follow-up task.');
             $receipt['record_id']=$taskId;$receipt['label']='Created CRM task';
@@ -298,5 +323,5 @@ function transcription_intelligence_execute_action_v303(
     }
 
     $master=transcription_intelligence_record_receipt_v303($pdo,(int)$session['id'],$master,$appId,$itemId,$actionKey,$receipt);
-    return ['master'=>$master,'receipt'=>$receipt,'existing'=>false,'operations'=>transcription_intelligence_operational_context_v303($pdo,$user,$session)];
+    return ['master'=>$master,'receipt'=>$receipt,'existing'=>false,'operations'=>$operations];
 }
