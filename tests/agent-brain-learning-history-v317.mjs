@@ -25,7 +25,7 @@ assert.match(endpoint, /personal_capability_has_v242\('agent_brain\.access'/, 'L
 assert.match(endpoint, /agent_learning_history_v317_state\(\$user,100\)/, 'endpoint must expose the owner-scoped canonical projection');
 assert.doesNotMatch(endpoint, /INSERT INTO|UPDATE |DELETE FROM|CREATE TABLE|ALTER TABLE/, 'Learning History endpoint must remain read-only');
 
-assert.match(ui, /data\.notificationTab = 'learning'/, 'Activity Center must add a Brain Learning tab');
+assert.ok(ui.includes("tab.dataset.notificationTab = 'learning';"), 'Activity Center must add a Brain Learning tab');
 assert.match(ui, /Brain Learning History/, 'Learning tab must identify the audit clearly');
 assert.match(ui, /Current Source Weights/, 'Learning tab must show current learned source weighting');
 assert.match(ui, /Recommendation Audit/, 'Learning tab must show surfaced recommendation outcomes');
