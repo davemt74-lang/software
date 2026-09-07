@@ -84,6 +84,7 @@ NODE_TESTS = [
     'tests/agent-outcome-closure-contract.mjs',
     'tests/agent-brain-outcome-controls-contract.mjs',
     'tests/team-workspace-scope-contract.mjs',
+    'tests/team-subscription-contract.mjs',
     'tests/member-navigation-contract.mjs',
     'tests/main-feed-canonical-ui-contract.mjs',
     'tests/site-settings-branding-contract.mjs',
