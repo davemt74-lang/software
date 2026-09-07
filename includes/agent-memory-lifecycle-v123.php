@@ -117,8 +117,6 @@ function agent_memory_v123_reconcile_user(array $user): array
         if($effective<0.16&&!in_array($type,['preference','decision','commitment','task','conversation_state','conversation_summary'],true)){
             $meta['lifecycle']='stale';agent_memory_v123_write_row($id,$meta,max(0.05,(float)$row['confidence']*0.82),0);$result['decayed']++;continue;
         }
-        // Effective confidence is a derived ranking signal. Keep the stored
-        // base confidence stable unless real lifecycle evidence changes it.
         agent_memory_v123_write_row($id,$meta,null,null);
     }
     return $result;
@@ -135,10 +133,14 @@ function agent_memory_v123_tasks(array $user,bool $includeClosed=false): array
         if(!$includeClosed&&in_array($status,['completed','cancelled'],true))continue;
         $due=(string)($meta['due_at']??'');
         if($due===''){foreach(agent_brain_extract_dates((string)$row['memory_text']) as $date){$due=$date;break;}}
+        $origin=is_array($meta['origin']??null)?$meta['origin']:[];
+        $sourceLabel=trim((string)($meta['source_label']??$origin['label']??''));
+        $sourceUrl=trim((string)($meta['source_url']??$origin['source_url']??''));
         $out[]=[
             'memory_id'=>(int)$row['id'],'task_key'=>(string)($meta['task_key']??sha1((string)$row['memory_hash'])),'kind'=>(string)($meta['task_kind']??$row['memory_type']),
             'title'=>(string)$row['subject'],'text'=>(string)$row['memory_text'],'status'=>$status,'due_at'=>$due,
             'confidence'=>agent_memory_v123_effective_confidence($row),'occurrences'=>(int)$row['occurrence_count'],'last_seen_at'=>(string)$row['last_seen_at'],
+            'source_kind'=>(string)($meta['source_kind']??''),'source_label'=>$sourceLabel,'source_url'=>$sourceUrl,'origin'=>$origin,
         ];
     }
     return $out;
