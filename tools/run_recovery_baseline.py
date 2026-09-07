@@ -60,6 +60,7 @@ NODE_TESTS = [
     'tests/agent-radar-server-side-contract.mjs',
     'tests/agent-radar-gateway-contract.mjs',
     'tests/agent-radar-chat-contract.mjs',
+    'tests/agent-radar-access-controls-contract.mjs',
     'tests/vp3-analytics-contract.mjs',
     'tests/team-workspace-scope-contract.mjs',
     'tests/member-navigation-contract.mjs',
