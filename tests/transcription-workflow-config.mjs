@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 const read = path => fs.readFileSync(path, 'utf8');
 const workflow = read('includes/transcription-workflow-config.php');
+const outputs = read('includes/transcription-intelligence-outputs.php');
 const api = read('api/artist-listening-intelligence-v300.php');
 const client = read('artist-listening-ai.js');
 const page = read('artist-listening.php');
@@ -16,7 +17,7 @@ for (const [id,title] of [['meeting','Meeting'],['product','Product'],['sales','
   assert.ok(workflow.includes(`'${id}'=>[`), `${title} preset must be server-defined`);
   assert.ok(workflow.includes(`'id'=>'${id}','title'=>'${title}'`), `${title} preset metadata must be public-configurable`);
 }
-assert.match(workflow,/'full'=>\[[\s\S]*'apps'=>array_keys\(transcription_app_registry_v301\(\)\)/,'Full preset must follow the live registry instead of duplicating every app ID');
+assert.match(workflow,/'full'=>\[[\s\S]*'apps'=>array_keys\(transcription_app_registry_v301\(\)\)/,'Full preset must follow the source-intelligence registry instead of duplicating every app ID');
 assert.match(workflow,/function transcription_workflow_normalize_v304/);
 assert.match(workflow,/\['concise','standard','deep'\]/,'depth is bounded by the server');
 assert.match(workflow,/\['transcript','authorized'\]/,'context mode is bounded by the server');
@@ -92,16 +93,18 @@ assert.match(client,/state\.pluginErrors/);
 assert.match(client,/needs a retry/);
 assert.match(client,/analyzeApps\(\[state\.activeApp\], 'manual'\)/,'retry remains isolated to the active plugin');
 
-/* Stable API preserves v304 workflow execution under the current v305 controller/cache identity. */
+/* Stable API preserves v304 workflow execution under v306 server outputs and the proven v305 browser. */
 assert.match(api,/transcription-workflow-config\.php/);
-assert.match(api,/transcription_app_analyze_v304\(/,'stable API must route analysis through v304');
+assert.match(api,/transcription-intelligence-outputs\.php/);
+assert.match(api,/transcription_app_analyze_v306\(/,'stable API must route analysis through v306');
+assert.match(outputs,/transcription_app_analyze_v304\(/,'v306 must preserve v304 as the source-analysis workflow engine');
 assert.doesNotMatch(api,/\$result = transcription_app_analyze_v301\(/,'stable API must no longer execute the v301 analyzer directly');
 assert.match(api,/workflow_config/);
-assert.match(api,/vp3-transcription-intelligence-v305-20260906/);
+assert.match(api,/vp3-transcription-intelligence-v306-20260906/);
 const asset='artist-listening-ai.js?v=transcription-relations-v305-20260906';
-assert.ok(page.includes(asset),'page must load the v305 canonical AI controller');
+assert.ok(page.includes(asset),'page must keep the proven v305 canonical AI controller');
 assert.equal(page.split('artist-listening-ai.js?').length-1,1,'page must load exactly one AI controller');
-assert.ok(!page.includes('artist-listening-ai.js?v=transcription-workflow-v304-20260906'),'v304 cache identity must be retired after v305 deploy');
+assert.ok(!page.includes('artist-listening-ai.js?v=transcription-workflow-v304-20260906'),'v304 cache identity must stay retired');
 assert.ok(!page.includes('artist-listening-ai.js?v=transcription-app-registry-v300-20260906'),'v300 cache identity must stay retired');
 assert.match(client,/const BUILD = 'transcription-relations-v305-20260906'/);
 

@@ -92,12 +92,14 @@ assert.match(client,/data-listening-ai-evidence/,'relationship evidence must reu
 assert.match(client,/buildRelations:async/);
 assert.match(client,/reviewRelation:async/);
 assert.match(page,/\.sf-listening-ai-relations\{/,'relationship UI must be styled in the canonical page');
-assert.match(page,/artist-listening-ai\.js\?v=transcription-relations-v305-20260906/,'page must use v305 cache identity');
+assert.match(page,/artist-listening-ai\.js\?v=transcription-relations-v305-20260906/,'page must keep v305 browser cache identity');
 assert.match(client,/const BUILD = 'transcription-relations-v305-20260906'/);
 assert.doesNotMatch(client,/MutationObserver|sfListeningTranscriptNav|MediaRecorder/,'relationship UI must not take transcript, recording or page-runtime ownership');
 
-assert.match(api,/vp3-transcription-intelligence-v305-20260906/,'stable API build must advance to v305');
-assert.match(api,/'source'=>'transcription-intelligence-v305'/,'Agent Brain provenance must advance with the v305 intelligence runtime');
+/* v305 relationship semantics remain active under the current v306 server runtime. */
+assert.match(api,/vp3-transcription-intelligence-v306-20260906/,'stable API build may advance without replacing v305 relationship semantics');
+assert.match(api,/'source'=>'transcription-intelligence-v306'/,'whole-report Brain provenance must follow the current server runtime');
+assert.match(api,/transcription_intelligence_build_relations_v305/,'v306 API must continue using the v305 graph engine');
 assert.match(baseline,/tests\/transcription-intelligence-relations\.mjs/,'v305 relationship contract must run in Recovery Baseline');
 
 console.log('VP3 transcription intelligence relationships contract: PASS');
