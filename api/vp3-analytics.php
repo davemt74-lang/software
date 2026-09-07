@@ -18,4 +18,4 @@ if(!vp3_radar_schema_ready($pdo))vp3_analytics_json(false,['error'=>'VP3 Analyti
 if(strtoupper((string)($_SERVER['REQUEST_METHOD']??'GET'))!=='GET')vp3_analytics_json(false,['error'=>'Method not allowed.'],405);
 $propertyId=max(0,(int)($_GET['property_id']??0));
 $days=max(1,min(90,(int)($_GET['days']??30)));
-try{vp3_analytics_json(true,['analytics'=>vp3_analytics_dashboard_state($pdo,$user,$propertyId,$days)]);}catch(Throwable $e){vp3_analytics_json(false,['error'=>'VP3 Analytics could not be loaded.'],500);}
+try{vp3_analytics_json(true,['analytics'=>vp3_analytics_dashboard_state_v2($pdo,$user,$propertyId,$days)]);}catch(Throwable $e){error_log('VP3 Analytics dashboard failed: '.$e->getMessage());vp3_analytics_json(false,['error'=>'VP3 Analytics could not be loaded.'],500);}
