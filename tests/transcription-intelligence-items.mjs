@@ -17,6 +17,7 @@ assert.match(items,/transcription_intelligence_review_index_v302/,'review state 
 assert.match(items,/\$priorReviewIndex\[\$fingerprint\]/,'normalization must reapply prior review state by stable source fingerprint');
 assert.match(items,/edited_text/,'user edits must persist separately from the source fingerprint');
 assert.match(items,/intelligence_items_version'\] = 302/,'persisted analysis must advertise the durable item contract');
+assert.match(items,/'actions'/,'durable items must preserve operational action receipts');
 assert.doesNotMatch(items,/CREATE TABLE|ALTER TABLE/,'item persistence must reuse the existing master-analysis JSON container');
 
 /* Evidence stays bounded to transcript locations and is navigable by page. */
@@ -47,14 +48,16 @@ assert.match(client,/data-listening-ai-edit-save=/);
 assert.match(items,/review_state.*accepted.*rejected/s,'review state must be constrained to explicit human states');
 assert.match(items,/\$item\['review_state'\] = 'accepted'/,'editing an item must explicitly accept the edited result');
 
-/* Rejected intelligence cannot leak into Brain/Knowledge report exports. */
+/* Rejected intelligence and internal receipts cannot leak into compiled Brain/Knowledge reports. */
 assert.match(items,/function transcription_intelligence_export_result_v302/);
 assert.match(items,/\(\$item\['review_state'\] \?\? ''\) === 'rejected'/);
+assert.match(items,/\['source_fingerprint','edited_text','actions'\]/,'internal metadata must stay out of compiled report text');
 assert.match(api,/transcription_intelligence_report_text_v302/,'Brain/Knowledge export must use the review-aware compiler');
-assert.match(api,/source'=>'transcription-intelligence-v302'/,'Agent Brain provenance must identify the v302 intelligence layer');
+assert.match(api,/source'=>'transcription-intelligence-v303'/,'Agent Brain report provenance must identify the operational intelligence layer');
 
-/* Canonical ownership stays singular. */
-assert.match(client,/const BUILD = 'transcription-intelligence-v302-20260906'/);
+/* Canonical ownership stays singular while v303 extends item actions. */
+assert.match(client,/const BUILD = 'transcription-intelligence-v303-20260906'/);
+assert.match(client,/performItemAction:/,'controller API must expose explicit item actions');
 assert.doesNotMatch(client,/document\.addEventListener\('click'/,'no delegated document click owner is allowed');
 assert.doesNotMatch(client,/MutationObserver/,'AI controller must not observe/rewrite the page runtime');
 assert.doesNotMatch(client,/MediaRecorder/,'AI controller must never own recording');
