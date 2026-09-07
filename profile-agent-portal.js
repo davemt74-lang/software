@@ -12,11 +12,12 @@ const attentionHost=document.getElementById('profileAgentAttention');
 const conversationsHost=document.getElementById('profileAgentConversations');
 const threadHost=document.getElementById('profileAgentThread');
 const visitorsHost=document.getElementById('profileAgentVisitors');
+const radarHost=document.getElementById('profileAgentRadar');
 const agentHost=document.getElementById('profileAgentSettings');
 const knowledgeHost=document.getElementById('profileAgentKnowledge');
 const profileHost=document.getElementById('profileAgentProfileSettings');
 const analyticsHost=document.getElementById('profileAgentAnalytics');
-let state=null,selectedConversation=0,selectedSession=0,refreshTimer=null,requestBusy=false;
+let state=null,radarState=null,radarFilter='all',selectedConversation=0,selectedSession=0,refreshTimer=null,requestBusy=false;
 const setNotice=(message='',error=false)=>{notice.textContent=message;notice.className=`profile-agent-notice${error?' error':''}`;};
 async function req(action,payload=null){
   const post=payload!==null;
@@ -25,6 +26,12 @@ async function req(action,payload=null){
   const r=await fetch(url,options),d=await r.json().catch(()=>null);
   if(!r.ok||!d?.ok)throw new Error(d?.error||'Profile Agent request failed.');
   return d;
+}
+async function radarReq(){
+  if(!cfg.radarEndpoint)return null;
+  const r=await fetch(cfg.radarEndpoint,{credentials:'same-origin',cache:'no-store'}),d=await r.json().catch(()=>null);
+  if(!r.ok||!d?.ok)throw new Error(d?.error||'Agent Radar request failed.');
+  return d.radar||null;
 }
 async function uploadProfileMedia(mediaType,file){
   if(!file)throw new Error('Choose an image first.');
@@ -80,6 +87,52 @@ function renderVisitors(){
   const rows=Array.isArray(state?.visits)?state.visits:[];
   visitorsHost.innerHTML=rows.length?rows.map(v=>{const live=!!v.active_now||recentlyActive(v.last_seen_at),selected=Number(v.profile_session_id||v.id)===selectedSession;return `<article class="profile-agent-visitor-row ${selected?'selected':''}" data-profile-session="${Number(v.profile_session_id||v.id||0)}"><div class="profile-agent-visitor-avatar">${visitorAvatar(v)}</div><div class="profile-agent-row-main"><strong>${esc(v.visitor_label||'Visitor')}</strong><p>${esc(visitorMeta(v))}</p><small>${Number(v.view_count||0)} profile view${Number(v.view_count||0)===1?'':'s'}${v.last_message_at?' · has chatted':''} · first seen ${relative(v.first_seen_at)} · last seen ${relative(v.last_seen_at)}</small>${v.profile_url?`<a href="${esc(v.profile_url)}" target="_blank" rel="noopener">View profile ↗</a>`:''}</div><div class="profile-agent-presence ${live?'live':''}">${live?'Active now':v.signed_in?'Member':'Guest'}</div></article>`;}).join(''):`<div class="profile-agent-empty">No profile visitors yet.</div>`;
 }
+function radarClassLabel(value){return ({human:'Human',ai_user_agent:'AI Agent',ai_search:'Search',ai_crawler:'Crawler',automated_unknown:'Unknown'})[value]||String(value||'Unknown').replaceAll('_',' ');}
+function radarMatches(value){return radarFilter==='all'||radarFilter===value;}
+function radarRiskClass(score){score=Number(score||0);return score>=70?'high':score>=40?'medium':'low';}
+function radarPaths(contactId){
+  const rows=(radarState?.events||[]).filter(e=>Number(e.agent_contact_id)===Number(contactId));
+  return [...new Set(rows.map(e=>String(e.path||'')).filter(Boolean))].slice(0,3);
+}
+function radarContactCards(){
+  const rows=[];
+  if(radarMatches('human')){
+    (state?.visits||[]).slice(0,60).forEach(v=>rows.push({kind:'human',date:v.last_seen_at,html:`<article class="profile-agent-radar-contact human"><div class="profile-agent-radar-contact-head"><div class="profile-agent-visitor-avatar">${visitorAvatar(v)}</div><div><span class="profile-agent-radar-type human">Human</span><strong>${esc(v.visitor_label||'Visitor')}</strong><small>${esc(visitorMeta(v))}</small></div></div><div class="profile-agent-radar-scores"><span>Status <b>${v.signed_in?'Member':'Guest'}</b></span><span>Views <b>${Number(v.view_count||0)}</b></span><span>Last seen <b>${esc(relative(v.last_seen_at))}</b></span></div><div class="profile-agent-radar-paths"><span>Recent page</span><code>Public profile</code></div></article>`}));
+  }
+  (radarState?.contacts||[]).filter(c=>radarMatches(c.visitor_class)).forEach(c=>{
+    const paths=radarPaths(c.id),risk=Number(c.risk_score||0),known=String(c.verification_status||'unknown')==='known';
+    const status=known?'Known signature':String(c.verification_status||'unknown').replaceAll('_',' ');
+    rows.push({kind:c.visitor_class,date:c.last_seen_at,html:`<article class="profile-agent-radar-contact ${esc(radarRiskClass(risk))}"><div class="profile-agent-radar-contact-head"><div class="profile-agent-radar-avatar">${esc(String(c.display_name||'A').charAt(0).toUpperCase())}</div><div><span class="profile-agent-radar-type ${esc(c.visitor_class)}">${esc(radarClassLabel(c.visitor_class))}</span><strong>${esc(c.display_name||'Automated agent')}</strong><small>${esc(c.operator_name||'Unidentified operator')}${c.registry_purpose?` · ${esc(c.registry_purpose)}`:''}</small></div><span class="profile-agent-radar-verification ${known?'known':'unknown'}">${esc(status)} · ${Number(c.confidence_score||0)}%</span></div><div class="profile-agent-radar-scores"><span>Trust <b>${Number(c.trust_score||0)}/100</b></span><span class="risk ${esc(radarRiskClass(risk))}">Risk <b>${risk}/100</b></span><span>Relationship <b>${esc(String(c.relationship_status||'new').replaceAll('_',' '))}</b></span><span>Sessions <b>${Number(c.session_count||0)}</b></span><span>Views <b>${Number(c.page_view_count||0)}</b></span><span>Value <b>${Number(c.value_score||0)}/100</b></span></div>${c.inferred_intent?`<div class="profile-agent-radar-intent"><span>Inferred intent</span><strong>${esc(c.inferred_intent)}</strong><small>${Number(c.intent_confidence||0)}% confidence</small></div>`:''}<div class="profile-agent-radar-paths"><span>Recent pages</span>${paths.length?paths.map(p=>`<code>${esc(p)}</code>`).join(''):'<small>No page history yet.</small>'}</div><footer>First seen ${esc(relative(c.first_seen_at))} · Last seen ${esc(relative(c.last_seen_at))} · ${Number(c.request_count||0)} request${Number(c.request_count||0)===1?'':'s'}</footer></article>`});
+  });
+  rows.sort((a,b)=>(parseDate(b.date)?.getTime()||0)-(parseDate(a.date)?.getTime()||0));
+  return rows.map(x=>x.html).join('');
+}
+function radarTimeline(){
+  const rows=[];
+  if(radarMatches('human')){
+    (state?.activity||[]).forEach(e=>rows.push({date:e.created_at,html:`<article class="profile-agent-radar-event human"><span class="profile-agent-radar-event-dot"></span><div><strong>${esc(e.visitor_label||'Human visitor')} · ${esc(String(e.event_type||'profile activity').replaceAll('_',' '))}</strong><p>${e.referrer_host?`Referrer ${esc(e.referrer_host)}`:'Public profile activity'}</p><small>${esc(relative(e.created_at))}</small></div><span class="profile-agent-radar-type human">Human</span></article>`}));
+  }
+  (radarState?.events||[]).filter(e=>radarMatches(e.visitor_class)).forEach(e=>rows.push({date:e.occurred_at,html:`<article class="profile-agent-radar-event ${esc(radarRiskClass(e.risk_score))}"><span class="profile-agent-radar-event-dot"></span><div><strong>${esc((e.operator_name?e.operator_name+' · ':'')+(e.display_name||'Automated agent'))}</strong><p>${esc(e.path||'/')} · ${esc(String(e.event_type||'activity').replaceAll('_',' '))} · risk ${Number(e.risk_score||0)}/100</p><small>${esc(relative(e.occurred_at))} · ${esc(e.property_label||'VP3 Profile')} · ${esc(e.severity||'low')}</small></div><span class="profile-agent-radar-type ${esc(e.visitor_class)}">${esc(radarClassLabel(e.visitor_class))}</span></article>`}));
+  rows.sort((a,b)=>(parseDate(b.date)?.getTime()||0)-(parseDate(a.date)?.getTime()||0));
+  return rows.slice(0,80).map(x=>x.html).join('');
+}
+function radarSessions(){
+  const rows=[];
+  if(radarMatches('human')){
+    (state?.visits||[]).forEach(v=>rows.push({date:v.last_seen_at,html:`<div class="profile-agent-radar-session"><div><strong>${esc(v.visitor_label||'Visitor')}</strong><small>Human · ${v.signed_in?'member':'guest'}</small></div><code>Public profile</code><span>${Number(v.view_count||0)} view${Number(v.view_count||0)===1?'':'s'}</span><span>${esc(relative(v.first_seen_at))} → ${esc(relative(v.last_seen_at))}</span></div>`}));
+  }
+  (radarState?.sessions||[]).filter(s=>radarMatches(s.visitor_class)).forEach(s=>rows.push({date:s.last_seen_at,html:`<div class="profile-agent-radar-session"><div><strong>${esc((s.operator_name?s.operator_name+' · ':'')+(s.display_name||'Automated agent'))}</strong><small>${esc(radarClassLabel(s.visitor_class))} · ${esc(s.verification_status||'unknown')}</small></div><code>${esc(s.entry_path||'/')}${s.exit_path&&s.exit_path!==s.entry_path?` → ${esc(s.exit_path)}`:''}</code><span>${Number(s.page_view_count||0)} view${Number(s.page_view_count||0)===1?'':'s'} · ${Number(s.request_count||0)} req.</span><span>${esc(relative(s.started_at))} → ${esc(relative(s.last_seen_at))}</span></div>`}));
+  rows.sort((a,b)=>(parseDate(b.date)?.getTime()||0)-(parseDate(a.date)?.getTime()||0));
+  return rows.slice(0,60).map(x=>x.html).join('');
+}
+function renderRadar(){
+  if(!radarHost)return;
+  const radar=radarState||{},rs=radar.stats||{},humanSessions=Number(state?.analytics?.visitor_sessions||0);
+  if(radarState&&!radar.ready){radarHost.innerHTML='<div class="profile-agent-panel"><div class="profile-agent-empty">Agent Radar storage is not ready. Run the VP3 upgrade before using Radar.</div></div>';return;}
+  const filters=[['all','All'],['human','Human'],['ai_user_agent','AI Agent'],['ai_search','Search'],['ai_crawler','Crawler'],['automated_unknown','Unknown']];
+  const contacts=radarContactCards(),timeline=radarTimeline(),sessions=radarSessions();
+  radarHost.innerHTML=`<div class="profile-agent-radar-hero"><div><span>Agent Radar</span><h2>Who and what is visiting your VP3 profile</h2><p>Human visitors stay in the privacy-preserving visitor CRM. Automated traffic is classified into Agent CRM contacts with trust, risk, relationship and activity history.</p></div><button type="button" id="profileAgentRadarRefresh">Refresh Radar</button></div><div class="profile-agent-radar-metrics"><article><strong>${humanSessions.toLocaleString()}</strong><span>Human sessions</span></article><article><strong>${Number(rs.agent_contacts||0).toLocaleString()}</strong><span>Agent contacts</span></article><article><strong>${Number(rs.events_24h||0).toLocaleString()}</strong><span>Agent events · 24h</span></article><article class="${Number(rs.high_risk_24h||0)>0?'alert':''}"><strong>${Number(rs.high_risk_24h||0).toLocaleString()}</strong><span>High risk · 24h</span></article><article><strong>${Number(rs.known_agents||0).toLocaleString()}</strong><span>Known signatures</span></article></div><div class="profile-agent-radar-filters" role="toolbar" aria-label="Radar visitor filters">${filters.map(([key,label])=>`<button type="button" data-radar-filter="${key}" class="${radarFilter===key?'active':''}">${label}</button>`).join('')}</div><div class="profile-agent-radar-layout"><section class="profile-agent-panel profile-agent-radar-contacts"><div class="profile-agent-section-head"><div><span>Contacts</span><h2>Visitor identities</h2></div></div><div class="profile-agent-radar-contact-list">${contacts||'<div class="profile-agent-empty">No contacts match this filter yet.</div>'}</div></section><section class="profile-agent-panel profile-agent-radar-timeline"><div class="profile-agent-section-head"><div><span>Activity</span><h2>Recent timeline</h2></div></div><div class="profile-agent-radar-event-list">${timeline||'<div class="profile-agent-empty">No activity matches this filter yet.</div>'}</div></section></div><section class="profile-agent-panel profile-agent-radar-sessions"><div class="profile-agent-section-head"><div><span>Sessions</span><h2>Recent sessions and paths</h2></div></div><div class="profile-agent-radar-session-head"><span>Identity</span><span>Path</span><span>Traffic</span><span>Window</span></div><div>${sessions||'<div class="profile-agent-empty">No sessions match this filter yet.</div>'}</div></section><div class="profile-agent-radar-note">Known signature means the request matched a maintained Agent Radar User-Agent signature. It does not mean cryptographic identity verification. Radar does not display or persist raw IP addresses or raw User-Agent strings.</div>`;
+}
 function agentOptions(selected){
   const agents=Array.isArray(state?.agents)?state.agents:[];
   return `<option value="0">Choose an agent</option>`+agents.map(a=>`<option value="${Number(a.id)}"${Number(a.id)===Number(selected)?' selected':''}>${esc(a.display_name)}${Number(a.is_active)?'':' · inactive'}</option>`).join('');
@@ -105,10 +158,10 @@ function renderAnalytics(){
   const responsePct=Number(a.total_conversations||0)>0?Math.round((Number(a.owner_joined||0)/Number(a.total_conversations||1))*100):0;
   analyticsHost.innerHTML=`<div class="profile-agent-card"><h2>Profile Agent Analytics</h2><p>A service-level snapshot from your existing visitor, conversation, and attention records.</p><div class="profile-agent-analytics-grid"><article class="profile-agent-analytics-card"><strong>${Number(a.total_views||0).toLocaleString()}</strong><span>Total profile views</span></article><article class="profile-agent-analytics-card"><strong>${Number(a.visitor_sessions||0).toLocaleString()}</strong><span>Visitor sessions</span></article><article class="profile-agent-analytics-card"><strong>${Number(a.active_visitors||0).toLocaleString()}</strong><span>Active in last 5 minutes</span></article><article class="profile-agent-analytics-card"><strong>${Number(a.total_conversations||0).toLocaleString()}</strong><span>Total conversations</span></article><article class="profile-agent-analytics-card"><strong>${Number(a.open_conversations||0).toLocaleString()}</strong><span>Open conversations</span></article><article class="profile-agent-analytics-card"><strong>${responsePct}%</strong><span>Owner joined conversations</span></article></div></div>`;
 }
-function renderAll(){renderService();renderMetrics();renderInbox();renderVisitors();renderAgentSettings();renderKnowledge();renderProfileSettings();renderAnalytics();const unread=Number(state?.notifications?.unread||0),bell=document.getElementById('chatNotificationButton');if(bell){let badge=bell.querySelector(':scope > span');if(unread>0){if(!badge){badge=document.createElement('span');bell.appendChild(badge);}badge.textContent=unread>99?'99+':String(unread);}else badge?.remove();}bindDynamic();}
+function renderAll(){renderService();renderMetrics();renderInbox();renderVisitors();renderRadar();renderAgentSettings();renderKnowledge();renderProfileSettings();renderAnalytics();const unread=Number(state?.notifications?.unread||0),bell=document.getElementById('chatNotificationButton');if(bell){let badge=bell.querySelector(':scope > span');if(unread>0){if(!badge){badge=document.createElement('span');bell.appendChild(badge);}badge.textContent=unread>99?'99+':String(unread);}else badge?.remove();}bindDynamic();}
 async function refresh(silent=false){
   if(requestBusy)return;requestBusy=true;
-  try{const d=await req('owner_state');state=d.state;renderAll();if(!silent)setNotice('Profile Agent workspace refreshed.');}
+  try{const [d,r]=await Promise.all([req('owner_state'),radarReq().catch(()=>null)]);state=d.state;if(r)radarState=r;renderAll();if(!silent)setNotice('Profile Agent workspace refreshed.');}
   catch(err){setNotice(err.message,true);}finally{requestBusy=false;}
 }
 async function openConversation(id){
@@ -125,9 +178,11 @@ function bindDynamic(){
   document.getElementById('paAgentForm')?.addEventListener('submit',async e=>{e.preventDefault();const f=new FormData(e.currentTarget);try{const d=await req('save_profile_agent',{profile_agent_id:Number(f.get('profile_agent_id')||0),profile_agent_enabled:f.get('profile_agent_enabled')?1:0,profile_agent_greeting:f.get('profile_agent_greeting'),profile_agent_instructions:f.get('profile_agent_instructions')});state=d.state;renderAll();setNotice('Profile Agent settings saved.');}catch(err){setNotice(err.message,true);}});
   document.getElementById('paProfileForm')?.addEventListener('submit',async e=>{e.preventDefault();const f=new FormData(e.currentTarget);try{const d=await req('save_profile',{username:f.get('username'),bio:f.get('bio'),website_url:f.get('website_url'),instagram_url:f.get('instagram_url'),tiktok_url:f.get('tiktok_url'),youtube_url:f.get('youtube_url'),spotify_url:f.get('spotify_url'),apple_music_url:f.get('apple_music_url'),is_public:f.get('is_public')?1:0,share_visit_identity:f.get('share_visit_identity')?1:0});state=d.state;renderAll();setNotice('Public profile saved.');}catch(err){setNotice(err.message,true);}});
   knowledgeHost.querySelectorAll('[data-policy]').forEach(row=>{const allow=row.querySelector('[data-policy-allow]'),audience=row.querySelector('[data-policy-audience]');const save=async()=>{try{const d=await req('save_profile_access',{resource_type:row.dataset.policy,profile_agent_allowed:allow.checked?1:0,audience_scope:audience.value});state=d.state;renderAll();setNotice('Knowledge access updated.');}catch(err){setNotice(err.message,true);}};allow?.addEventListener('change',save);audience?.addEventListener('change',save);});
+  document.getElementById('profileAgentRadarRefresh')?.addEventListener('click',async()=>{try{radarState=await radarReq();renderRadar();setNotice('Agent Radar refreshed.');}catch(err){setNotice(err.message,true);}});
 }
 app.addEventListener('click',async e=>{
   const tab=e.target.closest('[data-pa-tab]');if(tab){activateTab(tab.dataset.paTab);return;}
+  const filter=e.target.closest('[data-radar-filter]');if(filter){radarFilter=filter.dataset.radarFilter||'all';renderRadar();return;}
   const open=e.target.closest('[data-open-conversation]');if(open){activateTab('inbox');openConversation(Number(open.dataset.openConversation));return;}
   const attention=e.target.closest('[data-attention]');if(attention){try{const d=await req('attention_action',{attention_id:Number(attention.dataset.attention),attention_action:attention.dataset.attentionAction});state=d.state;renderAll();setNotice('Attention item updated.');}catch(err){setNotice(err.message,true);}return;}
 });
