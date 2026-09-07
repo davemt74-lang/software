@@ -40,8 +40,8 @@ assert.match(ui, /data-chat-profile-link="my_team"/, 'compatibility enhancement 
 assert.match(activity, /chat-brain-learning-history-v317\.js\?v=317-20260907/, 'Agent Activity may still load the compatibility Brain Learning enhancement');
 assert.match(activity, /data-brain-learning-history-v317/, 'Learning enhancement must be single-owner loaded');
 
-assert.match(chat, /agent-activity-v94\.js\?v=101', 'agent-activity-v94\.js\?v=' \. \$activityBuild/, 'Main Feed must cache-bust the Agent Activity runtime that owns the PR81 compatibility behavior');
-assert.match(chat, /data-chat-view-target=\"\(\?:player\|saved\|playlists\)\"/, 'Main Feed server wrapper must remove retired music navigation before HTML is sent');
+assert.ok(chat.includes("$html = str_replace('agent-activity-v94.js?v=101', 'agent-activity-v94.js?v=' . $activityBuild, $html);"), 'Main Feed must cache-bust the Agent Activity runtime that owns the PR81 compatibility behavior');
+assert.ok(chat.includes('data-chat-view-target="(?:player|saved|playlists)"'), 'Main Feed server wrapper must remove retired music navigation before HTML is sent');
 assert.match(chat, /data-chat-my-team/, 'Main Feed server wrapper must inject canonical My Team navigation');
 assert.match(chat, /data-brain-learning-history-v317 href=/, 'Main Feed must directly load Brain Learning styles from the Activity Center runtime');
 assert.match(chat, /data-brain-learning-history-v317 src=/, 'Main Feed must directly load Brain Learning runtime instead of relying on Agent Activity cache state');
