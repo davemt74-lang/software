@@ -42,6 +42,11 @@ assert.ok(loop.includes("'outcome_factor'=>"), 'priority evidence must expose le
 assert.ok(loop.includes("'score_delta'=>"), 'priority state must compare score changes to the prior cycle');
 assert.ok(loop.includes("'rank_delta'=>"), 'priority state must compare rank changes to the prior cycle');
 assert.ok(loop.includes("'movement'=>"), 'priority state must label new/up/down/same movement');
+assert.ok(loop.includes("'previous_score'=>$old?round((float)$old['score'],4):null"), 'new priorities must explicitly have no prior score');
+assert.ok(loop.includes("'score_delta']=$old?round($currentScore-(float)$old['score'],4):0.0"), 'new priorities must not manufacture an increase from zero');
+assert.ok(loop.includes("$movement==='new'"), 'explainability must special-case genuinely new priorities');
+assert.ok(loop.includes("'new this cycle'"), 'new priorities must be described as new rather than as an artificial percentage increase');
+assert.ok(loop.includes('if(!is_scalar($raw))continue;'), 'explainability metadata must ignore structured values rather than trigger array-to-string warnings');
 assert.ok(loop.includes("'suppression_reasons'=>[]"), 'cycle diagnostics must retain suppression reasons');
 assert.ok(loop.includes("'ignored_noise'=>0"), 'cycle diagnostics must count low-value/noise candidates');
 assert.ok(loop.includes("'deduped'=>0"), 'cycle diagnostics must count duplicate signals');
@@ -56,6 +61,11 @@ assert.ok(loop.includes("'evidence'=>["), 'ranked priorities must retain source/
 assert.ok(loop.includes('Activity Center already renders this memory'), 'explainability must intentionally use the existing Agent Brain surface');
 assert.ok(brainDrawer.includes('const recent = Array.isArray(brain.recent)'), 'Activity Center must consume recent Agent Brain memory');
 assert.ok(brainDrawer.includes("memory.memory_text || ''"), 'Activity Center must visibly render the cognitive explanation text');
+
+/* Explainability never becomes a second surfacing authority. */
+assert.ok(loop.includes("$parts[]=(string)($item['key']??'').'|'.(string)($item['risk_level']??'');"), 'surface signature must stay limited to ordered priority identity + canonical risk');
+assert.ok(!/score_delta[^\n]{0,120}signature|signature[^\n]{0,120}score_delta/.test(loop), 'score movement must not itself trigger Main Feed interruption');
+assert.ok(!/rank_delta[^\n]{0,120}signature|signature[^\n]{0,120}rank_delta/.test(loop), 'rank diagnostics must remain descriptive rather than a parallel trigger');
 
 /* Analytics becomes Brain evidence, including profile + website traffic spikes. */
 assert.ok(bootstrap.includes("require_once __DIR__.'/vp3-analytics-intelligence.php';"), 'bootstrap must load Analytics intelligence');
