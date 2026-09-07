@@ -31,7 +31,7 @@ function team_subscription_state(?array $user=null,?PDO $pdo=null): array
         &&has_permission('admin.access',$user)
         &&has_permission('team.manage',$user);
 
-    if($pdo&&table_exists('artist_team_members')&&function_exists('artist_workspace_v104_team_count')){
+    if($state['authorized']&&$pdo&&table_exists('artist_team_members')&&function_exists('artist_workspace_v104_team_count')){
         try{$state['used']=artist_workspace_v104_team_count($pdo,(int)$user['id']);}catch(Throwable $e){$state['used']=0;}
     }
 
