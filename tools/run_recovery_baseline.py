@@ -66,6 +66,7 @@ NODE_TESTS = [
     'tests/agent-relationship-intelligence-contract.mjs',
     'tests/agent-referral-attribution-contract.mjs',
     'tests/agent-crm-integration-contract.mjs',
+    'tests/agent-crm-watchlist-audit-contract.mjs',
     'tests/vp3-analytics-contract.mjs',
     'tests/team-workspace-scope-contract.mjs',
     'tests/member-navigation-contract.mjs',
