@@ -141,8 +141,19 @@ function vp3_agent_referral_record(PDO $pdo,array $referral,int $propertyId,stri
     $contactName=(trim((string)($referral['operator_name']??''))!==''?trim((string)$referral['operator_name']).' · ':'').trim((string)($referral['display_name']??'Automated agent'));
     $summary=$conversion?$contactName.' was attributed to a human conversion ('.$eventName.').':$contactName.' generated an attributed human visit.';
     $details=['referral_id'=>$referralId,'source_type'=>(string)($referral['source_type']??''),'event_name'=>$eventName,'attribution'=>'first_party_token'];if($value!==null)$details['value']=$value;
-    $event=$pdo->prepare("INSERT INTO vp3_radar_events (owner_user_id,property_id,session_id,agent_contact_id,event_type,severity,path,method,status_code,significance_score,risk_score,summary,details_json,occurred_at) VALUES (?,?,NULL,?,?,'low','/','ATTRIBUTION',NULL,?,?,?, ?,NOW())");
+    $event=$pdo->prepare("INSERT INTO vp3_radar_events (owner_user_id,property_id,session_id,agent_contact_id,event_type,severity,path,method,status_code,significance_score,risk_score,summary,details_json,occurred_at) VALUES (?,?,NULL,?,?,'low','/','ATTRIBUTION',NULL,?,?,?,?,NOW())");
     $event->execute([$owner,$property,$contactId,$conversion?'agent_referral_conversion':'agent_human_referral',$conversion?95:85,(int)($referral['risk_score']??0),mb_strimwidth($summary,0,500,'…'),json_encode($details,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE)]);
+    $radarEventId=(int)$pdo->lastInsertId();
+    if($conversion&&$radarEventId>0){
+        create_notification($owner,'radar_agent_conversion','AI-attributed conversion · '.trim((string)($referral['display_name']??'Agent')),$summary,url('/profile-agent.php?tab=radar'),'radar_event',$radarEventId);
+        if(function_exists('agent_brain_v122_upsert_system_memory')){
+            $contact=$pdo->prepare('SELECT referral_count,conversion_count,value_score,cost_score,risk_score FROM vp3_agent_contacts WHERE id=? AND owner_user_id=? LIMIT 1');$contact->execute([$contactId,$owner]);$counts=$contact->fetch()?:[];
+            $ownerUser=function_exists('vp3_radar_owner_user')?vp3_radar_owner_user($pdo,$owner):null;
+            if($ownerUser)agent_brain_v122_upsert_system_memory($ownerUser,'agent_radar','agent-radar-attribution:'.$contactId,$summary.' Current attributed totals: '.(int)($counts['referral_count']??0).' referrals and '.(int)($counts['conversion_count']??0).' conversions.',[
+                'agent_contact_id'=>$contactId,'referral_id'=>$referralId,'event_name'=>$eventName,'referral_count'=>(int)($counts['referral_count']??0),'conversion_count'=>(int)($counts['conversion_count']??0),'source'=>'agent_radar_attribution',
+            ],0.94);
+        }
+    }
     return true;
 }
 
@@ -161,6 +172,8 @@ function vp3_agent_referral_capture_native(PDO $pdo,array $profile): void
 function vp3_agent_referral_request_boot(): void
 {
     if(strtoupper((string)($_SERVER['REQUEST_METHOD']??'GET'))!=='GET'||empty($_GET['vp3_ref'])||empty($_GET['username']))return;
+    $path=(string)parse_url((string)($_SERVER['REQUEST_URI']??'/'),PHP_URL_PATH);
+    if(str_contains($path,'/api/')||str_contains($path,'/.well-known/'))return;
     try{
         $pdo=db();if(!$pdo||!vp3_agent_referral_schema_ready($pdo))return;
         $username=profile_username_normalize((string)$_GET['username']);if($username==='')return;
