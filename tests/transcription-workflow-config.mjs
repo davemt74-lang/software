@@ -92,17 +92,18 @@ assert.match(client,/state\.pluginErrors/);
 assert.match(client,/needs a retry/);
 assert.match(client,/analyzeApps\(\[state\.activeApp\], 'manual'\)/,'retry remains isolated to the active plugin');
 
-/* Stable API and cache identity route the deployed page to v304. */
+/* Stable API preserves v304 workflow execution under the current v305 controller/cache identity. */
 assert.match(api,/transcription-workflow-config\.php/);
 assert.match(api,/transcription_app_analyze_v304\(/,'stable API must route analysis through v304');
 assert.doesNotMatch(api,/\$result = transcription_app_analyze_v301\(/,'stable API must no longer execute the v301 analyzer directly');
 assert.match(api,/workflow_config/);
-assert.match(api,/vp3-transcription-intelligence-v304-20260906/);
-const asset='artist-listening-ai.js?v=transcription-workflow-v304-20260906';
-assert.ok(page.includes(asset),'page must load the v304 canonical AI controller');
+assert.match(api,/vp3-transcription-intelligence-v305-20260906/);
+const asset='artist-listening-ai.js?v=transcription-relations-v305-20260906';
+assert.ok(page.includes(asset),'page must load the v305 canonical AI controller');
 assert.equal(page.split('artist-listening-ai.js?').length-1,1,'page must load exactly one AI controller');
-assert.ok(!page.includes('artist-listening-ai.js?v=transcription-app-registry-v300-20260906'),'v300 cache identity must be retired after v304 deploy');
-assert.match(client,/const BUILD = 'transcription-workflow-v304-20260906'/);
+assert.ok(!page.includes('artist-listening-ai.js?v=transcription-workflow-v304-20260906'),'v304 cache identity must be retired after v305 deploy');
+assert.ok(!page.includes('artist-listening-ai.js?v=transcription-app-registry-v300-20260906'),'v300 cache identity must stay retired');
+assert.match(client,/const BUILD = 'transcription-relations-v305-20260906'/);
 
 /* Existing ownership and bounded-live safeguards remain intact. */
 assert.match(client,/state\.liveWords < 120/);
