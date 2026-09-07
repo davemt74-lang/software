@@ -178,25 +178,6 @@
     }
   }
 
-  function cleanupMainSidebar() {
-    const nav = document.querySelector('.chat-sidebar-nav');
-    if (!nav) return;
-    nav.querySelectorAll('[data-chat-view-target="player"],[data-chat-view-target="saved"],[data-chat-view-target="playlists"]').forEach(node => node.remove());
-    if (nav.querySelector('a[data-chat-my-team]')) return;
-    const teamProfile = document.querySelector('.chat-profile-links a[data-chat-profile-link="my_team"]');
-    if (!teamProfile) return;
-    const link = document.createElement('a');
-    link.className = 'chat-sidebar-nav-link';
-    link.href = teamProfile.href;
-    link.dataset.chatMyTeam = '1';
-    link.innerHTML = '<span>◎</span><strong>My Team</strong>';
-    const knowledge = [...nav.querySelectorAll('a')].find(a => /\/knowledge\.php(?:[?#]|$)/.test(a.getAttribute('href') || ''));
-    const transcriptions = [...nav.querySelectorAll('a')].find(a => /\/artist-listening\.php(?:[?#]|$)/.test(a.getAttribute('href') || ''));
-    if (knowledge) knowledge.insertAdjacentElement('afterend', link);
-    else if (transcriptions) transcriptions.insertAdjacentElement('afterend', link);
-    else nav.appendChild(link);
-  }
-
   function setup(target) {
     if (!(target instanceof Element) || target.dataset.brainLearningSetup === '1') return;
     const tabs = target.querySelector('.chat-notification-tabs');
@@ -235,11 +216,9 @@
   }
 
   injectCss();
-  cleanupMainSidebar();
   const existing = document.getElementById('chatNotificationDrawer');
   if (existing) setup(existing);
   const observer = new MutationObserver(records => {
-    cleanupMainSidebar();
     for (const record of records) {
       for (const node of record.addedNodes) {
         if (!(node instanceof Element)) continue;
