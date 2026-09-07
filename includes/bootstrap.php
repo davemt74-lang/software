@@ -39,6 +39,7 @@ require_once __DIR__.'/agent-relationship-intelligence.php';
 require_once __DIR__.'/agent-relationship-chat.php';
 require_once __DIR__.'/agent-crm.php';
 require_once __DIR__.'/agent-crm-chat.php';
+require_once __DIR__.'/agent-operator-intelligence.php';
 require_once __DIR__.'/agent-radar-chat.php';
 require_once __DIR__.'/agent-radar-portal.php';
 require_once __DIR__.'/vp3-analytics.php';
