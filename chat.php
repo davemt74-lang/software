@@ -17,7 +17,7 @@ $headerUiBuild = 'live-wiring-20260903-3';
 $teamChatAdminBuild = 'team-chat-bootstrap-v236-20260905';
 $chatSettingsBuild = 'chat-settings-v239-canonical-20260905';
 $notificationDrawerBuild = 'chat-notifications-canvas-v240-20260907-pr81-hotfix1';
-$activityBuild = 'agent-activity-v94-20260907-pr81-hotfix1';
+$activityBuild = 'agent-activity-v94-20260907-header-controls-hidden-v1';
 $brainLearningBuild = 'brain-learning-history-v317-20260907-pr81-hotfix1';
 
 if (!headers_sent()) {
@@ -52,6 +52,10 @@ $html = preg_replace(
     '',
     $html
 ) ?? $html;
+
+// Keep the existing Create menu implementation available for later, but hide
+// the header + control from the rendered Agent Chat for now.
+$html = str_replace('id="chatCreateMenu"', 'id="chatCreateMenu" hidden', $html);
 
 $agentFeatureReady = false;
 $activeUserAgent = null;
