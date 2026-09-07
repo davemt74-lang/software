@@ -73,9 +73,6 @@ function member_navigation_menu_links(?array $user = null): array
     if(member_navigation_entitled($user,'transcription.access',has_permission('artist_listening.access',$user)))$add($links,'transcriptions','My Transcriptions',url('/artist-listening.php'),'identity');
     if(member_navigation_entitled($user,'voice.access',personal_capability_has_v242('voice_profile.access',$user)))$add($links,'voice_profile','Voice Profile',url('/voice-profile.php'),'agent');
 
-    $teamState=function_exists('team_subscription_state')?team_subscription_state($user):['authorized'=>false];
-    if(!empty($teamState['authorized']))$add($links,'my_team','My Team',url('/admin/team.php'),'creator');
-
     $artistWorkspaceAllowed=user_has_role('artist',$user)&&(
         member_navigation_package_permission($user,'tracks.manage',has_permission('tracks.manage',$user))||
         member_navigation_package_permission($user,'albums.manage',has_permission('albums.manage',$user))||
