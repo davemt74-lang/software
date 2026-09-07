@@ -85,7 +85,8 @@ assert.match(advanced,/comparison_hash/,'comparison freshness must bind to the e
 
 /* Deep enrichment is opt-in through the existing workflow depth. */
 assert.match(deep,/function transcription_app_analyze_v307/);
-assert.match(deep,/\(string\)\(\$workflow\['depth'\]\?\?'standard'\)!=='deep'/,'non-deep runs must preserve the v306 path without extra enrichment');
+assert.ok(deepAnalyzeBlock.includes("($workflow['depth']??'standard')==='deep'"),'deep enrichment must require explicit deep workflow depth');
+assert.ok(deepAnalyzeBlock.includes("$mode!=='live'"),'live analysis must not execute the deep enrichment pass');
 assert.match(deep,/transcription_app_analyze_v306/,'v307 must delegate the base run to v306');
 assert.match(advanced,/research_context_changed/);
 assert.match(advanced,/crm_history_changed/);
