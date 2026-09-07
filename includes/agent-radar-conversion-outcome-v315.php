@@ -4,14 +4,21 @@ declare(strict_types=1);
 /**
  * Agent Radar conversion outcome closure v315.
  *
- * A first-party attributed human conversion may close an Agent Brain Radar
- * opportunity as successful, but only when the exact opportunity notification
- * for the same agent_contact_id was genuinely surfaced and remains unclosed.
- * This bridges existing Radar/referral evidence into the canonical v313 learner;
- * it does not create another identity, analytics, CRM, or outcome store.
+ * Bridges first-party attributed human conversions back into the existing
+ * Agent Brain outcome learner. The bridge is deliberately conservative:
+ * - conversion identity comes from vp3_agent_referral_events;
+ * - opportunity identity comes from the owner notification -> Radar event;
+ * - both sides must resolve to the same agent_contact_id;
+ * - the exact notification-hash recommendation must have been surfaced;
+ * - an already-finalized exposure cycle is never counted again.
+ *
+ * No fuzzy names, inferred intent, browser identifiers, new schema, or second
+ * learner are introduced here.
  */
 const VP3_AGENT_RADAR_CONVERSION_OUTCOME_V315='agent-radar-conversion-outcome-v315-20260907';
 const VP3_AGENT_RADAR_CONVERSION_OUTCOME_LOOKBACK_DAYS_V315=60;
+const VP3_AGENT_RADAR_CONVERSION_SCAN_DAYS_V315=35;
+const VP3_AGENT_RADAR_CONVERSION_SCAN_SECONDS_V315=60;
 
 function agent_radar_outcome_v315_notification_hash(int $notificationId): string
 {
@@ -22,6 +29,12 @@ function agent_radar_outcome_v315_time(string $value): string
 {
     $ts=strtotime(trim($value));
     return $ts===false?'':date('Y-m-d H:i:s',$ts);
+}
+
+function agent_radar_outcome_v315_event_name(string $eventType): string
+{
+    $eventType=trim($eventType);
+    return str_starts_with($eventType,'conversion:')?substr($eventType,11):'';
 }
 
 function agent_radar_outcome_v315_cycle_state(int $userId,string $hash,string $conversionAt): array
@@ -106,11 +119,11 @@ function agent_radar_outcome_v315_close_conversion(PDO $pdo,array $user,array $c
 {
     $userId=(int)($user['id']??0);
     $agentContactId=max(0,(int)($conversion['agent_contact_id']??0));
-    $conversionAt=agent_radar_outcome_v315_time((string)($conversion['occurred_at']??date('Y-m-d H:i:s')));
+    $conversionAt=agent_radar_outcome_v315_time((string)($conversion['occurred_at']??''));
     $eventName=trim((string)($conversion['event_name']??''));
     $referralId=max(0,(int)($conversion['referral_id']??0));
-    $conversionRadarEventId=max(0,(int)($conversion['radar_event_id']??0));
-    if($userId<1||$agentContactId<1||$conversionAt===''||$referralId<1||$conversionRadarEventId<1||$eventName===''){
+    $referralEventId=max(0,(int)($conversion['referral_event_id']??0));
+    if($userId<1||$agentContactId<1||$conversionAt===''||$referralId<1||$referralEventId<1||$eventName===''){
         return ['recorded'=>false,'reason'=>'conversion-identity-incomplete'];
     }
     if(!function_exists('agent_action_v124_record_outcome'))return ['recorded'=>false,'reason'=>'outcome-writer-unavailable'];
@@ -133,7 +146,7 @@ function agent_radar_outcome_v315_close_conversion(PDO $pdo,array $user,array $c
             'attribution'=>'first_party_token',
             'agent_contact_id'=>$agentContactId,
             'referral_id'=>$referralId,
-            'conversion_radar_event_id'=>$conversionRadarEventId,
+            'conversion_referral_event_id'=>$referralEventId,
             'conversion_event_name'=>$eventName,
             'conversion_value'=>is_numeric($conversion['value']??null)?(float)$conversion['value']:null,
             'conversion_at'=>$conversionAt,
@@ -154,7 +167,7 @@ function agent_radar_outcome_v315_close_conversion(PDO $pdo,array $user,array $c
         $result['cycle']=$cycle;
         $result['agent_contact_id']=$agentContactId;
         $result['referral_id']=$referralId;
-        $result['conversion_radar_event_id']=$conversionRadarEventId;
+        $result['conversion_referral_event_id']=$referralEventId;
         $result['opportunity_notification_id']=$notificationId;
         $result['automatic']=true;
         $result['closure_build']=VP3_AGENT_RADAR_CONVERSION_OUTCOME_V315;
@@ -164,7 +177,7 @@ function agent_radar_outcome_v315_close_conversion(PDO $pdo,array $user,array $c
                 'user_id'=>$userId,
                 'agent_contact_id'=>$agentContactId,
                 'referral_id'=>$referralId,
-                'conversion_radar_event_id'=>$conversionRadarEventId,
+                'conversion_referral_event_id'=>$referralEventId,
                 'opportunity_notification_id'=>$notificationId,
                 'event_name'=>$eventName,
                 'outcome'=>'successful',
@@ -174,4 +187,81 @@ function agent_radar_outcome_v315_close_conversion(PDO $pdo,array $user,array $c
     }
 
     return ['recorded'=>false,'reason'=>'no-open-surfaced-opportunity'];
+}
+
+function agent_radar_outcome_v315_recent_conversions(PDO $pdo,int $userId,int $limit=100): array
+{
+    if($userId<1||!table_exists('vp3_agent_referral_events'))return [];
+    $limit=max(1,min(250,$limit));
+    try{
+        $stmt=$pdo->prepare(
+            "SELECT id referral_event_id,referral_id,agent_contact_id,event_type,value_amount,occurred_at
+             FROM vp3_agent_referral_events
+             WHERE owner_user_id=?
+               AND event_type LIKE 'conversion:%'
+               AND occurred_at>=DATE_SUB(NOW(),INTERVAL ".VP3_AGENT_RADAR_CONVERSION_SCAN_DAYS_V315." DAY)
+             ORDER BY occurred_at DESC,id DESC
+             LIMIT {$limit}"
+        );
+        $stmt->execute([$userId]);
+        return $stmt->fetchAll()?:[];
+    }catch(Throwable $e){
+        return [];
+    }
+}
+
+function agent_radar_outcome_v315_reconcile(array $user): array
+{
+    $summary=['ready'=>false,'examined'=>0,'eligible'=>0,'recorded'=>0,'duplicates'=>0,'skipped'=>0];
+    $userId=(int)($user['id']??0);
+    $pdo=db();
+    if(!$pdo||$userId<1||!function_exists('agent_action_v124_record_outcome'))return $summary;
+    if(!table_exists('vp3_agent_referral_events')||!table_exists('agent_proactive_events'))return $summary;
+    $summary['ready']=true;
+
+    $rows=agent_radar_outcome_v315_recent_conversions($pdo,$userId,100);
+    $summary['examined']=count($rows);
+    foreach($rows as $row){
+        if(!is_array($row))continue;
+        $eventName=agent_radar_outcome_v315_event_name((string)($row['event_type']??''));
+        if($eventName===''){
+            $summary['skipped']++;
+            continue;
+        }
+        $result=agent_radar_outcome_v315_close_conversion($pdo,$user,[
+            'referral_event_id'=>(int)($row['referral_event_id']??0),
+            'referral_id'=>(int)($row['referral_id']??0),
+            'agent_contact_id'=>(int)($row['agent_contact_id']??0),
+            'event_name'=>$eventName,
+            'value'=>$row['value_amount']??null,
+            'occurred_at'=>(string)($row['occurred_at']??''),
+        ]);
+        if(!empty($result['cycle']['eligible']))$summary['eligible']++;
+        if(!empty($result['recorded']))$summary['recorded']++;
+        elseif(!empty($result['duplicate']))$summary['duplicates']++;
+        else $summary['skipped']++;
+    }
+    return $summary;
+}
+
+function agent_radar_outcome_v315_boot(): void
+{
+    if(PHP_SAPI==='cli'||!function_exists('current_user'))return;
+    try{
+        $user=current_user();
+        $userId=(int)($user['id']??0);
+        if(!$user||$userId<1)return;
+        if(function_exists('has_permission')&&!has_permission('chat.access',$user))return;
+        if(!table_exists('vp3_agent_referral_events')||!table_exists('agent_proactive_events'))return;
+
+        $sessionKey='agent_radar_outcome_v315_last_'.$userId;
+        $last=max(0,(int)($_SESSION[$sessionKey]??0));
+        if($last>0&&time()-$last<VP3_AGENT_RADAR_CONVERSION_SCAN_SECONDS_V315)return;
+        $_SESSION[$sessionKey]=time();
+        agent_radar_outcome_v315_reconcile($user);
+    }catch(Throwable $e){
+        if(function_exists('agent_runtime_v125_trace')){
+            agent_runtime_v125_trace('brain.radar_conversion_outcome_auto_close_failed',['error_class'=>get_class($e)]);
+        }
+    }
 }
