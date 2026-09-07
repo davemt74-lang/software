@@ -37,6 +37,9 @@ function vp3_agent_manifest_profile(PDO $pdo,array $profile): array
         if($count>0)$collections[$label]=['count'=>$count,'endpoint'=>url('/api/agent-content.php?username='.rawurlencode($username).'&collection='.$label)];
     }
     $agent=profile_active_agent($pdo,$profile);
+    $ownerUser=profile_user_row($pdo,(int)$profile['user_id']);
+    $messagingAvailable=(bool)$agent&&$ownerUser&&vp3_agent_messaging_allowed($ownerUser)&&personal_capability_has_v242('profile_chat.access',$ownerUser);
+    $accessRequest=$messagingAvailable?url('/api/agent-access-request.php?username='.rawurlencode($username)):null;
     return [
         'schema'=>'vp3-agent-manifest',
         'version'=>VP3_AGENT_MANIFEST_VERSION,
@@ -51,18 +54,23 @@ function vp3_agent_manifest_profile(PDO $pdo,array $profile): array
             'public_content'=>true,
             'structured_content'=>true,
             'gateway_managed'=>true,
-            'agent_messaging'=>false,
-            'note'=>'Only public profile content is exposed here. Private VP3, CRM, Analytics and HomeServer data are never included.',
+            'agent_messaging'=>$messagingAvailable,
+            'agent_messaging_requires_approval'=>$messagingAvailable,
+            'note'=>$messagingAvailable
+                ? 'Public content is available without messaging access. Agent Messaging requires an owner-approved grant. Approved AI replies consume the profile owner’s VP3 AI token balance. Private VP3, CRM, Analytics and HomeServer data are never included.'
+                : 'Only public profile content is exposed here. Private VP3, CRM, Analytics and HomeServer data are never included.',
         ],
-        'endpoints'=>[
+        'endpoints'=>array_filter([
             'content'=>url('/api/agent-content.php?username='.rawurlencode($username)),
+            'agent_access_request'=>$accessRequest,
             'human_profile'=>profile_public_url($username),
-        ],
+        ],static fn($value):bool=>$value!==null&&$value!==''),
         'collections'=>$collections,
         'profile_agent'=>[
             'available'=>(bool)$agent,
             'name'=>$agent?trim((string)($agent['display_name']??'')):'',
-            'messaging_available'=>false,
+            'messaging_available'=>$messagingAvailable,
+            'messaging_requires_approval'=>$messagingAvailable,
         ],
         'generated_at'=>gmdate('c'),
     ];
@@ -85,12 +93,12 @@ function vp3_agent_manifest_property(PDO $pdo,array $property): array
             'structured_content'=>false,
             'gateway_managed'=>(bool)trim((string)($property['secret_hash']??'')),
             'agent_messaging'=>false,
-            'note'=>'This manifest describes the connected property only. It does not expose private VP3 account, CRM, Analytics, Gateway policy or HomeServer data.',
+            'note'=>'This manifest describes the connected property only. Agent Messaging, when available, is requested through the owner’s public VP3 profile. This manifest exposes no private account, CRM, Analytics, Gateway policy or HomeServer data.',
         ],
-        'endpoints'=>[
+        'endpoints'=>array_filter([
             'website'=>'https://'.$domain.'/',
             'owner_public_manifest'=>$profile?url('/api/agent-manifest.php?username='.rawurlencode((string)$profile['username'])):null,
-        ],
+        ],static fn($value):bool=>$value!==null&&$value!==''),
         'generated_at'=>gmdate('c'),
     ];
 }
