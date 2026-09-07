@@ -35,6 +35,7 @@ require_once __DIR__.'/agent-radar-gateway.php';
 require_once __DIR__.'/agent-radar-chat.php';
 require_once __DIR__.'/agent-radar-portal.php';
 require_once __DIR__.'/vp3-analytics.php';
+require_once __DIR__.'/vp3-analytics-dashboard.php';
 require_once __DIR__.'/subscription-lifecycle.php';
 require_once __DIR__.'/chat-settings-v237.php';
 require_once __DIR__.'/permissions-v105.php';
