@@ -38,7 +38,7 @@ assert.match(actions,/created_from_reviewed_item'=>true/);
 assert.match(actions,/UPDATE agent_memory_items SET subject=\?,memory_text=\?/,'editing a reviewed source item must refresh an existing promoted Agent task in place');
 assert.match(actions,/updated_from_reviewed_item/,'updated task provenance must be explicit');
 assert.match(lifecycle,/\['open','in_progress','waiting','completed','cancelled'\]/,'promoted transcription tasks must participate in the existing task lifecycle');
-assert.match(lifecycle,/memory_type IN \('task','commitment'\)/);
+assert.match(lifecycle,/memory_type IN \('commitment','task'\)/);
 
 /* Per-item Brain and Knowledge promotions are deterministic and source-aware. */
 assert.match(actions,/agent_brain_v122_upsert_system_memory/);
