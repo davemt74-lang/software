@@ -98,49 +98,52 @@ function chat_notifications_v240_brain_operations(array $user, int $limit = 60):
 }
 
 /**
- * Map the current cognitive priority identity back to the canonical proactive
- * suggestion hash. These are all key families emitted by the current v123 +
- * notification + Analytics candidate builders. Unknown future key families are
- * deliberately not actionable until they define an exact mapping.
+ * Resolve exact hashes for the current v123 proactive candidate set. This is
+ * intentionally server-side: Brain display titles are bounded/truncated, so
+ * reconstructing identity from presentation text would be unsafe.
  */
-function chat_notifications_v313_priority_outcome_hash(array $priority): string
+function chat_notifications_v313_base_priority_hash_map(array $user): array
+{
+    if (!function_exists('agent_cognitive_loop_v310_base_candidates')) return [];
+    $context = function_exists('agent_brain_v122_activity_context')
+        ? agent_brain_v122_activity_context($user)
+        : [];
+    try {
+        $map = [];
+        foreach (agent_cognitive_loop_v310_base_candidates($user, $context) as $candidate) {
+            if (!is_array($candidate)) continue;
+            $key = trim((string)($candidate['key'] ?? $candidate['hash'] ?? ''));
+            $hash = strtolower(trim((string)($candidate['hash'] ?? '')));
+            if ($key !== '' && preg_match('/^[a-f0-9]{40}$/', $hash)) $map[$key] = $hash;
+        }
+        return $map;
+    } catch (Throwable $e) {
+        error_log('Activity Center Brain priority hash map failed: ' . $e->getMessage());
+        return [];
+    }
+}
+
+/**
+ * Map the current cognitive priority identity back to the canonical proactive
+ * suggestion hash. Proactive priorities come from the exact current candidate
+ * map; notification and Analytics identities are deterministic. Unknown or
+ * stale future key families are deliberately non-actionable rather than guessed.
+ */
+function chat_notifications_v313_priority_outcome_hash(array $priority, array $baseHashes = []): string
 {
     $key = trim((string)($priority['key'] ?? ''));
     $source = trim((string)($priority['source'] ?? ''));
     $title = trim((string)($priority['title'] ?? ''));
     if ($key === '') return '';
 
+    $mapped = strtolower(trim((string)($baseHashes[$key] ?? '')));
+    if (preg_match('/^[a-f0-9]{40}$/', $mapped)) return $mapped;
+
     if (preg_match('/^notification:(\d+)$/', $key, $match)) {
         return sha1('notification|' . (int)$match[1]);
     }
-    if ($source === 'analytics' && $title !== '') {
+    if ($source === 'analytics' && $title !== '' && !str_ends_with($title, '…')) {
         return sha1('analytics|' . $key . '|' . $title);
-    }
-    if (str_starts_with($key, 'task:')) {
-        $taskKey = substr($key, strlen('task:'));
-        return $taskKey !== '' ? sha1('task|' . $taskKey) : '';
-    }
-    if (str_starts_with($key, 'ecosystem:')) {
-        $eventKey = substr($key, strlen('ecosystem:'));
-        return $eventKey !== '' ? sha1('v123|' . $eventKey) : '';
-    }
-    if (str_starts_with($key, 'activity:') && str_starts_with($title, 'Resume ')) {
-        $taskTitle = trim(substr($title, strlen('Resume ')));
-        return $taskTitle !== '' ? sha1('activity|' . $taskTitle) : '';
-    }
-    if (str_starts_with($key, 'theme:') && str_starts_with($title, 'Go deeper on ')) {
-        $subject = trim(substr($title, strlen('Go deeper on ')));
-        return $subject !== '' ? sha1('theme|' . $subject) : '';
-    }
-    if (str_starts_with($key, 'edit-pattern:')) {
-        $parts = explode(':', $key, 3);
-        return count($parts) === 3 && $parts[1] !== '' && $parts[2] !== ''
-            ? sha1('edit|' . $parts[1] . '|' . $parts[2])
-            : '';
-    }
-    if (str_starts_with($key, 'tool-pattern:')) {
-        $toolKey = substr($key, strlen('tool-pattern:'));
-        return $toolKey !== '' ? sha1('tool|' . $toolKey) : '';
     }
     if (preg_match('/^[a-f0-9]{40}$/', $key)) return $key;
     return '';
@@ -192,11 +195,12 @@ function chat_notifications_v313_brain_priorities(array $user, PDO $pdo): array
     $state = agent_cognitive_loop_v310_state($user);
     if (!agent_cognitive_loop_v310_state_fresh($state)) return [];
 
+    $baseHashes = chat_notifications_v313_base_priority_hash_map($user);
     $rows = [];
     $hashes = [];
     foreach (array_slice((array)($state['priorities'] ?? []), 0, 6) as $priority) {
         if (!is_array($priority)) continue;
-        $hash = chat_notifications_v313_priority_outcome_hash($priority);
+        $hash = chat_notifications_v313_priority_outcome_hash($priority, $baseHashes);
         if ($hash !== '') $hashes[] = $hash;
         $rows[] = [
             'key'=>(string)($priority['key'] ?? ''),
@@ -248,7 +252,8 @@ function chat_notifications_v313_record_brain_outcome(PDO $pdo, array $user, arr
 
     $priority = null;
     foreach (chat_notifications_v313_brain_priorities($user, $pdo) as $candidate) {
-        if (hash_equals((string)($candidate['outcome_hash'] ?? ''), $hash)) {
+        $candidateHash = (string)($candidate['outcome_hash'] ?? '');
+        if ($candidateHash !== '' && hash_equals($candidateHash, $hash)) {
             $priority = $candidate;
             break;
         }
