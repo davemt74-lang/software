@@ -58,8 +58,23 @@ assert.ok(ui.includes("const finalOutcomes = ['successful','resolved','unsuccess
 assert.ok(ui.includes("const canClose = /^[a-f0-9]{40}$/.test(hash) && !closed;"), 'buttons must disappear after a final outcome or invalid identity');
 assert.ok(ui.includes('Outcome controls are unavailable for this priority type.'), 'ambiguous identity must fail closed in the UI');
 assert.ok(ui.includes('Recorded:'), 'closed priorities must visibly show the recorded result');
-assert.ok(ui.includes("void mutate('brain_outcome', {hash, outcome});"), 'buttons must post through the existing Activity Center CSRF request path');
+assert.ok(ui.includes("void mutate('brain_outcome', {hash, outcome});"), 'drawer buttons must post through the existing Activity Center CSRF request path');
 assert.ok(api.includes('This priority already has a final outcome.'), 'server must reject contradictory final outcomes');
+
+/* Main Feed projects the same owner-scoped priorities into the current Brain priority chat turn. */
+assert.ok(ui.includes('function mainFeedPriorities()'), 'Main Feed must consume the same Activity Center Brain priority state');
+assert.ok(ui.includes("document.querySelectorAll('#chatThread .message.assistant')"), 'Main Feed integration must remain inside the canonical chat canvas');
+assert.ok(ui.includes("text.startsWith('Agent Brain priority update')"), 'Main Feed controls must only target canonical Brain priority turns');
+assert.ok(ui.includes("titles.some(title => text.includes(title))"), 'a surfaced turn must still contain a current priority before controls are attached');
+assert.ok(ui.includes("[...document.querySelectorAll('#chatThread .message.assistant')].reverse()"), 'only the latest matching Brain priority turn should receive current controls');
+assert.ok(ui.includes("const hash = String(priority?.outcome_hash || '')"), 'Main Feed must use the server-returned closure hash rather than parse one from message text');
+assert.ok(ui.includes("state = await request('brain_outcome', {hash, outcome});"), 'Main Feed must post to the exact same canonical closure action');
+assert.ok(ui.includes('chat-main-feed-brain-outcomes'), 'Main Feed must render an inline outcome section under the surfaced priority turn');
+assert.ok(ui.includes('Teach Agent Brain what actually happened.'), 'Main Feed must explain why outcome feedback matters');
+assert.ok(ui.includes('observeMainFeedBrainPriorities()'), 'Main Feed controls must survive dynamically loaded/synchronized chat messages');
+assert.ok(ui.includes("startsWith('Agent Brain priority update')"), 'new Brain priority messages must trigger a state refresh');
+assert.ok(ui.includes('mainFeedObserver?.disconnect()'), 'Main Feed observer must be cleaned up on page exit');
+assert.ok(!ui.includes('brain_outcome='), 'Main Feed must not encode outcome commands into URLs or parse hashes from navigation');
 
 /* Dedicated styling keeps the controls usable on desktop and narrow mobile layouts. */
 assert.ok(css.includes('.chat-brain-priority-list'), 'priority list must be styled');
