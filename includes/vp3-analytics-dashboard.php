@@ -6,16 +6,13 @@ function vp3_analytics_enrich_site_state(PDO $pdo,array $user,array $state): arr
     $uid=(int)($user['id']??0);
     if($uid<1||empty($state['sites'])||!is_array($state['sites']))return $state;
     $stmt=$pdo->prepare("SELECT p.id,
-      COUNT(s.id) AS total_sessions,
-      COALESCE(SUM(s.agent_contact_id IS NULL),0) AS human_sessions,
-      COALESCE(SUM(s.agent_contact_id IS NOT NULL),0) AS agent_sessions,
-      COUNT(e.id) AS total_events,
-      MAX(e.occurred_at) AS last_event_at
+      (SELECT COUNT(*) FROM vp3_radar_sessions s WHERE s.property_id=p.id) AS total_sessions,
+      (SELECT COUNT(*) FROM vp3_radar_sessions s WHERE s.property_id=p.id AND s.agent_contact_id IS NULL) AS human_sessions,
+      (SELECT COUNT(*) FROM vp3_radar_sessions s WHERE s.property_id=p.id AND s.agent_contact_id IS NOT NULL) AS agent_sessions,
+      (SELECT COUNT(*) FROM vp3_radar_events e WHERE e.property_id=p.id) AS total_events,
+      (SELECT MAX(e.occurred_at) FROM vp3_radar_events e WHERE e.property_id=p.id) AS last_event_at
       FROM vp3_radar_properties p
-      LEFT JOIN vp3_radar_sessions s ON s.property_id=p.id
-      LEFT JOIN vp3_radar_events e ON e.property_id=p.id
-      WHERE p.owner_user_id=? AND p.property_type='external'
-      GROUP BY p.id");
+      WHERE p.owner_user_id=? AND p.property_type='external'");
     $stmt->execute([$uid]);
     $counts=[];
     foreach($stmt->fetchAll()?:[] as $row)$counts[(int)$row['id']]=$row;
