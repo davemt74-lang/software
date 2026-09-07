@@ -29,7 +29,7 @@ $personalKnowledgeAllowed = personal_capability_has_v242('personal_knowledge.acc
 <meta name="theme-color" content="#f7f8fa">
 <title>Profile Agent | <?= e(system_agent_name()) ?></title>
 <link rel="stylesheet" href="<?= e(url('/chat.css?v=82')) ?>">
-<link rel="stylesheet" href="<?= e(url('/profile-agent-portal.css?v=profile-owner-v242-20260905')) ?>">
+<link rel="stylesheet" href="<?= e(url('/profile-agent-portal.css?v=agent-radar-interface-20260906')) ?>">
 </head>
 <body>
 <div class="chat-app profile-agent-app">
@@ -45,10 +45,11 @@ $personalKnowledgeAllowed = personal_capability_has_v242('personal_knowledge.acc
     <nav class="profile-agent-sidebar-nav" aria-label="Profile Agent sections">
       <button type="button" data-pa-tab="inbox" class="active"><span>01</span><strong>Inbox</strong></button>
       <button type="button" data-pa-tab="visitors"><span>02</span><strong>Visitors</strong></button>
-      <button type="button" data-pa-tab="agent"><span>03</span><strong>Agent</strong></button>
-      <button type="button" data-pa-tab="knowledge"><span>04</span><strong>Knowledge Access</strong></button>
-      <button type="button" data-pa-tab="profile"><span>05</span><strong>Profile Settings</strong></button>
-      <button type="button" data-pa-tab="analytics"><span>06</span><strong>Analytics</strong></button>
+      <button type="button" data-pa-tab="radar"><span>03</span><strong>Agent Radar</strong></button>
+      <button type="button" data-pa-tab="agent"><span>04</span><strong>Agent</strong></button>
+      <button type="button" data-pa-tab="knowledge"><span>05</span><strong>Knowledge Access</strong></button>
+      <button type="button" data-pa-tab="profile"><span>06</span><strong>Profile Settings</strong></button>
+      <button type="button" data-pa-tab="analytics"><span>07</span><strong>Analytics</strong></button>
     </nav>
     <div class="profile-agent-sidebar-footer">
       <?php if ($profileUrl !== ''): ?><a href="<?= e($profileUrl) ?>" target="_blank" rel="noopener">View Profile ↗</a><?php endif; ?>
@@ -101,6 +102,12 @@ $personalKnowledgeAllowed = personal_capability_has_v242('personal_knowledge.acc
         </div>
       </section>
 
+      <section class="profile-agent-view" data-pa-view="radar">
+        <div id="profileAgentRadar">
+          <div class="profile-agent-panel"><div class="profile-agent-empty">Loading Agent Radar…</div></div>
+        </div>
+      </section>
+
       <section class="profile-agent-view" data-pa-view="agent">
         <div class="profile-agent-panel" id="profileAgentSettings"></div>
       </section>
@@ -144,13 +151,14 @@ $personalKnowledgeAllowed = personal_capability_has_v242('personal_knowledge.acc
 </div>
 <script>window.PROFILE_AGENT_PORTAL=<?= json_encode([
   'endpoint'=>url('/api/profile-agent.php'),
+  'radarEndpoint'=>url('/api/agent-radar.php'),
   'csrf'=>csrf_token(),
   'profileUrl'=>$profileUrl,
   'profileChatAllowed'=>$profileChatAllowed,
   'initialTab'=>(string)($_GET['tab'] ?? ''),
 ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>;</script>
 <script src="<?= e(url('/member-shell-v77.js?v=universal-member-header-20260905')) ?>"></script>
-<script src="<?= e(url('/profile-agent-portal.js?v=profile-owner-v242-20260905')) ?>"></script>
+<script src="<?= e(url('/profile-agent-portal.js?v=agent-radar-interface-20260906')) ?>"></script>
 <script src="<?= e(url('/profile-personal-settings-v242.js?v=profile-owner-v242-20260905')) ?>"></script>
 </body>
 </html>
