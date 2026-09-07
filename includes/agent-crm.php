@@ -125,6 +125,99 @@ function vp3_agent_crm_watchlist_refresh(PDO $pdo,array $user,int $lookbackDays=
     return $created;
 }
 
+/**
+ * Batched relationship analytics for Agent CRM. This reads the same privacy-
+ * preserving Radar session/event ledger used by VP3 Analytics; it never creates
+ * a second tracking store and never joins automated identities to human CRM.
+ */
+function vp3_agent_crm_analytics(PDO $pdo,int $ownerUserId,array $contactIds): array
+{
+    $ids=array_values(array_unique(array_filter(array_map('intval',$contactIds),static fn(int $id):bool=>$id>0)));
+    if($ownerUserId<1||!$ids)return [];
+    $placeholders=implode(',',array_fill(0,count($ids),'?'));
+    $params=array_merge([$ownerUserId],$ids);
+    $out=[];
+    foreach($ids as $id){
+        $out[$id]=[
+            'window_days'=>30,'sessions_30d'=>0,'views_30d'=>0,'requests_30d'=>0,'active_days_30d'=>0,
+            'sessions_7d'=>0,'views_7d'=>0,'requests_7d'=>0,
+            'sessions_previous_7d'=>0,'views_previous_7d'=>0,'requests_previous_7d'=>0,
+            'session_change'=>0,'view_change'=>0,'request_change'=>0,
+            'session_change_pct'=>null,'view_change_pct'=>null,'request_change_pct'=>null,
+            'first_session_at'=>'','last_session_at'=>'','property_count'=>0,'properties'=>[],'top_paths'=>[],'timeline'=>[],
+        ];
+    }
+
+    try{
+        $totals=$pdo->prepare("SELECT s.agent_contact_id,
+          COUNT(*) AS sessions_30d,
+          COALESCE(SUM(s.page_view_count),0) AS views_30d,
+          COALESCE(SUM(s.request_count),0) AS requests_30d,
+          COUNT(DISTINCT DATE(s.last_seen_at)) AS active_days_30d,
+          COALESCE(SUM(CASE WHEN s.last_seen_at>=DATE_SUB(NOW(),INTERVAL 7 DAY) THEN 1 ELSE 0 END),0) AS sessions_7d,
+          COALESCE(SUM(CASE WHEN s.last_seen_at>=DATE_SUB(NOW(),INTERVAL 7 DAY) THEN s.page_view_count ELSE 0 END),0) AS views_7d,
+          COALESCE(SUM(CASE WHEN s.last_seen_at>=DATE_SUB(NOW(),INTERVAL 7 DAY) THEN s.request_count ELSE 0 END),0) AS requests_7d,
+          COALESCE(SUM(CASE WHEN s.last_seen_at>=DATE_SUB(NOW(),INTERVAL 14 DAY) AND s.last_seen_at<DATE_SUB(NOW(),INTERVAL 7 DAY) THEN 1 ELSE 0 END),0) AS sessions_previous_7d,
+          COALESCE(SUM(CASE WHEN s.last_seen_at>=DATE_SUB(NOW(),INTERVAL 14 DAY) AND s.last_seen_at<DATE_SUB(NOW(),INTERVAL 7 DAY) THEN s.page_view_count ELSE 0 END),0) AS views_previous_7d,
+          COALESCE(SUM(CASE WHEN s.last_seen_at>=DATE_SUB(NOW(),INTERVAL 14 DAY) AND s.last_seen_at<DATE_SUB(NOW(),INTERVAL 7 DAY) THEN s.request_count ELSE 0 END),0) AS requests_previous_7d,
+          MIN(s.started_at) AS first_session_at,MAX(s.last_seen_at) AS last_session_at,COUNT(DISTINCT s.property_id) AS property_count
+          FROM vp3_radar_sessions s
+          WHERE s.owner_user_id=? AND s.agent_contact_id IN ({$placeholders}) AND s.last_seen_at>=DATE_SUB(NOW(),INTERVAL 30 DAY)
+          GROUP BY s.agent_contact_id");
+        $totals->execute($params);
+        foreach($totals->fetchAll()?:[] as $row){
+            $id=(int)$row['agent_contact_id'];if(!isset($out[$id]))continue;
+            foreach(['sessions_30d','views_30d','requests_30d','active_days_30d','sessions_7d','views_7d','requests_7d','sessions_previous_7d','views_previous_7d','requests_previous_7d','property_count'] as $key)$out[$id][$key]=(int)($row[$key]??0);
+            $out[$id]['first_session_at']=(string)($row['first_session_at']??'');$out[$id]['last_session_at']=(string)($row['last_session_at']??'');
+            foreach([['sessions','session'],['views','view'],['requests','request']] as [$metric,$prefix]){
+                $current=(int)$out[$id][$metric.'_7d'];$previous=(int)$out[$id][$metric.'_previous_7d'];$out[$id][$prefix.'_change']=$current-$previous;
+                $out[$id][$prefix.'_change_pct']=$previous>0?(int)round((($current-$previous)/$previous)*100):($current>0?null:0);
+            }
+        }
+    }catch(Throwable $e){error_log('Agent CRM analytics totals failed: '.$e->getMessage());}
+
+    try{
+        $properties=$pdo->prepare("SELECT s.agent_contact_id,p.id AS property_id,p.property_type,p.label,p.domain,
+          COUNT(*) AS sessions,COALESCE(SUM(s.page_view_count),0) AS views,COALESCE(SUM(s.request_count),0) AS requests,MAX(s.last_seen_at) AS last_seen_at
+          FROM vp3_radar_sessions s INNER JOIN vp3_radar_properties p ON p.id=s.property_id
+          WHERE s.owner_user_id=? AND s.agent_contact_id IN ({$placeholders}) AND s.last_seen_at>=DATE_SUB(NOW(),INTERVAL 30 DAY)
+          GROUP BY s.agent_contact_id,p.id,p.property_type,p.label,p.domain
+          ORDER BY s.agent_contact_id,views DESC,sessions DESC,last_seen_at DESC");
+        $properties->execute($params);
+        foreach($properties->fetchAll()?:[] as $row){$id=(int)$row['agent_contact_id'];if(!isset($out[$id])||count($out[$id]['properties'])>=8)continue;$out[$id]['properties'][]=[
+            'property_id'=>(int)$row['property_id'],'property_type'=>(string)$row['property_type'],'label'=>(string)$row['label'],'domain'=>(string)$row['domain'],
+            'sessions'=>(int)$row['sessions'],'views'=>(int)$row['views'],'requests'=>(int)$row['requests'],'last_seen_at'=>(string)$row['last_seen_at'],
+        ];}
+    }catch(Throwable $e){error_log('Agent CRM property analytics failed: '.$e->getMessage());}
+
+    try{
+        $paths=$pdo->prepare("SELECT e.agent_contact_id,e.path,COUNT(*) AS events,MAX(e.occurred_at) AS last_seen_at
+          FROM vp3_radar_events e
+          WHERE e.owner_user_id=? AND e.agent_contact_id IN ({$placeholders}) AND e.occurred_at>=DATE_SUB(NOW(),INTERVAL 30 DAY)
+            AND e.path<>'' AND (e.method IS NULL OR e.method<>'SYSTEM')
+          GROUP BY e.agent_contact_id,e.path
+          ORDER BY e.agent_contact_id,events DESC,last_seen_at DESC");
+        $paths->execute($params);
+        foreach($paths->fetchAll()?:[] as $row){$id=(int)$row['agent_contact_id'];if(!isset($out[$id])||count($out[$id]['top_paths'])>=8)continue;$out[$id]['top_paths'][]=[
+            'path'=>(string)$row['path'],'events'=>(int)$row['events'],'last_seen_at'=>(string)$row['last_seen_at'],
+        ];}
+    }catch(Throwable $e){error_log('Agent CRM path analytics failed: '.$e->getMessage());}
+
+    try{
+        $timeline=$pdo->prepare("SELECT s.agent_contact_id,DATE(s.last_seen_at) AS day,COUNT(*) AS sessions,COALESCE(SUM(s.page_view_count),0) AS views,COALESCE(SUM(s.request_count),0) AS requests
+          FROM vp3_radar_sessions s
+          WHERE s.owner_user_id=? AND s.agent_contact_id IN ({$placeholders}) AND s.last_seen_at>=DATE_SUB(NOW(),INTERVAL 14 DAY)
+          GROUP BY s.agent_contact_id,DATE(s.last_seen_at)
+          ORDER BY s.agent_contact_id,day");
+        $timeline->execute($params);
+        foreach($timeline->fetchAll()?:[] as $row){$id=(int)$row['agent_contact_id'];if(!isset($out[$id]))continue;$out[$id]['timeline'][]=[
+            'day'=>(string)$row['day'],'sessions'=>(int)$row['sessions'],'views'=>(int)$row['views'],'requests'=>(int)$row['requests'],
+        ];}
+    }catch(Throwable $e){error_log('Agent CRM timeline analytics failed: '.$e->getMessage());}
+
+    return $out;
+}
+
 function vp3_agent_crm_contacts(PDO $pdo,array $user,int $limit=250): array
 {
     $owner=(int)($user['id']??0);
@@ -146,6 +239,7 @@ function vp3_agent_crm_contacts(PDO $pdo,array $user,int $limit=250): array
 
     $ids=array_map(static fn(array $row):int=>(int)$row['id'],$rows);
     $policyMap=vp3_radar_gateway_contact_policy_map($pdo,$owner,$ids);
+    $analyticsMap=vp3_agent_crm_analytics($pdo,$owner,$ids);
     $requests=[];
     if(function_exists('vp3_agent_access_owner_list')){
         foreach(vp3_agent_access_owner_list($pdo,$owner,100) as $request){
@@ -186,6 +280,7 @@ function vp3_agent_crm_contacts(PDO $pdo,array $user,int $limit=250): array
         $row['recommendation']=trim((string)($intel['recommendation']??''));
         $row['relationship_metrics']=$intel;
         $row['recent_activity']=$recent[$id]??[];
+        $row['analytics']=$analyticsMap[$id]??[];
         unset($row['metadata_json']);
     }unset($row);
     return $rows;
