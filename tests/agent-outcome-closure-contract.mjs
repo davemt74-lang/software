@@ -80,8 +80,9 @@ assert.ok(taskClosure.includes("'automatic'=>true"), 'automatic lifecycle closur
 assert.ok(taskClosure.includes("'trigger'=>'task_lifecycle'"), 'automatic closure must identify the lifecycle trigger');
 assert.ok(taskClosure.includes("'source_label'=>trim((string)($task['source_label']??''))"), 'task source provenance must survive automatic closure');
 assert.ok(taskClosure.includes("'source_url'=>trim((string)($task['source_url']??''))"), 'exact task evidence URL must survive automatic closure');
+assert.ok(taskClosure.includes("'source'=>'task_lifecycle',\n        'outcome'=>$outcome,\n        'context'=>$context"), 'automatic closure writer payload must not request a task-status mutation');
+assert.ok(!/agent_action_v124_record_outcome\([^;]+?'task_status'\s*=>/s.test(taskClosure), 'automatic learning must never write task status back through Outcome Closure');
 assert.ok(!/CREATE TABLE|ALTER TABLE/.test(taskClosure), 'automatic closure must not add a second persistence schema');
-assert.ok(!taskClosure.includes("'task_status'=>$status," + "\n        'memory_id'"), 'placeholder');
 assert.ok(bootstrap.includes("require_once __DIR__.'/agent-task-outcome-closure-v314.php';"), 'bootstrap must load the lifecycle closure bridge after the canonical action system');
 assert.ok(bootstrap.includes('agent_task_outcome_v314_boot();'), 'bounded automatic closure scan must be part of the authenticated runtime');
 assert.ok(taskClosure.includes('STONEFELLOW_AGENT_TASK_OUTCOME_SCAN_SECONDS_V314=60'), 'automatic closure must be cadence-bounded');
