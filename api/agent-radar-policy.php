@@ -51,6 +51,11 @@ try{
         );
         vp3_radar_policy_json(true,$result);
     }
+    if($action==='set_contact_watch'){
+        vp3_radar_policy_json(true,vp3_agent_crm_set_watch(
+            $pdo,$user,max(0,(int)($input['contact_id']??0)),!empty($input['watch_enabled'])
+        ));
+    }
     if($action==='apply_access_profile'){
         vp3_radar_policy_json(true,vp3_radar_access_profile_apply($pdo,$user,(string)($input['profile_slug']??'')));
     }
