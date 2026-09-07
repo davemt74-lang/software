@@ -33,7 +33,13 @@ $input=json_decode($raw,true);if(!is_array($input)){if((string)$grant['status']=
 $message=trim((string)($input['message']??''));
 try{
     $result=vp3_agent_message_generate($pdo,$context,$grant,$message);
-    vp3_agent_message_json(200,['ok'=>true,'answer'=>$result['answer'],'sources'=>$result['sources'],'agent'=>$result['agent'],'grant'=>['status'=>(string)$grant['status']==='approved_once'?'consumed':'approved']]);
+    $referral=null;
+    if(function_exists('vp3_agent_referral_create_for_message')){
+        try{$referral=vp3_agent_referral_create_for_message($pdo,$context,$grant);}catch(Throwable $referralError){error_log('VP3 Agent referral link creation failed: '.$referralError->getMessage());}
+    }
+    $payload=['ok'=>true,'answer'=>$result['answer'],'sources'=>$result['sources'],'agent'=>$result['agent'],'grant'=>['status'=>(string)$grant['status']==='approved_once'?'consumed':'approved']];
+    if($referral)$payload['referral']=['url'=>(string)$referral['url'],'expires_at'=>(string)$referral['expires_at'],'attribution'=>'first_party_token','note'=>'Share this URL with a human when the Profile Agent response leads them to the VP3 profile. VP3 stores only a hash of the referral token.'];
+    vp3_agent_message_json(200,$payload);
 }catch(Throwable $e){
     if((string)$grant['status']==='approved_once')vp3_agent_access_restore_once($pdo,$owner,(int)$grant['id']);
     $messageText=(string)$e->getMessage();$lower=mb_strtolower($messageText);
