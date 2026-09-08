@@ -62,7 +62,10 @@ assert.match(ecosystem, /topic'\]\s*===\s*'Book a Demo'/,
 
 assert.match(dashboard, /crm_v180_require_admin/);
 assert.match(lead, /crm_v180_require_admin/);
-assert.match(dashboard, /Dashboard/);
+assert.match(dashboard, /Book Demo CRM/,
+  'CRM admin surface must identify the canonical Book Demo sales backend');
+assert.match(dashboard, /Overview/,
+  'CRM must expose its overview/dashboard view');
 assert.match(dashboard, /Pipeline/);
 assert.match(dashboard, /Follow-up tasks/);
 assert.match(lead, /Activity timeline/);
@@ -84,6 +87,7 @@ assert.equal(dashboardOpportunityScans.length, 1,
 assert.match(adminHeader, /\$adminCrmVisible/);
 assert.match(adminHeader, /crm_v180_can_manage\(\$user\)/,
   'Admin navigation must not expose CRM to non-admin account types');
-assert.match(adminHeader, />CRM</);
+assert.match(adminHeader, />Book Demo CRM</,
+  'Admin navigation must label the canonical Book Demo CRM explicitly');
 
 console.log('CRM v180 backend contract: PASS');
