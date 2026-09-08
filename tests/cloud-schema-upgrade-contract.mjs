@@ -25,9 +25,9 @@ assert.match(home, /CREATE TABLE IF NOT EXISTS homeserver_chat_sessions/);
 assert.match(v20, /CREATE TABLE IF NOT EXISTS agent_compute_preferences/);
 assert.match(v23, /CREATE TABLE IF NOT EXISTS agent_compute_overrides/);
 
-// Policy guard: every standalone VP3 cloud migration must have its table
-// represented in the canonical one-click upgrade.php path. Future migrations
-// therefore fail Recovery Baseline until upgrade.php is updated as well.
+// Policy guard: every table created by a standalone VP3 cloud migration must be
+// represented in the canonical one-click upgrade.php path. Migrations that only
+// alter existing schema are valid; newly created tables must remain covered.
 const cloudMigrations = fs.readdirSync(new URL('.', root))
   .filter(name => /^upgrade-vp3-.*\.sql$/i.test(name))
   .sort();
@@ -37,7 +37,6 @@ for (const name of cloudMigrations) {
   const sql = fs.readFileSync(new URL(name, root), 'utf8');
   const tables = [...sql.matchAll(/CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+`?([A-Za-z0-9_]+)`?/gi)]
     .map(match => match[1]);
-  assert.ok(tables.length > 0, `${name} must declare at least one CREATE TABLE IF NOT EXISTS statement.`);
   for (const table of tables) {
     assert.ok(
       upgrade.includes(table),
