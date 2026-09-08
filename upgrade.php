@@ -30,6 +30,8 @@ function vp3_upgrade_complete(): bool
         && studio_participants_schema_ready()
         && studio_voice_profile_schema_ready()
         && user_agent_system_schema_ready_v236()
+        && table_exists('homeserver_connections')
+        && table_exists('homeserver_releases')
         && table_exists('homeserver_chat_sessions')
         && table_exists('agent_compute_preferences')
         && table_exists('agent_compute_overrides')
@@ -79,6 +81,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (!$pdo) {
                 throw new RuntimeException('Database connection is unavailable.');
             }
+            homeserver_vp3_ensure_schema($pdo);
             if (!homeserver_agent_v018_ensure_schema($pdo)) {
                 throw new RuntimeException('HomeServer Agent chat schema could not be installed.');
             }
@@ -96,6 +99,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             artist_posts_v183_ensure_schema();
             artist_shows_v184_ensure_schema();
             artist_music_v185_ensure_schema();
+
             $complete = vp3_upgrade_complete();
 
             if ($complete) {
@@ -107,9 +111,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 }
-
-vp3_public_header('Database Upgrade — VP3', 'Upgrade the VP3 database and application capabilities.', ['compact' => true]);
 ?>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>VP3 Database Upgrade</title>
+  <link rel="stylesheet" href="<?= e(asset_url('/assets/style.css')) ?>">
+</head>
+<body class="vp3-auth-body">
 <main class="vp3-auth-shell">
   <section class="vp3-auth-visual">
     <div class="vp3-auth-visual-content">
@@ -120,7 +131,6 @@ vp3_public_header('Database Upgrade — VP3', 'Upgrade the VP3 database and appl
   </section>
   <section class="vp3-auth-form-side">
     <div class="vp3-auth-card">
-      <div class="vp3-kicker">Database</div>
       <h1>VP3 Database Upgrade</h1>
       <?php if ($complete): ?>
         <div class="vp3-alert success">The current VP3 schema is installed and ready.</div>
@@ -128,13 +138,16 @@ vp3_public_header('Database Upgrade — VP3', 'Upgrade the VP3 database and appl
         <a class="vp3-btn primary" href="<?= e(url('/admin/users.php')) ?>">Manage Users →</a>
       <?php else: ?>
         <p class="vp3-auth-intro">Run the current schema upgrade while preserving existing content and access. Existing accounts, package assignments, token balances and onboarding progress are preserved.</p>
-        <?php if ($error): ?><div class="vp3-alert error" role="alert"><?= e($error) ?></div><?php endif; ?>
+        <?php if ($error !== ''): ?>
+          <div class="vp3-alert error"><?= e($error) ?></div>
+        <?php endif; ?>
         <form method="post">
           <?= csrf_field() ?>
-          <button class="vp3-btn primary" type="submit">Run Upgrade →</button>
+          <button class="vp3-btn primary" type="submit">Run Upgrade</button>
         </form>
       <?php endif; ?>
     </div>
   </section>
 </main>
-<?php vp3_public_footer(); ?>
+</body>
+</html>
