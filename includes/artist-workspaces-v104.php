@@ -6,20 +6,24 @@ declare(strict_types=1);
  *
  * Global account authority is Customer/Admin. Subscription packages control
  * commercial capabilities. Artist ownership and Manager/Producer delegation
- * are contextual workspace relationships and never global user roles.
+ * are contextual workspace relationships and never newly assigned global roles.
  */
 
 const VP3_CONTEXTUAL_TEAM_MIGRATION = 'contextual-team-20260908-v4';
 
 function artist_workspace_v104_artist_permissions(): array
 {
-    // Retained for legacy-upgrade compatibility only. Current customer access
-    // is package-driven and workspace ownership is checked separately.
+    // Legacy-upgrade compatibility only. Current customer access is package-driven.
     return [
         'account.access','chat.access','admin.access','team.manage','listening.view',
         'track_notes.manage','tracks.manage','albums.manage','shows.manage','photos.manage',
         'merch.manage','posts.manage','messages.manage','profile.manage','knowledge.access','knowledge.manage',
     ];
+}
+
+function artist_workspace_v104_artist_package_permissions(): array
+{
+    return ['team.manage','tracks.manage','albums.manage','shows.manage','photos.manage','merch.manage','posts.manage','profile.manage','release.manage','credits.manage'];
 }
 
 function artist_workspace_v104_team_roles(): array
@@ -29,7 +33,7 @@ function artist_workspace_v104_team_roles(): array
 
 function artist_workspace_v104_context_role_permissions(): array
 {
-    // Contextual Team relationships no longer grant global role permissions.
+    // Contextual Team relationships never grant global role permissions.
     return ['manager'=>[],'producer'=>[]];
 }
 
@@ -53,6 +57,10 @@ function artist_workspace_v104_user_owns_workspace(PDO $pdo,int $userId): bool
     }catch(Throwable $e){return false;}
 }
 
+/**
+ * Artist is a workspace/capability context, not a newly assigned account type.
+ * Existing Artist markers remain a migration fallback only.
+ */
 function artist_workspace_v104_is_artist(?array $user = null): bool
 {
     $user ??= current_user();
@@ -60,8 +68,21 @@ function artist_workspace_v104_is_artist(?array $user = null): bool
     if(user_has_role('admin',$user))return true;
     $userId=(int)($user['id']??0);$pdo=db();
     if($pdo&&artist_workspace_v104_user_owns_workspace($pdo,$userId))return true;
-    // Older installs may not have the workspace table yet.
-    return !$pdo||!table_exists('artist_workspaces_v181') ? user_has_role('artist',$user) : false;
+
+    if(function_exists('subscription_schema_ready')&&subscription_schema_ready()){
+        $sub=subscription_current($user);
+        if($sub&&!subscription_has_entitlement($user,'legacy.permissions')){
+            foreach(artist_workspace_v104_artist_package_permissions() as $permission){
+                if(function_exists('permission_v105_catalog')&&isset(permission_v105_catalog()[$permission])){
+                    if(permission_v105_has($permission,$user))return true;
+                }elseif(subscription_package_grants_permission($user,$permission))return true;
+            }
+            return false;
+        }
+    }
+
+    // Older Legacy Access accounts keep working until their package is mapped.
+    return user_has_role('artist',$user);
 }
 
 function artist_workspace_v104_valid_team_role(string $role): bool
@@ -84,10 +105,7 @@ function artist_workspace_v104_sync_context_role_permissions(PDO $pdo): void
     $stmt->execute();
 }
 
-/**
- * Remove Manager/Producer from global account storage. Their authoritative
- * state is artist_team_members.team_role only.
- */
+/** Manager/Producer authority lives only in artist_team_members. */
 function artist_workspace_v104_sync_member_context_roles(PDO $pdo,int $userId): void
 {
     if($userId<1)return;
@@ -99,30 +117,21 @@ function artist_workspace_v104_sync_member_context_roles(PDO $pdo,int $userId): 
         $stmt=$pdo->prepare("UPDATE users SET role='fan' WHERE id=? AND role IN ('manager','producer')");
         $stmt->execute([$userId]);
         if((int)($_SESSION['user_id']??0)===$userId&&function_exists('reset_current_user_cache'))reset_current_user_cache();
-    }catch(Throwable $e){
-        error_log('VP3 Team global-role cleanup failed: '.$e->getMessage());
-    }
+    }catch(Throwable $e){error_log('VP3 Team global-role cleanup failed: '.$e->getMessage());}
 }
 
-/** Normalize every retired Team role while preserving the Team relationship. */
 function artist_workspace_v104_migrate_contextual_roles(PDO $pdo): bool
 {
     if(!table_exists('artist_team_members'))return false;
     try{
         artist_workspace_v104_sync_context_role_permissions($pdo);
         $ids=[];
-        $queries=[
-            "SELECT id FROM users WHERE role IN ('manager','producer')",
-            "SELECT member_user_id id FROM artist_team_members",
-        ];
+        $queries=["SELECT id FROM users WHERE role IN ('manager','producer')","SELECT member_user_id id FROM artist_team_members"];
         if(table_exists('user_account_types'))$queries[]="SELECT user_id id FROM user_account_types WHERE role IN ('manager','producer')";
         foreach($queries as $sql){foreach($pdo->query($sql)->fetchAll(PDO::FETCH_COLUMN)?:[] as $id)$ids[(int)$id]=true;}
         foreach(array_keys($ids) as $id)artist_workspace_v104_sync_member_context_roles($pdo,(int)$id);
         return true;
-    }catch(Throwable $e){
-        error_log('VP3 contextual team-role migration failed: '.$e->getMessage());
-        return false;
-    }
+    }catch(Throwable $e){error_log('VP3 contextual team-role migration failed: '.$e->getMessage());return false;}
 }
 
 function artist_workspace_v104_boot_contextual_roles(): void
@@ -139,9 +148,7 @@ function artist_workspace_v104_boot_contextual_roles(): void
 
 function artist_workspace_v104_ensure_schema(): void
 {
-    $pdo=db();
-    if(!$pdo)throw new RuntimeException('Database connection is unavailable.');
-
+    $pdo=db();if(!$pdo)throw new RuntimeException('Database connection is unavailable.');
     $pdo->exec("CREATE TABLE IF NOT EXISTS artist_team_members (
         artist_user_id INT UNSIGNED NOT NULL,
         member_user_id INT UNSIGNED NOT NULL,
@@ -154,7 +161,6 @@ function artist_workspace_v104_ensure_schema(): void
         CONSTRAINT fk_artist_team_artist FOREIGN KEY (artist_user_id) REFERENCES users(id) ON DELETE CASCADE,
         CONSTRAINT fk_artist_team_member FOREIGN KEY (member_user_id) REFERENCES users(id) ON DELETE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
-
     try{$pdo->exec('ALTER TABLE artist_team_members DROP INDEX uq_artist_team_member');}catch(Throwable $e){}
     try{$pdo->exec('ALTER TABLE artist_team_members ADD INDEX idx_artist_team_member (member_user_id,artist_user_id,team_role)');}catch(Throwable $e){}
     artist_workspace_v104_migrate_contextual_roles($pdo);
@@ -162,8 +168,7 @@ function artist_workspace_v104_ensure_schema(): void
 
 function artist_workspace_v104_seed_artist_permissions(): void
 {
-    // Legacy upgrade compatibility only. Package entitlements are authoritative
-    // for current Customer feature access.
+    // Legacy Access compatibility only.
     $pdo=db();if(!$pdo||!permissions_schema_ready())return;
     $countStmt=$pdo->prepare("SELECT COUNT(*) FROM role_permissions WHERE role='artist'");$countStmt->execute();
     if((int)$countStmt->fetchColumn()>0)return;
@@ -220,7 +225,7 @@ function artist_workspace_v104_can_access(int $artistUserId,?array $user=null): 
     $user??=current_user();if(!$user||$artistUserId<1)return false;
     if(user_has_role('admin',$user))return true;
     $uid=(int)($user['id']??0);$pdo=db();
-    if($uid===$artistUserId&&$pdo&&artist_workspace_v104_user_owns_workspace($pdo,$uid))return true;
+    if($uid===$artistUserId&&artist_workspace_v104_is_artist($user))return true;
     return artist_workspace_v104_member_role($artistUserId,$user)!=='';
 }
 
@@ -228,8 +233,8 @@ function artist_workspace_v104_can_manage(int $artistUserId,string $capability,?
 {
     $user??=current_user();if(!$user)return false;
     if(user_has_role('admin',$user))return true;
-    $uid=(int)($user['id']??0);$pdo=db();
-    if($uid===$artistUserId&&$pdo&&artist_workspace_v104_user_owns_workspace($pdo,$uid))return true;
+    $uid=(int)($user['id']??0);
+    if($uid===$artistUserId&&artist_workspace_v104_is_artist($user))return true;
     $role=artist_workspace_v104_member_role($artistUserId,$user);
     if($role==='manager')return in_array($capability,['tracks','albums','shows','photos','merch','posts','profile','knowledge','listening'],true);
     if($role==='producer')return in_array($capability,['production','track_notes'],true);
