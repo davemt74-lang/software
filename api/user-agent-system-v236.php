@@ -31,7 +31,7 @@ function user_agent_api_state_v236(PDO $pdo, array $user): array
         ];
     }
 
-    $state['compute'] = agent_compute_v020_state($pdo, $user);
+    $state['compute'] = agent_compute_v021_state($pdo, $user);
     return $state;
 }
 
@@ -81,6 +81,14 @@ try {
     if ($action === 'save_compute_preference') {
         agent_compute_v020_save_preference($pdo, $user, (string)($input['preference'] ?? ''));
         user_agent_api_v236(true, ['state' => user_agent_api_state_v236($pdo, $user)]);
+    }
+
+    if ($action === 'test_compute_route') {
+        $routeTest = agent_compute_v021_route_test($pdo, $user);
+        user_agent_api_v236(true, [
+            'route_test' => $routeTest,
+            'state' => user_agent_api_state_v236($pdo, $user),
+        ]);
     }
 
     if ($action === 'create_agent') {

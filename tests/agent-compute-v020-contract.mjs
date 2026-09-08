@@ -27,7 +27,8 @@ assert.match(compute, /subscription_recent_usage/);
 assert.doesNotMatch(compute, /relay_token_enc.*return|homeserver_token_enc.*return|pending_claim_token_enc.*return/i);
 
 assert.match(bootstrap, /agent-compute-v020\.php/);
-assert.match(api, /\$state\['compute'\]\s*=\s*agent_compute_v020_state/);
+// v0.21 wraps the v0.20 state rather than replacing its preference/usage implementation.
+assert.match(api, /\$state\['compute'\]\s*=\s*agent_compute_v021_state/);
 assert.match(api, /save_compute_preference/);
 assert.match(api, /agent_compute_v020_save_preference/);
 
@@ -50,8 +51,8 @@ assert.match(account, /VP3 tokens remaining/);
 assert.match(css, /\.sf-compute-options/);
 assert.match(css, /\.sf-compute-usage-row/);
 assert.match(loader, /agent-compute-v020\.css/);
-assert.match(loader, /agent-compute-v020-20260908/);
-assert.match(shell, /agent-compute-v020-20260908/);
+assert.match(loader, /agent-compute-v021-20260908/);
+assert.match(shell, /agent-compute-v021-20260908/);
 
 assert.match(migration, /CREATE TABLE IF NOT EXISTS agent_compute_preferences/);
 assert.match(migration, /PRIMARY KEY/);

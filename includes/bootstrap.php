@@ -30,6 +30,7 @@ if(!headers_sent())header('X-Stonefellow-Production: '.STONEFELLOW_PRODUCTION_V1
 require_once __DIR__.'/permissions.php';
 require_once __DIR__.'/subscriptions.php';
 require_once __DIR__.'/agent-compute-v020.php';
+require_once __DIR__.'/agent-compute-v021.php';
 require_once __DIR__.'/agent-radar-foundation.php';
 require_once __DIR__.'/agent-radar-native-profile.php';
 require_once __DIR__.'/agent-radar-external.php';
