@@ -101,6 +101,7 @@ NODE_TESTS = [
     'tests/homeserver-agent-v018-contract.mjs',
     'tests/chat-execution-v019-contract.mjs',
     'tests/agent-compute-v020-contract.mjs',
+    'tests/agent-compute-v021-contract.mjs',
 ]
 
 HISTORICAL_WORKFLOW_COUPLED_TESTS = [
@@ -115,6 +116,7 @@ PHP_TESTS = [
     'tests/agent-radar-conversion-outcome-v315.php',
     'tests/chat-execution-v019.php',
     'tests/agent-compute-v020.php',
+    'tests/agent-compute-v021.php',
 ]
 
 
