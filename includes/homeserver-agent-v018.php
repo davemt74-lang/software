@@ -92,12 +92,56 @@ function homeserver_agent_v018_credentials(int $userId): ?array
     return ['relay'=>$relay,'home'=>$home];
 }
 
+/**
+ * v0.22 keeps one sanitized attempt snapshot in request memory so the canonical
+ * chat execution object can explain a fallback without exposing relay errors,
+ * credentials, provider bodies, prompts, or other private runtime details.
+ */
+function homeserver_agent_v018_set_last_attempt(array $attempt): void
+{
+    $allowedFailures=['none','homeserver_not_paired','relay_unreachable','timeout','authorization','provider_unavailable','empty_response','homeserver_unavailable'];
+    $failure=trim((string)($attempt['failure_class']??'none'));
+    if(!in_array($failure,$allowedFailures,true))$failure='homeserver_unavailable';
+    $GLOBALS['vp3_homeserver_agent_last_attempt_v022']=[
+        'attempted'=>!empty($attempt['attempted']),
+        'success'=>!empty($attempt['success']),
+        'latency_ms'=>max(0,(int)($attempt['latency_ms']??0)),
+        'failure_class'=>$failure,
+        'provider'=>mb_strimwidth(trim((string)($attempt['provider']??'')),0,80,''),
+        'model'=>mb_strimwidth(trim((string)($attempt['model']??'')),0,160,''),
+        'compute_source'=>mb_strimwidth(trim((string)($attempt['compute_source']??'')),0,80,''),
+    ];
+}
+
+function homeserver_agent_v018_last_attempt(): array
+{
+    $attempt=$GLOBALS['vp3_homeserver_agent_last_attempt_v022']??null;
+    return is_array($attempt)?$attempt:[
+        'attempted'=>false,'success'=>false,'latency_ms'=>0,'failure_class'=>'none',
+        'provider'=>'','model'=>'','compute_source'=>'',
+    ];
+}
+
+function homeserver_agent_v018_failure_class(string $message): string
+{
+    $message=mb_strtolower($message);
+    if(str_contains($message,'timed out')||str_contains($message,'timeout'))return 'timeout';
+    if(str_contains($message,'401')||str_contains($message,'403')||str_contains($message,'unauthorized')||str_contains($message,'permission')||str_contains($message,'bearer'))return 'authorization';
+    if(str_contains($message,'model')||str_contains($message,'provider')||str_contains($message,'inference'))return 'provider_unavailable';
+    if(str_contains($message,'relay')||str_contains($message,'connection')||str_contains($message,'connect')||str_contains($message,'curl'))return 'relay_unreachable';
+    return 'homeserver_unavailable';
+}
+
 function homeserver_agent_v018_chat(array $user,string $query,int $conversationId,bool $cloudAllowed=true): ?array
 {
     $userId=(int)($user['id']??0);
+    homeserver_agent_v018_set_last_attempt(['attempted'=>false,'success'=>false,'failure_class'=>'none']);
     if($userId<1||$conversationId<1||trim($query)===''||!function_exists('homeserver_vp3_remote_operation'))return null;
     $credentials=homeserver_agent_v018_credentials($userId);
-    if(!$credentials)return null;
+    if(!$credentials){
+        homeserver_agent_v018_set_last_attempt(['attempted'=>false,'success'=>false,'failure_class'=>'homeserver_not_paired']);
+        return null;
+    }
     $payload=[
         'message'=>$query,
         'include_memory'=>true,
@@ -108,15 +152,33 @@ function homeserver_agent_v018_chat(array $user,string $query,int $conversationI
     ];
     $remoteId=homeserver_agent_v018_remote_id($userId,$conversationId);
     if($remoteId!=='')$payload['conversation_id']=$remoteId;
+    $started=microtime(true);
+    homeserver_agent_v018_set_last_attempt(['attempted'=>true,'success'=>false,'failure_class'=>'none']);
     try{
         $result=homeserver_vp3_remote_operation($credentials['relay'],'agent.chat',$payload,$credentials['home']);
     }catch(Throwable $e){
+        $latency=max(0,(int)round((microtime(true)-$started)*1000));
+        homeserver_agent_v018_set_last_attempt([
+            'attempted'=>true,'success'=>false,'latency_ms'=>$latency,
+            'failure_class'=>homeserver_agent_v018_failure_class($e->getMessage()),
+        ]);
         if(function_exists('ai_v100_telemetry'))ai_v100_telemetry(['scope'=>'chat','user_id'=>$userId,'provider'=>'homeserver','status'=>'failed','service'=>'homeserver-v0.18']);
         return null;
     }
+    $latency=max(0,(int)round((microtime(true)-$started)*1000));
     $reply=trim((string)($result['reply']??''));
-    if($reply==='')return null;
+    if($reply===''){
+        homeserver_agent_v018_set_last_attempt(['attempted'=>true,'success'=>false,'latency_ms'=>$latency,'failure_class'=>'empty_response']);
+        return null;
+    }
     homeserver_agent_v018_bind($userId,$conversationId,$result);
+    $attempt=[
+        'attempted'=>true,'success'=>true,'latency_ms'=>$latency,'failure_class'=>'none',
+        'provider'=>(string)($result['provider']??'homeserver'),
+        'model'=>(string)($result['model']??''),
+        'compute_source'=>(string)($result['compute_source']??'homeserver'),
+    ];
+    homeserver_agent_v018_set_last_attempt($attempt);
     if(function_exists('ai_v100_telemetry'))ai_v100_telemetry([
         'scope'=>'chat','user_id'=>$userId,'provider'=>'homeserver','model'=>(string)($result['model']??''),'status'=>'success','service'=>'homeserver-v0.18',
         'input_tokens'=>(int)($result['usage']['prompt_tokens']??0),'output_tokens'=>(int)($result['usage']['completion_tokens']??0),'total_tokens'=>(int)($result['usage']['total_tokens']??0),
@@ -129,6 +191,8 @@ function homeserver_agent_v018_chat(array $user,string $query,int $conversationI
         'usage'=>is_array($result['usage']??null)?$result['usage']:[],
         'run_id'=>(int)($result['run_id']??0),
         'conversation_id'=>(string)($result['conversation_id']??''),
+        'cloud_tokens_debited'=>max(0,(int)($result['cloud_tokens_debited']??0)),
+        'latency_ms'=>$latency,
     ];
 }
 
