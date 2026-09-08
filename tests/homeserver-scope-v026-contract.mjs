@@ -24,7 +24,7 @@ assert.match(scope,/memory_prefix_count/,'public scope must expose counts rather
 assert.match(scope,/plugin_count/,'public scope must expose Plugin restriction counts');
 
 assert.match(compute,/homeserver_scope_v026_fetch\(\$userId,false\)/,'effective compute policy must consult HomeServer scope');
-assert.match(compute,/scope_version'\s*=>\s*'v0\.26'/,'compute provenance must add v0.26 scope metadata');
+assert.match(compute,/\['scope_version'\]\s*=\s*'v0\.26'/,'compute provenance must add v0.26 scope metadata');
 assert.match(compute,/'version'\s*=>\s*'v0\.23'/,'v0.23 compute provenance version must remain backward-compatible');
 assert.match(compute,/scope_override_source/,'compute provenance must identify HomeServer scope narrowing additively');
 
