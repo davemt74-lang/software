@@ -3,7 +3,7 @@
 
   const cfg=window.STONEFELLOW_ACCOUNT_AGENT_V236;
   if(!cfg)return;
-  const esc=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[char]));
+  const esc=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#039;'}[char]));
   const sourceLabel=source=>source==='homeserver'?'HomeServer':source==='vp3_cloud'?'VP3 Cloud':source==='vp3_tool'?'VP3 Tools':'VP3';
   const reasonLabel=reason=>({
     homeserver_capability_ready:'Available from HomeServer',
@@ -46,7 +46,12 @@
 
   function scopeSection(scope){
     if(!scope?.supported)return '<p class="sf-hs-capability-note">This HomeServer does not advertise per-wrapper scope reporting. Existing HomeServer permissions still apply.</p>';
-    if(!scope?.available)return `<p class="sf-hs-capability-note">VP3 scope boundary is temporarily unavailable (${esc(scope?.reason||'HomeServer unavailable')}). HomeServer remains the final enforcement authority.</p>`;
+    if(!scope?.available){
+      if(scope?.cloud_allowed===false||scope?.last_known_cloud_blocked){
+        return '<p class="sf-hs-capability-note">HomeServer is currently unavailable, but VP3 is continuing to enforce the last-known local-only cloud boundary. A permissive cloud route will not be assumed while the authoritative scope cannot be refreshed.</p>';
+      }
+      return `<p class="sf-hs-capability-note">VP3 scope boundary is temporarily unavailable (${esc(scope?.reason||'HomeServer unavailable')}). HomeServer remains the final enforcement authority.</p>`;
+    }
     const cloudAllowed=scope.cloud_allowed!==false;
     const cards=[
       scopeCard('Cloud compute',cloudAllowed?'Allowed':'Local only',cloudAllowed?'VP3 may use cloud compute when your saved policy allows it.':'HomeServer scope blocks VP3 Cloud and hosted HomeServer providers.',cloudAllowed?'available':'homeserver'),
