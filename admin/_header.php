@@ -7,6 +7,7 @@ $adminTitle = $adminTitle ?? 'Dashboard';
 $adminActive = $adminActive ?? '';
 $adminCanvasMode = !empty($adminCanvasMode);
 $user = current_user();
+$siteBrandName = 'VP3';
 $adminRoleSummary = implode(' · ', user_role_labels($user));
 $notice = flash('notice');
 $errorNotice = flash('error');
@@ -30,7 +31,7 @@ $adminUserMenuLinks = member_navigation_menu_links($user);
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="theme-color" content="#f4f5f7">
-<title><?= e($adminTitle) ?> | VP3 Admin</title>
+<title><?= e($adminTitle) ?> | <?= e($siteBrandName) ?> Admin</title>
 <link rel="stylesheet" href="<?= e(url('/admin/admin.css?v=77')) ?>">
 <link data-admin-tech-theme rel="stylesheet" href="<?= e(url('/admin/admin-tech.css?v=admin-operating-center-20260907')) ?>">
 <link rel="stylesheet" href="<?= e(url('/site-branding.css?v=1')) ?>">
@@ -40,7 +41,7 @@ $adminUserMenuLinks = member_navigation_menu_links($user);
 <?php if (!$adminCanvasMode): ?>
 <header class="admin-mobile-bar">
   <button class="admin-mobile-menu" id="adminMenuToggle" type="button" aria-label="Open admin navigation" aria-expanded="false">☰</button>
-  <a class="admin-mobile-brand" href="<?= e(url('/admin/index.php')) ?>" aria-label="VP3 Admin">VP3</a>
+  <a class="admin-mobile-brand" href="<?= e(url('/admin/index.php')) ?>" aria-label="<?= e($siteBrandName) ?> Admin"><?= e($siteBrandName) ?></a>
   <button class="admin-mobile-user" id="adminMobileUserButton" type="button" aria-label="Open user menu">
     <?php if (user_avatar_url($user) !== ''): ?><img src="<?= e(user_avatar_url($user)) ?>" alt=""><?php else: ?><span><?= e(user_initials($user)) ?></span><?php endif; ?>
   </button>
@@ -52,7 +53,7 @@ $adminUserMenuLinks = member_navigation_menu_links($user);
   <?php if (!$adminCanvasMode): ?>
   <aside class="admin-sidebar" id="adminSidebar">
     <div class="admin-sidebar-head">
-      <a class="admin-brand" href="<?= e(url('/admin/index.php')) ?>" aria-label="VP3 Admin">VP3</a>
+      <a class="admin-brand" href="<?= e(url('/admin/index.php')) ?>" aria-label="<?= e($siteBrandName) ?> Admin"><?= e($siteBrandName) ?></a>
       <button class="admin-sidebar-close" id="adminSidebarClose" type="button" aria-label="Close navigation">×</button>
     </div>
 
@@ -116,7 +117,7 @@ $adminUserMenuLinks = member_navigation_menu_links($user);
   <main class="admin-content<?= $adminCanvasMode ? ' admin-content-canvas' : '' ?>">
     <?php if (!$adminCanvasMode): ?>
     <header class="admin-page-header">
-      <div class="admin-page-title"><span>VP3 Admin</span><h1><?= e($adminTitle) ?></h1></div>
+      <div class="admin-page-title"><span><?= e($siteBrandName) ?> Admin</span><h1><?= e($adminTitle) ?></h1></div>
       <div class="admin-page-actions">
         <div class="admin-user-menu" id="adminUserMenu">
           <button class="admin-user-menu-button" id="adminUserMenuButton" type="button" aria-expanded="false" aria-controls="adminUserDropdown">
