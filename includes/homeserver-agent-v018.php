@@ -92,7 +92,7 @@ function homeserver_agent_v018_credentials(int $userId): ?array
     return ['relay'=>$relay,'home'=>$home];
 }
 
-function homeserver_agent_v018_chat(array $user,string $query,int $conversationId): ?array
+function homeserver_agent_v018_chat(array $user,string $query,int $conversationId,bool $cloudAllowed=true): ?array
 {
     $userId=(int)($user['id']??0);
     if($userId<1||$conversationId<1||trim($query)===''||!function_exists('homeserver_vp3_remote_operation'))return null;
@@ -103,7 +103,7 @@ function homeserver_agent_v018_chat(array $user,string $query,int $conversationI
         'include_memory'=>true,
         'include_knowledge'=>true,
         'include_contacts'=>true,
-        'cloud_allowed'=>true,
+        'cloud_allowed'=>$cloudAllowed,
         'max_context_chars'=>12000,
     ];
     $remoteId=homeserver_agent_v018_remote_id($userId,$conversationId);
