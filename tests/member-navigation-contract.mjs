@@ -44,7 +44,9 @@ assert.ok(nav.includes("personal_capability_has_v242('personal_knowledge.access'
 assert.ok(nav.includes("personal_capability_has_v242('profile_agent.access'"), 'Profile Agent navigation must use its personal capability permission');
 assert.ok(nav.includes("personal_capability_has_v242('voice_profile.access'"), 'Voice Profile navigation must use its personal capability permission');
 assert.ok(nav.includes("has_permission('artist_listening.access'"), 'My Transcriptions must remain permission gated');
-assert.ok(nav.includes("user_has_role('artist'"), 'Artist Workspace must require artist identity');
+assert.ok(nav.includes('artist_workspace_v104_is_artist($user)'), 'Artist Workspace must require package/workspace Artist context');
+assert.ok(nav.includes('subscription_effective_permission($permission,$user)'), 'package permissions must drive customer navigation authorization');
+assert.ok(nav.includes("if(user_has_role('admin',$user))$add($links,'admin'"), 'only Admin identity may receive global Admin navigation');
 assert.ok(nav.includes("empty($profile['is_public'])") && nav.includes("'preview=1'"), 'unpublished owners should receive a usable profile preview URL');
 assert.ok(!nav.includes('My Library'), 'My Library is not a canonical user-dropdown destination');
 assert.ok(!nav.includes("'agent_settings'"), 'Agent Settings belongs inside My Account');
