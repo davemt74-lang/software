@@ -36,7 +36,11 @@ assert.match(chat, /agent_compute_v023_effective\(\$pdo,\$userId,\$activeAgentId
 assert.match(chat, /agent_compute_v020_route_plan/);
 assert.match(chat, /\$computePreference==='homeserver_only'/);
 assert.match(chat, /homeserver_agent_v018_chat\(\$user,\$query,\$conversationId,!empty\(\$computePlan\['homeserver_cloud_allowed'\]\)\)/);
-assert.match(chat, /\$computePreference==='vp3_cloud'\?chat_execution_v019_vp3_direct/);
+// v0.24 split direct VP3 Cloud into its own branch so capability discovery is
+// not invoked on a cloud-only request. Preserve the behavior contract rather
+// than requiring the old ternary implementation detail.
+assert.match(chat, /elseif\(\$computePreference==='vp3_cloud'\)/);
+assert.match(chat, /chat_execution_v019_vp3_direct\(\$user\)/);
 assert.match(chat, /HomeServer-only compute is selected/);
 assert.match(execution, /function chat_execution_v019_vp3_direct/);
 assert.match(execution, /'vp3_cloud','VP3 Cloud'/);
