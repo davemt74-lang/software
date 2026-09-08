@@ -57,8 +57,8 @@ function homeserver_agent_v018_credentials(int $userId): ?array
     $row=homeserver_vp3_connection($userId);
     if(!$row||empty($row['relay_token_enc'])||empty($row['homeserver_token_enc']))return null;
     try{
-        $relay=homeserver_vp3_decrypt((string)$row['relay_token_enc'];
-        $home=homeserver_vp3_decrypt((string)$row['homeserver_token_enc'];
+        $relay=homeserver_vp3_decrypt((string)$row['relay_token_enc']);
+        $home=homeserver_vp3_decrypt((string)$row['homeserver_token_enc']);
     }catch(Throwable $e){return null;}
     if(strlen($relay)<20||strlen($home)<20)return null;
     return ['relay'=>$relay,'home'=>$home];
