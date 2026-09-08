@@ -15,6 +15,7 @@ for (const table of ['homeserver_chat_sessions', 'agent_compute_preferences', 'a
   );
 }
 
+assert.match(upgrade, /homeserver_vp3_ensure_schema\(\$pdo\)/);
 assert.match(upgrade, /homeserver_agent_v018_ensure_schema\(\$pdo\)/);
 assert.match(upgrade, /agent_compute_v020_ensure_schema\(\$pdo\)/);
 assert.match(upgrade, /agent_compute_v023_ensure_schema\(\$pdo\)/);
