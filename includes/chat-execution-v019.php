@@ -231,8 +231,10 @@ function chat_execution_v019_source(array $execution): array
     if($latency>0)$parts[]=number_format($latency).' ms HomeServer';
     $tokens=(int)($safe['usage']['total_tokens']??0);
     $cloudDebit=(int)$safe['cloud_tokens_debited'];
+    // Preserve v0.19's generic model-token visibility, then add the distinct
+    // v0.22 VP3 billing fact instead of replacing the older contract.
+    if($tokens>0)$parts[]=number_format($tokens).' token'.($tokens===1?'':'s');
     if((string)$safe['source']==='vp3_cloud'&&$cloudDebit>0)$parts[]=number_format($cloudDebit).' VP3 tokens charged';
-    elseif($tokens>0)$parts[]=number_format($tokens).' token'.($tokens===1?'':'s');
     $failure=chat_execution_v019_failure_label((string)$safe['failure_class']);
     $fallback=chat_execution_v019_fallback_label((string)$safe['fallback_reason']);
     if(!empty($safe['fallback_used'])&&$failure!=='')$parts[]=$failure.' → fallback';
