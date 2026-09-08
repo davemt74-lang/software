@@ -23,6 +23,7 @@ require_once __DIR__.'/functions.php';
 require_once __DIR__.'/db.php';
 require_once __DIR__.'/homeserver-vp3.php';
 require_once __DIR__.'/homeserver-agent-v018.php';
+require_once __DIR__.'/homeserver-capabilities-v024.php';
 require_once __DIR__.'/site-settings.php';
 require_once __DIR__.'/agent-runtime-v125.php';
 require_once __DIR__.'/agent-ops-v126.php';
