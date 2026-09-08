@@ -10,10 +10,16 @@ $mainSidebarHistoryRows = isset($mainSidebarHistoryRows) && is_array($mainSideba
 ?>
 <link rel="stylesheet" data-workspace-header-ui href="<?= e(url('/chat-header-ui.css?v=white-tech-20260904')) ?>">
 <link rel="stylesheet" href="<?= e(url('/site-branding.css?v=1')) ?>">
+<link rel="stylesheet" href="<?= e(url('/homeserver-vp3.css?v=20260907')) ?>">
 <aside class="chat-sidebar workspace-main-sidebar" id="chatSidebar">
   <div class="chat-sidebar-top">
     <a class="chat-brand" href="<?= e(url('/')) ?>" aria-label="VP3">VP3</a>
-    <button class="chat-icon-button mobile-only" id="closeChatSidebar" type="button" aria-label="Close menu">×</button>
+    <div class="vp3-homeserver-head-actions">
+      <button class="vp3-homeserver-status" id="vp3HomeServerStatus" type="button" data-state="unpaired" data-status-url="<?= e(url('/api/homeserver-status.php')) ?>" data-csrf="<?= e(csrf_token()) ?>" aria-haspopup="dialog" aria-controls="vp3HomeServerModal" title="HomeServer status">
+        <span class="vp3-homeserver-dot" aria-hidden="true"></span><span class="vp3-homeserver-status-label">HomeServer</span>
+      </button>
+      <button class="chat-icon-button mobile-only" id="closeChatSidebar" type="button" aria-label="Close menu">×</button>
+    </div>
   </div>
 
   <div class="chat-sidebar-sections">
@@ -98,3 +104,33 @@ $mainSidebarHistoryRows = isset($mainSidebarHistoryRows) && is_array($mainSideba
     <?php endif; ?>
   </div>
 </aside>
+
+<div class="vp3-homeserver-modal" id="vp3HomeServerModal" hidden>
+  <div class="vp3-homeserver-backdrop" data-homeserver-close></div>
+  <section class="vp3-homeserver-dialog" role="dialog" aria-modal="true" aria-labelledby="vp3HomeServerModalTitle">
+    <header class="vp3-homeserver-modal-head"><div><small>Private Compute</small><h2 id="vp3HomeServerModalTitle">HomeServer Connection</h2></div><button class="vp3-homeserver-close" id="vp3HomeServerClose" type="button" aria-label="Close HomeServer connection">×</button></header>
+    <div class="vp3-homeserver-body">
+      <div class="vp3-homeserver-summary" id="vp3HomeServerSummary" data-state="unpaired"><span class="vp3-homeserver-dot" aria-hidden="true"></span><div><strong id="vp3HomeServerSummaryTitle">Checking HomeServer…</strong><span id="vp3HomeServerSummaryDetail">Loading connection status.</span></div></div>
+      <div class="vp3-homeserver-error" id="vp3HomeServerError" hidden></div>
+      <div class="vp3-homeserver-grid">
+        <div class="vp3-homeserver-field"><small>Remote Bridge</small><strong id="vp3HomeServerRelay">—</strong></div>
+        <div class="vp3-homeserver-field"><small>Last Seen</small><strong id="vp3HomeServerLastSeen">—</strong></div>
+        <div class="vp3-homeserver-field"><small>Installed</small><strong id="vp3HomeServerInstalled">—</strong></div>
+        <div class="vp3-homeserver-field"><small>Latest VP3 Release</small><strong id="vp3HomeServerLatest">—</strong></div>
+        <div class="vp3-homeserver-field"><small>Update Status</small><strong id="vp3HomeServerUpdate">—</strong></div>
+        <div class="vp3-homeserver-field"><small>Agent Brain</small><strong id="vp3HomeServerBrain">—</strong></div>
+        <div class="vp3-homeserver-field"><small>Compute Source</small><strong id="vp3HomeServerCompute">—</strong></div>
+        <div class="vp3-homeserver-field"><small>Provider</small><strong id="vp3HomeServerProvider">—</strong></div>
+        <div class="vp3-homeserver-field"><small>Model</small><strong id="vp3HomeServerModel">—</strong></div>
+      </div>
+      <div class="vp3-homeserver-panel" id="vp3HomeServerConnectPanel">
+        <h3>Connect this VP3 account</h3><p>Enable Remote Bridge in HomeServer, then enter the one-time relay claim code. VP3 will ask HomeServer to approve its scoped app permissions separately.</p>
+        <form class="vp3-homeserver-form" id="vp3HomeServerClaimForm"><input name="claim_code" maxlength="40" autocomplete="off" spellcheck="false" placeholder="Remote Bridge claim code" aria-label="HomeServer Remote Bridge claim code"><button class="vp3-homeserver-button primary" type="submit">Connect</button></form>
+        <div id="vp3HomeServerApprovalPanel" hidden><p>Approve the VP3 pairing code in the local HomeServer Control Center:</p><span class="vp3-homeserver-approval-code" id="vp3HomeServerApprovalCode">—</span><div><button class="vp3-homeserver-button primary" id="vp3HomeServerCheckPairing" type="button">Check Approval</button></div></div>
+      </div>
+      <div class="vp3-homeserver-panel"><h3>Capabilities</h3><p>Only capabilities reported by the connected HomeServer are shown. VP3 does not receive other apps’ raw private history.</p><div class="vp3-homeserver-capabilities" id="vp3HomeServerCapabilities"><span class="vp3-homeserver-capability">Checking…</span></div></div>
+      <div class="vp3-homeserver-actions"><button class="vp3-homeserver-button" id="vp3HomeServerRefresh" type="button">Refresh Status</button><a class="vp3-homeserver-download primary" id="vp3HomeServerDownload" href="#" hidden>Download HomeServer</a><button class="vp3-homeserver-button danger" id="vp3HomeServerDisconnect" type="button" hidden>Disconnect</button></div>
+    </div>
+  </section>
+</div>
+<script src="<?= e(url('/homeserver-vp3.js?v=20260907')) ?>" defer></script>
