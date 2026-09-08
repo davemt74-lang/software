@@ -156,22 +156,29 @@ function agent_compute_v023_public_policy(array $policy,int $agentId): array
     $account=(string)($policy['account_preference']??'auto');
     $override=(string)($policy['agent_override']??'inherit');
     $effective=(string)($policy['effective_preference']??'auto');
-    $source=(string)($policy['source']??'account');
-    if(!in_array($source,['account','agent','homeserver_scope'],true))$source='account';
+    $legacySource=(string)($policy['source_before_scope']??$policy['source']??'account');
+    if(!in_array($legacySource,['account','agent'],true))$legacySource='account';
     $public=[
-        'version'=>!empty($policy['scope_override'])?'v0.26':'v0.23',
+        'version'=>'v0.23',
         'agent_id'=>max(0,$agentId),
         'account_preference'=>in_array($account,$allowed,true)?$account:'auto',
         'agent_override'=>in_array($override,$allowed,true)?$override:'inherit',
         'effective_preference'=>in_array($effective,['auto','homeserver_only','vp3_cloud'],true)?$effective:'auto',
-        'source'=>$source,
+        'source'=>$legacySource,
     ];
     if(is_array($policy['homeserver_scope']??null)){
         $scope=$policy['homeserver_scope'];
+        $public['scope_version']='v0.26';
+        $public['scope_override']=!empty($policy['scope_override']);
+        $public['scope_override_source']=!empty($policy['scope_override'])?'homeserver_scope':null;
+        $public['pre_scope_effective_preference']=in_array((string)($policy['pre_scope_effective_preference']??''),['auto','homeserver_only','vp3_cloud'],true)
+            ?(string)$policy['pre_scope_effective_preference']
+            :null;
         $public['homeserver_scope']=[
             'supported'=>!empty($scope['supported']),
             'available'=>!empty($scope['available']),
             'cloud_allowed'=>$scope['cloud_allowed']??null,
+            'last_known_cloud_blocked'=>!empty($scope['last_known_cloud_blocked']),
             'cloud_blocked'=>!empty($policy['scope_override']),
         ];
     }
