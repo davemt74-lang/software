@@ -191,6 +191,7 @@ function homeserver_agent_v018_chat(array $user,string $query,int $conversationI
         'usage'=>is_array($result['usage']??null)?$result['usage']:[],
         'run_id'=>(int)($result['run_id']??0),
         'conversation_id'=>(string)($result['conversation_id']??''),
+        'cloud_tokens_debited'=>max(0,(int)($result['cloud_tokens_debited']??0)),
         'latency_ms'=>$latency,
     ];
 }
