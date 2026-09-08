@@ -98,6 +98,7 @@ NODE_TESTS = [
     'tests/public-product-pages-contract.mjs',
     'tests/vp3-public-auth-contract.mjs',
     'tests/homeserver-vp3-integration-contract.mjs',
+    'tests/homeserver-agent-v018-contract.mjs',
 ]
 
 HISTORICAL_WORKFLOW_COUPLED_TESTS = [
