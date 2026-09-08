@@ -104,6 +104,7 @@ NODE_TESTS = [
     'tests/agent-compute-v021-contract.mjs',
     'tests/chat-execution-v022-contract.mjs',
     'tests/agent-compute-v023-contract.mjs',
+    'tests/cloud-schema-upgrade-contract.mjs',
 ]
 
 HISTORICAL_WORKFLOW_COUPLED_TESTS = [
