@@ -32,7 +32,7 @@ function user_agent_api_state_v236(PDO $pdo, array $user): array
     }
 
     $state['compute'] = agent_compute_v021_state($pdo, $user);
-    return $state;
+    return agent_compute_v023_attach_state($pdo, $user, $state);
 }
 
 $user = current_user();
@@ -56,6 +56,7 @@ try {
         shared_knowledge_index_ensure_schema_v236($pdo);
     }
     agent_compute_v020_ensure_schema($pdo);
+    agent_compute_v023_ensure_schema($pdo);
 } catch (Throwable $e) {
     user_agent_api_v236(false, ['error' => 'Agent settings are not ready. Run the database upgrade.'], 503);
 }
@@ -81,6 +82,19 @@ try {
     if ($action === 'save_compute_preference') {
         agent_compute_v020_save_preference($pdo, $user, (string)($input['preference'] ?? ''));
         user_agent_api_v236(true, ['state' => user_agent_api_state_v236($pdo, $user)]);
+    }
+
+    if ($action === 'save_agent_compute_preference') {
+        $saved = agent_compute_v023_save_override(
+            $pdo,
+            $user,
+            (int)($input['agent_id'] ?? 0),
+            (string)($input['preference'] ?? 'inherit')
+        );
+        user_agent_api_v236(true, [
+            'saved_compute_policy' => $saved,
+            'state' => user_agent_api_state_v236($pdo, $user),
+        ]);
     }
 
     if ($action === 'test_compute_route') {
@@ -113,6 +127,7 @@ try {
             $pdo->prepare(
                 'DELETE FROM chat_conversations WHERE user_id=? AND user_agent_id=?'
             )->execute([(int)$user['id'], $agentId]);
+            agent_compute_v023_delete_override($pdo, (int)$user['id'], $agentId);
             user_agent_delete_v236($pdo, $user, $agentId);
             $pdo->commit();
         } catch (Throwable $deleteError) {

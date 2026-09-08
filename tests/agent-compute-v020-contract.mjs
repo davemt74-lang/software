@@ -27,12 +27,12 @@ assert.match(compute, /subscription_recent_usage/);
 assert.doesNotMatch(compute, /relay_token_enc.*return|homeserver_token_enc.*return|pending_claim_token_enc.*return/i);
 
 assert.match(bootstrap, /agent-compute-v020\.php/);
-// v0.21 wraps the v0.20 state rather than replacing its preference/usage implementation.
+// v0.21 wraps v0.20 state; v0.23 then attaches per-Agent policy metadata.
 assert.match(api, /\$state\['compute'\]\s*=\s*agent_compute_v021_state/);
 assert.match(api, /save_compute_preference/);
 assert.match(api, /agent_compute_v020_save_preference/);
 
-assert.match(chat, /agent_compute_v020_preference\(\$pdo,\$userId\)/);
+assert.match(chat, /agent_compute_v023_effective\(\$pdo,\$userId,\$activeAgentId\)/);
 assert.match(chat, /agent_compute_v020_route_plan/);
 assert.match(chat, /\$computePreference==='homeserver_only'/);
 assert.match(chat, /homeserver_agent_v018_chat\(\$user,\$query,\$conversationId,!empty\(\$computePlan\['homeserver_cloud_allowed'\]\)\)/);
@@ -42,7 +42,7 @@ assert.match(execution, /function chat_execution_v019_vp3_direct/);
 assert.match(execution, /'vp3_cloud','VP3 Cloud'/);
 assert.match(execution, /'not_used',false,'none'/);
 
-assert.match(account, /Where your Agent runs/);
+assert.match(account, /Account compute default/);
 assert.match(account, /data-compute-preference/);
 assert.match(account, /save_compute_preference/);
 assert.match(account, /Recent Agent usage/);
@@ -51,8 +51,8 @@ assert.match(account, /VP3 tokens remaining/);
 assert.match(css, /\.sf-compute-options/);
 assert.match(css, /\.sf-compute-usage-row/);
 assert.match(loader, /agent-compute-v020\.css/);
-assert.match(loader, /agent-compute-v021-20260908/);
-assert.match(shell, /agent-compute-v021-20260908/);
+assert.match(loader, /agent-compute-v023-20260908/);
+assert.match(shell, /agent-compute-v023-20260908/);
 
 assert.match(migration, /CREATE TABLE IF NOT EXISTS agent_compute_preferences/);
 assert.match(migration, /PRIMARY KEY/);
