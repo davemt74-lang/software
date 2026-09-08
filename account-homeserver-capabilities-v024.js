@@ -3,7 +3,7 @@
 
   const cfg=window.STONEFELLOW_ACCOUNT_AGENT_V236;
   if(!cfg)return;
-  const esc=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#039;'}[char]));
+  const esc=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[char]));
   const sourceLabel=source=>source==='homeserver'?'HomeServer':source==='vp3_cloud'?'VP3 Cloud':source==='vp3_tool'?'VP3 Tools':'VP3';
   const reasonLabel=reason=>({
     homeserver_capability_ready:'Available from HomeServer',
