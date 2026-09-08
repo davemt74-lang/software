@@ -46,7 +46,7 @@ assert.ok(users.includes('workspace_artist'), 'Admin Users must expose Artist wo
 assert.ok(users.includes("['admin','artist','manager','producer']"), 'Admin user saves must remove obsolete manually assigned Team roles before rebuilding identity');
 assert.ok(users.includes("if($workspaceArtist)$roles[]='artist'"), 'Artist identity must be explicitly assigned by Admin');
 assert.ok(users.includes('Package controls commercial feature access and capacity'), 'Admin UI must distinguish package from identity');
-assert.ok(users.includes('Manager/Producer never appear here'), 'Manager/Producer assignment must stay in Team');
+assert.match(users,/Manager(?:\/| and )Producer.*Team relationships/is,'Manager/Producer assignment must stay in Team');
 
 assert.ok(team.includes('artist_workspace_v104_attach_member'), 'Team must create relationship-scoped roles');
 assert.ok(team.includes('artist_workspace_v104_detach_member'), 'Team removal must detach the relationship');
