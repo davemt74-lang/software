@@ -11,6 +11,7 @@ const compute=read('includes/agent-compute-v023.php');
 const api=read('api/user-agent-system-v236.php');
 const ui=read('account-homeserver-capabilities-v024.js');
 const loader=read('account-agent-settings-loader-v236.js');
+const shell=read('includes/workspace-sidebar-v82.php');
 
 assert.match(bootstrap,/homeserver-scope-v026\.php/,'bootstrap must load v0.26 scope resolver');
 assert.match(scope,/app\.scopes\.v1/,'scope resolver must require the advertised scope feature');
@@ -34,6 +35,9 @@ assert.match(ui,/HomeServer-enforced scope/,'scope UI must identify HomeServer a
 assert.match(ui,/last-known local-only cloud boundary/,'scope UI must explain retained restrictive cloud state while offline');
 assert.match(ui,/memory_prefix_count/,'scope UI may show Memory restriction count');
 assert.doesNotMatch(ui,/memory_key_prefixes/,'scope UI must not render private Memory prefix values');
+assert.match(loader,/agent-compute-v024-20260908/,'v0.24 compatibility marker must remain in the asset key');
 assert.match(loader,/agent-compute-v026-scope-20260908/,'account loader must cache-bust v0.26 scope UI');
+assert.match(shell,/agent-compute-v024-20260908/,'server loader URL must retain the v0.24 compatibility marker');
+assert.match(shell,/agent-compute-v026-scope-20260908/,'server loader URL must force a fresh v0.26 loader');
 
 console.log('VP3 v0.26 HomeServer scope integration contract passed');
