@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+$_SESSION = [];
+$GLOBALS['v026_scope_fail'] = false;
 $GLOBALS['v026_scope_payload'] = [
     'cloud_allowed' => false,
     'memory_key_prefixes' => ['vp3:', 'vp3:'],
@@ -26,6 +28,9 @@ function homeserver_vp3_remote_operation(string $relay, string $operation, array
     if ($relay !== 'relay-token' || $home !== 'home-token' || $operation !== 'tools.list') {
         throw new RuntimeException('Unexpected scope handshake request.');
     }
+    if (!empty($GLOBALS['v026_scope_fail'])) {
+        throw new RuntimeException('Synthetic HomeServer outage.');
+    }
     return ['items' => [], 'app' => 'vp3', 'app_scope' => $GLOBALS['v026_scope_payload']];
 }
 
@@ -46,6 +51,7 @@ v026_assert($state['reason'] === 'scope_ready', 'scope ready reason');
 v026_assert($state['scope']['cloud_allowed'] === false, 'cloud block must be preserved');
 v026_assert($state['scope']['memory_key_prefixes'] === ['vp3:'], 'scope lists must be deduplicated');
 v026_assert(homeserver_scope_v026_blocks_cloud($state), 'available cloud=false scope must block cloud');
+v026_assert(homeserver_scope_v026_last_cloud_block(7), 'restrictive cloud scope must be remembered in-session');
 
 $public = homeserver_scope_v026_public($state);
 v026_assert($public['cloud_allowed'] === false, 'public scope cloud state');
@@ -55,6 +61,21 @@ v026_assert($public['tools_restricted'] === true && $public['tool_count'] === 2,
 v026_assert($public['plugins_restricted'] === true && $public['plugin_count'] === 1, 'public Plugin restriction count');
 v026_assert(!array_key_exists('memory_key_prefixes', $public), 'public state must not expose Memory prefixes');
 v026_assert(!array_key_exists('plugin_keys', $public), 'public state must not expose Plugin keys');
+
+$GLOBALS['v026_scope_fail'] = true;
+$offlineAfterBlock = homeserver_scope_v026_fetch(7, true);
+v026_assert($offlineAfterBlock['available'] === false, 'offline scope refresh must report unavailable');
+v026_assert($offlineAfterBlock['last_known_cloud_blocked'] === true, 'offline refresh must preserve last-known restrictive cloud scope');
+v026_assert(homeserver_scope_v026_blocks_cloud($offlineAfterBlock), 'last-known restrictive scope must keep cloud blocked');
+v026_assert(homeserver_scope_v026_public($offlineAfterBlock)['cloud_allowed'] === false, 'public offline state must retain restrictive cloud decision');
+
+$GLOBALS['v026_scope_fail'] = false;
+$GLOBALS['v026_scope_payload']['cloud_allowed'] = true;
+$freshAllowed = homeserver_scope_v026_fetch(7, true);
+v026_assert($freshAllowed['available'] === true && $freshAllowed['scope']['cloud_allowed'] === true, 'fresh authoritative cloud allowance must be accepted');
+v026_assert(!homeserver_scope_v026_blocks_cloud($freshAllowed), 'fresh cloud allowance must clear the restrictive override');
+v026_assert(!homeserver_scope_v026_last_cloud_block(7), 'fresh cloud allowance must clear last-known block');
+$GLOBALS['v026_scope_payload']['cloud_allowed'] = false;
 
 $policy = [
     'account_preference' => 'auto',
@@ -75,10 +96,11 @@ $unavailable = [
     'available' => false,
     'reason' => 'homeserver_unavailable',
     'scope' => null,
+    'last_known_cloud_blocked' => false,
 ];
 $preserved = homeserver_scope_v026_apply_compute_policy($policy, $unavailable);
-v026_assert($preserved['effective_preference'] === 'vp3_cloud', 'unavailable scope must not be guessed');
-v026_assert(empty($preserved['scope_override']), 'unavailable scope must not override policy');
+v026_assert($preserved['effective_preference'] === 'vp3_cloud', 'unknown unavailable scope must not be guessed');
+v026_assert(empty($preserved['scope_override']), 'unknown unavailable scope must not override policy');
 
 $unsupported = homeserver_scope_v026_fetch(8, true);
 v026_assert($unsupported['supported'] === false && $unsupported['available'] === false, 'unadvertised scope remains legacy-compatible');
