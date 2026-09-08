@@ -52,6 +52,14 @@ function homeserver_agent_v018_bind(int $userId,int $conversationId,array $resul
     ]);
 }
 
+function homeserver_agent_v018_forget(int $userId,int $conversationId): void
+{
+    if($userId<1||$conversationId<1)return;
+    $pdo=db();if(!$pdo)return;
+    homeserver_agent_v018_ensure_schema($pdo);
+    $pdo->prepare('DELETE FROM homeserver_chat_sessions WHERE user_id=? AND vp3_conversation_id=?')->execute([$userId,$conversationId]);
+}
+
 function homeserver_agent_v018_credentials(int $userId): ?array
 {
     $row=homeserver_vp3_connection($userId);
@@ -102,4 +110,42 @@ function homeserver_agent_v018_chat(array $user,string $query,int $conversationI
         'run_id'=>(int)($result['run_id']??0),
         'conversation_id'=>(string)($result['conversation_id']??''),
     ];
+}
+
+/** Mirror the exact VP3 cloud ledger row to the paired HomeServer usage history. */
+function homeserver_agent_v018_write_cloud_usage(array $user): void
+{
+    $userId=(int)($user['id']??0);
+    if($userId<1||!function_exists('agent_runtime_v125_trace_id')||!function_exists('homeserver_vp3_remote_operation'))return;
+    $trace=trim((string)agent_runtime_v125_trace_id());
+    if($trace==='')return;
+    $pdo=db();
+    if(!$pdo||!table_exists('ai_usage_ledger'))return;
+    $stmt=$pdo->prepare('SELECT id,scope,provider,model,input_tokens,output_tokens,total_tokens FROM ai_usage_ledger WHERE user_id=? AND trace_id=? ORDER BY id DESC LIMIT 1');
+    $stmt->execute([$userId,$trace]);
+    $usage=$stmt->fetch();
+    if(!$usage)return;
+    $credentials=homeserver_agent_v018_credentials($userId);
+    if(!$credentials)return;
+    $balance=null;
+    if(function_exists('subscription_ai_balance')){
+        $state=subscription_ai_balance($user);
+        if(empty($state['unlimited']))$balance=max(0,(int)($state['remaining']??0));
+    }
+    $payload=[
+        'event_id'=>'vp3-ledger:'.(int)$usage['id'],
+        'provider_key'=>mb_strimwidth((string)$usage['provider'],0,80,''),
+        'model'=>mb_strimwidth((string)$usage['model'],0,200,''),
+        'request_kind'=>mb_strimwidth((string)$usage['scope'],0,80,''),
+        'prompt_tokens'=>max(0,(int)$usage['input_tokens']),
+        'completion_tokens'=>max(0,(int)$usage['output_tokens']),
+        'total_tokens'=>max(0,(int)$usage['total_tokens']),
+        'billable_tokens'=>max(0,(int)$usage['total_tokens']),
+    ];
+    if($balance!==null)$payload['balance_after_tokens']=$balance;
+    try{
+        homeserver_vp3_remote_operation($credentials['relay'],'usage.write',$payload,$credentials['home']);
+    }catch(Throwable $e){
+        // Usage mirroring is best-effort and never turns a completed VP3 answer into an error.
+    }
 }
