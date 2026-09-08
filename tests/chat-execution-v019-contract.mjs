@@ -7,9 +7,11 @@ const execution = fs.readFileSync(new URL('includes/chat-execution-v019.php', ro
 const chat = fs.readFileSync(new URL('chat.js', root), 'utf8');
 
 assert.match(api, /chat-execution-v019\.php/);
-assert.match(api, /homeserver_agent_v018_chat\(\$user,\$query,\$conversationId\)/);
+// v0.20 extends the canonical HomeServer call with the routing plan's
+// cloud_allowed decision while preserving the same v0.18 execution path.
+assert.match(api, /homeserver_agent_v018_chat\(\$user,\$query,\$conversationId,!empty\(\$computePlan\['homeserver_cloud_allowed'\]\)\)/);
 assert.match(api, /chat_execution_v019_homeserver\(\$homeResult\)/);
-assert.match(api, /chat_execution_v019_fallback\(\$user,\$homePaired,\$homePaired\)/);
+assert.match(api, /chat_execution_v019_fallback\(\$user,\$homePaired,\$homeAttempted\)/);
 assert.match(api, /chat_execution_v019_tool\(\)/);
 assert.match(api, /chat_execution_v019_source\(\$execution\)/);
 assert.match(api, /'execution'=>\$execution/);
