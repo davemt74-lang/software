@@ -99,6 +99,7 @@ NODE_TESTS = [
     'tests/vp3-public-auth-contract.mjs',
     'tests/homeserver-vp3-integration-contract.mjs',
     'tests/homeserver-agent-v018-contract.mjs',
+    'tests/chat-execution-v019-contract.mjs',
 ]
 
 HISTORICAL_WORKFLOW_COUPLED_TESTS = [
@@ -111,6 +112,7 @@ PHP_TESTS = [
     'tests/agent-outcome-factor-v313.php',
     'tests/agent-task-outcome-closure-v314.php',
     'tests/agent-radar-conversion-outcome-v315.php',
+    'tests/chat-execution-v019.php',
 ]
 
 
