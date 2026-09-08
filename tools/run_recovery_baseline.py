@@ -104,6 +104,7 @@ NODE_TESTS = [
     'tests/agent-compute-v021-contract.mjs',
     'tests/chat-execution-v022-contract.mjs',
     'tests/agent-compute-v023-contract.mjs',
+    'tests/homeserver-capabilities-v024-contract.mjs',
     'tests/cloud-schema-upgrade-contract.mjs',
 ]
 
@@ -122,6 +123,7 @@ PHP_TESTS = [
     'tests/agent-compute-v021.php',
     'tests/chat-execution-v022.php',
     'tests/agent-compute-v023.php',
+    'tests/homeserver-capabilities-v024.php',
 ]
 
 
