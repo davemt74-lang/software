@@ -65,33 +65,40 @@ $adminUserMenuLinks = member_navigation_menu_links($user);
         </div>
       </section>
 
-      <section class="admin-nav-group" data-admin-nav-group="people-commerce" data-admin-nav-default="open">
-        <button class="admin-nav-group-toggle" type="button" aria-expanded="true" aria-controls="admin-nav-people-commerce"><span>People &amp; Commerce</span><span class="admin-nav-group-chevron">⌄</span></button>
-        <div class="admin-nav-group-links" id="admin-nav-people-commerce">
-          <?php if ($adminCrmVisible): ?><a class="<?= $adminActive === 'crm' ? 'active' : '' ?>" href="<?= e(url('/admin/crm.php')) ?>"><span>CRM</span><?php if ($adminCrmNew > 0): ?><span class="admin-nav-count"><?= $adminCrmNew > 99 ? '99+' : (int)$adminCrmNew ?></span><?php endif; ?></a><?php endif; ?>
-          <?php if (has_permission('messages.manage')): ?><a class="<?= $adminActive === 'messages' ? 'active' : '' ?>" href="<?= e(url('/admin/messages.php')) ?>"><span>Messages</span><?php if ($adminUnreadMessages > 0): ?><span class="admin-nav-count"><?= $adminUnreadMessages > 99 ? '99+' : (int)$adminUnreadMessages ?></span><?php endif; ?></a><?php endif; ?>
-          <?php if (has_permission('users.manage')): ?><a class="<?= $adminActive === 'users' ? 'active' : '' ?>" href="<?= e(url('/admin/users.php')) ?>"><span>Users</span></a><a class="<?= $adminActive === 'packages' ? 'active' : '' ?>" href="<?= e(url('/admin/packages.php')) ?>"><span>Packages</span></a><a class="<?= $adminActive === 'billing' ? 'active' : '' ?>" href="<?= e(url('/admin/billing.php')) ?>"><span>Billing</span></a><a class="<?= $adminActive === 'homeserver' ? 'active' : '' ?>" href="<?= e(url('/admin/homeserver.php')) ?>"><span>HomeServer Releases</span></a><?php endif; ?>
-          <?php if (has_permission('team.manage', $user)): ?><a class="<?= $adminActive === 'team' ? 'active' : '' ?>" href="<?= e(url('/team.php')) ?>"><span>Team</span></a><?php endif; ?>
-        </div>
-      </section>
-
-      <section class="admin-nav-group" data-admin-nav-group="platform" data-admin-nav-default="open">
-        <button class="admin-nav-group-toggle" type="button" aria-expanded="true" aria-controls="admin-nav-platform"><span>Platform</span><span class="admin-nav-group-chevron">⌄</span></button>
-        <div class="admin-nav-group-links" id="admin-nav-platform">
+      <section class="admin-nav-group" data-admin-nav-group="operations" data-admin-nav-default="open">
+        <button class="admin-nav-group-toggle" type="button" aria-expanded="true" aria-controls="admin-nav-operations"><span>Operations</span><span class="admin-nav-group-chevron">⌄</span></button>
+        <div class="admin-nav-group-links" id="admin-nav-operations">
           <?php if (has_permission('knowledge.manage')): ?><a class="<?= $adminActive === 'knowledge' ? 'active' : '' ?>" href="<?= e(url('/admin/knowledge.php')) ?>"><span>Knowledge</span></a><?php endif; ?>
-          <?php if (has_permission('ai.manage')): ?><a class="<?= $adminActive === 'ai' ? 'active' : '' ?>" href="<?= e(url('/admin/ai.php')) ?>"><span>AI / API</span></a><a class="<?= $adminActive === 'ai-data-usage' ? 'active' : '' ?>" href="<?= e(url('/admin/ai-data-usage-v236.php')) ?>"><span>AI Data Usage</span></a><?php endif; ?>
-          <?php if (has_permission('permissions.manage')): ?><a class="<?= $adminActive === 'permissions' ? 'active' : '' ?>" href="<?= e(url('/admin/permissions.php')) ?>"><span>Permissions</span></a><?php endif; ?>
-          <?php if (has_permission('admin.access')): ?><a class="<?= $adminActive === 'site-settings' ? 'active' : '' ?>" href="<?= e(url('/admin/site-settings.php')) ?>"><span>Site Settings</span></a><?php endif; ?>
+          <?php if ($adminCrmVisible): ?><a class="<?= $adminActive === 'crm' ? 'active' : '' ?>" href="<?= e(url('/admin/crm.php')) ?>"><span>Book Demo CRM</span><?php if ($adminCrmNew > 0): ?><span class="admin-nav-count"><?= $adminCrmNew > 99 ? '99+' : (int)$adminCrmNew ?></span><?php endif; ?></a><?php endif; ?>
+          <?php if (has_permission('messages.manage')): ?><a class="<?= $adminActive === 'messages' ? 'active' : '' ?>" href="<?= e(url('/admin/messages.php')) ?>"><span>Messages</span><?php if ($adminUnreadMessages > 0): ?><span class="admin-nav-count"><?= $adminUnreadMessages > 99 ? '99+' : (int)$adminUnreadMessages ?></span><?php endif; ?></a><?php endif; ?>
         </div>
       </section>
 
-      <section class="admin-nav-group" data-admin-nav-group="publishing" data-admin-nav-default="open">
-        <button class="admin-nav-group-toggle" type="button" aria-expanded="true" aria-controls="admin-nav-publishing"><span>Publishing</span><span class="admin-nav-group-chevron">⌄</span></button>
-        <div class="admin-nav-group-links" id="admin-nav-publishing">
-          <?php if (has_permission('shows.manage')): ?><a class="<?= $adminActive === 'shows' ? 'active' : '' ?>" href="<?= e(url($isArtistAdmin?'/admin/artist-shows.php':'/admin/shows.php')) ?>"><span>Shows</span></a><?php endif; ?>
-          <?php if (has_permission('photos.manage')): ?><a class="<?= $adminActive === 'photos' ? 'active' : '' ?>" href="<?= e(url($isArtistAdmin?'/admin/artist-media.php':'/admin/photos.php')) ?>"><span>Photos</span></a><?php endif; ?>
-          <?php if (has_permission('merch.manage')): ?><a class="<?= $adminActive === 'merch' ? 'active' : '' ?>" href="<?= e(url('/admin/merch.php')) ?>"><span>Merch</span></a><?php endif; ?>
-          <?php if (has_permission('posts.manage')): ?><a class="<?= $adminActive === 'posts' ? 'active' : '' ?>" href="<?= e(url($isArtistAdmin?'/admin/artist-posts.php':'/admin/posts.php')) ?>"><span>Posts</span></a><?php endif; ?>
+      <section class="admin-nav-group" data-admin-nav-group="accounts-revenue" data-admin-nav-default="open">
+        <button class="admin-nav-group-toggle" type="button" aria-expanded="true" aria-controls="admin-nav-accounts-revenue"><span>Accounts &amp; Revenue</span><span class="admin-nav-group-chevron">⌄</span></button>
+        <div class="admin-nav-group-links" id="admin-nav-accounts-revenue">
+          <?php if (has_permission('users.manage')): ?>
+            <a class="<?= $adminActive === 'users' ? 'active' : '' ?>" href="<?= e(url('/admin/users.php')) ?>"><span>Users</span></a>
+            <a class="<?= $adminActive === 'packages' ? 'active' : '' ?>" href="<?= e(url('/admin/packages.php')) ?>"><span>Packages</span></a>
+            <a class="<?= $adminActive === 'billing' ? 'active' : '' ?>" href="<?= e(url('/admin/billing.php')) ?>"><span>Billing</span></a>
+          <?php endif; ?>
+        </div>
+      </section>
+
+      <section class="admin-nav-group" data-admin-nav-group="ai-platform" data-admin-nav-default="open">
+        <button class="admin-nav-group-toggle" type="button" aria-expanded="true" aria-controls="admin-nav-ai-platform"><span>AI &amp; Platform</span><span class="admin-nav-group-chevron">⌄</span></button>
+        <div class="admin-nav-group-links" id="admin-nav-ai-platform">
+          <?php if (has_permission('ai.manage')): ?>
+            <a class="<?= $adminActive === 'ai' ? 'active' : '' ?>" href="<?= e(url('/admin/ai.php')) ?>"><span>AI / API</span></a>
+            <a class="<?= $adminActive === 'ai-data-usage' ? 'active' : '' ?>" href="<?= e(url('/admin/ai-data-usage-v236.php')) ?>"><span>AI Data Usage</span></a>
+          <?php endif; ?>
+          <?php if (has_permission('users.manage')): ?><a class="<?= $adminActive === 'homeserver' ? 'active' : '' ?>" href="<?= e(url('/admin/homeserver.php')) ?>"><span>HomeServer Releases</span></a><?php endif; ?>
+        </div>
+      </section>
+
+      <section class="admin-nav-group" data-admin-nav-group="profile" data-admin-nav-default="open">
+        <button class="admin-nav-group-toggle" type="button" aria-expanded="true" aria-controls="admin-nav-profile"><span>Profile</span><span class="admin-nav-group-chevron">⌄</span></button>
+        <div class="admin-nav-group-links" id="admin-nav-profile">
           <?php if (has_permission('profile.manage')): ?><a class="<?= $adminActive === 'profile' ? 'active' : '' ?>" href="<?= e(url('/admin/profile.php')) ?>"><span>Artist / Links</span></a><?php endif; ?>
         </div>
       </section>
@@ -100,6 +107,10 @@ $adminUserMenuLinks = member_navigation_menu_links($user);
         <button class="admin-nav-group-toggle" type="button" aria-expanded="false" aria-controls="admin-nav-music"><span>Music</span><span class="admin-nav-group-chevron">⌄</span></button>
         <div class="admin-nav-group-links" id="admin-nav-music" hidden>
           <?php if ($isArtistAdmin && has_permission('admin.access')): ?><a class="<?= $adminActive === 'artist-workspace' ? 'active' : '' ?>" href="<?= e(url('/admin/artist.php')) ?>"><span>Artist Workspace</span></a><?php endif; ?>
+          <?php if (has_permission('shows.manage')): ?><a class="<?= $adminActive === 'shows' ? 'active' : '' ?>" href="<?= e(url($isArtistAdmin?'/admin/artist-shows.php':'/admin/shows.php')) ?>"><span>Shows</span></a><?php endif; ?>
+          <?php if (has_permission('photos.manage')): ?><a class="<?= $adminActive === 'photos' ? 'active' : '' ?>" href="<?= e(url($isArtistAdmin?'/admin/artist-media.php':'/admin/photos.php')) ?>"><span>Photos</span></a><?php endif; ?>
+          <?php if (has_permission('merch.manage')): ?><a class="<?= $adminActive === 'merch' ? 'active' : '' ?>" href="<?= e(url('/admin/merch.php')) ?>"><span>Merch</span></a><?php endif; ?>
+          <?php if (has_permission('posts.manage')): ?><a class="<?= $adminActive === 'posts' ? 'active' : '' ?>" href="<?= e(url($isArtistAdmin?'/admin/artist-posts.php':'/admin/posts.php')) ?>"><span>Posts</span></a><?php endif; ?>
           <?php if (has_permission('tracks.manage')): ?><a class="<?= $adminActive === 'tracks' ? 'active' : '' ?>" href="<?= e(url('/admin/tracks.php')) ?>"><span>Tracks</span></a><?php endif; ?>
           <?php if (has_permission('albums.manage')): ?><a class="<?= $adminActive === 'albums' ? 'active' : '' ?>" href="<?= e(url('/admin/albums.php')) ?>"><span>Albums</span></a><?php endif; ?>
           <?php if (permission_v105_has('release.manage')): ?><a class="<?= $adminActive === 'releases' ? 'active' : '' ?>" href="<?= e(url('/admin/releases.php')) ?>"><span>Release Calendar</span></a><?php endif; ?>
