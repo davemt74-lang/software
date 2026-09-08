@@ -154,6 +154,9 @@ function homeserver_scope_v026_apply_compute_policy(array $policy, array $state)
     if (!homeserver_scope_v026_blocks_cloud($state)) return $policy;
 
     $policy['pre_scope_effective_preference'] = (string)($policy['effective_preference'] ?? 'auto');
+    $policy['source_before_scope'] = in_array((string)($policy['source'] ?? 'account'), ['account','agent'], true)
+        ? (string)$policy['source']
+        : 'account';
     $policy['effective_preference'] = 'homeserver_only';
     $policy['effective_label'] = 'HomeServer only';
     $policy['source'] = 'homeserver_scope';
