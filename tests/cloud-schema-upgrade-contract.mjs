@@ -35,7 +35,7 @@ assert.ok(cloudMigrations.length > 0, 'Expected at least one standalone VP3 clou
 
 for (const name of cloudMigrations) {
   const sql = fs.readFileSync(new URL(name, root), 'utf8');
-  const tables = [...sql.matchAll(/CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+`?([A-Za-z0-9_]+)`?/gi)]
+  const tables = [...sql.matchAll(/CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?`?([A-Za-z0-9_]+)`?/gi)]
     .map(match => match[1]);
   for (const table of tables) {
     assert.ok(
