@@ -17,6 +17,7 @@ function user_agent_api_state_v236(PDO $pdo,array $user): array
         $stmt->execute([(int)$user['id']]);$row=$stmt->fetch()?:[];
         $state['shared_knowledge']=['indexed'=>(int)($row['total']??0),'active'=>(int)($row['active']??0)];
     }
+    $state['compute']=agent_compute_v020_state($pdo,$user);
     return $state;
 }
 
@@ -27,6 +28,7 @@ try{
     if(!user_agent_system_schema_ready_v236($pdo))user_agent_system_ensure_schema_v236($pdo);
     if(!user_data_usage_schema_ready_v236($pdo))user_data_usage_ensure_schema_v236($pdo);
     if(!shared_knowledge_index_schema_ready_v236($pdo))shared_knowledge_index_ensure_schema_v236($pdo);
+    agent_compute_v020_ensure_schema($pdo);
 }catch(Throwable $e){user_agent_api_v236(false,['error'=>'Agent settings are not ready. Run the database upgrade.'],503);}
 
 if(($_SERVER['REQUEST_METHOD']??'GET')==='GET')user_agent_api_v236(true,['state'=>user_agent_api_state_v236($pdo,$user)]);
@@ -35,6 +37,7 @@ $input=json_decode((string)file_get_contents('php://input'),true);if(!is_array($
 $csrf=(string)($input['csrf_token']??'');if($csrf===''||!hash_equals(csrf_token(),$csrf))user_agent_api_v236(false,['error'=>'Session expired. Refresh and try again.'],419);
 $action=(string)($input['action']??'');
 try{
+    if($action==='save_compute_preference'){agent_compute_v020_save_preference($pdo,$user,(string)($input['preference']??''));user_agent_api_v236(true,['state'=>user_agent_api_state_v236($pdo,$user)]);}
     if($action==='create_agent'){user_agent_create_v236($pdo,$user,$input);user_agent_api_v236(true,['state'=>user_agent_api_state_v236($pdo,$user)]);}
     if($action==='update_agent'){user_agent_update_v236($pdo,$user,$input);user_agent_api_v236(true,['state'=>user_agent_api_state_v236($pdo,$user)]);}
     if($action==='delete_agent'){
@@ -55,7 +58,7 @@ try{
         $saved=user_data_policy_save_v236($pdo,$user,$input);
         if((string)($input['resource_type']??'')==='knowledge'){
             $rid=(string)($input['resource_id']??'*');
-            if($rid==='*')shared_knowledge_index_sync_owner_v236($pdo,(int)$user['id']);
+            if($rid==='*')shared_knowledge_index_sync_owner_v236($pdo,(int)$user['id]);
             elseif(ctype_digit($rid))shared_knowledge_index_sync_item_v236($pdo,(int)$rid);
         }
         user_agent_api_v236(true,['saved_policy'=>$saved,'state'=>user_agent_api_state_v236($pdo,$user)]);
