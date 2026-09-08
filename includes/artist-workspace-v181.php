@@ -158,22 +158,18 @@ function artist_workspace_v181_profile_url(array $workspace): string
     return url('/artist-profile.php?'.$query);
 }
 
-/** Resolve an Artist account's public profile without coupling viewing to CMS permissions. */
+/** Resolve an Artist-capable customer's public profile. */
 function artist_workspace_v181_profile_url_for_user(?array $user = null): string
 {
     $user ??= current_user();
-    if (!$user || !user_has_role('artist', $user) || (int)($user['id'] ?? 0) < 1) return '';
-
+    if (!$user || !artist_workspace_v104_is_artist($user) || (int)($user['id'] ?? 0) < 1) return '';
     $fallback = url('/artist-profile.php?user_id=' . (int)$user['id']);
     $pdo = db();
     if (!$pdo || !artist_workspace_v181_schema_ready($pdo)) return $fallback;
-
     try {
         $workspace = artist_workspace_v181_lookup_public($pdo, '', (int)$user['id']);
         return $workspace ? artist_workspace_v181_profile_url($workspace) : $fallback;
-    } catch (Throwable $e) {
-        return $fallback;
-    }
+    } catch (Throwable $e) {return $fallback;}
 }
 
 function artist_workspace_v181_lookup_public(PDO $pdo, string $slug='', int $artistUserId=0): ?array
@@ -243,7 +239,7 @@ function artist_workspace_v181_owned_image_path(int $workspaceId, string $stored
 
 function artist_workspace_v181_for_user(PDO $pdo, array $user): array
 {
-    if (!user_has_role('artist', $user)) throw new RuntimeException('Artist workspace access is required.');
+    if (!artist_workspace_v104_is_artist($user)) throw new RuntimeException('Your package does not include Artist workspace access.');
     $userId=(int)($user['id']??0); if ($userId<1) throw new RuntimeException('Sign in is required.');
     $name=trim((string)($user['display_name']??'')) ?: 'Artist';
     $pdo->prepare('INSERT INTO artist_workspaces_v181 (artist_user_id,workspace_name) VALUES (?,?) ON DUPLICATE KEY UPDATE workspace_name=VALUES(workspace_name)')->execute([$userId,$name]);
@@ -251,14 +247,12 @@ function artist_workspace_v181_for_user(PDO $pdo, array $user): array
     $workspace=$stmt->fetch() ?: throw new RuntimeException('Artist workspace could not be opened.');
     if(trim((string)($workspace['profile_slug']??''))===''){
         $base=artist_workspace_v181_slug($name) ?: 'artist';
-        $slug=$base;
-        $n=0;
+        $slug=$base;$n=0;
         do {
             $check=$pdo->prepare('SELECT 1 FROM artist_workspaces_v181 WHERE profile_slug=? AND id<>? LIMIT 1');
             $check->execute([$slug,(int)$workspace['id']]);
             if(!$check->fetchColumn()) break;
-            $n++;
-            $slug=$base.'-'.$userId.($n>1?'-'.$n:'');
+            $n++;$slug=$base.'-'.$userId.($n>1?'-'.$n:'');
         } while($n<100);
         $pdo->prepare('UPDATE artist_workspaces_v181 SET profile_slug=? WHERE id=? AND artist_user_id=?')->execute([$slug,(int)$workspace['id'],$userId]);
         $workspace['profile_slug']=$slug;
@@ -270,7 +264,7 @@ function artist_workspace_v181_for_user(PDO $pdo, array $user): array
 function artist_workspace_v181_scope_id(?array $user = null): int
 {
     $user ??= current_user();
-    if (!$user || !user_has_role('artist', $user) || !artist_workspace_v181_schema_ready()) return 0;
+    if (!$user || !artist_workspace_v104_is_artist($user) || !artist_workspace_v181_schema_ready()) return 0;
     $pdo = db();
     if (!$pdo) return 0;
     try { return (int)(artist_workspace_v181_for_user($pdo, $user)['id'] ?? 0); } catch (Throwable $e) { return 0; }
@@ -285,12 +279,8 @@ function artist_workspace_v181_public_records(string $kind, ?array $viewer = nul
     try {
         $order = $kind === 'shows' ? 'show_date ASC,id ASC' : 'updated_at DESC,id DESC';
         $limit=max(1,min(500,$limit));
-        if ($workspaceId !== null && $workspaceId > 0) {
-            $stmt=$pdo->prepare("SELECT * FROM {$table} WHERE is_published=1 AND workspace_id=? ORDER BY {$order} LIMIT {$limit}");
-            $stmt->execute([$workspaceId]);
-        } else {
-            $stmt=$pdo->query("SELECT * FROM {$table} WHERE is_published=1 ORDER BY {$order} LIMIT {$limit}");
-        }
+        if ($workspaceId !== null && $workspaceId > 0) {$stmt=$pdo->prepare("SELECT * FROM {$table} WHERE is_published=1 AND workspace_id=? ORDER BY {$order} LIMIT {$limit}");$stmt->execute([$workspaceId]);}
+        else {$stmt=$pdo->query("SELECT * FROM {$table} WHERE is_published=1 ORDER BY {$order} LIMIT {$limit}");}
         $rows = $stmt->fetchAll() ?: [];
         if ($kind === 'shows') return $rows;
         return array_values(array_filter($rows, static fn(array $row): bool => can_view_visibility((string)($row['visibility'] ?? 'members'), $viewer)));
@@ -325,11 +315,11 @@ function artist_workspace_v181_toggle_saved(string $kind, int $itemId, array $us
     $pdo->prepare("INSERT INTO {$savedTable} (user_id,{$foreignKey}) VALUES (?,?)")->execute([(int)$user['id'],$itemId]); return true;
 }
 
-/** Artists must use the private workspace, never the shared Stonefellow editors. */
+/** Artist-capable customers must use the private workspace, never shared editors. */
 function artist_workspace_v181_guard_legacy_admin(string $collection): void
 {
     $user = current_user();
-    if ($user && user_has_role('artist', $user) && artist_workspace_v181_schema_ready()) redirect(url('/admin/artist.php?collection=' . rawurlencode($collection)));
+    if ($user && artist_workspace_v104_is_artist($user) && artist_workspace_v181_schema_ready()) redirect(url('/admin/artist.php?collection=' . rawurlencode($collection)));
 }
 
 function artist_workspace_v181_migrate_legacy(PDO $pdo, array $user): void
