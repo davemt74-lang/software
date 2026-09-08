@@ -1,0 +1,59 @@
+import fs from 'node:fs';
+import assert from 'node:assert/strict';
+
+const read = path => fs.readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
+const helper = read('includes/homeserver-capabilities-v024.php');
+const bootstrap = read('includes/bootstrap.php');
+const api = read('api/user-agent-system-v236.php');
+const chat = read('api/chat-v236.php');
+const loader = read('account-agent-settings-loader-v236.js');
+const ui = read('account-homeserver-capabilities-v024.js');
+const css = read('homeserver-capabilities-v024.css');
+const runner = read('tools/run_recovery_baseline.py');
+
+for (const key of ['agent_brain','inference','memory','knowledge','contacts','awareness','tools','skills','plugins','events','tasks','notifications']) {
+  assert.match(helper, new RegExp(`'${key}'\\s*=>`), `catalog must include ${key}`);
+}
+for (const operation of ['memory.read','knowledge.search','contacts.search','awareness.list','tools.list','skills.list','plugins.list','events.list']) {
+  assert.ok(helper.includes(`'${operation}'`), `read gateway must allow ${operation}`);
+}
+assert.doesNotMatch(helper, /CREATE\s+TABLE/i, 'v0.24 must reuse canonical HomeServer capability storage');
+assert.match(helper, /homeserver_vp3_connection\(\$userId\)/, 'registry must read canonical HomeServer connection');
+assert.match(helper, /capabilities_json/, 'registry must derive from canonical capabilities cache');
+assert.match(helper, /legacy_assumed/, 'legacy Agent Brain compatibility must be explicit');
+assert.match(helper, /unsupported_capability/, 'read gateway must be allowlisted');
+assert.doesNotMatch(helper, /shell\.execute|filesystem\.read|http\.proxy/, 'unsafe HomeServer capabilities must not be routed');
+
+assert.match(bootstrap, /homeserver-capabilities-v024\.php/, 'bootstrap must load v0.24 capability resolver');
+assert.match(api, /homeserver_capability_v024_attach_state/, 'Agent settings state must expose capability registry');
+assert.match(api, /refresh_homeserver_capabilities/, 'Agent settings must support explicit capability refresh');
+assert.match(api, /homeserver_capability_v024_registry\(\(int\)\$user\['id'\], true\)/, 'refresh must force canonical HomeServer status discovery');
+
+const toolIndex = chat.indexOf('agent_tool_execute_query');
+const homeAttemptIndex = chat.indexOf('homeserver_agent_v018_chat');
+assert.ok(toolIndex >= 0 && homeAttemptIndex > toolIndex, 'existing VP3 tools must remain first in the canonical chat path');
+assert.match(chat, /homeserver_capability_v024_registry\(\$userId,false\)/, 'chat must resolve the current HomeServer registry');
+assert.match(chat, /homeserver_capability_v024_resolve\(\$capabilityRegistry,'agent_brain','vp3_cloud'\)/, 'chat must resolve Agent Brain capability');
+assert.match(chat, /\$homeReady=!empty\(\$brainCapability\['ready'\]\)/, 'compute route must use actual capability readiness');
+assert.match(chat, /\$homeSupported=!empty\(\$brainCapability\['supported'\]\)/, 'chat must distinguish support from temporary readiness');
+assert.match(chat, /try_homeserver'\]\)&&\$homeSupported/, 'HomeServer attempts must require advertised or explicit legacy support');
+assert.match(chat, /capability_route/, 'capability provenance must persist with execution metadata');
+assert.match(chat, /vp3_tool_handled/, 'VP3 tool execution must receive capability provenance');
+assert.match(chat, /policy_vp3_cloud/, 'direct cloud policy must be distinguishable from fallback');
+assert.match(chat, /does not advertise the Agent Brain capability/, 'HomeServer-only mode must fail closed for unsupported Agent Brain');
+assert.match(chat, /retrying supported paired HomeServers on each/, 'offline status must not disable v0.22 request-time recovery');
+
+assert.match(loader, /agent-compute-v024-20260908/, 'v0.24 assets must be cache-busted');
+assert.match(loader, /homeserver-capabilities-v024\.css/, 'capability CSS must load on account pages');
+assert.match(loader, /account-homeserver-capabilities-v024\.js/, 'capability UI must load on account pages');
+assert.match(ui, /HomeServer Capabilities/, 'Agents & Data must show HomeServer capability routing');
+assert.match(ui, /Agent capability routing/, 'capability card heading');
+assert.match(ui, /Refresh HomeServer/, 'capability card must support refresh');
+assert.match(ui, /Local and user-provider HomeServer execution does not consume VP3 cloud tokens/, 'UI must explain cloud billing boundary');
+assert.doesNotMatch(ui, /relay_token|homeserver_token|capabilities_json/, 'browser UI must not expose HomeServer credentials or raw storage');
+assert.match(css, /sf-homeserver-capabilities-v024/, 'capability UI must have dedicated responsive styling');
+
+assert.match(runner, /tests\/homeserver-capabilities-v024\.php/, 'pure v0.24 resolver test must run in Recovery Baseline');
+assert.match(runner, /tests\/homeserver-capabilities-v024-contract\.mjs/, 'v0.24 contract must run in Recovery Baseline');
+
+console.log('VP3 v0.24 HomeServer capability routing contract passed');
