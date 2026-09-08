@@ -88,6 +88,26 @@ function chat_execution_v019_cloud_ledger(array $user): ?array
     }
 }
 
+/** Direct VP3 route selected by v0.20 — never presented as a HomeServer fallback. */
+function chat_execution_v019_vp3_direct(array $user): array
+{
+    $ledger=chat_execution_v019_cloud_ledger($user);
+    if($ledger){
+        $total=max(0,(int)($ledger['total_tokens']??0));
+        return chat_execution_v019_base(
+            'vp3_cloud','VP3 Cloud',(string)($ledger['provider']??''),(string)($ledger['model']??''),'not_used',false,'none',
+            [
+                'input_tokens'=>(int)($ledger['input_tokens']??0),
+                'output_tokens'=>(int)($ledger['output_tokens']??0),
+                'total_tokens'=>$total,
+            ],0,$total
+        );
+    }
+    return chat_execution_v019_base(
+        'vp3_retrieval','VP3 Retrieval','local','','not_used',false,'none',[]
+    );
+}
+
 function chat_execution_v019_fallback(array $user,bool $homePaired,bool $homeAttempted=true): array
 {
     $ledger=chat_execution_v019_cloud_ledger($user);
