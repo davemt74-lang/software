@@ -31,6 +31,50 @@ function agent_compute_v020_valid_preference(string $preference): bool
     return isset(agent_compute_v020_preferences()[$preference]);
 }
 
+/**
+ * Pure routing plan shared by the settings surface and canonical Chat path.
+ */
+function agent_compute_v020_route_plan(string $preference, bool $homePaired, bool $homeReady): array
+{
+    if (!agent_compute_v020_valid_preference($preference)) {
+        $preference = 'auto';
+    }
+
+    if ($preference === 'vp3_cloud') {
+        return [
+            'preference' => $preference,
+            'try_homeserver' => false,
+            'homeserver_cloud_allowed' => false,
+            'allow_vp3_fallback' => true,
+            'resolved_route' => 'vp3_cloud',
+            'resolved_label' => 'VP3 Cloud',
+            'blocked' => false,
+        ];
+    }
+
+    if ($preference === 'homeserver_only') {
+        return [
+            'preference' => $preference,
+            'try_homeserver' => $homePaired,
+            'homeserver_cloud_allowed' => false,
+            'allow_vp3_fallback' => false,
+            'resolved_route' => $homeReady ? 'homeserver' : 'blocked',
+            'resolved_label' => $homeReady ? 'HomeServer' : 'Waiting for HomeServer',
+            'blocked' => !$homeReady,
+        ];
+    }
+
+    return [
+        'preference' => 'auto',
+        'try_homeserver' => $homePaired,
+        'homeserver_cloud_allowed' => true,
+        'allow_vp3_fallback' => true,
+        'resolved_route' => $homeReady ? 'homeserver' : 'vp3_cloud',
+        'resolved_label' => $homeReady ? 'HomeServer first' : 'VP3 Cloud',
+        'blocked' => false,
+    ];
+}
+
 function agent_compute_v020_ensure_schema(?PDO $pdo = null): void
 {
     $pdo ??= db();
@@ -101,12 +145,24 @@ function agent_compute_v020_cloud_state(array $user): array
         'reserved' => 0,
     ];
     $recent = [];
+    $summary = ['requests' => 0, 'total_tokens' => 0];
+
     try {
         if (function_exists('subscription_ai_balance')) {
             $balance = subscription_ai_balance($user);
         }
         if ($userId > 0 && function_exists('subscription_recent_usage')) {
             $recent = subscription_recent_usage($userId, 15);
+        }
+        $pdo = db();
+        if ($userId > 0 && $pdo && table_exists('ai_usage_ledger')) {
+            $stmt = $pdo->prepare('SELECT COUNT(*) requests,COALESCE(SUM(total_tokens),0) total_tokens FROM ai_usage_ledger WHERE user_id=?');
+            $stmt->execute([$userId]);
+            $row = $stmt->fetch() ?: [];
+            $summary = [
+                'requests' => max(0, (int)($row['requests'] ?? 0)),
+                'total_tokens' => max(0, (int)($row['total_tokens'] ?? 0)),
+            ];
         }
     } catch (Throwable $e) {
         // Compute settings remain usable even if subscription storage is being upgraded.
@@ -129,7 +185,7 @@ function agent_compute_v020_cloud_state(array $user): array
             'completion_tokens' => max(0, (int)($row['output_tokens'] ?? 0)),
             'total_tokens' => max(0, (int)($row['total_tokens'] ?? 0)),
             'billable_tokens' => max(0, (int)($row['total_tokens'] ?? 0)),
-            'created_at' => (string)($row['created_at'] ?? ''),
+            'created_at' => mb_strimwidth((string)($row['created_at'] ?? ''), 0, 64, ''),
         ];
     }
 
@@ -145,6 +201,7 @@ function agent_compute_v020_cloud_state(array $user): array
             'credits_remaining' => !empty($balance['unlimited']) ? null : max(0, (int)($balance['credits_remaining'] ?? 0)),
             'reserved' => !empty($balance['unlimited']) ? 0 : max(0, (int)($balance['reserved'] ?? 0)),
         ],
+        'summary' => $summary,
         'recent' => $items,
     ];
 }
@@ -184,13 +241,22 @@ function agent_compute_v020_homeserver_usage(array $user, int $limit = 15): arra
                 'completion_tokens' => max(0, (int)($row['completion_tokens'] ?? 0)),
                 'total_tokens' => max(0, (int)($row['total_tokens'] ?? 0)),
                 'billable_tokens' => max(0, (int)($row['billable_tokens'] ?? 0)),
-                'created_at' => (string)($row['created_at'] ?? ''),
+                'created_at' => mb_strimwidth((string)($row['created_at'] ?? ''), 0, 64, ''),
             ];
         }
+        $rawSummary = is_array($result['summary'] ?? null) ? $result['summary'] : [];
+        $summary = [
+            'cloud_tokens_debited' => max(0, (int)($rawSummary['cloud_tokens_debited'] ?? 0)),
+            'cloud_model_tokens' => max(0, (int)($rawSummary['cloud_model_tokens'] ?? 0)),
+            'homeserver_tokens' => max(0, (int)($rawSummary['homeserver_tokens'] ?? 0)),
+            'cloud_requests' => max(0, (int)($rawSummary['cloud_requests'] ?? 0)),
+            'homeserver_requests' => max(0, (int)($rawSummary['homeserver_requests'] ?? 0)),
+            'balance_tokens' => isset($rawSummary['balance_tokens']) ? max(0, (int)$rawSummary['balance_tokens']) : null,
+        ];
         return [
             'available' => true,
             'items' => $items,
-            'summary' => is_array($result['summary'] ?? null) ? $result['summary'] : [],
+            'summary' => $summary,
             'error' => '',
         ];
     } catch (Throwable $e) {
@@ -223,41 +289,26 @@ function agent_compute_v020_state(PDO $pdo, array $user): array
     $homeProvider = trim((string)($inference['provider_key'] ?? $inference['provider'] ?? $inference['active_provider'] ?? ''));
     $homeModel = trim((string)($inference['model'] ?? $inference['active_model'] ?? ''));
     $homeReady = !empty($home['agent_brain_ready']);
-    $route = 'vp3_cloud';
-    $routeLabel = 'VP3 Cloud';
-    $blocked = false;
-
-    if ($preference === 'homeserver_only') {
-        if ($homeReady) {
-            $route = 'homeserver';
-            $routeLabel = 'HomeServer';
-        } else {
-            $route = 'blocked';
-            $routeLabel = 'Waiting for HomeServer';
-            $blocked = true;
-        }
-    } elseif ($preference === 'auto' && $homeReady) {
-        $route = 'homeserver';
-        $routeLabel = 'HomeServer first';
-    }
+    $homePaired = !empty($home['paired']);
+    $plan = agent_compute_v020_route_plan($preference, $homePaired, $homeReady);
 
     return [
         'version' => 'v0.20',
         'preference' => $preference,
         'preferences' => agent_compute_v020_preferences(),
-        'resolved_route' => $route,
-        'resolved_label' => $routeLabel,
-        'blocked' => $blocked,
+        'resolved_route' => (string)$plan['resolved_route'],
+        'resolved_label' => (string)$plan['resolved_label'],
+        'blocked' => !empty($plan['blocked']),
         'homeserver' => [
             'state' => (string)($home['state'] ?? 'unpaired'),
             'connected' => !empty($home['connected']),
-            'paired' => !empty($home['paired']),
+            'paired' => $homePaired,
             'agent_brain_ready' => $homeReady,
             'last_seen_at' => $home['last_seen_at'] ?? null,
             'installed_version' => (string)($home['installed_version'] ?? ''),
             'update_available' => !empty($home['update_available']),
-            'provider' => $homeProvider,
-            'model' => $homeModel,
+            'provider' => mb_strimwidth($homeProvider, 0, 80, ''),
+            'model' => mb_strimwidth($homeModel, 0, 160, ''),
             'error' => trim((string)($home['error'] ?? '')) !== '' ? 'HomeServer needs attention.' : '',
             'usage' => $homeUsage,
         ],
