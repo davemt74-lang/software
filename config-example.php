@@ -35,6 +35,13 @@ return [
         'send_password_reset_email' => false,
     ],
 
+    // HomeServer's trusted Remote Relay. Production must use HTTPS. The same
+    // value may instead be supplied as VP3_HOMESERVER_RELAY_URL. HomeServer
+    // itself connects outbound to the corresponding WSS /bridge endpoint.
+    'homeserver' => [
+        'relay_base_url' => 'https://relay.example.com',
+    ],
+
     // Optional OpenAI-compatible chat endpoint. Leave blank to use
     // VP3's built-in database/knowledge retrieval responses.
     'ai' => [
