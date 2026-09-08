@@ -77,9 +77,6 @@
     });
   });
 
-  // Legacy specialty links (currently MIDI) are still injected later by the
-  // footer. Keep them inside the bottom Music accordion instead of allowing a
-  // second uncategorized navigation layer to appear.
   const navigation = document.querySelector('.admin-navigation');
   const musicLinks = document.getElementById('admin-nav-music');
   if (navigation && musicLinks) {
@@ -108,13 +105,70 @@
 
   function closeModal(modal) {
     if (!(modal instanceof HTMLElement) || modal.hidden) return;
+    const returnUrl = modal.dataset.adminModalReturnUrl || '';
     modal.classList.remove('is-open');
     modal.setAttribute('aria-hidden', 'true');
     window.setTimeout(() => {
       modal.hidden = true;
       if (!document.querySelector('[data-admin-modal].is-open')) body.classList.remove('admin-modal-open');
+      if (returnUrl) {
+        window.location.assign(returnUrl);
+        return;
+      }
       if (lastModalTrigger instanceof HTMLElement && lastModalTrigger.isConnected) lastModalTrigger.focus({preventScroll:true});
     }, 140);
+  }
+
+  function promoteLegacyPanelToModal(panel, options = {}) {
+    if (!(panel instanceof HTMLElement) || panel.closest('[data-admin-modal]')) return null;
+    const heading = panel.querySelector('.content-form-heading');
+    const headingTitle = heading?.querySelector('h2')?.textContent?.trim() || options.title || 'Edit';
+    const headingCopy = heading?.querySelector('p')?.textContent?.trim() || options.description || '';
+    const modal = document.createElement('div');
+    const id = options.id || `${panel.id || 'admin'}Modal`;
+    modal.className = 'admin-modal';
+    modal.id = id;
+    modal.dataset.adminModal = '1';
+    modal.dataset.adminModalReturnUrl = options.returnUrl || '';
+    modal.setAttribute('aria-hidden', 'false');
+
+    const dialog = document.createElement('div');
+    dialog.className = 'admin-modal-dialog';
+    dialog.setAttribute('role', 'dialog');
+    dialog.setAttribute('aria-modal', 'true');
+    dialog.setAttribute('aria-labelledby', `${id}Title`);
+
+    const head = document.createElement('div');
+    head.className = 'admin-modal-head';
+    const copy = document.createElement('div');
+    const eyebrow = document.createElement('span');
+    eyebrow.className = 'eyebrow';
+    eyebrow.textContent = options.eyebrow || 'Account Management';
+    const title = document.createElement('h2');
+    title.id = `${id}Title`;
+    title.textContent = headingTitle;
+    copy.append(eyebrow, title);
+    if (headingCopy) {
+      const p = document.createElement('p');
+      p.textContent = headingCopy;
+      copy.appendChild(p);
+    }
+    const close = document.createElement('button');
+    close.type = 'button';
+    close.className = 'admin-modal-close';
+    close.dataset.adminModalClose = '1';
+    close.setAttribute('aria-label', 'Close');
+    close.textContent = '×';
+    head.append(copy, close);
+
+    heading?.remove();
+    panel.classList.remove('panel');
+    panel.classList.add('admin-modal-body');
+    panel.removeAttribute('id');
+    dialog.append(head, panel);
+    modal.appendChild(dialog);
+    document.body.appendChild(modal);
+    return modal;
   }
 
   document.addEventListener('click', event => {
@@ -138,6 +192,19 @@
     if (userMenu && !userMenu.contains(event.target)) closeUserMenu();
     if (notificationMenu && !notificationMenu.contains(event.target)) closeNotificationMenu();
   });
+
+  // The Users page already has mature backend validation and persistence. Turn
+  // only its legacy editor panel into the canonical modal instead of duplicating
+  // that account-management implementation.
+  const legacyUserEditor = document.getElementById('user-form');
+  if (legacyUserEditor) {
+    const modal = promoteLegacyPanelToModal(legacyUserEditor, {
+      id:'userEditorModal',
+      eyebrow:'Account Management',
+      returnUrl:new URL('users.php', window.location.href).toString(),
+    });
+    if (modal) openModal(modal);
+  }
 
   document.querySelectorAll('[data-admin-modal][data-admin-modal-auto-open="1"]').forEach(modal => openModal(modal));
 
@@ -181,5 +248,5 @@
   });
   window.addEventListener('resize', () => { if (window.innerWidth > 900) closeSidebarMenu(); });
 
-  window.VP3AdminUI = {openModal, closeModal};
+  window.VP3AdminUI = {openModal, closeModal, promoteLegacyPanelToModal};
 })();
