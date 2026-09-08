@@ -40,24 +40,33 @@ function agent_compute_v023_ensure_schema(PDO $pdo): void
 function agent_compute_v023_overrides_for_user(PDO $pdo,int $userId): array
 {
     if($userId<1)return [];
-    $stmt=$pdo->prepare('SELECT agent_id,preference FROM agent_compute_overrides WHERE user_id=?');
-    $stmt->execute([$userId]);
-    $out=[];
-    foreach($stmt->fetchAll()?:[] as $row){
-        $agentId=max(0,(int)($row['agent_id']??0));
-        $preference=(string)($row['preference']??'inherit');
-        if(agent_compute_v023_valid_override($preference)&&$preference!=='inherit')$out[$agentId]=$preference;
+    try{
+        $stmt=$pdo->prepare('SELECT agent_id,preference FROM agent_compute_overrides WHERE user_id=?');
+        $stmt->execute([$userId]);
+        $out=[];
+        foreach($stmt->fetchAll()?:[] as $row){
+            $agentId=max(0,(int)($row['agent_id']??0));
+            $preference=(string)($row['preference']??'inherit');
+            if(agent_compute_v023_valid_override($preference)&&$preference!=='inherit')$out[$agentId]=$preference;
+        }
+        return $out;
+    }catch(Throwable $e){
+        // A not-yet-deployed v0.23 table must not break existing Agent Chat.
+        return [];
     }
-    return $out;
 }
 
 function agent_compute_v023_override(PDO $pdo,int $userId,int $agentId): string
 {
     if($userId<1||$agentId<0)return 'inherit';
-    $stmt=$pdo->prepare('SELECT preference FROM agent_compute_overrides WHERE user_id=? AND agent_id=? LIMIT 1');
-    $stmt->execute([$userId,$agentId]);
-    $preference=(string)($stmt->fetchColumn()?:'inherit');
-    return agent_compute_v023_valid_override($preference)?$preference:'inherit';
+    try{
+        $stmt=$pdo->prepare('SELECT preference FROM agent_compute_overrides WHERE user_id=? AND agent_id=? LIMIT 1');
+        $stmt->execute([$userId,$agentId]);
+        $preference=(string)($stmt->fetchColumn()?:'inherit');
+        return agent_compute_v023_valid_override($preference)?$preference:'inherit';
+    }catch(Throwable $e){
+        return 'inherit';
+    }
 }
 
 function agent_compute_v023_policy_from_values(string $accountPreference,string $agentOverride): array
@@ -116,7 +125,8 @@ function agent_compute_v023_delete_override(PDO $pdo,int $userId,int $agentId): 
 function agent_compute_v023_attach_state(PDO $pdo,array $user,array $state): array
 {
     $userId=(int)($user['id']??0);
-    $accountPreference=agent_compute_v020_preference($pdo,$userId);
+    $accountPreference=(string)($state['compute']['preference']??'');
+    if(!agent_compute_v020_valid_preference($accountPreference))$accountPreference=agent_compute_v020_preference($pdo,$userId);
     $overrides=agent_compute_v023_overrides_for_user($pdo,$userId);
     $state['compute']=is_array($state['compute']??null)?$state['compute']:[];
     $state['compute']['agent_policy_version']='v0.23';
