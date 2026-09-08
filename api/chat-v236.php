@@ -2,6 +2,7 @@
 declare(strict_types=1);
 require dirname(__DIR__) . '/includes/bootstrap.php';
 require_once dirname(__DIR__) . '/includes/chat-execution-v019.php';
+require_once dirname(__DIR__) . '/includes/homeserver-agent-v025.php';
 header('Content-Type: application/json; charset=UTF-8');header('Cache-Control: no-store');
 $user=current_user();if(!$user||!has_permission('chat.access',$user)){http_response_code(403);echo json_encode(['ok'=>false,'error'=>'Chat access is not available for this account.']);exit;}
 $pdo=db();if(!$pdo||!table_exists('chat_conversations')||!user_agent_system_schema_ready_v236($pdo)){http_response_code(503);echo json_encode(['ok'=>false,'error'=>'Agent Chat storage is not ready. An administrator needs to run the database upgrade.']);exit;}
@@ -45,8 +46,8 @@ else{
     // A previously-ready HomeServer may be temporarily offline. Preserve the
     // v0.22 recovery behavior by retrying supported paired HomeServers on each
     // new Agent request rather than trusting the short-lived status cache alone.
-    if(!empty($computePlan['try_homeserver'])&&$homeSupported){$homeAttempted=true;$homeResult=homeserver_agent_v018_chat($user,$query,$conversationId,!empty($computePlan['homeserver_cloud_allowed']));}
-    if($homeResult){$answer=(string)$homeResult['answer'];$context=[];$execution=chat_execution_v019_homeserver($homeResult);$successCapability=$brainCapability;$successCapability['source']='homeserver';$successCapability['ready']=true;$successCapability['reason']=$homeReady?'homeserver_capability_ready':'homeserver_request_recovered';$capabilityRoute=homeserver_capability_v024_public_route($successCapability,'homeserver',false);}
+    if(!empty($computePlan['try_homeserver'])&&$homeSupported){$homeAttempted=true;$homeResult=homeserver_agent_v025_chat($user,$query,$conversationId,$history,$principal,$activeAgent,$agentContext,!empty($computePlan['homeserver_cloud_allowed']));}
+    if($homeResult){$answer=(string)$homeResult['answer'];$context=[];$execution=chat_execution_v019_homeserver($homeResult);$execution['brain_delegation']=homeserver_agent_v025_public_state($homeResult);$successCapability=$brainCapability;$successCapability['source']='homeserver';$successCapability['ready']=true;$successCapability['reason']=$homeReady?'homeserver_capability_ready':'homeserver_request_recovered';$capabilityRoute=homeserver_capability_v024_public_route($successCapability,'homeserver',false);}
     elseif($computePreference==='homeserver_only'){
         throw new RuntimeException('HomeServer-only compute is selected for this Agent, but HomeServer could not complete this request. Start or reconnect HomeServer, then try again.');
     }
