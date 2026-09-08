@@ -87,10 +87,14 @@ function agent_compute_v023_policy_from_values(string $accountPreference,string 
 function agent_compute_v023_effective(PDO $pdo,int $userId,int $agentId=0,?string $accountPreference=null): array
 {
     $accountPreference ??= agent_compute_v020_preference($pdo,$userId);
-    return agent_compute_v023_policy_from_values(
+    $policy=agent_compute_v023_policy_from_values(
         $accountPreference,
         agent_compute_v023_override($pdo,$userId,$agentId)
     );
+    if(function_exists('homeserver_scope_v026_fetch')&&function_exists('homeserver_scope_v026_apply_compute_policy')){
+        $policy=homeserver_scope_v026_apply_compute_policy($policy,homeserver_scope_v026_fetch($userId,false));
+    }
+    return $policy;
 }
 
 function agent_compute_v023_assert_owned_agent(PDO $pdo,int $userId,int $agentId): void
@@ -152,12 +156,24 @@ function agent_compute_v023_public_policy(array $policy,int $agentId): array
     $account=(string)($policy['account_preference']??'auto');
     $override=(string)($policy['agent_override']??'inherit');
     $effective=(string)($policy['effective_preference']??'auto');
-    return [
-        'version'=>'v0.23',
+    $source=(string)($policy['source']??'account');
+    if(!in_array($source,['account','agent','homeserver_scope'],true))$source='account';
+    $public=[
+        'version'=>!empty($policy['scope_override'])?'v0.26':'v0.23',
         'agent_id'=>max(0,$agentId),
         'account_preference'=>in_array($account,$allowed,true)?$account:'auto',
         'agent_override'=>in_array($override,$allowed,true)?$override:'inherit',
         'effective_preference'=>in_array($effective,['auto','homeserver_only','vp3_cloud'],true)?$effective:'auto',
-        'source'=>(string)($policy['source']??'account')==='agent'?'agent':'account',
+        'source'=>$source,
     ];
+    if(is_array($policy['homeserver_scope']??null)){
+        $scope=$policy['homeserver_scope'];
+        $public['homeserver_scope']=[
+            'supported'=>!empty($scope['supported']),
+            'available'=>!empty($scope['available']),
+            'cloud_allowed'=>$scope['cloud_allowed']??null,
+            'cloud_blocked'=>!empty($policy['scope_override']),
+        ];
+    }
+    return $public;
 }
