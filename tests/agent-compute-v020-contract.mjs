@@ -27,7 +27,7 @@ assert.match(compute, /subscription_recent_usage/);
 assert.doesNotMatch(compute, /relay_token_enc.*return|homeserver_token_enc.*return|pending_claim_token_enc.*return/i);
 
 assert.match(bootstrap, /agent-compute-v020\.php/);
-assert.match(api, /\$state\['compute'\]=agent_compute_v020_state/);
+assert.match(api, /\$state\['compute'\]\s*=\s*agent_compute_v020_state/);
 assert.match(api, /save_compute_preference/);
 assert.match(api, /agent_compute_v020_save_preference/);
 
