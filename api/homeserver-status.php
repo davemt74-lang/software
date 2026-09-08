@@ -14,6 +14,15 @@ if ($userId < 1) {
     exit;
 }
 
+function homeserver_status_error_snapshot(int $userId): ?array
+{
+    try {
+        return homeserver_vp3_status($userId, false);
+    } catch (Throwable $e) {
+        return null;
+    }
+}
+
 try {
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (!verify_csrf()) {
@@ -54,9 +63,13 @@ try {
     echo json_encode(['ok'=>true,'status'=>homeserver_vp3_status($userId, $force)], JSON_UNESCAPED_SLASHES);
 } catch (Throwable $e) {
     http_response_code(400);
+    $message = trim($e->getMessage());
+    if ($message === '' || preg_match('/(?:credential key|decrypt|database|sql|openssl|curl)/i', $message)) {
+        $message = 'HomeServer connection could not be updated. Check the connection settings and try again.';
+    }
     echo json_encode([
         'ok'=>false,
-        'error'=>mb_substr($e->getMessage(), 0, 500),
-        'status'=>homeserver_vp3_status($userId, false),
+        'error'=>mb_substr($message, 0, 500),
+        'status'=>homeserver_status_error_snapshot($userId),
     ], JSON_UNESCAPED_SLASHES);
 }
