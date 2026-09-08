@@ -75,10 +75,11 @@ function agent_compute_v023_policy_from_values(string $accountPreference,string 
     ];
 }
 
-function agent_compute_v023_effective(PDO $pdo,int $userId,int $agentId=0): array
+function agent_compute_v023_effective(PDO $pdo,int $userId,int $agentId=0,?string $accountPreference=null): array
 {
+    $accountPreference ??= agent_compute_v020_preference($pdo,$userId);
     return agent_compute_v023_policy_from_values(
-        agent_compute_v020_preference($pdo,$userId),
+        $accountPreference,
         agent_compute_v023_override($pdo,$userId,$agentId)
     );
 }
