@@ -21,7 +21,7 @@ assert.match(helper,/function agent_compute_v023_save_override/);
 assert.match(helper,/function agent_compute_v023_assert_owned_agent/);
 assert.match(helper,/user_agent_get_v236\(\$pdo,\$userId,\$agentId\)/);
 assert.match(helper,/DELETE FROM agent_compute_overrides WHERE user_id=\? AND agent_id=\?/);
-assert.match(helper,/agent_id===0/);
+assert.match(helper,/if\(\$agentId===0\)return;/);
 assert.match(helper,/agent_policy_version'\]\s*=\s*'v0\.23'/);
 assert.doesNotMatch(helper,/relay_token_enc|homeserver_token_enc|pending_claim_token_enc|bearer_token|raw_error/i);
 
