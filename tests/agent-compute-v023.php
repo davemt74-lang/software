@@ -39,4 +39,27 @@ assert_same_v023(42,$public['agent_id'],'Execution policy must preserve the sele
 assert_same_v023('homeserver_only',$public['effective_preference'],'Execution policy must expose the effective sanitized preference.');
 assert_same_v023('agent',$public['source'],'Execution policy must expose whether the Agent overrode the account default.');
 
-fwrite(STDOUT,"VP3 v0.23 per-Agent compute policy tests passed\n");
+$scopedPublic=agent_compute_v023_public_policy([
+    'account_preference'=>'auto',
+    'agent_override'=>'vp3_cloud',
+    'effective_preference'=>'homeserver_only',
+    'source'=>'homeserver_scope',
+    'source_before_scope'=>'agent',
+    'scope_override'=>true,
+    'pre_scope_effective_preference'=>'vp3_cloud',
+    'homeserver_scope'=>[
+        'supported'=>true,
+        'available'=>false,
+        'cloud_allowed'=>false,
+        'last_known_cloud_blocked'=>true,
+    ],
+],42);
+assert_same_v023('v0.23',$scopedPublic['version'],'Scope narrowing must not break the v0.23 provenance version contract.');
+assert_same_v023('agent',$scopedPublic['source'],'Scope narrowing must preserve the legacy account/Agent source field.');
+assert_same_v023('v0.26',$scopedPublic['scope_version'],'Scope metadata must identify v0.26 additively.');
+assert_same_v023(true,$scopedPublic['scope_override'],'Scope provenance must identify the effective override.');
+assert_same_v023('homeserver_scope',$scopedPublic['scope_override_source'],'Scope provenance must identify HomeServer as the narrowing authority.');
+assert_same_v023('vp3_cloud',$scopedPublic['pre_scope_effective_preference'],'Scope provenance must preserve the pre-scope route.');
+assert_same_v023(true,$scopedPublic['homeserver_scope']['last_known_cloud_blocked'],'Last-known restrictive scope must remain visible in safe provenance.');
+
+fwrite(STDOUT,"VP3 v0.23/v0.26 per-Agent compute policy tests passed\n");
