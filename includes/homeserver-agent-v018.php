@@ -92,12 +92,133 @@ function homeserver_agent_v018_credentials(int $userId): ?array
     return ['relay'=>$relay,'home'=>$home];
 }
 
-function homeserver_agent_v018_chat(array $user,string $query,int $conversationId): ?array
+/** v0.19 safe, user-visible compute routing metadata. Never includes credentials or raw relay errors. */
+function homeserver_agent_v019_usage(array $usage): array
 {
+    return [
+        'prompt_tokens'=>max(0,(int)($usage['prompt_tokens']??$usage['input_tokens']??0)),
+        'completion_tokens'=>max(0,(int)($usage['completion_tokens']??$usage['output_tokens']??0)),
+        'total_tokens'=>max(0,(int)($usage['total_tokens']??0)),
+    ];
+}
+
+function homeserver_agent_v019_fallback_label(string $reason): string
+{
+    return match($reason){
+        'not_paired'=>'HomeServer not paired',
+        'integration_unavailable'=>'HomeServer integration unavailable',
+        'relay_unavailable'=>'HomeServer unavailable',
+        'empty_reply'=>'HomeServer returned no reply',
+        default=>'',
+    };
+}
+
+function homeserver_agent_v019_route_label(string $computeSource): string
+{
+    return match($computeSource){
+        'homeserver_local'=>'HomeServer Local',
+        'user_provider'=>'Connected Provider',
+        'vp3_cloud'=>'VP3 Cloud',
+        'vp3_tool'=>'VP3 Tool',
+        default=>'HomeServer',
+    };
+}
+
+function homeserver_agent_v019_route(array $route): array
+{
+    $computeSource=mb_strimwidth(trim((string)($route['compute_source']??'')),0,80,'');
+    $fallbackReason=mb_strimwidth(trim((string)($route['fallback_reason']??'')),0,80,'');
+    $connected=$route['homeserver_connected']??null;
+    return [
+        'compute_source'=>$computeSource,
+        'label'=>homeserver_agent_v019_route_label($computeSource),
+        'provider'=>mb_strimwidth(trim((string)($route['provider']??'')),0,80,''),
+        'model'=>mb_strimwidth(trim((string)($route['model']??'')),0,160,''),
+        'homeserver_connected'=>is_bool($connected)?$connected:null,
+        'fallback_reason'=>$fallbackReason!==''?$fallbackReason:null,
+        'usage'=>homeserver_agent_v019_usage(is_array($route['usage']??null)?$route['usage']:[]),
+        'cloud_tokens_debited'=>max(0,(int)($route['cloud_tokens_debited']??0)),
+    ];
+}
+
+function homeserver_agent_v019_route_source(array $route): array
+{
+    $safe=homeserver_agent_v019_route($route);
+    $parts=['Compute: '.(string)$safe['label']];
+    $provider=(string)$safe['provider'];
+    $model=(string)$safe['model'];
+    if($provider!==''&&$model!=='')$parts[]=$provider.' / '.$model;
+    elseif($model!=='')$parts[]=$model;
+    elseif($provider!=='')$parts[]=$provider;
+    $tokens=(int)($safe['usage']['total_tokens']??0);
+    if($tokens>0)$parts[]=number_format($tokens).' token'.($tokens===1?'':'s');
+    $fallback=homeserver_agent_v019_fallback_label((string)($safe['fallback_reason']??''));
+    if($fallback!=='')$parts[]=$fallback;
+    return ['source'=>'compute-routing:v019','title'=>implode(' · ',$parts)];
+}
+
+function homeserver_agent_v019_cloud_route(array $user,string $fallbackReason=''): array
+{
+    $route=[
+        'compute_source'=>'vp3_cloud',
+        'provider'=>'vp3-cloud',
+        'model'=>'',
+        'homeserver_connected'=>false,
+        'fallback_reason'=>$fallbackReason,
+        'usage'=>[],
+        'cloud_tokens_debited'=>0,
+    ];
     $userId=(int)($user['id']??0);
-    if($userId<1||$conversationId<1||trim($query)===''||!function_exists('homeserver_vp3_remote_operation'))return null;
+    if($userId<1||!function_exists('agent_runtime_v125_trace_id'))return homeserver_agent_v019_route($route);
+    try{
+        $trace=trim((string)agent_runtime_v125_trace_id());
+        $pdo=db();
+        if($trace===''||!$pdo||!table_exists('ai_usage_ledger'))return homeserver_agent_v019_route($route);
+        $stmt=$pdo->prepare('SELECT provider,model,input_tokens,output_tokens,total_tokens FROM ai_usage_ledger WHERE user_id=? AND trace_id=? ORDER BY id DESC LIMIT 1');
+        $stmt->execute([$userId,$trace]);
+        $usage=$stmt->fetch();
+        if($usage){
+            $route['provider']=(string)($usage['provider']??'vp3-cloud');
+            $route['model']=(string)($usage['model']??'');
+            $route['usage']=[
+                'prompt_tokens'=>(int)($usage['input_tokens']??0),
+                'completion_tokens'=>(int)($usage['output_tokens']??0),
+                'total_tokens'=>(int)($usage['total_tokens']??0),
+            ];
+            $route['cloud_tokens_debited']=max(0,(int)($usage['total_tokens']??0));
+        }
+    }catch(Throwable $e){
+        // Routing visibility is best-effort; never expose or propagate internal database details.
+    }
+    return homeserver_agent_v019_route($route);
+}
+
+function homeserver_agent_v019_tool_route(): array
+{
+    return homeserver_agent_v019_route([
+        'compute_source'=>'vp3_tool',
+        'provider'=>'vp3',
+        'model'=>'',
+        'homeserver_connected'=>null,
+        'usage'=>[],
+        'cloud_tokens_debited'=>0,
+    ]);
+}
+
+function homeserver_agent_v018_chat(array $user,string $query,int $conversationId,?string &$fallbackReason=null): ?array
+{
+    $fallbackReason='';
+    $userId=(int)($user['id']??0);
+    if($userId<1||$conversationId<1||trim($query)==='')return null;
+    if(!function_exists('homeserver_vp3_remote_operation')){
+        $fallbackReason='integration_unavailable';
+        return null;
+    }
     $credentials=homeserver_agent_v018_credentials($userId);
-    if(!$credentials)return null;
+    if(!$credentials){
+        $fallbackReason='not_paired';
+        return null;
+    }
     $payload=[
         'message'=>$query,
         'include_memory'=>true,
@@ -111,22 +232,37 @@ function homeserver_agent_v018_chat(array $user,string $query,int $conversationI
     try{
         $result=homeserver_vp3_remote_operation($credentials['relay'],'agent.chat',$payload,$credentials['home']);
     }catch(Throwable $e){
+        $fallbackReason='relay_unavailable';
         if(function_exists('ai_v100_telemetry'))ai_v100_telemetry(['scope'=>'chat','user_id'=>$userId,'provider'=>'homeserver','status'=>'failed','service'=>'homeserver-v0.18']);
         return null;
     }
     $reply=trim((string)($result['reply']??''));
-    if($reply==='')return null;
+    if($reply===''){
+        $fallbackReason='empty_reply';
+        return null;
+    }
     homeserver_agent_v018_bind($userId,$conversationId,$result);
     if(function_exists('ai_v100_telemetry'))ai_v100_telemetry([
         'scope'=>'chat','user_id'=>$userId,'provider'=>'homeserver','model'=>(string)($result['model']??''),'status'=>'success','service'=>'homeserver-v0.18',
         'input_tokens'=>(int)($result['usage']['prompt_tokens']??0),'output_tokens'=>(int)($result['usage']['completion_tokens']??0),'total_tokens'=>(int)($result['usage']['total_tokens']??0),
     ]);
-    return [
-        'answer'=>$reply,
+    $route=homeserver_agent_v019_route([
+        'compute_source'=>(string)($result['compute_source']??'homeserver'),
         'provider'=>(string)($result['provider']??'homeserver'),
         'model'=>(string)($result['model']??''),
-        'compute_source'=>(string)($result['compute_source']??'homeserver'),
+        'homeserver_connected'=>true,
+        'fallback_reason'=>'',
         'usage'=>is_array($result['usage']??null)?$result['usage']:[],
+        'cloud_tokens_debited'=>(int)($result['cloud_tokens_debited']??0),
+    ]);
+    return [
+        'answer'=>$reply,
+        'provider'=>(string)$route['provider'],
+        'model'=>(string)$route['model'],
+        'compute_source'=>(string)$route['compute_source'],
+        'usage'=>$route['usage'],
+        'cloud_tokens_debited'=>(int)$route['cloud_tokens_debited'],
+        'routing'=>$route,
         'run_id'=>(int)($result['run_id']??0),
         'conversation_id'=>(string)($result['conversation_id']??''),
     ];
