@@ -13,7 +13,7 @@ function assert_same_v020(mixed $expected, mixed $actual, string $message): void
 
 $autoReady = agent_compute_v020_route_plan('auto', true, true);
 assert_same_v020(true, $autoReady['try_homeserver'], 'Automatic must try a paired HomeServer.');
-assert_same_v020(true, $autoReady['homeserver_cloud_allowed'], 'Automatic allows HomeServer cloud/provider fallback.');
+assert_same_v020(true, $autoReady['homeserver_cloud_allowed'], 'Automatic allows the provider selected in HomeServer.');
 assert_same_v020(true, $autoReady['allow_vp3_fallback'], 'Automatic must allow VP3 fallback.');
 assert_same_v020('homeserver', $autoReady['resolved_route'], 'Automatic resolves to HomeServer when ready.');
 
@@ -23,8 +23,8 @@ assert_same_v020('vp3_cloud', $autoOffline['resolved_route'], 'Automatic reports
 
 $homeOnly = agent_compute_v020_route_plan('homeserver_only', true, true);
 assert_same_v020(true, $homeOnly['try_homeserver'], 'HomeServer-only must try HomeServer.');
-assert_same_v020(false, $homeOnly['homeserver_cloud_allowed'], 'HomeServer-only must disable HomeServer cloud fallback.');
-assert_same_v020(false, $homeOnly['allow_vp3_fallback'], 'HomeServer-only must disable VP3 fallback.');
+assert_same_v020(true, $homeOnly['homeserver_cloud_allowed'], 'HomeServer-only must allow the model/provider selected inside HomeServer.');
+assert_same_v020(false, $homeOnly['allow_vp3_fallback'], 'HomeServer-only must disable VP3-managed cloud fallback.');
 assert_same_v020(false, $homeOnly['blocked'], 'Ready HomeServer-only route must not be blocked.');
 
 $homeOnlyUnpaired = agent_compute_v020_route_plan('homeserver_only', false, false);
