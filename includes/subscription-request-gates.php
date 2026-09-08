@@ -39,52 +39,63 @@ function subscription_request_json_error(string $code,string $message,array $ext
     exit;
 }
 
+function subscription_admin_only_permissions(): array
+{
+    return ['admin.access','users.manage','permissions.manage','ai.manage'];
+}
+
 /**
- * Manager/Producer compatibility roles are derived from Artist Team
- * relationships and deliberately carry only minimal permissions. Admin routes
- * still fail closed except for the relationship-scoped workspaces that perform
- * their own Artist/track ownership checks. A stronger Artist/Supervisor/Admin
- * identity is never reduced merely because the same person also collaborates
- * on another Artist's Team.
+ * Team authority is contextual. These guards only prevent a Customer whose
+ * Manager/Producer relationship is recognized from wandering into unrelated
+ * global Admin surfaces; the allowed Team/production routes perform their own
+ * workspace or track ownership checks.
  */
 function subscription_request_guard_legacy_team_role(string $path,array $user): void
 {
-    if(user_has_role('admin',$user)||user_has_role('artist',$user)||user_has_role('supervisor',$user))return;
-    $legacyManager=user_has_role('manager',$user);
-    $legacyProducer=user_has_role('producer',$user);
-    if(!$legacyManager&&!$legacyProducer)return;
+    if(subscription_is_internal_admin($user))return;
+    $pdo=db();$userId=(int)($user['id']??0);if(!$pdo||$userId<1||!function_exists('artist_workspace_v104_memberships_for_user'))return;
+    try{$memberships=artist_workspace_v104_memberships_for_user($pdo,$userId);}catch(Throwable $e){return;}
+    if(!$memberships)return;
+
+    $hasManager=false;$hasProducer=false;
+    foreach($memberships as $membership){
+        $role=(string)($membership['team_role']??'');
+        if($role==='manager')$hasManager=true;
+        if($role==='producer')$hasProducer=true;
+    }
+    if(!$hasManager&&!$hasProducer)return;
 
     $managerSafe=['/admin/team-workspaces.php','/admin/team-workspace.php'];
     $producerSafe=['/admin/producer-tracks.php','/admin/stems.php','/admin/stems-legacy-v108.php'];
+    if($hasManager){foreach($managerSafe as $allowed)if($path===$allowed)return;}
+    if($hasProducer){foreach($producerSafe as $allowed)if($path===$allowed)return;}
 
-    if($legacyManager){
-        foreach($managerSafe as $allowed)if($path===$allowed)return;
-    }
-    if($legacyProducer){
-        foreach($producerSafe as $allowed)if($path===$allowed)return;
-    }
-
-    if($legacyManager&&str_starts_with($path,'/admin/')){
+    // Normal Customer pages are unaffected. Only unrelated Admin surfaces are blocked.
+    if(str_starts_with($path,'/admin/')){
         http_response_code(403);
-        exit('Legacy Manager authority has been retired. Use the Artist Team workspace for relationship-scoped management.');
-    }
-
-    if($legacyProducer&&str_starts_with($path,'/admin/')){
-        http_response_code(403);
-        exit('Producer authority is limited to explicitly assigned production tracks.');
+        exit('Workspace authority is relationship-scoped. Use the applicable Artist Team or production workspace.');
     }
 }
 
-/** A package can only remove an already-authorized permission, never create it. */
+/**
+ * Canonical permission decision.
+ *
+ * Admin is the only privileged global account authority. For Customers with a
+ * current non-legacy subscription, package entitlements are the authorization
+ * source for customer-facing permissions. Legacy Access falls back to the old
+ * role-permission table so upgrades remain non-breaking.
+ */
 function subscription_effective_permission(string $permission,?array $user=null): bool
 {
     $user??=current_user();
-    if(!$user||!has_permission($permission,$user))return false;
+    if(!$user)return false;
     if(subscription_is_internal_admin($user))return true;
-    if(!subscription_schema_ready())return true;
-    $sub=subscription_current($user);
-    if(!$sub||subscription_has_entitlement($user,'legacy.permissions'))return true;
+    if(in_array($permission,subscription_admin_only_permissions(),true))return false;
     if($permission==='account.access')return true;
+
+    if(!subscription_schema_ready())return has_permission($permission,$user);
+    $sub=subscription_current($user);
+    if(!$sub||subscription_has_entitlement($user,'legacy.permissions'))return has_permission($permission,$user);
     return subscription_package_grants_permission($user,$permission);
 }
 
