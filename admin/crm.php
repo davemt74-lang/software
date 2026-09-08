@@ -170,74 +170,82 @@ $attentionItems = $view === 'dashboard'
     ? crm_v180_agent_opportunities($user, date('Y-m-d H:i:s', time() - 7 * 86400))
     : [];
 
-$adminTitle = 'CRM';
+$adminTitle = 'Book Demo CRM';
 $adminActive = 'crm';
 require __DIR__ . '/_header.php';
 ?>
 <style>
-.crm-tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px}.crm-tabs a{padding:9px 13px;border:1px solid var(--admin-line,#342f2a);border-radius:999px;font-size:12px}.crm-tabs a.active{background:#fff;color:#111;border-color:#fff}.crm-stat-grid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:12px;margin:18px 0}.crm-stat{border:1px solid #312d29;border-radius:15px;padding:17px;background:rgba(255,255,255,.025)}.crm-stat span{display:block;color:#9d958d;font-size:11px;text-transform:uppercase;letter-spacing:.08em}.crm-stat strong{display:block;font-size:27px;margin-top:5px}.crm-two{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(280px,.7fr);gap:16px}.crm-card{border:1px solid #312d29;border-radius:16px;padding:18px;background:rgba(255,255,255,.02)}.crm-card h3{margin:0 0 14px}.crm-status{display:inline-flex;padding:5px 9px;border-radius:999px;background:#24211f;font-size:10px;font-weight:800}.crm-priority-high,.crm-priority-urgent{color:#f2a984}.crm-lead-name{font-weight:800}.crm-meta{font-size:11px;color:#9e978f}.crm-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.crm-search{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px}.crm-search input,.crm-search select{background:#12110f;color:#fff;border:1px solid #37322d;border-radius:9px;padding:10px 12px}.crm-pipeline{display:grid;grid-template-columns:repeat(7,minmax(220px,1fr));gap:12px;overflow-x:auto;padding-bottom:14px}.crm-column{min-width:220px;border:1px solid #312d29;border-radius:14px;background:rgba(255,255,255,.018);padding:12px}.crm-column-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;font-size:12px;font-weight:800}.crm-pipeline-card{display:block;border:1px solid #302c28;border-radius:11px;padding:12px;background:#141210;margin-bottom:9px}.crm-pipeline-card:hover{border-color:#5b5149}.crm-pipeline-card strong{display:block;font-size:12px}.crm-pipeline-card span{display:block;color:#918a83;font-size:10px;margin-top:4px}.crm-task-overdue{box-shadow:inset 3px 0 0 #c76654}.crm-empty{padding:28px;text-align:center;color:#8c857e}.crm-attention{display:grid;gap:9px}.crm-attention a{display:block;padding:12px;border:1px solid #302c28;border-radius:11px}.crm-attention strong{display:block;font-size:12px}.crm-attention span{font-size:10px;color:#9d958d}.crm-badge{min-width:20px;height:20px;border-radius:999px;background:#292521;display:inline-grid;place-items:center;font-size:10px}
-@media(max-width:1200px){.crm-stat-grid{grid-template-columns:repeat(3,1fr)}.crm-two{grid-template-columns:1fr}}@media(max-width:680px){.crm-stat-grid{grid-template-columns:repeat(2,1fr)}.crm-search>*{width:100%}}
+.crm-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:0 0 16px}.crm-tabs{display:flex;gap:6px;flex-wrap:wrap}.crm-tabs a{display:inline-flex;align-items:center;min-height:34px;padding:7px 11px;border:1px solid var(--admin-line);border-radius:7px;background:#fff;color:#66707a;text-decoration:none;font-size:.68rem;font-weight:800}.crm-tabs a:hover{background:#f4f6f8;color:#111318}.crm-tabs a.active{background:#111318;color:#fff;border-color:#111318}.crm-stat-grid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:12px;margin:0 0 18px}.crm-stat{padding:16px;border:1px solid var(--admin-line);border-radius:10px;background:#fff}.crm-stat span{display:block;color:#7c8590;font-size:.6rem;font-weight:900;letter-spacing:.06em;text-transform:uppercase}.crm-stat strong{display:block;margin-top:6px;color:#111318;font-size:1.55rem;line-height:1;font-weight:850;letter-spacing:-.04em}.crm-two{display:grid;grid-template-columns:minmax(0,1.65fr) minmax(280px,.7fr);gap:14px}.crm-card{padding:18px;border:1px solid var(--admin-line);border-radius:10px;background:#fff}.crm-card h3{margin:0 0 14px;color:#111318;font-size:.95rem}.crm-status{display:inline-flex;align-items:center;padding:4px 7px;border-radius:999px;background:#f0f2f4;color:#4d5660;font-size:.6rem;font-weight:850}.crm-priority-high,.crm-priority-urgent{font-weight:850;color:#8f4f3f}.crm-meta{color:#7c8590;font-size:.64rem}.crm-search{display:grid;grid-template-columns:minmax(220px,1fr) 190px auto;gap:8px;align-items:end;margin:0 0 14px}.crm-search input,.crm-search select{min-height:38px}.crm-pipeline{display:grid;grid-template-columns:repeat(7,minmax(220px,1fr));gap:10px;overflow-x:auto;padding:2px 2px 12px}.crm-column{min-width:220px;padding:10px;border:1px solid var(--admin-line);border-radius:10px;background:#f8fafb}.crm-column-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;color:#4f5862;font-size:.65rem;font-weight:900}.crm-badge{min-width:20px;height:20px;padding:0 6px;display:grid;place-items:center;border-radius:999px;background:#e8ecef;color:#505862;font-size:.58rem}.crm-pipeline-card{display:block;margin-bottom:8px;padding:11px;border:1px solid #e1e5e9;border-radius:8px;background:#fff;color:#111318;text-decoration:none}.crm-pipeline-card:hover{border-color:#bfc7cf;box-shadow:0 8px 20px rgba(17,19,24,.05)}.crm-pipeline-card strong{display:block;font-size:.7rem}.crm-pipeline-card span{display:block;margin-top:4px;color:#7a838e;font-size:.61rem;line-height:1.35}.crm-attention{display:grid;gap:8px}.crm-attention a{display:block;padding:11px;border:1px solid #e1e5e9;border-radius:8px;background:#fafbfb;color:#111318;text-decoration:none}.crm-attention a:hover{background:#f4f6f8}.crm-attention strong{display:block;font-size:.69rem}.crm-attention span{display:block;margin-top:4px;color:#7a838e;font-size:.62rem;line-height:1.4}.crm-empty{padding:24px;text-align:center;color:#7d8691;font-size:.68rem}.crm-task-overdue td:first-child{box-shadow:inset 3px 0 0 #b56554}.crm-page-summary{display:flex;gap:8px;flex-wrap:wrap}.crm-page-summary span{display:inline-flex;align-items:center;min-height:30px;padding:5px 8px;border-radius:999px;background:#f0f2f4;color:#67707b;font-size:.62rem;font-weight:750}
+@media(max-width:1180px){.crm-stat-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.crm-two{grid-template-columns:1fr}}@media(max-width:720px){.crm-stat-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.crm-search{grid-template-columns:1fr}.crm-search>*{width:100%}}
 </style>
-<div class="panel">
-  <div class="content-library-heading">
-    <div>
-      <span class="status">Admin-only sales workspace</span>
-      <h2>Stonefellow CRM</h2>
-      <p class="muted">Demo requests, sales pipeline, follow-up tasks and Agent Chat opportunities.</p>
-    </div>
-    <a class="btn primary" href="<?= e(url('/book-demo.php')) ?>" target="_blank" rel="noopener">Open Demo Form ↗</a>
-  </div>
 
+<div class="content-library-heading">
+  <div>
+    <span class="status">Sales pipeline</span>
+    <h2>Book Demo CRM</h2>
+    <p class="muted">Book Demo submissions flow directly into this lead pipeline for qualification, scheduling, trials, follow-up and conversion.</p>
+  </div>
+  <div class="actions">
+    <a class="btn" href="<?= e(url('/book-demo.php')) ?>" target="_blank" rel="noopener">View Book Demo Form ↗</a>
+  </div>
+</div>
+
+<div class="crm-toolbar">
   <nav class="crm-tabs" aria-label="CRM views">
-    <?php foreach (['dashboard'=>'Dashboard','leads'=>'Leads','pipeline'=>'Pipeline','tasks'=>'Tasks'] as $key=>$label): ?>
+    <?php foreach (['dashboard'=>'Overview','leads'=>'Leads','pipeline'=>'Pipeline','tasks'=>'Tasks'] as $key=>$label): ?>
       <a class="<?= $view===$key?'active':'' ?>" href="<?= e(url('/admin/crm.php?view='.$key)) ?>"><?= e($label) ?></a>
     <?php endforeach; ?>
   </nav>
+  <div class="crm-page-summary"><span><?= number_format($summary['all']) ?> total leads</span><span><?= number_format($summary['tasks_open']) ?> open tasks</span></div>
+</div>
 
-  <div class="crm-stat-grid">
-    <div class="crm-stat"><span>New leads</span><strong><?= $summary['new'] ?></strong></div>
-    <div class="crm-stat"><span>Qualified</span><strong><?= $summary['qualified'] ?></strong></div>
-    <div class="crm-stat"><span>Demos scheduled</span><strong><?= $summary['demo_scheduled'] ?></strong></div>
-    <div class="crm-stat"><span>Trials</span><strong><?= $summary['trial'] ?></strong></div>
-    <div class="crm-stat"><span>Follow-ups due</span><strong><?= $summary['followups_due'] ?></strong></div>
-    <div class="crm-stat"><span>Won</span><strong><?= $summary['won'] ?></strong></div>
-  </div>
+<div class="crm-stat-grid">
+  <div class="crm-stat"><span>New leads</span><strong><?= $summary['new'] ?></strong></div>
+  <div class="crm-stat"><span>Qualified</span><strong><?= $summary['qualified'] ?></strong></div>
+  <div class="crm-stat"><span>Demos scheduled</span><strong><?= $summary['demo_scheduled'] ?></strong></div>
+  <div class="crm-stat"><span>Trials</span><strong><?= $summary['trial'] ?></strong></div>
+  <div class="crm-stat"><span>Follow-ups due</span><strong><?= $summary['followups_due'] ?></strong></div>
+  <div class="crm-stat"><span>Won</span><strong><?= $summary['won'] ?></strong></div>
+</div>
 
 <?php if ($view === 'dashboard'): ?>
-  <div class="crm-two">
-    <section class="crm-card">
-      <h3>Recent demo leads</h3>
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th>Lead</th><th>Stage</th><th>Role / team</th><th>Owner</th><th>Created</th><th></th></tr></thead>
-          <tbody>
-          <?php foreach ($recentLeads as $lead): ?>
-            <tr>
-              <td><span class="crm-lead-name"><?= e($lead['name']) ?></span><br><span class="crm-meta"><?= e($lead['company'] ?: $lead['email']) ?></span></td>
-              <td><span class="crm-status"><?= e(crm_v180_stages()[(string)$lead['stage']] ?? (string)$lead['stage']) ?></span></td>
-              <td><?= e($lead['role_interest'] ?: '—') ?><br><span class="crm-meta"><?= e($lead['team_size'] ?: '—') ?></span></td>
-              <td><?= e($lead['assigned_name'] ?: 'Unassigned') ?></td>
-              <td><?= e(date('M j, g:i A', strtotime((string)$lead['created_at']))) ?></td>
-              <td><a class="btn" href="<?= e(url('/admin/crm-lead.php?id='.(int)$lead['id'])) ?>">Open</a></td>
-            </tr>
-          <?php endforeach; ?>
-          <?php if (!$recentLeads): ?><tr><td colspan="6" class="crm-empty">No CRM leads yet. New Book a Demo submissions will appear here automatically.</td></tr><?php endif; ?>
-          </tbody>
-        </table>
-      </div>
-    </section>
-    <aside class="crm-card">
-      <h3>Needs attention</h3>
-      <div class="crm-attention">
-        <?php foreach ($attentionItems as $item): ?>
-          <a href="<?= e($item['target_url']) ?>"><strong><?= e($item['title']) ?></strong><span><?= e($item['body']) ?></span></a>
+<div class="crm-two">
+  <section class="crm-card">
+    <div class="admin-card-head"><div><h3>Recent Book Demo leads</h3><p>Newest inquiries entering the sales workflow.</p></div><a class="btn" href="<?= e(url('/admin/crm.php?view=leads')) ?>">View all</a></div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Lead</th><th>Stage</th><th>Role / team</th><th>Owner</th><th>Created</th><th></th></tr></thead>
+        <tbody>
+        <?php foreach ($recentLeads as $lead): ?>
+          <tr>
+            <td><strong><?= e($lead['name']) ?></strong><br><span class="crm-meta"><?= e($lead['company'] ?: $lead['email']) ?></span></td>
+            <td><span class="crm-status"><?= e(crm_v180_stages()[(string)$lead['stage']] ?? (string)$lead['stage']) ?></span></td>
+            <td><?= e($lead['role_interest'] ?: '—') ?><br><span class="crm-meta"><?= e($lead['team_size'] ?: '—') ?></span></td>
+            <td><?= e($lead['assigned_name'] ?: 'Unassigned') ?></td>
+            <td><?= e(date('M j, g:i A', strtotime((string)$lead['created_at']))) ?></td>
+            <td><a class="btn" href="<?= e(url('/admin/crm-lead.php?id='.(int)$lead['id'])) ?>">Open</a></td>
+          </tr>
         <?php endforeach; ?>
-        <?php if (!$attentionItems): ?><div class="crm-empty">Nothing urgent right now.</div><?php endif; ?>
-      </div>
-    </aside>
-  </div>
+        <?php if (!$recentLeads): ?><tr><td colspan="6" class="crm-empty">No Book Demo leads yet.</td></tr><?php endif; ?>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <aside class="crm-card">
+    <div class="admin-card-head"><div><h3>Needs attention</h3><p>Follow-up opportunities surfaced from the existing CRM Agent logic.</p></div></div>
+    <div class="crm-attention">
+      <?php foreach ($attentionItems as $item): ?>
+        <a href="<?= e($item['target_url']) ?>"><strong><?= e($item['title']) ?></strong><span><?= e($item['body']) ?></span></a>
+      <?php endforeach; ?>
+      <?php if (!$attentionItems): ?><div class="crm-empty">Nothing urgent right now.</div><?php endif; ?>
+    </div>
+  </aside>
+</div>
 
 <?php elseif ($view === 'leads'): ?>
+<section class="admin-card">
+  <div class="admin-card-head"><div><h3>Lead directory</h3><p>Search and filter every Book Demo lead without leaving the CRM.</p></div></div>
   <form class="crm-search" method="get">
     <input type="hidden" name="view" value="leads">
     <input type="search" name="q" value="<?= e($search) ?>" placeholder="Search name, email, company or role">
@@ -247,8 +255,11 @@ require __DIR__ . '/_header.php';
   <div class="table-wrap"><table><thead><tr><th>Lead</th><th>Stage</th><th>Priority</th><th>Role / team</th><th>Assigned</th><th>Next follow-up</th><th>Updated</th><th></th></tr></thead><tbody>
   <?php foreach ($leads as $lead): ?><tr><td><strong><?= e($lead['name']) ?></strong><br><span class="crm-meta"><?= e($lead['company'] ?: $lead['email']) ?></span></td><td><span class="crm-status"><?= e(crm_v180_stages()[(string)$lead['stage']] ?? $lead['stage']) ?></span></td><td class="crm-priority-<?= e($lead['priority']) ?>"><?= e(ucfirst((string)$lead['priority'])) ?></td><td><?= e($lead['role_interest'] ?: '—') ?><br><span class="crm-meta"><?= e($lead['team_size'] ?: '—') ?></span></td><td><?= e($lead['assigned_name'] ?: 'Unassigned') ?></td><td><?= $lead['next_follow_up_at'] ? e(date('M j, g:i A',strtotime((string)$lead['next_follow_up_at']))) : '—' ?></td><td><?= e(date('M j',strtotime((string)$lead['updated_at']))) ?></td><td><a class="btn" href="<?= e(url('/admin/crm-lead.php?id='.(int)$lead['id'])) ?>">Open</a></td></tr><?php endforeach; ?>
   <?php if (!$leads): ?><tr><td colspan="8" class="crm-empty">No leads match this view.</td></tr><?php endif; ?></tbody></table></div>
+</section>
 
 <?php elseif ($view === 'pipeline'): ?>
+<section class="admin-card">
+  <div class="admin-card-head"><div><h3>Sales pipeline</h3><p>Book Demo leads grouped by their current sales stage.</p></div></div>
   <div class="crm-pipeline">
   <?php foreach (crm_v180_stages() as $stage=>$label): if ($stage === 'archived') continue; ?>
     <section class="crm-column"><div class="crm-column-head"><span><?= e($label) ?></span><span class="crm-badge"><?= count($pipeline[$stage]) ?></span></div>
@@ -257,12 +268,15 @@ require __DIR__ . '/_header.php';
     </section>
   <?php endforeach; ?>
   </div>
+</section>
 
 <?php elseif ($view === 'tasks'): ?>
-  <div class="content-library-heading"><div><h3>Follow-up tasks</h3><p class="muted"><?= $summary['tasks_open'] ?> open task<?= $summary['tasks_open']===1?'':'s' ?>.</p></div></div>
+<section class="admin-card">
+  <div class="admin-card-head"><div><h3>Follow-up tasks</h3><p><?= $summary['tasks_open'] ?> open task<?= $summary['tasks_open']===1?'':'s' ?> tied to Book Demo leads.</p></div></div>
   <div class="table-wrap"><table><thead><tr><th>Task</th><th>Lead</th><th>Assigned</th><th>Due</th><th>Status</th><th></th></tr></thead><tbody>
   <?php foreach ($tasks as $task): $overdue=$task['status']==='open'&&$task['due_at']&&strtotime((string)$task['due_at'])<time(); ?><tr class="<?= $overdue?'crm-task-overdue':'' ?>"><td><strong><?= e($task['title']) ?></strong><br><span class="crm-meta"><?= e(crm_v180_task_types()[(string)$task['task_type']] ?? $task['task_type']) ?></span></td><td><a href="<?= e(url('/admin/crm-lead.php?id='.(int)$task['lead_id'])) ?>"><?= e($task['name']) ?></a><br><span class="crm-meta"><?= e($task['company']) ?></span></td><td><?= e($task['assigned_name'] ?: 'Unassigned') ?></td><td><?= $task['due_at']?e(date('M j, g:i A',strtotime((string)$task['due_at']))):'—' ?><?= $overdue?' · OVERDUE':'' ?></td><td><?= e(ucfirst((string)$task['status'])) ?></td><td><?php if ($task['status']!=='completed'): ?><form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="complete_task"><input type="hidden" name="task_id" value="<?= (int)$task['id'] ?>"><button class="btn" type="submit">Complete</button></form><?php endif; ?></td></tr><?php endforeach; ?>
   <?php if (!$tasks): ?><tr><td colspan="6" class="crm-empty">No CRM tasks yet.</td></tr><?php endif; ?></tbody></table></div>
+</section>
 <?php endif; ?>
-</div>
+
 <?php require __DIR__ . '/_footer.php'; ?>
