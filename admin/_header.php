@@ -41,7 +41,7 @@ $adminUserMenuLinks = member_navigation_menu_links($user);
 <?php if (!$adminCanvasMode): ?>
 <header class="admin-mobile-bar">
   <button class="admin-mobile-menu" id="adminMenuToggle" type="button" aria-label="Open admin navigation" aria-expanded="false">☰</button>
-  <a class="admin-mobile-brand" href="<?= e(url('/admin/index.php')) ?>" aria-label="<?= e($siteBrandName) ?> Admin"><?= e($siteBrandName) ?></a>
+  <a class="admin-mobile-brand" href="<?= e(url('/admin/index.php')) ?>" aria-label="VP3">VP3</a>
   <button class="admin-mobile-user" id="adminMobileUserButton" type="button" aria-label="Open user menu">
     <?php if (user_avatar_url($user) !== ''): ?><img src="<?= e(user_avatar_url($user)) ?>" alt=""><?php else: ?><span><?= e(user_initials($user)) ?></span><?php endif; ?>
   </button>
@@ -53,7 +53,7 @@ $adminUserMenuLinks = member_navigation_menu_links($user);
   <?php if (!$adminCanvasMode): ?>
   <aside class="admin-sidebar" id="adminSidebar">
     <div class="admin-sidebar-head">
-      <a class="admin-brand" href="<?= e(url('/admin/index.php')) ?>" aria-label="<?= e($siteBrandName) ?> Admin"><?= e($siteBrandName) ?></a>
+      <a class="admin-brand" href="<?= e(url('/admin/index.php')) ?>" aria-label="VP3">VP3</a>
       <button class="admin-sidebar-close" id="adminSidebarClose" type="button" aria-label="Close navigation">×</button>
     </div>
 
