@@ -126,7 +126,7 @@ function agent_compute_v021_route_test(PDO $pdo, array $user): array
 
     if ($preference === 'vp3_cloud') {
         $reason = agent_compute_v021_reason($preference, $homePaired, false, $cloudReady, '');
-        return $base + [
+        return array_replace($base, [
             'ready' => $cloudReady,
             'route' => $cloudReady ? 'vp3_cloud' : 'blocked',
             'route_label' => $cloudReady ? 'VP3 Cloud' : 'VP3 Cloud unavailable',
@@ -134,7 +134,7 @@ function agent_compute_v021_route_test(PDO $pdo, array $user): array
             'model' => mb_strimwidth((string)($cloud['model'] ?? ''), 0, 160, ''),
             'compute_source' => 'vp3_cloud',
             'reason' => $reason,
-        ];
+        ]);
     }
 
     $homeAvailable = false;
@@ -161,7 +161,7 @@ function agent_compute_v021_route_test(PDO $pdo, array $user): array
     if ($homeAvailable) {
         $source = (string)($homeProbe['compute_source'] ?? 'user_provider');
         $reason = agent_compute_v021_reason($preference, true, true, $cloudReady, 'connected');
-        return $base + [
+        return array_replace($base, [
             'ready' => true,
             'route' => 'homeserver',
             'route_label' => $source === 'homeserver_local' ? 'HomeServer Local' : 'Connected Provider via HomeServer',
@@ -170,13 +170,13 @@ function agent_compute_v021_route_test(PDO $pdo, array $user): array
             'compute_source' => $source,
             'reason' => $reason,
             'homeserver' => $homeProbe,
-        ];
+        ]);
     }
 
     $homeState = !$homePaired ? 'unpaired' : ($homeProbeFailed ? 'offline' : 'connected');
     $reason = agent_compute_v021_reason($preference, $homePaired, false, $cloudReady, $homeState);
     if ($preference === 'auto' && $cloudReady) {
-        return $base + [
+        return array_replace($base, [
             'ready' => true,
             'route' => 'vp3_cloud',
             'route_label' => 'VP3 Cloud fallback',
@@ -185,11 +185,11 @@ function agent_compute_v021_route_test(PDO $pdo, array $user): array
             'compute_source' => 'vp3_cloud',
             'fallback_used' => true,
             'reason' => $reason,
-        ];
+        ]);
     }
 
-    return $base + [
+    return array_replace($base, [
         'reason' => $reason,
         'route_label' => (string)($reason['label'] ?? 'No route ready'),
-    ];
+    ]);
 }
