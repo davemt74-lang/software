@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 const root=new URL('../',import.meta.url);
 const helper=fs.readFileSync(new URL('includes/agent-compute-v023.php',root),'utf8');
+const delegation=fs.readFileSync(new URL('includes/homeserver-agent-v025.php',root),'utf8');
 const bootstrap=fs.readFileSync(new URL('includes/bootstrap.php',root),'utf8');
 const api=fs.readFileSync(new URL('api/user-agent-system-v236.php',root),'utf8');
 const chat=fs.readFileSync(new URL('api/chat-v236.php',root),'utf8');
@@ -40,7 +41,8 @@ assert.match(chat,/effective_preference/);
 assert.match(chat,/agent_compute_v023_public_policy\(\$computePolicy,\$activeAgentId\)/);
 assert.match(chat,/chat_execution_v019_vp3_direct\(\$user\)/);
 assert.match(chat,/chat_execution_v019_fallback\(\$user,\$homePaired,\$homeAttempted\)/);
-assert.match(chat,/homeserver_agent_v018_chat\(\$user,\$query,\$conversationId,!empty\(\$computePlan\['homeserver_cloud_allowed'\]\)\)/);
+assert.match(chat,/homeserver_agent_v025_chat\(\$user,\$query,\$conversationId,\$history,\$principal,\$activeAgent,\$agentContext,!empty\(\$computePlan\['homeserver_cloud_allowed'\]\)\)/);
+assert.match(delegation,/homeserver_agent_v018_chat\(\$user,\$query,\$conversationId,\$cloudAllowed\)/);
 const toolIndex=chat.indexOf("release_v105_chat_tool");
 const homeOnlyGuardIndex=chat.indexOf("HomeServer-only compute is selected for this Agent");
 assert.ok(toolIndex>=0&&homeOnlyGuardIndex>toolIndex,'Tools must run before HomeServer-only compute can block model execution.');
@@ -56,4 +58,4 @@ assert.match(loader,/agent-compute-v023\.css/);
 assert.match(loader,/agent-compute-v023-20260908/);
 assert.match(shell,/agent-compute-v023-20260908/);
 
-console.log('VP3 v0.23 per-Agent compute policy contract passed');
+console.log('VP3 v0.23 per-Agent compute policy contract passed through v0.25 delegation');

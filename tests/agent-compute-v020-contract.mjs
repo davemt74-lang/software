@@ -6,6 +6,7 @@ const compute = fs.readFileSync(new URL('includes/agent-compute-v020.php', root)
 const bootstrap = fs.readFileSync(new URL('includes/bootstrap.php', root), 'utf8');
 const api = fs.readFileSync(new URL('api/user-agent-system-v236.php', root), 'utf8');
 const chat = fs.readFileSync(new URL('api/chat-v236.php', root), 'utf8');
+const delegation = fs.readFileSync(new URL('includes/homeserver-agent-v025.php', root), 'utf8');
 const execution = fs.readFileSync(new URL('includes/chat-execution-v019.php', root), 'utf8');
 const account = fs.readFileSync(new URL('account-agent-settings-v236.js', root), 'utf8');
 const loader = fs.readFileSync(new URL('account-agent-settings-loader-v236.js', root), 'utf8');
@@ -35,7 +36,8 @@ assert.match(api, /agent_compute_v020_save_preference/);
 assert.match(chat, /agent_compute_v023_effective\(\$pdo,\$userId,\$activeAgentId\)/);
 assert.match(chat, /agent_compute_v020_route_plan/);
 assert.match(chat, /\$computePreference==='homeserver_only'/);
-assert.match(chat, /homeserver_agent_v018_chat\(\$user,\$query,\$conversationId,!empty\(\$computePlan\['homeserver_cloud_allowed'\]\)\)/);
+assert.match(chat, /homeserver_agent_v025_chat\(\$user,\$query,\$conversationId,\$history,\$principal,\$activeAgent,\$agentContext,!empty\(\$computePlan\['homeserver_cloud_allowed'\]\)\)/);
+assert.match(delegation, /homeserver_agent_v018_chat\(\$user,\$query,\$conversationId,\$cloudAllowed\)/, 'v0.20 HomeServer routing must retain legacy fallback');
 // v0.24 split direct VP3 Cloud into its own branch so capability discovery is
 // not invoked on a cloud-only request. Preserve the behavior contract rather
 // than requiring the old ternary implementation detail.
@@ -63,4 +65,4 @@ assert.match(migration, /PRIMARY KEY/);
 assert.match(migration, /FOREIGN KEY \(user_id\) REFERENCES users\(id\)/);
 assert.match(migration, /ON DELETE CASCADE/);
 
-console.log('VP3 v0.20 Agent compute integration contract passed');
+console.log('VP3 v0.20 Agent compute integration contract passed through v0.25 delegation');

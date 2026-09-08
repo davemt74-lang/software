@@ -3,13 +3,15 @@ import assert from 'node:assert/strict';
 
 const root = new URL('../', import.meta.url);
 const api = fs.readFileSync(new URL('api/chat-v236.php', root), 'utf8');
+const delegation = fs.readFileSync(new URL('includes/homeserver-agent-v025.php', root), 'utf8');
 const execution = fs.readFileSync(new URL('includes/chat-execution-v019.php', root), 'utf8');
 const chat = fs.readFileSync(new URL('chat.js', root), 'utf8');
 
 assert.match(api, /chat-execution-v019\.php/);
-// v0.20 extends the canonical HomeServer call with the routing plan's
-// cloud_allowed decision while preserving the same v0.18 execution path.
-assert.match(api, /homeserver_agent_v018_chat\(\$user,\$query,\$conversationId,!empty\(\$computePlan\['homeserver_cloud_allowed'\]\)\)/);
+// v0.25 wraps the established HomeServer route with capability-negotiated
+// delegation while retaining v0.18 as the compatibility path.
+assert.match(api, /homeserver_agent_v025_chat\(\$user,\$query,\$conversationId,\$history,\$principal,\$activeAgent,\$agentContext,!empty\(\$computePlan\['homeserver_cloud_allowed'\]\)\)/);
+assert.match(delegation, /homeserver_agent_v018_chat\(\$user,\$query,\$conversationId,\$cloudAllowed\)/);
 assert.match(api, /chat_execution_v019_homeserver\(\$homeResult\)/);
 assert.match(api, /chat_execution_v019_fallback\(\$user,\$homePaired,\$homeAttempted\)/);
 assert.match(api, /chat_execution_v019_tool\(\)/);
@@ -37,4 +39,4 @@ assert.match(chat, /JSON\.parse\(message\.context_json\)/);
 assert.match(chat, /context\.sources/);
 assert.match(chat, /action:'messages_after'/);
 
-console.log('VP3 v0.19 compute routing visibility contract passed');
+console.log('VP3 v0.19 compute routing visibility contract passed through v0.25 delegation');
