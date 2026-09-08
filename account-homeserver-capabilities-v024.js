@@ -66,14 +66,15 @@
     try{
       render(await requestState(true));
     }catch(error){
-      if(root)root.querySelector('.sf-hs-capability-note').textContent=error?.message||'HomeServer capabilities could not be refreshed.';
+      const note=root?.querySelector('.sf-hs-capability-note');
+      if(note)note.textContent=error?.message||'HomeServer capabilities could not be refreshed.';
     }finally{
       const next=root?.querySelector('[data-refresh-homeserver]');
       if(next)next.disabled=false;
     }
   }
 
-  async function mount(){
+  function mount(){
     if(document.querySelector('[data-homeserver-capabilities-v024]'))return true;
     const compute=document.querySelector('.sf-compute-card');
     if(!compute)return false;
@@ -83,7 +84,7 @@
     root.setAttribute('aria-label','HomeServer capability routing');
     compute.insertAdjacentElement('afterend',root);
     root.innerHTML='<div class="sf-agent-empty">Loading HomeServer capabilities…</div>';
-    try{render(await requestState(false));}catch(error){root.innerHTML=`<div class="sf-agent-empty">${esc(error?.message||'HomeServer capabilities could not be loaded.')}</div>`;}
+    requestState(false).then(render).catch(error=>{if(root)root.innerHTML=`<div class="sf-agent-empty">${esc(error?.message||'HomeServer capabilities could not be loaded.')}</div>`;});
     return true;
   }
 
