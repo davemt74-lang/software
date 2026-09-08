@@ -37,4 +37,7 @@ Header always set Cache-Control "no-cache, must-revalidate"
 <FilesMatch "^(?:chat-settings-v237|chat-notifications-drawer-v240|chat-agent-identity-v236)\.(?:js|css)$">
 Header always set Cache-Control "no-cache, must-revalidate"
 </FilesMatch>
+<FilesMatch "^(?:admin\.js|admin-tech\.css)$">
+Header always set Cache-Control "no-cache, must-revalidate"
+</FilesMatch>
 </IfModule>
