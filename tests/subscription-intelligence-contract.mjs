@@ -45,22 +45,25 @@ assert.match(service, /status='credited'/);
 assert.equal(/\b(?:CREATE|ALTER|DROP|INSERT|UPDATE|DELETE)\b/i.test(service), false, 'Subscription intelligence must remain read-only');
 assert.equal(/openai|anthropic|gemini/i.test(service), false, 'Business intelligence must not invoke an LLM provider');
 
-assert.match(billing, /Stripe Billing & Subscription Intelligence/);
-assert.match(billing, /Recurring MRR/);
-assert.match(billing, /Recurring ARR/);
-assert.match(billing, /This is not a collected-cash total/);
-assert.match(billing, /Trial → Paid/);
-assert.match(billing, /Token Revenue · 30d/);
-assert.match(billing, /Trials Ending in 7 Days/);
-assert.match(billing, /Current Package Mix/);
-assert.match(billing, /Recurring Run-Rate by Package/);
-assert.match(billing, /AI Credit Sources · 30 Days/);
-assert.match(billing, /AI Usage Trend · 30 Days/);
-assert.match(billing, /AI Consumption by Package · 30 Days/);
-assert.match(billing, /AI Consumption by Feature · 30 Days/);
-assert.match(billing, /Highest AI Usage · 30 Days/);
-assert.match(billing, /Historical usage is attributed to the subscription ID recorded on each AI request/);
-assert.match(billing, /AI Token Packs/);
-assert.match(billing, /Run-rate is derived from immutable Stripe Price mappings/);
+// Presentation can evolve, but the canonical Billing surface must continue to expose
+// the SaaS revenue and subscription-intelligence capabilities backed by the service above.
+assert.match(billing, /<h2>Billing<\/h2>/);
+assert.match(billing, /Revenue &amp; subscriptions/i);
+assert.match(billing, /<small>MRR<\/small>/);
+assert.match(billing, /ARR run-rate/i);
+assert.match(billing, /Annualized recurring run-rate, not collected cash\./i);
+assert.match(billing, /Trial → Paid/i);
+assert.match(billing, /Token revenue · 30d/i);
+assert.match(billing, /Trials ending in 7 days/i);
+assert.match(billing, /Current package mix/i);
+assert.match(billing, /Recurring run-rate by package/i);
+assert.match(billing, /AI credit sources · 30 days/i);
+assert.match(billing, /AI usage trend · 30 days/i);
+assert.match(billing, /AI consumption by package/i);
+assert.match(billing, /AI consumption by feature/i);
+assert.match(billing, /Highest AI usage · 30 days/i);
+assert.match(billing, /Historical usage attributed to the subscription recorded on each request\./i);
+assert.match(billing, /AI Token Packs/i);
+assert.match(billing, /Run-rate is derived from immutable Stripe Price mappings/i);
 
 console.log('Admin subscription intelligence contract: PASS');

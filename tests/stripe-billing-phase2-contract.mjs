@@ -85,7 +85,8 @@ assert.ok(page.includes('billing_begin_paid_flow'), 'paid selections must enter 
 assert.ok(page.includes('billing_cancel_request'), 'undo/cancel requests must route through provider-aware cancellation logic');
 
 assert.ok(admin.includes('Sync Stripe Catalog') && admin.includes('Test Stripe Connection'), 'Admin needs billing connection and catalog controls');
-assert.ok(admin.includes('Webhook Events') && admin.includes('Billing Subscriptions'), 'Admin needs provider reconciliation visibility');
+assert.match(admin, /Webhook events/i, 'Admin needs webhook reconciliation visibility');
+assert.match(admin, /Billing subscriptions/i, 'Admin needs provider subscription reconciliation visibility');
 assert.ok(admin.includes("billing_stripe_secret_key()!==''?'Configured':'Missing'"), 'Admin may expose only whether the Stripe secret is configured');
 assert.ok(admin.includes("billing_stripe_webhook_secret()!==''?'Configured':'Missing'"), 'Admin may expose only whether the webhook secret is configured');
 assert.ok(!admin.includes('e(billing_stripe_secret_key())') && !admin.includes('e(billing_stripe_webhook_secret())'), 'Admin UI must never render Stripe secret values');
