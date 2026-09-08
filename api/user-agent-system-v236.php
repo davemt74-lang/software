@@ -33,7 +33,8 @@ function user_agent_api_state_v236(PDO $pdo, array $user): array
 
     $state['compute'] = agent_compute_v021_state($pdo, $user);
     $state = agent_compute_v023_attach_state($pdo, $user, $state);
-    return homeserver_capability_v024_attach_state($state, $user, false);
+    $state = homeserver_capability_v024_attach_state($state, $user, false);
+    return homeserver_scope_v026_attach_state($state, $user, false);
 }
 
 $user = current_user();
@@ -108,8 +109,10 @@ try {
 
     if ($action === 'refresh_homeserver_capabilities') {
         $registry = homeserver_capability_v024_registry((int)$user['id'], true);
+        $scope = homeserver_scope_v026_public(homeserver_scope_v026_fetch((int)$user['id'], true));
         user_agent_api_v236(true, [
             'homeserver_capabilities' => $registry,
+            'homeserver_scope' => $scope,
             'state' => user_agent_api_state_v236($pdo, $user),
         ]);
     }

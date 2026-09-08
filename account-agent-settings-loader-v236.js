@@ -7,7 +7,7 @@
   const chatUrl=new URL('./chat.php',window.location.href);
   window.STONEFELLOW_ACCOUNT_AGENT_V236={endpoint:endpoint.pathname,chatUrl:chatUrl.pathname,csrf};
   const build='account-light-shell-20260905';
-  const computeBuild='agent-compute-v023-20260908-agent-compute-v024-20260908';
+  const computeBuild='agent-compute-v023-20260908-agent-compute-v024-20260908-agent-compute-v026-scope-20260908';
   const assets=[
     ['link','data-account-agent-v236-css',new URL(`./account-shell.css?v=${build}`,window.location.href).href,build],
     ['link','data-agent-compute-v020-css',new URL(`./agent-compute-v020.css?v=${computeBuild}`,window.location.href).href,computeBuild],

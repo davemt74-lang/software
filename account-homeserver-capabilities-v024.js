@@ -40,9 +40,37 @@
     return `<article class="sf-hs-capability ${status}"><div><small>${esc(cap?.label||key)}</small><strong>${esc(source)}</strong></div><span>${esc(detail)}</span></article>`;
   }
 
+  function scopeCard(label,value,detail,status='homeserver'){
+    return `<article class="sf-hs-capability ${status}"><div><small>${esc(label)}</small><strong>${esc(value)}</strong></div><span>${esc(detail)}</span></article>`;
+  }
+
+  function scopeSection(scope){
+    if(!scope?.supported)return '<p class="sf-hs-capability-note">This HomeServer does not advertise per-wrapper scope reporting. Existing HomeServer permissions still apply.</p>';
+    if(!scope?.available){
+      if(scope?.cloud_allowed===false||scope?.last_known_cloud_blocked){
+        return '<p class="sf-hs-capability-note">HomeServer is currently unavailable, but VP3 is continuing to enforce the last-known local-only cloud boundary. A permissive cloud route will not be assumed while the authoritative scope cannot be refreshed.</p>';
+      }
+      return `<p class="sf-hs-capability-note">VP3 scope boundary is temporarily unavailable (${esc(scope?.reason||'HomeServer unavailable')}). HomeServer remains the final enforcement authority.</p>`;
+    }
+    const cloudAllowed=scope.cloud_allowed!==false;
+    const cards=[
+      scopeCard('Cloud compute',cloudAllowed?'Allowed':'Local only',cloudAllowed?'VP3 may use cloud compute when your saved policy allows it.':'HomeServer scope blocks VP3 Cloud and hosted HomeServer providers.',cloudAllowed?'available':'homeserver'),
+      scopeCard('Memory',scope.memory_restricted?'Restricted':'All permitted',scope.memory_restricted?`${Number(scope.memory_prefix_count||0)} allowed prefix${Number(scope.memory_prefix_count||0)===1?'':'es'}`:'No additional Memory sub-scope'),
+      scopeCard('Knowledge',scope.knowledge_restricted?'Restricted':'All permitted',scope.knowledge_restricted?`${Number(scope.knowledge_kind_count||0)} allowed kind${Number(scope.knowledge_kind_count||0)===1?'':'s'}`:'No additional Knowledge sub-scope'),
+      scopeCard('Tools',scope.tools_restricted?'Restricted':'All permitted',scope.tools_restricted?`${Number(scope.tool_count||0)} allowed tool${Number(scope.tool_count||0)===1?'':'s'}`:'All tools allowed by permissions'),
+      scopeCard('Plugins',scope.plugins_restricted?'Restricted':'All permitted',scope.plugins_restricted?`${Number(scope.plugin_count||0)} allowed plugin${Number(scope.plugin_count||0)===1?'':'s'}`:'All plugins allowed by permissions'),
+    ];
+    return `
+      <div class="sf-hs-capability-head">
+        <div><span class="sf-agent-section-label">VP3 Access Boundary</span><h3>HomeServer-enforced scope</h3><p class="sf-agent-help">This is the effective boundary HomeServer applies specifically to VP3. VP3 can narrow its own behavior to match it, but cannot widen this scope.</p></div>
+      </div>
+      <div class="sf-hs-capability-grid">${cards.join('')}</div>`;
+  }
+
   function render(state){
     if(!root)return;
     const registry=state?.homeserver_capabilities||{};
+    const scope=state?.homeserver_scope||{};
     const caps=registry.capabilities||{};
     const keys=['agent_brain','inference','memory','knowledge','contacts','awareness','tools','skills','plugins'];
     const paired=Boolean(registry.paired);
@@ -56,7 +84,8 @@
         <div class="sf-hs-capability-meta"><small>${esc(version)}</small><strong>${esc(headline)}</strong><span>${esc(advertised)}</span><button type="button" class="sf-agent-button secondary" data-refresh-homeserver>Refresh HomeServer</button></div>
       </div>
       <div class="sf-hs-capability-grid">${keys.map(key=>capabilityCard(key,caps[key]||{},registry)).join('')}</div>
-      <p class="sf-hs-capability-note">Local and user-provider HomeServer execution does not consume VP3 cloud tokens. VP3 tokens are charged only when VP3 Cloud actually performs billable compute.</p>`;
+      ${scopeSection(scope)}
+      <p class="sf-hs-capability-note">Local and user-provider HomeServer execution does not consume VP3 cloud tokens. VP3 tokens are charged only when VP3 Cloud actually performs billable compute and the HomeServer wrapper scope allows cloud use.</p>`;
     root.querySelector('[data-refresh-homeserver]')?.addEventListener('click',refresh);
   }
 
@@ -81,7 +110,7 @@
     root=document.createElement('section');
     root.className='sf-homeserver-capabilities-v024';
     root.setAttribute('data-homeserver-capabilities-v024','1');
-    root.setAttribute('aria-label','HomeServer capability routing');
+    root.setAttribute('aria-label','HomeServer capability routing and VP3 scope');
     compute.insertAdjacentElement('afterend',root);
     root.innerHTML='<div class="sf-agent-empty">Loading HomeServer capabilities…</div>';
     requestState(false).then(render).catch(error=>{if(root)root.innerHTML=`<div class="sf-agent-empty">${esc(error?.message||'HomeServer capabilities could not be loaded.')}</div>`;});
