@@ -46,7 +46,7 @@ assert.match(css, /\.sf-compute-health-v021/);
 assert.match(css, /\.sf-compute-test-result/);
 assert.match(loader, /agent-compute-v021\.css/);
 assert.match(loader, /account-agent-compute-v021\.js/);
-assert.match(loader, /agent-compute-v021-20260908/);
-assert.match(shell, /agent-compute-v021-20260908/);
+assert.match(loader, /agent-compute-v023-20260908/);
+assert.match(shell, /agent-compute-v023-20260908/);
 
 console.log('VP3 v0.21 compute control and health contract passed');
