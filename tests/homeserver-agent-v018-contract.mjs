@@ -27,6 +27,7 @@ assert.match(helper, /catch\(Throwable \$e\)/); // relay/schema failures preserv
 assert.match(migration, /PRIMARY KEY \(user_id, vp3_conversation_id\)/);
 assert.match(integration, /'agent\.chat'/);
 assert.match(integration, /'usage\.write'/);
-assert.doesNotMatch(helper, /shell_exec|exec\(|system\(|passthru\(/);
+// Reject PHP process-execution functions without misclassifying PDO->exec().
+assert.doesNotMatch(helper, /(?:^|[^>A-Za-z0-9_])(?:shell_exec|exec|system|passthru)\s*\(/m);
 
 console.log('VP3 v0.18 HomeServer Agent execution contract passed');
