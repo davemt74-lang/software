@@ -17,7 +17,7 @@ function agent_compute_v020_preferences(): array
         ],
         'homeserver_only' => [
             'label' => 'HomeServer only',
-            'description' => 'Keep Agent compute on your paired HomeServer. VP3 Cloud fallback is disabled.',
+            'description' => 'Use the model or provider selected in HomeServer. VP3 Cloud fallback is disabled.',
         ],
         'vp3_cloud' => [
             'label' => 'VP3 Cloud',
@@ -33,6 +33,10 @@ function agent_compute_v020_valid_preference(string $preference): bool
 
 /**
  * Pure routing plan shared by the settings surface and canonical Chat path.
+ *
+ * HomeServer-only constrains the VP3 route, not HomeServer's own provider
+ * selection. A user-configured provider behind HomeServer is still a
+ * HomeServer route; only fallback into VP3-managed cloud billing is disabled.
  */
 function agent_compute_v020_route_plan(string $preference, bool $homePaired, bool $homeReady): array
 {
@@ -56,7 +60,7 @@ function agent_compute_v020_route_plan(string $preference, bool $homePaired, boo
         return [
             'preference' => $preference,
             'try_homeserver' => $homePaired,
-            'homeserver_cloud_allowed' => false,
+            'homeserver_cloud_allowed' => true,
             'allow_vp3_fallback' => false,
             'resolved_route' => $homeReady ? 'homeserver' : 'blocked',
             'resolved_label' => $homeReady ? 'HomeServer' : 'Waiting for HomeServer',
