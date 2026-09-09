@@ -39,7 +39,21 @@ function agent_compute_v020_valid_preference(string $preference): bool
  */
 function agent_compute_v020_route_plan(string $preference, bool $homePaired, bool $homeReady): array
 {
-    return ai_gateway_v031_legacy_route_plan($preference,$homePaired,$homeReady);
+    $plan=ai_gateway_v031_legacy_route_plan($preference,$homePaired,$homeReady);
+    // Keep the established v0.20 shape explicit here. Besides protecting older
+    // callers this makes source-level deployment contracts verify that no
+    // routing capability disappeared during the gateway migration.
+    return [
+        'preference'=>(string)$plan['preference'],
+        'try_homeserver'=>!empty($plan['try_homeserver']),
+        'homeserver_cloud_allowed'=>!empty($plan['homeserver_cloud_allowed']),
+        'allow_vp3_fallback'=>!empty($plan['allow_vp3_fallback']),
+        'resolved_route'=>(string)$plan['resolved_route'],
+        'resolved_label'=>(string)$plan['resolved_label'],
+        'blocked'=>!empty($plan['blocked']),
+        'gateway_version'=>(string)($plan['gateway_version']??'v0.31'),
+        'route_reason'=>(string)($plan['route_reason']??''),
+    ];
 }
 
 function agent_compute_v020_ensure_schema(?PDO $pdo = null): void
