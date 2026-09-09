@@ -3,17 +3,29 @@ declare(strict_types=1);
 
 $mainSidebarUser = $mainSidebarUser ?? $workspaceSidebarUser ?? current_user();
 $mainSidebarActive = $mainSidebarActive ?? $workspaceSidebarActive ?? '';
-$mainSidebarTokenCommerceReady = function_exists('token_pack_schema_ready') && token_pack_schema_ready();
-$mainSidebarTeamState = function_exists('team_subscription_state') ? team_subscription_state($mainSidebarUser) : ['authorized'=>false];
 $mainSidebarUseNewChatButton = !empty($mainSidebarUseNewChatButton);
 $mainSidebarHistoryRows = isset($mainSidebarHistoryRows) && is_array($mainSidebarHistoryRows) ? $mainSidebarHistoryRows : [];
+$mainSidebarMenuLinks = $mainSidebarUser ? member_navigation_menu_links($mainSidebarUser) : [];
+$mainSidebarPrimaryKeys = ['chat'=>true,'contacts'=>true,'knowledge'=>true];
+$mainSidebarFooterLinks = array_values(array_filter(
+    $mainSidebarMenuLinks,
+    static fn(array $link): bool => !isset($mainSidebarPrimaryKeys[(string)($link['key'] ?? '')])
+));
+$mainSidebarRoleSummary = $mainSidebarUser ? implode(' · ', user_role_labels($mainSidebarUser)) : '';
 ?>
 <link rel="stylesheet" data-workspace-header-ui href="<?= e(url('/chat-header-ui.css?v=white-tech-20260904')) ?>">
 <link rel="stylesheet" href="<?= e(url('/site-branding.css?v=1')) ?>">
 <link rel="stylesheet" href="<?= e(url('/homeserver-vp3.css?v=20260907')) ?>">
-<aside class="chat-sidebar workspace-main-sidebar" id="chatSidebar">
+<link rel="stylesheet" href="<?= e(url('/agent-ui-v034.css?v=agent-ui-v034-20260909')) ?>">
+<aside
+  class="chat-sidebar workspace-main-sidebar"
+  id="chatSidebar"
+  data-runtime-url="<?= e(url('/api/agent-runtime-status-v034.php')) ?>"
+  data-rename-url="<?= e(url('/api/chat-conversation-rename-v034.php')) ?>"
+  data-csrf="<?= e(csrf_token()) ?>"
+>
   <div class="chat-sidebar-top">
-    <a class="chat-brand" href="<?= e(url('/')) ?>" aria-label="VP3">VP3</a>
+    <a class="chat-brand" href="<?= e(url('/chat.php')) ?>" aria-label="VP3 Agent">VP3</a>
     <div class="vp3-homeserver-head-actions">
       <button class="vp3-homeserver-status" id="vp3HomeServerStatus" type="button" data-state="unpaired" data-status-url="<?= e(url('/api/homeserver-status.php')) ?>" data-csrf="<?= e(csrf_token()) ?>" aria-haspopup="dialog" aria-controls="vp3HomeServerModal" title="HomeServer status">
         <span class="vp3-homeserver-dot" aria-hidden="true"></span><span class="vp3-homeserver-status-label">HomeServer</span>
@@ -22,93 +34,78 @@ $mainSidebarHistoryRows = isset($mainSidebarHistoryRows) && is_array($mainSideba
     </div>
   </div>
 
+  <div class="agent-runtime-strip" id="vp3AgentRuntimeStrip" aria-label="Agent runtime status">
+    <div class="agent-runtime-line"><small>Run</small><strong id="vp3AgentRuntimeSource">Checking…</strong></div>
+    <div class="agent-runtime-line"><small>Brain / model</small><strong id="vp3AgentRuntimeModel">Agent</strong></div>
+    <div class="agent-runtime-line"><small>This month</small><a id="vp3AgentRuntimeUsage" href="<?= e(url('/ai-usage.php')) ?>">AI Usage</a></div>
+  </div>
+
   <div class="chat-sidebar-sections">
-    <section class="chat-sidebar-nav-section" aria-label="VP3 workspace">
-      <div class="chat-history-label">Explore</div>
-      <nav class="chat-sidebar-nav">
-        <?php if (has_permission('chat.access', $mainSidebarUser)): ?>
+    <section class="chat-sidebar-nav-section" aria-label="Agent workspace">
+      <div class="chat-history-label">Agent</div>
+      <nav class="chat-sidebar-nav agent-primary-nav" data-agent-primary-nav>
+        <?php if ($mainSidebarUser && has_permission('chat.access', $mainSidebarUser)): ?>
           <?php if ($mainSidebarUseNewChatButton): ?>
-            <button class="chat-sidebar-nav-link <?= $mainSidebarActive === 'chat' ? 'active' : '' ?>" id="newChatButton" type="button" data-chat-view-target="chat">
-              <span>＋</span><strong>New Chat</strong>
-            </button>
+            <button class="chat-sidebar-nav-link <?= $mainSidebarActive === 'chat' ? 'active' : '' ?>" id="newChatButton" type="button" data-chat-view-target="chat"><span>＋</span><strong>New Chat</strong></button>
           <?php else: ?>
-            <a class="chat-sidebar-nav-link <?= $mainSidebarActive === 'chat' ? 'active' : '' ?>" href="<?= e(url('/chat.php')) ?>">
-              <span>＋</span><strong>New Chat</strong>
-            </a>
+            <a class="chat-sidebar-nav-link <?= $mainSidebarActive === 'chat' ? 'active' : '' ?>" href="<?= e(url('/chat.php')) ?>"><span>＋</span><strong>New Chat</strong></a>
           <?php endif; ?>
         <?php endif; ?>
 
-        <?php if (has_permission('account.access', $mainSidebarUser)): ?>
-          <a class="chat-sidebar-nav-link <?= $mainSidebarActive === 'approvals' ? 'active' : '' ?>" href="<?= e(url('/approvals.php')) ?>">
-            <span>✓</span><strong>Approvals</strong>
-          </a>
+        <?php if ($mainSidebarUser && has_permission('account.access', $mainSidebarUser)): ?>
+          <a class="chat-sidebar-nav-link <?= $mainSidebarActive === 'approvals' ? 'active' : '' ?>" href="<?= e(url('/approvals.php')) ?>"><span>✓</span><strong>Approvals</strong></a>
         <?php endif; ?>
 
-        <?php if (personal_capability_has_v242('profile_agent.access', $mainSidebarUser)): ?>
-          <a class="chat-sidebar-nav-link <?= $mainSidebarActive === 'profile_agent' ? 'active' : '' ?>" href="<?= e(url('/profile-agent.php')) ?>">
-            <span>◎</span><strong>Profile Agent</strong>
-          </a>
+        <?php if ($mainSidebarUser && personal_capability_has_v242('personal_knowledge.access', $mainSidebarUser)): ?>
+          <a class="chat-sidebar-nav-link <?= $mainSidebarActive === 'knowledge' ? 'active' : '' ?>" href="<?= e(url('/knowledge.php')) ?>"><span>◆</span><strong>Knowledge</strong></a>
         <?php endif; ?>
 
-        <?php if (has_permission('account.access', $mainSidebarUser)): ?>
-          <a class="chat-sidebar-nav-link <?= $mainSidebarActive === 'contacts' ? 'active' : '' ?>" href="<?= e(url('/contacts.php')) ?>">
-            <span>●</span><strong>My Contacts</strong>
-          </a>
+        <?php if ($mainSidebarUser && has_permission('chat.access', $mainSidebarUser)): ?>
+          <a class="chat-sidebar-nav-link <?= $mainSidebarActive === 'memory' ? 'active' : '' ?>" href="<?= e(url('/memory.php')) ?>"><span>◉</span><strong>Memory</strong></a>
         <?php endif; ?>
 
-        <?php if (has_permission('artist_listening.access', $mainSidebarUser)): ?>
-          <a class="chat-sidebar-nav-link chat-sidebar-recordings-link <?= $mainSidebarActive === 'transcriptions' ? 'active' : '' ?>" href="<?= e(url('/artist-listening.php')) ?>">
-            <span>●</span><strong>My Transcriptions</strong>
-          </a>
-        <?php endif; ?>
-
-        <?php if (personal_capability_has_v242('personal_knowledge.access', $mainSidebarUser)): ?>
-          <a class="chat-sidebar-nav-link <?= $mainSidebarActive === 'knowledge' ? 'active' : '' ?>" href="<?= e(url('/knowledge.php')) ?>">
-            <span>◆</span><strong>My Knowledge</strong>
-          </a>
-        <?php endif; ?>
-
-        <?php if (!empty($mainSidebarTeamState['authorized'])): ?>
-          <a class="chat-sidebar-nav-link <?= $mainSidebarActive === 'team' ? 'active' : '' ?>" href="<?= e(url('/team.php')) ?>" data-main-sidebar-team>
-            <span>◎</span><strong>My Team</strong>
-          </a>
+        <?php if ($mainSidebarUser && has_permission('account.access', $mainSidebarUser)): ?>
+          <a class="chat-sidebar-nav-link <?= $mainSidebarActive === 'contacts' ? 'active' : '' ?>" href="<?= e(url('/contacts.php')) ?>"><span>●</span><strong>Contacts</strong></a>
         <?php endif; ?>
       </nav>
     </section>
 
-    <?php if ($mainSidebarHistoryRows): ?>
+    <?php if ($mainSidebarUseNewChatButton || $mainSidebarHistoryRows): ?>
       <section class="chat-sidebar-history-section" aria-label="Recent chats">
         <div class="chat-history-label">Chats</div>
         <nav class="chat-history" id="chatHistory">
-          <?php foreach ($mainSidebarHistoryRows as $conversation): ?>
-            <div class="chat-history-row" data-conversation-row="<?= (int)($conversation['id'] ?? 0) ?>">
-              <button class="chat-history-item" type="button" data-conversation-id="<?= (int)($conversation['id'] ?? 0) ?>">
-                <span><?= e((string)($conversation['title'] ?? 'Untitled chat')) ?></span>
+          <?php foreach ($mainSidebarHistoryRows as $conversation): $conversationId=(int)($conversation['id'] ?? 0); $conversationTitle=(string)($conversation['title'] ?? 'Untitled chat'); ?>
+            <div class="chat-history-row" data-conversation-row="<?= $conversationId ?>">
+              <button class="chat-history-item" type="button" data-conversation-id="<?= $conversationId ?>">
+                <span><?= e($conversationTitle) ?></span>
                 <small><?= !empty($conversation['updated_at']) ? e(date('M j', strtotime((string)$conversation['updated_at']))) : '' ?></small>
               </button>
-              <button class="chat-history-delete" type="button" data-delete-conversation="<?= (int)($conversation['id'] ?? 0) ?>" aria-label="Delete <?= e((string)($conversation['title'] ?? 'chat')) ?>" title="Delete chat">×</button>
+              <button class="chat-history-rename" type="button" data-rename-conversation="<?= $conversationId ?>" aria-label="Rename <?= e($conversationTitle) ?>" title="Rename chat">⋯</button>
+              <button class="chat-history-delete" type="button" data-delete-conversation="<?= $conversationId ?>" aria-label="Delete <?= e($conversationTitle) ?>" title="Delete chat">×</button>
             </div>
           <?php endforeach; ?>
         </nav>
       </section>
     <?php endif; ?>
-
-    <?php if (has_permission('account.access', $mainSidebarUser)): ?>
-      <section class="chat-sidebar-nav-section" aria-label="Account and plan">
-        <div class="chat-history-label">Account</div>
-        <nav class="chat-sidebar-nav">
-          <a class="chat-sidebar-nav-link <?= $mainSidebarActive === 'subscription' ? 'active' : '' ?>" href="<?= e(url('/subscription.php')) ?>">
-            <span>◫</span><strong>Plan &amp; Usage</strong>
-          </a>
-          <?php if ($mainSidebarTokenCommerceReady): ?>
-            <a class="chat-sidebar-nav-link <?= $mainSidebarActive === 'token-packs' ? 'active' : '' ?>" href="<?= e(url('/token-packs.php')) ?>">
-              <span>＋</span><strong>Buy AI Tokens</strong>
-            </a>
-          <?php endif; ?>
-        </nav>
-      </section>
-    <?php endif; ?>
   </div>
+
+  <?php if ($mainSidebarUser): ?>
+    <footer class="agent-sidebar-footer" data-agent-user-footer>
+      <button class="agent-sidebar-user-button" id="vp3AgentUserMenuButton" type="button" aria-expanded="false" aria-controls="vp3AgentUserMenu">
+        <span class="agent-sidebar-avatar" aria-hidden="true">
+          <?php if (user_avatar_url($mainSidebarUser) !== ''): ?><img src="<?= e(user_avatar_url($mainSidebarUser)) ?>" alt=""><?php else: ?><?= e(user_initials($mainSidebarUser)) ?><?php endif; ?>
+        </span>
+        <span class="agent-sidebar-user-copy"><strong><?= e((string)($mainSidebarUser['display_name'] ?? 'Account')) ?></strong><?php if ($mainSidebarRoleSummary !== ''): ?><small><?= e($mainSidebarRoleSummary) ?></small><?php endif; ?></span>
+        <span class="agent-sidebar-user-chevron" aria-hidden="true">⌃</span>
+      </button>
+      <nav class="agent-sidebar-user-menu" id="vp3AgentUserMenu" aria-label="User menu" hidden>
+        <?php $lastGroup=''; foreach ($mainSidebarFooterLinks as $link): $group=(string)($link['group'] ?? ''); ?>
+          <?php if ($lastGroup !== '' && $group !== $lastGroup): ?><div class="agent-menu-divider" aria-hidden="true"></div><?php endif; ?>
+          <a<?= !empty($link['danger']) ? ' class="logout"' : '' ?> href="<?= e((string)$link['url']) ?>"><span><?= e((string)$link['label']) ?></span><span>↗</span></a>
+        <?php $lastGroup=$group; endforeach; ?>
+      </nav>
+    </footer>
+  <?php endif; ?>
 </aside>
 
 <div class="vp3-homeserver-modal" id="vp3HomeServerModal" hidden>
@@ -140,3 +137,4 @@ $mainSidebarHistoryRows = isset($mainSidebarHistoryRows) && is_array($mainSideba
   </section>
 </div>
 <script src="<?= e(url('/homeserver-vp3.js?v=20260907')) ?>" defer></script>
+<script src="<?= e(url('/agent-ui-v034.js?v=agent-ui-v034-20260909')) ?>" defer></script>
