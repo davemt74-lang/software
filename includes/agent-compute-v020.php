@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__.'/ai-gateway-v031.php';
+
 /**
  * VP3 v0.20 — account-scoped Agent compute routing preferences and status.
  *
@@ -32,51 +34,12 @@ function agent_compute_v020_valid_preference(string $preference): bool
 }
 
 /**
- * Pure routing plan shared by the settings surface and canonical Chat path.
- *
- * HomeServer-only constrains the VP3 route, not HomeServer's own provider
- * selection. A user-configured provider behind HomeServer is still a
- * HomeServer route; only fallback into VP3-managed cloud billing is disabled.
+ * Compatibility entry point retained for every existing Agent caller.
+ * v0.31 is now the canonical route decision engine underneath this API.
  */
 function agent_compute_v020_route_plan(string $preference, bool $homePaired, bool $homeReady): array
 {
-    if (!agent_compute_v020_valid_preference($preference)) {
-        $preference = 'auto';
-    }
-
-    if ($preference === 'vp3_cloud') {
-        return [
-            'preference' => $preference,
-            'try_homeserver' => false,
-            'homeserver_cloud_allowed' => false,
-            'allow_vp3_fallback' => true,
-            'resolved_route' => 'vp3_cloud',
-            'resolved_label' => 'VP3 Cloud',
-            'blocked' => false,
-        ];
-    }
-
-    if ($preference === 'homeserver_only') {
-        return [
-            'preference' => $preference,
-            'try_homeserver' => $homePaired,
-            'homeserver_cloud_allowed' => true,
-            'allow_vp3_fallback' => false,
-            'resolved_route' => $homeReady ? 'homeserver' : 'blocked',
-            'resolved_label' => $homeReady ? 'HomeServer' : 'Waiting for HomeServer',
-            'blocked' => !$homeReady,
-        ];
-    }
-
-    return [
-        'preference' => 'auto',
-        'try_homeserver' => $homePaired,
-        'homeserver_cloud_allowed' => true,
-        'allow_vp3_fallback' => true,
-        'resolved_route' => $homeReady ? 'homeserver' : 'vp3_cloud',
-        'resolved_label' => $homeReady ? 'HomeServer first' : 'VP3 Cloud',
-        'blocked' => false,
-    ];
+    return ai_gateway_v031_legacy_route_plan($preference,$homePaired,$homeReady);
 }
 
 function agent_compute_v020_ensure_schema(?PDO $pdo = null): void
@@ -303,6 +266,8 @@ function agent_compute_v020_state(PDO $pdo, array $user): array
         'resolved_route' => (string)$plan['resolved_route'],
         'resolved_label' => (string)$plan['resolved_label'],
         'blocked' => !empty($plan['blocked']),
+        'gateway_version' => (string)($plan['gateway_version'] ?? 'v0.20'),
+        'route_reason' => (string)($plan['route_reason'] ?? ''),
         'homeserver' => [
             'state' => (string)($home['state'] ?? 'unpaired'),
             'connected' => !empty($home['connected']),
