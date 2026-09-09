@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 require_once dirname(__DIR__) . '/includes/bootstrap.php';
+require_once dirname(__DIR__) . '/includes/homeserver-approvals-v028.php';
 require_login();
 
 header('Content-Type: application/json; charset=utf-8');
@@ -32,7 +33,7 @@ try {
         }
         $action = trim((string)($_POST['action'] ?? ''));
         if ($action === 'claim') {
-            $pairing = homeserver_vp3_claim_and_pair($userId, (string)($_POST['claim_code'] ?? ''));
+            $pairing = homeserver_approvals_v028_claim_and_pair($userId, (string)($_POST['claim_code'] ?? ''));
             echo json_encode([
                 'ok'=>true,
                 'pairing'=>$pairing,

@@ -3,6 +3,7 @@ import fs from 'node:fs';
 
 const read = path => fs.readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
 const runtime = read('includes/homeserver-vp3.php');
+const approvalRuntime = read('includes/homeserver-approvals-v028.php');
 const sidebar = read('includes/main-sidebar.php');
 const modalJs = read('homeserver-vp3.js');
 const admin = read('admin/homeserver.php');
@@ -22,9 +23,14 @@ assert.match(sidebar, /homeserver-vp3\.js/);
 
 assert.match(statusApi, /require_login\(\)/);
 assert.match(statusApi, /verify_csrf\(\)/);
-assert.match(statusApi, /homeserver_vp3_claim_and_pair/);
+assert.match(statusApi, /homeserver_approvals_v028_claim_and_pair/);
 assert.match(statusApi, /homeserver_vp3_check_pairing/);
 assert.match(statusApi, /homeserver_vp3_disconnect/);
+assert.match(statusApi, /homeserver-approvals-v028\.php/);
+assert.doesNotMatch(statusApi, /\$pairing\s*=\s*homeserver_vp3_claim_and_pair/);
+assert.match(approvalRuntime, /'approvals\.review'/);
+assert.match(approvalRuntime, /homeserver_approvals_v028_permissions/);
+assert.match(approvalRuntime, /'app_key'=>'vp3'/);
 
 assert.match(runtime, /aes-256-gcm/);
 assert.match(runtime, /homeserver-vp3\.key/);
