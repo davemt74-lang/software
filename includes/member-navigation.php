@@ -32,7 +32,6 @@ function member_navigation_entitled(?array $user,string $capability,bool $legacy
     return subscription_has_entitlement($user,$capability);
 }
 
-/** Customer permission visibility follows the active package; Admin bypasses it. */
 function member_navigation_package_permission(?array $user,string $permission,bool $legacyFallback): bool
 {
     $user??=current_user();if(!$user)return false;
@@ -57,9 +56,10 @@ function member_navigation_menu_links(?array $user = null): array
     $accountAllowed=member_navigation_package_permission($user,'account.access',has_permission('account.access',$user));
     if($chatAllowed)$add($links,'chat','Main Feed',url('/chat.php'),'primary');
 
-    $profileUrl = member_navigation_profile_url($user);if($profileUrl!=='')$add($links,'profile','View Profile',$profileUrl,'identity');
+    $profileUrl=member_navigation_profile_url($user);if($profileUrl!=='')$add($links,'profile','View Profile',$profileUrl,'identity');
     if($accountAllowed){
         $add($links,'account','My Account',url('/account.php'),'identity');
+        $add($links,'messages','Messages',url('/messages.php'),'identity');
         $add($links,'subscription','Plan & Usage',url('/subscription.php'),'identity');
         if(function_exists('token_pack_schema_ready')&&token_pack_schema_ready())$add($links,'token_packs','Buy AI Tokens',url('/token-packs.php'),'identity');
         if($chatAllowed)$add($links,'ai_usage','AI Usage History',url('/ai-usage.php'),'identity');
@@ -73,7 +73,8 @@ function member_navigation_menu_links(?array $user = null): array
     $teamState=function_exists('team_subscription_state')?team_subscription_state($user):['authorized'=>false];
     if(!empty($teamState['authorized']))$add($links,'team','My Team',url('/team.php'),'collaboration');
 
-    $artistWorkspaceAllowed=function_exists('artist_workspace_v104_is_artist')&&artist_workspace_v104_is_artist($user)&&(
+    $musicEnabled=function_exists('music_workspace_enabled_v320')?music_workspace_enabled_v320($user):true;
+    $artistWorkspaceAllowed=$musicEnabled&&function_exists('artist_workspace_v104_is_artist')&&artist_workspace_v104_is_artist($user)&&(
         member_navigation_package_permission($user,'tracks.manage',has_permission('tracks.manage',$user))||
         member_navigation_package_permission($user,'albums.manage',has_permission('albums.manage',$user))||
         member_navigation_package_permission($user,'shows.manage',has_permission('shows.manage',$user))||
@@ -82,12 +83,11 @@ function member_navigation_menu_links(?array $user = null): array
         member_navigation_package_permission($user,'posts.manage',has_permission('posts.manage',$user))||
         permission_v105_has('release.manage',$user)
     );
-    if($artistWorkspaceAllowed)$add($links,'artist_workspace','Artist Workspace',url('/admin/artist.php'),'creator');
+    if($artistWorkspaceAllowed)$add($links,'music_workspace','Music Workspace',url('/admin/artist.php'),'creator');
 
     $memberships=[];$pdo=db();if($pdo&&function_exists('artist_workspace_v104_memberships_for_user')){try{$memberships=artist_workspace_v104_memberships_for_user($pdo,(int)$user['id']);}catch(Throwable $e){}}
     if($memberships)$add($links,'team_workspaces','Team Workspaces',url('/admin/team-workspaces.php'),'creator');
 
-    // Admin is the only global account authority that receives Admin navigation.
     if(user_has_role('admin',$user))$add($links,'admin','Admin Dashboard',url('/admin/index.php'),'admin');
     $add($links,'logout','Log Out',url('/logout.php'),'session',true);
     return $links;
