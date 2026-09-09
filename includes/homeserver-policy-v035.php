@@ -58,7 +58,9 @@ function homeserver_policy_v035_normalize(array $raw): array
     $result=homeserver_policy_v035_empty('ready');
     $result['available']=true;
     $result['reason']='ready';
-    $result['app']=mb_strimwidth(trim((string)($raw['app']??'vp3')),0,80,'');
+    // This bridge is reachable only through VP3's own paired credential. Do not
+    // let a remote display label redefine the local authority identity.
+    $result['app']='vp3';
     $items=is_array($raw['items']??null)?$raw['items']:[];
     foreach($items as $item){
         $tool=homeserver_policy_v035_tool($item);
@@ -73,15 +75,19 @@ function homeserver_policy_v035_normalize(array $raw): array
     return $result;
 }
 
-function homeserver_policy_v035_snapshot(int $userId,bool $forceRefresh=false): array
+function homeserver_policy_v035_snapshot(int $userId,bool $forceRefresh=false,?array $knownStatus=null): array
 {
     if($userId<1||!function_exists('homeserver_vp3_status')||!function_exists('homeserver_agent_v018_credentials')||!function_exists('homeserver_vp3_remote_operation')){
         return homeserver_policy_v035_empty('unavailable');
     }
-    try{
-        $status=homeserver_vp3_status($userId,$forceRefresh);
-    }catch(Throwable $e){
-        return homeserver_policy_v035_empty('status_unavailable');
+    if($knownStatus!==null){
+        $status=$knownStatus;
+    }else{
+        try{
+            $status=homeserver_vp3_status($userId,$forceRefresh);
+        }catch(Throwable $e){
+            return homeserver_policy_v035_empty('status_unavailable');
+        }
     }
     if(empty($status['paired']))return homeserver_policy_v035_empty('unpaired');
     if(empty($status['connected']))return homeserver_policy_v035_empty('offline');
