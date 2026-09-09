@@ -13,6 +13,7 @@ function vp3_upgrade_complete(): bool
 {
     return access_schema_ready()
         && subscription_schema_ready()
+        && ai_usage_accounting_v032_schema_ready()
         && vp3_radar_schema_ready()
         && vp3_agent_referral_schema_ready()
         && subscription_self_service_schema_ready()
@@ -57,6 +58,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         try {
             ensure_access_schema();
             subscription_ensure_schema();
+            ai_usage_accounting_v032_ensure_schema();
             vp3_radar_ensure_schema();
             vp3_agent_referral_ensure_schema();
             subscription_self_service_ensure_schema();
@@ -102,7 +104,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $complete = vp3_upgrade_complete();
 
             if ($complete) {
-                flash('notice', 'VP3 database upgrade complete: subscriptions, self-service plan management, Stripe billing, verified webhooks, AI quotas, purchasable AI token packs, persistent onboarding, trial intelligence, recovery, Agent Brain, Knowledge, Profile Agent, HomeServer Agent continuity, account and per-Agent compute policies, Agent Radar, AI referral attribution, analytics properties, CRM, transcriptions, and Studio capabilities are ready.');
+                flash('notice', 'VP3 database upgrade complete: subscriptions, self-service plan management, Stripe billing, AI quotas, AI execution accounting, purchasable AI token packs, persistent onboarding, trial intelligence, recovery, Agent Brain, Knowledge, Profile Agent, HomeServer Agent continuity, account and per-Agent compute policies, Agent Radar, AI referral attribution, analytics properties, CRM, transcriptions, and Studio capabilities are ready.');
                 redirect(url('/admin/users.php'));
             }
         } catch (Throwable $e) {
@@ -118,7 +120,7 @@ vp3_public_header('Database Upgrade — VP3', 'Upgrade the VP3 database and appl
     <div class="vp3-auth-visual-content">
       <div class="vp3-kicker">System maintenance</div>
       <h1>Keep VP3 capabilities current.</h1>
-      <p>The upgrade process adds the current subscription, billing, AI quota, token-commerce, onboarding, assistant, HomeServer continuity, Agent compute, knowledge, collaboration, analytics, Agent Radar, attribution, CRM, and Studio schema without replacing existing user content.</p>
+      <p>The upgrade process adds the current subscription, billing, AI quota and execution accounting, token-commerce, onboarding, assistant, HomeServer continuity, Agent compute, knowledge, collaboration, analytics, Agent Radar, attribution, CRM, and Studio schema without replacing existing user content.</p>
     </div>
   </section>
   <section class="vp3-auth-form-side">
@@ -127,7 +129,7 @@ vp3_public_header('Database Upgrade — VP3', 'Upgrade the VP3 database and appl
       <h1>VP3 Database Upgrade</h1>
       <?php if ($complete): ?>
         <div class="vp3-alert success">The current VP3 schema is installed and ready.</div>
-        <p class="vp3-auth-intro">Subscription packages, Stripe billing, AI quota accounting, Admin token top-ups, one-time AI token pack purchases, persistent onboarding and trial intelligence, password recovery, Agent Brain, private Knowledge, Profile Agent, HomeServer Agent continuity, account and per-Agent compute policies, Agent Radar, AI referral attribution, analytics properties, voice identity, transcriptions, shared knowledge, CRM, and Studio capabilities are available.</p>
+        <p class="vp3-auth-intro">Subscription packages, Stripe billing, AI quota and execution accounting, Admin token top-ups, one-time AI token pack purchases, persistent onboarding and trial intelligence, password recovery, Agent Brain, private Knowledge, Profile Agent, HomeServer Agent continuity, account and per-Agent compute policies, Agent Radar, AI referral attribution, analytics properties, voice identity, transcriptions, shared knowledge, CRM, and Studio capabilities are available.</p>
         <a class="vp3-btn primary" href="<?= e(url('/admin/users.php')) ?>">Manage Users →</a>
       <?php else: ?>
         <p class="vp3-auth-intro">Run the current schema upgrade while preserving existing content and access. Existing accounts, package assignments, token balances and onboarding progress are preserved.</p>
