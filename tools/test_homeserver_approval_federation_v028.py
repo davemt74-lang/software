@@ -38,7 +38,7 @@ assert "approvals.php" in sidebar and "<strong>Approvals</strong>" in sidebar
 assert ".innerHTML" not in js
 assert "textContent" in js
 assert "window.confirm" in js
-assert "action arguments stay on HomeServer" in js
+assert "tool arguments stay on HomeServer" in js
 assert "request_id" in js
 
 print("VP3 v0.28 HomeServer approval federation contract passed")
