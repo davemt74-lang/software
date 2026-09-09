@@ -40,13 +40,15 @@ assert.ok(chat.includes("$html = str_replace('agent-activity-v94.js?v=101', 'age
 assert.match(chat, /require __DIR__ \. '\/includes\/main-sidebar\.php'/, 'Main Feed must render the canonical shared sidebar');
 assert.match(chat, /\$mainSidebarHistoryRows = isset\(\$recent\)/, 'Main Feed must pass recent conversation history to the canonical sidebar');
 assert.doesNotMatch(chat, /chatMyTeamSidebarLink|data-chat-my-team|data-chat-view-target="\(\?:player\|saved\|playlists\)"/, 'Main Feed wrapper must not patch individual navigation items');
-assert.match(mainSidebar, /<strong>My Team<\/strong>/, 'canonical shared sidebar must own My Team navigation');
-assert.doesNotMatch(mainSidebar, /<strong>Player<\/strong>|<strong>Saved Songs<\/strong>|<strong>My Playlists<\/strong>/, 'canonical shared sidebar must not expose retired music navigation');
+assert.match(mainSidebar, /data-agent-user-footer/, 'canonical shared sidebar must move secondary workspaces into the bottom user menu');
+assert.match(mainSidebar, /member_navigation_menu_links\(\$mainSidebarUser\)/, 'canonical shared sidebar must source the bottom user menu from member navigation');
+assert.match(nav, /'team_workspaces','Team Workspaces'/, 'Team Workspaces must remain available in canonical member navigation when permitted');
+assert.doesNotMatch(mainSidebar, /<strong>My Team<\/strong>|<strong>Player<\/strong>|<strong>Saved Songs<\/strong>|<strong>My Playlists<\/strong>/, 'canonical Agent primary navigation must not expose secondary or retired navigation');
 assert.match(chat, /data-brain-learning-history-v317 src=/, 'Main Feed may retain the inert Brain Learning asset without exposing a tab');
 
 assert.match(css, /chat-learning-metrics/, 'Learning History styling may remain available for a future explainability UI');
 assert.match(css, /@media\(max-width:520px\)/, 'retained Learning History styling must remain narrow-screen capable');
 assert.ok(bootstrap.includes("require_once __DIR__.'/agent-learning-history-v317.php';"), 'bootstrap must retain the canonical Learning History projection');
-assert.doesNotMatch(nav, /'my_team','My Team'/, 'My Team must not be duplicated in the profile/dropdown navigation');
+assert.doesNotMatch(nav, /'my_team','My Team'/, 'legacy My Team must not be duplicated in canonical member navigation');
 
 console.log('AGENT_BRAIN_LEARNING_HISTORY_V317=PASS');
