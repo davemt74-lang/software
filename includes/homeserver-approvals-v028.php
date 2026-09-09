@@ -46,6 +46,9 @@ function homeserver_approvals_v028_state(int $userId, bool $forceRefresh=false):
     $supported = in_array(VP3_HOMESERVER_APPROVAL_FEATURE, $features, true);
     $paired = !empty($status['paired']);
     $connected = !empty($status['connected']);
+    $row = homeserver_vp3_connection($userId);
+    $pendingRequestId = trim((string)($row['pending_request_id'] ?? ''));
+    $pendingCode = trim((string)($row['pending_code'] ?? ''));
     return [
         'build'=>VP3_HOMESERVER_APPROVALS_V028,
         'connected'=>$connected,
@@ -54,7 +57,66 @@ function homeserver_approvals_v028_state(int $userId, bool $forceRefresh=false):
         'state'=>(string)($status['state'] ?? 'unpaired'),
         'installed_version'=>(string)($status['installed_version'] ?? ''),
         'permission'=>'unknown',
+        'permission_upgrade_pending'=>$paired && $pendingRequestId !== '' && $pendingCode !== '',
+        'approval_code'=>$paired && $pendingRequestId !== '' ? $pendingCode : '',
         'error'=>(string)($status['error'] ?? ''),
+    ];
+}
+
+function homeserver_approvals_v028_claim_and_pair(int $userId, string $claimCode): array
+{
+    if ($userId < 1) throw new RuntimeException('A signed-in user is required.');
+    $claimCode = strtoupper(trim($claimCode));
+    if (!preg_match('/^[A-Z0-9-]{8,40}$/', $claimCode)) {
+        throw new RuntimeException('Enter the Remote Bridge claim code shown by HomeServer.');
+    }
+    $claim = homeserver_vp3_relay_request('POST', '/v1/claim', ['claim_code'=>$claimCode]);
+    $relayToken = trim((string)($claim['relay_token'] ?? ''));
+    $deviceId = trim((string)($claim['device_id'] ?? ''));
+    if (strlen($relayToken) < 20 || $deviceId === '') {
+        throw new RuntimeException('HomeServer relay returned an invalid claim response.');
+    }
+
+    $permissions = homeserver_approvals_v028_permissions();
+    $pairing = homeserver_vp3_remote_operation($relayToken, 'pair.request', [
+        'app_key'=>'vp3',
+        'app_name'=>'VP3',
+        'permissions'=>$permissions,
+    ]);
+    $requestId = trim((string)($pairing['request_id'] ?? ''));
+    $claimToken = trim((string)($pairing['claim_token'] ?? ''));
+    $approvalCode = trim((string)($pairing['code'] ?? ''));
+    if ($requestId === '' || strlen($claimToken) < 20 || $approvalCode === '') {
+        try { homeserver_vp3_relay_request('POST', '/v1/session/rotate', [], $relayToken); } catch (Throwable $e) {}
+        throw new RuntimeException('HomeServer returned an unsupported pairing response.');
+    }
+
+    $pdo = db();
+    if (!$pdo) throw new RuntimeException('Database connection is unavailable.');
+    homeserver_vp3_ensure_schema($pdo);
+    $stmt = $pdo->prepare(
+        "INSERT INTO homeserver_connections (
+            user_id,device_id,relay_token_enc,pending_request_id,pending_claim_token_enc,pending_code,status,last_error
+         ) VALUES (?,?,?,?,?,?,'awaiting_approval','')
+         ON DUPLICATE KEY UPDATE
+            device_id=VALUES(device_id), relay_token_enc=VALUES(relay_token_enc),
+            homeserver_token_enc=NULL, pending_request_id=VALUES(pending_request_id),
+            pending_claim_token_enc=VALUES(pending_claim_token_enc), pending_code=VALUES(pending_code),
+            status='awaiting_approval', installed_version='', last_error='', last_checked_at=NULL"
+    );
+    $stmt->execute([
+        $userId,
+        $deviceId,
+        homeserver_vp3_encrypt($relayToken),
+        $requestId,
+        homeserver_vp3_encrypt($claimToken),
+        $approvalCode,
+    ]);
+    return [
+        'device_id'=>$deviceId,
+        'approval_code'=>$approvalCode,
+        'expires_at'=>(string)($pairing['expires_at'] ?? ''),
+        'permissions'=>$pairing['permissions'] ?? $permissions,
     ];
 }
 
@@ -85,6 +147,8 @@ function homeserver_approvals_v028_list(int $userId, string $status='pending', i
         $result = homeserver_vp3_remote_operation($credentials['relay'], 'action.list', ['status'=>$status,'limit'=>$limit], $credentials['home']);
         $items = is_array($result['items'] ?? null) ? array_values(array_filter($result['items'], 'is_array')) : [];
         $state['permission'] = 'granted';
+        $state['permission_upgrade_pending'] = false;
+        $state['approval_code'] = '';
         return ['ok'=>true,'state'=>$state,'items'=>$items,'error'=>''];
     } catch (Throwable $e) {
         $class = homeserver_approvals_v028_error_class($e->getMessage());
