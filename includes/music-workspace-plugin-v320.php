@@ -35,11 +35,43 @@ function music_workspace_enabled_v320(?array $user=null): bool
     return music_workspace_legacy_user_v320($user);
 }
 
+function music_workspace_ensure_owner_v320(PDO $pdo,array $user): array
+{
+    $uid=(int)($user['id']??0);if($uid<1)throw new RuntimeException('Sign in to use Music Workspace.');
+    if(!music_workspace_enabled_v320($user)&&!user_has_role('admin',$user))throw new RuntimeException('Music Workspace is not enabled for this VP3 account.');
+    if(!function_exists('artist_workspace_v181_ensure_schema'))throw new RuntimeException('Music Workspace runtime is unavailable.');
+    artist_workspace_v181_ensure_schema($pdo);
+    $stmt=$pdo->prepare('SELECT * FROM artist_workspaces_v181 WHERE artist_user_id=? LIMIT 1');$stmt->execute([$uid]);$workspace=$stmt->fetch();if($workspace)return $workspace;
+    $name=trim((string)($user['display_name']??''));if($name==='')$name='My Music Workspace';
+    $base=function_exists('artist_workspace_v181_slug')?artist_workspace_v181_slug((string)($user['username']??$name)):'music-'.$uid;
+    if($base==='')$base='music-'.$uid;$slug=$base;$n=1;
+    $check=$pdo->prepare('SELECT 1 FROM artist_workspaces_v181 WHERE profile_slug=? LIMIT 1');
+    while(true){$check->execute([$slug]);if(!$check->fetchColumn())break;$n++;$slug=substr($base,0,105).'-'.$n;}
+    $pdo->prepare('INSERT INTO artist_workspaces_v181 (artist_user_id,workspace_name,profile_slug) VALUES (?,?,?)')->execute([$uid,$name,$slug]);
+    $stmt->execute([$uid]);$workspace=$stmt->fetch();if(!$workspace)throw new RuntimeException('Music Workspace could not be created.');return $workspace;
+}
+
+function music_workspace_owner_authorized_v320(?array $user=null): bool
+{
+    $user??=current_user();if(!$user)return false;if(user_has_role('admin',$user))return true;
+    return music_workspace_enabled_v320($user);
+}
+
+function music_workspace_owner_permission_v320(string $permission,?array $user=null): bool
+{
+    $user??=current_user();if(!$user)return false;if(user_has_role('admin',$user))return true;
+    // Music Workspace is the owner bundle. Fine-grained legacy permissions remain
+    // meaningful for delegated collaborators, not as a second purchase gate for owners.
+    if(music_workspace_enabled_v320($user))return true;
+    return $permission==='release.manage'?permission_v105_has($permission,$user):has_permission($permission,$user);
+}
+
 function music_workspace_set_enabled_v320(PDO $pdo,array $user,bool $enabled): array
 {
     $uid=(int)($user['id']??0);if($uid<1)throw new RuntimeException('Sign in to manage Music Workspace.');
     if($enabled&&!music_workspace_entitled_v320($user))throw new RuntimeException('Music Workspace is not included in your current VP3 package.');
     $row=vp3_plugin_set_enabled_v320($pdo,$uid,music_workspace_plugin_key_v320(),$enabled);
+    if($enabled)music_workspace_ensure_owner_v320($pdo,$user);
     return ['enabled'=>$row['status']==='enabled','entitled'=>music_workspace_entitled_v320($user),'preserves_data'=>true];
 }
 
