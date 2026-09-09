@@ -8,30 +8,58 @@ if(!$pdo){flash('error','Database unavailable.');redirect(url('/admin/index.php'
 try{
     if(!user_data_usage_schema_ready_v236($pdo))user_data_usage_ensure_schema_v236($pdo);
     if(!shared_knowledge_index_schema_ready_v236($pdo))shared_knowledge_index_ensure_schema_v236($pdo);
+    if(!ai_usage_accounting_v032_schema_ready($pdo))ai_usage_accounting_v032_ensure_schema($pdo);
 }catch(Throwable $e){flash('error','AI data usage storage is not ready. Run the database upgrade.');redirect(url('/upgrade.php'));}
 
 $usage=user_data_usage_admin_state_v236($pdo,200);
+$compute=ai_usage_accounting_v032_admin_state($pdo,200);
 $indexStats=['total'=>0,'active'=>0,'owners'=>0];
 try{
     $indexStats=$pdo->query("SELECT COUNT(*) total,SUM(is_indexed=1 AND revoked_at IS NULL) active,COUNT(DISTINCT IF(is_indexed=1 AND revoked_at IS NULL,owner_user_id,NULL)) owners FROM shared_knowledge_index")->fetch()?:$indexStats;
 }catch(Throwable $e){}
+$sourceLabels=['homeserver_local'=>'HomeServer Local','user_provider'=>'Connected Provider','vp3_cloud'=>'VP3 Cloud','vp3_retrieval'=>'VP3 Retrieval','vp3_tool'=>'VP3 Tool'];
 
 $adminTitle='AI Data Usage';
 $adminActive='ai-data-usage';
 require __DIR__ . '/_header.php';
 ?>
 <style>
-.ai-usage-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:18px}.ai-usage-stat{padding:16px;border:1px solid rgba(255,255,255,.08);border-radius:12px;background:rgba(255,255,255,.025)}.ai-usage-stat strong{display:block;font-size:1.35rem}.ai-usage-stat span{display:block;margin-top:4px;color:#8c847d;font-size:.72rem}.ai-usage-table-wrap{overflow:auto}.ai-usage-table{width:100%;min-width:1050px;border-collapse:collapse}.ai-usage-table th,.ai-usage-table td{padding:10px 9px;border-bottom:1px solid rgba(255,255,255,.07);text-align:left;vertical-align:top;font-size:.72rem}.ai-usage-table th{color:#817a74;font-size:.63rem;text-transform:uppercase;letter-spacing:.06em}.ai-usage-table td small{display:block;margin-top:2px;color:#756e68}.ai-usage-note{line-height:1.6}@media(max-width:800px){.ai-usage-stats{grid-template-columns:1fr 1fr}}@media(max-width:480px){.ai-usage-stats{grid-template-columns:1fr}}
+.ai-usage-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:18px}.ai-usage-stat{padding:16px;border:1px solid rgba(255,255,255,.08);border-radius:12px;background:rgba(255,255,255,.025)}.ai-usage-stat strong{display:block;font-size:1.35rem}.ai-usage-stat span{display:block;margin-top:4px;color:#8c847d;font-size:.72rem}.ai-usage-table-wrap{overflow:auto}.ai-usage-table{width:100%;min-width:1050px;border-collapse:collapse}.ai-usage-table th,.ai-usage-table td{padding:10px 9px;border-bottom:1px solid rgba(255,255,255,.07);text-align:left;vertical-align:top;font-size:.72rem}.ai-usage-table th{color:#817a74;font-size:.63rem;text-transform:uppercase;letter-spacing:.06em}.ai-usage-table td small{display:block;margin-top:2px;color:#756e68}.ai-usage-note{line-height:1.6}.ai-usage-actions{display:flex;gap:8px;flex-wrap:wrap}.ai-source{display:inline-flex;padding:4px 7px;border-radius:999px;border:1px solid rgba(255,255,255,.09)}@media(max-width:800px){.ai-usage-stats{grid-template-columns:1fr 1fr}}@media(max-width:480px){.ai-usage-stats{grid-template-columns:1fr}}
 </style>
 <div class="panel">
   <div style="display:flex;justify-content:space-between;gap:18px;align-items:flex-start;flex-wrap:wrap">
     <div>
-      <span class="status">Transparency Ledger</span>
+      <span class="status">Transparency + Accounting</span>
       <h2>AI Data Usage</h2>
-      <p class="muted ai-usage-note">This ledger records data that actually entered an AI context: the data owner, requester account, agent identity, resource and time. It intentionally does not duplicate the requester’s prompt or conversation text.</p>
+      <p class="muted ai-usage-note">Two ledgers answer different questions: execution accounting records where AI ran, model/token usage and VP3 cloud charges; the transparency ledger records which authorized data entered AI context. Neither duplicates prompts or response bodies.</p>
     </div>
-    <a class="btn" href="<?= e(url('/admin/ai.php')) ?>">AI Settings</a>
+    <div class="ai-usage-actions"><a class="btn" href="<?= e(url('/admin/ai-usage-export-v032.php')) ?>">Export Compute CSV</a><a class="btn" href="<?= e(url('/admin/ai.php')) ?>">AI Settings</a></div>
   </div>
+</div>
+
+<div class="ai-usage-stats">
+  <article class="ai-usage-stat"><strong><?= number_format((int)$compute['requests']) ?></strong><span>AI executions</span></article>
+  <article class="ai-usage-stat"><strong><?= number_format((int)$compute['tokens']) ?></strong><span>Model tokens</span></article>
+  <article class="ai-usage-stat"><strong><?= number_format((int)$compute['cloud_tokens']) ?></strong><span>VP3 tokens charged</span></article>
+  <article class="ai-usage-stat"><strong><?= e(ai_usage_accounting_v032_format_cost((int)$compute['estimated_cost_micros'])) ?></strong><span>Configured-rate provider estimate<?= (int)$compute['unknown_cost_requests']>0?' + unknown rates':'' ?></span></article>
+</div>
+
+<div class="panel">
+  <h2>Execution Mix</h2>
+  <p class="muted ai-usage-note">HomeServer-local, VP3 retrieval and VP3 tools carry $0 VP3 cloud cost. Connected-provider and VP3 cloud cost estimates appear only when a provider/model rate is configured.</p>
+  <div class="ai-usage-table-wrap"><table class="ai-usage-table"><thead><tr><th>Execution source</th><th>Requests</th><th>Model tokens</th><th>VP3 tokens charged</th><th>Estimated provider cost</th></tr></thead><tbody>
+  <?php foreach($compute['by_source'] as $row):$src=(string)$row['source'];?><tr><td><span class="ai-source"><?= e($sourceLabels[$src]??$src) ?></span></td><td><?= number_format((int)$row['requests']) ?></td><td><?= number_format((int)$row['total_tokens']) ?></td><td><?= number_format((int)$row['cloud_tokens']) ?></td><td><?= e(ai_usage_accounting_v032_format_cost((int)$row['estimated_cost_micros'])) ?></td></tr><?php endforeach;?>
+  <?php if(!$compute['by_source']):?><tr><td colspan="5">No AI executions have been recorded yet.</td></tr><?php endif;?>
+  </tbody></table></div>
+</div>
+
+<div class="panel">
+  <h2>Recent AI Executions</h2>
+  <p class="muted">Newest 200 routed executions with user, Agent/chat linkage, model usage and route outcome.</p>
+  <div class="ai-usage-table-wrap"><table class="ai-usage-table"><thead><tr><th>When</th><th>User</th><th>Agent / chat</th><th>Execution</th><th>Provider / model</th><th>Tokens</th><th>VP3 charged</th><th>Cost / route</th></tr></thead><tbody>
+  <?php foreach($compute['recent'] as $row):$src=(string)$row['source'];?><tr><td><?= e((string)$row['created_at']) ?></td><td><strong><?= e((string)$row['user_name']) ?></strong><small><?= e((string)$row['user_email']) ?></small></td><td><?= e((string)($row['agent_name']?:'System Agent')) ?><small><?= (int)($row['conversation_id']??0)>0?'Chat #'.(int)$row['conversation_id']:'—' ?></small></td><td><span class="ai-source"><?= e($sourceLabels[$src]??$src) ?></span></td><td><?= e(trim((string)$row['provider'].' / '.(string)$row['model'],' /')) ?: '—' ?></td><td><?= number_format((int)$row['input_tokens']) ?> in / <?= number_format((int)$row['output_tokens']) ?> out<small><?= number_format((int)$row['total_tokens']) ?> total</small></td><td><?= number_format((int)$row['cloud_tokens_charged']) ?></td><td><?= e(ai_usage_accounting_v032_format_cost($row['estimated_cost_micros']===null?null:(int)$row['estimated_cost_micros'])) ?><small><?= !empty($row['fallback_used'])?'fallback · ':'' ?><?= e((string)$row['failure_class']) ?><?= (int)$row['latency_ms']>0?' · '.number_format((int)$row['latency_ms']).' ms':'' ?></small></td></tr><?php endforeach;?>
+  <?php if(!$compute['recent']):?><tr><td colspan="8">No AI executions have been recorded yet.</td></tr><?php endif;?>
+  </tbody></table></div>
 </div>
 
 <div class="ai-usage-stats">
@@ -42,7 +70,7 @@ require __DIR__ . '/_header.php';
 </div>
 
 <div class="panel">
-  <h2>Recent Retrievals</h2>
+  <h2>Recent Data Retrievals</h2>
   <p class="muted">Newest 200 authorized retrieval events. Revoking sharing prevents future cross-user retrieval even if an older ledger record remains for accountability.</p>
   <div class="ai-usage-table-wrap">
     <table class="ai-usage-table">
