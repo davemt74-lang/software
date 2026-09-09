@@ -1,0 +1,40 @@
+name: HomeServer Capability Registry v0.33
+
+on:
+  push:
+    branches:
+      - main
+      - section-4-capability-registry-v033-**
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  registry:
+    name: Capability Registry · PHP ${{ matrix.php }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.1', '8.3']
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+
+      - name: Lint capability registry integration
+        run: |
+          php -l includes/homeserver-capability-registry-v033.php
+          php -l includes/bootstrap.php
+          php -l api/homeserver-status.php
+          php -l tests/homeserver-capability-registry-v033.php
+
+      - name: Verify sanitized registry and routing facts
+        run: php tests/homeserver-capability-registry-v033.php
