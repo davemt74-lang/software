@@ -21,6 +21,7 @@
 
   const text=(node,value)=>{if(node)node.textContent=value==null?'':String(value)};
   const formatDate=value=>{if(!value)return '';const raw=String(value);const d=new Date(raw.includes('T')?raw:raw.replace(' ','T'));return Number.isNaN(d.getTime())?raw:d.toLocaleString()};
+  const actionLabel=value=>{const key=String(value||'');if(key==='memory.write')return 'Allow memory write';if(key==='tasks.create')return 'Create task';return key?`Approve ${key}`:'HomeServer action request'};
   const setBusy=value=>{busy=Boolean(value);[refresh,upgrade,check,...tabs].filter(Boolean).forEach(node=>{node.disabled=busy;node.setAttribute('aria-busy',busy?'true':'false')})};
 
   async function parse(response){
@@ -56,10 +57,12 @@
       stateBadge.classList.add('error');text(stateBadge,'Offline');text(stateTitle,'HomeServer is offline');text(stateDetail,data&&data.error?data.error:'Bring HomeServer online and refresh.');
     }else if(!supported||permissionState==='unsupported'){
       stateBadge.classList.add('warning');text(stateBadge,'Update required');text(stateTitle,'HomeServer needs approval federation support');text(stateDetail,data&&data.error?data.error:'Update HomeServer and refresh the connection.');
+    }else if(permissionState==='authorization'){
+      stateBadge.classList.add('error');text(stateBadge,'Re-pair required');text(stateTitle,'HomeServer authorization needs to be renewed');text(stateDetail,data&&data.error?data.error:'Re-pair HomeServer to restore authorization.');
     }else{
       stateBadge.classList.add('error');text(stateBadge,'Unavailable');text(stateTitle,'HomeServer approvals are unavailable');text(stateDetail,data&&data.error?data.error:'Refresh the HomeServer connection and try again.');
     }
-    const showPermission=paired&&connected&&supported&&(pendingUpgrade||permissionState==='permission_required'||permissionState==='authorization');
+    const showPermission=paired&&connected&&supported&&(pendingUpgrade||permissionState==='permission_required');
     if(permission)permission.hidden=!showPermission;
     const approvalCode=String(state.approval_code||'');
     if(codeWrap)codeWrap.hidden=!approvalCode;
@@ -71,9 +74,10 @@
     const article=document.createElement('article');article.className='approvals-request';article.dataset.requestId=String(item.id||'');
     const copy=document.createElement('div');copy.className='approvals-request-copy';
     const head=document.createElement('div');head.className='approvals-request-head';
-    const title=document.createElement('h3');title.textContent=String(item.summary||item.title||'HomeServer action request');head.appendChild(title);
-    const origin=document.createElement('span');origin.className='approvals-origin';origin.textContent='HomeServer';head.appendChild(origin);
-    if(item.tool_key){const tool=document.createElement('span');tool.className='approvals-tool';tool.textContent=String(item.tool_key);head.appendChild(tool);}
+    const actionKey=String(item.action_key||'');
+    const title=document.createElement('h3');title.textContent=actionLabel(actionKey);head.appendChild(title);
+    const origin=document.createElement('span');origin.className='approvals-origin';origin.textContent='VP3 → HomeServer';head.appendChild(origin);
+    if(actionKey){const tool=document.createElement('span');tool.className='approvals-tool';tool.textContent=actionKey;head.appendChild(tool);}
     const status=document.createElement('span');status.className='approvals-request-status';status.textContent=String(item.status||currentStatus);head.appendChild(status);
     copy.appendChild(head);
     const detail=document.createElement('p');detail.textContent='This approval is scoped to your VP3 pairing. Private tool arguments stay on HomeServer.';copy.appendChild(detail);
@@ -105,7 +109,7 @@
     setBusy(true);
     try{
       const response=await fetch(`${endpoint}?status=${encodeURIComponent(currentStatus)}&limit=100`,{credentials:'same-origin',cache:'no-store',headers:{Accept:'application/json'}});
-      const data=await parse(response);renderState(data);renderItems(data.items,data.ok? '':data.error||'HomeServer approvals are unavailable.');
+      const data=await parse(response);renderState(data);renderItems(data.items,data.ok?'':data.error||'HomeServer approvals are unavailable.');
     }catch(error){renderItems([],error&&error.message?error.message:'HomeServer approvals are unavailable.');renderState({ok:false,state:{},error:error&&error.message?error.message:''});}
     finally{setBusy(false);}
   }
