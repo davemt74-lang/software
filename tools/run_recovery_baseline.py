@@ -22,6 +22,7 @@ NODE_TESTS = [
     'tests/artist-listening-runtime.mjs',
     'tests/artist-listening-transcript.mjs',
     'tests/artist-listening-workspace.mjs',
+    'tests/homeserver-transcription-backup-v029-contract.mjs',
     'tests/chat-recordings-theme-v242.mjs',
     'tests/chat-transcription-canvas-v243.mjs',
     'tests/chat-media-overlays-contract.mjs',
