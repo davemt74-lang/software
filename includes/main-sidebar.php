@@ -38,6 +38,12 @@ $mainSidebarHistoryRows = isset($mainSidebarHistoryRows) && is_array($mainSideba
           <?php endif; ?>
         <?php endif; ?>
 
+        <?php if (has_permission('account.access', $mainSidebarUser)): ?>
+          <a class="chat-sidebar-nav-link <?= $mainSidebarActive === 'approvals' ? 'active' : '' ?>" href="<?= e(url('/approvals.php')) ?>">
+            <span>✓</span><strong>Approvals</strong>
+          </a>
+        <?php endif; ?>
+
         <?php if (personal_capability_has_v242('profile_agent.access', $mainSidebarUser)): ?>
           <a class="chat-sidebar-nav-link <?= $mainSidebarActive === 'profile_agent' ? 'active' : '' ?>" href="<?= e(url('/profile-agent.php')) ?>">
             <span>◎</span><strong>Profile Agent</strong>
