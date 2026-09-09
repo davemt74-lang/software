@@ -14,7 +14,7 @@ function expect_v035(bool $condition,string $message): void
 
 $secret='SYNTHETIC_PRIVATE_ARGUMENT_73519';
 $raw=[
-    'app'=>'vp3',
+    'app'=>'spoofed-wrapper-label',
     'items'=>[
         [
             'key'=>'knowledge.search','name'=>'Knowledge Search','mode'=>'read','enabled'=>true,'available'=>true,
@@ -40,7 +40,7 @@ $raw=[
 $normalized=homeserver_policy_v035_normalize($raw);
 expect_v035($normalized['available']===true,'policy should normalize as available');
 expect_v035($normalized['owner_managed']===true,'VP3 must preserve HomeServer owner authority');
-expect_v035($normalized['app']==='vp3','app identity should remain scoped to VP3');
+expect_v035($normalized['app']==='vp3','remote display labels must not redefine the VP3 authority identity');
 expect_v035($normalized['counts']['total']===4,'all synthetic tools should be counted');
 expect_v035($normalized['counts']['read_only']===1,'read-only count should be correct');
 expect_v035($normalized['counts']['safe_automatic']===1,'safe automatic count should be correct');
@@ -53,6 +53,7 @@ expect_v035(is_string($encoded),'normalized policy should encode');
 expect_v035(!str_contains($encoded,$secret),'raw private tool arguments must never survive normalization');
 expect_v035(!str_contains($encoded,'private_payload'),'unknown private fields must never survive normalization');
 expect_v035(!str_contains($encoded,'arguments'),'raw arguments must never be exposed to VP3 policy UI');
+expect_v035(!str_contains($encoded,'spoofed-wrapper-label'),'remote app labels must never be surfaced as local authority identity');
 
 $statusApi=(string)file_get_contents($root.'/api/homeserver-status.php');
 $approvalsApi=(string)file_get_contents($root.'/api/homeserver-approvals-v028.php');
@@ -64,6 +65,7 @@ $policySource=(string)file_get_contents($root.'/includes/homeserver-policy-v035.
 
 expect_v035(str_contains($statusApi,"'policy'"),'HomeServer status API must expose policy only when requested');
 expect_v035(str_contains($statusApi,'homeserver_policy_v035_snapshot'),'HomeServer status API must use the sanitized policy bridge');
+expect_v035(str_contains($statusApi,'$statusSnapshot')&&str_contains($statusApi,'homeserver_policy_v035_snapshot($userId,false,$statusSnapshot)'),'policy rendering must reuse the already-fetched HomeServer status snapshot');
 expect_v035(str_contains($approvalsApi,'homeserver_policy_v035_snapshot'),'Approvals API must attach effective policy');
 expect_v035(str_contains($sidebar,'vp3HomeServerPolicySummary')&&str_contains($sidebar,'vp3HomeServerPolicies'),'canonical HomeServer modal must contain Agent permission UI');
 expect_v035(str_contains($approvalsPage,'approvalsPolicySummary')&&str_contains($approvalsPage,'approvalsPolicyList'),'Approvals must contain effective-policy UI');
