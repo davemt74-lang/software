@@ -1,0 +1,65 @@
+name: Agent Permissions v0.35
+
+on:
+  pull_request:
+    paths:
+      - 'includes/homeserver-policy-v035.php'
+      - 'api/homeserver-status.php'
+      - 'api/homeserver-approvals-v028.php'
+      - 'includes/main-sidebar.php'
+      - 'approvals.php'
+      - 'homeserver-vp3.js'
+      - 'approvals-v028.js'
+      - 'agent-policy-v035.css'
+      - 'tests/agent-permissions-v035-contract.php'
+      - '.github/workflows/agent-permissions-v035.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'includes/homeserver-policy-v035.php'
+      - 'api/homeserver-status.php'
+      - 'api/homeserver-approvals-v028.php'
+      - 'includes/main-sidebar.php'
+      - 'approvals.php'
+      - 'homeserver-vp3.js'
+      - 'approvals-v028.js'
+      - 'agent-policy-v035.css'
+      - 'tests/agent-permissions-v035-contract.php'
+      - '.github/workflows/agent-permissions-v035.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.1', '8.3']
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: mbstring
+          coverage: none
+      - name: Lint Section 6 PHP
+        run: |
+          php -l includes/homeserver-policy-v035.php
+          php -l api/homeserver-status.php
+          php -l api/homeserver-approvals-v028.php
+          php -l includes/main-sidebar.php
+          php -l approvals.php
+          php -l tests/agent-permissions-v035-contract.php
+      - name: Run Agent permissions contract
+        run: php tests/agent-permissions-v035-contract.php
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Validate HomeServer modal JavaScript
+        run: node --check homeserver-vp3.js
+      - name: Validate Approvals JavaScript
+        run: node --check approvals-v028.js
