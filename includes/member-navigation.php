@@ -59,6 +59,7 @@ function member_navigation_menu_links(?array $user = null): array
     $profileUrl=member_navigation_profile_url($user);if($profileUrl!=='')$add($links,'profile','View Profile',$profileUrl,'identity');
     if($accountAllowed){
         $add($links,'account','My Account',url('/account.php'),'identity');
+        $add($links,'plugins','Plugins',url('/plugins.php'),'identity');
         $add($links,'messages','Messages',url('/messages.php'),'identity');
         $add($links,'subscription','Plan & Usage',url('/subscription.php'),'identity');
         if(function_exists('token_pack_schema_ready')&&token_pack_schema_ready())$add($links,'token_packs','Buy AI Tokens',url('/token-packs.php'),'identity');
@@ -73,17 +74,8 @@ function member_navigation_menu_links(?array $user = null): array
     $teamState=function_exists('team_subscription_state')?team_subscription_state($user):['authorized'=>false];
     if(!empty($teamState['authorized']))$add($links,'team','My Team',url('/team.php'),'collaboration');
 
-    $musicEnabled=function_exists('music_workspace_enabled_v320')?music_workspace_enabled_v320($user):true;
-    $artistWorkspaceAllowed=$musicEnabled&&function_exists('artist_workspace_v104_is_artist')&&artist_workspace_v104_is_artist($user)&&(
-        member_navigation_package_permission($user,'tracks.manage',has_permission('tracks.manage',$user))||
-        member_navigation_package_permission($user,'albums.manage',has_permission('albums.manage',$user))||
-        member_navigation_package_permission($user,'shows.manage',has_permission('shows.manage',$user))||
-        member_navigation_package_permission($user,'photos.manage',has_permission('photos.manage',$user))||
-        member_navigation_package_permission($user,'merch.manage',has_permission('merch.manage',$user))||
-        member_navigation_package_permission($user,'posts.manage',has_permission('posts.manage',$user))||
-        permission_v105_has('release.manage',$user)
-    );
-    if($artistWorkspaceAllowed)$add($links,'music_workspace','Music Workspace',url('/admin/artist.php'),'creator');
+    $musicEnabled=function_exists('music_workspace_enabled_v320')?music_workspace_enabled_v320($user):false;
+    if($musicEnabled)$add($links,'music_workspace','Music Workspace',url('/music-workspace.php'),'creator');
 
     $memberships=[];$pdo=db();if($pdo&&function_exists('artist_workspace_v104_memberships_for_user')){try{$memberships=artist_workspace_v104_memberships_for_user($pdo,(int)$user['id']);}catch(Throwable $e){}}
     if($memberships)$add($links,'team_workspaces','Team Workspaces',url('/admin/team-workspaces.php'),'creator');
