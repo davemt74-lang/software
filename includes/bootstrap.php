@@ -24,6 +24,7 @@ require_once __DIR__.'/db.php';
 require_once __DIR__.'/homeserver-vp3.php';
 require_once __DIR__.'/homeserver-agent-v018.php';
 require_once __DIR__.'/homeserver-capabilities-v024.php';
+require_once __DIR__.'/homeserver-capability-registry-v033.php';
 require_once __DIR__.'/homeserver-scope-v026.php';
 require_once __DIR__.'/homeserver-acceptance-v027.php';
 require_once __DIR__.'/site-settings.php';

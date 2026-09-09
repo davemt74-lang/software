@@ -61,7 +61,11 @@ try {
     }
 
     $force = (string)($_GET['refresh'] ?? '') === '1';
-    echo json_encode(['ok'=>true,'status'=>homeserver_vp3_status($userId, $force)], JSON_UNESCAPED_SLASHES);
+    $response=['ok'=>true,'status'=>homeserver_vp3_status($userId, $force)];
+    if((string)($_GET['registry'] ?? '')==='1'){
+        $response['registry']=homeserver_capability_v033_registry($userId,$force);
+    }
+    echo json_encode($response, JSON_UNESCAPED_SLASHES);
 } catch (Throwable $e) {
     http_response_code(400);
     $message = trim($e->getMessage());
