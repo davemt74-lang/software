@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 const read = path => fs.readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
 const service = read('includes/homeserver-knowledge-backup-v029.php');
 const api = read('api/artist-listening-homeserver-v029.php');
+const existingApi = read('api/artist-listening-v172.php');
 const ui = read('artist-listening-homeserver-v029.js');
 const loader = read('artist-listening-naming.js');
 
@@ -24,6 +25,11 @@ assert.match(api, /artist_listening_hs_v029_pump/, 'recording backup must use bo
 assert.match(api, /recording_synced.*recording_total/s, 'pump completion must validate current recording counts, not only stale state');
 assert.match(api, /recover_stale_upload/, 'expired resumable uploads must be recoverable');
 assert.match(api, /homeserver_vp3_check_pairing/, 'permission upgrade approval must complete through canonical pairing');
+
+assert.match(existingApi, /artist_listening_v029_homeserver_after_cloud_save/, 'canonical cloud Knowledge save must initiate HomeServer mirror server-side');
+assert.match(existingApi, /artist_listening_v029_homeserver_after_recording/, 'new retained recordings must nudge an existing HomeServer backup server-side');
+assert.match(existingApi, /\$result\['homeserver_backup'\]/, 'cloud Knowledge save should return additive HomeServer status without replacing canonical result');
+assert.match(existingApi, /return null;/, 'HomeServer mirror failure must remain best-effort and not fail the cloud Knowledge save');
 
 assert.match(ui, /Save to HomeServer Knowledge/, 'workspace must expose the new HomeServer Knowledge action');
 assert.match(ui, /save_direct/, 'new action must save the full transcription directly');
