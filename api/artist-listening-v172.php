@@ -35,6 +35,8 @@ if (!function_exists('public_platform_v159_user_has_type')) {
 }
 
 require_once dirname(__DIR__) . '/includes/artist-listening.php';
+require_once dirname(__DIR__) . '/includes/homeserver-approvals-v028.php';
+require_once dirname(__DIR__) . '/includes/homeserver-knowledge-backup-v029.php';
 
 function artist_listening_v172_json(bool $ok, array $data = [], int $status = 200): never
 {
@@ -141,6 +143,51 @@ function artist_listening_v195_sync_song_notes(PDO $pdo, array $user, int $sessi
     }
 }
 
+/**
+ * Cloud Knowledge is the authoritative cloud save. HomeServer backup is an
+ * independent, best-effort mirror and therefore can never make the cloud save
+ * fail. The returned state contains only browser-safe status metadata.
+ */
+function artist_listening_v029_homeserver_after_cloud_save(array $user, int $sessionId): ?array
+{
+    try {
+        $result = homeserver_knowledge_v029_prepare($user, $sessionId, 'cloud');
+        $backup = is_array($result['backup'] ?? null) ? $result['backup'] : [];
+        $homeserver = is_array($result['homeserver'] ?? null) ? $result['homeserver'] : [];
+        if (!empty($backup['text_synced'])
+            && !empty($homeserver['connected'])
+            && !empty($homeserver['supported'])
+            && !in_array((string)($backup['state'] ?? ''), ['unsupported','permission_required'], true)) {
+            $result = homeserver_knowledge_v029_sync_step($user, $sessionId);
+        }
+        return $result;
+    } catch (Throwable $e) {
+        return null;
+    }
+}
+
+/**
+ * A recording can be retained after the transcript was already mirrored. Nudge
+ * one resumable transfer step here so the new clip becomes pending immediately;
+ * the page-scoped v0.29 sync pump continues the bounded transfer while online.
+ */
+function artist_listening_v029_homeserver_after_recording(array $user, int $sessionId): ?array
+{
+    try {
+        $pdo = db();
+        if (!$pdo) return null;
+        $session = artist_listening_v172_session($pdo, $user, $sessionId);
+        $state = homeserver_knowledge_v029_session_state($session);
+        if ((int)($session['knowledge_id'] ?? 0) < 1 && empty($state['text_synced'])) return null;
+        if (empty($state['text_synced']) && (int)($session['knowledge_id'] ?? 0) > 0) {
+            return artist_listening_v029_homeserver_after_cloud_save($user, $sessionId);
+        }
+        return homeserver_knowledge_v029_sync_step($user, $sessionId);
+    } catch (Throwable $e) {
+        return null;
+    }
+}
+
 $user = current_user();
 if (!$user) {
     artist_listening_v172_json(false, ['error'=>'Sign in to use Artist Listening.'], 401);
@@ -218,10 +265,13 @@ try {
             max(0, (int)($input['ended_ms'] ?? 0)),
             max(0, (int)($input['duration_ms'] ?? 0))
         );
-        artist_listening_v172_json(true, [
+        $payload = [
             'recording'=>$recording,
             'session'=>artist_listening_v172_payload($pdo, $user, $sessionId),
-        ]);
+        ];
+        $homeserverBackup = artist_listening_v029_homeserver_after_recording($user, $sessionId);
+        if ($homeserverBackup !== null) $payload['homeserver_backup'] = $homeserverBackup;
+        artist_listening_v172_json(true, $payload);
     }
 
     if ($action === 'start') {
@@ -316,12 +366,16 @@ try {
         ));
     }
     if ($action === 'promote_knowledge') {
-        artist_listening_v172_json(true, artist_listening_v172_promote_knowledge(
+        $sessionId = max(0, (int)($input['session_id'] ?? 0));
+        $result = artist_listening_v172_promote_knowledge(
             $user,
-            max(0, (int)($input['session_id'] ?? 0)),
+            $sessionId,
             max(0, (int)($input['track_id'] ?? 0)),
             (string)($input['selected_text'] ?? '')
-        ));
+        );
+        $homeserverBackup = artist_listening_v029_homeserver_after_cloud_save($user, $sessionId);
+        if ($homeserverBackup !== null) $result['homeserver_backup'] = $homeserverBackup;
+        artist_listening_v172_json(true, $result);
     }
     artist_listening_v172_json(false, ['error'=>'Unsupported Artist Listening action.'], 422);
 } catch (Throwable $e) {
