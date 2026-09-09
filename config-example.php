@@ -50,6 +50,17 @@ return [
         'model' => '',
     ],
 
+    // Optional provider/model cost estimates for the AI Usage ledger. VP3 does
+    // not ship mutable API prices as code. Add current rates you actually pay,
+    // using provider:model keys. Wildcards such as "openai:*" are supported.
+    // Example only — enter your own current rates before relying on estimates.
+    'ai_cost_rates' => [
+        // 'openai:gpt-example' => [
+        //     'input_per_million_usd' => 0.00,
+        //     'output_per_million_usd' => 0.00,
+        // ],
+    ],
+
     // Phase 2 billing. VP3 treats Admin package prices as the source of truth
     // and creates/syncs Stripe Products and recurring Prices automatically.
     // Secret values may instead be supplied as STRIPE_SECRET_KEY and
