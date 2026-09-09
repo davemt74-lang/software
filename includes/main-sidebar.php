@@ -16,6 +16,7 @@ $mainSidebarRoleSummary = $mainSidebarUser ? implode(' · ', user_role_labels($m
 <link rel="stylesheet" data-workspace-header-ui href="<?= e(url('/chat-header-ui.css?v=white-tech-20260904')) ?>">
 <link rel="stylesheet" href="<?= e(url('/site-branding.css?v=1')) ?>">
 <link rel="stylesheet" href="<?= e(url('/homeserver-vp3.css?v=20260907')) ?>">
+<link rel="stylesheet" href="<?= e(url('/agent-policy-v035.css?v=agent-policy-v035-20260909')) ?>">
 <link rel="stylesheet" href="<?= e(url('/agent-ui-v034.css?v=agent-ui-v034-20260909')) ?>">
 <aside
   class="chat-sidebar workspace-main-sidebar"
@@ -132,9 +133,14 @@ $mainSidebarRoleSummary = $mainSidebarUser ? implode(' · ', user_role_labels($m
         <div id="vp3HomeServerApprovalPanel" hidden><p>Approve the VP3 pairing code in the local HomeServer Control Center:</p><span class="vp3-homeserver-approval-code" id="vp3HomeServerApprovalCode">—</span><div><button class="vp3-homeserver-button primary" id="vp3HomeServerCheckPairing" type="button">Check Approval</button></div></div>
       </div>
       <div class="vp3-homeserver-panel"><h3>Capabilities</h3><p>Only capabilities reported by the connected HomeServer are shown. VP3 does not receive other apps’ raw private history.</p><div class="vp3-homeserver-capabilities" id="vp3HomeServerCapabilities"><span class="vp3-homeserver-capability">Checking…</span></div></div>
+      <section class="vp3-homeserver-panel agent-policy-panel" id="vp3HomeServerPolicy" aria-labelledby="vp3HomeServerPolicyTitle">
+        <div class="agent-policy-heading"><div><h3 id="vp3HomeServerPolicyTitle">Agent permissions</h3><p>HomeServer decides what this VP3 Agent may run automatically, what requires approval, and what stays local-only.</p></div><span class="agent-policy-owner-badge">Managed on HomeServer</span></div>
+        <div class="agent-policy-summary" id="vp3HomeServerPolicySummary" aria-live="polite"><span>Checking effective policy…</span></div>
+        <div class="agent-policy-list" id="vp3HomeServerPolicies"><div class="agent-policy-empty">Open this panel while HomeServer is connected to view effective tool permissions.</div></div>
+      </section>
       <div class="vp3-homeserver-actions"><button class="vp3-homeserver-button" id="vp3HomeServerRefresh" type="button">Refresh Status</button><a class="vp3-homeserver-download primary" id="vp3HomeServerDownload" href="#" hidden>Download HomeServer</a><button class="vp3-homeserver-button danger" id="vp3HomeServerDisconnect" type="button" hidden>Disconnect</button></div>
     </div>
   </section>
 </div>
-<script src="<?= e(url('/homeserver-vp3.js?v=20260907')) ?>" defer></script>
+<script src="<?= e(url('/homeserver-vp3.js?v=agent-policy-v035-20260909')) ?>" defer></script>
 <script src="<?= e(url('/agent-ui-v034.js?v=agent-ui-v034-20260909')) ?>" defer></script>
