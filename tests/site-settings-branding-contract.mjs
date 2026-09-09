@@ -11,6 +11,7 @@ const sharedBrandingCss = read('site-branding.css');
 const runtimeBranding = read('site-branding-runtime.php');
 const chatCss = read('chat-v97.css');
 const mainSidebar = read('includes/main-sidebar.php');
+const memberNavigation = read('includes/member-navigation.php');
 
 assert.match(
   bootstrap,
@@ -64,9 +65,12 @@ assert.ok(adminHeader.includes('class="admin-mobile-brand"') && adminHeader.incl
 assert.ok(adminHeader.includes('class="admin-brand"') && adminHeader.includes('aria-label="VP3">VP3</a>'), 'Admin desktop logo must be VP3');
 assert.doesNotMatch(adminHeader, /class="site-brand-logo"/, 'legacy uploaded logo must not override the VP3 admin shell');
 assert.doesNotMatch(adminHeader, /url\('\/admin\/team\.php'\)/, 'Admin shell must never restore the legacy Admin Team destination');
-assert.match(mainSidebar, /href="<\?= e\(url\('\/team\.php'\)\) \?>" data-main-sidebar-team[\s\S]*?<strong>My Team<\/strong>/, 'My Team must retain the canonical front-end Team destination outside the core Admin rail');
 
-assert.ok(mainSidebar.includes('class="chat-brand"') && mainSidebar.includes('aria-label="VP3">VP3</a>'), 'Main Feed/member sidebar logo must be VP3');
+assert.ok(mainSidebar.includes('class="chat-brand"') && mainSidebar.includes('aria-label="VP3 Agent">VP3</a>'), 'Main Feed/member sidebar logo must remain fixed VP3 application branding');
+assert.match(mainSidebar, /data-agent-user-footer/, 'secondary workspaces must be consolidated in the bottom Agent user menu');
+assert.match(mainSidebar, /member_navigation_menu_links\(\$mainSidebarUser\)/, 'bottom Agent menu must reuse canonical member navigation');
+assert.ok(memberNavigation.includes("'team_workspaces','Team Workspaces'"), 'Team Workspaces must remain available from canonical user navigation when applicable');
+assert.doesNotMatch(mainSidebar, /data-main-sidebar-team[\s\S]*?<strong>My Team<\/strong>/, 'Team must not compete with primary Agent tools in the left rail');
 assert.ok(
   chatCss.includes('@import url("site-branding.css?v=1");'),
   'Main Feed may retain the shared branding layer for non-logo rules'

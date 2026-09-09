@@ -22,15 +22,24 @@ assert.match(wrapper, /\$mainSidebarHistoryRows = isset\(\$recent\)/, 'Chat must
 assert.match(wrapper, /<aside class=\"chat-sidebar\" id=\"chatSidebar\">\.\*\?<\/aside>/, 'Main Feed must replace the complete legacy sidebar as one unit');
 assert.doesNotMatch(wrapper, /data-chat-view-target=\"\(\?:player\|saved\|playlists\)\"|chatMyTeamSidebarLink|data-chat-my-team/, 'Main Feed must not strip/inject individual sidebar items after render');
 
-assert.match(mainSidebar, /aria-label="VP3">VP3<\/a>/, 'Canonical sidebar logo must be VP3');
-assert.match(mainSidebar, /href="<\?= e\(url\('\/contacts\.php'\)\) \?>"[\s\S]*?<strong>My Contacts<\/strong>/, 'Canonical sidebar must expose My Contacts');
-assert.match(mainSidebar, /href="<\?= e\(url\('\/profile-agent\.php'\)\) \?>"[\s\S]*?<strong>Profile Agent<\/strong>/, 'Canonical sidebar must expose Profile Agent');
-assert.match(mainSidebar, /href="<\?= e\(url\('\/knowledge\.php'\)\) \?>"[\s\S]*?<strong>My Knowledge<\/strong>/, 'Canonical sidebar must expose My Knowledge');
-assert.match(mainSidebar, /href="<\?= e\(url\('\/team\.php'\)\) \?>"[\s\S]*?<strong>My Team<\/strong>/, 'Canonical sidebar must expose the front-end My Team workspace');
-assert.equal((mainSidebar.match(/<strong>My Team<\/strong>/g) || []).length, 1, 'Canonical sidebar must render exactly one My Team link');
+assert.match(mainSidebar, /aria-label="VP3 Agent">VP3<\/a>/, 'Canonical sidebar logo must identify the VP3 Agent');
+const primaryStart = mainSidebar.indexOf('data-agent-primary-nav');
+const primaryEnd = primaryStart < 0 ? -1 : mainSidebar.indexOf('</nav>', primaryStart);
+assert.ok(primaryStart >= 0 && primaryEnd > primaryStart, 'Canonical sidebar must expose an explicit primary Agent navigation block');
+const primaryNav = mainSidebar.slice(primaryStart, primaryEnd);
+for (const label of ['New Chat', 'Approvals', 'Knowledge', 'Memory', 'Contacts']) {
+  assert.ok(primaryNav.includes(`<strong>${label}</strong>`), `Canonical Agent sidebar must expose ${label}`);
+}
+for (const secondary of ['Profile Agent', 'My Team', 'My Transcriptions', 'Plan &amp; Usage']) {
+  assert.ok(!primaryNav.includes(`<strong>${secondary}</strong>`), `${secondary} must live in the user menu instead of primary Agent navigation`);
+}
 assert.match(mainSidebar, /id="newChatButton"[\s\S]*data-chat-view-target="chat"/, 'Canonical sidebar must preserve Main Feed New Chat behavior');
 assert.match(mainSidebar, /id="chatHistory"[\s\S]*data-conversation-id/, 'Canonical sidebar must own recent Chat history rendering when supplied');
-assert.doesNotMatch(mainSidebar, /<strong>Player<\/strong>|<strong>Saved Songs<\/strong>|<strong>My Playlists<\/strong>/, 'Canonical sidebar must not contain retired music navigation');
+assert.match(mainSidebar, /data-rename-conversation/, 'Canonical sidebar must expose chat rename controls');
+assert.match(mainSidebar, /data-delete-conversation/, 'Canonical sidebar must preserve chat delete controls');
+assert.match(mainSidebar, /data-agent-user-footer/, 'Canonical sidebar must move secondary navigation into the bottom user menu');
+assert.match(mainSidebar, /id="vp3AgentRuntimeStrip"/, 'Canonical sidebar must expose live Agent runtime state');
+assert.doesNotMatch(primaryNav, /<strong>Player<\/strong>|<strong>Saved Songs<\/strong>|<strong>My Playlists<\/strong>/, 'Canonical Agent navigation must not contain retired music navigation');
 
 assert.ok(wrapper.includes("$html = str_replace('agent-activity-v94.js?v=101', 'agent-activity-v94.js?v=' . $activityBuild, $html);"), 'Main Feed must use an explicit current Agent Activity asset URL');
 assert.match(wrapper, /agent-activity-v94-canonical-runtime-20260907/, 'Main Feed must cache-bust the simplified Agent Activity runtime');
@@ -40,7 +49,10 @@ assert.match(learning, /enabled:false/, 'Brain Learning drawer tab must remain h
 
 assert.doesNotMatch(activity, /<strong>My Knowledge<\/strong>|chat-sidebar-nav|insertAdjacentElement|chatCreateMenu|chat-device-registry-v94|Audio input status|videoinput|getUserMedia|chat-brain-learning-history-v317\.js/, 'Agent Activity must not own sidebar/header/device/Brain Learning UI');
 assert.doesNotMatch(learning, /cleanupMainSidebar|data-chat-view-target="player"|data-chat-view-target="saved"|data-chat-view-target="playlists"|data-chat-profile-link="my_team"|chatMyTeam|notificationTab\s*=\s*['"]learning['"]/, 'Brain Learning must not mutate navigation or expose its tab');
-assert.doesNotMatch(memberNav, /'my_team','My Team'/, 'profile/dropdown navigation must not duplicate My Team');
+assert.doesNotMatch(memberNav, /'my_team','My Team'/, 'profile/dropdown navigation must not duplicate legacy My Team');
+assert.match(memberNav, /'profile_agent','Profile Agent'/, 'Profile Agent must remain available from the canonical user menu');
+assert.match(memberNav, /'transcriptions','My Transcriptions'/, 'Transcriptions must remain available from the canonical user menu');
+assert.match(memberNav, /'subscription','Plan & Usage'/, 'Plan & Usage must remain available from the canonical user menu');
 assert.match(settingsUi, /document\.body\.appendChild\(host\)/, 'Chat Settings launcher must live outside the left sidebar');
 assert.match(settingsUi, /chat-settings-presence-dot/, 'Chat Settings launcher must expose the compact status dot');
 assert.doesNotMatch(settingsUi, /sidebar\.appendChild\(host\)|const sidebar = document\.getElementById\('chatSidebar'\)/, 'Chat Settings must not append to the left sidebar');

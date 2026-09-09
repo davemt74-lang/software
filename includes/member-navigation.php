@@ -58,11 +58,20 @@ function member_navigation_menu_links(?array $user = null): array
     if($chatAllowed)$add($links,'chat','Main Feed',url('/chat.php'),'primary');
 
     $profileUrl = member_navigation_profile_url($user);if($profileUrl!=='')$add($links,'profile','View Profile',$profileUrl,'identity');
-    if($accountAllowed){$add($links,'account','My Account',url('/account.php'),'identity');$add($links,'subscription','Plan & Usage',url('/subscription.php'),'identity');if($chatAllowed)$add($links,'ai_usage','AI Usage History',url('/ai-usage.php'),'identity');$add($links,'contacts','My Contacts',url('/contacts.php'),'identity');}
+    if($accountAllowed){
+        $add($links,'account','My Account',url('/account.php'),'identity');
+        $add($links,'subscription','Plan & Usage',url('/subscription.php'),'identity');
+        if(function_exists('token_pack_schema_ready')&&token_pack_schema_ready())$add($links,'token_packs','Buy AI Tokens',url('/token-packs.php'),'identity');
+        if($chatAllowed)$add($links,'ai_usage','AI Usage History',url('/ai-usage.php'),'identity');
+        $add($links,'contacts','My Contacts',url('/contacts.php'),'identity');
+    }
     if(member_navigation_entitled($user,'profile_agent.access',personal_capability_has_v242('profile_agent.access',$user)))$add($links,'profile_agent','Profile Agent',url('/profile-agent.php'),'identity');
     if(member_navigation_entitled($user,'knowledge.access',personal_capability_has_v242('personal_knowledge.access',$user)))$add($links,'knowledge','My Knowledge',url('/knowledge.php'),'identity');
     if(member_navigation_entitled($user,'transcription.access',member_navigation_package_permission($user,'artist_listening.access',has_permission('artist_listening.access',$user))))$add($links,'transcriptions','My Transcriptions',url('/artist-listening.php'),'identity');
     if(member_navigation_entitled($user,'voice.access',personal_capability_has_v242('voice_profile.access',$user)))$add($links,'voice_profile','Voice Profile',url('/voice-profile.php'),'agent');
+
+    $teamState=function_exists('team_subscription_state')?team_subscription_state($user):['authorized'=>false];
+    if(!empty($teamState['authorized']))$add($links,'team','My Team',url('/team.php'),'collaboration');
 
     $artistWorkspaceAllowed=function_exists('artist_workspace_v104_is_artist')&&artist_workspace_v104_is_artist($user)&&(
         member_navigation_package_permission($user,'tracks.manage',has_permission('tracks.manage',$user))||

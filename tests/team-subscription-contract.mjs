@@ -40,10 +40,11 @@ assert.ok(legacyAdminTeam.includes("$target=url('/team.php')"), 'legacy admin Te
 assert.ok(legacyAdminTeam.includes("header('Location: '.$target,true,307)"), 'legacy admin Team route must issue a method-preserving redirect to the canonical target');
 assert.match(legacyAdminTeam, /307/, 'legacy Team redirect must preserve stale POST methods/bodies');
 
-assert.ok(sidebar.includes("team_subscription_state($mainSidebarUser)"), 'member sidebar must use canonical Team package state');
-assert.ok(sidebar.includes('<strong>My Team</strong>'), 'authorized Team owners must have a My Team entry in the canonical sidebar');
-assert.ok(sidebar.includes("url('/team.php')"), 'canonical My Team sidebar link must open the front-end workspace');
-assert.equal((sidebar.match(/<strong>My Team<\/strong>/g) || []).length, 1, 'canonical sidebar must render exactly one My Team navigation item');
-assert.doesNotMatch(memberNav, /'my_team','My Team'/, 'profile/dropdown navigation must not add a second My Team item');
+assert.match(sidebar, /member_navigation_menu_links\(\$mainSidebarUser\)/, 'Agent sidebar must source secondary navigation from canonical member navigation');
+assert.match(sidebar, /data-agent-user-footer/, 'My Team must live in the Agent bottom user menu rather than compete with primary tools');
+assert.ok(memberNav.includes("team_subscription_state($user)"), 'canonical member navigation must use Team package state');
+assert.ok(memberNav.includes("'team','My Team',url('/team.php')"), 'authorized Team owners must retain a My Team destination');
+assert.doesNotMatch(sidebar, /<strong>My Team<\/strong>/, 'My Team must not appear in the primary Agent tool rail');
+assert.doesNotMatch(memberNav, /'my_team','My Team'/, 'legacy duplicate My Team key must stay retired');
 
 console.log('TEAM_SUBSCRIPTION_CONTRACT=PASS');

@@ -65,9 +65,13 @@ assert.match(contacts, /page_view_count/, 'CRM table keeps page-view detail sepa
 assert.match(contacts, /data-label="Stage"[\s\S]*data-label="Visits"[\s\S]*data-label="Last activity"/, 'contact cells provide labels for the mobile card layout');
 assert.match(contacts, /Privacy-first guest continuity/, 'CRM explains the anonymous continuity model');
 assert.match(sidebar, /require __DIR__ \. '\/main-sidebar\.php';/, 'workspace sidebar delegates to the canonical member sidebar');
-assert.match(mainSidebar, /href="<\?= e\(url\('\/contacts\.php'\)\) \?>"[\s\S]*My Contacts/, 'canonical member sidebar exposes My Contacts');
-assert.match(mainSidebar, /mainSidebarActive === 'contacts'/, 'My Contacts has a real active sidebar state');
-assert.match(memberNav, /'contacts','My Contacts',url\('\/contacts\.php'\)/, 'member navigation also exposes My Contacts');
+const primaryStart = mainSidebar.indexOf('data-agent-primary-nav');
+const primaryEnd = primaryStart < 0 ? -1 : mainSidebar.indexOf('</nav>', primaryStart);
+assert.ok(primaryStart >= 0 && primaryEnd > primaryStart, 'canonical Agent sidebar must expose primary navigation');
+const primaryNav = mainSidebar.slice(primaryStart, primaryEnd);
+assert.match(primaryNav, /href="<\?= e\(url\('\/contacts\.php'\)\) \?>"[\s\S]*<strong>Contacts<\/strong>/, 'canonical Agent sidebar exposes Contacts as a primary Agent tool');
+assert.match(mainSidebar, /mainSidebarActive === 'contacts'/, 'Contacts has a real active sidebar state');
+assert.match(memberNav, /'contacts','My Contacts',url\('\/contacts\.php'\)/, 'member navigation retains the descriptive My Contacts label for secondary/account contexts');
 assert.match(contactsCss, /@media\(max-width:760px\)/, 'My Contacts has a dedicated mobile layout');
 assert.match(contactsCss, /grid-template-columns:repeat\(3,minmax\(0,1fr\)\)/, 'tablet metrics remain compact without vertical sprawl');
 assert.match(contactsCss, /\.contacts-board-head\{display:none\}/, 'mobile layout removes the desktop-only table header');

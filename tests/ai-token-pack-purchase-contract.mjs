@@ -15,6 +15,7 @@ const admin = read('admin/token-packs.php');
 const upgrade = read('upgrade.php');
 const migration = read('sql/ai-token-packs.sql');
 const sidebar = read('includes/main-sidebar.php');
+const memberNav = read('includes/member-navigation.php');
 
 assert.match(subscriptions, /token-packs\.php/);
 assert.match(runtime, /CREATE TABLE IF NOT EXISTS ai_token_packs/);
@@ -80,9 +81,14 @@ assert.match(upgrade, /token_pack_schema_ready\(\)/);
 assert.match(upgrade, /token_pack_ensure_schema\(\)/);
 assert.match(migration, /provider_session_id VARCHAR\(160\) NULL DEFAULT NULL/);
 assert.match(migration, /FOREIGN KEY \(credit_id\) REFERENCES ai_token_credits/);
-assert.match(sidebar, /Plan &amp; Usage/);
-assert.match(sidebar, /Buy AI Tokens/);
-assert.match(sidebar, /mainSidebarTokenCommerceReady/);
+
+// Section 5 moves account/commerce links into the canonical bottom user menu.
+// Preserve both destinations and preserve the token-pack schema readiness gate.
+assert.match(sidebar, /member_navigation_menu_links\(\$mainSidebarUser\)/);
+assert.match(sidebar, /data-agent-user-footer/);
+assert.match(memberNav, /'subscription','Plan & Usage',url\('\/subscription\.php'\)/);
+assert.match(memberNav, /function_exists\('token_pack_schema_ready'\)&&token_pack_schema_ready\(\)/);
+assert.match(memberNav, /'token_packs','Buy AI Tokens',url\('\/token-packs\.php'\)/);
 
 for (const source of [runtime, customer, admin]) {
   assert.equal(/openai|anthropic|gemini/i.test(source), false, 'Token commerce must not invoke an LLM provider');

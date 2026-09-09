@@ -1,0 +1,44 @@
+name: Agent UI v0.34
+
+on:
+  push:
+    branches:
+      - main
+      - section-5-agent-ui-v034-**
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  agent-ui:
+    name: Agent UI · PHP ${{ matrix.php }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.1', '8.3']
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+
+      - name: Lint Agent UI integration
+        run: |
+          php -l includes/main-sidebar.php
+          php -l memory.php
+          php -l api/chat-conversation-rename-v034.php
+          php -l api/agent-runtime-status-v034.php
+          php -l tests/agent-ui-v034-contract.php
+
+      - name: Verify JavaScript syntax
+        run: node --check agent-ui-v034.js
+
+      - name: Verify Agent UI contract
+        run: php tests/agent-ui-v034-contract.php
