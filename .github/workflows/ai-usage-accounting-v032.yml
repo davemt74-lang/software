@@ -1,0 +1,55 @@
+name: AI Usage Accounting
+
+on:
+  push:
+    branches:
+      - main
+      - section-3-ai-usage-**
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  accounting:
+    name: AI Usage · PHP ${{ matrix.php }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.1', '8.3']
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Lint accounting surfaces
+        run: |
+          php -l includes/ai-usage-accounting-v032.php
+          php -l api/chat-v236.php
+          php -l ai-usage.php
+          php -l ai-usage-export-v032.php
+          php -l admin/ai-data-usage-v236.php
+          php -l admin/ai-usage-export-v032.php
+          php -l includes/member-navigation.php
+          php -l upgrade.php
+          php -l tests/ai-usage-accounting-v032.php
+
+      - name: Verify accounting contracts
+        run: |
+          php tests/ai-usage-accounting-v032.php
+          node tests/ai-usage-accounting-v032-contract.mjs
+          php tests/ai-gateway-v031.php
+          node tests/chat-execution-v019-contract.mjs
+          node tests/chat-execution-v022-contract.mjs
