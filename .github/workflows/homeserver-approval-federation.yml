@@ -1,0 +1,35 @@
+name: HomeServer Approval Federation
+
+on:
+  push:
+    branches:
+      - main
+      - feature/v0.28-homeserver-approval-federation
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          coverage: none
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: PHP syntax
+        run: |
+          php -l includes/homeserver-approvals-v028.php
+          php -l api/homeserver-approvals-v028.php
+          php -l approvals.php
+          php -l includes/main-sidebar.php
+      - name: JavaScript syntax
+        run: node --check approvals-v028.js
+      - name: Approval federation contract
+        run: python3 tools/test_homeserver_approval_federation_v028.py
