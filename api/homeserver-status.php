@@ -62,12 +62,13 @@ try {
     }
 
     $force = (string)($_GET['refresh'] ?? '') === '1';
-    $response=['ok'=>true,'status'=>homeserver_vp3_status($userId, $force)];
+    $statusSnapshot=homeserver_vp3_status($userId, $force);
+    $response=['ok'=>true,'status'=>$statusSnapshot];
     if((string)($_GET['registry'] ?? '')==='1'){
         $response['registry']=homeserver_capability_v033_registry($userId,$force);
     }
     if((string)($_GET['policy'] ?? '')==='1'){
-        $response['policy']=homeserver_policy_v035_snapshot($userId,$force);
+        $response['policy']=homeserver_policy_v035_snapshot($userId,false,$statusSnapshot);
     }
     echo json_encode($response, JSON_UNESCAPED_SLASHES);
 } catch (Throwable $e) {
