@@ -128,3 +128,16 @@
   observer.observe(document.documentElement, {subtree:true, childList:true});
   enhanceWorkspace();
 })();
+
+// Artist Listening companion integrations are loaded here because this script is
+// already page-scoped and runs after the canonical workspace. The extension is
+// additive and no-ops outside the Artist Listening page.
+(() => {
+  'use strict';
+  if (window.STONEFELLOW_ARTIST_LISTENING_HOMESERVER_V029 || document.querySelector('script[data-homeserver-v029-loader]')) return;
+  const script = document.createElement('script');
+  script.dataset.homeserverV029Loader = '1';
+  script.src = new URL('artist-listening-homeserver-v029.js?v=homeserver-knowledge-v029-20260908', location.href).toString();
+  script.async = false;
+  document.head.appendChild(script);
+})();
