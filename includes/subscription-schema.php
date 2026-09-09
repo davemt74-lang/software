@@ -40,6 +40,7 @@ function subscription_capability_catalog(): array
         'voice.access' => ['label'=>'Voice','type'=>'boolean','category'=>'AI'],
         'voice_clone.access' => ['label'=>'Voice Clone','type'=>'boolean','category'=>'AI'],
         'transcription.access' => ['label'=>'Transcription','type'=>'boolean','category'=>'AI'],
+        'music_workspace.access' => ['label'=>'Music Workspace','type'=>'boolean','category'=>'Studio'],
         'stem_editor.access' => ['label'=>'Stem Editor','type'=>'boolean','category'=>'Studio'],
         'video_editor.access' => ['label'=>'Video Editor','type'=>'boolean','category'=>'Studio'],
         'team_seats' => ['label'=>'Team Seats','type'=>'limit','category'=>'Collaboration'],
