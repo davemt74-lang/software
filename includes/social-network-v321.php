@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-/** v321 query refinements layered over the v320 relationship/message model. */
+/** v321 policy/query refinements layered over the v320 relationship/message model. */
 const VP3_SOCIAL_NETWORK_V321 = 'vp3-social-network-v321-20260909';
 
 function vp3_social_team_workspaces_for_user_v321(PDO $pdo,int $userId): array
@@ -46,4 +46,47 @@ function vp3_social_inbox_v321(PDO $pdo,int $userId): array
     $requestStmt=$pdo->prepare("SELECT r.conversation_id,r.requester_user_id,r.recipient_user_id,r.status,r.created_at,u.display_name requester_name,u.avatar_path requester_avatar,m.body initial_message FROM human_message_requests r INNER JOIN users u ON u.id=r.requester_user_id LEFT JOIN human_messages m ON m.id=r.initial_message_id WHERE r.recipient_user_id=? AND r.status='pending' ORDER BY r.created_at DESC");
     $requestStmt->execute([$userId]);$requests=$requestStmt->fetchAll()?:[];
     return ['teams'=>$teams,'conversations'=>$conversations,'requests'=>$requests];
+}
+
+function vp3_social_direct_other_user_v321(array $conversation,int $userId): int
+{
+    $low=(int)($conversation['direct_user_low_id']??0);$high=(int)($conversation['direct_user_high_id']??0);
+    if($userId===$low)return $high;if($userId===$high)return $low;return 0;
+}
+
+function vp3_social_send_message_v321(PDO $pdo,int $conversationId,int $senderId,string $body): array
+{
+    $conversation=vp3_social_conversation_v320($pdo,$conversationId);
+    if(!$conversation)throw new RuntimeException('Conversation is not available.');
+    if((string)($conversation['conversation_type']??'')==='direct'){
+        $other=vp3_social_direct_other_user_v321($conversation,$senderId);if($other<1)throw new RuntimeException('Conversation is not available.');
+        if(vp3_social_blocked_v320($pdo,$senderId,$other))throw new RuntimeException('This conversation is no longer available.');
+        $request=vp3_social_request_v320($pdo,$conversationId);
+        if($request&&$request['status']==='accepted')return vp3_social_send_message_v320($pdo,$conversationId,$senderId,$body);
+        $route=vp3_social_dm_route_v320($pdo,$senderId,$other);
+        if($request&&$request['status']==='declined'){
+            if($route!=='direct')throw new RuntimeException('This message request was declined.');
+            $pdo->prepare("UPDATE human_message_requests SET status='accepted',resolved_at=NOW(),updated_at=NOW() WHERE conversation_id=?")->execute([$conversationId]);
+        }elseif(!$request){
+            if($route==='deny')throw new RuntimeException('This member is not accepting messages from you.');
+            if($route==='request')$pdo->prepare("INSERT INTO human_message_requests (conversation_id,requester_user_id,recipient_user_id,status) VALUES (?,?,?,'pending')")->execute([$conversationId,$senderId,$other]);
+        }elseif($request['status']==='pending'&&(int)$request['requester_user_id']!==$senderId){
+            throw new RuntimeException('Accept the message request before replying.');
+        }
+    }
+    return vp3_social_send_message_v320($pdo,$conversationId,$senderId,$body);
+}
+
+function vp3_social_start_direct_v321(PDO $pdo,int $senderId,int $recipientId,string $initialMessage=''): array
+{
+    $route=vp3_social_dm_route_v320($pdo,$senderId,$recipientId);if($route==='deny')throw new RuntimeException('This member is not accepting messages from you.');
+    $conversation=vp3_social_direct_conversation_v320($pdo,$senderId,$recipientId,$senderId);$cid=(int)$conversation['id'];$request=vp3_social_request_v320($pdo,$cid);
+    if($route==='request'){
+        if($request&&$request['status']==='declined')throw new RuntimeException('This message request was declined.');
+        if(!$request)$pdo->prepare("INSERT INTO human_message_requests (conversation_id,requester_user_id,recipient_user_id,status) VALUES (?,?,?,'pending')")->execute([$cid,$senderId,$recipientId]);
+    }elseif($request&&in_array((string)$request['status'],['pending','declined'],true)){
+        $pdo->prepare("UPDATE human_message_requests SET status='accepted',resolved_at=NOW(),updated_at=NOW() WHERE conversation_id=?")->execute([$cid]);
+    }
+    $message=null;if(trim($initialMessage)!=='')$message=vp3_social_send_message_v321($pdo,$cid,$senderId,$initialMessage);
+    return ['conversation'=>$conversation,'route'=>$route,'message'=>$message];
 }
