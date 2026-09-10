@@ -44,6 +44,7 @@ function vp3_upgrade_complete(): bool
         && profile_agent_schema_ready()
         && crm_v180_schema_ready()
         && artist_workspace_v181_schema_ready()
+        && music_workspace_release_schema_v330_ready()
         && music_workspace_resources_v330_schema_ready()
         && artist_media_v182_schema_ready()
         && artist_posts_v183_schema_ready()
@@ -102,6 +103,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             personal_capability_ensure_schema_v242();
             crm_v180_ensure_schema();
             artist_workspace_v181_ensure_schema();
+            music_workspace_release_schema_v330_ensure($pdo);
             music_workspace_resources_v330_ensure_schema($pdo);
             artist_media_v182_ensure_schema();
             artist_posts_v183_ensure_schema();
