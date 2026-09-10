@@ -1,5 +1,5 @@
 (() => {
-  const build='profile-activity-20260905';
+  const build='profile-social-20260909';
   const memberBase=new URL('.',document.currentScript?.src||window.location.href);
   const openSidebar = document.getElementById('openChatSidebar');
   const closeSidebar = document.getElementById('closeChatSidebar');
@@ -85,6 +85,15 @@
       const loader = document.createElement('script');
       loader.src = new URL('contacts-intelligence-outcomes-v316.js?v=agent-brain-learning-20260907',memberBase).href;
       loader.dataset.contactsIntelligenceOutcomesLoader = 'member-shell';
+      document.body.appendChild(loader);
+    }
+  }
+
+  if (document.body.classList.contains('profile-page') && window.STONEFELLOW_PROFILE_AGENT?.username) {
+    if(!document.querySelector('[data-profile-social-loader]')){
+      const loader=document.createElement('script');
+      loader.src=new URL(`profile-social-v320.js?v=${build}`,memberBase).href;
+      loader.dataset.profileSocialLoader='member-shell';
       document.body.appendChild(loader);
     }
   }
