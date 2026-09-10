@@ -69,12 +69,14 @@ assert.match(streamChat, /effective_preference.*homeserver_only/s);
 assert.match(streamChat, /vp3_agent_runtime_block_message_v420/);
 
 // One execution ledger records both source billing and v4.20 route truth. The
-// legacy insert remains only as an upgrade-safe fallback until columns exist.
+// legacy insert remains only as an upgrade-safe fallback until all six columns exist.
 for (const column of ['runtime_version','requested_route','attempted_route','actual_route','route_reason','fallback_reason']) {
   assert.match(accounting, new RegExp(`ADD COLUMN ${column}|${column} VARCHAR`));
 }
-assert.match(accounting, /column_exists\('ai_execution_ledger','runtime_version'\)/);
-assert.match(accounting, /column_exists\('ai_execution_ledger','actual_route'\)/);
+assert.match(accounting, /function ai_usage_accounting_v032_route_schema_ready/);
+assert.match(accounting, /foreach\(\['runtime_version','requested_route','attempted_route','actual_route','route_reason','fallback_reason'\] as \$column\)/);
+assert.match(accounting, /if\(!column_exists\('ai_execution_ledger',\$column\)\)return false/);
+assert.match(accounting, /if\(ai_usage_accounting_v032_route_schema_ready\(\$pdo\)\)/);
 assert.match(accounting, /INSERT INTO ai_execution_ledger[\s\S]*runtime_version[\s\S]*actual_route/);
 
 assert.match(status, /runtime_version/);
