@@ -1,5 +1,6 @@
 <?php
 declare(strict_types=1);
+require_once __DIR__.'/team-workspace-lifecycle-v350.php';
 
 /**
  * Canonical commercial state for a VP3-owned collaborative workspace.
@@ -39,6 +40,8 @@ function team_subscription_state(?array $user=null,?PDO $pdo=null): array
 
     if($state['authorized']&&$pdo&&table_exists('artist_team_members')){
         try{
+            // artist_team_members is the v3.50 active-membership projection.
+            // Suspended/removed relationships never consume commercial seats.
             $stmt=$pdo->prepare('SELECT COUNT(*) FROM artist_team_members atm INNER JOIN users u ON u.id=atm.member_user_id AND u.is_active=1 WHERE atm.artist_user_id=?');
             $stmt->execute([(int)$user['id']]);
             $state['used']=(int)$stmt->fetchColumn();
