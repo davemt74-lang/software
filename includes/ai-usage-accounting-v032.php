@@ -35,6 +35,12 @@ function ai_usage_accounting_v032_ensure_schema(?PDO $pdo=null): void
       failure_class VARCHAR(40) NOT NULL DEFAULT 'none',
       latency_ms INT UNSIGNED NOT NULL DEFAULT 0,
       run_id BIGINT UNSIGNED NULL,
+      runtime_version VARCHAR(16) NOT NULL DEFAULT '',
+      requested_route VARCHAR(32) NOT NULL DEFAULT '',
+      attempted_route VARCHAR(48) NOT NULL DEFAULT '',
+      actual_route VARCHAR(48) NOT NULL DEFAULT '',
+      route_reason VARCHAR(80) NOT NULL DEFAULT '',
+      fallback_reason VARCHAR(80) NOT NULL DEFAULT '',
       created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       INDEX idx_ai_execution_user_time (user_id,created_at,id),
       INDEX idx_ai_execution_agent_time (agent_id,created_at,id),
@@ -44,6 +50,15 @@ function ai_usage_accounting_v032_ensure_schema(?PDO $pdo=null): void
       INDEX idx_ai_execution_trace (trace_id,id),
       UNIQUE KEY uq_ai_execution_cloud_ledger (cloud_ledger_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+    $adds=[
+        'runtime_version'=>"ALTER TABLE ai_execution_ledger ADD COLUMN runtime_version VARCHAR(16) NOT NULL DEFAULT '' AFTER run_id",
+        'requested_route'=>"ALTER TABLE ai_execution_ledger ADD COLUMN requested_route VARCHAR(32) NOT NULL DEFAULT '' AFTER runtime_version",
+        'attempted_route'=>"ALTER TABLE ai_execution_ledger ADD COLUMN attempted_route VARCHAR(48) NOT NULL DEFAULT '' AFTER requested_route",
+        'actual_route'=>"ALTER TABLE ai_execution_ledger ADD COLUMN actual_route VARCHAR(48) NOT NULL DEFAULT '' AFTER attempted_route",
+        'route_reason'=>"ALTER TABLE ai_execution_ledger ADD COLUMN route_reason VARCHAR(80) NOT NULL DEFAULT '' AFTER actual_route",
+        'fallback_reason'=>"ALTER TABLE ai_execution_ledger ADD COLUMN fallback_reason VARCHAR(80) NOT NULL DEFAULT '' AFTER route_reason",
+    ];
+    foreach($adds as $column=>$ddl)if(function_exists('column_exists')&&!column_exists('ai_execution_ledger',$column))$pdo->exec($ddl);
 }
 
 function ai_usage_accounting_v032_rate_catalog(): array
@@ -97,8 +112,15 @@ function ai_usage_accounting_v032_record(PDO $pdo,array $user,int $agentId,int $
         $trace=function_exists('agent_runtime_v125_trace_id')?trim((string)agent_runtime_v125_trace_id()):'';$cloud=ai_usage_accounting_v032_cloud_ledger($pdo,$userId,$trace);$cloudLedgerId=$cloud?(int)$cloud['id']:null;
         $cloudCharged=max(0,(int)($execution['cloud_tokens_debited']??0));if($source==='vp3_cloud'&&$cloud&&$cloudCharged<1)$cloudCharged=max(0,(int)$cloud['total_tokens']);
         $cost=ai_usage_accounting_v032_cost($execution);
-        $stmt=$pdo->prepare('INSERT INTO ai_execution_ledger (user_id,agent_id,conversation_id,cloud_ledger_id,trace_id,source,provider,model,input_tokens,output_tokens,total_tokens,cloud_tokens_charged,estimated_cost_micros,cost_currency,cost_rate_source,homeserver_state,fallback_used,failure_class,latency_ms,run_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
-        $stmt->execute([$userId,$agentId>0?$agentId:null,$conversationId>0?$conversationId:null,$cloudLedgerId,mb_strimwidth($trace,0,120,''),$source,mb_strimwidth(trim((string)($execution['provider']??'')),0,80,''),mb_strimwidth(trim((string)($execution['model']??'')),0,160,''),$input,$output,$total,$cloudCharged,$cost['micros'],'USD',mb_strimwidth((string)$cost['rate_source'],0,40,''),mb_strimwidth((string)($execution['homeserver']??'not_used'),0,30,''),!empty($execution['fallback_used'])?1:0,mb_strimwidth((string)($execution['failure_class']??'none'),0,40,''),max(0,(int)($execution['latency_ms']??0)),(int)($execution['run_id']??0)>0?(int)$execution['run_id']:null]);
+        $base=[$userId,$agentId>0?$agentId:null,$conversationId>0?$conversationId:null,$cloudLedgerId,mb_strimwidth($trace,0,120,''),$source,mb_strimwidth(trim((string)($execution['provider']??'')),0,80,''),mb_strimwidth(trim((string)($execution['model']??'')),0,160,''),$input,$output,$total,$cloudCharged,$cost['micros'],'USD',mb_strimwidth((string)$cost['rate_source'],0,40,''),mb_strimwidth((string)($execution['homeserver']??'not_used'),0,30,''),!empty($execution['fallback_used'])?1:0,mb_strimwidth((string)($execution['failure_class']??'none'),0,40,''),max(0,(int)($execution['latency_ms']??0)),(int)($execution['run_id']??0)>0?(int)$execution['run_id']:null];
+        $v420=function_exists('column_exists')&&column_exists('ai_execution_ledger','runtime_version')&&column_exists('ai_execution_ledger','actual_route');
+        if($v420){
+            $stmt=$pdo->prepare('INSERT INTO ai_execution_ledger (user_id,agent_id,conversation_id,cloud_ledger_id,trace_id,source,provider,model,input_tokens,output_tokens,total_tokens,cloud_tokens_charged,estimated_cost_micros,cost_currency,cost_rate_source,homeserver_state,fallback_used,failure_class,latency_ms,run_id,runtime_version,requested_route,attempted_route,actual_route,route_reason,fallback_reason) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
+            $stmt->execute(array_merge($base,[mb_strimwidth((string)($execution['runtime_version']??''),0,16,''),mb_strimwidth((string)($execution['requested_route']??''),0,32,''),mb_strimwidth((string)($execution['attempted_route']??''),0,48,''),mb_strimwidth((string)($execution['actual_route']??''),0,48,''),mb_strimwidth((string)($execution['route_reason']??''),0,80,''),mb_strimwidth((string)($execution['fallback_reason']??''),0,80,'')]));
+        }else{
+            $stmt=$pdo->prepare('INSERT INTO ai_execution_ledger (user_id,agent_id,conversation_id,cloud_ledger_id,trace_id,source,provider,model,input_tokens,output_tokens,total_tokens,cloud_tokens_charged,estimated_cost_micros,cost_currency,cost_rate_source,homeserver_state,fallback_used,failure_class,latency_ms,run_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
+            $stmt->execute($base);
+        }
     }catch(PDOException $e){if((string)$e->getCode()==='23000')return;error_log('VP3 AI execution accounting failed: '.$e->getMessage());}catch(Throwable $e){error_log('VP3 AI execution accounting failed: '.$e->getMessage());}
 }
 
