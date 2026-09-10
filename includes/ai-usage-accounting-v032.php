@@ -9,6 +9,16 @@ function ai_usage_accounting_v032_schema_ready(?PDO $pdo=null): bool
     return (bool)$pdo&&table_exists('ai_execution_ledger');
 }
 
+function ai_usage_accounting_v032_route_schema_ready(?PDO $pdo=null): bool
+{
+    $pdo??=db();
+    if(!$pdo||!table_exists('ai_execution_ledger')||!function_exists('column_exists'))return false;
+    foreach(['runtime_version','requested_route','attempted_route','actual_route','route_reason','fallback_reason'] as $column){
+        if(!column_exists('ai_execution_ledger',$column))return false;
+    }
+    return true;
+}
+
 function ai_usage_accounting_v032_ensure_schema(?PDO $pdo=null): void
 {
     $pdo??=db();
@@ -113,8 +123,7 @@ function ai_usage_accounting_v032_record(PDO $pdo,array $user,int $agentId,int $
         $cloudCharged=max(0,(int)($execution['cloud_tokens_debited']??0));if($source==='vp3_cloud'&&$cloud&&$cloudCharged<1)$cloudCharged=max(0,(int)$cloud['total_tokens']);
         $cost=ai_usage_accounting_v032_cost($execution);
         $base=[$userId,$agentId>0?$agentId:null,$conversationId>0?$conversationId:null,$cloudLedgerId,mb_strimwidth($trace,0,120,''),$source,mb_strimwidth(trim((string)($execution['provider']??'')),0,80,''),mb_strimwidth(trim((string)($execution['model']??'')),0,160,''),$input,$output,$total,$cloudCharged,$cost['micros'],'USD',mb_strimwidth((string)$cost['rate_source'],0,40,''),mb_strimwidth((string)($execution['homeserver']??'not_used'),0,30,''),!empty($execution['fallback_used'])?1:0,mb_strimwidth((string)($execution['failure_class']??'none'),0,40,''),max(0,(int)($execution['latency_ms']??0)),(int)($execution['run_id']??0)>0?(int)$execution['run_id']:null];
-        $v420=function_exists('column_exists')&&column_exists('ai_execution_ledger','runtime_version')&&column_exists('ai_execution_ledger','actual_route');
-        if($v420){
+        if(ai_usage_accounting_v032_route_schema_ready($pdo)){
             $stmt=$pdo->prepare('INSERT INTO ai_execution_ledger (user_id,agent_id,conversation_id,cloud_ledger_id,trace_id,source,provider,model,input_tokens,output_tokens,total_tokens,cloud_tokens_charged,estimated_cost_micros,cost_currency,cost_rate_source,homeserver_state,fallback_used,failure_class,latency_ms,run_id,runtime_version,requested_route,attempted_route,actual_route,route_reason,fallback_reason) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
             $stmt->execute(array_merge($base,[mb_strimwidth((string)($execution['runtime_version']??''),0,16,''),mb_strimwidth((string)($execution['requested_route']??''),0,32,''),mb_strimwidth((string)($execution['attempted_route']??''),0,48,''),mb_strimwidth((string)($execution['actual_route']??''),0,48,''),mb_strimwidth((string)($execution['route_reason']??''),0,80,''),mb_strimwidth((string)($execution['fallback_reason']??''),0,80,'')]));
         }else{
