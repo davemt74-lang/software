@@ -203,17 +203,28 @@ function vp3_agent_tool_booking_suggestions_v400(array $user,int $limit=8): arra
     return array_slice($out,0,max(1,min(20,$limit)));
 }
 
+function vp3_agent_tool_media_intent_v400(string $query,string $mode): bool
+{
+    if(!preg_match('/\b(?:open|show|start|use|enable|record|capture|shoot|take|snap|make)\b/i',$query))return false;
+    return match($mode){
+        'photo'=>(bool)preg_match('/\b(?:photo|picture|image)\b/i',$query),
+        'video'=>(bool)preg_match('/\bvideo\b/i',$query),
+        'audio'=>(bool)preg_match('/\b(?:voice|audio|memo|recording|microphone|mic)\b/i',$query),
+        'camera'=>(bool)preg_match('/\b(?:camera|cameras|webcam|capture device)\b/i',$query),
+        default=>false,
+    };
+}
+
 function vp3_agent_tool_internal_action_v400(array $action,array $user,string $query): ?array
 {
     $type=(string)($action['type']??'');
     if($type==='media_capture'){
         $mode=(string)($action['mode']??'camera');
         if(!in_array($mode,['camera','photo','video','audio'],true))return null;
-        $explicit=(bool)preg_match('/\b(?:open|show|start|use|enable|record|capture|shoot|take|snap|make)\b/i',$query);
         return [
             'type'=>'media_capture','mode'=>$mode,'camera_index'=>max(0,min(4,(int)($action['camera_index']??0))),
             'label'=>mb_substr(trim((string)($action['label']??'Open Camera')),0,120),
-            'auto'=>$explicit,
+            'auto'=>vp3_agent_tool_media_intent_v400($query,$mode),
             'policy'=>['version'=>'v4.00','domain'=>'browser_local','risk'=>'low','requires_approval'=>false,'authorized'=>true],
         ];
     }
@@ -226,22 +237,30 @@ function vp3_agent_tool_internal_action_v400(array $action,array $user,string $q
     parse_str((string)($parts['query']??''),$params);
     $pdo=db();if(!$pdo)return null;
 
+    $autoAllowed=false;
     if(str_ends_with($path,'/admin/stems.php')||$path==='/admin/stems.php'){
         $trackId=max(0,(int)($params['track']??0));
         if($trackId<1)return null;
         $stmt=$pdo->prepare('SELECT * FROM tracks WHERE id=? LIMIT 1');$stmt->execute([$trackId]);$track=$stmt->fetch();
         if(!$track||!vp3_agent_tool_track_manage_v400($pdo,$track,$user))return null;
-    }
-    if(str_ends_with($path,'/music-releases.php')||$path==='/music-releases.php'){
+        $autoAllowed=true;
+    }elseif(str_ends_with($path,'/music-releases.php')||$path==='/music-releases.php'){
         $workspaceId=max(0,(int)($params['workspace']??0));
         if($workspaceId<1||!music_workspace_resources_v330_can_manage($pdo,$workspaceId,'releases',$user))return null;
+        $autoAllowed=true;
+    }elseif(str_ends_with($path,'/video-editor.php')||$path==='/video-editor.php'){
+        if(!has_permission('chat.access',$user))return null;
+        $autoAllowed=true;
+    }else{
+        // Other same-origin links may be presented as explicit navigation but are
+        // never auto-run. GET navigation is not generalized into execution authority.
+        $autoAllowed=false;
     }
-    if((str_ends_with($path,'/video-editor.php')||$path==='/video-editor.php')&&!has_permission('chat.access',$user))return null;
 
     $explicit=(bool)preg_match('/\b(?:open|show|start|launch|go to)\b/i',$query);
     return [
         'type'=>'open_url','label'=>mb_substr(trim((string)($action['label']??'Open')),0,120),'url'=>$raw,
-        'auto'=>$explicit,
+        'auto'=>$autoAllowed&&$explicit,
         'policy'=>['version'=>'v4.00','domain'=>'navigation','risk'=>'low','requires_approval'=>false,'authorized'=>true],
     ];
 }
