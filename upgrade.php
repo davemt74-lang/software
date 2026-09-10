@@ -147,7 +147,7 @@ vp3_public_header('Database Upgrade — VP3', 'Upgrade the VP3 database and appl
         <p class="vp3-auth-intro">Subscription packages, composable add-on entitlements, canonical opt-in plugins, social relationships, human messaging, Team invitation and membership lifecycle, workspace-owned Music resources, AI quota and execution accounting, Agent Brain, private Knowledge, Profile Agent, HomeServer Agent continuity, Agent Radar, CRM, voice identity, transcriptions and Music/Studio capabilities are available.</p>
         <a class="vp3-btn primary" href="<?= e(url('/admin/users.php')) ?>">Manage Users →</a>
       <?php else: ?>
-        <p class="vp3-auth-intro">Run the current schema upgrade while preserving existing content and access. Existing accounts, package assignments, Team memberships, plugin preferences, token balances, music content and onboarding progress are preserved, including Team membership history and existing add-on grants.</p>
+        <p class="vp3-auth-intro">Run the current schema upgrade while preserving existing content and access. Existing accounts, package assignments, team memberships, token balances, music content, plugin preferences and onboarding progress are preserved, including Team membership history and existing add-on grants.</p>
         <?php if ($error): ?><div class="vp3-alert error" role="alert"><?= e($error) ?></div><?php endif; ?>
         <form method="post">
           <?= csrf_field() ?>
