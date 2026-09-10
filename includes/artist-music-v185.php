@@ -65,7 +65,26 @@ function artist_music_v185_store_audio(array $upload,int $workspaceId): string
     @chmod($target,0640);return '/uploads/artist-music/'.$workspaceId.'/'.$filename;
 }
 
-function artist_music_v185_delete_owned_audio(int $workspaceId,string $storedPath): void{$path=artist_music_v185_owned_path($workspaceId,$storedPath);if($path)@unlink($path);}
+function artist_music_v185_audio_is_referenced(int $workspaceId,string $storedPath): bool
+{
+    $pdo=db();if(!$pdo||$workspaceId<1||$storedPath===''||!table_exists('tracks')||!column_exists('tracks','workspace_id'))return false;
+    try{$stmt=$pdo->prepare('SELECT 1 FROM tracks WHERE workspace_id=? AND audio_path=? LIMIT 1');$stmt->execute([$workspaceId,$storedPath]);return (bool)$stmt->fetchColumn();}catch(Throwable $e){return true;}
+}
+
+function artist_music_v185_delete_owned_audio(int $workspaceId,string $storedPath): void
+{
+    $path=artist_music_v185_owned_path($workspaceId,$storedPath);if(!$path)return;
+    if(artist_music_v185_audio_is_referenced($workspaceId,$storedPath)){
+        // Catalog save/delete can update the production backing later in the same
+        // request. Recheck at shutdown: delete only if no preserved Studio track
+        // still references the file after all transactional work has completed.
+        register_shutdown_function(static function()use($workspaceId,$storedPath):void{
+            try{if(!artist_music_v185_audio_is_referenced($workspaceId,$storedPath)){$resolved=artist_music_v185_owned_path($workspaceId,$storedPath);if($resolved)@unlink($resolved);}}catch(Throwable $e){}
+        });
+        return;
+    }
+    @unlink($path);
+}
 
 function artist_music_v185_album(PDO $pdo,int $workspaceId,int $id): ?array
 {
