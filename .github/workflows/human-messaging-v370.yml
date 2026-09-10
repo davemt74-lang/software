@@ -1,0 +1,52 @@
+name: Human Messaging v3.70
+
+on:
+  push:
+    branches:
+      - main
+      - feature/canonical-human-messaging-v370
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  messaging-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          coverage: none
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Human messaging contract
+        run: node tests/human-messaging-v370.mjs
+
+      - name: JavaScript syntax
+        run: |
+          node --check tests/human-messaging-v370.mjs
+          node --check messages-v320.js
+
+      - name: PHP syntax
+        run: |
+          php -l includes/human-messaging-v370.php
+          php -l includes/human-messaging-block-v370.php
+          php -l includes/social-network-v320.php
+          php -l includes/social-network-v321.php
+          php -l includes/bootstrap.php
+          php -l api/messages-v320.php
+          php -l api/team-chat-v109.php
+          php -l api/team-chat-v320.php
+          php -l messages.php
+          php -l setup.php
+          php -l upgrade.php

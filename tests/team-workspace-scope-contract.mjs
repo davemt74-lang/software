@@ -99,20 +99,26 @@ assert.ok(!domain.includes('legacy.permissions'), 'Artist workspace context must
 assert.ok(domain.includes('artist_workspace_v104_revoke_producer_assignments'), 'Producer membership removal or downgrade must revoke direct track assignments');
 assert.ok(domain.includes('UPDATE tracks SET producer_user_id=NULL WHERE owner_user_id=? AND producer_user_id=?'), 'producer revocation must be scoped to the owning Artist and member');
 
-// Older request/navigation/chat layers intentionally consume artist_team_members,
+// Older request/navigation layers intentionally consume artist_team_members,
 // which v3.50 maintains as active-only. They must never infer global Team roles.
 assert.ok(gates.includes('artist_workspace_v104_memberships_for_user'), 'request guards must derive Team authority from active relationships');
 assert.ok(gates.includes("$managerSafe=['/admin/team-workspaces.php','/admin/team-workspace.php']"), 'Manager relationship context must only pass scoped Team Admin routes');
 assert.ok(gates.includes("$producerSafe=['/admin/producer-tracks.php','/admin/stems.php','/admin/stems-legacy-v108.php']"), 'Producer relationship context must only pass direct production Admin routes');
 assert.ok(nav.includes('artist_workspace_v104_memberships_for_user'), 'member navigation must derive Team Workspaces visibility from active relationships');
 
-// v109 is compatibility-only. Contextual Team membership and directory scoping
-// are enforced by the canonical v320 runtime, not duplicated in the legacy file.
+// v109 is compatibility-only. v320 remains the scoped Team Chat endpoint but now
+// adapts canonical Human Messaging. Every history/send/read path first resolves the
+// peer through a helper that re-checks the current shared active-workspace boundary.
 assert.match(teamChatLegacy, /require __DIR__\.'\/team-chat-v320\.php'/, 'legacy Team Chat URL must delegate to v320');
 assert.ok(teamChatScoped.includes('FROM artist_team_members WHERE artist_user_id=?'), 'Team Chat must recognize workspace owners and their contextual members');
 assert.ok(teamChatScoped.includes('FROM artist_team_members WHERE member_user_id=?'), 'Team Chat eligibility must include contextual memberships');
 assert.ok(teamChatScoped.includes('INNER JOIN artist_team_members a2 ON a2.artist_user_id=a1.artist_user_id'), 'Team Chat directory must include peers in the same contextual workspace');
-assert.ok(teamChatScoped.includes('vp3_social_shared_workspace_v320'), 'history/send/read must re-check current shared-workspace authorization');
+assert.ok(teamChatScoped.includes('vp3_human_shared_workspace_v370'), 'Team Chat peer resolution must re-check current shared-workspace authorization');
+assert.match(teamChatScoped, /if\(\$action==='history'\)[\s\S]*team_chat_v320_peer\(\$pdo,\$uid,\$peer\)/, 'history must re-check current shared-workspace authorization');
+assert.match(teamChatScoped, /if\(\$action==='send'\)[\s\S]*team_chat_v320_peer\(\$pdo,\$uid,\$peer\)/, 'send must re-check current shared-workspace authorization');
+assert.match(teamChatScoped, /if\(\$action==='read'\)[\s\S]*team_chat_v320_peer\(\$pdo,\$uid,\$peer\)/, 'read must re-check current shared-workspace authorization');
+assert.ok(teamChatScoped.includes('human_messages'), 'Team Chat compatibility runtime must use canonical human-message persistence');
+assert.ok(!/INSERT\s+INTO\s+team_direct_messages/i.test(teamChatScoped), 'Team Chat must not create a parallel DM ledger');
 assert.ok(!teamChatScoped.includes("WHERE u.role IN"), 'Team Chat directory must not use global role membership');
 assert.ok(teamChatWidget.includes('artist_workspace_v104_memberships_for_user'), 'Team Chat widget must remain visible to contextual Managers and Producers');
 

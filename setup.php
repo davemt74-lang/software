@@ -28,8 +28,10 @@ try {
     workspace_team_v350_ensure_schema($pdo);
     vp3_plugin_ensure_schema_v320($pdo);
     vp3_social_ensure_schema_v320($pdo);
+    vp3_human_messaging_v370_ensure_schema($pdo);
     artist_workspace_v181_ensure_schema($pdo);
     vp3_plugin_migrate_legacy_v360($pdo);
+    vp3_human_messaging_v370_migrate_legacy($pdo);
     music_workspace_release_schema_v330_ensure($pdo);
     music_workspace_resources_v330_ensure_schema($pdo);
     password_reset_ensure_schema();
