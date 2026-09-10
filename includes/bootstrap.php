@@ -85,6 +85,7 @@ require_once __DIR__.'/artist-shows-v184.php';
 require_once __DIR__.'/artist-music-v185.php';
 require_once __DIR__.'/artist-admin-routing-v185.php';
 require_once __DIR__.'/release-agent-v105.php';
+require_once __DIR__.'/release-workspace-v332.php';
 require_once __DIR__.'/agent-integrations-v105.php';
 require_once __DIR__.'/release-guard-v105.php';
 require_once __DIR__.'/knowledge.php';
