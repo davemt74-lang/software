@@ -18,7 +18,6 @@ $mainSidebarRoleSummary = $mainSidebarUser ? implode(' · ', user_role_labels($m
 <link rel="stylesheet" href="<?= e(url('/homeserver-vp3.css?v=20260907')) ?>">
 <link rel="stylesheet" href="<?= e(url('/agent-policy-v035.css?v=agent-policy-v035-20260909')) ?>">
 <link rel="stylesheet" href="<?= e(url('/agent-ui-v034.css?v=agent-ui-v034-20260909')) ?>">
-<style data-chat-video-button-removal-v350>#chatVideoEditorButton,.chat-video-editor-button{display:none!important}</style>
 <aside
   class="chat-sidebar workspace-main-sidebar"
   id="chatSidebar"
@@ -145,4 +144,3 @@ $mainSidebarRoleSummary = $mainSidebarUser ? implode(' · ', user_role_labels($m
 </div>
 <script src="<?= e(url('/homeserver-vp3.js?v=agent-policy-v035-20260909')) ?>" defer></script>
 <script src="<?= e(url('/agent-ui-v034.js?v=agent-ui-v034-20260909')) ?>" defer></script>
-<script data-chat-video-button-removal-v350>(function(){var removeVideo=function(){var button=document.getElementById('chatVideoEditorButton');if(button)button.remove();};if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',removeVideo,{once:true});}else{removeVideo();}})();</script>
