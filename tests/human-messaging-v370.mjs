@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 const read = path => fs.readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
 const lifecycle = read('includes/human-messaging-v370.php');
+const blockLifecycle = read('includes/human-messaging-block-v370.php');
 const social = read('includes/social-network-v320.php');
 const api = read('api/messages-v320.php');
 const team = read('api/team-chat-v320.php');
@@ -68,6 +69,17 @@ assert.match(startBody, /initial_message_id/);
 assert.match(startBody, /Your message request is pending/);
 assert.match(sendBody, /Accept the message request before replying/);
 assert.match(sendBody, /Your message request is pending/);
+
+// Blocks share the exact user serialization boundary with DM sends. Blocking
+// resolves a pending request but preserves the conversation/message history.
+assert.match(blockLifecycle, /function vp3_human_set_block_v370/);
+assert.match(blockLifecycle, /vp3_human_lock_users_v370/);
+assert.match(blockLifecycle, /INSERT IGNORE INTO user_blocks/);
+assert.match(blockLifecycle, /UPDATE human_message_requests SET status='declined'/);
+assert.doesNotMatch(blockLifecycle, /DELETE FROM human_messages|DELETE FROM human_conversations/i);
+assert.match(api, /human-messaging-block-v370\.php/);
+assert.match(api, /vp3_human_set_block_v370/);
+assert.doesNotMatch(api, /vp3_social_block_v320/);
 
 // Blocks and Team scope are live authorization inputs.
 assert.match(lifecycle, /function vp3_human_blocked_v370/);
