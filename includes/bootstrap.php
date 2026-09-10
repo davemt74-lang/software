@@ -107,6 +107,7 @@ require_once __DIR__.'/agent-activity-v94.php';
 require_once __DIR__.'/agent-chat-continuity-v101.php';
 require_once __DIR__.'/crm-v180.php';
 require_once __DIR__.'/agent-ecosystem-v118.php';
+require_once __DIR__.'/agent-proactive-operations-v036.php';
 require_once __DIR__.'/agent-cognitive-loop-v310.php';
 require_once __DIR__.'/agent-surface-context-v131.php';
 require_once __DIR__.'/media-studio-v86.php';
