@@ -40,7 +40,9 @@ function music_workspace_ensure_owner_v320(PDO $pdo,array $user): array
     $uid=(int)($user['id']??0);if($uid<1)throw new RuntimeException('Sign in to use Music Workspace.');
     if(!music_workspace_enabled_v320($user)&&!user_has_role('admin',$user))throw new RuntimeException('Music Workspace is not enabled for this VP3 account.');
     if(!function_exists('artist_workspace_v181_ensure_schema'))throw new RuntimeException('Music Workspace runtime is unavailable.');
-    artist_workspace_v181_ensure_schema($pdo);
+    // Avoid DDL inside caller-owned transactions. The public toggle path normalizes
+    // missing workspace schema before beginning its state transaction.
+    if(!function_exists('artist_workspace_v181_schema_ready')||!artist_workspace_v181_schema_ready($pdo))artist_workspace_v181_ensure_schema($pdo);
     $stmt=$pdo->prepare('SELECT * FROM artist_workspaces_v181 WHERE artist_user_id=? LIMIT 1');$stmt->execute([$uid]);$workspace=$stmt->fetch();if($workspace)return $workspace;
     $name=trim((string)($user['display_name']??''));if($name==='')$name='My Music Workspace';
     $base=function_exists('artist_workspace_v181_slug')?artist_workspace_v181_slug((string)($user['username']??$name)):'music-'.$uid;
@@ -90,10 +92,15 @@ function music_workspace_set_enabled_v320(PDO $pdo,array $user,bool $enabled): a
     $uid=(int)($user['id']??0);if($uid<1)throw new RuntimeException('Sign in to manage Music Workspace.');
     if($enabled&&!music_workspace_entitled_v320($user))throw new RuntimeException('Music Workspace is not included in your current VP3 package.');
 
-    // Create any missing plugin schema before starting the state transaction because
-    // MySQL DDL can implicitly commit. From this point forward, enable/disable state
-    // and workspace creation succeed or fail together.
+    // Normalize DDL before starting the state transaction because MySQL DDL can
+    // implicitly commit. After this point plugin state + owner workspace creation
+    // succeed or fail atomically.
     if(!vp3_plugin_schema_ready_v320($pdo))vp3_plugin_ensure_schema_v320($pdo);
+    if($enabled&&(!function_exists('artist_workspace_v181_schema_ready')||!artist_workspace_v181_schema_ready($pdo))){
+        if(!function_exists('artist_workspace_v181_ensure_schema'))throw new RuntimeException('Music Workspace runtime is unavailable.');
+        artist_workspace_v181_ensure_schema($pdo);
+    }
+
     $ownsTransaction=!$pdo->inTransaction();if($ownsTransaction)$pdo->beginTransaction();
     try{
         $row=vp3_plugin_set_enabled_v320($pdo,$uid,music_workspace_plugin_key_v320(),$enabled);
