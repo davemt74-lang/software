@@ -28,13 +28,14 @@ assert.match(grants,/\$state\['limit'\]\+=\$delta/);
 
 // Commercial data must never encode security authority.
 assert.match(grants,/str_starts_with\(\$key,'permission\.'\)/);
-assert.match(grants,/DELETE FROM package_entitlements WHERE capability_key LIKE 'permission\.%'/);
+assert.match(grants,/DELETE FROM package_entitlements WHERE capability_key LIKE 'permission\.%' OR capability_key='legacy\.permissions'/);
 assert.match(access,/function subscription_package_grants_permission[\s\S]*?return false;/);
 assert.match(access,/function subscription_permissions_authoritative[\s\S]*?return false;/);
 assert.match(access,/subscription_entitlement_key_is_product_v340/);
 assert.doesNotMatch(permissions,/subscription_package_grants_permission/);
-assert.doesNotMatch(permissions,/subscription_has_entitlement\(\$user,'legacy\.permissions'\)/);
-assert.match(permissions,/has_permission\(\$permission,\$user\)/);
+assert.doesNotMatch(permissions,/subscription_has_entitlement/);
+assert.doesNotMatch(permissions,/subscription_current\(/);
+assert.match(permissions,/FROM role_permissions WHERE permission_key=\?/);
 assert.match(permissions,/Packages and add-ons buy product capabilities/);
 
 // HTTP gates may check purchased product availability, never security authority.
@@ -50,7 +51,7 @@ assert.doesNotMatch(packages,/permission_catalog\(\)/);
 assert.doesNotMatch(packages,/subscription_permission_key/);
 assert.match(packages,/Security authority is managed separately through roles and workspace membership/);
 assert.match(packages,/capability_key NOT LIKE 'permission\.%'/);
-assert.match(packages,/DELETE FROM package_entitlements[\s\S]*capability_key LIKE 'permission\.%'/);
+assert.match(packages,/DELETE FROM package_entitlements[\s\S]*capability_key LIKE 'permission\.%'[\s\S]*legacy\.permissions/);
 
 // Add-ons are independently operable by Admin and never mutate the base package.
 assert.match(entitlementAdmin,/require_permission\('users\.manage'\)/);
