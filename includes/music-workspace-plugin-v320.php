@@ -32,13 +32,16 @@ function music_workspace_entitled_v320(?array $user=null): bool
 
 function music_workspace_enabled_v320(?array $user=null): bool
 {
-    $user??=current_user();if(!$user)return false;if(user_has_role('admin',$user))return true;if(!music_workspace_entitled_v320($user))return false;
+    $user??=current_user();if(!$user)return false;
     $pdo=db();$uid=(int)($user['id']??0);if(!$pdo||$uid<1)return false;
+    if(function_exists('vp3_plugin_effective_enabled_v360'))return vp3_plugin_effective_enabled_v360($pdo,$user,music_workspace_plugin_key_v320());
+
+    // v3.20 compatibility fallback for partial/rolling deployments.
+    if(user_has_role('admin',$user))return true;if(!music_workspace_entitled_v320($user))return false;
     if(vp3_plugin_schema_ready_v320($pdo)){
         $row=vp3_plugin_installation_v320($pdo,$uid,music_workspace_plugin_key_v320());
         if($row)return $row['status']==='enabled';
     }
-    // Existing music users remain enabled until they explicitly opt out; newly entitled members must opt in.
     return music_workspace_legacy_user_v320($user);
 }
 
@@ -105,10 +108,12 @@ function music_workspace_set_enabled_v320(PDO $pdo,array $user,bool $enabled): a
 
     $ownsTransaction=!$pdo->inTransaction();if($ownsTransaction)$pdo->beginTransaction();
     try{
-        $row=vp3_plugin_set_enabled_v320($pdo,$uid,music_workspace_plugin_key_v320(),$enabled);
+        $state=function_exists('vp3_plugin_set_enabled_v360')
+            ?vp3_plugin_set_enabled_v360($pdo,$user,music_workspace_plugin_key_v320(),$enabled)
+            :['enabled'=>vp3_plugin_set_enabled_v320($pdo,$uid,music_workspace_plugin_key_v320(),$enabled)['status']==='enabled','entitled'=>music_workspace_entitled_v320($user)];
         if($enabled)music_workspace_ensure_owner_v320($pdo,$user);
         if($ownsTransaction)$pdo->commit();
-        return ['enabled'=>$row['status']==='enabled','entitled'=>music_workspace_entitled_v320($user),'preserves_data'=>true];
+        return ['enabled'=>!empty($state['enabled']),'entitled'=>!empty($state['entitled']),'reason'=>(string)($state['reason']??($enabled?'enabled':'disabled')),'preserves_data'=>true];
     }catch(Throwable $e){
         if($ownsTransaction&&$pdo->inTransaction())$pdo->rollBack();
         throw $e;
@@ -119,6 +124,21 @@ function music_workspace_access_v320(?array $user=null): bool{return music_works
 function music_workspace_require_v320(?array $user=null): void{if(!music_workspace_enabled_v320($user)){http_response_code(403);exit('Music Workspace is not enabled for this VP3 account.');}}
 function music_workspace_status_v320(?array $user=null): array
 {
-    $user??=current_user();$sub=$user?subscription_current($user):null;$pdo=db();$installation=$user&&$pdo?vp3_plugin_installation_v320($pdo,(int)$user['id'],music_workspace_plugin_key_v320()):null;
-    return ['enabled'=>music_workspace_enabled_v320($user),'entitled'=>music_workspace_entitled_v320($user),'installed'=>(bool)$installation,'installation_status'=>(string)($installation['status']??''),'capability'=>music_workspace_capability_key_v320(),'legacy_grandfathered'=>$user&&music_workspace_legacy_package_v340($sub)&&music_workspace_legacy_user_v320($user),'package'=>(string)($sub['package_name']??'No package'),'preserves_data_on_disable'=>true];
+    $user??=current_user();$sub=$user?subscription_current($user):null;$pdo=db();
+    $state=$user&&$pdo&&function_exists('vp3_plugin_effective_state_v360')
+        ?vp3_plugin_effective_state_v360($pdo,$user,music_workspace_plugin_key_v320())
+        :null;
+    $installation=$user&&$pdo?vp3_plugin_installation_v320($pdo,(int)$user['id'],music_workspace_plugin_key_v320()):null;
+    return [
+        'enabled'=>$state?!empty($state['enabled']):music_workspace_enabled_v320($user),
+        'entitled'=>$state?!empty($state['entitled']):music_workspace_entitled_v320($user),
+        'installed'=>$state?($state['requested']!=='unset'):(bool)$installation,
+        'requested'=>(string)($state['requested']??($installation['status']??'unset')),
+        'installation_status'=>(string)($installation['status']??''),
+        'reason'=>(string)($state['reason']??''),
+        'capability'=>music_workspace_capability_key_v320(),
+        'legacy_grandfathered'=>$user&&music_workspace_legacy_package_v340($sub)&&music_workspace_legacy_user_v320($user),
+        'package'=>(string)($sub['package_name']??'No package'),
+        'preserves_data_on_disable'=>true,
+    ];
 }
