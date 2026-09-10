@@ -93,9 +93,9 @@ function agent_memory_v123_write_row(int $id,array $meta,?float $confidence=null
 function agent_memory_v123_recent_user_messages(int $uid,int $limit=80,?int $agentId=null): array
 {
     if(function_exists('vp3_agent_memory_scope_sql_v410')){
-        if(!table_exists('agent_chat_archive')||!table_exists('chat_conversations'))return [];$pdo=db();if(!$pdo||$uid<1)return [];
-        [$scope,$params]=vp3_agent_memory_scope_sql_v410($agentId,'c');
-        try{$s=$pdo->prepare("SELECT a.message_text,a.created_at FROM agent_chat_archive a JOIN chat_conversations c ON c.id=a.conversation_id AND c.user_id=a.user_id WHERE a.user_id=? AND {$scope} AND a.role='user' ORDER BY a.id DESC LIMIT ".max(1,min(200,$limit)));$s->execute(array_merge([$uid],$params));return $s->fetchAll()?:[];}catch(Throwable $e){return [];}
+        if(!table_exists('agent_chat_archive'))return [];$pdo=db();if(!$pdo||$uid<1)return [];
+        [$scope,$params]=vp3_agent_memory_scope_sql_v410($agentId,'a');
+        try{$s=$pdo->prepare("SELECT a.message_text,a.created_at FROM agent_chat_archive a WHERE a.user_id=? AND {$scope} AND a.role='user' ORDER BY a.id DESC LIMIT ".max(1,min(200,$limit)));$s->execute(array_merge([$uid],$params));return $s->fetchAll()?:[];}catch(Throwable $e){return [];}
     }
     if(!table_exists('agent_chat_archive'))return [];$pdo=db();if(!$pdo)return [];
     try{$s=$pdo->prepare('SELECT message_text,created_at FROM agent_chat_archive WHERE user_id=? AND role=\'user\' ORDER BY id DESC LIMIT '.max(1,min(200,$limit)));$s->execute([$uid]);return $s->fetchAll()?:[];}catch(Throwable $e){return [];}
@@ -155,7 +155,7 @@ function agent_memory_v123_reconcile_user(array $user): array
             if(in_array($status,['completed','cancelled'],true))$meta['closed_at']=$meta['closed_at']??date('c');
         }
         if($effective<0.16&&!in_array($type,['preference','decision','commitment','task','conversation_state','conversation_summary'],true)){
-            $meta['lifecycle']='stale';agent_memory_v123_write_row($id,$meta,max(0.05,(float)$row['confidence']*0.82),0);$result['decayed']++;continue;
+            $meta['lifecycle']='stale';agent_memory_v123_write_row($id,$meta,max(0.05,(float)$row['confidence']*0.82,0);$result['decayed']++;continue;
         }
         agent_memory_v123_write_row($id,$meta,null,null);
     }
@@ -167,7 +167,7 @@ function agent_memory_v123_tasks(array $user,bool $includeClosed=false): array
     $uid=(int)($user['id']??0);$pdo=db();if(!$pdo||$uid<1||!table_exists('agent_memory_items'))return [];
     $agentId=0;$scopeSql='';$scopeParams=[];
     if(function_exists('vp3_agent_memory_scope_current_v410')&&function_exists('vp3_agent_memory_scope_sql_v410')){
-        if(function_exists('vp3_agent_memory_scope_schema_ready_v410')&&!vp3_agent_memory_scope_schema_ready_v410($pdo))return [];
+        if(function_exists('vp3_agent_memory_scope_schema_ready_v410')&&!vp3_agent_memory_scope_schema_ready_ready_v410($pdo))return [];
         $agentId=vp3_agent_memory_scope_current_v410($user);
         vp3_agent_memory_scope_set_current_v410($uid,$agentId);
         [$scopeSql,$scopeParams]=vp3_agent_memory_scope_sql_v410($agentId);
