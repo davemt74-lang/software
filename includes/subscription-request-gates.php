@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-/** Central HTTP feature gates for commercial package entitlements. */
+/** Central HTTP feature gates for commercial product entitlements. */
 function subscription_request_feature_map(): array
 {
     return [
@@ -78,12 +78,11 @@ function subscription_request_guard_legacy_team_role(string $path,array $user): 
 }
 
 /**
- * Canonical permission decision.
+ * Compatibility permission decision for callers that still use this helper.
  *
- * Admin is the only privileged global account authority. For Customers with a
- * current non-legacy subscription, package entitlements are the authorization
- * source for customer-facing permissions. Legacy Access falls back to the old
- * role-permission table so upgrades remain non-breaking.
+ * Commercial packages and add-on entitlements never grant security authority.
+ * Platform roles/direct role-permission assignments are canonical here, while
+ * workspace-specific authorization remains in the applicable workspace guards.
  */
 function subscription_effective_permission(string $permission,?array $user=null): bool
 {
@@ -92,11 +91,7 @@ function subscription_effective_permission(string $permission,?array $user=null)
     if(subscription_is_internal_admin($user))return true;
     if(in_array($permission,subscription_admin_only_permissions(),true))return false;
     if($permission==='account.access')return true;
-
-    if(!subscription_schema_ready())return has_permission($permission,$user);
-    $sub=subscription_current($user);
-    if(!$sub||subscription_has_entitlement($user,'legacy.permissions'))return has_permission($permission,$user);
-    return subscription_package_grants_permission($user,$permission);
+    return has_permission($permission,$user);
 }
 
 function subscription_request_gate(): void
@@ -108,21 +103,28 @@ function subscription_request_gate(): void
 
     subscription_request_guard_legacy_team_role($path,$user);
     if(subscription_is_internal_admin($user))return;
-    $sub=subscription_current($user);
-    // Before package migration or on Legacy Access, preserve existing behavior.
-    if(!$sub||subscription_has_entitlement($user,'legacy.permissions'))return;
 
     foreach(subscription_request_feature_map() as $capability=>$patterns){
         $matched=false;foreach($patterns as $pattern){if(subscription_request_matches($path,$pattern)){$matched=true;break;}}
         if(!$matched)continue;
+
+        // This is a product-availability check only. The destination endpoint
+        // remains responsible for role/workspace/resource authorization.
         if(subscription_has_entitlement($user,$capability))return;
+
         $isApi=str_starts_with($path,'/api/');
-        if($isApi)subscription_request_json_error('package_entitlement_required','This feature is not included in your current package.',['capability'=>$capability]);
+        if($isApi)subscription_request_json_error(
+            'package_entitlement_required',
+            'This feature is not included in your current plan or add-ons.',
+            ['capability'=>$capability]
+        );
+
         http_response_code(403);
-        $subName=(string)($sub['package_name']??'current package');
+        $sub=subscription_current($user);
+        $subName=(string)($sub['package_name']??'current access');
         $label=(string)(subscription_capability_catalog()[$capability]['label']??'This feature');
         $accountUrl=e(url('/subscription.php'));
-        echo '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Upgrade Required | VP3</title><style>body{margin:0;font-family:Inter,system-ui,sans-serif;background:#f6f7f8;color:#111827}.gate{min-height:100vh;display:grid;place-items:center;padding:24px}.card{max-width:620px;background:#fff;border:1px solid #e5e7eb;border-radius:18px;padding:32px;box-shadow:0 18px 60px rgba(15,23,42,.08)}.tag{font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#667085}h1{margin:8px 0 10px;font-size:32px}p{line-height:1.65;color:#475467}.btn{display:inline-block;margin-top:12px;padding:11px 16px;border-radius:9px;background:#111827;color:#fff;text-decoration:none;font-weight:700}</style></head><body><main class="gate"><section class="card"><div class="tag">Package feature</div><h1>'.e($label).' is locked.</h1><p>Your <strong>'.e($subName).'</strong> package does not include this feature. Your account and non-AI features remain available.</p><a class="btn" href="'.$accountUrl.'">View Plan &amp; Access</a></section></main></body></html>';
+        echo '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Upgrade Required | VP3</title><style>body{margin:0;font-family:Inter,system-ui,sans-serif;background:#f6f7f8;color:#111827}.gate{min-height:100vh;display:grid;place-items:center;padding:24px}.card{max-width:620px;background:#fff;border:1px solid #e5e7eb;border-radius:18px;padding:32px;box-shadow:0 18px 60px rgba(15,23,42,.08)}.tag{font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#667085}h1{margin:8px 0 10px;font-size:32px}p{line-height:1.65;color:#475467}.btn{display:inline-block;margin-top:12px;padding:11px 16px;border-radius:9px;background:#111827;color:#fff;text-decoration:none;font-weight:700}</style></head><body><main class="gate"><section class="card"><div class="tag">Product feature</div><h1>'.e($label).' is locked.</h1><p>Your <strong>'.e($subName).'</strong> plan and active add-ons do not include this feature. Your account and other entitled capabilities remain available.</p><a class="btn" href="'.$accountUrl.'">View Plan &amp; Access</a></section></main></body></html>';
         exit;
     }
 }
