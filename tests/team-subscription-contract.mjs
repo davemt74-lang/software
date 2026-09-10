@@ -26,14 +26,13 @@ assert.ok(state.indexOf("if($isInternalAdmin){") < state.indexOf("subscription_s
 assert.ok(state.includes("$state['package_name']='Internal Admin'"), 'internal admin Team state must be explicit');
 assert.ok(state.includes('u.is_active=1'), 'only active Team members may consume commercial Team seats');
 
-assert.ok(team.includes("$teamState=team_subscription_state($user,$pdo)"), 'front-end My Team must render from canonical package state');
+assert.ok(team.includes("$teamState=team_subscription_state($user,$pdo)"), 'front-end My Team must render and authorize from canonical package/workspace state');
+assert.ok(team.includes("if(empty($teamState['authorized']))"), 'unauthorized accounts must be denied by canonical Team state');
 assert.ok(team.includes("$lockedTeamState=team_subscription_state($user,$pdo)"), 'add-member requests must re-read package capacity after the owner lock');
 assert.ok(team.indexOf("SELECT id FROM users WHERE id=? FOR UPDATE") < team.indexOf("$lockedTeamState=team_subscription_state($user,$pdo)"), 'package capacity must be refreshed after acquiring the account lock');
 assert.ok(!team.includes("subscription_package_grants_permission($user,'team.manage')"), 'Team seats, not a duplicate package permission flag, must be the commercial Team authority');
 assert.ok(!team.includes("subscription_package_grants_permission($user,'admin.access')"), 'package seat state must not be coupled to an unrelated Admin package flag');
 assert.ok(team.includes("$teamInternalAdmin=function_exists('subscription_is_internal_admin')&&subscription_is_internal_admin($user)"), 'My Team page must recognize internal admins');
-assert.ok(team.includes("$initialTeamState=team_subscription_state($user)"), 'My Team must authorize through the canonical Team state resolver');
-assert.ok(team.includes("if(empty($initialTeamState['authorized']))"), 'unauthorized accounts must be denied by canonical Team state');
 assert.ok(!team.includes("user_has_role('artist',$user)"), 'My Team page must not require the retired global Artist identity');
 assert.ok(team.includes("Existing relationships remain intact"), 'downgrade UI must explicitly preserve existing Team relationships');
 assert.ok(team.includes("No one was removed by the package change"), 'over-limit downgrade UI must be non-destructive');
