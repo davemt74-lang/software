@@ -31,11 +31,13 @@ jobs:
 
       - name: PHP lint entitlement surfaces
         run: |
+          php -l includes/subscription-schema.php
           php -l includes/subscription-entitlements-v340.php
           php -l includes/subscriptions.php
           php -l includes/subscription-access.php
           php -l includes/permissions-v105.php
           php -l includes/team-subscription.php
+          php -l includes/music-workspace-plugin-v320.php
           php -l admin/packages.php
           php -l admin/entitlements.php
           php -l setup.php
