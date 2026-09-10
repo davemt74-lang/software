@@ -64,7 +64,8 @@ function vp3_agent_runtime_plan_v420(PDO $pdo,array $user,int $agentId,string $s
             $policy=homeserver_scope_v026_apply_compute_policy($policy,$scopeState);
             $home['scope_checked']=true;
             $publicScope=is_array($policy['homeserver_scope']??null)?$policy['homeserver_scope']:[];
-            $home['cloud_allowed']=($publicScope['cloud_allowed']??null)!==false&&!empty($policy['scope_override'])?false:(($publicScope['cloud_allowed']??null)!==false);
+            $home['cloud_allowed']=($publicScope['cloud_allowed']??null)!==false;
+            if(!empty($policy['scope_override']))$home['cloud_allowed']=false;
         }
         if(function_exists('homeserver_agent_v018_credentials'))$home['paired']=homeserver_agent_v018_credentials($userId)!==null;
         if(function_exists('homeserver_capability_v024_registry')&&function_exists('homeserver_capability_v024_resolve')){
@@ -141,6 +142,18 @@ function vp3_agent_runtime_block_message_v420(array $plan): string
     };
 }
 
+function vp3_agent_runtime_homeserver_execution_v420(array $result): array
+{
+    $compute=trim((string)($result['compute_source']??''));
+    if($compute!=='vp3_cloud')return chat_execution_v019_homeserver($result);
+    $usage=is_array($result['usage']??null)?$result['usage']:[];
+    return chat_execution_v019_base(
+        'vp3_cloud','VP3 Cloud via HomeServer',
+        trim((string)($result['provider']??'')),trim((string)($result['model']??'')),'connected',false,'none',$usage,
+        max(0,(int)($result['run_id']??0)),max(0,(int)($result['cloud_tokens_debited']??0)),max(0,(int)($result['latency_ms']??0)),'none'
+    );
+}
+
 function vp3_agent_runtime_actual_route_v420(array $execution): string
 {
     $source=(string)($execution['source']??'');
@@ -148,7 +161,7 @@ function vp3_agent_runtime_actual_route_v420(array $execution): string
     if($source==='vp3_retrieval')return 'vp3_retrieval';
     if($source==='user_provider')return 'homeserver_user_provider';
     if($source==='homeserver_local')return 'homeserver_local';
-    if($source==='vp3_cloud')return !empty($execution['homeserver']['connected'])?'homeserver_vp3_cloud':'vp3_cloud';
+    if($source==='vp3_cloud')return (string)($execution['homeserver']??'not_used')==='connected'?'homeserver_vp3_cloud':'vp3_cloud';
     return $source!==''?$source:'unknown';
 }
 
