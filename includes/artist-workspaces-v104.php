@@ -13,17 +13,12 @@ const VP3_CONTEXTUAL_TEAM_MIGRATION = 'contextual-team-20260908-v4';
 
 function artist_workspace_v104_artist_permissions(): array
 {
-    // Legacy-upgrade compatibility only. Current customer access is package-driven.
+    // Legacy-upgrade compatibility only. Current workspace authority is contextual.
     return [
         'account.access','chat.access','admin.access','team.manage','listening.view',
         'track_notes.manage','tracks.manage','albums.manage','shows.manage','photos.manage',
         'merch.manage','posts.manage','messages.manage','profile.manage','knowledge.access','knowledge.manage',
     ];
-}
-
-function artist_workspace_v104_artist_package_permissions(): array
-{
-    return ['team.manage','tracks.manage','albums.manage','shows.manage','photos.manage','merch.manage','posts.manage','profile.manage','release.manage','credits.manage'];
 }
 
 function artist_workspace_v104_team_roles(): array
@@ -58,7 +53,7 @@ function artist_workspace_v104_user_owns_workspace(PDO $pdo,int $userId): bool
 }
 
 /**
- * Artist is a workspace/capability context, not a newly assigned account type.
+ * Artist is a workspace context, not a package permission or global identity.
  * Existing Artist markers remain a migration fallback only.
  */
 function artist_workspace_v104_is_artist(?array $user = null): bool
@@ -66,22 +61,17 @@ function artist_workspace_v104_is_artist(?array $user = null): bool
     $user ??= current_user();
     if (!$user) return false;
     if(user_has_role('admin',$user))return true;
+
     $userId=(int)($user['id']??0);$pdo=db();
     if($pdo&&artist_workspace_v104_user_owns_workspace($pdo,$userId))return true;
 
-    if(function_exists('subscription_schema_ready')&&subscription_schema_ready()){
-        $sub=subscription_current($user);
-        if($sub&&!subscription_has_entitlement($user,'legacy.permissions')){
-            foreach(artist_workspace_v104_artist_package_permissions() as $permission){
-                if(function_exists('permission_v105_catalog')&&isset(permission_v105_catalog()[$permission])){
-                    if(permission_v105_has($permission,$user))return true;
-                }elseif(subscription_package_grants_permission($user,$permission))return true;
-            }
-            return false;
-        }
-    }
+    // A newly entitled Music customer becomes an Artist workspace owner only
+    // after the optional Music Workspace is enabled. Product entitlement alone
+    // never creates workspace/security authority.
+    if(function_exists('music_workspace_enabled_v320')&&music_workspace_enabled_v320($user))return true;
 
-    // Older Legacy Access accounts keep working until their package is mapped.
+    // Pre-workspace legacy accounts retain their historical marker only long
+    // enough for the normal migration/plugin path to create canonical ownership.
     return user_has_role('artist',$user);
 }
 
@@ -168,7 +158,7 @@ function artist_workspace_v104_ensure_schema(): void
 
 function artist_workspace_v104_seed_artist_permissions(): void
 {
-    // Legacy Access compatibility only.
+    // Legacy permission-row compatibility only; package entitlements never use this.
     $pdo=db();if(!$pdo||!permissions_schema_ready())return;
     $countStmt=$pdo->prepare("SELECT COUNT(*) FROM role_permissions WHERE role='artist'");$countStmt->execute();
     if((int)$countStmt->fetchColumn()>0)return;
