@@ -11,7 +11,8 @@ const settingsPhp = read('includes/chat-settings-v237.php');
 const settingsApi = read('api/chat-settings-v237.php');
 const settingsUi = read('chat-settings-v237.js');
 const settingsCss = read('chat-settings-v237.css');
-const teamApi = read('api/team-chat-v109.php');
+const teamApiCompat = read('api/team-chat-v109.php');
+const teamApi = read('api/team-chat-v320.php');
 const teamJs = read('team-chat-v109.js');
 const widget = read('includes/team-chat-widget-v81.php');
 const activity = read('agent-activity-v94.js');
@@ -67,10 +68,15 @@ assert.equal(widget.includes('chat-settings-v237.js'), false, 'Team Chat widget 
 assert.match(widget, /soundEnabled/);
 assert.match(widget, /socialChatEnabled/);
 
+// v109 remains the compatibility URL, while v320 is the canonical scoped Team Chat runtime.
+// Preserve the original Chat Settings contract by following that delegation instead of
+// requiring implementation details to remain duplicated in the compatibility shim.
+assert.match(teamApiCompat, /require __DIR__\.'\/team-chat-v320\.php'/);
 assert.match(teamApi, /chat_settings_get_v237/);
 assert.match(teamApi, /social_chat_disabled/);
 assert.match(teamApi, /COALESCE\(p\.presence_mode,'online'\)='online'/);
-assert.match(teamApi, /if \(\$since < 1\)[\s\S]*?\$messages = \[\]/);
+assert.match(teamApi, /\$messages=\[\];if\(\$since>0\)/);
+assert.match(teamApi, /vp3_social_shared_workspace_v320/, 'Team Chat settings must operate inside the scoped workspace runtime');
 
 assert.match(teamJs, /AudioContext/);
 assert.match(teamJs, /playIncomingSound/);

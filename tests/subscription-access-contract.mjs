@@ -110,9 +110,14 @@ assert.ok(teamPage.includes('subscription_assign_default_trial'), 'new Team-crea
 assert.ok(teamPage.includes('team_subscription_state'), 'Team capacity must consume canonical package state');
 assert.ok(teamSubscription.includes("subscription_entitlement_row((int)$subscription['package_id'],'team_seats')"), 'Team capacity must come from the package team_seats entitlement');
 assert.ok(teamSubscription.includes("$state['can_add']"), 'canonical Team state must own add-member capacity decisions');
+assert.ok(teamSubscription.includes('music_workspace_enabled_v320($user)'), 'Team ownership must recognize the enabled Music Workspace capability');
+assert.ok(teamSubscription.includes('artist_workspace_v104_is_artist($user)'), 'Legacy workspace/package context may remain only inside the canonical Team state resolver');
+assert.ok(!teamSubscription.includes("user_has_role('artist',$user)"), 'canonical Team authorization must not require a global Artist identity');
 
 assert.ok(nav.includes('subscription_effective_permission($permission,$user)'), 'member navigation must use the canonical package-aware permission decision');
-assert.ok(nav.includes('artist_workspace_v104_is_artist($user)'), 'Artist navigation must use workspace/package context rather than a global Artist assignment');
+assert.ok(nav.includes("team_subscription_state($user)"), 'Team navigation must consume canonical workspace/package state');
+assert.ok(nav.includes('music_workspace_enabled_v320($user)'), 'Music navigation must use explicit plugin/workspace state');
+assert.ok(!nav.includes("user_has_role('artist'"), 'member navigation must not depend on a global Artist assignment');
 assert.ok(nav.includes("if(user_has_role('admin',$user))$add($links,'admin'"), 'only Admin identity may receive global Admin navigation');
 
 console.log('SUBSCRIPTION_ACCESS_CONTRACT=PASS');

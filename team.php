@@ -6,21 +6,16 @@ $user=current_user();
 if(!$user){flash('error','Please sign in to continue.');redirect(url('/login.php'));}
 artist_workspace_v104_ensure_schema();
 
-$teamInternalAdmin=function_exists('subscription_is_internal_admin')&&subscription_is_internal_admin($user);
-if(!$teamInternalAdmin){
-    if(!user_has_role('artist',$user)){
-        http_response_code(403);exit('Artist workspace ownership is required to manage a team.');
-    }
-    if(!has_permission('admin.access',$user)||!has_permission('team.manage',$user)){
-        http_response_code(403);exit('Your account does not have Team management permission.');
-    }
-}
-
 $pdo=db();
 if(!$pdo){flash('error','Database unavailable.');redirect(url('/account.php'));}
+$teamInternalAdmin=function_exists('subscription_is_internal_admin')&&subscription_is_internal_admin($user);
+$teamState=team_subscription_state($user,$pdo);
+if(empty($teamState['authorized'])){
+    http_response_code(403);exit('An enabled VP3 workspace with Team management capability is required to manage a team.');
+}
+
 $ownerUserId=(int)$user['id'];
 $teamRoles=artist_workspace_v104_team_roles();
-$teamState=team_subscription_state($user,$pdo);
 $editId=max(0,(int)($_GET['edit']??0));
 $editing=$editId>0?artist_workspace_v104_team_member($pdo,$ownerUserId,$editId):null;
 if($editId>0&&!$editing){flash('error','That person is not part of your workspace.');redirect(url('/team.php'));}
@@ -149,13 +144,13 @@ $errorNotice=flash('error');
 
         <section class="team-metrics" aria-label="Team package status">
           <article><span>Current package</span><strong><?= e((string)$teamState['package_name']) ?></strong><small><?= $teamInternalAdmin?'Internal admin access':'Subscription authority' ?></small></article>
-          <article><span>Team seats</span><strong><?= number_format($teamCount) ?> / <?= e($teamLimitLabel) ?></strong><small>Members currently linked</small></article>
+          <article><span>Team seats</span><strong><?= number_format($teamCount) ?> / <?= e($teamLimitLabel) ?></strong><small>Active members consuming seats</small></article>
           <article><span>Available seats</span><strong><?= e($remainingLabel) ?></strong><small><?= $teamCanAdd?'Ready for another teammate':'Current package capacity' ?></small></article>
         </section>
 
         <?php if(empty($teamState['included'])):?><div class="team-notice">Your <strong><?= e((string)$teamState['package_name']) ?></strong> package does not include Team seats. Existing relationships remain intact. <a href="<?= e(url('/subscription.php')) ?>">Compare packages</a> to add Team access.</div>
         <?php elseif(empty($teamState['unlimited'])&&(int)$teamState['limit']===0):?><div class="team-notice">Your <strong><?= e((string)$teamState['package_name']) ?></strong> package currently includes zero Team seats. Existing relationships remain intact, but you cannot add another member until the package changes.</div>
-        <?php elseif(!empty($teamState['over_limit'])):?><div class="team-notice">Your Team has <strong><?= number_format($teamCount) ?></strong> members, while <strong><?= e((string)$teamState['package_name']) ?></strong> currently allows <strong><?= e($teamLimitLabel) ?></strong>. No one was removed by the package change. Remove members or <a href="<?= e(url('/subscription.php')) ?>">upgrade the package</a> before adding another.</div>
+        <?php elseif(!empty($teamState['over_limit'])):?><div class="team-notice">Your Team has <strong><?= number_format($teamCount) ?></strong> active members, while <strong><?= e((string)$teamState['package_name']) ?></strong> currently allows <strong><?= e($teamLimitLabel) ?></strong>. No one was removed by the package change. Remove members or <a href="<?= e(url('/subscription.php')) ?>">upgrade the package</a> before adding another.</div>
         <?php elseif(!$teamCanAdd&&!empty($teamState['included'])):?><div class="team-notice">All <?= e($teamLimitLabel) ?> Team seats in <strong><?= e((string)$teamState['package_name']) ?></strong> are in use. Remove a member or <a href="<?= e(url('/subscription.php')) ?>">upgrade the package</a> to add another.</div><?php endif;?>
 
         <section class="team-panel">

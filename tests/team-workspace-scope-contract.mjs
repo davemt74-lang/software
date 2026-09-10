@@ -11,7 +11,8 @@ const team = read('team.php');
 const domain = read('includes/artist-workspaces-v104.php');
 const gates = read('includes/subscription-request-gates.php');
 const nav = read('includes/member-navigation.php');
-const teamChatApi = read('api/team-chat-v109.php');
+const teamChatLegacy = read('api/team-chat-v109.php');
+const teamChatScoped = read('api/team-chat-v320.php');
 const teamChatWidget = read('includes/team-chat-widget-v81.php');
 
 assert.ok(selector.includes('artist_workspace_v104_memberships_for_user'), 'Team selector must derive workspaces from relationships');
@@ -74,9 +75,14 @@ assert.ok(gates.includes("$managerSafe=['/admin/team-workspaces.php','/admin/tea
 assert.ok(gates.includes("$producerSafe=['/admin/producer-tracks.php','/admin/stems.php','/admin/stems-legacy-v108.php']"), 'Producer relationship context must only pass direct production Admin routes');
 assert.ok(nav.includes('artist_workspace_v104_memberships_for_user'), 'member navigation must derive Team Workspaces visibility from relationships');
 
-assert.ok(teamChatApi.includes('team_chat_v109_contextual_member'), 'Team Chat API must recognize contextual Artist Team membership');
-assert.ok(teamChatApi.includes('FROM artist_team_members WHERE member_user_id=?'), 'Team Chat eligibility must come from the Team relationship table');
-assert.ok(teamChatApi.includes('WHERE atm.member_user_id=u.id'), 'Team Chat directory must include relationship-scoped Team members after base-role migration');
+// v109 is compatibility-only. Contextual Team membership and directory scoping
+// are enforced by the canonical v320 runtime, not duplicated in the legacy file.
+assert.match(teamChatLegacy, /require __DIR__\.'\/team-chat-v320\.php'/, 'legacy Team Chat URL must delegate to v320');
+assert.ok(teamChatScoped.includes('FROM artist_team_members WHERE artist_user_id=?'), 'Team Chat must recognize workspace owners and their contextual members');
+assert.ok(teamChatScoped.includes('FROM artist_team_members WHERE member_user_id=?'), 'Team Chat eligibility must include contextual memberships');
+assert.ok(teamChatScoped.includes('INNER JOIN artist_team_members a2 ON a2.artist_user_id=a1.artist_user_id'), 'Team Chat directory must include peers in the same contextual workspace');
+assert.ok(teamChatScoped.includes('vp3_social_shared_workspace_v320'), 'history/send/read must re-check current shared-workspace authorization');
+assert.ok(!teamChatScoped.includes("WHERE u.role IN"), 'Team Chat directory must not use global role membership');
 assert.ok(teamChatWidget.includes('artist_workspace_v104_memberships_for_user'), 'Team Chat widget must remain visible to contextual Managers and Producers');
 
 console.log('TEAM_WORKSPACE_SCOPE_CONTRACT=PASS');
