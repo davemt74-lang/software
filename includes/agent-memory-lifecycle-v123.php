@@ -70,12 +70,33 @@ function agent_memory_v123_write_row(int $id,array $meta,?float $confidence=null
     $sets=['metadata_json=?'];$params=[json_encode($meta,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE)?:'{}'];
     if($confidence!==null){$sets[]='confidence=?';$params[]=max(0.0,min(1.0,$confidence));}
     if($active!==null){$sets[]='is_active=?';$params[]=$active?1:0;}
+
+    // Preserve the v123 public signature. When v4.10 is active, lifecycle
+    // updates fail closed unless a current user+Agent scope has been established
+    // by reconcile_user(), then apply that exact scope to the UPDATE itself.
+    if(function_exists('vp3_agent_memory_scope_current_context_v410')&&function_exists('vp3_agent_memory_scope_sql_v410')){
+        $current=vp3_agent_memory_scope_current_context_v410();
+        $uid=(int)($current['user_id']??0);$agentId=(int)($current['user_agent_id']??0);
+        if($uid<1)return;
+        [$scope,$scopeParams]=vp3_agent_memory_scope_sql_v410($agentId);
+        $params[]=$id;$params[]=$uid;$params=array_merge($params,$scopeParams);
+        try{$pdo->prepare('UPDATE agent_memory_items SET '.implode(',',$sets).' WHERE id=? AND user_id=? AND '.$scope)->execute($params);}catch(Throwable $e){}
+        return;
+    }
+
+    // Standalone legacy callers/tests that do not load v4.10 keep the original
+    // behavior. Production bootstrap always loads the v4.10 scope helper first.
     $params[]=$id;
     try{$pdo->prepare('UPDATE agent_memory_items SET '.implode(',',$sets).' WHERE id=?')->execute($params);}catch(Throwable $e){}
 }
 
-function agent_memory_v123_recent_user_messages(int $uid,int $limit=80): array
+function agent_memory_v123_recent_user_messages(int $uid,int $limit=80,?int $agentId=null): array
 {
+    if(function_exists('vp3_agent_memory_scope_sql_v410')){
+        if(!table_exists('agent_chat_archive'))return [];$pdo=db();if(!$pdo||$uid<1)return [];
+        [$scope,$params]=vp3_agent_memory_scope_sql_v410($agentId,'a');
+        try{$s=$pdo->prepare("SELECT a.message_text,a.created_at FROM agent_chat_archive a WHERE a.user_id=? AND {$scope} AND a.role='user' ORDER BY a.id DESC LIMIT ".max(1,min(200,$limit)));$s->execute(array_merge([$uid],$params));return $s->fetchAll()?:[];}catch(Throwable $e){return [];}
+    }
     if(!table_exists('agent_chat_archive'))return [];$pdo=db();if(!$pdo)return [];
     try{$s=$pdo->prepare('SELECT message_text,created_at FROM agent_chat_archive WHERE user_id=? AND role=\'user\' ORDER BY id DESC LIMIT '.max(1,min(200,$limit)));$s->execute([$uid]);return $s->fetchAll()?:[];}catch(Throwable $e){return [];}
 }
@@ -85,8 +106,27 @@ function agent_memory_v123_reconcile_user(array $user): array
     $uid=(int)($user['id']??0);$pdo=db();
     $result=['ready'=>false,'examined'=>0,'superseded'=>0,'decayed'=>0,'tasks_updated'=>0];
     if(!$pdo||$uid<1||!table_exists('agent_memory_items'))return $result;
-    try{$s=$pdo->prepare('SELECT * FROM agent_memory_items WHERE user_id=? AND is_active=1 ORDER BY last_seen_at DESC,id DESC LIMIT 500');$s->execute([$uid]);$rows=$s->fetchAll()?:[];}catch(Throwable $e){return $result;}
-    $result['ready']=true;$result['examined']=count($rows);$seen=[];$messages=agent_memory_v123_recent_user_messages($uid);
+
+    $agentId=0;$scopeSql='';$scopeParams=[];
+    if(function_exists('vp3_agent_memory_scope_current_v410')&&function_exists('vp3_agent_memory_scope_sql_v410')){
+        if(function_exists('vp3_agent_memory_scope_schema_ready_v410')&&!vp3_agent_memory_scope_schema_ready_v410($pdo))return $result;
+        $agentId=vp3_agent_memory_scope_current_v410($user);
+        vp3_agent_memory_scope_set_current_v410($uid,$agentId);
+        [$scopeSql,$scopeParams]=vp3_agent_memory_scope_sql_v410($agentId);
+    }
+
+    try{
+        if($scopeSql!==''){
+            $s=$pdo->prepare('SELECT * FROM agent_memory_items WHERE user_id=? AND '.$scopeSql.' AND is_active=1 ORDER BY last_seen_at DESC,id DESC LIMIT 500');
+            $s->execute(array_merge([$uid],$scopeParams));
+        }else{
+            $s=$pdo->prepare('SELECT * FROM agent_memory_items WHERE user_id=? AND is_active=1 ORDER BY last_seen_at DESC,id DESC LIMIT 500');
+            $s->execute([$uid]);
+        }
+        $rows=$s->fetchAll()?:[];
+    }catch(Throwable $e){return $result;}
+
+    $result['ready']=true;$result['examined']=count($rows);$seen=[];$messages=agent_memory_v123_recent_user_messages($uid,80,$scopeSql!==''?$agentId:null);
     $activity=function_exists('agent_activity_v94_snapshot')?agent_activity_v94_snapshot($user,'chat',[]):[];
     $activityTask=(string)($activity['task_title']??'');
 
@@ -125,8 +165,24 @@ function agent_memory_v123_reconcile_user(array $user): array
 function agent_memory_v123_tasks(array $user,bool $includeClosed=false): array
 {
     $uid=(int)($user['id']??0);$pdo=db();if(!$pdo||$uid<1||!table_exists('agent_memory_items'))return [];
+    $agentId=0;$scopeSql='';$scopeParams=[];
+    if(function_exists('vp3_agent_memory_scope_current_v410')&&function_exists('vp3_agent_memory_scope_sql_v410')){
+        if(function_exists('vp3_agent_memory_scope_schema_ready_v410')&&!vp3_agent_memory_scope_schema_ready_v410($pdo))return [];
+        $agentId=vp3_agent_memory_scope_current_v410($user);
+        vp3_agent_memory_scope_set_current_v410($uid,$agentId);
+        [$scopeSql,$scopeParams]=vp3_agent_memory_scope_sql_v410($agentId);
+    }
     agent_memory_v123_reconcile_user($user);
-    try{$s=$pdo->prepare("SELECT * FROM agent_memory_items WHERE user_id=? AND is_active=1 AND memory_type IN ('commitment','task') ORDER BY last_seen_at DESC,id DESC LIMIT 100");$s->execute([$uid]);$rows=$s->fetchAll()?:[];}catch(Throwable $e){return [];}
+    try{
+        if($scopeSql!==''){
+            $s=$pdo->prepare("SELECT * FROM agent_memory_items WHERE user_id=? AND {$scopeSql} AND is_active=1 AND memory_type IN ('commitment','task') ORDER BY last_seen_at DESC,id DESC LIMIT 100");
+            $s->execute(array_merge([$uid],$scopeParams));
+        }else{
+            $s=$pdo->prepare("SELECT * FROM agent_memory_items WHERE user_id=? AND is_active=1 AND memory_type IN ('commitment','task') ORDER BY last_seen_at DESC,id DESC LIMIT 100");
+            $s->execute([$uid]);
+        }
+        $rows=$s->fetchAll()?:[];
+    }catch(Throwable $e){return [];}
     $out=[];
     foreach($rows as $row){
         $meta=agent_memory_v123_metadata($row);$status=(string)($meta['task_status']??'open');
@@ -141,6 +197,7 @@ function agent_memory_v123_tasks(array $user,bool $includeClosed=false): array
             'title'=>(string)$row['subject'],'text'=>(string)$row['memory_text'],'status'=>$status,'due_at'=>$due,
             'confidence'=>agent_memory_v123_effective_confidence($row),'occurrences'=>(int)$row['occurrence_count'],'last_seen_at'=>(string)$row['last_seen_at'],
             'source_kind'=>(string)($meta['source_kind']??''),'source_label'=>$sourceLabel,'source_url'=>$sourceUrl,'origin'=>$origin,
+            'user_agent_id'=>$scopeSql!==''?($agentId>0?$agentId:null):($row['user_agent_id']??null),
         ];
     }
     return $out;

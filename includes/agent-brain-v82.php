@@ -105,7 +105,9 @@ function agent_brain_reset_soul(array $user): string
 function agent_brain_schema_ready(): bool
 {
     return table_exists('agent_chat_archive')
-        && table_exists('agent_memory_items');
+        && table_exists('agent_memory_items')
+        && function_exists('vp3_agent_memory_scope_schema_ready_v410')
+        && vp3_agent_memory_scope_schema_ready_v410();
 }
 
 function agent_brain_tools(array $user): array
@@ -215,18 +217,21 @@ function agent_brain_archive_message(array $user, int $conversationId, int $sour
         return 0;
     }
 
+    $agentId = $conversationId > 0
+        ? vp3_agent_memory_scope_from_conversation_v410($user, $conversationId, true)
+        : vp3_agent_memory_scope_current_v410($user);
     $role = in_array($role, ['user', 'assistant'], true) ? $role : 'user';
     $inputMode = $inputMode === 'voice' ? 'voice' : 'text';
     $createdAt = $createdAt ?: date('Y-m-d H:i:s');
 
     $stmt = $pdo->prepare(
         'INSERT INTO agent_chat_archive
-         (user_id,conversation_id,source_message_id,role,input_mode,message_text,created_at,archived_at)
-         VALUES (?,?,?,?,?,?,?,NOW())
+         (user_id,user_agent_id,conversation_id,source_message_id,role,input_mode,message_text,created_at,archived_at)
+         VALUES (?,?,?,?,?,?,?,?,NOW())
          ON DUPLICATE KEY UPDATE
-           id=LAST_INSERT_ID(id),conversation_id=VALUES(conversation_id),role=VALUES(role),input_mode=VALUES(input_mode),message_text=VALUES(message_text),created_at=VALUES(created_at),archived_at=NOW()'
+           id=LAST_INSERT_ID(id),user_agent_id=VALUES(user_agent_id),conversation_id=VALUES(conversation_id),role=VALUES(role),input_mode=VALUES(input_mode),message_text=VALUES(message_text),created_at=VALUES(created_at),archived_at=NOW()'
     );
-    $stmt->execute([$userId,max(0,$conversationId),$sourceMessageId,$role,$inputMode,$message,$createdAt]);
+    $stmt->execute([$userId,$agentId > 0 ? $agentId : null,max(0,$conversationId),$sourceMessageId,$role,$inputMode,$message,$createdAt]);
     return (int)$pdo->lastInsertId();
 }
 
@@ -238,6 +243,7 @@ function agent_brain_store_memory(array $user, string $type, string $subject, st
 
     $pdo = db();
     $userId = (int)($user['id'] ?? 0);
+    $agentId = vp3_agent_memory_scope_current_v410($user);
     $type = mb_substr(agent_brain_normalize($type), 0, 40);
     $subject = trim(mb_substr($subject, 0, 190));
     $memoryText = trim(mb_substr($memoryText, 0, 2000));
@@ -248,18 +254,19 @@ function agent_brain_store_memory(array $user, string $type, string $subject, st
     $fingerprint = in_array($type, ['preference','decision','commitment'], true)
         ? $type . '|' . agent_brain_normalize($memoryText)
         : $type . '|' . agent_brain_normalize($subject);
-    $hash = sha1($fingerprint);
+    $hash = vp3_agent_memory_scope_hash_v410($agentId, sha1($fingerprint));
     $seenAt = $seenAt ?: date('Y-m-d H:i:s');
-    $metadataJson = $metadata ? json_encode($metadata, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) : null;
+    $metadata = vp3_agent_memory_scope_provenance_v410($metadata, $agentId, 0, $archiveId);
+    $metadataJson = json_encode($metadata, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?: '{}';
 
     $stmt = $pdo->prepare(
         'INSERT INTO agent_memory_items
-         (user_id,memory_type,subject,memory_text,memory_hash,source_archive_id,confidence,occurrence_count,first_seen_at,last_seen_at,is_active,metadata_json)
-         VALUES (?,?,?,?,?,?,?,1,?,?,1,?)
+         (user_id,user_agent_id,memory_type,subject,memory_text,memory_hash,memory_scope_version,source_archive_id,confidence,occurrence_count,first_seen_at,last_seen_at,is_active,metadata_json)
+         VALUES (?,?,?,?,?,?,410,?,?,1,?,?,1,?)
          ON DUPLICATE KEY UPDATE
-           id=LAST_INSERT_ID(id),memory_text=VALUES(memory_text),source_archive_id=VALUES(source_archive_id),confidence=GREATEST(confidence,VALUES(confidence)),occurrence_count=occurrence_count+1,last_seen_at=GREATEST(last_seen_at,VALUES(last_seen_at)),is_active=1,metadata_json=COALESCE(VALUES(metadata_json),metadata_json)'
+           id=LAST_INSERT_ID(id),memory_text=VALUES(memory_text),source_archive_id=VALUES(source_archive_id),confidence=GREATEST(confidence,VALUES(confidence)),occurrence_count=occurrence_count+1,last_seen_at=GREATEST(last_seen_at,VALUES(last_seen_at)),is_active=1,metadata_json=COALESCE(VALUES(metadata_json),metadata_json),memory_scope_version=410'
     );
-    $stmt->execute([$userId,$type,$subject,$memoryText,$hash,$archiveId > 0 ? $archiveId : null,max(0.0,min(1.0,$confidence)),$seenAt,$seenAt,$metadataJson]);
+    $stmt->execute([$userId,$agentId > 0 ? $agentId : null,$type,$subject,$memoryText,$hash,$archiveId > 0 ? $archiveId : null,max(0.0,min(1.0,$confidence)),$seenAt,$seenAt,$metadataJson]);
     return (int)$pdo->lastInsertId();
 }
 
@@ -352,6 +359,10 @@ function agent_brain_extract_memories(array $user, int $archiveId, string $text,
 
 function agent_brain_archive_and_parse(array $user, int $conversationId, int $sourceMessageId, string $role, string $message, string $inputMode = 'text', ?string $createdAt = null): int
 {
+    if (!agent_brain_schema_ready()) {
+        return 0;
+    }
+    vp3_agent_memory_scope_from_conversation_v410($user, $conversationId, true);
     $archiveId = agent_brain_archive_message($user, $conversationId, $sourceMessageId, $role, $message, $inputMode, $createdAt);
     if ($archiveId > 0 && $role === 'user') {
         agent_brain_extract_memories($user, $archiveId, $message, $createdAt);
@@ -409,13 +420,15 @@ function agent_brain_context(array $user, string $query, int $limit = 10): array
         return [];
     }
 
+    $agentId = vp3_agent_memory_scope_current_v410($user);
+    [$scope,$scopeParams] = vp3_agent_memory_scope_sql_v410($agentId);
     $terms = array_values(array_filter(
         preg_split('/[^\pL\pN._-]+/u', agent_brain_normalize($query)) ?: [],
         static fn(string $term): bool => mb_strlen($term) >= 3
     ));
     $terms = array_slice(array_unique($terms), 0, 6);
-    $params = [$userId];
-    $where = 'user_id=? AND is_active=1';
+    $params = array_merge([$userId], $scopeParams);
+    $where = 'user_id=? AND ' . $scope . ' AND is_active=1';
     if ($terms) {
         $parts = [];
         foreach ($terms as $term) {
@@ -441,11 +454,11 @@ function agent_brain_context(array $user, string $query, int $limit = 10): array
         $stmt = $pdo->prepare(
             "SELECT memory_type,subject,memory_text,occurrence_count,last_seen_at,confidence
              FROM agent_memory_items
-             WHERE user_id=? AND is_active=1
+             WHERE user_id=? AND {$scope} AND is_active=1
              ORDER BY last_seen_at DESC,id DESC
              LIMIT {$limit}"
         );
-        $stmt->execute([$userId]);
+        $stmt->execute(array_merge([$userId], $scopeParams));
         $rows = $stmt->fetchAll();
     }
 
@@ -470,32 +483,37 @@ function agent_brain_summary(array $user): array
         return $summary;
     }
 
-    $stmt = $pdo->prepare('SELECT COUNT(*) FROM agent_chat_archive WHERE user_id=?');
-    $stmt->execute([$userId]);
+    $agentId = vp3_agent_memory_scope_current_v410($user);
+    [$scope,$scopeParams] = vp3_agent_memory_scope_sql_v410($agentId, 'm');
+    [$archiveScope,$archiveParams] = vp3_agent_memory_scope_sql_v410($agentId, 'a');
+
+    $stmt = $pdo->prepare("SELECT COUNT(*) FROM agent_chat_archive a WHERE a.user_id=? AND {$archiveScope}");
+    $stmt->execute(array_merge([$userId], $archiveParams));
     $summary['archive_count'] = (int)$stmt->fetchColumn();
-    $stmt = $pdo->prepare('SELECT COUNT(*) FROM agent_memory_items WHERE user_id=? AND is_active=1');
-    $stmt->execute([$userId]);
+
+    $stmt = $pdo->prepare("SELECT COUNT(*) FROM agent_memory_items m WHERE m.user_id=? AND {$scope} AND m.is_active=1");
+    $stmt->execute(array_merge([$userId], $scopeParams));
     $summary['memory_count'] = (int)$stmt->fetchColumn();
 
     foreach (['theme'=>'themes','date'=>'dates','file'=>'files'] as $type=>$key) {
         $stmt = $pdo->prepare(
-            'SELECT subject,memory_text,occurrence_count,last_seen_at
-             FROM agent_memory_items
-             WHERE user_id=? AND memory_type=? AND is_active=1
+            "SELECT subject,memory_text,occurrence_count,last_seen_at
+             FROM agent_memory_items m
+             WHERE m.user_id=? AND {$scope} AND m.memory_type=? AND m.is_active=1
              ORDER BY occurrence_count DESC,last_seen_at DESC
-             LIMIT 10'
+             LIMIT 10"
         );
-        $stmt->execute([$userId,$type]);
+        $stmt->execute(array_merge([$userId], $scopeParams, [$type]));
         $summary[$key] = $stmt->fetchAll();
     }
 
     $stmt = $pdo->prepare(
         "SELECT memory_type,subject,memory_text,occurrence_count,last_seen_at
-         FROM agent_memory_items
-         WHERE user_id=? AND is_active=1 AND memory_type NOT IN ('theme','date','file')
+         FROM agent_memory_items m
+         WHERE m.user_id=? AND {$scope} AND m.is_active=1 AND m.memory_type NOT IN ('theme','date','file')
          ORDER BY last_seen_at DESC,id DESC LIMIT 12"
     );
-    $stmt->execute([$userId]);
+    $stmt->execute(array_merge([$userId], $scopeParams));
     $summary['recent'] = $stmt->fetchAll();
     return $summary;
 }

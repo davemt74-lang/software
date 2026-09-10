@@ -97,6 +97,7 @@ require_once __DIR__.'/shared-knowledge-index-v236.php';
 require_once __DIR__.'/recommendations.php';
 require_once __DIR__.'/player-v76.php';
 require_once __DIR__.'/stems-v30.php';
+require_once __DIR__.'/agent-memory-scope-v410.php';
 require_once __DIR__.'/agent-brain-v82.php';
 require_once __DIR__.'/agent-brain-v122.php';
 require_once __DIR__.'/agent-brain-runtime-v125.php';

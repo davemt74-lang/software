@@ -11,23 +11,29 @@ function agent_brain_v122_memory_hash(string $type,string $subject): string
 function agent_brain_v122_upsert_system_memory(array $user,string $type,string $subject,string $text,array $metadata=[],float $confidence=0.95): int
 {
     if(!agent_brain_schema_ready())return 0;
-    $pdo=db();$uid=(int)($user['id']??0);
+    $pdo=db();$uid=(int)($user['id']??0);$agentId=vp3_agent_memory_scope_current_v410($user);
     $type=mb_substr(agent_brain_normalize($type),0,40);
     $subject=trim(mb_strimwidth($subject,0,190,'…'));
     $text=trim(mb_strimwidth($text,0,6000,'…'));
     if(!$pdo||$uid<1||$type===''||$subject===''||$text==='')return 0;
-    $hash=agent_brain_v122_memory_hash($type,$subject);
+    $hash=vp3_agent_memory_scope_hash_v410($agentId,agent_brain_v122_memory_hash($type,$subject));
+    $metadata=vp3_agent_memory_scope_provenance_v410($metadata,$agentId,(int)($metadata['conversation_id']??0),0);
     $json=json_encode($metadata,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
     $stmt=$pdo->prepare(
         'INSERT INTO agent_memory_items
-         (user_id,memory_type,subject,memory_text,memory_hash,source_archive_id,confidence,occurrence_count,first_seen_at,last_seen_at,is_active,metadata_json)
-         VALUES (?,?,?,?,?,NULL,?,1,NOW(),NOW(),1,?)
+         (user_id,user_agent_id,memory_type,subject,memory_text,memory_hash,memory_scope_version,source_archive_id,confidence,occurrence_count,first_seen_at,last_seen_at,is_active,metadata_json)
+         VALUES (?,?,?,?,?,?,410,NULL,?,1,NOW(),NOW(),1,?)
          ON DUPLICATE KEY UPDATE
-           memory_text=VALUES(memory_text),confidence=VALUES(confidence),last_seen_at=NOW(),is_active=1,metadata_json=VALUES(metadata_json)'
+           id=LAST_INSERT_ID(id),memory_text=VALUES(memory_text),confidence=VALUES(confidence),last_seen_at=NOW(),is_active=1,metadata_json=VALUES(metadata_json),memory_scope_version=410'
     );
-    $stmt->execute([$uid,$type,$subject,$text,$hash,max(0.0,min(1.0,$confidence)),is_string($json)?$json:'{}']);
+    $stmt->execute([$uid,$agentId>0?$agentId:null,$type,$subject,$text,$hash,max(0.0,min(1.0,$confidence)),is_string($json)?$json:'{}']);
     $id=(int)$pdo->lastInsertId();
-    if($id<1){$q=$pdo->prepare('SELECT id FROM agent_memory_items WHERE user_id=? AND memory_hash=? LIMIT 1');$q->execute([$uid,$hash]);$id=(int)$q->fetchColumn();}
+    if($id<1){
+        [$scope,$params]=vp3_agent_memory_scope_sql_v410($agentId);
+        $q=$pdo->prepare('SELECT id FROM agent_memory_items WHERE user_id=? AND '.$scope.' AND memory_hash=? LIMIT 1');
+        $q->execute(array_merge([$uid],$params,[$hash]));
+        $id=(int)$q->fetchColumn();
+    }
     return $id;
 }
 
@@ -35,9 +41,11 @@ function agent_brain_v122_memory(array $user,string $type,string $subject): ?arr
 {
     if(!agent_brain_schema_ready())return null;
     $pdo=db();$uid=(int)($user['id']??0);if(!$pdo||$uid<1)return null;
+    $agentId=vp3_agent_memory_scope_current_v410($user);[$scope,$params]=vp3_agent_memory_scope_sql_v410($agentId);
     try{
-        $stmt=$pdo->prepare('SELECT * FROM agent_memory_items WHERE user_id=? AND memory_hash=? AND is_active=1 LIMIT 1');
-        $stmt->execute([$uid,agent_brain_v122_memory_hash($type,$subject)]);$row=$stmt->fetch()?:null;
+        $hash=vp3_agent_memory_scope_hash_v410($agentId,agent_brain_v122_memory_hash($type,$subject));
+        $stmt=$pdo->prepare('SELECT * FROM agent_memory_items WHERE user_id=? AND '.$scope.' AND memory_hash=? AND is_active=1 LIMIT 1');
+        $stmt->execute(array_merge([$uid],$params,[$hash]));$row=$stmt->fetch()?:null;
         if(!$row)return null;$metadata=json_decode((string)($row['metadata_json']??''),true);$row['metadata']=is_array($metadata)?$metadata:[];return $row;
     }catch(Throwable $e){return null;}
 }
@@ -79,10 +87,12 @@ function agent_brain_v122_goal_from_text(string $text): string
 
 function agent_brain_v122_state(array $user,int $conversationId): array
 {
-    $subject='conversation:'.max(0,$conversationId);$row=agent_brain_v122_memory($user,'conversation_state',$subject);
+    $conversationId=max(0,$conversationId);
+    if($conversationId>0)vp3_agent_memory_scope_from_conversation_v410($user,$conversationId,true);
+    $subject='conversation:'.$conversationId;$row=agent_brain_v122_memory($user,'conversation_state',$subject);
     $metadata=$row['metadata']??[];
     return is_array($metadata)&&isset($metadata['conversation_id'])?$metadata:[
-        'conversation_id'=>max(0,$conversationId),'current_surface'=>'chat','current_project'=>'','current_goal'=>'','current_task'=>'',
+        'conversation_id'=>$conversationId,'current_surface'=>'chat','current_project'=>'','current_goal'=>'','current_task'=>'',
         'pending_question'=>'','last_agent_action'=>'','next_expected_action'=>'','last_user_message'=>'','last_agent_message'=>'',
         'last_message_id'=>0,'last_role'=>'','updated_at'=>date(DATE_ATOM)
     ];
@@ -91,6 +101,7 @@ function agent_brain_v122_state(array $user,int $conversationId): array
 function agent_brain_v122_update_state(array $user,int $conversationId,array $message): array
 {
     $conversationId=max(0,$conversationId);if($conversationId<1)return [];
+    vp3_agent_memory_scope_from_conversation_v410($user,$conversationId,true);
     $state=agent_brain_v122_state($user,$conversationId);$activity=agent_brain_v122_activity_context($user);
     $role=(string)($message['role']??'');$text=trim((string)($message['message']??''));$messageId=max(0,(int)($message['id']??0));
     $state['conversation_id']=$conversationId;$state['current_surface']=(string)($activity['surface']??'chat');
@@ -116,6 +127,7 @@ function agent_brain_v122_update_state(array $user,int $conversationId,array $me
 function agent_brain_v122_rollup(array $user,int $conversationId,array $state=[]): array
 {
     $pdo=db();$uid=(int)($user['id']??0);$conversationId=max(0,$conversationId);if(!$pdo||$uid<1||$conversationId<1||!table_exists('chat_messages'))return [];
+    vp3_agent_memory_scope_from_conversation_v410($user,$conversationId,true);
     try{
         $stmt=$pdo->prepare('SELECT id,role,message,created_at FROM chat_messages WHERE conversation_id=? ORDER BY id DESC LIMIT 28');$stmt->execute([$conversationId]);$messages=array_reverse($stmt->fetchAll()?:[]);
         if(!$messages)return [];$state=$state?:agent_brain_v122_state($user,$conversationId);
@@ -149,9 +161,10 @@ function agent_brain_v122_refresh_latest(array $user): void
 {
     if(!agent_brain_schema_ready()||!table_exists('chat_messages')||!table_exists('chat_conversations'))return;
     $pdo=db();$uid=(int)($user['id']??0);if(!$pdo||$uid<1)return;
+    $agentId=vp3_agent_memory_scope_current_v410($user);[$scope,$params]=vp3_agent_memory_scope_sql_v410($agentId,'c');
     try{
-        $stmt=$pdo->prepare('SELECT m.id,m.conversation_id,m.role,m.message FROM chat_messages m JOIN chat_conversations c ON c.id=m.conversation_id WHERE c.user_id=? ORDER BY m.id DESC LIMIT 1');
-        $stmt->execute([$uid]);$latest=$stmt->fetch()?:null;if(!$latest)return;
+        $stmt=$pdo->prepare('SELECT m.id,m.conversation_id,m.role,m.message FROM chat_messages m JOIN chat_conversations c ON c.id=m.conversation_id WHERE c.user_id=? AND '.$scope.' ORDER BY m.id DESC LIMIT 1');
+        $stmt->execute(array_merge([$uid],$params));$latest=$stmt->fetch()?:null;if(!$latest)return;
         $cid=(int)$latest['conversation_id'];$state=agent_brain_v122_state($user,$cid);
         if((int)($state['last_message_id']??0)===(int)$latest['id'])return;
         $state=agent_brain_v122_update_state($user,$cid,$latest);agent_brain_v122_rollup($user,$cid,$state);

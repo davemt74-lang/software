@@ -1,0 +1,47 @@
+name: Agent Memory Scope v4.10
+
+on:
+  push:
+    branches:
+      - main
+      - feature/agent-scoped-brain-memory-v410
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          coverage: none
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Agent memory isolation contract
+        run: node tests/agent-memory-scope-v410.mjs
+
+      - name: JavaScript syntax
+        run: node --check tests/agent-memory-scope-v410.mjs
+
+      - name: PHP syntax
+        run: |
+          php -l includes/agent-memory-scope-v410.php
+          php -l includes/agent-brain-v82.php
+          php -l includes/agent-brain-v122.php
+          php -l includes/agent-brain-context-v142.php
+          php -l includes/agent-memory-lifecycle-v123.php
+          php -l includes/bootstrap.php
+          php -l setup.php
+          php -l upgrade.php
