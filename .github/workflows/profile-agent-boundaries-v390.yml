@@ -36,6 +36,7 @@ jobs:
         run: |
           node --check tests/profile-agent-boundaries-v390.mjs
           node --check profile-agent.js
+          node --check account-agent-settings-v236.js
 
       - name: PHP syntax
         run: |
