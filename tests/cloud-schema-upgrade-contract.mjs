@@ -15,12 +15,17 @@ for (const table of ['homeserver_chat_sessions', 'agent_compute_preferences', 'a
   );
 }
 
+// Canonical one-click upgrade must install every active HomeServer/compute layer,
+// independent of whatever wording is used in the success-page copy.
 assert.match(upgrade, /homeserver_vp3_ensure_schema\(\$pdo\)/);
 assert.match(upgrade, /homeserver_agent_v018_ensure_schema\(\$pdo\)/);
 assert.match(upgrade, /agent_compute_v020_ensure_schema\(\$pdo\)/);
 assert.match(upgrade, /agent_compute_v023_ensure_schema\(\$pdo\)/);
 assert.match(upgrade, /HomeServer Agent continuity/);
-assert.match(upgrade, /per-Agent compute policies/);
+assert.match(upgrade, /vp3_plugin_schema_ready_v320\(\)/, 'plugin registry must participate in upgrade completeness');
+assert.match(upgrade, /vp3_social_schema_ready_v320\(\)/, 'social and human-messaging schema must participate in upgrade completeness');
+assert.match(upgrade, /vp3_plugin_ensure_schema_v320\(\)/, 'one-click upgrade must install plugin registry schema');
+assert.match(upgrade, /vp3_social_ensure_schema_v320\(\)/, 'one-click upgrade must install social/human messaging schema');
 
 assert.match(home, /CREATE TABLE IF NOT EXISTS homeserver_chat_sessions/);
 assert.match(v20, /CREATE TABLE IF NOT EXISTS agent_compute_preferences/);
