@@ -57,12 +57,31 @@ function music_workspace_owner_authorized_v320(?array $user=null): bool
     return music_workspace_enabled_v320($user);
 }
 
+function music_workspace_owner_permissions_v320(): array
+{
+    // Deliberately excludes platform/admin powers such as admin.access,
+    // messages.manage (contact-form inbox), users.manage, ai.manage and permissions.manage.
+    return [
+        'artist_listening.access',
+        'producer.access',
+        'team.manage',
+        'listening.view',
+        'track_notes.manage',
+        'tracks.manage',
+        'albums.manage',
+        'shows.manage',
+        'photos.manage',
+        'merch.manage',
+        'posts.manage',
+        'profile.manage',
+        'release.manage',
+    ];
+}
+
 function music_workspace_owner_permission_v320(string $permission,?array $user=null): bool
 {
     $user??=current_user();if(!$user)return false;if(user_has_role('admin',$user))return true;
-    // Music Workspace is the owner bundle. Fine-grained legacy permissions remain
-    // meaningful for delegated collaborators, not as a second purchase gate for owners.
-    if(music_workspace_enabled_v320($user))return true;
+    if(music_workspace_enabled_v320($user)&&in_array($permission,music_workspace_owner_permissions_v320(),true))return true;
     return $permission==='release.manage'?permission_v105_has($permission,$user):has_permission($permission,$user);
 }
 
