@@ -234,7 +234,6 @@ function subscription_seed_defaults(PDO $pdo): void
         'voice.access'=>[1,null],
         'voice_clone.access'=>[1,null],
         'transcription.access'=>[1,null],
-        'music_workspace.access'=>[1,null],
         'stem_editor.access'=>[1,null],
         'video_editor.access'=>[1,null],
         'team_seats'=>[1,2],
