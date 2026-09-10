@@ -89,9 +89,21 @@ function music_workspace_set_enabled_v320(PDO $pdo,array $user,bool $enabled): a
 {
     $uid=(int)($user['id']??0);if($uid<1)throw new RuntimeException('Sign in to manage Music Workspace.');
     if($enabled&&!music_workspace_entitled_v320($user))throw new RuntimeException('Music Workspace is not included in your current VP3 package.');
-    $row=vp3_plugin_set_enabled_v320($pdo,$uid,music_workspace_plugin_key_v320(),$enabled);
-    if($enabled)music_workspace_ensure_owner_v320($pdo,$user);
-    return ['enabled'=>$row['status']==='enabled','entitled'=>music_workspace_entitled_v320($user),'preserves_data'=>true];
+
+    // Create any missing plugin schema before starting the state transaction because
+    // MySQL DDL can implicitly commit. From this point forward, enable/disable state
+    // and workspace creation succeed or fail together.
+    if(!vp3_plugin_schema_ready_v320($pdo))vp3_plugin_ensure_schema_v320($pdo);
+    $ownsTransaction=!$pdo->inTransaction();if($ownsTransaction)$pdo->beginTransaction();
+    try{
+        $row=vp3_plugin_set_enabled_v320($pdo,$uid,music_workspace_plugin_key_v320(),$enabled);
+        if($enabled)music_workspace_ensure_owner_v320($pdo,$user);
+        if($ownsTransaction)$pdo->commit();
+        return ['enabled'=>$row['status']==='enabled','entitled'=>music_workspace_entitled_v320($user),'preserves_data'=>true];
+    }catch(Throwable $e){
+        if($ownsTransaction&&$pdo->inTransaction())$pdo->rollBack();
+        throw $e;
+    }
 }
 
 function music_workspace_access_v320(?array $user=null): bool{return music_workspace_enabled_v320($user);}
