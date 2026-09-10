@@ -83,7 +83,7 @@ $adminTitle='Packages';$adminActive='packages';require __DIR__.'/_header.php';
 ?>
 <section class="admin-section-heading">
   <div><span class="eyebrow">Monetization</span><h2>Packages &amp; subscriptions</h2><p>Manage reusable account packages, AI allowances, product capabilities, limits and public availability. Security authority is managed separately through roles and workspace membership.</p></div>
-  <div class="actions"><a class="button primary" href="<?= e(url('/admin/packages.php?new=1')) ?>" data-admin-modal-open="packageModal">+ Create package</a></div>
+  <div class="actions"><a class="button" href="<?= e(url('/admin/entitlements.php')) ?>">Manage add-ons</a><a class="button primary" href="<?= e(url('/admin/packages.php?new=1')) ?>" data-admin-modal-open="packageModal">+ Create package</a></div>
 </section>
 <?php if($error): ?><div class="notice error"><?= e($error) ?></div><?php endif; ?>
 
