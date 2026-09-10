@@ -80,7 +80,23 @@ Agent Chat and Profile Agent visitor conversations remain separate domains.
 ### Profile Agent
 
 - Public Profile Agent visitor conversations remain in `profile_agent_conversations` / `profile_agent_messages`.
-- They are not social DMs and are not Team Chat.
+- They are not social DMs, Team Chat, or private Agent Chat.
+- v3.90 defines the Profile Agent visitor conversation principal as the exact **owner + Profile Agent + visitor session** tuple. A conversation ID alone never authorizes a public read, poll, or message append.
+- If an owner changes the Profile Agent, an older visitor conversation stays attached to the Agent that created it. The newly selected Agent cannot inherit or answer inside that older Agent's thread.
+- Owner-side history access is deliberately broader than public visitor access: the profile owner may inspect and answer historical visitor threads after changing or retiring the Agent that originally represented the profile.
+- Conversation state is authoritative: `open` permits automatic Profile Agent replies, `owner_joined` is human-owner takeover, and `resolved` is closed until a new visitor turn explicitly reopens the same authorized thread.
+- Owner takeover is race-safe. Visitor turns and owner mutations serialize on the conversation row; after model generation the Profile Agent must re-lock and recheck that the conversation is still `open` before persisting an automatic reply.
+- A visitor message received while the owner has joined is stored for the owner but does not trigger an Agent response. The owner must explicitly set the thread back to `open` to hand automatic replies back to the Profile Agent.
+- Public browser continuity must discard a stale conversation ID when the Profile Agent principal changes instead of silently creating or reassigning a thread.
+
+### User-owned Agent lifecycle
+
+- `user_agents` is the durable identity anchor for a named user-owned Agent and for historical conversation ownership.
+- v3.90 adds `retired_at` so removing an Agent from active use is a retirement operation rather than a hard delete.
+- A retired Agent is inactive, cannot be selected for new Agent Chat/Profile Agent work, and is removed from normal active Agent settings surfaces.
+- Retiring the currently selected Profile Agent disables/clears the public Profile Agent selection without deleting historical visitor conversations.
+- Agent compute overrides may be cleaned up on retirement, but conversation rows, Profile Agent history, data-policy history and the durable Agent identity row remain intact.
+- Retiring an Agent must not delete or reclassify Agent Chat or Profile Agent history. In particular, an Agent Chat conversation with a positive `user_agent_id` may never become the system-Agent namespace through retirement.
 
 ## Commercial access and plugins
 
@@ -141,7 +157,14 @@ A member can therefore be one VP3 identity with multiple workspace relationships
 23. Explicit Agent context must match an existing conversation's stored Agent namespace before history is loaded or appended.
 24. Text and streamed/voice Agent Chat must use the same principal/scope/create boundary.
 25. Human Conversations may enter Agent operations only through an explicit tool that rechecks canonical v3.70 conversation authorization; they are never ambient Chat context.
+26. Public Profile Agent conversation authority is owner + exact Profile Agent + visitor session; conversation ID alone is insufficient.
+27. Changing the selected Profile Agent must never move an existing visitor thread to the new Agent.
+28. `owner_joined` prevents automatic Profile Agent replies until the owner explicitly returns the thread to `open`.
+29. A Profile Agent must recheck current conversation status after model generation and before persisting an automatic reply.
+30. A resolved visitor thread may reopen only from a new authorized visitor turn for the same owner + Agent + session principal.
+31. Retiring a user Agent preserves its durable identity and must not delete or reclassify Agent Chat or Profile Agent history.
+32. Retired Agents may not be mutated through active Agent settings APIs or selected for new Agent execution.
 
 ## Migration direction
 
-Legacy Artist/Producer/Manager/Supervisor vocabulary can remain in database compatibility paths while user-facing and new authorization code moves to VP3 Member + capability/workspace terminology. Existing music data is migrated in place; no destructive rewrite is required. The v3.50 Team lifecycle keeps `artist_team_members` only as an active compatibility projection until every legacy caller has moved to the durable workspace membership ledger. The v3.60 plugin lifecycle may materialize legacy Music workspace owners into `user_plugin_installations`, but explicit disabled rows remain authoritative and no professional content is rewritten or deleted. The v3.70 messaging migration copies historical `team_direct_messages` into `human_messages` once, records each source mapping in `human_message_legacy_links_v370`, migrates read cursors, and leaves the legacy table as read-only migration history rather than an active message store. Section 6 does not migrate Agent Chat rows between principals: existing `user_agent_id IS NULL` conversations remain system-Agent history, while positive `user_agent_id` rows remain owned by that exact user-owned Agent.
+Legacy Artist/Producer/Manager/Supervisor vocabulary can remain in database compatibility paths while user-facing and new authorization code moves to VP3 Member + capability/workspace terminology. Existing music data is migrated in place; no destructive rewrite is required. The v3.50 Team lifecycle keeps `artist_team_members` only as an active compatibility projection until every legacy caller has moved to the durable workspace membership ledger. The v3.60 plugin lifecycle may materialize legacy Music workspace owners into `user_plugin_installations`, but explicit disabled rows remain authoritative and no professional content is rewritten or deleted. The v3.70 messaging migration copies historical `team_direct_messages` into `human_messages` once, records each source mapping in `human_message_legacy_links_v370`, migrates read cursors, and leaves the legacy table as read-only migration history rather than an active message store. Section 6 does not migrate Agent Chat rows between principals: existing `user_agent_id IS NULL` conversations remain system-Agent history, while positive `user_agent_id` rows remain owned by that exact user-owned Agent. Section 7 adds `user_agents.retired_at` in place; existing Agents remain current because the new column defaults to NULL. Future Agent removal marks the row retired instead of deleting it, so existing positive `chat_conversations.user_agent_id` values and `profile_agent_conversations.profile_agent_id` values retain their original principal. Existing Profile Agent conversations are not reassigned when the profile owner selects a different Agent.
