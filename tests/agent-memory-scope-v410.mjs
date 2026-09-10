@@ -63,9 +63,11 @@ assert.match(lifecycle, /vp3_agent_memory_scope_current_context_v410/);
 assert.match(lifecycle, /if\(\$uid<1\)return/);
 assert.match(lifecycle, /UPDATE agent_memory_items SET .* WHERE id=\? AND user_id=\? AND '\.\$scope/s);
 assert.match(lifecycle, /vp3_agent_memory_scope_set_current_v410\(\$uid,\$agentId\)/);
-assert.match(lifecycle, /JOIN chat_conversations c ON c\.id=a\.conversation_id AND c\.user_id=a\.user_id/);
+assert.match(lifecycle, /agent_chat_archive a WHERE a\.user_id=\? AND \{\$scope\}/);
+assert.doesNotMatch(lifecycle, /JOIN chat_conversations c ON c\.id=a\.conversation_id/);
 assert.match(lifecycle, /SELECT \* FROM agent_memory_items WHERE user_id=\? AND '\.\$scopeSql/);
 assert.match(lifecycle, /user_agent_id.*\$agentId>0\?\$agentId:null/s);
+assert.doesNotMatch(lifecycle, /schema_ready_ready_v410/);
 
 assert.match(context, /vp3_agent_memory_scope_current_v410/);
 assert.match(context, /\$memoryScope/);
