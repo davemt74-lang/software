@@ -5,6 +5,7 @@ const read = path => fs.readFileSync(path, 'utf8');
 const resources = read('includes/music-workspace-resources-v330.php');
 const runtime = read('includes/music-workspace-resources-v331.php');
 const releaseSchema = read('includes/music-workspace-release-schema-v330.php');
+const releaseMigration = read('upgrade-stonefellow-v105.sql');
 const permissions = read('includes/permissions.php');
 const artistMusic = read('includes/artist-music-v185.php');
 const memberNav = read('includes/member-navigation.php');
@@ -59,7 +60,7 @@ const productionGuard = permissions.match(/function can_manage_track_production[
 assert.match(productionGuard, /music_workspace_resources_v330_track_workspace_id/);
 assert.match(productionGuard, /music_workspace_resources_v330_can_manage_track/);
 assert.ok(productionGuard.indexOf('music_workspace_resources_v330_can_manage_track') < productionGuard.indexOf("has_permission('tracks.manage'"), 'workspace authorization must run before legacy global permissions');
-assert.match(permissions, /SELECT id,owner_user_id,producer_user_id,visibility['\"]?\s*\.\s*\$workspaceSelect|workspaceSelect/);
+assert.match(permissions, /workspaceSelect/);
 
 // Music Library validates every professional catalog mutation against workspace_id.
 assert.match(libraryPage, /music_workspace_resources_v330_resolve_active/);
@@ -76,9 +77,13 @@ assert.match(studioPage, /music_workspace_resources_v330_ensure_production_track
 assert.match(studioPage, /admin\/stems\.php\?track=/);
 assert.doesNotMatch(studioPage, /owner_user_id\s*===|user_has_role\('artist'/);
 
-// Release plans and tasks are scoped on every read/write/delete path.
-assert.match(releaseSchema, /CREATE TABLE IF NOT EXISTS release_plans/);
-assert.match(releaseSchema, /CREATE TABLE IF NOT EXISTS release_items/);
+// Release plans and tasks are scoped on every read/write/delete path. The PHP installer
+// deliberately executes the canonical v105 SQL instead of duplicating that schema.
+assert.match(releaseSchema, /upgrade-stonefellow-v105\.sql/);
+assert.match(releaseSchema, /music_workspace_release_schema_v330_ready/);
+assert.match(releaseMigration, /CREATE TABLE IF NOT EXISTS release_plans/);
+assert.match(releaseMigration, /CREATE TABLE IF NOT EXISTS release_items/);
+assert.match(releaseMigration, /CREATE TABLE IF NOT EXISTS track_credits/);
 assert.match(runtime, /INSERT INTO release_plans \(workspace_id,owner_user_id/);
 assert.match(runtime, /UPDATE release_plans[\s\S]*WHERE id=\? AND workspace_id=\?/);
 assert.match(runtime, /SELECT \* FROM release_items WHERE release_id=\? AND workspace_id=\?/);
