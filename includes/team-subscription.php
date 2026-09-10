@@ -2,11 +2,11 @@
 declare(strict_types=1);
 
 /**
- * Canonical package state for an Artist-owned Team.
+ * Canonical package state for a VP3-owned collaborative workspace.
  *
  * Identity/permissions decide who may manage a Team. The package's team_seats
  * entitlement is the sole commercial authority for whether new members may be
- * added and how many seats are available. A NULL limit means unlimited.
+ * added and how many active seats are available. A NULL limit means unlimited.
  */
 function team_subscription_state(?array $user=null,?PDO $pdo=null): array
 {
@@ -28,12 +28,24 @@ function team_subscription_state(?array $user=null,?PDO $pdo=null): array
     if(!$user||(int)($user['id']??0)<1)return $state;
 
     $isInternalAdmin=function_exists('subscription_is_internal_admin')&&subscription_is_internal_admin($user);
-    $state['authorized']=$isInternalAdmin||(user_has_role('artist',$user)
-        &&has_permission('admin.access',$user)
-        &&has_permission('team.manage',$user));
+    $workspaceOwner=false;
+    if(function_exists('music_workspace_enabled_v320'))$workspaceOwner=music_workspace_enabled_v320($user);
+    if(!$workspaceOwner&&function_exists('artist_workspace_v104_is_artist'))$workspaceOwner=artist_workspace_v104_is_artist($user);
+    $canManage=function_exists('music_workspace_owner_permission_v320')
+        ? music_workspace_owner_permission_v320('team.manage',$user)
+        : has_permission('team.manage',$user);
 
-    if($state['authorized']&&$pdo&&table_exists('artist_team_members')&&function_exists('artist_workspace_v104_team_count')){
-        try{$state['used']=artist_workspace_v104_team_count($pdo,(int)$user['id']);}catch(Throwable $e){$state['used']=0;}
+    // Workspace ownership/capability is authoritative. A global Artist role is
+    // retained only inside legacy compatibility helpers and is never required here.
+    $state['authorized']=$isInternalAdmin||($workspaceOwner&&$canManage);
+
+    if($state['authorized']&&$pdo&&table_exists('artist_team_members')){
+        try{
+            // Disabled VP3 identities do not consume commercial Team seats.
+            $stmt=$pdo->prepare('SELECT COUNT(*) FROM artist_team_members atm INNER JOIN users u ON u.id=atm.member_user_id AND u.is_active=1 WHERE atm.artist_user_id=?');
+            $stmt->execute([(int)$user['id']]);
+            $state['used']=(int)$stmt->fetchColumn();
+        }catch(Throwable $e){$state['used']=0;}
     }
 
     // Before the subscription migration, preserve the historical two-seat
