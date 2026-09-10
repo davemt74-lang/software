@@ -1,0 +1,50 @@
+name: VP3 Social + Music Architecture
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - feature/vp3-social-music-workspace-current-20260909
+
+permissions:
+  contents: read
+
+jobs:
+  architecture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          coverage: none
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: PHP lint changed architecture surfaces
+        run: |
+          php -l includes/social-network-v320.php
+          php -l includes/social-network-v321.php
+          php -l includes/plugin-registry-v320.php
+          php -l includes/music-workspace-plugin-v320.php
+          php -l includes/member-navigation.php
+          php -l includes/bootstrap.php
+          php -l api/messages-v320.php
+          php -l api/profile-social-v320.php
+          php -l api/team-chat-v109.php
+          php -l api/team-chat-v320.php
+          php -l plugins.php
+          php -l messages.php
+          php -l music-workspace.php
+          php -l upgrade.php
+
+      - name: Architecture contract
+        run: node tests/vp3-social-music-architecture-v320.mjs
