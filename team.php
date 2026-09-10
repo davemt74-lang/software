@@ -52,8 +52,8 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
         }
         if($action!=='invite')throw new RuntimeException('Unknown Team action.');
 
-        $teamState=team_subscription_state($user,$pdo);
-        if(empty($teamState['can_add']))throw new RuntimeException('No Team seat is currently available. Upgrade the workspace capacity or free a seat before inviting another member.');
+        // Invitations are intentionally not seats. Product eligibility is checked
+        // by the lifecycle service here; capacity is locked/rechecked on acceptance.
         $email=strtolower(trim((string)($_POST['email']??'')));
         $teamRole=trim((string)($_POST['team_role']??'producer'));
         $invite=workspace_team_v350_create_invitation($pdo,$ownerUserId,$email,$teamRole,$ownerUserId);
@@ -71,6 +71,7 @@ $pendingInvites=workspace_team_v350_pending_invitations($pdo,$ownerUserId);
 $teamState=team_subscription_state($user,$pdo);
 $teamCount=(int)$teamState['used'];
 $teamCanAdd=!empty($teamState['can_add']);
+$teamCanInvite=!empty($teamState['included']);
 $teamLimitLabel=team_subscription_limit_label($teamState);
 $remainingLabel=!empty($teamState['unlimited'])?'Unlimited':number_format((int)$teamState['remaining']);
 $editing=null;
@@ -97,7 +98,7 @@ $notice=flash('notice');$errorNotice=flash('error');
   <main class="chat-main team-main">
     <?php
       $memberHeaderUser=$user;$memberHeaderTitle='My Team';$memberHeaderSubtitle='Workspace roles, invitations and access lifecycle';
-      $memberHeaderActions=$teamCanAdd?'<a class="team-button primary" href="'.e(url('/team.php?new=1#team-add')).'">+ Invite Team Member</a>':'<a class="team-button" href="'.e(url('/subscription.php')).'">View Plans</a>';
+      $memberHeaderActions=$teamCanInvite?'<a class="team-button primary" href="'.e(url('/team.php?new=1#team-add')).'">+ Invite Team Member</a>':'<a class="team-button" href="'.e(url('/subscription.php')).'">View Plans</a>';
       require __DIR__.'/includes/member-header.php';
     ?>
     <section class="team-canvas"><div class="team-inner">
@@ -108,7 +109,7 @@ $notice=flash('notice');$errorNotice=flash('error');
       <section class="team-metrics" aria-label="Team entitlement status">
         <article><span>Current package</span><strong><?= e((string)$teamState['package_name']) ?></strong><small><?= $teamInternalAdmin?'Internal admin access':'Base + add-on entitlement' ?></small></article>
         <article><span>Active Team seats</span><strong><?= number_format($teamCount) ?> / <?= e($teamLimitLabel) ?></strong><small>Suspended and pending people do not consume seats</small></article>
-        <article><span>Available seats</span><strong><?= e($remainingLabel) ?></strong><small><?= $teamCanAdd?'Ready for an invitation':'Current effective capacity' ?></small></article>
+        <article><span>Available seats</span><strong><?= e($remainingLabel) ?></strong><small><?= $teamCanAdd?'A seat can activate now':'Acceptance waits for available capacity' ?></small></article>
       </section>
 
       <?php if(empty($teamState['included'])):?><div class="team-notice">Your current product access does not include Team seats. Existing membership history remains intact. <a href="<?= e(url('/subscription.php')) ?>">Compare packages</a>.</div>
@@ -145,10 +146,10 @@ $notice=flash('notice');$errorNotice=flash('error');
         </div>
       </section>
 
-      <?php if(isset($_GET['new'])&&$teamCanAdd):?>
+      <?php if(isset($_GET['new'])&&$teamCanInvite):?>
       <section class="team-panel team-form-panel" id="team-add">
         <header class="team-panel-head"><div><span>Invite collaborator</span><h2>Send workspace access</h2><p>Do not create a password for someone else. They sign in to their existing VP3 account or create their own account with the invited email.</p></div><a class="team-button small" href="<?= e(url('/team.php')) ?>">Close</a></header>
-        <form class="team-form" method="post"><?= csrf_field() ?><input type="hidden" name="action" value="invite"><label><span>Email</span><input name="email" type="email" maxlength="190" required></label><label><span>Workspace role</span><select name="team_role" required><?php foreach($teamRoles as $role=>$label):?><option value="<?= e($role) ?>"><?= e($label) ?></option><?php endforeach;?></select></label><p>Invitations expire after seven days. Existing users also receive an in-app notification. New users create their own VP3 credentials.</p><div class="team-form-actions"><button class="team-button primary" type="submit">Create Invitation</button><a class="team-button" href="<?= e(url('/team.php')) ?>">Cancel</a></div></form>
+        <form class="team-form" method="post"><?= csrf_field() ?><input type="hidden" name="action" value="invite"><label><span>Email</span><input name="email" type="email" maxlength="190" required></label><label><span>Workspace role</span><select name="team_role" required><?php foreach($teamRoles as $role=>$label):?><option value="<?= e($role) ?>"><?= e($label) ?></option><?php endforeach;?></select></label><p>Invitations expire after seven days. They do not consume a seat until accepted. Existing users also receive an in-app notification; new users create their own VP3 credentials.</p><div class="team-form-actions"><button class="team-button primary" type="submit">Create Invitation</button><a class="team-button" href="<?= e(url('/team.php')) ?>">Cancel</a></div></form>
       </section><?php endif;?>
 
       <?php if($editing):?>
