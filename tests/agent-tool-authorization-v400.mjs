@@ -51,18 +51,28 @@ assert.doesNotMatch(boundary,/\?=1 OR t\.owner_user_id|has_permission\('tracks\.
 
 // Returned executable actions are rebuilt by the server. Client/model supplied
 // auto flags, external schemes and unknown action types never become authority.
+assert.match(boundary,/function vp3_agent_tool_media_intent_v400/);
+assert.match(boundary,/'photo'=\>\(bool\)preg_match\('\/\\b\(\?:photo\|picture\|image\)\\b\/i'/);
+assert.match(boundary,/'video'=\>\(bool\)preg_match\('\/\\bvideo\\b\/i'/);
+assert.match(boundary,/'audio'=\>\(bool\)preg_match/);
+assert.match(boundary,/'camera'=\>\(bool\)preg_match/);
 assert.match(boundary,/function vp3_agent_tool_internal_action_v400/);
 assert.match(boundary,/if\(!in_array\(\$mode,\['camera','photo','video','audio'\],true\)\)return null/);
+assert.match(boundary,/'auto'=>vp3_agent_tool_media_intent_v400\(\$query,\$mode\)/);
 assert.match(boundary,/preg_match\('#\^\[a-z\]\[a-z0-9\+\.\-\]\*:#i',\$raw\)/);
 assert.match(boundary,/if\(\$type!=='open_url'\)return null/);
 assert.doesNotMatch(boundary,/\$action\['auto'\]/,'incoming auto flags are ignored');
 assert.match(boundary,/'server_derived'=>true/);
 assert.match(boundary,/'domain'=>'browser_local'/);
 assert.match(boundary,/'domain'=>'navigation'/);
+assert.match(boundary,/\$autoAllowed=false/);
+assert.match(boundary,/'auto'=>\$autoAllowed&&\$explicit/);
+assert.match(boundary,/Other same-origin links may be presented as explicit navigation but are[\s\S]*never auto-run/);
 assert.match(boundary,/admin\/stems\.php/);
 assert.match(boundary,/vp3_agent_tool_track_manage_v400\(\$pdo,\$track,\$user\)/);
 assert.match(boundary,/music-releases\.php/);
 assert.match(boundary,/music_workspace_resources_v330_can_manage\(\$pdo,\$workspaceId,'releases',\$user\)/);
+assert.match(boundary,/video-editor\.php/);
 
 // The browser may auto-run only the sanitized server response; historical stored
 // action metadata is rendered but not replayed automatically on load.
