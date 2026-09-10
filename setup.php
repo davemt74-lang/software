@@ -20,11 +20,14 @@ try {
 
     ensure_access_schema();
     // schema.sql is the historical install baseline. Normalize it immediately to
-    // the current architecture so fresh installs never retain the old one-team
-    // unique-member constraint or omit the plugin/social messaging domains.
+    // the current architecture so fresh installs never retain retired constraints
+    // or the legacy mixed-ownership Music production graph.
     artist_workspace_v104_ensure_schema();
     vp3_plugin_ensure_schema_v320($pdo);
     vp3_social_ensure_schema_v320($pdo);
+    artist_workspace_v181_ensure_schema($pdo);
+    music_workspace_release_schema_v330_ensure($pdo);
+    music_workspace_resources_v330_ensure_schema($pdo);
     password_reset_ensure_schema();
 
     $count = (int)$pdo->query('SELECT COUNT(*) FROM users')->fetchColumn();
@@ -63,6 +66,8 @@ try {
         if ($trackCount === 0) {
             $stmt = $pdo->prepare('INSERT INTO tracks (title,album,duration,description,genre,mood,energy,tempo_bpm,keywords,audio_path,cover_path,sort_order,is_published,visibility) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,1,?)');
             foreach (fallback_tracks() as $order => $track) {
+                // Seed/demo tracks are public platform content and intentionally have
+                // no workspace owner. A user-owned Music resource is always scoped.
                 $stmt->execute([$track['title'],$track['album'],$track['duration'],$track['description']??'',$track['genre']??'',$track['mood']??'',$track['energy']??'',$track['tempo_bpm']??null,$track['keywords']??'',$track['audio_path'],$track['cover_path'],$order+1,$track['visibility']??'public']);
             }
         }

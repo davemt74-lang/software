@@ -6,6 +6,7 @@ on:
     branches:
       - main
       - feature/vp3-social-music-workspace-20260909
+      - feature/music-workspace-resource-ownership-v330
 
 permissions:
   contents: read
@@ -29,13 +30,23 @@ jobs:
         with:
           node-version: '22'
 
-      - name: PHP lint changed architecture surfaces
+      - name: PHP lint architecture surfaces
         run: |
           php -l includes/social-network-v320.php
           php -l includes/social-network-v321.php
           php -l includes/plugin-registry-v320.php
           php -l includes/music-workspace-plugin-v320.php
+          php -l includes/music-workspace-release-schema-v330.php
+          php -l includes/music-workspace-resources-v330.php
+          php -l includes/music-workspace-resources-v331.php
+          php -l includes/release-workspace-v332.php
+          php -l includes/release-agent-v105.php
+          php -l includes/release-guard-v105.php
+          php -l includes/release-proactive-v105.php
+          php -l includes/release-chat-v105.php
+          php -l includes/artist-music-v185.php
           php -l includes/member-navigation.php
+          php -l includes/permissions.php
           php -l includes/bootstrap.php
           php -l api/messages-v320.php
           php -l api/profile-social-v320.php
@@ -44,7 +55,17 @@ jobs:
           php -l plugins.php
           php -l messages.php
           php -l music-workspace.php
+          php -l music-library.php
+          php -l music-studio.php
+          php -l music-releases.php
+          php -l setup.php
           php -l upgrade.php
 
-      - name: Architecture contract
+      - name: Social + plugin architecture contract
         run: node tests/vp3-social-music-architecture-v320.mjs
+
+      - name: Music Workspace resource ownership contract
+        run: node tests/music-workspace-resource-ownership-v330.mjs
+
+      - name: Legacy release workspace compatibility contract
+        run: node tests/release-workspace-compat-v332.mjs

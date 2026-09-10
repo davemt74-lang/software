@@ -1460,6 +1460,18 @@ function can_manage_track_production(array $track, ?array $user = null): bool
         return false;
     }
 
+    // v330: a track attached to a Music Workspace is authorized by that
+    // workspace, never by an unrelated global Artist/Producer permission.
+    $pdo = db();
+    if ($pdo && function_exists('music_workspace_resources_v330_track_workspace_id') && function_exists('music_workspace_resources_v330_can_manage_track')) {
+        $workspaceId = music_workspace_resources_v330_track_workspace_id($pdo, $track);
+        if ($workspaceId > 0) {
+            return music_workspace_resources_v330_can_manage_track($pdo, $track, $user);
+        }
+    }
+
+    // Truly unscoped historical/platform tracks keep the legacy authorization
+    // path until they are either migrated into a workspace or retired.
     if (has_permission('tracks.manage', $user)) {
         return true;
     }
@@ -1485,8 +1497,9 @@ function can_manage_track_production_id(int $trackId, ?array $user = null): bool
     }
 
     try {
+        $workspaceSelect = column_exists('tracks','workspace_id') ? ',workspace_id' : '';
         $stmt = $pdo->prepare(
-            'SELECT id,owner_user_id,producer_user_id,visibility
+            'SELECT id,owner_user_id,producer_user_id,visibility' . $workspaceSelect . '
              FROM tracks
              WHERE id=?
              LIMIT 1'
