@@ -25,7 +25,8 @@ function release_v105_chat_tool(string $query,array $user,int $conversationId=0)
     $empty=['handled'=>false,'answer'=>'','stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[]];
 
     if(chat_account_state_intent_v241($query)&&function_exists('chat_onboarding_v241_tool')){
-        $accountState=chat_onboarding_v241_tool($query,$user);if(!empty($accountState['handled']))return $accountState;
+        $accountState = chat_onboarding_v241_tool($query, $user);
+        if (!empty($accountState['handled'])) return $accountState;
     }
 
     if(!release_v105_schema_ready()||!function_exists('release_workspace_v332_can_manage')||!release_workspace_v332_can_manage($user)||!release_v105_chat_intent($query))return $empty;
