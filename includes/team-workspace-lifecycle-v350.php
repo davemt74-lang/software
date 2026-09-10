@@ -282,7 +282,6 @@ function workspace_team_v350_create_invitation(PDO $pdo,int $ownerId,string $ema
         if(!$owner||(int)$owner['is_active']!==1)throw new RuntimeException('Workspace owner is unavailable.');
         $state=team_subscription_state($owner,$pdo);
         if(empty($state['authorized'])||empty($state['included']))throw new RuntimeException('This workspace cannot invite Team members with its current product access.');
-        if(empty($state['can_add']))throw new RuntimeException('No Team seat is currently available for this workspace.');
 
         $find=$pdo->prepare('SELECT id,email,display_name,is_active FROM users WHERE email=? LIMIT 1 FOR UPDATE');$find->execute([$email]);$existing=$find->fetch()?:null;
         if($existing&&(int)$existing['id']===$ownerId)throw new RuntimeException('You cannot invite your own account.');
@@ -347,7 +346,7 @@ function workspace_team_v350_accept_invitation(PDO $pdo,int $inviteId,int $userI
         if(!$invite||$invite['invitation_status']!=='pending')throw new RuntimeException('This Team invitation is no longer available.');
         if((int)$invite['workspace_owner_user_id']!==$ownerId)throw new RuntimeException('This Team invitation changed unexpectedly.');
         if(strtotime((string)$invite['expires_at'])<=time()){
-            $pdo->prepare("UPDATE workspace_team_invitations_v350 SET invitation_status='expired',resolved_at=NOW(),updated_at=NOW() WHERE id=? AND invitation_status='pending'")->execute([$inviteId]);
+            $pdo->prepare("UPDATE workspace_team_invitations_v350 SET invitation_status='expired',resolved_at=COALESCE(resolved_at,NOW()),updated_at=NOW() WHERE id=? AND invitation_status='pending'")->execute([$inviteId]);
             if($owns)$pdo->commit();
             throw new RuntimeException('This Team invitation has expired.');
         }
