@@ -29,6 +29,7 @@ try {
     vp3_plugin_ensure_schema_v320($pdo);
     vp3_social_ensure_schema_v320($pdo);
     artist_workspace_v181_ensure_schema($pdo);
+    vp3_plugin_migrate_legacy_v360($pdo);
     music_workspace_release_schema_v330_ensure($pdo);
     music_workspace_resources_v330_ensure_schema($pdo);
     password_reset_ensure_schema();
