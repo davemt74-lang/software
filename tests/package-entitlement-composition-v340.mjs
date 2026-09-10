@@ -11,6 +11,7 @@ const requestGates=read('includes/subscription-request-gates.php');
 const packages=read('admin/packages.php');
 const entitlementAdmin=read('admin/entitlements.php');
 const team=read('includes/team-subscription.php');
+const artistWorkspace=read('includes/artist-workspaces-v104.php');
 const music=read('includes/music-workspace-plugin-v320.php');
 const schema=read('includes/subscription-schema.php');
 const setup=read('setup.php');
@@ -44,7 +45,15 @@ assert.match(requestGates,/subscription_has_entitlement\(\$user,\$capability\)/)
 assert.match(requestGates,/product-availability check only/);
 assert.doesNotMatch(requestGates,/subscription_package_grants_permission/);
 assert.doesNotMatch(requestGates,/legacy\.permissions/);
-assert.match(requestGates,/workspace or resource authorization/);
+assert.match(requestGates,/role\/workspace\/resource authorization/);
+
+// Workspace identity comes from canonical ownership/plugin state, not package permissions.
+assert.match(artistWorkspace,/artist_workspace_v104_user_owns_workspace\(\$pdo,\$userId\)/);
+assert.match(artistWorkspace,/music_workspace_enabled_v320\(\$user\)/);
+assert.match(artistWorkspace,/Product entitlement alone[\s\S]*never creates workspace\/security authority/);
+assert.doesNotMatch(artistWorkspace,/subscription_package_grants_permission/);
+assert.doesNotMatch(artistWorkspace,/legacy\.permissions/);
+assert.doesNotMatch(artistWorkspace,/artist_workspace_v104_artist_package_permissions/);
 
 // Package editor no longer exposes or duplicates permission-shaped rows.
 assert.doesNotMatch(packages,/permission_catalog\(\)/);
