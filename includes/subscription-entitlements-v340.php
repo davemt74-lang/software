@@ -52,11 +52,11 @@ function subscription_entitlements_v340_ensure_schema(?PDO $pdo=null): void
       CONSTRAINT fk_user_entitlement_creator FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 
-    // Permission-shaped package rows were created by the retired v105
-    // commercial-authority model. Remove them once the composable product model
-    // is installed so they cannot be mistaken for security policy later.
+    // Permission-shaped package rows were created by the retired commercial-
+    // authority model. Remove both historical forms so no future caller can
+    // mistake commercial data for security policy.
     if(table_exists('package_entitlements')){
-        $pdo->exec("DELETE FROM package_entitlements WHERE capability_key LIKE 'permission.%'");
+        $pdo->exec("DELETE FROM package_entitlements WHERE capability_key LIKE 'permission.%' OR capability_key='legacy.permissions'");
     }
 }
 
@@ -140,7 +140,8 @@ function subscription_grant_entitlement_v340(
         $actorUserId&&$actorUserId>0?$actorUserId:null,
     ]);
     $id=(int)$pdo->lastInsertId();
-    if(function_exists('subscription_audit'))subscription_audit($pdo,$actorUserId,$userId,'entitlement_granted',null,null,'',['grant_id'=>$id,'capability_key'=>$key,'limit_value'=>$limitValue,'source_kind'=>$sourceKind,'source_ref'=>$sourceRef,'ends_at'=>$endsAt]);
+    $auditReason=mb_strimwidth(trim((string)($metadata['reason']??'')),0,500,'');
+    if(function_exists('subscription_audit'))subscription_audit($pdo,$actorUserId,$userId,'entitlement_granted',null,null,$auditReason,['grant_id'=>$id,'capability_key'=>$key,'limit_value'=>$limitValue,'source_kind'=>$sourceKind,'source_ref'=>$sourceRef,'ends_at'=>$endsAt]);
     return $id;
 }
 
