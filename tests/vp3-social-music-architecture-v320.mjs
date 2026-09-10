@@ -66,10 +66,14 @@ assert.match(teamAccess, /team_general/);
 assert.match(teamAccess, /artist_team_members/);
 assert.match(teamAccess, /u\.is_active=1/);
 
-// Legacy Team Chat is a compatibility URL only and its directory/history/send path is shared-workspace scoped.
+// Legacy Team Chat is a compatibility URL only and its canonical runtime is both
+// shared-workspace scoped and governed by the member's existing Chat Settings.
 assert.match(teamLegacy, /require __DIR__\.'\/team-chat-v320\.php'/);
 assert.match(teamScoped, /vp3_social_shared_workspace_v320/);
 assert.match(teamScoped, /artist_team_members/);
+assert.match(teamScoped, /chat_settings_get_v237/);
+assert.match(teamScoped, /social_chat_disabled/);
+assert.match(teamScoped, /COALESCE\(p\.presence_mode,'online'\)='online'/);
 assert.doesNotMatch(teamScoped, /WHERE\s+u\.role\s+IN/i);
 assert.doesNotMatch(teamScoped, /user_has_role\(/);
 
