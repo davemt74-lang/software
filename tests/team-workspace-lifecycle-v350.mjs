@@ -8,6 +8,7 @@ const team = read('team.php');
 const invite = read('team-invite.php');
 const login = read('login.php');
 const signup = read('signup.php');
+const auth = read('includes/auth.php');
 const teamSubscription = read('includes/team-subscription.php');
 const social = read('includes/social-network-v320.php');
 const teamChat = read('api/team-chat-v320.php');
@@ -40,6 +41,10 @@ assert.match(lifecycle, /workspace_team_v350_assert_can_activate/);
 assert.match(lifecycle, /team_subscription_state\(\$owner,\$pdo\)/);
 assert.match(lifecycle, /hash_equals\(strtolower\(\(string\)\$invite\['invited_email'\]\),strtolower\(\(string\)\$user\['email'\]\)\)/);
 assert.match(lifecycle, /expires_at/);
+const statusStart = lifecycle.indexOf('function workspace_team_v350_set_status');
+const statusBody = lifecycle.slice(statusStart, lifecycle.indexOf('function workspace_team_v350_pending_invitations', statusStart));
+assert.match(statusBody, /workspace_team_v350_membership\(\$pdo,\$ownerId,\$memberId,true\)/);
+assert.ok(statusBody.indexOf("workspace_team_v350_membership($pdo,$ownerId,$memberId,true)") < statusBody.indexOf("workspace_team_v350_activate_member($pdo,$ownerId,$memberId,(string)$row['team_role'])"));
 
 // Legacy Team storage is active-only projection; lifecycle history is durable.
 assert.match(lifecycle, /WHERE wm\.membership_status<>'active'/);
@@ -68,6 +73,10 @@ assert.match(signup, /pending_team_invite_token/);
 assert.doesNotMatch(login, /[?&]return_to=/);
 assert.doesNotMatch(signup, /[?&]return_to=/);
 
+// Global Producer identity no longer controls post-login routing.
+assert.doesNotMatch(auth, /user_has_role\('producer'/);
+assert.doesNotMatch(auth, /producer\.access/);
+
 // Existing collaboration and messaging paths consume only the active projection.
 assert.match(teamSubscription, /FROM artist_team_members/);
 assert.match(social, /FROM artist_team_members/);
@@ -84,7 +93,7 @@ assert.doesNotMatch(workspacePicker, /user_has_role\('artist'/);
 assert.match(bootstrap, /team-workspace-lifecycle-v350\.php/);
 assert.match(setup, /workspace_team_v350_ensure_schema\(\$pdo\)/);
 assert.match(upgrade, /workspace_team_v350_schema_ready\(\)/);
-assert.match(upgrade, /workspace_team_v350_ensure_schema\(\$pdo\)/);
+assert.match(upgrade, /workspace_team_v350_ensure_schema\(\)/);
 
 // Sticky Agent composer: Video Editor control must remain removed at the render source.
 assert.doesNotMatch(chat, /chatVideoEditorButton/);
