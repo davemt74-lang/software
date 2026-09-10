@@ -28,11 +28,15 @@ for (const [label, route] of [
   ['Main Feed', '/chat.php'],
   ['View Profile', 'profile_public_url'],
   ['My Account', '/account.php'],
+  ['Plugins', '/plugins.php'],
+  ['Messages', '/messages.php'],
   ['Profile Agent', '/profile-agent.php'],
   ['My Knowledge', '/knowledge.php'],
   ['My Transcriptions', '/artist-listening.php'],
   ['Voice Profile', '/voice-profile.php'],
-  ['Artist Workspace', '/admin/artist.php'],
+  ['My Team', '/team.php'],
+  ['Music Workspace', '/music-workspace.php'],
+  ['Team Workspaces', '/admin/team-workspaces.php'],
   ['Admin Dashboard', '/admin/index.php'],
   ['Log Out', '/logout.php'],
 ]) {
@@ -44,7 +48,11 @@ assert.ok(nav.includes("personal_capability_has_v242('personal_knowledge.access'
 assert.ok(nav.includes("personal_capability_has_v242('profile_agent.access'"), 'Profile Agent navigation must use its personal capability permission');
 assert.ok(nav.includes("personal_capability_has_v242('voice_profile.access'"), 'Voice Profile navigation must use its personal capability permission');
 assert.ok(nav.includes("has_permission('artist_listening.access'"), 'My Transcriptions must remain permission gated');
-assert.ok(nav.includes('artist_workspace_v104_is_artist($user)'), 'Artist Workspace must require package/workspace Artist context');
+assert.ok(nav.includes("team_subscription_state($user)"), 'My Team navigation must use canonical workspace/package Team state');
+assert.ok(nav.includes('music_workspace_enabled_v320($user)'), 'Music Workspace navigation must use explicit plugin/workspace state');
+assert.ok(nav.includes('artist_workspace_v104_memberships_for_user'), 'Team Workspaces visibility must derive from contextual memberships');
+assert.ok(!nav.includes("user_has_role('artist'"), 'member navigation must not depend on the retired global Artist identity');
+assert.ok(!nav.includes('Artist Workspace'), 'retired Artist Workspace product naming must not return to canonical navigation');
 assert.ok(nav.includes('subscription_effective_permission($permission,$user)'), 'package permissions must drive customer navigation authorization');
 assert.ok(nav.includes("if(user_has_role('admin',$user))$add($links,'admin'"), 'only Admin identity may receive global Admin navigation');
 assert.ok(nav.includes("empty($profile['is_public'])") && nav.includes("'preview=1'"), 'unpublished owners should receive a usable profile preview URL');
