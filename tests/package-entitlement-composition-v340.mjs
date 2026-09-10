@@ -7,6 +7,7 @@ const subscriptions=read('includes/subscriptions.php');
 const grants=read('includes/subscription-entitlements-v340.php');
 const access=read('includes/subscription-access.php');
 const permissions=read('includes/permissions-v105.php');
+const requestGates=read('includes/subscription-request-gates.php');
 const packages=read('admin/packages.php');
 const entitlementAdmin=read('admin/entitlements.php');
 const team=read('includes/team-subscription.php');
@@ -35,6 +36,14 @@ assert.doesNotMatch(permissions,/subscription_package_grants_permission/);
 assert.doesNotMatch(permissions,/subscription_has_entitlement\(\$user,'legacy\.permissions'\)/);
 assert.match(permissions,/has_permission\(\$permission,\$user\)/);
 assert.match(permissions,/Packages and add-ons buy product capabilities/);
+
+// HTTP gates may check purchased product availability, never security authority.
+assert.match(requestGates,/return has_permission\(\$permission,\$user\);/);
+assert.match(requestGates,/subscription_has_entitlement\(\$user,\$capability\)/);
+assert.match(requestGates,/product-availability check only/);
+assert.doesNotMatch(requestGates,/subscription_package_grants_permission/);
+assert.doesNotMatch(requestGates,/legacy\.permissions/);
+assert.match(requestGates,/workspace or resource authorization/);
 
 // Package editor no longer exposes or duplicates permission-shaped rows.
 assert.doesNotMatch(packages,/permission_catalog\(\)/);
