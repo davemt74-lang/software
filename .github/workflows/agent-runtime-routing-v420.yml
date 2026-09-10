@@ -39,6 +39,7 @@ jobs:
         run: |
           php -l includes/agent-runtime-routing-v420.php
           php -l includes/ai-usage-accounting-v032.php
+          php -l includes/agent-proactive-operations-v036.php
           php -l includes/bootstrap.php
           php -l api/chat-v236.php
           php -l api/chat-stream-v121.php
