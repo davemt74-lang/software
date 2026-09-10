@@ -40,7 +40,7 @@ assert.match(boundary,/function vp3_profile_agent_agent_may_reply_v390/);
 assert.match(boundary,/==='open'/);
 assert.match(profileApi,/if\(!vp3_profile_agent_agent_may_reply_v390\(\$conversation\)\)/);
 assert.match(profileApi,/'awaiting_owner'=>true/);
-assert.match(profileApi,/owner_reply[\s\S]*FOR UPDATE|owner_reply[\s\S]*vp3_profile_agent_owner_conversation_v390\(\$pdo,\$cid,\$uid,true\)/);
+assert.match(profileApi,/owner_reply[\s\S]*vp3_profile_agent_owner_conversation_v390\(\$pdo,\$cid,\$uid,true\)/);
 assert.match(profileApi,/SET status='owner_joined'/);
 assert.match(profileApi,/The owner may have joined or resolved the thread while model generation was/);
 assert.match(profileApi,/\$current=vp3_profile_agent_public_conversation_v390\(\$pdo,\$cid,\$owner,\$agentId,\$sessionId,true\)/);
@@ -75,6 +75,17 @@ assert.doesNotMatch(agentApi,/DELETE FROM chat_conversations/);
 assert.doesNotMatch(agentApi,/user_agent_delete_v236/);
 assert.match(agentApi,/vp3_user_agent_filter_visible_v390/);
 assert.match(agentApi,/vp3_user_agent_require_current_v390/);
+
+// Lifecycle schema DDL is prepared before mutation and forbidden from running
+// inside an active lifecycle transaction.
+assert.match(lifecycle,/\$pdo->inTransaction\(\)&&!vp3_user_agent_lifecycle_schema_ready_v390\(\$pdo\)/);
+assert.match(lifecycle,/Agent lifecycle schema must be installed before starting a lifecycle transaction/);
+assert.match(agentApi,/vp3_user_agent_lifecycle_ensure_schema_v390\(\$pdo\);/);
+const retirementBlock=agentApi.match(/if \(\$action === 'delete_agent'\)[\s\S]*?user_agent_api_v236\(true,[\s\S]*?\n    }/)?.[0]||'';
+assert.ok(retirementBlock,'Agent retirement API block is inspectable');
+assert.match(retirementBlock,/beginTransaction/);
+assert.match(retirementBlock,/vp3_user_agent_retire_v390/);
+assert.doesNotMatch(retirementBlock,/ensure_schema/,'retirement transaction does not run schema DDL');
 
 // Normal setup/upgrade own the retirement schema; bootstrap owns both v3.90 boundaries.
 assert.match(bootstrap,/user-agent-lifecycle-v390\.php/);
