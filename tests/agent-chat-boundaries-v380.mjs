@@ -46,8 +46,11 @@ assert.match(streamApi, /\$rawAgentContext\['user_agent_id'\]=\$agentScopeId/);
 assert.doesNotMatch(streamApi, /UPDATE\s+chat_conversations\s+SET\s+user_agent_id/i);
 
 // Existing conversation identity wins over stale browser/cross-surface context.
+// Explicit system-Agent context is meaningful: zero must not be treated as
+// “Agent omitted” when the stored conversation belongs to a user-owned Agent.
 assert.match(boundary, /SELECT user_agent_id FROM chat_conversations WHERE id=\? AND user_id=\?/);
-assert.match(boundary, /if\(\$requested>0&&\$requested!==\$storedId\)throw new RuntimeException/);
+assert.match(boundary, /array_key_exists\('user_agent_id',\$rawContext\)/);
+assert.match(boundary, /if\(\$hasRequested&&\$requested!==\$storedId\)throw new RuntimeException/);
 assert.match(boundary, /Conversation not found for this Agent/);
 assert.match(boundary, /user_agent_get_v236\(\$pdo,\$userId,\$requestedAgentId\)/);
 assert.match(boundary, /empty\(\$agent\['is_active'\]\)/);
