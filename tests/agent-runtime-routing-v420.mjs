@@ -7,6 +7,7 @@ const textChat = read('api/chat-v236.php');
 const streamChat = read('api/chat-stream-v121.php');
 const accounting = read('includes/ai-usage-accounting-v032.php');
 const status = read('api/agent-runtime-status-v034.php');
+const proactive = read('includes/agent-proactive-operations-v036.php');
 const bootstrap = read('includes/bootstrap.php');
 const setup = read('setup.php');
 const upgrade = read('upgrade.php');
@@ -81,6 +82,14 @@ assert.match(status, /requested_route/);
 assert.match(status, /attempted_route/);
 assert.match(status, /actual_route/);
 assert.match(status, /homeserver_vp3_cloud/);
+
+// Proactive routing-health telemetry must use the real ledger timestamp and,
+// once v4.20 is installed, the canonical actual route instead of a missing
+// historical column or generic source alone.
+assert.match(proactive, /created_at>=\?/);
+assert.doesNotMatch(proactive, /occurred_at>=\?/);
+assert.match(proactive, /column_exists\('ai_execution_ledger', 'actual_route'\)/);
+assert.match(proactive, /actual_route='vp3_cloud'/);
 
 assert.match(bootstrap, /agent-compute-v023\.php[\s\S]*agent-runtime-routing-v420\.php/);
 assert.match(setup, /ai_usage_accounting_v032_ensure_schema\(\$pdo\)/);
