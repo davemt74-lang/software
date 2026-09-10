@@ -54,9 +54,20 @@ assert.match(lifecycle, /membership_status='removed'/);
 assert.match(legacy, /workspace_team_v350_activate_member/);
 assert.match(legacy, /workspace_team_v350_set_status\(\$pdo,\$artistUserId,\$memberUserId,'removed'\)/);
 
-// Pending invitations are not memberships and owners never create another user's password.
-assert.match(team, /workspace_team_v350_create_invitation/);
+// Pending invitations are not seats. Invitation creation requires Team product
+// eligibility, while capacity is enforced only when a membership activates.
+const createInviteStart=lifecycle.indexOf('function workspace_team_v350_create_invitation');
+const createInviteEnd=lifecycle.indexOf('function workspace_team_v350_invitation(',createInviteStart);
+const createInviteBody=lifecycle.slice(createInviteStart,createInviteEnd);
+const capacityStart=lifecycle.indexOf('function workspace_team_v350_assert_can_activate');
+const capacityEnd=lifecycle.indexOf('function workspace_team_v350_activate_member',capacityStart);
+const capacityBody=lifecycle.slice(capacityStart,capacityEnd);
+assert.match(createInviteBody, /empty\(\$state\['authorized'\]\)\|\|empty\(\$state\['included'\]\)/);
+assert.doesNotMatch(createInviteBody, /\$state\['can_add'\]/);
+assert.match(capacityBody, /!\$alreadyActive&&empty\(\$state\['can_add'\]\)/);
+assert.match(team, /\$teamCanInvite=!empty\(\$teamState\['included'\]\)/);
 assert.match(team, /Pending invitations do not consume a Team seat/);
+assert.match(team, /They do not consume a seat until accepted/);
 assert.doesNotMatch(team, /INSERT INTO users/);
 assert.doesNotMatch(team, /password_hash\(/);
 assert.doesNotMatch(team, /Temporary password/i);
@@ -84,6 +95,8 @@ assert.match(teamChat, /FROM artist_team_members/);
 assert.match(social, /You are not an active member of that workspace/);
 
 // Multi-workspace picker uses modern contextual surfaces, never a global Manager/Artist identity.
+assert.match(workspacePicker, /workspace_team_v350_memberships_for_user/);
+assert.match(workspacePicker, /['"]active['"]/);
 assert.match(workspacePicker, /music-workspace\.php\?workspace=/);
 assert.match(workspacePicker, /producer-tracks\.php\?artist_id=/);
 assert.doesNotMatch(workspacePicker, /user_has_role\('manager'/);
