@@ -7,6 +7,8 @@ const socialRefined = read('includes/social-network-v321.php');
 const plugins = read('includes/plugin-registry-v320.php');
 const music = read('includes/music-workspace-plugin-v320.php');
 const subscriptions = read('includes/subscription-schema.php');
+const teamSubscription = read('includes/team-subscription.php');
+const setup = read('setup.php');
 const upgrade = read('upgrade.php');
 const teamLegacy = read('api/team-chat-v109.php');
 const teamScoped = read('api/team-chat-v320.php');
@@ -39,6 +41,15 @@ for (const forbidden of ['admin.access','messages.manage','users.manage','ai.man
 assert.match(music, /preserves_data_on_disable'=>true/);
 assert.doesNotMatch(plugins, /DELETE\s+FROM\s+(?:tracks|albums|artist_|human_|users)/i, 'Plugin disablement must not delete user/workspace data');
 
+// Music enablement is atomic and plugin DDL is kept out of caller-owned transactions.
+assert.match(plugins, /if\(!vp3_plugin_schema_ready_v320\(\$pdo\)\)vp3_plugin_ensure_schema_v320\(\$pdo\)/);
+const musicToggle = music.match(/function music_workspace_set_enabled_v320[\s\S]*?\n}/)?.[0] || '';
+assert.match(musicToggle, /\$ownsTransaction=!\$pdo->inTransaction\(\)/);
+assert.match(musicToggle, /\$pdo->beginTransaction\(\)/);
+assert.match(musicToggle, /music_workspace_ensure_owner_v320\(\$pdo,\$user\)/);
+assert.match(musicToggle, /\$pdo->commit\(\)/);
+assert.match(musicToggle, /\$pdo->rollBack\(\)/);
+
 // Social graph and human messaging have their own persistence domain.
 for (const table of ['user_follows','user_friendships','user_blocks','human_conversations','human_conversation_members','human_messages','human_message_requests']) {
   assert.match(social, new RegExp(table));
@@ -66,6 +77,13 @@ assert.match(teamAccess, /team_general/);
 assert.match(teamAccess, /artist_team_members/);
 assert.match(teamAccess, /u\.is_active=1/);
 
+// Team ownership and billing are workspace/package driven, not a global Artist role.
+assert.match(teamSubscription, /music_workspace_enabled_v320\(\$user\)/);
+assert.match(teamSubscription, /artist_workspace_v104_is_artist\(\$user\)/);
+assert.doesNotMatch(teamSubscription, /user_has_role\('artist',\$user\)/);
+assert.match(teamSubscription, /u\.is_active=1/);
+assert.doesNotMatch(memberNav, /user_has_role\('artist'/);
+
 // Legacy Team Chat is a compatibility URL only and its canonical runtime is both
 // shared-workspace scoped and governed by the member's existing Chat Settings.
 assert.match(teamLegacy, /require __DIR__\.'\/team-chat-v320\.php'/);
@@ -84,7 +102,6 @@ for (const action of ['Follow','Add Friend','Accept Friend','Message']) assert.m
 assert.match(memberNav, /'plugins','Plugins'/);
 assert.match(memberNav, /'messages','Messages'/);
 assert.match(memberNav, /music_workspace_enabled_v320/);
-assert.doesNotMatch(memberNav.match(/\$musicEnabled[\s\S]*?\n\s*if\(\$musicEnabled\)/)?.[0] || '', /user_has_role\('artist'/);
 
 // Music portal only links to real, authorized routes. Stem Studio remains track-scoped.
 assert.doesNotMatch(musicPage, /stem-studio\.php/);
@@ -93,7 +110,10 @@ assert.match(musicPage, /player\.php/);
 assert.match(musicPage, /\$canListening=has_permission\('artist_listening\.access'/);
 assert.match(musicPage, /without assigning a global Artist role/);
 
-// One canonical upgrade installs this architecture without destructive replacement.
+// Fresh setup and canonical upgrade both normalize the architecture without destructive replacement.
+assert.match(setup, /artist_workspace_v104_ensure_schema\(\)/);
+assert.match(setup, /vp3_plugin_ensure_schema_v320\(\$pdo\)/);
+assert.match(setup, /vp3_social_ensure_schema_v320\(\$pdo\)/);
 assert.match(upgrade, /vp3_plugin_ensure_schema_v320\(\)/);
 assert.match(upgrade, /vp3_social_ensure_schema_v320\(\)/);
 assert.match(upgrade, /existing user content/);
