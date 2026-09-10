@@ -231,19 +231,22 @@ function workspace_team_v350_set_status(PDO $pdo,int $ownerId,int $memberId,stri
 {
     if(!isset(workspace_team_v350_statuses()[$status]))throw new RuntimeException('Choose a valid Team membership state.');
     workspace_team_v350_ensure_schema($pdo);
-    if($status==='active'){
-        $row=workspace_team_v350_membership($pdo,$ownerId,$memberId);
-        if(!$row)throw new RuntimeException('That Team membership is not available.');
-        workspace_team_v350_activate_member($pdo,$ownerId,$memberId,(string)$row['team_role']);
-        return;
-    }
 
     $owns=!$pdo->inTransaction();if($owns)$pdo->beginTransaction();
     try{
         $owner=workspace_team_v350_user($pdo,$ownerId,true);
-        if(!$owner)throw new RuntimeException('Workspace owner is unavailable.');
+        if(!$owner||(int)$owner['is_active']!==1)throw new RuntimeException('Workspace owner is unavailable.');
         $row=workspace_team_v350_membership($pdo,$ownerId,$memberId,true);
         if(!$row||$row['membership_status']==='removed')throw new RuntimeException('That Team membership is not available.');
+
+        if($status==='active'){
+            // Resume uses the role from the locked membership row so a concurrent
+            // role change can never be overwritten by stale pre-transaction data.
+            workspace_team_v350_activate_member($pdo,$ownerId,$memberId,(string)$row['team_role']);
+            if($owns)$pdo->commit();
+            return;
+        }
+
         if((string)$row['team_role']==='producer')artist_workspace_v104_revoke_producer_assignments($pdo,$ownerId,$memberId);
         if($status==='suspended'){
             $stmt=$pdo->prepare("UPDATE workspace_memberships_v350 SET membership_status='suspended',suspended_at=NOW(),removed_at=NULL,updated_at=NOW() WHERE workspace_owner_user_id=? AND member_user_id=?");
