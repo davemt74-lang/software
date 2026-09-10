@@ -14,6 +14,7 @@ const ai = read('includes/ai-settings.php');
 const stream = read('includes/ai-stream-v121.php');
 const signup = read('signup.php');
 const teamDomain = read('includes/artist-workspaces-v104.php');
+const teamLifecycle = read('includes/team-workspace-lifecycle-v350.php');
 const teamSubscription = read('includes/team-subscription.php');
 const teamPage = read('team.php');
 const nav = read('includes/member-navigation.php');
@@ -115,11 +116,19 @@ assert.ok(teamDomain.includes('artist_workspace_v104_revoke_producer_assignments
 assert.ok(teamDomain.includes('UPDATE tracks SET producer_user_id=NULL WHERE owner_user_id=? AND producer_user_id=?'), 'producer revocation must remain Artist + member scoped');
 assert.ok(bootstrap.includes('artist_workspace_v104_boot_contextual_roles();') && bootstrap.indexOf('artist_workspace_v104_boot_contextual_roles();') < bootstrap.indexOf('subscription_request_gate();'), 'Team-role cleanup must run before request authorization');
 
-assert.ok(teamPage.includes('artist_workspace_v104_attach_member'), 'Team must create relationship-scoped roles');
-assert.ok(teamPage.includes('artist_workspace_v104_detach_member'), 'Team removal must detach the relationship');
+// Team creation is invitation-first. Contextual roles become active only when
+// the invitee accepts and the lifecycle atomically activates the relationship.
+assert.ok(teamPage.includes('workspace_team_v350_create_invitation'), 'Team must create relationship-scoped invitations rather than another user identity');
+assert.ok(teamLifecycle.includes('workspace_team_v350_activate_member'), 'accepted Team invitations must activate a relationship-scoped role');
+assert.ok(teamLifecycle.includes("workspace_team_v350_set_status"), 'Team lifecycle must own suspension/removal transitions');
+assert.ok(teamLifecycle.includes("membership_status='removed'"), 'Team removal must preserve durable relationship history');
+assert.ok(teamDomain.includes('workspace_team_v350_activate_member'), 'legacy attach callers must delegate to canonical relationship activation');
+assert.ok(teamDomain.includes("workspace_team_v350_set_status($pdo,$artistUserId,$memberUserId,'removed')"), 'legacy detach callers must delegate to durable removal');
+assert.ok(!teamPage.includes('INSERT INTO users'), 'Team invitations must never create another person’s VP3 identity');
+assert.ok(!teamPage.includes('password_hash('), 'Team invitations must never create another person’s password');
 assert.ok(!teamPage.includes('DELETE FROM users'), 'Team removal must preserve the VP3 account');
-assert.ok(teamPage.includes('subscription_assign_default_trial'), 'new Team-created accounts must enter the ordinary trial flow');
 assert.ok(teamPage.includes('team_subscription_state'), 'Team capacity must consume canonical product entitlement state');
+assert.ok(teamLifecycle.includes('team_subscription_state($owner,$pdo)'), 'Team activation must recheck effective seat capacity at acceptance/resume');
 assert.ok(teamSubscription.includes("subscription_has_entitlement($user,'team_seats')"), 'Team availability must use the composed team_seats entitlement');
 assert.ok(teamSubscription.includes("subscription_entitlement_limit($user,'team_seats',0)"), 'Team capacity must compose base package and add-on seats');
 assert.ok(!teamSubscription.includes("subscription_entitlement_row((int)$subscription['package_id'],'team_seats')"), 'Team capacity must not bypass entitlement composition with direct package reads');
