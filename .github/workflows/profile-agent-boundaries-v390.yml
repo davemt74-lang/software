@@ -1,0 +1,49 @@
+name: Profile Agent Boundaries v3.90
+
+on:
+  push:
+    branches:
+      - main
+      - feature/canonical-profile-agent-boundaries-v390
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          coverage: none
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Profile Agent boundary contract
+        run: node tests/profile-agent-boundaries-v390.mjs
+
+      - name: JavaScript syntax
+        run: |
+          node --check tests/profile-agent-boundaries-v390.mjs
+          node --check profile-agent.js
+          node --check account-agent-settings-v236.js
+
+      - name: PHP syntax
+        run: |
+          php -l includes/profile-agent-boundary-v390.php
+          php -l includes/user-agent-lifecycle-v390.php
+          php -l api/profile-agent.php
+          php -l api/user-agent-system-v236.php
+          php -l includes/bootstrap.php
+          php -l setup.php
+          php -l upgrade.php

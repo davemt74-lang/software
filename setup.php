@@ -35,6 +35,8 @@ try {
     music_workspace_release_schema_v330_ensure($pdo);
     music_workspace_resources_v330_ensure_schema($pdo);
     password_reset_ensure_schema();
+    user_agent_system_ensure_schema_v236($pdo);
+    vp3_user_agent_lifecycle_ensure_schema_v390($pdo);
 
     $count = (int)$pdo->query('SELECT COUNT(*) FROM users')->fetchColumn();
     if ($count > 0) {

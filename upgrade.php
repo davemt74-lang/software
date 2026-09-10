@@ -37,6 +37,7 @@ function vp3_upgrade_complete(): bool
         && studio_participants_schema_ready()
         && studio_voice_profile_schema_ready()
         && user_agent_system_schema_ready_v236()
+        && vp3_user_agent_lifecycle_schema_ready_v390()
         && table_exists('homeserver_connections')
         && table_exists('homeserver_releases')
         && table_exists('homeserver_chat_sessions')
@@ -88,6 +89,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             studio_participants_ensure_schema();
             studio_voice_profile_ensure_schema();
             user_agent_system_ensure_schema_v236();
+            vp3_user_agent_lifecycle_ensure_schema_v390();
 
             // Cloud-site schema upgrades are canonical here. Any new cloud
             // migration must be represented in this upgrade path and in the
@@ -122,7 +124,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $complete = vp3_upgrade_complete();
 
             if ($complete) {
-                flash('notice', 'VP3 database upgrade complete: subscriptions, composable product entitlements, canonical plugin lifecycle, canonical human messaging, social relationships, Team invitation/lifecycle collaboration, workspace-owned Music resources, AI execution accounting, Agent Brain, Knowledge, Profile Agent, HomeServer Agent continuity, Agent Radar, CRM, transcriptions, and Music/Studio capabilities are ready.');
+                flash('notice', 'VP3 database upgrade complete: subscriptions, composable product entitlements, canonical plugin lifecycle, canonical human messaging, durable Agent retirement, social relationships, Team invitation/lifecycle collaboration, workspace-owned Music resources, AI execution accounting, Agent Brain, Knowledge, Profile Agent, HomeServer Agent continuity, Agent Radar, CRM, transcriptions, and Music/Studio capabilities are ready.');
                 redirect(url('/admin/users.php'));
             }
         } catch (Throwable $e) {
@@ -147,10 +149,10 @@ vp3_public_header('Database Upgrade — VP3', 'Upgrade the VP3 database and appl
       <h1>VP3 Database Upgrade</h1>
       <?php if ($complete): ?>
         <div class="vp3-alert success">The current VP3 schema is installed and ready.</div>
-        <p class="vp3-auth-intro">Subscription packages, composable add-on entitlements, canonical opt-in plugins, social relationships, canonical human messaging, Team invitation and membership lifecycle, workspace-owned Music resources, AI quota and execution accounting, Agent Brain, private Knowledge, Profile Agent, HomeServer Agent continuity, Agent Radar, CRM, voice identity, transcriptions and Music/Studio capabilities are available.</p>
+        <p class="vp3-auth-intro">Subscription packages, composable add-on entitlements, canonical opt-in plugins, social relationships, canonical human messaging, durable Agent history, Team invitation and membership lifecycle, workspace-owned Music resources, AI quota and execution accounting, Agent Brain, private Knowledge, Profile Agent, HomeServer Agent continuity, Agent Radar, CRM, voice identity, transcriptions and Music/Studio capabilities are available.</p>
         <a class="vp3-btn primary" href="<?= e(url('/admin/users.php')) ?>">Manage Users →</a>
       <?php else: ?>
-        <p class="vp3-auth-intro">Run the current schema upgrade while preserving existing content and access. Existing accounts, package assignments, team memberships, token balances, music content, plugin preferences, human conversations and onboarding progress are preserved, including Team membership history, legacy Team direct messages and existing add-on grants.</p>
+        <p class="vp3-auth-intro">Run the current schema upgrade while preserving existing content and access. Existing accounts, package assignments, team memberships, token balances, music content, plugin preferences, Agent identities and conversations, human conversations and onboarding progress are preserved, including Team membership history, legacy Team direct messages and existing add-on grants.</p>
         <?php if ($error): ?><div class="vp3-alert error" role="alert"><?= e($error) ?></div><?php endif; ?>
         <form method="post">
           <?= csrf_field() ?>

@@ -54,9 +54,35 @@ if(in_array($action,$ownerActions,true)){
         profile_agent_json(true,['state'=>profile_agent_owner_state_v242($pdo,$user)]);
     }
     if($action==='attention_action'){profile_attention_update($pdo,$uid,(int)($input['attention_id']??0),(string)($input['attention_action']??''));profile_agent_json(true,['state'=>profile_agent_owner_state_v242($pdo,$user)]);}
-    if($action==='conversation_messages'){$cid=max(0,(int)($input['conversation_id']??0));$conversation=profile_runtime_conversation_owner($pdo,$cid,$uid);if(!$conversation)profile_agent_json(false,['error'=>'Conversation not found.'],404);profile_agent_json(true,['conversation'=>$conversation,'messages'=>profile_agent_messages($pdo,$cid)]);}
-    if($action==='conversation_status'){$cid=max(0,(int)($input['conversation_id']??0));$status=(string)($input['status']??'');if(!in_array($status,['open','owner_joined','resolved'],true))throw new RuntimeException('Unknown conversation status.');$conversation=profile_runtime_conversation_owner($pdo,$cid,$uid);if(!$conversation)profile_agent_json(false,['error'=>'Conversation not found.'],404);$pdo->prepare('UPDATE profile_agent_conversations SET status=?,updated_at=NOW() WHERE id=? AND owner_user_id=?')->execute([$status,$cid,$uid]);if($status==='resolved')$pdo->prepare("UPDATE agent_attention_items SET status='handled',snoozed_until=NULL WHERE owner_user_id=? AND source_conversation_id=? AND status IN ('pending','seen','snoozed')")->execute([$uid,$cid]);profile_agent_json(true,['state'=>profile_agent_owner_state_v242($pdo,$user)]);}
-    if($action==='owner_reply'){$cid=max(0,(int)($input['conversation_id']??0));$reply=trim((string)($input['message']??''));if($reply===''||mb_strlen($reply)>4000)throw new RuntimeException('Enter a reply up to 4,000 characters.');$conversation=profile_runtime_conversation_owner($pdo,$cid,$uid);if(!$conversation)profile_agent_json(false,['error'=>'Conversation not found.'],404);$pdo->prepare("INSERT INTO profile_agent_messages (conversation_id,sender_type,sender_user_id,message) VALUES (?,'owner',?,?)")->execute([$cid,$uid,$reply]);$pdo->prepare("UPDATE profile_agent_conversations SET status='owner_joined',last_summary=?,last_message_at=NOW() WHERE id=? AND owner_user_id=?")->execute([mb_strimwidth($reply,0,900,'…'),$cid,$uid]);$pdo->prepare("UPDATE agent_attention_items SET status='handled',snoozed_until=NULL WHERE owner_user_id=? AND source_conversation_id=? AND status IN ('pending','seen','snoozed')")->execute([$uid,$cid]);profile_agent_json(true,['state'=>profile_agent_owner_state_v242($pdo,$user),'messages'=>profile_agent_messages($pdo,$cid)]);}
+    if($action==='conversation_messages'){
+        $cid=max(0,(int)($input['conversation_id']??0));
+        if(!vp3_profile_agent_owner_conversation_v390($pdo,$cid,$uid))profile_agent_json(false,['error'=>'Conversation not found.'],404);
+        $conversation=profile_runtime_conversation_owner($pdo,$cid,$uid)?:throw new RuntimeException('Conversation not found.');
+        profile_agent_json(true,['conversation'=>$conversation,'messages'=>profile_agent_messages($pdo,$cid)]);
+    }
+    if($action==='conversation_status'){
+        $cid=max(0,(int)($input['conversation_id']??0));$status=(string)($input['status']??'');if(!in_array($status,['open','owner_joined','resolved'],true))throw new RuntimeException('Unknown conversation status.');
+        $pdo->beginTransaction();
+        try{
+            $conversation=vp3_profile_agent_owner_conversation_v390($pdo,$cid,$uid,true);if(!$conversation)throw new RuntimeException('Conversation not found.');
+            $pdo->prepare('UPDATE profile_agent_conversations SET status=?,updated_at=NOW() WHERE id=? AND owner_user_id=?')->execute([$status,$cid,$uid]);
+            if($status==='resolved')$pdo->prepare("UPDATE agent_attention_items SET status='handled',snoozed_until=NULL WHERE owner_user_id=? AND source_conversation_id=? AND status IN ('pending','seen','snoozed')")->execute([$uid,$cid]);
+            $pdo->commit();
+        }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();throw $e;}
+        profile_agent_json(true,['state'=>profile_agent_owner_state_v242($pdo,$user)]);
+    }
+    if($action==='owner_reply'){
+        $cid=max(0,(int)($input['conversation_id']??0));$reply=trim((string)($input['message']??''));if($reply===''||mb_strlen($reply)>4000)throw new RuntimeException('Enter a reply up to 4,000 characters.');
+        $pdo->beginTransaction();
+        try{
+            $conversation=vp3_profile_agent_owner_conversation_v390($pdo,$cid,$uid,true);if(!$conversation)throw new RuntimeException('Conversation not found.');
+            $pdo->prepare("INSERT INTO profile_agent_messages (conversation_id,sender_type,sender_user_id,message) VALUES (?,'owner',?,?)")->execute([$cid,$uid,$reply]);
+            $pdo->prepare("UPDATE profile_agent_conversations SET status='owner_joined',last_summary=?,last_message_at=NOW(),updated_at=NOW() WHERE id=? AND owner_user_id=?")->execute([mb_strimwidth($reply,0,900,'…'),$cid,$uid]);
+            $pdo->prepare("UPDATE agent_attention_items SET status='handled',snoozed_until=NULL WHERE owner_user_id=? AND source_conversation_id=? AND status IN ('pending','seen','snoozed')")->execute([$uid,$cid]);
+            $pdo->commit();
+        }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();throw $e;}
+        profile_agent_json(true,['state'=>profile_agent_owner_state_v242($pdo,$user),'messages'=>profile_agent_messages($pdo,$cid)]);
+    }
 }
 
 $username=profile_username_normalize((string)($input['username']??''));$profile=profile_by_username($pdo,$username);
@@ -64,15 +90,41 @@ if(!$profile||empty($profile['is_active'])||empty($profile['is_public']))profile
 $owner=(int)$profile['user_id'];$ownerUser=profile_user_row($pdo,$owner);if(!$ownerUser||!personal_capability_has_v242('profile_agent.access',$ownerUser)||!personal_capability_has_v242('profile_chat.access',$ownerUser))profile_agent_json(false,['error'=>'This Profile Agent chat is not available.'],404);
 $visitor=$user;if((int)($visitor['id']??0)===$owner)profile_agent_json(false,['error'=>'Use visitor preview from your Profile Agent dashboard.'],403);
 $agent=profile_active_agent($pdo,$profile);if(!$agent)profile_agent_json(false,['error'=>'This Profile Agent is not available.'],404);
+$agentId=(int)$agent['id'];
 if($method==='POST'&&!profile_chat_token_valid($owner,(string)($input['profile_token']??'')))profile_agent_json(false,['error'=>'Profile session expired. Refresh and try again.'],419);
-$session=profile_runtime_session($pdo,$owner,$visitor,false);
+$session=profile_runtime_session($pdo,$owner,$visitor,false);$sessionId=(int)$session['id'];
 
-if($action==='state'){$cid=max(0,(int)($input['conversation_id']??0));$messages=[];if($cid>0){$c=profile_agent_conversation_get($pdo,$cid,$owner,(int)$session['id']);if($c)$messages=profile_agent_messages($pdo,$cid);}profile_agent_json(true,['agent'=>['id'=>(int)$agent['id'],'name'=>(string)$agent['display_name'],'system_name'=>system_agent_name(),'greeting'=>trim((string)($profile['profile_agent_greeting']??''))],'messages'=>$messages]);}
+if($action==='state'){
+    $cid=max(0,(int)($input['conversation_id']??0));$messages=[];$conversationState=null;
+    if($cid>0){
+        $conversation=vp3_profile_agent_public_conversation_v390($pdo,$cid,$owner,$agentId,$sessionId);
+        if(!$conversation)profile_agent_json(false,['error'=>'Conversation not found for this Profile Agent.'],404);
+        $messages=profile_agent_messages($pdo,$cid);$conversationState=vp3_profile_agent_public_state_v390($conversation);
+    }
+    profile_agent_json(true,['agent'=>['id'=>$agentId,'name'=>(string)$agent['display_name'],'system_name'=>system_agent_name(),'greeting'=>trim((string)($profile['profile_agent_greeting']??''))],'conversation'=>$conversationState,'messages'=>$messages]);
+}
 if($method!=='POST')profile_agent_json(false,['error'=>'POST is required.'],405);
 if($action==='message'){
     $query=trim((string)($input['message']??''));if($query===''||mb_strlen($query)>2000)throw new RuntimeException('Enter a message up to 2,000 characters.');
-    $cid=max(0,(int)($input['conversation_id']??0));$conversation=$cid?profile_agent_conversation_get($pdo,$cid,$owner,(int)$session['id']):null;if(!$conversation)$conversation=profile_agent_conversation_create($pdo,$profile,$agent,$session);$cid=(int)$conversation['id'];profile_agent_rate_check($pdo,$cid);
-    $pdo->prepare("INSERT INTO profile_agent_messages (conversation_id,sender_type,sender_user_id,message) VALUES (?,'visitor',?,?)")->execute([$cid,(int)($visitor['id']??0)?:null,$query]);$pdo->prepare('UPDATE profile_visit_sessions SET last_message_at=NOW() WHERE id=?')->execute([(int)$session['id']]);
+    $cid=max(0,(int)($input['conversation_id']??0));
+    if($cid>0&&!vp3_profile_agent_public_conversation_v390($pdo,$cid,$owner,$agentId,$sessionId))profile_agent_json(false,['error'=>'Conversation not found for this Profile Agent.'],404);
+    if($cid<1){$conversation=profile_agent_conversation_create($pdo,$profile,$agent,$session);$cid=(int)$conversation['id'];}
+
+    $pdo->beginTransaction();
+    try{
+        $conversation=vp3_profile_agent_public_conversation_v390($pdo,$cid,$owner,$agentId,$sessionId,true);if(!$conversation)throw new RuntimeException('Conversation not found for this Profile Agent.');
+        $conversation=vp3_profile_agent_prepare_visitor_turn_v390($pdo,$conversation);
+        profile_agent_rate_check($pdo,$cid);
+        $pdo->prepare("INSERT INTO profile_agent_messages (conversation_id,sender_type,sender_user_id,message) VALUES (?,'visitor',?,?)")->execute([$cid,(int)($visitor['id']??0)?:null,$query]);
+        $pdo->prepare('UPDATE profile_visit_sessions SET last_message_at=NOW(),last_seen_at=NOW() WHERE id=? AND owner_user_id=?')->execute([$sessionId,$owner]);
+        $pdo->prepare('UPDATE profile_agent_conversations SET last_summary=?,last_message_at=NOW(),updated_at=NOW() WHERE id=? AND owner_user_id=? AND profile_agent_id=? AND profile_session_id=?')->execute([mb_strimwidth($query,0,900,'…'),$cid,$owner,$agentId,$sessionId]);
+        $pdo->commit();
+    }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();throw $e;}
+
+    if(!vp3_profile_agent_agent_may_reply_v390($conversation)){
+        profile_agent_json(true,['conversation_id'=>$cid,'answer'=>'','awaiting_owner'=>true,'conversation'=>vp3_profile_agent_public_state_v390($conversation),'agent'=>['name'=>(string)$agent['display_name'],'system_name'=>system_agent_name()]]);
+    }
+
     $history=[];foreach(profile_agent_messages($pdo,$cid,14) as $m){if($m['sender_type']==='visitor')$history[]=['role'=>'user','message'=>(string)$m['message']];elseif(in_array($m['sender_type'],['agent','owner'],true))$history[]=['role'=>'assistant','message'=>(string)$m['message']];}
     $context=profile_agent_context($pdo,$profile,$agent,$visitor,$query);
     foreach(profile_agent_transcript_brain_context_v255($pdo,$ownerUser,$agent,$visitor,$query,$cid) as $item)$context[]=$item;
@@ -82,9 +134,27 @@ if($action==='message'){
     elseif($greeting){$answer=trim((string)($profile['profile_agent_greeting']??''))?:'Hi — I’m '.(string)$agent['display_name'].', '.(string)$profile['display_name'].'’s AI representative. What would you like to know?';}
     else{$answer=chat_remote_answer($query,$history,$context,$ownerUser);if($answer===null)$answer=chat_local_answer($query,$context);if(trim((string)$answer)===''){profile_agent_needs_owner($pdo,$profile,$agent,$session,$conversation,$query);$answer='I don’t have enough approved information to answer that accurately.';}}
     $sources=[];foreach($context as $c){if(!in_array((string)$c['source'],['profile:identity','profile:rules'],true))$sources[]=['source'=>(string)$c['source'],'title'=>(string)$c['title']];}
-    $pdo->prepare("INSERT INTO profile_agent_messages (conversation_id,sender_type,sender_user_id,message,context_json) VALUES (?,'agent',NULL,?,?)")->execute([$cid,$answer,json_encode(['sources'=>$sources],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE)]);$pdo->prepare('UPDATE profile_agent_conversations SET last_summary=?,last_message_at=NOW() WHERE id=?')->execute([mb_strimwidth($query,0,900,'…'),$cid]);
-    profile_agent_json(true,['conversation_id'=>$cid,'answer'=>$answer,'sources'=>$sources,'agent'=>['name'=>(string)$agent['display_name'],'system_name'=>system_agent_name()]]);
+
+    // The owner may have joined or resolved the thread while model generation was
+    // in flight. Re-lock and recheck before persisting any Agent reply.
+    $pdo->beginTransaction();
+    try{
+        $current=vp3_profile_agent_public_conversation_v390($pdo,$cid,$owner,$agentId,$sessionId,true);if(!$current)throw new RuntimeException('Conversation not found for this Profile Agent.');
+        if(!vp3_profile_agent_agent_may_reply_v390($current)){
+            $pdo->commit();
+            profile_agent_json(true,['conversation_id'=>$cid,'answer'=>'','awaiting_owner'=>vp3_profile_agent_status_v390($current)==='owner_joined','conversation'=>vp3_profile_agent_public_state_v390($current),'agent'=>['name'=>(string)$agent['display_name'],'system_name'=>system_agent_name()]]);
+        }
+        $pdo->prepare("INSERT INTO profile_agent_messages (conversation_id,sender_type,sender_user_id,message,context_json) VALUES (?,'agent',NULL,?,?)")->execute([$cid,$answer,json_encode(['sources'=>$sources],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE)]);
+        $pdo->prepare('UPDATE profile_agent_conversations SET last_message_at=NOW(),updated_at=NOW() WHERE id=? AND owner_user_id=? AND profile_agent_id=? AND profile_session_id=?')->execute([$cid,$owner,$agentId,$sessionId]);
+        $pdo->commit();
+    }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();throw $e;}
+    profile_agent_json(true,['conversation_id'=>$cid,'answer'=>$answer,'sources'=>$sources,'conversation'=>vp3_profile_agent_public_state_v390($current),'agent'=>['name'=>(string)$agent['display_name'],'system_name'=>system_agent_name()]]);
 }
-if($action==='poll'){$cid=max(0,(int)($input['conversation_id']??0));$after=max(0,(int)($input['after_id']??0));if(!profile_agent_conversation_get($pdo,$cid,$owner,(int)$session['id']))profile_agent_json(false,['error'=>'Conversation not found.'],404);$s=$pdo->prepare('SELECT id,sender_type,message,created_at FROM profile_agent_messages WHERE conversation_id=? AND id>? ORDER BY id ASC LIMIT 50');$s->execute([$cid,$after]);profile_agent_json(true,['messages'=>$s->fetchAll()?:[]]);}
+if($action==='poll'){
+    $cid=max(0,(int)($input['conversation_id']??0));$after=max(0,(int)($input['after_id']??0));
+    $conversation=vp3_profile_agent_public_conversation_v390($pdo,$cid,$owner,$agentId,$sessionId);if(!$conversation)profile_agent_json(false,['error'=>'Conversation not found for this Profile Agent.'],404);
+    $s=$pdo->prepare('SELECT id,sender_type,message,created_at FROM profile_agent_messages WHERE conversation_id=? AND id>? ORDER BY id ASC LIMIT 50');$s->execute([$cid,$after]);
+    profile_agent_json(true,['messages'=>$s->fetchAll()?:[],'conversation'=>vp3_profile_agent_public_state_v390($conversation)]);
+}
 profile_agent_json(false,['error'=>'Unknown Profile Agent action.'],404);
 }catch(Throwable $e){profile_agent_json(false,['error'=>$e->getMessage()],400);}

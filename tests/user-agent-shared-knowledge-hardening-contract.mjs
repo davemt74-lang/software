@@ -8,6 +8,7 @@ const account=fs.readFileSync('account-agent-settings-v236.js','utf8');
 const identity=fs.readFileSync('chat-agent-identity-v236.js','utf8');
 const chatPage=fs.readFileSync('chat.php','utf8');
 const settingsApi=fs.readFileSync('api/user-agent-system-v236.php','utf8');
+const lifecycle=fs.readFileSync('includes/user-agent-lifecycle-v390.php','utf8');
 
 assert.match(index,/function shared_knowledge_index_revoke_v236/,'shared index has one revocation owner');
 assert.match(index,/topic_tags=''[^;]*embedding_ref=''[^;]*source_version_hash=REPEAT\('0',64\)/,'revocation erases content-derived discovery metadata');
@@ -34,10 +35,14 @@ assert.match(usage,/Owner-facing telemetry intentionally omits requester identit
 assert.match(usage,/requester_name/,'admin audit can still attribute the requesting account');
 
 assert.match(account,/\?agent=system/,'Account Settings exposes an explicit universal system-agent chat');
-assert.match(account,/Delete \$\{a\.display_name\} and its agent chat history\? This cannot be undone\./,'agent deletion UI accurately warns that scoped history is deleted');
-assert.match(account,/Agent and its chat history deleted\./,'deletion success copy matches backend behavior');
-assert.match(settingsApi,/DELETE FROM chat_conversations WHERE user_id=\? AND user_agent_id=\?/,'agent deletion removes scoped conversations before deleting the agent');
-assert.match(settingsApi,/beginTransaction\(\)/,'agent/history deletion is transactional');
+assert.match(account,/Retire \$\{a\.display_name\}\? Existing Agent Chat and Profile Agent history will be preserved/,'Agent retirement UI explains that conversation history is preserved');
+assert.match(account,/Agent retired\. Conversation history preserved\./,'retirement success copy matches durable backend behavior');
+assert.match(settingsApi,/vp3_user_agent_retire_v390/,'active Agent removal delegates to durable retirement');
+assert.doesNotMatch(settingsApi,/DELETE FROM chat_conversations WHERE user_id=\? AND user_agent_id=\?/,'Agent retirement never deletes scoped Agent Chat history');
+assert.doesNotMatch(settingsApi,/user_agent_delete_v236/,'active Agent settings no longer call the destructive legacy delete helper');
+assert.match(settingsApi,/beginTransaction\(\)/,'Agent retirement is transactional');
+assert.match(lifecycle,/retired_at=NOW\(\)/,'retirement records durable lifecycle state');
+assert.doesNotMatch(lifecycle,/DELETE FROM user_agents|DELETE FROM chat_conversations|DELETE FROM profile_agent_conversations/,'retirement preserves Agent identity and conversation history');
 
 assert.match(identity,/requestedAgent\s*!==\s*['"]system['"]/,'explicit system-agent URL bypasses browser fallback selection');
 assert.match(identity,/const active\s*=\s*agents\.filter\(agent\s*=>\s*Number\(agent\.is_active\)\)/,'browser fallback ignores inactive agents');
