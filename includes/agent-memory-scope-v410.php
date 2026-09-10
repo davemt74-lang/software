@@ -23,10 +23,20 @@ function vp3_agent_memory_scope_index_exists_v410(PDO $pdo,string $table,string 
 function vp3_agent_memory_scope_schema_ready_v410(?PDO $pdo=null): bool
 {
     $pdo ??= db();
-    return (bool)$pdo
-        && table_exists('agent_memory_items')
-        && column_exists('agent_memory_items','user_agent_id')
-        && column_exists('agent_memory_items','memory_scope_version');
+    if(!$pdo
+        || !table_exists('agent_memory_items')
+        || !table_exists('chat_conversations')
+        || !column_exists('agent_memory_items','user_agent_id')
+        || !column_exists('agent_memory_items','memory_scope_version')
+        || !column_exists('chat_conversations','user_agent_id')
+        || !vp3_agent_memory_scope_index_exists_v410($pdo,'agent_memory_items','idx_agent_memory_agent_type_v410')
+        || !vp3_agent_memory_scope_index_exists_v410($pdo,'agent_memory_items','idx_agent_memory_agent_occurrence_v410')){
+        return false;
+    }
+    try{
+        $stmt=$pdo->query('SELECT 1 FROM agent_memory_items WHERE memory_scope_version<410 LIMIT 1');
+        return !$stmt->fetchColumn();
+    }catch(Throwable $e){return false;}
 }
 
 function vp3_agent_memory_scope_ensure_schema_v410(?PDO $pdo=null): void
@@ -44,13 +54,12 @@ function vp3_agent_memory_scope_ensure_schema_v410(?PDO $pdo=null): void
         $pdo->exec('ALTER TABLE agent_memory_items ADD COLUMN memory_scope_version SMALLINT UNSIGNED NOT NULL DEFAULT 0 AFTER memory_hash');
     }
 
-    // Existing owner-wide memories predate durable Agent identity. They belong
-    // only to the canonical system Agent. Re-hash them once into that namespace
-    // so the existing UNIQUE(user_id,memory_hash) remains collision-safe for
-    // system and custom Agents without relying on nullable unique semantics.
+    // Existing owner-wide memories predate durable Agent identity and therefore
+    // remain in the system-Agent namespace. If a partially upgraded row already
+    // has a custom Agent id, preserve it while re-hashing into that Agent's
+    // namespace. This keeps the migration restart-safe and collision-safe.
     $pdo->exec("UPDATE agent_memory_items
-               SET user_agent_id=NULL,
-                   memory_hash=SHA1(CONCAT('v410|agent:0|',memory_hash)),
+               SET memory_hash=SHA1(CONCAT('v410|agent:',COALESCE(user_agent_id,0),'|',memory_hash)),
                    memory_scope_version=410
                WHERE memory_scope_version<410");
 
@@ -100,12 +109,21 @@ function vp3_agent_memory_scope_set_current_v410(int $userId,?int $userAgentId):
     ];
 }
 
+function vp3_agent_memory_scope_current_context_v410(): array
+{
+    $scope=$GLOBALS['VP3_AGENT_MEMORY_SCOPE_V410']??null;
+    return is_array($scope)?[
+        'user_id'=>max(0,(int)($scope['user_id']??0)),
+        'user_agent_id'=>vp3_agent_memory_scope_id_v410((int)($scope['user_agent_id']??0)),
+    ]:['user_id'=>0,'user_agent_id'=>0];
+}
+
 function vp3_agent_memory_scope_current_v410(array $user,?int $fallbackAgentId=null): int
 {
     $userId=(int)($user['id']??0);
-    $scope=$GLOBALS['VP3_AGENT_MEMORY_SCOPE_V410']??null;
-    if(is_array($scope)&&(int)($scope['user_id']??0)===$userId){
-        return vp3_agent_memory_scope_id_v410((int)($scope['user_agent_id']??0));
+    $scope=vp3_agent_memory_scope_current_context_v410();
+    if($scope['user_id']===$userId){
+        return $scope['user_agent_id'];
     }
     return vp3_agent_memory_scope_id_v410($fallbackAgentId);
 }
