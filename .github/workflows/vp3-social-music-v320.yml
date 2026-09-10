@@ -39,6 +39,11 @@ jobs:
           php -l includes/music-workspace-release-schema-v330.php
           php -l includes/music-workspace-resources-v330.php
           php -l includes/music-workspace-resources-v331.php
+          php -l includes/release-workspace-v332.php
+          php -l includes/release-agent-v105.php
+          php -l includes/release-guard-v105.php
+          php -l includes/release-proactive-v105.php
+          php -l includes/release-chat-v105.php
           php -l includes/artist-music-v185.php
           php -l includes/member-navigation.php
           php -l includes/permissions.php
@@ -61,3 +66,6 @@ jobs:
 
       - name: Music Workspace resource ownership contract
         run: node tests/music-workspace-resource-ownership-v330.mjs
+
+      - name: Legacy release workspace compatibility contract
+        run: node tests/release-workspace-compat-v332.mjs
