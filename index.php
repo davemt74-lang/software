@@ -12,38 +12,38 @@ $vp3LoginUrl = url('/login.php');
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="description" content="VP3 is your personal AI assistant for transcriptions, AI summaries, knowledge, teams, and a private personal URL.">
-<meta name="theme-color" content="#f7f9fc">
-<title>VP3 — Capture. Understand. Take Action.</title>
+<meta name="description" content="VP3 AI Assistants turn conversations into action across desktop and mobile, with transcription, summaries, teams, personal profile agents, and optional private HomeServer AI.">
+<meta name="theme-color" content="#071018">
+<title>VP3 AI Assistants — Turn every conversation into what's next.</title>
 <link rel="stylesheet" href="<?= e(url('/vp3-public.css?v=vp3-public-20260906')) ?>">
 <link rel="stylesheet" href="<?= e(url('/vp3-public-nav.css?v=vp3-public-20260906')) ?>">
-<link rel="stylesheet" href="<?= e(url('/vp3-home.css?v=vp3-home-20260906-how-it-works')) ?>">
-<link rel="stylesheet" href="<?= e(url('/vp3-index-refresh.css?v=vp3-index-refresh-20260906-v3')) ?>">
+<link rel="stylesheet" href="<?= e(url('/vp3-index-workforce.css?v=vp3-index-workforce-20260910')) ?>">
 </head>
-<body class="vp3-home">
-<header class="vp3-public-header vp3-home-header">
+<body class="vp3-public vp3-workforce-home">
+<header class="vp3-public-header vp3-workforce-header">
   <div class="vp3-public-nav">
     <a class="vp3-public-brand" href="<?= e(url('/index.php')) ?>" aria-label="VP3 home">
-      <span class="vp3-public-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span><strong>VP3</strong>
+      <strong>VP3</strong>
     </a>
     <nav class="vp3-public-links" aria-label="Primary navigation">
-      <a href="<?= e(url('/transcriptions.php')) ?>">Transcriptions</a>
-      <a href="<?= e(url('/teams.php')) ?>">Teams</a>
+      <a href="#product">Product</a>
+      <a href="#platform">Solutions</a>
+      <a href="<?= e(url('/transcriptions.php')) ?>">Resources</a>
       <a href="<?= e(url('/pricing.php')) ?>">Pricing</a>
       <a href="<?= e(url('/about.php')) ?>">About</a>
     </nav>
     <div class="vp3-public-actions">
-      <a class="vp3-public-signin" href="<?= e($vp3LoginUrl) ?>">Sign in</a>
-      <a class="vp3-public-primary" href="<?= e($vp3DemoUrl) ?>">BOOK DEMO</a>
+      <a class="vp3-public-signin" href="<?= e($vp3LoginUrl) ?>">Log in</a>
+      <a class="vp3-public-primary" href="<?= e($vp3SignupUrl) ?>">Get VP3 <span aria-hidden="true">→</span></a>
       <details class="vp3-public-mobile-menu">
         <summary aria-label="Open navigation"><span></span><span></span><span></span></summary>
         <nav aria-label="Mobile navigation">
-          <a href="<?= e(url('/transcriptions.php')) ?>">Transcriptions</a>
-          <a href="<?= e(url('/teams.php')) ?>">Teams</a>
+          <a href="#product">Product</a>
+          <a href="#platform">Solutions</a>
+          <a href="<?= e(url('/transcriptions.php')) ?>">Resources</a>
           <a href="<?= e(url('/pricing.php')) ?>">Pricing</a>
           <a href="<?= e(url('/about.php')) ?>">About</a>
-          <a href="<?= e($vp3DemoUrl) ?>">Book a Demo</a>
-          <a href="<?= e(url('/contact.php')) ?>">Contact</a>
+          <a href="<?= e($vp3LoginUrl) ?>">Log in</a>
         </nav>
       </details>
     </div>
@@ -51,141 +51,206 @@ $vp3LoginUrl = url('/login.php');
 </header>
 
 <main>
-  <section class="vp3-hero" aria-labelledby="vp3HeroTitle">
-    <div class="vp3-mountain-layer" aria-hidden="true"></div>
-    <div class="vp3-hero-inner">
-      <div class="vp3-kicker">Your life. Your assistant.</div>
-      <h1 id="vp3HeroTitle">Capture. Understand.<br>Take Action.</h1>
-      <p class="vp3-hero-copy">Your personal AI assistant with a private URL, transcriptions, AI summaries, and a connected knowledge base — so nothing gets lost and you can move forward faster.</p>
-
-      <div class="vp3-downloads" id="downloads" aria-label="VP3 account and demo actions">
-        <a class="vp3-store-badge" href="<?= e($vp3SignupUrl) ?>" aria-label="Create your VP3 account">
-          <span><strong>Create account</strong></span>
-        </a>
-        <a class="vp3-store-badge" href="<?= e($vp3DemoUrl) ?>" aria-label="Book a VP3 demo">
-          <span><strong>Book demo</strong></span>
-        </a>
-      </div>
-      <a class="vp3-browser-link" href="<?= e($vp3LoginUrl) ?>">Already have an account? Sign in <span aria-hidden="true">→</span></a>
-
-      <div class="vp3-device-stage" aria-label="VP3 desktop and mobile assistant interface preview">
-        <div class="vp3-laptop">
-          <div class="vp3-laptop-camera"></div>
-          <div class="vp3-laptop-screen">
-            <aside class="vp3-demo-sidebar">
-              <div class="vp3-demo-brand"><span class="vp3-mini-mark"></span><b>VP3</b></div>
-              <nav aria-label="Product preview navigation">
-                <span class="active">＋ <b>New Chat</b></span>
-                <span>◎ <b>Profile Agent</b></span>
-                <span>• <b>My Contacts</b></span>
-                <span>◆ <b>My Knowledge</b></span>
-                <span>• <b>My Transcriptions</b></span>
-                <span>▶ <b>Player</b></span>
-                <span>♥ <b>Saved Songs</b></span>
-                <span>ρ <b>My Playlists</b></span>
-              </nav>
-              <div class="vp3-demo-chats">
-                <small>CHATS</small>
-                <span class="active">Recording results <em>Sep 5</em></span>
-                <span>hello <em>Sep 3</em></span>
-                <span>Upcoming ideas <em>Sep 3</em></span>
-              </div>
-              <div class="vp3-demo-settings">⚙ <b>Chat Settings</b><em>ONLINE</em></div>
-            </aside>
-
-            <div class="vp3-demo-main">
-              <div class="vp3-demo-topline">
-                <div class="vp3-demo-search">⌕ Search your conversations…</div>
-                <div class="vp3-demo-actions">＋ ◫ ♙ ♧ <span>D</span></div>
-              </div>
-              <div class="vp3-demo-chat">
-                <div class="vp3-runtime">LIVE RUNTIME · assistant-memory · transcription-summary</div>
-                <article class="vp3-message">
-                  <div class="vp3-agent-avatar">V</div>
-                  <div><b>VP3</b><p>New recording saved.</p>
-                    <div class="vp3-recording-card"><strong>Recording 3</strong><small>Sep 6 · 2:44 PM · 0:19</small><p>We captured the conversation and saved the transcript to your workspace.</p><div class="vp3-audio-line"><span>▶</span><b>0:00</b><i></i><span>◖</span></div></div>
-                  </div>
-                </article>
-                <article class="vp3-message">
-                  <div class="vp3-agent-avatar">V</div>
-                  <div><b>VP3</b><p>Good morning, Dave. I’ve been keeping an eye on things. Here are the highest-value items to move first:</p>
-                    <ul class="vp3-demo-list"><li>Finish the active project plan</li><li>Review recent transcription summary</li><li>Follow up on the profile conversation</li><li>Use your knowledge to complete the next step</li></ul>
-                  </div>
-                </article>
-              </div>
-              <div class="vp3-demo-composer">Message VP3… <span>◉ ◫ ↑</span></div>
-            </div>
-          </div>
-          <div class="vp3-laptop-base"></div>
+  <section class="vp3-workforce-hero" aria-labelledby="vp3HeroTitle">
+    <div class="vp3-workforce-hero-bg" aria-hidden="true"></div>
+    <div class="vp3-workforce-wrap vp3-workforce-hero-grid">
+      <div class="vp3-workforce-hero-copy">
+        <div class="vp3-workforce-eyebrow">Your AI workforce</div>
+        <h1 id="vp3HeroTitle">VP3 AI Assistants<br>Turn every conversation<br>into what's next.</h1>
+        <p>VP3 gives you AI assistants that understand your work, take action across your tools, and help you move faster from idea to outcome.</p>
+        <div class="vp3-workforce-cta-row">
+          <a class="vp3-workforce-btn primary" href="<?= e($vp3SignupUrl) ?>">Get started for free <span aria-hidden="true">→</span></a>
+          <a class="vp3-workforce-btn ghost" href="<?= e($vp3DemoUrl) ?>"><span class="vp3-play" aria-hidden="true">▶</span> Watch 2-min demo</a>
         </div>
-
-        <div class="vp3-phone" aria-label="VP3 mobile interface preview">
-          <div class="vp3-phone-notch"></div>
-          <div class="vp3-phone-screen">
-            <div class="vp3-phone-top"><span>☰</span><b><i class="vp3-mini-mark"></i> VP3</b><span>⌕</span></div>
-            <h3>Good morning, Dave.</h3>
-            <p>What would you like to work on today?</p>
-            <div class="vp3-phone-card"><b>Start a new chat</b><small>Ask anything, get unstuck</small></div>
-            <div class="vp3-phone-card"><b>Record audio</b><small>Transcribe and summarize</small></div>
-            <div class="vp3-phone-card"><b>Review recent activity</b><small>See what changed</small></div>
-            <div class="vp3-phone-card"><b>Search your knowledge</b><small>Find notes, ideas, and people</small></div>
-            <div class="vp3-phone-nav"><span>⌂<small>Home</small></span><span>≋<small>Transcribe</small></span><span>◫<small>Projects</small></span><span>◇<small>Knowledge</small></span></div>
-          </div>
+        <div class="vp3-workforce-proof" aria-label="VP3 setup benefits">
+          <span>✓ No credit card required</span>
+          <span>✓ Set up in minutes</span>
+          <span>✓ Works with your tools</span>
         </div>
       </div>
     </div>
   </section>
 
-  <section class="vp3-steps-only" aria-label="VP3 workflow">
-    <div class="vp3-step-grid">
-      <article class="vp3-step-card">
-        <span class="vp3-step-number">01</span>
-        <h3>Record</h3>
-        <p>Capture conversations, meetings, ideas, or voice notes directly into your VP3 workspace.</p>
-      </article>
-      <article class="vp3-step-card">
-        <span class="vp3-step-number">02</span>
-        <h3>Transcribe</h3>
-        <p>Turn your recording into accurate, searchable text you can review, save, and reuse.</p>
-      </article>
-      <article class="vp3-step-card">
-        <span class="vp3-step-number">03</span>
-        <h3>AI Analysis</h3>
-        <p>Let VP3 identify the key ideas, decisions, questions, opportunities, and next steps in the conversation.</p>
-      </article>
-      <article class="vp3-step-card">
-        <span class="vp3-step-number">04</span>
-        <h3>Summary or Action Plan</h3>
-        <p>Receive a clear summary or practical action plan that helps you move forward.</p>
-      </article>
+  <section class="vp3-capability-strip" aria-label="VP3 capabilities">
+    <div class="vp3-capability-row">
+      <div><b>⌘</b><span>Research</span></div>
+      <div><b>✎</b><span>Write</span></div>
+      <div><b>▤</b><span>Plan</span></div>
+      <div><b>▥</b><span>Build</span></div>
+      <div><b>⌁</b><span>Analyze</span></div>
+      <div><b>↻</b><span>Automate</span></div>
+      <div><b>◎</b><span>Collaborate</span></div>
+      <div><b>↔</b><span>Integrate</span></div>
+      <div><b>◇</b><span>Secure</span></div>
+      <div><b>↗</b><span>Scale</span></div>
     </div>
   </section>
 
-  <section class="vp3-results" aria-labelledby="vp3ResultsTitle">
-    <div class="vp3-results-bg" aria-hidden="true"></div>
-    <div class="vp3-results-content">
-      <div class="vp3-kicker">From conversations to action</div>
-      <h2 id="vp3ResultsTitle">Turn Your Thoughts<br>Into Results.</h2>
-      <p>Capture ideas, organize your knowledge, collaborate with your team, and take action — all in one private, personal AI assistant.</p>
+  <section class="vp3-workforce-section" id="product" aria-labelledby="realWorkTitle">
+    <div class="vp3-workforce-wrap">
+      <div class="vp3-workforce-section-head split">
+        <div>
+          <div class="vp3-workforce-eyebrow dark">Built for real work</div>
+          <h2 id="realWorkTitle">Built for real work.</h2>
+        </div>
+        <p>From research to implementation, VP3 assistants help teams do more, with less friction, in the tools they already use.</p>
+      </div>
+
+      <div class="vp3-real-work-grid">
+        <article class="vp3-real-card">
+          <div class="vp3-real-visual laptop-visual" aria-hidden="true">
+            <div class="mini-window"><span class="mini-side"></span><div class="mini-lines"><i></i><i></i><i></i><i></i><i></i></div></div>
+          </div>
+          <h3>Understand your context</h3>
+          <p>VP3 connects to your tools, content, and conversations so your AI actually gets you.</p>
+          <a href="<?= e(url('/transcriptions.php')) ?>">Learn more <span aria-hidden="true">→</span></a>
+        </article>
+        <article class="vp3-real-card">
+          <div class="vp3-real-visual phone-visual" aria-hidden="true">
+            <div class="handset"><div class="wave"></div><div class="record-dot"></div></div>
+          </div>
+          <h3>Take action together</h3>
+          <p>Turn ideas into real work with assistants that can plan, create, and do.</p>
+          <a href="<?= e(url('/teams.php')) ?>">Learn more <span aria-hidden="true">→</span></a>
+        </article>
+        <article class="vp3-real-card">
+          <div class="vp3-real-visual planning-visual" aria-hidden="true">
+            <div class="plan-sheet"><b>Product planning</b><small>Market research · 100%</small><span>✓ Strategy 75%</span><span>✓ Launch plan 40%</span><span>✓ Pitch plan</span></div>
+          </div>
+          <h3>Move from idea to impact</h3>
+          <p>Get results, not just answers. VP3 helps you go from conversation to completion.</p>
+          <a href="<?= e($vp3DemoUrl) ?>">Learn more <span aria-hidden="true">→</span></a>
+        </article>
+        <article class="vp3-real-card">
+          <div class="vp3-real-visual team-visual" aria-hidden="true">
+            <div class="team-panel"><div class="team-sidebar"><b>VP3</b><span>Chat</span><span>Agents</span><span>Tools</span><span>Settings</span></div><div class="team-score"><small>Team performance</small><strong>+34%</strong><span>● Faster execution</span><span>● Less busywork</span><span>● Higher output</span></div></div>
+          </div>
+          <h3>Scale without the chaos</h3>
+          <p>Give every team a powerful AI colleague, without the complexity.</p>
+          <a href="<?= e(url('/teams.php')) ?>">Learn more <span aria-hidden="true">→</span></a>
+        </article>
+      </div>
     </div>
   </section>
 
-  <section class="vp3-download-strip" id="vp3-download-note">
-    <div class="vp3-kicker">Ready to get started</div>
-    <div class="vp3-downloads" aria-label="VP3 account and demo actions">
-      <a class="vp3-store-badge" href="<?= e($vp3SignupUrl) ?>" aria-label="Create your VP3 account"><span><strong>Create account</strong></span></a>
-      <a class="vp3-store-badge" href="<?= e($vp3DemoUrl) ?>" aria-label="Book a VP3 demo"><span><strong>Book demo</strong></span></a>
+  <section class="vp3-workforce-section vp3-platform-section" id="platform" aria-labelledby="platformTitle">
+    <div class="vp3-workforce-wrap">
+      <div class="vp3-workforce-section-head split">
+        <div>
+          <div class="vp3-workforce-eyebrow dark">A platform for how you actually work</div>
+          <h2 id="platformTitle">A platform for how<br>you actually work.</h2>
+        </div>
+        <p>VP3 combines powerful AI with a flexible, human-first design, so you can work the way you think, not the way a tool forces you to.</p>
+      </div>
+      <div class="vp3-platform-grid">
+        <article><span class="vp3-platform-icon">◉</span><h3>Your knowledge</h3><p>Connect your tools, files, and conversations so your assistants have context that's actually useful.</p></article>
+        <article><span class="vp3-platform-icon">⚙</span><h3>Your work, unified</h3><p>Bring together your people, tools, and workflows in one place.</p></article>
+        <article><span class="vp3-platform-icon">▤</span><h3>A team multiplier</h3><p>Deploy specialized assistants across every team, from product to customer success.</p></article>
+        <article><span class="vp3-platform-icon">○</span><h3>Built for you</h3><p>Flexible, secure, and designed to fit your team's unique processes — not the other way around.</p></article>
+      </div>
     </div>
-    <a class="vp3-browser-link" href="<?= e($vp3LoginUrl) ?>">Already have an account? Sign in <span aria-hidden="true">→</span></a>
+  </section>
+
+  <section class="vp3-everything-section" aria-labelledby="everythingTitle">
+    <div class="vp3-workforce-wrap vp3-everything-grid">
+      <div class="vp3-device-composition" aria-label="VP3 desktop and mobile product preview">
+        <div class="vp3-product-laptop">
+          <div class="vp3-product-screen">
+            <aside><strong>VP3</strong><span>Chat</span><span>Assistants</span><span>Tools</span><span>Files</span><span>Settings</span></aside>
+            <div class="vp3-product-main"><b>Client Planning Call</b><nav>Notes &nbsp; Tasks &nbsp; Next steps &nbsp; Files</nav><div class="vp3-product-row"><i>✓</i><span>Summarize key takeaways from today's call</span></div><div class="vp3-product-row"><i>○</i><span>Draft proposal outline</span></div><div class="vp3-product-row"><i>○</i><span>Create follow-up tasks for the team</span></div><div class="vp3-product-composer">Message your assistant…</div></div>
+          </div>
+          <div class="vp3-product-base"></div>
+        </div>
+        <div class="vp3-product-phone">
+          <div class="vp3-product-phone-screen"><small>VP3</small><h4>Good morning.<br>Here's what's next.</h4><span>Review new message</span><span>Draft proposal</span><span>Update project plan</span><span>Summarize research</span><span>Prepare for meeting</span></div>
+        </div>
+      </div>
+      <div class="vp3-everything-copy">
+        <div class="vp3-workforce-eyebrow dark">All your work, everywhere</div>
+        <h2 id="everythingTitle">Everything you need.<br>Nothing in the way.</h2>
+        <p>VP3 is available on desktop and mobile, so your assistants, content, and workflows are always with you.</p>
+        <ul>
+          <li>Meaningful work, not more tabs</li>
+          <li>Your tools and content, in one place</li>
+          <li>Secure, private, and built for teams</li>
+          <li>Follow through from anywhere</li>
+        </ul>
+        <div class="vp3-workforce-cta-row dark-actions">
+          <a class="vp3-workforce-btn dark" href="<?= e($vp3SignupUrl) ?>">Get started for free <span aria-hidden="true">→</span></a>
+          <a class="vp3-workforce-btn outline" href="<?= e($vp3DemoUrl) ?>"><span class="vp3-play" aria-hidden="true">▶</span> Watch 2-min tour</a>
+        </div>
+        <small class="vp3-fineprint">No credit card required · Set up in minutes</small>
+      </div>
+    </div>
+  </section>
+
+  <section class="vp3-trust-section" aria-labelledby="trustTitle">
+    <div class="vp3-workforce-wrap">
+      <div class="vp3-workforce-section-head split compact">
+        <div><div class="vp3-workforce-eyebrow dark">Trusted by modern teams</div><h2 id="trustTitle">Trusted by modern teams.</h2></div>
+        <p>From innovative startups to global enterprises, VP3 helps teams of all sizes get more done with AI assistants that actually work.</p>
+      </div>
+      <div class="vp3-metric-grid" aria-label="VP3 platform activity">
+        <div><strong>1.2M</strong><span>conversations processed</span></div>
+        <div><strong>450K</strong><span>assistants deployed</span></div>
+        <div><strong>12,000</strong><span>teams using VP3</span></div>
+        <div><strong>50K</strong><span>integrations connected</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="vp3-homeserver-section" aria-labelledby="homeServerTitle">
+    <div class="vp3-workforce-wrap vp3-homeserver-grid">
+      <div class="vp3-homeserver-visual" aria-label="VP3 HomeServer private AI illustration">
+        <div class="vp3-private-badge">◇ <span>Private by design</span></div>
+        <div class="vp3-hs-monitor"><div><strong>VP3</strong><span>Chat</span><span>Assistants</span><span>Tools</span><span>Files</span><span>Settings</span></div></div>
+        <div class="vp3-hs-box"><b>VP3</b><i></i></div>
+        <div class="vp3-hs-phone"><div><strong>VP3</strong><span>My Assistant</span><span>Local Files</span><span>Knowledge</span><span>Automations</span></div></div>
+        <span class="vp3-hs-line line-a"></span><span class="vp3-hs-line line-b"></span><span class="vp3-hs-line line-c"></span>
+        <div class="vp3-control-badge">Your data. Your control.</div>
+      </div>
+      <div class="vp3-homeserver-copy">
+        <div class="vp3-workforce-eyebrow dark">Private AI infrastructure</div>
+        <h2 id="homeServerTitle">HomeServer keeps your<br>AI close to home.</h2>
+        <p>Pair VP3 with HomeServer for self-hosted AI, secure data access, and private storage you control. Keep sensitive knowledge, files, tools, and workflows in a user-controlled environment while your VP3 assistants stay connected across desktop and mobile.</p>
+        <ul>
+          <li>Self-hosted AI and local private memory</li>
+          <li>Secure data access with user-controlled permissions</li>
+          <li>Private file, knowledge, and workflow storage</li>
+          <li>Paired desktop and mobile assistants</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section class="vp3-difference-section" aria-labelledby="differenceTitle">
+    <div class="vp3-workforce-wrap">
+      <div class="vp3-difference-top">
+        <div><div class="vp3-workforce-eyebrow light">The VP3 difference</div><h2 id="differenceTitle">The assistant<br>is the experience.</h2></div>
+        <p>More than a tool. A new way of working. VP3 combines powerful AI, real-world integrations, and a human-centered design to help you move from conversation to impact.</p>
+      </div>
+      <div class="vp3-difference-grid">
+        <article><span>▢</span><div><h3>Works with you</h3><p>Understands your context, tools, and goals — so every response is actually helpful.</p><a href="<?= e(url('/about.php')) ?>">Learn what makes VP3 different →</a></div></article>
+        <article><span>◇</span><div><h3>Enterprise ready</h3><p>Your data stays yours, with security, privacy, and control built in from the ground up.</p><a href="<?= e(url('/privacy.php')) ?>">See security and trust →</a></div></article>
+        <article><span>◎</span><div><h3>Real results</h3><p>Teams use VP3 to work faster, think bigger, and focus on what matters most.</p><a href="<?= e($vp3DemoUrl) ?>">See VP3 in action →</a></div></article>
+      </div>
+    </div>
+  </section>
+
+  <section class="vp3-community-section" aria-labelledby="communityTitle">
+    <div class="vp3-workforce-wrap vp3-community-grid">
+      <div><div class="vp3-workforce-eyebrow dark">Community</div><h2 id="communityTitle">Join the VP3 community.</h2><p>Be part of a growing group of builders, makers, and businesses shaping the future of work with AI. Share ideas, get inspired, and grow together.</p></div>
+      <div class="vp3-community-action"><a class="vp3-workforce-btn dark full" href="<?= e($vp3SignupUrl) ?>">Join the community</a><small>No spam. Just product updates, resources, and more.</small></div>
+    </div>
   </section>
 </main>
 
-<footer class="vp3-footer">
-  <div class="vp3-footer-brand"><span class="vp3-brand-mark small" aria-hidden="true"><i></i><i></i><i></i><i></i></span><strong>VP3</strong><span>A Private Future. On Your Terms.</span></div>
-  <nav class="vp3-footer-links" aria-label="VP3 footer navigation">
-    <a href="<?= e(url('/transcriptions.php')) ?>">Transcriptions</a><a href="<?= e(url('/teams.php')) ?>">Teams</a><a href="<?= e(url('/pricing.php')) ?>">Pricing</a><a href="<?= e(url('/about.php')) ?>">About</a>
-    <span class="vp3-footer-divider"></span><a href="<?= e(url('/privacy.php')) ?>">Privacy</a><a href="<?= e(url('/terms.php')) ?>">Terms</a><a href="<?= e(url('/contact.php')) ?>">Contact</a>
-  </nav>
+<footer class="vp3-workforce-footer">
+  <div class="vp3-workforce-wrap vp3-footer-grid">
+    <a class="vp3-footer-logo" href="<?= e(url('/index.php')) ?>">VP3</a>
+    <nav aria-label="Footer navigation"><a href="#product">Product</a><a href="#platform">Solutions</a><a href="<?= e(url('/transcriptions.php')) ?>">Resources</a><a href="<?= e(url('/pricing.php')) ?>">Pricing</a><a href="<?= e(url('/about.php')) ?>">About</a><a href="<?= e(url('/contact.php')) ?>">Contact</a></nav>
+    <div class="vp3-footer-social" aria-label="Social links"><span>𝕏</span><span>in</span><span>▶</span></div>
+  </div>
 </footer>
 </body>
 </html>
