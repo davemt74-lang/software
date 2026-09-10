@@ -68,15 +68,18 @@ assert.equal(widget.includes('chat-settings-v237.js'), false, 'Team Chat widget 
 assert.match(widget, /soundEnabled/);
 assert.match(widget, /socialChatEnabled/);
 
-// v109 remains the compatibility URL, while v320 is the canonical scoped Team Chat runtime.
-// Preserve the original Chat Settings contract by following that delegation instead of
-// requiring implementation details to remain duplicated in the compatibility shim.
+// v109 remains the compatibility URL, while v320 is the scoped Team Chat adapter.
+// Chat Settings still govern visibility/sound/presence, but human message persistence
+// and read state now come from the canonical v3.70 human-messaging domain.
 assert.match(teamApiCompat, /require __DIR__\.'\/team-chat-v320\.php'/);
 assert.match(teamApi, /chat_settings_get_v237/);
 assert.match(teamApi, /social_chat_disabled/);
 assert.match(teamApi, /COALESCE\(p\.presence_mode,'online'\)='online'/);
-assert.match(teamApi, /\$messages=\[\];if\(\$since>0\)/);
-assert.match(teamApi, /vp3_social_shared_workspace_v320/, 'Team Chat settings must operate inside the scoped workspace runtime');
+assert.match(teamApi, /\$messages=\[\];if\(\$since>0&&\$cursor>\$since\)/);
+assert.match(teamApi, /vp3_human_shared_workspace_v370/, 'Team Chat settings must operate inside the current shared-workspace boundary');
+assert.match(teamApi, /human_messages/, 'Team Chat compatibility runtime must read the canonical human message ledger');
+assert.match(teamApi, /vp3_human_mark_read_v370/, 'Team Chat read state must use the canonical human read cursor');
+assert.doesNotMatch(teamApi, /INSERT\s+INTO\s+team_direct_messages/i, 'Team Chat must not create a parallel direct-message history');
 
 assert.match(teamJs, /AudioContext/);
 assert.match(teamJs, /playIncomingSound/);
