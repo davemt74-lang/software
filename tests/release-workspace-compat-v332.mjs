@@ -14,9 +14,15 @@ const bootstrap = read('includes/bootstrap.php');
 assert.match(legacy, /function release_v105_workspace_owner_id/);
 assert.match(legacy, /release_workspace_v332_owner_id/);
 assert.doesNotMatch(legacy, /SELECT artist_user_id[\s\S]{0,180}LIMIT 1/, 'legacy release owner must never be guessed from the first Team membership');
-for (const fn of ['plans','plan','items','resources','integrations','enqueue_action','agent_context']) {
-  assert.match(legacy, new RegExp(`release_workspace_v332_[a-z_]+`));
-}
+for (const delegate of [
+  'release_workspace_v332_plans',
+  'release_workspace_v332_plan',
+  'release_workspace_v332_items',
+  'release_workspace_v332_owner_resources',
+  'release_workspace_v332_owner_integrations',
+  'release_workspace_v332_enqueue_action',
+  'release_workspace_v332_agent_context',
+]) assert.match(legacy, new RegExp(delegate));
 
 // Compatibility context resolves an explicit release workspace first, then the
 // requested/session active workspace; owner_user_id is attribution only.
