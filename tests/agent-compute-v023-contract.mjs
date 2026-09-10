@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 const root=new URL('../',import.meta.url);
 const helper=fs.readFileSync(new URL('includes/agent-compute-v023.php',root),'utf8');
+const runtime=fs.readFileSync(new URL('includes/agent-runtime-routing-v420.php',root),'utf8');
 const delegation=fs.readFileSync(new URL('includes/homeserver-agent-v025.php',root),'utf8');
 const bootstrap=fs.readFileSync(new URL('includes/bootstrap.php',root),'utf8');
 const api=fs.readFileSync(new URL('api/user-agent-system-v236.php',root),'utf8');
@@ -14,6 +15,7 @@ const css=fs.readFileSync(new URL('agent-compute-v023.css',root),'utf8');
 const migration=fs.readFileSync(new URL('upgrade-vp3-agent-compute-v023.sql',root),'utf8');
 
 assert.match(bootstrap,/agent-compute-v023\.php/);
+assert.match(bootstrap,/agent-compute-v023\.php[\s\S]*agent-runtime-routing-v420\.php/);
 assert.match(helper,/function agent_compute_v023_preferences/);
 assert.match(helper,/'inherit'/);
 assert.match(helper,/function agent_compute_v023_policy_from_values/);
@@ -36,16 +38,25 @@ assert.match(api,/save_agent_compute_preference/);
 assert.match(api,/agent_compute_v023_save_override/);
 assert.match(api,/agent_compute_v023_delete_override/);
 
-assert.match(chat,/agent_compute_v023_effective\(\$pdo,\$userId,\$activeAgentId\)/);
+// v0.23 remains the sparse per-Agent preference/ownership layer. Section 10
+// consumes it centrally so Chat itself does not create a parallel policy path.
+assert.match(runtime,/agent_compute_v023_override\(\$pdo,\$userId,max\(0,\$agentId\)\)/);
+assert.match(runtime,/agent_compute_v023_policy_from_values\(\$account,\$override\)/);
+assert.match(runtime,/agent_compute_v023_assert_owned_agent\(\$pdo,\$userId,\$agentId\)/);
+assert.match(runtime,/agent_compute_v023_public_policy\(\$policy,\$agentId\)/);
+assert.match(chat,/vp3_agent_runtime_plan_v420\(\$pdo,\$user,\$activeAgentId,'chat'\)/);
 assert.match(chat,/effective_preference/);
-assert.match(chat,/agent_compute_v023_public_policy\(\$computePolicy,\$activeAgentId\)/);
+assert.doesNotMatch(chat,/agent_compute_v023_effective\(/);
+assert.doesNotMatch(chat,/agent_compute_v023_public_policy\(/);
 assert.match(chat,/chat_execution_v019_vp3_direct\(\$user\)/);
-assert.match(chat,/chat_execution_v019_fallback\(\$user,\$homePaired,\$homeAttempted\)/);
-assert.match(chat,/homeserver_agent_v025_chat\(\$user,\$query,\$conversationId,\$history,\$principal,\$activeAgent,\$agentContext,!empty\(\$computePlan\['homeserver_cloud_allowed'\]\)\)/);
+assert.match(chat,/chat_execution_v019_fallback\(\$user,!empty\(\$runtimePlan\['home'\]\['paired'\]\),true\)/);
+assert.match(chat,/homeserver_agent_v025_chat\(\$user,\$query,\$conversationId,\$history,\$principal,\$activeAgent,\$agentContext,!empty\(\$runtimePlan\['homeserver_cloud_allowed'\]\)\)/);
 assert.match(delegation,/homeserver_agent_v018_chat\(\$user,\$query,\$conversationId,\$cloudAllowed\)/);
 const toolIndex=chat.indexOf("release_v105_chat_tool");
-const homeOnlyGuardIndex=chat.indexOf("HomeServer-only compute is selected for this Agent");
-assert.ok(toolIndex>=0&&homeOnlyGuardIndex>toolIndex,'Tools must run before HomeServer-only compute can block model execution.');
+const runtimePlanIndex=chat.indexOf("vp3_agent_runtime_plan_v420");
+assert.ok(toolIndex>=0&&runtimePlanIndex>toolIndex,'Deterministic tools must run before model compute routing is planned.');
+assert.match(chat,/vp3_agent_runtime_block_message_v420/);
+assert.doesNotMatch(chat,/homeserver_agent_v018_write_cloud_usage\(/);
 
 assert.match(ui,/Account compute default/);
 assert.match(ui,/function agentComputeControl/);
@@ -58,4 +69,4 @@ assert.match(loader,/agent-compute-v023\.css/);
 assert.match(loader,/agent-compute-v023-20260908/);
 assert.match(shell,/agent-compute-v023-20260908/);
 
-console.log('VP3 v0.23 per-Agent compute policy contract passed through v0.25 delegation');
+console.log('VP3 v0.23 per-Agent compute policy compatibility contract passed through canonical v4.20 runtime routing');
