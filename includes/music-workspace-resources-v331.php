@@ -47,6 +47,31 @@ function music_workspace_resources_v331_boot(): void
     });
 }
 
+/**
+ * Prepare a catalog track for the mature Stem Studio without allowing a
+ * Producer to self-assign an arbitrary workspace track by guessing its id.
+ */
+function music_workspace_resources_v331_prepare_studio_track(PDO $pdo,int $workspaceId,int $catalogTrackId,array $user): array
+{
+    if(!music_workspace_resources_v330_can_access($pdo,$workspaceId,$user))throw new RuntimeException('This Music Workspace is not available to your account.');
+    $catalog=music_workspace_resources_v330_catalog_track($pdo,$workspaceId,$catalogTrackId);
+    if(!$catalog)throw new RuntimeException('Track is not available in this Music Workspace.');
+
+    $role=music_workspace_resources_v330_member_role($pdo,$workspaceId,(int)($user['id']??0));
+    if($role==='producer'){
+        $sourceId=(int)($catalog['source_track_id']??0);
+        if($sourceId<1)throw new RuntimeException('This track has not been shared with your production role.');
+        $stmt=$pdo->prepare('SELECT * FROM tracks WHERE id=? AND workspace_id=? AND producer_user_id=? LIMIT 1');
+        $stmt->execute([$sourceId,$workspaceId,(int)$user['id']]);
+        $track=$stmt->fetch();
+        if(!$track||!music_workspace_resources_v330_can_manage_track($pdo,$track,$user))throw new RuntimeException('This track has not been shared with your production role.');
+        return $track;
+    }
+
+    if(!music_workspace_resources_v330_can_manage($pdo,$workspaceId,'tracks',$user))throw new RuntimeException('You do not have production access to this Music Workspace.');
+    return music_workspace_resources_v330_ensure_production_track($pdo,$workspaceId,$catalogTrackId,$user);
+}
+
 function music_workspace_resources_v331_release_types(): array
 {
     return function_exists('release_v105_release_types')?release_v105_release_types():['single'=>'Single','ep'=>'EP','album'=>'Album','video'=>'Video','show'=>'Show / Event','campaign'=>'Campaign','other'=>'Other'];
