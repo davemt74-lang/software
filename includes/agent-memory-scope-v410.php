@@ -6,7 +6,8 @@ declare(strict_types=1);
  *
  * The durable system Agent namespace is represented by user_agent_id=NULL.
  * Custom Agents retain their exact user_agents.id even after retirement. Brain
- * memory must never fall back from a custom Agent to the system namespace.
+ * memory and archived conversation history must never fall back from a custom
+ * Agent to the system namespace.
  */
 const VP3_AGENT_MEMORY_SCOPE_V410='vp3-agent-memory-scope-v410-20260910';
 const VP3_AGENT_MEMORY_SCOPE_VERSION_V410=410;
@@ -25,12 +26,15 @@ function vp3_agent_memory_scope_schema_ready_v410(?PDO $pdo=null): bool
     $pdo ??= db();
     if(!$pdo
         || !table_exists('agent_memory_items')
+        || !table_exists('agent_chat_archive')
         || !table_exists('chat_conversations')
         || !column_exists('agent_memory_items','user_agent_id')
         || !column_exists('agent_memory_items','memory_scope_version')
+        || !column_exists('agent_chat_archive','user_agent_id')
         || !column_exists('chat_conversations','user_agent_id')
         || !vp3_agent_memory_scope_index_exists_v410($pdo,'agent_memory_items','idx_agent_memory_agent_type_v410')
-        || !vp3_agent_memory_scope_index_exists_v410($pdo,'agent_memory_items','idx_agent_memory_agent_occurrence_v410')){
+        || !vp3_agent_memory_scope_index_exists_v410($pdo,'agent_memory_items','idx_agent_memory_agent_occurrence_v410')
+        || !vp3_agent_memory_scope_index_exists_v410($pdo,'agent_chat_archive','idx_agent_archive_agent_created_v410')){
         return false;
     }
     try{
@@ -43,7 +47,7 @@ function vp3_agent_memory_scope_ensure_schema_v410(?PDO $pdo=null): void
 {
     $pdo ??= db();
     if(!$pdo)throw new RuntimeException('Database connection is unavailable.');
-    if(!table_exists('agent_memory_items'))return;
+    if(!table_exists('agent_memory_items')||!table_exists('agent_chat_archive'))return;
     if($pdo->inTransaction()&&!vp3_agent_memory_scope_schema_ready_v410($pdo)){
         throw new RuntimeException('Agent memory scope schema must be installed before starting a Brain transaction.');
     }
@@ -53,10 +57,22 @@ function vp3_agent_memory_scope_ensure_schema_v410(?PDO $pdo=null): void
     if(!column_exists('agent_memory_items','memory_scope_version')){
         $pdo->exec('ALTER TABLE agent_memory_items ADD COLUMN memory_scope_version SMALLINT UNSIGNED NOT NULL DEFAULT 0 AFTER memory_hash');
     }
+    if(!column_exists('agent_chat_archive','user_agent_id')){
+        $pdo->exec('ALTER TABLE agent_chat_archive ADD COLUMN user_agent_id INT UNSIGNED NULL AFTER user_id');
+    }
+
+    // Backfill durable archive identity from the authoritative conversation when
+    // that conversation still exists. INNER JOIN is intentional: an archive that
+    // has outlived a deleted conversation is never overwritten on later upgrades.
+    // Pre-v4.10 orphan rows have no recoverable Agent identity and safely remain
+    // in the legacy system-Agent namespace rather than being guessed.
+    $pdo->exec('UPDATE agent_chat_archive a
+                JOIN chat_conversations c ON c.id=a.conversation_id AND c.user_id=a.user_id
+                SET a.user_agent_id=c.user_agent_id');
 
     // Existing owner-wide memories predate durable Agent identity and therefore
     // remain in the system-Agent namespace. If a partially upgraded row already
-    // has a custom Agent id, preserve it while re-hashing into that Agent's
+    // has a custom Agent id, preserve it while re-hashing into that Agent\'s
     // namespace. This keeps the migration restart-safe and collision-safe.
     $pdo->exec("UPDATE agent_memory_items
                SET memory_hash=SHA1(CONCAT('v410|agent:',COALESCE(user_agent_id,0),'|',memory_hash)),
@@ -68,6 +84,9 @@ function vp3_agent_memory_scope_ensure_schema_v410(?PDO $pdo=null): void
     }
     if(!vp3_agent_memory_scope_index_exists_v410($pdo,'agent_memory_items','idx_agent_memory_agent_occurrence_v410')){
         $pdo->exec('ALTER TABLE agent_memory_items ADD INDEX idx_agent_memory_agent_occurrence_v410 (user_id,user_agent_id,occurrence_count,last_seen_at)');
+    }
+    if(!vp3_agent_memory_scope_index_exists_v410($pdo,'agent_chat_archive','idx_agent_archive_agent_created_v410')){
+        $pdo->exec('ALTER TABLE agent_chat_archive ADD INDEX idx_agent_archive_agent_created_v410 (user_id,user_agent_id,created_at,id)');
     }
 }
 
@@ -138,13 +157,10 @@ function vp3_agent_memory_scope_from_conversation_v410(array $user,int $conversa
     return $agentId;
 }
 
-function vp3_agent_memory_scope_archive_where_v410(?int $userAgentId,string $archiveAlias='a',string $conversationAlias='c'): array
+function vp3_agent_memory_scope_archive_where_v410(?int $userAgentId,string $archiveAlias='a'): array
 {
-    [$scope,$params]=vp3_agent_memory_scope_sql_v410($userAgentId,$conversationAlias);
-    return [
-        $archiveAlias.'.user_id=? AND '.$conversationAlias.'.user_id='.$archiveAlias.'.user_id AND '.$scope,
-        $params,
-    ];
+    [$scope,$params]=vp3_agent_memory_scope_sql_v410($userAgentId,$archiveAlias);
+    return [$archiveAlias.'.user_id=? AND '.$scope,$params];
 }
 
 function vp3_agent_memory_scope_provenance_v410(array $metadata,int $userAgentId,int $conversationId=0,int $archiveId=0): array
