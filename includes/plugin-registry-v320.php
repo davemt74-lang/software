@@ -24,6 +24,10 @@ function vp3_plugin_schema_ready_v320(?PDO $pdo=null): bool
 function vp3_plugin_ensure_schema_v320(?PDO $pdo=null): void
 {
     $pdo??=db();if(!$pdo)throw new RuntimeException('Database connection is unavailable.');
+    if(vp3_plugin_schema_ready_v320($pdo))return;
+    // MySQL DDL implicitly commits. Plugin lifecycle mutations may be wrapped in
+    // an application transaction, so missing schema must be installed beforehand.
+    if($pdo->inTransaction())throw new RuntimeException('Plugin registry schema must be installed before starting a plugin lifecycle transaction.');
     $pdo->exec("CREATE TABLE IF NOT EXISTS user_plugin_installations (
       user_id INT UNSIGNED NOT NULL,
       plugin_key VARCHAR(80) NOT NULL,

@@ -71,13 +71,17 @@ Agent Chat and Profile Agent visitor conversations remain separate domains.
 
 ## Commercial access and plugins
 
-Packages and entitlements answer **what the member paid for / is allowed to use**. Plugin installations answer **what the member opted into**.
+Packages and entitlements answer **what the member paid for / is allowed to use**. Plugin installations answer **what the member opted into**. These are separate state machines.
 
-`music_workspace.access` is the commercial entitlement for Music Workspace.
+`music_workspace.access` is the commercial entitlement for Music Workspace. `user_plugin_installations` records explicit plugin enable/disable preference; it is not an entitlement ledger and it is not a workspace authorization table.
 
-`user_plugin_installations` records explicit plugin enable/disable state. Disabling a plugin hides/deactivates its working surface; it does not delete tracks, albums, releases, teams, messages or history.
+The v3.60 effective plugin state resolver composes commercial eligibility, the explicit installation preference, and narrowly-scoped legacy migration fallback. An explicit disable always wins. An explicit enabled preference whose entitlement is temporarily unavailable becomes `paused_entitlement`; entitlement loss does not erase the preference. Restoring eligibility therefore resumes the plugin without recreating its workspace or content.
 
-Existing music users on Legacy Access are grandfathered while packages are remapped.
+A member who is commercially eligible but has never opted into a non-legacy plugin sees it as available rather than automatically enabled. Historical Music workspace owners may be materialized as enabled during migration, but migration never overwrites an explicit disabled installation.
+
+Disabling a plugin hides/deactivates its working surface and removes its owner-specific Agent capability exposure; it does not delete tracks, albums, releases, teams, messages or history. Music Workspace collaborators derive access from current active Team membership plus the owning workspace's effective plugin state. A collaborator does not need to purchase or install the owner's Music plugin independently.
+
+Existing music users on Legacy Access remain grandfathered while packages are remapped, subject to their explicit plugin preference.
 
 ## Music Workspace
 
@@ -111,7 +115,11 @@ A member can therefore be one VP3 identity with multiple workspace relationships
 10. Pending Team invitations never grant workspace access or consume active seats.
 11. Team invitation acceptance is bound to the invited VP3 identity and current workspace capacity.
 12. Membership lifecycle mutations are transaction-safe and may not run schema DDL inside an active database transaction.
+13. Plugin installation preference never grants commercial eligibility or unrelated workspace authority.
+14. Explicit plugin disablement overrides grandfathering and removes owner plugin capabilities from Agent context.
+15. Entitlement loss pauses an enabled plugin without deleting its installation preference, workspace, Team relationships or content.
+16. Plugin registry schema DDL may not execute inside an active plugin lifecycle transaction.
 
 ## Migration direction
 
-Legacy Artist/Producer/Manager/Supervisor vocabulary can remain in database compatibility paths while user-facing and new authorization code moves to VP3 Member + capability/workspace terminology. Existing music data is migrated in place; no destructive rewrite is required. The v3.50 Team lifecycle keeps `artist_team_members` only as an active compatibility projection until every legacy caller has moved to the durable workspace membership ledger.
+Legacy Artist/Producer/Manager/Supervisor vocabulary can remain in database compatibility paths while user-facing and new authorization code moves to VP3 Member + capability/workspace terminology. Existing music data is migrated in place; no destructive rewrite is required. The v3.50 Team lifecycle keeps `artist_team_members` only as an active compatibility projection until every legacy caller has moved to the durable workspace membership ledger. The v3.60 plugin lifecycle may materialize legacy Music workspace owners into `user_plugin_installations`, but explicit disabled rows remain authoritative and no professional content is rewritten or deleted.
