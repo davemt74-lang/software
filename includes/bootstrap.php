@@ -37,6 +37,7 @@ require_once __DIR__.'/ai-usage-accounting-v032.php';
 require_once __DIR__.'/agent-compute-v020.php';
 require_once __DIR__.'/agent-compute-v021.php';
 require_once __DIR__.'/agent-compute-v023.php';
+require_once __DIR__.'/agent-runtime-routing-v420.php';
 require_once __DIR__.'/agent-radar-foundation.php';
 require_once __DIR__.'/agent-radar-native-profile.php';
 require_once __DIR__.'/agent-radar-external.php';

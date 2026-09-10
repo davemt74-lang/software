@@ -98,6 +98,33 @@ Agent Chat and Profile Agent visitor conversations remain separate domains.
 - Agent compute overrides may be cleaned up on retirement, but conversation rows, Profile Agent history, data-policy history and the durable Agent identity row remain intact.
 - Retiring an Agent must not delete or reclassify Agent Chat or Profile Agent history. In particular, an Agent Chat conversation with a positive `user_agent_id` may never become the system-Agent namespace through retirement.
 
+### Agent tool authorization and execution
+
+- v4.00 makes the authenticated VP3 user the Agent-tool principal. Agent identity, conversation identity, packages, plugin state and legacy professional account roles never add resource authority.
+- Professional production reads/actions resolve through the exact Music Workspace and exact track/resource boundary before data is returned.
+- Owners and Managers operate only inside authorized workspaces. Producers remain limited to tracks explicitly assigned to them.
+- Executable browser actions are rebuilt server-side; model/tool-provided `auto` flags, external schemes and unknown executable action types are not trusted.
+- External provider work remains approval governed, and paired HomeServer actions remain executed by HomeServer rather than reproduced inside VP3.
+
+### Agent Brain memory
+
+- v4.10 makes the exact Agent namespace part of durable Brain ownership. Owner identity alone is not sufficient to retrieve, rank, reconcile or update an Agent memory.
+- `agent_memory_items.user_agent_id` and `agent_chat_archive.user_agent_id` follow the same canonical Agent namespace as Agent Chat: positive ids identify exact user-owned Agents and SQL NULL is the system Agent.
+- Archived Agent identity is durable even if a live conversation is later removed or an Agent is retired.
+- Legacy memories recover Agent provenance from their source archive when possible. Ambiguous legacy owner-wide memory remains in the system-Agent namespace rather than being copied across Agents or guessed.
+- Rolling conversation state, summaries, recurring themes, task/commitment reconciliation, archive retrieval and tool-history context remain scoped to the exact Agent.
+
+### Agent compute and runtime routing
+
+- v4.20 makes compute routing a canonical request boundary shared by text and streamed/voice Agent Chat.
+- The routing principal is the authenticated user plus exact Agent namespace; per-Agent compute configuration selects a runtime but never widens data, tool, workspace, plugin or messaging authority.
+- `auto` prefers a paired/supported HomeServer and permits VP3 Cloud fallback/delegation only when the paired HomeServer scope allows cloud and VP3 confirms current commercial/token capacity.
+- `homeserver_only` never falls back to VP3 Cloud and passes cloud delegation disabled to HomeServer itself.
+- `vp3_cloud` is a strict direct-cloud route: planning/execution does not contact HomeServer for scope, capability discovery, relay status, compute or usage mirroring.
+- Deterministic VP3 tools do not probe an AI provider/runtime merely to produce a tool response.
+- HomeServer compute is attributed distinctly as HomeServer local, user provider via HomeServer, or VP3 Cloud via HomeServer.
+- `ai_execution_ledger` remains the canonical VP3 execution ledger and records v4.20 runtime version, requested route, attempted route, actual route, route reason and fallback reason alongside provider/model/token/cost facts.
+
 ## Commercial access and plugins
 
 Packages and entitlements answer **what the member paid for / is allowed to use**. Plugin installations answer **what the member opted into**. These are separate state machines.
@@ -164,7 +191,15 @@ A member can therefore be one VP3 identity with multiple workspace relationships
 30. A resolved visitor thread may reopen only from a new authorized visitor turn for the same owner + Agent + session principal.
 31. Retiring a user Agent preserves its durable identity and must not delete or reclassify Agent Chat or Profile Agent history.
 32. Retired Agents may not be mutated through active Agent settings APIs or selected for new Agent execution.
+33. Agent tool authority derives from the authenticated user plus exact authorized resource/workspace; Agent identity, conversation, package, plugin state and legacy professional role do not add authority.
+34. Agent Brain memory, archive history, rolling state, summaries, themes and task reconciliation are scoped to the exact Agent namespace; retired Agent history may not be reassigned.
+35. Text and streamed/voice Agent Chat must use the same canonical v4.20 runtime route decision.
+36. An explicit VP3 Cloud route must not contact HomeServer for scope, capability discovery, execution or usage mirroring.
+37. HomeServer-only routing may never execute VP3 Cloud, including indirect cloud delegation inside HomeServer.
+38. Automatic routing may permit VP3 Cloud fallback/delegation only when both HomeServer wrapper policy and current VP3 commercial/token capacity allow it.
+39. Canonical execution accounting must distinguish requested route, attempted route, actual route and fallback reason, including VP3 Cloud reached through HomeServer.
+40. Deterministic VP3 tool responses must not probe HomeServer or cloud compute merely to resolve an unused model route.
 
 ## Migration direction
 
-Legacy Artist/Producer/Manager/Supervisor vocabulary can remain in database compatibility paths while user-facing and new authorization code moves to VP3 Member + capability/workspace terminology. Existing music data is migrated in place; no destructive rewrite is required. The v3.50 Team lifecycle keeps `artist_team_members` only as an active compatibility projection until every legacy caller has moved to the durable workspace membership ledger. The v3.60 plugin lifecycle may materialize legacy Music workspace owners into `user_plugin_installations`, but explicit disabled rows remain authoritative and no professional content is rewritten or deleted. The v3.70 messaging migration copies historical `team_direct_messages` into `human_messages` once, records each source mapping in `human_message_legacy_links_v370`, migrates read cursors, and leaves the legacy table as read-only migration history rather than an active message store. Section 6 does not migrate Agent Chat rows between principals: existing `user_agent_id IS NULL` conversations remain system-Agent history, while positive `user_agent_id` rows remain owned by that exact user-owned Agent. Section 7 adds `user_agents.retired_at` in place; existing Agents remain current because the new column defaults to NULL. Future Agent removal marks the row retired instead of deleting it, so existing positive `chat_conversations.user_agent_id` values and `profile_agent_conversations.profile_agent_id` values retain their original principal. Existing Profile Agent conversations are not reassigned when the profile owner selects a different Agent.
+Legacy Artist/Producer/Manager/Supervisor vocabulary can remain in database compatibility paths while user-facing and new authorization code moves to VP3 Member + capability/workspace terminology. Existing music data is migrated in place; no destructive rewrite is required. The v3.50 Team lifecycle keeps `artist_team_members` only as an active compatibility projection until every legacy caller has moved to the durable workspace membership ledger. The v3.60 plugin lifecycle may materialize legacy Music workspace owners into `user_plugin_installations`, but explicit disabled rows remain authoritative and no professional content is rewritten or deleted. The v3.70 messaging migration copies historical `team_direct_messages` into `human_messages` once, records each source mapping in `human_message_legacy_links_v370`, migrates read cursors, and leaves the legacy table as read-only migration history rather than an active message store. Section 6 does not migrate Agent Chat rows between principals: existing `user_agent_id IS NULL` conversations remain system-Agent history, while positive `user_agent_id` rows remain owned by that exact user-owned Agent. Section 7 adds `user_agents.retired_at` in place; existing Agents remain current because the new column defaults to NULL. Future Agent removal marks the row retired instead of deleting it, so existing positive `chat_conversations.user_agent_id` values and `profile_agent_conversations.profile_agent_id` values retain their original principal. Existing Profile Agent conversations are not reassigned when the profile owner selects a different Agent. Section 9 migrates durable Brain memory into the same exact Agent namespace, recovering provenance from archived chat where possible and leaving ambiguous owner-wide legacy memory in the system-Agent namespace. Section 10 extends the existing `ai_execution_ledger` in place with route-attribution fields; older rows remain valid historical execution records, while new v4.20 runs persist requested, attempted and actual routes without creating a second billing ledger.

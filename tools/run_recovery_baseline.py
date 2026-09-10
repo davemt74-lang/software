@@ -97,6 +97,7 @@ NODE_TESTS = [
     'tests/agent-chat-operational-activity-contract.mjs',
     'tests/agent-tool-authorization-v400.mjs',
     'tests/agent-memory-scope-v410.mjs',
+    'tests/agent-runtime-routing-v420.mjs',
     'tests/vp3-index-contract.mjs',
     'tests/public-product-pages-contract.mjs',
     'tests/vp3-public-auth-contract.mjs',

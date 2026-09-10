@@ -24,7 +24,12 @@ $unknownCost = 0;
 
 if ($pdo && function_exists('ai_usage_accounting_v032_schema_ready') && ai_usage_accounting_v032_schema_ready($pdo)) {
     try {
-        $stmt = $pdo->prepare('SELECT source,provider,model,fallback_used,failure_class,latency_ms,created_at FROM ai_execution_ledger WHERE user_id=? ORDER BY id DESC LIMIT 1');
+        $routeReady = function_exists('ai_usage_accounting_v032_route_schema_ready')
+            && ai_usage_accounting_v032_route_schema_ready($pdo);
+        $routeColumns = $routeReady
+            ? 'runtime_version,requested_route,attempted_route,actual_route,route_reason,fallback_reason,'
+            : "'' runtime_version,'' requested_route,'' attempted_route,'' actual_route,'' route_reason,'' fallback_reason,";
+        $stmt = $pdo->prepare('SELECT '.$routeColumns.'source,provider,model,fallback_used,failure_class,latency_ms,created_at FROM ai_execution_ledger WHERE user_id=? ORDER BY id DESC LIMIT 1');
         $stmt->execute([$userId]);
         $latest = $stmt->fetch() ?: null;
 
@@ -42,13 +47,18 @@ if ($pdo && function_exists('ai_usage_accounting_v032_schema_ready') && ai_usage
 }
 
 $source = (string)($latest['source'] ?? '');
-$sourceLabel = match ($source) {
-    'homeserver_local' => 'HomeServer Local',
-    'user_provider' => 'Connected Provider',
-    'vp3_cloud' => 'VP3 Cloud',
-    'vp3_tool' => 'VP3 Tool',
-    'vp3_retrieval' => 'VP3 Retrieval',
-    default => 'No AI run yet',
+$actualRoute = (string)($latest['actual_route'] ?? '');
+$sourceLabel = match ($actualRoute) {
+    'homeserver_vp3_cloud' => 'VP3 Cloud via HomeServer',
+    'homeserver_user_provider' => 'Connected Provider via HomeServer',
+    default => match ($source) {
+        'homeserver_local' => 'HomeServer Local',
+        'user_provider' => 'Connected Provider',
+        'vp3_cloud' => 'VP3 Cloud',
+        'vp3_tool' => 'VP3 Tool',
+        'vp3_retrieval' => 'VP3 Retrieval',
+        default => 'No AI run yet',
+    },
 };
 
 $costLabel = function_exists('ai_usage_accounting_v032_format_aggregate_cost')
@@ -58,6 +68,12 @@ $costLabel = function_exists('ai_usage_accounting_v032_format_aggregate_cost')
 echo json_encode([
     'ok' => true,
     'latest' => [
+        'runtime_version' => (string)($latest['runtime_version'] ?? ''),
+        'requested_route' => (string)($latest['requested_route'] ?? ''),
+        'attempted_route' => (string)($latest['attempted_route'] ?? ''),
+        'actual_route' => $actualRoute,
+        'route_reason' => (string)($latest['route_reason'] ?? ''),
+        'fallback_reason' => (string)($latest['fallback_reason'] ?? ''),
         'source' => $source,
         'source_label' => $sourceLabel,
         'provider' => (string)($latest['provider'] ?? ''),

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 const read = path => fs.readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
 const helper = read('includes/homeserver-capabilities-v024.php');
+const runtime = read('includes/agent-runtime-routing-v420.php');
 const delegation = read('includes/homeserver-agent-v025.php');
 const bootstrap = read('includes/bootstrap.php');
 const api = read('api/user-agent-system-v236.php');
@@ -26,28 +27,40 @@ assert.match(helper, /unsupported_capability/, 'read gateway must be allowlisted
 assert.doesNotMatch(helper, /shell\.execute|filesystem\.read|http\.proxy/, 'unsafe HomeServer capabilities must not be routed');
 
 assert.match(bootstrap, /homeserver-capabilities-v024\.php/, 'bootstrap must load v0.24 capability resolver');
+assert.match(bootstrap, /agent-runtime-routing-v420\.php/, 'bootstrap must load the canonical runtime after compute compatibility layers');
 assert.match(api, /homeserver_capability_v024_attach_state/, 'Agent settings state must expose capability registry');
 assert.match(api, /refresh_homeserver_capabilities/, 'Agent settings must support explicit capability refresh');
 assert.match(api, /homeserver_capability_v024_registry\(\(int\)\$user\['id'\], true\)/, 'refresh must force canonical HomeServer status discovery');
 
-const toolIndex = chat.indexOf('agent_tool_execute_query');
-const directCloudIndex = chat.indexOf("elseif($computePreference==='vp3_cloud')");
-const registryIndex = chat.indexOf('homeserver_capability_v024_registry($userId,false)');
+// Section 10 centralizes live capability-aware routing. Direct VP3 Cloud must
+// never enter HomeServer scope/capability discovery, while Automatic and
+// HomeServer-only may resolve the cached/refreshable Agent Brain capability.
+assert.match(runtime, /if\(\$requested!==\'vp3_cloud\'\)[\s\S]*homeserver_capability_v024_registry\(\$userId,false\)/, 'direct VP3 Cloud must not refresh HomeServer capability status');
+assert.match(runtime, /homeserver_capability_v024_resolve\(\$registry,'agent_brain','vp3_cloud'\)/, 'runtime must resolve Agent Brain capability');
+assert.match(runtime, /\$home\['supported'\]=!empty\(\$brainCapability\['supported'\]\)/, 'runtime must distinguish HomeServer capability support');
+assert.match(runtime, /\$home\['ready'\]=!empty\(\$brainCapability\['ready'\]\)/, 'runtime must use current HomeServer capability readiness');
+assert.match(runtime, /ai_gateway_v031_plan/, 'v4.20 must delegate pure route choice to the canonical AI Gateway');
+assert.match(runtime, /'try_homeserver'=>!empty\(\$gateway\['try_homeserver'\]\)/, 'runtime plan must expose whether HomeServer may be attempted');
+assert.match(runtime, /'homeserver_cloud_allowed'=>\$homeCloudAllowed/, 'runtime must carry bounded HomeServer cloud permission');
+assert.match(runtime, /does not advertise the Agent Brain capability/, 'HomeServer-only mode must fail closed for unsupported Agent Brain');
+assert.match(runtime, /function vp3_agent_runtime_capability_route_v420/, 'capability provenance must be normalized by Section 10');
+assert.match(runtime, /route_reason/, 'canonical route reason must remain visible in runtime provenance');
+assert.match(runtime, /fallback_reason/, 'canonical fallback reason must remain visible in runtime provenance');
+
+// Deterministic tools run before model routing, and Chat consumes one v4.20
+// plan instead of independently resolving v0.24 capability state.
+const toolIndex = chat.indexOf('vp3_agent_tool_execute_query_v400');
+const runtimePlanIndex = chat.indexOf('vp3_agent_runtime_plan_v420');
 const homeAttemptIndex = chat.indexOf('homeserver_agent_v025_chat');
-assert.ok(toolIndex >= 0 && homeAttemptIndex > toolIndex, 'existing VP3 tools must remain first in the canonical chat path');
-assert.ok(directCloudIndex > toolIndex && registryIndex > directCloudIndex, 'direct VP3 Cloud must not refresh HomeServer capability status');
-assert.match(chat, /homeserver_capability_v024_registry\(\$userId,false\)/, 'HomeServer routes must resolve the current capability registry');
-assert.match(chat, /homeserver_capability_v024_resolve\(\$capabilityRegistry,'agent_brain','vp3_cloud'\)/, 'chat must resolve Agent Brain capability');
-assert.match(chat, /\$homeReady=!empty\(\$brainCapability\['ready'\]\)/, 'compute route must use actual capability readiness');
-assert.match(chat, /\$homeSupported=!empty\(\$brainCapability\['supported'\]\)/, 'chat must distinguish support from temporary readiness');
-assert.match(chat, /try_homeserver'\]\)&&\$homeSupported/, 'HomeServer attempts must require advertised or explicit legacy support');
-assert.match(chat, /capability_route/, 'capability provenance must persist with execution metadata');
-assert.match(chat, /vp3_tool_handled/, 'VP3 tool execution must receive capability provenance');
-assert.match(chat, /policy_vp3_cloud/, 'direct cloud policy must be distinguishable from fallback');
-assert.match(chat, /homeserver_request_recovered/, 'request-time HomeServer recovery must be visible in provenance');
-assert.match(chat, /homeserver_request_failed/, 'request-time HomeServer fallback must be visible in provenance');
-assert.match(chat, /does not advertise the Agent Brain capability/, 'HomeServer-only mode must fail closed for unsupported Agent Brain');
-assert.match(chat, /retrying supported paired HomeServers on each/, 'offline status must not disable v0.22 request-time recovery');
+assert.ok(toolIndex >= 0 && runtimePlanIndex > toolIndex, 'existing VP3 tools must remain first in the canonical chat path');
+assert.ok(homeAttemptIndex > runtimePlanIndex, 'HomeServer execution must follow the canonical v4.20 plan');
+assert.doesNotMatch(chat, /homeserver_capability_v024_registry\(\$userId,false\)/, 'Chat must not create a second capability-routing path');
+assert.doesNotMatch(chat, /homeserver_capability_v024_resolve\(/, 'Chat must consume v4.20 capability decisions instead of resolving them again');
+assert.match(chat, /homeserver_agent_v025_chat\(\$user,\$query,\$conversationId,\$history,\$principal,\$activeAgent,\$agentContext,!empty\(\$runtimePlan\['homeserver_cloud_allowed'\]\)\)/, 'HomeServer execution must use the v4.20 cloud boundary');
+assert.match(chat, /vp3_agent_runtime_capability_route_v420\(\$runtimePlan,\$execution,\$homeAttempted\)/, 'capability provenance must persist with execution metadata');
+assert.match(chat, /vp3_agent_runtime_tool_plan_v420/, 'VP3 tool execution must receive local capability/runtime provenance');
+assert.match(chat, /vp3_agent_runtime_finalize_v420/, 'all model execution must receive canonical runtime provenance');
+assert.match(chat, /vp3_agent_runtime_block_message_v420/, 'blocked routes must use the canonical runtime failure contract');
 
 // v0.25 is a capability-negotiated extension of agent.chat. It must never be
 // legacy-assumed and must leave VP3 as the canonical history store.
@@ -82,4 +95,4 @@ assert.match(css, /sf-homeserver-capabilities-v024/, 'capability UI must have de
 assert.match(runner, /tests\/homeserver-capabilities-v024\.php/, 'pure v0.24 resolver test must run in Recovery Baseline');
 assert.match(runner, /tests\/homeserver-capabilities-v024-contract\.mjs/, 'v0.24/v0.25 contract must run in Recovery Baseline');
 
-console.log('VP3 v0.24 capability routing + v0.25 Agent Brain delegation contract passed');
+console.log('VP3 v0.24 capability routing + v0.25 delegation compatibility contract passed through canonical v4.20 runtime');
