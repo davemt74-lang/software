@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-/** v105+ permission extensions. Customer access is package-driven. */
+/** v105+ permission extensions. Authorization is role/direct/workspace driven. */
 function permission_v105_catalog(): array
 {
     return [
@@ -33,7 +33,7 @@ function permission_v105_catalog(): array
     ];
 }
 
-/** Legacy Access fallback only. New customer permissions come from packages. */
+/** Compatibility defaults used only when canonical permission storage is absent. */
 function permission_v105_default_roles(): array
 {
     return [
@@ -52,33 +52,22 @@ function permission_v105_has(string $permission, ?array $user = null): bool
     if (user_has_role('admin', $user)) return true;
     if($permission==='midi.manage')return false;
 
-    if(function_exists('subscription_schema_ready')&&subscription_schema_ready()){
-        $sub=subscription_current($user);
-        if($sub&&!subscription_has_entitlement($user,'legacy.permissions')){
-            return subscription_package_grants_permission($user,$permission);
-        }
-    }
+    // Packages and add-ons buy product capabilities; they never create security
+    // authority. Canonical role/direct/workspace authorization is the source of
+    // truth regardless of the customer's commercial plan.
+    if(function_exists('has_permission')&&has_permission($permission,$user))return true;
 
-    // Legacy Access compatibility only.
-    $roles=user_roles_for_user($user);
-    if (!$roles) return false;
     $pdo=db();
-    if ($pdo && permissions_schema_ready()) {
-        try{
-            $placeholders=implode(',',array_fill(0,count($roles),'?'));
-            $stmt=$pdo->prepare("SELECT 1 FROM role_permissions WHERE permission_key=? AND role IN ($placeholders) LIMIT 1");
-            $stmt->execute([$permission,...$roles]);
-            return (bool)$stmt->fetchColumn();
-        } catch (Throwable $e) {}
+    if($pdo&&permissions_schema_ready())return false;
+
+    // Pre-permission-schema fallback only.
+    foreach(user_roles_for_user($user) as $role){
+        if(in_array($role,permission_v105_default_roles()[$permission]??[],true))return true;
     }
-    foreach($roles as $role)if(in_array($role,permission_v105_default_roles()[$permission]??[],true))return true;
     return false;
 }
 
-/**
- * One-time legacy rollout. Retained for old installs; package entitlements are
- * the current Customer permission source.
- */
+/** One-time role-permission seed retained for upgraded installations. */
 function permission_v105_seed_playlist_permission(): void
 {
     static $attempted=false;if($attempted)return;$attempted=true;
