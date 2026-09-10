@@ -12,7 +12,7 @@ $workspaceId=(int)$workspace['id'];
 $catalogTrackId=max(0,(int)($_GET['track']??0));
 if($catalogTrackId<1){flash('error','Choose a Music Workspace track first.');redirect(url('/music-library.php?workspace='.$workspaceId));}
 try{
-    $source=music_workspace_resources_v330_ensure_production_track($pdo,$workspaceId,$catalogTrackId,$user);
+    $source=music_workspace_resources_v331_prepare_studio_track($pdo,$workspaceId,$catalogTrackId,$user);
     $sourceId=(int)($source['id']??0);
     if($sourceId<1)throw new RuntimeException('Production track could not be prepared.');
     redirect(url('/admin/stems.php?track='.$sourceId.'&return='.rawurlencode(url('/music-library.php?workspace='.$workspaceId))));
