@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 require dirname(__DIR__).'/includes/bootstrap.php';
+require_once dirname(__DIR__).'/includes/human-messaging-block-v370.php';
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
 function vp3_messages_json_v320(array $payload,int $status=200): never{http_response_code($status);echo json_encode($payload,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);exit;}
@@ -20,7 +21,7 @@ try{
  if($action==='follow'||$action==='unfollow'){vp3_messages_require_post_v320();$target=max(0,(int)($_POST['user_id']??0));vp3_social_follow_v320($pdo,$uid,$target,$action==='follow');vp3_messages_json_v320(['ok'=>true,'following'=>$action==='follow']);}
  if($action==='friend_request'){vp3_messages_require_post_v320();vp3_social_friend_request_v320($pdo,$uid,max(0,(int)($_POST['user_id']??0)));vp3_messages_json_v320(['ok'=>true,'status'=>'pending']);}
  if($action==='friend_accept'){vp3_messages_require_post_v320();vp3_social_friend_accept_v320($pdo,$uid,max(0,(int)($_POST['user_id']??0)));vp3_messages_json_v320(['ok'=>true,'status'=>'accepted']);}
- if($action==='block'||$action==='unblock'){vp3_messages_require_post_v320();$target=max(0,(int)($_POST['user_id']??0));vp3_social_block_v320($pdo,$uid,$target,$action==='block');vp3_messages_json_v320(['ok'=>true,'blocked'=>$action==='block']);}
+ if($action==='block'||$action==='unblock'){vp3_messages_require_post_v320();$target=max(0,(int)($_POST['user_id']??0));vp3_human_set_block_v370($pdo,$uid,$target,$action==='block');vp3_messages_json_v320(['ok'=>true,'blocked'=>$action==='block']);}
  if($action==='settings'){vp3_messages_require_post_v320();vp3_messages_json_v320(['ok'=>true,'settings'=>vp3_social_save_settings_v320($pdo,$uid,$_POST)]);}
  vp3_messages_json_v320(['ok'=>false,'error'=>'unknown_action'],404);
 }catch(RuntimeException $e){vp3_messages_json_v320(['ok'=>false,'error'=>'validation','message'=>$e->getMessage()],422);}catch(Throwable $e){error_log('VP3 messages v370: '.$e->getMessage());vp3_messages_json_v320(['ok'=>false,'error'=>'server_error'],500);}
