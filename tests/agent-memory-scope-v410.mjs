@@ -35,8 +35,8 @@ assert.match(setup, /vp3_agent_memory_scope_ensure_schema_v410\(\$pdo\)/);
 assert.match(upgrade, /vp3_agent_memory_scope_schema_ready_v410\(\)/);
 assert.match(upgrade, /vp3_agent_memory_scope_ensure_schema_v410\(\$pdo\)/);
 
-assert.match(brain, /vp3_agent_memory_scope_from_conversation_v410\(\$user,\$conversationId,true\)/);
-assert.match(brain, /INSERT INTO agent_memory_items \(user_id,user_agent_id,/);
+assert.match(brain, /vp3_agent_memory_scope_from_conversation_v410\(\$user,\s*\$conversationId,\s*true\)/);
+assert.match(brain, /INSERT INTO agent_memory_items[\s\S]*?\(user_id,user_agent_id,/);
 assert.match(brain, /memory_scope_version/);
 assert.match(brain, /vp3_agent_memory_scope_hash_v410/);
 assert.match(brain, /vp3_agent_memory_scope_provenance_v410/);
@@ -44,7 +44,7 @@ assert.match(brain, /JOIN chat_conversations c ON c\.id=a\.conversation_id AND c
 assert.match(brain, /WHERE m\.user_id=\? AND \{\$scope\}/);
 
 assert.match(state, /vp3_agent_memory_scope_current_v410/);
-assert.match(state, /INSERT INTO agent_memory_items \(user_id,user_agent_id,/);
+assert.match(state, /INSERT INTO agent_memory_items[\s\S]*?\(user_id,user_agent_id,/);
 assert.match(state, /vp3_agent_memory_scope_from_conversation_v410\(\$user,\$conversationId,true\)/);
 assert.match(state, /WHERE user_id=\? AND '\.\$scope\.' AND memory_hash=\?/);
 assert.match(state, /JOIN chat_conversations c ON c\.id=m\.conversation_id WHERE c\.user_id=\? AND '\.\$scope/);
