@@ -52,9 +52,16 @@ assert.ok(!users.includes('workspace_artist'), 'Admin Users must not expose a ma
 assert.ok(users.includes('Package and workspace relationships were not changed'), 'editing account identity must not silently mutate package or workspace context');
 assert.ok(users.includes("atm.team_role IN ('manager','producer')"), 'Manager/Producer labels in Users must come from Team relationships');
 
-assert.ok(permissions.includes('$packages = subscription_packages(false)'), 'Permissions must be package-oriented');
-assert.ok(permissions.includes('package_entitlements'), 'Permissions must write package entitlements');
+// Permissions is a security surface only. It may edit the neutral Customer role
+// policy, but it must never mutate commercial packages or workspace authority.
+assert.ok(permissions.includes("role='fan'"), 'Permissions must edit the neutral Customer role policy');
+assert.ok(permissions.includes('customer_permissions'), 'Permissions must expose the Customer security baseline explicitly');
+assert.ok(permissions.includes('workspaceOnly'), 'workspace-scoped powers must be identified as contextual');
 assert.ok(permissions.includes('Admin only'), 'Permissions UI must identify internal Admin-only capabilities');
+assert.ok(permissions.includes('Product access belongs to Packages and Entitlement Grants'), 'Permissions must explain the product/security separation');
+assert.ok(!permissions.includes('INSERT INTO package_entitlements'), 'Permissions must never write package entitlements');
+assert.ok(!permissions.includes('UPDATE package_entitlements'), 'Permissions must never update package entitlements');
+assert.ok(!permissions.includes('subscription_permission_key'), 'Permissions must not manufacture permission-shaped product keys');
 assert.ok(!permissions.includes('Account Type Permissions'), 'legacy account-type permission matrix must be retired');
 
 assert.ok(team.includes('artist_workspace_v104_attach_member'), 'Team must create relationship-scoped roles');
@@ -66,7 +73,11 @@ assert.ok(domain.includes('PRIMARY KEY (artist_user_id,member_user_id)'), 'membe
 assert.ok(domain.includes("return ['manager'=>[],'producer'=>[]];"), 'Manager/Producer Team relationships must grant no global role permissions');
 assert.ok(domain.includes("DELETE FROM role_permissions WHERE role IN ('manager','producer')"), 'legacy Team role permissions must be removed globally');
 assert.match(domain, /DELETE FROM user_account_types WHERE user_id=\? AND role IN \('manager','producer'\)/, 'legacy Team account-role rows must be removed');
-assert.ok(domain.includes('artist_workspace_v104_artist_package_permissions'), 'Artist workspace context must recognize package capabilities');
+assert.ok(domain.includes('artist_workspace_v104_user_owns_workspace'), 'Artist workspace context must recognize canonical workspace ownership');
+assert.ok(domain.includes('music_workspace_enabled_v320($user)'), 'enabled Music Workspace state may establish owner context');
+assert.ok(domain.includes('Product entitlement alone'), 'product access alone must not create workspace authority');
+assert.ok(!domain.includes('subscription_package_grants_permission'), 'Artist workspace context must not derive authority from package permissions');
+assert.ok(!domain.includes('legacy.permissions'), 'Artist workspace context must not depend on retired legacy permission entitlements');
 assert.ok(domain.includes('artist_workspace_v104_revoke_producer_assignments'), 'Producer membership removal or downgrade must revoke direct track assignments');
 assert.ok(domain.includes('UPDATE tracks SET producer_user_id=NULL WHERE owner_user_id=? AND producer_user_id=?'), 'producer revocation must be scoped to the owning Artist and member');
 
