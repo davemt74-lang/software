@@ -14,6 +14,7 @@ function vp3_upgrade_complete(): bool
     return access_schema_ready()
         && subscription_schema_ready()
         && subscription_entitlements_v340_schema_ready()
+        && workspace_team_v350_schema_ready()
         && ai_usage_accounting_v032_schema_ready()
         && vp3_radar_schema_ready()
         && vp3_agent_referral_schema_ready()
@@ -64,6 +65,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ensure_access_schema();
             subscription_ensure_schema();
             subscription_entitlements_v340_ensure_schema();
+            artist_workspace_v104_ensure_schema();
+            workspace_team_v350_ensure_schema();
             ai_usage_accounting_v032_ensure_schema();
             vp3_radar_ensure_schema();
             vp3_agent_referral_ensure_schema();
@@ -114,7 +117,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $complete = vp3_upgrade_complete();
 
             if ($complete) {
-                flash('notice', 'VP3 database upgrade complete: subscriptions, composable product entitlements, plugins, social relationships, human messaging, Team collaboration, workspace-owned Music resources, AI execution accounting, Agent Brain, Knowledge, Profile Agent, HomeServer Agent continuity, Agent Radar, CRM, transcriptions, and Music/Studio capabilities are ready.');
+                flash('notice', 'VP3 database upgrade complete: subscriptions, composable product entitlements, plugins, social relationships, human messaging, Team invitation/lifecycle collaboration, workspace-owned Music resources, AI execution accounting, Agent Brain, Knowledge, Profile Agent, HomeServer Agent continuity, Agent Radar, CRM, transcriptions, and Music/Studio capabilities are ready.');
                 redirect(url('/admin/users.php'));
             }
         } catch (Throwable $e) {
@@ -139,10 +142,10 @@ vp3_public_header('Database Upgrade — VP3', 'Upgrade the VP3 database and appl
       <h1>VP3 Database Upgrade</h1>
       <?php if ($complete): ?>
         <div class="vp3-alert success">The current VP3 schema is installed and ready.</div>
-        <p class="vp3-auth-intro">Subscription packages, composable add-on entitlements, opt-in plugins, social relationships, human messaging, Team workspaces, workspace-owned Music resources, AI quota and execution accounting, Agent Brain, private Knowledge, Profile Agent, HomeServer Agent continuity, Agent Radar, CRM, voice identity, transcriptions and Music/Studio capabilities are available.</p>
+        <p class="vp3-auth-intro">Subscription packages, composable add-on entitlements, opt-in plugins, social relationships, human messaging, Team invitation and membership lifecycle, workspace-owned Music resources, AI quota and execution accounting, Agent Brain, private Knowledge, Profile Agent, HomeServer Agent continuity, Agent Radar, CRM, voice identity, transcriptions and Music/Studio capabilities are available.</p>
         <a class="vp3-btn primary" href="<?= e(url('/admin/users.php')) ?>">Manage Users →</a>
       <?php else: ?>
-        <p class="vp3-auth-intro">Run the current schema upgrade while preserving existing content and access. Existing accounts, package assignments, team memberships, token balances, music content and onboarding progress are preserved, along with existing add-on grants.</p>
+        <p class="vp3-auth-intro">Run the current schema upgrade while preserving existing content and access. Existing accounts, package assignments, Team membership history, token balances, music content and onboarding progress are preserved, along with existing add-on grants.</p>
         <?php if ($error): ?><div class="vp3-alert error" role="alert"><?= e($error) ?></div><?php endif; ?>
         <form method="post">
           <?= csrf_field() ?>
