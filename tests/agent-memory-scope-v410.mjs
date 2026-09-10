@@ -22,9 +22,15 @@ assert.match(scope, /idx_agent_archive_agent_created_v410/);
 assert.match(scope, /SELECT 1 FROM agent_memory_items WHERE memory_scope_version<410 LIMIT 1/);
 assert.match(scope, /UPDATE agent_chat_archive a[\s\S]*JOIN chat_conversations c[\s\S]*SET a\.user_agent_id=c\.user_agent_id/);
 assert.doesNotMatch(scope, /LEFT JOIN chat_conversations c[\s\S]*SET a\.user_agent_id/);
+assert.match(scope, /UPDATE agent_memory_items m[\s\S]*LEFT JOIN agent_chat_archive a ON a\.id=m\.source_archive_id AND a\.user_id=m\.user_id[\s\S]*SET m\.user_agent_id=COALESCE\(m\.user_agent_id,a\.user_agent_id\)[\s\S]*WHERE m\.memory_scope_version<410/);
 assert.match(scope, /WHERE memory_scope_version<410/);
 assert.match(scope, /SHA1\(CONCAT\('v410\|agent:',COALESCE\(user_agent_id,0\),'\|',memory_hash\)\)/);
 assert.doesNotMatch(scope, /SET user_agent_id=NULL/);
+
+const provenanceMigration = scope.indexOf('LEFT JOIN agent_chat_archive a ON a.id=m.source_archive_id');
+const hashMigration = scope.indexOf("SHA1(CONCAT('v410|agent:'");
+assert.ok(provenanceMigration >= 0 && hashMigration > provenanceMigration, 'recover Agent provenance before re-hashing legacy memory');
+
 assert.match(scope, /user_agent_id=\?/);
 assert.match(scope, /user_agent_id IS NULL/);
 assert.match(scope, /sha1\('v410\|agent:'\.vp3_agent_memory_scope_id_v410/);
