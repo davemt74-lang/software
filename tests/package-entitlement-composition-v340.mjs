@@ -11,6 +11,7 @@ const packages=read('admin/packages.php');
 const entitlementAdmin=read('admin/entitlements.php');
 const team=read('includes/team-subscription.php');
 const music=read('includes/music-workspace-plugin-v320.php');
+const schema=read('includes/subscription-schema.php');
 const setup=read('setup.php');
 const upgrade=read('upgrade.php');
 
@@ -51,15 +52,24 @@ assert.doesNotMatch(entitlementAdmin,/UPDATE user_subscriptions/);
 assert.doesNotMatch(entitlementAdmin,/UPDATE subscription_packages/);
 
 // Existing consumers get composition through the stable entitlement API.
-assert.match(music,/subscription_has_entitlement\([^\n]*music_workspace\.access/);
+assert.match(music,/function music_workspace_capability_key_v320\(\): string\{return 'music_workspace\.access';\}/);
+assert.match(music,/subscription_has_entitlement\(\$user,music_workspace_capability_key_v320\(\)\)/);
+assert.match(music,/function music_workspace_legacy_package_v340/);
+assert.match(music,/package_slug[^\n]*legacy-access/);
+assert.doesNotMatch(music,/legacy\.permissions/,'Music grandfathering must not depend on retired permission entitlements');
 assert.match(team,/subscription_has_entitlement\(\$user,'team_seats'\)/);
 assert.match(team,/subscription_entitlement_limit\(\$user,'team_seats',0\)/);
 assert.doesNotMatch(team,/subscription_entitlement_row\([^\n]*team_seats/);
+
+// Retired permission-shaped seed rows must not be recreated after v3.40.
+assert.doesNotMatch(schema,/['\"]permission\.[a-z0-9._-]+['\"]\s*=>/);
+assert.doesNotMatch(schema,/['\"]legacy\.permissions['\"]\s*=>/);
 
 // Fresh installs and upgrades explicitly install and require v3.40 grants.
 assert.match(setup,/subscription_entitlements_v340_ensure_schema\(\$pdo\)/);
 assert.match(upgrade,/subscription_entitlements_v340_schema_ready\(\)/);
 assert.match(upgrade,/subscription_entitlements_v340_ensure_schema\(\)/);
+assert.match(upgrade,/Existing accounts, package assignments, team memberships, token balances, music content/);
 
 // Key validation itself is executable without a database.
 const probe=spawnSync('php',['-r',String.raw`
