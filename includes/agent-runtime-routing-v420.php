@@ -43,6 +43,19 @@ function vp3_agent_runtime_cloud_state_v420(array $user): array
     return $state;
 }
 
+function vp3_agent_runtime_tool_plan_v420(int $userId,int $agentId,string $surface='chat'): array
+{
+    return [
+        'version'=>'v4.20','surface'=>ai_gateway_v031_surface($surface),'user_id'=>max(0,$userId),'agent_id'=>max(0,$agentId),
+        'requested_preference'=>'tool','effective_preference'=>'tool','policy_source'=>'tool','compute_policy'=>[],
+        'route'=>'vp3_tool','route_reason'=>'vp3_tool_handled','blocked'=>false,'try_homeserver'=>false,
+        'allow_vp3_fallback'=>false,'fallback_target'=>'none','homeserver_cloud_allowed'=>false,
+        'home'=>['paired'=>false,'supported'=>false,'ready'=>false,'cloud_allowed'=>false,'scope_checked'=>false],
+        'cloud'=>['ready'=>false,'entitled'=>false,'unlimited'=>false,'remaining'=>null,'reason'=>'not_checked'],
+        'capability'=>['supported'=>true,'ready'=>true,'reason'=>'vp3_tool_handled'],'gateway_version'=>'v4.20',
+    ];
+}
+
 function vp3_agent_runtime_plan_v420(PDO $pdo,array $user,int $agentId,string $surface='chat'): array
 {
     $userId=(int)($user['id']??0);$agentId=max(0,$agentId);
@@ -136,6 +149,7 @@ function vp3_agent_runtime_block_message_v420(array $plan): string
     return match($reason){
         'homeserver_required_unpaired'=>'HomeServer-only compute is selected for this Agent, but this account is not connected to HomeServer. Connect HomeServer or change this Agent’s compute policy in My Account.',
         'homeserver_capability_unsupported'=>'HomeServer-only compute is selected for this Agent, but the paired HomeServer does not advertise the Agent Brain capability. Update or reconnect HomeServer, then try again.',
+        'homeserver_only_retry'=>'HomeServer-only compute is selected for this Agent, but HomeServer could not complete this request. Start or reconnect HomeServer, then try again.',
         'vp3_cloud_unavailable'=>'VP3 Cloud is selected for this Agent, but cloud AI access or token capacity is unavailable. Add tokens or update your package to continue.',
         'no_route_unpaired_cloud_unavailable','no_route_ready'=>'No Agent compute route is currently available. Connect HomeServer or add VP3 Cloud token capacity.',
         default=>'The selected Agent compute route is currently unavailable.',
@@ -185,7 +199,7 @@ function vp3_agent_runtime_capability_route_v420(array $plan,array $execution,bo
 {
     return [
         'version'=>'v4.20','capability'=>'agent_brain','planned_source'=>(string)($plan['route']??'blocked'),
-        'actual_source'=>vp3_agent_runtime_actual_route_v420($execution),'supported'=>!empty($plan['capability']['supported'])||((string)($execution['source']??'')==='vp3_cloud'),
+        'actual_source'=>vp3_agent_runtime_actual_route_v420($execution),'supported'=>!empty($plan['capability']['supported'])||((string)($execution['source']??'')==='vp3_cloud')||((string)($execution['source']??'')==='vp3_tool'),
         'ready'=>true,'fallback_used'=>!empty($execution['fallback_used']),'reason'=>(string)($execution['fallback_reason']??$plan['route_reason']??''),
         'home_attempted'=>$homeAttempted,
     ];
