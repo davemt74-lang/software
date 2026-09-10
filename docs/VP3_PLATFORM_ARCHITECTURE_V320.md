@@ -68,8 +68,13 @@ Agent Chat and Profile Agent visitor conversations remain separate domains.
 ### Agent Chat
 
 - Agent Chat remains the private user↔agent interface and retains its existing conversation/history system.
+- v3.80 defines the canonical conversation principal as the signed-in VP3 `user_id` plus one exact Agent namespace.
+- A positive `chat_conversations.user_agent_id` belongs to that user-owned Agent. `user_agent_id IS NULL` permanently means that user's system-Agent namespace; NULL is not unclaimed history.
+- Text and streamed/voice Agent Chat use the same v3.80 principal, scope, conversation validation and conversation-creation boundary. Voice is transport only and does not change ownership.
+- Existing conversations are authoritative about their Agent namespace. Explicit browser/cross-surface Agent context must match the stored namespace, including explicit system-Agent ID `0`; mismatches are rejected.
+- Creating or selecting a user-owned Agent never reassigns older system-Agent conversations. Legacy automatic first-Agent history claiming is retired.
 - Human messages must not be stored as Agent Chat messages.
-- The Agent may later summarize or act on human conversations only through explicit, permission-aware tools.
+- Human Conversations are not ambient Agent context. The Agent may later summarize or act on them only through explicit, permission-aware tools that first pass the current v3.70 conversation authorization boundary.
 - The sticky Agent composer is intentionally focused on conversation/voice capture; the Video Editor shortcut is not part of the composer UI.
 
 ### Profile Agent
@@ -131,7 +136,12 @@ A member can therefore be one VP3 identity with multiple workspace relationships
 18. Direct-message lifecycle mutations lock user identities in a stable order before conversation/request rows.
 19. Legacy Team Chat may read/write only the canonical human message ledger after v3.70 migration; the historical Team DM table is migration input only.
 20. Human message bodies may not be copied into generic Agent/activity/audit persistence.
+21. Agent Chat conversation ownership is the tuple of VP3 user and exact Agent namespace; a conversation ID alone is never authority.
+22. `chat_conversations.user_agent_id IS NULL` always means the system Agent and may not be automatically reassigned to a user-owned Agent.
+23. Explicit Agent context must match an existing conversation's stored Agent namespace before history is loaded or appended.
+24. Text and streamed/voice Agent Chat must use the same principal/scope/create boundary.
+25. Human Conversations may enter Agent operations only through an explicit tool that rechecks canonical v3.70 conversation authorization; they are never ambient Chat context.
 
 ## Migration direction
 
-Legacy Artist/Producer/Manager/Supervisor vocabulary can remain in database compatibility paths while user-facing and new authorization code moves to VP3 Member + capability/workspace terminology. Existing music data is migrated in place; no destructive rewrite is required. The v3.50 Team lifecycle keeps `artist_team_members` only as an active compatibility projection until every legacy caller has moved to the durable workspace membership ledger. The v3.60 plugin lifecycle may materialize legacy Music workspace owners into `user_plugin_installations`, but explicit disabled rows remain authoritative and no professional content is rewritten or deleted. The v3.70 messaging migration copies historical `team_direct_messages` into `human_messages` once, records each source mapping in `human_message_legacy_links_v370`, migrates read cursors, and leaves the legacy table as read-only migration history rather than an active message store.
+Legacy Artist/Producer/Manager/Supervisor vocabulary can remain in database compatibility paths while user-facing and new authorization code moves to VP3 Member + capability/workspace terminology. Existing music data is migrated in place; no destructive rewrite is required. The v3.50 Team lifecycle keeps `artist_team_members` only as an active compatibility projection until every legacy caller has moved to the durable workspace membership ledger. The v3.60 plugin lifecycle may materialize legacy Music workspace owners into `user_plugin_installations`, but explicit disabled rows remain authoritative and no professional content is rewritten or deleted. The v3.70 messaging migration copies historical `team_direct_messages` into `human_messages` once, records each source mapping in `human_message_legacy_links_v370`, migrates read cursors, and leaves the legacy table as read-only migration history rather than an active message store. Section 6 does not migrate Agent Chat rows between principals: existing `user_agent_id IS NULL` conversations remain system-Agent history, while positive `user_agent_id` rows remain owned by that exact user-owned Agent.
