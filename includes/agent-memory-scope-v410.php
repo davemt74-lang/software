@@ -70,10 +70,18 @@ function vp3_agent_memory_scope_ensure_schema_v410(?PDO $pdo=null): void
                 JOIN chat_conversations c ON c.id=a.conversation_id AND c.user_id=a.user_id
                 SET a.user_agent_id=c.user_agent_id');
 
-    // Existing owner-wide memories predate durable Agent identity and therefore
-    // remain in the system-Agent namespace. If a partially upgraded row already
-    // has a custom Agent id, preserve it while re-hashing into that Agent\'s
-    // namespace. This keeps the migration restart-safe and collision-safe.
+    // Legacy memories may still point at the archive message that produced the
+    // latest value. Recover that Agent identity before namespacing the hash. A
+    // partially upgraded custom id always wins; rows without recoverable source
+    // provenance remain NULL/system rather than being assigned heuristically.
+    $pdo->exec('UPDATE agent_memory_items m
+                LEFT JOIN agent_chat_archive a ON a.id=m.source_archive_id AND a.user_id=m.user_id
+                SET m.user_agent_id=COALESCE(m.user_agent_id,a.user_agent_id)
+                WHERE m.memory_scope_version<410');
+
+    // Namespace every legacy hash exactly once. This keeps the existing
+    // UNIQUE(user_id,memory_hash) collision-safe for both SQL-NULL system scope
+    // and custom Agent ids without depending on nullable unique-key semantics.
     $pdo->exec("UPDATE agent_memory_items
                SET memory_hash=SHA1(CONCAT('v410|agent:',COALESCE(user_agent_id,0),'|',memory_hash)),
                    memory_scope_version=410
