@@ -6,6 +6,7 @@ const social = read('includes/social-network-v320.php');
 const socialRefined = read('includes/social-network-v321.php');
 const plugins = read('includes/plugin-registry-v320.php');
 const music = read('includes/music-workspace-plugin-v320.php');
+const resources = read('includes/music-workspace-resources-v330.php');
 const subscriptions = read('includes/subscription-schema.php');
 const teamSubscription = read('includes/team-subscription.php');
 const setup = read('setup.php');
@@ -107,20 +108,29 @@ for (const action of ['Follow','Add Friend','Accept Friend','Message']) assert.m
 assert.match(memberNav, /'plugins','Plugins'/);
 assert.match(memberNav, /'messages','Messages'/);
 assert.match(memberNav, /music_workspace_enabled_v320/);
+assert.match(memberNav, /music_workspace_resources_v330_accessible_workspaces/);
+assert.match(memberNav, /\$musicEnabled\|\|\$musicWorkspaces/);
 
-// Music portal only links to real, authorized routes. Stem Studio remains track-scoped.
+// Music portal now uses capability/workspace-native member routes; Stem Studio remains track-scoped.
 assert.doesNotMatch(musicPage, /stem-studio\.php/);
-assert.match(musicPage, /admin\/artist\.php\?collection=tracks/);
+assert.doesNotMatch(musicPage, /admin\/artist\.php\?collection=/);
+assert.match(musicPage, /music-library\.php\?workspace=/);
+assert.match(musicPage, /music-releases\.php\?workspace=/);
+assert.match(musicPage, /music_workspace_resources_v330_resolve_active/);
 assert.match(musicPage, /player\.php/);
 assert.match(musicPage, /\$canListening=has_permission\('artist_listening\.access'/);
-assert.match(musicPage, /without assigning a global Artist role/);
+assert.match(resources, /professional Music resources belong to this workspace|Professional music catalog/);
 
-// Fresh setup and canonical upgrade both normalize the architecture without destructive replacement.
+// Fresh setup and canonical upgrade normalize the current architecture without destructive replacement.
 assert.match(setup, /artist_workspace_v104_ensure_schema\(\)/);
 assert.match(setup, /vp3_plugin_ensure_schema_v320\(\$pdo\)/);
 assert.match(setup, /vp3_social_ensure_schema_v320\(\$pdo\)/);
+assert.match(setup, /music_workspace_release_schema_v330_ensure\(\$pdo\)/);
+assert.match(setup, /music_workspace_resources_v330_ensure_schema\(\$pdo\)/);
 assert.match(upgrade, /vp3_plugin_ensure_schema_v320\(\)/);
 assert.match(upgrade, /vp3_social_ensure_schema_v320\(\)/);
+assert.match(upgrade, /music_workspace_release_schema_v330_ensure\(\$pdo\)/);
+assert.match(upgrade, /music_workspace_resources_v330_ensure_schema\(\$pdo\)/);
 assert.match(upgrade, /existing user content/);
 assert.match(upgrade, /Existing accounts, package assignments, team memberships, token balances, music content/);
 
