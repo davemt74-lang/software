@@ -8,7 +8,7 @@ declare(strict_types=1);
  * Admin remains an internal authority and is never represented as a public plan.
  */
 
-const VP3_SUBSCRIPTION_SCHEMA_VERSION = 'subscription-packages-20260906';
+const VP3_SUBSCRIPTION_SCHEMA_VERSION = 'subscription-packages-v340-20260910';
 
 function subscription_schema_ready(?PDO $pdo = null): bool
 {
@@ -48,13 +48,7 @@ function subscription_capability_catalog(): array
         'projects.limit' => ['label'=>'Project Limit','type'=>'limit','category'=>'Limits'],
         'storage_mb' => ['label'=>'Storage (MB)','type'=>'limit','category'=>'Limits'],
         'ai.unlimited' => ['label'=>'Unlimited AI Tokens','type'=>'boolean','category'=>'AI'],
-        'legacy.permissions' => ['label'=>'Legacy Permission Compatibility','type'=>'boolean','category'=>'Internal'],
     ];
-}
-
-function subscription_permission_key(string $permission): string
-{
-    return 'permission.' . trim($permission);
 }
 
 function subscription_ensure_schema(?PDO $pdo = null): void
@@ -226,10 +220,6 @@ function subscription_seed_defaults(PDO $pdo): void
         'stem_editor.access'=>[0,null],
         'video_editor.access'=>[0,null],
         'team_seats'=>[1,0],
-        'permission.account.access'=>[1,null],
-        'permission.chat.access'=>[1,null],
-        'permission.artist_listening.access'=>[1,null],
-        'permission.knowledge.access'=>[1,null],
     ];
     foreach ($trialEntitlements as $key => [$enabled,$limit]) {
         subscription_seed_entitlement($pdo,$trialId,$key,(bool)$enabled,$limit);
@@ -248,7 +238,6 @@ function subscription_seed_defaults(PDO $pdo): void
         'video_editor.access'=>[1,null],
         'team_seats'=>[1,2],
         'ai.unlimited'=>[1,null],
-        'legacy.permissions'=>[1,null],
     ];
     foreach ($legacyEntitlements as $key => [$enabled,$limit]) {
         subscription_seed_entitlement($pdo,$legacyId,$key,(bool)$enabled,$limit);
@@ -258,6 +247,7 @@ function subscription_seed_defaults(PDO $pdo): void
 function subscription_seed_entitlement(PDO $pdo,int $packageId,string $key,bool $enabled,?int $limit): void
 {
     if ($packageId < 1) return;
+    if(function_exists('subscription_entitlement_key_is_product_v340')&&!subscription_entitlement_key_is_product_v340($key))return;
     $stmt=$pdo->prepare("INSERT IGNORE INTO package_entitlements (package_id,capability_key,is_enabled,limit_value) VALUES (?,?,?,?)");
     $stmt->execute([$packageId,$key,$enabled?1:0,$limit]);
 }

@@ -19,6 +19,8 @@ try {
     foreach ($statements as $sql) if ($sql !== '') $pdo->exec($sql);
 
     ensure_access_schema();
+    subscription_ensure_schema($pdo);
+    subscription_entitlements_v340_ensure_schema($pdo);
     // schema.sql is the historical install baseline. Normalize it immediately to
     // the current architecture so fresh installs never retain retired constraints
     // or the legacy mixed-ownership Music production graph.
@@ -66,8 +68,6 @@ try {
         if ($trackCount === 0) {
             $stmt = $pdo->prepare('INSERT INTO tracks (title,album,duration,description,genre,mood,energy,tempo_bpm,keywords,audio_path,cover_path,sort_order,is_published,visibility) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,1,?)');
             foreach (fallback_tracks() as $order => $track) {
-                // Seed/demo tracks are public platform content and intentionally have
-                // no workspace owner. A user-owned Music resource is always scoped.
                 $stmt->execute([$track['title'],$track['album'],$track['duration'],$track['description']??'',$track['genre']??'',$track['mood']??'',$track['energy']??'',$track['tempo_bpm']??null,$track['keywords']??'',$track['audio_path'],$track['cover_path'],$order+1,$track['visibility']??'public']);
             }
         }
