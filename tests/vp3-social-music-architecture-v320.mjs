@@ -41,10 +41,15 @@ for (const forbidden of ['admin.access','messages.manage','users.manage','ai.man
 assert.match(music, /preserves_data_on_disable'=>true/);
 assert.doesNotMatch(plugins, /DELETE\s+FROM\s+(?:tracks|albums|artist_|human_|users)/i, 'Plugin disablement must not delete user/workspace data');
 
-// Music enablement is atomic and plugin DDL is kept out of caller-owned transactions.
+// Music enablement is atomic and all schema DDL is kept out of caller-owned transactions.
 assert.match(plugins, /if\(!vp3_plugin_schema_ready_v320\(\$pdo\)\)vp3_plugin_ensure_schema_v320\(\$pdo\)/);
 const musicToggle = music.match(/function music_workspace_set_enabled_v320[\s\S]*?\n}/)?.[0] || '';
+const musicOwner = music.match(/function music_workspace_ensure_owner_v320[\s\S]*?\n}/)?.[0] || '';
 assert.match(musicToggle, /\$ownsTransaction=!\$pdo->inTransaction\(\)/);
+assert.match(musicToggle, /artist_workspace_v181_schema_ready/);
+assert.match(musicToggle, /artist_workspace_v181_ensure_schema\(\$pdo\)/);
+assert.ok(musicToggle.indexOf('artist_workspace_v181_ensure_schema($pdo)') < musicToggle.indexOf('$pdo->beginTransaction()'), 'workspace schema DDL must run before Music state transaction');
+assert.match(musicOwner, /artist_workspace_v181_schema_ready/);
 assert.match(musicToggle, /\$pdo->beginTransaction\(\)/);
 assert.match(musicToggle, /music_workspace_ensure_owner_v320\(\$pdo,\$user\)/);
 assert.match(musicToggle, /\$pdo->commit\(\)/);
