@@ -199,7 +199,7 @@ function workspace_team_v350_activate_member(PDO $pdo,int $ownerId,int $memberId
         $stmt=$pdo->prepare("INSERT INTO workspace_memberships_v350
           (workspace_owner_user_id,member_user_id,team_role,membership_status,invited_by_user_id,activated_at,suspended_at,removed_at,role_changed_at)
           VALUES (?,?,?,'active',?,NOW(),NULL,NULL,NOW())
-          ON DUPLICATE KEY UPDATE team_role=VALUES(team_role),membership_status='active',invited_by_user_id=COALESCE(VALUES(invited_by_user_id),invited_by_user_id),activated_at=NOW(),suspended_at=NULL,removed_at=NULL,role_changed_at=IF(team_role<>VALUES(team_role),NOW(),role_changed_at),updated_at=NOW()");
+          ON DUPLICATE KEY UPDATE role_changed_at=IF(team_role<>VALUES(team_role),NOW(),role_changed_at),team_role=VALUES(team_role),membership_status='active',invited_by_user_id=COALESCE(VALUES(invited_by_user_id),invited_by_user_id),activated_at=NOW(),suspended_at=NULL,removed_at=NULL,updated_at=NOW()");
         $stmt->execute([$ownerId,$memberId,$teamRole,$actorId]);
         workspace_team_v350_sync_projection($pdo,$ownerId,$memberId);
         artist_workspace_v104_sync_context_role_permissions($pdo);
@@ -220,7 +220,7 @@ function workspace_team_v350_change_role(PDO $pdo,int $ownerId,int $memberId,str
         if(!$row||$row['membership_status']==='removed')throw new RuntimeException('That Team membership is not available.');
         $oldRole=(string)$row['team_role'];
         if($oldRole==='producer'&&$teamRole!=='producer')artist_workspace_v104_revoke_producer_assignments($pdo,$ownerId,$memberId);
-        $stmt=$pdo->prepare('UPDATE workspace_memberships_v350 SET team_role=?,role_changed_at=IF(team_role<>?,NOW(),role_changed_at),updated_at=NOW() WHERE workspace_owner_user_id=? AND member_user_id=?');
+        $stmt=$pdo->prepare('UPDATE workspace_memberships_v350 SET role_changed_at=IF(team_role<>?,NOW(),role_changed_at),team_role=?,updated_at=NOW() WHERE workspace_owner_user_id=? AND member_user_id=?');
         $stmt->execute([$teamRole,$teamRole,$ownerId,$memberId]);
         workspace_team_v350_sync_projection($pdo,$ownerId,$memberId);
         if($owns)$pdo->commit();
