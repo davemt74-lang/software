@@ -1,0 +1,45 @@
+name: Package Entitlements v3.40
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - feature/package-entitlement-composition-v340
+
+permissions:
+  contents: read
+
+jobs:
+  entitlement-architecture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          coverage: none
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: PHP lint entitlement surfaces
+        run: |
+          php -l includes/subscription-entitlements-v340.php
+          php -l includes/subscriptions.php
+          php -l includes/subscription-access.php
+          php -l includes/permissions-v105.php
+          php -l includes/team-subscription.php
+          php -l admin/packages.php
+          php -l admin/entitlements.php
+          php -l setup.php
+          php -l upgrade.php
+
+      - name: Package entitlement composition contract
+        run: node tests/package-entitlement-composition-v340.mjs
