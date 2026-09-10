@@ -49,22 +49,26 @@ function music_workspace_resources_v331_boot(): void
 
 function music_workspace_resources_v331_release_types(): array
 {
-    return function_exists('release_v105_allowed_types')?release_v105_allowed_types():['single'=>'Single','ep'=>'EP','album'=>'Album','video'=>'Video','campaign'=>'Campaign'];
+    return function_exists('release_v105_release_types')?release_v105_release_types():['single'=>'Single','ep'=>'EP','album'=>'Album','video'=>'Video','show'=>'Show / Event','campaign'=>'Campaign','other'=>'Other'];
 }
 function music_workspace_resources_v331_release_statuses(): array
 {
-    return function_exists('release_v105_allowed_statuses')?release_v105_allowed_statuses():['planning'=>'Planning','active'=>'Active','blocked'=>'Blocked','complete'=>'Complete','archived'=>'Archived'];
+    return function_exists('release_v105_statuses')?release_v105_statuses():['planning'=>'Planning','active'=>'Active','scheduled'=>'Scheduled','released'=>'Released','paused'=>'Paused','cancelled'=>'Cancelled'];
+}
+function music_workspace_resources_v331_release_item_statuses(): array
+{
+    return function_exists('release_v105_item_statuses')?release_v105_item_statuses():['todo'=>'To Do','in_progress'=>'In Progress','blocked'=>'Blocked','waiting'=>'Waiting','scheduled'=>'Scheduled','complete'=>'Complete','cancelled'=>'Cancelled'];
 }
 function music_workspace_resources_v331_release_priorities(): array
 {
-    return function_exists('release_v105_allowed_priorities')?release_v105_allowed_priorities():['low'=>'Low','normal'=>'Normal','high'=>'High','urgent'=>'Urgent'];
+    return ['low'=>'Low','normal'=>'Normal','high'=>'High','urgent'=>'Urgent'];
 }
 
-function music_workspace_resources_v331_releases(PDO $pdo,int $workspaceId,bool $includeArchived=false): array
+function music_workspace_resources_v331_releases(PDO $pdo,int $workspaceId,bool $includeCancelled=false): array
 {
     if($workspaceId<1||!table_exists('release_plans'))return [];
-    $sql='SELECT r.*,(SELECT COUNT(*) FROM release_items i WHERE i.release_id=r.id) item_count,(SELECT COUNT(*) FROM release_items i WHERE i.release_id=r.id AND i.status IN (\'done\',\'complete\')) completed_count FROM release_plans r WHERE r.workspace_id=?';
-    if(!$includeArchived)$sql.=" AND r.status<>'archived'";
+    $sql='SELECT r.*,(SELECT COUNT(*) FROM release_items i WHERE i.release_id=r.id AND i.workspace_id=r.workspace_id) item_count,(SELECT COUNT(*) FROM release_items i WHERE i.release_id=r.id AND i.workspace_id=r.workspace_id AND i.status=\'complete\') completed_count FROM release_plans r WHERE r.workspace_id=?';
+    if(!$includeCancelled)$sql.=" AND r.status<>'cancelled'";
     $sql.=' ORDER BY CASE WHEN r.target_date IS NULL THEN 1 ELSE 0 END,r.target_date ASC,r.updated_at DESC,r.id DESC';
     $stmt=$pdo->prepare($sql);$stmt->execute([$workspaceId]);return $stmt->fetchAll()?:[];
 }
@@ -111,8 +115,8 @@ function music_workspace_resources_v331_add_release_item(PDO $pdo,int $workspace
 function music_workspace_resources_v331_set_release_item_status(PDO $pdo,int $workspaceId,int $releaseId,int $itemId,array $user,string $status): void
 {
     if(!music_workspace_resources_v330_can_manage($pdo,$workspaceId,'releases',$user))throw new RuntimeException('Release management is not available to your workspace role.');
-    if(!in_array($status,['todo','in_progress','blocked','done','complete'],true))throw new RuntimeException('Choose a valid task status.');
-    $stmt=$pdo->prepare("UPDATE release_items SET status=?,completed_at=CASE WHEN ? IN ('done','complete') THEN COALESCE(completed_at,NOW()) ELSE NULL END,updated_at=NOW() WHERE id=? AND release_id=? AND workspace_id=?");$stmt->execute([$status,$status,$itemId,$releaseId,$workspaceId]);if($stmt->rowCount()<1){$check=$pdo->prepare('SELECT 1 FROM release_items WHERE id=? AND release_id=? AND workspace_id=? LIMIT 1');$check->execute([$itemId,$releaseId,$workspaceId]);if(!$check->fetchColumn())throw new RuntimeException('Release task was not found in this Music Workspace.');}
+    $allowed=music_workspace_resources_v331_release_item_statuses();if(!isset($allowed[$status]))throw new RuntimeException('Choose a valid task status.');
+    $stmt=$pdo->prepare("UPDATE release_items SET status=?,completed_at=CASE WHEN ?='complete' THEN COALESCE(completed_at,NOW()) ELSE NULL END,updated_at=NOW() WHERE id=? AND release_id=? AND workspace_id=?");$stmt->execute([$status,$status,$itemId,$releaseId,$workspaceId]);if($stmt->rowCount()<1){$check=$pdo->prepare('SELECT 1 FROM release_items WHERE id=? AND release_id=? AND workspace_id=? LIMIT 1');$check->execute([$itemId,$releaseId,$workspaceId]);if(!$check->fetchColumn())throw new RuntimeException('Release task was not found in this Music Workspace.');}
 }
 
 function music_workspace_resources_v331_delete_release(PDO $pdo,int $workspaceId,int $releaseId,array $user): void
