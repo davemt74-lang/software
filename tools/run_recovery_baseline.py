@@ -132,38 +132,58 @@ PHP_TESTS = [
 ]
 
 
-def run(command: list[str], label: str) -> None:
+def run(command: list[str], label: str, failures: list[str]) -> bool:
+    """Run one baseline check and record failure without aborting later checks."""
     print(f'\n=== {label} ===', flush=True)
     result = subprocess.run(command, cwd=ROOT)
     if result.returncode != 0:
-        raise SystemExit(f'FAILED: {label} (exit {result.returncode})')
+        failure = f'{label} (exit {result.returncode})'
+        failures.append(failure)
+        print(f'FAILED: {failure}', file=sys.stderr, flush=True)
+        return False
+    return True
 
 
 def main() -> int:
+    failures: list[str] = []
+
+    # Lint the whole PHP surface, but report every broken file in a single run.
     php_files = sorted(
         path for path in ROOT.rglob('*.php')
         if '.git' not in path.parts and 'vendor' not in path.parts
     )
     for path in php_files:
-        run(['php', '-l', str(path.relative_to(ROOT))], f'PHP lint · {path.relative_to(ROOT)}')
+        rel = str(path.relative_to(ROOT))
+        run(['php', '-l', rel], f'PHP lint · {rel}', failures)
 
-    missing = [path for path in NODE_TESTS + PHP_TESTS if not (ROOT / path).is_file()]
-    if missing:
-        print('Missing recovery baseline tests:', file=sys.stderr)
-        for path in missing:
-            print(f' - {path}', file=sys.stderr)
-        return 2
+    required_tests = NODE_TESTS + PHP_TESTS
+    missing = [path for path in required_tests if not (ROOT / path).is_file()]
+    for path in missing:
+        failures.append(f'missing recovery baseline test: {path}')
+        print(f'MISSING: {path}', file=sys.stderr, flush=True)
 
     for path in HISTORICAL_WORKFLOW_COUPLED_TESTS:
         if (ROOT / path).is_file():
             print(f'SKIP historical workflow-coupled test: {path}')
 
+    # Do not stop at the first stale/broken contract. A single CI run must tell us
+    # the full recovery state so architecture migrations can be reconciled once.
     for path in PHP_TESTS:
-        run(['php', path], path)
+        if (ROOT / path).is_file():
+            run(['php', path], path, failures)
     for path in NODE_TESTS:
-        run(['node', path], path)
+        if (ROOT / path).is_file():
+            run(['node', path], path, failures)
 
-    run(['python3', 'tools/recovery_inventory.py'], 'deterministic recovery inventory')
+    run(['python3', 'tools/recovery_inventory.py'], 'deterministic recovery inventory', failures)
+
+    if failures:
+        print('\nRECOVERY_BASELINE=FAIL', file=sys.stderr)
+        print(f'Failures ({len(failures)}):', file=sys.stderr)
+        for failure in failures:
+            print(f' - {failure}', file=sys.stderr)
+        return 1
+
     print('\nRECOVERY_BASELINE=PASS')
     return 0
 
