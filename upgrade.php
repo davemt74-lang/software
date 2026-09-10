@@ -13,6 +13,7 @@ function vp3_upgrade_complete(): bool
 {
     return access_schema_ready()
         && subscription_schema_ready()
+        && subscription_entitlements_v340_schema_ready()
         && ai_usage_accounting_v032_schema_ready()
         && vp3_radar_schema_ready()
         && vp3_agent_referral_schema_ready()
@@ -62,6 +63,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         try {
             ensure_access_schema();
             subscription_ensure_schema();
+            subscription_entitlements_v340_ensure_schema();
             ai_usage_accounting_v032_ensure_schema();
             vp3_radar_ensure_schema();
             vp3_agent_referral_ensure_schema();
@@ -112,7 +114,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $complete = vp3_upgrade_complete();
 
             if ($complete) {
-                flash('notice', 'VP3 database upgrade complete: subscriptions, plugins, social relationships, human messaging, Team collaboration, workspace-owned Music resources, AI execution accounting, Agent Brain, Knowledge, Profile Agent, HomeServer Agent continuity, Agent Radar, CRM, transcriptions, and Music/Studio capabilities are ready.');
+                flash('notice', 'VP3 database upgrade complete: subscriptions, composable product entitlements, plugins, social relationships, human messaging, Team collaboration, workspace-owned Music resources, AI execution accounting, Agent Brain, Knowledge, Profile Agent, HomeServer Agent continuity, Agent Radar, CRM, transcriptions, and Music/Studio capabilities are ready.');
                 redirect(url('/admin/users.php'));
             }
         } catch (Throwable $e) {
@@ -128,7 +130,7 @@ vp3_public_header('Database Upgrade — VP3', 'Upgrade the VP3 database and appl
     <div class="vp3-auth-visual-content">
       <div class="vp3-kicker">System maintenance</div>
       <h1>Keep VP3 capabilities current.</h1>
-      <p>The upgrade process adds the current subscription, plugin, social, human messaging, billing, AI, HomeServer, collaboration, analytics, CRM and Studio schema without replacing existing user content.</p>
+      <p>The upgrade process adds the current subscription, composable entitlement, plugin, social, human messaging, billing, AI, HomeServer, collaboration, analytics, CRM and Studio schema without replacing existing user content.</p>
     </div>
   </section>
   <section class="vp3-auth-form-side">
@@ -137,10 +139,10 @@ vp3_public_header('Database Upgrade — VP3', 'Upgrade the VP3 database and appl
       <h1>VP3 Database Upgrade</h1>
       <?php if ($complete): ?>
         <div class="vp3-alert success">The current VP3 schema is installed and ready.</div>
-        <p class="vp3-auth-intro">Subscription packages, opt-in plugins, social relationships, human messaging, Team workspaces, workspace-owned Music resources, AI quota and execution accounting, Agent Brain, private Knowledge, Profile Agent, HomeServer Agent continuity, Agent Radar, CRM, voice identity, transcriptions and Music/Studio capabilities are available.</p>
+        <p class="vp3-auth-intro">Subscription packages, composable add-on entitlements, opt-in plugins, social relationships, human messaging, Team workspaces, workspace-owned Music resources, AI quota and execution accounting, Agent Brain, private Knowledge, Profile Agent, HomeServer Agent continuity, Agent Radar, CRM, voice identity, transcriptions and Music/Studio capabilities are available.</p>
         <a class="vp3-btn primary" href="<?= e(url('/admin/users.php')) ?>">Manage Users →</a>
       <?php else: ?>
-        <p class="vp3-auth-intro">Run the current schema upgrade while preserving existing content and access. Existing accounts, package assignments, team memberships, token balances, music content and onboarding progress are preserved.</p>
+        <p class="vp3-auth-intro">Run the current schema upgrade while preserving existing content and access. Existing accounts, package assignments, add-on grants, team memberships, token balances, music content and onboarding progress are preserved.</p>
         <?php if ($error): ?><div class="vp3-alert error" role="alert"><?= e($error) ?></div><?php endif; ?>
         <form method="post">
           <?= csrf_field() ?>
