@@ -62,7 +62,9 @@ assert.ok(nav.includes("'profile_agent','Profile Agent',url('/profile-agent.php'
 assert.ok(!nav.includes("url('/account.php#profile-agent')"), 'canonical navigation must not route Profile Agent back into My Account');
 assert.ok(!nav.includes('Stem Studio') && !nav.includes('/admin/stems.php'), 'Stem Studio must not appear in the user dropdown');
 assert.ok(!nav.includes('Video Editor') && !nav.includes('/video-editor.php'), 'Video Editor must not appear in the user dropdown');
-assert.ok(nav.indexOf("$add($links,'chat','Main Feed'") < nav.indexOf('$profileUrl = member_navigation_profile_url'), 'Main Feed must be the first canonical user-menu destination');
+const mainFeedIndex=nav.indexOf("$add($links,'chat','Main Feed'");
+const profileResolveIndex=nav.indexOf('$profileUrl=member_navigation_profile_url($user)');
+assert.ok(mainFeedIndex>=0 && profileResolveIndex>=0 && mainFeedIndex<profileResolveIndex, 'Main Feed must be the first canonical user-menu destination');
 
 for (const [name, source] of [['account', account], ['admin', admin], ['site header', header]]) {
   assert.ok(source.includes('member_navigation_menu_links'), `${name} should use canonical member navigation`);
