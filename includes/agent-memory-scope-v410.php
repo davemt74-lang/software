@@ -11,6 +11,15 @@ declare(strict_types=1);
 const VP3_AGENT_MEMORY_SCOPE_V410='vp3-agent-memory-scope-v410-20260910';
 const VP3_AGENT_MEMORY_SCOPE_VERSION_V410=410;
 
+function vp3_agent_memory_scope_index_exists_v410(PDO $pdo,string $table,string $index): bool
+{
+    try{
+        $stmt=$pdo->prepare('SELECT 1 FROM information_schema.statistics WHERE table_schema=DATABASE() AND table_name=? AND index_name=? LIMIT 1');
+        $stmt->execute([$table,$index]);
+        return (bool)$stmt->fetchColumn();
+    }catch(Throwable $e){return false;}
+}
+
 function vp3_agent_memory_scope_schema_ready_v410(?PDO $pdo=null): bool
 {
     $pdo ??= db();
@@ -45,10 +54,10 @@ function vp3_agent_memory_scope_ensure_schema_v410(?PDO $pdo=null): void
                    memory_scope_version=410
                WHERE memory_scope_version<410");
 
-    if(!index_exists('agent_memory_items','idx_agent_memory_agent_type_v410')){
+    if(!vp3_agent_memory_scope_index_exists_v410($pdo,'agent_memory_items','idx_agent_memory_agent_type_v410')){
         $pdo->exec('ALTER TABLE agent_memory_items ADD INDEX idx_agent_memory_agent_type_v410 (user_id,user_agent_id,memory_type,is_active,last_seen_at)');
     }
-    if(!index_exists('agent_memory_items','idx_agent_memory_agent_occurrence_v410')){
+    if(!vp3_agent_memory_scope_index_exists_v410($pdo,'agent_memory_items','idx_agent_memory_agent_occurrence_v410')){
         $pdo->exec('ALTER TABLE agent_memory_items ADD INDEX idx_agent_memory_agent_occurrence_v410 (user_id,user_agent_id,occurrence_count,last_seen_at)');
     }
 }
