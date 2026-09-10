@@ -7,6 +7,7 @@ require_permission('users.manage');
 $pdo=db();
 if(!$pdo)throw new RuntimeException('Database connection is unavailable.');
 if(!subscription_schema_ready($pdo))subscription_ensure_schema($pdo);
+if(function_exists('subscription_entitlements_v340_ensure_schema'))subscription_entitlements_v340_ensure_schema($pdo);
 
 function admin_package_slug(string $value): string
 {
@@ -16,12 +17,14 @@ function admin_package_slug(string $value): string
 }
 function admin_package_entitlement_catalog(): array
 {
-    $catalog=subscription_capability_catalog();
-    if(function_exists('permission_catalog')){
-        foreach(permission_catalog() as $key=>$meta){
-            $catalog[subscription_permission_key((string)$key)]=['label'=>'Permission: '.(string)($meta['label']??$key),'type'=>'boolean','category'=>'Permissions'];
-        }
-    }
+    // Commercial packages expose product capabilities and limits only. Security
+    // permissions are managed by Roles/Permissions and workspace membership.
+    $catalog=array_filter(subscription_capability_catalog(),static fn(array $meta,string $key): bool=>
+        function_exists('subscription_entitlement_key_is_product_v340')
+            ? subscription_entitlement_key_is_product_v340($key)
+            : !str_starts_with($key,'permission.'),
+        ARRAY_FILTER_USE_BOTH
+    );
     uasort($catalog,static fn(array $a,array $b): int=>[(string)($a['category']??''),(string)($a['label']??'')]<=>[(string)($b['category']??''),(string)($b['label']??'')]);
     return $catalog;
 }
@@ -43,9 +46,17 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
                 if($editId>0){$stmt=$pdo->prepare('UPDATE subscription_packages SET slug=?,name=?,description=?,monthly_price_cents=?,annual_price_cents=?,ai_tokens_monthly=?,trial_days=?,trial_tokens=?,is_trial=?,is_default=?,is_public=?,is_active=?,sort_order=? WHERE id=?');$stmt->execute([...$values,$editId]);$packageId=$editId;}
                 else{$stmt=$pdo->prepare('INSERT INTO subscription_packages (slug,name,description,monthly_price_cents,annual_price_cents,ai_tokens_monthly,trial_days,trial_tokens,is_trial,is_default,is_public,is_active,sort_order) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)');$stmt->execute($values);$packageId=(int)$pdo->lastInsertId();}
                 if(!empty($_POST['is_default'])){$pdo->prepare('UPDATE subscription_packages SET is_default=0 WHERE id<>?')->execute([$packageId]);$pdo->prepare('UPDATE subscription_packages SET is_default=1 WHERE id=?')->execute([$packageId]);}
-                $enabled=is_array($_POST['entitlement_enabled']??null)?$_POST['entitlement_enabled']:[];$limits=is_array($_POST['entitlement_limit']??null)?$_POST['entitlement_limit']:[];
+                $enabled=is_array($_POST['entitlement_enabled']??null)?$_POST['entitlement_enabled']:[];
+                $limits=is_array($_POST['entitlement_limit']??null)?$_POST['entitlement_limit']:[];
                 $upsert=$pdo->prepare('INSERT INTO package_entitlements (package_id,capability_key,is_enabled,limit_value) VALUES (?,?,?,?) ON DUPLICATE KEY UPDATE is_enabled=VALUES(is_enabled),limit_value=VALUES(limit_value),updated_at=NOW()');
-                foreach(admin_package_entitlement_catalog() as $key=>$meta){$limit=null;if(($meta['type']??'boolean')==='limit'){$raw=trim((string)($limits[$key]??''));$limit=$raw===''?null:max(0,(int)$raw);}$upsert->execute([$packageId,$key,array_key_exists($key,$enabled)?1:0,$limit]);}
+                foreach(admin_package_entitlement_catalog() as $key=>$meta){
+                    if(function_exists('subscription_entitlement_key_is_product_v340')&&!subscription_entitlement_key_is_product_v340($key))continue;
+                    $limit=null;
+                    if(($meta['type']??'boolean')==='limit'){$raw=trim((string)($limits[$key]??''));$limit=$raw===''?null:max(0,(int)$raw);}
+                    $upsert->execute([$packageId,$key,array_key_exists($key,$enabled)?1:0,$limit]);
+                }
+                // Defensive cleanup for rows from pre-v3.40 package editors.
+                $pdo->prepare("DELETE FROM package_entitlements WHERE package_id=? AND (capability_key LIKE 'permission.%' OR capability_key='legacy.permissions')")->execute([$packageId]);
                 $pdo->commit();flash('notice','Package saved.');redirect(url('/admin/packages.php'));
             }
             if($action==='duplicate'){
@@ -53,7 +64,10 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
                 $slug=admin_package_slug((string)$source['slug'].'-copy-'.date('His'));
                 $stmt=$pdo->prepare('INSERT INTO subscription_packages (slug,name,description,monthly_price_cents,annual_price_cents,ai_tokens_monthly,trial_days,trial_tokens,is_trial,is_default,is_public,is_active,sort_order) VALUES (?,?,?,?,?,?,?,?,?,0,0,1,?)');
                 $stmt->execute([$slug,(string)$source['name'].' Copy',(string)$source['description'],(int)$source['monthly_price_cents'],(int)$source['annual_price_cents'],(int)$source['ai_tokens_monthly'],(int)$source['trial_days'],(int)$source['trial_tokens'],(int)$source['is_trial'],(int)$source['sort_order']+1]);
-                $newId=(int)$pdo->lastInsertId();$pdo->prepare('INSERT INTO package_entitlements (package_id,capability_key,is_enabled,limit_value,metadata_json) SELECT ?,capability_key,is_enabled,limit_value,metadata_json FROM package_entitlements WHERE package_id=?')->execute([$newId,$editId]);
+                $newId=(int)$pdo->lastInsertId();
+                $pdo->prepare("INSERT INTO package_entitlements (package_id,capability_key,is_enabled,limit_value,metadata_json)
+                    SELECT ?,capability_key,is_enabled,limit_value,metadata_json FROM package_entitlements
+                    WHERE package_id=? AND capability_key NOT LIKE 'permission.%' AND capability_key<>'legacy.permissions'")->execute([$newId,$editId]);
                 flash('notice','Package duplicated.');redirect(url('/admin/packages.php?edit='.$newId));
             }
         }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();$error=$e->getMessage();}
@@ -68,7 +82,7 @@ $showModal=isset($_GET['new'])||$editId>0||$error!=='';
 $adminTitle='Packages';$adminActive='packages';require __DIR__.'/_header.php';
 ?>
 <section class="admin-section-heading">
-  <div><span class="eyebrow">Monetization</span><h2>Packages &amp; subscriptions</h2><p>Manage reusable account packages, AI allowances, feature entitlements, limits and public availability.</p></div>
+  <div><span class="eyebrow">Monetization</span><h2>Packages &amp; subscriptions</h2><p>Manage reusable account packages, AI allowances, product capabilities, limits and public availability. Security authority is managed separately through roles and workspace membership.</p></div>
   <div class="actions"><a class="button primary" href="<?= e(url('/admin/packages.php?new=1')) ?>" data-admin-modal-open="packageModal">+ Create package</a></div>
 </section>
 <?php if($error): ?><div class="notice error"><?= e($error) ?></div><?php endif; ?>
@@ -89,14 +103,14 @@ $adminTitle='Packages';$adminActive='packages';require __DIR__.'/_header.php';
 
 <?php if($package): ?>
 <section class="admin-card" style="margin-top:14px">
-  <div class="admin-card-head"><div><h3><?= e((string)$package['name']) ?> access summary</h3><p>Current package-level capabilities before Team/workspace delegation or internal Admin authority.</p></div></div>
+  <div class="admin-card-head"><div><h3><?= e((string)$package['name']) ?> product access summary</h3><p>Base-package capabilities before independent add-on grants. Roles and Team permissions are not commercial entitlements.</p></div></div>
   <div class="admin-table-wrap"><table class="admin-table"><tbody><tr><td>AI allowance</td><td><?= (int)$package['is_trial']===1?number_format((int)$package['trial_tokens']).' total trial tokens':number_format((int)$package['ai_tokens_monthly']).' tokens/month' ?></td></tr><?php foreach($catalog as $key=>$meta):$state=$entitlementMap[$key]??null;if(!$state||(int)$state['is_enabled']!==1)continue;?><tr><td><?= e((string)$meta['label']) ?></td><td><?= ($meta['type']??'boolean')==='limit'?(($state['limit_value']===null)?'Enabled':number_format((int)$state['limit_value'])):'Enabled' ?></td></tr><?php endforeach; ?></tbody></table></div>
 </section>
 <?php endif; ?>
 
 <div class="admin-modal" id="packageModal" data-admin-modal aria-hidden="<?= $showModal?'false':'true' ?>" <?= $showModal?'data-admin-modal-auto-open="1"':'hidden' ?>>
   <div class="admin-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="packageModalTitle">
-    <div class="admin-modal-head"><div><span class="eyebrow"><?= $package?'Edit package':'New package' ?></span><h2 id="packageModalTitle"><?= $package?'Edit '.e((string)$package['name']):'Create package' ?></h2><p><?= $package?'Changes affect package access immediately.':'Create a reusable VP3 subscription package.' ?></p></div><a class="admin-modal-close" href="<?= e(url('/admin/packages.php')) ?>" data-admin-modal-close aria-label="Close">×</a></div>
+    <div class="admin-modal-head"><div><span class="eyebrow"><?= $package?'Edit package':'New package' ?></span><h2 id="packageModalTitle"><?= $package?'Edit '.e((string)$package['name']):'Create package' ?></h2><p><?= $package?'Changes affect product access immediately.':'Create a reusable VP3 base subscription package.' ?></p></div><a class="admin-modal-close" href="<?= e(url('/admin/packages.php')) ?>" data-admin-modal-close aria-label="Close">×</a></div>
     <div class="admin-modal-body">
       <form method="post" class="admin-form" id="packageForm"><?= csrf_field() ?><input type="hidden" name="action" value="save"><input type="hidden" name="package_id" value="<?= (int)$editId ?>">
         <div class="form-row"><label>Name<input name="name" maxlength="120" required value="<?= e((string)($package['name']??'')) ?>" autofocus></label><label>Slug<input name="slug" maxlength="80" value="<?= e((string)($package['slug']??'')) ?>" placeholder="auto-from-name"></label></div>
@@ -105,7 +119,7 @@ $adminTitle='Packages';$adminActive='packages';require __DIR__.'/_header.php';
         <div class="form-row"><label>Monthly AI tokens<input type="number" min="0" name="ai_tokens_monthly" value="<?= (int)($package['ai_tokens_monthly']??0) ?>"></label><label>Sort order<input type="number" name="sort_order" value="<?= (int)($package['sort_order']??100) ?>"></label></div>
         <div class="form-row"><label>Trial days<input type="number" min="0" max="3650" name="trial_days" value="<?= (int)($package['trial_days']??0) ?>"></label><label>Trial AI tokens<input type="number" min="0" name="trial_tokens" value="<?= (int)($package['trial_tokens']??0) ?>"></label></div>
         <div class="admin-check-grid"><label><input type="checkbox" name="is_trial" value="1" <?= (int)($package['is_trial']??0)===1?'checked':'' ?>> Trial package</label><label><input type="checkbox" name="is_default" value="1" <?= (int)($package['is_default']??0)===1?'checked':'' ?>> Default signup package</label><label><input type="checkbox" name="is_public" value="1" <?= !$package||(int)$package['is_public']===1?'checked':'' ?>> Public</label><label><input type="checkbox" name="is_active" value="1" <?= !$package||(int)$package['is_active']===1?'checked':'' ?>> Active</label></div>
-        <div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>Capability</th><th>Enabled</th><th>Limit</th></tr></thead><tbody>
+        <div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>Product capability</th><th>Enabled</th><th>Limit</th></tr></thead><tbody>
         <?php $lastCategory='';foreach($catalog as $key=>$meta):$category=(string)($meta['category']??'Other');$state=$entitlementMap[$key]??null;if($category!==$lastCategory):$lastCategory=$category;?><tr><th colspan="3"><?= e($category) ?></th></tr><?php endif; ?><tr><td><strong><?= e((string)$meta['label']) ?></strong><br><small><?= e($key) ?></small></td><td><input type="checkbox" name="entitlement_enabled[<?= e($key) ?>]" value="1" <?= $state&&(int)$state['is_enabled']===1?'checked':'' ?>></td><td><?php if(($meta['type']??'boolean')==='limit'): ?><input type="number" min="0" name="entitlement_limit[<?= e($key) ?>]" value="<?= e($state&&$state['limit_value']!==null?(string)$state['limit_value']:'') ?>"><?php else: ?>—<?php endif; ?></td></tr><?php endforeach; ?>
         </tbody></table></div>
       </form>
