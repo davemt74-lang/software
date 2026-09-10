@@ -2,11 +2,11 @@
 declare(strict_types=1);
 
 /**
- * Canonical package state for a VP3-owned collaborative workspace.
+ * Canonical commercial state for a VP3-owned collaborative workspace.
  *
- * Identity/permissions decide who may manage a Team. The package's team_seats
- * entitlement is the sole commercial authority for whether new members may be
- * added and how many active seats are available. A NULL limit means unlimited.
+ * Identity/permissions decide who may manage a Team. Product entitlements decide
+ * capacity only. The base package and active add-on grants compose through the
+ * canonical subscription resolver; a NULL limit means unlimited.
  */
 function team_subscription_state(?array $user=null,?PDO $pdo=null): array
 {
@@ -35,21 +35,16 @@ function team_subscription_state(?array $user=null,?PDO $pdo=null): array
         ? music_workspace_owner_permission_v320('team.manage',$user)
         : has_permission('team.manage',$user);
 
-    // Workspace ownership/capability is authoritative. A global Artist role is
-    // retained only inside legacy compatibility helpers and is never required here.
     $state['authorized']=$isInternalAdmin||($workspaceOwner&&$canManage);
 
     if($state['authorized']&&$pdo&&table_exists('artist_team_members')){
         try{
-            // Disabled VP3 identities do not consume commercial Team seats.
             $stmt=$pdo->prepare('SELECT COUNT(*) FROM artist_team_members atm INNER JOIN users u ON u.id=atm.member_user_id AND u.is_active=1 WHERE atm.artist_user_id=?');
             $stmt->execute([(int)$user['id']]);
             $state['used']=(int)$stmt->fetchColumn();
         }catch(Throwable $e){$state['used']=0;}
     }
 
-    // Before the subscription migration, preserve the historical two-seat
-    // behavior. Once package storage exists, package data is authoritative.
     if($isInternalAdmin){
         $state['package_name']='Internal Admin';
         $state['included']=true;
@@ -64,15 +59,15 @@ function team_subscription_state(?array $user=null,?PDO $pdo=null): array
         if($subscription){
             $state['package_id']=(int)$subscription['package_id'];
             $state['package_name']=(string)($subscription['package_name']??'Current package');
-            $row=subscription_entitlement_row((int)$subscription['package_id'],'team_seats');
-            $state['included']=$row&&(int)($row['is_enabled']??0)===1;
-            if($state['included']){
-                if($row['limit_value']===null){
-                    $state['limit']=null;
-                    $state['unlimited']=true;
-                }else{
-                    $state['limit']=max(0,(int)$row['limit_value']);
-                }
+        }
+        $state['included']=subscription_has_entitlement($user,'team_seats');
+        if($state['included']){
+            $limit=subscription_entitlement_limit($user,'team_seats',0);
+            if($limit===null){
+                $state['limit']=null;
+                $state['unlimited']=true;
+            }else{
+                $state['limit']=max(0,$limit);
             }
         }
     }
