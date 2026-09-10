@@ -93,6 +93,15 @@ function vp3_agent_runtime_plan_v420(PDO $pdo,array $user,int $agentId,string $s
 
     $effective=(string)($policy['effective_preference']??$requested);
     if(!in_array($effective,['auto','homeserver_only','vp3_cloud'],true))$effective='auto';
+
+    // HomeServer may delegate to VP3 Cloud only when Automatic routing is in
+    // effect, the authenticated wrapper scope allows cloud, and VP3 confirms
+    // current commercial/token capacity. HomeServer-only is always local/user-
+    // provider only and therefore receives cloud_allowed=false.
+    $homeCloudAllowed=$effective==='auto'
+        && !empty($home['cloud_allowed'])
+        && !empty($cloud['ready']);
+
     $gateway=ai_gateway_v031_plan([
         'surface'=>$surface,
         'preference'=>$effective,
@@ -100,7 +109,7 @@ function vp3_agent_runtime_plan_v420(PDO $pdo,array $user,int $agentId,string $s
         'home_supported'=>$home['supported'],
         'home_ready'=>$home['ready'],
         'cloud_ready'=>!empty($cloud['ready']),
-        'homeserver_cloud_allowed'=>!empty($home['cloud_allowed']),
+        'homeserver_cloud_allowed'=>$homeCloudAllowed,
     ]);
 
     return [
@@ -110,7 +119,7 @@ function vp3_agent_runtime_plan_v420(PDO $pdo,array $user,int $agentId,string $s
         'compute_policy'=>agent_compute_v023_public_policy($policy,$agentId),
         'route'=>(string)$gateway['route'],'route_reason'=>(string)$gateway['reason'],'blocked'=>!empty($gateway['blocked']),
         'try_homeserver'=>!empty($gateway['try_homeserver']),'allow_vp3_fallback'=>!empty($gateway['allow_vp3_fallback']),
-        'fallback_target'=>(string)($gateway['fallback_target']??'none'),'homeserver_cloud_allowed'=>!empty($gateway['homeserver_cloud_allowed']),
+        'fallback_target'=>(string)($gateway['fallback_target']??'none'),'homeserver_cloud_allowed'=>$homeCloudAllowed,
         'home'=>$home,'cloud'=>$cloud,
         'capability'=>[
             'supported'=>!empty($brainCapability['supported']),'ready'=>!empty($brainCapability['ready']),
