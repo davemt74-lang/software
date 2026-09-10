@@ -37,10 +37,12 @@ jobs:
           php -l includes/subscription-access.php
           php -l includes/subscription-request-gates.php
           php -l includes/permissions-v105.php
+          php -l includes/artist-workspaces-v104.php
           php -l includes/team-subscription.php
           php -l includes/music-workspace-plugin-v320.php
           php -l admin/packages.php
           php -l admin/entitlements.php
+          php -l admin/permissions.php
           php -l setup.php
           php -l upgrade.php
 
