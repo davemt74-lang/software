@@ -50,6 +50,14 @@ assert.match(messagesApi, /friend_request/);
 assert.match(messagesApi, /block/);
 assert.match(socialRefined, /r\.status='pending'/);
 
+// Direct sends are re-evaluated against the current social/workspace relationship.
+assert.match(socialRefined, /function vp3_social_send_message_v321/);
+assert.match(socialRefined, /vp3_social_dm_route_v320\(\$pdo,\$senderId,\$other\)/);
+assert.match(socialRefined, /This member is not accepting messages from you/);
+assert.match(socialRefined, /status='accepted'/);
+assert.match(messagesApi, /vp3_social_start_direct_v321/);
+assert.match(messagesApi, /vp3_social_send_message_v321/);
+
 // Team General is authorized from current workspace membership, not a copied participant grant.
 assert.match(social, /conversation_type='team_general'/);
 assert.match(social, /artist_team_members/);
