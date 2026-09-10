@@ -71,9 +71,19 @@ assert.match(libraryPage, /UPDATE artist_catalog_albums_v181[\s\S]*WHERE id=\? A
 assert.match(libraryPage, /producer_user_id=\?/);
 assert.match(libraryPage, /music-studio\.php\?workspace=/);
 
-// Studio entry resolves a workspace track and bridges to the existing mature Stem Studio only after authorization.
+// Studio entry resolves a workspace track and uses the strict preparation guard.
+// A Producer may open only an existing backing track explicitly assigned to them;
+// they cannot self-assign a catalog track by guessing a route id.
+const studioPrep = runtime.match(/function music_workspace_resources_v331_prepare_studio_track[\s\S]*?\n}/)?.[0] || '';
+assert.match(studioPrep, /music_workspace_resources_v330_can_access/);
+assert.match(studioPrep, /\$role==='producer'/);
+assert.match(studioPrep, /\$sourceId<1/);
+assert.match(studioPrep, /producer_user_id=\?/);
+assert.match(studioPrep, /music_workspace_resources_v330_can_manage_track/);
+assert.match(studioPrep, /music_workspace_resources_v330_ensure_production_track/);
 assert.match(studioPage, /music_workspace_resources_v330_resolve_active/);
-assert.match(studioPage, /music_workspace_resources_v330_ensure_production_track/);
+assert.match(studioPage, /music_workspace_resources_v331_prepare_studio_track/);
+assert.doesNotMatch(studioPage, /music_workspace_resources_v330_ensure_production_track/);
 assert.match(studioPage, /admin\/stems\.php\?track=/);
 assert.doesNotMatch(studioPage, /owner_user_id\s*===|user_has_role\('artist'/);
 
