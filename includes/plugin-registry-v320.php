@@ -55,7 +55,10 @@ function vp3_plugin_enabled_v320(PDO $pdo,int $userId,string $key): bool
 function vp3_plugin_set_enabled_v320(PDO $pdo,int $userId,string $key,bool $enabled): array
 {
     if($userId<1)throw new RuntimeException('Sign in to manage plugins.');if(!vp3_plugin_valid_v320($key))throw new RuntimeException('Unknown VP3 plugin.');
-    vp3_plugin_ensure_schema_v320($pdo);$status=$enabled?'enabled':'disabled';
+    // DDL causes implicit commits in MySQL. Only create the schema when missing so
+    // callers can safely wrap installation-state mutations in their own transaction.
+    if(!vp3_plugin_schema_ready_v320($pdo))vp3_plugin_ensure_schema_v320($pdo);
+    $status=$enabled?'enabled':'disabled';
     $stmt=$pdo->prepare("INSERT INTO user_plugin_installations (user_id,plugin_key,status,enabled_at,disabled_at) VALUES (?,?,?,IF(?='enabled',NOW(),NULL),IF(?='disabled',NOW(),NULL)) ON DUPLICATE KEY UPDATE status=VALUES(status),enabled_at=IF(VALUES(status)='enabled',COALESCE(enabled_at,NOW()),enabled_at),disabled_at=IF(VALUES(status)='disabled',NOW(),NULL),updated_at=NOW()");
     $stmt->execute([$userId,$key,$status,$status,$status]);
     return vp3_plugin_installation_v320($pdo,$userId,$key)?:throw new RuntimeException('Plugin state could not be saved.');
