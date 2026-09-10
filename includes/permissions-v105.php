@@ -53,15 +53,24 @@ function permission_v105_has(string $permission, ?array $user = null): bool
     if($permission==='midi.manage')return false;
 
     // Packages and add-ons buy product capabilities; they never create security
-    // authority. Canonical role/direct/workspace authorization is the source of
-    // truth regardless of the customer's commercial plan.
-    if(function_exists('has_permission')&&has_permission($permission,$user))return true;
-
+    // authority. Extended v105 permissions are resolved directly from the same
+    // role-permission matrix used by the Admin permission editor.
+    $roles=user_roles_for_user($user);
+    if(!$roles)return false;
     $pdo=db();
-    if($pdo&&permissions_schema_ready())return false;
+    if($pdo&&permissions_schema_ready()){
+        try{
+            $placeholders=implode(',',array_fill(0,count($roles),'?'));
+            $stmt=$pdo->prepare("SELECT 1 FROM role_permissions WHERE permission_key=? AND role IN ($placeholders) LIMIT 1");
+            $stmt->execute([$permission,...$roles]);
+            return (bool)$stmt->fetchColumn();
+        }catch(Throwable $e){
+            // Fall through to compatibility defaults only if storage cannot be read.
+        }
+    }
 
-    // Pre-permission-schema fallback only.
-    foreach(user_roles_for_user($user) as $role){
+    // Pre-permission-schema/read-failure fallback only.
+    foreach($roles as $role){
         if(in_array($role,permission_v105_default_roles()[$permission]??[],true))return true;
     }
     return false;
