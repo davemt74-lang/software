@@ -7,6 +7,7 @@ const lifecycle=read('includes/user-agent-lifecycle-v390.php');
 const profileApi=read('api/profile-agent.php');
 const agentApi=read('api/user-agent-system-v236.php');
 const publicUi=read('profile-agent.js');
+const accountUi=read('account-agent-settings-v236.js');
 const bootstrap=read('includes/bootstrap.php');
 const setup=read('setup.php');
 const upgrade=read('upgrade.php');
@@ -75,6 +76,10 @@ assert.doesNotMatch(agentApi,/DELETE FROM chat_conversations/);
 assert.doesNotMatch(agentApi,/user_agent_delete_v236/);
 assert.match(agentApi,/vp3_user_agent_filter_visible_v390/);
 assert.match(agentApi,/vp3_user_agent_require_current_v390/);
+assert.match(accountUi,/>Retire<\/button>/,'Agent settings labels the lifecycle action as Retire');
+assert.match(accountUi,/Existing Agent Chat and Profile Agent history will be preserved/,'retirement confirmation explains history preservation');
+assert.match(accountUi,/Agent retired\. Conversation history preserved\./,'retirement completion copy matches durable lifecycle behavior');
+assert.doesNotMatch(accountUi,/and its agent chat history\? This cannot be undone/,'destructive history-deletion copy is retired');
 
 // Lifecycle schema DDL is prepared before mutation and forbidden from running
 // inside an active lifecycle transaction.
