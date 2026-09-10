@@ -17,9 +17,10 @@ assert.ok(state.includes("$state['limit']=2"), 'two-seat behavior may remain onl
 assert.ok(state.includes("$state['over_limit']=(int)$state['used']>$limit"), 'downgrades must detect over-limit Teams without deleting members');
 assert.ok(state.includes("$state['can_add']=$state['authorized']"), 'add-member availability must combine authorization with package capacity');
 assert.ok(state.includes("$isInternalAdmin=function_exists('subscription_is_internal_admin')&&subscription_is_internal_admin($user)"), 'canonical Team state must explicitly recognize internal admins');
-assert.ok(state.includes("$musicOwner=function_exists('music_workspace_enabled_v320')&&music_workspace_enabled_v320($user)"), 'Music Workspace enablement must be a canonical Team-owner authority');
-assert.ok(state.includes("$legacyOwner=function_exists('artist_workspace_v104_is_artist')&&artist_workspace_v104_is_artist($user)"), 'legacy workspace/package context may remain as a migration compatibility authority');
-assert.ok(state.includes("$state['authorized']=$isInternalAdmin||$musicOwner||$legacyOwner"), 'internal admins, Music Workspace owners, and legacy workspace owners must be authorized without a global Artist role');
+assert.ok(state.includes("if(function_exists('music_workspace_enabled_v320'))$workspaceOwner=music_workspace_enabled_v320($user);"), 'Music Workspace enablement must be a canonical Team-owner authority');
+assert.ok(state.includes("if(!$workspaceOwner&&function_exists('artist_workspace_v104_is_artist'))$workspaceOwner=artist_workspace_v104_is_artist($user);"), 'legacy workspace/package context may remain only as a migration fallback');
+assert.ok(state.includes("music_workspace_owner_permission_v320('team.manage',$user)"), 'Team ownership must still require the scoped Team management capability');
+assert.ok(state.includes("$state['authorized']=$isInternalAdmin||($workspaceOwner&&$canManage);"), 'internal admins or capable workspace owners must be authorized without a global Artist role');
 assert.ok(!state.includes("user_has_role('artist',$user)"), 'canonical Team authorization must not depend on a global Artist role');
 assert.ok(state.indexOf("if($isInternalAdmin){") < state.indexOf("subscription_schema_ready($pdo)"), 'internal admin unlimited Team access must not depend on subscription schema/package assignment');
 assert.ok(state.includes("$state['package_name']='Internal Admin'"), 'internal admin Team state must be explicit');
