@@ -142,9 +142,13 @@ function agent_proactive_operations_v036_recent_cloud_fallbacks(PDO $pdo, int $u
     }
     $floor = max(time() - 86400, $since > 0 ? $since : 0);
     try {
+        $hasV420 = function_exists('column_exists') && column_exists('ai_execution_ledger', 'actual_route');
+        $routeFilter = $hasV420
+            ? " AND actual_route='vp3_cloud'"
+            : " AND source='vp3_cloud'";
         $stmt = $pdo->prepare(
             "SELECT COUNT(*) FROM ai_execution_ledger "
-            . "WHERE user_id=? AND occurred_at>=? AND source='vp3_cloud' AND fallback_used=1"
+            . "WHERE user_id=? AND created_at>=? AND fallback_used=1" . $routeFilter
         );
         $stmt->execute([$userId, gmdate('Y-m-d H:i:s', $floor)]);
         return max(0, (int)$stmt->fetchColumn());
