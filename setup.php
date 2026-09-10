@@ -23,8 +23,9 @@ try {
     subscription_entitlements_v340_ensure_schema($pdo);
     // schema.sql is the historical install baseline. Normalize it immediately to
     // the current architecture so fresh installs never retain retired constraints
-    // or the legacy mixed-ownership Music production graph.
+    // or mixed workspace ownership/lifecycle state.
     artist_workspace_v104_ensure_schema();
+    workspace_team_v350_ensure_schema($pdo);
     vp3_plugin_ensure_schema_v320($pdo);
     vp3_social_ensure_schema_v320($pdo);
     artist_workspace_v181_ensure_schema($pdo);
