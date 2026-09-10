@@ -17,9 +17,13 @@ assert.ok(state.includes("$state['limit']=2"), 'two-seat behavior may remain onl
 assert.ok(state.includes("$state['over_limit']=(int)$state['used']>$limit"), 'downgrades must detect over-limit Teams without deleting members');
 assert.ok(state.includes("$state['can_add']=$state['authorized']"), 'add-member availability must combine authorization with package capacity');
 assert.ok(state.includes("$isInternalAdmin=function_exists('subscription_is_internal_admin')&&subscription_is_internal_admin($user)"), 'canonical Team state must explicitly recognize internal admins');
-assert.ok(state.includes("$state['authorized']=$isInternalAdmin||(user_has_role('artist',$user)"), 'internal admins must be authorized even without an Artist role');
+assert.ok(state.includes("$musicOwner=function_exists('music_workspace_enabled_v320')&&music_workspace_enabled_v320($user)"), 'Music Workspace enablement must be a canonical Team-owner authority');
+assert.ok(state.includes("$legacyOwner=function_exists('artist_workspace_v104_is_artist')&&artist_workspace_v104_is_artist($user)"), 'legacy workspace/package context may remain as a migration compatibility authority');
+assert.ok(state.includes("$state['authorized']=$isInternalAdmin||$musicOwner||$legacyOwner"), 'internal admins, Music Workspace owners, and legacy workspace owners must be authorized without a global Artist role');
+assert.ok(!state.includes("user_has_role('artist',$user)"), 'canonical Team authorization must not depend on a global Artist role');
 assert.ok(state.indexOf("if($isInternalAdmin){") < state.indexOf("subscription_schema_ready($pdo)"), 'internal admin unlimited Team access must not depend on subscription schema/package assignment');
 assert.ok(state.includes("$state['package_name']='Internal Admin'"), 'internal admin Team state must be explicit');
+assert.ok(state.includes('u.is_active=1'), 'only active Team members may consume commercial Team seats');
 
 assert.ok(team.includes("$teamState=team_subscription_state($user,$pdo)"), 'front-end My Team must render from canonical package state');
 assert.ok(team.includes("$lockedTeamState=team_subscription_state($user,$pdo)"), 'add-member requests must re-read package capacity after the owner lock');
@@ -27,7 +31,9 @@ assert.ok(team.indexOf("SELECT id FROM users WHERE id=? FOR UPDATE") < team.inde
 assert.ok(!team.includes("subscription_package_grants_permission($user,'team.manage')"), 'Team seats, not a duplicate package permission flag, must be the commercial Team authority');
 assert.ok(!team.includes("subscription_package_grants_permission($user,'admin.access')"), 'package seat state must not be coupled to an unrelated Admin package flag');
 assert.ok(team.includes("$teamInternalAdmin=function_exists('subscription_is_internal_admin')&&subscription_is_internal_admin($user)"), 'My Team page must recognize internal admins');
-assert.ok(team.includes("if(!$teamInternalAdmin){"), 'Artist role/permission gates must apply only to non-admin Team owners');
+assert.ok(team.includes("$initialTeamState=team_subscription_state($user)"), 'My Team must authorize through the canonical Team state resolver');
+assert.ok(team.includes("if(empty($initialTeamState['authorized']))"), 'unauthorized accounts must be denied by canonical Team state');
+assert.ok(!team.includes("user_has_role('artist',$user)"), 'My Team page must not require the retired global Artist identity');
 assert.ok(team.includes("Existing relationships remain intact"), 'downgrade UI must explicitly preserve existing Team relationships');
 assert.ok(team.includes("No one was removed by the package change"), 'over-limit downgrade UI must be non-destructive');
 assert.ok(team.includes("url('/subscription.php')"), 'limit/locked states must link to plan management');
