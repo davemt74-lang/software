@@ -1,0 +1,68 @@
+name: Section 6 Runtime Migration
+
+on:
+  push:
+    branches:
+      - feature/retire-legacy-team-chat-v380
+    paths:
+      - .github/workflows/section6-runtime-migration.yml
+
+permissions:
+  contents: write
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/retire-legacy-team-chat-v380
+      - name: Retire remaining legacy runtime dependencies
+        shell: python
+        run: |
+          from pathlib import Path
+          import re
+
+          # access_schema_ready no longer requires the retired store and fresh
+          # installs no longer create it. Existing tables are preserved for the
+          # v3.70 migration input path.
+          p=Path('includes/permissions.php')
+          s=p.read_text()
+          s,n1=re.subn(r"\n\s*&& table_exists\('team_direct_messages'\)", '', s, count=1)
+          pattern=r'''\n\s*\$pdo->exec\(\n\s*"CREATE TABLE IF NOT EXISTS team_direct_messages \([\s\S]*?\n\s*\);\n'''
+          s,n2=re.subn(pattern, '\n', s, count=1)
+          if n1 != 1 or n2 != 1:
+              raise SystemExit(f'permissions patch mismatch: readiness={n1} schema={n2}')
+          p.write_text(s)
+
+          # Agent Chat may surface that human messages are waiting, but it must
+          # not copy message text into the Agent conversation domain.
+          p=Path('includes/agent-chat-continuity-v101.php')
+          s=p.read_text()
+          old=re.compile(r'''\n    if \(\$pdo && \$userId > 0 && table_exists\('team_direct_messages'\)\) \{\n        try \{\n            \$stmt=\$pdo->prepare\(\n                'SELECT dm\.id,dm\.message_text,dm\.created_at,u\.display_name\n                 FROM team_direct_messages dm INNER JOIN users u ON u\.id=dm\.sender_user_id\n                 WHERE dm\.recipient_user_id=\? AND dm\.read_at IS NULL AND dm\.created_at>\?\n                 ORDER BY dm\.id DESC LIMIT 5'\n            \);\n            \$stmt->execute\(\[\$userId,\$since\]\);\n            foreach\(\$stmt->fetchAll\(\) as \$message\)\{\$updates\[\]=\['id'=>'team-'\.\(int\)\$message\['id'\],'type'=>'team_message','title'=>'Message from '\.\(string\)\$message\['display_name'\],'body'=>mb_strimwidth\(\(string\)\$message\['message_text'\],0,300,'…'\),'target_url'=>url\('/chat\.php'\),'created_at'=>\(string\)\$message\['created_at'\]\];\}\n        \} catch \(Throwable \$e\) \{\}\n    \}\n''')
+          new='''\n    if ($pdo && $userId > 0 && function_exists('vp3_human_messaging_v370_ready') && vp3_human_messaging_v370_ready($pdo)) {\n        try {\n            $humanInbox=vp3_human_inbox_v370($pdo,$userId);\n            $humanUnread=0;\n            foreach(array_merge((array)($humanInbox['conversations']??[]),(array)($humanInbox['teams']??[])) as $thread){\n                $humanUnread+=max(0,(int)($thread['unread_count']??0));\n            }\n            $humanUnread+=count((array)($humanInbox['requests']??[]));\n            if($humanUnread>0){\n                $updates[]=[\n                    'id'=>'human-messages-unread',\n                    'type'=>'team_message',\n                    'title'=>$humanUnread.' unread human message'.($humanUnread===1?'':'s'),\n                    'body'=>'Open Messages to review your unread conversations and requests.',\n                    'target_url'=>url('/messages.php'),\n                    'created_at'=>date('Y-m-d H:i:s'),\n                ];\n            }\n        } catch (Throwable $e) {}\n    }\n'''
+          s,n=old.subn(new,s,count=1)
+          if n != 1:
+              raise SystemExit(f'continuity patch mismatch: {n}')
+          p.write_text(s)
+
+          # Runtime diagnostics now test the canonical adapter and human ledger,
+          # not the retired migration-input table or obsolete role markers.
+          p=Path('admin/runtime-status.php')
+          s=p.read_text()
+          s=s.replace("'api/team-chat-v109.php'=>['path'=>$appRoot.'/api/team-chat-v109.php','markers'=>['LEFT JOIN team_user_presence',\"'artist','manager','producer','supervisor','admin'\"]],", "'api/team-chat-v109.php'=>['path'=>$appRoot.'/api/team-chat-v109.php','markers'=>[\"require __DIR__.'/team-chat-v320.php'\"]],\n    'api/team-chat-v320.php'=>['path'=>$appRoot.'/api/team-chat-v320.php','markers'=>['vp3_human_messaging_v370_ready','vp3_human_shared_workspace_v370','human_messages']],")
+          old="\$teamTables=['team_user_presence'=>table_exists('team_user_presence'),'team_direct_messages'=>table_exists('team_direct_messages'),'user_account_types'=>table_exists('user_account_types')];"
+          new="\$teamTables=['team_user_presence'=>table_exists('team_user_presence'),'human_conversations'=>table_exists('human_conversations'),'human_messages'=>table_exists('human_messages'),'human_reads_v370'=>table_exists('human_conversation_reads_v370'),'messaging_v370_ready'=>function_exists('vp3_human_messaging_v370_ready')&&vp3_human_messaging_v370_ready($pdo)];"
+          if old not in s:
+              raise SystemExit('runtime table-status patch mismatch')
+          s=s.replace(old,new,1)
+          p.write_text(s)
+
+          Path('.github/workflows/section6-runtime-migration.yml').unlink()
+      - name: Commit runtime retirement
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add includes/permissions.php includes/agent-chat-continuity-v101.php admin/runtime-status.php .github/workflows/section6-runtime-migration.yml
+          git commit -m "Section 6: retire remaining legacy Team Chat runtime dependencies"
+          git push origin HEAD:feature/retire-legacy-team-chat-v380
