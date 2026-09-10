@@ -24,9 +24,8 @@ $unknownCost = 0;
 
 if ($pdo && function_exists('ai_usage_accounting_v032_schema_ready') && ai_usage_accounting_v032_schema_ready($pdo)) {
     try {
-        $routeReady = function_exists('column_exists')
-            && column_exists('ai_execution_ledger','runtime_version')
-            && column_exists('ai_execution_ledger','actual_route');
+        $routeReady = function_exists('ai_usage_accounting_v032_route_schema_ready')
+            && ai_usage_accounting_v032_route_schema_ready($pdo);
         $routeColumns = $routeReady
             ? 'runtime_version,requested_route,attempted_route,actual_route,route_reason,fallback_reason,'
             : "'' runtime_version,'' requested_route,'' attempted_route,'' actual_route,'' route_reason,'' fallback_reason,";
