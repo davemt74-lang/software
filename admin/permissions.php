@@ -20,6 +20,9 @@ $catalog = personal_capability_admin_catalog_v242(permission_v105_catalog_for_ad
 // VP3 global identity is Customer/Admin. Product packages never appear on this
 // screen. Workspace-scoped powers are granted by the owning workspace, not by
 // the Customer role, and internal powers remain Admin-only.
+$customerAlways = [
+    'account.access' => true,
+];
 $adminOnly = [
     'admin.access' => true,
     'knowledge.manage' => true,
@@ -78,7 +81,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $insert = $pdo->prepare('INSERT IGNORE INTO role_permissions (role,permission_key) VALUES (\'fan\',?)');
         foreach ($catalog as $permissionKey => $permission) {
             if (isset($adminOnly[$permissionKey]) || isset($workspaceOnly[$permissionKey])) continue;
-            if (array_key_exists((string)$permissionKey, $selected)) {
+            if (isset($customerAlways[$permissionKey]) || array_key_exists((string)$permissionKey, $selected)) {
                 $insert->execute([(string)$permissionKey]);
             }
         }
@@ -118,7 +121,7 @@ require __DIR__ . '/_header.php';
 </div>
 
 <div class="permission-model">
-  <section class="permission-model-card"><small>Customer</small><strong>Global security baseline</strong><p>These checkboxes control only ordinary signed-in Customer authority. They do not buy product features or grant access to another person’s workspace.</p></section>
+  <section class="permission-model-card"><small>Customer</small><strong>Global security baseline</strong><p>Customer permissions control ordinary signed-in authority. Core account access is always enabled and cannot be removed from a valid signed-in VP3 identity.</p></section>
   <section class="permission-model-card"><small>Workspace</small><strong>Contextual authority</strong><p>Music ownership and Manager/Producer powers are resolved from the active workspace relationship and cannot be granted globally here.</p></section>
   <section class="permission-model-card"><small>Admin</small><strong>Internal authority</strong><p>Admin-only permissions are implicit for Administrators and cannot be sold, assigned by package, or enabled for the Customer role.</p></section>
 </div>
@@ -131,13 +134,14 @@ require __DIR__ . '/_header.php';
       <table class="admin-table permission-table">
         <thead><tr><th>Permission</th><th>Customer</th><th>Workspace</th><th>Admin</th></tr></thead>
         <tbody>
-        <?php $lastCategory=''; foreach ($catalog as $key => $permission): $category=(string)($permission['category']??'General'); $isAdminOnly=isset($adminOnly[$key]); $isWorkspaceOnly=isset($workspaceOnly[$key]); if($category!==$lastCategory):$lastCategory=$category; ?>
+        <?php $lastCategory=''; foreach ($catalog as $key => $permission): $category=(string)($permission['category']??'General'); $isCustomerAlways=isset($customerAlways[$key]); $isAdminOnly=isset($adminOnly[$key]); $isWorkspaceOnly=isset($workspaceOnly[$key]); if($category!==$lastCategory):$lastCategory=$category; ?>
           <tr class="permission-category"><th colspan="4"><?= e($category) ?></th></tr>
         <?php endif; ?>
           <tr>
             <td><strong><?= e((string)$permission['label']) ?></strong><br><span class="muted"><?= e((string)$permission['description']) ?></span><span class="permission-key"><?= e((string)$key) ?></span></td>
             <td>
-              <?php if($isAdminOnly): ?><span class="permission-badge">Admin only</span>
+              <?php if($isCustomerAlways): ?><span class="permission-badge">Customer core</span>
+              <?php elseif($isAdminOnly): ?><span class="permission-badge">Admin only</span>
               <?php elseif($isWorkspaceOnly): ?><span class="permission-badge">Context only</span>
               <?php else: ?><input class="permission-check" type="checkbox" name="customer_permissions[<?= e((string)$key) ?>]" value="1" <?= !empty($customerAssigned[$key])?'checked':'' ?> aria-label="Customer · <?= e((string)$permission['label']) ?>"><?php endif; ?>
             </td>
