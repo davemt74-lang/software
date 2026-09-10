@@ -14,6 +14,7 @@ function user_agent_api_v236(bool $ok, array $data = [], int $status = 200): nev
 function user_agent_api_state_v236(PDO $pdo, array $user): array
 {
     $state = user_agent_state_v236($pdo, $user);
+    $state['agents'] = vp3_user_agent_filter_visible_v390($pdo, (int)$user['id'], $state['agents'] ?? []);
     $state['data_usage'] = user_data_usage_owner_state_v236($pdo, (int)$user['id'], 30);
     $state['shared_knowledge'] = ['indexed' => 0, 'active' => 0];
 
@@ -51,6 +52,7 @@ try {
     if (!user_agent_system_schema_ready_v236($pdo)) {
         user_agent_system_ensure_schema_v236($pdo);
     }
+    vp3_user_agent_lifecycle_ensure_schema_v390($pdo);
     if (!user_data_usage_schema_ready_v236($pdo)) {
         user_data_usage_ensure_schema_v236($pdo);
     }
@@ -87,10 +89,12 @@ try {
     }
 
     if ($action === 'save_agent_compute_preference') {
+        $agentId = (int)($input['agent_id'] ?? 0);
+        vp3_user_agent_require_current_v390($pdo, (int)$user['id'], $agentId);
         $saved = agent_compute_v023_save_override(
             $pdo,
             $user,
-            (int)($input['agent_id'] ?? 0),
+            $agentId,
             (string)($input['preference'] ?? 'inherit')
         );
         user_agent_api_v236(true, [
@@ -123,24 +127,18 @@ try {
     }
 
     if ($action === 'update_agent') {
+        vp3_user_agent_require_current_v390($pdo, (int)$user['id'], (int)($input['id'] ?? 0));
         user_agent_update_v236($pdo, $user, $input);
         user_agent_api_v236(true, ['state' => user_agent_api_state_v236($pdo, $user)]);
     }
 
     if ($action === 'delete_agent') {
         $agentId = (int)($input['id'] ?? 0);
-        if (!user_agent_get_v236($pdo, (int)$user['id'], $agentId)) {
-            throw new RuntimeException('Agent not found.');
-        }
+        vp3_user_agent_require_current_v390($pdo, (int)$user['id'], $agentId);
         $pdo->beginTransaction();
         try {
-            // Agent-scoped conversations must never silently become system-agent
-            // conversations through the FK's ON DELETE SET NULL behavior.
-            $pdo->prepare(
-                'DELETE FROM chat_conversations WHERE user_id=? AND user_agent_id=?'
-            )->execute([(int)$user['id'], $agentId]);
             agent_compute_v023_delete_override($pdo, (int)$user['id'], $agentId);
-            user_agent_delete_v236($pdo, $user, $agentId);
+            vp3_user_agent_retire_v390($pdo, $user, $agentId);
             $pdo->commit();
         } catch (Throwable $deleteError) {
             if ($pdo->inTransaction()) {
@@ -173,10 +171,12 @@ try {
     }
 
     if ($action === 'save_rule') {
+        $agentId = (int)($input['agent_id'] ?? 0);
+        vp3_user_agent_require_current_v390($pdo, (int)$user['id'], $agentId);
         user_agent_rule_save_v236(
             $pdo,
             $user,
-            (int)($input['agent_id'] ?? 0),
+            $agentId,
             (string)($input['resource_type'] ?? ''),
             (string)($input['access_mode'] ?? 'inherit')
         );
