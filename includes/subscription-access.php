@@ -13,7 +13,7 @@ function subscription_package(int $packageId): ?array
     $pdo=db();if(!$pdo||$packageId<1||!subscription_schema_ready($pdo))return null;
     $stmt=$pdo->prepare('SELECT * FROM subscription_packages WHERE id=? LIMIT 1');$stmt->execute([$packageId]);$row=$stmt->fetch();
     if(!$row)return null;
-    $ent=$pdo->prepare('SELECT capability_key,is_enabled,limit_value,metadata_json FROM package_entitlements WHERE package_id=? ORDER BY capability_key');$ent->execute([$packageId]);
+    $ent=$pdo->prepare("SELECT capability_key,is_enabled,limit_value,metadata_json FROM package_entitlements WHERE package_id=? AND capability_key NOT LIKE 'permission.%' AND capability_key<>'legacy.permissions' ORDER BY capability_key");$ent->execute([$packageId]);
     $row['entitlements']=$ent->fetchAll()?:[];
     return $row;
 }
@@ -54,38 +54,53 @@ function subscription_is_internal_admin(?array $user=null): bool
 function subscription_entitlement_row(int $packageId,string $key): ?array
 {
     $pdo=db();if(!$pdo||$packageId<1||$key===''||!subscription_schema_ready($pdo))return null;
+    if(function_exists('subscription_entitlement_key_is_product_v340')&&!subscription_entitlement_key_is_product_v340($key))return null;
     $stmt=$pdo->prepare('SELECT is_enabled,limit_value,metadata_json FROM package_entitlements WHERE package_id=? AND capability_key=? LIMIT 1');
     $stmt->execute([$packageId,$key]);$row=$stmt->fetch();return $row?:null;
 }
 
 function subscription_has_entitlement(?array $user,string $key): bool
 {
+    if(function_exists('subscription_entitlement_key_is_product_v340')&&!subscription_entitlement_key_is_product_v340($key))return false;
     if(subscription_is_internal_admin($user))return true;
-    $sub=subscription_current($user);
-    if(!$sub)return !subscription_schema_ready();
-    $row=subscription_entitlement_row((int)$sub['package_id'],$key);
-    return $row?(int)$row['is_enabled']===1:false;
+    if(function_exists('subscription_effective_entitlement_v340')){
+        $state=subscription_effective_entitlement_v340($user,$key);
+        if(!empty($state['enabled']))return true;
+    }
+    // Preserve the pre-migration compatibility behavior only while package
+    // storage itself is unavailable. Once subscriptions exist, no row means no
+    // product entitlement.
+    return !subscription_schema_ready();
 }
 
 function subscription_entitlement_limit(?array $user,string $key,?int $default=null): ?int
 {
+    if(function_exists('subscription_entitlement_key_is_product_v340')&&!subscription_entitlement_key_is_product_v340($key))return 0;
     if(subscription_is_internal_admin($user))return null;
-    $sub=subscription_current($user);if(!$sub)return $default;
-    $row=subscription_entitlement_row((int)$sub['package_id'],$key);
-    if(!$row||(int)$row['is_enabled']!==1)return 0;
-    return $row['limit_value']===null?$default:(int)$row['limit_value'];
+    if(function_exists('subscription_effective_entitlement_v340')){
+        $state=subscription_effective_entitlement_v340($user,$key);
+        if(!empty($state['enabled'])){
+            if(!empty($state['unlimited']))return null;
+            return max(0,(int)($state['limit']??0));
+        }
+    }
+    if(!subscription_schema_ready())return $default;
+    return 0;
 }
 
+/**
+ * Retained as a compatibility signature for older callers. Commercial packages
+ * are never authoritative for security permissions in v3.40+.
+ */
 function subscription_permissions_authoritative(?array $user=null): bool
 {
-    if(subscription_is_internal_admin($user))return false;
-    $sub=subscription_current($user);if(!$sub)return false;
-    return !subscription_has_entitlement($user,'legacy.permissions');
+    return false;
 }
 
+/** Security permissions come from roles/direct grants/workspace context only. */
 function subscription_package_grants_permission(?array $user,string $permission): bool
 {
-    return subscription_has_entitlement($user,subscription_permission_key($permission));
+    return false;
 }
 
 function subscription_assign_package(
@@ -114,8 +129,6 @@ function subscription_assign_package(
     $ownsTransaction=!$pdo->inTransaction();
     if($ownsTransaction)$pdo->beginTransaction();
     try{
-        // Lock the account so concurrent package changes serialize. This also
-        // allows signup to create the user and package atomically in one outer transaction.
         $userStmt=$pdo->prepare('SELECT id FROM users WHERE id=? LIMIT 1 FOR UPDATE');
         $userStmt->execute([$userId]);if(!$userStmt->fetchColumn())throw new RuntimeException('User account not found.');
         $old=subscription_current_for_user_id($userId,$pdo,true);
