@@ -9,7 +9,7 @@ declare(strict_types=1);
  * are contextual workspace relationships and never newly assigned global roles.
  */
 
-const VP3_CONTEXTUAL_TEAM_MIGRATION = 'contextual-team-20260908-v4';
+const VP3_CONTEXTUAL_TEAM_MIGRATION = 'contextual-team-20260910-v5';
 
 function artist_workspace_v104_artist_permissions(): array
 {
@@ -95,7 +95,7 @@ function artist_workspace_v104_sync_context_role_permissions(PDO $pdo): void
     $stmt->execute();
 }
 
-/** Manager/Producer authority lives only in artist_team_members. */
+/** Manager/Producer authority lives only in workspace membership. */
 function artist_workspace_v104_sync_member_context_roles(PDO $pdo,int $userId): void
 {
     if($userId<1)return;
@@ -154,6 +154,7 @@ function artist_workspace_v104_ensure_schema(): void
     try{$pdo->exec('ALTER TABLE artist_team_members DROP INDEX uq_artist_team_member');}catch(Throwable $e){}
     try{$pdo->exec('ALTER TABLE artist_team_members ADD INDEX idx_artist_team_member (member_user_id,artist_user_id,team_role)');}catch(Throwable $e){}
     artist_workspace_v104_migrate_contextual_roles($pdo);
+    if(function_exists('workspace_team_v350_ensure_schema'))workspace_team_v350_ensure_schema($pdo);
 }
 
 function artist_workspace_v104_seed_artist_permissions(): void
@@ -240,6 +241,10 @@ function artist_workspace_v104_revoke_producer_assignments(PDO $pdo,int $artistU
 
 function artist_workspace_v104_attach_member(PDO $pdo,int $artistUserId,int $memberUserId,string $teamRole): void
 {
+    if(function_exists('workspace_team_v350_activate_member')){
+        workspace_team_v350_activate_member($pdo,$artistUserId,$memberUserId,$teamRole,(int)(current_user()['id']??0)?:null);
+        return;
+    }
     if(!artist_workspace_v104_valid_team_role($teamRole))throw new RuntimeException('Select a valid team role.');
     if($artistUserId<1||$memberUserId<1||$artistUserId===$memberUserId)throw new RuntimeException('Select another user for this team seat.');
     $ownsTransaction=!$pdo->inTransaction();if($ownsTransaction)$pdo->beginTransaction();
@@ -256,6 +261,10 @@ function artist_workspace_v104_attach_member(PDO $pdo,int $artistUserId,int $mem
 
 function artist_workspace_v104_detach_member(PDO $pdo,int $artistUserId,int $memberUserId): void
 {
+    if(function_exists('workspace_team_v350_set_status')){
+        workspace_team_v350_set_status($pdo,$artistUserId,$memberUserId,'removed');
+        return;
+    }
     $ownsTransaction=!$pdo->inTransaction();if($ownsTransaction)$pdo->beginTransaction();
     try{
         $membership=artist_workspace_v104_membership($pdo,$artistUserId,$memberUserId);
