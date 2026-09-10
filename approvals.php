@@ -15,6 +15,7 @@ if (!$user) redirect(url('/login.php'));
 <title><?= e(system_agent_name()) ?> | Approvals</title>
 <link rel="stylesheet" href="<?= e(url('/chat.css?v=82')) ?>">
 <link rel="stylesheet" href="<?= e(url('/approvals-v028.css?v=20260908')) ?>">
+<link rel="stylesheet" href="<?= e(url('/agent-policy-v035.css?v=agent-policy-v035-20260909')) ?>">
 </head>
 <body class="approvals-page">
 <div class="chat-app">
@@ -45,6 +46,19 @@ if (!$user) redirect(url('/login.php'));
             <p id="approvalsStatusDetail">VP3 can review only action requests created by this VP3 pairing. HomeServer remains the execution authority.</p>
           </div>
           <span class="approvals-state" id="approvalsState">Checking</span>
+        </section>
+
+        <section class="approvals-policy-card agent-policy-panel" id="approvalsPolicy" aria-labelledby="approvalsPolicyTitle">
+          <div class="agent-policy-heading">
+            <div>
+              <span class="approvals-eyebrow">Effective Agent policy</span>
+              <h2 id="approvalsPolicyTitle">What VP3 can do through HomeServer</h2>
+              <p>Policy is controlled locally by HomeServer. VP3 can display the effective rules and review its own approval requests, but it cannot silently loosen them.</p>
+            </div>
+            <span class="agent-policy-owner-badge">Managed on HomeServer</span>
+          </div>
+          <div class="agent-policy-summary" id="approvalsPolicySummary" aria-live="polite"><span>Checking effective policy…</span></div>
+          <div class="agent-policy-list compact" id="approvalsPolicyList"><div class="agent-policy-empty">Effective tool policy will appear when HomeServer is connected.</div></div>
         </section>
 
         <section class="approvals-permission" id="approvalsPermission" hidden>
@@ -80,6 +94,6 @@ if (!$user) redirect(url('/login.php'));
     </section>
   </main>
 </div>
-<script src="<?= e(url('/approvals-v028.js?v=20260908')) ?>" defer></script>
+<script src="<?= e(url('/approvals-v028.js?v=agent-policy-v035-20260909')) ?>" defer></script>
 </body>
 </html>
