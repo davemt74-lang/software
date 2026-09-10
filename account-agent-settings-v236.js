@@ -4,7 +4,7 @@
   const nav=document.querySelector('.account-canvas-nav');
   if(!content||!nav||!window.STONEFELLOW_ACCOUNT_AGENT_V236)return;
   const cfg=window.STONEFELLOW_ACCOUNT_AGENT_V236;
-  const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#039;'}[c]));
+  const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
   const panel=document.createElement('section');
   panel.className='account-panel account-agent-v236';
   panel.id='agents-data';
