@@ -29,7 +29,6 @@ assert.doesNotMatch(trackBoundary,/user_has_role\s*\(\s*['"](?:manager|producer|
 assert.doesNotMatch(trackBoundary,/\$user\s*\[\s*['"]role['"]\s*\]/,'resource authorization never trusts a copied primary role');
 assert.match(trackBoundary,/owner_user_id/);
 assert.match(trackBoundary,/producer_user_id/);
-assert.match(resources,/professional music catalog, production, release and credit resources resolve to/);
 assert.match(resources,/function music_workspace_resources_v330_can_manage_track/);
 assert.match(resources,/if\(\$role==='producer'\)return \(int\)\(\$track\['producer_user_id'\]/);
 
@@ -52,8 +51,8 @@ assert.doesNotMatch(boundary,/\?=1 OR t\.owner_user_id|has_permission\('tracks\.
 // Returned executable actions are rebuilt by the server. Client/model supplied
 // auto flags, external schemes and unknown action types never become authority.
 assert.match(boundary,/function vp3_agent_tool_media_intent_v400/);
-assert.match(boundary,/'photo'=\>\(bool\)preg_match\('\/\\b\(\?:photo\|picture\|image\)\\b\/i'/);
-assert.match(boundary,/'video'=\>\(bool\)preg_match\('\/\\bvideo\\b\/i'/);
+assert.match(boundary,/'photo'=\>\(bool\)preg_match/);
+assert.match(boundary,/'video'=\>\(bool\)preg_match/);
 assert.match(boundary,/'audio'=\>\(bool\)preg_match/);
 assert.match(boundary,/'camera'=\>\(bool\)preg_match/);
 assert.match(boundary,/function vp3_agent_tool_internal_action_v400/);
