@@ -1,0 +1,49 @@
+name: Plugin Lifecycle v3.60
+
+on:
+  push:
+    branches:
+      - main
+      - feature/canonical-plugin-lifecycle-v360
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          coverage: none
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Plugin lifecycle contract
+        run: node tests/plugin-lifecycle-v360.mjs
+
+      - name: JavaScript syntax
+        run: node --check tests/plugin-lifecycle-v360.mjs
+
+      - name: PHP syntax
+        run: |
+          php -l includes/plugin-registry-v320.php
+          php -l includes/plugin-lifecycle-v360.php
+          php -l includes/music-workspace-plugin-v320.php
+          php -l includes/music-workspace-resources-v330.php
+          php -l includes/member-navigation.php
+          php -l includes/agent-surface-context-v131.php
+          php -l includes/bootstrap.php
+          php -l plugins.php
+          php -l setup.php
+          php -l upgrade.php
