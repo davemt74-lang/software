@@ -10,6 +10,7 @@ const permissions=read('includes/permissions-v105.php');
 const requestGates=read('includes/subscription-request-gates.php');
 const packages=read('admin/packages.php');
 const entitlementAdmin=read('admin/entitlements.php');
+const permissionAdmin=read('admin/permissions.php');
 const team=read('includes/team-subscription.php');
 const artistWorkspace=read('includes/artist-workspaces-v104.php');
 const music=read('includes/music-workspace-plugin-v320.php');
@@ -61,6 +62,18 @@ assert.doesNotMatch(packages,/subscription_permission_key/);
 assert.match(packages,/Security authority is managed separately through roles and workspace membership/);
 assert.match(packages,/capability_key NOT LIKE 'permission\.%'/);
 assert.match(packages,/DELETE FROM package_entitlements[\s\S]*capability_key LIKE 'permission\.%'[\s\S]*legacy\.permissions/);
+
+// Admin Permissions is security-only and cannot reconstruct commercial authority.
+assert.match(permissionAdmin,/require_permission\('permissions\.manage'\)/);
+assert.match(permissionAdmin,/role='fan'/);
+assert.match(permissionAdmin,/customer_permissions/);
+assert.match(permissionAdmin,/\$customerAlways[\s\S]*'account\.access'/);
+assert.match(permissionAdmin,/\$workspaceOnly/);
+assert.match(permissionAdmin,/Product access belongs to Packages and Entitlement Grants/);
+assert.doesNotMatch(permissionAdmin,/INSERT INTO package_entitlements/);
+assert.doesNotMatch(permissionAdmin,/UPDATE package_entitlements/);
+assert.doesNotMatch(permissionAdmin,/subscription_permission_key/);
+assert.doesNotMatch(permissionAdmin,/subscription_packages\(/);
 
 // Add-ons are independently operable by Admin and never mutate the base package.
 assert.match(entitlementAdmin,/require_permission\('users\.manage'\)/);
