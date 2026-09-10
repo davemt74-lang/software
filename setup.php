@@ -19,6 +19,12 @@ try {
     foreach ($statements as $sql) if ($sql !== '') $pdo->exec($sql);
 
     ensure_access_schema();
+    // schema.sql is the historical install baseline. Normalize it immediately to
+    // the current architecture so fresh installs never retain the old one-team
+    // unique-member constraint or omit the plugin/social messaging domains.
+    artist_workspace_v104_ensure_schema();
+    vp3_plugin_ensure_schema_v320($pdo);
+    vp3_social_ensure_schema_v320($pdo);
     password_reset_ensure_schema();
 
     $count = (int)$pdo->query('SELECT COUNT(*) FROM users')->fetchColumn();
