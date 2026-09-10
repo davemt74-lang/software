@@ -190,6 +190,17 @@ function music_workspace_resources_v330_workspace_owner_id(PDO $pdo,int $workspa
     return (int)($workspace['artist_user_id']??0);
 }
 
+function music_workspace_resources_v330_workspace_enabled(PDO $pdo,int $workspaceId): bool
+{
+    if($workspaceId<1)return false;
+    try{
+        $stmt=$pdo->prepare('SELECT u.* FROM artist_workspaces_v181 w INNER JOIN users u ON u.id=w.artist_user_id AND u.is_active=1 WHERE w.id=? LIMIT 1');
+        $stmt->execute([$workspaceId]);
+        $owner=$stmt->fetch();
+        return $owner ? music_workspace_enabled_v320($owner) : false;
+    }catch(Throwable $e){return false;}
+}
+
 function music_workspace_resources_v330_member_role(PDO $pdo,int $workspaceId,int $userId): string
 {
     if($workspaceId<1||$userId<1)return '';
@@ -207,6 +218,7 @@ function music_workspace_resources_v330_can_access(PDO $pdo,int $workspaceId,?ar
     $user??=current_user();
     if(!$user||$workspaceId<1)return false;
     if(user_has_role('admin',$user))return true;
+    if(!music_workspace_resources_v330_workspace_enabled($pdo,$workspaceId))return false;
     return music_workspace_resources_v330_member_role($pdo,$workspaceId,(int)($user['id']??0))!=='';
 }
 
@@ -215,9 +227,10 @@ function music_workspace_resources_v330_can_manage(PDO $pdo,int $workspaceId,str
     $user??=current_user();
     if(!$user||$workspaceId<1)return false;
     if(user_has_role('admin',$user))return true;
+    if(!music_workspace_resources_v330_can_access($pdo,$workspaceId,$user))return false;
     $uid=(int)($user['id']??0);
     $role=music_workspace_resources_v330_member_role($pdo,$workspaceId,$uid);
-    if($role==='owner')return music_workspace_enabled_v320($user)||music_workspace_legacy_user_v320($user);
+    if($role==='owner')return true;
     if($role==='manager')return in_array($capability,['tracks','albums','releases','shows','credits','profile','media','team'],true);
     if($role==='producer')return in_array($capability,['production','track_notes','credits'],true);
     return false;
@@ -238,14 +251,12 @@ function music_workspace_resources_v330_can_manage_track(PDO $pdo,array $track,?
     if(!$user)return false;
     if(user_has_role('admin',$user))return true;
     $workspaceId=music_workspace_resources_v330_track_workspace_id($pdo,$track);
-    if($workspaceId<1)return false;
+    if($workspaceId<1||!music_workspace_resources_v330_can_access($pdo,$workspaceId,$user))return false;
     $uid=(int)($user['id']??0);
     $role=music_workspace_resources_v330_member_role($pdo,$workspaceId,$uid);
     if($role==='owner'||$role==='manager')return music_workspace_resources_v330_can_manage($pdo,$workspaceId,'tracks',$user);
     if($role==='producer')return (int)($track['producer_user_id']??0)===$uid;
-    // A direct production assignment remains a narrow legacy compatibility grant;
-    // it never gives Team, catalog or unrelated track access.
-    return (int)($track['producer_user_id']??0)===$uid;
+    return false;
 }
 
 function music_workspace_resources_v330_resolve_active(PDO $pdo,array $user,int $requestedWorkspaceId=0): ?array
@@ -263,12 +274,13 @@ function music_workspace_resources_v330_resolve_active(PDO $pdo,array $user,int 
         $_SESSION['music_workspace_id']=(int)$owned['id'];
         return $owned;
     }
-    if(table_exists('artist_team_members')){
-        $stmt=$pdo->prepare('SELECT w.* FROM artist_team_members atm INNER JOIN users owner ON owner.id=atm.artist_user_id AND owner.is_active=1 INNER JOIN artist_workspaces_v181 w ON w.artist_user_id=atm.artist_user_id WHERE atm.member_user_id=? ORDER BY w.workspace_name,w.id LIMIT 1');
-        $stmt->execute([$uid]);
-        $row=$stmt->fetch();
-        if($row){$_SESSION['music_workspace_id']=(int)$row['id'];return $row;}
+    foreach(music_workspace_resources_v330_accessible_workspaces($pdo,$user) as $row){
+        $workspaceId=(int)($row['id']??0);
+        if($workspaceId<1)continue;
+        $_SESSION['music_workspace_id']=$workspaceId;
+        return $row;
     }
+    unset($_SESSION['music_workspace_id']);
     return null;
 }
 
@@ -285,7 +297,8 @@ function music_workspace_resources_v330_accessible_workspaces(PDO $pdo,array $us
         WHERE w.artist_user_id=? OR atm.member_user_id=?
         ORDER BY w.artist_user_id=? DESC,w.workspace_name,w.id");
     $stmt->execute([$uid,$uid,$uid,$uid,$uid]);
-    return $stmt->fetchAll()?:[];
+    $rows=$stmt->fetchAll()?:[];
+    return array_values(array_filter($rows,static fn(array $row):bool=>music_workspace_resources_v330_workspace_enabled($pdo,(int)($row['id']??0))));
 }
 
 function music_workspace_resources_v330_catalog_track(PDO $pdo,int $workspaceId,int $catalogTrackId): ?array
