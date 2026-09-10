@@ -35,15 +35,21 @@ Agent Chat and Profile Agent visitor conversations remain separate domains.
 - Team membership is a resource relationship, not an account type.
 - Manager and Producer are workspace roles.
 - A VP3 member may participate in multiple workspaces.
-- Removing a Team membership must never delete the person's VP3 account, package or personal content.
-- Commercial Team-seat limits come from package entitlements.
+- `workspace_memberships_v350` is the durable Team relationship ledger. Membership state is explicit: `active`, `suspended`, or `removed`.
+- `artist_team_members` remains an active-only compatibility projection while legacy Music/Team callers are migrated. It must never contain suspended or removed memberships.
+- A pending Team invitation is not a membership and does not consume a Team seat. Invitation acceptance rechecks the invited identity, expiration, workspace authority and current seat capacity.
+- Workspace owners never create credentials or passwords for invited people. Invitees sign in to an existing VP3 identity or create their own identity using the invited email address.
+- Suspending a Team membership immediately removes workspace authorization while preserving the relationship history and VP3 identity. Resuming reactivates the same relationship if capacity permits.
+- Removing a Team membership preserves the person's VP3 account, package, profile, personal content and Team lifecycle history.
+- Commercial Team-seat limits come from the composed effective entitlement resolver; suspended, removed and pending people do not consume active seats.
 
 ### Team General
 
 - Each workspace has one canonical General conversation.
 - The workspace owner and every current active Team member are automatically authorized.
 - There is no separate chat invitation or participant grant for General.
-- Authorization is evaluated from current workspace membership, so removal immediately removes General access.
+- Authorization is evaluated from current active workspace membership, so suspension or removal immediately removes General access.
+- Teammate direct-message shortcuts that rely on a shared workspace use the same active-membership boundary.
 
 ### Human messaging
 
@@ -56,6 +62,7 @@ Agent Chat and Profile Agent visitor conversations remain separate domains.
 - Agent Chat remains the private user↔agent interface and retains its existing conversation/history system.
 - Human messages must not be stored as Agent Chat messages.
 - The Agent may later summarize or act on human conversations only through explicit, permission-aware tools.
+- The sticky Agent composer is intentionally focused on conversation/voice capture; the Video Editor shortcut is not part of the composer UI.
 
 ### Profile Agent
 
@@ -93,15 +100,18 @@ A member can therefore be one VP3 identity with multiple workspace relationships
 ## Security invariants
 
 1. Global roles must never authorize access to an unrelated Team workspace.
-2. Team directories, presence, history and messages must be scoped to a shared workspace.
+2. Team directories, presence, history and messages must be scoped to a shared active workspace.
 3. Blocks deny social DMs regardless of follow/friend state.
 4. A pending Message Request permits only its initial requester message until accepted.
-5. Team General authorization follows current Team membership dynamically.
+5. Team General authorization follows current active Team membership dynamically; suspension/removal revokes it immediately.
 6. Package changes do not mutate identity or Team relationships.
 7. Plugin disablement preserves user data.
 8. Agent Chat, Profile Agent conversations and human messages remain separate persistence domains.
 9. Legacy role/account-type behavior is compatibility-only and may not be used to create new cross-workspace authority.
+10. Pending Team invitations never grant workspace access or consume active seats.
+11. Team invitation acceptance is bound to the invited VP3 identity and current workspace capacity.
+12. Membership lifecycle mutations are transaction-safe and may not run schema DDL inside an active database transaction.
 
 ## Migration direction
 
-Legacy Artist/Producer/Manager/Supervisor vocabulary can remain in database compatibility paths while user-facing and new authorization code moves to VP3 Member + capability/workspace terminology. Existing music data is migrated in place; no destructive rewrite is required.
+Legacy Artist/Producer/Manager/Supervisor vocabulary can remain in database compatibility paths while user-facing and new authorization code moves to VP3 Member + capability/workspace terminology. Existing music data is migrated in place; no destructive rewrite is required. The v3.50 Team lifecycle keeps `artist_team_members` only as an active compatibility projection until every legacy caller has moved to the durable workspace membership ledger.
