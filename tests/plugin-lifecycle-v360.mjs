@@ -54,9 +54,11 @@ assert.match(nav, /music_workspace_enabled_v320\(\$user\)/);
 assert.match(nav, /music_workspace_resources_v330_accessible_workspaces/);
 assert.match(nav, /if\(\$musicEnabled\|\|\$musicWorkspaces\)/);
 
-// The Agent only receives capabilities from effectively enabled owner plugins.
+// Agent owner capabilities follow effective plugin state; active collaborators receive only contextual workspace access.
 assert.match(lifecycle, /function vp3_plugin_agent_capabilities_v360/);
-assert.match(lifecycle, /if\(empty\(\$state\['enabled'\]\)\)continue/);
+assert.match(lifecycle, /music_workspace_resources_v330_accessible_workspaces/);
+assert.match(lifecycle, /\$contextual=\$workspaceCount>0/);
+assert.match(lifecycle, /'state'=>\$contextual\?'workspace_access'/);
 assert.match(agentContext, /plugin_capabilities/);
 assert.match(agentContext, /vp3_plugin_agent_capabilities_v360/);
 assert.match(agentContext, /plugin-capability/);
