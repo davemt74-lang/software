@@ -76,6 +76,7 @@ function vp3_agent_chat_stream_scope_v380(PDO $pdo,array $user,array $input): ar
     $userId=(int)($user['id']??0);
     $conversationId=max(0,(int)($input['conversation_id']??0));
     $rawContext=is_array($input['agent_context']??null)?$input['agent_context']:[];
+    $hasRequested=array_key_exists('user_agent_id',$rawContext);
     $requested=max(0,(int)($rawContext['user_agent_id']??0));
 
     if($conversationId>0){
@@ -84,7 +85,7 @@ function vp3_agent_chat_stream_scope_v380(PDO $pdo,array $user,array $input): ar
         $stored=$stmt->fetchColumn();
         if($stored===false)throw new RuntimeException('Conversation not found for this Agent.');
         $storedId=$stored===null?0:max(0,(int)$stored);
-        if($requested>0&&$requested!==$storedId)throw new RuntimeException('Conversation not found for this Agent.');
+        if($hasRequested&&$requested!==$storedId)throw new RuntimeException('Conversation not found for this Agent.');
         $requested=$storedId;
     }
 
