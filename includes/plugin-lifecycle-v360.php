@@ -117,18 +117,34 @@ function vp3_plugin_lifecycle_v360_ready(?PDO $pdo=null): bool
     return !function_exists('setting')||(string)setting('plugin_lifecycle_v360_migrated','')===VP3_PLUGIN_LIFECYCLE_V360;
 }
 
-/** Agent-facing capability manifest: only effectively enabled owner plugins appear. */
+/**
+ * Agent-facing capability manifest. Owners get capabilities only from their
+ * effectively enabled plugins. Active collaborators may also receive contextual
+ * capabilities from an enabled workspace they can actually access; they never
+ * need to purchase or install the owner's plugin themselves.
+ */
 function vp3_plugin_agent_capabilities_v360(PDO $pdo,array $user): array
 {
     $out=[];
     foreach(vp3_plugin_catalog_v320() as $key=>$plugin){
-        $state=vp3_plugin_effective_state_v360($pdo,$user,(string)$key);
-        if(empty($state['enabled']))continue;
+        $key=(string)$key;
+        $state=vp3_plugin_effective_state_v360($pdo,$user,$key);
+        $contextual=false;
+        $workspaceCount=0;
+        if(empty($state['enabled'])&&$key==='music_workspace'&&function_exists('music_workspace_resources_v330_accessible_workspaces')){
+            try{
+                $workspaces=music_workspace_resources_v330_accessible_workspaces($pdo,$user);
+                $workspaceCount=count($workspaces);
+                $contextual=$workspaceCount>0;
+            }catch(Throwable $e){$contextual=false;$workspaceCount=0;}
+        }
+        if(empty($state['enabled'])&&!$contextual)continue;
         $out[]=[
-            'plugin_key'=>(string)$key,
+            'plugin_key'=>$key,
             'label'=>(string)($plugin['label']??$key),
             'entitlement'=>(string)($plugin['entitlement']??''),
-            'state'=>(string)$state['reason'],
+            'state'=>$contextual?'workspace_access':(string)$state['reason'],
+            'workspace_count'=>$workspaceCount,
         ];
     }
     return $out;
