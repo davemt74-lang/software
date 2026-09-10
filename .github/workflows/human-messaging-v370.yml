@@ -40,6 +40,7 @@ jobs:
       - name: PHP syntax
         run: |
           php -l includes/human-messaging-v370.php
+          php -l includes/human-messaging-block-v370.php
           php -l includes/social-network-v320.php
           php -l includes/social-network-v321.php
           php -l includes/bootstrap.php
