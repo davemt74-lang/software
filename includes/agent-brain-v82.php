@@ -217,18 +217,21 @@ function agent_brain_archive_message(array $user, int $conversationId, int $sour
         return 0;
     }
 
+    $agentId = $conversationId > 0
+        ? vp3_agent_memory_scope_from_conversation_v410($user, $conversationId, true)
+        : vp3_agent_memory_scope_current_v410($user);
     $role = in_array($role, ['user', 'assistant'], true) ? $role : 'user';
     $inputMode = $inputMode === 'voice' ? 'voice' : 'text';
     $createdAt = $createdAt ?: date('Y-m-d H:i:s');
 
     $stmt = $pdo->prepare(
         'INSERT INTO agent_chat_archive
-         (user_id,conversation_id,source_message_id,role,input_mode,message_text,created_at,archived_at)
-         VALUES (?,?,?,?,?,?,?,NOW())
+         (user_id,user_agent_id,conversation_id,source_message_id,role,input_mode,message_text,created_at,archived_at)
+         VALUES (?,?,?,?,?,?,?,?,NOW())
          ON DUPLICATE KEY UPDATE
-           id=LAST_INSERT_ID(id),conversation_id=VALUES(conversation_id),role=VALUES(role),input_mode=VALUES(input_mode),message_text=VALUES(message_text),created_at=VALUES(created_at),archived_at=NOW()'
+           id=LAST_INSERT_ID(id),user_agent_id=VALUES(user_agent_id),conversation_id=VALUES(conversation_id),role=VALUES(role),input_mode=VALUES(input_mode),message_text=VALUES(message_text),created_at=VALUES(created_at),archived_at=NOW()'
     );
-    $stmt->execute([$userId,max(0,$conversationId),$sourceMessageId,$role,$inputMode,$message,$createdAt]);
+    $stmt->execute([$userId,$agentId > 0 ? $agentId : null,max(0,$conversationId),$sourceMessageId,$role,$inputMode,$message,$createdAt]);
     return (int)$pdo->lastInsertId();
 }
 
@@ -482,15 +485,10 @@ function agent_brain_summary(array $user): array
 
     $agentId = vp3_agent_memory_scope_current_v410($user);
     [$scope,$scopeParams] = vp3_agent_memory_scope_sql_v410($agentId, 'm');
-    [$conversationScope,$conversationParams] = vp3_agent_memory_scope_sql_v410($agentId, 'c');
+    [$archiveScope,$archiveParams] = vp3_agent_memory_scope_sql_v410($agentId, 'a');
 
-    $stmt = $pdo->prepare(
-        "SELECT COUNT(*)
-         FROM agent_chat_archive a
-         JOIN chat_conversations c ON c.id=a.conversation_id AND c.user_id=a.user_id
-         WHERE a.user_id=? AND {$conversationScope}"
-    );
-    $stmt->execute(array_merge([$userId], $conversationParams));
+    $stmt = $pdo->prepare("SELECT COUNT(*) FROM agent_chat_archive a WHERE a.user_id=? AND {$archiveScope}");
+    $stmt->execute(array_merge([$userId], $archiveParams));
     $summary['archive_count'] = (int)$stmt->fetchColumn();
 
     $stmt = $pdo->prepare("SELECT COUNT(*) FROM agent_memory_items m WHERE m.user_id=? AND {$scope} AND m.is_active=1");
