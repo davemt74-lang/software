@@ -3,7 +3,10 @@ declare(strict_types=1);
 require __DIR__ . '/includes/bootstrap.php';
 require_once __DIR__ . '/includes/vp3-public.php';
 
-if (is_logged_in()) redirect(login_destination());
+if (is_logged_in()) {
+    if (!empty($_SESSION['pending_team_invite_token'])) redirect(url('/team-invite.php'));
+    redirect(login_destination());
+}
 $error = flash('error');
 $email = strtolower(trim((string)($_POST['email'] ?? '')));
 
@@ -12,7 +15,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $error = 'Your session expired. Please try again.';
     } else {
         $password = (string)($_POST['password'] ?? '');
-        if (login_attempt($email, $password)) redirect(login_destination());
+        if (login_attempt($email, $password)) {
+            if (!empty($_SESSION['pending_team_invite_token'])) redirect(url('/team-invite.php'));
+            redirect(login_destination());
+        }
         $error = 'Invalid email or password, or too many recent attempts.';
     }
 }

@@ -183,16 +183,6 @@ $html = preg_replace(
     1
 ) ?? $html;
 
-$videoEditorButton = '<a class="chat-video-editor-button" id="chatVideoEditorButton" href="' . e(url('/video-editor.php')) . '" aria-label="Open Video Editor" title="Video Editor">'
-    . '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false"><rect x="3" y="5" width="13" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M16 9.2 21 6.8v10.4L16 14.8Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>'
-    . '</a>';
-$html = preg_replace(
-    '~(<button class="chat-voice-button" id="chatVoiceButton"[^>]*>.*?</button>)~s',
-    '$1' . $videoEditorButton,
-    $html,
-    1
-) ?? $html;
-
 $introText = trim((string)($chatIntro['greeting'] ?? ''));
 if ($introText === '') {
     $displayName = trim((string)($user['display_name'] ?? ''));
@@ -228,9 +218,6 @@ $hardening = '<style data-chat-overlay-removal-v206>.agent-update-overlay,.agent
     . '<script data-chat-ui-hardening-v206>(function(){"use strict";var selector="#agentNextMovesCanvas,.agent-next-canvas-v97,.agent-next-moves,.agent-proactive-panel,.agent-update-overlay,.agent-updates-overlay,#chatRecordingsCanvas,.chat-recordings-canvas";var purge=function(){document.querySelectorAll(selector).forEach(function(el){el.remove();});};purge();var o=new MutationObserver(purge);o.observe(document.documentElement,{childList:true,subtree:true});window.addEventListener("pagehide",function(){o.disconnect();},{once:true});})();</script>';
 
 $composerControls = '<style data-chat-controls-v142>'
-    . '.chat-composer .chat-video-editor-button{display:grid;place-items:center;flex:0 0 34px;width:34px;min-width:34px;height:34px;border:0;border-radius:9px;color:inherit;background:transparent;text-decoration:none;align-self:flex-end;box-sizing:border-box;}'
-    . '.chat-composer .chat-video-editor-button:hover,.chat-composer .chat-video-editor-button:focus-visible{background:rgba(127,127,127,.12);outline:none;}'
-    . '.chat-composer .chat-video-editor-button svg{display:block;pointer-events:none;}'
     . '.chat-sidebar-sections .chat-history-label{padding:7px 10px 5px;}'
     . '.chat-sidebar-nav{gap:0;padding:0 1px 2px;}'
     . '.chat-sidebar-nav-link{min-height:28px;padding:3px 9px;line-height:1.05;}'
@@ -249,7 +236,6 @@ $composerControls = '<style data-chat-controls-v142>'
     . 'body[data-stonefellow-agent-state="listening"] .chat-topbar::after{opacity:1;background:linear-gradient(90deg,rgba(88,166,255,.16),rgba(88,166,255,.045));box-shadow:inset 0 -3px 0 #58a6ff;}'
     . 'body[data-stonefellow-agent-state="processing"] .chat-topbar::after{opacity:1;background:linear-gradient(90deg,rgba(73,209,125,.16),rgba(73,209,125,.045));box-shadow:inset 0 -3px 0 #49d17d;}'
     . 'body[data-stonefellow-agent-state="speaking"] .chat-topbar::after{opacity:1;background:linear-gradient(90deg,rgba(255,98,107,.17),rgba(255,98,107,.045));box-shadow:inset 0 -3px 0 #ff626b;}'
-    . '@media(max-width:600px){.chat-composer .chat-video-editor-button{flex-basis:32px;width:32px;min-width:32px;height:32px;}}'
     . '</style>';
 
 $railLayout = '<style data-team-rail-layout-v111>'

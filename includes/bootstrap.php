@@ -71,6 +71,7 @@ require_once __DIR__.'/subscription-request-gates.php';
 require_once __DIR__.'/notifications.php';
 require_once __DIR__.'/agent-chat-activity.php';
 require_once __DIR__.'/artist-workspaces-v104.php';
+require_once __DIR__.'/team-workspace-lifecycle-v350.php';
 require_once __DIR__.'/team-subscription.php';
 require_once __DIR__.'/social-network-v320.php';
 require_once __DIR__.'/social-network-v321.php';

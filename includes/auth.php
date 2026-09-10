@@ -122,7 +122,6 @@ function login_destination(): string
     $user = current_user();
     if (!$user) return url('/index.php');
     if (has_permission('chat.access', $user)) return url('/chat.php');
-    if (user_has_role('producer', $user) && has_permission('producer.access', $user)) return url('/admin/producer-tracks.php');
     if (has_permission('admin.access', $user)) return url('/admin/index.php');
     if (has_permission('investor.access', $user)) return url('/investor.php');
     if (has_permission('account.access', $user)) return url('/account.php');

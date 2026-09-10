@@ -3,7 +3,10 @@ declare(strict_types=1);
 require __DIR__ . '/includes/bootstrap.php';
 require_once __DIR__ . '/includes/vp3-public.php';
 
-if (is_logged_in()) redirect(login_destination());
+if (is_logged_in()) {
+    if (!empty($_SESSION['pending_team_invite_token'])) redirect(url('/team-invite.php'));
+    redirect(login_destination());
+}
 
 $error = '';
 $displayName = trim((string)($_POST['display_name'] ?? ''));
@@ -40,8 +43,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $exists->execute([$email]);
                     if ($exists->fetchColumn()) throw new RuntimeException('An account with that email already exists.');
                     $pdo->beginTransaction();
-                    // users.role remains a compatibility identity column while packages become
-                    // the public account type and commercial permission source.
+                    // users.role remains a compatibility identity column. Product
+                    // entitlements and workspace relationships are separate domains.
                     $insert = $pdo->prepare("INSERT INTO users (email,password_hash,display_name,role,is_active,created_at,updated_at) VALUES (?,?,?,?,1,NOW(),NOW())");
                     $insert->execute([$email, password_hash($password, PASSWORD_DEFAULT), $displayName, 'fan']);
                     $userId = (int)$pdo->lastInsertId();
@@ -61,6 +64,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     flash('notice', $tokens > 0
                         ? 'Welcome to VP3. Your Free Trial includes ' . number_format($tokens) . ' AI tokens.'
                         : 'Welcome to VP3. Your Free Trial is ready.');
+                    if (!empty($_SESSION['pending_team_invite_token'])) redirect(url('/team-invite.php'));
                     redirect(login_destination());
                 } catch (Throwable $e) {
                     if ($pdo->inTransaction()) $pdo->rollBack();
