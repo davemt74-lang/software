@@ -20,6 +20,9 @@ function vp3_user_agent_lifecycle_ensure_schema_v390(?PDO $pdo=null): void
 {
     $pdo ??= db();
     if(!$pdo)throw new RuntimeException('Database connection is unavailable.');
+    if($pdo->inTransaction()&&!vp3_user_agent_lifecycle_schema_ready_v390($pdo)){
+        throw new RuntimeException('Agent lifecycle schema must be installed before starting a lifecycle transaction.');
+    }
     if(!table_exists('user_agents'))user_agent_system_ensure_schema_v236($pdo);
     if(!column_exists('user_agents','retired_at')){
         $pdo->exec('ALTER TABLE user_agents ADD COLUMN retired_at DATETIME NULL AFTER voice_enabled, ADD INDEX idx_user_agents_owner_retired (owner_user_id,retired_at,is_active,id)');
@@ -63,7 +66,7 @@ function vp3_user_agent_retire_v390(PDO $pdo,array $user,int $agentId): void
     $ownerUserId=(int)($user['id']??0);
     if($ownerUserId<1||$agentId<1)throw new RuntimeException('Agent not found.');
     vp3_user_agent_lifecycle_ensure_schema_v390($pdo);
-    $agent=vp3_user_agent_require_current_v390($pdo,$ownerUserId,$agentId);
+    vp3_user_agent_require_current_v390($pdo,$ownerUserId,$agentId);
 
     $started=!$pdo->inTransaction();
     if($started)$pdo->beginTransaction();
