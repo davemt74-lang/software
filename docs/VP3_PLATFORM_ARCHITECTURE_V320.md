@@ -49,12 +49,20 @@ Agent Chat and Profile Agent visitor conversations remain separate domains.
 - The workspace owner and every current active Team member are automatically authorized.
 - There is no separate chat invitation or participant grant for General.
 - Authorization is evaluated from current active workspace membership, so suspension or removal immediately removes General access.
+- Team General read/unread state is bookkeeping only and lives outside conversation membership; a read cursor never grants workspace access.
 - Teammate direct-message shortcuts that rely on a shared workspace use the same active-membership boundary.
 
 ### Human messaging
 
 - Human conversations use `human_conversations`, `human_conversation_members`, `human_messages` and `human_message_requests`.
+- v3.70 adds `human_conversation_reads_v370` as authorization-neutral read/unread state and `human_message_legacy_links_v370` as the idempotent migration ledger.
 - Direct messages, friend chats, Team General and future group/channel conversations belong to the human messaging domain.
+- Direct-message creation, sending and Message Request resolution serialize the two user identities in stable numeric order before locking conversation/request state. Messaging schema DDL never runs inside those transactions.
+- Message Request acceptance/decline is bound to the current recipient identity, current pending request, active users and block state. A pending request permits one initial requester message and no recipient reply until acceptance.
+- Blocks are checked on access and mutation. A block therefore revokes an existing direct-message surface even if an older conversation row remains for history.
+- Team General access is never copied into `human_conversation_members`; it is recalculated from the current active Team relationship on every access/send.
+- The legacy Team Chat endpoint is a compatibility adapter over the canonical `human_*` message ledger. It must not create new `team_direct_messages` rows.
+- Existing `team_direct_messages` history is migrated once and linked by source ID so rerunning the migration cannot duplicate messages. Legacy read state is migrated into the canonical read cursor.
 - Message text is not copied into generic activity/audit logs.
 
 ### Agent Chat
@@ -119,7 +127,11 @@ A member can therefore be one VP3 identity with multiple workspace relationships
 14. Explicit plugin disablement overrides grandfathering and removes owner plugin capabilities from Agent context.
 15. Entitlement loss pauses an enabled plugin without deleting its installation preference, workspace, Team relationships or content.
 16. Plugin registry schema DDL may not execute inside an active plugin lifecycle transaction.
+17. Human message read state never grants conversation or Team authorization.
+18. Direct-message lifecycle mutations lock user identities in a stable order before conversation/request rows.
+19. Legacy Team Chat may read/write only the canonical human message ledger after v3.70 migration; the historical Team DM table is migration input only.
+20. Human message bodies may not be copied into generic Agent/activity/audit persistence.
 
 ## Migration direction
 
-Legacy Artist/Producer/Manager/Supervisor vocabulary can remain in database compatibility paths while user-facing and new authorization code moves to VP3 Member + capability/workspace terminology. Existing music data is migrated in place; no destructive rewrite is required. The v3.50 Team lifecycle keeps `artist_team_members` only as an active compatibility projection until every legacy caller has moved to the durable workspace membership ledger. The v3.60 plugin lifecycle may materialize legacy Music workspace owners into `user_plugin_installations`, but explicit disabled rows remain authoritative and no professional content is rewritten or deleted.
+Legacy Artist/Producer/Manager/Supervisor vocabulary can remain in database compatibility paths while user-facing and new authorization code moves to VP3 Member + capability/workspace terminology. Existing music data is migrated in place; no destructive rewrite is required. The v3.50 Team lifecycle keeps `artist_team_members` only as an active compatibility projection until every legacy caller has moved to the durable workspace membership ledger. The v3.60 plugin lifecycle may materialize legacy Music workspace owners into `user_plugin_installations`, but explicit disabled rows remain authoritative and no professional content is rewritten or deleted. The v3.70 messaging migration copies historical `team_direct_messages` into `human_messages` once, records each source mapping in `human_message_legacy_links_v370`, migrates read cursors, and leaves the legacy table as read-only migration history rather than an active message store.
