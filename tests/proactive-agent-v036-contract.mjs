@@ -37,7 +37,14 @@ assert.match(helper, /'bio' => 'bio'/);
 assert.match(helper, /'avatar_path' => 'profile image'/);
 assert.match(helper, /SELECT status,last_seen_at,capabilities_json FROM homeserver_connections/);
 assert.match(helper, /SELECT COUNT\(\*\) FROM ai_execution_ledger/);
-assert.match(helper, /source='vp3_cloud' AND fallback_used=1/);
+// v4.20 uses the canonical actual route when available, but keeps source as the
+// compatibility fallback on installations that have not completed the upgrade.
+assert.match(helper, /created_at>=\?/);
+assert.doesNotMatch(helper, /occurred_at>=\?/);
+assert.match(helper, /column_exists\('ai_execution_ledger', 'actual_route'\)/);
+assert.match(helper, /actual_route='vp3_cloud'/);
+assert.match(helper, /source='vp3_cloud'/);
+assert.match(helper, /fallback_used=1/);
 assert.match(helper, /in_array\('agent\.chat', \$features, true\)/);
 
 // Never make a relay/network request or pull HomeServer credentials/errors from
@@ -74,4 +81,4 @@ for (const forbidden of [
 assert.match(notifications, /notification_is_agent_brain_activity/);
 assert.match(notifications, /if \(notification_is_agent_brain_activity\(\$notification\)\)/);
 
-console.log('Proactive Agent Operations v0.36 contract: PASS');
+console.log('Proactive Agent Operations v0.36 contract: PASS through canonical v4.20 route telemetry');
