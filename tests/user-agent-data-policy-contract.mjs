@@ -6,6 +6,7 @@ const domain = read('includes/user-agent-system-v236.php');
 const usage = read('includes/user-data-usage-v236.php');
 const index = read('includes/shared-knowledge-index-v236.php');
 const policy = read('includes/chat-agent-policy-v236.php');
+const chatBoundary = read('includes/agent-chat-boundary-v380.php');
 const settingsApi = read('api/user-agent-system-v236.php');
 const onboardingApi = read('api/chat-onboarding-v241.php');
 const chatApi = read('api/chat-v236.php');
@@ -48,21 +49,28 @@ assert.match(chatPage,/api\/chat-v236\.php/,'live Chat shell routes through the 
 assert.match(chatPage,/chat-agent-identity-v236\.js/,'live Chat loads optional agent identity/onboarding runtime');
 assert.match(chatPage,/user_agent_id IS NULL/,'system Chat resumes only system-agent conversations');
 assert.match(chatPage,/user_agent_id=\?/,'named-agent Chat resumes only that agent’s conversations');
-assert.match(chatApi,/chat_v236_scope_sql/,'Chat API has one conversation-scope owner');
-assert.match(chatApi,/user_agent_id=\?/,'named-agent API conversations are scoped by agent ID');
-assert.match(chatApi,/user_agent_id IS NULL/,'system API conversations cannot leak into named-agent history');
+
+// v3.80 is the single ownership implementation for both active text and streamed
+// Agent Chat. The endpoints delegate to it instead of duplicating ownership SQL.
+assert.match(chatApi,/chat_v236_scope_sql/,'Chat API has one conversation-scope adapter');
+assert.match(chatApi,/vp3_agent_chat_scope_sql_v380/,'text Chat delegates conversation scope to the canonical v3.80 boundary');
+assert.match(chatApi,/vp3_agent_chat_conversation_v380/,'text Chat delegates conversation ownership checks to v3.80');
+assert.match(chatBoundary,/user_agent_id=\?/,'canonical boundary scopes named-agent conversations by agent ID');
+assert.match(chatBoundary,/user_agent_id IS NULL/,'canonical boundary isolates system-Agent conversations');
+assert.doesNotMatch(chatApi,/chat_v236_claim_legacy_history_v237/,'text Chat must not claim system-Agent history for the first named Agent');
+assert.doesNotMatch(chatApi,/UPDATE\s+chat_conversations\s+SET\s+user_agent_id/i,'text Chat must not rewrite conversation principal ownership');
 assert.match(chatApi,/chat_generate_answer_policy_v236\(\$query,\$history,\$user,\$principal,\$agentContext,\$conversationId\)/,'AI retrieval audit receives the active conversation ID');
 
 assert.match(agentContext,/user_agent_id:activeUserAgentId\(\)/,'shared Agent Context carries the selected named agent into voice transport');
 assert.match(agentContext,/STONEFELLOW_AGENT_IDENTITY_V236\?\.agentId/,'Agent Context reads the canonical selected agent identity');
 assert.ok(agentContext.includes("const conversationKey=`stonefellow:conversation-id:${userId}:${selectedUserAgentId||'system'}`"),'stored conversation continuity is isolated by user and selected agent');
-assert.match(chatStream,/function chat_v121_scope_sql\(/,'voice Chat has the same explicit conversation scope model as text Chat');
-assert.match(chatStream,/user_agent_id=\?/,'voice Chat can require a named-agent conversation');
-assert.match(chatStream,/user_agent_id IS NULL/,'voice Chat keeps system conversations isolated from named agents');
-assert.match(chatStream,/\$rawContext\['user_agent_id'\]/,'voice transport consumes the selected agent from canonical Agent Context');
-assert.match(chatStream,/user_agent_get_v236\(\$pdo,\$userId,\$requested\)/,'voice Chat validates selected agent ownership');
-assert.match(chatStream,/user_agent_principal_v236\(\$user,\$activeAgent\)/,'voice Chat uses the selected agent principal rather than forcing the system principal');
-assert.match(chatStream,/INSERT INTO chat_conversations \(user_id,user_agent_id,artist_workspace_id,title\)/,'new voice conversations persist the selected agent owner');
+assert.match(chatStream,/function chat_v121_scope_sql\(/,'voice Chat has the same explicit conversation scope adapter as text Chat');
+assert.match(chatStream,/vp3_agent_chat_scope_sql_v380/,'voice Chat delegates scope to the same v3.80 boundary');
+assert.match(chatStream,/vp3_agent_chat_stream_scope_v380/,'voice Chat resolves selected/stored principal through v3.80');
+assert.match(chatStream,/\$rawAgentContext\['user_agent_id'\]/,'voice transport persists the resolved Agent in canonical Agent Context');
+assert.match(chatBoundary,/user_agent_get_v236\(\$pdo,\$userId,\$requestedAgentId\)/,'canonical boundary validates selected agent ownership');
+assert.match(chatBoundary,/user_agent_principal_v236\(\$user,\$agent\)/,'canonical boundary derives the selected agent principal');
+assert.match(chatBoundary,/INSERT INTO chat_conversations \(user_id,user_agent_id,artist_workspace_id,title\)/,'canonical boundary persists the selected Agent owner for new conversations');
 assert.match(chatStream,/chat_v121_owned\(\$pdo,\$conversationId,\$userId,\$activeAgent\)/,'existing voice conversations are checked against selected-agent scope');
 assert.match(chatStream,/chat_v121_context\(\$query,\$user,\$principal,\$agentContext,\$conversationId\)/,'voice retrieval receives the selected agent principal');
 assert.match(chatStream,/'agent'=>\['id'=>\$agentScopeId/,'voice assistant messages persist their agent identity');
