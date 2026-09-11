@@ -15,13 +15,14 @@
   let pollTimer=0,presenceTimer=0;
 
   // Public Agent profiles get a direct scheduling action without changing the
-  // canonical profile layout. The booking page itself handles profiles whose
-  // schedule is currently disabled or has no published appointment types.
+  // canonical profile layout. Deriving from the current profile location keeps
+  // the route correct when VP3 is installed under a configured base path.
   const profileName=document.querySelector('.profile-name');
   if(profileName&&!profileName.querySelector('[data-profile-booking-link]')){
     const bookingLink=document.createElement('a');
+    const profileBase=new URL('.',window.location.href);
     bookingLink.dataset.profileBookingLink='1';
-    bookingLink.href=`/${encodeURIComponent(cfg.username)}/book`;
+    bookingLink.href=new URL(`${encodeURIComponent(cfg.username)}/book`,profileBase).href;
     bookingLink.textContent='Book a time';
     bookingLink.setAttribute('aria-label',`Book a time with ${cfg.username}`);
     Object.assign(bookingLink.style,{
