@@ -71,7 +71,7 @@ if ($eventSlug !== '' && !$event) {
     exit('Appointment type not found.');
 }
 
-$manageToken = strtolower(trim((string)($_GET['manage'] ?? ''));
+$manageToken = strtolower(trim((string)($_GET['manage'] ?? '')));
 $managedBooking = $manageToken !== '' ? agent_scheduling_booking_by_cancel_token_v450($pdo, $manageToken) : null;
 if ($manageToken !== '' && (!$managedBooking || (int)$managedBooking['owner_user_id'] !== (int)$profile['user_id'])) {
     http_response_code(404);
