@@ -18,6 +18,7 @@ function agent_paid_appointments_balance_due_v800(array $paid): int
 
 function agent_paid_appointments_payment_url_v800(PDO $pdo,array $paid): string
 {
+    if(function_exists('agent_commerce_sync_paid_appointment_v800'))agent_commerce_sync_paid_appointment_v800($pdo,$paid);
     $token=agent_paid_appointments_manage_token_v800($pdo,$paid);
     return preg_match('/^[a-f0-9]{64}$/',$token)?url('/appointment-payment.php?manage='.rawurlencode($token)):'';
 }
@@ -61,12 +62,18 @@ function agent_paid_appointments_record_cancellation_v800(PDO $pdo,array $paid,s
     $fresh=agent_paid_appointments_paid_booking_v800($pdo,$paidId)?:$paid;
     $refundable=agent_paid_appointments_refundable_cents_v800($pdo,$fresh);
     agent_paid_appointments_audit_v800($pdo,$paidId,(int)$fresh['owner_user_id'],(int)($fresh['workspace_owner_user_id']??0)?:null,$actorType,$actorUserId,$actorAgentId,$source,$from,$to,$refundable,['refundable_cents'=>$refundable]);
+    if(function_exists('agent_commerce_sync_paid_appointment_v800'))agent_commerce_sync_paid_appointment_v800($pdo,$fresh);
+    if(function_exists('agent_commerce_cancel_fulfillment_v800'))agent_commerce_cancel_fulfillment_v800($pdo,$fresh,$source);
     return $fresh;
 }
 
 function agent_paid_appointments_record_reschedule_v800(PDO $pdo,array $paid,string $actorType='guest',?int $actorUserId=null,?int $actorAgentId=null): void
 {
     agent_paid_appointments_audit_v800($pdo,(int)$paid['id'],(int)$paid['owner_user_id'],(int)($paid['workspace_owner_user_id']??0)?:null,$actorType,$actorUserId,$actorAgentId,'appointment_rescheduled',(string)$paid['payment_status'],(string)$paid['payment_status'],0,['payment_retained'=>true]);
+    if(function_exists('agent_commerce_sync_paid_appointment_v800')){
+        $order=agent_commerce_sync_paid_appointment_v800($pdo,$paid);
+        if($order)agent_commerce_audit_v800($pdo,(int)$order['id'],(int)$order['owner_user_id'],(int)($order['workspace_owner_user_id']??0)?:null,$actorType,'fulfillment_rescheduled',(string)$order['order_status'],(string)$order['order_status'],0,['payment_retained'=>true],$actorUserId,$actorAgentId);
+    }
 }
 
 function agent_paid_appointments_display_terms_v800(array $terms): string
