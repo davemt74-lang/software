@@ -18,6 +18,11 @@ try{
 $manageUrl=(int)($paid['team_booking_id']??0)>0?url('/team-book.php?manage='.rawurlencode($manage)):'';
 if($manageUrl===''){
     $booking=agent_appointment_lifecycle_booking_v700($pdo,(int)$paid['booking_id']);
-    if($booking){$stmt=$pdo->prepare('SELECT p.username FROM profiles p WHERE p.user_id=? LIMIT 1');$stmt->execute([(int)$booking['owner_user_id']]);$username=(string)$stmt->fetchColumn();if($username!=='')$manageUrl=agent_scheduling_public_manage_url_v450($username,$manage);}
+    if($booking&&table_exists('user_profiles')){
+        $stmt=$pdo->prepare('SELECT username FROM user_profiles WHERE user_id=? LIMIT 1');
+        $stmt->execute([(int)$booking['owner_user_id']]);
+        $username=(string)$stmt->fetchColumn();
+        if($username!=='')$manageUrl=agent_scheduling_public_manage_url_v450($username,$manage);
+    }
 }
 ?><!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow,noarchive"><title>Payment status — VP3</title><style>body{margin:0;background:#f4f5f7;color:#151515;font:15px/1.5 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.shell{max-width:620px;margin:0 auto;padding:64px 20px}.card{background:#fff;border:1px solid #e1e3e8;border-radius:24px;padding:30px;box-shadow:0 16px 50px rgba(20,25,35,.08)}h1{font-size:30px;margin:0 0 12px}.state{font-size:15px;color:#5f6570}.button{display:inline-block;margin-top:16px;padding:10px 14px;border-radius:10px;background:#111;color:#fff;text-decoration:none}</style></head><body><main class="shell"><section class="card"><div><?= $ok?'✓':'•' ?></div><h1><?= $ok?'Appointment confirmed':'Payment verification' ?></h1><p class="state"><?=e($message)?></p><?php if($manageUrl!==''):?><a class="button" href="<?=e($manageUrl)?>">Manage appointment</a><?php endif;?></section></main></body></html>
