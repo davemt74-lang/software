@@ -49,6 +49,7 @@ function vp3_upgrade_complete(): bool
         && agent_calendar_sync_schema_ready_v500()
         && agent_team_scheduling_schema_ready_v600()
         && agent_appointment_lifecycle_schema_ready_v700()
+        && agent_paid_appointments_schema_ready_v800()
         && table_exists('homeserver_connections')
         && table_exists('homeserver_releases')
         && table_exists('homeserver_chat_sessions')
@@ -106,6 +107,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             agent_calendar_sync_ensure_schema_v500();
             agent_team_scheduling_ensure_schema_v600();
             agent_appointment_lifecycle_ensure_schema_v700();
+            agent_paid_appointments_ensure_schema_v800();
 
             $pdo = db();
             if (!$pdo) throw new RuntimeException('Database connection is unavailable.');
@@ -132,7 +134,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $complete = vp3_upgrade_complete();
 
             if ($complete) {
-                flash('notice', 'VP3 database upgrade complete: subscriptions, composable product entitlements, canonical plugin lifecycle, canonical human messaging, durable Agent retirement, Agent-scoped Brain memory, native Agent Scheduling, external calendar synchronization, Team Scheduling and Appointment Lifecycle + Automation, canonical Agent runtime routing and route-attributed AI accounting, social relationships, Team invitation/lifecycle collaboration, workspace-owned Music resources, Knowledge, Profile Agent, HomeServer Agent continuity, Agent Radar, CRM, transcriptions, and Music/Studio capabilities are ready.');
+                flash('notice', 'VP3 database upgrade complete: subscriptions, composable product entitlements, canonical plugin lifecycle, canonical human messaging, durable Agent retirement, Agent-scoped Brain memory, native Agent Scheduling, external calendar synchronization, Team Scheduling, Appointment Lifecycle + Automation and Paid Appointments, canonical Agent runtime routing and route-attributed AI accounting, social relationships, Team invitation/lifecycle collaboration, workspace-owned Music resources, Knowledge, Profile Agent, HomeServer Agent continuity, Agent Radar, CRM, transcriptions, and Music/Studio capabilities are ready.');
                 redirect(url('/admin/users.php'));
             }
         } catch (Throwable $e) {
@@ -148,7 +150,7 @@ vp3_public_header('Database Upgrade — VP3', 'Upgrade the VP3 database and appl
     <div class="vp3-auth-visual-content">
       <div class="vp3-kicker">System maintenance</div>
       <h1>Keep VP3 capabilities current.</h1>
-      <p>The upgrade process adds the current subscription, composable entitlement, plugin lifecycle, social, canonical human messaging, billing, AI, HomeServer, collaboration, scheduling, calendar sync, Team Scheduling, Appointment Lifecycle + Automation, analytics, CRM and Studio schema without replacing existing user content.</p>
+      <p>The upgrade process adds the current subscription, composable entitlement, plugin lifecycle, social, canonical human messaging, billing, AI, HomeServer, collaboration, scheduling, calendar sync, Team Scheduling, Appointment Lifecycle + Automation, Paid Appointments, analytics, CRM and Studio schema without replacing existing user content.</p>
     </div>
   </section>
   <section class="vp3-auth-form-side">
@@ -157,10 +159,10 @@ vp3_public_header('Database Upgrade — VP3', 'Upgrade the VP3 database and appl
       <h1>VP3 Database Upgrade</h1>
       <?php if ($complete): ?>
         <div class="vp3-alert success">The current VP3 schema is installed and ready.</div>
-        <p class="vp3-auth-intro">Subscription packages, composable add-on entitlements, canonical opt-in plugins, social relationships, canonical human messaging, durable Agent history, Agent-scoped Brain memory, native Agent Scheduling, external calendar synchronization, round-robin and collective Team Scheduling, Appointment Lifecycle + Automation, canonical Agent runtime routing, Team invitation and membership lifecycle, workspace-owned Music resources, AI quota and route-attributed execution accounting, private Knowledge, Profile Agent, HomeServer Agent continuity, Agent Radar, CRM, voice identity, transcriptions and Music/Studio capabilities are available.</p>
+        <p class="vp3-auth-intro">Subscription packages, composable add-on entitlements, canonical opt-in plugins, social relationships, canonical human messaging, durable Agent history, Agent-scoped Brain memory, native Agent Scheduling, external calendar synchronization, round-robin and collective Team Scheduling, Appointment Lifecycle + Automation, Paid Appointments, canonical Agent runtime routing, Team invitation and membership lifecycle, workspace-owned Music resources, AI quota and route-attributed execution accounting, private Knowledge, Profile Agent, HomeServer Agent continuity, Agent Radar, CRM, voice identity, transcriptions and Music/Studio capabilities are available.</p>
         <a class="vp3-btn primary" href="<?= e(url('/admin/users.php')) ?>">Manage Users →</a>
       <?php else: ?>
-        <p class="vp3-auth-intro">Run the current schema upgrade while preserving existing content and access. Existing accounts, package assignments, team memberships, token balances, music content, plugin preferences, Agent identities, Agent-scoped Brain memories, schedules, canonical bookings, lifecycle history, intake answers, automation deliveries, calendar connections, Team scheduling pools and conversations are preserved, including Team membership history, legacy Team direct messages and existing add-on grants.</p>
+        <p class="vp3-auth-intro">Run the current schema upgrade while preserving existing content and access. Existing accounts, package assignments, team memberships, token balances, music content, plugin preferences, Agent identities, Agent-scoped Brain memories, schedules, canonical bookings, lifecycle history, intake answers, automation deliveries, payment-provider connections, paid-booking lineage, refunds, calendar connections, Team scheduling pools and conversations are preserved, including Team membership history, legacy Team direct messages and existing add-on grants.</p>
         <?php if ($error): ?><div class="vp3-alert error" role="alert"><?= e($error) ?></div><?php endif; ?>
         <form method="post">
           <?= csrf_field() ?>
