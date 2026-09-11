@@ -1,0 +1,37 @@
+name: Agent Team Scheduling v6.00
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          coverage: none
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Team Scheduling contract
+        run: node tests/agent-team-scheduling-v600-contract.mjs
+      - name: PHP syntax
+        run: |
+          php -l includes/agent-team-scheduling-v600.php
+          php -l includes/agent-team-scheduling-tools-v610.php
+          php -l includes/agent-tool-authorization-v400.php
+          php -l includes/bootstrap.php
+          php -l includes/member-navigation.php
+          php -l team-scheduling.php
+          php -l team-book.php
+          php -l upgrade.php
