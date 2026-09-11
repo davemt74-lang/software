@@ -61,6 +61,25 @@ return [
         // ],
     ],
 
+    // Phase 5 calendar synchronization. The encryption key protects OAuth
+    // access/refresh tokens at rest. Use a long random production secret and
+    // keep it stable after users connect calendars. Every value can instead be
+    // supplied by environment variables shown below.
+    'calendar' => [
+        'encryption_key' => '', // VP3_CALENDAR_ENCRYPTION_KEY
+        'providers' => [
+            'google' => [
+                'client_id' => '',     // VP3_GOOGLE_CALENDAR_CLIENT_ID
+                'client_secret' => '', // VP3_GOOGLE_CALENDAR_CLIENT_SECRET
+            ],
+            'microsoft' => [
+                'client_id' => '',     // VP3_MICROSOFT_CALENDAR_CLIENT_ID
+                'client_secret' => '', // VP3_MICROSOFT_CALENDAR_CLIENT_SECRET
+                'tenant' => 'common',  // VP3_MICROSOFT_CALENDAR_TENANT
+            ],
+        ],
+    ],
+
     // Phase 2 billing. VP3 treats Admin package prices as the source of truth
     // and creates/syncs Stripe Products and recurring Prices automatically.
     // Secret values may instead be supplied as STRIPE_SECRET_KEY and

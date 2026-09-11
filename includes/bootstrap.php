@@ -66,6 +66,7 @@ require_once __DIR__.'/personal-capabilities-v242.php';
 require_once __DIR__.'/plugin-registry-v320.php';
 require_once __DIR__.'/user-agent-system-v236.php';
 require_once __DIR__.'/agent-scheduling-v430.php';
+require_once __DIR__.'/agent-calendar-sync-v500.php';
 require_once __DIR__.'/agent-scheduling-public-v450.php';
 require_once __DIR__.'/agent-scheduling-tools-v460.php';
 require_once __DIR__.'/user-agent-lifecycle-v390.php';

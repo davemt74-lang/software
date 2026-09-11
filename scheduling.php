@@ -6,7 +6,7 @@ require_permission('account.access');
 $pdo = db();
 $user = current_user();
 if (!$pdo || !$user) redirect(url('/login.php'));
-if (!agent_scheduling_schema_ready_v430($pdo)) redirect(url('/upgrade.php'));
+if (!agent_scheduling_schema_ready_v430($pdo) || !agent_calendar_sync_schema_ready_v500($pdo)) redirect(url('/upgrade.php'));
 
 function scheduling_ui_time_to_minute(string $value): int
 {
@@ -44,7 +44,7 @@ function scheduling_ui_redirect(int $scheduleId, string $saved, string $anchor =
     redirect($target);
 }
 
-$pageError = '';
+$pageError = trim((string)($_GET['calendar_error'] ?? ''));
 $schedule = agent_scheduling_default_schedule_v430($pdo, $user);
 $requestedScheduleId = (int)($_GET['schedule'] ?? $_POST['schedule_id'] ?? 0);
 if ($requestedScheduleId > 0) {
@@ -132,7 +132,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if (!agent_scheduling_cancel_booking_v430($pdo, $bookingId, (int)$user['id'])) {
                     throw new RuntimeException('That appointment could not be cancelled.');
                 }
-                scheduling_ui_redirect($scheduleId, 'Appointment cancelled.', 'bookings');
+                scheduling_ui_redirect($scheduleId, 'Appointment cancelled and connected calendars were updated.', 'bookings');
+            }
+
+            if ($action === 'save_calendar_link') {
+                $connectionId=(int)($_POST['connection_id']??0);
+                agent_calendar_sync_link_schedule_v500($pdo,$user,$scheduleId,$connectionId,!empty($_POST['blocks_availability']),!empty($_POST['writes_bookings']));
+                $connection=agent_calendar_sync_connection_v500($pdo,(int)$user['id'],$connectionId);
+                if($connection)agent_calendar_sync_now_v500($pdo,$connection,true);
+                scheduling_ui_redirect($scheduleId,'Calendar behavior saved.','calendars');
+            }
+
+            if ($action === 'sync_calendar') {
+                $connectionId=(int)($_POST['connection_id']??0);$connection=agent_calendar_sync_connection_v500($pdo,(int)$user['id'],$connectionId);
+                if(!$connection)throw new RuntimeException('Calendar connection not found.');
+                $result=agent_calendar_sync_now_v500($pdo,$connection,true);
+                if(empty($result['ok']))throw new RuntimeException((string)($result['error']??'Calendar synchronization failed.'));
+                agent_tool_log($user,'calendar.sync','Manual calendar sync','success',['connection_id'=>$connectionId,'schedule_id'=>$scheduleId,'busy_count'=>(int)($result['busy_count']??0)]);
+                scheduling_ui_redirect($scheduleId,'Calendar synchronized.','calendars');
+            }
+
+            if ($action === 'disconnect_calendar') {
+                $connectionId=(int)($_POST['connection_id']??0);
+                if(!agent_calendar_sync_disconnect_v500($pdo,$user,$connectionId))throw new RuntimeException('Calendar connection could not be disconnected.');
+                agent_tool_log($user,'calendar.disconnect','Disconnect calendar','success',['connection_id'=>$connectionId,'schedule_id'=>$scheduleId]);
+                scheduling_ui_redirect($scheduleId,'Calendar disconnected.','calendars');
             }
 
             throw new RuntimeException('Unknown scheduling action.');
@@ -171,6 +195,12 @@ $historyStmt = $pdo->prepare("SELECT * FROM agent_scheduling_bookings WHERE owne
 $historyStmt->execute([(int)$user['id'], $scheduleId]);
 $history = $historyStmt->fetchAll() ?: [];
 
+$allCalendarConnections=agent_calendar_sync_connections_v500($pdo,(int)$user['id']);
+$scheduleCalendarConnections=agent_calendar_sync_connections_v500($pdo,(int)$user['id'],$scheduleId);
+$calendarLinkMap=[];foreach($scheduleCalendarConnections as $connection)$calendarLinkMap[(int)$connection['id']]=$connection;
+$googleCalendarReady=agent_calendar_sync_provider_ready_v500('google');
+$microsoftCalendarReady=agent_calendar_sync_provider_ready_v500('microsoft');
+
 $agents = user_agents_list_v236($pdo, (int)$user['id'], true);
 $timezoneIds = DateTimeZone::listIdentifiers();
 $activeEventCount = count(array_filter($eventTypes, static fn(array $event): bool => !empty($event['is_active'])));
@@ -187,7 +217,7 @@ $scheduleTimezone = agent_scheduling_timezone_v430((string)$schedule['timezone']
 <meta name="theme-color" content="#f7f7f5">
 <title><?= e(system_agent_name()) ?> | Scheduling</title>
 <link rel="stylesheet" href="<?= e(url('/chat.css?v=82')) ?>">
-<link rel="stylesheet" href="<?= e(url('/scheduling.css?v=agent-scheduling-ui-v440-20260911')) ?>">
+<link rel="stylesheet" href="<?= e(url('/scheduling.css?v=agent-calendar-sync-v500-20260911')) ?>">
 </head>
 <body class="scheduling-page">
 <div class="chat-app">
@@ -202,7 +232,7 @@ $scheduleTimezone = agent_scheduling_timezone_v430((string)$schedule['timezone']
     <?php
       $memberHeaderUser = $user;
       $memberHeaderTitle = 'Scheduling';
-      $memberHeaderSubtitle = 'Availability, appointment types + Agent-managed bookings';
+      $memberHeaderSubtitle = 'Availability, connected calendars + Agent-managed bookings';
       $memberHeaderActions = '<a class="scheduling-header-button" href="' . e(url('/chat.php')) . '">Ask Agent</a>';
       require __DIR__ . '/includes/member-header.php';
     ?>
@@ -219,7 +249,7 @@ $scheduleTimezone = agent_scheduling_timezone_v430((string)$schedule['timezone']
             <p>Control when people can book you, which appointment types you offer, and which VP3 Agent owns the scheduling workflow.</p>
           </div>
           <nav class="scheduling-jump" aria-label="Scheduling sections">
-            <a href="#event-types">Event types</a><a href="#availability">Availability</a><a href="#bookings">Bookings</a><a href="#settings">Settings</a>
+            <a href="#event-types">Event types</a><a href="#availability">Availability</a><a href="#bookings">Bookings</a><a href="#calendars">Calendars</a><a href="#settings">Settings</a>
           </nav>
         </section>
 
@@ -227,7 +257,7 @@ $scheduleTimezone = agent_scheduling_timezone_v430((string)$schedule['timezone']
           <article><span>Active event types</span><strong><?= $activeEventCount ?></strong><small><?= count($eventTypes) ?> total</small></article>
           <article><span>Upcoming</span><strong><?= count($upcoming) ?></strong><small>Confirmed + pending</small></article>
           <article><span>Next appointment</span><strong class="metric-date"><?= $nextBooking ? e(scheduling_ui_booking_label((string)$nextBooking['start_at_utc'], $scheduleTimezone)) : 'Open' ?></strong><small><?= $nextBooking ? e((string)$nextBooking['guest_name']) : 'No upcoming booking' ?></small></article>
-          <article><span>Public booking</span><strong><?= !empty($schedule['public_enabled']) ? 'On' : 'Off' ?></strong><small>Public flow connects in Phase 3</small></article>
+          <article><span>Connected calendars</span><strong><?= count($scheduleCalendarConnections) ?></strong><small><?= !empty($schedule['public_enabled']) ? 'Public booking on' : 'Public booking off' ?></small></article>
         </section>
 
         <section class="scheduling-schedule-switcher" aria-label="Schedules">
@@ -278,7 +308,7 @@ $scheduleTimezone = agent_scheduling_timezone_v430((string)$schedule['timezone']
                 <label class="span-2"><span>Title</span><input name="title" maxlength="190" required placeholder="30 Minute Meeting"></label>
                 <label><span>URL slug</span><input name="slug" maxlength="80" placeholder="30-minute-meeting"></label>
                 <label><span>Duration</span><select name="duration_minutes"><option value="15">15 minutes</option><option value="30" selected>30 minutes</option><option value="45">45 minutes</option><option value="60">60 minutes</option><option value="90">90 minutes</option></select></label>
-                <label><span>Start times every</span><select name="slot_interval_minutes"><option value="15">15 min</option><option value="30" selected>30 min</option><option value="60">60 min</option></select></label>
+                <label><span>Start times every</span><select name="slot_interval_minutes"><option value="15">15 min</option><option value="30" selected>30 minutes</option><option value="60">60 minutes</option></select></label>
                 <label><span>Location</span><select name="location_type"><option value="virtual">Virtual</option><option value="phone">Phone</option><option value="in_person">In person</option><option value="custom">Custom</option></select></label>
                 <label class="span-2"><span>Location / meeting instructions</span><input name="location_value" maxlength="500" placeholder="Video link, phone instructions or address"></label>
                 <label><span>Buffer before</span><input type="number" min="0" max="1440" name="buffer_before_minutes" value="0"></label>
@@ -295,7 +325,7 @@ $scheduleTimezone = agent_scheduling_timezone_v430((string)$schedule['timezone']
         </section>
 
         <section class="scheduling-section" id="availability">
-          <div class="scheduling-section-head"><div><span class="scheduling-eyebrow">Working hours</span><h2>Availability</h2><p>These hours are the default for every appointment type in this schedule.</p></div><span class="timezone-chip"><?= e($scheduleTimezone) ?></span></div>
+          <div class="scheduling-section-head"><div><span class="scheduling-eyebrow">Working hours</span><h2>Availability</h2><p>These hours are the default for every appointment type in this schedule. Connected calendars are checked on top of these hours.</p></div><span class="timezone-chip"><?= e($scheduleTimezone) ?></span></div>
           <div class="scheduling-two-col">
             <form method="post" class="scheduling-panel availability-panel">
               <?= csrf_field() ?><input type="hidden" name="action" value="save_availability"><input type="hidden" name="schedule_id" value="<?= $scheduleId ?>">
@@ -334,7 +364,7 @@ $scheduleTimezone = agent_scheduling_timezone_v430((string)$schedule['timezone']
         </section>
 
         <section class="scheduling-section" id="bookings">
-          <div class="scheduling-section-head"><div><span class="scheduling-eyebrow">Calendar</span><h2>Bookings</h2><p>Upcoming appointments created by visitors, you, or an authorized VP3 Agent will appear here.</p></div></div>
+          <div class="scheduling-section-head"><div><span class="scheduling-eyebrow">Calendar</span><h2>Bookings</h2><p>Upcoming appointments created by visitors, you, or an authorized VP3 Agent will appear here and synchronize to connected write calendars.</p></div></div>
           <div class="scheduling-booking-list">
             <?php foreach ($upcoming as $booking): ?>
               <article class="booking-row">
@@ -352,6 +382,44 @@ $scheduleTimezone = agent_scheduling_timezone_v430((string)$schedule['timezone']
               <?php foreach ($history as $booking): ?><article><span><strong><?= e((string)$booking['guest_name']) ?></strong><small><?= e((string)$booking['event_title']) ?></small></span><span><?= e(scheduling_ui_booking_label((string)$booking['start_at_utc'], $scheduleTimezone)) ?></span><span class="history-status"><?= e(ucfirst((string)$booking['status'])) ?></span></article><?php endforeach; ?>
             </div></details>
           <?php endif; ?>
+        </section>
+
+        <section class="scheduling-section" id="calendars">
+          <div class="scheduling-section-head">
+            <div><span class="scheduling-eyebrow">Two-way calendar sync</span><h2>Connected calendars</h2><p>Busy events block VP3 availability. New VP3 bookings can be written back to Google Calendar or Microsoft Outlook, including Meet/Teams links when supported.</p></div>
+            <div class="calendar-connect-actions">
+              <?php if($googleCalendarReady): ?><a class="scheduling-button calendar-connect-link" href="<?= e(url('/calendar-oauth.php?action=start&provider=google&schedule='.$scheduleId)) ?>">Connect Google</a><?php else: ?><span class="calendar-provider-disabled">Google not configured</span><?php endif; ?>
+              <?php if($microsoftCalendarReady): ?><a class="scheduling-button calendar-connect-link" href="<?= e(url('/calendar-oauth.php?action=start&provider=microsoft&schedule='.$scheduleId)) ?>">Connect Outlook</a><?php else: ?><span class="calendar-provider-disabled">Outlook not configured</span><?php endif; ?>
+            </div>
+          </div>
+
+          <div class="calendar-connection-grid">
+            <?php foreach($allCalendarConnections as $connection): $connectionId=(int)$connection['id'];$linked=$calendarLinkMap[$connectionId]??null;$connected=(string)$connection['status']==='connected'; ?>
+              <article class="calendar-connection-card <?= $connected?'connected':'needs-attention' ?>">
+                <div class="calendar-connection-head">
+                  <span class="calendar-provider-mark"><?= e((string)$connection['provider']==='google'?'G':'M') ?></span>
+                  <div><strong><?= e(agent_calendar_sync_provider_label_v500((string)$connection['provider'])) ?></strong><small><?= e((string)($connection['account_email']?:$connection['account_name'])) ?></small></div>
+                  <span class="calendar-status"><?= e(ucfirst((string)$connection['status'])) ?></span>
+                </div>
+                <div class="calendar-sync-meta">
+                  <span>Last sync</span><strong><?= !empty($connection['last_synced_at'])?e(date('M j · g:i A',strtotime((string)$connection['last_synced_at']))):'Not yet' ?></strong>
+                </div>
+                <?php if(!empty($connection['last_error'])): ?><p class="calendar-error-text"><?= e((string)$connection['last_error']) ?></p><?php endif; ?>
+                <form method="post" class="calendar-link-form">
+                  <?= csrf_field() ?><input type="hidden" name="action" value="save_calendar_link"><input type="hidden" name="schedule_id" value="<?= $scheduleId ?>"><input type="hidden" name="connection_id" value="<?= $connectionId ?>">
+                  <label class="toggle-line"><input type="checkbox" name="blocks_availability" value="1" <?= $linked===null||!empty($linked['blocks_availability'])?'checked':'' ?>><span>Block VP3 times when this calendar is busy</span></label>
+                  <label class="toggle-line"><input type="checkbox" name="writes_bookings" value="1" <?= $linked===null||!empty($linked['writes_bookings'])?'checked':'' ?>><span>Add VP3 bookings to this calendar</span></label>
+                  <button class="scheduling-button primary" type="submit"><?= $linked?'Save calendar behavior':'Use on this schedule' ?></button>
+                </form>
+                <div class="calendar-card-actions">
+                  <?php if($connected): ?><form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="sync_calendar"><input type="hidden" name="schedule_id" value="<?= $scheduleId ?>"><input type="hidden" name="connection_id" value="<?= $connectionId ?>"><button class="scheduling-button" type="submit">Sync now</button></form><?php endif; ?>
+                  <form method="post" onsubmit="return confirm('Disconnect this calendar from VP3?')"><?= csrf_field() ?><input type="hidden" name="action" value="disconnect_calendar"><input type="hidden" name="schedule_id" value="<?= $scheduleId ?>"><input type="hidden" name="connection_id" value="<?= $connectionId ?>"><button class="calendar-disconnect" type="submit">Disconnect</button></form>
+                </div>
+              </article>
+            <?php endforeach; ?>
+            <?php if(!$allCalendarConnections): ?><div class="scheduling-empty calendar-empty"><span>↔</span><strong>Connect your real calendar.</strong><p>VP3 will stop offering times that are already busy and keep Agent-created bookings synchronized.</p></div><?php endif; ?>
+          </div>
+          <?php if(!$googleCalendarReady||!$microsoftCalendarReady): ?><p class="calendar-config-note">Provider buttons appear after the deployment config contains an OAuth client plus <code>VP3_CALENDAR_ENCRYPTION_KEY</code>. OAuth tokens are encrypted before they are stored.</p><?php endif; ?>
         </section>
 
         <section class="scheduling-section" id="settings">

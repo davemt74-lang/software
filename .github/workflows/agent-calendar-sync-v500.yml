@@ -1,0 +1,36 @@
+name: Agent Calendar Sync v5.00
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          coverage: none
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Calendar sync contract
+        run: node tests/agent-calendar-sync-v500-contract.mjs
+      - name: PHP syntax
+        run: |
+          php -l includes/agent-calendar-sync-v500.php
+          php -l includes/agent-scheduling-v430.php
+          php -l calendar-oauth.php
+          php -l scheduling.php
+          php -l upgrade.php
+          php -l config-example.php
+          php -l includes/bootstrap.php

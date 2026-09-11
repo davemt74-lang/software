@@ -46,7 +46,12 @@ assert.match(page, /Weekly hours/, 'Member UI must expose recurring weekly avail
 assert.match(page, /Upcoming appointments created by visitors, you, or an authorized VP3 Agent/, 'Bookings UI must present Agent-native booking ownership');
 assert.match(page, /Past \+ cancelled appointments/, 'Booking history must remain visible');
 
-assert.doesNotMatch(page, /api\.google|graph\.microsoft|oauth/i, 'External calendar sync belongs to a later phase');
-assert.doesNotMatch(page, /public-book|booking-public/i, 'Public booking flow belongs to Phase 3');
+// Phase 5 extends this same canonical Scheduling workspace rather than creating
+// a parallel calendar page. Provider API/OAuth mechanics stay in the dedicated
+// calendar runtime/callback while this page only invokes owner-scoped helpers.
+assert.match(page, /agent_calendar_sync_schema_ready_v500/, 'Scheduling must require the Phase 5 calendar schema after calendar sync ships');
+assert.match(page, /id="calendars"/, 'Scheduling must expose the Phase 5 connected-calendar section');
+assert.doesNotMatch(page, /https:\/\/accounts\.google\.com|https:\/\/graph\.microsoft\.com|client_secret|access_token/i, 'Provider endpoints and credentials must stay outside the member UI');
+assert.doesNotMatch(page, /public-book|booking-public/i, 'Public booking flow belongs to Phase 3 routes rather than the authenticated Scheduling UI');
 
 console.log('Agent Scheduling UI v4.40 contract passed.');
