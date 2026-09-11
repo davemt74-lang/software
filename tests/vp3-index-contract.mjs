@@ -11,9 +11,11 @@ assert.match(index, /hero-home-office\.webp/, 'homepage must use the full-width 
 assert.match(css, /\.hero\{[^}]*min-height:/, 'homepage must define a full hero stage');
 assert.match(css, /\.hero-image\{[^}]*object-fit:cover/, 'hero image must fill the hero responsively');
 
-for (const route of ['/signup.php', '/book-demo.php', '/login.php', '/pricing.php', '/about.php', '/transcriptions.php', '/teams.php', '/homeserver-download.php']) {
+for (const route of ['/signup.php', '/book-demo.php', '/login.php', '/pricing.php', '/about.php', '/transcriptions.php', '/teams.php']) {
   assert.ok(index.includes(`url('${route}')`), `homepage must preserve ${route}`);
 }
+assert.match(index, /\$homeServerUrl\s*=\s*'#homeserver'/, 'HomeServer CTA must target the homepage HomeServer section');
+assert.doesNotMatch(index, /homeserver-download\.php/, 'homepage must not link to a missing HomeServer download route');
 assert.doesNotMatch(index, /App Store|Google Play|VP3 for iPhone|VP3 for Android/, 'homepage must not expose obsolete app-store CTAs');
 
 assert.match(index, /Built for real work\./, 'homepage must include the real-work section');
@@ -50,5 +52,6 @@ assert.match(css, /@media\(max-width:720px\)/, 'homepage must include small-scre
 assert.match(css, /\.feature-grid\{[^}]*grid-template-columns:repeat\(4,1fr\)/, 'desktop real-work section must use four columns');
 assert.match(css, /@media\(max-width:1050px\)[\s\S]*\.feature-grid,.value-grid\{grid-template-columns:repeat\(2,1fr\)/, 'feature cards must collapse on tablet');
 assert.match(css, /@media\(max-width:720px\)[\s\S]*\.feature-grid,.value-grid,.proof-grid\{grid-template-columns:1fr\}/, 'feature cards must collapse to one column on small screens');
+assert.match(css, /\.check-list li\{[^}]*grid-template-columns:28px 1fr/, 'timeline checklist must use a two-column icon/content grid');
 
 console.log('vp3-index-contract: PASS');
