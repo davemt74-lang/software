@@ -12,8 +12,10 @@ if (!$booking) {
 
 function booking_ics_escape_v450(string $value): string
 {
-    $value = str_replace(["\r\n", "\r", "\n"], '\\n', trim($value));
-    $value = str_replace(['\\', ';', ','], ['\\\\', '\\;', '\\,'], $value);
+    $value = trim($value);
+    $value = str_replace('\\', '\\\\', $value);
+    $value = str_replace([';', ','], ['\\;', '\\,'], $value);
+    $value = str_replace(["\r\n", "\r", "\n"], '\\n', $value);
     return $value;
 }
 
