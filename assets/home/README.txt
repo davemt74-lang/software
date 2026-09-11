@@ -1,0 +1,1 @@
+VP3 AI Assistants landing page image assets are added in this directory by the homepage redesign branch.
