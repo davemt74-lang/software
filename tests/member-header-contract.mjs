@@ -5,6 +5,8 @@ const header = fs.readFileSync('includes/member-header.php', 'utf8');
 const headerUi = fs.readFileSync('chat-header-ui.css', 'utf8');
 const scrollUi = fs.readFileSync('member-page-scroll.css', 'utf8');
 const agentUi = fs.readFileSync('agent-ui-v034.css', 'utf8');
+const agentUiJs = fs.readFileSync('agent-ui-v034.js', 'utf8');
+const mainSidebar = fs.readFileSync('includes/main-sidebar.php', 'utf8');
 const menu = fs.readFileSync('includes/member-user-menu.php', 'utf8');
 const contacts = fs.readFileSync('contacts.php', 'utf8');
 const knowledge = fs.readFileSync('knowledge.php', 'utf8');
@@ -39,8 +41,12 @@ assert.match(scrollUi, /@media\(max-width:800px\)[\s\S]*\.messages-shell[\s\S]*o
 assert.match(agentUi, /\.workspace-main-sidebar \.chat-sidebar-sections\{order:1;/, 'main sidebar content must stay above runtime telemetry');
 assert.match(agentUi, /\.workspace-main-sidebar \.agent-runtime-strip\{order:2;/, 'runtime telemetry must live at the bottom of the sidebar');
 assert.match(agentUi, /\.workspace-main-sidebar \.agent-sidebar-footer\{order:3;/, 'account footer must remain below runtime telemetry');
-assert.match(agentUi, /body:has\(\.chat-composer\) \.chat-settings-launcher\{[\s\S]*z-index:12050!important;[\s\S]*right:max\(72px,calc\(\(100vw - 1062px\)\/2 \+ 60px\)\)!important;/, 'Agent Chat settings control must sit above and inside the composer rail');
-assert.match(agentUi, /body:has\(\.chat-composer\) \.chat-settings-button\{[\s\S]*width:30px!important;[\s\S]*height:30px!important;/, 'Agent Chat settings control must use the compact rail size');
+assert.doesNotMatch(mainSidebar, /<div class="chat-history-label">Agent<\/div>/, 'main sidebar must not render the redundant Agent category heading');
+assert.match(agentUiJs, /function dockChatSettingsLauncher\(\)/, 'Agent UI runtime must own chat settings rail docking');
+assert.match(agentUiJs, /composer\.insertBefore\(launcher, voice \|\| send \|\| null\)/, 'settings launcher must be inserted into the composer before voice/send controls');
+assert.match(agentUi, /\.chat-composer\{[\s\S]*grid-template-columns:minmax\(0,1fr\) 28px 32px 32px!important;/, 'Agent Chat composer must reserve explicit settings, microphone, and send columns');
+assert.match(agentUi, /\.chat-composer \.chat-settings-launcher\{[\s\S]*position:relative!important;[\s\S]*width:28px!important;[\s\S]*height:28px!important;/, 'Agent Chat settings control must be compact and physically inside the composer rail');
+assert.match(agentUi, /\.chat-composer \.chat-voice-button,[\s\S]*\.chat-composer #sendChatButton\{[\s\S]*width:32px!important;[\s\S]*height:32px!important;/, 'microphone and send controls must use identical sizing');
 
 for (const [name, source, contentClass] of [
   ['Plugins', plugins, 'plugins-wrap'],
