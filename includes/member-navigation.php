@@ -73,7 +73,10 @@ function member_navigation_menu_links(?array $user = null): array
     if(member_navigation_entitled($user,'voice.access',personal_capability_has_v242('voice_profile.access',$user)))$add($links,'voice_profile','Voice Profile',url('/voice-profile.php'),'agent');
 
     $teamState=function_exists('team_subscription_state')?team_subscription_state($user):['authorized'=>false];
-    if(!empty($teamState['authorized']))$add($links,'team','My Team',url('/team.php'),'collaboration');
+    if(!empty($teamState['authorized'])){
+        $add($links,'team','My Team',url('/team.php'),'collaboration');
+        if($accountAllowed&&function_exists('agent_team_scheduling_schema_ready_v600')&&agent_team_scheduling_schema_ready_v600())$add($links,'team_scheduling','Team Scheduling',url('/team-scheduling.php'),'collaboration');
+    }
 
     $pdo=db();
     $musicEnabled=function_exists('music_workspace_enabled_v320')?music_workspace_enabled_v320($user):false;
