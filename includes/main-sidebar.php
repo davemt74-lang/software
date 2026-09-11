@@ -17,7 +17,7 @@ $mainSidebarRoleSummary = $mainSidebarUser ? implode(' · ', user_role_labels($m
 <link rel="stylesheet" href="<?= e(url('/site-branding.css?v=1')) ?>">
 <link rel="stylesheet" href="<?= e(url('/homeserver-vp3.css?v=20260910-1')) ?>">
 <link rel="stylesheet" href="<?= e(url('/agent-policy-v035.css?v=agent-policy-v035-20260909')) ?>">
-<link rel="stylesheet" href="<?= e(url('/agent-ui-v034.css?v=agent-ui-v034-20260909')) ?>">
+<link rel="stylesheet" href="<?= e(url('/agent-ui-v034.css?v=agent-ui-v034-20260910-chat-rail')) ?>">
 <aside
   class="chat-sidebar workspace-main-sidebar"
   id="chatSidebar"
@@ -43,7 +43,6 @@ $mainSidebarRoleSummary = $mainSidebarUser ? implode(' · ', user_role_labels($m
 
   <div class="chat-sidebar-sections">
     <section class="chat-sidebar-nav-section" aria-label="Agent workspace">
-      <div class="chat-history-label">Agent</div>
       <nav class="chat-sidebar-nav agent-primary-nav" data-agent-primary-nav>
         <?php if ($mainSidebarUser && has_permission('chat.access', $mainSidebarUser)): ?>
           <?php if ($mainSidebarUseNewChatButton): ?>
@@ -143,4 +142,4 @@ $mainSidebarRoleSummary = $mainSidebarUser ? implode(' · ', user_role_labels($m
   </section>
 </div>
 <script src="<?= e(url('/homeserver-vp3.js?v=agent-policy-v035-20260909')) ?>" defer></script>
-<script src="<?= e(url('/agent-ui-v034.js?v=agent-ui-v034-20260909')) ?>" defer></script>
+<script src="<?= e(url('/agent-ui-v034.js?v=agent-ui-v034-20260910-chat-rail')) ?>" defer></script>
