@@ -2,78 +2,53 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const index = fs.readFileSync('index.php', 'utf8');
-const css = fs.readFileSync('vp3-home.css', 'utf8');
-const refreshCss = fs.readFileSync('vp3-index-refresh.css', 'utf8');
-const publicShell = fs.readFileSync('includes/vp3-public.php', 'utf8');
-const mountain = fs.readFileSync('assets/vp3-mountain-bg.svg', 'utf8');
+const css = fs.readFileSync('vp3-index-ai-assistants.css', 'utf8');
 
 assert.match(index, /redirect_logged_in_public_page\(\)/, 'homepage must preserve logged-in redirect behavior');
-assert.match(index, /<title>VP3 — Capture\. Understand\. Take Action\.<\/title>/, 'public homepage must use VP3 positioning');
-assert.match(index, /Capture\. Understand\.[\s\S]*Take Action\./, 'hero must use the approved headline');
-assert.doesNotMatch(index, /<h1[^>]*>\s*VP3\s*<\/h1>/, 'homepage must not repeat VP3 as a second hero title');
-assert.match(refreshCss, /\.vp3-hero h1\{[^}]*font-family:[^}]*Georgia,serif[^}]*font-weight:500/, 'hero title must use the refined serif treatment');
+assert.match(index, /<title>VP3 AI Assistants — Turn Every Conversation Into What’s Next<\/title>/, 'homepage must use the AI Assistants positioning');
+assert.match(index, /VP3 AI Assistants[\s\S]*Turn every conversation[\s\S]*into what’s next\./, 'hero must present the AI Assistants headline');
+assert.match(index, /hero-home-office\.webp/, 'homepage must use the full-width home-office hero image');
+assert.match(css, /\.hero\{[^}]*min-height:/, 'homepage must define a full hero stage');
+assert.match(css, /\.hero-image\{[^}]*object-fit:cover/, 'hero image must fill the hero responsively');
 
-assert.match(index, /vp3-public-header vp3-home-header/, 'homepage must use the canonical public-header structure');
-const homePrimaryNav = index.match(/<nav class="vp3-public-links"[\s\S]*?<\/nav>/)?.[0] || '';
-assert.ok(homePrimaryNav, 'homepage must expose a primary navigation block');
-assert.match(homePrimaryNav, /url\('\/transcriptions\.php'\)[\s\S]*>Transcriptions</, 'homepage primary nav must link to the standalone Transcriptions page');
-assert.match(homePrimaryNav, /url\('\/teams\.php'\)[\s\S]*>Teams</, 'homepage primary nav must link to the standalone Teams page');
-assert.doesNotMatch(homePrimaryNav, /index\.php#transcriptions|index\.php#teams|>Features</, 'homepage primary nav must not use removed homepage product anchors');
-assert.match(index, /\$vp3DemoUrl\s*=\s*url\('\/book-demo\.php'\)/, 'homepage must derive the demo CTA from the canonical demo URL');
-assert.match(index, /class="vp3-public-primary"[^>]*href="<\?= e\(\$vp3DemoUrl\) \?>"[^>]*>BOOK DEMO<\/a>/, 'homepage dark primary CTA must be BOOK DEMO');
-assert.match(refreshCss, /\.vp3-home-header \.vp3-public-primary\{[^}]*color:#fff/, 'BOOK DEMO text must remain white');
-
-const sharedPrimaryNav = publicShell.match(/<nav class="vp3-public-links"[\s\S]*?<\/nav>/)?.[0] || '';
-assert.ok(sharedPrimaryNav, 'shared public shell must expose a primary navigation block');
-assert.match(sharedPrimaryNav, /url\('\/transcriptions\.php'\)/, 'shared public nav must link to standalone Transcriptions');
-assert.match(sharedPrimaryNav, /url\('\/teams\.php'\)/, 'shared public nav must link to standalone Teams');
-assert.doesNotMatch(sharedPrimaryNav, /index\.php#transcriptions|index\.php#teams|>Features</, 'shared public nav must not use removed homepage product anchors');
-const sharedMobileNav = publicShell.match(/<nav aria-label="Mobile navigation">[\s\S]*?<\/nav>/)?.[0] || '';
-assert.match(sharedMobileNav, /url\('\/transcriptions\.php'\)/, 'shared mobile nav must link to standalone Transcriptions');
-assert.match(sharedMobileNav, /url\('\/teams\.php'\)/, 'shared mobile nav must link to standalone Teams');
-assert.doesNotMatch(sharedMobileNav, /index\.php#transcriptions|index\.php#teams|>Features</, 'shared mobile nav must not use removed homepage product anchors');
-
-assert.match(index, /url\('\/signup\.php'\)/, 'homepage must route account creation to the canonical signup page');
-assert.match(index, /Create account/, 'homepage must expose a create-account CTA');
-assert.match(index, /url\('\/book-demo\.php'\)/, 'homepage must route demos to the CRM-backed booking page');
-assert.match(index, /Already have an account\? Sign in/, 'homepage must keep the sign-in path visible');
-assert.doesNotMatch(index, /App Store|Google Play|VP3 for iPhone|VP3 for Android/, 'homepage must not expose obsolete mobile-store CTAs');
-assert.match(index, /My Contacts[\s\S]*My Knowledge[\s\S]*My Transcriptions/, 'desktop mockup must reflect the existing Agent Chat navigation');
-assert.match(index, /Good morning, Dave\./, 'desktop and mobile previews must use the assistant interaction pattern');
-
-assert.doesNotMatch(index, /How it works|From recording to action in four steps\.|Capture the conversation once\. VP3 turns it into searchable context/, 'homepage must not restore the removed workflow heading or intro copy');
-assert.doesNotMatch(index, /Everything you need\. All in one place\./, 'legacy Everything You Need section must remain removed');
-assert.match(index, /<section class="vp3-steps-only"[^>]*>/, 'homepage must keep the four-step workflow as a standalone card section');
-for (const step of ['Record', 'Transcribe', 'AI Analysis', 'Summary or Action Plan']) {
-  assert.match(index, new RegExp(`<h3>${step}<\\/h3>`), `homepage workflow must include ${step}`);
+for (const route of ['/signup.php', '/book-demo.php', '/login.php', '/pricing.php', '/about.php', '/transcriptions.php', '/teams.php', '/homeserver-download.php']) {
+  assert.ok(index.includes(`url('${route}')`), `homepage must preserve ${route}`);
 }
-for (const copy of [
-  'Capture conversations, meetings, ideas, or voice notes directly into your VP3 workspace.',
-  'Turn your recording into accurate, searchable text you can review, save, and reuse.',
-  'Let VP3 identify the key ideas, decisions, questions, opportunities, and next steps in the conversation.',
-  'Receive a clear summary or practical action plan that helps you move forward.'
+assert.doesNotMatch(index, /App Store|Google Play|VP3 for iPhone|VP3 for Android/, 'homepage must not expose obsolete app-store CTAs');
+
+assert.match(index, /Built for real work\./, 'homepage must include the real-work section');
+for (const asset of [
+  'feature-transcription.webp',
+  'feature-mobile.webp',
+  'feature-ai-summaries.webp',
+  'feature-teams.webp'
 ]) {
-  assert.ok(index.includes(copy), `homepage workflow must include: ${copy}`);
+  assert.ok(index.includes(`/assets/home/${asset}`), `homepage must use ${asset}`);
 }
-assert.match(index, /vp3-step-number">01<[\s\S]*vp3-step-number">02<[\s\S]*vp3-step-number">03<[\s\S]*vp3-step-number">04</, 'workflow steps must remain explicitly ordered');
-assert.match(refreshCss, /\.vp3-step-grid\{[^}]*grid-template-columns:repeat\(4,minmax\(0,1fr\)\)/, 'desktop workflow must use four columns');
-assert.match(refreshCss, /@media\(max-width:620px\)[\s\S]*\.vp3-step-grid\{grid-template-columns:1fr\}/, 'workflow cards must collapse to one column on small screens');
+for (const copy of ['Transcription, organized.', 'Capture anywhere.', 'Summaries that matter.', 'Work together, better.']) {
+  assert.ok(index.includes(copy), `homepage must include feature card: ${copy}`);
+}
 
-const results = index.match(/<section class="vp3-results"[\s\S]*?<\/section>/)?.[0] || '';
-assert.ok(results, 'homepage must keep the Turn Your Thoughts Into Results section');
-assert.match(results, /Turn Your Thoughts[\s\S]*Into Results\./, 'results section must keep its approved headline');
-assert.doesNotMatch(results, /vp3-get-started|>Get Started</, 'results section must not include a Get Started button');
-assert.match(refreshCss, /\.vp3-results-content\{[^}]*text-align:center[^}]*align-items:center/, 'results section content must be centered');
-assert.match(refreshCss, /\.vp3-results:after\{[^}]*linear-gradient/, 'centered results copy must keep a readable centered overlay');
+assert.match(index, /A platform for how[\s\S]*you actually work\./, 'homepage must include the platform section');
+assert.match(index, /Your profile agent/, 'homepage must position the personal profile agent');
+assert.match(index, /Personal link/, 'homepage must expose personal-link capability');
+assert.match(index, /Everything you need\.[\s\S]*Nothing in the way\./, 'homepage must include the desktop and phone showcase');
+assert.match(index, /devices-everything-you-need\.webp/, 'homepage must use the desktop and phone artwork');
 
-const footerNav = index.match(/<nav class="vp3-footer-links"[\s\S]*?<\/nav>/)?.[0] || '';
-assert.ok(footerNav, 'marketing navigation must remain available in the footer');
-assert.match(footerNav, /url\('\/transcriptions\.php'\)/, 'homepage footer must link to standalone Transcriptions');
-assert.match(footerNav, /url\('\/teams\.php'\)/, 'homepage footer must link to standalone Teams');
-assert.doesNotMatch(footerNav, /#transcriptions|#teams|>Features</, 'homepage footer must not link to removed homepage product anchors');
-assert.match(css, /@media\(max-width:620px\)/, 'homepage must include a dedicated small-screen layout');
-assert.match(css, /url\('\/assets\/vp3-mountain-bg\.svg'\)/, 'hero and CTA must use the reusable mountain background asset');
-assert.match(mountain, /<svg[\s\S]*viewBox="0 0 1600 900"/, 'mountain background must be a scalable SVG asset');
-assert.doesNotMatch(mountain, /<text|VP3|Capture|Understand|Take Action/, 'background asset must contain no baked-in marketing copy');
+assert.match(index, /HomeServer keeps your[\s\S]*AI close to home\./, 'homepage must include the HomeServer section');
+assert.match(index, /self-hosted AI/i, 'homepage must explain self-hosted AI');
+assert.match(index, /secure data access/i, 'homepage must explain secure data access');
+assert.match(index, /private storage/i, 'homepage must explain private storage');
+assert.match(index, /user-controlled/i, 'homepage must explain user-controlled data');
+
+assert.match(index, /The assistant[\s\S]*is the experience\./, 'homepage must include the dark product-positioning section');
+assert.match(index, /Put a VP3 assistant to work\./, 'homepage must include the closing CTA');
+assert.match(index, /<footer class="footer">/, 'homepage must include the new marketing footer');
+
+assert.match(css, /@media\(max-width:1050px\)/, 'homepage must include tablet responsive rules');
+assert.match(css, /@media\(max-width:720px\)/, 'homepage must include small-screen responsive rules');
+assert.match(css, /\.feature-grid\{[^}]*grid-template-columns:repeat\(4,1fr\)/, 'desktop real-work section must use four columns');
+assert.match(css, /@media\(max-width:1050px\)[\s\S]*\.feature-grid,.value-grid\{grid-template-columns:repeat\(2,1fr\)/, 'feature cards must collapse on tablet');
+assert.match(css, /@media\(max-width:720px\)[\s\S]*\.feature-grid,.value-grid,.proof-grid\{grid-template-columns:1fr\}/, 'feature cards must collapse to one column on small screens');
 
 console.log('vp3-index-contract: PASS');
