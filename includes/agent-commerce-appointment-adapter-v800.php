@@ -19,6 +19,22 @@ function agent_commerce_adapter_booking_v800(PDO $pdo,array $paid): array
     return agent_appointment_lifecycle_booking_v700($pdo,(int)$paid['booking_id'])?:[];
 }
 
+function agent_commerce_sync_legacy_refund_v800(PDO $pdo,array $paid,array $refund): void
+{
+    $external=trim((string)($refund['external_refund_id']??''));if($external==='')return;
+    $order=agent_commerce_order_for_paid_v800($pdo,$paid);if(!$order)return;
+    $provider=(string)$refund['provider'];$authority='cloud';
+    $paymentStmt=$pdo->prepare('SELECT id FROM agent_commerce_payments_v800 WHERE order_id=? AND provider=? AND authority=? ORDER BY id DESC LIMIT 1');
+    $paymentStmt->execute([(int)$order['id'],$provider,$authority]);$paymentId=(int)($paymentStmt->fetchColumn()?:0)?:null;
+    $status=(string)($refund['status']??'pending');$completed=in_array($status,['completed','succeeded'],true)?($refund['completed_at']??gmdate('Y-m-d H:i:s')):null;
+    $pdo->prepare("INSERT INTO agent_commerce_refunds_v800 (order_id,payment_id,provider,authority,external_refund_id,amount_cents,status,reason,approved_by_user_id,completed_at) VALUES (?,?,?,?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE payment_id=VALUES(payment_id),amount_cents=VALUES(amount_cents),status=VALUES(status),reason=VALUES(reason),approved_by_user_id=COALESCE(VALUES(approved_by_user_id),approved_by_user_id),completed_at=COALESCE(VALUES(completed_at),completed_at),updated_at=NOW()")
+        ->execute([(int)$order['id'],$paymentId,$provider,$authority,$external,max(0,(int)$refund['amount_cents']),$status,(string)($refund['reason']??''),(int)($refund['approved_by_user_id']??0)?:null,$completed]);
+    $sum=$pdo->prepare("SELECT COALESCE(SUM(amount_cents),0) FROM agent_commerce_refunds_v800 WHERE order_id=? AND status IN ('completed','succeeded')");$sum->execute([(int)$order['id']]);$refunded=min((int)$order['amount_paid_cents'],max(0,(int)$sum->fetchColumn()));
+    $paymentStatus=$refunded>0?($refunded>=(int)$order['amount_paid_cents']?'refunded':'partially_refunded'):(string)$order['payment_status'];
+    $pdo->prepare("UPDATE agent_commerce_orders_v800 SET amount_refunded_cents=?,payment_status=?,refunded_at=IF(?='refunded',COALESCE(refunded_at,NOW()),refunded_at),updated_at=NOW() WHERE id=?")
+        ->execute([$refunded,$paymentStatus,$paymentStatus,(int)$order['id']]);
+}
+
 function agent_commerce_sync_paid_appointment_v800(PDO $pdo,array $paid): ?array
 {
     if(!$paid||empty($paid['id']))return null;agent_commerce_ensure_schema_v800($pdo);
@@ -41,7 +57,7 @@ function agent_commerce_sync_paid_appointment_v800(PDO $pdo,array $paid): ?array
     elseif(!empty($paid['cancelled_at']))agent_commerce_cancel_fulfillment_v800($pdo,$paid,'appointment_cancelled');
 
     $refunds=$pdo->prepare('SELECT * FROM agent_paid_refunds_v800 WHERE paid_booking_id=? ORDER BY id');$refunds->execute([(int)$paid['id']]);
-    foreach($refunds->fetchAll()?:[] as $refund){if(trim((string)($refund['external_refund_id']??''))==='')continue;agent_commerce_record_refund_v800($pdo,$paid,(string)$refund['provider'],(string)$refund['external_refund_id'],(int)$refund['amount_cents'],(string)$refund['status'],(int)($refund['approved_by_user_id']??0)?:null,'cloud');}
+    foreach($refunds->fetchAll()?:[] as $refund)agent_commerce_sync_legacy_refund_v800($pdo,$paid,$refund);
     return agent_commerce_order_for_paid_v800($pdo,$paid)?:$order;
 }
 
