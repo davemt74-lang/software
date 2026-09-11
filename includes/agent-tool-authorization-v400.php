@@ -198,7 +198,7 @@ function vp3_agent_tool_booking_suggestions_v400(array $user,int $limit=8): arra
         $market['reason']=$recent>0?'Strong listener density; already represented in the current show calendar.':'Strong listener density with no upcoming show currently listed in this market.';
         $out[]=$market;
     }
-    usort($out,static fn(array $a,array $b):int=>(int)$b['score']<=>(int)$a['_score']);
+    usort($out,static fn(array $a,array $b):int=>(int)$b['score']<=>(int)$a['score']);
     return array_slice($out,0,max(1,min(20,$limit)));
 }
 
