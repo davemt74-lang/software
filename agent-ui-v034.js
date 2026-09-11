@@ -17,6 +17,29 @@
   let runtimeTimer = null;
   let runtimeBusy = false;
 
+  function dockChatSettingsLauncher() {
+    const composer = document.getElementById('chatForm');
+    const launcher = document.getElementById('chatSettingsLauncher');
+    if (!composer || !launcher) return false;
+    if (composer.contains(launcher)) {
+      launcher.dataset.railDocked = '1';
+      return true;
+    }
+    const voice = composer.querySelector('#chatVoiceButton,#chatVoiceButtonLegacyDormant,.chat-voice-button');
+    const send = composer.querySelector('#sendChatButton');
+    composer.insertBefore(launcher, voice || send || null);
+    launcher.dataset.railDocked = '1';
+    return true;
+  }
+
+  if (!dockChatSettingsLauncher()) {
+    const railObserver = new MutationObserver(() => {
+      if (dockChatSettingsLauncher()) railObserver.disconnect();
+    });
+    railObserver.observe(document.body, { childList: true, subtree: true });
+    window.setTimeout(() => railObserver.disconnect(), 5000);
+  }
+
   function closeUserMenu() {
     if (!userMenu || !userMenuButton) return;
     userMenu.hidden = true;
