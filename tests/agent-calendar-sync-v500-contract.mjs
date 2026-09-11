@@ -50,16 +50,24 @@ assert.match(sync, /blocks_availability/, 'per-schedule busy blocking must be co
 assert.match(sync, /writes_bookings/, 'per-schedule booking writeback must be configurable');
 assert.match(sync, /bb\.start_at_utc<\? AND bb\.end_at_utc>\?/, 'external busy ranges must be overlap-checked');
 assert.match(scheduling, /agent_calendar_sync_conflict_v500/, 'canonical scheduling conflict checks must include connected calendars');
-assert.match(scheduling, /agent_calendar_sync_maybe_schedule_v500/, 'slot generation must refresh stale connected-calendar busy data');
+assert.match(scheduling, /agent_calendar_sync_maybe_schedule_v500/, 'slot generation must refresh connected-calendar busy data');
 
 assert.match(sync, /conferenceData/, 'Google Meet creation must be supported for virtual bookings');
 assert.match(sync, /hangoutsMeet/, 'Google Meet conference solution must be requested');
 assert.match(sync, /isOnlineMeeting/, 'Microsoft Teams meeting creation must be supported');
 assert.match(sync, /teamsForBusiness/, 'Microsoft Teams provider must be requested when available');
 assert.match(sync, /attendees/, 'provider events must support guest attendees');
+assert.match(sync, /reminders.*useDefault/s, 'Google bookings must retain provider reminder behavior');
+assert.match(sync, /isReminderOn/, 'Outlook bookings must enable provider reminders');
 assert.match(sync, /sendUpdates=all/, 'Google booking changes must notify attendees through the provider');
 assert.match(scheduling, /agent_calendar_sync_booking_v500/, 'new VP3 bookings must write through to linked calendars');
 assert.match(scheduling, /agent_calendar_sync_cancel_booking_v500/, 'VP3 cancellations must propagate to linked calendars');
+
+assert.match(sync, /function agent_calendar_sync_defer_schedule_v500/, 'calendar writes must support post-transaction reconciliation');
+assert.match(sync, /register_shutdown_function/, 'transactional reschedules must defer provider side effects until the DB transaction has resolved');
+assert.match(sync, /if\(\$pdo->inTransaction\(\)\)\{agent_calendar_sync_defer_schedule_v500/, 'provider booking writes must never run inside an open database transaction');
+assert.match(sync, /b\.status='cancelled'.*l\.sync_status<>'cancelled'/s, 'reconciliation must remove mirrored provider events for locally cancelled/rescheduled bookings');
+assert.match(sync, /b\.status IN \('pending','confirmed'\)/, 'reconciliation must recreate/update active future VP3 bookings after commit');
 
 assert.match(sync, /WHERE c\.owner_user_id=\?/, 'calendar connections must be owner-scoped');
 assert.match(sync, /WHERE id=\? AND owner_user_id=\?/, 'calendar connection mutations must re-authorize ownership');
