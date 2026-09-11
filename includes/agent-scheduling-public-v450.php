@@ -58,8 +58,6 @@ function agent_scheduling_public_event_for_owner_v450(PDO $pdo, int $ownerUserId
     $event = agent_scheduling_event_type_v430($pdo, $eventTypeId);
     if (!$event) return null;
     if ((int)$event['owner_user_id'] !== $ownerUserId || empty($event['is_active']) || empty($event['schedule_active']) || empty($event['public_enabled'])) return null;
-    $schedule = agent_scheduling_public_schedule_v450($pdo, $ownerUserId);
-    if (!$schedule || (int)$schedule['id'] !== (int)$event['schedule_id']) return null;
     return $event;
 }
 
@@ -136,9 +134,18 @@ function agent_scheduling_public_reschedule_v450(PDO $pdo, array $booking, strin
     $event = agent_scheduling_public_event_for_owner_v450($pdo, $ownerUserId, $eventTypeId);
     if (!$event) throw new RuntimeException('This appointment type is no longer open for public booking.');
 
+    // Hold the same per-schedule named lock used by v4.30 booking creation for
+    // the entire cancel+create transaction. The inner create call reacquires
+    // this lock on the same connection and releases only its own reference, so
+    // no second request can see the old slot released before the new row commits.
+    $lockName = 'vp3_schedule_' . (int)$event['schedule_id'];
+    $lockStmt = $pdo->prepare('SELECT GET_LOCK(?,5)');
+    $lockStmt->execute([$lockName]);
+    if ((int)$lockStmt->fetchColumn() !== 1) throw new RuntimeException('That schedule is busy. Please try rescheduling again.');
+
     $started = !$pdo->inTransaction();
-    if ($started) $pdo->beginTransaction();
     try {
+        if ($started) $pdo->beginTransaction();
         $cancel = $pdo->prepare(
             "UPDATE agent_scheduling_bookings
              SET status='cancelled',cancelled_at=NOW(),updated_at=NOW()
@@ -164,6 +171,12 @@ function agent_scheduling_public_reschedule_v450(PDO $pdo, array $booking, strin
     } catch (Throwable $e) {
         if ($started && $pdo->inTransaction()) $pdo->rollBack();
         throw $e;
+    } finally {
+        try {
+            $release = $pdo->prepare('SELECT RELEASE_LOCK(?)');
+            $release->execute([$lockName]);
+        } catch (Throwable $ignored) {
+        }
     }
 }
 
