@@ -15,6 +15,7 @@ const musicWorkspace = fs.readFileSync('music-workspace.php', 'utf8');
 const musicLibrary = fs.readFileSync('music-library.php', 'utf8');
 const musicReleases = fs.readFileSync('music-releases.php', 'utf8');
 const messages = fs.readFileSync('messages.php', 'utf8');
+const notifications = fs.readFileSync('notifications.php', 'utf8');
 
 assert.match(header, /data-member-header/, 'canonical member header must expose one shared header marker');
 assert.match(header, /chatNotificationMenu/, 'canonical member header must own notifications');
@@ -57,6 +58,12 @@ for (const [name, source] of [['Contacts', contacts], ['My Knowledge', knowledge
   assert.match(source, /includes\/member-header\.php/, `${name} must use the canonical member header`);
   assert.doesNotMatch(source, /<header class="contacts-topbar"|<header class="chat-topbar personal-knowledge-topbar"/, `${name} must not recreate its own top header`);
 }
+
+assert.match(notifications, /includes\/workspace-sidebar-v82\.php/, 'Notifications must use the canonical member sidebar');
+assert.match(notifications, /includes\/member-header\.php/, 'Notifications must use the canonical member header');
+assert.match(notifications, /class="notification-member-canvas"/, 'Notifications must expose its fixed-shell scroll owner');
+assert.match(notifications, /workspace-shell-v82\.js/, 'Notifications must use the canonical workspace shell runtime');
+assert.doesNotMatch(notifications, /includes\/header\.php|includes\/footer\.php/, 'Notifications must not fall back to the public-site header/footer shell');
 
 assert.match(profile, /\$memberHeaderUser=\$viewer/, 'logged-in public profile viewers must use the authenticated member header');
 assert.match(profile, /includes\/member-header\.php/, 'public profile must reuse the canonical member header for authenticated viewers');
