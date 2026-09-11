@@ -7,7 +7,7 @@ const auth=read('includes/agent-tool-authorization-v400.php');
 const bootstrap=read('includes/bootstrap.php');
 const upgrade=read('upgrade.php');
 const member=read('team-scheduling.php');
-const publicPage=read('team-book.php');
+const publicPage=[read('team-book.php'),read('includes/team-book-controller-v700.php'),read('includes/team-book-view-v700.php')].join('\n');
 const css=read('team-scheduling.css');
 const nav=read('includes/member-navigation.php');
 

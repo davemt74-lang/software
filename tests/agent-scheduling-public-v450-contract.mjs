@@ -5,7 +5,7 @@ const read = (path) => fs.readFileSync(new URL(`../${path}`, import.meta.url), '
 
 const runtime = read('includes/agent-scheduling-public-v450.php');
 const bootstrap = read('includes/bootstrap.php');
-const page = read('public-booking.php');
+const page = [read('public-booking.php'),read('public-booking-controller-v700.php'),read('public-booking-view-v700.php')].join('\n');
 const api = read('api/public-scheduling-slots-v450.php');
 const calendar = read('public-booking-calendar.php');
 const htaccess = read('.htaccess');
@@ -25,11 +25,11 @@ assert.match(runtime, /preg_match\('\/\^\[a-f0-9\]\{64\}\$\/'/, 'public/manage t
 assert.match(runtime, /hash_equals\(\(string\)\(\$booking\['cancel_token'\]/, 'management mutations must compare the bearer token in constant time');
 assert.match(runtime, /Too many booking attempts/, 'public booking writes need session rate limiting');
 
-assert.match(runtime, /SELECT GET_LOCK\(\?,5\)/, 'rescheduling must hold the schedule lock around cancel+create');
-assert.match(runtime, /if \(\$started\) \$pdo->beginTransaction\(\)/, 'rescheduling must use an atomic transaction');
-assert.match(runtime, /status='cancelled'[\s\S]*agent_scheduling_create_booking_v430/, 'rescheduling must atomically release the prior row before creating the replacement');
-assert.match(runtime, /rescheduled_from_id=\?/, 'rescheduled bookings must preserve lineage');
-assert.match(runtime, /SELECT RELEASE_LOCK\(\?\)/, 'the outer reschedule lock must always be released');
+assert.match(runtime, /SELECT GET_LOCK\(\?,5\)/, 'legacy rescheduling must hold the schedule lock around cancel+create');
+assert.match(runtime, /if \(\$started\) \$pdo->beginTransaction\(\)/, 'legacy rescheduling must use an atomic transaction');
+assert.match(runtime, /status='cancelled'[\s\S]*agent_scheduling_create_booking_v430/, 'legacy rescheduling must atomically release the prior row before creating the replacement');
+assert.match(runtime, /rescheduled_from_id=\?/, 'legacy rescheduled bookings must preserve lineage');
+assert.match(runtime, /SELECT RELEASE_LOCK\(\?\)/, 'the legacy outer reschedule lock must always be released');
 
 assert.match(page, /profile_by_username\(\$pdo, \$username\)/, 'public booking must resolve ownership from the canonical public profile');
 assert.match(page, /empty\(\$profile\['is_public'\]\)/, 'private profiles must not expose booking pages');
@@ -39,9 +39,10 @@ assert.match(page, /filter_var\(\$email, FILTER_VALIDATE_EMAIL\)/, 'public booki
 assert.match(page, /agent_scheduling_public_event_for_owner_v450/, 'posted event ids must be re-authorized against the profile owner');
 assert.match(page, /\(int\)\$postEvent\['schedule_id'\] !== \(int\)\$schedule\['id'\]/, 'new public bookings must remain inside the public schedule rendered by the booking root');
 assert.match(page, /agent_scheduling_create_booking_v430/, 'public booking must use the conflict-safe canonical booking engine');
-assert.match(page, /create_notification\(/, 'booking creation/cancellation/reschedule must notify the schedule owner');
-assert.match(page, /scheduling\.php\?schedule=/, 'owner notifications must reopen the correct schedule when accounts have multiple schedules');
-assert.match(page, /agent_scheduling_public_reschedule_v450/, 'guest self-service must support rescheduling');
+assert.match(page, /create_notification\(/, 'booking creation/cancellation/reschedule must retain owner notification support');
+assert.match(page, /scheduling\.php\?schedule=/, 'legacy owner notifications must reopen the correct schedule when accounts have multiple schedules');
+assert.match(page, /agent_scheduling_public_reschedule_v450/, 'legacy fallback guest self-service must remain available before Phase 7 schema upgrade');
+assert.match(page, /agent_appointment_lifecycle_reschedule_v700/, 'Phase 7 guest self-service must reschedule the canonical booking in place');
 assert.match(page, /agent_scheduling_cancel_booking_v430/, 'guest self-service must support cancellation');
 assert.match(page, /X-Robots-Tag: noindex, nofollow, noarchive/, 'management URLs must be excluded from indexing');
 assert.match(page, /Referrer-Policy: no-referrer/, 'management bearer tokens must not leak through referrers');
