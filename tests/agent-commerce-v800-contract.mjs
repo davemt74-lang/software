@@ -56,6 +56,14 @@ assert.match(core,/partially_paid/,'Deposits must remain distinct from paid-in-f
 assert.match(core,/balance_due_cents/,'Payment audit must retain remaining-balance state');
 assert.match(core,/SELECT id FROM agent_commerce_payments_v800 WHERE provider=\? AND external_payment_id=\?/,'Duplicate provider callbacks must not double-count payments');
 assert.match(core,/Explicit refund approval is required/,'External refunds require explicit owner approval');
+assert.match(core,/payment_status IN \('awaiting_payment','partially_paid','paid','partially_refunded'\)/,'A provider cannot be disconnected while a deposit-paid order still has a balance or refund exposure');
+assert.match(core,/floor\(\$due\*\(int\)agent_commerce_config_v800\(\)\['platform_fee_bps'\]\/10000\)/,'Each checkout, including a post-deposit balance payment, must calculate its platform fee from that checkout amount');
+assert.match(core,/function agent_commerce_payment_refund_reserved_v800/,'Refund allocation must track refund exposure per original payment');
+assert.match(core,/SELECT p\.\*,a\.connection_id,a\.id checkout_attempt_id[\s\S]*ORDER BY p\.id DESC/,'A refund request must allocate across canonical original payments rather than only the latest charge');
+assert.match(core,/function agent_commerce_issue_refund_slice_v800/,'Multi-payment refunds must issue provider refunds against each original payment lineage');
+assert.match(core,/function agent_commerce_reconcile_pending_refunds_v800/,'Pending provider refunds must be reconciled instead of remaining pending forever');
+assert.match(core,/refunds_reconciled/,'Commerce housekeeping must reconcile asynchronous refund completion');
+assert.match(core,/agent_commerce_minor_to_decimal_v800/,'Provider decimal amounts must be formatted from integer minor units without binary float conversion');
 
 assert.match(adapter,/appointment_event_type/,'Appointment event types must bind to Commerce products');
 assert.match(adapter,/team_scheduling_pool/,'Team pools must bind to Commerce products');
