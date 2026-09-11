@@ -14,10 +14,10 @@ const profileAgent = read('profile-agent.js');
 
 assert.match(bootstrap, /require_once __DIR__\.'\/agent-scheduling-public-v450\.php';/, 'bootstrap must load the public scheduling runtime');
 
-assert.match(htaccess, /booking-calendar\/\(\[A-Fa-f0-9\]\{64\}\)\\\.ics/, 'calendar downloads must use an opaque 64-hex token route');
-assert.match(htaccess, /\/book\/manage\/\(\[A-Fa-f0-9\]\{64\}\)/, 'guest self-service must use an opaque management token route');
-assert.match(htaccess, /\/book\/\(\[A-Za-z0-9-\]\{1,80\}\)/, 'event-type booking URLs must use public slugs rather than numeric ids');
-assert.match(htaccess, /\/book\/\?\$/, 'profiles must expose a canonical booking root');
+assert.ok(htaccess.includes('RewriteRule ^booking-calendar/([A-Fa-f0-9]{64})\\.ics$ public-booking-calendar.php?token=$1'), 'calendar downloads must use an opaque 64-hex token route');
+assert.ok(htaccess.includes('/book/manage/([A-Fa-f0-9]{64})/?$ public-booking.php?username=$1&manage=$2'), 'guest self-service must use an opaque management token route');
+assert.ok(htaccess.includes('/book/([A-Za-z0-9-]{1,80})/?$ public-booking.php?username=$1&event=$2'), 'event-type booking URLs must use public slugs rather than numeric ids');
+assert.ok(htaccess.includes('/book/?$ public-booking.php?username=$1'), 'profiles must expose a canonical booking root');
 
 assert.match(runtime, /WHERE s\.owner_user_id=\? AND s\.is_active=1 AND s\.public_enabled=1/, 'public schedules must enforce owner, active and public boundaries');
 assert.match(runtime, /e\.is_active=1 AND s\.is_active=1 AND s\.public_enabled=1/, 'public event lookup must enforce event and schedule publication');
@@ -37,8 +37,10 @@ assert.match(page, /verify_csrf\(\)/, 'guest booking mutations must be CSRF prot
 assert.match(page, /\$_POST\['website'\]/, 'guest booking forms must include a honeypot abuse boundary');
 assert.match(page, /filter_var\(\$email, FILTER_VALIDATE_EMAIL\)/, 'public bookings must require a valid guest email');
 assert.match(page, /agent_scheduling_public_event_for_owner_v450/, 'posted event ids must be re-authorized against the profile owner');
+assert.match(page, /\(int\)\$postEvent\['schedule_id'\] !== \(int\)\$schedule\['id'\]/, 'new public bookings must remain inside the public schedule rendered by the booking root');
 assert.match(page, /agent_scheduling_create_booking_v430/, 'public booking must use the conflict-safe canonical booking engine');
 assert.match(page, /create_notification\(/, 'booking creation/cancellation/reschedule must notify the schedule owner');
+assert.match(page, /scheduling\.php\?schedule=/, 'owner notifications must reopen the correct schedule when accounts have multiple schedules');
 assert.match(page, /agent_scheduling_public_reschedule_v450/, 'guest self-service must support rescheduling');
 assert.match(page, /agent_scheduling_cancel_booking_v430/, 'guest self-service must support cancellation');
 assert.match(page, /X-Robots-Tag: noindex, nofollow, noarchive/, 'management URLs must be excluded from indexing');
@@ -58,10 +60,11 @@ assert.match(calendar, /agent_scheduling_booking_by_public_token_v450/, 'calenda
 assert.match(calendar, /text\/calendar/, 'calendar response must use the ICS content type');
 assert.match(calendar, /DTSTART:/, 'calendar output must contain a UTC start');
 assert.match(calendar, /DTEND:/, 'calendar output must contain a UTC end');
-assert.match(calendar, /str_replace\(\["\\r\\n", "\\r", "\\n"\]/, 'ICS text must neutralize injected line breaks');
+assert.match(calendar, /str_replace\('\\\\', '\\\\\\\\'/, 'ICS escaping must escape literal backslashes first');
+assert.match(calendar, /str_replace\(\["\\r\\n", "\\r", "\\n"\]/, 'ICS escaping must neutralize injected line breaks');
 assert.doesNotMatch(calendar, /cancel_token/, 'calendar payload must never expose the management token');
 
-assert.match(profileAgent, /data\.profileBookingLink='1'/, 'active Profile Agents must expose a Book a time entry point');
-assert.match(profileAgent, /\/book`/, 'Profile Agent booking CTA must target the native scheduling route');
+assert.match(profileAgent, /dataset\.profileBookingLink='1'/, 'active Profile Agents must expose a Book a time entry point');
+assert.match(profileAgent, /new URL\(`\$\{encodeURIComponent\(cfg\.username\)\}\/book`,profileBase\)/, 'Profile Agent booking CTA must preserve configured base paths');
 
 console.log('Agent Scheduling Public v4.50 contract passed.');
