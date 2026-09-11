@@ -5,6 +5,7 @@ const read = path => fs.readFileSync(new URL(`../${path}`, import.meta.url), 'ut
 const runtime = read('includes/homeserver-vp3.php');
 const approvalRuntime = read('includes/homeserver-approvals-v028.php');
 const sidebar = read('includes/main-sidebar.php');
+const modalCss = read('homeserver-vp3.css');
 const modalJs = read('homeserver-vp3.js');
 const admin = read('admin/homeserver.php');
 const statusApi = read('api/homeserver-status.php');
@@ -20,6 +21,7 @@ assert.match(sidebar, /HomeServer Connection/);
 assert.match(sidebar, /Latest VP3 Release/);
 assert.match(sidebar, /Agent Brain/);
 assert.match(sidebar, /homeserver-vp3\.js/);
+assert.match(modalCss, /\.vp3-homeserver-modal\{[^}]*z-index:20500/, 'HomeServer modal must overlay the global member header and its menus');
 
 assert.match(statusApi, /require_login\(\)/);
 assert.match(statusApi, /verify_csrf\(\)/);
