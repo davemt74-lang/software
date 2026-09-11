@@ -18,6 +18,7 @@ $mainSidebarRoleSummary = $mainSidebarUser ? implode(' · ', user_role_labels($m
 <link rel="stylesheet" href="<?= e(url('/homeserver-vp3.css?v=20260910-1')) ?>">
 <link rel="stylesheet" href="<?= e(url('/agent-policy-v035.css?v=agent-policy-v035-20260909')) ?>">
 <link rel="stylesheet" href="<?= e(url('/agent-ui-v034.css?v=agent-ui-v034-20260910-chat-rail')) ?>">
+<link rel="stylesheet" data-chat-rail-controls-v132 href="<?= e(url('/chat-rail-controls-v132.css?v=20260911-1')) ?>">
 <aside
   class="chat-sidebar workspace-main-sidebar"
   id="chatSidebar"
@@ -143,3 +144,4 @@ $mainSidebarRoleSummary = $mainSidebarUser ? implode(' · ', user_role_labels($m
 </div>
 <script src="<?= e(url('/homeserver-vp3.js?v=agent-policy-v035-20260909')) ?>" defer></script>
 <script src="<?= e(url('/agent-ui-v034.js?v=agent-ui-v034-20260910-chat-rail')) ?>" defer></script>
+<script data-chat-rail-controls-v132 src="<?= e(url('/chat-rail-controls-v132.js?v=20260911-1')) ?>" defer></script>
