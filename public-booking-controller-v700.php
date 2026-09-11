@@ -9,6 +9,9 @@ if (!$pdo || !agent_scheduling_schema_ready_v430($pdo) || !profile_agent_schema_
 }
 $lifecycleReady = function_exists('agent_appointment_lifecycle_schema_ready_v700')
     && agent_appointment_lifecycle_schema_ready_v700($pdo);
+$paidReady = $lifecycleReady
+    && function_exists('agent_paid_appointments_schema_ready_v800')
+    && agent_paid_appointments_schema_ready_v800($pdo);
 
 function public_booking_redirect_v450(string $target): never
 {
@@ -115,10 +118,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $booking = agent_appointment_lifecycle_booking_v700($pdo, (int)$booking['id'], (int)$profile['user_id']) ?: $booking;
                 try {
                     if ($intakeAnswers) agent_appointment_lifecycle_capture_intake_v700($pdo, $booking, $intakeAnswers);
-                } catch (Throwable $captureError) {
+                    $paid = $paidReady ? agent_paid_appointments_create_personal_v800($pdo, $booking) : null;
+                } catch (Throwable $commercialError) {
+                    $existingPaid = $paidReady ? agent_paid_appointments_paid_booking_for_booking_v800($pdo, (int)$booking['id']) : null;
                     try { agent_scheduling_cancel_booking_v430($pdo, (int)$booking['id'], (int)$profile['user_id']); } catch (Throwable $ignored) {}
-                    throw $captureError;
+                    if ($existingPaid) {
+                        try { agent_paid_appointments_record_cancellation_v800($pdo, $existingPaid, 'system', null, null, 'commercial_booking_rollback'); } catch (Throwable $ignored) {}
+                    }
+                    throw $commercialError;
                 }
+
+                if ($paid) {
+                    $paymentUrl = agent_paid_appointments_payment_url_v800($pdo, $paid);
+                    if ($paymentUrl === '') throw new RuntimeException('Appointment payment link could not be created.');
+                    agent_paid_appointments_housekeeping_v800($pdo, 50);
+                    public_booking_redirect_v450($paymentUrl);
+                }
+
                 agent_appointment_lifecycle_event_v700($pdo, $booking, 'confirmed', '', 'confirmed', 'guest', null, null, ['source'=>'public']);
                 agent_appointment_lifecycle_queue_booking_v700($pdo, $booking, true);
                 agent_appointment_lifecycle_housekeeping_v700($pdo, 100);
@@ -130,9 +146,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if ($action === 'cancel') {
             if (!$managedBooking || !hash_equals((string)$managedBooking['cancel_token'], $manageToken)) throw new RuntimeException('This booking management link is not valid.');
+            $paid = $paidReady ? agent_paid_appointments_paid_booking_for_booking_v800($pdo, (int)$managedBooking['id']) : null;
             if ($lifecycleReady) {
                 $managedBooking = agent_appointment_lifecycle_booking_v700($pdo, (int)$managedBooking['id'], (int)$profile['user_id']) ?: $managedBooking;
                 $managedBooking = agent_appointment_lifecycle_transition_v700($pdo, $managedBooking, 'cancelled', 'guest', null, null, ['source'=>'private_manage_link']);
+                if ($paid) agent_paid_appointments_record_cancellation_v800($pdo, $paid, 'guest', null, null, 'guest_cancelled');
                 agent_appointment_lifecycle_housekeeping_v700($pdo, 100);
             } else {
                 if (!agent_scheduling_cancel_booking_v430($pdo, (int)$managedBooking['id'], null, $manageToken)) throw new RuntimeException('This appointment could not be cancelled.');
@@ -145,6 +163,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($action === 'reschedule') {
             agent_scheduling_public_rate_limit_v450('reschedule', 10, 60);
             if (!$managedBooking || !hash_equals((string)$managedBooking['cancel_token'], $manageToken)) throw new RuntimeException('This booking management link is not valid.');
+            $paid = $paidReady ? agent_paid_appointments_paid_booking_for_booking_v800($pdo, (int)$managedBooking['id']) : null;
             if ($lifecycleReady) {
                 $managedBooking = agent_appointment_lifecycle_booking_v700($pdo, (int)$managedBooking['id'], (int)$profile['user_id']) ?: $managedBooking;
                 $newBooking = agent_appointment_lifecycle_reschedule_v700(
@@ -154,6 +173,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     trim((string)($_POST['guest_timezone'] ?? (string)$managedBooking['guest_timezone'])),
                     'guest'
                 );
+                if ($paid) agent_paid_appointments_record_reschedule_v800($pdo, $paid, 'guest');
                 agent_appointment_lifecycle_housekeeping_v700($pdo, 100);
             } else {
                 $newBooking = agent_scheduling_public_reschedule_v450(
@@ -190,6 +210,8 @@ $windowDays = $slotEventPublic ? max(1, min(730, (int)$slotEventPublic['booking_
 $maxDate = (new DateTimeImmutable($today, new DateTimeZone($scheduleTimezone)))->modify('+' . $windowDays . ' days')->format('Y-m-d');
 $serverSlots = $slotEventPublic ? agent_scheduling_slots_for_date_v430($pdo, (int)$slotEventPublic['id'], $selectedDate, true) : [];
 $intakeQuestions = $lifecycleReady && $event ? agent_appointment_lifecycle_questions_v700($pdo, (int)$event['id'], true) : [];
+$eventPaymentTerms = $paidReady && $event ? agent_paid_appointments_event_terms_v800($pdo, (int)$event['id']) : null;
+$managedPaid = $paidReady && $managedBooking ? agent_paid_appointments_paid_booking_for_booking_v800($pdo, (int)$managedBooking['id']) : null;
 
 $confirmed = !empty($_GET['confirmed']);
 $rescheduled = !empty($_GET['rescheduled']);
