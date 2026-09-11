@@ -21,7 +21,7 @@ assert.match(tools, /SELECT \* FROM agent_scheduling_schedules WHERE owner_user_
 assert.doesNotMatch(tools, /agent_scheduling_default_schedule_v430/, 'read-only Agent scheduling questions must not create a schedule as a side effect');
 assert.match(tools, /WHERE b\.owner_user_id=\? AND b\.schedule_id=\?/, 'booking discovery must be scoped to the authenticated owner and selected schedule');
 assert.match(tools, /owner_user_id=\? AND schedule_id=\? AND status IN \('pending','confirmed'\)/, 'reschedule mutations must remain owner and schedule scoped');
-assert.match(tools, /\(int\)\$event\['owner_user_id'\]!==(int)\$user\['id'\]/, 'event types must be re-authorized to the current owner before mutation');
+assert.match(tools, /\(int\)\$event\['owner_user_id'\]!==\(int\)\$user\['id'\]/, 'event types must be re-authorized to the current owner before mutation');
 assert.match(tools, /SELECT user_agent_id FROM chat_conversations WHERE id=\? AND user_id=\?/, 'selected Agent attribution must come from an owner-scoped conversation');
 assert.match(tools, /user_agent_get_v236\(\$pdo,\$userId,\$agentId\)/, 'selected Agent must be revalidated against its owner');
 assert.match(tools, /\$currentAgentId!==\$agentId/, 'approved mutations must fail closed if the Agent principal changed');
