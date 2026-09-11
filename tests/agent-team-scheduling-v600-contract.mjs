@@ -1,0 +1,70 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+const read=path=>fs.readFileSync(new URL(`../${path}`,import.meta.url),'utf8');
+const core=read('includes/agent-team-scheduling-v600.php');
+const tools=read('includes/agent-team-scheduling-tools-v610.php');
+const auth=read('includes/agent-tool-authorization-v400.php');
+const bootstrap=read('includes/bootstrap.php');
+const upgrade=read('upgrade.php');
+const member=read('team-scheduling.php');
+const publicPage=read('team-book.php');
+const css=read('team-scheduling.css');
+const nav=read('includes/member-navigation.php');
+
+assert.match(core,/VP3_AGENT_TEAM_SCHEDULING_V600/,'Team Scheduling must expose a versioned runtime');
+assert.match(tools,/VP3_AGENT_TEAM_SCHEDULING_TOOLS_V610/,'Booking Agent Team Scheduling must expose a versioned tool runtime');
+for(const table of ['agent_team_scheduling_pools','agent_team_scheduling_members','agent_team_scheduling_bookings','agent_team_scheduling_booking_members'])assert.ok(core.includes(`CREATE TABLE IF NOT EXISTS ${table}`),`${table} must be canonical upgrade-managed storage`);
+assert.doesNotMatch(core,/CREATE TABLE IF NOT EXISTS agent_scheduling_(?:schedules|event_types|availability|overrides|bookings)/,'Phase 6 must compose, never duplicate, canonical v4.30 scheduling');
+
+assert.match(core,/team_workspace_memberships WHERE workspace_owner_user_id=\? AND member_user_id=\? AND status='active'/,'Team participant authorization must use the canonical active workspace membership boundary');
+assert.match(core,/agent_scheduling_event_type_v430\(\$pdo,\$eventTypeId\)/,'Participant event mappings must resolve through canonical scheduling');
+assert.match(core,/\(int\)\$event\['owner_user_id'\]!==\$userId/,'Participant appointment types must be owned by that Team member');
+assert.match(core,/agent_scheduling_slots_for_date_v430\(\$pdo,\(int\)\$member\['event_type_id'\],\$date,false\)/,'Pooled availability must reuse canonical v4.30 slots, including calendar-sync busy blocking');
+assert.match(core,/eligible_member_ids/,'Round-robin pooled slots must retain eligible host identities');
+assert.match(core,/array_intersect_key\(\$intersection,\$set\)/,'Collective meetings must expose only the exact intersection of participant availability');
+assert.match(core,/count\(\$durations\\)!==1|count\(\$durations\)!==1/,'Collective pools must reject incompatible participant durations');
+assert.match(core,/assignment_count/,'Round-robin pools must persist fairness counters');
+assert.match(core,/last_assigned_at/,'Round-robin pools must persist last-assigned time');
+assert.match(core,/\$b\['priority'\]<=>\(int\)\$a\['priority'\]/,'Priority may break fairness ties without replacing the assignment-count algorithm');
+assert.match(core,/vp3_team_schedule_/,'Team booking mutations must serialize on a pool-level named lock');
+assert.match(core,/sort\(\$scheduleIds,SORT_NUMERIC\)/,'Collective schedule locks must be acquired in stable order');
+assert.match(core,/\$pdo->beginTransaction\(\)/,'Collective/Team booking writes must be transactional');
+assert.match(core,/agent_scheduling_create_booking_v430/,'Every Team participant booking must be a canonical VP3 booking');
+assert.match(core,/agent_scheduling_cancel_booking_v430/,'Team cancellation must traverse the canonical cancellation path');
+assert.match(core,/canonical_booking_id/,'Team booking lineage must point back to every canonical participant booking');
+
+assert.match(tools,/time\(\)\+900/,'Team booking approvals must expire after 15 minutes');
+for(const key of ["'user_id'=>","'conversation_id'=>","'agent_id'=>","'pool_id'=>"])assert.ok(tools.includes(key),`Pending Team approval must bind ${key}`);
+assert.match(tools,/Confirm team booking/i,'Booking Agent must require explicit second-turn Team booking confirmation');
+assert.match(tools,/Confirm team cancellation/i,'Booking Agent must require explicit second-turn Team cancellation confirmation');
+assert.match(tools,/agent_team_scheduling_tools_agent_id_v610/,'Team tools must re-resolve the selected Agent principal');
+assert.match(tools,/agent_tool_log/,'Team scheduling Agent actions must be audited');
+assert.match(auth,/agent_team_scheduling_tools_query_v610/,'Canonical Agent tool routing must check Team Scheduling');
+assert.ok(auth.indexOf('agent_team_scheduling_tools_query_v610')<auth.indexOf('agent_scheduling_tools_query_v460'),'Team Scheduling must route before personal scheduling');
+assert.ok(auth.indexOf('agent_team_scheduling_tools_query_v610')<auth.indexOf('vp3_agent_tool_booking_workspace_ids_v400'),'Team Scheduling must route before legacy music Booking Agent research');
+assert.match(auth,/\$a\['score'\]/,'Existing Booking Agent market ranking must retain its score comparator during Phase 6 integration');
+
+assert.match(publicPage,/agent_team_scheduling_public_pool_v600\(\$pdo,\$publicKey\)/,'Public Team booking must resolve authority from an opaque public key');
+assert.doesNotMatch(publicPage,/owner_user_id.*\$_GET|workspace_owner_user_id.*\$_GET/,'Public Team booking must never trust an owner id from the browser');
+assert.match(publicPage,/agent_scheduling_public_rate_limit_v450/,'Public Team booking writes must be rate limited');
+assert.match(publicPage,/verify_csrf\(\)/,'Public Team booking writes must enforce CSRF');
+assert.match(publicPage,/agent_team_scheduling_cancel_booking_v600/,'Private Team management link must cancel the whole Team booking');
+assert.doesNotMatch(publicPage,/agent_calendar_busy_blocks|access_token_ciphertext|refresh_token_ciphertext/,'Public Team booking must not expose calendar internals');
+
+assert.match(member,/require_permission\('account\.access'\)/,'Team Scheduling workspace must require account access');
+assert.match(member,/verify_csrf\(\)/,'Team Scheduling mutations must enforce CSRF');
+assert.match(member,/agent_team_scheduling_save_pool_v600/,'Member UI must use canonical Team pool writes');
+assert.match(member,/agent_team_scheduling_save_member_v600/,'Member UI must use validated participant mappings');
+assert.match(member,/agent_team_scheduling_public_url_v600/,'Member UI must expose a public Team booking link');
+assert.match(css,/\.team-scheduling-main\{[^}]*min-height:0;[^}]*grid-template-rows:58px minmax\(0,1fr\);[^}]*overflow:hidden/,'Team Scheduling must participate in the fixed member shell');
+assert.match(css,/\.team-scheduling-canvas\{[^}]*min-height:0;[^}]*overflow-x:hidden;[^}]*overflow-y:auto/,'Team Scheduling must own its vertical scroll region');
+assert.match(css,/@media\(max-width:700px\)/,'Team Scheduling must provide a mobile layout');
+assert.match(nav,/'team_scheduling','Team Scheduling',url\('\/team-scheduling\.php'\),'collaboration'/,'Team Scheduling must be reachable from canonical member navigation');
+
+const lifecycleIndex=bootstrap.indexOf("team-workspace-lifecycle-v350.php");
+const teamIndex=bootstrap.indexOf("agent-team-scheduling-v600.php");
+const toolIndex=bootstrap.indexOf("agent-team-scheduling-tools-v610.php");
+assert.ok(lifecycleIndex>=0&&teamIndex>lifecycleIndex&&toolIndex>teamIndex,'Bootstrap must load Team lifecycle before Team Scheduling and Agent tools');
+assert.match(upgrade,/agent_team_scheduling_schema_ready_v600\(\)/,'Canonical upgrade completeness must include Team Scheduling');
+assert.match(upgrade,/agent_team_scheduling_ensure_schema_v600\(\)/,'Canonical upgrade must install Team Scheduling');
+console.log('AGENT_TEAM_SCHEDULING_V600=PASS');
