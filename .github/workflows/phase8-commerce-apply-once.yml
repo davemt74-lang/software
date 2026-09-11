@@ -20,7 +20,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cat .phase8/chunk-01.b64 .phase8/chunk-02.b64 .phase8/chunk-03.b64 .phase8/chunk-04.b64 .phase8/chunk-05.b64 .phase8/chunk-06-exact.b64 .phase8/chunk-07.b64 > /tmp/phase8-commerce.b64
+          cat .phase8/chunk-01.b64 .phase8/chunk-02.b64 .phase8/chunk-03.b64 .phase8/chunk-05.b64 .phase8/chunk-04.b64 .phase8/chunk-06-exact.b64 .phase8/chunk-07.b64 > /tmp/phase8-commerce.b64
           base64 -d /tmp/phase8-commerce.b64 > /tmp/phase8-commerce.tar.gz
           echo 'fcae2818c7ba62a9d642da5a15e6db8a3801cd1ef0b6981507d69ddbb5ffe07f  /tmp/phase8-commerce.tar.gz' | sha256sum -c -
           tar -xzf /tmp/phase8-commerce.tar.gz -C .
