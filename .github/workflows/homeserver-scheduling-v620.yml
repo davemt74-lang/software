@@ -8,6 +8,7 @@ on:
       - 'api/homeserver-scheduling-v620.php'
       - 'api/homeserver-status.php'
       - 'tests/homeserver-scheduling-v620-contract.mjs'
+      - 'tests/homeserver-scheduling-v620-static.php'
       - '.github/workflows/homeserver-scheduling-v620.yml'
   push:
     branches: [main]
@@ -17,6 +18,7 @@ on:
       - 'api/homeserver-scheduling-v620.php'
       - 'api/homeserver-status.php'
       - 'tests/homeserver-scheduling-v620-contract.mjs'
+      - 'tests/homeserver-scheduling-v620-static.php'
       - '.github/workflows/homeserver-scheduling-v620.yml'
 
 permissions:
@@ -36,6 +38,8 @@ jobs:
           node-version: '22'
       - name: HomeServer scheduling connector contract
         run: node tests/homeserver-scheduling-v620-contract.mjs
+      - name: HomeServer scheduling PHP safety
+        run: php tests/homeserver-scheduling-v620-static.php
       - name: Retain Google/Outlook calendar sync contract
         run: node tests/agent-calendar-sync-v500-contract.mjs
       - name: Retain Team Scheduling contract
@@ -46,3 +50,4 @@ jobs:
           php -l includes/homeserver-approvals-v028.php
           php -l api/homeserver-scheduling-v620.php
           php -l api/homeserver-status.php
+          php -l tests/homeserver-scheduling-v620-static.php
