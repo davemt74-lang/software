@@ -198,7 +198,7 @@ function vp3_agent_tool_booking_suggestions_v400(array $user,int $limit=8): arra
         $market['reason']=$recent>0?'Strong listener density; already represented in the current show calendar.':'Strong listener density with no upcoming show currently listed in this market.';
         $out[]=$market;
     }
-    usort($out,static fn(array $a,array $b):int=>(int)$b['score']<=>(int)$a['score']);
+    usort($out,static fn(array $a,array $b):int=>(int)$b['score']<=>(int)$a['_score']);
     return array_slice($out,0,max(1,min(20,$limit)));
 }
 
@@ -289,6 +289,13 @@ function vp3_agent_tool_execute_query_v400(string $query,array $user,int $conver
 {
     $empty=vp3_agent_tool_empty_v400();$pdo=db();
     if(!$pdo)return $empty;
+
+    // Team scheduling is more specific than personal scheduling and must route
+    // first so "book a team meeting" cannot fall through to music Booking Agent.
+    if(function_exists('agent_team_scheduling_tools_query_v610')){
+        $teamScheduling=agent_team_scheduling_tools_query_v610($query,$user,$conversationId);
+        if(!empty($teamScheduling['handled']))return vp3_agent_tool_authorize_result_v400($teamScheduling,$user,$query);
+    }
 
     // Native calendar/scheduling intents run through the same principal and
     // result-sanitization boundary before the legacy music Booking Agent so
