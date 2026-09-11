@@ -10,6 +10,7 @@ const context = read('includes/agent-brain-context-v142.php');
 const bootstrap = read('includes/bootstrap.php');
 const setup = read('setup.php');
 const upgrade = read('upgrade.php');
+const memoryPage = read('memory.php');
 
 assert.match(scope, /VP3_AGENT_MEMORY_SCOPE_V410/);
 assert.match(scope, /user_agent_id INT UNSIGNED NULL/);
@@ -85,6 +86,11 @@ assert.match(context, /agent_tool_history t JOIN chat_conversations c/);
 assert.match(context, /memory_type='theme'/);
 assert.doesNotMatch(context, /agent_memory_items WHERE user_id=\? AND is_active=1/);
 assert.doesNotMatch(context, /agent_chat_archive WHERE user_id=\?/);
+
+// The shared member shell intentionally locks the viewport. Long Memory content
+// therefore has to own the middle grid row and provide its own scroll container.
+assert.match(memoryPage, /\.memory-main\{[^}]*min-height:0;[^}]*grid-template-rows:58px minmax\(0,1fr\)/);
+assert.match(memoryPage, /\.memory-canvas\{[^}]*min-height:0;[^}]*overflow-y:auto;[^}]*overscroll-behavior:contain/);
 
 // Same logical memory must produce a different durable identity in every Agent
 // namespace, including the canonical system-Agent namespace (id 0 / SQL NULL).
