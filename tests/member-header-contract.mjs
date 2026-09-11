@@ -6,6 +6,8 @@ const headerUi = fs.readFileSync('chat-header-ui.css', 'utf8');
 const scrollUi = fs.readFileSync('member-page-scroll.css', 'utf8');
 const agentUi = fs.readFileSync('agent-ui-v034.css', 'utf8');
 const agentUiJs = fs.readFileSync('agent-ui-v034.js', 'utf8');
+const railUi = fs.readFileSync('chat-rail-controls-v132.css', 'utf8');
+const railJs = fs.readFileSync('chat-rail-controls-v132.js', 'utf8');
 const mainSidebar = fs.readFileSync('includes/main-sidebar.php', 'utf8');
 const menu = fs.readFileSync('includes/member-user-menu.php', 'utf8');
 const contacts = fs.readFileSync('contacts.php', 'utf8');
@@ -44,9 +46,17 @@ assert.match(agentUi, /\.workspace-main-sidebar \.agent-sidebar-footer\{order:3;
 assert.doesNotMatch(mainSidebar, /<div class="chat-history-label">Agent<\/div>/, 'main sidebar must not render the redundant Agent category heading');
 assert.match(agentUiJs, /function dockChatSettingsLauncher\(\)/, 'Agent UI runtime must own chat settings rail docking');
 assert.match(agentUiJs, /composer\.insertBefore\(launcher, voice \|\| send \|\| null\)/, 'settings launcher must be inserted into the composer before voice/send controls');
-assert.match(agentUi, /\.chat-composer\{[\s\S]*grid-template-columns:minmax\(0,1fr\) 28px 32px 32px!important;/, 'Agent Chat composer must reserve explicit settings, microphone, and send columns');
-assert.match(agentUi, /\.chat-composer \.chat-settings-launcher\{[\s\S]*position:relative!important;[\s\S]*width:28px!important;[\s\S]*height:28px!important;/, 'Agent Chat settings control must be compact and physically inside the composer rail');
-assert.match(agentUi, /\.chat-composer \.chat-voice-button,[\s\S]*\.chat-composer #sendChatButton\{[\s\S]*width:32px!important;[\s\S]*height:32px!important;/, 'microphone and send controls must use identical sizing');
+assert.match(agentUi, /\.chat-composer\{[\s\S]*grid-template-columns:minmax\(0,1fr\) 28px 32px 32px!important;/, 'legacy Agent UI must reserve explicit settings, microphone, and send columns');
+assert.match(agentUi, /\.chat-composer \.chat-settings-launcher\{[\s\S]*position:relative!important;[\s\S]*width:28px!important;[\s\S]*height:28px!important;/, 'legacy Agent UI must retain compact settings fallback sizing');
+assert.match(agentUi, /\.chat-composer \.chat-voice-button,[\s\S]*\.chat-composer #sendChatButton\{[\s\S]*width:32px!important;[\s\S]*height:32px!important;/, 'legacy microphone and send controls must use identical sizing');
+
+assert.match(mainSidebar, /chat-rail-controls-v132\.css\?v=20260911-1/, 'sidebar must load the canonical rail stylesheet with a fresh cache key');
+assert.match(mainSidebar, /chat-rail-controls-v132\.js\?v=20260911-1/, 'sidebar must load the canonical rail runtime with a fresh cache key');
+assert.match(railUi, /#chatForm\.chat-composer\{[\s\S]*grid-template-columns:minmax\(0,1fr\) 32px 32px 32px!important;/, 'canonical rail must reserve three equal 32px control columns');
+assert.match(railUi, /#chatForm\.chat-composer>#chatSettingsLauncher[\s\S]*position:static!important;[\s\S]*width:32px!important;[\s\S]*height:32px!important;/, 'settings launcher must be physically inside the composer and use the same footprint');
+assert.match(railUi, /#chatForm\.chat-composer>#sendChatButton[\s\S]*width:32px!important;[\s\S]*height:32px!important;/, 'send control must use the canonical 32px footprint');
+assert.match(railJs, /form\.insertBefore\(launcher, voice \|\| send \|\| null\)/, 'canonical rail runtime must reparent settings into the chat form');
+assert.match(railJs, /removeRedundantAgentHeading/, 'canonical rail runtime must defensively remove stale Agent headings');
 
 for (const [name, source, contentClass] of [
   ['Plugins', plugins, 'plugins-wrap'],
