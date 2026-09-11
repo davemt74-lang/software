@@ -11,7 +11,7 @@ $pricingUrl = url('/pricing.php');
 $aboutUrl = url('/about.php');
 $transcriptionsUrl = url('/transcriptions.php');
 $teamsUrl = url('/teams.php');
-$homeServerUrl = url('/homeserver-download.php');
+$homeServerUrl = '#homeserver';
 ?>
 <!doctype html>
 <html lang="en">
