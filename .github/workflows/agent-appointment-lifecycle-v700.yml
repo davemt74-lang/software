@@ -1,0 +1,38 @@
+name: Agent Appointment Lifecycle v7.00
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          coverage: none
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Appointment Lifecycle contract
+        run: node tests/agent-appointment-lifecycle-v700-contract.mjs
+      - name: PHP syntax
+        run: |
+          php -l includes/agent-appointment-lifecycle-v700.php
+          for f in includes/agent-appointment-lifecycle-v700-part*.php; do php -l "$f"; done
+          php -l includes/bootstrap.php
+          php -l includes/member-navigation.php
+          php -l appointment-lifecycle.php
+          php -l cron/appointment-lifecycle-v700.php
+          php -l public-booking.php
+          php -l team-book.php
+          php -l upgrade.php
