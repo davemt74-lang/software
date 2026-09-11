@@ -31,8 +31,14 @@ jobs:
           for f in includes/agent-appointment-lifecycle-v700-part*.php; do php -l "$f"; done
           php -l includes/bootstrap.php
           php -l includes/member-navigation.php
+          php -l includes/appointment-lifecycle-controller-v700.php
+          php -l includes/appointment-lifecycle-view-v700.php
+          php -l includes/team-book-controller-v700.php
+          php -l includes/team-book-view-v700.php
           php -l appointment-lifecycle.php
           php -l cron/appointment-lifecycle-v700.php
+          php -l public-booking-controller-v700.php
+          php -l public-booking-view-v700.php
           php -l public-booking.php
           php -l team-book.php
           php -l upgrade.php
