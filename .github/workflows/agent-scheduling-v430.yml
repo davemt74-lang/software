@@ -32,11 +32,15 @@ jobs:
       - name: Agent Scheduling contract
         run: node tests/agent-scheduling-v430-contract.mjs
 
+      - name: Agent Scheduling helper tests
+        run: php tests/agent-scheduling-v430.php
+
       - name: JavaScript syntax
         run: node --check tests/agent-scheduling-v430-contract.mjs
 
       - name: PHP syntax
         run: |
           php -l includes/agent-scheduling-v430.php
+          php -l tests/agent-scheduling-v430.php
           php -l includes/bootstrap.php
           php -l upgrade.php
