@@ -45,13 +45,15 @@ assert.match(core,/canonical_booking_id/,'Team booking lineage must point back t
 assert.match(tools,/time\(\)\+900/,'Team booking approvals must expire after 15 minutes');
 for(const key of ["'user_id'=>","'conversation_id'=>","'agent_id'=>","'pool_id'=>"])assert.ok(tools.includes(key),`Pending Team approval must bind ${key}`);
 assert.match(tools,/Confirm team booking/i,'Booking Agent must require explicit second-turn Team booking confirmation');
-assert.match(tools,/Confirm team cancellation/i,'Booking Agent must require explicit second-turn Team cancellation confirmation');
+assert.match(tools,/Confirm team cancellation/i,'Booking Agent must require explicit second-turn Team booking cancellation confirmation');
 assert.match(tools,/agent_team_scheduling_tools_agent_id_v610/,'Team tools must re-resolve the selected Agent principal');
 assert.match(tools,/agent_team_scheduling_entitled_v600\(\$pdo,\$ownerId\)/,'Team tools must re-check commercial entitlement before reads and approved mutations');
 assert.match(tools,/agent_tool_log/,'Team scheduling Agent actions must be audited');
 assert.match(auth,/agent_team_scheduling_tools_query_v610/,'Canonical Agent tool routing must check Team Scheduling');
-assert.ok(auth.indexOf('agent_team_scheduling_tools_query_v610')<auth.indexOf('agent_scheduling_tools_query_v460'),'Team Scheduling must route before personal scheduling');
-assert.ok(auth.indexOf('agent_team_scheduling_tools_query_v610')<auth.indexOf('vp3_agent_tool_booking_workspace_ids_v400'),'Team Scheduling must route before legacy music Booking Agent research');
+const executeStart=auth.indexOf('function vp3_agent_tool_execute_query_v400');
+const executeBody=executeStart>=0?auth.slice(executeStart):'';
+assert.ok(executeBody.indexOf('agent_team_scheduling_tools_query_v610')<executeBody.indexOf('agent_scheduling_tools_query_v460'),'Team Scheduling must route before personal scheduling');
+assert.ok(executeBody.indexOf('agent_team_scheduling_tools_query_v610')<executeBody.indexOf('$bookingIntent='),'Team Scheduling must route before legacy music Booking Agent research');
 assert.match(auth,/usort\(\$out,static fn\(array \$a,array \$b\):int=>\(int\)\$b\['score'\]<=>\(int\)\$a\['score'\]\)/,'Existing Booking Agent market ranking must retain its score comparator during Phase 6 integration');
 
 assert.match(publicPage,/agent_team_scheduling_public_pool_v600\(\$pdo,\$publicKey\)/,'Public Team booking must resolve authority from an opaque public key');
