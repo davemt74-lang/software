@@ -59,7 +59,7 @@ assert.match(tools, /'approval_required'/, 'prepared mutations must be auditable
 assert.doesNotMatch(tools, /cancel_token|public_token/, 'Agent tools must never read or expose public bearer tokens');
 
 assert.match(tools, /Please say AM or PM/, 'ambiguous 12-hour times must not be guessed');
-assert.match(tools, /(?:book\|schedule)\\s\+\(\[\\pL\]/, 'direct phrases such as Book Sarah tomorrow must support guest extraction');
+assert.ok(tools.includes("(?:book|schedule)\\s+([\\pL]"), 'direct phrases such as Book Sarah tomorrow must support guest extraction');
 assert.match(tools, /venue\|venues\|gig\|gigs\|tour\|touring/, 'music booking research must remain explicitly disambiguated from appointments');
 assert.match(tools, /function agent_scheduling_tools_profile_query_v460/, 'phase 4 must include a safe public Profile Agent scheduling skill');
 assert.match(tools, /private appointment-management link/, 'public Profile Agent must never expose another visitor booking for mutation');
