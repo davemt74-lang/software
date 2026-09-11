@@ -24,7 +24,7 @@ function homeserver_status_error_snapshot(int $userId): ?array
 
 function homeserver_status_with_scheduling_v620(int $userId,array $status): array
 {
-    $status['scheduling_connector']=homeserver_scheduling_v620_maybe_provision($userId,$status);
+    $status['scheduling_connector']=homeserver_scheduling_v620_connector_status($userId);
     return $status;
 }
 
@@ -43,12 +43,21 @@ try {
         }
         if ($action === 'check_pairing') {
             $pairing = homeserver_vp3_check_pairing($userId);
-            echo json_encode(['ok'=>true,'pairing'=>$pairing,'status'=>homeserver_status_with_scheduling_v620($userId,homeserver_vp3_status($userId,true))], JSON_UNESCAPED_SLASHES);
+            $connector=homeserver_scheduling_v620_connector_status($userId);
+            if(!empty($pairing['ready'])&&!empty(homeserver_vp3_status($userId,false)['connected'])){
+                try{$connector=homeserver_scheduling_v620_provision($userId,false);}
+                catch(Throwable $e){$connector['error']='Pairing is complete, but the scheduling connector is awaiting a compatible HomeServer.';}
+            }
+            $status=homeserver_vp3_status($userId,true);
+            $status['scheduling_connector']=$connector;
+            echo json_encode(['ok'=>true,'pairing'=>$pairing,'status'=>$status], JSON_UNESCAPED_SLASHES);
             exit;
         }
         if ($action === 'provision_scheduling' || $action === 'rotate_scheduling') {
             $connector=homeserver_scheduling_v620_provision($userId,$action==='rotate_scheduling');
-            echo json_encode(['ok'=>true,'connector'=>$connector,'status'=>homeserver_status_with_scheduling_v620($userId,homeserver_vp3_status($userId,false))],JSON_UNESCAPED_SLASHES);
+            $status=homeserver_vp3_status($userId,false);
+            $status['scheduling_connector']=$connector;
+            echo json_encode(['ok'=>true,'connector'=>$connector,'status'=>$status],JSON_UNESCAPED_SLASHES);
             exit;
         }
         if ($action === 'disconnect') {
