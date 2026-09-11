@@ -10,3 +10,4 @@ require_once __DIR__.'/agent-paid-appointments-v800-part2.php';
 require_once __DIR__.'/agent-paid-appointments-v800-part3.php';
 require_once __DIR__.'/agent-paid-appointments-v800-part4.php';
 require_once __DIR__.'/agent-paid-appointments-v800-part5.php';
+require_once __DIR__.'/agent-commerce-appointment-adapter-v800.php';
