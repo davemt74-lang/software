@@ -189,6 +189,16 @@ function agent_team_scheduling_pool_list_v600(PDO $pdo,int $workspaceOwnerId,boo
     return $stmt->fetchAll()?:[];
 }
 
+function agent_team_scheduling_collective_duration_ready_v600(PDO $pdo,int $poolId,int $ignoreUserId=0,?int $candidateDuration=null): bool
+{
+    if($poolId<1)return true;
+    $sql="SELECT DISTINCT e.duration_minutes FROM agent_team_scheduling_members m JOIN agent_scheduling_schedules s ON s.id=m.schedule_id AND s.owner_user_id=m.user_id JOIN agent_scheduling_event_types e ON e.id=m.event_type_id AND e.schedule_id=m.schedule_id WHERE m.pool_id=? AND m.enabled=1 AND s.is_active=1 AND e.is_active=1";$args=[$poolId];
+    if($ignoreUserId>0){$sql.=' AND m.user_id<>?';$args[]=$ignoreUserId;}
+    $stmt=$pdo->prepare($sql);$stmt->execute($args);$durations=array_map('intval',array_column($stmt->fetchAll()?:[],'duration_minutes'));
+    if($candidateDuration!==null)$durations[]=$candidateDuration;
+    return count(array_unique($durations))<=1;
+}
+
 function agent_team_scheduling_save_pool_v600(PDO $pdo,array $user,array $input): array
 {
     $ownerId=(int)($user['id']??0);if($ownerId<1)throw new RuntimeException('A signed-in workspace owner is required.');
@@ -198,6 +208,7 @@ function agent_team_scheduling_save_pool_v600(PDO $pdo,array $user,array $input)
     if($name==='')throw new RuntimeException('Enter a team scheduling name.');
     $mode=(string)($input['mode']??($existing['mode']??'round_robin'));
     if(!in_array($mode,['round_robin','collective'],true))$mode='round_robin';
+    if($mode==='collective'&&$poolId>0&&!agent_team_scheduling_collective_duration_ready_v600($pdo,$poolId))throw new RuntimeException('Collective Team scheduling requires every active participant appointment type to use the same duration.');
     $timezone=agent_scheduling_timezone_v430((string)($input['timezone']??($existing['timezone']??($user['timezone']??'UTC'))),'UTC');
     $slug=agent_team_scheduling_slug_v600((string)($input['slug']??($existing['slug']??$name)))?:'team';
     $collision=$pdo->prepare('SELECT id FROM agent_team_scheduling_pools WHERE workspace_owner_user_id=? AND slug=? AND id<>? LIMIT 1');
@@ -232,8 +243,9 @@ function agent_team_scheduling_save_member_v600(PDO $pdo,array $user,int $poolId
 {
     $ownerId=(int)($user['id']??0);$pool=agent_team_scheduling_pool_v600($pdo,$ownerId,$poolId);if(!$pool)throw new RuntimeException('Team schedule not found.');
     $userId=max(0,(int)($input['user_id']??0));$eventTypeId=max(0,(int)($input['event_type_id']??0));
-    $event=agent_team_scheduling_validate_member_v600($pdo,$pool,$userId,$eventTypeId);
-    $keywords=mb_strimwidth(trim((string)($input['routing_keywords']??'')),0,4000,'');$priority=max(-1000,min(1000,(int)($input['priority']??0)));$enabled=!empty($input['enabled'])?1:0;
+    $event=agent_team_scheduling_validate_member_v600($pdo,$pool,$userId,$eventTypeId);$enabled=!empty($input['enabled'])?1:0;
+    if($enabled&&(string)$pool['mode']==='collective'&&!agent_team_scheduling_collective_duration_ready_v600($pdo,$poolId,$userId,(int)$event['duration_minutes']))throw new RuntimeException('Collective Team scheduling requires every active participant appointment type to use the same duration.');
+    $keywords=mb_strimwidth(trim((string)($input['routing_keywords']??'')),0,4000,'');$priority=max(-1000,min(1000,(int)($input['priority']??0)));
     $stmt=$pdo->prepare('INSERT INTO agent_team_scheduling_members (pool_id,user_id,schedule_id,event_type_id,routing_keywords,priority,enabled) VALUES (?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE schedule_id=VALUES(schedule_id),event_type_id=VALUES(event_type_id),routing_keywords=VALUES(routing_keywords),priority=VALUES(priority),enabled=VALUES(enabled)');
     $stmt->execute([$poolId,$userId,(int)$event['schedule_id'],$eventTypeId,$keywords,$priority,$enabled]);
     $find=$pdo->prepare('SELECT * FROM agent_team_scheduling_members WHERE pool_id=? AND user_id=? LIMIT 1');$find->execute([$poolId,$userId]);
@@ -273,16 +285,21 @@ function agent_team_scheduling_routed_members_v600(array $members,string $answer
     return $matched?:$members;
 }
 
+function agent_team_scheduling_slot_matches_pool_date_v600(array $slot,string $poolTimezone,string $date): bool
+{
+    try{return(new DateTimeImmutable((string)$slot['start_at_utc'],new DateTimeZone('UTC')))->setTimezone(new DateTimeZone(agent_scheduling_timezone_v430($poolTimezone)))->format('Y-m-d')===$date;}catch(Throwable $e){return false;}
+}
+
 function agent_team_scheduling_slots_v600(PDO $pdo,array $pool,string $date,string $routingAnswer=''): array
 {
     if(empty($pool['is_active']))return [];
-    $members=agent_team_scheduling_members_v600($pdo,$pool,true);if(!$members)return [];
+    $members=agent_team_scheduling_members_v600($pdo,$pool,true);if(!$members)return [];$poolTimezone=agent_scheduling_timezone_v430((string)$pool['timezone']);
     if((string)$pool['mode']==='round_robin'){
         $members=agent_team_scheduling_routed_members_v600($members,$routingAnswer);$slots=[];
         foreach($members as $member){
             foreach(agent_scheduling_slots_for_date_v430($pdo,(int)$member['event_type_id'],$date,false) as $slot){
-                $key=(string)$slot['start_at_utc'];
-                if(!isset($slots[$key]))$slots[$key]=['start_at_utc'=>$key,'end_at_utc'=>(string)$slot['end_at_utc'],'timezone'=>(string)$pool['timezone'],'eligible_member_ids'=>[]];
+                if(!agent_team_scheduling_slot_matches_pool_date_v600($slot,$poolTimezone,$date))continue;$key=(string)$slot['start_at_utc'];
+                if(!isset($slots[$key]))$slots[$key]=['start_at_utc'=>$key,'end_at_utc'=>(string)$slot['end_at_utc'],'timezone'=>$poolTimezone,'eligible_member_ids'=>[]];
                 $slots[$key]['eligible_member_ids'][]=(int)$member['id'];
             }
         }
@@ -292,12 +309,12 @@ function agent_team_scheduling_slots_v600(PDO $pdo,array $pool,string $date,stri
     if(count($durations)!==1)return [];
     $intersection=null;$ends=[];
     foreach($members as $member){
-        $set=[];foreach(agent_scheduling_slots_for_date_v430($pdo,(int)$member['event_type_id'],$date,false) as $slot){$set[(string)$slot['start_at_utc']]=true;$ends[(string)$slot['start_at_utc']]=(string)$slot['end_at_utc'];}
+        $set=[];foreach(agent_scheduling_slots_for_date_v430($pdo,(int)$member['event_type_id'],$date,false) as $slot){if(!agent_team_scheduling_slot_matches_pool_date_v600($slot,$poolTimezone,$date))continue;$set[(string)$slot['start_at_utc']]=true;$ends[(string)$slot['start_at_utc']]=(string)$slot['end_at_utc'];}
         $intersection=$intersection===null?$set:array_intersect_key($intersection,$set);
         if(!$intersection)return [];
     }
     ksort($intersection);$memberIds=array_map(static fn(array $m):int=>(int)$m['id'],$members);$out=[];
-    foreach(array_keys($intersection) as $start)$out[]=['start_at_utc'=>$start,'end_at_utc'=>$ends[$start]??'','timezone'=>(string)$pool['timezone'],'eligible_member_ids'=>$memberIds];
+    foreach(array_keys($intersection) as $start)$out[]=['start_at_utc'=>$start,'end_at_utc'=>$ends[$start]??'','timezone'=>$poolTimezone,'eligible_member_ids'=>$memberIds];
     return $out;
 }
 
@@ -353,10 +370,11 @@ function agent_team_scheduling_create_booking_v600(PDO $pdo,array $pool,array $i
         try{
             $canonical=[];$end='';
             foreach($selected as $index=>$member){
+                $canonicalAgentId=((int)$member['user_id']===(int)$pool['workspace_owner_user_id'])?$agentId:null;
                 $booking=agent_scheduling_create_booking_v430($pdo,[
                     'event_type_id'=>(int)$member['event_type_id'],'start_at_utc'=>$start,'guest_timezone'=>$guestTimezone,
                     'guest_name'=>$guestName,'guest_email'=>$guestEmail,'guest_phone'=>(string)($input['guest_phone']??''),'guest_notes'=>(string)($input['guest_notes']??''),
-                    'created_by_user_id'=>(int)$pool['workspace_owner_user_id'],'created_by_agent_id'=>$agentId,'source'=>$source,
+                    'created_by_user_id'=>(int)$pool['workspace_owner_user_id'],'created_by_agent_id'=>$canonicalAgentId,'source'=>$source,
                 ]);
                 $canonical[]=['member'=>$member,'booking'=>$booking,'role'=>$index===0?'host':'participant'];$end=(string)$booking['end_at_utc'];
             }
@@ -387,7 +405,7 @@ function agent_team_scheduling_booking_by_cancel_token_v600(PDO $pdo,string $tok
 
 function agent_team_scheduling_upcoming_v600(PDO $pdo,int $ownerId,int $poolId=0,int $limit=50): array
 {
-    $sql="SELECT b.*,p.name AS pool_name,p.mode,u.display_name AS assigned_name FROM agent_team_scheduling_bookings b JOIN agent_team_scheduling_pools p ON p.id=b.pool_id LEFT JOIN users u ON u.id=b.assigned_user_id WHERE b.workspace_owner_user_id=? AND b.status='confirmed' AND b.end_at_utc>=UTC_TIMESTAMP()";$args=[$ownerId];if($poolId>0){$sql.=' AND b.pool_id=?';$args[]=$poolId;}$sql.=' ORDER BY b.start_at_utc,b.id LIMIT '.max(1,min(100,$limit));$stmt=$pdo->prepare($sql);$stmt->execute($args);return $stmt->fetchAll()?:[];
+    $sql="SELECT b.*,p.name AS pool_name,p.mode,p.timezone AS pool_timezone,u.display_name AS assigned_name FROM agent_team_scheduling_bookings b JOIN agent_team_scheduling_pools p ON p.id=b.pool_id LEFT JOIN users u ON u.id=b.assigned_user_id WHERE b.workspace_owner_user_id=? AND b.status='confirmed' AND b.end_at_utc>=UTC_TIMESTAMP()";$args=[$ownerId];if($poolId>0){$sql.=' AND b.pool_id=?';$args[]=$poolId;}$sql.=' ORDER BY b.start_at_utc,b.id LIMIT '.max(1,min(100,$limit));$stmt=$pdo->prepare($sql);$stmt->execute($args);return $stmt->fetchAll()?:[];
 }
 
 function agent_team_scheduling_cancel_booking_v600(PDO $pdo,array $booking): bool
