@@ -14,6 +14,25 @@
   let lastMessageId=0;
   let pollTimer=0,presenceTimer=0;
 
+  // Public Agent profiles get a direct scheduling action without changing the
+  // canonical profile layout. The booking page itself handles profiles whose
+  // schedule is currently disabled or has no published appointment types.
+  const profileName=document.querySelector('.profile-name');
+  if(profileName&&!profileName.querySelector('[data-profile-booking-link]')){
+    const bookingLink=document.createElement('a');
+    bookingLink.dataset.profileBookingLink='1';
+    bookingLink.href=`/${encodeURIComponent(cfg.username)}/book`;
+    bookingLink.textContent='Book a time';
+    bookingLink.setAttribute('aria-label',`Book a time with ${cfg.username}`);
+    Object.assign(bookingLink.style,{
+      display:'inline-flex',alignItems:'center',justifyContent:'center',marginTop:'10px',
+      minHeight:'34px',padding:'0 13px',borderRadius:'999px',background:'#fff',color:'#171513',
+      border:'1px solid rgba(255,255,255,.7)',textDecoration:'none',fontSize:'11px',fontWeight:'850',
+      boxShadow:'0 5px 18px rgba(0,0,0,.16)'
+    });
+    profileName.appendChild(bookingLink);
+  }
+
   function messageNode(type,text,id=0){
     const div=document.createElement('div');div.className=`profile-agent-message ${type}`;div.dataset.messageId=String(id||0);div.textContent=String(text||'');return div;
   }
