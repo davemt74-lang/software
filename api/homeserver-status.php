@@ -38,21 +38,28 @@ try {
         $action = trim((string)($_POST['action'] ?? ''));
         if ($action === 'claim') {
             $pairing = homeserver_approvals_v028_claim_and_pair($userId, (string)($_POST['claim_code'] ?? ''));
-            echo json_encode(['ok'=>true,'pairing'=>$pairing,'status'=>homeserver_status_with_scheduling_v620($userId,homeserver_vp3_status($userId,true))], JSON_UNESCAPED_SLASHES); exit;
+            echo json_encode(['ok'=>true,'pairing'=>$pairing,'status'=>homeserver_status_with_scheduling_v620($userId,homeserver_vp3_status($userId,true))], JSON_UNESCAPED_SLASHES);
+            exit;
         }
         if ($action === 'check_pairing') {
             $pairing = homeserver_vp3_check_pairing($userId);
-            echo json_encode(['ok'=>true,'pairing'=>$pairing,'status'=>homeserver_status_with_scheduling_v620($userId,homeserver_vp3_status($userId,true))], JSON_UNESCAPED_SLASHES); exit;
+            echo json_encode(['ok'=>true,'pairing'=>$pairing,'status'=>homeserver_status_with_scheduling_v620($userId,homeserver_vp3_status($userId,true))], JSON_UNESCAPED_SLASHES);
+            exit;
         }
         if ($action === 'provision_scheduling' || $action === 'rotate_scheduling') {
             $connector=homeserver_scheduling_v620_provision($userId,$action==='rotate_scheduling');
-            echo json_encode(['ok'=>true,'connector'=>$connector,'status'=>homeserver_status_with_scheduling_v620($userId,homeserver_vp3_status($userId,false))],JSON_UNESCAPED_SLASHES);exit;
+            echo json_encode(['ok'=>true,'connector'=>$connector,'status'=>homeserver_status_with_scheduling_v620($userId,homeserver_vp3_status($userId,false))],JSON_UNESCAPED_SLASHES);
+            exit;
         }
         if ($action === 'disconnect') {
+            homeserver_scheduling_v620_revoke($userId);
             homeserver_vp3_disconnect($userId);
-            echo json_encode(['ok'=>true,'status'=>homeserver_vp3_status($userId,false)], JSON_UNESCAPED_SLASHES); exit;
+            echo json_encode(['ok'=>true,'status'=>homeserver_vp3_status($userId,false)], JSON_UNESCAPED_SLASHES);
+            exit;
         }
-        http_response_code(400); echo json_encode(['ok'=>false,'error'=>'Unsupported HomeServer action.']); exit;
+        http_response_code(400);
+        echo json_encode(['ok'=>false,'error'=>'Unsupported HomeServer action.']);
+        exit;
     }
 
     $force = (string)($_GET['refresh'] ?? '') === '1';
