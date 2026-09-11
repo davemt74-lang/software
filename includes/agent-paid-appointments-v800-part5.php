@@ -1,6 +1,16 @@
 <?php
 declare(strict_types=1);
 
+function agent_paid_appointments_decimal_to_minor_v800(string $value): int
+{
+    $value=trim($value);
+    if($value==='')return 0;
+    if(!preg_match('/^(\d{1,9})(?:\.(\d{1,2}))?$/',$value,$m))throw new RuntimeException('Enter a valid money amount with no more than two decimal places.');
+    $whole=(int)$m[1];$fraction=str_pad((string)($m[2]??''),2,'0');
+    if($whole>21474836)throw new RuntimeException('Money amount is too large.');
+    return ($whole*100)+(int)$fraction;
+}
+
 function agent_paid_appointments_balance_due_v800(array $paid): int
 {
     return max(0,(int)($paid['amount_total_cents']??0)-(int)($paid['amount_paid_cents']??0));
