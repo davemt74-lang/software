@@ -53,12 +53,14 @@ $memberHeaderAgentVoiceEnabled = $memberHeaderCanChat ? member_agent_voice_enabl
 if (empty($GLOBALS['STONEFELLOW_MEMBER_HEADER_RUNTIME_RENDERED'])):
     $GLOBALS['STONEFELLOW_MEMBER_HEADER_RUNTIME_RENDERED'] = true;
     $memberHeaderUiBuild = 'universal-member-header-layout-20260906';
+    $memberHeaderScrollBuild = 'member-page-scroll-20260910';
     $memberHeaderSettingsBuild = 'chat-settings-v239-canonical-20260905';
     $memberHeaderNotificationBuild = 'activity-center-brain-routing-20260906';
     $memberHeaderTranscriptionBuild = 'chat-transcription-canvas-v243-layout-20260905';
     $memberHeaderRecordingUiBuild = 'chat-recording-results-v206-20260901';
 ?>
 <link rel="stylesheet" data-member-header-ui href="<?= e(url('/chat-header-ui.css?v=' . $memberHeaderUiBuild)) ?>">
+<link rel="stylesheet" data-member-page-scroll href="<?= e(url('/member-page-scroll.css?v=' . $memberHeaderScrollBuild)) ?>">
 <?php if ($memberHeaderCanChat): ?>
 <link rel="stylesheet" data-chat-settings-canonical href="<?= e(url('/chat-settings-v237.css?v=' . $memberHeaderSettingsBuild)) ?>">
 <script data-chat-settings-config>window.STONEFELLOW_CHAT_SETTINGS=<?= json_encode([
