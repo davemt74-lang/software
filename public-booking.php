@@ -44,7 +44,7 @@ function public_booking_owner_notification_v450(array $profile, array $booking, 
         $type,
         $title,
         $body,
-        url('/scheduling.php?open=' . (int)$booking['id'] . '#bookings'),
+        url('/scheduling.php?schedule=' . (int)$booking['schedule_id'] . '&open=' . (int)$booking['id'] . '#bookings'),
         'agent_scheduling_booking',
         (int)$booking['id']
     );
@@ -88,7 +88,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             agent_scheduling_public_rate_limit_v450('book', 10, 60);
             $eventId = (int)($_POST['event_type_id'] ?? 0);
             $postEvent = agent_scheduling_public_event_for_owner_v450($pdo, (int)$profile['user_id'], $eventId);
-            if (!$postEvent) throw new RuntimeException('This appointment type is no longer available.');
+            if (!$postEvent || !$schedule || (int)$postEvent['schedule_id'] !== (int)$schedule['id']) {
+                throw new RuntimeException('This appointment type is no longer available.');
+            }
             $email = strtolower(trim((string)($_POST['guest_email'] ?? '')));
             if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) throw new RuntimeException('Enter a valid email address.');
             $booking = agent_scheduling_create_booking_v430($pdo, [
