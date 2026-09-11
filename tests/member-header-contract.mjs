@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 const header = fs.readFileSync('includes/member-header.php', 'utf8');
 const headerUi = fs.readFileSync('chat-header-ui.css', 'utf8');
 const scrollUi = fs.readFileSync('member-page-scroll.css', 'utf8');
+const agentUi = fs.readFileSync('agent-ui-v034.css', 'utf8');
 const menu = fs.readFileSync('includes/member-user-menu.php', 'utf8');
 const contacts = fs.readFileSync('contacts.php', 'utf8');
 const knowledge = fs.readFileSync('knowledge.php', 'utf8');
@@ -33,6 +34,12 @@ assert.match(menu, /id="chatProfileButton"/, 'shared user menu must expose the p
 assert.match(scrollUi, /\.plugins-wrap,[\s\S]*\.team-canvas,[\s\S]*\.music-wrap,[\s\S]*\.ml-wrap,[\s\S]*\.mr-wrap[\s\S]*overflow-y:auto/, 'long fixed-shell member pages must own vertical scrolling');
 assert.match(scrollUi, /\.messages-shell[\s\S]*height:100%[\s\S]*overflow:hidden/, 'desktop Messages must stay constrained to the member content row');
 assert.match(scrollUi, /@media\(max-width:800px\)[\s\S]*\.messages-shell[\s\S]*overflow-y:auto/, 'mobile Messages must expose a scrollable stacked shell');
+
+assert.match(agentUi, /\.workspace-main-sidebar \.chat-sidebar-sections\{order:1;/, 'main sidebar content must stay above runtime telemetry');
+assert.match(agentUi, /\.workspace-main-sidebar \.agent-runtime-strip\{order:2;/, 'runtime telemetry must live at the bottom of the sidebar');
+assert.match(agentUi, /\.workspace-main-sidebar \.agent-sidebar-footer\{order:3;/, 'account footer must remain below runtime telemetry');
+assert.match(agentUi, /body:has\(\.chat-composer\) \.chat-settings-launcher\{[\s\S]*z-index:12050!important;[\s\S]*right:max\(72px,calc\(\(100vw - 1062px\)\/2 \+ 60px\)\)!important;/, 'Agent Chat settings control must sit above and inside the composer rail');
+assert.match(agentUi, /body:has\(\.chat-composer\) \.chat-settings-button\{[\s\S]*width:30px!important;[\s\S]*height:30px!important;/, 'Agent Chat settings control must use the compact rail size');
 
 for (const [name, source, contentClass] of [
   ['Plugins', plugins, 'plugins-wrap'],
