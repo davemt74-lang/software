@@ -17,8 +17,9 @@ for (const table of [
   'agent_scheduling_bookings',
 ]) {
   assert.match(scheduling, new RegExp(`CREATE TABLE IF NOT EXISTS ${table}`), `${table} must be installed`);
-  assert.match(scheduling, new RegExp(`table_exists\\('${table}'\\)`), `${table} must participate in schema readiness`);
+  assert.match(scheduling, new RegExp(`['\"]${table}['\"]`), `${table} must participate in schema readiness`);
 }
+assert.match(scheduling, /if \(!table_exists\(\$table\)\) return false;/, 'schema readiness must reject any missing scheduling table');
 
 assert.match(scheduling, /function agent_scheduling_save_schedule_v430\(/, 'schedules need a canonical owner-scoped save primitive');
 assert.match(scheduling, /function agent_scheduling_save_event_type_v430\(/, 'event types need a canonical owner-scoped save primitive');
