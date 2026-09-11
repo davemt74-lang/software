@@ -1,0 +1,42 @@
+name: Agent Scheduling UI v4.40
+
+on:
+  push:
+    branches:
+      - main
+      - feature-agent-scheduling-ui-phase-2
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          coverage: none
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Scheduling member UI contract
+        run: node tests/agent-scheduling-ui-v440-contract.mjs
+
+      - name: JavaScript syntax
+        run: node --check tests/agent-scheduling-ui-v440-contract.mjs
+
+      - name: PHP syntax
+        run: |
+          php -l scheduling.php
+          php -l includes/member-navigation.php
+          php -l includes/agent-scheduling-v430.php
