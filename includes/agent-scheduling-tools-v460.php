@@ -326,11 +326,38 @@ function agent_scheduling_tools_execute_pending_v460(PDO $pdo,array $user,int $c
     if($operation==='create'){
         $event=agent_scheduling_event_type_v430($pdo,(int)($payload['event_type_id']??0));
         if(!$event||(int)$event['owner_user_id']!==(int)$user['id'])throw new RuntimeException('That appointment type is no longer available to this account.');
+        $guestEmail=strtolower(trim((string)($payload['guest_email']??'')));
+        $paidTerms=null;$paidDue=0;
+        if(function_exists('agent_paid_appointments_schema_ready_v800')&&agent_paid_appointments_schema_ready_v800($pdo)){
+            $paidTerms=agent_paid_appointments_event_terms_v800($pdo,(int)$event['id']);
+            $paidDue=agent_paid_appointments_amount_due_v800($paidTerms);
+            if($paidDue>0&&($guestEmail===''||!filter_var($guestEmail,FILTER_VALIDATE_EMAIL)))throw new RuntimeException('Paid appointments need the guest email before I can hold the time and create a secure payment link.');
+            if($paidDue>0&&(!function_exists('agent_appointment_lifecycle_schema_ready_v700')||!agent_appointment_lifecycle_schema_ready_v700($pdo)))throw new RuntimeException('Run the VP3 database upgrade before Agent-paid appointment booking can be used.');
+        }
         $booking=agent_scheduling_create_booking_v430($pdo,[
             'event_type_id'=>(int)$event['id'],'start_at_utc'=>(string)$payload['start_at_utc'],'guest_timezone'=>(string)$event['schedule_timezone'],
-            'guest_name'=>(string)$payload['guest_name'],'guest_email'=>(string)($payload['guest_email']??''),'guest_phone'=>'','guest_notes'=>'',
+            'guest_name'=>(string)$payload['guest_name'],'guest_email'=>$guestEmail,'guest_phone'=>'','guest_notes'=>'',
             'created_by_user_id'=>(int)$user['id'],'created_by_agent_id'=>$agentId,'source'=>'agent',
         ]);
+        if($paidDue>0){
+            $paid=null;
+            try{
+                $canonical=agent_appointment_lifecycle_booking_v700($pdo,(int)$booking['id'],(int)$user['id'])?:$booking;
+                $paid=agent_paid_appointments_create_personal_v800($pdo,$canonical);
+                if(!$paid)throw new RuntimeException('Paid appointment state could not be created.');
+                $paymentUrl=agent_paid_appointments_payment_url_v800($pdo,$paid);
+                if($paymentUrl==='')throw new RuntimeException('Secure appointment payment link could not be created.');
+            }catch(Throwable $commercialError){
+                $existingPaid=$paid?:agent_paid_appointments_paid_booking_for_booking_v800($pdo,(int)$booking['id']);
+                try{agent_scheduling_cancel_booking_v430($pdo,(int)$booking['id'],(int)$user['id']);}catch(Throwable $ignored){}
+                if($existingPaid){try{agent_paid_appointments_record_cancellation_v800($pdo,$existingPaid,'system',(int)$user['id'],$agentId?:null,'agent_commercial_booking_rollback');}catch(Throwable $ignored){}}
+                throw $commercialError;
+            }
+            $result['answer']='Time held pending payment. '.(string)$booking['event_title'].' with '.(string)$booking['guest_name'].' is reserved for '.agent_scheduling_tools_slot_label_v460((string)$booking['start_at_utc'],(string)$booking['organizer_timezone']).'. The appointment is not confirmed until the payment provider verifies payment.';
+            $result['actions'][]=['type'=>'open_url','label'=>'Open secure payment','url'=>$paymentUrl];
+            agent_tool_log($user,'scheduling.book',(string)$pending['request_text'],'success',['booking_id'=>(int)$booking['id'],'event_type_id'=>(int)$booking['event_type_id'],'start_at_utc'=>(string)$booking['start_at_utc'],'agent_id'=>$agentId,'payment_status'=>'awaiting_payment','paid_booking_id'=>(int)$paid['id']],$conversationId);
+            return $result;
+        }
         $result['answer']='Booked. '.(string)$booking['event_title'].' with '.(string)$booking['guest_name'].' is set for '.agent_scheduling_tools_slot_label_v460((string)$booking['start_at_utc'],(string)$booking['organizer_timezone']).'.';
         $result['actions'][]=['type'=>'open_url','label'=>'Open Scheduling','url'=>url('/scheduling.php?open='.(int)$booking['id'].'#bookings')];
         agent_tool_log($user,'scheduling.book',(string)$pending['request_text'],'success',['booking_id'=>(int)$booking['id'],'event_type_id'=>(int)$booking['event_type_id'],'start_at_utc'=>(string)$booking['start_at_utc'],'agent_id'=>$agentId],$conversationId);
@@ -351,7 +378,9 @@ function agent_scheduling_tools_execute_pending_v460(PDO $pdo,array $user,int $c
         $stmt=$pdo->prepare('SELECT * FROM agent_scheduling_bookings WHERE id=? AND owner_user_id=? AND schedule_id=? LIMIT 1');
         $stmt->execute([$bookingId,(int)$user['id'],$scheduleId]);$booking=$stmt->fetch();
         if(!$booking||!in_array((string)$booking['status'],['pending','confirmed'],true))throw new RuntimeException('That appointment is no longer active.');
-        if(!agent_scheduling_cancel_booking_v430($pdo,$bookingId,(int)$user['id']))throw new RuntimeException('That appointment could not be cancelled.');
+        $paid=(function_exists('agent_paid_appointments_schema_ready_v800')&&agent_paid_appointments_schema_ready_v800($pdo))?agent_paid_appointments_paid_booking_for_booking_v800($pdo,$bookingId):null;
+        if(function_exists('agent_appointment_lifecycle_schema_ready_v700')&&agent_appointment_lifecycle_schema_ready_v700($pdo)){$life=agent_appointment_lifecycle_booking_v700($pdo,$bookingId,(int)$user['id']);if(!$life)throw new RuntimeException('That appointment is no longer available.');agent_appointment_lifecycle_transition_v700($pdo,$life,'cancelled','agent',(int)$user['id'],$agentId?:null,['source'=>'agent_chat_v460']);}elseif(!agent_scheduling_cancel_booking_v430($pdo,$bookingId,(int)$user['id']))throw new RuntimeException('That appointment could not be cancelled.');
+        if($paid)agent_paid_appointments_record_cancellation_v800($pdo,$paid,'agent',(int)$user['id'],$agentId?:null,'agent_chat_cancelled');
         $result['answer']='Cancelled. '.(string)$booking['event_title'].' with '.(string)$booking['guest_name'].' is no longer on your schedule.';
         $result['actions'][]=['type'=>'open_url','label'=>'Open Scheduling','url'=>url('/scheduling.php#bookings')];
         agent_tool_log($user,'scheduling.cancel',(string)$pending['request_text'],'success',['booking_id'=>$bookingId,'agent_id'=>$agentId],$conversationId);

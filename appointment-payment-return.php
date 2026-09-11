@@ -9,7 +9,7 @@ if(!$paid||(int)$paid['id']!==$paidId||!in_array($provider,['stripe','square','p
 $message='We are confirming your payment with the provider.';$ok=false;
 try{
     $paid=agent_paid_appointments_return_verify_v800($pdo,$paid,$provider,$_GET);
-    $ok=in_array((string)$paid['payment_status'],['paid','partially_refunded','refunded'],true);
+    $ok=in_array((string)$paid['payment_status'],['paid','partially_paid','partially_refunded','refunded'],true);
     $message=$ok?'Payment received. Your appointment is confirmed.':'The provider has not confirmed payment yet. Use your private appointment link to check again.';
 }catch(Throwable $e){
     error_log('VP3 appointment payment return failed: '.$e->getMessage());

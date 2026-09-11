@@ -3,312 +3,140 @@ declare(strict_types=1);
 
 function agent_paid_appointments_schema_ready_v800(?PDO $pdo=null): bool
 {
-    $pdo??=db();if(!$pdo)return false;
-    foreach([
-        'agent_appointment_payment_connections_v800','agent_team_payment_provider_v800',
-        'agent_paid_event_types_v800','agent_paid_team_pools_v800','agent_paid_bookings_v800',
-        'agent_paid_checkout_attempts_v800','agent_paid_refunds_v800','agent_paid_webhook_events_v800',
-        'agent_paid_audit_v800'
-    ] as $table)if(!table_exists($table))return false;
-    return column_exists('agent_paid_bookings_v800','provider_snapshot')
-        &&column_exists('agent_paid_bookings_v800','hold_expires_at')
-        &&column_exists('agent_team_payment_provider_v800','workspace_owner_user_id');
+    $pdo??=db();return (bool)($pdo
+        &&function_exists('agent_commerce_schema_ready_v800')&&agent_commerce_schema_ready_v800($pdo)
+        &&function_exists('agent_scheduling_schema_ready_v430')&&agent_scheduling_schema_ready_v430($pdo)
+        &&function_exists('agent_team_scheduling_schema_ready_v600')&&agent_team_scheduling_schema_ready_v600($pdo)
+        &&function_exists('agent_appointment_lifecycle_schema_ready_v700')&&agent_appointment_lifecycle_schema_ready_v700($pdo));
 }
-
 function agent_paid_appointments_ensure_schema_v800(?PDO $pdo=null): void
 {
-    $pdo??=db();if(!$pdo)throw new RuntimeException('Database connection is unavailable.');
-    if(!agent_scheduling_schema_ready_v430($pdo))throw new RuntimeException('Install Agent Scheduling before Paid Appointments.');
-    if(!agent_team_scheduling_schema_ready_v600($pdo))throw new RuntimeException('Install Team Scheduling before Paid Appointments.');
-
-    $pdo->exec("CREATE TABLE IF NOT EXISTS agent_appointment_payment_connections_v800 (
-      id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-      owner_user_id INT UNSIGNED NOT NULL,
-      provider VARCHAR(24) NOT NULL,
-      external_account_id VARCHAR(190) NOT NULL,
-      account_label VARCHAR(190) NOT NULL DEFAULT '',
-      account_email VARCHAR(190) NOT NULL DEFAULT '',
-      access_token_ciphertext MEDIUMTEXT NULL,
-      refresh_token_ciphertext MEDIUMTEXT NULL,
-      token_expires_at DATETIME NULL,
-      scopes TEXT NULL,
-      capabilities_json LONGTEXT NULL,
-      status VARCHAR(24) NOT NULL DEFAULT 'connected',
-      is_default_personal TINYINT(1) NOT NULL DEFAULT 0,
-      connected_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      last_verified_at DATETIME NULL,
-      last_error VARCHAR(1000) NOT NULL DEFAULT '',
-      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-      UNIQUE KEY uq_appt_provider_account (owner_user_id,provider,external_account_id),
-      INDEX idx_appt_provider_owner (owner_user_id,status,is_default_personal,provider,id),
-      CONSTRAINT fk_appt_provider_owner FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
-
-    $pdo->exec("CREATE TABLE IF NOT EXISTS agent_team_payment_provider_v800 (
-      workspace_owner_user_id INT UNSIGNED NOT NULL PRIMARY KEY,
-      connection_id BIGINT UNSIGNED NOT NULL,
-      set_by_user_id INT UNSIGNED NOT NULL,
-      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-      INDEX idx_team_payment_connection (connection_id,workspace_owner_user_id),
-      CONSTRAINT fk_team_payment_owner FOREIGN KEY (workspace_owner_user_id) REFERENCES users(id) ON DELETE CASCADE,
-      CONSTRAINT fk_team_payment_connection FOREIGN KEY (connection_id) REFERENCES agent_appointment_payment_connections_v800(id) ON DELETE RESTRICT,
-      CONSTRAINT fk_team_payment_setter FOREIGN KEY (set_by_user_id) REFERENCES users(id) ON DELETE RESTRICT
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
-
-    $pdo->exec("CREATE TABLE IF NOT EXISTS agent_paid_event_types_v800 (
-      event_type_id BIGINT UNSIGNED NOT NULL PRIMARY KEY,
-      payment_mode VARCHAR(24) NOT NULL DEFAULT 'free',
-      price_cents INT UNSIGNED NOT NULL DEFAULT 0,
-      deposit_cents INT UNSIGNED NOT NULL DEFAULT 0,
-      currency CHAR(3) NOT NULL DEFAULT 'usd',
-      provider_mode VARCHAR(24) NOT NULL DEFAULT 'guest_choice',
-      fixed_connection_id BIGINT UNSIGNED NULL,
-      hold_minutes SMALLINT UNSIGNED NOT NULL DEFAULT 30,
-      refund_before_hours SMALLINT UNSIGNED NOT NULL DEFAULT 24,
-      cancellation_fee_cents INT UNSIGNED NOT NULL DEFAULT 0,
-      cancellation_policy VARCHAR(1000) NOT NULL DEFAULT '',
-      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-      CONSTRAINT fk_paid_event_type FOREIGN KEY (event_type_id) REFERENCES agent_scheduling_event_types(id) ON DELETE CASCADE,
-      CONSTRAINT fk_paid_event_connection FOREIGN KEY (fixed_connection_id) REFERENCES agent_appointment_payment_connections_v800(id) ON DELETE RESTRICT
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
-
-    $pdo->exec("CREATE TABLE IF NOT EXISTS agent_paid_team_pools_v800 (
-      pool_id BIGINT UNSIGNED NOT NULL PRIMARY KEY,
-      payment_mode VARCHAR(24) NOT NULL DEFAULT 'free',
-      price_cents INT UNSIGNED NOT NULL DEFAULT 0,
-      deposit_cents INT UNSIGNED NOT NULL DEFAULT 0,
-      currency CHAR(3) NOT NULL DEFAULT 'usd',
-      hold_minutes SMALLINT UNSIGNED NOT NULL DEFAULT 30,
-      refund_before_hours SMALLINT UNSIGNED NOT NULL DEFAULT 24,
-      cancellation_fee_cents INT UNSIGNED NOT NULL DEFAULT 0,
-      cancellation_policy VARCHAR(1000) NOT NULL DEFAULT '',
-      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-      CONSTRAINT fk_paid_team_pool FOREIGN KEY (pool_id) REFERENCES agent_team_scheduling_pools(id) ON DELETE CASCADE
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
-
-    $pdo->exec("CREATE TABLE IF NOT EXISTS agent_paid_bookings_v800 (
-      id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-      booking_id BIGINT UNSIGNED NOT NULL,
-      team_booking_id BIGINT UNSIGNED NULL,
-      owner_user_id INT UNSIGNED NOT NULL,
-      workspace_owner_user_id INT UNSIGNED NULL,
-      connection_id BIGINT UNSIGNED NULL,
-      provider_snapshot VARCHAR(24) NOT NULL DEFAULT '',
-      external_account_snapshot VARCHAR(190) NOT NULL DEFAULT '',
-      payment_mode VARCHAR(24) NOT NULL DEFAULT 'free',
-      currency CHAR(3) NOT NULL DEFAULT 'usd',
-      amount_total_cents INT UNSIGNED NOT NULL DEFAULT 0,
-      amount_due_cents INT UNSIGNED NOT NULL DEFAULT 0,
-      amount_paid_cents INT UNSIGNED NOT NULL DEFAULT 0,
-      amount_refunded_cents INT UNSIGNED NOT NULL DEFAULT 0,
-      platform_fee_cents INT UNSIGNED NOT NULL DEFAULT 0,
-      payment_status VARCHAR(32) NOT NULL DEFAULT 'not_required',
-      payer_email VARCHAR(190) NOT NULL DEFAULT '',
-      hold_expires_at DATETIME NULL,
-      paid_at DATETIME NULL,
-      cancelled_at DATETIME NULL,
-      refunded_at DATETIME NULL,
-      terms_snapshot_json LONGTEXT NULL,
-      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-      UNIQUE KEY uq_paid_booking (booking_id),
-      UNIQUE KEY uq_paid_team_booking (team_booking_id),
-      INDEX idx_paid_booking_owner (owner_user_id,payment_status,hold_expires_at,id),
-      INDEX idx_paid_booking_team_owner (workspace_owner_user_id,payment_status,id),
-      INDEX idx_paid_booking_provider (provider_snapshot,payment_status,id),
-      CONSTRAINT fk_paid_booking_booking FOREIGN KEY (booking_id) REFERENCES agent_scheduling_bookings(id) ON DELETE RESTRICT,
-      CONSTRAINT fk_paid_booking_team_booking FOREIGN KEY (team_booking_id) REFERENCES agent_team_scheduling_bookings(id) ON DELETE RESTRICT,
-      CONSTRAINT fk_paid_booking_owner FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE RESTRICT,
-      CONSTRAINT fk_paid_booking_workspace_owner FOREIGN KEY (workspace_owner_user_id) REFERENCES users(id) ON DELETE RESTRICT,
-      CONSTRAINT fk_paid_booking_connection FOREIGN KEY (connection_id) REFERENCES agent_appointment_payment_connections_v800(id) ON DELETE SET NULL
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
-
-    $pdo->exec("CREATE TABLE IF NOT EXISTS agent_paid_checkout_attempts_v800 (
-      id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-      paid_booking_id BIGINT UNSIGNED NOT NULL,
-      connection_id BIGINT UNSIGNED NOT NULL,
-      provider VARCHAR(24) NOT NULL,
-      external_session_id VARCHAR(190) NOT NULL,
-      external_payment_id VARCHAR(190) NOT NULL DEFAULT '',
-      checkout_url TEXT NULL,
-      status VARCHAR(32) NOT NULL DEFAULT 'open',
-      amount_cents INT UNSIGNED NOT NULL,
-      currency CHAR(3) NOT NULL,
-      idempotency_key CHAR(64) NOT NULL,
-      expires_at DATETIME NULL,
-      completed_at DATETIME NULL,
-      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-      UNIQUE KEY uq_paid_checkout_provider_session (provider,external_session_id),
-      UNIQUE KEY uq_paid_checkout_idempotency (idempotency_key),
-      INDEX idx_paid_checkout_booking (paid_booking_id,status,id),
-      CONSTRAINT fk_paid_checkout_booking FOREIGN KEY (paid_booking_id) REFERENCES agent_paid_bookings_v800(id) ON DELETE CASCADE,
-      CONSTRAINT fk_paid_checkout_connection FOREIGN KEY (connection_id) REFERENCES agent_appointment_payment_connections_v800(id) ON DELETE RESTRICT
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
-
-    $pdo->exec("CREATE TABLE IF NOT EXISTS agent_paid_refunds_v800 (
-      id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-      paid_booking_id BIGINT UNSIGNED NOT NULL,
-      checkout_attempt_id BIGINT UNSIGNED NULL,
-      provider VARCHAR(24) NOT NULL,
-      external_refund_id VARCHAR(190) NOT NULL,
-      amount_cents INT UNSIGNED NOT NULL,
-      status VARCHAR(32) NOT NULL DEFAULT 'pending',
-      reason VARCHAR(500) NOT NULL DEFAULT '',
-      requested_by_user_id INT UNSIGNED NULL,
-      requested_by_agent_id BIGINT UNSIGNED NULL,
-      approved_by_user_id INT UNSIGNED NULL,
-      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      completed_at DATETIME NULL,
-      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-      UNIQUE KEY uq_paid_refund_provider (provider,external_refund_id),
-      INDEX idx_paid_refund_booking (paid_booking_id,status,id),
-      CONSTRAINT fk_paid_refund_booking FOREIGN KEY (paid_booking_id) REFERENCES agent_paid_bookings_v800(id) ON DELETE CASCADE,
-      CONSTRAINT fk_paid_refund_checkout FOREIGN KEY (checkout_attempt_id) REFERENCES agent_paid_checkout_attempts_v800(id) ON DELETE SET NULL,
-      CONSTRAINT fk_paid_refund_user FOREIGN KEY (requested_by_user_id) REFERENCES users(id) ON DELETE SET NULL,
-      CONSTRAINT fk_paid_refund_agent FOREIGN KEY (requested_by_agent_id) REFERENCES user_agents(id) ON DELETE SET NULL,
-      CONSTRAINT fk_paid_refund_approver FOREIGN KEY (approved_by_user_id) REFERENCES users(id) ON DELETE SET NULL
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
-
-    $pdo->exec("CREATE TABLE IF NOT EXISTS agent_paid_webhook_events_v800 (
-      id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-      provider VARCHAR(24) NOT NULL,
-      external_event_id VARCHAR(190) NOT NULL,
-      event_type VARCHAR(120) NOT NULL,
-      payload_sha256 CHAR(64) NOT NULL,
-      status VARCHAR(24) NOT NULL DEFAULT 'processing',
-      error_message VARCHAR(1000) NOT NULL DEFAULT '',
-      processed_at DATETIME NULL,
-      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-      UNIQUE KEY uq_paid_webhook_event (provider,external_event_id),
-      INDEX idx_paid_webhook_status (provider,status,created_at,id)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
-
-    $pdo->exec("CREATE TABLE IF NOT EXISTS agent_paid_audit_v800 (
-      id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-      paid_booking_id BIGINT UNSIGNED NULL,
-      owner_user_id INT UNSIGNED NOT NULL,
-      workspace_owner_user_id INT UNSIGNED NULL,
-      actor_type VARCHAR(24) NOT NULL DEFAULT 'system',
-      actor_user_id INT UNSIGNED NULL,
-      actor_agent_id BIGINT UNSIGNED NULL,
-      event_type VARCHAR(80) NOT NULL,
-      from_status VARCHAR(32) NOT NULL DEFAULT '',
-      to_status VARCHAR(32) NOT NULL DEFAULT '',
-      amount_cents INT UNSIGNED NOT NULL DEFAULT 0,
-      metadata_json LONGTEXT NULL,
-      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      INDEX idx_paid_audit_booking (paid_booking_id,created_at,id),
-      INDEX idx_paid_audit_owner (owner_user_id,created_at,id),
-      CONSTRAINT fk_paid_audit_booking FOREIGN KEY (paid_booking_id) REFERENCES agent_paid_bookings_v800(id) ON DELETE SET NULL,
-      CONSTRAINT fk_paid_audit_owner FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE RESTRICT,
-      CONSTRAINT fk_paid_audit_workspace_owner FOREIGN KEY (workspace_owner_user_id) REFERENCES users(id) ON DELETE RESTRICT,
-      CONSTRAINT fk_paid_audit_user FOREIGN KEY (actor_user_id) REFERENCES users(id) ON DELETE SET NULL,
-      CONSTRAINT fk_paid_audit_agent FOREIGN KEY (actor_agent_id) REFERENCES user_agents(id) ON DELETE SET NULL
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+    $pdo??=db();if(!$pdo)throw new RuntimeException('Database connection is unavailable.');if(!agent_scheduling_schema_ready_v430($pdo))throw new RuntimeException('Install Agent Scheduling before Appointment Commerce.');if(!agent_team_scheduling_schema_ready_v600($pdo))throw new RuntimeException('Install Team Scheduling before Appointment Commerce.');if(!agent_appointment_lifecycle_schema_ready_v700($pdo))throw new RuntimeException('Install Appointment Lifecycle before Appointment Commerce.');agent_commerce_ensure_schema_v800($pdo);
 }
 
-function agent_paid_appointments_config_v800(): array
+function agent_paid_appointments_config_v800(): array{return agent_commerce_config_v800();}
+function agent_paid_appointments_provider_registry_v800(): array{return agent_commerce_provider_registry_v800();}
+function agent_paid_appointments_provider_label_v800(string $provider): string{return agent_commerce_provider_label_v800($provider);}
+function agent_paid_appointments_provider_ready_v800(string $provider): bool{return agent_commerce_provider_ready_v800($provider);}
+function agent_paid_appointments_encrypt_v800(string $plain): string{return agent_commerce_encrypt_v800($plain);}
+function agent_paid_appointments_decrypt_v800(string $ciphertext): string{return agent_commerce_decrypt_v800($ciphertext);}
+function agent_paid_appointments_absolute_url_v800(string $path): string{return agent_commerce_absolute_url_v800($path);}
+function agent_paid_appointments_money_v800(int $cents,string $currency='usd'): string{return agent_commerce_money_v800($cents,$currency);}
+function agent_paid_appointments_decimal_to_minor_v800(string $value): int{return agent_commerce_decimal_to_minor_v800($value);}
+function agent_paid_appointments_http_v800(string $method,string $url,array $headers=[],mixed $body=null,bool $form=false): array{return agent_commerce_http_v800($method,$url,$headers,$body,$form);}
+function agent_paid_appointments_is_team_super_admin_v800(int $workspaceOwnerId,?array $actor=null): bool{return agent_commerce_is_team_super_admin_v800($workspaceOwnerId,$actor);}
+function agent_paid_appointments_connection_v800(PDO $pdo,int $connectionId,int $ownerUserId=0): ?array{return agent_commerce_connection_v800($pdo,$connectionId,$ownerUserId);}
+function agent_paid_appointments_connections_v800(PDO $pdo,int $ownerUserId,bool $connectedOnly=false): array{return agent_commerce_connections_v800($pdo,$ownerUserId,$connectedOnly);}
+function agent_paid_appointments_store_connection_v800(PDO $pdo,int $ownerUserId,string $provider,string $externalAccountId,array $data=[]): array{return agent_commerce_store_connection_v800($pdo,$ownerUserId,$provider,$externalAccountId,$data);}
+function agent_paid_appointments_set_personal_default_v800(PDO $pdo,int $ownerUserId,int $connectionId): array{return agent_commerce_set_personal_default_v800($pdo,$ownerUserId,$connectionId);}
+function agent_paid_appointments_disconnect_v800(PDO $pdo,int $ownerUserId,int $connectionId): void{agent_commerce_disconnect_v800($pdo,$ownerUserId,$connectionId);}
+function agent_paid_appointments_team_primary_v800(PDO $pdo,int $workspaceOwnerId): ?array{return agent_commerce_team_primary_v800($pdo,$workspaceOwnerId);}
+function agent_paid_appointments_set_team_primary_v800(PDO $pdo,int $workspaceOwnerId,int $connectionId,?array $actor=null): array{return agent_commerce_set_team_primary_v800($pdo,$workspaceOwnerId,$connectionId,$actor);}
+function agent_paid_appointments_currency_v800(string $currency): string{return agent_commerce_currency_v800($currency);}
+function agent_paid_appointments_payment_mode_v800(string $mode): string{return agent_commerce_payment_mode_v800($mode);}
+function agent_paid_appointments_validate_terms_v800(array $input): array{return agent_commerce_validate_terms_v800($input);}
+function agent_paid_appointments_amount_due_v800(array $terms): int{return agent_commerce_amount_due_v800($terms);}
+function agent_paid_appointments_audit_v800(PDO $pdo,?int $paidBookingId,int $ownerUserId,?int $workspaceOwnerId,string $actorType,?int $actorUserId,?int $actorAgentId,string $eventType,string $fromStatus='',string $toStatus='',int $amountCents=0,array $metadata=[]): void{agent_commerce_audit_v800($pdo,$paidBookingId,$ownerUserId,$workspaceOwnerId,$actorType,$actorUserId,$actorAgentId,$eventType,$fromStatus,$toStatus,$amountCents,$metadata);}
+
+function agent_paid_appointments_event_terms_v800(PDO $pdo,int $eventTypeId): array
 {
-    global $config;$root=is_array($config['appointment_payments']??null)?$config['appointment_payments']:[];$providers=is_array($root['providers']??null)?$root['providers']:[];
-    $stripe=is_array($providers['stripe']??null)?$providers['stripe']:[];$square=is_array($providers['square']??null)?$providers['square']:[];$paypal=is_array($providers['paypal']??null)?$providers['paypal']:[];
-    return [
-      'encryption_key'=>trim((string)(getenv('VP3_APPOINTMENT_PAYMENTS_ENCRYPTION_KEY')?:($root['encryption_key']??''))),
-      'platform_fee_bps'=>max(0,min(10000,(int)(getenv('VP3_APPOINTMENT_PLATFORM_FEE_BPS')?:($root['platform_fee_bps']??0)))),
-      'stripe'=>[
-        'secret_key'=>trim((string)(getenv('VP3_APPOINTMENT_STRIPE_SECRET_KEY')?:($stripe['secret_key']??''))),
-        'connect_client_id'=>trim((string)(getenv('VP3_APPOINTMENT_STRIPE_CONNECT_CLIENT_ID')?:($stripe['connect_client_id']??''))),
-        'webhook_secret'=>trim((string)(getenv('VP3_APPOINTMENT_STRIPE_WEBHOOK_SECRET')?:($stripe['webhook_secret']??''))),
-      ],
-      'square'=>[
-        'application_id'=>trim((string)(getenv('VP3_APPOINTMENT_SQUARE_APPLICATION_ID')?:($square['application_id']??''))),
-        'client_secret'=>trim((string)(getenv('VP3_APPOINTMENT_SQUARE_CLIENT_SECRET')?:($square['client_secret']??''))),
-        'webhook_signature_key'=>trim((string)(getenv('VP3_APPOINTMENT_SQUARE_WEBHOOK_SIGNATURE_KEY')?:($square['webhook_signature_key']??''))),
-        'environment'=>strtolower(trim((string)(getenv('VP3_APPOINTMENT_SQUARE_ENVIRONMENT')?:($square['environment']??'sandbox'))))==='production'?'production':'sandbox',
-      ],
-      'paypal'=>[
-        'client_id'=>trim((string)(getenv('VP3_APPOINTMENT_PAYPAL_CLIENT_ID')?:($paypal['client_id']??''))),
-        'client_secret'=>trim((string)(getenv('VP3_APPOINTMENT_PAYPAL_CLIENT_SECRET')?:($paypal['client_secret']??''))),
-        'partner_id'=>trim((string)(getenv('VP3_APPOINTMENT_PAYPAL_PARTNER_ID')?:($paypal['partner_id']??''))),
-        'bn_code'=>trim((string)(getenv('VP3_APPOINTMENT_PAYPAL_BN_CODE')?:($paypal['bn_code']??''))),
-        'webhook_id'=>trim((string)(getenv('VP3_APPOINTMENT_PAYPAL_WEBHOOK_ID')?:($paypal['webhook_id']??''))),
-        'environment'=>strtolower(trim((string)(getenv('VP3_APPOINTMENT_PAYPAL_ENVIRONMENT')?:($paypal['environment']??'sandbox'))))==='production'?'production':'sandbox',
-      ],
-    ];
+    $product=agent_commerce_product_by_binding_v800($pdo,'appointment_event_type',$eventTypeId);if(!$product)return ['event_type_id'=>$eventTypeId,'product_id'=>0,'payment_mode'=>'free','price_cents'=>0,'deposit_cents'=>0,'currency'=>'usd','provider_mode'=>'guest_choice','fixed_connection_id'=>null,'hold_minutes'=>30,'refund_before_hours'=>24,'cancellation_fee_cents'=>0,'cancellation_policy'=>''];$terms=agent_commerce_product_terms_v800($product);$terms['event_type_id']=$eventTypeId;return $terms;
+}
+function agent_paid_appointments_save_event_terms_v800(PDO $pdo,int $ownerUserId,int $eventTypeId,array $input): array
+{
+    $event=agent_scheduling_event_type_v430($pdo,$eventTypeId);if(!$event||(int)($event['owner_user_id']??0)!==$ownerUserId)throw new RuntimeException('Appointment type not found.');$terms=agent_commerce_validate_terms_v800($input);$providerMode=(string)($input['provider_mode']??'guest_choice');if(!in_array($providerMode,['guest_choice','fixed'],true))$providerMode='guest_choice';$connectionId=max(0,(int)($input['fixed_connection_id']??0))?:null;if($terms['payment_mode']!=='free'&&$providerMode==='fixed'){$connection=agent_commerce_connection_v800($pdo,(int)$connectionId,$ownerUserId);if(!$connection||$connection['status']!=='connected')throw new RuntimeException('Choose a connected provider for this appointment product.');}elseif($providerMode!=='fixed')$connectionId=null;if($terms['payment_mode']!=='free'&&$providerMode==='guest_choice'&&!agent_commerce_connections_v800($pdo,$ownerUserId,true))throw new RuntimeException('Connect at least one commerce payment provider first.');$product=agent_commerce_upsert_bound_product_v800($pdo,$ownerUserId,null,'appointment:event:'.$eventTypeId,'appointment_event_type',$eventTypeId,array_merge($terms,['title'=>(string)$event['title'],'description'=>'Scheduled appointment product','product_type'=>'service','fulfillment_type'=>'appointment','provider_mode'=>$providerMode,'fixed_connection_id'=>$connectionId,'metadata'=>['appointment_event_type_id'=>$eventTypeId]]));$out=agent_commerce_product_terms_v800($product);$out['event_type_id']=$eventTypeId;return $out;
+}
+function agent_paid_appointments_team_terms_v800(PDO $pdo,int $poolId): array
+{
+    $product=agent_commerce_product_by_binding_v800($pdo,'team_scheduling_pool',$poolId);if(!$product)return ['pool_id'=>$poolId,'product_id'=>0,'payment_mode'=>'free','price_cents'=>0,'deposit_cents'=>0,'currency'=>'usd','provider_mode'=>'team_primary','fixed_connection_id'=>null,'hold_minutes'=>30,'refund_before_hours'=>24,'cancellation_fee_cents'=>0,'cancellation_policy'=>''];$terms=agent_commerce_product_terms_v800($product);$terms['pool_id']=$poolId;return $terms;
+}
+function agent_paid_appointments_save_team_terms_v800(PDO $pdo,int $workspaceOwnerId,int $poolId,array $input,?array $actor=null): array
+{
+    $actor??=current_user();if(!agent_commerce_is_team_super_admin_v800($workspaceOwnerId,$actor))throw new RuntimeException('Only the Team Super Admin can change Team appointment product pricing.');$pool=agent_team_scheduling_pool_v600($pdo,$workspaceOwnerId,$poolId);if(!$pool)throw new RuntimeException('Team scheduling pool not found.');$terms=agent_commerce_validate_terms_v800($input);$primary=agent_commerce_team_primary_v800($pdo,$workspaceOwnerId);if($terms['payment_mode']!=='free'&&!$primary)throw new RuntimeException('Select the Team primary payment provider before enabling paid Team appointment products.');$product=agent_commerce_upsert_bound_product_v800($pdo,$workspaceOwnerId,$workspaceOwnerId,'appointment:team_pool:'.$poolId,'team_scheduling_pool',$poolId,array_merge($terms,['title'=>(string)$pool['name'],'description'=>'Team scheduled appointment product','product_type'=>'service','fulfillment_type'=>'appointment','provider_mode'=>'team_primary','fixed_connection_id'=>null,'metadata'=>['team_scheduling_pool_id'=>$poolId]]));$out=agent_commerce_product_terms_v800($product);$out['pool_id']=$poolId;return $out;
+}
+function agent_paid_appointments_personal_connections_for_terms_v800(PDO $pdo,int $ownerUserId,array $terms): array
+{
+    if((string)($terms['payment_mode']??'free')==='free')return [];if((string)($terms['provider_mode']??'guest_choice')==='fixed'){$c=agent_commerce_connection_v800($pdo,(int)($terms['fixed_connection_id']??0),$ownerUserId);return $c&&$c['status']==='connected'?[$c]:[];}return agent_commerce_connections_v800($pdo,$ownerUserId,true);
 }
 
-function agent_paid_appointments_provider_registry_v800(): array
+function agent_paid_appointments_order_adapter_v800(array $order): array
 {
-    return [
-      'stripe'=>['label'=>'Stripe','oauth'=>true,'checkout'=>true,'refunds'=>true],
-      'square'=>['label'=>'Square','oauth'=>true,'checkout'=>true,'refunds'=>true],
-      'paypal'=>['label'=>'PayPal','oauth'=>false,'checkout'=>true,'refunds'=>true],
-    ];
+    $row=$order;$row['booking_id']=((string)($order['fulfillment_ref_type']??'')==='appointment_booking')?(int)($order['fulfillment_ref_id']??0):0;$row['team_booking_id']=((string)($order['fulfillment_group_type']??'')==='team_booking')?(int)($order['fulfillment_group_id']??0):0;$row['amount_total_cents']=(int)($order['total_cents']??0);return $row;
 }
-
-function agent_paid_appointments_provider_label_v800(string $provider): string
+function agent_paid_appointments_paid_booking_v800(PDO $pdo,int $paidBookingId): ?array
 {
-    $provider=strtolower(trim($provider));return (string)(agent_paid_appointments_provider_registry_v800()[$provider]['label']??'Payment provider');
+    $order=agent_commerce_order_v800($pdo,$paidBookingId);return $order&&$order['fulfillment_type']==='appointment'?agent_paid_appointments_order_adapter_v800($order):null;
 }
-
-function agent_paid_appointments_provider_ready_v800(string $provider): bool
+function agent_paid_appointments_paid_booking_for_booking_v800(PDO $pdo,int $bookingId): ?array
 {
-    $cfg=agent_paid_appointments_config_v800();$provider=strtolower(trim($provider));
-    if($cfg['encryption_key']==='')return false;
-    return match($provider){
-      'stripe'=>$cfg['stripe']['secret_key']!==''&&$cfg['stripe']['connect_client_id']!=='',
-      'square'=>$cfg['square']['application_id']!==''&&$cfg['square']['client_secret']!=='',
-      'paypal'=>$cfg['paypal']['client_id']!==''&&$cfg['paypal']['client_secret']!==''&&$cfg['paypal']['partner_id']!=='',
-      default=>false,
-    };
+    $order=agent_commerce_order_by_fulfillment_v800($pdo,'appointment_booking',$bookingId);return $order&&$order['fulfillment_type']==='appointment'?agent_paid_appointments_order_adapter_v800($order):null;
 }
-
-function agent_paid_appointments_encrypt_v800(string $plain): string
+function agent_paid_appointments_paid_booking_for_team_v800(PDO $pdo,int $teamBookingId): ?array
 {
-    if($plain==='')return '';$secret=(string)agent_paid_appointments_config_v800()['encryption_key'];
-    if($secret==='')throw new RuntimeException('Appointment payment token encryption is not configured.');
-    if(!function_exists('openssl_encrypt'))throw new RuntimeException('OpenSSL is required for appointment payment token encryption.');
-    $iv=random_bytes(12);$tag='';$cipher=openssl_encrypt($plain,'aes-256-gcm',hash('sha256',$secret,true),OPENSSL_RAW_DATA,$iv,$tag,'vp3-appointment-payments-v800',16);
-    if($cipher===false||strlen($tag)!==16)throw new RuntimeException('Appointment payment token encryption failed.');
-    return 'v1:'.base64_encode($iv.$tag.$cipher);
+    $order=agent_commerce_order_by_group_v800($pdo,'team_booking',$teamBookingId);return $order&&$order['fulfillment_type']==='appointment'?agent_paid_appointments_order_adapter_v800($order):null;
 }
-
-function agent_paid_appointments_decrypt_v800(string $ciphertext): string
+function agent_paid_appointments_checkout_attempt_v800(PDO $pdo,int $attemptId): ?array
 {
-    if($ciphertext==='')return '';$secret=(string)agent_paid_appointments_config_v800()['encryption_key'];
-    if($secret==='')throw new RuntimeException('Appointment payment token encryption is not configured.');
-    if(!str_starts_with($ciphertext,'v1:'))throw new RuntimeException('Unsupported appointment payment token format.');
-    $raw=base64_decode(substr($ciphertext,3),true);if($raw===false||strlen($raw)<29)throw new RuntimeException('Appointment payment token data is invalid.');
-    $plain=openssl_decrypt(substr($raw,28),'aes-256-gcm',hash('sha256',$secret,true),OPENSSL_RAW_DATA,substr($raw,0,12),substr($raw,12,16),'vp3-appointment-payments-v800');
-    if($plain===false)throw new RuntimeException('Appointment payment token decryption failed.');return $plain;
+    $row=agent_commerce_checkout_attempt_v800($pdo,$attemptId);if($row)$row['paid_booking_id']=(int)$row['order_id'];return $row;
 }
-
-function agent_paid_appointments_absolute_url_v800(string $path): string
+function agent_paid_appointments_attempt_by_external_v800(PDO $pdo,string $provider,string $externalId): ?array
 {
-    global $config;$base=rtrim(trim((string)($config['site']['base_url']??'')),'/');
-    if($base==='')throw new RuntimeException('Configure site.base_url before appointment payments can be used.');
-    if(!preg_match('#^https?://[A-Za-z0-9.-]+(?::\d+)?$#',$base))throw new RuntimeException('site.base_url must be an origin before appointment payments can be used.');
-    return $base.url($path);
+    $row=agent_commerce_attempt_by_external_v800($pdo,$provider,$externalId);if($row)$row['paid_booking_id']=(int)$row['order_id'];return $row;
 }
-
-function agent_paid_appointments_money_v800(int $cents,string $currency='usd'): string
+function agent_paid_appointments_mark_canonical_pending_v800(PDO $pdo,int $bookingId): void
 {
-    $currency=strtoupper(preg_match('/^[a-zA-Z]{3}$/',$currency)?$currency:'USD');return $currency.' '.number_format(max(0,$cents)/100,2);
+    $booking=agent_appointment_lifecycle_booking_v700($pdo,$bookingId);if(!$booking)return;$from=agent_appointment_lifecycle_status_v700($booking);if($from==='pending')return;if(!in_array($from,['confirmed','rescheduled'],true))throw new RuntimeException('This appointment cannot enter payment hold from its current lifecycle state.');$stmt=$pdo->prepare("UPDATE agent_scheduling_bookings SET lifecycle_status='pending',last_lifecycle_event_at=NOW() WHERE id=? AND lifecycle_status=?");$stmt->execute([$bookingId,$from]);if($stmt->rowCount()!==1)throw new RuntimeException('Appointment changed while the payment hold was being created.');$fresh=agent_appointment_lifecycle_booking_v700($pdo,$bookingId)?:$booking;agent_appointment_lifecycle_event_v700($pdo,$fresh,'payment_required',$from,'pending','system',null,null,['source'=>'commerce_v800']);
 }
-
-function agent_paid_appointments_http_v800(string $method,string $url,array $headers=[],mixed $body=null,bool $form=false): array
+function agent_paid_appointments_create_personal_v800(PDO $pdo,array $booking): ?array
 {
-    if(!function_exists('curl_init'))throw new RuntimeException('cURL is required for appointment payment providers.');
-    $method=strtoupper($method);$opts=[CURLOPT_RETURNTRANSFER=>true,CURLOPT_FOLLOWLOCATION=>false,CURLOPT_CONNECTTIMEOUT=>10,CURLOPT_TIMEOUT=>35,CURLOPT_CUSTOMREQUEST=>$method,CURLOPT_HTTPHEADER=>$headers,CURLOPT_USERAGENT=>'VP3-Paid-Appointments/'.VP3_AGENT_PAID_APPOINTMENTS_V800];
-    if($body!==null){$payload=$form?http_build_query((array)$body,'','&',PHP_QUERY_RFC3986):(is_string($body)?$body:json_encode($body,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE));$opts[CURLOPT_POSTFIELDS]=$payload;$opts[CURLOPT_HTTPHEADER]=array_merge($headers,[$form?'Content-Type: application/x-www-form-urlencoded':'Content-Type: application/json']);}
-    $ch=curl_init($url);curl_setopt_array($ch,$opts);$raw=curl_exec($ch);$errno=curl_errno($ch);$error=curl_error($ch);$status=(int)curl_getinfo($ch,CURLINFO_RESPONSE_CODE);curl_close($ch);
-    if($raw===false||$errno!==0)throw new RuntimeException('Payment provider network request failed: '.$error);
-    $json=$raw!==''?json_decode((string)$raw,true):[];if(!is_array($json))$json=[];
-    if($status<200||$status>=300){$message=(string)($json['error_description']??$json['error']['message']??$json['message']??$json['details'][0]['detail']??'Payment provider returned HTTP '.$status.'.');throw new RuntimeException(mb_strimwidth(trim($message),0,800,'…'));}
-    return ['status'=>$status,'json'=>$json,'raw'=>(string)$raw,'headers'=>[]];
+    $bookingId=(int)($booking['id']??0);$eventTypeId=(int)($booking['event_type_id']??0);$ownerId=(int)($booking['owner_user_id']??0);
+    if($bookingId<1||$eventTypeId<1||$ownerId<1)return null;
+    $existing=agent_paid_appointments_paid_booking_for_booking_v800($pdo,$bookingId);if($existing)return $existing;
+    $product=agent_commerce_product_by_binding_v800($pdo,'appointment_event_type',$eventTypeId);if(!$product||agent_commerce_amount_due_v800($product)<1)return null;
+    $connections=agent_paid_appointments_personal_connections_for_terms_v800($pdo,$ownerId,agent_commerce_product_terms_v800($product));if(!$connections)throw new RuntimeException('This paid appointment product has no connected payment provider.');
+    $connection=(string)$product['provider_mode']==='fixed'?$connections[0]:null;
+    $owns=!$pdo->inTransaction();if($owns)$pdo->beginTransaction();
+    try{
+        $order=agent_commerce_create_order_v800($pdo,$product,['connection_id'=>$connection['id']??null,'payer_email'=>(string)($booking['guest_email']??''),'fulfillment_ref_type'=>'appointment_booking','fulfillment_ref_id'=>$bookingId,'metadata'=>['appointment_event_type_id'=>$eventTypeId]]);
+        agent_paid_appointments_mark_canonical_pending_v800($pdo,$bookingId);
+        agent_commerce_audit_v800($pdo,(int)$order['id'],$ownerId,null,'system',null,null,'appointment_payment_hold_created','confirmed','awaiting_payment',(int)$order['amount_due_cents'],['booking_id'=>$bookingId]);
+        if($owns)$pdo->commit();
+    }catch(Throwable $e){if($owns&&$pdo->inTransaction())$pdo->rollBack();throw $e;}
+    return agent_paid_appointments_order_adapter_v800($order);
+}
+function agent_paid_appointments_create_team_v800(PDO $pdo,array $teamBooking): ?array
+{
+    $teamBookingId=(int)($teamBooking['id']??0);$poolId=(int)($teamBooking['pool_id']??0);$workspaceOwnerId=(int)($teamBooking['workspace_owner_user_id']??0);
+    if($teamBookingId<1||$poolId<1||$workspaceOwnerId<1)return null;
+    $existing=agent_paid_appointments_paid_booking_for_team_v800($pdo,$teamBookingId);if($existing)return $existing;
+    $product=agent_commerce_product_by_binding_v800($pdo,'team_scheduling_pool',$poolId);if(!$product||agent_commerce_amount_due_v800($product)<1)return null;
+    $primary=agent_commerce_team_primary_v800($pdo,$workspaceOwnerId);if(!$primary||$primary['connection_status']!=='connected')throw new RuntimeException('This Team does not currently have an active primary payment provider.');
+    $stmt=$pdo->prepare('SELECT canonical_booking_id,user_id FROM agent_team_scheduling_booking_members WHERE team_booking_id=? ORDER BY id');$stmt->execute([$teamBookingId]);$members=$stmt->fetchAll()?:[];if(!$members)throw new RuntimeException('Team booking participants are unavailable.');
+    $bookingId=(int)$members[0]['canonical_booking_id'];$owns=!$pdo->inTransaction();if($owns)$pdo->beginTransaction();
+    try{
+        $order=agent_commerce_create_order_v800($pdo,$product,['connection_id'=>(int)$primary['connection_id'],'payer_email'=>(string)($teamBooking['guest_email']??''),'fulfillment_ref_type'=>'appointment_booking','fulfillment_ref_id'=>$bookingId,'fulfillment_group_type'=>'team_booking','fulfillment_group_id'=>$teamBookingId,'metadata'=>['team_scheduling_pool_id'=>$poolId,'participant_booking_ids'=>array_map(static fn(array $m):int=>(int)$m['canonical_booking_id'],$members)]]);
+        $teamUpdate=$pdo->prepare("UPDATE agent_team_scheduling_bookings SET status='pending',updated_at=NOW() WHERE id=? AND status='confirmed'");$teamUpdate->execute([$teamBookingId]);if($teamUpdate->rowCount()!==1)throw new RuntimeException('Team booking changed while the payment hold was being created.');
+        foreach($members as $member)agent_paid_appointments_mark_canonical_pending_v800($pdo,(int)$member['canonical_booking_id']);
+        agent_commerce_audit_v800($pdo,(int)$order['id'],$workspaceOwnerId,$workspaceOwnerId,'system',null,null,'team_appointment_payment_hold_created','confirmed','awaiting_payment',(int)$order['amount_due_cents'],['team_booking_id'=>$teamBookingId,'connection_id'=>(int)$primary['connection_id']]);
+        if($owns)$pdo->commit();
+    }catch(Throwable $e){if($owns&&$pdo->inTransaction())$pdo->rollBack();throw $e;}
+    return agent_paid_appointments_order_adapter_v800($order);
+}
+function agent_paid_appointments_available_connections_v800(PDO $pdo,array $paid): array{return agent_commerce_available_connections_v800($pdo,$paid);}
+function agent_paid_appointments_oauth_state_v800(array $user,string $provider): string{return agent_commerce_oauth_state_v800($user,$provider);}
+function agent_paid_appointments_oauth_state_take_v800(array $user,string $state): array{return agent_commerce_oauth_state_take_v800($user,$state);}
+function agent_paid_appointments_oauth_callback_v800(): string{return agent_commerce_oauth_callback_v800();}
+function agent_paid_appointments_oauth_url_v800(array $user,string $provider): string{return agent_commerce_oauth_url_v800($user,$provider);}
+function agent_paid_appointments_square_base_v800(): string{return agent_commerce_square_base_v800();}
+function agent_paid_appointments_capabilities_v800(array $connection): array{return agent_commerce_capabilities_v800($connection);}
+function agent_paid_appointments_square_profile_v800(string $accessToken): array{return agent_commerce_square_profile_v800($accessToken);}
+function agent_paid_appointments_oauth_exchange_v800(PDO $pdo,array $user,string $provider,string $code): array{return agent_commerce_oauth_exchange_v800($pdo,$user,$provider,$code);}
+function agent_paid_appointments_square_access_token_v800(PDO $pdo,array $connection): string{return agent_commerce_square_access_token_v800($pdo,$connection);}
+function agent_paid_appointments_paypal_base_v800(): string{return agent_commerce_paypal_base_v800();}
+function agent_paid_appointments_paypal_platform_token_v800(): string{return agent_commerce_paypal_platform_token_v800();}
+function agent_paid_appointments_paypal_assertion_v800(string $merchantId): string{return agent_commerce_paypal_assertion_v800($merchantId);}
+function agent_paid_appointments_attach_paypal_v800(PDO $pdo,int $ownerUserId,string $merchantId): array{return agent_commerce_attach_paypal_v800($pdo,$ownerUserId,$merchantId);}
+function agent_paid_appointments_create_checkout_v800(PDO $pdo,array $paid,int $connectionId): array
+{
+    $manage=agent_paid_appointments_manage_token_v800($pdo,$paid);if(!preg_match('/^[a-f0-9]{64}$/',$manage))throw new RuntimeException('Private appointment payment state is unavailable.');$provider='';foreach(agent_commerce_available_connections_v800($pdo,$paid) as $c)if((int)$c['id']===$connectionId){$provider=(string)$c['provider'];break;}if($provider==='')throw new RuntimeException('Choose an available payment provider.');$return=agent_commerce_absolute_url_v800('/appointment-payment-return.php?paid='.(int)$paid['id'].'&provider='.rawurlencode($provider).'&manage='.rawurlencode($manage));$cancel=agent_commerce_absolute_url_v800('/appointment-payment.php?manage='.rawurlencode($manage).'&cancelled=1');$attempt=agent_commerce_create_checkout_v800($pdo,$paid,$connectionId,$return,$cancel);$attempt['paid_booking_id']=(int)$attempt['order_id'];return $attempt;
 }

@@ -82,7 +82,7 @@ return [
 
     // VP3 system/subscription billing is Stripe-only. These credentials are
     // platform billing credentials and are never used as a user's merchant
-    // account for appointment payments.
+    // account for customer Commerce payments.
     'billing' => [
         'provider' => 'stripe',
         'currency' => 'usd',
@@ -94,33 +94,33 @@ return [
         ],
     ],
 
-    // Phase 8 customer appointment payments. This is intentionally separate
-    // from VP3 system billing above. Users may connect multiple merchant
-    // providers; each Team workspace has one primary provider selected only by
-    // its workspace owner / Team Super Admin. Provider credentials below are
-    // platform/OAuth credentials used to connect those merchant accounts.
-    'appointment_payments' => [
-        'encryption_key' => '', // VP3_APPOINTMENT_PAYMENTS_ENCRYPTION_KEY
-        'platform_fee_bps' => 0, // VP3_APPOINTMENT_PLATFORM_FEE_BPS
+    // Phase 8 VP3 Commerce customer payments. This is intentionally separate
+    // from VP3 system/subscription billing above. Users may connect multiple
+    // merchant providers; each Team workspace has one primary provider selected
+    // only by its workspace owner / Team Super Admin. Appointment is the first
+    // fulfillment adapter, not the canonical commerce object.
+    'commerce' => [
+        'encryption_key' => '', // VP3_COMMERCE_ENCRYPTION_KEY
+        'platform_fee_bps' => 0, // VP3_COMMERCE_PLATFORM_FEE_BPS
         'providers' => [
             'stripe' => [
-                'secret_key' => '',       // VP3_APPOINTMENT_STRIPE_SECRET_KEY
-                'connect_client_id' => '',// VP3_APPOINTMENT_STRIPE_CONNECT_CLIENT_ID
-                'webhook_secret' => '',   // VP3_APPOINTMENT_STRIPE_WEBHOOK_SECRET
+                'secret_key' => '',       // VP3_COMMERCE_STRIPE_SECRET_KEY
+                'connect_client_id' => '',// VP3_COMMERCE_STRIPE_CONNECT_CLIENT_ID
+                'webhook_secret' => '',   // VP3_COMMERCE_STRIPE_WEBHOOK_SECRET
             ],
             'square' => [
-                'application_id' => '',        // VP3_APPOINTMENT_SQUARE_APPLICATION_ID
-                'client_secret' => '',         // VP3_APPOINTMENT_SQUARE_CLIENT_SECRET
-                'webhook_signature_key' => '', // VP3_APPOINTMENT_SQUARE_WEBHOOK_SIGNATURE_KEY
-                'environment' => 'sandbox',    // VP3_APPOINTMENT_SQUARE_ENVIRONMENT
+                'application_id' => '',        // VP3_COMMERCE_SQUARE_APPLICATION_ID
+                'client_secret' => '',         // VP3_COMMERCE_SQUARE_CLIENT_SECRET
+                'webhook_signature_key' => '', // VP3_COMMERCE_SQUARE_WEBHOOK_SIGNATURE_KEY
+                'environment' => 'sandbox',    // VP3_COMMERCE_SQUARE_ENVIRONMENT
             ],
             'paypal' => [
-                'client_id' => '',      // VP3_APPOINTMENT_PAYPAL_CLIENT_ID
-                'client_secret' => '',  // VP3_APPOINTMENT_PAYPAL_CLIENT_SECRET
-                'partner_id' => '',     // VP3_APPOINTMENT_PAYPAL_PARTNER_ID
-                'bn_code' => '',        // VP3_APPOINTMENT_PAYPAL_BN_CODE
-                'webhook_id' => '',     // VP3_APPOINTMENT_PAYPAL_WEBHOOK_ID
-                'environment' => 'sandbox', // VP3_APPOINTMENT_PAYPAL_ENVIRONMENT
+                'client_id' => '',      // VP3_COMMERCE_PAYPAL_CLIENT_ID
+                'client_secret' => '',  // VP3_COMMERCE_PAYPAL_CLIENT_SECRET
+                'partner_id' => '',     // VP3_COMMERCE_PAYPAL_PARTNER_ID
+                'bn_code' => '',        // VP3_COMMERCE_PAYPAL_BN_CODE
+                'webhook_id' => '',     // VP3_COMMERCE_PAYPAL_WEBHOOK_ID
+                'environment' => 'sandbox', // VP3_COMMERCE_PAYPAL_ENVIRONMENT
             ],
         ],
     ],
