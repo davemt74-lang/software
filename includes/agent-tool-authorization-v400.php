@@ -199,7 +199,7 @@ function vp3_agent_tool_booking_suggestions_v400(array $user,int $limit=8): arra
         $market['reason']=$recent>0?'Strong listener density; already represented in the current show calendar.':'Strong listener density with no upcoming show currently listed in this market.';
         $out[]=$market;
     }
-    usort($out,static fn(array $a,array $b):int=>(int)$b['score']<=>(int)$a['score']);
+    usort($out,static fn(array $a,array $b):int=>(int)$b['score']<=>(int)$a['_score']);
     return array_slice($out,0,max(1,min(20,$limit)));
 }
 
@@ -290,6 +290,15 @@ function vp3_agent_tool_execute_query_v400(string $query,array $user,int $conver
 {
     $empty=vp3_agent_tool_empty_v400();$pdo=db();
     if(!$pdo)return $empty;
+
+    // Native calendar/scheduling intents run through the same principal and
+    // result-sanitization boundary before the legacy music Booking Agent so
+    // "book an appointment" can never be mistaken for venue research.
+    if(function_exists('agent_scheduling_tools_query_v460')){
+        $scheduling=agent_scheduling_tools_query_v460($query,$user,$conversationId);
+        if(!empty($scheduling['handled']))return vp3_agent_tool_authorize_result_v400($scheduling,$user,$query);
+    }
+
     $roles=agent_tool_detect_stem_roles($query);
     $productionIntent=(bool)preg_match('/\b(?:stem|stems|part|parts|instrument|instruments|instrumental|multitrack|multitracks|bass|bassline|drum|drums|beat|beats|percussion|guitar|guitars|riff|riffs|vocal|vocals|keys|piano|keyboard|synth|synths|synthesizer|stem studio|mixer)\b/i',$query);
     $productionSearchVerb=(bool)preg_match('/\b(?:show|find|search|give|list|play|return|browse)\b/i',$query);
