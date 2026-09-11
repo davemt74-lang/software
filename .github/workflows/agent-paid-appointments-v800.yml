@@ -1,0 +1,42 @@
+name: Agent Paid Appointments v8.00
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          coverage: none
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Appointment fulfillment contract
+        run: node tests/agent-paid-appointments-v800-contract.mjs
+      - name: Commerce + Appointment runtime load
+        run: php -r "require 'includes/agent-commerce-v800.php'; require 'includes/agent-paid-appointments-v800.php'; echo 'APPOINTMENT_COMMERCE_RUNTIME=PASS'.PHP_EOL;"
+      - name: PHP syntax
+        run: |
+          php -l includes/agent-paid-appointments-v800.php
+          for f in includes/agent-paid-appointments-v800-part*.php; do php -l "$f"; done
+          php -l includes/agent-scheduling-tools-v460.php
+          php -l includes/agent-appointment-lifecycle-v700-part4.php
+          php -l public-booking-controller-v700.php
+          php -l public-booking-view-v700.php
+          php -l includes/team-book-controller-v700.php
+          php -l includes/team-book-view-v700.php
+          php -l appointment-payment.php
+          php -l appointment-payment-return.php
+          php -l appointment-payment-oauth.php
+          php -l appointment-payment-webhook.php
+          php -l appointment-payments.php
+          php -l cron/paid-appointments-v800.php

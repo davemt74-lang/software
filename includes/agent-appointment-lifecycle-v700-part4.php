@@ -7,6 +7,10 @@ function agent_appointment_lifecycle_reschedule_v700(
 ): array {
     $bookingId=(int)($booking['id']??0);$ownerId=(int)($booking['owner_user_id']??0);
     if($bookingId<1||$ownerId<1||!in_array((string)($booking['status']??''),['pending','confirmed'],true))throw new RuntimeException('Only an active appointment can be rescheduled.');
+    if(function_exists('agent_paid_appointments_schema_ready_v800')&&agent_paid_appointments_schema_ready_v800($pdo)){
+        $paid=agent_paid_appointments_paid_booking_for_booking_v800($pdo,$bookingId);
+        if($paid&&(string)$paid['payment_status']==='awaiting_payment')throw new RuntimeException('Complete or cancel the pending appointment payment before rescheduling.');
+    }
     $event=agent_scheduling_event_type_v430($pdo,(int)($booking['event_type_id']??0));
     if(!$event||(int)$event['owner_user_id']!==$ownerId||(int)$event['schedule_id']!==(int)$booking['schedule_id'])throw new RuntimeException('This appointment type is no longer available.');
 

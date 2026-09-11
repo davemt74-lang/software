@@ -1,0 +1,38 @@
+name: Agent Commerce v8.00
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          coverage: none
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Commerce contract
+        run: node tests/agent-commerce-v800-contract.mjs
+      - name: Generic Commerce runtime load
+        run: php -r "require 'includes/agent-commerce-v800.php'; echo 'AGENT_COMMERCE_RUNTIME=PASS'.PHP_EOL;"
+      - name: PHP syntax
+        run: |
+          php -l includes/agent-commerce-v800.php
+          for f in includes/agent-commerce-v800-part*.php; do php -l "$f"; done
+          php -l commerce.php
+          php -l commerce-provider-oauth.php
+          php -l commerce-payment-webhook.php
+          php -l cron/commerce-v800.php
+          php -l includes/bootstrap.php
+          php -l includes/member-navigation.php
+          php -l upgrade.php
+          php -l config-example.php

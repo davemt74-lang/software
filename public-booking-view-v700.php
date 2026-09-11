@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#f5f5f3">
 <?php if ($managedBooking): ?><meta name="robots" content="noindex,nofollow,noarchive"><?php endif; ?>
 <title><?= e($bookingPageTitle) ?> | <?= e($displayName) ?></title>
-<link rel="stylesheet" href="<?= e(url('/public-booking.css?v=agent-appointment-lifecycle-v700-20260911')) ?>">
+<link rel="stylesheet" href="<?= e(url('/public-booking.css?v=agent-paid-appointments-v800-20260911')) ?>">
 </head>
 <body class="public-booking-page">
 <header class="booking-topbar">
@@ -34,10 +34,13 @@
         $calendarUrl = agent_scheduling_public_calendar_url_v450((string)$managedBooking['public_token']);
         $rebookUrl = $managedEvent ? agent_scheduling_public_booking_url_v450($username, (string)$managedEvent['slug']) : agent_scheduling_public_booking_url_v450($username);
         $displayStatus = $lifecycleReady ? agent_appointment_lifecycle_status_v700($managedBooking) : (string)$managedBooking['status'];
+        $paymentAwaiting = $managedPaid && (string)$managedPaid['payment_status']==='awaiting_payment';
+        $paymentUrl = $managedPaid ? agent_paid_appointments_payment_url_v800($pdo,$managedPaid) : '';
       ?>
       <?php if ($confirmed): ?><div class="booking-notice success" role="status">Your appointment is confirmed.</div><?php endif; ?>
-      <?php if ($rescheduled): ?><div class="booking-notice success" role="status">Your appointment has been rescheduled. Your private management link stays the same.</div><?php endif; ?>
-      <?php if ($cancelled): ?><div class="booking-notice neutral" role="status">Your appointment was cancelled.</div><?php endif; ?>
+      <?php if ($rescheduled): ?><div class="booking-notice success" role="status">Your appointment has been rescheduled. Your private management link stays the same and any payment stays attached to this booking.</div><?php endif; ?>
+      <?php if ($cancelled): ?><div class="booking-notice neutral" role="status">Your appointment was cancelled. Any refundable amount is now visible to the appointment owner for approval under the stated cancellation policy.</div><?php endif; ?>
+      <?php if ($paymentAwaiting): ?><div class="booking-notice neutral" role="status"><strong>Payment required.</strong> This time is being held, but the appointment is not confirmed until payment succeeds.<?php if($paymentUrl!==''):?> <a href="<?=e($paymentUrl)?>">Continue payment →</a><?php endif;?></div><?php endif; ?>
 
       <div class="booking-section-head"><span class="booking-kicker">Your appointment</span><h2><?= e((string)$managedBooking['event_title']) ?></h2></div>
       <div class="booking-confirmation-grid">
@@ -45,9 +48,10 @@
         <div><span>Duration</span><strong><?= (int)$managedBooking['duration_minutes'] ?> minutes</strong></div>
         <div><span>With</span><strong><?= e($displayName) ?></strong></div>
         <div><span>Status</span><strong><?= e(ucwords(str_replace('_',' ',$displayStatus))) ?></strong></div>
+        <?php if($managedPaid):?><div><span>Payment</span><strong><?=e(ucwords(str_replace('_',' ',(string)$managedPaid['payment_status'])))?></strong></div><div><span>Paid</span><strong><?=e(agent_paid_appointments_money_v800((int)$managedPaid['amount_paid_cents'],(string)$managedPaid['currency']))?></strong></div><?php endif;?>
       </div>
 
-      <?php if ($activeBooking && trim((string)$managedBooking['location_value']) !== ''): ?>
+      <?php if ($activeBooking && !$paymentAwaiting && trim((string)$managedBooking['location_value']) !== ''): ?>
         <div class="booking-location-card"><span><?= e(public_booking_location_label_v450($managedBooking)) ?></span>
           <?php $locationValue=trim((string)$managedBooking['location_value']); ?>
           <?php if (filter_var($locationValue,FILTER_VALIDATE_URL) && in_array(strtolower((string)parse_url($locationValue,PHP_URL_SCHEME)),['http','https'],true)): ?>
@@ -57,11 +61,12 @@
       <?php endif; ?>
 
       <div class="booking-manage-actions">
-        <?php if ($activeBooking && $calendarUrl !== ''): ?><a class="booking-button secondary" href="<?= e($calendarUrl) ?>">Add to calendar</a><?php endif; ?>
+        <?php if ($activeBooking && !$paymentAwaiting && $calendarUrl !== ''): ?><a class="booking-button secondary" href="<?= e($calendarUrl) ?>">Add to calendar</a><?php endif; ?>
+        <?php if ($paymentAwaiting && $paymentUrl!==''): ?><a class="booking-button primary" href="<?=e($paymentUrl)?>">Complete payment</a><?php endif;?>
         <?php if (!$activeBooking && $rebookUrl !== ''): ?><a class="booking-button primary" href="<?= e($rebookUrl) ?>">Book another time</a><?php endif; ?>
       </div>
 
-      <?php if ($activeBooking && $slotEventPublic): ?>
+      <?php if ($activeBooking && !$paymentAwaiting && $slotEventPublic): ?>
         <details class="booking-manage-panel" <?= $pageError !== '' ? 'open' : '' ?>>
           <summary>Reschedule appointment</summary>
           <form method="post" class="booking-reschedule-form" data-slot-form data-username="<?= e($username) ?>" data-event="<?= e((string)$slotEventPublic['slug']) ?>">
@@ -71,7 +76,7 @@
               <?php foreach ($serverSlots as $slot): ?><button type="button" data-slot-value="<?= e((string)$slot['start_at_utc']) ?>"><?= e(agent_scheduling_public_display_time_v450((string)$slot['start_at_utc'],$bookingTimezone,'g:i A')) ?></button><?php endforeach; ?>
               <?php if (!$serverSlots): ?><p class="booking-empty-slots">No open times on this date.</p><?php endif; ?>
             </div>
-            <p class="booking-privacy-copy">Rescheduling moves this same booking and updates the connected calendar event in place.</p>
+            <p class="booking-privacy-copy">Rescheduling moves this same booking, retains its payment record, and updates the connected calendar event in place.</p>
             <button class="booking-button primary" type="submit" data-slot-submit disabled>Reschedule</button>
           </form>
         </details>
@@ -82,7 +87,7 @@
           <summary>Cancel appointment</summary>
           <form method="post" class="booking-cancel-form">
             <?= csrf_field() ?><input type="hidden" name="action" value="cancel"><input type="text" name="website" class="booking-honeypot" tabindex="-1" autocomplete="off" aria-hidden="true">
-            <p>This releases the time back to <?= e($displayName) ?>’s schedule and updates connected calendars.</p>
+            <p>This releases the time back to <?= e($displayName) ?>’s schedule and updates connected calendars. Refund eligibility follows the cancellation terms shown when you booked; money is returned only after the account owner approves the refund.</p>
             <button class="booking-button danger" type="submit">Cancel appointment</button>
           </form>
         </details>
@@ -96,17 +101,18 @@
     <?php elseif (!$event): ?>
       <div class="booking-section-head"><span class="booking-kicker">Choose an appointment</span><h2>What would you like to book?</h2><p>Select a meeting type to see live availability.</p></div>
       <div class="booking-event-list">
-        <?php foreach ($events as $item): ?>
+        <?php foreach ($events as $item): $itemTerms=$paidReady?agent_paid_appointments_event_terms_v800($pdo,(int)$item['id']):null; ?>
           <a href="<?= e(agent_scheduling_public_booking_url_v450($username,(string)$item['slug'])) ?>">
             <div><strong><?= e((string)$item['title']) ?></strong><?php if (trim((string)($item['description']??'')) !== ''): ?><p><?= e((string)$item['description']) ?></p><?php endif; ?></div>
-            <span><?= (int)$item['duration_minutes'] ?> min · <?= e(public_booking_location_label_v450($item)) ?> →</span>
+            <span><?= (int)$item['duration_minutes'] ?> min<?php if($itemTerms):?> · <?=e(agent_paid_appointments_display_terms_v800($itemTerms))?><?php else:?> · <?= e(public_booking_location_label_v450($item)) ?><?php endif;?> →</span>
           </a>
         <?php endforeach; ?>
       </div>
 
     <?php else: ?>
       <div class="booking-section-head"><a class="booking-back" href="<?= e(agent_scheduling_public_booking_url_v450($username)) ?>">← Appointment types</a><span class="booking-kicker">Book a time</span><h2><?= e((string)$event['title']) ?></h2><p><?= e(trim((string)($event['description']??'')) !== '' ? (string)$event['description'] : public_booking_location_label_v450($event)) ?></p></div>
-      <div class="booking-event-meta"><span><?= (int)$event['duration_minutes'] ?> minutes</span><span><?= e(public_booking_location_label_v450($event)) ?></span><span>Times shown in your timezone</span></div>
+      <div class="booking-event-meta"><span><?= (int)$event['duration_minutes'] ?> minutes</span><span><?= e(public_booking_location_label_v450($event)) ?></span><span>Times shown in your timezone</span><?php if($eventPaymentTerms):?><span><?=e(agent_paid_appointments_display_terms_v800($eventPaymentTerms))?></span><?php endif;?></div>
+      <?php if($eventPaymentTerms && (string)$eventPaymentTerms['payment_mode']!=='free'):?><div class="booking-notice neutral"><strong><?=e(agent_paid_appointments_display_terms_v800($eventPaymentTerms))?></strong>. Your selected time is held while you complete secure checkout. The appointment is confirmed only after the provider verifies payment.<?php if(trim((string)$eventPaymentTerms['cancellation_policy'])!==''):?><br><?=nl2br(e((string)$eventPaymentTerms['cancellation_policy']))?><?php endif;?></div><?php endif;?>
 
       <form method="post" class="booking-form" data-slot-form data-username="<?= e($username) ?>" data-event="<?= e((string)$event['slug']) ?>">
         <?= csrf_field() ?><input type="hidden" name="action" value="book"><input type="hidden" name="event_type_id" value="<?= (int)$event['id'] ?>"><input type="hidden" name="start_at_utc" data-slot-input><input type="hidden" name="guest_timezone" data-guest-timezone value="<?= e($scheduleTimezone) ?>"><input type="text" name="website" class="booking-honeypot" tabindex="-1" autocomplete="off" aria-hidden="true">
@@ -141,8 +147,8 @@
             <?php endforeach; ?>
           <?php endif; ?>
         </div>
-        <button class="booking-button primary book-submit" type="submit" data-slot-submit disabled>Confirm appointment</button>
-        <p class="booking-privacy-copy">Your details and intake answers are used to manage and prepare for this appointment with <?= e($displayName) ?>.</p>
+        <button class="booking-button primary book-submit" type="submit" data-slot-submit disabled><?=($eventPaymentTerms && (string)$eventPaymentTerms['payment_mode']!=='free')?'Continue to payment':'Confirm appointment'?></button>
+        <p class="booking-privacy-copy">Your details and intake answers are used to manage and prepare for this appointment with <?= e($displayName) ?>. VP3 does not store card numbers.</p>
       </form>
     <?php endif; ?>
   </section>
