@@ -46,12 +46,13 @@ jobs:
           node tests/agent-scheduling-tools-v460-contract.mjs
           node tests/agent-appointment-lifecycle-v700-contract.mjs
           php -r "require 'includes/agent-commerce-v800.php'; require 'includes/agent-paid-appointments-v800.php'; echo 'COMMERCE_RUNTIME_LOAD=PASS'.PHP_EOL;"
-      - name: Commit validated Commerce refactor
+      - name: Commit validated Commerce source only
         shell: bash
         run: |
           set -euo pipefail
           rm -rf .phase8
-          rm -f .github/workflows/phase8-commerce-apply-once.yml .github/workflows/phase8-finalize-once.yml
+          rm -f .github/workflows/agent-commerce-v800.yml .github/workflows/phase8-commerce-apply-once.yml .github/workflows/phase8-finalize-once.yml
+          git checkout HEAD -- .github/workflows/agent-paid-appointments-v800.yml
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -A
