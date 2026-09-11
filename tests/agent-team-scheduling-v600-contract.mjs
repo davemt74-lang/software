@@ -16,16 +16,25 @@ assert.match(tools,/VP3_AGENT_TEAM_SCHEDULING_TOOLS_V610/,'Booking Agent Team Sc
 for(const table of ['agent_team_scheduling_pools','agent_team_scheduling_members','agent_team_scheduling_bookings','agent_team_scheduling_booking_members'])assert.ok(core.includes(`CREATE TABLE IF NOT EXISTS ${table}`),`${table} must be canonical upgrade-managed storage`);
 assert.doesNotMatch(core,/CREATE TABLE IF NOT EXISTS agent_scheduling_(?:schedules|event_types|availability|overrides|bookings)/,'Phase 6 must compose, never duplicate, canonical v4.30 scheduling');
 
+assert.match(core,/function agent_team_scheduling_entitled_v600/,'Team Scheduling must have a server-side commercial entitlement boundary');
+assert.match(core,/team_subscription_state\(\$owner,\$pdo\)/,'Team Scheduling entitlement must resolve through the canonical Team subscription state');
+assert.match(core,/!empty\(\$state\['authorized'\]\)&&!empty\(\$state\['included'\]\)/,'Team Scheduling must require both workspace authority and Team product inclusion');
+assert.match(core,/agent_team_scheduling_public_pool_v600[\s\S]*agent_team_scheduling_entitled_v600/,'Public Team booking must close when Team Scheduling entitlement is absent');
 assert.match(core,/team_workspace_memberships WHERE workspace_owner_user_id=\? AND member_user_id=\? AND status='active'/,'Team participant authorization must use the canonical active workspace membership boundary');
 assert.match(core,/agent_scheduling_event_type_v430\(\$pdo,\$eventTypeId\)/,'Participant event mappings must resolve through canonical scheduling');
 assert.match(core,/\(int\)\$event\['owner_user_id'\]!==\$userId/,'Participant appointment types must be owned by that Team member');
-assert.match(core,/agent_scheduling_slots_for_date_v430\(\$pdo,\(int\)\$member\['event_type_id'\],\$date,false\)/,'Pooled availability must reuse canonical v4.30 slots, including calendar-sync busy blocking');
+assert.match(core,/function agent_team_scheduling_member_slots_for_pool_date_v600/,'Team availability must normalize participant-local dates into the Team pool date');
+assert.match(core,/\$firstDate=\$poolStart->setTimezone\(\$memberTz\)->format\('Y-m-d'\)/,'Multi-timezone pooling must derive each participant local start date from the pool day');
+assert.match(core,/\$lastDate=\$poolEnd->modify\('-1 second'\)->setTimezone\(\$memberTz\)->format\('Y-m-d'\)/,'Multi-timezone pooling must include adjacent participant-local dates across the full pool day');
+assert.match(core,/agent_scheduling_slots_for_date_v430\(\$pdo,\(int\)\$member\['event_type_id'\],\$memberDate,false\)/,'Pooled availability must reuse canonical v4.30 slots, including calendar-sync busy blocking');
 assert.match(core,/eligible_member_ids/,'Round-robin pooled slots must retain eligible host identities');
 assert.match(core,/array_intersect_key\(\$intersection,\$set\)/,'Collective meetings must expose only the exact intersection of participant availability');
-assert.match(core,/count\(\$durations\\)!==1|count\(\$durations\)!==1/,'Collective pools must reject incompatible participant durations');
+assert.ok(core.includes('if(count($durations)!==1)return [];'),'Collective pools must reject incompatible participant durations');
 assert.match(core,/assignment_count/,'Round-robin pools must persist fairness counters');
 assert.match(core,/last_assigned_at/,'Round-robin pools must persist last-assigned time');
 assert.match(core,/\$b\['priority'\]<=>\(int\)\$a\['priority'\]/,'Priority may break fairness ties without replacing the assignment-count algorithm');
+assert.match(core,/UPDATE agent_team_scheduling_members SET enabled=0/,'Removing a Team participant must soft-disable the membership and preserve booking lineage');
+assert.doesNotMatch(core,/DELETE FROM agent_team_scheduling_members/,'Team participant removal must never delete historical membership rows');
 assert.match(core,/vp3_team_schedule_/,'Team booking mutations must serialize on a pool-level named lock');
 assert.match(core,/sort\(\$scheduleIds,SORT_NUMERIC\)/,'Collective schedule locks must be acquired in stable order');
 assert.match(core,/\$pdo->beginTransaction\(\)/,'Collective/Team booking writes must be transactional');
@@ -38,11 +47,12 @@ for(const key of ["'user_id'=>","'conversation_id'=>","'agent_id'=>","'pool_id'=
 assert.match(tools,/Confirm team booking/i,'Booking Agent must require explicit second-turn Team booking confirmation');
 assert.match(tools,/Confirm team cancellation/i,'Booking Agent must require explicit second-turn Team cancellation confirmation');
 assert.match(tools,/agent_team_scheduling_tools_agent_id_v610/,'Team tools must re-resolve the selected Agent principal');
+assert.match(tools,/agent_team_scheduling_entitled_v600\(\$pdo,\$ownerId\)/,'Team tools must re-check commercial entitlement before reads and approved mutations');
 assert.match(tools,/agent_tool_log/,'Team scheduling Agent actions must be audited');
 assert.match(auth,/agent_team_scheduling_tools_query_v610/,'Canonical Agent tool routing must check Team Scheduling');
 assert.ok(auth.indexOf('agent_team_scheduling_tools_query_v610')<auth.indexOf('agent_scheduling_tools_query_v460'),'Team Scheduling must route before personal scheduling');
 assert.ok(auth.indexOf('agent_team_scheduling_tools_query_v610')<auth.indexOf('vp3_agent_tool_booking_workspace_ids_v400'),'Team Scheduling must route before legacy music Booking Agent research');
-assert.match(auth,/\$a\['score'\]/,'Existing Booking Agent market ranking must retain its score comparator during Phase 6 integration');
+assert.match(auth,/usort\(\$out,static fn\(array \$a,array \$b\):int=>\(int\)\$b\['score'\]<=>\(int\)\$a\['score'\]\)/,'Existing Booking Agent market ranking must retain its score comparator during Phase 6 integration');
 
 assert.match(publicPage,/agent_team_scheduling_public_pool_v600\(\$pdo,\$publicKey\)/,'Public Team booking must resolve authority from an opaque public key');
 assert.doesNotMatch(publicPage,/owner_user_id.*\$_GET|workspace_owner_user_id.*\$_GET/,'Public Team booking must never trust an owner id from the browser');
@@ -52,6 +62,8 @@ assert.match(publicPage,/agent_team_scheduling_cancel_booking_v600/,'Private Tea
 assert.doesNotMatch(publicPage,/agent_calendar_busy_blocks|access_token_ciphertext|refresh_token_ciphertext/,'Public Team booking must not expose calendar internals');
 
 assert.match(member,/require_permission\('account\.access'\)/,'Team Scheduling workspace must require account access');
+assert.match(member,/team_subscription_state\(\$user,\$pdo\)/,'Team Scheduling workspace must enforce canonical Team product access');
+assert.match(member,/empty\(\$teamState\['authorized'\]\)\|\|empty\(\$teamState\['included'\]\)/,'Member UI must deny Team Scheduling without workspace authority or Team inclusion');
 assert.match(member,/verify_csrf\(\)/,'Team Scheduling mutations must enforce CSRF');
 assert.match(member,/agent_team_scheduling_save_pool_v600/,'Member UI must use canonical Team pool writes');
 assert.match(member,/agent_team_scheduling_save_member_v600/,'Member UI must use validated participant mappings');
