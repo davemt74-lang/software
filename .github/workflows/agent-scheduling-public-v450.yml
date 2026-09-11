@@ -1,0 +1,47 @@
+name: Agent Scheduling Public v4.50
+
+on:
+  push:
+    branches:
+      - main
+      - feature-agent-scheduling-public-phase-3
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          coverage: none
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Public scheduling contract
+        run: node tests/agent-scheduling-public-v450-contract.mjs
+
+      - name: JavaScript syntax
+        run: |
+          node --check public-booking-v450.js
+          node --check profile-agent.js
+          node --check tests/agent-scheduling-public-v450-contract.mjs
+
+      - name: PHP syntax
+        run: |
+          php -l includes/agent-scheduling-public-v450.php
+          php -l public-booking.php
+          php -l public-booking-calendar.php
+          php -l api/public-scheduling-slots-v450.php
+          php -l includes/bootstrap.php
