@@ -1,0 +1,149 @@
+name: Phase 8 Financial Hardening Once
+
+on:
+  push:
+    branches: [feature-paid-appointments-phase-8]
+
+permissions:
+  contents: write
+
+jobs:
+  harden:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature-paid-appointments-phase-8
+          fetch-depth: 0
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          coverage: none
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Apply Commerce financial hardening
+        shell: bash
+        run: |
+          python <<'PY'
+          from pathlib import Path
+
+          p=Path('includes/agent-commerce-v800-part1.php'); s=p.read_text()
+          needle="function agent_commerce_http_v800(string $method,string $url,array $headers=[],mixed $body=null,bool $form=false): array"
+          helper="function agent_commerce_minor_to_decimal_v800(int $cents): string\n{\n    $cents=max(0,$cents);return intdiv($cents,100).'.'.str_pad((string)($cents%100),2,'0',STR_PAD_LEFT);\n}\n"
+          if 'function agent_commerce_minor_to_decimal_v800' not in s:
+              if needle not in s: raise SystemExit('minor-unit helper insertion point missing')
+              s=s.replace(needle,helper+needle,1)
+          old="payment_status IN ('awaiting_payment','paid','partially_refunded')"
+          if old in s: s=s.replace(old,"payment_status IN ('awaiting_payment','partially_paid','paid','partially_refunded')",1)
+          p.write_text(s)
+
+          p=Path('includes/agent-commerce-v800-part2.php'); s=p.read_text()
+          old="$fee=(int)floor($due*(int)agent_commerce_config_v800()['platform_fee_bps']/10000);"
+          new="$fee=(int)floor((int)$product['price_cents']*(int)agent_commerce_config_v800()['platform_fee_bps']/10000);"
+          if old in s: s=s.replace(old,new,1)
+          p.write_text(s)
+
+          p=Path('includes/agent-commerce-v800-part3.php'); s=p.read_text()
+          old="$fee=max(0,min($due-1,(int)$order['platform_fee_cents']));"
+          new="$fee=max(0,min($due-1,(int)floor($due*(int)agent_commerce_config_v800()['platform_fee_bps']/10000)));"
+          if old in s: s=s.replace(old,new,1)
+          s=s.replace("number_format($due/100,2,'.','')","agent_commerce_minor_to_decimal_v800($due)")
+          s=s.replace("number_format($fee/100,2,'.','')","agent_commerce_minor_to_decimal_v800($fee)")
+          p.write_text(s)
+
+          p=Path('includes/agent-commerce-v800-part4.php'); s=p.read_text()
+          s=s.replace("return ['expired'=>agent_commerce_expire_holds_v800($pdo,$limit)];","return ['expired'=>agent_commerce_expire_holds_v800($pdo,$limit),'refunds_reconciled'=>agent_commerce_reconcile_pending_refunds_v800($pdo,$limit)];",1)
+          start=s.index('function agent_commerce_refund_v800(')
+          prefix=s[:start]
+          refund_code=r'''function agent_commerce_refresh_refund_totals_v800(PDO $pdo,int $orderId): array
+          {
+              $order=agent_commerce_order_v800($pdo,$orderId)?:throw new RuntimeException('Commerce order not found.');
+              $stmt=$pdo->prepare("SELECT COALESCE(SUM(amount_cents),0) FROM agent_commerce_refunds_v800 WHERE order_id=? AND status='completed'");
+              $stmt->execute([$orderId]);$completed=(int)$stmt->fetchColumn();$completed=min((int)$order['amount_paid_cents'],max(0,$completed));
+              $newStatus=$completed>0?($completed>=(int)$order['amount_paid_cents']?'refunded':'partially_refunded'):(string)$order['payment_status'];
+              if($completed>0){$pdo->prepare("UPDATE agent_commerce_orders_v800 SET amount_refunded_cents=?,payment_status=?,order_status=?,refunded_at=IF(?='refunded',COALESCE(refunded_at,NOW()),refunded_at),updated_at=NOW() WHERE id=?")->execute([$completed,$newStatus,$newStatus,$newStatus,$orderId]);}
+              return agent_commerce_order_v800($pdo,$orderId)?:$order;
+          }
+          function agent_commerce_payment_refund_reserved_v800(PDO $pdo,int $paymentId): int
+          {
+              $stmt=$pdo->prepare("SELECT COALESCE(SUM(amount_cents),0) FROM agent_commerce_refunds_v800 WHERE payment_id=? AND status IN ('pending','completed')");$stmt->execute([$paymentId]);return max(0,(int)$stmt->fetchColumn());
+          }
+          function agent_commerce_issue_refund_slice_v800(PDO $pdo,array $order,array $payment,array $attempt,array $connection,int $amountCents,string $reason,int $actorId,?int $agentId): array
+          {
+              $provider=(string)$payment['provider'];$externalPayment=(string)$payment['external_payment_id'];if($provider===''||$externalPayment==='')throw new RuntimeException('Provider payment lineage is incomplete.');
+              $already=agent_commerce_payment_refund_reserved_v800($pdo,(int)$payment['id']);if($amountCents<1||$amountCents>max(0,(int)$payment['amount_cents']-$already))throw new RuntimeException('Refund slice exceeds the remaining amount on its provider payment.');
+              $idempotency=hash('sha256','vp3-commerce-refund|'.(int)$order['id'].'|'.(int)$payment['id'].'|'.$amountCents.'|'.$already);$reason=mb_strimwidth(trim($reason),0,500,'');$externalRefund='';$status='completed';
+              if($provider==='stripe'){$cfg=agent_commerce_config_v800()['stripe'];$params=['payment_intent'=>$externalPayment,'amount'=>$amountCents,'metadata'=>['vp3_commerce_order_id'=>(string)$order['id'],'vp3_commerce_payment_id'=>(string)$payment['id']]];$resp=agent_commerce_http_v800('POST','https://api.stripe.com/v1/refunds',['Authorization: Bearer '.$cfg['secret_key'],'Stripe-Account: '.(string)$connection['external_account_id'],'Idempotency-Key: '.$idempotency],$params,true)['json'];$externalRefund=trim((string)($resp['id']??''));$providerStatus=strtolower((string)($resp['status']??'succeeded'));$status=$providerStatus==='succeeded'?'completed':(in_array($providerStatus,['failed','canceled'],true)?'failed':'pending');}
+              elseif($provider==='square'){$token=agent_commerce_square_access_token_v800($pdo,$connection);$body=['idempotency_key'=>$idempotency,'amount_money'=>['amount'=>$amountCents,'currency'=>strtoupper((string)$order['currency'])],'payment_id'=>$externalPayment,'reason'=>$reason?:'VP3 Commerce refund'];$resp=agent_commerce_http_v800('POST',agent_commerce_square_base_v800().'/v2/refunds',['Authorization: Bearer '.$token,'Square-Version: 2026-08-19'],$body)['json'];$refund=$resp['refund']??[];$externalRefund=trim((string)($refund['id']??''));$providerStatus=strtoupper((string)($refund['status']??''));$status=$providerStatus==='COMPLETED'?'completed':(in_array($providerStatus,['FAILED','REJECTED'],true)?'failed':'pending');}
+              elseif($provider==='paypal'){$cfg=agent_commerce_config_v800()['paypal'];$token=agent_commerce_paypal_platform_token_v800();$headers=['Authorization: Bearer '.$token,'PayPal-Request-Id: '.$idempotency,'PayPal-Auth-Assertion: '.agent_commerce_paypal_assertion_v800((string)$connection['external_account_id'])];if($cfg['bn_code']!=='')$headers[]='PayPal-Partner-Attribution-Id: '.$cfg['bn_code'];$resp=agent_commerce_http_v800('POST',agent_commerce_paypal_base_v800().'/v2/payments/captures/'.rawurlencode($externalPayment).'/refund',$headers,['amount'=>['currency_code'=>strtoupper((string)$order['currency']),'value'=>agent_commerce_minor_to_decimal_v800($amountCents)],'note_to_payer'=>$reason?:'VP3 Commerce refund'])['json'];$externalRefund=trim((string)($resp['id']??''));$providerStatus=strtoupper((string)($resp['status']??''));$status=$providerStatus==='COMPLETED'?'completed':(in_array($providerStatus,['FAILED','CANCELLED'],true)?'failed':'pending');}
+              else throw new RuntimeException('Unsupported refund provider.');
+              if($externalRefund==='')throw new RuntimeException('Payment provider did not return a refund ID.');
+              $pdo->prepare('INSERT INTO agent_commerce_refunds_v800 (order_id,payment_id,checkout_attempt_id,provider,external_refund_id,amount_cents,status,reason,requested_by_user_id,requested_by_agent_id,approved_by_user_id,completed_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)')->execute([(int)$order['id'],(int)$payment['id'],(int)$attempt['id'],$provider,$externalRefund,$amountCents,$status,$reason,$actorId,$agentId,$actorId,$status==='completed'?gmdate('Y-m-d H:i:s'):null]);
+              agent_commerce_audit_v800($pdo,(int)$order['id'],(int)$order['owner_user_id'],(int)($order['workspace_owner_user_id']??0)?:null,'user',$actorId,$agentId,$status==='completed'?'refund_completed':'refund_requested',(string)$order['payment_status'],$status==='completed'?'refund_completed':'refund_pending',$amountCents,['provider'=>$provider,'payment_id'=>(int)$payment['id'],'external_refund_id'=>$externalRefund,'reason'=>$reason]);return ['status'=>$status,'amount_cents'=>$amountCents,'external_refund_id'=>$externalRefund];
+          }
+          function agent_commerce_refund_v800(PDO $pdo,array $order,int $amountCents,string $reason,?array $actor=null,bool $approved=false,?int $agentId=null): array
+          {
+              $actor??=current_user();$actorId=(int)($actor['id']??0);$authority=(int)($order['workspace_owner_user_id']??0)>0?(int)$order['workspace_owner_user_id']:(int)$order['owner_user_id'];if($actorId<1||$actorId!==$authority)throw new RuntimeException('Only the commerce account owner can approve a refund.');if(!$approved)throw new RuntimeException('Explicit refund approval is required before money is sent back to the customer.');
+              $remaining=max(0,(int)$order['amount_paid_cents']-(int)$order['amount_refunded_cents']);$amountCents=max(0,$amountCents);if($amountCents<1||$amountCents>$remaining)throw new RuntimeException('Refund amount exceeds the remaining paid amount.');
+              $stmt=$pdo->prepare("SELECT p.*,a.connection_id,a.id checkout_attempt_id FROM agent_commerce_payments_v800 p INNER JOIN agent_commerce_checkout_attempts_v800 a ON a.id=p.checkout_attempt_id WHERE p.order_id=? AND p.status='completed' ORDER BY p.id DESC");$stmt->execute([(int)$order['id']]);$payments=$stmt->fetchAll()?:[];if(!$payments)throw new RuntimeException('Completed payment lineage was not found.');
+              $available=0;foreach($payments as $payment)$available+=max(0,(int)$payment['amount_cents']-agent_commerce_payment_refund_reserved_v800($pdo,(int)$payment['id']));if($amountCents>$available)throw new RuntimeException('Part of this order already has a pending refund. Wait for it to settle before requesting the remaining amount.');
+              $left=$amountCents;$completed=0;$pending=0;foreach($payments as $payment){if($left<1)break;$paymentAvailable=max(0,(int)$payment['amount_cents']-agent_commerce_payment_refund_reserved_v800($pdo,(int)$payment['id']));if($paymentAvailable<1)continue;$slice=min($left,$paymentAvailable);$connection=agent_commerce_connection_v800($pdo,(int)$payment['connection_id']);if(!$connection){agent_commerce_refresh_refund_totals_v800($pdo,(int)$order['id']);throw new RuntimeException('Payment provider connection is unavailable for an original payment.');}$attempt=['id'=>(int)$payment['checkout_attempt_id']];try{$result=agent_commerce_issue_refund_slice_v800($pdo,$order,$payment,$attempt,$connection,$slice,$reason,$actorId,$agentId);}catch(Throwable $e){agent_commerce_refresh_refund_totals_v800($pdo,(int)$order['id']);throw $e;}if($result['status']==='failed'){agent_commerce_refresh_refund_totals_v800($pdo,(int)$order['id']);throw new RuntimeException('The payment provider rejected part of this refund. Review the Commerce ledger before retrying.');}if($result['status']==='completed')$completed+=$slice;else $pending+=$slice;$left-=$slice;}
+              if($left>0)throw new RuntimeException('The full refund could not be allocated across the original provider payments.');$fresh=agent_commerce_refresh_refund_totals_v800($pdo,(int)$order['id']);if($pending>0)agent_commerce_audit_v800($pdo,(int)$order['id'],(int)$order['owner_user_id'],(int)($order['workspace_owner_user_id']??0)?:null,'user',$actorId,$agentId,'refund_batch_pending',(string)$order['payment_status'],'refund_pending',$pending,['requested_cents'=>$amountCents,'completed_cents'=>$completed]);return $fresh;
+          }
+          function agent_commerce_reconcile_refund_v800(PDO $pdo,array $refund): bool
+          {
+              if((string)($refund['status']??'')!=='pending')return false;$paymentId=(int)($refund['payment_id']??0);if($paymentId<1)return false;$stmt=$pdo->prepare('SELECT p.*,a.connection_id FROM agent_commerce_payments_v800 p INNER JOIN agent_commerce_checkout_attempts_v800 a ON a.id=p.checkout_attempt_id WHERE p.id=? LIMIT 1');$stmt->execute([$paymentId]);$payment=$stmt->fetch();if(!$payment)return false;$connection=agent_commerce_connection_v800($pdo,(int)$payment['connection_id']);if(!$connection)return false;$provider=(string)$refund['provider'];$external=trim((string)$refund['external_refund_id']);if($external==='')return false;$status='pending';
+              if($provider==='stripe'){$cfg=agent_commerce_config_v800()['stripe'];$resp=agent_commerce_http_v800('GET','https://api.stripe.com/v1/refunds/'.rawurlencode($external),['Authorization: Bearer '.$cfg['secret_key'],'Stripe-Account: '.(string)$connection['external_account_id']])['json'];$providerStatus=strtolower((string)($resp['status']??''));$status=$providerStatus==='succeeded'?'completed':(in_array($providerStatus,['failed','canceled'],true)?'failed':'pending');}
+              elseif($provider==='square'){$token=agent_commerce_square_access_token_v800($pdo,$connection);$resp=agent_commerce_http_v800('GET',agent_commerce_square_base_v800().'/v2/refunds/'.rawurlencode($external),['Authorization: Bearer '.$token,'Square-Version: 2026-08-19'])['json'];$providerStatus=strtoupper((string)($resp['refund']['status']??''));$status=$providerStatus==='COMPLETED'?'completed':(in_array($providerStatus,['FAILED','REJECTED'],true)?'failed':'pending');}
+              elseif($provider==='paypal'){$token=agent_commerce_paypal_platform_token_v800();$headers=['Authorization: Bearer '.$token,'PayPal-Auth-Assertion: '.agent_commerce_paypal_assertion_v800((string)$connection['external_account_id'])];$cfg=agent_commerce_config_v800()['paypal'];if($cfg['bn_code']!=='')$headers[]='PayPal-Partner-Attribution-Id: '.$cfg['bn_code'];$resp=agent_commerce_http_v800('GET',agent_commerce_paypal_base_v800().'/v2/payments/refunds/'.rawurlencode($external),$headers)['json'];$providerStatus=strtoupper((string)($resp['status']??''));$status=$providerStatus==='COMPLETED'?'completed':(in_array($providerStatus,['FAILED','CANCELLED'],true)?'failed':'pending');}
+              if($status==='pending')return false;$pdo->prepare("UPDATE agent_commerce_refunds_v800 SET status=?,completed_at=?,updated_at=NOW() WHERE id=? AND status='pending'")->execute([$status,$status==='completed'?gmdate('Y-m-d H:i:s'):null,(int)$refund['id']]);$order=agent_commerce_refresh_refund_totals_v800($pdo,(int)$refund['order_id']);agent_commerce_audit_v800($pdo,(int)$order['id'],(int)$order['owner_user_id'],(int)($order['workspace_owner_user_id']??0)?:null,'provider',null,null,$status==='completed'?'refund_reconciled':'refund_failed','refund_pending',$status,(int)$refund['amount_cents'],['provider'=>$provider,'external_refund_id'=>$external]);return true;
+          }
+          function agent_commerce_reconcile_pending_refunds_v800(PDO $pdo,int $limit=100): int
+          {
+              $limit=max(1,min(500,$limit));$rows=$pdo->query("SELECT * FROM agent_commerce_refunds_v800 WHERE status='pending' ORDER BY created_at,id LIMIT {$limit}")->fetchAll()?:[];$count=0;foreach($rows as $refund){try{if(agent_commerce_reconcile_refund_v800($pdo,$refund))$count++;}catch(Throwable $e){error_log('VP3 commerce refund reconciliation failed: '.$e->getMessage());}}return $count;
+          }
+          '''
+          p.write_text(prefix+refund_code)
+
+          p=Path('tests/agent-commerce-v800-contract.mjs'); s=p.read_text()
+          needle="assert.match(core,/Explicit refund approval is required/,'External refunds require explicit owner approval');\n"
+          additions="""assert.match(core,/payment_status IN \\('awaiting_payment','partially_paid','paid','partially_refunded'\\)/,'A provider cannot be disconnected while a deposit-paid order still has a balance or refund exposure');
+          assert.match(core,/floor\\(\\$due\\*\\(int\\)agent_commerce_config_v800\\(\\)\\['platform_fee_bps'\\]\\/10000\\)/,'Each checkout, including a post-deposit balance payment, must calculate its platform fee from that checkout amount');
+          assert.match(core,/function agent_commerce_payment_refund_reserved_v800/,'Refund allocation must track refund exposure per original payment');
+          assert.match(core,/SELECT p\\.\\*,a\\.connection_id,a\\.id checkout_attempt_id[\\s\\S]*ORDER BY p\\.id DESC/,'A refund request must allocate across canonical original payments rather than only the latest charge');
+          assert.match(core,/function agent_commerce_issue_refund_slice_v800/,'Multi-payment refunds must issue provider refunds against each original payment lineage');
+          assert.match(core,/function agent_commerce_reconcile_pending_refunds_v800/,'Pending provider refunds must be reconciled instead of remaining pending forever');
+          assert.match(core,/refunds_reconciled/,'Commerce housekeeping must reconcile asynchronous refund completion');
+          assert.match(core,/agent_commerce_minor_to_decimal_v800/,'Provider decimal amounts must be formatted from integer minor units without binary float conversion');
+          """
+          if additions.strip() not in s:
+              if needle not in s: raise SystemExit('Commerce contract insertion point missing')
+              s=s.replace(needle,needle+additions,1)
+          p.write_text(s)
+          PY
+      - name: Validate financial hardening
+        shell: bash
+        run: |
+          set -euo pipefail
+          php -l includes/agent-commerce-v800-part1.php
+          php -l includes/agent-commerce-v800-part2.php
+          php -l includes/agent-commerce-v800-part3.php
+          php -l includes/agent-commerce-v800-part4.php
+          node tests/agent-commerce-v800-contract.mjs
+          node tests/agent-paid-appointments-v800-contract.mjs
+          node tests/agent-scheduling-tools-v460-contract.mjs
+          node tests/agent-appointment-lifecycle-v700-contract.mjs
+          php -r "require 'includes/agent-commerce-v800.php'; require 'includes/agent-paid-appointments-v800.php'; echo 'COMMERCE_FINANCIAL_RUNTIME=PASS'.PHP_EOL;"
+      - name: Commit source hardening
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add includes/agent-commerce-v800-part1.php includes/agent-commerce-v800-part2.php includes/agent-commerce-v800-part3.php includes/agent-commerce-v800-part4.php tests/agent-commerce-v800-contract.mjs
+          git diff --cached --check
+          git diff --cached --quiet && exit 0
+          git commit -m 'Phase 8: harden multi-payment Commerce refunds and fees'
+          git push origin HEAD:feature-paid-appointments-phase-8
