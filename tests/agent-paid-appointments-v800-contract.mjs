@@ -37,7 +37,7 @@ assert.match(core,/function agent_paid_appointments_is_team_super_admin_v800/,'T
 const superAdminStart=core.indexOf('function agent_paid_appointments_is_team_super_admin_v800');
 const superAdminEnd=core.indexOf('function agent_paid_appointments_connection_v800',superAdminStart);
 const superAdmin=core.slice(superAdminStart,superAdminEnd);
-assert.match(superAdmin,/\$actorId===\$workspaceOwnerId/,'Only the canonical Team workspace owner may act as Team Super Admin');
+assert.match(superAdmin,/\(int\)\(\$actor\['id'\]\?\?0\)===\$workspaceOwnerId/,'Only the canonical Team workspace owner may act as Team Super Admin');
 assert.doesNotMatch(superAdmin,/user_has_role|manager|producer/,'Manager, Producer and global role shortcuts must not select Team payment routing');
 assert.match(core,/PRIMARY KEY\s*\(workspace_owner_user_id\)/,'A Team must have only one primary appointment provider selection');
 assert.match(core,/team_primary_connection_id/,'Team commercial terms must snapshot the selected primary provider');
@@ -56,10 +56,13 @@ assert.match(core,/Idempotency-Key|PayPal-Request-Id|idempotency_key/,'Provider 
 assert.match(core,/payment_mode.*free.*full.*deposit/s,'Commercial terms must support free, full-payment and deposit appointments');
 assert.match(core,/amount_total_cents/,'Amounts must be stored in integer minor units');
 assert.match(core,/amount_due_cents/,'Required checkout amount must be separate from total appointment price');
+assert.match(core,/function agent_paid_appointments_decimal_to_minor_v800/,'Member-entered money must be parsed without floating-point arithmetic');
+assert.doesNotMatch(payments,/\(float\).*\*100/,'Commercial UI must not convert money through binary floating point');
 assert.match(core,/cancellation_fee_cents/,'Cancellation terms must support an explicit fee');
 assert.match(core,/refund_before_hours/,'Refund terms must support a cutoff window');
 assert.match(core,/cancellation_policy/,'Cancellation terms must retain user-facing policy text');
 assert.match(core,/hold_expires_at/,'Paid bookings must have an expiring slot hold');
+assert.match(core,/max\(30,min\(120/,'Payment holds must reserve a practical minimum checkout window');
 assert.match(core,/payment_hold_expired/,'Expired holds must be audited and release the booking');
 assert.match(cron,/PHP_SAPI!=='cli'/,'Paid appointment housekeeping must expose a CLI-only runner');
 assert.match(cron,/agent_paid_appointments_housekeeping_v800\(\$pdo,500\)/,'CLI runner must expire holds and reconcile cancellations');
@@ -71,6 +74,7 @@ assert.ok(personalPaid>=0&&personalConfirmed>personalPaid,'Personal confirmation
 assert.match(core,/agent_paid_appointments_mark_canonical_pending_v800/,'Paid bookings must enter pending lifecycle state while checkout is unresolved');
 assert.match(core,/agent_paid_appointments_confirmation_after_payment_v800/,'Payment completion must be the boundary that returns bookings to confirmed');
 assert.match(core,/agent_appointment_lifecycle_queue_booking_v700/,'Verified payment must start Phase 7 confirmation/reminder automation');
+assert.match(personal,/Complete or cancel the pending appointment payment before rescheduling/,'Unpaid personal holds must not become confirmed through rescheduling');
 assert.match(personal,/payment record/,'Public reschedule UI must explain retained commercial lineage');
 assert.match(personal,/agent_paid_appointments_record_reschedule_v800/,'Personal reschedule must retain the existing commercial record');
 assert.match(team,/agent_paid_appointments_record_cancellation_v800/,'Team cancellation must preserve refund eligibility and audit state');
@@ -78,6 +82,7 @@ assert.match(team,/agent_paid_appointments_record_cancellation_v800/,'Team cance
 assert.match(checkout,/verify_csrf\(\)/,'Private checkout creation must remain CSRF protected');
 assert.match(checkout,/agent_scheduling_public_rate_limit_v450/,'Private checkout creation must be rate limited');
 assert.match(checkout,/agent_paid_appointments_public_by_token_v800/,'Checkout must require the private booking token rather than a numeric paid-booking id alone');
+assert.match(checkout,/Cache-Control: no-store, private/,'Private payment page must not be cached');
 assert.match(paymentReturn,/agent_paid_appointments_public_by_token_v800/,'Provider return must re-bind to the private booking token');
 assert.match(paymentReturn,/\(int\)\$paid\['id'\]!==\$paidId/,'Provider return must verify numeric id belongs to the private token');
 assert.match(paymentReturn,/Cache-Control: no-store, private/,'Payment return must not be cached');
@@ -97,6 +102,7 @@ assert.match(payments,/name="confirm_refund" value="1"/,'Member commerce UI must
 assert.match(core,/agent_paid_refunds_v800/,'Refunds must have canonical provider lineage');
 assert.match(core,/refund_completed|refund_requested/,'Refund activity must be audited');
 assert.match(core,/agent_paid_appointments_refundable_cents_v800/,'Refund amount must be bounded by accepted cancellation terms');
+assert.doesNotMatch(core,/refund_application_fee/,'Partial customer refunds must not silently refund the entire Stripe application fee');
 
 assert.match(payments,/VP3 subscription billing remains Stripe-only and separate/,'Member UI must clearly separate platform billing from appointment commerce');
 assert.match(payments,/Connected providers/,'Members must be able to manage multiple appointment payment providers');
@@ -120,6 +126,8 @@ const legacyReschedule=legacyTools.slice(legacyStart,legacyEnd);
 assert.ok(legacyReschedule,'Agent Chat reschedule implementation must exist');
 assert.match(legacyReschedule,/agent_appointment_lifecycle_reschedule_v700/,'Approved Agent Chat reschedule must delegate to the canonical in-place Phase 7 path');
 assert.doesNotMatch(legacyReschedule,/agent_scheduling_create_booking_v430/,'Agent Chat reschedule must not create a replacement booking that severs Phase 8 payment lineage');
-assert.match(legacyReschedule,/agent_paid_appointments_record_reschedule_v800|paid_booking_for_booking_v800/,'Agent Chat reschedule must explicitly preserve\/audit commercial lineage when Phase 8 is installed');
+assert.match(legacyReschedule,/agent_paid_appointments_paid_booking_for_booking_v800/,'Agent Chat reschedule must inspect commercial state before mutation');
+assert.match(legacyReschedule,/Complete or cancel the pending appointment payment before rescheduling/,'Agent Chat must not confirm an unpaid hold through rescheduling');
+assert.match(legacyReschedule,/agent_paid_appointments_record_reschedule_v800/,'Paid Agent Chat reschedule must audit retained commercial lineage');
 
 console.log('AGENT_PAID_APPOINTMENTS_V800=PASS');
