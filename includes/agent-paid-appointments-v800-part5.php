@@ -35,13 +35,15 @@ function agent_paid_appointments_owner_rows_v800(PDO $pdo,int $ownerUserId,int $
       LEFT JOIN agent_team_scheduling_pools p ON p.id=tb.pool_id
       WHERE pb.owner_user_id=? OR pb.workspace_owner_user_id=?
       ORDER BY b.start_at_utc DESC,pb.id DESC LIMIT {$limit}");
-    $stmt->execute([$ownerUserId,$ownerUserId]);
-    return $stmt->fetchAll()?:[];
+    $stmt->execute([$ownerUserId,$ownerUserId]);$rows=$stmt->fetchAll()?:[];
+    if(function_exists('agent_commerce_sync_paid_appointment_v800'))foreach($rows as $row)try{agent_commerce_sync_paid_appointment_v800($pdo,$row);}catch(Throwable $e){error_log('VP3 commerce owner-row reconciliation failed: '.$e->getMessage());}
+    return $rows;
 }
 
 function agent_paid_appointments_refunds_v800(PDO $pdo,int $paidBookingId): array
 {
     if($paidBookingId<1)return [];
+    if(function_exists('agent_commerce_sync_paid_appointment_id_v800'))try{agent_commerce_sync_paid_appointment_id_v800($pdo,$paidBookingId);}catch(Throwable $e){error_log('VP3 commerce refund reconciliation failed: '.$e->getMessage());}
     $stmt=$pdo->prepare('SELECT * FROM agent_paid_refunds_v800 WHERE paid_booking_id=? ORDER BY id DESC');
     $stmt->execute([$paidBookingId]);
     return $stmt->fetchAll()?:[];
