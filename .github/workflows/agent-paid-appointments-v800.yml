@@ -24,7 +24,22 @@ jobs:
         with:
           node-version: '22'
       - name: Paid Appointments contract
-        run: node tests/agent-paid-appointments-v800-contract.mjs
+        id: contract
+        shell: bash
+        run: |
+          set +e
+          node tests/agent-paid-appointments-v800-contract.mjs > phase8-contract.log 2>&1
+          code=$?
+          cat phase8-contract.log
+          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
+          exit 0
+      - name: Upload contract diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase8-contract-diagnostics
+          path: phase8-contract.log
+          if-no-files-found: error
       - name: PHP syntax
         run: |
           php -l includes/agent-paid-appointments-v800.php
@@ -44,3 +59,8 @@ jobs:
           php -l includes/agent-scheduling-tools-v460.php
           php -l upgrade.php
           php -l config-example.php
+      - name: Enforce contract result
+        if: always()
+        shell: bash
+        run: |
+          test "${{ steps.contract.outputs.exit_code }}" = "0"
