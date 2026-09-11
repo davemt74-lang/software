@@ -147,6 +147,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($action === 'cancel') {
             if (!$managedBooking || !hash_equals((string)$managedBooking['cancel_token'], $manageToken)) throw new RuntimeException('This booking management link is not valid.');
             $paid = $paidReady ? agent_paid_appointments_paid_booking_for_booking_v800($pdo, (int)$managedBooking['id']) : null;
+            if ($paid && (string)$paid['payment_status'] === 'awaiting_payment') throw new RuntimeException('Complete or cancel the pending appointment payment before rescheduling.');
             if ($lifecycleReady) {
                 $managedBooking = agent_appointment_lifecycle_booking_v700($pdo, (int)$managedBooking['id'], (int)$profile['user_id']) ?: $managedBooking;
                 $managedBooking = agent_appointment_lifecycle_transition_v700($pdo, $managedBooking, 'cancelled', 'guest', null, null, ['source'=>'private_manage_link']);

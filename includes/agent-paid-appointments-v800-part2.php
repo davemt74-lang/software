@@ -84,13 +84,13 @@ function agent_paid_appointments_validate_terms_v800(array $input): array
     if($mode!=='free'&&$price<1)throw new RuntimeException('Paid appointments require a price greater than zero.');
     if($mode==='deposit'&&($deposit<1||$deposit>$price))throw new RuntimeException('Deposit must be greater than zero and no more than the appointment price.');
     if($mode==='full')$deposit=$price;if($mode==='free'){$price=0;$deposit=0;}
-    $hold=max(5,min(120,(int)($input['hold_minutes']??20)));$refundHours=max(0,min(2160,(int)($input['refund_before_hours']??24)));$fee=max(0,(int)($input['cancellation_fee_cents']??0));if($fee>$price)$fee=$price;
+    $hold=max(30,min(120,(int)($input['hold_minutes']??30)));$refundHours=max(0,min(2160,(int)($input['refund_before_hours']??24)));$fee=max(0,(int)($input['cancellation_fee_cents']??0));if($fee>$price)$fee=$price;
     return ['payment_mode'=>$mode,'price_cents'=>$price,'deposit_cents'=>$deposit,'currency'=>$currency,'hold_minutes'=>$hold,'refund_before_hours'=>$refundHours,'cancellation_fee_cents'=>$fee,'cancellation_policy'=>mb_strimwidth(trim((string)($input['cancellation_policy']??'')),0,1000,'')];
 }
 
 function agent_paid_appointments_event_terms_v800(PDO $pdo,int $eventTypeId): array
 {
-    $stmt=$pdo->prepare('SELECT * FROM agent_paid_event_types_v800 WHERE event_type_id=? LIMIT 1');$stmt->execute([$eventTypeId]);$row=$stmt->fetch();return $row?:['event_type_id'=>$eventTypeId,'payment_mode'=>'free','price_cents'=>0,'deposit_cents'=>0,'currency'=>'usd','provider_mode'=>'guest_choice','fixed_connection_id'=>null,'hold_minutes'=>20,'refund_before_hours'=>24,'cancellation_fee_cents'=>0,'cancellation_policy'=>''];
+    $stmt=$pdo->prepare('SELECT * FROM agent_paid_event_types_v800 WHERE event_type_id=? LIMIT 1');$stmt->execute([$eventTypeId]);$row=$stmt->fetch();return $row?:['event_type_id'=>$eventTypeId,'payment_mode'=>'free','price_cents'=>0,'deposit_cents'=>0,'currency'=>'usd','provider_mode'=>'guest_choice','fixed_connection_id'=>null,'hold_minutes'=>30,'refund_before_hours'=>24,'cancellation_fee_cents'=>0,'cancellation_policy'=>''];
 }
 
 function agent_paid_appointments_save_event_terms_v800(PDO $pdo,int $ownerUserId,int $eventTypeId,array $input): array
@@ -106,7 +106,7 @@ function agent_paid_appointments_save_event_terms_v800(PDO $pdo,int $ownerUserId
 
 function agent_paid_appointments_team_terms_v800(PDO $pdo,int $poolId): array
 {
-    $stmt=$pdo->prepare('SELECT * FROM agent_paid_team_pools_v800 WHERE pool_id=? LIMIT 1');$stmt->execute([$poolId]);$row=$stmt->fetch();return $row?:['pool_id'=>$poolId,'payment_mode'=>'free','price_cents'=>0,'deposit_cents'=>0,'currency'=>'usd','hold_minutes'=>20,'refund_before_hours'=>24,'cancellation_fee_cents'=>0,'cancellation_policy'=>''];
+    $stmt=$pdo->prepare('SELECT * FROM agent_paid_team_pools_v800 WHERE pool_id=? LIMIT 1');$stmt->execute([$poolId]);$row=$stmt->fetch();return $row?:['pool_id'=>$poolId,'payment_mode'=>'free','price_cents'=>0,'deposit_cents'=>0,'currency'=>'usd','hold_minutes'=>30,'refund_before_hours'=>24,'cancellation_fee_cents'=>0,'cancellation_policy'=>''];
 }
 
 function agent_paid_appointments_save_team_terms_v800(PDO $pdo,int $workspaceOwnerId,int $poolId,array $input,?array $actor=null): array

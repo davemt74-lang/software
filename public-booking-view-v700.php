@@ -66,7 +66,7 @@
         <?php if (!$activeBooking && $rebookUrl !== ''): ?><a class="booking-button primary" href="<?= e($rebookUrl) ?>">Book another time</a><?php endif; ?>
       </div>
 
-      <?php if ($activeBooking && $slotEventPublic): ?>
+      <?php if ($activeBooking && !$paymentAwaiting && $slotEventPublic): ?>
         <details class="booking-manage-panel" <?= $pageError !== '' ? 'open' : '' ?>>
           <summary>Reschedule appointment</summary>
           <form method="post" class="booking-reschedule-form" data-slot-form data-username="<?= e($username) ?>" data-event="<?= e((string)$slotEventPublic['slug']) ?>">

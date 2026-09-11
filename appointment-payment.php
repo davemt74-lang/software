@@ -2,7 +2,7 @@
 declare(strict_types=1);
 require __DIR__.'/includes/bootstrap.php';
 $pdo=db();if(!$pdo||!agent_paid_appointments_schema_ready_v800($pdo)){http_response_code(503);exit('Appointment payments are not available.');}
-if(!headers_sent()){header('Referrer-Policy: no-referrer');header('X-Robots-Tag: noindex, nofollow, noarchive');}
+if(!headers_sent()){header('Referrer-Policy: no-referrer');header('X-Robots-Tag: noindex, nofollow, noarchive');header('Cache-Control: no-store, private');}
 $manage=strtolower(trim((string)($_GET['manage']??$_POST['manage']??'')));$paid=agent_paid_appointments_public_by_token_v800($pdo,$manage);if(!$paid){http_response_code(404);exit('Appointment payment link not found.');}
 $error='';
 if($_SERVER['REQUEST_METHOD']==='POST'){

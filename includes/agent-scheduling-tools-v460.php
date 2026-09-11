@@ -299,27 +299,21 @@ function agent_scheduling_tools_reschedule_owner_v460(PDO $pdo,array $user,array
     $userId=(int)($user['id']??0);
     if($userId<1||(int)($booking['owner_user_id']??0)!==$userId)throw new RuntimeException('That appointment is not available to this account.');
     if(!in_array((string)($booking['status']??''),['pending','confirmed'],true))throw new RuntimeException('Only an active appointment can be rescheduled.');
-    $event=agent_scheduling_event_type_v430($pdo,(int)$booking['event_type_id']);
-    if(!$event||(int)$event['owner_user_id']!==$userId||(int)$event['schedule_id']!==(int)$booking['schedule_id'])throw new RuntimeException('That appointment type is not available to this account.');
-    $scheduleId=(int)$booking['schedule_id'];$lockName='vp3_schedule_'.$scheduleId;
-    $lock=$pdo->prepare('SELECT GET_LOCK(?,5)');$lock->execute([$lockName]);
-    if((int)$lock->fetchColumn()!==1)throw new RuntimeException('That schedule is busy. Try the reschedule again.');
-    $started=!$pdo->inTransaction();if($started)$pdo->beginTransaction();
-    try{
-        $cancel=$pdo->prepare("UPDATE agent_scheduling_bookings SET status='cancelled',cancelled_at=NOW(),updated_at=NOW() WHERE id=? AND owner_user_id=? AND schedule_id=? AND status IN ('pending','confirmed')");
-        $cancel->execute([(int)$booking['id'],$userId,$scheduleId]);
-        if($cancel->rowCount()!==1)throw new RuntimeException('That appointment changed before it could be rescheduled.');
-        $new=agent_scheduling_create_booking_v430($pdo,[
-            'event_type_id'=>(int)$booking['event_type_id'],'start_at_utc'=>$startAtUtc,
-            'guest_timezone'=>(string)($booking['guest_timezone']?:$booking['organizer_timezone']),
-            'guest_name'=>(string)$booking['guest_name'],'guest_email'=>(string)$booking['guest_email'],'guest_phone'=>(string)$booking['guest_phone'],
-            'guest_notes'=>(string)($booking['guest_notes']??''),'internal_notes'=>(string)($booking['internal_notes']??''),
-            'created_by_user_id'=>$userId,'created_by_agent_id'=>$agentId,'source'=>'agent_reschedule',
-        ]);
-        $pdo->prepare('UPDATE agent_scheduling_bookings SET rescheduled_from_id=? WHERE id=? AND owner_user_id=?')->execute([(int)$booking['id'],(int)$new['id'],$userId]);
-        if($started)$pdo->commit();return $new;
-    }catch(Throwable $e){if($started&&$pdo->inTransaction())$pdo->rollBack();throw $e;}
-    finally{try{$release=$pdo->prepare('SELECT RELEASE_LOCK(?)');$release->execute([$lockName]);}catch(Throwable $ignored){}}
+    if(!function_exists('agent_appointment_lifecycle_schema_ready_v700')||!agent_appointment_lifecycle_schema_ready_v700($pdo))throw new RuntimeException('Run the VP3 database upgrade before Agent rescheduling can be used.');
+    $current=agent_appointment_lifecycle_booking_v700($pdo,(int)$booking['id'],$userId);
+    if(!$current)throw new RuntimeException('That appointment is no longer available.');
+    $paid=null;
+    if(function_exists('agent_paid_appointments_schema_ready_v800')&&agent_paid_appointments_schema_ready_v800($pdo)){
+        $paid=agent_paid_appointments_paid_booking_for_booking_v800($pdo,(int)$booking['id']);
+        if($paid&&(string)$paid['payment_status']==='awaiting_payment')throw new RuntimeException('Complete or cancel the pending appointment payment before rescheduling.');
+    }
+    $fresh=agent_appointment_lifecycle_reschedule_v700(
+        $pdo,$current,$startAtUtc,
+        (string)($current['guest_timezone']?:$current['organizer_timezone']),
+        'agent',$userId,$agentId?:null
+    );
+    if($paid)agent_paid_appointments_record_reschedule_v800($pdo,$paid,'agent',$userId,$agentId?:null);
+    return $fresh;
 }
 
 function agent_scheduling_tools_execute_pending_v460(PDO $pdo,array $user,int $conversationId,array $pending): array
