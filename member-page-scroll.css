@@ -1,0 +1,53 @@
+/* Canonical fixed-shell scrolling for long member pages.
+   chat.css intentionally locks .chat-app to the viewport; these member pages
+   must give their content row an explicit scroll owner instead of overflowing
+   behind the fixed shell. */
+.plugins-main,
+.team-main,
+.music-main,
+.ml-main,
+.mr-main,
+.messages-main{
+  min-height:0;
+  grid-template-rows:58px minmax(0,1fr);
+  overflow:hidden;
+}
+
+.plugins-wrap,
+.team-canvas,
+.music-wrap,
+.ml-wrap,
+.mr-wrap{
+  height:100%;
+  min-height:0;
+  overflow-x:hidden;
+  overflow-y:auto;
+  overscroll-behavior:contain;
+  -webkit-overflow-scrolling:touch;
+}
+
+/* Messages already owns inbox/thread scrolling on desktop. Keep the shell
+   constrained to the member content row and let the whole two-panel stack
+   scroll on narrow screens so the composer can never be clipped. */
+.messages-shell{
+  height:100%;
+  min-height:0;
+  max-height:100%;
+  overflow:hidden;
+}
+.messages-inbox,
+.messages-thread{
+  min-height:0;
+}
+
+@media(max-width:800px){
+  .messages-shell{
+    height:100%;
+    min-height:0;
+    max-height:100%;
+    overflow-x:hidden;
+    overflow-y:auto;
+    overscroll-behavior:contain;
+    -webkit-overflow-scrolling:touch;
+  }
+}
