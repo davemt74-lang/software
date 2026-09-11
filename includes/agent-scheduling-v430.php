@@ -508,7 +508,13 @@ function agent_scheduling_conflict_v430(PDO $pdo, int $scheduleId, string $start
     $sql .= ' ORDER BY start_at_utc,id LIMIT 1';
     $stmt = $pdo->prepare($sql);
     $stmt->execute($args);
-    return $stmt->fetch() ?: null;
+    $native=$stmt->fetch();
+    if($native)return $native;
+    if(function_exists('agent_calendar_sync_conflict_v500')){
+        $external=agent_calendar_sync_conflict_v500($pdo,$scheduleId,$candidateStart,$candidateEnd);
+        if($external){$external['external_calendar']=true;return $external;}
+    }
+    return null;
 }
 
 function agent_scheduling_day_booking_count_v430(PDO $pdo, array $event, DateTimeImmutable $localStart): int
@@ -556,7 +562,7 @@ function agent_scheduling_validate_start_v430(PDO $pdo, array $event, DateTimeIm
 
     $endUtcObject = $startUtcObject->modify('+' . $duration . ' minutes');
     if (agent_scheduling_conflict_v430($pdo, (int)$event['schedule_id'], $startUtcObject->format('Y-m-d H:i:s'), $endUtcObject->format('Y-m-d H:i:s'), (int)$event['buffer_before_minutes'], (int)$event['buffer_after_minutes'], $excludeBookingId)) {
-        throw new RuntimeException('That time was just booked. Please choose another time.');
+        throw new RuntimeException('That time is already busy. Please choose another time.');
     }
 }
 
@@ -564,6 +570,7 @@ function agent_scheduling_slots_for_date_v430(PDO $pdo, int $eventTypeId, string
 {
     $event = agent_scheduling_event_type_v430($pdo, $eventTypeId);
     if (!$event || empty($event['is_active']) || empty($event['schedule_active']) || ($publicOnly && empty($event['public_enabled']))) return [];
+    if(function_exists('agent_calendar_sync_maybe_schedule_v500'))agent_calendar_sync_maybe_schedule_v500($pdo,(int)$event['schedule_id']);
     $timezone = agent_scheduling_timezone_v430((string)$event['schedule_timezone']);
     $tz = new DateTimeZone($timezone);
     $day = DateTimeImmutable::createFromFormat('!Y-m-d', $date, $tz);
@@ -612,6 +619,7 @@ function agent_scheduling_create_booking_v430(PDO $pdo, array $input): array
     $bufferAfter = max(0, min(1440, (int)($event['buffer_after_minutes'] ?? 0)));
     $organizerTimezone = agent_scheduling_timezone_v430((string)($event['schedule_timezone'] ?? 'UTC'));
     $guestTimezone = agent_scheduling_timezone_v430((string)($input['guest_timezone'] ?? $organizerTimezone), $organizerTimezone);
+    if(function_exists('agent_calendar_sync_maybe_schedule_v500'))agent_calendar_sync_maybe_schedule_v500($pdo,$scheduleId);
 
     try {
         if (!empty($input['start_at_utc'])) {
@@ -645,6 +653,7 @@ function agent_scheduling_create_booking_v430(PDO $pdo, array $input): array
     $lockStmt->execute([$lockName]);
     if ((int)$lockStmt->fetchColumn() !== 1) throw new RuntimeException('That schedule is busy. Please choose the time again.');
 
+    $booking=null;
     try {
         agent_scheduling_validate_start_v430($pdo, $event, $startUtcObject);
         $publicToken = bin2hex(random_bytes(32));
@@ -667,7 +676,6 @@ function agent_scheduling_create_booking_v430(PDO $pdo, array $input): array
         $find->execute([$bookingId]);
         $booking = $find->fetch();
         if (!$booking) throw new RuntimeException('Appointment could not be created.');
-        return $booking;
     } finally {
         try {
             $release = $pdo->prepare('SELECT RELEASE_LOCK(?)');
@@ -675,19 +683,33 @@ function agent_scheduling_create_booking_v430(PDO $pdo, array $input): array
         } catch (Throwable $ignored) {
         }
     }
+    if(!$booking)throw new RuntimeException('Appointment could not be created.');
+    if(function_exists('agent_calendar_sync_booking_v500')){
+        agent_calendar_sync_booking_v500($pdo,$booking);
+        $refresh=$pdo->prepare('SELECT * FROM agent_scheduling_bookings WHERE id=? AND owner_user_id=? LIMIT 1');$refresh->execute([(int)$booking['id'],$ownerUserId]);$booking=$refresh->fetch()?:$booking;
+    }
+    return $booking;
 }
 
 function agent_scheduling_cancel_booking_v430(PDO $pdo, int $bookingId, ?int $ownerUserId = null, string $cancelToken = ''): bool
 {
     if ($bookingId < 1) return false;
     if ($ownerUserId !== null && $ownerUserId > 0) {
+        $find=$pdo->prepare("SELECT * FROM agent_scheduling_bookings WHERE id=? AND owner_user_id=? AND status IN ('pending','confirmed') LIMIT 1");$find->execute([$bookingId,$ownerUserId]);$booking=$find->fetch();
+        if(!$booking)return false;
         $stmt = $pdo->prepare("UPDATE agent_scheduling_bookings SET status='cancelled',cancelled_at=NOW(),updated_at=NOW() WHERE id=? AND owner_user_id=? AND status IN ('pending','confirmed')");
         $stmt->execute([$bookingId, $ownerUserId]);
-        return $stmt->rowCount() > 0;
+        $changed=$stmt->rowCount()>0;
+        if($changed&&function_exists('agent_calendar_sync_cancel_booking_v500'))agent_calendar_sync_cancel_booking_v500($pdo,$booking);
+        return $changed;
     }
     $cancelToken = trim($cancelToken);
     if ($cancelToken === '') return false;
+    $find=$pdo->prepare("SELECT * FROM agent_scheduling_bookings WHERE id=? AND cancel_token=? AND status IN ('pending','confirmed') LIMIT 1");$find->execute([$bookingId,$cancelToken]);$booking=$find->fetch();
+    if(!$booking)return false;
     $stmt = $pdo->prepare("UPDATE agent_scheduling_bookings SET status='cancelled',cancelled_at=NOW(),updated_at=NOW() WHERE id=? AND cancel_token=? AND status IN ('pending','confirmed')");
     $stmt->execute([$bookingId, $cancelToken]);
-    return $stmt->rowCount() > 0;
+    $changed=$stmt->rowCount()>0;
+    if($changed&&function_exists('agent_calendar_sync_cancel_booking_v500'))agent_calendar_sync_cancel_booking_v500($pdo,$booking);
+    return $changed;
 }
