@@ -1,0 +1,48 @@
+name: HomeServer Scheduling Connector v6.20
+
+on:
+  pull_request:
+    paths:
+      - 'includes/homeserver-scheduling-connector-v620.php'
+      - 'includes/homeserver-approvals-v028.php'
+      - 'api/homeserver-scheduling-v620.php'
+      - 'api/homeserver-status.php'
+      - 'tests/homeserver-scheduling-v620-contract.mjs'
+      - '.github/workflows/homeserver-scheduling-v620.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'includes/homeserver-scheduling-connector-v620.php'
+      - 'includes/homeserver-approvals-v028.php'
+      - 'api/homeserver-scheduling-v620.php'
+      - 'api/homeserver-status.php'
+      - 'tests/homeserver-scheduling-v620-contract.mjs'
+      - '.github/workflows/homeserver-scheduling-v620.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          coverage: none
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: HomeServer scheduling connector contract
+        run: node tests/homeserver-scheduling-v620-contract.mjs
+      - name: Retain Google/Outlook calendar sync contract
+        run: node tests/agent-calendar-sync-v500-contract.mjs
+      - name: Retain Team Scheduling contract
+        run: node tests/agent-team-scheduling-v600-contract.mjs
+      - name: PHP syntax
+        run: |
+          php -l includes/homeserver-scheduling-connector-v620.php
+          php -l includes/homeserver-approvals-v028.php
+          php -l api/homeserver-scheduling-v620.php
+          php -l api/homeserver-status.php
