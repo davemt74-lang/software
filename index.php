@@ -4,21 +4,6 @@ declare(strict_types=1);
 require __DIR__ . '/includes/bootstrap.php';
 redirect_logged_in_public_page();
 
-function vp3_home_image(string $filename): string
-{
-    $path = __DIR__ . '/assets/home/' . $filename . '.b64';
-    if (!is_file($path)) {
-        return '';
-    }
-
-    $encoded = trim((string) file_get_contents($path));
-    if ($encoded === '' || preg_match('/^[A-Za-z0-9+\/=]+$/', $encoded) !== 1) {
-        return '';
-    }
-
-    return 'data:image/webp;base64,' . $encoded;
-}
-
 $signupUrl = url('/signup.php');
 $demoUrl = url('/book-demo.php');
 $loginUrl = url('/login.php');
@@ -67,7 +52,7 @@ $homeServerUrl = url('/homeserver-download.php');
 
 <main>
   <section class="hero" aria-labelledby="hero-title">
-    <img class="hero-image" src="<?= e(vp3_home_image('hero-home-office.webp')) ?>" alt="Professional using VP3 from a warmly lit home office">
+    <img class="hero-image" src="<?= e(url('/assets/home/hero-home-office.webp')) ?>" alt="Professional using VP3 from a warmly lit home office">
     <div class="hero-shade" aria-hidden="true"></div>
     <div class="hero-content wrap">
       <p class="eyebrow light">Your AI workforce</p>
@@ -112,7 +97,7 @@ $homeServerUrl = url('/homeserver-download.php');
 
       <div class="feature-grid">
         <article class="feature-card">
-          <img src="<?= e(vp3_home_image('feature-transcription.webp')) ?>" alt="VP3 transcription workspace on a laptop" loading="lazy">
+          <img src="<?= e(url('/assets/home/feature-transcription.webp')) ?>" alt="VP3 transcription workspace on a laptop" loading="lazy">
           <div class="card-copy">
             <p class="card-label">Desktop</p>
             <h3>Transcription, organized.</h3>
@@ -121,7 +106,7 @@ $homeServerUrl = url('/homeserver-download.php');
           </div>
         </article>
         <article class="feature-card">
-          <img src="<?= e(vp3_home_image('feature-mobile.webp')) ?>" alt="VP3 mobile voice capture interface" loading="lazy">
+          <img src="<?= e(url('/assets/home/feature-mobile.webp')) ?>" alt="VP3 mobile voice capture interface" loading="lazy">
           <div class="card-copy">
             <p class="card-label">Mobile</p>
             <h3>Capture anywhere.</h3>
@@ -130,7 +115,7 @@ $homeServerUrl = url('/homeserver-download.php');
           </div>
         </article>
         <article class="feature-card">
-          <img src="<?= e(vp3_home_image('feature-ai-summaries.webp')) ?>" alt="VP3 AI summary and product planning interface" loading="lazy">
+          <img src="<?= e(url('/assets/home/feature-ai-summaries.webp')) ?>" alt="VP3 AI summary and product planning interface" loading="lazy">
           <div class="card-copy">
             <p class="card-label">AI</p>
             <h3>Summaries that matter.</h3>
@@ -139,7 +124,7 @@ $homeServerUrl = url('/homeserver-download.php');
           </div>
         </article>
         <article class="feature-card">
-          <img src="<?= e(vp3_home_image('feature-teams.webp')) ?>" alt="VP3 team workspace dashboard" loading="lazy">
+          <img src="<?= e(url('/assets/home/feature-teams.webp')) ?>" alt="VP3 team workspace dashboard" loading="lazy">
           <div class="card-copy">
             <p class="card-label">Teams</p>
             <h3>Work together, better.</h3>
@@ -172,7 +157,7 @@ $homeServerUrl = url('/homeserver-download.php');
   <section class="everything" id="everything" aria-labelledby="everything-title">
     <div class="wrap everything-grid">
       <div class="device-art">
-        <img src="<?= e(vp3_home_image('devices-everything-you-need.webp')) ?>" alt="VP3 desktop and mobile apps shown together" loading="lazy">
+        <img src="<?= e(url('/assets/home/devices-everything-you-need.webp')) ?>" alt="VP3 desktop and mobile apps shown together" loading="lazy">
       </div>
       <div class="everything-copy">
         <p class="eyebrow">All your work. Everywhere.</p>
