@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 require __DIR__.'/includes/bootstrap.php';
-$pdo=db();if(!$pdo||!agent_paid_appointments_schema_ready_v800($pdo)){http_response_code(503);exit('Appointment payments are not available.');}
+$pdo=db();if(!$pdo||!agent_paid_appointments_schema_ready_v800($pdo)||!agent_commerce_appointment_adapter_ready_v800($pdo)){http_response_code(503);exit('VP3 Commerce is not available. Run the database upgrade.');}
 if(!headers_sent()){header('Referrer-Policy: no-referrer');header('X-Robots-Tag: noindex, nofollow, noarchive');header('Cache-Control: no-store, private');}
 $paidId=max(0,(int)($_GET['paid']??0));$provider=strtolower(trim((string)($_GET['provider']??'')));$manage=strtolower(trim((string)($_GET['manage']??'')));
 $paid=$manage!==''?agent_paid_appointments_public_by_token_v800($pdo,$manage):null;
@@ -9,10 +9,11 @@ if(!$paid||(int)$paid['id']!==$paidId||!in_array($provider,['stripe','square','p
 $message='We are confirming your payment with the provider.';$ok=false;
 try{
     $paid=agent_paid_appointments_return_verify_v800($pdo,$paid,$provider,$_GET);
+    agent_commerce_sync_paid_appointment_v800($pdo,$paid);
     $ok=in_array((string)$paid['payment_status'],['paid','partially_refunded','refunded'],true);
     $message=$ok?'Payment received. Your appointment is confirmed.':'The provider has not confirmed payment yet. Use your private appointment link to check again.';
 }catch(Throwable $e){
-    error_log('VP3 appointment payment return failed: '.$e->getMessage());
+    error_log('VP3 commerce payment return failed: '.$e->getMessage());
     $message='We could not confirm the payment from this return page. If you completed checkout, use your private appointment link to check status.';
 }
 $manageUrl=(int)($paid['team_booking_id']??0)>0?url('/team-book.php?manage='.rawurlencode($manage)):'';
