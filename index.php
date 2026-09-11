@@ -52,7 +52,7 @@ $homeServerUrl = '#homeserver';
 
 <main>
   <section class="hero" aria-labelledby="hero-title">
-    <img class="hero-image" src="<?= e(url('/assets/home/hero-home-office.webp')) ?>" alt="Professional using VP3 from a warmly lit home office">
+    <img class="hero-image" src="<?= e(url('/assets/home/vp3-main-header_bg.png')) ?>" alt="VP3 AI Assistants home office hero">
     <div class="hero-shade" aria-hidden="true"></div>
     <div class="hero-content wrap">
       <p class="eyebrow light">Your AI workforce</p>

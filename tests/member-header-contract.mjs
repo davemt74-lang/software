@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 const header = fs.readFileSync('includes/member-header.php', 'utf8');
 const headerUi = fs.readFileSync('chat-header-ui.css', 'utf8');
 const scrollUi = fs.readFileSync('member-page-scroll.css', 'utf8');
+const agentUi = fs.readFileSync('agent-ui-v034.css', 'utf8');
 const menu = fs.readFileSync('includes/member-user-menu.php', 'utf8');
 const contacts = fs.readFileSync('contacts.php', 'utf8');
 const knowledge = fs.readFileSync('knowledge.php', 'utf8');
@@ -14,6 +15,7 @@ const musicWorkspace = fs.readFileSync('music-workspace.php', 'utf8');
 const musicLibrary = fs.readFileSync('music-library.php', 'utf8');
 const musicReleases = fs.readFileSync('music-releases.php', 'utf8');
 const messages = fs.readFileSync('messages.php', 'utf8');
+const notifications = fs.readFileSync('notifications.php', 'utf8');
 
 assert.match(header, /data-member-header/, 'canonical member header must expose one shared header marker');
 assert.match(header, /chatNotificationMenu/, 'canonical member header must own notifications');
@@ -34,6 +36,12 @@ assert.match(scrollUi, /\.plugins-wrap,[\s\S]*\.team-canvas,[\s\S]*\.music-wrap,
 assert.match(scrollUi, /\.messages-shell[\s\S]*height:100%[\s\S]*overflow:hidden/, 'desktop Messages must stay constrained to the member content row');
 assert.match(scrollUi, /@media\(max-width:800px\)[\s\S]*\.messages-shell[\s\S]*overflow-y:auto/, 'mobile Messages must expose a scrollable stacked shell');
 
+assert.match(agentUi, /\.workspace-main-sidebar \.chat-sidebar-sections\{order:1;/, 'main sidebar content must stay above runtime telemetry');
+assert.match(agentUi, /\.workspace-main-sidebar \.agent-runtime-strip\{order:2;/, 'runtime telemetry must live at the bottom of the sidebar');
+assert.match(agentUi, /\.workspace-main-sidebar \.agent-sidebar-footer\{order:3;/, 'account footer must remain below runtime telemetry');
+assert.match(agentUi, /body:has\(\.chat-composer\) \.chat-settings-launcher\{[\s\S]*z-index:12050!important;[\s\S]*right:max\(72px,calc\(\(100vw - 1062px\)\/2 \+ 60px\)\)!important;/, 'Agent Chat settings control must sit above and inside the composer rail');
+assert.match(agentUi, /body:has\(\.chat-composer\) \.chat-settings-button\{[\s\S]*width:30px!important;[\s\S]*height:30px!important;/, 'Agent Chat settings control must use the compact rail size');
+
 for (const [name, source, contentClass] of [
   ['Plugins', plugins, 'plugins-wrap'],
   ['My Team', team, 'team-canvas'],
@@ -50,6 +58,12 @@ for (const [name, source] of [['Contacts', contacts], ['My Knowledge', knowledge
   assert.match(source, /includes\/member-header\.php/, `${name} must use the canonical member header`);
   assert.doesNotMatch(source, /<header class="contacts-topbar"|<header class="chat-topbar personal-knowledge-topbar"/, `${name} must not recreate its own top header`);
 }
+
+assert.match(notifications, /includes\/workspace-sidebar-v82\.php/, 'Notifications must use the canonical member sidebar');
+assert.match(notifications, /includes\/member-header\.php/, 'Notifications must use the canonical member header');
+assert.match(notifications, /class="notification-member-canvas"/, 'Notifications must expose its fixed-shell scroll owner');
+assert.match(notifications, /workspace-shell-v82\.js/, 'Notifications must use the canonical workspace shell runtime');
+assert.doesNotMatch(notifications, /includes\/header\.php|includes\/footer\.php/, 'Notifications must not fall back to the public-site header/footer shell');
 
 assert.match(profile, /\$memberHeaderUser=\$viewer/, 'logged-in public profile viewers must use the authenticated member header');
 assert.match(profile, /includes\/member-header\.php/, 'public profile must reuse the canonical member header for authenticated viewers');

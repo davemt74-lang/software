@@ -7,7 +7,7 @@ const css = fs.readFileSync('vp3-index-ai-assistants.css', 'utf8');
 assert.match(index, /redirect_logged_in_public_page\(\)/, 'homepage must preserve logged-in redirect behavior');
 assert.match(index, /<title>VP3 AI Assistants — Turn Every Conversation Into What’s Next<\/title>/, 'homepage must use the AI Assistants positioning');
 assert.match(index, /VP3 AI Assistants[\s\S]*Turn every conversation[\s\S]*into what’s next\./, 'hero must present the AI Assistants headline');
-assert.match(index, /hero-home-office\.webp/, 'homepage must use the full-width home-office hero image');
+assert.match(index, /vp3-main-header_bg\.png/, 'homepage must use the supplied VP3 hero background image');
 assert.match(css, /\.hero\{[^}]*min-height:/, 'homepage must define a full hero stage');
 assert.match(css, /\.hero-image\{[^}]*object-fit:cover/, 'hero image must fill the hero responsively');
 
