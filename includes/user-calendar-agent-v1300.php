@@ -111,7 +111,7 @@ function user_calendar_agent_query_v1300(string $query,array $user,int $conversa
         }
         try{
             $agentId=max(0,(int)($pending['agent_id']??0));
-            $source=$agentId>0?'agent':'user';
+            $source='agent';
             $event=user_calendar_create_local_event_v1300($pdo,$user,$pending,$source,$agentId>0?$agentId:null);
             user_calendar_agent_clear_pending_v1300($user,$conversationId);
             $timezone=user_calendar_timezone_v1300((string)$event['timezone']);
