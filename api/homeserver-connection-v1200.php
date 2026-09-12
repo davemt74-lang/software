@@ -22,6 +22,9 @@ if ($userId < 1) {
 function homeserver_connection_v1200_response(int $userId, bool $force=false): array
 {
     $status = homeserver_cloud_v1200_status($userId, $force);
+    $row = homeserver_vp3_connection($userId);
+    $status['can_repair'] = $row && !empty($row['relay_token_enc']);
+    $status['can_remove'] = $row !== null;
     $status['scheduling_connector'] = homeserver_scheduling_v620_connector_status($userId);
     $status['commerce_agent_connector'] = homeserver_commerce_agent_v1000_status($userId);
     return $status;
@@ -73,12 +76,14 @@ try {
     } elseif ($action === 'cancel_pairing') {
         homeserver_cloud_v1200_cancel_pairing($userId);
     } elseif ($action === 'disconnect') {
-        // Fail closed: revoke the exact relay credential before deleting or clearing any secret needed to retry revocation.
-        homeserver_cloud_v1200_revoke_access($userId);
+        // Invalidate the current relay credential first, retain only its encrypted replacement,
+        // and clear the paired-app bearer so authenticated HomeServer operations stop immediately.
+        homeserver_cloud_v1200_disconnect($userId);
         homeserver_commerce_agent_v1000_revoke($userId);
         homeserver_scheduling_v620_revoke($userId);
     } elseif ($action === 'remove') {
-        homeserver_cloud_v1200_remove_local($userId);
+        // Final removal rotates once more before deleting the local record. The replacement is intentionally discarded.
+        homeserver_cloud_v1200_remove_pairing($userId);
     } else {
         http_response_code(400);
         echo json_encode(['ok'=>false,'error'=>'Unsupported HomeServer action.']);
