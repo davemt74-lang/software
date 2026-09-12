@@ -66,10 +66,10 @@ function member_navigation_menu_links(?array $user = null): array
         if(function_exists('token_pack_schema_ready')&&token_pack_schema_ready())$add($links,'token_packs','Buy AI Tokens',url('/token-packs.php'),'identity');
         if($chatAllowed)$add($links,'ai_usage','AI Usage History',url('/ai-usage.php'),'identity');
         $add($links,'contacts','My Contacts',url('/contacts.php'),'identity');
+        $add($links,'calendar','My Calendar',url('/calendar.php'),'agent');
     }
     if(member_navigation_entitled($user,'profile_agent.access',personal_capability_has_v242('profile_agent.access',$user)))$add($links,'profile_agent','Profile Agent',url('/profile-agent.php'),'identity');
     if($accountAllowed&&function_exists('agent_scheduling_schema_ready_v430')&&agent_scheduling_schema_ready_v430()){
-        $add($links,'calendar','Calendar',url('/calendar.php'),'agent');
         $add($links,'scheduling','Scheduling',url('/scheduling.php'),'agent');
     }
     if($accountAllowed&&function_exists('agent_appointment_lifecycle_schema_ready_v700')&&agent_appointment_lifecycle_schema_ready_v700())$add($links,'appointment_lifecycle','Appointment Lifecycle',url('/appointment-lifecycle.php'),'agent');
