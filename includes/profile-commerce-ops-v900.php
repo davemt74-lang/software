@@ -47,7 +47,7 @@ function profile_commerce_set_fulfillment_v900(PDO $pdo,int $ownerUserId,int $or
     $status=strtolower(trim($status));if(!in_array($status,['processing','fulfilled'],true))throw new RuntimeException('Choose a valid fulfillment state.');
     $order=profile_commerce_order_for_owner_v900($pdo,$ownerUserId,$orderId);if(!$order)throw new RuntimeException('Profile Commerce order not found.');
     if((string)($order['fulfillment_type']??'')==='appointment')throw new RuntimeException('Appointment fulfillment remains authoritative in Scheduling.');
-    if(!in_array((string)($order['payment_status']??''),['paid','partially_paid'],true))throw new RuntimeException('Only paid or deposit-paid orders can enter fulfillment.');
+    if((string)($order['payment_status']??'')!=='paid')throw new RuntimeException('Only fully paid Profile Commerce orders can enter fulfillment.');
     $from=profile_commerce_fulfillment_state_v900($order);
     $pdo->beginTransaction();
     try{
