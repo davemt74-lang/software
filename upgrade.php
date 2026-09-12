@@ -7,6 +7,7 @@ require_once __DIR__ . '/includes/artist-listening-transcript.php';
 require_once __DIR__ . '/includes/studio-participants.php';
 require_once __DIR__ . '/includes/studio-voice-profile.php';
 require_once __DIR__ . '/includes/onboarding-intelligence.php';
+require_once __DIR__ . '/includes/user-calendar-v1300.php';
 require_permission('users.manage');
 
 function vp3_upgrade_complete(): bool
@@ -47,6 +48,7 @@ function vp3_upgrade_complete(): bool
         && vp3_agent_memory_scope_schema_ready_v410()
         && agent_scheduling_schema_ready_v430()
         && agent_calendar_sync_schema_ready_v500()
+        && user_calendar_schema_ready_v1300()
         && agent_team_scheduling_schema_ready_v600()
         && agent_appointment_lifecycle_schema_ready_v700()
         && agent_commerce_schema_ready_v800()
@@ -70,14 +72,10 @@ function vp3_upgrade_complete(): bool
         && artist_music_v185_schema_ready();
 }
 
-$error = '';
-$complete = vp3_upgrade_complete();
-
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    if (!verify_csrf()) {
-        $error = 'Session expired. Please try again.';
-    } else {
-        try {
+$error='';$complete=vp3_upgrade_complete();
+if($_SERVER['REQUEST_METHOD']==='POST'){
+    if(!verify_csrf()){$error='Session expired. Please try again.';}else{
+        try{
             ensure_access_schema();
             subscription_ensure_schema();
             subscription_entitlements_v340_ensure_schema();
@@ -106,72 +104,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             vp3_agent_memory_scope_ensure_schema_v410();
             agent_scheduling_ensure_schema_v430();
             agent_calendar_sync_ensure_schema_v500();
+            user_calendar_ensure_schema_v1300();
             agent_team_scheduling_ensure_schema_v600();
             agent_appointment_lifecycle_ensure_schema_v700();
             agent_commerce_ensure_schema_v800();
             agent_paid_appointments_ensure_schema_v800();
 
-            $pdo = db();
-            if (!$pdo) throw new RuntimeException('Database connection is unavailable.');
+            $pdo=db();if(!$pdo)throw new RuntimeException('Database connection is unavailable.');
             homeserver_vp3_ensure_schema($pdo);
-            if (!homeserver_agent_v018_ensure_schema($pdo)) throw new RuntimeException('HomeServer Agent chat schema could not be installed.');
-            agent_compute_v020_ensure_schema($pdo);
-            agent_compute_v023_ensure_schema($pdo);
-
-            onboarding_intelligence_ensure_schema();
-            user_data_usage_ensure_schema_v236();
-            shared_knowledge_index_ensure_schema_v236();
-            profile_agent_ensure_schema();
-            personal_capability_ensure_schema_v242();
-            crm_v180_ensure_schema();
-            artist_workspace_v181_ensure_schema();
-            vp3_plugin_migrate_legacy_v360($pdo);
-            vp3_human_messaging_v370_migrate_legacy($pdo);
-            music_workspace_release_schema_v330_ensure($pdo);
-            music_workspace_resources_v330_ensure_schema($pdo);
-            artist_media_v182_ensure_schema();
-            artist_posts_v183_ensure_schema();
-            artist_shows_v184_ensure_schema();
-            artist_music_v185_ensure_schema();
-            $complete = vp3_upgrade_complete();
-
-            if ($complete) {
-                flash('notice', 'VP3 database upgrade complete: subscriptions, composable product entitlements, canonical plugin lifecycle, canonical human messaging, durable Agent retirement, Agent-scoped Brain memory, native Agent Scheduling, external calendar synchronization, Team Scheduling, Appointment Lifecycle + Automation and Paid Appointments, canonical Agent runtime routing and route-attributed AI accounting, social relationships, Team invitation/lifecycle collaboration, workspace-owned Music resources, Knowledge, Profile Agent, HomeServer Agent continuity, Agent Radar, CRM, transcriptions, and Music/Studio capabilities are ready.');
-                redirect(url('/admin/users.php'));
-            }
-        } catch (Throwable $e) {
-            $error = $e->getMessage();
-        }
+            if(!homeserver_agent_v018_ensure_schema($pdo))throw new RuntimeException('HomeServer Agent chat schema could not be installed.');
+            agent_compute_v020_ensure_schema($pdo);agent_compute_v023_ensure_schema($pdo);
+            onboarding_intelligence_ensure_schema();user_data_usage_ensure_schema_v236();shared_knowledge_index_ensure_schema_v236();profile_agent_ensure_schema();personal_capability_ensure_schema_v242();crm_v180_ensure_schema();artist_workspace_v181_ensure_schema();vp3_plugin_migrate_legacy_v360($pdo);vp3_human_messaging_v370_migrate_legacy($pdo);music_workspace_release_schema_v330_ensure($pdo);music_workspace_resources_v330_ensure_schema($pdo);artist_media_v182_ensure_schema();artist_posts_v183_ensure_schema();artist_shows_v184_ensure_schema();artist_music_v185_ensure_schema();
+            $complete=vp3_upgrade_complete();
+            if($complete){flash('notice','VP3 database upgrade complete: subscriptions, Agent Scheduling, unified User Calendar, external calendar synchronization, Team Scheduling, Appointment Lifecycle + Automation and Paid Appointments, canonical Agent runtime routing, HomeServer continuity, CRM, Knowledge, transcriptions, and Music/Studio capabilities are ready.');redirect(url('/admin/users.php'));}
+        }catch(Throwable $e){$error=$e->getMessage();}
     }
 }
 
-vp3_public_header('Database Upgrade — VP3', 'Upgrade the VP3 database and application capabilities.', ['compact' => true]);
+vp3_public_header('Database Upgrade — VP3','Upgrade the VP3 database and application capabilities.',['compact'=>true]);
 ?>
-<main class="vp3-auth-shell">
-  <section class="vp3-auth-visual">
-    <div class="vp3-auth-visual-content">
-      <div class="vp3-kicker">System maintenance</div>
-      <h1>Keep VP3 capabilities current.</h1>
-      <p>The upgrade process adds the current subscription, composable entitlement, plugin lifecycle, social, canonical human messaging, billing, AI, HomeServer, collaboration, scheduling, calendar sync, Team Scheduling, Appointment Lifecycle + Automation, Paid Appointments, analytics, CRM and Studio schema without replacing existing user content.</p>
-    </div>
-  </section>
-  <section class="vp3-auth-form-side">
-    <div class="vp3-auth-card">
-      <div class="vp3-kicker">Database</div>
-      <h1>VP3 Database Upgrade</h1>
-      <?php if ($complete): ?>
-        <div class="vp3-alert success">The current VP3 schema is installed and ready.</div>
-        <p class="vp3-auth-intro">Subscription packages, composable add-on entitlements, canonical opt-in plugins, social relationships, canonical human messaging, durable Agent history, Agent-scoped Brain memory, native Agent Scheduling, external calendar synchronization, round-robin and collective Team Scheduling, Appointment Lifecycle + Automation, Commerce + Paid Scheduling, canonical Agent runtime routing, Team invitation and membership lifecycle, workspace-owned Music resources, AI quota and route-attributed execution accounting, private Knowledge, Profile Agent, HomeServer Agent continuity, Agent Radar, CRM, voice identity, transcriptions and Music/Studio capabilities are available.</p>
-        <a class="vp3-btn primary" href="<?= e(url('/admin/users.php')) ?>">Manage Users →</a>
-      <?php else: ?>
-        <p class="vp3-auth-intro">Run the current schema upgrade while preserving existing content and access. Existing accounts, package assignments, team memberships, token balances, music content, plugin preferences, Agent identities, Agent-scoped Brain memories, schedules, canonical bookings, lifecycle history, intake answers, automation deliveries, commerce provider connections, products, orders, payment/refund lineage, calendar connections, Team scheduling pools and conversations are preserved, including Team membership history, legacy Team direct messages and existing add-on grants.</p>
-        <?php if ($error): ?><div class="vp3-alert error" role="alert"><?= e($error) ?></div><?php endif; ?>
-        <form method="post">
-          <?= csrf_field() ?>
-          <button class="vp3-btn primary" type="submit">Run Upgrade →</button>
-        </form>
-      <?php endif; ?>
-    </div>
-  </section>
-</main>
-<?php vp3_public_footer(); ?>
+<main class="vp3-auth-shell"><section class="vp3-auth-visual"><div class="vp3-auth-visual-content"><div class="vp3-kicker">System maintenance</div><h1>Keep VP3 capabilities current.</h1><p>The upgrade process adds the current subscription, social, billing, AI, HomeServer, collaboration, scheduling, unified User Calendar, calendar sync, Team Scheduling, Appointment Lifecycle, Paid Appointments, analytics, CRM and Studio schema without replacing existing user content.</p></div></section><section class="vp3-auth-form-side"><div class="vp3-auth-card"><div class="vp3-kicker">Database</div><h1>VP3 Database Upgrade</h1>
+<?php if($complete): ?><div class="vp3-alert success">The current VP3 schema is installed and ready.</div><p class="vp3-auth-intro">Subscription packages, social relationships, durable Agent history, native Agent Scheduling, unified User Calendar, external calendar synchronization, Team Scheduling, Appointment Lifecycle + Automation, Commerce + Paid Scheduling, canonical Agent runtime routing, workspace-owned Music resources, AI accounting, private Knowledge, Profile Agent, HomeServer continuity, Agent Radar, CRM, voice identity, transcriptions and Music/Studio capabilities are available.</p><a class="vp3-btn primary" href="<?= e(url('/admin/users.php')) ?>">Manage Users →</a>
+<?php else: ?><p class="vp3-auth-intro">Run the current schema upgrade while preserving existing accounts, content, schedules, bookings, calendar events, calendar connections, Team scheduling pools, commerce records and conversations.</p><?php if($error): ?><div class="vp3-alert error" role="alert"><?= e($error) ?></div><?php endif; ?><form method="post"><?= csrf_field() ?><button class="vp3-btn primary" type="submit">Run Upgrade →</button></form><?php endif; ?>
+</div></section></main><?php vp3_public_footer(); ?>
