@@ -36,6 +36,8 @@ assert.doesNotMatch(bridge,/secret_key|access_token|webhook_secret/,'Agent bridg
 assert.match(api,/HTTP_AUTHORIZATION/,'endpoint must authenticate the connector bearer credential');
 assert.match(api,/Bearer\\s\+\(\.\+\)/,'endpoint must parse a Bearer authorization header');
 assert.match(api,/array_diff\(array_keys\(\$body\),\['operation','arguments'\]\)/,'wire envelope must reject unknown fields');
+assert.match(api,/GET_LOCK\(\?,10\)/,'matching fulfillment mutations must be serialized before canonical execution');
+assert.match(api,/RELEASE_LOCK\(\?\)/,'fulfillment serialization lock must always be released');
 assert.match(approvals,/commerce\.read/);assert.match(approvals,/commerce\.order/);assert.match(approvals,/commerce\.fulfill/);
 assert.match(status,/homeserver_commerce_agent_v1000_provision/);
 assert.match(status,/homeserver_commerce_agent_v1000_revoke/);
