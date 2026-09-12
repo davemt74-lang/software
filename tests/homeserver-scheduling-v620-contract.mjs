@@ -24,7 +24,8 @@ assert.match(connector, /A valid idempotency_key is required for scheduling muta
 
 assert.match(connector, /'vp3\.connector\.configure'/, 'provisioning must use the bounded HomeServer bootstrap operation');
 assert.match(connector, /catch\(Throwable \$e\)\{\s*homeserver_scheduling_v620_revoke\(\$userId\)/s, 'failed provisioning must revoke the newly issued reverse credential');
-assert.match(status, /homeserver_scheduling_v620_revoke\(\$userId\);\s*homeserver_vp3_disconnect\(\$userId\)/s, 'disconnect must revoke scheduling access before relay teardown');
+assert.match(status, /homeserver_scheduling_v620_revoke\(\$userId\);\s*homeserver_cloud_v1200_disconnect\(\$userId\)/s, 'disconnect must revoke scheduling access before safe relay rotation');
+assert.doesNotMatch(status, /homeserver_vp3_disconnect\(\$userId\)/, 'legacy destructive relay disconnect must not be reachable from the status API');
 assert.doesNotMatch(status, /REQUEST_METHOD.*GET[\s\S]*homeserver_scheduling_v620_provision/s, 'plain status reads must not provision the connector');
 assert.match(status, /\$action === 'check_pairing'[\s\S]*\$pairing\['ready'\][\s\S]*homeserver_scheduling_v620_provision/s, 'successful pairing completion should provision scheduling');
 

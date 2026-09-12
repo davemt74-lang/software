@@ -59,6 +59,7 @@ function member_navigation_menu_links(?array $user = null): array
     $profileUrl=member_navigation_profile_url($user);if($profileUrl!=='')$add($links,'profile','View Profile',$profileUrl,'identity');
     if($accountAllowed){
         $add($links,'account','My Account',url('/account.php'),'identity');
+        $add($links,'homeserver','HomeServer',url('/settings-homeserver.php'),'identity');
         $add($links,'plugins','Plugins',url('/plugins.php'),'identity');
         $add($links,'messages','Messages',url('/messages.php'),'identity');
         $add($links,'subscription','Plan & Usage',url('/subscription.php'),'identity');

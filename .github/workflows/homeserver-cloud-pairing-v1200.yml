@@ -1,0 +1,52 @@
+name: HomeServer Cloud Pairing v12.00
+
+on:
+  push:
+    branches:
+      - main
+      - phase-12-homeserver-cloud-pairing
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  cloud-pairing:
+    name: Cloud pairing · PHP ${{ matrix.php }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.1', '8.3']
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Lint pairing PHP
+        run: |
+          php -l includes/homeserver-cloud-pairing-v1200.php
+          php -l includes/homeserver-cloud-pairing-actions-v1200.php
+          php -l api/homeserver-connection-v1200.php
+          php -l api/homeserver-status.php
+          php -l settings-homeserver.php
+          php -l includes/member-navigation.php
+
+      - name: Verify pairing contract
+        run: node tests/homeserver-cloud-pairing-v1200-contract.mjs
+
+      - name: Verify browser bundle syntax
+        run: |
+          node --check homeserver-settings-v1200.js
+          node --check homeserver-settings-lifecycle-v1200.js
