@@ -44,6 +44,7 @@ jobs:
           php -l calendar-event.php
           php -l scheduling.php
           php -l scheduling-type.php
+          php -l calendar-oauth.php
           php -l includes/member-navigation.php
           php -l upgrade.php
 
