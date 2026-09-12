@@ -49,13 +49,18 @@ const releaseToolIndex = chat.indexOf("release_v105_chat_tool($query,$user,$conv
 assert.ok(calendarToolIndex > 0 && releaseToolIndex > calendarToolIndex, 'User Calendar must route before generic/release tools');
 assert.match(chat, /vp3_agent_tool_authorize_result_v400\(\$toolResult,\$user,\$query\)/);
 
-assert.match(calendarSync, /function agent_calendar_sync_conflict_v500/);
-assert.match(calendarSync, /table_exists\('user_calendar_events'\)/);
-assert.match(calendarSync, /INNER JOIN agent_scheduling_schedules s ON s\.owner_user_id=e\.owner_user_id/);
-assert.match(calendarSync, /e\.status='active'/);
-assert.match(calendarSync, /e\.start_at_utc<\? AND e\.end_at_utc>\?/);
-assert.match(calendarSync, /\$calendarEvent\['user_calendar'\]=true/);
-assert.ok(calendarSync.indexOf("table_exists('user_calendar_events')") < calendarSync.indexOf('agent_calendar_sync_schema_ready_v500($pdo)'), 'Native VP3 busy time must work even without a connected external calendar');
+const conflictStart = calendarSync.indexOf('function agent_calendar_sync_conflict_v500');
+assert.ok(conflictStart >= 0, 'Calendar sync conflict helper must exist');
+const conflictBody = calendarSync.slice(conflictStart);
+assert.match(conflictBody, /table_exists\('user_calendar_events'\)/);
+assert.match(conflictBody, /INNER JOIN agent_scheduling_schedules s ON s\.owner_user_id=e\.owner_user_id/);
+assert.match(conflictBody, /e\.status='active'/);
+assert.match(conflictBody, /e\.start_at_utc<\? AND e\.end_at_utc>\?/);
+assert.match(conflictBody, /\$calendarEvent\['user_calendar'\]=true/);
+assert.ok(
+  conflictBody.indexOf("table_exists('user_calendar_events')") < conflictBody.indexOf('if(!agent_calendar_sync_schema_ready_v500($pdo))return null;'),
+  'Native VP3 busy time must work even without a connected external calendar',
+);
 
 assert.match(calendar, /user_calendar_events_v1300/);
 assert.match(calendar, /Booking/);
