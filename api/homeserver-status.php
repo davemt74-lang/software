@@ -5,6 +5,7 @@ require_once dirname(__DIR__) . '/includes/homeserver-approvals-v028.php';
 require_once dirname(__DIR__) . '/includes/homeserver-policy-v035.php';
 require_once dirname(__DIR__) . '/includes/homeserver-scheduling-connector-v620.php';
 require_once dirname(__DIR__) . '/includes/homeserver-commerce-agent-v1000.php';
+require_once dirname(__DIR__) . '/includes/homeserver-cloud-pairing-actions-v1200.php';
 require_login();
 
 header('Content-Type: application/json; charset=utf-8');
@@ -69,10 +70,11 @@ try {
             exit;
         }
         if ($action === 'disconnect') {
+            // Keep legacy callers on the same fail-closed, re-pairable lifecycle as Settings → HomeServer.
+            homeserver_cloud_v1200_disconnect($userId);
             homeserver_commerce_agent_v1000_revoke($userId);
             homeserver_scheduling_v620_revoke($userId);
-            homeserver_vp3_disconnect($userId);
-            echo json_encode(['ok'=>true,'status'=>homeserver_vp3_status($userId,false)], JSON_UNESCAPED_SLASHES);
+            echo json_encode(['ok'=>true,'status'=>homeserver_cloud_v1200_status($userId,false)], JSON_UNESCAPED_SLASHES);
             exit;
         }
         http_response_code(400);
