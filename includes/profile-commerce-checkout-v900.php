@@ -53,13 +53,21 @@ function profile_commerce_checkout_intent_forget_v900(string $nonce): void
     $nonce=trim($nonce);if($nonce!==''&&isset($_SESSION['profile_commerce_checkout_intents'][$nonce]))unset($_SESSION['profile_commerce_checkout_intents'][$nonce]);
 }
 
-function profile_commerce_create_checkout_idempotent_v900(PDO $pdo,array $profile,array $projectedProduct,int $connectionId,string $payerEmail,string $nonce): array
+function profile_commerce_terms_digest_v900(array $product): string
+{
+    $terms=agent_commerce_product_terms_v800($product);
+    return hash('sha256',(string)json_encode($terms,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE));
+}
+
+function profile_commerce_create_checkout_idempotent_v900(PDO $pdo,array $profile,array $projectedProduct,int $connectionId,string $payerEmail,string $nonce,string $termsDigest,bool $termsAccepted): array
 {
     $owner=(int)($profile['user_id']??0);$productId=(int)($projectedProduct['id']??0);
     $product=profile_commerce_owner_product_v900($pdo,$owner,$productId);
     if(!$product||profile_commerce_visibility_v900($product)!=='public'||empty($product['is_active']))throw new RuntimeException('This product is not available.');
     $intent=profile_commerce_checkout_intent_v900($owner,$productId,$nonce);
     $payerEmail=strtolower(trim($payerEmail));if($payerEmail===''||!filter_var($payerEmail,FILTER_VALIDATE_EMAIL))throw new RuntimeException('Enter a valid email address for the receipt and fulfillment contact.');
+    if(!$termsAccepted)throw new RuntimeException('Accept the seller terms before checkout.');
+    $currentTermsDigest=profile_commerce_terms_digest_v900($product);if($termsDigest===''||!hash_equals($currentTermsDigest,$termsDigest))throw new RuntimeException('Product terms changed. Refresh the product page and review the updated terms before checkout.');
 
     $connections=profile_commerce_checkout_connections_v900($pdo,$product);
     $selected=null;
@@ -85,6 +93,8 @@ function profile_commerce_create_checkout_idempotent_v900(PDO $pdo,array $profil
                 'profile_username'=>(string)$profile['username'],
                 'profile_product_slug'=>(string)$projectedProduct['slug'],
                 'checkout_nonce_sha256'=>hash('sha256',$nonce),
+                'terms_accepted_at'=>gmdate('c'),
+                'terms_snapshot_sha256'=>$currentTermsDigest,
             ],
         ]);
         $intent['order_id']=(int)$order['id'];
