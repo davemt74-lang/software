@@ -81,6 +81,11 @@ function homeserver_cloud_v1200_remove_pairing(int $userId): void
     homeserver_cloud_v1200_relay_security();
     $row = homeserver_vp3_connection($userId);
     if (!$row) return;
+    if ((string)($row['status'] ?? '') !== 'disconnected'
+        || !empty($row['homeserver_token_enc'])
+        || trim((string)($row['pending_request_id'] ?? '')) !== '') {
+        throw new RuntimeException('Disconnect HomeServer before removing the Cloud pairing.');
+    }
     $relayToken = homeserver_vp3_decrypt((string)($row['relay_token_enc'] ?? ''));
     if ($relayToken !== '') {
         // Final removal invalidates the latest Cloud relay credential and intentionally discards its replacement.
