@@ -20,8 +20,10 @@ RewriteRule ^([A-Za-z0-9][A-Za-z0-9._-]{1,58}[A-Za-z0-9])/book/manage/([A-Fa-f0-
 RewriteRule ^([A-Za-z0-9][A-Za-z0-9._-]{1,58}[A-Za-z0-9])/book/([A-Za-z0-9-]{1,80})/?$ public-booking.php?username=$1&event=$2 [L,QSA,NC]
 RewriteRule ^([A-Za-z0-9][A-Za-z0-9._-]{1,58}[A-Za-z0-9])/book/?$ public-booking.php?username=$1 [L,QSA,NC]
 
-# Profile Commerce product detail/checkout remains subordinate to the canonical
-# /username public profile. There is intentionally no separate public store.
+# Profile Commerce stays subordinate to the canonical /username profile.
+# Customer order access uses a customer-facing order number plus opaque 256-bit
+# receipt token; the database stores only the token SHA-256.
+RewriteRule ^([A-Za-z0-9][A-Za-z0-9._-]{1,58}[A-Za-z0-9])/order/([A-Za-z0-9._-]{1,80})/([A-Fa-f0-9]{64})/?$ profile-commerce-order.php?username=$1&order=$2&receipt=$3 [L,QSA,NC]
 RewriteRule ^([A-Za-z0-9][A-Za-z0-9._-]{1,58}[A-Za-z0-9])/product/([A-Za-z0-9-]{1,80})/checkout/?$ profile-commerce-product.php?username=$1&product=$2&checkout=1 [L,QSA,NC]
 RewriteRule ^([A-Za-z0-9][A-Za-z0-9._-]{1,58}[A-Za-z0-9])/product/([A-Za-z0-9-]{1,80})/?$ profile-commerce-product.php?username=$1&product=$2 [L,QSA,NC]
 
