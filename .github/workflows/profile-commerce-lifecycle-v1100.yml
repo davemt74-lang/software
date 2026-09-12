@@ -1,0 +1,42 @@
+name: Profile Commerce Lifecycle v11.00
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          coverage: none
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Phase 11 customer lifecycle contract
+        run: node tests/profile-commerce-lifecycle-v1100-contract.mjs
+      - name: Retained Profile Commerce contract
+        run: node tests/profile-commerce-v900-contract.mjs
+      - name: Retained Commerce contract
+        run: node tests/agent-commerce-v800-contract.mjs
+      - name: Frozen Agent Commerce contract
+        run: node tests/commerce-agent-v1-contract.mjs
+      - name: Frozen payment authority contract
+        run: node tests/commerce-payment-v1-contract.mjs
+      - name: Phase 11 runtime load
+        run: php -r "require 'includes/agent-commerce-v800.php'; require 'includes/profile-agent.php'; require 'includes/profile-commerce-v900.php'; require 'includes/profile-commerce-ops-v900.php'; require 'includes/profile-commerce-receipt-v1100.php'; require 'includes/profile-commerce-lifecycle-v1100.php'; require 'includes/profile-commerce-checkout-v900.php'; echo 'PROFILE_COMMERCE_LIFECYCLE_RUNTIME=PASS'.PHP_EOL;"
+      - name: PHP syntax
+        run: |
+          php -l includes/profile-commerce-receipt-v1100.php
+          php -l includes/profile-commerce-lifecycle-v1100.php
+          php -l includes/profile-commerce-checkout-v900.php
+          php -l profile-commerce-return.php
+          php -l profile-commerce-order.php
+          php -l profile-commerce-products.php
