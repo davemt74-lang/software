@@ -1,0 +1,44 @@
+name: Profile Commerce Seller Alert v11.40
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          coverage: none
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Seller alert contract
+        run: node tests/profile-commerce-seller-alert-v1140-contract.mjs
+      - name: Retained customer refund request contract
+        run: node tests/profile-commerce-refund-requests-v1110-contract.mjs
+      - name: Retained secure file delivery contract
+        run: node tests/profile-commerce-secure-file-v1130-contract.mjs
+      - name: Retained customer lifecycle contract
+        run: node tests/profile-commerce-lifecycle-v1100-contract.mjs
+      - name: Retained Profile Commerce contract
+        run: node tests/profile-commerce-v900-contract.mjs
+      - name: Retained Commerce contract
+        run: node tests/agent-commerce-v800-contract.mjs
+      - name: Frozen Agent Commerce contract
+        run: node tests/commerce-agent-v1-contract.mjs
+      - name: Frozen payment authority contract
+        run: node tests/commerce-payment-v1-contract.mjs
+      - name: Seller alert runtime load
+        run: php -r "require 'includes/notifications.php'; require 'includes/profile-commerce-seller-alert-v1140.php'; echo 'PROFILE_COMMERCE_SELLER_ALERT_RUNTIME=PASS'.PHP_EOL;"
+      - name: PHP syntax
+        run: |
+          php -l includes/profile-commerce-seller-alert-v1140.php
+          php -l includes/profile-commerce-lifecycle-v1100.php
