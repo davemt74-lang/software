@@ -81,7 +81,10 @@ assert.match(typePage, /Calendar → New event/);
 assert.match(oauth, /'tab'=>'calendars'/);
 assert.doesNotMatch(oauth, /#calendars/);
 
-assert.match(nav, /'calendar','Calendar',url\('\/calendar\.php'\),'agent'/);
+assert.match(nav, /'calendar','My Calendar',url\('\/calendar\.php'\),'agent'/);
+const memberCalendarIndex = nav.indexOf("$add($links,'calendar','My Calendar'");
+const schedulingGateIndex = nav.indexOf("agent_scheduling_schema_ready_v430");
+assert.ok(memberCalendarIndex > 0 && schedulingGateIndex > memberCalendarIndex, 'My Calendar navigation must not depend on legacy scheduling schema readiness');
 assert.match(upgrade, /user-calendar-v1300\.php/);
 assert.match(upgrade, /user_calendar_schema_ready_v1300\(\)/);
 assert.match(upgrade, /user_calendar_ensure_schema_v1300\(\)/);
