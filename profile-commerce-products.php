@@ -10,7 +10,16 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
     if(!verify_csrf())$error='Session expired. Please try again.';
     else try{
         $action=(string)($_POST['action']??'');
-        if($action==='save_generic'){profile_commerce_save_generic_product_v900($pdo,$uid,$_POST);profile_commerce_manage_redirect_v900('Profile Commerce product saved.');}
+        if($action==='save_generic'){
+            $requested=$_POST;$safe=$_POST;$safe['profile_visibility']='hidden';
+            $pdo->beginTransaction();
+            try{
+                $saved=profile_commerce_save_generic_product_v900($pdo,$uid,$safe);
+                profile_commerce_publish_v900($pdo,$uid,(int)$saved['id'],$requested);
+                $pdo->commit();
+            }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();throw $e;}
+            profile_commerce_manage_redirect_v900('Profile Commerce product saved.');
+        }
         if($action==='publish'){profile_commerce_publish_v900($pdo,$uid,(int)($_POST['product_id']??0),$_POST);profile_commerce_manage_redirect_v900('Profile publication settings saved.');}
         throw new RuntimeException('Unknown Profile Commerce action.');
     }catch(Throwable $e){$error=$e->getMessage();}
