@@ -2,7 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__.'/profile-commerce-v900.php';
-require_once __DIR__.'/profile-commerce-lifecycle-v1100.php';
+require_once __DIR__.'/profile-commerce-receipt-v1100.php';
 
 /**
  * Browser retry/idempotency guard for Profile Commerce checkout.
