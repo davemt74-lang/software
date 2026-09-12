@@ -55,13 +55,13 @@ assert.match(api, /repair/);
 assert.match(api, /disconnect/);
 assert.match(api, /remove/);
 assert.match(api, /Retry-After: 1/);
-assert.match(api, /homeserver_cloud_v1200_disconnect[\s\S]*homeserver_commerce_agent_v1000_revoke[\s\S]*homeserver_scheduling_v620_revoke/);
-assert.match(api, /homeserver_cloud_v1200_remove_pairing[\s\S]*homeserver_commerce_agent_v1000_revoke[\s\S]*homeserver_scheduling_v620_revoke/);
+assert.match(api, /homeserver_commerce_agent_v1000_revoke[\s\S]*homeserver_scheduling_v620_revoke[\s\S]*homeserver_cloud_v1200_disconnect/);
+assert.match(api, /homeserver_commerce_agent_v1000_revoke[\s\S]*homeserver_scheduling_v620_revoke[\s\S]*homeserver_cloud_v1200_remove_pairing/);
 assert.doesNotMatch(api, /homeserver_cloud_v1200_revoke_access/);
 assert.doesNotMatch(api, /\brelay_token\b|\bclaim_token\b|\bhomeserver_token\b/);
 
 assert.match(legacyApi, /homeserver-cloud-pairing-actions-v1200\.php/);
-assert.match(legacyApi, /homeserver_cloud_v1200_disconnect\(\$userId\)/);
+assert.match(legacyApi, /homeserver_commerce_agent_v1000_revoke[\s\S]*homeserver_scheduling_v620_revoke[\s\S]*homeserver_cloud_v1200_disconnect/);
 assert.doesNotMatch(legacyApi, /homeserver_vp3_disconnect\(\$userId\)/);
 
 assert.match(page, /Settings[\s\S]*HomeServer/);
