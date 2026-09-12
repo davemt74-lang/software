@@ -7,7 +7,8 @@ $mainSidebarUseNewChatButton = !empty($mainSidebarUseNewChatButton);
 $mainSidebarHistoryRows = isset($mainSidebarHistoryRows) && is_array($mainSidebarHistoryRows) ? $mainSidebarHistoryRows : [];
 $mainSidebarMenuLinks = $mainSidebarUser ? member_navigation_menu_links($mainSidebarUser) : [];
 $mainSidebarProductsActive = $mainSidebarActive === 'profile_commerce' || basename((string)($_SERVER['SCRIPT_NAME'] ?? '')) === 'profile-commerce-products.php';
-$mainSidebarPrimaryKeys = ['chat'=>true,'contacts'=>true,'knowledge'=>true,'profile_commerce'=>true];
+$mainSidebarCalendarActive = $mainSidebarActive === 'calendar' || in_array(basename((string)($_SERVER['SCRIPT_NAME'] ?? '')), ['calendar.php','calendar-event.php'], true);
+$mainSidebarPrimaryKeys = ['chat'=>true,'contacts'=>true,'knowledge'=>true,'calendar'=>true,'profile_commerce'=>true];
 $mainSidebarFooterLinks = array_values(array_filter(
     $mainSidebarMenuLinks,
     static fn(array $link): bool => !isset($mainSidebarPrimaryKeys[(string)($link['key'] ?? '')])
@@ -55,10 +56,6 @@ $mainSidebarRoleSummary = $mainSidebarUser ? implode(' · ', user_role_labels($m
           <?php endif; ?>
         <?php endif; ?>
 
-        <?php if ($mainSidebarUser && has_permission('account.access', $mainSidebarUser)): ?>
-          <a class="chat-sidebar-nav-link <?= $mainSidebarActive === 'approvals' ? 'active' : '' ?>" href="<?= e(url('/approvals.php')) ?>"><span>✓</span><strong>Approvals</strong></a>
-        <?php endif; ?>
-
         <?php if ($mainSidebarUser && personal_capability_has_v242('personal_knowledge.access', $mainSidebarUser)): ?>
           <a class="chat-sidebar-nav-link <?= $mainSidebarActive === 'knowledge' ? 'active' : '' ?>" href="<?= e(url('/knowledge.php')) ?>"><span>◆</span><strong>Knowledge</strong></a>
         <?php endif; ?>
@@ -69,6 +66,7 @@ $mainSidebarRoleSummary = $mainSidebarUser ? implode(' · ', user_role_labels($m
 
         <?php if ($mainSidebarUser && has_permission('account.access', $mainSidebarUser)): ?>
           <a class="chat-sidebar-nav-link <?= $mainSidebarActive === 'contacts' ? 'active' : '' ?>" href="<?= e(url('/contacts.php')) ?>"><span>●</span><strong>Contacts</strong></a>
+          <a class="chat-sidebar-nav-link <?= $mainSidebarCalendarActive ? 'active' : '' ?>" href="<?= e(url('/calendar.php')) ?>"><span>▣</span><strong>My Calendar</strong></a>
         <?php endif; ?>
 
         <?php if ($mainSidebarUser && has_permission('account.access', $mainSidebarUser) && function_exists('agent_commerce_schema_ready_v800') && agent_commerce_schema_ready_v800()): ?>

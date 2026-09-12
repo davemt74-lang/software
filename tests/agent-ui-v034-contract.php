@@ -17,9 +17,10 @@ $check = static function(bool $ok, string $message) use (&$failures): void {
 $primaryStart = strpos($sidebar, 'data-agent-primary-nav');
 $primaryEnd = $primaryStart === false ? false : strpos($sidebar, '</nav>', $primaryStart);
 $primary = ($primaryStart !== false && $primaryEnd !== false) ? substr($sidebar, $primaryStart, $primaryEnd - $primaryStart) : '';
-foreach (['New Chat','Approvals','Knowledge','Memory','Contacts'] as $label) {
+foreach (['New Chat','Knowledge','Memory','Contacts','My Calendar'] as $label) {
     $check(str_contains($primary, '>' . $label . '<'), 'Primary Agent navigation is missing ' . $label . '.');
 }
+$check(!str_contains($primary, '>Approvals<'), 'Primary Agent navigation still contains the removed Approvals shortcut.');
 foreach (['Profile Agent','My Transcriptions','My Team','Plan &amp; Usage','Buy AI Tokens'] as $label) {
     $check(!str_contains($primary, $label), 'Primary Agent navigation still contains secondary item ' . $label . '.');
 }

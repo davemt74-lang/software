@@ -38,10 +38,13 @@ assert "homeserver-approvals-v028.php" in status_api
 assert "homeserver_approvals_v028_claim_and_pair" in status_api
 assert "homeserver_vp3_claim_and_pair" not in status_api
 
+# Approval federation remains fully available even though the dedicated
+# Approvals shortcut is intentionally no longer part of the primary sidebar.
 assert "data-endpoint" in page
 assert "HomeServer remains the execution authority" in page
 assert "approvals.review" in page
-assert "approvals.php" in sidebar and "<strong>Approvals</strong>" in sidebar
+assert "approvals.php" not in sidebar
+assert "<strong>Approvals</strong>" not in sidebar
 
 # Server-controlled values must be rendered as text, never interpolated HTML.
 assert ".innerHTML" not in js

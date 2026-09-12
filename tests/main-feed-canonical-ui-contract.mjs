@@ -27,9 +27,10 @@ const primaryStart = mainSidebar.indexOf('data-agent-primary-nav');
 const primaryEnd = primaryStart < 0 ? -1 : mainSidebar.indexOf('</nav>', primaryStart);
 assert.ok(primaryStart >= 0 && primaryEnd > primaryStart, 'Canonical sidebar must expose an explicit primary Agent navigation block');
 const primaryNav = mainSidebar.slice(primaryStart, primaryEnd);
-for (const label of ['New Chat', 'Approvals', 'Knowledge', 'Memory', 'Contacts']) {
+for (const label of ['New Chat', 'Knowledge', 'Memory', 'Contacts', 'My Calendar']) {
   assert.ok(primaryNav.includes(`<strong>${label}</strong>`), `Canonical Agent sidebar must expose ${label}`);
 }
+assert.ok(!primaryNav.includes('<strong>Approvals</strong>'), 'Approvals must not remain in canonical primary navigation');
 for (const secondary of ['Profile Agent', 'My Team', 'My Transcriptions', 'Plan &amp; Usage']) {
   assert.ok(!primaryNav.includes(`<strong>${secondary}</strong>`), `${secondary} must live in the user menu instead of primary Agent navigation`);
 }
@@ -53,6 +54,7 @@ assert.doesNotMatch(memberNav, /'my_team','My Team'/, 'profile/dropdown navigati
 assert.match(memberNav, /'profile_agent','Profile Agent'/, 'Profile Agent must remain available from the canonical user menu');
 assert.match(memberNav, /'transcriptions','My Transcriptions'/, 'Transcriptions must remain available from the canonical user menu');
 assert.match(memberNav, /'subscription','Plan & Usage'/, 'Plan & Usage must remain available from the canonical user menu');
+assert.match(memberNav, /'calendar','My Calendar',url\('\/calendar\.php'\)/, 'My Calendar must remain available from canonical member navigation');
 assert.match(settingsUi, /document\.body\.appendChild\(host\)/, 'Chat Settings launcher must live outside the left sidebar');
 assert.match(settingsUi, /chat-settings-presence-dot/, 'Chat Settings launcher must expose the compact status dot');
 assert.doesNotMatch(settingsUi, /sidebar\.appendChild\(host\)|const sidebar = document\.getElementById\('chatSidebar'\)/, 'Chat Settings must not append to the left sidebar');

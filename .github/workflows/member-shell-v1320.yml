@@ -1,0 +1,36 @@
+name: Member Shell v13.20
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        php: ['8.1','8.3']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: PHP syntax
+        run: |
+          php -l includes/member-navigation.php
+          php -l includes/main-sidebar.php
+          php -l includes/member-header.php
+          php -l profile-commerce-products.php
+          php -l settings-homeserver.php
+      - name: JavaScript syntax
+        run: node --check member-shell-v77.js
+      - name: Member shell contract
+        run: node tests/member-shell-v1320-contract.mjs

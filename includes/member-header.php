@@ -61,6 +61,7 @@ if (empty($GLOBALS['STONEFELLOW_MEMBER_HEADER_RUNTIME_RENDERED'])):
 ?>
 <link rel="stylesheet" data-member-header-ui href="<?= e(url('/chat-header-ui.css?v=' . $memberHeaderUiBuild)) ?>">
 <link rel="stylesheet" data-member-page-scroll href="<?= e(url('/member-page-scroll.css?v=' . $memberHeaderScrollBuild)) ?>">
+<script data-member-shell-runtime src="<?= e(url('/member-shell-v77.js?v=member-header-dropdown-20260912')) ?>" defer></script>
 <?php if ($memberHeaderCanChat): ?>
 <link rel="stylesheet" data-chat-settings-canonical href="<?= e(url('/chat-settings-v237.css?v=' . $memberHeaderSettingsBuild)) ?>">
 <script data-chat-settings-config>window.STONEFELLOW_CHAT_SETTINGS=<?= json_encode([

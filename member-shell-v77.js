@@ -1,4 +1,7 @@
 (() => {
+  if (window.__VP3_MEMBER_SHELL_V77__) return;
+  window.__VP3_MEMBER_SHELL_V77__ = true;
+
   const build='profile-social-20260909';
   const memberBase=new URL('.',document.currentScript?.src||window.location.href);
   const openSidebar = document.getElementById('openChatSidebar');
