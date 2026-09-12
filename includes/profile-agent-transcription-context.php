@@ -1,14 +1,13 @@
 <?php
 declare(strict_types=1);
+require_once __DIR__.'/profile-commerce-v900.php';
 
 /**
- * Profile Agent bridge for transcription intelligence saved to the owner's
- * canonical Agent Brain. The existing Knowledge Access policy is the single
- * sharing boundary for both My Knowledge and transcript-analysis memories.
+ * Supplemental Profile Agent context bridge.
  *
- * We intentionally expose only explicit transcript_analysis memories here,
- * never the owner's general chat archive, edit ledger, tool history, or other
- * private Agent Brain internals.
+ * Public Profile Commerce is always eligible because it is already an explicit
+ * public projection. Transcript-analysis memories remain separately gated by
+ * the canonical Knowledge Access policy and Agent Brain capability.
  */
 function profile_agent_transcript_brain_context_v255(
     PDO $pdo,
@@ -19,11 +18,23 @@ function profile_agent_transcript_brain_context_v255(
     int $conversationId = 0
 ): array {
     $ownerId = max(0, (int)($ownerUser['id'] ?? 0));
+    $commerceContext = [];
+    if ($ownerId > 0 && function_exists('profile_commerce_agent_context_v900')) {
+        try {
+            $profile = profile_for_user($pdo, $ownerId, false);
+            if ($profile && !empty($profile['is_public'])) {
+                $commerceContext = profile_commerce_agent_context_v900($pdo, $profile, $query);
+            }
+        } catch (Throwable $e) {
+            $commerceContext = [];
+        }
+    }
+
     if ($ownerId < 1
         || !personal_capability_has_v242('agent_brain.access', $ownerUser)
         || !agent_brain_schema_ready()
         || !table_exists('agent_memory_items')) {
-        return [];
+        return $commerceContext;
     }
 
     $principal = user_agent_principal_v236($viewer, $agent, true);
@@ -40,7 +51,7 @@ function profile_agent_transcript_brain_context_v255(
         $stmt->execute([$ownerId]);
         $rows = $stmt->fetchAll() ?: [];
     } catch (Throwable $e) {
-        return [];
+        return $commerceContext;
     }
 
     $context = [];
@@ -136,5 +147,5 @@ function profile_agent_transcript_brain_context_v255(
         if (count($context) >= 6) break;
     }
 
-    return $context;
+    return array_merge($commerceContext, $context);
 }

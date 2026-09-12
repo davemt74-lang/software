@@ -20,6 +20,11 @@ RewriteRule ^([A-Za-z0-9][A-Za-z0-9._-]{1,58}[A-Za-z0-9])/book/manage/([A-Fa-f0-
 RewriteRule ^([A-Za-z0-9][A-Za-z0-9._-]{1,58}[A-Za-z0-9])/book/([A-Za-z0-9-]{1,80})/?$ public-booking.php?username=$1&event=$2 [L,QSA,NC]
 RewriteRule ^([A-Za-z0-9][A-Za-z0-9._-]{1,58}[A-Za-z0-9])/book/?$ public-booking.php?username=$1 [L,QSA,NC]
 
+# Profile Commerce product detail/checkout remains subordinate to the canonical
+# /username public profile. There is intentionally no separate public store.
+RewriteRule ^([A-Za-z0-9][A-Za-z0-9._-]{1,58}[A-Za-z0-9])/product/([A-Za-z0-9-]{1,80})/checkout/?$ profile-commerce-product.php?username=$1&product=$2&checkout=1 [L,QSA,NC]
+RewriteRule ^([A-Za-z0-9][A-Za-z0-9._-]{1,58}[A-Za-z0-9])/product/([A-Za-z0-9-]{1,80})/?$ profile-commerce-product.php?username=$1&product=$2 [L,QSA,NC]
+
 # Legacy profile URLs permanently collapse to the canonical root username URL.
 RewriteRule ^stonefellow/([A-Za-z0-9._-]+)/?$ /$1 [R=301,L,NE]
 
@@ -27,7 +32,7 @@ RewriteRule ^stonefellow/([A-Za-z0-9._-]+)/?$ /$1 [R=301,L,NE]
 # always win so application, admin, API, asset and upload paths remain intact.
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
-RewriteRule ^([A-Za-z0-9][A-Za-z0-9._-]{1,58}[A-Za-z0-9])/?$ profile.php?username=$1 [L,QSA,NC]
+RewriteRule ^([A-Za-z0-9][A-Za-z0-9._-]{1,58}[A-Za-z0-9])/?$ profile-v900.php?username=$1 [L,QSA,NC]
 </IfModule>
 <FilesMatch "^(?:config\.php|config-example\.php|schema\.sql|upgrade-.*\.sql|\.env.*)$">
 Require all denied
