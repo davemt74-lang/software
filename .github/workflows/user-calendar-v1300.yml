@@ -38,6 +38,7 @@ jobs:
         run: |
           php -l includes/user-calendar-v1300.php
           php -l includes/user-calendar-agent-v1300.php
+          php -l includes/agent-calendar-sync-v500.php
           php -l api/user-calendar-v1300.php
           php -l api/chat-v236.php
           php -l calendar.php
