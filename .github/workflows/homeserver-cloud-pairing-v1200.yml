@@ -39,6 +39,7 @@ jobs:
           php -l includes/homeserver-cloud-pairing-v1200.php
           php -l includes/homeserver-cloud-pairing-actions-v1200.php
           php -l api/homeserver-connection-v1200.php
+          php -l api/homeserver-status.php
           php -l settings-homeserver.php
           php -l includes/member-navigation.php
 
