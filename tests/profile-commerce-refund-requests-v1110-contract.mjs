@@ -22,6 +22,8 @@ assert.match(lifecycle,/FOR UPDATE/,'customer and seller request transitions mus
 assert.doesNotMatch(lifecycle,/api\.stripe\.com|connect\.square|api-m\.paypal/,'customer request lifecycle must not implement payment providers');
 
 assert.match(sellerOps,/profile_commerce_owner_approve_refund_request_v1100/);
+assert.match(sellerOps,/GET_LOCK\(\?,10\)/,'seller approvals must serialize concurrent review attempts per canonical order');
+assert.match(sellerOps,/RELEASE_LOCK\(\?\)/,'seller approval lock must always be released');
 assert.match(sellerOps,/profile_commerce_refund_order_v900/,'seller approval must reuse the audited Phase 8 refund engine');
 assert.match(sellerOps,/profile_commerce_owner_refund_request_set_v1100/,'provider submission must resolve the pending customer request state');
 assert.match(sellerOps,/profile_commerce_owner_decline_refund_request_v1100/,'seller may explicitly decline without moving money');
