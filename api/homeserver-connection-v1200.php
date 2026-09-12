@@ -82,8 +82,11 @@ try {
         homeserver_commerce_agent_v1000_revoke($userId);
         homeserver_scheduling_v620_revoke($userId);
     } elseif ($action === 'remove') {
-        // Final removal rotates once more before deleting the local record. The replacement is intentionally discarded.
+        // Final removal is only legal after disconnect. Rotate once more, delete the connection,
+        // and remove dependent Cloud connector grants for the same authenticated user.
         homeserver_cloud_v1200_remove_pairing($userId);
+        homeserver_commerce_agent_v1000_revoke($userId);
+        homeserver_scheduling_v620_revoke($userId);
     } else {
         http_response_code(400);
         echo json_encode(['ok'=>false,'error'=>'Unsupported HomeServer action.']);
