@@ -1,0 +1,33 @@
+VP3 Cloud HomeServer Remote Contract v12.00
+Verified: 2026-09-12
+HomeServer repository: davemt74-lang/otro
+HomeServer main: 2ec7c46521857d19d90395437dd56c8cc8108c6f
+
+Transport
+- HomeServer owns the outbound persistent connection to the relay.
+- VP3 Cloud uses ordinary HTTPS relay requests.
+- Cloud does not require an inbound HomeServer port or browser-held HomeServer credentials.
+
+Relay claim
+- POST /v1/claim with claim_code.
+- Successful claim returns device_id and relay_token.
+- Relay session inspection: GET /v1/session with relay bearer.
+- Relay credential rotation/revocation path: POST /v1/session/rotate with relay bearer.
+- HomeServer relay trust model: trusted-relay.
+
+App pairing
+- Pairing protocol: claim-v1.
+- Remote operation pair.request accepts app_key, app_name and permissions.
+- pair.request returns request_id, claim_token, code, expires_at and permissions.
+- The user approves or rejects locally in HomeServer.
+- Remote operation pair.status accepts request_id and claim_token.
+- Pending, paired, denied and expired are terminal/state values used by the HomeServer implementation.
+- Once paired, the claim_token is the scoped VP3 application bearer for HomeServer operations.
+
+Capabilities
+- Remote operation capabilities returns the HomeServer capability projection, including service/version/features where supported.
+- HomeServer remains canonical for private knowledge, tools, skills, models, agents, credentials and private/personal context.
+
+Cloud storage rule
+- relay_token and paired application bearer are encrypted server-side only.
+- No relay or HomeServer bearer is projected to browser HTML, JavaScript, query parameters, analytics or browser storage.
