@@ -32,11 +32,6 @@ function homeserver_cloud_v1200_check_pairing_safe(int $userId): array
         homeserver_vp3_status($userId, true);
         return $result;
     }
-
-    if ($hadApprovedToken && in_array($pairState, ['denied','expired'], true)) {
-        $pdo = db();
-        if (!$pdo throw new RuntimeException('Database connection is unavailable.'));
-    }
     return homeserver_cloud_v1200_restore_previous_pairing($userId, $result, $hadApprovedToken, $pairState);
 }
 
