@@ -143,6 +143,9 @@ function profile_commerce_publish_v900(PDO $pdo,int $ownerUserId,int $productId,
     $product=profile_commerce_owner_product_v900($pdo,$ownerUserId,$productId);if(!$product)throw new RuntimeException('Commerce product not found.');
     $meta=profile_commerce_metadata_v900($product);
     $visibility=strtolower(trim((string)($input['profile_visibility']??'hidden')));if(!in_array($visibility,['public','hidden'],true))$visibility='hidden';
+    $bindingType=trim((string)($product['binding_type']??''));
+    if($visibility==='public'&&$bindingType===''&&(string)($product['payment_mode']??'')!=='full')throw new RuntimeException('Generic Profile Commerce products must use full payment.');
+    if($visibility==='public'&&(string)($product['fulfillment_type']??'')==='physical')throw new RuntimeException('Shipped physical products cannot be published until the shipping-address fulfillment adapter is installed.');
     $slug=profile_commerce_slug_v900((string)($input['profile_slug']??profile_commerce_public_slug_v900($product)));if($slug==='')throw new RuntimeException('Choose a valid profile product slug.');
     $check=$pdo->prepare('SELECT id,metadata_json,product_key FROM agent_commerce_products_v800 WHERE owner_user_id=? AND id<>? AND is_active=1');$check->execute([$ownerUserId,$productId]);
     foreach($check->fetchAll()?:[] as $other)if(profile_commerce_public_slug_v900($other)===$slug)throw new RuntimeException('That profile product URL is already in use.');
@@ -161,7 +164,8 @@ function profile_commerce_save_generic_product_v900(PDO $pdo,int $ownerUserId,ar
     $productType=strtolower(trim((string)($input['product_type']??'service')));if(!in_array($productType,['service','digital','membership','event','gift','physical','other'],true))$productType='other';
     $fulfillmentType=strtolower(trim((string)($input['fulfillment_type']??'other')));if(!in_array($fulfillmentType,['physical','local_pickup','digital','virtual','event','membership','gift','other'],true))$fulfillmentType='other';
     $terms=agent_commerce_validate_terms_v800(['payment_mode'=>(string)($input['payment_mode']??'full'),'price_cents'=>agent_commerce_decimal_to_minor_v800((string)($input['price']??'0')),'deposit_cents'=>agent_commerce_decimal_to_minor_v800((string)($input['deposit']??'0')),'currency'=>(string)($input['currency']??'usd'),'hold_minutes'=>(int)($input['hold_minutes']??30),'refund_before_hours'=>(int)($input['refund_before_hours']??24),'cancellation_fee_cents'=>agent_commerce_decimal_to_minor_v800((string)($input['cancellation_fee']??'0')),'cancellation_policy'=>(string)($input['cancellation_policy']??'')]);
-    if($terms['payment_mode']==='free')throw new RuntimeException('Profile Commerce products currently require a paid price or deposit.');
+    if($terms['payment_mode']!=='full')throw new RuntimeException('Generic Profile Commerce products must use full payment.');
+    $terms['deposit_cents']=0;
     $providerMode=strtolower(trim((string)($input['provider_mode']??'guest_choice')));if(!in_array($providerMode,['guest_choice','fixed'],true))$providerMode='guest_choice';
     $fixed=max(0,(int)($input['fixed_connection_id']??0))?:null;
     if($providerMode==='fixed'){$connection=agent_commerce_connection_v800($pdo,(int)$fixed,$ownerUserId);if(!$connection||(string)$connection['status']!=='connected')throw new RuntimeException('Choose a connected fixed provider.');}
@@ -194,16 +198,4 @@ function profile_commerce_checkout_connections_v900(PDO $pdo,array $productRow):
     $owner=(int)$productRow['owner_user_id'];$mode=(string)$productRow['provider_mode'];
     if($mode==='fixed'){$c=agent_commerce_connection_v800($pdo,(int)($productRow['fixed_connection_id']??0),$owner);return $c&&(string)$c['status']==='connected'?[$c]:[];}
     return agent_commerce_connections_v800($pdo,$owner,true);
-}
-
-function profile_commerce_create_checkout_v900(PDO $pdo,array $profile,array $projectedProduct,int $connectionId,string $payerEmail): array
-{
-    $owner=(int)$profile['user_id'];$product=profile_commerce_owner_product_v900($pdo,$owner,(int)$projectedProduct['id']);if(!$product||profile_commerce_visibility_v900($product)!=='public'||empty($product['is_active']))throw new RuntimeException('This product is not available.');
-    $payerEmail=strtolower(trim($payerEmail));if($payerEmail!==''&&!filter_var($payerEmail,FILTER_VALIDATE_EMAIL))throw new RuntimeException('Enter a valid email address for the receipt.');
-    $connections=profile_commerce_checkout_connections_v900($pdo,$product);$selected=null;foreach($connections as $connection)if((int)$connection['id']===$connectionId){$selected=$connection;break;}if(!$selected)throw new RuntimeException('Choose an available payment provider.');
-    $order=agent_commerce_create_order_v800($pdo,$product,['connection_id'=>(int)$selected['id'],'payer_email'=>$payerEmail,'metadata'=>['source'=>'profile_commerce_v900','profile_username'=>(string)$profile['username'],'profile_product_slug'=>$projectedProduct['slug']]]);
-    $return=agent_commerce_absolute_url_v800('/'.rawurlencode((string)$profile['username']).'?commerce=return&order='.(int)$order['id']);
-    $cancel=agent_commerce_absolute_url_v800('/'.rawurlencode((string)$profile['username']).'/product/'.rawurlencode((string)$projectedProduct['slug']).'?commerce=cancelled');
-    $attempt=agent_commerce_create_checkout_v800($pdo,$order,(int)$selected['id'],$return,$cancel);
-    return ['order'=>$order,'attempt'=>$attempt,'checkout_url'=>(string)($attempt['checkout_url']??'')];
 }
