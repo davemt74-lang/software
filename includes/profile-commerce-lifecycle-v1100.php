@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require_once __DIR__.'/profile-commerce-ops-v900.php';
 require_once __DIR__.'/profile-commerce-receipt-v1100.php';
+require_once __DIR__.'/profile-commerce-seller-alert-v1140.php';
 
 /** VP3 Profile Commerce v11.00 — customer-safe order lifecycle projection. */
 const VP3_PROFILE_COMMERCE_LIFECYCLE_V1100='profile-commerce-lifecycle-v1100-20260912';
@@ -53,6 +54,7 @@ function profile_commerce_customer_refund_request_create_v1100(PDO $pdo,int $own
         agent_commerce_audit_v800($pdo,(int)$locked['id'],$ownerUserId,(int)($locked['workspace_owner_user_id']??0)?:null,'customer',null,null,'customer_refund_requested',(string)$locked['payment_status'],(string)$locked['payment_status'],$remaining,['request_id'=>$request['request_id']]);
         $pdo->commit();
     }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();throw $e;}
+    profile_commerce_seller_refund_alert_v1140($locked,$request);
     return profile_commerce_customer_order_v1100($pdo,$ownerUserId,$orderNumber,$token)?:throw new RuntimeException('Order could not be reloaded.');
 }
 
