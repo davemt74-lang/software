@@ -328,5 +328,15 @@ function agent_calendar_sync_maybe_schedule_v500(PDO $pdo,int $scheduleId): void
 }
 function agent_calendar_sync_conflict_v500(PDO $pdo,int $scheduleId,string $startUtc,string $endUtc): ?array
 {
-    if($scheduleId<1||!agent_calendar_sync_schema_ready_v500($pdo))return null;$stmt=$pdo->prepare("SELECT bb.id,bb.connection_id,bb.start_at_utc,bb.end_at_utc,c.provider,c.account_email FROM agent_calendar_busy_blocks bb INNER JOIN agent_calendar_connections c ON c.id=bb.connection_id INNER JOIN agent_calendar_schedule_connections sc ON sc.connection_id=c.id WHERE sc.schedule_id=? AND sc.blocks_availability=1 AND c.status IN ('connected','error') AND c.sync_enabled=1 AND bb.start_at_utc<? AND bb.end_at_utc>? ORDER BY bb.start_at_utc LIMIT 1");$stmt->execute([$scheduleId,$endUtc,$startUtc]);return $stmt->fetch()?:null;
+    if($scheduleId<1)return null;
+    if(table_exists('user_calendar_events')){
+        $native=$pdo->prepare("SELECT e.id,e.start_at_utc,e.end_at_utc,e.status FROM user_calendar_events e INNER JOIN agent_scheduling_schedules s ON s.owner_user_id=e.owner_user_id WHERE s.id=? AND e.status='active' AND e.start_at_utc<? AND e.end_at_utc>? ORDER BY e.start_at_utc,e.id LIMIT 1");
+        $native->execute([$scheduleId,$endUtc,$startUtc]);
+        $calendarEvent=$native->fetch();
+        if($calendarEvent){$calendarEvent['user_calendar']=true;return $calendarEvent;}
+    }
+    if(!agent_calendar_sync_schema_ready_v500($pdo))return null;
+    $stmt=$pdo->prepare("SELECT bb.id,bb.connection_id,bb.start_at_utc,bb.end_at_utc,c.provider,c.account_email FROM agent_calendar_busy_blocks bb INNER JOIN agent_calendar_connections c ON c.id=bb.connection_id INNER JOIN agent_calendar_schedule_connections sc ON sc.connection_id=c.id WHERE sc.schedule_id=? AND sc.blocks_availability=1 AND c.status IN ('connected','error') AND c.sync_enabled=1 AND bb.start_at_utc<? AND bb.end_at_utc>? ORDER BY bb.start_at_utc LIMIT 1");
+    $stmt->execute([$scheduleId,$endUtc,$startUtc]);
+    return $stmt->fetch()?:null;
 }
