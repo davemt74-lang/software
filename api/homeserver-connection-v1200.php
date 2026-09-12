@@ -2,7 +2,7 @@
 declare(strict_types=1);
 
 require_once dirname(__DIR__) . '/includes/bootstrap.php';
-require_once dirname(__DIR__) . '/includes/homeserver-cloud-pairing-v1200.php';
+require_once dirname(__DIR__) . '/includes/homeserver-cloud-pairing-actions-v1200.php';
 require_once dirname(__DIR__) . '/includes/homeserver-scheduling-connector-v620.php';
 require_once dirname(__DIR__) . '/includes/homeserver-commerce-agent-v1000.php';
 
@@ -61,7 +61,7 @@ try {
             exit;
         }
         $_SESSION['vp3_homeserver_pair_poll_at'] = $now;
-        $pairing = homeserver_cloud_v1200_check_pairing($userId);
+        $pairing = homeserver_cloud_v1200_check_pairing_safe($userId);
         if (!empty($pairing['ready'])) {
             try { homeserver_scheduling_v620_provision($userId, false); } catch (Throwable $ignored) {}
             try { homeserver_commerce_agent_v1000_provision($userId, false); } catch (Throwable $ignored) {}
