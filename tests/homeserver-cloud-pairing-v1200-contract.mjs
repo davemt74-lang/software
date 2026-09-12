@@ -5,6 +5,7 @@ const read = path => fs.readFileSync(new URL(`../${path}`, import.meta.url), 'ut
 const service = read('includes/homeserver-cloud-pairing-v1200.php');
 const actions = read('includes/homeserver-cloud-pairing-actions-v1200.php');
 const api = read('api/homeserver-connection-v1200.php');
+const legacyApi = read('api/homeserver-status.php');
 const page = read('settings-homeserver.php');
 const js = read('homeserver-settings-v1200.js');
 const lifecycle = read('homeserver-settings-lifecycle-v1200.js');
@@ -58,6 +59,10 @@ assert.match(api, /homeserver_cloud_v1200_disconnect[\s\S]*homeserver_commerce_a
 assert.match(api, /homeserver_cloud_v1200_remove_pairing[\s\S]*homeserver_commerce_agent_v1000_revoke[\s\S]*homeserver_scheduling_v620_revoke/);
 assert.doesNotMatch(api, /homeserver_cloud_v1200_revoke_access/);
 assert.doesNotMatch(api, /\brelay_token\b|\bclaim_token\b|\bhomeserver_token\b/);
+
+assert.match(legacyApi, /homeserver-cloud-pairing-actions-v1200\.php/);
+assert.match(legacyApi, /homeserver_cloud_v1200_disconnect\(\$userId\)/);
+assert.doesNotMatch(legacyApi, /homeserver_vp3_disconnect\(\$userId\)/);
 
 assert.match(page, /Settings[\s\S]*HomeServer/);
 assert.match(page, /Connect HomeServer/);
