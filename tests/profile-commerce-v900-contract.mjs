@@ -7,6 +7,7 @@ const checkout=read('includes/profile-commerce-checkout-v900.php');
 const ops=read('includes/profile-commerce-ops-v900.php');
 const wrapper=read('profile-v900.php');
 const product=read('profile-commerce-product.php');
+const paymentReturn=read('profile-commerce-return.php');
 const manage=read('profile-commerce-products.php');
 const routes=read('.htaccess');
 const transcript=read('includes/profile-agent-transcription-context.php');
@@ -30,8 +31,18 @@ assert.match(checkout,/\$payerEmail===['"]['"]\|\|!filter_var/,'generic checkout
 assert.match(checkout,/\$intent\['order_id'\]=\(int\)\$order\['id'\]/,'canonical order must be bound to the intent before provider checkout');
 assert.match(checkout,/agent_commerce_order_v800\(\$pdo,\$storedOrder\)/,'browser retries must resume the existing canonical order');
 assert.match(checkout,/agent_commerce_order_items_v800/,'resumed orders must be verified against the requested product');
+assert.match(checkout,/profile-commerce-return\.php\?username=/,'provider returns must use the verified internal callback');
+assert.match(checkout,/&intent=/,'provider return callback must carry the session-bound checkout intent');
 assert.match(checkout,/agent_commerce_create_checkout_v800/,'idempotent wrapper must still delegate provider execution to Phase 8');
 assert.doesNotMatch(checkout,/api\.stripe\.com|connect\.square|api-m\.paypal/,'retry layer must not implement provider adapters');
+
+assert.match(paymentReturn,/profile_commerce_order_for_owner_v900/,'provider return must scope the canonical order to the profile owner');
+assert.match(paymentReturn,/profile_commerce_checkout_intent_v900/,'provider return must validate the original checkout intent');
+assert.match(paymentReturn,/\$intent\['order_id'\].*\$orderId/s,'provider return must bind the intent to the exact canonical order');
+assert.match(paymentReturn,/agent_commerce_return_verify_v800/,'provider return must delegate Stripe, Square and PayPal verification/capture to Phase 8');
+assert.match(paymentReturn,/profile_commerce_checkout_intent_forget_v900/,'verified returns must retire the checkout intent');
+assert.match(paymentReturn,/profile_commerce_return_notices/,'return state must be carried to the profile as a short-lived server session notice');
+assert.doesNotMatch(paymentReturn,/api\.stripe\.com|connect\.square|api-m\.paypal/,'return callback must not implement provider adapters');
 
 assert.match(ops,/profile_commerce_order_is_profile_v900/,'order operations must be limited to Profile Commerce lineage');
 assert.match(ops,/\(int\)\(\$order\['owner_user_id'\]/,'order operations must be owner scoped');
@@ -48,7 +59,8 @@ assert.match(routes,/\/product\//,'product detail must remain subordinate to /us
 assert.doesNotMatch(routes,/RewriteRule[^\n]*\/store/i,'no separate public storefront route is allowed');
 assert.match(wrapper,/require __DIR__.'\/profile\.php'/,'v9 must compose the canonical profile renderer rather than fork it');
 assert.match(wrapper,/profile-commerce-grid-v900/);
-assert.match(wrapper,/verifying the provider result/i,'return UI must not claim payment succeeded before verification');
+assert.match(wrapper,/profile_commerce_return_notices/,'profile return messaging must come from server-verified session state');
+assert.doesNotMatch(wrapper,/agent_commerce_return_verify_v800/,'profile renderer itself must not perform provider network verification');
 
 assert.match(product,/profile_commerce_token_valid_v900/,'public checkout must validate its session token');
 assert.match(product,/checkout_nonce/,'public checkout form must carry the retry/idempotency nonce');
