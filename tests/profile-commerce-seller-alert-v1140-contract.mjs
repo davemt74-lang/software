@@ -16,7 +16,7 @@ assert.doesNotMatch(alert,/INSERT INTO notifications|UPDATE notifications/,'sell
 
 assert.match(lifecycle,/require_once __DIR__\.'\/profile-commerce-seller-alert-v1140\.php'/,'customer lifecycle must load the Phase 11.4 seller alert helper');
 assert.match(lifecycle,/if\(\$existing&&\$existing\['status'\]==='pending'\)\{\$pdo->commit\(\);return/s,'pending retries must return before seller alert emission');
-assert.match(lifecycle,/\$pdo->commit\(\);\s*\}catch\(Throwable \$e\)\{[^}]*\}[^\n]*throw \$e;\}\s*profile_commerce_seller_refund_alert_v1140\(\$locked,\$request\)/s,'seller alert must fire only after the canonical refund-request transaction commits');
+assert.match(lifecycle,/\$pdo->commit\(\);\s*\}catch\(Throwable \$e\)\{.*?throw \$e;\}\s*profile_commerce_seller_refund_alert_v1140\(\$locked,\$request\)/s,'seller alert must fire only after the canonical refund-request transaction commits');
 assert.equal((lifecycle.match(/profile_commerce_seller_refund_alert_v1140\(\$locked,\$request\)/g)||[]).length,1,'customer lifecycle must have exactly one seller-alert emission point');
 
 assert.match(notifications,/source_type=\? AND source_id=\? AND type=\?/,'native notification carrier must deduplicate by source identity and notification type');
