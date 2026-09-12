@@ -16,12 +16,18 @@ function profile_commerce_refund_requests_for_owner_v1100(PDO $pdo,int $ownerUse
 
 function profile_commerce_owner_approve_refund_request_v1100(PDO $pdo,int $ownerUserId,int $orderId,array $actor): array
 {
-    $order=profile_commerce_order_for_owner_v900($pdo,$ownerUserId,$orderId);if(!$order)throw new RuntimeException('Profile Commerce order not found.');
-    $request=profile_commerce_customer_refund_request_v1100($order);if(!$request||$request['status']!=='pending')throw new RuntimeException('There is no pending customer refund request.');
-    $remaining=max(0,(int)$order['amount_paid_cents']-(int)$order['amount_refunded_cents']);$amount=min($remaining,max(0,(int)$request['requested_amount_cents']));if($amount<1)throw new RuntimeException('This order has no refundable balance.');
-    $reason=trim((string)$request['reason']);if($reason==='')$reason='Customer refund request';
-    profile_commerce_refund_order_v900($pdo,$ownerUserId,$orderId,$amount,mb_strimwidth('Customer request: '.$reason,0,500,''),$actor,true);
-    return profile_commerce_owner_refund_request_set_v1100($pdo,$ownerUserId,$orderId,'seller_refund_submitted');
+    if($ownerUserId<1||$orderId<1)throw new RuntimeException('Profile Commerce order not found.');
+    $lockName='vp3-profile-refund-request:'.substr(hash('sha256',$ownerUserId.'|'.$orderId),0,48);$lock=$pdo->prepare('SELECT GET_LOCK(?,10)');$lock->execute([$lockName]);if((int)$lock->fetchColumn()!==1)throw new RuntimeException('This refund request is already being reviewed.');
+    try{
+        $order=profile_commerce_order_for_owner_v900($pdo,$ownerUserId,$orderId);if(!$order)throw new RuntimeException('Profile Commerce order not found.');
+        $request=profile_commerce_customer_refund_request_v1100($order);if(!$request||$request['status']!=='pending')throw new RuntimeException('There is no pending customer refund request.');
+        $remaining=max(0,(int)$order['amount_paid_cents']-(int)$order['amount_refunded_cents']);$amount=min($remaining,max(0,(int)$request['requested_amount_cents']));if($amount<1)throw new RuntimeException('This order has no refundable balance.');
+        $reason=trim((string)$request['reason']);if($reason==='')$reason='Customer refund request';
+        profile_commerce_refund_order_v900($pdo,$ownerUserId,$orderId,$amount,mb_strimwidth('Customer request: '.$reason,0,500,''),$actor,true);
+        return profile_commerce_owner_refund_request_set_v1100($pdo,$ownerUserId,$orderId,'seller_refund_submitted');
+    }finally{
+        try{$release=$pdo->prepare('SELECT RELEASE_LOCK(?)');$release->execute([$lockName]);}catch(Throwable $ignored){}
+    }
 }
 
 function profile_commerce_owner_decline_refund_request_v1100(PDO $pdo,int $ownerUserId,int $orderId): array
