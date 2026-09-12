@@ -6,6 +6,7 @@ const service = read('includes/user-calendar-v1300.php');
 const agent = read('includes/user-calendar-agent-v1300.php');
 const api = read('api/user-calendar-v1300.php');
 const chat = read('api/chat-v236.php');
+const calendarSync = read('includes/agent-calendar-sync-v500.php');
 const calendar = read('calendar.php');
 const editor = read('calendar-event.php');
 const scheduling = read('scheduling.php');
@@ -24,6 +25,7 @@ assert.match(service, /source === 'automation'.*sourceReference/s);
 assert.match(service, /SELECT \* FROM user_calendar_events WHERE owner_user_id=\? AND source='automation' AND source_reference=\?/);
 assert.match(service, /owner_user_id=\?/);
 assert.match(service, /created_by_agent_id/);
+assert.match(service, /built-in VP3 system Agent has no user_agents row/);
 
 assert.match(api, /current_user\(\)/);
 assert.match(api, /has_permission\('account\.access'/);
@@ -36,6 +38,8 @@ assert.match(agent, /Confirm\?/);
 assert.match(agent, /user_calendar_agent_confirmation_v1300/);
 assert.match(agent, /agent_scheduling_tools_date_v460/);
 assert.match(agent, /agent_scheduling_tools_time_request_v460/);
+assert.match(agent, /\$source='agent'/);
+assert.doesNotMatch(agent, /\$source=\$agentId>0\?'agent':'user'/);
 assert.match(agent, /calendar\.event\.prepare/);
 assert.match(agent, /calendar\.event\.create/);
 
@@ -44,6 +48,14 @@ const calendarToolIndex = chat.indexOf('user_calendar_agent_query_v1300($query,$
 const releaseToolIndex = chat.indexOf("release_v105_chat_tool($query,$user,$conversationId)");
 assert.ok(calendarToolIndex > 0 && releaseToolIndex > calendarToolIndex, 'User Calendar must route before generic/release tools');
 assert.match(chat, /vp3_agent_tool_authorize_result_v400\(\$toolResult,\$user,\$query\)/);
+
+assert.match(calendarSync, /function agent_calendar_sync_conflict_v500/);
+assert.match(calendarSync, /table_exists\('user_calendar_events'\)/);
+assert.match(calendarSync, /INNER JOIN agent_scheduling_schedules s ON s\.owner_user_id=e\.owner_user_id/);
+assert.match(calendarSync, /e\.status='active'/);
+assert.match(calendarSync, /e\.start_at_utc<\? AND e\.end_at_utc>\?/);
+assert.match(calendarSync, /\$calendarEvent\['user_calendar'\]=true/);
+assert.ok(calendarSync.indexOf("table_exists('user_calendar_events')") < calendarSync.indexOf('agent_calendar_sync_schema_ready_v500($pdo)'), 'Native VP3 busy time must work even without a connected external calendar');
 
 assert.match(calendar, /user_calendar_events_v1300/);
 assert.match(calendar, /Booking/);
@@ -68,5 +80,7 @@ assert.match(nav, /'calendar','Calendar',url\('\/calendar\.php'\),'agent'/);
 assert.match(upgrade, /user-calendar-v1300\.php/);
 assert.match(upgrade, /user_calendar_schema_ready_v1300\(\)/);
 assert.match(upgrade, /user_calendar_ensure_schema_v1300\(\)/);
+assert.match(upgrade, /HomeServer Agent continuity/);
+assert.match(upgrade, /Existing accounts, package assignments, team memberships, token balances, music content/);
 
 console.log('User Calendar v13.00 contract OK');
