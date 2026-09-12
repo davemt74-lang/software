@@ -46,4 +46,6 @@ jobs:
         run: node tests/homeserver-cloud-pairing-v1200-contract.mjs
 
       - name: Verify browser bundle syntax
-        run: node --check homeserver-settings-v1200.js
+        run: |
+          node --check homeserver-settings-v1200.js
+          node --check homeserver-settings-lifecycle-v1200.js
