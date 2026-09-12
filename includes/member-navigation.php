@@ -69,7 +69,10 @@ function member_navigation_menu_links(?array $user = null): array
     if(member_navigation_entitled($user,'profile_agent.access',personal_capability_has_v242('profile_agent.access',$user)))$add($links,'profile_agent','Profile Agent',url('/profile-agent.php'),'identity');
     if($accountAllowed&&function_exists('agent_scheduling_schema_ready_v430')&&agent_scheduling_schema_ready_v430())$add($links,'scheduling','Scheduling',url('/scheduling.php'),'agent');
     if($accountAllowed&&function_exists('agent_appointment_lifecycle_schema_ready_v700')&&agent_appointment_lifecycle_schema_ready_v700())$add($links,'appointment_lifecycle','Appointment Lifecycle',url('/appointment-lifecycle.php'),'agent');
-    if($accountAllowed&&function_exists('agent_commerce_schema_ready_v800')&&agent_commerce_schema_ready_v800())$add($links,'commerce','Commerce',url('/commerce.php'),'agent');
+    if($accountAllowed&&function_exists('agent_commerce_schema_ready_v800')&&agent_commerce_schema_ready_v800()){
+        $add($links,'commerce','Commerce',url('/commerce.php'),'agent');
+        $add($links,'profile_commerce','Profile Commerce',url('/profile-commerce-products.php'),'agent');
+    }
     if(member_navigation_entitled($user,'knowledge.access',personal_capability_has_v242('personal_knowledge.access',$user)))$add($links,'knowledge','My Knowledge',url('/knowledge.php'),'identity');
     if(member_navigation_entitled($user,'transcription.access',member_navigation_package_permission($user,'artist_listening.access',has_permission('artist_listening.access',$user))))$add($links,'transcriptions','My Transcriptions',url('/artist-listening.php'),'identity');
     if(member_navigation_entitled($user,'voice.access',personal_capability_has_v242('voice_profile.access',$user)))$add($links,'voice_profile','Voice Profile',url('/voice-profile.php'),'agent');
