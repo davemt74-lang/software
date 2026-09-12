@@ -4,6 +4,7 @@ import fs from 'node:fs';
 const read=(p)=>fs.readFileSync(new URL(`../${p}`,import.meta.url),'utf8');
 const layer=read('includes/profile-commerce-v900.php');
 const checkout=read('includes/profile-commerce-checkout-v900.php');
+const ops=read('includes/profile-commerce-ops-v900.php');
 const wrapper=read('profile-v900.php');
 const product=read('profile-commerce-product.php');
 const manage=read('profile-commerce-products.php');
@@ -25,11 +26,22 @@ assert.match(layer,/profile_commerce_token_valid_v900/);
 
 assert.match(checkout,/profile_commerce_checkout_nonce_v900/,'checkout must create a session-scoped idempotency nonce');
 assert.match(checkout,/profile_commerce_checkout_intent_v900/,'checkout nonce must be owner/product bound');
+assert.match(checkout,/\$payerEmail===['"]['"]\|\|!filter_var/,'generic checkout must require an email fulfillment contact');
 assert.match(checkout,/\$intent\['order_id'\]=\(int\)\$order\['id'\]/,'canonical order must be bound to the intent before provider checkout');
 assert.match(checkout,/agent_commerce_order_v800\(\$pdo,\$storedOrder\)/,'browser retries must resume the existing canonical order');
 assert.match(checkout,/agent_commerce_order_items_v800/,'resumed orders must be verified against the requested product');
 assert.match(checkout,/agent_commerce_create_checkout_v800/,'idempotent wrapper must still delegate provider execution to Phase 8');
 assert.doesNotMatch(checkout,/api\.stripe\.com|connect\.square|api-m\.paypal/,'retry layer must not implement provider adapters');
+
+assert.match(ops,/profile_commerce_order_is_profile_v900/,'order operations must be limited to Profile Commerce lineage');
+assert.match(ops,/\(int\)\(\$order\['owner_user_id'\]/,'order operations must be owner scoped');
+assert.match(ops,/\['processing','fulfilled'\]/,'manual fulfillment must use bounded states');
+assert.match(ops,/\['paid','partially_paid'\]/,'fulfillment must require paid or deposit-paid state');
+assert.match(ops,/fulfillment_type.*appointment/s,'appointment fulfillment must remain outside generic Profile Commerce operations');
+assert.match(ops,/agent_commerce_audit_v800/,'manual fulfillment must enter the canonical Commerce audit ledger');
+assert.match(ops,/agent_commerce_refund_v800/,'generic refunds must reuse the Phase 8 refund engine');
+assert.match(ops,/\$approved\)/,'generic refunds must preserve explicit approval');
+assert.doesNotMatch(ops,/api\.stripe\.com|connect\.square|api-m\.paypal/,'order operations must not implement provider adapters');
 
 assert.match(routes,/profile-v900\.php\?username=\$1/,'canonical /username route must compose Profile Commerce');
 assert.match(routes,/\/product\//,'product detail must remain subordinate to /username');
@@ -43,12 +55,16 @@ assert.match(product,/checkout_nonce/,'public checkout form must carry the retry
 assert.match(product,/profile_commerce_checkout_intent_v900/,'public checkout must validate the nonce before any action');
 assert.match(product,/profile_commerce_checkout_connections_v900/,'checkout must use canonical connected providers');
 assert.match(product,/profile_commerce_create_checkout_idempotent_v900/,'product surface must delegate to the idempotent v9 bridge');
+assert.match(product,/payer_email[^>]*required/,'public checkout must collect the fulfillment contact before charging');
 assert.doesNotMatch(product,/api\.stripe\.com|connect\.square|api-m\.paypal/,'public product page must not call payment providers directly');
 
 assert.match(manage,/require_permission\(['"]account\.access['"]\)/);
 assert.match(manage,/verify_csrf\(\)/);
 assert.match(manage,/profile_commerce_publish_v900/);
 assert.match(manage,/profile_commerce_save_generic_product_v900/);
+assert.match(manage,/profile_commerce_set_fulfillment_v900/,'owner workspace must expose manual fulfillment');
+assert.match(manage,/profile_commerce_refund_order_v900/,'owner workspace must expose provider-neutral generic refunds');
+assert.match(manage,/Shipping.*coming later/,'shipping must remain disabled until its fulfillment adapter exists');
 assert.match(manage,/Nothing is published automatically/);
 
 assert.match(transcript,/profile_commerce_agent_context_v900/,'Profile Agent supplemental context must include public Commerce');
