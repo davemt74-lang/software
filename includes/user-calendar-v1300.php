@@ -159,10 +159,14 @@ function user_calendar_create_event_v1300(PDO $pdo, array $user, array $input, s
 
     if ($source === 'agent') {
         $agentId = max(0, (int)$agentId);
-        if ($agentId < 1) throw new RuntimeException('An owned Agent is required to create an Agent calendar event.');
-        $stmt = $pdo->prepare('SELECT id FROM user_agents WHERE id=? AND owner_user_id=? AND is_active=1 LIMIT 1');
-        $stmt->execute([$agentId, $ownerUserId]);
-        if (!(int)$stmt->fetchColumn()) throw new RuntimeException('That Agent is not authorized for this calendar.');
+        if ($agentId > 0) {
+            $stmt = $pdo->prepare('SELECT id FROM user_agents WHERE id=? AND owner_user_id=? AND is_active=1 LIMIT 1');
+            $stmt->execute([$agentId, $ownerUserId]);
+            if (!(int)$stmt->fetchColumn()) throw new RuntimeException('That Agent is not authorized for this calendar.');
+        } else {
+            // The built-in VP3 system Agent has no user_agents row but is still an Agent source.
+            $agentId = null;
+        }
     } else {
         $agentId = null;
     }
