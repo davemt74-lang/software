@@ -54,7 +54,7 @@ function profile_commerce_create_checkout_idempotent_v900(PDO $pdo,array $profil
     $product=profile_commerce_owner_product_v900($pdo,$owner,$productId);
     if(!$product||profile_commerce_visibility_v900($product)!=='public'||empty($product['is_active']))throw new RuntimeException('This product is not available.');
     $intent=profile_commerce_checkout_intent_v900($owner,$productId,$nonce);
-    $payerEmail=strtolower(trim($payerEmail));if($payerEmail!==''&&!filter_var($payerEmail,FILTER_VALIDATE_EMAIL))throw new RuntimeException('Enter a valid email address for the receipt.');
+    $payerEmail=strtolower(trim($payerEmail));if($payerEmail===''||!filter_var($payerEmail,FILTER_VALIDATE_EMAIL))throw new RuntimeException('Enter a valid email address for the receipt and fulfillment contact.');
 
     $connections=profile_commerce_checkout_connections_v900($pdo,$product);
     $selected=null;
