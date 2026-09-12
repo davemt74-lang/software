@@ -71,9 +71,10 @@ try {
         }
         if ($action === 'disconnect') {
             // Keep legacy callers on the same fail-closed, re-pairable lifecycle as Settings → HomeServer.
-            homeserver_cloud_v1200_disconnect($userId);
+            // Reverse connector grants are revoked before relay rotation to preserve the existing security contract.
             homeserver_commerce_agent_v1000_revoke($userId);
             homeserver_scheduling_v620_revoke($userId);
+            homeserver_cloud_v1200_disconnect($userId);
             echo json_encode(['ok'=>true,'status'=>homeserver_cloud_v1200_status($userId,false)], JSON_UNESCAPED_SLASHES);
             exit;
         }
