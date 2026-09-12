@@ -19,6 +19,59 @@ function profile_commerce_customer_order_v1100(PDO $pdo,int $ownerUserId,string 
     return $order;
 }
 
+function profile_commerce_customer_refund_request_v1100(array $order): ?array
+{
+    $meta=profile_commerce_order_metadata_v900($order);$request=$meta['customer_refund_request']??null;
+    if(!is_array($request))return null;
+    $status=strtolower(trim((string)($request['status']??'')));if(!in_array($status,['pending','seller_refund_submitted','declined'],true))return null;
+    return [
+        'request_id'=>(string)($request['request_id']??''),
+        'status'=>$status,
+        'reason'=>(string)($request['reason']??''),
+        'requested_amount_cents'=>max(0,(int)($request['requested_amount_cents']??0)),
+        'requested_at'=>(string)($request['requested_at']??''),
+        'resolved_at'=>(string)($request['resolved_at']??''),
+    ];
+}
+
+function profile_commerce_customer_refund_request_create_v1100(PDO $pdo,int $ownerUserId,string $orderNumber,string $token,string $reason): array
+{
+    $order=profile_commerce_customer_order_v1100($pdo,$ownerUserId,$orderNumber,$token);if(!$order)throw new RuntimeException('Order not found.');
+    if((string)($order['fulfillment_type']??'')==='appointment')throw new RuntimeException('Appointment refunds are managed through the appointment lifecycle.');
+    $reason=mb_strimwidth(trim($reason),0,500,'');if(mb_strlen($reason)<3)throw new RuntimeException('Tell the seller why you are requesting a refund.');
+    $remaining=max(0,(int)($order['amount_paid_cents']??0)-(int)($order['amount_refunded_cents']??0));if($remaining<1)throw new RuntimeException('This order has no refundable balance.');
+    if(!in_array((string)($order['payment_status']??''),['paid','partially_refunded'],true))throw new RuntimeException('A refund can be requested only after payment is verified.');
+
+    $pdo->beginTransaction();
+    try{
+        $stmt=$pdo->prepare('SELECT * FROM agent_commerce_orders_v800 WHERE id=? AND owner_user_id=? LIMIT 1 FOR UPDATE');$stmt->execute([(int)$order['id'],$ownerUserId]);$locked=$stmt->fetch();if(!$locked||!profile_commerce_order_is_profile_v900($locked))throw new RuntimeException('Order not found.');
+        $meta=profile_commerce_order_metadata_v900($locked);$stored=strtolower(trim((string)($meta['receipt_token_sha256']??'')));if(!preg_match('/\A[a-f0-9]{64}\z/',$stored)||!hash_equals($stored,profile_commerce_receipt_token_hash_v1100($token)))throw new RuntimeException('Order not found.');
+        $remaining=max(0,(int)$locked['amount_paid_cents']-(int)$locked['amount_refunded_cents']);if($remaining<1)throw new RuntimeException('This order has no refundable balance.');
+        $existing=profile_commerce_customer_refund_request_v1100($locked);if($existing&&$existing['status']==='pending'){$pdo->commit();return profile_commerce_customer_order_v1100($pdo,$ownerUserId,$orderNumber,$token)?:$order;}
+        $request=['request_id'=>bin2hex(random_bytes(16)),'status'=>'pending','reason'=>$reason,'requested_amount_cents'=>$remaining,'requested_at'=>gmdate('c'),'resolved_at'=>''];$meta['customer_refund_request']=$request;
+        $pdo->prepare('UPDATE agent_commerce_orders_v800 SET metadata_json=?,updated_at=NOW() WHERE id=? AND owner_user_id=?')->execute([json_encode($meta,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE),(int)$locked['id'],$ownerUserId]);
+        agent_commerce_audit_v800($pdo,(int)$locked['id'],$ownerUserId,(int)($locked['workspace_owner_user_id']??0)?:null,'customer',null,null,'customer_refund_requested',(string)$locked['payment_status'],(string)$locked['payment_status'],$remaining,['request_id'=>$request['request_id']]);
+        $pdo->commit();
+    }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();throw $e;}
+    return profile_commerce_customer_order_v1100($pdo,$ownerUserId,$orderNumber,$token)?:throw new RuntimeException('Order could not be reloaded.');
+}
+
+function profile_commerce_owner_refund_request_set_v1100(PDO $pdo,int $ownerUserId,int $orderId,string $status): array
+{
+    if(!in_array($status,['seller_refund_submitted','declined'],true))throw new RuntimeException('Invalid refund request state.');
+    $order=profile_commerce_order_for_owner_v900($pdo,$ownerUserId,$orderId);if(!$order)throw new RuntimeException('Profile Commerce order not found.');
+    $pdo->beginTransaction();
+    try{
+        $stmt=$pdo->prepare('SELECT * FROM agent_commerce_orders_v800 WHERE id=? AND owner_user_id=? LIMIT 1 FOR UPDATE');$stmt->execute([$orderId,$ownerUserId]);$locked=$stmt->fetch();if(!$locked||!profile_commerce_order_is_profile_v900($locked))throw new RuntimeException('Profile Commerce order not found.');
+        $meta=profile_commerce_order_metadata_v900($locked);$request=$meta['customer_refund_request']??null;if(!is_array($request)||(string)($request['status']??'')!=='pending')throw new RuntimeException('There is no pending customer refund request.');
+        $request['status']=$status;$request['resolved_at']=gmdate('c');$meta['customer_refund_request']=$request;
+        $pdo->prepare('UPDATE agent_commerce_orders_v800 SET metadata_json=?,updated_at=NOW() WHERE id=? AND owner_user_id=?')->execute([json_encode($meta,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE),$orderId,$ownerUserId]);
+        agent_commerce_audit_v800($pdo,$orderId,$ownerUserId,(int)($locked['workspace_owner_user_id']??0)?:null,'user',$ownerUserId,null,$status==='declined'?'customer_refund_declined':'customer_refund_actioned',(string)$locked['payment_status'],(string)$locked['payment_status'],max(0,(int)($request['requested_amount_cents']??0)),['request_id'=>(string)($request['request_id']??'')]);
+        $pdo->commit();
+    }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();throw $e;}
+    return profile_commerce_order_for_owner_v900($pdo,$ownerUserId,$orderId)?:throw new RuntimeException('Profile Commerce order could not be reloaded.');
+}
+
 function profile_commerce_customer_status_v1100(array $order): array
 {
     $payment=strtolower(trim((string)($order['payment_status']??'awaiting_payment')));
@@ -48,6 +101,8 @@ function profile_commerce_customer_projection_v1100(array $order): array
         'payment_status'=>(string)($order['payment_status']??'awaiting_payment'),
         'fulfillment_status'=>profile_commerce_fulfillment_state_v900($order),
         'status'=>$status,
+        'refund_request'=>profile_commerce_customer_refund_request_v1100($order),
+        'refundable_cents'=>max(0,(int)($order['amount_paid_cents']??0)-(int)($order['amount_refunded_cents']??0)),
         'currency'=>$currency,
         'total_label'=>agent_commerce_money_v800((int)($order['total_cents']??0),$currency),
         'paid_label'=>agent_commerce_money_v800((int)($order['amount_paid_cents']??0),$currency),
