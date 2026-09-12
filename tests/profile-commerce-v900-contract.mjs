@@ -18,8 +18,9 @@ assert.match(layer,/profile_visibility.*hidden/s,'publication must be hidden by 
 assert.match(layer,/profile_commerce_visibility_v900\(\$product\)!==['"]public['"]/,'checkout must recheck public visibility');
 assert.match(layer,/p\.owner_user_id=\?/,'public profile projection must be owner scoped');
 assert.match(layer,/p\.is_active=1/,'public projection must be active-only');
-assert.match(layer,/agent_commerce_create_order_v800/,'v9 must reuse canonical Phase 8 orders');
-assert.match(layer,/agent_commerce_create_checkout_v800/,'v9 must reuse canonical Phase 8 checkout');
+assert.match(layer,/Generic Profile Commerce products must use full payment/,'generic full-payment restriction must be enforced in the domain layer');
+assert.match(layer,/Shipped physical products cannot be published/,'unsupported shipping must fail closed in the domain layer');
+assert.doesNotMatch(layer,/function profile_commerce_create_checkout_v900/,'obsolete non-idempotent checkout helper must stay removed');
 assert.doesNotMatch(layer,/api\.stripe\.com|connect\.square|api-m\.paypal/,'Profile Commerce must not implement provider adapters');
 assert.match(layer,/profile_commerce_agent_context_v900/);
 assert.match(layer,/profile_commerce_products_for_profile_v900\(\$pdo,\$profile,true/,'Agent context must consume the public projection');
@@ -39,7 +40,8 @@ assert.match(checkout,/agent_commerce_order_v800\(\$pdo,\$storedOrder\)/,'browse
 assert.match(checkout,/agent_commerce_order_items_v800/,'resumed orders must be verified against the requested product');
 assert.match(checkout,/profile-commerce-return\.php\?username=/,'provider returns must use the verified internal callback');
 assert.match(checkout,/&intent=/,'provider return callback must carry the session-bound checkout intent');
-assert.match(checkout,/agent_commerce_create_checkout_v800/,'idempotent wrapper must still delegate provider execution to Phase 8');
+assert.match(checkout,/agent_commerce_create_order_v800/,'idempotent wrapper must create canonical Phase 8 orders');
+assert.match(checkout,/agent_commerce_create_checkout_v800/,'idempotent wrapper must delegate provider execution to Phase 8');
 assert.doesNotMatch(checkout,/api\.stripe\.com|connect\.square|api-m\.paypal/,'retry layer must not implement provider adapters');
 
 assert.match(paymentReturn,/profile_commerce_order_for_owner_v900/,'provider return must scope the canonical order to the profile owner');
