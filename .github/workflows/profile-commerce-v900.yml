@@ -26,12 +26,17 @@ jobs:
         run: node tests/agent-commerce-v800-contract.mjs
       - name: Cross-repo payment contract
         run: node tests/commerce-payment-v1-contract.mjs
+      - name: Retained Profile Agent route contract
+        run: node tests/profile-agent-attention-contract.mjs
+      - name: Retained member navigation contract
+        run: node tests/member-navigation-contract.mjs
       - name: Profile Commerce runtime load
-        run: php -r "require 'includes/agent-commerce-v800.php'; require 'includes/profile-agent.php'; require 'includes/profile-commerce-v900.php'; require 'includes/profile-commerce-checkout-v900.php'; echo 'PROFILE_COMMERCE_RUNTIME=PASS'.PHP_EOL;"
+        run: php -r "require 'includes/agent-commerce-v800.php'; require 'includes/profile-agent.php'; require 'includes/profile-commerce-v900.php'; require 'includes/profile-commerce-checkout-v900.php'; require 'includes/profile-commerce-ops-v900.php'; echo 'PROFILE_COMMERCE_RUNTIME=PASS'.PHP_EOL;"
       - name: PHP syntax
         run: |
           php -l includes/profile-commerce-v900.php
           php -l includes/profile-commerce-checkout-v900.php
+          php -l includes/profile-commerce-ops-v900.php
           php -l profile-v900.php
           php -l profile-commerce-product.php
           php -l profile-commerce-products.php
