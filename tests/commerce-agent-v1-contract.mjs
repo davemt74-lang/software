@@ -33,7 +33,8 @@ assert.match(bridge,/homeserver_commerce_agent_idempotency/,'mutation must be id
 assert.doesNotMatch(bridge,/api\.stripe\.com|connect\.square|api-m\.paypal/,'Agent Commerce must not duplicate provider adapters');
 assert.doesNotMatch(bridge,/secret_key|access_token|webhook_secret/,'Agent bridge must not project provider credentials');
 
-assert.match(api,/^Bearer\\s\+\(\.\+\)/m);
+assert.match(api,/HTTP_AUTHORIZATION/,'endpoint must authenticate the connector bearer credential');
+assert.match(api,/Bearer\\s\+\(\.\+\)/,'endpoint must parse a Bearer authorization header');
 assert.match(api,/array_diff\(array_keys\(\$body\),\['operation','arguments'\]\)/,'wire envelope must reject unknown fields');
 assert.match(approvals,/commerce\.read/);assert.match(approvals,/commerce\.order/);assert.match(approvals,/commerce\.fulfill/);
 assert.match(status,/homeserver_commerce_agent_v1000_provision/);
