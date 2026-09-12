@@ -68,7 +68,10 @@ function member_navigation_menu_links(?array $user = null): array
         $add($links,'contacts','My Contacts',url('/contacts.php'),'identity');
     }
     if(member_navigation_entitled($user,'profile_agent.access',personal_capability_has_v242('profile_agent.access',$user)))$add($links,'profile_agent','Profile Agent',url('/profile-agent.php'),'identity');
-    if($accountAllowed&&function_exists('agent_scheduling_schema_ready_v430')&&agent_scheduling_schema_ready_v430())$add($links,'scheduling','Scheduling',url('/scheduling.php'),'agent');
+    if($accountAllowed&&function_exists('agent_scheduling_schema_ready_v430')&&agent_scheduling_schema_ready_v430()){
+        $add($links,'calendar','Calendar',url('/calendar.php'),'agent');
+        $add($links,'scheduling','Scheduling',url('/scheduling.php'),'agent');
+    }
     if($accountAllowed&&function_exists('agent_appointment_lifecycle_schema_ready_v700')&&agent_appointment_lifecycle_schema_ready_v700())$add($links,'appointment_lifecycle','Appointment Lifecycle',url('/appointment-lifecycle.php'),'agent');
     if($accountAllowed&&function_exists('agent_commerce_schema_ready_v800')&&agent_commerce_schema_ready_v800()){
         $add($links,'commerce','Commerce',url('/commerce.php'),'agent');
