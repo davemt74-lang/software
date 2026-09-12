@@ -14,6 +14,7 @@ assert.match(lifecycle,/\['paid','partially_refunded'\]/,'refund requests requir
 assert.match(lifecycle,/amount_paid_cents.*amount_refunded_cents/s,'requested amount must be bounded to the remaining canonical paid balance');
 assert.match(lifecycle,/customer_refund_request/,'refund request state must stay attached to the canonical order');
 assert.match(lifecycle,/status.*pending/s,'customer request must enter seller review rather than moving money');
+assert.match(lifecycle,/seller_refund_submitted.*still being processed/s,'direct replay must fail closed while an approved provider refund is still processing');
 assert.match(lifecycle,/customer_refund_requested/,'customer request must enter the Commerce audit ledger');
 assert.match(lifecycle,/'customer',null,null,'customer_refund_requested'/,'audit actor must be customer-safe and not invent a VP3 user identity');
 assert.match(lifecycle,/fulfillment_type.*appointment/s,'appointment refunds must remain outside generic Profile Commerce');
