@@ -24,6 +24,8 @@ jobs:
         run: node tests/agent-commerce-v800-contract.mjs
       - name: Commerce payment bridge contract
         run: node tests/commerce-payment-v1-contract.mjs
+      - name: Profile Commerce products shell contract
+        run: node tests/profile-commerce-products-shell-v1310-contract.mjs
       - name: Generic Commerce runtime load
         run: php -r "require 'includes/agent-commerce-v800.php'; echo 'AGENT_COMMERCE_RUNTIME=PASS'.PHP_EOL;"
       - name: PHP syntax
@@ -31,10 +33,12 @@ jobs:
           php -l includes/agent-commerce-v800.php
           for f in includes/agent-commerce-v800-part*.php; do php -l "$f"; done
           php -l commerce.php
+          php -l profile-commerce-products.php
           php -l commerce-provider-oauth.php
           php -l commerce-payment-webhook.php
           php -l cron/commerce-v800.php
           php -l includes/bootstrap.php
           php -l includes/member-navigation.php
+          php -l includes/main-sidebar.php
           php -l upgrade.php
           php -l config-example.php

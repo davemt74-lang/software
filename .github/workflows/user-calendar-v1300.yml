@@ -1,0 +1,53 @@
+name: User Calendar v13.00
+
+on:
+  push:
+    branches:
+      - main
+      - phase-13-user-calendar
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  user-calendar:
+    name: User calendar · PHP ${{ matrix.php }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.1', '8.3']
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Lint User Calendar PHP
+        run: |
+          php -l includes/user-calendar-v1300.php
+          php -l includes/user-calendar-agent-v1300.php
+          php -l includes/agent-calendar-sync-v500.php
+          php -l api/user-calendar-v1300.php
+          php -l api/chat-v236.php
+          php -l calendar.php
+          php -l calendar-event.php
+          php -l scheduling.php
+          php -l scheduling-type.php
+          php -l calendar-oauth.php
+          php -l includes/member-navigation.php
+          php -l upgrade.php
+
+      - name: Verify User Calendar contract
+        run: node tests/user-calendar-v1300-contract.mjs

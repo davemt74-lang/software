@@ -9,10 +9,10 @@ if(!agent_calendar_sync_schema_ready_v500($pdo))redirect(url('/upgrade.php'));
 
 function calendar_oauth_redirect_v500(int $scheduleId,string $saved='',string $error=''): never
 {
-    $query=['schedule'=>max(0,$scheduleId)];
+    $query=['schedule'=>max(0,$scheduleId),'tab'=>'calendars'];
     if($saved!=='')$query['saved']=$saved;
     if($error!=='')$query['calendar_error']=$error;
-    redirect(url('/scheduling.php?'.http_build_query($query,'','&',PHP_QUERY_RFC3986).'#calendars'));
+    redirect(url('/scheduling.php?'.http_build_query($query,'','&',PHP_QUERY_RFC3986)));
 }
 
 try{

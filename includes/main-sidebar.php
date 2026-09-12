@@ -6,7 +6,8 @@ $mainSidebarActive = $mainSidebarActive ?? $workspaceSidebarActive ?? '';
 $mainSidebarUseNewChatButton = !empty($mainSidebarUseNewChatButton);
 $mainSidebarHistoryRows = isset($mainSidebarHistoryRows) && is_array($mainSidebarHistoryRows) ? $mainSidebarHistoryRows : [];
 $mainSidebarMenuLinks = $mainSidebarUser ? member_navigation_menu_links($mainSidebarUser) : [];
-$mainSidebarPrimaryKeys = ['chat'=>true,'contacts'=>true,'knowledge'=>true];
+$mainSidebarProductsActive = $mainSidebarActive === 'profile_commerce' || basename((string)($_SERVER['SCRIPT_NAME'] ?? '')) === 'profile-commerce-products.php';
+$mainSidebarPrimaryKeys = ['chat'=>true,'contacts'=>true,'knowledge'=>true,'profile_commerce'=>true];
 $mainSidebarFooterLinks = array_values(array_filter(
     $mainSidebarMenuLinks,
     static fn(array $link): bool => !isset($mainSidebarPrimaryKeys[(string)($link['key'] ?? '')])
@@ -19,6 +20,7 @@ $mainSidebarRoleSummary = $mainSidebarUser ? implode(' · ', user_role_labels($m
 <link rel="stylesheet" href="<?= e(url('/agent-policy-v035.css?v=agent-policy-v035-20260909')) ?>">
 <link rel="stylesheet" href="<?= e(url('/agent-ui-v034.css?v=agent-ui-v034-20260910-chat-rail')) ?>">
 <link rel="stylesheet" data-chat-rail-controls-v132 href="<?= e(url('/chat-rail-controls-v132.css?v=20260911-1')) ?>">
+<link rel="stylesheet" href="<?= e(url('/profile-commerce-products-shell-v1310.css?v=1310')) ?>">
 <aside
   class="chat-sidebar workspace-main-sidebar"
   id="chatSidebar"
@@ -67,6 +69,10 @@ $mainSidebarRoleSummary = $mainSidebarUser ? implode(' · ', user_role_labels($m
 
         <?php if ($mainSidebarUser && has_permission('account.access', $mainSidebarUser)): ?>
           <a class="chat-sidebar-nav-link <?= $mainSidebarActive === 'contacts' ? 'active' : '' ?>" href="<?= e(url('/contacts.php')) ?>"><span>●</span><strong>Contacts</strong></a>
+        <?php endif; ?>
+
+        <?php if ($mainSidebarUser && has_permission('account.access', $mainSidebarUser) && function_exists('agent_commerce_schema_ready_v800') && agent_commerce_schema_ready_v800()): ?>
+          <a class="chat-sidebar-nav-link <?= $mainSidebarProductsActive ? 'active' : '' ?>" href="<?= e(url('/profile-commerce-products.php')) ?>"><span>▦</span><strong>My Products</strong></a>
         <?php endif; ?>
       </nav>
     </section>
