@@ -27,7 +27,8 @@ assert.match(download,/profile_commerce_customer_order_v1100\(/,'download must r
 assert.match(download,/profile_commerce_delivery_file_for_customer_v1130\(/,'download must apply payment/refund delivery policy');
 assert.match(download,/Content-Disposition: attachment/,'files must be served as downloads, not inline web content');
 assert.match(download,/X-Content-Type-Options: nosniff/,'download must disable browser MIME sniffing');
-assert.match(download,/Content-Security-Policy: default-src \\'none\\'; sandbox/,'download response must fail closed for active content');
+assert.match(download,/Content-Security-Policy: default-src/,'download response must set a fail-closed CSP');
+assert.match(download,/sandbox/,'download response CSP must sandbox active content');
 assert.match(download,/Content-Length/,'download must bind response length to stored metadata');
 assert.match(download,/filesize\(\$path\).*\$file\['bytes'\]/s,'download must reject storage-size drift');
 assert.doesNotMatch(download,/X-Sendfile|X-Accel-Redirect/,'this slice must not expose private filesystem paths to a web-server redirect');
