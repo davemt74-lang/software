@@ -7,7 +7,7 @@ const VP3_HOMESERVER_APPROVAL_FEATURE = 'approvals.federation.v1';
 function homeserver_approvals_v028_permissions(): array
 {
     return [
-        'agent.chat','approvals.review','awareness.read','contacts.read','events.read','events.write',
+        'agent.chat','approvals.review','awareness.read','commerce.read','commerce.order','commerce.fulfill','contacts.read','events.read','events.write',
         'knowledge.search','memory.read','memory.write','notifications.read','plugins.read',
         'scheduling.read','scheduling.write','tasks.read','tasks.write','tools.execute','usage.read','usage.write',
     ];
