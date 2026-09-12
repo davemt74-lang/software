@@ -48,6 +48,11 @@ function profile_commerce_checkout_intent_save_v900(string $nonce,array $row): v
     $_SESSION['profile_commerce_checkout_intents'][$nonce]=$row;
 }
 
+function profile_commerce_checkout_intent_forget_v900(string $nonce): void
+{
+    $nonce=trim($nonce);if($nonce!==''&&isset($_SESSION['profile_commerce_checkout_intents'][$nonce]))unset($_SESSION['profile_commerce_checkout_intents'][$nonce]);
+}
+
 function profile_commerce_create_checkout_idempotent_v900(PDO $pdo,array $profile,array $projectedProduct,int $connectionId,string $payerEmail,string $nonce): array
 {
     $owner=(int)($profile['user_id']??0);$productId=(int)($projectedProduct['id']??0);
@@ -87,7 +92,7 @@ function profile_commerce_create_checkout_idempotent_v900(PDO $pdo,array $profil
         profile_commerce_checkout_intent_save_v900($nonce,$intent);
     }
 
-    $return=agent_commerce_absolute_url_v800('/'.rawurlencode((string)$profile['username']).'?commerce=return&order='.(int)$order['id']);
+    $return=agent_commerce_absolute_url_v800('/'.rawurlencode((string)$profile['username']).'?commerce=return&order='.(int)$order['id'].'&intent='.rawurlencode($nonce));
     $cancel=agent_commerce_absolute_url_v800('/'.rawurlencode((string)$profile['username']).'/product/'.rawurlencode((string)$projectedProduct['slug']).'?commerce=cancelled');
     $attempt=agent_commerce_create_checkout_v800($pdo,$order,(int)$selected['id'],$return,$cancel);
     $intent['order_id']=(int)$order['id'];$intent['connection_id']=(int)$selected['id'];$intent['attempt_id']=(int)($attempt['id']??0);
