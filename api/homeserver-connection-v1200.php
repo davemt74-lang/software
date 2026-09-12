@@ -76,17 +76,17 @@ try {
     } elseif ($action === 'cancel_pairing') {
         homeserver_cloud_v1200_cancel_pairing($userId);
     } elseif ($action === 'disconnect') {
-        // Invalidate the current relay credential first, retain only its encrypted replacement,
-        // and clear the paired-app bearer so authenticated HomeServer operations stop immediately.
-        homeserver_cloud_v1200_disconnect($userId);
+        // Revoke reverse Cloud connector grants first, then rotate the relay and clear the paired-app bearer.
+        // If relay rotation fails, the connector revocations remain fail-closed and the user can retry disconnect.
         homeserver_commerce_agent_v1000_revoke($userId);
         homeserver_scheduling_v620_revoke($userId);
+        homeserver_cloud_v1200_disconnect($userId);
     } elseif ($action === 'remove') {
         // Final removal is only legal after disconnect. Rotate once more, delete the connection,
-        // and remove dependent Cloud connector grants for the same authenticated user.
-        homeserver_cloud_v1200_remove_pairing($userId);
+        // and defensively clear dependent Cloud connector grants for the same authenticated user.
         homeserver_commerce_agent_v1000_revoke($userId);
         homeserver_scheduling_v620_revoke($userId);
+        homeserver_cloud_v1200_remove_pairing($userId);
     } else {
         http_response_code(400);
         echo json_encode(['ok'=>false,'error'=>'Unsupported HomeServer action.']);
