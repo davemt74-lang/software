@@ -1,0 +1,38 @@
+name: Paired Agent Commerce v10.00
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          coverage: none
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Paired Agent Commerce contract
+        run: node tests/commerce-agent-v1-contract.mjs
+      - name: Retain Profile Commerce contract
+        run: node tests/profile-commerce-v900-contract.mjs
+      - name: Retain Commerce engine contract
+        run: node tests/agent-commerce-v800-contract.mjs
+      - name: Retain payment authority contract
+        run: node tests/commerce-payment-v1-contract.mjs
+      - name: Runtime load
+        run: php -r "require 'includes/agent-commerce-v800.php'; require 'includes/profile-agent.php'; require 'includes/profile-commerce-v900.php'; require 'includes/profile-commerce-checkout-v900.php'; require 'includes/profile-commerce-ops-v900.php'; require 'includes/homeserver-commerce-agent-v1000.php'; echo 'PAIRED_AGENT_COMMERCE_RUNTIME=PASS'.PHP_EOL;"
+      - name: PHP syntax
+        run: |
+          php -l includes/homeserver-commerce-agent-v1000.php
+          php -l api/homeserver-commerce-agent-v1000.php
+          php -l includes/homeserver-approvals-v028.php
+          php -l api/homeserver-status.php

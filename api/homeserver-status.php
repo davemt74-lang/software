@@ -4,6 +4,7 @@ require_once dirname(__DIR__) . '/includes/bootstrap.php';
 require_once dirname(__DIR__) . '/includes/homeserver-approvals-v028.php';
 require_once dirname(__DIR__) . '/includes/homeserver-policy-v035.php';
 require_once dirname(__DIR__) . '/includes/homeserver-scheduling-connector-v620.php';
+require_once dirname(__DIR__) . '/includes/homeserver-commerce-agent-v1000.php';
 require_login();
 
 header('Content-Type: application/json; charset=utf-8');
@@ -22,9 +23,10 @@ function homeserver_status_error_snapshot(int $userId): ?array
     try { return homeserver_vp3_status($userId, false); } catch (Throwable $e) { return null; }
 }
 
-function homeserver_status_with_scheduling_v620(int $userId,array $status): array
+function homeserver_status_with_connectors_v1000(int $userId,array $status): array
 {
     $status['scheduling_connector']=homeserver_scheduling_v620_connector_status($userId);
+    $status['commerce_agent_connector']=homeserver_commerce_agent_v1000_status($userId);
     return $status;
 }
 
@@ -38,29 +40,36 @@ try {
         $action = trim((string)($_POST['action'] ?? ''));
         if ($action === 'claim') {
             $pairing = homeserver_approvals_v028_claim_and_pair($userId, (string)($_POST['claim_code'] ?? ''));
-            echo json_encode(['ok'=>true,'pairing'=>$pairing,'status'=>homeserver_status_with_scheduling_v620($userId,homeserver_vp3_status($userId,true))], JSON_UNESCAPED_SLASHES);
+            echo json_encode(['ok'=>true,'pairing'=>$pairing,'status'=>homeserver_status_with_connectors_v1000($userId,homeserver_vp3_status($userId,true))], JSON_UNESCAPED_SLASHES);
             exit;
         }
         if ($action === 'check_pairing') {
             $pairing = homeserver_vp3_check_pairing($userId);
-            $connector=homeserver_scheduling_v620_connector_status($userId);
+            $scheduling=homeserver_scheduling_v620_connector_status($userId);
+            $commerce=homeserver_commerce_agent_v1000_status($userId);
             if(!empty($pairing['ready'])&&!empty(homeserver_vp3_status($userId,false)['connected'])){
-                try{$connector=homeserver_scheduling_v620_provision($userId,false);}
-                catch(Throwable $e){$connector['error']='Pairing is complete, but the scheduling connector is awaiting a compatible HomeServer.';}
+                try{$scheduling=homeserver_scheduling_v620_provision($userId,false);}catch(Throwable $e){$scheduling['error']='Pairing is complete, but the scheduling connector is awaiting a compatible HomeServer.';}
+                try{$commerce=homeserver_commerce_agent_v1000_provision($userId,false);}catch(Throwable $e){$commerce['error']='Pairing is complete, but Agent Commerce may require the new Commerce permissions to be approved in HomeServer.';}
             }
             $status=homeserver_vp3_status($userId,true);
-            $status['scheduling_connector']=$connector;
+            $status['scheduling_connector']=$scheduling;$status['commerce_agent_connector']=$commerce;
             echo json_encode(['ok'=>true,'pairing'=>$pairing,'status'=>$status], JSON_UNESCAPED_SLASHES);
             exit;
         }
         if ($action === 'provision_scheduling' || $action === 'rotate_scheduling') {
             $connector=homeserver_scheduling_v620_provision($userId,$action==='rotate_scheduling');
-            $status=homeserver_vp3_status($userId,false);
-            $status['scheduling_connector']=$connector;
+            $status=homeserver_status_with_connectors_v1000($userId,homeserver_vp3_status($userId,false));$status['scheduling_connector']=$connector;
+            echo json_encode(['ok'=>true,'connector'=>$connector,'status'=>$status],JSON_UNESCAPED_SLASHES);
+            exit;
+        }
+        if ($action === 'provision_commerce_agent' || $action === 'rotate_commerce_agent') {
+            $connector=homeserver_commerce_agent_v1000_provision($userId,$action==='rotate_commerce_agent');
+            $status=homeserver_status_with_connectors_v1000($userId,homeserver_vp3_status($userId,false));$status['commerce_agent_connector']=$connector;
             echo json_encode(['ok'=>true,'connector'=>$connector,'status'=>$status],JSON_UNESCAPED_SLASHES);
             exit;
         }
         if ($action === 'disconnect') {
+            homeserver_commerce_agent_v1000_revoke($userId);
             homeserver_scheduling_v620_revoke($userId);
             homeserver_vp3_disconnect($userId);
             echo json_encode(['ok'=>true,'status'=>homeserver_vp3_status($userId,false)], JSON_UNESCAPED_SLASHES);
@@ -72,7 +81,7 @@ try {
     }
 
     $force = (string)($_GET['refresh'] ?? '') === '1';
-    $statusSnapshot=homeserver_status_with_scheduling_v620($userId,homeserver_vp3_status($userId,$force));
+    $statusSnapshot=homeserver_status_with_connectors_v1000($userId,homeserver_vp3_status($userId,$force));
     $response=['ok'=>true,'status'=>$statusSnapshot];
     if((string)($_GET['registry'] ?? '')==='1')$response['registry']=homeserver_capability_v033_registry($userId,$force);
     if((string)($_GET['policy'] ?? '')==='1')$response['policy']=homeserver_policy_v035_snapshot($userId,false,$statusSnapshot);
