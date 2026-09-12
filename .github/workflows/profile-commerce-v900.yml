@@ -39,6 +39,7 @@ jobs:
           php -l includes/profile-commerce-ops-v900.php
           php -l profile-v900.php
           php -l profile-commerce-product.php
+          php -l profile-commerce-return.php
           php -l profile-commerce-products.php
           php -l includes/profile-agent-transcription-context.php
           php -l includes/member-navigation.php
