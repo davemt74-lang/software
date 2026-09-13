@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/homeserver-cloud-pairing-v1200.php';
+require_once __DIR__ . '/homeserver-relay-lifecycle-v1210.php';
 
 const VP3_HOMESERVER_ACCOUNT_PAIRING_V1210 = 'homeserver-account-pairing-v1210-20260913';
 const VP3_HOMESERVER_ACCOUNT_PAIRING_TTL_SECONDS = 900;
@@ -139,7 +140,9 @@ function homeserver_account_v1210_begin_redeem(string $rawToken): array
             $pdo->commit();
             throw new RuntimeException('The VP3 pairing token expired. Generate a new token in VP3 Cloud.');
         }
-        if (homeserver_vp3_connection((int)$row['user_id'])) {
+        $existing = $pdo->prepare('SELECT user_id FROM homeserver_connections WHERE user_id=? LIMIT 1');
+        $existing->execute([(int)$row['user_id']]);
+        if ($existing->fetch()) {
             throw new RuntimeException('This VP3 account already has a HomeServer connection.');
         }
         $pdo->prepare("UPDATE homeserver_pairing_tokens SET status='redeeming' WHERE id=?")->execute([(int)$row['id']]);
@@ -225,7 +228,7 @@ function homeserver_account_v1210_redeem(string $rawToken, string $relayClaim): 
         ];
     } catch (Throwable $e) {
         if ($relayToken !== '') {
-            try { homeserver_vp3_relay_request('POST', '/v1/session/release', [], $relayToken); } catch (Throwable $ignored) {}
+            try { homeserver_relay_v1210_release($relayToken); } catch (Throwable $ignored) {}
         }
         homeserver_account_v1210_reset_redeem($tokenId);
         throw $e;
