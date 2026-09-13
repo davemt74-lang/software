@@ -76,15 +76,15 @@ assert.match(outputs,/if \(\$mode==='live' && !\$baseIds && \$requestedOutputIds
 assert.match(outputs,/'reason'=>'selected_outputs_manual_only'/,'output-only live requests must report a truthful manual-only skip');
 assert.match(outputs,/'skipped'=>true/);
 
-/* v306 remains the output engine; the stable runtime now wraps it with v307 deeper intelligence. */
+/* v306 remains the output engine; v307 remains the intelligence engine while additive wrappers may advance independently. */
 assert.match(api,/transcription-intelligence-outputs\.php/);
-assert.match(api,/vp3-transcription-intelligence-v307-20260907/);
+assert.match(api,/vp3-transcription-intelligence-v(?:307-20260907|313-20260913)/,'stable v307 intelligence may be exposed through the additive v3.13 folder wrapper');
 assert.match(api,/transcription_app_registry_public_v307\(\)/);
 assert.match(api,/transcription_deeper_advanced_status_v307\(/);
 assert.match(api,/transcription_app_analyze_v307\(/);
 assert.match(deep,/transcription_app_analyze_v306\(/,'v307 must delegate base output generation through v306');
 assert.doesNotMatch(api,/\$result\s*=\s*transcription_app_analyze_v304\(/,'stable API must not bypass v307/v306 output wrappers');
-assert.match(api,/'source'=>'transcription-intelligence-v307'/,'whole-report Brain provenance must identify the current runtime');
+assert.match(api,/'source'=>'transcription-intelligence-v307'/,'whole-report Brain provenance must identify the current intelligence engine');
 assert.match(client,/const BUILD = 'transcription-deeper-v307-20260907'/,'the canonical browser controller must identify the current v307 runtime');
 assert.match(page,/artist-listening-ai\.js\?v=transcription-deeper-v307-20260907/,'page must cache-bust the same canonical controller for v307');
 assert.match(client,/state\.registry/);

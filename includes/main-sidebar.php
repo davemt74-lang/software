@@ -6,12 +6,16 @@ $mainSidebarActive = $mainSidebarActive ?? $workspaceSidebarActive ?? '';
 $mainSidebarUseNewChatButton = !empty($mainSidebarUseNewChatButton);
 $mainSidebarHistoryRows = isset($mainSidebarHistoryRows) && is_array($mainSidebarHistoryRows) ? $mainSidebarHistoryRows : [];
 $mainSidebarMenuLinks = $mainSidebarUser ? member_navigation_menu_links($mainSidebarUser) : [];
-$mainSidebarProductsActive = $mainSidebarActive === 'profile_commerce' || basename((string)($_SERVER['SCRIPT_NAME'] ?? '')) === 'profile-commerce-products.php';
-$mainSidebarCalendarActive = $mainSidebarActive === 'calendar' || in_array(basename((string)($_SERVER['SCRIPT_NAME'] ?? '')), ['calendar.php','calendar-event.php'], true);
+$mainSidebarScript = basename((string)($_SERVER['SCRIPT_NAME'] ?? ''));
+$mainSidebarIsChat = $mainSidebarActive === 'chat' || $mainSidebarScript === 'chat.php';
+$mainSidebarProductsActive = $mainSidebarActive === 'profile_commerce' || $mainSidebarScript === 'profile-commerce-products.php';
+$mainSidebarCalendarActive = $mainSidebarActive === 'calendar' || in_array($mainSidebarScript, ['calendar.php','calendar-event.php'], true);
+$mainSidebarTranscriptionsActive = $mainSidebarActive === 'transcriptions' || $mainSidebarScript === 'artist-listening.php';
 $mainSidebarCanAccount = $mainSidebarUser && has_permission('account.access', $mainSidebarUser);
 $mainSidebarCanKnowledge = $mainSidebarUser && member_navigation_entitled($mainSidebarUser, 'knowledge.access', personal_capability_has_v242('personal_knowledge.access', $mainSidebarUser));
 $mainSidebarCanProfileAgent = $mainSidebarUser && member_navigation_entitled($mainSidebarUser, 'profile_agent.access', personal_capability_has_v242('profile_agent.access', $mainSidebarUser));
-$mainSidebarPrimaryKeys = ['chat'=>true,'contacts'=>true,'profile_agent'=>true,'messages'=>true,'knowledge'=>true,'calendar'=>true,'profile_commerce'=>true];
+$mainSidebarCanTranscriptions = $mainSidebarUser && member_navigation_entitled($mainSidebarUser, 'transcription.access', member_navigation_package_permission($mainSidebarUser, 'artist_listening.access', has_permission('artist_listening.access', $mainSidebarUser)));
+$mainSidebarPrimaryKeys = ['chat'=>true,'contacts'=>true,'profile_agent'=>true,'messages'=>true,'knowledge'=>true,'transcriptions'=>true,'calendar'=>true,'profile_commerce'=>true];
 $mainSidebarFooterLinks = array_values(array_filter(
     $mainSidebarMenuLinks,
     static fn(array $link): bool => !isset($mainSidebarPrimaryKeys[(string)($link['key'] ?? '')])
@@ -25,7 +29,7 @@ if ($mainSidebarRenderAgentVoiceAssets) $GLOBALS['VP3_MEMBER_AGENT_VOICE_MENU_AS
 <link rel="stylesheet" href="<?= e(url('/homeserver-vp3.css?v=20260910-1')) ?>">
 <link rel="stylesheet" href="<?= e(url('/agent-policy-v035.css?v=agent-policy-v035-20260909')) ?>">
 <link rel="stylesheet" href="<?= e(url('/agent-ui-v034.css?v=agent-ui-v034-20260910-chat-rail')) ?>">
-<link rel="stylesheet" data-chat-rail-controls-v132 href="<?= e(url('/chat-rail-controls-v132.css?v=20260911-1')) ?>">
+<?php if ($mainSidebarIsChat): ?><link rel="stylesheet" data-chat-rail-controls-v132 href="<?= e(url('/chat-rail-controls-v132.css?v=20260911-1')) ?>"><?php endif; ?>
 <link rel="stylesheet" href="<?= e(url('/profile-commerce-products-shell-v1310.css?v=1310')) ?>">
 <?php if ($mainSidebarRenderAgentVoiceAssets): ?><link rel="stylesheet" data-member-agent-voice-menu href="<?= e(url('/member-agent-voice-menu.css?v=agent-voice-menu-20260913')) ?>"><?php endif; ?>
 <aside
@@ -82,6 +86,10 @@ if ($mainSidebarRenderAgentVoiceAssets) $GLOBALS['VP3_MEMBER_AGENT_VOICE_MENU_AS
 
         <?php if ($mainSidebarCanKnowledge): ?>
           <a class="chat-sidebar-nav-link <?= $mainSidebarActive === 'knowledge' ? 'active' : '' ?>" href="<?= e(url('/knowledge.php')) ?>"><span>◇</span><strong>My Knowledge</strong></a>
+        <?php endif; ?>
+
+        <?php if ($mainSidebarCanTranscriptions): ?>
+          <a class="chat-sidebar-nav-link <?= $mainSidebarTranscriptionsActive ? 'active' : '' ?>" href="<?= e(url('/artist-listening.php')) ?>"><span>▤</span><strong>My Transcriptions</strong></a>
         <?php endif; ?>
 
         <?php if ($mainSidebarCanAccount): ?>
@@ -167,5 +175,5 @@ if ($mainSidebarRenderAgentVoiceAssets) $GLOBALS['VP3_MEMBER_AGENT_VOICE_MENU_AS
 </div>
 <script src="<?= e(url('/homeserver-vp3.js?v=agent-policy-v035-20260909')) ?>" defer></script>
 <script src="<?= e(url('/agent-ui-v034.js?v=agent-ui-v034-20260910-chat-rail')) ?>" defer></script>
-<script data-chat-rail-controls-v132 src="<?= e(url('/chat-rail-controls-v132.js?v=20260911-1')) ?>" defer></script>
+<?php if ($mainSidebarIsChat): ?><script data-chat-rail-controls-v132 src="<?= e(url('/chat-rail-controls-v132.js?v=20260911-1')) ?>" defer></script><?php endif; ?>
 <?php if ($mainSidebarRenderAgentVoiceAssets): ?><script data-member-agent-voice-menu src="<?= e(url('/member-agent-voice-menu.js?v=agent-voice-menu-20260913')) ?>" defer></script><?php endif; ?>

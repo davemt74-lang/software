@@ -27,14 +27,14 @@ const primaryStart = mainSidebar.indexOf('data-agent-primary-nav');
 const primaryEnd = primaryStart < 0 ? -1 : mainSidebar.indexOf('</nav>', primaryStart);
 assert.ok(primaryStart >= 0 && primaryEnd > primaryStart, 'Canonical sidebar must expose an explicit primary Agent navigation block');
 const primaryNav = mainSidebar.slice(primaryStart, primaryEnd);
-for (const label of ['New Chat', 'Contacts', 'My Calendar']) {
+for (const label of ['New Chat', 'Contacts', 'My Knowledge', 'My Transcriptions', 'My Calendar']) {
   assert.ok(primaryNav.includes(`<strong>${label}</strong>`), `Canonical Agent sidebar must expose ${label}`);
 }
-for (const accountLevel of ['Knowledge', 'Memory']) {
+for (const accountLevel of ['Memory']) {
   assert.ok(!primaryNav.includes(`<strong>${accountLevel}</strong>`), `${accountLevel} must live in the canonical user menu instead of primary Agent navigation`);
 }
 assert.ok(!primaryNav.includes('<strong>Approvals</strong>'), 'Approvals must not remain in canonical primary navigation');
-for (const secondary of ['Profile Agent', 'My Team', 'My Transcriptions', 'Plan &amp; Usage']) {
+for (const secondary of ['Profile Agent', 'My Team', 'Plan &amp; Usage']) {
   assert.ok(!primaryNav.includes(`<strong>${secondary}</strong>`), `${secondary} must live in the user menu instead of primary Agent navigation`);
 }
 assert.match(mainSidebar, /id="newChatButton"[\s\S]*data-chat-view-target="chat"/, 'Canonical sidebar must preserve Main Feed New Chat behavior');
@@ -57,13 +57,15 @@ assert.doesNotMatch(memberNav, /'my_team','My Team'/, 'profile/dropdown navigati
 assert.match(memberNav, /'profile_agent','Profile Agent'/, 'Profile Agent must remain available from the canonical user menu');
 assert.match(memberNav, /'knowledge','My Knowledge',url\('\/knowledge\.php'\)/, 'My Knowledge must remain available from the canonical user menu');
 assert.match(memberNav, /'memory','My Memory',url\('\/memory\.php'\)/, 'My Memory must remain available from the canonical user menu');
-assert.match(memberNav, /'transcriptions','My Transcriptions'/, 'Transcriptions must remain available from the canonical user menu');
+assert.match(memberNav, /'transcriptions','My Transcriptions'/, 'Transcriptions must remain available from canonical member navigation');
 assert.match(memberNav, /'subscription','Plan & Usage'/, 'Plan & Usage must remain available from the canonical user menu');
 assert.match(memberNav, /'calendar','My Calendar',url\('\/calendar\.php'\)/, 'My Calendar must remain available from canonical member navigation');
 assert.match(settingsUi, /document\.body\.appendChild\(host\)/, 'Chat Settings launcher must live outside the left sidebar');
 assert.match(settingsUi, /chat-settings-presence-dot/, 'Chat Settings launcher must expose the compact status dot');
 assert.doesNotMatch(settingsUi, /sidebar\.appendChild\(host\)|const sidebar = document\.getElementById\('chatSidebar'\)/, 'Chat Settings must not append to the left sidebar');
-assert.match(settingsCss, /position:fixed;[\s\S]*right:10px;[\s\S]*bottom:12px;/, 'Chat Settings must occupy the bottom-right rail position');
+assert.match(settingsCss, /position:fixed;[\s\S]*right:10px;[\s\S]*bottom:12px;/, 'Chat Settings must occupy the bottom-right rail position on Agent Chat');
+assert.match(mainSidebar, /\$mainSidebarIsChat/, 'Shared sidebar must scope Chat rail controls to Agent Chat');
+assert.match(mainSidebar, /if \(\$mainSidebarIsChat\): \?><script data-chat-rail-controls-v132/, 'Chat rail controls must not load on non-Chat workspaces');
 assert.match(htaccess, /RewriteRule \^chat-legacy-v108\\\.php\$ \/chat\.php \[R=302,L,NE\]/, 'legacy Chat template must redirect to the one canonical public Chat path');
 
 // The retained source template may still contain legacy media canvas markup for

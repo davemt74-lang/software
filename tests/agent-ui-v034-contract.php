@@ -18,16 +18,17 @@ $check = static function(bool $ok, string $message) use (&$failures): void {
 $primaryStart = strpos($sidebar, 'data-agent-primary-nav');
 $primaryEnd = $primaryStart === false ? false : strpos($sidebar, '</nav>', $primaryStart);
 $primary = ($primaryStart !== false && $primaryEnd !== false) ? substr($sidebar, $primaryStart, $primaryEnd - $primaryStart) : '';
-foreach (['New Chat','Contacts','My Calendar'] as $label) {
+foreach (['New Chat','Contacts','My Knowledge','My Transcriptions','My Calendar'] as $label) {
     $check(str_contains($primary, '>' . $label . '<'), 'Primary Agent navigation is missing ' . $label . '.');
 }
-foreach (['Knowledge','Memory','Approvals'] as $label) {
+foreach (['Memory','Approvals'] as $label) {
     $check(!str_contains($primary, '>' . $label . '<'), 'Primary Agent navigation still contains account-level item ' . $label . '.');
 }
-foreach (['Profile Agent','My Transcriptions','My Team','Plan &amp; Usage','Buy AI Tokens'] as $label) {
+foreach (['Profile Agent','My Team','Plan &amp; Usage','Buy AI Tokens'] as $label) {
     $check(!str_contains($primary, $label), 'Primary Agent navigation still contains secondary item ' . $label . '.');
 }
 $check(str_contains($navigation, "'knowledge','My Knowledge',url('/knowledge.php'),'identity'"), 'User menu is missing My Knowledge.');
+$check(str_contains($navigation, "'transcriptions','My Transcriptions',url('/artist-listening.php'),'identity'"), 'Navigation registry is missing My Transcriptions.');
 $check(str_contains($navigation, "'memory','My Memory',url('/memory.php'),'identity'"), 'User menu is missing My Memory.');
 $check(str_contains($sidebar, 'data-agent-user-footer'), 'Bottom user menu is missing.');
 $check(str_contains($sidebar, 'vp3AgentRuntimeStrip'), 'Primary runtime strip is missing.');
