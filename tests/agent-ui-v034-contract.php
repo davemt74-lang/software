@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 $root = dirname(__DIR__);
 $sidebar = (string)file_get_contents($root . '/includes/main-sidebar.php');
+$navigation = (string)file_get_contents($root . '/includes/member-navigation.php');
 $rename = (string)file_get_contents($root . '/api/chat-conversation-rename-v034.php');
 $runtime = (string)file_get_contents($root . '/api/agent-runtime-status-v034.php');
 $memory = (string)file_get_contents($root . '/memory.php');
@@ -17,13 +18,17 @@ $check = static function(bool $ok, string $message) use (&$failures): void {
 $primaryStart = strpos($sidebar, 'data-agent-primary-nav');
 $primaryEnd = $primaryStart === false ? false : strpos($sidebar, '</nav>', $primaryStart);
 $primary = ($primaryStart !== false && $primaryEnd !== false) ? substr($sidebar, $primaryStart, $primaryEnd - $primaryStart) : '';
-foreach (['New Chat','Knowledge','Memory','Contacts','My Calendar'] as $label) {
+foreach (['New Chat','Contacts','My Calendar'] as $label) {
     $check(str_contains($primary, '>' . $label . '<'), 'Primary Agent navigation is missing ' . $label . '.');
 }
-$check(!str_contains($primary, '>Approvals<'), 'Primary Agent navigation still contains the removed Approvals shortcut.');
+foreach (['Knowledge','Memory','Approvals'] as $label) {
+    $check(!str_contains($primary, '>' . $label . '<'), 'Primary Agent navigation still contains account-level item ' . $label . '.');
+}
 foreach (['Profile Agent','My Transcriptions','My Team','Plan &amp; Usage','Buy AI Tokens'] as $label) {
     $check(!str_contains($primary, $label), 'Primary Agent navigation still contains secondary item ' . $label . '.');
 }
+$check(str_contains($navigation, "'knowledge','My Knowledge',url('/knowledge.php'),'identity'"), 'User menu is missing My Knowledge.');
+$check(str_contains($navigation, "'memory','My Memory',url('/memory.php'),'identity'"), 'User menu is missing My Memory.');
 $check(str_contains($sidebar, 'data-agent-user-footer'), 'Bottom user menu is missing.');
 $check(str_contains($sidebar, 'vp3AgentRuntimeStrip'), 'Primary runtime strip is missing.');
 $check(str_contains($sidebar, 'vp3AgentRuntimeSource'), 'Execution-source indicator is missing.');
@@ -46,7 +51,7 @@ $check(str_contains($runtime, 'cloud_tokens_charged'), 'Runtime usage indicator 
 
 $check(str_contains($memory, "WHERE user_id=? AND is_active=1"), 'Memory list is not owner scoped.');
 $check(str_contains($memory, 'SET is_active=0 WHERE id=? AND user_id=?'), 'Forget action is not owner scoped.');
-$check(str_contains($memory, "workspaceSidebarActive='memory'"), 'Memory does not activate the canonical sidebar route.');
+$check(str_contains($memory, "workspaceSidebarActive='memory'"), 'Memory does not activate the canonical member-shell route.');
 $check(str_contains($memory, 'Forget'), 'Memory lacks an explicit user forget control.');
 
 $check(str_contains($js, 'MutationObserver(decorateHistory)'), 'Dynamic history rows are not decorated after refresh.');
