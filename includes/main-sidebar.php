@@ -11,6 +11,7 @@ $mainSidebarIsChat = $mainSidebarActive === 'chat' || $mainSidebarScript === 'ch
 $mainSidebarProductsActive = $mainSidebarActive === 'profile_commerce' || $mainSidebarScript === 'profile-commerce-products.php';
 $mainSidebarCalendarActive = $mainSidebarActive === 'calendar' || in_array($mainSidebarScript, ['calendar.php','calendar-event.php'], true);
 $mainSidebarTranscriptionsActive = $mainSidebarActive === 'transcriptions' || $mainSidebarScript === 'artist-listening.php';
+$mainSidebarCanChat = $mainSidebarUser && has_permission('chat.access', $mainSidebarUser);
 $mainSidebarCanAccount = $mainSidebarUser && has_permission('account.access', $mainSidebarUser);
 $mainSidebarCanKnowledge = $mainSidebarUser && member_navigation_entitled($mainSidebarUser, 'knowledge.access', personal_capability_has_v242('personal_knowledge.access', $mainSidebarUser));
 $mainSidebarCanProfileAgent = $mainSidebarUser && member_navigation_entitled($mainSidebarUser, 'profile_agent.access', personal_capability_has_v242('profile_agent.access', $mainSidebarUser));
@@ -28,7 +29,7 @@ if ($mainSidebarRenderAgentVoiceAssets) $GLOBALS['VP3_MEMBER_AGENT_VOICE_MENU_AS
 <link rel="stylesheet" href="<?= e(url('/site-branding.css?v=1')) ?>">
 <link rel="stylesheet" href="<?= e(url('/homeserver-vp3.css?v=20260910-1')) ?>">
 <link rel="stylesheet" href="<?= e(url('/agent-policy-v035.css?v=agent-policy-v035-20260909')) ?>">
-<link rel="stylesheet" href="<?= e(url('/agent-ui-v034.css?v=agent-ui-v034-20260910-chat-rail')) ?>">
+<link rel="stylesheet" href="<?= e(url('/agent-ui-v034.css?v=agent-ui-v034-20260913-sidebar-footer')) ?>">
 <?php if ($mainSidebarIsChat): ?><link rel="stylesheet" data-chat-rail-controls-v132 href="<?= e(url('/chat-rail-controls-v132.css?v=20260911-1')) ?>"><?php endif; ?>
 <link rel="stylesheet" href="<?= e(url('/profile-commerce-products-shell-v1310.css?v=1310')) ?>">
 <?php if ($mainSidebarRenderAgentVoiceAssets): ?><link rel="stylesheet" data-member-agent-voice-menu href="<?= e(url('/member-agent-voice-menu.css?v=agent-voice-menu-20260913')) ?>"><?php endif; ?>
@@ -55,23 +56,9 @@ if ($mainSidebarRenderAgentVoiceAssets) $GLOBALS['VP3_MEMBER_AGENT_VOICE_MENU_AS
     </div>
   </div>
 
-  <div class="agent-runtime-strip" id="vp3AgentRuntimeStrip" aria-label="Agent runtime status">
-    <div class="agent-runtime-line"><small>Run</small><strong id="vp3AgentRuntimeSource">Checking…</strong></div>
-    <div class="agent-runtime-line"><small>Brain / model</small><strong id="vp3AgentRuntimeModel">Agent</strong></div>
-    <div class="agent-runtime-line"><small>This month</small><a id="vp3AgentRuntimeUsage" href="<?= e(url('/ai-usage.php')) ?>">AI Usage</a></div>
-  </div>
-
   <div class="chat-sidebar-sections">
     <section class="chat-sidebar-nav-section" aria-label="Agent workspace">
       <nav class="chat-sidebar-nav agent-primary-nav" data-agent-primary-nav>
-        <?php if ($mainSidebarUser && has_permission('chat.access', $mainSidebarUser)): ?>
-          <?php if ($mainSidebarUseNewChatButton): ?>
-            <button class="chat-sidebar-nav-link <?= $mainSidebarActive === 'chat' ? 'active' : '' ?>" id="newChatButton" type="button" data-chat-view-target="chat"><span>＋</span><strong>New Chat</strong></button>
-          <?php else: ?>
-            <a class="chat-sidebar-nav-link <?= $mainSidebarActive === 'chat' ? 'active' : '' ?>" href="<?= e(url('/chat.php')) ?>"><span>＋</span><strong>New Chat</strong></a>
-          <?php endif; ?>
-        <?php endif; ?>
-
         <?php if ($mainSidebarCanAccount): ?>
           <a class="chat-sidebar-nav-link <?= $mainSidebarActive === 'contacts' ? 'active' : '' ?>" href="<?= e(url('/contacts.php')) ?>"><span>●</span><strong>Contacts</strong></a>
         <?php endif; ?>
@@ -102,9 +89,18 @@ if ($mainSidebarRenderAgentVoiceAssets) $GLOBALS['VP3_MEMBER_AGENT_VOICE_MENU_AS
       </nav>
     </section>
 
-    <?php if ($mainSidebarUseNewChatButton || $mainSidebarHistoryRows): ?>
+    <?php if ($mainSidebarCanChat || $mainSidebarHistoryRows): ?>
       <section class="chat-sidebar-history-section" aria-label="Recent chats">
-        <div class="chat-history-label">Chats</div>
+        <div class="chat-history-heading">
+          <div class="chat-history-label">Chats</div>
+          <?php if ($mainSidebarCanChat): ?>
+            <?php if ($mainSidebarUseNewChatButton): ?>
+              <button class="chat-history-new" id="newChatButton" type="button" data-chat-view-target="chat" aria-label="New chat" title="New chat">+</button>
+            <?php else: ?>
+              <a class="chat-history-new" href="<?= e(url('/chat.php')) ?>" aria-label="New chat" title="New chat">+</a>
+            <?php endif; ?>
+          <?php endif; ?>
+        </div>
         <nav class="chat-history" id="chatHistory">
           <?php foreach ($mainSidebarHistoryRows as $conversation): $conversationId=(int)($conversation['id'] ?? 0); $conversationTitle=(string)($conversation['title'] ?? 'Untitled chat'); ?>
             <div class="chat-history-row" data-conversation-row="<?= $conversationId ?>">
@@ -124,12 +120,14 @@ if ($mainSidebarRenderAgentVoiceAssets) $GLOBALS['VP3_MEMBER_AGENT_VOICE_MENU_AS
   <?php if ($mainSidebarUser): ?>
     <footer class="agent-sidebar-footer" data-agent-user-footer>
       <button class="agent-sidebar-user-button" id="vp3AgentUserMenuButton" type="button" aria-expanded="false" aria-controls="vp3AgentUserMenu">
-        <span class="agent-sidebar-avatar" aria-hidden="true">
-          <?php if (user_avatar_url($mainSidebarUser) !== ''): ?><img src="<?= e(user_avatar_url($mainSidebarUser)) ?>" alt=""><?php else: ?><?= e(user_initials($mainSidebarUser)) ?><?php endif; ?>
-        </span>
         <span class="agent-sidebar-user-copy"><strong><?= e((string)($mainSidebarUser['display_name'] ?? 'Account')) ?></strong><?php if ($mainSidebarRoleSummary !== ''): ?><small><?= e($mainSidebarRoleSummary) ?></small><?php endif; ?></span>
         <span class="agent-sidebar-user-chevron" aria-hidden="true">⌃</span>
       </button>
+      <div class="agent-runtime-strip agent-sidebar-runtime" id="vp3AgentRuntimeStrip" aria-label="Agent runtime status">
+        <div class="agent-runtime-line"><small>Run</small><strong id="vp3AgentRuntimeSource">Checking…</strong></div>
+        <div class="agent-runtime-line"><small>Brain / model</small><strong id="vp3AgentRuntimeModel">Agent</strong></div>
+        <div class="agent-runtime-line"><small>This month</small><a id="vp3AgentRuntimeUsage" href="<?= e(url('/ai-usage.php')) ?>">AI Usage</a></div>
+      </div>
       <nav class="agent-sidebar-user-menu" id="vp3AgentUserMenu" aria-label="User menu" hidden>
         <?php $lastGroup=''; foreach ($mainSidebarFooterLinks as $link): $group=(string)($link['group'] ?? ''); ?>
           <?php if ($lastGroup !== '' && $group !== $lastGroup): ?><div class="agent-menu-divider" aria-hidden="true"></div><?php endif; ?>
@@ -174,6 +172,6 @@ if ($mainSidebarRenderAgentVoiceAssets) $GLOBALS['VP3_MEMBER_AGENT_VOICE_MENU_AS
   </section>
 </div>
 <script src="<?= e(url('/homeserver-vp3.js?v=agent-policy-v035-20260909')) ?>" defer></script>
-<script src="<?= e(url('/agent-ui-v034.js?v=agent-ui-v034-20260910-chat-rail')) ?>" defer></script>
+<script src="<?= e(url('/agent-ui-v034.js?v=agent-ui-v034-20260913-sidebar-footer')) ?>" defer></script>
 <?php if ($mainSidebarIsChat): ?><script data-chat-rail-controls-v132 src="<?= e(url('/chat-rail-controls-v132.js?v=20260911-1')) ?>" defer></script><?php endif; ?>
 <?php if ($mainSidebarRenderAgentVoiceAssets): ?><script data-member-agent-voice-menu src="<?= e(url('/member-agent-voice-menu.js?v=agent-voice-menu-20260913')) ?>" defer></script><?php endif; ?>
