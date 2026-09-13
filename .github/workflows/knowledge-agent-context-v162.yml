@@ -29,12 +29,17 @@ jobs:
           php -l includes/knowledge-retrieval-v162.php
           php -l api/chat-v236.php
           php -l api/chat-stream-v121.php
+          php -l api/knowledge-scopes-v162.php
           php -l tests/knowledge-agent-context-v162-contract.php
           php -l tests/knowledge-agent-context-v162-security-contract.php
+          node --check agent-context-v131.js
+          node --check tests/knowledge-agent-context-v162-browser-contract.mjs
       - name: Phase 16.2 behavior contract
         run: php tests/knowledge-agent-context-v162-contract.php
       - name: Phase 16.2 privacy contract
         run: php tests/knowledge-agent-context-v162-security-contract.php
+      - name: Phase 16.2 browser contract
+        run: node tests/knowledge-agent-context-v162-browser-contract.mjs
       - name: Knowledge regression contracts
         run: |
           if [ -f tests/knowledge-library-v161-contract.php ]; then php tests/knowledge-library-v161-contract.php; fi
