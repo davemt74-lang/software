@@ -1,0 +1,48 @@
+VP3 Cloud ↔ HomeServer Knowledge Contract v0.62
+Verified: 2026-09-12
+HomeServer repository: davemt74-lang/otro
+HomeServer main: 8e99d762aa39f8ce6165013c635175249e37f4d3
+
+Remote operations
+- knowledge.collections.list
+- knowledge.folders.list
+- knowledge.folder.map
+- knowledge.folder.unmap
+- knowledge.item.write
+
+Permissions
+- Read/list operations require knowledge.search.
+- Folder map/unmap and item write require knowledge.write.
+- VP3 requests knowledge.write only through an explicit one-time HomeServer permission upgrade.
+- Permission upgrade preserves VP3's existing requested permission set.
+
+Native folder picker
+- knowledge.folder.map does not accept a native folder location from VP3 Cloud.
+- HomeServer opens its native folder picker on the HomeServer machine.
+- The owner selects the folder locally.
+- HomeServer returns only the safe mapping projection.
+- VP3 Cloud never receives or stores the selected absolute/native folder location.
+- The native picker can remain open for up to 660 seconds; Cloud uses the same operation-specific relay timeout.
+
+Safe Cloud projection
+Collections:
+- collection_key
+- name
+- description
+- source_count
+- direct_item_count
+
+Folder mappings:
+- mapping_id
+- label
+- collection_key / collection_name
+- enabled / recursive / scan interval
+- indexing status and counts
+- last indexing timestamp
+
+Cloud does not project HomeServer filesystem metadata or full indexed folder documents.
+
+Authority
+- HomeServer remains canonical for local folders, indexing, collection scope, knowledge-kind scope and local knowledge writes.
+- VP3 Cloud provides the authenticated owner UI and relays only the five pinned operations.
+- Browser requests map to named Cloud actions; browsers cannot choose arbitrary HomeServer operations or supply HomeServer credentials.
