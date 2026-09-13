@@ -44,7 +44,7 @@ if (!$user) redirect(url('/login.php'));
           <div class="hs-stepper" id="hsStepper" hidden aria-label="Pairing steps">
             <div class="hs-step" data-step="1"><span>1</span><div><strong>Generate in VP3 Cloud</strong><small>Create an account-bound one-time pairing token below.</small></div></div>
             <div class="hs-step" data-step="2"><span>2</span><div><strong>Enter token in HomeServer</strong><small>Open HomeServer → Remote Bridge and paste the VP3 token.</small></div></div>
-            <div class="hs-step" data-step="3"><span>3</span><div><strong>Approve locally</strong><small>Review the VP3 permissions in HomeServer → Connected Apps and click Approve.</small></div></div>
+            <div class="hs-step" data-step="3"><span>3</span><div><strong>Approve locally</strong><small>Stay in HomeServer → Remote Bridge, review the requested VP3 permissions, and click Approve VP3.</small></div></div>
           </div>
 
           <div class="hs-claim-form" id="hsTokenPanel">
@@ -63,7 +63,7 @@ if (!$user) redirect(url('/login.php'));
           <div class="hs-approval" id="hsApproval" hidden>
             <span>Local approval required</span>
             <strong>Review VP3 in HomeServer</strong>
-            <p>The account token was accepted and this HomeServer proved its relay identity. Open HomeServer → Connected Apps, review the requested capabilities, and click Approve. No second code is required.</p>
+            <p>The account token was accepted and this HomeServer proved its relay identity. In HomeServer → Remote Bridge, review the requested capabilities and click Approve VP3. No second code is required.</p>
             <div class="hs-actions"><button class="hs-button" id="hsCheckApproval" type="button">Check now</button><button class="hs-button quiet" id="hsCancelPairing" type="button">Cancel request</button></div>
           </div>
 
