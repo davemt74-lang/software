@@ -47,8 +47,10 @@ jobs:
           php -l settings-homeserver.php
           php -l includes/member-navigation.php
 
-      - name: Verify account-token pairing contract
-        run: node tests/homeserver-cloud-pairing-v1200-contract.mjs
+      - name: Verify account-token pairing contracts
+        run: |
+          node tests/homeserver-cloud-pairing-v1200-contract.mjs
+          node tests/homeserver-account-pairing-v1210-contract.mjs
 
       - name: Verify browser bundle syntax
         run: |
