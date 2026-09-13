@@ -33,7 +33,7 @@
   function closeAndRemove(dialog) {
     if (!dialog) return;
     if (dialog.open) dialog.close();
-    dialog.remove();
+    window.setTimeout(() => dialog.remove(), 0);
   }
 
   function makeDialog(className, label) {
@@ -113,9 +113,8 @@
       body.appendChild(source);
       dialog.appendChild(body);
       dialog.addEventListener('close', () => {
-        if (source.isConnected) placeholder.after(source);
+        placeholder.after(source);
         activeDialog = null;
-        dialog.remove();
       }, { once: true });
       dialog.showModal();
       return dialog;
