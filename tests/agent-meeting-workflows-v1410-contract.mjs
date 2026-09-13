@@ -3,12 +3,14 @@ import assert from 'node:assert/strict';
 
 const read = (path) => fs.readFileSync(path, 'utf8');
 const meeting = read('includes/agent-meeting-workflows-v1410.php');
+const hardening = read('includes/agent-meeting-workflows-v1410-hardening.php');
 const lifecycle = read('includes/agent-appointment-lifecycle-v700.php');
 const delivery = read('includes/agent-appointment-lifecycle-v700-part7.php');
 const housekeeping = read('includes/agent-appointment-lifecycle-v700-part8.php');
 const controller = read('includes/appointment-lifecycle-controller-v700.php');
 
 assert.match(lifecycle, /agent-meeting-workflows-v1410\.php/, 'Appointment lifecycle must load Phase 14.1 orchestration');
+assert.match(lifecycle, /agent-meeting-workflows-v1410-hardening\.php/, 'Appointment lifecycle must load Phase 14.1 rollout hardening');
 assert.match(meeting, /require_once __DIR__\.'\/agent-workflow-runs-v1400\.php'/, 'Phase 14.1 must reuse the canonical Phase 14 ledger');
 assert.match(meeting, /workflow_type[^\n]*meeting_prep|agent_meeting_workflow_create_run_v1410\([^;]*'meeting_prep'/s, 'Meeting prep must be a durable workflow run');
 assert.match(meeting, /prepare-brief[\s\S]*publish-chat/, 'Prep must prepare the brief before Chat-canvas publication');
@@ -35,7 +37,12 @@ assert.match(meeting, /This message has not been sent\./, 'Agent Chat must clear
 assert.match(meeting, /status IN \('approved','executing'\)/, 'Housekeeping may execute only approved follow-up runs');
 assert.match(meeting, /ambiguous_delivery/, 'An interrupted external send with unknown outcome must fail closed instead of being automatically resent');
 assert.match(meeting, /\$wasInterrupted&&\(string\)\$followup\['message_status'\]!=='sent'/, 'Only database-confirmed sent follow-ups may auto-close after interruption');
-assert.match(housekeeping, /agent_meeting_workflow_housekeeping_v1410/, 'Lifecycle housekeeping must reconcile drafts and execute approved follow-ups');
-assert.match(housekeeping, /register_shutdown_function[\s\S]*agent_meeting_workflow_housekeeping_v1410/, 'Approval POSTs must get an immediate shutdown execution pass');
+
+assert.match(hardening, /INTERVAL 72 HOUR/, 'First rollout must only generate proactive follow-ups for recent completed meetings');
+assert.match(hardening, /SELECT id FROM agent_scheduling_followups WHERE booking_id=\? AND owner_user_id=\?/, 'Automation must check for an existing host follow-up before creating another');
+assert.match(hardening, /if\(\(int\)\$follow->fetchColumn\(\)>0\)continue/, 'An existing human or automated follow-up must suppress duplicate proactive creation');
+assert.match(hardening, /if\(\$existingRun\)[\s\S]*agent_meeting_workflow_ensure_followup_v1410/, 'Existing Phase 14.1 runs must still reconcile after transient failures');
+assert.match(housekeeping, /agent_meeting_workflow_housekeeping_hardened_v1410/, 'Lifecycle housekeeping must use the bounded follow-up reconciler');
+assert.match(housekeeping, /register_shutdown_function[\s\S]*agent_meeting_workflow_housekeeping_hardened_v1410/, 'Approval POSTs must get an immediate hardened shutdown execution pass');
 
 console.log('Agent Meeting Workflows v14.10 contract: OK');
