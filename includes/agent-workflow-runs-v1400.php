@@ -305,6 +305,8 @@ function agent_workflow_claim_next_action_v1400(PDO $pdo,array $user,int $runId,
     try{
         $pdo->beginTransaction();$run=agent_workflow_row_v1400($pdo,$ownerUserId,$runId,true);
         if(!$run||!in_array((string)$run['status'],['approved','executing'],true)){if($pdo->inTransaction())$pdo->rollBack();return null;}
+        // The locked run row is the single-executor gate. A second caller must wait until the active action reports a result.
+        if((string)$run['status']==='executing'&&(int)($run['current_action_id']??0)>0){$pdo->commit();return null;}
         // Global sequence wins over runtime affinity: neither Cloud nor HomeServer may skip an earlier queued step.
         $stmt=$pdo->prepare("SELECT * FROM agent_workflow_actions WHERE run_id=? AND owner_user_id=? AND status='queued' ORDER BY sequence_no,id LIMIT 1 FOR UPDATE");$stmt->execute([$runId,$ownerUserId]);$action=$stmt->fetch();
         if(!$action){$pdo->commit();return null;}
@@ -320,7 +322,7 @@ function agent_workflow_record_action_result_v1400(PDO $pdo,array $user,int $run
 {
     $ownerUserId=(int)($user['id']??0);if($ownerUserId<1)throw new RuntimeException('A signed-in account is required.');$summary=agent_workflow_text_v1400($summary,1500);$errorClass=agent_workflow_text_v1400($errorClass,80);
     try{
-        $pdo->beginTransaction();$run=agent_workflow_row_v1400($pdo,$ownerUserId,$runId,true);if(!$run||!in_array((string)$run['status'],['executing','approved'],true))throw new RuntimeException('Workflow is not executing.');
+        $pdo->beginTransaction();$run=agent_workflow_row_v1400($pdo,$ownerUserId,$runId,true);if(!$run||(string)$run['status']!=='executing'||(int)($run['current_action_id']??0)!==$actionId)throw new RuntimeException('Workflow action is not the active execution.');
         $stmt=$pdo->prepare('SELECT * FROM agent_workflow_actions WHERE id=? AND run_id=? AND owner_user_id=? LIMIT 1 FOR UPDATE');$stmt->execute([$actionId,$runId,$ownerUserId]);$action=$stmt->fetch();if(!$action||(string)$action['status']!=='executing')throw new RuntimeException('Workflow action is not executing.');
         $actionStatus=$success?'completed':'failed';$pdo->prepare('UPDATE agent_workflow_actions SET status=?,result_summary=?,result_json=?,error_class=?,completed_at=UTC_TIMESTAMP() WHERE id=? AND owner_user_id=?')->execute([$actionStatus,$summary,$result?agent_workflow_json_v1400($result):null,$success?'':$errorClass,$actionId,$ownerUserId]);agent_workflow_event_v1400($pdo,$ownerUserId,$runId,$success?'action_completed':'action_failed','executing','executing','executor',$summary!==''?$summary:($success?'Workflow action completed.':'Workflow action failed.'),['action_id'=>$actionId,'error_class'=>$success?'':$errorClass]);
         if(!$success){$pdo->prepare("UPDATE agent_workflow_runs SET status='failed',current_action_id=NULL,last_error_class=? WHERE id=? AND owner_user_id=?")->execute([$errorClass!==''?$errorClass:'execution_failed',$runId,$ownerUserId]);agent_workflow_event_v1400($pdo,$ownerUserId,$runId,'failed','executing','failed','executor','Workflow stopped after an action failure.',['error_class'=>$errorClass]);}
