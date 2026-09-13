@@ -50,7 +50,7 @@ assert.match(service, /'absolute_paths_exposed'\s*=>\s*false/, 'Cloud snapshot m
 assert.match(service, /'cloud_stores_native_paths'\s*=>\s*false/, 'Cloud snapshot must explicitly reject native path storage');
 assert.match(service, /'full_documents_returned'\s*=>\s*false/, 'Cloud projection must preserve full-document boundary');
 assert.match(service, /\^source-\\d\{1,18\}\$/, 'Folder mapping IDs must be validated as opaque HomeServer IDs');
-assert.doesNotMatch(service, /\$payload\[['"]path['"]\]|['"]path['"]\s*=>\s*\$|native_path|absolute_path\s*=>\s*\$|filesystem_path/, 'Cloud service must never build or consume a native folder location');
+assert.doesNotMatch(service, /\$payload\[['"](?:path|native_path|absolute_path|filesystem_path)['"]\]|['"](?:path|native_path|absolute_path|filesystem_path)['"]\s*=>\s*\$/, 'Cloud service must never build or consume a native folder location');
 
 assert.match(page, /data-local-knowledge/, 'Local Knowledge page must mount the browser controller');
 assert.match(page, /knowledge\.write/, 'Local Knowledge page must explain the explicit write permission');
