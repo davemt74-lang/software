@@ -27,7 +27,7 @@ assert.doesNotMatch(domain,/const STONEFELLOW_PROFILE_NAMESPACE/,'profile URL is
 assert.match(domain,/return url\('\/' \. rawurlencode\(\$username\)\)/,'canonical profile URL resolves at /username');
 assert.match(ht,/RewriteRule \^stonefellow\/[\s\S]*\/\$1 \[R=301,L,NE\]/,'legacy namespaced profile URLs permanently redirect to root usernames');
 assert.match(ht,/profile-v900\.php\?username=\$1 \[L,QSA,NC\]/,'root username route resolves to the canonical Profile Commerce composition renderer');
-assert.match(profileComposition,/require __DIR__.'\/profile\.php'/,'Profile Commerce composition must retain the existing profile renderer');
+assert.match(profileComposition,/require\s+__DIR__\s*\.\s*['"]\/profile\.php['"]/,'Profile Commerce composition must retain the existing profile renderer');
 assert.doesNotMatch(ht,/system_agent_name/,'editable system-agent name does not control URL routing');
 assert.match(domain,/profile_username_valid/,'user chooses validated unique username');
 assert.match(domain,/user_agent_get_v236\(\$pdo,\$uid,\$agentId\)/,'profile agent must belong to owner');
