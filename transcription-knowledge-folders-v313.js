@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const BUILD = 'transcription-knowledge-folders-v313-20260913';
+  const BUILD = 'transcription-knowledge-folders-v313-hotfix-20260913';
   const cfg = window.STONEFELLOW_ARTIST_LISTENING_V172 || {};
   const proof = window.VP3_TRANSCRIPTION_KNOWLEDGE_FOLDERS_V313 = {
     build: BUILD,
@@ -73,8 +73,14 @@
     const button = document.querySelector('[data-listening-ai-knowledge]');
     const actions = button?.parentElement;
     if (!button || !actions) return false;
-    button.textContent = 'Save to folder';
-    button.title = 'Save this AI summary to My Knowledge';
+
+    // This function is invoked by a document-wide childList MutationObserver.
+    // Replacing button text on every observer pass creates another childList
+    // mutation and can keep the page in a self-sustaining observer loop.
+    if (button.textContent !== 'Save to folder') button.textContent = 'Save to folder';
+    if (button.title !== 'Save this AI summary to My Knowledge') {
+      button.title = 'Save this AI summary to My Knowledge';
+    }
 
     let wrap = actions.querySelector('[data-listening-ai-folder-wrap]');
     if (!wrap) {
