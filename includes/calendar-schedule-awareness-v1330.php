@@ -125,7 +125,8 @@ function calendar_schedule_awareness_snapshot_v1330(PDO $pdo, array $user, ?Date
     $utc=new DateTimeZone('UTC');
     $nowUtc=($now??new DateTimeImmutable('now',$utc))->setTimezone($utc);
     $nowLocal=$nowUtc->setTimezone($timezone);
-    $rangeStart=$nowLocal->setTime(0,0,0)->setTimezone($utc);
+    $todayStart=$nowLocal->setTime(0,0,0);
+    $rangeStart=$todayStart->setTimezone($utc);
     $rangeEnd=$nowLocal->modify('+'.$horizonDays.' days')->setTime(23,59,59)->setTimezone($utc);
 
     try {
@@ -142,13 +143,16 @@ function calendar_schedule_awareness_snapshot_v1330(PDO $pdo, array $user, ?Date
     }
     usort($events,static fn(array $a,array $b):int=>strcmp((string)$a['start_local'],(string)$b['start_local']));
 
-    $current=null;$next=null;$today=[];$remaining=[];$upcoming=[];
+    $current=null;$next=null;$today=[];$remainingToday=[];$upcoming=[];
     $todayDate=$nowLocal->format('Y-m-d');
     foreach($events as $event){
         $start=new DateTimeImmutable((string)$event['start_local']);
         $end=new DateTimeImmutable((string)$event['end_local']);
-        if($start->format('Y-m-d')===$todayDate || ($start < $nowLocal->setTime(0,0,0) && $end > $nowLocal->setTime(0,0,0)))$today[]=$event;
-        if($end > $nowLocal)$remaining[]=$event;
+        $isToday=$start->format('Y-m-d')===$todayDate || ($start < $todayStart && $end > $todayStart);
+        if($isToday){
+            $today[]=$event;
+            if($end > $nowLocal)$remainingToday[]=$event;
+        }
         if($start <= $nowLocal && $end > $nowLocal && $current===null)$current=$event;
         if($start > $nowLocal && $next===null)$next=$event;
         if($end > $nowLocal && count($upcoming)<10)$upcoming[]=$event;
@@ -173,7 +177,7 @@ function calendar_schedule_awareness_snapshot_v1330(PDO $pdo, array $user, ?Date
         'current'=>$current,
         'next'=>$next,
         'starts_soon'=>$startsSoon,
-        'today'=>['date'=>$todayDate,'count'=>count($today),'remaining_count'=>count($remaining)],
+        'today'=>['date'=>$todayDate,'count'=>count($today),'remaining_count'=>count($remainingToday)],
         'upcoming'=>$upcoming,
         'conflicts'=>calendar_schedule_awareness_conflicts_v1330($conflictPool),
         'open_gaps_today'=>calendar_schedule_awareness_open_gaps_v1330($todayFuture,$nowLocal),
@@ -191,9 +195,9 @@ function calendar_schedule_awareness_candidates_v1330(array $snapshot): array
         $minutes=max(1,(int)($conflict['overlap_minutes']??0));
         $key='calendar-conflict:'.sha1((string)($conflict['left_ref']??'').'|'.(string)($conflict['right_ref']??''));
         $candidates[]=[
-            'hash'=>sha1('calendar|'.$key),'key'=>$key,'title'=>'Calendar conflict: '.$left.' + '.$right,
+            'hash'=>sha1('calendar|'.$key),'key'=>$key,'title'=>'Upcoming calendar conflict: '.$left.' + '.$right,
             'prompt'=>'Review this calendar overlap and help me decide whether either commitment should change.',
-            'reason'=>$left.' overlaps '.$right.' by about '.$minutes.' minutes.',
+            'reason'=>'Upcoming calendar conflict: '.$left.' overlaps '.$right.' by about '.$minutes.' minutes.',
             'priority'=>190,'score'=>0.95,'source'=>'calendar_conflict','url'=>'/calendar.php','created_at'=>(string)($snapshot['generated_at']??gmdate('c')),
         ];
     }
@@ -203,9 +207,9 @@ function calendar_schedule_awareness_candidates_v1330(array $snapshot): array
         $title=trim((string)($next['title']??'Upcoming commitment'));
         $key='calendar-starting:'.(string)($next['ref']??sha1($title));
         $candidates[]=[
-            'hash'=>sha1('calendar|'.$key),'key'=>$key,'title'=>'Starting soon: '.$title,
+            'hash'=>sha1('calendar|'.$key),'key'=>$key,'title'=>'Upcoming commitment starting soon: '.$title,
             'prompt'=>'Help me prepare for my next scheduled commitment.',
-            'reason'=>$title.' starts in about '.$minutes.' minute'.($minutes===1?'':'s').'.',
+            'reason'=>'Upcoming commitment '.$title.' starts in about '.$minutes.' minute'.($minutes===1?'':'s').'.',
             'priority'=>168,'score'=>0.84,'source'=>'calendar_upcoming','url'=>'/calendar.php','created_at'=>(string)($snapshot['generated_at']??gmdate('c')),
         ];
     }
