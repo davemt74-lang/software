@@ -48,6 +48,15 @@ function agent_meeting_workflow_event_exists_v1410(PDO $pdo,int $ownerUserId,int
     return (int)$stmt->fetchColumn()>0;
 }
 
+function agent_meeting_workflow_active_action_v1410(PDO $pdo,int $ownerUserId,array $run): ?array
+{
+    $runId=(int)($run['id']??0);$actionId=(int)($run['current_action_id']??0);
+    if($ownerUserId<1||$runId<1||$actionId<1||(string)($run['status']??'')!=='executing')return null;
+    $stmt=$pdo->prepare("SELECT * FROM agent_workflow_actions WHERE id=? AND run_id=? AND owner_user_id=? AND status='executing' LIMIT 1");
+    $stmt->execute([$actionId,$runId,$ownerUserId]);$action=$stmt->fetch();
+    return is_array($action)?agent_workflow_public_action_v1400($action):null;
+}
+
 /**
  * Create one canonical Phase 14 run for an appointment occurrence.
  * $steps: [['key','label','summary','requires_approval','capability_key']]
@@ -146,6 +155,29 @@ function agent_meeting_workflow_publish_prep_v1410(PDO $pdo,array $user,array $b
     return $conversationId;
 }
 
+function agent_meeting_workflow_execute_prep_action_v1410(PDO $pdo,array $user,array $booking,int $runId,array $action,?array &$brief,int &$conversationId): void
+{
+    $ownerUserId=(int)$user['id'];$actionId=(int)($action['id']??0);$key=(string)($action['action_key']??'');
+    if($actionId<1)throw new RuntimeException('Meeting-prep action is unavailable.');
+    try{
+        if($key==='prepare-brief'){
+            $brief=agent_appointment_lifecycle_prepare_brief_v700($pdo,$booking);
+            agent_workflow_record_action_result_v1400($pdo,$user,$runId,$actionId,true,'Meeting brief prepared from canonical appointment context.',['booking_id'=>(int)$booking['id'],'context_sections'=>count((array)($brief['context']??[]))]);
+        }elseif($key==='publish-chat'){
+            if(!$brief){$saved=agent_appointment_lifecycle_brief_v700($pdo,(int)$booking['id']);if($saved)$brief=['brief_text'=>(string)$saved['brief_text'],'context'=>json_decode((string)($saved['context_json']??'{}'),true)?:[],'agent_id'=>$saved['agent_id']??null];}
+            if(!$brief)throw new RuntimeException('Meeting brief is unavailable for Agent Chat publication.');
+            if(agent_meeting_workflow_event_exists_v1410($pdo,$ownerUserId,$runId,'meeting_prep_chat_published'))$conversationId=0;
+            else $conversationId=agent_meeting_workflow_publish_prep_v1410($pdo,$user,$booking,$runId,$brief);
+            agent_workflow_record_action_result_v1400($pdo,$user,$runId,$actionId,true,'Meeting prep report published to Agent Chat.',['booking_id'=>(int)$booking['id'],'conversation_id'=>$conversationId]);
+        }else{
+            throw new RuntimeException('Unknown meeting-prep workflow action.');
+        }
+    }catch(Throwable $e){
+        try{agent_workflow_record_action_result_v1400($pdo,$user,$runId,$actionId,false,'Meeting prep action failed.',[],get_class($e));}catch(Throwable $ignored){}
+        throw $e;
+    }
+}
+
 /**
  * Prepare one appointment occurrence and make Chat-canvas publication part of
  * the same durable Phase 14 run. Automatic runs dedupe by appointment start;
@@ -176,27 +208,17 @@ function agent_meeting_workflow_prepare_v1410(PDO $pdo,array $booking,bool $manu
     }
 
     $brief=null;$conversationId=0;
+    // Prep actions are read-only/idempotent enough to resume safely if PHP was
+    // interrupted after Phase 14 marked an action executing. Chat publication
+    // is protected by the workflow event marker before a second append attempt.
+    $lockedRun=agent_workflow_row_v1400($pdo,$ownerUserId,$runId);
+    if($lockedRun&&($active=agent_meeting_workflow_active_action_v1410($pdo,$ownerUserId,$lockedRun))){
+        agent_meeting_workflow_execute_prep_action_v1410($pdo,$user,$booking,$runId,$active,$brief,$conversationId);
+    }
     for($guard=0;$guard<4;$guard++){
         $action=agent_workflow_claim_next_action_v1400($pdo,$user,$runId,'cloud');
         if(!$action)break;
-        $actionId=(int)$action['id'];$key=(string)$action['action_key'];
-        try{
-            if($key==='prepare-brief'){
-                $brief=agent_appointment_lifecycle_prepare_brief_v700($pdo,$booking);
-                agent_workflow_record_action_result_v1400($pdo,$user,$runId,$actionId,true,'Meeting brief prepared from canonical appointment context.',['booking_id'=>(int)$booking['id'],'context_sections'=>count((array)($brief['context']??[]))]);
-            }elseif($key==='publish-chat'){
-                if(!$brief){$saved=agent_appointment_lifecycle_brief_v700($pdo,(int)$booking['id']);if($saved)$brief=['brief_text'=>(string)$saved['brief_text'],'context'=>json_decode((string)($saved['context_json']??'{}'),true)?:[],'agent_id'=>$saved['agent_id']??null];}
-                if(!$brief)throw new RuntimeException('Meeting brief is unavailable for Agent Chat publication.');
-                if(agent_meeting_workflow_event_exists_v1410($pdo,$ownerUserId,$runId,'meeting_prep_chat_published'))$conversationId=0;
-                else $conversationId=agent_meeting_workflow_publish_prep_v1410($pdo,$user,$booking,$runId,$brief);
-                agent_workflow_record_action_result_v1400($pdo,$user,$runId,$actionId,true,'Meeting prep report published to Agent Chat.',['booking_id'=>(int)$booking['id'],'conversation_id'=>$conversationId]);
-            }else{
-                throw new RuntimeException('Unknown meeting-prep workflow action.');
-            }
-        }catch(Throwable $e){
-            try{agent_workflow_record_action_result_v1400($pdo,$user,$runId,$actionId,false,'Meeting prep action failed.',[],get_class($e));}catch(Throwable $ignored){}
-            throw $e;
-        }
+        agent_meeting_workflow_execute_prep_action_v1410($pdo,$user,$booking,$runId,$action,$brief,$conversationId);
     }
     $row=agent_workflow_row_v1400($pdo,$ownerUserId,$runId);
     $final=$row?agent_workflow_public_run_v1400($pdo,$row,true):$run;
@@ -278,12 +300,20 @@ function agent_meeting_workflow_execute_followups_v1410(PDO $pdo,int $limit=40):
     $stmt=$pdo->prepare("SELECT * FROM agent_workflow_runs WHERE workflow_type='meeting_followup' AND source_kind='appointment' AND status IN ('approved','executing') ORDER BY updated_at,id LIMIT ".$limit);$stmt->execute();$executed=0;
     foreach($stmt->fetchAll()?:[] as $run){
         $ownerUserId=(int)$run['owner_user_id'];$user=agent_meeting_workflow_owner_v1410($pdo,$ownerUserId);if(!$user)continue;
-        $runId=(int)$run['id'];$action=agent_workflow_claim_next_action_v1400($pdo,$user,$runId,'cloud');if(!$action)continue;$actionId=(int)$action['id'];
+        $runId=(int)$run['id'];$wasInterrupted=(string)$run['status']==='executing'&&(int)($run['current_action_id']??0)>0;
+        $action=$wasInterrupted?agent_meeting_workflow_active_action_v1410($pdo,$ownerUserId,$run):agent_workflow_claim_next_action_v1400($pdo,$user,$runId,'cloud');
+        if(!$action)continue;$actionId=(int)$action['id'];
         try{
             if(!preg_match('/^send-followup:(\d+)$/',(string)$action['action_key'],$m))throw new RuntimeException('Unknown meeting follow-up action.');
             $followupId=(int)$m[1];if(!preg_match('/meeting_followup:booking:(\d+):/',(string)$run['source_key'],$bm))throw new RuntimeException('Meeting follow-up is missing its appointment reference.');
             $booking=agent_appointment_lifecycle_booking_v700($pdo,(int)$bm[1]);if(!$booking||(int)$booking['owner_user_id']!==$ownerUserId)throw new RuntimeException('Appointment is unavailable for this workflow.');
             $find=$pdo->prepare('SELECT * FROM agent_scheduling_followups WHERE id=? AND booking_id=? AND owner_user_id=? LIMIT 1');$find->execute([$followupId,(int)$booking['id'],$ownerUserId]);$followup=$find->fetch();if(!$followup)throw new RuntimeException('Approved follow-up draft no longer exists.');
+            if($wasInterrupted&&(string)$followup['message_status']!=='sent'){
+                // mail() has no provider idempotency key. If PHP died during an
+                // external send, never guess and resend automatically.
+                agent_workflow_record_action_result_v1400($pdo,$user,$runId,$actionId,false,'Follow-up delivery state is ambiguous after an interrupted execution. Review before retrying.',[],'ambiguous_delivery');
+                continue;
+            }
             if((string)$followup['message_status']==='sent')$sent=$followup;
             else $sent=agent_appointment_lifecycle_send_followup_v700($pdo,$booking,$user,$followupId,max(0,(int)($followup['created_by_agent_id']??0))?:null);
             agent_workflow_record_action_result_v1400($pdo,$user,$runId,$actionId,true,'Approved post-meeting follow-up delivered.',['booking_id'=>(int)$booking['id'],'followup_id'=>$followupId,'message_status'=>(string)($sent['message_status']??'sent')]);$executed++;
