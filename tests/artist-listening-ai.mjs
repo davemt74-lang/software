@@ -107,7 +107,7 @@ assert.ok(client.includes('sf-listening-ai-stat-grid'), 'Stats tab must render s
 assert.ok(client.includes('sf-listening-ai-chart-track'), 'Stats tab must render speaker-share charts');
 assert.ok(page.includes('.sf-listening-ai-chart-track{height:7px'), 'speaker-share chart must retain visible geometry');
 
-/* Stable v300 URL now delegates through v307 while preserving v302-v306 contracts. */
+/* Stable v300 URL still executes v307 intelligence; additive wrapper build IDs may advance independently. */
 for (const include of ['transcription-app-registry.php','transcription-apps-wave2.php','transcription-intelligence-items.php','transcription-intelligence-relations.php','transcription-intelligence-actions.php','transcription-workflow-config.php','transcription-intelligence-outputs.php','transcription-deeper-intelligence.php']) assert.ok(api.includes(include), `stable API must load ${include}`);
 assert.ok(api.includes("$action==='analyze'"), 'stable API URL must continue to own app analysis');
 assert.ok(api.includes('transcription_app_analyze_v307'), 'stable endpoint must execute analysis through v307');
@@ -120,7 +120,7 @@ assert.ok(api.includes("$action==='item_action'"), 'stable endpoint must preserv
 assert.ok(api.includes("['save_brain','save_knowledge']"), 'stable API must preserve explicit whole-report save actions');
 assert.ok(api.includes('transcription_deeper_report_text_v307'), 'Brain/Knowledge saves must use review-aware v307 source intelligence filtering');
 assert.ok(api.includes("'source'=>'transcription-intelligence-v307'"), 'Agent Brain provenance must identify the v307 runtime');
-assert.ok(api.includes('vp3-transcription-intelligence-v307-20260907'), 'stable API build must identify v307');
+assert.ok(/vp3-transcription-intelligence-v(?:307-20260907|313-20260913)/.test(api), 'stable v307 intelligence may be exposed through the additive v3.13 folder wrapper');
 assert.ok(client.includes('artist-listening-intelligence-v300.php'), 'browser must keep the stable registry API URL');
 assert.ok(legacyApi.includes('artist_listening_v254_analyze'), 'legacy v254 endpoint must remain available during migration');
 
