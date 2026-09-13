@@ -18,9 +18,13 @@ $check = static function(bool $ok, string $message) use (&$failures): void {
 $primaryStart = strpos($sidebar, 'data-agent-primary-nav');
 $primaryEnd = $primaryStart === false ? false : strpos($sidebar, '</nav>', $primaryStart);
 $primary = ($primaryStart !== false && $primaryEnd !== false) ? substr($sidebar, $primaryStart, $primaryEnd - $primaryStart) : '';
-foreach (['New Chat','Contacts','My Knowledge','My Transcriptions','My Calendar'] as $label) {
+foreach (['Contacts','My Knowledge','My Transcriptions','My Calendar'] as $label) {
     $check(str_contains($primary, '>' . $label . '<'), 'Primary Agent navigation is missing ' . $label . '.');
 }
+$check(!str_contains($primary, '>New Chat<'), 'New Chat must not remain a primary navigation row.');
+$check(str_contains($sidebar, 'class="chat-history-heading"'), 'Chats section heading is missing.');
+$check(str_contains($sidebar, 'class="chat-history-new" id="newChatButton"'), 'Chats heading is missing the canonical New Chat plus action.');
+$check(str_contains($sidebar, 'aria-label="New chat"'), 'Chats heading plus action is missing its accessible label.');
 foreach (['Memory','Approvals'] as $label) {
     $check(!str_contains($primary, '>' . $label . '<'), 'Primary Agent navigation still contains account-level item ' . $label . '.');
 }
@@ -31,10 +35,14 @@ $check(str_contains($navigation, "'knowledge','My Knowledge',url('/knowledge.php
 $check(str_contains($navigation, "'transcriptions','My Transcriptions',url('/artist-listening.php'),'identity'"), 'Navigation registry is missing My Transcriptions.');
 $check(str_contains($navigation, "'memory','My Memory',url('/memory.php'),'identity'"), 'User menu is missing My Memory.');
 $check(str_contains($sidebar, 'data-agent-user-footer'), 'Bottom user menu is missing.');
-$check(str_contains($sidebar, 'vp3AgentRuntimeStrip'), 'Primary runtime strip is missing.');
-$check(str_contains($sidebar, 'vp3AgentRuntimeSource'), 'Execution-source indicator is missing.');
-$check(str_contains($sidebar, 'vp3AgentRuntimeModel'), 'Brain/model indicator is missing.');
-$check(str_contains($sidebar, 'vp3AgentRuntimeUsage'), 'Usage indicator is missing.');
+$check(!str_contains($sidebar, 'class="agent-sidebar-avatar"'), 'Bottom user menu must not render the user avatar.');
+$footerStart = strpos($sidebar, '<footer class="agent-sidebar-footer"');
+$footerEnd = $footerStart === false ? false : strpos($sidebar, '</footer>', $footerStart);
+$footer = ($footerStart !== false && $footerEnd !== false) ? substr($sidebar, $footerStart, $footerEnd - $footerStart) : '';
+$check(str_contains($footer, 'vp3AgentRuntimeStrip'), 'Runtime stats must be integrated into the bottom user footer.');
+$check(str_contains($footer, 'vp3AgentRuntimeSource'), 'Execution-source indicator is missing from the combined footer.');
+$check(str_contains($footer, 'vp3AgentRuntimeModel'), 'Brain/model indicator is missing from the combined footer.');
+$check(str_contains($footer, 'vp3AgentRuntimeUsage'), 'Usage indicator is missing from the combined footer.');
 $check(str_contains($sidebar, 'data-rename-conversation'), 'Server-rendered chat rename control is missing.');
 $check(str_contains($sidebar, 'id="chatHistory"'), 'Canonical chat history container is missing.');
 
@@ -59,6 +67,8 @@ $check(str_contains($js, 'MutationObserver(decorateHistory)'), 'Dynamic history 
 $check(str_contains($js, 'data-rename-conversation') || str_contains($js, 'dataset.renameConversation'), 'Dynamic rename control wiring is missing.');
 $check(str_contains($js, 'setInterval(refreshRuntime, 15000)'), 'Runtime status is not refreshed during long Agent sessions.');
 $check(str_contains($css, '.agent-sidebar-footer'), 'Bottom user-menu layout is missing.');
+$check(str_contains($css, '.agent-sidebar-footer .agent-sidebar-runtime'), 'Combined footer runtime layout is missing.');
+$check(str_contains($css, '.chat-history-new'), 'Chats heading New Chat plus is not styled.');
 $check(str_contains($css, '.chat-history-rename-input'), 'Inline rename editing is not styled.');
 
 if ($failures) {
