@@ -49,3 +49,24 @@ jobs:
 
       - name: Verify Agent UI navigation contract
         run: php tests/agent-ui-v034-contract.php
+
+      - name: Verify canonical Main Feed shell contract
+        run: node tests/main-feed-canonical-ui-contract.mjs
+
+      - name: Verify member sidebar shell contract
+        run: node tests/member-sidebar-shell-contract.mjs
+
+      - name: Verify member navigation contract
+        run: node tests/member-navigation-contract.mjs
+
+      - name: Verify member header contract
+        run: node tests/member-header-contract.mjs
+
+      - name: Verify Artist Listening runtime contract
+        run: node tests/artist-listening-runtime.mjs
+
+      - name: Verify transcription Knowledge integration contract
+        run: node tests/transcription-agent-knowledge-integration.mjs
+
+      - name: Verify Cloud schema upgrade contract
+        run: node tests/cloud-schema-upgrade-contract.mjs
