@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - phase-13-user-calendar
+      - fix-calendar-scroll-flex
   pull_request:
 
 permissions:
@@ -47,7 +48,10 @@ jobs:
           php -l scheduling-type.php
           php -l calendar-oauth.php
           php -l includes/member-navigation.php
+          php -l includes/member-header.php
           php -l upgrade.php
 
       - name: Verify User Calendar contract
-        run: node tests/user-calendar-v1300-contract.mjs
+        run: |
+          node tests/user-calendar-v1300-contract.mjs
+          node tests/calendar-scroll-v1322-contract.mjs
