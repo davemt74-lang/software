@@ -2,14 +2,17 @@
   'use strict';
 
   const BUILD='conversation-integration-v131-20260826';
+  const KNOWLEDGE_SCOPE_BUILD='knowledge-agent-context-v162-20260913';
   const EDITOR_AGENT_ASSET='editor-agent-capabilities-20260903';
   const PARTICIPANT_ASSET='studio-participants-20260903';
   const cfg=window.STONEFELLOW_AGENT_CONTEXT||{};
   if(!cfg.userId)return;
 
   const userId=Number(cfg.userId||0);
+  const chatCfg=window.STONEFELLOW_CHAT||{};
   const selectedUserAgentId=Math.max(0,Number(window.STONEFELLOW_AGENT_IDENTITY_V236?.agentId||0));
   const conversationKey=`stonefellow:conversation-id:${userId}:${selectedUserAgentId||'system'}`;
+  const knowledgeScopeKey=`stonefellow:knowledge-scope-v162:${userId}:${selectedUserAgentId||'system'}`;
   const readStoredConversation=()=>{
     try{return Math.max(0,Number(localStorage.getItem(conversationKey)||0));}
     catch(error){return 0;}
@@ -36,6 +39,8 @@
   let voiceSession=null;
   let editorAgentLoadRequested=false;
   let participantLoadRequested=false;
+  let knowledgeScopeSelect=null;
+  let knowledgeScopeFetchInstalled=false;
 
   const cleanText=(value,limit=280)=>String(value??'').replace(/\s+/g,' ').trim().slice(0,limit);
   const safeSuggestion=row=>({
@@ -65,6 +70,122 @@
     }catch(error){return null;}
   };
   const activeUserAgentId=()=>selectedUserAgentId;
+  const knowledgeChatUrl=()=>{
+    try{return new URL(String(chatCfg.endpoint||''),location.href);}
+    catch(error){return null;}
+  };
+  const knowledgeScopeSupported=()=>{
+    const target=knowledgeChatUrl();
+    return !!target&&/\/api\/chat-v236\.php$/.test(target.pathname);
+  };
+  const normalizeKnowledgeScopeValue=value=>{
+    const raw=String(value||'all').toLowerCase().trim();
+    if(raw==='off')return {mode:'off',folder_id:0};
+    const match=raw.match(/^folder:(\d+)$/);
+    if(match&&Number(match[1])>0)return {mode:'folder',folder_id:Number(match[1])};
+    return {mode:'all',folder_id:0};
+  };
+  const currentKnowledgeScope=()=>normalizeKnowledgeScopeValue(knowledgeScopeSelect?.value||'all');
+  const storedKnowledgeScope=()=>{
+    try{return String(localStorage.getItem(knowledgeScopeKey)||'all');}
+    catch(error){return 'all';}
+  };
+  const persistKnowledgeScope=value=>{
+    try{localStorage.setItem(knowledgeScopeKey,String(value||'all'));}
+    catch(error){}
+  };
+  const setKnowledgeScopeOptions=folders=>{
+    if(!knowledgeScopeSelect)return;
+    const previous=storedKnowledgeScope();
+    knowledgeScopeSelect.textContent='';
+    const add=(value,label)=>{
+      const option=document.createElement('option');
+      option.value=value;
+      option.textContent=label;
+      knowledgeScopeSelect.appendChild(option);
+    };
+    add('all','All personal knowledge');
+    add('off','No personal knowledge');
+    (Array.isArray(folders)?folders:[]).forEach(folder=>{
+      const id=Math.max(0,Number(folder?.id||0));
+      if(id<1)return;
+      const name=cleanText(folder?.name||`Folder ${id}`,120)||`Folder ${id}`;
+      add(`folder:${id}`,`Folder · ${name}`);
+    });
+    const allowed=[...knowledgeScopeSelect.options].some(option=>option.value===previous);
+    knowledgeScopeSelect.value=allowed?previous:'all';
+    if(!allowed)persistKnowledgeScope('all');
+  };
+  async function loadKnowledgeScopeFolders(){
+    const chatUrl=knowledgeChatUrl();
+    if(!chatUrl||!knowledgeScopeSupported())return [];
+    try{
+      const endpoint=new URL('knowledge-scopes-v162.php',chatUrl).toString();
+      const response=await fetch(endpoint,{method:'GET',credentials:'same-origin',headers:{'Accept':'application/json'}});
+      const data=await response.json().catch(()=>null);
+      if(response.ok&&data?.ok&&Array.isArray(data.folders))return data.folders;
+    }catch(error){}
+    return [];
+  }
+  function ensureKnowledgeScopeUi(){
+    if(!knowledgeScopeSupported()||String(cfg.surface||'chat')!=='chat'||typeof document.createElement!=='function')return false;
+    if(document.getElementById('chatKnowledgeScopeV162')){
+      knowledgeScopeSelect=document.getElementById('chatKnowledgeScopeV162');
+      return true;
+    }
+    const form=document.getElementById('chatForm');
+    const shell=document.getElementById('chatComposerShell');
+    if(!form||!shell)return false;
+    const style=document.createElement('style');
+    style.dataset.knowledgeScopeV162=KNOWLEDGE_SCOPE_BUILD;
+    style.textContent='.chat-knowledge-scope-v162{display:flex;align-items:center;justify-content:flex-end;gap:7px;max-width:790px;margin:0 auto 7px;padding:0 4px;color:#6b7280;font:600 11px/1.2 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.chat-knowledge-scope-v162 select{max-width:min(280px,60vw);min-height:30px;border:1px solid #d1d5db;border-radius:8px;background:#fff;color:#374151;padding:4px 28px 4px 9px;font:600 11px/1.2 inherit}.chat-knowledge-scope-v162 select:focus{outline:2px solid rgba(59,130,246,.22);outline-offset:1px;border-color:#93c5fd}@media(max-width:640px){.chat-knowledge-scope-v162{justify-content:space-between}.chat-knowledge-scope-v162 select{max-width:68vw}}';
+    (document.head||document.documentElement).appendChild(style);
+    const wrap=document.createElement('label');
+    wrap.className='chat-knowledge-scope-v162';
+    wrap.htmlFor='chatKnowledgeScopeV162';
+    const label=document.createElement('span');
+    label.textContent='Knowledge';
+    const select=document.createElement('select');
+    select.id='chatKnowledgeScopeV162';
+    select.setAttribute('aria-label','Personal Knowledge scope');
+    select.dataset.knowledgeScopeV162=KNOWLEDGE_SCOPE_BUILD;
+    wrap.append(label,select);
+    shell.insertBefore(wrap,form);
+    knowledgeScopeSelect=select;
+    setKnowledgeScopeOptions([]);
+    select.addEventListener('change',()=>{
+      persistKnowledgeScope(select.value);
+      window.dispatchEvent(new CustomEvent('stonefellow:knowledge-scope',{detail:{build:KNOWLEDGE_SCOPE_BUILD,scope:currentKnowledgeScope()}}));
+    });
+    void loadKnowledgeScopeFolders().then(setKnowledgeScopeOptions);
+    return true;
+  }
+  function installKnowledgeScopeFetch(){
+    if(knowledgeScopeFetchInstalled||!knowledgeScopeSupported()||typeof window.fetch!=='function')return false;
+    knowledgeScopeFetchInstalled=true;
+    const previousFetch=window.fetch.bind(window);
+    const chatUrl=knowledgeChatUrl();
+    window.fetch=async function(inputArg,init={}){
+      let payload=null;
+      if(typeof init?.body==='string'){
+        try{payload=JSON.parse(init.body);}catch(error){}
+      }
+      if(payload?.action==='send'){
+        try{
+          const target=new URL(typeof inputArg==='string'?inputArg:inputArg?.url||'',location.href);
+          const sameOrigin=target.origin===chatUrl.origin;
+          const chatSend=target.pathname===chatUrl.pathname;
+          const streamedSend=/\/api\/chat-stream-v121\.php$/.test(target.pathname);
+          if(sameOrigin&&(chatSend||streamedSend)){
+            payload={...payload,knowledge_scope:currentKnowledgeScope()};
+            init={...init,body:JSON.stringify(payload)};
+          }
+        }catch(error){}
+      }
+      return previousFetch(inputArg,init);
+    };
+    return true;
+  }
   function ensureEditorAgent(){
     if(String(cfg.surface||'chat')!=='chat'||window.StonefellowEditorAgent||editorAgentLoadRequested)return false;
     if(typeof document.createElement!=='function')return false;
@@ -212,7 +333,10 @@
 
   const api={build:BUILD,snapshot,refresh,setConversationId,setTask,conversationId:()=>conversationId,conversationKey,editorCapabilities,participantContext};
   window.StonefellowAgentContext=api;
+  window.StonefellowKnowledgeScopeV162={build:KNOWLEDGE_SCOPE_BUILD,value:currentKnowledgeScope,raw:()=>knowledgeScopeSelect?.value||'all'};
   if(window.STONEFELLOW_ACTIVITY&&conversationId>0)window.STONEFELLOW_ACTIVITY.conversationId=conversationId;
+  installKnowledgeScopeFetch();
+  ensureKnowledgeScopeUi();
   ensureEditorAgent();
   ensureParticipantRuntime();
   publish(configuredConversationId>0?'load':'restore');
