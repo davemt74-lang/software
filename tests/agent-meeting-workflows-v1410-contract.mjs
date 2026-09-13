@@ -34,7 +34,7 @@ assert.match(meeting, /agent_appointment_lifecycle_send_followup_v700/, 'Phase 1
 assert.match(meeting, /This message has not been sent\./, 'Agent Chat must clearly disclose that a follow-up draft is pending approval');
 assert.match(meeting, /status IN \('approved','executing'\)/, 'Housekeeping may execute only approved follow-up runs');
 assert.match(meeting, /ambiguous_delivery/, 'An interrupted external send with unknown outcome must fail closed instead of being automatically resent');
-assert.match(meeting, /\$wasInterrupted&&\(string\)\$followup\['message_status'\\]!=='sent'/, 'Only database-confirmed sent follow-ups may auto-close after interruption');
+assert.match(meeting, /\$wasInterrupted&&\(string\)\$followup\['message_status'\]!=='sent'/, 'Only database-confirmed sent follow-ups may auto-close after interruption');
 assert.match(housekeeping, /agent_meeting_workflow_housekeeping_v1410/, 'Lifecycle housekeeping must reconcile drafts and execute approved follow-ups');
 assert.match(housekeeping, /register_shutdown_function[\s\S]*agent_meeting_workflow_housekeeping_v1410/, 'Approval POSTs must get an immediate shutdown execution pass');
 
