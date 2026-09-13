@@ -18,7 +18,7 @@ require_once dirname(__DIR__) . '/includes/transcription-deeper-advanced.php';
 require_once dirname(__DIR__) . '/includes/transcription-deeper-chat.php';
 require_once dirname(__DIR__) . '/includes/transcription-deeper-report.php';
 
-const VP3_TRANSCRIPTION_INTELLIGENCE_V300 = 'vp3-transcription-intelligence-v313-20260913';
+const VP3_TRANSCRIPTION_INTELLIGENCE_V300 = 'vp3-transcription-intelligence-v307-20260907';
 
 function transcription_intelligence_json_v300(bool $ok,array $data=[],int $status=200): never
 {
