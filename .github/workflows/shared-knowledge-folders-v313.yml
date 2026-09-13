@@ -43,9 +43,13 @@ jobs:
         run: |
           node --check transcription-knowledge-folders-v313.js
           node --check artist-listening-naming.js
+          node --check tests/transcription-folder-observer-hotfix-contract.mjs
 
       - name: Verify shared folder contract
         run: php tests/shared-knowledge-folders-v313-contract.php
+
+      - name: Verify transcription folder observer hotfix
+        run: node tests/transcription-folder-observer-hotfix-contract.mjs
 
       - name: Verify Agent UI navigation contract
         run: php tests/agent-ui-v034-contract.php
