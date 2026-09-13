@@ -19,8 +19,8 @@ function agent_appointment_lifecycle_housekeeping_v700(PDO $pdo,int $limit=100):
     $deliver->execute();$rows=$deliver->fetchAll()?:[];$processed=0;
     foreach($rows as $row){try{agent_appointment_lifecycle_process_delivery_v700($pdo,$row);}catch(Throwable $e){$pdo->prepare("UPDATE agent_scheduling_automation_deliveries SET attempts=attempts+1,last_error=?,status=CASE WHEN attempts+1>=3 THEN 'failed' ELSE 'pending' END,updated_at=NOW() WHERE id=?")->execute([mb_strimwidth($e->getMessage(),0,1000,'…'),(int)$row['id']]);}$processed++;}
     $meeting=['followups_created'=>0,'followups_executed'=>0];
-    if(function_exists('agent_meeting_workflow_housekeeping_v1410')){
-        try{$meeting=agent_meeting_workflow_housekeeping_v1410($pdo,min(160,$limit));}catch(Throwable $ignored){}
+    if(function_exists('agent_meeting_workflow_housekeeping_hardened_v1410')){
+        try{$meeting=agent_meeting_workflow_housekeeping_hardened_v1410($pdo,min(160,$limit));}catch(Throwable $ignored){}
     }
     return ['queued'=>$queued,'processed'=>$processed,'reconciled'=>$reconciled,'followups_created'=>(int)($meeting['followups_created']??0),'followups_executed'=>(int)($meeting['followups_executed']??0)];
 }
@@ -38,7 +38,7 @@ function agent_appointment_lifecycle_housekeeping_maybe_v700(): void
                     foreach($due as $row)agent_appointment_lifecycle_process_delivery_v700($db,$row);
                     // Approval POSTs in Agent Workflows reach this shutdown hook,
                     // so a newly approved follow-up can execute immediately.
-                    if(function_exists('agent_meeting_workflow_housekeeping_v1410'))agent_meeting_workflow_housekeeping_v1410($db,80);
+                    if(function_exists('agent_meeting_workflow_housekeeping_hardened_v1410'))agent_meeting_workflow_housekeeping_hardened_v1410($db,80);
                 }
             }catch(Throwable $ignored){}
         });
