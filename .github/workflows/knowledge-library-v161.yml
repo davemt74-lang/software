@@ -35,6 +35,7 @@ jobs:
           php -l api/shared-folders-v161.php
           php -l knowledge.php
           php -l tests/knowledge-library-v161-contract.php
+          php -l tests/knowledge-library-v161-security-contract.php
           php -l tests/shared-knowledge-folders-v313-contract.php
 
       - name: Verify JavaScript syntax
@@ -47,6 +48,9 @@ jobs:
 
       - name: Verify Knowledge Library contract
         run: php tests/knowledge-library-v161-contract.php
+
+      - name: Verify folder ownership security contract
+        run: php tests/knowledge-library-v161-security-contract.php
 
       - name: Verify browser integration contract
         run: node tests/knowledge-library-v161-browser-contract.mjs
