@@ -87,10 +87,19 @@ function homeserver_cloud_v1200_remove_pairing(int $userId): void
         throw new RuntimeException('Disconnect HomeServer before removing the Cloud pairing.');
     }
     $relayToken = homeserver_vp3_decrypt((string)($row['relay_token_enc'] ?? ''));
-    if ($relayToken !== '') {
-        // Final removal invalidates the latest Cloud relay credential and intentionally discards its replacement.
-        homeserver_vp3_relay_request('POST', '/v1/session/rotate', [], $relayToken);
+    if ($relayToken === '') {
+        throw new RuntimeException('HomeServer relay authorization is unavailable.');
     }
+
+    // Release the relay claim before deleting Cloud state. This revokes all Cloud relay
+    // sessions for the device and causes the connected HomeServer to receive a fresh,
+    // local-only connection code. If release fails, retain the Cloud row so recovery
+    // remains possible instead of stranding a permanently claimed HomeServer.
+    $released = homeserver_vp3_relay_request('POST', '/v1/session/release', [], $relayToken);
+    if (empty($released['released']) || trim((string)($released['device_id'] ?? '')) !== trim((string)($row['device_id'] ?? ''))) {
+        throw new RuntimeException('HomeServer relay did not release the device pairing.');
+    }
+
     $pdo = db();
     if (!$pdo) throw new RuntimeException('Database connection is unavailable.');
     $pdo->prepare('DELETE FROM homeserver_connections WHERE user_id=?')->execute([$userId]);
