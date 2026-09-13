@@ -1,10 +1,10 @@
-name: HomeServer Cloud Pairing v12.00
+name: HomeServer Cloud Pairing v12.10
 
 on:
   push:
     branches:
       - main
-      - phase-12-homeserver-cloud-pairing
+      - phase-15-2-2-cloud-issued-pairing
   pull_request:
 
 permissions:
@@ -36,17 +36,21 @@ jobs:
 
       - name: Lint pairing PHP
         run: |
+          php -l includes/homeserver-vp3.php
           php -l includes/homeserver-cloud-pairing-v1200.php
           php -l includes/homeserver-cloud-pairing-actions-v1200.php
+          php -l includes/homeserver-account-pairing-v1210.php
+          php -l includes/homeserver-relay-lifecycle-v1210.php
           php -l api/homeserver-connection-v1200.php
+          php -l api/homeserver-pair-v1210.php
           php -l api/homeserver-status.php
           php -l settings-homeserver.php
           php -l includes/member-navigation.php
 
-      - name: Verify pairing contract
+      - name: Verify account-token pairing contract
         run: node tests/homeserver-cloud-pairing-v1200-contract.mjs
 
       - name: Verify browser bundle syntax
         run: |
-          node --check homeserver-settings-v1200.js
+          node --check homeserver-settings-v1210.js
           node --check homeserver-settings-lifecycle-v1200.js
