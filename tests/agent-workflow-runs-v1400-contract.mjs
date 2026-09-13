@@ -23,6 +23,8 @@ assert.match(workflow, /agent_action_v124_plan\(/, 'Workflow planning must reuse
 assert.match(workflow, /status='queued' ORDER BY sequence_no,id LIMIT 1 FOR UPDATE/, 'Executors must lock the global next queued action before checking runtime affinity');
 assert.doesNotMatch(workflow, /status='queued' AND execution_target=\? ORDER BY sequence_no,id LIMIT 1 FOR UPDATE/, 'Runtime affinity must never allow Cloud or HomeServer to skip an earlier action');
 assert.match(workflow, /execution_target'\]\?\?'cloud'\)!==\$executor/, 'The globally next action must be owned by the claiming executor');
+assert.match(workflow, /status'\]==='executing'&&\(int\)\(\$run\['current_action_id'\]\?\?0\)>0/, 'An active action must serialize later executor claims');
+assert.match(workflow, /current_action_id'\]\?\?0\)!==\$actionId/, 'Only the currently claimed action may report a result');
 assert.doesNotMatch(api, /record_action_result|claim_next_action/, 'Browser API must not expose executor-only completion hooks');
 assert.match(api, /agent_workflow_find_brain_priority_v1400/, 'Browser creates runs only from server-owned Brain state');
 assert.match(api, /hash_equals\(csrf_token\(\),\$csrf\)/);
