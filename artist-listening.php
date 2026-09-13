@@ -259,7 +259,7 @@ $config = [
   <script src="<?= e(url('/artist-listening-workspace.js?v=artist-listening-normalized-20260903')) ?>"></script>
   <script src="<?= e(url('/artist-listening.js?v=9ac023be')) ?>"></script>
   <script src="<?= e(url('/artist-listening-recordings.js?v=artist-listening-normalized-20260903')) ?>"></script>
-  <script src="<?= e(url('/artist-listening-naming.js?v=artist-listening-normalized-20260903')) ?>"></script>
+  <script src="<?= e(url('/artist-listening-naming.js?v=transcription-folder-hotfix-20260913')) ?>"></script>
   <script>window.STONEFELLOW_ARTIST_LISTENING_V172=Object.assign(window.STONEFELLOW_ARTIST_LISTENING_V172||{},window.STONEFELLOW_ARTIST_LISTENING_CONFIG||{});</script>
   <script src="<?= e(url('/artist-listening-ai.js?v=transcription-deeper-v307-20260907')) ?>"></script>
   <script src="<?= e(url('/artist-listening-ui.js?v=artist-listening-normalized-20260903')) ?>"></script>
