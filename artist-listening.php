@@ -226,6 +226,7 @@ $config = [
       .sf-listening-workspace-folder-delete{display:block!important}
       .sf-listening-workspace-files{display:block!important;min-height:0!important;overflow:auto!important;padding:8px!important}
       .sf-listening-workspace-file{width:100%!important;min-width:0!important;max-width:none!important}
+      .sf-listening-workspace-file{width:100%!important;min-width:0!important;max-width:none!important}
       .sf-listening-mobile-menu-toggle{display:grid!important;place-items:center!important;flex:0 0 36px!important;width:36px!important;height:34px!important;padding:0!important;border:1px solid #d6d6d6!important;border-radius:8px!important;background:#fff!important;color:#222!important;font:800 19px/1 system-ui!important;cursor:pointer!important}
       .sf-listening-mobile-menu-shade{display:block!important;position:fixed!important;z-index:10055!important;inset:0!important;border:0!important;background:rgba(0,0,0,.24)!important;opacity:0!important;pointer-events:none!important;transition:opacity .2s ease!important}
       body.sf-listening-mobile-menu-open .sf-listening-mobile-menu-shade{opacity:1!important;pointer-events:auto!important}
@@ -259,7 +260,7 @@ $config = [
   <script src="<?= e(url('/artist-listening-workspace.js?v=artist-listening-normalized-20260903')) ?>"></script>
   <script src="<?= e(url('/artist-listening.js?v=9ac023be')) ?>"></script>
   <script src="<?= e(url('/artist-listening-recordings.js?v=artist-listening-normalized-20260903')) ?>"></script>
-  <script src="<?= e(url('/artist-listening-naming.js?v=artist-listening-normalized-20260903')) ?>"></script>
+  <script src="<?= e(url('/artist-listening-naming.js?v=transcription-folder-hotfix-20260913')) ?>"></script>
   <script>window.STONEFELLOW_ARTIST_LISTENING_V172=Object.assign(window.STONEFELLOW_ARTIST_LISTENING_V172||{},window.STONEFELLOW_ARTIST_LISTENING_CONFIG||{});</script>
   <script src="<?= e(url('/artist-listening-ai.js?v=transcription-deeper-v307-20260907')) ?>"></script>
   <script src="<?= e(url('/artist-listening-ui.js?v=artist-listening-normalized-20260903')) ?>"></script>
