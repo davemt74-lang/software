@@ -52,7 +52,12 @@ if(!empty($toolResult['handled'])){
     }elseif(empty($runtimePlan['cloud']['ready'])||((string)$runtimePlan['route']!=='vp3_cloud'&&empty($runtimePlan['allow_vp3_fallback']))){
         throw new RuntimeException(vp3_agent_runtime_block_message_v420($runtimePlan));
     }else{
-        $result=knowledge_retrieval_v162_generate_answer($query,$history,$user,$principal,$agentContext,$input['knowledge_scope']??null,$conversationId);$answer=(string)$result['answer'];$context=$result['context'];$knowledgeContext=is_array($result['knowledge']??null)?$result['knowledge']:$knowledgeContext;$execution=$homeAttempted?chat_execution_v019_fallback($user,!empty($runtimePlan['home']['paired']),true):chat_execution_v019_vp3_direct($user);$execution=vp3_agent_runtime_finalize_v420($runtimePlan,$execution,$homeAttempted?'homeserver->vp3_cloud':'vp3_cloud',$homeAttempted?'homeserver_unavailable':'none');
+        $result=knowledge_retrieval_v162_generate_answer($query,$history,$user,$principal,$agentContext,$input['knowledge_scope']??null,$conversationId);
+        if(!is_array($result)||!array_key_exists('answer',$result)||!isset($result['context'])||!is_array($result['context'])){
+            $result=chat_generate_answer_policy_v236($query,$history,$user,$principal,$agentContext,$conversationId);
+            $result['knowledge']=$knowledgeContext;
+        }
+        $answer=(string)$result['answer'];$context=$result['context'];$knowledgeContext=is_array($result['knowledge']??null)?$result['knowledge']:$knowledgeContext;$execution=$homeAttempted?chat_execution_v019_fallback($user,!empty($runtimePlan['home']['paired']),true):chat_execution_v019_vp3_direct($user);$execution=vp3_agent_runtime_finalize_v420($runtimePlan,$execution,$homeAttempted?'homeserver->vp3_cloud':'vp3_cloud',$homeAttempted?'homeserver_unavailable':'none');
     }
     $capabilityRoute=vp3_agent_runtime_capability_route_v420($runtimePlan,$execution,$homeAttempted);
 }
