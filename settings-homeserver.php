@@ -42,27 +42,34 @@ if (!$user) redirect(url('/login.php'));
           <div class="hs-card-head"><div><small>Connection</small><h2 id="hsConnectionTitle">Checking HomeServer</h2><p id="hsConnectionDetail">Loading connection state.</p></div></div>
 
           <div class="hs-stepper" id="hsStepper" hidden aria-label="Pairing steps">
-            <div class="hs-step" data-step="1"><span>1</span><div><strong>Start on HomeServer</strong><small>Open Remote Bridge and choose Start Pairing.</small></div></div>
-            <div class="hs-step" data-step="2"><span>2</span><div><strong>Connect VP3</strong><small>Paste the HomeServer connection code below.</small></div></div>
-            <div class="hs-step" data-step="3"><span>3</span><div><strong>Approve locally</strong><small>Enter the Approval code in HomeServer → Connected Apps.</small></div></div>
+            <div class="hs-step" data-step="1"><span>1</span><div><strong>Generate in VP3 Cloud</strong><small>Create an account-bound one-time pairing token below.</small></div></div>
+            <div class="hs-step" data-step="2"><span>2</span><div><strong>Enter token in HomeServer</strong><small>Open HomeServer → Remote Bridge and paste the VP3 token.</small></div></div>
+            <div class="hs-step" data-step="3"><span>3</span><div><strong>Approve locally</strong><small>Review the VP3 permissions in HomeServer → Connected Apps and click Approve.</small></div></div>
           </div>
 
-          <form class="hs-claim-form" id="hsClaimForm" autocomplete="off">
-            <label for="hsClaimCode">HomeServer connection code</label>
-            <div><input id="hsClaimCode" name="claim_code" maxlength="40" spellcheck="false" autocomplete="off" placeholder="Paste connection code from HomeServer"><button class="hs-button primary" type="submit">Connect HomeServer</button></div>
-            <small>Generate this code in HomeServer → Remote Bridge → Start Pairing. It is used once; VP3 never puts relay or HomeServer credentials in browser storage.</small>
-          </form>
+          <div class="hs-claim-form" id="hsTokenPanel">
+            <label>VP3 account pairing token</label>
+            <div><button class="hs-button primary" id="hsGenerateToken" type="button">Generate Pairing Token</button></div>
+            <small>VP3 creates this token for your signed-in account. It expires after 15 minutes and can be redeemed only once by a HomeServer that also proves its relay device identity.</small>
+          </div>
+
+          <div class="hs-approval" id="hsTokenResult" hidden>
+            <span>One-time VP3 pairing token</span>
+            <strong id="hsPairingToken">—</strong>
+            <p>Copy this token now. Open HomeServer → Remote Bridge, paste it into the VP3 pairing field, and submit it. VP3 does not show this raw token again after you leave or refresh this page.</p>
+            <div class="hs-actions"><button class="hs-button" id="hsCopyToken" type="button">Copy token</button><button class="hs-button quiet" id="hsRegenerateToken" type="button">Generate new token</button></div>
+          </div>
 
           <div class="hs-approval" id="hsApproval" hidden>
-            <span>Approval code</span>
-            <strong id="hsApprovalCode">—</strong>
-            <p>This is the second, separate code. Open HomeServer → Connected Apps, review the VP3 permissions, and enter this Approval code. This page checks the approval automatically.</p>
-            <div class="hs-actions"><button class="hs-button" id="hsCheckApproval" type="button">Check now</button><button class="hs-button quiet" id="hsCancelPairing" type="button">Cancel</button></div>
+            <span>Local approval required</span>
+            <strong>Review VP3 in HomeServer</strong>
+            <p>The account token was accepted and this HomeServer proved its relay identity. Open HomeServer → Connected Apps, review the requested capabilities, and click Approve. No second code is required.</p>
+            <div class="hs-actions"><button class="hs-button" id="hsCheckApproval" type="button">Check now</button><button class="hs-button quiet" id="hsCancelPairing" type="button">Cancel request</button></div>
           </div>
 
           <div class="hs-actions" id="hsConnectedActions" hidden>
             <button class="hs-button" id="hsReconnect" type="button">Reconnect</button>
-            <button class="hs-button" id="hsRepair" type="button">Re-pair</button>
+            <button class="hs-button" id="hsRepair" type="button">Re-pair permissions</button>
             <button class="hs-button danger" id="hsDisconnect" type="button">Disconnect</button>
           </div>
           <div class="hs-actions" id="hsDisconnectedActions" hidden>
@@ -89,14 +96,14 @@ if (!$user) redirect(url('/login.php'));
 
         <details class="hs-card hs-advanced" id="hsAdvanced">
           <summary><span><small>Advanced</small><strong>Connection details</strong></span><span>＋</span></summary>
-          <div class="hs-advanced-body"><dl class="hs-info-grid"><div><dt>Pairing protocol</dt><dd>claim-v1</dd></div><div><dt>Relay host</dt><dd id="hsRelayHost">—</dd></div><div><dt>Cloud build</dt><dd id="hsBuild">—</dd></div><div><dt>Paired scopes</dt><dd id="hsScopeCount">—</dd></div></dl></div>
+          <div class="hs-advanced-body"><dl class="hs-info-grid"><div><dt>Pairing protocol</dt><dd>account-token-v1</dd></div><div><dt>Relay host</dt><dd id="hsRelayHost">—</dd></div><div><dt>Cloud build</dt><dd id="hsBuild">—</dd></div><div><dt>Paired scopes</dt><dd id="hsScopeCount">—</dd></div></dl></div>
         </details>
       </div>
     </section>
   </main>
 </div>
 <script src="<?= e(url('/member-shell-v77.js')) ?>"></script>
-<script src="<?= e(url('/homeserver-settings-v1200.js?v=20260912')) ?>" defer></script>
+<script src="<?= e(url('/homeserver-settings-v1210.js?v=20260913')) ?>" defer></script>
 <script src="<?= e(url('/homeserver-settings-lifecycle-v1200.js?v=20260912')) ?>" defer></script>
 </body>
 </html>
