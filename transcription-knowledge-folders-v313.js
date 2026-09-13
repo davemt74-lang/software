@@ -38,25 +38,33 @@
     node.dataset.state = error ? 'error' : 'saved';
   }
 
-  function renderOptions(select) {
+  function renderOptions(select, force = false) {
     if (!select) return;
     const selected = select.dataset.userSelected === '1'
       ? Math.max(0, Number(select.value || 0))
       : currentFolderId();
     const rows = folders();
-    select.innerHTML = '';
+    const signature = JSON.stringify([
+      selected,
+      rows.map(folder => [Math.max(0, Number(folder?.id || 0)), clean(folder?.folder_name || folder?.name || '')]),
+    ]);
+    if (!force && select.dataset.folderSignature === signature && select.options.length) return;
+
+    const fragment = document.createDocumentFragment();
     const unfiled = document.createElement('option');
     unfiled.value = '0';
     unfiled.textContent = 'Unfiled';
-    select.appendChild(unfiled);
+    fragment.appendChild(unfiled);
     rows.forEach(folder => {
       const id = Math.max(0, Number(folder?.id || 0));
       if (!id) return;
       const option = document.createElement('option');
       option.value = String(id);
       option.textContent = clean(folder?.folder_name || folder?.name || `Folder ${id}`);
-      select.appendChild(option);
+      fragment.appendChild(option);
     });
+    select.replaceChildren(fragment);
+    select.dataset.folderSignature = signature;
     if ([...select.options].some(option => Number(option.value) === selected)) select.value = String(selected);
     else select.value = '0';
   }
@@ -76,7 +84,10 @@
       wrap.innerHTML = '<span>Knowledge folder</span><select data-listening-ai-folder aria-label="Knowledge folder"></select>';
       actions.insertBefore(wrap, button);
       const select = wrap.querySelector('[data-listening-ai-folder]');
-      select?.addEventListener('change', () => { select.dataset.userSelected = '1'; });
+      select?.addEventListener('change', () => {
+        select.dataset.userSelected = '1';
+        delete select.dataset.folderSignature;
+      });
     }
     renderOptions(wrap.querySelector('[data-listening-ai-folder]'));
     return true;
@@ -140,12 +151,16 @@
     const select = document.querySelector('[data-listening-ai-folder]');
     if (select) {
       select.dataset.userSelected = '0';
-      renderOptions(select);
+      delete select.dataset.folderSignature;
+      renderOptions(select, true);
     }
   });
   window.addEventListener('stonefellow:artist-listening-metadata-saved', () => {
     const select = document.querySelector('[data-listening-ai-folder]');
-    if (select && select.dataset.userSelected !== '1') renderOptions(select);
+    if (select && select.dataset.userSelected !== '1') {
+      delete select.dataset.folderSignature;
+      renderOptions(select, true);
+    }
   });
 
   const style = document.createElement('style');
