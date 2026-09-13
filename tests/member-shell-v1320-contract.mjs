@@ -15,6 +15,12 @@ const calendarIndex = navigation.indexOf("$add($links,'calendar','My Calendar'")
 const schedulingGateIndex = navigation.indexOf("agent_scheduling_schema_ready_v430");
 assert.ok(calendarIndex > 0 && schedulingGateIndex > calendarIndex, 'My Calendar must not depend on legacy scheduling schema readiness');
 
+assert.match(navigation, /\$add\(\$links,'knowledge','My Knowledge',url\('\/knowledge\.php'\),'identity'\)/, 'My Knowledge must be available from the canonical user menu');
+assert.match(navigation, /\$add\(\$links,'memory','My Memory',url\('\/memory\.php'\),'identity'\)/, 'My Memory must be available from the canonical user menu');
+assert.doesNotMatch(sidebar, /'knowledge'=>true/, 'My Knowledge must not be filtered out of the sidebar user dropdown');
+assert.doesNotMatch(sidebar, /href="<\?= e\(url\('\/knowledge\.php'\)\) \?>"[^>]*><span>◆<\/span><strong>Knowledge<\/strong>/, 'Knowledge must not remain in the primary sidebar');
+assert.doesNotMatch(sidebar, /href="<\?= e\(url\('\/memory\.php'\)\) \?>"[^>]*><span>◉<\/span><strong>Memory<\/strong>/, 'Memory must not remain in the primary sidebar');
+
 assert.match(sidebar, /'calendar'=>true/, 'My Calendar must be promoted out of the footer menu');
 assert.match(sidebar, /href="<\?= e\(url\('\/calendar\.php'\)\) \?>"[^>]*><span>▣<\/span><strong>My Calendar<\/strong>/, 'Primary sidebar must visibly expose My Calendar');
 assert.match(sidebar, /\$mainSidebarCalendarActive/, 'My Calendar must have a canonical active state');
