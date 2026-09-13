@@ -93,6 +93,7 @@ NODE_TESTS = [
     'tests/member-sidebar-shell-contract.mjs',
     'tests/member-header-contract.mjs',
     'tests/transcription-agent-knowledge-integration.mjs',
+    'tests/transcription-folder-observer-hotfix-contract.mjs',
     'tests/profile-agent-chat-order-voice-contract.mjs',
     'tests/agent-chat-operational-activity-contract.mjs',
     'tests/agent-tool-authorization-v400.mjs',
