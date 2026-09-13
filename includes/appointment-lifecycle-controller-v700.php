@@ -59,8 +59,9 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
                 appointment_lifecycle_redirect_v700((int)$booking['id'],'Appointment marked '.str_replace('_',' ',$to).'.','appointment');
             }
             if($action==='prepare_brief'){
-                agent_appointment_lifecycle_prepare_brief_v700($pdo,$booking);
-                appointment_lifecycle_redirect_v700((int)$booking['id'],'Agent preparation brief refreshed.','brief');
+                if(!function_exists('agent_meeting_workflow_prepare_v1410'))throw new RuntimeException('Meeting workflow runtime is unavailable.');
+                agent_meeting_workflow_prepare_v1410($pdo,$booking,true);
+                appointment_lifecycle_redirect_v700((int)$booking['id'],'Agent preparation brief refreshed and reported to Agent Chat.','brief');
             }
             if($action==='agent_followup'){
                 $follow=agent_appointment_lifecycle_agent_followup_v700($pdo,$booking,$user);
