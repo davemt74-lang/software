@@ -62,8 +62,15 @@ assert.match(
   /'url'=>url\('\/api\/artist-listening\.php\?action=recording&session_id='/,
   'recording library must keep emitting the canonical private playback URL'
 );
-assert.match(ui, /audio\.controls = true;/, 'Chat recording cards must retain native playback controls');
-assert.match(ui, /audio\.preload = 'metadata';/, 'Chat recording cards must remain metadata-preloaded for fast duration discovery');
-assert.match(ui, /audio\.src = item\.url;/, 'Chat recording cards must play the authorized canonical media URL');
+assert.match(
+  ui,
+  /data-v206-recording-audio controls preload="metadata"/,
+  'Chat recording cards must retain native controls and metadata preloading'
+);
+assert.match(
+  ui,
+  /src="\$\{escapeHtml\(item\?\.url \|\| ''\)\}"/,
+  'Chat recording cards must play the authorized canonical media URL'
+);
 
 console.log('CHAT_RECORDING_PLAYBACK_CONTRACT=PASS');
