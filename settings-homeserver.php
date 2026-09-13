@@ -42,21 +42,21 @@ if (!$user) redirect(url('/login.php'));
           <div class="hs-card-head"><div><small>Connection</small><h2 id="hsConnectionTitle">Checking HomeServer</h2><p id="hsConnectionDetail">Loading connection state.</p></div></div>
 
           <div class="hs-stepper" id="hsStepper" hidden aria-label="Pairing steps">
-            <div class="hs-step" data-step="1"><span>1</span><div><strong>Remote Bridge</strong><small>Enable Remote Bridge in HomeServer.</small></div></div>
-            <div class="hs-step" data-step="2"><span>2</span><div><strong>Connect VP3</strong><small>Enter the one-time relay claim code.</small></div></div>
-            <div class="hs-step" data-step="3"><span>3</span><div><strong>Approve locally</strong><small>Approve the VP3 request in HomeServer.</small></div></div>
+            <div class="hs-step" data-step="1"><span>1</span><div><strong>Start on HomeServer</strong><small>Open Remote Bridge and choose Start Pairing.</small></div></div>
+            <div class="hs-step" data-step="2"><span>2</span><div><strong>Connect VP3</strong><small>Paste the HomeServer connection code below.</small></div></div>
+            <div class="hs-step" data-step="3"><span>3</span><div><strong>Approve locally</strong><small>Enter the Approval code in HomeServer → Connected Apps.</small></div></div>
           </div>
 
           <form class="hs-claim-form" id="hsClaimForm" autocomplete="off">
-            <label for="hsClaimCode">Remote Bridge claim code</label>
-            <div><input id="hsClaimCode" name="claim_code" maxlength="40" spellcheck="false" autocomplete="off" placeholder="Enter code from HomeServer"><button class="hs-button primary" type="submit">Connect HomeServer</button></div>
-            <small>The relay code is used once. VP3 never puts relay or HomeServer credentials in browser storage.</small>
+            <label for="hsClaimCode">HomeServer connection code</label>
+            <div><input id="hsClaimCode" name="claim_code" maxlength="40" spellcheck="false" autocomplete="off" placeholder="Paste connection code from HomeServer"><button class="hs-button primary" type="submit">Connect HomeServer</button></div>
+            <small>Generate this code in HomeServer → Remote Bridge → Start Pairing. It is used once; VP3 never puts relay or HomeServer credentials in browser storage.</small>
           </form>
 
           <div class="hs-approval" id="hsApproval" hidden>
-            <span>Waiting for HomeServer approval</span>
+            <span>Approval code</span>
             <strong id="hsApprovalCode">—</strong>
-            <p>Open HomeServer on your computer, review the VP3 permissions, and approve this code. This page checks the approval automatically.</p>
+            <p>This is the second, separate code. Open HomeServer → Connected Apps, review the VP3 permissions, and enter this Approval code. This page checks the approval automatically.</p>
             <div class="hs-actions"><button class="hs-button" id="hsCheckApproval" type="button">Check now</button><button class="hs-button quiet" id="hsCancelPairing" type="button">Cancel</button></div>
           </div>
 

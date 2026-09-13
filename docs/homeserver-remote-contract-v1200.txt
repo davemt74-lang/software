@@ -1,7 +1,8 @@
 VP3 Cloud HomeServer Remote Contract v12.00
-Verified: 2026-09-12
+Verified: 2026-09-13
 HomeServer repository: davemt74-lang/otro
-HomeServer main: 2ec7c46521857d19d90395437dd56c8cc8108c6f
+HomeServer Phase 15.2 pairing branch: phase-15-2-official-pairing-flow
+HomeServer pairing head: 994ad4a0e9c6306a0d73dd3bbb9b9822e498ea3e
 
 Transport
 - HomeServer owns the outbound persistent connection to the relay.
@@ -9,20 +10,39 @@ Transport
 - Cloud does not require an inbound HomeServer port or browser-held HomeServer credentials.
 
 Relay claim
-- POST /v1/claim with claim_code.
-- Successful claim returns device_id and relay_token.
+- HomeServer Remote Bridge is the first surface in the official pairing flow.
+- Start Pairing enables the configured outbound relay connection and waits for the relay-issued HomeServer connection code.
+- POST /v1/claim with the HomeServer connection code.
+- Successful claim returns device_id and relay_token to VP3 Cloud.
 - Relay session inspection: GET /v1/session with relay bearer.
-- Relay credential rotation/revocation path: POST /v1/session/rotate with relay bearer.
+- Relay credential rotation path: POST /v1/session/rotate with relay bearer.
+- Relay claim release path: POST /v1/session/release with relay bearer.
+- Release revokes active Cloud relay sessions, returns the relay device to unclaimed state, and pushes a fresh one-time HomeServer connection code only to the connected HomeServer socket.
+- The release HTTP response never returns the fresh HomeServer connection code to VP3 Cloud.
 - HomeServer relay trust model: trusted-relay.
 
 App pairing
 - Pairing protocol: claim-v1.
-- Remote operation pair.request accepts app_key, app_name and permissions.
+- After the relay claim, remote operation pair.request accepts app_key, app_name and permissions.
 - pair.request returns request_id, claim_token, code, expires_at and permissions.
-- The user approves or rejects locally in HomeServer.
+- VP3 Cloud displays the second-stage code as the Approval code.
+- The user enters the Approval code locally in HomeServer → Connected Apps and approves or rejects the requested permissions.
 - Remote operation pair.status accepts request_id and claim_token.
 - Pending, paired, denied and expired are terminal/state values used by the HomeServer implementation.
 - Once paired, the claim_token is the scoped VP3 application bearer for HomeServer operations.
+
+Official user flow
+1. HomeServer → Remote Bridge → Start Pairing.
+2. Copy the HomeServer connection code into VP3 Cloud → Settings → HomeServer.
+3. VP3 Cloud displays a separate Approval code.
+4. Enter the Approval code in HomeServer → Connected Apps and approve the requested permissions.
+5. VP3 Cloud completes the connection.
+
+Pairing removal
+- Disconnect rotates the Cloud relay session and retains the replacement credential server-side for repair/re-pair.
+- Remove Cloud pairing requires disconnected state and calls POST /v1/session/release before deleting Cloud pairing state.
+- If release fails, Cloud retains the pairing row and recovery credential instead of leaving the HomeServer permanently claimed at the relay.
+- After successful release, the fresh HomeServer connection code remains local to HomeServer.
 
 Capabilities
 - Remote operation capabilities returns the HomeServer capability projection, including service/version/features where supported.

@@ -37,6 +37,8 @@ assert.match(actions, /homeserver_token_enc=NULL/);
 assert.match(actions, /status='disconnected'/);
 assert.match(actions, /function homeserver_cloud_v1200_remove_pairing/);
 assert.match(actions, /Disconnect HomeServer before removing the Cloud pairing/);
+assert.match(actions, /\/v1\/session\/release/);
+assert.match(actions, /HomeServer relay did not release the device pairing/);
 assert.match(actions, /DELETE FROM homeserver_connections WHERE user_id=\?/);
 const disconnectOffset = actions.indexOf('function homeserver_cloud_v1200_disconnect');
 const removeOffset = actions.indexOf('function homeserver_cloud_v1200_remove_pairing');
@@ -44,7 +46,9 @@ assert.ok(disconnectOffset >= 0 && removeOffset > disconnectOffset);
 const disconnectBody = actions.slice(disconnectOffset, removeOffset);
 assert.ok(disconnectBody.indexOf('/v1/session/rotate') < disconnectBody.indexOf("status='disconnected'"));
 const removeBody = actions.slice(removeOffset);
-assert.ok(removeBody.indexOf('/v1/session/rotate') < removeBody.indexOf('DELETE FROM homeserver_connections'));
+assert.ok(removeBody.indexOf('/v1/session/release') >= 0);
+assert.ok(removeBody.indexOf('/v1/session/release') < removeBody.indexOf('DELETE FROM homeserver_connections'));
+assert.ok(removeBody.indexOf("released['device_id']") < removeBody.indexOf('DELETE FROM homeserver_connections'));
 
 assert.match(api, /require_login\(\)/);
 assert.match(api, /verify_csrf\(\)/);
@@ -65,8 +69,12 @@ assert.match(legacyApi, /homeserver_commerce_agent_v1000_revoke[\s\S]*homeserver
 assert.doesNotMatch(legacyApi, /homeserver_vp3_disconnect\(\$userId\)/);
 
 assert.match(page, /Settings[\s\S]*HomeServer/);
+assert.match(page, /Start on HomeServer/);
+assert.match(page, /Start Pairing/);
+assert.match(page, /HomeServer connection code/);
+assert.match(page, /Approval code/);
+assert.match(page, /Connected Apps/);
 assert.match(page, /Connect HomeServer/);
-assert.match(page, /Waiting for HomeServer approval/);
 assert.match(page, /Re-pair/);
 assert.match(page, /Disconnect/);
 assert.match(page, /Remove Cloud pairing/);
@@ -88,11 +96,15 @@ for (const browserSource of [js, lifecycle]) {
 
 assert.match(base, /aes-256-gcm/);
 assert.match(base, /homeserver-vp3\.key/);
-assert.match(hsRemote, /HomeServer main: 2ec7c46521857d19d90395437dd56c8cc8108c6f/);
+assert.match(hsRemote, /HomeServer pairing head: 994ad4a0e9c6306a0d73dd3bbb9b9822e498ea3e/);
 assert.match(hsRemote, /pair\.request/);
 assert.match(hsRemote, /pair\.status/);
 assert.match(hsRemote, /claim-v1/);
+assert.match(hsRemote, /HomeServer connection code/);
+assert.match(hsRemote, /Approval code/);
 assert.match(hsRemote, /\/v1\/claim/);
 assert.match(hsRemote, /\/v1\/session\/rotate/);
+assert.match(hsRemote, /\/v1\/session\/release/);
+assert.match(hsRemote, /release HTTP response never returns the fresh HomeServer connection code/);
 
 console.log('homeserver-cloud-pairing-v1200-contract: ok');
