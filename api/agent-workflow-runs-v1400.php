@@ -31,18 +31,18 @@ try{
         $priority=agent_workflow_find_brain_priority_v1400($user,$key,$hash);
         if(!$priority)throw new RuntimeException('That Agent Brain priority is no longer available. Refresh and try again.');
         $run=agent_workflow_create_from_priority_v1400($pdo,$user,$priority);
-        agent_tool_log($user,'agent.workflow.create','Agent Brain workflow','success',['run_id'=>(int)($run['id']??0),'source'=>(string)($run['source_kind']??'')]);
     }elseif($action==='approve'){
         $run=agent_workflow_approve_v1400($pdo,$user,(int)($input['run_id']??0));
-        agent_tool_log($user,'agent.workflow.approve','Agent workflow approval','success',['run_id'=>(int)($run['id']??0)]);
     }elseif($action==='cancel'){
         $run=agent_workflow_cancel_v1400($pdo,$user,(int)($input['run_id']??0));
-        agent_tool_log($user,'agent.workflow.cancel','Agent workflow cancellation','success',['run_id'=>(int)($run['id']??0)]);
     }elseif($action==='retry'){
         $run=agent_workflow_retry_v1400($pdo,$user,(int)($input['run_id']??0));
-        agent_tool_log($user,'agent.workflow.retry','Agent workflow retry','success',['run_id'=>(int)($run['id']??0)]);
     }else{
         throw new RuntimeException('Unknown workflow action.');
     }
     echo json_encode(['ok'=>true,'run'=>$run,'build'=>VP3_AGENT_WORKFLOW_RUNS_V1400],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
-}catch(Throwable $e){http_response_code(400);echo json_encode(['ok'=>false,'error'=>$e->getMessage()],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);}
+}catch(Throwable $e){
+    $safe=$e instanceof RuntimeException?$e->getMessage():'Workflow request failed.';
+    http_response_code($e instanceof RuntimeException?400:500);
+    echo json_encode(['ok'=>false,'error'=>$safe],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
+}
