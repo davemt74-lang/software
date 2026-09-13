@@ -18,7 +18,7 @@ require_once dirname(__DIR__) . '/includes/transcription-deeper-advanced.php';
 require_once dirname(__DIR__) . '/includes/transcription-deeper-chat.php';
 require_once dirname(__DIR__) . '/includes/transcription-deeper-report.php';
 
-const VP3_TRANSCRIPTION_INTELLIGENCE_V300 = 'vp3-transcription-intelligence-v307-20260907';
+const VP3_TRANSCRIPTION_INTELLIGENCE_V300 = 'vp3-transcription-intelligence-v313-20260913';
 
 function transcription_intelligence_json_v300(bool $ok,array $data=[],int $status=200): never
 {
@@ -38,6 +38,18 @@ function transcription_intelligence_normalize_v307(PDO $pdo,int $sessionId,array
     return $master;
 }
 
+function transcription_intelligence_folder_id_v313(PDO $pdo,array $user,array $session,array $input): int
+{
+    if(array_key_exists('folder_id',$input)){
+        $folderId=max(0,(int)$input['folder_id']);
+        if($folderId>0&&!personal_knowledge_folder($pdo,$user,$folderId))throw new RuntimeException('Choose a folder from your library.');
+        return $folderId;
+    }
+    $metadata=json_decode((string)($session['metadata_json']??''),true);
+    $folderId=max(0,(int)(is_array($metadata)?($metadata['folder_id']??0):0));
+    return $folderId>0&&personal_knowledge_folder($pdo,$user,$folderId)?$folderId:0;
+}
+
 $user=current_user();
 if(!$user)transcription_intelligence_json_v300(false,['error'=>'Sign in to use transcription intelligence.'],401);
 if(!has_permission('artist_listening.access',$user))transcription_intelligence_json_v300(false,['error'=>'Transcription access is required.'],403);
@@ -52,18 +64,19 @@ if($method==='POST'){
 $action=trim((string)($input['action']??$_GET['action']??'status'));
 $sessionId=max(0,(int)($input['session_id']??$_GET['session_id']??0));
 $workflowConfig=transcription_workflow_public_v304();
+$knowledgeFolders=personal_knowledge_folders($pdo,$user);
 
 try{
     $session=$sessionId?artist_listening_v172_session($pdo,$user,$sessionId):null;
 
-    if($method==='GET'&&$action==='registry')transcription_intelligence_json_v300(true,['registry'=>transcription_app_registry_public_v307(),'workflow_config'=>$workflowConfig]);
+    if($method==='GET'&&$action==='registry')transcription_intelligence_json_v300(true,['registry'=>transcription_app_registry_public_v307(),'workflow_config'=>$workflowConfig,'folders'=>$knowledgeFolders]);
     if($method==='GET'&&$action==='workflow')transcription_intelligence_json_v300(true,['workflow_config'=>$workflowConfig]);
     if($method==='GET'&&$action==='comparison_targets')transcription_intelligence_json_v300(true,['comparison_targets'=>$session?transcription_deeper_comparison_targets_v307($pdo,$user,$session):[]]);
 
     if($method==='GET'&&$action==='status'){
         if(!$session)transcription_intelligence_json_v300(true,[
             'master'=>null,'app_status'=>[],'registry'=>transcription_app_registry_public_v307(),'tags'=>[],
-            'permissions'=>transcription_app_permissions_v300($user),'operations'=>[],'workflow_config'=>$workflowConfig,
+            'permissions'=>transcription_app_permissions_v300($user),'operations'=>[],'workflow_config'=>$workflowConfig,'folders'=>$knowledgeFolders,
             'relations_summary'=>transcription_intelligence_relations_summary_v305(null),
             'output_input'=>['accepted_items'=>0,'accepted_connections'=>0,'input_hash'=>''],'comparison_targets'=>[],
             'deeper_intelligence'=>['version'=>307,'enabled'=>true],
@@ -73,7 +86,7 @@ try{
         if($master)$master=transcription_intelligence_normalize_v307($pdo,$sessionId,$master);
         transcription_intelligence_json_v300(true,transcription_deeper_advanced_status_v307($pdo,$user,$session,$master,$map)+[
             'tags'=>transcription_app_tags_v300($session),'permissions'=>transcription_app_permissions_v300($user),
-            'operations'=>transcription_intelligence_operational_context_v303($pdo,$user,$session),'workflow_config'=>$workflowConfig,
+            'operations'=>transcription_intelligence_operational_context_v303($pdo,$user,$session),'workflow_config'=>$workflowConfig,'folders'=>$knowledgeFolders,
             'relations_summary'=>transcription_intelligence_relations_summary_v305($master),
             'comparison_targets'=>transcription_deeper_comparison_targets_v307($pdo,$user,$session),
         ]);
@@ -103,7 +116,7 @@ try{
             $result['master']=$deepView['master'];$result['app_status']=$deepView['app_status'];$result['registry']=$deepView['registry'];
             $result['output_input']=$deepView['output_input']??($result['output_input']??[]);
         }
-        $result['workflow']=$workflow;$result['workflow_config']=$workflowConfig;
+        $result['workflow']=$workflow;$result['workflow_config']=$workflowConfig;$result['folders']=$knowledgeFolders;
         $result['operations']=transcription_intelligence_operational_context_v303($pdo,$user,$session);
         $result['relations_summary']=transcription_intelligence_relations_summary_v305($master);
         $result['comparison_targets']=transcription_deeper_comparison_targets_v307($pdo,$user,$session);
@@ -124,7 +137,7 @@ try{
         transcription_intelligence_json_v300(true,$view+[
             'relations_summary'=>$built['relations_summary']??transcription_intelligence_relations_summary_v305($master),
             'relation_provider'=>(string)($built['provider']??''),'relation_model'=>(string)($built['model']??''),'relation_catalog_items'=>max(0,(int)($built['catalog_items']??0)),
-            'operations'=>transcription_intelligence_operational_context_v303($pdo,$user,$session),'workflow_config'=>$workflowConfig,
+            'operations'=>transcription_intelligence_operational_context_v303($pdo,$user,$session),'workflow_config'=>$workflowConfig,'folders'=>$knowledgeFolders,
             'comparison_targets'=>transcription_deeper_comparison_targets_v307($pdo,$user,$session),
         ]);
     }
@@ -139,7 +152,7 @@ try{
         $view=transcription_deeper_advanced_status_v307($pdo,$user,$session,$master,$map);
         transcription_intelligence_json_v300(true,$view+[
             'relations_summary'=>transcription_intelligence_relations_summary_v305($master),'operations'=>transcription_intelligence_operational_context_v303($pdo,$user,$session),
-            'workflow_config'=>$workflowConfig,'comparison_targets'=>transcription_deeper_comparison_targets_v307($pdo,$user,$session),
+            'workflow_config'=>$workflowConfig,'folders'=>$knowledgeFolders,'comparison_targets'=>transcription_deeper_comparison_targets_v307($pdo,$user,$session),
         ]);
     }
 
@@ -154,7 +167,7 @@ try{
         $view=transcription_deeper_advanced_status_v307($pdo,$user,$session,$master,$map);
         transcription_intelligence_json_v300(true,$view+[
             'tags'=>transcription_app_tags_v300($session),'permissions'=>transcription_app_permissions_v300($user),
-            'operations'=>transcription_intelligence_operational_context_v303($pdo,$user,$session),'workflow_config'=>$workflowConfig,
+            'operations'=>transcription_intelligence_operational_context_v303($pdo,$user,$session),'workflow_config'=>$workflowConfig,'folders'=>$knowledgeFolders,
             'relations_summary'=>transcription_intelligence_relations_summary_v305($master),'comparison_targets'=>transcription_deeper_comparison_targets_v307($pdo,$user,$session),
             'main_chat_notice'=>$notice,
         ]);
@@ -168,7 +181,7 @@ try{
         $view=transcription_deeper_advanced_status_v307($pdo,$user,$session,$master,$map);
         transcription_intelligence_json_v300(true,$view+[
             'receipt'=>$operation['receipt']??[],'existing'=>!empty($operation['existing']),'operations'=>$operation['operations']??transcription_intelligence_operational_context_v303($pdo,$user,$session),
-            'tags'=>transcription_app_tags_v300($session),'permissions'=>transcription_app_permissions_v300($user),'workflow_config'=>$workflowConfig,
+            'tags'=>transcription_app_tags_v300($session),'permissions'=>transcription_app_permissions_v300($user),'workflow_config'=>$workflowConfig,'folders'=>$knowledgeFolders,
             'relations_summary'=>transcription_intelligence_relations_summary_v305($master),'comparison_targets'=>transcription_deeper_comparison_targets_v307($pdo,$user,$session),
         ]);
     }
@@ -189,9 +202,11 @@ try{
 
     if($action==='save_knowledge'){
         $permissions=transcription_app_permissions_v300($user);if(!$permissions['personal_knowledge_write'])throw new RuntimeException('Personal Knowledge Base storage is not available for this account.');
+        $folderId=transcription_intelligence_folder_id_v313($pdo,$user,$session,$input);
         $title=mb_strimwidth('Transcript Intelligence · '.((string)($session['title']??'')?:('Session '.$sessionId)),0,190,'…');
-        $id=personal_knowledge_store($user,'artist-listening-analysis:'.$sessionId,$title,$text,'Personal transcription intelligence · session #'.$sessionId.' · v307 filtered');
-        transcription_intelligence_json_v300(true,['saved'=>true,'knowledge_id'=>$id,'scope'=>'personal','published'=>false,'saved_at'=>gmdate('c')]);
+        $id=personal_knowledge_store($user,'artist-listening-analysis:'.$sessionId,$title,$text,'Personal transcription intelligence · session #'.$sessionId.' · v307 filtered',$folderId);
+        $folder=$folderId>0?personal_knowledge_folder($pdo,$user,$folderId):null;
+        transcription_intelligence_json_v300(true,['saved'=>true,'knowledge_id'=>$id,'scope'=>'personal','published'=>false,'folder'=>['id'=>$folderId,'name'=>$folder?(string)$folder['folder_name']:'Unfiled'],'saved_at'=>gmdate('c')]);
     }
 
     transcription_intelligence_json_v300(false,['error'=>'Unsupported transcription intelligence action.'],422);
