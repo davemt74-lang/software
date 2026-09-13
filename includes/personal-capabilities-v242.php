@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-const STONEFELLOW_PERSONAL_CAPABILITIES_V242 = 'personal-capabilities-v242-20260905';
+const STONEFELLOW_PERSONAL_CAPABILITIES_V242 = 'personal-capabilities-v242-20260913-shared-folders';
 const STONEFELLOW_PERSONAL_CAPABILITIES_SEED = 'personal_capabilities_seed_v242';
 
 function personal_capability_catalog_v242(): array
@@ -56,13 +56,20 @@ function personal_capability_seed_v242(): void
 
 function personal_capability_schema_ready_v242(?PDO $pdo=null): bool
 {
-    $pdo??=db();return (bool)$pdo&&table_exists('knowledge_items')&&column_exists('knowledge_items','knowledge_scope')&&table_exists('user_profiles')&&column_exists('user_profiles','tagline')&&column_exists('user_profiles','contact_email')&&column_exists('user_profiles','tidal_url')&&column_exists('user_profiles','facebook_url');
+    $pdo??=db();return (bool)$pdo&&table_exists('knowledge_items')&&column_exists('knowledge_items','knowledge_scope')&&column_exists('knowledge_items','folder_id')&&table_exists('user_profiles')&&column_exists('user_profiles','tagline')&&column_exists('user_profiles','contact_email')&&column_exists('user_profiles','tidal_url')&&column_exists('user_profiles','facebook_url');
 }
 
 function personal_capability_ensure_schema_v242(?PDO $pdo=null): void
 {
     $pdo??=db();if(!$pdo)throw new RuntimeException('Database connection is unavailable.');
     if(table_exists('knowledge_items')&&!column_exists('knowledge_items','knowledge_scope')){$pdo->exec("ALTER TABLE knowledge_items ADD COLUMN knowledge_scope VARCHAR(20) NOT NULL DEFAULT 'system' AFTER created_by_user_id");try{$pdo->exec('ALTER TABLE knowledge_items ADD INDEX idx_kb_scope_owner (knowledge_scope,created_by_user_id,updated_at)');}catch(Throwable $e){}}
+    if(table_exists('knowledge_items')&&!column_exists('knowledge_items','folder_id')){
+        $pdo->exec("ALTER TABLE knowledge_items ADD COLUMN folder_id BIGINT UNSIGNED NULL AFTER track_id");
+        try{$pdo->exec('ALTER TABLE knowledge_items ADD INDEX idx_kb_folder_owner (folder_id,created_by_user_id,updated_at)');}catch(Throwable $e){}
+        if(table_exists('artist_transcript_folders_v177')){
+            try{$pdo->exec('ALTER TABLE knowledge_items ADD CONSTRAINT fk_kb_shared_folder_v313 FOREIGN KEY (folder_id) REFERENCES artist_transcript_folders_v177(id) ON DELETE SET NULL');}catch(Throwable $e){}
+        }
+    }
     if(table_exists('knowledge_items')&&column_exists('knowledge_items','knowledge_scope'))$pdo->exec("UPDATE knowledge_items SET knowledge_scope='personal' WHERE file_type='personal_note' AND created_by_user_id IS NOT NULL");
     if(table_exists('user_profiles')){
         $columns=['tagline'=>"VARCHAR(255) NOT NULL DEFAULT ''",'bio_subhead'=>"VARCHAR(500) NOT NULL DEFAULT ''",'genre'=>"VARCHAR(190) NOT NULL DEFAULT ''",'focus'=>"VARCHAR(255) NOT NULL DEFAULT ''",'contact_email'=>"VARCHAR(190) NOT NULL DEFAULT ''",'player_description'=>"VARCHAR(500) NOT NULL DEFAULT ''",'artist_bio'=>'TEXT NULL','tidal_url'=>"VARCHAR(500) NOT NULL DEFAULT ''",'facebook_url'=>"VARCHAR(500) NOT NULL DEFAULT ''"];
