@@ -10,6 +10,10 @@
 #vp3AgentRuntimeSource[data-source="homeserver_local"]{color:#166534;}
 #vp3AgentRuntimeSource[data-source="vp3_cloud"]{color:#1d4ed8;}
 #vp3AgentRuntimeSource[data-source="user_provider"]{color:#6d28d9;}
+.chat-history-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;padding-right:7px;}
+.chat-history-heading .chat-history-label{min-width:0;}
+.chat-history-new{display:grid;place-items:center;flex:0 0 auto;width:24px;height:24px;padding:0;border:0;border-radius:7px;background:transparent;color:#6b7280;text-decoration:none;cursor:pointer;font:700 18px/1 system-ui,sans-serif;}
+.chat-history-new:hover,.chat-history-new:focus-visible{background:#f3f4f6;color:#111827;outline:none;}
 .chat-history-row{position:relative;display:grid;grid-template-columns:minmax(0,1fr) 26px 26px;align-items:center;gap:1px;}
 .chat-history-row .chat-history-item{min-width:0;}
 .chat-history-rename,.chat-history-delete{display:grid;place-items:center;width:26px;height:26px;border:0;border-radius:7px;background:transparent;color:#9ca3af;cursor:pointer;font:700 16px/1 system-ui,sans-serif;opacity:0;transition:opacity .14s ease,background .14s ease,color .14s ease;}
@@ -18,29 +22,30 @@
 .chat-history-delete:hover,.chat-history-delete:focus-visible{color:#b91c1c;}
 .chat-history-row.is-renaming{grid-template-columns:minmax(0,1fr) 26px 26px;}
 .chat-history-rename-input{width:100%;min-width:0;height:28px;padding:4px 7px;border:1px solid #c7d2fe;border-radius:7px;background:#fff;color:#111827;font:600 11px/1.2 system-ui,sans-serif;outline:none;box-shadow:0 0 0 2px rgba(79,70,229,.08);}
-.agent-sidebar-footer{position:relative;flex:0 0 auto;margin-top:auto;padding:8px;border-top:1px solid #e5e7eb;background:rgba(255,255,255,.96);}
-.agent-sidebar-user-button{display:grid;grid-template-columns:32px minmax(0,1fr) auto;align-items:center;gap:9px;width:100%;padding:7px;border:0;border-radius:10px;background:transparent;color:#111827;text-align:left;cursor:pointer;}
+.agent-sidebar-footer{position:relative;flex:0 0 auto;margin-top:auto;padding:7px 8px 8px;border-top:1px solid #e5e7eb;background:rgba(255,255,255,.96);}
+.agent-sidebar-user-button{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:9px;width:100%;padding:6px 7px;border:0;border-radius:9px;background:transparent;color:#111827;text-align:left;cursor:pointer;}
 .agent-sidebar-user-button:hover,.agent-sidebar-user-button:focus-visible{background:#f3f4f6;outline:none;}
-.agent-sidebar-avatar{display:grid;place-items:center;width:32px;height:32px;overflow:hidden;border:1px solid #e5e7eb;border-radius:50%;background:#111827;color:#fff;font-size:11px;font-weight:800;}
-.agent-sidebar-avatar img{width:100%;height:100%;object-fit:cover;}
 .agent-sidebar-user-copy{display:grid;min-width:0;gap:1px;}
 .agent-sidebar-user-copy strong,.agent-sidebar-user-copy small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .agent-sidebar-user-copy strong{font-size:11px;}
 .agent-sidebar-user-copy small{font-size:9px;color:#6b7280;}
 .agent-sidebar-user-chevron{color:#9ca3af;font-size:12px;}
-.agent-sidebar-user-menu{position:absolute;left:8px;right:8px;bottom:58px;z-index:60;max-height:min(68vh,520px);overflow:auto;padding:6px;border:1px solid #e5e7eb;border-radius:12px;background:#fff;box-shadow:0 18px 50px rgba(15,23,42,.16);}
+.agent-sidebar-footer .agent-sidebar-runtime{margin:1px 0 0;padding:4px 7px 2px;border:0;border-radius:0;background:transparent;box-shadow:none;gap:3px;}
+.agent-sidebar-footer .agent-sidebar-runtime .agent-runtime-line{font-size:9px;}
+.agent-sidebar-footer .agent-sidebar-runtime .agent-runtime-line small{font-size:8px;}
+.agent-sidebar-footer .agent-sidebar-runtime .agent-runtime-line strong,.agent-sidebar-footer .agent-sidebar-runtime .agent-runtime-line a{font-size:9px;}
+.agent-sidebar-user-menu{position:absolute;left:8px;right:8px;bottom:100%;z-index:60;max-height:min(68vh,520px);overflow:auto;margin-bottom:6px;padding:6px;border:1px solid #e5e7eb;border-radius:12px;background:#fff;box-shadow:0 18px 50px rgba(15,23,42,.16);}
 .agent-sidebar-user-menu[hidden]{display:none!important;}
 .agent-sidebar-user-menu a{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 9px;border-radius:8px;color:#111827;font-size:11px;font-weight:650;text-decoration:none;}
 .agent-sidebar-user-menu a:hover,.agent-sidebar-user-menu a:focus-visible{background:#f3f4f6;outline:none;}
 .agent-sidebar-user-menu a.logout{color:#b91c1c;}
 .agent-sidebar-user-menu .agent-menu-divider{height:1px;margin:5px 4px;background:#e5e7eb;}
 @media (hover:none){.chat-history-rename,.chat-history-delete{opacity:1;}}
-@media (max-width:720px){.agent-runtime-strip{margin-left:6px;margin-right:6px}.agent-sidebar-user-menu{bottom:62px;}}
+@media (max-width:720px){.agent-sidebar-user-menu{bottom:100%;}}
 
-/* Member Shell v2: keep runtime telemetry at the bottom of the sidebar. */
+/* Member Shell: the user identity and runtime telemetry share one compact footer. */
 .workspace-main-sidebar .chat-sidebar-sections{order:1;}
-.workspace-main-sidebar .agent-runtime-strip{order:2;flex:0 0 auto;margin:8px 8px 0;}
-.workspace-main-sidebar .agent-sidebar-footer{order:3;margin-top:0;}
+.workspace-main-sidebar .agent-sidebar-footer{order:2;margin-top:auto;}
 
 /* Keep the primary Agent links visually direct; the redundant AGENT label is removed in markup. */
 .workspace-main-sidebar .chat-sidebar-nav-section{padding-top:4px;}
