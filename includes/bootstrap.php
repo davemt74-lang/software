@@ -69,6 +69,8 @@ require_once __DIR__.'/agent-scheduling-v430.php';
 require_once __DIR__.'/agent-calendar-sync-v500.php';
 require_once __DIR__.'/agent-scheduling-public-v450.php';
 require_once __DIR__.'/agent-scheduling-tools-v460.php';
+require_once __DIR__.'/user-calendar-v1300.php';
+require_once __DIR__.'/calendar-schedule-awareness-v1330.php';
 require_once __DIR__.'/user-agent-lifecycle-v390.php';
 require_once __DIR__.'/user-data-usage-v236.php';
 require_once __DIR__.'/midi-v217.php';
