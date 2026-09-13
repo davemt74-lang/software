@@ -86,9 +86,10 @@
     if (name.length > 80) throw new Error('Folder names are limited to 80 characters.');
 
     const workspace = window.STONEFELLOW_ARTIST_LISTENING_WORKSPACE?.api;
-    const artistSelect = select.matches('[data-listening-workspace-folder-select],[data-listening-ai-folder]');
-    if (artistSelect && typeof workspace?.createFolder === 'function') {
+    if (select.matches('[data-listening-workspace-folder-select],[data-listening-ai-folder]') && typeof workspace?.createFolder === 'function') {
+      const previousFilter = String(workspace.getState?.()?.filter?.folder || 'all');
       const folder = await workspace.createFolder(name);
+      if (previousFilter && typeof workspace.filterLibrary === 'function') workspace.filterLibrary({folder:previousFilter});
       return folder || null;
     }
     return createWithSharedApi(name);
