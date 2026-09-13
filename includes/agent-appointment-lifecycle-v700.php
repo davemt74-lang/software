@@ -18,3 +18,5 @@ require_once __DIR__.'/agent-appointment-lifecycle-v700-part5.php';
 require_once __DIR__.'/agent-appointment-lifecycle-v700-part6.php';
 require_once __DIR__.'/agent-appointment-lifecycle-v700-part7.php';
 require_once __DIR__.'/agent-appointment-lifecycle-v700-part8.php';
+require_once __DIR__.'/agent-meeting-workflows-v1410.php';
+require_once __DIR__.'/agent-meeting-workflows-v1410-hardening.php';

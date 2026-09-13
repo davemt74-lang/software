@@ -81,7 +81,12 @@ function agent_appointment_lifecycle_process_delivery_v700(PDO $pdo,array $deliv
     }
     [$title,$body]=agent_appointment_lifecycle_delivery_copy_v700($booking,$key);
     if($key==='agent_prep'){
-        $brief=agent_appointment_lifecycle_prepare_brief_v700($pdo,$booking);$body=mb_strimwidth((string)$brief['brief_text'],0,900,'…');
+        // Phase 14.1 contract: a meeting-prep delivery is not successful until
+        // the canonical report has also been written to the Agent Chat canvas.
+        if(!function_exists('agent_meeting_workflow_prepare_v1410'))throw new RuntimeException('Meeting workflow runtime is unavailable.');
+        $prep=agent_meeting_workflow_prepare_v1410($pdo,$booking,false);$brief=$prep['brief']??null;
+        if(!is_array($brief)||trim((string)($brief['brief_text']??''))==='')throw new RuntimeException('Meeting prep report is unavailable after workflow execution.');
+        $body=mb_strimwidth((string)$brief['brief_text'],0,900,'…');
     }
     $ok=false;$error='';
     if((string)$delivery['channel']==='host_notification'&&(int)($delivery['recipient_user_id']??0)>0){
@@ -116,4 +121,3 @@ function agent_appointment_lifecycle_reconcile_statuses_v700(PDO $pdo,int $limit
     }
     return $count;
 }
-
