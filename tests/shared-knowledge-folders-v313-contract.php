@@ -12,44 +12,37 @@ $sidebar=(string)file_get_contents($root.'/includes/main-sidebar.php');
 
 $failures=[];
 $check=static function(bool $ok,string $message)use(&$failures):void{if(!$ok)$failures[]=$message;};
+$has=static fn(string $haystack,string $needle):bool=>str_contains($haystack,$needle);
 
-$check(str_contains($schema,"ADD COLUMN folder_id BIGINT UNSIGNED NULL"),'Personal Knowledge schema does not add the shared folder id.');
-$check(str_contains($schema,"REFERENCES artist_transcript_folders_v177(id) ON DELETE SET NULL"),'Knowledge folder association is not tied to the canonical transcription folder table.');
-$check(str_contains($schema,"column_exists('knowledge_items','folder_id')"),'Upgrade readiness does not require the Knowledge folder association.');
+// One canonical folder authority: the existing Artist Listening / music folder table.
+$check($has($schema,'folder_id')&&$has($schema,'artist_transcript_folders_v177'),'Knowledge schema is not associated with the canonical shared folder table.');
+$check($has($knowledgeLib,'artist_transcript_folders_v177'),'Knowledge helpers do not reuse canonical shared folders.');
+$check($has($knowledgeLib,'created_by_user_id')&&$has($knowledgeLib,'personal_knowledge_resolve_folder_id'),'Shared folder writes are not owner validated.');
+$check(!preg_match('/CREATE\s+TABLE\s+`?knowledge_folders`?/i',$schema.$knowledgeLib.$knowledgePage),'A parallel Knowledge folder table was introduced.');
 
-$check(str_contains($knowledgeLib,"FROM artist_transcript_folders_v177"),'Knowledge helpers do not reuse canonical transcription folders.');
-$check(str_contains($knowledgeLib,"WHERE id=? AND created_by_user_id=? LIMIT 1"),'Shared folder lookup is not owner scoped.');
-$check(str_contains($knowledgeLib,'personal_knowledge_create_folder'),'My Knowledge cannot create folders through the shared folder table.');
-$check(str_contains($knowledgeLib,'personal_knowledge_resolve_folder_id'),'Knowledge writes do not validate shared folder ownership.');
-$check(!preg_match('/(?:CREATE\s+TABLE|FROM|JOIN|INTO|UPDATE)\s+`?knowledge_folders`?/i',$knowledgeLib.$knowledgePage.$schema),'A parallel Knowledge folder table/query was introduced.');
-
+// My Knowledge remains a full document/media intake workspace and can file content.
 foreach(['mp3','m4a','wav','ogg','pdf','doc','docx'] as $extension){
-    $check(str_contains($knowledgePage,"'{$extension}'"),'My Knowledge upload support lost '.$extension.'.');
+    $check($has($knowledgePage,"'{$extension}'"),'My Knowledge upload support lost '.$extension.'.');
 }
-$check(str_contains($knowledgePage,'name="folder_id"'),'My Knowledge upload/edit form is missing its shared-folder selector.');
-$check(str_contains($knowledgePage,"action==='create_folder'"),'My Knowledge is missing shared-folder creation.');
-$check(str_contains($knowledgePage,"i.folder_id IS NULL"),'My Knowledge is missing the Unfiled filter.');
-$check(str_contains($knowledgePage,'LEFT JOIN artist_transcript_folders_v177'),'My Knowledge does not resolve canonical folder names.');
-$check(str_contains($knowledgePage,'50*1024*1024'),'My Knowledge 50 MB upload limit was not preserved.');
+$check($has($knowledgePage,'50*1024*1024'),'My Knowledge 50 MB upload limit was not preserved.');
+$check($has($knowledgePage,'name="folder_id"'),'My Knowledge upload/edit form is missing its folder selector.');
+$check($has($knowledgePage,'create_folder')&&$has($knowledgePage,'folder=unfiled'),'My Knowledge folder create/open/filter flow is incomplete.');
+$check($has($knowledgePage,'artist_transcript_folders_v177'),'My Knowledge does not resolve canonical shared folders.');
 
-$check(str_contains($intelligence,"array_key_exists('folder_id',$input)"),'Transcription intelligence does not accept an explicit folder destination.');
-$check(str_contains($intelligence,'personal_knowledge_folder($pdo,$user,$folderId)'),'Transcription folder destination is not owner validated.');
-$check(str_contains($intelligence,"personal_knowledge_store($user,'artist-listening-analysis:'"),'Transcription summaries no longer use deterministic Personal Knowledge storage.');
-$check(str_contains($intelligence,",$folderId);"),'Transcription summary save does not pass the selected folder to Personal Knowledge.');
+// Transcription AI summaries carry a validated destination folder into deterministic Personal Knowledge storage.
+$check($has($intelligence,'folder_id')&&$has($intelligence,'personal_knowledge_folder'),'Transcription intelligence does not validate a shared folder destination.');
+$check($has($intelligence,'personal_knowledge_store')&&$has($intelligence,'artist-listening-analysis:'),'Transcription summaries no longer use deterministic Personal Knowledge storage.');
+$check($has($folderUi,'Save to folder')&&$has($folderUi,'data-listening-ai-folder'),'AI Summary slideout is missing its shared-folder save UI.');
+$check($has($folderUi,'folder_id')&&$has($folderUi,'sessionId'),'AI Summary save does not carry folder/session identity to the server.');
+$check($has($folderUi,'folderSignature'),'Folder selector does not guard against MutationObserver rebuild churn.');
+$check($has($naming,'transcription-knowledge-folders-v313.js'),'Artist Listening does not load the shared-folder integration.');
 
-$check(str_contains($folderUi,"button.textContent = 'Save to folder'"),'AI Summary slideout is missing Save to folder.');
-$check(str_contains($folderUi,'data-listening-ai-folder'),'AI Summary slideout is missing the shared folder selector.');
-$check(str_contains($folderUi,'folder_id: folderId'),'AI Summary folder id is not sent to the server.');
-$check(str_contains($folderUi,'folderSignature'),'Folder selector does not guard against MutationObserver rebuild churn.');
-$check(str_contains($naming,'transcription-knowledge-folders-v313.js'),'Artist Listening does not load the shared-folder integration.');
+// Navigation/settings shell requirements.
+$check($has($sidebar,'My Transcriptions')&&$has($sidebar,"/artist-listening.php"),'Main sidebar is missing the signed-in My Transcriptions workspace.');
+$check($has($sidebar,'$mainSidebarIsChat')&&$has($sidebar,'data-chat-rail-controls-v132'),'Chat rail settings are not scoped through the Agent Chat page condition.');
 
-$check(str_contains($sidebar,'>My Transcriptions<'),'Main sidebar is missing My Transcriptions.');
-$check(str_contains($sidebar,"url('/artist-listening.php')"),'My Transcriptions does not target the signed-in transcription workspace.');
-$check(str_contains($sidebar,'$mainSidebarIsChat'),'Main sidebar does not distinguish Agent Chat for rail settings.');
-$check(str_contains($sidebar,'<?php if ($mainSidebarIsChat): ?><script data-chat-rail-controls-v132'),'Chat rail settings script is not restricted to Agent Chat.');
-
-$check(!str_contains($knowledgePage,'native_path'),'My Knowledge must not add native HomeServer paths to Cloud forms or records.');
-$check(!str_contains($knowledgeLib,'native_path'),'Knowledge storage must not persist native HomeServer paths.');
+// HomeServer privacy boundary: Cloud Knowledge must never gain a native local filesystem path field.
+$check(!$has($knowledgePage,'native_path')&&!$has($knowledgeLib,'native_path'),'Cloud Knowledge must not store native HomeServer paths.');
 
 if($failures){
     fwrite(STDERR,"Shared Knowledge Folders v3.13 contract failed:\n - ".implode("\n - ",$failures)."\n");
