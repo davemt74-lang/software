@@ -26,6 +26,35 @@
   -webkit-overflow-scrolling:touch;
 }
 
+/* Calendar uses the same fixed member shell, but its month grid has a large
+   intrinsic height. Use flex instead of the inherited chat grid so the
+   calendar body is always the single, deterministic scroll owner. */
+.calendar-main{
+  display:flex;
+  flex-direction:column;
+  min-width:0;
+  min-height:0;
+  height:100dvh;
+  max-height:100dvh;
+  overflow:hidden;
+}
+.calendar-main>.chat-topbar{
+  flex:0 0 58px;
+  min-height:58px;
+}
+.calendar-main>.calendar-canvas{
+  flex:1 1 auto;
+  width:100%;
+  height:auto;
+  min-height:0;
+  max-height:calc(100dvh - 58px);
+  overflow-x:hidden;
+  overflow-y:scroll;
+  overscroll-behavior-y:contain;
+  -webkit-overflow-scrolling:touch;
+  scrollbar-gutter:stable;
+}
+
 /* Messages already owns inbox/thread scrolling on desktop. Keep the shell
    constrained to the member content row and let the whole two-panel stack
    scroll on narrow screens so the composer can never be clipped. */
@@ -41,6 +70,9 @@
 }
 
 @media(max-width:800px){
+  .calendar-main>.calendar-canvas{
+    scrollbar-gutter:auto;
+  }
   .messages-shell{
     height:100%;
     min-height:0;
