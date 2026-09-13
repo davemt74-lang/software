@@ -69,6 +69,7 @@ function member_navigation_menu_links(?array $user = null): array
         $add($links,'calendar','My Calendar',url('/calendar.php'),'agent');
     }
     if(member_navigation_entitled($user,'knowledge.access',personal_capability_has_v242('personal_knowledge.access',$user)))$add($links,'knowledge','My Knowledge',url('/knowledge.php'),'identity');
+    if($accountAllowed&&member_navigation_entitled($user,'knowledge.access',personal_capability_has_v242('personal_knowledge.access',$user)))$add($links,'local_knowledge','Local Knowledge',url('/local-knowledge.php'),'identity');
     if(member_navigation_package_permission($user,'chat.access',has_permission('chat.access',$user)))$add($links,'memory','My Memory',url('/memory.php'),'identity');
     if(member_navigation_entitled($user,'profile_agent.access',personal_capability_has_v242('profile_agent.access',$user)))$add($links,'profile_agent','Profile Agent',url('/profile-agent.php'),'identity');
     if($accountAllowed&&function_exists('agent_scheduling_schema_ready_v430')&&agent_scheduling_schema_ready_v430()){
