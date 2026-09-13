@@ -1,0 +1,51 @@
+name: Shared Knowledge Folders v3.13
+
+on:
+  push:
+    branches:
+      - main
+      - shared-knowledge-folders
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  shared-knowledge-folders:
+    name: Shared Knowledge Folders · PHP ${{ matrix.php }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.1', '8.3']
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+
+      - name: Lint shared folder integration
+        run: |
+          php -l includes/personal-capabilities-v242.php
+          php -l includes/knowledge.php
+          php -l knowledge.php
+          php -l api/artist-listening-intelligence-v300.php
+          php -l includes/main-sidebar.php
+          php -l tests/shared-knowledge-folders-v313-contract.php
+          php -l tests/agent-ui-v034-contract.php
+
+      - name: Verify JavaScript syntax
+        run: |
+          node --check transcription-knowledge-folders-v313.js
+          node --check artist-listening-naming.js
+
+      - name: Verify shared folder contract
+        run: php tests/shared-knowledge-folders-v313-contract.php
+
+      - name: Verify Agent UI navigation contract
+        run: php tests/agent-ui-v034-contract.php
