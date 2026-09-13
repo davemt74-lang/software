@@ -10,6 +10,7 @@ const team = read('api/team-chat-v320.php');
 const legacyTeam = read('api/team-chat-v109.php');
 const js = read('messages-v320.js');
 const css = read('messages-v320.css');
+const page = read('messages.php');
 const bootstrap = read('includes/bootstrap.php');
 const setup = read('setup.php');
 const upgrade = read('upgrade.php');
@@ -123,6 +124,14 @@ assert.match(js, /through_message_id/);
 assert.match(js, /unread_count/);
 assert.match(js, /messages-unread/);
 assert.match(css, /\.messages-unread/);
+
+// Messages owns its left rail. The global member sidebar and its mobile shell
+// must not create a second navigation column on this surface.
+assert.doesNotMatch(page, /workspace-sidebar-v82\.php/, 'Messages must not render the global workspace sidebar');
+assert.doesNotMatch(page, /workspace-shell-v82\.js/, 'Messages must not load the global sidebar runtime');
+assert.match(page, /\$memberHeaderShowSidebarToggle=false/, 'Messages header must not expose a toggle for a sidebar that is not rendered');
+assert.match(page, /<aside class="messages-inbox"/, 'Messages inbox must be the page sidebar');
+assert.match(css, /\.messages-page \.chat-app\{grid-template-columns:minmax\(0,1fr\)\}/, 'Messages page must collapse the base chat shell to one page column');
 
 // Human message bodies stay out of Agent/Profile-Agent persistence.
 assert.doesNotMatch(lifecycle, /agent_chat|profile_agent_messages|agent_activity.*body|activity.*body/i);
