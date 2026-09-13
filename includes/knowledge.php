@@ -132,13 +132,74 @@ function personal_knowledge_available(?array $user = null): bool
         && column_exists('knowledge_items', 'knowledge_scope');
 }
 
+/** Canonical user folders shared by Transcriptions, Songs/Studio organization and My Knowledge. */
+function personal_knowledge_folders(PDO $pdo, array $user): array
+{
+    $userId = max(0, (int)($user['id'] ?? 0));
+    if ($userId < 1 || !table_exists('artist_transcript_folders_v177')) return [];
+    $stmt = $pdo->prepare(
+        'SELECT id,folder_name,sort_order,created_at,updated_at
+         FROM artist_transcript_folders_v177
+         WHERE created_by_user_id=?
+         ORDER BY sort_order ASC,folder_name ASC,id ASC'
+    );
+    $stmt->execute([$userId]);
+    return $stmt->fetchAll() ?: [];
+}
+
+function personal_knowledge_folder(PDO $pdo, array $user, int $folderId): ?array
+{
+    $userId = max(0, (int)($user['id'] ?? 0));
+    if ($userId < 1 || $folderId < 1 || !table_exists('artist_transcript_folders_v177')) return null;
+    $stmt = $pdo->prepare(
+        'SELECT id,folder_name,sort_order,created_at,updated_at
+         FROM artist_transcript_folders_v177
+         WHERE id=? AND created_by_user_id=? LIMIT 1'
+    );
+    $stmt->execute([$folderId, $userId]);
+    $row = $stmt->fetch();
+    return is_array($row) ? $row : null;
+}
+
+function personal_knowledge_create_folder(PDO $pdo, array $user, string $name): array
+{
+    $userId = max(0, (int)($user['id'] ?? 0));
+    if ($userId < 1 || !table_exists('artist_transcript_folders_v177')) {
+        throw new RuntimeException('Shared folders are unavailable until the transcription schema upgrade is complete.');
+    }
+    $name = trim(preg_replace('/\s+/u', ' ', $name) ?? '');
+    if ($name === '' || mb_strlen($name) > 80) {
+        throw new RuntimeException('Folder names must contain 1 to 80 characters.');
+    }
+    try {
+        $stmt = $pdo->prepare('INSERT INTO artist_transcript_folders_v177 (created_by_user_id,folder_name,sort_order) VALUES (?,?,0)');
+        $stmt->execute([$userId, $name]);
+    } catch (PDOException $e) {
+        if ((string)$e->getCode() === '23000') throw new RuntimeException('A folder with that name already exists.');
+        throw $e;
+    }
+    $folder = personal_knowledge_folder($pdo, $user, (int)$pdo->lastInsertId());
+    if (!$folder) throw new RuntimeException('The folder could not be reloaded.');
+    return $folder;
+}
+
+function personal_knowledge_resolve_folder_id(PDO $pdo, array $user, int $folderId): ?int
+{
+    if ($folderId <= 0) return null;
+    if (!personal_knowledge_folder($pdo, $user, $folderId)) {
+        throw new RuntimeException('Choose a folder from your library.');
+    }
+    return $folderId;
+}
+
 /** Store deterministic internal/user-agent knowledge under the current owner. */
 function personal_knowledge_store(
     array $user,
     string $key,
     string $title,
     string $content,
-    string $description = ''
+    string $description = '',
+    ?int $folderId = null
 ): int {
     if (!personal_knowledge_available($user)) {
         throw new RuntimeException('Personal Knowledge Base storage is unavailable for this account.');
@@ -160,6 +221,7 @@ function personal_knowledge_store(
     $title = mb_strimwidth($title, 0, 190, '…');
     $description = mb_strimwidth($description, 0, 2000, '…');
     $marker = 'personal-' . sha1($key) . '.txt';
+    $resolvedFolderId = $folderId === null ? null : personal_knowledge_resolve_folder_id($pdo, $user, max(0, $folderId));
 
     $find = $pdo->prepare(
         "SELECT id FROM knowledge_items
@@ -170,21 +232,31 @@ function personal_knowledge_store(
     $knowledgeId = (int)$find->fetchColumn();
 
     if ($knowledgeId > 0) {
-        $stmt = $pdo->prepare(
-            "UPDATE knowledge_items
-             SET title=?,description=?,file_path='',mime_type='text/plain',file_size=0,
-                 content_text=?,visibility='private',is_published=0,knowledge_scope='personal'
-             WHERE id=? AND created_by_user_id=?"
-        );
-        $stmt->execute([$title, $description, $content, $knowledgeId, $userId]);
+        if ($folderId === null) {
+            $stmt = $pdo->prepare(
+                "UPDATE knowledge_items
+                 SET title=?,description=?,file_path='',mime_type='text/plain',file_size=0,
+                     content_text=?,visibility='private',is_published=0,knowledge_scope='personal'
+                 WHERE id=? AND created_by_user_id=?"
+            );
+            $stmt->execute([$title, $description, $content, $knowledgeId, $userId]);
+        } else {
+            $stmt = $pdo->prepare(
+                "UPDATE knowledge_items
+                 SET title=?,description=?,file_path='',mime_type='text/plain',file_size=0,
+                     content_text=?,visibility='private',is_published=0,knowledge_scope='personal',folder_id=?
+                 WHERE id=? AND created_by_user_id=?"
+            );
+            $stmt->execute([$title, $description, $content, $resolvedFolderId, $knowledgeId, $userId]);
+        }
     } else {
         $stmt = $pdo->prepare(
             "INSERT INTO knowledge_items
-             (track_id,title,description,file_name,file_path,file_type,mime_type,file_size,
+             (track_id,folder_id,title,description,file_name,file_path,file_type,mime_type,file_size,
               content_text,visibility,is_published,created_by_user_id,knowledge_scope)
-             VALUES (NULL,?,?,?,'','personal_note','text/plain',0,?,'private',0,?,'personal')"
+             VALUES (NULL,?,?,?,?,'','personal_note','text/plain',0,?,'private',0,?,'personal')"
         );
-        $stmt->execute([$title, $description, $marker, $content, $userId]);
+        $stmt->execute([$resolvedFolderId, $title, $description, $marker, $content, $userId]);
         $knowledgeId = (int)$pdo->lastInsertId();
     }
 
