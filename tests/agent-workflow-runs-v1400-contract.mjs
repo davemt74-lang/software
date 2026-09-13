@@ -26,6 +26,9 @@ assert.doesNotMatch(workflow, /status='queued' AND execution_target=\? ORDER BY 
 assert.match(workflow, /execution_target'\]\?\?'cloud'\)!==\$executor/, 'The globally next action must be owned by the claiming executor');
 assert.match(workflow, /status'\]==='executing'&&\(int\)\(\$run\['current_action_id'\]\?\?0\)>0/, 'An active action must serialize later executor claims');
 assert.match(workflow, /current_action_id'\]\?\?0\)!==\$actionId/, 'Only the currently claimed action may report a result');
+assert.match(workflow, /result_summary='',result_json=NULL,error_class=''/, 'Retry must clear stale failed-action results');
+assert.match(workflow, /\$safeResult=\$result\?agent_workflow_public_json_v1400\(agent_workflow_json_v1400\(\$result\)\):\[\]/, 'Executor result storage must pass through the secret/reasoning filter');
+assert.doesNotMatch(workflow, /status='queued',attempt_count=attempt_count\+1,last_error_class/, 'Retry must not double-count a run attempt before it is claimed');
 assert.doesNotMatch(api, /record_action_result|claim_next_action/, 'Browser API must not expose executor-only completion hooks');
 assert.doesNotMatch(api, /agent_tool_log/, 'Workflow API must not depend on a nonexistent audit helper');
 assert.match(api, /agent_workflow_find_brain_priority_v1400/, 'Browser creates runs only from server-owned Brain state');
