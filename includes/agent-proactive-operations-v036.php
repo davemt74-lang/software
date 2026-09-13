@@ -157,6 +157,33 @@ function agent_proactive_operations_v036_recent_cloud_fallbacks(PDO $pdo, int $u
     }
 }
 
+/**
+ * Calendar intelligence enters the same evidence-first proactive pipeline as
+ * other operational signals. It remains read-only and the cognitive loop still
+ * owns ranking, suppression, cooldown and whether anything is surfaced.
+ */
+function agent_proactive_operations_v036_calendar_candidates(PDO $pdo, array $user): array
+{
+    if (!function_exists('calendar_schedule_awareness_snapshot_v1330') || !function_exists('calendar_schedule_awareness_candidates_v1330')) {
+        return [];
+    }
+    try {
+        $snapshot = calendar_schedule_awareness_snapshot_v1330($pdo, $user);
+        $rows = calendar_schedule_awareness_candidates_v1330($snapshot);
+    } catch (Throwable $e) {
+        return [];
+    }
+    $out = [];
+    foreach ($rows as $row) {
+        if (!is_array($row)) continue;
+        $row['_confidence'] = (string)($row['source'] ?? '') === 'calendar_conflict' ? 0.99 : 0.95;
+        $row['_recency'] = 1.0;
+        $row['_occurred_at'] = gmdate('Y-m-d H:i:s');
+        $out[] = $row;
+    }
+    return array_slice($out, 0, 4);
+}
+
 function agent_proactive_operations_v036_candidates(PDO $pdo, array $user, int $since = 0): array
 {
     $userId = (int)($user['id'] ?? 0);
@@ -168,6 +195,9 @@ function agent_proactive_operations_v036_candidates(PDO $pdo, array $user, int $
     $profile = agent_proactive_operations_v036_profile_candidate($pdo, $userId);
     if (is_array($profile)) {
         $out[] = $profile;
+    }
+    foreach (agent_proactive_operations_v036_calendar_candidates($pdo, $user) as $calendarCandidate) {
+        $out[] = $calendarCandidate;
     }
 
     $homeServer = agent_proactive_operations_v036_homeserver_state($pdo, $userId);
