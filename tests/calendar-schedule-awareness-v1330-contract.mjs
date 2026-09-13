@@ -6,6 +6,8 @@ const awareness = read('includes/calendar-schedule-awareness-v1330.php');
 const calendar = read('includes/user-calendar-v1300.php');
 const bootstrap = read('includes/bootstrap.php');
 const proactive = read('includes/agent-proactive-operations-v036.php');
+const proactivePipeline = read('includes/agent-proactive-v123.php');
+const cognitive = read('includes/agent-cognitive-loop-v310.php');
 const chat = read('api/chat-v236.php');
 
 assert.match(awareness, /user_calendar_events_v1300\(\$pdo,\$user,/,
@@ -33,9 +35,17 @@ assert.ok(proactiveLoad > awarenessLoad,
 assert.match(proactive, /calendar_schedule_awareness_snapshot_v1330\(\$pdo, \$user\)/);
 assert.match(proactive, /calendar_schedule_awareness_candidates_v1330\(\$snapshot\)/);
 assert.match(proactive, /foreach \(agent_proactive_operations_v036_calendar_candidates\(\$pdo, \$user\)/,
-  'calendar signals must enter the existing evidence-first proactive pipeline');
-assert.match(proactive, /cognitive loop owns ranking, suppression, cooldown/i,
-  'provider must leave surfacing authority with the canonical Brain loop');
+  'calendar signals must enter the operational evidence provider');
+assert.match(proactivePipeline, /agent_proactive_operations_v036_candidates\(\$pdo,\$user\)/,
+  'the evidence-first proactive pipeline must consume the operational provider');
+assert.match(cognitive, /agent_proactive_v123_suggestions\(\$user,'brain',\$context\)/,
+  'the canonical cognitive loop must consume the evidence-first proactive pipeline');
+assert.match(cognitive, /agent_action_v124_suppression\(\$candidate,\$uid\)/,
+  'the cognitive loop must retain suppression authority over calendar-derived candidates');
+assert.match(cognitive, /agent_action_v124_risk\(\$candidate\)/,
+  'the cognitive loop must retain risk classification authority over calendar-derived candidates');
+assert.match(cognitive, /agent_action_v124_plan\(\$candidate,\$event,\[\]\)/,
+  'the cognitive loop must retain action-planning authority over calendar-derived candidates');
 
 assert.match(chat, /calendar_schedule_awareness_snapshot_v1330\(\$pdo,\$user\)/,
   'chat must derive a fresh owner-scoped schedule snapshot');
