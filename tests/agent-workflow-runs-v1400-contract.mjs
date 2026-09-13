@@ -1,0 +1,36 @@
+import fs from 'node:fs';
+import assert from 'node:assert/strict';
+
+const read = (path) => fs.readFileSync(path, 'utf8');
+const workflow = read('includes/agent-workflow-runs-v1400.php');
+const api = read('api/agent-workflow-runs-v1400.php');
+const page = read('agent-workflows.php');
+const migration = read('upgrade-agent-workflow-runs-v1400.sql');
+const navigation = read('includes/member-navigation.php');
+const upgrade = read('upgrade.php');
+
+assert.match(workflow, /agent_workflow_runs/);
+assert.match(workflow, /agent_workflow_actions/);
+assert.match(workflow, /agent_workflow_events/);
+assert.match(workflow, /uq_agent_workflow_owner_dedupe/);
+assert.match(workflow, /owner_user_id=\?/);
+assert.match(workflow, /approval_pending/);
+assert.match(workflow, /agent_workflow_claim_next_action_v1400/);
+assert.match(workflow, /agent_workflow_record_action_result_v1400/);
+assert.match(workflow, /execution_target/);
+assert.match(workflow, /calendar_conflict_resolution/);
+assert.match(workflow, /calendar_commitment_prep/);
+assert.match(workflow, /agent_action_v124_plan\(/, 'Workflow planning must reuse canonical v124 action planning');
+assert.doesNotMatch(api, /record_action_result|claim_next_action/, 'Browser API must not expose executor-only completion hooks');
+assert.match(api, /agent_workflow_find_brain_priority_v1400/, 'Browser creates runs only from server-owned Brain state');
+assert.match(api, /hash_equals\(csrf_token\(\),\$csrf\)/);
+assert.match(page, /Create workflow/);
+assert.match(page, /Execution history/);
+assert.match(page, /without storing hidden reasoning/i);
+assert.match(migration, /CONSTRAINT fk_agent_workflow_owner/);
+assert.match(migration, /CONSTRAINT fk_agent_workflow_action_run/);
+assert.match(navigation, /agent_workflows/);
+assert.match(upgrade, /agent_workflow_schema_ready_v1400\(\)/);
+assert.match(upgrade, /agent_workflow_ensure_schema_v1400\(\)/);
+
+console.log('Agent Workflow Runs v14.00 contract: OK');
