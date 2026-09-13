@@ -43,9 +43,13 @@ jobs:
           node --check knowledge-library-v161.js
           node --check artist-listening-naming.js
           node --check transcription-knowledge-folders-v313.js
+          node --check tests/knowledge-library-v161-browser-contract.mjs
 
       - name: Verify Knowledge Library contract
         run: php tests/knowledge-library-v161-contract.php
+
+      - name: Verify browser integration contract
+        run: node tests/knowledge-library-v161-browser-contract.mjs
 
       - name: Verify shared folder compatibility
         run: php tests/shared-knowledge-folders-v313-contract.php
