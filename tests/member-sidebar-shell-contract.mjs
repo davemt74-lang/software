@@ -17,12 +17,12 @@ const primaryStart = mainSidebar.indexOf('data-agent-primary-nav');
 const primaryEnd = primaryStart < 0 ? -1 : mainSidebar.indexOf('</nav>', primaryStart);
 assert.ok(primaryStart >= 0 && primaryEnd > primaryStart, 'canonical Agent sidebar must expose one primary navigation block');
 const primaryNav = mainSidebar.slice(primaryStart, primaryEnd);
-for (const label of ['New Chat', 'Contacts', 'My Agent', 'My Messages', 'My Knowledge', 'My Calendar']) {
+for (const label of ['New Chat', 'Contacts', 'My Agent', 'My Messages', 'My Knowledge', 'My Transcriptions', 'My Calendar']) {
   assert.ok(primaryNav.includes(`<strong>${label}</strong>`), `canonical Agent sidebar must include primary ${label}`);
 }
 assert.ok(!primaryNav.includes('<strong>Memory</strong>') && !primaryNav.includes('<strong>My Memory</strong>'), 'My Memory must remain in secondary account navigation');
 assert.ok(!primaryNav.includes('<strong>Approvals</strong>'), 'canonical Agent sidebar must not restore the removed Approvals shortcut');
-for (const secondary of ['My Transcriptions', 'My Team', 'Plan &amp; Usage', 'Buy AI Tokens']) {
+for (const secondary of ['My Team', 'Plan &amp; Usage', 'Buy AI Tokens']) {
   assert.ok(!primaryNav.includes(`<strong>${secondary}</strong>`), `secondary ${secondary} must not compete with core personal navigation`);
 }
 for (const removed of ['Player', 'Saved Songs', 'My Playlists', 'Stem Studio', 'Video Editor']) {
@@ -30,7 +30,8 @@ for (const removed of ['Player', 'Saved Songs', 'My Playlists', 'Stem Studio', '
 }
 assert.match(mainSidebar, /data-agent-user-footer/, 'secondary account and product navigation must live in the bottom user menu');
 assert.match(mainSidebar, /member_navigation_menu_links\(\$mainSidebarUser\)/, 'bottom user menu must reuse canonical member navigation');
-assert.match(mainSidebar, /'profile_agent'=>true,'messages'=>true,'knowledge'=>true/, 'promoted My Agent, My Messages and My Knowledge destinations must be filtered out of the bottom menu');
+assert.match(mainSidebar, /'profile_agent'=>true,'messages'=>true,'knowledge'=>true,'transcriptions'=>true/, 'promoted My Agent, My Messages, My Knowledge and My Transcriptions destinations must be filtered out of the bottom menu');
+assert.match(mainSidebar, /mainSidebarTranscriptionsActive/, 'My Transcriptions must support the active-page state');
 assert.match(mainSidebar, /mainSidebarCalendarActive/, 'My Calendar must support the active-page state');
 assert.match(mainSidebar, /id="vp3AgentRuntimeStrip"/, 'sidebar must promote Agent runtime state');
 assert.match(mainSidebar, /data-rename-conversation/, 'chat history must expose rename alongside delete');
