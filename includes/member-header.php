@@ -13,6 +13,8 @@ $memberHeaderNotifications = notification_recent($memberHeaderUser, 6);
 $memberHeaderNotificationCount = notification_unread_count($memberHeaderUser);
 $memberHeaderCanChat = has_permission('chat.access', $memberHeaderUser);
 $memberHeaderAgentVoiceEnabled = $memberHeaderCanChat ? member_agent_voice_enabled($memberHeaderUser) : true;
+$memberHeaderRenderAgentVoiceAssets = empty($GLOBALS['VP3_MEMBER_AGENT_VOICE_MENU_ASSETS_RENDERED']);
+if ($memberHeaderRenderAgentVoiceAssets) $GLOBALS['VP3_MEMBER_AGENT_VOICE_MENU_ASSETS_RENDERED'] = true;
 ?>
 <header class="chat-topbar member-header<?= $memberHeaderClass !== '' ? ' ' . e($memberHeaderClass) : '' ?>" data-member-header>
   <?php if ($memberHeaderShowSidebarToggle): ?><button class="chat-icon-button mobile-only" id="openChatSidebar" type="button" aria-label="Open menu">☰</button><?php endif; ?>
@@ -58,10 +60,13 @@ if (empty($GLOBALS['STONEFELLOW_MEMBER_HEADER_RUNTIME_RENDERED'])):
     $memberHeaderNotificationBuild = 'activity-center-brain-routing-20260906';
     $memberHeaderTranscriptionBuild = 'chat-transcription-canvas-v243-layout-20260905';
     $memberHeaderRecordingUiBuild = 'chat-recording-results-v206-20260901';
+    $memberAgentVoiceMenuBuild = 'agent-voice-menu-20260913';
 ?>
 <link rel="stylesheet" data-member-header-ui href="<?= e(url('/chat-header-ui.css?v=' . $memberHeaderUiBuild)) ?>">
 <link rel="stylesheet" data-member-page-scroll href="<?= e(url('/member-page-scroll.css?v=' . $memberHeaderScrollBuild)) ?>">
+<?php if ($memberHeaderRenderAgentVoiceAssets): ?><link rel="stylesheet" data-member-agent-voice-menu href="<?= e(url('/member-agent-voice-menu.css?v=' . $memberAgentVoiceMenuBuild)) ?>"><?php endif; ?>
 <script data-member-shell-runtime src="<?= e(url('/member-shell-v77.js?v=member-header-dropdown-20260912')) ?>" defer></script>
+<?php if ($memberHeaderRenderAgentVoiceAssets): ?><script data-member-agent-voice-menu src="<?= e(url('/member-agent-voice-menu.js?v=' . $memberAgentVoiceMenuBuild)) ?>" defer></script><?php endif; ?>
 <?php if ($memberHeaderCanChat): ?>
 <link rel="stylesheet" data-chat-settings-canonical href="<?= e(url('/chat-settings-v237.css?v=' . $memberHeaderSettingsBuild)) ?>">
 <script data-chat-settings-config>window.STONEFELLOW_CHAT_SETTINGS=<?= json_encode([

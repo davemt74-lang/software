@@ -8,12 +8,17 @@ $mainSidebarHistoryRows = isset($mainSidebarHistoryRows) && is_array($mainSideba
 $mainSidebarMenuLinks = $mainSidebarUser ? member_navigation_menu_links($mainSidebarUser) : [];
 $mainSidebarProductsActive = $mainSidebarActive === 'profile_commerce' || basename((string)($_SERVER['SCRIPT_NAME'] ?? '')) === 'profile-commerce-products.php';
 $mainSidebarCalendarActive = $mainSidebarActive === 'calendar' || in_array(basename((string)($_SERVER['SCRIPT_NAME'] ?? '')), ['calendar.php','calendar-event.php'], true);
-$mainSidebarPrimaryKeys = ['chat'=>true,'contacts'=>true,'calendar'=>true,'profile_commerce'=>true];
+$mainSidebarCanAccount = $mainSidebarUser && has_permission('account.access', $mainSidebarUser);
+$mainSidebarCanKnowledge = $mainSidebarUser && member_navigation_entitled($mainSidebarUser, 'knowledge.access', personal_capability_has_v242('personal_knowledge.access', $mainSidebarUser));
+$mainSidebarCanProfileAgent = $mainSidebarUser && member_navigation_entitled($mainSidebarUser, 'profile_agent.access', personal_capability_has_v242('profile_agent.access', $mainSidebarUser));
+$mainSidebarPrimaryKeys = ['chat'=>true,'contacts'=>true,'profile_agent'=>true,'messages'=>true,'knowledge'=>true,'calendar'=>true,'profile_commerce'=>true];
 $mainSidebarFooterLinks = array_values(array_filter(
     $mainSidebarMenuLinks,
     static fn(array $link): bool => !isset($mainSidebarPrimaryKeys[(string)($link['key'] ?? '')])
 ));
 $mainSidebarRoleSummary = $mainSidebarUser ? implode(' · ', user_role_labels($mainSidebarUser)) : '';
+$mainSidebarRenderAgentVoiceAssets = empty($GLOBALS['VP3_MEMBER_AGENT_VOICE_MENU_ASSETS_RENDERED']);
+if ($mainSidebarRenderAgentVoiceAssets) $GLOBALS['VP3_MEMBER_AGENT_VOICE_MENU_ASSETS_RENDERED'] = true;
 ?>
 <link rel="stylesheet" data-workspace-header-ui href="<?= e(url('/chat-header-ui.css?v=white-tech-20260904')) ?>">
 <link rel="stylesheet" href="<?= e(url('/site-branding.css?v=1')) ?>">
@@ -22,11 +27,18 @@ $mainSidebarRoleSummary = $mainSidebarUser ? implode(' · ', user_role_labels($m
 <link rel="stylesheet" href="<?= e(url('/agent-ui-v034.css?v=agent-ui-v034-20260910-chat-rail')) ?>">
 <link rel="stylesheet" data-chat-rail-controls-v132 href="<?= e(url('/chat-rail-controls-v132.css?v=20260911-1')) ?>">
 <link rel="stylesheet" href="<?= e(url('/profile-commerce-products-shell-v1310.css?v=1310')) ?>">
+<?php if ($mainSidebarRenderAgentVoiceAssets): ?><link rel="stylesheet" data-member-agent-voice-menu href="<?= e(url('/member-agent-voice-menu.css?v=agent-voice-menu-20260913')) ?>"><?php endif; ?>
 <aside
   class="chat-sidebar workspace-main-sidebar"
   id="chatSidebar"
   data-runtime-url="<?= e(url('/api/agent-runtime-status-v034.php')) ?>"
   data-rename-url="<?= e(url('/api/chat-conversation-rename-v034.php')) ?>"
+  data-agent-endpoint="<?= e(url('/api/user-agent-system-v236.php')) ?>"
+  data-voice-endpoint="<?= e(url('/api/studio-voice-profile.php')) ?>"
+  data-chat-settings-endpoint="<?= e(url('/api/chat-settings-v237.php')) ?>"
+  data-voice-profile-url="<?= e(url('/voice-profile.php')) ?>"
+  data-profile-agent-url="<?= e(url('/profile-agent.php')) ?>"
+  data-account-agents-url="<?= e(url('/account.php#agents-data')) ?>"
   data-csrf="<?= e(csrf_token()) ?>"
 >
   <div class="chat-sidebar-top">
@@ -56,12 +68,27 @@ $mainSidebarRoleSummary = $mainSidebarUser ? implode(' · ', user_role_labels($m
           <?php endif; ?>
         <?php endif; ?>
 
-        <?php if ($mainSidebarUser && has_permission('account.access', $mainSidebarUser)): ?>
+        <?php if ($mainSidebarCanAccount): ?>
           <a class="chat-sidebar-nav-link <?= $mainSidebarActive === 'contacts' ? 'active' : '' ?>" href="<?= e(url('/contacts.php')) ?>"><span>●</span><strong>Contacts</strong></a>
+        <?php endif; ?>
+
+        <?php if ($mainSidebarCanProfileAgent): ?>
+          <a class="chat-sidebar-nav-link <?= $mainSidebarActive === 'profile_agent' ? 'active' : '' ?>" href="<?= e(url('/profile-agent.php')) ?>"><span>◉</span><strong>My Agent</strong></a>
+        <?php endif; ?>
+
+        <?php if ($mainSidebarCanAccount): ?>
+          <a class="chat-sidebar-nav-link <?= $mainSidebarActive === 'messages' ? 'active' : '' ?>" href="<?= e(url('/messages.php')) ?>"><span>✉</span><strong>My Messages</strong></a>
+        <?php endif; ?>
+
+        <?php if ($mainSidebarCanKnowledge): ?>
+          <a class="chat-sidebar-nav-link <?= $mainSidebarActive === 'knowledge' ? 'active' : '' ?>" href="<?= e(url('/knowledge.php')) ?>"><span>◇</span><strong>My Knowledge</strong></a>
+        <?php endif; ?>
+
+        <?php if ($mainSidebarCanAccount): ?>
           <a class="chat-sidebar-nav-link <?= $mainSidebarCalendarActive ? 'active' : '' ?>" href="<?= e(url('/calendar.php')) ?>"><span>▣</span><strong>My Calendar</strong></a>
         <?php endif; ?>
 
-        <?php if ($mainSidebarUser && has_permission('account.access', $mainSidebarUser) && function_exists('agent_commerce_schema_ready_v800') && agent_commerce_schema_ready_v800()): ?>
+        <?php if ($mainSidebarCanAccount && function_exists('agent_commerce_schema_ready_v800') && agent_commerce_schema_ready_v800()): ?>
           <a class="chat-sidebar-nav-link <?= $mainSidebarProductsActive ? 'active' : '' ?>" href="<?= e(url('/profile-commerce-products.php')) ?>"><span>▦</span><strong>My Products</strong></a>
         <?php endif; ?>
       </nav>
@@ -141,3 +168,4 @@ $mainSidebarRoleSummary = $mainSidebarUser ? implode(' · ', user_role_labels($m
 <script src="<?= e(url('/homeserver-vp3.js?v=agent-policy-v035-20260909')) ?>" defer></script>
 <script src="<?= e(url('/agent-ui-v034.js?v=agent-ui-v034-20260910-chat-rail')) ?>" defer></script>
 <script data-chat-rail-controls-v132 src="<?= e(url('/chat-rail-controls-v132.js?v=20260911-1')) ?>" defer></script>
+<?php if ($mainSidebarRenderAgentVoiceAssets): ?><script data-member-agent-voice-menu src="<?= e(url('/member-agent-voice-menu.js?v=agent-voice-menu-20260913')) ?>" defer></script><?php endif; ?>

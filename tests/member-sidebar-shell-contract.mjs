@@ -17,28 +17,28 @@ const primaryStart = mainSidebar.indexOf('data-agent-primary-nav');
 const primaryEnd = primaryStart < 0 ? -1 : mainSidebar.indexOf('</nav>', primaryStart);
 assert.ok(primaryStart >= 0 && primaryEnd > primaryStart, 'canonical Agent sidebar must expose one primary navigation block');
 const primaryNav = mainSidebar.slice(primaryStart, primaryEnd);
-for (const label of ['New Chat', 'Contacts', 'My Calendar']) {
+for (const label of ['New Chat', 'Contacts', 'My Agent', 'My Messages', 'My Knowledge', 'My Calendar']) {
   assert.ok(primaryNav.includes(`<strong>${label}</strong>`), `canonical Agent sidebar must include primary ${label}`);
 }
-for (const accountLevel of ['Knowledge', 'Memory']) {
-  assert.ok(!primaryNav.includes(`<strong>${accountLevel}</strong>`), `${accountLevel} must live in the user dropdown instead of primary Agent navigation`);
-}
+assert.ok(!primaryNav.includes('<strong>Memory</strong>') && !primaryNav.includes('<strong>My Memory</strong>'), 'My Memory must remain in secondary account navigation');
 assert.ok(!primaryNav.includes('<strong>Approvals</strong>'), 'canonical Agent sidebar must not restore the removed Approvals shortcut');
-for (const secondary of ['Profile Agent', 'My Transcriptions', 'My Team', 'Plan &amp; Usage', 'Buy AI Tokens']) {
-  assert.ok(!primaryNav.includes(`<strong>${secondary}</strong>`), `secondary ${secondary} must not compete with Agent tools in primary navigation`);
+for (const secondary of ['My Transcriptions', 'My Team', 'Plan &amp; Usage', 'Buy AI Tokens']) {
+  assert.ok(!primaryNav.includes(`<strong>${secondary}</strong>`), `secondary ${secondary} must not compete with core personal navigation`);
 }
 for (const removed of ['Player', 'Saved Songs', 'My Playlists', 'Stem Studio', 'Video Editor']) {
   assert.ok(!primaryNav.includes(`<strong>${removed}</strong>`), `canonical Agent navigation must not include ${removed}`);
 }
 assert.match(mainSidebar, /data-agent-user-footer/, 'secondary account and product navigation must live in the bottom user menu');
 assert.match(mainSidebar, /member_navigation_menu_links\(\$mainSidebarUser\)/, 'bottom user menu must reuse canonical member navigation');
+assert.match(mainSidebar, /'profile_agent'=>true,'messages'=>true,'knowledge'=>true/, 'promoted My Agent, My Messages and My Knowledge destinations must be filtered out of the bottom menu');
 assert.match(mainSidebar, /mainSidebarCalendarActive/, 'My Calendar must support the active-page state');
 assert.match(mainSidebar, /id="vp3AgentRuntimeStrip"/, 'sidebar must promote Agent runtime state');
 assert.match(mainSidebar, /data-rename-conversation/, 'chat history must expose rename alongside delete');
 
 for (const label of ['Profile Agent', 'My Knowledge', 'My Memory', 'My Transcriptions', 'Plan & Usage']) {
-  assert.ok(memberNavigation.includes(`'${label}'`), `canonical member user menu must retain ${label}`);
+  assert.ok(memberNavigation.includes(`'${label}'`), `canonical member navigation must retain ${label}`);
 }
+assert.ok(memberNavigation.includes("'messages','Messages'"), 'canonical member navigation must retain Messages');
 assert.ok(memberNavigation.includes("'calendar','My Calendar'"), 'canonical member navigation must retain My Calendar');
 assert.ok(memberNavigation.includes("personal_capability_has_v242('personal_knowledge.access'"), 'My Knowledge must remain permission-aware in canonical navigation');
 assert.ok(memberNavigation.includes("has_permission('chat.access'"), 'My Memory must remain permission-aware in canonical navigation');
@@ -63,6 +63,9 @@ assert.match(memberHeader, /member-user-menu\.php/, 'shared member header must o
 assert.match(memberHeader, /member-shell-v77\.js/, 'shared member header must load its menu controller');
 assert.match(memberMenu, /id="chatProfileButton"/, 'shared member menu must expose the canonical profile trigger');
 assert.match(memberMenu, /id="chatProfileDropdown"/, 'shared member menu must expose the canonical dropdown');
-assert.match(memberMenu, /member_navigation_menu_links\(\$memberMenuUser\)/, 'shared member menu must use canonical member navigation links');
+assert.match(memberMenu, /data-vp3-agent-voice-dashboard/, 'upper-right member menu must be the focused Agent + Voice dashboard');
+assert.doesNotMatch(memberMenu, /member_navigation_menu_links\(\$memberMenuUser\)/, 'upper-right member menu must not duplicate the general navigation list');
+assert.match(memberMenu, /data-vp3-agent-name/, 'Agent + Voice dashboard must expose the Agent name field');
+assert.match(memberMenu, /My ElevenLabs voice clone/, 'Agent + Voice dashboard must expose the existing ElevenLabs clone setting');
 
 console.log('member-sidebar-shell-contract: ok');
