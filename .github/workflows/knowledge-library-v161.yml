@@ -1,0 +1,71 @@
+name: Knowledge Library v16.1
+
+on:
+  push:
+    branches:
+      - main
+      - phase-16-1-knowledge-library-ux
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  knowledge-library:
+    name: Knowledge Library · PHP ${{ matrix.php }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.1', '8.3']
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+
+      - name: Lint Knowledge library surfaces
+        run: |
+          php -l includes/shared-folders-v161.php
+          php -l api/shared-folders-v161.php
+          php -l knowledge.php
+          php -l tests/knowledge-library-v161-contract.php
+          php -l tests/knowledge-library-v161-security-contract.php
+          php -l tests/shared-knowledge-folders-v313-contract.php
+
+      - name: Verify JavaScript syntax
+        run: |
+          node --check shared-folder-picker-v161.js
+          node --check knowledge-library-v161.js
+          node --check artist-listening-naming.js
+          node --check transcription-knowledge-folders-v313.js
+          node --check tests/knowledge-library-v161-browser-contract.mjs
+
+      - name: Verify Knowledge Library contract
+        run: php tests/knowledge-library-v161-contract.php
+
+      - name: Verify folder ownership security contract
+        run: php tests/knowledge-library-v161-security-contract.php
+
+      - name: Verify browser integration contract
+        run: node tests/knowledge-library-v161-browser-contract.mjs
+
+      - name: Verify shared folder compatibility
+        run: php tests/shared-knowledge-folders-v313-contract.php
+
+      - name: Verify Artist Listening runtime contract
+        run: node tests/artist-listening-runtime.mjs
+
+      - name: Verify transcription Knowledge integration contract
+        run: node tests/transcription-agent-knowledge-integration.mjs
+
+      - name: Verify member navigation contract
+        run: node tests/member-navigation-contract.mjs
+
+      - name: Verify member header contract
+        run: node tests/member-header-contract.mjs

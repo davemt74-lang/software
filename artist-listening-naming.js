@@ -148,4 +148,11 @@
     script.async = false;
     document.head.appendChild(script);
   }
+  if (!window.VP3_SHARED_FOLDER_PICKER_V161 && !document.querySelector('script[data-shared-folder-picker-v161-loader]')) {
+    const script = document.createElement('script');
+    script.dataset.sharedFolderPickerV161Loader = '1';
+    script.src = new URL('shared-folder-picker-v161.js?v=knowledge-library-v161-20260913', location.href).toString();
+    script.async = false;
+    document.head.appendChild(script);
+  }
 })();

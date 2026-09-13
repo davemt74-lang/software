@@ -85,8 +85,8 @@ assert.ok(voiceProfile.includes('chat-topbar-actions voice-profile-top-actions')
 assert.ok(voiceProfile.includes('>View Profile</a>'), 'Voice Profile header should expose View Profile');
 
 assert.ok(knowledge.includes("personal_capability_has_v242('personal_knowledge.access'"), 'Personal Knowledge workspace must require personal Knowledge access');
-assert.ok(knowledge.includes("$canManage=personal_capability_has_v242('personal_knowledge.manage'"), 'Personal Knowledge workspace must separate view and manage permissions');
-assert.ok(knowledge.includes("if(!$canManage){http_response_code(403)"), 'Personal Knowledge writes must fail closed without manage permission');
+assert.ok(/\$canManage\s*=\s*personal_capability_has_v242\('personal_knowledge\.manage'\s*,\s*\$user\)/.test(knowledge), 'Personal Knowledge workspace must separate view and manage permissions');
+assert.ok(/if\s*\(\s*!\$canManage\s*\)\s*\{[\s\S]{0,120}?http_response_code\(403\)/.test(knowledge), 'Personal Knowledge writes must fail closed without manage permission');
 assert.ok(knowledge.includes("created_by_user_id=? AND i.knowledge_scope='personal'"), 'Personal Knowledge list must be owner-scoped and personal-only');
 assert.ok(knowledge.includes("created_by_user_id=? AND knowledge_scope='personal'"), 'Personal Knowledge item operations must be owner-scoped and personal-only');
 assert.ok(!knowledge.includes("redirect(url('/admin/knowledge.php'))"), 'Personal Knowledge must not redirect members into the system Knowledge manager');
