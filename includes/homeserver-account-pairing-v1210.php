@@ -192,12 +192,16 @@ function homeserver_account_v1210_mark_paired(int $userId, string $deviceId=''):
     $pdo->prepare($sql)->execute($args);
 }
 
-function homeserver_account_v1210_redeem(string $rawToken, string $relayClaim): array
+function homeserver_account_v1210_redeem(string $rawToken, string $relayClaim, string $expectedDeviceId): array
 {
     homeserver_cloud_v1200_relay_security();
     $relayClaim = strtoupper(trim($relayClaim));
+    $expectedDeviceId = strtolower(trim($expectedDeviceId));
     if (!preg_match('/^[A-Z0-9-]{8,40}$/', $relayClaim)) {
         throw new RuntimeException('HomeServer relay device proof is invalid.');
+    }
+    if (!preg_match('/^hs-[a-f0-9]{24}$/', $expectedDeviceId)) {
+        throw new RuntimeException('HomeServer device identity is invalid.');
     }
 
     $tokenRow = homeserver_account_v1210_begin_redeem($rawToken);
@@ -207,9 +211,12 @@ function homeserver_account_v1210_redeem(string $rawToken, string $relayClaim): 
     try {
         $claim = homeserver_vp3_relay_request('POST', '/v1/claim', ['claim_code'=>$relayClaim]);
         $relayToken = trim((string)($claim['relay_token'] ?? ''));
-        $deviceId = trim((string)($claim['device_id'] ?? ''));
+        $deviceId = strtolower(trim((string)($claim['device_id'] ?? '')));
         if (strlen($relayToken) < 32 || strlen($relayToken) > 512 || !preg_match('/^hs-[a-f0-9]{24}$/', $deviceId)) {
             throw new RuntimeException('HomeServer relay returned an invalid device claim.');
+        }
+        if (!hash_equals($expectedDeviceId, $deviceId)) {
+            throw new RuntimeException('HomeServer device identity did not match the relay claim.');
         }
         if (isset($claim['trust_model']) && (string)$claim['trust_model'] !== 'trusted-relay') {
             throw new RuntimeException('HomeServer relay trust model is not supported.');
