@@ -40,9 +40,15 @@ assert.match(scrollUi, /\.plugins-wrap,[\s\S]*\.team-canvas,[\s\S]*\.music-wrap,
 assert.match(scrollUi, /\.messages-shell[\s\S]*height:100%[\s\S]*overflow:hidden/, 'desktop Messages must stay constrained to the member content row');
 assert.match(scrollUi, /@media\(max-width:800px\)[\s\S]*\.messages-shell[\s\S]*overflow-y:auto/, 'mobile Messages must expose a scrollable stacked shell');
 
-assert.match(agentUi, /\.workspace-main-sidebar \.chat-sidebar-sections\{order:1;/, 'main sidebar content must stay above runtime telemetry');
-assert.match(agentUi, /\.workspace-main-sidebar \.agent-runtime-strip\{order:2;/, 'runtime telemetry must live at the bottom of the sidebar');
-assert.match(agentUi, /\.workspace-main-sidebar \.agent-sidebar-footer\{order:3;/, 'account footer must remain below runtime telemetry');
+assert.match(agentUi, /\.workspace-main-sidebar \.chat-sidebar-sections\{order:1;/, 'main sidebar content must stay above the combined footer');
+assert.match(agentUi, /\.workspace-main-sidebar \.agent-sidebar-footer\{order:2;margin-top:auto;/, 'combined account/runtime footer must remain pinned to the bottom of the sidebar');
+assert.match(agentUi, /\.agent-sidebar-footer \.agent-sidebar-runtime\{[\s\S]*background:transparent;[\s\S]*box-shadow:none;/, 'runtime telemetry must be visually integrated into the bottom account footer');
+const footerStart = mainSidebar.indexOf('<footer class="agent-sidebar-footer"');
+const footerEnd = footerStart < 0 ? -1 : mainSidebar.indexOf('</footer>', footerStart);
+assert.ok(footerStart >= 0 && footerEnd > footerStart, 'main sidebar must expose the combined bottom footer');
+const footer = mainSidebar.slice(footerStart, footerEnd);
+assert.match(footer, /id="vp3AgentRuntimeStrip"/, 'runtime telemetry must live inside the bottom account footer');
+assert.doesNotMatch(footer, /agent-sidebar-avatar/, 'combined footer must not restore the removed sidebar user picture');
 assert.doesNotMatch(mainSidebar, /<div class="chat-history-label">Agent<\/div>/, 'main sidebar must not render the redundant Agent category heading');
 assert.match(agentUiJs, /function dockChatSettingsLauncher\(\)/, 'legacy Agent UI still exposes its compatibility settings hook');
 assert.match(agentUi, /\.chat-composer \.chat-voice-button,[\s\S]*\.chat-composer #sendChatButton\{[\s\S]*width:32px!important;[\s\S]*height:32px!important;/, 'legacy microphone and send controls must use identical sizing');

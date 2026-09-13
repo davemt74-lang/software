@@ -27,9 +27,10 @@ const primaryStart = mainSidebar.indexOf('data-agent-primary-nav');
 const primaryEnd = primaryStart < 0 ? -1 : mainSidebar.indexOf('</nav>', primaryStart);
 assert.ok(primaryStart >= 0 && primaryEnd > primaryStart, 'Canonical sidebar must expose an explicit primary Agent navigation block');
 const primaryNav = mainSidebar.slice(primaryStart, primaryEnd);
-for (const label of ['New Chat', 'Contacts', 'My Knowledge', 'My Transcriptions', 'My Calendar']) {
+for (const label of ['Contacts', 'My Knowledge', 'My Transcriptions', 'My Calendar']) {
   assert.ok(primaryNav.includes(`<strong>${label}</strong>`), `Canonical Agent sidebar must expose ${label}`);
 }
+assert.ok(!primaryNav.includes('<strong>New Chat</strong>'), 'New Chat must be a Chats-section action instead of a primary navigation destination');
 for (const accountLevel of ['Memory']) {
   assert.ok(!primaryNav.includes(`<strong>${accountLevel}</strong>`), `${accountLevel} must live in the canonical user menu instead of primary Agent navigation`);
 }
@@ -37,12 +38,18 @@ assert.ok(!primaryNav.includes('<strong>Approvals</strong>'), 'Approvals must no
 for (const secondary of ['Profile Agent', 'My Team', 'Plan &amp; Usage']) {
   assert.ok(!primaryNav.includes(`<strong>${secondary}</strong>`), `${secondary} must live in the user menu instead of primary Agent navigation`);
 }
-assert.match(mainSidebar, /id="newChatButton"[\s\S]*data-chat-view-target="chat"/, 'Canonical sidebar must preserve Main Feed New Chat behavior');
+assert.match(mainSidebar, /class="chat-history-heading"[\s\S]*id="newChatButton"[\s\S]*data-chat-view-target="chat"/, 'Canonical sidebar must preserve Main Feed New Chat behavior in the Chats heading');
+assert.match(mainSidebar, /class="chat-history-new" id="newChatButton"/, 'Canonical Main Feed New Chat action must use the compact Chats-heading plus control');
 assert.match(mainSidebar, /id="chatHistory"[\s\S]*data-conversation-id/, 'Canonical sidebar must own recent Chat history rendering when supplied');
 assert.match(mainSidebar, /data-rename-conversation/, 'Canonical sidebar must expose chat rename controls');
 assert.match(mainSidebar, /data-delete-conversation/, 'Canonical sidebar must preserve chat delete controls');
 assert.match(mainSidebar, /data-agent-user-footer/, 'Canonical sidebar must move secondary navigation into the bottom user menu');
-assert.match(mainSidebar, /id="vp3AgentRuntimeStrip"/, 'Canonical sidebar must expose live Agent runtime state');
+const footerStart = mainSidebar.indexOf('<footer class="agent-sidebar-footer"');
+const footerEnd = footerStart < 0 ? -1 : mainSidebar.indexOf('</footer>', footerStart);
+assert.ok(footerStart >= 0 && footerEnd > footerStart, 'Canonical sidebar must expose the combined bottom footer');
+const footer = mainSidebar.slice(footerStart, footerEnd);
+assert.match(footer, /id="vp3AgentRuntimeStrip"/, 'Canonical sidebar must integrate live Agent runtime state into the bottom footer');
+assert.doesNotMatch(footer, /agent-sidebar-avatar/, 'Canonical bottom footer must not render the removed user avatar');
 assert.doesNotMatch(primaryNav, /<strong>Player<\/strong>|<strong>Saved Songs<\/strong>|<strong>My Playlists<\/strong>/, 'Canonical Agent navigation must not contain retired music navigation');
 
 assert.ok(wrapper.includes("$html = str_replace('agent-activity-v94.js?v=101', 'agent-activity-v94.js?v=' . $activityBuild, $html);"), 'Main Feed must use an explicit current Agent Activity asset URL');

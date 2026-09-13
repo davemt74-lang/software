@@ -35,5 +35,8 @@ jobs:
         run: |
           node --check member-shell-v77.js
           node --check member-agent-voice-menu.js
+          node --check tests/member-sidebar-shell-contract.mjs
       - name: Member shell contract
-        run: node tests/member-shell-v1320-contract.mjs
+        run: |
+          node tests/member-shell-v1320-contract.mjs
+          node tests/member-sidebar-shell-contract.mjs

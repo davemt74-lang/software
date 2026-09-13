@@ -6,6 +6,7 @@ const legacyWrapper = readFileSync('includes/workspace-sidebar-v82.php', 'utf8')
 const memberHeader = readFileSync('includes/member-header.php', 'utf8');
 const memberMenu = readFileSync('includes/member-user-menu.php', 'utf8');
 const memberNavigation = readFileSync('includes/member-navigation.php', 'utf8');
+const agentUiCss = readFileSync('agent-ui-v034.css', 'utf8');
 const contacts = readFileSync('contacts.php', 'utf8');
 const knowledge = readFileSync('knowledge.php', 'utf8');
 const memory = readFileSync('memory.php', 'utf8');
@@ -17,9 +18,10 @@ const primaryStart = mainSidebar.indexOf('data-agent-primary-nav');
 const primaryEnd = primaryStart < 0 ? -1 : mainSidebar.indexOf('</nav>', primaryStart);
 assert.ok(primaryStart >= 0 && primaryEnd > primaryStart, 'canonical Agent sidebar must expose one primary navigation block');
 const primaryNav = mainSidebar.slice(primaryStart, primaryEnd);
-for (const label of ['New Chat', 'Contacts', 'My Agent', 'My Messages', 'My Knowledge', 'My Transcriptions', 'My Calendar']) {
+for (const label of ['Contacts', 'My Agent', 'My Messages', 'My Knowledge', 'My Transcriptions', 'My Calendar']) {
   assert.ok(primaryNav.includes(`<strong>${label}</strong>`), `canonical Agent sidebar must include primary ${label}`);
 }
+assert.ok(!primaryNav.includes('<strong>New Chat</strong>'), 'New Chat must not remain a primary navigation row');
 assert.ok(!primaryNav.includes('<strong>Memory</strong>') && !primaryNav.includes('<strong>My Memory</strong>'), 'My Memory must remain in secondary account navigation');
 assert.ok(!primaryNav.includes('<strong>Approvals</strong>'), 'canonical Agent sidebar must not restore the removed Approvals shortcut');
 for (const secondary of ['My Team', 'Plan &amp; Usage', 'Buy AI Tokens']) {
@@ -28,12 +30,30 @@ for (const secondary of ['My Team', 'Plan &amp; Usage', 'Buy AI Tokens']) {
 for (const removed of ['Player', 'Saved Songs', 'My Playlists', 'Stem Studio', 'Video Editor']) {
   assert.ok(!primaryNav.includes(`<strong>${removed}</strong>`), `canonical Agent navigation must not include ${removed}`);
 }
+
+assert.match(mainSidebar, /class="chat-history-heading"/, 'Chats section must expose a dedicated heading row');
+assert.match(mainSidebar, /class="chat-history-new" id="newChatButton"[^>]*aria-label="New chat"[^>]*>\+<\/button>/, 'Agent Chat must move the canonical New Chat action into a compact Chats heading plus button');
+assert.match(mainSidebar, /<a class="chat-history-new" href="<\?= e\(url\('\/chat\.php'\)\) \?>" aria-label="New chat" title="New chat">\+<\/a>/, 'non-Chat member surfaces must expose the Chats heading plus as the canonical Chat link');
+assert.match(agentUiCss, /\.chat-history-heading\{[^}]*justify-content:space-between/, 'Chats heading must place the plus control at the far right');
+assert.match(agentUiCss, /\.chat-history-new\{[^}]*width:24px;[^}]*height:24px;/, 'Chats heading plus must stay compact');
+
 assert.match(mainSidebar, /data-agent-user-footer/, 'secondary account and product navigation must live in the bottom user menu');
 assert.match(mainSidebar, /member_navigation_menu_links\(\$mainSidebarUser\)/, 'bottom user menu must reuse canonical member navigation');
 assert.match(mainSidebar, /'profile_agent'=>true,'messages'=>true,'knowledge'=>true,'transcriptions'=>true/, 'promoted My Agent, My Messages, My Knowledge and My Transcriptions destinations must be filtered out of the bottom menu');
 assert.match(mainSidebar, /mainSidebarTranscriptionsActive/, 'My Transcriptions must support the active-page state');
 assert.match(mainSidebar, /mainSidebarCalendarActive/, 'My Calendar must support the active-page state');
-assert.match(mainSidebar, /id="vp3AgentRuntimeStrip"/, 'sidebar must promote Agent runtime state');
+assert.doesNotMatch(mainSidebar, /class="agent-sidebar-avatar"/, 'bottom user section must not render the user picture/avatar');
+assert.match(mainSidebar, /class="agent-sidebar-user-copy"><strong>/, 'bottom user section must retain the user name');
+const footerStart = mainSidebar.indexOf('<footer class="agent-sidebar-footer"');
+const footerEnd = footerStart < 0 ? -1 : mainSidebar.indexOf('</footer>', footerStart);
+assert.ok(footerStart >= 0 && footerEnd > footerStart, 'canonical sidebar must expose the compact user footer');
+const footer = mainSidebar.slice(footerStart, footerEnd);
+assert.match(footer, /id="vp3AgentRuntimeStrip"/, 'runtime stats must be integrated into the bottom user footer');
+assert.match(footer, /id="vp3AgentRuntimeSource"/, 'combined footer must retain runtime source status');
+assert.match(footer, /id="vp3AgentRuntimeModel"/, 'combined footer must retain Brain/model status');
+assert.match(footer, /id="vp3AgentRuntimeUsage"/, 'combined footer must retain monthly usage status');
+assert.match(agentUiCss, /\.agent-sidebar-footer \.agent-sidebar-runtime\{[^}]*background:transparent;[^}]*box-shadow:none;/, 'integrated runtime stats must visually belong to the footer instead of a second card');
+assert.match(agentUiCss, /\.agent-sidebar-user-button\{[^}]*grid-template-columns:minmax\(0,1fr\) auto;/, 'footer identity layout must no longer reserve an avatar column');
 assert.match(mainSidebar, /data-rename-conversation/, 'chat history must expose rename alongside delete');
 
 for (const label of ['Profile Agent', 'My Knowledge', 'My Memory', 'My Transcriptions', 'Plan & Usage']) {
