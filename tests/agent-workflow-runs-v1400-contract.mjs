@@ -5,6 +5,7 @@ const read = (path) => fs.readFileSync(path, 'utf8');
 const workflow = read('includes/agent-workflow-runs-v1400.php');
 const api = read('api/agent-workflow-runs-v1400.php');
 const page = read('agent-workflows.php');
+const calendar = read('calendar.php');
 const migration = read('upgrade-agent-workflow-runs-v1400.sql');
 const upgrade = read('agent-workflow-upgrade-v1400.php');
 
@@ -26,12 +27,15 @@ assert.match(workflow, /execution_target'\]\?\?'cloud'\)!==\$executor/, 'The glo
 assert.match(workflow, /status'\]==='executing'&&\(int\)\(\$run\['current_action_id'\]\?\?0\)>0/, 'An active action must serialize later executor claims');
 assert.match(workflow, /current_action_id'\]\?\?0\)!==\$actionId/, 'Only the currently claimed action may report a result');
 assert.doesNotMatch(api, /record_action_result|claim_next_action/, 'Browser API must not expose executor-only completion hooks');
+assert.doesNotMatch(api, /agent_tool_log/, 'Workflow API must not depend on a nonexistent audit helper');
 assert.match(api, /agent_workflow_find_brain_priority_v1400/, 'Browser creates runs only from server-owned Brain state');
 assert.match(api, /hash_equals\(csrf_token\(\),\$csrf\)/);
+assert.match(api, /Workflow request failed\./, 'Unexpected server failures must be projected as a generic error');
 assert.match(page, /Create workflow/);
 assert.match(page, /Execution history/);
 assert.match(page, /without storing hidden reasoning/i);
 assert.match(page, /agent-workflow-upgrade-v1400\.php/);
+assert.match(calendar, /agent-workflows\.php/,'Calendar must provide a discoverable path to Agent Workflows');
 assert.match(migration, /CONSTRAINT fk_agent_workflow_owner/);
 assert.match(migration, /CONSTRAINT fk_agent_workflow_action_run/);
 assert.match(upgrade, /require_permission\('users\.manage'\)/);
