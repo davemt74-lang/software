@@ -5,6 +5,8 @@ const read = path => fs.readFileSync(new URL(`../${path}`, import.meta.url), 'ut
 const pairing = read('includes/homeserver-account-pairing-v1210.php');
 const endpoint = read('api/homeserver-pair-v1210.php');
 const accountApi = read('api/homeserver-connection-v1200.php');
+const relayBootstrap = read('includes/homeserver-relay-bootstrap-v1210.php');
+const relayBootstrapApi = read('api/homeserver-relay-bootstrap-v1210.php');
 
 assert.match(pairing, /VP3_HOMESERVER_ACCOUNT_PAIRING_TTL_SECONDS\s*=\s*900/);
 assert.match(pairing, /bin2hex\(random_bytes\(32\)\)/);
@@ -28,5 +30,13 @@ assert.doesNotMatch(endpoint, /['\"]relay_token['\"]|['\"]claim_token['\"]|['\"]
 assert.match(accountApi, /generate_pairing_token/);
 assert.match(accountApi, /homeserver_account_v1210_generate_token/);
 assert.match(accountApi, /account-token-v1/);
+
+assert.match(relayBootstrap, /homeserver_vp3_relay_base_url\(\)/);
+assert.match(relayBootstrap, /\$wsScheme\s*=\s*'wss'/);
+assert.match(relayBootstrap, /\/bridge'/);
+assert.match(relayBootstrapApi, /pairing_protocol'=>'account-token-v1'/);
+assert.match(relayBootstrapApi, /relay_websocket_url/);
+assert.match(relayBootstrapApi, /homeserver_relay_bootstrap_v1210_websocket_url\(\)/);
+assert.doesNotMatch(relayBootstrapApi, /require_login\(\)|verify_csrf\(\)/);
 
 console.log('homeserver-account-pairing-v1210-contract: ok');
