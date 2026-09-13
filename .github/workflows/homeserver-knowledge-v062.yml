@@ -1,0 +1,72 @@
+name: HomeServer Knowledge v0.62
+
+on:
+  push:
+    branches:
+      - main
+      - phase-15-homeserver-knowledge-v062
+    paths:
+      - 'includes/homeserver-knowledge-v062.php'
+      - 'api/homeserver-knowledge-v062.php'
+      - 'local-knowledge.php'
+      - 'homeserver-knowledge-v062.js'
+      - 'homeserver-knowledge-v062.css'
+      - 'includes/member-navigation.php'
+      - 'tests/homeserver-knowledge-v062-contract.mjs'
+      - 'tests/homeserver-knowledge-v062-test.php'
+      - '.github/workflows/homeserver-knowledge-v062.yml'
+  pull_request:
+    paths:
+      - 'includes/homeserver-knowledge-v062.php'
+      - 'api/homeserver-knowledge-v062.php'
+      - 'local-knowledge.php'
+      - 'homeserver-knowledge-v062.js'
+      - 'homeserver-knowledge-v062.css'
+      - 'includes/member-navigation.php'
+      - 'tests/homeserver-knowledge-v062-contract.mjs'
+      - 'tests/homeserver-knowledge-v062-test.php'
+      - '.github/workflows/homeserver-knowledge-v062.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    name: Knowledge bridge · PHP ${{ matrix.php }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.1', '8.3']
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Lint PHP
+        run: |
+          php -l includes/homeserver-knowledge-v062.php
+          php -l api/homeserver-knowledge-v062.php
+          php -l local-knowledge.php
+          php -l includes/member-navigation.php
+          php -l tests/homeserver-knowledge-v062-test.php
+
+      - name: Verify Cloud contract
+        run: node tests/homeserver-knowledge-v062-contract.mjs
+
+      - name: Verify safe projections
+        run: php tests/homeserver-knowledge-v062-test.php
+
+      - name: Verify browser bundle syntax
+        run: node --check homeserver-knowledge-v062.js
