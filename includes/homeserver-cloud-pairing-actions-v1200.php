@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/homeserver-cloud-pairing-v1200.php';
+require_once __DIR__ . '/homeserver-relay-lifecycle-v1210.php';
 
 function homeserver_cloud_v1200_cancel_pairing(int $userId): void
 {
@@ -91,13 +92,12 @@ function homeserver_cloud_v1200_remove_pairing(int $userId): void
         throw new RuntimeException('HomeServer relay authorization is unavailable.');
     }
 
-    // Release the relay claim before deleting Cloud state. This revokes all Cloud relay
-    // sessions for the device and causes the connected HomeServer to receive a fresh,
-    // local-only connection code. If release fails, retain the Cloud row so recovery
-    // remains possible instead of stranding a permanently claimed HomeServer.
-    $released = homeserver_vp3_relay_request('POST', '/v1/session/release', [], $relayToken);
-    if (empty($released['released']) || trim((string)($released['device_id'] ?? '')) !== trim((string)($row['device_id'] ?? ''))) {
-        throw new RuntimeException('HomeServer relay did not release the device pairing.');
+    // Release before deleting Cloud state. The relay revokes every Cloud session for
+    // this device and gives the connected HomeServer fresh private bootstrap proof.
+    // If release fails, retain the Cloud row so recovery remains possible.
+    $released = homeserver_relay_v1210_release($relayToken);
+    if (trim((string)($released['device_id'] ?? '')) !== trim((string)($row['device_id'] ?? ''))) {
+        throw new RuntimeException('HomeServer relay did not release the expected device pairing.');
     }
 
     $pdo = db();

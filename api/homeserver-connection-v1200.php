@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require_once dirname(__DIR__) . '/includes/bootstrap.php';
 require_once dirname(__DIR__) . '/includes/homeserver-cloud-pairing-actions-v1200.php';
+require_once dirname(__DIR__) . '/includes/homeserver-account-pairing-v1210.php';
 require_once dirname(__DIR__) . '/includes/homeserver-scheduling-connector-v620.php';
 require_once dirname(__DIR__) . '/includes/homeserver-commerce-agent-v1000.php';
 
@@ -25,6 +26,8 @@ function homeserver_connection_v1200_response(int $userId, bool $force=false): a
     $row = homeserver_vp3_connection($userId);
     $status['can_repair'] = $row && !empty($row['relay_token_enc']);
     $status['can_remove'] = $row !== null;
+    $status['account_pairing'] = homeserver_account_v1210_token_status($userId);
+    $status['pairing_protocol'] = 'account-token-v1';
     $status['scheduling_connector'] = homeserver_scheduling_v620_connector_status($userId);
     $status['commerce_agent_connector'] = homeserver_commerce_agent_v1000_status($userId);
     return $status;
@@ -51,8 +54,13 @@ try {
 
     $action = trim((string)($_POST['action'] ?? ''));
     $pairing = null;
+    $accountToken = null;
 
-    if ($action === 'start_pairing') {
+    if ($action === 'generate_pairing_token') {
+        $accountToken = homeserver_account_v1210_generate_token($userId);
+    } elseif ($action === 'start_pairing') {
+        // Compatibility path for older HomeServer builds. New installations use
+        // the Cloud-issued account token and redeem it from HomeServer.
         $pairing = homeserver_cloud_v1200_start_pairing($userId, (string)($_POST['claim_code'] ?? ''));
     } elseif ($action === 'pairing_status') {
         $now = microtime(true);
@@ -66,6 +74,8 @@ try {
         $_SESSION['vp3_homeserver_pair_poll_at'] = $now;
         $pairing = homeserver_cloud_v1200_check_pairing_safe($userId);
         if (!empty($pairing['ready'])) {
+            $row = homeserver_vp3_connection($userId);
+            homeserver_account_v1210_mark_paired($userId, (string)($row['device_id'] ?? ''));
             try { homeserver_scheduling_v620_provision($userId, false); } catch (Throwable $ignored) {}
             try { homeserver_commerce_agent_v1000_provision($userId, false); } catch (Throwable $ignored) {}
         }
@@ -76,14 +86,10 @@ try {
     } elseif ($action === 'cancel_pairing') {
         homeserver_cloud_v1200_cancel_pairing($userId);
     } elseif ($action === 'disconnect') {
-        // Revoke reverse Cloud connector grants first, then rotate the relay and clear the paired-app bearer.
-        // If relay rotation fails, the connector revocations remain fail-closed and the user can retry disconnect.
         homeserver_commerce_agent_v1000_revoke($userId);
         homeserver_scheduling_v620_revoke($userId);
         homeserver_cloud_v1200_disconnect($userId);
     } elseif ($action === 'remove') {
-        // Final removal is only legal after disconnect. Rotate once more, delete the connection,
-        // and defensively clear dependent Cloud connector grants for the same authenticated user.
         homeserver_commerce_agent_v1000_revoke($userId);
         homeserver_scheduling_v620_revoke($userId);
         homeserver_cloud_v1200_remove_pairing($userId);
@@ -95,14 +101,19 @@ try {
 
     $response = ['ok'=>true,'status'=>homeserver_connection_v1200_response($userId,true)];
     if (is_array($pairing)) $response['pairing'] = $pairing;
+    if (is_array($accountToken)) $response['account_pairing_token'] = $accountToken;
     echo json_encode($response, JSON_UNESCAPED_SLASHES);
 } catch (Throwable $e) {
     http_response_code(400);
     $status = null;
     try { $status = homeserver_connection_v1200_response($userId,false); } catch (Throwable $ignored) {}
+    $error = homeserver_cloud_v1200_public_error($e->getMessage());
+    if (str_contains(strtolower($e->getMessage()), 'pairing token') || str_contains(strtolower($e->getMessage()), 'homeserver connection already exists')) {
+        $error = $e->getMessage();
+    }
     echo json_encode([
         'ok'=>false,
-        'error'=>homeserver_cloud_v1200_public_error($e->getMessage()),
+        'error'=>$error,
         'status'=>$status,
     ], JSON_UNESCAPED_SLASHES);
 }
