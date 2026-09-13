@@ -21,7 +21,7 @@ $check(str_contains($knowledgeLib,"FROM artist_transcript_folders_v177"),'Knowle
 $check(str_contains($knowledgeLib,"WHERE id=? AND created_by_user_id=? LIMIT 1"),'Shared folder lookup is not owner scoped.');
 $check(str_contains($knowledgeLib,'personal_knowledge_create_folder'),'My Knowledge cannot create folders through the shared folder table.');
 $check(str_contains($knowledgeLib,'personal_knowledge_resolve_folder_id'),'Knowledge writes do not validate shared folder ownership.');
-$check(!str_contains($knowledgeLib,'knowledge_folders'),'A parallel Knowledge folder model was introduced.');
+$check(!preg_match('/(?:CREATE\s+TABLE|FROM|JOIN|INTO|UPDATE)\s+`?knowledge_folders`?/i',$knowledgeLib.$knowledgePage.$schema),'A parallel Knowledge folder table/query was introduced.');
 
 foreach(['mp3','m4a','wav','ogg','pdf','doc','docx'] as $extension){
     $check(str_contains($knowledgePage,"'{$extension}'"),'My Knowledge upload support lost '.$extension.'.');
