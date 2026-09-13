@@ -1,0 +1,31 @@
+name: Transcription AI Summary Scroll Hotfix
+
+on:
+  push:
+    branches: [main, hotfix-transcription-ai-summary-scroll]
+  pull_request:
+    paths:
+      - 'artist-listening.php'
+      - 'tests/transcription-ai-summary-scroll-contract.mjs'
+      - '.github/workflows/transcription-ai-summary-scroll-hotfix.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        php: ['8.1', '8.3']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+      - name: Lint Transcriptions page
+        run: php -l artist-listening.php
+      - name: Check regression contract syntax
+        run: node --check tests/transcription-ai-summary-scroll-contract.mjs
+      - name: Verify AI Summary scroll contract
+        run: node tests/transcription-ai-summary-scroll-contract.mjs

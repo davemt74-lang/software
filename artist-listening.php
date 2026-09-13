@@ -113,6 +113,12 @@ $config = [
     .sf-listening-workspace-side-head [data-listening-workspace-exit]:hover{background:#f4f4f4;border-color:#aaa}
     .sf-listening-workspace-editor-top>.sf-listening-workspace-toolbar{margin-left:auto!important;overflow:visible!important}
 
+    /* AI Summary is a column flex drawer. Allow the report body to shrink below its intrinsic
+       content height so overflow is owned by the report body rather than the fixed panel. */
+    .sf-listening-ai-panel{min-height:0!important;overflow:hidden!important}
+    .sf-listening-ai-head,.sf-listening-ai-status,.sf-listening-ai-apps,.sf-listening-ai-tabs,.sf-listening-ai-footer{flex:0 0 auto}
+    .sf-listening-ai-scroll{flex:1 1 auto!important;min-height:0!important;overflow-x:hidden!important;overflow-y:auto!important;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
+
     .sf-listening-ai-footer{display:block!important;padding:10px 12px!important;background:#fafafa!important}
     .sf-listening-ai-footer-actions{display:flex!important;align-items:center!important;gap:7px!important;flex-wrap:nowrap!important;overflow-x:auto!important;overflow-y:hidden!important;width:100%!important}
     .sf-listening-ai-footer-actions button{flex:1 1 0!important;min-width:0!important;min-height:34px!important;padding:7px 8px!important;white-space:nowrap!important;font-size:9px!important}
