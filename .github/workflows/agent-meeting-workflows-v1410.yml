@@ -37,6 +37,7 @@ jobs:
       - name: Lint meeting workflow PHP
         run: |
           php -l includes/agent-meeting-workflows-v1410.php
+          php -l includes/agent-meeting-workflows-v1410-hardening.php
           php -l includes/agent-appointment-lifecycle-v700.php
           php -l includes/agent-appointment-lifecycle-v700-part7.php
           php -l includes/agent-appointment-lifecycle-v700-part8.php
