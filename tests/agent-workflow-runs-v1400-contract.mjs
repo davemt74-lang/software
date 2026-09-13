@@ -6,8 +6,7 @@ const workflow = read('includes/agent-workflow-runs-v1400.php');
 const api = read('api/agent-workflow-runs-v1400.php');
 const page = read('agent-workflows.php');
 const migration = read('upgrade-agent-workflow-runs-v1400.sql');
-const navigation = read('includes/member-navigation.php');
-const upgrade = read('upgrade.php');
+const upgrade = read('agent-workflow-upgrade-v1400.php');
 
 assert.match(workflow, /agent_workflow_runs/);
 assert.match(workflow, /agent_workflow_actions/);
@@ -27,10 +26,10 @@ assert.match(api, /hash_equals\(csrf_token\(\),\$csrf\)/);
 assert.match(page, /Create workflow/);
 assert.match(page, /Execution history/);
 assert.match(page, /without storing hidden reasoning/i);
+assert.match(page, /agent-workflow-upgrade-v1400\.php/);
 assert.match(migration, /CONSTRAINT fk_agent_workflow_owner/);
 assert.match(migration, /CONSTRAINT fk_agent_workflow_action_run/);
-assert.match(navigation, /agent_workflows/);
-assert.match(upgrade, /agent_workflow_schema_ready_v1400\(\)/);
-assert.match(upgrade, /agent_workflow_ensure_schema_v1400\(\)/);
+assert.match(upgrade, /require_permission\('users\.manage'\)/);
+assert.match(upgrade, /agent_workflow_ensure_schema_v1400\(\$pdo\)/);
 
 console.log('Agent Workflow Runs v14.00 contract: OK');
