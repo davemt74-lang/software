@@ -14,6 +14,7 @@ const userAgentApi = read('api/user-agent-system-v236.php');
 const products = read('profile-commerce-products.php');
 const homeserverPage = read('settings-homeserver.php');
 const homeserverCss = read('homeserver-settings-v1200.css');
+const chatPage = read('chat.php');
 
 assert.match(navigation, /\$add\(\$links,'calendar','My Calendar',url\('\/calendar\.php'\),'agent'\)/, 'My Calendar must be an account-level navigation destination');
 const calendarIndex = navigation.indexOf("$add($links,'calendar','My Calendar'");
@@ -61,6 +62,15 @@ assert.match(sidebar, /member-agent-voice-menu\.js/, 'Canonical sidebar must loa
 assert.match(memberShell, /window\.__VP3_MEMBER_SHELL_V77__/, 'Member shell runtime must guard against duplicate execution');
 assert.match(memberShell, /profileButton\?\.addEventListener\('click'/, 'Member shell runtime must wire the profile dropdown button');
 assert.match(memberShell, /profileDropdown\.hidden = !opening/, 'Member shell runtime must toggle the profile dropdown');
+
+// The floating chat settings gear/rail belongs to the main Agent Chat surface,
+// not the shared member header used by Messages, account and settings pages.
+assert.doesNotMatch(memberHeader, /chat-settings-v237\.(?:css|js)/, 'Shared member header must not load the Agent Chat settings rail');
+assert.doesNotMatch(memberHeader, /STONEFELLOW_CHAT_SETTINGS/, 'Shared member header must not publish Agent Chat settings configuration');
+assert.match(memberHeader, /chat-notifications-drawer-v240/, 'Removing the settings rail must not remove the shared notification drawer');
+assert.match(chatPage, /chat-settings-v237\.css/, 'Agent Chat must retain its settings rail stylesheet');
+assert.match(chatPage, /chat-settings-v237\.js/, 'Agent Chat must retain its settings rail runtime');
+assert.match(chatPage, /STONEFELLOW_CHAT_SETTINGS/, 'Agent Chat must retain its settings configuration');
 
 assert.match(homeserverPage, /class="chat-main account-chat-main"/, 'HomeServer settings must use the fixed account shell');
 assert.match(homeserverPage, /class="hs-settings"/, 'HomeServer settings must expose its dedicated scroll surface');

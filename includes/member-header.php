@@ -56,7 +56,6 @@ if (empty($GLOBALS['STONEFELLOW_MEMBER_HEADER_RUNTIME_RENDERED'])):
     $GLOBALS['STONEFELLOW_MEMBER_HEADER_RUNTIME_RENDERED'] = true;
     $memberHeaderUiBuild = 'universal-member-header-layout-20260906';
     $memberHeaderScrollBuild = 'member-page-scroll-20260912-calendar-flex';
-    $memberHeaderSettingsBuild = 'chat-settings-v239-canonical-20260905';
     $memberHeaderNotificationBuild = 'activity-center-brain-routing-20260906';
     $memberHeaderTranscriptionBuild = 'chat-transcription-canvas-v243-layout-20260905';
     $memberHeaderRecordingUiBuild = 'chat-recording-results-v206-20260901';
@@ -68,13 +67,6 @@ if (empty($GLOBALS['STONEFELLOW_MEMBER_HEADER_RUNTIME_RENDERED'])):
 <script data-member-shell-runtime src="<?= e(url('/member-shell-v77.js?v=member-header-dropdown-20260912')) ?>" defer></script>
 <?php if ($memberHeaderRenderAgentVoiceAssets): ?><script data-member-agent-voice-menu src="<?= e(url('/member-agent-voice-menu.js?v=' . $memberAgentVoiceMenuBuild)) ?>" defer></script><?php endif; ?>
 <?php if ($memberHeaderCanChat): ?>
-<link rel="stylesheet" data-chat-settings-canonical href="<?= e(url('/chat-settings-v237.css?v=' . $memberHeaderSettingsBuild)) ?>">
-<script data-chat-settings-config>window.STONEFELLOW_CHAT_SETTINGS=<?= json_encode([
-  'endpoint'=>url('/api/chat-settings-v237.php'),
-  'csrf'=>csrf_token(),
-  'build'=>$memberHeaderSettingsBuild,
-], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>;</script>
-<script data-chat-settings-canonical src="<?= e(url('/chat-settings-v237.js?v=' . $memberHeaderSettingsBuild)) ?>"></script>
 <link rel="stylesheet" data-chat-notification-drawer href="<?= e(url('/chat-notifications-drawer-v240.css?v=' . $memberHeaderNotificationBuild)) ?>">
 <script data-chat-notification-drawer-config>window.STONEFELLOW_NOTIFICATION_DRAWER=<?= json_encode([
   'endpoint'=>url('/api/chat-notifications-brain-v240.php'),
