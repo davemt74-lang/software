@@ -39,9 +39,8 @@ jobs:
           php -l includes/agent-workflow-runs-v1400.php
           php -l api/agent-workflow-runs-v1400.php
           php -l agent-workflows.php
+          php -l agent-workflow-upgrade-v1400.php
           php -l includes/bootstrap.php
-          php -l includes/member-navigation.php
-          php -l upgrade.php
 
       - name: Verify Agent Workflow contract
         run: |
