@@ -1,0 +1,47 @@
+import fs from 'node:fs';
+import assert from 'node:assert/strict';
+
+const read = (path) => fs.readFileSync(path, 'utf8');
+const workflow = read('includes/agent-workflow-runs-v1400.php');
+const api = read('api/agent-workflow-runs-v1400.php');
+const page = read('agent-workflows.php');
+const calendar = read('calendar.php');
+const migration = read('upgrade-agent-workflow-runs-v1400.sql');
+const upgrade = read('agent-workflow-upgrade-v1400.php');
+
+assert.match(workflow, /agent_workflow_runs/);
+assert.match(workflow, /agent_workflow_actions/);
+assert.match(workflow, /agent_workflow_events/);
+assert.match(workflow, /uq_agent_workflow_owner_dedupe/);
+assert.match(workflow, /owner_user_id=\?/);
+assert.match(workflow, /approval_pending/);
+assert.match(workflow, /agent_workflow_claim_next_action_v1400/);
+assert.match(workflow, /agent_workflow_record_action_result_v1400/);
+assert.match(workflow, /execution_target/);
+assert.match(workflow, /calendar_conflict_resolution/);
+assert.match(workflow, /calendar_commitment_prep/);
+assert.match(workflow, /agent_action_v124_plan\(/, 'Workflow planning must reuse canonical v124 action planning');
+assert.match(workflow, /status='queued' ORDER BY sequence_no,id LIMIT 1 FOR UPDATE/, 'Executors must lock the global next queued action before checking runtime affinity');
+assert.doesNotMatch(workflow, /status='queued' AND execution_target=\? ORDER BY sequence_no,id LIMIT 1 FOR UPDATE/, 'Runtime affinity must never allow Cloud or HomeServer to skip an earlier action');
+assert.match(workflow, /execution_target'\]\?\?'cloud'\)!==\$executor/, 'The globally next action must be owned by the claiming executor');
+assert.match(workflow, /status'\]==='executing'&&\(int\)\(\$run\['current_action_id'\]\?\?0\)>0/, 'An active action must serialize later executor claims');
+assert.match(workflow, /current_action_id'\]\?\?0\)!==\$actionId/, 'Only the currently claimed action may report a result');
+assert.match(workflow, /result_summary='',result_json=NULL,error_class=''/, 'Retry must clear stale failed-action results');
+assert.match(workflow, /\$safeResult=\$result\?agent_workflow_public_json_v1400\(agent_workflow_json_v1400\(\$result\)\):\[\]/, 'Executor result storage must pass through the secret/reasoning filter');
+assert.doesNotMatch(workflow, /status='queued',attempt_count=attempt_count\+1,last_error_class/, 'Retry must not double-count a run attempt before it is claimed');
+assert.doesNotMatch(api, /record_action_result|claim_next_action/, 'Browser API must not expose executor-only completion hooks');
+assert.doesNotMatch(api, /agent_tool_log/, 'Workflow API must not depend on a nonexistent audit helper');
+assert.match(api, /agent_workflow_find_brain_priority_v1400/, 'Browser creates runs only from server-owned Brain state');
+assert.match(api, /hash_equals\(csrf_token\(\),\$csrf\)/);
+assert.match(api, /Workflow request failed\./, 'Unexpected server failures must be projected as a generic error');
+assert.match(page, /Create workflow/);
+assert.match(page, /Execution history/);
+assert.match(page, /without storing hidden reasoning/i);
+assert.match(page, /agent-workflow-upgrade-v1400\.php/);
+assert.match(calendar, /agent-workflows\.php/,'Calendar must provide a discoverable path to Agent Workflows');
+assert.match(migration, /CONSTRAINT fk_agent_workflow_owner/);
+assert.match(migration, /CONSTRAINT fk_agent_workflow_action_run/);
+assert.match(upgrade, /require_permission\('users\.manage'\)/);
+assert.match(upgrade, /agent_workflow_ensure_schema_v1400\(\$pdo\)/);
+
+console.log('Agent Workflow Runs v14.00 contract: OK');
