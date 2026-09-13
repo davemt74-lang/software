@@ -64,6 +64,14 @@
     return header;
   }
 
+  function removeLegacyHeroCopy() {
+    const hero = document.querySelector('.personal-knowledge-hero');
+    if (!hero) return;
+    [...hero.children].forEach(child => {
+      if (!child.classList.contains('personal-knowledge-stats')) child.remove();
+    });
+  }
+
   function removeLegacyHeaderAddAction() {
     document.querySelectorAll('a[href*="/knowledge.php#knowledge-form"]').forEach(link => {
       if (!link.closest('.personal-knowledge-stats')) link.remove();
@@ -92,7 +100,7 @@
 
   function installKnowledgeFormDialog() {
     const source = document.getElementById('knowledge-form');
-    if (!source) return null;
+    if (!source?.querySelector('form.personal-knowledge-form')) return null;
 
     const placeholder = document.createComment('knowledge-form-dialog-home');
     source.before(placeholder);
@@ -190,7 +198,7 @@
     const fileLink = [...row.querySelectorAll('.personal-knowledge-actions a')].find(link => /Open file/i.test(link.textContent || ''));
     const editLink = [...row.querySelectorAll('.personal-knowledge-actions a')].find(link => /Edit/i.test(link.textContent || ''));
     const description = row.querySelector('.personal-knowledge-copy > p')?.textContent?.trim() || '';
-    const content = row.querySelector('.personal-knowledge-copy details p')?.innerText?.trim() || '';
+    const content = row.querySelector('.personal-knowledge-copy details p')?.textContent?.trim() || '';
 
     const dialog = makeDialog('knowledge-item-dialog', title);
     dialogHeader(dialog, title, `Back to ${folderName}`);
@@ -201,7 +209,7 @@
     const badges = document.createElement('div');
     badges.className = 'personal-knowledge-detail-badges';
     row.querySelectorAll('.source').forEach(source => badges.appendChild(source.cloneNode(true)));
-    if (kind === 'Transcription' && sourceLink) {
+    if (kind === 'Transcription') {
       const origin = document.createElement('span');
       origin.className = 'source system-origin';
       origin.textContent = 'System-originated transcription';
@@ -338,6 +346,7 @@
     form.submit();
   });
 
+  removeLegacyHeroCopy();
   removeLegacyHeaderAddAction();
   const openFolderDialog = installCreateFolderDialog();
   const openKnowledgeDialog = installKnowledgeFormDialog();
