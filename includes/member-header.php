@@ -53,7 +53,7 @@ $memberHeaderAgentVoiceEnabled = $memberHeaderCanChat ? member_agent_voice_enabl
 if (empty($GLOBALS['STONEFELLOW_MEMBER_HEADER_RUNTIME_RENDERED'])):
     $GLOBALS['STONEFELLOW_MEMBER_HEADER_RUNTIME_RENDERED'] = true;
     $memberHeaderUiBuild = 'universal-member-header-layout-20260906';
-    $memberHeaderScrollBuild = 'member-page-scroll-20260910';
+    $memberHeaderScrollBuild = 'member-page-scroll-20260912-calendar-flex';
     $memberHeaderSettingsBuild = 'chat-settings-v239-canonical-20260905';
     $memberHeaderNotificationBuild = 'activity-center-brain-routing-20260906';
     $memberHeaderTranscriptionBuild = 'chat-transcription-canvas-v243-layout-20260905';
@@ -85,4 +85,4 @@ if (empty($GLOBALS['STONEFELLOW_MEMBER_HEADER_RUNTIME_RENDERED'])):
 <script data-artist-recordings-v198 data-recording-ui-build="<?= e($memberHeaderRecordingUiBuild) ?>" src="<?= e(url('/artist-listening-recordings.js?v=' . $memberHeaderRecordingUiBuild)) ?>"></script>
 <script data-chat-transcription-canvas data-transcription-canvas-build="<?= e($memberHeaderTranscriptionBuild) ?>" src="<?= e(url('/chat-transcription-canvas.js?v=' . $memberHeaderTranscriptionBuild)) ?>"></script>
 <?php endif; ?>
-<?php endif; ?>
+<?php endif;
