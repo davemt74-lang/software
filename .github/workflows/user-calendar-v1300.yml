@@ -6,6 +6,7 @@ on:
       - main
       - phase-13-user-calendar
       - fix-calendar-scroll-flex
+      - calendar-schedule-awareness-v1330
   pull_request:
 
 permissions:
@@ -38,8 +39,10 @@ jobs:
       - name: Lint User Calendar PHP
         run: |
           php -l includes/user-calendar-v1300.php
+          php -l includes/calendar-schedule-awareness-v1330.php
           php -l includes/user-calendar-agent-v1300.php
           php -l includes/agent-calendar-sync-v500.php
+          php -l includes/agent-proactive-operations-v036.php
           php -l api/user-calendar-v1300.php
           php -l api/chat-v236.php
           php -l calendar.php
@@ -49,9 +52,12 @@ jobs:
           php -l calendar-oauth.php
           php -l includes/member-navigation.php
           php -l includes/member-header.php
+          php -l includes/bootstrap.php
           php -l upgrade.php
 
       - name: Verify User Calendar contract
         run: |
           node tests/user-calendar-v1300-contract.mjs
           node tests/calendar-scroll-v1322-contract.mjs
+          node tests/calendar-schedule-awareness-v1330-contract.mjs
+          php tests/calendar-schedule-awareness-v1330-test.php
