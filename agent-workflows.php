@@ -4,7 +4,7 @@ require __DIR__ . '/includes/bootstrap.php';
 require_once __DIR__ . '/includes/agent-workflow-runs-v1400.php';
 require_permission('account.access');
 $pdo=db();$user=current_user();if(!$pdo||!$user)redirect(url('/login.php'));
-if(!agent_workflow_schema_ready_v1400($pdo))redirect(url('/upgrade.php'));
+if(!agent_workflow_schema_ready_v1400($pdo))redirect(url('/agent-workflow-upgrade-v1400.php'));
 
 $notice='';$error='';
 if($_SERVER['REQUEST_METHOD']==='POST'){
