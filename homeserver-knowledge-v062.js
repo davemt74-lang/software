@@ -15,6 +15,7 @@ const els={
 };
 let snapshot=null;
 let busy=false;
+let permissionNeeded=false;
 
 function setAlert(message,type='error'){
   if(!els.alert)return;
@@ -47,7 +48,7 @@ function fillSelect(select,collections,defaultKey){
 function renderCollections(data){
   const collections=Array.isArray(data.collections)?data.collections:[];
   els.collections.replaceChildren();
-  if(!collections.length){els.collections.append(node('div','lk-empty',data.connected?'No HomeServer Knowledge collections are available to this pairing.':'Connect HomeServer to load collections.'));}
+  if(!collections.length)els.collections.append(node('div','lk-empty',data.connected?'No HomeServer Knowledge collections are available to this pairing.':'Connect HomeServer to load collections.'));
   for(const collection of collections){
     const card=node('article','lk-collection');
     const top=node('div','lk-collection-top');
@@ -82,24 +83,27 @@ function renderPermission(data){
   if(!els.permission)return;
   const pending=!!(data.permission_upgrade&&data.permission_upgrade.pending);
   const code=data.permission_upgrade&&data.permission_upgrade.approval_code?String(data.permission_upgrade.approval_code):'';
-  els.permission.hidden=!pending;
+  els.permission.hidden=!(pending||permissionNeeded);
   if(els.approval){els.approval.hidden=!pending;if(code&&els.approvalCode)els.approvalCode.textContent=code;}
 }
-function render(data){
+function render(data,preserveAlert=false){
   snapshot=data||{};setState(snapshot);renderCollections(snapshot);renderMappings(snapshot);renderPermission(snapshot);
-  if(snapshot.error)setAlert(snapshot.error);else setAlert('');
+  if(snapshot.error)setAlert(snapshot.error);else if(!preserveAlert)setAlert('');
   const writable=!!(snapshot.connected&&snapshot.supported&&canManage);
   if(els.mapForm)els.mapForm.querySelectorAll('input,select,textarea,button').forEach(el=>{el.disabled=!writable||busy;});
   if(els.writeForm)els.writeForm.querySelectorAll('input,select,textarea,button').forEach(el=>{el.disabled=!writable||busy;});
 }
-async function request(options={}){
-  const response=await fetch(api,{credentials:'same-origin',cache:'no-store',headers:{Accept:'application/json',...(options.headers||{})},...options});
+async function request(options={},endpoint=api){
+  const headers={Accept:'application/json',...(options.headers||{})};
+  const settings={...options};delete settings.headers;
+  const response=await fetch(endpoint,{credentials:'same-origin',cache:'no-store',...settings,headers});
   const data=await response.json().catch(()=>({ok:false,error:'VP3 returned an invalid Local Knowledge response.',code:'invalid_response'}));
   if(!response.ok||!data.ok){const error=new Error(data.error||'Local Knowledge request failed.');error.code=data.code||'request_failed';throw error;}
   return data;
 }
 async function load(force=false){
-  const data=await request({method:'GET',headers:{Accept:'application/json'},...(force?{}:{}) ,});
+  const endpoint=api+(force?'?refresh=1':'');
+  const data=await request({method:'GET'},endpoint);
   render(data.snapshot||{});return data.snapshot||{};
 }
 async function post(action,fields={}){
@@ -108,21 +112,18 @@ async function post(action,fields={}){
   return request({method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},body:body.toString()});
 }
 function showPermission(error){
-  if(!els.permission)return;
-  if(error&&error.code==='permission_required'){
-    els.permission.hidden=false;
-    els.permission.scrollIntoView({behavior:'smooth',block:'center'});
-  }
+  if(!els.permission||!error||error.code!=='permission_required')return;
+  permissionNeeded=true;renderPermission(snapshot||{});els.permission.scrollIntoView({behavior:'smooth',block:'center'});
 }
 async function unmap(mappingId,label){
   if(busy||!canManage)return;
   if(!/^source-\d{1,18}$/.test(String(mappingId))||!confirm(`Stop using ${label} as a HomeServer Knowledge source?`))return;
   setBusy(true,'Removing the HomeServer mapping…');
-  try{await post('unmap_folder',{mapping_id:mappingId});await load(true);setAlert('Local Knowledge folder unmapped.','success');}
+  try{await post('unmap_folder',{mapping_id:mappingId});permissionNeeded=false;await load(true);setAlert('Local Knowledge folder unmapped.','success');}
   catch(error){setAlert(error.message);showPermission(error);}
-  finally{setBusy(false);if(snapshot)render(snapshot);}
+  finally{setBusy(false);if(snapshot)render(snapshot,true);}
 }
-if(els.refresh)els.refresh.addEventListener('click',async()=>{if(busy)return;setBusy(true);try{await load(true);}catch(error){setAlert(error.message);}finally{setBusy(false);if(snapshot)render(snapshot);}});
+if(els.refresh)els.refresh.addEventListener('click',async()=>{if(busy)return;setBusy(true);try{await load(true);}catch(error){setAlert(error.message);}finally{setBusy(false);if(snapshot)render(snapshot,true);}});
 if(els.mapForm)els.mapForm.addEventListener('submit',async event=>{
   event.preventDefault();if(busy||!canManage)return;
   const form=new FormData(els.mapForm);
@@ -131,10 +132,10 @@ if(els.mapForm)els.mapForm.addEventListener('submit',async event=>{
   setBusy(true,'Waiting for the folder picker on HomeServer. Choose a folder there; its native location will not be sent to VP3.');
   try{
     const data=await post('map_folder',fields);
-    if(data.result&&data.result.cancelled){setAlert('Folder selection was cancelled on HomeServer.');}
-    else{await load(true);setAlert('HomeServer folder mapped and indexing started.','success');}
+    if(data.result&&data.result.cancelled)setAlert('Folder selection was cancelled on HomeServer.');
+    else{permissionNeeded=false;await load(true);setAlert('HomeServer folder mapped and indexing started.','success');}
   }catch(error){setAlert(error.message);showPermission(error);}
-  finally{setBusy(false);if(snapshot)render(snapshot);}
+  finally{setBusy(false);if(snapshot)render(snapshot,true);}
 });
 if(els.writeForm)els.writeForm.addEventListener('submit',async event=>{
   event.preventDefault();if(busy||!canManage)return;
@@ -145,27 +146,28 @@ if(els.writeForm)els.writeForm.addEventListener('submit',async event=>{
     const item=data.result&&data.result.item?data.result.item:null;
     if(els.writeResult)els.writeResult.textContent=item?`Saved “${item.title}” · ${item.chunk_count||0} chunks`:'Saved to HomeServer.';
     els.writeForm.querySelector('[name="title"]').value='';els.writeForm.querySelector('[name="content"]').value='';
-    await load(true);setAlert('Private knowledge saved on HomeServer.','success');
+    permissionNeeded=false;await load(true);setAlert('Private knowledge saved on HomeServer.','success');
   }catch(error){setAlert(error.message);showPermission(error);}
-  finally{setBusy(false);if(snapshot)render(snapshot);}
+  finally{setBusy(false);if(snapshot)render(snapshot,true);}
 });
 if(els.requestPermission)els.requestPermission.addEventListener('click',async()=>{
   if(busy||!canManage)return;setBusy(true,'Creating a one-time HomeServer approval request…');
   try{
-    const data=await post('request_write_permission');const result=data.result||{};
-    els.permission.hidden=false;els.approval.hidden=false;els.approvalCode.textContent=result.approval_code||'Check HomeServer';
+    const data=await post('request_write_permission');const result=data.result||{};permissionNeeded=true;
+    await load(true);
+    if(result.approval_code&&els.approvalCode)els.approvalCode.textContent=result.approval_code;
     setAlert(result.existing?'Complete the existing approval shown on HomeServer, then check again.':'Approve the displayed code locally in HomeServer.','success');
   }catch(error){setAlert(error.message);}
-  finally{setBusy(false);if(snapshot)render(snapshot);if(els.permission)els.permission.hidden=false;}
+  finally{setBusy(false);if(snapshot)render(snapshot,true);}
 });
 if(els.checkPermission)els.checkPermission.addEventListener('click',async()=>{
   if(busy||!canManage)return;setBusy(true,'Checking HomeServer approval…');
   try{
     const data=await post('check_write_permission');
-    if(data.result&&data.result.ready){await load(true);setAlert('Knowledge write access approved.','success');if(els.permission)els.permission.hidden=true;}
-    else setAlert(`HomeServer approval is ${data.result&&data.result.status?data.result.status:'still pending'}.`);
+    if(data.result&&data.result.ready){permissionNeeded=false;await load(true);setAlert('Knowledge write access approved.','success');}
+    else{permissionNeeded=true;await load(true);setAlert(`HomeServer approval is ${data.result&&data.result.status?data.result.status:'still pending'}.`);}
   }catch(error){setAlert(error.message);}
-  finally{setBusy(false);if(snapshot)render(snapshot);}
+  finally{setBusy(false);if(snapshot)render(snapshot,true);}
 });
 (async()=>{try{await load(false);}catch(error){setAlert(error.message);els.state.dataset.state='attention';els.stateLabel.textContent='Local Knowledge unavailable';}})();
 })();
