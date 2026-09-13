@@ -27,8 +27,11 @@ const primaryStart = mainSidebar.indexOf('data-agent-primary-nav');
 const primaryEnd = primaryStart < 0 ? -1 : mainSidebar.indexOf('</nav>', primaryStart);
 assert.ok(primaryStart >= 0 && primaryEnd > primaryStart, 'Canonical sidebar must expose an explicit primary Agent navigation block');
 const primaryNav = mainSidebar.slice(primaryStart, primaryEnd);
-for (const label of ['New Chat', 'Knowledge', 'Memory', 'Contacts', 'My Calendar']) {
+for (const label of ['New Chat', 'Contacts', 'My Calendar']) {
   assert.ok(primaryNav.includes(`<strong>${label}</strong>`), `Canonical Agent sidebar must expose ${label}`);
+}
+for (const accountLevel of ['Knowledge', 'Memory']) {
+  assert.ok(!primaryNav.includes(`<strong>${accountLevel}</strong>`), `${accountLevel} must live in the canonical user menu instead of primary Agent navigation`);
 }
 assert.ok(!primaryNav.includes('<strong>Approvals</strong>'), 'Approvals must not remain in canonical primary navigation');
 for (const secondary of ['Profile Agent', 'My Team', 'My Transcriptions', 'Plan &amp; Usage']) {
@@ -52,6 +55,8 @@ assert.doesNotMatch(activity, /<strong>My Knowledge<\/strong>|chat-sidebar-nav|i
 assert.doesNotMatch(learning, /cleanupMainSidebar|data-chat-view-target="player"|data-chat-view-target="saved"|data-chat-view-target="playlists"|data-chat-profile-link="my_team"|chatMyTeam|notificationTab\s*=\s*['"]learning['"]/, 'Brain Learning must not mutate navigation or expose its tab');
 assert.doesNotMatch(memberNav, /'my_team','My Team'/, 'profile/dropdown navigation must not duplicate legacy My Team');
 assert.match(memberNav, /'profile_agent','Profile Agent'/, 'Profile Agent must remain available from the canonical user menu');
+assert.match(memberNav, /'knowledge','My Knowledge',url\('\/knowledge\.php'\)/, 'My Knowledge must remain available from the canonical user menu');
+assert.match(memberNav, /'memory','My Memory',url\('\/memory\.php'\)/, 'My Memory must remain available from the canonical user menu');
 assert.match(memberNav, /'transcriptions','My Transcriptions'/, 'Transcriptions must remain available from the canonical user menu');
 assert.match(memberNav, /'subscription','Plan & Usage'/, 'Plan & Usage must remain available from the canonical user menu');
 assert.match(memberNav, /'calendar','My Calendar',url\('\/calendar\.php'\)/, 'My Calendar must remain available from canonical member navigation');
