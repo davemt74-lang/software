@@ -134,7 +134,7 @@ $activeTab=(string)(array_key_first($profileTabs)??'');
 
     <?php if(isset($profileTabs['booking'])): ?>
       <section class="profile-card profile-panel" data-profile-panel="booking"<?= $activeTab==='booking'?'':' hidden' ?>>
-        <div class="profile-panel-heading"><h2>Booking</h2><?php if($isOwner): ?><a class="profile-tab-manage" href="<?= e(url('/calendar.php')) ?>">Manage scheduling</a><?php endif; ?></div>
+        <div class="profile-panel-heading"><h2>Booking</h2><?php if($isOwner): ?><a class="profile-tab-manage" href="<?= e(url('/scheduling.php')) ?>">Manage scheduling</a><?php endif; ?></div>
         <div class="profile-booking-list">
           <?php foreach($bookingTypes as $event): $duration=max(0,(int)($event['duration_minutes']??0)); ?>
             <article class="profile-booking-item"><div class="profile-booking-meta"><?php if($duration>0): ?><span><?= $duration ?> min</span><?php endif; ?></div><h3><?= e((string)($event['title']??'Appointment')) ?></h3><?php if(trim((string)($event['description']??''))!==''): ?><p><?= e(mb_strimwidth((string)$event['description'],0,260,'…')) ?></p><?php endif; ?><a href="<?= e(agent_scheduling_public_booking_url_v450($username,(string)($event['slug']??''))) ?>">Book a time →</a></article>
