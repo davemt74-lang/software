@@ -17,8 +17,11 @@ const primaryStart = mainSidebar.indexOf('data-agent-primary-nav');
 const primaryEnd = primaryStart < 0 ? -1 : mainSidebar.indexOf('</nav>', primaryStart);
 assert.ok(primaryStart >= 0 && primaryEnd > primaryStart, 'canonical Agent sidebar must expose one primary navigation block');
 const primaryNav = mainSidebar.slice(primaryStart, primaryEnd);
-for (const label of ['New Chat', 'Knowledge', 'Memory', 'Contacts', 'My Calendar']) {
+for (const label of ['New Chat', 'Contacts', 'My Calendar']) {
   assert.ok(primaryNav.includes(`<strong>${label}</strong>`), `canonical Agent sidebar must include primary ${label}`);
+}
+for (const accountLevel of ['Knowledge', 'Memory']) {
+  assert.ok(!primaryNav.includes(`<strong>${accountLevel}</strong>`), `${accountLevel} must live in the user dropdown instead of primary Agent navigation`);
 }
 assert.ok(!primaryNav.includes('<strong>Approvals</strong>'), 'canonical Agent sidebar must not restore the removed Approvals shortcut');
 for (const secondary of ['Profile Agent', 'My Transcriptions', 'My Team', 'Plan &amp; Usage', 'Buy AI Tokens']) {
@@ -29,17 +32,16 @@ for (const removed of ['Player', 'Saved Songs', 'My Playlists', 'Stem Studio', '
 }
 assert.match(mainSidebar, /data-agent-user-footer/, 'secondary account and product navigation must live in the bottom user menu');
 assert.match(mainSidebar, /member_navigation_menu_links\(\$mainSidebarUser\)/, 'bottom user menu must reuse canonical member navigation');
-assert.match(mainSidebar, /personal_knowledge\.access/, 'Knowledge must remain permission-aware');
-assert.match(mainSidebar, /mainSidebarActive === 'knowledge'/, 'Knowledge must support the active-page state');
-assert.match(mainSidebar, /mainSidebarActive === 'memory'/, 'Memory must support the active-page state');
 assert.match(mainSidebar, /mainSidebarCalendarActive/, 'My Calendar must support the active-page state');
 assert.match(mainSidebar, /id="vp3AgentRuntimeStrip"/, 'sidebar must promote Agent runtime state');
 assert.match(mainSidebar, /data-rename-conversation/, 'chat history must expose rename alongside delete');
 
-for (const label of ['Profile Agent', 'My Transcriptions', 'Plan & Usage']) {
+for (const label of ['Profile Agent', 'My Knowledge', 'My Memory', 'My Transcriptions', 'Plan & Usage']) {
   assert.ok(memberNavigation.includes(`'${label}'`), `canonical member user menu must retain ${label}`);
 }
 assert.ok(memberNavigation.includes("'calendar','My Calendar'"), 'canonical member navigation must retain My Calendar');
+assert.ok(memberNavigation.includes("personal_capability_has_v242('personal_knowledge.access'"), 'My Knowledge must remain permission-aware in canonical navigation');
+assert.ok(memberNavigation.includes("has_permission('chat.access'"), 'My Memory must remain permission-aware in canonical navigation');
 
 assert.match(contacts, /workspaceSidebarActive = 'contacts'/, 'Contacts must identify its active canonical sidebar item');
 assert.match(contacts, /includes\/workspace-sidebar-v82\.php/, 'Contacts must use the canonical sidebar wrapper');
@@ -49,11 +51,11 @@ assert.doesNotMatch(contacts, /<span class="contacts-avatar"/, 'Contacts must no
 assert.doesNotMatch(contacts, /contacts-hero|Personal relationship CRM|A living list of people and guest browsers|Visitor activity|Open Agent Chat/, 'Contacts must start with working CRM content instead of the removed duplicate hero');
 assert.match(contacts, /<section class="contacts-metrics"/, 'Contacts metrics must be the first page content after the shared header');
 
-assert.match(knowledge, /workspaceSidebarActive='knowledge'/, 'Knowledge must identify its active canonical sidebar item');
+assert.match(knowledge, /workspaceSidebarActive='knowledge'/, 'Knowledge must identify its active canonical route');
 assert.match(knowledge, /includes\/workspace-sidebar-v82\.php/, 'Knowledge must use the canonical sidebar wrapper');
 assert.match(knowledge, /includes\/member-header\.php/, 'Knowledge must use the shared member header');
 
-assert.match(memory, /workspaceSidebarActive='memory'/, 'Memory must identify its active canonical sidebar item');
+assert.match(memory, /workspaceSidebarActive='memory'/, 'Memory must identify its active canonical route');
 assert.match(memory, /includes\/workspace-sidebar-v82\.php/, 'Memory must use the canonical sidebar wrapper');
 assert.match(memory, /SET is_active=0 WHERE id=\? AND user_id=\?/, 'Memory Forget must remain owner scoped');
 
