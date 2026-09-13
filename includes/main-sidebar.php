@@ -8,7 +8,7 @@ $mainSidebarHistoryRows = isset($mainSidebarHistoryRows) && is_array($mainSideba
 $mainSidebarMenuLinks = $mainSidebarUser ? member_navigation_menu_links($mainSidebarUser) : [];
 $mainSidebarProductsActive = $mainSidebarActive === 'profile_commerce' || basename((string)($_SERVER['SCRIPT_NAME'] ?? '')) === 'profile-commerce-products.php';
 $mainSidebarCalendarActive = $mainSidebarActive === 'calendar' || in_array(basename((string)($_SERVER['SCRIPT_NAME'] ?? '')), ['calendar.php','calendar-event.php'], true);
-$mainSidebarPrimaryKeys = ['chat'=>true,'contacts'=>true,'knowledge'=>true,'calendar'=>true,'profile_commerce'=>true];
+$mainSidebarPrimaryKeys = ['chat'=>true,'contacts'=>true,'calendar'=>true,'profile_commerce'=>true];
 $mainSidebarFooterLinks = array_values(array_filter(
     $mainSidebarMenuLinks,
     static fn(array $link): bool => !isset($mainSidebarPrimaryKeys[(string)($link['key'] ?? '')])
@@ -54,14 +54,6 @@ $mainSidebarRoleSummary = $mainSidebarUser ? implode(' · ', user_role_labels($m
           <?php else: ?>
             <a class="chat-sidebar-nav-link <?= $mainSidebarActive === 'chat' ? 'active' : '' ?>" href="<?= e(url('/chat.php')) ?>"><span>＋</span><strong>New Chat</strong></a>
           <?php endif; ?>
-        <?php endif; ?>
-
-        <?php if ($mainSidebarUser && personal_capability_has_v242('personal_knowledge.access', $mainSidebarUser)): ?>
-          <a class="chat-sidebar-nav-link <?= $mainSidebarActive === 'knowledge' ? 'active' : '' ?>" href="<?= e(url('/knowledge.php')) ?>"><span>◆</span><strong>Knowledge</strong></a>
-        <?php endif; ?>
-
-        <?php if ($mainSidebarUser && has_permission('chat.access', $mainSidebarUser)): ?>
-          <a class="chat-sidebar-nav-link <?= $mainSidebarActive === 'memory' ? 'active' : '' ?>" href="<?= e(url('/memory.php')) ?>"><span>◉</span><strong>Memory</strong></a>
         <?php endif; ?>
 
         <?php if ($mainSidebarUser && has_permission('account.access', $mainSidebarUser)): ?>
