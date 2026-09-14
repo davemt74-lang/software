@@ -53,6 +53,25 @@ function agent_worker_cloud_active_row_v1910(PDO $pdo,array $user,array $claim):
     return $row;
 }
 
+/** Canonical server-only Cloud poll for non-mutating distributed executors. */
+function agent_worker_cloud_poll_v1910(PDO $pdo,array $user,int $limit=25): array
+{
+    $uid=(int)($user['id']??0);
+    if($uid<1||!agent_job_engine_schema_ready_v1900($pdo))return ['ok'=>false,'reason'=>'job_engine_not_ready','claim'=>null,'recovery'=>['recovered'=>0,'failed'=>0],'build'=>VP3_AGENT_WORKER_CLOUD_V1910];
+    $limit=max(1,min(100,$limit));
+    $recovery=agent_job_recover_expired_v1900($pdo,$user,$limit);
+    $claim=agent_job_claim_next_v1900($pdo,$user,'cloud',agent_worker_cloud_worker_id_v1910($uid),$limit);
+    if(!$claim)return ['ok'=>true,'reason'=>'no_work','claim'=>null,'recovery'=>$recovery,'build'=>VP3_AGENT_WORKER_CLOUD_V1910];
+    $row=agent_worker_cloud_active_row_v1910($pdo,$user,$claim);
+    if(!$row){
+        $runId=(int)($claim['run_id']??0);$actionId=(int)($claim['action']['id']??0);$attempt=max(1,(int)($claim['action']['attempt_count']??1));
+        agent_job_record_result_v1900($pdo,$user,$runId,$actionId,(string)($claim['lease_token']??''),'v1910-cloud-deny-'.$runId.'-'.$actionId.'-'.$attempt,false,'Cloud execution was denied by the server-side lease boundary.',[],'cloud_authorization_denied',false);
+        return ['ok'=>false,'reason'=>'authorization_denied','claim'=>null,'recovery'=>$recovery,'build'=>VP3_AGENT_WORKER_CLOUD_V1910];
+    }
+    $claim['authorization']=['authorized'=>true,'reason'=>'authorized','principal_user_id'=>$uid,'server_derived'=>true,'capability_key'=>(string)($row['action_capability_key']??'')];
+    return ['ok'=>true,'reason'=>'claimed','claim'=>$claim,'recovery'=>$recovery,'build'=>VP3_AGENT_WORKER_CLOUD_V1910];
+}
+
 function agent_worker_cloud_brain_priority_v1910(array $user,array $run): ?array
 {
     try{
@@ -71,8 +90,9 @@ function agent_worker_cloud_result_v1910(PDO $pdo,array $user,array $claim,bool 
 
 function agent_worker_cloud_execute_once_v1910(PDO $pdo,array $user,int $limit=25): array
 {
-    $claim=agent_worker_cloud_claim_v1910($pdo,$user,$limit);
-    if(!$claim)return ['ok'=>true,'reason'=>'no_work','receipt'=>null,'build'=>VP3_AGENT_WORKER_CLOUD_V1910];
+    $poll=agent_worker_cloud_poll_v1910($pdo,$user,$limit);
+    $claim=is_array($poll['claim']??null)?$poll['claim']:null;
+    if(!$claim)return ['ok'=>!empty($poll['ok']),'reason'=>(string)($poll['reason']??'no_work'),'receipt'=>null,'build'=>VP3_AGENT_WORKER_CLOUD_V1910];
     $run=agent_worker_cloud_active_row_v1910($pdo,$user,$claim);
     if(!$run){
         $receipt=agent_worker_cloud_result_v1910($pdo,$user,$claim,false,'Cloud execution was denied by the server-side lease boundary.',[],'cloud_authorization_denied',false);
