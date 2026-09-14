@@ -48,7 +48,7 @@ Header always set Permissions-Policy "microphone=(self), camera=(self)"
 <FilesMatch "^(?:premium-voice-v117|chat-voice-v117|editor-voice-barge-v117|voice-lease-v122|conversation-voice-v120|conversation-voice-v121|conversation-voice-v122|chat-conversation-v121|editor-agent-v114|stem-agent-v114|video-header-v92|agent-activity-v94|chat-notifications-drawer-v240|chat-agent-identity-v236|profile-agent)\.js$">
 Header always set Cache-Control "no-cache, must-revalidate"
 </FilesMatch>
-<FilesMatch "^(?:chat-settings-v237|chat-notifications-drawer-v240|chat-agent-identity-v236)\.(?:js|css)$">
+<FilesMatch "^(?:chat-settings-v237|chat-notifications-drawer-v240|chat-agent-identity-v236|profile-agent-portal|profile-agent-analytics)\.(?:js|css)$">
 Header always set Cache-Control "no-cache, must-revalidate"
 </FilesMatch>
 <FilesMatch "^(?:admin\.js|admin-tech\.css)$">
