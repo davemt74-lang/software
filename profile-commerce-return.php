@@ -17,6 +17,7 @@ try{
     $receiptToken=strtolower(trim((string)($intent['receipt_token']??'')));if(!profile_commerce_receipt_token_valid_v1100($receiptToken))$receiptToken='';
     $provider=strtolower(trim((string)($order['provider_snapshot']??'')));if($provider==='')throw new RuntimeException('Checkout provider lineage is unavailable.');
     $verified=agent_commerce_return_verify_v800($pdo,$order,$provider,$_GET);
+    if(function_exists('profile_conversion_commerce_order_v179'))profile_conversion_commerce_order_v179($pdo,$verified);
     $status=(string)($verified['payment_status']??'awaiting_payment');
     if($status==='paid'){$notice=['kind'=>'verified','headline'=>'Payment verified.','message'=>'Your payment is confirmed in the canonical Commerce order.'];}
     elseif($status==='partially_paid'){$notice=['kind'=>'verified','headline'=>'Deposit verified.','message'=>'Your deposit is confirmed in the canonical Commerce order.'];}
