@@ -14,8 +14,6 @@ const VP3_FUNNEL_MAX_RETURN_LENGTH = 2048;
 const VP3_FUNNEL_ALLOWED_BILLING = ['weekly', 'monthly', 'annual'];
 const VP3_FUNNEL_ALLOWED_EVENTS = [
     'pricing_view',
-    'pricing_signup_click',
-    'pricing_demo_click',
     'signup_view',
     'signup_submit',
     'signup_success',
@@ -91,7 +89,7 @@ function vp3_funnel_safe_return(mixed $value): ?string
     }
 
     $parts = parse_url($value);
-    if ($parts === false || isset($parts['scheme'], $parts['host'])) {
+    if ($parts === false) {
         return null;
     }
     foreach (['scheme', 'host', 'user', 'pass', 'port'] as $forbidden) {
@@ -192,6 +190,26 @@ function vp3_funnel_destination(string $fallback): string
 {
     $intent = vp3_funnel_intent();
     return vp3_funnel_safe_return($intent['return_to'] ?? null) ?? $fallback;
+}
+
+/**
+ * Consume a one-time post-auth return target so an old acquisition redirect
+ * cannot unexpectedly affect a later login. Plan/billing/source attribution is
+ * preserved for downstream onboarding and conversion telemetry.
+ */
+function vp3_funnel_take_destination(string $fallback): string
+{
+    $intent = vp3_funnel_intent();
+    $destination = vp3_funnel_safe_return($intent['return_to'] ?? null) ?? $fallback;
+    unset($intent['return_to']);
+
+    if ($intent === []) {
+        unset($_SESSION[VP3_FUNNEL_SESSION_KEY]);
+    } else {
+        $_SESSION[VP3_FUNNEL_SESSION_KEY] = $intent;
+    }
+
+    return $destination;
 }
 
 function vp3_funnel_event_context(array $extra = []): array
