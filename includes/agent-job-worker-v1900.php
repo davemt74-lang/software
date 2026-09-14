@@ -8,6 +8,7 @@ declare(strict_types=1);
  */
 require_once __DIR__.'/agent-job-engine-v1900.php';
 require_once __DIR__.'/agent-worker-runtime-v1910.php';
+require_once __DIR__.'/agent-worker-cloud-v1910.php';
 
 function agent_job_worker_poll_v1900(PDO $pdo,array $user,string $executor,string $workerId,int $limit=25): array
 {
@@ -18,13 +19,16 @@ function agent_job_worker_poll_v1900(PDO $pdo,array $user,string $executor,strin
 }
 
 /**
- * Phase 19.1 canonical distributed poll. New executors use this path so worker
- * identity, capacity, HomeServer freshness, capability and approval checks are
- * enforced before an executable claim is released.
+ * Phase 19.1 canonical distributed poll. Cloud orchestration and paired
+ * HomeServer execution have different capability authorities, so route each to
+ * its dedicated server-side boundary rather than applying one model to both.
  */
 function agent_job_worker_poll_distributed_v1910(PDO $pdo,array $user,string $executor,string $workerId='primary',int $limit=25): array
 {
-    return agent_worker_runtime_poll_v1910($pdo,$user,$executor,$workerId,$limit);
+    $executor=strtolower(trim($executor));
+    if($executor==='cloud')return agent_worker_cloud_poll_v1910($pdo,$user,$limit);
+    if($executor==='homeserver')return agent_worker_runtime_poll_v1910($pdo,$user,'homeserver',$workerId,$limit);
+    return ['ok'=>false,'reason'=>'invalid_executor','claim'=>null,'recovery'=>['recovered'=>0,'failed'=>0],'build'=>VP3_AGENT_WORKER_RUNTIME_V1910];
 }
 
 /**
