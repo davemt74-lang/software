@@ -41,7 +41,7 @@ function agent_worker_cloud_active_row_v1910(PDO $pdo,array $user,array $claim):
 {
     $uid=(int)($user['id']??0);$runId=(int)($claim['run_id']??0);$actionId=(int)($claim['action']['id']??0);
     if($uid<1||$runId<1||$actionId<1)return null;
-    $stmt=$pdo->prepare('SELECT r.*,a.action_type,a.action_key,a.label action_label,a.summary action_summary,a.status action_status,a.execution_target action_execution_target,a.capability_key action_capability_key FROM agent_workflow_runs r INNER JOIN agent_workflow_actions a ON a.id=r.current_action_id AND a.run_id=r.id AND a.owner_user_id=r.owner_user_id WHERE r.id=? AND r.owner_user_id=? AND a.id=? LIMIT 1');
+    $stmt=$pdo->prepare('SELECT r.*,a.action_type,a.action_key,a.label action_label,a.summary action_summary,a.status action_status,a.requires_approval action_requires_approval,a.execution_target action_execution_target,a.capability_key action_capability_key FROM agent_workflow_runs r INNER JOIN agent_workflow_actions a ON a.id=r.current_action_id AND a.run_id=r.id AND a.owner_user_id=r.owner_user_id WHERE r.id=? AND r.owner_user_id=? AND a.id=? LIMIT 1');
     $stmt->execute([$runId,$uid,$actionId]);$row=$stmt->fetch();
     if(!is_array($row))return null;
     if((string)$row['status']!=='executing'||(string)$row['action_status']!=='executing')return null;
@@ -57,9 +57,7 @@ function agent_worker_cloud_brain_priority_v1910(array $user,array $run): ?array
 {
     try{
         $state=function_exists('agent_cognitive_loop_v310_state')?agent_cognitive_loop_v310_state($user):[];
-        if(function_exists('agent_cognitive_loop_v310_run')&&!agent_cognitive_loop_v310_state_fresh($state,VP3_AGENT_COGNITIVE_LOOP_STATE_MAX_AGE_SECONDS_V310)){
-            agent_cognitive_loop_v310_run($user);
-        }
+        if(function_exists('agent_cognitive_loop_v310_run')&&!agent_cognitive_loop_v310_state_fresh($state,VP3_AGENT_COGNITIVE_LOOP_STATE_MAX_AGE_SECONDS_V310))agent_cognitive_loop_v310_run($user);
     }catch(Throwable $e){}
     if(!function_exists('agent_workflow_find_brain_priority_v1400'))return null;
     return agent_workflow_find_brain_priority_v1400($user,(string)($run['source_key']??''),(string)($run['source_hash']??''));
@@ -68,10 +66,7 @@ function agent_worker_cloud_brain_priority_v1910(array $user,array $run): ?array
 function agent_worker_cloud_result_v1910(PDO $pdo,array $user,array $claim,bool $success,string $summary,array $result=[],string $errorClass='',bool $retryable=false): array
 {
     $runId=(int)($claim['run_id']??0);$actionId=(int)($claim['action']['id']??0);$attempt=max(1,(int)($claim['action']['attempt_count']??1));
-    return agent_job_record_result_v1900(
-        $pdo,$user,$runId,$actionId,(string)($claim['lease_token']??''),
-        'v1910-cloud-'.$runId.'-'.$actionId.'-'.$attempt,$success,$summary,$result,$errorClass,$retryable
-    );
+    return agent_job_record_result_v1900($pdo,$user,$runId,$actionId,(string)($claim['lease_token']??''),'v1910-cloud-'.$runId.'-'.$actionId.'-'.$attempt,$success,$summary,$result,$errorClass,$retryable);
 }
 
 function agent_worker_cloud_execute_once_v1910(PDO $pdo,array $user,int $limit=25): array
@@ -86,20 +81,20 @@ function agent_worker_cloud_execute_once_v1910(PDO $pdo,array $user,int $limit=2
 
     $type=strtolower(trim((string)($run['action_type']??'')));
     $capability=trim((string)($run['action_capability_key']??''));
-    $label=trim((string)($run['action_label']??''));
     $instruction=trim((string)($run['action_summary']??''));
+    $allowedTypes=['read'=>true,'resolve'=>true,'prepare'=>true,'verify'=>true,'execute'=>true];
+    if(!isset($allowedTypes[$type])){
+        $receipt=agent_worker_cloud_result_v1910($pdo,$user,$claim,false,'Cloud execution stopped because the workflow action type is not allowlisted.',[],'cloud_action_type_unavailable',false);
+        return ['ok'=>false,'reason'=>'action_type_unavailable','receipt'=>$receipt,'build'=>VP3_AGENT_WORKER_CLOUD_V1910];
+    }
+
     $priority=agent_worker_cloud_brain_priority_v1910($user,$run);
     $priorityTitle=trim((string)($priority['title']??''));
     $priorityReason=trim((string)($priority['reason']??''));
     $priorityPrompt=trim((string)($priority['prompt']??''));
 
     if($type==='execute'&&!isset(agent_worker_cloud_analysis_capabilities_v1910()[$capability])){
-        $receipt=agent_worker_cloud_result_v1910(
-            $pdo,$user,$claim,false,
-            'Cloud execution stopped because this action has no canonical domain executor. No external side effect was attempted.',
-            ['effect_state'=>'not_executed','capability'=>$capability],
-            'cloud_domain_executor_unavailable',false
-        );
+        $receipt=agent_worker_cloud_result_v1910($pdo,$user,$claim,false,'Cloud execution stopped because this action has no canonical domain executor. No external side effect was attempted.',['effect_state'=>'not_executed','capability'=>$capability],'cloud_domain_executor_unavailable',false);
         return ['ok'=>false,'reason'=>'domain_executor_unavailable','receipt'=>$receipt,'build'=>VP3_AGENT_WORKER_CLOUD_V1910];
     }
 
@@ -109,14 +104,10 @@ function agent_worker_cloud_execute_once_v1910(PDO $pdo,array $user,int $limit=2
         'prepare'=>'Agent Brain context prepared the next workflow action.',
         'verify'=>'The orchestration result was verified against the current Agent Brain context.',
         'execute'=>'The approved Cloud analysis/preparation capability completed without a direct domain mutation.',
-        default=>'The Cloud orchestration step completed without a direct domain mutation.',
     };
     $result=[
-        'effect_state'=>'orchestration_complete',
-        'action_type'=>$type,
-        'capability'=>$capability,
-        'brain_priority_found'=>$priority!==null,
-        'brain_title'=>mb_strimwidth($priorityTitle,0,190,'…'),
+        'effect_state'=>'orchestration_complete','action_type'=>$type,'capability'=>$capability,
+        'brain_priority_found'=>$priority!==null,'brain_title'=>mb_strimwidth($priorityTitle,0,190,'…'),
         'brain_reason'=>mb_strimwidth($priorityReason,0,500,'…'),
         'prepared_instruction'=>mb_strimwidth($priorityPrompt!==''?$priorityPrompt:$instruction,0,800,'…'),
         'domain_mutation_performed'=>false,
