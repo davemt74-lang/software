@@ -3,7 +3,10 @@ import fs from 'node:fs';
 
 const transcriptions = fs.readFileSync('transcriptions.php', 'utf8');
 const teams = fs.readFileSync('teams.php', 'utf8');
+const services = fs.readFileSync('services.php', 'utf8');
+const renderer = fs.readFileSync('includes/vp3-marketing-pages.php', 'utf8');
 const shell = fs.readFileSync('includes/vp3-public.php', 'utf8');
+const index = fs.readFileSync('index.php', 'utf8');
 
 for (const [name, source, active] of [
   ['Transcriptions', transcriptions, 'transcriptions'],
@@ -29,10 +32,17 @@ const desktopNav = shell.match(/<nav class="vp3-public-links"[\s\S]*?<\/nav>/)?.
 const mobileNav = shell.match(/<nav aria-label="Mobile navigation">[\s\S]*?<\/nav>/)?.[0] || '';
 const footerNav = shell.match(/<nav class="vp3-public-footer-links"[\s\S]*?<\/nav>/)?.[0] || '';
 for (const nav of [desktopNav, mobileNav, footerNav]) {
-  assert.match(nav, /url\('\/transcriptions\.php'\)/, 'all public navigation surfaces must link to Transcriptions');
-  assert.match(nav, /url\('\/teams\.php'\)/, 'all public navigation surfaces must link to Teams');
+  for (const route of ['/product.php', '/services.php', '/homeserver.php', '/pricing.php', '/about.php']) {
+    assert.match(nav, new RegExp(`url\\('\\/${route.slice(1).replace('.', '\\.')}\\'\\)`), `all public navigation surfaces must link to ${route}`);
+  }
   assert.doesNotMatch(nav, /index\.php#transcriptions|index\.php#teams/, 'public navigation must not fall back to homepage product anchors');
 }
 assert.doesNotMatch(footerNav, />Features</, 'shared public footer must not link to the removed Features section');
+
+assert.match(services, /vp3_render_marketing_page\('services'\)/, 'Services must use the shared marketing page renderer');
+assert.match(renderer, /\['Transcription',[\s\S]*'\/transcriptions\.php'\]/, 'Services data must expose the standalone Transcriptions page');
+assert.match(renderer, /Team scheduling[\s\S]*'\/teams\.php'/, 'marketing data must preserve the standalone Teams destination');
+assert.match(index, /href="<\?= e\(\$transcriptionsUrl\) \?>"/, 'homepage mega menu must expose Transcriptions');
+assert.match(index, /href="<\?= e\(\$teamsUrl\) \?>"/, 'homepage mega menu must expose Teams');
 
 console.log('public-product-pages-contract: PASS');

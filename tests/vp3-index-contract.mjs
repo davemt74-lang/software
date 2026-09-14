@@ -3,6 +3,7 @@ import fs from 'node:fs';
 
 const index = fs.readFileSync('index.php', 'utf8');
 const css = fs.readFileSync('vp3-index-ai-assistants.css', 'utf8');
+const megaCss = fs.readFileSync('vp3-index-mega-menu.css', 'utf8');
 
 assert.match(index, /redirect_logged_in_public_page\(\)/, 'homepage must preserve logged-in redirect behavior');
 assert.match(index, /<title>VP3 AI Assistants — Turn Every Conversation Into What’s Next<\/title>/, 'homepage must use the AI Assistants positioning');
@@ -11,10 +12,16 @@ assert.match(index, /vp3-main-header_bg\.png/, 'homepage must use the supplied V
 assert.match(css, /\.hero\{[^}]*min-height:/, 'homepage must define a full hero stage');
 assert.match(css, /\.hero-image\{[^}]*object-fit:cover/, 'hero image must fill the hero responsively');
 
-for (const route of ['/signup.php', '/book-demo.php', '/login.php', '/pricing.php', '/about.php', '/transcriptions.php', '/teams.php']) {
+for (const route of ['/signup.php', '/book-demo.php', '/login.php', '/pricing.php', '/about.php', '/transcriptions.php', '/teams.php', '/product.php', '/services.php', '/homeserver.php']) {
   assert.ok(index.includes(`url('${route}')`), `homepage must preserve ${route}`);
 }
-assert.match(index, /\$homeServerUrl\s*=\s*'#homeserver'/, 'HomeServer CTA must target the homepage HomeServer section');
+assert.match(index, /\$homeServerUrl\s*=\s*url\('\/homeserver\.php'\)/, 'HomeServer CTA must target the standalone HomeServer page');
+assert.match(index, /\$productUrl\s*=\s*url\('\/product\.php'\)/, 'Product mega-menu landing must target the standalone Product page');
+assert.match(index, /\$servicesUrl\s*=\s*url\('\/services\.php'\)/, 'Services mega-menu landing must target the standalone Services page');
+assert.match(index, /<section class="homeserver" id="homeserver"/, 'homepage must retain the HomeServer editorial section');
+assert.match(index, /vp3-index-mega-menu\.css/, 'homepage must load the responsive mega-menu stylesheet');
+assert.match(index, /desktop-nav mega-nav/, 'homepage must expose the desktop mega-menu navigation');
+assert.match(index, /mega-mobile-nav/, 'homepage must expose the mobile mega-menu navigation');
 assert.doesNotMatch(index, /homeserver-download\.php/, 'homepage must not link to a missing HomeServer download route');
 assert.doesNotMatch(index, /App Store|Google Play|VP3 for iPhone|VP3 for Android/, 'homepage must not expose obsolete app-store CTAs');
 
@@ -53,5 +60,6 @@ assert.match(css, /\.feature-grid\{[^}]*grid-template-columns:repeat\(4,1fr\)/, 
 assert.match(css, /@media\(max-width:1050px\)[\s\S]*\.feature-grid,.value-grid\{grid-template-columns:repeat\(2,1fr\)/, 'feature cards must collapse on tablet');
 assert.match(css, /@media\(max-width:720px\)[\s\S]*\.feature-grid,.value-grid,.proof-grid\{grid-template-columns:1fr\}/, 'feature cards must collapse to one column on small screens');
 assert.match(css, /\.check-list li\{[^}]*grid-template-columns:28px 1fr/, 'timeline checklist must use a two-column icon/content grid');
+assert.match(megaCss, /@media\(max-width:/, 'mega menu must include responsive rules');
 
 console.log('vp3-index-contract: PASS');

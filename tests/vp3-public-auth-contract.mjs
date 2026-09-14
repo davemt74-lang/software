@@ -25,8 +25,9 @@ const resetSql = read('sql/vp3-password-reset.sql');
 assert.match(shell, /function vp3_public_header/, 'VP3 must own one canonical public header');
 assert.match(shell, /function vp3_public_footer/, 'VP3 must own one canonical public footer');
 assert.match(shell, />VP3</, 'canonical public shell must render VP3 branding');
-assert.match(shell, /url\('\/transcriptions\.php'\)/, 'public shell must link to the standalone Transcriptions page');
-assert.match(shell, /url\('\/teams\.php'\)/, 'public shell must link to the standalone Teams page');
+for (const route of ['/product.php', '/services.php', '/homeserver.php', '/pricing.php', '/about.php']) {
+  assert.ok(shell.includes(`url('${route}')`), `public shell must link to ${route}`);
+}
 assert.doesNotMatch(shell, /index\.php#features|index\.php#transcriptions|index\.php#teams/, 'public shell must not depend on removed homepage product anchors');
 assert.match(shell, /vp3-public-mobile-menu/, 'canonical public shell must expose responsive navigation');
 assert.match(shell, /Open VP3/, 'authenticated visitors must get a product entry action instead of Sign in');
