@@ -54,6 +54,33 @@ function profile_revenue_money_rows_v180(array $buckets): array
     return $rows;
 }
 
+function profile_revenue_money_map_v180(array $rows): array
+{
+    $map=[];
+    foreach($rows as $row){
+        $currency=profile_revenue_currency_v180($row['currency']??'');
+        if($currency==='')continue;
+        $map[$currency]=max(0,(int)($row['value_cents']??0));
+    }
+    return $map;
+}
+
+function profile_revenue_money_change_v180(array $current,array $previous): array
+{
+    $currentMap=profile_revenue_money_map_v180($current);
+    $previousMap=profile_revenue_money_map_v180($previous);
+    $currencies=array_values(array_unique(array_merge(array_keys($currentMap),array_keys($previousMap))));
+    $rows=[];
+    foreach($currencies as $currency){
+        $currentCents=(int)($currentMap[$currency]??0);
+        $previousCents=(int)($previousMap[$currency]??0);
+        $change=profile_revenue_change_v180($currentCents,$previousCents);
+        $rows[]=['currency'=>$currency,'current_cents'=>$currentCents,'previous_cents'=>$previousCents,'delta_cents'=>(int)$change['delta'],'percent'=>$change['percent']];
+    }
+    usort($rows,static fn(array $a,array $b): int=>$b['current_cents']<=>$a['current_cents']);
+    return $rows;
+}
+
 function profile_revenue_source_v180(array $metadata): array
 {
     $campaign=profile_revenue_text_v180($metadata['utm_campaign']??'',120);
@@ -86,10 +113,10 @@ function profile_revenue_change_v180(float|int $current,float|int $previous): ar
     return ['current'=>$current,'previous'=>$previous,'delta'=>$delta,'percent'=>$pct];
 }
 
-function profile_revenue_period_snapshot_v180(array $rows,DateTimeImmutable $start,DateTimeImmutable $end,array $sessionSources): array
+function profile_revenue_period_snapshot_v180(array $rows,DateTimeImmutable $start,DateTimeImmutable $end): array
 {
     $counts=['views'=>0,'booking_intents'=>0,'product_intents'=>0,'booking_conversions'=>0,'product_conversions'=>0];
-    $revenue=[];
+    $revenue=[];$bookingRevenue=[];$productRevenue=[];
     foreach($rows as $row){
         $at=strtotime((string)($row['created_at']??''));
         if($at===false||$at<$start->getTimestamp()||$at>=$end->getTimestamp())continue;
@@ -101,7 +128,11 @@ function profile_revenue_period_snapshot_v180(array $rows,DateTimeImmutable $sta
         elseif($type==='product_converted')$counts['product_conversions']++;
         if(in_array($type,['booking_converted','product_converted'],true)){
             $metadata=$row['_meta']??profile_revenue_meta_v180((string)($row['metadata_json']??''));
-            profile_revenue_money_add_v180($revenue,profile_revenue_currency_v180($metadata['currency']??''),max(0,(int)($metadata['value_cents']??0)));
+            $currency=profile_revenue_currency_v180($metadata['currency']??'');
+            $cents=max(0,(int)($metadata['value_cents']??0));
+            profile_revenue_money_add_v180($revenue,$currency,$cents);
+            if($type==='booking_converted')profile_revenue_money_add_v180($bookingRevenue,$currency,$cents);
+            else profile_revenue_money_add_v180($productRevenue,$currency,$cents);
         }
     }
     $intents=$counts['booking_intents']+$counts['product_intents'];
@@ -113,6 +144,8 @@ function profile_revenue_period_snapshot_v180(array $rows,DateTimeImmutable $sta
         'booking_conversion_rate'=>profile_revenue_rate_v180($counts['booking_conversions'],$counts['booking_intents']),
         'product_conversion_rate'=>profile_revenue_rate_v180($counts['product_conversions'],$counts['product_intents']),
         'revenue'=>profile_revenue_money_rows_v180($revenue),
+        'booking_revenue'=>profile_revenue_money_rows_v180($bookingRevenue),
+        'product_revenue'=>profile_revenue_money_rows_v180($productRevenue),
     ];
 }
 
@@ -125,6 +158,7 @@ function profile_revenue_period_comparison_v180(array $current,array $previous):
         'conversion_rate_points'=>round((float)($current['conversion_rate']??0)-(float)($previous['conversion_rate']??0),1),
         'booking_rate_points'=>round((float)($current['booking_conversion_rate']??0)-(float)($previous['booking_conversion_rate']??0),1),
         'product_rate_points'=>round((float)($current['product_conversion_rate']??0)-(float)($previous['product_conversion_rate']??0),1),
+        'revenue'=>profile_revenue_money_change_v180($current['revenue']??[],$previous['revenue']??[]),
     ];
 }
 
@@ -180,7 +214,7 @@ function profile_revenue_top_targets_v180(array $rows,DateTimeImmutable $start,D
         $scoreB=((int)$b['conversions']*100000)+((int)$b['intents']*100)+(int)round((float)($b['conversion_rate']??0));
         return $scoreB<=>$scoreA;
     });
-    return array_slice($rowsOut,0,max(1,min(25,$limit)));
+    return array_slice($rowsOut,0,max(1,min(250,$limit)));
 }
 
 function profile_revenue_sources_v180(array $rows,DateTimeImmutable $start,DateTimeImmutable $end,array $sessionSources,int $limit=10): array
@@ -289,7 +323,8 @@ function profile_revenue_intelligence_v180(PDO $pdo,int $ownerUserId): array
 {
     $empty=[
         'version'=>VP3_PROFILE_REVENUE_INTELLIGENCE_V180,
-        'attribution_model'=>'session_first_touch','periods'=>[],'revenue_all_time'=>[],
+        'attribution_model'=>'session_first_touch','rate_model'=>'period_event_ratio','periods'=>[],
+        'revenue_all_time'=>[],'booking_revenue_all_time'=>[],'product_revenue_all_time'=>[],
         'top_targets'=>[],'sources'=>[],'opportunities'=>[],'insights'=>[],
     ];
     if($ownerUserId<1)return $empty;
@@ -306,8 +341,7 @@ function profile_revenue_intelligence_v180(PDO $pdo,int $ownerUserId): array
             $row['_meta']=$metadata;
             $sessionId=max(0,(int)($row['profile_session_id']??0));
             if($sessionId<1)continue;
-            $candidate=profile_revenue_source_v180($metadata);
-            if(!isset($sessionSources[$sessionId])||($sessionSources[$sessionId]['type']==='direct'&&$candidate['type']!=='direct'))$sessionSources[$sessionId]=$candidate;
+            if(!isset($sessionSources[$sessionId]))$sessionSources[$sessionId]=profile_revenue_source_v180($metadata);
         }
         unset($row);
 
@@ -319,30 +353,38 @@ function profile_revenue_intelligence_v180(PDO $pdo,int $ownerUserId): array
         ];
         $periods=[];
         foreach($periodSpecs as $key=>[$currentStart,$currentEnd,$previousStart,$previousEnd]){
-            $current=profile_revenue_period_snapshot_v180($rows,$currentStart,$currentEnd,$sessionSources);
-            $previous=profile_revenue_period_snapshot_v180($rows,$previousStart,$previousEnd,$sessionSources);
+            $current=profile_revenue_period_snapshot_v180($rows,$currentStart,$currentEnd);
+            $previous=profile_revenue_period_snapshot_v180($rows,$previousStart,$previousEnd);
             $periods[$key]=['current'=>$current,'previous'=>$previous,'change'=>profile_revenue_period_comparison_v180($current,$previous)];
         }
 
-        $allRevenue=[];
-        $revenueStmt=$pdo->prepare("SELECT metadata_json FROM profile_events WHERE owner_user_id=? AND event_type IN ('booking_converted','product_converted')");
+        $allRevenue=[];$allBookingRevenue=[];$allProductRevenue=[];
+        $revenueStmt=$pdo->prepare("SELECT event_type,metadata_json FROM profile_events WHERE owner_user_id=? AND event_type IN ('booking_converted','product_converted')");
         $revenueStmt->execute([$ownerUserId]);
         while($row=$revenueStmt->fetch()){
             $metadata=profile_revenue_meta_v180((string)($row['metadata_json']??''));
-            profile_revenue_money_add_v180($allRevenue,profile_revenue_currency_v180($metadata['currency']??''),max(0,(int)($metadata['value_cents']??0)));
+            $currency=profile_revenue_currency_v180($metadata['currency']??'');
+            $cents=max(0,(int)($metadata['value_cents']??0));
+            profile_revenue_money_add_v180($allRevenue,$currency,$cents);
+            if((string)($row['event_type']??'')==='booking_converted')profile_revenue_money_add_v180($allBookingRevenue,$currency,$cents);
+            else profile_revenue_money_add_v180($allProductRevenue,$currency,$cents);
         }
 
         $start30=$now->modify('-30 days');
-        $topTargets=profile_revenue_top_targets_v180($rows,$start30,$now,12);
+        $allTargets=profile_revenue_top_targets_v180($rows,$start30,$now,250);
+        $topTargets=array_slice($allTargets,0,12);
         $sources=profile_revenue_sources_v180($rows,$start30,$now,$sessionSources,10);
-        $opportunities=profile_revenue_opportunities_v180($topTargets,$periods['30d']['current']);
+        $opportunities=profile_revenue_opportunities_v180($allTargets,$periods['30d']['current']);
         $insights=profile_revenue_insights_v180($periods,$topTargets,$sources,$opportunities);
 
         return [
             'version'=>VP3_PROFILE_REVENUE_INTELLIGENCE_V180,
             'attribution_model'=>'session_first_touch',
+            'rate_model'=>'period_event_ratio',
             'periods'=>$periods,
             'revenue_all_time'=>profile_revenue_money_rows_v180($allRevenue),
+            'booking_revenue_all_time'=>profile_revenue_money_rows_v180($allBookingRevenue),
+            'product_revenue_all_time'=>profile_revenue_money_rows_v180($allProductRevenue),
             'top_targets'=>$topTargets,
             'sources'=>$sources,
             'opportunities'=>$opportunities,
