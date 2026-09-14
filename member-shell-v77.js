@@ -2,8 +2,9 @@
   if (window.__VP3_MEMBER_SHELL_V77__) return;
   window.__VP3_MEMBER_SHELL_V77__ = true;
 
-  const build='profile-social-20260909';
+  const build='authenticated-shell-phase2-20260914';
   const memberBase=new URL('.',document.currentScript?.src||window.location.href);
+  const sidebar = document.getElementById('chatSidebar');
   const openSidebar = document.getElementById('openChatSidebar');
   const closeSidebar = document.getElementById('closeChatSidebar');
   const backdrop = document.getElementById('chatSidebarBackdrop');
@@ -15,12 +16,26 @@
   const profileDropdown = document.getElementById('chatProfileDropdown');
   let notificationTimer=0;
 
+  const activeShellKey=sidebar?.dataset.shellActive||document.querySelector('[data-member-header]')?.dataset.shellActive||'';
+  const activeShellSection=sidebar?.dataset.shellSection||document.querySelector('[data-member-header]')?.dataset.shellSection||'';
+  if(activeShellKey)document.body.dataset.vp3ShellActive=activeShellKey;
+  if(activeShellSection)document.body.dataset.vp3ShellSection=activeShellSection;
+
   if((notificationMenu||profileMenu)&&!document.querySelector('link[data-member-header-ui]')){
     const css=document.createElement('link');css.rel='stylesheet';css.dataset.memberHeaderUi='1';css.href=new URL(`chat-header-ui.css?v=${build}`,memberBase).href;document.head.appendChild(css);
   }
 
   const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
-  function closeNav() { document.body.classList.remove('chat-nav-open'); }
+  function closeNav(restoreFocus=false) {
+    const wasOpen=document.body.classList.contains('chat-nav-open');
+    document.body.classList.remove('chat-nav-open');
+    if(wasOpen&&restoreFocus)openSidebar?.focus();
+  }
+  function openNav(){
+    closeNotifications();closeProfile();
+    document.body.classList.add('chat-nav-open');
+    window.requestAnimationFrame(()=>closeSidebar?.focus());
+  }
   function closeNotifications() {
     if (!notificationButton || !notificationDropdown) return;
     notificationDropdown.hidden = true;
@@ -45,9 +60,13 @@
     try{const endpoint=new URL('api/member-notifications.php',memberBase).pathname,r=await fetch(endpoint,{credentials:'same-origin',cache:'no-store'}),d=await r.json().catch(()=>null);if(r.ok)renderNotificationState(d);}catch(_e){}
   }
 
-  openSidebar?.addEventListener('click',() => { closeNotifications(); closeProfile(); document.body.classList.add('chat-nav-open'); });
-  closeSidebar?.addEventListener('click',closeNav);
-  backdrop?.addEventListener('click',closeNav);
+  openSidebar?.addEventListener('click',openNav);
+  closeSidebar?.addEventListener('click',()=>closeNav(true));
+  backdrop?.addEventListener('click',()=>closeNav(true));
+  sidebar?.addEventListener('click',event=>{
+    const link=event.target.closest?.('a[href]');
+    if(link&&window.matchMedia('(max-width: 760px)').matches)closeNav(false);
+  });
 
   notificationButton?.addEventListener('click',event => {
     event.stopPropagation();closeProfile();
@@ -71,7 +90,8 @@
   });
   document.addEventListener('keydown',event => {
     if (event.key !== 'Escape') return;
-    closeNav();closeNotifications();closeProfile();
+    const navWasOpen=document.body.classList.contains('chat-nav-open');
+    closeNav(navWasOpen);closeNotifications();closeProfile();
   });
 
   if (document.querySelector('.account-canvas-content')) {

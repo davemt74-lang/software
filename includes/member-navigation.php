@@ -39,6 +39,78 @@ function member_navigation_package_permission(?array $user,string $permission,bo
     return $legacyFallback;
 }
 
+/**
+ * Resolve the canonical member-navigation key from the executing script.
+ * Pages may still provide an explicit sidebar key; this is the safe fallback
+ * that keeps active state consistent across legacy and newer VP3 workspaces.
+ */
+function member_navigation_active_key(?string $scriptName = null): string
+{
+    $scriptName ??= (string)($_SERVER['SCRIPT_NAME'] ?? '');
+    $path='/' . ltrim(str_replace('\\','/',trim($scriptName)),'/');
+    if($path==='/')return '';
+    if($path==='/admin/index.php')return 'admin';
+    if($path==='/admin/team-workspaces.php')return 'team_workspaces';
+
+    $map=[
+        'chat.php'=>'chat',
+        'contacts.php'=>'contacts',
+        'profile-agent.php'=>'profile_agent',
+        'messages.php'=>'messages',
+        'knowledge.php'=>'knowledge',
+        'local-knowledge.php'=>'local_knowledge',
+        'memory.php'=>'memory',
+        'artist-listening.php'=>'transcriptions',
+        'calendar.php'=>'calendar',
+        'calendar-event.php'=>'calendar',
+        'account.php'=>'account',
+        'settings-homeserver.php'=>'homeserver',
+        'plugins.php'=>'plugins',
+        'subscription.php'=>'subscription',
+        'token-packs.php'=>'token_packs',
+        'ai-usage.php'=>'ai_usage',
+        'scheduling.php'=>'scheduling',
+        'appointment-lifecycle.php'=>'appointment_lifecycle',
+        'commerce.php'=>'commerce',
+        'profile-commerce-products.php'=>'profile_commerce',
+        'profile-commerce-delivery.php'=>'profile_commerce_delivery',
+        'profile-commerce-refund-requests.php'=>'profile_commerce_refunds',
+        'voice-profile.php'=>'voice_profile',
+        'team.php'=>'team',
+        'team-scheduling.php'=>'team_scheduling',
+        'music-workspace.php'=>'music_workspace',
+    ];
+    return $map[basename($path)]??'';
+}
+
+function member_navigation_section_label(string $key): string
+{
+    return match($key){
+        'chat','profile_agent','voice_profile'=>'Agent',
+        'messages','contacts','knowledge','local_knowledge','memory','transcriptions','calendar'=>'Workspace',
+        'scheduling','appointment_lifecycle','commerce','profile_commerce','profile_commerce_delivery','profile_commerce_refunds'=>'Business',
+        'team','team_scheduling','team_workspaces'=>'Team',
+        'music_workspace'=>'Creator',
+        'account','homeserver','plugins','subscription','token_packs','ai_usage'=>'Account',
+        'admin'=>'Administration',
+        default=>'Workspace',
+    };
+}
+
+function member_navigation_group_label(string $group): string
+{
+    return match($group){
+        'primary'=>'Agent',
+        'identity'=>'Account & Data',
+        'agent'=>'Business & Automation',
+        'collaboration'=>'Team',
+        'creator'=>'Creator',
+        'admin'=>'Administration',
+        'session'=>'Session',
+        default=>'More',
+    };
+}
+
 function member_agent_voice_toggle_html(?array $user = null): string
 {
     $user??=current_user();
