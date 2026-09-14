@@ -27,7 +27,9 @@ assert.match(api, /profile_agent_transcript_brain_context_v255/, 'public Profile
 assert.match(client, /appendSafeLinkedText/, 'Profile Agent messages must render safe clickable links');
 assert.match(client, /\['http:','https:'\]/, 'only HTTP and HTTPS links may be activated');
 assert.match(client, /noopener noreferrer nofollow/, 'external Profile Agent links must be isolated and nofollowed');
-assert.doesNotMatch(client, /data-profile-booking-link|Book a time with/, 'client must not inject an unconditional booking CTA when no public schedule exists');
+assert.match(client, /profileBookingTab=document\.querySelector\('\[data-profile-tab="booking"\]'\)/, 'Profile Agent booking CTA must be gated by the canonical public Booking tab');
+assert.match(client, /if\(profileBookingTab&&profileName/, 'Profile Agent booking CTA must not render when no public booking types exist');
+assert.match(client, /dataset\.profileBookingLink='1'/, 'eligible public profiles must retain the native Book a time entry point');
 assert.match(client, /type==='agent'\|\|type==='owner'/, 'only trusted response surfaces should receive automatic linkification');
 assert.match(routes, /profile-agent\)\\\.js\$[^]*Cache-Control "no-cache, must-revalidate"/, 'Profile Agent client changes must not be hidden behind stale static caching');
 
