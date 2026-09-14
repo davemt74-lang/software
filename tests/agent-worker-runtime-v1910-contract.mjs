@@ -87,10 +87,16 @@ assert.ok(cloud.includes("'calendar.review_conflict'=>true"));
 assert.ok(cloud.includes("'calendar.prepare_commitment'=>true"));
 assert.ok(cloud.includes("'scheduling.prepare_followup'=>true"));
 assert.ok(cloud.includes("'commerce.review_next_action'=>true"));
-assert.ok(!cloud.includes("'agent.next_action'=>true"), 'generic Agent next-action execute must fail closed without a canonical domain executor');
+assert.ok(!cloud.includes("'agent.next_action'=>true"));
 assert.ok(cloud.includes('a.requires_approval action_requires_approval'));
 assert.ok(cloud.includes("hash_equals((string)$row['lease_token']"));
 assert.ok(cloud.includes("'v1910-cloud-'.$runId.'-'.$actionId.'-'.$attempt"));
+assert.ok(cloud.includes('agent_worker_cloud_poll_v1910'));
+
+// Canonical distributed poll routes each executor to its own authority model.
+assert.ok(worker.includes("if($executor==='cloud')return agent_worker_cloud_poll_v1910"));
+assert.ok(worker.includes("if($executor==='homeserver')return agent_worker_runtime_poll_v1910"));
+assert.ok(worker.includes("'invalid_executor'"));
 
 // Production invocation is CLI-only, single-instance and outside web requests.
 assert.ok(runner.includes("if(PHP_SAPI!=='cli')"));
@@ -102,7 +108,7 @@ assert.ok(runner.includes("--loop"));
 assert.ok(runner.includes("--executor"));
 assert.ok(runner.includes('agent_cognitive_loop_v310_user'));
 assert.ok(deploy.includes('rsync -a ./ _deploy/'));
-assert.ok(!deploy.includes("--exclude='agent-worker-v1910.php'"), 'production package must include the CLI worker runner');
+assert.ok(!deploy.includes("--exclude='agent-worker-v1910.php'"));
 
 // Browser surfaces remain observability-only.
 assert.ok(api.includes('agent_worker_runtime_summary_v1910'));
