@@ -14,6 +14,26 @@
   let lastMessageId=0;
   let pollTimer=0,presenceTimer=0;
 
+  // Preserve the native scheduling CTA contract, but expose it only when the
+  // canonical Profile renderer has a Booking tab backed by public event types.
+  const profileBookingTab=document.querySelector('[data-profile-tab="booking"]');
+  const profileName=document.querySelector('.profile-name');
+  if(profileBookingTab&&profileName&&!profileName.querySelector('[data-profile-booking-link]')){
+    const bookingLink=document.createElement('a');
+    const profileBase=new URL('.',window.location.href);
+    bookingLink.dataset.profileBookingLink='1';
+    bookingLink.href=new URL(`${encodeURIComponent(cfg.username)}/book`,profileBase).href;
+    bookingLink.textContent='Book a time';
+    bookingLink.setAttribute('aria-label',`Book a time with ${cfg.username}`);
+    Object.assign(bookingLink.style,{
+      display:'inline-flex',alignItems:'center',justifyContent:'center',marginTop:'10px',
+      minHeight:'34px',padding:'0 13px',borderRadius:'999px',background:'#fff',color:'#171513',
+      border:'1px solid rgba(255,255,255,.7)',textDecoration:'none',fontSize:'11px',fontWeight:'850',
+      boxShadow:'0 5px 18px rgba(0,0,0,.16)'
+    });
+    profileName.appendChild(bookingLink);
+  }
+
   function appendSafeLinkedText(container,text){
     const input=String(text||'');
     const pattern=/https?:\/\/[^\s<>"']+/gi;
