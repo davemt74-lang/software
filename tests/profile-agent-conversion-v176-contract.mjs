@@ -17,9 +17,11 @@ assert.doesNotMatch(helper, /user_calendar_events|agent_scheduling_bookings/, 'b
 assert.doesNotMatch(helper, /SELECT\s|FROM\s+agent_scheduling/i, 'booking context must delegate scheduling reads to the canonical public helper');
 
 assert.match(bridge, /profile-agent-booking-context-v176\.php/, 'Profile Agent bridge must load booking conversion context');
-assert.match(bridge, /profile_agent_booking_context_v176/, 'Profile Agent bridge must append public booking context');
-assert.match(bridge, /profile_commerce_agent_context_v900/, 'existing public Commerce context must remain available');
-assert.match(bridge, /array_merge\(\$conversionContext, \$context\)/, 'public conversion context must survive when Agent Brain context is available');
+assert.match(bridge, /\$bookingContext = profile_agent_booking_context_v176/, 'Profile Agent bridge must append public booking context');
+assert.match(bridge, /\$commerceContext = profile_commerce_agent_context_v900/, 'existing public Commerce context must remain independently available');
+assert.match(bridge, /\$commerceContext = array_merge\(\$bookingContext, \$commerceContext\)/, 'booking context must join the public conversion context without replacing Commerce');
+assert.match(bridge, /return \$commerceContext;/, 'public conversion context must survive when Agent Brain is unavailable');
+assert.match(bridge, /return array_merge\(\$commerceContext, \$context\)/, 'public conversion context must survive when Agent Brain context is available');
 assert.match(api, /profile_agent_transcript_brain_context_v255/, 'public Profile Agent message flow must consume the supplemental conversion context');
 
 assert.match(client, /appendSafeLinkedText/, 'Profile Agent messages must render safe clickable links');
