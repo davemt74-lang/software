@@ -1,0 +1,35 @@
+name: Profile Runtime Resilience
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        php: ['8.1','8.3']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Profile PHP syntax
+        run: php -l profile.php
+      - name: Contract syntax
+        run: node --check tests/profile-runtime-resilience-contract.mjs
+      - name: Profile runtime resilience contract
+        run: node tests/profile-runtime-resilience-contract.mjs
+      - name: Retained Profile cleanup contract
+        run: node tests/profile-cleanup-v174-contract.mjs
+      - name: Retained Profile Commerce contract
+        run: node tests/profile-commerce-v900-contract.mjs
