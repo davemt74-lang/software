@@ -3,6 +3,7 @@ declare(strict_types=1);
 require dirname(__DIR__) . '/includes/bootstrap.php';
 require_once dirname(__DIR__) . '/includes/agent-workflow-runs-v1400.php';
 require_once dirname(__DIR__) . '/includes/agent-job-engine-v1900.php';
+require_once dirname(__DIR__) . '/includes/agent-worker-runtime-v1910.php';
 header('Content-Type: application/json; charset=UTF-8');
 header('Cache-Control: no-store');
 
@@ -12,16 +13,17 @@ if(!$pdo||!agent_workflow_schema_ready_v1400($pdo)){http_response_code(503);echo
 
 try{
     if($_SERVER['REQUEST_METHOD']==='GET'){
-        $runId=max(0,(int)($_GET['id']??0));
+        $runId=max(0,(int)($_GET['id']??0));$durable=agent_job_engine_schema_ready_v1900($pdo);
+        $workers=$durable?agent_worker_runtime_summary_v1910($pdo,$user):['build'=>'','workers'=>[]];
         if($runId>0){
             $row=agent_workflow_row_v1400($pdo,(int)$user['id'],$runId);
             if(!$row){http_response_code(404);echo json_encode(['ok'=>false,'error'=>'Workflow not found.']);exit;}
-            $run=agent_job_engine_schema_ready_v1900($pdo)?agent_job_public_run_v1900($pdo,$row,true):agent_workflow_public_run_v1400($pdo,$row,true);
-            echo json_encode(['ok'=>true,'run'=>$run,'build'=>agent_job_engine_schema_ready_v1900($pdo)?VP3_AGENT_JOB_ENGINE_V1900:VP3_AGENT_WORKFLOW_RUNS_V1400],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);exit;
+            $run=$durable?agent_job_public_run_v1900($pdo,$row,true):agent_workflow_public_run_v1400($pdo,$row,true);
+            echo json_encode(['ok'=>true,'run'=>$run,'workers'=>$workers,'build'=>$durable?VP3_AGENT_JOB_ENGINE_V1900:VP3_AGENT_WORKFLOW_RUNS_V1400],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);exit;
         }
-        $limit=max(1,min(50,(int)($_GET['limit']??20)));$runs=[];$durable=agent_job_engine_schema_ready_v1900($pdo);
+        $limit=max(1,min(50,(int)($_GET['limit']??20)));$runs=[];
         foreach(agent_workflow_recent_v1400($pdo,$user,$limit) as $row)$runs[]=$durable?agent_job_public_run_v1900($pdo,$row,false):agent_workflow_public_run_v1400($pdo,$row,false);
-        echo json_encode(['ok'=>true,'runs'=>$runs,'build'=>$durable?VP3_AGENT_JOB_ENGINE_V1900:VP3_AGENT_WORKFLOW_RUNS_V1400],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);exit;
+        echo json_encode(['ok'=>true,'runs'=>$runs,'workers'=>$workers,'build'=>$durable?VP3_AGENT_JOB_ENGINE_V1900:VP3_AGENT_WORKFLOW_RUNS_V1400],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);exit;
     }
     if($_SERVER['REQUEST_METHOD']!=='POST'){http_response_code(405);echo json_encode(['ok'=>false,'error'=>'Method not allowed.']);exit;}
     $input=json_decode((string)file_get_contents('php://input'),true);if(!is_array($input))$input=$_POST;
