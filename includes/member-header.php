@@ -71,24 +71,26 @@ if (!$memberHeaderRuntimeRendered):
     $memberHeaderTranscriptionBuild = 'chat-transcription-canvas-v243-layout-20260905';
     $memberHeaderRecordingUiBuild = 'chat-recording-results-v206-20260901';
     $memberAgentVoiceMenuBuild = 'agent-voice-menu-20260913';
+    $memberRuntimeBridgeBuild = 'authenticated-vp3-runtime-cleanup-20260914';
 ?>
 <link rel="stylesheet" data-member-header-ui href="<?= e(url('/chat-header-ui.css?v=' . $memberHeaderUiBuild)) ?>">
 <link rel="stylesheet" data-member-page-scroll href="<?= e(url('/member-page-scroll.css?v=' . $memberHeaderScrollBuild)) ?>">
 <?php if ($memberHeaderRenderAgentVoiceAssets): ?><link rel="stylesheet" data-member-agent-voice-menu href="<?= e(url('/member-agent-voice-menu.css?v=' . $memberAgentVoiceMenuBuild)) ?>"><?php endif; ?>
+<script data-vp3-authenticated-runtime-bridge src="<?= e(url('/vp3-authenticated-runtime-bridge.js?v=' . $memberRuntimeBridgeBuild)) ?>"></script>
 <script data-member-shell-runtime src="<?= e(url('/member-shell-v77.js?v=authenticated-shell-phase2-20260914')) ?>" defer></script>
 <?php if ($memberHeaderRenderAgentVoiceAssets): ?><script data-member-agent-voice-menu src="<?= e(url('/member-agent-voice-menu.js?v=' . $memberAgentVoiceMenuBuild)) ?>" defer></script><?php endif; ?>
 <?php if ($memberHeaderCanChat): ?>
 <link rel="stylesheet" data-chat-notification-drawer href="<?= e(url('/chat-notifications-drawer-v240.css?v=' . $memberHeaderNotificationBuild)) ?>">
-<script data-chat-notification-drawer-config>window.STONEFELLOW_NOTIFICATION_DRAWER=<?= json_encode([
+<script data-chat-notification-drawer-config>window.VP3_NOTIFICATION_DRAWER=<?= json_encode([
   'endpoint'=>url('/api/chat-notifications-brain-v240.php'),
   'csrf'=>csrf_token(),
   'build'=>$memberHeaderNotificationBuild,
   'agentVoiceEnabled'=>$memberHeaderAgentVoiceEnabled,
-], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>;</script>
+], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>;window.STONEFELLOW_NOTIFICATION_DRAWER=window.VP3_NOTIFICATION_DRAWER;</script>
 <script data-chat-notification-drawer src="<?= e(url('/chat-notifications-drawer-v240.js?v=' . $memberHeaderNotificationBuild)) ?>"></script>
 <?php endif; ?>
 <?php if (has_permission('artist_listening.access', $memberHeaderUser)): ?>
-<script>window.STONEFELLOW_RECORDINGS_V198_CONFIG={endpoint:<?= json_encode(url('/api/artist-recordings-v198.php'), JSON_UNESCAPED_SLASHES) ?>,csrf:<?= json_encode(csrf_token(), JSON_UNESCAPED_SLASHES) ?>,artistListeningUrl:<?= json_encode(url('/artist-listening.php'), JSON_UNESCAPED_SLASHES) ?>,persistEndpoint:<?= json_encode(url('/api/chat-recordings-v242.php'), JSON_UNESCAPED_SLASHES) ?>};</script>
+<script>window.VP3_RECORDINGS_V198_CONFIG={endpoint:<?= json_encode(url('/api/artist-recordings-v198.php'), JSON_UNESCAPED_SLASHES) ?>,csrf:<?= json_encode(csrf_token(), JSON_UNESCAPED_SLASHES) ?>,artistListeningUrl:<?= json_encode(url('/artist-listening.php'), JSON_UNESCAPED_SLASHES) ?>,persistEndpoint:<?= json_encode(url('/api/chat-recordings-v242.php'), JSON_UNESCAPED_SLASHES) ?>};window.STONEFELLOW_RECORDINGS_V198_CONFIG=window.VP3_RECORDINGS_V198_CONFIG;</script>
 <link rel="stylesheet" data-chat-transcription-canvas href="<?= e(url('/chat-transcription-canvas.css?v=' . $memberHeaderTranscriptionBuild)) ?>">
 <script data-artist-recordings-v198 data-recording-ui-build="<?= e($memberHeaderRecordingUiBuild) ?>" src="<?= e(url('/artist-listening-recordings.js?v=' . $memberHeaderRecordingUiBuild)) ?>"></script>
 <script data-chat-transcription-canvas data-transcription-canvas-build="<?= e($memberHeaderTranscriptionBuild) ?>" src="<?= e(url('/chat-transcription-canvas.js?v=' . $memberHeaderTranscriptionBuild)) ?>"></script>
