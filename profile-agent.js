@@ -14,11 +14,11 @@
   let lastMessageId=0;
   let pollTimer=0,presenceTimer=0;
 
-  // Public Agent profiles get a direct scheduling action without changing the
-  // canonical profile layout. Deriving from the current profile location keeps
-  // the route correct when VP3 is installed under a configured base path.
+  // Preserve the native scheduling CTA contract, but expose it only when the
+  // canonical Profile renderer has a Booking tab backed by public event types.
+  const profileBookingTab=document.querySelector('[data-profile-tab="booking"]');
   const profileName=document.querySelector('.profile-name');
-  if(profileName&&!profileName.querySelector('[data-profile-booking-link]')){
+  if(profileBookingTab&&profileName&&!profileName.querySelector('[data-profile-booking-link]')){
     const bookingLink=document.createElement('a');
     const profileBase=new URL('.',window.location.href);
     bookingLink.dataset.profileBookingLink='1';
@@ -34,8 +34,38 @@
     profileName.appendChild(bookingLink);
   }
 
+  function appendSafeLinkedText(container,text){
+    const input=String(text||'');
+    const pattern=/https?:\/\/[^\s<>"']+/gi;
+    let cursor=0;
+    for(const match of input.matchAll(pattern)){
+      const start=Number(match.index||0);
+      if(start>cursor)container.appendChild(document.createTextNode(input.slice(cursor,start)));
+      let raw=String(match[0]||'');
+      let trailing='';
+      while(raw&&/[),.;!?]$/.test(raw)){trailing=raw.slice(-1)+trailing;raw=raw.slice(0,-1);}
+      try{
+        const parsed=new URL(raw,window.location.href);
+        if(!['http:','https:'].includes(parsed.protocol))throw new Error('unsupported protocol');
+        const anchor=document.createElement('a');
+        anchor.href=parsed.href;
+        anchor.textContent=raw;
+        anchor.className='profile-agent-message-link';
+        anchor.rel=parsed.origin===window.location.origin?'noopener':'noopener noreferrer nofollow';
+        if(parsed.origin!==window.location.origin)anchor.target='_blank';
+        Object.assign(anchor.style,{color:'inherit',fontWeight:'750',textDecoration:'underline',textUnderlineOffset:'2px',overflowWrap:'anywhere'});
+        container.appendChild(anchor);
+      }catch(_error){container.appendChild(document.createTextNode(raw));}
+      if(trailing)container.appendChild(document.createTextNode(trailing));
+      cursor=start+String(match[0]||'').length;
+    }
+    if(cursor<input.length)container.appendChild(document.createTextNode(input.slice(cursor)));
+  }
+
   function messageNode(type,text,id=0){
-    const div=document.createElement('div');div.className=`profile-agent-message ${type}`;div.dataset.messageId=String(id||0);div.textContent=String(text||'');return div;
+    const div=document.createElement('div');div.className=`profile-agent-message ${type}`;div.dataset.messageId=String(id||0);
+    if(type==='agent'||type==='owner')appendSafeLinkedText(div,text);else div.textContent=String(text||'');
+    return div;
   }
   function appendMessage(type,text,id=0){
     if(!String(text||'').trim())return;

@@ -1,13 +1,15 @@
 <?php
 declare(strict_types=1);
 require_once __DIR__.'/profile-commerce-v900.php';
+require_once __DIR__.'/profile-agent-booking-context-v176.php';
 
 /**
  * Supplemental Profile Agent context bridge.
  *
- * Public Profile Commerce is always eligible because it is already an explicit
- * public projection. Transcript-analysis memories remain separately gated by
- * the canonical Knowledge Access policy and Agent Brain capability.
+ * Public Profile Commerce and explicitly public booking types are always
+ * eligible because they are already public projections. Transcript-analysis
+ * memories remain separately gated by the canonical Knowledge Access policy
+ * and Agent Brain capability.
  */
 function profile_agent_transcript_brain_context_v255(
     PDO $pdo,
@@ -19,16 +21,24 @@ function profile_agent_transcript_brain_context_v255(
 ): array {
     $ownerId = max(0, (int)($ownerUser['id'] ?? 0));
     $commerceContext = [];
-    if ($ownerId > 0 && function_exists('profile_commerce_agent_context_v900')) {
+    $bookingContext = [];
+    if ($ownerId > 0) {
         try {
             $profile = profile_for_user($pdo, $ownerId, false);
             if ($profile && !empty($profile['is_public'])) {
-                $commerceContext = profile_commerce_agent_context_v900($pdo, $profile, $query);
+                if (function_exists('profile_agent_booking_context_v176')) {
+                    $bookingContext = profile_agent_booking_context_v176($pdo, $profile, $query);
+                }
+                if (function_exists('profile_commerce_agent_context_v900')) {
+                    $commerceContext = profile_commerce_agent_context_v900($pdo, $profile, $query);
+                }
             }
         } catch (Throwable $e) {
+            $bookingContext = [];
             $commerceContext = [];
         }
     }
+    if ($bookingContext) $commerceContext = array_merge($bookingContext, $commerceContext);
 
     if ($ownerId < 1
         || !personal_capability_has_v242('agent_brain.access', $ownerUser)
