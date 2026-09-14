@@ -34,6 +34,7 @@ jobs:
           node --check tests/knowledge-library-v161-browser-contract.mjs
           node --check tests/member-shell-v1320-contract.mjs
           node --check tests/member-sidebar-shell-contract.mjs
+          node --check tests/profile-commerce-products-shell-v1310-contract.mjs
       - name: Knowledge folder-browser contract
         run: node tests/knowledge-library-v161-browser-contract.mjs
       - name: Shared Knowledge folder regression contract
@@ -42,6 +43,7 @@ jobs:
         run: |
           node tests/member-shell-v1320-contract.mjs
           node tests/member-sidebar-shell-contract.mjs
+          node tests/profile-commerce-products-shell-v1310-contract.mjs
       - name: Retained authenticated shell consolidation contract
         run: node tests/authenticated-shell-consolidation-contract.mjs
       - name: Retained VP3 normalization contract
