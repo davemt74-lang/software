@@ -1,0 +1,35 @@
+name: Public Mega Menu Pages
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        php: ['8.1','8.3']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Public page PHP syntax
+        run: |
+          php -l index.php
+          php -l includes/vp3-public.php
+          php -l includes/vp3-marketing-pages.php
+          for file in product.php ai-assistant.php profile-agent-overview.php personal-url.php services.php ai-summary.php calendar-service.php booking.php ecommerce.php homeserver.php cloud-vs-self-hosted.php paired-devices.php openrouter.php model-choice.php local-knowledge-overview.php tools-skills.php pricing-monthly.php pricing-weekly.php pricing-yearly.php token-packages.php about-team.php mission.php case-studies.php testimonials.php social.php; do php -l "$file"; done
+      - name: Contract syntax
+        run: node --check tests/public-mega-menu-pages-contract.mjs
+      - name: Public page contracts
+        run: node tests/public-mega-menu-pages-contract.mjs
