@@ -14,7 +14,15 @@ assert.doesNotMatch(helper,/\b(?:CREATE|ALTER|DROP)\s+TABLE\b/i,'Phase 18 must n
 assert.doesNotMatch(helper,/\$_SERVER\s*\[\s*['"](?:REMOTE_ADDR|HTTP_USER_AGENT)['"]\s*\]/,'Phase 18 must not read raw IP or User-Agent data');
 assert.match(helper,/function profile_revenue_money_add_v180[\s\S]*\$buckets\[\$currency\]/,'revenue must remain bucketed by validated currency');
 assert.match(helper,/profile_revenue_currency_v180[\s\S]*\^\[a-z\]\{3\}\$/,'currency codes must be validated before aggregation');
+assert.match(helper,/booking_revenue_all_time/,'all-time Booking revenue must be separately available');
+assert.match(helper,/product_revenue_all_time/,'all-time Product revenue must be separately available');
+assert.match(helper,/'booking_revenue'=>profile_revenue_money_rows_v180/,'period Booking revenue must stay currency-bucketed');
+assert.match(helper,/'product_revenue'=>profile_revenue_money_rows_v180/,'period Product revenue must stay currency-bucketed');
+assert.match(helper,/profile_revenue_money_change_v180/,'period comparisons must include currency-safe revenue deltas');
 assert.match(helper,/'attribution_model'=>'session_first_touch'/,'the owner API must declare its attribution model');
+assert.match(helper,/'rate_model'=>'period_event_ratio'/,'the owner API must disclose its non-person-level funnel rate model');
+assert.match(helper,/if\(!isset\(\$sessionSources\[\$sessionId\]\)\)\$sessionSources\[\$sessionId\]=profile_revenue_source_v180/,'session first-touch attribution must lock the earliest observed source');
+assert.doesNotMatch(helper,/\$sessionSources\[\$sessionId\]\['type'\].*direct/,'session first-touch attribution must not replace an earlier direct source with a later touch');
 assert.match(helper,/utm_campaign/,'campaign attribution must use existing first-party UTM metadata');
 assert.match(helper,/utm_source/,'source attribution must use existing first-party UTM metadata');
 assert.match(helper,/referrer_host/,'referrer attribution must use the already-sanitized referrer hostname');
@@ -22,7 +30,8 @@ assert.match(helper,/'today'=>\[/,'intelligence must include a today period');
 assert.match(helper,/'7d'=>\[/,'intelligence must include a seven-day period');
 assert.match(helper,/'30d'=>\[/,'intelligence must include a thirty-day period');
 assert.match(helper,/previousStart/,'period intelligence must calculate a previous-period comparator');
-assert.match(helper,/profile_revenue_top_targets_v180/,'intelligence must rank products and booking types');
+assert.match(helper,/\$allTargets=profile_revenue_top_targets_v180\([^;]+250\)/,'opportunity detection must inspect the broad offer set rather than only displayed winners');
+assert.match(helper,/\$topTargets=array_slice\(\$allTargets,0,12\)/,'the owner UI payload must keep the displayed top-offer list bounded');
 assert.match(helper,/profile_revenue_sources_v180/,'intelligence must aggregate acquisition sources');
 assert.match(helper,/profile_revenue_opportunities_v180/,'intelligence must derive owner opportunities');
 assert.match(helper,/'action_key'=>'review_offer'/,'conversion gaps must expose an advisory review action');
@@ -38,6 +47,9 @@ assert.match(api,/profile_revenue_intelligence_v180\(\$pdo,\(int\)\$user\['id'\]
 assert.match(ui,/\/api\/profile-revenue-intelligence\.php/,'Analytics UI must load the owner-only Phase 18 endpoint');
 assert.match(ui,/From Profile traffic to real business/,'Analytics UI must surface the Phase 18 intelligence workspace');
 assert.match(ui,/Tracked revenue · all time/,'Analytics UI must show tracked revenue');
+assert.match(ui,/Booking \$\{esc\(moneyRows\(intelligence\.booking_revenue_all_time\)\)\}/,'Analytics UI must show all-time Booking revenue separately');
+assert.match(ui,/Products \$\{esc\(moneyRows\(intelligence\.product_revenue_all_time\)\)\}/,'Analytics UI must show all-time Product revenue separately');
+assert.match(ui,/moneyDeltaRows\(change\.revenue\)/,'period cards must show revenue movement against the prior period');
 assert.match(ui,/Top converting products \+ bookings/,'Analytics UI must show top offers');
 assert.match(ui,/Conversion sources/,'Analytics UI must show acquisition attribution');
 assert.match(ui,/Agent Intelligence/,'Analytics UI must show agent-derived opportunities');
@@ -47,6 +59,7 @@ assert.match(ui,/funnelCard\('30d','30 days'\)/,'Analytics UI must render thirty
 assert.match(ui,/rel=\"noopener\"/,'external offer links must be isolated with noopener');
 assert.match(ui,/const esc=v=>/,'all Phase 18 text must use the existing HTML escaping boundary');
 assert.doesNotMatch(ui,/v\.request_count/,'human Profile analytics must not inherit automated request-count UI');
+assert.match(ui,/not cross-site person-level cohorts/,'UI must explain the privacy-safe period rate model');
 assert.match(ui,/Suggested actions are advisory until you explicitly choose to act/,'UI must state that opportunity actions are advisory');
 
 assert.match(css,/\.profile-revenue-periods\{display:grid/,'Phase 18 period comparison cards must have a dedicated responsive layout');
