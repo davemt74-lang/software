@@ -92,7 +92,9 @@
     }
   }
 
-  if (document.body.classList.contains('profile-page') && window.STONEFELLOW_PROFILE_AGENT?.username) {
+  const profileAgent = window.VP3_PROFILE_AGENT || window.STONEFELLOW_PROFILE_AGENT;
+  if (profileAgent && !window.VP3_PROFILE_AGENT) window.VP3_PROFILE_AGENT = profileAgent;
+  if (document.body.classList.contains('profile-page') && profileAgent?.username) {
     if(!document.querySelector('[data-profile-social-loader]')){
       const loader=document.createElement('script');
       loader.src=new URL(`profile-social-v320.js?v=${build}`,memberBase).href;

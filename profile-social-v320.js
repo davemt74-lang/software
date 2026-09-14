@@ -1,5 +1,5 @@
 (() => {
-  const config=window.STONEFELLOW_PROFILE_AGENT;
+  const config=window.VP3_PROFILE_AGENT||window.STONEFELLOW_PROFILE_AGENT;
   const username=String(config?.username||'').trim();
   const identity=document.querySelector('.profile-identity');
   if(!username||!identity||document.querySelector('[data-profile-social-actions]'))return;
