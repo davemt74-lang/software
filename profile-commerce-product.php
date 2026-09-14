@@ -2,11 +2,13 @@
 declare(strict_types=1);
 require __DIR__.'/includes/bootstrap.php';
 require_once __DIR__.'/includes/profile-commerce-checkout-v900.php';
+require_once __DIR__.'/includes/profile-conversion-activity-v177.php';
 $pdo=db();if(!$pdo||!profile_agent_schema_ready($pdo)||!agent_commerce_schema_ready_v800($pdo)){http_response_code(503);exit('Profile Commerce is not ready.');}
 $username=profile_username_normalize((string)($_GET['username']??''));$slug=profile_commerce_slug_v900((string)($_GET['product']??''));
 $profile=profile_by_username($pdo,$username);if(!$profile||empty($profile['is_active'])||empty($profile['is_public'])){http_response_code(404);exit('Profile not found.');}
 $product=profile_commerce_public_product_v900($pdo,$profile,$slug);if(!$product){http_response_code(404);exit('Product not found.');}
 $productRow=profile_commerce_owner_product_v900($pdo,(int)$profile['user_id'],(int)$product['id']);if(!$productRow){http_response_code(404);exit('Product not found.');}
+if($_SERVER['REQUEST_METHOD']==='GET')profile_conversion_activity_v177_record($pdo,$profile,'product_intent',['id'=>(int)$product['id'],'slug'=>(string)$product['slug'],'title'=>(string)$product['title'],'url'=>(string)$product['product_url']]);
 $displayName=trim((string)$profile['display_name'])?:$username;$connections=profile_commerce_checkout_connections_v900($pdo,$productRow);$error='';
 $token=profile_commerce_token_v900((int)$profile['user_id']);$checkoutNonce=profile_commerce_checkout_nonce_v900((int)$profile['user_id'],(int)$product['id']);$termsDigest=profile_commerce_terms_digest_v900($productRow);$sellerPolicy=trim((string)($productRow['cancellation_policy']??''));
 if($_SERVER['REQUEST_METHOD']==='POST'){

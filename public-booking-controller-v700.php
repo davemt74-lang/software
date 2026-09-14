@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 require __DIR__ . '/includes/bootstrap.php';
+require_once __DIR__ . '/includes/profile-conversion-activity-v177.php';
 
 $pdo = db();
 if (!$pdo || !agent_scheduling_schema_ready_v430($pdo) || !profile_agent_schema_ready($pdo)) {
@@ -83,6 +84,16 @@ if ($manageToken !== '' && (!$managedBooking || (int)$managedBooking['owner_user
 $managedEvent = $managedBooking && (int)($managedBooking['event_type_id'] ?? 0) > 0
     ? agent_scheduling_event_type_v430($pdo, (int)$managedBooking['event_type_id'])
     : null;
+
+if ($_SERVER['REQUEST_METHOD'] === 'GET' && $manageToken === '' && $schedule && $events) {
+    $intentEvent = $event ?: null;
+    profile_conversion_activity_v177_record($pdo, $profile, 'booking_intent', [
+        'id' => $intentEvent ? (int)$intentEvent['id'] : (int)$schedule['id'],
+        'slug' => $intentEvent ? (string)($intentEvent['slug'] ?? '') : '',
+        'title' => $intentEvent ? (string)($intentEvent['title'] ?? 'Appointment') : 'Booking',
+        'url' => agent_scheduling_public_booking_url_v450($username, $intentEvent ? (string)($intentEvent['slug'] ?? '') : null),
+    ]);
+}
 
 $pageError = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
