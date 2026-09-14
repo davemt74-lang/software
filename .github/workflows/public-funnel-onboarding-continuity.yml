@@ -1,0 +1,44 @@
+name: Public Funnel + Onboarding Continuity
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        php: ['8.1','8.3']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Funnel PHP syntax
+        run: |
+          php -l includes/vp3-funnel.php
+          php -l includes/vp3-public.php
+          php -l signup.php
+          php -l login.php
+          php -l pricing.php
+          php -l book-demo.php
+          php -l tests/public-funnel-runtime.php
+      - name: Runtime redirect and source contract
+        run: php tests/public-funnel-runtime.php
+      - name: Static contract syntax
+        run: node --check tests/public-funnel-onboarding-contract.mjs
+      - name: Public funnel and onboarding contract
+        run: node tests/public-funnel-onboarding-contract.mjs
+      - name: Retained public/auth contract
+        run: node tests/vp3-public-auth-contract.mjs
+      - name: Retained mega-menu pages contract
+        run: node tests/public-mega-menu-pages-contract.mjs
