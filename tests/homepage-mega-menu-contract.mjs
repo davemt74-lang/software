@@ -29,5 +29,6 @@ assert.ok(css.includes('@media(max-width:1050px)'), 'desktop/mobile handoff is n
 assert.ok(css.includes('@media(max-width:560px)'), 'narrow mobile layout is not protected');
 assert.ok(js.includes("event.key !== 'Escape'"), 'Escape close behavior is missing');
 assert.ok(js.includes("querySelectorAll('.mega-nav > details')"), 'desktop menu exclusivity behavior is missing');
+assert.ok(js.includes("querySelectorAll('.mega-nav a')"), 'desktop menu navigation close behavior is missing');
 
 console.log('Homepage mega menu contract passed.');
