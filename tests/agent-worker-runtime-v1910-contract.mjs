@@ -6,12 +6,15 @@ const runtime = read('includes/agent-worker-runtime-v1910.php');
 const worker = read('includes/agent-job-worker-v1900.php');
 const api = read('api/agent-workflow-runs-v1400.php');
 const engine = read('includes/agent-job-engine-v1900.php');
+const page = read('agent-workflows.php');
 
 assert.match(runtime,/VP3_AGENT_WORKER_RUNTIME_V1910/);
-assert.match(runtime,/require_once __DIR__\.\/['"]agent-job-engine-v1900\.php['"]/);
-assert.match(runtime,/require_once __DIR__\.\/['"]homeserver-vp3\.php['"]/);
-assert.match(runtime,/require_once __DIR__\.\/['"]homeserver-capability-registry-v033\.php['"]/);
-assert.match(runtime,/require_once __DIR__\.\/['"]agent-tool-authorization-v400\.php['"]/);
+for (const include of [
+  "require_once __DIR__.'/agent-job-engine-v1900.php'",
+  "require_once __DIR__.'/homeserver-vp3.php'",
+  "require_once __DIR__.'/homeserver-capability-registry-v033.php'",
+  "require_once __DIR__.'/agent-tool-authorization-v400.php'",
+]) assert.ok(runtime.includes(include), `missing canonical dependency ${include}`);
 
 for (const fn of [
   'agent_worker_runtime_worker_v1910',
@@ -28,7 +31,7 @@ for (const fn of ['agent_job_recover_expired_v1900','agent_job_claim_next_v1900'
 }
 assert.ok(!runtime.includes('CREATE TABLE'), '19.1 must not create a second worker/job store');
 assert.ok(!runtime.includes('ALTER TABLE'), '19.1 must not add a parallel execution schema');
-assert.ok(!runtime.includes('UPDATE agent_workflow_actions SET status=\'queued\''), '19.1 must not implement its own retry machine');
+assert.ok(!runtime.includes("UPDATE agent_workflow_actions SET status='queued'"), '19.1 must not implement its own retry machine');
 assert.ok(engine.includes("status='failed'"), 'Phase 19.0 terminal failed state remains canonical');
 assert.ok(runtime.includes("'dead_lettered'"), 'owner summary should translate terminal failed receipts to dead-letter semantics');
 
@@ -39,7 +42,9 @@ assert.ok(runtime.includes("hash_equals((string)$row['lease_token'],(string)($cl
 assert.ok(runtime.includes('lease_expires_at'));
 assert.ok(runtime.includes('approval_required'));
 assert.ok(runtime.includes('capability_unavailable'));
-assert.ok(runtime.indexOf('agent_worker_runtime_authorize_claim_v1910') < runtime.indexOf("$claim['authorization']=$authorization"), 'executable claim must be authorized before release');
+const authCall = runtime.indexOf('$authorization=agent_worker_runtime_authorize_claim_v1910');
+const release = runtime.indexOf("$claim['authorization']=$authorization");
+assert.ok(authCall >= 0 && release > authCall, 'executable claim must be authorized before release');
 
 // HomeServer identity and capability facts come from existing canonical stores.
 assert.ok(runtime.includes('homeserver_vp3_connection($uid)'));
@@ -49,7 +54,7 @@ assert.ok(runtime.includes('VP3_AGENT_WORKER_STALE_SECONDS_V1910'));
 assert.ok(runtime.includes("'homeserver_stale'"));
 assert.ok(runtime.includes("'homeserver_offline'"));
 assert.ok(runtime.includes('max_concurrency'));
-assert.ok(runtime.includes("lease_owner LIKE ?"), 'capacity must be derived from canonical live leases');
+assert.ok(runtime.includes('lease_owner LIKE ?'), 'capacity must be derived from canonical live leases');
 
 // Worker capability may narrow routing, but Cloud capability is not itself permission authority.
 assert.ok(runtime.includes('Capability narrows routing; it never grants authority.'));
@@ -67,6 +72,15 @@ for (const fn of ['agent_worker_runtime_poll_v1910','agent_worker_runtime_heartb
 }
 assert.ok(worker.includes('agent_job_worker_poll_distributed_v1910'));
 assert.ok(worker.includes('agent_worker_runtime_poll_v1910'));
+
+// Owner UI must expose worker state without exposing executor primitives.
+assert.ok(page.includes("require_once __DIR__ . '/includes/agent-worker-runtime-v1910.php'"));
+assert.ok(page.includes('agent_worker_runtime_summary_v1910'));
+assert.ok(page.includes('Worker Runtime'));
+assert.ok(page.includes('Dead-lettered'));
+for (const fn of ['agent_worker_runtime_poll_v1910','agent_worker_runtime_heartbeat_v1910','agent_worker_runtime_result_v1910']) {
+  assert.ok(!page.includes(fn), `owner page must not expose ${fn}`);
+}
 
 // No native HomeServer paths or credentials are copied into the runtime registry.
 for (const forbidden of ['native_path','filesystem_path','relay_token_enc=','homeserver_token_enc=']) {
