@@ -12,12 +12,16 @@ for (const field of ['next_attempt_at','lease_owner','lease_expires_at','heartbe
 assert.ok(engine.includes('agent_workflow_action_dependencies'));
 assert.ok(engine.includes('agent_workflow_receipts'));
 assert.ok(engine.includes('uq_agent_job_owner_receipt'),'Receipts need a durable idempotency constraint');
+assert.ok(engine.includes('idx_agent_job_due'),'Durable queue needs a due-work index');
 for (const fn of ['agent_job_claim_next_v1900','agent_job_claim_run_v1900','agent_job_heartbeat_v1900','agent_job_record_result_v1900','agent_job_recover_expired_v1900','agent_job_retry_delay_v1900','agent_job_dependencies_satisfied_v1900']) assert.ok(engine.includes(fn),`missing ${fn}`);
+assert.ok(engine.includes("status='queued' ORDER BY sequence_no,id LIMIT 1 FOR UPDATE"),'Claim must lock the globally next queued action before runtime affinity');
+assert.ok(!engine.includes("status='queued' AND execution_target=?"),'Cloud/HomeServer affinity must never skip an earlier queued action');
+assert.ok(engine.includes("execution_target']??'cloud')!==$executor"),'Runtime affinity is checked only after the global next action is locked');
 assert.ok(engine.includes('lease_expires_at>=UTC_TIMESTAMP()'),'Heartbeat must not revive an expired lease');
 assert.ok(engine.includes('Durable job lease is invalid.'),'Result commits must validate active lease ownership');
 assert.ok(engine.includes('A result idempotency key is required.'));
 assert.ok(engine.includes('SELECT * FROM agent_workflow_receipts WHERE owner_user_id=? AND receipt_key=? LIMIT 1 FOR UPDATE'),'Duplicate result commits must resolve the receipt before reapplying a mutation');
-assert.ok(engine.includes('attempt<$maxAttempts'),'Retries must be bounded');
+assert.ok(engine.includes('$attempt<$max'),'Retries must be bounded');
 assert.ok(engine.includes('min(3600'),'Backoff must be capped');
 assert.ok(engine.includes('agent_action_v124_record_outcome'),'Terminal jobs must feed existing Agent Brain outcome learning');
 assert.ok(engine.includes('agent_brain_v122_upsert_system_memory'),'Execution state must feed existing Agent Brain memory');
