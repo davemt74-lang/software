@@ -4,8 +4,8 @@ const cfg=window.PROFILE_AGENT_PORTAL;
 const host=document.getElementById('profileAgentAnalytics');
 const notice=document.getElementById('profileAgentNotice');
 if(!cfg?.analyticsEndpoint||!host)return;
-const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
-let state=null,intelligence=null,intelligenceError='',propertyId=0,days=30,busy=false,timer=null;
+const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#039;'}[c]));
+let state=null,intelligence=null,intelligenceError='',intelligenceLoadedAt=0,propertyId=0,days=30,busy=false,timer=null;
 function setNotice(message='',error=false){if(!notice)return;notice.textContent=message;notice.className=`profile-agent-notice${error?' error':''}`;}
 function parseDate(value){if(!value)return null;const d=new Date(String(value).replace(' ','T'));return Number.isNaN(d.getTime())?null:d;}
 function relative(value){const d=parseDate(value);if(!d)return String(value||'');const s=Math.round((Date.now()-d.getTime())/1000);if(s<60)return 'just now';if(s<3600)return `${Math.max(1,Math.round(s/60))}m ago`;if(s<86400)return `${Math.round(s/3600)}h ago`;if(s<604800)return `${Math.round(s/86400)}d ago`;return d.toLocaleDateString();}
@@ -16,15 +16,16 @@ function moneyDeltaRows(rows){const list=Array.isArray(rows)?rows:[];if(!list.le
 function rate(value){return value===null||value===undefined?'—':`${Number(value).toFixed(1)}%`;}
 function signed(value,suffix=''){const n=Number(value||0);return `${n>0?'+':''}${n.toLocaleString()}${suffix}`;}
 function safeLink(url,label='Open'){const raw=String(url||'').trim();if(!/^https?:\/\//i.test(raw))return '';return `<a href="${esc(raw)}" target="_blank" rel="noopener">${esc(label)} ↗</a>`;}
-async function loadIntelligence(){
+async function loadIntelligence(force=false){
+  if(!force&&intelligence&&Date.now()-intelligenceLoadedAt<120000)return;
   const url=new URL('/api/profile-revenue-intelligence.php',window.location.origin);
   try{
     const r=await fetch(url,{credentials:'same-origin',cache:'no-store'}),d=await r.json().catch(()=>null);
     if(!r.ok||!d?.ok)throw new Error(d?.error||'Profile conversion intelligence request failed.');
-    intelligence=d.intelligence||null;intelligenceError='';
+    intelligence=d.intelligence||null;intelligenceLoadedAt=Date.now();intelligenceError='';
   }catch(err){intelligence=null;intelligenceError=String(err?.message||'Profile conversion intelligence is unavailable.');}
 }
-async function load(silent=true){if(busy)return;busy=true;try{const url=new URL(cfg.analyticsEndpoint,window.location.origin);url.searchParams.set('property_id',String(propertyId));url.searchParams.set('days',String(days));const r=await fetch(url,{credentials:'same-origin',cache:'no-store'}),d=await r.json().catch(()=>null);if(!r.ok||!d?.ok)throw new Error(d?.error||'VP3 Analytics request failed.');state=d.analytics;await loadIntelligence();render();if(!silent)setNotice(intelligenceError?'VP3 Analytics refreshed; conversion intelligence is temporarily unavailable.':'VP3 Analytics and conversion intelligence refreshed.',!!intelligenceError);}catch(err){setNotice(err.message,true);}finally{busy=false;}}
+async function load(silent=true){if(busy)return;busy=true;try{const url=new URL(cfg.analyticsEndpoint,window.location.origin);url.searchParams.set('property_id',String(propertyId));url.searchParams.set('days',String(days));const r=await fetch(url,{credentials:'same-origin',cache:'no-store'}),d=await r.json().catch(()=>null);if(!r.ok||!d?.ok)throw new Error(d?.error||'VP3 Analytics request failed.');state=d.analytics;await loadIntelligence(!silent);render();if(!silent)setNotice(intelligenceError?'VP3 Analytics refreshed; conversion intelligence is temporarily unavailable.':'VP3 Analytics and conversion intelligence refreshed.',!!intelligenceError);}catch(err){setNotice(err.message,true);}finally{busy=false;}}
 function propertyOptions(){const rows=Array.isArray(state?.properties)?state.properties:[];return `<option value="0"${propertyId===0?' selected':''}>All properties</option>`+rows.map(p=>`<option value="${Number(p.id)}"${Number(p.id)===propertyId?' selected':''}>${esc(p.property_type==='native'?'VP3 Profile':p.label||p.domain)}</option>`).join('');}
 function metric(label,value,sub=''){return `<article class="vp3-analytics-metric"><strong>${Number(value||0).toLocaleString()}</strong><span>${esc(label)}</span>${sub?`<small>${esc(sub)}</small>`:''}</article>`;}
 function timeline(){const rows=Array.isArray(state?.timeline)?state.timeline:[];if(!rows.length)return '<div class="vp3-analytics-empty">No traffic in this period.</div>';const max=Math.max(1,...rows.map(r=>Number(r.page_views||0)+Number(r.native_views||0)));return `<div class="vp3-analytics-timeline">${rows.map(r=>{const total=Number(r.page_views||0)+Number(r.native_views||0),agents=Number(r.agent_sessions||0),height=Math.max(4,Math.round(total/max*100));return `<div class="vp3-analytics-day" title="${esc(r.day)} · ${total} views"><div class="vp3-analytics-bar" style="height:${height}%"><span></span></div><small>${esc(String(r.day||'').slice(5))}</small>${agents?`<b>${agents}A</b>`:''}</div>`;}).join('')}</div>`;}
