@@ -4,6 +4,7 @@ import fs from 'node:fs';
 const read = path => fs.readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
 const runtime = read('includes/profile-agent-runtime.php');
 const portal = read('profile-agent-portal.js');
+const analyticsCss = read('profile-agent-analytics.css');
 const routes = read('.htaccess');
 
 assert.match(runtime, /\$event\['conversion_kind'\].*\['booking','product'\]/s, 'owner activity must expose only known conversion kinds');
@@ -27,7 +28,10 @@ assert.match(portal, /Booking intent/, 'analytics must display Booking intent');
 assert.match(portal, /Product intent/, 'analytics must display Product intent');
 assert.match(portal, /Human intent · 24h/, 'Agent Radar metrics must surface first-party human intent');
 assert.match(portal, /String\(e\.event_type\|\|'profile activity'\)\.replaceAll\('_',' '\)/, 'generic Profile activity rendering must remain intact');
+assert.doesNotMatch(portal, /v\.request_count/, 'human Profile sessions must not inherit automated request-count UI');
 
+assert.match(analyticsCss, /\.profile-agent-metrics\{grid-template-columns:repeat\(6,minmax\(0,1fr\)\)\}/, 'six headline metrics must fit one desktop grid row');
 assert.match(routes, /profile-agent-portal\)\\\.js\$[^]*Cache-Control "no-cache, must-revalidate"/, 'Profile Agent portal intelligence must not be hidden behind stale static caching');
+assert.match(routes, /profile-agent-analytics\)\\\.\(\?:js\|css\)\$[^]*Cache-Control "no-cache, must-revalidate"/, 'Profile analytics layout changes must not be hidden behind stale static caching');
 
 console.log('profile-conversion-intelligence-v178-contract: ok');
