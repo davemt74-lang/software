@@ -30,7 +30,9 @@ jobs:
       - name: PHP syntax
         run: |
           php -l includes/agent-worker-runtime-v1910.php
+          php -l includes/agent-worker-cloud-v1910.php
           php -l includes/agent-job-worker-v1900.php
+          php -l agent-worker-v1910.php
           php -l api/agent-workflow-runs-v1400.php
           php -l agent-workflows.php
       - name: JavaScript syntax
