@@ -1,0 +1,55 @@
+/* VP3 public homepage mega menu — isolated from the authenticated member shell. */
+.mega-nav{align-items:center;gap:8px;margin-left:4px}
+.mega-nav>details{position:static}
+.mega-nav>details>summary{list-style:none;display:flex;align-items:center;gap:6px;padding:10px 9px;border-radius:9px;cursor:pointer;font-size:12px;color:rgba(255,255,255,.82);transition:background .18s ease,color .18s ease}
+.mega-nav>details>summary::-webkit-details-marker{display:none}
+.mega-nav>details>summary::after{content:"";width:5px;height:5px;border-right:1px solid currentColor;border-bottom:1px solid currentColor;transform:rotate(45deg) translateY(-2px);opacity:.7;transition:transform .18s ease}
+.mega-nav>details>summary:hover,.mega-nav>details[open]>summary{background:rgba(255,255,255,.1);color:#fff}
+.mega-nav>details[open]>summary::after{transform:rotate(225deg) translate(-1px,-1px)}
+.mega-panel{position:absolute;top:60px;left:50%;width:min(1120px,calc(100vw - 44px));transform:translateX(-50%);padding:18px;background:#292b2e;color:#fff;border:1px solid rgba(255,255,255,.12);border-radius:18px;box-shadow:0 28px 70px rgba(0,0,0,.34);overflow:hidden;z-index:40}
+.mega-panel::before{content:"";position:absolute;inset:0;background:linear-gradient(135deg,rgba(255,255,255,.035),transparent 46%);pointer-events:none}
+.mega-panel-head{position:relative;display:flex;align-items:flex-end;justify-content:space-between;gap:24px;padding:8px 10px 18px;border-bottom:1px solid rgba(255,255,255,.1)}
+.mega-panel-kicker{display:block;margin-bottom:4px;font-size:9px;font-weight:800;letter-spacing:.18em;text-transform:uppercase;color:#aeb3b6}
+.mega-panel-head strong{font-size:20px;letter-spacing:-.025em}
+.mega-panel-head p{max-width:470px;margin:0;color:#adb1b4;font-size:11px;line-height:1.55;text-align:right}
+.mega-grid{position:relative;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;padding-top:10px}
+.mega-grid.cols-3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.mega-link{display:block;min-height:104px;padding:16px;border:1px solid transparent;border-radius:13px;transition:background .18s ease,border-color .18s ease,transform .18s ease}
+.mega-link:hover,.mega-link:focus-visible{background:#35383b;border-color:rgba(255,255,255,.12);transform:translateY(-1px);outline:none}
+.mega-link-icon{display:grid;place-items:center;width:28px;height:28px;margin-bottom:12px;border-radius:8px;background:#3b3e41;border:1px solid rgba(255,255,255,.08);font-size:13px;color:#f3f3f3}
+.mega-link strong{display:block;font-size:13px;line-height:1.3;color:#fff}
+.mega-link small{display:block;margin-top:5px;color:#aeb2b5;font-size:10px;line-height:1.45;font-weight:450}
+.mega-link em{font-style:normal;color:#d9dcde}
+.mega-panel-footer{position:relative;display:flex;align-items:center;justify-content:space-between;gap:16px;margin:10px -2px -2px;padding:14px 16px;border-radius:12px;background:#222427;color:#c9cdd0;font-size:10px}
+.mega-panel-footer a{font-weight:780;color:#fff}
+
+/* Mobile uses the existing homepage hamburger, with category accordions. */
+.mobile-mega-nav{width:min(92vw,420px)!important;min-width:0!important;max-height:calc(100vh - 84px);overflow:auto;padding:10px!important;background:#f3f3f1!important;color:#151719!important;border:1px solid rgba(0,0,0,.08);box-shadow:0 24px 60px rgba(0,0,0,.28)!important}
+.mobile-mega-section{border-bottom:1px solid #dcdedc}
+.mobile-mega-section:last-of-type{border-bottom:0}
+.mobile-mega-section>summary{list-style:none;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 12px;cursor:pointer;font-size:14px;font-weight:760}
+.mobile-mega-section>summary::-webkit-details-marker{display:none}
+.mobile-mega-section>summary::after{content:"+";font-size:18px;font-weight:400;color:#747a7c}
+.mobile-mega-section[open]>summary::after{content:"−"}
+.mobile-mega-list{display:grid;grid-template-columns:1fr 1fr;gap:5px;padding:0 6px 12px}
+.mobile-menu .mobile-mega-list a{display:block;padding:10px!important;border-radius:9px;background:#fff;border:1px solid #e2e3e1;font-size:11px!important;line-height:1.3;color:#202326}
+.mobile-menu .mobile-mega-list a:hover{background:#e9ebe9}
+.mobile-menu .mobile-mega-list a strong{display:block;font-size:11px}
+.mobile-menu .mobile-mega-list a span{display:block;margin-top:3px;color:#74797b;font-size:9px;line-height:1.35}
+.mobile-menu-actions{display:grid;grid-template-columns:1fr 1fr;gap:7px;padding:10px 6px 2px}
+.mobile-menu .mobile-menu-actions a{display:flex!important;justify-content:center;align-items:center;text-align:center;padding:11px!important;border-radius:999px;background:#fff;border:1px solid #d8dad8;font-size:11px!important;font-weight:760}
+.mobile-menu .mobile-menu-actions a:last-child{background:#111820;color:#fff;border-color:#111820}
+
+@media(max-width:1180px){
+  .mega-nav{gap:2px}.mega-nav>details>summary{padding-inline:6px}.mega-panel{width:calc(100vw - 34px)}
+}
+@media(max-width:1050px){
+  .mega-nav{display:none}
+}
+@media(max-width:560px){
+  .mobile-mega-nav{width:calc(100vw - 34px)!important;right:-2px!important}
+  .mobile-mega-list{grid-template-columns:1fr}
+}
+@media(prefers-reduced-motion:reduce){
+  .mega-nav>details>summary::after,.mega-link{transition:none}
+}
