@@ -167,6 +167,11 @@ function profile_runtime_owner_state(PDO $pdo,array $user): array
         $event['utm_medium']=(string)($metadata['utm_medium']??'');
         $event['utm_campaign']=(string)($metadata['utm_campaign']??'');
         $event['conversion_kind']=in_array((string)($metadata['conversion_kind']??''),['booking','product'],true)?(string)$metadata['conversion_kind']:'';
+        $event['conversion_stage']=(string)($metadata['conversion_stage']??'')==='outcome'?'outcome':'';
+        $event['outcome_status']=mb_strimwidth(trim((string)($metadata['outcome_status']??'')),0,40,'');
+        $event['value_cents']=max(0,(int)($metadata['value_cents']??0));
+        $currency=strtolower(trim((string)($metadata['currency']??'')));
+        $event['currency']=preg_match('/^[a-z]{3}$/',$currency)?$currency:'';
         $event['target_id']=max(0,(int)($metadata['target_id']??0));
         $event['target_slug']=mb_strimwidth(trim((string)($metadata['target_slug']??'')),0,120,'');
         $event['target_title']=mb_strimwidth(trim((string)($metadata['target_title']??'')),0,190,'…');
@@ -197,8 +202,12 @@ function profile_runtime_owner_state(PDO $pdo,array $user): array
     $visitStats->execute([$uid]);$visitStatRow=$visitStats->fetch()?:[];
     $conversationStats=$pdo->prepare("SELECT COUNT(*) AS total_conversations,COALESCE(SUM(status<>'resolved'),0) AS open_conversations,COALESCE(SUM(status='owner_joined'),0) AS owner_joined FROM profile_agent_conversations WHERE owner_user_id=?");
     $conversationStats->execute([$uid]);$conversationStatRow=$conversationStats->fetch()?:[];
-    $conversionStats=$pdo->prepare("SELECT COALESCE(SUM(event_type='booking_intent'),0) AS booking_intents,COALESCE(SUM(event_type='product_intent'),0) AS product_intents,COALESCE(SUM(event_type IN ('booking_intent','product_intent')),0) AS conversion_intents,COALESCE(SUM(event_type IN ('booking_intent','product_intent') AND created_at>=DATE_SUB(NOW(),INTERVAL 24 HOUR)),0) AS conversion_intents_24h FROM profile_events WHERE owner_user_id=?");
+    $conversionStats=$pdo->prepare("SELECT COALESCE(SUM(event_type='booking_intent'),0) AS booking_intents,COALESCE(SUM(event_type='product_intent'),0) AS product_intents,COALESCE(SUM(event_type IN ('booking_intent','product_intent')),0) AS conversion_intents,COALESCE(SUM(event_type IN ('booking_intent','product_intent') AND created_at>=DATE_SUB(NOW(),INTERVAL 24 HOUR)),0) AS conversion_intents_24h,COALESCE(SUM(event_type='booking_converted'),0) AS booking_conversions,COALESCE(SUM(event_type='product_converted'),0) AS product_conversions,COALESCE(SUM(event_type IN ('booking_converted','product_converted')),0) AS conversions,COALESCE(SUM(event_type IN ('booking_converted','product_converted') AND created_at>=DATE_SUB(NOW(),INTERVAL 24 HOUR)),0) AS conversions_24h FROM profile_events WHERE owner_user_id=?");
     $conversionStats->execute([$uid]);$conversionStatRow=$conversionStats->fetch()?:[];
+    $bookingIntents=(int)($conversionStatRow['booking_intents']??0);$productIntents=(int)($conversionStatRow['product_intents']??0);
+    $bookingConversions=(int)($conversionStatRow['booking_conversions']??0);$productConversions=(int)($conversionStatRow['product_conversions']??0);
+    $bookingConversionRate=$bookingIntents>0?round(($bookingConversions/$bookingIntents)*100,1):0.0;
+    $productConversionRate=$productIntents>0?round(($productConversions/$productIntents)*100,1):0.0;
 
     return [
         'build'=>STONEFELLOW_PROFILE_AGENT_BUILD,
@@ -240,10 +249,16 @@ function profile_runtime_owner_state(PDO $pdo,array $user): array
             'agent_contacts'=>(int)$radarStats['agent_contacts'],
             'agent_events_24h'=>(int)$radarStats['events_24h'],
             'agent_high_risk_24h'=>(int)$radarStats['high_risk_24h'],
-            'booking_intents'=>(int)($conversionStatRow['booking_intents']??0),
-            'product_intents'=>(int)($conversionStatRow['product_intents']??0),
+            'booking_intents'=>$bookingIntents,
+            'product_intents'=>$productIntents,
             'conversion_intents'=>(int)($conversionStatRow['conversion_intents']??0),
             'conversion_intents_24h'=>(int)($conversionStatRow['conversion_intents_24h']??0),
+            'booking_conversions'=>$bookingConversions,
+            'product_conversions'=>$productConversions,
+            'conversions'=>(int)($conversionStatRow['conversions']??0),
+            'conversions_24h'=>(int)($conversionStatRow['conversions_24h']??0),
+            'booking_conversion_rate'=>$bookingConversionRate,
+            'product_conversion_rate'=>$productConversionRate,
         ],
     ];
 }
