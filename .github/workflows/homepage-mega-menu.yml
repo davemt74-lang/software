@@ -1,0 +1,37 @@
+name: Homepage Mega Menu
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    name: Homepage mega menu · PHP ${{ matrix.php }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.1', '8.3']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+          ini-file: production
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: PHP syntax
+        run: php -l index.php
+      - name: JavaScript syntax
+        run: |
+          node --check vp3-index-mega-menu.js
+          node --check tests/homepage-mega-menu-contract.mjs
+      - name: Homepage mega menu contract
+        run: node tests/homepage-mega-menu-contract.mjs
