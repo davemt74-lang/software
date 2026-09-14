@@ -1,6 +1,17 @@
 <?php
 declare(strict_types=1);
 
+function vp3_marketing_public_path(string $path): string
+{
+    return match ($path) {
+        '/profile-agent.php' => '/profile-agent-overview.php',
+        '/calendar.php' => '/calendar-service.php',
+        '/local-knowledge.php' => '/local-knowledge-overview.php',
+        '/team.php' => '/about-team.php',
+        default => $path,
+    };
+}
+
 function vp3_marketing_page_data(string $slug): ?array
 {
     $base = [
@@ -336,7 +347,7 @@ function vp3_render_marketing_page(string $slug): void
   <section class="vp3-section"><div class="vp3-wrap">
     <div class="vp3-marketing-feature-grid">
       <?php foreach ($page['cards'] as $card): ?>
-      <a class="vp3-marketing-feature" href="<?= e(url((string)$card[2])) ?>">
+      <a class="vp3-marketing-feature" href="<?= e(url(vp3_marketing_public_path((string)$card[2]))) ?>">
         <span class="vp3-marketing-arrow" aria-hidden="true">↗</span>
         <h2><?= e((string)$card[0]) ?></h2>
         <p><?= e((string)$card[1]) ?></p>
