@@ -2,9 +2,11 @@
 declare(strict_types=1);
 require __DIR__ . '/includes/bootstrap.php';
 require_once __DIR__ . '/includes/agent-workflow-runs-v1400.php';
+require_once __DIR__ . '/includes/agent-job-engine-v1900.php';
 require_permission('account.access');
 $pdo=db();$user=current_user();if(!$pdo||!$user)redirect(url('/login.php'));
 if(!agent_workflow_schema_ready_v1400($pdo))redirect(url('/agent-workflow-upgrade-v1400.php'));
+$durable=agent_job_engine_schema_ready_v1900($pdo);
 
 $notice='';$error='';
 if($_SERVER['REQUEST_METHOD']==='POST'){
@@ -15,11 +17,14 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
             if($action==='create_from_brain'){
                 $priority=agent_workflow_find_brain_priority_v1400($user,trim((string)($_POST['priority_key']??'')),trim((string)($_POST['suggestion_hash']??'')));
                 if(!$priority)throw new RuntimeException('That Agent Brain priority is no longer available. Refresh and try again.');
-                $run=agent_workflow_create_from_priority_v1400($pdo,$user,$priority);
-                $notice='Workflow created from the Agent Brain plan.';
-            }elseif($action==='approve'){$run=agent_workflow_approve_v1400($pdo,$user,(int)($_POST['run_id']??0));$notice='Workflow approved.';}
-            elseif($action==='cancel'){$run=agent_workflow_cancel_v1400($pdo,$user,(int)($_POST['run_id']??0));$notice='Workflow cancelled.';}
-            elseif($action==='retry'){$run=agent_workflow_retry_v1400($pdo,$user,(int)($_POST['run_id']??0));$notice='Workflow retry queued.';}
+                $run=$durable?agent_job_enqueue_from_brain_v1900($pdo,$user,$priority):agent_workflow_create_from_priority_v1400($pdo,$user,$priority);
+                $notice=$durable?'Durable job created from the Agent Brain plan.':'Workflow created from the Agent Brain plan.';
+            }elseif($action==='approve'){
+                $runId=(int)($_POST['run_id']??0);$run=agent_workflow_approve_v1400($pdo,$user,$runId);
+                if($durable){$pdo->prepare("UPDATE agent_workflow_runs SET next_attempt_at=UTC_TIMESTAMP(),progress_message='Approved and ready' WHERE id=? AND owner_user_id=?")->execute([$runId,(int)$user['id']]);$row=agent_workflow_row_v1400($pdo,(int)$user['id'],$runId);if($row)$run=agent_job_public_run_v1900($pdo,$row,true);}
+                $notice='Workflow approved.';
+            }elseif($action==='cancel'){$run=$durable?agent_job_cancel_v1900($pdo,$user,(int)($_POST['run_id']??0)):agent_workflow_cancel_v1400($pdo,$user,(int)($_POST['run_id']??0));$notice='Workflow cancelled.';}
+            elseif($action==='retry'){$run=$durable?agent_job_retry_v1900($pdo,$user,(int)($_POST['run_id']??0)):agent_workflow_retry_v1400($pdo,$user,(int)($_POST['run_id']??0));$notice='Workflow retry queued.';}
             else throw new RuntimeException('Unknown workflow action.');
             if(is_array($run)&&!empty($run['id']))redirect(url('/agent-workflows.php?id='.(int)$run['id'].'&notice='.rawurlencode($notice)));
         }catch(Throwable $e){$error=$e->getMessage();}
@@ -31,7 +36,7 @@ $brain=function_exists('agent_cognitive_loop_v310_state')?agent_cognitive_loop_v
 $priorities=array_values(array_filter((array)($brain['priorities']??[]),'is_array'));
 $runs=agent_workflow_recent_v1400($pdo,$user,30);
 $detail=null;$detailId=max(0,(int)($_GET['id']??0));
-if($detailId>0){$row=agent_workflow_row_v1400($pdo,(int)$user['id'],$detailId);if($row)$detail=agent_workflow_public_run_v1400($pdo,$row,true);}
+if($detailId>0){$row=agent_workflow_row_v1400($pdo,(int)$user['id'],$detailId);if($row)$detail=$durable?agent_job_public_run_v1900($pdo,$row,true):agent_workflow_public_run_v1400($pdo,$row,true);}
 
 function workflow_v1400_status_label(string $status): string{return str_replace('_',' ',ucwords($status,'_'));}
 function workflow_v1400_time(string $value): string{$ts=strtotime($value);return $ts?date('M j, g:i A',$ts):'—';}
@@ -40,12 +45,13 @@ function workflow_v1400_time(string $value): string{$ts=strtotime($value);return
 <body class="workflow-page"><div class="chat-app">
 <?php $workspaceSidebarUser=$user;$workspaceSidebarActive='agent_workflows';require __DIR__.'/includes/workspace-sidebar-v82.php'; ?><div class="chat-sidebar-backdrop" id="chatSidebarBackdrop"></div>
 <main class="chat-main workflow-main">
-<?php $memberHeaderUser=$user;$memberHeaderTitle='Agent Workflows';$memberHeaderSubtitle='Plans, approvals, execution targets + observable results';$memberHeaderActions='';require __DIR__.'/includes/member-header.php'; ?>
+<?php $memberHeaderUser=$user;$memberHeaderTitle='Agent Workflows';$memberHeaderSubtitle=$durable?'Durable jobs, approvals, execution targets + receipts':'Plans, approvals, execution targets + observable results';$memberHeaderActions='';require __DIR__.'/includes/member-header.php'; ?>
 <section class="workflow-canvas"><div class="workflow-inner">
 <?php if($notice!==''): ?><div class="workflow-notice success" role="status"><?= e($notice) ?></div><?php endif; ?>
 <?php if($error!==''): ?><div class="workflow-notice error" role="alert"><?= e($error) ?></div><?php endif; ?>
+<?php if(!$durable): ?><div class="workflow-notice" role="status">Phase 19.0 durable execution is not installed yet. <a href="<?= e(url('/agent-job-engine-upgrade-v1900.php')) ?>">Install the Durable Job Engine</a>.</div><?php endif; ?>
 
-<section class="workflow-hero"><div><small>Phase 14</small><h1>Agent Workflow Runs</h1><p>The Brain can turn a prioritized next move into a durable run. VP3 records the goal, approval boundary, action sequence, execution target and result without storing hidden reasoning.</p></div><div class="workflow-hero-actions"><a class="workflow-button" href="<?= e(url('/calendar.php')) ?>">Calendar</a><a class="workflow-button" href="<?= e(url('/chat.php')) ?>">Ask Agent</a></div></section>
+<section class="workflow-hero"><div><small><?= $durable?'Phase 19.0':'Phase 14' ?></small><h1><?= $durable?'Durable Agent Jobs':'Agent Workflow Runs' ?></h1><p><?= $durable?'The Agent Brain still decides what matters. The durable execution layer now carries approved work through leases, retries, recovery, progress and receipt-backed completion.':'The Brain can turn a prioritized next move into a durable run. VP3 records the goal, approval boundary, action sequence, execution target and result without storing hidden reasoning.' ?></p></div><div class="workflow-hero-actions"><a class="workflow-button" href="<?= e(url('/calendar.php')) ?>">Calendar</a><a class="workflow-button" href="<?= e(url('/chat.php')) ?>">Ask Agent</a></div></section>
 
 <?php if($detail): ?>
 <section class="workflow-detail">
@@ -57,6 +63,7 @@ function workflow_v1400_time(string $value): string{$ts=strtotime($value);return
     <div><small>Risk / approval</small><strong><?= e(ucfirst((string)$detail['risk_level'])) ?> · <?= !empty($detail['requires_approval'])?'Approval required':'No approval required' ?></strong></div>
     <div><small>Execution</small><strong><?= e(ucfirst((string)$detail['execution_target'])) ?><?= (string)$detail['capability_key']!==''?' · '.e((string)$detail['capability_key']):'' ?></strong></div>
     <div><small>Updated</small><strong><?= e(workflow_v1400_time((string)$detail['updated_at'])) ?></strong></div>
+    <?php if($durable): ?><div><small>Progress</small><strong><?= (int)($detail['progress_percent']??0) ?>%<?= !empty($detail['progress_message'])?' · '.e((string)$detail['progress_message']):'' ?></strong></div><div><small>Attempts</small><strong><?= (int)($detail['attempt_count']??0) ?> / <?= (int)($detail['max_attempts']??3) ?></strong></div><?php endif; ?>
   </div>
   <div class="workflow-actions-bar">
     <?php if((string)$detail['status']==='approval_pending'): ?><form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="approve"><input type="hidden" name="run_id" value="<?= (int)$detail['id'] ?>"><button class="workflow-button primary" type="submit">Approve workflow</button></form><?php endif; ?>
@@ -75,13 +82,14 @@ function workflow_v1400_time(string $value): string{$ts=strtotime($value);return
       <?php if(!(array)$detail['events']): ?><div class="workflow-empty">No execution events recorded yet.</div><?php endif; ?>
     </div></section>
   </div>
+  <?php if($durable&&!empty($detail['receipts'])): ?><section class="workflow-panel"><div class="workflow-panel-head"><h3>Execution receipts</h3><span><?= count((array)$detail['receipts']) ?> receipts</span></div><div class="workflow-event-list"><?php foreach((array)$detail['receipts'] as $receipt): ?><article><strong><?= e(workflow_v1400_status_label((string)$receipt['status'])) ?> · action #<?= (int)$receipt['action_id'] ?></strong><p><?= e((string)$receipt['summary']) ?></p><small><?= e(workflow_v1400_time((string)$receipt['created_at'])) ?> · <?= e((string)$receipt['executor']) ?> · attempt <?= (int)$receipt['attempt_no'] ?></small></article><?php endforeach; ?></div></section><?php endif; ?>
 </section>
 <?php endif; ?>
 
 <section class="workflow-panel brain-priorities"><div class="workflow-panel-head"><div><small>Agent Brain</small><h2>Ready to become workflows</h2></div><span><?= count($priorities) ?> priorities</span></div>
 <div class="workflow-priority-grid">
 <?php foreach($priorities as $priority): $key=(string)($priority['key']??'');$hash=(string)($priority['suggestion_hash']??'');if($key==='')continue; ?>
-<article class="workflow-priority"><div class="workflow-priority-top"><span><?= e((string)($priority['source']??'Agent Brain')) ?></span><span><?= e(ucfirst((string)($priority['risk_level']??'low'))) ?> risk</span></div><h3><?= e((string)($priority['title']??'Agent next action')) ?></h3><p><?= e((string)($priority['reason']??'')) ?></p><form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="create_from_brain"><input type="hidden" name="priority_key" value="<?= e($key) ?>"><input type="hidden" name="suggestion_hash" value="<?= e($hash) ?>"><button class="workflow-button primary" type="submit">Create workflow</button></form></article>
+<article class="workflow-priority"><div class="workflow-priority-top"><span><?= e((string)($priority['source']??'Agent Brain')) ?></span><span><?= e(ucfirst((string)($priority['risk_level']??'low'))) ?> risk</span></div><h3><?= e((string)($priority['title']??'Agent next action')) ?></h3><p><?= e((string)($priority['reason']??'')) ?></p><form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="create_from_brain"><input type="hidden" name="priority_key" value="<?= e($key) ?>"><input type="hidden" name="suggestion_hash" value="<?= e($hash) ?>"><button class="workflow-button primary" type="submit"><?= $durable?'Create durable job':'Create workflow' ?></button></form></article>
 <?php endforeach; ?>
 <?php if(!$priorities): ?><div class="workflow-empty">No current Brain priorities are ready to turn into a workflow.</div><?php endif; ?>
 </div></section>
