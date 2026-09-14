@@ -20,34 +20,31 @@ function profile_agent_transcript_brain_context_v255(
     int $conversationId = 0
 ): array {
     $ownerId = max(0, (int)($ownerUser['id'] ?? 0));
-    $conversionContext = [];
+    $commerceContext = [];
+    $bookingContext = [];
     if ($ownerId > 0) {
         try {
             $profile = profile_for_user($pdo, $ownerId, false);
             if ($profile && !empty($profile['is_public'])) {
                 if (function_exists('profile_agent_booking_context_v176')) {
-                    $conversionContext = array_merge(
-                        $conversionContext,
-                        profile_agent_booking_context_v176($pdo, $profile, $query)
-                    );
+                    $bookingContext = profile_agent_booking_context_v176($pdo, $profile, $query);
                 }
                 if (function_exists('profile_commerce_agent_context_v900')) {
-                    $conversionContext = array_merge(
-                        $conversionContext,
-                        profile_commerce_agent_context_v900($pdo, $profile, $query)
-                    );
+                    $commerceContext = profile_commerce_agent_context_v900($pdo, $profile, $query);
                 }
             }
         } catch (Throwable $e) {
-            $conversionContext = [];
+            $bookingContext = [];
+            $commerceContext = [];
         }
     }
+    if ($bookingContext) $commerceContext = array_merge($bookingContext, $commerceContext);
 
     if ($ownerId < 1
         || !personal_capability_has_v242('agent_brain.access', $ownerUser)
         || !agent_brain_schema_ready()
         || !table_exists('agent_memory_items')) {
-        return $conversionContext;
+        return $commerceContext;
     }
 
     $principal = user_agent_principal_v236($viewer, $agent, true);
@@ -64,7 +61,7 @@ function profile_agent_transcript_brain_context_v255(
         $stmt->execute([$ownerId]);
         $rows = $stmt->fetchAll() ?: [];
     } catch (Throwable $e) {
-        return $conversionContext;
+        return $commerceContext;
     }
 
     $context = [];
@@ -160,5 +157,5 @@ function profile_agent_transcript_brain_context_v255(
         if (count($context) >= 6) break;
     }
 
-    return array_merge($conversionContext, $context);
+    return array_merge($commerceContext, $context);
 }
