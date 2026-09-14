@@ -7,13 +7,17 @@ declare(strict_types=1);
  * Thin server-side coordinator over the Phase 19.0 durable job engine.
  * It does not create another queue, lease, retry, receipt, approval, pairing,
  * capability, or authorization store. Phase 19.0 remains authoritative for
- * execution state; HomeServer pairing/capability state remains authoritative
- * for local workers.
+ * execution state; HomeServer pairing/capability/action policy remains
+ * authoritative for local execution.
  */
 const VP3_AGENT_WORKER_RUNTIME_V1910='agent-worker-runtime-v1910-20260914';
 const VP3_AGENT_WORKER_STALE_SECONDS_V1910=300;
 const VP3_AGENT_WORKER_CLOUD_MAX_CONCURRENCY_V1910=4;
 const VP3_AGENT_WORKER_HOMESERVER_MAX_CONCURRENCY_V1910=1;
+const VP3_AGENT_WORKER_HOMESERVER_OPERATION_V1910='agent.chat';
+const VP3_AGENT_WORKER_HOMESERVER_RELAY_TIMEOUT_V1910=145;
+const VP3_AGENT_WORKER_HOMESERVER_LEASE_SECONDS_V1910=180;
+const VP3_AGENT_WORKER_INSTRUCTION_MAX_CHARS_V1910=8000;
 
 require_once __DIR__.'/agent-job-engine-v1900.php';
 require_once __DIR__.'/homeserver-vp3.php';
@@ -50,6 +54,25 @@ function agent_worker_runtime_homeserver_registry_v1910(array $connection): arra
         if(is_array($decoded))$raw=$decoded;
     }
     return $raw?homeserver_capability_v033_normalize($raw):homeserver_capability_v033_empty('capabilities_unavailable');
+}
+
+/**
+ * Phase 19 workflow capability keys are orchestration labels, not raw
+ * HomeServer operation names. Keep the mapping explicit and fail closed so a
+ * newly introduced workflow capability cannot silently broaden remote access.
+ */
+function agent_worker_runtime_homeserver_transport_v1910(string $capabilityKey): ?array
+{
+    $capabilityKey=agent_worker_runtime_slug_v1910($capabilityKey,120);
+    $allowed=[
+        'agent.next_action'=>VP3_AGENT_WORKER_HOMESERVER_OPERATION_V1910,
+        'calendar.review_conflict'=>VP3_AGENT_WORKER_HOMESERVER_OPERATION_V1910,
+        'calendar.prepare_commitment'=>VP3_AGENT_WORKER_HOMESERVER_OPERATION_V1910,
+        'scheduling.prepare_followup'=>VP3_AGENT_WORKER_HOMESERVER_OPERATION_V1910,
+        'commerce.review_next_action'=>VP3_AGENT_WORKER_HOMESERVER_OPERATION_V1910,
+    ];
+    if($capabilityKey===''||!isset($allowed[$capabilityKey]))return null;
+    return ['capability_key'=>$capabilityKey,'operation'=>$allowed[$capabilityKey]];
 }
 
 function agent_worker_runtime_active_count_v1910(PDO $pdo,int $ownerUserId,string $executor): int
@@ -96,10 +119,13 @@ function agent_worker_runtime_supports_capability_v1910(array $worker,string $ca
     $capabilityKey=agent_worker_runtime_slug_v1910($capabilityKey,120);
     if($capabilityKey==='')return false;
     if((string)($worker['executor']??'')==='cloud')return true; // Capability narrows routing; it never grants authority.
+    $transport=agent_worker_runtime_homeserver_transport_v1910($capabilityKey);
+    if(!$transport)return false;
     $supported=array_fill_keys((array)($worker['capability_keys']??[]),true);
-    if(isset($supported[$capabilityKey]))return true;
-    $parts=explode('.',$capabilityKey,2);$tool=$parts[0]??'';
-    return $tool!==''&&(isset($supported[$tool])||isset($supported[$tool.'.*']));
+    // The paired HomeServer must explicitly advertise the mapped operation.
+    // This only proves transport availability; HomeServer still enforces the
+    // paired app's permissions, scoped tools and local action policy.
+    return isset($supported[(string)$transport['operation']]);
 }
 
 function agent_worker_runtime_worker_v1910(PDO $pdo,array $user,string $executor,string $requestedWorkerId='primary'): array
@@ -209,9 +235,12 @@ function agent_worker_runtime_poll_v1910(PDO $pdo,array $user,string $executor,s
     return ['ok'=>true,'reason'=>'claimed','claim'=>$claim,'worker'=>$worker,'recovery'=>$recovery,'build'=>VP3_AGENT_WORKER_RUNTIME_V1910];
 }
 
-function agent_worker_runtime_heartbeat_v1910(PDO $pdo,array $user,array $claim,int $progress,string $message=''): bool
+function agent_worker_runtime_heartbeat_v1910(PDO $pdo,array $user,array $claim,int $progress,string $message='',int $leaseSeconds=120): bool
 {
-    return agent_job_heartbeat_v1900($pdo,$user,(int)($claim['run_id']??0),(int)($claim['action']['id']??0),(string)($claim['lease_token']??''),$progress,$message);
+    return agent_job_heartbeat_v1900(
+        $pdo,$user,(int)($claim['run_id']??0),(int)($claim['action']['id']??0),(string)($claim['lease_token']??''),
+        $progress,$message,$leaseSeconds
+    );
 }
 
 function agent_worker_runtime_result_v1910(PDO $pdo,array $user,array $claim,string $idempotencyKey,bool $success,string $summary,array $result=[],string $errorClass='',bool $retryable=true): array
@@ -227,4 +256,148 @@ function agent_worker_runtime_result_v1910(PDO $pdo,array $user,array $claim,str
         $pdo,$user,(int)($claim['run_id']??0),(int)($claim['action']['id']??0),(string)($claim['lease_token']??''),
         $idempotencyKey,$success,$summary,$result,$errorClass,$retryable
     );
+}
+
+function agent_worker_runtime_homeserver_instruction_v1910(array $claim): string
+{
+    $action=is_array($claim['action']??null)?$claim['action']:[];
+    $label=trim((string)($action['label']??''));
+    $summary=trim((string)($action['summary']??''));
+    $capability=agent_worker_runtime_slug_v1910((string)($action['capability_key']??($claim['authorization']['capability_key']??'')),120);
+    $instruction="Execute only this approved VP3 durable action within the paired VP3 app permissions and HomeServer action policy. Do not broaden the requested scope. If local HomeServer policy requires approval, create or return that approval request instead of bypassing it.";
+    if($capability!=='')$instruction.="\nCapability: ".$capability.'.';
+    if($label!=='')$instruction.="\nAction: ".$label.'.';
+    if($summary!=='')$instruction.="\nInstruction: ".$summary;
+    return mb_strimwidth($instruction,0,VP3_AGENT_WORKER_INSTRUCTION_MAX_CHARS_V1910,'…');
+}
+
+/**
+ * Long-running HomeServer worker transport. This deliberately does not alter
+ * the shared 8-second status helper used by UI requests.
+ */
+function agent_worker_runtime_homeserver_relay_v1910(string $relayToken,string $homeServerToken,string $operation,array $payload): array
+{
+    $base=homeserver_vp3_relay_base_url();
+    if($base===''||$relayToken===''||$homeServerToken==='')return ['ok'=>false,'http_status'=>0,'error_class'=>'homeserver_credentials_unavailable','retryable'=>false];
+    if(!function_exists('curl_init'))return ['ok'=>false,'http_status'=>0,'error_class'=>'homeserver_transport_unavailable','retryable'=>false];
+    if($operation!==VP3_AGENT_WORKER_HOMESERVER_OPERATION_V1910)return ['ok'=>false,'http_status'=>0,'error_class'=>'homeserver_operation_denied','retryable'=>false];
+    $body=json_encode(['operation'=>$operation,'payload'=>$payload,'bearer_token'=>$homeServerToken],JSON_UNESCAPED_SLASHES);
+    if(!is_string($body))return ['ok'=>false,'http_status'=>0,'error_class'=>'homeserver_request_invalid','retryable'=>false];
+    $ch=curl_init(rtrim($base,'/').'/v1/request');
+    if($ch===false)return ['ok'=>false,'http_status'=>0,'error_class'=>'homeserver_transport_unavailable','retryable'=>true];
+    curl_setopt_array($ch,[
+        CURLOPT_RETURNTRANSFER=>true,CURLOPT_HEADER=>false,CURLOPT_FOLLOWLOCATION=>false,
+        CURLOPT_CONNECTTIMEOUT=>3,CURLOPT_TIMEOUT=>VP3_AGENT_WORKER_HOMESERVER_RELAY_TIMEOUT_V1910,
+        CURLOPT_HTTPHEADER=>['Accept: application/json','Content-Type: application/json','Authorization: Bearer '.$relayToken],
+        CURLOPT_PROTOCOLS=>CURLPROTO_HTTP|CURLPROTO_HTTPS,CURLOPT_CUSTOMREQUEST=>'POST',CURLOPT_POSTFIELDS=>$body,
+    ]);
+    $raw=curl_exec($ch);$errno=curl_errno($ch);$status=(int)curl_getinfo($ch,CURLINFO_RESPONSE_CODE);curl_close($ch);
+    if(!is_string($raw)){
+        return ['ok'=>false,'http_status'=>0,'error_class'=>$errno===CURLE_OPERATION_TIMEDOUT?'homeserver_transport_timeout':'homeserver_transport_network','retryable'=>true];
+    }
+    $decoded=json_decode($raw,true);
+    if(!is_array($decoded))return ['ok'=>false,'http_status'=>$status,'error_class'=>'homeserver_transport_invalid_response','retryable'=>$status===0||$status>=500];
+    if($status<200||$status>=300){
+        $retryable=$status===0||$status===408||$status===425||$status===429||$status>=500;
+        $errorClass=in_array($status,[401,403],true)?'homeserver_auth_denied':($retryable?'homeserver_transport_retryable':'homeserver_request_denied');
+        return ['ok'=>false,'http_status'=>$status,'error_class'=>$errorClass,'retryable'=>$retryable];
+    }
+    $response=$decoded['payload']??[];
+    if(!is_array($response))return ['ok'=>false,'http_status'=>$status,'error_class'=>'homeserver_transport_invalid_response','retryable'=>true];
+    return ['ok'=>true,'http_status'=>$status,'payload'=>$response,'error_class'=>'','retryable'=>false];
+}
+
+function agent_worker_runtime_homeserver_safe_result_v1910(array $response): array
+{
+    $tools=is_array($response['tools']??null)?$response['tools']:[];
+    $requests=[];
+    foreach((array)($tools['action_request_ids']??[]) as $requestId){
+        $requestId=trim((string)$requestId);
+        if($requestId!==''&&preg_match('/^[A-Za-z0-9._:-]{1,128}$/',$requestId))$requests[$requestId]=true;
+        if(count($requests)>=50)break;
+    }
+    $reply=mb_strimwidth(trim((string)($response['reply']??'')),0,1600,'…');
+    $provider=agent_worker_runtime_slug_v1910((string)($response['provider']??''),80);
+    $model=mb_strimwidth(trim((string)($response['model']??'')),0,160,'');
+    $compute=agent_worker_runtime_slug_v1910((string)($response['compute_source']??''),80);
+    $conversationId=mb_strimwidth(trim((string)($response['conversation_id']??'')),0,128,'');
+    $runId=max(0,(int)($response['run_id']??0));
+    return [
+        'effect_state'=>$requests?'homeserver_approval_pending':'reported_complete',
+        'reply'=>$reply,'provider'=>$provider,'model'=>$model,'compute_source'=>$compute,
+        'conversation_id'=>$conversationId,'homeserver_run_id'=>$runId,
+        'local_action_request_count'=>count($requests),
+    ];
+}
+
+function agent_worker_runtime_homeserver_failure_v1910(PDO $pdo,array $user,array $claim,string $errorClass,bool $retryable,string $summary): array
+{
+    $runId=(int)($claim['run_id']??0);$actionId=(int)($claim['action']['id']??0);$attempt=max(1,(int)($claim['action']['attempt_count']??1));
+    $key='v1910-hs-'.$runId.'-'.$actionId.'-'.$attempt;
+    return agent_worker_runtime_result_v1910($pdo,$user,$claim,$key,false,$summary,[],agent_worker_runtime_slug_v1910($errorClass,80)?:'homeserver_execution_failed',$retryable);
+}
+
+/**
+ * Execute one leased HomeServer-targeted action through the existing trusted
+ * relay. This is server-side infrastructure; it is intentionally not exposed
+ * by an HTTP/browser executor endpoint.
+ */
+function agent_worker_runtime_execute_homeserver_once_v1910(PDO $pdo,array $user,int $limit=25): array
+{
+    $uid=(int)($user['id']??0);
+    if($uid<1)return ['ok'=>false,'reason'=>'invalid_owner','claim'=>null,'build'=>VP3_AGENT_WORKER_RUNTIME_V1910];
+
+    // Refresh liveness/capabilities before leasing work so an actually-online
+    // HomeServer is not rejected only because the cached heartbeat is stale.
+    try{homeserver_vp3_status($uid,true);}catch(Throwable $e){}
+    $poll=agent_worker_runtime_poll_v1910($pdo,$user,'homeserver','primary',$limit);
+    $claim=is_array($poll['claim']??null)?$poll['claim']:null;
+    if(!$claim)return $poll;
+
+    if(!agent_worker_runtime_heartbeat_v1910($pdo,$user,$claim,10,'Dispatching to paired HomeServer',VP3_AGENT_WORKER_HOMESERVER_LEASE_SECONDS_V1910)){
+        return ['ok'=>false,'reason'=>'lease_lost','claim'=>null,'build'=>VP3_AGENT_WORKER_RUNTIME_V1910];
+    }
+
+    $transport=agent_worker_runtime_homeserver_transport_v1910((string)($claim['authorization']['capability_key']??''));
+    if(!$transport){
+        $receipt=agent_worker_runtime_homeserver_failure_v1910($pdo,$user,$claim,'homeserver_transport_unmapped',false,'HomeServer execution was denied because this workflow capability is not mapped to an approved transport operation.');
+        return ['ok'=>false,'reason'=>'transport_unmapped','receipt'=>$receipt,'build'=>VP3_AGENT_WORKER_RUNTIME_V1910];
+    }
+
+    $connection=homeserver_vp3_connection($uid);
+    $deviceId=trim((string)($connection['device_id']??''));
+    $expectedWorker=agent_worker_runtime_homeserver_id_v1910($uid,$deviceId);
+    if(!$connection||$expectedWorker===''||!hash_equals((string)($poll['worker']['worker_id']??''),$expectedWorker)){
+        $receipt=agent_worker_runtime_homeserver_failure_v1910($pdo,$user,$claim,'homeserver_identity_changed',false,'HomeServer execution stopped because the paired device identity changed after the job was leased.');
+        return ['ok'=>false,'reason'=>'identity_changed','receipt'=>$receipt,'build'=>VP3_AGENT_WORKER_RUNTIME_V1910];
+    }
+
+    try{
+        $relayToken=homeserver_vp3_decrypt((string)($connection['relay_token_enc']??''));
+        $homeToken=homeserver_vp3_decrypt((string)($connection['homeserver_token_enc']??''));
+    }catch(Throwable $e){
+        $relayToken='';$homeToken='';
+    }
+    if($relayToken===''||$homeToken===''){
+        $receipt=agent_worker_runtime_homeserver_failure_v1910($pdo,$user,$claim,'homeserver_credentials_unavailable',false,'HomeServer execution stopped because the paired credentials are unavailable.');
+        return ['ok'=>false,'reason'=>'credentials_unavailable','receipt'=>$receipt,'build'=>VP3_AGENT_WORKER_RUNTIME_V1910];
+    }
+
+    $message=agent_worker_runtime_homeserver_instruction_v1910($claim);
+    $remote=agent_worker_runtime_homeserver_relay_v1910($relayToken,$homeToken,(string)$transport['operation'],['message'=>$message,'conversation_id'=>null]);
+    if(empty($remote['ok'])){
+        $errorClass=(string)($remote['error_class']??'homeserver_execution_failed');
+        $retryable=!empty($remote['retryable']);
+        $receipt=agent_worker_runtime_homeserver_failure_v1910($pdo,$user,$claim,$errorClass,$retryable,'The paired HomeServer could not complete this execution handoff.');
+        return ['ok'=>false,'reason'=>$errorClass,'retryable'=>$retryable,'receipt'=>$receipt,'build'=>VP3_AGENT_WORKER_RUNTIME_V1910];
+    }
+
+    $safe=agent_worker_runtime_homeserver_safe_result_v1910((array)$remote['payload']);
+    $pending=(int)$safe['local_action_request_count'];
+    $summary=$pending>0
+        ?'HomeServer accepted the durable action and created '.$pending.' local approval request'.($pending===1?'':'s').'.'
+        :((string)$safe['reply']!==''?(string)$safe['reply']:'HomeServer reported the durable action complete.');
+    $runId=(int)($claim['run_id']??0);$actionId=(int)($claim['action']['id']??0);$attempt=max(1,(int)($claim['action']['attempt_count']??1));
+    $receipt=agent_worker_runtime_result_v1910($pdo,$user,$claim,'v1910-hs-'.$runId.'-'.$actionId.'-'.$attempt,true,$summary,$safe,'',false);
+    return ['ok'=>true,'reason'=>$pending>0?'homeserver_approval_pending':'completed','effect_state'=>(string)$safe['effect_state'],'receipt'=>$receipt,'build'=>VP3_AGENT_WORKER_RUNTIME_V1910];
 }
