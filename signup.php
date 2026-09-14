@@ -9,7 +9,7 @@ $funnelIntent = vp3_funnel_capture(is_array($requestInput) ? $requestInput : [])
 
 if (is_logged_in()) {
     if (!empty($_SESSION['pending_team_invite_token'])) redirect(url('/team-invite.php'));
-    redirect(vp3_funnel_take_destination(login_destination()));
+    redirect(vp3_funnel_finish_auth(login_destination(), current_user()));
 }
 
 $error = '';
@@ -76,7 +76,7 @@ if ($isPost) {
                         : 'Welcome to VP3. Your Free Trial is ready.');
                     vp3_funnel_event('signup_success');
                     if (!empty($_SESSION['pending_team_invite_token'])) redirect(url('/team-invite.php'));
-                    redirect(vp3_funnel_take_destination(login_destination()));
+                    redirect(vp3_funnel_finish_auth(login_destination(), current_user()));
                 } catch (Throwable $e) {
                     if ($pdo->inTransaction()) $pdo->rollBack();
                     error_log('VP3 public signup failed: ' . $e->getMessage());
