@@ -22,6 +22,10 @@ function vp3_public_header(string $title, string $description = '', array $optio
     $canonicalUrl = $canonicalPath !== '' ? url($canonicalPath) : '';
     $publicUser = current_user();
     $openUrl = $publicUser ? login_destination() : '';
+
+    if (!$publicUser && function_exists('vp3_funnel_capture_public_source')) {
+        vp3_funnel_capture_public_source();
+    }
     ?>
 <!doctype html>
 <html lang="en">
@@ -49,7 +53,7 @@ function vp3_public_header(string $title, string $description = '', array $optio
 </head>
 <body class="vp3-public<?= $bodyClass !== '' ? ' ' . e($bodyClass) : '' ?>">
 <?php if ($skipLink): ?><a class="vp3-skip-link" href="#main-content">Skip to main content</a><?php endif; ?>
-<header class="vp3-public-header">
+<header class="vp3-public-header<?= $compact ? ' compact' : '' ?>">
   <div class="vp3-public-nav">
     <a class="vp3-public-brand" href="<?= e(url('/index.php')) ?>" aria-label="VP3 home"><?= vp3_public_brand() ?></a>
     <?php if (!$compact): ?>
