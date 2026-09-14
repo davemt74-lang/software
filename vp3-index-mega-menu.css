@@ -30,6 +30,11 @@
 .mega-panel-pricing{grid-template-columns:minmax(200px,.65fr) minmax(0,2.35fr)}
 .mega-panel-pricing .mega-columns{align-items:stretch}
 
+/* Canonical VP3 mark on the homepage header and footer. */
+.brand,.footer-brand{display:inline-flex!important;align-items:center;gap:12px}
+.brand::before,.footer-brand::before{content:"";display:inline-block;width:8px;height:8px;flex:0 0 8px;background:currentColor;box-shadow:11px 0 0 currentColor,0 11px 0 currentColor,11px 11px 0 currentColor;transform:rotate(45deg);transform-origin:center;margin:0 12px 0 3px;border-radius:1px}
+.footer-brand::before{color:#fff}
+
 /* Mobile keeps the existing hamburger but upgrades it to an accordion-style product map. */
 .mobile-menu>summary{position:relative;z-index:3}
 .mobile-menu[open]>summary{background:rgba(255,255,255,.14)}
