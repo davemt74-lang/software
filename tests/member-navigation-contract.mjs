@@ -99,7 +99,7 @@ assert.ok(!profileAgent.includes('const STONEFELLOW_PROFILE_NAMESPACE'), 'profil
 assert.ok(profileRuntime.includes("'profile_url_example'=>url('/username')"), 'profile owner state should expose a root URL example');
 assert.ok(htaccess.includes('RewriteRule ^stonefellow/([A-Za-z0-9._-]+)/?$ /$1 [R=301,L,NE]'), 'legacy namespaced profile URLs should redirect to root usernames');
 assert.ok(htaccess.includes('profile-v900.php?username=$1 [L,QSA,NC]'), 'root usernames should rewrite to the canonical Profile Commerce composition renderer');
-assert.ok(profileComposition.includes("require __DIR__.'/profile.php';"), 'Profile Commerce composition must retain the existing profile renderer');
+assert.match(profileComposition,/require\s+__DIR__\s*\.\s*['"]\/profile\.php['"]\s*;/,'Profile Commerce composition must retain the existing profile renderer');
 assert.ok(account.includes('/account.css?v=account-light-20260904'), 'My Account should load the canonical light workspace theme');
 assert.ok(account.includes('system_agent_name()'), 'My Account should use the configured system name');
 assert.ok(profileDashboard.includes('state.system_agent_name'), 'legacy Profile Agent dashboard source should still use the configured system name while retained for compatibility');

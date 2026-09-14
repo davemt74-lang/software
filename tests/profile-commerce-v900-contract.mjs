@@ -6,6 +6,7 @@ const layer=read('includes/profile-commerce-v900.php');
 const checkout=read('includes/profile-commerce-checkout-v900.php');
 const ops=read('includes/profile-commerce-ops-v900.php');
 const wrapper=read('profile-v900.php');
+const profile=read('profile.php');
 const product=read('profile-commerce-product.php');
 const paymentReturn=read('profile-commerce-return.php');
 const manage=read('profile-commerce-products.php');
@@ -65,10 +66,13 @@ assert.doesNotMatch(ops,/api\.stripe\.com|connect\.square|api-m\.paypal/,'order 
 assert.match(routes,/profile-v900\.php\?username=\$1/,'canonical /username route must compose Profile Commerce');
 assert.match(routes,/\/product\//,'product detail must remain subordinate to /username');
 assert.doesNotMatch(routes,/RewriteRule[^\n]*\/store/i,'no separate public storefront route is allowed');
-assert.match(wrapper,/require __DIR__.'\/profile\.php'/,'v9 must compose the canonical profile renderer rather than fork it');
-assert.match(wrapper,/profile-commerce-grid-v900/);
-assert.match(wrapper,/profile_commerce_return_notices/,'profile return messaging must come from server-verified session state');
-assert.doesNotMatch(wrapper,/agent_commerce_return_verify_v800/,'profile renderer itself must not perform provider network verification');
+assert.match(wrapper,/require __DIR__ \. '\/profile\.php'/,'v9 must remain a thin wrapper around the canonical profile renderer');
+assert.doesNotMatch(wrapper,/profile-commerce-grid-v900|ob_start\(|str_replace\(/,'v9 wrapper must not inject a second Commerce layout');
+assert.match(profile,/profile_commerce_products_for_profile_v900\(\$pdo,\$profile,true,40\)/,'canonical profile must project public Commerce itself');
+assert.match(profile,/\$profileTabs\['products'\]=['"]Products['"]/,'Products must be part of the canonical profile tab model');
+assert.match(profile,/data-profile-panel="products"/,'canonical profile must render Products as a tab panel');
+assert.match(profile,/profile_commerce_return_notices/,'profile return messaging must come from server-verified session state');
+assert.doesNotMatch(profile,/agent_commerce_return_verify_v800/,'profile renderer itself must not perform provider network verification');
 
 assert.match(product,/profile_commerce_token_valid_v900/,'public checkout must validate its session token');
 assert.match(product,/checkout_nonce/,'public checkout form must carry the retry/idempotency nonce');

@@ -34,11 +34,11 @@ assert.ok(profileCss.includes('.profile-cover{width:100%'),'cover CSS must own t
 assert.ok(uploadsHtaccess.includes('Require all denied'),'raw uploads must remain inaccessible directly');
 assert.match(rootHtaccess,/RewriteRule \^uploads\/\(avatars\|profile-covers\)\//,'profile avatar and cover requests must route through the secure media reader');
 assert.ok(mediaApi.includes("['avatars', 'profile-covers']"),'media reader must allow only the two profile media buckets');
-assert.ok(mediaApi.includes("u.avatar_path=?"),'avatar delivery must be tied to the persisted owning user');
-assert.ok(mediaApi.includes("p.cover_path=?"),'cover delivery must be tied to the persisted owning profile');
+assert.ok(mediaApi.includes("u.avatar_path IN (?,?)"),'avatar delivery must be tied to the persisted owning user while accepting the canonical and legacy-safe path forms');
+assert.ok(mediaApi.includes("p.cover_path IN (?,?)"),'cover delivery must be tied to the persisted owning profile while accepting the canonical and legacy-safe path forms');
 assert.ok(mediaApi.includes("if (!$isPublic && !$isOwner && !$isAdmin && !$identityDisclosure)"),'private profile media must stay private unless an existing disclosure rule authorizes it');
 assert.ok(mediaApi.includes("identity_disclosed=1"),'visitor avatar access must preserve explicit identity-sharing privacy');
-assert.ok(mediaApi.includes("realpath(STONEFELLOW_ROOT . '/uploads/' . $bucket)"),'media reader must enforce filesystem containment');
+assert.ok(mediaApi.includes("profile_public_media_file_v174"),'media reader must delegate filesystem containment to the canonical profile-media resolver');
 assert.match(mediaApi,/\$allowed\s*=\s*\[[\s\S]*?'jpg'\s*=>\s*'image\/jpeg'[\s\S]*?'png'\s*=>\s*'image\/png'[\s\S]*?'webp'\s*=>\s*'image\/webp'/,'media reader must enforce image MIME/extension boundaries');
 assert.ok(fs.existsSync(new URL('../uploads/avatars/.gitkeep',import.meta.url)),'avatar upload directory must ship in deploys');
 assert.ok(fs.existsSync(new URL('../uploads/profile-covers/.gitkeep',import.meta.url)),'cover upload directory must ship in deploys');
