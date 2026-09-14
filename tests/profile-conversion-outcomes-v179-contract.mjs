@@ -13,8 +13,8 @@ const portal = read('profile-agent-portal.js');
 const bootstrap = read('includes/bootstrap.php');
 
 assert.match(outcomes, /\['booking_converted', 'product_converted'\]/, 'outcomes must use the narrow Booking/Product conversion event allowlist');
-assert.match(outcomes, /profile-conversion-outcome-v179\|' \.[^;]+\$eventType[^;]+\$sourceId/s, 'outcomes must dedupe from canonical entity identity');
-assert.doesNotMatch(outcomes, /floor\(time\(|time\(\).*dedupe|bucket/i, 'outcome dedupe must not depend on a time bucket');
+assert.match(outcomes, /\$dedupeKey\s*=\s*hash\('sha256',\s*'profile-conversion-outcome-v179\|'\s*\.\s*\$ownerUserId\s*\.\s*'\|'\s*\.\s*\$eventType\s*\.\s*'\|'\s*\.\s*\$sourceId\);/, 'outcomes must dedupe from canonical owner, event, and source entity identity');
+assert.doesNotMatch(outcomes, /\$dedupeKey\s*=\s*[^;]*(?:floor\s*\(\s*time\s*\(|\$bucket|time\s*\(\s*\))/i, 'outcome dedupe must not depend on a time bucket');
 assert.match(outcomes, /SELECT \* FROM profile_visit_sessions WHERE id=\? AND owner_user_id=\?/, 'attributed Profile sessions must be owner-scoped before use');
 assert.match(outcomes, /INSERT INTO profile_events \(owner_user_id,profile_session_id,visitor_user_id,profile_agent_id,event_type,priority,dedupe_key,metadata_json\) VALUES \(\?,NULL,NULL/, 'webhook outcomes must preserve real conversions without manufacturing visitor identity');
 assert.doesNotMatch(outcomes, /CREATE TABLE|ALTER TABLE/i, 'conversion outcomes must remain migration-free');
