@@ -30,7 +30,7 @@ assert.match(workspaceWrapper, /require __DIR__ \. '\/main-sidebar\.php'/, 'lega
 assert.match(sidebar, /member_navigation_active_key\(\)/, 'sidebar must fall back to canonical active-key resolution');
 assert.match(sidebar, /\['chat','profile_agent','messages','contacts','knowledge','transcriptions','calendar','scheduling','profile_commerce','team'\]/, 'primary shell must cover core Agent, workspace, planning, commerce and team destinations');
 assert.match(sidebar, /data-vp3-nav-key=/, 'sidebar links must expose canonical navigation keys');
-assert.match(sidebar, /aria-current=\\"page\\"/, 'active sidebar links must expose aria-current');
+assert.match(sidebar, /aria-current="page"/, 'active sidebar links must expose aria-current');
 assert.match(sidebar, /agent-nav-group-label/, 'primary navigation must render product-area grouping');
 assert.match(sidebar, /agent-menu-group-label/, 'secondary user menu must render group labels');
 assert.match(sidebar, /data-shell-active=/, 'sidebar must expose active shell state to the runtime');
