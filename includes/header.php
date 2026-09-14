@@ -1,9 +1,10 @@
 <?php
 declare(strict_types=1);
-$pageTitle = $pageTitle ?? 'Stonefellow';
-$pageDescription = $pageDescription ?? 'Stonefellow — music, stories, connection.';
-$activePage = $activePage ?? '';
 $headerUser = current_user();
+$headerBrandName = $headerUser ? 'VP3' : 'Stonefellow';
+$pageTitle = $pageTitle ?? $headerBrandName;
+$pageDescription = $pageDescription ?? ($headerUser ? 'VP3 — your personal online deployment.' : 'Stonefellow — music, stories, connection.');
+$activePage = $activePage ?? '';
 $headerNotificationCount = $headerUser ? notification_unread_count($headerUser) : 0;
 $headerNotifications = $headerUser ? notification_recent($headerUser, 6) : [];
 $headerUserMenuLinks = $headerUser ? member_navigation_menu_links($headerUser) : [];
@@ -44,7 +45,7 @@ $headerCanManageArtist = $headerUser
 <body>
 <header class="site-header">
   <div class="header-inner">
-    <a class="logo" href="<?= e(url($headerUser && has_permission('chat.access', $headerUser) ? '/chat.php' : '/index.php')) ?>" aria-label="Stonefellow home">Stonefellow</a>
+    <a class="logo" href="<?= e(url($headerUser && has_permission('chat.access', $headerUser) ? '/chat.php' : '/index.php')) ?>" aria-label="<?= e($headerBrandName) ?> home"><?= e($headerBrandName) ?></a>
 
     <div class="header-right">
       <nav class="desktop-nav" aria-label="Primary navigation">
