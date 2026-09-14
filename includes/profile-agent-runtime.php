@@ -166,6 +166,12 @@ function profile_runtime_owner_state(PDO $pdo,array $user): array
         $event['utm_source']=(string)($metadata['utm_source']??'');
         $event['utm_medium']=(string)($metadata['utm_medium']??'');
         $event['utm_campaign']=(string)($metadata['utm_campaign']??'');
+        $event['conversion_kind']=in_array((string)($metadata['conversion_kind']??''),['booking','product'],true)?(string)$metadata['conversion_kind']:'';
+        $event['target_id']=max(0,(int)($metadata['target_id']??0));
+        $event['target_slug']=mb_strimwidth(trim((string)($metadata['target_slug']??'')),0,120,'');
+        $event['target_title']=mb_strimwidth(trim((string)($metadata['target_title']??'')),0,190,'…');
+        $targetUrl=trim((string)($metadata['target_url']??''));
+        $event['target_url']=$targetUrl!==''&&filter_var($targetUrl,FILTER_VALIDATE_URL)&&in_array(strtolower((string)parse_url($targetUrl,PHP_URL_SCHEME)),['http','https'],true)?mb_strimwidth($targetUrl,0,500,''):'';
         unset($event['visitor_user_id'],$event['session_key'],$event['metadata_json']);
     }unset($event);
 
@@ -191,6 +197,8 @@ function profile_runtime_owner_state(PDO $pdo,array $user): array
     $visitStats->execute([$uid]);$visitStatRow=$visitStats->fetch()?:[];
     $conversationStats=$pdo->prepare("SELECT COUNT(*) AS total_conversations,COALESCE(SUM(status<>'resolved'),0) AS open_conversations,COALESCE(SUM(status='owner_joined'),0) AS owner_joined FROM profile_agent_conversations WHERE owner_user_id=?");
     $conversationStats->execute([$uid]);$conversationStatRow=$conversationStats->fetch()?:[];
+    $conversionStats=$pdo->prepare("SELECT COALESCE(SUM(event_type='booking_intent'),0) AS booking_intents,COALESCE(SUM(event_type='product_intent'),0) AS product_intents,COALESCE(SUM(event_type IN ('booking_intent','product_intent')),0) AS conversion_intents,COALESCE(SUM(event_type IN ('booking_intent','product_intent') AND created_at>=DATE_SUB(NOW(),INTERVAL 24 HOUR)),0) AS conversion_intents_24h FROM profile_events WHERE owner_user_id=?");
+    $conversionStats->execute([$uid]);$conversionStatRow=$conversionStats->fetch()?:[];
 
     return [
         'build'=>STONEFELLOW_PROFILE_AGENT_BUILD,
@@ -232,6 +240,10 @@ function profile_runtime_owner_state(PDO $pdo,array $user): array
             'agent_contacts'=>(int)$radarStats['agent_contacts'],
             'agent_events_24h'=>(int)$radarStats['events_24h'],
             'agent_high_risk_24h'=>(int)$radarStats['high_risk_24h'],
+            'booking_intents'=>(int)($conversionStatRow['booking_intents']??0),
+            'product_intents'=>(int)($conversionStatRow['product_intents']??0),
+            'conversion_intents'=>(int)($conversionStatRow['conversion_intents']??0),
+            'conversion_intents_24h'=>(int)($conversionStatRow['conversion_intents_24h']??0),
         ],
     ];
 }
