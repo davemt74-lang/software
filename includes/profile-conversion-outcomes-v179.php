@@ -17,12 +17,22 @@ function profile_conversion_order_metadata_v179(array $order): array
     return is_array($decoded) ? $decoded : [];
 }
 
-function profile_conversion_session_id_v179(PDO $pdo, int $ownerUserId): int
+function profile_conversion_viewer_is_owner_v179(int $ownerUserId): bool
 {
-    if ($ownerUserId < 1 || !function_exists('profile_runtime_session')) return 0;
+    if ($ownerUserId < 1) return false;
     try {
         $viewer = current_user();
-        if ((int)($viewer['id'] ?? 0) === $ownerUserId) return 0;
+        return (int)($viewer['id'] ?? 0) === $ownerUserId;
+    } catch (Throwable $e) {
+        return false;
+    }
+}
+
+function profile_conversion_session_id_v179(PDO $pdo, int $ownerUserId): int
+{
+    if ($ownerUserId < 1 || !function_exists('profile_runtime_session') || profile_conversion_viewer_is_owner_v179($ownerUserId)) return 0;
+    try {
+        $viewer = current_user();
         $session = profile_runtime_session($pdo, $ownerUserId, $viewer, false);
         return max(0, (int)($session['id'] ?? 0));
     } catch (Throwable $e) {
@@ -32,7 +42,7 @@ function profile_conversion_session_id_v179(PDO $pdo, int $ownerUserId): int
 
 function profile_conversion_attach_order_v179(PDO $pdo, int $orderId, int $ownerUserId, array $metadata): void
 {
-    if ($orderId < 1 || $ownerUserId < 1 || !$metadata) return;
+    if ($orderId < 1 || $ownerUserId < 1 || !$metadata || profile_conversion_viewer_is_owner_v179($ownerUserId)) return;
     try {
         $stmt = $pdo->prepare('SELECT owner_user_id,metadata_json FROM agent_commerce_orders_v800 WHERE id=? LIMIT 1');
         $stmt->execute([$orderId]);
@@ -159,7 +169,7 @@ function profile_conversion_booking_confirmed_v179(PDO $pdo, array $profile, arr
 {
     $ownerUserId = max(0, (int)($profile['user_id'] ?? 0));
     $bookingId = max(0, (int)($booking['id'] ?? 0));
-    if ($ownerUserId < 1 || $bookingId < 1) return null;
+    if ($ownerUserId < 1 || $bookingId < 1 || profile_conversion_viewer_is_owner_v179($ownerUserId)) return null;
     $username = profile_username_normalize((string)($profile['username'] ?? ''));
     $slug = trim((string)($event['slug'] ?? ''));
     $url = $username !== '' && function_exists('agent_scheduling_public_booking_url_v450')
@@ -189,7 +199,7 @@ function profile_conversion_commerce_order_v179(PDO $pdo, array $order): ?array
     if ($orderId < 1 || $ownerUserId < 1 || !in_array($paymentStatus, ['paid', 'partially_paid'], true)) return null;
 
     $metadata = profile_conversion_order_metadata_v179($order);
-    $source = trim((string)($metadata['profile_conversion_source'] ?? $metadata['source'] ?? ''));
+    $source = trim((string)($metadata['profile_conversion_source'] ?? ''));
     $sessionId = max(0, (int)($metadata['profile_session_id'] ?? 0));
     $profile = function_exists('profile_for_user') ? profile_for_user($pdo, $ownerUserId, false) : null;
     $username = profile_username_normalize((string)($metadata['profile_username'] ?? $profile['username'] ?? ''));
@@ -230,7 +240,7 @@ function profile_conversion_commerce_order_v179(PDO $pdo, array $order): ?array
         $items = function_exists('agent_commerce_order_items_v800') ? agent_commerce_order_items_v800($pdo, $orderId) : [];
         $item = $items[0] ?? [];
         $productId = max(0, (int)($metadata['profile_target_id'] ?? $item['product_id'] ?? 0));
-        $slug = trim((string)($metadata['profile_target_slug'] ?? $metadata['profile_product_slug'] ?? ''));
+        $slug = trim((string)($metadata['profile_target_slug'] ?? ''));
         $title = trim((string)($metadata['profile_target_title'] ?? $item['title_snapshot'] ?? 'Product'));
         $targetUrl = trim((string)($metadata['profile_target_url'] ?? ''));
         if ($targetUrl === '' && $username !== '' && $slug !== '') {
@@ -253,36 +263,4 @@ function profile_conversion_commerce_order_v179(PDO $pdo, array $order): ?array
     }
 
     return null;
-}
-
-function profile_conversion_webhook_v179(PDO $pdo, string $provider, string $payload): ?array
-{
-    $event = json_decode($payload, true);
-    if (!is_array($event)) return null;
-    $provider = strtolower(trim($provider));
-    $eventType = (string)($event['type'] ?? $event['event_type'] ?? '');
-    $orderId = 0;
-
-    if ($provider === 'stripe' && $eventType === 'checkout.session.completed') {
-        $object = $event['data']['object'] ?? [];
-        $orderId = max(0, (int)($object['metadata']['vp3_commerce_order_id'] ?? 0));
-    } elseif ($provider === 'square' && in_array($eventType, ['payment.created', 'payment.updated'], true)) {
-        $payment = $event['data']['object']['payment'] ?? [];
-        $external = trim((string)($payment['order_id'] ?? ''));
-        if ($external !== '' && function_exists('agent_commerce_attempt_by_external_v800')) {
-            $attempt = agent_commerce_attempt_by_external_v800($pdo, 'square', $external);
-            $orderId = max(0, (int)($attempt['order_id'] ?? 0));
-        }
-    } elseif ($provider === 'paypal' && $eventType === 'PAYMENT.CAPTURE.COMPLETED') {
-        $capture = $event['resource'] ?? [];
-        $external = trim((string)($capture['supplementary_data']['related_ids']['order_id'] ?? ''));
-        if ($external !== '' && function_exists('agent_commerce_attempt_by_external_v800')) {
-            $attempt = agent_commerce_attempt_by_external_v800($pdo, 'paypal', $external);
-            $orderId = max(0, (int)($attempt['order_id'] ?? 0));
-        }
-    }
-
-    if ($orderId < 1 || !function_exists('agent_commerce_order_v800')) return null;
-    $order = agent_commerce_order_v800($pdo, $orderId);
-    return $order ? profile_conversion_commerce_order_v179($pdo, $order) : null;
 }
