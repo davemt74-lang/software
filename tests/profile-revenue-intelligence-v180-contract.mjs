@@ -56,6 +56,11 @@ assert.match(ui,/Agent Intelligence/,'Analytics UI must show agent-derived oppor
 assert.match(ui,/funnelCard\('today','Today'\)/,'Analytics UI must render today funnel comparison');
 assert.match(ui,/funnelCard\('7d','7 days'\)/,'Analytics UI must render seven-day funnel comparison');
 assert.match(ui,/funnelCard\('30d','30 days'\)/,'Analytics UI must render thirty-day funnel comparison');
+assert.match(ui,/async function loadIntelligence\(force=false\)/,'Phase 18 refreshes must support an explicit manual force path');
+assert.match(ui,/Date\.now\(\)-intelligenceLoadedAt<120000/,'automatic Phase 18 aggregate refresh must be throttled to two minutes');
+assert.match(ui,/await loadIntelligence\(!silent\)/,'manual Analytics refresh must bypass the Phase 18 throttle while background refresh respects it');
+assert.match(ui,/intelligenceLoadedAt=Date\.now\(\)/,'successful Phase 18 loads must update their freshness timestamp');
+assert.match(ui,/['"]&quot;['"]/,'HTML quote escaping must retain a complete quote entity');
 assert.match(ui,/rel=\"noopener\"/,'external offer links must be isolated with noopener');
 assert.match(ui,/const esc=v=>/,'all Phase 18 text must use the existing HTML escaping boundary');
 assert.doesNotMatch(ui,/v\.request_count/,'human Profile analytics must not inherit automated request-count UI');
