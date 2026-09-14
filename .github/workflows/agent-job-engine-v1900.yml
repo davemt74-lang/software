@@ -28,7 +28,9 @@ jobs:
       - name: PHP syntax
         run: |
           php -l includes/agent-job-engine-v1900.php
+          php -l includes/agent-job-worker-v1900.php
           php -l api/agent-workflow-runs-v1400.php
+          php -l agent-workflows.php
           php -l agent-job-engine-upgrade-v1900.php
           php -l tests/agent-job-engine-v1900-test.php
       - name: Contract
