@@ -2,34 +2,50 @@
 declare(strict_types=1);
 require __DIR__ . '/includes/bootstrap.php';
 require_once __DIR__ . '/includes/vp3-public.php';
+require_once __DIR__ . '/includes/vp3-funnel.php';
+
+$requestInput = ($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' ? $_POST : $_GET;
+$funnelIntent = vp3_funnel_capture(is_array($requestInput) ? $requestInput : []);
 
 if (is_logged_in()) {
     if (!empty($_SESSION['pending_team_invite_token'])) redirect(url('/team-invite.php'));
-    redirect(login_destination());
+    redirect(vp3_funnel_destination(login_destination()));
 }
 $error = flash('error');
 $email = strtolower(trim((string)($_POST['email'] ?? '')));
+$isPost = ($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST';
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+if (!$isPost) {
+    vp3_funnel_event('login_view');
+}
+
+if ($isPost) {
+    vp3_funnel_event('login_submit');
     if (!verify_csrf()) {
         $error = 'Your session expired. Please try again.';
     } else {
         $password = (string)($_POST['password'] ?? '');
         if (login_attempt($email, $password)) {
+            vp3_funnel_event('login_success');
             if (!empty($_SESSION['pending_team_invite_token'])) redirect(url('/team-invite.php'));
-            redirect(login_destination());
+            redirect(vp3_funnel_destination(login_destination()));
         }
         $error = 'Invalid email or password, or too many recent attempts.';
     }
+
+    if ($error) {
+        vp3_funnel_event('login_failure');
+    }
 }
 
+$funnelIntent = vp3_funnel_intent();
 vp3_public_header('Sign in — VP3', 'Sign in to your VP3 personal AI assistant.', ['active'=>'login','compact'=>true,'body_class'=>'vp3-auth-page']);
 ?>
-<main class="vp3-auth-shell">
-  <section class="vp3-auth-visual">
+<main id="main-content" class="vp3-auth-shell">
+  <section class="vp3-auth-visual" aria-labelledby="login-benefits-heading">
     <div class="vp3-auth-visual-content">
       <div class="vp3-kicker">Your life. Your assistant.</div>
-      <h1>Pick up where you left off.</h1>
+      <h1 id="login-benefits-heading">Pick up where you left off.</h1>
       <p>Return to your conversations, transcriptions, second brain, personal URL, projects, contacts, and team activity.</p>
       <div class="vp3-auth-points">
         <div class="vp3-auth-point"><b>One connected context</b>Your assistant carries forward the work, knowledge, and decisions that matter.</div>
@@ -38,21 +54,22 @@ vp3_public_header('Sign in — VP3', 'Sign in to your VP3 personal AI assistant.
       </div>
     </div>
   </section>
-  <section class="vp3-auth-form-side">
+  <section class="vp3-auth-form-side" aria-labelledby="login-form-heading">
     <div class="vp3-auth-card">
       <div class="vp3-kicker">Welcome back</div>
-      <h1>Sign in to VP3.</h1>
+      <h1 id="login-form-heading">Sign in to VP3.</h1>
       <p class="vp3-auth-intro">Open your personal assistant and continue your work.</p>
-      <?php if (!db_ready()): ?><div class="vp3-alert">The database is not configured yet. Sign-in will be available after setup is complete.</div><?php endif; ?>
-      <?php if ($error): ?><div class="vp3-alert error" role="alert"><?= e((string)$error) ?></div><?php endif; ?>
+      <?php if (!db_ready()): ?><div class="vp3-alert" role="status">The database is not configured yet. Sign-in will be available after setup is complete.</div><?php endif; ?>
+      <?php if ($error): ?><div class="vp3-alert error" role="alert" aria-live="polite"><?= e((string)$error) ?></div><?php endif; ?>
       <form class="vp3-auth-form" method="post" action="<?= e(url('/login.php')) ?>">
         <?= csrf_field() ?>
+        <?php foreach(['plan','billing','source','return_to'] as $intentKey): if(isset($funnelIntent[$intentKey])): ?><input type="hidden" name="<?= e($intentKey) ?>" value="<?= e((string)$funnelIntent[$intentKey]) ?>"><?php endif; endforeach; ?>
         <div class="vp3-field"><label for="email">Email address</label><input id="email" name="email" type="email" maxlength="190" autocomplete="username" required placeholder="you@example.com" value="<?= e($email) ?>"></div>
-        <div class="vp3-field"><label for="password">Password</label><div class="vp3-password-wrap"><input id="password" name="password" type="password" autocomplete="current-password" required placeholder="Enter your password"><button class="vp3-password-toggle" type="button" data-password-toggle="password">Show</button></div></div>
+        <div class="vp3-field"><label for="password">Password</label><div class="vp3-password-wrap"><input id="password" name="password" type="password" autocomplete="current-password" required placeholder="Enter your password"><button class="vp3-password-toggle" type="button" data-password-toggle="password" aria-controls="password">Show</button></div></div>
         <div class="vp3-form-row"><span>Secure session</span><a class="vp3-text-link" href="<?= e(url('/forgot-password.php')) ?>">Forgot password?</a></div>
         <button class="vp3-btn primary full" type="submit">Sign in →</button>
       </form>
-      <div class="vp3-auth-foot">New to VP3? <a class="vp3-text-link" href="<?= e(url('/signup.php')) ?>">Create an account</a></div>
+      <div class="vp3-auth-foot">New to VP3? <a class="vp3-text-link" href="<?= e(vp3_funnel_url('/signup.php')) ?>">Create an account</a></div>
       <div class="vp3-legal-mini">By continuing, you agree to the <a class="vp3-text-link" href="<?= e(url('/terms.php')) ?>">Terms</a> and <a class="vp3-text-link" href="<?= e(url('/privacy.php')) ?>">Privacy Policy</a>.</div>
     </div>
   </section>
