@@ -2,6 +2,7 @@
 declare(strict_types=1);
 require __DIR__ . '/includes/bootstrap.php';
 require_once __DIR__ . '/includes/vp3-public.php';
+require_once __DIR__ . '/includes/vp3-funnel.php';
 redirect_logged_in_public_page();
 
 function vp3_pricing_money(int $cents): string
@@ -54,15 +55,16 @@ foreach($capabilityCatalog as $key=>$meta){
     }
 }
 
+if(($_SERVER['REQUEST_METHOD']??'GET')==='GET')vp3_funnel_event('pricing_view',['source'=>'pricing']);
 vp3_public_header('Pricing — VP3', 'VP3 packages and feature access configured by the service administrator.', ['active'=>'pricing']);
 ?>
 <section class="vp3-public-hero">
   <div class="vp3-kicker">One account. Packages that fit the work.</div>
   <h1>Choose the VP3 access that fits how you work.</h1>
   <p>Packages control commercial features, AI capacity and collaboration limits. Your account identity and security permissions remain separate.</p>
-  <?php if($hasAnnual): ?><div class="vp3-billing"><button class="active" type="button" data-billing="monthly">Monthly</button><button type="button" data-billing="annual">Annual</button></div><?php endif; ?>
+  <?php if($hasAnnual): ?><div class="vp3-billing" role="group" aria-label="Billing period"><button class="active" type="button" data-billing="monthly" aria-pressed="true">Monthly</button><button type="button" data-billing="annual" aria-pressed="false">Annual</button></div><?php endif; ?>
 </section>
-<main>
+<main id="main-content">
 <section class="vp3-section"><div class="vp3-wrap">
 <?php if($packages): ?>
   <div class="vp3-price-grid">
@@ -75,6 +77,9 @@ vp3_public_header('Pricing — VP3', 'VP3 packages and feature access configured
       $monthlyTokens=max(0,(int)($package['ai_tokens_monthly']??0));
       $default=(int)($package['is_default']??0)===1;
       $features=$package['public_features']??[];
+      $funnelPath=($isTrial||$monthly===0)?'/signup.php':'/book-demo.php';
+      $funnelLabel=$isTrial||$monthly===0?'Create account':'Book a demo';
+      $funnelUrl=vp3_funnel_url($funnelPath,['plan'=>(string)$package['id'],'billing'=>'monthly','source'=>'pricing']);
   ?>
     <article class="vp3-plan<?= $default?' featured':'' ?>">
       <?php if($default): ?><span class="vp3-plan-badge">Default signup package</span><?php elseif($isTrial): ?><span class="vp3-plan-badge">Trial</span><?php endif; ?>
@@ -87,20 +92,20 @@ vp3_public_header('Pricing — VP3', 'VP3 packages and feature access configured
         <div class="vp3-price"><strong data-monthly-cents="<?= $monthly ?>" data-annual-cents="<?= $annual>0?$annual:'' ?>"><?= e(vp3_pricing_money($monthly)) ?></strong><span data-price-suffix><?= $monthly>0?'/mo':'' ?></span></div>
         <div class="vp3-price-note"><?= $monthlyTokens>0?number_format($monthlyTokens).' AI tokens / month':'AI allowance configured by package' ?></div>
       <?php endif; ?>
-      <a class="vp3-btn<?= $default?' primary':'' ?>" href="<?= e(url(($isTrial||$monthly===0)?'/signup.php':'/book-demo.php')) ?>"><?= $isTrial||$monthly===0?'Create account':'Book a demo' ?></a>
+      <a class="vp3-btn<?= $default?' primary':'' ?>" data-funnel-cta href="<?= e($funnelUrl) ?>"><?= e($funnelLabel) ?></a>
       <?php if($features): ?><ul><?php foreach(array_slice($features,0,10) as $feature): ?><li><?= e((string)$feature) ?></li><?php endforeach; ?></ul><?php endif; ?>
     </article>
   <?php endforeach; ?>
   </div>
 <?php else: ?>
-  <div class="vp3-cta-box"><div><h2>Packages are being configured.</h2><p>Create your VP3 account to begin onboarding, or book a demo to discuss the right setup.</p></div><div><a class="vp3-btn primary" href="<?= e(url('/signup.php')) ?>">Create account →</a> <a class="vp3-btn" href="<?= e(url('/book-demo.php')) ?>">Book a demo</a></div></div>
+  <div class="vp3-cta-box"><div><h2>Packages are being configured.</h2><p>Create your VP3 account to begin onboarding, or book a demo to discuss the right setup.</p></div><div><a class="vp3-btn primary" href="<?= e(vp3_funnel_url('/signup.php',['source'=>'pricing'])) ?>">Create account →</a> <a class="vp3-btn" href="<?= e(vp3_funnel_url('/book-demo.php',['source'=>'pricing'])) ?>">Book a demo</a></div></div>
 <?php endif; ?>
 </div></section>
 
 <?php if(count($packages)>1&&$matrixKeys): ?>
-<section class="vp3-section soft"><div class="vp3-wrap"><div class="vp3-section-head"><div class="vp3-kicker">Compare packages</div><h2>Features and limits from the live package catalog.</h2></div><div class="vp3-matrix"><table><thead><tr><th>Capability</th><?php foreach($packages as $package): ?><th><?= e((string)$package['name']) ?></th><?php endforeach; ?></tr></thead><tbody>
-<tr><td>AI token allowance</td><?php foreach($packages as $package): ?><td><?= (int)$package['is_trial']===1?number_format((int)$package['trial_tokens']).' trial':number_format((int)$package['ai_tokens_monthly']).' / month' ?></td><?php endforeach; ?></tr>
-<?php foreach($matrixKeys as $key=>$meta): ?><tr><td><?= e((string)$meta['label']) ?></td><?php foreach($packages as $package):
+<section class="vp3-section soft"><div class="vp3-wrap"><div class="vp3-section-head"><div class="vp3-kicker">Compare packages</div><h2>Features and limits from the live package catalog.</h2></div><div class="vp3-matrix"><table><thead><tr><th scope="col">Capability</th><?php foreach($packages as $package): ?><th scope="col"><?= e((string)$package['name']) ?></th><?php endforeach; ?></tr></thead><tbody>
+<tr><th scope="row">AI token allowance</th><?php foreach($packages as $package): ?><td><?= (int)$package['is_trial']===1?number_format((int)$package['trial_tokens']).' trial':number_format((int)$package['ai_tokens_monthly']).' / month' ?></td><?php endforeach; ?></tr>
+<?php foreach($matrixKeys as $key=>$meta): ?><tr><th scope="row"><?= e((string)$meta['label']) ?></th><?php foreach($packages as $package):
     $state=null;foreach(($package['entitlements']??[]) as $row)if((string)$row['capability_key']===$key){$state=$row;break;}
     $enabled=$state&&(int)$state['is_enabled']===1;
 ?><td><?php if(!$enabled): ?>—<?php elseif(($meta['type']??'boolean')==='limit'&&$state['limit_value']!==null): ?><?= number_format((int)$state['limit_value']) ?><?php else: ?>✓<?php endif; ?></td><?php endforeach; ?></tr><?php endforeach; ?>
@@ -108,7 +113,7 @@ vp3_public_header('Pricing — VP3', 'VP3 packages and feature access configured
 <?php endif; ?>
 
 <section class="vp3-section"><div class="vp3-wrap"><div class="vp3-section-head"><div class="vp3-kicker">Questions</div><h2>Pricing FAQ</h2></div><div class="vp3-faq-grid"><details open><summary>Do packages change my account permissions?</summary><p>No. Packages provide commercial entitlements and capacity. They cannot create security permissions or Artist/Team authority that your account does not already have.</p></details><details><summary>Can my package change later?</summary><p>Yes. An administrator can assign or change packages, trial periods, complimentary access and AI token capacity without changing your account identity.</p></details><details><summary>How are AI tokens counted?</summary><p>VP3 records actual provider-reported input and output tokens against the active package period. Added token credits extend the included allowance.</p></details><details><summary>How does team access work?</summary><p>Packages can set the number of Team seats, while Manager and Producer authority remains scoped to the specific Artist relationship and assigned work.</p></details></div></div></section>
-<section class="vp3-section soft"><div class="vp3-wrap"><div class="vp3-cta-box"><div><h2>Not sure which package fits?</h2><p>Tell us how you work and we’ll map the right VP3 configuration.</p></div><a class="vp3-btn primary" href="<?= e(url('/book-demo.php')) ?>">Find my setup →</a></div></div></section>
+<section class="vp3-section soft"><div class="vp3-wrap"><div class="vp3-cta-box"><div><h2>Not sure which package fits?</h2><p>Tell us how you work and we’ll map the right VP3 configuration.</p></div><a class="vp3-btn primary" href="<?= e(vp3_funnel_url('/book-demo.php',['source'=>'pricing'])) ?>">Find my setup →</a></div></div></section>
 </main>
-<?php if($hasAnnual): ?><script>(()=>{const buttons=document.querySelectorAll('[data-billing]'),prices=document.querySelectorAll('[data-monthly-cents]');const money=cents=>{const n=Number(cents);if(!Number.isFinite(n))return 'Contact';if(n<=0)return 'Free';const value=n/100;return '$'+value.toLocaleString(undefined,{minimumFractionDigits:n%100?2:0,maximumFractionDigits:2});};buttons.forEach(btn=>btn.addEventListener('click',()=>{buttons.forEach(b=>b.classList.remove('active'));btn.classList.add('active');const annual=btn.dataset.billing==='annual';prices.forEach(p=>{const raw=annual?p.dataset.annualCents:p.dataset.monthlyCents;p.textContent=raw===''?'Contact':money(raw);const suffix=p.parentElement.querySelector('[data-price-suffix]');if(suffix)suffix.textContent=raw!==''&&Number(raw)>0?(annual?'/yr':'/mo'):'';});}));})();</script><?php endif; ?>
+<?php if($hasAnnual): ?><script>(()=>{const buttons=document.querySelectorAll('[data-billing]'),prices=document.querySelectorAll('[data-monthly-cents]'),ctas=document.querySelectorAll('[data-funnel-cta]');const money=cents=>{const n=Number(cents);if(!Number.isFinite(n))return 'Contact';if(n<=0)return 'Free';const value=n/100;return '$'+value.toLocaleString(undefined,{minimumFractionDigits:n%100?2:0,maximumFractionDigits:2});};buttons.forEach(btn=>btn.addEventListener('click',()=>{buttons.forEach(b=>{const active=b===btn;b.classList.toggle('active',active);b.setAttribute('aria-pressed',active?'true':'false');});const billing=btn.dataset.billing==='annual'?'annual':'monthly',annual=billing==='annual';prices.forEach(p=>{const raw=annual?p.dataset.annualCents:p.dataset.monthlyCents;p.textContent=raw===''?'Contact':money(raw);const suffix=p.parentElement.querySelector('[data-price-suffix]');if(suffix)suffix.textContent=raw!==''&&Number(raw)>0?(annual?'/yr':'/mo'):'';});ctas.forEach(link=>{try{const target=new URL(link.href,window.location.href);target.searchParams.set('billing',billing);link.href=target.toString();}catch(e){}});}))})();</script><?php endif; ?>
 <?php vp3_public_footer(); ?>
