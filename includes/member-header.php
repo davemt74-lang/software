@@ -9,6 +9,14 @@ $memberHeaderSubtitle = trim((string)($memberHeaderSubtitle ?? ''));
 $memberHeaderActions = (string)($memberHeaderActions ?? '');
 $memberHeaderClass = trim((string)($memberHeaderClass ?? ''));
 $memberHeaderShowSidebarToggle = (bool)($memberHeaderShowSidebarToggle ?? true);
+$memberHeaderActiveKey = trim((string)($memberHeaderActiveKey ?? $mainSidebarActive ?? $workspaceSidebarActive ?? ''));
+if ($memberHeaderActiveKey === '' && function_exists('member_navigation_active_key')) {
+    $memberHeaderActiveKey = member_navigation_active_key();
+}
+$memberHeaderSection = trim((string)($memberHeaderSection ?? ''));
+if ($memberHeaderSection === '' && function_exists('member_navigation_section_label')) {
+    $memberHeaderSection = member_navigation_section_label($memberHeaderActiveKey);
+}
 $memberHeaderNotifications = notification_recent($memberHeaderUser, 6);
 $memberHeaderNotificationCount = notification_unread_count($memberHeaderUser);
 $memberHeaderCanChat = has_permission('chat.access', $memberHeaderUser);
@@ -16,10 +24,11 @@ $memberHeaderAgentVoiceEnabled = $memberHeaderCanChat ? member_agent_voice_enabl
 $memberHeaderRenderAgentVoiceAssets = empty($GLOBALS['VP3_MEMBER_AGENT_VOICE_MENU_ASSETS_RENDERED']);
 if ($memberHeaderRenderAgentVoiceAssets) $GLOBALS['VP3_MEMBER_AGENT_VOICE_MENU_ASSETS_RENDERED'] = true;
 ?>
-<header class="chat-topbar member-header<?= $memberHeaderClass !== '' ? ' ' . e($memberHeaderClass) : '' ?>" data-member-header>
-  <?php if ($memberHeaderShowSidebarToggle): ?><button class="chat-icon-button mobile-only" id="openChatSidebar" type="button" aria-label="Open menu">☰</button><?php endif; ?>
+<header class="chat-topbar member-header<?= $memberHeaderClass !== '' ? ' ' . e($memberHeaderClass) : '' ?>" data-member-header data-shell-active="<?= e($memberHeaderActiveKey) ?>" data-shell-section="<?= e($memberHeaderSection) ?>">
+  <?php if ($memberHeaderShowSidebarToggle): ?><button class="chat-icon-button mobile-only" id="openChatSidebar" type="button" aria-label="Open VP3 navigation" aria-controls="chatSidebar">☰</button><?php endif; ?>
 
   <div class="chat-topbar-title member-header-title">
+    <?php if ($memberHeaderSection !== ''): ?><small class="member-header-context">VP3 · <?= e($memberHeaderSection) ?></small><?php endif; ?>
     <?php if ($memberHeaderTitle !== ''): ?><strong><?= e($memberHeaderTitle) ?></strong><?php endif; ?>
     <?php if ($memberHeaderSubtitle !== ''): ?><span><?= e($memberHeaderSubtitle) ?></span><?php endif; ?>
   </div>
@@ -52,8 +61,10 @@ if ($memberHeaderRenderAgentVoiceAssets) $GLOBALS['VP3_MEMBER_AGENT_VOICE_MENU_A
   </div>
 </header>
 <?php
-if (empty($GLOBALS['STONEFELLOW_MEMBER_HEADER_RUNTIME_RENDERED'])):
-    $GLOBALS['STONEFELLOW_MEMBER_HEADER_RUNTIME_RENDERED'] = true;
+$memberHeaderRuntimeRendered = !empty($GLOBALS['VP3_MEMBER_HEADER_RUNTIME_RENDERED']) || !empty($GLOBALS['STONEFELLOW_MEMBER_HEADER_RUNTIME_RENDERED']);
+if (!$memberHeaderRuntimeRendered):
+    $GLOBALS['VP3_MEMBER_HEADER_RUNTIME_RENDERED'] = true;
+    $GLOBALS['STONEFELLOW_MEMBER_HEADER_RUNTIME_RENDERED'] = true; // legacy compatibility
     $memberHeaderUiBuild = 'universal-member-header-layout-20260906';
     $memberHeaderScrollBuild = 'member-page-scroll-20260912-calendar-flex';
     $memberHeaderNotificationBuild = 'activity-center-brain-routing-20260906';
@@ -64,7 +75,7 @@ if (empty($GLOBALS['STONEFELLOW_MEMBER_HEADER_RUNTIME_RENDERED'])):
 <link rel="stylesheet" data-member-header-ui href="<?= e(url('/chat-header-ui.css?v=' . $memberHeaderUiBuild)) ?>">
 <link rel="stylesheet" data-member-page-scroll href="<?= e(url('/member-page-scroll.css?v=' . $memberHeaderScrollBuild)) ?>">
 <?php if ($memberHeaderRenderAgentVoiceAssets): ?><link rel="stylesheet" data-member-agent-voice-menu href="<?= e(url('/member-agent-voice-menu.css?v=' . $memberAgentVoiceMenuBuild)) ?>"><?php endif; ?>
-<script data-member-shell-runtime src="<?= e(url('/member-shell-v77.js?v=member-header-dropdown-20260912')) ?>" defer></script>
+<script data-member-shell-runtime src="<?= e(url('/member-shell-v77.js?v=authenticated-shell-phase2-20260914')) ?>" defer></script>
 <?php if ($memberHeaderRenderAgentVoiceAssets): ?><script data-member-agent-voice-menu src="<?= e(url('/member-agent-voice-menu.js?v=' . $memberAgentVoiceMenuBuild)) ?>" defer></script><?php endif; ?>
 <?php if ($memberHeaderCanChat): ?>
 <link rel="stylesheet" data-chat-notification-drawer href="<?= e(url('/chat-notifications-drawer-v240.css?v=' . $memberHeaderNotificationBuild)) ?>">
