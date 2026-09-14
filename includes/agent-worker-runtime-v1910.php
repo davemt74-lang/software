@@ -46,14 +46,22 @@ function agent_worker_runtime_homeserver_id_v1910(int $ownerUserId,string $devic
     return 'homeserver:u'.$ownerUserId.':'.substr(hash('sha256',$deviceId),0,20);
 }
 
-function agent_worker_runtime_homeserver_registry_v1910(array $connection): array
+/**
+ * Execution readiness must come from the live authenticated v0.33 registry,
+ * never from the legacy capabilities_json cache. The v0.33 function refreshes
+ * connection state and calls HomeServer capability.registry through the paired
+ * relay/token boundary before returning a sanitized registry.
+ */
+function agent_worker_runtime_homeserver_registry_v1910(int $ownerUserId): array
 {
-    $raw=[];
-    if(!empty($connection['capabilities_json'])){
-        $decoded=json_decode((string)$connection['capabilities_json'],true);
-        if(is_array($decoded))$raw=$decoded;
+    if($ownerUserId<1||!function_exists('homeserver_capability_v033_registry')){
+        return homeserver_capability_v033_empty('capability_registry_unavailable');
     }
-    return $raw?homeserver_capability_v033_normalize($raw):homeserver_capability_v033_empty('capabilities_unavailable');
+    try{
+        return homeserver_capability_v033_registry($ownerUserId,true);
+    }catch(Throwable $e){
+        return homeserver_capability_v033_empty('remote_unavailable');
+    }
 }
 
 /**
@@ -152,20 +160,46 @@ function agent_worker_runtime_worker_v1910(PDO $pdo,array $user,string $executor
     $connection=homeserver_vp3_connection($uid);
     if(!$connection){$base['reason']='homeserver_unpaired';$base['state']='unpaired';return $base;}
     $deviceId=trim((string)($connection['device_id']??''));
+    $paired=$deviceId!==''&&!empty($connection['homeserver_token_enc']);
+    if(!$paired){$base['reason']='homeserver_unpaired';$base['state']='unpaired';return $base;}
+
     $base['worker_id']=agent_worker_runtime_homeserver_id_v1910($uid,$deviceId);
     $base['label']='Paired HomeServer';$base['max_concurrency']=VP3_AGENT_WORKER_HOMESERVER_MAX_CONCURRENCY_V1910;
     $base['active_jobs']=agent_worker_runtime_active_count_v1910($pdo,$uid,'homeserver');
-    $base['last_seen_at']=(string)($connection['last_seen_at']??'');
     $base['receipts']=agent_worker_runtime_receipt_stats_v1910($pdo,$uid,$base['worker_id']);
 
-    $paired=$deviceId!==''&&!empty($connection['homeserver_token_enc']);
-    if(!$paired){$base['reason']='homeserver_unpaired';$base['state']='unpaired';return $base;}
-    $seenAt=strtotime($base['last_seen_at'])?:0;
-    if($seenAt<time()-VP3_AGENT_WORKER_STALE_SECONDS_V1910){$base['reason']='homeserver_stale';$base['state']='stale';return $base;}
-    $registry=agent_worker_runtime_homeserver_registry_v1910($connection);
+    // A fresh authenticated registry response is the execution-readiness
+    // authority. Cached capabilities may describe UI state but cannot release
+    // durable work to HomeServer.
+    $registry=agent_worker_runtime_homeserver_registry_v1910($uid);
+
+    // v0.33 refreshes connection state. Reload only the sanitized connection
+    // metadata we need for observability/identity after that live check.
+    $refreshed=homeserver_vp3_connection($uid);
+    if($refreshed){
+        $connection=$refreshed;
+        $refreshedDeviceId=trim((string)($connection['device_id']??''));
+        if($refreshedDeviceId!==''&&!hash_equals($deviceId,$refreshedDeviceId)){
+            $base['worker_id']=agent_worker_runtime_homeserver_id_v1910($uid,$refreshedDeviceId);
+            $deviceId=$refreshedDeviceId;
+            $base['receipts']=agent_worker_runtime_receipt_stats_v1910($pdo,$uid,$base['worker_id']);
+        }
+    }
+    $base['last_seen_at']=(string)($connection['last_seen_at']??'');
     $base['capability_keys']=agent_worker_runtime_homeserver_capability_keys_v1910($registry);
     $base['capability_count']=count($base['capability_keys']);
-    if(empty($registry['available'])){$base['reason']='homeserver_offline';$base['state']='offline';return $base;}
+
+    if(empty($registry['available'])){
+        $seenAt=strtotime($base['last_seen_at'])?:0;
+        $base['reason']=$seenAt>0&&$seenAt<time()-VP3_AGENT_WORKER_STALE_SECONDS_V1910?'homeserver_stale':'homeserver_offline';
+        $base['state']=$base['reason']==='homeserver_stale'?'stale':'offline';
+        return $base;
+    }
+    if(!in_array(VP3_AGENT_WORKER_HOMESERVER_OPERATION_V1910,$base['capability_keys'],true)){
+        $base['reason']='homeserver_agent_chat_unavailable';$base['state']='capability_unavailable';
+        return $base;
+    }
+
     $base['ready']=true;$base['state']='ready';$base['reason']='ready';
     return $base;
 }
@@ -347,9 +381,8 @@ function agent_worker_runtime_execute_homeserver_once_v1910(PDO $pdo,array $user
     $uid=(int)($user['id']??0);
     if($uid<1)return ['ok'=>false,'reason'=>'invalid_owner','claim'=>null,'build'=>VP3_AGENT_WORKER_RUNTIME_V1910];
 
-    // Refresh liveness/capabilities before leasing work so an actually-online
-    // HomeServer is not rejected only because the cached heartbeat is stale.
-    try{homeserver_vp3_status($uid,true);}catch(Throwable $e){}
+    // Poll performs a live authenticated v0.33 capability registry check
+    // before any HomeServer-targeted durable action can be leased.
     $poll=agent_worker_runtime_poll_v1910($pdo,$user,'homeserver','primary',$limit);
     $claim=is_array($poll['claim']??null)?$poll['claim']:null;
     if(!$claim)return $poll;
