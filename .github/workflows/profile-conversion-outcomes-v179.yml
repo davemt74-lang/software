@@ -29,6 +29,7 @@ jobs:
         run: |
           php -l includes/profile-conversion-outcomes-v179.php
           php -l includes/bootstrap.php
+          php -l includes/agent-commerce-v800-part4.php
           php -l public-booking-controller-v700.php
           php -l profile-commerce-product.php
           php -l profile-commerce-return.php
