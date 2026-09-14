@@ -21,6 +21,7 @@ function profile_conversion_activity_v177_record(PDO $pdo, array $profile, strin
 
     try {
         $viewer = current_user();
+        if ((int)($viewer['id'] ?? 0) === $ownerUserId) return null;
         $session = profile_runtime_session($pdo, $ownerUserId, $viewer, false);
         $targetId = max(0, (int)($target['id'] ?? 0));
         $targetSlug = mb_strimwidth(trim((string)($target['slug'] ?? '')), 0, 120, '');
