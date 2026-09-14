@@ -4,7 +4,7 @@ const cfg=window.PROFILE_AGENT_PORTAL;
 const host=document.getElementById('profileAgentAnalytics');
 const notice=document.getElementById('profileAgentNotice');
 if(!cfg?.analyticsEndpoint||!host)return;
-const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#039;'}[c]));
+const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
 let state=null,intelligence=null,intelligenceError='',intelligenceLoadedAt=0,propertyId=0,days=30,busy=false,timer=null;
 function setNotice(message='',error=false){if(!notice)return;notice.textContent=message;notice.className=`profile-agent-notice${error?' error':''}`;}
 function parseDate(value){if(!value)return null;const d=new Date(String(value).replace(' ','T'));return Number.isNaN(d.getTime())?null:d;}
