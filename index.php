@@ -45,7 +45,7 @@ $servicesUrl = url('/services.php');
           <div class="mega-column">
             <span class="mega-column-label">Your assistant</span>
             <a class="mega-link" href="<?= e(url('/ai-assistant.php')) ?>"><strong>AI Assistant</strong><small>Your primary agent for conversations, knowledge, tasks, workflows, and follow-through.</small></a>
-            <a class="mega-link" href="<?= e(url('/profile-agent.php')) ?>"><strong>Profile Agent</strong><small>An AI agent on your public profile that can represent you within the permissions you set.</small></a>
+            <a class="mega-link" href="<?= e(url('/profile-agent-overview.php')) ?>"><strong>Profile Agent</strong><small>An AI agent on your public profile that can represent you within the permissions you set.</small></a>
           </div>
           <div class="mega-column">
             <span class="mega-column-label">Your presence</span>
@@ -74,7 +74,7 @@ $servicesUrl = url('/services.php');
           <div class="mega-column">
             <span class="mega-column-label">Coordinate</span>
             <a class="mega-link" href="<?= e($teamsUrl) ?>"><strong>Teams</strong><small>Shared workspaces, conversations, permissions, context, and collaborative Agent workflows.</small></a>
-            <a class="mega-link" href="<?= e(url('/calendar.php')) ?>"><strong>Calendar</strong><small>Availability, calendar intelligence, sync, scheduling context, and Agent-managed coordination.</small></a>
+            <a class="mega-link" href="<?= e(url('/calendar-service.php')) ?>"><strong>Calendar</strong><small>Availability, calendar intelligence, sync, scheduling context, and Agent-managed coordination.</small></a>
           </div>
           <div class="mega-column">
             <span class="mega-column-label">Book + sell</span>
@@ -107,7 +107,7 @@ $servicesUrl = url('/services.php');
           </div>
           <div class="mega-column">
             <span class="mega-column-label">Private capabilities</span>
-            <a class="mega-link" href="<?= e(url('/local-knowledge.php')) ?>"><strong>Local Knowledge</strong><small>Keep native local files and private collections authoritative on HomeServer.</small></a>
+            <a class="mega-link" href="<?= e(url('/local-knowledge-overview.php')) ?>"><strong>Local Knowledge</strong><small>Keep native local files and private collections authoritative on HomeServer.</small></a>
             <a class="mega-link" href="<?= e(url('/tools-skills.php')) ?>"><strong>Tools + skills</strong><small>Give paired Agents approved local capabilities without exposing private filesystem paths to VP3 Cloud.</small></a>
           </div>
         </div>
@@ -144,7 +144,7 @@ $servicesUrl = url('/services.php');
         <div class="mega-columns">
           <div class="mega-column">
             <span class="mega-column-label">Company</span>
-            <a class="mega-link" href="<?= e(url('/team.php')) ?>"><strong>Team</strong><small>Meet the people building VP3.</small></a>
+            <a class="mega-link" href="<?= e(url('/about-team.php')) ?>"><strong>Team</strong><small>Meet the people building VP3.</small></a>
             <a class="mega-link" href="<?= e(url('/mission.php')) ?>"><strong>Mission</strong><small>Why user-controlled AI, identity, knowledge, and capability matter.</small></a>
           </div>
           <div class="mega-column">
@@ -173,7 +173,7 @@ $servicesUrl = url('/services.php');
           <div class="mobile-nav-links">
             <a href="<?= e(url('/ai-assistant.php')) ?>"><strong>AI Assistant</strong><small>Your main VP3 agent and workspace.</small></a>
             <a href="<?= e(url('/personal-url.php')) ?>"><strong>Personal URL</strong><small>Your shareable VP3 destination.</small></a>
-            <a href="<?= e(url('/profile-agent.php')) ?>"><strong>Profile Agent</strong><small>An AI agent on your public profile.</small></a>
+            <a href="<?= e(url('/profile-agent-overview.php')) ?>"><strong>Profile Agent</strong><small>An AI agent on your public profile.</small></a>
             <a href="<?= e(url('/homeserver.php')) ?>"><strong>HomeServer</strong><small>Private local knowledge and capabilities.</small></a>
           </div>
         </details>
@@ -183,7 +183,7 @@ $servicesUrl = url('/services.php');
             <a href="<?= e($transcriptionsUrl) ?>"><strong>Transcription</strong><small>Capture and organize conversations.</small></a>
             <a href="<?= e(url('/ai-summary.php')) ?>"><strong>AI Summary</strong><small>Decisions, actions, and reusable knowledge.</small></a>
             <a href="<?= e($teamsUrl) ?>"><strong>Teams</strong><small>Shared context and collaborative workspaces.</small></a>
-            <a href="<?= e(url('/calendar.php')) ?>"><strong>Calendar</strong><small>Availability and calendar intelligence.</small></a>
+            <a href="<?= e(url('/calendar-service.php')) ?>"><strong>Calendar</strong><small>Availability and calendar intelligence.</small></a>
             <a href="<?= e(url('/booking.php')) ?>"><strong>Booking</strong><small>Free and paid appointment workflows.</small></a>
             <a href="<?= e(url('/ecommerce.php')) ?>"><strong>Ecommerce</strong><small>Products, orders, checkout, and fulfillment.</small></a>
           </div>
@@ -193,7 +193,7 @@ $servicesUrl = url('/services.php');
           <div class="mobile-nav-links">
             <a href="<?= e(url('/cloud-vs-self-hosted.php')) ?>"><strong>Cloud vs. self-hosted</strong><small>Cloud, local, or paired hybrid operation.</small></a>
             <a href="<?= e(url('/openrouter.php')) ?>"><strong>OpenRouter</strong><small>Provider and model choice.</small></a>
-            <a href="<?= e(url('/local-knowledge.php')) ?>"><strong>Local Knowledge</strong><small>Private files stay locally authoritative.</small></a>
+            <a href="<?= e(url('/local-knowledge-overview.php')) ?>"><strong>Local Knowledge</strong><small>Private files stay locally authoritative.</small></a>
             <a href="<?= e(url('/tools-skills.php')) ?>"><strong>Tools + skills</strong><small>Approved local capabilities for paired Agents.</small></a>
           </div>
         </details>
@@ -209,7 +209,7 @@ $servicesUrl = url('/services.php');
         <details class="mobile-nav-group">
           <summary>About</summary>
           <div class="mobile-nav-links">
-            <a href="<?= e(url('/team.php')) ?>"><strong>Team</strong><small>Meet the people building VP3.</small></a>
+            <a href="<?= e(url('/about-team.php')) ?>"><strong>Team</strong><small>Meet the people building VP3.</small></a>
             <a href="<?= e(url('/mission.php')) ?>"><strong>Mission</strong><small>Why VP3 exists.</small></a>
             <a href="<?= e(url('/case-studies.php')) ?>"><strong>Case studies</strong><small>Real workflow examples.</small></a>
             <a href="<?= e(url('/testimonials.php')) ?>"><strong>Testimonials</strong><small>What people say about VP3.</small></a>
@@ -252,9 +252,9 @@ $servicesUrl = url('/services.php');
       <a href="<?= e($transcriptionsUrl) ?>"><span aria-hidden="true">▯</span>Mobile capture</a>
       <a href="<?= e(url('/ai-summary.php')) ?>"><span aria-hidden="true">▤</span>AI summaries</a>
       <a href="<?= e($teamsUrl) ?>"><span aria-hidden="true">◎</span>Teams</a>
-      <a href="<?= e(url('/profile-agent.php')) ?>"><span aria-hidden="true">♙</span>Profile agent</a>
+      <a href="<?= e(url('/profile-agent-overview.php')) ?>"><span aria-hidden="true">♙</span>Profile agent</a>
       <a href="<?= e(url('/personal-url.php')) ?>"><span aria-hidden="true">↗</span>Personal link</a>
-      <a href="<?= e(url('/local-knowledge.php')) ?>"><span aria-hidden="true">◇</span>Knowledge</a>
+      <a href="<?= e(url('/local-knowledge-overview.php')) ?>"><span aria-hidden="true">◇</span>Knowledge</a>
       <a href="<?= e($homeServerUrl) ?>"><span aria-hidden="true">▣</span>HomeServer</a>
       <a href="<?= e(url('/cloud-vs-self-hosted.php')) ?>"><span aria-hidden="true">⌾</span>Private data</a>
       <a href="<?= e($servicesUrl) ?>"><span aria-hidden="true">✓</span>Action items</a>
