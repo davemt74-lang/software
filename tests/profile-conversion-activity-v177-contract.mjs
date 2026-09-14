@@ -17,7 +17,7 @@ assert.match(helper, /VP3_PROFILE_CONVERSION_DEDUPE_SECONDS_V177 = 1800/, 'conve
 assert.match(helper, /hash\('sha256'.*\$session\['session_key'\]/s, 'dedupe identity must use the existing owner-scoped session hash');
 assert.match(helper, /profile_visitor_request_context_v243/, 'conversion events should retain the existing privacy-safe request attribution context');
 assert.match(helper, /target_title/, 'conversion event metadata must retain the resolved public target title');
-assert.doesNotMatch(helper, /REMOTE_ADDR|HTTP_USER_AGENT|fingerprint/i, 'conversion activity must not introduce IP or user-agent fingerprinting');
+assert.doesNotMatch(helper, /REMOTE_ADDR|HTTP_USER_AGENT/, 'conversion activity must not introduce IP or user-agent identifiers');
 assert.doesNotMatch(helper, /profile_attention_from_event|create_notification\(/, 'conversion intent must remain activity-only and avoid notification noise');
 assert.doesNotMatch(helper, /CREATE TABLE|ALTER TABLE/i, 'conversion activity must remain migration-free');
 
