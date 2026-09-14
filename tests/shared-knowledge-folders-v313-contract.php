@@ -10,6 +10,7 @@ $intelligence=(string)file_get_contents($root.'/api/artist-listening-intelligenc
 $folderUi=(string)file_get_contents($root.'/transcription-knowledge-folders-v313.js');
 $naming=(string)file_get_contents($root.'/artist-listening-naming.js');
 $sidebar=(string)file_get_contents($root.'/includes/main-sidebar.php');
+$memberNavigation=(string)file_get_contents($root.'/includes/member-navigation.php');
 
 $failures=[];
 $check=static function(bool $ok,string $message)use(&$failures):void{if(!$ok)$failures[]=$message;};
@@ -38,8 +39,16 @@ $check($has($folderUi,'folder_id')&&$has($folderUi,'sessionId'),'AI Summary save
 $check($has($folderUi,'folderSignature'),'Folder selector does not guard against MutationObserver rebuild churn.');
 $check($has($naming,'transcription-knowledge-folders-v313.js'),'Artist Listening does not load the shared-folder integration.');
 
-// Navigation/settings shell requirements.
-$check($has($sidebar,'My Transcriptions')&&$has($sidebar,"/artist-listening.php"),'Main sidebar is missing the signed-in My Transcriptions workspace.');
+// Navigation/settings shell requirements. The consolidated shell derives the primary
+// destination from canonical member navigation instead of hard-coding its URL in the sidebar.
+$transcriptionsNeedle = '$add($links,\'transcriptions\',\'My Transcriptions\',url(\'/artist-listening.php\'),\'identity\')';
+$check(
+    $has($sidebar,"'transcriptions'=>'Transcriptions'")
+    && $has($sidebar,"'transcriptions'")
+    && $has($sidebar,'member_navigation_menu_links($mainSidebarUser)')
+    && $has($memberNavigation,$transcriptionsNeedle),
+    'Canonical signed-in Transcriptions workspace is missing.'
+);
 $check($has($sidebar,'$mainSidebarIsChat')&&$has($sidebar,'data-chat-rail-controls-v132'),'Chat rail settings are not scoped through the Agent Chat page condition.');
 
 // HomeServer privacy boundary: Cloud Knowledge must never gain a native local filesystem path field.
