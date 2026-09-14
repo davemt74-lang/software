@@ -9,7 +9,7 @@ $funnelIntent = vp3_funnel_capture(is_array($requestInput) ? $requestInput : [])
 
 if (is_logged_in()) {
     if (!empty($_SESSION['pending_team_invite_token'])) redirect(url('/team-invite.php'));
-    redirect(vp3_funnel_destination(login_destination()));
+    redirect(vp3_funnel_take_destination(login_destination()));
 }
 
 $error = '';
@@ -76,7 +76,7 @@ if ($isPost) {
                         : 'Welcome to VP3. Your Free Trial is ready.');
                     vp3_funnel_event('signup_success');
                     if (!empty($_SESSION['pending_team_invite_token'])) redirect(url('/team-invite.php'));
-                    redirect(vp3_funnel_destination(login_destination()));
+                    redirect(vp3_funnel_take_destination(login_destination()));
                 } catch (Throwable $e) {
                     if ($pdo->inTransaction()) $pdo->rollBack();
                     error_log('VP3 public signup failed: ' . $e->getMessage());
@@ -92,7 +92,7 @@ if ($isPost) {
 }
 
 $funnelIntent = vp3_funnel_intent();
-vp3_public_header('Create account — VP3', 'Create your VP3 personal AI assistant account.', ['active'=>'signup','compact'=>true,'body_class'=>'vp3-auth-page']);
+vp3_public_header('Create account — VP3', 'Create your VP3 personal AI assistant account.', ['active'=>'signup','compact'=>true,'body_class'=>'vp3-auth-page','canonical'=>'/signup.php','robots'=>'noindex,follow','skip_link'=>true]);
 ?>
 <main id="main-content" class="vp3-auth-shell">
   <section class="vp3-auth-visual" aria-labelledby="signup-benefits-heading">
