@@ -12,7 +12,7 @@ function agent_commerce_mark_paid_v800(PDO $pdo,int $orderId,string $provider,st
     $owns=!$pdo->inTransaction();if($owns)$pdo->beginTransaction();$dispatch='';
     try{
         $stmt=$pdo->prepare('SELECT * FROM agent_commerce_orders_v800 WHERE id=? LIMIT 1 FOR UPDATE');$stmt->execute([$orderId]);$order=$stmt->fetch();if(!$order)throw new RuntimeException('Commerce order not found.');
-        $seen=$pdo->prepare('SELECT id FROM agent_commerce_payments_v800 WHERE provider=? AND external_payment_id=? LIMIT 1');$seen->execute([$provider,$externalPaymentId]);if($seen->fetchColumn()){if($owns)$pdo->commit();return agent_commerce_order_v800($pdo,$orderId)?:$order;}
+        $seen=$pdo->prepare('SELECT id FROM agent_commerce_payments_v800 WHERE provider=? AND external_payment_id=? LIMIT 1');$seen->execute([$provider,$externalPaymentId]);if($seen->fetchColumn()){if($owns)$pdo->commit();$existing=agent_commerce_order_v800($pdo,$orderId)?:$order;if(function_exists('profile_conversion_commerce_order_v179'))profile_conversion_commerce_order_v179($pdo,$existing);return $existing;}
         $from=(string)$order['payment_status'];if(!in_array($from,['awaiting_payment','partially_paid'],true))throw new RuntimeException('Order is no longer awaiting a payment.');
         if((string)$order['provider_snapshot']!==$provider)throw new RuntimeException('Payment provider does not match this order.');
         if($amountCents<(int)$order['amount_due_cents'])throw new RuntimeException('Payment amount is less than the required amount.');
@@ -27,7 +27,7 @@ function agent_commerce_mark_paid_v800(PDO $pdo,int $orderId,string $provider,st
         $dispatch=$from==='awaiting_payment'?'paid':($remaining===0?'paid_in_full':'payment_updated');
         if($owns)$pdo->commit();
     }catch(Throwable $e){if($owns&&$pdo->inTransaction())$pdo->rollBack();throw $e;}
-    $fresh=agent_commerce_order_v800($pdo,$orderId)?:throw new RuntimeException('Commerce order could not be reloaded.');if($dispatch!=='')agent_commerce_dispatch_fulfillment_v800($pdo,$fresh,$dispatch);return $fresh;
+    $fresh=agent_commerce_order_v800($pdo,$orderId)?:throw new RuntimeException('Commerce order could not be reloaded.');if($dispatch!=='')agent_commerce_dispatch_fulfillment_v800($pdo,$fresh,$dispatch);if(function_exists('profile_conversion_commerce_order_v179'))profile_conversion_commerce_order_v179($pdo,$fresh);return $fresh;
 }
 function agent_commerce_expire_one_v800(PDO $pdo,array $order): void
 {
