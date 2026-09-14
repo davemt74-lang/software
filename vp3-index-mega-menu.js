@@ -16,6 +16,10 @@
     });
   });
 
+  document.querySelectorAll('.mega-nav a').forEach((link) => {
+    link.addEventListener('click', () => closeDesktopMenus());
+  });
+
   document.addEventListener('click', (event) => {
     if (!event.target.closest('.mega-nav')) closeDesktopMenus();
   });
