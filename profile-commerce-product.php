@@ -19,6 +19,18 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
         if($product['payment_mode']==='free')throw new RuntimeException('This offer does not require checkout. Ask the Profile Agent for next steps.');
         $connectionId=(int)($_POST['connection_id']??0);if($connectionId<1&&count($connections)===1)$connectionId=(int)$connections[0]['id'];
         $checkout=profile_commerce_create_checkout_idempotent_v900($pdo,$profile,$product,$connectionId,(string)($_POST['payer_email']??''),$postedNonce,(string)($_POST['terms_digest']??''),!empty($_POST['accept_terms']));
+        if(function_exists('profile_conversion_attach_order_v179')){
+            $checkoutOrder=(array)($checkout['order']??[]);
+            profile_conversion_attach_order_v179($pdo,(int)($checkoutOrder['id']??0),(int)$profile['user_id'],[
+                'profile_conversion_source'=>'profile_commerce_v900',
+                'profile_session_id'=>profile_conversion_session_id_v179($pdo,(int)$profile['user_id']),
+                'profile_username'=>$username,
+                'profile_target_id'=>(int)$product['id'],
+                'profile_target_slug'=>(string)$product['slug'],
+                'profile_target_title'=>(string)$product['title'],
+                'profile_target_url'=>(string)$product['product_url'],
+            ]);
+        }
         $checkoutUrl=trim((string)($checkout['checkout_url']??''));if($checkoutUrl===''||!filter_var($checkoutUrl,FILTER_VALIDATE_URL))throw new RuntimeException('Secure checkout could not be created.');redirect($checkoutUrl);
     }catch(Throwable $e){$error=$e->getMessage();}
 }
