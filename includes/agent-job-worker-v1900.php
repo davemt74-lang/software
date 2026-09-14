@@ -7,6 +7,7 @@ declare(strict_types=1);
  * are recovered before new work is claimed.
  */
 require_once __DIR__.'/agent-job-engine-v1900.php';
+require_once __DIR__.'/agent-worker-runtime-v1910.php';
 
 function agent_job_worker_poll_v1900(PDO $pdo,array $user,string $executor,string $workerId,int $limit=25): array
 {
@@ -14,4 +15,14 @@ function agent_job_worker_poll_v1900(PDO $pdo,array $user,string $executor,strin
     $recovery=agent_job_recover_expired_v1900($pdo,$user,$limit);
     $claim=agent_job_claim_next_v1900($pdo,$user,$executor,$workerId,$limit);
     return ['ok'=>true,'claim'=>$claim,'recovery'=>$recovery,'build'=>VP3_AGENT_JOB_ENGINE_V1900];
+}
+
+/**
+ * Phase 19.1 canonical distributed poll. New executors use this path so worker
+ * identity, capacity, HomeServer freshness, capability and approval checks are
+ * enforced before an executable claim is released.
+ */
+function agent_job_worker_poll_distributed_v1910(PDO $pdo,array $user,string $executor,string $workerId='primary',int $limit=25): array
+{
+    return agent_worker_runtime_poll_v1910($pdo,$user,$executor,$workerId,$limit);
 }
