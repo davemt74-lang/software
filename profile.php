@@ -5,17 +5,44 @@ require_once __DIR__ . '/includes/profile-public-media-v174.php';
 require_once __DIR__ . '/includes/profile-commerce-v900.php';
 require_once __DIR__ . '/includes/agent-scheduling-public-v450.php';
 
+if (!function_exists('vp3_profile_optional_failure')) {
+    function vp3_profile_optional_failure(string $stage, Throwable $e, string $username = ''): void
+    {
+        $suffix = $username !== '' ? ' @' . $username : '';
+        error_log('VP3 public profile optional stage failed [' . $stage . ']' . $suffix . ': ' . $e->getMessage());
+    }
+}
+
 $pdo=db();
 if(!$pdo||!profile_agent_schema_ready($pdo)){http_response_code(503);exit(system_agent_name().' profiles are not ready. Run /upgrade.php.');}
 $username=profile_username_normalize((string)($_GET['username']??''));
-$profile=profile_by_username($pdo,$username);$viewer=current_user();
+try {
+    $profile=profile_by_username($pdo,$username);
+    $viewer=current_user();
+} catch (Throwable $e) {
+    error_log('VP3 public profile core lookup failed @'.$username.': '.$e->getMessage());
+    http_response_code(503);
+    exit('Profile temporarily unavailable.');
+}
 $isOwner=$profile&&$viewer&&(int)$viewer['id']===(int)$profile['user_id'];
 $preview=$isOwner&&!empty($_GET['preview']);
 if(!$profile||empty($profile['is_active'])||(!$preview&&empty($profile['is_public']))){http_response_code(404);exit('Profile not found.');}
-if(!$preview)profile_runtime_record_view($pdo,$profile,$viewer);
+if(!$preview){
+    try { profile_runtime_record_view($pdo,$profile,$viewer); }
+    catch (Throwable $e) { vp3_profile_optional_failure('view-telemetry',$e,$username); }
+}
 $catalogViewer=$preview?null:$viewer;
-$catalog=profile_public_catalog($pdo,$profile,$catalogViewer);$workspace=$catalog['workspace'];
-$agent=profile_active_agent($pdo,$profile);
+$catalog=['workspace'=>null,'tracks'=>[],'albums'=>[],'photos'=>[],'posts'=>[],'merch'=>[],'shows'=>[]];
+try {
+    $loadedCatalog=profile_public_catalog($pdo,$profile,$catalogViewer);
+    if(is_array($loadedCatalog))$catalog=array_replace($catalog,$loadedCatalog);
+} catch (Throwable $e) {
+    vp3_profile_optional_failure('public-catalog',$e,$username);
+}
+$workspace=is_array($catalog['workspace']??null)?$catalog['workspace']:null;
+$agent=null;
+try { $agent=profile_active_agent($pdo,$profile); }
+catch (Throwable $e) { vp3_profile_optional_failure('profile-agent',$e,$username); }
 $displayName=trim((string)$profile['display_name'])?:$username;
 $bio=trim((string)($profile['bio']??''));if($bio===''&&$workspace)$bio=trim((string)($workspace['bio']??''));
 $canSave=$catalogViewer&&has_permission('account.access',$catalogViewer);
@@ -30,22 +57,41 @@ if($workspace){foreach(['Website'=>'website_url','Instagram'=>'instagram_url','T
 $links=array_filter($links,static fn(string $v):bool=>(bool)filter_var($v,FILTER_VALIDATE_URL)&&in_array(strtolower((string)parse_url($v,PHP_URL_SCHEME)),['http','https'],true));
 $roleLabel=function_exists('role_label')?role_label((string)($profile['role']??'')):ucfirst((string)($profile['role']??''));
 $agentGreeting=$agent?(trim((string)($profile['profile_agent_greeting']??''))?:'Hi — I’m '.(string)$agent['display_name'].', '.$displayName.'’s AI representative. What would you like to know?'):'';
-$profileToken=$agent&&!$preview?profile_chat_token((int)$profile['user_id']):'';
+$profileToken='';
+if($agent&&!$preview){
+    try { $profileToken=profile_chat_token((int)$profile['user_id']); }
+    catch (Throwable $e) {
+        vp3_profile_optional_failure('profile-agent-token',$e,$username);
+        $agent=null;$agentGreeting='';$profileToken='';
+    }
+}
 
 $workspaceId=$workspace?(int)$workspace['id']:0;
-$tracks=$catalog['tracks']??[];$albums=$catalog['albums']??[];$photos=$catalog['photos']??[];$posts=$catalog['posts']??[];$merch=$catalog['merch']??[];
-$shows=array_values(array_filter($catalog['shows']??[],static function(array $show):bool{$when=strtotime((string)($show['show_date']??''));return $when!==false&&$when>=time();}));
+$tracks=is_array($catalog['tracks']??null)?$catalog['tracks']:[];
+$albums=is_array($catalog['albums']??null)?$catalog['albums']:[];
+$photos=is_array($catalog['photos']??null)?$catalog['photos']:[];
+$posts=is_array($catalog['posts']??null)?$catalog['posts']:[];
+$merch=is_array($catalog['merch']??null)?$catalog['merch']:[];
+$catalogShows=is_array($catalog['shows']??null)?$catalog['shows']:[];
+$shows=array_values(array_filter($catalogShows,static function(array $show):bool{$when=strtotime((string)($show['show_date']??''));return $when!==false&&$when>=time();}));
 $publishedAlbumIds=[];foreach($albums as $album)$publishedAlbumIds[(int)$album['id']]=true;
 $tracksByAlbum=[];$singles=[];
 foreach($tracks as $track){$albumId=(int)($track['album_id']??0);if($albumId>0&&isset($publishedAlbumIds[$albumId]))$tracksByAlbum[$albumId][]=$track;else$singles[]=$track;}
 usort($albums,static function(array $a,array $b):int{$sort=(int)($a['sort_order']??0)<=>(int)($b['sort_order']??0);return $sort!==0?$sort:strcmp((string)($b['release_date']??''),(string)($a['release_date']??''));});
 foreach($tracksByAlbum as &$group)usort($group,static fn(array $a,array $b):int=>((int)($a['track_number']??0)<=>(int)($b['track_number']??0))?:((int)$a['id']<=>(int)$b['id']));unset($group);
 
-$commerceProducts=profile_commerce_products_for_profile_v900($pdo,$profile,true,40);
+$commerceProducts=[];
+try { $commerceProducts=profile_commerce_products_for_profile_v900($pdo,$profile,true,40); }
+catch (Throwable $e) { vp3_profile_optional_failure('commerce',$e,$username); }
 $publicSchedule=null;$bookingTypes=[];
-if(table_exists('agent_scheduling_schedules')&&table_exists('agent_scheduling_event_types')){
-    $publicSchedule=agent_scheduling_public_schedule_v450($pdo,(int)$profile['user_id']);
-    if($publicSchedule)$bookingTypes=agent_scheduling_public_events_v450($pdo,(int)$publicSchedule['id']);
+try {
+    if(table_exists('agent_scheduling_schedules')&&table_exists('agent_scheduling_event_types')){
+        $publicSchedule=agent_scheduling_public_schedule_v450($pdo,(int)$profile['user_id']);
+        if($publicSchedule)$bookingTypes=agent_scheduling_public_events_v450($pdo,(int)$publicSchedule['id']);
+    }
+} catch (Throwable $e) {
+    vp3_profile_optional_failure('scheduling',$e,$username);
+    $publicSchedule=null;$bookingTypes=[];
 }
 
 $commerceNotice=null;
