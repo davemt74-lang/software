@@ -31,7 +31,8 @@ assert.match(portal, /String\(e\.event_type\|\|'profile activity'\)\.replaceAll\
 assert.doesNotMatch(portal, /v\.request_count/, 'human Profile sessions must not inherit automated request-count UI');
 
 assert.match(analyticsCss, /\.profile-agent-metrics\{grid-template-columns:repeat\(6,minmax\(0,1fr\)\)\}/, 'six headline metrics must fit one desktop grid row');
-assert.match(routes, /profile-agent-portal\)\\\.js\$[^]*Cache-Control "no-cache, must-revalidate"/, 'Profile Agent portal intelligence must not be hidden behind stale static caching');
-assert.match(routes, /profile-agent-analytics\)\\\.\(\?:js\|css\)\$[^]*Cache-Control "no-cache, must-revalidate"/, 'Profile analytics layout changes must not be hidden behind stale static caching');
+const noCacheRules = [...routes.matchAll(/<FilesMatch "([^"]+)">\s*\nHeader always set Cache-Control "no-cache, must-revalidate"/g)].map(match => match[1]);
+assert.ok(noCacheRules.some(rule => rule.includes('profile-agent-portal')), 'Profile Agent portal intelligence must not be hidden behind stale static caching');
+assert.ok(noCacheRules.some(rule => rule.includes('profile-agent-analytics')), 'Profile analytics layout changes must not be hidden behind stale static caching');
 
 console.log('profile-conversion-intelligence-v178-contract: ok');
