@@ -2,6 +2,9 @@
 .workspace-main-sidebar .chat-sidebar-sections{flex:1 1 auto;min-height:0;overflow:auto;padding-bottom:8px;}
 .agent-primary-nav .chat-sidebar-nav-link{min-height:34px;}
 .agent-primary-nav .chat-sidebar-nav-link strong{font-weight:720;}
+.agent-nav-group-label{padding:10px 10px 4px;color:#9ca3af;font-size:9px;font-weight:800;letter-spacing:.08em;line-height:1;text-transform:uppercase;}
+.agent-nav-group-label:first-child{padding-top:5px;}
+.agent-primary-nav .chat-sidebar-nav-link[aria-current="page"]{background:#f3f4f6;color:#111827;box-shadow:inset 2px 0 0 #111827;}
 .agent-runtime-strip{display:grid;grid-template-columns:1fr;gap:5px;margin:4px 8px 10px;padding:8px;border:1px solid #e5e7eb;border-radius:11px;background:#fff;box-shadow:0 1px 2px rgba(17,24,39,.03);}
 .agent-runtime-line{display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0;font-size:10px;color:#6b7280;}
 .agent-runtime-line small{flex:0 0 auto;font-size:9px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#9ca3af;}
@@ -38,17 +41,19 @@
 .agent-sidebar-user-menu[hidden]{display:none!important;}
 .agent-sidebar-user-menu a{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 9px;border-radius:8px;color:#111827;font-size:11px;font-weight:650;text-decoration:none;}
 .agent-sidebar-user-menu a:hover,.agent-sidebar-user-menu a:focus-visible{background:#f3f4f6;outline:none;}
+.agent-sidebar-user-menu a.active,.agent-sidebar-user-menu a[aria-current="page"]{background:#f3f4f6;color:#111827;font-weight:760;}
 .agent-sidebar-user-menu a.logout{color:#b91c1c;}
 .agent-sidebar-user-menu .agent-menu-divider{height:1px;margin:5px 4px;background:#e5e7eb;}
+.agent-sidebar-user-menu .agent-menu-group-label{padding:5px 9px 2px;color:#9ca3af;font-size:8px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;}
+.member-header-title{min-width:0;}
+.member-header-title .member-header-context{display:block;margin-bottom:2px;color:#9ca3af;font-size:8px;font-weight:800;letter-spacing:.08em;line-height:1.1;text-transform:uppercase;}
+.member-header-title strong,.member-header-title span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 @media (hover:none){.chat-history-rename,.chat-history-delete{opacity:1;}}
-@media (max-width:720px){.agent-sidebar-user-menu{bottom:100%;}}
+@media (max-width:720px){.agent-sidebar-user-menu{bottom:100%;}.agent-nav-group-label{padding-left:12px}.member-header-title .member-header-context{font-size:7px;}}
 
 /* Member Shell: the user identity and runtime telemetry share one compact footer. */
 .workspace-main-sidebar .chat-sidebar-sections{order:1;}
 .workspace-main-sidebar .agent-sidebar-footer{order:2;margin-top:auto;}
-
-/* Keep the primary Agent links visually direct; the redundant AGENT label is removed in markup. */
-.workspace-main-sidebar .chat-sidebar-nav-section{padding-top:4px;}
 
 /* Agent Chat composer: settings is a real rail control, and voice/send share one compact size. */
 body:has(.chat-composer) .chat-composer{
