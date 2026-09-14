@@ -6,6 +6,7 @@ const helper = read('includes/profile-agent-booking-context-v176.php');
 const bridge = read('includes/profile-agent-transcription-context.php');
 const api = read('api/profile-agent.php');
 const client = read('profile-agent.js');
+const routes = read('.htaccess');
 
 assert.match(helper, /profile_agent_booking_intent_v176/, 'booking conversion must be intent driven');
 assert.match(helper, /agent_scheduling_public_schedule_v450/, 'booking context must use the canonical public schedule projection');
@@ -26,5 +27,6 @@ assert.match(client, /\['http:','https:'\]/, 'only HTTP and HTTPS links may be a
 assert.match(client, /noopener noreferrer nofollow/, 'external Profile Agent links must be isolated and nofollowed');
 assert.doesNotMatch(client, /data-profile-booking-link|Book a time with/, 'client must not inject an unconditional booking CTA when no public schedule exists');
 assert.match(client, /type==='agent'\|\|type==='owner'/, 'only trusted response surfaces should receive automatic linkification');
+assert.match(routes, /profile-agent\)\\\.js\$[^]*Cache-Control "no-cache, must-revalidate"/, 'Profile Agent client changes must not be hidden behind stale static caching');
 
 console.log('profile-agent-conversion-v176-contract: ok');
