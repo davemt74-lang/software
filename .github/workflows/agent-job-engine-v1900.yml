@@ -1,0 +1,37 @@
+name: Durable Agent Job Engine v19.0
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.1', '8.3']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+          ini-file: production
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: PHP syntax
+        run: |
+          php -l includes/agent-job-engine-v1900.php
+          php -l api/agent-workflow-runs-v1400.php
+          php -l agent-job-engine-upgrade-v1900.php
+          php -l tests/agent-job-engine-v1900-test.php
+      - name: Contract
+        run: |
+          node tests/agent-job-engine-v1900-contract.mjs
+          php tests/agent-job-engine-v1900-test.php
