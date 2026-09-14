@@ -4,11 +4,11 @@ import fs from 'node:fs';
 const read = path => fs.readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
 const outcomes = read('includes/profile-conversion-outcomes-v179.php');
 const runtime = read('includes/profile-agent-runtime.php');
+const commerceCore = read('includes/agent-commerce-v800-part4.php');
 const booking = read('public-booking-controller-v700.php');
 const product = read('profile-commerce-product.php');
 const commerceReturn = read('profile-commerce-return.php');
 const appointmentReturn = read('appointment-payment-return.php');
-const webhook = read('commerce-payment-webhook.php');
 const portal = read('profile-agent-portal.js');
 const bootstrap = read('includes/bootstrap.php');
 
@@ -19,9 +19,13 @@ assert.match(outcomes, /SELECT \* FROM profile_visit_sessions WHERE id=\? AND ow
 assert.match(outcomes, /INSERT INTO profile_events \(owner_user_id,profile_session_id,visitor_user_id,profile_agent_id,event_type,priority,dedupe_key,metadata_json\) VALUES \(\?,NULL,NULL/, 'webhook outcomes must preserve real conversions without manufacturing visitor identity');
 assert.doesNotMatch(outcomes, /CREATE TABLE|ALTER TABLE/i, 'conversion outcomes must remain migration-free');
 assert.doesNotMatch(outcomes, /REMOTE_ADDR|HTTP_USER_AGENT|User-Agent|fingerprint/i, 'conversion outcomes must not add IP/User-Agent fingerprinting');
+assert.match(outcomes, /profile_conversion_viewer_is_owner_v179/, 'owner self-conversions must be explicitly detectable');
+assert.match(outcomes, /profile_conversion_attach_order_v179[\s\S]*profile_conversion_viewer_is_owner_v179\(\$ownerUserId\)/, 'owner self-purchases must not receive Profile conversion attribution');
+assert.match(outcomes, /profile_conversion_booking_confirmed_v179[\s\S]*profile_conversion_viewer_is_owner_v179\(\$ownerUserId\)/, 'owner self-bookings must not become Profile conversions');
 assert.match(outcomes, /profile_conversion_source.*profile_session_id.*profile_target_id.*profile_target_url/s, 'order attribution must use a narrow metadata allowlist');
 assert.match(outcomes, /conversion_stage' => 'outcome'/, 'outcome events must be distinguishable from intent events');
 assert.match(outcomes, /paymentStatus, \['paid', 'partially_paid'\]/, 'paid appointments may convert after verified full payment or deposit');
+assert.match(outcomes, /agent_appointment_lifecycle_status_v700\(\$booking\) !== 'confirmed'/, 'paid Booking outcomes must require confirmed appointment lifecycle state');
 assert.match(outcomes, /source === 'profile_commerce_v900' && \$paymentStatus === 'paid'/, 'generic Profile Commerce must only convert after full payment');
 
 assert.match(bootstrap, /require_once __DIR__\.'\/profile-conversion-outcomes-v179\.php';/, 'conversion outcome bridge must load in canonical bootstrap');
@@ -42,9 +46,14 @@ const freeOutcome = booking.indexOf('profile_conversion_booking_confirmed_v179',
 assert.ok(freeConfirmed > -1 && freeOutcome > freeConfirmed, 'free Booking outcome must only be projected after canonical confirmation');
 assert.ok(booking.indexOf('profile_conversion_booking_confirmed_v179', paidCreate) > paymentRedirect, 'pending paid bookings must not be counted as converted before payment');
 
-const webhookCanonical = webhook.indexOf('agent_commerce_process_webhook_v800');
-const webhookOutcome = webhook.indexOf('profile_conversion_webhook_v179');
-assert.ok(webhookCanonical > -1 && webhookOutcome > webhookCanonical, 'Profile outcomes must run only after canonical signed webhook processing');
+const markPaidStart = commerceCore.indexOf('function agent_commerce_mark_paid_v800');
+const markPaidEnd = commerceCore.indexOf('function agent_commerce_expire_one_v800');
+const markPaidBody = commerceCore.slice(markPaidStart, markPaidEnd);
+const fulfillmentProjection = markPaidBody.lastIndexOf('agent_commerce_dispatch_fulfillment_v800');
+const outcomeProjection = markPaidBody.lastIndexOf('profile_conversion_commerce_order_v179');
+assert.ok(markPaidStart > -1 && fulfillmentProjection > -1 && outcomeProjection > fulfillmentProjection, 'true paid outcomes must project from canonical Commerce after fulfillment dispatch');
+assert.match(markPaidBody, /seen->fetchColumn\(\)[\s\S]*profile_conversion_commerce_order_v179/, 'idempotent duplicate payment verification must be able to repair a missed outcome projection');
+
 const commerceVerify = commerceReturn.indexOf('agent_commerce_return_verify_v800');
 const commerceOutcome = commerceReturn.indexOf('profile_conversion_commerce_order_v179');
 assert.ok(commerceVerify > -1 && commerceOutcome > commerceVerify, 'Profile Commerce return fallback must run only after provider verification');
