@@ -9,7 +9,7 @@ $funnelIntent = vp3_funnel_capture(is_array($requestInput) ? $requestInput : [])
 
 if (is_logged_in()) {
     if (!empty($_SESSION['pending_team_invite_token'])) redirect(url('/team-invite.php'));
-    redirect(vp3_funnel_destination(login_destination()));
+    redirect(vp3_funnel_take_destination(login_destination()));
 }
 $error = flash('error');
 $email = strtolower(trim((string)($_POST['email'] ?? '')));
@@ -28,7 +28,7 @@ if ($isPost) {
         if (login_attempt($email, $password)) {
             vp3_funnel_event('login_success');
             if (!empty($_SESSION['pending_team_invite_token'])) redirect(url('/team-invite.php'));
-            redirect(vp3_funnel_destination(login_destination()));
+            redirect(vp3_funnel_take_destination(login_destination()));
         }
         $error = 'Invalid email or password, or too many recent attempts.';
     }
@@ -39,7 +39,7 @@ if ($isPost) {
 }
 
 $funnelIntent = vp3_funnel_intent();
-vp3_public_header('Sign in — VP3', 'Sign in to your VP3 personal AI assistant.', ['active'=>'login','compact'=>true,'body_class'=>'vp3-auth-page']);
+vp3_public_header('Sign in — VP3', 'Sign in to your VP3 personal AI assistant.', ['active'=>'login','compact'=>true,'body_class'=>'vp3-auth-page','canonical'=>'/login.php','robots'=>'noindex,follow','skip_link'=>true]);
 ?>
 <main id="main-content" class="vp3-auth-shell">
   <section class="vp3-auth-visual" aria-labelledby="login-benefits-heading">
