@@ -143,6 +143,7 @@ require_once __DIR__.'/profile-agent.php';
 require_once __DIR__.'/profile-agent-boundary-v390.php';
 require_once __DIR__.'/profile-visitor-crm-v243.php';
 require_once __DIR__.'/profile-agent-runtime.php';
+require_once __DIR__.'/profile-conversion-outcomes-v179.php';
 require_once __DIR__.'/chat-onboarding-v241.php';
 require_once __DIR__.'/member-navigation.php';
 require_once __DIR__.'/release-chat-v105.php';

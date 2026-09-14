@@ -1,0 +1,44 @@
+name: Profile Conversion Outcomes v1.79
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.1', '8.3']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+          ini-file: production
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: PHP syntax
+        run: |
+          php -l includes/profile-conversion-outcomes-v179.php
+          php -l includes/bootstrap.php
+          php -l includes/agent-commerce-v800-part4.php
+          php -l public-booking-controller-v700.php
+          php -l profile-commerce-product.php
+          php -l profile-commerce-return.php
+          php -l appointment-payment-return.php
+          php -l commerce-payment-webhook.php
+          php -l includes/profile-agent-runtime.php
+      - name: JavaScript syntax
+        run: |
+          node --check profile-agent-portal.js
+          node --check tests/profile-conversion-outcomes-v179-contract.mjs
+      - name: Profile conversion outcomes contract
+        run: node tests/profile-conversion-outcomes-v179-contract.mjs
