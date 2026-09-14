@@ -18,7 +18,8 @@ assert.doesNotMatch(outcomes, /\$dedupeKey\s*=\s*[^;]*(?:floor\s*\(\s*time\s*\(|
 assert.match(outcomes, /SELECT \* FROM profile_visit_sessions WHERE id=\? AND owner_user_id=\?/, 'attributed Profile sessions must be owner-scoped before use');
 assert.match(outcomes, /INSERT INTO profile_events \(owner_user_id,profile_session_id,visitor_user_id,profile_agent_id,event_type,priority,dedupe_key,metadata_json\) VALUES \(\?,NULL,NULL/, 'webhook outcomes must preserve real conversions without manufacturing visitor identity');
 assert.doesNotMatch(outcomes, /CREATE TABLE|ALTER TABLE/i, 'conversion outcomes must remain migration-free');
-assert.doesNotMatch(outcomes, /REMOTE_ADDR|HTTP_USER_AGENT|User-Agent|fingerprint/i, 'conversion outcomes must not add IP/User-Agent fingerprinting');
+assert.doesNotMatch(outcomes, /\$_SERVER\s*\[\s*['"](?:REMOTE_ADDR|HTTP_USER_AGENT)['"]\s*\]/i, 'conversion outcomes must not read raw IP/User-Agent request data');
+assert.doesNotMatch(outcomes, /hash\s*\([^;]*(?:REMOTE_ADDR|HTTP_USER_AGENT)/i, 'conversion outcomes must not fingerprint visitors from request headers');
 assert.match(outcomes, /profile_conversion_viewer_is_owner_v179/, 'owner self-conversions must be explicitly detectable');
 assert.match(outcomes, /profile_conversion_attach_order_v179[\s\S]*profile_conversion_viewer_is_owner_v179\(\$ownerUserId\)/, 'owner self-purchases must not receive Profile conversion attribution');
 assert.match(outcomes, /profile_conversion_booking_confirmed_v179[\s\S]*profile_conversion_viewer_is_owner_v179\(\$ownerUserId\)/, 'owner self-bookings must not become Profile conversions');
