@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require __DIR__ . '/includes/bootstrap.php';
+require_once __DIR__ . '/includes/vp3-public.php';
 redirect_logged_in_public_page();
 
 $signupUrl = url('/signup.php');
@@ -25,11 +26,11 @@ $servicesUrl = url('/services.php');
 <meta name="theme-color" content="#0b0d0f">
 <title>VP3 AI Assistants — Turn Every Conversation Into What’s Next</title>
 <link rel="stylesheet" href="<?= e(url('/vp3-index-ai-assistants.css?v=20260910-2')) ?>">
-<link rel="stylesheet" href="<?= e(url('/vp3-index-mega-menu.css?v=20260914-1')) ?>">
+<link rel="stylesheet" href="<?= e(url('/vp3-index-mega-menu.css?v=20260914-2')) ?>">
 </head>
 <body>
 <header class="site-header">
-  <a class="brand" href="<?= e(url('/index.php')) ?>" aria-label="VP3 home">VP3</a>
+  <a class="brand vp3-home-brand" href="<?= e(url('/index.php')) ?>" aria-label="VP3 home"><?= vp3_public_brand() ?></a>
 
   <nav class="desktop-nav mega-nav" aria-label="Primary navigation">
     <details class="mega-item">
@@ -423,7 +424,7 @@ $servicesUrl = url('/services.php');
 
 <footer class="footer">
   <div class="wrap footer-grid">
-    <div class="footer-brand"><strong>VP3</strong><span>AI assistants for real work.</span></div>
+    <div class="footer-brand"><?= vp3_public_brand() ?><span>AI assistants for real work.</span></div>
     <nav aria-label="Footer navigation">
       <a href="<?= e($productUrl) ?>">Product</a>
       <a href="<?= e($teamsUrl) ?>">Teams</a>
