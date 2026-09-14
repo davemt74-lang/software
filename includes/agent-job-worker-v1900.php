@@ -26,3 +26,13 @@ function agent_job_worker_poll_distributed_v1910(PDO $pdo,array $user,string $ex
 {
     return agent_worker_runtime_poll_v1910($pdo,$user,$executor,$workerId,$limit);
 }
+
+/**
+ * Execute one HomeServer-targeted durable action through the already-paired
+ * trusted relay. This entry point stays server-side and never exposes worker
+ * credentials or lease mutation primitives to the browser.
+ */
+function agent_job_worker_execute_homeserver_v1910(PDO $pdo,array $user,int $limit=25): array
+{
+    return agent_worker_runtime_execute_homeserver_once_v1910($pdo,$user,$limit);
+}
