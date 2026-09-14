@@ -9,7 +9,7 @@ $funnelIntent = vp3_funnel_capture(is_array($requestInput) ? $requestInput : [])
 
 if (is_logged_in()) {
     if (!empty($_SESSION['pending_team_invite_token'])) redirect(url('/team-invite.php'));
-    redirect(vp3_funnel_take_destination(login_destination()));
+    redirect(vp3_funnel_finish_auth(login_destination(), current_user()));
 }
 $error = flash('error');
 $email = strtolower(trim((string)($_POST['email'] ?? '')));
@@ -28,7 +28,7 @@ if ($isPost) {
         if (login_attempt($email, $password)) {
             vp3_funnel_event('login_success');
             if (!empty($_SESSION['pending_team_invite_token'])) redirect(url('/team-invite.php'));
-            redirect(vp3_funnel_take_destination(login_destination()));
+            redirect(vp3_funnel_finish_auth(login_destination(), current_user()));
         }
         $error = 'Invalid email or password, or too many recent attempts.';
     }
