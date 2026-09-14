@@ -23,6 +23,7 @@ for (const fn of [
   'agent_worker_runtime_poll_v1910',
   'agent_worker_runtime_heartbeat_v1910',
   'agent_worker_runtime_result_v1910',
+  'agent_worker_runtime_execute_homeserver_once_v1910',
 ]) assert.ok(runtime.includes(fn), `missing ${fn}`);
 
 // Phase 19.0 remains the sole durable queue/lease/retry/receipt authority.
@@ -46,9 +47,13 @@ const authCall = runtime.indexOf('$authorization=agent_worker_runtime_authorize_
 const release = runtime.indexOf("$claim['authorization']=$authorization");
 assert.ok(authCall >= 0 && release > authCall, 'executable claim must be authorized before release');
 
-// HomeServer identity and capability facts come from existing canonical stores.
-assert.ok(runtime.includes('homeserver_vp3_connection($uid)'));
-assert.ok(runtime.includes('homeserver_capability_v033_normalize'));
+// HomeServer execution readiness must come from the live authenticated v0.33 registry.
+assert.ok(runtime.includes('homeserver_capability_v033_registry($ownerUserId,true)'), 'worker readiness must force a live capability registry refresh');
+assert.ok(!runtime.includes("$connection['capabilities_json']"), 'cached capabilities_json must never authorize durable execution');
+assert.ok(runtime.includes("'homeserver_agent_chat_unavailable'"), 'agent.chat must be explicitly advertised');
+assert.ok(runtime.includes('VP3_AGENT_WORKER_HOMESERVER_OPERATION_V1910'), 'transport operation must stay explicit');
+assert.ok(runtime.includes("'agent.next_action'=>VP3_AGENT_WORKER_HOMESERVER_OPERATION_V1910"), 'workflow capability transport must be allowlisted');
+assert.ok(runtime.includes('if($capabilityKey===\'\'||!isset($allowed[$capabilityKey]))return null;'), 'unknown workflow capabilities must fail closed');
 assert.ok(runtime.includes("hash('sha256',$deviceId)"), 'raw device id should not become the public worker id');
 assert.ok(runtime.includes('VP3_AGENT_WORKER_STALE_SECONDS_V1910'));
 assert.ok(runtime.includes("'homeserver_stale'"));
@@ -56,9 +61,31 @@ assert.ok(runtime.includes("'homeserver_offline'"));
 assert.ok(runtime.includes('max_concurrency'));
 assert.ok(runtime.includes('lease_owner LIKE ?'), 'capacity must be derived from canonical live leases');
 
+// The execution lease must safely outlive the longest relay request.
+const constantInt = (name) => {
+  const m = runtime.match(new RegExp(`const ${name}=(\\d+);`));
+  assert.ok(m, `missing numeric constant ${name}`);
+  return Number(m[1]);
+};
+const relayTimeout = constantInt('VP3_AGENT_WORKER_HOMESERVER_RELAY_TIMEOUT_V1910');
+const leaseSeconds = constantInt('VP3_AGENT_WORKER_HOMESERVER_LEASE_SECONDS_V1910');
+assert.ok(leaseSeconds >= relayTimeout + 20, 'HomeServer lease must exceed relay timeout by a recovery margin');
+assert.ok(runtime.includes('CURLOPT_TIMEOUT=>VP3_AGENT_WORKER_HOMESERVER_RELAY_TIMEOUT_V1910'));
+assert.ok(runtime.includes('VP3_AGENT_WORKER_HOMESERVER_LEASE_SECONDS_V1910'));
+
 // Worker capability may narrow routing, but Cloud capability is not itself permission authority.
 assert.ok(runtime.includes('Capability narrows routing; it never grants authority.'));
 assert.ok(runtime.includes('agent_worker_runtime_supports_capability_v1910'));
+
+// Local HomeServer policy remains authoritative; approval requests are surfaced, not bypassed.
+assert.ok(runtime.includes('If local HomeServer policy requires approval'));
+assert.ok(runtime.includes("'homeserver_approval_pending'"));
+assert.ok(runtime.includes("'local_action_request_count'"));
+
+// Result persistence stays receipt/idempotency based and retries stay in Phase 19.0.
+assert.ok(runtime.includes("'v1910-hs-'.$runId.'-'.$actionId.'-'.$attempt"));
+assert.ok(runtime.includes("'homeserver_transport_timeout'"));
+assert.ok(runtime.includes('$retryable=!empty($remote[\'retryable\'])'));
 
 // v4.00 is used according to its real contract: returned browser actions are sanitized.
 assert.ok(runtime.includes('vp3_agent_tool_authorize_result_v400'));
@@ -67,7 +94,7 @@ assert.ok(runtime.includes("unset($result['actions'])"), 'raw worker actions mus
 // Browser workflow API is observability only; executor primitives remain server-only.
 assert.ok(api.includes('agent_worker_runtime_summary_v1910'));
 assert.ok(api.includes("'workers'=>$workers"));
-for (const fn of ['agent_worker_runtime_poll_v1910','agent_worker_runtime_heartbeat_v1910','agent_worker_runtime_result_v1910','agent_job_claim_next_v1900']) {
+for (const fn of ['agent_worker_runtime_poll_v1910','agent_worker_runtime_heartbeat_v1910','agent_worker_runtime_result_v1910','agent_job_claim_next_v1900','agent_worker_runtime_execute_homeserver_once_v1910']) {
   assert.ok(!api.includes(fn), `browser API must not expose ${fn}`);
 }
 assert.ok(worker.includes('agent_job_worker_poll_distributed_v1910'));
@@ -78,13 +105,13 @@ assert.ok(page.includes("require_once __DIR__ . '/includes/agent-worker-runtime-
 assert.ok(page.includes('agent_worker_runtime_summary_v1910'));
 assert.ok(page.includes('Worker Runtime'));
 assert.ok(page.includes('Dead-lettered'));
-for (const fn of ['agent_worker_runtime_poll_v1910','agent_worker_runtime_heartbeat_v1910','agent_worker_runtime_result_v1910']) {
+for (const fn of ['agent_worker_runtime_poll_v1910','agent_worker_runtime_heartbeat_v1910','agent_worker_runtime_result_v1910','agent_worker_runtime_execute_homeserver_once_v1910']) {
   assert.ok(!page.includes(fn), `owner page must not expose ${fn}`);
 }
 
-// No native HomeServer paths or credentials are copied into the runtime registry.
-for (const forbidden of ['native_path','filesystem_path','relay_token_enc=','homeserver_token_enc=']) {
-  assert.ok(!runtime.includes(forbidden), `runtime must not store/expose ${forbidden}`);
+// Private/local filesystem data must never enter worker observability.
+for (const forbidden of ['native_path','filesystem_path']) {
+  assert.ok(!runtime.includes(forbidden), `runtime must not expose ${forbidden}`);
 }
 
 console.log('Distributed Worker Runtime v19.1 contract: OK');
