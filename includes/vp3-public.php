@@ -1,5 +1,6 @@
 <?php
 declare(strict_types=1);
+require_once __DIR__.'/vp3-funnel.php';
 
 function vp3_public_brand(): string
 {
@@ -23,7 +24,7 @@ function vp3_public_header(string $title, string $description = '', array $optio
     $publicUser = current_user();
     $openUrl = $publicUser ? login_destination() : '';
 
-    if (!$publicUser && function_exists('vp3_funnel_capture_public_source')) {
+    if (!$publicUser) {
         vp3_funnel_capture_public_source();
     }
     ?>
