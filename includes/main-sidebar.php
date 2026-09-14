@@ -2,21 +2,65 @@
 declare(strict_types=1);
 
 $mainSidebarUser = $mainSidebarUser ?? $workspaceSidebarUser ?? current_user();
-$mainSidebarActive = $mainSidebarActive ?? $workspaceSidebarActive ?? '';
+$mainSidebarActive = trim((string)($mainSidebarActive ?? $workspaceSidebarActive ?? ''));
+if ($mainSidebarActive === '' && function_exists('member_navigation_active_key')) {
+    $mainSidebarActive = member_navigation_active_key();
+}
 $mainSidebarUseNewChatButton = !empty($mainSidebarUseNewChatButton);
 $mainSidebarHistoryRows = isset($mainSidebarHistoryRows) && is_array($mainSidebarHistoryRows) ? $mainSidebarHistoryRows : [];
 $mainSidebarMenuLinks = $mainSidebarUser ? member_navigation_menu_links($mainSidebarUser) : [];
 $mainSidebarScript = basename((string)($_SERVER['SCRIPT_NAME'] ?? ''));
 $mainSidebarIsChat = $mainSidebarActive === 'chat' || $mainSidebarScript === 'chat.php';
-$mainSidebarProductsActive = $mainSidebarActive === 'profile_commerce' || $mainSidebarScript === 'profile-commerce-products.php';
-$mainSidebarCalendarActive = $mainSidebarActive === 'calendar' || in_array($mainSidebarScript, ['calendar.php','calendar-event.php'], true);
-$mainSidebarTranscriptionsActive = $mainSidebarActive === 'transcriptions' || $mainSidebarScript === 'artist-listening.php';
 $mainSidebarCanChat = $mainSidebarUser && has_permission('chat.access', $mainSidebarUser);
-$mainSidebarCanAccount = $mainSidebarUser && has_permission('account.access', $mainSidebarUser);
-$mainSidebarCanKnowledge = $mainSidebarUser && member_navigation_entitled($mainSidebarUser, 'knowledge.access', personal_capability_has_v242('personal_knowledge.access', $mainSidebarUser));
-$mainSidebarCanProfileAgent = $mainSidebarUser && member_navigation_entitled($mainSidebarUser, 'profile_agent.access', personal_capability_has_v242('profile_agent.access', $mainSidebarUser));
-$mainSidebarCanTranscriptions = $mainSidebarUser && member_navigation_entitled($mainSidebarUser, 'transcription.access', member_navigation_package_permission($mainSidebarUser, 'artist_listening.access', has_permission('artist_listening.access', $mainSidebarUser)));
-$mainSidebarPrimaryKeys = ['chat'=>true,'contacts'=>true,'profile_agent'=>true,'messages'=>true,'knowledge'=>true,'transcriptions'=>true,'calendar'=>true,'profile_commerce'=>true];
+$mainSidebarCurrentSection = function_exists('member_navigation_section_label') ? member_navigation_section_label($mainSidebarActive) : 'Workspace';
+
+$mainSidebarPrimaryOrder = ['chat','profile_agent','messages','contacts','knowledge','transcriptions','calendar','scheduling','profile_commerce','team'];
+$mainSidebarPrimaryKeys = array_fill_keys($mainSidebarPrimaryOrder, true);
+$mainSidebarPrimaryLabels = [
+    'chat'=>'Agent Chat',
+    'profile_agent'=>'Profile Agent',
+    'messages'=>'Messages',
+    'contacts'=>'Contacts',
+    'knowledge'=>'Knowledge',
+    'transcriptions'=>'Transcriptions',
+    'calendar'=>'Calendar',
+    'scheduling'=>'Scheduling',
+    'profile_commerce'=>'Products',
+    'team'=>'Team',
+];
+$mainSidebarPrimaryIcons = [
+    'chat'=>'✦',
+    'profile_agent'=>'◉',
+    'messages'=>'✉',
+    'contacts'=>'●',
+    'knowledge'=>'◇',
+    'transcriptions'=>'▤',
+    'calendar'=>'▣',
+    'scheduling'=>'◷',
+    'profile_commerce'=>'▦',
+    'team'=>'◎',
+];
+$mainSidebarPrimarySections = [
+    'chat'=>'Agent',
+    'profile_agent'=>'Agent',
+    'messages'=>'Workspace',
+    'contacts'=>'Workspace',
+    'knowledge'=>'Workspace',
+    'transcriptions'=>'Workspace',
+    'calendar'=>'Plan & Sell',
+    'scheduling'=>'Plan & Sell',
+    'profile_commerce'=>'Plan & Sell',
+    'team'=>'Team',
+];
+$mainSidebarLinkIndex = [];
+foreach ($mainSidebarMenuLinks as $link) {
+    $key = (string)($link['key'] ?? '');
+    if ($key !== '') $mainSidebarLinkIndex[$key] = $link;
+}
+$mainSidebarPrimaryLinks = [];
+foreach ($mainSidebarPrimaryOrder as $key) {
+    if (isset($mainSidebarLinkIndex[$key])) $mainSidebarPrimaryLinks[] = $mainSidebarLinkIndex[$key];
+}
 $mainSidebarFooterLinks = array_values(array_filter(
     $mainSidebarMenuLinks,
     static fn(array $link): bool => !isset($mainSidebarPrimaryKeys[(string)($link['key'] ?? '')])
@@ -29,13 +73,15 @@ if ($mainSidebarRenderAgentVoiceAssets) $GLOBALS['VP3_MEMBER_AGENT_VOICE_MENU_AS
 <link rel="stylesheet" href="<?= e(url('/site-branding.css?v=1')) ?>">
 <link rel="stylesheet" href="<?= e(url('/homeserver-vp3.css?v=20260910-1')) ?>">
 <link rel="stylesheet" href="<?= e(url('/agent-policy-v035.css?v=agent-policy-v035-20260909')) ?>">
-<link rel="stylesheet" href="<?= e(url('/agent-ui-v034.css?v=agent-ui-v034-20260913-sidebar-footer')) ?>">
+<link rel="stylesheet" href="<?= e(url('/agent-ui-v034.css?v=authenticated-shell-phase2-20260914')) ?>">
 <?php if ($mainSidebarIsChat): ?><link rel="stylesheet" data-chat-rail-controls-v132 href="<?= e(url('/chat-rail-controls-v132.css?v=20260911-1')) ?>"><?php endif; ?>
 <link rel="stylesheet" href="<?= e(url('/profile-commerce-products-shell-v1310.css?v=1310')) ?>">
 <?php if ($mainSidebarRenderAgentVoiceAssets): ?><link rel="stylesheet" data-member-agent-voice-menu href="<?= e(url('/member-agent-voice-menu.css?v=agent-voice-menu-20260913')) ?>"><?php endif; ?>
 <aside
   class="chat-sidebar workspace-main-sidebar"
   id="chatSidebar"
+  data-shell-active="<?= e($mainSidebarActive) ?>"
+  data-shell-section="<?= e($mainSidebarCurrentSection) ?>"
   data-runtime-url="<?= e(url('/api/agent-runtime-status-v034.php')) ?>"
   data-rename-url="<?= e(url('/api/chat-conversation-rename-v034.php')) ?>"
   data-agent-endpoint="<?= e(url('/api/user-agent-system-v236.php')) ?>"
@@ -57,35 +103,16 @@ if ($mainSidebarRenderAgentVoiceAssets) $GLOBALS['VP3_MEMBER_AGENT_VOICE_MENU_AS
   </div>
 
   <div class="chat-sidebar-sections">
-    <section class="chat-sidebar-nav-section" aria-label="Agent workspace">
+    <section class="chat-sidebar-nav-section" aria-label="VP3 workspace navigation">
       <nav class="chat-sidebar-nav agent-primary-nav" data-agent-primary-nav>
-        <?php if ($mainSidebarCanAccount): ?>
-          <a class="chat-sidebar-nav-link <?= $mainSidebarActive === 'contacts' ? 'active' : '' ?>" href="<?= e(url('/contacts.php')) ?>"><span>●</span><strong>Contacts</strong></a>
-        <?php endif; ?>
-
-        <?php if ($mainSidebarCanProfileAgent): ?>
-          <a class="chat-sidebar-nav-link <?= $mainSidebarActive === 'profile_agent' ? 'active' : '' ?>" href="<?= e(url('/profile-agent.php')) ?>"><span>◉</span><strong>My Agent</strong></a>
-        <?php endif; ?>
-
-        <?php if ($mainSidebarCanAccount): ?>
-          <a class="chat-sidebar-nav-link <?= $mainSidebarActive === 'messages' ? 'active' : '' ?>" href="<?= e(url('/messages.php')) ?>"><span>✉</span><strong>My Messages</strong></a>
-        <?php endif; ?>
-
-        <?php if ($mainSidebarCanKnowledge): ?>
-          <a class="chat-sidebar-nav-link <?= $mainSidebarActive === 'knowledge' ? 'active' : '' ?>" href="<?= e(url('/knowledge.php')) ?>"><span>◇</span><strong>My Knowledge</strong></a>
-        <?php endif; ?>
-
-        <?php if ($mainSidebarCanTranscriptions): ?>
-          <a class="chat-sidebar-nav-link <?= $mainSidebarTranscriptionsActive ? 'active' : '' ?>" href="<?= e(url('/artist-listening.php')) ?>"><span>▤</span><strong>My Transcriptions</strong></a>
-        <?php endif; ?>
-
-        <?php if ($mainSidebarCanAccount): ?>
-          <a class="chat-sidebar-nav-link <?= $mainSidebarCalendarActive ? 'active' : '' ?>" href="<?= e(url('/calendar.php')) ?>"><span>▣</span><strong>My Calendar</strong></a>
-        <?php endif; ?>
-
-        <?php if ($mainSidebarCanAccount && function_exists('agent_commerce_schema_ready_v800') && agent_commerce_schema_ready_v800()): ?>
-          <a class="chat-sidebar-nav-link <?= $mainSidebarProductsActive ? 'active' : '' ?>" href="<?= e(url('/profile-commerce-products.php')) ?>"><span>▦</span><strong>My Products</strong></a>
-        <?php endif; ?>
+        <?php $lastPrimarySection=''; foreach ($mainSidebarPrimaryLinks as $link):
+          $key=(string)($link['key']??'');
+          $section=(string)($mainSidebarPrimarySections[$key]??'Workspace');
+          $isActive=$mainSidebarActive===$key;
+        ?>
+          <?php if ($section !== $lastPrimarySection): ?><div class="agent-nav-group-label"><?= e($section) ?></div><?php endif; ?>
+          <a class="chat-sidebar-nav-link<?= $isActive ? ' active' : '' ?>" href="<?= e((string)$link['url']) ?>" data-vp3-nav-key="<?= e($key) ?>"<?= $isActive ? ' aria-current="page"' : '' ?>><span><?= e((string)($mainSidebarPrimaryIcons[$key]??'•')) ?></span><strong><?= e((string)($mainSidebarPrimaryLabels[$key]??$link['label']??$key)) ?></strong></a>
+        <?php $lastPrimarySection=$section; endforeach; ?>
       </nav>
     </section>
 
@@ -129,9 +156,12 @@ if ($mainSidebarRenderAgentVoiceAssets) $GLOBALS['VP3_MEMBER_AGENT_VOICE_MENU_AS
         <div class="agent-runtime-line"><small>This month</small><a id="vp3AgentRuntimeUsage" href="<?= e(url('/ai-usage.php')) ?>">AI Usage</a></div>
       </div>
       <nav class="agent-sidebar-user-menu" id="vp3AgentUserMenu" aria-label="User menu" hidden>
-        <?php $lastGroup=''; foreach ($mainSidebarFooterLinks as $link): $group=(string)($link['group'] ?? ''); ?>
-          <?php if ($lastGroup !== '' && $group !== $lastGroup): ?><div class="agent-menu-divider" aria-hidden="true"></div><?php endif; ?>
-          <a<?= !empty($link['danger']) ? ' class="logout"' : '' ?> href="<?= e((string)$link['url']) ?>"><span><?= e((string)$link['label']) ?></span><span>↗</span></a>
+        <?php $lastGroup=''; foreach ($mainSidebarFooterLinks as $link): $group=(string)($link['group'] ?? '');$footerKey=(string)($link['key']??'');$footerActive=$mainSidebarActive===$footerKey; ?>
+          <?php if ($group !== $lastGroup): ?>
+            <?php if ($lastGroup !== ''): ?><div class="agent-menu-divider" aria-hidden="true"></div><?php endif; ?>
+            <div class="agent-menu-group-label"><?= e(function_exists('member_navigation_group_label') ? member_navigation_group_label($group) : ucfirst($group)) ?></div>
+          <?php endif; ?>
+          <a class="agent-menu-link<?= $footerActive ? ' active' : '' ?><?= !empty($link['danger']) ? ' logout' : '' ?>" data-vp3-nav-key="<?= e($footerKey) ?>" href="<?= e((string)$link['url']) ?>"<?= $footerActive ? ' aria-current="page"' : '' ?>><span><?= e((string)$link['label']) ?></span><span>↗</span></a>
         <?php $lastGroup=$group; endforeach; ?>
       </nav>
     </footer>
