@@ -210,6 +210,7 @@ function profile_conversion_commerce_order_v179(PDO $pdo, array $order): ?array
         $booking = function_exists('agent_appointment_lifecycle_booking_v700')
             ? agent_appointment_lifecycle_booking_v700($pdo, $bookingId)
             : null;
+        if (!$booking || (function_exists('agent_appointment_lifecycle_status_v700') && agent_appointment_lifecycle_status_v700($booking) !== 'confirmed')) return null;
         $eventTypeId = max(0, (int)($metadata['profile_target_id'] ?? $booking['event_type_id'] ?? 0));
         $event = $eventTypeId > 0 && function_exists('agent_scheduling_event_type_v430')
             ? agent_scheduling_event_type_v430($pdo, $eventTypeId)
