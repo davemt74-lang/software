@@ -24,7 +24,8 @@ const resetSql = read('sql/vp3-password-reset.sql');
 
 assert.match(shell, /function vp3_public_header/, 'VP3 must own one canonical public header');
 assert.match(shell, /function vp3_public_footer/, 'VP3 must own one canonical public footer');
-assert.match(shell, />VP3</, 'canonical public shell must render VP3 branding');
+assert.match(shell, /function vp3_public_brand/, 'VP3 must own one canonical public brand lockup');
+assert.match(shell, /vp3-public-mark[\s\S]*<i><\/i><i><\/i><i><\/i><i><\/i>[\s\S]*<strong>VP3<\/strong>/, 'canonical public brand must include the four-tile VP3 mark and wordmark');
 for (const route of ['/product.php', '/services.php', '/homeserver.php', '/pricing.php', '/about.php']) {
   assert.ok(shell.includes(`url('${route}')`), `public shell must link to ${route}`);
 }
@@ -36,9 +37,16 @@ for (const state of ['', ':visited', ':hover', ':focus']) {
   assert.ok(navCss.includes(`body.vp3-public a.vp3-public-primary${state}`), `public primary CTA must explicitly own white text in ${state || 'default'} state`);
 }
 assert.match(navCss, /body\.vp3-public a\.vp3-public-primary[\s\S]*\{color:#fff\}/, 'public primary CTA must override inherited anchor color with white text');
-assert.match(shell, /vp3-public-nav\.css\?v=vp3-public-20260906-v2/, 'public shell must cache-bust the corrected CTA navigation styles');
+assert.match(shell, /vp3-public\.css\?v=vp3-public-20260914-index/, 'public shell must cache-bust the homepage-aligned public styles');
+assert.match(shell, /vp3-public-nav\.css\?v=vp3-public-20260914-index/, 'public shell must cache-bust the homepage-aligned navigation styles');
+assert.match(shell, /vp3-marketing-pages\.css\?v=20260914-index/, 'public shell must cache-bust the homepage-aligned marketing styles');
+assert.match(css, /--vp3-ink:#0b0c0e/, 'public/auth system must use the homepage ink token');
+assert.match(css, /--vp3-paper:#f6f4ef/, 'public/auth system must use the homepage paper token');
+assert.match(css, /--vp3-blue:#5d55ff/, 'public/auth system must use the homepage blue accent');
+assert.match(css, /--vp3-orange:#ef5b25/, 'public/auth system must use the homepage orange accent');
 assert.match(css, /\.vp3-auth-shell/, 'auth surfaces must share the VP3 design system');
-assert.match(css, /vp3-mountain-bg\.svg/, 'public/auth system must reuse the VP3 mountain visual');
+assert.match(css, /vp3-main-header_bg\.png/, 'public/auth hero surfaces must reuse the homepage hero artwork');
+assert.doesNotMatch(css, /vp3-mountain-bg\.svg/, 'retired mountain artwork must not drive the public/auth design');
 
 for (const [name, source] of Object.entries({login,signup,forgot,reset,pricing,about,contact,privacy,terms,demo,upgrade})) {
   assert.match(source, /includes\/vp3-public\.php/, `${name} must use the canonical VP3 public shell`);

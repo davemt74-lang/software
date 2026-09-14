@@ -22,11 +22,11 @@ function vp3_public_header(string $title, string $description = '', array $optio
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <?php if ($description !== ''): ?><meta name="description" content="<?= e($description) ?>"><?php endif; ?>
 <?php if ($robots !== ''): ?><meta name="robots" content="<?= e($robots) ?>"><?php endif; ?>
-<meta name="theme-color" content="#f7f9fc">
+<meta name="theme-color" content="#0b0c0e">
 <title><?= e($title) ?></title>
-<link rel="stylesheet" href="<?= e(url('/vp3-public.css?v=vp3-public-20260906')) ?>">
-<link rel="stylesheet" href="<?= e(url('/vp3-public-nav.css?v=vp3-public-20260906-v2')) ?>">
-<link rel="stylesheet" href="<?= e(url('/vp3-marketing-pages.css?v=20260914-1')) ?>">
+<link rel="stylesheet" href="<?= e(url('/vp3-public.css?v=vp3-public-20260914-index')) ?>">
+<link rel="stylesheet" href="<?= e(url('/vp3-public-nav.css?v=vp3-public-20260914-index')) ?>">
+<link rel="stylesheet" href="<?= e(url('/vp3-marketing-pages.css?v=20260914-index')) ?>">
 </head>
 <body class="vp3-public<?= $bodyClass !== '' ? ' ' . e($bodyClass) : '' ?>">
 <header class="vp3-public-header<?= $compact ? ' compact' : '' ?>">
@@ -47,10 +47,10 @@ function vp3_public_header(string $title, string $description = '', array $optio
       <?php elseif ($active === 'login'): ?>
         <a class="vp3-public-secondary" href="<?= e(url('/signup.php')) ?>">Create account</a>
       <?php elseif ($active === 'signup'): ?>
-        <a class="vp3-public-secondary" href="<?= e(url('/login.php')) ?>">Sign in</a>
+        <a class="vp3-public-secondary" href="<?= e(url('/login.php')) ?>">Log in</a>
       <?php else: ?>
-        <a class="vp3-public-signin" href="<?= e(url('/login.php')) ?>">Sign in</a>
-        <a class="vp3-public-primary" href="<?= e(url('/signup.php')) ?>">Get Started <span aria-hidden="true">→</span></a>
+        <a class="vp3-public-signin" href="<?= e(url('/login.php')) ?>">Log in</a>
+        <a class="vp3-public-primary" href="<?= e(url('/signup.php')) ?>">Get VP3 <span aria-hidden="true">→</span></a>
       <?php endif; ?>
       <?php if (!$compact): ?>
       <details class="vp3-public-mobile-menu">

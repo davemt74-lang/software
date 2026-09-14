@@ -15,13 +15,18 @@ assert.match(css, /\.hero-image\{[^}]*object-fit:cover/, 'hero image must fill t
 for (const route of ['/signup.php', '/book-demo.php', '/login.php', '/pricing.php', '/about.php', '/transcriptions.php', '/teams.php', '/product.php', '/services.php', '/homeserver.php']) {
   assert.ok(index.includes(`url('${route}')`), `homepage must preserve ${route}`);
 }
+assert.match(index, /require_once __DIR__ \. '\/includes\/vp3-public\.php'/, 'homepage must load the canonical VP3 public brand component');
+assert.match(index, /class="brand vp3-home-brand"[\s\S]*vp3_public_brand\(\)/, 'homepage header must render the canonical VP3 mark and wordmark');
+assert.match(index, /class="footer-brand"[\s\S]*vp3_public_brand\(\)/, 'homepage footer must render the canonical VP3 mark and wordmark');
 assert.match(index, /\$homeServerUrl\s*=\s*url\('\/homeserver\.php'\)/, 'HomeServer CTA must target the standalone HomeServer page');
 assert.match(index, /\$productUrl\s*=\s*url\('\/product\.php'\)/, 'Product mega-menu landing must target the standalone Product page');
 assert.match(index, /\$servicesUrl\s*=\s*url\('\/services\.php'\)/, 'Services mega-menu landing must target the standalone Services page');
 assert.match(index, /<section class="homeserver" id="homeserver"/, 'homepage must retain the HomeServer editorial section');
-assert.match(index, /vp3-index-mega-menu\.css/, 'homepage must load the responsive mega-menu stylesheet');
+assert.match(index, /vp3-index-mega-menu\.css\?v=20260914-2/, 'homepage must cache-bust the branded mega-menu stylesheet');
 assert.match(index, /desktop-nav mega-nav/, 'homepage must expose the desktop mega-menu navigation');
 assert.match(index, /mega-mobile-nav/, 'homepage must expose the mobile mega-menu navigation');
+assert.match(megaCss, /\.brand>\.vp3-public-mark,\.footer-brand>\.vp3-public-mark/, 'homepage header and footer must style the shared VP3 mark markup');
+assert.match(megaCss, /grid-template-columns:repeat\(2,8px\)[\s\S]*grid-template-rows:repeat\(2,8px\)/, 'homepage VP3 mark must render the canonical four-tile grid');
 assert.doesNotMatch(index, /homeserver-download\.php/, 'homepage must not link to a missing HomeServer download route');
 assert.doesNotMatch(index, /App Store|Google Play|VP3 for iPhone|VP3 for Android/, 'homepage must not expose obsolete app-store CTAs');
 

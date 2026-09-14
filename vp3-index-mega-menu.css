@@ -30,6 +30,15 @@
 .mega-panel-pricing{grid-template-columns:minmax(200px,.65fr) minmax(0,2.35fr)}
 .mega-panel-pricing .mega-columns{align-items:stretch}
 
+/* The homepage reuses the exact public-shell VP3 mark markup. */
+.brand,.footer-brand{display:inline-flex!important;align-items:center;gap:12px}
+.brand>.vp3-public-mark,.footer-brand>.vp3-public-mark{display:grid;grid-template-columns:repeat(2,8px);grid-template-rows:repeat(2,8px);gap:3px;width:19px;height:19px;transform:rotate(45deg);margin:0 3px;padding:0;border:0;flex:0 0 19px;color:inherit}
+.brand>.vp3-public-mark i,.footer-brand>.vp3-public-mark i{display:block;background:currentColor;border-radius:1px}
+.brand>strong{font-size:27px;font-weight:900;letter-spacing:-.06em}
+.footer-brand>.vp3-public-mark{color:#101214}
+.footer-brand>strong{font-size:22px;letter-spacing:-.05em}
+.footer-brand>span:last-child{font-size:10px;color:#848886;padding-left:15px;border-left:1px solid #e5e2dc}
+
 /* Mobile keeps the existing hamburger but upgrades it to an accordion-style product map. */
 .mobile-menu>summary{position:relative;z-index:3}
 .mobile-menu[open]>summary{background:rgba(255,255,255,.14)}
@@ -59,6 +68,7 @@
 }
 @media(max-width:430px){
   .mobile-nav-actions{grid-template-columns:1fr}
+  .brand>.vp3-public-mark{grid-template-columns:repeat(2,7px);grid-template-rows:repeat(2,7px);gap:2px;width:16px;height:16px;flex-basis:16px}
 }
 @media(prefers-reduced-motion:reduce){
   .mega-item>summary,.mega-link{transition:none}
