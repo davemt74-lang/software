@@ -9,9 +9,12 @@ $demoUrl = url('/book-demo.php');
 $loginUrl = url('/login.php');
 $pricingUrl = url('/pricing.php');
 $aboutUrl = url('/about.php');
+$contactUrl = url('/contact.php');
 $transcriptionsUrl = url('/transcriptions.php');
 $teamsUrl = url('/teams.php');
 $homeServerUrl = '#homeserver';
+$productUrl = '#platform';
+$servicesUrl = '#features';
 ?>
 <!doctype html>
 <html lang="en">
@@ -22,29 +25,202 @@ $homeServerUrl = '#homeserver';
 <meta name="theme-color" content="#0b0d0f">
 <title>VP3 AI Assistants — Turn Every Conversation Into What’s Next</title>
 <link rel="stylesheet" href="<?= e(url('/vp3-index-ai-assistants.css?v=20260910-2')) ?>">
+<link rel="stylesheet" href="<?= e(url('/vp3-index-mega-menu.css?v=20260914-1')) ?>">
 </head>
 <body>
 <header class="site-header">
   <a class="brand" href="<?= e(url('/index.php')) ?>" aria-label="VP3 home">VP3</a>
-  <nav class="desktop-nav" aria-label="Primary navigation">
-    <a href="#features">Product</a>
-    <a href="#platform">Solutions</a>
-    <a href="#homeserver">HomeServer</a>
-    <a href="<?= e($pricingUrl) ?>">Pricing</a>
-    <a href="<?= e($aboutUrl) ?>">About</a>
+
+  <nav class="desktop-nav mega-nav" aria-label="Primary navigation">
+    <details class="mega-item">
+      <summary>Product</summary>
+      <div class="mega-panel">
+        <div class="mega-intro">
+          <span class="mega-kicker">Product</span>
+          <h2>Your AI identity, workspace, and agent.</h2>
+          <p>VP3 connects your assistant, public profile, personal URL, private knowledge, and optional HomeServer into one system.</p>
+          <a class="mega-intro-link" href="<?= e($productUrl) ?>">Explore the VP3 platform <span aria-hidden="true">→</span></a>
+        </div>
+        <div class="mega-columns cols-2">
+          <div class="mega-column">
+            <span class="mega-column-label">Your assistant</span>
+            <a class="mega-link" href="<?= e($productUrl) ?>"><strong>AI Assistant</strong><small>Your primary agent for conversations, knowledge, tasks, workflows, and follow-through.</small></a>
+            <a class="mega-link" href="<?= e($productUrl) ?>"><strong>Profile Agent</strong><small>An AI agent on your public profile that can represent you within the permissions you set.</small></a>
+          </div>
+          <div class="mega-column">
+            <span class="mega-column-label">Your presence</span>
+            <a class="mega-link" href="<?= e($productUrl) ?>"><strong>Personal URL</strong><small>A shareable VP3 profile and agent destination for people, customers, and collaborators.</small></a>
+            <a class="mega-link" href="<?= e($homeServerUrl) ?>"><strong>HomeServer</strong><small>Pair your VP3 account with private local knowledge, tools, models, and compute.</small></a>
+          </div>
+        </div>
+      </div>
+    </details>
+
+    <details class="mega-item">
+      <summary>Services</summary>
+      <div class="mega-panel">
+        <div class="mega-intro">
+          <span class="mega-kicker">Services</span>
+          <h2>From conversation to coordinated action.</h2>
+          <p>Capture, understand, schedule, sell, collaborate, and let your Agent keep the context connected across the work.</p>
+          <a class="mega-intro-link" href="<?= e($servicesUrl) ?>">See VP3 services <span aria-hidden="true">→</span></a>
+        </div>
+        <div class="mega-columns">
+          <div class="mega-column">
+            <span class="mega-column-label">Capture + understand</span>
+            <a class="mega-link" href="<?= e($transcriptionsUrl) ?>"><strong>Transcription</strong><small>Record and organize meetings, calls, interviews, voice notes, and other conversations.</small></a>
+            <a class="mega-link" href="#features"><strong>AI Summary</strong><small>Turn long conversations into decisions, action items, questions, and reusable knowledge.</small></a>
+          </div>
+          <div class="mega-column">
+            <span class="mega-column-label">Coordinate</span>
+            <a class="mega-link" href="<?= e($teamsUrl) ?>"><strong>Teams</strong><small>Shared workspaces, conversations, permissions, context, and collaborative Agent workflows.</small></a>
+            <a class="mega-link" href="#platform"><strong>Calendar</strong><small>Availability, calendar intelligence, sync, scheduling context, and Agent-managed coordination.</small></a>
+          </div>
+          <div class="mega-column">
+            <span class="mega-column-label">Book + sell</span>
+            <a class="mega-link" href="#platform"><strong>Booking — free or paid</strong><small>Public scheduling, appointment lifecycle, deposits, paid appointments, reminders, and follow-up.</small></a>
+            <a class="mega-link" href="#platform"><strong>Ecommerce</strong><small>Public products, checkout, paid orders, fulfillment, refunds, seller alerts, and Agent commerce.</small></a>
+          </div>
+        </div>
+      </div>
+    </details>
+
+    <details class="mega-item">
+      <summary>HomeServer</summary>
+      <div class="mega-panel">
+        <div class="mega-intro">
+          <span class="mega-kicker">HomeServer</span>
+          <h2>Use the Cloud, self-host, or connect both.</h2>
+          <p>Keep VP3 convenient in the Cloud while moving private knowledge, tools, models, and local capabilities onto hardware you control.</p>
+          <a class="mega-intro-link" href="<?= e($homeServerUrl) ?>">Explore HomeServer <span aria-hidden="true">→</span></a>
+        </div>
+        <div class="mega-columns">
+          <div class="mega-column">
+            <span class="mega-column-label">Deployment</span>
+            <a class="mega-link" href="<?= e($homeServerUrl) ?>"><strong>Cloud vs. self-hosted</strong><small>Choose Cloud convenience, local privacy, or a paired hybrid setup with clear authority boundaries.</small></a>
+            <a class="mega-link" href="<?= e($homeServerUrl) ?>"><strong>Paired devices</strong><small>Connect approved VP3 front ends to your private HomeServer capability platform.</small></a>
+          </div>
+          <div class="mega-column">
+            <span class="mega-column-label">Models + compute</span>
+            <a class="mega-link" href="<?= e($homeServerUrl) ?>"><strong>OpenRouter</strong><small>Use provider/model choice through VP3 while keeping HomeServer available for local/private execution.</small></a>
+            <a class="mega-link" href="<?= e($homeServerUrl) ?>"><strong>Model choice</strong><small>Route work to Cloud or local models based on privacy, capability, availability, and cost.</small></a>
+          </div>
+          <div class="mega-column">
+            <span class="mega-column-label">Private capabilities</span>
+            <a class="mega-link" href="<?= e($homeServerUrl) ?>"><strong>Local Knowledge</strong><small>Keep native local files and private collections authoritative on HomeServer.</small></a>
+            <a class="mega-link" href="<?= e($homeServerUrl) ?>"><strong>Tools + skills</strong><small>Give paired Agents approved local capabilities without exposing private filesystem paths to VP3 Cloud.</small></a>
+          </div>
+        </div>
+      </div>
+    </details>
+
+    <details class="mega-item">
+      <summary>Pricing</summary>
+      <div class="mega-panel mega-panel-pricing">
+        <div class="mega-intro">
+          <span class="mega-kicker">Pricing</span>
+          <h2>Use VP3 on the cadence that fits.</h2>
+          <p>Account access, usage, and AI capacity can be matched to how often and how deeply you use your Agent.</p>
+          <a class="mega-intro-link" href="<?= e($pricingUrl) ?>">View pricing <span aria-hidden="true">→</span></a>
+        </div>
+        <div class="mega-columns cols-4">
+          <a class="mega-price" href="<?= e($pricingUrl) ?>"><strong>Monthly</strong><small>A simple recurring plan for regular VP3 use.</small><b>View monthly →</b></a>
+          <a class="mega-price" href="<?= e($pricingUrl) ?>"><strong>Weekly</strong><small>Short-cycle access when your usage is project-based or changing.</small><b>View weekly →</b></a>
+          <a class="mega-price" href="<?= e($pricingUrl) ?>"><strong>Yearly</strong><small>Longer-term access for individuals and teams committed to VP3.</small><b>View yearly →</b></a>
+          <a class="mega-price" href="<?= e($pricingUrl) ?>"><strong>Token packages</strong><small>Add AI capacity for heavier conversations, workflows, and model usage.</small><b>View tokens →</b></a>
+        </div>
+      </div>
+    </details>
+
+    <details class="mega-item">
+      <summary>About</summary>
+      <div class="mega-panel mega-panel-about">
+        <div class="mega-intro">
+          <span class="mega-kicker">About VP3</span>
+          <h2>Private, useful AI built around the person.</h2>
+          <p>Learn who is building VP3, why we are building it, how people use it, and how to reach us.</p>
+          <a class="mega-intro-link" href="<?= e($aboutUrl) ?>">About VP3 <span aria-hidden="true">→</span></a>
+        </div>
+        <div class="mega-columns">
+          <div class="mega-column">
+            <span class="mega-column-label">Company</span>
+            <a class="mega-link" href="<?= e($aboutUrl) ?>"><strong>Team</strong><small>Meet the people building VP3.</small></a>
+            <a class="mega-link" href="<?= e($aboutUrl) ?>"><strong>Mission</strong><small>Why user-controlled AI, identity, knowledge, and capability matter.</small></a>
+          </div>
+          <div class="mega-column">
+            <span class="mega-column-label">Stories</span>
+            <a class="mega-link" href="<?= e($aboutUrl) ?>"><strong>Case studies</strong><small>See how VP3 can fit real personal, team, scheduling, and commerce workflows.</small></a>
+            <a class="mega-link" href="<?= e($aboutUrl) ?>"><strong>Testimonials</strong><small>Feedback and experiences from people using the platform.</small></a>
+          </div>
+          <div class="mega-column">
+            <span class="mega-column-label">Connect</span>
+            <a class="mega-link" href="<?= e($contactUrl) ?>"><strong>Contact us</strong><small>Questions, partnerships, demos, support, and general inquiries.</small></a>
+            <a class="mega-link" href="<?= e($aboutUrl) ?>#social"><strong>Social links</strong><small>Follow VP3 and the team across our public channels.</small></a>
+          </div>
+        </div>
+      </div>
+    </details>
   </nav>
+
   <div class="header-actions">
     <a class="signin" href="<?= e($loginUrl) ?>">Log in</a>
     <a class="button button-light button-small" href="<?= e($signupUrl) ?>">Get VP3 <span aria-hidden="true">→</span></a>
     <details class="mobile-menu">
       <summary aria-label="Open navigation"><span></span><span></span><span></span></summary>
-      <nav aria-label="Mobile navigation">
-        <a href="#features">Product</a>
-        <a href="#platform">Solutions</a>
-        <a href="#homeserver">HomeServer</a>
-        <a href="<?= e($pricingUrl) ?>">Pricing</a>
-        <a href="<?= e($aboutUrl) ?>">About</a>
-        <a href="<?= e($loginUrl) ?>">Log in</a>
+      <nav class="mega-mobile-nav" aria-label="Mobile navigation">
+        <details class="mobile-nav-group">
+          <summary>Product</summary>
+          <div class="mobile-nav-links">
+            <a href="#platform"><strong>AI Assistant</strong><small>Your main VP3 agent and workspace.</small></a>
+            <a href="#platform"><strong>Personal URL</strong><small>Your shareable VP3 destination.</small></a>
+            <a href="#platform"><strong>Profile Agent</strong><small>An AI agent on your public profile.</small></a>
+            <a href="#homeserver"><strong>HomeServer</strong><small>Private local knowledge and capabilities.</small></a>
+          </div>
+        </details>
+        <details class="mobile-nav-group">
+          <summary>Services</summary>
+          <div class="mobile-nav-links">
+            <a href="<?= e($transcriptionsUrl) ?>"><strong>Transcription</strong><small>Capture and organize conversations.</small></a>
+            <a href="#features"><strong>AI Summary</strong><small>Decisions, actions, and reusable knowledge.</small></a>
+            <a href="<?= e($teamsUrl) ?>"><strong>Teams</strong><small>Shared context and collaborative workspaces.</small></a>
+            <a href="#platform"><strong>Calendar</strong><small>Availability and calendar intelligence.</small></a>
+            <a href="#platform"><strong>Booking</strong><small>Free and paid appointment workflows.</small></a>
+            <a href="#platform"><strong>Ecommerce</strong><small>Products, orders, checkout, and fulfillment.</small></a>
+          </div>
+        </details>
+        <details class="mobile-nav-group">
+          <summary>HomeServer</summary>
+          <div class="mobile-nav-links">
+            <a href="#homeserver"><strong>Cloud vs. self-hosted</strong><small>Cloud, local, or paired hybrid operation.</small></a>
+            <a href="#homeserver"><strong>OpenRouter</strong><small>Provider and model choice.</small></a>
+            <a href="#homeserver"><strong>Local Knowledge</strong><small>Private files stay locally authoritative.</small></a>
+            <a href="#homeserver"><strong>Tools + skills</strong><small>Approved local capabilities for paired Agents.</small></a>
+          </div>
+        </details>
+        <details class="mobile-nav-group">
+          <summary>Pricing</summary>
+          <div class="mobile-nav-links">
+            <a href="<?= e($pricingUrl) ?>"><strong>Monthly</strong><small>Recurring monthly access.</small></a>
+            <a href="<?= e($pricingUrl) ?>"><strong>Weekly</strong><small>Short-cycle project access.</small></a>
+            <a href="<?= e($pricingUrl) ?>"><strong>Yearly</strong><small>Long-term individual or team access.</small></a>
+            <a href="<?= e($pricingUrl) ?>"><strong>Token packages</strong><small>Add AI usage capacity.</small></a>
+          </div>
+        </details>
+        <details class="mobile-nav-group">
+          <summary>About</summary>
+          <div class="mobile-nav-links">
+            <a href="<?= e($aboutUrl) ?>"><strong>Team</strong><small>Meet the people building VP3.</small></a>
+            <a href="<?= e($aboutUrl) ?>"><strong>Mission</strong><small>Why VP3 exists.</small></a>
+            <a href="<?= e($aboutUrl) ?>"><strong>Case studies</strong><small>Real workflow examples.</small></a>
+            <a href="<?= e($aboutUrl) ?>"><strong>Testimonials</strong><small>What people say about VP3.</small></a>
+            <a href="<?= e($contactUrl) ?>"><strong>Contact us</strong><small>Demos, partnerships, and questions.</small></a>
+            <a href="<?= e($aboutUrl) ?>#social"><strong>Social links</strong><small>Follow VP3 and the team.</small></a>
+          </div>
+        </details>
+        <div class="mobile-nav-actions">
+          <a href="<?= e($loginUrl) ?>">Log in</a>
+          <a href="<?= e($signupUrl) ?>">Get VP3 →</a>
+        </div>
       </nav>
     </details>
   </div>
@@ -256,9 +432,43 @@ $homeServerUrl = '#homeserver';
       <a href="<?= e($aboutUrl) ?>">About</a>
       <a href="<?= e(url('/privacy.php')) ?>">Privacy</a>
       <a href="<?= e(url('/terms.php')) ?>">Terms</a>
-      <a href="<?= e(url('/contact.php')) ?>">Contact</a>
+      <a href="<?= e($contactUrl) ?>">Contact</a>
     </nav>
   </div>
 </footer>
+<script>
+(() => {
+  const desktopNav = document.querySelector('.mega-nav');
+  if (desktopNav) {
+    const items = [...desktopNav.querySelectorAll('.mega-item')];
+    items.forEach((item) => item.addEventListener('toggle', () => {
+      if (!item.open) return;
+      items.forEach((other) => {
+        if (other !== item) other.removeAttribute('open');
+      });
+    }));
+    document.addEventListener('click', (event) => {
+      if (!desktopNav.contains(event.target)) items.forEach((item) => item.removeAttribute('open'));
+    });
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') items.forEach((item) => item.removeAttribute('open'));
+    });
+  }
+
+  const mobileMenu = document.querySelector('.mobile-menu');
+  if (mobileMenu) {
+    const groups = [...mobileMenu.querySelectorAll('.mobile-nav-group')];
+    groups.forEach((group) => group.addEventListener('toggle', () => {
+      if (!group.open) return;
+      groups.forEach((other) => {
+        if (other !== group) other.removeAttribute('open');
+      });
+    }));
+    mobileMenu.querySelectorAll('a').forEach((link) => link.addEventListener('click', () => {
+      mobileMenu.removeAttribute('open');
+    }));
+  }
+})();
+</script>
 </body>
 </html>
