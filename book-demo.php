@@ -2,6 +2,10 @@
 declare(strict_types=1);
 require __DIR__ . '/includes/bootstrap.php';
 require_once __DIR__ . '/includes/vp3-public.php';
+require_once __DIR__ . '/includes/vp3-funnel.php';
+
+$requestInput=($_SERVER['REQUEST_METHOD']??'GET')==='POST'?$_POST:$_GET;
+$funnelIntent=vp3_funnel_capture(is_array($requestInput)?$requestInput:[]);
 redirect_logged_in_public_page();
 
 $error='';$success=flash('success');
@@ -11,10 +15,14 @@ $labels=['assistant'=>'Personal AI assistant','transcription'=>'Transcriptions &
 $workflows=array_values(array_intersect($workflows,array_keys($labels)));
 $allowedRoles=['personal','creator','professional','manager','team','organization'];if(!in_array($role,$allowedRoles,true))$role='';
 $allowedTeamSizes=['1','2-5','6-20','21+'];if(!in_array($teamSize,$allowedTeamSizes,true))$teamSize='';
+$isPost=($_SERVER['REQUEST_METHOD']??'GET')==='POST';
 
-if($_SERVER['REQUEST_METHOD']==='POST'){
+if(!$isPost)vp3_funnel_event('demo_view');
+
+if($isPost){
+    vp3_funnel_event('demo_submit');
     if(!verify_csrf())$error='Your session expired. Please refresh the page and try again.';
-    elseif(trim((string)($_POST['website']??''))!==''){flash('success','Thanks. Your demo request has been received.');redirect(url('/book-demo.php'));}
+    elseif(trim((string)($_POST['website']??''))!==''){flash('success','Thanks. Your demo request has been received.');redirect(vp3_funnel_url('/book-demo.php'));}
     elseif($name===''||!filter_var($email,FILTER_VALIDATE_EMAIL))$error='Please enter your name and a valid email address.';
     elseif(mb_strlen($name)>120||mb_strlen($email)>190||mb_strlen($company)>190||mb_strlen($phone)>80||mb_strlen($notes)>5000)$error='One or more fields are too long.';
     else{
@@ -32,23 +40,25 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
         }catch(Throwable $e){error_log('VP3 demo request save failed: '.$e->getMessage());}
         $recipient=(string)setting('contact_email',(string)site_config('email',''));$mailed=false;
         if((bool)site_config('send_contact_email',false)&&filter_var($recipient,FILTER_VALIDATE_EMAIL)){$subject='VP3 — Book a Demo';$headers=['From: '.$recipient,'Reply-To: '.$email,'Content-Type: text/plain; charset=UTF-8'];$mailed=@mail($recipient,$subject,"Name: {$name}\nEmail: {$email}\n\n{$message}",implode("\r\n",$headers));}
-        if($stored||$mailed){flash('success','Thanks. Your demo request has been received. We will follow up with you soon.');redirect(url('/book-demo.php'));}
+        if($stored||$mailed){vp3_funnel_event('demo_success');flash('success','Thanks. Your demo request has been received. We will follow up with you soon.');redirect(vp3_funnel_url('/book-demo.php'));}
         $error='The demo request could not be submitted because the backend is not configured yet. Please use the contact page instead.';
     }
+    if($error!=='')vp3_funnel_event('demo_failure');
 }
 
+$funnelIntent=vp3_funnel_intent();
 vp3_public_header('Book a Demo — VP3','See how VP3 can connect your assistant, transcriptions, knowledge, profile, projects, and team workflows.');
 ?>
 <section class="vp3-public-hero"><div class="vp3-kicker">See VP3 in context</div><h1>Build the assistant around how you work.</h1><p>Tell us what you want to connect and we’ll focus the demo on the parts of VP3 that matter to you.</p></section>
-<main><section class="vp3-section"><div class="vp3-wrap vp3-demo-grid">
+<main id="main-content"><section class="vp3-section"><div class="vp3-wrap vp3-demo-grid">
   <aside class="vp3-card vp3-demo-aside"><div><div class="vp3-kicker">Capture → Understand → Act</div><h2>A connected personal assistant.</h2><p>See how conversations, recordings, summaries, knowledge, profiles, projects, contacts, and teams can work through one assistant instead of separate silos.</p><div class="vp3-about-points"><div class="vp3-about-point"><b>Transcribe and summarize</b><span>Turn recordings into searchable context and action items.</span></div><div class="vp3-about-point"><b>Build a second brain</b><span>Connect notes, files, memories, relationships, and project knowledge.</span></div><div class="vp3-about-point"><b>Use your agent</b><span>Let the main Agent Chat work across approved tools, skills, and proactive opportunities.</span></div></div></div></aside>
-  <div class="vp3-card"><div class="vp3-kicker">Request a demo</div><h2>What should we show you?</h2><p>Answer a few questions and we’ll tailor the conversation.</p>
-    <?php if($success):?><div class="vp3-alert success"><?=e((string)$success)?></div><?php endif;?><?php if($error):?><div class="vp3-alert error" role="alert"><?=e($error)?></div><?php endif;?>
-    <form method="post" action="<?=e(url('/book-demo.php'))?>"><?=csrf_field()?><div style="position:absolute;left:-9999px" aria-hidden="true"><label for="website">Website</label><input id="website" name="website" tabindex="-1" autocomplete="off"></div>
-      <div class="vp3-field"><label>What do you want VP3 to help with?</label><div class="vp3-demo-options"><?php foreach($labels as $value=>$label):?><label class="vp3-option"><input type="checkbox" name="workflow[]" value="<?=e($value)?>" <?=in_array($value,$workflows,true)?'checked':''?>> <span><?=e($label)?></span></label><?php endforeach;?></div></div><br>
-      <div class="vp3-field"><label>Which best describes you?</label><select name="role"><option value="">Select one</option><?php foreach(['personal'=>'Personal use','creator'=>'Creator','professional'=>'Professional','manager'=>'Manager','team'=>'Team lead','organization'=>'Organization'] as $value=>$label):?><option value="<?=e($value)?>" <?=$role===$value?'selected':''?>><?=e($label)?></option><?php endforeach;?></select></div><br>
-      <div class="vp3-field"><label>How large is the team?</label><select name="team_size"><option value="">Select one</option><?php foreach(['1'=>'Just me','2-5'=>'2–5 people','6-20'=>'6–20 people','21+'=>'21+ people'] as $value=>$label):?><option value="<?=e($value)?>" <?=$teamSize===$value?'selected':''?>><?=e($label)?></option><?php endforeach;?></select></div><br>
-      <div class="vp3-form-grid"><div class="vp3-field"><label for="name">Name</label><input id="name" name="name" maxlength="120" autocomplete="name" required value="<?=e($name)?>"></div><div class="vp3-field"><label for="email">Email</label><input id="email" name="email" type="email" maxlength="190" autocomplete="email" required value="<?=e($email)?>"></div><div class="vp3-field"><label for="company">Company / organization</label><input id="company" name="company" maxlength="190" value="<?=e($company)?>"></div><div class="vp3-field"><label for="phone">Phone</label><input id="phone" name="phone" maxlength="80" autocomplete="tel" value="<?=e($phone)?>"></div><div class="vp3-field full"><label for="notes">What would you like to see?</label><textarea id="notes" name="notes" maxlength="5000"><?=e($notes)?></textarea></div></div><br><button class="vp3-btn primary" type="submit">Request my demo →</button>
+  <div class="vp3-card"><div class="vp3-kicker">Request a demo</div><h2 id="demo-form-heading">What should we show you?</h2><p>Answer a few questions and we’ll tailor the conversation.</p>
+    <?php if($success):?><div class="vp3-alert success" role="status" aria-live="polite"><?=e((string)$success)?></div><?php endif;?><?php if($error):?><div class="vp3-alert error" role="alert" aria-live="polite"><?=e($error)?></div><?php endif;?>
+    <form method="post" action="<?=e(url('/book-demo.php'))?>" aria-labelledby="demo-form-heading"><?=csrf_field()?><?php foreach(['plan','billing','source','return_to'] as $intentKey):if(isset($funnelIntent[$intentKey])):?><input type="hidden" name="<?=e($intentKey)?>" value="<?=e((string)$funnelIntent[$intentKey])?>"><?php endif;endforeach;?><div style="position:absolute;left:-9999px" aria-hidden="true"><label for="website">Website</label><input id="website" name="website" tabindex="-1" autocomplete="off"></div>
+      <fieldset class="vp3-field"><legend>What do you want VP3 to help with?</legend><div class="vp3-demo-options"><?php foreach($labels as $value=>$label):?><label class="vp3-option"><input type="checkbox" name="workflow[]" value="<?=e($value)?>" <?=in_array($value,$workflows,true)?'checked':''?>> <span><?=e($label)?></span></label><?php endforeach;?></div></fieldset><br>
+      <div class="vp3-field"><label for="role">Which best describes you?</label><select id="role" name="role"><option value="">Select one</option><?php foreach(['personal'=>'Personal use','creator'=>'Creator','professional'=>'Professional','manager'=>'Manager','team'=>'Team lead','organization'=>'Organization'] as $value=>$label):?><option value="<?=e($value)?>" <?=$role===$value?'selected':''?>><?=e($label)?></option><?php endforeach;?></select></div><br>
+      <div class="vp3-field"><label for="team_size">How large is the team?</label><select id="team_size" name="team_size"><option value="">Select one</option><?php foreach(['1'=>'Just me','2-5'=>'2–5 people','6-20'=>'6–20 people','21+'=>'21+ people'] as $value=>$label):?><option value="<?=e($value)?>" <?=$teamSize===$value?'selected':''?>><?=e($label)?></option><?php endforeach;?></select></div><br>
+      <div class="vp3-form-grid"><div class="vp3-field"><label for="name">Name</label><input id="name" name="name" maxlength="120" autocomplete="name" required value="<?=e($name)?>"></div><div class="vp3-field"><label for="email">Email</label><input id="email" name="email" type="email" maxlength="190" autocomplete="email" required value="<?=e($email)?>"></div><div class="vp3-field"><label for="company">Company / organization</label><input id="company" name="company" maxlength="190" autocomplete="organization" value="<?=e($company)?>"></div><div class="vp3-field"><label for="phone">Phone</label><input id="phone" name="phone" maxlength="80" autocomplete="tel" value="<?=e($phone)?>"></div><div class="vp3-field full"><label for="notes">What would you like to see?</label><textarea id="notes" name="notes" maxlength="5000"><?=e($notes)?></textarea></div></div><br><button class="vp3-btn primary" type="submit">Request my demo →</button>
     </form>
   </div>
 </div></section></main>

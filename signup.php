@@ -2,17 +2,27 @@
 declare(strict_types=1);
 require __DIR__ . '/includes/bootstrap.php';
 require_once __DIR__ . '/includes/vp3-public.php';
+require_once __DIR__ . '/includes/vp3-funnel.php';
+
+$requestInput = ($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' ? $_POST : $_GET;
+$funnelIntent = vp3_funnel_capture(is_array($requestInput) ? $requestInput : []);
 
 if (is_logged_in()) {
     if (!empty($_SESSION['pending_team_invite_token'])) redirect(url('/team-invite.php'));
-    redirect(login_destination());
+    redirect(vp3_funnel_finish_auth(login_destination(), current_user()));
 }
 
 $error = '';
 $displayName = trim((string)($_POST['display_name'] ?? ''));
 $email = strtolower(trim((string)($_POST['email'] ?? '')));
+$isPost = ($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST';
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+if (!$isPost) {
+    vp3_funnel_event('signup_view');
+}
+
+if ($isPost) {
+    vp3_funnel_event('signup_submit');
     if (!verify_csrf()) {
         $error = 'Your session expired. Please try again.';
     } elseif (trim((string)($_POST['website'] ?? '')) !== '') {
@@ -64,8 +74,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     flash('notice', $tokens > 0
                         ? 'Welcome to VP3. Your Free Trial includes ' . number_format($tokens) . ' AI tokens.'
                         : 'Welcome to VP3. Your Free Trial is ready.');
+                    vp3_funnel_event('signup_success');
                     if (!empty($_SESSION['pending_team_invite_token'])) redirect(url('/team-invite.php'));
-                    redirect(login_destination());
+                    redirect(vp3_funnel_finish_auth(login_destination(), current_user()));
                 } catch (Throwable $e) {
                     if ($pdo->inTransaction()) $pdo->rollBack();
                     error_log('VP3 public signup failed: ' . $e->getMessage());
@@ -74,15 +85,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
     }
+
+    if ($error !== '') {
+        vp3_funnel_event('signup_failure');
+    }
 }
 
-vp3_public_header('Create account — VP3', 'Create your VP3 personal AI assistant account.', ['active'=>'signup','compact'=>true,'body_class'=>'vp3-auth-page']);
+$funnelIntent = vp3_funnel_intent();
+vp3_public_header('Create account — VP3', 'Create your VP3 personal AI assistant account.', ['active'=>'signup','compact'=>true,'body_class'=>'vp3-auth-page','canonical'=>'/signup.php','robots'=>'noindex,follow','skip_link'=>true]);
 ?>
-<main class="vp3-auth-shell">
-  <section class="vp3-auth-visual">
+<main id="main-content" class="vp3-auth-shell">
+  <section class="vp3-auth-visual" aria-labelledby="signup-benefits-heading">
     <div class="vp3-auth-visual-content">
       <div class="vp3-kicker">Capture. Understand. Take action.</div>
-      <h1>Build an assistant around your life and work.</h1>
+      <h1 id="signup-benefits-heading">Build an assistant around your life and work.</h1>
       <p>Create your account and start with a Free Trial. Your assistant will guide setup and recommend the right package as you use VP3.</p>
       <div class="vp3-auth-points">
         <div class="vp3-auth-point"><b>Start free</b>No package decision is required before you can explore VP3.</div>
@@ -91,24 +107,25 @@ vp3_public_header('Create account — VP3', 'Create your VP3 personal AI assista
       </div>
     </div>
   </section>
-  <section class="vp3-auth-form-side">
+  <section class="vp3-auth-form-side" aria-labelledby="signup-form-heading">
     <div class="vp3-auth-card">
       <div class="vp3-kicker">Create your account</div>
-      <h1>Get started.</h1>
+      <h1 id="signup-form-heading">Get started.</h1>
       <p class="vp3-auth-intro">Create one VP3 account. Your Free Trial is assigned automatically.</p>
-      <?php if (!db_ready()): ?><div class="vp3-alert">Account registration is unavailable until the database is configured.</div><?php endif; ?>
-      <?php if ($error): ?><div class="vp3-alert error" role="alert"><?= e($error) ?></div><?php endif; ?>
+      <?php if (!db_ready()): ?><div class="vp3-alert" role="status">Account registration is unavailable until the database is configured.</div><?php endif; ?>
+      <?php if ($error): ?><div class="vp3-alert error" role="alert" aria-live="polite"><?= e($error) ?></div><?php endif; ?>
       <form class="vp3-auth-form" method="post" action="<?= e(url('/signup.php')) ?>">
         <?= csrf_field() ?>
+        <?php foreach(['plan','billing','source','return_to'] as $intentKey): if(isset($funnelIntent[$intentKey])): ?><input type="hidden" name="<?= e($intentKey) ?>" value="<?= e((string)$funnelIntent[$intentKey]) ?>"><?php endif; endforeach; ?>
         <div style="position:absolute;left:-9999px" aria-hidden="true"><label for="website">Website</label><input id="website" name="website" type="text" tabindex="-1" autocomplete="off"></div>
         <div class="vp3-field"><label for="display_name">Full name</label><input id="display_name" name="display_name" maxlength="120" autocomplete="name" required placeholder="Your name" value="<?= e($displayName) ?>"></div>
         <div class="vp3-field"><label for="email">Email address</label><input id="email" name="email" type="email" maxlength="190" autocomplete="email" required placeholder="you@example.com" value="<?= e($email) ?>"></div>
-        <div class="vp3-field"><label for="password">Create password</label><div class="vp3-password-wrap"><input id="password" name="password" type="password" minlength="12" maxlength="4096" autocomplete="new-password" required placeholder="12+ characters"><button class="vp3-password-toggle" type="button" data-password-toggle="password">Show</button></div><p class="vp3-form-note">Use at least 12 characters.</p></div>
-        <div class="vp3-field"><label for="password_confirmation">Confirm password</label><div class="vp3-password-wrap"><input id="password_confirmation" name="password_confirmation" type="password" minlength="12" maxlength="4096" autocomplete="new-password" required placeholder="Repeat your password"><button class="vp3-password-toggle" type="button" data-password-toggle="password_confirmation">Show</button></div></div>
+        <div class="vp3-field"><label for="password">Create password</label><div class="vp3-password-wrap"><input id="password" name="password" type="password" minlength="12" maxlength="4096" autocomplete="new-password" required placeholder="12+ characters" aria-describedby="password-help"><button class="vp3-password-toggle" type="button" data-password-toggle="password" aria-controls="password">Show</button></div><p class="vp3-form-note" id="password-help">Use at least 12 characters.</p></div>
+        <div class="vp3-field"><label for="password_confirmation">Confirm password</label><div class="vp3-password-wrap"><input id="password_confirmation" name="password_confirmation" type="password" minlength="12" maxlength="4096" autocomplete="new-password" required placeholder="Repeat your password"><button class="vp3-password-toggle" type="button" data-password-toggle="password_confirmation" aria-controls="password_confirmation">Show</button></div></div>
         <label class="vp3-check"><input type="checkbox" name="accept_terms" value="1" required><span>I agree to the <a class="vp3-text-link" href="<?= e(url('/terms.php')) ?>">Terms of Service</a> and <a class="vp3-text-link" href="<?= e(url('/privacy.php')) ?>">Privacy Policy</a>.</span></label>
         <button class="vp3-btn primary full" type="submit">Create account →</button>
       </form>
-      <div class="vp3-auth-foot">Already have an account? <a class="vp3-text-link" href="<?= e(url('/login.php')) ?>">Sign in</a></div>
+      <div class="vp3-auth-foot">Already have an account? <a class="vp3-text-link" href="<?= e(vp3_funnel_url('/login.php')) ?>">Sign in</a></div>
     </div>
   </section>
 </main>
