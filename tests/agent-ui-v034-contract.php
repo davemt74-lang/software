@@ -15,25 +15,38 @@ $check = static function(bool $ok, string $message) use (&$failures): void {
     if (!$ok) $failures[] = $message;
 };
 
-$primaryStart = strpos($sidebar, 'data-agent-primary-nav');
-$primaryEnd = $primaryStart === false ? false : strpos($sidebar, '</nav>', $primaryStart);
-$primary = ($primaryStart !== false && $primaryEnd !== false) ? substr($sidebar, $primaryStart, $primaryEnd - $primaryStart) : '';
-foreach (['Contacts','My Knowledge','My Transcriptions','My Calendar'] as $label) {
-    $check(str_contains($primary, '>' . $label . '<'), 'Primary Agent navigation is missing ' . $label . '.');
+// The consolidated authenticated shell renders primary navigation from canonical
+// keyed member-navigation entries rather than hard-coded anchors in this template.
+$primaryOrder = "['chat','profile_agent','messages','contacts','knowledge','transcriptions','calendar','scheduling','profile_commerce','team']";
+$check(str_contains($sidebar, '$mainSidebarPrimaryOrder = ' . $primaryOrder), 'Canonical primary Agent navigation order is missing.');
+foreach ([
+    'chat' => 'Agent Chat',
+    'profile_agent' => 'Profile Agent',
+    'messages' => 'Messages',
+    'contacts' => 'Contacts',
+    'knowledge' => 'Knowledge',
+    'transcriptions' => 'Transcriptions',
+    'calendar' => 'Calendar',
+] as $key => $label) {
+    $check(str_contains($sidebar, "'{$key}'=>'{$label}'"), 'Primary Agent navigation is missing canonical ' . $label . ' metadata.');
 }
-$check(!str_contains($primary, '>New Chat<'), 'New Chat must not remain a primary navigation row.');
+$check(str_contains($sidebar, 'member_navigation_menu_links($mainSidebarUser)'), 'Sidebar must consume canonical member navigation.');
+$check(str_contains($sidebar, '$mainSidebarPrimaryKeys = array_fill_keys($mainSidebarPrimaryOrder, true)'), 'Primary Agent destinations are not represented by the canonical key set.');
+$check(str_contains($sidebar, 'data-vp3-nav-key='), 'Primary Agent navigation is missing canonical keyed rows.');
+$check(str_contains($sidebar, 'aria-current="page"'), 'Primary Agent navigation is missing accessible active state.');
+$check(!str_contains($sidebar, '$mainSidebarCalendarActive') && !str_contains($sidebar, '$mainSidebarTranscriptionsActive'), 'Legacy page-specific active-state booleans returned.');
+$check(!str_contains($primaryOrder, 'memory') && !str_contains($primaryOrder, 'approvals'), 'Account-level Memory or Approvals leaked into primary navigation.');
+
 $check(str_contains($sidebar, 'class="chat-history-heading"'), 'Chats section heading is missing.');
 $check(str_contains($sidebar, 'class="chat-history-new" id="newChatButton"'), 'Chats heading is missing the canonical New Chat plus action.');
 $check(str_contains($sidebar, 'aria-label="New chat"'), 'Chats heading plus action is missing its accessible label.');
-foreach (['Memory','Approvals'] as $label) {
-    $check(!str_contains($primary, '>' . $label . '<'), 'Primary Agent navigation still contains account-level item ' . $label . '.');
-}
-foreach (['Profile Agent','My Team','Plan &amp; Usage','Buy AI Tokens'] as $label) {
-    $check(!str_contains($primary, $label), 'Primary Agent navigation still contains secondary item ' . $label . '.');
-}
-$check(str_contains($navigation, "'knowledge','My Knowledge',url('/knowledge.php'),'identity'"), 'User menu is missing My Knowledge.');
-$check(str_contains($navigation, "'transcriptions','My Transcriptions',url('/artist-listening.php'),'identity'"), 'Navigation registry is missing My Transcriptions.');
-$check(str_contains($navigation, "'memory','My Memory',url('/memory.php'),'identity'"), 'User menu is missing My Memory.');
+
+$check(str_contains($navigation, "'knowledge','My Knowledge',url('/knowledge.php'),'identity'"), 'Canonical navigation is missing My Knowledge.');
+$check(str_contains($navigation, "'transcriptions','My Transcriptions',url('/artist-listening.php'),'identity'"), 'Canonical navigation is missing My Transcriptions.');
+$check(str_contains($navigation, "'memory','My Memory',url('/memory.php'),'identity'"), 'Canonical navigation is missing My Memory.');
+$check(str_contains($navigation, "'calendar','My Calendar',url('/calendar.php'),'agent'"), 'Canonical navigation is missing My Calendar.');
+$check(str_contains($navigation, "'profile_agent','Profile Agent',url('/profile-agent.php'),'identity'"), 'Canonical navigation is missing Profile Agent.');
+
 $check(str_contains($sidebar, 'data-agent-user-footer'), 'Bottom user menu is missing.');
 $check(!str_contains($sidebar, 'class="agent-sidebar-avatar"'), 'Bottom user menu must not render the user avatar.');
 $footerStart = strpos($sidebar, '<footer class="agent-sidebar-footer"');

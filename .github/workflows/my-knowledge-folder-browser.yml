@@ -28,6 +28,7 @@ jobs:
         run: |
           php -l knowledge.php
           php -l tests/shared-knowledge-folders-v313-contract.php
+          php -l tests/agent-ui-v034-contract.php
       - name: JavaScript syntax
         run: |
           node --check knowledge-library-v161.js
@@ -39,6 +40,8 @@ jobs:
         run: node tests/knowledge-library-v161-browser-contract.mjs
       - name: Shared Knowledge folder regression contract
         run: php tests/shared-knowledge-folders-v313-contract.php
+      - name: Retained Agent UI contract
+        run: php tests/agent-ui-v034-contract.php
       - name: Retained member shell contracts
         run: |
           node tests/member-shell-v1320-contract.mjs
