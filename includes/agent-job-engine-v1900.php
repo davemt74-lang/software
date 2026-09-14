@@ -1,0 +1,310 @@
+<?php
+declare(strict_types=1);
+
+/**
+ * VP3 Phase 19.0 — Durable Agent Job Engine.
+ *
+ * Extends the canonical Phase 14 workflow ledger. The Agent Brain remains the
+ * decision/prioritization layer; this file only owns durable execution state.
+ * Domain systems remain authoritative for their own mutations.
+ */
+const VP3_AGENT_JOB_ENGINE_V1900='agent-job-engine-v1900-20260914';
+const VP3_AGENT_JOB_DEFAULT_MAX_ATTEMPTS_V1900=3;
+const VP3_AGENT_JOB_DEFAULT_RETRY_SECONDS_V1900=60;
+const VP3_AGENT_JOB_DEFAULT_TIMEOUT_SECONDS_V1900=900;
+const VP3_AGENT_JOB_DEFAULT_LEASE_SECONDS_V1900=120;
+
+require_once __DIR__.'/agent-workflow-runs-v1400.php';
+
+function agent_job_engine_schema_ready_v1900(?PDO $pdo=null): bool
+{
+    $pdo??=db();
+    if(!$pdo||!agent_workflow_schema_ready_v1400($pdo))return false;
+    foreach(['next_attempt_at','lease_owner','lease_token','lease_expires_at','heartbeat_at','progress_percent','progress_message','max_attempts','retry_backoff_seconds','timeout_seconds'] as $column){
+        if(!column_exists('agent_workflow_runs',$column))return false;
+    }
+    foreach(['available_at','heartbeat_at','progress_percent','progress_message','max_attempts','timeout_seconds'] as $column){
+        if(!column_exists('agent_workflow_actions',$column))return false;
+    }
+    return table_exists('agent_workflow_action_dependencies')&&table_exists('agent_workflow_receipts');
+}
+
+function agent_job_engine_add_column_v1900(PDO $pdo,string $table,string $column,string $definition): void
+{
+    if(!column_exists($table,$column))$pdo->exec('ALTER TABLE `'.$table.'` ADD COLUMN `'.$column.'` '.$definition);
+}
+
+function agent_job_engine_ensure_schema_v1900(?PDO $pdo=null): void
+{
+    $pdo??=db();
+    if(!$pdo)throw new RuntimeException('Database connection is unavailable.');
+    agent_workflow_ensure_schema_v1400($pdo);
+    agent_job_engine_add_column_v1900($pdo,'agent_workflow_runs','next_attempt_at','DATETIME NULL AFTER last_error_class');
+    agent_job_engine_add_column_v1900($pdo,'agent_workflow_runs','lease_owner','VARCHAR(120) NOT NULL DEFAULT \'\' AFTER next_attempt_at');
+    agent_job_engine_add_column_v1900($pdo,'agent_workflow_runs','lease_token','CHAR(64) NOT NULL DEFAULT \'\' AFTER lease_owner');
+    agent_job_engine_add_column_v1900($pdo,'agent_workflow_runs','lease_expires_at','DATETIME NULL AFTER lease_token');
+    agent_job_engine_add_column_v1900($pdo,'agent_workflow_runs','heartbeat_at','DATETIME NULL AFTER lease_expires_at');
+    agent_job_engine_add_column_v1900($pdo,'agent_workflow_runs','progress_percent','TINYINT UNSIGNED NOT NULL DEFAULT 0 AFTER heartbeat_at');
+    agent_job_engine_add_column_v1900($pdo,'agent_workflow_runs','progress_message','VARCHAR(500) NOT NULL DEFAULT \'\' AFTER progress_percent');
+    agent_job_engine_add_column_v1900($pdo,'agent_workflow_runs','max_attempts','INT UNSIGNED NOT NULL DEFAULT 3 AFTER progress_message');
+    agent_job_engine_add_column_v1900($pdo,'agent_workflow_runs','retry_backoff_seconds','INT UNSIGNED NOT NULL DEFAULT 60 AFTER max_attempts');
+    agent_job_engine_add_column_v1900($pdo,'agent_workflow_runs','timeout_seconds','INT UNSIGNED NOT NULL DEFAULT 900 AFTER retry_backoff_seconds');
+
+    agent_job_engine_add_column_v1900($pdo,'agent_workflow_actions','available_at','DATETIME NULL AFTER error_class');
+    agent_job_engine_add_column_v1900($pdo,'agent_workflow_actions','heartbeat_at','DATETIME NULL AFTER available_at');
+    agent_job_engine_add_column_v1900($pdo,'agent_workflow_actions','progress_percent','TINYINT UNSIGNED NOT NULL DEFAULT 0 AFTER heartbeat_at');
+    agent_job_engine_add_column_v1900($pdo,'agent_workflow_actions','progress_message','VARCHAR(500) NOT NULL DEFAULT \'\' AFTER progress_percent');
+    agent_job_engine_add_column_v1900($pdo,'agent_workflow_actions','max_attempts','INT UNSIGNED NOT NULL DEFAULT 3 AFTER progress_message');
+    agent_job_engine_add_column_v1900($pdo,'agent_workflow_actions','timeout_seconds','INT UNSIGNED NOT NULL DEFAULT 900 AFTER max_attempts');
+
+    $pdo->exec("CREATE TABLE IF NOT EXISTS agent_workflow_action_dependencies (
+      id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+      run_id BIGINT UNSIGNED NOT NULL,
+      owner_user_id INT UNSIGNED NOT NULL,
+      action_id BIGINT UNSIGNED NOT NULL,
+      depends_on_action_id BIGINT UNSIGNED NOT NULL,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE KEY uq_agent_job_dependency (action_id,depends_on_action_id),
+      INDEX idx_agent_job_dependency_run (run_id,action_id),
+      CONSTRAINT fk_agent_job_dependency_run FOREIGN KEY (run_id) REFERENCES agent_workflow_runs(id) ON DELETE CASCADE,
+      CONSTRAINT fk_agent_job_dependency_action FOREIGN KEY (action_id) REFERENCES agent_workflow_actions(id) ON DELETE CASCADE,
+      CONSTRAINT fk_agent_job_dependency_on_action FOREIGN KEY (depends_on_action_id) REFERENCES agent_workflow_actions(id) ON DELETE CASCADE,
+      CONSTRAINT fk_agent_job_dependency_owner FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+    $pdo->exec("CREATE TABLE IF NOT EXISTS agent_workflow_receipts (
+      id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+      run_id BIGINT UNSIGNED NOT NULL,
+      action_id BIGINT UNSIGNED NOT NULL,
+      owner_user_id INT UNSIGNED NOT NULL,
+      receipt_key CHAR(64) NOT NULL,
+      executor VARCHAR(24) NOT NULL DEFAULT 'cloud',
+      worker_id VARCHAR(120) NOT NULL DEFAULT '',
+      attempt_no INT UNSIGNED NOT NULL DEFAULT 1,
+      status VARCHAR(24) NOT NULL DEFAULT 'completed',
+      summary VARCHAR(500) NOT NULL DEFAULT '',
+      result_json MEDIUMTEXT NULL,
+      error_class VARCHAR(80) NOT NULL DEFAULT '',
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE KEY uq_agent_job_owner_receipt (owner_user_id,receipt_key),
+      INDEX idx_agent_job_receipt_run (run_id,action_id,id),
+      CONSTRAINT fk_agent_job_receipt_run FOREIGN KEY (run_id) REFERENCES agent_workflow_runs(id) ON DELETE CASCADE,
+      CONSTRAINT fk_agent_job_receipt_action FOREIGN KEY (action_id) REFERENCES agent_workflow_actions(id) ON DELETE CASCADE,
+      CONSTRAINT fk_agent_job_receipt_owner FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+}
+
+function agent_job_retry_delay_v1900(int $attempt,int $baseSeconds): int
+{
+    $attempt=max(1,$attempt);$base=max(5,$baseSeconds);
+    return min(3600,$base*(2**min(5,$attempt-1)));
+}
+
+function agent_job_release_sql_v1900(): string
+{
+    return "lease_owner='',lease_token='',lease_expires_at=NULL,heartbeat_at=NULL,current_action_id=NULL";
+}
+
+function agent_job_public_run_v1900(PDO $pdo,array $row,bool $includeHistory=false): array
+{
+    $out=agent_workflow_public_run_v1400($pdo,$row,$includeHistory);
+    $out['job_engine_build']=VP3_AGENT_JOB_ENGINE_V1900;
+    $out['next_attempt_at']=(string)($row['next_attempt_at']??'');
+    $out['heartbeat_at']=(string)($row['heartbeat_at']??'');
+    $out['lease_expires_at']=(string)($row['lease_expires_at']??'');
+    $out['progress_percent']=max(0,min(100,(int)($row['progress_percent']??0)));
+    $out['progress_message']=(string)($row['progress_message']??'');
+    $out['max_attempts']=max(1,(int)($row['max_attempts']??VP3_AGENT_JOB_DEFAULT_MAX_ATTEMPTS_V1900));
+    $out['retry_backoff_seconds']=max(5,(int)($row['retry_backoff_seconds']??VP3_AGENT_JOB_DEFAULT_RETRY_SECONDS_V1900));
+    $out['timeout_seconds']=max(30,(int)($row['timeout_seconds']??VP3_AGENT_JOB_DEFAULT_TIMEOUT_SECONDS_V1900));
+    if($includeHistory&&table_exists('agent_workflow_receipts')){
+        $stmt=$pdo->prepare('SELECT id,action_id,executor,worker_id,attempt_no,status,summary,error_class,created_at FROM agent_workflow_receipts WHERE run_id=? AND owner_user_id=? ORDER BY id DESC LIMIT 100');
+        $stmt->execute([(int)($row['id']??0),(int)($row['owner_user_id']??0)]);
+        $out['receipts']=$stmt->fetchAll()?:[];
+    }
+    return $out;
+}
+
+function agent_job_attach_dependencies_v1900(PDO $pdo,array $user,int $runId,array $priority): void
+{
+    $ownerUserId=(int)($user['id']??0);if($ownerUserId<1||$runId<1)return;
+    $actions=agent_workflow_actions_v1400($pdo,$ownerUserId,$runId);if(!$actions)return;
+    $byKey=[];foreach($actions as $action)$byKey[(string)($action['action_key']??'')]=(int)$action['id'];
+    $plan=is_array($priority['plan']??null)?$priority['plan']:[];
+    $steps=array_values(array_filter((array)($plan['steps']??[]),'is_array'));
+    if(!$steps)return;
+    $insert=$pdo->prepare('INSERT IGNORE INTO agent_workflow_action_dependencies (run_id,owner_user_id,action_id,depends_on_action_id) VALUES (?,?,?,?)');
+    foreach($steps as $step){
+        $actionId=(int)($byKey[(string)($step['id']??'')]??0);if($actionId<1)continue;
+        foreach((array)($step['depends_on']??[]) as $dependencyKey){
+            $dependsOn=(int)($byKey[(string)$dependencyKey]??0);if($dependsOn<1||$dependsOn===$actionId)continue;
+            $insert->execute([$runId,$ownerUserId,$actionId,$dependsOn]);
+        }
+    }
+}
+
+function agent_job_enqueue_from_brain_v1900(PDO $pdo,array $user,array $priority,?int $agentId=null): array
+{
+    if(!agent_job_engine_schema_ready_v1900($pdo))throw new RuntimeException('Durable Agent Jobs are not ready. An administrator needs to run the Phase 19 upgrade.');
+    $run=agent_workflow_create_from_priority_v1400($pdo,$user,$priority,$agentId);$runId=(int)($run['id']??0);$ownerUserId=(int)($user['id']??0);
+    if($runId<1)return $run;
+    $pdo->prepare("UPDATE agent_workflow_runs SET next_attempt_at=COALESCE(next_attempt_at,UTC_TIMESTAMP()),max_attempts=GREATEST(max_attempts,?),retry_backoff_seconds=GREATEST(retry_backoff_seconds,5),timeout_seconds=GREATEST(timeout_seconds,30) WHERE id=? AND owner_user_id=?")
+        ->execute([VP3_AGENT_JOB_DEFAULT_MAX_ATTEMPTS_V1900,$runId,$ownerUserId]);
+    $pdo->prepare("UPDATE agent_workflow_actions SET available_at=COALESCE(available_at,UTC_TIMESTAMP()),max_attempts=GREATEST(max_attempts,?),timeout_seconds=GREATEST(timeout_seconds,30) WHERE run_id=? AND owner_user_id=?")
+        ->execute([VP3_AGENT_JOB_DEFAULT_MAX_ATTEMPTS_V1900,$runId,$ownerUserId]);
+    agent_job_attach_dependencies_v1900($pdo,$user,$runId,$priority);
+    $row=agent_workflow_row_v1400($pdo,$ownerUserId,$runId);
+    if($row)agent_job_brain_memory_v1900($user,$row,'queued');
+    return $row?agent_job_public_run_v1900($pdo,$row,true):$run;
+}
+
+function agent_job_dependencies_satisfied_v1900(PDO $pdo,int $ownerUserId,int $actionId): bool
+{
+    $stmt=$pdo->prepare("SELECT COUNT(*) FROM agent_workflow_action_dependencies d JOIN agent_workflow_actions a ON a.id=d.depends_on_action_id WHERE d.owner_user_id=? AND d.action_id=? AND a.status<>'completed'");
+    $stmt->execute([$ownerUserId,$actionId]);return (int)$stmt->fetchColumn()===0;
+}
+
+function agent_job_claim_run_v1900(PDO $pdo,array $user,int $runId,string $executor,string $workerId,int $leaseSeconds=VP3_AGENT_JOB_DEFAULT_LEASE_SECONDS_V1900): ?array
+{
+    $ownerUserId=(int)($user['id']??0);$executor=strtolower(trim($executor));$workerId=agent_workflow_text_v1400($workerId,120);
+    if($ownerUserId<1||$runId<1||!in_array($executor,['cloud','homeserver'],true)||$workerId==='')return null;
+    if(!agent_job_engine_schema_ready_v1900($pdo))return null;
+    $leaseSeconds=max(30,min(900,$leaseSeconds));
+    try{
+        $pdo->beginTransaction();$run=agent_workflow_row_v1400($pdo,$ownerUserId,$runId,true);
+        if(!$run||!in_array((string)$run['status'],['approved','executing'],true)){ $pdo->rollBack();return null; }
+        if((int)($run['current_action_id']??0)>0){$pdo->rollBack();return null;}
+        $leaseExpires=strtotime((string)($run['lease_expires_at']??''))?:0;if($leaseExpires>time()){ $pdo->rollBack();return null; }
+        $nextAttempt=strtotime((string)($run['next_attempt_at']??''))?:0;if($nextAttempt>time()){ $pdo->rollBack();return null; }
+        $stmt=$pdo->prepare("SELECT * FROM agent_workflow_actions WHERE run_id=? AND owner_user_id=? AND status='queued' AND execution_target=? AND (available_at IS NULL OR available_at<=UTC_TIMESTAMP()) ORDER BY sequence_no,id FOR UPDATE");
+        $stmt->execute([$runId,$ownerUserId,$executor]);$action=null;
+        foreach($stmt->fetchAll()?:[] as $candidate){if(agent_job_dependencies_satisfied_v1900($pdo,$ownerUserId,(int)$candidate['id'])){$action=$candidate;break;}}
+        if(!$action){$pdo->rollBack();return null;}
+        $actionId=(int)$action['id'];$token=hash('sha256',random_bytes(32));$expires=gmdate('Y-m-d H:i:s',time()+$leaseSeconds);
+        $pdo->prepare("UPDATE agent_workflow_actions SET status='executing',attempt_count=attempt_count+1,started_at=COALESCE(started_at,UTC_TIMESTAMP()),heartbeat_at=UTC_TIMESTAMP(),progress_percent=0,progress_message='' WHERE id=? AND owner_user_id=? AND status='queued'")->execute([$actionId,$ownerUserId]);
+        $pdo->prepare("UPDATE agent_workflow_runs SET status='executing',current_action_id=?,attempt_count=attempt_count+1,started_at=COALESCE(started_at,UTC_TIMESTAMP()),lease_owner=?,lease_token=?,lease_expires_at=?,heartbeat_at=UTC_TIMESTAMP(),progress_percent=0,progress_message='Execution started' WHERE id=? AND owner_user_id=?")
+            ->execute([$actionId,$workerId,$token,$expires,$runId,$ownerUserId]);
+        agent_workflow_event_v1400($pdo,$ownerUserId,$runId,'job_claimed',(string)$run['status'],'executing','executor','Durable job lease claimed.',['action_id'=>$actionId,'executor'=>$executor,'worker_id'=>$workerId,'lease_seconds'=>$leaseSeconds]);
+        $pdo->commit();$action['status']='executing';$action['attempt_count']=(int)$action['attempt_count']+1;
+        return ['run_id'=>$runId,'action'=>agent_workflow_public_action_v1400($action),'lease_token'=>$token,'lease_expires_at'=>$expires,'worker_id'=>$workerId,'executor'=>$executor,'build'=>VP3_AGENT_JOB_ENGINE_V1900];
+    }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();throw $e;}
+}
+
+function agent_job_claim_next_v1900(PDO $pdo,array $user,string $executor,string $workerId,int $limit=25): ?array
+{
+    $ownerUserId=(int)($user['id']??0);if($ownerUserId<1||!agent_job_engine_schema_ready_v1900($pdo))return null;
+    $limit=max(1,min(100,$limit));$stmt=$pdo->prepare("SELECT id FROM agent_workflow_runs WHERE owner_user_id=? AND status IN ('approved','executing') AND current_action_id IS NULL AND (next_attempt_at IS NULL OR next_attempt_at<=UTC_TIMESTAMP()) AND (lease_expires_at IS NULL OR lease_expires_at<=UTC_TIMESTAMP()) ORDER BY COALESCE(next_attempt_at,created_at),id LIMIT ".$limit);
+    $stmt->execute([$ownerUserId]);foreach($stmt->fetchAll()?:[] as $row){$claim=agent_job_claim_run_v1900($pdo,$user,(int)$row['id'],$executor,$workerId);if($claim)return $claim;}return null;
+}
+
+function agent_job_heartbeat_v1900(PDO $pdo,array $user,int $runId,int $actionId,string $leaseToken,int $progress,string $message='',int $leaseSeconds=VP3_AGENT_JOB_DEFAULT_LEASE_SECONDS_V1900): bool
+{
+    $ownerUserId=(int)($user['id']??0);$progress=max(0,min(99,$progress));$message=agent_workflow_text_v1400($message,500);$leaseSeconds=max(30,min(900,$leaseSeconds));
+    if($ownerUserId<1||$runId<1||$actionId<1||!preg_match('/^[a-f0-9]{64}$/',$leaseToken))return false;
+    $expires=gmdate('Y-m-d H:i:s',time()+$leaseSeconds);
+    $stmt=$pdo->prepare("UPDATE agent_workflow_runs SET heartbeat_at=UTC_TIMESTAMP(),lease_expires_at=?,progress_percent=?,progress_message=? WHERE id=? AND owner_user_id=? AND status='executing' AND current_action_id=? AND lease_token=? AND lease_expires_at>=UTC_TIMESTAMP()");
+    $stmt->execute([$expires,$progress,$message,$runId,$ownerUserId,$actionId,$leaseToken]);if($stmt->rowCount()!==1)return false;
+    $pdo->prepare("UPDATE agent_workflow_actions SET heartbeat_at=UTC_TIMESTAMP(),progress_percent=?,progress_message=? WHERE id=? AND run_id=? AND owner_user_id=? AND status='executing'")->execute([$progress,$message,$actionId,$runId,$ownerUserId]);
+    return true;
+}
+
+function agent_job_receipt_key_v1900(int $ownerUserId,int $runId,int $actionId,string $idempotencyKey): string
+{
+    $idempotencyKey=trim($idempotencyKey);if($idempotencyKey==='')throw new RuntimeException('A result idempotency key is required.');
+    return hash('sha256',$ownerUserId.'|'.$runId.'|'.$actionId.'|'.$idempotencyKey);
+}
+
+function agent_job_record_result_v1900(PDO $pdo,array $user,int $runId,int $actionId,string $leaseToken,string $idempotencyKey,bool $success,string $summary,array $result=[],string $errorClass='',bool $retryable=true): array
+{
+    $ownerUserId=(int)($user['id']??0);if($ownerUserId<1)throw new RuntimeException('A signed-in account is required.');
+    $receiptKey=agent_job_receipt_key_v1900($ownerUserId,$runId,$actionId,$idempotencyKey);$summary=agent_workflow_text_v1400($summary,500);$errorClass=agent_workflow_text_v1400($errorClass,80);$terminal='';
+    try{
+        $pdo->beginTransaction();
+        $existing=$pdo->prepare('SELECT * FROM agent_workflow_receipts WHERE owner_user_id=? AND receipt_key=? LIMIT 1 FOR UPDATE');$existing->execute([$ownerUserId,$receiptKey]);$receipt=$existing->fetch();
+        if(is_array($receipt)){$pdo->commit();$row=agent_workflow_row_v1400($pdo,$ownerUserId,$runId);return ['duplicate'=>true,'receipt_id'=>(int)$receipt['id'],'run'=>$row?agent_job_public_run_v1900($pdo,$row,true):null,'build'=>VP3_AGENT_JOB_ENGINE_V1900];}
+        $run=agent_workflow_row_v1400($pdo,$ownerUserId,$runId,true);if(!$run||(string)$run['status']!=='executing'||(int)($run['current_action_id']??0)!==$actionId)throw new RuntimeException('Durable job action is not the active execution.');
+        if(!hash_equals((string)($run['lease_token']??''),$leaseToken))throw new RuntimeException('Durable job lease is invalid.');
+        $leaseExpiry=strtotime((string)($run['lease_expires_at']??''))?:0;if($leaseExpiry<time())throw new RuntimeException('Durable job lease expired before result commit.');
+        $stmt=$pdo->prepare('SELECT * FROM agent_workflow_actions WHERE id=? AND run_id=? AND owner_user_id=? LIMIT 1 FOR UPDATE');$stmt->execute([$actionId,$runId,$ownerUserId]);$action=$stmt->fetch();if(!$action||(string)$action['status']!=='executing')throw new RuntimeException('Durable job action is not executing.');
+        $safeResult=$result?agent_workflow_public_json_v1400(agent_workflow_json_v1400($result)):[];$attempt=(int)($action['attempt_count']??1);$maxAttempts=max(1,(int)($action['max_attempts']??$run['max_attempts']??VP3_AGENT_JOB_DEFAULT_MAX_ATTEMPTS_V1900));
+        $receiptStatus=$success?'completed':(($retryable&&$attempt<$maxAttempts)?'retry_scheduled':'failed');
+        $pdo->prepare('INSERT INTO agent_workflow_receipts (run_id,action_id,owner_user_id,receipt_key,executor,worker_id,attempt_no,status,summary,result_json,error_class) VALUES (?,?,?,?,?,?,?,?,?,?,?)')
+            ->execute([$runId,$actionId,$ownerUserId,$receiptKey,(string)($run['execution_target']??'cloud'),(string)($run['lease_owner']??''),$attempt,$receiptStatus,$summary,$safeResult?agent_workflow_json_v1400($safeResult):null,$success?'':$errorClass]);$receiptId=(int)$pdo->lastInsertId();
+        if($success){
+            $pdo->prepare("UPDATE agent_workflow_actions SET status='completed',result_summary=?,result_json=?,error_class='',completed_at=UTC_TIMESTAMP(),heartbeat_at=UTC_TIMESTAMP(),progress_percent=100,progress_message='Completed' WHERE id=? AND owner_user_id=?")
+                ->execute([$summary,$safeResult?agent_workflow_json_v1400($safeResult):null,$actionId,$ownerUserId]);
+            agent_workflow_event_v1400($pdo,$ownerUserId,$runId,'action_completed','executing','executing','executor',$summary!==''?$summary:'Workflow action completed.',['action_id'=>$actionId,'receipt_id'=>$receiptId]);
+            $pending=$pdo->prepare("SELECT COUNT(*) FROM agent_workflow_actions WHERE run_id=? AND owner_user_id=? AND status IN ('queued','approval_pending','executing')");$pending->execute([$runId,$ownerUserId]);
+            if((int)$pending->fetchColumn()===0){
+                $pdo->prepare("UPDATE agent_workflow_runs SET status='completed',".agent_job_release_sql_v1900().",last_error_class='',next_attempt_at=NULL,progress_percent=100,progress_message='Completed',completed_at=UTC_TIMESTAMP() WHERE id=? AND owner_user_id=?")->execute([$runId,$ownerUserId]);
+                agent_workflow_event_v1400($pdo,$ownerUserId,$runId,'completed','executing','completed','executor','Durable workflow completed with receipt-backed execution.',['receipt_id'=>$receiptId]);$terminal='completed';
+            }else{
+                $pdo->prepare("UPDATE agent_workflow_runs SET status='approved',".agent_job_release_sql_v1900().",next_attempt_at=UTC_TIMESTAMP(),progress_percent=0,progress_message='Ready for next action' WHERE id=? AND owner_user_id=?")->execute([$runId,$ownerUserId]);
+            }
+        }else{
+            $errorClass=$errorClass!==''?$errorClass:'execution_failed';
+            if($retryable&&$attempt<$maxAttempts){
+                $delay=agent_job_retry_delay_v1900($attempt,(int)($run['retry_backoff_seconds']??VP3_AGENT_JOB_DEFAULT_RETRY_SECONDS_V1900));$when=gmdate('Y-m-d H:i:s',time()+$delay);
+                $pdo->prepare("UPDATE agent_workflow_actions SET status='queued',result_summary=?,result_json=?,error_class=?,available_at=?,heartbeat_at=NULL,progress_percent=0,progress_message='Retry scheduled' WHERE id=? AND owner_user_id=?")->execute([$summary,$safeResult?agent_workflow_json_v1400($safeResult):null,$errorClass,$when,$actionId,$ownerUserId]);
+                $pdo->prepare("UPDATE agent_workflow_runs SET status='approved',".agent_job_release_sql_v1900().",last_error_class=?,next_attempt_at=?,progress_percent=0,progress_message='Retry scheduled' WHERE id=? AND owner_user_id=?")->execute([$errorClass,$when,$runId,$ownerUserId]);
+                agent_workflow_event_v1400($pdo,$ownerUserId,$runId,'retry_scheduled','executing','approved','executor','Action failed and was scheduled for bounded retry.',['action_id'=>$actionId,'receipt_id'=>$receiptId,'attempt'=>$attempt,'max_attempts'=>$maxAttempts,'retry_at'=>$when,'error_class'=>$errorClass]);
+            }else{
+                $pdo->prepare("UPDATE agent_workflow_actions SET status='failed',result_summary=?,result_json=?,error_class=?,completed_at=UTC_TIMESTAMP(),heartbeat_at=UTC_TIMESTAMP(),progress_message='Failed' WHERE id=? AND owner_user_id=?")->execute([$summary,$safeResult?agent_workflow_json_v1400($safeResult):null,$errorClass,$actionId,$ownerUserId]);
+                $pdo->prepare("UPDATE agent_workflow_runs SET status='failed',".agent_job_release_sql_v1900().",last_error_class=?,next_attempt_at=NULL,progress_message='Failed' WHERE id=? AND owner_user_id=?")->execute([$errorClass,$runId,$ownerUserId]);
+                agent_workflow_event_v1400($pdo,$ownerUserId,$runId,'failed','executing','failed','executor','Durable workflow exhausted execution attempts or received a terminal failure.',['action_id'=>$actionId,'receipt_id'=>$receiptId,'attempt'=>$attempt,'max_attempts'=>$maxAttempts,'error_class'=>$errorClass]);$terminal='failed';
+            }
+        }
+        $pdo->commit();
+    }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();throw $e;}
+    $row=agent_workflow_row_v1400($pdo,$ownerUserId,$runId);if($row){agent_job_brain_memory_v1900($user,$row,$terminal!==''?$terminal:'progress');if($terminal!=='')agent_job_brain_outcome_v1900($user,$row,$terminal);}
+    return ['duplicate'=>false,'receipt_id'=>$receiptId??0,'run'=>$row?agent_job_public_run_v1900($pdo,$row,true):null,'build'=>VP3_AGENT_JOB_ENGINE_V1900];
+}
+
+function agent_job_recover_expired_v1900(PDO $pdo,array $user,int $limit=25): array
+{
+    $ownerUserId=(int)($user['id']??0);if($ownerUserId<1||!agent_job_engine_schema_ready_v1900($pdo))return ['recovered'=>0,'failed'=>0];
+    $limit=max(1,min(100,$limit));$stmt=$pdo->prepare("SELECT id FROM agent_workflow_runs WHERE owner_user_id=? AND status='executing' AND lease_expires_at IS NOT NULL AND lease_expires_at<UTC_TIMESTAMP() ORDER BY lease_expires_at,id LIMIT ".$limit);$stmt->execute([$ownerUserId]);$recovered=0;$failed=0;
+    foreach($stmt->fetchAll()?:[] as $item){
+        $runId=(int)$item['id'];$terminal=false;
+        try{
+            $pdo->beginTransaction();$run=agent_workflow_row_v1400($pdo,$ownerUserId,$runId,true);if(!$run||(string)$run['status']!=='executing'||strtotime((string)($run['lease_expires_at']??''))>=time()){ $pdo->rollBack();continue; }
+            $actionId=(int)($run['current_action_id']??0);$a=$pdo->prepare('SELECT * FROM agent_workflow_actions WHERE id=? AND run_id=? AND owner_user_id=? LIMIT 1 FOR UPDATE');$a->execute([$actionId,$runId,$ownerUserId]);$action=$a->fetch();if(!$action){$pdo->rollBack();continue;}
+            $attempt=(int)($action['attempt_count']??1);$maxAttempts=max(1,(int)($action['max_attempts']??$run['max_attempts']??VP3_AGENT_JOB_DEFAULT_MAX_ATTEMPTS_V1900));
+            if($attempt<$maxAttempts){$delay=agent_job_retry_delay_v1900($attempt,(int)($run['retry_backoff_seconds']??VP3_AGENT_JOB_DEFAULT_RETRY_SECONDS_V1900));$when=gmdate('Y-m-d H:i:s',time()+$delay);$pdo->prepare("UPDATE agent_workflow_actions SET status='queued',available_at=?,heartbeat_at=NULL,error_class='lease_expired',progress_percent=0,progress_message='Recovered after expired lease' WHERE id=? AND owner_user_id=?")->execute([$when,$actionId,$ownerUserId]);$pdo->prepare("UPDATE agent_workflow_runs SET status='approved',".agent_job_release_sql_v1900().",last_error_class='lease_expired',next_attempt_at=?,progress_percent=0,progress_message='Recovered after expired lease' WHERE id=? AND owner_user_id=?")->execute([$when,$runId,$ownerUserId]);agent_workflow_event_v1400($pdo,$ownerUserId,$runId,'lease_recovered','executing','approved','system','Expired execution lease recovered and retry scheduled.',['action_id'=>$actionId,'retry_at'=>$when]);$recovered++;}
+            else{$pdo->prepare("UPDATE agent_workflow_actions SET status='failed',error_class='lease_expired',completed_at=UTC_TIMESTAMP(),progress_message='Lease expired' WHERE id=? AND owner_user_id=?")->execute([$actionId,$ownerUserId]);$pdo->prepare("UPDATE agent_workflow_runs SET status='failed',".agent_job_release_sql_v1900().",last_error_class='lease_expired',next_attempt_at=NULL,progress_message='Lease expired' WHERE id=? AND owner_user_id=?")->execute([$runId,$ownerUserId]);agent_workflow_event_v1400($pdo,$ownerUserId,$runId,'failed','executing','failed','system','Execution lease expired after the maximum attempt count.',['action_id'=>$actionId]);$failed++;$terminal=true;}$pdo->commit();
+            $row=agent_workflow_row_v1400($pdo,$ownerUserId,$runId);if($row){agent_job_brain_memory_v1900($user,$row,$terminal?'failed':'recovered');if($terminal)agent_job_brain_outcome_v1900($user,$row,'failed');}
+        }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();}
+    }
+    return ['recovered'=>$recovered,'failed'=>$failed,'build'=>VP3_AGENT_JOB_ENGINE_V1900];
+}
+
+function agent_job_cancel_v1900(PDO $pdo,array $user,int $runId,string $actorKind='user'): array
+{
+    $run=agent_workflow_cancel_v1400($pdo,$user,$runId,$actorKind);$ownerUserId=(int)($user['id']??0);
+    if($ownerUserId>0)$pdo->prepare("UPDATE agent_workflow_runs SET ".agent_job_release_sql_v1900().",next_attempt_at=NULL,progress_message='Cancelled' WHERE id=? AND owner_user_id=?")->execute([$runId,$ownerUserId]);
+    $row=agent_workflow_row_v1400($pdo,$ownerUserId,$runId);if($row){agent_job_brain_memory_v1900($user,$row,'cancelled');agent_job_brain_outcome_v1900($user,$row,'cancelled');return agent_job_public_run_v1900($pdo,$row,true);}return $run;
+}
+
+function agent_job_retry_v1900(PDO $pdo,array $user,int $runId): array
+{
+    $run=agent_workflow_retry_v1400($pdo,$user,$runId);$ownerUserId=(int)($user['id']??0);
+    if($ownerUserId>0){$pdo->prepare("UPDATE agent_workflow_runs SET ".agent_job_release_sql_v1900().",next_attempt_at=UTC_TIMESTAMP(),progress_percent=0,progress_message='Retry requested' WHERE id=? AND owner_user_id=?")->execute([$runId,$ownerUserId]);$pdo->prepare("UPDATE agent_workflow_actions SET available_at=UTC_TIMESTAMP(),heartbeat_at=NULL,progress_percent=0,progress_message='' WHERE run_id=? AND owner_user_id=? AND status='queued'")->execute([$runId,$ownerUserId]);}
+    $row=agent_workflow_row_v1400($pdo,$ownerUserId,$runId);if($row){agent_job_brain_memory_v1900($user,$row,'retry');return agent_job_public_run_v1900($pdo,$row,true);}return $run;
+}
+
+function agent_job_brain_outcome_v1900(array $user,array $run,string $terminal): void
+{
+    if(!function_exists('agent_action_v124_record_outcome'))return;
+    $hash=trim((string)($run['source_hash']??''));if(!preg_match('/^[a-f0-9]{40}$/',$hash))return;
+    $outcome=match($terminal){'completed'=>'successful','failed'=>'unsuccessful','cancelled'=>'ignored',default=>''};if($outcome==='')return;
+    try{agent_action_v124_record_outcome($user,$hash,$outcome,'job_engine',['outcome'=>$outcome,'source'=>(string)($run['source_kind']??'agent_brain'),'context'=>['run_id'=>(int)($run['id']??0),'workflow_type'=>(string)($run['workflow_type']??''),'status'=>(string)($run['status']??''),'build'=>VP3_AGENT_JOB_ENGINE_V1900]]);}catch(Throwable $e){}
+}
+
+function agent_job_brain_memory_v1900(array $user,array $run,string $event='progress'): void
+{
+    if(!function_exists('agent_brain_v122_upsert_system_memory'))return;$runId=(int)($run['id']??0);if($runId<1)return;
+    $status=(string)($run['status']??'');$title=agent_workflow_text_v1400($run['title']??'Agent job',190);$progress=max(0,min(100,(int)($run['progress_percent']??0)));$message=agent_workflow_text_v1400($run['progress_message']??'',300);
+    $text='Durable Agent job #'.$runId.' “'.$title.'” is '.$status.'. Progress '.$progress.'%.'.($message!==''?' '.$message:'');
+    $metadata=['run_id'=>$runId,'title'=>$title,'status'=>$status,'event'=>$event,'progress_percent'=>$progress,'execution_target'=>(string)($run['execution_target']??'cloud'),'attempt_count'=>(int)($run['attempt_count']??0),'last_error_class'=>(string)($run['last_error_class']??''),'updated_at'=>(string)($run['updated_at']??gmdate('c')),'build'=>VP3_AGENT_JOB_ENGINE_V1900];
+    try{agent_brain_v122_upsert_system_memory($user,'job_execution','run-'.$runId,$text,$metadata,0.99);}catch(Throwable $e){}
+}
