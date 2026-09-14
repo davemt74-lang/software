@@ -140,6 +140,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
 
                 if ($paid) {
+                    if (function_exists('profile_conversion_attach_order_v179')) {
+                        $postEventSlug = (string)($postEvent['slug'] ?? '');
+                        profile_conversion_attach_order_v179($pdo, (int)$paid['id'], (int)$profile['user_id'], [
+                            'profile_conversion_source' => 'public_profile_booking',
+                            'profile_session_id' => profile_conversion_session_id_v179($pdo, (int)$profile['user_id']),
+                            'profile_username' => $username,
+                            'profile_target_id' => (int)$postEvent['id'],
+                            'profile_target_slug' => $postEventSlug,
+                            'profile_target_title' => (string)($postEvent['title'] ?? 'Appointment'),
+                            'profile_target_url' => agent_scheduling_public_booking_url_v450($username, $postEventSlug !== '' ? $postEventSlug : null),
+                        ]);
+                    }
                     $paymentUrl = agent_paid_appointments_payment_url_v800($pdo, $paid);
                     if ($paymentUrl === '') throw new RuntimeException('Appointment payment link could not be created.');
                     agent_paid_appointments_housekeeping_v800($pdo, 50);
@@ -147,10 +159,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
 
                 agent_appointment_lifecycle_event_v700($pdo, $booking, 'confirmed', '', 'confirmed', 'guest', null, null, ['source'=>'public']);
+                if (function_exists('profile_conversion_booking_confirmed_v179')) {
+                    profile_conversion_booking_confirmed_v179($pdo, $profile, $booking, $postEvent);
+                }
                 agent_appointment_lifecycle_queue_booking_v700($pdo, $booking, true);
                 agent_appointment_lifecycle_housekeeping_v700($pdo, 100);
             } else {
                 public_booking_owner_notification_v450($profile, $booking, 'scheduling_booking_created', 'New appointment booked');
+                if (function_exists('profile_conversion_booking_confirmed_v179')) {
+                    profile_conversion_booking_confirmed_v179($pdo, $profile, $booking, $postEvent);
+                }
             }
             public_booking_redirect_v450(agent_scheduling_public_manage_url_v450($username, (string)$booking['cancel_token']) . '?confirmed=1');
         }
