@@ -3,10 +3,12 @@ declare(strict_types=1);
 require __DIR__ . '/includes/bootstrap.php';
 require_once __DIR__ . '/includes/agent-workflow-runs-v1400.php';
 require_once __DIR__ . '/includes/agent-job-engine-v1900.php';
+require_once __DIR__ . '/includes/agent-worker-runtime-v1910.php';
 require_permission('account.access');
 $pdo=db();$user=current_user();if(!$pdo||!$user)redirect(url('/login.php'));
 if(!agent_workflow_schema_ready_v1400($pdo))redirect(url('/agent-workflow-upgrade-v1400.php'));
 $durable=agent_job_engine_schema_ready_v1900($pdo);
+$workerRuntime=$durable?agent_worker_runtime_summary_v1910($pdo,$user):['build'=>'','workers'=>[]];
 
 $notice='';$error='';
 if($_SERVER['REQUEST_METHOD']==='POST'){
@@ -45,13 +47,30 @@ function workflow_v1400_time(string $value): string{$ts=strtotime($value);return
 <body class="workflow-page"><div class="chat-app">
 <?php $workspaceSidebarUser=$user;$workspaceSidebarActive='agent_workflows';require __DIR__.'/includes/workspace-sidebar-v82.php'; ?><div class="chat-sidebar-backdrop" id="chatSidebarBackdrop"></div>
 <main class="chat-main workflow-main">
-<?php $memberHeaderUser=$user;$memberHeaderTitle='Agent Workflows';$memberHeaderSubtitle=$durable?'Durable jobs, approvals, execution targets + receipts':'Plans, approvals, execution targets + observable results';$memberHeaderActions='';require __DIR__.'/includes/member-header.php'; ?>
+<?php $memberHeaderUser=$user;$memberHeaderTitle='Agent Workflows';$memberHeaderSubtitle=$durable?'Durable jobs, distributed workers, approvals + receipts':'Plans, approvals, execution targets + observable results';$memberHeaderActions='';require __DIR__.'/includes/member-header.php'; ?>
 <section class="workflow-canvas"><div class="workflow-inner">
 <?php if($notice!==''): ?><div class="workflow-notice success" role="status"><?= e($notice) ?></div><?php endif; ?>
 <?php if($error!==''): ?><div class="workflow-notice error" role="alert"><?= e($error) ?></div><?php endif; ?>
 <?php if(!$durable): ?><div class="workflow-notice" role="status">Phase 19.0 durable execution is not installed yet. <a href="<?= e(url('/agent-job-engine-upgrade-v1900.php')) ?>">Install the Durable Job Engine</a>.</div><?php endif; ?>
 
-<section class="workflow-hero"><div><small><?= $durable?'Phase 19.0':'Phase 14' ?></small><h1><?= $durable?'Durable Agent Jobs':'Agent Workflow Runs' ?></h1><p><?= $durable?'The Agent Brain still decides what matters. The durable execution layer now carries approved work through leases, retries, recovery, progress and receipt-backed completion.':'The Brain can turn a prioritized next move into a durable run. VP3 records the goal, approval boundary, action sequence, execution target and result without storing hidden reasoning.' ?></p></div><div class="workflow-hero-actions"><a class="workflow-button" href="<?= e(url('/calendar.php')) ?>">Calendar</a><a class="workflow-button" href="<?= e(url('/chat.php')) ?>">Ask Agent</a></div></section>
+<section class="workflow-hero"><div><small><?= $durable?'Phase 19.1':'Phase 14' ?></small><h1><?= $durable?'Distributed Agent Jobs':'Agent Workflow Runs' ?></h1><p><?= $durable?'The Agent Brain decides what matters. The durable job engine owns leases, retries and receipts while the worker runtime safely routes approved work to VP3 Cloud or a paired HomeServer.':'The Brain can turn a prioritized next move into a durable run. VP3 records the goal, approval boundary, action sequence, execution target and result without storing hidden reasoning.' ?></p></div><div class="workflow-hero-actions"><a class="workflow-button" href="<?= e(url('/calendar.php')) ?>">Calendar</a><a class="workflow-button" href="<?= e(url('/chat.php')) ?>">Ask Agent</a></div></section>
+
+<?php if($durable): ?>
+<section class="workflow-panel" aria-labelledby="workerRuntimeTitle">
+  <div class="workflow-panel-head"><div><small>Phase 19.1</small><h2 id="workerRuntimeTitle">Worker Runtime</h2></div><span><?= count((array)($workerRuntime['workers']??[])) ?> execution routes</span></div>
+  <div class="workflow-priority-grid">
+    <?php foreach((array)($workerRuntime['workers']??[]) as $worker): $receipts=is_array($worker['receipts']??null)?$worker['receipts']:[]; ?>
+    <article class="workflow-priority">
+      <div class="workflow-priority-top"><span><?= e(ucfirst((string)($worker['executor']??'worker'))) ?></span><span><?= e(workflow_v1400_status_label((string)($worker['state']??'unavailable'))) ?></span></div>
+      <h3><?= e((string)($worker['label']??'Worker')) ?></h3>
+      <p><?= (int)($worker['active_jobs']??0) ?> / <?= (int)($worker['max_concurrency']??0) ?> active jobs · <?= (int)($worker['capability_count']??0) ?> routed capabilities<?php if(!empty($worker['last_seen_at'])): ?> · last seen <?= e(workflow_v1400_time((string)$worker['last_seen_at'])) ?><?php endif; ?>.</p>
+      <small>Completed <?= (int)($receipts['completed']??0) ?> · Retries <?= (int)($receipts['retry_scheduled']??0) ?> · Dead-lettered <?= (int)($receipts['dead_lettered']??0) ?></small>
+    </article>
+    <?php endforeach; ?>
+  </div>
+  <div class="workflow-notice" role="note" style="margin:14px 0 0">Worker capabilities only narrow execution routing. Owner scope, workflow approvals, active leases and domain authorization remain authoritative; failed jobs keep the canonical Phase 19.0 <strong>failed</strong> state.</div>
+</section>
+<?php endif; ?>
 
 <?php if($detail): ?>
 <section class="workflow-detail">
