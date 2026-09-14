@@ -22,6 +22,8 @@ assert.match(index, /<section class="homeserver" id="homeserver"/, 'homepage mus
 assert.match(index, /vp3-index-mega-menu\.css/, 'homepage must load the responsive mega-menu stylesheet');
 assert.match(index, /desktop-nav mega-nav/, 'homepage must expose the desktop mega-menu navigation');
 assert.match(index, /mega-mobile-nav/, 'homepage must expose the mobile mega-menu navigation');
+assert.match(megaCss, /\.brand,\.footer-brand\{display:inline-flex!important;align-items:center;gap:12px\}/, 'homepage header and footer must use the canonical VP3 mark lockup');
+assert.match(megaCss, /box-shadow:11px 0 0 currentColor,0 11px 0 currentColor,11px 11px 0 currentColor/, 'homepage VP3 mark must render all four tiles');
 assert.doesNotMatch(index, /homeserver-download\.php/, 'homepage must not link to a missing HomeServer download route');
 assert.doesNotMatch(index, /App Store|Google Play|VP3 for iPhone|VP3 for Android/, 'homepage must not expose obsolete app-store CTAs');
 
