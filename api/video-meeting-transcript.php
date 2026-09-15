@@ -11,16 +11,16 @@ $fail=static function(int $status,string $message): never {
     echo json_encode(['ok'=>false,'error'=>$message],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
     exit;
 };
-if($_SERVER['REQUEST_METHOD']!=='GET')$fail(405,'GET required.');
+if($_SERVER['REQUEST_METHOD']!=='POST')$fail(405,'POST required.');
 $pdo=db();if(!$pdo||!video_meeting_schema_ready_v1800($pdo))$fail(503,'Video Meetings are not ready.');
-$user=current_user();
+$user=current_user();if($user&&!verify_csrf())$fail(403,'Session expired. Refresh the meeting and try again.');
 $access=video_meeting_secure_access_v1800(
     $pdo,$user,
-    strtolower(trim((string)($_GET['meeting']??''))),
-    strtolower(trim((string)($_GET['invite']??'')))
+    strtolower(trim((string)($_POST['meeting']??''))),
+    strtolower(trim((string)($_POST['invite']??'')))
 );
 if(!$access)$fail(403,'This meeting invitation is not available to you.');
-$meeting=$access['meeting'];$after=max(0,(int)($_GET['after']??0));
+$meeting=$access['meeting'];$after=max(0,(int)($_POST['after']??0));
 try{
     $state=video_meeting_transcription_state_v1800($pdo,$meeting);
     if(empty($access['is_organizer']))$state['session_id']=0;
