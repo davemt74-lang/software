@@ -259,12 +259,14 @@ function agent_objective_state_v175(PDO $pdo,array $user,int $objectiveRunId,boo
         elseif($status==='cancelled')$counts['cancelled']++;
         else $counts['active']++;
         $entry=agent_work_control_schema_ready_v173($pdo)?agent_work_control_public_run_v173($pdo,$row,$history):agent_workflow_public_run_v1400($pdo,$row,$history);
-        if(preg_match('/:s(\d+)t(\d+)$/',(string)($row['source_key']??''),$m)){$entry['objective_stage']=(int)$m[1];$entry['objective_task']=(int)$m[2];}
+        if(preg_match('/:s(\d+)t(\d+)$/',(string)($row['source_key']??''),$m)){$entry['objective_stage']=(int)$m[1];$entry['objective_task']=(int)$m[2];if((int)$m[1]>=9000)$entry['objective_remediation']=true;}
         $public[]=$entry;
     }
     $total=max(1,$counts['total']);$progress=(int)floor(($counts['completed']/$total)*100);
     $parentPublic=agent_work_dependencies_state_v174($pdo,$user,$objectiveRunId,$history);
-    return ['build'=>VP3_AGENT_OBJECTIVE_PLANS_V175,'objective'=>$parentPublic,'goal'=>(string)($parent['goal']??''),'counts'=>$counts,'progress_percent'=>$progress,'children'=>$public];
+    $state=['build'=>VP3_AGENT_OBJECTIVE_PLANS_V175,'objective'=>$parentPublic,'goal'=>(string)($parent['goal']??''),'counts'=>$counts,'progress_percent'=>$progress,'children'=>$public];
+    if(function_exists('agent_objective_verification_public_fields_v176'))$state=array_merge($state,agent_objective_verification_public_fields_v176($pdo,$user,$parent,$children));
+    return $state;
 }
 
 function agent_objective_create_v175(PDO $pdo,array $user,string $goal,array $stages,int $conversationId=0,?int $agentId=null): array
@@ -277,7 +279,8 @@ function agent_objective_create_v175(PDO $pdo,array $user,string $goal,array $st
     if($childCount>VP3_AGENT_OBJECTIVE_MAX_RUNS_V175)throw new RuntimeException('This objective is too large for one plan. Split it into smaller objectives.');
     $fingerprint=[];foreach($stages as $stage){$items=[];foreach($stage as $step)$items[]=(string)($step['title']??'');$fingerprint[]=$items;}
     $objectiveHash=sha1($uid.'|'.$conversationId.'|'.$goal.'|'.json_encode($fingerprint,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES));
-    $existing=agent_objective_existing_parent_v175($pdo,$uid,$objectiveHash);if($existing)return agent_objective_state_v175($pdo,$user,(int)$existing['id'],true);
+    $existing=agent_objective_existing_parent_v175($pdo,$uid,$objectiveHash);
+    if($existing){if(function_exists('agent_objective_verification_initialize_v176'))agent_objective_verification_initialize_v176($pdo,$user,(int)$existing['id'],$stages);return agent_objective_state_v175($pdo,$user,(int)$existing['id'],true);}
 
     try{
         $pdo->beginTransaction();
@@ -299,6 +302,7 @@ function agent_objective_create_v175(PDO $pdo,array $user,string $goal,array $st
         foreach($allRuns as $childId)agent_objective_insert_dependency_v175($pdo,$uid,$parentId,$childId,'objective');
         $pdo->commit();
     }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();throw $e;}
+    if(function_exists('agent_objective_verification_initialize_v176'))agent_objective_verification_initialize_v176($pdo,$user,$parentId,$stages);
     return agent_objective_state_v175($pdo,$user,$parentId,true);
 }
 
@@ -361,19 +365,20 @@ function agent_objective_extract_step_ordinal_v175(string $query): ?int
 
 function agent_objective_answer_v175(array $state,string $verb='status'): string
 {
-    $objective=(array)($state['objective']??[]);$id=(int)($objective['id']??0);$goal=(string)($state['goal']??'');$counts=(array)($state['counts']??[]);$progress=(int)($state['progress_percent']??0);$children=(array)($state['children']??[]);
+    $objective=(array)($state['objective']??[]);$id=(int)($objective['id']??0);$goal=(string)($state['goal']??'');$counts=(array)($state['counts']??[]);$progress=(int)($state['progress_percent']??0);$children=(array)($state['children']??[]);$verification=(string)($state['verification_status']??'');
     if($verb==='created'){
-        $lines=[];foreach($children as $index=>$child){$stage=(int)($child['objective_stage']??0);$target=(string)($child['execution_target']??'cloud');$approval=(string)($child['approval_status']??'not_required');$lines[]=(($index+1).'. #'.(int)($child['id']??0).' · '.(string)($child['title']??'Workflow').' · stage '.$stage.' · '.($target==='homeserver'?'HomeServer':'Cloud').($approval==='pending'?' · approval required':''));}
-        return 'Created objective #'.$id.' — '.$goal.'. It contains '.count($children).' durable workflows. Each stage is wired through the existing dependency graph, and the objective parent will unblock only after its child workflows complete.'.($lines?"\n\n".implode("\n",$lines):'');
+        $lines=[];foreach($children as $index=>$child){$stage=(int)($child['objective_stage']??0);$target=(string)($child['execution_target']??'cloud');$approval=(string)($child['approval_status']??'not_required');$lines[]=(($index+1).'. #'.(int)($child['id']??0).' · '.(string)($child['title']??'Workflow').' · '.($stage>=9000?'remediation':('stage '.$stage)).' · '.($target==='homeserver'?'HomeServer':'Cloud').($approval==='pending'?' · approval required':''));}
+        return 'Created objective #'.$id.' — '.$goal.'. It contains '.count($children).' durable workflows. Each stage is wired through the existing dependency graph, and the objective parent will unblock only after its child workflows complete.'.($verification!==''?' Outcome verification is '.$verification.'.':'').($lines?"\n\n".implode("\n",$lines):'');
     }
     $parts=[];$parts[]=$progress.'% complete';$parts[]=(int)($counts['completed']??0).'/'.(int)($counts['total']??0).' child workflows completed';
-    if((int)($counts['approval']??0)>0)$parts[]=(int)$counts['approval'].' waiting approval';if((int)($counts['failed']??0)>0)$parts[]=(int)$counts['failed'].' failed';if((int)($counts['paused']??0)>0)$parts[]=(int)$counts['paused'].' paused';
+    if((int)($counts['approval']??0)>0)$parts[]=(int)$counts['approval'].' waiting approval';if((int)($counts['failed']??0)>0)$parts[]=(int)$counts['failed'].' failed';if((int)($counts['paused']??0)>0)$parts[]=(int)$counts['paused'].' paused';if($verification!=='')$parts[]='verification '.$verification;
     return 'Objective #'.$id.' — '.$goal.' is '.implode(' · ',$parts).'. The objective workflow is '.(string)($objective['status']??'unknown').(!empty($objective['blocked'])?' and is still blocked by unfinished child workflows.':'.');
 }
 
 function agent_objective_chat_v175(string $query,array $user,int $conversationId=0): array
 {
     $empty=agent_objective_empty_tool_v175();$q=trim($query);if($q==='')return $empty;
+    if(function_exists('agent_objective_verification_chat_v176')){$verification=agent_objective_verification_chat_v176($q,$user,$conversationId);if(!empty($verification['handled']))return $verification;}
     $create=agent_objective_parse_create_v175($q);
     $id=agent_objective_extract_id_v175($q);
     $objectiveIntent=$create!==null||$id>0||preg_match('/\bobjective\b/i',$q);
@@ -383,7 +388,7 @@ function agent_objective_chat_v175(string $query,array $user,int $conversationId
         if($create!==null){
             $state=agent_objective_create_v175($pdo,$user,(string)$create['goal'],(array)$create['stages'],$conversationId,null);
             $result=$empty;$result['handled']=true;$result['answer']=agent_objective_answer_v175($state,'created');
-            if(function_exists('agent_tool_log'))agent_tool_log($user,'objective.create',$query,'success',['objective_run_id'=>(int)($state['objective']['id']??0),'children'=>(int)($state['counts']['total']??0)],$conversationId);
+            if(function_exists('agent_tool_log'))agent_tool_log($user,'objective.create',$query,'success',['objective_run_id'=>(int)($state['objective']['id']??0),'children'=>(int)($state['counts']['total']??0),'verification_status'=>(string)($state['verification_status']??'')],$conversationId);
             return $result;
         }
         if($id<1)return $empty;
