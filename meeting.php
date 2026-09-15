@@ -5,7 +5,7 @@ require_once __DIR__.'/includes/transcription-app-registry.php';
 $pdo=db();if(!$pdo||!video_meeting_schema_ready_v1800($pdo)){http_response_code(503);exit('Video Meetings are not ready.');}
 $user=current_user();$publicId=strtolower(trim((string)($_GET['meeting']??'')));$invite=strtolower(trim((string)($_GET['invite']??'')));
 $access=video_meeting_access_v1800($pdo,$user,$publicId,$invite);
-if(!$access){http_response_code(404);exit('Meeting invitation not found or not available to this account.');}
+if(!$access||!video_meeting_member_binding_allowed_v1800($user,$access)){http_response_code(404);exit('Meeting invitation not found or not available to this account.');}
 $meeting=$access['meeting'];$participant=$access['participant'];$isOrganizer=!empty($access['is_organizer']);
 $agentName=video_meeting_agent_name_v1800($pdo,$meeting);$apps=transcription_app_registry_public_v300();
 $participantName=trim((string)($user['display_name']??$participant['display_name']??''))?:'Guest';
