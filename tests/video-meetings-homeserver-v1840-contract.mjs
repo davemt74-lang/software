@@ -24,10 +24,12 @@ assert.ok(home.includes("'homeserver_advertised_unwired_cloud_fallback'"));
 assert.ok(home.includes('generic\n    // relay transport'), 'contract must document why generic relay availability alone is insufficient');
 
 // HomeServer-only/private policy fails closed when the concrete meeting runtime
-// is absent. Automatic may use VP3 Cloud only when the v18.1 privacy policy
-// already authorizes cloud processing.
+// is absent. Missing policy code is unresolved too; it never becomes implicit
+// cloud permission. Automatic may use VP3 Cloud only when v18.1 authorizes it.
 assert.ok(home.includes("$requested==='homeserver_only'"));
 assert.ok(home.includes("$state['route']='blocked';$state['status']='required_unavailable'"));
+assert.ok(home.includes("'policy_resolved'=>false,'requested_compute'=>'auto','cloud_processing_allowed'=>false"));
+assert.ok(home.includes("'cloud_block_reason'=>'policy_unavailable'"));
 assert.ok(home.includes("if($cloudAllowed)"));
 assert.ok(legacyHome.includes("video_meeting_transcription_ai_policy_v1801($pdo,$user,$session,true)"));
 assert.ok(legacyHome.includes('VP3 Cloud AI Summary is disabled for this transcript.'));
@@ -58,6 +60,8 @@ assert.ok(tokenApi.includes('video_meeting_homeserver_public_status_v1840'));
 assert.ok(tokenApi.includes("'processing_route'=>$processingRoute"));
 assert.ok(tokenApi.includes("'processing_status'=>$processingStatus"));
 assert.ok(tokenApi.includes("!empty($access['is_organizer'])"));
+assert.ok(tokenApi.includes("['policy_resolved'=>false,'cloud_processing_allowed'=>false]"));
+assert.ok(tokenApi.includes("$processingStatus['status']='policy_pending'"));
 assert.ok(!tokenApi.includes('homeserver_capability_v033_registry'));
 assert.ok(!tokenApi.includes('homeserver_agent_v018_credentials'));
 
