@@ -20,6 +20,7 @@ assert.match(memory,/agent_objective_memory_template_v177/,'Learning must derive
 assert.match(memory,/agent_objective_children_rows_v175/,'Learning must read canonical 17.5 child workflows rather than duplicate live state');
 assert.match(memory,/source_key.*:s.*t/s,'Relative objective stage/task structure must drive the learned template');
 assert.match(memory,/execution_target_preference/,'Cloud/HomeServer routing may be learned as a preference');
+assert.match(memory,/observed_status/,'Observed child outcome must be available to prevent repeating failed work');
 assert.match(memory,/observed_risk_level/,'Observed risk shape should be available as learning context');
 assert.match(memory,/observed_requires_approval/,'Observed approval shape should be available as learning context');
 assert.match(memory,/objective_success_criteria/,'Verified success criteria must be retained as learned context');
@@ -30,6 +31,7 @@ assert.match(memory,/objective_verification_status='achieved'/,'Only verified ac
 assert.match(memory,/status IN \('failed','cancelled'\)/,'Failed/cancelled objectives should be retained as negative evidence');
 assert.match(memory,/\$outcome==='failed'\?0\.20/,'Failed outcomes must be materially down-ranked');
 assert.match(memory,/\$outcome==='remediated'\?0\.88/,'Remediated success must rank below clean success');
+assert.match(memory,/\$intersection<1\)return 0\.0/,'Unrelated successful objectives must not receive similarity credit from quality alone');
 assert.match(memory,/outcome_score/,'Outcome quality must contribute to retrieval ranking');
 assert.match(memory,/similarity_score/,'Similar prior objectives need deterministic ranking');
 
@@ -38,17 +40,23 @@ assert.match(memory,/ON DUPLICATE KEY UPDATE/,'Repeated learning sync must updat
 assert.match(memory,/agent_objective_memory_similar_v177/,'Agent Chat needs similar-objective retrieval');
 assert.match(memory,/agent_objective_memory_reuse_v177/,'Successful learned plans must support explicit reuse');
 assert.match(memory,/in_array\(\(string\)\(\$memory\['outcome_status'\].*\['achieved','remediated'\]/s,'Failed memory must never be replayable as a plan');
+assert.match(memory,/\$remediated&&in_array\(\(string\)\(\$step\['observed_status'\].*\['failed','cancelled'\]/s,'Remediated replay must remove failed/cancelled base steps');
+assert.match(memory,/remediation_lessons.*observed_status/s,'Successful remediation must be promotable into future learned plans');
+assert.match(memory,/agent_objective_memory_adapt_text_v177/,'Reused plans must adapt stale source-goal wording');
 assert.match(memory,/agent_objective_create_v175\(/,'Reuse must create fresh canonical 17.5 objective/workflow records');
 assert.match(objective,/agent_action_v124_plan/,'Fresh 17.5 child creation must retain the current risk/approval planner');
+assert.match(memory,/agent_work_delegate_target_v174/,'Stored routing preferences must pass the current Cloud/HomeServer target validator');
 assert.match(memory,/agent_objective_target_v175/,'Stored execution targets must be normalized against the current execution boundary');
 assert.match(memory,/historical execution state was not copied|historical terminal state/,'Chat must explain the non-replay execution boundary');
 assert.match(memory,/objective_memory_reused/,'Plan reuse must leave an auditable canonical workflow event');
 assert.match(memory,/reuse_count=reuse_count\+1/,'Learned-plan reuse should improve future evidence about useful patterns');
 
 for(const phrase of ['objective memory','similar objectives','reuse objective','best past plan'])assert.match(memory,new RegExp(phrase.replace(' ','\\s+'),'i'),`Agent Chat must recognize ${phrase}`);
+assert.match(memory,/agent_objective_memory_suggestion_v177/,'New objective planning should be able to surface a similar successful learned plan');
 assert.match(chat,/require_once __DIR__\.'\/agent-objective-memory-v177\.php'/,'Shared Agent Chat must load Phase 17.7');
 assert.match(chat,/agent_objective_memory_chat_v177\(\$query,\$user,\$conversationId\)/,'Agent Chat must route explicit memory commands through Phase 17.7');
 assert.ok(chat.indexOf('agent_objective_memory_chat_v177')<chat.indexOf('agent_objective_chat_v175'),'Memory reuse/search must be resolved before generic objective-create routing');
+assert.match(chat,/agent_objective_memory_suggestion_v177\(\$query,\$user\)/,'Normal objective creation must surface relevant learned-plan suggestions without silently replaying them');
 
 assert.match(verification,/agent_objective_verification_after_result_v176/,'Phase 17.6 verification remains authoritative for outcome truth');
 assert.match(engine,/agent_objective_verification_after_result_v176/,'Phase 19 must remain the receipt-to-verification execution path');
