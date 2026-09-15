@@ -6,6 +6,7 @@ const core = read('includes/video-meetings-v1800.php');
 const security = read('includes/video-meetings-security-v1800.php');
 const agent = read('includes/video-meetings-agent-v1800.php');
 const bridge = read('includes/video-meetings-transcription-v1800.php');
+const reconcile = read('includes/video-meetings-reconcile-v1800.php');
 const tokenApi = read('api/video-meeting-token.php');
 const presenceApi = read('api/video-meeting-presence.php');
 const transcriptApi = read('api/video-meeting-transcript.php');
@@ -32,6 +33,7 @@ assert.ok(core.includes('bin2hex(random_bytes(16))'), 'meeting public id must be
 assert.ok(core.includes('bin2hex(random_bytes(32))'), 'invite capability must use a high-entropy token');
 assert.ok(meetings.includes("'recording_enabled'=>false"), 'recording must remain off by default');
 assert.ok(meetings.includes('Phase 18.0 is notes-first'));
+assert.ok(meetings.includes("$agentMode=(string)($_POST['agent_mode']??'notes')==='off'?'off':'notes'"), 'server must constrain Phase 18 Agent mode to notes/off');
 assert.ok(!meetings.includes("'assistant'=>'Assistant'"), 'spoken Assistant mode must not be advertised before voice policy ships');
 
 // One access boundary for browser, API and calendar surfaces. A member-bound
@@ -44,6 +46,11 @@ for (const [name, source] of [['meeting room',meeting],['token API',tokenApi],['
 assert.ok(security.includes('video_meeting_member_binding_allowed_v1800'));
 assert.ok(security.includes('if(!$user)return false'), 'member-bound invitation must not work logged out');
 assert.ok(security.includes("role='organizer'"), 'owner access must resolve back to organizer participant');
+assert.ok(security.includes('This invitation is bound to your VP3 account'), 'member invitation copy must disclose its sign-in requirement');
+assert.ok(security.includes('Keep the link private because it grants meeting access'), 'guest invitation must disclose bearer capability risk');
+assert.ok(meetings.includes('video_meeting_secure_invitation_email_v1800'));
+assert.ok(security.includes('video_meeting_agent_worker_ready_v1800'));
+assert.ok(meetings.includes('transcription worker setup required'), 'UI must distinguish media readiness from worker readiness');
 
 // LiveKit credentials remain server-side and Agent dispatch is explicit/idempotent.
 assert.ok(core.includes('video_meeting_livekit_participant_token_v1800'));
@@ -54,6 +61,12 @@ assert.ok(agent.includes("'agent_name'=>$worker"));
 assert.ok(agent.includes('video_meeting_agent_dispatch_metadata_v1800'));
 assert.ok(!meetingJs.includes('api_secret'));
 assert.ok(!meetingJs.includes('worker_secret'));
+
+// Paid appointments never become a side door around Commerce checkout.
+assert.ok(reconcile.includes('video_meeting_booking_payment_pending_v1800'));
+assert.ok(reconcile.includes("==='awaiting_payment'"));
+assert.ok(tokenApi.includes("==='awaiting_payment'"));
+assert.ok(tokenApi.includes('Complete the appointment payment before joining this meeting.'));
 
 // Worker callback uses a separate server-to-server secret and final-only ingest.
 assert.ok(config.includes("'worker_secret'"));
