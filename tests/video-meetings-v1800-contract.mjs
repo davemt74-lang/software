@@ -34,12 +34,16 @@ assert.ok(meetings.includes("'recording_enabled'=>false"), 'recording must remai
 assert.ok(meetings.includes('Phase 18.0 is notes-first'));
 assert.ok(!meetings.includes("'assistant'=>'Assistant'"), 'spoken Assistant mode must not be advertised before voice policy ships');
 
-// One access boundary for browser, API and calendar surfaces.
+// One access boundary for browser, API and calendar surfaces. A member-bound
+// invitation requires that exact signed-in VP3 account; guest links remain
+// bearer capabilities. The organizer is rebound to the organizer participant.
 assert.ok(security.includes('function video_meeting_secure_access_v1800'));
 for (const [name, source] of [['meeting room',meeting],['token API',tokenApi],['presence API',presenceApi],['ICS',ics]]) {
   assert.ok(source.includes('video_meeting_secure_access_v1800'), `${name} must enforce member-bound invitations`);
 }
 assert.ok(security.includes('video_meeting_member_binding_allowed_v1800'));
+assert.ok(security.includes('if(!$user)return false'), 'member-bound invitation must not work logged out');
+assert.ok(security.includes("role='organizer'"), 'owner access must resolve back to organizer participant');
 
 // LiveKit credentials remain server-side and Agent dispatch is explicit/idempotent.
 assert.ok(core.includes('video_meeting_livekit_participant_token_v1800'));
@@ -54,10 +58,12 @@ assert.ok(!meetingJs.includes('worker_secret'));
 // Worker callback uses a separate server-to-server secret and final-only ingest.
 assert.ok(config.includes("'worker_secret'"));
 assert.ok(bridge.includes('VP3_MEETING_WORKER_SECRET'));
-assert.ok(workerApi.includes("Authorization"));
+assert.ok(workerApi.includes('Authorization'));
 assert.ok(workerApi.includes('hash_equals($secret,$provided)'));
 assert.ok(workerApi.includes("empty($input['is_final'])"));
 assert.ok(workerApi.includes('video_meeting_transcription_append_v1800'));
+assert.ok(workerApi.includes("time()-$endedAt>300"), 'late final STT needs a bounded post-end flush grace');
+assert.ok(workerApi.includes("['cancelled','processed']"), 'cancelled/processed meetings must remain closed to transcript writes');
 
 // Meeting transcript is projected into the existing VP3 transcription system,
 // not a second AI-summary architecture.
