@@ -25,14 +25,26 @@ assert.match(navigation, /\$add\(\$links,'knowledge','My Knowledge',url\('\/know
 assert.match(navigation, /\$add\(\$links,'messages','Messages',url\('\/messages\.php'\),'identity'\)/, 'Messages must remain a canonical destination');
 assert.match(navigation, /\$add\(\$links,'profile_agent','Profile Agent',url\('\/profile-agent\.php'\),'identity'\)/, 'Profile Agent must remain a canonical destination');
 assert.match(navigation, /\$add\(\$links,'memory','My Memory',url\('\/memory\.php'\),'identity'\)/, 'My Memory must remain available from the secondary account menu');
+assert.match(navigation, /\$add\(\$links,'transcriptions','My Transcriptions',url\('\/artist-listening\.php'\),'identity'\)/, 'My Transcriptions must remain a canonical destination');
 
-assert.match(sidebar, /'profile_agent'=>true,'messages'=>true,'knowledge'=>true/, 'My Agent, My Messages and My Knowledge must be promoted out of the sidebar footer menu');
-assert.match(sidebar, /href="<\?= e\(url\('\/profile-agent\.php'\)\) \?>"[^>]*><span>◉<\/span><strong>My Agent<\/strong>/, 'Primary sidebar must visibly expose My Agent');
-assert.match(sidebar, /href="<\?= e\(url\('\/messages\.php'\)\) \?>"[^>]*><span>✉<\/span><strong>My Messages<\/strong>/, 'Primary sidebar must visibly expose My Messages');
-assert.match(sidebar, /href="<\?= e\(url\('\/knowledge\.php'\)\) \?>"[^>]*><span>◇<\/span><strong>My Knowledge<\/strong>/, 'Primary sidebar must visibly expose My Knowledge');
-assert.match(sidebar, /'calendar'=>true/, 'My Calendar must be promoted out of the footer menu');
-assert.match(sidebar, /href="<\?= e\(url\('\/calendar\.php'\)\) \?>"[^>]*><span>▣<\/span><strong>My Calendar<\/strong>/, 'Primary sidebar must visibly expose My Calendar');
-assert.match(sidebar, /\$mainSidebarCalendarActive/, 'My Calendar must have a canonical active state');
+// Phase 2 consolidated the authenticated shell: primary destinations are keyed and
+// rendered from canonical navigation instead of duplicated hard-coded anchors.
+assert.match(sidebar, /\$mainSidebarPrimaryOrder = \['chat','profile_agent','messages','contacts','knowledge','transcriptions','calendar','scheduling','profile_commerce','team'\]/, 'Primary VP3 destinations must remain consolidated');
+for (const [key, label] of [
+  ['profile_agent', 'Profile Agent'],
+  ['messages', 'Messages'],
+  ['knowledge', 'Knowledge'],
+  ['transcriptions', 'Transcriptions'],
+  ['calendar', 'Calendar'],
+]) {
+  assert.ok(sidebar.includes(`'${key}'=>'${label}'`), `Canonical sidebar label missing for ${key}`);
+}
+assert.match(sidebar, /member_navigation_menu_links\(\$mainSidebarUser\)/, 'Sidebar must consume canonical member navigation');
+assert.match(sidebar, /\$mainSidebarPrimaryKeys = array_fill_keys\(\$mainSidebarPrimaryOrder, true\)/, 'Primary destinations must be excluded from the footer through the canonical key set');
+assert.match(sidebar, /!isset\(\$mainSidebarPrimaryKeys\[\(string\)\(\$link\['key'\] \?\? ''\)\]\)/, 'Footer filtering must use the canonical primary key set');
+assert.match(sidebar, /data-vp3-nav-key=/, 'Rendered primary links must expose canonical navigation keys');
+assert.match(sidebar, /aria-current="page"/, 'Current primary destination must expose aria-current');
+assert.doesNotMatch(sidebar, /\$mainSidebarCalendarActive|\$mainSidebarProductsActive|\$mainSidebarTranscriptionsActive/, 'Legacy page-specific active-state booleans must not return');
 assert.doesNotMatch(sidebar, /href="<\?= e\(url\('\/approvals\.php'\)\) \?>"/, 'Approvals must not remain in the primary sidebar');
 assert.doesNotMatch(sidebar, /<strong>Approvals<\/strong>/, 'Approvals label must be removed from the primary sidebar');
 

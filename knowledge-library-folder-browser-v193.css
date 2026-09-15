@@ -1,0 +1,30 @@
+/* VP3 My Knowledge folder-browser hardening — 2026-09-14 */
+.personal-knowledge-action:focus-visible,
+.personal-knowledge-back:focus-visible,
+.personal-knowledge-open-item:focus-visible,
+.personal-knowledge-folder-card>a:focus-visible,
+.personal-knowledge-folder-menu>summary:focus-visible,
+.personal-knowledge-folder-menu button:focus-visible,
+.personal-knowledge-folder-menu input:focus-visible,
+.personal-knowledge-detail-action:focus-visible {
+  outline: 3px solid rgba(17,17,17,.22);
+  outline-offset: 2px;
+}
+.personal-knowledge-dialog[open]{display:flex;flex-direction:column}
+.personal-knowledge-dialog-head{flex:0 0 auto}
+.personal-knowledge-dialog-body{min-height:0;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
+.personal-knowledge-document-body{max-height:52dvh;overflow:auto;tab-size:2}
+.personal-knowledge-stat-actions{min-width:max-content}
+.personal-knowledge-folder-nav strong[aria-current="page"]{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:min(55vw,520px)}
+@media (prefers-reduced-motion:reduce){
+  .personal-knowledge-action,.personal-knowledge-folder-card,.personal-knowledge-row{transition:none!important}
+}
+@media(max-width:620px){
+  .personal-knowledge-stat-actions{min-width:0;display:grid;grid-template-columns:1fr 1fr}
+  .personal-knowledge-action{min-height:48px;padding:0 12px}
+  .personal-knowledge-folder-nav strong[aria-current="page"]{max-width:100%}
+  .personal-knowledge-document-body{max-height:46dvh;padding:14px}
+}
+@media(max-width:420px){
+  .personal-knowledge-stat-actions{grid-template-columns:1fr}
+}

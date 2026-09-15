@@ -12,6 +12,7 @@ const create = read('api/chat-create-v76.php');
 const header = read('includes/header.php');
 const sidebar = read('includes/workspace-sidebar-v82.php');
 const mainSidebar = read('includes/main-sidebar.php');
+const memberNavigation = read('includes/member-navigation.php');
 const account = read('account.php');
 const accountAgentLoader = read('account-agent-settings-loader-v236.js');
 const accountShellCss = read('account-shell.css');
@@ -36,7 +37,13 @@ assert.match(header, /has_permission\('chat\.access', \$headerUser\)/);
 assert.match(header, /has_permission\('account\.access', \$headerUser\)/);
 assert.match(sidebar, /require __DIR__ \. '\/main-sidebar\.php';/);
 assert.match(mainSidebar, /has_permission\('chat\.access',\s*\$mainSidebarUser\)/);
-assert.match(mainSidebar, /has_permission\('account\.access',\s*\$mainSidebarUser\)/);
+
+// Account authorization now belongs to canonical member navigation. The shared
+// sidebar consumes the permitted link set and must not duplicate account gates.
+assert.match(mainSidebar, /member_navigation_menu_links\(\$mainSidebarUser\)/, 'shared sidebar must consume canonical member-navigation permissions');
+assert.match(memberNavigation, /\$accountAllowed=member_navigation_package_permission\(\$user,'account\.access',has_permission\('account\.access',\$user\)\)/, 'canonical navigation must retain account.access authorization');
+assert.match(memberNavigation, /if\(\$accountAllowed\)\{[\s\S]*\$add\(\$links,'account','My Account',url\('\/account\.php'\),'identity'\)/, 'My Account must remain behind the canonical account gate');
+assert.doesNotMatch(mainSidebar, /has_permission\('account\.access',\s*\$mainSidebarUser\)/, 'shared sidebar must not reintroduce duplicate account authorization logic');
 assert.match(account, /has_permission\('chat\.access', \$user\)/);
 assert.match(chatLegacy, /\$chatCanAccessAccount = has_permission\('account\.access', \$user\)/);
 assert.match(chatLegacy, /<\?php if \(\$chatCanAccessAccount\): \?>[\s\S]{0,120}<div class="chat-top-menu" id="chatNotificationMenu"/);

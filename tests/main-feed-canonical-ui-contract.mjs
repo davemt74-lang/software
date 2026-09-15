@@ -23,21 +23,30 @@ assert.match(wrapper, /<aside class=\"chat-sidebar\" id=\"chatSidebar\">\.\*\?<\
 assert.doesNotMatch(wrapper, /data-chat-view-target=\"\(\?:player\|saved\|playlists\)\"|chatMyTeamSidebarLink|data-chat-my-team/, 'Main Feed must not strip/inject individual sidebar items after render');
 
 assert.match(mainSidebar, /aria-label="VP3 Agent">VP3<\/a>/, 'Canonical sidebar logo must identify the VP3 Agent');
-const primaryStart = mainSidebar.indexOf('data-agent-primary-nav');
-const primaryEnd = primaryStart < 0 ? -1 : mainSidebar.indexOf('</nav>', primaryStart);
-assert.ok(primaryStart >= 0 && primaryEnd > primaryStart, 'Canonical sidebar must expose an explicit primary Agent navigation block');
-const primaryNav = mainSidebar.slice(primaryStart, primaryEnd);
-for (const label of ['Contacts', 'My Knowledge', 'My Transcriptions', 'My Calendar']) {
-  assert.ok(primaryNav.includes(`<strong>${label}</strong>`), `Canonical Agent sidebar must expose ${label}`);
+assert.match(mainSidebar, /\$mainSidebarPrimaryOrder = \['chat','profile_agent','messages','contacts','knowledge','transcriptions','calendar','scheduling','profile_commerce','team'\]/, 'Canonical sidebar must retain the consolidated primary Agent navigation order');
+for (const [key, label] of [
+  ['chat', 'Agent Chat'],
+  ['profile_agent', 'Profile Agent'],
+  ['messages', 'Messages'],
+  ['contacts', 'Contacts'],
+  ['knowledge', 'Knowledge'],
+  ['transcriptions', 'Transcriptions'],
+  ['calendar', 'Calendar'],
+  ['scheduling', 'Scheduling'],
+  ['profile_commerce', 'Products'],
+  ['team', 'Team'],
+]) {
+  assert.ok(mainSidebar.includes(`'${key}'=>'${label}'`), `Canonical Agent sidebar must retain ${label}`);
 }
-assert.ok(!primaryNav.includes('<strong>New Chat</strong>'), 'New Chat must be a Chats-section action instead of a primary navigation destination');
-for (const accountLevel of ['Memory']) {
-  assert.ok(!primaryNav.includes(`<strong>${accountLevel}</strong>`), `${accountLevel} must live in the canonical user menu instead of primary Agent navigation`);
-}
-assert.ok(!primaryNav.includes('<strong>Approvals</strong>'), 'Approvals must not remain in canonical primary navigation');
-for (const secondary of ['Profile Agent', 'My Team', 'Plan &amp; Usage']) {
-  assert.ok(!primaryNav.includes(`<strong>${secondary}</strong>`), `${secondary} must live in the user menu instead of primary Agent navigation`);
-}
+assert.match(mainSidebar, /member_navigation_menu_links\(\$mainSidebarUser\)/, 'Canonical sidebar must consume permission-aware member navigation');
+assert.match(mainSidebar, /foreach \(\$mainSidebarPrimaryOrder as \$key\)/, 'Canonical sidebar must derive primary links by canonical key order');
+assert.match(mainSidebar, /data-agent-primary-nav/, 'Canonical sidebar must expose an explicit primary Agent navigation block');
+assert.match(mainSidebar, /data-vp3-nav-key=/, 'Canonical primary navigation must expose keyed destinations');
+assert.match(mainSidebar, /aria-current="page"/, 'Canonical primary navigation must expose accessible active state');
+assert.doesNotMatch(mainSidebar, /\$mainSidebarCalendarActive|\$mainSidebarProductsActive|\$mainSidebarTranscriptionsActive/, 'Legacy page-specific active-state booleans must not return');
+assert.ok(!mainSidebar.includes("'memory'=>'Memory'") && !mainSidebar.includes("'approvals'=>'Approvals'"), 'Memory and Approvals must not become primary Agent destinations');
+assert.match(mainSidebar, /\$mainSidebarPrimaryKeys = array_fill_keys\(\$mainSidebarPrimaryOrder, true\)/, 'Primary destinations must be represented by the canonical key set');
+assert.match(mainSidebar, /!isset\(\$mainSidebarPrimaryKeys\[\(string\)\(\$link\['key'\] \?\? ''\)\]\)/, 'Primary destinations must be removed from duplicate footer navigation');
 assert.match(mainSidebar, /class="chat-history-heading"[\s\S]*id="newChatButton"[\s\S]*data-chat-view-target="chat"/, 'Canonical sidebar must preserve Main Feed New Chat behavior in the Chats heading');
 assert.match(mainSidebar, /class="chat-history-new" id="newChatButton"/, 'Canonical Main Feed New Chat action must use the compact Chats-heading plus control');
 assert.match(mainSidebar, /id="chatHistory"[\s\S]*data-conversation-id/, 'Canonical sidebar must own recent Chat history rendering when supplied');
@@ -50,7 +59,7 @@ assert.ok(footerStart >= 0 && footerEnd > footerStart, 'Canonical sidebar must e
 const footer = mainSidebar.slice(footerStart, footerEnd);
 assert.match(footer, /id="vp3AgentRuntimeStrip"/, 'Canonical sidebar must integrate live Agent runtime state into the bottom footer');
 assert.doesNotMatch(footer, /agent-sidebar-avatar/, 'Canonical bottom footer must not render the removed user avatar');
-assert.doesNotMatch(primaryNav, /<strong>Player<\/strong>|<strong>Saved Songs<\/strong>|<strong>My Playlists<\/strong>/, 'Canonical Agent navigation must not contain retired music navigation');
+assert.doesNotMatch(mainSidebar, /'player'=>'Player'|'saved'=>'Saved Songs'|'playlists'=>'My Playlists'/, 'Canonical Agent navigation must not contain retired music navigation');
 
 assert.ok(wrapper.includes("$html = str_replace('agent-activity-v94.js?v=101', 'agent-activity-v94.js?v=' . $activityBuild, $html);"), 'Main Feed must use an explicit current Agent Activity asset URL');
 assert.match(wrapper, /agent-activity-v94-canonical-runtime-20260907/, 'Main Feed must cache-bust the simplified Agent Activity runtime');
@@ -61,8 +70,8 @@ assert.match(learning, /enabled:false/, 'Brain Learning drawer tab must remain h
 assert.doesNotMatch(activity, /<strong>My Knowledge<\/strong>|chat-sidebar-nav|insertAdjacentElement|chatCreateMenu|chat-device-registry-v94|Audio input status|videoinput|getUserMedia|chat-brain-learning-history-v317\.js/, 'Agent Activity must not own sidebar/header/device/Brain Learning UI');
 assert.doesNotMatch(learning, /cleanupMainSidebar|data-chat-view-target="player"|data-chat-view-target="saved"|data-chat-view-target="playlists"|data-chat-profile-link="my_team"|chatMyTeam|notificationTab\s*=\s*['"]learning['"]/, 'Brain Learning must not mutate navigation or expose its tab');
 assert.doesNotMatch(memberNav, /'my_team','My Team'/, 'profile/dropdown navigation must not duplicate legacy My Team');
-assert.match(memberNav, /'profile_agent','Profile Agent'/, 'Profile Agent must remain available from the canonical user menu');
-assert.match(memberNav, /'knowledge','My Knowledge',url\('\/knowledge\.php'\)/, 'My Knowledge must remain available from the canonical user menu');
+assert.match(memberNav, /'profile_agent','Profile Agent'/, 'Profile Agent must remain available from canonical member navigation');
+assert.match(memberNav, /'knowledge','My Knowledge',url\('\/knowledge\.php'\)/, 'My Knowledge must remain available from canonical member navigation');
 assert.match(memberNav, /'memory','My Memory',url\('\/memory\.php'\)/, 'My Memory must remain available from the canonical user menu');
 assert.match(memberNav, /'transcriptions','My Transcriptions'/, 'Transcriptions must remain available from canonical member navigation');
 assert.match(memberNav, /'subscription','Plan & Usage'/, 'Plan & Usage must remain available from the canonical user menu');

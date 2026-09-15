@@ -14,22 +14,25 @@ const memory = readFileSync('memory.php', 'utf8');
 assert.match(legacyWrapper, /require __DIR__ \. '\/main-sidebar\.php';/, 'legacy workspace sidebar must route to one canonical member sidebar');
 assert.doesNotMatch(legacyWrapper, /Stem Studio|Video Editor|workspace-main-sidebar/, 'legacy wrapper must not own duplicate navigation markup');
 
-const primaryStart = mainSidebar.indexOf('data-agent-primary-nav');
-const primaryEnd = primaryStart < 0 ? -1 : mainSidebar.indexOf('</nav>', primaryStart);
-assert.ok(primaryStart >= 0 && primaryEnd > primaryStart, 'canonical Agent sidebar must expose one primary navigation block');
-const primaryNav = mainSidebar.slice(primaryStart, primaryEnd);
-for (const label of ['Contacts', 'My Agent', 'My Messages', 'My Knowledge', 'My Transcriptions', 'My Calendar']) {
-  assert.ok(primaryNav.includes(`<strong>${label}</strong>`), `canonical Agent sidebar must include primary ${label}`);
+// Primary navigation is rendered from canonical keyed destinations. Keep the source
+// contract aligned with the consolidated shell rather than expecting duplicated anchors.
+assert.match(mainSidebar, /\$mainSidebarPrimaryOrder = \['chat','profile_agent','messages','contacts','knowledge','transcriptions','calendar','scheduling','profile_commerce','team'\]/, 'canonical Agent sidebar must retain the primary destination order');
+for (const [key, label] of [
+  ['chat', 'Agent Chat'],
+  ['profile_agent', 'Profile Agent'],
+  ['messages', 'Messages'],
+  ['contacts', 'Contacts'],
+  ['knowledge', 'Knowledge'],
+  ['transcriptions', 'Transcriptions'],
+  ['calendar', 'Calendar'],
+]) {
+  assert.ok(mainSidebar.includes(`'${key}'=>'${label}'`), `canonical Agent sidebar must retain ${label}`);
 }
-assert.ok(!primaryNav.includes('<strong>New Chat</strong>'), 'New Chat must not remain a primary navigation row');
-assert.ok(!primaryNav.includes('<strong>Memory</strong>') && !primaryNav.includes('<strong>My Memory</strong>'), 'My Memory must remain in secondary account navigation');
-assert.ok(!primaryNav.includes('<strong>Approvals</strong>'), 'canonical Agent sidebar must not restore the removed Approvals shortcut');
-for (const secondary of ['My Team', 'Plan &amp; Usage', 'Buy AI Tokens']) {
-  assert.ok(!primaryNav.includes(`<strong>${secondary}</strong>`), `secondary ${secondary} must not compete with core personal navigation`);
-}
-for (const removed of ['Player', 'Saved Songs', 'My Playlists', 'Stem Studio', 'Video Editor']) {
-  assert.ok(!primaryNav.includes(`<strong>${removed}</strong>`), `canonical Agent navigation must not include ${removed}`);
-}
+assert.match(mainSidebar, /foreach \(\$mainSidebarPrimaryOrder as \$key\)/, 'canonical sidebar must derive primary links by keyed order');
+assert.match(mainSidebar, /data-agent-primary-nav/, 'canonical Agent sidebar must expose one primary navigation block');
+assert.match(mainSidebar, /data-vp3-nav-key=/, 'primary navigation rows must expose canonical destination keys');
+assert.match(mainSidebar, /aria-current="page"/, 'active primary destination must expose aria-current');
+assert.ok(!mainSidebar.includes("'approvals'=>"), 'canonical Agent navigation must not restore the removed Approvals shortcut');
 
 assert.match(mainSidebar, /class="chat-history-heading"/, 'Chats section must expose a dedicated heading row');
 assert.match(mainSidebar, /class="chat-history-new" id="newChatButton"[^>]*aria-label="New chat"[^>]*>\+<\/button>/, 'Agent Chat must move the canonical New Chat action into a compact Chats heading plus button');
@@ -38,10 +41,10 @@ assert.match(agentUiCss, /\.chat-history-heading\{[^}]*justify-content:space-bet
 assert.match(agentUiCss, /\.chat-history-new\{[^}]*width:24px;[^}]*height:24px;/, 'Chats heading plus must stay compact');
 
 assert.match(mainSidebar, /data-agent-user-footer/, 'secondary account and product navigation must live in the bottom user menu');
-assert.match(mainSidebar, /member_navigation_menu_links\(\$mainSidebarUser\)/, 'bottom user menu must reuse canonical member navigation');
-assert.match(mainSidebar, /'profile_agent'=>true,'messages'=>true,'knowledge'=>true,'transcriptions'=>true/, 'promoted My Agent, My Messages, My Knowledge and My Transcriptions destinations must be filtered out of the bottom menu');
-assert.match(mainSidebar, /mainSidebarTranscriptionsActive/, 'My Transcriptions must support the active-page state');
-assert.match(mainSidebar, /mainSidebarCalendarActive/, 'My Calendar must support the active-page state');
+assert.match(mainSidebar, /member_navigation_menu_links\(\$mainSidebarUser\)/, 'sidebar and bottom user menu must reuse canonical member navigation');
+assert.match(mainSidebar, /\$mainSidebarPrimaryKeys = array_fill_keys\(\$mainSidebarPrimaryOrder, true\)/, 'promoted destinations must be represented by the canonical primary key set');
+assert.match(mainSidebar, /!isset\(\$mainSidebarPrimaryKeys\[\(string\)\(\$link\['key'\] \?\? ''\)\]\)/, 'promoted destinations must be filtered out of the bottom menu');
+assert.doesNotMatch(mainSidebar, /\$mainSidebarCalendarActive|\$mainSidebarProductsActive|\$mainSidebarTranscriptionsActive/, 'page-specific active-state booleans must not return');
 assert.doesNotMatch(mainSidebar, /class="agent-sidebar-avatar"/, 'bottom user section must not render the user picture/avatar');
 assert.match(mainSidebar, /class="agent-sidebar-user-copy"><strong>/, 'bottom user section must retain the user name');
 const footerStart = mainSidebar.indexOf('<footer class="agent-sidebar-footer"');
@@ -61,6 +64,7 @@ for (const label of ['Profile Agent', 'My Knowledge', 'My Memory', 'My Transcrip
 }
 assert.ok(memberNavigation.includes("'messages','Messages'"), 'canonical member navigation must retain Messages');
 assert.ok(memberNavigation.includes("'calendar','My Calendar'"), 'canonical member navigation must retain My Calendar');
+assert.ok(memberNavigation.includes("'transcriptions','My Transcriptions',url('/artist-listening.php')"), 'canonical member navigation must route Transcriptions to Artist Listening');
 assert.ok(memberNavigation.includes("personal_capability_has_v242('personal_knowledge.access'"), 'My Knowledge must remain permission-aware in canonical navigation');
 assert.ok(memberNavigation.includes("has_permission('chat.access'"), 'My Memory must remain permission-aware in canonical navigation');
 
