@@ -29,6 +29,21 @@ if(!in_array((string)$meeting['status'],['scheduled','ready','live'],true)){
     $fail(409,(string)$meeting['status']==='cancelled'?'This meeting was cancelled.':'This meeting has ended.');
 }
 
+// Paid Scheduling can reserve time before checkout settles. Even if a stale
+// meeting row or copied URL exists, media credentials are never minted while
+// the canonical Commerce order is still awaiting payment.
+$bookingId=(int)($meeting['booking_id']??0);
+if($bookingId>0&&function_exists('agent_paid_appointments_schema_ready_v800')&&agent_paid_appointments_schema_ready_v800($pdo)&&function_exists('agent_paid_appointments_paid_booking_for_booking_v800')){
+    try{
+        $paid=agent_paid_appointments_paid_booking_for_booking_v800($pdo,$bookingId);
+        if(is_array($paid)&&(string)($paid['payment_status']??'')==='awaiting_payment')$fail(402,'Complete the appointment payment before joining this meeting.');
+    }catch(Throwable $e){
+        if((int)http_response_code()===402)exit;
+        error_log('VP3 meeting payment gate check failed: '.$e->getMessage());
+        $fail(503,'Meeting payment status could not be verified.');
+    }
+}
+
 $now=time();$start=strtotime((string)$meeting['start_at_utc'].' UTC')?:0;$end=strtotime((string)$meeting['end_at_utc'].' UTC')?:0;
 if(empty($access['is_organizer'])&&$start>0&&$now<$start-1800)$fail(409,'This meeting opens 30 minutes before its scheduled start.');
 if($end>0&&$now>$end+14400)$fail(409,'This meeting is no longer open.');
