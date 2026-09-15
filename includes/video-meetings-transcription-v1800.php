@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 const VP3_VIDEO_MEETING_TRANSCRIPTION_V1800='video-meeting-transcription-v1800-20260915';
+const VP3_VIDEO_MEETING_TRANSCRIPTION_HARDENING_V1801='video-meeting-transcription-hardening-v1801-20260915';
 
 function video_meeting_transcription_load_stack_v1800(): void
 {
@@ -137,22 +138,38 @@ function video_meeting_transcription_source_key_v1800(array $meeting,array $inpu
     ]));
 }
 
+/**
+ * Project one final meeting segment into the canonical transcription store.
+ * Normal live ingest must stay O(1) per segment; the full mirror below is only
+ * a repair/finalization backstop for pre-hardening rows or interrupted writes.
+ */
+function video_meeting_transcription_mirror_segment_v1801(PDO $pdo,array $meeting,int $segmentId,?array $session=null): ?array
+{
+    if($segmentId<1)return null;
+    $session??=video_meeting_transcription_ensure_session_v1800($pdo,$meeting);if(!$session)return null;
+    $stmt=$pdo->prepare("SELECT * FROM video_meeting_transcript_segments WHERE id=? AND meeting_id=? AND is_final=1 AND TRIM(transcript_text)<>'' LIMIT 1");
+    $stmt->execute([$segmentId,(int)$meeting['id']]);$row=$stmt->fetch();if(!is_array($row))return ['session'=>$session,'accepted'=>0,'segment_id'=>$segmentId];
+    $key=strtolower(trim((string)($row['source_key']??'')));if(!preg_match('/^[a-f0-9]{64}$/',$key))$key=hash('sha256','meeting-segment|'.(int)$row['id']);
+    $start=max(0,(int)$row['start_ms']);$end=max($start,(int)$row['end_ms']);
+    $speaker=trim((string)$row['speaker_name'])?:trim((string)$row['speaker_key'])?:'Speaker';
+    $insert=$pdo->prepare('INSERT IGNORE INTO artist_transcript_segments_v172 (session_id,client_segment_key,segment_index,segment_type,speaker_label,transcript_text,started_ms,ended_ms,confidence) VALUES (?,?,?,?,?,?,?,?,?)');
+    $insert->execute([(int)$session['id'],$key,(int)$row['id'],'transcript',mb_strimwidth($speaker,0,80,''),mb_strimwidth(trim((string)$row['transcript_text']),0,8000,''),$start,$end,$row['confidence']!==null?(float)$row['confidence']:null]);
+    $accepted=$insert->rowCount();
+    $pdo->prepare('UPDATE artist_transcript_sessions_v172 SET duration_ms=GREATEST(duration_ms,?),last_activity_at=NOW() WHERE id=?')->execute([$end,(int)$session['id']]);
+    return ['session'=>$session,'accepted'=>$accepted,'segment_id'=>(int)$row['id']];
+}
+
 function video_meeting_transcription_mirror_v1800(PDO $pdo,array $meeting): ?array
 {
     $session=video_meeting_transcription_ensure_session_v1800($pdo,$meeting);if(!$session)return null;
-    $stmt=$pdo->prepare("SELECT * FROM video_meeting_transcript_segments WHERE meeting_id=? AND is_final=1 AND TRIM(transcript_text)<>'' ORDER BY start_ms,id");
-    $stmt->execute([(int)$meeting['id']]);$rows=$stmt->fetchAll()?:[];
-    $insert=$pdo->prepare('INSERT IGNORE INTO artist_transcript_segments_v172 (session_id,client_segment_key,segment_index,segment_type,speaker_label,transcript_text,started_ms,ended_ms,confidence) VALUES (?,?,?,?,?,?,?,?,?)');
-    $maxEnd=0;$accepted=0;
-    foreach($rows as $row){
-        $key=strtolower(trim((string)($row['source_key']??'')));if(!preg_match('/^[a-f0-9]{64}$/',$key))$key=hash('sha256','meeting-segment|'.(int)$row['id']);
-        $start=max(0,(int)$row['start_ms']);$end=max($start,(int)$row['end_ms']);$maxEnd=max($maxEnd,$end);
-        $speaker=trim((string)$row['speaker_name'])?:trim((string)$row['speaker_key'])?:'Speaker';
-        $insert->execute([(int)$session['id'],$key,(int)$row['id'],'transcript',mb_strimwidth($speaker,0,80,''),mb_strimwidth(trim((string)$row['transcript_text']),0,8000,''),$start,$end,$row['confidence']!==null?(float)$row['confidence']:null]);
-        $accepted+=$insert->rowCount();
+    $stmt=$pdo->prepare("SELECT id FROM video_meeting_transcript_segments WHERE meeting_id=? AND is_final=1 AND TRIM(transcript_text)<>'' ORDER BY id");
+    $stmt->execute([(int)$meeting['id']]);$ids=array_map('intval',$stmt->fetchAll(PDO::FETCH_COLUMN)?:[]);
+    $accepted=0;
+    foreach($ids as $segmentId){
+        $mirrored=video_meeting_transcription_mirror_segment_v1801($pdo,$meeting,$segmentId,$session);
+        $accepted+=(int)($mirrored['accepted']??0);
     }
-    $pdo->prepare('UPDATE artist_transcript_sessions_v172 SET duration_ms=GREATEST(duration_ms,?),last_activity_at=NOW() WHERE id=?')->execute([$maxEnd,(int)$session['id']]);
-    return ['session'=>$session,'accepted'=>$accepted,'segments'=>count($rows)];
+    return ['session'=>$session,'accepted'=>$accepted,'segments'=>count($ids)];
 }
 
 function video_meeting_transcription_append_v1800(PDO $pdo,array $meeting,array $input): array
@@ -168,8 +185,9 @@ function video_meeting_transcription_append_v1800(PDO $pdo,array $meeting,array 
     $source=trim((string)($input['source']??'livekit-agent'))?:'livekit-agent';$sourceKey=video_meeting_transcription_source_key_v1800($meeting,$input);
 
     $existing=$pdo->prepare('SELECT id FROM video_meeting_transcript_segments WHERE meeting_id=? AND source_key=? LIMIT 1');$existing->execute([(int)$meeting['id'],$sourceKey]);
-    if($existing->fetchColumn()){
-        $mirror=video_meeting_transcription_mirror_v1800($pdo,$meeting);
+    $existingId=(int)$existing->fetchColumn();
+    if($existingId>0){
+        $mirror=video_meeting_transcription_mirror_segment_v1801($pdo,$meeting,$existingId);
         return ['accepted'=>0,'duplicate'=>true,'source_key'=>$sourceKey,'transcript_session_id'=>(int)($mirror['session']['id']??0)];
     }
     try{
@@ -177,10 +195,11 @@ function video_meeting_transcription_append_v1800(PDO $pdo,array $meeting,array 
         $stmt->execute([(int)$meeting['id'],$participant?(int)$participant['id']:null,mb_strimwidth($identity,0,100,''),mb_strimwidth($speaker,0,190,''),$start,$end,$text,$confidence,mb_strimwidth($source,0,40,''),$sourceKey]);
         $segmentId=(int)$pdo->lastInsertId();
     }catch(Throwable $e){
-        $existing->execute([(int)$meeting['id'],$sourceKey]);if(!$existing->fetchColumn())throw $e;
-        return ['accepted'=>0,'duplicate'=>true,'source_key'=>$sourceKey];
+        $existing->execute([(int)$meeting['id'],$sourceKey]);$existingId=(int)$existing->fetchColumn();if($existingId<1)throw $e;
+        $mirror=video_meeting_transcription_mirror_segment_v1801($pdo,$meeting,$existingId);
+        return ['accepted'=>0,'duplicate'=>true,'source_key'=>$sourceKey,'transcript_session_id'=>(int)($mirror['session']['id']??0)];
     }
-    $mirror=video_meeting_transcription_mirror_v1800($pdo,$meeting);
+    $mirror=video_meeting_transcription_mirror_segment_v1801($pdo,$meeting,$segmentId);
     return ['accepted'=>1,'segment_id'=>$segmentId,'source_key'=>$sourceKey,'transcript_session_id'=>(int)($mirror['session']['id']??0)];
 }
 
@@ -193,6 +212,9 @@ function video_meeting_transcription_segments_v1800(PDO $pdo,array $meeting,int 
 function video_meeting_transcription_finalize_v1800(PDO $pdo,array $meeting): void
 {
     if(!video_meeting_transcription_schema_ready_v1800($pdo))return;
+    // Finalization is also the bounded repair pass. Normal live ingest already
+    // mirrors only the newly accepted segment, so long meetings no longer
+    // rescan their entire transcript on every callback.
     $mirror=video_meeting_transcription_mirror_v1800($pdo,$meeting);$session=$mirror['session']??null;if(!is_array($session))return;
     $stmt=$pdo->prepare('SELECT COALESCE(MAX(end_ms),0) FROM video_meeting_transcript_segments WHERE meeting_id=?');$stmt->execute([(int)$meeting['id']]);$duration=max(0,(int)$stmt->fetchColumn());
     $pdo->prepare("UPDATE artist_transcript_sessions_v172 SET status='draft',duration_ms=GREATEST(duration_ms,?),stopped_at=COALESCE(stopped_at,NOW()),last_activity_at=NOW() WHERE id=? AND status<>'discarded'")
