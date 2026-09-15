@@ -80,6 +80,17 @@ return [
         ],
     ],
 
+    // Phase 18 VP3 Video Meetings. The LiveKit API secret is server-only and
+    // must never be exposed to the browser. Environment variables are preferred
+    // in production: VP3_LIVEKIT_URL, VP3_LIVEKIT_API_KEY,
+    // VP3_LIVEKIT_API_SECRET and optional VP3_LIVEKIT_AGENT_NAME.
+    'livekit' => [
+        'url' => '',        // wss://your-project.livekit.cloud
+        'api_key' => '',    // server-side API key
+        'api_secret' => '', // server-side API secret
+        'agent_name' => '', // optional named LiveKit Agent worker for later dispatch
+    ],
+
     // VP3 system/subscription billing is Stripe-only. These credentials are
     // platform billing credentials and are never used as a user's merchant
     // account for customer Commerce payments.
