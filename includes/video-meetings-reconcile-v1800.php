@@ -15,7 +15,10 @@ function video_meeting_reconcile_booking_v1800(PDO $pdo,array $booking,bool $del
     if(!$isVideo)return null;
 
     if(in_array((string)($booking['status']??''),['cancelled','no_show'],true)){
-        if($existing)video_meeting_cancel_for_booking_v1800($pdo,$booking);
+        if($existing){
+            if(!empty($existing['transcription_enabled'])&&function_exists('video_meeting_transcription_finalize_v1800'))video_meeting_transcription_finalize_v1800($pdo,$existing);
+            video_meeting_cancel_for_booking_v1800($pdo,$booking);
+        }
         return $existing;
     }
 
@@ -23,6 +26,7 @@ function video_meeting_reconcile_booking_v1800(PDO $pdo,array $booking,bool $del
     $oldEnd=(string)($existing['end_at_utc']??'');
     $meeting=video_meeting_sync_booking_v1800($pdo,$booking,$existing?'updated':'created');
     if(!$meeting)return null;
+    if(!empty($meeting['transcription_enabled'])&&function_exists('video_meeting_transcription_ensure_session_v1800'))video_meeting_transcription_ensure_session_v1800($pdo,$meeting);
 
     // The meeting sync writes the stable owner join URL back onto the canonical
     // booking. Re-load before updating Google/Microsoft so the same VP3 link is
