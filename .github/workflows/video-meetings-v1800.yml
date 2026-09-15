@@ -28,6 +28,7 @@ jobs:
         run: |
           php -l includes/video-meetings-v1800.php
           php -l includes/video-meetings-security-v1800.php
+          php -l includes/video-meetings-homeserver-v1801.php
           php -l includes/video-meetings-agent-v1800.php
           php -l includes/video-meetings-transcription-v1800.php
           php -l includes/video-meetings-reconcile-v1800.php
