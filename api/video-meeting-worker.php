@@ -12,23 +12,29 @@ $fail=static function(int $status,string $message): never {
     exit;
 };
 if($_SERVER['REQUEST_METHOD']!=='POST')$fail(405,'POST required.');
-$pdo=db();if(!$pdo||!video_meeting_transcription_schema_ready_v1800($pdo))$fail(503,'Meeting transcription is not ready.');
-$secret=video_meeting_worker_secret_v1800();if($secret==='')$fail(503,'Meeting worker authentication is not configured.');
-$authorization=trim((string)($_SERVER['HTTP_AUTHORIZATION']??$_SERVER['REDIRECT_HTTP_AUTHORIZATION']??''));
-$provided='';if(preg_match('/^Bearer\s+(.+)$/i',$authorization,$m))$provided=trim($m[1]);
-if($provided===''||!hash_equals($secret,$provided))$fail(401,'Meeting worker authentication failed.');
 
 $input=json_decode((string)file_get_contents('php://input'),true);if(!is_array($input))$fail(400,'JSON body required.');
-$publicId=strtolower(trim((string)($input['meeting']??'')));$meeting=video_meeting_by_public_id_v1800($pdo,$publicId);
-if(!$meeting)$fail(404,'Meeting not found.');
+$publicId=strtolower(trim((string)($input['meeting']??'')));
 $roomName=trim((string)($input['room_name']??''));
-if($roomName===''||!hash_equals((string)$meeting['room_name'],$roomName))$fail(403,'Meeting worker room binding failed.');
+if(!preg_match('/^[a-f0-9]{32}$/',$publicId)||$roomName==='')$fail(401,'Meeting worker authentication failed.');
+
+$authorization=trim((string)($_SERVER['HTTP_AUTHORIZATION']??$_SERVER['REDIRECT_HTTP_AUTHORIZATION']??''));
+$provided='';if(preg_match('/^Bearer\s+(.+)$/i',$authorization,$m))$provided=trim($m[1]);
+$secret=video_meeting_worker_secret_v1800();
+$globalAuthorized=$secret!==''&&$provided!==''&&hash_equals($secret,$provided);
+$homeserverAuthorized=!$globalAuthorized
+    &&function_exists('video_meeting_homeserver_callback_verify_v1850')
+    &&video_meeting_homeserver_callback_verify_v1850($publicId,$roomName,$provided);
+if(!$globalAuthorized&&!$homeserverAuthorized)$fail(401,'Meeting worker authentication failed.');
+if($homeserverAuthorized&&strtolower(trim((string)($input['source']??'')))!=='homeserver')$fail(403,'HomeServer transcript source binding failed.');
+
+$pdo=db();if(!$pdo||!video_meeting_transcription_schema_ready_v1800($pdo))$fail(503,'Meeting transcription is not ready.');
+$meeting=video_meeting_by_public_id_v1800($pdo,$publicId);if(!$meeting)$fail(404,'Meeting not found.');
+if(!hash_equals((string)$meeting['room_name'],$roomName))$fail(403,'Meeting worker room binding failed.');
 $status=(string)$meeting['status'];
-if(in_array($status,['cancelled','processed'],true))$fail(409,'Meeting is closed.');
+$legacyClosed=['cancelled','processed'];
+if(in_array($status,array_merge($legacyClosed,['no_show']),true))$fail(409,'Meeting is closed.');
 if($status==='ended'){
-    // LiveKit may deliver the final STT result just after the organizer ends the
-    // room. Accept that final flush briefly, but do not leave ended rooms open
-    // as indefinite transcript-write targets.
     $endedAt=strtotime((string)($meeting['ended_at']??'').' UTC')?:0;
     if($endedAt<1||time()-$endedAt>300)$fail(409,'Meeting transcript grace period has ended.');
 }

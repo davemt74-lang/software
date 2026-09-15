@@ -2,9 +2,9 @@
 declare(strict_types=1);
 
 /**
- * Dispatch the configured LiveKit Agent worker into a room. The worker name is
- * deployment routing metadata; the human-facing Agent name still comes from
- * VP3's existing user_agents identity system.
+ * Dispatch the configured meeting transcription runtime. LiveKit is the media
+ * transport; processing may use the existing cloud Agent worker or a paired
+ * HomeServer when the canonical privacy/readiness boundary selects it.
  */
 function video_meeting_livekit_twirp_v1800(array $meeting,string $method,array $payload): array
 {
@@ -31,9 +31,8 @@ function video_meeting_livekit_twirp_v1800(array $meeting,string $method,array $
 
 function video_meeting_agent_dispatch_metadata_v1800(PDO $pdo,array $meeting): string
 {
-    // LiveKit receives only the identifiers the worker actually needs. Internal
-    // VP3 user/Agent primary keys and other account metadata never need to
-    // leave VP3 Cloud just to route a meeting transcription worker.
+    // LiveKit receives only the identifiers the cloud worker actually needs.
+    // Internal VP3 user/Agent primary keys remain server-side.
     return json_encode([
         'vp3_meeting_public_id'=>(string)$meeting['public_id'],
         'room_name'=>(string)$meeting['room_name'],
@@ -48,10 +47,24 @@ function video_meeting_livekit_agent_dispatch_v1800(PDO $pdo,array $meeting): ar
     if($mode==='off')return ['ok'=>true,'dispatched'=>false,'reason'=>'agent_off'];
     if($mode==='notes'&&empty($meeting['transcription_enabled']))return ['ok'=>true,'dispatched'=>false,'reason'=>'transcription_off'];
 
-    // HomeServer-only compute and wrapper scopes that explicitly block cloud
-    // processing are hard privacy boundaries. Phase 18.1 recognizes those
-    // existing settings instead of silently routing live speech to cloud STT.
-    if(!empty($meeting['transcription_enabled'])&&function_exists('video_meeting_cloud_transcription_allowed_v1801')&&!video_meeting_cloud_transcription_allowed_v1801($pdo,$meeting)){
+    if(!empty($meeting['transcription_enabled'])&&function_exists('video_meeting_homeserver_runtime_status_v1840')){
+        $processing=video_meeting_homeserver_runtime_status_v1840($pdo,$meeting,true);
+        $route=(string)($processing['route']??'');$status=(string)($processing['status']??'');
+        if($route==='homeserver'&&$status==='ready'){
+            if(!function_exists('video_meeting_homeserver_transcription_execute_v1840')||!function_exists('video_meeting_homeserver_transcription_operation_v1850')){
+                return ['ok'=>false,'dispatched'=>false,'reason'=>'homeserver_dispatch_failed'];
+            }
+            $result=video_meeting_homeserver_transcription_execute_v1840(
+                $pdo,$meeting,video_meeting_homeserver_transcription_operation_v1850()
+            );
+            if(!empty($result['ok']))return $result;
+            // A private-route execution failure never falls through to cloud STT.
+            return ['ok'=>false,'dispatched'=>false,'reason'=>'homeserver_dispatch_failed'];
+        }
+        if($route!=='cloud'||$status!=='ready'){
+            return ['ok'=>true,'dispatched'=>false,'reason'=>'homeserver_private_processing_required'];
+        }
+    }elseif(!empty($meeting['transcription_enabled'])&&function_exists('video_meeting_cloud_transcription_allowed_v1801')&&!video_meeting_cloud_transcription_allowed_v1801($pdo,$meeting)){
         return ['ok'=>true,'dispatched'=>false,'reason'=>'homeserver_private_processing_required'];
     }
 
@@ -59,9 +72,8 @@ function video_meeting_livekit_agent_dispatch_v1800(PDO $pdo,array $meeting): ar
     if($worker==='')return ['ok'=>true,'dispatched'=>false,'reason'=>'agent_worker_not_configured'];
     if(!video_meeting_livekit_ready_v1800())return ['ok'=>false,'dispatched'=>false,'reason'=>'livekit_not_configured'];
 
-    // Explicit dispatch is idempotent from VP3's point of view. Ask LiveKit for
-    // current dispatches in the room first so reconnects do not spawn another
-    // copy of the user's Agent.
+    // Explicit cloud dispatch is idempotent from VP3's point of view. Ask
+    // LiveKit for current dispatches first so reconnects do not spawn duplicates.
     $listed=video_meeting_livekit_twirp_v1800($meeting,'ListDispatch',['room'=>(string)$meeting['room_name']]);
     if(!empty($listed['ok'])){
         $rows=(array)($listed['json']['agent_dispatches']??$listed['json']['agentDispatches']??[]);
