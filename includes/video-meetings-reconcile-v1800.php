@@ -7,6 +7,16 @@ declare(strict_types=1);
  * observes the authoritative booking rows and idempotently projects video-room
  * state, invitations and calendar links.
  */
+function video_meeting_booking_payment_pending_v1800(PDO $pdo,array $booking): bool
+{
+    $bookingId=(int)($booking['id']??0);if($bookingId<1)return false;
+    if(!function_exists('agent_paid_appointments_schema_ready_v800')||!agent_paid_appointments_schema_ready_v800($pdo)||!function_exists('agent_paid_appointments_paid_booking_for_booking_v800'))return false;
+    try{
+        $paid=agent_paid_appointments_paid_booking_for_booking_v800($pdo,$bookingId);
+        return is_array($paid)&&(string)($paid['payment_status']??'')==='awaiting_payment';
+    }catch(Throwable $e){return false;}
+}
+
 function video_meeting_reconcile_booking_v1800(PDO $pdo,array $booking,bool $deliverNewInvite=true): ?array
 {
     if(!video_meeting_schema_ready_v1800($pdo)||(int)($booking['id']??0)<1)return null;
@@ -21,6 +31,12 @@ function video_meeting_reconcile_booking_v1800(PDO $pdo,array $booking,bool $del
         }
         return $existing;
     }
+
+    // A paid appointment may reserve canonical Scheduling time before checkout
+    // settles. Do not create or deliver the media room until Commerce says the
+    // payment hold is no longer awaiting payment. Token minting has the same
+    // defense so a stale/preexisting room cannot bypass checkout.
+    if(video_meeting_booking_payment_pending_v1800($pdo,$booking)&&!$existing)return null;
 
     $oldStart=(string)($existing['start_at_utc']??'');
     $oldEnd=(string)($existing['end_at_utc']??'');
@@ -41,7 +57,7 @@ function video_meeting_reconcile_booking_v1800(PDO $pdo,array $booking,bool $del
     if(!$existing&&$deliverNewInvite){
         foreach($participants as $participant){
             if((string)$participant['role']!=='attendee')continue;
-            if(trim((string)$participant['email'])!=='')video_meeting_email_invitation_v1800($pdo,$meeting,$participant);
+            if(trim((string)$participant['email'])!=='')video_meeting_secure_invitation_email_v1800($pdo,$meeting,$participant);
         }
     }elseif($existing&&($oldStart!==(string)$meeting['start_at_utc']||$oldEnd!==(string)$meeting['end_at_utc'])){
         foreach($participants as $participant){
@@ -50,7 +66,7 @@ function video_meeting_reconcile_booking_v1800(PDO $pdo,array $booking,bool $del
             if($uid>0&&function_exists('create_notification')){
                 create_notification($uid,'video_meeting_changed','Video meeting updated',(string)$meeting['title'].' · '.(string)$meeting['start_at_utc'].' UTC',url('/meeting.php?meeting='.(string)$meeting['public_id']),'video_meeting_change',(int)$meeting['id']);
             }
-            if(trim((string)$participant['email'])!=='')video_meeting_email_invitation_v1800($pdo,$meeting,$participant,'Video meeting updated');
+            if(trim((string)$participant['email'])!=='')video_meeting_secure_invitation_email_v1800($pdo,$meeting,$participant,'Video meeting updated');
         }
     }
     return $meeting;
