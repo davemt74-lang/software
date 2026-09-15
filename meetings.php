@@ -3,7 +3,7 @@ declare(strict_types=1);
 require __DIR__.'/includes/bootstrap.php';
 require_permission('account.access');
 $pdo=db();$user=current_user();if(!$pdo||!$user)redirect(url('/login.php'));
-if(!video_meeting_schema_ready_v1800($pdo)||!video_meeting_transcription_schema_ready_v1800($pdo))redirect(url('/upgrade.php'));
+if(!video_meeting_schema_ready_v1800($pdo)||!video_meeting_transcription_schema_ready_v1800($pdo)||!video_meeting_external_calendar_schema_ready_v1801($pdo))redirect(url('/upgrade.php'));
 
 try{video_meeting_reconcile_recent_bookings_v1800($pdo,50);}catch(Throwable $ignored){}
 $userId=(int)$user['id'];$timezone=function_exists('user_calendar_default_timezone_v1300')?user_calendar_default_timezone_v1300($pdo,$user):'UTC';
@@ -38,6 +38,7 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
         if(!empty($meeting['transcription_enabled']))video_meeting_transcription_ensure_session_v1800($pdo,$meeting);
         foreach($parseInvitees((string)($_POST['invitees']??'')) as $invitee){
             $participant=video_meeting_add_participant_v1800($pdo,$meeting,$invitee,false);
+            video_meeting_external_calendar_sync_participant_v1801($pdo,$meeting,$participant);
             video_meeting_secure_invitation_email_v1800($pdo,$meeting,$participant);
         }
         if(function_exists('create_notification'))create_notification($userId,'video_meeting_scheduled','Video meeting scheduled',(string)$meeting['title'].' · '.(string)$meeting['start_at_utc'].' UTC',url('/meeting.php?meeting='.(string)$meeting['public_id']),'video_meeting',(int)$meeting['id']);
@@ -56,7 +57,7 @@ $serviceState=!$mediaReady?'LiveKit configuration required before joining':($age
 <main class="chat-main meetings-main"><?php $memberHeaderUser=$user;$memberHeaderTitle='Meetings';$memberHeaderSubtitle='Video meetings connected to Calendar, Scheduling, your Agent and follow-up.';$memberHeaderActions='<a class="meeting-secondary" href="'.e(url('/calendar.php')).'">Calendar</a>';require __DIR__.'/includes/member-header.php'; ?>
 <div class="meetings-canvas"><div class="meetings-inner">
 <?php if($error!==''): ?><div class="meeting-alert error" role="alert"><?= e($error) ?></div><?php endif; ?>
-<section class="meeting-create-card"><div class="meeting-section-copy"><span class="meeting-eyebrow">New video meeting</span><h2>Schedule a room around the work.</h2><p>Invite VP3 members or guests. Members receive a notification and VP3 calendar event; guests receive an email with a secure join link and calendar file.</p></div>
+<section class="meeting-create-card"><div class="meeting-section-copy"><span class="meeting-eyebrow">New video meeting</span><h2>Schedule a room around the work.</h2><p>Invite VP3 members or guests. Members receive a notification and VP3 calendar event, plus a projection to any writable connected Google or Microsoft calendar; guests receive an email with a secure join link and calendar file.</p></div>
 <form method="post" class="meeting-create-form"><?= csrf_field() ?>
 <label class="wide"><span>Meeting title</span><input name="title" maxlength="190" required value="<?= e((string)($_POST['title']??'')) ?>" placeholder="Project review"></label>
 <label><span>Starts</span><input type="datetime-local" name="start_local" required value="<?= e((string)($_POST['start_local']??$localDefault)) ?>"></label>
