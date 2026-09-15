@@ -3,7 +3,7 @@ declare(strict_types=1);
 require __DIR__.'/includes/bootstrap.php';
 require_permission('account.access');
 $pdo=db();$user=current_user();if(!$pdo||!$user)redirect(url('/login.php'));
-if(!video_meeting_schema_ready_v1800($pdo))redirect(url('/upgrade.php'));
+if(!video_meeting_schema_ready_v1800($pdo)||!video_meeting_transcription_schema_ready_v1800($pdo))redirect(url('/upgrade.php'));
 
 try{video_meeting_reconcile_recent_bookings_v1800($pdo,50);}catch(Throwable $ignored){}
 $userId=(int)$user['id'];$timezone=function_exists('user_calendar_default_timezone_v1300')?user_calendar_default_timezone_v1300($pdo,$user):'UTC';
@@ -35,32 +35,33 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
             'title'=>$title,'description'=>trim((string)($_POST['description']??'')),'start_at_utc'=>$startUtc->format('Y-m-d H:i:s'),'end_at_utc'=>$endUtc->format('Y-m-d H:i:s'),'timezone'=>$tz,
             'organizer_agent_id'=>(int)($_POST['organizer_agent_id']??$defaultAgentId),'agent_mode'=>(string)($_POST['agent_mode']??'notes'),'transcription_enabled'=>!empty($_POST['transcription_enabled']),'recording_enabled'=>false,
         ]);
+        if(!empty($meeting['transcription_enabled']))video_meeting_transcription_ensure_session_v1800($pdo,$meeting);
         foreach($parseInvitees((string)($_POST['invitees']??'')) as $invitee)video_meeting_add_participant_v1800($pdo,$meeting,$invitee,true);
         if(function_exists('create_notification'))create_notification($userId,'video_meeting_scheduled','Video meeting scheduled',(string)$meeting['title'].' · '.(string)$meeting['start_at_utc'].' UTC',url('/meeting.php?meeting='.(string)$meeting['public_id']),'video_meeting',(int)$meeting['id']);
         redirect(url('/meeting.php?meeting='.(string)$meeting['public_id'].'&created=1'));
     }catch(Throwable $e){$error=$e->getMessage();}
 }
 
-$meetings=video_meeting_recent_for_user_v1800($pdo,$userId,80);$now=time();
+$meetings=video_meeting_recent_for_user_v1800($pdo,$userId,80);
 $localDefault=(new DateTimeImmutable('+1 hour',new DateTimeZone($timezone)))->setTime((int)(new DateTimeImmutable('+1 hour',new DateTimeZone($timezone)))->format('H'),0)->format('Y-m-d\TH:i');
 ?>
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#f7f7f5"><title>Meetings | VP3</title><link rel="stylesheet" href="<?= e(url('/chat.css?v=82')) ?>"><link rel="stylesheet" href="<?= e(url('/video-meetings-v1800.css?v=1800')) ?>"></head>
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#f7f7f5"><title>Meetings | VP3</title><link rel="stylesheet" href="<?= e(url('/chat.css?v=82')) ?>"><link rel="stylesheet" href="<?= e(url('/video-meetings-v1800.css?v=1801')) ?>"></head>
 <body class="vp3-meetings-page"><div class="chat-app">
 <?php $workspaceSidebarUser=$user;$workspaceSidebarActive='meetings';require __DIR__.'/includes/workspace-sidebar-v82.php'; ?><div class="chat-sidebar-backdrop" id="chatSidebarBackdrop"></div>
 <main class="chat-main meetings-main"><?php $memberHeaderUser=$user;$memberHeaderTitle='Meetings';$memberHeaderSubtitle='Video meetings connected to Calendar, Scheduling, your Agent and follow-up.';$memberHeaderActions='<a class="meeting-secondary" href="'.e(url('/calendar.php')).'">Calendar</a>';require __DIR__.'/includes/member-header.php'; ?>
 <div class="meetings-canvas"><div class="meetings-inner">
 <?php if($error!==''): ?><div class="meeting-alert error" role="alert"><?= e($error) ?></div><?php endif; ?>
-<section class="meeting-create-card"><div class="meeting-section-copy"><span class="meeting-eyebrow">New video meeting</span><h2>Schedule a room around the work.</h2><p>Invite VP3 members or guests. Members receive a notification, email and VP3 calendar event; guests receive an email with a secure join link and calendar file.</p></div>
+<section class="meeting-create-card"><div class="meeting-section-copy"><span class="meeting-eyebrow">New video meeting</span><h2>Schedule a room around the work.</h2><p>Invite VP3 members or guests. Members receive a notification and VP3 calendar event; guests receive an email with a secure join link and calendar file.</p></div>
 <form method="post" class="meeting-create-form"><?= csrf_field() ?>
 <label class="wide"><span>Meeting title</span><input name="title" maxlength="190" required value="<?= e((string)($_POST['title']??'')) ?>" placeholder="Project review"></label>
 <label><span>Starts</span><input type="datetime-local" name="start_local" required value="<?= e((string)($_POST['start_local']??$localDefault)) ?>"></label>
 <label><span>Duration</span><select name="duration_minutes"><?php foreach([15,30,45,60,90,120] as $m): ?><option value="<?= $m ?>" <?= (int)($_POST['duration_minutes']??30)===$m?'selected':'' ?>><?= $m ?> minutes</option><?php endforeach; ?></select></label>
 <label class="wide"><span>Timezone</span><input name="timezone" value="<?= e((string)($_POST['timezone']??$timezone)) ?>" maxlength="80" required></label>
 <label><span>Meeting Agent</span><select name="organizer_agent_id"><option value="0">System Agent</option><?php foreach($agents as $agent): ?><option value="<?= (int)$agent['id'] ?>" <?= (int)($_POST['organizer_agent_id']??$defaultAgentId)===(int)$agent['id']?'selected':'' ?>><?= e((string)$agent['display_name']) ?></option><?php endforeach; ?></select></label>
-<label><span>Agent mode</span><select name="agent_mode"><?php foreach(['off'=>'Off','notes'=>'Notes','assistant'=>'Assistant'] as $key=>$label): ?><option value="<?= e($key) ?>" <?= (string)($_POST['agent_mode']??'notes')===$key?'selected':'' ?>><?= e($label) ?></option><?php endforeach; ?></select></label>
+<label><span>Agent mode</span><select name="agent_mode"><option value="notes" <?= (string)($_POST['agent_mode']??'notes')==='notes'?'selected':'' ?>>Notes + transcription</option><option value="off" <?= (string)($_POST['agent_mode']??'notes')==='off'?'selected':'' ?>>Off</option></select><small>Phase 18.0 is notes-first. Spoken Agent participation remains disabled until its separate approval and voice policy layer ships.</small></label>
 <label class="wide"><span>Invite participants</span><textarea name="invitees" rows="3" placeholder="sarah@example.com&#10;John Smith &lt;john@example.com&gt;"><?= e((string)($_POST['invitees']??'')) ?></textarea><small>One per line or comma-separated. Existing VP3 accounts are matched by email; no duplicate CRM contact is created.</small></label>
 <label class="wide"><span>Description / agenda</span><textarea name="description" rows="3" placeholder="What should everyone prepare or decide?"><?= e((string)($_POST['description']??'')) ?></textarea></label>
-<label class="meeting-check wide"><input type="checkbox" name="transcription_enabled" value="1" <?= !isset($_POST['transcription_enabled'])||!empty($_POST['transcription_enabled'])?'checked':'' ?>><span>Enable live transcript + AI Summary tools. Participants see this disclosure before joining.</span></label>
+<label class="meeting-check wide"><input type="checkbox" name="transcription_enabled" value="1" <?= !isset($_POST['transcription_enabled'])||!empty($_POST['transcription_enabled'])?'checked':'' ?>><span>Enable live transcript + existing VP3 transcription intelligence. Participants see this disclosure before joining.</span></label>
 <div class="meeting-form-actions wide"><span class="meeting-livekit-state <?= video_meeting_livekit_ready_v1800()?'ready':'setup' ?>"><?= video_meeting_livekit_ready_v1800()?'LiveKit ready':'LiveKit configuration required before joining' ?></span><button type="submit" class="meeting-primary">Schedule video meeting</button></div>
 </form></section>
 
