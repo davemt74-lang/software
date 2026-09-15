@@ -27,6 +27,15 @@ assert.match(memory,/objective_success_criteria/,'Verified success criteria must
 assert.match(memory,/remediation_lessons/,'Remediation should be retained as learning evidence');
 assert.doesNotMatch(memory,/INSERT INTO agent_objective_outcome_memory[^;]*(?:receipt|lease|approval_status|result_json)/is,'Derived memory must not persist canonical execution receipts, leases, approval decisions, or result payloads');
 
+// Privacy boundary: HomeServer/local execution detail stays out of Cloud learning memory.
+assert.match(memory,/agent_objective_memory_safe_instruction_v177/,'Objective memory needs an explicit private-execution minimization boundary');
+assert.match(memory,/if\(\$target==='homeserver'\)return agent_objective_text_v175\('HomeServer-scoped step: '\.\$title/,'HomeServer memory must retain only the Cloud-visible step label, not the full local instruction');
+assert.match(memory,/private_context_required/,'Learned templates must mark HomeServer steps as requiring private execution context');
+assert.match(memory,/HomeServer private execution context is never copied into objective memory/,'The memory template must document the HomeServer privacy boundary');
+assert.doesNotMatch(memory,/objective_verification_evidence/,'Phase 17.7 must not duplicate verification evidence into the learning table');
+assert.doesNotMatch(memory,/objective_verification_summary/,'Phase 17.7 must not duplicate verification narrative into the learning table');
+for(const summary of ['Objective achieved without remediation.','Objective achieved after targeted remediation.','Objective ended without verified achievement.'])assert.match(memory,new RegExp(summary.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')),`Outcome memory must use the generic summary: ${summary}`);
+
 assert.match(memory,/objective_verification_status='achieved'/,'Only verified achievements qualify as positive outcome memory');
 assert.match(memory,/status IN \('failed','cancelled'\)/,'Failed/cancelled objectives should be retained as negative evidence');
 assert.match(memory,/\$outcome==='failed'\?0\.20/,'Failed outcomes must be materially down-ranked');
