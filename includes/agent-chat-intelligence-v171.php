@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 const VP3_AGENT_CHAT_INTELLIGENCE_V171 = 'agent-chat-intelligence-v171-20260914';
+const VP3_AGENT_WORK_QUEUE_V172 = 'agent-work-queue-v172-20260914';
 
 function vp3_agent_chat_intelligence_text_v171(string $value, int $max = 160): string
 {
@@ -19,6 +20,131 @@ function vp3_agent_chat_intelligence_date_v171(string $value, string $timezone =
     } catch (Throwable $e) {
         return '';
     }
+}
+
+function vp3_agent_work_queue_lane_v172(array $row): string
+{
+    $status = strtolower(trim((string)($row['status'] ?? '')));
+    $approval = strtolower(trim((string)($row['approval_status'] ?? '')));
+    $nextAttempt = trim((string)($row['next_attempt_at'] ?? ''));
+    $nextAttemptTs = $nextAttempt !== '' ? (strtotime($nextAttempt) ?: 0) : 0;
+    $future = $nextAttemptTs > time() + 5;
+    $retrySignal = trim((string)($row['last_error_class'] ?? '')) !== ''
+        || str_contains(strtolower((string)($row['progress_message'] ?? '')), 'retry');
+
+    if ($status === 'completed') return 'completed';
+    if ($status === 'approval_pending' || $approval === 'pending') return 'approval';
+    if ($status === 'failed') return 'failed_retry';
+    if ($future && $retrySignal) return 'failed_retry';
+    if ($future) return 'scheduled';
+    if (in_array($status, ['queued', 'planning', 'approved', 'executing'], true)) return 'active';
+    return 'active';
+}
+
+function vp3_agent_work_queue_item_v172(array $row, string $lane, string $timezone): array
+{
+    $id = max(0, (int)($row['id'] ?? 0));
+    $title = vp3_agent_chat_intelligence_text_v171((string)($row['title'] ?? 'Agent work'), 96);
+    if ($title === '') $title = 'Agent work #' . $id;
+    $status = strtolower(trim((string)($row['status'] ?? 'queued'))) ?: 'queued';
+    $progress = max(0, min(100, (int)($row['progress_percent'] ?? 0)));
+    $message = vp3_agent_chat_intelligence_text_v171((string)($row['progress_message'] ?? ''), 120);
+    $next = vp3_agent_chat_intelligence_date_v171((string)($row['next_attempt_at'] ?? ''), $timezone);
+    $updated = vp3_agent_chat_intelligence_date_v171((string)($row['updated_at'] ?? ''), $timezone);
+    $attempts = max(0, (int)($row['attempt_count'] ?? 0));
+    $target = strtolower(trim((string)($row['execution_target'] ?? 'cloud'))) ?: 'cloud';
+    $error = vp3_agent_chat_intelligence_text_v171((string)($row['last_error_class'] ?? ''), 64);
+
+    $detail = match ($lane) {
+        'approval' => 'Waiting for your approval',
+        'scheduled' => $next !== '' ? 'Scheduled · ' . $next : 'Scheduled',
+        'failed_retry' => $status === 'failed'
+            ? ('Failed' . ($error !== '' ? ' · ' . $error : ''))
+            : ($next !== '' ? 'Retry · ' . $next : 'Retry scheduled'),
+        'completed' => $updated !== '' ? 'Completed · ' . $updated : 'Completed',
+        default => $status === 'executing'
+            ? ($progress > 0 ? 'Working · ' . $progress . '%' : 'Working now')
+            : ucfirst($status),
+    };
+    if ($message !== '' && $lane === 'active') $detail = $message . ($progress > 0 ? ' · ' . $progress . '%' : '');
+
+    $prompt = match ($lane) {
+        'approval' => 'Review pending workflow #' . $id . ' (' . $title . '). Explain the requested action, risk, permissions and expected result, then ask me whether I want to approve or cancel it. Do not execute before my explicit approval.',
+        'scheduled' => 'Show me the plan and timing for scheduled workflow #' . $id . ' (' . $title . '). Tell me what will happen, when it will run, and whether anything needs my attention first.',
+        'failed_retry' => 'Review failed or retrying workflow #' . $id . ' (' . $title . '). Diagnose the latest failure, tell me whether a retry is already scheduled, and recommend the safest next action.',
+        'completed' => 'Summarize completed workflow #' . $id . ' (' . $title . '), including the outcome, receipts or result evidence available, and any useful follow-up.',
+        default => 'Give me the live status of workflow #' . $id . ' (' . $title . '), including current step, progress, execution target and anything blocking completion.',
+    };
+
+    return [
+        'id'=>$id,
+        'title'=>$title,
+        'status'=>$status,
+        'detail'=>$detail,
+        'progress'=>$progress,
+        'attempts'=>$attempts,
+        'target'=>$target,
+        'prompt'=>$prompt,
+        'updated_at'=>$updated,
+        'next_attempt_at'=>$next,
+    ];
+}
+
+function vp3_agent_work_queue_model_v172(PDO $pdo, array $user, string $timezone = 'UTC'): array
+{
+    $uid = (int)($user['id'] ?? 0);
+    $empty = [
+        'available'=>false,
+        'build'=>VP3_AGENT_WORK_QUEUE_V172,
+        'counts'=>['active'=>0,'approval'=>0,'scheduled'=>0,'failed_retry'=>0,'completed'=>0],
+        'lanes'=>['active'=>[],'approval'=>[],'scheduled'=>[],'failed_retry'=>[],'completed'=>[]],
+    ];
+    if ($uid < 1 || !table_exists('agent_workflow_runs') || !column_exists('agent_workflow_runs', 'owner_user_id')) return $empty;
+
+    $hasNextAttempt = column_exists('agent_workflow_runs', 'next_attempt_at');
+    $hasProgress = column_exists('agent_workflow_runs', 'progress_message');
+    $retryExpr = $hasNextAttempt
+        ? "(status='failed' OR (status='approved' AND approval_status<>'pending' AND next_attempt_at>UTC_TIMESTAMP() AND (COALESCE(last_error_class,'')<>''" . ($hasProgress ? " OR LOWER(COALESCE(progress_message,'')) LIKE '%retry%'" : '') . ")))"
+        : "status='failed'";
+    $scheduledExpr = $hasNextAttempt
+        ? "(status='approved' AND approval_status<>'pending' AND next_attempt_at>UTC_TIMESTAMP() AND COALESCE(last_error_class,'')=''" . ($hasProgress ? " AND LOWER(COALESCE(progress_message,'')) NOT LIKE '%retry%'" : '') . ")"
+        : '0';
+    $activeExpr = $hasNextAttempt
+        ? "(approval_status<>'pending' AND (status IN ('queued','planning','executing') OR (status='approved' AND (next_attempt_at IS NULL OR next_attempt_at<=UTC_TIMESTAMP()))))"
+        : "(approval_status<>'pending' AND status IN ('queued','planning','approved','executing'))";
+
+    try {
+        $countSql = "SELECT "
+            . "SUM(CASE WHEN {$activeExpr} THEN 1 ELSE 0 END) active_count,"
+            . "SUM(CASE WHEN status='approval_pending' OR approval_status='pending' THEN 1 ELSE 0 END) approval_count,"
+            . "SUM(CASE WHEN {$scheduledExpr} THEN 1 ELSE 0 END) scheduled_count,"
+            . "SUM(CASE WHEN {$retryExpr} THEN 1 ELSE 0 END) failed_retry_count,"
+            . "SUM(CASE WHEN status='completed' THEN 1 ELSE 0 END) completed_count "
+            . "FROM agent_workflow_runs WHERE owner_user_id=? AND status<>'cancelled'";
+        $countStmt = $pdo->prepare($countSql);
+        $countStmt->execute([$uid]);
+        $counts = $countStmt->fetch() ?: [];
+        $empty['counts'] = [
+            'active'=>max(0, (int)($counts['active_count'] ?? 0)),
+            'approval'=>max(0, (int)($counts['approval_count'] ?? 0)),
+            'scheduled'=>max(0, (int)($counts['scheduled_count'] ?? 0)),
+            'failed_retry'=>max(0, (int)($counts['failed_retry_count'] ?? 0)),
+            'completed'=>max(0, (int)($counts['completed_count'] ?? 0)),
+        ];
+
+        $rowsStmt = $pdo->prepare("SELECT * FROM agent_workflow_runs WHERE owner_user_id=? AND status<>'cancelled' ORDER BY CASE status WHEN 'approval_pending' THEN 1 WHEN 'failed' THEN 2 WHEN 'executing' THEN 3 WHEN 'approved' THEN 4 WHEN 'planning' THEN 5 WHEN 'queued' THEN 6 WHEN 'completed' THEN 7 ELSE 8 END, updated_at DESC,id DESC LIMIT 200");
+        $rowsStmt->execute([$uid]);
+        foreach ($rowsStmt->fetchAll() ?: [] as $row) {
+            if (!is_array($row)) continue;
+            $lane = vp3_agent_work_queue_lane_v172($row);
+            if (!isset($empty['lanes'][$lane]) || count($empty['lanes'][$lane]) >= 6) continue;
+            $empty['lanes'][$lane][] = vp3_agent_work_queue_item_v172($row, $lane, $timezone);
+        }
+        $empty['available'] = true;
+    } catch (Throwable $e) {
+        return $empty;
+    }
+    return $empty;
 }
 
 function vp3_agent_chat_intelligence_model_v171(
@@ -41,6 +167,7 @@ function vp3_agent_chat_intelligence_model_v171(
         'knowledge_count'=>0,
         'homeserver'=>['state'=>'unpaired','label'=>'Not paired','paired'=>false,'connected'=>false],
         'attention_count'=>0,
+        'work_queue'=>[],
     ];
     if ($uid < 1) return $model;
 
@@ -120,6 +247,10 @@ function vp3_agent_chat_intelligence_model_v171(
         }
     } catch (Throwable $e) {}
 
+    $model['work_queue'] = vp3_agent_work_queue_model_v172($pdo, $user, (string)$model['timezone']);
+    $queueCounts = is_array($model['work_queue']['counts'] ?? null) ? $model['work_queue']['counts'] : [];
+    $model['workflow_approvals'] = max((int)$model['workflow_approvals'], (int)($queueCounts['approval'] ?? 0));
+
     $model['attention_count'] =
         (int)$model['unread_notifications']
         + (int)$model['workflow_approvals']
@@ -138,6 +269,62 @@ function vp3_agent_chat_intelligence_model_v171(
     return $model;
 }
 
+function vp3_agent_work_queue_render_v172(array $queue): string
+{
+    if (empty($queue['available'])) return '';
+    $counts = is_array($queue['counts'] ?? null) ? $queue['counts'] : [];
+    $lanes = is_array($queue['lanes'] ?? null) ? $queue['lanes'] : [];
+    $meta = [
+        'active'=>['label'=>'In progress','empty'=>'No work is running right now.'],
+        'approval'=>['label'=>'Waiting approval','empty'=>'No approvals are waiting.'],
+        'scheduled'=>['label'=>'Scheduled','empty'=>'No future work is scheduled.'],
+        'failed_retry'=>['label'=>'Failed / retry','empty'=>'No failed or retrying work.'],
+        'completed'=>['label'=>'Completed','empty'=>'No completed work yet.'],
+    ];
+    ob_start();
+    ?>
+    <style data-agent-work-queue-v172>
+      .chat-agent-work-queue{display:grid;gap:9px;padding:11px;border:1px solid #e5e7eb;border-radius:12px;background:#fbfcfd}.chat-agent-work-queue-head{display:flex;align-items:center;justify-content:space-between;gap:12px}.chat-agent-work-queue-title{display:grid;gap:2px}.chat-agent-work-queue-title small{color:#8a94a3;font-size:9px;font-weight:850;letter-spacing:.11em;text-transform:uppercase}.chat-agent-work-queue-title strong{font-size:12px}.chat-agent-work-queue-counts{display:flex;gap:5px;flex-wrap:wrap;justify-content:flex-end}.chat-agent-work-queue-counts span{padding:4px 7px;border:1px solid #e2e5e9;border-radius:999px;background:#fff;color:#667085;font-size:8.8px;font-weight:800}.chat-agent-work-queue-counts .warn{border-color:#f4c7c3;background:#fff5f4;color:#b42318}.chat-agent-work-queue-counts .attention{border-color:#f4d6a2;background:#fff9ee;color:#9a5a00}.chat-agent-work-queue-lanes{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:7px}.chat-agent-work-lane{min-width:0;padding:9px;border:1px solid #e8eaee;border-radius:9px;background:#fff}.chat-agent-work-lane>header{display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:6px}.chat-agent-work-lane>header strong{font-size:9.6px}.chat-agent-work-lane>header span{display:grid;min-width:18px;height:18px;place-items:center;border-radius:999px;background:#f1f3f5;color:#667085;font-size:8.5px;font-weight:850}.chat-agent-work-item{appearance:none;display:grid;width:100%;gap:3px;padding:7px 0;border:0;border-top:1px solid #f0f1f3;background:none;color:inherit;text-align:left;cursor:pointer}.chat-agent-work-item:first-of-type{border-top:0}.chat-agent-work-item:hover,.chat-agent-work-item:focus-visible{background:#f8f9fa;outline:0}.chat-agent-work-item strong{overflow:hidden;font-size:9.5px;text-overflow:ellipsis;white-space:nowrap}.chat-agent-work-item small{overflow:hidden;color:#8a94a3;font-size:8.4px;line-height:1.3;text-overflow:ellipsis;white-space:nowrap}.chat-agent-work-empty{margin:0;color:#98a2b3;font-size:8.8px;line-height:1.4}.chat-agent-work-more{margin-top:5px;color:#667085;font-size:8.3px;font-weight:800}.chat-agent-work-queue-foot{display:flex;align-items:center;justify-content:space-between;gap:8px;color:#8a94a3;font-size:8.8px}.chat-agent-work-queue-foot a{color:#667085;font-weight:800;text-decoration:none}@media(max-width:1080px){.chat-agent-work-queue-lanes{grid-template-columns:repeat(3,minmax(0,1fr))}}@media(max-width:760px){.chat-agent-work-queue-head{align-items:flex-start;flex-direction:column}.chat-agent-work-queue-counts{justify-content:flex-start}.chat-agent-work-queue-lanes{grid-template-columns:1fr}.chat-agent-work-lane{padding:10px}}
+    </style>
+    <section class="chat-agent-work-queue" data-agent-work-queue="<?= e(VP3_AGENT_WORK_QUEUE_V172) ?>" aria-label="Agent work queue">
+      <header class="chat-agent-work-queue-head">
+        <div class="chat-agent-work-queue-title"><small>Agent Work Queue</small><strong>What your Agent is doing, waiting on, and finishing</strong></div>
+        <div class="chat-agent-work-queue-counts" aria-label="Work queue counts">
+          <span><?= (int)($counts['active'] ?? 0) ?> active</span>
+          <span class="<?= (int)($counts['approval'] ?? 0) > 0 ? 'attention' : '' ?>"><?= (int)($counts['approval'] ?? 0) ?> approval</span>
+          <span><?= (int)($counts['scheduled'] ?? 0) ?> scheduled</span>
+          <span class="<?= (int)($counts['failed_retry'] ?? 0) > 0 ? 'warn' : '' ?>"><?= (int)($counts['failed_retry'] ?? 0) ?> failed/retry</span>
+          <span><?= (int)($counts['completed'] ?? 0) ?> completed</span>
+        </div>
+      </header>
+      <div class="chat-agent-work-queue-lanes">
+        <?php foreach ($meta as $key=>$laneMeta):
+            $items = is_array($lanes[$key] ?? null) ? $lanes[$key] : [];
+            $count = max(0, (int)($counts[$key] ?? 0));
+        ?>
+          <article class="chat-agent-work-lane" data-work-lane="<?= e($key) ?>">
+            <header><strong><?= e($laneMeta['label']) ?></strong><span><?= $count ?></span></header>
+            <?php if ($items): ?>
+              <?php foreach (array_slice($items, 0, 2) as $item): ?>
+                <button type="button" class="chat-agent-work-item" data-agent-intelligence-prompt="<?= e((string)($item['prompt'] ?? '')) ?>">
+                  <strong><?= e((string)($item['title'] ?? 'Agent work')) ?></strong>
+                  <small><?= e((string)($item['detail'] ?? '')) ?></small>
+                </button>
+              <?php endforeach; ?>
+              <?php if ($count > 2): ?><div class="chat-agent-work-more">+<?= $count - 2 ?> more</div><?php endif; ?>
+            <?php else: ?><p class="chat-agent-work-empty"><?= e($laneMeta['empty']) ?></p><?php endif; ?>
+          </article>
+        <?php endforeach; ?>
+      </div>
+      <footer class="chat-agent-work-queue-foot">
+        <span>Owner-scoped durable workflow state · no second job system</span>
+        <a href="<?= e(url('/agent-workflows.php')) ?>">Workflow history</a>
+      </footer>
+    </section>
+    <?php
+    return (string)ob_get_clean();
+}
+
 function vp3_agent_chat_intelligence_render_v171(array $model): string
 {
     $suggestions = is_array($model['suggestions'] ?? null) ? $model['suggestions'] : [];
@@ -147,6 +334,7 @@ function vp3_agent_chat_intelligence_render_v171(array $model): string
     $timezone = (string)($model['timezone'] ?? 'UTC');
     $activity = is_array($model['activity'] ?? null) ? $model['activity'] : [];
     $homeserver = is_array($model['homeserver'] ?? null) ? $model['homeserver'] : [];
+    $workQueue = is_array($model['work_queue'] ?? null) ? $model['work_queue'] : [];
 
     $primaryTitle = vp3_agent_chat_intelligence_text_v171((string)($primary['title'] ?? 'Best next move'), 110);
     $primaryReason = vp3_agent_chat_intelligence_text_v171((string)($primary['reason'] ?? ''), 180);
@@ -195,6 +383,8 @@ function vp3_agent_chat_intelligence_render_v171(array $model): string
           <?php endforeach; ?>
         </div>
         <?php endif; ?>
+
+        <?= vp3_agent_work_queue_render_v172($workQueue) ?>
 
         <div class="chat-agent-intelligence-grid">
           <article>
