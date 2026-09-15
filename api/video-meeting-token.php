@@ -21,8 +21,8 @@ if($user&&!verify_csrf())$fail(403,'Session expired. Refresh the meeting and try
 
 $publicId=strtolower(trim((string)($_POST['meeting']??'')));
 $invite=strtolower(trim((string)($_POST['invite']??'')));
-$access=video_meeting_access_v1800($pdo,$user,$publicId,$invite);
-if(!$access||!video_meeting_member_binding_allowed_v1800($user,$access))$fail(403,'This meeting invitation is not available to you.');
+$access=video_meeting_secure_access_v1800($pdo,$user,$publicId,$invite);
+if(!$access)$fail(403,'This meeting invitation is not available to you.');
 $meeting=$access['meeting'];$participant=$access['participant'];
 
 if(!in_array((string)$meeting['status'],['scheduled','ready','live'],true)){
@@ -41,6 +41,7 @@ if(!$user&&(int)$participant['user_id']<1&&$displayName!==(string)$participant['
 }
 
 try{
+    if(!empty($meeting['transcription_enabled']))video_meeting_transcription_ensure_session_v1800($pdo,$meeting);
     $identity=video_meeting_participant_identity_v1800($meeting,$participant);
     $token=video_meeting_livekit_participant_token_v1800($meeting,$identity,$displayName);
     $cfg=video_meeting_livekit_config_v1800();
