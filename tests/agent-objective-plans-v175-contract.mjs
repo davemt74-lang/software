@@ -32,6 +32,9 @@ assert.match(objective,/agent_objective_insert_dependency_v175\(\$pdo,\$uid,\$ru
 assert.match(objective,/agent_objective_insert_dependency_v175\(\$pdo,\$uid,\$parentId,\$childId,'objective'\)/,'The objective parent must wait for child workflows');
 assert.match(objective,/foreach\(\$allRuns as \$childId\)agent_objective_insert_dependency_v175/,'The objective parent must depend on every child run so remaining work is visible');
 assert.match(objective,/foreach\(\$stageRuns\[\$stage\] as \$runId\)foreach\(\$stageRuns\[\$stage-1\] as \$prerequisite\)/,'Every run in a stage must wait for the prior stage');
+assert.match(objective,/\$run=agent_workflow_row_v1400\(\$pdo,\$uid,\$runId\)/,'Dependency audit events must inspect the actual durable run state');
+assert.match(objective,/dependency_added',\$status,\$status/,'Dependency audit events must preserve the run’s real status');
+assert.doesNotMatch(objective,/approval_not_required','planning'/,'Objective audit history must not invent a planning transition that never occurred');
 
 assert.match(objective,/homeserver.*cloud|cloud.*homeserver/s,'Objective work must retain Cloud/HomeServer execution authority');
 assert.match(objective,/agent_work_delegate_v174/,'Objective delegation must reuse Phase 17.4 delegation');
@@ -50,7 +53,9 @@ assert.match(objective,/failed/,'Objective inspection must surface failed childr
 assert.match(objective,/paused/,'Objective inspection must surface paused children');
 
 for(const command of ['pause','resume','cancel','priority','delegate'])assert.match(objective,new RegExp(`agent_objective_${command}_v175`),`Objective plans must support ${command}`);
-assert.match(objective,/childOrdinal/,'Objective delegation must support targeting an individual child step');
+assert.match(objective,/agent_objective_extract_step_ordinal_v175/,'Objective delegation must parse a child step independently from the objective id and target');
+assert.match(objective,/step\\s\*#?\\s\*\\(\\d\+\\)/,'The advertised step-number syntax must remain recognized');
+assert.match(objective,/\(HomeServer\|Home Server\|Cloud\|VP3 Cloud\)/,'Objective delegation must independently parse the execution target');
 assert.match(objective,/agent_objective_state_v175/,'Objective Chat must expose objective status and blockers');
 assert.match(objective,/objective\.create/,'Objective creation must remain in the Agent tool audit log');
 assert.match(objective,/objective\.control/,'Objective controls must remain in the Agent tool audit log');
