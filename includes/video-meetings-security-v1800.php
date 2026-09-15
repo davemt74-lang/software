@@ -41,3 +41,15 @@ function video_meeting_secure_access_v1800(PDO $pdo,?array $user,string $publicI
     }
     return $access;
 }
+
+function video_meeting_secure_invitation_email_v1800(PDO $pdo,array $meeting,array $participant,string $prefix='Video meeting invitation'): bool
+{
+    $email=strtolower(trim((string)($participant['email']??'')));if(!filter_var($email,FILTER_VALIDATE_EMAIL))return false;
+    $owner=video_meeting_user_v1800($pdo,(int)$meeting['owner_user_id']);$ownerName=trim((string)($owner['display_name']??''))?:'VP3';
+    $memberBound=(int)($participant['user_id']??0)>0;
+    $body=$ownerName." invited you to a VP3 video meeting.\n\n".(string)$meeting['title']."\n".(string)$meeting['start_at_utc']." UTC\n\nJoin meeting:\n".video_meeting_invite_url_v1800($participant)."\n\nAdd to calendar:\n".video_meeting_ics_url_v1800($participant)."\n\n";
+    if($memberBound)$body.='This invitation is bound to your VP3 account. Sign in with '.$email.' before opening the meeting link.';
+    else $body.='You do not need a VP3 account to use this guest invitation link. Keep the link private because it grants meeting access.';
+    if(function_exists('agent_appointment_lifecycle_email_v700'))return agent_appointment_lifecycle_email_v700($email,$prefix.': '.(string)$meeting['title'],$body);
+    return false;
+}
