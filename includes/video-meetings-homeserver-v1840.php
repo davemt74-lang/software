@@ -46,11 +46,13 @@ function video_meeting_homeserver_owner_probe_allowed_v1840(array $meeting): boo
  */
 function video_meeting_homeserver_runtime_status_v1840(PDO $pdo,array $meeting,bool $forceRefresh=false): array
 {
+    // Missing privacy/routing policy is not permission to use cloud compute.
+    // Fail unresolved so no caller can silently weaken the HomeServer boundary.
     $policy=function_exists('video_meeting_homeserver_policy_v1801')
         ?video_meeting_homeserver_policy_v1801($pdo,$meeting,$forceRefresh)
         :[
-            'policy_resolved'=>true,'requested_compute'=>'auto','cloud_processing_allowed'=>true,
-            'cloud_block_reason'=>'','reason'=>'compatibility','available'=>false,
+            'policy_resolved'=>false,'requested_compute'=>'auto','cloud_processing_allowed'=>false,
+            'cloud_block_reason'=>'policy_unavailable','reason'=>'policy_unavailable','available'=>false,
             'local_transcription_advertised'=>false,'local_transcription_operation'=>'',
         ];
 
