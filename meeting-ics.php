@@ -2,8 +2,9 @@
 declare(strict_types=1);
 require __DIR__.'/includes/bootstrap.php';
 
-$pdo=db();$invite=strtolower(trim((string)($_GET['invite']??'')));$participant=$pdo?video_meeting_participant_by_invite_v1800($pdo,$invite):null;
-$meeting=$participant&&$pdo?video_meeting_row_v1800($pdo,(int)$participant['meeting_id']):null;
+$pdo=db();$invite=strtolower(trim((string)($_GET['invite']??'')));$user=current_user();
+$access=$pdo?video_meeting_secure_access_v1800($pdo,$user,'',$invite):null;
+$participant=$access['participant']??null;$meeting=$access['meeting']??null;
 if(!$participant||!$meeting){http_response_code(404);exit('Meeting invitation not found.');}
 
 $escape=static function(string $value): string {
@@ -20,4 +21,5 @@ $ics="BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//VP3//Video Meetings//EN\r\nCAL
 header('Content-Type: text/calendar; charset=utf-8');
 header('Content-Disposition: attachment; filename="vp3-meeting.ics"');
 header('Cache-Control: private, no-store');
+header('Referrer-Policy: no-referrer');
 echo $ics;
