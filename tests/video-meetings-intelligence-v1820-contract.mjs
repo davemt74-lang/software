@@ -47,7 +47,7 @@ assert.ok(!intelJs.includes('api.anthropic.com'));
 
 // Private meeting intelligence is owner-only at the API boundary, not merely
 // hidden by browser UI. Every mutation also carries canonical meeting access + CSRF.
-assert.ok(api.includes("REQUEST_METHOD']!=='POST'"));
+assert.ok(api.includes("REQUEST_METHOD']??'')!=='POST'"));
 assert.ok(api.includes('current_user()'));
 assert.ok(api.includes('verify_csrf()'));
 assert.ok(api.includes('video_meeting_secure_access_v1800'));
