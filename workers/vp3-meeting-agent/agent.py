@@ -10,7 +10,7 @@ import urllib.error
 import urllib.request
 from typing import Any
 
-from livekit import agents, rtc
+from livekit import rtc
 from livekit.agents import AgentServer, AutoSubscribe, JobContext, cli, inference, stt
 
 logger = logging.getLogger("vp3-meeting-agent")
@@ -112,18 +112,23 @@ async def _transcribe_track(
         finally:
             await speech_stream.aclose()
 
+    result_task = asyncio.create_task(consume_results())
     try:
-        async with asyncio.TaskGroup() as group:
-            result_task = group.create_task(consume_results())
-            async for audio_event in audio_stream:
-                speech_stream.push_frame(audio_event.frame)
-            speech_stream.end_input()
-            await result_task
+        async for audio_event in audio_stream:
+            speech_stream.push_frame(audio_event.frame)
+        speech_stream.end_input()
+        await result_task
     except asyncio.CancelledError:
         speech_stream.end_input()
+        if not result_task.done():
+            result_task.cancel()
+        await asyncio.gather(result_task, return_exceptions=True)
         raise
     except Exception:
         logger.exception("Meeting audio transcription failed for participant %s", participant.identity)
+        if not result_task.done():
+            result_task.cancel()
+        await asyncio.gather(result_task, return_exceptions=True)
     finally:
         await audio_stream.aclose()
 
