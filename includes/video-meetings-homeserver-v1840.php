@@ -107,6 +107,9 @@ function video_meeting_homeserver_runtime_status_v1840(PDO $pdo,array $meeting,b
     $state['homeserver_available']=$registryAvailable;
     $state['capability_advertised']=!empty($policy['local_transcription_advertised'])&&$operation!=='';
 
+    // Deliberately require a concrete meeting executor, not merely generic
+    // relay transport. The executor's deployability check must also pass for the
+    // exact advertised operation before HomeServer processing can report ready.
     $executorFunction=function_exists('video_meeting_homeserver_transcription_execute_v1840');
     $executorDeployable=$executorFunction;
     if($executorDeployable&&function_exists('video_meeting_homeserver_transcription_executor_available_v1850')){
