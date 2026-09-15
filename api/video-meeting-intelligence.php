@@ -68,6 +68,11 @@ try{
         $reply(true,['state'=>$state]);
     }
     if($action==='handoff'){
+        if(!in_array((string)$meeting['status'],['ended','processed'],true))throw new RuntimeException('End the meeting before publishing final intelligence to Agent Chat.');
+        $review=video_meeting_intelligence_public_state_v1820($pdo,$meeting);
+        if(empty($review['final_analysis_at'])||!empty($review['final_analysis_due'])){
+            throw new RuntimeException('Finalize and review the current meeting intelligence before sending it to Agent Chat.');
+        }
         $result=video_meeting_intelligence_handoff_v1820($pdo,$meeting,$user);
         $reply(true,['handoff'=>$result,'state'=>video_meeting_intelligence_public_state_v1820($pdo,$meeting)]);
     }
