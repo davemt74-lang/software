@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 const control = fs.readFileSync('includes/agent-work-control-v173.php','utf8');
 const engine = fs.readFileSync('includes/agent-job-engine-v1900.php','utf8');
 const api = fs.readFileSync('api/agent-workflow-runs-v1400.php','utf8');
+const canonicalChat = fs.readFileSync('api/chat-v236.php','utf8');
 const sharedChat = fs.readFileSync('includes/release-chat-v105.php','utf8');
 const queue = fs.readFileSync('includes/agent-chat-intelligence-v171.php','utf8');
 const upgrade = fs.readFileSync('agent-work-control-upgrade-v173.php','utf8');
@@ -41,8 +42,10 @@ for (const action of ['pause','resume','reschedule','priority']) {
 assert.match(api,/csrf_token/,'Workflow control API must keep CSRF protection');
 assert.match(api,/agent_work_control_public_run_v173/,'Workflow API must expose control state through the canonical run representation');
 
-assert.match(sharedChat,/agent_work_control_chat_v173/,'Canonical and fallback Chat must share one Agent Work Control tool boundary');
-assert.ok(sharedChat.indexOf('agent_work_control_chat_v173') < sharedChat.indexOf('release_v105_schema_ready'), 'Work Control must run before release-specific tool routing');
+assert.match(canonicalChat,/agent_work_control_chat_v173/,'Canonical Agent Chat must invoke Work Control directly');
+assert.ok(canonicalChat.indexOf('agent_work_control_chat_v173($query') < canonicalChat.indexOf('user_calendar_agent_query_v1300($query'), 'Work Control must run before Calendar intent routing in canonical Agent Chat');
+assert.match(sharedChat,/agent_work_control_chat_v173/,'Fallback Chat must share the same Agent Work Control boundary');
+assert.ok(sharedChat.indexOf('agent_work_control_chat_v173') < sharedChat.indexOf('release_v105_schema_ready'), 'Fallback Work Control must run before release-specific tool routing');
 
 assert.match(queue,/'paused'/,'Agent Chat Work Queue must expose a paused lane');
 assert.match(queue,/data-agent-work-control=/,'Agent Chat must expose the Phase 17.3 control marker');
