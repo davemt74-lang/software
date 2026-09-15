@@ -80,6 +80,9 @@ try{
             else{$processingStatus['route']='private_required';$processingStatus['status']='private_required';$processingStatus['homeserver_required']=true;}
         }
     }
+    // Preserve the established scalar processing_route response while the new
+    // sanitized v18.4 object carries richer readiness detail.
+    $processingRoute=(string)$processingStatus['route'];
 
     echo json_encode([
         'ok'=>true,
@@ -89,7 +92,7 @@ try{
         'meeting'=>[
             'public_id'=>(string)$meeting['public_id'],'title'=>(string)$meeting['title'],'status'=>(string)$meeting['status'],
             'agent_mode'=>(string)$meeting['agent_mode'],'transcription_enabled'=>!empty($meeting['transcription_enabled']),
-            'recording_enabled'=>!empty($meeting['recording_enabled']),'processing_route'=>(string)$processingStatus['route'],
+            'recording_enabled'=>!empty($meeting['recording_enabled']),'processing_route'=>$processingRoute,
             'processing_status'=>$processingStatus,
         ],
         'agent'=>['name'=>video_meeting_agent_name_v1800($pdo,$meeting),'mode'=>(string)$meeting['agent_mode']],
