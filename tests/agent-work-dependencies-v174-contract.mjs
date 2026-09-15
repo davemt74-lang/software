@@ -5,6 +5,7 @@ const deps=fs.readFileSync('includes/agent-work-dependencies-v174.php','utf8');
 const engine=fs.readFileSync('includes/agent-job-engine-v1900.php','utf8');
 const shared=fs.readFileSync('includes/release-chat-v105.php','utf8');
 const api=fs.readFileSync('api/agent-workflow-runs-v1400.php','utf8');
+const queue=fs.readFileSync('includes/agent-chat-intelligence-v171.php','utf8');
 const upgrade=fs.readFileSync('agent-work-dependencies-upgrade-v174.php','utf8');
 const migration=fs.readFileSync('upgrade-agent-work-dependencies-v174.sql','utf8');
 
@@ -37,6 +38,15 @@ assert.ok(shared.indexOf('agent_work_dependencies_chat_v174') < shared.indexOf('
 for(const action of ['delegate','add_dependency','remove_dependency'])assert.match(api,new RegExp(`'${action}'`),`Workflow API must expose ${action}`);
 assert.match(api,/csrf_token/,'Workflow mutation API must preserve CSRF protection');
 assert.match(api,/agent_work_dependencies_state_v174/,'Workflow API must expose blockers and dependencies through the canonical run representation');
+
+assert.match(queue,/VP3_AGENT_WORK_DEPENDENCIES_UI_V174/,'Agent Chat queue needs a Phase 17.4 UI marker');
+assert.match(queue,/return 'blocked'/,'Blocked dependencies must be a first-class queue lane');
+assert.match(queue,/'blocked'=>\['label'=>'Blocked'/,'Agent Chat must render the blocked lane directly in the existing Work Queue');
+assert.match(queue,/data-agent-work-dependencies/,'The existing Work Queue must advertise dependency capability without a second dashboard');
+assert.match(queue,/NOT \(\{\$blockedExpr\}\)/,'Blocked work must not be double-counted as active or scheduled');
+assert.match(queue,/workflow_blocked/,'Blocked workflows must contribute to Agent Brief attention');
+assert.match(queue,/delegate workflow #15 to HomeServer/,'Queue help must teach conversational delegation');
+assert.match(queue,/show dependencies for workflow #15/,'Queue help must teach blocker inspection');
 
 assert.match(upgrade,/agent_work_dependencies_ensure_schema_v174/,'The admin upgrade must install Phase 17.4 idempotently');
 assert.match(upgrade,/require_permission\('users\.manage'\)/,'Only an administrator may run the Phase 17.4 schema upgrade');
