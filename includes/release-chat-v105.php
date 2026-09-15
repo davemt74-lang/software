@@ -4,6 +4,7 @@ require_once __DIR__.'/agent-work-control-v173.php';
 require_once __DIR__.'/agent-work-dependencies-v174.php';
 require_once __DIR__.'/agent-objective-plans-v175.php';
 require_once __DIR__.'/agent-objective-memory-v177.php';
+require_once __DIR__.'/agent-proactive-objectives-v178.php';
 
 function release_v105_chat_intent(string $query): bool
 {
@@ -27,6 +28,12 @@ function chat_account_state_intent_v241(string $query): bool
 function release_v105_chat_tool(string $query,array $user,int $conversationId=0): array
 {
     $empty=['handled'=>false,'answer'=>'','stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[]];
+
+    // Phase 17.8 owns explicit proactive-objective proposal language. A proposal
+    // remains advisory until the user explicitly accepts it, at which point a
+    // fresh Phase 17.5 objective is created under current safety boundaries.
+    $proactiveObjective=agent_proactive_objective_chat_v178($query,$user,$conversationId);
+    if(!empty($proactiveObjective['handled']))return $proactiveObjective;
 
     // Phase 17.7 owns explicit learned-objective lookup/reuse language. Reuse
     // always creates fresh Phase 17.5 workflows; it never replays receipts,
@@ -128,6 +135,31 @@ function chat_generate_answer_v105(string $query,array $history,array $user,arra
         }
     }
 
+    // Phase 17.8 can proactively surface one high-confidence objective without
+    // creating it. The nudge is rate-limited through the existing proactive
+    // event ledger and remains advisory until explicit Agent Chat acceptance.
+    $proactiveObjectiveNudge='';
+    try{
+        $pdo=db();$uid=(int)($user['id']??0);
+        if($pdo instanceof PDO&&$uid>0&&agent_proactive_objective_ready_v178($pdo)){
+            $objectiveContext=['unread_notifications'=>function_exists('notification_unread_count')?max(0,(int)notification_unread_count($user)):0,'knowledge_count'=>0];
+            if(table_exists('knowledge_items')){try{$stmt=$pdo->prepare("SELECT COUNT(*) FROM knowledge_items WHERE created_by_user_id=? AND knowledge_scope='personal'");$stmt->execute([$uid]);$objectiveContext['knowledge_count']=max(0,(int)$stmt->fetchColumn());}catch(Throwable $e){}}
+            $proposals=agent_proactive_objectives_v178($pdo,$user,[],$objectiveContext,false);
+            if($proposals){
+                $proposal=$proposals[0];
+                $context[]=['source'=>'agent:proactive-objective:'.(string)$proposal['token'],'title'=>'Proactive objective proposal','text'=>agent_proactive_objective_answer_v178($proposal,false)];
+                $latest=agent_proactive_objective_event_v178($pdo,$uid,(string)$proposal['token']);
+                $shownRecently=is_array($latest)&&(string)($latest['event_type']??'')==='shown'&&(strtotime((string)($latest['created_at']??''))?:0)>=time()-(VP3_AGENT_PROACTIVE_OBJECTIVE_SHOWN_TTL_HOURS_V178*3600);
+                $controlQuery=(bool)preg_match('/\b(?:objective|proposal|workflow|approve|approval|cancel|dismiss|pause|resume|retry)\b/i',$query);
+                if(!$shownRecently&&!$controlQuery&&(float)($proposal['score']??0)>=0.88){
+                    agent_proactive_objective_record_shown_v178($pdo,$user,$proposal);
+                    $proactiveObjectiveNudge='I also see a high-confidence multi-step objective worth considering: “'.agent_proactive_objective_text_v178((string)$proposal['title'],140).'”. Say “show proposed objective '.(string)$proposal['token'].'” to review the plan. Nothing will run unless you accept it.';
+                }
+            }
+        }
+    }catch(Throwable $e){}
+
     $context=array_slice($context,0,32);$answer=chat_remote_answer($query,$history,$context,$user);if($answer===null)$answer=chat_local_answer($query,$context);
+    if($proactiveObjectiveNudge!=='')$answer=rtrim((string)$answer)."\n\n".$proactiveObjectiveNudge;
     return ['answer'=>$answer,'context'=>$context];
 }
