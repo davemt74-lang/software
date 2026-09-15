@@ -158,9 +158,11 @@ function video_meeting_homeserver_public_policy_v1801(PDO $pdo,array $meeting): 
 /**
  * Resolve the processing policy for a canonical transcription session that was
  * created by Video Meetings. Non-meeting transcripts return null and keep their
- * existing transcription-intelligence behavior unchanged.
+ * existing transcription-intelligence behavior unchanged. Status reads may use
+ * cached HomeServer scope; a cloud-AI execution guard refreshes it immediately
+ * before sending any private meeting material to a cloud provider.
  */
-function video_meeting_transcription_ai_policy_v1801(PDO $pdo,array $user,array $session): ?array
+function video_meeting_transcription_ai_policy_v1801(PDO $pdo,array $user,array $session,bool $forceRefresh=false): ?array
 {
     $metadata=json_decode((string)($session['metadata_json']??''),true);
     if(!is_array($metadata)||(string)($metadata['capture_mode']??'')!=='vp3_video_meeting')return null;
@@ -177,7 +179,7 @@ function video_meeting_transcription_ai_policy_v1801(PDO $pdo,array $user,array 
         return ['is_meeting'=>true,'cloud_ai_allowed'=>false,'policy_resolved'=>true,'reason'=>'meeting_binding_unavailable','requested_compute'=>'unknown','local_compute_available'=>false];
     }
 
-    $state=video_meeting_homeserver_policy_v1801($pdo,$meeting,true);
+    $state=video_meeting_homeserver_policy_v1801($pdo,$meeting,$forceRefresh);
     return [
         'is_meeting'=>true,
         'meeting_id'=>(int)$meeting['id'],
@@ -192,7 +194,7 @@ function video_meeting_transcription_ai_policy_v1801(PDO $pdo,array $user,array 
 
 function video_meeting_transcription_assert_cloud_ai_v1801(PDO $pdo,array $user,array $session): ?array
 {
-    $policy=video_meeting_transcription_ai_policy_v1801($pdo,$user,$session);
+    $policy=video_meeting_transcription_ai_policy_v1801($pdo,$user,$session,true);
     if($policy===null)return null;
     if(!empty($policy['cloud_ai_allowed']))return $policy;
 
