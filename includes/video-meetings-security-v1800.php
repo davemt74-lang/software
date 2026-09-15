@@ -53,11 +53,12 @@ function video_meeting_public_origin_v1801(): string
     $base=rtrim(trim((string)($config['site']['base_url']??'')),'/');
     if($base!==''){
         $parts=parse_url($base);
-        $scheme=strtolower((string)($parts['scheme']??''));$host=(string)($parts['host']??'');
-        if(!in_array($scheme,['http','https'],true)||$host===''||isset($parts['user'])||isset($parts['pass'])||isset($parts['query'])||isset($parts['fragment'])){
-            throw new RuntimeException('VP3 site.base_url is invalid. Configure the canonical public origin before sending meeting invitations.');
+        $scheme=strtolower((string)($parts['scheme']??''));$host=(string)($parts['host']??'');$path=(string)($parts['path']??'');
+        if(!in_array($scheme,['http','https'],true)||$host===''||($path!==''&&$path!=='/')||isset($parts['user'])||isset($parts['pass'])||isset($parts['query'])||isset($parts['fragment'])){
+            throw new RuntimeException('VP3 site.base_url is invalid. Configure a root canonical public origin before sending meeting invitations.');
         }
-        return $base;
+        $port=isset($parts['port'])?':'.(int)$parts['port']:'';
+        return $scheme.'://'.$host.$port;
     }
 
     $host=strtolower(trim((string)($_SERVER['HTTP_HOST']??'')));
