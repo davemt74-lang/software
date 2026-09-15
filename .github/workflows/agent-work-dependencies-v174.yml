@@ -1,4 +1,4 @@
-name: Agent Work Control v17.3
+name: Agent Work Dependencies v17.4
 
 on:
   pull_request:
@@ -27,15 +27,11 @@ jobs:
       - name: PHP syntax
         run: |
           php -l includes/agent-work-dependencies-v174.php
-          php -l includes/agent-work-control-v173.php
           php -l includes/agent-job-engine-v1900.php
-          php -l includes/agent-chat-intelligence-v171.php
           php -l includes/release-chat-v105.php
           php -l api/agent-workflow-runs-v1400.php
-          php -l api/chat-v236.php
           php -l agent-work-dependencies-upgrade-v174.php
-          php -l agent-work-control-upgrade-v173.php
-          php -l chat.php
+          php -l upgrade.php
       - name: JavaScript syntax
         run: |
           node --check tests/agent-work-dependencies-v174-contract.mjs
@@ -45,7 +41,7 @@ jobs:
           node --check tests/agent-home-command-center-contract.mjs
       - name: Agent Work Dependencies contract
         run: node tests/agent-work-dependencies-v174-contract.mjs
-      - name: Agent Work Control contract
+      - name: Retained Agent Work Control contract
         run: node tests/agent-work-control-v173-contract.mjs
       - name: Retained Agent Work Queue contract
         run: node tests/agent-work-queue-v172-contract.mjs

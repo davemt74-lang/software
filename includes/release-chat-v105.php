@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 require_once __DIR__.'/agent-work-control-v173.php';
+require_once __DIR__.'/agent-work-dependencies-v174.php';
 
 function release_v105_chat_intent(string $query): bool
 {
@@ -24,6 +25,12 @@ function chat_account_state_intent_v241(string $query): bool
 function release_v105_chat_tool(string $query,array $user,int $conversationId=0): array
 {
     $empty=['handled'=>false,'answer'=>'','stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[]];
+
+    // Phase 17.4 runs before generic release/tool routing. It owns only explicit
+    // workflow dependency/delegation language and leaves all execution to the
+    // existing Phase 19 durable claimant.
+    $workDependencies=agent_work_dependencies_chat_v174($query,$user,$conversationId);
+    if(!empty($workDependencies['handled']))return $workDependencies;
 
     // Phase 17.3: both canonical Agent Chat and fallback Chat already pass
     // through this shared boundary before their generic tool executors. Work

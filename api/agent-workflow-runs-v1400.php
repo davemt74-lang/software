@@ -4,6 +4,7 @@ require dirname(__DIR__) . '/includes/bootstrap.php';
 require_once dirname(__DIR__) . '/includes/agent-workflow-runs-v1400.php';
 require_once dirname(__DIR__) . '/includes/agent-job-engine-v1900.php';
 require_once dirname(__DIR__) . '/includes/agent-work-control-v173.php';
+require_once dirname(__DIR__) . '/includes/agent-work-dependencies-v174.php';
 require_once dirname(__DIR__) . '/includes/agent-worker-runtime-v1910.php';
 header('Content-Type: application/json; charset=UTF-8');
 header('Cache-Control: no-store');
@@ -14,22 +15,22 @@ if(!$pdo||!agent_workflow_schema_ready_v1400($pdo)){http_response_code(503);echo
 
 try{
     if($_SERVER['REQUEST_METHOD']==='GET'){
-        $runId=max(0,(int)($_GET['id']??0));$durable=agent_job_engine_schema_ready_v1900($pdo);$control=$durable&&agent_work_control_schema_ready_v173($pdo);
+        $runId=max(0,(int)($_GET['id']??0));$durable=agent_job_engine_schema_ready_v1900($pdo);$control=$durable&&agent_work_control_schema_ready_v173($pdo);$dependencies=$control&&agent_work_dependencies_schema_ready_v174($pdo);
         $workers=$durable?agent_worker_runtime_summary_v1910($pdo,$user):['build'=>'','workers'=>[]];
         if($runId>0){
             $row=agent_workflow_row_v1400($pdo,(int)$user['id'],$runId);
             if(!$row){http_response_code(404);echo json_encode(['ok'=>false,'error'=>'Workflow not found.']);exit;}
-            $run=$control?agent_work_control_public_run_v173($pdo,$row,true):($durable?agent_job_public_run_v1900($pdo,$row,true):agent_workflow_public_run_v1400($pdo,$row,true));
-            echo json_encode(['ok'=>true,'run'=>$run,'workers'=>$workers,'build'=>$control?VP3_AGENT_WORK_CONTROL_V173:($durable?VP3_AGENT_JOB_ENGINE_V1900:VP3_AGENT_WORKFLOW_RUNS_V1400)],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);exit;
+            $run=$dependencies?agent_work_dependencies_state_v174($pdo,$user,$runId,true):($control?agent_work_control_public_run_v173($pdo,$row,true):($durable?agent_job_public_run_v1900($pdo,$row,true):agent_workflow_public_run_v1400($pdo,$row,true)));
+            echo json_encode(['ok'=>true,'run'=>$run,'workers'=>$workers,'build'=>$dependencies?VP3_AGENT_WORK_DEPENDENCIES_V174:($control?VP3_AGENT_WORK_CONTROL_V173:($durable?VP3_AGENT_JOB_ENGINE_V1900:VP3_AGENT_WORKFLOW_RUNS_V1400))],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);exit;
         }
         $limit=max(1,min(50,(int)($_GET['limit']??20)));$runs=[];
-        foreach(agent_workflow_recent_v1400($pdo,$user,$limit) as $row)$runs[]=$control?agent_work_control_public_run_v173($pdo,$row,false):($durable?agent_job_public_run_v1900($pdo,$row,false):agent_workflow_public_run_v1400($pdo,$row,false));
-        echo json_encode(['ok'=>true,'runs'=>$runs,'workers'=>$workers,'build'=>$control?VP3_AGENT_WORK_CONTROL_V173:($durable?VP3_AGENT_JOB_ENGINE_V1900:VP3_AGENT_WORKFLOW_RUNS_V1400)],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);exit;
+        foreach(agent_workflow_recent_v1400($pdo,$user,$limit) as $row){$id=(int)($row['id']??0);$runs[]=$dependencies?agent_work_dependencies_state_v174($pdo,$user,$id,false):($control?agent_work_control_public_run_v173($pdo,$row,false):($durable?agent_job_public_run_v1900($pdo,$row,false):agent_workflow_public_run_v1400($pdo,$row,false)));}
+        echo json_encode(['ok'=>true,'runs'=>$runs,'workers'=>$workers,'build'=>$dependencies?VP3_AGENT_WORK_DEPENDENCIES_V174:($control?VP3_AGENT_WORK_CONTROL_V173:($durable?VP3_AGENT_JOB_ENGINE_V1900:VP3_AGENT_WORKFLOW_RUNS_V1400))],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);exit;
     }
     if($_SERVER['REQUEST_METHOD']!=='POST'){http_response_code(405);echo json_encode(['ok'=>false,'error'=>'Method not allowed.']);exit;}
     $input=json_decode((string)file_get_contents('php://input'),true);if(!is_array($input))$input=$_POST;
     $csrf=(string)($input['csrf_token']??'');if($csrf===''||!hash_equals(csrf_token(),$csrf)){http_response_code(419);echo json_encode(['ok'=>false,'error'=>'Session expired. Refresh the page and try again.']);exit;}
-    $action=trim((string)($input['action']??''));$run=null;$durable=agent_job_engine_schema_ready_v1900($pdo);$control=$durable&&agent_work_control_schema_ready_v173($pdo);$runId=(int)($input['run_id']??0);
+    $action=trim((string)($input['action']??''));$run=null;$durable=agent_job_engine_schema_ready_v1900($pdo);$control=$durable&&agent_work_control_schema_ready_v173($pdo);$dependencies=$control&&agent_work_dependencies_schema_ready_v174($pdo);$runId=(int)($input['run_id']??0);
 
     if($action==='create_from_brain'){
         $key=trim((string)($input['priority_key']??''));$hash=trim((string)($input['suggestion_hash']??''));
@@ -51,10 +52,18 @@ try{
             'reschedule'=>agent_work_control_reschedule_v173($pdo,$user,$runId,(string)($input['when']??$input['value']??'')),
             'priority'=>agent_work_control_priority_v173($pdo,$user,$runId,$input['priority']??$input['value']??'normal'),
         };
+    }elseif(in_array($action,['delegate','add_dependency','remove_dependency'],true)){
+        if(!$dependencies)throw new RuntimeException('Agent Work Dependencies are not installed yet. An administrator needs to run the Phase 17.4 upgrade.');
+        $run=match($action){
+            'delegate'=>agent_work_delegate_v174($pdo,$user,$runId,(string)($input['target']??$input['value']??'')),
+            'add_dependency'=>agent_work_dependency_add_v174($pdo,$user,$runId,(int)($input['depends_on_run_id']??0)),
+            'remove_dependency'=>agent_work_dependency_remove_v174($pdo,$user,$runId,(int)($input['depends_on_run_id']??0)),
+        };
     }else{
         throw new RuntimeException('Unknown workflow action.');
     }
-    echo json_encode(['ok'=>true,'run'=>$run,'build'=>$control?VP3_AGENT_WORK_CONTROL_V173:($durable?VP3_AGENT_JOB_ENGINE_V1900:VP3_AGENT_WORKFLOW_RUNS_V1400)],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
+    if($dependencies&&$runId>0&&$action!=='create_from_brain')$run=agent_work_dependencies_state_v174($pdo,$user,$runId,true);
+    echo json_encode(['ok'=>true,'run'=>$run,'build'=>$dependencies?VP3_AGENT_WORK_DEPENDENCIES_V174:($control?VP3_AGENT_WORK_CONTROL_V173:($durable?VP3_AGENT_JOB_ENGINE_V1900:VP3_AGENT_WORKFLOW_RUNS_V1400))],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
 }catch(Throwable $e){
     $safe=$e instanceof RuntimeException?$e->getMessage():'Workflow request failed.';
     http_response_code($e instanceof RuntimeException?400:500);

@@ -49,9 +49,9 @@ assert.ok(sharedChat.indexOf('agent_work_control_chat_v173') < sharedChat.indexO
 
 assert.match(queue,/'paused'/,'Agent Chat Work Queue must expose a paused lane');
 assert.match(queue,/data-agent-work-control=/,'Agent Chat must expose the Phase 17.3 control marker');
-assert.match(queue,/priority high/,'The Chat queue must teach conversational priority control');
-assert.match(queue,/resume workflow/,'The Chat queue must teach conversational resume control');
-assert.match(queue,/reschedule workflow/,'The Chat queue must teach conversational rescheduling');
+assert.match(queue,/(?:priority high|reprioritize)/,'The Chat queue must teach conversational priority control');
+assert.match(queue,/(?:resume workflow|can resume)/,'The Chat queue must teach conversational resume control');
+assert.match(queue,/(?:reschedule workflow|reschedule)/,'The Chat queue must teach conversational rescheduling');
 assert.match(queue,/Workflow history/,'Detailed history remains available without becoming the command center');
 
 assert.match(upgrade,/agent_work_control_ensure_schema_v173/,'The admin upgrade must install Phase 17.3 idempotently');

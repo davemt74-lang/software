@@ -11,6 +11,7 @@ const VP3_AGENT_JOB_DEFAULT_RETRY_SECONDS_V1900=60;
 const VP3_AGENT_JOB_DEFAULT_TIMEOUT_SECONDS_V1900=900;
 const VP3_AGENT_JOB_DEFAULT_LEASE_SECONDS_V1900=120;
 require_once __DIR__.'/agent-workflow-runs-v1400.php';
+require_once __DIR__.'/agent-work-dependencies-v174.php';
 
 function agent_job_engine_schema_ready_v1900(?PDO $pdo=null): bool
 {
@@ -94,6 +95,7 @@ function agent_job_claim_run_v1900(PDO $pdo,array $user,int $runId,string $execu
     $uid=(int)($user['id']??0);$executor=strtolower(trim($executor));$workerId=agent_workflow_text_v1400($workerId,120);if($uid<1||$runId<1||!in_array($executor,['cloud','homeserver'],true)||$workerId===''||!agent_job_engine_schema_ready_v1900($pdo))return null;$leaseSeconds=max(30,min(900,$leaseSeconds));
     try{$pdo->beginTransaction();$run=agent_workflow_row_v1400($pdo,$uid,$runId,true);if(!$run||!in_array((string)$run['status'],['approved','executing'],true)||(int)($run['current_action_id']??0)>0){$pdo->rollBack();return null;}
         if(agent_job_control_ready_v1900($pdo)&&agent_job_pause_requested_v1900($run)){$pdo->rollBack();return null;}
+        if(!agent_work_dependencies_satisfied_v174($pdo,$uid,$runId)){$pdo->rollBack();return null;}
         if((strtotime((string)($run['lease_expires_at']??''))?:0)>time()||(strtotime((string)($run['next_attempt_at']??''))?:0)>time()){$pdo->rollBack();return null;}
         $s=$pdo->prepare("SELECT * FROM agent_workflow_actions WHERE run_id=? AND owner_user_id=? AND status='queued' ORDER BY sequence_no,id LIMIT 1 FOR UPDATE");$s->execute([$runId,$uid]);$action=$s->fetch();if(!$action){$pdo->rollBack();return null;}
         if((string)($action['execution_target']??'cloud')!==$executor){$pdo->rollBack();return null;}if((strtotime((string)($action['available_at']??''))?:0)>time()||!agent_job_dependencies_satisfied_v1900($pdo,$uid,(int)$action['id'])){$pdo->rollBack();return null;}
