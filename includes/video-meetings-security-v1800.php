@@ -29,6 +29,17 @@ function video_meeting_member_binding_allowed_v1800(?array $user,array $access):
 function video_meeting_secure_access_v1800(PDO $pdo,?array $user,string $publicId='',string $inviteToken=''): ?array
 {
     $access=video_meeting_access_v1800($pdo,$user,$publicId,$inviteToken);
+
+    // When the organizer selects Phase 18.3 email-gate mode, old unbound guest
+    // bearer links are no longer an alternate door around the email check.
+    // Member-bound invite links still work because VP3 account identity remains
+    // the stronger authorization boundary for those participants.
+    if($access&&$inviteToken!==''&&function_exists('video_meeting_guest_access_mode_v1830')){
+        $meeting=is_array($access['meeting']??null)?$access['meeting']:[];
+        $participant=is_array($access['participant']??null)?$access['participant']:[];
+        if((int)($participant['user_id']??0)===0&&video_meeting_guest_access_mode_v1830($pdo,$meeting)==='email_gate')return null;
+    }
+
     // Phase 18.3 email-gated public links create a server-side session grant
     // after the invited guest proves the email address. No bearer capability is
     // added to the public URL, and signed-in members continue to use identity.
