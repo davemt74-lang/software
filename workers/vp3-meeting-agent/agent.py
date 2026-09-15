@@ -20,6 +20,10 @@ STT_MODEL = os.getenv("VP3_MEETING_STT_MODEL", "deepgram/nova-3").strip() or "de
 STT_LANGUAGE = os.getenv("VP3_MEETING_STT_LANGUAGE", "en").strip() or "en"
 API_BASE = os.getenv("VP3_MEETING_API_BASE", "").strip().rstrip("/")
 WORKER_SECRET = os.getenv("VP3_MEETING_WORKER_SECRET", "").strip()
+try:
+    FINAL_DRAIN_SECONDS = max(2.0, min(30.0, float(os.getenv("VP3_MEETING_FINAL_DRAIN_SECONDS", "10") or "10")))
+except ValueError:
+    FINAL_DRAIN_SECONDS = 10.0
 
 server = AgentServer()
 
@@ -36,7 +40,7 @@ def _post_segment(payload: dict[str, Any]) -> dict[str, Any]:
             "Authorization": f"Bearer {WORKER_SECRET}",
             "Content-Type": "application/json",
             "Accept": "application/json",
-            "User-Agent": "VP3-LiveKit-Meeting-Agent/18.0",
+            "User-Agent": "VP3-LiveKit-Meeting-Agent/18.1",
         },
     )
     try:
@@ -63,10 +67,23 @@ async def _send_segment(payload: dict[str, Any]) -> None:
         logger.exception("Could not persist final meeting transcript segment")
 
 
+async def _finish_result_task(result_task: asyncio.Task[Any], timeout: float = FINAL_DRAIN_SECONDS) -> None:
+    if result_task.done():
+        await asyncio.gather(result_task, return_exceptions=True)
+        return
+    try:
+        await asyncio.wait_for(asyncio.shield(result_task), timeout=timeout)
+    except asyncio.TimeoutError:
+        logger.warning("Timed out draining final STT results after %.1fs", timeout)
+        result_task.cancel()
+        await asyncio.gather(result_task, return_exceptions=True)
+
+
 async def _transcribe_track(
     track: rtc.Track,
     participant: rtc.RemoteParticipant,
     meeting_public_id: str,
+    room_name: str,
     job_started: float,
 ) -> None:
     track_started = time.monotonic()
@@ -91,13 +108,14 @@ async def _transcribe_track(
                 request_id = str(getattr(event, "request_id", "") or "")
                 track_sid = str(getattr(track, "sid", "") or getattr(track, "name", "") or "audio")
                 source_key = hashlib.sha256(
-                    f"{meeting_public_id}|{participant.identity}|{track_sid}|{request_id}|{start_ms}|{end_ms}|{text}".encode("utf-8")
+                    f"{meeting_public_id}|{room_name}|{participant.identity}|{track_sid}|{request_id}|{start_ms}|{end_ms}|{text}".encode("utf-8")
                 ).hexdigest()
                 confidence_raw = getattr(alternative, "confidence", None)
                 confidence = float(confidence_raw) if confidence_raw is not None else None
                 await _send_segment(
                     {
                         "meeting": meeting_public_id,
+                        "room_name": room_name,
                         "participant_identity": participant.identity,
                         "speaker_name": participant.name or participant.identity or "Participant",
                         "start_ms": start_ms,
@@ -117,18 +135,24 @@ async def _transcribe_track(
         async for audio_event in audio_stream:
             speech_stream.push_frame(audio_event.frame)
         speech_stream.end_input()
-        await result_task
+        await _finish_result_task(result_task)
     except asyncio.CancelledError:
+        # A room may disconnect while the STT provider still has a final phrase
+        # buffered. Close input and give that final result a short bounded drain
+        # before abandoning it; the VP3 callback accepts a five-minute final-STT
+        # grace period after the organizer ends the meeting.
         speech_stream.end_input()
-        if not result_task.done():
-            result_task.cancel()
-        await asyncio.gather(result_task, return_exceptions=True)
+        await _finish_result_task(result_task, min(FINAL_DRAIN_SECONDS, 5.0))
         raise
     except Exception:
         logger.exception("Meeting audio transcription failed for participant %s", participant.identity)
-        if not result_task.done():
-            result_task.cancel()
-        await asyncio.gather(result_task, return_exceptions=True)
+        try:
+            speech_stream.end_input()
+            await _finish_result_task(result_task, min(FINAL_DRAIN_SECONDS, 5.0))
+        except Exception:
+            if not result_task.done():
+                result_task.cancel()
+            await asyncio.gather(result_task, return_exceptions=True)
     finally:
         await audio_stream.aclose()
 
@@ -142,8 +166,11 @@ async def vp3_meeting_agent(ctx: JobContext) -> None:
     if not isinstance(metadata, dict):
         metadata = {}
     meeting_public_id = str(metadata.get("vp3_meeting_public_id", "")).strip().lower()
-    if not meeting_public_id:
-        raise RuntimeError("Explicit VP3 meeting dispatch metadata is required")
+    expected_room_name = str(metadata.get("room_name", "")).strip()
+    if not meeting_public_id or not expected_room_name:
+        raise RuntimeError("Explicit VP3 meeting and room dispatch metadata are required")
+    if ctx.room.name != expected_room_name:
+        raise RuntimeError("LiveKit room does not match VP3 dispatch metadata")
     if not API_BASE or not WORKER_SECRET:
         raise RuntimeError("VP3 meeting worker callback configuration is incomplete")
 
@@ -160,7 +187,9 @@ async def vp3_meeting_agent(ctx: JobContext) -> None:
     def on_track_subscribed(track: rtc.Track, _publication: Any, participant: rtc.RemoteParticipant) -> None:
         if track.kind != rtc.TrackKind.KIND_AUDIO:
             return
-        task = asyncio.create_task(_transcribe_track(track, participant, meeting_public_id, job_started))
+        task = asyncio.create_task(
+            _transcribe_track(track, participant, meeting_public_id, expected_room_name, job_started)
+        )
         active_tasks.add(task)
         task.add_done_callback(active_tasks.discard)
 
@@ -179,9 +208,14 @@ async def vp3_meeting_agent(ctx: JobContext) -> None:
     logger.info("VP3 meeting transcription worker connected")
     await disconnected.wait()
     if active_tasks:
-        for task in list(active_tasks):
+        # Do not immediately cancel transcription tasks on room disconnect. Give
+        # participant audio streams and the STT provider a bounded opportunity
+        # to emit their last FINAL_TRANSCRIPT events, then cancel only stragglers.
+        _done, pending = await asyncio.wait(list(active_tasks), timeout=FINAL_DRAIN_SECONDS)
+        for task in pending:
             task.cancel()
-        await asyncio.gather(*active_tasks, return_exceptions=True)
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
 
 
 if __name__ == "__main__":
