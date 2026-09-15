@@ -5,6 +5,7 @@ const read = (path) => readFileSync(path, 'utf8');
 const core = read('includes/video-meetings-v1800.php');
 const security = read('includes/video-meetings-security-v1800.php');
 const home = read('includes/video-meetings-homeserver-v1801.php');
+const calendarBridge = read('includes/video-meetings-calendar-v1801.php');
 const agent = read('includes/video-meetings-agent-v1800.php');
 const bridge = read('includes/video-meetings-transcription-v1800.php');
 const reconcile = read('includes/video-meetings-reconcile-v1800.php');
@@ -12,6 +13,9 @@ const tokenApi = read('api/video-meeting-token.php');
 const presenceApi = read('api/video-meeting-presence.php');
 const transcriptApi = read('api/video-meeting-transcript.php');
 const workerApi = read('api/video-meeting-worker.php');
+const intelligenceApi = read('api/artist-listening-intelligence-v300.php');
+const longTranscriptApi = read('api/artist-listening-long-v237.php');
+const lifecycle = read('includes/agent-appointment-lifecycle-v700.php');
 const meeting = read('meeting.php');
 const meetings = read('meetings.php');
 const meetingJs = read('video-meetings-v1800.js');
@@ -111,6 +115,27 @@ assert.ok(upgrade.includes('video_meeting_transcription_ensure_schema_v1800($pdo
 assert.ok(tokenApi.includes('video_meeting_transcription_ensure_session_v1800'));
 assert.ok(presenceApi.includes('video_meeting_transcription_finalize_v1800'));
 
+// Member attendee calendars reuse the canonical provider/token stack while the
+// meeting layer owns only its provider event IDs. Guest bearer links must never
+// be copied to Google/Microsoft; connected members receive their signed-in VP3
+// public-id URL, and provider-side invite/conference duplication stays disabled.
+assert.ok(lifecycle.includes("require_once __DIR__.'/video-meetings-calendar-v1801.php'"));
+assert.ok(calendarBridge.includes('CREATE TABLE IF NOT EXISTS video_meeting_external_calendar_links'));
+assert.ok(calendarBridge.includes("require_once __DIR__.'/agent-calendar-sync-v500.php'"));
+assert.ok(calendarBridge.includes('agent_calendar_sync_connections_v500($pdo,$userId)'));
+assert.ok(calendarBridge.includes('agent_calendar_sync_api_v500'));
+assert.ok(calendarBridge.includes("if($participantId<1||$userId<1||(string)($participant['role']??'')!=='attendee')"), 'guest and organizer rows must not be projected as member attendee calendar events');
+assert.ok(calendarBridge.includes("'/meeting.php?meeting='.rawurlencode((string)$meeting['public_id'])"), 'member calendar event must use signed-in public-id meeting URL');
+assert.ok(!calendarBridge.includes('invite_token'), 'external calendar bridge must never expose invite bearer tokens');
+assert.ok(calendarBridge.includes('?sendUpdates=none'), 'member event projection must not cause duplicate Google invitations');
+assert.ok(!calendarBridge.includes('conferenceData'), 'member event projection must not create a competing Google Meet room');
+assert.ok(!calendarBridge.includes("'attendees'"), 'member event projection must not generate provider attendee invitations');
+assert.ok(meetings.includes('video_meeting_external_calendar_sync_participant_v1801'));
+assert.ok(reconcile.includes('video_meeting_external_calendar_sync_members_v1801'));
+assert.ok(reconcile.includes('video_meeting_cancel_for_booking_v1800'));
+assert.ok(bridge.includes('video_meeting_external_calendar_schema_ready_v1801($pdo)'), 'Video Meetings readiness must own the member-calendar schema');
+assert.ok(bridge.includes('video_meeting_external_calendar_ensure_schema_v1801($pdo)'), 'Video Meetings upgrade must install the member-calendar schema');
+
 // Live room consumes transcript incrementally without interrupting media. The
 // guest bearer token must not be repeated in a polling URL/query string.
 assert.ok(meeting.includes("'transcriptEndpoint'=>url('/api/video-meeting-transcript.php')"));
@@ -139,17 +164,38 @@ assert.ok(pythonWorker.includes('/api/video-meeting-worker.php'));
 assert.ok(workerReadme.includes('notes-first'));
 
 // HomeServer remains optional, but its existing compute/privacy boundary is
-// authoritative for meeting AI processing. We detect future local STT support
-// only when the paired HomeServer actually advertises it; nothing is invented.
+// authoritative for live STT and for later AI Summary/plugin processing. A
+// status view may use cached policy, while every cloud-AI execution refreshes
+// policy immediately and fails closed if meeting ownership cannot be verified.
 assert.ok(home.includes('vp3_agent_runtime_preference_v420'));
 assert.ok(home.includes('homeserver_scope_v026_blocks_cloud'));
 assert.ok(home.includes("$state['requested_compute']==='homeserver_only'"));
 assert.ok(home.includes("'meeting.transcription.stream','transcription.stream','transcription.start'"));
 assert.ok(home.includes('homeserver_capability_v033_registry'));
+assert.ok(home.includes('function video_meeting_transcription_ai_policy_v1801'));
+assert.ok(home.includes("capture_mode']??'')!=='vp3_video_meeting'"), 'ordinary transcripts must remain outside meeting policy');
+assert.ok(home.includes("'meeting_transcript_owner_mismatch'"));
+assert.ok(home.includes("'meeting_binding_unavailable'"));
+assert.ok(home.includes('video_meeting_transcription_ai_policy_v1801($pdo,$user,$session,true)'), 'cloud-AI guard must refresh privacy policy immediately before execution');
+assert.ok(home.includes('VP3 Cloud AI Summary is disabled for this transcript.'));
 assert.ok(agent.includes('video_meeting_cloud_transcription_allowed_v1801'));
 assert.ok(agent.includes('homeserver_private_processing_required'));
 assert.ok(meeting.includes('HomeServer privacy/compute policy prevents VP3 from dispatching the cloud transcription worker'));
 assert.ok(tokenApi.includes("'processing_route'=>$processingRoute"));
+
+// The existing transcription/AI Summary endpoints are the enforcement point;
+// Meetings does not create a second summarization stack. Both current plugin
+// analysis and the legacy long-transcript AI route must honor meeting privacy.
+assert.ok(intelligenceApi.includes("require_once dirname(__DIR__) . '/includes/video-meetings-homeserver-v1801.php'"));
+assert.ok(intelligenceApi.includes('video_meeting_transcription_ai_policy_v1801($pdo,$user,$session)'));
+assert.ok(intelligenceApi.includes('transcription_app_ids_v306'));
+assert.ok(intelligenceApi.includes("$registry[$requestedApp]['execution']??''"));
+assert.ok(intelligenceApi.includes('video_meeting_transcription_assert_cloud_ai_v1801($pdo,$user,$session)'));
+assert.ok(intelligenceApi.includes("'meeting_processing_policy'=>$meetingAiPolicyPublic"));
+assert.ok(longTranscriptApi.includes('video_meeting_transcription_assert_cloud_ai_v1801($pdo,$user,$session)'));
+assert.ok(longTranscriptApi.includes("$action === 'analyze_page'"));
+assert.ok(longTranscriptApi.includes("$action === 'analyze_master'"));
+assert.ok(longTranscriptApi.includes("'meeting_processing_policy'=>"));
 
 // Existing product surfaces are extended rather than duplicated.
 assert.ok(schedulingType.includes("'vp3_video'=>'VP3 Video Meeting'"));
