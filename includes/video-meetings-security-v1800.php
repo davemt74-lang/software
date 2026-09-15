@@ -16,3 +16,10 @@ function video_meeting_member_binding_allowed_v1800(?array $user,array $access):
     $boundUserId=(int)($participant['user_id']??0);
     return $boundUserId<1||$boundUserId===$userId;
 }
+
+function video_meeting_secure_access_v1800(PDO $pdo,?array $user,string $publicId='',string $inviteToken=''): ?array
+{
+    $access=video_meeting_access_v1800($pdo,$user,$publicId,$inviteToken);
+    if(!$access||!video_meeting_member_binding_allowed_v1800($user,$access))return null;
+    return $access;
+}
