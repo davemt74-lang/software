@@ -4,6 +4,8 @@ declare(strict_types=1);
 require_once dirname(__DIR__) . '/includes/bootstrap.php';
 require_once dirname(__DIR__) . '/includes/artist-listening.php';
 require_once dirname(__DIR__) . '/includes/artist-listening-transcript.php';
+require_once dirname(__DIR__) . '/includes/video-meetings-v1800.php';
+require_once dirname(__DIR__) . '/includes/video-meetings-homeserver-v1801.php';
 
 function artist_listening_v237_json(bool $ok, array $data = [], int $status = 200): never
 {
@@ -108,22 +110,34 @@ try {
         $session = artist_listening_v172_session($pdo, $user, $sessionId);
         $map = artist_listening_transcript_page_map(artist_listening_v172_segments($pdo, $sessionId));
         $provider = ai_active_provider();
+        $meetingPolicy=function_exists('video_meeting_transcription_ai_policy_v1801')?video_meeting_transcription_ai_policy_v1801($pdo,$user,$session):null;
         artist_listening_v237_json(true, [
             'analysis'=>artist_listening_v237_analysis_status($pdo, $sessionId, $map),
             'schema_ready'=>artist_listening_v237_schema_ready(),
             'provider'=>$provider,
             'provider_ready'=>in_array($provider, ['openai','anthropic'], true) && ai_provider_ready($provider),
             'participants'=>artist_listening_v237_participants($session),
+            'meeting_processing_policy'=>$meetingPolicy===null?null:[
+                'cloud_ai_allowed'=>!empty($meetingPolicy['cloud_ai_allowed']),
+                'policy_resolved'=>!empty($meetingPolicy['policy_resolved']),
+                'requested_compute'=>(string)($meetingPolicy['requested_compute']??'auto'),
+                'local_compute_available'=>!empty($meetingPolicy['local_compute_available']),
+                'reason'=>(string)($meetingPolicy['reason']??''),
+            ],
         ]);
     }
     if ($method === 'GET') artist_listening_v237_json(false, ['error'=>'Unknown long-transcript request.'], 404);
     if ($method !== 'POST') artist_listening_v237_json(false, ['error'=>'POST is required.'], 405);
 
     if ($action === 'analyze_page') {
+        $session=artist_listening_v172_session($pdo,$user,$sessionId);
+        if(function_exists('video_meeting_transcription_assert_cloud_ai_v1801'))video_meeting_transcription_assert_cloud_ai_v1801($pdo,$user,$session);
         $page = max(1, (int)($input['page'] ?? 1));
         artist_listening_v237_json(true, ['page_analysis'=>artist_listening_v237_analyze_page_request($pdo, $user, $sessionId, $page, !empty($input['force']))]);
     }
     if ($action === 'analyze_master') {
+        $session=artist_listening_v172_session($pdo,$user,$sessionId);
+        if(function_exists('video_meeting_transcription_assert_cloud_ai_v1801'))video_meeting_transcription_assert_cloud_ai_v1801($pdo,$user,$session);
         artist_listening_v237_json(true, artist_listening_v237_analyze_master($pdo, $user, $sessionId, !empty($input['research']), !empty($input['force'])));
     }
     artist_listening_v237_json(false, ['error'=>'Unsupported long-transcript action.'], 422);

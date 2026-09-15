@@ -12,7 +12,8 @@ $escape=static function(string $value): string {
 };
 $start=(new DateTimeImmutable((string)$meeting['start_at_utc'],new DateTimeZone('UTC')))->format('Ymd\THis\Z');
 $end=(new DateTimeImmutable((string)$meeting['end_at_utc'],new DateTimeZone('UTC')))->format('Ymd\THis\Z');
-$stamp=gmdate('Ymd\THis\Z');$join=video_meeting_invite_url_v1800($participant);
+$stamp=gmdate('Ymd\THis\Z');
+try{$join=video_meeting_secure_invite_url_v1801($participant);}catch(Throwable $e){http_response_code(503);exit('Meeting calendar links are not configured.');}
 $status=(string)$meeting['status']==='cancelled'?'CANCELLED':'CONFIRMED';
 $uid=$escape((string)$meeting['public_id'].'@vp3');
 $description=trim((string)($meeting['description']??''));

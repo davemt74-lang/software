@@ -22,6 +22,8 @@ require_once __DIR__.'/agent-meeting-workflows-v1410.php';
 require_once __DIR__.'/agent-meeting-workflows-v1410-hardening.php';
 require_once __DIR__.'/video-meetings-v1800.php';
 require_once __DIR__.'/video-meetings-security-v1800.php';
+require_once __DIR__.'/video-meetings-homeserver-v1801.php';
+require_once __DIR__.'/video-meetings-calendar-v1801.php';
 require_once __DIR__.'/video-meetings-agent-v1800.php';
 require_once __DIR__.'/video-meetings-transcription-v1800.php';
 require_once __DIR__.'/video-meetings-reconcile-v1800.php';

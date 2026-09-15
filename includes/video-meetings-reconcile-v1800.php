@@ -14,7 +14,11 @@ function video_meeting_booking_payment_pending_v1800(PDO $pdo,array $booking): b
     try{
         $paid=agent_paid_appointments_paid_booking_for_booking_v800($pdo,$bookingId);
         return is_array($paid)&&(string)($paid['payment_status']??'')==='awaiting_payment';
-    }catch(Throwable $e){return false;}
+    }catch(Throwable $e){
+        // Commerce status is an authorization input for paid appointments.
+        // Uncertainty must not become permission to create/deliver a room.
+        throw new RuntimeException('Paid appointment status could not be verified.',0,$e);
+    }
 }
 
 function video_meeting_reconcile_booking_v1800(PDO $pdo,array $booking,bool $deliverNewInvite=true): ?array
@@ -28,14 +32,16 @@ function video_meeting_reconcile_booking_v1800(PDO $pdo,array $booking,bool $del
         if($existing){
             if(!empty($existing['transcription_enabled'])&&function_exists('video_meeting_transcription_finalize_v1800'))video_meeting_transcription_finalize_v1800($pdo,$existing);
             video_meeting_cancel_for_booking_v1800($pdo,$booking);
+            $cancelled=video_meeting_for_booking_v1800($pdo,(int)$booking['id'])?:$existing;
+            if(function_exists('video_meeting_external_calendar_sync_members_v1801'))video_meeting_external_calendar_sync_members_v1801($pdo,$cancelled);
         }
         return $existing;
     }
 
     // A paid appointment may reserve canonical Scheduling time before checkout
     // settles. Do not create or deliver the media room until Commerce says the
-    // payment hold is no longer awaiting payment. Token minting has the same
-    // defense so a stale/preexisting room cannot bypass checkout.
+    // payment hold is no longer awaiting payment. Verification failures throw
+    // and therefore fail closed; token minting independently enforces the gate.
     if(video_meeting_booking_payment_pending_v1800($pdo,$booking)&&!$existing)return null;
 
     $oldStart=(string)($existing['start_at_utc']??'');
@@ -43,6 +49,7 @@ function video_meeting_reconcile_booking_v1800(PDO $pdo,array $booking,bool $del
     $meeting=video_meeting_sync_booking_v1800($pdo,$booking,$existing?'updated':'created');
     if(!$meeting)return null;
     if(!empty($meeting['transcription_enabled'])&&function_exists('video_meeting_transcription_ensure_session_v1800'))video_meeting_transcription_ensure_session_v1800($pdo,$meeting);
+    if(function_exists('video_meeting_external_calendar_sync_members_v1801'))video_meeting_external_calendar_sync_members_v1801($pdo,$meeting);
 
     // The meeting sync writes the stable owner join URL back onto the canonical
     // booking. Re-load before updating Google/Microsoft so the same VP3 link is
@@ -95,11 +102,24 @@ function video_meeting_boot_v1800(): void
 {
     static $registered=false;if($registered)return;$registered=true;
     if(PHP_SAPI==='cli')return;
-    register_shutdown_function(static function(): void {
-        try{
-            $pdo=db();
-            if(!$pdo||$pdo->inTransaction()||!video_meeting_schema_ready_v1800($pdo))return;
-            video_meeting_reconcile_recent_bookings_v1800($pdo,30);
-        }catch(Throwable $e){error_log('VP3 Video Meetings shutdown reconciliation failed: '.$e->getMessage());}
-    });
+
+    // Mutation requests may have just created/rescheduled/cancelled a canonical
+    // booking, so reconcile once after commit. Ordinary GET traffic is bounded
+    // to one lightweight sweep per session every two minutes rather than a
+    // database scan at the end of every VP3 page request.
+    if(strtoupper((string)($_SERVER['REQUEST_METHOD']??'GET'))==='POST'){
+        register_shutdown_function(static function(): void {
+            try{
+                $pdo=db();
+                if(!$pdo||$pdo->inTransaction()||!video_meeting_schema_ready_v1800($pdo))return;
+                video_meeting_reconcile_recent_bookings_v1800($pdo,30);
+            }catch(Throwable $e){error_log('VP3 Video Meetings shutdown reconciliation failed: '.$e->getMessage());}
+        });
+    }
+    if(!isset($_SESSION)||!is_array($_SESSION))return;
+    $last=(int)($_SESSION['vp3_video_meeting_reconcile_at']??0);if($last>time()-120)return;
+    $_SESSION['vp3_video_meeting_reconcile_at']=time();
+    try{
+        $pdo=db();if($pdo&&!$pdo->inTransaction()&&video_meeting_schema_ready_v1800($pdo))video_meeting_reconcile_recent_bookings_v1800($pdo,30);
+    }catch(Throwable $e){error_log('VP3 Video Meetings reconciliation failed: '.$e->getMessage());}
 }

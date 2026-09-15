@@ -21,6 +21,8 @@ if($provided===''||!hash_equals($secret,$provided))$fail(401,'Meeting worker aut
 $input=json_decode((string)file_get_contents('php://input'),true);if(!is_array($input))$fail(400,'JSON body required.');
 $publicId=strtolower(trim((string)($input['meeting']??'')));$meeting=video_meeting_by_public_id_v1800($pdo,$publicId);
 if(!$meeting)$fail(404,'Meeting not found.');
+$roomName=trim((string)($input['room_name']??''));
+if($roomName===''||!hash_equals((string)$meeting['room_name'],$roomName))$fail(403,'Meeting worker room binding failed.');
 $status=(string)$meeting['status'];
 if(in_array($status,['cancelled','processed'],true))$fail(409,'Meeting is closed.');
 if($status==='ended'){

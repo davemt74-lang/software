@@ -31,20 +31,30 @@ function video_meeting_livekit_twirp_v1800(array $meeting,string $method,array $
 
 function video_meeting_agent_dispatch_metadata_v1800(PDO $pdo,array $meeting): string
 {
+    // LiveKit receives only the identifiers the worker actually needs. Internal
+    // VP3 user/Agent primary keys and other account metadata never need to
+    // leave VP3 Cloud just to route a meeting transcription worker.
     return json_encode([
         'vp3_meeting_public_id'=>(string)$meeting['public_id'],
-        'owner_user_id'=>(int)$meeting['owner_user_id'],
-        'organizer_agent_id'=>(int)($meeting['organizer_agent_id']??0),
+        'room_name'=>(string)$meeting['room_name'],
         'agent_display_name'=>video_meeting_agent_name_v1800($pdo,$meeting),
         'mode'=>(string)$meeting['agent_mode'],
-        'transcription_enabled'=>!empty($meeting['transcription_enabled']),
-        'recording_enabled'=>!empty($meeting['recording_enabled']),
     ],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE)?:'{}';
 }
 
 function video_meeting_livekit_agent_dispatch_v1800(PDO $pdo,array $meeting): array
 {
-    if((string)($meeting['agent_mode']??'off')==='off')return ['ok'=>true,'dispatched'=>false,'reason'=>'agent_off'];
+    $mode=(string)($meeting['agent_mode']??'off');
+    if($mode==='off')return ['ok'=>true,'dispatched'=>false,'reason'=>'agent_off'];
+    if($mode==='notes'&&empty($meeting['transcription_enabled']))return ['ok'=>true,'dispatched'=>false,'reason'=>'transcription_off'];
+
+    // HomeServer-only compute and wrapper scopes that explicitly block cloud
+    // processing are hard privacy boundaries. Phase 18.1 recognizes those
+    // existing settings instead of silently routing live speech to cloud STT.
+    if(!empty($meeting['transcription_enabled'])&&function_exists('video_meeting_cloud_transcription_allowed_v1801')&&!video_meeting_cloud_transcription_allowed_v1801($pdo,$meeting)){
+        return ['ok'=>true,'dispatched'=>false,'reason'=>'homeserver_private_processing_required'];
+    }
+
     $cfg=video_meeting_livekit_config_v1800();$worker=trim((string)($cfg['agent_name']??''));
     if($worker==='')return ['ok'=>true,'dispatched'=>false,'reason'=>'agent_worker_not_configured'];
     if(!video_meeting_livekit_ready_v1800())return ['ok'=>false,'dispatched'=>false,'reason'=>'livekit_not_configured'];

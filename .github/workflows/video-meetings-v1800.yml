@@ -28,13 +28,18 @@ jobs:
         run: |
           php -l includes/video-meetings-v1800.php
           php -l includes/video-meetings-security-v1800.php
+          php -l includes/video-meetings-homeserver-v1801.php
+          php -l includes/video-meetings-calendar-v1801.php
           php -l includes/video-meetings-agent-v1800.php
           php -l includes/video-meetings-transcription-v1800.php
           php -l includes/video-meetings-reconcile-v1800.php
+          php -l includes/agent-appointment-lifecycle-v700.php
           php -l api/video-meeting-token.php
           php -l api/video-meeting-presence.php
           php -l api/video-meeting-transcript.php
           php -l api/video-meeting-worker.php
+          php -l api/artist-listening-intelligence-v300.php
+          php -l api/artist-listening-long-v237.php
           php -l meeting.php
           php -l meeting-ics.php
           php -l meetings.php
