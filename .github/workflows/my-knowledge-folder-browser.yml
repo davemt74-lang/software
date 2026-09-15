@@ -37,6 +37,8 @@ jobs:
           node --check tests/member-sidebar-shell-contract.mjs
           node --check tests/profile-commerce-products-shell-v1310-contract.mjs
           node --check tests/main-feed-canonical-ui-contract.mjs
+          node --check tests/profile-visitor-crm-v243.mjs
+          node --check tests/account-scope-v181.mjs
       - name: Knowledge folder-browser contract
         run: node tests/knowledge-library-v161-browser-contract.mjs
       - name: Shared Knowledge folder regression contract
@@ -45,6 +47,10 @@ jobs:
         run: php tests/agent-ui-v034-contract.php
       - name: Retained Main Feed shell contract
         run: node tests/main-feed-canonical-ui-contract.mjs
+      - name: Retained visitor CRM and account scope contracts
+        run: |
+          node tests/profile-visitor-crm-v243.mjs
+          node tests/account-scope-v181.mjs
       - name: Retained member shell contracts
         run: |
           node tests/member-shell-v1320-contract.mjs
