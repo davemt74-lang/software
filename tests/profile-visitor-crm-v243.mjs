@@ -65,13 +65,17 @@ assert.match(contacts, /page_view_count/, 'CRM table keeps page-view detail sepa
 assert.match(contacts, /data-label="Stage"[\s\S]*data-label="Visits"[\s\S]*data-label="Last activity"/, 'contact cells provide labels for the mobile card layout');
 assert.match(contacts, /Privacy-first guest continuity/, 'CRM explains the anonymous continuity model');
 assert.match(sidebar, /require __DIR__ \. '\/main-sidebar\.php';/, 'workspace sidebar delegates to the canonical member sidebar');
-const primaryStart = mainSidebar.indexOf('data-agent-primary-nav');
-const primaryEnd = primaryStart < 0 ? -1 : mainSidebar.indexOf('</nav>', primaryStart);
-assert.ok(primaryStart >= 0 && primaryEnd > primaryStart, 'canonical Agent sidebar must expose primary navigation');
-const primaryNav = mainSidebar.slice(primaryStart, primaryEnd);
-assert.match(primaryNav, /href="<\?= e\(url\('\/contacts\.php'\)\) \?>"[\s\S]*<strong>Contacts<\/strong>/, 'canonical Agent sidebar exposes Contacts as a primary Agent tool');
-assert.match(mainSidebar, /mainSidebarActive === 'contacts'/, 'Contacts has a real active sidebar state');
-assert.match(memberNav, /'contacts','My Contacts',url\('\/contacts\.php'\)/, 'member navigation retains the descriptive My Contacts label for secondary/account contexts');
+
+// The consolidated authenticated shell renders Contacts from canonical keyed member
+// navigation. Do not require a duplicated hard-coded Contacts anchor in the sidebar.
+assert.match(mainSidebar, /\$mainSidebarPrimaryOrder = \['chat','profile_agent','messages','contacts','knowledge','transcriptions','calendar','scheduling','profile_commerce','team'\]/, 'canonical Agent sidebar keeps Contacts in primary order');
+assert.match(mainSidebar, /'contacts'=>'Contacts'/, 'canonical Agent sidebar keeps the Contacts display label');
+assert.match(mainSidebar, /member_navigation_menu_links\(\$mainSidebarUser\)/, 'canonical Agent sidebar consumes member-navigation authority');
+assert.match(mainSidebar, /\$isActive=\$mainSidebarActive===\$key/, 'canonical Agent sidebar derives active state from the current navigation key');
+assert.match(mainSidebar, /data-vp3-nav-key=/, 'canonical Agent sidebar renders keyed primary links');
+assert.match(memberNav, /'contacts\.php'=>'contacts'/, 'member navigation resolves Contacts to the canonical active key');
+assert.match(memberNav, /\$accountAllowed=member_navigation_package_permission\(\$user,'account\.access',has_permission\('account\.access',\$user\)\)/, 'Contacts availability remains anchored to account access');
+assert.match(memberNav, /\$add\(\$links,'contacts','My Contacts',url\('\/contacts\.php'\),'identity'\)/, 'member navigation retains the descriptive My Contacts route');
 assert.match(contactsCss, /@media\(max-width:760px\)/, 'My Contacts has a dedicated mobile layout');
 assert.match(contactsCss, /grid-template-columns:repeat\(3,minmax\(0,1fr\)\)/, 'tablet metrics remain compact without vertical sprawl');
 assert.match(contactsCss, /\.contacts-board-head\{display:none\}/, 'mobile layout removes the desktop-only table header');
