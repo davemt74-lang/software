@@ -14,9 +14,10 @@ $mainSidebarIsChat = $mainSidebarActive === 'chat' || $mainSidebarScript === 'ch
 $mainSidebarCanChat = $mainSidebarUser && has_permission('chat.access', $mainSidebarUser);
 $mainSidebarCurrentSection = function_exists('member_navigation_section_label') ? member_navigation_section_label($mainSidebarActive) : 'Workspace';
 
-$mainSidebarPrimaryOrder = ['chat','profile_agent','messages','contacts','knowledge','transcriptions','calendar','scheduling','profile_commerce','team'];
+$mainSidebarPrimaryOrder = ['home','chat','profile_agent','messages','contacts','knowledge','transcriptions','calendar','scheduling','profile_commerce','team'];
 $mainSidebarPrimaryKeys = array_fill_keys($mainSidebarPrimaryOrder, true);
 $mainSidebarPrimaryLabels = [
+    'home'=>'Home',
     'chat'=>'Agent Chat',
     'profile_agent'=>'Profile Agent',
     'messages'=>'Messages',
@@ -29,6 +30,7 @@ $mainSidebarPrimaryLabels = [
     'team'=>'Team',
 ];
 $mainSidebarPrimaryIcons = [
+    'home'=>'⌂',
     'chat'=>'✦',
     'profile_agent'=>'◉',
     'messages'=>'✉',
@@ -41,6 +43,7 @@ $mainSidebarPrimaryIcons = [
     'team'=>'◎',
 ];
 $mainSidebarPrimarySections = [
+    'home'=>'Agent',
     'chat'=>'Agent',
     'profile_agent'=>'Agent',
     'messages'=>'Workspace',
@@ -93,7 +96,7 @@ if ($mainSidebarRenderAgentVoiceAssets) $GLOBALS['VP3_MEMBER_AGENT_VOICE_MENU_AS
   data-csrf="<?= e(csrf_token()) ?>"
 >
   <div class="chat-sidebar-top">
-    <a class="chat-brand" href="<?= e(url('/chat.php')) ?>" aria-label="VP3 Agent">VP3</a>
+    <a class="chat-brand" href="<?= e(url('/home.php')) ?>" aria-label="VP3 Home">VP3</a>
     <div class="vp3-homeserver-head-actions">
       <button class="vp3-homeserver-status" id="vp3HomeServerStatus" type="button" data-state="unpaired" data-status-url="<?= e(url('/api/homeserver-status.php')) ?>" data-csrf="<?= e(csrf_token()) ?>" aria-haspopup="dialog" aria-controls="vp3HomeServerModal" title="HomeServer status">
         <span class="vp3-homeserver-dot" aria-hidden="true"></span><span class="vp3-homeserver-status-label">HomeServer</span>
@@ -135,7 +138,7 @@ if ($mainSidebarRenderAgentVoiceAssets) $GLOBALS['VP3_MEMBER_AGENT_VOICE_MENU_AS
                 <span><?= e($conversationTitle) ?></span>
                 <small><?= !empty($conversation['updated_at']) ? e(date('M j', strtotime((string)$conversation['updated_at']))) : '' ?></small>
               </button>
-              <button class="chat-history-rename" type="button" data-rename-conversation="<?= $conversationId ?>" aria-label="Rename <?= e($conversationTitle) ?>" title="Rename chat">⋯</button>
+              <button class="chat-history-rename" type="button" data-rename-conversation="<?= $conversationId ?>" aria-label="Rename <?= e($conversationTitle) ?>" title="Rename chat">���</button>
               <button class="chat-history-delete" type="button" data-delete-conversation="<?= $conversationId ?>" aria-label="Delete <?= e($conversationTitle) ?>" title="Delete chat">×</button>
             </div>
           <?php endforeach; ?>
