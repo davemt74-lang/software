@@ -93,13 +93,14 @@ function agent_objective_portfolio_score_v179(array $parent,array $stats,array $
     $schedule=0.30;$next=strtotime((string)($stats['next_attempt_at']??''))?:0;if($next>0){$hours=max(0,($next-time())/3600);$schedule=$hours<=24?0.95:($hours<=72?0.72:0.42);}
     $updated=strtotime((string)($parent['updated_at']??''))?:time();$ageHours=max(0,(time()-$updated)/3600);$recency=max(0.15,1.0-min(1.0,$ageHours/(30*24)));
     $historyScore=max(0.0,min(1.0,(float)($history['score']??0.5)));
-    $score=($priority*0.30)+($state*0.20)+($verify*0.14)+($attention*0.14)+($schedule*0.08)+($historyScore*0.09)+($recency*0.05);
+    $score=($status==='completed'||$verification==='achieved')?0.0:(($priority*0.30)+($state*0.20)+($verify*0.14)+($attention*0.14)+($schedule*0.08)+($historyScore*0.09)+($recency*0.05));
     return ['score'=>round(max(0,min(1,$score)),4),'components'=>['user_priority'=>round($priority,3),'state'=>round($state,3),'verification'=>round($verify,3),'attention'=>round($attention,3),'schedule'=>round($schedule,3),'historical_outcome'=>round($historyScore,3),'recency'=>round($recency,3)]];
 }
 
 function agent_objective_portfolio_recommendation_v179(array $item): array
 {
     $status=(string)($item['status']??'');$verification=(string)($item['verification_status']??'');$stats=(array)($item['child_stats']??[]);
+    if($status==='completed'||$verification==='achieved')return ['action'=>'done','label'=>'Achieved','reason'=>'This objective is complete and remains visible only as portfolio history.'];
     if($verification==='needs_remediation'||(int)($stats['failed']??0)>0)return ['action'=>'repair_now','label'=>'Repair now','reason'=>'Failure or remediation evidence is blocking verified completion.'];
     if((int)($stats['approval']??0)>0)return ['action'=>'review_approval','label'=>'Review approval','reason'=>'Required approvals are holding objective work.'];
     if((int)($stats['blocked']??0)>0)return ['action'=>'wait','label'=>'Wait on prerequisites','reason'=>'One or more objective workflows are dependency-blocked.'];
