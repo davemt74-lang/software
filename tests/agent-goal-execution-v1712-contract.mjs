@@ -1,0 +1,49 @@
+import fs from 'node:fs';
+import assert from 'node:assert/strict';
+
+const execution=fs.readFileSync('includes/agent-goal-execution-v1712.php','utf8');
+const planning=fs.readFileSync('includes/agent-goal-planning-v1711.php','utf8');
+const objective=fs.readFileSync('includes/agent-objective-plans-v175.php','utf8');
+const deps=fs.readFileSync('includes/agent-work-dependencies-v174.php','utf8');
+const chat=fs.readFileSync('includes/release-chat-v105.php','utf8');
+
+assert.match(execution,/agent-goal-execution-v1712-20260915/,'stable Phase 17.12 marker is required');
+assert.match(execution,/require_once __DIR__\.\'\/agent-goal-planning-v1711\.php\'/,'17.12 must extend the existing roadmap layer');
+assert.match(execution,/agent_goal_plan_state_v1711/,'execution state must begin from the canonical goal roadmap');
+assert.match(execution,/agent_objective_state_v175/,'goal execution must inspect the canonical Phase 17.5 objective graph');
+assert.match(execution,/agent_work_dependency_blockers_v174/,'workflow readiness must respect Phase 17.4 prerequisites');
+assert.match(execution,/approval_pending.*waiting_approval/s,'approval waits must be detected rather than bypassed');
+assert.match(execution,/execution_target/,'Cloud\/HomeServer target assignment must remain visible to goal orchestration');
+assert.match(execution,/next_attempt_at/,'existing durable scheduling must be recognized');
+assert.match(execution,/executing.*ready.*waiting_approval.*repair_needed.*paused.*scheduled.*blocked/s,'goal orchestration must expose concrete execution states');
+assert.match(execution,/agent_goal_execution_focus_v1712/,'17.12 must select a canonical current workflow focus');
+assert.match(execution,/objective_stage/,'focus selection must preserve objective stage ordering');
+assert.match(execution,/work_priority/,'parallel-stage focus should honor existing durable priority');
+assert.match(execution,/agent_goal_execution_advance_v1712/,'an explicit goal-advance operation is required');
+assert.match(execution,/execution_state.*plan_missing[\s\S]*agent_goal_plan_seed_v1711/s,'explicit advance may create a missing advisory roadmap');
+assert.match(execution,/execution_state.*needs_objective[\s\S]*agent_goal_plan_create_objective_v1711/s,'explicit advance may convert only the next advisory milestone into a canonical objective');
+assert.match(execution,/objective_created/,'goal Chat must disclose when orchestration created the canonical objective');
+assert.match(execution,/Phase 19 can claim it normally/,'ready work must remain under the existing Phase 19 claimant');
+assert.match(execution,/goal orchestration will not approve it automatically/,'approval must remain explicit');
+assert.match(execution,/dependency graph remains authoritative/,'dependency authority must be preserved');
+assert.match(execution,/goal orchestration will not silently resume it/,'paused work must not be silently resumed');
+assert.match(execution,/work\s+on|advance/,'Agent Chat must understand explicit work\/advance language');
+assert.match(execution,/not\s+moving|stalled|blocked|stuck|waiting/,'Agent Chat must explain stalled goals');
+assert.match(execution,/agent\s+doing/,'Agent Chat must expose current goal work');
+assert.match(execution,/what\s+next|next\s+step/,'Agent Chat must expose the next safe step');
+assert.doesNotMatch(execution,/CREATE TABLE|ALTER TABLE|INSERT INTO agent_workflow_runs|INSERT INTO agent_workflow_actions/i,'17.12 must not create schema or its own execution records');
+assert.doesNotMatch(execution,/UPDATE\s+agent_workflow_runs|UPDATE\s+agent_workflow_actions/i,'17.12 must not directly mutate workflow/action state');
+assert.doesNotMatch(execution,/agent_work_control_(?:approve|resume|retry|cancel|reschedule)_v173\s*\(/,'goal orchestration must not bypass explicit workflow controls');
+assert.doesNotMatch(execution,/lease_owner\s*=|lease_expires\s*=|receipt_json\s*=|result_json\s*=|approval_status\s*=/i,'17.12 must not own Phase 19 or approval writes');
+assert.doesNotMatch(execution,/status\s*=\s*['\"]achieved['\"]/i,'17.12 must not manually assert goal or milestone achievement');
+assert.doesNotMatch(execution,/setInterval\s*\(/,'goal execution must not add polling');
+
+assert.match(chat,/require_once __DIR__\.\'\/agent-goal-execution-v1712\.php\'/,'shared Chat boundary must load Phase 17.12');
+assert.match(chat,/agent_goal_execution_chat_v1712\(\$query,\$user,\$conversationId\)/,'Agent Chat must route goal-execution language through Phase 17.12');
+assert.ok(chat.indexOf('agent_goal_execution_chat_v1712') < chat.indexOf('agent_goal_plan_chat_v1711'),'execution routing must run before roadmap planning');
+assert.ok(chat.indexOf('agent_goal_execution_chat_v1712') < chat.indexOf('agent_goal_chat_v1710'),'execution routing must run before generic goal routing');
+assert.match(planning,/agent_goal_plan_create_objective_v1711/,'17.11 must remain the canonical milestone-to-objective conversion path');
+assert.match(objective,/Phase 19 remains the only claimant/,'Phase 17.5 must retain worker authority');
+assert.match(deps,/Phase 19 remains the only durable claimant/,'Phase 17.4 must retain dependency\/delegation authority');
+
+console.log('Agent Goal Execution v17.12 contract passed.');
