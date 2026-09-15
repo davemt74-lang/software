@@ -20,8 +20,8 @@ if(!preg_match('/^[a-f0-9]{32}$/',$publicId)||$roomName==='')$fail(401,'Meeting 
 
 $authorization=trim((string)($_SERVER['HTTP_AUTHORIZATION']??$_SERVER['REDIRECT_HTTP_AUTHORIZATION']??''));
 $provided='';if(preg_match('/^Bearer\s+(.+)$/i',$authorization,$m))$provided=trim($m[1]);
-$globalSecret=video_meeting_worker_secret_v1800();
-$globalAuthorized=$globalSecret!==''&&$provided!==''&&hash_equals($globalSecret,$provided);
+$secret=video_meeting_worker_secret_v1800();
+$globalAuthorized=$secret!==''&&$provided!==''&&hash_equals($secret,$provided);
 $homeserverAuthorized=!$globalAuthorized
     &&function_exists('video_meeting_homeserver_callback_verify_v1850')
     &&video_meeting_homeserver_callback_verify_v1850($publicId,$roomName,$provided);
@@ -32,7 +32,8 @@ $pdo=db();if(!$pdo||!video_meeting_transcription_schema_ready_v1800($pdo))$fail(
 $meeting=video_meeting_by_public_id_v1800($pdo,$publicId);if(!$meeting)$fail(404,'Meeting not found.');
 if(!hash_equals((string)$meeting['room_name'],$roomName))$fail(403,'Meeting worker room binding failed.');
 $status=(string)$meeting['status'];
-if(in_array($status,['cancelled','processed','no_show'],true))$fail(409,'Meeting is closed.');
+$legacyClosed=['cancelled','processed'];
+if(in_array($status,array_merge($legacyClosed,['no_show']),true))$fail(409,'Meeting is closed.');
 if($status==='ended'){
     $endedAt=strtotime((string)($meeting['ended_at']??'').' UTC')?:0;
     if($endedAt<1||time()-$endedAt>300)$fail(409,'Meeting transcript grace period has ended.');
