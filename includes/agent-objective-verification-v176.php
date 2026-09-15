@@ -61,6 +61,17 @@ function agent_objective_verification_json_v176(mixed $value): array
     $decoded=json_decode($text,true);return is_array($decoded)?$decoded:[];
 }
 
+function agent_objective_verification_queue_label_v176(PDO $pdo,int $uid,int $runId,string $state): void
+{
+    $labels=['verifying'=>'Verifying','needs_remediation'=>'Needs remediation','achieved'=>'Achieved'];
+    if(!isset($labels[$state])||$uid<1||$runId<1)return;
+    $row=agent_objective_verification_parent_v176($pdo,$uid,$runId);if(!$row)return;
+    $goal=agent_objective_text_v175((string)($row['goal']??''),150);
+    $title=agent_objective_text_v175('Objective: '.$goal.' · '.$labels[$state],190);
+    $progress=match($state){'verifying'=>'Verifying objective outcome','needs_remediation'=>'Needs remediation','achieved'=>'Objective achieved',default=>''};
+    $pdo->prepare('UPDATE agent_workflow_runs SET title=?,progress_message=? WHERE id=? AND owner_user_id=?')->execute([$title,$progress,$runId,$uid]);
+}
+
 function agent_objective_success_criteria_v176(string $goal,array $stages=[],array $explicit=[]): array
 {
     $clean=[];
@@ -87,6 +98,13 @@ function agent_objective_verification_parent_v176(PDO $pdo,int $uid,int $objecti
 {
     $sql="SELECT * FROM agent_workflow_runs WHERE id=? AND owner_user_id=? AND (source_kind='objective_plan' OR workflow_type='agent_objective_plan') LIMIT 1".($forUpdate?' FOR UPDATE':'');
     $stmt=$pdo->prepare($sql);$stmt->execute([$objectiveRunId,$uid]);$row=$stmt->fetch();return is_array($row)?$row:null;
+}
+
+function agent_objective_verification_parent_by_hash_v176(PDO $pdo,int $uid,string $hash): ?array
+{
+    if($hash==='')return null;
+    $stmt=$pdo->prepare("SELECT * FROM agent_workflow_runs WHERE owner_user_id=? AND source_kind='objective_plan' AND source_hash=? ORDER BY id DESC LIMIT 1");
+    $stmt->execute([$uid,$hash]);$row=$stmt->fetch();return is_array($row)?$row:null;
 }
 
 function agent_objective_verification_latest_review_v176(PDO $pdo,int $uid,int $objectiveRunId): ?array
@@ -120,6 +138,7 @@ function agent_objective_verification_initialize_v176(PDO $pdo,array $user,int $
     }elseif((string)($parent['status']??'')==='completed'&&trim((string)($parent['objective_verification_status']??''))===''){
         agent_objective_verification_add_review_action_v176($pdo,$uid,$parent,$criteria,(int)($parent['objective_remediation_count']??0));
         $pdo->prepare("UPDATE agent_workflow_runs SET status='approved',completed_at=NULL,next_attempt_at=UTC_TIMESTAMP(),progress_percent=0,progress_message='Verification queued',objective_verification_status='verifying' WHERE id=? AND owner_user_id=?")->execute([$objectiveRunId,$uid]);
+        agent_objective_verification_queue_label_v176($pdo,$uid,$objectiveRunId,'verifying');
         agent_workflow_event_v1400($pdo,$uid,$objectiveRunId,'objective_verification_queued','completed','approved','system','Objective reopened for explicit outcome verification.',['build'=>VP3_AGENT_OBJECTIVE_VERIFICATION_V176]);
     }
     $row=agent_objective_verification_parent_v176($pdo,$uid,$objectiveRunId);return $row?:$parent;
@@ -194,20 +213,41 @@ function agent_objective_verification_queue_remediation_v176(PDO $pdo,array $use
     foreach($runIds as $runId)agent_objective_insert_dependency_v175($pdo,$uid,$parentId,$runId,'objective_remediation');
     $reviewId=agent_objective_verification_add_review_action_v176($pdo,$uid,$parent,$criteria,$cycle);
     $pdo->prepare("UPDATE agent_workflow_runs SET status='approved',completed_at=NULL,next_attempt_at=UTC_TIMESTAMP(),progress_percent=0,progress_message='Needs remediation',objective_verification_status='needs_remediation',objective_verification_summary=?,objective_verification_evidence=?,objective_verified_at=NULL,objective_remediation_count=? WHERE id=? AND owner_user_id=?")->execute([agent_objective_text_v175($summary,500),$evidence?agent_workflow_json_v1400($evidence):null,$cycle,$parentId,$uid]);
+    agent_objective_verification_queue_label_v176($pdo,$uid,$parentId,'needs_remediation');
     agent_workflow_event_v1400($pdo,$uid,$parentId,'objective_remediation_queued','completed','approved','agent','Objective verification found unmet criteria and queued targeted remediation.',['cycle'=>$cycle,'remediation_run_ids'=>$runIds,'verification_action_id'=>$reviewId]);
     return $runIds;
 }
 
+function agent_objective_verification_child_result_v176(PDO $pdo,array $run,bool $success,string $receiptStatus): void
+{
+    if((string)($run['source_kind']??'')!=='objective_step')return;
+    if(!in_array($receiptStatus,['completed','failed'],true))return;
+    $uid=(int)($run['owner_user_id']??0);$hash=(string)($run['source_hash']??'');if($uid<1||$hash==='')return;
+    $parent=agent_objective_verification_parent_by_hash_v176($pdo,$uid,$hash);if(!$parent)return;$parentId=(int)$parent['id'];
+    if(!$success||$receiptStatus==='failed'){
+        $pdo->prepare("UPDATE agent_workflow_runs SET objective_verification_status='needs_remediation',objective_verification_summary='Objective child work failed and requires targeted remediation.' WHERE id=? AND owner_user_id=? AND objective_verification_status<>'achieved'")->execute([$parentId,$uid]);
+        agent_objective_verification_queue_label_v176($pdo,$uid,$parentId,'needs_remediation');
+        return;
+    }
+    $stmt=$pdo->prepare("SELECT COUNT(*) FROM agent_workflow_runs WHERE owner_user_id=? AND source_kind='objective_step' AND source_hash=? AND status<>'completed'");$stmt->execute([$uid,$hash]);
+    if((int)$stmt->fetchColumn()===0){
+        $pdo->prepare("UPDATE agent_workflow_runs SET objective_verification_status='verifying' WHERE id=? AND owner_user_id=? AND objective_verification_status NOT IN ('achieved','needs_remediation')")->execute([$parentId,$uid]);
+        agent_objective_verification_queue_label_v176($pdo,$uid,$parentId,'verifying');
+    }
+}
+
 function agent_objective_verification_after_result_v176(PDO $pdo,array $user,array $run,array $action,bool $success,string $summary,array $result,int $receiptId,string $receiptStatus): array
 {
-    if(!$success||$receiptStatus!=='completed'||(string)($run['source_kind']??'')!=='objective_plan'||!str_starts_with((string)($action['action_key']??''),'objective-review'))return ['handled'=>false,'reopened'=>false];
     if(!agent_objective_verification_schema_ready_v176($pdo))return ['handled'=>false,'reopened'=>false];
+    agent_objective_verification_child_result_v176($pdo,$run,$success,$receiptStatus);
+    if(!$success||$receiptStatus!=='completed'||(string)($run['source_kind']??'')!=='objective_plan'||!str_starts_with((string)($action['action_key']??''),'objective-review'))return ['handled'=>false,'reopened'=>false];
     $uid=(int)($user['id']??0);$runId=(int)($run['id']??0);if($uid<1||$runId<1)return ['handled'=>false,'reopened'=>false];
     $parent=agent_objective_verification_parent_v176($pdo,$uid,$runId,true);if(!$parent)return ['handled'=>false,'reopened'=>false];
     $criteria=agent_objective_verification_json_v176($parent['objective_success_criteria']??'');if(!$criteria)$criteria=agent_objective_success_criteria_v176((string)($parent['goal']??''));
     $signal=agent_objective_verification_signal_v176($result);$verificationSummary=agent_objective_text_v175($result['verification_summary']??$summary,500);$evidence=$result['evidence']??($result['criteria_results']??[]);if(!is_array($evidence))$evidence=['summary'=>agent_objective_text_v175($evidence,800)];
     if($signal===true){
         $pdo->prepare("UPDATE agent_workflow_runs SET objective_verification_status='achieved',objective_verification_summary=?,objective_verification_evidence=?,objective_verified_at=UTC_TIMESTAMP(),progress_message='Objective achieved' WHERE id=? AND owner_user_id=?")->execute([$verificationSummary,$evidence?agent_workflow_json_v1400($evidence):null,$runId,$uid]);
+        agent_objective_verification_queue_label_v176($pdo,$uid,$runId,'achieved');
         agent_workflow_event_v1400($pdo,$uid,$runId,'objective_achieved','completed','completed','agent','Objective verification confirmed the requested outcome.',['receipt_id'=>$receiptId,'criteria_count'=>count($criteria)]);
         return ['handled'=>true,'reopened'=>false,'verification_status'=>'achieved'];
     }
@@ -228,6 +268,7 @@ function agent_objective_verification_rewire_failed_v176(PDO $pdo,array $user,in
         agent_workflow_event_v1400($pdo,$uid,$oldId,'objective_replaced',(string)$old['status'],(string)$old['status'],'agent','Adaptive replanning preserved the failed workflow as history and rewired remaining dependents to replacement work.',['replacement_run_id'=>$newId,'objective_run_id'=>$objectiveRunId]);$replacements[]=$newId;
     }
     $pdo->prepare("UPDATE agent_workflow_runs SET objective_verification_status='needs_remediation',objective_verification_summary='Failed objective work was replaced and remaining dependencies were rewired.',objective_remediation_count=? WHERE id=? AND owner_user_id=?")->execute([$cycle,$objectiveRunId,$uid]);
+    agent_objective_verification_queue_label_v176($pdo,$uid,$objectiveRunId,'needs_remediation');
     return ['replaced'=>count($replacements),'replacement_run_ids'=>$replacements];
 }
 
@@ -239,7 +280,7 @@ function agent_objective_verification_verify_v176(PDO $pdo,array $user,int $obje
     if($unfinished)return ['queued'=>false,'unfinished'=>$unfinished,'state'=>agent_objective_verification_state_v176($pdo,$user,$objectiveRunId,true)];
     if((string)($parent['objective_verification_status']??'')==='achieved')return ['queued'=>false,'unfinished'=>[],'state'=>agent_objective_verification_state_v176($pdo,$user,$objectiveRunId,true)];
     $review=agent_objective_verification_latest_review_v176($pdo,$uid,$objectiveRunId);if(!$review||in_array((string)$review['status'],['completed','failed'],true)){$criteria=agent_objective_verification_json_v176($parent['objective_success_criteria']??'');agent_objective_verification_add_review_action_v176($pdo,$uid,$parent,$criteria,(int)($parent['objective_remediation_count']??0));}
-    $from=(string)($parent['status']??'');$pdo->prepare("UPDATE agent_workflow_runs SET status='approved',completed_at=NULL,next_attempt_at=UTC_TIMESTAMP(),progress_percent=0,progress_message='Verification queued',objective_verification_status='verifying' WHERE id=? AND owner_user_id=?")->execute([$objectiveRunId,$uid]);agent_workflow_event_v1400($pdo,$uid,$objectiveRunId,'objective_verification_queued',$from,'approved','user','Objective verification was explicitly requested in Agent Chat.',[]);
+    $from=(string)($parent['status']??'');$pdo->prepare("UPDATE agent_workflow_runs SET status='approved',completed_at=NULL,next_attempt_at=UTC_TIMESTAMP(),progress_percent=0,progress_message='Verification queued',objective_verification_status='verifying' WHERE id=? AND owner_user_id=?")->execute([$objectiveRunId,$uid]);agent_objective_verification_queue_label_v176($pdo,$uid,$objectiveRunId,'verifying');agent_workflow_event_v1400($pdo,$uid,$objectiveRunId,'objective_verification_queued',$from,'approved','user','Objective verification was explicitly requested in Agent Chat.',[]);
     return ['queued'=>true,'unfinished'=>[],'state'=>agent_objective_verification_state_v176($pdo,$user,$objectiveRunId,true)];
 }
 
