@@ -109,14 +109,16 @@ function agent_objective_memory_template_v177(PDO $pdo,int $uid,array $parent): 
         $title=agent_objective_text_v175((string)($child['title']??''),190);
         $instruction=agent_objective_text_v175((string)($child['goal']??$title),1500);
         $target=in_array((string)($child['execution_target']??''),['cloud','homeserver'],true)?(string)$child['execution_target']:'cloud';
+        $observedStatus=(string)($child['status']??'');
         if($stage>=VP3_AGENT_OBJECTIVE_REMEDIATION_STAGE_BASE_V176){
-            if($title!=='')$lessons[]=['title'=>$title,'instruction'=>$instruction,'execution_target_preference'=>$target];
+            if($title!=='')$lessons[]=['title'=>$title,'instruction'=>$instruction,'execution_target_preference'=>$target,'observed_status'=>$observedStatus];
             continue;
         }
         $stages[$stage][$task]=[
             'title'=>$title,
             'instruction'=>$instruction,
             'execution_target_preference'=>$target,
+            'observed_status'=>$observedStatus,
             'observed_risk_level'=>(string)($child['risk_level']??'low'),
             'observed_requires_approval'=>!empty($child['requires_approval']),
         ];
@@ -128,7 +130,7 @@ function agent_objective_memory_template_v177(PDO $pdo,int $uid,array $parent): 
         'source_objective_run_id'=>(int)($parent['id']??0),
         'stages'=>$normalized,
         'remediation_lessons'=>array_slice($lessons,0,12),
-        'note'=>'Observed risk/approval fields and execution targets are learning hints only. Reuse must recalculate current approval/risk and normalize the current execution boundary.',
+        'note'=>'Observed status/risk/approval fields and execution targets are learning hints only. Reuse must recalculate current approval/risk and normalize the current execution boundary.',
     ];
 }
 
@@ -187,23 +189,37 @@ function agent_objective_memory_similar_v177(PDO $pdo,array $user,string $goal,i
     return array_slice($ranked,0,max(1,min(10,$limit)));
 }
 
+function agent_objective_memory_adapt_text_v177(string $text,string $oldGoal,string $newGoal,int $limit): string
+{
+    if($oldGoal!==''&&$newGoal!==''&&strcasecmp($oldGoal,$newGoal)!==0)$text=str_ireplace($oldGoal,$newGoal,$text);
+    $text=preg_replace('/\b(?:objective|workflow)\s*#\s*\d+\b/i','the affected workflow',$text)??$text;
+    $text=preg_replace('/\s*Latest error:\s*[^.]+\.?/i','',$text)??$text;
+    return agent_objective_text_v175($text,$limit);
+}
+
 function agent_objective_memory_replay_stages_v177(array $memory,string $newGoal): array
 {
-    $template=agent_objective_memory_json_v177($memory['plan_template']??'');$out=[];$oldGoal=agent_objective_text_v175((string)($memory['goal']??''),900);$newGoal=agent_objective_text_v175($newGoal,900);
+    $template=agent_objective_memory_json_v177($memory['plan_template']??'');$out=[];$oldGoal=agent_objective_text_v175((string)($memory['goal']??''),900);$newGoal=agent_objective_text_v175($newGoal,900);$remediated=(string)($memory['outcome_status']??'')==='remediated';
     foreach(array_slice((array)($template['stages']??[]),0,VP3_AGENT_OBJECTIVE_MAX_STAGES_V175) as $stage){
         $clean=[];
         foreach((array)$stage as $step){
-            if(!is_array($step))continue;
-            $title=(string)($step['title']??'');$instruction=(string)($step['instruction']??$title);
-            if($oldGoal!==''&&$newGoal!==''&&strcasecmp($oldGoal,$newGoal)!==0){$title=str_ireplace($oldGoal,$newGoal,$title);$instruction=str_ireplace($oldGoal,$newGoal,$instruction);}
-            $title=agent_objective_text_v175($title,190);$instruction=agent_objective_text_v175($instruction,1500);if($title==='')continue;
+            if(!is_array($step))continue;if($remediated&&in_array((string)($step['observed_status']??''),['failed','cancelled'],true))continue;
+            $title=agent_objective_memory_adapt_text_v177((string)($step['title']??''),$oldGoal,$newGoal,190);$instruction=agent_objective_memory_adapt_text_v177((string)($step['instruction']??$title),$oldGoal,$newGoal,1500);if($title==='')continue;
             $preferred=(string)($step['execution_target_preference']??'cloud');try{$preferred=agent_work_delegate_target_v174($preferred);}catch(Throwable $e){$preferred='cloud';}
             $target=agent_objective_target_v175($instruction,$preferred);
             $clean[]=['title'=>$title,'instruction'=>$instruction,'target'=>$target];
         }
         if($clean)$out[]=$clean;
     }
-    return $out;
+    if($remediated){
+        foreach(array_slice((array)($template['remediation_lessons']??[]),0,4) as $lesson){
+            if(!is_array($lesson)||(string)($lesson['observed_status']??'')!=='completed')continue;
+            $title=agent_objective_memory_adapt_text_v177((string)($lesson['title']??'Learned remediation'),$oldGoal,$newGoal,190);$instruction=agent_objective_memory_adapt_text_v177((string)($lesson['instruction']??$title),$oldGoal,$newGoal,1500);if($instruction==='')continue;
+            $preferred=(string)($lesson['execution_target_preference']??'cloud');try{$preferred=agent_work_delegate_target_v174($preferred);}catch(Throwable $e){$preferred='cloud';}
+            $out[]=[['title'=>$title!==''?$title:'Apply learned remediation','instruction'=>$instruction,'target'=>agent_objective_target_v175($instruction,$preferred)]];
+        }
+    }
+    return array_slice($out,0,VP3_AGENT_OBJECTIVE_MAX_STAGES_V175);
 }
 
 function agent_objective_memory_reuse_v177(PDO $pdo,array $user,array $memory,string $goal,int $conversationId=0,?int $agentId=null): array
@@ -221,6 +237,12 @@ function agent_objective_memory_reuse_v177(PDO $pdo,array $user,array $memory,st
     if($parentId>0)agent_workflow_event_v1400($pdo,$uid,$parentId,'objective_memory_reused','','approved','agent','A learned objective pattern seeded fresh canonical workflows.',['memory_id'=>(int)$memory['id'],'source_objective_run_id'=>(int)$memory['source_objective_run_id'],'historical_outcome'=>(string)$memory['outcome_status']]);
     $state['memory_reuse']=['memory_id'=>(int)$memory['id'],'source_objective_run_id'=>(int)$memory['source_objective_run_id'],'historical_outcome'=>(string)$memory['outcome_status'],'historical_score'=>(int)$memory['outcome_score']];
     return $state;
+}
+
+function agent_objective_memory_suggestion_v177(string $query,array $user): string
+{
+    $parsed=agent_objective_parse_create_v175($query);if(!$parsed)return '';$pdo=db();if(!$pdo||!agent_objective_memory_schema_ready_v177($pdo))return '';
+    try{$matches=agent_objective_memory_similar_v177($pdo,$user,(string)$parsed['goal'],1,false);if(!$matches||(float)$matches[0]['similarity_score']<0.30)return '';$row=$matches[0];return 'I also found learned memory #'.(int)$row['id'].' from a '.((string)$row['outcome_status']==='achieved'?'cleanly achieved':'remediated').' similar objective. Say “reuse objective memory #'.(int)$row['id'].' for '.agent_objective_text_v175((string)$parsed['goal'],180).'” if you want a fresh plan based on that successful pattern.';}catch(Throwable $e){return '';}
 }
 
 function agent_objective_memory_answer_matches_v177(array $matches): string
