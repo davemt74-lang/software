@@ -64,6 +64,8 @@ function member_navigation_active_key(?string $scriptName = null): string
         'artist-listening.php'=>'transcriptions',
         'calendar.php'=>'calendar',
         'calendar-event.php'=>'calendar',
+        'meetings.php'=>'meetings',
+        'meeting.php'=>'meetings',
         'account.php'=>'account',
         'settings-homeserver.php'=>'homeserver',
         'plugins.php'=>'plugins',
@@ -89,7 +91,7 @@ function member_navigation_section_label(string $key): string
     return match($key){
         'home','chat','profile_agent','voice_profile'=>'Agent',
         'messages','contacts','knowledge','local_knowledge','memory','transcriptions','calendar'=>'Workspace',
-        'scheduling','appointment_lifecycle','commerce','profile_commerce','profile_commerce_delivery','profile_commerce_refunds'=>'Business',
+        'meetings','scheduling','appointment_lifecycle','commerce','profile_commerce','profile_commerce_delivery','profile_commerce_refunds'=>'Business',
         'team','team_scheduling','team_workspaces'=>'Team',
         'music_workspace'=>'Creator',
         'account','homeserver','plugins','subscription','token_packs','ai_usage'=>'Account',
@@ -141,6 +143,7 @@ function member_navigation_menu_links(?array $user = null): array
         if($chatAllowed)$add($links,'ai_usage','AI Usage History',url('/ai-usage.php'),'identity');
         $add($links,'contacts','My Contacts',url('/contacts.php'),'identity');
         $add($links,'calendar','My Calendar',url('/calendar.php'),'agent');
+        if(function_exists('video_meeting_schema_ready_v1800')&&video_meeting_schema_ready_v1800())$add($links,'meetings','Meetings',url('/meetings.php'),'agent');
     }
     if(member_navigation_entitled($user,'knowledge.access',personal_capability_has_v242('personal_knowledge.access',$user)))$add($links,'knowledge','My Knowledge',url('/knowledge.php'),'identity');
     if($accountAllowed&&member_navigation_entitled($user,'knowledge.access',personal_capability_has_v242('personal_knowledge.access',$user)))$add($links,'local_knowledge','Local Knowledge',url('/local-knowledge.php'),'identity');
