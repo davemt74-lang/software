@@ -17,6 +17,8 @@ require_once dirname(__DIR__) . '/includes/transcription-deeper-items.php';
 require_once dirname(__DIR__) . '/includes/transcription-deeper-advanced.php';
 require_once dirname(__DIR__) . '/includes/transcription-deeper-chat.php';
 require_once dirname(__DIR__) . '/includes/transcription-deeper-report.php';
+require_once dirname(__DIR__) . '/includes/video-meetings-v1800.php';
+require_once dirname(__DIR__) . '/includes/video-meetings-homeserver-v1801.php';
 
 const VP3_TRANSCRIPTION_INTELLIGENCE_V300 = 'vp3-transcription-intelligence-v307-20260907';
 
@@ -50,6 +52,19 @@ function transcription_intelligence_folder_id_v313(PDO $pdo,array $user,array $s
     return $folderId>0&&personal_knowledge_folder($pdo,$user,$folderId)?$folderId:0;
 }
 
+function transcription_intelligence_meeting_policy_public_v1801(?array $policy): ?array
+{
+    if($policy===null)return null;
+    return [
+        'cloud_ai_allowed'=>!empty($policy['cloud_ai_allowed']),
+        'policy_resolved'=>!empty($policy['policy_resolved']),
+        'requested_compute'=>(string)($policy['requested_compute']??'auto'),
+        'local_compute_available'=>!empty($policy['local_compute_available']),
+        'reason'=>(string)($policy['reason']??''),
+        'cloud_block_reason'=>(string)($policy['cloud_block_reason']??''),
+    ];
+}
+
 $user=current_user();
 if(!$user)transcription_intelligence_json_v300(false,['error'=>'Sign in to use transcription intelligence.'],401);
 if(!has_permission('artist_listening.access',$user))transcription_intelligence_json_v300(false,['error'=>'Transcription access is required.'],403);
@@ -68,6 +83,8 @@ $knowledgeFolders=personal_knowledge_folders($pdo,$user);
 
 try{
     $session=$sessionId?artist_listening_v172_session($pdo,$user,$sessionId):null;
+    $meetingAiPolicy=$session&&function_exists('video_meeting_transcription_ai_policy_v1801')?video_meeting_transcription_ai_policy_v1801($pdo,$user,$session):null;
+    $meetingAiPolicyPublic=transcription_intelligence_meeting_policy_public_v1801($meetingAiPolicy);
 
     if($method==='GET'&&$action==='registry')transcription_intelligence_json_v300(true,['registry'=>transcription_app_registry_public_v307(),'workflow_config'=>$workflowConfig,'folders'=>$knowledgeFolders]);
     if($method==='GET'&&$action==='workflow')transcription_intelligence_json_v300(true,['workflow_config'=>$workflowConfig]);
@@ -79,7 +96,7 @@ try{
             'permissions'=>transcription_app_permissions_v300($user),'operations'=>[],'workflow_config'=>$workflowConfig,'folders'=>$knowledgeFolders,
             'relations_summary'=>transcription_intelligence_relations_summary_v305(null),
             'output_input'=>['accepted_items'=>0,'accepted_connections'=>0,'input_hash'=>''],'comparison_targets'=>[],
-            'deeper_intelligence'=>['version'=>307,'enabled'=>true],
+            'deeper_intelligence'=>['version'=>307,'enabled'=>true],'meeting_processing_policy'=>null,
         ]);
         $segments=artist_listening_v172_segments($pdo,$sessionId);$map=artist_listening_transcript_page_map($segments);
         $status=artist_listening_v237_analysis_status($pdo,$sessionId,$map);$master=is_array($status['master']??null)?$status['master']:null;
@@ -89,6 +106,7 @@ try{
             'operations'=>transcription_intelligence_operational_context_v303($pdo,$user,$session),'workflow_config'=>$workflowConfig,'folders'=>$knowledgeFolders,
             'relations_summary'=>transcription_intelligence_relations_summary_v305($master),
             'comparison_targets'=>transcription_deeper_comparison_targets_v307($pdo,$user,$session),
+            'meeting_processing_policy'=>$meetingAiPolicyPublic,
         ]);
     }
 
@@ -102,9 +120,12 @@ try{
         if(!array_key_exists('web_research',$workflowInput)&&array_key_exists('research',$input))$workflowInput['web_research']=!empty($input['research']);
         if(!array_key_exists('live_analysis',$workflowInput)&&$mode==='live')$workflowInput['live_analysis']=true;
         $workflow=transcription_workflow_normalize_v304($workflowInput);$comparison=is_array($input['comparison']??null)?$input['comparison']:[];
-        $result=transcription_app_analyze_v307($pdo,$user,$sessionId,$mode,$input['apps']??['basic'],$workflow,$comparison);
+        $requestedApps=transcription_app_ids_v306($input['apps']??['basic']);$registry=transcription_app_registry_v307();$needsCloudAi=!empty($workflow['web_research'])||($workflow['depth']??'standard')==='deep';
+        foreach($requestedApps as $requestedApp){if((string)($registry[$requestedApp]['execution']??'')==='ai'){$needsCloudAi=true;break;}}
+        if($needsCloudAi&&function_exists('video_meeting_transcription_assert_cloud_ai_v1801'))video_meeting_transcription_assert_cloud_ai_v1801($pdo,$user,$session);
+        $result=transcription_app_analyze_v307($pdo,$user,$sessionId,$mode,$requestedApps,$workflow,$comparison);
         $master=is_array($result['master']??null)?$result['master']:null;
-        $requested=array_values(array_map('strval',(array)($result['requested_apps']??($input['apps']??['basic']))));
+        $requested=array_values(array_map('strval',(array)($result['requested_apps']??$requestedApps)));
         if(($workflow['depth']??'standard')==='deep'&&$mode==='manual'&&$master&&empty($result['skipped'])){
             $advanced=transcription_deeper_advanced_finalize_v307($pdo,$user,$session,$master,$workflow,$comparison,$requested);
             $master=$advanced['master'];$result['master']=$master;
@@ -120,6 +141,7 @@ try{
         $result['operations']=transcription_intelligence_operational_context_v303($pdo,$user,$session);
         $result['relations_summary']=transcription_intelligence_relations_summary_v305($master);
         $result['comparison_targets']=transcription_deeper_comparison_targets_v307($pdo,$user,$session);
+        $result['meeting_processing_policy']=$meetingAiPolicyPublic;
         transcription_intelligence_json_v300(true,$result);
     }
 
@@ -128,6 +150,7 @@ try{
     if($master)$master=transcription_intelligence_normalize_v307($pdo,$sessionId,$master);
 
     if($action==='build_relations'){
+        if(function_exists('video_meeting_transcription_assert_cloud_ai_v1801'))video_meeting_transcription_assert_cloud_ai_v1801($pdo,$user,$session);
         if(!$master)throw new RuntimeException('Analyze this transcript before building intelligence connections.');
         $outputs=transcription_output_only_modules_v306(is_array($master['analysis']??null)?$master['analysis']:[],$master);
         $built=transcription_intelligence_build_relations_v305($pdo,$user,$session,$master,(string)$map['source_hash']);$master=is_array($built['master']??null)?$built['master']:$master;
@@ -138,7 +161,7 @@ try{
             'relations_summary'=>$built['relations_summary']??transcription_intelligence_relations_summary_v305($master),
             'relation_provider'=>(string)($built['provider']??''),'relation_model'=>(string)($built['model']??''),'relation_catalog_items'=>max(0,(int)($built['catalog_items']??0)),
             'operations'=>transcription_intelligence_operational_context_v303($pdo,$user,$session),'workflow_config'=>$workflowConfig,'folders'=>$knowledgeFolders,
-            'comparison_targets'=>transcription_deeper_comparison_targets_v307($pdo,$user,$session),
+            'comparison_targets'=>transcription_deeper_comparison_targets_v307($pdo,$user,$session),'meeting_processing_policy'=>$meetingAiPolicyPublic,
         ]);
     }
 
@@ -153,6 +176,7 @@ try{
         transcription_intelligence_json_v300(true,$view+[
             'relations_summary'=>transcription_intelligence_relations_summary_v305($master),'operations'=>transcription_intelligence_operational_context_v303($pdo,$user,$session),
             'workflow_config'=>$workflowConfig,'folders'=>$knowledgeFolders,'comparison_targets'=>transcription_deeper_comparison_targets_v307($pdo,$user,$session),
+            'meeting_processing_policy'=>$meetingAiPolicyPublic,
         ]);
     }
 
@@ -169,7 +193,7 @@ try{
             'tags'=>transcription_app_tags_v300($session),'permissions'=>transcription_app_permissions_v300($user),
             'operations'=>transcription_intelligence_operational_context_v303($pdo,$user,$session),'workflow_config'=>$workflowConfig,'folders'=>$knowledgeFolders,
             'relations_summary'=>transcription_intelligence_relations_summary_v305($master),'comparison_targets'=>transcription_deeper_comparison_targets_v307($pdo,$user,$session),
-            'main_chat_notice'=>$notice,
+            'main_chat_notice'=>$notice,'meeting_processing_policy'=>$meetingAiPolicyPublic,
         ]);
     }
 
@@ -183,6 +207,7 @@ try{
             'receipt'=>$operation['receipt']??[],'existing'=>!empty($operation['existing']),'operations'=>$operation['operations']??transcription_intelligence_operational_context_v303($pdo,$user,$session),
             'tags'=>transcription_app_tags_v300($session),'permissions'=>transcription_app_permissions_v300($user),'workflow_config'=>$workflowConfig,'folders'=>$knowledgeFolders,
             'relations_summary'=>transcription_intelligence_relations_summary_v305($master),'comparison_targets'=>transcription_deeper_comparison_targets_v307($pdo,$user,$session),
+            'meeting_processing_policy'=>$meetingAiPolicyPublic,
         ]);
     }
 
@@ -197,7 +222,7 @@ try{
             'source'=>'transcription-intelligence-v307','session_id'=>$sessionId,'title'=>(string)($session['title']??''),'tags'=>$tags,'source_hash'=>(string)$map['source_hash'],'saved_at'=>gmdate('c')
         ],0.98);
         if($id<1)throw new RuntimeException('Could not save the transcription intelligence to Agent Brain.');
-        transcription_intelligence_json_v300(true,['saved'=>true,'memory_id'=>$id,'saved_at'=>gmdate('c')]);
+        transcription_intelligence_json_v300(true,['saved'=>true,'memory_id'=>$id,'saved_at'=>gmdate('c'),'meeting_processing_policy'=>$meetingAiPolicyPublic]);
     }
 
     if($action==='save_knowledge'){
@@ -206,7 +231,7 @@ try{
         $title=mb_strimwidth('Transcript Intelligence · '.((string)($session['title']??'')?:('Session '.$sessionId)),0,190,'…');
         $id=personal_knowledge_store($user,'artist-listening-analysis:'.$sessionId,$title,$text,'Personal transcription intelligence · session #'.$sessionId.' · v307 filtered',$folderId);
         $folder=$folderId>0?personal_knowledge_folder($pdo,$user,$folderId):null;
-        transcription_intelligence_json_v300(true,['saved'=>true,'knowledge_id'=>$id,'scope'=>'personal','published'=>false,'folder'=>['id'=>$folderId,'name'=>$folder?(string)$folder['folder_name']:'Unfiled'],'saved_at'=>gmdate('c')]);
+        transcription_intelligence_json_v300(true,['saved'=>true,'knowledge_id'=>$id,'scope'=>'personal','published'=>false,'folder'=>['id'=>$folderId,'name'=>$folder?(string)$folder['folder_name']:'Unfiled'],'saved_at'=>gmdate('c'),'meeting_processing_policy'=>$meetingAiPolicyPublic]);
     }
 
     transcription_intelligence_json_v300(false,['error'=>'Unsupported transcription intelligence action.'],422);
