@@ -29,6 +29,7 @@ jobs:
           php -l includes/video-meetings-v1800.php
           php -l includes/video-meetings-security-v1800.php
           php -l includes/video-meetings-homeserver-v1801.php
+          php -l includes/video-meetings-homeserver-v1840.php
           php -l includes/video-meetings-calendar-v1801.php
           php -l includes/video-meetings-agent-v1800.php
           php -l includes/video-meetings-transcription-v1800.php
@@ -53,10 +54,13 @@ jobs:
         run: |
           node --check video-meetings-v1800.js
           node --check tests/video-meetings-v1800-contract.mjs
+          node --check tests/video-meetings-homeserver-v1840-contract.mjs
       - name: Python syntax
         run: python -m py_compile workers/vp3-meeting-agent/agent.py
       - name: Video Meetings contract
-        run: node tests/video-meetings-v1800-contract.mjs
+        run: |
+          node tests/video-meetings-v1800-contract.mjs
+          node tests/video-meetings-homeserver-v1840-contract.mjs
 
   worker-sdk:
     name: LiveKit worker SDK contract
