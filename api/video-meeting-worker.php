@@ -21,7 +21,15 @@ if($provided===''||!hash_equals($secret,$provided))$fail(401,'Meeting worker aut
 $input=json_decode((string)file_get_contents('php://input'),true);if(!is_array($input))$fail(400,'JSON body required.');
 $publicId=strtolower(trim((string)($input['meeting']??'')));$meeting=video_meeting_by_public_id_v1800($pdo,$publicId);
 if(!$meeting)$fail(404,'Meeting not found.');
-if(in_array((string)$meeting['status'],['cancelled','ended','processed'],true))$fail(409,'Meeting is closed.');
+$status=(string)$meeting['status'];
+if(in_array($status,['cancelled','processed'],true))$fail(409,'Meeting is closed.');
+if($status==='ended'){
+    // LiveKit may deliver the final STT result just after the organizer ends the
+    // room. Accept that final flush briefly, but do not leave ended rooms open
+    // as indefinite transcript-write targets.
+    $endedAt=strtotime((string)($meeting['ended_at']??'').' UTC')?:0;
+    if($endedAt<1||time()-$endedAt>300)$fail(409,'Meeting transcript grace period has ended.');
+}
 if(empty($input['is_final'])){
     echo json_encode(['ok'=>true,'accepted'=>0,'ignored'=>'interim'],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);exit;
 }
