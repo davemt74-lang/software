@@ -25,6 +25,7 @@ assert.match(verification,/return null/,'Missing verification signals must not b
 assert.match(verification,/agent_objective_verification_after_result_v176/,'Receipt completion must feed objective verification');
 assert.match(verification,/objective_achieved','completed','completed'/,'Verified objectives need an auditable achieved event');
 assert.match(verification,/objective_remediation_queued/,'Unmet criteria must create an auditable remediation event');
+assert.match(verification,/\$hasFailed\|\|\$hasCancelled/,'Failed or cancelled objective work must surface Needs remediation before manual repair');
 
 assert.match(verification,/agent_objective_insert_run_v175/,'Remediation must reuse canonical child workflow creation');
 assert.match(verification,/agent_objective_insert_dependency_v175/,'Remediation must reuse the existing cross-workflow dependency graph');
@@ -34,7 +35,7 @@ assert.match(verification,/agent_objective_verification_add_review_action_v176/,
 assert.match(verification,/agent_objective_verification_rewire_failed_v176/,'Failed objective work must support targeted replacement');
 assert.match(verification,/DELETE FROM agent_workflow_run_dependencies/,'Affected dependency edges must be rewired away from replaced failed work');
 assert.match(verification,/replacement_run_id/,'Failed work history must point to its replacement');
-assert.match(verification,/status==='completed'|status\]==='completed'/,'Completed dependent work must be preserved rather than rewritten');
+assert.ok(verification.includes("(string)$dependent['status']==='completed'"),'Completed dependent work must be preserved rather than rewritten');
 
 for(const phrase of ['verify','repair','replan'])assert.match(verification,new RegExp(`objective\\.${phrase}`),`Agent Chat needs an audited objective.${phrase} tool path`);
 assert.match(verification,/why|blocking|complete/,'Agent Chat must explain why an objective is not achieved');
