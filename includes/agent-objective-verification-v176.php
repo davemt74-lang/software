@@ -131,9 +131,11 @@ function agent_objective_verification_public_fields_v176(PDO $pdo,array $user,ar
     $status=trim((string)($parent['objective_verification_status']??''));
     $criteria=agent_objective_verification_json_v176($parent['objective_success_criteria']??'');
     if($status==='')$status='waiting';
-    if($status!=='achieved'&&$status!=='needs_remediation'){
-        $allComplete=$children!==[];foreach($children as $child){if((string)($child['status']??'')!=='completed'){$allComplete=false;break;}}
-        if((string)($parent['status']??'')==='executing'||$allComplete)$status='verifying';
+    $hasFailed=false;$hasCancelled=false;$allComplete=$children!==[];
+    foreach($children as $child){$childStatus=(string)($child['status']??'');if($childStatus==='failed')$hasFailed=true;if($childStatus==='cancelled')$hasCancelled=true;if($childStatus!=='completed')$allComplete=false;}
+    if($status!=='achieved'){
+        if($hasFailed||$hasCancelled)$status='needs_remediation';
+        elseif($status!=='needs_remediation'&&((string)($parent['status']??'')==='executing'||$allComplete))$status='verifying';
     }
     return [
         'verification_build'=>VP3_AGENT_OBJECTIVE_VERIFICATION_V176,
@@ -166,7 +168,7 @@ function agent_objective_verification_signal_v176(array $result): ?bool
 function agent_objective_verification_remediation_steps_v176(array $result,array $criteria,string $goal): array
 {
     $steps=[];$raw=$result['remediation_steps']??[];
-    if(is_string($raw))$raw=preg_split('/\s*(?:;|\r?\n)+\s*/u,$raw,-1,PREG_SPLIT_NO_EMPTY)?:[];
+    if(is_string($raw))$raw=preg_split('/\s*(?:;|\r?\n)+\s*/u',$raw,-1,PREG_SPLIT_NO_EMPTY)?:[];
     if(is_array($raw))foreach($raw as $item){$text=is_array($item)?(string)($item['instruction']??$item['title']??''):(string)$item;$text=agent_objective_text_v175($text,700);if($text!=='')$steps[]=$text;}
     if(!$steps){$unmet=$result['unmet_criteria']??[];if(is_string($unmet))$unmet=[$unmet];if(is_array($unmet))foreach($unmet as $item){$text=agent_objective_text_v175(is_array($item)?($item['criterion']??$item['summary']??''):$item,320);if($text!=='')$steps[]='Resolve unmet success criterion: '.$text;}}
     if(!$steps)$steps[]='Collect missing verification evidence, resolve any unmet success criteria, and make the objective verifiably complete: '.$goal;
@@ -179,7 +181,8 @@ function agent_objective_verification_insert_remediation_v176(PDO $pdo,int $uid,
     $stage=VP3_AGENT_OBJECTIVE_REMEDIATION_STAGE_BASE_V176+$cycle;
     $step=agent_objective_clean_step_v175($instruction);
     $runId=agent_objective_insert_run_v175($pdo,$uid,$agentId,$hash,(string)($parent['goal']??''),$step,$stage,$taskNo);
-    agent_workflow_event_v1400($pdo,$uid,$runId,'objective_remediation_created','',(string)((agent_workflow_row_v1400($pdo,$uid,$runId)['status']??'approved')),'agent','Adaptive objective replanning created remediation work.',['objective_run_id'=>(int)$parent['id'],'cycle'=>$cycle,'task'=>$taskNo]);
+    $remediationRow=agent_workflow_row_v1400($pdo,$uid,$runId);$remediationStatus=is_array($remediationRow)?(string)($remediationRow['status']??'approved'):'approved';
+    agent_workflow_event_v1400($pdo,$uid,$runId,'objective_remediation_created','',$remediationStatus,'agent','Adaptive objective replanning created remediation work.',['objective_run_id'=>(int)$parent['id'],'cycle'=>$cycle,'task'=>$taskNo]);
     return $runId;
 }
 
@@ -245,7 +248,7 @@ function agent_objective_verification_answer_v176(array $state,string $mode='sta
     $objective=(array)($state['objective']??[]);$id=(int)($objective['id']??0);$goal=(string)($state['goal']??'');$status=(string)($state['verification_status']??'waiting');$summary=(string)($state['verification_summary']??'');$criteria=(array)($state['success_criteria']??[]);$counts=(array)($state['counts']??[]);
     $label=match($status){'achieved'=>'Achieved','needs_remediation'=>'Needs remediation','verifying'=>'Verifying',default=>'Waiting for execution'};
     $parts=['Objective #'.$id.' — '.$goal.'. Verification: '.$label.'.',((int)($counts['completed']??0)).'/'.((int)($counts['total']??0)).' child workflows completed.'];if($summary!=='')$parts[]=$summary;
-    if($mode==='why'&&$status!=='achieved'){if((int)($counts['failed']??0)>0)$parts[]=(int)$counts['failed'].' child workflow(s) failed.';if((int)($counts['approval']??0)>0)$parts[]=(int)$counts['approval'].' child workflow(s) are waiting approval.';if((int)($counts['paused']??0)>0)$parts[]=(int)$counts['paused'].' child workflow(s) are paused.';if($criteria)$parts[]='Achievement still requires '.count($criteria).' stored success criterion/criteria to be verified.';}
+    if($mode==='why'&&$status!=='achieved'){if((int)($counts['failed']??0)>0)$parts[]=(int)$counts['failed'].' child workflow(s) failed.';if((int)($counts['cancelled']??0)>0)$parts[]=(int)$counts['cancelled'].' child workflow(s) were cancelled.';if((int)($counts['approval']??0)>0)$parts[]=(int)$counts['approval'].' child workflow(s) are waiting approval.';if((int)($counts['paused']??0)>0)$parts[]=(int)$counts['paused'].' child workflow(s) are paused.';if($criteria)$parts[]='Achievement still requires '.count($criteria).' stored success criterion/criteria to be verified.';}
     return implode(' ',$parts);
 }
 
