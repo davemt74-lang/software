@@ -7,6 +7,7 @@ require_once __DIR__.'/agent-objective-memory-v177.php';
 require_once __DIR__.'/agent-proactive-objectives-v178.php';
 require_once __DIR__.'/agent-objective-portfolio-v179.php';
 require_once __DIR__.'/agent-goal-strategy-v1710.php';
+require_once __DIR__.'/agent-goal-planning-v1711.php';
 
 function release_v105_chat_intent(string $query): bool
 {
@@ -30,6 +31,12 @@ function chat_account_state_intent_v241(string $query): bool
 function release_v105_chat_tool(string $query,array $user,int $conversationId=0): array
 {
     $empty=['handled'=>false,'answer'=>'','stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[]];
+
+    // Phase 17.11 owns goal-roadmap and milestone language. Roadmaps are
+    // advisory planning metadata only; executable work still becomes fresh
+    // Phase 17.5 objectives under the existing approval/execution boundary.
+    $goalPlanning=agent_goal_plan_chat_v1711($query,$user,$conversationId);
+    if(!empty($goalPlanning['handled']))return $goalPlanning;
 
     // Phase 17.10 owns durable Goal → Objective strategy language. Goal state is
     // planning metadata only; verified progress always comes from Phase 17.6
