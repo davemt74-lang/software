@@ -38,7 +38,11 @@ function release_v105_chat_tool(string $query,array $user,int $conversationId=0)
     // composes normal Phase 14/19 workflows plus Phase 17.4 dependencies. It
     // must run before single-workflow controls or release-specific routing.
     $objectivePlan=agent_objective_chat_v175($query,$user,$conversationId);
-    if(!empty($objectivePlan['handled']))return $objectivePlan;
+    if(!empty($objectivePlan['handled'])){
+        $suggestion=agent_objective_memory_suggestion_v177($query,$user);
+        if($suggestion!=='')$objectivePlan['answer']=trim((string)($objectivePlan['answer']??'')).' '.$suggestion;
+        return $objectivePlan;
+    }
 
     // Phase 17.4 runs before generic release/tool routing. It owns only explicit
     // workflow dependency/delegation language and leaves all execution to the
