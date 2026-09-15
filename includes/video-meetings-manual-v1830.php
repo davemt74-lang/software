@@ -81,7 +81,7 @@ function video_meeting_manual_parse_attendees_v1830(string $raw,int $limit=50): 
     return $items;
 }
 
-function video_meeting_manual_new_attendee_emails_v1830(PDO $pdo,array $meeting): array
+function video_meeting_manual_existing_attendee_emails_v1830(PDO $pdo,array $meeting): array
 {
     $emails=[];
     foreach(video_meeting_participants_v1800($pdo,(int)($meeting['id']??0)) as $participant){
@@ -89,6 +89,15 @@ function video_meeting_manual_new_attendee_emails_v1830(PDO $pdo,array $meeting)
         $email=strtolower(trim((string)($participant['email']??'')));if($email!=='')$emails[$email]=true;
     }
     return $emails;
+}
+
+function video_meeting_manual_meeting_changed_v1830(array $meeting,array $event): bool
+{
+    return trim((string)($meeting['title']??''))!==trim((string)($event['title']??''))
+        || trim((string)($meeting['description']??''))!==trim((string)($event['description']??''))
+        || (string)($meeting['start_at_utc']??'')!==(string)($event['start_at_utc']??'')
+        || (string)($meeting['end_at_utc']??'')!==(string)($event['end_at_utc']??'')
+        || (string)($meeting['timezone']??'')!==(string)($event['timezone']??'');
 }
 
 /**
@@ -105,7 +114,7 @@ function video_meeting_manual_sync_event_v1830(PDO $pdo,array $owner,array $even
     $status=(string)($event['status']??'active');if($status==='cancelled')throw new RuntimeException('A cancelled calendar event cannot start a video meeting.');
 
     $meeting=video_meeting_for_calendar_event_v1800($pdo,$eventId);
-    $isNew=!$meeting;$existingEmails=$meeting?video_meeting_manual_new_attendee_emails_v1830($pdo,$meeting):[];
+    $isNew=!$meeting;$meetingChanged=$isNew;$existingEmails=$meeting?video_meeting_manual_existing_attendee_emails_v1830($pdo,$meeting):[];
     if(!$meeting){
         $meeting=video_meeting_create_v1800($pdo,$owner,[
             'calendar_event_id'=>$eventId,
@@ -122,6 +131,7 @@ function video_meeting_manual_sync_event_v1830(PDO $pdo,array $owner,array $even
     }else{
         if((int)($meeting['owner_user_id']??0)!==$ownerId)throw new RuntimeException('This meeting belongs to another account.');
         if(in_array((string)($meeting['status']??''),['ended','processed','cancelled'],true))throw new RuntimeException('Completed or cancelled meetings cannot be rescheduled from Calendar.');
+        $meetingChanged=video_meeting_manual_meeting_changed_v1830($meeting,$event);
         $pdo->prepare("UPDATE video_meetings SET title=?,description=?,start_at_utc=?,end_at_utc=?,timezone=? WHERE id=? AND owner_user_id=?")
             ->execute([
                 mb_strimwidth(trim((string)$event['title']),0,190,''),trim((string)($event['description']??''))?:null,
@@ -142,7 +152,7 @@ function video_meeting_manual_sync_event_v1830(PDO $pdo,array $owner,array $even
     }
 
     video_meeting_update_calendar_events_v1800($pdo,$meeting);
-    return ['meeting'=>$meeting,'guest_access_mode'=>$mode,'new_participants'=>$newParticipants,'created'=>$isNew];
+    return ['meeting'=>$meeting,'guest_access_mode'=>$mode,'new_participants'=>$newParticipants,'created'=>$isNew,'meeting_changed'=>$meetingChanged];
 }
 
 function video_meeting_manual_public_invitation_email_v1830(PDO $pdo,array $meeting,array $participant): bool
@@ -159,9 +169,18 @@ function video_meeting_manual_public_invitation_email_v1830(PDO $pdo,array $meet
 function video_meeting_manual_after_commit_v1830(PDO $pdo,array $result,bool $sendGuestEmails=false): array
 {
     $meeting=is_array($result['meeting']??null)?$result['meeting']:[];$mode=(string)($result['guest_access_mode']??'invite_only');
-    $sent=0;$failed=0;
+    $sent=0;$failed=0;$newIds=[];
+    foreach((array)($result['new_participants']??[]) as $participant)if(is_array($participant))$newIds[(int)($participant['id']??0)]=true;
     if(function_exists('video_meeting_external_calendar_sync_members_v1801')){
         try{video_meeting_external_calendar_sync_members_v1801($pdo,$meeting);}catch(Throwable $e){error_log('VP3 manual meeting member calendar sync failed: '.$e->getMessage());}
+    }
+    if(empty($result['created'])&&!empty($result['meeting_changed'])&&function_exists('create_notification')){
+        foreach(video_meeting_participants_v1800($pdo,(int)($meeting['id']??0)) as $participant){
+            $uid=(int)($participant['user_id']??0);$pid=(int)($participant['id']??0);
+            if($uid>0&&$uid!==(int)($meeting['owner_user_id']??0)&&!isset($newIds[$pid])){
+                create_notification($uid,'video_meeting_updated','Video meeting updated',(string)$meeting['title'].' · '.(string)$meeting['start_at_utc'].' UTC',url('/meeting.php?meeting='.(string)$meeting['public_id']),'video_meeting',(int)$meeting['id']);
+            }
+        }
     }
     if($sendGuestEmails){
         foreach((array)($result['new_participants']??[]) as $participant){
@@ -186,13 +205,17 @@ function video_meeting_manual_cancel_event_v1830(PDO $pdo,array $owner,array $ev
         $pdo->prepare("UPDATE video_meetings SET status='cancelled',cancelled_at=COALESCE(cancelled_at,UTC_TIMESTAMP()) WHERE id=? AND owner_user_id=?")
             ->execute([(int)$meeting['id'],$ownerId]);
         $meeting=video_meeting_row_v1800($pdo,(int)$meeting['id'])?:$meeting;
-        video_meeting_update_calendar_events_v1800($pdo,$meeting);
     }
+    // The owner event is cancelled by user_calendar_cancel_event_v1300 in the
+    // same transaction. Project the cancellation to attendee calendars only
+    // after that transaction commits, otherwise the canonical cancel would see
+    // an already-cancelled owner row and report failure.
     return $meeting;
 }
 
 function video_meeting_manual_after_cancel_v1830(PDO $pdo,array $meeting): void
 {
+    video_meeting_update_calendar_events_v1800($pdo,$meeting);
     video_meeting_livekit_delete_room_v1800($meeting);
     foreach(video_meeting_participants_v1800($pdo,(int)($meeting['id']??0)) as $participant){
         $uid=(int)($participant['user_id']??0);
@@ -217,14 +240,18 @@ function video_meeting_email_gate_rate_check_v1830(string $publicId): void
 function video_meeting_email_gate_claim_v1830(PDO $pdo,array $meeting,string $email): array
 {
     if(video_meeting_guest_access_mode_v1830($pdo,$meeting)!=='email_gate')throw new RuntimeException('This meeting requires a private invitation link.');
+    if(!in_array((string)($meeting['status']??''),['scheduled','ready','live'],true))throw new RuntimeException('This meeting is not accepting guest entry.');
     $publicId=strtolower(trim((string)($meeting['public_id']??'')));if(!preg_match('/^[a-f0-9]{32}$/',$publicId))throw new RuntimeException('Meeting is unavailable.');
     video_meeting_email_gate_rate_check_v1830($publicId);
-    $email=strtolower(trim($email));if(!filter_var($email,FILTER_VALIDATE_EMAIL))throw new RuntimeException('That email is not eligible for guest entry.');
+    $denied='That email is not eligible for guest entry. If you use VP3, sign in with the invited account.';
+    $email=strtolower(trim($email));if(!filter_var($email,FILTER_VALIDATE_EMAIL))throw new RuntimeException($denied);
     $stmt=$pdo->prepare("SELECT * FROM video_meeting_participants WHERE meeting_id=? AND role='attendee' AND LOWER(email)=? AND invitation_status NOT IN ('cancelled','revoked','declined') ORDER BY id LIMIT 1");
     $stmt->execute([(int)$meeting['id'],$email]);$participant=$stmt->fetch();
-    if(!$participant||(int)($participant['user_id']??0)>0)throw new RuntimeException('That email is not eligible for guest entry. If it belongs to a VP3 account, sign in first.');
+    if(!$participant||(int)($participant['user_id']??0)>0)throw new RuntimeException($denied);
     $end=strtotime((string)$meeting['end_at_utc'].' UTC')?:0;$now=time();$expires=min(max($now+7200,$end+14400),$now+2592000);
+    if(session_status()===PHP_SESSION_ACTIVE)@session_regenerate_id(true);
     $_SESSION['vp3_meeting_email_access'][$publicId]=['participant_id'=>(int)$participant['id'],'expires_at'=>$expires];
+    unset($_SESSION['vp3_meeting_email_gate_rate'][$publicId]);
     return $participant;
 }
 
