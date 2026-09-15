@@ -1,9 +1,12 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__.'/agent-work-dependencies-v174.php';
+
 const VP3_AGENT_CHAT_INTELLIGENCE_V171 = 'agent-chat-intelligence-v171-20260914';
 const VP3_AGENT_WORK_QUEUE_V172 = 'agent-work-queue-v172-20260914';
 const VP3_AGENT_WORK_CONTROL_UI_V173 = 'agent-work-control-ui-v173-20260915';
+const VP3_AGENT_WORK_DEPENDENCIES_UI_V174 = 'agent-work-dependencies-ui-v174-20260915';
 
 function vp3_agent_chat_intelligence_text_v171(string $value, int $max = 160): string
 {
@@ -38,6 +41,7 @@ function vp3_agent_work_queue_lane_v172(array $row): string
     if ($status === 'approval_pending' || $approval === 'pending') return 'approval';
     if ($status === 'failed') return 'failed_retry';
     if ($future && $retrySignal) return 'failed_retry';
+    if (!empty($row['_dependency_blocked'])) return 'blocked';
     if ($future) return 'scheduled';
     if (in_array($status, ['queued', 'planning', 'approved', 'executing'], true)) return 'active';
     return 'active';
@@ -64,10 +68,13 @@ function vp3_agent_work_queue_item_v172(array $row, string $lane, string $timezo
     $error = vp3_agent_chat_intelligence_text_v171((string)($row['last_error_class'] ?? ''), 64);
     $priority=max(1,min(100,(int)($row['work_priority'] ?? 50)));
     $priorityLabel=vp3_agent_work_queue_priority_label_v173($priority);
+    $blockers=is_array($row['_dependency_blockers']??null)?$row['_dependency_blockers']:[];
+    $blockerIds=[];foreach(array_slice($blockers,0,3) as $blocker){$bid=(int)($blocker['run_id']??0);if($bid>0)$blockerIds[]='#'.$bid;}
 
     $detail = match ($lane) {
         'approval' => 'Waiting for your approval',
         'paused' => $next !== '' ? 'Paused · schedule preserved for ' . $next : 'Paused by you',
+        'blocked' => 'Blocked · waiting for ' . ($blockerIds ? implode(', ', $blockerIds) : count($blockers).' prerequisite'.(count($blockers)===1?'':'s')),
         'scheduled' => $next !== '' ? 'Scheduled · ' . $next : 'Scheduled',
         'failed_retry' => $status === 'failed'
             ? ('Failed' . ($error !== '' ? ' · ' . $error : ''))
@@ -79,14 +86,16 @@ function vp3_agent_work_queue_item_v172(array $row, string $lane, string $timezo
     };
     if ($message !== '' && $lane === 'active') $detail = $message . ($progress > 0 ? ' · ' . $progress . '%' : '');
     if($lane!=='completed')$detail.=' · '.$priorityLabel.' priority';
+    $detail.=' · '.($target==='homeserver'?'HomeServer':'Cloud');
 
     $prompt = match ($lane) {
         'approval' => 'Inspect workflow #' . $id . '. Explain the approval risk and expected result. I can then say “approve workflow #' . $id . '” or “cancel workflow #' . $id . '”.',
-        'paused' => 'Inspect workflow #' . $id . '. Tell me what remains, its preserved schedule and priority. Remind me I can say “resume workflow #' . $id . '”, “reschedule workflow #' . $id . ' for tomorrow at 9 AM”, or “set workflow #' . $id . ' priority high”.',
-        'scheduled' => 'Inspect workflow #' . $id . '. Show its plan, schedule and priority. Remind me I can pause, reschedule, cancel or reprioritize it from this chat.',
-        'failed_retry' => 'Inspect workflow #' . $id . '. Diagnose the latest failure or retry state and show the newest receipt. If it is failed, remind me I can say “retry workflow #' . $id . '”.',
-        'completed' => 'Inspect workflow #' . $id . '. Summarize its outcome, latest receipt and result evidence, plus any useful follow-up.',
-        default => 'Inspect workflow #' . $id . '. Give me its live status, current step, progress, execution target and priority. Remind me I can pause, cancel or reprioritize it from Chat.',
+        'paused' => 'Inspect workflow #' . $id . '. Tell me what remains, its preserved schedule, priority and execution target. Remind me I can resume, reschedule, reprioritize or delegate it.',
+        'blocked' => 'Show dependencies for workflow #' . $id . '. Explain every prerequisite blocking it, each prerequisite status, and what can safely unblock it. Remind me I can remove an obsolete dependency or delegate remaining work to Cloud or HomeServer.',
+        'scheduled' => 'Inspect workflow #' . $id . '. Show its plan, schedule, priority, dependencies and execution target. Remind me I can pause, reschedule, cancel, reprioritize or delegate it from this chat.',
+        'failed_retry' => 'Inspect workflow #' . $id . '. Diagnose the latest failure or retry state and show the newest receipt. Also show whether another workflow is blocking its next attempt.',
+        'completed' => 'Inspect workflow #' . $id . '. Summarize its outcome, latest receipt, result evidence and any dependent workflows that can now advance.',
+        default => 'Inspect workflow #' . $id . '. Give me its live status, current step, progress, execution target, priority and dependencies. Remind me I can pause, cancel, reprioritize or delegate it from Chat.',
     };
 
     return [
@@ -99,6 +108,8 @@ function vp3_agent_work_queue_item_v172(array $row, string $lane, string $timezo
         'target'=>$target,
         'priority'=>$priority,
         'priority_label'=>$priorityLabel,
+        'blocked'=>count($blockers)>0,
+        'blockers'=>$blockers,
         'prompt'=>$prompt,
         'updated_at'=>$updated,
         'next_attempt_at'=>$next,
@@ -112,28 +123,35 @@ function vp3_agent_work_queue_model_v172(PDO $pdo, array $user, string $timezone
         'available'=>false,
         'build'=>VP3_AGENT_WORK_QUEUE_V172,
         'control_build'=>VP3_AGENT_WORK_CONTROL_UI_V173,
-        'counts'=>['active'=>0,'approval'=>0,'paused'=>0,'scheduled'=>0,'failed_retry'=>0,'completed'=>0],
-        'lanes'=>['active'=>[],'approval'=>[],'paused'=>[],'scheduled'=>[],'failed_retry'=>[],'completed'=>[]],
+        'dependencies_build'=>VP3_AGENT_WORK_DEPENDENCIES_UI_V174,
+        'counts'=>['active'=>0,'approval'=>0,'paused'=>0,'blocked'=>0,'scheduled'=>0,'failed_retry'=>0,'completed'=>0],
+        'lanes'=>['active'=>[],'approval'=>[],'paused'=>[],'blocked'=>[],'scheduled'=>[],'failed_retry'=>[],'completed'=>[]],
     ];
     if ($uid < 1 || !table_exists('agent_workflow_runs') || !column_exists('agent_workflow_runs', 'owner_user_id')) return $empty;
 
     $hasNextAttempt = column_exists('agent_workflow_runs', 'next_attempt_at');
     $hasProgress = column_exists('agent_workflow_runs', 'progress_message');
+    $dependencyReady=function_exists('agent_work_dependencies_schema_ready_v174')&&agent_work_dependencies_schema_ready_v174($pdo);
+    $blockedExpr=$dependencyReady
+        ? "EXISTS (SELECT 1 FROM agent_workflow_run_dependencies d INNER JOIN agent_workflow_runs p ON p.id=d.depends_on_run_id AND p.owner_user_id=d.owner_user_id WHERE d.owner_user_id=agent_workflow_runs.owner_user_id AND d.run_id=agent_workflow_runs.id AND p.status<>'completed')"
+        : '0';
+    $blockedLaneExpr="({$blockedExpr} AND status NOT IN ('completed','cancelled','paused','approval_pending','failed') AND approval_status<>'pending')";
     $retryExpr = $hasNextAttempt
         ? "(status='failed' OR (status='approved' AND approval_status<>'pending' AND next_attempt_at>UTC_TIMESTAMP() AND (COALESCE(last_error_class,'')<>''" . ($hasProgress ? " OR LOWER(COALESCE(progress_message,'')) LIKE '%retry%'" : '') . ")))"
         : "status='failed'";
     $scheduledExpr = $hasNextAttempt
-        ? "(status='approved' AND approval_status<>'pending' AND next_attempt_at>UTC_TIMESTAMP() AND COALESCE(last_error_class,'')=''" . ($hasProgress ? " AND LOWER(COALESCE(progress_message,'')) NOT LIKE '%retry%'" : '') . ")"
+        ? "(status='approved' AND approval_status<>'pending' AND NOT ({$blockedExpr}) AND next_attempt_at>UTC_TIMESTAMP() AND COALESCE(last_error_class,'')=''" . ($hasProgress ? " AND LOWER(COALESCE(progress_message,'')) NOT LIKE '%retry%'" : '') . ")"
         : '0';
     $activeExpr = $hasNextAttempt
-        ? "(approval_status<>'pending' AND (status IN ('queued','planning','executing') OR (status='approved' AND (next_attempt_at IS NULL OR next_attempt_at<=UTC_TIMESTAMP()))))"
-        : "(approval_status<>'pending' AND status IN ('queued','planning','approved','executing'))";
+        ? "(approval_status<>'pending' AND NOT ({$blockedExpr}) AND (status IN ('queued','planning','executing') OR (status='approved' AND (next_attempt_at IS NULL OR next_attempt_at<=UTC_TIMESTAMP()))))"
+        : "(approval_status<>'pending' AND NOT ({$blockedExpr}) AND status IN ('queued','planning','approved','executing'))";
 
     try {
         $countSql = "SELECT "
             . "SUM(CASE WHEN {$activeExpr} THEN 1 ELSE 0 END) active_count,"
             . "SUM(CASE WHEN status='approval_pending' OR approval_status='pending' THEN 1 ELSE 0 END) approval_count,"
             . "SUM(CASE WHEN status='paused' THEN 1 ELSE 0 END) paused_count,"
+            . "SUM(CASE WHEN {$blockedLaneExpr} THEN 1 ELSE 0 END) blocked_count,"
             . "SUM(CASE WHEN {$scheduledExpr} THEN 1 ELSE 0 END) scheduled_count,"
             . "SUM(CASE WHEN {$retryExpr} THEN 1 ELSE 0 END) failed_retry_count,"
             . "SUM(CASE WHEN status='completed' THEN 1 ELSE 0 END) completed_count "
@@ -145,15 +163,24 @@ function vp3_agent_work_queue_model_v172(PDO $pdo, array $user, string $timezone
             'active'=>max(0, (int)($counts['active_count'] ?? 0)),
             'approval'=>max(0, (int)($counts['approval_count'] ?? 0)),
             'paused'=>max(0, (int)($counts['paused_count'] ?? 0)),
+            'blocked'=>max(0, (int)($counts['blocked_count'] ?? 0)),
             'scheduled'=>max(0, (int)($counts['scheduled_count'] ?? 0)),
             'failed_retry'=>max(0, (int)($counts['failed_retry_count'] ?? 0)),
             'completed'=>max(0, (int)($counts['completed_count'] ?? 0)),
         ];
 
+        $blockerMap=[];
+        if($dependencyReady){
+            $blockerStmt=$pdo->prepare("SELECT d.run_id,p.id prerequisite_run_id,p.title,p.status,p.execution_target,p.updated_at,d.created_at FROM agent_workflow_run_dependencies d INNER JOIN agent_workflow_runs p ON p.id=d.depends_on_run_id AND p.owner_user_id=d.owner_user_id WHERE d.owner_user_id=? AND p.status<>'completed' ORDER BY d.id");
+            $blockerStmt->execute([$uid]);
+            foreach($blockerStmt->fetchAll()?:[] as $blocker){$runId=(int)($blocker['run_id']??0);if($runId<1)continue;$blockerMap[$runId][]=['run_id'=>(int)($blocker['prerequisite_run_id']??0),'title'=>(string)($blocker['title']??''),'status'=>(string)($blocker['status']??''),'execution_target'=>(string)($blocker['execution_target']??'cloud'),'updated_at'=>(string)($blocker['updated_at']??''),'created_at'=>(string)($blocker['created_at']??'')];}
+        }
+
         $rowsStmt = $pdo->prepare("SELECT * FROM agent_workflow_runs WHERE owner_user_id=? AND status<>'cancelled' ORDER BY CASE status WHEN 'approval_pending' THEN 1 WHEN 'failed' THEN 2 WHEN 'executing' THEN 3 WHEN 'paused' THEN 4 WHEN 'approved' THEN 5 WHEN 'planning' THEN 6 WHEN 'queued' THEN 7 WHEN 'completed' THEN 8 ELSE 9 END, updated_at DESC,id DESC LIMIT 200");
         $rowsStmt->execute([$uid]);
         foreach ($rowsStmt->fetchAll() ?: [] as $row) {
             if (!is_array($row)) continue;
+            $runId=(int)($row['id']??0);$row['_dependency_blockers']=$blockerMap[$runId]??[];$row['_dependency_blocked']=!empty($row['_dependency_blockers']);
             $lane = vp3_agent_work_queue_lane_v172($row);
             if (!isset($empty['lanes'][$lane]) || count($empty['lanes'][$lane]) >= 6) continue;
             $empty['lanes'][$lane][] = vp3_agent_work_queue_item_v172($row, $lane, $timezone);
@@ -182,6 +209,7 @@ function vp3_agent_chat_intelligence_model_v171(
         'unread_notifications'=>0,
         'workflow_approvals'=>0,
         'workflow_failures'=>0,
+        'workflow_blocked'=>0,
         'knowledge_count'=>0,
         'homeserver'=>['state'=>'unpaired','label'=>'Not paired','paired'=>false,'connected'=>false],
         'attention_count'=>0,
@@ -268,11 +296,13 @@ function vp3_agent_chat_intelligence_model_v171(
     $model['work_queue'] = vp3_agent_work_queue_model_v172($pdo, $user, (string)$model['timezone']);
     $queueCounts = is_array($model['work_queue']['counts'] ?? null) ? $model['work_queue']['counts'] : [];
     $model['workflow_approvals'] = max((int)$model['workflow_approvals'], (int)($queueCounts['approval'] ?? 0));
+    $model['workflow_blocked'] = max(0,(int)($queueCounts['blocked'] ?? 0));
 
     $model['attention_count'] =
         (int)$model['unread_notifications']
         + (int)$model['workflow_approvals']
-        + (int)$model['workflow_failures'];
+        + (int)$model['workflow_failures']
+        + (int)$model['workflow_blocked'];
 
     if (!$model['suggestions']) {
         $model['suggestions'][] = [
@@ -296,6 +326,7 @@ function vp3_agent_work_queue_render_v172(array $queue): string
         'active'=>['label'=>'In progress','empty'=>'No work is running right now.'],
         'approval'=>['label'=>'Waiting approval','empty'=>'No approvals are waiting.'],
         'paused'=>['label'=>'Paused','empty'=>'No work is paused.'],
+        'blocked'=>['label'=>'Blocked','empty'=>'No work is waiting on another workflow.'],
         'scheduled'=>['label'=>'Scheduled','empty'=>'No future work is scheduled.'],
         'failed_retry'=>['label'=>'Failed / retry','empty'=>'No failed or retrying work.'],
         'completed'=>['label'=>'Completed','empty'=>'No completed work yet.'],
@@ -305,13 +336,14 @@ function vp3_agent_work_queue_render_v172(array $queue): string
     <style data-agent-work-queue-v172>
       .chat-agent-work-queue{display:grid;gap:9px;padding:11px;border:1px solid #e5e7eb;border-radius:12px;background:#fbfcfd}.chat-agent-work-queue-head{display:flex;align-items:center;justify-content:space-between;gap:12px}.chat-agent-work-queue-title{display:grid;gap:2px}.chat-agent-work-queue-title small{color:#8a94a3;font-size:9px;font-weight:850;letter-spacing:.11em;text-transform:uppercase}.chat-agent-work-queue-title strong{font-size:12px}.chat-agent-work-queue-counts{display:flex;gap:5px;flex-wrap:wrap;justify-content:flex-end}.chat-agent-work-queue-counts span{padding:4px 7px;border:1px solid #e2e5e9;border-radius:999px;background:#fff;color:#667085;font-size:8.8px;font-weight:800}.chat-agent-work-queue-counts .warn{border-color:#f4c7c3;background:#fff5f4;color:#b42318}.chat-agent-work-queue-counts .attention{border-color:#f4d6a2;background:#fff9ee;color:#9a5a00}.chat-agent-work-queue-lanes{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px}.chat-agent-work-lane{min-width:0;padding:9px;border:1px solid #e8eaee;border-radius:9px;background:#fff}.chat-agent-work-lane>header{display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:6px}.chat-agent-work-lane>header strong{font-size:9.6px}.chat-agent-work-lane>header span{display:grid;min-width:18px;height:18px;place-items:center;border-radius:999px;background:#f1f3f5;color:#667085;font-size:8.5px;font-weight:850}.chat-agent-work-item{appearance:none;display:grid;width:100%;gap:3px;padding:7px 0;border:0;border-top:1px solid #f0f1f3;background:none;color:inherit;text-align:left;cursor:pointer}.chat-agent-work-item:first-of-type{border-top:0}.chat-agent-work-item:hover,.chat-agent-work-item:focus-visible{background:#f8f9fa;outline:0}.chat-agent-work-item strong{overflow:hidden;font-size:9.5px;text-overflow:ellipsis;white-space:nowrap}.chat-agent-work-item small{overflow:hidden;color:#8a94a3;font-size:8.4px;line-height:1.3;text-overflow:ellipsis;white-space:nowrap}.chat-agent-work-empty{margin:0;color:#98a2b3;font-size:8.8px;line-height:1.4}.chat-agent-work-more{margin-top:5px;color:#667085;font-size:8.3px;font-weight:800}.chat-agent-work-queue-foot{display:flex;align-items:center;justify-content:space-between;gap:8px;color:#8a94a3;font-size:8.8px}.chat-agent-work-queue-foot span{line-height:1.4}.chat-agent-work-queue-foot a{color:#667085;font-weight:800;text-decoration:none}@media(max-width:1080px){.chat-agent-work-queue-lanes{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:760px){.chat-agent-work-queue-head{align-items:flex-start;flex-direction:column}.chat-agent-work-queue-counts{justify-content:flex-start}.chat-agent-work-queue-lanes{grid-template-columns:1fr}.chat-agent-work-lane{padding:10px}.chat-agent-work-queue-foot{align-items:flex-start;flex-direction:column}}
     </style>
-    <section class="chat-agent-work-queue" data-agent-work-queue="<?= e(VP3_AGENT_WORK_QUEUE_V172) ?>" data-agent-work-control="<?= e(VP3_AGENT_WORK_CONTROL_UI_V173) ?>" aria-label="Agent work queue">
+    <section class="chat-agent-work-queue" data-agent-work-queue="<?= e(VP3_AGENT_WORK_QUEUE_V172) ?>" data-agent-work-control="<?= e(VP3_AGENT_WORK_CONTROL_UI_V173) ?>" data-agent-work-dependencies="<?= e(VP3_AGENT_WORK_DEPENDENCIES_UI_V174) ?>" aria-label="Agent work queue">
       <header class="chat-agent-work-queue-head">
         <div class="chat-agent-work-queue-title"><small>Agent Work Queue</small><strong>What your Agent is doing, waiting on, and finishing</strong></div>
         <div class="chat-agent-work-queue-counts" aria-label="Work queue counts">
           <span><?= (int)($counts['active'] ?? 0) ?> active</span>
           <span class="<?= (int)($counts['approval'] ?? 0) > 0 ? 'attention' : '' ?>"><?= (int)($counts['approval'] ?? 0) ?> approval</span>
           <span><?= (int)($counts['paused'] ?? 0) ?> paused</span>
+          <span class="<?= (int)($counts['blocked'] ?? 0) > 0 ? 'attention' : '' ?>"><?= (int)($counts['blocked'] ?? 0) ?> blocked</span>
           <span><?= (int)($counts['scheduled'] ?? 0) ?> scheduled</span>
           <span class="<?= (int)($counts['failed_retry'] ?? 0) > 0 ? 'warn' : '' ?>"><?= (int)($counts['failed_retry'] ?? 0) ?> failed/retry</span>
           <span><?= (int)($counts['completed'] ?? 0) ?> completed</span>
@@ -337,7 +369,7 @@ function vp3_agent_work_queue_render_v172(array $queue): string
         <?php endforeach; ?>
       </div>
       <footer class="chat-agent-work-queue-foot">
-        <span>Control it here: “pause workflow #12” · “resume workflow #12” · “retry workflow #12” · “reschedule workflow #12 for tomorrow at 9 AM” · “set workflow #12 priority high”</span>
+        <span>Control it here: “workflow #15 depends on workflow #12” · “show dependencies for workflow #15” · “remove dependency from workflow #15 on workflow #12” · “delegate workflow #15 to HomeServer” · plus pause, retry, schedule and priority controls</span>
         <a href="<?= e(url('/agent-workflows.php')) ?>">Workflow history</a>
       </footer>
     </section>
@@ -413,6 +445,7 @@ function vp3_agent_chat_intelligence_render_v171(array $model): string
             <p><?= $activityState === 'working' ? 'Your Agent is actively working now.' : 'Your Agent is available for the next instruction.' ?></p>
             <div class="chat-agent-intelligence-metrics">
               <?php if ((int)($model['workflow_approvals'] ?? 0) > 0): ?><a href="<?= e(url('/agent-workflows.php')) ?>"><?= (int)$model['workflow_approvals'] ?> approval<?= (int)$model['workflow_approvals'] === 1 ? '' : 's' ?></a><?php endif; ?>
+              <?php if ((int)($model['workflow_blocked'] ?? 0) > 0): ?><button type="button" data-agent-intelligence-prompt="Review my blocked Agent workflows and explain which prerequisites are holding each one up."><?= (int)$model['workflow_blocked'] ?> blocked</button><?php endif; ?>
               <?php if ((int)($model['workflow_failures'] ?? 0) > 0): ?><a class="warn" href="<?= e(url('/agent-workflows.php')) ?>"><?= (int)$model['workflow_failures'] ?> failed</a><?php endif; ?>
             </div>
           </article>
@@ -433,8 +466,8 @@ function vp3_agent_chat_intelligence_render_v171(array $model): string
             <header><span>Attention</span><a href="<?= e(url('/notifications.php')) ?>">Notifications</a></header>
             <?php if ((int)($model['attention_count'] ?? 0) > 0): ?>
               <strong><?= (int)$model['attention_count'] ?> item<?= (int)$model['attention_count'] === 1 ? '' : 's' ?> need review</strong>
-              <p><?= (int)($model['unread_notifications'] ?? 0) ?> unread · <?= (int)($model['workflow_approvals'] ?? 0) ?> approvals · <?= (int)($model['workflow_failures'] ?? 0) ?> failed workflows</p>
-              <button type="button" class="chat-agent-intelligence-inline" data-agent-intelligence-prompt="Review what needs my attention across unread notifications, pending workflow approvals and failed workflows. Prioritize the most important item first.">Prioritize for me</button>
+              <p><?= (int)($model['unread_notifications'] ?? 0) ?> unread · <?= (int)($model['workflow_approvals'] ?? 0) ?> approvals · <?= (int)($model['workflow_blocked'] ?? 0) ?> blocked · <?= (int)($model['workflow_failures'] ?? 0) ?> failed workflows</p>
+              <button type="button" class="chat-agent-intelligence-inline" data-agent-intelligence-prompt="Review what needs my attention across unread notifications, pending workflow approvals, blocked dependencies and failed workflows. Prioritize the most important item first.">Prioritize for me</button>
             <?php elseif ($notifications): ?>
               <strong>No urgent items</strong><p>Recent notifications are available, but none are currently counted as unread or blocked work.</p>
             <?php else: ?><p>Nothing currently needs your attention.</p><?php endif; ?>
