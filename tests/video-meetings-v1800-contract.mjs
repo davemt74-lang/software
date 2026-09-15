@@ -37,7 +37,7 @@ assert.match(core, /recording_enabled TINYINT\(1\) NOT NULL DEFAULT 0/);
 assert.ok(core.includes('bin2hex(random_bytes(16))'), 'meeting public id must be opaque/random');
 assert.ok(core.includes('bin2hex(random_bytes(32))'), 'invite capability must use a high-entropy token');
 assert.ok(meetings.includes("'recording_enabled'=>false"), 'recording must remain off by default');
-assert.ok(meetings.includes('Phase 18.0 is notes-first'));
+assert.ok(meetings.includes('remains notes-first'));
 assert.ok(meetings.includes("$agentMode=(string)($_POST['agent_mode']??'notes')==='off'?'off':'notes'"), 'server must constrain Phase 18 Agent mode to notes/off');
 assert.ok(!meetings.includes("'assistant'=>'Assistant'"), 'spoken Assistant mode must not be advertised before voice policy ships');
 
