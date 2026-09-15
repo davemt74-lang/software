@@ -64,12 +64,13 @@ assert.ok(manual.includes('video_meeting_secure_invitation_email_v1800'));
 assert.ok(manual.includes('video_meeting_manual_public_invitation_email_v1830'));
 assert.ok(manual.includes('video_meeting_public_guest_url_v1830'));
 assert.ok(manual.includes('The public meeting link does not grant access by itself.'));
+assert.ok(editor.includes('Copy private invite'), 'organizer must be able to manually copy a private guest capability');
 
 // Email-gated public admission only recognizes an already invited, unbound guest
 // email. It never creates a participant from an arbitrary address and it cannot
 // impersonate a VP3 member account.
 assert.ok(guest.includes('Guest meeting access'));
-assert.ok(guest.includes('Email verification required'));
+assert.ok(guest.includes('Invited email required'));
 assert.ok(guest.includes('verify_csrf()'));
 assert.ok(manual.includes("role='attendee' AND LOWER(email)=?"));
 assert.ok(manual.includes("(int)($participant['user_id']??0)>0"));
@@ -117,5 +118,6 @@ assert.ok(afterCancelBlock.includes('video_meeting_external_calendar_sync_member
 assert.ok(editor.includes('Public guest meeting link'));
 assert.ok(editor.includes("$guestAccessMode==='email_gate'"));
 assert.ok(editor.includes('Editing the event keeps the same meeting identity and link'));
+assert.ok(editor.includes("$wasExisting?'calendar.event.update':'calendar.event.create'"), 'audit log must preserve create vs update semantics');
 
 console.log('Video Meetings Phase 18.3 manual Calendar meeting contract passed.');
