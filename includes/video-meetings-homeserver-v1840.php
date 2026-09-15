@@ -30,7 +30,7 @@ function video_meeting_homeserver_terminal_v1840(array $meeting): bool
 
 function video_meeting_homeserver_operation_candidates_v1840(): array
 {
-    return ['meeting.transcription.stream','transcription.stream','transcription.start','meeting.transcription.start'];
+    return ['meeting.transcription.stream','transcription.stream','transcription.start'];
 }
 
 function video_meeting_homeserver_owner_probe_allowed_v1840(array $meeting): bool
@@ -46,6 +46,8 @@ function video_meeting_homeserver_owner_probe_allowed_v1840(array $meeting): boo
  */
 function video_meeting_homeserver_runtime_status_v1840(PDO $pdo,array $meeting,bool $forceRefresh=false): array
 {
+    // Missing privacy/routing policy is not permission to use cloud compute.
+    // Fail unresolved so no caller can silently weaken the HomeServer boundary.
     $policy=function_exists('video_meeting_homeserver_policy_v1801')
         ?video_meeting_homeserver_policy_v1801($pdo,$meeting,$forceRefresh)
         :[
@@ -92,6 +94,8 @@ function video_meeting_homeserver_runtime_status_v1840(PDO $pdo,array $meeting,b
         return $state;
     }
 
+    // Non-owner requests never probe the organizer's paired HomeServer. They
+    // receive only the already-resolved privacy outcome.
     if(!$ownerProbe){
         if($cloudAllowed){
             $state['route']='cloud';$state['status']='ready';$state['reason_code']='cloud_allowed';$state['ready']=true;
@@ -101,6 +105,8 @@ function video_meeting_homeserver_runtime_status_v1840(PDO $pdo,array $meeting,b
         return $state;
     }
 
+    // v18.1 already performed the authenticated, sanitized capability probe for
+    // the owner. Reuse that result rather than making another relay call here.
     $operation=(string)($policy['local_transcription_operation']??'');
     if(!in_array($operation,video_meeting_homeserver_operation_candidates_v1840(),true))$operation='';
     $registryAvailable=!empty($policy['available']);
@@ -128,6 +134,8 @@ function video_meeting_homeserver_runtime_status_v1840(PDO $pdo,array $meeting,b
         return $state;
     }
 
+    // Automatic routing preserves cloud operation when privacy policy allows
+    // it. HomeServer is selected only when policy requires private compute.
     if($cloudAllowed){
         $state['route']='cloud';$state['status']='ready';$state['reason_code']=!empty($state['capability_advertised'])&&!$homeReady?'homeserver_advertised_unwired_cloud_fallback':'automatic_cloud';$state['ready']=true;
         return $state;
@@ -140,6 +148,8 @@ function video_meeting_homeserver_runtime_status_v1840(PDO $pdo,array $meeting,b
 function video_meeting_homeserver_public_status_v1840(PDO $pdo,array $meeting,bool $forceRefresh=false): array
 {
     $state=video_meeting_homeserver_runtime_status_v1840($pdo,$meeting,$forceRefresh);
+    // Explicit allow-list: never forward the HomeServer registry or any relay,
+    // credential, endpoint, model/provider or device metadata to the browser.
     return [
         'version'=>'v18.4',
         'route'=>(string)$state['route'],
