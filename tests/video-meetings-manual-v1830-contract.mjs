@@ -93,6 +93,13 @@ for (const [name, source] of [['token', tokenApi], ['presence', presenceApi], ['
 assert.ok(security.includes("$inviteToken===''"));
 assert.ok(security.includes('!$user'));
 
+// Selecting email-gate mode is authoritative: any previously issued unbound
+// guest bearer link stops being an alternate path around the email check. A
+// member-bound invite remains identity-bound and is not weakened by this rule.
+assert.ok(security.includes("$inviteToken!==''"));
+assert.ok(security.includes("video_meeting_guest_access_mode_v1830($pdo,$meeting)==='email_gate'"));
+assert.ok(security.includes("(int)($participant['user_id']??0)===0"));
+
 // Existing individual invitations remain private capabilities and revoked rows
 // cannot be used through either the old bearer path or the new email gate.
 assert.ok(security.includes("['cancelled','revoked','declined']"));
