@@ -4,6 +4,8 @@ declare(strict_types=1);
 const VP3_VIDEO_MEETING_TRANSCRIPTION_V1800='video-meeting-transcription-v1800-20260915';
 const VP3_VIDEO_MEETING_TRANSCRIPTION_HARDENING_V1801='video-meeting-transcription-hardening-v1801-20260915';
 
+require_once __DIR__.'/video-meetings-calendar-v1801.php';
+
 function video_meeting_transcription_load_stack_v1800(): void
 {
     require_once __DIR__.'/artist-listening.php';
@@ -22,7 +24,8 @@ function video_meeting_transcription_schema_ready_v1800(?PDO $pdo=null): bool
         && artist_listening_v172_schema_ready()
         && artist_listening_v237_schema_ready()
         && table_exists('video_meeting_transcription_links')
-        && column_exists('video_meeting_transcript_segments','source_key');
+        && column_exists('video_meeting_transcript_segments','source_key')
+        && video_meeting_external_calendar_schema_ready_v1801($pdo);
 }
 
 function video_meeting_transcription_ensure_schema_v1800(?PDO $pdo=null): void
@@ -32,6 +35,7 @@ function video_meeting_transcription_ensure_schema_v1800(?PDO $pdo=null): void
     if(!artist_listening_v172_schema_ready())artist_listening_v172_ensure_schema();
     if(!artist_listening_v237_schema_ready())artist_listening_v237_ensure_schema();
     if(!video_meeting_schema_ready_v1800($pdo))video_meeting_ensure_schema_v1800($pdo);
+    video_meeting_external_calendar_ensure_schema_v1801($pdo);
 
     $pdo->exec("CREATE TABLE IF NOT EXISTS video_meeting_transcription_links (
       meeting_id BIGINT UNSIGNED NOT NULL PRIMARY KEY,
@@ -127,7 +131,6 @@ function video_meeting_transcription_participant_v1800(PDO $pdo,array $meeting,s
     }
     return null;
 }
-
 function video_meeting_transcription_source_key_v1800(array $meeting,array $input): string
 {
     $key=strtolower(trim((string)($input['source_key']??'')));
