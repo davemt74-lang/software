@@ -33,6 +33,20 @@
     setCollapsed(root.dataset.collapsed!=='true',true);
   });
 
+  // Phase 17.9 keeps the portfolio inside the existing Agent Brief without
+  // adding a dashboard or polling path. The control uses the canonical Chat
+  // composer so server-side portfolio ranking remains authoritative.
+  var pulse=root.querySelector('.chat-agent-intelligence-pulse');
+  if(pulse&&!pulse.querySelector('[data-agent-objective-portfolio-control]')){
+    var portfolio=document.createElement('button');
+    portfolio.type='button';
+    portfolio.className='chat-agent-intelligence-portfolio-control';
+    portfolio.setAttribute('data-agent-objective-portfolio-control','');
+    portfolio.setAttribute('data-agent-intelligence-prompt','Show my objective portfolio and explain what I should do first.');
+    portfolio.textContent='Objective portfolio';
+    pulse.appendChild(portfolio);
+  }
+
   root.addEventListener('click',function(event){
     var button=event.target.closest('[data-agent-intelligence-prompt]');
     if(!button||!input||!form)return;
