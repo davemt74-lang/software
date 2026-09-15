@@ -194,7 +194,7 @@ function video_meeting_transcription_finalize_v1800(PDO $pdo,array $meeting): vo
 {
     if(!video_meeting_transcription_schema_ready_v1800($pdo))return;
     $mirror=video_meeting_transcription_mirror_v1800($pdo,$meeting);$session=$mirror['session']??null;if(!is_array($session))return;
-    $stmt=$pdo->prepare('SELECT COALESCE(MAX(end_ms),0) FROM video_meeting_transcript_segments WHERE meeting_id=?');$stmt->execute([(int)$meeting['id']);$duration=max(0,(int)$stmt->fetchColumn());
+    $stmt=$pdo->prepare('SELECT COALESCE(MAX(end_ms),0) FROM video_meeting_transcript_segments WHERE meeting_id=?');$stmt->execute([(int)$meeting['id']]);$duration=max(0,(int)$stmt->fetchColumn());
     $pdo->prepare("UPDATE artist_transcript_sessions_v172 SET status='draft',duration_ms=GREATEST(duration_ms,?),stopped_at=COALESCE(stopped_at,NOW()),last_activity_at=NOW() WHERE id=? AND status<>'discarded'")
         ->execute([$duration,(int)$session['id']]);
 }
