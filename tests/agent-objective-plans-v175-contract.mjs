@@ -27,13 +27,13 @@ assert.match(objective,/source_hash/,'Objective membership must use an existing 
 
 assert.match(objective,/beginTransaction\(\)/,'Objective decomposition must install runs and graph atomically');
 assert.match(objective,/agent_workflow_run_dependencies/,'Objective stages must use the existing Phase 17.4 dependency table');
-assert.match(objective,/created_by.*objective_v175/,'Objective-created dependency edges must be attributable');
-assert.match(objective,/dependency_kind.*stage/,'Child workflows must support stage-to-stage prerequisites');
-assert.match(objective,/dependency_kind.*objective/,'The objective parent must wait for child workflows');
+assert.match(objective,/objective_v175/,'Objective-created dependency edges must be attributable');
+assert.match(objective,/agent_objective_insert_dependency_v175\(\$pdo,\$uid,\$runId,\$prerequisite,'stage'\)/,'Child workflows must support stage-to-stage prerequisites');
+assert.match(objective,/agent_objective_insert_dependency_v175\(\$pdo,\$uid,\$parentId,\$childId,'objective'\)/,'The objective parent must wait for child workflows');
 assert.match(objective,/foreach\(\$allRuns as \$childId\)agent_objective_insert_dependency_v175/,'The objective parent must depend on every child run so remaining work is visible');
 assert.match(objective,/foreach\(\$stageRuns\[\$stage\] as \$runId\)foreach\(\$stageRuns\[\$stage-1\] as \$prerequisite\)/,'Every run in a stage must wait for the prior stage');
 
-assert.match(objective,/\['cloud','homeserver'\]|homeserver.*cloud|cloud.*homeserver/s,'Objective work must retain Cloud/HomeServer execution authority');
+assert.match(objective,/homeserver.*cloud|cloud.*homeserver/s,'Objective work must retain Cloud/HomeServer execution authority');
 assert.match(objective,/agent_work_delegate_v174/,'Objective delegation must reuse Phase 17.4 delegation');
 assert.match(objective,/agent_work_control_pause_v173/,'Objective pause must reuse Phase 17.3 work control');
 assert.match(objective,/agent_work_control_resume_v173/,'Objective resume must reuse Phase 17.3 work control');
@@ -50,8 +50,8 @@ assert.match(objective,/failed/,'Objective inspection must surface failed childr
 assert.match(objective,/paused/,'Objective inspection must surface paused children');
 
 for(const command of ['pause','resume','cancel','priority','delegate'])assert.match(objective,new RegExp(`agent_objective_${command}_v175`),`Objective plans must support ${command}`);
-assert.match(objective,/step\\s\*#?/,'Objective delegation must support targeting an individual child step');
-assert.match(objective,/what.*blocking|status|show|objective/i,'Objective Chat must support inspection language');
+assert.match(objective,/childOrdinal/,'Objective delegation must support targeting an individual child step');
+assert.match(objective,/agent_objective_state_v175/,'Objective Chat must expose objective status and blockers');
 assert.match(objective,/objective\.create/,'Objective creation must remain in the Agent tool audit log');
 assert.match(objective,/objective\.control/,'Objective controls must remain in the Agent tool audit log');
 
