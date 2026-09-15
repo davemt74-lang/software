@@ -158,5 +158,8 @@ function agent_appointment_lifecycle_ensure_schema_v700(?PDO $pdo=null): void
                  WHEN status='no_show' THEN 'no_show'
                  ELSE COALESCE(NULLIF(lifecycle_status,''),'confirmed')
                END");
-}
 
+    // Phase 18.1 keeps member attendee provider events in the existing Calendar
+    // connection stack while persisting only meeting-specific event IDs here.
+    if(function_exists('video_meeting_external_calendar_ensure_schema_v1801'))video_meeting_external_calendar_ensure_schema_v1801($pdo);
+}
