@@ -66,7 +66,8 @@ assert.ok(adminHeader.includes('class="admin-brand"') && adminHeader.includes('a
 assert.doesNotMatch(adminHeader, /class="site-brand-logo"/, 'legacy uploaded logo must not override the VP3 admin shell');
 assert.doesNotMatch(adminHeader, /url\('\/admin\/team\.php'\)/, 'Admin shell must never restore the legacy Admin Team destination');
 
-assert.ok(mainSidebar.includes('class="chat-brand"') && mainSidebar.includes('aria-label="VP3 Agent">VP3</a>'), 'Main Feed/member sidebar logo must remain fixed VP3 application branding');
+assert.ok(mainSidebar.includes('class="chat-brand"') && mainSidebar.includes('aria-label="VP3 Home">VP3</a>'), 'Member sidebar logo must remain fixed VP3 application branding and route to Agent Home');
+assert.ok(mainSidebar.includes("url('/home.php')"), 'Member sidebar VP3 brand must use Agent Home as its authenticated destination');
 assert.match(mainSidebar, /data-agent-user-footer/, 'secondary workspaces must be consolidated in the bottom Agent user menu');
 assert.match(mainSidebar, /member_navigation_menu_links\(\$mainSidebarUser\)/, 'bottom Agent menu must reuse canonical member navigation');
 assert.ok(memberNavigation.includes("'team_workspaces','Team Workspaces'"), 'Team Workspaces must remain available from canonical user navigation when applicable');
