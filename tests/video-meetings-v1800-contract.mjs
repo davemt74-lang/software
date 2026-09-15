@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 const read = (path) => readFileSync(path, 'utf8');
 const core = read('includes/video-meetings-v1800.php');
 const security = read('includes/video-meetings-security-v1800.php');
+const home = read('includes/video-meetings-homeserver-v1801.php');
 const agent = read('includes/video-meetings-agent-v1800.php');
 const bridge = read('includes/video-meetings-transcription-v1800.php');
 const reconcile = read('includes/video-meetings-reconcile-v1800.php');
@@ -52,6 +53,14 @@ assert.ok(meetings.includes('video_meeting_secure_invitation_email_v1800'));
 assert.ok(security.includes('video_meeting_agent_worker_ready_v1800'));
 assert.ok(meetings.includes('transcription worker setup required'), 'UI must distinguish media readiness from worker readiness');
 
+// Security-sensitive outbound links use a configured canonical origin rather
+// than trusting an arbitrary Host header on production requests.
+assert.ok(security.includes('function video_meeting_public_origin_v1801'));
+assert.ok(security.includes("$config['site']['base_url']"));
+assert.ok(security.includes('Configure site.base_url before sending VP3 meeting invitations.'));
+assert.ok(security.includes('video_meeting_secure_invite_url_v1801'));
+assert.ok(ics.includes('video_meeting_secure_invite_url_v1801'));
+
 // LiveKit credentials remain server-side and Agent dispatch is explicit/idempotent.
 assert.ok(core.includes('video_meeting_livekit_participant_token_v1800'));
 assert.ok(agent.includes('AgentDispatchService'));
@@ -59,55 +68,88 @@ assert.ok(agent.includes("'ListDispatch'"));
 assert.ok(agent.includes("'CreateDispatch'"));
 assert.ok(agent.includes("'agent_name'=>$worker"));
 assert.ok(agent.includes('video_meeting_agent_dispatch_metadata_v1800'));
+assert.ok(agent.includes("'room_name'=>(string)$meeting['room_name']"), 'worker dispatch must bind metadata to the exact LiveKit room');
+assert.ok(!agent.includes("'owner_user_id'=>(int)$meeting['owner_user_id']"), 'LiveKit dispatch must not receive internal owner IDs');
+assert.ok(!agent.includes("'organizer_agent_id'=>(int)($meeting['organizer_agent_id']??0)"), 'LiveKit dispatch must not receive internal Agent IDs');
 assert.ok(!meetingJs.includes('api_secret'));
 assert.ok(!meetingJs.includes('worker_secret'));
 
-// Paid appointments never become a side door around Commerce checkout.
+// Paid appointments never become a side door around Commerce checkout and
+// reconciliation fails closed when Commerce authorization state is uncertain.
 assert.ok(reconcile.includes('video_meeting_booking_payment_pending_v1800'));
 assert.ok(reconcile.includes("==='awaiting_payment'"));
+assert.ok(reconcile.includes("throw new RuntimeException('Paid appointment status could not be verified.'"));
 assert.ok(tokenApi.includes("==='awaiting_payment'"));
 assert.ok(tokenApi.includes('Complete the appointment payment before joining this meeting.'));
+assert.ok(reconcile.includes("$_SESSION['vp3_video_meeting_reconcile_at']"), 'background reconciliation must be throttled on ordinary page traffic');
 
-// Worker callback uses a separate server-to-server secret and final-only ingest.
+// Worker callback uses a separate server-to-server secret, exact room binding
+// and final-only ingest.
 assert.ok(config.includes("'worker_secret'"));
 assert.ok(bridge.includes('VP3_MEETING_WORKER_SECRET'));
 assert.ok(workerApi.includes('HTTP_AUTHORIZATION'), 'worker callback must read the Authorization header from the PHP server environment');
 assert.ok(workerApi.includes("/^Bearer\\s+(.+)$/i"), 'worker callback must require Bearer authentication');
 assert.ok(workerApi.includes('hash_equals($secret,$provided)'));
+assert.ok(workerApi.includes("hash_equals((string)$meeting['room_name'],$roomName)"), 'worker callback must be bound to the exact LiveKit room');
 assert.ok(workerApi.includes("empty($input['is_final'])"));
 assert.ok(workerApi.includes('video_meeting_transcription_append_v1800'));
 assert.ok(workerApi.includes("time()-$endedAt>300"), 'late final STT needs a bounded post-end flush grace');
 assert.ok(workerApi.includes("['cancelled','processed']"), 'cancelled/processed meetings must remain closed to transcript writes');
 
 // Meeting transcript is projected into the existing VP3 transcription system,
-// not a second AI-summary architecture.
+// not a second AI-summary architecture. Normal ingest must mirror only the new
+// segment so long meetings stay O(1) per final STT callback.
 assert.ok(bridge.includes('artist_transcript_sessions_v172'));
 assert.ok(bridge.includes('artist_transcript_segments_v172'));
 assert.ok(bridge.includes('video_meeting_transcription_links'));
 assert.ok(bridge.includes('transcription_app_registry_public_v307'));
+assert.ok(bridge.includes('video_meeting_transcription_mirror_segment_v1801'));
+assert.ok(bridge.includes("$mirror=video_meeting_transcription_mirror_segment_v1801($pdo,$meeting,$segmentId)"));
 assert.ok(!bridge.includes('video_meeting_artifacts'), 'canonical transcription bridge must not write a parallel analysis store');
 assert.ok(upgrade.includes('video_meeting_transcription_schema_ready_v1800()'));
 assert.ok(upgrade.includes('video_meeting_transcription_ensure_schema_v1800($pdo)'));
 assert.ok(tokenApi.includes('video_meeting_transcription_ensure_session_v1800'));
 assert.ok(presenceApi.includes('video_meeting_transcription_finalize_v1800'));
 
-// Live room consumes transcript incrementally without interrupting media.
+// Live room consumes transcript incrementally without interrupting media. The
+// guest bearer token must not be repeated in a polling URL/query string.
 assert.ok(meeting.includes("'transcriptEndpoint'=>url('/api/video-meeting-transcript.php')"));
 assert.ok(meeting.includes('video-meetings-transcript-v1800.css'));
+assert.ok(transcriptApi.includes("REQUEST_METHOD']!=='POST'"));
 assert.ok(transcriptApi.includes('video_meeting_transcription_segments_v1800'));
 assert.ok(meetingJs.includes('pollTranscript'));
 assert.ok(meetingJs.includes('lastTranscriptId'));
+assert.ok(meetingJs.includes('post(boot.transcriptEndpoint'));
+assert.ok(!meetingJs.includes("boot.transcriptEndpoint+'?'"), 'transcript bearer capability must not be sent in query-string polling');
 assert.ok(meetingJs.includes('textContent=String(segment.transcript_text'));
+assert.ok(meetingJs.includes("await post(boot.presenceEndpoint,{action:'join'})"), 'VP3 presence must succeed before the lobby is dismissed');
 
-// Real LiveKit Agent worker subscribes to participant audio and posts only final
-// transcript events back through the authenticated callback.
+// Real LiveKit Agent worker subscribes to participant audio, binds itself to
+// the dispatched room and gives final STT a bounded drain on disconnect.
 assert.ok(pythonWorker.includes('@server.rtc_session(agent_name=AGENT_NAME)'));
 assert.ok(pythonWorker.includes('AutoSubscribe.AUDIO_ONLY'));
 assert.ok(pythonWorker.includes('rtc.AudioStream(track)'));
 assert.ok(pythonWorker.includes('stt.SpeechEventType.FINAL_TRANSCRIPT'));
 assert.ok(pythonWorker.includes('source_key = hashlib.sha256'));
+assert.ok(pythonWorker.includes('"room_name": room_name'));
+assert.ok(pythonWorker.includes('ctx.room.name != expected_room_name'));
+assert.ok(pythonWorker.includes('FINAL_DRAIN_SECONDS'));
+assert.ok(pythonWorker.includes('asyncio.wait'));
 assert.ok(pythonWorker.includes('/api/video-meeting-worker.php'));
 assert.ok(workerReadme.includes('notes-first'));
+
+// HomeServer remains optional, but its existing compute/privacy boundary is
+// authoritative for meeting AI processing. We detect future local STT support
+// only when the paired HomeServer actually advertises it; nothing is invented.
+assert.ok(home.includes('vp3_agent_runtime_preference_v420'));
+assert.ok(home.includes('homeserver_scope_v026_blocks_cloud'));
+assert.ok(home.includes("$state['requested_compute']==='homeserver_only'"));
+assert.ok(home.includes("'meeting.transcription.stream','transcription.stream','transcription.start'"));
+assert.ok(home.includes('homeserver_capability_v033_registry'));
+assert.ok(agent.includes('video_meeting_cloud_transcription_allowed_v1801'));
+assert.ok(agent.includes('homeserver_private_processing_required'));
+assert.ok(meeting.includes('HomeServer privacy/compute policy prevents VP3 from dispatching the cloud transcription worker'));
+assert.ok(tokenApi.includes("'processing_route'=>$processingRoute"));
 
 // Existing product surfaces are extended rather than duplicated.
 assert.ok(schedulingType.includes("'vp3_video'=>'VP3 Video Meeting'"));
@@ -116,4 +158,4 @@ assert.ok(calendar.includes('Join VP3 Meeting'));
 assert.ok(nav.includes("'meetings.php'=>'meetings'"));
 assert.ok(nav.includes("url('/meetings.php')"));
 
-console.log('Video Meetings v18.0 contract passed.');
+console.log('Video Meetings v18.0/18.1 hardening contract passed.');
