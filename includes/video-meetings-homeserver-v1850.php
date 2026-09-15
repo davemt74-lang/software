@@ -13,7 +13,7 @@ const VP3_VIDEO_MEETINGS_HOMESERVER_V1850='video-meetings-homeserver-v1850-20260
 
 function video_meeting_homeserver_transcription_operation_v1850(): string
 {
-    return 'meeting.transcription.start';
+    return 'meeting.transcription.stream';
 }
 
 function video_meeting_homeserver_runtime_expiry_v1850(array $meeting): int
