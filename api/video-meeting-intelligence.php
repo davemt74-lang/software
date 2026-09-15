@@ -48,8 +48,23 @@ try{
         $reply(true,['objectives'=>$objectives]);
     }
     if($action==='record_analysis'){
-        $mode=(string)($_POST['mode']??'live');
-        $state=video_meeting_intelligence_record_analysis_v1820($pdo,$meeting,$mode,(string)($_POST['source_hash']??''));
+        $mode=strtolower(trim((string)($_POST['mode']??'live')))==='final'?'final':'live';
+        if($mode==='final'&&!in_array((string)$meeting['status'],['ended','processed'],true)){
+            throw new RuntimeException('Final meeting intelligence is only available after the meeting ends.');
+        }
+        $source=video_meeting_intelligence_source_v1820($pdo,$meeting);
+        $currentHash=(string)($source['source_hash']??'');$submittedHash=trim((string)($_POST['source_hash']??''));
+        if($currentHash===''||$submittedHash===''||!hash_equals($currentHash,$submittedHash)){
+            throw new RuntimeException('The meeting transcript changed while intelligence was running. Refresh and try again.');
+        }
+        $bundle=video_meeting_intelligence_modules_v1820($pdo,$source);
+        if(empty($bundle['fresh']))throw new RuntimeException('Canonical Transcription Intelligence did not finish for the current meeting transcript.');
+        $hasResult=false;
+        foreach((array)($bundle['modules']??[]) as $module){
+            if(is_array($module)&&function_exists('transcription_app_has_result_v300')&&transcription_app_has_result_v300($module['result']??null)){$hasResult=true;break;}
+        }
+        if(!$hasResult)throw new RuntimeException('Canonical Transcription Intelligence returned no current meeting analysis.');
+        $state=video_meeting_intelligence_record_analysis_v1820($pdo,$meeting,$mode,$submittedHash);
         $reply(true,['state'=>$state]);
     }
     if($action==='handoff'){
