@@ -18,6 +18,6 @@ function agent_appointment_lifecycle_schema_ready_v700(?PDO $pdo=null): bool
         && column_exists('agent_scheduling_bookings','no_show_at')
         && column_exists('agent_scheduling_event_types','reminder_24h_enabled')
         && column_exists('agent_scheduling_event_types','reminder_soon_minutes')
-        && column_exists('agent_scheduling_automation_deliveries','occurrence_key');
+        && column_exists('agent_scheduling_automation_deliveries','occurrence_key')
+        && (!function_exists('video_meeting_external_calendar_schema_ready_v1801')||video_meeting_external_calendar_schema_ready_v1801($pdo));
 }
-
