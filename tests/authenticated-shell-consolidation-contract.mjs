@@ -13,6 +13,7 @@ const account = fs.readFileSync('account.php', 'utf8');
 
 assert.match(navigation, /function member_navigation_active_key\(/, 'navigation must own canonical active-key resolution');
 for (const [script, key] of [
+  ['home.php', 'home'],
   ['chat.php', 'chat'],
   ['knowledge.php', 'knowledge'],
   ['calendar.php', 'calendar'],
@@ -28,7 +29,7 @@ assert.match(navigation, /function member_navigation_group_label\(/, 'navigation
 
 assert.match(workspaceWrapper, /require __DIR__ \. '\/main-sidebar\.php'/, 'legacy workspace wrapper must continue delegating to the canonical sidebar');
 assert.match(sidebar, /member_navigation_active_key\(\)/, 'sidebar must fall back to canonical active-key resolution');
-assert.match(sidebar, /\['chat','profile_agent','messages','contacts','knowledge','transcriptions','calendar','scheduling','profile_commerce','team'\]/, 'primary shell must cover core Agent, workspace, planning, commerce and team destinations');
+assert.match(sidebar, /\['home','chat','profile_agent','messages','contacts','knowledge','transcriptions','calendar','scheduling','profile_commerce','team'\]/, 'primary shell must cover Agent Home, chat, core workspace, planning, commerce and team destinations');
 assert.match(sidebar, /data-vp3-nav-key=/, 'sidebar links must expose canonical navigation keys');
 assert.match(sidebar, /aria-current="page"/, 'active sidebar links must expose aria-current');
 assert.match(sidebar, /agent-nav-group-label/, 'primary navigation must render product-area grouping');
