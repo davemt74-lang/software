@@ -53,3 +53,12 @@ function video_meeting_secure_invitation_email_v1800(PDO $pdo,array $meeting,arr
     if(function_exists('agent_appointment_lifecycle_email_v700'))return agent_appointment_lifecycle_email_v700($email,$prefix.': '.(string)$meeting['title'],$body);
     return false;
 }
+
+function video_meeting_agent_worker_ready_v1800(): bool
+{
+    if(!video_meeting_livekit_ready_v1800())return false;
+    $cfg=video_meeting_livekit_config_v1800();
+    global $config;$livekit=is_array($config['livekit']??null)?$config['livekit']:[];
+    $workerSecret=trim((string)(getenv('VP3_MEETING_WORKER_SECRET')?:($livekit['worker_secret']??'')));
+    return trim((string)($cfg['agent_name']??''))!==''&&$workerSecret!=='';
+}
