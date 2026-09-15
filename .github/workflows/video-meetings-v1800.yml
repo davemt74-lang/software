@@ -1,0 +1,78 @@
+name: Video Meetings v18.0
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    name: contract (${{ matrix.php }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.1', '8.3']
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+      - name: PHP syntax
+        run: |
+          php -l includes/video-meetings-v1800.php
+          php -l includes/video-meetings-security-v1800.php
+          php -l includes/video-meetings-agent-v1800.php
+          php -l includes/video-meetings-transcription-v1800.php
+          php -l includes/video-meetings-reconcile-v1800.php
+          php -l api/video-meeting-token.php
+          php -l api/video-meeting-presence.php
+          php -l api/video-meeting-transcript.php
+          php -l api/video-meeting-worker.php
+          php -l meeting.php
+          php -l meeting-ics.php
+          php -l meetings.php
+          php -l scheduling-type.php
+          php -l scheduling.php
+          php -l calendar.php
+          php -l includes/member-navigation.php
+          php -l config-example.php
+          php -l upgrade.php
+      - name: JavaScript syntax
+        run: |
+          node --check video-meetings-v1800.js
+          node --check tests/video-meetings-v1800-contract.mjs
+      - name: Python syntax
+        run: python -m py_compile workers/vp3-meeting-agent/agent.py
+      - name: Video Meetings contract
+        run: node tests/video-meetings-v1800-contract.mjs
+
+  worker-sdk:
+    name: LiveKit worker SDK contract
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install worker dependency
+        run: python -m pip install --disable-pip-version-check -r workers/vp3-meeting-agent/requirements.txt
+      - name: Import deployed worker contract
+        run: |
+          python - <<'PY'
+          import runpy
+          namespace = runpy.run_path('workers/vp3-meeting-agent/agent.py', run_name='vp3_meeting_agent_contract')
+          required = ['server', 'vp3_meeting_agent', '_transcribe_track', '_post_segment']
+          missing = [name for name in required if name not in namespace]
+          if missing:
+              raise SystemExit(f'Missing meeting worker symbols: {missing}')
+          print('LiveKit meeting worker SDK contract passed.')
+          PY
