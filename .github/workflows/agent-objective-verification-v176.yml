@@ -1,4 +1,4 @@
-name: Agent Objective Plans v17.5
+name: Agent Objective Verification v17.6
 
 on:
   pull_request:
@@ -28,10 +28,9 @@ jobs:
         run: |
           php -l includes/agent-objective-verification-v176.php
           php -l includes/agent-objective-plans-v175.php
-          php -l includes/release-chat-v105.php
+          php -l includes/agent-job-engine-v1900.php
           php -l includes/agent-work-dependencies-v174.php
           php -l includes/agent-work-control-v173.php
-          php -l includes/agent-job-engine-v1900.php
           php -l upgrade.php
       - name: JavaScript syntax
         run: |
@@ -44,7 +43,7 @@ jobs:
           node --check tests/agent-home-command-center-contract.mjs
       - name: Agent Objective Verification contract
         run: node tests/agent-objective-verification-v176-contract.mjs
-      - name: Agent Objective Plans contract
+      - name: Retained Agent Objective Plans contract
         run: node tests/agent-objective-plans-v175-contract.mjs
       - name: Retained Agent Work Dependencies contract
         run: node tests/agent-work-dependencies-v174-contract.mjs

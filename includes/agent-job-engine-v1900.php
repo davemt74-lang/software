@@ -12,6 +12,7 @@ const VP3_AGENT_JOB_DEFAULT_TIMEOUT_SECONDS_V1900=900;
 const VP3_AGENT_JOB_DEFAULT_LEASE_SECONDS_V1900=120;
 require_once __DIR__.'/agent-workflow-runs-v1400.php';
 require_once __DIR__.'/agent-work-dependencies-v174.php';
+require_once __DIR__.'/agent-objective-verification-v176.php';
 
 function agent_job_engine_schema_ready_v1900(?PDO $pdo=null): bool
 {
@@ -66,6 +67,12 @@ function agent_job_public_run_v1900(PDO $pdo,array $row,bool $history=false): ar
         $out['pause_requested_at']=(string)($row['pause_requested_at']??'');
         $out['paused_at']=(string)($row['paused_at']??'');
         $out['paused_from_status']=(string)($row['paused_from_status']??'');
+    }
+    if(agent_objective_verification_schema_ready_v176($pdo)&&((string)($row['source_kind']??'')==='objective_plan')){
+        $out['objective_verification_status']=(string)($row['objective_verification_status']??'');
+        $out['objective_verification_summary']=(string)($row['objective_verification_summary']??'');
+        $out['objective_verified_at']=(string)($row['objective_verified_at']??'');
+        $out['objective_remediation_count']=(int)($row['objective_remediation_count']??0);
     }
     if($history&&table_exists('agent_workflow_receipts')){$s=$pdo->prepare('SELECT id,action_id,executor,worker_id,attempt_no,status,summary,error_class,created_at FROM agent_workflow_receipts WHERE run_id=? AND owner_user_id=? ORDER BY id DESC LIMIT 100');$s->execute([(int)($row['id']??0),(int)($row['owner_user_id']??0)]);$out['receipts']=$s->fetchAll()?:[];}
     return $out;
@@ -139,6 +146,7 @@ function agent_job_record_result_v1900(PDO $pdo,array $user,int $runId,int $acti
                 if($pauseAfterCurrent){$pdo->prepare("UPDATE agent_workflow_runs SET status='paused',".agent_job_release_sql_v1900().",last_error_class=?,next_attempt_at=?,progress_percent=0,progress_message='Paused · retry waiting',pause_requested_at=NULL,paused_at=UTC_TIMESTAMP(),paused_from_status='approved' WHERE id=? AND owner_user_id=?")->execute([$errorClass,$when,$runId,$uid]);agent_workflow_event_v1400($pdo,$uid,$runId,'paused','executing','paused','system','Workflow paused after the active action failed; bounded retry timing was preserved.',['action_id'=>$actionId,'receipt_id'=>$receiptId,'retry_at'=>$when,'error_class'=>$errorClass]);}
                 else{$pdo->prepare("UPDATE agent_workflow_runs SET status='approved',".agent_job_release_sql_v1900().",last_error_class=?,next_attempt_at=?,progress_percent=0,progress_message='Retry scheduled' WHERE id=? AND owner_user_id=?")->execute([$errorClass,$when,$runId,$uid]);agent_workflow_event_v1400($pdo,$uid,$runId,'retry_scheduled','executing','approved','executor','Action failed and was scheduled for bounded retry.',['action_id'=>$actionId,'receipt_id'=>$receiptId,'attempt'=>$attempt,'max_attempts'=>$max,'retry_at'=>$when,'error_class'=>$errorClass]);}}
             else{$pdo->prepare("UPDATE agent_workflow_actions SET status='failed',result_summary=?,result_json=?,error_class=?,completed_at=UTC_TIMESTAMP(),heartbeat_at=UTC_TIMESTAMP(),progress_message='Failed' WHERE id=? AND owner_user_id=?")->execute([$summary,$safe?agent_workflow_json_v1400($safe):null,$errorClass,$actionId,$uid]);$pdo->prepare("UPDATE agent_workflow_runs SET status='failed',".agent_job_release_sql_v1900().",last_error_class=?,next_attempt_at=NULL,progress_message='Failed' WHERE id=? AND owner_user_id=?")->execute([$errorClass,$runId,$uid]);if($control)agent_job_clear_control_state_v1900($pdo,$uid,$runId);agent_workflow_event_v1400($pdo,$uid,$runId,'failed','executing','failed','executor','Durable workflow exhausted execution attempts or received a terminal failure.',['action_id'=>$actionId,'receipt_id'=>$receiptId,'attempt'=>$attempt,'max_attempts'=>$max,'error_class'=>$errorClass]);$terminal='failed';}}
+        if(function_exists('agent_objective_verification_after_result_v176')){$verification=agent_objective_verification_after_result_v176($pdo,$user,$run,$action,$success,$summary,$safe,$receiptId,$receiptStatus);if(!empty($verification['reopened']))$terminal='';}
         $pdo->commit();
     }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();throw $e;}
     $row=agent_workflow_row_v1400($pdo,$uid,$runId);if($row){agent_job_brain_memory_v1900($user,$row,$terminal!==''?$terminal:'progress');if($terminal!=='')agent_job_brain_outcome_v1900($user,$row,$terminal);}return ['duplicate'=>false,'receipt_id'=>$receiptId,'run'=>$row?agent_job_public_run_v1900($pdo,$row,true):null,'build'=>VP3_AGENT_JOB_ENGINE_V1900];
