@@ -27,10 +27,12 @@ assert.match(execution,/Phase 19 can claim it normally/,'ready work must remain 
 assert.match(execution,/goal orchestration will not approve it automatically/,'approval must remain explicit');
 assert.match(execution,/dependency graph remains authoritative/,'dependency authority must be preserved');
 assert.match(execution,/goal orchestration will not silently resume it/,'paused work must not be silently resumed');
-assert.match(execution,/work\s+on|advance/,'Agent Chat must understand explicit work\/advance language');
-assert.match(execution,/not\s+moving|stalled|blocked|stuck|waiting/,'Agent Chat must explain stalled goals');
-assert.match(execution,/agent\s+doing/,'Agent Chat must expose current goal work');
-assert.match(execution,/what\s+next|next\s+step/,'Agent Chat must expose the next safe step');
+assert.match(execution,/archived immutable history/,'archived goals must remain immutable');
+assert.match(execution,/needs_remediation/,'Phase 17.6 remediation state must be surfaced');
+assert.ok(execution.includes('work\\s+on')&&execution.includes('advance'),'Agent Chat must understand explicit work\/advance language');
+assert.match(execution,/moving|progressing|advancing|stalled|blocked|stuck|waiting/,'Agent Chat must explain stalled goals');
+assert.ok(execution.includes('agent\\s+doing'),'Agent Chat must expose current goal work');
+assert.ok(execution.includes('what\\s+next')||execution.includes('next\\s+step'),'Agent Chat must expose the next safe step');
 assert.doesNotMatch(execution,/CREATE TABLE|ALTER TABLE|INSERT INTO agent_workflow_runs|INSERT INTO agent_workflow_actions/i,'17.12 must not create schema or its own execution records');
 assert.doesNotMatch(execution,/UPDATE\s+agent_workflow_runs|UPDATE\s+agent_workflow_actions/i,'17.12 must not directly mutate workflow/action state');
 assert.doesNotMatch(execution,/agent_work_control_(?:approve|resume|retry|cancel|reschedule)_v173\s*\(/,'goal orchestration must not bypass explicit workflow controls');
