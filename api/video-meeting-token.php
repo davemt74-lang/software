@@ -74,10 +74,11 @@ try{
             // outcome without touching the organizer's private runtime.
             $processingStatus=video_meeting_homeserver_public_status_v1840($pdo,$meeting,!empty($access['is_organizer']));
         }else{
-            $policy=function_exists('video_meeting_homeserver_public_policy_v1801')?video_meeting_homeserver_public_policy_v1801($pdo,$meeting):['policy_resolved'=>true,'cloud_processing_allowed'=>true];
-            if(empty($policy['policy_resolved']))$processingStatus['route']='pending';
-            elseif(($policy['cloud_processing_allowed']??null)===true){$processingStatus['route']='cloud';$processingStatus['status']='ready';$processingStatus['ready']=true;$processingStatus['cloud_allowed']=true;}
-            else{$processingStatus['route']='private_required';$processingStatus['status']='private_required';$processingStatus['homeserver_required']=true;}
+            // Privacy policy absence is unresolved, never implicit cloud consent.
+            $policy=function_exists('video_meeting_homeserver_public_policy_v1801')?video_meeting_homeserver_public_policy_v1801($pdo,$meeting):['policy_resolved'=>false,'cloud_processing_allowed'=>false];
+            if(empty($policy['policy_resolved'])){$processingStatus['route']='pending';$processingStatus['status']='policy_pending';$processingStatus['policy_resolved']=false;$processingStatus['reason_code']='owner_policy_pending';}
+            elseif(($policy['cloud_processing_allowed']??null)===true){$processingStatus['route']='cloud';$processingStatus['status']='ready';$processingStatus['ready']=true;$processingStatus['cloud_allowed']=true;$processingStatus['reason_code']='cloud_allowed';}
+            else{$processingStatus['route']='private_required';$processingStatus['status']='private_required';$processingStatus['homeserver_required']=true;$processingStatus['reason_code']='private_processing_required';}
         }
     }
     // Preserve the established scalar processing_route response while the new
