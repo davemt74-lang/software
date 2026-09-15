@@ -58,13 +58,17 @@ function video_meeting_homeserver_callback_verify_v1850(string $publicId,string 
 
 function video_meeting_homeserver_callback_url_v1850(): string
 {
-    if(!function_exists('video_meeting_absolute_url_v1800'))return '';
-    $url=video_meeting_absolute_url_v1800('/api/video-meeting-worker.php');
+    // Credential-bearing server-to-server callbacks must use the same canonical
+    // origin boundary as meeting invitations; never derive this URL from an
+    // arbitrary production Host header.
+    if(!function_exists('video_meeting_secure_external_url_v1801'))return '';
+    try{$url=video_meeting_secure_external_url_v1801('/api/video-meeting-worker.php');}
+    catch(Throwable $e){return '';}
     $parts=parse_url($url);if(!is_array($parts))return '';
     $scheme=strtolower((string)($parts['scheme']??''));$host=strtolower((string)($parts['host']??''));
     $loopback=in_array($host,['localhost','127.0.0.1','::1'],true);
     if($scheme!=='https'&&!($scheme==='http'&&$loopback))return '';
-    if(isset($parts['user'])||isset($parts['pass']))return '';
+    if(isset($parts['user'])||isset($parts['pass'])||isset($parts['query'])||isset($parts['fragment']))return '';
     return $url;
 }
 
@@ -104,6 +108,11 @@ function video_meeting_homeserver_transcription_executor_available_v1850(array $
  * The HomeServer operation is expected to be idempotent for idempotency_key and
  * to return ready/started/running/already_running when the local subscriber is
  * accepted. No raw HomeServer response is forwarded to the browser.
+ *
+ * HomeServer posts final segments to callback.url using callback.bearer_token.
+ * Each callback body uses the canonical meeting worker shape:
+ * meeting, room_name, participant_identity, speaker_name, start_ms, end_ms,
+ * text, confidence, source="homeserver", source_key and is_final=true.
  */
 function video_meeting_homeserver_transcription_execute_v1840(PDO $pdo,array $meeting,string $operation=''): array
 {
@@ -136,6 +145,7 @@ function video_meeting_homeserver_transcription_execute_v1840(PDO $pdo,array $me
             'bearer_token'=>video_meeting_homeserver_callback_token_v1850($meeting,$expiresAt),
             'expires_at'=>gmdate('c',$expiresAt),
             'final_only'=>true,
+            'source'=>'homeserver',
         ],
         'transcription'=>['language'=>mb_strimwidth($language,0,32,''),'final_only'=>true],
     ];
