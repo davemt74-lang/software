@@ -1,0 +1,52 @@
+name: Agent Work Queue v17.2
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    name: contract (${{ matrix.php }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.1', '8.3']
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+      - name: PHP syntax
+        run: |
+          php -l chat.php
+          php -l includes/agent-chat-intelligence-v171.php
+          php -l includes/agent-workflow-runs-v1400.php
+          php -l includes/agent-job-engine-v1900.php
+      - name: JavaScript syntax
+        run: |
+          node --check tests/agent-work-queue-v172-contract.mjs
+          node --check tests/agent-chat-intelligence-v171-contract.mjs
+      - name: Agent Work Queue contract
+        run: node tests/agent-work-queue-v172-contract.mjs
+      - name: Retained Agent Chat Intelligence contract
+        run: node tests/agent-chat-intelligence-v171-contract.mjs
+      - name: Retained Home command-center contract
+        run: node tests/agent-home-command-center-contract.mjs
+      - name: Retained durable workflow contracts
+        run: |
+          node tests/agent-workflows-v1400-contract.mjs
+          node tests/agent-job-engine-v1900-contract.mjs
+      - name: Retained canonical shell contracts
+        run: |
+          node tests/main-feed-canonical-ui-contract.mjs
+          node tests/authenticated-shell-consolidation-contract.mjs
+          node tests/member-sidebar-shell-contract.mjs
+          node tests/member-shell-v1320-contract.mjs
