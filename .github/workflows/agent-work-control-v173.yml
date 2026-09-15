@@ -31,6 +31,7 @@ jobs:
           php -l includes/agent-chat-intelligence-v171.php
           php -l includes/release-chat-v105.php
           php -l api/agent-workflow-runs-v1400.php
+          php -l api/chat-v236.php
           php -l agent-work-control-upgrade-v173.php
           php -l chat.php
       - name: JavaScript syntax
