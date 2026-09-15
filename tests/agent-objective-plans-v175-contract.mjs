@@ -54,7 +54,7 @@ assert.match(objective,/paused/,'Objective inspection must surface paused childr
 
 for(const command of ['pause','resume','cancel','priority','delegate'])assert.match(objective,new RegExp(`agent_objective_${command}_v175`),`Objective plans must support ${command}`);
 assert.match(objective,/agent_objective_extract_step_ordinal_v175/,'Objective delegation must parse a child step independently from the objective id and target');
-assert.match(objective,/step\\s\*#?\\s\*\\(\\d\+\\)/,'The advertised step-number syntax must remain recognized');
+assert.ok(objective.includes("preg_match('/\\bstep\\s*#?\\s*(\\d+)\\b/i'"),'The advertised step-number syntax must remain recognized');
 assert.match(objective,/\(HomeServer\|Home Server\|Cloud\|VP3 Cloud\)/,'Objective delegation must independently parse the execution target');
 assert.match(objective,/agent_objective_state_v175/,'Objective Chat must expose objective status and blockers');
 assert.match(objective,/objective\.create/,'Objective creation must remain in the Agent tool audit log');
