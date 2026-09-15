@@ -1,0 +1,41 @@
+name: Video Meetings v18.3
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    name: contract (${{ matrix.php }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.1', '8.3']
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+      - name: PHP syntax
+        run: |
+          php -l includes/video-meetings-manual-v1830.php
+          php -l includes/video-meetings-security-v1800.php
+          php -l includes/agent-appointment-lifecycle-v700.php
+          php -l calendar-event.php
+          php -l meeting-guest.php
+          php -l upgrade.php
+          php -l api/video-meeting-token.php
+          php -l api/video-meeting-presence.php
+          php -l api/video-meeting-transcript.php
+      - name: Contract syntax
+        run: node --check tests/video-meetings-manual-v1830-contract.mjs
+      - name: Manual Calendar meeting contract
+        run: node tests/video-meetings-manual-v1830-contract.mjs
