@@ -42,12 +42,53 @@ function video_meeting_secure_access_v1800(PDO $pdo,?array $user,string $publicI
     return $access;
 }
 
+/**
+ * Outbound meeting links are security capabilities, so production email/ICS
+ * must use the configured canonical origin instead of trusting HTTP_HOST.
+ * Localhost remains available for development without weakening production.
+ */
+function video_meeting_public_origin_v1801(): string
+{
+    global $config;
+    $base=rtrim(trim((string)($config['site']['base_url']??'')),'/');
+    if($base!==''){
+        $parts=parse_url($base);
+        $scheme=strtolower((string)($parts['scheme']??''));$host=(string)($parts['host']??'');
+        if(!in_array($scheme,['http','https'],true)||$host===''||isset($parts['user'])||isset($parts['pass'])||isset($parts['query'])||isset($parts['fragment'])){
+            throw new RuntimeException('VP3 site.base_url is invalid. Configure the canonical public origin before sending meeting invitations.');
+        }
+        return $base;
+    }
+
+    $host=strtolower(trim((string)($_SERVER['HTTP_HOST']??'')));
+    $hostOnly=preg_replace('/:\d+$/','',$host)??$host;
+    $local=in_array($hostOnly,['localhost','127.0.0.1','[::1]','::1'],true);
+    if(!$local)throw new RuntimeException('Configure site.base_url before sending VP3 meeting invitations.');
+    $scheme=(!empty($_SERVER['HTTPS'])&&$_SERVER['HTTPS']!=='off')?'https':'http';
+    return $scheme.'://'.$host;
+}
+
+function video_meeting_secure_external_url_v1801(string $path): string
+{
+    return video_meeting_public_origin_v1801().url($path);
+}
+
+function video_meeting_secure_invite_url_v1801(array $participant): string
+{
+    return video_meeting_secure_external_url_v1801('/meeting.php?invite='.rawurlencode((string)$participant['invite_token']));
+}
+
+function video_meeting_secure_ics_url_v1801(array $participant): string
+{
+    return video_meeting_secure_external_url_v1801('/meeting-ics.php?invite='.rawurlencode((string)$participant['invite_token']));
+}
+
 function video_meeting_secure_invitation_email_v1800(PDO $pdo,array $meeting,array $participant,string $prefix='Video meeting invitation'): bool
 {
     $email=strtolower(trim((string)($participant['email']??'')));if(!filter_var($email,FILTER_VALIDATE_EMAIL))return false;
     $owner=video_meeting_user_v1800($pdo,(int)$meeting['owner_user_id']);$ownerName=trim((string)($owner['display_name']??''))?:'VP3';
     $memberBound=(int)($participant['user_id']??0)>0;
-    $body=$ownerName." invited you to a VP3 video meeting.\n\n".(string)$meeting['title']."\n".(string)$meeting['start_at_utc']." UTC\n\nJoin meeting:\n".video_meeting_invite_url_v1800($participant)."\n\nAdd to calendar:\n".video_meeting_ics_url_v1800($participant)."\n\n";
+    $body=$ownerName." invited you to a VP3 video meeting.\n\n".(string)$meeting['title']."\n".(string)$meeting['start_at_utc']." UTC\n\nJoin meeting:\n".video_meeting_secure_invite_url_v1801($participant)."\n\nAdd to calendar:\n".video_meeting_secure_ics_url_v1801($participant)."\n\n";
     if($memberBound)$body.='This invitation is bound to your VP3 account. Sign in with '.$email.' before opening the meeting link.';
     else $body.='You do not need a VP3 account to use this guest invitation link. Keep the link private because it grants meeting access.';
     if(function_exists('agent_appointment_lifecycle_email_v700'))return agent_appointment_lifecycle_email_v700($email,$prefix.': '.(string)$meeting['title'],$body);
