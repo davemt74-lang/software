@@ -45,8 +45,33 @@ try{
         }
     }
     if($action==='leave')video_meeting_record_crm_attendance_v1800($pdo,$meeting,$access['participant'],'left');
-    if($action==='end'&&!empty($meeting['transcription_enabled']))video_meeting_transcription_finalize_v1800($pdo,$meeting);
-    echo json_encode(['ok'=>true,'status'=>(string)$meeting['status'],'agent_dispatch'=>$dispatch],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
+    if($action==='end'){
+        if(!empty($meeting['transcription_enabled']))video_meeting_transcription_finalize_v1800($pdo,$meeting);
+        // Phase 18.2 deliberately does not execute cloud AI inside the presence
+        // request. Ending media stays fast; the organizer client/review surface
+        // runs canonical Transcription Intelligence under the existing privacy
+        // guard, while this marker makes the durable post-meeting state ready.
+        if(function_exists('video_meeting_intelligence_mark_ended_v1820'))video_meeting_intelligence_mark_ended_v1820($pdo,$meeting);
+        if(table_exists('notifications')&&function_exists('create_notification')){
+            $exists=$pdo->prepare("SELECT id FROM notifications WHERE user_id=? AND source_type='video_meeting' AND source_id=? AND type='video_meeting_needs_attention_intelligence_review' LIMIT 1");
+            $exists->execute([(int)$meeting['owner_user_id'],(int)$meeting['id']]);
+            if(!(int)$exists->fetchColumn()){
+                create_notification(
+                    (int)$meeting['owner_user_id'],
+                    'video_meeting_needs_attention_intelligence_review',
+                    'Meeting ready for review',
+                    (string)$meeting['title'].' · Review Meeting Intelligence and follow-up.',
+                    url('/meeting.php?meeting='.(string)$meeting['public_id'].'&review=1'),
+                    'video_meeting',
+                    (int)$meeting['id']
+                );
+            }
+        }
+    }
+    echo json_encode([
+        'ok'=>true,'status'=>(string)$meeting['status'],'agent_dispatch'=>$dispatch,
+        'intelligence_review_url'=>$action==='end'&&!empty($access['is_organizer'])?url('/meeting.php?meeting='.(string)$meeting['public_id'].'&review=1'):'',
+    ],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
 }catch(Throwable $e){
     error_log('VP3 meeting presence error: '.$e->getMessage());
     $fail(500,'Meeting status could not be updated.');

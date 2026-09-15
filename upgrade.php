@@ -60,6 +60,7 @@ function vp3_upgrade_complete(): bool
         && agent_appointment_lifecycle_schema_ready_v700()
         && video_meeting_schema_ready_v1800()
         && video_meeting_transcription_schema_ready_v1800()
+        && video_meeting_intelligence_schema_ready_v1820()
         && agent_commerce_schema_ready_v800()
         && agent_paid_appointments_schema_ready_v800()
         && agent_work_control_schema_ready_v173()
@@ -152,6 +153,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             crm_v180_ensure_schema();
             video_meeting_ensure_schema_v1800($pdo);
             video_meeting_transcription_ensure_schema_v1800($pdo);
+            video_meeting_intelligence_ensure_schema_v1820($pdo);
             artist_workspace_v181_ensure_schema();
             vp3_plugin_migrate_legacy_v360($pdo);
             vp3_human_messaging_v370_migrate_legacy($pdo);
@@ -164,7 +166,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $complete = vp3_upgrade_complete();
 
             if ($complete) {
-                flash('notice', 'VP3 database upgrade complete: subscriptions, composable product entitlements, canonical plugin lifecycle, canonical human messaging, durable Agent retirement, Agent-scoped Brain memory, native Agent Scheduling, unified User Calendar, external calendar synchronization, Team Scheduling, Appointment Lifecycle + Automation, Video Meetings + canonical transcription bridge, Paid Appointments, Agent Work Control + Dependencies, Objective Verification + Adaptive Replanning, Objective Memory + Outcome Learning, Goals + Strategy + Adaptive Roadmaps + Forecast Review Learning, canonical Agent runtime routing and route-attributed AI accounting, social relationships, Team invitation/lifecycle collaboration, workspace-owned Music resources, Knowledge, Profile Agent, HomeServer Agent continuity, Agent Radar, CRM, transcriptions, and Music/Studio capabilities are ready.');
+                flash('notice', 'VP3 database upgrade complete: subscriptions, composable product entitlements, canonical plugin lifecycle, canonical human messaging, durable Agent retirement, Agent-scoped Brain memory, native Agent Scheduling, unified User Calendar, external calendar synchronization, Team Scheduling, Appointment Lifecycle + Automation, Video Meetings + Meeting Intelligence, Paid Appointments, Agent Work Control + Dependencies, Objective Verification + Adaptive Replanning, Objective Memory + Outcome Learning, Goals + Strategy + Adaptive Roadmaps + Forecast Review Learning, canonical Agent runtime routing and route-attributed AI accounting, social relationships, Team invitation/lifecycle collaboration, workspace-owned Music resources, Knowledge, Profile Agent, HomeServer Agent continuity, Agent Radar, CRM, transcriptions, and Music/Studio capabilities are ready.');
                 redirect(url('/admin/users.php'));
             }
         } catch (Throwable $e) {
@@ -180,7 +182,7 @@ vp3_public_header('Database Upgrade — VP3', 'Upgrade the VP3 database and appl
     <div class="vp3-auth-visual-content">
       <div class="vp3-kicker">System maintenance</div>
       <h1>Keep VP3 capabilities current.</h1>
-      <p>The upgrade process adds the current subscription, composable entitlement, plugin lifecycle, social, canonical human messaging, billing, AI, HomeServer, collaboration, scheduling, unified User Calendar, calendar sync, Team Scheduling, Appointment Lifecycle + Automation, Video Meetings + transcription bridge, Paid Appointments, Agent Work Control + Dependencies, Objective Verification + Adaptive Replanning, Objective Memory + Outcome Learning, Goals + Strategy + Adaptive Roadmaps + Forecast Review Learning, analytics, CRM and Studio schema without replacing existing user content.</p>
+      <p>The upgrade process adds the current subscription, composable entitlement, plugin lifecycle, social, canonical human messaging, billing, AI, HomeServer, collaboration, scheduling, unified User Calendar, calendar sync, Team Scheduling, Appointment Lifecycle + Automation, Video Meetings + Meeting Intelligence, Paid Appointments, Agent Work Control + Dependencies, Objective Verification + Adaptive Replanning, Objective Memory + Outcome Learning, Goals + Strategy + Adaptive Roadmaps + Forecast Review Learning, analytics, CRM and Studio schema without replacing existing user content.</p>
     </div>
   </section>
   <section class="vp3-auth-form-side">
@@ -189,10 +191,10 @@ vp3_public_header('Database Upgrade — VP3', 'Upgrade the VP3 database and appl
       <h1>VP3 Database Upgrade</h1>
       <?php if ($complete): ?>
         <div class="vp3-alert success">The current VP3 schema is installed and ready.</div>
-        <p class="vp3-auth-intro">Subscription packages, composable add-on entitlements, canonical opt-in plugins, social relationships, canonical human messaging, durable Agent history, Agent-scoped Brain memory, native Agent Scheduling, unified User Calendar, external calendar synchronization, round-robin and collective Team Scheduling, Appointment Lifecycle + Automation, Video Meetings + canonical transcription intelligence, Commerce + Paid Scheduling, Agent Work Control + Dependencies, Objective Verification + Adaptive Replanning, Objective Memory + Outcome Learning, Goals + Strategy + Adaptive Roadmaps + Forecast Review Learning, canonical Agent runtime routing, Team invitation and membership lifecycle, workspace-owned Music resources, AI quota and route-attributed execution accounting, private Knowledge, Profile Agent, HomeServer Agent continuity, Agent Radar, CRM, voice identity, transcriptions and Music/Studio capabilities are available.</p>
+        <p class="vp3-auth-intro">Subscription packages, composable add-on entitlements, canonical opt-in plugins, social relationships, canonical human messaging, durable Agent history, Agent-scoped Brain memory, native Agent Scheduling, unified User Calendar, external calendar synchronization, round-robin and collective Team Scheduling, Appointment Lifecycle + Automation, Video Meetings + Meeting Intelligence, Commerce + Paid Scheduling, Agent Work Control + Dependencies, Objective Verification + Adaptive Replanning, Objective Memory + Outcome Learning, Goals + Strategy + Adaptive Roadmaps + Forecast Review Learning, canonical Agent runtime routing, Team invitation and membership lifecycle, workspace-owned Music resources, AI quota and route-attributed execution accounting, private Knowledge, Profile Agent, HomeServer Agent continuity, Agent Radar, CRM, voice identity, transcriptions and Music/Studio capabilities are available.</p>
         <a class="vp3-btn primary" href="<?= e(url('/admin/users.php')) ?>">Manage Users →</a>
       <?php else: ?>
-        <p class="vp3-auth-intro">Run the current schema upgrade while preserving existing content and access. Existing accounts, package assignments, team memberships, token balances, music content, plugin preferences, Agent identities, Agent-scoped Brain memories, schedules, canonical bookings, lifecycle history, intake answers, automation deliveries, commerce provider connections, products, orders, payment/refund lineage, calendar events, calendar connections, Team scheduling pools, video meeting records/invitations/transcripts, durable Agent work controls/dependencies, objective verification history, learned objective patterns, durable goals, goal-objective strategy links, advisory goal roadmaps/milestones, goal forecast review snapshots and conversations are preserved, including Team membership history, legacy Team direct messages and existing add-on grants.</p>
+        <p class="vp3-auth-intro">Run the current schema upgrade while preserving existing content and access. Existing accounts, package assignments, team memberships, token balances, music content, plugin preferences, Agent identities, Agent-scoped Brain memories, schedules, canonical bookings, lifecycle history, intake answers, automation deliveries, commerce provider connections, products, orders, payment/refund lineage, calendar events, calendar connections, Team scheduling pools, video meeting records/invitations/transcripts/intelligence notes/objectives, durable Agent work controls/dependencies, objective verification history, learned objective patterns, durable goals, goal-objective strategy links, advisory goal roadmaps/milestones, goal forecast review snapshots and conversations are preserved, including Team membership history, legacy Team direct messages and existing add-on grants.</p>
         <?php if ($error): ?><div class="vp3-alert error" role="alert"><?= e($error) ?></div><?php endif; ?>
         <form method="post">
           <?= csrf_field() ?>
