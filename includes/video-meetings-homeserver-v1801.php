@@ -154,3 +154,50 @@ function video_meeting_homeserver_public_policy_v1801(PDO $pdo,array $meeting): 
         'reason'=>(string)$state['reason'],
     ];
 }
+
+/**
+ * Resolve the processing policy for a canonical transcription session that was
+ * created by Video Meetings. Non-meeting transcripts return null and keep their
+ * existing transcription-intelligence behavior unchanged.
+ */
+function video_meeting_transcription_ai_policy_v1801(PDO $pdo,array $user,array $session): ?array
+{
+    $metadata=json_decode((string)($session['metadata_json']??''),true);
+    if(!is_array($metadata)||(string)($metadata['capture_mode']??'')!=='vp3_video_meeting')return null;
+
+    $sessionOwner=(int)($session['created_by_user_id']??0);$userId=(int)($user['id']??0);
+    if($sessionOwner<1||$userId<1||$sessionOwner!==$userId){
+        return ['is_meeting'=>true,'cloud_ai_allowed'=>false,'policy_resolved'=>true,'reason'=>'meeting_transcript_owner_mismatch','requested_compute'=>'unknown','local_compute_available'=>false];
+    }
+
+    $meetingId=max(0,(int)($metadata['video_meeting_id']??0));$publicId=strtolower(trim((string)($metadata['video_meeting_public_id']??'')));
+    $meeting=$meetingId>0&&function_exists('video_meeting_row_v1800')?video_meeting_row_v1800($pdo,$meetingId):null;
+    if(!$meeting&&$publicId!==''&&function_exists('video_meeting_by_public_id_v1800'))$meeting=video_meeting_by_public_id_v1800($pdo,$publicId);
+    if(!$meeting||(int)($meeting['owner_user_id']??0)!==$sessionOwner){
+        return ['is_meeting'=>true,'cloud_ai_allowed'=>false,'policy_resolved'=>true,'reason'=>'meeting_binding_unavailable','requested_compute'=>'unknown','local_compute_available'=>false];
+    }
+
+    $state=video_meeting_homeserver_policy_v1801($pdo,$meeting,true);
+    return [
+        'is_meeting'=>true,
+        'meeting_id'=>(int)$meeting['id'],
+        'cloud_ai_allowed'=>$state['cloud_processing_allowed']===true,
+        'policy_resolved'=>!empty($state['policy_resolved']),
+        'requested_compute'=>(string)$state['requested_compute'],
+        'local_compute_available'=>!empty($state['local_compute_available']),
+        'reason'=>(string)$state['reason'],
+        'cloud_block_reason'=>(string)$state['cloud_block_reason'],
+    ];
+}
+
+function video_meeting_transcription_assert_cloud_ai_v1801(PDO $pdo,array $user,array $session): ?array
+{
+    $policy=video_meeting_transcription_ai_policy_v1801($pdo,$user,$session);
+    if($policy===null)return null;
+    if(!empty($policy['cloud_ai_allowed']))return $policy;
+
+    $message='This meeting transcript is not authorized for VP3 Cloud AI processing.';
+    if((string)($policy['requested_compute']??'')==='homeserver_only')$message='This meeting uses HomeServer-only processing. VP3 Cloud AI Summary is disabled for this transcript.';
+    elseif(!empty($policy['local_compute_available']))$message='This meeting is restricted to private HomeServer processing. VP3 Cloud AI Summary is disabled for this transcript.';
+    throw new RuntimeException($message);
+}
