@@ -6,6 +6,7 @@ require_once __DIR__.'/agent-objective-plans-v175.php';
 require_once __DIR__.'/agent-objective-memory-v177.php';
 require_once __DIR__.'/agent-proactive-objectives-v178.php';
 require_once __DIR__.'/agent-objective-portfolio-v179.php';
+require_once __DIR__.'/agent-goal-strategy-v1710.php';
 
 function release_v105_chat_intent(string $query): bool
 {
@@ -29,6 +30,12 @@ function chat_account_state_intent_v241(string $query): bool
 function release_v105_chat_tool(string $query,array $user,int $conversationId=0): array
 {
     $empty=['handled'=>false,'answer'=>'','stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[]];
+
+    // Phase 17.10 owns durable Goal → Objective strategy language. Goal state is
+    // planning metadata only; verified progress always comes from Phase 17.6
+    // objective outcomes and no goal command bypasses normal execution safety.
+    $goalStrategy=agent_goal_chat_v1710($query,$user,$conversationId);
+    if(!empty($goalStrategy['handled']))return $goalStrategy;
 
     // Phase 17.8 owns explicit proactive-objective proposal language. A proposal
     // remains advisory until the user explicitly accepts it, at which point a
