@@ -14,6 +14,8 @@ assert.match(portfolio,/objective_verification_status/,'verification state must 
 assert.match(portfolio,/agent_objective_outcome_memory/,'17.7 outcomes must inform ranking');
 assert.match(portfolio,/agent_proactive_objectives_v178/,'17.8 proposals must be portfolio inputs');
 assert.match(portfolio,/user_priority.*state.*verification.*attention.*schedule.*historical_outcome.*recency/s,'ranking must combine explicit priority, state, verification, attention, schedule, learned outcomes, and recency');
+assert.match(portfolio,/\$status==='completed'\|\|\$verification==='achieved'\)\?0\.0/,'completed or verified-achieved objectives must not compete for active portfolio rank');
+assert.match(portfolio,/\['action'=>'done','label'=>'Achieved'/,'completed objectives must be presented as portfolio history, not next work');
 assert.match(portfolio,/VP3_AGENT_OBJECTIVE_PORTFOLIO_DUPLICATE_THRESHOLD_V179/,'portfolio must detect overlapping objectives');
 assert.match(portfolio,/schedule_conflict_with/,'portfolio must detect competing scheduled objective work');
 assert.match(portfolio,/merge_review/,'overlap must be advisory rather than destructive');
