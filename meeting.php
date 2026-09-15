@@ -14,7 +14,7 @@ $csrf=$user?csrf_token():'';
 header('Referrer-Policy: no-referrer');
 header('X-Robots-Tag: noindex, nofollow, noarchive');
 ?>
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#0b0b0c"><title><?= e((string)$meeting['title']) ?> | VP3 Meeting</title><link rel="stylesheet" href="<?= e(url('/video-meetings-v1800.css?v=1801')) ?>"></head>
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#0b0b0c"><title><?= e((string)$meeting['title']) ?> | VP3 Meeting</title><link rel="stylesheet" href="<?= e(url('/video-meetings-v1800.css?v=1801')) ?>"><link rel="stylesheet" href="<?= e(url('/video-meetings-transcript-v1800.css?v=1800')) ?>"></head>
 <body class="vp3-meeting-room-page">
 <?php if($closed): ?><div class="video-meeting-shell"><div class="meeting-ended-card"><a class="video-meeting-brand" href="<?= e(url('/')) ?>"><span class="video-meeting-brand-mark"><i></i><i></i><i></i><i></i></span><span>VP3</span></a><span class="meeting-lobby-kicker">Video meeting</span><h1><?= e((string)$meeting['status']==='cancelled'?'Meeting cancelled':'Meeting ended') ?></h1><p><?= e((string)$meeting['title']) ?> · <?= e($when) ?></p><?php if($user): ?><a class="meeting-join-button" href="<?= e(url('/meetings.php')) ?>">Back to Meetings</a><?php endif; ?></div></div>
 <?php else: ?>
