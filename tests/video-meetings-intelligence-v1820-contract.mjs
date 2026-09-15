@@ -69,13 +69,26 @@ assert.ok(intelJs.includes("web_research:false"), 'automatic meeting intelligenc
 assert.ok(intelJs.includes("action:'analyze'"));
 assert.ok(intelJs.includes("action:'record_analysis'"));
 
+// A browser cannot mark analysis current just by echoing a transcript hash.
+// The server re-reads the canonical transcript, verifies the exact hash and
+// requires fresh canonical plugin output before recording live/final freshness.
+assert.ok(api.includes("Final meeting intelligence is only available after the meeting ends."));
+assert.ok(api.includes('video_meeting_intelligence_source_v1820($pdo,$meeting)'));
+assert.ok(api.includes('hash_equals($currentHash,$submittedHash)'));
+assert.ok(api.includes('video_meeting_intelligence_modules_v1820($pdo,$source)'));
+assert.ok(api.includes("empty($bundle['fresh'])"));
+assert.ok(api.includes('transcription_app_has_result_v300'));
+assert.ok(api.includes('Canonical Transcription Intelligence returned no current meeting analysis.'));
+
 // Live intelligence is driven by new canonical transcript segments, while room
 // end remains fast and only marks durable post-meeting work for follow-up.
 assert.ok(mediaJs.includes("vp3:meeting-transcript-updated"));
 assert.ok(mediaJs.includes("vp3:meeting-ended"));
+assert.ok(mediaJs.includes('intelligence_review_url'), 'room end must use the organizer-authorized review URL returned by the server');
 assert.ok(intelJs.includes("window.addEventListener('vp3:meeting-transcript-updated'"));
 assert.ok(intelJs.includes("window.addEventListener('vp3:meeting-ended'"));
 assert.ok(presence.includes('video_meeting_intelligence_mark_ended_v1820'));
+assert.ok(presence.includes('video_meeting_needs_attention_intelligence_review'), 'ended meeting review must enter the existing cognitive attention path');
 assert.ok(!presence.includes("action:'analyze'"), 'presence endpoint must not block room termination on cloud AI');
 
 // Private notes/objectives are explicitly organizer-scoped and do not silently
@@ -88,14 +101,18 @@ assert.ok(meeting.includes('meetingObjectiveInput'));
 assert.ok(meeting.includes('meetingIntelligenceCrm'));
 assert.ok(meeting.includes('CRM recommendations stay advisory'));
 
-// Pre-meeting prep comes from the existing scheduling/lifecycle brief, and the
-// post-meeting summary is handed back to the existing Agent Chat command center.
+// Pre-meeting prep comes from the existing scheduling/lifecycle brief. Final
+// intelligence can be sent to Agent Chat only through an explicit organizer
+// review action; generated output is never auto-published at room termination.
 assert.ok(intelligence.includes('agent_appointment_lifecycle_brief_v700'));
 assert.ok(intelligence.includes('agent_chat_v101_append_ecosystem_message'));
 assert.ok(intelligence.includes("'skip_brain_archive'=>true"), 'generated handoff must not create an Agent Brain feedback loop');
 assert.ok(intelligence.includes("'source'=>'video_meeting_intelligence'"));
 assert.ok(intelligence.includes('Review the linked meeting intelligence before promoting items into CRM, Tasks, Knowledge or external follow-up.'));
 assert.ok(intelligence.includes('already_published'));
+assert.ok(intelJs.includes('Review it before sending it to Agent Chat.'));
+assert.ok(intelJs.includes("$('#meetingIntelligenceHandoff')?.addEventListener('click',handoff)"));
+assert.ok(!intelJs.includes('if(ok)await handoff()'), 'room-end finalization must not auto-publish unreviewed AI output');
 
 // The existing meeting surface becomes the live and post-meeting intelligence
 // workspace; meeting history exposes review without adding another dashboard.
