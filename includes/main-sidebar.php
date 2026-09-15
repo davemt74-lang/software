@@ -138,7 +138,7 @@ if ($mainSidebarRenderAgentVoiceAssets) $GLOBALS['VP3_MEMBER_AGENT_VOICE_MENU_AS
                 <span><?= e($conversationTitle) ?></span>
                 <small><?= !empty($conversation['updated_at']) ? e(date('M j', strtotime((string)$conversation['updated_at']))) : '' ?></small>
               </button>
-              <button class="chat-history-rename" type="button" data-rename-conversation="<?= $conversationId ?>" aria-label="Rename <?= e($conversationTitle) ?>" title="Rename chat">âà‹</button>
+              <button class="chat-history-rename" type="button" data-rename-conversation="<?= $conversationId ?>" aria-label="Rename <?= e($conversationTitle) ?>" title="Rename chat">â‹¯</button>
               <button class="chat-history-delete" type="button" data-delete-conversation="<?= $conversationId ?>" aria-label="Delete <?= e($conversationTitle) ?>" title="Delete chat">Ã—</button>
             </div>
           <?php endforeach; ?>
