@@ -17,9 +17,10 @@ $check = static function(bool $ok, string $message) use (&$failures): void {
 
 // The consolidated authenticated shell renders primary navigation from canonical
 // keyed member-navigation entries rather than hard-coded anchors in this template.
-$primaryOrder = "['chat','profile_agent','messages','contacts','knowledge','transcriptions','calendar','scheduling','profile_commerce','team']";
+$primaryOrder = "['home','chat','profile_agent','messages','contacts','knowledge','transcriptions','calendar','scheduling','profile_commerce','team']";
 $check(str_contains($sidebar, '$mainSidebarPrimaryOrder = ' . $primaryOrder), 'Canonical primary Agent navigation order is missing.');
 foreach ([
+    'home' => 'Home',
     'chat' => 'Agent Chat',
     'profile_agent' => 'Profile Agent',
     'messages' => 'Messages',
@@ -41,6 +42,7 @@ $check(str_contains($sidebar, 'class="chat-history-heading"'), 'Chats section he
 $check(str_contains($sidebar, 'class="chat-history-new" id="newChatButton"'), 'Chats heading is missing the canonical New Chat plus action.');
 $check(str_contains($sidebar, 'aria-label="New chat"'), 'Chats heading plus action is missing its accessible label.');
 
+$check(str_contains($navigation, "'home','Home',url('/home.php'),'primary'"), 'Canonical navigation is missing Agent Home.');
 $check(str_contains($navigation, "'knowledge','My Knowledge',url('/knowledge.php'),'identity'"), 'Canonical navigation is missing My Knowledge.');
 $check(str_contains($navigation, "'transcriptions','My Transcriptions',url('/artist-listening.php'),'identity'"), 'Canonical navigation is missing My Transcriptions.');
 $check(str_contains($navigation, "'memory','My Memory',url('/memory.php'),'identity'"), 'Canonical navigation is missing My Memory.');
