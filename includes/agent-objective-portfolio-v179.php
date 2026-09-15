@@ -145,10 +145,10 @@ function agent_objective_portfolio_priority_v179(PDO $pdo,array $user,int $objec
     return $updated;
 }
 
-function agent_objective_portfolio_root_children_v179(PDO $pdo,int $uid,array $parent): array
+function agent_objective_portfolio_remaining_children_v179(PDO $pdo,int $uid,array $parent): array
 {
     $hash=(string)($parent['source_hash']??'');if($hash==='')return [];
-    $stmt=$pdo->prepare("SELECT r.id,r.status FROM agent_workflow_runs r WHERE r.owner_user_id=? AND r.source_hash=? AND r.source_kind='objective_step' AND NOT EXISTS (SELECT 1 FROM agent_workflow_run_dependencies d INNER JOIN agent_workflow_runs p ON p.id=d.depends_on_run_id AND p.owner_user_id=d.owner_user_id WHERE d.owner_user_id=r.owner_user_id AND d.run_id=r.id AND p.source_hash=r.source_hash AND p.source_kind='objective_step') ORDER BY r.id");$stmt->execute([$uid,$hash]);return $stmt->fetchAll()?:[];
+    $stmt=$pdo->prepare("SELECT id,status FROM agent_workflow_runs WHERE owner_user_id=? AND source_hash=? AND source_kind='objective_step' AND status NOT IN ('completed','cancelled') ORDER BY id");$stmt->execute([$uid,$hash]);return $stmt->fetchAll()?:[];
 }
 
 function agent_objective_portfolio_dependency_v179(PDO $pdo,array $user,int $objectiveId,int $dependsOnObjectiveId): array
@@ -156,10 +156,12 @@ function agent_objective_portfolio_dependency_v179(PDO $pdo,array $user,int $obj
     $uid=agent_objective_portfolio_require_v179($pdo,$user);if($objectiveId===$dependsOnObjectiveId)throw new RuntimeException('An objective cannot depend on itself.');
     $dependent=agent_objective_portfolio_parent_v179($pdo,$uid,$objectiveId);$prerequisite=agent_objective_portfolio_parent_v179($pdo,$uid,$dependsOnObjectiveId);
     if(in_array((string)$dependent['status'],['completed','cancelled'],true))throw new RuntimeException('Closed objectives cannot have their execution order changed.');
-    $roots=agent_objective_portfolio_root_children_v179($pdo,$uid,$dependent);if(!$roots)throw new RuntimeException('The dependent objective has no mutable root workflows.');
-    foreach($roots as $root){if(in_array((string)$root['status'],['completed','cancelled'],true))continue;agent_work_dependency_add_v174($pdo,$user,(int)$root['id'],(int)$prerequisite['id'],'objective_portfolio_v179');}
-    agent_workflow_event_v1400($pdo,$uid,$objectiveId,'objective_portfolio_dependency',(string)$dependent['status'],(string)$dependent['status'],'user','Objective execution was explicitly sequenced behind another objective.',['depends_on_objective_id'=>$dependsOnObjectiveId]);
-    return ['objective_id'=>$objectiveId,'depends_on_objective_id'=>$dependsOnObjectiveId,'root_count'=>count($roots)];
+    if((string)$prerequisite['status']==='cancelled')throw new RuntimeException('A cancelled objective cannot be used as a prerequisite.');
+    $remaining=agent_objective_portfolio_remaining_children_v179($pdo,$uid,$dependent);if(!$remaining)throw new RuntimeException('The dependent objective has no unfinished workflows to sequence.');
+    foreach($remaining as $row)if((string)($row['status']??'')==='executing')throw new RuntimeException('Pause the executing objective work before changing cross-objective order.');
+    foreach($remaining as $row)agent_work_dependency_add_v174($pdo,$user,(int)$row['id'],(int)$prerequisite['id'],'objective_portfolio_v179');
+    agent_workflow_event_v1400($pdo,$uid,$objectiveId,'objective_portfolio_dependency',(string)$dependent['status'],(string)$dependent['status'],'user','Objective execution was explicitly sequenced behind another objective.',['depends_on_objective_id'=>$dependsOnObjectiveId,'remaining_workflows'=>count($remaining)]);
+    return ['objective_id'=>$objectiveId,'depends_on_objective_id'=>$dependsOnObjectiveId,'remaining_count'=>count($remaining)];
 }
 
 function agent_objective_portfolio_answer_v179(array $portfolio,bool $conflictsOnly=false): string
@@ -182,7 +184,7 @@ function agent_objective_portfolio_chat_v179(string $query,array $user,int $conv
             if(isset($m[1])){$id=(int)$m[1];$priority=(string)$m[2];}else{$id=(int)$m2[2];$priority=strtolower((string)$m2[1])==='prioritize'?'high':'low';}
             $row=agent_objective_portfolio_priority_v179($pdo,$user,$id,$priority);$value=max(1,min(100,(int)($row['work_priority']??agent_work_control_priority_value_v173($priority))));$answer='Objective #'.$id.' and its unfinished child workflows are now '.agent_work_control_priority_label_v173($value).' priority ('.$value.'). No work was otherwise started, paused, cancelled, or approved.';$tool='objective.portfolio.priority';
         }elseif(preg_match('/\bobjective\s*#?\s*(\d+)\s+(?:depends?\s+on|waits?\s+for|after)\s+objective\s*#?\s*(\d+)\b/i',$q,$m)){
-            $state=agent_objective_portfolio_dependency_v179($pdo,$user,(int)$m[1],(int)$m[2]);$answer='Objective #'.(int)$state['objective_id'].' now waits for objective #'.(int)$state['depends_on_objective_id'].' before its root workflows can advance. Existing approvals, receipts, retries, and Phase 19 execution remain unchanged.';$tool='objective.portfolio.dependency';
+            $state=agent_objective_portfolio_dependency_v179($pdo,$user,(int)$m[1],(int)$m[2]);$answer='Objective #'.(int)$state['objective_id'].' now waits for objective #'.(int)$state['depends_on_objective_id'].' before its remaining workflows can advance. Existing approvals, receipts, retries, and Phase 19 execution remain unchanged.';$tool='objective.portfolio.dependency';
         }elseif(preg_match('/\b(?:portfolio conflicts?|objective conflicts?|overlapping objectives?)\b/i',$q)){
             $answer=agent_objective_portfolio_answer_v179(agent_objective_portfolio_v179($pdo,$user,true),true);$tool='objective.portfolio.conflicts';
         }else{
