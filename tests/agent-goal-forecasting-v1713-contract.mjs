@@ -1,0 +1,53 @@
+import fs from 'node:fs';
+import assert from 'node:assert/strict';
+
+const forecasting=fs.readFileSync('includes/agent-goal-forecasting-v1713.php','utf8');
+const execution=fs.readFileSync('includes/agent-goal-execution-v1712.php','utf8');
+const planning=fs.readFileSync('includes/agent-goal-planning-v1711.php','utf8');
+const strategy=fs.readFileSync('includes/agent-goal-strategy-v1710.php','utf8');
+const portfolio=fs.readFileSync('includes/agent-objective-portfolio-v179.php','utf8');
+const memory=fs.readFileSync('includes/agent-objective-memory-v177.php','utf8');
+const chat=fs.readFileSync('includes/release-chat-v105.php','utf8');
+
+assert.match(forecasting,/agent-goal-forecasting-v1713-20260915/,'stable Phase 17.13 marker is required');
+assert.match(forecasting,/require_once __DIR__\.\'\/agent-goal-execution-v1712\.php\'/,'17.13 must extend the canonical 17.12 execution view');
+assert.match(forecasting,/agent_goal_plan_state_v1711/,'forecasting must derive remaining work from the canonical roadmap');
+assert.match(forecasting,/agent_goal_execution_state_v1712/,'forecasting must inspect the canonical execution state');
+assert.match(forecasting,/agent_objective_state_v175/,'milestone estimates must inspect canonical objectives');
+assert.match(forecasting,/agent_goal_execution_focus_v1712/,'forecasting must respect the current workflow focus');
+assert.match(forecasting,/agent_objective_portfolio_similarity_v179/,'forecasting must use existing learned similarity instead of a second learning system');
+assert.match(forecasting,/objective_verification_status='achieved'/,'timing history must be grounded in verified achieved objectives');
+assert.match(forecasting,/created_at.*updated_at/s,'forecast timing must use observed historical durations');
+assert.match(forecasting,/confidence_percent/,'forecasts must expose confidence');
+assert.match(forecasting,/capacity_buffer_days/,'portfolio capacity must affect forecast uncertainty');
+assert.match(forecasting,/agent_goal_capacity_v1713/,'capacity intelligence is required');
+assert.match(forecasting,/agent_goal_list_v1710/,'capacity must reuse the canonical goal portfolio');
+assert.match(forecasting,/due_within_30_days/,'capacity must account for deadline clustering');
+assert.match(forecasting,/stalled_goals/,'capacity must account for stalled goals');
+assert.match(forecasting,/overcommitted/,'capacity must explicitly detect overcommitment');
+assert.match(forecasting,/fastest[\s\S]*highest_value[\s\S]*lowest_risk/,'fastest, highest-value, and lowest-risk scenarios are required');
+assert.match(forecasting,/No scenario changes priority, dates, scope, approvals, dependencies, or execution/,'scenario comparison must be advisory');
+assert.match(forecasting,/agent_goal_forecast_recovery_v1713/,'forecast risk must produce recovery recommendations');
+assert.match(forecasting,/roadmap resequence or scope reduction/,'recovery must cover scope/sequence options');
+assert.match(forecasting,/changing the target date or adding resources\/capability/,'recovery must cover date/resource options');
+assert.match(forecasting,/agent_goal_forecast_extract_comparison_date_v1713/,'Chat must support a requested comparison deadline without mutating the goal');
+assert.match(forecasting,/forecast|predict|on track|when will|how long/,'Chat must understand forecasting language');
+assert.match(forecasting,/capacity|overcommitted|workload/,'Chat must understand capacity language');
+assert.match(forecasting,/scenario|what if|fastest|lowest\[- \]risk|highest\[- \]value/,'Chat must understand scenario language');
+assert.doesNotMatch(forecasting,/CREATE TABLE|ALTER TABLE|INSERT INTO|UPDATE\s+agent_|DELETE\s+FROM/i,'17.13 must not create schema or mutate canonical ledgers');
+assert.doesNotMatch(forecasting,/agent_goal_(?:update|priority|status|link|unlink|create)_v1710\s*\(/,'forecasting must not mutate goals');
+assert.doesNotMatch(forecasting,/agent_goal_plan_(?:add|seed|link|create|resequence|retire)_/,'forecasting must not mutate roadmaps');
+assert.doesNotMatch(forecasting,/agent_work_control_(?:approve|resume|retry|cancel|reschedule|priority)_v173\s*\(/,'forecasting must not mutate workflow controls');
+assert.doesNotMatch(forecasting,/lease_owner\s*=|receipt_json\s*=|result_json\s*=|approval_status\s*=/i,'forecasting must not own Phase 19 or approval writes');
+assert.doesNotMatch(forecasting,/setInterval\s*\(/,'forecasting must not add polling');
+
+assert.match(chat,/require_once __DIR__\.\'\/agent-goal-forecasting-v1713\.php\'/,'shared Chat boundary must load Phase 17.13');
+assert.match(chat,/agent_goal_forecasting_chat_v1713\(\$query,\$user,\$conversationId\)/,'Agent Chat must route forecast/capacity language through Phase 17.13');
+assert.ok(chat.indexOf('agent_goal_forecasting_chat_v1713') < chat.indexOf('agent_goal_execution_chat_v1712'),'forecasting routing must run before ordinary goal execution');
+assert.match(execution,/Phase 19 can claim it normally/,'Phase 17.12 must retain Phase 19 worker authority');
+assert.match(planning,/Advisory milestones sit above Phase 17\.10/,'Phase 17.11 roadmap authority must be retained');
+assert.match(strategy,/Goal progress is derived only from Phase 17\.6 verified objective outcomes/,'goal achievement must remain verification-derived');
+assert.match(portfolio,/Automatic arbitration is advisory only/,'portfolio arbitration must remain advisory');
+assert.match(memory,/never stores or replays receipts/,'outcome learning boundary must remain intact');
+
+console.log('Agent Goal Forecasting v17.13 contract passed.');

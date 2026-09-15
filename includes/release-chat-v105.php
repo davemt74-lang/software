@@ -9,6 +9,7 @@ require_once __DIR__.'/agent-objective-portfolio-v179.php';
 require_once __DIR__.'/agent-goal-strategy-v1710.php';
 require_once __DIR__.'/agent-goal-planning-v1711.php';
 require_once __DIR__.'/agent-goal-execution-v1712.php';
+require_once __DIR__.'/agent-goal-forecasting-v1713.php';
 
 function release_v105_chat_intent(string $query): bool
 {
@@ -32,6 +33,13 @@ function chat_account_state_intent_v241(string $query): bool
 function release_v105_chat_tool(string $query,array $user,int $conversationId=0): array
 {
     $empty=['handled'=>false,'answer'=>'','stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[]];
+
+    // Phase 17.13 owns explicit goal forecast/capacity/scenario language.
+    // Forecasts are advisory projections over the canonical goal/objective/work
+    // ledgers and never mutate priorities, dates, approvals, dependencies, or
+    // Phase 19 execution state.
+    $goalForecast=agent_goal_forecasting_chat_v1713($query,$user,$conversationId);
+    if(!empty($goalForecast['handled']))return $goalForecast;
 
     // Phase 17.12 owns explicit goal execution/orchestration language. It may
     // convert an advisory milestone into a fresh Phase 17.5 objective only when
