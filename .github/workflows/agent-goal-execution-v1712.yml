@@ -1,0 +1,81 @@
+name: Agent Goal Execution v17.12
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    name: contract (${{ matrix.php }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.1', '8.3']
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+      - name: PHP syntax
+        run: |
+          php -l includes/agent-goal-execution-v1712.php
+          php -l includes/agent-goal-planning-v1711.php
+          php -l includes/agent-goal-strategy-v1710.php
+          php -l includes/agent-objective-portfolio-v179.php
+          php -l includes/agent-proactive-objectives-v178.php
+          php -l includes/agent-objective-memory-v177.php
+          php -l includes/agent-objective-verification-v176.php
+          php -l includes/agent-objective-plans-v175.php
+          php -l includes/agent-work-dependencies-v174.php
+          php -l includes/agent-work-control-v173.php
+          php -l includes/release-chat-v105.php
+          php -l upgrade.php
+      - name: JavaScript syntax
+        run: |
+          node --check tests/agent-goal-execution-v1712-contract.mjs
+          node --check tests/agent-goal-planning-v1711-contract.mjs
+          node --check tests/agent-goal-strategy-v1710-contract.mjs
+          node --check tests/agent-objective-portfolio-v179-contract.mjs
+          node --check tests/agent-proactive-objectives-v178-contract.mjs
+          node --check tests/agent-objective-memory-v177-contract.mjs
+          node --check tests/agent-objective-verification-v176-contract.mjs
+          node --check tests/agent-objective-plans-v175-contract.mjs
+          node --check tests/agent-work-dependencies-v174-contract.mjs
+          node --check tests/agent-work-control-v173-contract.mjs
+          node --check tests/agent-work-queue-v172-contract.mjs
+          node --check tests/agent-chat-intelligence-v171-contract.mjs
+          node --check tests/agent-home-command-center-contract.mjs
+      - name: Agent Goal Execution contract
+        run: node tests/agent-goal-execution-v1712-contract.mjs
+      - name: Retained Agent Goal Planning contract
+        run: node tests/agent-goal-planning-v1711-contract.mjs
+      - name: Retained Agent Goal Strategy contract
+        run: node tests/agent-goal-strategy-v1710-contract.mjs
+      - name: Retained Agent Objective Portfolio contract
+        run: node tests/agent-objective-portfolio-v179-contract.mjs
+      - name: Retained Agent Proactive Objectives contract
+        run: node tests/agent-proactive-objectives-v178-contract.mjs
+      - name: Retained Agent Objective Memory contract
+        run: node tests/agent-objective-memory-v177-contract.mjs
+      - name: Retained Agent Objective Verification contract
+        run: node tests/agent-objective-verification-v176-contract.mjs
+      - name: Retained Agent Objective Plans contract
+        run: node tests/agent-objective-plans-v175-contract.mjs
+      - name: Retained Agent Work Dependencies contract
+        run: node tests/agent-work-dependencies-v174-contract.mjs
+      - name: Retained Agent Work Control contract
+        run: node tests/agent-work-control-v173-contract.mjs
+      - name: Retained Agent Work Queue contract
+        run: node tests/agent-work-queue-v172-contract.mjs
+      - name: Retained Agent Chat Intelligence contract
+        run: node tests/agent-chat-intelligence-v171-contract.mjs
+      - name: Retained Home command-center contract
+        run: node tests/agent-home-command-center-contract.mjs
