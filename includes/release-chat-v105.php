@@ -5,6 +5,7 @@ require_once __DIR__.'/agent-work-dependencies-v174.php';
 require_once __DIR__.'/agent-objective-plans-v175.php';
 require_once __DIR__.'/agent-objective-memory-v177.php';
 require_once __DIR__.'/agent-proactive-objectives-v178.php';
+require_once __DIR__.'/agent-objective-portfolio-v179.php';
 
 function release_v105_chat_intent(string $query): bool
 {
@@ -34,6 +35,11 @@ function release_v105_chat_tool(string $query,array $user,int $conversationId=0)
     // fresh Phase 17.5 objective is created under current safety boundaries.
     $proactiveObjective=agent_proactive_objective_chat_v178($query,$user,$conversationId);
     if(!empty($proactiveObjective['handled']))return $proactiveObjective;
+
+    // Phase 17.9 arbitrates across objectives. Ranking is advisory; priority or
+    // cross-objective dependency changes require an explicit user command.
+    $objectivePortfolio=agent_objective_portfolio_chat_v179($query,$user,$conversationId);
+    if(!empty($objectivePortfolio['handled']))return $objectivePortfolio;
 
     // Phase 17.7 owns explicit learned-objective lookup/reuse language. Reuse
     // always creates fresh Phase 17.5 workflows; it never replays receipts,
