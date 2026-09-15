@@ -104,14 +104,14 @@ function vp3_agent_work_queue_model_v172(PDO $pdo, array $user, string $timezone
     $hasNextAttempt = column_exists('agent_workflow_runs', 'next_attempt_at');
     $hasProgress = column_exists('agent_workflow_runs', 'progress_message');
     $retryExpr = $hasNextAttempt
-        ? "(status='failed' OR (status='approved' AND next_attempt_at>UTC_TIMESTAMP() AND (COALESCE(last_error_class,'')<>''" . ($hasProgress ? " OR LOWER(COALESCE(progress_message,'')) LIKE '%retry%'" : '') . ")))"
+        ? "(status='failed' OR (status='approved' AND approval_status<>'pending' AND next_attempt_at>UTC_TIMESTAMP() AND (COALESCE(last_error_class,'')<>''" . ($hasProgress ? " OR LOWER(COALESCE(progress_message,'')) LIKE '%retry%'" : '') . ")))"
         : "status='failed'";
     $scheduledExpr = $hasNextAttempt
-        ? "(status='approved' AND next_attempt_at>UTC_TIMESTAMP() AND COALESCE(last_error_class,'')=''" . ($hasProgress ? " AND LOWER(COALESCE(progress_message,'')) NOT LIKE '%retry%'" : '') . ")"
+        ? "(status='approved' AND approval_status<>'pending' AND next_attempt_at>UTC_TIMESTAMP() AND COALESCE(last_error_class,'')=''" . ($hasProgress ? " AND LOWER(COALESCE(progress_message,'')) NOT LIKE '%retry%'" : '') . ")"
         : '0';
     $activeExpr = $hasNextAttempt
-        ? "(status IN ('queued','planning','executing') OR (status='approved' AND (next_attempt_at IS NULL OR next_attempt_at<=UTC_TIMESTAMP())))"
-        : "status IN ('queued','planning','approved','executing')";
+        ? "(approval_status<>'pending' AND (status IN ('queued','planning','executing') OR (status='approved' AND (next_attempt_at IS NULL OR next_attempt_at<=UTC_TIMESTAMP()))))"
+        : "(approval_status<>'pending' AND status IN ('queued','planning','approved','executing'))";
 
     try {
         $countSql = "SELECT "
@@ -250,7 +250,6 @@ function vp3_agent_chat_intelligence_model_v171(
     $model['work_queue'] = vp3_agent_work_queue_model_v172($pdo, $user, (string)$model['timezone']);
     $queueCounts = is_array($model['work_queue']['counts'] ?? null) ? $model['work_queue']['counts'] : [];
     $model['workflow_approvals'] = max((int)$model['workflow_approvals'], (int)($queueCounts['approval'] ?? 0));
-    $model['workflow_failures'] = max((int)$model['workflow_failures'], (int)($queueCounts['failed_retry'] ?? 0));
 
     $model['attention_count'] =
         (int)$model['unread_notifications']
