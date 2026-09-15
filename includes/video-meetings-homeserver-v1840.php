@@ -50,7 +50,8 @@ function video_meeting_homeserver_runtime_status_v1840(PDO $pdo,array $meeting,b
         ?video_meeting_homeserver_policy_v1801($pdo,$meeting,$forceRefresh)
         :[
             'policy_resolved'=>true,'requested_compute'=>'auto','cloud_processing_allowed'=>true,
-            'cloud_block_reason'=>'','reason'=>'compatibility',
+            'cloud_block_reason'=>'','reason'=>'compatibility','available'=>false,
+            'local_transcription_advertised'=>false,'local_transcription_operation'=>'',
         ];
 
     $requested=(string)($policy['requested_compute']??'auto');
@@ -102,32 +103,26 @@ function video_meeting_homeserver_runtime_status_v1840(PDO $pdo,array $meeting,b
         return $state;
     }
 
-    $operation='';$registryAvailable=false;
-    if(function_exists('homeserver_capability_v033_registry')){
-        try{
-            $registry=homeserver_capability_v033_registry((int)($meeting['owner_user_id']??0),$forceRefresh);
-            $registryAvailable=!empty($registry['available']);
-            $operations=is_array($registry['operations']??null)?$registry['operations']:[];
-            foreach(video_meeting_homeserver_operation_candidates_v1840() as $candidate){
-                if(in_array($candidate,$operations,true)){$operation=$candidate;break;}
-            }
-        }catch(Throwable $ignored){}
-    }
+    // v18.1 already performed the one authenticated, sanitized capability probe
+    // for the owner. Reuse that result instead of making a second relay call.
+    $operation=(string)($policy['local_transcription_operation']??'');
+    if(!in_array($operation,video_meeting_homeserver_operation_candidates_v1840(),true))$operation='';
+    $registryAvailable=!empty($policy['available']);
     $state['homeserver_available']=$registryAvailable;
-    $state['capability_advertised']=$operation!=='';
+    $state['capability_advertised']=!empty($policy['local_transcription_advertised'])&&$operation!=='';
 
     // Deliberately require a concrete meeting executor, not merely the generic
     // relay transport. This avoids claiming local STT when no audio/transcript
     // operation contract is implemented in VP3 Cloud.
     $state['executor_available']=function_exists('video_meeting_homeserver_transcription_execute_v1840');
-    $homeReady=$registryAvailable&&$operation!==''&&!empty($state['executor_available']);
+    $homeReady=$registryAvailable&&!empty($state['capability_advertised'])&&!empty($state['executor_available']);
 
     if(!empty($state['homeserver_required'])){
         if($homeReady){
             $state['route']='homeserver';$state['status']='ready';$state['reason_code']='homeserver_ready';$state['ready']=true;
         }else{
             $state['route']='blocked';$state['status']='required_unavailable';
-            $state['reason_code']=!$registryAvailable?'homeserver_unavailable':($operation===''?'capability_unavailable':'capability_advertised_unwired');
+            $state['reason_code']=!$registryAvailable?'homeserver_unavailable':(empty($state['capability_advertised'])?'capability_unavailable':'capability_advertised_unwired');
         }
         return $state;
     }
@@ -135,7 +130,7 @@ function video_meeting_homeserver_runtime_status_v1840(PDO $pdo,array $meeting,b
     // Automatic routing preserves cloud operation when privacy policy allows
     // it. HomeServer metadata is informational until a concrete executor ships.
     if($cloudAllowed){
-        $state['route']='cloud';$state['status']='ready';$state['reason_code']=$operation!==''&&!$homeReady?'homeserver_advertised_unwired_cloud_fallback':'automatic_cloud';$state['ready']=true;
+        $state['route']='cloud';$state['status']='ready';$state['reason_code']=!empty($state['capability_advertised'])&&!$homeReady?'homeserver_advertised_unwired_cloud_fallback':'automatic_cloud';$state['ready']=true;
         return $state;
     }
 
