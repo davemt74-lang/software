@@ -60,12 +60,16 @@ try{
     $identity=video_meeting_participant_identity_v1800($meeting,$participant);
     $token=video_meeting_livekit_participant_token_v1800($meeting,$identity,$displayName);
     $cfg=video_meeting_livekit_config_v1800();
+    $processingRoute='off';
+    if(!empty($meeting['transcription_enabled'])){
+        $processingRoute=function_exists('video_meeting_cloud_transcription_allowed_v1801')&&video_meeting_cloud_transcription_allowed_v1801($pdo,$meeting)?'cloud':'private_required';
+    }
     echo json_encode([
         'ok'=>true,
         'server_url'=>(string)$cfg['url'],
         'participant_token'=>$token,
         'participant'=>['identity'=>$identity,'name'=>$displayName,'role'=>(string)$participant['role'],'is_organizer'=>!empty($access['is_organizer'])],
-        'meeting'=>['public_id'=>(string)$meeting['public_id'],'title'=>(string)$meeting['title'],'status'=>(string)$meeting['status'],'agent_mode'=>(string)$meeting['agent_mode'],'transcription_enabled'=>!empty($meeting['transcription_enabled']),'recording_enabled'=>!empty($meeting['recording_enabled'])],
+        'meeting'=>['public_id'=>(string)$meeting['public_id'],'title'=>(string)$meeting['title'],'status'=>(string)$meeting['status'],'agent_mode'=>(string)$meeting['agent_mode'],'transcription_enabled'=>!empty($meeting['transcription_enabled']),'recording_enabled'=>!empty($meeting['recording_enabled']),'processing_route'=>$processingRoute],
         'agent'=>['name'=>video_meeting_agent_name_v1800($pdo,$meeting),'mode'=>(string)$meeting['agent_mode']],
     ],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
 }catch(Throwable $e){
