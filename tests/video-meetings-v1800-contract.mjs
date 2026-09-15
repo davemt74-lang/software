@@ -71,7 +71,8 @@ assert.ok(tokenApi.includes('Complete the appointment payment before joining thi
 // Worker callback uses a separate server-to-server secret and final-only ingest.
 assert.ok(config.includes("'worker_secret'"));
 assert.ok(bridge.includes('VP3_MEETING_WORKER_SECRET'));
-assert.ok(workerApi.includes('Authorization'));
+assert.ok(workerApi.includes('HTTP_AUTHORIZATION'), 'worker callback must read the Authorization header from the PHP server environment');
+assert.ok(workerApi.includes("/^Bearer\\s+(.+)$/i"), 'worker callback must require Bearer authentication');
 assert.ok(workerApi.includes('hash_equals($secret,$provided)'));
 assert.ok(workerApi.includes("empty($input['is_final'])"));
 assert.ok(workerApi.includes('video_meeting_transcription_append_v1800'));
