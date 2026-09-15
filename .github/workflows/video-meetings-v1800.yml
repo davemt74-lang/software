@@ -1,0 +1,54 @@
+name: Video Meetings v18.0
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    name: contract (${{ matrix.php }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.1', '8.3']
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+      - name: PHP syntax
+        run: |
+          php -l includes/video-meetings-v1800.php
+          php -l includes/video-meetings-security-v1800.php
+          php -l includes/video-meetings-agent-v1800.php
+          php -l includes/video-meetings-transcription-v1800.php
+          php -l includes/video-meetings-reconcile-v1800.php
+          php -l api/video-meeting-token.php
+          php -l api/video-meeting-presence.php
+          php -l api/video-meeting-transcript.php
+          php -l api/video-meeting-worker.php
+          php -l meeting.php
+          php -l meeting-ics.php
+          php -l meetings.php
+          php -l scheduling-type.php
+          php -l scheduling.php
+          php -l calendar.php
+          php -l includes/member-navigation.php
+          php -l config-example.php
+          php -l upgrade.php
+      - name: JavaScript syntax
+        run: |
+          node --check video-meetings-v1800.js
+          node --check tests/video-meetings-v1800-contract.mjs
+      - name: Python syntax
+        run: python -m py_compile workers/vp3-meeting-agent/agent.py
+      - name: Video Meetings contract
+        run: node tests/video-meetings-v1800-contract.mjs
