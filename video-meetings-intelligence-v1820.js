@@ -3,6 +3,7 @@ const boot=window.VP3Meeting;if(!boot||!boot.intelligenceEndpoint)return;
 const $=(s,r=document)=>r.querySelector(s);const $$=(s,r=document)=>Array.from(r.querySelectorAll(s));
 let state=null;let loading=false;let analyzing=false;let noteTimer=null;let autoTimer=null;let finalizing=false;
 const privateMessage='Meeting Intelligence is private to the organizer.';
+const VP3_MIN_LIVE_WORDS=80,VP3_MIN_FINAL_WORDS=20;
 
 async function formPost(endpoint,extra={}){
   const body=new URLSearchParams({meeting:boot.meeting||'',invite:boot.invite||'',csrf_token:boot.csrf||'',...extra});
@@ -64,22 +65,23 @@ function renderState(s){
   const note=$('#meetingPrivateNotes');if(note&&document.activeElement!==note&&note.value!==String(state.notes?.text||''))note.value=String(state.notes?.text||'');
   const bridge=$('#meetingTranscriptBridgeState');if(bridge&&Number(state.session_id||0)>0)bridge.textContent='VP3 Transcription #'+Number(state.session_id)+' · '+Number(state.word_count||0)+' words';
   [$('#meetingFullIntelligenceLink'),$('#meetingFullIntelligenceLinkSecondary')].forEach(full=>{if(full&&state.full_transcription_url)full.href=String(state.full_transcription_url);});
-  const refresh=$('#meetingIntelligenceRefresh');if(refresh){refresh.disabled=analyzing||Number(state.word_count||0)<VP3_MIN_WORDS;refresh.textContent=analyzing?'Analyzing…':(state.final_analysis_due?'Finalize intelligence':'Update intelligence');}
+  const isFinal=['ended','processed'].includes(String(state.meeting_status||''));const minWords=isFinal?VP3_MIN_FINAL_WORDS:VP3_MIN_LIVE_WORDS;
+  const refresh=$('#meetingIntelligenceRefresh');if(refresh){refresh.disabled=analyzing||Number(state.word_count||0)<minWords;refresh.textContent=analyzing?'Analyzing…':(state.final_analysis_due?'Finalize intelligence':'Update intelligence');}
   const handoff=$('#meetingIntelligenceHandoff');if(handoff){handoff.disabled=!state.final_analysis_at||analyzing;handoff.textContent=state.handoff_at?'Sent to Agent Chat':'Send to Agent Chat';}
   if(state.last_error)setStatus(String(state.last_error),'error');
   else if(state.final_analysis_at)setStatus('Final meeting intelligence is current. Review it, then send it to Agent Chat when ready.','ready');
   else if(state.live_analysis_due)setStatus('New transcript material is ready for rolling intelligence.','ready');
-  else if(Number(state.word_count||0)<VP3_MIN_WORDS)setStatus('Waiting for more transcript context.','waiting');
+  else if(Number(state.word_count||0)<minWords)setStatus(isFinal?'This meeting does not yet have enough final transcript context.':'Waiting for more transcript context.','waiting');
   else setStatus('Meeting intelligence is current.','ready');
 }
-const VP3_MIN_WORDS=80;
 async function loadState(){
   if(!boot.isOrganizer){setStatus(privateMessage,'private');return null;}if(loading)return state;loading=true;
   try{const data=await intelligence('state');renderState(data.state||{});return state;}catch(err){setStatus(err.message||'Meeting Intelligence could not load.','error');return null;}finally{loading=false;}
 }
 async function runAnalysis(mode='live',automatic=false){
   if(!boot.isOrganizer||analyzing)return false;const s=await loadState();if(!s)return false;
-  if(Number(s.word_count||0)<VP3_MIN_WORDS){if(!automatic)setStatus('The transcript needs more context before analysis.','waiting');return false;}
+  const minWords=mode==='final'?VP3_MIN_FINAL_WORDS:VP3_MIN_LIVE_WORDS;
+  if(Number(s.word_count||0)<minWords){if(!automatic)setStatus('The transcript needs more context before analysis.','waiting');return false;}
   const policy=s.processing_policy||{};if(policy.cloud_ai_allowed!==true){setStatus(policy.requested_compute==='homeserver_only'?'HomeServer-only policy blocks VP3 Cloud AI for this meeting.':'Cloud AI processing is not authorized for this meeting.','private');return false;}
   if(mode==='live'&&!s.live_analysis_due&&automatic)return false;if(mode==='final'&&!s.final_analysis_due&&automatic)return false;
   const sessionId=Number(s.session_id||0),sourceHash=String(s.source_hash||'');if(!sessionId||!sourceHash)return false;
