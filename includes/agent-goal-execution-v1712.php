@@ -113,6 +113,9 @@ function agent_goal_execution_state_v1712(PDO $pdo,array $user,int $goalId): arr
         'reason'=>'',
     ];
 
+    if((string)($goal['status']??'')==='archived'){
+        $result['execution_state']='archived';$result['reason']='The goal is archived immutable history. Goal orchestration will not create or change execution for it.';return $result;
+    }
     if((string)($goal['status']??'')==='paused'){
         $result['execution_state']='goal_paused';$result['reason']='The goal is paused. Resume the goal before changing its roadmap or creating new objective work.';return $result;
     }
@@ -159,6 +162,12 @@ function agent_goal_execution_state_v1712(PDO $pdo,array $user,int $goalId): arr
         return $result;
     }
 
+    if($verification==='needs_remediation'){
+        $result['execution_state']='repair_needed';
+        $result['reason']='Phase 17.6 verification says this objective needs remediation before the goal can advance.';
+        return $result;
+    }
+
     $counts=(array)($objective['counts']??[]);
     if((int)($counts['completed']??0)>=(int)($counts['total']??0)&&(int)($counts['total']??0)>0){
         $result['execution_state']='verification';
@@ -195,6 +204,7 @@ function agent_goal_execution_answer_v1712(array $state,string $mode='status'): 
     $goal=(array)($state['goal']??[]);$goalId=(int)($goal['id']??0);$milestone=is_array($state['milestone']??null)?$state['milestone']:null;$objective=is_array($state['objective']??null)?$state['objective']:null;$focus=is_array($state['focus']??null)?$state['focus']:null;$execution=(string)($state['execution_state']??'unknown');
     $prefix=$mode==='advance'?'Goal #'.$goalId.' orchestration: ':'Goal #'.$goalId.': ';
     if($execution==='achieved')return $prefix.'achieved. '.(string)$state['reason'];
+    if($execution==='archived')return $prefix.(string)$state['reason'];
     if($execution==='goal_paused')return $prefix.(string)$state['reason'].' Say “resume goal #'.$goalId.'” first.';
     if($execution==='plan_missing')return $prefix.(string)$state['reason'].' Say “build plan for goal #'.$goalId.'” or “work on goal #'.$goalId.'” to create the advisory roadmap.';
     if($execution==='review_needed')return $prefix.(string)$state['reason'].' Review the goal roadmap before creating more work.';
@@ -229,7 +239,7 @@ function agent_goal_execution_chat_v1712(string $query,array $user,int $conversa
 {
     $empty=agent_objective_empty_tool_v175();$q=trim($query);if($q==='')return $empty;$goalId=agent_goal_execution_extract_id_v1712($q);if($goalId<1)return $empty;
     $advance=(bool)(preg_match('/\b(?:advance|work\s+on|start\s+work\s+on|continue\s+work\s+on|move\s+forward\s+on)\s+goal\s*#?\s*\d+\b/i',$q)||preg_match('/\bgoal\s*#?\s*\d+\s+(?:advance|work|continue)\b/i',$q));
-    $why=(bool)preg_match('/\bwhy\b.*\bgoal\s*#?\s*\d+\b.*\b(?:not\s+moving|stalled|blocked|stuck|waiting)\b/i',$q);
+    $why=(bool)(preg_match('/\bwhy\b.*\bgoal\s*#?\s*\d+\b/i',$q)&&preg_match('/\b(?:moving|progressing|advancing|stalled|blocked|stuck|waiting)\b/i',$q));
     $doing=(bool)(preg_match('/\bwhat(?:\'s|\s+is)\s+(?:the\s+)?agent\s+doing\b.*\bgoal\s*#?\s*\d+/i',$q)||preg_match('/\bgoal\s*#?\s*\d+\b.*\bwhat(?:\'s|\s+is)\s+(?:the\s+)?agent\s+doing\b/i',$q));
     $next=(bool)(preg_match('/\bwhat\s+(?:should|needs?\s+to)\s+happen\s+next\b.*\bgoal\s*#?\s*\d+/i',$q)||preg_match('/\bwhat(?:\'s|\s+is)\s+next\b.*\bgoal\s*#?\s*\d+/i',$q)||preg_match('/\bgoal\s*#?\s*\d+\b.*\b(?:what\s+next|next\s+step)\b/i',$q));
     $status=(bool)preg_match('/\bgoal\s*#?\s*\d+\b.*\b(?:execution|orchestration|working|work status)\b/i',$q);
