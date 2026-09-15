@@ -4,11 +4,11 @@ declare(strict_types=1);
 /**
  * Phase 18.4 — truthful HomeServer routing/readiness for Video Meetings.
  *
- * Capability metadata is not execution. Until a concrete meeting transcription
- * executor is shipped, an advertised HomeServer transcription operation is
- * reported as advertised-but-unwired and HomeServer-only fails closed. This
- * layer never exposes relay credentials, device identifiers, endpoints, raw
- * registry data, provider details, or pairing secrets to Meeting clients.
+ * Capability metadata is not execution. Phase 18.5 may provide a concrete
+ * executor, but readiness still requires that executor to be deployable for the
+ * exact advertised meeting operation. This layer never exposes relay
+ * credentials, device identifiers, endpoints, raw registry data, provider
+ * details, or pairing secrets to Meeting clients.
  */
 const VP3_VIDEO_MEETINGS_HOMESERVER_V1840='video-meetings-homeserver-v1840-20260915';
 
@@ -16,6 +16,7 @@ $vp3MeetingHomeDeps=[
     __DIR__.'/homeserver-vp3.php',
     __DIR__.'/homeserver-agent-v018.php',
     __DIR__.'/homeserver-capability-registry-v033.php',
+    __DIR__.'/video-meetings-homeserver-v1850.php',
 ];
 foreach($vp3MeetingHomeDeps as $vp3MeetingHomeDep){
     if(is_file($vp3MeetingHomeDep))require_once $vp3MeetingHomeDep;
@@ -29,7 +30,7 @@ function video_meeting_homeserver_terminal_v1840(array $meeting): bool
 
 function video_meeting_homeserver_operation_candidates_v1840(): array
 {
-    return ['meeting.transcription.stream','transcription.stream','transcription.start'];
+    return ['meeting.transcription.stream','transcription.stream','transcription.start','meeting.transcription.start'];
 }
 
 function video_meeting_homeserver_owner_probe_allowed_v1840(array $meeting): bool
@@ -40,14 +41,11 @@ function video_meeting_homeserver_owner_probe_allowed_v1840(array $meeting): boo
 
 /**
  * Resolve a server-side meeting processing state without pretending that an
- * advertised operation is executable. A future concrete executor may expose
- * video_meeting_homeserver_transcription_execute_v1840(); readiness will then
- * require both that callable and an advertised compatible operation.
+ * advertised operation is executable. Readiness requires both an advertised
+ * compatible operation and a concrete deployable meeting executor.
  */
 function video_meeting_homeserver_runtime_status_v1840(PDO $pdo,array $meeting,bool $forceRefresh=false): array
 {
-    // Missing privacy/routing policy is not permission to use cloud compute.
-    // Fail unresolved so no caller can silently weaken the HomeServer boundary.
     $policy=function_exists('video_meeting_homeserver_policy_v1801')
         ?video_meeting_homeserver_policy_v1801($pdo,$meeting,$forceRefresh)
         :[
@@ -94,8 +92,6 @@ function video_meeting_homeserver_runtime_status_v1840(PDO $pdo,array $meeting,b
         return $state;
     }
 
-    // Non-owner requests never probe the organizer's paired HomeServer. They
-    // receive only the already-resolved privacy outcome.
     if(!$ownerProbe){
         if($cloudAllowed){
             $state['route']='cloud';$state['status']='ready';$state['reason_code']='cloud_allowed';$state['ready']=true;
@@ -105,18 +101,18 @@ function video_meeting_homeserver_runtime_status_v1840(PDO $pdo,array $meeting,b
         return $state;
     }
 
-    // v18.1 already performed the one authenticated, sanitized capability probe
-    // for the owner. Reuse that result instead of making a second relay call.
     $operation=(string)($policy['local_transcription_operation']??'');
     if(!in_array($operation,video_meeting_homeserver_operation_candidates_v1840(),true))$operation='';
     $registryAvailable=!empty($policy['available']);
     $state['homeserver_available']=$registryAvailable;
     $state['capability_advertised']=!empty($policy['local_transcription_advertised'])&&$operation!=='';
 
-    // Deliberately require a concrete meeting executor, not merely the generic
-    // relay transport. This avoids claiming local STT when no audio/transcript
-    // operation contract is implemented in VP3 Cloud.
-    $state['executor_available']=function_exists('video_meeting_homeserver_transcription_execute_v1840');
+    $executorFunction=function_exists('video_meeting_homeserver_transcription_execute_v1840');
+    $executorDeployable=$executorFunction;
+    if($executorDeployable&&function_exists('video_meeting_homeserver_transcription_executor_available_v1850')){
+        $executorDeployable=video_meeting_homeserver_transcription_executor_available_v1850($meeting,$operation);
+    }
+    $state['executor_available']=$executorDeployable;
     $homeReady=$registryAvailable&&!empty($state['capability_advertised'])&&!empty($state['executor_available']);
 
     if(!empty($state['homeserver_required'])){
@@ -129,8 +125,6 @@ function video_meeting_homeserver_runtime_status_v1840(PDO $pdo,array $meeting,b
         return $state;
     }
 
-    // Automatic routing preserves cloud operation when privacy policy allows
-    // it. HomeServer metadata is informational until a concrete executor ships.
     if($cloudAllowed){
         $state['route']='cloud';$state['status']='ready';$state['reason_code']=!empty($state['capability_advertised'])&&!$homeReady?'homeserver_advertised_unwired_cloud_fallback':'automatic_cloud';$state['ready']=true;
         return $state;
@@ -143,8 +137,6 @@ function video_meeting_homeserver_runtime_status_v1840(PDO $pdo,array $meeting,b
 function video_meeting_homeserver_public_status_v1840(PDO $pdo,array $meeting,bool $forceRefresh=false): array
 {
     $state=video_meeting_homeserver_runtime_status_v1840($pdo,$meeting,$forceRefresh);
-    // Explicit allow-list: never forward the HomeServer registry or any relay,
-    // credential, endpoint, model/provider or device metadata to the browser.
     return [
         'version'=>'v18.4',
         'route'=>(string)$state['route'],
