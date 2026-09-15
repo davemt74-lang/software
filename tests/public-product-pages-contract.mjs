@@ -28,13 +28,31 @@ assert.match(teams, /Members &amp; roles[\s\S]*Shared knowledge[\s\S]*Permission
 assert.match(teams, /Shared transcripts[\s\S]*Project continuity[\s\S]*Collaborative knowledge[\s\S]*Controlled administration/, 'Teams page must explain collaboration capabilities');
 assert.match(teams, /personal knowledge remains personal unless the owner grants access/i, 'Teams page must preserve the permission-aware positioning');
 
-const desktopNav = shell.match(/<nav class="vp3-public-links"[\s\S]*?<\/nav>/)?.[0] || '';
-const mobileNav = shell.match(/<nav aria-label="Mobile navigation">[\s\S]*?<\/nav>/)?.[0] || '';
+const desktopNav = shell.match(/<nav class="mega-nav vp3-public-mega-nav"[\s\S]*?<\/nav>/)?.[0] || '';
+const mobileNav = shell.match(/<nav class="mega-mobile-nav" aria-label="Mobile navigation">[\s\S]*?<\/nav>/)?.[0] || '';
 const footerNav = shell.match(/<nav class="vp3-public-footer-links"[\s\S]*?<\/nav>/)?.[0] || '';
+
+assert.ok(desktopNav, 'canonical public shell must render the desktop mega menu');
+assert.ok(mobileNav, 'canonical public shell must render the responsive mobile mega menu');
+assert.ok(footerNav, 'canonical public shell must render the public footer navigation');
+
+for (const route of ['/product.php', '/services.php', '/homeserver.php', '/pricing.php', '/about.php']) {
+  assert.match(desktopNav, new RegExp(`url\\('\\/${route.slice(1).replace('.', '\\.')}\\'\\)`), `desktop mega menu must link to ${route}`);
+  assert.match(footerNav, new RegExp(`url\\('\\/${route.slice(1).replace('.', '\\.')}\\'\\)`), `public footer must link to ${route}`);
+}
+
+for (const route of [
+  '/ai-assistant.php','/personal-url.php','/profile-agent-overview.php',
+  '/transcriptions.php','/ai-summary.php','/teams.php','/calendar-service.php','/booking.php','/ecommerce.php',
+  '/cloud-vs-self-hosted.php','/paired-devices.php','/model-choice.php','/local-knowledge-overview.php','/tools-skills.php',
+  '/pricing-monthly.php','/pricing-weekly.php','/pricing-yearly.php','/token-packages.php',
+  '/about-team.php','/mission.php','/case-studies.php','/testimonials.php','/contact.php'
+]) {
+  assert.match(mobileNav, new RegExp(`url\\('\\/${route.slice(1).replace('.', '\\.')}\\'\\)`), `mobile mega menu must expose ${route}`);
+}
+assert.match(mobileNav, /url\('\/pricing\.php'\)/, 'mobile mega menu must expose the canonical Pricing overview');
+
 for (const nav of [desktopNav, mobileNav, footerNav]) {
-  for (const route of ['/product.php', '/services.php', '/homeserver.php', '/pricing.php', '/about.php']) {
-    assert.match(nav, new RegExp(`url\\('\\/${route.slice(1).replace('.', '\\.')}\\'\\)`), `all public navigation surfaces must link to ${route}`);
-  }
   assert.doesNotMatch(nav, /index\.php#transcriptions|index\.php#teams/, 'public navigation must not fall back to homepage product anchors');
 }
 assert.doesNotMatch(footerNav, />Features</, 'shared public footer must not link to the removed Features section');

@@ -1,1 +1,56 @@
-body.vp3-public.vp3-marketing-page{background:#f6f4ef}.vp3-marketing-hero{padding-top:108px;padding-bottom:104px}.vp3-marketing-hero h1{max-width:1040px}.vp3-marketing-hero p{max-width:760px}.vp3-marketing-hero-actions{display:flex;justify-content:flex-start;gap:10px;flex-wrap:wrap;margin-top:30px}.vp3-marketing-hero .vp3-btn{border-color:rgba(255,255,255,.42);color:#fff}.vp3-marketing-hero .vp3-btn:hover,.vp3-marketing-hero .vp3-btn:focus-visible{border-color:#fff}.vp3-marketing-hero .vp3-btn.primary{background:#fff;border-color:#fff;color:#0b0c0e}.vp3-marketing-feature-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.vp3-marketing-feature{position:relative;min-height:280px;padding:30px;border:1px solid #d8d5cd;border-radius:18px;background:#fff;display:flex;flex-direction:column;transition:transform .18s ease,border-color .18s ease,background .18s ease}.vp3-marketing-feature:nth-child(4n+1){background:#0b0c0e;color:#fff;border-color:#0b0c0e}.vp3-marketing-feature:nth-child(4n+4){background:#5d55ff;color:#fff;border-color:#5d55ff}.vp3-marketing-feature:hover,.vp3-marketing-feature:focus-visible{transform:translateY(-3px);border-color:#0b0c0e;outline:none}.vp3-marketing-feature:nth-child(4n+1):hover,.vp3-marketing-feature:nth-child(4n+4):hover{border-color:transparent}.vp3-marketing-arrow{position:absolute;right:22px;top:22px;width:36px;height:36px;border-radius:50%;display:grid;place-items:center;background:#f0eee8;color:#4d4e49;font-size:14px}.vp3-marketing-feature:nth-child(4n+1) .vp3-marketing-arrow,.vp3-marketing-feature:nth-child(4n+4) .vp3-marketing-arrow{background:rgba(255,255,255,.13);color:#fff}.vp3-marketing-feature h2{font-size:clamp(28px,3vw,38px);line-height:.98;letter-spacing:-.05em;margin:64px 0 12px;max-width:12ch}.vp3-marketing-feature p{color:#686963;font-size:14px;margin:0 0 26px;max-width:44ch}.vp3-marketing-feature:nth-child(4n+1) p,.vp3-marketing-feature:nth-child(4n+4) p{color:rgba(255,255,255,.7)}.vp3-marketing-link{margin-top:auto;font-size:12px;font-weight:850}.vp3-marketing-story-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.vp3-marketing-story{padding:30px;border-top:1px solid #bdbab2;background:rgba(255,255,255,.7);border-radius:0 0 18px 18px}.vp3-marketing-story-index{display:block;font-size:10px;letter-spacing:.18em;color:#7c7d76;font-weight:850;margin-bottom:30px}.vp3-marketing-story h3{font-size:27px;line-height:1.02;letter-spacing:-.045em;margin:0 0 12px}.vp3-marketing-story p{color:#686963;font-size:14px;margin:0}.vp3-marketing-related{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}.vp3-marketing-related a{min-height:82px;padding:18px 20px;border:1px solid #d8d5cd;border-radius:14px;display:flex;align-items:center;justify-content:space-between;gap:12px;background:#fff}.vp3-marketing-related a:hover{background:#0b0c0e;color:#fff;border-color:#0b0c0e}.vp3-marketing-related strong{font-size:13px}.vp3-marketing-related span{color:#797a74}.vp3-marketing-why{display:grid;grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr);gap:72px;align-items:start}.vp3-marketing-why h2{font-size:clamp(38px,5vw,64px);line-height:.94;letter-spacing:-.055em;margin:14px 0 0}.vp3-marketing-why>p{margin:8px 0 0;color:#5f605a;font-size:18px;line-height:1.7;max-width:620px}.vp3-marketing-cta{background:#ef5b25}.vp3-marketing-cta-actions{display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end}.vp3-marketing-cta .vp3-btn.primary{background:#0b0c0e;border-color:#0b0c0e;color:#fff}.vp3-marketing-cta .vp3-btn{border-color:rgba(255,255,255,.5);color:#fff}@media(max-width:980px){.vp3-marketing-story-grid{grid-template-columns:1fr}.vp3-marketing-related{grid-template-columns:repeat(2,minmax(0,1fr))}.vp3-marketing-why{grid-template-columns:1fr;gap:30px}.vp3-marketing-cta{align-items:flex-start}.vp3-marketing-cta-actions{justify-content:flex-start}}@media(max-width:640px){.vp3-marketing-hero{padding-top:80px;padding-bottom:74px}.vp3-marketing-feature-grid,.vp3-marketing-related{grid-template-columns:1fr}.vp3-marketing-feature{min-height:235px;padding:24px}.vp3-marketing-feature h2{margin-top:54px}.vp3-marketing-story{padding:24px}.vp3-marketing-cta{display:grid;padding:28px}.vp3-marketing-cta-actions{display:grid;width:100%}.vp3-marketing-cta-actions .vp3-btn{width:100%}}
+/* VP3 informational pages — editorial product-page system. */
+body.vp3-public.vp3-marketing-page{background:#f6f4ef}
+.vp3-marketing-hero{min-height:590px;padding-top:150px;padding-bottom:92px}
+.vp3-marketing-hero h1{max-width:1010px}
+.vp3-marketing-hero p{max-width:760px}
+.vp3-marketing-hero-actions{display:flex;justify-content:flex-start;gap:10px;flex-wrap:wrap;margin-top:29px}
+.vp3-marketing-hero .vp3-btn{border-color:rgba(255,255,255,.42);color:#fff}
+.vp3-marketing-hero .vp3-btn:hover,.vp3-marketing-hero .vp3-btn:focus-visible{border-color:#fff}
+.vp3-marketing-hero .vp3-btn.primary{background:#fff;border-color:#fff;color:#0b0c0e}
+
+/* The old 2x2 squares are intentionally gone. Each subject becomes a readable editorial row. */
+.vp3-marketing-feature-grid{display:block;border-top:1px solid #d8d5cd}
+.vp3-marketing-feature{position:relative;min-height:0;padding:30px 4px;border:0;border-bottom:1px solid #d8d5cd;border-radius:0;background:transparent;color:#0b0c0e;display:grid;grid-template-columns:minmax(220px,.75fr) minmax(0,1.25fr) 110px;gap:34px;align-items:start;transition:padding .18s ease,background .18s ease}
+.vp3-marketing-feature:hover,.vp3-marketing-feature:focus-visible{padding-left:16px;padding-right:16px;background:#fff;outline:none}
+.vp3-marketing-arrow{display:none}
+.vp3-marketing-feature h2{font-size:clamp(28px,3vw,40px);line-height:1;letter-spacing:-.048em;margin:0;max-width:14ch;color:#0b0c0e}
+.vp3-marketing-feature p{color:#666761;font-size:15px;line-height:1.65;margin:2px 0 0;max-width:62ch}
+.vp3-marketing-link{margin-top:5px;justify-self:end;font-size:11px;font-weight:850;color:#0b0c0e;white-space:nowrap}
+
+/* Supporting editorial sections. */
+.vp3-marketing-story-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.vp3-marketing-story{padding:30px;border-top:1px solid #bdbab2;background:rgba(255,255,255,.7);border-radius:0 0 18px 18px}
+.vp3-marketing-story-index{display:block;font-size:10px;letter-spacing:.18em;color:#7c7d76;font-weight:850;margin-bottom:30px}
+.vp3-marketing-story h3{font-size:27px;line-height:1.02;letter-spacing:-.045em;margin:0 0 12px}
+.vp3-marketing-story p{color:#686963;font-size:14px;margin:0}
+.vp3-marketing-related{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.vp3-marketing-related a{min-height:82px;padding:18px 20px;border:1px solid #d8d5cd;border-radius:14px;display:flex;align-items:center;justify-content:space-between;gap:12px;background:#fff}
+.vp3-marketing-related a:hover{background:#0b0c0e;color:#fff;border-color:#0b0c0e}
+.vp3-marketing-related strong{font-size:13px}.vp3-marketing-related span{color:#797a74}
+.vp3-marketing-why{display:grid;grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr);gap:80px;align-items:start}
+.vp3-marketing-why h2{font-size:clamp(38px,5vw,64px);line-height:.94;letter-spacing:-.055em;margin:14px 0 0;max-width:12ch}
+.vp3-marketing-why>p{margin:8px 0 0;color:#5f605a;font-size:18px;line-height:1.7;max-width:620px}
+.vp3-marketing-cta{background:#5d55ff}
+.vp3-marketing-cta-actions{display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end}
+.vp3-marketing-cta .vp3-btn.primary{background:#0b0c0e;border-color:#0b0c0e;color:#fff}
+.vp3-marketing-cta .vp3-btn{border-color:rgba(255,255,255,.5);color:#fff}
+
+@media(max-width:980px){
+  .vp3-marketing-story-grid{grid-template-columns:1fr}
+  .vp3-marketing-related{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .vp3-marketing-why{grid-template-columns:1fr;gap:30px}
+  .vp3-marketing-cta{align-items:flex-start}
+  .vp3-marketing-cta-actions{justify-content:flex-start}
+}
+@media(max-width:760px){
+  .vp3-marketing-hero{min-height:500px;padding-top:120px;padding-bottom:68px}
+  .vp3-marketing-feature{grid-template-columns:1fr;gap:9px;padding:24px 2px}
+  .vp3-marketing-feature:hover,.vp3-marketing-feature:focus-visible{padding-left:10px;padding-right:10px}
+  .vp3-marketing-link{justify-self:start;margin-top:8px}
+  .vp3-marketing-related{grid-template-columns:1fr}
+  .vp3-marketing-story{padding:24px}
+  .vp3-marketing-cta{display:grid;padding:28px}
+  .vp3-marketing-cta-actions{display:grid;width:100%}
+  .vp3-marketing-cta-actions .vp3-btn{width:100%}
+}
+@media(prefers-reduced-motion:reduce){.vp3-marketing-feature{transition:none}}

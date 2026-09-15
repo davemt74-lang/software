@@ -60,4 +60,30 @@ if (!renderer.includes("'/calendar.php' => '/calendar-service.php'")) throw new 
 if (!renderer.includes("'/local-knowledge.php' => '/local-knowledge-overview.php'")) throw new Error('Local Knowledge public route remap missing');
 if (!renderer.includes("'/team.php' => '/about-team.php'")) throw new Error('Team public route remap missing');
 
-console.log(`Public mega menu pages contract OK: ${requiredRoutes.length} routes verified.`);
+// Public pages must share the homepage-style transparent mega menu.
+const publicShell = fs.readFileSync('includes/vp3-public.php', 'utf8');
+for (const needle of [
+  'function vp3_public_mega_nav',
+  'class="mega-nav vp3-public-mega-nav"',
+  '/vp3-index-mega-menu.css',
+  '/vp3-public-editorial.css'
+]) {
+  if (!publicShell.includes(needle)) throw new Error(`Shared public mega header contract missing: ${needle}`);
+}
+if (!publicShell.includes("if (!$compact):")) throw new Error('Compact auth header boundary missing');
+
+// Auth pages use compact brand-only header: no context-specific floating auth CTA should be emitted by the compact branch.
+for (const file of ['login.php','signup.php']) {
+  const source = fs.readFileSync(file, 'utf8');
+  if (!source.includes("'compact'=>true")) throw new Error(`${file} must use compact public header`);
+}
+
+// The informational renderer may keep its historical class names, but its CSS must be editorial rows rather than 2x2 colored squares.
+const marketingCss = fs.readFileSync('vp3-marketing-pages.css', 'utf8');
+if (!marketingCss.includes('.vp3-marketing-feature-grid{display:block')) throw new Error('Marketing pages are not using editorial row layout');
+if (!marketingCss.includes('grid-template-columns:minmax(220px,.75fr)')) throw new Error('Editorial marketing row columns missing');
+if (marketingCss.includes('.vp3-marketing-feature:nth-child(4n+1)') || marketingCss.includes('.vp3-marketing-feature:nth-child(4n+4)')) {
+  throw new Error('Legacy alternating square-tile styling returned');
+}
+
+console.log(`Public mega menu/editorial pages contract OK: ${requiredRoutes.length} routes verified.`);

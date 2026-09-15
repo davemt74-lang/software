@@ -5,6 +5,7 @@ const read = path => fs.readFileSync(path, 'utf8');
 const shell = read('includes/vp3-public.php');
 const css = read('vp3-public.css');
 const navCss = read('vp3-public-nav.css');
+const editorialCss = read('vp3-public-editorial.css');
 const auth = read('includes/auth.php');
 const login = read('login.php');
 const signup = read('signup.php');
@@ -25,21 +26,24 @@ const resetSql = read('sql/vp3-password-reset.sql');
 assert.match(shell, /function vp3_public_header/, 'VP3 must own one canonical public header');
 assert.match(shell, /function vp3_public_footer/, 'VP3 must own one canonical public footer');
 assert.match(shell, /function vp3_public_brand/, 'VP3 must own one canonical public brand lockup');
+assert.match(shell, /function vp3_public_mega_nav/, 'VP3 public shell must own the homepage-style mega menu');
 assert.match(shell, /vp3-public-mark[\s\S]*<i><\/i><i><\/i><i><\/i><i><\/i>[\s\S]*<strong>VP3<\/strong>/, 'canonical public brand must include the four-tile VP3 mark and wordmark');
 for (const route of ['/product.php', '/services.php', '/homeserver.php', '/pricing.php', '/about.php']) {
   assert.ok(shell.includes(`url('${route}')`), `public shell must link to ${route}`);
 }
 assert.doesNotMatch(shell, /index\.php#features|index\.php#transcriptions|index\.php#teams/, 'public shell must not depend on removed homepage product anchors');
-assert.match(shell, /vp3-public-mobile-menu/, 'canonical public shell must expose responsive navigation');
+assert.match(shell, /vp3-public-mobile-mega/, 'canonical public shell must expose responsive mega navigation');
 assert.match(shell, /Open VP3/, 'authenticated visitors must get a product entry action instead of Sign in');
-assert.match(navCss, /@media\(max-width:980px\)[\s\S]*vp3-public-mobile-menu/, 'responsive public navigation must activate below the desktop breakpoint');
+assert.match(shell, /vp3-index-mega-menu\.css/, 'public shell must reuse the homepage mega-menu stylesheet');
+assert.match(shell, /vp3-public-editorial\.css/, 'public shell must load the editorial public-page layer');
+assert.match(editorialCss, /position:absolute[\s\S]*background:linear-gradient/, 'public header must be transparent/overlaid on hero artwork');
+assert.match(editorialCss, /Compact auth header: brand only/, 'auth header must explicitly remain brand-only');
+
 for (const state of ['', ':visited', ':hover', ':focus']) {
-  assert.ok(navCss.includes(`body.vp3-public a.vp3-public-primary${state}`), `public primary CTA must explicitly own white text in ${state || 'default'} state`);
+  assert.ok(navCss.includes(`body.vp3-public a.vp3-public-primary${state}`), `legacy public CTA safety rule must exist in ${state || 'default'} state`);
 }
-assert.match(navCss, /body\.vp3-public a\.vp3-public-primary[\s\S]*\{color:#fff\}/, 'public primary CTA must override inherited anchor color with white text');
-assert.match(shell, /vp3-public\.css\?v=vp3-public-20260914-index/, 'public shell must cache-bust the homepage-aligned public styles');
-assert.match(shell, /vp3-public-nav\.css\?v=vp3-public-20260914-index/, 'public shell must cache-bust the homepage-aligned navigation styles');
-assert.match(shell, /vp3-marketing-pages\.css\?v=20260914-index/, 'public shell must cache-bust the homepage-aligned marketing styles');
+assert.match(shell, /vp3-public\.css\?v=vp3-public-20260915-editorial/, 'public shell must cache-bust the editorial public styles');
+assert.match(shell, /vp3-marketing-pages\.css\?v=20260915-editorial/, 'public shell must cache-bust the editorial marketing styles');
 assert.match(css, /--vp3-ink:#0b0c0e/, 'public/auth system must use the homepage ink token');
 assert.match(css, /--vp3-paper:#f6f4ef/, 'public/auth system must use the homepage paper token');
 assert.match(css, /--vp3-blue:#5d55ff/, 'public/auth system must use the homepage blue accent');
@@ -51,6 +55,10 @@ assert.doesNotMatch(css, /vp3-mountain-bg\.svg/, 'retired mountain artwork must 
 for (const [name, source] of Object.entries({login,signup,forgot,reset,pricing,about,contact,privacy,terms,demo,upgrade})) {
   assert.match(source, /includes\/vp3-public\.php/, `${name} must use the canonical VP3 public shell`);
   assert.doesNotMatch(source, /<span>Stonefellow<\/span>|>Stonefellow<\/a>|Sign in to Stonefellow|Create my Stonefellow account/, `${name} must not render the old public Stonefellow brand`);
+}
+
+for (const [name, source] of Object.entries({login,signup})) {
+  assert.match(source, /'compact'=>true/, `${name} must use the compact brand-only header`);
 }
 
 assert.match(login, /forgot-password\.php/, 'Sign in must link to real password recovery');
