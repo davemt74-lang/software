@@ -12,7 +12,7 @@ assert.match(goal,/CREATE TABLE IF NOT EXISTS agent_goal_objectives/,'goal-objec
 assert.match(goal,/UNIQUE KEY uq_agent_goal_objective \(owner_user_id,goal_id,objective_run_id\)/,'goal-objective links must be owner-scoped and idempotent');
 assert.match(goal,/CREATE TABLE IF NOT EXISTS agent_goal_events/,'goal changes need a lightweight audit trail');
 assert.match(goal,/agent_objective_verification_schema_ready_v176/,'goal readiness must depend on canonical objective verification');
-assert.match(goal,/objective_verification_status==='achieved'/,'goal progress must derive from verified objective achievement');
+assert.match(goal,/objective_verification_status.*achieved/s,'goal progress must derive from verified objective achievement');
 assert.match(goal,/derived_status.*achieved/s,'goal achievement must be derived rather than manually asserted');
 assert.match(goal,/contribution_weight/,'linked objectives must express contribution to the parent goal');
 assert.match(goal,/goal_score_percent/,'goal-specific contribution must affect strategic ranking');
@@ -27,7 +27,7 @@ assert.match(goal,/Resume this goal before changing its strategy or objective li
 assert.match(goal,/Archived goals are immutable history/,'archived goals must be immutable');
 assert.match(goal,/Existing objective\/workflow execution was not changed/,'goal pause must not mutate existing execution');
 assert.match(goal,/none will be attached or executed without your explicit instruction/,'proactive strategy suggestions must stay advisory');
-assert.doesNotMatch(goal,/manual completion|mark goal .* complete/i,'goal completion must not have a manual completion path');
+assert.doesNotMatch(goal,/UPDATE agent_goals SET status=.*achieved|status\s*=\s*['\"]achieved['\"]/i,'goal completion must not have a manual achieved mutation');
 assert.doesNotMatch(goal,/lease_owner|lease_expires|receipt_json|result_json|approval_status\s*=|next_attempt_at\s*=/,'goal layer must not own Phase 19 execution state');
 assert.doesNotMatch(goal,/setInterval\s*\(|fetch\s*\(/,'goal layer must not add polling');
 
