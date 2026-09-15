@@ -49,8 +49,8 @@ function video_meeting_transcription_ensure_schema_v1800(?PDO $pdo=null): void
         $index=$pdo->query("SHOW INDEX FROM video_meeting_transcript_segments WHERE Key_name='uq_video_meeting_transcript_source'");
         if(!$index||!$index->fetch())$pdo->exec('ALTER TABLE video_meeting_transcript_segments ADD UNIQUE KEY uq_video_meeting_transcript_source (meeting_id,source_key)');
     }catch(Throwable $e){
-        // A future schema manager may own this index. The source-key column is
-        // enough for safe application-level idempotency until then.
+        // Application-level duplicate detection still protects ingest if an
+        // older MySQL deployment cannot add the helper index immediately.
     }
 }
 
@@ -175,12 +175,13 @@ function video_meeting_transcription_append_v1800(PDO $pdo,array $meeting,array 
     try{
         $stmt=$pdo->prepare('INSERT INTO video_meeting_transcript_segments (meeting_id,participant_id,speaker_key,speaker_name,start_ms,end_ms,transcript_text,confidence,source,source_key,is_final) VALUES (?,?,?,?,?,?,?,?,?,?,1)');
         $stmt->execute([(int)$meeting['id'],$participant?(int)$participant['id']:null,mb_strimwidth($identity,0,100,''),mb_strimwidth($speaker,0,190,''),$start,$end,$text,$confidence,mb_strimwidth($source,0,40,''),$sourceKey]);
+        $segmentId=(int)$pdo->lastInsertId();
     }catch(Throwable $e){
         $existing->execute([(int)$meeting['id'],$sourceKey]);if(!$existing->fetchColumn())throw $e;
         return ['accepted'=>0,'duplicate'=>true,'source_key'=>$sourceKey];
     }
     $mirror=video_meeting_transcription_mirror_v1800($pdo,$meeting);
-    return ['accepted'=>1,'segment_id'=>(int)$pdo->lastInsertId(),'source_key'=>$sourceKey,'transcript_session_id'=>(int)($mirror['session']['id']??0)];
+    return ['accepted'=>1,'segment_id'=>$segmentId,'source_key'=>$sourceKey,'transcript_session_id'=>(int)($mirror['session']['id']??0)];
 }
 
 function video_meeting_transcription_segments_v1800(PDO $pdo,array $meeting,int $afterId=0,int $limit=100): array
@@ -200,7 +201,8 @@ function video_meeting_transcription_finalize_v1800(PDO $pdo,array $meeting): vo
 
 function video_meeting_transcription_state_v1800(PDO $pdo,array $meeting): array
 {
-    $session=video_meeting_transcription_schema_ready_v1800($pdo)?video_meeting_transcription_session_v1800($pdo,$meeting):null;
+    $ready=video_meeting_transcription_schema_ready_v1800($pdo);
+    $session=$ready?video_meeting_transcription_session_v1800($pdo,$meeting):null;
     $stmt=$pdo->prepare('SELECT COUNT(*),COALESCE(MAX(id),0) FROM video_meeting_transcript_segments WHERE meeting_id=? AND is_final=1');$stmt->execute([(int)$meeting['id']]);$stats=$stmt->fetch(PDO::FETCH_NUM)?:[0,0];
-    return ['ready'=>video_meeting_transcription_schema_ready_v1800($pdo),'session_id'=>(int)($session['id']??0),'segment_count'=>(int)$stats[0],'last_segment_id'=>(int)$stats[1]];
+    return ['ready'=>$ready,'session_id'=>(int)($session['id']??0),'segment_count'=>(int)$stats[0],'last_segment_id'=>(int)$stats[1]];
 }
