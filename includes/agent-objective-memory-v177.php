@@ -7,8 +7,10 @@ declare(strict_types=1);
  * This is a derived, owner-scoped learning layer over the canonical objective,
  * workflow, dependency and receipt ledgers. It stores reusable plan/outcome
  * patterns only. It never stores or replays receipts, result payloads, leases,
- * approval decisions, or terminal workflow state, and it does not introduce a
- * scheduler, worker, polling loop, or second command center.
+ * approval decisions, verification evidence, or terminal workflow state, and
+ * it does not introduce a scheduler, worker, polling loop, or second command
+ * center. HomeServer-targeted steps retain only Cloud-visible labels/routing,
+ * never duplicated local execution detail.
  */
 const VP3_AGENT_OBJECTIVE_MEMORY_V177='agent-objective-memory-v177-20260915';
 const VP3_AGENT_OBJECTIVE_MEMORY_SYNC_LIMIT_V177=80;
@@ -99,6 +101,14 @@ function agent_objective_memory_outcome_v177(array $parent): ?array
     return null;
 }
 
+function agent_objective_memory_safe_instruction_v177(string $title,string $instruction,string $target): string
+{
+    // HomeServer/local work may resolve private context at execution time. The
+    // Cloud learning layer keeps only the already-visible label and target hint.
+    if($target==='homeserver')return agent_objective_text_v175('HomeServer-scoped step: '.$title,500);
+    return agent_objective_text_v175($instruction,1500);
+}
+
 function agent_objective_memory_template_v177(PDO $pdo,int $uid,array $parent): array
 {
     $children=agent_objective_children_rows_v175($pdo,$uid,$parent);
@@ -107,17 +117,18 @@ function agent_objective_memory_template_v177(PDO $pdo,int $uid,array $parent): 
         if(!preg_match('/:s(\d+)t(\d+)$/',(string)($child['source_key']??''),$m))continue;
         $stage=(int)$m[1];$task=(int)$m[2];
         $title=agent_objective_text_v175((string)($child['title']??''),190);
-        $instruction=agent_objective_text_v175((string)($child['goal']??$title),1500);
         $target=in_array((string)($child['execution_target']??''),['cloud','homeserver'],true)?(string)$child['execution_target']:'cloud';
+        $instruction=agent_objective_memory_safe_instruction_v177($title,(string)($child['goal']??$title),$target);
         $observedStatus=(string)($child['status']??'');
         if($stage>=VP3_AGENT_OBJECTIVE_REMEDIATION_STAGE_BASE_V176){
-            if($title!=='')$lessons[]=['title'=>$title,'instruction'=>$instruction,'execution_target_preference'=>$target,'observed_status'=>$observedStatus];
+            if($title!=='')$lessons[]=['title'=>$title,'instruction'=>$instruction,'execution_target_preference'=>$target,'observed_status'=>$observedStatus,'private_context_required'=>$target==='homeserver'];
             continue;
         }
         $stages[$stage][$task]=[
             'title'=>$title,
             'instruction'=>$instruction,
             'execution_target_preference'=>$target,
+            'private_context_required'=>$target==='homeserver',
             'observed_status'=>$observedStatus,
             'observed_risk_level'=>(string)($child['risk_level']??'low'),
             'observed_requires_approval'=>!empty($child['requires_approval']),
@@ -130,7 +141,7 @@ function agent_objective_memory_template_v177(PDO $pdo,int $uid,array $parent): 
         'source_objective_run_id'=>(int)($parent['id']??0),
         'stages'=>$normalized,
         'remediation_lessons'=>array_slice($lessons,0,12),
-        'note'=>'Observed status/risk/approval fields and execution targets are learning hints only. Reuse must recalculate current approval/risk and normalize the current execution boundary.',
+        'note'=>'Observed status/risk/approval fields and execution targets are learning hints only. Reuse must recalculate current approval/risk and normalize the current execution boundary. HomeServer private execution context is never copied into objective memory.',
     ];
 }
 
@@ -142,7 +153,7 @@ function agent_objective_memory_capture_v177(PDO $pdo,int $uid,array $parent): ?
     if($stageCount<1||$stepCount<2)return null;
     $goal=agent_objective_text_v175((string)($parent['goal']??''),900);
     $criteria=agent_objective_verification_json_v176($parent['objective_success_criteria']??'');
-    $summary=agent_objective_text_v175((string)($parent['objective_verification_summary']??''),500);
+    $summary=match((string)$outcome['status']){'achieved'=>'Objective achieved without remediation.','remediated'=>'Objective achieved after targeted remediation.','failed'=>'Objective ended without verified achievement.',default=>'Objective outcome recorded.'};
     $stmt=$pdo->prepare("INSERT INTO agent_objective_outcome_memory (owner_user_id,source_objective_run_id,goal,intent_signature,outcome_status,outcome_score,remediation_count,plan_template,success_criteria,outcome_summary) VALUES (?,?,?,?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE goal=VALUES(goal),intent_signature=VALUES(intent_signature),outcome_status=VALUES(outcome_status),outcome_score=VALUES(outcome_score),remediation_count=VALUES(remediation_count),plan_template=VALUES(plan_template),success_criteria=VALUES(success_criteria),outcome_summary=VALUES(outcome_summary),updated_at=CURRENT_TIMESTAMP");
     $stmt->execute([$uid,(int)$parent['id'],$goal,agent_objective_memory_signature_v177($goal),(string)$outcome['status'],(int)$outcome['score'],(int)$outcome['remediation_count'],agent_workflow_json_v1400($template),$criteria?agent_workflow_json_v1400($criteria):null,$summary]);
     $find=$pdo->prepare('SELECT id FROM agent_objective_outcome_memory WHERE owner_user_id=? AND source_objective_run_id=? LIMIT 1');$find->execute([$uid,(int)$parent['id']]);$id=(int)$find->fetchColumn();return $id>0?$id:null;
