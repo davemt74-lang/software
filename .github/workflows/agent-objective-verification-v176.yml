@@ -26,14 +26,17 @@ jobs:
           coverage: none
       - name: PHP syntax
         run: |
+          php -l includes/agent-objective-memory-v177.php
           php -l includes/agent-objective-verification-v176.php
           php -l includes/agent-objective-plans-v175.php
           php -l includes/agent-job-engine-v1900.php
           php -l includes/agent-work-dependencies-v174.php
           php -l includes/agent-work-control-v173.php
+          php -l includes/release-chat-v105.php
           php -l upgrade.php
       - name: JavaScript syntax
         run: |
+          node --check tests/agent-objective-memory-v177-contract.mjs
           node --check tests/agent-objective-verification-v176-contract.mjs
           node --check tests/agent-objective-plans-v175-contract.mjs
           node --check tests/agent-work-dependencies-v174-contract.mjs
@@ -41,6 +44,8 @@ jobs:
           node --check tests/agent-work-queue-v172-contract.mjs
           node --check tests/agent-chat-intelligence-v171-contract.mjs
           node --check tests/agent-home-command-center-contract.mjs
+      - name: Agent Objective Memory contract
+        run: node tests/agent-objective-memory-v177-contract.mjs
       - name: Agent Objective Verification contract
         run: node tests/agent-objective-verification-v176-contract.mjs
       - name: Retained Agent Objective Plans contract
