@@ -3,6 +3,7 @@ declare(strict_types=1);
 require_once __DIR__.'/agent-work-control-v173.php';
 require_once __DIR__.'/agent-work-dependencies-v174.php';
 require_once __DIR__.'/agent-objective-plans-v175.php';
+require_once __DIR__.'/agent-objective-memory-v177.php';
 
 function release_v105_chat_intent(string $query): bool
 {
@@ -26,6 +27,12 @@ function chat_account_state_intent_v241(string $query): bool
 function release_v105_chat_tool(string $query,array $user,int $conversationId=0): array
 {
     $empty=['handled'=>false,'answer'=>'','stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[]];
+
+    // Phase 17.7 owns explicit learned-objective lookup/reuse language. Reuse
+    // always creates fresh Phase 17.5 workflows; it never replays receipts,
+    // approvals, leases, or historical terminal state.
+    $objectiveMemory=agent_objective_memory_chat_v177($query,$user,$conversationId);
+    if(!empty($objectiveMemory['handled']))return $objectiveMemory;
 
     // Phase 17.5 owns explicit objective / multi-workflow planning language and
     // composes normal Phase 14/19 workflows plus Phase 17.4 dependencies. It
