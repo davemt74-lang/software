@@ -8,6 +8,7 @@ require_once __DIR__.'/agent-proactive-objectives-v178.php';
 require_once __DIR__.'/agent-objective-portfolio-v179.php';
 require_once __DIR__.'/agent-goal-strategy-v1710.php';
 require_once __DIR__.'/agent-goal-planning-v1711.php';
+require_once __DIR__.'/agent-goal-execution-v1712.php';
 
 function release_v105_chat_intent(string $query): bool
 {
@@ -31,6 +32,13 @@ function chat_account_state_intent_v241(string $query): bool
 function release_v105_chat_tool(string $query,array $user,int $conversationId=0): array
 {
     $empty=['handled'=>false,'answer'=>'','stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[]];
+
+    // Phase 17.12 owns explicit goal execution/orchestration language. It may
+    // convert an advisory milestone into a fresh Phase 17.5 objective only when
+    // the user explicitly says to work on/advance the goal; Phase 19 remains
+    // the only worker and all approvals/dependencies remain authoritative.
+    $goalExecution=agent_goal_execution_chat_v1712($query,$user,$conversationId);
+    if(!empty($goalExecution['handled']))return $goalExecution;
 
     // Phase 17.11 owns goal-roadmap and milestone language. Roadmaps are
     // advisory planning metadata only; executable work still becomes fresh
