@@ -27,16 +27,19 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
     if(!verify_csrf())$error='Session expired. Please try again.';
     else try{
         $title=trim((string)($_POST['title']??''));$startLocal=trim((string)($_POST['start_local']??''));$duration=max(15,min(480,(int)($_POST['duration_minutes']??30)));
-        $tz=user_calendar_timezone_v1300((string)($_POST['timezone']??$timezone),$timezone);
+        $tz=user_calendar_timezone_v1300((string)($_POST['timezone']??$timezone),$timezone);$agentMode=(string)($_POST['agent_mode']??'notes')==='off'?'off':'notes';
         if($startLocal==='')throw new RuntimeException('Choose a meeting date and time.');
         $local=new DateTimeImmutable($startLocal,new DateTimeZone($tz));$startUtc=$local->setTimezone(new DateTimeZone('UTC'));$endUtc=$startUtc->modify('+'.$duration.' minutes');
         if($startUtc<=(new DateTimeImmutable('now',new DateTimeZone('UTC')))->modify('-5 minutes'))throw new RuntimeException('Choose a current or future meeting time.');
         $meeting=video_meeting_create_v1800($pdo,$user,[
             'title'=>$title,'description'=>trim((string)($_POST['description']??'')),'start_at_utc'=>$startUtc->format('Y-m-d H:i:s'),'end_at_utc'=>$endUtc->format('Y-m-d H:i:s'),'timezone'=>$tz,
-            'organizer_agent_id'=>(int)($_POST['organizer_agent_id']??$defaultAgentId),'agent_mode'=>(string)($_POST['agent_mode']??'notes'),'transcription_enabled'=>!empty($_POST['transcription_enabled']),'recording_enabled'=>false,
+            'organizer_agent_id'=>(int)($_POST['organizer_agent_id']??$defaultAgentId),'agent_mode'=>$agentMode,'transcription_enabled'=>!empty($_POST['transcription_enabled']),'recording_enabled'=>false,
         ]);
         if(!empty($meeting['transcription_enabled']))video_meeting_transcription_ensure_session_v1800($pdo,$meeting);
-        foreach($parseInvitees((string)($_POST['invitees']??'')) as $invitee)video_meeting_add_participant_v1800($pdo,$meeting,$invitee,true);
+        foreach($parseInvitees((string)($_POST['invitees']??'')) as $invitee){
+            $participant=video_meeting_add_participant_v1800($pdo,$meeting,$invitee,false);
+            video_meeting_secure_invitation_email_v1800($pdo,$meeting,$participant);
+        }
         if(function_exists('create_notification'))create_notification($userId,'video_meeting_scheduled','Video meeting scheduled',(string)$meeting['title'].' · '.(string)$meeting['start_at_utc'].' UTC',url('/meeting.php?meeting='.(string)$meeting['public_id']),'video_meeting',(int)$meeting['id']);
         redirect(url('/meeting.php?meeting='.(string)$meeting['public_id'].'&created=1'));
     }catch(Throwable $e){$error=$e->getMessage();}
@@ -44,6 +47,8 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
 
 $meetings=video_meeting_recent_for_user_v1800($pdo,$userId,80);
 $localDefault=(new DateTimeImmutable('+1 hour',new DateTimeZone($timezone)))->setTime((int)(new DateTimeImmutable('+1 hour',new DateTimeZone($timezone)))->format('H'),0)->format('Y-m-d\TH:i');
+$mediaReady=video_meeting_livekit_ready_v1800();$agentWorkerReady=video_meeting_agent_worker_ready_v1800();
+$serviceState=!$mediaReady?'LiveKit configuration required before joining':($agentWorkerReady?'LiveKit media + meeting Agent ready':'LiveKit media ready · transcription worker setup required');
 ?>
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#f7f7f5"><title>Meetings | VP3</title><link rel="stylesheet" href="<?= e(url('/chat.css?v=82')) ?>"><link rel="stylesheet" href="<?= e(url('/video-meetings-v1800.css?v=1801')) ?>"></head>
 <body class="vp3-meetings-page"><div class="chat-app">
@@ -62,7 +67,7 @@ $localDefault=(new DateTimeImmutable('+1 hour',new DateTimeZone($timezone)))->se
 <label class="wide"><span>Invite participants</span><textarea name="invitees" rows="3" placeholder="sarah@example.com&#10;John Smith &lt;john@example.com&gt;"><?= e((string)($_POST['invitees']??'')) ?></textarea><small>One per line or comma-separated. Existing VP3 accounts are matched by email; no duplicate CRM contact is created.</small></label>
 <label class="wide"><span>Description / agenda</span><textarea name="description" rows="3" placeholder="What should everyone prepare or decide?"><?= e((string)($_POST['description']??'')) ?></textarea></label>
 <label class="meeting-check wide"><input type="checkbox" name="transcription_enabled" value="1" <?= !isset($_POST['transcription_enabled'])||!empty($_POST['transcription_enabled'])?'checked':'' ?>><span>Enable live transcript + existing VP3 transcription intelligence. Participants see this disclosure before joining.</span></label>
-<div class="meeting-form-actions wide"><span class="meeting-livekit-state <?= video_meeting_livekit_ready_v1800()?'ready':'setup' ?>"><?= video_meeting_livekit_ready_v1800()?'LiveKit ready':'LiveKit configuration required before joining' ?></span><button type="submit" class="meeting-primary">Schedule video meeting</button></div>
+<div class="meeting-form-actions wide"><span class="meeting-livekit-state <?= $mediaReady?'ready':'setup' ?>"><?= e($serviceState) ?></span><button type="submit" class="meeting-primary">Schedule video meeting</button></div>
 </form></section>
 
 <section class="meeting-list-section"><div class="meeting-list-head"><div><span class="meeting-eyebrow">Meeting history</span><h2>Upcoming and recent</h2></div><span><?= count($meetings) ?> meetings</span></div>
