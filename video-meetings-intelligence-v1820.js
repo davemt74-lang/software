@@ -67,7 +67,7 @@ function renderState(s){
   const refresh=$('#meetingIntelligenceRefresh');if(refresh){refresh.disabled=analyzing||Number(state.word_count||0)<VP3_MIN_WORDS;refresh.textContent=analyzing?'Analyzing…':(state.final_analysis_due?'Finalize intelligence':'Update intelligence');}
   const handoff=$('#meetingIntelligenceHandoff');if(handoff){handoff.disabled=!state.final_analysis_at||analyzing;handoff.textContent=state.handoff_at?'Sent to Agent Chat':'Send to Agent Chat';}
   if(state.last_error)setStatus(String(state.last_error),'error');
-  else if(state.final_analysis_at)setStatus('Final meeting intelligence is current.','ready');
+  else if(state.final_analysis_at)setStatus('Final meeting intelligence is current. Review it, then send it to Agent Chat when ready.','ready');
   else if(state.live_analysis_due)setStatus('New transcript material is ready for rolling intelligence.','ready');
   else if(Number(state.word_count||0)<VP3_MIN_WORDS)setStatus('Waiting for more transcript context.','waiting');
   else setStatus('Meeting intelligence is current.','ready');
@@ -91,16 +91,16 @@ async function runAnalysis(mode='live',automatic=false){
     let data={};try{data=await res.json();}catch(_){data={};}
     if(!res.ok||!data.ok)throw new Error(data.error||'Transcription Intelligence could not complete.');
     const recorded=await intelligence('record_analysis',{mode:mode==='final'?'final':'live',source_hash:sourceHash});renderState(recorded.state||{});
-    setStatus(mode==='final'?'Final meeting intelligence complete.':'Rolling meeting intelligence updated.','ready');return true;
+    setStatus(mode==='final'?'Final meeting intelligence complete. Review it before sending it to Agent Chat.':'Rolling meeting intelligence updated.','ready');return true;
   }catch(err){setStatus(err.message||'Meeting Intelligence analysis failed.','error');return false;}finally{analyzing=false;if(state)renderState(state);}
 }
 async function saveNote(){const note=$('#meetingPrivateNotes');if(!note||!boot.isOrganizer)return;try{const data=await intelligence('save_note',{note_text:note.value});if(state){state.notes=data.notes||state.notes;renderState(state);}setStatus('Private note saved.','ready');}catch(err){setStatus(err.message,'error');}}
 function scheduleNoteSave(){clearTimeout(noteTimer);noteTimer=setTimeout(saveNote,650);}
 async function addObjective(){const input=$('#meetingObjectiveInput');if(!input)return;const text=input.value.trim();if(!text)return;try{const data=await intelligence('add_objective',{objective_text:text});input.value='';if(state){state.objectives=data.objectives||[];renderObjectives(state.objectives);}setStatus('Meeting objective added.','ready');}catch(err){setStatus(err.message,'error');}}
 async function setObjective(id,status){try{const data=await intelligence('objective_status',{objective_id:String(id||0),status});if(state){state.objectives=data.objectives||[];renderObjectives(state.objectives);}}catch(err){setStatus(err.message,'error');}}
-async function handoff(){if(!boot.isOrganizer)return;try{setStatus('Publishing meeting intelligence to Agent Chat…','working');const data=await intelligence('handoff');if(data.state)renderState(data.state);setStatus(data.handoff?.already_published?'This version is already in Agent Chat.':'Meeting intelligence sent to Agent Chat.','ready');}catch(err){setStatus(err.message,'error');}}
+async function handoff(){if(!boot.isOrganizer)return;try{setStatus('Publishing reviewed meeting intelligence to Agent Chat…','working');const data=await intelligence('handoff');if(data.state)renderState(data.state);setStatus(data.handoff?.already_published?'This version is already in Agent Chat.':'Reviewed meeting intelligence sent to Agent Chat.','ready');}catch(err){setStatus(err.message,'error');}}
 function scheduleAutoLive(){clearTimeout(autoTimer);autoTimer=setTimeout(async()=>{const s=await loadState();if(s?.live_analysis_due)await runAnalysis('live',true);},1800);}
-async function finalizeAfterEnd(){if(finalizing||!boot.isOrganizer)return;finalizing=true;try{await new Promise(r=>setTimeout(r,1800));const ok=await runAnalysis('final',true);if(ok)await handoff();}finally{finalizing=false;}}
+async function finalizeAfterEnd(){if(finalizing||!boot.isOrganizer)return;finalizing=true;try{await new Promise(r=>setTimeout(r,1800));await runAnalysis('final',true);}finally{finalizing=false;}}
 function setupReviewTabs(){if(!boot.reviewOnly)return;$$('.meeting-agent-tab').forEach(btn=>btn.addEventListener('click',()=>{$$('.meeting-agent-tab').forEach(b=>b.classList.remove('active'));$$('.meeting-agent-pane').forEach(p=>p.classList.remove('active'));btn.classList.add('active');document.getElementById('meetingPane-'+btn.dataset.pane)?.classList.add('active');}));}
 function wire(){
   $('#meetingPrivateNotes')?.addEventListener('input',scheduleNoteSave);
@@ -114,6 +114,6 @@ function wire(){
 }
 wire();
 if(!boot.isOrganizer){setStatus(privateMessage,'private');$$('[data-meeting-private]').forEach(el=>el.hidden=true);return;}
-loadState().then(s=>{if(boot.reviewOnly&&s?.final_analysis_due)runAnalysis('final',true).then(ok=>{if(ok&&!s.handoff_at)handoff();});});
+loadState().then(s=>{if(boot.reviewOnly&&s?.final_analysis_due)runAnalysis('final',true);});
 if(!boot.reviewOnly)setInterval(()=>{if(document.visibilityState==='visible')loadState();},15000);
 })();
