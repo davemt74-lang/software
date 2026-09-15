@@ -49,9 +49,9 @@ $closed=in_array((string)$meeting['status'],['cancelled','ended','processed'],tr
 <div class="meeting-lobby-kicker" style="margin-top:24px">Guest meeting access</div><h1><?= e((string)$meeting['title']) ?></h1><div class="meeting-lobby-meta"><?= e($when) ?></div>
 <?php if($closed): ?><div class="meeting-lobby-disclosure"><strong><?= (string)$meeting['status']==='cancelled'?'Meeting cancelled':'Meeting ended' ?></strong><br>This meeting is no longer accepting guest entry.</div>
 <?php else: ?>
-<div class="meeting-lobby-disclosure"><strong>Email verification required</strong><br>Enter the same email address the organizer invited. The public meeting link alone does not grant access.</div>
+<div class="meeting-lobby-disclosure"><strong>Invited email required</strong><br>Enter the same email address the organizer added to this meeting. The public meeting link alone does not grant access.</div>
 <?php if($error!==''): ?><div class="meeting-room-error" style="display:block"><?= e($error) ?></div><?php endif; ?>
 <form method="post" class="meeting-lobby-form" autocomplete="off"><?= csrf_field() ?><input type="hidden" name="meeting" value="<?= e($publicId) ?>"><label><span>Invited email address</span><input type="email" name="email" maxlength="190" required autocomplete="email" placeholder="you@example.com"></label><button class="meeting-join-button" type="submit">Continue to meeting</button></form>
-<?php if(!$user): ?><p class="meeting-lobby-meta" style="margin-top:16px">Have a VP3 account? <a href="<?= e(url('/login.php')) ?>">Sign in</a> and return to this link.</p><?php endif; ?>
+<?php if(!$user): ?><p class="meeting-lobby-meta" style="margin-top:16px">Have a VP3 account? <a href="<?= e(url('/login.php')) ?>">Sign in</a> with the invited account, then return to this meeting link.</p><?php endif; ?>
 <?php endif; ?>
 </div></div></div></body></html>
