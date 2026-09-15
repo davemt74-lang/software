@@ -28,11 +28,17 @@ assert.ok(exec.includes("$publicId.'|'.$roomName.'|'.$expiresAt"));
 assert.ok(exec.includes("return 'v1850.'.$expiresAt.'.'.$signature"));
 assert.ok(exec.includes("'bearer_token'=>video_meeting_homeserver_callback_token_v1850"));
 assert.ok(!exec.includes("'bearer_token'=>video_meeting_worker_secret_v1800"));
+assert.ok(exec.includes("video_meeting_secure_external_url_v1801('/api/video-meeting-worker.php')"));
+assert.ok(!exec.includes("video_meeting_absolute_url_v1800('/api/video-meeting-worker.php')"));
+assert.ok(exec.includes("'source'=>'homeserver'"));
+assert.ok(exec.includes('participant_identity, speaker_name, start_ms, end_ms'));
+assert.ok(exec.includes('source="homeserver", source_key and is_final=true'));
 
 // Readiness is not function-exists theater: v18.4 asks the executor whether the
 // exact advertised operation is deployable before reporting HomeServer ready.
 assert.ok(route.includes("video_meeting_homeserver_transcription_executor_available_v1850($meeting,$operation)"));
 assert.ok(route.includes("__DIR__.'/video-meetings-homeserver-v1850.php'"));
+assert.ok(route.includes("return ['meeting.transcription.stream','transcription.stream','transcription.start'];"));
 assert.ok(exec.includes("if($operation!==video_meeting_homeserver_transcription_operation_v1850())return false"));
 assert.ok(exec.includes("video_meeting_livekit_ready_v1800()"));
 assert.ok(exec.includes("homeserver_agent_v018_credentials((int)($meeting['owner_user_id']??0))"));
