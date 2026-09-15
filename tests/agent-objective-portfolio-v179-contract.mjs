@@ -21,6 +21,10 @@ assert.match(portfolio,/sequence_review/,'schedule conflicts must recommend sequ
 assert.match(portfolio,/repair_now/,'failed/remediating objectives must be surfaced for repair');
 assert.match(portfolio,/agent_work_control_priority_v173/,'explicit reprioritization must reuse Phase 17.3 controls');
 assert.match(portfolio,/agent_work_dependency_add_v174/,'cross-objective ordering must reuse Phase 17.4 dependencies');
+assert.match(portfolio,/status NOT IN \('completed','cancelled'\)/,'cross-objective sequencing must preserve completed work and gate only remaining work');
+assert.match(portfolio,/Pause the executing objective work before changing cross-objective order/,'sequencing must fail before mutating an executing objective');
+assert.match(portfolio,/cancelled objective cannot be used as a prerequisite/,'cancelled objectives must not become permanent prerequisite blockers');
+assert.ok(portfolio.indexOf("==='executing')throw") < portfolio.indexOf("agent_work_dependency_add_v174($pdo,$user,(int)$row['id']"),'all remaining objective work must be prevalidated before dependency mutation starts');
 assert.match(portfolio,/objective_portfolio_priority/,'priority changes must be audited');
 assert.match(portfolio,/objective_portfolio_dependency/,'cross-objective ordering must be audited');
 assert.match(portfolio,/Ranking is advisory/,'portfolio output must state the advisory boundary');
