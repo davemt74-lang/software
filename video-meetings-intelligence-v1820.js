@@ -63,7 +63,7 @@ function renderState(s){
   renderObjectives(state.objectives);renderActivity(state);renderPolicy(state);
   const note=$('#meetingPrivateNotes');if(note&&document.activeElement!==note&&note.value!==String(state.notes?.text||''))note.value=String(state.notes?.text||'');
   const bridge=$('#meetingTranscriptBridgeState');if(bridge&&Number(state.session_id||0)>0)bridge.textContent='VP3 Transcription #'+Number(state.session_id)+' · '+Number(state.word_count||0)+' words';
-  const full=$('#meetingFullIntelligenceLink');if(full&&state.full_transcription_url)full.href=String(state.full_transcription_url);
+  [$('#meetingFullIntelligenceLink'),$('#meetingFullIntelligenceLinkSecondary')].forEach(full=>{if(full&&state.full_transcription_url)full.href=String(state.full_transcription_url);});
   const refresh=$('#meetingIntelligenceRefresh');if(refresh){refresh.disabled=analyzing||Number(state.word_count||0)<VP3_MIN_WORDS;refresh.textContent=analyzing?'Analyzing…':(state.final_analysis_due?'Finalize intelligence':'Update intelligence');}
   const handoff=$('#meetingIntelligenceHandoff');if(handoff){handoff.disabled=!state.final_analysis_at||analyzing;handoff.textContent=state.handoff_at?'Sent to Agent Chat':'Send to Agent Chat';}
   if(state.last_error)setStatus(String(state.last_error),'error');
@@ -98,9 +98,10 @@ async function saveNote(){const note=$('#meetingPrivateNotes');if(!note||!boot.i
 function scheduleNoteSave(){clearTimeout(noteTimer);noteTimer=setTimeout(saveNote,650);}
 async function addObjective(){const input=$('#meetingObjectiveInput');if(!input)return;const text=input.value.trim();if(!text)return;try{const data=await intelligence('add_objective',{objective_text:text});input.value='';if(state){state.objectives=data.objectives||[];renderObjectives(state.objectives);}setStatus('Meeting objective added.','ready');}catch(err){setStatus(err.message,'error');}}
 async function setObjective(id,status){try{const data=await intelligence('objective_status',{objective_id:String(id||0),status});if(state){state.objectives=data.objectives||[];renderObjectives(state.objectives);}}catch(err){setStatus(err.message,'error');}}
-async function handoff(){if(!boot.isOrganizer)return;try{setStatus('Publishing meeting intelligence to Agent Chat…','working');const data=await intelligence('handoff');if(state&&data.state)renderState(data.state);setStatus(data.handoff?.already_published?'This version is already in Agent Chat.':'Meeting intelligence sent to Agent Chat.','ready');}catch(err){setStatus(err.message,'error');}}
+async function handoff(){if(!boot.isOrganizer)return;try{setStatus('Publishing meeting intelligence to Agent Chat…','working');const data=await intelligence('handoff');if(data.state)renderState(data.state);setStatus(data.handoff?.already_published?'This version is already in Agent Chat.':'Meeting intelligence sent to Agent Chat.','ready');}catch(err){setStatus(err.message,'error');}}
 function scheduleAutoLive(){clearTimeout(autoTimer);autoTimer=setTimeout(async()=>{const s=await loadState();if(s?.live_analysis_due)await runAnalysis('live',true);},1800);}
 async function finalizeAfterEnd(){if(finalizing||!boot.isOrganizer)return;finalizing=true;try{await new Promise(r=>setTimeout(r,1800));const ok=await runAnalysis('final',true);if(ok)await handoff();}finally{finalizing=false;}}
+function setupReviewTabs(){if(!boot.reviewOnly)return;$$('.meeting-agent-tab').forEach(btn=>btn.addEventListener('click',()=>{$$('.meeting-agent-tab').forEach(b=>b.classList.remove('active'));$$('.meeting-agent-pane').forEach(p=>p.classList.remove('active'));btn.classList.add('active');document.getElementById('meetingPane-'+btn.dataset.pane)?.classList.add('active');}));}
 function wire(){
   $('#meetingPrivateNotes')?.addEventListener('input',scheduleNoteSave);
   $('#meetingObjectiveAdd')?.addEventListener('click',addObjective);
@@ -109,6 +110,7 @@ function wire(){
   $('#meetingIntelligenceHandoff')?.addEventListener('click',handoff);
   window.addEventListener('vp3:meeting-transcript-updated',scheduleAutoLive);
   window.addEventListener('vp3:meeting-ended',finalizeAfterEnd);
+  setupReviewTabs();
 }
 wire();
 if(!boot.isOrganizer){setStatus(privateMessage,'private');$$('[data-meeting-private]').forEach(el=>el.hidden=true);return;}
