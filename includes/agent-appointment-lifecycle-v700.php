@@ -26,6 +26,7 @@ require_once __DIR__.'/video-meetings-homeserver-v1801.php';
 require_once __DIR__.'/video-meetings-calendar-v1801.php';
 require_once __DIR__.'/video-meetings-agent-v1800.php';
 require_once __DIR__.'/video-meetings-transcription-v1800.php';
+require_once __DIR__.'/video-meetings-intelligence-v1820.php';
 require_once __DIR__.'/video-meetings-reconcile-v1800.php';
 
 video_meeting_boot_v1800();
