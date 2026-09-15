@@ -6,7 +6,7 @@ const chat = fs.readFileSync(new URL('../chat.php', import.meta.url), 'utf8');
 const legacy = fs.readFileSync(new URL('../chat-legacy-v108.php', import.meta.url), 'utf8');
 
 assert.match(chat, /chat-media-overlays\.css\?v=/, 'Chat loads the canonical media overlay stylesheet');
-assert.match(chat, /\$runtime = \$headerUiRuntime\s*\n\s*\. \$mediaOverlayRuntime/, 'Media overlays load directly in the canonical Chat runtime');
+assert.match(chat, /\$runtime = \$headerUiRuntime\s*\n\s*\. \$agentIntelligenceRuntime\s*\n\s*\. \$mediaOverlayRuntime/, 'Media overlays remain directly loaded by the canonical Chat runtime alongside the integrated Agent intelligence layer');
 assert.doesNotMatch(chat, /\$themeRuntime|agent-theme-v242/, 'Media overlays must not depend on the retired Chat theme runtime');
 
 assert.match(legacy, /id=\\?"chatQueueDrawer\\?"/, 'Queue drawer remains present');
