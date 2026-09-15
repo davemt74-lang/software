@@ -135,10 +135,10 @@ function vp3_agent_work_queue_model_v172(PDO $pdo, array $user, string $timezone
     $blockedExpr=$dependencyReady
         ? "EXISTS (SELECT 1 FROM agent_workflow_run_dependencies d INNER JOIN agent_workflow_runs p ON p.id=d.depends_on_run_id AND p.owner_user_id=d.owner_user_id WHERE d.owner_user_id=agent_workflow_runs.owner_user_id AND d.run_id=agent_workflow_runs.id AND p.status<>'completed')"
         : '0';
-    $blockedLaneExpr="({$blockedExpr} AND status NOT IN ('completed','cancelled','paused','approval_pending','failed') AND approval_status<>'pending')";
     $retryExpr = $hasNextAttempt
         ? "(status='failed' OR (status='approved' AND approval_status<>'pending' AND next_attempt_at>UTC_TIMESTAMP() AND (COALESCE(last_error_class,'')<>''" . ($hasProgress ? " OR LOWER(COALESCE(progress_message,'')) LIKE '%retry%'" : '') . ")))"
         : "status='failed'";
+    $blockedLaneExpr="({$blockedExpr} AND status NOT IN ('completed','cancelled','paused','approval_pending','failed') AND approval_status<>'pending' AND NOT ({$retryExpr}))";
     $scheduledExpr = $hasNextAttempt
         ? "(status='approved' AND approval_status<>'pending' AND NOT ({$blockedExpr}) AND next_attempt_at>UTC_TIMESTAMP() AND COALESCE(last_error_class,'')=''" . ($hasProgress ? " AND LOWER(COALESCE(progress_message,'')) NOT LIKE '%retry%'" : '') . ")"
         : '0';
