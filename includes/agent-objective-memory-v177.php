@@ -169,7 +169,8 @@ function agent_objective_memory_similarity_v177(string $goal,array $memory): flo
 {
     $query=agent_objective_memory_terms_v177($goal);$past=agent_objective_memory_terms_v177((string)($memory['intent_signature']??$memory['goal']??''));
     if(!$query||!$past)return 0.0;
-    $intersection=count(array_intersect($query,$past));$union=count(array_unique(array_merge($query,$past)));$lexical=$union>0?$intersection/$union:0.0;
+    $intersection=count(array_intersect($query,$past));if($intersection<1)return 0.0;
+    $union=count(array_unique(array_merge($query,$past)));$lexical=$union>0?$intersection/$union:0.0;
     $quality=max(0,min(100,(int)($memory['outcome_score']??0)))/100;
     $outcome=(string)($memory['outcome_status']??'');$outcomeFactor=$outcome==='failed'?0.20:($outcome==='remediated'?0.88:1.0);
     return round(($lexical*0.78+$quality*0.22)*$outcomeFactor,4);
@@ -186,15 +187,18 @@ function agent_objective_memory_similar_v177(PDO $pdo,array $user,string $goal,i
     return array_slice($ranked,0,max(1,min(10,$limit)));
 }
 
-function agent_objective_memory_replay_stages_v177(array $memory): array
+function agent_objective_memory_replay_stages_v177(array $memory,string $newGoal): array
 {
-    $template=agent_objective_memory_json_v177($memory['plan_template']??'');$out=[];
+    $template=agent_objective_memory_json_v177($memory['plan_template']??'');$out=[];$oldGoal=agent_objective_text_v175((string)($memory['goal']??''),900);$newGoal=agent_objective_text_v175($newGoal,900);
     foreach(array_slice((array)($template['stages']??[]),0,VP3_AGENT_OBJECTIVE_MAX_STAGES_V175) as $stage){
         $clean=[];
         foreach((array)$stage as $step){
             if(!is_array($step))continue;
-            $title=agent_objective_text_v175($step['title']??'',190);$instruction=agent_objective_text_v175($step['instruction']??$title,1500);if($title==='')continue;
-            $preferred=(string)($step['execution_target_preference']??'cloud');$target=agent_objective_target_v175($instruction,in_array($preferred,['cloud','homeserver'],true)?$preferred:'cloud');
+            $title=(string)($step['title']??'');$instruction=(string)($step['instruction']??$title);
+            if($oldGoal!==''&&$newGoal!==''&&strcasecmp($oldGoal,$newGoal)!==0){$title=str_ireplace($oldGoal,$newGoal,$title);$instruction=str_ireplace($oldGoal,$newGoal,$instruction);}
+            $title=agent_objective_text_v175($title,190);$instruction=agent_objective_text_v175($instruction,1500);if($title==='')continue;
+            $preferred=(string)($step['execution_target_preference']??'cloud');try{$preferred=agent_work_delegate_target_v174($preferred);}catch(Throwable $e){$preferred='cloud';}
+            $target=agent_objective_target_v175($instruction,$preferred);
             $clean[]=['title'=>$title,'instruction'=>$instruction,'target'=>$target];
         }
         if($clean)$out[]=$clean;
@@ -207,7 +211,7 @@ function agent_objective_memory_reuse_v177(PDO $pdo,array $user,array $memory,st
     $uid=agent_objective_memory_require_v177($pdo,$user);if((int)($memory['owner_user_id']??0)!==$uid)throw new RuntimeException('Objective memory not found.');
     if(!in_array((string)($memory['outcome_status']??''),['achieved','remediated'],true))throw new RuntimeException('Failed objective memory is negative evidence and cannot be replayed as a plan.');
     $goal=agent_objective_text_v175($goal!==''?$goal:(string)($memory['goal']??''),900);if($goal==='')throw new RuntimeException('A new objective goal is required.');
-    $stages=agent_objective_memory_replay_stages_v177($memory);$steps=0;foreach($stages as $stage)$steps+=count($stage);if($steps<2)throw new RuntimeException('This learned plan is not reusable.');
+    $stages=agent_objective_memory_replay_stages_v177($memory,$goal);$steps=0;foreach($stages as $stage)$steps+=count($stage);if($steps<2)throw new RuntimeException('This learned plan is not reusable.');
     // Critical boundary: create a completely fresh objective through v17.5.
     // Current risk/approval planning, IDs, dependencies, leases and receipts are
     // regenerated; no historical receipt/result/approval payload is copied.
@@ -229,7 +233,7 @@ function agent_objective_memory_answer_matches_v177(array $matches): string
 function agent_objective_memory_chat_v177(string $query,array $user,int $conversationId=0): array
 {
     $empty=agent_objective_empty_tool_v175();$q=trim($query);if($q==='')return $empty;
-    $memoryLanguage=(bool)preg_match('/\b(?:objective memory|past objectives?|previous objectives?|similar objectives?|learned plans?|past plans?|reuse objective|reuse memory|best past plan|what (?:have you|did you) learn)\b/i',$q);
+    $memoryLanguage=(bool)preg_match('/\b(?:objective memory|past objectives?|previous objectives?|similar objectives?|learned plans?|past plans?|reuse objective|reuse memory|best past plan|what (?:have you|did you) learn(?:ed)?)\b/i',$q);
     if(!$memoryLanguage)return $empty;$pdo=db();if(!$pdo)return $empty;
     try{
         $uid=agent_objective_memory_require_v177($pdo,$user);agent_objective_memory_sync_recent_v177($pdo,$user);
