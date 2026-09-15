@@ -50,7 +50,8 @@ assert.ok(agent.includes("if($route!=='cloud'||$status!=='ready')"));
 assert.ok(worker.includes('video_meeting_homeserver_callback_verify_v1850($publicId,$roomName,$provided)'));
 assert.ok(worker.includes("if($homeserverAuthorized&&strtolower(trim((string)($input['source']??'')))!=='homeserver')"));
 assert.ok(worker.includes("hash_equals((string)$meeting['room_name'],$roomName)"));
-assert.ok(worker.includes("['cancelled','processed','no_show']"));
+assert.ok(worker.includes("$legacyClosed=['cancelled','processed']"));
+assert.ok(worker.includes("array_merge($legacyClosed,['no_show'])"));
 assert.ok(worker.includes("time()-$endedAt>300"));
 assert.ok(worker.includes('video_meeting_transcription_append_v1800($pdo,$meeting,$input)'));
 
