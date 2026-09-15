@@ -6,6 +6,7 @@ const exec = read('includes/video-meetings-homeserver-v1850.php');
 const route = read('includes/video-meetings-homeserver-v1840.php');
 const agent = read('includes/video-meetings-agent-v1800.php');
 const worker = read('api/video-meeting-worker.php');
+const presence = read('api/video-meeting-presence.php');
 const ui = read('video-meetings-v1800.js');
 
 // The concrete executor uses one already-recognized meeting-specific operation.
@@ -61,8 +62,16 @@ assert.ok(worker.includes("array_merge($legacyClosed,['no_show'])"));
 assert.ok(worker.includes("time()-$endedAt>300"));
 assert.ok(worker.includes('video_meeting_transcription_append_v1800($pdo,$meeting,$input)'));
 
-// A failed private dispatch must override the earlier readiness snapshot so
-// transcript polling cannot paint the UI green again.
+// Token-time readiness is only a preview. Presence must return the refreshed,
+// post-dispatch route so a race cannot repaint an obsolete HomeServer/cloud state.
+assert.ok(presence.includes("'processing_status'=>$processingStatus"));
+assert.ok(presence.includes("$processingStatus=video_meeting_homeserver_public_status_v1840($pdo,$meeting,true)"));
+assert.ok(presence.includes("$processingStatus['reason_code']='homeserver_dispatch_failed'"));
+assert.ok(presence.includes("$processingStatus['reason_code']='homeserver_active'"));
+assert.ok(presence.includes("$processingStatus['reason_code']='cloud_active'"));
+assert.ok(ui.includes("if(presence?.processing_status&&typeof presence.processing_status==='object')processingStatus=presence.processing_status"));
+
+// A failed private dispatch must remain authoritative during transcript polling.
 assert.ok(ui.includes("reason==='homeserver_dispatch_failed'"));
 assert.ok(ui.includes("processingStatus={...(processingStatus||{}),route:'blocked',status:'required_unavailable'"));
 assert.ok(ui.includes("reason==='homeserver_created'||reason==='homeserver_already_running'"));
