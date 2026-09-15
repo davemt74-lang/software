@@ -19,6 +19,7 @@ const VP3_AGENT_GOAL_REVIEW_DEDUPE_SECONDS_V1714=43200;
 
 require_once __DIR__.'/agent-goal-forecasting-v1713.php';
 require_once __DIR__.'/agent-objective-memory-v177.php';
+require_once __DIR__.'/agent-goal-commitments-v1715.php';
 
 function agent_goal_review_schema_ready_v1714(?PDO $pdo=null): bool
 {
@@ -199,6 +200,7 @@ function agent_goal_review_portfolio_answer_v1714(array $review): string
 
 function agent_goal_review_chat_v1714(string $query,array $user,int $conversationId=0): array
 {
+    $commitment=agent_goal_commitment_chat_v1715($query,$user,$conversationId);if(!empty($commitment['handled']))return $commitment;
     $empty=agent_objective_empty_tool_v175();$q=trim($query);if($q==='')return $empty;$goalId=agent_goal_execution_extract_id_v1712($q);$reviewIntent=(bool)preg_match('/\b(?:review|retrospective|postmortem|post-mortem|lesson|lessons|learned|learning|forecast accuracy|accuracy|continuous improvement|improve|improvement)\b/i',$q)||(bool)preg_match('/\bwhy\b.*\b(?:goal|goals)\b.*\b(?:slip|late|miss|delay|fail|stuck)\b/i',$q)||(bool)preg_match('/\bwhat\b.*\b(?:change|improve)\b.*\bgoal\b/i',$q);$portfolioIntent=$goalId<1&&$reviewIntent&&(bool)preg_match('/\b(?:goals|portfolio|overall|across)\b/i',$q);
     $forecastIntent=$goalId>0&&(bool)preg_match('/\b(?:forecast|predict|prediction|finish|complete|completion|on track|hit|make|achieve|deadline|when will|how long)\b/i',$q);$riskIntent=$goalId>0&&(bool)(preg_match('/\b(?:risk|at risk|miss|late|delay|slip|behind|putting|threat)\b/i',$q)&&preg_match('/\b(?:goal|target|deadline|date|risk|miss)\b/i',$q));$scenarioIntent=$goalId>0&&(bool)preg_match('/\b(?:scenario|compare|what if|fastest|lowest[- ]risk|highest[- ]value)\b/i',$q);
     if(!$reviewIntent&&!$forecastIntent&&!$riskIntent&&!$scenarioIntent)return $empty;$pdo=db();if(!$pdo)return $empty;
