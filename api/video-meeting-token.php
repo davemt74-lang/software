@@ -22,7 +22,7 @@ if($user&&!verify_csrf())$fail(403,'Session expired. Refresh the meeting and try
 $publicId=strtolower(trim((string)($_POST['meeting']??'')));
 $invite=strtolower(trim((string)($_POST['invite']??'')));
 $access=video_meeting_access_v1800($pdo,$user,$publicId,$invite);
-if(!$access)$fail(403,'This meeting invitation is not available to you.');
+if(!$access||!video_meeting_member_binding_allowed_v1800($user,$access))$fail(403,'This meeting invitation is not available to you.');
 $meeting=$access['meeting'];$participant=$access['participant'];
 
 if(!in_array((string)$meeting['status'],['scheduled','ready','live'],true)){
