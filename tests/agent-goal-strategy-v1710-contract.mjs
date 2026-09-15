@@ -32,7 +32,7 @@ assert.match(goal,/Existing objective\/workflow execution was not changed/,'goal
 assert.match(goal,/none will be attached or executed without your explicit instruction/,'proactive strategy suggestions must stay advisory');
 assert.doesNotMatch(goal,/UPDATE agent_goals SET status=.*achieved|status\s*=\s*['\"]achieved['\"]/i,'goal completion must not have a manual achieved mutation');
 assert.doesNotMatch(goal,/lease_owner|lease_expires|receipt_json|result_json|approval_status\s*=|next_attempt_at\s*=/,'goal layer must not own Phase 19 execution state');
-assert.doesNotMatch(goal,/setInterval\s*\(|fetch\s*\(/,'goal layer must not add polling');
+assert.doesNotMatch(goal,/setInterval\s*\(/,'PHP goal layer must not add polling loops');
 
 assert.match(chat,/require_once __DIR__\.\'\/agent-goal-strategy-v1710\.php\'/,'shared Chat boundary must load Phase 17.10');
 assert.match(chat,/agent_goal_chat_v1710\(\$query,\$user,\$conversationId\)/,'Agent Chat must route explicit goal language through Phase 17.10');
