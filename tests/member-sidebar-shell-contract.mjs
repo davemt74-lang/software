@@ -16,8 +16,9 @@ assert.doesNotMatch(legacyWrapper, /Stem Studio|Video Editor|workspace-main-side
 
 // Primary navigation is rendered from canonical keyed destinations. Keep the source
 // contract aligned with the consolidated shell rather than expecting duplicated anchors.
-assert.match(mainSidebar, /\$mainSidebarPrimaryOrder = \['chat','profile_agent','messages','contacts','knowledge','transcriptions','calendar','scheduling','profile_commerce','team'\]/, 'canonical Agent sidebar must retain the primary destination order');
+assert.match(mainSidebar, /\$mainSidebarPrimaryOrder = \['home','chat','profile_agent','messages','contacts','knowledge','transcriptions','calendar','scheduling','profile_commerce','team'\]/, 'canonical Agent sidebar must retain the primary destination order');
 for (const [key, label] of [
+  ['home', 'Home'],
   ['chat', 'Agent Chat'],
   ['profile_agent', 'Profile Agent'],
   ['messages', 'Messages'],

@@ -29,8 +29,9 @@ assert.match(navigation, /\$add\(\$links,'transcriptions','My Transcriptions',ur
 
 // Phase 2 consolidated the authenticated shell: primary destinations are keyed and
 // rendered from canonical navigation instead of duplicated hard-coded anchors.
-assert.match(sidebar, /\$mainSidebarPrimaryOrder = \['chat','profile_agent','messages','contacts','knowledge','transcriptions','calendar','scheduling','profile_commerce','team'\]/, 'Primary VP3 destinations must remain consolidated');
+assert.match(sidebar, /\$mainSidebarPrimaryOrder = \['home','chat','profile_agent','messages','contacts','knowledge','transcriptions','calendar','scheduling','profile_commerce','team'\]/, 'Primary VP3 destinations must remain consolidated');
 for (const [key, label] of [
+  ['home', 'Home'],
   ['profile_agent', 'Profile Agent'],
   ['messages', 'Messages'],
   ['knowledge', 'Knowledge'],

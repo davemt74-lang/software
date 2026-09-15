@@ -22,9 +22,10 @@ assert.match(wrapper, /\$mainSidebarHistoryRows = isset\(\$recent\)/, 'Chat must
 assert.match(wrapper, /<aside class=\"chat-sidebar\" id=\"chatSidebar\">\.\*\?<\/aside>/, 'Main Feed must replace the complete legacy sidebar as one unit');
 assert.doesNotMatch(wrapper, /data-chat-view-target=\"\(\?:player\|saved\|playlists\)\"|chatMyTeamSidebarLink|data-chat-my-team/, 'Main Feed must not strip/inject individual sidebar items after render');
 
-assert.match(mainSidebar, /aria-label="VP3 Agent">VP3<\/a>/, 'Canonical sidebar logo must identify the VP3 Agent');
-assert.match(mainSidebar, /\$mainSidebarPrimaryOrder = \['chat','profile_agent','messages','contacts','knowledge','transcriptions','calendar','scheduling','profile_commerce','team'\]/, 'Canonical sidebar must retain the consolidated primary Agent navigation order');
+assert.match(mainSidebar, /aria-label="VP3 Home">VP3<\/a>/, 'Canonical sidebar logo must identify VP3 Home');
+assert.match(mainSidebar, /\$mainSidebarPrimaryOrder = \['home','chat','profile_agent','messages','contacts','knowledge','transcriptions','calendar','scheduling','profile_commerce','team'\]/, 'Canonical sidebar must retain the consolidated primary Agent navigation order');
 for (const [key, label] of [
+  ['home', 'Home'],
   ['chat', 'Agent Chat'],
   ['profile_agent', 'Profile Agent'],
   ['messages', 'Messages'],

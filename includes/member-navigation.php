@@ -53,6 +53,7 @@ function member_navigation_active_key(?string $scriptName = null): string
     if($path==='/admin/team-workspaces.php')return 'team_workspaces';
 
     $map=[
+        'home.php'=>'home',
         'chat.php'=>'chat',
         'contacts.php'=>'contacts',
         'profile-agent.php'=>'profile_agent',
@@ -86,7 +87,7 @@ function member_navigation_active_key(?string $scriptName = null): string
 function member_navigation_section_label(string $key): string
 {
     return match($key){
-        'chat','profile_agent','voice_profile'=>'Agent',
+        'home','chat','profile_agent','voice_profile'=>'Agent',
         'messages','contacts','knowledge','local_knowledge','memory','transcriptions','calendar'=>'Workspace',
         'scheduling','appointment_lifecycle','commerce','profile_commerce','profile_commerce_delivery','profile_commerce_refunds'=>'Business',
         'team','team_scheduling','team_workspaces'=>'Team',
@@ -126,6 +127,7 @@ function member_navigation_menu_links(?array $user = null): array
 
     $chatAllowed=member_navigation_package_permission($user,'chat.access',has_permission('chat.access',$user))&&member_navigation_entitled($user,'main_ai.access',true);
     $accountAllowed=member_navigation_package_permission($user,'account.access',has_permission('account.access',$user));
+    $add($links,'home','Home',url('/home.php'),'primary');
     if($chatAllowed)$add($links,'chat','Main Feed',url('/chat.php'),'primary');
 
     $profileUrl=member_navigation_profile_url($user);if($profileUrl!=='')$add($links,'profile','View Profile',$profileUrl,'identity');
