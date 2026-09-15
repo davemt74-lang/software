@@ -19,6 +19,9 @@ assert.match(goal,/goal_score_percent/,'goal-specific contribution must affect s
 assert.match(goal,/score_percent.*0\.75.*ratio\*25/s,'goal strategy must combine Phase 17.9 portfolio score with goal contribution');
 assert.match(goal,/agent_goal_deadline_v1710/,'goal strategy must evaluate target-date risk');
 assert.match(goal,/within one week|within 30 days|target date has passed/,'deadline risk must be evidence based');
+assert.match(goal,/agent_goal_attention_v1710/,'Phase 17.10 must arbitrate attention across goals');
+assert.match(goal,/priority\*0\.40.*deadlineScore\*0\.25.*issues\*0\.20.*remaining\*0\.15/s,'cross-goal attention must combine user priority, deadline pressure, unresolved problems, and remaining verified progress');
+assert.match(goal,/needs the most attention right now/,'goal list Chat output must identify the highest-attention goal');
 assert.match(goal,/agent_objective_memory_similar_v177/,'Phase 17.7 learned outcomes must inform goal strategy');
 assert.match(goal,/agent_proactive_objectives_v178/,'Phase 17.8 proposals must be available as advisory goal inputs');
 assert.match(goal,/agent_objective_portfolio_v179/,'Phase 17.9 arbitration must remain the base objective-ranking layer');
