@@ -21,7 +21,7 @@ assert.match(sidebar, /profile-commerce-products-shell-v1310\.css/, 'Canonical s
 // sidebar consumes those permitted links instead of duplicating Commerce gates.
 assert.match(navigation, /agent_commerce_schema_ready_v800\(\)/, 'Profile Commerce must remain gated by Commerce schema readiness');
 assert.match(navigation, /\$add\(\$links,'profile_commerce','Profile Commerce',url\('\/profile-commerce-products\.php'\),'agent'\)/, 'Canonical member navigation must route Profile Commerce products');
-assert.match(sidebar, /\$mainSidebarPrimaryOrder = \['chat','profile_agent','messages','contacts','knowledge','transcriptions','calendar','scheduling','profile_commerce','team'\]/, 'Profile Commerce must remain a canonical primary destination');
+assert.match(sidebar, /\$mainSidebarPrimaryOrder = \['home','chat','profile_agent','messages','contacts','knowledge','transcriptions','calendar','scheduling','profile_commerce','team'\]/, 'Profile Commerce must remain a canonical primary destination after Agent Home');
 assert.match(sidebar, /'profile_commerce'=>'Products'/, 'Primary sidebar must label the Profile Commerce workspace Products');
 assert.match(sidebar, /member_navigation_menu_links\(\$mainSidebarUser\)/, 'Sidebar must consume canonical permission-aware navigation');
 assert.match(sidebar, /\$mainSidebarPrimaryKeys = array_fill_keys\(\$mainSidebarPrimaryOrder, true\)/, 'Profile Commerce must be excluded from duplicate footer navigation through the primary key set');
