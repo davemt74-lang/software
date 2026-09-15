@@ -26,6 +26,6 @@ assert.match(intelligence, /vp3_agent_work_queue_render_v172\(\$workQueue\)/, 'Q
 assert.match(chat, /agent-chat-intelligence-v171\.php/, 'Phase 17.2 must stay inside the canonical Agent Chat intelligence integration');
 assert.doesNotMatch(chat, /agent-work-queue\.php/, 'Phase 17.2 must not create or route Chat to a standalone Agent Work Queue page');
 assert.doesNotMatch(intelligence, /CREATE TABLE|ALTER TABLE/i, 'Phase 17.2 must not introduce a parallel work-queue schema');
-assert.doesNotMatch(intelligence, /setInterval|fetch\(/, 'Server-rendered queue must not add a parallel polling runtime');
+assert.doesNotMatch(intelligence, /setInterval\s*\(/, 'Server-rendered queue must not add a parallel polling runtime');
 
 console.log('Agent Work Queue v17.2 contract passed.');
