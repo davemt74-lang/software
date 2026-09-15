@@ -27,6 +27,14 @@ assert.match(verification,/objective_achieved','completed','completed'/,'Verifie
 assert.match(verification,/objective_remediation_queued/,'Unmet criteria must create an auditable remediation event');
 assert.match(verification,/\$hasFailed\|\|\$hasCancelled/,'Failed or cancelled objective work must surface Needs remediation before manual repair');
 
+assert.match(verification,/agent_objective_verification_queue_label_v176/,'Verification state must be visible through the canonical Work Queue workflow row');
+for(const label of ['Verifying','Needs remediation','Achieved'])assert.match(verification,new RegExp(`'${label}'`),`Work Queue state must visibly surface ${label}`);
+assert.match(verification,/title=\?,progress_message=\?/,'Work Queue display state must reuse canonical workflow title/progress fields');
+assert.match(verification,/agent_objective_verification_child_result_v176/,'Child completion/failure must advance the parent verification display state');
+assert.match(verification,/objective_verification_status='verifying'/,'All completed children must move the objective into Verifying');
+assert.match(verification,/objective_verification_status='needs_remediation'/,'Failed objective work must visibly move the objective into Needs remediation');
+assert.match(verification,/agent_objective_verification_queue_label_v176\(\$pdo,\$uid,\$runId,'achieved'\)/,'Verified achievement must remain visible in the completed Work Queue row');
+
 assert.match(verification,/agent_objective_insert_run_v175/,'Remediation must reuse canonical child workflow creation');
 assert.match(verification,/agent_objective_insert_dependency_v175/,'Remediation must reuse the existing cross-workflow dependency graph');
 assert.match(verification,/agent_action_v124_plan|agent_objective_insert_run_v175/s,'Remediation children must retain the canonical risk and approval planner');
