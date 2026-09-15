@@ -26,6 +26,7 @@ jobs:
           coverage: none
       - name: PHP syntax
         run: |
+          php -l includes/agent-objective-plans-v175.php
           php -l includes/agent-work-dependencies-v174.php
           php -l includes/agent-job-engine-v1900.php
           php -l includes/release-chat-v105.php
@@ -34,11 +35,14 @@ jobs:
           php -l upgrade.php
       - name: JavaScript syntax
         run: |
+          node --check tests/agent-objective-plans-v175-contract.mjs
           node --check tests/agent-work-dependencies-v174-contract.mjs
           node --check tests/agent-work-control-v173-contract.mjs
           node --check tests/agent-work-queue-v172-contract.mjs
           node --check tests/agent-chat-intelligence-v171-contract.mjs
           node --check tests/agent-home-command-center-contract.mjs
+      - name: Agent Objective Plans contract
+        run: node tests/agent-objective-plans-v175-contract.mjs
       - name: Agent Work Dependencies contract
         run: node tests/agent-work-dependencies-v174-contract.mjs
       - name: Retained Agent Work Control contract
