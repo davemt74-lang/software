@@ -83,10 +83,10 @@ assert.ok(!presence.includes("action:'analyze'"), 'presence endpoint must not bl
 assert.ok(intelligence.includes('Only the organizer can edit private meeting notes.'));
 assert.ok(intelligence.includes('Only the organizer can manage meeting objectives.'));
 assert.ok(meeting.includes('meetingPrivateNotes'));
+assert.ok(meeting.includes('Private organizer notes'));
 assert.ok(meeting.includes('meetingObjectiveInput'));
 assert.ok(meeting.includes('meetingIntelligenceCrm'));
 assert.ok(meeting.includes('CRM recommendations stay advisory'));
-assert.ok(intelJs.includes('Private organizer notes'));
 
 // Pre-meeting prep comes from the existing scheduling/lifecycle brief, and the
 // post-meeting summary is handed back to the existing Agent Chat command center.
