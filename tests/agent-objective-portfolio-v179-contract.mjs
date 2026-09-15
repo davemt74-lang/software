@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 
 const portfolio=fs.readFileSync('includes/agent-objective-portfolio-v179.php','utf8');
 const chat=fs.readFileSync('includes/release-chat-v105.php','utf8');
+const briefJs=fs.readFileSync('chat-agent-intelligence-v171.js','utf8');
+const briefCss=fs.readFileSync('chat-agent-intelligence-v171.css','utf8');
 
 assert.match(portfolio,/agent-objective-portfolio-v179-20260915/,'stable Phase 17.9 marker is required');
 assert.match(portfolio,/source_kind='objective_plan'/,'portfolio must derive from canonical objective parents');
@@ -29,5 +31,11 @@ assert.doesNotMatch(portfolio,/setInterval\s*\(|fetch\s*\(/,'Phase 17.9 must not
 assert.match(chat,/require_once __DIR__\.\'\/agent-objective-portfolio-v179\.php\'/,'shared Chat boundary must load Phase 17.9');
 assert.match(chat,/agent_objective_portfolio_chat_v179\(\$query,\$user,\$conversationId\)/,'Agent Chat must route portfolio commands through Phase 17.9');
 assert.ok(chat.indexOf('agent_objective_portfolio_chat_v179') < chat.indexOf('agent_objective_memory_chat_v177'),'portfolio arbitration must run before single-objective memory routing');
+
+assert.match(briefJs,/data-agent-objective-portfolio-control/,'Agent Brief must expose the portfolio without a second dashboard');
+assert.match(briefJs,/Show my objective portfolio and explain what I should do first\./,'Agent Brief must route portfolio inspection through canonical Chat');
+assert.match(briefJs,/form\.requestSubmit\(\)/,'portfolio control must reuse canonical Chat submission');
+assert.doesNotMatch(briefJs,/fetch\s*\(|setInterval\s*\(/,'Agent Brief portfolio control must not add polling');
+assert.match(briefCss,/chat-agent-intelligence-portfolio-control/,'Agent Brief portfolio control must use the existing brief presentation layer');
 
 console.log('Agent Objective Portfolio v17.9 contract passed.');
