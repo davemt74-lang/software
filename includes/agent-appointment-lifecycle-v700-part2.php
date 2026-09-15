@@ -159,3 +159,4 @@ function agent_appointment_lifecycle_ensure_schema_v700(?PDO $pdo=null): void
                  ELSE COALESCE(NULLIF(lifecycle_status,''),'confirmed')
                END");
 }
+
