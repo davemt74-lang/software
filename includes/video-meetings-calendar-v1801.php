@@ -56,12 +56,15 @@ function video_meeting_member_join_url_v1801(array $meeting): string
 
 function video_meeting_external_calendar_payload_v1801(array $meeting): array
 {
+    $joinUrl=video_meeting_member_join_url_v1801($meeting);
+    $agenda=trim((string)($meeting['description']??''));
+    $description=($agenda!==''?$agenda."\n\n":'').'Join VP3 Meeting: '.$joinUrl;
     return [
         'summary'=>mb_strimwidth(trim((string)$meeting['title']),0,190,''),
-        'description'=>mb_strimwidth(trim((string)($meeting['description']??'')),0,6000,'…'),
+        'description'=>mb_strimwidth($description,0,6000,'…'),
         'start_at_utc'=>(string)$meeting['start_at_utc'],
         'end_at_utc'=>(string)$meeting['end_at_utc'],
-        'location'=>video_meeting_member_join_url_v1801($meeting),
+        'location'=>$joinUrl,
     ];
 }
 
@@ -129,12 +132,12 @@ function video_meeting_external_calendar_record_v1801(PDO $pdo,int $participantI
       ]);
 }
 
-function video_meeting_external_calendar_cancel_v1801(PDO $pdo,array $connection,array $participant): void
+function video_meeting_external_calendar_cancel_v1801(PDO $pdo,array $connection,array $participant): bool
 {
     $participantId=(int)($participant['id']??0);$connectionId=(int)($connection['id']??0);
-    if($participantId<1||$connectionId<1)return;
+    if($participantId<1||$connectionId<1)return false;
     $link=video_meeting_external_calendar_link_v1801($pdo,$participantId,$connectionId);
-    if(!$link||(string)$link['sync_status']==='cancelled')return;
+    if(!$link||(string)$link['sync_status']==='cancelled')return false;
     $externalId=trim((string)($link['external_event_id']??''));
     if($externalId!==''){
         if((string)$connection['provider']==='google'){
@@ -146,6 +149,7 @@ function video_meeting_external_calendar_cancel_v1801(PDO $pdo,array $connection
     }
     $pdo->prepare("UPDATE video_meeting_external_calendar_links SET sync_status='cancelled',last_synced_at=NOW(),last_error='' WHERE participant_id=? AND connection_id=?")
         ->execute([$participantId,$connectionId]);
+    return true;
 }
 
 function video_meeting_external_calendar_sync_participant_v1801(PDO $pdo,array $meeting,array $participant): array
@@ -161,7 +165,8 @@ function video_meeting_external_calendar_sync_participant_v1801(PDO $pdo,array $
         $connectionId=(int)$connection['id'];
         try{
             if((string)($meeting['status']??'')==='cancelled'){
-                video_meeting_external_calendar_cancel_v1801($pdo,$connection,$participant);$synced++;continue;
+                if(video_meeting_external_calendar_cancel_v1801($pdo,$connection,$participant))$synced++;
+                continue;
             }
             $link=video_meeting_external_calendar_link_v1801($pdo,$participantId,$connectionId);
             $externalId=trim((string)($link['external_event_id']??''))?:null;
