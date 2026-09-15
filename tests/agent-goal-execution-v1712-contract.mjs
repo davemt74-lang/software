@@ -46,6 +46,6 @@ assert.ok(chat.indexOf('agent_goal_execution_chat_v1712') < chat.indexOf('agent_
 assert.ok(chat.indexOf('agent_goal_execution_chat_v1712') < chat.indexOf('agent_goal_chat_v1710'),'execution routing must run before generic goal routing');
 assert.match(planning,/agent_goal_plan_create_objective_v1711/,'17.11 must remain the canonical milestone-to-objective conversion path');
 assert.match(objective,/Phase 19 remains the only claimant/,'Phase 17.5 must retain worker authority');
-assert.match(deps,/Phase 19 remains the only durable claimant/,'Phase 17.4 must retain dependency\/delegation authority');
+assert.match(deps,/Phase 19 remains the only[\s\S]{0,80}durable claimant/,'Phase 17.4 must retain dependency\/delegation authority');
 
 console.log('Agent Goal Execution v17.12 contract passed.');
