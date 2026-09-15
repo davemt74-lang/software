@@ -67,7 +67,7 @@ for (const id of ['requirements','crm']) assert.ok(api.includes(`'${id}'`), `mis
 assert.ok(intelJs.includes("mode==='final'?'manual':'live'"));
 assert.ok(intelJs.includes("web_research:false"), 'automatic meeting intelligence must not leak meeting content into web research');
 assert.ok(intelJs.includes("action:'analyze'"));
-assert.ok(intelJs.includes("action:'record_analysis'"));
+assert.ok(intelJs.includes("intelligence('record_analysis'"));
 
 // A browser cannot mark analysis current just by echoing a transcript hash.
 // The server re-reads the canonical transcript, verifies the exact hash and
