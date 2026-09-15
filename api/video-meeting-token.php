@@ -60,19 +60,42 @@ try{
     $identity=video_meeting_participant_identity_v1800($meeting,$participant);
     $token=video_meeting_livekit_participant_token_v1800($meeting,$identity,$displayName);
     $cfg=video_meeting_livekit_config_v1800();
-    $processingRoute='off';
+
+    $processingStatus=[
+        'version'=>'v18.4','route'=>'off','status'=>'off','reason_code'=>'transcription_disabled',
+        'policy_resolved'=>true,'cloud_allowed'=>false,'homeserver_required'=>false,
+        'homeserver_available'=>false,'capability_advertised'=>false,'executor_available'=>false,
+        'ready'=>false,'terminal'=>false,
+    ];
     if(!empty($meeting['transcription_enabled'])){
-        $policy=function_exists('video_meeting_homeserver_public_policy_v1801')?video_meeting_homeserver_public_policy_v1801($pdo,$meeting):['policy_resolved'=>true,'cloud_processing_allowed'=>true];
-        if(empty($policy['policy_resolved']))$processingRoute='organizer_policy';
-        elseif(($policy['cloud_processing_allowed']??null)===true)$processingRoute='cloud';
-        else $processingRoute='private_required';
+        if(function_exists('video_meeting_homeserver_public_status_v1840')){
+            // Only the signed-in organizer may cause a HomeServer readiness
+            // probe. Guests and member attendees receive the sanitized policy
+            // outcome without touching the organizer's private runtime.
+            $processingStatus=video_meeting_homeserver_public_status_v1840($pdo,$meeting,!empty($access['is_organizer']));
+        }else{
+            // Privacy policy absence is unresolved, never implicit cloud consent.
+            $policy=function_exists('video_meeting_homeserver_public_policy_v1801')?video_meeting_homeserver_public_policy_v1801($pdo,$meeting):['policy_resolved'=>false,'cloud_processing_allowed'=>false];
+            if(empty($policy['policy_resolved'])){$processingStatus['route']='pending';$processingStatus['status']='policy_pending';$processingStatus['policy_resolved']=false;$processingStatus['reason_code']='owner_policy_pending';}
+            elseif(($policy['cloud_processing_allowed']??null)===true){$processingStatus['route']='cloud';$processingStatus['status']='ready';$processingStatus['ready']=true;$processingStatus['cloud_allowed']=true;$processingStatus['reason_code']='cloud_allowed';}
+            else{$processingStatus['route']='private_required';$processingStatus['status']='private_required';$processingStatus['homeserver_required']=true;$processingStatus['reason_code']='private_processing_required';}
+        }
     }
+    // Preserve the established scalar processing_route response while the new
+    // sanitized v18.4 object carries richer readiness detail.
+    $processingRoute=(string)$processingStatus['route'];
+
     echo json_encode([
         'ok'=>true,
         'server_url'=>(string)$cfg['url'],
         'participant_token'=>$token,
         'participant'=>['identity'=>$identity,'name'=>$displayName,'role'=>(string)$participant['role'],'is_organizer'=>!empty($access['is_organizer'])],
-        'meeting'=>['public_id'=>(string)$meeting['public_id'],'title'=>(string)$meeting['title'],'status'=>(string)$meeting['status'],'agent_mode'=>(string)$meeting['agent_mode'],'transcription_enabled'=>!empty($meeting['transcription_enabled']),'recording_enabled'=>!empty($meeting['recording_enabled']),'processing_route'=>$processingRoute],
+        'meeting'=>[
+            'public_id'=>(string)$meeting['public_id'],'title'=>(string)$meeting['title'],'status'=>(string)$meeting['status'],
+            'agent_mode'=>(string)$meeting['agent_mode'],'transcription_enabled'=>!empty($meeting['transcription_enabled']),
+            'recording_enabled'=>!empty($meeting['recording_enabled']),'processing_route'=>$processingRoute,
+            'processing_status'=>$processingStatus,
+        ],
         'agent'=>['name'=>video_meeting_agent_name_v1800($pdo,$meeting),'mode'=>(string)$meeting['agent_mode']],
     ],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
 }catch(Throwable $e){
