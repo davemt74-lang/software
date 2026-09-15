@@ -52,3 +52,27 @@ jobs:
         run: python -m py_compile workers/vp3-meeting-agent/agent.py
       - name: Video Meetings contract
         run: node tests/video-meetings-v1800-contract.mjs
+
+  worker-sdk:
+    name: LiveKit worker SDK contract
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install worker dependency
+        run: python -m pip install --disable-pip-version-check -r workers/vp3-meeting-agent/requirements.txt
+      - name: Import deployed worker contract
+        run: |
+          python - <<'PY'
+          import runpy
+          namespace = runpy.run_path('workers/vp3-meeting-agent/agent.py', run_name='vp3_meeting_agent_contract')
+          required = ['server', 'vp3_meeting_agent', '_transcribe_track', '_post_segment']
+          missing = [name for name in required if name not in namespace]
+          if missing:
+              raise SystemExit(f'Missing meeting worker symbols: {missing}')
+          print('LiveKit meeting worker SDK contract passed.')
+          PY
