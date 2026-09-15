@@ -1,5 +1,6 @@
 <?php
 declare(strict_types=1);
+require_once __DIR__.'/agent-work-control-v173.php';
 
 function release_v105_chat_intent(string $query): bool
 {
@@ -23,6 +24,12 @@ function chat_account_state_intent_v241(string $query): bool
 function release_v105_chat_tool(string $query,array $user,int $conversationId=0): array
 {
     $empty=['handled'=>false,'answer'=>'','stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[]];
+
+    // Phase 17.3: both canonical Agent Chat and fallback Chat already pass
+    // through this shared boundary before their generic tool executors. Work
+    // controls remain owner-scoped and mutate only the durable workflow ledger.
+    $workControl=agent_work_control_chat_v173($query,$user,$conversationId);
+    if(!empty($workControl['handled']))return $workControl;
 
     if(chat_account_state_intent_v241($query)&&function_exists('chat_onboarding_v241_tool')){
         $accountState = chat_onboarding_v241_tool($query, $user);

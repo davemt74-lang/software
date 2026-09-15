@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 const VP3_AGENT_CHAT_INTELLIGENCE_V171 = 'agent-chat-intelligence-v171-20260914';
 const VP3_AGENT_WORK_QUEUE_V172 = 'agent-work-queue-v172-20260914';
+const VP3_AGENT_WORK_CONTROL_UI_V173 = 'agent-work-control-ui-v173-20260915';
 
 function vp3_agent_chat_intelligence_text_v171(string $value, int $max = 160): string
 {
@@ -33,12 +34,19 @@ function vp3_agent_work_queue_lane_v172(array $row): string
         || str_contains(strtolower((string)($row['progress_message'] ?? '')), 'retry');
 
     if ($status === 'completed') return 'completed';
+    if ($status === 'paused') return 'paused';
     if ($status === 'approval_pending' || $approval === 'pending') return 'approval';
     if ($status === 'failed') return 'failed_retry';
     if ($future && $retrySignal) return 'failed_retry';
     if ($future) return 'scheduled';
     if (in_array($status, ['queued', 'planning', 'approved', 'executing'], true)) return 'active';
     return 'active';
+}
+
+function vp3_agent_work_queue_priority_label_v173(int $priority): string
+{
+    $priority=max(1,min(100,$priority));
+    return $priority>=90?'Urgent':($priority>=70?'High':($priority<=30?'Low':'Normal'));
 }
 
 function vp3_agent_work_queue_item_v172(array $row, string $lane, string $timezone): array
@@ -54,9 +62,12 @@ function vp3_agent_work_queue_item_v172(array $row, string $lane, string $timezo
     $attempts = max(0, (int)($row['attempt_count'] ?? 0));
     $target = strtolower(trim((string)($row['execution_target'] ?? 'cloud'))) ?: 'cloud';
     $error = vp3_agent_chat_intelligence_text_v171((string)($row['last_error_class'] ?? ''), 64);
+    $priority=max(1,min(100,(int)($row['work_priority'] ?? 50)));
+    $priorityLabel=vp3_agent_work_queue_priority_label_v173($priority);
 
     $detail = match ($lane) {
         'approval' => 'Waiting for your approval',
+        'paused' => $next !== '' ? 'Paused · schedule preserved for ' . $next : 'Paused by you',
         'scheduled' => $next !== '' ? 'Scheduled · ' . $next : 'Scheduled',
         'failed_retry' => $status === 'failed'
             ? ('Failed' . ($error !== '' ? ' · ' . $error : ''))
@@ -67,13 +78,15 @@ function vp3_agent_work_queue_item_v172(array $row, string $lane, string $timezo
             : ucfirst($status),
     };
     if ($message !== '' && $lane === 'active') $detail = $message . ($progress > 0 ? ' · ' . $progress . '%' : '');
+    if($lane!=='completed')$detail.=' · '.$priorityLabel.' priority';
 
     $prompt = match ($lane) {
-        'approval' => 'Review pending workflow #' . $id . ' (' . $title . '). Explain the requested action, risk, permissions and expected result, then ask me whether I want to approve or cancel it. Do not execute before my explicit approval.',
-        'scheduled' => 'Show me the plan and timing for scheduled workflow #' . $id . ' (' . $title . '). Tell me what will happen, when it will run, and whether anything needs my attention first.',
-        'failed_retry' => 'Review failed or retrying workflow #' . $id . ' (' . $title . '). Diagnose the latest failure, tell me whether a retry is already scheduled, and recommend the safest next action.',
-        'completed' => 'Summarize completed workflow #' . $id . ' (' . $title . '), including the outcome, receipts or result evidence available, and any useful follow-up.',
-        default => 'Give me the live status of workflow #' . $id . ' (' . $title . '), including current step, progress, execution target and anything blocking completion.',
+        'approval' => 'Inspect workflow #' . $id . '. Explain the approval risk and expected result. I can then say “approve workflow #' . $id . '” or “cancel workflow #' . $id . '”.',
+        'paused' => 'Inspect workflow #' . $id . '. Tell me what remains, its preserved schedule and priority. Remind me I can say “resume workflow #' . $id . '”, “reschedule workflow #' . $id . ' for tomorrow at 9 AM”, or “set workflow #' . $id . ' priority high”.',
+        'scheduled' => 'Inspect workflow #' . $id . '. Show its plan, schedule and priority. Remind me I can pause, reschedule, cancel or reprioritize it from this chat.',
+        'failed_retry' => 'Inspect workflow #' . $id . '. Diagnose the latest failure or retry state and show the newest receipt. If it is failed, remind me I can say “retry workflow #' . $id . '”.',
+        'completed' => 'Inspect workflow #' . $id . '. Summarize its outcome, latest receipt and result evidence, plus any useful follow-up.',
+        default => 'Inspect workflow #' . $id . '. Give me its live status, current step, progress, execution target and priority. Remind me I can pause, cancel or reprioritize it from Chat.',
     };
 
     return [
@@ -84,6 +97,8 @@ function vp3_agent_work_queue_item_v172(array $row, string $lane, string $timezo
         'progress'=>$progress,
         'attempts'=>$attempts,
         'target'=>$target,
+        'priority'=>$priority,
+        'priority_label'=>$priorityLabel,
         'prompt'=>$prompt,
         'updated_at'=>$updated,
         'next_attempt_at'=>$next,
@@ -96,8 +111,9 @@ function vp3_agent_work_queue_model_v172(PDO $pdo, array $user, string $timezone
     $empty = [
         'available'=>false,
         'build'=>VP3_AGENT_WORK_QUEUE_V172,
-        'counts'=>['active'=>0,'approval'=>0,'scheduled'=>0,'failed_retry'=>0,'completed'=>0],
-        'lanes'=>['active'=>[],'approval'=>[],'scheduled'=>[],'failed_retry'=>[],'completed'=>[]],
+        'control_build'=>VP3_AGENT_WORK_CONTROL_UI_V173,
+        'counts'=>['active'=>0,'approval'=>0,'paused'=>0,'scheduled'=>0,'failed_retry'=>0,'completed'=>0],
+        'lanes'=>['active'=>[],'approval'=>[],'paused'=>[],'scheduled'=>[],'failed_retry'=>[],'completed'=>[]],
     ];
     if ($uid < 1 || !table_exists('agent_workflow_runs') || !column_exists('agent_workflow_runs', 'owner_user_id')) return $empty;
 
@@ -117,6 +133,7 @@ function vp3_agent_work_queue_model_v172(PDO $pdo, array $user, string $timezone
         $countSql = "SELECT "
             . "SUM(CASE WHEN {$activeExpr} THEN 1 ELSE 0 END) active_count,"
             . "SUM(CASE WHEN status='approval_pending' OR approval_status='pending' THEN 1 ELSE 0 END) approval_count,"
+            . "SUM(CASE WHEN status='paused' THEN 1 ELSE 0 END) paused_count,"
             . "SUM(CASE WHEN {$scheduledExpr} THEN 1 ELSE 0 END) scheduled_count,"
             . "SUM(CASE WHEN {$retryExpr} THEN 1 ELSE 0 END) failed_retry_count,"
             . "SUM(CASE WHEN status='completed' THEN 1 ELSE 0 END) completed_count "
@@ -127,12 +144,13 @@ function vp3_agent_work_queue_model_v172(PDO $pdo, array $user, string $timezone
         $empty['counts'] = [
             'active'=>max(0, (int)($counts['active_count'] ?? 0)),
             'approval'=>max(0, (int)($counts['approval_count'] ?? 0)),
+            'paused'=>max(0, (int)($counts['paused_count'] ?? 0)),
             'scheduled'=>max(0, (int)($counts['scheduled_count'] ?? 0)),
             'failed_retry'=>max(0, (int)($counts['failed_retry_count'] ?? 0)),
             'completed'=>max(0, (int)($counts['completed_count'] ?? 0)),
         ];
 
-        $rowsStmt = $pdo->prepare("SELECT * FROM agent_workflow_runs WHERE owner_user_id=? AND status<>'cancelled' ORDER BY CASE status WHEN 'approval_pending' THEN 1 WHEN 'failed' THEN 2 WHEN 'executing' THEN 3 WHEN 'approved' THEN 4 WHEN 'planning' THEN 5 WHEN 'queued' THEN 6 WHEN 'completed' THEN 7 ELSE 8 END, updated_at DESC,id DESC LIMIT 200");
+        $rowsStmt = $pdo->prepare("SELECT * FROM agent_workflow_runs WHERE owner_user_id=? AND status<>'cancelled' ORDER BY CASE status WHEN 'approval_pending' THEN 1 WHEN 'failed' THEN 2 WHEN 'executing' THEN 3 WHEN 'paused' THEN 4 WHEN 'approved' THEN 5 WHEN 'planning' THEN 6 WHEN 'queued' THEN 7 WHEN 'completed' THEN 8 ELSE 9 END, updated_at DESC,id DESC LIMIT 200");
         $rowsStmt->execute([$uid]);
         foreach ($rowsStmt->fetchAll() ?: [] as $row) {
             if (!is_array($row)) continue;
@@ -277,6 +295,7 @@ function vp3_agent_work_queue_render_v172(array $queue): string
     $meta = [
         'active'=>['label'=>'In progress','empty'=>'No work is running right now.'],
         'approval'=>['label'=>'Waiting approval','empty'=>'No approvals are waiting.'],
+        'paused'=>['label'=>'Paused','empty'=>'No work is paused.'],
         'scheduled'=>['label'=>'Scheduled','empty'=>'No future work is scheduled.'],
         'failed_retry'=>['label'=>'Failed / retry','empty'=>'No failed or retrying work.'],
         'completed'=>['label'=>'Completed','empty'=>'No completed work yet.'],
@@ -284,14 +303,15 @@ function vp3_agent_work_queue_render_v172(array $queue): string
     ob_start();
     ?>
     <style data-agent-work-queue-v172>
-      .chat-agent-work-queue{display:grid;gap:9px;padding:11px;border:1px solid #e5e7eb;border-radius:12px;background:#fbfcfd}.chat-agent-work-queue-head{display:flex;align-items:center;justify-content:space-between;gap:12px}.chat-agent-work-queue-title{display:grid;gap:2px}.chat-agent-work-queue-title small{color:#8a94a3;font-size:9px;font-weight:850;letter-spacing:.11em;text-transform:uppercase}.chat-agent-work-queue-title strong{font-size:12px}.chat-agent-work-queue-counts{display:flex;gap:5px;flex-wrap:wrap;justify-content:flex-end}.chat-agent-work-queue-counts span{padding:4px 7px;border:1px solid #e2e5e9;border-radius:999px;background:#fff;color:#667085;font-size:8.8px;font-weight:800}.chat-agent-work-queue-counts .warn{border-color:#f4c7c3;background:#fff5f4;color:#b42318}.chat-agent-work-queue-counts .attention{border-color:#f4d6a2;background:#fff9ee;color:#9a5a00}.chat-agent-work-queue-lanes{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:7px}.chat-agent-work-lane{min-width:0;padding:9px;border:1px solid #e8eaee;border-radius:9px;background:#fff}.chat-agent-work-lane>header{display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:6px}.chat-agent-work-lane>header strong{font-size:9.6px}.chat-agent-work-lane>header span{display:grid;min-width:18px;height:18px;place-items:center;border-radius:999px;background:#f1f3f5;color:#667085;font-size:8.5px;font-weight:850}.chat-agent-work-item{appearance:none;display:grid;width:100%;gap:3px;padding:7px 0;border:0;border-top:1px solid #f0f1f3;background:none;color:inherit;text-align:left;cursor:pointer}.chat-agent-work-item:first-of-type{border-top:0}.chat-agent-work-item:hover,.chat-agent-work-item:focus-visible{background:#f8f9fa;outline:0}.chat-agent-work-item strong{overflow:hidden;font-size:9.5px;text-overflow:ellipsis;white-space:nowrap}.chat-agent-work-item small{overflow:hidden;color:#8a94a3;font-size:8.4px;line-height:1.3;text-overflow:ellipsis;white-space:nowrap}.chat-agent-work-empty{margin:0;color:#98a2b3;font-size:8.8px;line-height:1.4}.chat-agent-work-more{margin-top:5px;color:#667085;font-size:8.3px;font-weight:800}.chat-agent-work-queue-foot{display:flex;align-items:center;justify-content:space-between;gap:8px;color:#8a94a3;font-size:8.8px}.chat-agent-work-queue-foot a{color:#667085;font-weight:800;text-decoration:none}@media(max-width:1080px){.chat-agent-work-queue-lanes{grid-template-columns:repeat(3,minmax(0,1fr))}}@media(max-width:760px){.chat-agent-work-queue-head{align-items:flex-start;flex-direction:column}.chat-agent-work-queue-counts{justify-content:flex-start}.chat-agent-work-queue-lanes{grid-template-columns:1fr}.chat-agent-work-lane{padding:10px}}
+      .chat-agent-work-queue{display:grid;gap:9px;padding:11px;border:1px solid #e5e7eb;border-radius:12px;background:#fbfcfd}.chat-agent-work-queue-head{display:flex;align-items:center;justify-content:space-between;gap:12px}.chat-agent-work-queue-title{display:grid;gap:2px}.chat-agent-work-queue-title small{color:#8a94a3;font-size:9px;font-weight:850;letter-spacing:.11em;text-transform:uppercase}.chat-agent-work-queue-title strong{font-size:12px}.chat-agent-work-queue-counts{display:flex;gap:5px;flex-wrap:wrap;justify-content:flex-end}.chat-agent-work-queue-counts span{padding:4px 7px;border:1px solid #e2e5e9;border-radius:999px;background:#fff;color:#667085;font-size:8.8px;font-weight:800}.chat-agent-work-queue-counts .warn{border-color:#f4c7c3;background:#fff5f4;color:#b42318}.chat-agent-work-queue-counts .attention{border-color:#f4d6a2;background:#fff9ee;color:#9a5a00}.chat-agent-work-queue-lanes{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px}.chat-agent-work-lane{min-width:0;padding:9px;border:1px solid #e8eaee;border-radius:9px;background:#fff}.chat-agent-work-lane>header{display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:6px}.chat-agent-work-lane>header strong{font-size:9.6px}.chat-agent-work-lane>header span{display:grid;min-width:18px;height:18px;place-items:center;border-radius:999px;background:#f1f3f5;color:#667085;font-size:8.5px;font-weight:850}.chat-agent-work-item{appearance:none;display:grid;width:100%;gap:3px;padding:7px 0;border:0;border-top:1px solid #f0f1f3;background:none;color:inherit;text-align:left;cursor:pointer}.chat-agent-work-item:first-of-type{border-top:0}.chat-agent-work-item:hover,.chat-agent-work-item:focus-visible{background:#f8f9fa;outline:0}.chat-agent-work-item strong{overflow:hidden;font-size:9.5px;text-overflow:ellipsis;white-space:nowrap}.chat-agent-work-item small{overflow:hidden;color:#8a94a3;font-size:8.4px;line-height:1.3;text-overflow:ellipsis;white-space:nowrap}.chat-agent-work-empty{margin:0;color:#98a2b3;font-size:8.8px;line-height:1.4}.chat-agent-work-more{margin-top:5px;color:#667085;font-size:8.3px;font-weight:800}.chat-agent-work-queue-foot{display:flex;align-items:center;justify-content:space-between;gap:8px;color:#8a94a3;font-size:8.8px}.chat-agent-work-queue-foot span{line-height:1.4}.chat-agent-work-queue-foot a{color:#667085;font-weight:800;text-decoration:none}@media(max-width:1080px){.chat-agent-work-queue-lanes{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:760px){.chat-agent-work-queue-head{align-items:flex-start;flex-direction:column}.chat-agent-work-queue-counts{justify-content:flex-start}.chat-agent-work-queue-lanes{grid-template-columns:1fr}.chat-agent-work-lane{padding:10px}.chat-agent-work-queue-foot{align-items:flex-start;flex-direction:column}}
     </style>
-    <section class="chat-agent-work-queue" data-agent-work-queue="<?= e(VP3_AGENT_WORK_QUEUE_V172) ?>" aria-label="Agent work queue">
+    <section class="chat-agent-work-queue" data-agent-work-queue="<?= e(VP3_AGENT_WORK_QUEUE_V172) ?>" data-agent-work-control="<?= e(VP3_AGENT_WORK_CONTROL_UI_V173) ?>" aria-label="Agent work queue">
       <header class="chat-agent-work-queue-head">
         <div class="chat-agent-work-queue-title"><small>Agent Work Queue</small><strong>What your Agent is doing, waiting on, and finishing</strong></div>
         <div class="chat-agent-work-queue-counts" aria-label="Work queue counts">
           <span><?= (int)($counts['active'] ?? 0) ?> active</span>
           <span class="<?= (int)($counts['approval'] ?? 0) > 0 ? 'attention' : '' ?>"><?= (int)($counts['approval'] ?? 0) ?> approval</span>
+          <span><?= (int)($counts['paused'] ?? 0) ?> paused</span>
           <span><?= (int)($counts['scheduled'] ?? 0) ?> scheduled</span>
           <span class="<?= (int)($counts['failed_retry'] ?? 0) > 0 ? 'warn' : '' ?>"><?= (int)($counts['failed_retry'] ?? 0) ?> failed/retry</span>
           <span><?= (int)($counts['completed'] ?? 0) ?> completed</span>
@@ -307,7 +327,7 @@ function vp3_agent_work_queue_render_v172(array $queue): string
             <?php if ($items): ?>
               <?php foreach (array_slice($items, 0, 2) as $item): ?>
                 <button type="button" class="chat-agent-work-item" data-agent-intelligence-prompt="<?= e((string)($item['prompt'] ?? '')) ?>">
-                  <strong><?= e((string)($item['title'] ?? 'Agent work')) ?></strong>
+                  <strong>#<?= (int)($item['id'] ?? 0) ?> · <?= e((string)($item['title'] ?? 'Agent work')) ?></strong>
                   <small><?= e((string)($item['detail'] ?? '')) ?></small>
                 </button>
               <?php endforeach; ?>
@@ -317,7 +337,7 @@ function vp3_agent_work_queue_render_v172(array $queue): string
         <?php endforeach; ?>
       </div>
       <footer class="chat-agent-work-queue-foot">
-        <span>Owner-scoped durable workflow state · no second job system</span>
+        <span>Control it here: “pause workflow #12” · “resume workflow #12” · “retry workflow #12” · “reschedule workflow #12 for tomorrow at 9 AM” · “set workflow #12 priority high”</span>
         <a href="<?= e(url('/agent-workflows.php')) ?>">Workflow history</a>
       </footer>
     </section>

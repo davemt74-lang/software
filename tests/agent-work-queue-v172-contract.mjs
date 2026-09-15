@@ -20,7 +20,7 @@ for (const lane of ['active','approval','scheduled','failed_retry','completed'])
 assert.match(intelligence, /Agent Work Queue/, 'Queue must render directly in the Agent Brief');
 assert.match(intelligence, /data-agent-work-queue=/, 'Queue must have an integrated Chat canvas marker');
 assert.match(intelligence, /data-agent-intelligence-prompt=/, 'Queue item actions must flow through the canonical Chat composer');
-assert.match(intelligence, /Do not execute before my explicit approval/, 'Approval review must preserve the explicit approval boundary');
+assert.match(intelligence, /approve workflow #/, 'Approval review must preserve an explicit owner command before execution');
 assert.match(intelligence, /Workflow history/, 'The pre-existing workflow page may remain available as history/detail, not as a new command center');
 assert.match(intelligence, /vp3_agent_work_queue_render_v172\(\$workQueue\)/, 'Queue must be rendered inside the existing Agent Brief body');
 assert.match(chat, /agent-chat-intelligence-v171\.php/, 'Phase 17.2 must stay inside the canonical Agent Chat intelligence integration');
