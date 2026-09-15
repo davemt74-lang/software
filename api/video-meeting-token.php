@@ -62,7 +62,10 @@ try{
     $cfg=video_meeting_livekit_config_v1800();
     $processingRoute='off';
     if(!empty($meeting['transcription_enabled'])){
-        $processingRoute=function_exists('video_meeting_cloud_transcription_allowed_v1801')&&video_meeting_cloud_transcription_allowed_v1801($pdo,$meeting)?'cloud':'private_required';
+        $policy=function_exists('video_meeting_homeserver_public_policy_v1801')?video_meeting_homeserver_public_policy_v1801($pdo,$meeting):['policy_resolved'=>true,'cloud_processing_allowed'=>true];
+        if(empty($policy['policy_resolved']))$processingRoute='organizer_policy';
+        elseif(($policy['cloud_processing_allowed']??null)===true)$processingRoute='cloud';
+        else $processingRoute='private_required';
     }
     echo json_encode([
         'ok'=>true,
