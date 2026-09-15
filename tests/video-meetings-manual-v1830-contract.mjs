@@ -32,7 +32,7 @@ assert.ok(manual.includes('video_meeting_for_calendar_event_v1800'));
 assert.ok(manual.includes('video_meeting_create_v1800'));
 assert.ok(manual.includes('video_meeting_update_calendar_events_v1800'));
 assert.ok(!manual.includes('agent_scheduling_bookings'));
-assert.ok(editor.includes("name=\"add_video_meeting\""));
+assert.ok(editor.includes('name="add_video_meeting"'));
 assert.ok(editor.includes('video_meeting_manual_sync_event_v1830'));
 
 // Calendar-created meetings stay Notes-first with recording off and canonical
@@ -49,7 +49,13 @@ assert.ok(editor.includes('Invite attendees — one per line'));
 assert.ok(manual.includes('video_meeting_manual_parse_attendees_v1830'));
 assert.ok(manual.includes('video_meeting_add_participant_v1800'));
 assert.ok(editor.includes('VP3 accounts are recognized by email and receive a native VP3 notification'));
-assert.ok(manual.includes("],false);"), 'manual orchestration must suppress the legacy automatic email helper');
+assert.ok(manual.includes('],false);'), 'manual orchestration must suppress the legacy automatic email helper');
+
+// Existing member attendees are notified when an edited Calendar event changes
+// their meeting while newly added members keep the canonical invitation notice.
+assert.ok(manual.includes('video_meeting_manual_meeting_changed_v1830'));
+assert.ok(manual.includes("'video_meeting_updated'"));
+assert.ok(manual.includes('!isset($newIds[$pid])'));
 
 // External guest email is opt-in. Private mode uses the hardened bearer-email
 // helper; email-gate mode sends the public page but no bearer capability.
@@ -70,7 +76,9 @@ assert.ok(manual.includes("(int)($participant['user_id']??0)>0"));
 assert.ok(manual.includes('vp3_meeting_email_access'));
 assert.ok(manual.includes('vp3_meeting_email_gate_rate'));
 assert.ok(manual.includes('attempts>=10'));
-assert.ok(!manual.includes('INSERT INTO video_meeting_participants') || manual.includes('video_meeting_add_participant_v1800'), 'email claim must not directly create arbitrary guests');
+assert.ok(manual.includes("['scheduled','ready','live']"), 'closed meetings must reject new email-gate claims');
+assert.ok(manual.includes('session_regenerate_id(true)'), 'successful guest proof should rotate the session id');
+assert.ok(!manual.includes('INSERT INTO video_meeting_participants'), 'email proof must never create arbitrary guests directly');
 
 // The public URL contains only the opaque meeting id. Authorization after email
 // proof is server-side session state, so the normal room APIs reuse one canonical
@@ -89,13 +97,20 @@ assert.ok(security.includes('!$user'));
 assert.ok(security.includes("['cancelled','revoked','declined']"));
 assert.ok(manual.includes("invitation_status NOT IN ('cancelled','revoked','declined')"));
 
-// Calendar removal closes the corresponding meeting, room and member calendar
-// projections instead of leaving an orphaned Video Meeting behind.
+// Calendar removal first lets User Calendar cancel the canonical owner event.
+// Only after commit may the Video Meeting projection cancel attendee calendars;
+// doing it earlier would make user_calendar_cancel_event_v1300 report failure.
 assert.ok(editor.includes('video_meeting_manual_cancel_event_v1830'));
 assert.ok(editor.includes('video_meeting_manual_after_cancel_v1830'));
-assert.ok(manual.includes("status='cancelled'"));
-assert.ok(manual.includes('video_meeting_livekit_delete_room_v1800'));
-assert.ok(manual.includes('video_meeting_external_calendar_sync_members_v1801'));
+const cancelStart = manual.indexOf('function video_meeting_manual_cancel_event_v1830');
+const afterCancelStart = manual.indexOf('function video_meeting_manual_after_cancel_v1830');
+assert.ok(cancelStart >= 0 && afterCancelStart > cancelStart);
+const cancelBlock = manual.slice(cancelStart, afterCancelStart);
+assert.ok(!cancelBlock.includes('video_meeting_update_calendar_events_v1800'), 'owner calendar must not be pre-cancelled before canonical User Calendar cancellation');
+const afterCancelBlock = manual.slice(afterCancelStart, manual.indexOf('function video_meeting_email_gate_rate_check_v1830'));
+assert.ok(afterCancelBlock.includes('video_meeting_update_calendar_events_v1800'));
+assert.ok(afterCancelBlock.includes('video_meeting_livekit_delete_room_v1800'));
+assert.ok(afterCancelBlock.includes('video_meeting_external_calendar_sync_members_v1801'));
 
 // The editor exposes the stable public guest link only for email-gate mode and
 // keeps existing meeting identity/link when an event is edited.
