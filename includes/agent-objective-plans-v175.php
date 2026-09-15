@@ -198,7 +198,7 @@ function agent_objective_insert_run_v175(PDO $pdo,int $uid,?int $agentId,string 
         $capability=$kind==='execute'?'agent.next_action':'';
         $insert->execute([$runId,$uid,$index+1,agent_objective_text_v175($actionStep['id']??('step-'.($index+1)),120),$kind,agent_objective_text_v175($actionStep['label']??$plan['title'],190),agent_objective_text_v175($actionStep['instruction']??$plan['instruction'],1500),$requires?'approval_pending':'queued',$requires?1:0,$target,$capability]);
     }
-    agent_workflow_event_v1400($pdo,$uid,$runId,$plan['requires_approval']?'approval_requested':'approval_not_required','planning',$status,'system',$plan['requires_approval']?'Objective child workflow is waiting for explicit approval.':'Objective child workflow is ready; no approval is required.',['risk_level'=>$plan['risk_level']]);
+    agent_workflow_event_v1400($pdo,$uid,$runId,$plan['requires_approval']?'approval_requested':'approval_not_required',$status,$status,'system',$plan['requires_approval']?'Objective child workflow is waiting for explicit approval.':'Objective child workflow is ready; no approval is required.',['risk_level'=>$plan['risk_level']]);
     return $runId;
 }
 
@@ -222,7 +222,11 @@ function agent_objective_insert_dependency_v175(PDO $pdo,int $uid,int $runId,int
     if($runId<1||$dependsOnRunId<1||$runId===$dependsOnRunId)throw new RuntimeException('Invalid objective dependency edge.');
     $stmt=$pdo->prepare('INSERT IGNORE INTO agent_workflow_run_dependencies (owner_user_id,run_id,depends_on_run_id,created_by) VALUES (?,?,?,?)');
     $stmt->execute([$uid,$runId,$dependsOnRunId,'objective_v175']);
-    if($stmt->rowCount()>0)agent_workflow_event_v1400($pdo,$uid,$runId,'dependency_added','approved','approved','agent','Objective planner connected a prerequisite workflow.',['depends_on_run_id'=>$dependsOnRunId,'dependency_kind'=>$kind]);
+    if($stmt->rowCount()>0){
+        $run=agent_workflow_row_v1400($pdo,$uid,$runId);
+        $status=(string)($run['status']??'approved');
+        agent_workflow_event_v1400($pdo,$uid,$runId,'dependency_added',$status,$status,'agent','Objective planner connected a prerequisite workflow.',['depends_on_run_id'=>$dependsOnRunId,'dependency_kind'=>$kind]);
+    }
 }
 
 function agent_objective_existing_parent_v175(PDO $pdo,int $uid,string $objectiveHash): ?array
@@ -349,6 +353,12 @@ function agent_objective_extract_id_v175(string $query): int
     return 0;
 }
 
+function agent_objective_extract_step_ordinal_v175(string $query): ?int
+{
+    if(preg_match('/\bstep\s*#?\s*(\d+)\b/i',$query,$m))return max(1,(int)$m[1]);
+    return null;
+}
+
 function agent_objective_answer_v175(array $state,string $verb='status'): string
 {
     $objective=(array)($state['objective']??[]);$id=(int)($objective['id']??0);$goal=(string)($state['goal']??'');$counts=(array)($state['counts']??[]);$progress=(int)($state['progress_percent']??0);$children=(array)($state['children']??[]);
@@ -381,7 +391,7 @@ function agent_objective_chat_v175(string $query,array $user,int $conversationId
         elseif(preg_match('/\b(?:resume|continue|unpause)\b/i',$q)){$state=agent_objective_resume_v175($pdo,$user,$id);$answer='Resumed '.(int)($state['control_result']['changed']??0).' paused workflow'.((int)($state['control_result']['changed']??0)===1?'':'s').' in objective #'.$id.'. '.agent_objective_answer_v175($state);}
         elseif(preg_match('/\b(?:cancel|abort)\b/i',$q)){$state=agent_objective_cancel_v175($pdo,$user,$id);$answer='Cancelled '.(int)($state['control_result']['changed']??0).' unfinished workflow'.((int)($state['control_result']['changed']??0)===1?'':'s').' in objective #'.$id.'. '.agent_objective_answer_v175($state);}
         elseif(preg_match('/\b(?:priority|prioritize|reprioritize)\b.*\b(urgent|high|normal|low)\b/i',$q,$m)){$state=agent_objective_priority_v175($pdo,$user,$id,(string)$m[1]);$answer='Updated priority across '.(int)($state['control_result']['changed']??0).' unfinished workflows in objective #'.$id.'. '.agent_objective_answer_v175($state);}
-        elseif(preg_match('/\b(?:delegate|assign|route|move)\b.*?\b(?:step\s*#?\s*(\d+)\s+)?(?:to\s+)?(HomeServer|Home Server|Cloud|VP3 Cloud)\b/i',$q,$m)){$ordinal=isset($m[1])&&$m[1]!==''?(int)$m[1]:null;$state=agent_objective_delegate_v175($pdo,$user,$id,(string)$m[2],$ordinal);$answer='Updated execution delegation for '.(int)($state['control_result']['changed']??0).' workflow'.((int)($state['control_result']['changed']??0)===1?'':'s').' in objective #'.$id.'. '.agent_objective_answer_v175($state);}
+        elseif(preg_match('/\b(?:delegate|assign|route|move)\b.*\b(HomeServer|Home Server|Cloud|VP3 Cloud)\b/i',$q,$m)){$ordinal=agent_objective_extract_step_ordinal_v175($q);$state=agent_objective_delegate_v175($pdo,$user,$id,(string)$m[1],$ordinal);$answer='Updated execution delegation for '.(int)($state['control_result']['changed']??0).' workflow'.((int)($state['control_result']['changed']??0)===1?'':'s').' in objective #'.$id.'. '.agent_objective_answer_v175($state);}
         else{$state=agent_objective_state_v175($pdo,$user,$id,true);$answer=agent_objective_answer_v175($state);}
         $result=$empty;$result['handled']=true;$result['answer']=$answer;
         if(function_exists('agent_tool_log'))agent_tool_log($user,'objective.control',$query,'success',['objective_run_id'=>$id],$conversationId);
