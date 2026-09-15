@@ -62,9 +62,12 @@ assert.ok(!tokenApi.includes('homeserver_capability_v033_registry'));
 assert.ok(!tokenApi.includes('homeserver_agent_v018_credentials'));
 
 // The live Meeting UI consumes only the sanitized token response. Private
-// processing failures remain distinct from LiveKit media connectivity.
+// processing failures remain distinct from LiveKit media connectivity, and
+// transcript polling may not overwrite a blocked/private readiness warning.
 assert.ok(meetingJs.includes('function handleProcessingStatus(status)'));
-assert.ok(meetingJs.includes('auth?.meeting?.processing_status'));
+assert.ok(meetingJs.includes('processingStatus=auth?.meeting?.processing_status'));
+assert.ok(meetingJs.includes("['required_unavailable','private_required','policy_pending','closed'].includes"));
+assert.ok(meetingJs.includes('handleProcessingStatus(processingStatus);return;'));
 assert.ok(meetingJs.includes('Private processing required · HomeServer meeting processing unavailable'));
 assert.ok(meetingJs.includes('Private processing required · organizer resolves HomeServer readiness'));
 assert.ok(!meetingJs.includes('relay_token'));
