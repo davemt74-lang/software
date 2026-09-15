@@ -7,6 +7,7 @@ const shared=fs.readFileSync('includes/release-chat-v105.php','utf8');
 const api=fs.readFileSync('api/agent-workflow-runs-v1400.php','utf8');
 const queue=fs.readFileSync('includes/agent-chat-intelligence-v171.php','utf8');
 const upgrade=fs.readFileSync('agent-work-dependencies-upgrade-v174.php','utf8');
+const centralUpgrade=fs.readFileSync('upgrade.php','utf8');
 const migration=fs.readFileSync('upgrade-agent-work-dependencies-v174.sql','utf8');
 
 assert.match(deps,/VP3_AGENT_WORK_DEPENDENCIES_V174\s*=\s*'agent-work-dependencies-v174-20260915'/,'Phase 17.4 needs a stable build marker');
@@ -49,8 +50,14 @@ assert.match(queue,/workflow_blocked/,'Blocked workflows must contribute to Agen
 assert.match(queue,/delegate workflow #15 to HomeServer/,'Queue help must teach conversational delegation');
 assert.match(queue,/show dependencies for workflow #15/,'Queue help must teach blocker inspection');
 
-assert.match(upgrade,/agent_work_dependencies_ensure_schema_v174/,'The admin upgrade must install Phase 17.4 idempotently');
-assert.match(upgrade,/require_permission\('users\.manage'\)/,'Only an administrator may run the Phase 17.4 schema upgrade');
+assert.match(upgrade,/agent_work_dependencies_ensure_schema_v174/,'The standalone admin upgrade must install Phase 17.4 idempotently');
+assert.match(upgrade,/require_permission\('users\.manage'\)/,'Only an administrator may run the standalone Phase 17.4 schema upgrade');
+assert.match(centralUpgrade,/require_once __DIR__ \. '\/includes\/agent-work-control-v173\.php'/,'Central upgrade.php must load Phase 17.3 Agent Work Control');
+assert.match(centralUpgrade,/require_once __DIR__ \. '\/includes\/agent-work-dependencies-v174\.php'/,'Central upgrade.php must load Phase 17.4 Agent Work Dependencies');
+assert.match(centralUpgrade,/agent_work_control_schema_ready_v173\(\)/,'Central upgrade completeness must include Phase 17.3 schema readiness');
+assert.match(centralUpgrade,/agent_work_dependencies_schema_ready_v174\(\)/,'Central upgrade completeness must include Phase 17.4 schema readiness');
+assert.match(centralUpgrade,/agent_work_control_ensure_schema_v173\(\$pdo\)/,'Central upgrade.php must install Phase 17.3 through the normal Run Upgrade process');
+assert.match(centralUpgrade,/agent_work_dependencies_ensure_schema_v174\(\$pdo\)/,'Central upgrade.php must install Phase 17.4 through the normal Run Upgrade process');
 assert.doesNotMatch(deps,/DROP TABLE|TRUNCATE TABLE/i,'Phase 17.4 must be additive');
 assert.doesNotMatch(deps,/setInterval\s*\(/,'Phase 17.4 must not add a second polling runtime');
 assert.equal(fs.existsSync('agent-work-dependencies.php'),false,'Phase 17.4 must not create a competing work dashboard');
