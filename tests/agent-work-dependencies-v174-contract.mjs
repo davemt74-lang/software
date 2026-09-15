@@ -44,6 +44,7 @@ assert.match(queue,/return 'blocked'/,'Blocked dependencies must be a first-clas
 assert.match(queue,/'blocked'=>\['label'=>'Blocked'/,'Agent Chat must render the blocked lane directly in the existing Work Queue');
 assert.match(queue,/data-agent-work-dependencies/,'The existing Work Queue must advertise dependency capability without a second dashboard');
 assert.match(queue,/NOT \(\{\$blockedExpr\}\)/,'Blocked work must not be double-counted as active or scheduled');
+assert.match(queue,/\$blockedLaneExpr=.*NOT \(\{\$retryExpr\}\)/,'Retrying work must not be double-counted as blocked');
 assert.match(queue,/workflow_blocked/,'Blocked workflows must contribute to Agent Brief attention');
 assert.match(queue,/delegate workflow #15 to HomeServer/,'Queue help must teach conversational delegation');
 assert.match(queue,/show dependencies for workflow #15/,'Queue help must teach blocker inspection');
