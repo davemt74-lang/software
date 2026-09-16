@@ -1,0 +1,42 @@
+(()=>{'use strict';
+const boot=window.VP3Meeting;if(!boot||!boot.isOrganizer)return;
+const $=(s,r=document)=>r.querySelector(s);let api=null,state=null,busy=false;
+function endpoint(){if(api)return api;const source=String(boot.intelligenceEndpoint||'');api=source.replace(/video-meeting-intelligence\.php(?:\?.*)?$/,'video-meeting-live-agent.php');return api;}
+async function request(action,extra={}){
+  const body=new URLSearchParams({meeting:boot.meeting||'',invite:boot.invite||'',csrf_token:boot.csrf||'',action,...extra});
+  const res=await fetch(endpoint(),{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8','Accept':'application/json'},body:body.toString(),credentials:'same-origin',cache:'no-store'});
+  let data={};try{data=await res.json();}catch(_){data={};}if(!res.ok||!data.ok)throw new Error(data.error||'Live meeting Agent request failed.');return data;
+}
+function node(tag,cls,text=''){const el=document.createElement(tag);if(cls)el.className=cls;if(text!=='')el.textContent=text;return el;}
+function turnId(){if(globalThis.crypto?.randomUUID)return crypto.randomUUID();return 'turn-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,12);}
+function ensurePane(){
+  if($('#meetingPane-liveagent'))return;
+  const tabs=$('.meeting-agent-tabs'),content=$('.meeting-agent-content');if(!tabs||!content)return;
+  const button=node('button','meeting-agent-tab','Live Agent');button.type='button';button.dataset.pane='liveagent';button.dataset.meetingPrivate='';
+  button.addEventListener('click',()=>{document.querySelectorAll('.meeting-agent-tab').forEach(b=>b.classList.toggle('active',b===button));document.querySelectorAll('.meeting-agent-pane').forEach(p=>p.classList.toggle('active',p.id==='meetingPane-liveagent'));});
+  tabs.appendChild(button);
+  const pane=node('section','meeting-agent-pane');pane.id='meetingPane-liveagent';pane.dataset.meetingPrivate='';
+  const head=node('div','meeting-agent-head');const title=node('div','meeting-agent-id');title.append(node('strong','', 'Live Meeting Agent'),node('span','meeting-agent-mode','Organizer controlled'));head.append(title,node('p','', 'Ask the configured VP3 Agent to reason over the live meeting and current Meeting Intelligence. Live replies are advisory; actions still require the existing review and approval paths.'));
+  const controls=node('div','meeting-intelligence-toolbar');controls.id='meetingLiveAgentControls';
+  const start=node('button','', 'Start Agent');start.type='button';start.id='meetingLiveAgentStart';
+  const stop=node('button','', 'Stop Agent');stop.type='button';stop.id='meetingLiveAgentStop';
+  const status=node('span','', 'Loading live Agent…');status.id='meetingLiveAgentStatus';controls.append(start,stop,status);
+  const capability=node('div','meeting-intelligence-policy','Text participation · spoken output unavailable');capability.id='meetingLiveAgentCapability';capability.dataset.state='pending';
+  const messages=node('div','meeting-intelligence-stack');messages.id='meetingLiveAgentMessages';
+  const compose=node('div','meeting-objective-compose');const input=document.createElement('input');input.id='meetingLiveAgentInput';input.maxLength=4000;input.placeholder='Ask the Agent about the live meeting…';const send=node('button','', 'Ask Agent');send.type='button';send.id='meetingLiveAgentSend';compose.append(input,send);
+  pane.append(head,controls,capability,messages,compose);content.appendChild(pane);
+  start.addEventListener('click',()=>act('start'));stop.addEventListener('click',()=>act('stop'));send.addEventListener('click',ask);input.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();ask();}});
+}
+function renderMessages(turns){const el=$('#meetingLiveAgentMessages');if(!el)return;el.innerHTML='';const rows=Array.isArray(turns)?turns:[];if(!rows.length){el.appendChild(node('div','meeting-agent-empty','Start the Agent, then ask it to summarize, clarify, challenge, or reason about the live meeting.'));return;}for(const turn of rows){const card=node('article','meeting-intelligence-item');const q=node('strong','',String(turn.question||''));const a=node('p','',String(turn.answer||''));card.append(q,a);const meta=[turn.route,turn.created_at].filter(Boolean).join(' · ');if(meta)card.appendChild(node('span','',meta));el.appendChild(card);}el.scrollTop=el.scrollHeight;}
+function render(next){state=next||{};ensurePane();const available=state.available===true,active=state.active===true;const start=$('#meetingLiveAgentStart'),stop=$('#meetingLiveAgentStop'),send=$('#meetingLiveAgentSend'),input=$('#meetingLiveAgentInput'),status=$('#meetingLiveAgentStatus'),cap=$('#meetingLiveAgentCapability');
+  if(start)start.disabled=busy||!available||active;if(stop)stop.disabled=busy||!active;if(send)send.disabled=busy||!active;if(input)input.disabled=busy||!active;
+  if(status)status.textContent=active?'Agent active':(available?'Agent ready · start when you want it to participate':'Live Agent unavailable for the current meeting/runtime');
+  if(cap){const route=String(state.runtime_plan?.route||'blocked');const media=state.media_worker_available?'LiveKit worker available':'LiveKit worker not configured';cap.textContent=`Text participation · ${route} · ${media} · spoken output unavailable`;cap.dataset.state=available?'allowed':'private';}
+  renderMessages(state.turns);
+}
+async function load(){try{const data=await request('state');render(data.state);}catch(err){const s=$('#meetingLiveAgentStatus');if(s)s.textContent=err.message||'Live Agent could not load.';}}
+async function act(action){if(busy)return;busy=true;render(state);try{const data=await request(action);render(data.state);}catch(err){const s=$('#meetingLiveAgentStatus');if(s)s.textContent=err.message||'Live Agent request failed.';}finally{busy=false;render(state);}}
+async function ask(){if(busy||!state?.active)return;const input=$('#meetingLiveAgentInput');const question=String(input?.value||'').trim();if(!question)return;busy=true;render(state);try{const data=await request('ask',{question,client_turn_id:turnId()});if(input)input.value='';render(data.state);}catch(err){const s=$('#meetingLiveAgentStatus');if(s)s.textContent=err.message||'Live Agent could not answer.';}finally{busy=false;render(state);}}
+function init(){if(boot.reviewOnly)return;ensurePane();load();window.addEventListener('vp3:meeting-ended',()=>{if(state){state.active=false;state.available=false;render(state);}});}
+window.VP3MeetingLiveAgent18110={init,render,load};
+})();
