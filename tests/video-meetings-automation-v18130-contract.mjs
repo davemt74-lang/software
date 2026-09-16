@@ -32,11 +32,18 @@ assert.ok(automation.includes("'discussed '.$subject"));
 for(const key of ['historical_decisions','unresolved_commitments','relevant_context','sources'])assert.ok(automation.includes(`'${key}'`),`missing prep output ${key}`);
 for(const key of ['source_hash','final_source_hash','index_hash','artifact_id','review_path'])assert.ok(automation.includes(`'${key}'`),`missing source provenance ${key}`);
 
+// Historical prep excludes the target meeting itself, including completed/review mode.
+assert.ok(automation.includes('int $excludeMeetingId=0'));
+assert.ok(automation.includes('$meetingId===$excludeMeetingId'));
+assert.ok(automation.includes('false,$meetingId'));
+assert.ok(automation.includes('true,$meetingId'));
+assert.ok(automation.includes('The current meeting is excluded from historical retrieval'));
+
 // Unresolved work never gets upgraded into completed work by the prep layer.
 assert.ok(automation.includes("$category==='followthrough_pending'"));
 assert.ok(automation.includes("$category==='followthrough_verified'"));
 assert.ok(automation.includes("['verified','completed','complete','done','closed','cancelled','canceled','failed']"));
-assert.ok(automation.includes('Pending commitments remain pending until separately verified.'));
+assert.ok(automation.includes('pending commitments remain pending until separately verified'));
 
 // Privacy boundaries match 18.12: participant names only; no emails, transcript, notes or historical HomeServer probing.
 assert.ok(automation.includes('SELECT display_name FROM video_meeting_participants'));
