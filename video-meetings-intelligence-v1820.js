@@ -44,19 +44,21 @@ function renderActivity(s){
   if(s.final_analysis_at)rows.push(['Final intelligence',s.final_analysis_at]);
   if(s.handoff_at)rows.push(['Agent Chat handoff',s.handoff_at]);
   (Array.isArray(snap.plugins)?snap.plugins:[]).slice(0,14).forEach(p=>rows.push([String(p.id||'Plugin'),String(p.generated_at||'')]));
-  if(!rows.length){clearAndMessage(el,'Analysis activity will appear here as the canonical Transcription Intelligence plugins run.');return;}
+  if(!rows.length){clearAndMessage(el,'Analysis activity will appear here as the current authorized Meeting Intelligence route runs.');return;}
   rows.forEach(([label,time])=>{const row=document.createElement('div');row.className='meeting-activity-row';const strong=document.createElement('strong');strong.textContent=label;const span=document.createElement('span');span.textContent=time||'Ready';row.append(strong,span);el.appendChild(row);});
 }
 function renderPolicy(s){
-  const policy=s.processing_policy||{};const el=$('#meetingIntelligencePolicy');if(!el)return;
-  if(policy.cloud_ai_allowed===true){el.textContent='Processing route: VP3 Cloud AI allowed';el.dataset.state='allowed';}
+  const policy=s.processing_policy||{};const hybrid=s.hybrid_intelligence||{};const el=$('#meetingIntelligencePolicy');if(!el)return;
+  if(hybrid.route==='homeserver'&&hybrid.ready===true){el.textContent='Processing route: HomeServer private AI · local model and private context';el.dataset.state='private';}
+  else if(hybrid.route==='cloud'&&hybrid.ready===true){el.textContent='Processing route: VP3 Cloud AI';el.dataset.state='allowed';}
+  else if(hybrid.status==='required_unavailable'){el.textContent='Processing route: HomeServer required · private Meeting Intelligence is unavailable';el.dataset.state='private';}
   else if(policy.requested_compute==='homeserver_only'){el.textContent='Processing route: HomeServer only · cloud AI is blocked';el.dataset.state='private';}
   else if(policy.policy_resolved===false){el.textContent='Processing route: waiting for organizer policy';el.dataset.state='pending';}
-  else{el.textContent='Processing route: private/cloud-blocked';el.dataset.state='private';}
+  else{el.textContent='Processing route: no authorized Meeting Intelligence route';el.dataset.state='private';}
 }
 function renderState(s){
   state=s||{};const snap=state.snapshot||{};renderSummary(snap,state.prep);
-  renderList('#meetingIntelligenceActions',snap.actions,['action','follow_up','next_step','text'],['owner','timing','priority','status'],'No grounded actions or follow-up items yet.');
+  renderList('#meetingIntelligenceActions',snap.actions,['action','follow_up','next_step','text'],['owner','timing','due_date','priority','status'],'No grounded actions or follow-up items yet.');
   renderList('#meetingIntelligenceDecisions',snap.decisions,['decision','commitment','text'],['owner','timing','confidence'],'No confirmed decisions or commitments yet.');
   renderList('#meetingIntelligenceQuestions',snap.questions,['question','text'],['asked_by','why_open','follow_up'],'No unresolved questions identified yet.');
   renderList('#meetingIntelligenceRisks',snap.risks,['risk','blocker','text'],['impact','likelihood','owner'],'No grounded blockers or risks identified yet.');
@@ -66,12 +68,13 @@ function renderState(s){
   const bridge=$('#meetingTranscriptBridgeState');if(bridge&&Number(state.session_id||0)>0)bridge.textContent='VP3 Transcription #'+Number(state.session_id)+' · '+Number(state.word_count||0)+' words';
   [$('#meetingFullIntelligenceLink'),$('#meetingFullIntelligenceLinkSecondary')].forEach(full=>{if(full&&state.full_transcription_url)full.href=String(state.full_transcription_url);});
   const isFinal=['ended','processed'].includes(String(state.meeting_status||''));const minWords=isFinal?VP3_MIN_FINAL_WORDS:VP3_MIN_LIVE_WORDS;
-  const refresh=$('#meetingIntelligenceRefresh');if(refresh){refresh.disabled=analyzing||Number(state.word_count||0)<minWords;refresh.textContent=analyzing?'Analyzing…':(state.final_analysis_due?'Finalize intelligence':'Update intelligence');}
+  const refresh=$('#meetingIntelligenceRefresh');if(refresh){refresh.disabled=analyzing||Number(state.word_count||0)<minWords||state.hybrid_intelligence?.ready!==true;refresh.textContent=analyzing?'Analyzing…':(state.final_analysis_due?'Finalize intelligence':'Update intelligence');}
   const handoff=$('#meetingIntelligenceHandoff');if(handoff){handoff.disabled=!state.final_analysis_at||analyzing;handoff.textContent=state.handoff_at?'Sent to Agent Chat':'Send to Agent Chat';}
   if(state.last_error)setStatus(String(state.last_error),'error');
   else if(state.final_analysis_at)setStatus('Final meeting intelligence is current. Review it, then send it to Agent Chat when ready.','ready');
   else if(state.live_analysis_due)setStatus('New transcript material is ready for rolling intelligence.','ready');
   else if(Number(state.word_count||0)<minWords)setStatus(isFinal?'This meeting does not yet have enough final transcript context.':'Waiting for more transcript context.','waiting');
+  else if(state.hybrid_intelligence?.ready!==true)setStatus('The configured Meeting Intelligence route is not ready.','private');
   else setStatus('Meeting intelligence is current.','ready');
 }
 async function loadState(){
@@ -82,12 +85,22 @@ async function runAnalysis(mode='live',automatic=false){
   if(!boot.isOrganizer||analyzing)return false;const s=await loadState();if(!s)return false;
   const minWords=mode==='final'?VP3_MIN_FINAL_WORDS:VP3_MIN_LIVE_WORDS;
   if(Number(s.word_count||0)<minWords){if(!automatic)setStatus('The transcript needs more context before analysis.','waiting');return false;}
-  const policy=s.processing_policy||{};if(policy.cloud_ai_allowed!==true){setStatus(policy.requested_compute==='homeserver_only'?'HomeServer-only policy blocks VP3 Cloud AI for this meeting.':'Cloud AI processing is not authorized for this meeting.','private');return false;}
   if(mode==='live'&&!s.live_analysis_due&&automatic)return false;if(mode==='final'&&!s.final_analysis_due&&automatic)return false;
   const sessionId=Number(s.session_id||0),sourceHash=String(s.source_hash||'');if(!sessionId||!sourceHash)return false;
-  analyzing=true;renderState(s);setStatus(mode==='final'?'Finalizing meeting intelligence…':'Updating rolling meeting intelligence…','working');
-  const apps=mode==='final'?(s.analysis_apps_final||['basic','actions','decisions','qa','requirements','followup','risks','topics','crm']):(s.analysis_apps_live||['basic','actions','decisions','qa','followup','risks','topics']);
+  const policy=s.processing_policy||{};const hybrid=s.hybrid_intelligence||{};
+  if(hybrid.ready!==true){setStatus(hybrid.homeserver_required?'HomeServer private Meeting Intelligence is required but is not ready.':'No authorized Meeting Intelligence route is ready.','private');return false;}
+  analyzing=true;renderState(s);
+  const homeRoute=hybrid.route==='homeserver';
+  setStatus(mode==='final'?(homeRoute?'Finalizing privately on HomeServer…':'Finalizing meeting intelligence…'):(homeRoute?'Updating privately on HomeServer…':'Updating rolling meeting intelligence…'),'working');
   try{
+    if(homeRoute){
+      const recorded=await intelligence('run_hybrid_analysis',{mode:mode==='final'?'final':'live',source_hash:sourceHash});renderState(recorded.state||{});
+      setStatus(mode==='final'?'Final private meeting intelligence complete. Review it before sending it to Agent Chat.':'Private HomeServer meeting intelligence updated.','ready');return true;
+    }
+    // Retain the canonical cloud authorization check immediately before the
+    // browser invokes the existing Transcription Intelligence pipeline.
+    if(hybrid.route!=='cloud'||policy.cloud_ai_allowed!==true){setStatus(policy.requested_compute==='homeserver_only'?'HomeServer-only policy blocks VP3 Cloud AI for this meeting.':'Cloud AI processing is not authorized for this meeting.','private');return false;}
+    const apps=mode==='final'?(s.analysis_apps_final||['basic','actions','decisions','qa','requirements','followup','risks','topics','crm']):(s.analysis_apps_live||['basic','actions','decisions','qa','followup','risks','topics']);
     const payload={csrf_token:boot.csrf||'',action:'analyze',session_id:sessionId,mode:mode==='final'?'manual':'live',apps,workflow:{depth:'standard',web_research:false,live_analysis:mode!=='final'}};
     const res=await fetch(boot.transcriptionIntelligenceEndpoint,{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json'},credentials:'same-origin',cache:'no-store',body:JSON.stringify(payload)});
     let data={};try{data=await res.json();}catch(_){data={};}
