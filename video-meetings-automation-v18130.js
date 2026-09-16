@@ -70,6 +70,12 @@ function loadAgendaController(){
   boot.agendaEndpoint=boot.agendaEndpoint||automationEndpoint.replace(/video-meeting-automation\.php(?:\?.*)?$/,'video-meeting-agenda.php')||'/api/video-meeting-agenda.php';
   return new Promise((resolve,reject)=>{const script=document.createElement('script');script.src='video-meetings-agenda-v18140.js?v=18140';script.async=true;script.dataset.vp3MeetingAgenda='18140';script.onload=resolve;script.onerror=()=>reject(new Error('Meeting Agenda & Action Orchestration could not load.'));document.head.appendChild(script);});
 }
+function loadActionsController(){
+  if(window.VP3MeetingActions18150||document.querySelector('script[data-vp3-meeting-actions="18150"]'))return Promise.resolve();
+  const agendaEndpoint=String(boot.agendaEndpoint||'');
+  boot.actionsEndpoint=boot.actionsEndpoint||agendaEndpoint.replace(/video-meeting-agenda\.php(?:\?.*)?$/,'video-meeting-actions.php')||'/api/video-meeting-actions.php';
+  return new Promise((resolve,reject)=>{const script=document.createElement('script');script.src='video-meetings-actions-v18150.js?v=18150';script.async=true;script.dataset.vp3MeetingActions='18150';script.onload=resolve;script.onerror=()=>reject(new Error('Meeting Action Execution could not load.'));document.head.appendChild(script);});
+}
 async function load(){
   if(loading)return;loading=true;buildPane();installStyle();
   try{prep=await post();renderPane(prep);if(!boot.reviewOnly)renderLobby(prep);window.dispatchEvent(new CustomEvent('vp3:meeting-prep-ready',{detail:{prep}}));}
@@ -77,6 +83,6 @@ async function load(){
   finally{loading=false;}
 }
 load();
-loadAgendaController().catch(()=>{});
+loadAgendaController().then(loadActionsController).catch(()=>{});
 window.VP3MeetingAutomation18130={reload:load,getPrep:()=>prep,activate};
 })();
