@@ -51,6 +51,8 @@ assert.ok(ui.includes("tab.dataset.pane='outcomes'"),'18.16 must remain inside M
 assert.ok(ui.includes("pane.id='meetingPane-outcomes'"));
 assert.ok(ui.includes('Confirm resolved'));
 assert.ok(ui.includes('Monitoring never executes external actions.'));
+assert.ok(ui.includes("state?.meeting?.timezone||'UTC'"),'follow-through target editing must display the meeting timezone used by the server');
+assert.ok(ui.includes("'Target ('+timezone+')'"),'target control must visibly label its timezone');
 assert.ok(!ui.includes('innerHTML'),'18.16 UI must render server content safely');
 assert.ok(automationUi.includes('meetingPrepFollowthrough'),'Prep UI must display 18.16 context');
 assert.ok(automationUi.includes('loadFollowthroughController'),'organizer workspace must load 18.16 Outcomes');
