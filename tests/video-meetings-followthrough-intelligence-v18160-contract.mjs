@@ -23,6 +23,11 @@ assert.ok(p1.includes('user_calendar_event_v1300'),'calendar verification must r
 assert.ok(p1.includes('agent_workflow_row_v1400'),'Task verification must read canonical Agent workflow state');
 assert.ok(p1.includes('SELECT id FROM crm_activities'),'CRM verification must read canonical CRM state');
 assert.ok(p1.includes('video_meeting_action_complete_v18150'),'explicit resolution confirmation must reuse Phase 18.15 completion');
+assert.ok(p1.includes('video_meeting_action_refresh_task_v18150'),'Task verification must synchronize completed canonical workflow state back to Phase 18.15');
+assert.ok(p1.includes('blocked by its canonical result and cannot be confirmed resolved yet'),'blocked canonical outcomes must not be overridable through a crafted confirm request');
+assert.ok(p1.includes('Reopen this follow-through monitor before confirming it resolved.'),'dismissed monitors must not trigger completion side effects');
+assert.ok(p1.includes('Verified follow-through history cannot be dismissed.'),'verified audit history must remain durable');
+assert.ok(p1.includes('Verified or dismissed follow-through items do not accept a new target.'),'closed monitor targets must be immutable');
 for(const forbidden of ['user_calendar_automation_create_event_v1300','crm_v180_activity(','agent_workflow_create_from_priority_v1400','agent_appointment_lifecycle_email_v700(','mail('])assert.ok(!p1.includes(forbidden),`monitoring must not execute external writer ${forbidden}`);
 
 assert.ok(p2.includes('SELECT display_name FROM video_meeting_participants'),'prep relevance may use participant display names');
