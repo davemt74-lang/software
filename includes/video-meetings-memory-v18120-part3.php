@@ -85,6 +85,7 @@ function video_meeting_memory_agent_context_v18120(PDO $pdo,int $ownerUserId,str
     $rows=[];
     foreach((array)($search['results']??[]) as $row){
         if(!is_array($row))continue;$rows[]=[
+            'meeting_id'=>(int)$row['meeting_id'],'meeting_public_id'=>(string)$row['meeting_public_id'],
             'meeting_title'=>(string)$row['meeting_title'],'meeting_when_utc'=>(string)$row['meeting_when_utc'],'category'=>(string)$row['category'],
             'text'=>(string)$row['text'],'owner'=>(string)$row['owner'],'due_date'=>(string)$row['due_date'],'status'=>(string)$row['status'],
             'review_path'=>(string)$row['review_path'],'provenance'=>$row['provenance'],
@@ -94,4 +95,28 @@ function video_meeting_memory_agent_context_v18120(PDO $pdo,int $ownerUserId,str
         'version'=>'v18.12','relevant'=>true,'source'=>'vp3_meeting_memory','results'=>$rows,
         'instructions'=>'These are source-backed finalized meeting-memory excerpts. Distinguish pending, failed and verified follow-through exactly as labeled. Do not claim a pending item was completed. Cite the meeting title/date or review path when relying on a result.',
     ];
+}
+
+function video_meeting_memory_chat_sources_v18120(array $memory): array
+{
+    if(empty($memory['relevant'])||empty($memory['results'])||!is_array($memory['results']))return [];
+    $sources=[];$seen=[];
+    foreach($memory['results'] as $row){
+        if(!is_array($row))continue;
+        $meetingId=max(0,(int)($row['meeting_id']??0));$publicId=trim((string)($row['meeting_public_id']??''));
+        $sourceHash=trim((string)($row['provenance']['source_hash']??''));
+        if($meetingId<1||$publicId===''||$sourceHash==='')continue;
+        $key=$meetingId.'|'.$sourceHash;if(isset($seen[$key]))continue;$seen[$key]=true;
+        $path=trim((string)($row['review_path']??''));
+        if($path===''||!str_starts_with($path,'/meeting.php?'))$path='/meeting.php?meeting='.rawurlencode($publicId).'&review=1';
+        $when=video_meeting_memory_text_v18120($row['meeting_when_utc']??'',40);
+        $title=video_meeting_memory_text_v18120($row['meeting_title']??'Meeting',190);
+        $sources[]=[
+            'source'=>'video_meeting_memory:'.$meetingId.':'.substr($sourceHash,0,16),
+            'title'=>$title.($when!==''?' · '.$when:''),
+            'url'=>url($path),
+        ];
+        if(count($sources)>=6)break;
+    }
+    return $sources;
 }
