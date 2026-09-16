@@ -56,6 +56,7 @@ function video_meeting_action_save_draft_v18150(PDO $pdo,array $meeting,array $u
     $ownerUserId=(int)($user['id']??0);$execution=video_meeting_action_row_v18150($pdo,$ownerUserId,$executionId);
     if(!$execution||(int)$execution['meeting_id']!==(int)$meeting['id'])throw new RuntimeException('Meeting Action draft not found.');
     if(!in_array((string)$execution['status'],['needs_review','failed'],true))throw new RuntimeException('Only an unapproved or failed action draft can be edited.');
+    if((string)$execution['status']==='failed'&&(string)$execution['error_class']==='delivery_uncertain')throw new RuntimeException('This email delivery is uncertain and cannot be edited or retried automatically.');
     $item=video_meeting_action_item_v18150($pdo,$meeting,$ownerUserId,(int)$execution['agenda_item_id']);$kind=video_meeting_action_require_eligible_v18150($item);
     if($kind!==(string)$execution['action_kind'])throw new RuntimeException('The agenda action type changed. Discard this draft and prepare it again.');
     $draft=video_meeting_action_sanitize_draft_v18150($kind,$input);$json=video_meeting_action_json_v18150($draft);$hash=hash('sha256',$json);$from=(string)$execution['status'];
@@ -70,6 +71,7 @@ function video_meeting_action_approve_v18150(PDO $pdo,array $meeting,array $user
     $ownerUserId=(int)($user['id']??0);$execution=video_meeting_action_row_v18150($pdo,$ownerUserId,$executionId);
     if(!$execution||(int)$execution['meeting_id']!==(int)$meeting['id'])throw new RuntimeException('Meeting Action draft not found.');
     if(!in_array((string)$execution['status'],['needs_review','failed'],true))throw new RuntimeException('This Meeting Action is not waiting for approval.');
+    if((string)$execution['status']==='failed'&&(string)$execution['error_class']==='delivery_uncertain')throw new RuntimeException('This email delivery is uncertain and cannot be approved or retried automatically.');
     $item=video_meeting_action_item_v18150($pdo,$meeting,$ownerUserId,(int)$execution['agenda_item_id']);$kind=video_meeting_action_require_eligible_v18150($item);
     if($kind!==(string)$execution['action_kind'])throw new RuntimeException('The agenda action type changed. Discard this draft and prepare it again.');
     $draft=video_meeting_action_decode_v18150($execution['draft_json']??'');video_meeting_action_validate_draft_v18150($pdo,$meeting,$kind,$draft,$user);
