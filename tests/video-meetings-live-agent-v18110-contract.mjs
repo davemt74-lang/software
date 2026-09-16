@@ -33,7 +33,8 @@ assert.ok(live.includes('Meeting Agent mode is off for this meeting.'));
 assert.ok(live.includes('vp3_agent_runtime_plan_v420'));
 assert.ok(live.includes('vp3_agent_runtime_public_plan_v420'));
 assert.ok(live.includes('vp3_agent_runtime_block_message_v420'));
-assert.ok(live.includes("(string)($plan['route']??'')!=='vp3_cloud'"));
+assert.ok(live.includes("if($route==='homeserver')"));
+assert.ok(live.includes("elseif($route==='vp3_cloud')"));
 assert.ok(live.includes("in_array($provider,['openai','anthropic'],true)"));
 assert.ok(live.includes('ai_provider_ready($provider)'));
 assert.ok(live.includes('chat_remote_answer($question,$history,$context,$user)'));
@@ -44,24 +45,45 @@ assert.ok(live.includes("'source'=>'video_meeting:'"));
 assert.ok(!live.includes('chat_generate_answer_v105'));
 assert.ok(!live.includes('agent_surface_v131_enrich'));
 
-// Meeting privacy always wins. HomeServer-routed live generation is blocked until
-// VP3 has a verified HomeServer chat-generation executor; no Cloud fallback leaks meeting content.
-for(const reason of ['meeting_policy_unresolved','meeting_homeserver_live_agent_unavailable','homeserver_live_agent_executor_unavailable','meeting_policy_unavailable'])assert.ok(live.includes(reason),`missing route guard ${reason}`);
+// Meeting privacy wins over account/Agent preference. Private meetings execute
+// through existing HomeServer agent.chat with cloud delegation and fallback off.
+assert.ok(live.includes('video_meeting_live_agent_homeserver_executor_ready_v18110'));
+assert.ok(live.includes('homeserver_agent_v018_credentials'));
+assert.ok(live.includes('homeserver_vp3_remote_operation'));
+assert.ok(live.includes("'agent.chat'"));
+assert.ok(live.includes("'cloud_allowed'=>$cloudAllowed"));
+assert.ok(live.includes("if(!$cloudAllowed&&$compute==='vp3_cloud')"));
+assert.ok(live.includes("$plan['route']=$ready?'homeserver':'blocked'"));
+for(const reason of ['meeting_policy_unresolved','meeting_homeserver_unavailable','homeserver_live_agent_executor_unavailable','meeting_policy_unavailable'])assert.ok(live.includes(reason),`missing route guard ${reason}`);
 assert.ok(live.includes("$plan['allow_vp3_fallback']=false"));
 assert.ok(live.includes("$plan['fallback_target']='none'"));
 assert.ok(live.includes("$plan['homeserver_cloud_allowed']=false"));
-assert.ok(live.includes("'homeserver_live_generation_supported'=>false"));
-assert.ok(ui.includes('HomeServer-routed live generation stays blocked'));
-assert.ok(ui.includes('live generation remains private/blocked'));
+assert.ok(live.includes("'homeserver_live_generation_supported'=>true"));
+
+// HomeServer turn content is browser-ephemeral: Cloud stores opaque continuity
+// and idempotency receipts only, never the private question/answer text.
+assert.ok(live.includes("'receipts'=>[]"));
+assert.ok(live.includes("'homeserver_conversation_id'=>''"));
+assert.ok(live.includes("'ephemeral'=>$isHome"));
+assert.ok(live.includes("if($isHome)"));
+assert.ok(live.includes("$state['receipts']=array_slice($receipts,-80)"));
+assert.ok(live.includes("$state['homeserver_conversation_id']=$remoteId"));
+assert.ok(live.includes("'homeserver_turns_ephemeral'=>true"));
+assert.ok(ui.includes('ephemeralTurns=[]'));
+assert.ok(ui.includes("data.turn?.ephemeral"));
+assert.ok(ui.includes('private · not stored in VP3 Cloud'));
+assert.ok(ui.includes('private turns stay on this page only'));
 
 // Live turns are advisory/read-only; execution stays in the reviewed 18.10 queue.
 assert.ok(live.includes("'no_direct_side_effects'=>true"));
 assert.ok(live.includes('Post-Meeting Action Queue'));
 for(const forbidden of ['agent_tool_execute_query','agent_brain_archive_and_parse','crm_v180_activity(','crm_v180_create_task(','user_calendar_automation_create_event_v1300(','mail(','agent_proactive_objective_record_shown_v178'])assert.ok(!live.includes(forbidden),`live turn must not execute ${forbidden}`);
 
-// Stable session/turn identity and retries cannot duplicate a live turn.
+// Stable session/turn identity and retries cannot duplicate either durable or private turns.
 assert.ok(live.includes("'session_id'=>'mla-'"));
 assert.ok(live.includes("hash_equals((string)($existing['client_turn_id']??''),$clientTurnId)"));
+assert.ok(live.includes('video_meeting_live_agent_private_receipt_v18110'));
+assert.ok(live.includes("hash_equals((string)($receipt['client_turn_id']??''),$clientTurnId)"));
 assert.ok(live.includes("'id'=>'mlat-'"));
 assert.ok(live.includes("$sessionId.'|'.$clientTurnId"));
 assert.ok(live.includes("'idempotent'=>true"));
@@ -70,6 +92,7 @@ assert.ok(live.includes("'idempotent'=>true"));
 assert.ok(live.includes('video_meeting_intelligence_public_state_v1890'));
 for(const allowed of ['summary','decisions','actions','questions','objectives','source_hash','word_count'])assert.ok(live.includes(`'${allowed}'`));
 for(const forbidden of ['relay_credentials','api_secret','provider_secret','raw_transcript','source_excerpt'])assert.ok(!live.includes(forbidden),`private field leaked: ${forbidden}`);
+assert.ok(live.includes('Current sanitized live meeting and Meeting Intelligence context.'));
 
 // Existing LiveKit worker is reused, but speech is not falsely advertised.
 assert.ok(media.includes('AgentDispatchService'));
