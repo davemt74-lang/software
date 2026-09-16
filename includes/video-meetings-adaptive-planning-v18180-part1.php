@@ -59,6 +59,7 @@ function video_meeting_adaptive_planning_item_v18180(PDO $pdo,array $meeting,int
     if($itemId<1)throw new RuntimeException('Agenda item not found.');
     $s=$pdo->prepare('SELECT * FROM video_meeting_agenda_items WHERE id=? AND meeting_id=? AND owner_user_id=? LIMIT 1');$s->execute([$itemId,(int)$meeting['id'],$ownerUserId]);$item=$s->fetch();
     if(!is_array($item))throw new RuntimeException('Agenda item not found.');
+    if((string)$item['status']==='skipped')throw new RuntimeException('Skipped follow-ups do not have an active follow-through plan.');
     if((string)$item['status']!=='follow_up'&&(string)$item['item_type']!=='follow_up')throw new RuntimeException('Adaptive follow-through planning is available only for follow-up agenda items.');
     return $item;
 }
