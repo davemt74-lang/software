@@ -48,14 +48,14 @@ function video_meeting_live_agent_runtime_plan_v18110(PDO $pdo,array $meeting,ar
 function video_meeting_live_agent_capability_v18110(PDO $pdo,array $meeting,array $user): array
 {
     $plan=video_meeting_live_agent_runtime_plan_v18110($pdo,$meeting,$user);
-    $live=(string)($meeting['status']??'')==='live';
+    $live=(string)($meeting['status']??'')==='live';$enabled=(string)($meeting['agent_mode']??'off')!=='off';
     $chatAllowed=function_exists('has_permission')?has_permission('chat.access',$user):true;
     $runtimeReady=function_exists('chat_generate_answer_v105')||function_exists('chat_generate_answer');
     $cfg=video_meeting_livekit_config_v1800();
     $mediaWorker=video_meeting_livekit_ready_v1800()&&trim((string)($cfg['agent_name']??''))!=='';
     return [
-        'available'=>$live&&$chatAllowed&&$runtimeReady&&empty($plan['blocked']),
-        'meeting_live'=>$live,'chat_allowed'=>$chatAllowed,'runtime_ready'=>$runtimeReady,
+        'available'=>$live&&$enabled&&$chatAllowed&&$runtimeReady&&empty($plan['blocked']),
+        'meeting_live'=>$live,'agent_enabled'=>$enabled,'chat_allowed'=>$chatAllowed,'runtime_ready'=>$runtimeReady,
         'interaction_mode'=>'text','spoken_available'=>false,'media_worker_available'=>$mediaWorker,
         'agent_id'=>max(0,(int)($meeting['organizer_agent_id']??0)),
         'agent_name'=>function_exists('video_meeting_agent_name_v1800')?video_meeting_agent_name_v1800($pdo,$meeting):'VP3 Agent',
