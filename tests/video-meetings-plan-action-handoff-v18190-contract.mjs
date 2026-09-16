@@ -4,6 +4,8 @@ import fs from 'node:fs';
 const read=p=>fs.readFileSync(p,'utf8');
 const service=read('includes/video-meetings-plan-action-handoff-v18190.php');
 const guard=read('includes/video-meetings-plan-action-guard-v18190.php');
+const actionsMaster=read('includes/video-meetings-actions-v18150.php');
+const actionsPart3=read('includes/video-meetings-actions-v18150-part3.php');
 const api=read('api/video-meeting-plan-action-handoff.php');
 const actionsApi=read('api/video-meeting-actions.php');
 const planningUi=read('video-meetings-adaptive-planning-v18180.js');
@@ -30,10 +32,15 @@ assert.ok(guard.includes('hash_equals')&&guard.includes('plan_snapshot_hash'),'g
 assert.ok(guard.includes('video_meeting_plan_action_bound_draft_hash_v18190'),'guard must also compare plan-bound action draft fields');
 for(const key of ["'task'=>['description'","'calendar'=>['date'","'crm'=>['summary'","'email'=>['body'"])assert.ok(guard.includes(key),`missing bound draft projection ${key}`);
 assert.ok(!guard.includes("recipient_email")&&!guard.includes("lead_id")&&!guard.includes("'title'=>")&&!guard.includes("'priority'=>")&&!guard.includes("'location'=>"),'non-plan action fields must not cause plan drift');
+assert.ok(guard.includes("$pdo->inTransaction()?' FOR UPDATE':''"),'execution guard must lock handoff and plan rows inside a transaction');
+assert.ok(guard.match(/LIMIT 1'\.\$lock/g)?.length>=2,'both handoff and plan reads must take the transaction lock');
 assert.ok(guard.includes("status='stale'"),'plan or plan-bound draft drift must become stale');
 assert.ok(guard.includes('Plan-bound fields in the Meeting Action draft changed after handoff.'),'draft drift needs an explicit reason');
 assert.ok(guard.includes('Refresh the action from the current plan'),'stale handoff must block downstream action');
-assert.ok(actionsApi.includes("in_array($action,['approve','execute','retry'],true)"),'approve, execute, and retry must all pass the drift guard');
+assert.ok(actionsMaster.includes('video-meetings-plan-action-guard-v18190.php'),'canonical Meeting Actions must load the drift guard when 18.19 is present');
+assert.ok(actionsPart3.includes("video_meeting_plan_action_guard_execution_v18190($pdo,$execution,'execution')"),'canonical execution transaction must recheck handoff drift');
+assert.ok(actionsPart3.indexOf("video_meeting_plan_action_guard_execution_v18190($pdo,$execution,'execution')")<actionsPart3.indexOf("SET status='executing'"),'drift must be checked before the action becomes executing');
+assert.ok(actionsApi.includes("in_array($action,['approve','execute','retry'],true)"),'approve, execute, and retry must all pass the API drift guard');
 assert.ok(actionsApi.includes('video_meeting_plan_action_guard_execution_v18190'),'Meeting Actions API must enforce plan drift before approval/execution/retry');
 
 assert.ok(api.includes('REQUEST_METHOD')&&api.includes("'POST'"),'handoff API must be POST-only');
