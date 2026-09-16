@@ -108,6 +108,9 @@ function video_meeting_intelligence_hybrid_route_v1890(PDO $pdo,array $meeting,a
     if(!$requiresHome&&$cloudAllowed){
         return array_replace($base,['route'=>'cloud','status'=>'ready','reason_code'=>'cloud_authorized','ready'=>true]);
     }
+    if(!$requiresHome){
+        return array_replace($base,['route'=>'blocked','status'=>'blocked','reason_code'=>'explicit_cloud_route_not_authorized']);
+    }
 
     // Never probe another user's private HomeServer from attendee/guest context.
     $viewer=function_exists('current_user')?current_user():null;
@@ -144,9 +147,6 @@ function video_meeting_intelligence_hybrid_public_route_v1890(array $route): arr
 
 function video_meeting_intelligence_hybrid_validate_response_v1890(array $result,array $meeting,string $sourceHash,string $mode,string $idempotencyKey): array
 {
-    // Some relay implementations expose the HomeServer dispatch envelope while
-    // others return its payload directly. Unwrap exactly one authenticated
-    // success envelope, then validate every binding before accepting output.
     if(($result['ok']??null)===true&&is_array($result['payload']??null))$result=$result['payload'];
     $checks=[
         [(string)($result['contract']??''),VP3_VIDEO_MEETINGS_INTELLIGENCE_HOMESERVER_CONTRACT_V1890,'contract'],
