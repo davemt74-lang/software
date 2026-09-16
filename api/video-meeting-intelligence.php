@@ -1,13 +1,14 @@
 <?php
 declare(strict_types=1);
 require __DIR__.'/../includes/bootstrap.php';
+require_once __DIR__.'/../includes/video-meetings-intelligence-handoff-v1890.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store, private');
 
 $reply=static function(bool $ok,array $data=[],int $status=200): never {
     http_response_code($status);
-    echo json_encode(['ok'=>$ok,'build'=>VP3_VIDEO_MEETINGS_INTELLIGENCE_V1820]+$data,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
+    echo json_encode(['ok'=>$ok,'build'=>VP3_VIDEO_MEETINGS_INTELLIGENCE_HYBRID_V1890]+$data,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
     exit;
 };
 if(($_SERVER['REQUEST_METHOD']??'')!=='POST')$reply(false,['error'=>'POST required.'],405);
@@ -28,7 +29,7 @@ $action=strtolower(trim((string)($_POST['action']??'state')));
 
 try{
     if($action==='state'){
-        $state=video_meeting_intelligence_public_state_v1820($pdo,$meeting);
+        $state=video_meeting_intelligence_public_state_v1890($pdo,$meeting);
         $state['analysis_apps_live']=['basic','actions','decisions','qa','followup','risks','topics'];
         $state['analysis_apps_final']=['basic','actions','decisions','qa','requirements','followup','risks','topics','crm'];
         $reply(true,['state'=>$state]);
@@ -47,12 +48,22 @@ try{
         );
         $reply(true,['objectives'=>$objectives]);
     }
+    if($action==='run_hybrid_analysis'){
+        $mode=strtolower(trim((string)($_POST['mode']??'live')))==='final'?'final':'live';
+        $sourceHash=strtolower(trim((string)($_POST['source_hash']??'')));
+        $state=video_meeting_intelligence_run_homeserver_v1890($pdo,$meeting,$mode,$sourceHash);
+        $reply(true,['state'=>$state,'route'=>'homeserver']);
+    }
     if($action==='record_analysis'){
         $mode=strtolower(trim((string)($_POST['mode']??'live')))==='final'?'final':'live';
         if($mode==='final'&&!in_array((string)$meeting['status'],['ended','processed'],true)){
             throw new RuntimeException('Final meeting intelligence is only available after the meeting ends.');
         }
         $source=video_meeting_intelligence_source_v1820($pdo,$meeting);
+        $route=video_meeting_intelligence_hybrid_route_v1890($pdo,$meeting,$source,false);
+        if(($route['route']??'')!=='cloud'||empty($route['ready'])){
+            throw new RuntimeException('VP3 Cloud Meeting Intelligence is not authorized for this meeting.');
+        }
         $currentHash=(string)($source['source_hash']??'');$submittedHash=trim((string)($_POST['source_hash']??''));
         if($currentHash===''||$submittedHash===''||!hash_equals($currentHash,$submittedHash)){
             throw new RuntimeException('The meeting transcript changed while intelligence was running. Refresh and try again.');
@@ -64,17 +75,17 @@ try{
             if(is_array($module)&&function_exists('transcription_app_has_result_v300')&&transcription_app_has_result_v300($module['result']??null)){$hasResult=true;break;}
         }
         if(!$hasResult)throw new RuntimeException('Canonical Transcription Intelligence returned no current meeting analysis.');
-        $state=video_meeting_intelligence_record_analysis_v1820($pdo,$meeting,$mode,$submittedHash);
-        $reply(true,['state'=>$state]);
+        video_meeting_intelligence_record_analysis_v1820($pdo,$meeting,$mode,$submittedHash);
+        $reply(true,['state'=>video_meeting_intelligence_public_state_v1890($pdo,$meeting),'route'=>'cloud']);
     }
     if($action==='handoff'){
         if(!in_array((string)$meeting['status'],['ended','processed'],true))throw new RuntimeException('End the meeting before publishing final intelligence to Agent Chat.');
-        $review=video_meeting_intelligence_public_state_v1820($pdo,$meeting);
+        $review=video_meeting_intelligence_public_state_v1890($pdo,$meeting);
         if(empty($review['final_analysis_at'])||!empty($review['final_analysis_due'])){
             throw new RuntimeException('Finalize and review the current meeting intelligence before sending it to Agent Chat.');
         }
-        $result=video_meeting_intelligence_handoff_v1820($pdo,$meeting,$user);
-        $reply(true,['handoff'=>$result,'state'=>video_meeting_intelligence_public_state_v1820($pdo,$meeting)]);
+        $result=video_meeting_intelligence_handoff_v1890($pdo,$meeting,$user);
+        $reply(true,['handoff'=>$result,'state'=>video_meeting_intelligence_public_state_v1890($pdo,$meeting)]);
     }
     $reply(false,['error'=>'Unknown Meeting Intelligence action.'],404);
 }catch(Throwable $e){
