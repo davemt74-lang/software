@@ -92,9 +92,10 @@ assert.ok(ui.includes('textContent'));
 assert.ok(!ui.includes('innerHTML'));
 assert.ok(!ui.toLowerCase().includes('dashboard'));
 
-// Agent Chat receives upcoming organizer-owned agenda state through the already-integrated meeting_memory context.
+// Agent Chat receives active/upcoming organizer-owned agenda state through existing meeting_memory context.
 assert.ok(memory.includes('video_meeting_memory_agenda_query_relevant_v18140'));
 assert.ok(memory.includes('video_meeting_memory_upcoming_agenda_v18140'));
+assert.ok(memory.includes("status NOT IN ('cancelled','ended','processed')"));
 assert.ok(memory.includes("'upcoming_agendas'=>$agendas"));
 assert.ok(memory.includes("'agenda_version'=>'v18.14'"));
 assert.ok(memory.includes('Do not claim a pending item was completed.'));
