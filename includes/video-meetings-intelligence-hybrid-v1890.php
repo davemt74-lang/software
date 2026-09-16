@@ -100,7 +100,7 @@ function video_meeting_intelligence_hybrid_route_v1890(PDO $pdo,array $meeting,a
         'requested_compute'=>$requested,'policy_resolved'=>$resolved,'cloud_allowed'=>$cloudAllowed,
         'homeserver_required'=>false,'homeserver_available'=>false,'capability_advertised'=>false,'ready'=>false,
     ];
-    if(empty($meeting['transcription_enabled']))return $base+['status'=>'off','reason_code'=>'transcription_disabled'];
+    if(empty($meeting['transcription_enabled']))return array_replace($base,['status'=>'off','reason_code'=>'transcription_disabled']);
     if(!$resolved)return array_replace($base,['status'=>'pending','reason_code'=>'policy_pending']);
 
     $requiresHome=video_meeting_intelligence_hybrid_policy_requires_home_v1890($policy);
