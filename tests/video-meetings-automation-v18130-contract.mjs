@@ -61,7 +61,10 @@ for(const forbidden of ['agent_brain_archive_and_parse','crm_v180_activity(','cr
   assert.ok(!api.includes(forbidden),`meeting prep API must not execute ${forbidden}`);
 }
 
-// API is authenticated, CSRF protected, owner-bound and POST/body based.
+// API is POST-only, authenticated, CSRF protected, owner-bound and body based.
+assert.ok(api.includes("strtoupper((string)($_SERVER['REQUEST_METHOD']??''))!=='POST'"));
+assert.ok(api.includes("header('Allow: POST')"));
+assert.ok(api.includes('http_response_code(405)'));
 assert.ok(api.includes('current_user()'));
 assert.ok(api.includes('hash_equals(csrf_token(),$csrf)'));
 assert.ok(api.includes("$action!=='prep'"));
