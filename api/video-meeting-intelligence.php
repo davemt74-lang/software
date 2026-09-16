@@ -75,6 +75,11 @@ try{
             if(is_array($module)&&function_exists('transcription_app_has_result_v300')&&transcription_app_has_result_v300($module['result']??null)){$hasResult=true;break;}
         }
         if(!$hasResult)throw new RuntimeException('Canonical Transcription Intelligence returned no current meeting analysis.');
+        // A verified cloud analysis for this exact transcript replaces any prior
+        // sanitized HomeServer projection. Do not let stale private output mask
+        // the route the organizer actually selected for the current source hash.
+        $pdo->prepare('DELETE FROM video_meeting_artifacts WHERE meeting_id=? AND app_id=? AND source_hash=?')
+            ->execute([(int)$meeting['id'],VP3_VIDEO_MEETINGS_INTELLIGENCE_HOMESERVER_APP_V1890,$submittedHash]);
         video_meeting_intelligence_record_analysis_v1820($pdo,$meeting,$mode,$submittedHash);
         $reply(true,['state'=>video_meeting_intelligence_public_state_v1890($pdo,$meeting),'route'=>'cloud']);
     }
