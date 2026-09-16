@@ -2,6 +2,7 @@
 declare(strict_types=1);
 require dirname(__DIR__).'/includes/bootstrap.php';
 require_once dirname(__DIR__).'/includes/video-meetings-actions-v18150.php';
+require_once dirname(__DIR__).'/includes/video-meetings-plan-action-guard-v18190.php';
 header('Content-Type: application/json; charset=UTF-8');
 header('Cache-Control: no-store');
 
@@ -19,6 +20,10 @@ try{
     if($action==='state'){echo json_encode(['ok'=>true,'actions'=>video_meeting_action_state_v18150($pdo,$meeting,$user)],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);exit;}
     if($action==='prepare'){$execution=video_meeting_action_prepare_v18150($pdo,$meeting,$user,(int)($input['item_id']??0));echo json_encode(['ok'=>true,'execution'=>$execution],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);exit;}
     if($action==='save_draft'){$draft=is_array($input['draft']??null)?$input['draft']:[];$execution=video_meeting_action_save_draft_v18150($pdo,$meeting,$user,(int)($input['execution_id']??0),$draft);echo json_encode(['ok'=>true,'execution'=>$execution],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);exit;}
+    if(in_array($action,['approve','execute','retry'],true)){
+        $executionId=(int)($input['execution_id']??0);$linked=video_meeting_action_row_v18150($pdo,$userId,$executionId);
+        if($linked&&(int)$linked['meeting_id']===(int)$meeting['id'])video_meeting_plan_action_guard_execution_v18190($pdo,$linked,$action==='approve'?'approval':$action);
+    }
     if($action==='approve'){$execution=video_meeting_action_approve_v18150($pdo,$meeting,$user,(int)($input['execution_id']??0));echo json_encode(['ok'=>true,'execution'=>$execution],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);exit;}
     if($action==='execute'){$execution=video_meeting_action_execute_v18150($pdo,$meeting,$user,(int)($input['execution_id']??0));echo json_encode(['ok'=>true,'execution'=>$execution],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);exit;}
     if($action==='reopen'){$execution=video_meeting_action_reopen_v18150($pdo,$meeting,$user,(int)($input['execution_id']??0));echo json_encode(['ok'=>true,'execution'=>$execution],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);exit;}
