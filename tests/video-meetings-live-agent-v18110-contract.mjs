@@ -55,6 +55,15 @@ assert.ok(live.includes('video_meeting_intelligence_public_state_v1890'));
 for(const allowed of ['summary','decisions','actions','questions','objectives','source_hash','word_count'])assert.ok(live.includes(`'${allowed}'`));
 for(const forbidden of ['relay_credentials','api_secret','provider_secret','raw_transcript','source_excerpt'])assert.ok(!live.includes(forbidden),`private field leaked: ${forbidden}`);
 
+// HomeServer-only turns remain ephemeral: VP3 Cloud stores the turn identity only.
+assert.ok(live.includes("'private_compute'=>$privateCompute"));
+assert.ok(live.includes("$plan['effective_preference']??'')==='homeserver_only'"));
+assert.ok(live.includes("$persisted['question']=''"));
+assert.ok(live.includes("$persisted['answer']=''"));
+assert.ok(live.includes("$persisted['sources']=[]"));
+assert.ok(ui.includes('private · ephemeral'));
+assert.ok(ui.includes('HomeServer-only replies remain in this browser session'));
+
 // Existing LiveKit worker is reused, but speech is not falsely advertised.
 assert.ok(media.includes('AgentDispatchService'));
 assert.ok(live.includes('video_meeting_livekit_agent_dispatch_v1800'));
