@@ -38,10 +38,11 @@ function video_meeting_plan_action_bound_draft_hash_v18190(array $execution): st
 function video_meeting_plan_action_guard_execution_v18190(PDO $pdo,array $execution,string $operation): void
 {
     if(!table_exists('video_meeting_plan_action_handoffs')||!table_exists('video_meeting_followthrough_plans'))return;
-    $stmt=$pdo->prepare('SELECT * FROM video_meeting_plan_action_handoffs WHERE action_execution_id=? AND owner_user_id=? LIMIT 1');
+    $lock=$pdo->inTransaction()?' FOR UPDATE':'';
+    $stmt=$pdo->prepare('SELECT * FROM video_meeting_plan_action_handoffs WHERE action_execution_id=? AND owner_user_id=? LIMIT 1'.$lock);
     $stmt->execute([(int)($execution['id']??0),(int)($execution['owner_user_id']??0)]);$handoff=$stmt->fetch();
     if(!is_array($handoff))return;
-    $planStmt=$pdo->prepare('SELECT * FROM video_meeting_followthrough_plans WHERE id=? AND owner_user_id=? LIMIT 1');
+    $planStmt=$pdo->prepare('SELECT * FROM video_meeting_followthrough_plans WHERE id=? AND owner_user_id=? LIMIT 1'.$lock);
     $planStmt->execute([(int)$handoff['plan_id'],(int)$execution['owner_user_id']]);$plan=$planStmt->fetch();
     $planStale=!is_array($plan)||(string)($plan['readiness']??'')!=='ready';
     if(!$planStale)$planStale=!hash_equals((string)$handoff['plan_snapshot_hash'],video_meeting_plan_action_snapshot_hash_v18190(video_meeting_plan_action_snapshot_from_row_v18190($plan)));
