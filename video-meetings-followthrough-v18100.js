@@ -66,9 +66,14 @@ async function queueRequest(action,extra={}){
   catch(err){ctx.setStatus(err.message||'Post-meeting action could not be completed.','error');}
   finally{queueBusy=false;}
 }
+function loadLiveAgentController(){
+  if(!ctx||ctx.boot.reviewOnly||window.VP3MeetingLiveAgent18110)return;
+  const script=document.createElement('script');script.src='video-meetings-live-agent-v18110.js?v=18110';script.async=true;
+  script.onload=()=>window.VP3MeetingLiveAgent18110?.init?.();script.onerror=()=>ctx.setStatus('Live Meeting Agent UI could not load.','error');document.head.appendChild(script);
+}
 
 window.VP3MeetingFollowthrough18100={
-  init(context){ctx=context;installFollowthroughUi();const current=ctx.getState();if(current?.post_meeting_queue)renderQueue(current.post_meeting_queue);},
+  init(context){ctx=context;installFollowthroughUi();const current=ctx.getState();if(current?.post_meeting_queue)renderQueue(current.post_meeting_queue);loadLiveAgentController();},
   render(queue){if(ctx)renderQueue(queue);},
   activatePane,
 };
