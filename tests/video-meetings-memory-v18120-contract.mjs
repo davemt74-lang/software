@@ -26,10 +26,10 @@ assert.ok(p3.includes('VP3_VIDEO_MEETINGS_MEMORY_SCAN_LIMIT_V18120'));
 assert.ok(p3.includes('VP3_VIDEO_MEETINGS_MEMORY_RESULT_LIMIT_V18120'));
 assert.ok(p3.includes('VP3_VIDEO_MEETINGS_MEMORY_CURSOR_LIMIT_V18120'));
 assert.ok(p3.includes('usort($matches'));
-assert.ok(p3.includes("'last month'"));
-assert.ok(p3.includes("'last week'"));
-assert.ok(p3.includes("'this week'"));
-assert.ok(p3.includes("'this month'"));
+assert.ok(p1.includes("'last month'"));
+assert.ok(p1.includes("'last week'"));
+assert.ok(p1.includes("'this week'"));
+assert.ok(p1.includes("'this month'"));
 for(const intent of ['decision','followthrough','discussion','participant'])assert.ok(p3.includes(`'${intent}'`),`missing search intent ${intent}`);
 
 // Only current finalized source hashes can become memory.
@@ -78,10 +78,10 @@ assert.ok(!api.includes('$_GET'));
 assert.ok(meeting.includes("'memoryEndpoint'=>url('/api/video-meeting-memory.php')"));
 assert.equal((meeting.match(/video-meetings-intelligence-v1820\.js\?v=18120/g)||[]).length,2);
 assert.ok(bridge.includes('video-meetings-memory-v18120.js?v=18120'));
-assert.ok(bridge.includes('VP3MeetingMemory18120'));
+assert.ok(bridge.includes("dataset.vp3MeetingMemory='18120'"));
 assert.ok(ui.includes("pane.id='meetingPane-memory'"));
 assert.ok(ui.includes("tab.dataset.pane='memory'"));
-assert.ok(ui.includes("textContent"));
+assert.ok(ui.includes('textContent'));
 assert.ok(!ui.includes('innerHTML'));
 assert.ok(!ui.includes('dashboard'));
 assert.ok(ui.includes('safeHref'));
