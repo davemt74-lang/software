@@ -30,12 +30,12 @@ assert.ok(p2.includes("'source'=>'meeting_agenda_external'"), 'Task action must 
 assert.ok(p2.includes("empty($run['requires_approval'])"), 'Task action must verify canonical approval is attached');
 assert.ok(p2.includes('meeting_action_reference'), 'CRM execution must carry a durable meeting-action reference');
 assert.ok(p2.includes("user_calendar_automation_create_event_v1300($pdo,$user") && p2.includes("],$ref);"), 'calendar execution must pass a stable source reference into canonical calendar automation');
+assert.ok(p2.includes('cannot be edited or retried automatically'), 'uncertain email delivery must block edit/reapproval paths');
 
 assert.ok(p3.includes("status='executing'"), 'execution needs a durable single-start state');
 assert.ok(p3.includes('This Meeting Action has already started. It will not be executed twice.'), 'duplicate execution must be rejected');
 assert.ok(p3.includes("'delivery_uncertain'"), 'uncertain email delivery must be represented explicitly');
 assert.ok(p3.includes('cannot be retried automatically'), 'uncertain email delivery must block automatic retry');
-assert.ok(p3.includes('cannot be edited or retried automatically'), 'uncertain email delivery must block edit/reapproval paths');
 assert.ok(p3.includes('cannot be discarded'), 'uncertain email delivery must remain in the audit history');
 assert.ok(p3.includes("(string)$run['status']!=='completed'"), 'Task completion must follow canonical workflow completion');
 assert.ok(p3.includes('execution remains executed because the canonical work item was created successfully'), 'downstream Task failure must not rewrite successful Task creation as an execution failure');
