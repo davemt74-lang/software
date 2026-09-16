@@ -35,7 +35,6 @@ function video_meeting_live_agent_public_turn_v18110(array $turn): array
         'answer'=>video_meeting_live_agent_text_v18110($turn['answer']??'',12000),
         'created_at'=>(string)($turn['created_at']??''),'route'=>(string)($turn['route']??''),
         'sources'=>array_slice(is_array($turn['sources']??null)?$turn['sources']:[],0,12),
-        'ephemeral'=>!empty($turn['ephemeral']),
     ];
 }
 
@@ -53,8 +52,7 @@ function video_meeting_live_agent_public_state_v18110(PDO $pdo,array $meeting,ar
         'turns'=>$turns,'turn_count'=>count($turns),
         'safety'=>[
             'organizer_controlled'=>true,'advisory_only'=>true,'direct_actions_disabled'=>true,
-            'followthrough_requires_review'=>true,'spoken_output_available'=>false,
-            'homeserver_live_generation_supported'=>true,'homeserver_turns_ephemeral'=>true,
+            'followthrough_requires_review'=>true,'spoken_output_available'=>false,'homeserver_live_generation_supported'=>false,
         ],
     ];
 }
