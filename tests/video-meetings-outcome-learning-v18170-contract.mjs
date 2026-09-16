@@ -18,11 +18,13 @@ for(const part of ['part1.php','part2.php'])assert.ok(master.includes(`video-mee
 assert.ok(p1.includes('video_meeting_outcome_patterns'),'durable aggregate pattern storage is required');
 assert.ok(p1.includes('uq_video_meeting_outcome_pattern (owner_user_id,action_kind,source_kind,priority)'),'aggregate uniqueness must be owner + non-personal dimensions');
 for(const column of ['observed_count','verified_count','blocked_count','overdue_count','dismissed_count','verified_rate_bps','friction_rate_bps'])assert.ok(p1.includes(column),`missing aggregate ${column}`);
-assert.ok(p1.includes("m.status IN ('verified','blocked','overdue','dismissed')"),'learning must use resolved/attention outcome states only');
+assert.ok(p1.includes("m.status IN ('verified','blocked','overdue','dismissed')"),'learning may retain dismissed monitor counts for audit context');
+assert.ok(p1.includes("$observed=(int)$row['verified']+(int)$row['blocked']+(int)$row['overdue'];"),'dismissed monitors must not count toward learning evidence');
+assert.ok(!p1.includes("$observed=(int)$row['verified']+(int)$row['blocked']+(int)$row['overdue']+(int)$row['dismissed']"),'dismissed monitors cannot inflate evidence thresholds');
 assert.ok(p1.includes('video_meeting_followthrough_reconcile_owner_v18160'),'learning must reconcile canonical follow-through before rebuilding');
 assert.ok(p1.includes('video_meeting_outcome_learning_source_v18170'),'source dimensions must be normalized');
 for(const source of ['manual','suggested','prep_unresolved_commitments','prep_historical_decisions','prep_relevant_context'])assert.ok(p1.includes(`'${source}'`),`missing bounded source ${source}`);
-assert.ok(p1.includes("?'other'" )||p1.includes(":'other'"),'unknown source kinds must collapse to other');
+assert.ok(p1.includes(":'other'"),'unknown source kinds must collapse to other');
 assert.ok(p1.includes('video_meeting_outcome_learning_rebuild_due_v18170'),'aggregate rebuilds should be briefly cached');
 assert.ok(p1.includes('maxAgeSeconds=60'),'default aggregate refresh window should be explicit');
 assert.ok(p1.includes('observed<VP3_VIDEO_MEETINGS_OUTCOME_MIN_EVIDENCE_V18170'),'guidance must reject thin evidence');
