@@ -3,16 +3,11 @@ declare(strict_types=1);
 
 function video_meeting_live_agent_context_v18110(PDO $pdo,array $meeting): array
 {
-    $public=video_meeting_intelligence_public_state_v1890($pdo,$meeting);
-    $snapshot=is_array($public['snapshot']??null)?$public['snapshot']:[];
+    $public=video_meeting_intelligence_public_state_v1890($pdo,$meeting);$snapshot=is_array($public['snapshot']??null)?$public['snapshot']:[];
+    $hybrid=is_array($public['hybrid_intelligence']??null)?$public['hybrid_intelligence']:[];$policy=is_array($public['processing_policy']??null)?$public['processing_policy']:[];
+    $privateCompute=(string)($hybrid['route']??'')==='homeserver'||(string)($policy['requested_compute']??'')==='homeserver_only';
     $cleanRows=static function(mixed $rows,array $keys,int $limit=8): array {
-        $out=[];
-        foreach(array_slice(is_array($rows)?$rows:[],0,$limit) as $row){
-            if(!is_array($row))continue;$text='';
-            foreach($keys as $key){$text=video_meeting_live_agent_text_v18110($row[$key]??'',900);if($text!=='')break;}
-            if($text!=='')$out[]=$text;
-        }
-        return $out;
+        $out=[];foreach(array_slice(is_array($rows)?$rows:[],0,$limit) as $row){if(!is_array($row))continue;$text='';foreach($keys as $key){$text=video_meeting_live_agent_text_v18110($row[$key]??'',900);if($text!=='')break;}if($text!=='')$out[]=$text;}return $out;
     };
     return [
         'meeting'=>[
@@ -25,7 +20,7 @@ function video_meeting_live_agent_context_v18110(PDO $pdo,array $meeting): array
             'actions'=>$cleanRows($snapshot['actions']??[],['action','follow_up','next_step','text']),
             'questions'=>$cleanRows($snapshot['questions']??[],['question','text']),
             'objectives'=>array_values(array_filter(array_map(static fn($row)=>is_array($row)?video_meeting_live_agent_text_v18110($row['objective_text']??'',700):'',array_slice((array)($public['objectives']??[]),0,8)))),
-            'source_hash'=>(string)($public['source_hash']??''),'word_count'=>(int)($public['word_count']??0),
+            'source_hash'=>(string)($public['source_hash']??''),'word_count'=>(int)($public['word_count']??0),'private_compute'=>$privateCompute,
         ],
         'guardrails'=>[
             'live_advisory_only'=>true,'no_direct_side_effects'=>true,
@@ -41,6 +36,7 @@ function video_meeting_live_agent_public_turn_v18110(array $turn): array
         'question'=>video_meeting_live_agent_text_v18110($turn['question']??'',4000),
         'answer'=>video_meeting_live_agent_text_v18110($turn['answer']??'',12000),
         'created_at'=>(string)($turn['created_at']??''),'route'=>(string)($turn['route']??''),
+        'private_ephemeral'=>!empty($turn['private_ephemeral']),
         'sources'=>array_slice(is_array($turn['sources']??null)?$turn['sources']:[],0,12),
     ];
 }
@@ -66,11 +62,5 @@ function video_meeting_live_agent_public_state_v18110(PDO $pdo,array $meeting,ar
 
 function video_meeting_live_agent_history_v18110(array $state): array
 {
-    $history=[];
-    foreach(array_slice((array)($state['turns']??[]),-8) as $turn){
-        if(!is_array($turn))continue;
-        $q=video_meeting_live_agent_text_v18110($turn['question']??'',4000);$a=video_meeting_live_agent_text_v18110($turn['answer']??'',8000);
-        if($q!=='')$history[]=['role'=>'user','message'=>$q];if($a!=='')$history[]=['role'=>'assistant','message'=>$a];
-    }
-    return $history;
+    $history=[];foreach(array_slice((array)($state['turns']??[]),-8) as $turn){if(!is_array($turn)||!empty($turn['private_ephemeral']))continue;$q=video_meeting_live_agent_text_v18110($turn['question']??'',4000);$a=video_meeting_live_agent_text_v18110($turn['answer']??'',8000);if($q!=='')$history[]=['role'=>'user','message'=>$q];if($a!=='')$history[]=['role'=>'assistant','message'=>$a];}return $history;
 }
