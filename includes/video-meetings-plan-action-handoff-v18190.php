@@ -110,7 +110,7 @@ function video_meeting_plan_action_handoff_v18190(PDO $pdo,array $meeting,array 
     $item=video_meeting_action_item_v18150($pdo,$meeting,$ownerUserId,$itemId);$kind=video_meeting_action_require_eligible_v18150($item);
     $snapshot=video_meeting_plan_action_snapshot_from_row_v18190($plan);$snapshotJson=video_meeting_action_json_v18150($snapshot);$snapshotHash=video_meeting_plan_action_snapshot_hash_v18190($snapshot);
     $existing=video_meeting_action_row_for_item_v18150($pdo,$ownerUserId,$itemId);$prior=video_meeting_plan_action_existing_v18190($pdo,$ownerUserId,$itemId);
-    if($existing&&$prior&&(int)$prior['action_execution_id']===(int)$existing['id']&&hash_equals((string)$prior['plan_snapshot_hash'],$snapshotHash)){
+    if($existing&&$prior&&(int)$prior['action_execution_id']===(int)$existing['id']&&hash_equals((string)$prior['plan_snapshot_hash'],$snapshotHash)&&hash_equals((string)$prior['action_draft_hash'],video_meeting_plan_action_bound_draft_hash_v18190($existing))){
         return ['handoff'=>$prior,'execution'=>video_meeting_action_public_v18150($pdo,$existing,$meeting,$user,true),'idempotent'=>true];
     }
     if($existing&&!in_array((string)$existing['status'],['needs_review','failed'],true))throw new RuntimeException('Reopen the Meeting Action before refreshing it from the plan.');
@@ -119,11 +119,12 @@ function video_meeting_plan_action_handoff_v18190(PDO $pdo,array $meeting,array 
     $mapped=video_meeting_plan_action_map_draft_v18190($kind,(array)($prepared['draft']??[]),$plan);
     $saved=video_meeting_action_save_draft_v18150($pdo,$meeting,$user,$executionId,$mapped);
     $execution=video_meeting_action_row_v18150($pdo,$ownerUserId,$executionId)?:throw new RuntimeException('Meeting Action draft could not be reloaded.');
+    $boundDraftHash=video_meeting_plan_action_bound_draft_hash_v18190($execution);
     $pdo->prepare("INSERT INTO video_meeting_plan_action_handoffs (plan_id,action_execution_id,agenda_item_id,meeting_id,owner_user_id,plan_snapshot_json,plan_snapshot_hash,action_draft_hash,status) VALUES (?,?,?,?,?,?,?,?, 'current') ON DUPLICATE KEY UPDATE plan_id=VALUES(plan_id),action_execution_id=VALUES(action_execution_id),plan_snapshot_json=VALUES(plan_snapshot_json),plan_snapshot_hash=VALUES(plan_snapshot_hash),action_draft_hash=VALUES(action_draft_hash),status='current',updated_at=NOW()")
-        ->execute([(int)$plan['id'],$executionId,$itemId,(int)$meeting['id'],$ownerUserId,$snapshotJson,$snapshotHash,(string)$execution['draft_hash']]);
+        ->execute([(int)$plan['id'],$executionId,$itemId,(int)$meeting['id'],$ownerUserId,$snapshotJson,$snapshotHash,$boundDraftHash]);
     $handoff=video_meeting_plan_action_existing_v18190($pdo,$ownerUserId,$itemId);if(!$handoff)throw new RuntimeException('Plan handoff could not be recorded.');
     video_meeting_plan_action_event_v18190($pdo,$handoff,$prior?'refreshed':'handed_off',$prior?'Organizer refreshed the Meeting Action draft from the current follow-through plan.':'Organizer handed the current follow-through plan to Meeting Actions for review.');
-    video_meeting_action_event_v18150($pdo,$execution,'plan_handoff','needs_review','needs_review','Follow-through plan applied to this action draft.',['plan_id'=>(int)$plan['id'],'plan_snapshot_hash'=>$snapshotHash]);
+    video_meeting_action_event_v18150($pdo,$execution,'plan_handoff','needs_review','needs_review','Follow-through plan applied to this action draft.',['plan_id'=>(int)$plan['id'],'plan_snapshot_hash'=>$snapshotHash,'plan_bound_draft_hash'=>$boundDraftHash]);
     return ['handoff'=>$handoff,'execution'=>$saved,'idempotent'=>false];
 }
 
@@ -134,11 +135,16 @@ function video_meeting_plan_action_state_v18190(PDO $pdo,array $meeting,array $u
     $stmt=$pdo->prepare("SELECT p.*,a.action_kind,a.approval_state,a.status AS agenda_status FROM video_meeting_followthrough_plans p JOIN video_meeting_agenda_items a ON a.id=p.agenda_item_id WHERE p.meeting_id=? AND p.owner_user_id=? ORDER BY a.sort_order,a.id");$stmt->execute([(int)$meeting['id'],$ownerUserId]);$items=[];
     foreach($stmt->fetchAll()?:[] as $plan){
         $itemId=(int)$plan['agenda_item_id'];$handoff=video_meeting_plan_action_existing_v18190($pdo,$ownerUserId,$itemId);$execution=video_meeting_action_row_for_item_v18150($pdo,$ownerUserId,$itemId);
-        $currentHash=video_meeting_plan_action_snapshot_hash_v18190(video_meeting_plan_action_snapshot_from_row_v18190($plan));$status='none';
-        if($handoff){$status=((string)$plan['readiness']==='ready'&&hash_equals((string)$handoff['plan_snapshot_hash'],$currentHash))?'current':'stale';if($status!==(string)$handoff['status'])$pdo->prepare('UPDATE video_meeting_plan_action_handoffs SET status=?,updated_at=NOW() WHERE id=?')->execute([$status,(int)$handoff['id']]);}
+        $currentHash=video_meeting_plan_action_snapshot_hash_v18190(video_meeting_plan_action_snapshot_from_row_v18190($plan));$status='none';$drift='';
+        if($handoff){
+            $planCurrent=(string)$plan['readiness']==='ready'&&hash_equals((string)$handoff['plan_snapshot_hash'],$currentHash);
+            $draftCurrent=$execution&&hash_equals((string)$handoff['action_draft_hash'],video_meeting_plan_action_bound_draft_hash_v18190($execution));
+            $status=$planCurrent&&$draftCurrent?'current':'stale';$drift=!$planCurrent?'plan':(!$draftCurrent?'action_draft':'');
+            if($status!==(string)$handoff['status'])$pdo->prepare('UPDATE video_meeting_plan_action_handoffs SET status=?,updated_at=NOW() WHERE id=?')->execute([$status,(int)$handoff['id']]);
+        }
         $executionStatus=(string)($execution['status']??'');$uncertain=$executionStatus==='failed'&&(string)($execution['error_class']??'')==='delivery_uncertain';
         $editable=!$execution||in_array($executionStatus,['needs_review','failed'],true);
-        $items[]=['agenda_item_id'=>$itemId,'plan_id'=>(int)$plan['id'],'plan_readiness'=>(string)$plan['readiness'],'action_kind'=>(string)$plan['action_kind'],'approval_state'=>(string)$plan['approval_state'],'handoff_status'=>$status,'execution_id'=>(int)($execution['id']??0),'execution_status'=>$executionStatus,'execution_error_class'=>(string)($execution['error_class']??''),'can_handoff'=>(string)$plan['readiness']==='ready'&&(string)$plan['agenda_status']==='follow_up'&&(string)$plan['approval_state']==='approved_for_agent_review'&&$editable&&!$uncertain];
+        $items[]=['agenda_item_id'=>$itemId,'plan_id'=>(int)$plan['id'],'plan_readiness'=>(string)$plan['readiness'],'action_kind'=>(string)$plan['action_kind'],'approval_state'=>(string)$plan['approval_state'],'handoff_status'=>$status,'drift_source'=>$drift,'execution_id'=>(int)($execution['id']??0),'execution_status'=>$executionStatus,'execution_error_class'=>(string)($execution['error_class']??''),'can_handoff'=>(string)$plan['readiness']==='ready'&&(string)$plan['agenda_status']==='follow_up'&&(string)$plan['approval_state']==='approved_for_agent_review'&&$editable&&!$uncertain];
     }
-    return ['version'=>'v18.19','schema'=>'vp3.meeting.plan_action_handoff','items'=>$items,'policy'=>['explicit_handoff'=>true,'auto_approval'=>false,'auto_execution'=>false,'stale_blocks_approval'=>true,'stale_blocks_execution'=>true,'recipient_inference'=>false,'idempotent_same_plan'=>true],'generated_at'=>gmdate('c')];
+    return ['version'=>'v18.19','schema'=>'vp3.meeting.plan_action_handoff','items'=>$items,'policy'=>['explicit_handoff'=>true,'auto_approval'=>false,'auto_execution'=>false,'stale_blocks_approval'=>true,'stale_blocks_execution'=>true,'recipient_inference'=>false,'idempotent_same_plan'=>true,'non_plan_action_fields_editable'=>true],'generated_at'=>gmdate('c')];
 }
