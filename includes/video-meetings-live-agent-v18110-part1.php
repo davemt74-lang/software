@@ -44,31 +44,25 @@ function video_meeting_live_agent_runtime_plan_v18110(PDO $pdo,array $meeting,ar
     try{$plan=vp3_agent_runtime_plan_v420($pdo,$user,$agentId,'chat');}
     catch(Throwable $e){return ['blocked'=>true,'route'=>'blocked','route_reason'=>'runtime_unavailable','agent_id'=>$agentId];}
 
-    // Meeting privacy is stricter than account/Agent compute preference. The
-    // current canonical chat generator is a VP3 Cloud provider path; it is not
-    // a HomeServer executor. Therefore Phase 18.11 may generate a live answer
-    // only when BOTH the meeting policy and the canonical Agent runtime resolve
-    // explicitly to VP3 Cloud. HomeServer/Automatic plans that currently resolve
-    // to HomeServer remain blocked rather than silently crossing that boundary.
+    // The live answer executor below is the canonical VP3 Cloud inference
+    // boundary. Until VP3 has a verified HomeServer chat-generation executor,
+    // this phase must never pretend a HomeServer plan can be honored here.
     try{
         $public=video_meeting_intelligence_public_state_v1890($pdo,$meeting);
         $policy=is_array($public['processing_policy']??null)?$public['processing_policy']:[];
         if(array_key_exists('policy_resolved',$policy)&&empty($policy['policy_resolved'])){
             $plan['blocked']=true;$plan['route']='blocked';$plan['route_reason']='meeting_policy_unresolved';
-            $plan['allow_vp3_fallback']=false;$plan['fallback_target']='none';$plan['homeserver_cloud_allowed']=false;
-            return $plan;
+            $plan['allow_vp3_fallback']=false;$plan['fallback_target']='none';$plan['homeserver_cloud_allowed']=false;return $plan;
         }
         $requiresHome=(($policy['cloud_ai_allowed']??null)===false)||(string)($policy['requested_compute']??'')==='homeserver_only';
         if($requiresHome){
             $plan['blocked']=true;$plan['route']='blocked';$plan['route_reason']='meeting_homeserver_live_agent_unavailable';
-            $plan['allow_vp3_fallback']=false;$plan['fallback_target']='none';$plan['homeserver_cloud_allowed']=false;
-            return $plan;
+            $plan['allow_vp3_fallback']=false;$plan['fallback_target']='none';$plan['homeserver_cloud_allowed']=false;return $plan;
         }
         if(!empty($plan['blocked']))return $plan;
         if((string)($plan['route']??'')!=='vp3_cloud'){
             $plan['blocked']=true;$plan['route']='blocked';$plan['route_reason']='homeserver_live_agent_executor_unavailable';
-            $plan['allow_vp3_fallback']=false;$plan['fallback_target']='none';$plan['homeserver_cloud_allowed']=false;
-            return $plan;
+            $plan['allow_vp3_fallback']=false;$plan['fallback_target']='none';$plan['homeserver_cloud_allowed']=false;return $plan;
         }
     }catch(Throwable $e){
         $plan['blocked']=true;$plan['route']='blocked';$plan['route_reason']='meeting_policy_unavailable';
@@ -82,13 +76,13 @@ function video_meeting_live_agent_capability_v18110(PDO $pdo,array $meeting,arra
     $plan=video_meeting_live_agent_runtime_plan_v18110($pdo,$meeting,$user);
     $live=(string)($meeting['status']??'')==='live';$enabled=(string)($meeting['agent_mode']??'off')!=='off';
     $chatAllowed=function_exists('has_permission')?has_permission('chat.access',$user):true;
-    $runtimeReady=function_exists('chat_generate_answer_v105')||function_exists('chat_generate_answer');
-    $cfg=video_meeting_livekit_config_v1800();
-    $mediaWorker=video_meeting_livekit_ready_v1800()&&trim((string)($cfg['agent_name']??''))!=='';
+    $provider=function_exists('ai_active_provider')?(string)ai_active_provider():'local';
+    $generatorReady=function_exists('chat_remote_answer')&&in_array($provider,['openai','anthropic'],true)&&function_exists('ai_provider_ready')&&ai_provider_ready($provider);
+    $cfg=video_meeting_livekit_config_v1800();$mediaWorker=video_meeting_livekit_ready_v1800()&&trim((string)($cfg['agent_name']??''))!=='';
     return [
-        'available'=>$live&&$enabled&&$chatAllowed&&$runtimeReady&&empty($plan['blocked'])&&(string)($plan['route']??'')==='vp3_cloud',
-        'meeting_live'=>$live,'agent_enabled'=>$enabled,'chat_allowed'=>$chatAllowed,'runtime_ready'=>$runtimeReady,
-        'interaction_mode'=>'text','spoken_available'=>false,'media_worker_available'=>$mediaWorker,
+        'available'=>$live&&$enabled&&$chatAllowed&&$generatorReady&&empty($plan['blocked'])&&(string)($plan['route']??'')==='vp3_cloud',
+        'meeting_live'=>$live,'agent_enabled'=>$enabled,'chat_allowed'=>$chatAllowed,'runtime_ready'=>$generatorReady,
+        'provider'=>$generatorReady?$provider:'','interaction_mode'=>'text','spoken_available'=>false,'media_worker_available'=>$mediaWorker,
         'agent_id'=>max(0,(int)($meeting['organizer_agent_id']??0)),
         'agent_name'=>function_exists('video_meeting_agent_name_v1800')?video_meeting_agent_name_v1800($pdo,$meeting):'VP3 Agent',
         'runtime_plan'=>function_exists('vp3_agent_runtime_public_plan_v420')?vp3_agent_runtime_public_plan_v420($plan):['route'=>(string)($plan['route']??'blocked'),'blocked'=>!empty($plan['blocked'])],
