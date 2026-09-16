@@ -12,10 +12,13 @@ const upgrade=read('upgrade.php');
 // 18.14 extends 18.13 prep and creates one canonical organizer-owned agenda store.
 assert.ok(agenda.includes("require_once __DIR__.'/video-meetings-automation-v18130.php'"));
 assert.ok(agenda.includes("const VP3_VIDEO_MEETINGS_AGENDA_V18140"));
+assert.ok(agenda.includes('VP3_VIDEO_MEETINGS_AGENDA_ITEM_LIMIT_V18140=80'));
 assert.ok(agenda.includes('CREATE TABLE IF NOT EXISTS video_meeting_agenda_items'));
 for(const key of ['meeting_id','owner_user_id','item_text','item_type','source_kind','source_meeting_id','source_hash','source_index_hash','source_review_path','status','priority','action_kind','approval_state','sort_order','fingerprint'])assert.ok(agenda.includes(key),`missing agenda field ${key}`);
 assert.ok(agenda.includes('UNIQUE KEY uniq_video_meeting_agenda_fingerprint'));
 assert.ok(agenda.includes("(int)($meeting['owner_user_id']??0)!==$ownerUserId"));
+assert.ok(agenda.includes("SELECT COUNT(*) FROM video_meeting_agenda_items WHERE meeting_id=? AND owner_user_id=?"));
+assert.ok(agenda.includes('This meeting already has the maximum number of agenda items.'));
 
 // Suggestions are deterministic projections of 18.13 finalized prep and current meeting objectives.
 assert.ok(agenda.includes('video_meeting_automation_prep_v18130'));
@@ -30,12 +33,15 @@ assert.ok(agenda.includes('source_review_path'));
 assert.ok(agenda.includes('video_meeting_agenda_promote_suggestion_v18140'));
 assert.ok(agenda.includes("$suggestion=$state['suggestions'][$suggestionIndex]??null"));
 
-// Live agenda state is bounded and explicit.
+// Live agenda state is bounded, explicit and durable under edits/reordering.
 for(const status of ['open','discussed','decision','follow_up','skipped'])assert.ok(agenda.includes(`'${status}'`));
 for(const priority of ['low','normal','high'])assert.ok(agenda.includes(`'${priority}'`));
 assert.ok(agenda.includes('video_meeting_agenda_reorder_v18140'));
 assert.ok(agenda.includes('video_meeting_agenda_promote_prep_v18140'));
 assert.ok(agenda.includes('video_meeting_agenda_accept_suggestions_v18140'));
+assert.ok(agenda.includes('fingerprint=?,updated_at=NOW()'));
+assert.ok(agenda.includes('An equivalent agenda item already exists.'));
+assert.ok(agenda.includes('Agenda order is stale. Reload the agenda and try again.'));
 
 // Action orchestration records approval only; it never executes external side effects.
 for(const kind of ['task','calendar','crm','email'])assert.ok(agenda.includes(`'${kind}'`));
@@ -43,6 +49,7 @@ assert.ok(agenda.includes("'approved_for_agent_review'"));
 assert.ok(agenda.includes("'execution'=>'agent_review_only'"));
 assert.ok(agenda.includes("'side_effects_executed'=>false"));
 assert.ok(agenda.includes("SET item_type='follow_up',status='follow_up',action_kind=?,approval_state=?"));
+assert.ok(agenda.includes("if((string)($row['approval_state']??'none')!=='none'){$type='follow_up';$status='follow_up';}"));
 const forbiddenExecutors=['agent_brain_archive_and_parse','crm_v180_activity(','crm_v180_create_task(','user_calendar_automation_create_event_v1300(','agent_tool_execute_query','mail(','create_notification(','homeserver_vp3_remote_operation'];
 for(const forbidden of forbiddenExecutors){assert.ok(!agenda.includes(forbidden),`agenda service must not execute ${forbidden}`);assert.ok(!api.includes(forbidden),`agenda API must not execute ${forbidden}`);}
 assert.ok(!agenda.includes('transcript_text'));
