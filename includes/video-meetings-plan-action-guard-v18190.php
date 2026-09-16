@@ -20,6 +20,21 @@ function video_meeting_plan_action_snapshot_hash_v18190(array $snapshot): string
     return hash('sha256',is_string($json)?$json:'{}');
 }
 
+function video_meeting_plan_action_bound_draft_hash_v18190(array $execution): string
+{
+    $draft=json_decode((string)($execution['draft_json']??''),true);if(!is_array($draft))$draft=[];
+    $kind=(string)($execution['action_kind']??'');
+    $bound=match($kind){
+        'task'=>['description'=>(string)($draft['description']??'')],
+        'calendar'=>['date'=>(string)($draft['date']??''),'start_time'=>(string)($draft['start_time']??''),'timezone'=>(string)($draft['timezone']??''),'description'=>(string)($draft['description']??'')],
+        'crm'=>['summary'=>(string)($draft['summary']??'')],
+        'email'=>['body'=>(string)($draft['body']??'')],
+        default=>[],
+    };
+    $json=json_encode($bound,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE|JSON_INVALID_UTF8_SUBSTITUTE);
+    return hash('sha256',is_string($json)?$json:'{}');
+}
+
 function video_meeting_plan_action_guard_execution_v18190(PDO $pdo,array $execution,string $operation): void
 {
     if(!table_exists('video_meeting_plan_action_handoffs')||!table_exists('video_meeting_followthrough_plans'))return;
@@ -28,10 +43,12 @@ function video_meeting_plan_action_guard_execution_v18190(PDO $pdo,array $execut
     if(!is_array($handoff))return;
     $planStmt=$pdo->prepare('SELECT * FROM video_meeting_followthrough_plans WHERE id=? AND owner_user_id=? LIMIT 1');
     $planStmt->execute([(int)$handoff['plan_id'],(int)$execution['owner_user_id']]);$plan=$planStmt->fetch();
-    $stale=!is_array($plan)||(string)($plan['readiness']??'')!=='ready';
-    if(!$stale){$stale=!hash_equals((string)$handoff['plan_snapshot_hash'],video_meeting_plan_action_snapshot_hash_v18190(video_meeting_plan_action_snapshot_from_row_v18190($plan)));}
-    if($stale){
+    $planStale=!is_array($plan)||(string)($plan['readiness']??'')!=='ready';
+    if(!$planStale)$planStale=!hash_equals((string)$handoff['plan_snapshot_hash'],video_meeting_plan_action_snapshot_hash_v18190(video_meeting_plan_action_snapshot_from_row_v18190($plan)));
+    $draftStale=!hash_equals((string)($handoff['action_draft_hash']??''),video_meeting_plan_action_bound_draft_hash_v18190($execution));
+    if($planStale||$draftStale){
         if((string)($handoff['status']??'')!=='stale')$pdo->prepare("UPDATE video_meeting_plan_action_handoffs SET status='stale',updated_at=NOW() WHERE id=?")->execute([(int)$handoff['id']]);
-        throw new RuntimeException('The linked follow-through plan changed after handoff. Refresh the action from the current plan before '.$operation.'.');
+        $reason=$planStale?'The linked follow-through plan changed after handoff.':'Plan-bound fields in the Meeting Action draft changed after handoff.';
+        throw new RuntimeException($reason.' Refresh the action from the current plan before '.$operation.'.');
     }
 }
