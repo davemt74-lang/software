@@ -38,7 +38,7 @@ assert.ok(p1.includes("$state['final_source_hash']"));
 assert.ok(p1.includes('hash_equals($finalHash,$sourceHash)'));
 assert.ok(p1.includes('final_analysis_at'));
 assert.ok(p1.includes('Finalize and review the current meeting intelligence before it can become searchable memory.'));
-assert.ok(p1.includes('video_meeting_intelligence_source_v1820'));
+assert.ok(p1.includes('video_meeting_intelligence_public_state_v1820'));
 assert.ok(p1.includes('video_meeting_intelligence_state_row_v1820'));
 
 // Historical private search consumes only an already-sanitized cached 18.9 artifact.
