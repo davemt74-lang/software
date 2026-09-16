@@ -20,17 +20,17 @@ jobs:
       - name: Check out VP3 Cloud
         uses: actions/checkout@v4
 
-      - name: Check out pinned HomeServer Phase 18.9
+      - name: Check out pinned HomeServer Phase 18.11
         uses: actions/checkout@v4
         with:
           repository: davemt74-lang/otro
-          ref: 9dd65b10915687786c8674575b622ceb0792e68e
+          ref: 1d600b6154b43638c94d71b5238a15fab0b33d9f
           path: homeserver-v1890
           persist-credentials: false
 
       - name: Verify pinned HomeServer revision
         shell: bash
-        run: test "$(git -C homeserver-v1890 rev-parse HEAD)" = "9dd65b10915687786c8674575b622ceb0792e68e"
+        run: test "$(git -C homeserver-v1890 rev-parse HEAD)" = "1d600b6154b43638c94d71b5238a15fab0b33d9f"
 
       - name: Set up PHP
         uses: shivammathur/setup-php@v2
