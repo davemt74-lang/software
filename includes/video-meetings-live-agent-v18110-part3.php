@@ -6,10 +6,15 @@ function video_meeting_live_agent_start_v18110(PDO $pdo,array $meeting,array $us
     if(!video_meeting_live_agent_owner_allowed_v18110($user,$meeting))throw new RuntimeException('Only the meeting organizer can start the live Agent.');
     $cap=video_meeting_live_agent_capability_v18110($pdo,$meeting,$user);
     if(empty($cap['meeting_live']))throw new RuntimeException('Join the live meeting before starting the Agent.');
+    if(empty($cap['agent_enabled']))throw new RuntimeException('Meeting Agent mode is off for this meeting.');
     if(empty($cap['chat_allowed']))throw new RuntimeException('Agent Chat access is not available for this account.');
     if(empty($cap['runtime_ready']))throw new RuntimeException('The canonical VP3 Agent runtime is unavailable.');
     if(!empty($cap['runtime_plan']['blocked'])){
         $plan=video_meeting_live_agent_runtime_plan_v18110($pdo,$meeting,$user);
+        $reason=(string)($plan['route_reason']??'');
+        if($reason==='meeting_policy_unresolved')throw new RuntimeException('The meeting privacy policy is not resolved yet. The live Agent remains blocked.');
+        if($reason==='meeting_homeserver_only')throw new RuntimeException('This meeting requires HomeServer compute, but an authorized HomeServer Agent route is not ready.');
+        if($reason==='meeting_policy_unavailable')throw new RuntimeException('The meeting privacy policy could not be verified. The live Agent remains blocked.');
         throw new RuntimeException(function_exists('vp3_agent_runtime_block_message_v420')?vp3_agent_runtime_block_message_v420($plan):'No authorized Agent compute route is currently available.');
     }
     $state=video_meeting_live_agent_artifact_v18110($pdo,$meeting)?:[];
