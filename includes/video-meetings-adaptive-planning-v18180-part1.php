@@ -96,7 +96,7 @@ function video_meeting_adaptive_planning_event_v18180(PDO $pdo,array $plan,strin
 
 function video_meeting_adaptive_planning_save_v18180(PDO $pdo,array $meeting,array $user,int $itemId,array $input): array
 {
-    $ownerUserId=(int)($user['id']??0);$item=video_meeting_adaptive_planning_item_v18180($pdo,$meeting,$ownerUserId,$itemId);
+    $ownerUserId=(int)($user['id']??0);video_meeting_adaptive_planning_item_v18180($pdo,$meeting,$ownerUserId,$itemId);
     if(!video_meeting_adaptive_planning_schema_ready_v18180($pdo))throw new RuntimeException('Adaptive Meeting Planning is not ready. Run the current database upgrade first.');
     $ownerLabel=video_meeting_adaptive_planning_text_v18180($input['owner_label']??'',190);
     $verification=video_meeting_adaptive_planning_text_v18180($input['verification_criteria']??'',1000);
@@ -113,5 +113,9 @@ function video_meeting_adaptive_planning_save_v18180(PDO $pdo,array $meeting,arr
 function video_meeting_adaptive_planning_clear_v18180(PDO $pdo,array $meeting,array $user,int $itemId): void
 {
     $ownerUserId=(int)($user['id']??0);video_meeting_adaptive_planning_item_v18180($pdo,$meeting,$ownerUserId,$itemId);
-    $pdo->prepare('DELETE FROM video_meeting_followthrough_plans WHERE agenda_item_id=? AND owner_user_id=?')->execute([$itemId,$ownerUserId]);
+    $plan=video_meeting_adaptive_planning_row_v18180($pdo,$ownerUserId,$itemId);if(!$plan)return;
+    $timezone=video_meeting_adaptive_planning_timezone_v18180($meeting);
+    $pdo->prepare("UPDATE video_meeting_followthrough_plans SET owner_label='',target_at=NULL,target_timezone=?,verification_criteria='',readiness='needs_definition',updated_at=NOW() WHERE id=? AND owner_user_id=?")->execute([$timezone,(int)$plan['id'],$ownerUserId]);
+    $plan=video_meeting_adaptive_planning_row_v18180($pdo,$ownerUserId,$itemId)?:$plan;
+    video_meeting_adaptive_planning_event_v18180($pdo,$plan,'reset','Organizer cleared the current planning fields; audit history was preserved.');
 }
