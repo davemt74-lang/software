@@ -52,7 +52,7 @@ function video_meeting_automation_unresolved_v18130(array $row): bool
     return !in_array($status,['verified','completed','complete','done','closed','cancelled','canceled','failed'],true);
 }
 
-function video_meeting_automation_pick_v18130(array $rows,array $categories,int $limit,bool $unresolvedOnly=false): array
+function video_meeting_automation_pick_v18130(array $rows,array $categories,int $limit,bool $unresolvedOnly=false,int $excludeMeetingId=0): array
 {
     $out=[];$seen=[];
     foreach($rows as $row){
@@ -60,7 +60,7 @@ function video_meeting_automation_pick_v18130(array $rows,array $categories,int 
         if(!in_array($category,$categories,true))continue;
         if($unresolvedOnly&&!video_meeting_automation_unresolved_v18130($row))continue;
         $meetingId=(int)($row['meeting_id']??0);$text=video_meeting_automation_text_v18130($row['text']??'',1200);
-        if($meetingId<1||$text==='')continue;
+        if($meetingId<1||$meetingId===$excludeMeetingId||$text==='')continue;
         $fingerprint=$meetingId.'|'.$category.'|'.hash('sha256',mb_strtolower($text));
         if(isset($seen[$fingerprint]))continue;$seen[$fingerprint]=true;
         $out[]=$row;if(count($out)>=$limit)break;
@@ -97,21 +97,22 @@ function video_meeting_automation_prep_v18130(PDO $pdo,array $meeting,int $owner
     if((int)($meeting['owner_user_id']??0)!==$ownerUserId)throw new RuntimeException('Meeting preparation is available only to the organizer.');
     if(strtolower((string)($meeting['status']??''))==='cancelled')throw new RuntimeException('Cancelled meetings do not have automated preparation.');
 
+    $meetingId=(int)$meeting['id'];
     $participants=video_meeting_automation_participants_v18130($pdo,$meeting);
     $subject=video_meeting_automation_subject_v18130($meeting,$participants);
     $decisionSearch=video_meeting_memory_search_v18120($pdo,$ownerUserId,'decided '.$subject,24,0);
     $followSearch=video_meeting_memory_search_v18120($pdo,$ownerUserId,'pending action item '.$subject,24,0);
     $contextSearch=video_meeting_memory_search_v18120($pdo,$ownerUserId,'discussed '.$subject,24,0);
 
-    $decisions=video_meeting_automation_pick_v18130((array)($decisionSearch['results']??[]),['decision','followthrough_verified'],VP3_VIDEO_MEETINGS_AUTOMATION_ITEM_LIMIT_V18130);
-    $commitments=video_meeting_automation_pick_v18130((array)($followSearch['results']??[]),['followthrough_pending','action','decision'],VP3_VIDEO_MEETINGS_AUTOMATION_ITEM_LIMIT_V18130,true);
-    $context=video_meeting_automation_pick_v18130((array)($contextSearch['results']??[]),['summary','key_point','topic','objective','question','risk'],VP3_VIDEO_MEETINGS_AUTOMATION_ITEM_LIMIT_V18130);
+    $decisions=video_meeting_automation_pick_v18130((array)($decisionSearch['results']??[]),['decision','followthrough_verified'],VP3_VIDEO_MEETINGS_AUTOMATION_ITEM_LIMIT_V18130,false,$meetingId);
+    $commitments=video_meeting_automation_pick_v18130((array)($followSearch['results']??[]),['followthrough_pending','action','decision'],VP3_VIDEO_MEETINGS_AUTOMATION_ITEM_LIMIT_V18130,true,$meetingId);
+    $context=video_meeting_automation_pick_v18130((array)($contextSearch['results']??[]),['summary','key_point','topic','objective','question','risk'],VP3_VIDEO_MEETINGS_AUTOMATION_ITEM_LIMIT_V18130,false,$meetingId);
     $sources=video_meeting_automation_sources_v18130([$decisions,$commitments,$context]);
 
     return [
         'version'=>'v18.13','schema'=>'vp3.meeting.intelligence.automation.prep','automated'=>true,'read_only'=>true,
         'meeting'=>[
-            'id'=>(int)$meeting['id'],'public_id'=>(string)$meeting['public_id'],'title'=>video_meeting_automation_text_v18130($meeting['title']??'',190),
+            'id'=>$meetingId,'public_id'=>(string)$meeting['public_id'],'title'=>video_meeting_automation_text_v18130($meeting['title']??'',190),
             'start_at_utc'=>(string)($meeting['start_at_utc']??''),'timezone'=>(string)($meeting['timezone']??'UTC'),'status'=>(string)($meeting['status']??''),
             'participants'=>$participants,
         ],
@@ -125,6 +126,6 @@ function video_meeting_automation_prep_v18130(PDO $pdo,array $meeting,int $owner
             'source'=>'finalized_phase_18_12_meeting_memory','raw_transcript_read'=>false,'private_notes_read'=>false,
             'participant_email_read'=>false,'homeserver_historical_probe'=>false,'side_effects_executed'=>false,
         ],
-        'instructions'=>'Preparation is source-backed historical context only. Pending commitments remain pending until separately verified. Review sources before acting; no task, CRM, calendar, mail, Agent Brain, or tool action is executed by this automation.',
+        'instructions'=>'Preparation is source-backed historical context only. The current meeting is excluded from historical retrieval, and pending commitments remain pending until separately verified. Review sources before acting; no task, CRM, calendar, mail, Agent Brain, or tool action is executed by this automation.',
     ];
 }
