@@ -114,7 +114,7 @@ function video_meeting_memory_agent_context_v18120(PDO $pdo,int $ownerUserId,str
     return [
         'version'=>'v18.12','agenda_version'=>'v18.14','relevant'=>true,'source'=>'vp3_meeting_memory','results'=>$rows,'upcoming_agendas'=>$agendas,
         'error'=>(string)($search['error']??''),
-        'instructions'=>'Finalized Meeting Memory results are source-backed. Upcoming agendas are organizer-owned Phase 18.14 state. Distinguish pending, failed and verified follow-through exactly as labeled. An agenda item marked approved_for_agent_review is approved for Agent review only; it does not mean a Task, Calendar event, CRM update, email, notification or tool action was executed. Cite the meeting title/date or meeting path when relying on meeting context.',
+        'instructions'=>'Finalized Meeting Memory results are source-backed. Upcoming agendas are organizer-owned Phase 18.14 state. Distinguish pending, failed and verified follow-through exactly as labeled. Do not claim a pending item was completed. An agenda item marked approved_for_agent_review is approved for Agent review only; it does not mean a Task, Calendar event, CRM update, email, notification or tool action was executed. Cite the meeting title/date or meeting path when relying on meeting context.',
     ];
 }
 
