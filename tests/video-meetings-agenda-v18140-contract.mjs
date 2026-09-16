@@ -27,6 +27,8 @@ for(const key of ['brief_text','suggestions','suggested_questions'])assert.ok(ag
 assert.ok(agenda.includes('source_hash'));
 assert.ok(agenda.includes('source_index_hash'));
 assert.ok(agenda.includes('source_review_path'));
+assert.ok(agenda.includes('video_meeting_agenda_promote_suggestion_v18140'));
+assert.ok(agenda.includes("$suggestion=$state['suggestions'][$suggestionIndex]??null"));
 
 // Live agenda state is bounded and explicit.
 for(const status of ['open','discussed','decision','follow_up','skipped'])assert.ok(agenda.includes(`'${status}'`));
@@ -40,6 +42,7 @@ for(const kind of ['task','calendar','crm','email'])assert.ok(agenda.includes(`'
 assert.ok(agenda.includes("'approved_for_agent_review'"));
 assert.ok(agenda.includes("'execution'=>'agent_review_only'"));
 assert.ok(agenda.includes("'side_effects_executed'=>false"));
+assert.ok(agenda.includes("SET item_type='follow_up',status='follow_up',action_kind=?,approval_state=?"));
 const forbiddenExecutors=['agent_brain_archive_and_parse','crm_v180_activity(','crm_v180_create_task(','user_calendar_automation_create_event_v1300(','agent_tool_execute_query','mail(','create_notification(','homeserver_vp3_remote_operation'];
 for(const forbidden of forbiddenExecutors){assert.ok(!agenda.includes(forbidden),`agenda service must not execute ${forbidden}`);assert.ok(!api.includes(forbidden),`agenda API must not execute ${forbidden}`);}
 assert.ok(!agenda.includes('transcript_text'));
@@ -56,7 +59,8 @@ assert.ok(api.includes('current_user()'));
 assert.ok(api.includes('hash_equals(csrf_token(),$csrf)'));
 assert.ok(api.includes("(int)($meeting['owner_user_id']??0)!==$userId"));
 assert.ok(!api.includes('$_GET'));
-for(const action of ['state','add','promote_prep','accept_suggestions','update','reorder','delete','action_state'])assert.ok(api.includes(`$action==='${action}'`),`missing API action ${action}`);
+for(const action of ['state','add','promote_prep','promote_suggestion','accept_suggestions','update','reorder','delete','action_state'])assert.ok(api.includes(`$action==='${action}'`),`missing API action ${action}`);
+assert.ok(api.includes('video_meeting_agenda_promote_suggestion_v18140'));
 assert.ok(api.includes("'side_effects_executed'=>false"));
 
 // Existing Meeting Intelligence owns the surface; 18.13 loads 18.14 rather than creating a dashboard.
@@ -72,6 +76,8 @@ assert.ok(ui.includes('Suggested questions'));
 assert.ok(ui.includes('Add to agenda'));
 assert.ok(ui.includes('Approve for Agent review'));
 assert.ok(ui.includes('No external action was executed'));
+assert.ok(ui.includes("post('promote_suggestion',{suggestion_index:index})"));
+assert.ok(ui.includes("post('promote_prep',{source_bucket:bucket,source_index:index})"));
 assert.ok(ui.includes('attachPrepPromotion'));
 assert.ok(ui.includes("['open','discussed','decision','follow_up','skipped']"));
 assert.ok(ui.includes('safeHref'));
@@ -84,6 +90,7 @@ assert.ok(memory.includes('video_meeting_memory_agenda_query_relevant_v18140'));
 assert.ok(memory.includes('video_meeting_memory_upcoming_agenda_v18140'));
 assert.ok(memory.includes("'upcoming_agendas'=>$agendas"));
 assert.ok(memory.includes("'agenda_version'=>'v18.14'"));
+assert.ok(memory.includes('Do not claim a pending item was completed.'));
 assert.ok(memory.includes('approved_for_agent_review is approved for Agent review only'));
 assert.ok(memory.includes("'source'=>'video_meeting_agenda:'"));
 assert.ok(!memory.includes('JOIN video_meeting_notes'));
