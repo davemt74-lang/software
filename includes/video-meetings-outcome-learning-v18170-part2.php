@@ -23,16 +23,3 @@ function video_meeting_outcome_learning_for_meeting_v18170(PDO $pdo,array $meeti
         'generated_at'=>gmdate('c'),
     ];
 }
-
-function video_meeting_outcome_learning_query_relevant_v18170(string $query): bool
-{
-    $q=video_meeting_memory_normalize_v18120($query);
-    return $q!==''&&preg_match('/\b(what works after meetings|follow[ -]?up performance|follow[ -]?through performance|outcome learning|meeting outcomes|which follow[ -]?ups work|blocked follow[ -]?ups|overdue follow[ -]?ups)\b/u',$q)===1;
-}
-
-function video_meeting_outcome_learning_agent_context_v18170(PDO $pdo,int $ownerUserId,string $query): array
-{
-    if(!video_meeting_outcome_learning_query_relevant_v18170($query)||$ownerUserId<1||!video_meeting_outcome_learning_schema_ready_v18170($pdo))return ['version'=>'v18.17','relevant'=>false,'patterns'=>[]];
-    $patterns=[];foreach(video_meeting_outcome_learning_rows_v18170($pdo,$ownerUserId) as $row){if(!is_array($row))continue;$guidance=video_meeting_outcome_learning_guidance_v18170($row);if($guidance)$patterns[]=$guidance;if(count($patterns)>=8)break;}
-    return ['version'=>'v18.17','relevant'=>(bool)$patterns,'patterns'=>$patterns,'instructions'=>'Outcome Learning is aggregate organizer-owned advisory evidence. It does not score participants and does not prove that any future action will succeed. Treat verified and friction rates as historical observations only.','privacy'=>['participant_scoring'=>false,'participant_names'=>false,'participant_emails'=>false,'raw_transcript'=>false,'private_notes'=>false]];
-}
