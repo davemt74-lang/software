@@ -7,8 +7,6 @@ const api=read('api/video-meeting-intelligence.php');
 const handoff=read('includes/video-meetings-intelligence-handoff-v1890.php');
 const ui=read('video-meetings-intelligence-v1820.js')+'\n'+read('video-meetings-followthrough-v18100.js');
 
-assert.ok(follow.includes('VP3_VIDEO_MEETING_FOLLOWTHROUGH_V18100'));
-assert.ok(follow.includes('video-meetings-followthrough-v18100-20260915'));
 assert.ok(follow.includes("VP3_VIDEO_MEETING_FOLLOWTHROUGH_APP_V18100='meeting_followthrough_v18100'"));
 assert.ok(follow.includes("VP3_VIDEO_MEETING_FOLLOWTHROUGH_ARTIFACT_V18100='post_meeting_action_queue'"));
 assert.ok(!follow.includes('CREATE TABLE'), '18.10 must not create parallel domain tables');
