@@ -69,6 +69,13 @@ function loadMemoryController(){
   boot.memoryEndpoint=boot.memoryEndpoint||intelligenceEndpoint.replace(/video-meeting-intelligence\.php(?:\?.*)?$/,'video-meeting-memory.php')||'/api/video-meeting-memory.php';
   return new Promise((resolve,reject)=>{const script=document.createElement('script');script.src='video-meetings-memory-v18120.js?v=18120';script.async=true;script.dataset.vp3MeetingMemory='18120';script.onload=resolve;script.onerror=()=>reject(new Error('Meeting Search & Memory UI could not load.'));document.head.appendChild(script);});
 }
+function loadAutomationController(){
+  if(!boot.isOrganizer)return Promise.resolve();
+  if(document.querySelector('script[data-vp3-meeting-automation="18130"]'))return Promise.resolve();
+  const intelligenceEndpoint=String(boot.intelligenceEndpoint||'');
+  boot.automationEndpoint=boot.automationEndpoint||intelligenceEndpoint.replace(/video-meeting-intelligence\.php(?:\?.*)?$/,'video-meeting-automation.php')||'/api/video-meeting-automation.php';
+  return new Promise((resolve,reject)=>{const script=document.createElement('script');script.src='video-meetings-automation-v18130.js?v=18130';script.async=true;script.dataset.vp3MeetingAutomation='18130';script.onload=resolve;script.onerror=()=>reject(new Error('Meeting Intelligence Prep could not load.'));document.head.appendChild(script);});
+}
 
 function renderState(s){
   state=s||{};const snap=state.snapshot||{};renderSummary(snap,state.prep);
@@ -133,6 +140,7 @@ function wire(){
 wire();
 loadFollowthroughController().then(()=>window.VP3MeetingFollowthrough18100?.init?.({boot,intelligence,setStatus,renderState,getState:()=>state})).catch(err=>setStatus(err.message,'error'));
 loadMemoryController().catch(err=>setStatus(err.message,'error'));
+loadAutomationController().catch(err=>setStatus(err.message,'error'));
 if(!boot.isOrganizer){setStatus(privateMessage,'private');$$('[data-meeting-private]').forEach(el=>el.hidden=true);return;}
 loadState().then(s=>{if(boot.reviewOnly&&s?.final_analysis_due)runAnalysis('final',true);});
 if(!boot.reviewOnly)setInterval(()=>{if(document.visibilityState==='visible')loadState();},15000);
