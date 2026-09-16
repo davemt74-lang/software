@@ -48,7 +48,8 @@ assert.ok(automation.includes('pending commitments remain pending until separate
 // Privacy boundaries match 18.12: participant names only; no emails, transcript, notes or historical HomeServer probing.
 assert.ok(automation.includes('SELECT display_name FROM video_meeting_participants'));
 assert.ok(!automation.includes('SELECT email'));
-for(const forbidden of ['transcript_text','note_text','private_note','homeserver_vp3_remote_operation','homeserver_agent_v018_credentials','homeserver_capability_v033_registry'])assert.ok(!automation.includes(forbidden),`automation must not consume private field/route ${forbidden}`);
+for(const forbidden of ['transcript_text','note_text','homeserver_vp3_remote_operation','homeserver_agent_v018_credentials','homeserver_capability_v033_registry'])assert.ok(!automation.includes(forbidden),`automation must not consume private field/route ${forbidden}`);
+for(const forbiddenAccess of ["['private_note']",'["private_note"]',"['private_notes']",'["private_notes"]'])assert.ok(!automation.includes(forbiddenAccess),`automation must not access private notes via ${forbiddenAccess}`);
 assert.ok(automation.includes("'raw_transcript_read'=>false"));
 assert.ok(automation.includes("'private_notes_read'=>false"));
 assert.ok(automation.includes("'participant_email_read'=>false"));
