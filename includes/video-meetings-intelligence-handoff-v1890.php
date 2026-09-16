@@ -36,9 +36,17 @@ function video_meeting_intelligence_handoff_v1890(PDO $pdo,array $meeting,array 
             ['source'=>'transcript:'.$sessionId,'title'=>'Meeting transcript #'.$sessionId],
         ],
     ];
+    if(function_exists('video_meeting_followthrough_queue_context_v18100')){
+        try{$context=array_merge($context,video_meeting_followthrough_queue_context_v18100($pdo,$meeting));}catch(Throwable $ignored){}
+    }
     $text=video_meeting_intelligence_handoff_text_v1820($meeting,$public);
     $brief=trim((string)($public['snapshot']['agent_brief']??''));
     if($brief!=='')$text=mb_strimwidth($text."\n\nAgent Brief\n".$brief,0,20000,'…');
+    $pending=is_array($context['followthrough_pending']??null)?$context['followthrough_pending']:[];
+    if($pending){
+        $rows=[];foreach(array_slice($pending,0,10) as $item)if(is_array($item))$rows[]='• '.(string)($item['title']??'Action').' ['.(string)($item['status']??'suggested').']';
+        if($rows)$text=mb_strimwidth($text."\n\nPost-Meeting Action Queue\n".implode("\n",$rows)."\nOpen the meeting review to approve or finish these follow-ups.",0,20000,'…');
+    }
     $conversationId=agent_chat_v101_append_ecosystem_message($user,$text,$context);
     if($conversationId<1)throw new RuntimeException('Agent Chat did not accept the meeting intelligence handoff.');
     $pdo->prepare('INSERT INTO video_meeting_intelligence_state (meeting_id,transcript_session_id,handoff_source_hash,handoff_conversation_id,handoff_at,last_error) VALUES (?,?,?,?,NOW(),\'\') ON DUPLICATE KEY UPDATE transcript_session_id=VALUES(transcript_session_id),handoff_source_hash=VALUES(handoff_source_hash),handoff_conversation_id=VALUES(handoff_conversation_id),handoff_at=NOW(),last_error=\'\',updated_at=NOW()')
