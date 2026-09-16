@@ -111,7 +111,8 @@ function video_meeting_agenda_next_sort_v18140(PDO $pdo,int $meetingId): int
 
 function video_meeting_agenda_fingerprint_v18140(int $meetingId,string $text,string $sourceKind,int $sourceMeetingId,string $sourceHash): string
 {
-    return hash('sha256',$meetingId.'|'.mb_strtolower($text).'|'.$sourceKind.'|'.$sourceMeetingId.'|'.$sourceHash);
+    $sourceIdentity=$sourceMeetingId>0?($sourceMeetingId.'|'.$sourceHash):'manual';
+    return hash('sha256',$meetingId.'|'.mb_strtolower($text).'|'.$sourceIdentity);
 }
 
 function video_meeting_agenda_insert_v18140(PDO $pdo,array $meeting,int $ownerUserId,string $text,string $type='discussion',string $priority='normal',string $sourceKind='manual',int $sourceMeetingId=0,string $sourceHash='',string $sourceIndexHash='',string $sourceReviewPath=''): array
@@ -124,7 +125,7 @@ function video_meeting_agenda_insert_v18140(PDO $pdo,array $meeting,int $ownerUs
     $sourceReviewPath=video_meeting_agenda_text_v18140($sourceReviewPath,500);if($sourceReviewPath!==''&&!str_starts_with($sourceReviewPath,'/meeting.php?'))$sourceReviewPath='';
     $fingerprint=video_meeting_agenda_fingerprint_v18140((int)$meeting['id'],$text,$sourceKind,$sourceMeetingId,$sourceHash);
     $sort=video_meeting_agenda_next_sort_v18140($pdo,(int)$meeting['id']);
-    $stmt=$pdo->prepare("INSERT INTO video_meeting_agenda_items (meeting_id,owner_user_id,item_text,item_type,source_kind,source_meeting_id,source_hash,source_index_hash,source_review_path,status,priority,sort_order,fingerprint) VALUES (?,?,?,?,?,?,?,?,?,'open',?,?,?) ON DUPLICATE KEY UPDATE item_text=VALUES(item_text),item_type=VALUES(item_type),priority=VALUES(priority),updated_at=NOW()");
+    $stmt=$pdo->prepare("INSERT INTO video_meeting_agenda_items (meeting_id,owner_user_id,item_text,item_type,source_kind,source_meeting_id,source_hash,source_index_hash,source_review_path,status,priority,sort_order,fingerprint) VALUES (?,?,?,?,?,?,?,?,?,'open',?,?,?) ON DUPLICATE KEY UPDATE item_text=VALUES(item_text),item_type=VALUES(item_type),priority=VALUES(priority),source_kind=VALUES(source_kind),source_index_hash=VALUES(source_index_hash),source_review_path=VALUES(source_review_path),updated_at=NOW()");
     $stmt->execute([(int)$meeting['id'],$ownerUserId,$text,$type,$sourceKind,$sourceMeetingId>0?$sourceMeetingId:null,$sourceHash,$sourceIndexHash,$sourceReviewPath,$priority,$sort,$fingerprint]);
     return video_meeting_agenda_items_v18140($pdo,$meeting,$ownerUserId);
 }
@@ -173,6 +174,12 @@ function video_meeting_agenda_promote_prep_v18140(PDO $pdo,array $meeting,int $o
     return video_meeting_agenda_insert_v18140($pdo,$meeting,$ownerUserId,(string)($row['text']??''),$type,$priority,'prep_'.$bucket,$source['source_meeting_id'],$source['source_hash'],$source['source_index_hash'],$source['source_review_path']);
 }
 
+function video_meeting_agenda_promote_suggestion_v18140(PDO $pdo,array $meeting,int $ownerUserId,int $suggestionIndex): array
+{
+    $state=video_meeting_agenda_suggestions_v18140($pdo,$meeting,$ownerUserId);$suggestion=$state['suggestions'][$suggestionIndex]??null;if(!is_array($suggestion))throw new RuntimeException('That agenda suggestion is no longer available.');
+    return video_meeting_agenda_insert_v18140($pdo,$meeting,$ownerUserId,(string)$suggestion['text'],(string)$suggestion['type'],(string)$suggestion['priority'],'suggested',(int)$suggestion['source_meeting_id'],(string)$suggestion['source_hash'],(string)$suggestion['source_index_hash'],(string)$suggestion['source_review_path']);
+}
+
 function video_meeting_agenda_accept_suggestions_v18140(PDO $pdo,array $meeting,int $ownerUserId): array
 {
     $state=video_meeting_agenda_suggestions_v18140($pdo,$meeting,$ownerUserId);
@@ -208,7 +215,9 @@ function video_meeting_agenda_action_state_v18140(PDO $pdo,array $meeting,int $o
 {
     video_meeting_agenda_owner_guard_v18140($meeting,$ownerUserId);$actionKind=video_meeting_agenda_normalize_action_v18140($actionKind);if($actionKind==='')throw new RuntimeException('Choose Task, Calendar, CRM, or Email.');
     $approvalState=strtolower(trim($approvalState));if(!in_array($approvalState,['proposed','approved_for_agent_review','none'],true))throw new RuntimeException('Unsupported action approval state.');
-    $stmt=$pdo->prepare("UPDATE video_meeting_agenda_items SET action_kind=?,approval_state=?,status=IF(status='open','follow_up',status),updated_at=NOW() WHERE id=? AND meeting_id=? AND owner_user_id=?");$stmt->execute([$approvalState==='none'?'':$actionKind,$approvalState,$itemId,(int)$meeting['id'],$ownerUserId]);if($stmt->rowCount()<1){$check=$pdo->prepare('SELECT id FROM video_meeting_agenda_items WHERE id=? AND meeting_id=? AND owner_user_id=?');$check->execute([$itemId,(int)$meeting['id'],$ownerUserId]);if(!$check->fetchColumn())throw new RuntimeException('Agenda item not found.');}
+    if($approvalState==='none'){$stmt=$pdo->prepare("UPDATE video_meeting_agenda_items SET action_kind='',approval_state='none',updated_at=NOW() WHERE id=? AND meeting_id=? AND owner_user_id=?");$stmt->execute([$itemId,(int)$meeting['id'],$ownerUserId]);}
+    else{$stmt=$pdo->prepare("UPDATE video_meeting_agenda_items SET item_type='follow_up',status='follow_up',action_kind=?,approval_state=?,updated_at=NOW() WHERE id=? AND meeting_id=? AND owner_user_id=?");$stmt->execute([$actionKind,$approvalState,$itemId,(int)$meeting['id'],$ownerUserId]);}
+    if($stmt->rowCount()<1){$check=$pdo->prepare('SELECT id FROM video_meeting_agenda_items WHERE id=? AND meeting_id=? AND owner_user_id=?');$check->execute([$itemId,(int)$meeting['id'],$ownerUserId]);if(!$check->fetchColumn())throw new RuntimeException('Agenda item not found.');}
     return video_meeting_agenda_items_v18140($pdo,$meeting,$ownerUserId);
 }
 
