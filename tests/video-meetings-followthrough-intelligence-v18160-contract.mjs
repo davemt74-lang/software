@@ -26,7 +26,8 @@ assert.ok(p1.includes('video_meeting_action_complete_v18150'),'explicit resoluti
 for(const forbidden of ['user_calendar_automation_create_event_v1300','crm_v180_activity(','agent_workflow_create_from_priority_v1400','agent_appointment_lifecycle_email_v700(','mail('])assert.ok(!p1.includes(forbidden),`monitoring must not execute external writer ${forbidden}`);
 
 assert.ok(p2.includes('SELECT display_name FROM video_meeting_participants'),'prep relevance may use participant display names');
-assert.ok(!p2.includes('email'),'Phase 18.16 prep relevance must not read participant email');
+assert.ok(!p2.includes('SELECT email')&&!p2.includes("['email']")&&!p2.includes('["email"]'),'Phase 18.16 prep relevance must not read participant email fields');
+assert.ok(p2.includes("'participant_email_read'=>false"),'privacy metadata must explicitly state participant email is not read');
 assert.ok(p2.includes("m.status IN ('blocked','overdue','due_soon','verified')"),'future prep must resurface attention/outcome states');
 assert.ok(p2.includes('video_meeting_followthrough_name_overlap_v18160'),'future prep should prefer participant-relevant prior outcomes');
 assert.ok(p2.includes('raw_transcript_read')&&p2.includes('homeserver_historical_probe'),'privacy metadata is required');
@@ -37,7 +38,7 @@ assert.ok(api.includes("(int)($meeting['owner_user_id']??0)!==$userId"),'18.16 A
 for(const action of ['state','set_expected','confirm','dismiss','reopen'])assert.ok(api.includes(`$action==='${action}'`),`missing API action ${action}`);
 assert.ok(!api.includes('$_GET'),'18.16 API must not accept query-string mutations');
 
-assert.ok(prepApi.includes('video-meeting-followthrough-intelligence-v18160.php'),'Prep API must load 18.16');
+assert.ok(prepApi.includes('video-meetings-followthrough-intelligence-v18160.php'),'Prep API must load 18.16');
 assert.ok(prepApi.includes("$prep['followthrough_intelligence']"),'Prep API must attach 18.16 intelligence');
 assert.ok(ui.includes("tab.dataset.pane='outcomes'"),'18.16 must remain inside Meeting Intelligence');
 assert.ok(ui.includes("pane.id='meetingPane-outcomes'"));
