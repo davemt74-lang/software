@@ -76,13 +76,17 @@ function video_meeting_memory_date_window_v18120(string $query): ?array
 function video_meeting_memory_require_final_v18120(PDO $pdo,array $meeting): array
 {
     if(!in_array(strtolower((string)($meeting['status']??'')),['ended','processed'],true))throw new RuntimeException('Meeting memory is available after the meeting ends.');
-    $public=video_meeting_intelligence_public_state_v1890($pdo,$meeting);
+    // Use the canonical finalized 18.2 state and only overlay an already-cached,
+    // sanitized 18.9 artifact. Historical search must never probe HomeServer.
+    $public=video_meeting_intelligence_public_state_v1820($pdo,$meeting);
     $sourceHash=(string)($public['source_hash']??'');
     $state=video_meeting_intelligence_state_row_v1820($pdo,$meeting);
     $finalHash=(string)($state['final_source_hash']??'');
     if($sourceHash===''||empty($public['final_analysis_at'])||!empty($public['final_analysis_due'])||$finalHash===''||!hash_equals($finalHash,$sourceHash)){
         throw new RuntimeException('Finalize and review the current meeting intelligence before it can become searchable memory.');
     }
+    $hybrid=video_meeting_intelligence_hybrid_artifact_v1890($pdo,$meeting,$sourceHash);
+    if(is_array($hybrid))$public['snapshot']=video_meeting_intelligence_hybrid_snapshot_v1890($hybrid);
     return ['public'=>$public,'source_hash'=>$sourceHash,'final_source_hash'=>$finalHash];
 }
 
