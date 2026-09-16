@@ -64,10 +64,17 @@ function video_meeting_outcome_learning_rebuild_v18170(PDO $pdo,int $ownerUserId
     return count($patterns);
 }
 
+function video_meeting_outcome_learning_rebuild_due_v18170(PDO $pdo,int $ownerUserId,int $maxAgeSeconds=60): bool
+{
+    if($ownerUserId<1)return false;$maxAgeSeconds=max(10,min(600,$maxAgeSeconds));
+    $s=$pdo->prepare('SELECT MAX(last_rebuilt_at) FROM video_meeting_outcome_patterns WHERE owner_user_id=?');$s->execute([$ownerUserId]);$last=trim((string)$s->fetchColumn());
+    if($last==='')return true;$ts=strtotime($last)?:0;return $ts<time()-$maxAgeSeconds;
+}
+
 function video_meeting_outcome_learning_rows_v18170(PDO $pdo,int $ownerUserId): array
 {
     if($ownerUserId<1||!video_meeting_outcome_learning_schema_ready_v18170($pdo))return [];
-    video_meeting_outcome_learning_rebuild_v18170($pdo,$ownerUserId);
+    if(video_meeting_outcome_learning_rebuild_due_v18170($pdo,$ownerUserId))video_meeting_outcome_learning_rebuild_v18170($pdo,$ownerUserId);
     $s=$pdo->prepare('SELECT * FROM video_meeting_outcome_patterns WHERE owner_user_id=? ORDER BY observed_count DESC,verified_rate_bps DESC,id ASC LIMIT 40');$s->execute([$ownerUserId]);return $s->fetchAll()?:[];
 }
 
