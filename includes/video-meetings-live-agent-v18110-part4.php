@@ -39,10 +39,13 @@ function video_meeting_live_agent_homeserver_answer_v18110(PDO $pdo,array $meeti
     $cloudAllowed=!empty($plan['homeserver_cloud_allowed']);
     $payload=[
         'message'=>$message,'include_memory'=>true,'include_knowledge'=>true,'include_contacts'=>true,
-        'cloud_allowed'=>$cloudAllowed,'max_context_chars'=>16000,
+        'cloud_allowed'=>$cloudAllowed,'read_only'=>true,'max_context_chars'=>16000,
     ];
     $remoteId=video_meeting_live_agent_text_v18110($state['homeserver_conversation_id']??'',160);if($remoteId!=='')$payload['conversation_id']=$remoteId;
     $result=homeserver_vp3_remote_operation((string)$credentials['relay'],'agent.chat',$payload,(string)$credentials['home']);
+    if(empty($result['read_only']))throw new RuntimeException('HomeServer did not confirm server-enforced read-only live Agent mode.');
+    $tools=is_array($result['tools']??null)?$result['tools']:[];
+    if((int)($tools['call_count']??0)!==0||!empty($tools['run_ids'])||!empty($tools['action_request_ids']))throw new RuntimeException('HomeServer reported tool or action activity during a read-only live Agent turn.');
     $answer=video_meeting_live_agent_text_v18110($result['reply']??'',12000);if($answer==='')throw new RuntimeException('HomeServer did not return a live Agent response.');
     $compute=trim((string)($result['compute_source']??'homeserver_local'));
     if(!$cloudAllowed&&$compute==='vp3_cloud')throw new RuntimeException('HomeServer attempted a cloud delegation that this meeting does not allow.');
