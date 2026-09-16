@@ -28,10 +28,8 @@ function video_meeting_live_agent_context_v18110(PDO $pdo,array $meeting): array
             'source_hash'=>(string)($public['source_hash']??''),'word_count'=>(int)($public['word_count']??0),
         ],
         'guardrails'=>[
-            'live_advisory_only'=>true,
-            'no_direct_side_effects'=>true,
-            'promote_actions_via_post_meeting_queue'=>true,
-            'private_context_not_persisted'=>true,
+            'live_advisory_only'=>true,'no_direct_side_effects'=>true,
+            'promote_actions_via_post_meeting_queue'=>true,'private_context_not_persisted'=>true,
         ],
     ];
 }
@@ -49,11 +47,11 @@ function video_meeting_live_agent_public_turn_v18110(array $turn): array
 
 function video_meeting_live_agent_public_state_v18110(PDO $pdo,array $meeting,array $user): array
 {
-    $cap=video_meeting_live_agent_capability_v18110($pdo,$meeting,$user);
-    $stored=video_meeting_live_agent_artifact_v18110($pdo,$meeting)?:[];
+    $cap=video_meeting_live_agent_capability_v18110($pdo,$meeting,$user);$stored=video_meeting_live_agent_artifact_v18110($pdo,$meeting)?:[];
     $turns=[];foreach(array_slice((array)($stored['turns']??[]),-30) as $turn)if(is_array($turn))$turns[]=video_meeting_live_agent_public_turn_v18110($turn);
+    $active=!empty($stored['active'])&&!empty($cap['meeting_live']);
     return [
-        'available'=>!empty($cap['available']),'active'=>!empty($stored['active']),'session_id'=>(string)($stored['session_id']??''),
+        'available'=>!empty($cap['available']),'active'=>$active,'session_id'=>(string)($stored['session_id']??''),
         'started_at'=>(string)($stored['started_at']??''),'stopped_at'=>(string)($stored['stopped_at']??''),
         'interaction_mode'=>'text','spoken_available'=>false,'media_worker_available'=>!empty($cap['media_worker_available']),
         'media_worker'=>is_array($stored['media_worker']??null)?$stored['media_worker']:null,
@@ -72,8 +70,7 @@ function video_meeting_live_agent_history_v18110(array $state): array
     foreach(array_slice((array)($state['turns']??[]),-8) as $turn){
         if(!is_array($turn))continue;
         $q=video_meeting_live_agent_text_v18110($turn['question']??'',4000);$a=video_meeting_live_agent_text_v18110($turn['answer']??'',8000);
-        if($q!=='')$history[]=['role'=>'user','message'=>$q];
-        if($a!=='')$history[]=['role'=>'assistant','message'=>$a];
+        if($q!=='')$history[]=['role'=>'user','message'=>$q];if($a!=='')$history[]=['role'=>'assistant','message'=>$a];
     }
     return $history;
 }
