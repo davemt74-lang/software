@@ -7,6 +7,8 @@ const api=read('api/video-meeting-live-agent.php');
 const ui=read('video-meetings-live-agent-v18110.js');
 const bridge=read('video-meetings-followthrough-v18100.js');
 const media=read('includes/video-meetings-agent-v1800.php');
+const homeserverBrainApi=read('homeserver-v1890/app/brain_api.py');
+const homeserverChat=read('homeserver-v1890/app/services/context_chat.py');
 
 // Phase 18.11 extends existing meeting/artifact state; no second chat/domain schema.
 assert.ok(live.includes("VP3_VIDEO_MEETING_LIVE_AGENT_APP_V18110='meeting_live_agent_v18110'"));
@@ -65,6 +67,17 @@ assert.ok(live.includes("$plan['allow_vp3_fallback']=false"));
 assert.ok(live.includes("$plan['fallback_target']='none'"));
 assert.ok(live.includes("$plan['homeserver_cloud_allowed']=false"));
 assert.ok(live.includes("'homeserver_live_generation_supported'=>true"));
+
+// The pinned HomeServer implementation must enforce the same contract server-side.
+assert.ok(homeserverBrainApi.includes('read_only: bool = False'));
+assert.ok(homeserverBrainApi.includes('if payload.read_only:'));
+assert.ok(homeserverBrainApi.includes('read_only=True'));
+assert.ok(homeserverChat.includes('def _model_tool_permissions(read_only: bool, permissions: set[str])'));
+assert.ok(homeserverChat.includes('return set() if read_only else set(permissions)'));
+assert.ok(homeserverChat.includes('granted_permissions=_model_tool_permissions(read_only, canonical.model_tool_permissions)'));
+assert.ok(homeserverChat.includes('owner=bool(owner_tools and not read_only)'));
+assert.ok(homeserverChat.includes('tool_state["read_only"] = bool(read_only)'));
+assert.ok(homeserverChat.includes('"read_only": bool(read_only)'));
 
 // HomeServer turn content is browser-ephemeral: Cloud stores opaque continuity
 // and idempotency receipts only, never the private question/answer text.
