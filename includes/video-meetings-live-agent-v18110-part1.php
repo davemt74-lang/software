@@ -41,8 +41,33 @@ function video_meeting_live_agent_runtime_plan_v18110(PDO $pdo,array $meeting,ar
 {
     $agentId=max(0,(int)($meeting['organizer_agent_id']??0));
     if(!function_exists('vp3_agent_runtime_plan_v420'))return ['blocked'=>true,'route'=>'blocked','route_reason'=>'runtime_unavailable','agent_id'=>$agentId];
-    try{return vp3_agent_runtime_plan_v420($pdo,$user,$agentId,'chat');}
+    try{$plan=vp3_agent_runtime_plan_v420($pdo,$user,$agentId,'chat');}
     catch(Throwable $e){return ['blocked'=>true,'route'=>'blocked','route_reason'=>'runtime_unavailable','agent_id'=>$agentId];}
+
+    // Meeting privacy is a stricter boundary than the account/Agent compute
+    // preference. A private or unresolved meeting can never be routed to VP3
+    // Cloud merely because the Agent account prefers cloud compute.
+    try{
+        $public=video_meeting_intelligence_public_state_v1890($pdo,$meeting);
+        $policy=is_array($public['processing_policy']??null)?$public['processing_policy']:[];
+        if(array_key_exists('policy_resolved',$policy)&&empty($policy['policy_resolved'])){
+            $plan['blocked']=true;$plan['route']='blocked';$plan['route_reason']='meeting_policy_unresolved';
+            $plan['allow_vp3_fallback']=false;$plan['fallback_target']='none';$plan['homeserver_cloud_allowed']=false;
+            return $plan;
+        }
+        $requiresHome=(($policy['cloud_ai_allowed']??null)===false)||(string)($policy['requested_compute']??'')==='homeserver_only';
+        if($requiresHome){
+            $homeReady=!empty($plan['home']['ready'])&&(!empty($plan['try_homeserver'])||(string)($plan['route']??'')==='homeserver');
+            if(!$homeReady){
+                $plan['blocked']=true;$plan['route']='blocked';$plan['route_reason']='meeting_homeserver_only';
+            }
+            $plan['allow_vp3_fallback']=false;$plan['fallback_target']='none';$plan['homeserver_cloud_allowed']=false;
+        }
+    }catch(Throwable $e){
+        $plan['blocked']=true;$plan['route']='blocked';$plan['route_reason']='meeting_policy_unavailable';
+        $plan['allow_vp3_fallback']=false;$plan['fallback_target']='none';$plan['homeserver_cloud_allowed']=false;
+    }
+    return $plan;
 }
 
 function video_meeting_live_agent_capability_v18110(PDO $pdo,array $meeting,array $user): array
