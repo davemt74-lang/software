@@ -64,6 +64,12 @@ function buildPane(){
 function installStyle(){if($('#meetingPrepStyle18130'))return;const style=el('style');style.id='meetingPrepStyle18130';style.textContent=`
 .meeting-prep-intro{padding:4px 0 12px}.meeting-prep-intro strong{display:block;font-size:15px}.meeting-prep-intro p{margin:7px 0 0;opacity:.72;line-height:1.5}.meeting-prep-participants,.meeting-prep-status{font-size:12px;opacity:.72;margin:8px 0}.meeting-prep-status[data-kind="error"]{opacity:1}.meeting-prep-section{margin-top:16px}.meeting-prep-section h3{font-size:12px;text-transform:uppercase;letter-spacing:.08em;opacity:.65;margin:0 0 8px}.meeting-prep-stack{display:grid;gap:8px}.meeting-prep-item{border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:11px;background:rgba(255,255,255,.035)}.meeting-prep-top{display:flex;justify-content:space-between;gap:8px}.meeting-prep-category{font-size:10px;text-transform:uppercase;letter-spacing:.08em;font-weight:800;opacity:.7}.meeting-prep-date{font-size:10px;opacity:.5}.meeting-prep-title{display:block;margin-top:7px}.meeting-prep-text{margin:5px 0 0;line-height:1.48}.meeting-prep-meta{font-size:11px;opacity:.7;margin-top:7px}.meeting-prep-source{display:inline-block;margin-top:8px;font-size:11px;font-weight:750}.meeting-prep-lobby{margin-top:18px;padding:14px;border:1px solid rgba(255,255,255,.12);border-radius:14px;text-align:left;background:rgba(255,255,255,.045)}.meeting-prep-lobby-head{display:flex;align-items:center;justify-content:space-between;gap:10px}.meeting-prep-lobby-head strong{font-size:14px}.meeting-prep-lobby p{margin:8px 0 10px;line-height:1.45;opacity:.76}.meeting-prep-open{border:0;border-radius:10px;padding:9px 12px;font-weight:750;cursor:pointer}@media(max-width:720px){.meeting-prep-top{flex-direction:column}}
 `;document.head.appendChild(style);}
+function loadAgendaController(){
+  if(window.VP3MeetingAgenda18140||document.querySelector('script[data-vp3-meeting-agenda="18140"]'))return Promise.resolve();
+  const automationEndpoint=String(boot.automationEndpoint||endpoint());
+  boot.agendaEndpoint=boot.agendaEndpoint||automationEndpoint.replace(/video-meeting-automation\.php(?:\?.*)?$/,'video-meeting-agenda.php')||'/api/video-meeting-agenda.php';
+  return new Promise((resolve,reject)=>{const script=document.createElement('script');script.src='video-meetings-agenda-v18140.js?v=18140';script.async=true;script.dataset.vp3MeetingAgenda='18140';script.onload=resolve;script.onerror=()=>reject(new Error('Meeting Agenda & Action Orchestration could not load.'));document.head.appendChild(script);});
+}
 async function load(){
   if(loading)return;loading=true;buildPane();installStyle();
   try{prep=await post();renderPane(prep);if(!boot.reviewOnly)renderLobby(prep);window.dispatchEvent(new CustomEvent('vp3:meeting-prep-ready',{detail:{prep}}));}
@@ -71,5 +77,6 @@ async function load(){
   finally{loading=false;}
 }
 load();
+loadAgendaController().catch(()=>{});
 window.VP3MeetingAutomation18130={reload:load,getPrep:()=>prep,activate};
 })();
