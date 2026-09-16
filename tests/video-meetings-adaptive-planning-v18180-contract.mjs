@@ -19,12 +19,14 @@ assert.ok(p1.includes('uq_video_meeting_followthrough_plan_item (agenda_item_id)
 for(const field of ['owner_label','target_at','target_timezone','verification_criteria','readiness'])assert.ok(p1.includes(field),`missing plan field ${field}`);
 assert.ok(p1.includes("?'ready':'needs_definition'"),'readiness must require all planning fields');
 assert.ok(p1.includes("status']!=='follow_up'")&&p1.includes("item_type']!=='follow_up'"),'planning must be limited to follow-up agenda items');
+assert.ok(p1.includes("status']==='skipped'"),'skipped follow-ups must reject planning mutations');
 assert.ok(p1.includes('video_meeting_agenda_owner_guard_v18140'),'planning must inherit organizer ownership guard');
 assert.ok(p1.includes('DateTimeZone')&&p1.includes('target_timezone'),'target handling must be timezone explicit');
 assert.ok(p1.includes("event_v18180($pdo,$plan,'reset'"),'clearing a plan must preserve an audit event');
 assert.ok(!p1.includes('DELETE FROM video_meeting_followthrough_plans WHERE agenda_item_id'),'clear must reset in place rather than erase plan audit history');
 
 assert.ok(p2.includes('video_meeting_outcome_learning_for_meeting_v18170'),'18.18 advice must consume 18.17 aggregate learning');
+assert.ok(p2.includes("status<>'skipped'"),'skipped follow-ups must be excluded from planning state');
 assert.ok(p2.includes('owner')&&p2.includes('target')&&p2.includes('verification criteria'),'planning advice must identify missing readiness fields');
 assert.ok(p2.includes("tone==='friction'")&&p2.includes("tone==='reliable'"),'adaptive advice must distinguish learned outcome patterns');
 assert.ok(p2.includes("'advisory_learning_only'=>true"),'outcome learning must remain advisory');
@@ -41,11 +43,15 @@ assert.ok(!api.includes('$_GET'),'18.18 API must not accept query-string mutatio
 
 assert.ok(learningUi.includes('loadAdaptivePlanningController'),'18.17 UI must load 18.18 after outcome learning');
 assert.ok(learningUi.includes("dataset.vp3MeetingAdaptivePlanning='18180'"),'18.18 loader marker is required');
+assert.ok(learningUi.includes('script.onerror'),'18.18 loader failures must be surfaced');
 assert.ok(ui.includes("tab.dataset.pane='plan'"),'18.18 must stay inside Meeting Intelligence');
 assert.ok(ui.includes("pane.id='meetingPane-plan'"));
 for(const text of ['Owner','Verification criteria','Save plan','Clear plan'])assert.ok(ui.includes(text),`18.18 UI missing ${text}`);
 assert.ok(ui.includes('datetime-local')&&ui.includes('state?.meeting?.timezone'),'target editor must expose the meeting timezone');
 assert.ok(ui.includes('never auto-assigns a person')&&ui.includes('never executes an external action'),'UI must state advisory/execution boundaries');
+assert.ok(ui.includes('if(loading)return'),'planning refreshes must be single-flight');
+assert.ok(ui.includes('audit history was preserved'),'reset messaging must state audit preservation');
+assert.ok(ui.includes('Skipped follow-ups are excluded'),'UI should explain skipped follow-up behavior');
 assert.ok(!ui.includes('innerHTML'),'18.18 UI must render server content safely');
 
 assert.ok(upgrade.includes('video-meetings-adaptive-planning-v18180.php'),'upgrade must load 18.18');
