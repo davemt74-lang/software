@@ -1,0 +1,100 @@
+name: Video Meetings v18.15 Action Execution
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    name: meeting-actions contract (${{ matrix.php }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.1', '8.3']
+    steps:
+      - name: Check out VP3 Cloud
+        uses: actions/checkout@v4
+
+      - name: Check out pinned HomeServer Phase 18.11
+        uses: actions/checkout@v4
+        with:
+          repository: davemt74-lang/otro
+          ref: 1d600b6154b43638c94d71b5238a15fab0b33d9f
+          path: homeserver-v1890
+          persist-credentials: false
+
+      - name: Verify pinned HomeServer revision
+        shell: bash
+        run: test "$(git -C homeserver-v1890 rev-parse HEAD)" = "1d600b6154b43638c94d71b5238a15fab0b33d9f"
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: PHP syntax
+        run: |
+          php -l includes/video-meetings-memory-v18120.php
+          for f in includes/video-meetings-memory-v18120-part*.php; do php -l "$f"; done
+          php -l includes/video-meetings-automation-v18130.php
+          php -l includes/video-meetings-agenda-v18140.php
+          php -l includes/video-meetings-actions-v18150.php
+          for f in includes/video-meetings-actions-v18150-part*.php; do php -l "$f"; done
+          php -l api/video-meeting-memory.php
+          php -l api/video-meeting-automation.php
+          php -l api/video-meeting-agenda.php
+          php -l api/video-meeting-actions.php
+          php -l api/chat-v236.php
+          php -l meeting.php
+          php -l upgrade.php
+
+      - name: JavaScript syntax
+        run: |
+          node --check video-meetings-memory-v18120.js
+          node --check video-meetings-automation-v18130.js
+          node --check video-meetings-agenda-v18140.js
+          node --check video-meetings-actions-v18150.js
+          node --check video-meetings-intelligence-v1820.js
+          node --check tests/video-meetings-intelligence-v1820-contract.mjs
+          node --check tests/video-meetings-intelligence-v1890-contract.mjs
+          node --check tests/video-meetings-intelligence-v18100-contract.mjs
+          node --check tests/video-meetings-live-agent-v18110-contract.mjs
+          node --check tests/video-meetings-memory-v18120-contract.mjs
+          node --check tests/video-meetings-automation-v18130-contract.mjs
+          node --check tests/video-meetings-agenda-v18140-contract.mjs
+          node --check tests/video-meetings-actions-v18150-contract.mjs
+
+      - name: Phase 18.2 regression contract
+        run: node tests/video-meetings-intelligence-v1820-contract.mjs
+
+      - name: Phase 18.9 hybrid regression contract
+        run: node tests/video-meetings-intelligence-v1890-contract.mjs
+
+      - name: Phase 18.10 follow-through regression contract
+        run: node tests/video-meetings-intelligence-v18100-contract.mjs
+
+      - name: Phase 18.11 Live Meeting Agent regression contract
+        run: node tests/video-meetings-live-agent-v18110-contract.mjs
+
+      - name: Phase 18.12 Meeting Search & Memory regression contract
+        run: node tests/video-meetings-memory-v18120-contract.mjs
+
+      - name: Phase 18.13 Meeting Intelligence Automation regression contract
+        run: node tests/video-meetings-automation-v18130-contract.mjs
+
+      - name: Phase 18.14 Meeting Agenda & Action Orchestration regression contract
+        run: node tests/video-meetings-agenda-v18140-contract.mjs
+
+      - name: Phase 18.15 Meeting Action Execution contract
+        run: node tests/video-meetings-actions-v18150-contract.mjs

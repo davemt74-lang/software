@@ -95,10 +95,36 @@ function video_meeting_memory_upcoming_agenda_v18140(PDO $pdo,int $ownerUserId):
     return $out;
 }
 
+function video_meeting_memory_action_query_relevant_v18150(string $query): bool
+{
+    $q=video_meeting_memory_normalize_v18120($query);
+    return $q!==''&&preg_match('/\b(meeting action|meeting actions|after (?:the|our) meeting|follow[ -]?through|follow[ -]?up|executed|execution|what did we do|what happened after)\b/u',$q)===1;
+}
+
+function video_meeting_memory_action_history_v18150(PDO $pdo,int $ownerUserId): array
+{
+    if($ownerUserId<1||!table_exists('video_meeting_action_executions')||!table_exists('video_meeting_agenda_items'))return [];
+    $stmt=$pdo->prepare("SELECT e.id,e.meeting_id,e.action_kind,e.status,e.workflow_run_id,e.calendar_event_id,e.crm_lead_id,e.result_summary,e.executed_at,e.completed_at,m.public_id,m.title,m.start_at_utc,a.item_text
+      FROM video_meeting_action_executions e
+      JOIN video_meetings m ON m.id=e.meeting_id
+      JOIN video_meeting_agenda_items a ON a.id=e.agenda_item_id
+      WHERE e.owner_user_id=? AND e.status IN ('executed','failed','completed')
+      ORDER BY COALESCE(e.completed_at,e.executed_at,e.updated_at) DESC,e.id DESC LIMIT 8");
+    $stmt->execute([$ownerUserId]);$out=[];
+    foreach($stmt->fetchAll()?:[] as $row){if(!is_array($row))continue;$out[]=[
+        'execution_id'=>(int)$row['id'],'meeting_id'=>(int)$row['meeting_id'],'meeting_public_id'=>(string)$row['public_id'],'meeting_title'=>video_meeting_memory_text_v18120($row['title']??'Meeting',190),
+        'meeting_start_at_utc'=>(string)$row['start_at_utc'],'action_kind'=>(string)$row['action_kind'],'status'=>(string)$row['status'],
+        'agenda_text'=>video_meeting_memory_text_v18120($row['item_text']??'',600),'result_summary'=>video_meeting_memory_text_v18120($row['result_summary']??'',800),
+        'workflow_run_id'=>(int)($row['workflow_run_id']??0),'calendar_event_id'=>(int)($row['calendar_event_id']??0),'crm_lead_id'=>(int)($row['crm_lead_id']??0),
+        'review_path'=>'/meeting.php?meeting='.rawurlencode((string)$row['public_id']),
+    ];}
+    return $out;
+}
+
 function video_meeting_memory_agent_context_v18120(PDO $pdo,int $ownerUserId,string $query): array
 {
-    $memoryRelevant=video_meeting_memory_query_relevant_v18120($query);$agendaRelevant=video_meeting_memory_agenda_query_relevant_v18140($query);
-    if(!$memoryRelevant&&!$agendaRelevant)return ['version'=>'v18.12','relevant'=>false,'results'=>[]];
+    $memoryRelevant=video_meeting_memory_query_relevant_v18120($query);$agendaRelevant=video_meeting_memory_agenda_query_relevant_v18140($query);$actionRelevant=video_meeting_memory_action_query_relevant_v18150($query);
+    if(!$memoryRelevant&&!$agendaRelevant&&!$actionRelevant)return ['version'=>'v18.12','relevant'=>false,'results'=>[]];
     $search=['results'=>[]];
     if($memoryRelevant){try{$search=video_meeting_memory_search_v18120($pdo,$ownerUserId,$query,6,0);}catch(Throwable $e){$search=['results'=>[],'error'=>'Meeting memory search is unavailable.'];}}
     $rows=[];
@@ -110,11 +136,11 @@ function video_meeting_memory_agent_context_v18120(PDO $pdo,int $ownerUserId,str
             'review_path'=>(string)$row['review_path'],'provenance'=>$row['provenance'],
         ];
     }
-    $agendas=$agendaRelevant?video_meeting_memory_upcoming_agenda_v18140($pdo,$ownerUserId):[];
+    $agendas=$agendaRelevant?video_meeting_memory_upcoming_agenda_v18140($pdo,$ownerUserId):[];$actions=$actionRelevant?video_meeting_memory_action_history_v18150($pdo,$ownerUserId):[];
     return [
-        'version'=>'v18.12','agenda_version'=>'v18.14','relevant'=>true,'source'=>'vp3_meeting_memory','results'=>$rows,'upcoming_agendas'=>$agendas,
+        'version'=>'v18.12','agenda_version'=>'v18.14','action_version'=>'v18.15','relevant'=>true,'source'=>'vp3_meeting_memory','results'=>$rows,'upcoming_agendas'=>$agendas,'meeting_actions'=>$actions,
         'error'=>(string)($search['error']??''),
-        'instructions'=>'Finalized Meeting Memory results are source-backed. Upcoming agendas are organizer-owned Phase 18.14 state. Distinguish pending, failed and verified follow-through exactly as labeled. Do not claim a pending item was completed. An agenda item marked approved_for_agent_review is approved for Agent review only; it does not mean a Task, Calendar event, CRM update, email, notification or tool action was executed. Cite the meeting title/date or meeting path when relying on meeting context.',
+        'instructions'=>'Finalized Meeting Memory results are source-backed. Upcoming agendas are organizer-owned Phase 18.14 state. Meeting Action history is organizer-owned Phase 18.15 execution state and intentionally omits email bodies and recipient addresses. Distinguish pending, failed, executed, completed and verified follow-through exactly as labeled. Do not claim a pending item was completed. Do not claim an executed action is completed unless its status is completed. An agenda item marked approved_for_agent_review is approved for Agent review only; it does not mean a Task, Calendar event, CRM update, email, notification or tool action was executed. Cite the meeting title/date or meeting path when relying on meeting context.',
     ];
 }
 
@@ -136,6 +162,9 @@ function video_meeting_memory_chat_sources_v18120(array $memory): array
     }
     foreach((array)($memory['upcoming_agendas']??[]) as $agenda){
         if(!is_array($agenda))continue;$meetingId=(int)($agenda['meeting_id']??0);$publicId=trim((string)($agenda['meeting_public_id']??''));if($meetingId<1||$publicId==='')continue;$key='agenda|'.$meetingId;if(isset($seen[$key]))continue;$seen[$key]=true;$title=video_meeting_memory_text_v18120($agenda['meeting_title']??'Meeting agenda',190);$when=video_meeting_memory_text_v18120($agenda['start_at_utc']??'',40);$sources[]=['source'=>'video_meeting_agenda:'.$meetingId,'title'=>$title.($when!==''?' · '.$when:''),'url'=>url('/meeting.php?meeting='.rawurlencode($publicId))];if(count($sources)>=8)break;
+    }
+    foreach((array)($memory['meeting_actions']??[]) as $action){
+        if(!is_array($action))continue;$meetingId=(int)($action['meeting_id']??0);$publicId=trim((string)($action['meeting_public_id']??''));if($meetingId<1||$publicId==='')continue;$key='action|'.$meetingId;if(isset($seen[$key]))continue;$seen[$key]=true;$title=video_meeting_memory_text_v18120($action['meeting_title']??'Meeting actions',190);$sources[]=['source'=>'video_meeting_action:'.$meetingId,'title'=>$title.' · action history','url'=>url('/meeting.php?meeting='.rawurlencode($publicId))];if(count($sources)>=10)break;
     }
     return $sources;
 }

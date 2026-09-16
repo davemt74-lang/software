@@ -2,6 +2,7 @@
 declare(strict_types=1);
 require dirname(__DIR__).'/includes/bootstrap.php';
 require_once dirname(__DIR__).'/includes/video-meetings-agenda-v18140.php';
+require_once dirname(__DIR__).'/includes/video-meetings-actions-v18150.php';
 header('Content-Type: application/json; charset=UTF-8');
 header('Cache-Control: no-store');
 
@@ -21,10 +22,10 @@ try{
     if($action==='promote_prep'){$items=video_meeting_agenda_promote_prep_v18140($pdo,$meeting,$userId,(string)($input['source_bucket']??''),(int)($input['source_index']??-1));echo json_encode(['ok'=>true,'items'=>$items],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);exit;}
     if($action==='promote_suggestion'){$items=video_meeting_agenda_promote_suggestion_v18140($pdo,$meeting,$userId,(int)($input['suggestion_index']??-1));echo json_encode(['ok'=>true,'items'=>$items],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);exit;}
     if($action==='accept_suggestions'){$items=video_meeting_agenda_accept_suggestions_v18140($pdo,$meeting,$userId);echo json_encode(['ok'=>true,'items'=>$items],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);exit;}
-    if($action==='update'){$changes=[];foreach(['item_text','item_type','status','priority'] as $key){if(array_key_exists($key,$input))$changes[$key]=$input[$key];}$items=video_meeting_agenda_update_v18140($pdo,$meeting,$userId,(int)($input['item_id']??0),$changes);echo json_encode(['ok'=>true,'items'=>$items],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);exit;}
+    if($action==='update'){video_meeting_action_guard_agenda_mutation_v18150($pdo,$userId,(int)($input['item_id']??0),'update',$input);$changes=[];foreach(['item_text','item_type','status','priority'] as $key){if(array_key_exists($key,$input))$changes[$key]=$input[$key];}$items=video_meeting_agenda_update_v18140($pdo,$meeting,$userId,(int)($input['item_id']??0),$changes);echo json_encode(['ok'=>true,'items'=>$items],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);exit;}
     if($action==='reorder'){$ids=is_array($input['ids']??null)?$input['ids']:[];$items=video_meeting_agenda_reorder_v18140($pdo,$meeting,$userId,$ids);echo json_encode(['ok'=>true,'items'=>$items],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);exit;}
-    if($action==='delete'){$items=video_meeting_agenda_delete_v18140($pdo,$meeting,$userId,(int)($input['item_id']??0));echo json_encode(['ok'=>true,'items'=>$items],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);exit;}
-    if($action==='action_state'){$items=video_meeting_agenda_action_state_v18140($pdo,$meeting,$userId,(int)($input['item_id']??0),(string)($input['action_kind']??''),(string)($input['approval_state']??'proposed'));echo json_encode(['ok'=>true,'items'=>$items,'side_effects_executed'=>false],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);exit;}
+    if($action==='delete'){video_meeting_action_guard_agenda_mutation_v18150($pdo,$userId,(int)($input['item_id']??0),'delete',$input);$items=video_meeting_agenda_delete_v18140($pdo,$meeting,$userId,(int)($input['item_id']??0));echo json_encode(['ok'=>true,'items'=>$items],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);exit;}
+    if($action==='action_state'){video_meeting_action_guard_agenda_mutation_v18150($pdo,$userId,(int)($input['item_id']??0),'action_state',$input);$items=video_meeting_agenda_action_state_v18140($pdo,$meeting,$userId,(int)($input['item_id']??0),(string)($input['action_kind']??''),(string)($input['approval_state']??'proposed'));echo json_encode(['ok'=>true,'items'=>$items,'side_effects_executed'=>false],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);exit;}
     http_response_code(400);echo json_encode(['ok'=>false,'error'=>'Unsupported Meeting Agenda action.']);
 }catch(RuntimeException $e){http_response_code(422);echo json_encode(['ok'=>false,'error'=>$e->getMessage()],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);}
 catch(Throwable $e){error_log('VP3 meeting agenda: '.$e->getMessage());http_response_code(500);echo json_encode(['ok'=>false,'error'=>'Meeting Agenda could not complete this request.']);}
