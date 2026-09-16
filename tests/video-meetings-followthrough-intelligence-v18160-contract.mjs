@@ -35,6 +35,8 @@ assert.ok(!p2.includes('SELECT email')&&!p2.includes("['email']")&&!p2.includes(
 assert.ok(p2.includes("'participant_email_read'=>false"),'privacy metadata must explicitly state participant email is not read');
 assert.ok(p2.includes("m.status IN ('blocked','overdue','due_soon','verified')"),'future prep must resurface attention/outcome states');
 assert.ok(p2.includes('video_meeting_followthrough_name_overlap_v18160'),'future prep should prefer participant-relevant prior outcomes');
+assert.ok(p2.includes('video_meeting_followthrough_title_overlap_v18160'),'future prep should use meaningful title overlap when participant names do not match');
+assert.ok(!p2.includes('!$currentNames||'),'meetings without named participants must not receive every recent outcome');
 assert.ok(p2.includes('raw_transcript_read')&&p2.includes('homeserver_historical_probe'),'privacy metadata is required');
 
 assert.ok(api.includes('REQUEST_METHOD')&&api.includes("'POST'"),'18.16 API must be POST-only');
