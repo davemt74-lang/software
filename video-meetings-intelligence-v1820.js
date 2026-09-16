@@ -62,6 +62,13 @@ function loadFollowthroughController(){
   if(window.VP3MeetingFollowthrough18100)return Promise.resolve();
   return new Promise((resolve,reject)=>{const script=document.createElement('script');script.src='video-meetings-followthrough-v18100.js?v=18100';script.async=true;script.onload=resolve;script.onerror=()=>reject(new Error('Post-meeting follow-through UI could not load.'));document.head.appendChild(script);});
 }
+function loadMemoryController(){
+  if(!boot.reviewOnly||!boot.isOrganizer)return Promise.resolve();
+  if(document.querySelector('script[data-vp3-meeting-memory="18120"]'))return Promise.resolve();
+  const intelligenceEndpoint=String(boot.intelligenceEndpoint||'');
+  boot.memoryEndpoint=boot.memoryEndpoint||intelligenceEndpoint.replace(/video-meeting-intelligence\.php(?:\?.*)?$/,'video-meeting-memory.php')||'/api/video-meeting-memory.php';
+  return new Promise((resolve,reject)=>{const script=document.createElement('script');script.src='video-meetings-memory-v18120.js?v=18120';script.async=true;script.dataset.vp3MeetingMemory='18120';script.onload=resolve;script.onerror=()=>reject(new Error('Meeting Search & Memory UI could not load.'));document.head.appendChild(script);});
+}
 
 function renderState(s){
   state=s||{};const snap=state.snapshot||{};renderSummary(snap,state.prep);
@@ -125,6 +132,7 @@ function wire(){
 }
 wire();
 loadFollowthroughController().then(()=>window.VP3MeetingFollowthrough18100?.init?.({boot,intelligence,setStatus,renderState,getState:()=>state})).catch(err=>setStatus(err.message,'error'));
+loadMemoryController().catch(err=>setStatus(err.message,'error'));
 if(!boot.isOrganizer){setStatus(privateMessage,'private');$$('[data-meeting-private]').forEach(el=>el.hidden=true);return;}
 loadState().then(s=>{if(boot.reviewOnly&&s?.final_analysis_due)runAnalysis('final',true);});
 if(!boot.reviewOnly)setInterval(()=>{if(document.visibilityState==='visible')loadState();},15000);
