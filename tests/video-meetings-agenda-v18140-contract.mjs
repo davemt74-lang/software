@@ -50,6 +50,7 @@ assert.ok(agenda.includes("'execution'=>'agent_review_only'"));
 assert.ok(agenda.includes("'side_effects_executed'=>false"));
 assert.ok(agenda.includes("SET item_type='follow_up',status='follow_up',action_kind=?,approval_state=?"));
 assert.ok(agenda.includes("if((string)($row['approval_state']??'none')!=='none'){$type='follow_up';$status='follow_up';}"));
+assert.ok(agenda.includes("SET action_kind='',approval_state='none'"));
 const forbiddenExecutors=['agent_brain_archive_and_parse','crm_v180_activity(','crm_v180_create_task(','user_calendar_automation_create_event_v1300(','agent_tool_execute_query','mail(','create_notification(','homeserver_vp3_remote_operation'];
 for(const forbidden of forbiddenExecutors){assert.ok(!agenda.includes(forbidden),`agenda service must not execute ${forbidden}`);assert.ok(!api.includes(forbidden),`agenda API must not execute ${forbidden}`);}
 assert.ok(!agenda.includes('transcript_text'));
@@ -82,6 +83,9 @@ assert.ok(ui.includes('Live agenda'));
 assert.ok(ui.includes('Suggested questions'));
 assert.ok(ui.includes('Add to agenda'));
 assert.ok(ui.includes('Approve for Agent review'));
+assert.ok(ui.includes('Clear approval'));
+assert.ok(ui.includes("save('none')"));
+assert.ok(ui.includes('Approval cleared. No external action was executed.'));
 assert.ok(ui.includes('No external action was executed'));
 assert.ok(ui.includes("post('promote_suggestion',{suggestion_index:index})"));
 assert.ok(ui.includes("post('promote_prep',{source_bucket:bucket,source_index:index})"));
