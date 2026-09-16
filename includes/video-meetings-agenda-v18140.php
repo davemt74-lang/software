@@ -123,10 +123,12 @@ function video_meeting_agenda_insert_v18140(PDO $pdo,array $meeting,int $ownerUs
     $type=video_meeting_agenda_normalize_type_v18140($type);$priority=video_meeting_agenda_normalize_priority_v18140($priority);
     $sourceKind=video_meeting_agenda_text_v18140($sourceKind,40)?:'manual';$sourceHash=preg_match('/^[a-f0-9]{64}$/i',$sourceHash)?strtolower($sourceHash):'';$sourceIndexHash=preg_match('/^[a-f0-9]{64}$/i',$sourceIndexHash)?strtolower($sourceIndexHash):'';
     $sourceReviewPath=video_meeting_agenda_text_v18140($sourceReviewPath,500);if($sourceReviewPath!==''&&!str_starts_with($sourceReviewPath,'/meeting.php?'))$sourceReviewPath='';
-    $fingerprint=video_meeting_agenda_fingerprint_v18140((int)$meeting['id'],$text,$sourceKind,$sourceMeetingId,$sourceHash);
-    $sort=video_meeting_agenda_next_sort_v18140($pdo,(int)$meeting['id']);
+    $meetingId=(int)$meeting['id'];$fingerprint=video_meeting_agenda_fingerprint_v18140($meetingId,$text,$sourceKind,$sourceMeetingId,$sourceHash);
+    $existing=$pdo->prepare('SELECT id FROM video_meeting_agenda_items WHERE meeting_id=? AND owner_user_id=? AND fingerprint=? LIMIT 1');$existing->execute([$meetingId,$ownerUserId,$fingerprint]);
+    if(!(int)$existing->fetchColumn()){$count=$pdo->prepare('SELECT COUNT(*) FROM video_meeting_agenda_items WHERE meeting_id=? AND owner_user_id=?');$count->execute([$meetingId,$ownerUserId]);if((int)$count->fetchColumn()>=VP3_VIDEO_MEETINGS_AGENDA_ITEM_LIMIT_V18140)throw new RuntimeException('This meeting already has the maximum number of agenda items.');}
+    $sort=video_meeting_agenda_next_sort_v18140($pdo,$meetingId);
     $stmt=$pdo->prepare("INSERT INTO video_meeting_agenda_items (meeting_id,owner_user_id,item_text,item_type,source_kind,source_meeting_id,source_hash,source_index_hash,source_review_path,status,priority,sort_order,fingerprint) VALUES (?,?,?,?,?,?,?,?,?,'open',?,?,?) ON DUPLICATE KEY UPDATE item_text=VALUES(item_text),item_type=VALUES(item_type),priority=VALUES(priority),source_kind=VALUES(source_kind),source_index_hash=VALUES(source_index_hash),source_review_path=VALUES(source_review_path),updated_at=NOW()");
-    $stmt->execute([(int)$meeting['id'],$ownerUserId,$text,$type,$sourceKind,$sourceMeetingId>0?$sourceMeetingId:null,$sourceHash,$sourceIndexHash,$sourceReviewPath,$priority,$sort,$fingerprint]);
+    $stmt->execute([$meetingId,$ownerUserId,$text,$type,$sourceKind,$sourceMeetingId>0?$sourceMeetingId:null,$sourceHash,$sourceIndexHash,$sourceReviewPath,$priority,$sort,$fingerprint]);
     return video_meeting_agenda_items_v18140($pdo,$meeting,$ownerUserId);
 }
 
@@ -195,13 +197,17 @@ function video_meeting_agenda_update_v18140(PDO $pdo,array $meeting,int $ownerUs
     $type=array_key_exists('item_type',$changes)?video_meeting_agenda_normalize_type_v18140((string)$changes['item_type']):(string)$row['item_type'];
     $status=array_key_exists('status',$changes)?video_meeting_agenda_normalize_status_v18140((string)$changes['status']):(string)$row['status'];
     $priority=array_key_exists('priority',$changes)?video_meeting_agenda_normalize_priority_v18140((string)$changes['priority']):(string)$row['priority'];
-    $pdo->prepare('UPDATE video_meeting_agenda_items SET item_text=?,item_type=?,status=?,priority=?,updated_at=NOW() WHERE id=? AND meeting_id=? AND owner_user_id=?')->execute([$text,$type,$status,$priority,$itemId,(int)$meeting['id'],$ownerUserId]);
+    if((string)($row['approval_state']??'none')!=='none'){$type='follow_up';$status='follow_up';}
+    $fingerprint=video_meeting_agenda_fingerprint_v18140((int)$meeting['id'],$text,(string)$row['source_kind'],(int)($row['source_meeting_id']??0),(string)$row['source_hash']);
+    $duplicate=$pdo->prepare('SELECT id FROM video_meeting_agenda_items WHERE meeting_id=? AND owner_user_id=? AND fingerprint=? AND id<>? LIMIT 1');$duplicate->execute([(int)$meeting['id'],$ownerUserId,$fingerprint,$itemId]);if((int)$duplicate->fetchColumn())throw new RuntimeException('An equivalent agenda item already exists.');
+    $pdo->prepare('UPDATE video_meeting_agenda_items SET item_text=?,item_type=?,status=?,priority=?,fingerprint=?,updated_at=NOW() WHERE id=? AND meeting_id=? AND owner_user_id=?')->execute([$text,$type,$status,$priority,$fingerprint,$itemId,(int)$meeting['id'],$ownerUserId]);
     return video_meeting_agenda_items_v18140($pdo,$meeting,$ownerUserId);
 }
 
 function video_meeting_agenda_reorder_v18140(PDO $pdo,array $meeting,int $ownerUserId,array $ids): array
 {
     video_meeting_agenda_owner_guard_v18140($meeting,$ownerUserId);$ids=array_values(array_unique(array_filter(array_map('intval',$ids),static fn($v)=>$v>0)));if(count($ids)>VP3_VIDEO_MEETINGS_AGENDA_ITEM_LIMIT_V18140)throw new RuntimeException('Too many agenda items.');
+    $currentIds=array_map(static fn(array $row): int=>(int)$row['id'],video_meeting_agenda_items_v18140($pdo,$meeting,$ownerUserId));$checkIds=$ids;sort($currentIds);sort($checkIds);if($currentIds!==$checkIds)throw new RuntimeException('Agenda order is stale. Reload the agenda and try again.');
     $pdo->beginTransaction();try{$sort=10;$stmt=$pdo->prepare('UPDATE video_meeting_agenda_items SET sort_order=? WHERE id=? AND meeting_id=? AND owner_user_id=?');foreach($ids as $id){$stmt->execute([$sort,$id,(int)$meeting['id'],$ownerUserId]);$sort+=10;}$pdo->commit();}catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();throw $e;}
     return video_meeting_agenda_items_v18140($pdo,$meeting,$ownerUserId);
 }
