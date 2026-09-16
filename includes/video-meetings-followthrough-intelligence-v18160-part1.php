@@ -143,7 +143,11 @@ function video_meeting_followthrough_reconcile_owner_v18160(PDO $pdo,int $ownerU
 {
     if($ownerUserId<1||!video_meeting_followthrough_intelligence_schema_ready_v18160($pdo))return 0;$limit=max(1,min(200,$limit));
     $s=$pdo->prepare("SELECT * FROM video_meeting_action_executions WHERE owner_user_id=? AND status IN ('executed','completed','failed') ORDER BY updated_at DESC,id DESC LIMIT ".$limit);$s->execute([$ownerUserId]);$count=0;
-    foreach($s->fetchAll()?:[] as $execution){if(!is_array($execution))continue;$monitor=video_meeting_followthrough_monitor_ensure_v18160($pdo,$execution);video_meeting_followthrough_reconcile_monitor_v18160($pdo,$monitor,$execution);$count++;}
+    foreach($s->fetchAll()?:[] as $execution){
+        if(!is_array($execution))continue;
+        if((string)($execution['action_kind']??'')==='task'&&(string)($execution['status']??'')==='executed')$execution=video_meeting_action_refresh_task_v18150($pdo,$execution);
+        $monitor=video_meeting_followthrough_monitor_ensure_v18160($pdo,$execution);video_meeting_followthrough_reconcile_monitor_v18160($pdo,$monitor,$execution);$count++;
+    }
     return $count;
 }
 
@@ -164,12 +168,13 @@ function video_meeting_followthrough_state_v18160(PDO $pdo,array $meeting,array 
     $s=$pdo->prepare("SELECT m.*,e.action_kind,e.result_summary,a.item_text,v.public_id FROM video_meeting_followthrough_monitors m JOIN video_meeting_action_executions e ON e.id=m.execution_id JOIN video_meeting_agenda_items a ON a.id=e.agenda_item_id JOIN video_meetings v ON v.id=m.meeting_id WHERE m.meeting_id=? AND m.owner_user_id=? ORDER BY FIELD(m.status,'blocked','overdue','due_soon','watching','verified','dismissed'),m.expected_by_at,m.id");
     $s->execute([(int)$meeting['id'],$owner]);$items=[];$counts=['watching'=>0,'due_soon'=>0,'overdue'=>0,'blocked'=>0,'verified'=>0,'dismissed'=>0];
     foreach($s->fetchAll()?:[] as $row){if(!is_array($row))continue;$items[]=video_meeting_followthrough_public_monitor_v18160($row);$st=(string)$row['status'];if(isset($counts[$st]))$counts[$st]++;}
-    return ['version'=>'v18.16','schema'=>'vp3.meeting.followthrough.intelligence','meeting'=>['id'=>(int)$meeting['id'],'public_id'=>(string)$meeting['public_id'],'title'=>(string)$meeting['title']],'items'=>$items,'counts'=>$counts,'policy'=>['external_side_effects'=>false,'canonical_verification'=>true,'task_auto_verification'=>true,'editable_followthrough_target'=>true],'generated_at'=>gmdate('c')];
+    return ['version'=>'v18.16','schema'=>'vp3.meeting.followthrough.intelligence','meeting'=>['id'=>(int)$meeting['id'],'public_id'=>(string)$meeting['public_id'],'title'=>(string)$meeting['title'],'timezone'=>(string)($meeting['timezone']??'UTC')],'items'=>$items,'counts'=>$counts,'policy'=>['external_side_effects'=>false,'canonical_verification'=>true,'task_auto_verification'=>true,'editable_followthrough_target'=>true],'generated_at'=>gmdate('c')];
 }
 
 function video_meeting_followthrough_expected_v18160(PDO $pdo,array $meeting,array $user,int $monitorId,string $localValue): array
 {
     $owner=(int)($user['id']??0);$monitor=video_meeting_followthrough_monitor_row_v18160($pdo,$owner,$monitorId);if(!$monitor||(int)$monitor['meeting_id']!==(int)$meeting['id'])throw new RuntimeException('Follow-through item not found.');
+    if(in_array((string)$monitor['status'],['verified','dismissed'],true))throw new RuntimeException('Verified or dismissed follow-through items do not accept a new target.');
     $value=trim($localValue);if($value==='')throw new RuntimeException('Choose a follow-through target date and time.');
     try{$tz=new DateTimeZone((string)($meeting['timezone']??'UTC'));$dt=(new DateTimeImmutable($value,$tz))->setTimezone(new DateTimeZone('UTC'));}catch(Throwable $e){throw new RuntimeException('Choose a valid follow-through target.');}
     $from=(string)$monitor['status'];$pdo->prepare("UPDATE video_meeting_followthrough_monitors SET expected_by_at=?,expected_source='organizer',dismissed_at=NULL,updated_at=NOW() WHERE id=? AND owner_user_id=?")->execute([$dt->format('Y-m-d H:i:s'),$monitorId,$owner]);
@@ -181,7 +186,11 @@ function video_meeting_followthrough_expected_v18160(PDO $pdo,array $meeting,arr
 function video_meeting_followthrough_confirm_v18160(PDO $pdo,array $meeting,array $user,int $monitorId): array
 {
     $owner=(int)($user['id']??0);$monitor=video_meeting_followthrough_monitor_row_v18160($pdo,$owner,$monitorId);if(!$monitor||(int)$monitor['meeting_id']!==(int)$meeting['id'])throw new RuntimeException('Follow-through item not found.');
+    if((string)$monitor['status']==='dismissed')throw new RuntimeException('Reopen this follow-through monitor before confirming it resolved.');
+    if((string)$monitor['status']==='verified')return $monitor;
     $execution=video_meeting_action_row_v18150($pdo,$owner,(int)$monitor['execution_id']);if(!$execution)throw new RuntimeException('Meeting Action execution is unavailable.');
+    $signal=video_meeting_followthrough_canonical_signal_v18160($pdo,$execution);
+    if((string)($signal['terminal']??'')==='blocked')throw new RuntimeException('This follow-through is blocked by its canonical result and cannot be confirmed resolved yet.');
     if((string)$execution['status']==='executed')video_meeting_action_complete_v18150($pdo,$meeting,$user,(int)$execution['id']);
     $execution=video_meeting_action_row_v18150($pdo,$owner,(int)$execution['id'])?:$execution;$fresh=video_meeting_followthrough_reconcile_monitor_v18160($pdo,$monitor,$execution);
     if((string)$fresh['status']!=='verified')throw new RuntimeException('This follow-through cannot be verified yet.');
@@ -191,6 +200,8 @@ function video_meeting_followthrough_confirm_v18160(PDO $pdo,array $meeting,arra
 function video_meeting_followthrough_dismiss_v18160(PDO $pdo,array $meeting,array $user,int $monitorId): array
 {
     $owner=(int)($user['id']??0);$monitor=video_meeting_followthrough_monitor_row_v18160($pdo,$owner,$monitorId);if(!$monitor||(int)$monitor['meeting_id']!==(int)$meeting['id'])throw new RuntimeException('Follow-through item not found.');$from=(string)$monitor['status'];
+    if($from==='verified')throw new RuntimeException('Verified follow-through history cannot be dismissed.');
+    if($from==='dismissed')return $monitor;
     $pdo->prepare("UPDATE video_meeting_followthrough_monitors SET status='dismissed',dismissed_at=UTC_TIMESTAMP(),updated_at=NOW() WHERE id=? AND owner_user_id=?")->execute([$monitorId,$owner]);$fresh=video_meeting_followthrough_monitor_row_v18160($pdo,$owner,$monitorId)?:$monitor;video_meeting_followthrough_event_v18160($pdo,$fresh,'dismissed',$from,'dismissed','Organizer dismissed this follow-through monitor.');return $fresh;
 }
 
