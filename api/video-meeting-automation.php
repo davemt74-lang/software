@@ -5,6 +5,13 @@ require_once dirname(__DIR__).'/includes/video-meetings-automation-v18130.php';
 header('Content-Type: application/json; charset=UTF-8');
 header('Cache-Control: no-store');
 
+if(strtoupper((string)($_SERVER['REQUEST_METHOD']??''))!=='POST'){
+    header('Allow: POST');
+    http_response_code(405);
+    echo json_encode(['ok'=>false,'error'=>'Meeting Intelligence Automation accepts POST requests only.']);
+    exit;
+}
+
 $user=current_user();
 if(!$user){http_response_code(403);echo json_encode(['ok'=>false,'error'=>'Sign in to load meeting preparation.']);exit;}
 $pdo=db();
