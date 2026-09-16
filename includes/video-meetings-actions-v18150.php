@@ -16,6 +16,7 @@ require_once __DIR__.'/agent-work-control-v173.php';
 require_once __DIR__.'/user-calendar-v1300.php';
 require_once __DIR__.'/crm-v180.php';
 require_once __DIR__.'/agent-appointment-lifecycle-v700.php';
+if(is_file(__DIR__.'/video-meetings-plan-action-guard-v18190.php'))require_once __DIR__.'/video-meetings-plan-action-guard-v18190.php';
 require_once __DIR__.'/video-meetings-actions-v18150-part1.php';
 require_once __DIR__.'/video-meetings-actions-v18150-part2.php';
 require_once __DIR__.'/video-meetings-actions-v18150-part3.php';
