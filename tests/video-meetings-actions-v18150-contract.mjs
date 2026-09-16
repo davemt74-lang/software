@@ -29,7 +29,7 @@ for (const canonical of ['agent_workflow_create_from_priority_v1400','user_calen
 assert.ok(p2.includes("'source'=>'meeting_agenda_external'"), 'Task action must enter the external-action risk path');
 assert.ok(p2.includes("empty($run['requires_approval'])"), 'Task action must verify canonical approval is attached');
 assert.ok(p2.includes('meeting_action_reference'), 'CRM execution must carry a durable meeting-action reference');
-assert.ok(p2.includes('source_reference'), 'calendar execution should use canonical idempotency source semantics');
+assert.ok(p2.includes("user_calendar_automation_create_event_v1300($pdo,$user") && p2.includes("],$ref);"), 'calendar execution must pass a stable source reference into canonical calendar automation');
 
 assert.ok(p3.includes("status='executing'"), 'execution needs a durable single-start state');
 assert.ok(p3.includes('This Meeting Action has already started. It will not be executed twice.'), 'duplicate execution must be rejected');
@@ -55,7 +55,7 @@ assert.ok(ui.includes('Execute approved action'), 'UI must require an explicit e
 assert.ok(ui.includes('Automatic edit, retry, approval, and discard are blocked'), 'UI must explain uncertain email safety');
 assert.ok(!ui.includes('innerHTML'), 'Actions UI must not use innerHTML for server-supplied content');
 assert.ok(automationUi.includes('loadActionsController'), 'existing organizer Meeting Intelligence controller must load 18.15 Actions');
-assert.ok(automationUi.includes("data-vp3-meeting-actions=\"18150\"" ) || automationUi.includes("dataset.vp3MeetingActions='18150'"), '18.15 loader marker is required');
+assert.ok(automationUi.includes("dataset.vp3MeetingActions='18150'"), '18.15 loader marker is required');
 
 assert.ok(memory.includes('video_meeting_memory_action_history_v18150'), 'Agent Chat Meeting Memory needs sanitized execution history');
 assert.ok(memory.includes("e.status IN ('executed','failed','completed')"), 'Agent Chat history must use durable execution states');
