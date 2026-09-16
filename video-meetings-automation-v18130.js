@@ -83,6 +83,10 @@ function loadFollowthroughController(){
   const actionsEndpoint=String(boot.actionsEndpoint||'');boot.followthroughIntelligenceEndpoint=boot.followthroughIntelligenceEndpoint||actionsEndpoint.replace(/video-meeting-actions\.php(?:\?.*)?$/,'video-meeting-followthrough-intelligence.php')||'/api/video-meeting-followthrough-intelligence.php';
   return new Promise((resolve,reject)=>{const script=document.createElement('script');script.src='video-meetings-followthrough-intelligence-v18160.js?v=18160';script.async=true;script.dataset.vp3MeetingFollowthrough='18160';script.onload=resolve;script.onerror=()=>reject(new Error('Meeting Follow-Through Intelligence could not load.'));document.head.appendChild(script);});
 }
+function loadOutcomeLearningController(){
+  if(window.VP3MeetingOutcomeLearning18170||document.querySelector('script[data-vp3-meeting-outcome-learning="18170"]'))return Promise.resolve();
+  return new Promise((resolve,reject)=>{const script=document.createElement('script');script.src='video-meetings-outcome-learning-v18170.js?v=18170';script.async=true;script.dataset.vp3MeetingOutcomeLearning='18170';script.onload=resolve;script.onerror=()=>reject(new Error('Meeting Outcome Learning could not load.'));document.head.appendChild(script);});
+}
 async function load(){
   if(loading)return;loading=true;buildPane();installStyle();
   try{prep=await post();renderPane(prep);if(!boot.reviewOnly)renderLobby(prep);window.dispatchEvent(new CustomEvent('vp3:meeting-prep-ready',{detail:{prep}}));}
@@ -90,6 +94,6 @@ async function load(){
   finally{loading=false;}
 }
 load();
-loadAgendaController().then(loadActionsController).then(loadFollowthroughController).catch(()=>{});
+loadAgendaController().then(loadActionsController).then(loadFollowthroughController).then(loadOutcomeLearningController).catch(()=>{});
 window.VP3MeetingAutomation18130={reload:load,getPrep:()=>prep,activate};
 })();
