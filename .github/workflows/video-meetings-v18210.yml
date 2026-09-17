@@ -40,6 +40,7 @@ jobs:
       - name: PHP syntax
         run: |
           php -l includes/video-meetings-memory-v18120.php
+          php -l includes/video-meetings-memory-v18120-part3.php
           php -l includes/video-meetings-automation-v18130.php
           php -l includes/video-meetings-agenda-v18140.php
           php -l includes/video-meetings-actions-v18150.php
