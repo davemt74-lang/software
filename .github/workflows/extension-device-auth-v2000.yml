@@ -1,0 +1,47 @@
+name: Browser Companion Device Auth v20.00
+
+on:
+  push:
+    branches:
+      - main
+      - feature/extension-device-auth
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          coverage: none
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Browser Companion auth contract
+        run: node tests/extension-device-auth-v2000.mjs
+
+      - name: JavaScript syntax
+        run: node --check tests/extension-device-auth-v2000.mjs
+
+      - name: PHP syntax
+        run: |
+          php -l includes/extension-device-auth-v2000.php
+          php -l includes/bootstrap.php
+          php -l upgrade.php
+          php -l api/extension-connect-request.php
+          php -l api/extension-connect-status.php
+          php -l api/extension-session.php
+          php -l extension-connect.php
+          php -l connected-browsers.php
