@@ -1,11 +1,12 @@
 <?php
 declare(strict_types=1);
 require dirname(__DIR__).'/includes/bootstrap.php';
+require_once dirname(__DIR__).'/includes/extension-device-auth-v2001.php';
 
 header('Content-Type: application/json; charset=UTF-8');
 header('Cache-Control: no-store');
 header('X-Content-Type-Options: nosniff');
-vp3_extension_apply_cors_v2000();
+vp3_extension_apply_cors_v2001();
 header('Access-Control-Allow-Headers: Content-Type, X-VP3-Extension-Version, X-VP3-Contract-Version');
 header('Access-Control-Allow-Methods: POST, OPTIONS');
 
