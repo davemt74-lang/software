@@ -4,16 +4,16 @@ declare(strict_types=1);
 /**
  * VP3 v20.10 Browser Share backend.
  *
- * Browser Share is a structured, immutable source object linked to the canonical
- * human message ledger. The human message remains the collaboration/thread
- * anchor; captured browser content is never stored as executable HTML and is
- * never copied into generic Agent/activity/audit persistence.
+ * Browser Share is an immutable, source-aware object linked to the canonical
+ * human-message ledger. Captured browser content is plain text, never executable
+ * HTML, and is not copied into generic activity/audit storage.
  */
 const VP3_BROWSER_SHARE_V2010 = 'browser-share-v2010-20260917';
 const VP3_BROWSER_SHARE_SELECTED_MAX_BYTES_V2010 = 32768;
 const VP3_BROWSER_SHARE_NOTE_MAX_BYTES_V2010 = 4096;
 const VP3_BROWSER_SHARE_TITLE_MAX_CHARS_V2010 = 512;
 const VP3_BROWSER_SHARE_URL_MAX_BYTES_V2010 = 2048;
+const VP3_BROWSER_SHARE_HOURLY_LIMIT_V2010 = 300;
 
 final class VP3BrowserShareExceptionV2010 extends RuntimeException
 {
@@ -51,7 +51,7 @@ function vp3_browser_share_ensure_schema_v2010(?PDO $pdo=null): void
       id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
       public_id CHAR(36) NOT NULL,
       sender_user_id INT UNSIGNED NOT NULL,
-      device_id BIGINT UNSIGNED NOT NULL,
+      device_id BIGINT UNSIGNED NULL,
       share_type VARCHAR(24) NOT NULL,
       source_url VARCHAR(2048) NOT NULL,
       canonical_url VARCHAR(2048) NOT NULL,
@@ -69,7 +69,7 @@ function vp3_browser_share_ensure_schema_v2010(?PDO $pdo=null): void
       INDEX idx_browser_share_device (device_id,created_at,id),
       INDEX idx_browser_share_dedupe (sender_user_id,dedupe_fingerprint,created_at),
       CONSTRAINT fk_browser_share_sender FOREIGN KEY (sender_user_id) REFERENCES users(id) ON DELETE CASCADE,
-      CONSTRAINT fk_browser_share_device FOREIGN KEY (device_id) REFERENCES extension_devices_v2000(id) ON DELETE CASCADE
+      CONSTRAINT fk_browser_share_device FOREIGN KEY (device_id) REFERENCES extension_devices_v2000(id) ON DELETE SET NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 
     $pdo->exec("CREATE TABLE IF NOT EXISTS human_message_browser_shares_v2010 (
@@ -116,12 +116,34 @@ function vp3_browser_share_require_capability_v2010(array $session,string $capab
 function vp3_browser_share_device_db_id_v2010(PDO $pdo,array $session): int
 {
     $publicId=(string)($session['device_id']??'');
-    if(!vp3_extension_valid_uuid_v2000($publicId))throw new VP3BrowserShareExceptionV2010('authentication_required',401,'Browser Companion authentication is required.');
-    $stmt=$pdo->prepare("SELECT id FROM extension_devices_v2000 WHERE public_id=? AND device_status='active' AND revoked_at IS NULL LIMIT 1");
-    $stmt->execute([$publicId]);
+    $userId=(int)($session['user_id']??0);
+    if(!vp3_extension_valid_uuid_v2000($publicId)||$userId<1){
+        throw new VP3BrowserShareExceptionV2010('authentication_required',401,'Browser Companion authentication is required.');
+    }
+    $stmt=$pdo->prepare("SELECT id FROM extension_devices_v2000 WHERE public_id=? AND user_id=? AND device_status='active' AND revoked_at IS NULL LIMIT 1");
+    $stmt->execute([$publicId,$userId]);
     $id=(int)($stmt->fetchColumn()?:0);
     if($id<1)throw new VP3BrowserShareExceptionV2010('device_revoked',401,'This browser connection is no longer active.');
     return $id;
+}
+
+function vp3_browser_share_scrub_query_v2010(string $query): string
+{
+    if($query==='')return '';
+    $sensitive=array_fill_keys([
+        'access_token','auth','authorization','code','id_token','jwt','oauth_token',
+        'password','passwd','refresh_token','secret','session','session_id','sid',
+        'api_key','apikey','signature','sig','token',
+    ],true);
+    $safe=[];
+    foreach(explode('&',$query) as $pair){
+        if($pair==='')continue;
+        $rawKey=explode('=',$pair,2)[0];
+        $key=strtolower(trim(rawurldecode(str_replace('+',' ',$rawKey))));
+        if($key!==''&&isset($sensitive[$key]))continue;
+        $safe[]=$pair;
+    }
+    return implode('&',$safe);
 }
 
 function vp3_browser_share_validate_url_v2010(mixed $value): array
@@ -142,13 +164,15 @@ function vp3_browser_share_validate_url_v2010(mixed $value): array
         throw new VP3BrowserShareExceptionV2010('invalid_request',422,'Source URL port is invalid.');
     }
 
-    // Strip fragments because they often contain transient client state. No
-    // server-side fetch is performed; the URL is stored only as provenance.
+    // Fragments and common credential/token query values are deliberately not
+    // persisted. Browser Share stores provenance but should not preserve auth
+    // state embedded in a URL.
     $authority=$host;
     if(str_contains($host,':')&&!str_starts_with($host,'['))$authority='['.$host.']';
     if(isset($parts['port']))$authority.=':'.(int)$parts['port'];
     $normalized=$scheme.'://'.$authority.(string)($parts['path']??'');
-    if(isset($parts['query'])&&(string)$parts['query']!=='')$normalized.='?'.(string)$parts['query'];
+    $query=vp3_browser_share_scrub_query_v2010((string)($parts['query']??''));
+    if($query!=='')$normalized.='?'.$query;
     if(strlen($normalized)>VP3_BROWSER_SHARE_URL_MAX_BYTES_V2010)throw new VP3BrowserShareExceptionV2010('invalid_request',422,'Source URL is too long.');
     return ['url'=>$normalized,'domain'=>$host];
 }
@@ -196,7 +220,7 @@ function vp3_browser_share_validate_capture_v2010(array $input): array
         'source_url'=>$sourceInfo['url'],
         'canonical_url'=>$canonical['url'],
         'source_title'=>$title,
-        'source_domain'=>$canonical['domain'],
+        'source_domain'=>$sourceInfo['domain'],
         'selected_text'=>$selection,
         'captured_at'=>$capturedAt,
     ];
@@ -219,8 +243,27 @@ function vp3_browser_share_fallback_body_v2010(array $capture): string
     $domain=(string)($capture['source_domain']??'');
     $url=(string)($capture['source_url']??'');
     $label=$title!==''?$title:$domain;
-    $body="Shared from the web".($label!==''?": ".$label:'')."\n".$url;
-    return mb_substr($body,0,3900);
+    return mb_substr("Shared from the web".($label!==''?": ".$label:'')."\n".$url,0,3900);
+}
+
+function vp3_browser_share_conversation_sendable_v2010(PDO $pdo,array $conversation,int $userId): bool
+{
+    if(!vp3_human_can_access_v370($pdo,$conversation,$userId))return false;
+    if((string)($conversation['conversation_type']??'')!=='direct')return true;
+
+    $other=vp3_human_direct_other_v370($conversation,$userId);
+    if($other<1||vp3_human_blocked_v370($pdo,$userId,$other))return false;
+    $request=vp3_human_request_v370($pdo,(int)$conversation['id']);
+    if($request){
+        $status=(string)($request['status']??'');
+        if($status==='pending'){
+            return (int)($request['requester_user_id']??0)===$userId
+                && (int)($request['initial_message_id']??0)<1;
+        }
+        if($status==='declined')return vp3_human_dm_route_v370($pdo,$userId,$other)==='direct';
+        return $status==='accepted';
+    }
+    return vp3_human_dm_route_v370($pdo,$userId,$other)!=='deny';
 }
 
 function vp3_browser_share_destination_conversation_v2010(PDO $pdo,int $userId,array $destination): array
@@ -234,8 +277,10 @@ function vp3_browser_share_destination_conversation_v2010(PDO $pdo,int $userId,a
         catch(Throwable $e){throw new VP3BrowserShareExceptionV2010('destination_denied',403,'You cannot share to that Team workspace.');}
     }
     if($kind==='conversation'){
-        $conversation=vp3_human_conversation_v370($pdo,$id,true);
-        if(!$conversation||!vp3_human_can_access_v370($pdo,$conversation,$userId)){
+        // Do not lock the conversation here. Canonical Human Messaging owns the
+        // user/workspace -> conversation lock order and will revalidate on send.
+        $conversation=vp3_human_conversation_v370($pdo,$id,false);
+        if(!$conversation||!vp3_browser_share_conversation_sendable_v2010($pdo,$conversation,$userId)){
             throw new VP3BrowserShareExceptionV2010('destination_denied',403,'You cannot share to that conversation.');
         }
         return $conversation;
@@ -252,14 +297,10 @@ function vp3_browser_share_destinations_v2010(PDO $pdo,int $userId): array
     foreach(vp3_human_team_workspaces_v370($pdo,$userId) as $workspace){
         $ownerId=(int)($workspace['owner_user_id']??0);
         if($ownerId<1||!vp3_human_team_authorized_v370($pdo,$ownerId,$userId))continue;
-        $teams[]=[
-            'kind'=>'team_general',
-            'id'=>$ownerId,
-            'name'=>(string)($workspace['workspace_name']??'Team').' · General',
-        ];
+        $teams[]=['kind'=>'team_general','id'=>$ownerId,'name'=>(string)($workspace['workspace_name']??'Team').' · General'];
     }
 
-    $stmt=$pdo->prepare("SELECT c.id,c.conversation_type,c.title,c.direct_user_low_id,c.direct_user_high_id,c.updated_at,
+    $stmt=$pdo->prepare("SELECT c.id,c.conversation_type,c.title,c.direct_user_low_id,c.direct_user_high_id,c.workspace_owner_user_id,c.updated_at,
       CASE WHEN c.direct_user_low_id=? THEN c.direct_user_high_id ELSE c.direct_user_low_id END other_user_id,
       u.display_name other_name
       FROM human_conversations c
@@ -271,7 +312,7 @@ function vp3_browser_share_destinations_v2010(PDO $pdo,int $userId): array
     $conversations=[];
     foreach($stmt->fetchAll()?:[] as $row){
         $conversation=vp3_human_conversation_v370($pdo,(int)$row['id']);
-        if(!$conversation||!vp3_human_can_access_v370($pdo,$conversation,$userId))continue;
+        if(!$conversation||!vp3_browser_share_conversation_sendable_v2010($pdo,$conversation,$userId))continue;
         $type=(string)$row['conversation_type'];
         $name=$type==='direct'?(string)($row['other_name']??'Conversation'):(string)($row['title']??'Conversation');
         $conversations[]=['kind'=>'conversation','id'=>(int)$row['id'],'name'=>$name,'conversation_type'=>$type];
@@ -297,6 +338,15 @@ function vp3_browser_share_existing_result_v2010(PDO $pdo,int $deviceDbId,string
     ];
 }
 
+function vp3_browser_share_enforce_rate_v2010(PDO $pdo,int $deviceDbId): void
+{
+    $stmt=$pdo->prepare('SELECT COUNT(*) FROM browser_shares_v2010 WHERE device_id=? AND created_at>=DATE_SUB(NOW(),INTERVAL 1 HOUR)');
+    $stmt->execute([$deviceDbId]);
+    if((int)$stmt->fetchColumn()>=VP3_BROWSER_SHARE_HOURLY_LIMIT_V2010){
+        throw new VP3BrowserShareExceptionV2010('rate_limited',429,'This browser has created too many shares recently. Try again later.');
+    }
+}
+
 function vp3_browser_share_create_v2010(PDO $pdo,array $session,array $input,string $idempotencyKey): array
 {
     vp3_browser_share_require_ready_v2010($pdo);
@@ -308,11 +358,11 @@ function vp3_browser_share_create_v2010(PDO $pdo,array $session,array $input,str
     $deviceDbId=vp3_browser_share_device_db_id_v2010($pdo,$session);
     $capture=vp3_browser_share_validate_capture_v2010($input);
     $destination=is_array($input['destination']??null)?$input['destination']:[];
+    vp3_browser_share_enforce_rate_v2010($pdo,$deviceDbId);
 
-    $pdo->beginTransaction();
+    $owns=!$pdo->inTransaction();
+    if($owns)$pdo->beginTransaction();
     try{
-        // Remove only an expired, unfinished reservation. Completed results remain
-        // replayable even after their advisory expiry timestamp.
         $pdo->prepare("DELETE FROM browser_share_idempotency_v2010 WHERE device_id=? AND idempotency_key=? AND browser_share_id IS NULL AND human_message_id IS NULL AND expires_at<=NOW()")
             ->execute([$deviceDbId,$idempotencyKey]);
         $pdo->prepare("INSERT IGNORE INTO browser_share_idempotency_v2010 (device_id,idempotency_key,expires_at) VALUES (?,?,DATE_ADD(NOW(),INTERVAL 7 DAY))")
@@ -320,19 +370,20 @@ function vp3_browser_share_create_v2010(PDO $pdo,array $session,array $input,str
 
         $existing=vp3_browser_share_existing_result_v2010($pdo,$deviceDbId,$idempotencyKey);
         if($existing){
-            $pdo->commit();
+            if($owns)$pdo->commit();
             return $existing;
         }
 
-        // Resolve/lock through canonical Human Messaging first so Browser Share
-        // cannot invert its established user/workspace -> conversation lock order.
         $conversation=vp3_browser_share_destination_conversation_v2010($pdo,$userId,$destination);
         try{
+            // This canonical helper revalidates permissions and owns the established
+            // user/workspace -> conversation locking order. Because our transaction
+            // is already open, its message insert participates in this transaction.
             $message=vp3_human_send_message_v370($pdo,(int)$conversation['id'],$userId,vp3_browser_share_fallback_body_v2010($capture));
-        }catch(VP3BrowserShareExceptionV2010 $e){
+        }catch(PDOException $e){
             throw $e;
         }catch(Throwable $e){
-            throw new VP3BrowserShareExceptionV2010('destination_denied',403,$e->getMessage()!==''?$e->getMessage():'This Browser Share could not be posted.');
+            throw new VP3BrowserShareExceptionV2010('destination_denied',403,'This Browser Share cannot be posted to that conversation.');
         }
 
         $publicId=vp3_extension_uuid_v2000();
@@ -346,17 +397,17 @@ function vp3_browser_share_create_v2010(PDO $pdo,array $session,array $input,str
         $shareDbId=(int)$pdo->lastInsertId();
         $messageId=(int)$message['id'];
         $pdo->prepare('INSERT INTO human_message_browser_shares_v2010 (human_message_id,browser_share_id) VALUES (?,?)')->execute([$messageId,$shareDbId]);
-        $pdo->prepare("UPDATE browser_share_idempotency_v2010 SET browser_share_id=?,human_message_id=? WHERE device_id=? AND idempotency_key=?")
+        $pdo->prepare('UPDATE browser_share_idempotency_v2010 SET browser_share_id=?,human_message_id=? WHERE device_id=? AND idempotency_key=?')
             ->execute([$shareDbId,$messageId,$deviceDbId,$idempotencyKey]);
 
-        $pdo->commit();
+        if($owns)$pdo->commit();
         return [
             'browser_share'=>['id'=>$publicId,'type'=>$capture['share_type'],'snapshot_hash'=>$capture['snapshot_hash']],
             'chat_message'=>['id'=>$messageId,'conversation_id'=>(int)$conversation['id']],
             'idempotent_replay'=>false,
         ];
     }catch(Throwable $e){
-        if($pdo->inTransaction())$pdo->rollBack();
+        if($owns&&$pdo->inTransaction())$pdo->rollBack();
         if($e instanceof VP3BrowserShareExceptionV2010)throw $e;
         throw new VP3BrowserShareExceptionV2010('service_unavailable',503,'Browser Share could not be created.');
     }
