@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>VP3 Browser Companion Settings</title>
+  <link rel="stylesheet" href="sidepanel.css">
+  <link rel="stylesheet" href="options.css">
+</head>
+<body class="options-body">
+  <main class="options-shell">
+    <section class="card options-hero">
+      <div class="eyebrow">VP3 Browser Companion</div>
+      <h1>Settings</h1>
+      <p class="hint">Manage the VP3 installation this browser connects to and revoke this browser when you no longer want it connected.</p>
+    </section>
+
+    <section class="card">
+      <label class="field">
+        <span>VP3 site</span>
+        <input id="baseUrl" type="url" spellcheck="false" autocomplete="off" placeholder="https://vp3.me">
+      </label>
+      <p class="hint">HTTPS is required except for localhost development. Alternate installations require an explicit Chrome site permission.</p>
+      <button id="saveBaseUrl" class="primary" type="button">Save VP3 site</button>
+    </section>
+
+    <section class="card">
+      <div class="eyebrow">Browser connection</div>
+      <div id="connectionSummary" class="connection-state">Checking…</div>
+      <p id="extensionOrigin" class="hint"></p>
+      <button id="disconnectBtn" type="button" class="danger-btn" hidden>Disconnect and revoke this browser</button>
+    </section>
+
+    <section class="card">
+      <div class="eyebrow">Development</div>
+      <p class="hint">Unpacked Chrome extensions receive an installation-specific extension origin. VP3 production should allow only the published extension origin. A development VP3 installation can temporarily enable its existing unlisted-Chrome-origin switch while testing an unpacked build.</p>
+    </section>
+
+    <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
+  </main>
+  <script src="options.js"></script>
+</body>
+</html>
