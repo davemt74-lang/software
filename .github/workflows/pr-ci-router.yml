@@ -32,14 +32,16 @@ jobs:
             const headRef = pr.head.ref;
             const currentRunId = Number(context.runId);
 
-            // Give the other pull_request workflows a brief chance to enqueue so
-            // this router can clean the queue in a single pass.
+            // Give sibling pull_request workflows a brief chance to enqueue so
+            // this router can trim the queue in a single pass.
             await new Promise(resolve => setTimeout(resolve, 5000));
 
             const changedFiles = await github.paginate(
               github.rest.pulls.listFiles,
               { owner, repo, pull_number: prNumber, per_page: 100 },
-              response => response.data.map(file => file.filename)
+              response => Array.isArray(response.data)
+                ? response.data.map(file => file.filename).filter(Boolean)
+                : []
             );
 
             const browserPathPatterns = [
@@ -85,27 +87,36 @@ jobs:
             const isRequiredBrowserWorkflow = (name) =>
               browserRequiredWorkflowPrefixes.some(prefix => name.startsWith(prefix));
 
-            const runs = await github.paginate(
-              github.rest.actions.listWorkflowRunsForRepo,
-              {
+            // Avoid Octokit pagination mapper edge cases for the Actions endpoint.
+            // The repo currently has many workflows, so walk the branch runs
+            // explicitly and normalize every page before iterating it.
+            const runs = [];
+            for (let page = 1; page <= 10; page++) {
+              const response = await github.rest.actions.listWorkflowRunsForRepo({
                 owner,
                 repo,
                 branch: headRef,
                 event: 'pull_request',
-                per_page: 100
-              },
-              response => response.data.workflow_runs
-            );
+                per_page: 100,
+                page
+              });
+              const batch = Array.isArray(response.data?.workflow_runs)
+                ? response.data.workflow_runs.filter(run => run && typeof run === 'object')
+                : [];
+              runs.push(...batch);
+              if (batch.length < 100) break;
+            }
 
             let cancelledSuperseded = 0;
             let cancelledUnrelated = 0;
 
             for (const run of runs) {
-              if (run.id === currentRunId) continue;
+              if (!run || typeof run !== 'object' || !run.id) continue;
+              if (Number(run.id) === currentRunId) continue;
               if (!['queued', 'in_progress', 'waiting', 'requested', 'pending'].includes(run.status)) continue;
 
               const belongsToPr = Array.isArray(run.pull_requests) &&
-                run.pull_requests.some(item => item.number === prNumber);
+                run.pull_requests.some(item => item && item.number === prNumber);
               if (!belongsToPr) continue;
 
               // Always cancel obsolete generations of this PR, regardless of domain.
@@ -120,7 +131,7 @@ jobs:
               }
 
               // Browser-only PRs use a focused regression lane. The allowlist keeps
-              // the browser, messaging, permissions, knowledge, baseline, and deploy
+              // browser, messaging, permissions, knowledge, baseline, and deploy
               // contracts while dropping unrelated video/profile/commerce suites.
               if (browserOnly && !isRequiredBrowserWorkflow(run.name || '')) {
                 try {
