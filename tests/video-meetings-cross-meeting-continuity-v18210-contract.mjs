@@ -35,7 +35,7 @@ assert.ok(guard.includes('video_meeting_continuity_related_thread_v18210')||guar
 assert.ok(guard.includes("l.status IN ('carried_forward','resolved_elsewhere')")||guard.includes("l.status='carried_forward'"),'active/resolved descendant links must be visible to the guard');
 assert.ok(guard.includes("c.status='verified'")||guard.includes("closure_status']??'')==='verified'"),'descendant verified closure must block duplicate carry');
 assert.ok(guard.includes("(int)($related['execution_id']??0)>0")||guard.includes("(string)$signal['kind']==='action'"),'descendant action history must block duplicate carry');
-assert.ok(guard.includes("continuity_status']??'')==='carried_forward'")||guard.includes("(string)$signal['kind']==='active'"),'an already-active descendant thread must block a second active carry');
+assert.ok(guard.includes("'kind'=>'active'")&&guard.includes('This continuity thread is already active in'),'an already-active descendant thread must block a second active carry');
 assert.ok(guard.includes("(string)$e->getCode()==='23000'"),'same-target carry races must be idempotently recovered');
 assert.ok(guard.includes('video_meeting_continuity_existing_target_link_v18210'),'repeated same-target carry must be idempotent');
 
