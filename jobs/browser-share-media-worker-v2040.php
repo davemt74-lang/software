@@ -31,7 +31,7 @@ while($processed<$limit){
     $jobId=(int)$job['id'];
     $mediaId=(int)$job['media_id'];
     try{
-        $stmt=$pdo->prepare("SELECT id,media_kind,mime_type,storage_key,metadata_json FROM browser_share_media_v2040 WHERE id=? AND deleted_at IS NULL LIMIT 1");
+        $stmt=$pdo->prepare("SELECT id,media_kind,mime_type,sha256,storage_key,metadata_json FROM browser_share_media_v2040 WHERE id=? AND deleted_at IS NULL LIMIT 1");
         $stmt->execute([$mediaId]);
         $media=$stmt->fetch(PDO::FETCH_ASSOC);
         if(!$media)throw new RuntimeException('Media record no longer exists.');
@@ -39,6 +39,9 @@ while($processed<$limit){
         if($key==='')throw new RuntimeException('Media record has no private storage key.');
         $path=vp3_browser_share_media_storage_path_v2040($key,false);
         if(!is_file($path))throw new RuntimeException('Private media file is missing.');
+        $expectedSha=strtolower(trim((string)($media['sha256']??'')));
+        $actualSha=hash_file('sha256',$path);
+        if(!is_string($actualSha)||$expectedSha===''||!hash_equals($expectedSha,$actualSha))throw new RuntimeException('Private media integrity check failed.');
         $metadata=json_decode((string)($media['metadata_json']??'{}'),true);
         if(!is_array($metadata))$metadata=[];
 
@@ -47,6 +50,16 @@ while($processed<$limit){
             if(!is_array($info)||empty($info[0])||empty($info[1]))throw new RuntimeException('Screenshot failed image inspection.');
             $metadata['width']=(int)$info[0];
             $metadata['height']=(int)$info[1];
+        }elseif((string)$media['media_kind']==='commentary_audio'){
+            if(!class_exists('finfo'))throw new RuntimeException('Server file inspection is unavailable.');
+            $finfo=new finfo(FILEINFO_MIME_TYPE);
+            $detected=strtolower(trim((string)$finfo->file($path)));
+            $declared=strtolower(trim((string)($media['mime_type']??'')));
+            $valid=str_starts_with($detected,'audio/')
+                || ($declared==='audio/webm' && $detected==='video/webm')
+                || ($declared==='audio/ogg' && $detected==='application/ogg')
+                || ($declared==='audio/mp4' && in_array($detected,['video/mp4','application/mp4'],true));
+            if(!$valid)throw new RuntimeException('Commentary failed audio-container inspection.');
         }
 
         $encoded=json_encode($metadata,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
