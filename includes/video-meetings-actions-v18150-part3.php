@@ -10,6 +10,7 @@ function video_meeting_action_execute_v18150(PDO $pdo,array $meeting,array $user
         if(!$execution||(int)$execution['meeting_id']!==(int)$meeting['id'])throw new RuntimeException('Meeting Action not found.');
         if((string)$execution['status']==='executing')throw new RuntimeException('This Meeting Action has already started. It will not be executed twice.');
         if((string)$execution['status']!=='approved')throw new RuntimeException('Approve this Meeting Action before execution.');
+        if(function_exists('video_meeting_plan_action_guard_execution_v18190'))video_meeting_plan_action_guard_execution_v18190($pdo,$execution,'execution');
         $item=video_meeting_action_item_v18150($pdo,$meeting,$ownerUserId,(int)$execution['agenda_item_id'],true);$kind=video_meeting_action_require_eligible_v18150($item);
         if($kind!==(string)$execution['action_kind'])throw new RuntimeException('The agenda action type changed. Execution is blocked.');
         $pdo->prepare("UPDATE video_meeting_action_executions SET status='executing',executing_at=UTC_TIMESTAMP(),error_class='',last_error='',updated_at=NOW() WHERE id=? AND owner_user_id=? AND status='approved'")->execute([$executionId,$ownerUserId]);
