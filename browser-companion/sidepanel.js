@@ -70,13 +70,29 @@ function capabilities() {
   return new Set(Array.isArray(state?.capabilities) ? state.capabilities : []);
 }
 
+function dropCapability(capability) {
+  if (!state || !capability) return;
+  state.capabilities = (Array.isArray(state.capabilities) ? state.capabilities : []).filter(item => item !== capability);
+  renderCapabilities();
+}
+
+function capabilityForAction(action) {
+  if (action === 'save_knowledge') return 'knowledge.write';
+  if (action === 'create_task') return 'task.propose';
+  if (action === 'ask_agent') return 'agent.message';
+  return '';
+}
+
 function renderCapabilities() {
   const caps = capabilities();
-  ui.askAgentBtn.disabled = state?.connected ? !caps.has('agent.message') : true;
-  ui.saveKnowledgeBtn.disabled = state?.connected ? !caps.has('knowledge.write') : true;
-  ui.createTaskBtn.disabled = state?.connected ? !caps.has('task.propose') : true;
+  const hasShare = Boolean(lastShare?.browser_share?.id && lastShare?.chat_message?.conversation_id);
+  ui.askAgentBtn.disabled = !state?.connected || !hasShare || !caps.has('agent.message');
+  ui.saveKnowledgeBtn.disabled = !state?.connected || !hasShare || !caps.has('knowledge.write');
+  ui.createTaskBtn.disabled = !state?.connected || !hasShare || !caps.has('task.propose');
+  ui.openSourceBtn.disabled = !hasShare || !safeHttpUrl(lastShare?.source_url);
+  ui.openMessagesBtn.disabled = !hasShare;
   const canShare = state?.connected && caps.has('team.share.create');
-  ui.shareBtn.disabled = !canShare || !capture?.available || !capture?.selected_text?.trim() || !ui.destinationSelect.value;
+  ui.shareBtn.disabled = !canShare || !capture?.available || !capture?.selected_text?.trim() || !parseDestination();
 }
 
 function renderCapture(next) {
@@ -145,6 +161,7 @@ function renderLastShare(result) {
   lastShare = result || null;
   if (!lastShare?.browser_share?.id || !lastShare?.chat_message?.conversation_id) {
     ui.successCard.hidden = true;
+    renderCapabilities();
     return;
   }
   ui.successCard.hidden = false;
@@ -174,9 +191,13 @@ async function refreshCapture() {
 }
 
 async function loadDestinations() {
-  try { renderDestinations(await message('destinations')); }
-  catch (error) {
+  try {
+    const payload = await message('destinations');
+    if (Array.isArray(payload?.capabilities) && state) state.capabilities = payload.capabilities;
+    renderDestinations(payload);
+  } catch (error) {
     ui.destinationSelect.replaceChildren(new Option('Destinations unavailable', ''));
+    if (error.code === 'capability_denied') dropCapability('team.destinations.read');
     await reportError(error);
   }
 }
@@ -234,8 +255,10 @@ ui.shareBtn.addEventListener('click', async () => {
     renderLastShare({ ...result, source_url: capture.source_url });
     ui.shareNote.value = '';
     notify('Shared with VP3.', 'success');
-  } catch (error) { await reportError(error); }
-  finally { setBusy(ui.shareBtn, false); }
+  } catch (error) {
+    if (error.code === 'capability_denied') dropCapability('team.share.create');
+    await reportError(error);
+  } finally { setBusy(ui.shareBtn, false); }
 });
 
 async function runShareAction(action, button, busyLabel) {
@@ -252,22 +275,25 @@ async function runShareAction(action, button, busyLabel) {
     } else if (action === 'create_task') {
       notify('VP3 task created.', 'success');
     }
-  } catch (error) { await reportError(error); }
-  finally { setBusy(button, false); }
+  } catch (error) {
+    if (error.code === 'capability_denied') dropCapability(capabilityForAction(action));
+    await reportError(error);
+  } finally { setBusy(button, false); }
 }
 
 ui.askAgentBtn.addEventListener('click', () => runShareAction('ask_agent', ui.askAgentBtn, 'Opening…'));
 ui.saveKnowledgeBtn.addEventListener('click', () => runShareAction('save_knowledge', ui.saveKnowledgeBtn, 'Saving…'));
 ui.createTaskBtn.addEventListener('click', () => runShareAction('create_task', ui.createTaskBtn, 'Creating…'));
 ui.openSourceBtn.addEventListener('click', async () => {
-  const url = safeHttpUrl(lastShare?.source_url || capture?.source_url);
-  if (!url) return notify('The source URL is unavailable.', 'error');
+  const url = safeHttpUrl(lastShare?.source_url);
+  if (!url) return notify('The original source is not retained in extension storage. Open it from the VP3 Browser Share card.', 'error');
   try { await message('open_url', { url }); } catch (error) { await reportError(error); }
 });
 ui.openMessagesBtn.addEventListener('click', async () => {
   const base = state?.base_url || 'https://vp3.me';
   const cid = Number(lastShare?.chat_message?.conversation_id || 0);
-  const url = `${base}/messages.php${cid ? `?conversation_id=${cid}` : ''}`;
+  if (!cid) return notify('The VP3 conversation is unavailable.', 'error');
+  const url = `${base}/messages.php?conversation_id=${cid}`;
   try { await message('open_url', { url }); } catch (error) { await reportError(error); }
 });
 
