@@ -93,6 +93,9 @@ must(mediaApi.includes("header('Cache-Control: private, no-store')"), 'private m
 must(!mediaApi.includes('ensure_schema'), 'public media API must never run DDL');
 
 must(worker.includes("job_status='queued'"), 'media worker queue claim missing');
+must(worker.includes("job_status='processing' AND attempts<3"), 'stale processing jobs must be reclaimable below the retry ceiling');
+must(worker.includes("locked_at<=DATE_SUB(UTC_TIMESTAMP(),INTERVAL 15 MINUTE)"), 'media worker must define a stale-claim timeout');
+must(worker.includes('Worker claim expired after retry limit.'), 'expired claims at the retry ceiling must fail permanently');
 must(worker.includes("hash_file('sha256',$path)"), 'worker must verify stored binary integrity');
 must(worker.includes('hash_equals($expectedSha,$actualSha)'), 'worker must compare stored and expected hashes safely');
 must(worker.includes('getimagesize($path)'), 'screenshot inspection missing');
