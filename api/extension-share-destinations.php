@@ -1,11 +1,13 @@
 <?php
 declare(strict_types=1);
 require dirname(__DIR__).'/includes/bootstrap.php';
+require_once dirname(__DIR__).'/includes/extension-device-auth-v2001.php';
+require_once dirname(__DIR__).'/includes/browser-share-v2011.php';
 
 header('Content-Type: application/json; charset=UTF-8');
 header('Cache-Control: no-store');
 header('X-Content-Type-Options: nosniff');
-vp3_extension_apply_cors_v2000();
+vp3_extension_apply_cors_v2001();
 header('Access-Control-Allow-Headers: Authorization, Content-Type, X-VP3-Extension-Version, X-VP3-Contract-Version');
 header('Access-Control-Allow-Methods: GET, OPTIONS');
 
@@ -29,9 +31,12 @@ if(!$pdo||!vp3_browser_share_schema_ready_v2010($pdo)||!vp3_human_messaging_v370
 }
 
 try{
-    $session=vp3_extension_session_authenticate_v2000($pdo);
+    $session=vp3_extension_session_authenticate_v2001($pdo);
     if(!$session)throw new VP3BrowserShareExceptionV2010('authentication_required',401,'Browser Companion authentication is required.');
-    vp3_browser_share_require_capability_v2010($session,'team.destinations.read');
+    if(!vp3_extension_session_has_capability_v2001($session,'team.destinations.read')){
+        throw new VP3BrowserShareExceptionV2010('capability_denied',403,'This browser connection cannot read share destinations.');
+    }
+    vp3_browser_share_reconcile_deleted_v2011($pdo,100);
     $destinations=vp3_browser_share_destinations_v2010($pdo,(int)$session['user_id']);
     vp3_browser_destinations_json_v2010(200,[
         'ok'=>true,
