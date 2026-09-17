@@ -68,7 +68,11 @@ assert.ok(memory.includes('carried_forward means the prior thread was linked int
 assert.ok(memory.includes('Continuity status changes and carry-forward actions require explicit organizer action in the Meeting workspace.'),'Agent Chat must remain read-only for continuity mutations');
 assert.ok(memory.includes("'source'=>'video_meeting_continuity:'"),'continuity context must publish meeting citations');
 assert.ok(chat.includes('video_meeting_memory_agent_context_v18120($pdo,$userId,$query)'),'Agent Chat must keep using canonical Meeting Memory context');
-for(const forbidden of ['participant_email','email_recipient','raw_transcript','private_notes','note_text','transcript_text'])assert.ok(!memory.includes(forbidden),`Agent Chat continuity context must not depend on private field ${forbidden}`);
+for(const forbidden of ['email_recipient','note_text','transcript_text','follow_up_draft','provider_secret'])assert.ok(!memory.includes(forbidden),`Agent Chat continuity context must not depend on private field ${forbidden}`);
+assert.ok(!memory.includes('SELECT email'),'Meeting Memory continuity must not read participant email');
+assert.ok(!memory.includes('raw_transcript_read'),'Meeting Memory continuity must not read raw transcript content');
+assert.ok(!memory.includes('private_notes_read'),'Meeting Memory continuity must not read private notes');
+assert.ok(memory.includes("'participant_email_indexed'=>false")&&memory.includes("'raw_transcript_indexed'=>false")&&memory.includes("'private_notes_indexed'=>false"),'existing Meeting Memory privacy flags must remain explicit');
 
 assert.ok(ui.includes('Cross-meeting continuity'),'Prep must visibly expose continuity');
 assert.ok(ui.includes('Carry forward to agenda'),'carry-forward must be explicit');
