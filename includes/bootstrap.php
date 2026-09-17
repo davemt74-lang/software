@@ -75,6 +75,7 @@ require_once __DIR__.'/user-agent-lifecycle-v390.php';
 require_once __DIR__.'/user-data-usage-v236.php';
 require_once __DIR__.'/midi-v217.php';
 require_once __DIR__.'/auth.php';
+require_once __DIR__.'/extension-device-auth-v2000.php';
 require_once __DIR__.'/subscription-request-gates.php';
 require_once __DIR__.'/notifications.php';
 require_once __DIR__.'/agent-chat-activity.php';
