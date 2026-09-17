@@ -212,7 +212,7 @@ async function activeCapture(tabHint = null) {
       func: async () => {
         const selected_text = String(window.getSelection?.() || '').trim();
         const canonical_url = document.querySelector('link[rel="canonical"]')?.href || '';
-        const pageText = String(document.body?.innerText || '').replace(/\\s+/g, ' ').trim().slice(0, 1000000);
+        const pageText = String(document.body?.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 1000000);
         let page_text_sha256 = '';
         if (pageText) {
           const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(pageText));
