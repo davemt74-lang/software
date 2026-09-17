@@ -41,6 +41,7 @@ try{
     vp3_browser_destinations_json_v2010(200,[
         'ok'=>true,
         'contract_version'=>1,
+        'capabilities'=>array_values($session['capabilities']??[]),
         'destinations'=>$destinations,
     ]);
 }catch(VP3BrowserShareExceptionV2010 $e){
