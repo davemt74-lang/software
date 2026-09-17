@@ -165,6 +165,42 @@ async function authorizedFetch(path, options = {}, capability = '') {
   }
 }
 
+async function authorizedMediaDataUrl(path) {
+  let current = await session(false);
+  const call = async (token) => {
+    const { base_url } = await config();
+    const response = await fetch(apiUrl(base_url, path), {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'X-VP3-Extension-Version': VP3_EXTENSION_VERSION,
+        'X-VP3-Contract-Version': VP3_CONTRACT_VERSION
+      },
+      cache: 'no-store',
+      credentials: 'omit'
+    });
+    if (!response.ok) {
+      const error = new Error('Browser Share media could not be loaded.');
+      error.status = response.status;
+      throw error;
+    }
+    const blob = await response.blob();
+    if (blob.size > 16 * 1024 * 1024) throw new Error('Browser Share media is too large to preview.');
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    let binary = '';
+    for (let offset = 0; offset < bytes.length; offset += 0x8000) {
+      binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
+    }
+    return `data:${blob.type || 'application/octet-stream'};base64,${btoa(binary)}`;
+  };
+  try { return await call(current.access_token); }
+  catch (error) {
+    if (error.status !== 401) throw error;
+    current = await session(true);
+    return call(current.access_token);
+  }
+}
+
 async function activeCapture(tabHint = null) {
   let tab = tabHint;
   if (!tab?.id) [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -562,6 +598,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       case 'this_page': return thisPage(message.capture || await activeCapture(), message.cursor || '');
       case 'following': return followingFeed(message.cursor || '');
       case 'source_action': return sourceFeedAction(message.action, message.payload || {});
+      case 'media_data': return authorizedMediaDataUrl(String(message.path || ''));
       case 'share': return createRichShare(message);
       case 'share_action': return browserShareAction(message.action, message.browser_share_id, message.folder_id);
       case 'disconnect': return disconnect();
