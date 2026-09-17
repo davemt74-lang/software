@@ -78,6 +78,11 @@ must(mediaService.includes("(string)$e->getCode()==='23000'"), 'concurrent dupli
 must(mediaService.includes("$status==='ready'&&!empty($row['storage_key'])"), 'private binary content URL must stay hidden until inspection passes');
 must(mediaService.includes("if($status!=='ready')"), 'direct private media reads must reject non-ready files');
 must(mediaService.includes("'media_processing'"), 'processing media read state must be explicit');
+must(mediaService.includes("'capture_scale_x','capture_scale_y'"), 'server must retain effective screenshot bitmap scales');
+must(mediaService.includes('$ownsTransaction=!$pdo->inTransaction();'), 'media insert must own a transaction when called standalone');
+must(mediaService.includes('if($ownsTransaction)$pdo->beginTransaction();'), 'media insert transaction start missing');
+must(mediaService.includes('if($ownsTransaction)$pdo->commit();'), 'media row and inspection job must commit atomically');
+must(mediaService.includes('if($ownsTransaction&&$pdo->inTransaction())$pdo->rollBack();'), 'failed media/job inserts must roll back atomically');
 
 must(mediaApi.includes('vp3_extension_apply_cors_v2001()'), 'media API must use hardened extension CORS');
 must(mediaApi.includes('vp3_extension_session_authenticate_v2001($pdo)'), 'media API must authenticate extension bearer sessions');
