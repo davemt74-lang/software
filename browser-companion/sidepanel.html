@@ -8,10 +8,7 @@
 </head>
 <body>
   <header class="topbar">
-    <div>
-      <strong>VP3</strong>
-      <span>Browser Companion</span>
-    </div>
+    <div><strong>VP3</strong><span>Browser Companion</span></div>
     <button id="settingsBtn" class="icon-btn" type="button" aria-label="Settings">⚙</button>
   </header>
 
@@ -20,10 +17,7 @@
       <div class="eyebrow">Connection</div>
       <div id="connectionState" class="connection-state">Checking VP3…</div>
       <div id="connectControls" hidden>
-        <label class="field">
-          <span>Device name</span>
-          <input id="deviceName" maxlength="120" autocomplete="off" value="Chrome Browser">
-        </label>
+        <label class="field"><span>Device name</span><input id="deviceName" maxlength="120" autocomplete="off" value="Chrome Browser"></label>
         <button id="connectBtn" class="primary" type="button">Connect to VP3</button>
         <p class="hint">A VP3 tab will open so you can approve this browser. Your password never enters the extension.</p>
       </div>
@@ -34,100 +28,124 @@
     </section>
 
     <section id="shareWorkspace" hidden>
-      <section class="card source-card">
-        <div class="row-between">
-          <div class="eyebrow">Current page</div>
-          <button id="refreshCaptureBtn" class="text-btn" type="button">Refresh</button>
-        </div>
-        <div id="pageTitle" class="page-title">No page selected</div>
-        <div id="pageHost" class="page-host"></div>
-      </section>
+      <nav class="feed-tabs" aria-label="Browser Companion views">
+        <button id="thisPageTab" class="feed-tab active" type="button" aria-selected="true">This Page</button>
+        <button id="followingTab" class="feed-tab" type="button" aria-selected="false">Following</button>
+      </nav>
 
-      <section class="card capture-card">
-        <div class="row-between capture-heading">
-          <div>
-            <div class="eyebrow">Capture</div>
-            <strong>Add what matters</strong>
+      <section id="thisPageView">
+        <section class="card source-card">
+          <div class="row-between">
+            <div>
+              <div class="eyebrow">Current source</div>
+              <div id="pageTitle" class="page-title">No page selected</div>
+              <div id="pageHost" class="page-host"></div>
+            </div>
+            <button id="refreshCaptureBtn" class="text-btn" type="button">Refresh</button>
           </div>
-          <span id="captureSummary" class="capture-summary">Text</span>
-        </div>
-
-        <label class="field">
-          <span>Highlighted text <small>optional with rich capture</small></span>
-          <textarea id="selectedText" rows="5" readonly placeholder="Highlight text on the page, then click Refresh—or right-click the selection and choose “Share selection with VP3.”"></textarea>
-        </label>
-        <div id="selectionCount" class="counter">0 / 32,768 bytes</div>
-
-        <div class="capture-tools">
-          <button id="captureScreenshotBtn" type="button">
-            <span class="tool-title">Screenshot region</span>
-            <small>Drag over the part of the page you want to keep</small>
-          </button>
-          <button id="captureMediaBtn" type="button" hidden>
-            <span class="tool-title">Media moment</span>
-            <small id="mediaDetectedText">Capture the current playback position</small>
-          </button>
-          <button id="recordCommentaryBtn" type="button">
-            <span class="tool-title">Voice commentary</span>
-            <small id="commentaryStatus">Add your own audio note, up to 90 seconds</small>
-          </button>
-        </div>
-
-        <div id="screenshotPreview" class="attachment-preview" hidden>
-          <div class="preview-head"><strong>Screenshot region</strong><button id="removeScreenshotBtn" class="text-btn danger-text" type="button">Remove</button></div>
-          <img id="screenshotImage" alt="Captured screenshot region">
-          <small id="screenshotMeta"></small>
-        </div>
-
-        <div id="mediaPreview" class="attachment-preview" hidden>
-          <div class="preview-head"><strong id="mediaPreviewTitle">Media moment</strong><button id="removeMediaBtn" class="text-btn danger-text" type="button">Remove</button></div>
-          <div class="clip-row">
-            <label><span>Start</span><input id="mediaStart" type="number" min="0" step="0.1"></label>
-            <label><span>End</span><input id="mediaEnd" type="number" min="0" step="0.1"></label>
+          <div id="sourceMeta" class="source-meta" hidden>
+            <span id="sourceStatus" class="pill">Recognized</span>
+            <button id="followCurrentSourceBtn" class="compact-btn" type="button">Follow source</button>
+            <button id="openSourcePageBtn" class="text-btn" type="button">Source page</button>
           </div>
-          <small id="mediaClipHint">Maximum clip window: 90 seconds. VP3 stores the source timestamps, not a downloaded copy.</small>
-        </div>
+        </section>
 
-        <div id="commentaryPreview" class="attachment-preview" hidden>
-          <div class="preview-head"><strong>Voice commentary</strong><button id="removeCommentaryBtn" class="text-btn danger-text" type="button">Remove</button></div>
-          <audio id="commentaryAudio" controls></audio>
-          <small id="commentaryMeta"></small>
-        </div>
+        <section class="card composer-card">
+          <div class="row-between capture-heading">
+            <div><div class="eyebrow">Annotate</div><strong>Add context to this page</strong></div>
+            <span id="captureSummary" class="capture-summary">Add capture</span>
+          </div>
+
+          <label class="field">
+            <span>Highlighted text <small>optional with rich capture</small></span>
+            <textarea id="selectedText" rows="4" readonly placeholder="Highlight text on the page, then click Refresh—or right-click the selection and choose “Share selection with VP3.”"></textarea>
+          </label>
+          <div id="selectionCount" class="counter">0 / 32,768 bytes</div>
+
+          <div class="capture-tools">
+            <button id="captureScreenshotBtn" type="button"><span class="tool-title">Screenshot region</span><small>Drag over the visible area you want to keep</small></button>
+            <button id="captureMediaBtn" type="button" hidden><span class="tool-title">Media moment</span><small id="mediaDetectedText">Capture the current playback position</small></button>
+            <button id="recordCommentaryBtn" type="button"><span class="tool-title">Voice commentary</span><small id="commentaryStatus">Add an audio note, up to 90 seconds</small></button>
+          </div>
+
+          <div id="screenshotPreview" class="attachment-preview" hidden>
+            <div class="preview-head"><strong>Screenshot region</strong><button id="removeScreenshotBtn" class="text-btn danger-text" type="button">Remove</button></div>
+            <img id="screenshotImage" alt="Captured screenshot region"><small id="screenshotMeta"></small>
+          </div>
+
+          <div id="mediaPreview" class="attachment-preview" hidden>
+            <div class="preview-head"><strong id="mediaPreviewTitle">Media moment</strong><button id="removeMediaBtn" class="text-btn danger-text" type="button">Remove</button></div>
+            <div class="clip-row">
+              <label><span>Start</span><input id="mediaStart" type="number" min="0" step="0.1"></label>
+              <label><span>End</span><input id="mediaEnd" type="number" min="0" step="0.1"></label>
+            </div>
+            <small id="mediaClipHint">Maximum clip window: 90 seconds. VP3 stores timestamps, not a downloaded copy.</small>
+          </div>
+
+          <div id="commentaryPreview" class="attachment-preview" hidden>
+            <div class="preview-head"><strong>Voice commentary</strong><button id="removeCommentaryBtn" class="text-btn danger-text" type="button">Remove</button></div>
+            <audio id="commentaryAudio" controls></audio><small id="commentaryMeta"></small>
+          </div>
+
+          <label class="field"><span>Note <small>optional</small></span><textarea id="shareNote" rows="3" maxlength="4096" placeholder="What matters about this?"></textarea></label>
+
+          <div class="publish-grid">
+            <label class="field">
+              <span>Visibility</span>
+              <select id="visibilitySelect">
+                <option value="private">Private</option>
+                <option value="team">Team</option>
+                <option value="public">Public</option>
+              </select>
+            </label>
+            <label id="visibilityTeamField" class="field" hidden>
+              <span>Visible to Team</span>
+              <select id="visibilityTeamSelect"><option value="">Choose team…</option></select>
+            </label>
+          </div>
+
+          <label class="field">
+            <span>Deliver to</span>
+            <select id="destinationSelect"><option value="">Loading destinations…</option></select>
+          </label>
+          <p class="hint split-hint">Delivery and feed visibility are separate. A capture can be delivered to a conversation while remaining Private, Team-visible, or Public.</p>
+          <button id="shareBtn" class="primary" type="button">Publish annotation</button>
+        </section>
+
+        <section id="successCard" class="card success-card" hidden>
+          <div class="eyebrow">Published</div>
+          <h2>Annotation added</h2>
+          <p id="shareResultText" class="hint"></p>
+          <div id="shareMediaResult" class="media-result" hidden></div>
+          <div class="action-grid">
+            <button id="askAgentBtn" type="button">Ask VP3</button>
+            <button id="saveKnowledgeBtn" type="button">Save to Knowledge</button>
+            <button id="createTaskBtn" type="button">Create Task</button>
+            <button id="openSourceBtn" type="button">Open source</button>
+          </div>
+          <button id="openMessagesBtn" class="primary secondary-primary" type="button">Open in VP3 Messages</button>
+        </section>
+
+        <section class="feed-section">
+          <div class="section-heading"><div><div class="eyebrow">This Page</div><strong>Annotations on this source</strong></div><span id="thisPageCount" class="muted"></span></div>
+          <div id="thisPageEmpty" class="empty-state">No authorized annotations on this source yet.</div>
+          <div id="thisPageFeed" class="feed-list"></div>
+          <button id="loadMoreThisPageBtn" class="load-more" type="button" hidden>Load more</button>
+        </section>
       </section>
 
-      <section class="card">
-        <label class="field">
-          <span>Share with</span>
-          <select id="destinationSelect">
-            <option value="">Loading destinations…</option>
-          </select>
-        </label>
-        <label class="field">
-          <span>Note <small>optional</small></span>
-          <textarea id="shareNote" rows="3" maxlength="4096" placeholder="Why are you sharing this?"></textarea>
-        </label>
-        <button id="shareBtn" class="primary" type="button">Share with VP3</button>
-        <p class="hint">Rich captures stay linked to the Browser Share and inherit its live VP3 access rules.</p>
-      </section>
-
-      <section id="successCard" class="card success-card" hidden>
-        <div class="eyebrow">Shared</div>
-        <h2>Sent to VP3</h2>
-        <p id="shareResultText" class="hint"></p>
-        <div id="shareMediaResult" class="media-result" hidden></div>
-        <div class="action-grid">
-          <button id="askAgentBtn" type="button">Ask VP3</button>
-          <button id="saveKnowledgeBtn" type="button">Save to Knowledge</button>
-          <button id="createTaskBtn" type="button">Create Task</button>
-          <button id="openSourceBtn" type="button">Open source</button>
-        </div>
-        <button id="openMessagesBtn" class="primary secondary-primary" type="button">Open in VP3 Messages</button>
+      <section id="followingView" hidden>
+        <section class="feed-section following-section">
+          <div class="section-heading"><div><div class="eyebrow">Following</div><strong>People and sources you follow</strong></div><button id="refreshFollowingBtn" class="text-btn" type="button">Refresh</button></div>
+          <div id="followingEmpty" class="empty-state">Follow a source or VP3 user to build this feed.</div>
+          <div id="followingFeed" class="feed-list"></div>
+          <button id="loadMoreFollowingBtn" class="load-more" type="button" hidden>Load more</button>
+        </section>
       </section>
     </section>
 
     <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
   </main>
-
   <script src="sidepanel.js"></script>
 </body>
 </html>
