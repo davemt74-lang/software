@@ -75,11 +75,24 @@ jobs:
             exit 1
           fi
           sha256sum dist/vp3-browser-companion-v20.50.0.zip > dist/vp3-browser-companion-v20.50.0.zip.sha256
+          zip -r dist/vp3-phase6-source-feed-deploy.zip \
+            api/browser-source-feed-v2050.php \
+            api/browser-share-media-v2040.php \
+            includes/browser-source-feed-v2050.php \
+            includes/browser-share-chat-feed-v2020.php \
+            includes/browser-share-media-v2040.php \
+            includes/bootstrap.php \
+            browser-companion \
+            source.php annotation.php upgrade.php
+          unzip -t dist/vp3-phase6-source-feed-deploy.zip
+          sha256sum dist/vp3-phase6-source-feed-deploy.zip > dist/vp3-phase6-source-feed-deploy.zip.sha256
       - uses: actions/upload-artifact@v4
         with:
           name: vp3-browser-companion-v20.50.0
           path: |
             dist/vp3-browser-companion-v20.50.0.zip
             dist/vp3-browser-companion-v20.50.0.zip.sha256
+            dist/vp3-phase6-source-feed-deploy.zip
+            dist/vp3-phase6-source-feed-deploy.zip.sha256
           if-no-files-found: error
           retention-days: 30
