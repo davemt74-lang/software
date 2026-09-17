@@ -4,6 +4,7 @@ require dirname(__DIR__).'/includes/bootstrap.php';
 require_once dirname(__DIR__).'/includes/video-meetings-automation-v18130.php';
 require_once dirname(__DIR__).'/includes/video-meetings-followthrough-intelligence-v18160.php';
 require_once dirname(__DIR__).'/includes/video-meetings-outcome-learning-v18170.php';
+require_once dirname(__DIR__).'/includes/video-meetings-cross-meeting-continuity-v18210.php';
 header('Content-Type: application/json; charset=UTF-8');
 header('Cache-Control: no-store');
 
@@ -32,6 +33,7 @@ try{
     $prep=video_meeting_automation_prep_v18130($pdo,$meeting,$userId);
     $prep['followthrough_intelligence']=video_meeting_followthrough_prep_v18160($pdo,$meeting,$userId);
     $prep['outcome_learning']=video_meeting_outcome_learning_for_meeting_v18170($pdo,$meeting,$userId);
+    $prep['continuity']=video_meeting_continuity_schema_ready_v18210($pdo)?video_meeting_continuity_state_v18210($pdo,$meeting,$userId):['version'=>'v18.21','schema'=>'vp3.meeting.continuity','candidates'=>[],'not_ready'=>true];
     echo json_encode(['ok'=>true,'prep'=>$prep],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
 }catch(RuntimeException $e){http_response_code(422);echo json_encode(['ok'=>false,'error'=>$e->getMessage()],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);}
 catch(Throwable $e){error_log('VP3 meeting automation: '.$e->getMessage());http_response_code(500);echo json_encode(['ok'=>false,'error'=>'Meeting Intelligence Automation could not complete this request.']);}
