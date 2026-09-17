@@ -144,7 +144,7 @@
   if (!window.VP3_TRANSCRIPTION_KNOWLEDGE_FOLDERS_V313 && !document.querySelector('script[data-knowledge-folders-v313-loader]')) {
     const script = document.createElement('script');
     script.dataset.knowledgeFoldersV313Loader = '1';
-    script.src = new URL('transcription-knowledge-folders-v313.js?v=shared-folders-v313-hotfix-20260913', location.href).toString();
+    script.src = new URL('transcription-knowledge-folders-v313.js?v=transcription-knowledge-roundtrip-v315-20260917', location.href).toString();
     script.async = false;
     document.head.appendChild(script);
   }
