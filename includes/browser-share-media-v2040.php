@@ -276,6 +276,7 @@ function vp3_browser_share_media_public_v2040(array $row): array
 {
     $metadata=json_decode((string)($row['metadata_json']??'{}'),true);
     if(!is_array($metadata))$metadata=[];
+    $status=(string)($row['media_status']??'ready');
     return [
         'id'=>(string)($row['public_id']??''),
         'kind'=>(string)($row['media_kind']??''),
@@ -283,10 +284,10 @@ function vp3_browser_share_media_public_v2040(array $row): array
         'byte_size'=>(int)($row['byte_size']??0),
         'sha256'=>(string)($row['sha256']??''),
         'original_name'=>(string)($row['original_name']??''),
-        'status'=>(string)($row['media_status']??'ready'),
+        'status'=>$status,
         'metadata'=>$metadata,
         'created_at'=>(string)($row['created_at']??''),
-        'content_url'=>!empty($row['storage_key'])?'/api/browser-share-media-v2040.php?media_id='.rawurlencode((string)($row['public_id']??'')):'',
+        'content_url'=>($status==='ready'&&!empty($row['storage_key']))?'/api/browser-share-media-v2040.php?media_id='.rawurlencode((string)($row['public_id']??'')):'',
     ];
 }
 
@@ -307,6 +308,11 @@ function vp3_browser_share_media_file_v2040(PDO $pdo,string $mediaPublicId,int $
     $row=$stmt->fetch(PDO::FETCH_ASSOC);
     if(!$row)throw new VP3BrowserShareMediaExceptionV2040('media_not_found',404,'Media file was not found.');
     vp3_browser_share_media_share_row_v2040($pdo,(string)$row['browser_share_public_id'],$userId);
+    $status=(string)($row['media_status']??'');
+    if($status!=='ready'){
+        $code=$status==='failed'?'media_failed':'media_processing';
+        throw new VP3BrowserShareMediaExceptionV2040($code,409,$status==='failed'?'Media inspection failed.':'Media is still being inspected.');
+    }
     $key=(string)($row['storage_key']??'');
     if($key==='')throw new VP3BrowserShareMediaExceptionV2040('media_not_found',404,'This attachment has no private media file.');
     $path=vp3_browser_share_media_storage_path_v2040($key,false);
