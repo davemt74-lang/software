@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>VP3 Browser Companion</title>
+  <link rel="stylesheet" href="sidepanel.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <strong>VP3</strong>
+      <span>Browser Companion</span>
+    </div>
+    <button id="settingsBtn" class="icon-btn" type="button" aria-label="Settings">⚙</button>
+  </header>
+
+  <main>
+    <section id="connectionCard" class="card">
+      <div class="eyebrow">Connection</div>
+      <div id="connectionState" class="connection-state">Checking VP3…</div>
+      <div id="connectControls" hidden>
+        <label class="field">
+          <span>Device name</span>
+          <input id="deviceName" maxlength="120" autocomplete="off" value="Chrome Browser">
+        </label>
+        <button id="connectBtn" class="primary" type="button">Connect to VP3</button>
+        <p class="hint">A VP3 tab will open so you can approve this browser. Your password never enters the extension.</p>
+      </div>
+      <div id="pendingControls" hidden>
+        <p class="hint">Approve the connection in the VP3 tab. This panel will finish connecting automatically.</p>
+        <button id="checkConnectionBtn" type="button">Check connection</button>
+      </div>
+    </section>
+
+    <section id="shareWorkspace" hidden>
+      <section class="card source-card">
+        <div class="row-between">
+          <div class="eyebrow">Current page</div>
+          <button id="refreshCaptureBtn" class="text-btn" type="button">Refresh</button>
+        </div>
+        <div id="pageTitle" class="page-title">No page selected</div>
+        <div id="pageHost" class="page-host"></div>
+      </section>
+
+      <section class="card">
+        <label class="field">
+          <span>Highlighted text</span>
+          <textarea id="selectedText" rows="7" readonly placeholder="Highlight text on the page, then click Refresh—or right-click the selection and choose “Share selection with VP3.”"></textarea>
+        </label>
+        <div id="selectionCount" class="counter">0 / 32,768 bytes</div>
+      </section>
+
+      <section class="card">
+        <label class="field">
+          <span>Share with</span>
+          <select id="destinationSelect">
+            <option value="">Loading destinations…</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Note <small>optional</small></span>
+          <textarea id="shareNote" rows="3" maxlength="4096" placeholder="Why are you sharing this?"></textarea>
+        </label>
+        <button id="shareBtn" class="primary" type="button">Share with VP3</button>
+      </section>
+
+      <section id="successCard" class="card success-card" hidden>
+        <div class="eyebrow">Shared</div>
+        <h2>Sent to VP3</h2>
+        <p id="shareResultText" class="hint"></p>
+        <div class="action-grid">
+          <button id="askAgentBtn" type="button">Ask VP3</button>
+          <button id="saveKnowledgeBtn" type="button">Save to Knowledge</button>
+          <button id="createTaskBtn" type="button">Create Task</button>
+          <button id="openSourceBtn" type="button">Open source</button>
+        </div>
+        <button id="openMessagesBtn" class="primary secondary-primary" type="button">Open in VP3 Messages</button>
+      </section>
+    </section>
+
+    <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
+  </main>
+
+  <script src="sidepanel.js"></script>
+</body>
+</html>
