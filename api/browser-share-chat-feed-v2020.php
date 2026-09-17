@@ -40,6 +40,14 @@ try{
         if(!$share)vp3_browser_share_api_json_v2020(['ok'=>false,'error'=>'not_found'],404);
         vp3_browser_share_api_json_v2020(['ok'=>true,'browser_share'=>$share]);
     }
+    if($action==='message'){
+        if($method!=='GET')vp3_browser_share_api_json_v2020(['ok'=>false,'error'=>'method_not_allowed'],405);
+        $messageId=max(0,(int)($_GET['message_id']??0));
+        if($messageId<1)vp3_browser_share_api_json_v2020(['ok'=>false,'error'=>'message_required'],422);
+        $share=vp3_browser_share_for_message_public_v2020($pdo,$messageId,$uid);
+        if(!$share)vp3_browser_share_api_json_v2020(['ok'=>false,'error'=>'not_found'],404);
+        vp3_browser_share_api_json_v2020(['ok'=>true,'browser_share'=>$share]);
+    }
     if($method!=='POST')vp3_browser_share_api_json_v2020(['ok'=>false,'error'=>'method_not_allowed'],405);
     $publicId=trim((string)($input['browser_share_id']??''));
     if($publicId==='')vp3_browser_share_api_json_v2020(['ok'=>false,'error'=>'browser_share_required'],422);
