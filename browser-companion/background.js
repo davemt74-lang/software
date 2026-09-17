@@ -173,7 +173,7 @@ async function activeCapture(tabHint = null) {
   try {
     const injected = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
-      func: () => {
+      func: async () => {
         const selected_text = String(window.getSelection?.() || '').trim();
         const canonical_url = document.querySelector('link[rel="canonical"]')?.href || '';
         const pageText = String(document.body?.innerText || '').replace(/\\s+/g, ' ').trim().slice(0, 1000000);
