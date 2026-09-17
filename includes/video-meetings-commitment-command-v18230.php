@@ -64,13 +64,13 @@ function video_meeting_commitment_command_classify_v18230(array $row): array
     if($monitor==='blocked')return ['bucket'=>'followthrough_blocked','attention_required'=>true,'stage'=>'followthrough'];
     if($monitor==='overdue')return ['bucket'=>'overdue','attention_required'=>true,'stage'=>'followthrough'];
     if($handoff==='stale')return ['bucket'=>'handoff_drift','attention_required'=>true,'stage'=>'handoff'];
+    if((string)($row['continuity_status']??'')==='carried_forward')return ['bucket'=>'carried_forward','attention_required'=>false,'stage'=>'continuity'];
     if((int)($row['plan_id']??0)<1||$plan==='needs_definition')return ['bucket'=>'plan_needs_definition','attention_required'=>true,'stage'=>'plan'];
     if($verification==='needs_attention')return ['bucket'=>'verification_needs_attention','attention_required'=>true,'stage'=>'verification'];
     if($verification==='evidence_available')return ['bucket'=>'verification_review','attention_required'=>true,'stage'=>'verification'];
     if($verification==='waiting_for_verification')return ['bucket'=>'waiting_for_verification','attention_required'=>false,'stage'=>'verification'];
     if((int)($row['execution_id']??0)>0&&$execution==='needs_review')return ['bucket'=>'action_needs_review','attention_required'=>true,'stage'=>'action'];
     if($handoff==='none'&&$plan==='ready')return ['bucket'=>'ready_for_handoff','attention_required'=>true,'stage'=>'plan'];
-    if((string)($row['continuity_status']??'')==='carried_forward')return ['bucket'=>'carried_forward','attention_required'=>false,'stage'=>'continuity'];
     if((int)($row['monitor_id']??0)>0)return ['bucket'=>'active_followthrough','attention_required'=>false,'stage'=>'followthrough'];
     if((int)($row['execution_id']??0)>0)return ['bucket'=>'action_in_progress','attention_required'=>false,'stage'=>'action'];
     return ['bucket'=>'active','attention_required'=>false,'stage'=>'agenda'];
