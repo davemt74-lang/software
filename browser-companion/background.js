@@ -389,6 +389,7 @@ async function thisPage(capture, cursor = '') {
     url: String(capture.source_url || ''),
     canonical_url: String(capture.canonical_url || ''),
     title: String(capture.title || '').slice(0, 512),
+    source_version_hash: String(capture.page_text_sha256 || ''),
     limit: '25'
   });
   if (cursor) query.set('cursor', cursor);
