@@ -52,6 +52,22 @@ function vp3_browser_share_media_header_metadata_v2040(): array
     return $data;
 }
 
+function vp3_browser_share_media_verified_mime_v2040(string $kind,string $declared,string $detected): string
+{
+    $declared=strtolower(trim(explode(';',$declared,2)[0]));
+    $detected=strtolower(trim(explode(';',$detected,2)[0]));
+    if($kind==='screenshot')return $detected;
+    if($kind!=='commentary_audio')return $declared;
+    if(str_starts_with($detected,'audio/'))return $detected;
+    $containerMatch=(
+        ($declared==='audio/webm' && $detected==='video/webm')
+        || ($declared==='audio/ogg' && $detected==='application/ogg')
+        || ($declared==='audio/mp4' && in_array($detected,['video/mp4','application/mp4'],true))
+    );
+    if($containerMatch)return $declared;
+    throw new VP3BrowserShareMediaExceptionV2040('unsupported_media_type',415,'Commentary bytes do not match an approved audio container.');
+}
+
 $method=strtoupper((string)($_SERVER['REQUEST_METHOD']??'GET'));
 if($method==='OPTIONS')vp3_browser_share_media_json_v2040(204);
 if(!in_array($method,['GET','POST'],true))vp3_browser_share_media_json_v2040(405,['ok'=>false,'error'=>['code'=>'method_not_allowed','message'=>'Method not allowed.']]);
@@ -107,19 +123,14 @@ try{
     $bytes=(string)file_get_contents('php://input',false,null,0,$limit+1);
     if(strlen($bytes)>$limit)throw new VP3BrowserShareMediaExceptionV2040('payload_too_large',413,'Media upload is too large.');
     if($bytes==='')throw new VP3BrowserShareMediaExceptionV2040('invalid_request',422,'Media upload is empty.');
+    if(!class_exists('finfo'))throw new VP3BrowserShareMediaExceptionV2040('service_unavailable',503,'Server file inspection is unavailable.');
 
-    $detected='';
-    if(class_exists('finfo')){
-        $finfo=new finfo(FILEINFO_MIME_TYPE);
-        $detected=(string)$finfo->buffer($bytes);
-    }
-    if($kind==='screenshot' && $detected!=='' && $detected!=='application/octet-stream')$declaredMime=$detected;
-    elseif($kind==='commentary_audio' && str_starts_with($detected,'audio/'))$declaredMime=$detected;
-    elseif($kind==='commentary_audio' && in_array($detected,['video/webm','application/ogg'],true) && in_array($declaredMime,['audio/webm','audio/ogg'],true)){
-        // Browsers commonly produce audio-only WebM/Ogg containers that libmagic labels by container.
-    }
+    $finfo=new finfo(FILEINFO_MIME_TYPE);
+    $detected=(string)$finfo->buffer($bytes);
+    if($detected==='')throw new VP3BrowserShareMediaExceptionV2040('unsupported_media_type',415,'Media type could not be verified.');
+    $verifiedMime=vp3_browser_share_media_verified_mime_v2040($kind,$declaredMime,$detected);
 
-    $media=vp3_browser_share_media_store_binary_v2040($pdo,$shareId,$userId,$kind,$declaredMime,$bytes,$name,vp3_browser_share_media_header_metadata_v2040());
+    $media=vp3_browser_share_media_store_binary_v2040($pdo,$shareId,$userId,$kind,$verifiedMime,$bytes,$name,vp3_browser_share_media_header_metadata_v2040());
     vp3_browser_share_media_json_v2040(201,['ok'=>true,'media'=>$media]);
 }catch(VP3BrowserShareMediaExceptionV2040 $e){
     vp3_browser_share_media_json_v2040($e->httpStatus,['ok'=>false,'error'=>['code'=>$e->apiCode,'message'=>$e->getMessage()]]);
