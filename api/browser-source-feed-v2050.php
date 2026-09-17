@@ -61,7 +61,8 @@ try{
             $feed=vp3_browser_source_this_page_v2050(
                 $pdo,$userId,$url,trim((string)($_GET['canonical_url']??'')),trim((string)($_GET['title']??'')),
                 max(1,min(VP3_BROWSER_SOURCE_FEED_LIMIT_MAX_V2050,(int)($_GET['limit']??25))),
-                trim((string)($_GET['cursor']??''))
+                trim((string)($_GET['cursor']??'')),
+                trim((string)($_GET['source_version_hash']??''))
             );
             vp3_browser_source_api_json_v2050(200,['ok'=>true,'feed'=>$feed]);
         }
