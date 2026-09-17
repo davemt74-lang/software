@@ -38,9 +38,10 @@ requireText(ui, '[data-listening-ai-brain]{display:none!important}', 'Agent Brai
 requireText(ui, "source:'transcript'", 'Raw transcription saves must publish a success event.');
 requireText(ui, "source:'ai_summary'", 'AI summary saves must retain their folder-aware success event.');
 requireText(ui, 'if (node.textContent !== message) node.textContent = message;', 'Mutation-observed status text must only change when its value changes.');
-requireText(ui, "if (state === 'idle' || state === 'saving')", 'Idle and saving states must remain visually neutral instead of appearing successfully saved.');
+requireText(ui, "if (state === 'idle' || state === 'saving' || state === 'loading')", 'Idle, loading, and saving states must remain visually neutral instead of appearing successfully saved.');
 requireText(ui, "if (!document.querySelector('[data-transcription-knowledge-status]'))", 'MutationObserver passes must not recreate or reset an existing save status.');
-requireText(ui, "workspaceStatus(`Saved to My Knowledge · ${savedFolder}`, 'saved')", 'Only a successful save may set the raw transcription status to saved.');
+requireText(ui, '`Saved to My Knowledge · ${savedFolder}`', 'A successful raw transcription save must set a clear saved status.');
+requireText(ui, "'saved', viewUrl", 'A successful raw transcription save must attach the direct My Knowledge link.');
 requireText(ui, "workspaceStatus(proof.lastError, 'error')", 'Save failures must remain visibly distinct from successful saves.');
 
 requireText(knowledgePage, "i.created_by_user_id=? AND i.knowledge_scope='personal'", 'My Knowledge must continue listing the same Personal Knowledge scope used by the repaired endpoint.');
