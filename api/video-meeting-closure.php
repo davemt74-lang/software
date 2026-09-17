@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 require dirname(__DIR__).'/includes/bootstrap.php';
-require_once dirname(__DIR__).'/includes/video-meetings-closure-recurring-continuity-v18220.php';
+require_once dirname(__DIR__).'/includes/video-meetings-closure-recurring-continuity-guard-v18220.php';
 header('Content-Type: application/json; charset=UTF-8');
 header('Cache-Control: no-store');
 
@@ -26,7 +26,7 @@ try{
     if($action==='state'){echo json_encode(['ok'=>true,'closure'=>video_meeting_closure_state_v18220($pdo,$meeting,$userId)],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);exit;}
     if($action==='close'){echo json_encode(['ok'=>true,'closure'=>video_meeting_closure_close_v18220($pdo,$meeting,$userId)],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);exit;}
     if($action==='reopen'){echo json_encode(['ok'=>true,'closure'=>video_meeting_closure_reopen_v18220($pdo,$meeting,$userId)],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);exit;}
-    if($action==='carry_to_next'){echo json_encode(['ok'=>true,'closure'=>video_meeting_closure_carry_to_next_v18220($pdo,$meeting,$userId,(int)($input['closure_snapshot_id']??0),(int)($input['source_agenda_item_id']??0),(int)($input['target_meeting_id']??0))],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);exit;}
+    if($action==='carry_to_next'){echo json_encode(['ok'=>true,'closure'=>video_meeting_closure_guarded_carry_to_next_v18220($pdo,$meeting,$userId,(int)($input['closure_snapshot_id']??0),(int)($input['source_agenda_item_id']??0),(int)($input['target_meeting_id']??0))],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);exit;}
     http_response_code(400);echo json_encode(['ok'=>false,'error'=>'Unsupported Meeting Closure request.']);
 }catch(RuntimeException $e){http_response_code(422);echo json_encode(['ok'=>false,'error'=>$e->getMessage()],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);}
 catch(Throwable $e){error_log('VP3 meeting closure v18.22: '.$e->getMessage());http_response_code(500);echo json_encode(['ok'=>false,'error'=>'Meeting Closure could not complete this request.']);}
