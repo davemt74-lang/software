@@ -15,7 +15,7 @@ const card = read('browser-share-card-v2020.js');
 const bootstrap = read('includes/bootstrap.php');
 const upgrade = read('upgrade.php');
 
-must(manifest.version === '20.40.0', 'rich capture extension version must be v20.40.0');
+must(Number(manifest.version.split('.')[0]) === 20 && Number(manifest.version.split('.')[1]) >= 40, 'rich capture requires Browser Companion v20.40 or newer');
 must(manifest.manifest_version === 3, 'rich capture must remain Manifest V3');
 must(!manifest.host_permissions?.includes('<all_urls>'), 'rich capture must not add required all-URL access');
 must(!manifest.permissions?.includes('tabCapture'), 'v20.40 must not capture/download third-party tab media');
@@ -120,4 +120,4 @@ must(bootstrap.includes("require_once __DIR__.'/browser-share-media-v2040.php';"
 must(upgrade.includes('vp3_browser_share_media_schema_ready_v2040()'), 'upgrade readiness must include rich-media schema');
 must(upgrade.includes('vp3_browser_share_media_ensure_schema_v2040();'), 'upgrade must install rich-media schema');
 
-console.log('VP3 Browser Companion rich capture v20.40 contract passed.');
+console.log('VP3 Browser Companion rich capture v20.40+ regression contract passed.');
