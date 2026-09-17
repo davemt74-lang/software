@@ -1,4 +1,4 @@
-name: Browser Companion Rich Capture v20.40
+name: Browser Companion Rich Capture v20.40+ regression
 
 on:
   push:
@@ -47,7 +47,7 @@ jobs:
         run: node tests/browser-companion-rich-capture-v2040.mjs
 
       - name: Manifest contract
-        run: node -e "const m=require('./browser-companion/manifest.json'); if(m.manifest_version!==3||m.version!=='20.40.0') process.exit(1)"
+        run: node -e "const m=require('./browser-companion/manifest.json'); if(m.manifest_version!==3||Number(m.version.split('.')[0])!==20||Number(m.version.split('.')[1])<40) process.exit(1)"
 
       - name: JavaScript syntax
         run: |
@@ -77,22 +77,22 @@ jobs:
         run: |
           mkdir -p dist
           cd browser-companion
-          zip -r ../dist/vp3-browser-companion-v20.40.0.zip . -x '*.DS_Store'
+          zip -r ../dist/vp3-browser-companion-current.zip . -x '*.DS_Store'
           cd ..
-          unzip -t dist/vp3-browser-companion-v20.40.0.zip
-          unzip -Z1 dist/vp3-browser-companion-v20.40.0.zip | grep -qx 'manifest.json'
-          if unzip -Z1 dist/vp3-browser-companion-v20.40.0.zip | grep -q '^browser-companion/'; then
+          unzip -t dist/vp3-browser-companion-current.zip
+          unzip -Z1 dist/vp3-browser-companion-current.zip | grep -qx 'manifest.json'
+          if unzip -Z1 dist/vp3-browser-companion-current.zip | grep -q '^browser-companion/'; then
             echo 'Extension ZIP contains an unexpected wrapper folder.' >&2
             exit 1
           fi
-          sha256sum dist/vp3-browser-companion-v20.40.0.zip > dist/vp3-browser-companion-v20.40.0.zip.sha256
+          sha256sum dist/vp3-browser-companion-current.zip > dist/vp3-browser-companion-current.zip.sha256
 
       - name: Upload directly loadable Browser Companion
         uses: actions/upload-artifact@v4
         with:
-          name: vp3-browser-companion-v20.40.0
+          name: vp3-browser-companion-current
           path: |
-            dist/vp3-browser-companion-v20.40.0.zip
-            dist/vp3-browser-companion-v20.40.0.zip.sha256
+            dist/vp3-browser-companion-current.zip
+            dist/vp3-browser-companion-current.zip.sha256
           if-no-files-found: error
           retention-days: 30
