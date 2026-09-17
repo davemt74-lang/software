@@ -158,8 +158,12 @@ async function refreshState() {
   renderConnection(next);
   if (next.connected) {
     renderLastShare(next.last_share);
-    if (next.pending_capture?.available && next.pending_capture.selected_text) renderCapture(next.pending_capture);
-    else await refreshCapture();
+    if (next.pending_capture?.available && next.pending_capture.selected_text) {
+      renderCapture(next.pending_capture);
+      await message('clear_pending_capture').catch(() => {});
+    } else {
+      await refreshCapture();
+    }
     await loadDestinations();
   } else if (next.pending_connection) startPolling();
 }
