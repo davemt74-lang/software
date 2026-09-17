@@ -30,11 +30,22 @@ if(!$row||!vp3_browser_source_share_authorized_v2050($pdo,$row,$userId)){
     $item=$row?vp3_browser_source_item_v2050($pdo,$row,$userId,true):null;
 }
 function annotation_page_e_v2050(string $value): string{return htmlspecialchars($value,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8');}
+function annotation_page_media_v2050(array $media): string{
+    $html='';
+    foreach($media as $asset){
+        if(!is_array($asset)||($asset['status']??'')!=='ready')continue;
+        $content=trim((string)($asset['content_url']??''));
+        if($content==='')continue;
+        if(($asset['kind']??'')==='screenshot')$html.='<img class="media-image" src="'.annotation_page_e_v2050($content).'" alt="Annotation screenshot">';
+        elseif(($asset['kind']??'')==='commentary_audio')$html.='<audio controls src="'.annotation_page_e_v2050($content).'"></audio>';
+    }
+    return $html;
+}
 ?><!doctype html><html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title><?=annotation_page_e_v2050((string)($item['source_identity']['title']??'Annotation'))?> · VP3</title>
 <style>
-*{box-sizing:border-box}body{margin:0;background:#f5f5f2;color:#171717;font:15px/1.55 Inter,system-ui,sans-serif}a{color:inherit}.shell{max-width:780px;margin:0 auto;padding:26px 18px 70px}.top{display:flex;justify-content:space-between;margin-bottom:24px}.brand{font-weight:850;text-decoration:none}.card{padding:22px;background:#fff;border:1px solid #e1e1db;border-radius:18px}.eyebrow{font-size:10px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:#777}.title{font-size:24px;line-height:1.15;letter-spacing:-.035em;margin:7px 0}.meta{color:#6c6c66;font-size:12px}.quote{margin:18px 0 0;padding:14px;border-left:3px solid #ccc;background:#fafaf7;white-space:pre-wrap}.note{margin-top:14px;white-space:pre-wrap}.badges,.actions{display:flex;gap:7px;flex-wrap:wrap;margin-top:14px}.badge,.actions button,.actions a{border:0;border-radius:999px;background:#f0f0eb;padding:6px 9px;font:inherit;font-size:11px;text-decoration:none;cursor:pointer}.comments{margin-top:22px;display:grid;gap:8px}.comment{padding:10px;background:#f7f7f3;border-radius:10px}.reply{margin-left:20px}.comment strong{font-size:11px}.comment p{margin:3px 0 0}.compose{display:grid;grid-template-columns:1fr auto;gap:8px;margin-top:12px}.compose input{width:100%;padding:10px;border:1px solid #ddd;border-radius:10px}.compose button{padding:10px 14px}.error{margin-bottom:12px;padding:10px;background:#fff0f0;color:#8a2525;border-radius:10px}.empty{text-align:center;color:#777;padding:50px}
+*{box-sizing:border-box}body{margin:0;background:#f5f5f2;color:#171717;font:15px/1.55 Inter,system-ui,sans-serif}a{color:inherit}.shell{max-width:780px;margin:0 auto;padding:26px 18px 70px}.top{display:flex;justify-content:space-between;margin-bottom:24px}.brand{font-weight:850;text-decoration:none}.card{padding:22px;background:#fff;border:1px solid #e1e1db;border-radius:18px}.eyebrow{font-size:10px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:#777}.title{font-size:24px;line-height:1.15;letter-spacing:-.035em;margin:7px 0}.meta{color:#6c6c66;font-size:12px}.quote{margin:18px 0 0;padding:14px;border-left:3px solid #ccc;background:#fafaf7;white-space:pre-wrap}.note{margin-top:14px;white-space:pre-wrap}.media{display:grid;gap:8px;margin-top:14px}.media-image{width:100%;max-height:520px;object-fit:contain;border-radius:12px;background:#eee}.media audio{width:100%}.badges,.actions{display:flex;gap:7px;flex-wrap:wrap;margin-top:14px}.badge,.actions button,.actions a{border:0;border-radius:999px;background:#f0f0eb;padding:6px 9px;font:inherit;font-size:11px;text-decoration:none;cursor:pointer}.comments{margin-top:22px;display:grid;gap:8px}.comment{padding:10px;background:#f7f7f3;border-radius:10px}.reply{margin-left:20px}.comment strong{font-size:11px}.comment p{margin:3px 0 0}.compose{display:grid;grid-template-columns:1fr auto;gap:8px;margin-top:12px}.compose input{width:100%;padding:10px;border:1px solid #ddd;border-radius:10px}.compose button{padding:10px 14px}.error{margin-bottom:12px;padding:10px;background:#fff0f0;color:#8a2525;border-radius:10px}.empty{text-align:center;color:#777;padding:50px}
 </style></head><body><main class="shell">
 <div class="top"><a class="brand" href="<?=annotation_page_e_v2050(url('/'))?>">VP3</a><?php if($item): ?><a href="<?=annotation_page_e_v2050((string)$item['source_identity']['page_url'])?>">Source page</a><?php endif; ?></div>
 <?php if(!$item): ?><div class="empty">This annotation is not available.</div><?php else: ?>
@@ -45,11 +56,14 @@ function annotation_page_e_v2050(string $value): string{return htmlspecialchars(
 <?php if(!empty($item['selection'])): ?><div class="quote"><?=annotation_page_e_v2050((string)$item['selection'])?></div><?php endif; ?>
 <?php if(!empty($item['note'])): ?><div class="note"><?=annotation_page_e_v2050((string)$item['note'])?></div><?php endif; ?>
 <div class="badges"><span class="badge"><?=annotation_page_e_v2050(ucfirst((string)($item['publication']['visibility']??'shared')))?></span><span class="badge"><?=annotation_page_e_v2050((string)($item['source_version']['badge']??'Captured snapshot'))?></span></div>
+<?php $annotationMedia=annotation_page_media_v2050($item['media']??[]); if($annotationMedia!==''): ?><div class="media"><?=$annotationMedia?></div><?php endif; ?>
 <div class="actions">
 <a target="_blank" rel="noopener noreferrer" href="<?=annotation_page_e_v2050((string)$item['source_identity']['canonical_url'])?>">Open original source</a>
 <?php if($userId>0): ?>
 <form method="post"><input type="hidden" name="csrf_token" value="<?=annotation_page_e_v2050(csrf_token())?>"><input type="hidden" name="id" value="<?=annotation_page_e_v2050($publicId)?>"><input type="hidden" name="action" value="save"><input type="hidden" name="enabled" value="<?=!empty($item['interactions']['saved'])?'0':'1'?>"><button><?=!empty($item['interactions']['saved'])?'Unsave':'Save'?></button></form>
 <form method="post"><input type="hidden" name="csrf_token" value="<?=annotation_page_e_v2050(csrf_token())?>"><input type="hidden" name="id" value="<?=annotation_page_e_v2050($publicId)?>"><input type="hidden" name="action" value="research"><input type="hidden" name="enabled" value="<?=!empty($item['interactions']['in_research'])?'0':'1'?>"><button><?=!empty($item['interactions']['in_research'])?'Remove from Research':'Add to Research'?></button></form>
+<form method="post"><input type="hidden" name="csrf_token" value="<?=annotation_page_e_v2050(csrf_token())?>"><input type="hidden" name="id" value="<?=annotation_page_e_v2050($publicId)?>"><input type="hidden" name="action" value="follow_source"><input type="hidden" name="enabled" value="<?=!empty($item['source_identity']['following'])?'0':'1'?>"><button><?=!empty($item['source_identity']['following'])?'Unfollow source':'Follow source'?></button></form>
+<?php if((int)($item['sender']['id']??0)!==$userId): ?><form method="post"><input type="hidden" name="csrf_token" value="<?=annotation_page_e_v2050(csrf_token())?>"><input type="hidden" name="id" value="<?=annotation_page_e_v2050($publicId)?>"><input type="hidden" name="action" value="follow_user"><input type="hidden" name="enabled" value="<?=!empty($item['interactions']['following_user'])?'0':'1'?>"><button><?=!empty($item['interactions']['following_user'])?'Unfollow user':'Follow user'?></button></form><?php endif; ?>
 <a href="<?=annotation_page_e_v2050(url('/browser-share-agent-handoff.php?browser_share_id='.rawurlencode($publicId)))?>">Ask VP3</a>
 <?php endif; ?>
 </div>
