@@ -44,7 +44,10 @@ jobs:
                 : []
             );
 
-            const browserPathPatterns = [
+            // Browser-specific paths are the positive signal for the fast lane.
+            // Shared bootstrap/upgrade files may accompany a Browser Companion
+            // change, but can never qualify a PR for reduced coverage by themselves.
+            const browserSpecificPathPatterns = [
               /^api\/extension-/,
               /^api\/browser-share/,
               /^includes\/extension-device-auth/,
@@ -58,13 +61,20 @@ jobs:
               /^browser-extension\//,
               /^chrome-extension\//,
               /^extension\//,
-              /^database\/.*browser/i,
+              /^database\/.*browser/i
+            ];
+            const browserSharedPathPatterns = [
               /^upgrade\.php$/,
               /^includes\/bootstrap\.php$/
             ];
-
-            const browserOnly = changedFiles.length > 0 && changedFiles.every(
-              file => browserPathPatterns.some(pattern => pattern.test(file))
+            const matchesAny = (file, patterns) =>
+              patterns.some(pattern => pattern.test(file));
+            const hasBrowserSpecificChange = changedFiles.some(
+              file => matchesAny(file, browserSpecificPathPatterns)
+            );
+            const browserOnly = hasBrowserSpecificChange && changedFiles.every(
+              file => matchesAny(file, browserSpecificPathPatterns) ||
+                matchesAny(file, browserSharedPathPatterns)
             );
 
             const browserRequiredWorkflowPrefixes = [
@@ -150,6 +160,7 @@ jobs:
                 ['PR', `#${prNumber}`],
                 ['Head SHA', currentSha],
                 ['Changed files', String(changedFiles.length)],
+                ['Browser-specific file present', hasBrowserSpecificChange ? 'yes' : 'no'],
                 ['Browser-only fast lane', browserOnly ? 'yes' : 'no'],
                 ['Superseded runs cancelled', String(cancelledSuperseded)],
                 ['Unrelated current-head runs cancelled', String(cancelledUnrelated)]
