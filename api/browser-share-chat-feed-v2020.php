@@ -43,6 +43,16 @@ try{
     if($method!=='POST')vp3_browser_share_api_json_v2020(['ok'=>false,'error'=>'method_not_allowed'],405);
     $publicId=trim((string)($input['browser_share_id']??''));
     if($publicId==='')vp3_browser_share_api_json_v2020(['ok'=>false,'error'=>'browser_share_required'],422);
+    if($action==='ask_agent'){
+        $share=vp3_browser_share_resolve_v2020($pdo,$publicId,$uid);
+        if(!$share)vp3_browser_share_api_json_v2020(['ok'=>false,'error'=>'not_found'],404);
+        $_SESSION['vp3_browser_share_agent_context_v2020']=[
+            'browser_share_id'=>(string)$share['id'],
+            'conversation_id'=>0,
+            'created_at'=>time(),
+        ];
+        vp3_browser_share_api_json_v2020(['ok'=>true,'chat_url'=>url('/chat.php?browser_share_id='.rawurlencode((string)$share['id'])),'browser_share'=>$share]);
+    }
     if($action==='save_knowledge'){
         $result=vp3_browser_share_save_knowledge_v2020($pdo,$user,$publicId,max(0,(int)($input['folder_id']??0)));
         vp3_browser_share_api_json_v2020(['ok'=>true]+$result);
