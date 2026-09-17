@@ -30,6 +30,14 @@ must(background.includes('async function selectScreenshotRegion()'), 'region scr
 must(background.includes('chrome.tabs.captureVisibleTab'), 'visible-tab screenshot capture missing');
 must(background.includes('new OffscreenCanvas'), 'screenshot crop must happen locally in the extension');
 must(background.includes("type: 'image/png'"), 'screenshot derivative must use PNG');
+must(background.includes('viewport_width: innerWidth'), 'region capture must record the CSS viewport width');
+must(background.includes('viewport_height: innerHeight'), 'region capture must record the CSS viewport height');
+must(background.includes('bitmap.width / viewportWidth'), 'screenshot X scaling must use the actual captured bitmap width');
+must(background.includes('bitmap.height / viewportHeight'), 'screenshot Y scaling must use the actual captured bitmap height');
+must(background.includes('capture_scale_x: scaleX'), 'screenshot metadata must preserve the effective X capture scale');
+must(background.includes('capture_scale_y: scaleY'), 'screenshot metadata must preserve the effective Y capture scale');
+must(!background.includes('rect.x * dpr'), 'region cropping must not assume devicePixelRatio equals captured bitmap scale');
+must(!background.includes('rect.y * dpr'), 'region cropping must not assume devicePixelRatio equals captured bitmap scale');
 must(background.includes("kind: isYoutube ? 'youtube_clip'"), 'YouTube media detection missing');
 must(background.includes("tag === 'audio' ? 'audio_reference' : 'video_reference'"), 'generic web media detection missing');
 must(background.includes('VP3_MEDIA_CLIP_MAX_SECONDS = 90'), 'media clip ceiling must be 90 seconds');
