@@ -75,6 +75,14 @@ try {
         throw new RuntimeException('My Knowledge could not save this transcription.');
     }
 
+    // personal_knowledge_store() intentionally preserves an existing folder when
+    // its folder argument is null. This action is explicit, so Unfiled (0) must
+    // also move an existing transcription Knowledge item back to Unfiled.
+    $pdo->prepare(
+        "UPDATE knowledge_items SET folder_id=?
+         WHERE id=? AND created_by_user_id=? AND knowledge_scope='personal'"
+    )->execute([$folderId > 0 ? $folderId : null, $knowledgeId, (int)$user['id']]);
+
     $pdo->prepare(
         'UPDATE artist_transcript_sessions_v172
          SET knowledge_id=?,last_activity_at=NOW()
