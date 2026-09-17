@@ -67,19 +67,29 @@ must(mediaService.includes("$sha=hash('sha256',$bytes)"), 'binary attachment fin
 must(mediaService.includes("$sha=hash('sha256',$encoded)"), 'source-reference fingerprint missing');
 must(mediaService.includes("$metadata,'processing'"), 'binary attachments must remain processing until inspection succeeds');
 must(mediaService.includes("(string)$e->getCode()==='23000'"), 'concurrent duplicate attachment retries must converge safely');
+must(mediaService.includes("$status==='ready'&&!empty($row['storage_key'])"), 'private binary content URL must stay hidden until inspection passes');
+must(mediaService.includes("if($status!=='ready')"), 'direct private media reads must reject non-ready files');
+must(mediaService.includes("'media_processing'"), 'processing media read state must be explicit');
 
 must(mediaApi.includes('vp3_extension_apply_cors_v2001()'), 'media API must use hardened extension CORS');
 must(mediaApi.includes('vp3_extension_session_authenticate_v2001($pdo)'), 'media API must authenticate extension bearer sessions');
 must(mediaApi.includes("$cap=$write?'team.share.create':'team.chat.read'"), 'extension media access capability gates missing');
 must(mediaApi.includes('current_user()'), 'web cards must require a live signed-in VP3 user');
 must(mediaApi.includes("if($write)throw new VP3BrowserShareMediaExceptionV2040"), 'web sessions must not gain media upload authority');
-must(mediaApi.includes("class_exists('finfo')"), 'server MIME inspection missing');
+must(mediaApi.includes("if(!class_exists('finfo'))"), 'server MIME inspection must fail closed when finfo is unavailable');
+must(mediaApi.includes('vp3_browser_share_media_verified_mime_v2040'), 'verified MIME/container boundary missing');
+must(mediaApi.includes("$declared==='audio/webm' && $detected==='video/webm'"), 'WebM audio-container compatibility rule missing');
+must(mediaApi.includes("throw new VP3BrowserShareMediaExceptionV2040('unsupported_media_type',415,'Commentary bytes do not match an approved audio container.')"), 'commentary MIME mismatch must fail closed');
 must(mediaApi.includes("header('X-Content-Type-Options: nosniff')"), 'private media endpoint must disable MIME sniffing');
 must(mediaApi.includes("header('Cache-Control: private, no-store')"), 'private media bytes must not be publicly cached');
 must(!mediaApi.includes('ensure_schema'), 'public media API must never run DDL');
 
 must(worker.includes("job_status='queued'"), 'media worker queue claim missing');
+must(worker.includes("hash_file('sha256',$path)"), 'worker must verify stored binary integrity');
+must(worker.includes('hash_equals($expectedSha,$actualSha)'), 'worker must compare stored and expected hashes safely');
 must(worker.includes('getimagesize($path)'), 'screenshot inspection missing');
+must(worker.includes("$media['media_kind']==='commentary_audio'"), 'commentary inspection missing');
+must(worker.includes("Commentary failed audio-container inspection."), 'commentary container failure path missing');
 must(worker.includes("media_status='ready'"), 'worker ready transition missing');
 must(worker.includes("attempts>=3"), 'worker retry/failure ceiling missing');
 
