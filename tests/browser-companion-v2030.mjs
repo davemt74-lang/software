@@ -76,9 +76,9 @@ must(sidepanelJs.includes("http(lastShare&&lastShare.source_url)") || sidepanelJ
 must(!sidepanelJs.includes("lastShare?.source_url || capture?.source_url"), 'restored shares must never fall back to the current tab URL');
 must(sidepanelJs.includes('Array.isArray(p&&p.capabilities)') || sidepanelJs.includes('Array.isArray(payload?.capabilities)'), 'panel must refresh capabilities from a live authenticated server response');
 must(sidepanelJs.includes('dropCapability(capabilityForAction(a))') || sidepanelJs.includes('dropCapability(capabilityForAction(action))'), 'denied share actions must immediately remove stale local capability state');
-must(sidepanelJs.includes("caps.has('agent.message')"), 'Ask VP3 must follow live Agent capability state');
-must(sidepanelJs.includes("caps.has('knowledge.write')"), 'Knowledge action must follow live capability state');
-must(sidepanelJs.includes("caps.has('task.propose')"), 'Task action must follow live capability state');
+must(sidepanelJs.includes("caps.has('agent.message')") || sidepanelJs.includes("c.has('agent.message')"), 'Ask VP3 must follow live Agent capability state');
+must(sidepanelJs.includes("caps.has('knowledge.write')") || sidepanelJs.includes("c.has('knowledge.write')"), 'Knowledge action must follow live capability state');
+must(sidepanelJs.includes("caps.has('task.propose')") || sidepanelJs.includes("c.has('task.propose')"), 'Task action must follow live capability state');
 
 for (const capability of ['team.destinations.read','team.share.create','agent.message','knowledge.write','task.propose']) {
   must(background.includes(`'${capability}'`), `requested capability ${capability} missing`);
