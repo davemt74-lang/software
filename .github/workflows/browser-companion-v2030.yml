@@ -46,7 +46,13 @@ jobs:
         run: node tests/browser-companion-v2030.mjs
 
       - name: Manifest contract
-        run: node -e "const m=require('./browser-companion/manifest.json'); if(m.manifest_version!==3||m.version!=='20.30.0') process.exit(1)"
+        run: |
+          node - <<'NODE'
+          const m = require('./browser-companion/manifest.json');
+          const parts = String(m.version || '').split('.').map(Number);
+          const compatible = Number.isInteger(parts[0]) && Number.isInteger(parts[1]) && (parts[0] > 20 || (parts[0] === 20 && parts[1] >= 30));
+          if (m.manifest_version !== 3 || !compatible) process.exit(1);
+          NODE
 
       - name: JavaScript syntax
         run: |
@@ -70,26 +76,29 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Resolve extension version
+        run: echo "EXT_VERSION=$(node -p \"require('./browser-companion/manifest.json').version\")" >> "$GITHUB_ENV"
+
       - name: Build directly loadable extension ZIP
         run: |
           mkdir -p dist
           cd browser-companion
-          zip -r ../dist/vp3-browser-companion-v20.30.0.zip . -x '*.DS_Store'
+          zip -r "../dist/vp3-browser-companion-v${EXT_VERSION}.zip" . -x '*.DS_Store'
           cd ..
-          unzip -t dist/vp3-browser-companion-v20.30.0.zip
-          unzip -Z1 dist/vp3-browser-companion-v20.30.0.zip | grep -qx 'manifest.json'
-          if unzip -Z1 dist/vp3-browser-companion-v20.30.0.zip | grep -q '^browser-companion/'; then
+          unzip -t "dist/vp3-browser-companion-v${EXT_VERSION}.zip"
+          unzip -Z1 "dist/vp3-browser-companion-v${EXT_VERSION}.zip" | grep -qx 'manifest.json'
+          if unzip -Z1 "dist/vp3-browser-companion-v${EXT_VERSION}.zip" | grep -q '^browser-companion/'; then
             echo 'Extension ZIP contains an unexpected wrapper folder.' >&2
             exit 1
           fi
-          sha256sum dist/vp3-browser-companion-v20.30.0.zip > dist/vp3-browser-companion-v20.30.0.zip.sha256
+          sha256sum "dist/vp3-browser-companion-v${EXT_VERSION}.zip" > "dist/vp3-browser-companion-v${EXT_VERSION}.zip.sha256"
 
       - name: Upload directly loadable Browser Companion
         uses: actions/upload-artifact@v4
         with:
-          name: vp3-browser-companion-v20.30.0
+          name: vp3-browser-companion-v${{ env.EXT_VERSION }}
           path: |
-            dist/vp3-browser-companion-v20.30.0.zip
-            dist/vp3-browser-companion-v20.30.0.zip.sha256
+            dist/vp3-browser-companion-v${{ env.EXT_VERSION }}.zip
+            dist/vp3-browser-companion-v${{ env.EXT_VERSION }}.zip.sha256
           if-no-files-found: error
           retention-days: 30
