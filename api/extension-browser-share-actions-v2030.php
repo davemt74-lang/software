@@ -19,6 +19,18 @@ function vp3_extension_share_action_json_v2030(int $status,array $payload=[]): n
     exit;
 }
 
+function vp3_extension_share_action_user_v2030(PDO $pdo,int $userId): ?array
+{
+    if($userId<1)return null;
+    $stmt=$pdo->prepare('SELECT * FROM users WHERE id=? AND is_active=1 LIMIT 1');
+    $stmt->execute([$userId]);
+    $user=$stmt->fetch();
+    if(!is_array($user))return null;
+    $primaryRole=(string)($user['role']??'');
+    $user['roles']=user_account_types_for_user_id($userId,$primaryRole);
+    return $user;
+}
+
 $method=strtoupper((string)($_SERVER['REQUEST_METHOD']??'GET'));
 if($method==='OPTIONS')vp3_extension_share_action_json_v2030(204);
 if($method!=='POST')vp3_extension_share_action_json_v2030(405,['ok'=>false,'error'=>['code'=>'method_not_allowed','message'=>'Method not allowed.']]);
@@ -39,7 +51,7 @@ if(!is_array($input))vp3_extension_share_action_json_v2030(400,['ok'=>false,'err
 try{
     $session=vp3_extension_session_authenticate_v2001($pdo);
     if(!$session)vp3_extension_share_action_json_v2030(401,['ok'=>false,'error'=>['code'=>'authentication_required','message'=>'Browser Companion authentication is required.']]);
-    $user=vp3_extension_user_for_permission_v2001($pdo,(int)$session['user_id']);
+    $user=vp3_extension_share_action_user_v2030($pdo,(int)$session['user_id']);
     if(!$user)vp3_extension_share_action_json_v2030(401,['ok'=>false,'error'=>['code'=>'authentication_required','message'=>'The connected VP3 account is unavailable.']]);
 
     $action=trim((string)($input['action']??''));
@@ -51,9 +63,7 @@ try{
         if(!vp3_extension_session_has_capability_v2001($session,'agent.message')){
             vp3_extension_share_action_json_v2030(403,['ok'=>false,'error'=>['code'=>'capability_denied','message'=>'This browser connection cannot hand shares to Agent Chat.']]);
         }
-        $handoff=url('/browser-share-agent-handoff.php?browser_share_id='.rawurlencode((string)$share['id']));
-        $base=rtrim(trim((string)site_config('base_url','')),'/');
-        if($base!==''&&filter_var($base,FILTER_VALIDATE_URL))$handoff=$base.$handoff;
+        $handoff=vp3_extension_absolute_url_v2000('/browser-share-agent-handoff.php?browser_share_id='.rawurlencode((string)$share['id']));
         vp3_extension_share_action_json_v2030(200,['ok'=>true,'action'=>'ask_agent','browser_share_id'=>$share['id'],'handoff_url'=>$handoff]);
     }
 
