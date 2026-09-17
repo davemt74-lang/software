@@ -27,16 +27,18 @@ requireText(endpoint, "hash_equals(csrf_token(), $csrf)", 'Save endpoint must en
 rejectText(endpoint, 'owner_user_id', 'The repaired save endpoint must not recreate the legacy Artist Knowledge writer.');
 rejectText(endpoint, 'INSERT INTO knowledge_items', 'The repaired endpoint must delegate persistence to the canonical Personal Knowledge store.');
 
-requireText(ui, "[data-listening-workspace-knowledge]", 'UI bridge must intercept the open-transcription Knowledge action.');
-requireText(ui, "event.stopImmediatePropagation();", 'UI bridge must stop the obsolete legacy save handler.');
-requireText(ui, "api/transcription-knowledge-save-v314.php", 'Open transcription save must use the repaired endpoint.');
-requireText(ui, "folder_id: folderId", 'Knowledge saves must submit the chosen folder.');
-requireText(ui, "Saved to My Knowledge ·", 'Successful saves must show explicit confirmation.');
-requireText(ui, "[data-listening-workspace-folder-select]", 'Open transcription save must honor the visible selected folder.');
+requireText(ui, '[data-listening-workspace-knowledge]', 'UI bridge must intercept the open-transcription Knowledge action.');
+requireText(ui, 'event.stopImmediatePropagation();', 'UI bridge must stop the obsolete legacy save handler.');
+requireText(ui, 'api/transcription-knowledge-save-v314.php', 'Open transcription save must use the repaired endpoint.');
+requireText(ui, 'folder_id: folderId', 'Knowledge saves must submit the chosen folder.');
+requireText(ui, 'Saved to My Knowledge ·', 'Successful saves must show explicit confirmation.');
+requireText(ui, '[data-listening-workspace-folder-select]', 'Open transcription save must honor the visible selected folder.');
 requireText(ui, "document.querySelectorAll('[data-listening-ai-brain]').forEach(button => button.remove())", 'AI Summary Agent Brain action must be removed from the slide-out UI.');
-requireText(ui, "[data-listening-ai-brain]{display:none!important}", 'Agent Brain action must remain hidden during dynamic AI panel rendering.');
+requireText(ui, '[data-listening-ai-brain]{display:none!important}', 'Agent Brain action must remain hidden during dynamic AI panel rendering.');
 requireText(ui, "source:'transcript'", 'Raw transcription saves must publish a success event.');
 requireText(ui, "source:'ai_summary'", 'AI summary saves must retain their folder-aware success event.');
+requireText(ui, 'if (node.textContent !== message) node.textContent = message;', 'Mutation-observed status text must only change when its value changes.');
+requireText(ui, "if (node.dataset.state !== nextState) node.dataset.state = nextState;", 'Mutation-observed status state must only change when its value changes.');
 
 requireText(knowledgePage, "i.created_by_user_id=? AND i.knowledge_scope='personal'", 'My Knowledge must continue listing the same Personal Knowledge scope used by the repaired endpoint.');
 
