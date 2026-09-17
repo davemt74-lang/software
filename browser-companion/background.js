@@ -332,6 +332,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       }
       case 'set_base_url': {
         const base_url = cleanBaseUrl(message.base_url);
+        const current = await config();
+        if (base_url !== current.base_url) {
+          const connection = await storage.get(['device_id', 'pending_connection']);
+          if (connection.device_id || connection.pending_connection) {
+            throw new Error('Disconnect this browser from the current VP3 site before changing the VP3 site.');
+          }
+        }
         if (!(await ensureOriginPermission(base_url))) throw new Error('VP3 site permission was not granted.');
         await storage.set({ base_url, session: null });
         return { base_url };
