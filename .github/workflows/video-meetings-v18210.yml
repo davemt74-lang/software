@@ -1,0 +1,102 @@
+name: Video Meetings v18.21 Cross-Meeting Continuity
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    name: cross-meeting continuity (${{ matrix.php }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.1','8.3']
+    steps:
+      - name: Check out VP3 Cloud
+        uses: actions/checkout@v4
+      - name: Check out pinned HomeServer Phase 18.11
+        uses: actions/checkout@v4
+        with:
+          repository: davemt74-lang/otro
+          ref: 1d600b6154b43638c94d71b5238a15fab0b33d9f
+          path: homeserver-v1890
+          persist-credentials: false
+      - name: Verify pinned HomeServer revision
+        run: test "$(git -C homeserver-v1890 rev-parse HEAD)" = "1d600b6154b43638c94d71b5238a15fab0b33d9f"
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: PHP syntax
+        run: |
+          php -l includes/video-meetings-memory-v18120.php
+          php -l includes/video-meetings-automation-v18130.php
+          php -l includes/video-meetings-agenda-v18140.php
+          php -l includes/video-meetings-actions-v18150.php
+          for f in includes/video-meetings-actions-v18150-part*.php; do php -l "$f"; done
+          php -l includes/video-meetings-followthrough-intelligence-v18160.php
+          for f in includes/video-meetings-followthrough-intelligence-v18160-part*.php; do php -l "$f"; done
+          php -l includes/video-meetings-outcome-learning-v18170.php
+          for f in includes/video-meetings-outcome-learning-v18170-part*.php; do php -l "$f"; done
+          php -l includes/video-meetings-adaptive-planning-v18180.php
+          for f in includes/video-meetings-adaptive-planning-v18180-part*.php; do php -l "$f"; done
+          php -l includes/video-meetings-plan-action-guard-v18190.php
+          php -l includes/video-meetings-plan-action-handoff-v18190.php
+          php -l includes/video-meetings-followthrough-verification-v18200.php
+          for f in includes/video-meetings-followthrough-verification-v18200-part*.php; do php -l "$f"; done
+          php -l includes/video-meetings-cross-meeting-continuity-v18210.php
+          php -l includes/video-meetings-cross-meeting-continuity-guard-v18210.php
+          php -l api/video-meeting-automation.php
+          php -l api/video-meeting-continuity.php
+          php -l api/video-meeting-followthrough-verification.php
+          php -l meeting.php
+          php -l upgrade.php
+      - name: JavaScript syntax
+        run: |
+          node --check video-meetings-automation-v18130.js
+          node --check video-meetings-followthrough-intelligence-v18160.js
+          node --check video-meetings-adaptive-planning-v18180.js
+          node --check video-meetings-plan-action-handoff-v18190.js
+          node --check video-meetings-followthrough-verification-v18200.js
+          node --check video-meetings-cross-meeting-continuity-v18210.js
+          node --check tests/video-meetings-intelligence-v1820-contract.mjs
+          node --check tests/video-meetings-intelligence-v1890-contract.mjs
+          node --check tests/video-meetings-intelligence-v18100-contract.mjs
+          node --check tests/video-meetings-live-agent-v18110-contract.mjs
+          node --check tests/video-meetings-memory-v18120-contract.mjs
+          node --check tests/video-meetings-automation-v18130-contract.mjs
+          node --check tests/video-meetings-agenda-v18140-contract.mjs
+          node --check tests/video-meetings-actions-v18150-contract.mjs
+          node --check tests/video-meetings-followthrough-intelligence-v18160-contract.mjs
+          node --check tests/video-meetings-outcome-learning-v18170-contract.mjs
+          node --check tests/video-meetings-adaptive-planning-v18180-contract.mjs
+          node --check tests/video-meetings-plan-action-handoff-v18190-contract.mjs
+          node --check tests/video-meetings-followthrough-verification-v18200-contract.mjs
+          node --check tests/video-meetings-cross-meeting-continuity-v18210-contract.mjs
+      - name: Meeting Intelligence regression contracts 18.2-18.20
+        run: |
+          node tests/video-meetings-intelligence-v1820-contract.mjs
+          node tests/video-meetings-intelligence-v1890-contract.mjs
+          node tests/video-meetings-intelligence-v18100-contract.mjs
+          node tests/video-meetings-live-agent-v18110-contract.mjs
+          node tests/video-meetings-memory-v18120-contract.mjs
+          node tests/video-meetings-automation-v18130-contract.mjs
+          node tests/video-meetings-agenda-v18140-contract.mjs
+          node tests/video-meetings-actions-v18150-contract.mjs
+          node tests/video-meetings-followthrough-intelligence-v18160-contract.mjs
+          node tests/video-meetings-outcome-learning-v18170-contract.mjs
+          node tests/video-meetings-adaptive-planning-v18180-contract.mjs
+          node tests/video-meetings-plan-action-handoff-v18190-contract.mjs
+          node tests/video-meetings-followthrough-verification-v18200-contract.mjs
+      - name: Phase 18.21 Cross-Meeting Continuity contract
+        run: node tests/video-meetings-cross-meeting-continuity-v18210-contract.mjs
