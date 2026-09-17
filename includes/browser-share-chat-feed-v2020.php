@@ -14,6 +14,7 @@ const VP3_BROWSER_SHARE_FEED_LIMIT_MAX_V2020 = 100;
 
 require_once __DIR__.'/browser-share-v2010.php';
 require_once __DIR__.'/agent-work-control-v173.php';
+require_once __DIR__.'/agent-workflow-runs-v1400.php';
 
 function vp3_browser_share_chat_feed_ready_v2020(?PDO $pdo=null): bool
 {
@@ -95,8 +96,6 @@ function vp3_browser_share_enrich_message_v2020(PDO $pdo,array $message,int $use
         $share=vp3_browser_share_for_message_public_v2020($pdo,$messageId,$userId);
         if($share)$message['browser_share']=$share;
     }catch(Throwable $e){
-        // Message delivery must not fail merely because optional Browser Share
-        // metadata is unavailable during an upgrade or transient DB issue.
         error_log('VP3 Browser Share v2020 message enrichment: '.$e->getMessage());
     }
     return $message;
