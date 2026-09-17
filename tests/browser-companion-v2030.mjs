@@ -70,6 +70,12 @@ must(background.includes('browser_share: payload.browser_share || null'), 'last-
 must(!background.includes("last_share: { ...payload, source_url"), 'last-share cache must not persist the original source URL or capture payload');
 must(sidepanelJs.includes("message('clear_pending_capture')"), 'side panel must consume context-menu selection after opening');
 must(sidepanelJs.includes("error.code === 'reconnect_required'"), 'side panel must immediately redraw revoked connections');
+must(sidepanelJs.includes("const hasShare = Boolean(lastShare?.browser_share?.id && lastShare?.chat_message?.conversation_id);"), 'post-share actions must require an actual Browser Share');
+must(sidepanelJs.includes("ui.openSourceBtn.disabled = !hasShare || !safeHttpUrl(lastShare?.source_url);"), 'Open source must be disabled when the original URL is not retained');
+must(sidepanelJs.includes("const url = safeHttpUrl(lastShare?.source_url);"), 'Open source must use only the original in-memory Browser Share source');
+must(!sidepanelJs.includes("lastShare?.source_url || capture?.source_url"), 'restored shares must never fall back to the current tab URL');
+must(sidepanelJs.includes("if (Array.isArray(payload?.capabilities) && state) state.capabilities = payload.capabilities;"), 'panel must refresh capabilities from a live authenticated server response');
+must(sidepanelJs.includes("dropCapability(capabilityForAction(action))"), 'denied share actions must immediately remove stale local capability state');
 must(sidepanelJs.includes("caps.has('agent.message')"), 'Ask VP3 must follow live Agent capability state');
 must(sidepanelJs.includes("caps.has('knowledge.write')"), 'Knowledge action must follow live capability state');
 must(sidepanelJs.includes("caps.has('task.propose')"), 'Task action must follow live capability state');
@@ -105,6 +111,7 @@ must(actionsApi.includes('vp3_browser_share_save_knowledge_v2020'), 'Knowledge a
 must(actionsApi.includes('vp3_browser_share_create_task_v2020'), 'Task action must reuse canonical Agent Workflow helper');
 must(actionsApi.includes('vp3_extension_absolute_url_v2000'), 'Agent handoff must return an absolute VP3 URL');
 must(disconnectApi.includes('vp3_extension_device_revoke_v2000'), 'disconnect must revoke the server device and its sessions');
+must(destinationsApi.includes("'capabilities'=>array_values($session['capabilities']??[])"), 'destination refresh must return live effective capabilities');
 
 must(handoff.includes('current_user()'), 'Agent handoff must require a live VP3 web user');
 must(handoff.includes('vp3_browser_share_resolve_v2020'), 'Agent handoff must re-resolve Browser Share authorization');
