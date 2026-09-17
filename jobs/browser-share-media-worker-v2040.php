@@ -13,13 +13,23 @@ $pdo=vp3_browser_share_media_require_ready_v2040(db());
 $limit=max(1,min(50,(int)($argv[1]??10)));
 $processed=0;
 
+$pdo->beginTransaction();
+try{
+    $pdo->exec("UPDATE browser_share_media_jobs_v2040 SET job_status='failed',finished_at=UTC_TIMESTAMP(),last_error=IF(last_error='','Worker claim expired after retry limit.',last_error) WHERE job_status='processing' AND attempts>=3 AND locked_at IS NOT NULL AND locked_at<=DATE_SUB(UTC_TIMESTAMP(),INTERVAL 15 MINUTE)");
+    $pdo->exec("UPDATE browser_share_media_v2040 m SET media_status='failed' WHERE media_status='processing' AND EXISTS (SELECT 1 FROM browser_share_media_jobs_v2040 j WHERE j.media_id=m.id AND j.job_status='failed' AND j.attempts>=3)");
+    $pdo->commit();
+}catch(Throwable $e){
+    if($pdo->inTransaction())$pdo->rollBack();
+    throw $e;
+}
+
 while($processed<$limit){
     $pdo->beginTransaction();
     try{
-        $stmt=$pdo->query("SELECT id,media_id,job_type FROM browser_share_media_jobs_v2040 WHERE job_status='queued' AND available_at<=UTC_TIMESTAMP() ORDER BY id ASC LIMIT 1 FOR UPDATE");
+        $stmt=$pdo->query("SELECT id,media_id,job_type FROM browser_share_media_jobs_v2040 WHERE (job_status='queued' AND available_at<=UTC_TIMESTAMP()) OR (job_status='processing' AND attempts<3 AND locked_at IS NOT NULL AND locked_at<=DATE_SUB(UTC_TIMESTAMP(),INTERVAL 15 MINUTE)) ORDER BY id ASC LIMIT 1 FOR UPDATE");
         $job=$stmt?$stmt->fetch(PDO::FETCH_ASSOC):false;
         if(!$job){$pdo->commit();break;}
-        $claim=$pdo->prepare("UPDATE browser_share_media_jobs_v2040 SET job_status='processing',attempts=attempts+1,locked_at=UTC_TIMESTAMP() WHERE id=? AND job_status='queued'");
+        $claim=$pdo->prepare("UPDATE browser_share_media_jobs_v2040 SET job_status='processing',attempts=attempts+1,locked_at=UTC_TIMESTAMP() WHERE id=? AND ((job_status='queued' AND available_at<=UTC_TIMESTAMP()) OR (job_status='processing' AND attempts<3 AND locked_at IS NOT NULL AND locked_at<=DATE_SUB(UTC_TIMESTAMP(),INTERVAL 15 MINUTE)))");
         $claim->execute([(int)$job['id']]);
         if($claim->rowCount()!==1){$pdo->rollBack();continue;}
         $pdo->commit();
