@@ -62,11 +62,17 @@ must(requestApi.includes("strlen($raw)>8192"), 'connection request body must be 
 must(requestApi.includes("contract_version"), 'connection request must enforce contract version');
 must(requestApi.includes("429"), 'connection request must expose rate limiting');
 
-// Approval is a normal authenticated VP3 page with CSRF and explicit decisions.
-must(approval.includes('require_login();'), 'approval page must require VP3 login');
+// Approval state must survive login without exposing the approval secret after
+// the first request. The secret is moved into the server session, the browser is
+// redirected to a clean URL, and the page forbids referrer propagation.
+must(approval.includes("header('Referrer-Policy: no-referrer')"), 'approval page must block referrer leakage');
+must(approval.includes("VP3_EXTENSION_PENDING_APPROVAL_SESSION_V2000"), 'approval state must use a server-side session');
+must(approval.includes("redirect(url('/extension-connect.php'))"), 'approval URL must be cleaned after capturing the secret');
+must(approval.includes("login.php?return_to="), 'signed-out approval must return through normal VP3 login');
 must(approval.includes('verify_csrf()'), 'approval decision must require CSRF protection');
 must(approval.includes('value="approve"'), 'approval page must expose explicit approve action');
 must(approval.includes('value="deny"'), 'approval page must expose explicit deny action');
+must(!approval.includes('name="approval_token"'), 'approval secret must not be rendered into the form');
 must(!approval.includes('device_credential'), 'approval page must never expose the device credential');
 
 // Device management must be owner scoped and CSRF protected.
