@@ -156,10 +156,39 @@ function video_meeting_memory_continuity_context_v18210(PDO $pdo,int $ownerUserI
     return $out;
 }
 
+function video_meeting_memory_closure_query_relevant_v18220(string $query): bool
+{
+    $q=video_meeting_memory_normalize_v18120($query);
+    return $q!==''&&preg_match('/\b(close(?:d|ure)? meeting|meeting closure|next meeting|recurring meeting|carried to (?:the )?next|moved to (?:the )?next|closure snapshot|what moved forward|what carried forward)\b/u',$q)===1;
+}
+
+function video_meeting_memory_closure_context_v18220(PDO $pdo,int $ownerUserId): array
+{
+    if($ownerUserId<1||!table_exists('video_meeting_closure_snapshots')||!table_exists('video_meeting_closure_handoffs'))return [];
+    $stmt=$pdo->prepare("SELECT s.id AS snapshot_id,s.revision,s.status AS closure_status,s.closed_at,s.meeting_id,
+      sm.public_id AS source_public_id,sm.title AS source_title,sm.start_at_utc AS source_start_at_utc,
+      h.id AS handoff_id,h.source_agenda_item_id,h.target_meeting_id,h.status AS handoff_status,
+      a.item_text AS source_text,tm.public_id AS target_public_id,tm.title AS target_title,tm.start_at_utc AS target_start_at_utc
+      FROM video_meeting_closure_snapshots s
+      JOIN video_meetings sm ON sm.id=s.meeting_id AND sm.owner_user_id=s.owner_user_id
+      LEFT JOIN video_meeting_closure_handoffs h ON h.closure_snapshot_id=s.id AND h.owner_user_id=s.owner_user_id
+      LEFT JOIN video_meeting_agenda_items a ON a.id=h.source_agenda_item_id AND a.owner_user_id=s.owner_user_id
+      LEFT JOIN video_meetings tm ON tm.id=h.target_meeting_id AND tm.owner_user_id=s.owner_user_id
+      WHERE s.owner_user_id=? ORDER BY s.closed_at DESC,s.id DESC,h.id DESC LIMIT 12");
+    $stmt->execute([$ownerUserId]);$out=[];
+    foreach($stmt->fetchAll()?:[] as $row){if(!is_array($row))continue;$out[]=[
+        'snapshot_id'=>(int)$row['snapshot_id'],'revision'=>(int)$row['revision'],'closure_status'=>(string)$row['closure_status'],'closed_at'=>(string)$row['closed_at'],
+        'source_meeting_id'=>(int)$row['meeting_id'],'source_meeting_public_id'=>(string)$row['source_public_id'],'source_meeting_title'=>video_meeting_memory_text_v18120($row['source_title']??'Meeting',190),'source_start_at_utc'=>(string)$row['source_start_at_utc'],'source_review_path'=>'/meeting.php?meeting='.rawurlencode((string)$row['source_public_id']),
+        'handoff_id'=>(int)($row['handoff_id']??0),'source_text'=>video_meeting_memory_text_v18120($row['source_text']??'',1200),'handoff_status'=>(string)($row['handoff_status']??''),
+        'target_meeting_id'=>(int)($row['target_meeting_id']??0),'target_meeting_public_id'=>(string)($row['target_public_id']??''),'target_meeting_title'=>video_meeting_memory_text_v18120($row['target_title']??'',190),'target_start_at_utc'=>(string)($row['target_start_at_utc']??''),'target_review_path'=>!empty($row['target_public_id'])?'/meeting.php?meeting='.rawurlencode((string)$row['target_public_id']):'',
+    ];}
+    return $out;
+}
+
 function video_meeting_memory_agent_context_v18120(PDO $pdo,int $ownerUserId,string $query): array
 {
-    $memoryRelevant=video_meeting_memory_query_relevant_v18120($query);$agendaRelevant=video_meeting_memory_agenda_query_relevant_v18140($query);$actionRelevant=video_meeting_memory_action_query_relevant_v18150($query);$continuityRelevant=video_meeting_memory_continuity_query_relevant_v18210($query);
-    if(!$memoryRelevant&&!$agendaRelevant&&!$actionRelevant&&!$continuityRelevant)return ['version'=>'v18.12','relevant'=>false,'results'=>[]];
+    $memoryRelevant=video_meeting_memory_query_relevant_v18120($query);$agendaRelevant=video_meeting_memory_agenda_query_relevant_v18140($query);$actionRelevant=video_meeting_memory_action_query_relevant_v18150($query);$continuityRelevant=video_meeting_memory_continuity_query_relevant_v18210($query);$closureRelevant=video_meeting_memory_closure_query_relevant_v18220($query);
+    if(!$memoryRelevant&&!$agendaRelevant&&!$actionRelevant&&!$continuityRelevant&&!$closureRelevant)return ['version'=>'v18.12','relevant'=>false,'results'=>[]];
     $search=['results'=>[]];
     if($memoryRelevant){try{$search=video_meeting_memory_search_v18120($pdo,$ownerUserId,$query,6,0);}catch(Throwable $e){$search=['results'=>[],'error'=>'Meeting memory search is unavailable.'];}}
     $rows=[];
@@ -171,11 +200,11 @@ function video_meeting_memory_agent_context_v18120(PDO $pdo,int $ownerUserId,str
             'review_path'=>(string)$row['review_path'],'provenance'=>$row['provenance'],
         ];
     }
-    $agendas=$agendaRelevant?video_meeting_memory_upcoming_agenda_v18140($pdo,$ownerUserId):[];$actions=$actionRelevant?video_meeting_memory_action_history_v18150($pdo,$ownerUserId):[];$continuity=$continuityRelevant?video_meeting_memory_continuity_context_v18210($pdo,$ownerUserId):[];
+    $agendas=$agendaRelevant?video_meeting_memory_upcoming_agenda_v18140($pdo,$ownerUserId):[];$actions=$actionRelevant?video_meeting_memory_action_history_v18150($pdo,$ownerUserId):[];$continuity=$continuityRelevant?video_meeting_memory_continuity_context_v18210($pdo,$ownerUserId):[];$closures=$closureRelevant?video_meeting_memory_closure_context_v18220($pdo,$ownerUserId):[];
     return [
-        'version'=>'v18.12','agenda_version'=>'v18.14','action_version'=>'v18.15','continuity_version'=>'v18.21','relevant'=>true,'source'=>'vp3_meeting_memory','results'=>$rows,'upcoming_agendas'=>$agendas,'meeting_actions'=>$actions,'meeting_continuity'=>$continuity,
+        'version'=>'v18.12','agenda_version'=>'v18.14','action_version'=>'v18.15','continuity_version'=>'v18.21','closure_version'=>'v18.22','relevant'=>true,'source'=>'vp3_meeting_memory','results'=>$rows,'upcoming_agendas'=>$agendas,'meeting_actions'=>$actions,'meeting_continuity'=>$continuity,'meeting_closure'=>$closures,
         'error'=>(string)($search['error']??''),
-        'instructions'=>'Finalized Meeting Memory results are source-backed. Upcoming agendas are organizer-owned Phase 18.14 state. Meeting Action history is organizer-owned Phase 18.15 execution state and intentionally omits email bodies and recipient addresses. Cross-meeting continuity is organizer-owned Phase 18.21 agenda lineage and is read-only in Agent Chat; carried_forward means the prior thread was linked into another meeting, not that it was completed. Distinguish pending, failed, executed, completed and verified follow-through exactly as labeled. Do not claim a pending item was completed. Do not claim an executed action is completed unless its status is completed. An agenda item marked approved_for_agent_review is approved for Agent review only; it does not mean a Task, Calendar event, CRM update, email, notification or tool action was executed. Continuity status changes and carry-forward actions require explicit organizer action in the Meeting workspace. Cite the meeting title/date or meeting path when relying on meeting context.',
+        'instructions'=>'Finalized Meeting Memory results are source-backed. Upcoming agendas are organizer-owned Phase 18.14 state. Meeting Action history is organizer-owned Phase 18.15 execution state and intentionally omits email bodies and recipient addresses. Cross-meeting continuity is organizer-owned Phase 18.21 agenda lineage and is read-only in Agent Chat; carried_forward means the prior thread was linked into another meeting, not that it was completed. Meeting Closure is organizer-owned Phase 18.22 review state; a closed snapshot freezes what was reviewed, and a next-meeting handoff means the organizer explicitly carried context forward, not that any Task, Calendar event, CRM update or Email was executed. Distinguish pending, failed, executed, completed and verified follow-through exactly as labeled. Do not claim a pending item was completed. Do not claim an executed action is completed unless its status is completed. An agenda item marked approved_for_agent_review is approved for Agent review only; it does not mean a Task, Calendar event, CRM update, email, notification or tool action was executed. Continuity, closure and next-meeting mutations require explicit organizer action in the Meeting workspace. Cite the meeting title/date or meeting path when relying on meeting context.',
     ];
 }
 
@@ -206,6 +235,11 @@ function video_meeting_memory_chat_sources_v18120(array $memory): array
         foreach([['source','source_meeting_id','source_meeting_public_id','source_meeting_title','source_start_at_utc'],['target','target_meeting_id','target_meeting_public_id','target_meeting_title','target_start_at_utc']] as [$side,$idKey,$publicKey,$titleKey,$whenKey]){
             $meetingId=(int)($thread[$idKey]??0);$publicId=trim((string)($thread[$publicKey]??''));if($meetingId<1||$publicId==='')continue;$key='continuity|'.$linkId.'|'.$side;if(isset($seen[$key]))continue;$seen[$key]=true;$title=video_meeting_memory_text_v18120($thread[$titleKey]??'Meeting continuity',190);$when=video_meeting_memory_text_v18120($thread[$whenKey]??'',40);$sources[]=['source'=>'video_meeting_continuity:'.$linkId.':'.$side,'title'=>$title.($when!==''?' · '.$when:'').' · continuity','url'=>url('/meeting.php?meeting='.rawurlencode($publicId))];if(count($sources)>=12)break 2;
         }
+    }
+    foreach((array)($memory['meeting_closure']??[]) as $closure){
+        if(!is_array($closure))continue;$snapshotId=(int)($closure['snapshot_id']??0);$sourceId=(int)($closure['source_meeting_id']??0);$sourcePublic=trim((string)($closure['source_meeting_public_id']??''));if($snapshotId<1||$sourceId<1||$sourcePublic==='')continue;$key='closure|'.$snapshotId.'|source';if(!isset($seen[$key])){$seen[$key]=true;$title=video_meeting_memory_text_v18120($closure['source_meeting_title']??'Meeting closure',190);$sources[]=['source'=>'video_meeting_closure:'.$snapshotId.':source','title'=>$title.' · closure revision '.(int)($closure['revision']??0),'url'=>url('/meeting.php?meeting='.rawurlencode($sourcePublic))];}
+        $handoffId=(int)($closure['handoff_id']??0);$targetId=(int)($closure['target_meeting_id']??0);$targetPublic=trim((string)($closure['target_meeting_public_id']??''));if($handoffId>0&&$targetId>0&&$targetPublic!==''&&count($sources)<14){$key='closure|'.$handoffId.'|target';if(!isset($seen[$key])){$seen[$key]=true;$title=video_meeting_memory_text_v18120($closure['target_meeting_title']??'Next meeting',190);$sources[]=['source'=>'video_meeting_closure_handoff:'.$handoffId,'title'=>$title.' · next-meeting handoff','url'=>url('/meeting.php?meeting='.rawurlencode($targetPublic))];}}
+        if(count($sources)>=14)break;
     }
     return $sources;
 }
