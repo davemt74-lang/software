@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "VP3 Browser Companion",
-  "version": "20.40.0",
-  "description": "Capture highlighted text, screenshot regions, media moments, and voice commentary into VP3.",
+  "version": "20.50.0",
+  "description": "Annotate the current page, follow people and sources, and capture highlighted text, screenshots, media moments, and voice commentary into VP3.",
   "minimum_chrome_version": "116",
   "permissions": [
     "activeTab",
