@@ -49,7 +49,8 @@ for (const capability of ['team.destinations.read','team.share.create','team.cha
 must(bootstrap.includes("require_once __DIR__.'/extension-device-auth-v2000.php';"), 'bootstrap must load extension auth service');
 must(upgrade.includes('vp3_extension_schema_ready_v2000()'), 'upgrade completeness must include extension auth schema');
 must(upgrade.includes('vp3_extension_ensure_schema_v2000();'), 'upgrade must install extension auth schema');
-must(upgrade.includes('vp3_agent_memory_scope_schema_ready_v410();'), 'existing Agent memory upgrade call must remain intact');
+must(upgrade.includes('artist_listening_v237_ensure_schema();'), 'existing listening upgrade call must remain intact');
+must(upgrade.includes('vp3_agent_memory_scope_ensure_schema_v410();'), 'existing Agent memory upgrade call must remain intact');
 for (const api of [requestApi,statusApi,sessionApi]) {
   must(!api.includes('vp3_extension_ensure_schema_v2000'), 'public extension APIs must not run DDL');
   must(api.includes("header('Cache-Control: no-store')"), 'extension APIs must disable caching');
