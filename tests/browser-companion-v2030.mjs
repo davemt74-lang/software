@@ -58,6 +58,9 @@ must(background.includes("'/api/extension-browser-share-actions-v2030.php'"), 'B
 must(background.includes("'/api/extension-device-disconnect-v2030.php'"), 'server-side device revoke endpoint missing');
 must(background.includes('chrome.storage.local'), 'device state must use extension-local storage');
 must(!background.includes('chrome.storage.sync'), 'device credentials must not sync between browsers');
+must(background.includes('async function clearRevokedConnection()'), 'revoked credential cleanup helper missing');
+must(background.includes("await storage.remove(['device_id', 'device_credential', 'connected_user', 'approved_capabilities', 'pending_connection', 'session', 'last_share'])"), 'revoked state must clear local credentials and cached identity');
+must(background.includes("revoked.code = 'reconnect_required'"), 'revoked session refresh must return an explicit reconnect state');
 
 for (const capability of ['team.destinations.read','team.share.create','agent.message','knowledge.write','task.propose']) {
   must(background.includes(`'${capability}'`), `requested capability ${capability} missing`);
