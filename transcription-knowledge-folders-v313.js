@@ -57,8 +57,9 @@
   function status(message, error = false) {
     const node = document.querySelector('[data-listening-ai-status]');
     if (!node) return;
-    node.textContent = message;
-    node.dataset.state = error ? 'error' : 'saved';
+    if (node.textContent !== message) node.textContent = message;
+    const nextState = error ? 'error' : 'saved';
+    if (node.dataset.state !== nextState) node.dataset.state = nextState;
   }
 
   function workspaceStatus(message, error = false) {
@@ -72,8 +73,9 @@
       node.dataset.transcriptionKnowledgeStatus = '1';
       actions.insertAdjacentElement('afterend', node);
     }
-    node.textContent = message;
-    node.dataset.state = error ? 'error' : 'saved';
+    if (node.textContent !== message) node.textContent = message;
+    const nextState = error ? 'error' : 'saved';
+    if (node.dataset.state !== nextState) node.dataset.state = nextState;
   }
 
   function renderOptions(select, force = false) {
@@ -115,7 +117,9 @@
     const button = document.querySelector('[data-listening-workspace-knowledge]');
     if (!button) return false;
     if (button.textContent !== 'Save to Knowledge Base') button.textContent = 'Save to Knowledge Base';
-    button.title = 'Save this transcription to My Knowledge in its selected folder';
+    if (button.title !== 'Save this transcription to My Knowledge in its selected folder') {
+      button.title = 'Save this transcription to My Knowledge in its selected folder';
+    }
     workspaceStatus(document.querySelector('[data-transcription-knowledge-status]')?.textContent || 'Not saved to My Knowledge yet.');
     return true;
   }
