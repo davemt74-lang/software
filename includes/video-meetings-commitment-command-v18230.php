@@ -70,7 +70,7 @@ function video_meeting_commitment_command_classify_v18230(array $row): array
     if($verification==='waiting_for_verification')return ['bucket'=>'waiting_for_verification','attention_required'=>false,'stage'=>'verification'];
     if((int)($row['execution_id']??0)>0&&$execution==='needs_review')return ['bucket'=>'action_needs_review','attention_required'=>true,'stage'=>'action'];
     if($handoff==='none'&&$plan==='ready')return ['bucket'=>'ready_for_handoff','attention_required'=>true,'stage'=>'plan'];
-    if((int)($row['continuity_link_id']??0)>0)return ['bucket'=>'carried_forward','attention_required'=>false,'stage'=>'continuity'];
+    if((string)($row['continuity_status']??'')==='carried_forward')return ['bucket'=>'carried_forward','attention_required'=>false,'stage'=>'continuity'];
     if((int)($row['monitor_id']??0)>0)return ['bucket'=>'active_followthrough','attention_required'=>false,'stage'=>'followthrough'];
     if((int)($row['execution_id']??0)>0)return ['bucket'=>'action_in_progress','attention_required'=>false,'stage'=>'action'];
     return ['bucket'=>'active','attention_required'=>false,'stage'=>'agenda'];
@@ -104,7 +104,7 @@ function video_meeting_commitment_command_state_v18230(PDO $pdo,int $ownerUserId
     $stmt=$pdo->prepare($sql);$stmt->execute([$ownerUserId,$ownerUserId]);
     $now=time();$items=[];$buckets=[];$attention=0;$verified=0;$carried=0;
     foreach($stmt->fetchAll()?:[] as $row){
-        if(!is_array($row))continue;$handoff=video_meeting_commitment_command_handoff_v18230($row);$row['derived_handoff_status']=$handoff['status'];$row['derived_monitor_status']=video_meeting_commitment_command_monitor_status_v18230($row,$now);$class=video_meeting_commitment_command_classify_v18230($row);$bucket=(string)$class['bucket'];$buckets[$bucket]=($buckets[$bucket]??0)+1;if($class['attention_required'])$attention++;if($bucket==='verified')$verified++;if((int)($row['continuity_link_id']??0)>0)$carried++;
+        if(!is_array($row))continue;$handoff=video_meeting_commitment_command_handoff_v18230($row);$row['derived_handoff_status']=$handoff['status'];$row['derived_monitor_status']=video_meeting_commitment_command_monitor_status_v18230($row,$now);$class=video_meeting_commitment_command_classify_v18230($row);$bucket=(string)$class['bucket'];$buckets[$bucket]=($buckets[$bucket]??0)+1;if($class['attention_required'])$attention++;if($bucket==='verified')$verified++;if((string)($row['continuity_status']??'')==='carried_forward')$carried++;
         $targetPublic=trim((string)($row['continuity_target_public_id']??''));$meetingPublic=(string)$row['meeting_public_id'];
         $items[]=[
             'agenda_item_id'=>(int)$row['agenda_item_id'],'commitment'=>video_meeting_memory_text_v18120($row['item_text']??'',1200),'priority'=>(string)($row['priority']??''),'agenda_status'=>(string)($row['agenda_status']??''),'action_kind'=>(string)($row['action_kind']??''),'approval_state'=>(string)($row['approval_state']??''),
