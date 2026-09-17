@@ -46,13 +46,25 @@ function video_meeting_outcome_learning_rebuild_v18170(PDO $pdo,int $ownerUserId
 {
     if($ownerUserId<1||!video_meeting_outcome_learning_schema_ready_v18170($pdo))return 0;
     video_meeting_followthrough_reconcile_owner_v18160($pdo,$ownerUserId,200);
-    $s=$pdo->prepare("SELECT e.action_kind,a.source_kind,a.priority,m.status,MIN(m.created_at) AS first_seen,MAX(m.updated_at) AS last_seen,COUNT(*) AS c
-      FROM video_meeting_followthrough_monitors m
-      JOIN video_meeting_action_executions e ON e.id=m.execution_id
-      JOIN video_meeting_agenda_items a ON a.id=e.agenda_item_id
-      WHERE m.owner_user_id=? AND m.status IN ('verified','blocked','overdue','dismissed')
-      GROUP BY e.action_kind,a.source_kind,a.priority,m.status");
-    $s->execute([$ownerUserId]);$patterns=[];
+    if(table_exists('video_meeting_followthrough_closures')){
+        $sql="SELECT e.action_kind,a.source_kind,a.priority,
+          CASE WHEN c.status='verified' THEN 'verified' WHEN m.status IN ('blocked','overdue','dismissed') THEN m.status ELSE '' END AS status,
+          MIN(m.created_at) AS first_seen,MAX(m.updated_at) AS last_seen,COUNT(*) AS c
+          FROM video_meeting_followthrough_monitors m
+          JOIN video_meeting_action_executions e ON e.id=m.execution_id
+          JOIN video_meeting_agenda_items a ON a.id=e.agenda_item_id
+          LEFT JOIN video_meeting_followthrough_closures c ON c.execution_id=e.id AND c.owner_user_id=m.owner_user_id
+          WHERE m.owner_user_id=? AND (c.status='verified' OR m.status IN ('blocked','overdue','dismissed'))
+          GROUP BY e.action_kind,a.source_kind,a.priority,CASE WHEN c.status='verified' THEN 'verified' WHEN m.status IN ('blocked','overdue','dismissed') THEN m.status ELSE '' END";
+    }else{
+        $sql="SELECT e.action_kind,a.source_kind,a.priority,m.status,MIN(m.created_at) AS first_seen,MAX(m.updated_at) AS last_seen,COUNT(*) AS c
+          FROM video_meeting_followthrough_monitors m
+          JOIN video_meeting_action_executions e ON e.id=m.execution_id
+          JOIN video_meeting_agenda_items a ON a.id=e.agenda_item_id
+          WHERE m.owner_user_id=? AND m.status IN ('verified','blocked','overdue','dismissed')
+          GROUP BY e.action_kind,a.source_kind,a.priority,m.status";
+    }
+    $s=$pdo->prepare($sql);$s->execute([$ownerUserId]);$patterns=[];
     foreach($s->fetchAll()?:[] as $row){if(!is_array($row))continue;$kind=video_meeting_agenda_normalize_action_v18140((string)$row['action_kind']);if($kind==='')continue;$source=video_meeting_outcome_learning_source_v18170((string)($row['source_kind']??'manual'));$priority=video_meeting_agenda_normalize_priority_v18140((string)($row['priority']??'normal'));$key=$kind.'|'.$source.'|'.$priority;if(!isset($patterns[$key]))$patterns[$key]=['action_kind'=>$kind,'source_kind'=>$source,'priority'=>$priority,'verified'=>0,'blocked'=>0,'overdue'=>0,'dismissed'=>0,'first'=>'','last'=>''];$status=(string)$row['status'];$count=max(0,(int)$row['c']);if(isset($patterns[$key][$status]))$patterns[$key][$status]+=$count;$first=(string)($row['first_seen']??'');$last=(string)($row['last_seen']??'');if($first!==''&&($patterns[$key]['first']===''||$first<$patterns[$key]['first']))$patterns[$key]['first']=$first;if($last!==''&&($patterns[$key]['last']===''||$last>$patterns[$key]['last']))$patterns[$key]['last']=$last;}
     $pdo->beginTransaction();
     try{

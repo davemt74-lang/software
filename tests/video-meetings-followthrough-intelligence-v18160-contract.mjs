@@ -49,7 +49,8 @@ assert.ok(prepApi.includes('video-meetings-followthrough-intelligence-v18160.php
 assert.ok(prepApi.includes("$prep['followthrough_intelligence']"),'Prep API must attach 18.16 intelligence');
 assert.ok(ui.includes("tab.dataset.pane='outcomes'"),'18.16 must remain inside Meeting Intelligence');
 assert.ok(ui.includes("pane.id='meetingPane-outcomes'"));
-assert.ok(ui.includes('Confirm resolved'));
+assert.ok(ui.includes('Confirm action resolved'),'18.16 must expose operational action resolution distinctly from intended-outcome verification');
+assert.ok(ui.includes('Intended-outcome verification remains separate.'),'18.16 must state that action completion is not intended-outcome verification');
 assert.ok(ui.includes('Monitoring never executes external actions.'));
 assert.ok(ui.includes("state?.meeting?.timezone||'UTC'"),'follow-through target editing must display the meeting timezone used by the server');
 assert.ok(ui.includes("'Target ('+timezone+')'"),'target control must visibly label its timezone');
