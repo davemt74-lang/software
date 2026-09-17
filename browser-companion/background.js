@@ -90,6 +90,10 @@ async function fetchJson(path, options = {}) {
   return payload;
 }
 
+async function clearRevokedConnection() {
+  await storage.remove(['device_id', 'device_credential', 'connected_user', 'approved_capabilities', 'pending_connection', 'session', 'last_share']);
+}
+
 async function session(force = false) {
   const state = await storage.get(['device_id', 'device_credential', 'installation_id', 'session']);
   if (!state.device_id || !state.device_credential || !state.installation_id) throw new Error('Connect this browser to VP3 first.');
@@ -98,14 +102,26 @@ async function session(force = false) {
     const expires = Date.parse(current.expires_at);
     if (Number.isFinite(expires) && expires > Date.now() + 60_000) return current;
   }
-  const payload = await fetchJson('/api/extension-session.php', {
-    method: 'POST',
-    json: {
-      device_id: state.device_id,
-      installation_id: state.installation_id,
-      device_credential: state.device_credential
+  let payload;
+  try {
+    payload = await fetchJson('/api/extension-session.php', {
+      method: 'POST',
+      json: {
+        device_id: state.device_id,
+        installation_id: state.installation_id,
+        device_credential: state.device_credential
+      }
+    });
+  } catch (error) {
+    if (error.status === 401 || error.code === 'reconnect_required' || error.code === 'authentication_required') {
+      await clearRevokedConnection();
+      const revoked = new Error('This browser connection was revoked or expired. Reconnect to VP3.');
+      revoked.status = 401;
+      revoked.code = 'reconnect_required';
+      throw revoked;
     }
-  });
+    throw error;
+  }
   await storage.set({ session: payload.session });
   return payload.session;
 }
@@ -258,7 +274,7 @@ async function disconnect() {
       if (error.status !== 401) throw error;
     }
   }
-  await storage.remove(['device_id', 'device_credential', 'connected_user', 'approved_capabilities', 'pending_connection', 'session', 'last_share']);
+  await clearRevokedConnection();
   return { ok: true };
 }
 
