@@ -61,6 +61,7 @@ jobs:
           php -l upgrade.php
       - name: JavaScript syntax
         run: |
+          node --check video-meetings-automation-v18130.js
           node --check video-meetings-followthrough-intelligence-v18160.js
           node --check video-meetings-adaptive-planning-v18180.js
           node --check video-meetings-plan-action-handoff-v18190.js
