@@ -90,8 +90,20 @@ function vp3_browser_source_normalize_url_v2050(string $raw): array
 
 function vp3_browser_source_identity_v2050(string $url,string $canonicalUrl='',string $title=''): array
 {
-    $preferred=trim($canonicalUrl)!==''?$canonicalUrl:$url;
-    $identity=vp3_browser_source_normalize_url_v2050($preferred);
+    $page=vp3_browser_source_normalize_url_v2050($url);
+    $preferred=$page;
+    if(trim($canonicalUrl)!==''){
+        $canonical=vp3_browser_source_normalize_url_v2050($canonicalUrl);
+        $pageHost=strtolower((string)$page['domain']);
+        $canonicalHost=strtolower((string)$canonical['domain']);
+        $pageComparable=preg_replace('/^www\\./','',$pageHost)??$pageHost;
+        $canonicalComparable=preg_replace('/^www\\./','',$canonicalHost)??$canonicalHost;
+        // A canonical tag is controlled by page content. Only same-host / www
+        // aliases may change Source identity; unrelated cross-origin canonicals
+        // remain metadata-only so one site cannot poison another site's feed.
+        if(hash_equals($pageComparable,$canonicalComparable))$preferred=$canonical;
+    }
+    $identity=$preferred;
     $title=trim($title);
     if(mb_strlen($title)>VP3_BROWSER_SHARE_TITLE_MAX_CHARS_V2010)$title=mb_substr($title,0,VP3_BROWSER_SHARE_TITLE_MAX_CHARS_V2010);
     return $identity+[
