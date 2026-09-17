@@ -54,8 +54,9 @@ function video_meeting_followthrough_verification_confirm_v18200(PDO $pdo,array 
         video_meeting_action_complete_v18150($pdo,$meeting,$user,(int)$execution['id']);
         $execution=video_meeting_followthrough_verification_execution_v18200($pdo,$owner,(int)$execution['id'])?:$execution;
     }
-    $from=(string)$closure['status'];$pdo->prepare("UPDATE video_meeting_followthrough_closures SET status='verified',organizer_note=?,verified_at=UTC_TIMESTAMP(),needs_attention_at=NULL,updated_at=NOW() WHERE id=? AND owner_user_id=? AND status='evidence_available'")->execute([$note,$closureId,$owner]);
-    if($pdo->query('SELECT ROW_COUNT()')->fetchColumn()==='0')throw new RuntimeException('Outcome verification state changed before closure. Refresh and review it again.');
+    $from=(string)$closure['status'];$receipt=$pdo->prepare("UPDATE video_meeting_followthrough_closures SET status='verified',organizer_note=?,verified_at=UTC_TIMESTAMP(),needs_attention_at=NULL,updated_at=NOW() WHERE id=? AND owner_user_id=? AND status='evidence_available'");
+    $receipt->execute([$note,$closureId,$owner]);
+    if($receipt->rowCount()!==1)throw new RuntimeException('Outcome verification state changed before closure. Refresh and review it again.');
     $fresh=video_meeting_followthrough_verification_row_v18200($pdo,$owner,$closureId)?:$closure;
     video_meeting_followthrough_verification_event_v18200($pdo,$fresh,'organizer_verified',$from,'verified','Organizer verified the intended meeting outcome against the recorded criterion.',['criteria_hash'=>(string)$fresh['criteria_hash'],'evidence_source'=>(string)$fresh['evidence_source'],'organizer_note_recorded'=>$note!=='']);
     video_meeting_followthrough_reconcile_owner_v18160($pdo,$owner);
