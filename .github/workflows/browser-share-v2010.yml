@@ -1,0 +1,44 @@
+name: Browser Share Backend v20.10
+
+on:
+  push:
+    branches:
+      - main
+      - feature/browser-share-backend-v2010
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          coverage: none
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Browser Share backend contract
+        run: node tests/browser-share-v2010.mjs
+
+      - name: JavaScript syntax
+        run: node --check tests/browser-share-v2010.mjs
+
+      - name: PHP syntax
+        run: |
+          php -l includes/browser-share-v2010.php
+          php -l includes/bootstrap.php
+          php -l api/browser-share.php
+          php -l api/extension-share-destinations.php
+          php -l upgrade.php
