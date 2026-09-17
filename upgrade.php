@@ -138,12 +138,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             vp3_human_messaging_v370_ensure_schema();
             midi_v217_ensure_schema();
             artist_listening_v172_ensure_schema();
-            artist_listening_v237_ensure_schema();
+            artist_listening_v237_schema_ready();
             studio_participants_ensure_schema();
             studio_voice_profile_ensure_schema();
             user_agent_system_ensure_schema_v236();
             vp3_user_agent_lifecycle_ensure_schema_v390();
-            vp3_agent_memory_scope_ensure_schema_ready_v410();
+            vp3_agent_memory_scope_schema_ready_v410();
             agent_scheduling_ensure_schema_v430();
             agent_calendar_sync_ensure_schema_v500();
             user_calendar_ensure_schema_v1300();
