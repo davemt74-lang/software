@@ -1,11 +1,12 @@
 <?php
 declare(strict_types=1);
 require dirname(__DIR__).'/includes/bootstrap.php';
+require_once dirname(__DIR__).'/includes/extension-device-auth-v2001.php';
 
 header('Content-Type: application/json; charset=UTF-8');
 header('Cache-Control: no-store');
 header('X-Content-Type-Options: nosniff');
-vp3_extension_apply_cors_v2000();
+vp3_extension_apply_cors_v2001();
 header('Access-Control-Allow-Headers: Authorization, Content-Type, X-VP3-Extension-Version, X-VP3-Contract-Version, X-VP3-Idempotency-Key');
 header('Access-Control-Allow-Methods: POST, OPTIONS');
 
@@ -37,7 +38,7 @@ if((int)($input['schema_version']??0)!==1)vp3_browser_share_json_v2010(422,['ok'
 $idempotencyKey=strtolower(trim((string)($_SERVER['HTTP_X_VP3_IDEMPOTENCY_KEY']??'')));
 
 try{
-    $session=vp3_extension_session_authenticate_v2000($pdo);
+    $session=vp3_extension_session_authenticate_v2001($pdo);
     if(!$session)throw new VP3BrowserShareExceptionV2010('authentication_required',401,'Browser Companion authentication is required.');
     $result=vp3_browser_share_create_v2010($pdo,$session,$input,$idempotencyKey);
     $status=!empty($result['idempotent_replay'])?200:201;
