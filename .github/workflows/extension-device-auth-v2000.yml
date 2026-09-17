@@ -1,10 +1,11 @@
-name: Browser Companion Device Auth v20.00
+name: Browser Companion Device Auth v20.01
 
 on:
   push:
     branches:
       - main
       - feature/extension-device-auth
+      - feature/browser-share-backend-v2010
   pull_request:
 
 permissions:
@@ -29,15 +30,21 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Browser Companion auth contract
+      - name: Browser Companion auth base contract
         run: node tests/extension-device-auth-v2000.mjs
 
+      - name: Browser Companion security audit contract
+        run: node tests/extension-device-auth-v2001.mjs
+
       - name: JavaScript syntax
-        run: node --check tests/extension-device-auth-v2000.mjs
+        run: |
+          node --check tests/extension-device-auth-v2000.mjs
+          node --check tests/extension-device-auth-v2001.mjs
 
       - name: PHP syntax
         run: |
           php -l includes/extension-device-auth-v2000.php
+          php -l includes/extension-device-auth-v2001.php
           php -l includes/bootstrap.php
           php -l upgrade.php
           php -l api/extension-connect-request.php
