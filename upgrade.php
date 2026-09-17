@@ -185,7 +185,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             video_meeting_plan_action_ensure_schema_v18190($pdo);
             video_meeting_followthrough_verification_ensure_schema_v18200($pdo);
             video_meeting_continuity_ensure_schema_v18210($pdo);
-            video_meeting_closure_schema_ready_v18220() || video_meeting_closure_ensure_schema_v18220($pdo);
+            video_meeting_closure_ensure_schema_v18220($pdo);
             video_meeting_manual_ensure_schema_v1830($pdo);
             artist_workspace_v181_ensure_schema();
             vp3_plugin_migrate_legacy_v360($pdo);
