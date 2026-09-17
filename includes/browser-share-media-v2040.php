@@ -140,14 +140,14 @@ function vp3_browser_share_media_validate_metadata_v2040(mixed $raw,string $kind
         $raw=json_decode($raw,true);
     }
     $input=is_array($raw)?$raw:[];
-    $allowed=['width','height','device_pixel_ratio','x','y','duration_seconds','start_seconds','end_seconds','source_media_url','source_media_title','source_media_kind'];
+    $allowed=['width','height','device_pixel_ratio','capture_scale_x','capture_scale_y','x','y','duration_seconds','start_seconds','end_seconds','source_media_url','source_media_title','source_media_kind'];
     $out=[];
     foreach($allowed as $key){
         if(!array_key_exists($key,$input))continue;
         $value=$input[$key];
         if(in_array($key,['width','height'],true)){
             $value=max(0,min(20000,(int)$value));
-        }elseif(in_array($key,['device_pixel_ratio','x','y','duration_seconds','start_seconds','end_seconds'],true)){
+        }elseif(in_array($key,['device_pixel_ratio','capture_scale_x','capture_scale_y','x','y','duration_seconds','start_seconds','end_seconds'],true)){
             $value=round(max(0,(float)$value),3);
         }elseif($key==='source_media_url'){
             try{$value=(string)vp3_browser_share_validate_url_v2010($value)['url'];}
@@ -201,13 +201,21 @@ function vp3_browser_share_media_insert_v2040(PDO $pdo,array $share,int $userId,
     $publicId=vp3_browser_share_media_uuid_v2040();
     $encoded=json_encode($metadata,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
     if(!is_string($encoded))$encoded='{}';
-    $stmt=$pdo->prepare("INSERT INTO browser_share_media_v2040(public_id,browser_share_id,uploader_user_id,media_kind,mime_type,byte_size,sha256,original_name,storage_key,metadata_json,media_status) VALUES(?,?,?,?,?,?,?,?,?,?,?)");
-    $stmt->execute([$publicId,(int)$share['id'],$userId,$kind,$mime,$bytes,$sha,mb_substr($name,0,255),$storageKey,$encoded,$status]);
-    $id=(int)$pdo->lastInsertId();
-    if($id<1)throw new VP3BrowserShareMediaExceptionV2040('media_create_failed',503,'Media attachment could not be created.');
-    if($storageKey!==null){
-        $job=$pdo->prepare("INSERT INTO browser_share_media_jobs_v2040(media_id,job_type,job_status) VALUES(?,?,'queued')");
-        $job->execute([$id,$kind==='screenshot'?'image.inspect':'audio.inspect']);
+    $ownsTransaction=!$pdo->inTransaction();
+    if($ownsTransaction)$pdo->beginTransaction();
+    try{
+        $stmt=$pdo->prepare("INSERT INTO browser_share_media_v2040(public_id,browser_share_id,uploader_user_id,media_kind,mime_type,byte_size,sha256,original_name,storage_key,metadata_json,media_status) VALUES(?,?,?,?,?,?,?,?,?,?,?)");
+        $stmt->execute([$publicId,(int)$share['id'],$userId,$kind,$mime,$bytes,$sha,mb_substr($name,0,255),$storageKey,$encoded,$status]);
+        $id=(int)$pdo->lastInsertId();
+        if($id<1)throw new VP3BrowserShareMediaExceptionV2040('media_create_failed',503,'Media attachment could not be created.');
+        if($storageKey!==null){
+            $job=$pdo->prepare("INSERT INTO browser_share_media_jobs_v2040(media_id,job_type,job_status) VALUES(?,?,'queued')");
+            $job->execute([$id,$kind==='screenshot'?'image.inspect':'audio.inspect']);
+        }
+        if($ownsTransaction)$pdo->commit();
+    }catch(Throwable $e){
+        if($ownsTransaction&&$pdo->inTransaction())$pdo->rollBack();
+        throw $e;
     }
     return vp3_browser_share_media_public_v2040([
         'public_id'=>$publicId,'media_kind'=>$kind,'mime_type'=>$mime,'byte_size'=>$bytes,'sha256'=>$sha,
