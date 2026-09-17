@@ -91,7 +91,7 @@ async function fetchJson(path, options = {}) {
 }
 
 async function clearRevokedConnection() {
-  await storage.remove(['device_id', 'device_credential', 'connected_user', 'approved_capabilities', 'pending_connection', 'session', 'last_share']);
+  await storage.remove(['device_id', 'device_credential', 'connected_user', 'approved_capabilities', 'pending_connection', 'session', 'last_share', 'pending_capture']);
 }
 
 async function session(force = false) {
@@ -250,7 +250,14 @@ async function createShare(input) {
       message: { note: utf8Limit(String(input.note || ''), 4096) }
     }
   }, 'team.share.create');
-  await storage.set({ last_share: { ...payload, source_url: sourceUrl, created_at: new Date().toISOString() } });
+  const lastShare = {
+    browser_share: payload.browser_share || null,
+    chat_message: payload.chat_message || null,
+    idempotent_replay: Boolean(payload.idempotent_replay),
+    created_at: new Date().toISOString()
+  };
+  await storage.set({ last_share: lastShare });
+  await storage.remove('pending_capture');
   return payload;
 }
 
@@ -313,11 +320,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   const run = async () => {
     switch (message?.type) {
       case 'state': return publicState();
-      case 'capture': {
-        const capture = await activeCapture();
-        await storage.set({ pending_capture: capture });
-        return capture;
-      }
+      case 'capture': return activeCapture();
+      case 'clear_pending_capture': await storage.remove('pending_capture'); return { ok: true };
       case 'connect': return beginConnect(message.device_name);
       case 'poll_connect': return pollConnect();
       case 'destinations': return destinations();
