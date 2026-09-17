@@ -77,7 +77,11 @@ jobs:
           zip -r ../dist/vp3-browser-companion-v20.30.0.zip . -x '*.DS_Store'
           cd ..
           unzip -t dist/vp3-browser-companion-v20.30.0.zip
-          test "$(unzip -Z1 dist/vp3-browser-companion-v20.30.0.zip | head -n1)" = "manifest.json"
+          unzip -Z1 dist/vp3-browser-companion-v20.30.0.zip | grep -qx 'manifest.json'
+          if unzip -Z1 dist/vp3-browser-companion-v20.30.0.zip | grep -q '^browser-companion/'; then
+            echo 'Extension ZIP contains an unexpected wrapper folder.' >&2
+            exit 1
+          fi
           sha256sum dist/vp3-browser-companion-v20.30.0.zip > dist/vp3-browser-companion-v20.30.0.zip.sha256
 
       - name: Upload directly loadable Browser Companion
