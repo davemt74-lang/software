@@ -442,8 +442,9 @@ function vp3_browser_source_this_page_v2050(PDO $pdo,int $viewerUserId,string $u
     $stmt=$pdo->prepare($sql);
     $stmt->execute($before>0?[(int)$source['id'],$before]:[(int)$source['id']]);
     $ids=array_map('intval',$stmt->fetchAll(PDO::FETCH_COLUMN)?:[]);
-    $items=[];$lastScanned=0;
+    $items=[];$lastScanned=0;$scannedCount=0;
     foreach($ids as $id){
+        $scannedCount++;
         $lastScanned=$id;
         $row=vp3_browser_source_share_row_by_id_v2050($pdo,$id);
         if(!$row||!vp3_browser_source_share_authorized_v2050($pdo,$row,$viewerUserId))continue;
@@ -461,7 +462,7 @@ function vp3_browser_source_this_page_v2050(PDO $pdo,int $viewerUserId,string $u
         'source'=>vp3_browser_source_public_source_v2050($pdo,$source,$viewerUserId),
         'items'=>$items,
         'next_cursor'=>$lastScanned>0?vp3_browser_source_cursor_encode_v2050($lastScanned):'',
-        'has_more'=>count($ids)===$scan,
+        'has_more'=>$scannedCount<count($ids)||count($ids)===$scan,
     ];
 }
 
@@ -484,8 +485,9 @@ function vp3_browser_source_following_v2050(PDO $pdo,int $viewerUserId,int $limi
     if($before>0)$params[]=$before;
     $stmt->execute($params);
     $ids=array_map('intval',$stmt->fetchAll(PDO::FETCH_COLUMN)?:[]);
-    $items=[];$lastScanned=0;
+    $items=[];$lastScanned=0;$scannedCount=0;
     foreach($ids as $id){
+        $scannedCount++;
         $lastScanned=$id;
         $row=vp3_browser_source_share_row_by_id_v2050($pdo,$id);
         if(!$row||!vp3_browser_source_share_authorized_v2050($pdo,$row,$viewerUserId))continue;
@@ -495,7 +497,7 @@ function vp3_browser_source_following_v2050(PDO $pdo,int $viewerUserId,int $limi
     return [
         'items'=>$items,
         'next_cursor'=>$lastScanned>0?vp3_browser_source_cursor_encode_v2050($lastScanned):'',
-        'has_more'=>count($ids)===$scan,
+        'has_more'=>$scannedCount<count($ids)||count($ids)===$scan,
     ];
 }
 
