@@ -30,6 +30,20 @@ function cleanBaseUrl(value) {
 
 function apiUrl(base, path) { return `${cleanBaseUrl(base)}${path}`; }
 function uuid() { return crypto.randomUUID(); }
+function utf8Limit(value, maxBytes) {
+  const text = String(value || '');
+  const encoder = new TextEncoder();
+  if (encoder.encode(text).length <= maxBytes) return text;
+  let bytes = 0;
+  let result = '';
+  for (const character of text) {
+    const size = encoder.encode(character).length;
+    if (bytes + size > maxBytes) break;
+    bytes += size;
+    result += character;
+  }
+  return result;
+}
 
 async function ensureInstallation() {
   const state = await storage.get(['installation_id']);
@@ -134,8 +148,8 @@ async function activeCapture(tabHint = null) {
     tab_id: tab.id,
     source_url: tab.url || '',
     canonical_url: result.canonical_url || tab.url || '',
-    title: tab.title || '',
-    selected_text: String(result.selected_text || '').slice(0, 32768),
+    title: String(tab.title || '').slice(0, 512),
+    selected_text: utf8Limit(String(result.selected_text || ''), 32768),
     captured_at: new Date().toISOString()
   };
 }
@@ -193,10 +207,13 @@ async function destinations() {
 
 async function createShare(input) {
   const capture = input?.capture || {};
-  const selection = String(capture.selected_text || '').trim();
+  const selection = utf8Limit(String(capture.selected_text || '').trim(), 32768);
   if (!selection) throw new Error('Highlight text on the page before sharing.');
   const destination = input?.destination || {};
-  if (!destination.kind || !Number(destination.id)) throw new Error('Choose a VP3 destination.');
+  if (!['team_general', 'conversation'].includes(destination.kind) || !Number(destination.id)) throw new Error('Choose a VP3 destination.');
+  const sourceUrl = String(capture.source_url || '');
+  const canonicalUrl = String(capture.canonical_url || sourceUrl);
+  if (!/^https?:\/\//i.test(sourceUrl) || !/^https?:\/\//i.test(canonicalUrl)) throw new Error('This page cannot be shared.');
   const idempotencyKey = input.idempotency_key || uuid();
   const payload = await authorizedFetch('/api/browser-share.php', {
     method: 'POST',
@@ -206,30 +223,41 @@ async function createShare(input) {
       share_type: 'selection',
       destination: { kind: destination.kind, id: Number(destination.id) },
       source: {
-        url: capture.source_url,
-        canonical_url: capture.canonical_url || capture.source_url,
-        title: String(capture.title || '').slice(0, 500)
+        url: sourceUrl,
+        canonical_url: canonicalUrl,
+        title: String(capture.title || '').slice(0, 512)
       },
       snapshot: {
-        selected_text: selection.slice(0, 32768),
+        selected_text: selection,
         captured_at: capture.captured_at || new Date().toISOString()
       },
-      message: { note: String(input.note || '').slice(0, 4096) }
+      message: { note: utf8Limit(String(input.note || ''), 4096) }
     }
   }, 'team.share.create');
-  await storage.set({ last_share: { ...payload, source_url: capture.source_url, created_at: new Date().toISOString() } });
+  await storage.set({ last_share: { ...payload, source_url: sourceUrl, created_at: new Date().toISOString() } });
   return payload;
 }
 
 async function browserShareAction(action, browserShareId, folderId = 0) {
+  if (!['ask_agent', 'save_knowledge', 'create_task'].includes(action)) throw new Error('Unsupported Browser Share action.');
   const capability = action === 'save_knowledge' ? 'knowledge.write' : action === 'create_task' ? 'task.propose' : 'agent.message';
   return authorizedFetch('/api/extension-browser-share-actions-v2030.php', {
     method: 'POST',
-    json: { action, browser_share_id: browserShareId, folder_id: Number(folderId || 0) }
+    json: { action, browser_share_id: String(browserShareId || ''), folder_id: Number(folderId || 0) }
   }, capability);
 }
 
 async function disconnect() {
+  const state = await storage.get(['device_id']);
+  if (state.device_id) {
+    try {
+      await authorizedFetch('/api/extension-device-disconnect-v2030.php', { method: 'POST', json: {} });
+    } catch (error) {
+      // A 401 means the server has already invalidated this credential. For all
+      // other failures retain local credentials so the user can retry revocation.
+      if (error.status !== 401) throw error;
+    }
+  }
   await storage.remove(['device_id', 'device_credential', 'connected_user', 'approved_capabilities', 'pending_connection', 'session', 'last_share']);
   return { ok: true };
 }
@@ -259,7 +287,7 @@ chrome.runtime.onInstalled.addListener(() => {
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   if (info.menuItemId !== 'vp3-share-selection' || !tab?.id) return;
   const capture = await activeCapture(tab);
-  if (info.selectionText) capture.selected_text = String(info.selectionText).trim().slice(0, 32768);
+  if (info.selectionText) capture.selected_text = utf8Limit(String(info.selectionText).trim(), 32768);
   capture.captured_at = new Date().toISOString();
   await storage.set({ pending_capture: capture });
   try { await chrome.sidePanel.open({ tabId: tab.id }); } catch {}
@@ -280,7 +308,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       case 'share': return createShare(message);
       case 'share_action': return browserShareAction(message.action, message.browser_share_id, message.folder_id);
       case 'disconnect': return disconnect();
-      case 'open_url': await chrome.tabs.create({ url: message.url }); return { ok: true };
+      case 'open_url': {
+        const url = String(message.url || '');
+        if (!/^https?:\/\//i.test(url)) throw new Error('Only HTTP(S) links can be opened.');
+        await chrome.tabs.create({ url });
+        return { ok: true };
+      }
       case 'set_base_url': {
         const base_url = cleanBaseUrl(message.base_url);
         if (!(await ensureOriginPermission(base_url))) throw new Error('VP3 site permission was not granted.');
