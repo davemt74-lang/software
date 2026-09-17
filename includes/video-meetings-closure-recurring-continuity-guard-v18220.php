@@ -15,6 +15,10 @@ function video_meeting_closure_active_thread_target_v18220(PDO $pdo,int $ownerUs
 
 function video_meeting_closure_guarded_carry_to_next_v18220(PDO $pdo,array $meeting,int $ownerUserId,int $snapshotId,int $sourceAgendaItemId,int $targetMeetingId): array
 {
+    // If the exact source→target continuity link already exists, let the core
+    // handoff path validate the frozen snapshot and repair any missing audit row.
+    $exact=video_meeting_continuity_existing_target_link_v18210($pdo,$ownerUserId,$sourceAgendaItemId,$targetMeetingId);
+    if($exact)return video_meeting_closure_carry_to_next_v18220($pdo,$meeting,$ownerUserId,$snapshotId,$sourceAgendaItemId,$targetMeetingId);
     $active=video_meeting_closure_active_thread_target_v18220($pdo,$ownerUserId,$sourceAgendaItemId,(int)$meeting['id']);
     if($active){$title=video_meeting_closure_text_v18220($active['title']??'another meeting',190);throw new RuntimeException('This continuity thread is already active in '.$title.'. Resolve or supersede that link before carrying it to another next meeting.');}
     return video_meeting_closure_carry_to_next_v18220($pdo,$meeting,$ownerUserId,$snapshotId,$sourceAgendaItemId,$targetMeetingId);
