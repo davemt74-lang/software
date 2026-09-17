@@ -25,6 +25,18 @@ if(!$pdo||!vp3_extension_schema_ready_v2000($pdo)){
     vp3_extension_connect_request_json_v2000(503,['ok'=>false,'error'=>['code'=>'service_unavailable','message'=>'VP3 Browser Companion is not ready. Run the database upgrade.']]);
 }
 
+// The installation-level throttle in the service protects accidental/repeated
+// pairing. This independent IP throttle prevents anonymous callers from simply
+// rotating installation UUIDs to fill the connection-request table.
+$requestIp=vp3_extension_request_ip_v2000();
+if($requestIp!==''){
+    $rate=$pdo->prepare("SELECT COUNT(*) FROM extension_connection_requests_v2000 WHERE request_ip=? AND created_at>=DATE_SUB(NOW(),INTERVAL 1 HOUR)");
+    $rate->execute([$requestIp]);
+    if((int)$rate->fetchColumn()>=50){
+        vp3_extension_connect_request_json_v2000(429,['ok'=>false,'error'=>['code'=>'rate_limited','message'=>'Too many Browser Companion connection requests. Try again later.']]);
+    }
+}
+
 $raw=(string)file_get_contents('php://input');
 if(strlen($raw)>8192)vp3_extension_connect_request_json_v2000(413,['ok'=>false,'error'=>['code'=>'payload_too_large','message'=>'Payload too large.']]);
 $input=json_decode($raw,true);
