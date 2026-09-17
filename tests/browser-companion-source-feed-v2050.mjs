@@ -50,6 +50,7 @@ must(service.includes("vp3_human_team_authorized_v370"),'Team publication must u
 must(service.includes("Legacy Phase 4/5 Browser Shares"),'legacy Browser Share authorization/backfill boundary missing');
 must(service.includes("page_text_sha256"),'source version basis missing');
 must(service.includes("vp3_browser_source_backfill_v2050"),'Phase 4/5 canonical Source backfill missing');
+must(service.includes("$scannedCount<count($ids)||count($ids)===$scan"),'feed cursors must preserve additional authorized items beyond the first page');
 
 must(api.includes("action==='this_page'"),'This Page API missing');
 must(api.includes("action==='following'"),'Following API missing');
