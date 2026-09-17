@@ -29,7 +29,7 @@ async function render() {
   connectionSummary.textContent = state.connected
     ? `Connected${state.user?.display_name ? ` as ${state.user.display_name}` : ''}`
     : state.pending_connection ? 'Connection approval pending' : 'Not connected';
-  disconnectBtn.hidden = !state.connected && !state.pending_connection;
+  disconnectBtn.hidden = !state.connected;
   extensionOrigin.textContent = `Extension origin: chrome-extension://${chrome.runtime.id}`;
 }
 
