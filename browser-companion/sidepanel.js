@@ -19,7 +19,11 @@ function message(type, data = {}) {
   return new Promise((resolve, reject) => {
     chrome.runtime.sendMessage({ type, ...data }, (response) => {
       if (chrome.runtime.lastError) return reject(new Error(chrome.runtime.lastError.message));
-      if (!response?.ok) return reject(new Error(response?.error || 'Browser Companion request failed.'));
+      if (!response?.ok) {
+        const error = new Error(response?.error || 'Browser Companion request failed.');
+        error.code = response?.code || '';
+        return reject(error);
+      }
       resolve(response.value);
     });
   });
@@ -33,6 +37,11 @@ function notify(text, kind = '') {
   notify.timer = setTimeout(() => { ui.notice.hidden = true; }, 4500);
 }
 
+async function reportError(error) {
+  notify(error.message, 'error');
+  if (error.code === 'reconnect_required') await refreshState().catch(() => {});
+}
+
 function setBusy(button, busy, label = '') {
   if (!button) return;
   if (busy) {
@@ -40,9 +49,9 @@ function setBusy(button, busy, label = '') {
     button.disabled = true;
     if (label) button.textContent = label;
   } else {
-    button.disabled = false;
     if (button.dataset.label) button.textContent = button.dataset.label;
     delete button.dataset.label;
+    renderCapabilities();
   }
 }
 
@@ -57,6 +66,19 @@ function hostOf(value) {
   try { return new URL(value).hostname; } catch { return ''; }
 }
 
+function capabilities() {
+  return new Set(Array.isArray(state?.capabilities) ? state.capabilities : []);
+}
+
+function renderCapabilities() {
+  const caps = capabilities();
+  ui.askAgentBtn.disabled = state?.connected ? !caps.has('agent.message') : true;
+  ui.saveKnowledgeBtn.disabled = state?.connected ? !caps.has('knowledge.write') : true;
+  ui.createTaskBtn.disabled = state?.connected ? !caps.has('task.propose') : true;
+  const canShare = state?.connected && caps.has('team.share.create');
+  ui.shareBtn.disabled = !canShare || !capture?.available || !capture?.selected_text?.trim() || !ui.destinationSelect.value;
+}
+
 function renderCapture(next) {
   capture = next || { available: false };
   ui.pageTitle.textContent = capture.title || (capture.available ? 'Untitled page' : 'No shareable page');
@@ -64,7 +86,7 @@ function renderCapture(next) {
   ui.selectedText.value = capture.selected_text || '';
   const bytes = new TextEncoder().encode(ui.selectedText.value).length;
   ui.selectionCount.textContent = `${bytes.toLocaleString()} / 32,768 bytes`;
-  ui.shareBtn.disabled = !capture.available || !ui.selectedText.value.trim() || !ui.destinationSelect.value;
+  renderCapabilities();
 }
 
 function addOptions(group, rows) {
@@ -91,13 +113,13 @@ function renderDestinations(payload) {
   addOptions('Recent', destinations.recent);
   addOptions('Teams', destinations.teams);
   addOptions('Conversations', destinations.conversations);
-  ui.shareBtn.disabled = !capture?.selected_text?.trim();
+  renderCapabilities();
 }
 
 function parseDestination() {
   const [kind, rawId] = String(ui.destinationSelect.value || '').split(':');
   const id = Number(rawId || 0);
-  return kind && id > 0 ? { kind, id } : null;
+  return ['team_general', 'conversation'].includes(kind) && id > 0 ? { kind, id } : null;
 }
 
 function renderConnection(next) {
@@ -116,6 +138,7 @@ function renderConnection(next) {
     ui.connectionState.textContent = 'Not connected';
     ui.connectControls.hidden = false;
   }
+  renderCapabilities();
 }
 
 function renderLastShare(result) {
@@ -127,6 +150,7 @@ function renderLastShare(result) {
   ui.successCard.hidden = false;
   const replay = lastShare.idempotent_replay ? ' Existing share restored safely.' : '';
   ui.shareResultText.textContent = `Message #${lastShare.chat_message.id} was posted.${replay}`;
+  renderCapabilities();
 }
 
 async function refreshState() {
@@ -142,14 +166,14 @@ async function refreshState() {
 
 async function refreshCapture() {
   try { renderCapture(await message('capture')); }
-  catch (error) { notify(error.message, 'error'); }
+  catch (error) { await reportError(error); }
 }
 
 async function loadDestinations() {
   try { renderDestinations(await message('destinations')); }
   catch (error) {
     ui.destinationSelect.replaceChildren(new Option('Destinations unavailable', ''));
-    notify(error.message, 'error');
+    await reportError(error);
   }
 }
 
@@ -172,7 +196,7 @@ async function checkConnection() {
       notify(result.reconnect_required ? 'Reconnect this browser to receive a new credential.' : `Connection ${result.status}.`, 'error');
       await refreshState();
     }
-  } catch (error) { stopPolling(); notify(error.message, 'error'); await refreshState().catch(() => {}); }
+  } catch (error) { stopPolling(); await reportError(error); await refreshState().catch(() => {}); }
 }
 
 function startPolling() {
@@ -187,14 +211,14 @@ ui.connectBtn.addEventListener('click', async () => {
     notify('Approve this browser in the VP3 tab.');
     await refreshState();
     startPolling();
-  } catch (error) { notify(error.message, 'error'); }
+  } catch (error) { await reportError(error); }
   finally { setBusy(ui.connectBtn, false); }
 });
 
 ui.checkConnectionBtn.addEventListener('click', checkConnection);
 ui.settingsBtn.addEventListener('click', () => chrome.runtime.openOptionsPage());
 ui.refreshCaptureBtn.addEventListener('click', refreshCapture);
-ui.destinationSelect.addEventListener('change', () => { ui.shareBtn.disabled = !parseDestination() || !capture?.selected_text?.trim(); });
+ui.destinationSelect.addEventListener('change', renderCapabilities);
 
 ui.shareBtn.addEventListener('click', async () => {
   const destination = parseDestination();
@@ -206,7 +230,7 @@ ui.shareBtn.addEventListener('click', async () => {
     renderLastShare({ ...result, source_url: capture.source_url });
     ui.shareNote.value = '';
     notify('Shared with VP3.', 'success');
-  } catch (error) { notify(error.message, 'error'); }
+  } catch (error) { await reportError(error); }
   finally { setBusy(ui.shareBtn, false); }
 });
 
@@ -224,7 +248,7 @@ async function runShareAction(action, button, busyLabel) {
     } else if (action === 'create_task') {
       notify('VP3 task created.', 'success');
     }
-  } catch (error) { notify(error.message, 'error'); }
+  } catch (error) { await reportError(error); }
   finally { setBusy(button, false); }
 }
 
@@ -234,17 +258,17 @@ ui.createTaskBtn.addEventListener('click', () => runShareAction('create_task', u
 ui.openSourceBtn.addEventListener('click', async () => {
   const url = safeHttpUrl(lastShare?.source_url || capture?.source_url);
   if (!url) return notify('The source URL is unavailable.', 'error');
-  await message('open_url', { url });
+  try { await message('open_url', { url }); } catch (error) { await reportError(error); }
 });
 ui.openMessagesBtn.addEventListener('click', async () => {
   const base = state?.base_url || 'https://vp3.me';
   const cid = Number(lastShare?.chat_message?.conversation_id || 0);
   const url = `${base}/messages.php${cid ? `?conversation_id=${cid}` : ''}`;
-  await message('open_url', { url });
+  try { await message('open_url', { url }); } catch (error) { await reportError(error); }
 });
 
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') refreshState().catch(() => {});
 });
 
-refreshState().catch(error => notify(error.message, 'error'));
+refreshState().catch(error => reportError(error));
