@@ -1,4 +1,4 @@
-name: Browser Share Backend v20.10
+name: Browser Share Backend v20.11
 
 on:
   push:
@@ -29,15 +29,22 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Browser Share backend contract
+      - name: Browser Share backend base contract
         run: node tests/browser-share-v2010.mjs
 
+      - name: Browser Share hardening audit contract
+        run: node tests/browser-share-v2011.mjs
+
       - name: JavaScript syntax
-        run: node --check tests/browser-share-v2010.mjs
+        run: |
+          node --check tests/browser-share-v2010.mjs
+          node --check tests/browser-share-v2011.mjs
 
       - name: PHP syntax
         run: |
           php -l includes/browser-share-v2010.php
+          php -l includes/browser-share-v2011.php
+          php -l includes/extension-device-auth-v2001.php
           php -l includes/bootstrap.php
           php -l api/browser-share.php
           php -l api/extension-share-destinations.php
