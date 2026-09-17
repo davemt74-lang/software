@@ -3,23 +3,62 @@ declare(strict_types=1);
 require __DIR__.'/includes/bootstrap.php';
 require_once __DIR__.'/includes/vp3-public.php';
 
-require_login();
+header('Cache-Control: no-store');
+header('Referrer-Policy: no-referrer');
+
+const VP3_EXTENSION_PENDING_APPROVAL_SESSION_V2000='vp3_extension_pending_approval_v2000';
+
+// Approval links necessarily arrive with a one-time secret. Move it into the
+// server-side PHP session immediately, then redirect to a clean URL so the
+// secret does not remain in page markup, subresource referrers, or later POSTs.
+if(($_SERVER['REQUEST_METHOD']??'GET')==='GET'){
+    $incomingId=trim((string)($_GET['id']??''));
+    $incomingToken=trim((string)($_GET['approval_token']??''));
+    if($incomingId!==''||$incomingToken!==''){
+        if(vp3_extension_valid_uuid_v2000($incomingId)&&preg_match('/^[a-f0-9]{64}$/',$incomingToken)){
+            $_SESSION[VP3_EXTENSION_PENDING_APPROVAL_SESSION_V2000]=[
+                'id'=>strtolower($incomingId),
+                'approval_token'=>strtolower($incomingToken),
+                'stored_at'=>time(),
+            ];
+        }else{
+            unset($_SESSION[VP3_EXTENSION_PENDING_APPROVAL_SESSION_V2000]);
+        }
+        redirect(url('/extension-connect.php'));
+    }
+}
+
+// Preserve the pending pairing through an ordinary VP3 sign-in without putting
+// the approval secret into the login URL or login form. The existing funnel
+// return_to handling safely brings the user back to this clean local path.
+if(!is_logged_in()){
+    $returnTo=url('/extension-connect.php');
+    redirect(url('/login.php?return_to='.rawurlencode($returnTo)));
+}
+
 $pdo=db();
 $user=current_user();
 $error='';
 $notice='';
-
-$id=trim((string)($_POST['connection_request_id']??$_GET['id']??''));
-$approvalToken=trim((string)($_POST['approval_token']??$_GET['approval_token']??''));
 $request=null;
+$pending=$_SESSION[VP3_EXTENSION_PENDING_APPROVAL_SESSION_V2000]??null;
+if(!is_array($pending)||((int)($pending['stored_at']??0))<(time()-1200)){
+    unset($_SESSION[VP3_EXTENSION_PENDING_APPROVAL_SESSION_V2000]);
+    $pending=null;
+}
+$id=trim((string)($pending['id']??''));
+$approvalToken=trim((string)($pending['approval_token']??''));
 
 if(!$pdo||!vp3_extension_schema_ready_v2000($pdo)){
     $error='VP3 Browser Companion is not ready. Ask an administrator to run the database upgrade.';
 }elseif($id===''||$approvalToken===''){
-    $error='This Browser Companion connection link is incomplete.';
+    $error='This Browser Companion connection link is incomplete or expired.';
 }else{
     $request=vp3_extension_connection_for_approval_v2000($pdo,$id,$approvalToken);
-    if(!$request)$error='This Browser Companion connection request is not available.';
+    if(!$request){
+        unset($_SESSION[VP3_EXTENSION_PENDING_APPROVAL_SESSION_V2000]);
+        $error='This Browser Companion connection request is not available.';
+    }
 }
 
 if($_SERVER['REQUEST_METHOD']==='POST'&&$request&&$user){
@@ -35,6 +74,7 @@ if($_SERVER['REQUEST_METHOD']==='POST'&&$request&&$user){
             elseif($status==='expired')$error='This Browser Companion connection request has expired. Start a new connection from the extension.';
             else $notice='This Browser Companion request has already been resolved.';
             $request=vp3_extension_connection_for_approval_v2000($pdo,$id,$approvalToken);
+            if($status!=='pending')unset($_SESSION[VP3_EXTENSION_PENDING_APPROVAL_SESSION_V2000]);
         }catch(Throwable $e){
             $error=$e->getMessage();
         }
@@ -92,8 +132,6 @@ vp3_public_header('Connect Browser Companion — VP3','Approve a browser connect
         <?php if($status==='pending'): ?>
           <form method="post" action="<?= e(url('/extension-connect.php')) ?>" style="display:flex;gap:.75rem;flex-wrap:wrap;margin-top:1.5rem;">
             <?= csrf_field() ?>
-            <input type="hidden" name="connection_request_id" value="<?= e($id) ?>">
-            <input type="hidden" name="approval_token" value="<?= e($approvalToken) ?>">
             <button class="vp3-btn primary" type="submit" name="decision" value="approve">Approve Browser →</button>
             <button class="vp3-btn" type="submit" name="decision" value="deny">Deny</button>
           </form>
