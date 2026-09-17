@@ -261,11 +261,15 @@ async function selectScreenshotRegion() {
   const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' });
   const source = await fetch(dataUrl);
   const bitmap = await createImageBitmap(await source.blob());
-  const dpr = Math.max(0.5, Number(rect.device_pixel_ratio || 1));
-  const sx = Math.max(0, Math.round(rect.x * dpr));
-  const sy = Math.max(0, Math.round(rect.y * dpr));
-  const sw = Math.min(bitmap.width - sx, Math.max(1, Math.round(rect.width * dpr)));
-  const sh = Math.min(bitmap.height - sy, Math.max(1, Math.round(rect.height * dpr)));
+  const viewportWidth = Math.max(1, Number(rect.viewport_width || 0));
+  const viewportHeight = Math.max(1, Number(rect.viewport_height || 0));
+  const fallbackScale = Math.max(0.5, Number(rect.device_pixel_ratio || 1));
+  const scaleX = Number.isFinite(bitmap.width / viewportWidth) ? bitmap.width / viewportWidth : fallbackScale;
+  const scaleY = Number.isFinite(bitmap.height / viewportHeight) ? bitmap.height / viewportHeight : fallbackScale;
+  const sx = Math.min(bitmap.width - 1, Math.max(0, Math.round(rect.x * scaleX)));
+  const sy = Math.min(bitmap.height - 1, Math.max(0, Math.round(rect.y * scaleY)));
+  const sw = Math.min(bitmap.width - sx, Math.max(1, Math.round(rect.width * scaleX)));
+  const sh = Math.min(bitmap.height - sy, Math.max(1, Math.round(rect.height * scaleY)));
   const canvas = new OffscreenCanvas(sw, sh);
   const context = canvas.getContext('2d');
   context.drawImage(bitmap, sx, sy, sw, sh, 0, 0, sw, sh);
@@ -278,7 +282,7 @@ async function selectScreenshotRegion() {
   return {
     cancelled: false,
     data_url: `data:image/png;base64,${btoa(binary)}`,
-    metadata: { width: sw, height: sh, device_pixel_ratio: dpr, x: rect.x, y: rect.y }
+    metadata: { width: sw, height: sh, device_pixel_ratio: Number(rect.device_pixel_ratio || 1), capture_scale_x: scaleX, capture_scale_y: scaleY, x: rect.x, y: rect.y }
   };
 }
 
