@@ -45,6 +45,7 @@ for(const table of [
 
 must(service.includes("str_starts_with($key,'utm_')"),'URL normalization must remove UTM tracking parameters');
 must(service.includes("'fbclid'=>true"),'URL normalization must remove common click trackers');
+must(service.includes('if(hash_equals($pageComparable,$canonicalComparable))$preferred=$canonical;'),'page-controlled canonicals must not alias unrelated origins');
 must(service.includes("['private','team','public']"),'Private/Team/Public publication policy missing');
 must(service.includes("vp3_human_team_authorized_v370"),'Team publication must use live server-side team authorization');
 must(service.includes("Legacy Phase 4/5 Browser Shares"),'legacy Browser Share authorization/backfill boundary missing');
