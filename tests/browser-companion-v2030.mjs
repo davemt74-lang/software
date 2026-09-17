@@ -61,6 +61,8 @@ must(!background.includes('chrome.storage.sync'), 'device credentials must not s
 must(background.includes('async function clearRevokedConnection()'), 'revoked credential cleanup helper missing');
 must(background.includes("await storage.remove(['device_id', 'device_credential', 'connected_user', 'approved_capabilities', 'pending_connection', 'session', 'last_share'])"), 'revoked state must clear local credentials and cached identity');
 must(background.includes("revoked.code = 'reconnect_required'"), 'revoked session refresh must return an explicit reconnect state');
+must(background.includes("await storage.get(['device_id', 'pending_connection'])"), 'VP3 site changes must inspect connection state');
+must(background.includes('Disconnect this browser from the current VP3 site before changing the VP3 site.'), 'device credentials must not be carried across VP3 origins');
 
 for (const capability of ['team.destinations.read','team.share.create','agent.message','knowledge.write','task.propose']) {
   must(background.includes(`'${capability}'`), `requested capability ${capability} missing`);
