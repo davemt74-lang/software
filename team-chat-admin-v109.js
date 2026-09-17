@@ -3,9 +3,11 @@
 
   const BUILD = 'team-chat-bootstrap-v236-20260905';
   const ASSET_BUILD = 'team-chat-light-v117-20260905';
+  const BROWSER_SHARE_BUILD = 'browser-share-chat-feed-v2020-20260917';
   const proof = window.STONEFELLOW_TEAM_CHAT_RUNTIME = {
     build: BUILD,
     assetBuild: ASSET_BUILD,
+    browserShareBuild: BROWSER_SHARE_BUILD,
     bootstrapLoaded: true,
     railCreated: false,
     runtimeLoaded: false,
@@ -23,6 +25,19 @@
     document.body?.classList.remove('sf-team-rail-active');
   }
 
+  function loadBrowserShareAddon(endpoint) {
+    if (!endpoint || document.querySelector('script[data-team-chat-browser-share-v2020]')) return;
+    try {
+      const endpointUrl = new URL(endpoint, window.location.href);
+      const assetBase = new URL('../', endpointUrl);
+      const script = document.createElement('script');
+      script.src = new URL('team-chat-browser-share-v2020.js?v=' + BROWSER_SHARE_BUILD, assetBase).toString();
+      script.defer = true;
+      script.dataset.teamChatBrowserShareV2020 = BROWSER_SHARE_BUILD;
+      document.body.appendChild(script);
+    } catch (error) {}
+  }
+
   function boot() {
     /* Agent Chat already renders the canonical Team Chat widget directly.
        Reusing it avoids a second poller, duplicate incoming-message sounds and
@@ -34,6 +49,7 @@
       proof.railCreated = true;
       proof.runtimeLoaded = true;
       proof.endpoint = String(window.STONEFELLOW_TEAM_CHAT.endpoint || '');
+      loadBrowserShareAddon(proof.endpoint);
       return;
     }
 
@@ -115,7 +131,10 @@
     script.src = new URL('team-chat-v109.js?v=' + ASSET_BUILD, assetBase).toString();
     script.async = false;
     script.dataset.teamChatRuntimeScript = ASSET_BUILD;
-    script.addEventListener('load', () => { proof.runtimeLoaded = true; }, { once:true });
+    script.addEventListener('load', () => {
+      proof.runtimeLoaded = true;
+      loadBrowserShareAddon(endpoint);
+    }, { once:true });
     document.body.appendChild(script);
   }
 

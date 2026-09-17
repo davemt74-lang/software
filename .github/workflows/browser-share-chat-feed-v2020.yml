@@ -1,0 +1,56 @@
+name: Browser Share Chat Feed v20.20
+
+on:
+  push:
+    branches:
+      - main
+      - feature/browser-share-chat-feed-v2020
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          coverage: none
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Phase 2 Browser Share regression contracts
+        run: |
+          node tests/browser-share-v2010.mjs
+          node tests/browser-share-v2011.mjs
+
+      - name: Phase 3 Browser Share Chat Feed contract
+        run: node tests/browser-share-chat-feed-v2020.mjs
+
+      - name: JavaScript syntax
+        run: |
+          node --check browser-share-card-v2020.js
+          node --check messages-v320.js
+          node --check team-chat-browser-share-v2020.js
+          node --check team-chat-admin-v109.js
+          node --check tests/browser-share-chat-feed-v2020.mjs
+
+      - name: PHP syntax
+        run: |
+          php -l includes/browser-share-chat-feed-v2020.php
+          php -l api/browser-share-chat-feed-v2020.php
+          php -l api/messages-v320.php
+          php -l api/team-chat-v320.php
+          php -l includes/agent-surface-context-v131.php
+          php -l includes/bootstrap.php
+          php -l messages.php

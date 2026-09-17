@@ -2,6 +2,7 @@
 declare(strict_types=1);
 require dirname(__DIR__).'/includes/bootstrap.php';
 require_once dirname(__DIR__).'/includes/human-messaging-block-v370.php';
+require_once dirname(__DIR__).'/includes/browser-share-chat-feed-v2020.php';
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
 function vp3_messages_json_v320(array $payload,int $status=200): never{http_response_code($status);echo json_encode($payload,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);exit;}
@@ -11,7 +12,7 @@ try{vp3_human_messaging_v370_ensure_schema($pdo);if(!vp3_human_messaging_v370_re
 $action=(string)($_POST['action']??$_GET['action']??'inbox');
 try{
  if($action==='inbox')vp3_messages_json_v320(['ok'=>true,'inbox'=>vp3_human_inbox_v370($pdo,$uid),'settings'=>vp3_social_settings_v320($pdo,$uid)]);
- if($action==='conversation'){$cid=max(0,(int)($_GET['conversation_id']??0));$after=max(0,(int)($_GET['after']??0));$c=vp3_human_conversation_v370($pdo,$cid);if(!$c||!vp3_human_can_access_v370($pdo,$c,$uid))vp3_messages_json_v320(['ok'=>false,'error'=>'not_found'],404);vp3_messages_json_v320(['ok'=>true,'conversation'=>$c,'request'=>vp3_human_request_v370($pdo,$cid),'messages'=>vp3_human_messages_v370($pdo,$cid,$uid,$after),'last_read_message_id'=>vp3_human_read_cursor_v370($pdo,$cid,$uid)]);}
+ if($action==='conversation'){$cid=max(0,(int)($_GET['conversation_id']??0));$after=max(0,(int)($_GET['after']??0));$c=vp3_human_conversation_v370($pdo,$cid);if(!$c||!vp3_human_can_access_v370($pdo,$c,$uid))vp3_messages_json_v320(['ok'=>false,'error'=>'not_found'],404);$messages=vp3_human_messages_v370($pdo,$cid,$uid,$after);$messages=vp3_browser_share_enrich_messages_v2020($pdo,$messages,$uid);vp3_messages_json_v320(['ok'=>true,'conversation'=>$c,'request'=>vp3_human_request_v370($pdo,$cid),'messages'=>$messages,'last_read_message_id'=>vp3_human_read_cursor_v370($pdo,$cid,$uid)]);}
  if($action==='relationship'){$target=max(0,(int)($_GET['user_id']??0));if($target<1||$target===$uid)vp3_messages_json_v320(['ok'=>false,'error'=>'invalid_user'],422);vp3_messages_json_v320(['ok'=>true,'relationship'=>vp3_social_relationship_state_v320($pdo,$uid,$target)]);}
  if($action==='start'){vp3_messages_require_post_v320();$result=vp3_human_start_direct_v370($pdo,$uid,max(0,(int)($_POST['user_id']??0)),(string)($_POST['message']??''));vp3_messages_json_v320(['ok'=>true]+$result);}
  if($action==='send'){vp3_messages_require_post_v320();vp3_messages_json_v320(['ok'=>true,'message'=>vp3_human_send_message_v370($pdo,max(0,(int)($_POST['conversation_id']??0)),$uid,(string)($_POST['message']??''))]);}
