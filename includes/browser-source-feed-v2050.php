@@ -416,10 +416,12 @@ function vp3_browser_source_cursor_decode_v2050(string $cursor): int
     return is_array($data)?max(0,(int)($data['i']??0)):0;
 }
 
-function vp3_browser_source_this_page_v2050(PDO $pdo,int $viewerUserId,string $url,string $canonicalUrl='',string $title='',int $limit=25,string $cursor=''): array
+function vp3_browser_source_this_page_v2050(PDO $pdo,int $viewerUserId,string $url,string $canonicalUrl='',string $title='',int $limit=25,string $cursor='',string $currentPageHash=''): array
 {
     vp3_browser_source_feed_require_ready_v2050($pdo);
     $identity=vp3_browser_source_identity_v2050($url,$canonicalUrl,$title);
+    $currentPageHash=strtolower(trim($currentPageHash));
+    if(!preg_match('/^[a-f0-9]{64}$/',$currentPageHash))$currentPageHash='';
     $source=vp3_browser_source_row_by_hash_v2050($pdo,(string)$identity['url_hash']);
     if(!$source){
         return [
@@ -445,7 +447,14 @@ function vp3_browser_source_this_page_v2050(PDO $pdo,int $viewerUserId,string $u
         $lastScanned=$id;
         $row=vp3_browser_source_share_row_by_id_v2050($pdo,$id);
         if(!$row||!vp3_browser_source_share_authorized_v2050($pdo,$row,$viewerUserId))continue;
-        $items[]=vp3_browser_source_item_v2050($pdo,$row,$viewerUserId,true);
+        $item=vp3_browser_source_item_v2050($pdo,$row,$viewerUserId,true);
+        if($currentPageHash!=='' && (string)($row['version_basis']??'')==='page_text_sha256'){
+            $changed=!hash_equals((string)($row['source_version_hash']??''),$currentPageHash);
+            $item['source_version']['changed']=$changed;
+            $item['source_version']['is_current']=!$changed;
+            $item['source_version']['badge']=$changed?'Source changed':'Current page snapshot';
+        }
+        $items[]=$item;
         if(count($items)>=$limit)break;
     }
     return [
