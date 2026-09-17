@@ -25,6 +25,14 @@ if(!$source){
     $feed=vp3_browser_source_this_page_v2050(
         $pdo,$userId,(string)$source['normalized_url'],(string)$source['canonical_url'],(string)$source['source_title'],50,''
     );
+    // A private follow alone must not publish source metadata to anonymous web
+    // visitors. Public source pages exist only when at least one annotation is
+    // actually visible under the same server-side authorization rules.
+    if($userId<1 && empty($feed['items'])){
+        http_response_code(404);
+        $source=null;
+        $pageTitle='Source not found';
+    }
 }
 function source_page_e_v2050(string $value): string{return htmlspecialchars($value,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8');}
 function source_page_media_v2050(array $media): string{
