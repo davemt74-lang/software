@@ -1,20 +1,64 @@
-# VP3 Browser Companion v20.30
+# VP3 Browser Companion v20.40
 
-Chrome Manifest V3 companion for the VP3 Browser Share workflow.
+Chrome Manifest V3 companion for VP3 Browser Share, including highlighted text, screenshot regions, source-media moments, and voice commentary.
 
-## First usable loop
+## Capture and share
 
 1. Load the extension in Chrome.
 2. Open the side panel and connect the browser to VP3.
 3. Approve the connection in the VP3 tab that opens.
-4. Highlight text on any normal HTTP(S) page.
-5. Either open the VP3 side panel and refresh the selection, or right-click the selection and choose **Share selection with VP3**.
-6. Choose a Team or conversation, optionally add a note, and share.
-7. Use **Ask VP3**, **Save to Knowledge**, **Create Task**, **Open source**, or **Open in VP3 Messages**.
+4. Open any normal HTTP(S) page and choose one or more capture types:
+   - highlight text;
+   - **Screenshot region** and drag over the visible area to keep;
+   - **Media moment** on a detected YouTube, audio, or video page and set a source timestamp window up to 90 seconds;
+   - **Voice commentary** to record an audio note up to 90 seconds.
+5. Choose a Team or conversation, optionally add a note, and share.
+6. Use **Ask VP3**, **Save to Knowledge**, **Create Task**, **Open source**, or **Open in VP3 Messages**.
 
-## Local installation
+The existing right-click **Share selection with VP3** path remains available for text selections.
 
-Open `chrome://extensions`, enable **Developer mode**, choose **Load unpacked**, and select this `browser-companion` directory.
+## What rich capture stores
+
+Browser Share remains the canonical share/message object. Rich capture does not place screenshots or audio blobs into Browser Share text fields.
+
+- Screenshot bytes and voice commentary are private media attachments linked to the Browser Share.
+- YouTube/audio/video moments are source references with bounded start/end timestamps. v20.40 does not download or rip third-party media streams.
+- If a share contains no highlighted text, the canonical Browser Share receives only a short readable fallback such as “Screenshot captured from …” while the actual media remains in the private media layer.
+- Media reads always re-resolve the current Browser Share authorization. Deleting the share or losing conversation access also removes access to the attachment.
+- Binary attachment retries are idempotent per Browser Share, media kind, and content hash.
+
+## Private media storage
+
+The default private media directory is outside the application web root:
+
+`../vp3-private/browser-share-media`
+
+A production installation can override it in `config.php`:
+
+```php
+'uploads' => [
+    // existing upload settings...
+    'browser_share_private_root' => '/absolute/private/path/browser-share-media',
+],
+```
+
+The PHP/web worker user needs read/write access to this directory. Files are created with private permissions and are served only through the live-authorized VP3 media endpoint.
+
+After deploying v20.40, run the normal `/upgrade.php` flow once to install `browser_share_media_v2040` and `browser_share_media_jobs_v2040`.
+
+## Media inspection worker
+
+Binary screenshot/commentary uploads enter `processing` state and are inspected by the CLI worker before becoming `ready`:
+
+```bash
+php jobs/browser-share-media-worker-v2040.php 20
+```
+
+The optional numeric argument controls the maximum number of jobs processed in that run, capped at 50. A normal production scheduler can invoke this command repeatedly. Failed inspections retry up to three times with a delay and then move to `failed`.
+
+## Local Chrome installation
+
+Open `chrome://extensions`, enable **Developer mode**, choose **Load unpacked**, and select this `browser-companion` directory. The CI package `vp3-browser-companion-v20.40.0.zip` is directly loadable/extractable and contains `manifest.json` at the ZIP root.
 
 The default VP3 site is `https://vp3.me`. Another HTTPS VP3 installation can be selected in Extension Settings. Local development may use `http://localhost` or `http://127.0.0.1`; Chrome asks for explicit access to the selected origin.
 
@@ -26,11 +70,14 @@ Production VP3 installations should configure the published extension's exact `c
 
 Disconnecting from the extension calls the VP3 self-revoke endpoint before local credentials are removed, revoking active sessions for that browser.
 
-## Privacy boundaries
+## Privacy and safety boundaries
 
-- Only a user-selected text capture is sent in v20.30.
 - Browser Share accepts only HTTP(S) source URLs.
-- Selection payloads are bounded to 32,768 UTF-8 bytes; notes are bounded to 4,096 UTF-8 bytes.
-- Browser Share content is stored by the existing immutable Browser Share backend and linked to canonical Human Messaging; the extension adds no parallel content store.
+- Selection payloads remain bounded to 32,768 UTF-8 bytes; notes remain bounded to 4,096 UTF-8 bytes.
+- Screenshot uploads are bounded to 8 MB and PNG/JPEG/WebP.
+- Voice commentary uploads are bounded to 16 MB and an explicit audio MIME allowlist.
+- Region screenshots are cropped locally from Chrome's visible-tab capture.
+- Source-media windows are clamped server-side to 90 seconds and store timestamps rather than copied third-party media.
+- The extension does not request `tabCapture` and does not call media-element `captureStream()`.
 - **Ask VP3** passes only the Browser Share public ID into the web handoff. VP3 re-resolves authorization and current share state before Agent Chat receives the content.
-- Knowledge and Task actions re-resolve the Browser Share server-side and use the existing Personal Knowledge and Agent Workflow systems.
+- Knowledge and Task actions continue to reuse the existing Personal Knowledge and Agent Workflow systems.

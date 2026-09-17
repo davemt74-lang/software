@@ -43,12 +43,56 @@
         <div id="pageHost" class="page-host"></div>
       </section>
 
-      <section class="card">
+      <section class="card capture-card">
+        <div class="row-between capture-heading">
+          <div>
+            <div class="eyebrow">Capture</div>
+            <strong>Add what matters</strong>
+          </div>
+          <span id="captureSummary" class="capture-summary">Text</span>
+        </div>
+
         <label class="field">
-          <span>Highlighted text</span>
-          <textarea id="selectedText" rows="7" readonly placeholder="Highlight text on the page, then click Refresh—or right-click the selection and choose “Share selection with VP3.”"></textarea>
+          <span>Highlighted text <small>optional with rich capture</small></span>
+          <textarea id="selectedText" rows="5" readonly placeholder="Highlight text on the page, then click Refresh—or right-click the selection and choose “Share selection with VP3.”"></textarea>
         </label>
         <div id="selectionCount" class="counter">0 / 32,768 bytes</div>
+
+        <div class="capture-tools">
+          <button id="captureScreenshotBtn" type="button">
+            <span class="tool-title">Screenshot region</span>
+            <small>Drag over the part of the page you want to keep</small>
+          </button>
+          <button id="captureMediaBtn" type="button" hidden>
+            <span class="tool-title">Media moment</span>
+            <small id="mediaDetectedText">Capture the current playback position</small>
+          </button>
+          <button id="recordCommentaryBtn" type="button">
+            <span class="tool-title">Voice commentary</span>
+            <small id="commentaryStatus">Add your own audio note, up to 90 seconds</small>
+          </button>
+        </div>
+
+        <div id="screenshotPreview" class="attachment-preview" hidden>
+          <div class="preview-head"><strong>Screenshot region</strong><button id="removeScreenshotBtn" class="text-btn danger-text" type="button">Remove</button></div>
+          <img id="screenshotImage" alt="Captured screenshot region">
+          <small id="screenshotMeta"></small>
+        </div>
+
+        <div id="mediaPreview" class="attachment-preview" hidden>
+          <div class="preview-head"><strong id="mediaPreviewTitle">Media moment</strong><button id="removeMediaBtn" class="text-btn danger-text" type="button">Remove</button></div>
+          <div class="clip-row">
+            <label><span>Start</span><input id="mediaStart" type="number" min="0" step="0.1"></label>
+            <label><span>End</span><input id="mediaEnd" type="number" min="0" step="0.1"></label>
+          </div>
+          <small id="mediaClipHint">Maximum clip window: 90 seconds. VP3 stores the source timestamps, not a downloaded copy.</small>
+        </div>
+
+        <div id="commentaryPreview" class="attachment-preview" hidden>
+          <div class="preview-head"><strong>Voice commentary</strong><button id="removeCommentaryBtn" class="text-btn danger-text" type="button">Remove</button></div>
+          <audio id="commentaryAudio" controls></audio>
+          <small id="commentaryMeta"></small>
+        </div>
       </section>
 
       <section class="card">
@@ -63,12 +107,14 @@
           <textarea id="shareNote" rows="3" maxlength="4096" placeholder="Why are you sharing this?"></textarea>
         </label>
         <button id="shareBtn" class="primary" type="button">Share with VP3</button>
+        <p class="hint">Rich captures stay linked to the Browser Share and inherit its live VP3 access rules.</p>
       </section>
 
       <section id="successCard" class="card success-card" hidden>
         <div class="eyebrow">Shared</div>
         <h2>Sent to VP3</h2>
         <p id="shareResultText" class="hint"></p>
+        <div id="shareMediaResult" class="media-result" hidden></div>
         <div class="action-grid">
           <button id="askAgentBtn" type="button">Ask VP3</button>
           <button id="saveKnowledgeBtn" type="button">Save to Knowledge</button>

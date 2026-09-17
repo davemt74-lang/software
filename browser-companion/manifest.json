@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "VP3 Browser Companion",
-  "version": "20.30.0",
-  "description": "Share highlighted web content into VP3 teams, conversations, Knowledge, and Agent workflows.",
+  "version": "20.40.0",
+  "description": "Capture highlighted text, screenshot regions, media moments, and voice commentary into VP3.",
   "minimum_chrome_version": "116",
   "permissions": [
     "activeTab",

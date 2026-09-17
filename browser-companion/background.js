@@ -1,6 +1,6 @@
 const VP3_DEFAULT_BASE = 'https://vp3.me';
 const VP3_CONTRACT_VERSION = '1';
-const VP3_EXTENSION_VERSION = '20.30.0';
+const VP3_EXTENSION_VERSION = '20.40.0';
 const VP3_REQUESTED_CAPABILITIES = [
   'team.destinations.read',
   'team.share.create',
@@ -9,6 +9,7 @@ const VP3_REQUESTED_CAPABILITIES = [
   'knowledge.write',
   'task.propose'
 ];
+const VP3_MEDIA_CLIP_MAX_SECONDS = 90;
 
 const storage = {
   async get(keys = null) { return chrome.storage.local.get(keys); },
@@ -43,6 +44,28 @@ function utf8Limit(value, maxBytes) {
     result += character;
   }
   return result;
+}
+
+function secondsLabel(value) {
+  const seconds = Math.max(0, Math.floor(Number(value || 0)));
+  const minutes = Math.floor(seconds / 60);
+  return `${minutes}:${String(seconds % 60).padStart(2, '0')}`;
+}
+
+function base64UrlJson(value) {
+  const bytes = new TextEncoder().encode(JSON.stringify(value || {}));
+  let binary = '';
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+}
+
+function dataUrlBytes(dataUrl) {
+  const match = /^data:([^;,]+);base64,(.+)$/i.exec(String(dataUrl || ''));
+  if (!match) throw new Error('Captured media is invalid.');
+  const binary = atob(match[2]);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+  return { mime: match[1].toLowerCase(), bytes };
 }
 
 async function ensureInstallation() {
@@ -146,27 +169,120 @@ async function activeCapture(tabHint = null) {
   let tab = tabHint;
   if (!tab?.id) [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab?.id || !/^https?:/i.test(String(tab.url || ''))) return { available: false, reason: 'Open a normal web page to capture content.' };
-  let result = { selected_text: '', canonical_url: '' };
+  let result = { selected_text: '', canonical_url: '', media: null };
   try {
     const injected = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
-      func: () => ({
-        selected_text: String(window.getSelection?.() || '').trim(),
-        canonical_url: document.querySelector('link[rel="canonical"]')?.href || ''
-      })
+      func: () => {
+        const selected_text = String(window.getSelection?.() || '').trim();
+        const canonical_url = document.querySelector('link[rel="canonical"]')?.href || '';
+        const candidate = document.querySelector('video, audio');
+        let media = null;
+        if (candidate) {
+          const pageUrl = location.href;
+          const rawSrc = candidate.currentSrc || candidate.src || '';
+          const sourceUrl = /^https?:/i.test(rawSrc) ? rawSrc : pageUrl;
+          const isYoutube = /(^|\.)youtube\.com$/i.test(location.hostname) || /(^|\.)youtu\.be$/i.test(location.hostname);
+          const tag = candidate.tagName.toLowerCase();
+          media = {
+            kind: isYoutube ? 'youtube_clip' : (tag === 'audio' ? 'audio_reference' : 'video_reference'),
+            source_media_url: isYoutube ? pageUrl : sourceUrl,
+            source_media_title: document.title || '',
+            source_media_kind: isYoutube ? 'youtube' : tag,
+            current_time: Number.isFinite(candidate.currentTime) ? candidate.currentTime : 0,
+            duration: Number.isFinite(candidate.duration) ? candidate.duration : 0,
+            paused: Boolean(candidate.paused)
+          };
+        }
+        return { selected_text, canonical_url, media };
+      }
     });
     result = injected?.[0]?.result || result;
   } catch {
-    // Chrome blocks injection on privileged pages. The tab metadata is still safe to show.
+    // Chrome blocks injection on privileged pages. Tab metadata remains usable.
   }
   return {
     available: true,
     tab_id: tab.id,
+    window_id: tab.windowId,
     source_url: tab.url || '',
     canonical_url: result.canonical_url || tab.url || '',
     title: String(tab.title || '').slice(0, 512),
     selected_text: utf8Limit(String(result.selected_text || ''), 32768),
+    media: result.media || null,
     captured_at: new Date().toISOString()
+  };
+}
+
+async function selectScreenshotRegion() {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (!tab?.id || !/^https?:/i.test(String(tab.url || ''))) throw new Error('Open a normal web page before capturing a screenshot.');
+  const injected = await chrome.scripting.executeScript({
+    target: { tabId: tab.id },
+    func: () => new Promise((resolve) => {
+      document.getElementById('vp3-region-capture-overlay')?.remove();
+      const overlay = document.createElement('div');
+      overlay.id = 'vp3-region-capture-overlay';
+      Object.assign(overlay.style, { position:'fixed', inset:'0', zIndex:'2147483647', cursor:'crosshair', background:'rgba(0,0,0,.18)', userSelect:'none' });
+      const hint = document.createElement('div');
+      hint.textContent = 'Drag to capture a region · Esc to cancel';
+      Object.assign(hint.style, { position:'fixed', top:'16px', left:'50%', transform:'translateX(-50%)', background:'#111', color:'#fff', padding:'8px 12px', borderRadius:'8px', font:'13px system-ui', pointerEvents:'none' });
+      const box = document.createElement('div');
+      Object.assign(box.style, { position:'fixed', border:'2px solid #fff', background:'rgba(255,255,255,.10)', boxShadow:'0 0 0 9999px rgba(0,0,0,.18)', display:'none', pointerEvents:'none' });
+      overlay.append(hint, box);
+      document.documentElement.append(overlay);
+      let startX = 0, startY = 0, dragging = false;
+      const cleanup = (value) => { window.removeEventListener('keydown', onKey, true); overlay.remove(); resolve(value); };
+      const onKey = (event) => { if (event.key === 'Escape') { event.preventDefault(); cleanup(null); } };
+      window.addEventListener('keydown', onKey, true);
+      overlay.addEventListener('pointerdown', (event) => {
+        dragging = true; startX = event.clientX; startY = event.clientY; box.style.display = 'block'; overlay.setPointerCapture(event.pointerId);
+      });
+      overlay.addEventListener('pointermove', (event) => {
+        if (!dragging) return;
+        const x = Math.min(startX, event.clientX), y = Math.min(startY, event.clientY);
+        const width = Math.abs(event.clientX - startX), height = Math.abs(event.clientY - startY);
+        Object.assign(box.style, { left:`${x}px`, top:`${y}px`, width:`${width}px`, height:`${height}px` });
+      });
+      overlay.addEventListener('pointerup', (event) => {
+        if (!dragging) return;
+        dragging = false;
+        const x = Math.max(0, Math.min(startX, event.clientX));
+        const y = Math.max(0, Math.min(startY, event.clientY));
+        const width = Math.abs(event.clientX - startX);
+        const height = Math.abs(event.clientY - startY);
+        if (width < 8 || height < 8) return cleanup(null);
+        cleanup({ x, y, width, height, device_pixel_ratio: window.devicePixelRatio || 1, viewport_width: innerWidth, viewport_height: innerHeight });
+      });
+    })
+  });
+  const rect = injected?.[0]?.result;
+  if (!rect) return { cancelled: true };
+  const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' });
+  const source = await fetch(dataUrl);
+  const bitmap = await createImageBitmap(await source.blob());
+  const viewportWidth = Math.max(1, Number(rect.viewport_width || 0));
+  const viewportHeight = Math.max(1, Number(rect.viewport_height || 0));
+  const fallbackScale = Math.max(0.5, Number(rect.device_pixel_ratio || 1));
+  const scaleX = Number.isFinite(bitmap.width / viewportWidth) ? bitmap.width / viewportWidth : fallbackScale;
+  const scaleY = Number.isFinite(bitmap.height / viewportHeight) ? bitmap.height / viewportHeight : fallbackScale;
+  const sx = Math.min(bitmap.width - 1, Math.max(0, Math.round(rect.x * scaleX)));
+  const sy = Math.min(bitmap.height - 1, Math.max(0, Math.round(rect.y * scaleY)));
+  const sw = Math.min(bitmap.width - sx, Math.max(1, Math.round(rect.width * scaleX)));
+  const sh = Math.min(bitmap.height - sy, Math.max(1, Math.round(rect.height * scaleY)));
+  const canvas = new OffscreenCanvas(sw, sh);
+  const context = canvas.getContext('2d');
+  context.drawImage(bitmap, sx, sy, sw, sh, 0, 0, sw, sh);
+  bitmap.close();
+  const blob = await canvas.convertToBlob({ type: 'image/png' });
+  if (blob.size > 8 * 1024 * 1024) throw new Error('Captured screenshot is larger than 8 MB. Select a smaller region.');
+  const array = new Uint8Array(await blob.arrayBuffer());
+  let binary = '';
+  for (let i = 0; i < array.length; i += 0x8000) binary += String.fromCharCode(...array.subarray(i, Math.min(i + 0x8000, array.length)));
+  return {
+    cancelled: false,
+    data_url: `data:image/png;base64,${btoa(binary)}`,
+    metadata: { width: sw, height: sh, device_pixel_ratio: Number(rect.device_pixel_ratio || 1), capture_scale_x: scaleX, capture_scale_y: scaleY, x: rect.x, y: rect.y }
   };
 }
 
@@ -221,10 +337,25 @@ async function destinations() {
   return authorizedFetch('/api/extension-share-destinations.php', { method: 'GET' }, 'team.destinations.read');
 }
 
+function fallbackSelection(capture, rich = {}) {
+  const selected = utf8Limit(String(capture?.selected_text || '').trim(), 32768);
+  if (selected) return selected;
+  const title = String(capture?.title || 'this page').trim() || 'this page';
+  if (rich.screenshot?.data_url) return `Screenshot captured from ${title}.`;
+  if (rich.media_reference?.kind) {
+    const start = Number(rich.media_reference.metadata?.start_seconds || 0);
+    const end = Number(rich.media_reference.metadata?.end_seconds || start);
+    return `Media clip ${secondsLabel(start)}–${secondsLabel(end)} captured from ${title}.`;
+  }
+  if (rich.commentary?.data_url) return `Voice commentary captured from ${title}.`;
+  return '';
+}
+
 async function createShare(input) {
   const capture = input?.capture || {};
-  const selection = utf8Limit(String(capture.selected_text || '').trim(), 32768);
-  if (!selection) throw new Error('Highlight text on the page before sharing.');
+  const rich = input?.rich_media || {};
+  const selection = fallbackSelection(capture, rich);
+  if (!selection) throw new Error('Highlight text or add a rich capture before sharing.');
   const destination = input?.destination || {};
   if (!['team_general', 'conversation'].includes(destination.kind) || !Number(destination.id)) throw new Error('Choose a VP3 destination.');
   const sourceUrl = String(capture.source_url || '');
@@ -261,6 +392,60 @@ async function createShare(input) {
   return payload;
 }
 
+async function uploadBinaryMedia(browserShareId, kind, dataUrl, metadata = {}, name = '') {
+  const { mime, bytes } = dataUrlBytes(dataUrl);
+  return authorizedFetch(`/api/browser-share-media-v2040.php?browser_share_id=${encodeURIComponent(browserShareId)}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': mime,
+      'X-VP3-Media-Kind': kind,
+      'X-VP3-Media-Name': encodeURIComponent(String(name || '').slice(0, 180)),
+      'X-VP3-Media-Metadata': base64UrlJson(metadata)
+    },
+    body: bytes
+  }, 'team.share.create');
+}
+
+async function createMediaReference(browserShareId, reference) {
+  return authorizedFetch('/api/browser-share-media-v2040.php', {
+    method: 'POST',
+    json: {
+      browser_share_id: browserShareId,
+      kind: reference.kind,
+      metadata: reference.metadata || {}
+    }
+  }, 'team.share.create');
+}
+
+async function createRichShare(input) {
+  const payload = await createShare(input);
+  const browserShareId = String(payload?.browser_share?.id || '');
+  if (!browserShareId) return { ...payload, media: [], media_errors: ['Browser Share media could not resolve the new share ID.'] };
+  const media = [];
+  const media_errors = [];
+  const rich = input?.rich_media || {};
+  if (rich.screenshot?.data_url) {
+    try {
+      const result = await uploadBinaryMedia(browserShareId, 'screenshot', rich.screenshot.data_url, rich.screenshot.metadata || {}, 'browser-share-screenshot.png');
+      if (result.media) media.push(result.media);
+    } catch (error) { media_errors.push(`Screenshot: ${error.message}`); }
+  }
+  if (rich.media_reference?.kind) {
+    try {
+      const result = await createMediaReference(browserShareId, rich.media_reference);
+      if (result.media) media.push(result.media);
+    } catch (error) { media_errors.push(`Media reference: ${error.message}`); }
+  }
+  if (rich.commentary?.data_url) {
+    try {
+      const extension = /ogg/i.test(rich.commentary.mime_type || '') ? 'ogg' : /mp4/i.test(rich.commentary.mime_type || '') ? 'm4a' : 'webm';
+      const result = await uploadBinaryMedia(browserShareId, 'commentary_audio', rich.commentary.data_url, rich.commentary.metadata || {}, `browser-share-commentary.${extension}`);
+      if (result.media) media.push(result.media);
+    } catch (error) { media_errors.push(`Commentary: ${error.message}`); }
+  }
+  return { ...payload, media, media_errors };
+}
+
 async function browserShareAction(action, browserShareId, folderId = 0) {
   if (!['ask_agent', 'save_knowledge', 'create_task'].includes(action)) throw new Error('Unsupported Browser Share action.');
   const capability = action === 'save_knowledge' ? 'knowledge.write' : action === 'create_task' ? 'task.propose' : 'agent.message';
@@ -276,8 +461,6 @@ async function disconnect() {
     try {
       await authorizedFetch('/api/extension-device-disconnect-v2030.php', { method: 'POST', json: {} });
     } catch (error) {
-      // A 401 means the server has already invalidated this credential. For all
-      // other failures retain local credentials so the user can retry revocation.
       if (error.status !== 401) throw error;
     }
   }
@@ -321,11 +504,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     switch (message?.type) {
       case 'state': return publicState();
       case 'capture': return activeCapture();
+      case 'capture_region': return selectScreenshotRegion();
       case 'clear_pending_capture': await storage.remove('pending_capture'); return { ok: true };
       case 'connect': return beginConnect(message.device_name);
       case 'poll_connect': return pollConnect();
       case 'destinations': return destinations();
-      case 'share': return createShare(message);
+      case 'share': return createRichShare(message);
       case 'share_action': return browserShareAction(message.action, message.browser_share_id, message.folder_id);
       case 'disconnect': return disconnect();
       case 'open_url': {

@@ -1,10 +1,10 @@
-name: Browser Companion MV3 v20.30
+name: Browser Companion Rich Capture v20.40
 
 on:
   push:
     branches:
       - main
-      - feature/browser-companion-mv3-v2030
+      - feature/browser-companion-rich-capture-v2040
   pull_request:
 
 permissions:
@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   contract:
-    name: Browser Companion contract · PHP ${{ matrix.php }}
+    name: Rich capture contract · PHP ${{ matrix.php }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     strategy:
@@ -34,38 +34,35 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Phase 1-3 Browser Companion regressions
+      - name: Phase 1-4 Browser Companion regressions
         run: |
           node tests/extension-device-auth-v2000.mjs
           node tests/extension-device-auth-v2001.mjs
           node tests/browser-share-v2010.mjs
           node tests/browser-share-v2011.mjs
           node tests/browser-share-chat-feed-v2020.mjs
+          node tests/browser-companion-v2030.mjs
 
-      - name: Phase 4 Browser Companion contract
-        run: node tests/browser-companion-v2030.mjs
+      - name: Phase 5 rich capture contract
+        run: node tests/browser-companion-rich-capture-v2040.mjs
 
       - name: Manifest contract
-        run: |
-          node - <<'NODE'
-          const m = require('./browser-companion/manifest.json');
-          const parts = String(m.version || '').split('.').map(Number);
-          const compatible = Number.isInteger(parts[0]) && Number.isInteger(parts[1]) && (parts[0] > 20 || (parts[0] === 20 && parts[1] >= 30));
-          if (m.manifest_version !== 3 || !compatible) process.exit(1);
-          NODE
+        run: node -e "const m=require('./browser-companion/manifest.json'); if(m.manifest_version!==3||m.version!=='20.40.0') process.exit(1)"
 
       - name: JavaScript syntax
         run: |
           node --check browser-companion/background.js
           node --check browser-companion/sidepanel.js
           node --check browser-companion/options.js
+          node --check browser-share-card-v2020.js
           node --check tests/browser-companion-v2030.mjs
+          node --check tests/browser-companion-rich-capture-v2040.mjs
 
       - name: PHP syntax
         run: |
-          php -l api/extension-browser-share-actions-v2030.php
-          php -l api/extension-device-disconnect-v2030.php
-          php -l browser-share-agent-handoff.php
+          php -l includes/browser-share-media-v2040.php
+          php -l api/browser-share-media-v2040.php
+          php -l jobs/browser-share-media-worker-v2040.php
 
   package:
     name: Package Chrome extension
@@ -76,29 +73,26 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Resolve extension version
-        run: echo "EXT_VERSION=$(node -p \"require('./browser-companion/manifest.json').version\")" >> "$GITHUB_ENV"
-
       - name: Build directly loadable extension ZIP
         run: |
           mkdir -p dist
           cd browser-companion
-          zip -r "../dist/vp3-browser-companion-v${EXT_VERSION}.zip" . -x '*.DS_Store'
+          zip -r ../dist/vp3-browser-companion-v20.40.0.zip . -x '*.DS_Store'
           cd ..
-          unzip -t "dist/vp3-browser-companion-v${EXT_VERSION}.zip"
-          unzip -Z1 "dist/vp3-browser-companion-v${EXT_VERSION}.zip" | grep -qx 'manifest.json'
-          if unzip -Z1 "dist/vp3-browser-companion-v${EXT_VERSION}.zip" | grep -q '^browser-companion/'; then
+          unzip -t dist/vp3-browser-companion-v20.40.0.zip
+          unzip -Z1 dist/vp3-browser-companion-v20.40.0.zip | grep -qx 'manifest.json'
+          if unzip -Z1 dist/vp3-browser-companion-v20.40.0.zip | grep -q '^browser-companion/'; then
             echo 'Extension ZIP contains an unexpected wrapper folder.' >&2
             exit 1
           fi
-          sha256sum "dist/vp3-browser-companion-v${EXT_VERSION}.zip" > "dist/vp3-browser-companion-v${EXT_VERSION}.zip.sha256"
+          sha256sum dist/vp3-browser-companion-v20.40.0.zip > dist/vp3-browser-companion-v20.40.0.zip.sha256
 
       - name: Upload directly loadable Browser Companion
         uses: actions/upload-artifact@v4
         with:
-          name: vp3-browser-companion-v${{ env.EXT_VERSION }}
+          name: vp3-browser-companion-v20.40.0
           path: |
-            dist/vp3-browser-companion-v${{ env.EXT_VERSION }}.zip
-            dist/vp3-browser-companion-v${{ env.EXT_VERSION }}.zip.sha256
+            dist/vp3-browser-companion-v20.40.0.zip
+            dist/vp3-browser-companion-v20.40.0.zip.sha256
           if-no-files-found: error
           retention-days: 30
