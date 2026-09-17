@@ -54,7 +54,9 @@ must(share.includes('vp3_human_conversation_v370($pdo,$id,false)'), 'Browser Sha
 must(!share.includes('vp3_human_conversation_v370($pdo,$id,true)'), 'pre-send conversation FOR UPDATE would invert canonical lock order');
 
 must(share.includes('Shared from the web'), 'fallback Chat message marker is required');
-must(!share.match(/fallback_body_v2010[\s\S]{0,800}selected_text/), 'fallback Chat body must not copy captured selected text');
+const fallbackBlock = share.match(/function vp3_browser_share_fallback_body_v2010[\s\S]*?\n}\n\nfunction vp3_browser_share_conversation_sendable_v2010/)?.[0] ?? '';
+must(fallbackBlock !== '', 'fallback Chat-body function could not be isolated');
+must(!fallbackBlock.includes('selected_text'), 'fallback Chat body must not copy captured selected text');
 
 must(share.includes('PRIMARY KEY (device_id,idempotency_key)'), 'idempotency key must be unique per connected browser');
 must(share.includes('INSERT IGNORE INTO browser_share_idempotency_v2010'), 'idempotency reservation must be concurrency-safe');
