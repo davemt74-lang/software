@@ -62,7 +62,7 @@
     if (node.dataset.state !== nextState) node.dataset.state = nextState;
   }
 
-  function workspaceStatus(message, error = false) {
+  function workspaceStatus(message, state = 'idle') {
     let node = document.querySelector('[data-transcription-knowledge-status]');
     if (!node) {
       const button = document.querySelector('[data-listening-workspace-knowledge]');
@@ -74,8 +74,11 @@
       actions.insertAdjacentElement('afterend', node);
     }
     if (node.textContent !== message) node.textContent = message;
-    const nextState = error ? 'error' : 'saved';
-    if (node.dataset.state !== nextState) node.dataset.state = nextState;
+    if (state === 'idle' || state === 'saving') {
+      if (node.dataset.state) delete node.dataset.state;
+    } else if (node.dataset.state !== state) {
+      node.dataset.state = state;
+    }
   }
 
   function renderOptions(select, force = false) {
@@ -120,7 +123,9 @@
     if (button.title !== 'Save this transcription to My Knowledge in its selected folder') {
       button.title = 'Save this transcription to My Knowledge in its selected folder';
     }
-    workspaceStatus(document.querySelector('[data-transcription-knowledge-status]')?.textContent || 'Not saved to My Knowledge yet.');
+    if (!document.querySelector('[data-transcription-knowledge-status]')) {
+      workspaceStatus('Not saved to My Knowledge yet.', 'idle');
+    }
     return true;
   }
 
@@ -161,7 +166,7 @@
     const folderName = currentFolderName(folderId);
 
     button.disabled = true;
-    workspaceStatus(`Saving to My Knowledge · ${folderName}…`);
+    workspaceStatus(`Saving to My Knowledge · ${folderName}…`, 'saving');
     try {
       const response = await fetch(transcriptEndpoint, {
         method: 'POST',
@@ -179,11 +184,11 @@
       proof.lastFolderId = folderId;
       proof.lastError = '';
       const savedFolder = clean(data.folder?.name || folderName);
-      workspaceStatus(`Saved to My Knowledge · ${savedFolder}`);
+      workspaceStatus(`Saved to My Knowledge · ${savedFolder}`, 'saved');
       window.dispatchEvent(new CustomEvent('vp3:transcription-knowledge-saved', {detail:{sessionId,folderId,knowledgeId:Number(data.knowledge_id || 0),source:'transcript'}}));
     } catch (error) {
       proof.lastError = String(error?.message || error);
-      workspaceStatus(proof.lastError, true);
+      workspaceStatus(proof.lastError, 'error');
       throw error;
     } finally {
       button.disabled = false;
@@ -247,7 +252,7 @@
   }, true);
 
   window.addEventListener('stonefellow:artist-listening-document-selected', () => {
-    workspaceStatus('Not saved to My Knowledge yet.');
+    workspaceStatus('Not saved to My Knowledge yet.', 'idle');
     const select = document.querySelector('[data-listening-ai-folder]');
     if (select) {
       select.dataset.userSelected = '0';
