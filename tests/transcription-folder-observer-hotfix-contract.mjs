@@ -32,11 +32,11 @@ assert.match(
   'Folder options must retain their idempotent signature guard',
 );
 
-// Force both loader layers to a new URL so clients that cached the broken runtime
-// do not keep executing it after the hotfix deploys.
+// Keep both loader layers cache-busted whenever the folder/Knowledge bridge changes,
+// while preserving the original observer hotfix guarantees.
 assert.ok(
-  namingRuntime.includes('transcription-knowledge-folders-v313.js?v=shared-folders-v313-hotfix-20260913'),
-  'Artist Listening companion loader must cache-bust the fixed folder runtime',
+  namingRuntime.includes('transcription-knowledge-folders-v313.js?v=transcription-knowledge-roundtrip-v315-20260917'),
+  'Artist Listening companion loader must cache-bust the current folder/Knowledge runtime',
 );
 assert.ok(
   page.includes("artist-listening-naming.js?v=transcription-folder-hotfix-20260913"),
