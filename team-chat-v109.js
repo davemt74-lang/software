@@ -45,6 +45,42 @@
     return browserShareLoader;
   }
 
+  async function mountAgentBrowserShare() {
+    if (!window.STONEFELLOW_CHAT) return;
+    const shareId = String(new URLSearchParams(window.location.search).get('browser_share_id') || '').trim();
+    if (!/^[A-Za-z0-9_-]{8,96}$/.test(shareId)) return;
+    const thread = document.getElementById('chatThread');
+    if (!thread || document.querySelector('[data-agent-browser-share-v2020]')) return;
+    try {
+      const apiUrl = new URL('/api/browser-share-chat-feed-v2020.php', window.location.href);
+      apiUrl.searchParams.set('action', 'get');
+      apiUrl.searchParams.set('browser_share_id', shareId);
+      const [data, lib] = await Promise.all([request(apiUrl.toString()), browserShareComponent()]);
+      if (!data.browser_share?.id || !lib?.create) return;
+      const host = document.createElement('section');
+      host.dataset.agentBrowserShareV2020 = '1';
+      host.style.cssText = 'max-width:790px;margin:0 auto 12px;padding:0 18px;box-sizing:border-box;width:100%';
+      const label = document.createElement('div');
+      label.textContent = 'Browser Share · active Agent context';
+      label.style.cssText = 'font:700 11px/1.3 ui-sans-serif,system-ui;margin:0 0 6px;opacity:.65;text-transform:uppercase;letter-spacing:.04em';
+      const card = lib.create(data.browser_share, {
+        api:'/api/browser-share-chat-feed-v2020.php',
+        csrf:cfg.csrf,
+        chatUrl:'/chat.php',
+        onAsk:() => document.getElementById('chatInput')?.focus()
+      });
+      if (!card) return;
+      host.append(label, card);
+      const composer = document.getElementById('chatComposerShell');
+      if (composer && composer.parentElement === thread) thread.insertBefore(host, composer);
+      else thread.prepend(host);
+    } catch (error) {
+      const url = new URL(window.location.href);
+      url.searchParams.delete('browser_share_id');
+      window.history.replaceState({}, '', url.toString());
+    }
+  }
+
   async function unlockNotificationSound() {
     if (!AudioContextCtor) return;
     try {
@@ -217,5 +253,6 @@
   window.addEventListener('stonefellow:chat-settings-updated', event => applyRuntimeSettings(event.detail || {}));
   applyRuntimeSettings({ sound_enabled:cfg.soundEnabled !== false, social_chat_enabled:cfg.socialChatEnabled !== false });
   void browserShareComponent();
+  void mountAgentBrowserShare();
   void poll();
 })();
