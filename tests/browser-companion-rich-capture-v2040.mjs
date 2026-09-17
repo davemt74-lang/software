@@ -12,6 +12,8 @@ const mediaService = read('includes/browser-share-media-v2040.php');
 const mediaApi = read('api/browser-share-media-v2040.php');
 const worker = read('jobs/browser-share-media-worker-v2040.php');
 const card = read('browser-share-card-v2020.js');
+const bootstrap = read('includes/bootstrap.php');
+const upgrade = read('upgrade.php');
 
 must(manifest.version === '20.40.0', 'rich capture extension version must be v20.40.0');
 must(manifest.manifest_version === 3, 'rich capture must remain Manifest V3');
@@ -59,6 +61,12 @@ must(mediaService.includes('VP3_BROWSER_SHARE_MEDIA_CLIP_MAX_SECONDS_V2040 = 90.
 must(mediaService.includes('browser_share_private_root'), 'private storage override missing');
 must(mediaService.includes("dirname(STONEFELLOW_ROOT).DIRECTORY_SEPARATOR.'vp3-private'"), 'default media storage must be outside the application web root');
 must(!mediaService.includes('base64'), 'binary media must not be persisted as base64 in the database');
+must(mediaService.includes('UNIQUE KEY uq_browser_share_media_dedupe (browser_share_id,media_kind,sha256)'), 'attachment retry dedupe constraint missing');
+must(mediaService.includes('function vp3_browser_share_media_existing_v2040'), 'attachment replay lookup missing');
+must(mediaService.includes("$sha=hash('sha256',$bytes)"), 'binary attachment fingerprint missing');
+must(mediaService.includes("$sha=hash('sha256',$encoded)"), 'source-reference fingerprint missing');
+must(mediaService.includes("$metadata,'processing'"), 'binary attachments must remain processing until inspection succeeds');
+must(mediaService.includes("(string)$e->getCode()==='23000'"), 'concurrent duplicate attachment retries must converge safely');
 
 must(mediaApi.includes('vp3_extension_apply_cors_v2001()'), 'media API must use hardened extension CORS');
 must(mediaApi.includes('vp3_extension_session_authenticate_v2001($pdo)'), 'media API must authenticate extension bearer sessions');
@@ -81,5 +89,9 @@ must(card.includes("item.kind==='commentary_audio'"), 'Browser Share commentary 
 must(card.includes("item.kind==='youtube_clip'"), 'Browser Share media-reference renderer missing');
 must(card.includes('encodeURIComponent(id)'), 'Browser Share media lookup must encode public IDs');
 must(card.includes("a.rel='noopener noreferrer'"), 'external media links must be isolated');
+
+must(bootstrap.includes("require_once __DIR__.'/browser-share-media-v2040.php';"), 'bootstrap must load the rich-media authority');
+must(upgrade.includes('vp3_browser_share_media_schema_ready_v2040()'), 'upgrade readiness must include rich-media schema');
+must(upgrade.includes('vp3_browser_share_media_ensure_schema_v2040();'), 'upgrade must install rich-media schema');
 
 console.log('VP3 Browser Companion rich capture v20.40 contract passed.');
