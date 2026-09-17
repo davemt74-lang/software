@@ -31,6 +31,7 @@ assert.ok(core.includes("if($expected>0&&$expected-$now<=86400)return 'due_soon'
 for(const bucket of ['verified','action_failed','followthrough_blocked','overdue','handoff_drift','plan_needs_definition','verification_needs_attention','verification_review','waiting_for_verification','action_needs_review','ready_for_handoff','carried_forward','active_followthrough','action_in_progress','active']){
   assert.ok(core.includes(`'${bucket}'`),`missing command bucket ${bucket}`);
 }
+assert.ok(core.includes("(string)($row['continuity_status']??'')==='carried_forward'"),'only active continuity may be classified or counted as carried forward');
 assert.ok(core.includes("a.status<>'skipped'"),'skipped agenda items must not appear as active commitments');
 assert.ok(core.includes("(a.item_type='follow_up' OR a.status='follow_up')"),'command must remain bounded to follow-up commitments');
 assert.ok(core.includes('max(1,min(100,$limit))'),'command query must have a hard bounded result window');
