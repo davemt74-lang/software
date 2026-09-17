@@ -9,6 +9,7 @@ on:
       - 'knowledge.php'
       - 'includes/knowledge.php'
       - 'includes/artist-listening.php'
+      - 'tests/transcription-folder-observer-hotfix-contract.mjs'
       - 'tests/transcription-knowledge-save-v314-contract.mjs'
       - 'tests/transcription-knowledge-roundtrip-v315-contract.mjs'
       - '.github/workflows/transcription-knowledge-roundtrip-v315.yml'
@@ -21,6 +22,7 @@ on:
       - 'knowledge.php'
       - 'includes/knowledge.php'
       - 'includes/artist-listening.php'
+      - 'tests/transcription-folder-observer-hotfix-contract.mjs'
       - 'tests/transcription-knowledge-save-v314-contract.mjs'
       - 'tests/transcription-knowledge-roundtrip-v315-contract.mjs'
       - '.github/workflows/transcription-knowledge-roundtrip-v315.yml'
@@ -44,6 +46,9 @@ jobs:
         run: |
           node --check transcription-knowledge-folders-v313.js
           node --check artist-listening-naming.js
+          node --check tests/transcription-folder-observer-hotfix-contract.mjs
+      - name: Retained folder observer regression
+        run: node tests/transcription-folder-observer-hotfix-contract.mjs
       - name: Save regression contract
         run: node tests/transcription-knowledge-save-v314-contract.mjs
       - name: Round-trip hardening contract
