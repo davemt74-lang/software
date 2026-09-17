@@ -1,11 +1,12 @@
 <?php
 declare(strict_types=1);
 require dirname(__DIR__).'/includes/bootstrap.php';
+require_once dirname(__DIR__).'/includes/extension-device-auth-v2001.php';
 
 header('Content-Type: application/json; charset=UTF-8');
 header('Cache-Control: no-store');
 header('X-Content-Type-Options: nosniff');
-vp3_extension_apply_cors_v2000();
+vp3_extension_apply_cors_v2001();
 header('Access-Control-Allow-Headers: Content-Type, X-VP3-Extension-Version, X-VP3-Contract-Version');
 header('Access-Control-Allow-Methods: POST, OPTIONS');
 
@@ -19,6 +20,8 @@ function vp3_extension_connect_status_json_v2000(int $status,array $payload=[]):
 $method=strtoupper((string)($_SERVER['REQUEST_METHOD']??'GET'));
 if($method==='OPTIONS')vp3_extension_connect_status_json_v2000(204);
 if($method!=='POST')vp3_extension_connect_status_json_v2000(405,['ok'=>false,'error'=>['code'=>'method_not_allowed','message'=>'Method not allowed.']]);
+$contract=trim((string)($_SERVER['HTTP_X_VP3_CONTRACT_VERSION']??''));
+if($contract!=='1')vp3_extension_connect_status_json_v2000(422,['ok'=>false,'error'=>['code'=>'unsupported_contract','message'=>'Unsupported extension contract version.']]);
 
 $pdo=db();
 if(!$pdo||!vp3_extension_schema_ready_v2000($pdo)){
@@ -31,7 +34,7 @@ $input=json_decode($raw,true);
 if(!is_array($input))vp3_extension_connect_status_json_v2000(400,['ok'=>false,'error'=>['code'=>'invalid_request','message'=>'A JSON request body is required.']]);
 
 try{
-    $result=vp3_extension_connection_poll_v2000(
+    $result=vp3_extension_connection_poll_v2001(
         $pdo,
         (string)($input['connection_request_id']??''),
         (string)($input['poll_token']??''),
@@ -39,6 +42,7 @@ try{
     );
     $payload=['ok'=>true,'contract_version'=>1,'status'=>$result['status']];
     if(isset($result['credential_delivered']))$payload['credential_delivered']=(bool)$result['credential_delivered'];
+    if(isset($result['reconnect_required']))$payload['reconnect_required']=(bool)$result['reconnect_required'];
     if(!empty($result['device_id']))$payload['device_id']=$result['device_id'];
     if(!empty($result['device_credential']))$payload['device_credential']=$result['device_credential'];
     if(!empty($result['user']))$payload['user']=$result['user'];

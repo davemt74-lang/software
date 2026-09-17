@@ -1,11 +1,12 @@
 <?php
 declare(strict_types=1);
 require dirname(__DIR__).'/includes/bootstrap.php';
+require_once dirname(__DIR__).'/includes/extension-device-auth-v2001.php';
 
 header('Content-Type: application/json; charset=UTF-8');
 header('Cache-Control: no-store');
 header('X-Content-Type-Options: nosniff');
-vp3_extension_apply_cors_v2000();
+vp3_extension_apply_cors_v2001();
 header('Access-Control-Allow-Headers: Content-Type, X-VP3-Extension-Version, X-VP3-Contract-Version');
 header('Access-Control-Allow-Methods: POST, OPTIONS');
 
@@ -19,6 +20,8 @@ function vp3_extension_session_json_v2000(int $status,array $payload=[]): never
 $method=strtoupper((string)($_SERVER['REQUEST_METHOD']??'GET'));
 if($method==='OPTIONS')vp3_extension_session_json_v2000(204);
 if($method!=='POST')vp3_extension_session_json_v2000(405,['ok'=>false,'error'=>['code'=>'method_not_allowed','message'=>'Method not allowed.']]);
+$contract=trim((string)($_SERVER['HTTP_X_VP3_CONTRACT_VERSION']??''));
+if($contract!=='1')vp3_extension_session_json_v2000(422,['ok'=>false,'error'=>['code'=>'unsupported_contract','message'=>'Unsupported extension contract version.']]);
 
 $pdo=db();
 if(!$pdo||!vp3_extension_schema_ready_v2000($pdo)){
@@ -31,13 +34,15 @@ $input=json_decode($raw,true);
 if(!is_array($input))vp3_extension_session_json_v2000(400,['ok'=>false,'error'=>['code'=>'invalid_request','message'=>'A JSON request body is required.']]);
 
 try{
-    $session=vp3_extension_session_issue_v2000(
+    $session=vp3_extension_session_issue_v2001(
         $pdo,
         (string)($input['device_id']??''),
         (string)($input['installation_id']??''),
         (string)($input['device_credential']??'')
     );
     vp3_extension_session_json_v2000(200,['ok'=>true,'contract_version'=>1,'session'=>$session]);
+}catch(VP3ExtensionSecurityExceptionV2001 $e){
+    vp3_extension_session_json_v2000($e->httpStatus,['ok'=>false,'error'=>['code'=>$e->apiCode,'message'=>$e->getMessage()]]);
 }catch(InvalidArgumentException $e){
     vp3_extension_session_json_v2000(422,['ok'=>false,'error'=>['code'=>'invalid_request','message'=>$e->getMessage()]]);
 }catch(RuntimeException $e){

@@ -54,7 +54,10 @@ must(upgrade.includes('vp3_agent_memory_scope_ensure_schema_v410();'), 'existing
 for (const api of [requestApi,statusApi,sessionApi]) {
   must(!api.includes('vp3_extension_ensure_schema_v2000'), 'public extension APIs must not run DDL');
   must(api.includes("header('Cache-Control: no-store')"), 'extension APIs must disable caching');
-  must(api.includes('vp3_extension_apply_cors_v2000()'), 'extension APIs must use extension CORS policy');
+  must(
+    api.includes('vp3_extension_apply_cors_v2000()') || api.includes('vp3_extension_apply_cors_v2001()'),
+    'extension APIs must use a reviewed extension CORS policy'
+  );
 }
 
 // Request API remains anonymous but bounded and contract-versioned.
