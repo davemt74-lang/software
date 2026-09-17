@@ -59,10 +59,20 @@ must(background.includes("'/api/extension-device-disconnect-v2030.php'"), 'serve
 must(background.includes('chrome.storage.local'), 'device state must use extension-local storage');
 must(!background.includes('chrome.storage.sync'), 'device credentials must not sync between browsers');
 must(background.includes('async function clearRevokedConnection()'), 'revoked credential cleanup helper missing');
-must(background.includes("await storage.remove(['device_id', 'device_credential', 'connected_user', 'approved_capabilities', 'pending_connection', 'session', 'last_share'])"), 'revoked state must clear local credentials and cached identity');
+must(background.includes("'last_share', 'pending_capture'"), 'revocation/disconnect must clear cached share and temporary capture state');
 must(background.includes("revoked.code = 'reconnect_required'"), 'revoked session refresh must return an explicit reconnect state');
 must(background.includes("await storage.get(['device_id', 'pending_connection'])"), 'VP3 site changes must inspect connection state');
 must(background.includes('Disconnect this browser from the current VP3 site before changing the VP3 site.'), 'device credentials must not be carried across VP3 origins');
+must(background.includes("case 'capture': return activeCapture();"), 'normal page capture must remain in memory instead of being persisted');
+must(background.includes("case 'clear_pending_capture': await storage.remove('pending_capture')"), 'context-menu capture must be explicitly consumable');
+must(background.includes("await storage.remove('pending_capture');"), 'successful shares must clear temporary captured selection storage');
+must(background.includes('browser_share: payload.browser_share || null'), 'last-share cache must persist only Browser Share metadata');
+must(!background.includes("last_share: { ...payload, source_url"), 'last-share cache must not persist the original source URL or capture payload');
+must(sidepanelJs.includes("message('clear_pending_capture')"), 'side panel must consume context-menu selection after opening');
+must(sidepanelJs.includes("error.code === 'reconnect_required'"), 'side panel must immediately redraw revoked connections');
+must(sidepanelJs.includes("caps.has('agent.message')"), 'Ask VP3 must follow live Agent capability state');
+must(sidepanelJs.includes("caps.has('knowledge.write')"), 'Knowledge action must follow live capability state');
+must(sidepanelJs.includes("caps.has('task.propose')"), 'Task action must follow live capability state');
 
 for (const capability of ['team.destinations.read','team.share.create','agent.message','knowledge.write','task.propose']) {
   must(background.includes(`'${capability}'`), `requested capability ${capability} missing`);
