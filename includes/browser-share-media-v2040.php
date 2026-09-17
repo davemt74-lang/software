@@ -62,6 +62,7 @@ function vp3_browser_share_media_ensure_schema_v2040(?PDO $pdo=null): void
       updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       deleted_at DATETIME NULL,
       UNIQUE KEY uq_browser_share_media_public (public_id),
+      UNIQUE KEY uq_browser_share_media_dedupe (browser_share_id,media_kind,sha256),
       INDEX idx_browser_share_media_share (browser_share_id,created_at,id),
       INDEX idx_browser_share_media_user (uploader_user_id,created_at,id),
       CONSTRAINT fk_browser_share_media_share FOREIGN KEY (browser_share_id) REFERENCES browser_shares_v2010(id) ON DELETE CASCADE,
@@ -187,6 +188,14 @@ function vp3_browser_share_media_allowed_upload_v2040(string $kind,string $mime,
     throw new VP3BrowserShareMediaExceptionV2040('unsupported_media_type',415,'This media kind cannot upload binary content.');
 }
 
+function vp3_browser_share_media_existing_v2040(PDO $pdo,int $shareId,string $kind,string $sha): ?array
+{
+    $stmt=$pdo->prepare("SELECT public_id,media_kind,mime_type,byte_size,sha256,original_name,storage_key,metadata_json,media_status,created_at FROM browser_share_media_v2040 WHERE browser_share_id=? AND media_kind=? AND sha256=? AND deleted_at IS NULL LIMIT 1");
+    $stmt->execute([$shareId,$kind,$sha]);
+    $row=$stmt->fetch(PDO::FETCH_ASSOC);
+    return is_array($row)?vp3_browser_share_media_public_v2040($row):null;
+}
+
 function vp3_browser_share_media_insert_v2040(PDO $pdo,array $share,int $userId,string $kind,string $mime,int $bytes,string $sha,string $name,?string $storageKey,array $metadata,string $status='ready'): array
 {
     $publicId=vp3_browser_share_media_uuid_v2040();
@@ -202,7 +211,7 @@ function vp3_browser_share_media_insert_v2040(PDO $pdo,array $share,int $userId,
     }
     return vp3_browser_share_media_public_v2040([
         'public_id'=>$publicId,'media_kind'=>$kind,'mime_type'=>$mime,'byte_size'=>$bytes,'sha256'=>$sha,
-        'original_name'=>$name,'metadata_json'=>$encoded,'media_status'=>$status,'created_at'=>gmdate('Y-m-d H:i:s')
+        'original_name'=>$name,'storage_key'=>$storageKey,'metadata_json'=>$encoded,'media_status'=>$status,'created_at'=>gmdate('Y-m-d H:i:s')
     ]);
 }
 
@@ -213,6 +222,9 @@ function vp3_browser_share_media_store_binary_v2040(PDO $pdo,string $browserShar
     vp3_browser_share_media_allowed_upload_v2040($kind,$mime,strlen($bytes));
     $metadata=vp3_browser_share_media_validate_metadata_v2040($metadata,$kind);
     $sha=hash('sha256',$bytes);
+    $existing=vp3_browser_share_media_existing_v2040($pdo,(int)$share['id'],$kind,$sha);
+    if($existing)return $existing;
+
     $random=bin2hex(random_bytes(16));
     $key=substr($random,0,2).'/'.substr($random,2,2).'/'.$random;
     $path=vp3_browser_share_media_storage_path_v2040($key,true);
@@ -223,7 +235,14 @@ function vp3_browser_share_media_store_binary_v2040(PDO $pdo,string $browserShar
     }
     @chmod($path,0600);
     try{
-        return vp3_browser_share_media_insert_v2040($pdo,$share,$userId,$kind,strtolower(trim(explode(';',$mime,2)[0])),strlen($bytes),$sha,$name,$key,$metadata,'ready');
+        return vp3_browser_share_media_insert_v2040($pdo,$share,$userId,$kind,strtolower(trim(explode(';',$mime,2)[0])),strlen($bytes),$sha,$name,$key,$metadata,'processing');
+    }catch(PDOException $e){
+        @unlink($path);
+        if((string)$e->getCode()==='23000'){
+            $existing=vp3_browser_share_media_existing_v2040($pdo,(int)$share['id'],$kind,$sha);
+            if($existing)return $existing;
+        }
+        throw $e;
     }catch(Throwable $e){
         @unlink($path);
         throw $e;
@@ -237,7 +256,20 @@ function vp3_browser_share_media_create_reference_v2040(PDO $pdo,string $browser
     $share=vp3_browser_share_media_share_row_v2040($pdo,$browserSharePublicId,$userId);
     $metadata=vp3_browser_share_media_validate_metadata_v2040($metadata,$kind);
     if(empty($metadata['source_media_url']))throw new VP3BrowserShareMediaExceptionV2040('invalid_request',422,'A source media URL is required.');
-    return vp3_browser_share_media_insert_v2040($pdo,$share,$userId,$kind,'',0,'','',null,$metadata,'ready');
+    $encoded=json_encode($metadata,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
+    if(!is_string($encoded))throw new VP3BrowserShareMediaExceptionV2040('invalid_request',422,'Media reference could not be encoded.');
+    $sha=hash('sha256',$encoded);
+    $existing=vp3_browser_share_media_existing_v2040($pdo,(int)$share['id'],$kind,$sha);
+    if($existing)return $existing;
+    try{
+        return vp3_browser_share_media_insert_v2040($pdo,$share,$userId,$kind,'',0,$sha,'',null,$metadata,'ready');
+    }catch(PDOException $e){
+        if((string)$e->getCode()==='23000'){
+            $existing=vp3_browser_share_media_existing_v2040($pdo,(int)$share['id'],$kind,$sha);
+            if($existing)return $existing;
+        }
+        throw $e;
+    }
 }
 
 function vp3_browser_share_media_public_v2040(array $row): array
