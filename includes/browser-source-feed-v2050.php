@@ -382,6 +382,18 @@ function vp3_browser_source_item_v2050(PDO $pdo,array $row,int $viewerUserId=0,b
 {
     if(!vp3_browser_source_share_authorized_v2050($pdo,$row,$viewerUserId))throw new RuntimeException('This annotation is not available.');
     $base=vp3_browser_share_public_v2020($row);
+    $deliveryAuthorized=false;
+    if($viewerUserId>0){
+        try{$deliveryAuthorized=is_array(vp3_browser_share_by_public_id_v2010($pdo,(string)$row['public_id'],$viewerUserId));}
+        catch(Throwable $e){$deliveryAuthorized=false;}
+    }
+    if(!$deliveryAuthorized){
+        // Publication visibility is intentionally independent from delivery.
+        // Never expose internal Human Messaging identifiers to a viewer who is
+        // authorized only through a Team/Public Source Feed publication.
+        $base['message_id']=0;
+        $base['conversation_id']=0;
+    }
     $flags=vp3_browser_source_following_flags_v2050($pdo,$viewerUserId,$row);
     $versionBasis=(string)($row['version_basis']??'');
     $currentVersion=(int)($row['current_version_id']??0);
