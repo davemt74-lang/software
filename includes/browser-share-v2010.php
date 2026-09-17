@@ -164,9 +164,6 @@ function vp3_browser_share_validate_url_v2010(mixed $value): array
         throw new VP3BrowserShareExceptionV2010('invalid_request',422,'Source URL port is invalid.');
     }
 
-    // Fragments and common credential/token query values are deliberately not
-    // persisted. Browser Share stores provenance but should not preserve auth
-    // state embedded in a URL.
     $authority=$host;
     if(str_contains($host,':')&&!str_starts_with($host,'['))$authority='['.$host.']';
     if(isset($parts['port']))$authority.=':'.(int)$parts['port'];
@@ -277,8 +274,6 @@ function vp3_browser_share_destination_conversation_v2010(PDO $pdo,int $userId,a
         catch(Throwable $e){throw new VP3BrowserShareExceptionV2010('destination_denied',403,'You cannot share to that Team workspace.');}
     }
     if($kind==='conversation'){
-        // Do not lock the conversation here. Canonical Human Messaging owns the
-        // user/workspace -> conversation lock order and will revalidate on send.
         $conversation=vp3_human_conversation_v370($pdo,$id,false);
         if(!$conversation||!vp3_browser_share_conversation_sendable_v2010($pdo,$conversation,$userId)){
             throw new VP3BrowserShareExceptionV2010('destination_denied',403,'You cannot share to that conversation.');
@@ -358,7 +353,6 @@ function vp3_browser_share_create_v2010(PDO $pdo,array $session,array $input,str
     $deviceDbId=vp3_browser_share_device_db_id_v2010($pdo,$session);
     $capture=vp3_browser_share_validate_capture_v2010($input);
     $destination=is_array($input['destination']??null)?$input['destination']:[];
-    vp3_browser_share_enforce_rate_v2010($pdo,$deviceDbId);
 
     $owns=!$pdo->inTransaction();
     if($owns)$pdo->beginTransaction();
@@ -374,11 +368,12 @@ function vp3_browser_share_create_v2010(PDO $pdo,array $session,array $input,str
             return $existing;
         }
 
+        // New creates are rate-limited only after replay detection so a retry of
+        // an already committed idempotent operation always receives that result.
+        vp3_browser_share_enforce_rate_v2010($pdo,$deviceDbId);
+
         $conversation=vp3_browser_share_destination_conversation_v2010($pdo,$userId,$destination);
         try{
-            // This canonical helper revalidates permissions and owns the established
-            // user/workspace -> conversation locking order. Because our transaction
-            // is already open, its message insert participates in this transaction.
             $message=vp3_human_send_message_v370($pdo,(int)$conversation['id'],$userId,vp3_browser_share_fallback_body_v2010($capture));
         }catch(PDOException $e){
             throw $e;
