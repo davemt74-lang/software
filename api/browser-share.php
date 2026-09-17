@@ -2,6 +2,7 @@
 declare(strict_types=1);
 require dirname(__DIR__).'/includes/bootstrap.php';
 require_once dirname(__DIR__).'/includes/extension-device-auth-v2001.php';
+require_once dirname(__DIR__).'/includes/browser-share-v2011.php';
 
 header('Content-Type: application/json; charset=UTF-8');
 header('Cache-Control: no-store');
@@ -40,7 +41,7 @@ $idempotencyKey=strtolower(trim((string)($_SERVER['HTTP_X_VP3_IDEMPOTENCY_KEY']?
 try{
     $session=vp3_extension_session_authenticate_v2001($pdo);
     if(!$session)throw new VP3BrowserShareExceptionV2010('authentication_required',401,'Browser Companion authentication is required.');
-    $result=vp3_browser_share_create_v2010($pdo,$session,$input,$idempotencyKey);
+    $result=vp3_browser_share_create_v2011($pdo,$session,$input,$idempotencyKey);
     $status=!empty($result['idempotent_replay'])?200:201;
     vp3_browser_share_json_v2010($status,[
         'ok'=>true,
