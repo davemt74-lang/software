@@ -303,6 +303,8 @@ function vp3_browser_source_publish_v2050(PDO $pdo,int $userId,string $browserSh
 
     $fresh=vp3_browser_source_share_row_v2050($pdo,$browserSharePublicId);
     if(!$fresh)throw new RuntimeException('Published annotation could not be reloaded.');
+    if(function_exists('vp3_search_index_annotation_v2090'))vp3_search_index_annotation_v2090($pdo,(int)$fresh['id']);
+    if(function_exists('vp3_search_index_source_v2090')&&(int)($fresh['source_id']??0)>0)vp3_search_index_source_v2090($pdo,(int)$fresh['source_id']);
     return vp3_browser_source_item_v2050($pdo,$fresh,$userId,true);
 }
 
@@ -604,6 +606,7 @@ function vp3_browser_source_comment_v2050(PDO $pdo,int $userId,string $browserSh
     $stmt->execute([$publicId,(int)$row['id'],$parentId,$userId,$body]);
     if(function_exists('vp3_browser_trust_notify_comment_v2080'))vp3_browser_trust_notify_comment_v2080($pdo,$row,$userId,$publicId,trim($parentPublicId));
     if(function_exists('vp3_browser_trust_notify_comment_mentions_v2080'))vp3_browser_trust_notify_comment_mentions_v2080($pdo,$row,$userId,$body,$publicId);
+    if(function_exists('vp3_search_index_annotation_v2090'))vp3_search_index_annotation_v2090($pdo,(int)$row['id']);
     return ['comments'=>vp3_browser_source_comments_v2050($pdo,(int)$row['id'],100)];
 }
 
@@ -619,6 +622,7 @@ function vp3_browser_source_toggle_share_state_v2050(PDO $pdo,int $userId,string
         $pdo->prepare("DELETE FROM {$table} WHERE user_id=? AND browser_share_id=?")
             ->execute([$userId,(int)$row['id']]);
     }
+    if(function_exists('vp3_search_index_annotation_v2090'))vp3_search_index_annotation_v2090($pdo,(int)$row['id']);
     return [$kind==='research'?'in_research':'saved'=>$enabled];
 }
 

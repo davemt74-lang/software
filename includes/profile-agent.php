@@ -206,7 +206,7 @@ function profile_save(PDO $pdo, array $user, array $input): array
 {
     $uid=(int)($user['id']??0);
     if($uid<1)throw new RuntimeException('Sign in to edit your profile.');
-    profile_for_user($pdo,$uid,true);
+    $before=profile_for_user($pdo,$uid,true);
     $username=profile_username_normalize((string)($input['username']??''));
     if($username===''||!profile_username_valid($username))throw new RuntimeException('Choose a username using 3–60 letters, numbers, dots, dashes or underscores.');
     $dup=$pdo->prepare('SELECT user_id FROM user_profiles WHERE username=? AND user_id<>? LIMIT 1');$dup->execute([$username,$uid]);
@@ -215,7 +215,10 @@ function profile_save(PDO $pdo, array $user, array $input): array
     $links=[];foreach(['website_url','instagram_url','tiktok_url','youtube_url','spotify_url','apple_music_url'] as $field)$links[$field]=profile_safe_external_url((string)($input[$field]??''));
     $stmt=$pdo->prepare('UPDATE user_profiles SET username=?,bio=?,website_url=?,instagram_url=?,tiktok_url=?,youtube_url=?,spotify_url=?,apple_music_url=?,is_public=?,share_visit_identity=? WHERE user_id=?');
     $stmt->execute([$username,$bio,$links['website_url'],$links['instagram_url'],$links['tiktok_url'],$links['youtube_url'],$links['spotify_url'],$links['apple_music_url'],!empty($input['is_public'])?1:0,!empty($input['share_visit_identity'])?1:0,$uid]);
-    return profile_for_user($pdo,$uid,false)?:throw new RuntimeException('Profile could not be saved.');
+    $saved=profile_for_user($pdo,$uid,false)?:throw new RuntimeException('Profile could not be saved.');
+    if(function_exists('vp3_search_tombstone_v2090')&&!empty($before['username'])&&(string)$before['username']!==$username)vp3_search_tombstone_v2090($pdo,'user',(string)$before['username']);
+    if(function_exists('vp3_search_index_user_v2090'))vp3_search_index_user_v2090($pdo,$uid);
+    return $saved;
 }
 
 function profile_migrate_artist_identity(PDO $pdo, array $user): array

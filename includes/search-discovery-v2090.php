@@ -126,6 +126,20 @@ function vp3_search_source_changed_v2090(PDO $pdo,int $sourceId): bool
     return (bool)$stmt->fetchColumn();
 }
 
+function vp3_search_mark_source_changed_v2090(PDO $pdo,int $sourceId): void
+{
+    if($sourceId<1||!vp3_search_schema_ready_v2090($pdo))return;
+    $pdo->prepare('UPDATE search_documents_v2090 SET source_changed=1,indexed_at=UTC_TIMESTAMP() WHERE source_id=? AND deleted_at IS NULL')->execute([$sourceId]);
+    vp3_search_index_source_v2090($pdo,$sourceId);
+}
+
+function vp3_search_touch_viewer_v2090(PDO $pdo,int $userId): void
+{
+    if($userId<1)return;
+    try{vp3_search_index_user_v2090($pdo,$userId);}catch(Throwable $e){}
+    try{foreach(vp3_human_team_workspaces_v370($pdo,$userId) as $workspace)vp3_search_index_team_v2090($pdo,(int)$workspace['owner_user_id']);}catch(Throwable $e){}
+}
+
 function vp3_search_index_source_v2090(PDO $pdo,int $sourceId): void
 {
     $stmt=$pdo->prepare('SELECT * FROM browser_sources_v2050 WHERE id=? LIMIT 1');$stmt->execute([$sourceId]);$row=$stmt->fetch(PDO::FETCH_ASSOC);
@@ -410,6 +424,7 @@ function vp3_search_record_recent_v2090(PDO $pdo,int $userId,string $query,array
 
 function vp3_search_query_v2090(PDO $pdo,int $viewerUserId,string $query,array $input=[],int $limit=50,bool $record=true): array
 {
+    vp3_search_touch_viewer_v2090($pdo,$viewerUserId);
     $query=vp3_search_clean_text_v2090($query,500);$filters=vp3_search_filters_v2090($input);$limit=max(1,min(100,$limit));
     $where=['deleted_at IS NULL'];$params=[];
     $tokens=vp3_search_tokens_v2090($query);
@@ -488,6 +503,7 @@ function vp3_search_clear_recent_v2090(PDO $pdo,int $userId): void
 
 function vp3_search_filter_options_v2090(PDO $pdo,int $userId): array
 {
+    vp3_search_touch_viewer_v2090($pdo,$userId);
     $teams=[];
     if($userId>0)foreach(vp3_human_team_workspaces_v370($pdo,$userId) as $workspace)$teams[]=['id'=>(int)$workspace['owner_user_id'],'name'=>(string)$workspace['workspace_name']];
     return ['types'=>['source','annotation','claim','research','live','user','team'],'visibilities'=>['public','team','private','legacy'],'claim_statuses'=>['open','under_review','resolved','disputed','withdrawn'],'teams'=>$teams];
