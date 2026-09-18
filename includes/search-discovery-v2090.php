@@ -165,15 +165,14 @@ function vp3_search_index_annotation_v2090(PDO $pdo,int $shareId): void
     $row=vp3_browser_source_share_row_by_id_v2050($pdo,$shareId);
     if(!$row){$stmt=$pdo->prepare("SELECT public_id FROM browser_shares_v2010 WHERE id=? LIMIT 1");$stmt->execute([$shareId]);$id=(string)($stmt->fetchColumn()?:'');if($id!=='')vp3_search_tombstone_v2090($pdo,'annotation',$id);return;}
     $comments=$pdo->prepare('SELECT COUNT(*) FROM browser_share_comments_v2050 WHERE browser_share_id=? AND deleted_at IS NULL');$comments->execute([$shareId]);$commentCount=(int)$comments->fetchColumn();
-    $saves=$pdo->prepare('SELECT COUNT(*) FROM browser_share_saves_v2050 WHERE browser_share_id=?');$saves->execute([$shareId]);$saveCount=(int)$saves->fetchColumn();
-    $research=$pdo->prepare('SELECT COUNT(*) FROM browser_research_queue_v2050 WHERE browser_share_id=?');$research->execute([$shareId]);$researchCount=(int)$research->fetchColumn();
+    $saveCount=0;$researchCount=0;
     $visibility=trim((string)($row['visibility']??''))?:'legacy';
     vp3_search_upsert_document_v2090($pdo,[
         'document_type'=>'annotation','object_public_id'=>(string)$row['public_id'],'source_id'=>(int)($row['source_id']??0),
         'owner_user_id'=>(int)$row['sender_user_id'],'team_owner_user_id'=>(int)($row['team_owner_user_id']??0),'visibility'=>$visibility,
         'source_domain'=>(string)$row['source_domain'],'title'=>(string)$row['source_title'],
         'body'=>(string)$row['selected_text'].' '.(string)$row['user_note'],'url'=>url('/annotation.php?id='.rawurlencode((string)$row['public_id'])),
-        'activity_score'=>$commentCount*3+$saveCount*2+$researchCount*3,'engagement_count'=>$commentCount+$saveCount+$researchCount,
+        'activity_score'=>$commentCount*3,'engagement_count'=>$commentCount,
         'source_changed'=>vp3_search_source_changed_v2090($pdo,(int)($row['source_id']??0)),
         'object_created_at'=>(string)$row['created_at'],'object_updated_at'=>(string)($row['updated_at']??$row['published_at']??$row['created_at']),
     ]);
@@ -417,6 +416,10 @@ function vp3_search_score_v2090(PDO $pdo,array $doc,string $query,array $filters
     if((string)$doc['document_type']==='live'&&str_contains((string)$doc['body'],'active'))$score+=15;
     if(!empty($doc['source_changed']))$score+=4;
     if($viewerUserId>0&&(int)($doc['source_id']??0)>0){$stmt=$pdo->prepare('SELECT 1 FROM browser_source_follows_v2050 WHERE user_id=? AND source_id=? LIMIT 1');$stmt->execute([$viewerUserId,(int)$doc['source_id']]);if($stmt->fetchColumn())$score+=12;}
+    if($viewerUserId>0&&(string)$doc['document_type']==='annotation'){
+        $row=vp3_browser_source_share_row_v2050($pdo,(string)$doc['object_public_id']);
+        if($row&&vp3_browser_source_share_authorized_v2050($pdo,$row,$viewerUserId)){$flags=vp3_browser_source_following_flags_v2050($pdo,$viewerUserId,$row);if(!empty($flags['saved']))$score+=8;if(!empty($flags['in_research']))$score+=8;}
+    }
     $ts=strtotime((string)$doc['object_updated_at']);if($ts!==false){$days=max(0,(time()-$ts)/86400);$score+=max(0,18-min(18,$days/5));}
     return round($score,3);
 }
@@ -459,10 +462,10 @@ function vp3_search_query_v2090(PDO $pdo,int $viewerUserId,string $query,array $
     $stmt=$pdo->prepare($sql);$stmt->execute($params);$scored=[];
     foreach($stmt->fetchAll(PDO::FETCH_ASSOC)?:[] as $doc){
         $result=vp3_search_result_v2090($pdo,$doc,$viewerUserId,$query);if(!$result)continue;
-        $score=vp3_search_score_v2090($pdo,$doc,$query,$filters,$viewerUserId);$result['score']=$score;$scored[]=$result;
+        $score=vp3_search_score_v2090($pdo,$doc,$query,$filters,$viewerUserId);$result['_rank_score']=$score;$scored[]=$result;
     }
-    usort($scored,static fn(array $a,array $b): int=>($b['score']<=>$a['score'])?:strcmp((string)$b['updated_at'],(string)$a['updated_at']));
-    $items=array_slice($scored,0,$limit);
+    usort($scored,static fn(array $a,array $b): int=>($b['_rank_score']<=>$a['_rank_score'])?:strcmp((string)$b['updated_at'],(string)$a['updated_at']));
+    $items=array_slice($scored,0,$limit);foreach($items as &$item)unset($item['_rank_score']);unset($item);
     if($record)vp3_search_record_recent_v2090($pdo,$viewerUserId,$query,$filters,count($items));
     return ['query'=>$query,'filters'=>$filters,'items'=>$items,'count'=>count($items),'candidate_count'=>count($scored)];
 }

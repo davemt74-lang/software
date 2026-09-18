@@ -235,7 +235,7 @@ function searchParams(extra){
 function searchResultCard(item){
   const box=el('article','search-result',''),head=el('div','search-result-head',''),left=el('div','','');
   left.append(el('div','search-result-type',String(item.type||'result').replace(/_/g,' ')),el('div','search-result-title',item.title||'VP3 result'));
-  head.append(left,el('div','search-result-score',item.score!==undefined?'Rel. '+Number(item.score).toFixed(1):''));box.append(head);
+  head.append(left,el('div','search-result-score','Ranked'));box.append(head);
   if(item.snippet)box.append(el('div','search-result-snippet',item.snippet));
   const meta=el('div','search-result-meta','');if(item.domain)meta.append(el('span','pill',item.domain));if(item.visibility)meta.append(el('span','pill',item.visibility));if(item.status)meta.append(el('span','pill',String(item.status).replace(/_/g,' ')));if(item.source_changed)meta.append(el('span','pill changed','Source changed'));if(meta.children.length)box.append(meta);
   const actions=el('div','search-result-actions',''),open=act('Open','search_open');open.dataset.url=String(item.url||'');actions.append(open);

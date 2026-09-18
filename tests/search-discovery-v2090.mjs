@@ -51,6 +51,10 @@ must(service.includes("if($title===$q)$score+=100"),'exact title relevance boost
 must(service.includes("if($domain===$q)$score+=60"),'domain relevance boost missing');
 must(service.includes("$score+=35"),'current-Source context boost missing');
 must(service.includes('activity_score'),'activity ranking signal missing');
+must(service.includes("if(!empty($flags['saved']))$score+=8"),'saved annotation relevance must be viewer-specific');
+must(service.includes("if(!empty($flags['in_research']))$score+=8"),'Research relevance must be viewer-specific');
+must(service.includes("unset($item['_rank_score'])"),'internal ranking scores must not be exposed to clients');
+mustNot(service.includes("$saveCount*2+$researchCount*3"),'private aggregate Save/Research counts must not become cross-user activity signals');
 must(service.includes('object_updated_at'),'recency ranking signal missing');
 must(service.includes('browser_source_follows_v2050'),'followed-source personalization boost missing');
 must(service.includes("SELECT source_id FROM browser_source_follows_v2050 WHERE user_id=?"),'opening Search must refresh the viewer\'s followed Source index');
