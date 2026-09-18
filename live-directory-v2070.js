@@ -1,0 +1,1 @@
+(()=>{'use strict';const scope=document.getElementById('liveScope'),team=document.getElementById('liveTeamField');if(!scope||!team)return;const sync=()=>{team.hidden=scope.value!=='team';};scope.addEventListener('change',sync);sync();})();
