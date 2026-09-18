@@ -5,6 +5,7 @@ require_login();
 $pdo=vp3_browser_trust_require_ready_v2080(db());
 $user=current_user();$userId=(int)($user['id']??0);
 $sourcePublic=trim((string)($_GET['source']??$_POST['source_id']??''));
+$evidenceShare=trim((string)($_GET['annotation']??$_POST['browser_share_id']??''));
 $source=$sourcePublic!==''?vp3_browser_source_row_by_public_id_v2050($pdo,$sourcePublic):null;
 $notice='';$error='';
 if($_SERVER['REQUEST_METHOD']==='POST'){
@@ -33,7 +34,7 @@ $memberHeaderUser=$user;$memberHeaderTitle='Claims';$memberHeaderSubtitle='Sourc
 <main class="chat-main claims-main"><?php require __DIR__.'/includes/member-header.php';?><section class="claims-canvas"><div class="claims-wrap">
 <?php if($error):?><div class="alert"><?=e($error)?></div><?php endif;?>
 <?php if($source):?><section class="claim-form"><div><small>FILE A CLAIM</small><h2><?=e((string)($source['source_domain']??'Source'))?></h2><p>Claims pin the current source version or selected annotation as evidence. Later source changes do not rewrite that evidence.</p></div>
-<form method="post" class="claim-form"><?=csrf_field()?><input type="hidden" name="action" value="create"><input type="hidden" name="source_id" value="<?=e($sourcePublic)?>">
+<form method="post" class="claim-form"><?=csrf_field()?><input type="hidden" name="action" value="create"><input type="hidden" name="source_id" value="<?=e($sourcePublic)?>"><input type="hidden" name="browser_share_id" value="<?=e($evidenceShare)?>"><?php if($evidenceShare!==''):?><div class="pill">Annotation evidence <?=e(substr($evidenceShare,0,8))?> pinned on submit</div><?php endif;?>
 <label>Claim statement<input name="statement" maxlength="1000" required placeholder="State the claim precisely"></label>
 <label>Rationale / context<textarea name="rationale" maxlength="12000" placeholder="Why this claim matters, what it asserts, and any qualification"></textarea></label>
 <div class="claim-grid"><label>Visibility<select name="visibility" id="claimVisibility"><option value="public">Public</option><option value="team">Team</option><option value="private">Private</option></select></label>

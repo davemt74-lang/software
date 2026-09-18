@@ -19,6 +19,7 @@ const claimsPage=read('claims.php');
 const claimPage=read('claim.php');
 const moderationPage=read('moderation.php');
 const prefsPage=read('notification-settings.php');
+const annotationPage=read('annotation.php');
 
 must(manifest.manifest_version===3,'Phase 9 must remain Manifest V3');
 must(manifest.version==='20.80.0','Phase 9 Browser Companion version must be v20.80.0');
@@ -94,6 +95,9 @@ must(sourcePage.includes('Compare versions'),'Source page must link to version c
 must(sourcePage.includes('vp3_browser_trust_claims_for_source_v2080'),'Source page must surface claims');
 must(sourcePage.includes('File a claim'),'Source page claim entry point missing');
 must(claimsPage.includes('vp3_browser_trust_claim_create_v2080'),'web claim creation must use canonical Phase 9 service');
+must(claimsPage.includes('browser_share_id'),'web claim creation must preserve optional annotation evidence');
+must(annotationPage.includes("'&annotation='"),'annotation pages must offer evidence-linked claim filing');
+must(panelJs.includes("browser_share_id:claimShareId"),'sidebar claims must pin selected annotation evidence when filed from a feed card');
 must(claimPage.includes('vp3_browser_trust_claim_status_v2080'),'claim lifecycle page missing');
 must(moderationPage.includes("require_permission('users.manage')"),'moderation queue must require server-side admin permission');
 must(moderationPage.includes('vp3_browser_trust_report_action_v2080'),'moderation action ledger missing from web surface');

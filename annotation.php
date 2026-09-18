@@ -22,6 +22,7 @@ if(!$row||!vp3_browser_source_share_authorized_v2050($pdo,$row,$userId)){
                 elseif($action==='research')vp3_browser_source_toggle_share_state_v2050($pdo,$userId,$publicId,'research',(string)($_POST['enabled']??'1')==='1');
                 elseif($action==='follow_source')vp3_browser_source_follow_source_v2050($pdo,$userId,(string)($row['source_public_id']??''),(string)($_POST['enabled']??'1')==='1');
                 elseif($action==='follow_user')vp3_browser_source_follow_user_v2050($pdo,$userId,(int)$row['sender_user_id'],(string)($_POST['enabled']??'1')==='1');
+                elseif($action==='report'&&vp3_browser_trust_schema_ready_v2080($pdo))vp3_browser_trust_report_create_v2080($pdo,$userId,'annotation',$publicId,trim((string)($_POST['reason']??'')),trim((string)($_POST['detail']??'')));
                 header('Location: '.url('/annotation.php?id='.rawurlencode($publicId)),true,303);exit;
             }catch(Throwable $e){$pageError=$e->getMessage();}
         }
@@ -65,6 +66,8 @@ function annotation_page_media_v2050(array $media): string{
 <form method="post"><input type="hidden" name="csrf_token" value="<?=annotation_page_e_v2050(csrf_token())?>"><input type="hidden" name="id" value="<?=annotation_page_e_v2050($publicId)?>"><input type="hidden" name="action" value="follow_source"><input type="hidden" name="enabled" value="<?=!empty($item['source_identity']['following'])?'0':'1'?>"><button><?=!empty($item['source_identity']['following'])?'Unfollow source':'Follow source'?></button></form>
 <?php if((int)($item['sender']['id']??0)!==$userId): ?><form method="post"><input type="hidden" name="csrf_token" value="<?=annotation_page_e_v2050(csrf_token())?>"><input type="hidden" name="id" value="<?=annotation_page_e_v2050($publicId)?>"><input type="hidden" name="action" value="follow_user"><input type="hidden" name="enabled" value="<?=!empty($item['interactions']['following_user'])?'0':'1'?>"><button><?=!empty($item['interactions']['following_user'])?'Unfollow user':'Follow user'?></button></form><?php endif; ?>
 <a href="<?=annotation_page_e_v2050(url('/browser-share-agent-handoff.php?browser_share_id='.rawurlencode($publicId)))?>">Ask VP3</a>
+<?php if(vp3_browser_trust_schema_ready_v2080($pdo)): ?><a href="<?=annotation_page_e_v2050(url('/claims.php?source='.rawurlencode((string)$item['source_identity']['id']).'&annotation='.rawurlencode($publicId)))?>">File a claim</a><?php endif; ?>
+<?php if(vp3_browser_trust_schema_ready_v2080($pdo)): ?><form method="post"><input type="hidden" name="csrf_token" value="<?=annotation_page_e_v2050(csrf_token())?>"><input type="hidden" name="id" value="<?=annotation_page_e_v2050($publicId)?>"><input type="hidden" name="action" value="report"><input name="reason" maxlength="190" required placeholder="Report reason"><button>Report</button></form><?php endif; ?>
 <?php endif; ?>
 </div>
 <section class="comments"><div class="eyebrow">Comments</div>
