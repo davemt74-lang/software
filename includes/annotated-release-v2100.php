@@ -255,6 +255,7 @@ function vp3_annotated_rate_policy_v2100(string $scope): array
 {
     return match($scope){
         'browser_share_create'=>[30,60],
+        'media_upload'=>[60,60],
         'annotation_publish'=>[30,60],
         'annotation_comment'=>[60,60],
         'source_follow'=>[60,60],

@@ -19,7 +19,8 @@ const sourcePage=read('source.php');
 const annotationPage=read('annotation.php');
 
 must(manifest.manifest_version===3,'Phase 6 must remain Manifest V3');
-must(Number(manifest.version.split('.')[0])===20 && Number(manifest.version.split('.')[1])>=50,'Phase 6 requires Browser Companion v20.50 or newer');
+const [sourceMajor,sourceMinor]=manifest.version.split('.').map(Number);
+must(sourceMajor>20||(sourceMajor===20&&sourceMinor>=50),'Phase 6 requires Browser Companion v20.50 or newer');
 must(background.includes("case 'this_page'"),'This Page transport missing');
 must(background.includes("case 'tab_identity'"),'lightweight active-tab identity transport missing');
 must(panelJs.includes("msg('tab_identity')"),'page navigation watch must use lightweight tab identity instead of rehashing page text');

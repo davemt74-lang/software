@@ -66,8 +66,11 @@ jobs:
       - name: Phase 10 Search & Discovery Intelligence contract
         run: node tests/search-discovery-v2090.mjs
 
+      - name: Phase 11A Annotated V1 Release Foundation contract
+        run: node tests/annotated-release-v2100.mjs
+
       - name: Manifest contract
-        run: node -e "const m=require('./browser-companion/manifest.json'); if(m.manifest_version!==3||Number(m.version.split('.')[0])!==20||Number(m.version.split('.')[1])<40) process.exit(1)"
+        run: node -e "const m=require('./browser-companion/manifest.json'); const [a,b]=m.version.split('.').map(Number); if(m.manifest_version!==3||!(a>20||(a===20&&b>=40))) process.exit(1)"
 
       - name: JavaScript syntax
         run: |
@@ -82,6 +85,7 @@ jobs:
           node --check tests/live-rooms-cloak-v2070.mjs
           node --check tests/browser-trust-v2080.mjs
           node --check tests/search-discovery-v2090.mjs
+          node --check tests/annotated-release-v2100.mjs
           node --check live-room-v2070.js
           node --check live-directory-v2070.js
 
@@ -116,6 +120,15 @@ jobs:
           php -l api/search-v2090.php
           php -l search.php
           php -l includes/profile-agent.php
+          php -l includes/annotated-release-v2100.php
+          php -l api/annotated-release-v2100.php
+          php -l api/annotated-health-v2100.php
+          php -l api/browser-share.php
+          php -l api/extension-connect-request.php
+          php -l api/extension-connect-status.php
+          php -l api/extension-session.php
+          php -l signup.php
+          php -l includes/chat-onboarding-v241.php
           php -l upgrade.php
 
   package:
@@ -140,7 +153,7 @@ jobs:
             exit 1
           fi
           sha256sum dist/vp3-browser-companion-current.zip > dist/vp3-browser-companion-current.zip.sha256
-          zip -r dist/vp3-phase10-search-deploy.zip \
+          zip -r dist/vp3-phase11a-annotated-release-deploy.zip \
             api/browser-source-feed-v2050.php \
             api/browser-share-media-v2040.php \
             includes/browser-source-feed-v2050.php \
@@ -161,9 +174,14 @@ jobs:
             includes/search-discovery-v2090.php \
             api/search-v2090.php search.php \
             includes/profile-agent.php \
+            includes/annotated-release-v2100.php \
+            api/annotated-release-v2100.php api/annotated-health-v2100.php \
+            api/browser-share.php \
+            api/extension-connect-request.php api/extension-connect-status.php api/extension-session.php \
+            signup.php includes/chat-onboarding-v241.php \
             upgrade.php
-          unzip -t dist/vp3-phase10-search-deploy.zip
-          sha256sum dist/vp3-phase10-search-deploy.zip > dist/vp3-phase10-search-deploy.zip.sha256
+          unzip -t dist/vp3-phase11a-annotated-release-deploy.zip
+          sha256sum dist/vp3-phase11a-annotated-release-deploy.zip > dist/vp3-phase11a-annotated-release-deploy.zip.sha256
 
       - name: Upload directly loadable Browser Companion
         uses: actions/upload-artifact@v4
@@ -172,7 +190,7 @@ jobs:
           path: |
             dist/vp3-browser-companion-current.zip
             dist/vp3-browser-companion-current.zip.sha256
-            dist/vp3-phase10-search-deploy.zip
-            dist/vp3-phase10-search-deploy.zip.sha256
+            dist/vp3-phase11a-annotated-release-deploy.zip
+            dist/vp3-phase11a-annotated-release-deploy.zip.sha256
           if-no-files-found: error
           retention-days: 30

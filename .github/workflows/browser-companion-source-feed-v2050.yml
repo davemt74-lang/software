@@ -1,4 +1,4 @@
-name: Browser Companion Phase 6+7+8+9+10 · Source + Research + Live + Trust + Search v20.90
+name: Browser Companion Phase 6-11A · Annotated V1 Release Foundation v21.00
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -17,7 +17,7 @@ permissions:
 
 jobs:
   contract:
-    name: Source + Research + Live + Trust + Search contract · PHP ${{ matrix.php }}
+    name: Annotated V1 master contract · PHP ${{ matrix.php }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     strategy:
@@ -52,6 +52,8 @@ jobs:
         run: node tests/browser-trust-v2080.mjs
       - name: Phase 10 Search & Discovery Intelligence contract
         run: node tests/search-discovery-v2090.mjs
+      - name: Phase 11A Annotated V1 Release Foundation contract
+        run: node tests/annotated-release-v2100.mjs
       - name: JavaScript syntax
         run: |
           node --check browser-companion/background.js
@@ -61,6 +63,7 @@ jobs:
           node --check tests/live-rooms-cloak-v2070.mjs
           node --check tests/browser-trust-v2080.mjs
           node --check tests/search-discovery-v2090.mjs
+          node --check tests/annotated-release-v2100.mjs
           node --check live-room-v2070.js
           node --check live-directory-v2070.js
       - name: PHP syntax
@@ -93,10 +96,19 @@ jobs:
           php -l api/search-v2090.php
           php -l search.php
           php -l includes/profile-agent.php
+          php -l includes/annotated-release-v2100.php
+          php -l api/annotated-release-v2100.php
+          php -l api/annotated-health-v2100.php
+          php -l api/browser-share.php
+          php -l api/extension-connect-request.php
+          php -l api/extension-connect-status.php
+          php -l api/extension-session.php
+          php -l signup.php
+          php -l includes/chat-onboarding-v241.php
           php -l upgrade.php
 
   package:
-    name: Package Browser Companion v20.90
+    name: Package Browser Companion v21.00
     needs: contract
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -106,16 +118,16 @@ jobs:
         run: |
           mkdir -p dist
           cd browser-companion
-          zip -r ../dist/vp3-browser-companion-v20.90.0.zip . -x '*.DS_Store'
+          zip -r ../dist/vp3-browser-companion-v21.00.0.zip . -x '*.DS_Store'
           cd ..
-          unzip -t dist/vp3-browser-companion-v20.90.0.zip
-          unzip -Z1 dist/vp3-browser-companion-v20.90.0.zip | grep -qx 'manifest.json'
-          if unzip -Z1 dist/vp3-browser-companion-v20.90.0.zip | grep -q '^browser-companion/'; then
+          unzip -t dist/vp3-browser-companion-v21.00.0.zip
+          unzip -Z1 dist/vp3-browser-companion-v21.00.0.zip | grep -qx 'manifest.json'
+          if unzip -Z1 dist/vp3-browser-companion-v21.00.0.zip | grep -q '^browser-companion/'; then
             echo 'Extension ZIP contains an unexpected wrapper folder.' >&2
             exit 1
           fi
-          sha256sum dist/vp3-browser-companion-v20.90.0.zip > dist/vp3-browser-companion-v20.90.0.zip.sha256
-          zip -r dist/vp3-phase10-search-deploy.zip \
+          sha256sum dist/vp3-browser-companion-v21.00.0.zip > dist/vp3-browser-companion-v21.00.0.zip.sha256
+          zip -r dist/vp3-phase11a-annotated-release-deploy.zip \
             api/browser-source-feed-v2050.php \
             api/browser-share-media-v2040.php \
             includes/browser-source-feed-v2050.php \
@@ -136,16 +148,21 @@ jobs:
             includes/search-discovery-v2090.php \
             api/search-v2090.php search.php \
             includes/profile-agent.php \
+            includes/annotated-release-v2100.php \
+            api/annotated-release-v2100.php api/annotated-health-v2100.php \
+            api/browser-share.php \
+            api/extension-connect-request.php api/extension-connect-status.php api/extension-session.php \
+            signup.php includes/chat-onboarding-v241.php \
             upgrade.php
-          unzip -t dist/vp3-phase10-search-deploy.zip
-          sha256sum dist/vp3-phase10-search-deploy.zip > dist/vp3-phase10-search-deploy.zip.sha256
+          unzip -t dist/vp3-phase11a-annotated-release-deploy.zip
+          sha256sum dist/vp3-phase11a-annotated-release-deploy.zip > dist/vp3-phase11a-annotated-release-deploy.zip.sha256
       - uses: actions/upload-artifact@v4
         with:
-          name: vp3-browser-companion-v20.90.0
+          name: vp3-browser-companion-v21.00.0
           path: |
-            dist/vp3-browser-companion-v20.90.0.zip
-            dist/vp3-browser-companion-v20.90.0.zip.sha256
-            dist/vp3-phase10-search-deploy.zip
-            dist/vp3-phase10-search-deploy.zip.sha256
+            dist/vp3-browser-companion-v21.00.0.zip
+            dist/vp3-browser-companion-v21.00.0.zip.sha256
+            dist/vp3-phase11a-annotated-release-deploy.zip
+            dist/vp3-phase11a-annotated-release-deploy.zip.sha256
           if-no-files-found: error
           retention-days: 30

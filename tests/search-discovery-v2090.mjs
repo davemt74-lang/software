@@ -21,8 +21,11 @@ const web=read('search.php');
 const sourcePage=read('source.php');
 
 must(manifest.manifest_version===3,'Phase 10 must remain Manifest V3');
-must(manifest.version==='20.90.0','Phase 10 Browser Companion version must be v20.90.0');
-must(background.includes("const VP3_EXTENSION_VERSION = '20.90.0'"),'Phase 10 runtime version missing');
+const [searchMajor,searchMinor]=manifest.version.split('.').map(Number);
+must(searchMajor>20||(searchMajor===20&&searchMinor>=90),'Phase 10 Browser Companion version must remain v20.90+');
+const searchRuntime=(background.match(/const VP3_EXTENSION_VERSION = '([0-9.]+)'/)||[])[1]||'';
+const [searchRuntimeMajor,searchRuntimeMinor]=searchRuntime.split('.').map(Number);
+must(searchRuntimeMajor>20||(searchRuntimeMajor===20&&searchRuntimeMinor>=90),'Phase 10 runtime must remain v20.90+');
 
 for(const table of ['search_documents_v2090','search_recent_queries_v2090','search_saved_queries_v2090','search_index_events_v2090']){
   must(service.includes(table),'Phase 10 schema missing '+table);

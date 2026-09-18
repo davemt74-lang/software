@@ -23,9 +23,11 @@ const annotationPage=read('annotation.php');
 const comparePage=read('source-change.php');
 
 must(manifest.manifest_version===3,'Phase 9 must remain Manifest V3');
-must(Number(manifest.version.split('.')[0])===20&&Number(manifest.version.split('.')[1])>=80,'Phase 9 Browser Companion version must remain v20.80+');
+const [trustMajor,trustMinor]=manifest.version.split('.').map(Number);
+must(trustMajor>20||(trustMajor===20&&trustMinor>=80),'Phase 9 Browser Companion version must remain v20.80+');
 const runtimeVersion=(background.match(/const VP3_EXTENSION_VERSION = '([0-9.]+)'/)||[])[1]||'';
-must(Number(runtimeVersion.split('.')[0])===20&&Number(runtimeVersion.split('.')[1])>=80,'Phase 9 runtime must remain v20.80+');
+const [trustRuntimeMajor,trustRuntimeMinor]=runtimeVersion.split('.').map(Number);
+must(trustRuntimeMajor>20||(trustRuntimeMajor===20&&trustRuntimeMinor>=80),'Phase 9 runtime must remain v20.80+');
 
 for(const table of ['browser_source_change_events_v2080','browser_notification_preferences_v2080','browser_notifications_v2080','browser_claims_v2080','browser_claim_events_v2080','browser_moderation_reports_v2080','browser_moderation_actions_v2080']){
   must(service.includes(table),'Phase 9 schema missing '+table);

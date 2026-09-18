@@ -102,6 +102,7 @@ try{
         vp3_browser_share_media_json_v2040(200,['ok'=>true,'media'=>vp3_browser_share_media_list_v2040($pdo,$shareId,$userId)]);
     }
 
+    vp3_annotated_rate_limit_v2100($pdo,$userId,'media_upload');
     $contentType=strtolower(trim(explode(';',(string)($_SERVER['CONTENT_TYPE']??''),2)[0]));
     if($contentType==='application/json'){
         $raw=(string)file_get_contents('php://input');
@@ -134,6 +135,7 @@ try{
 
     $media=vp3_browser_share_media_store_binary_v2040($pdo,$shareId,$userId,$kind,$verifiedMime,$bytes,$name,vp3_browser_share_media_header_metadata_v2040());
     vp3_browser_share_media_json_v2040(201,['ok'=>true,'media'=>$media]);
+}catch(VP3AnnotatedRateLimitExceptionV2100 $e){header('Retry-After: '.$e->retryAfter);vp3_browser_share_media_json_v2040(429,['ok'=>false,'error'=>['code'=>'rate_limited','message'=>$e->getMessage()]]);
 }catch(VP3BrowserShareMediaExceptionV2040 $e){
     vp3_browser_share_media_json_v2040($e->httpStatus,['ok'=>false,'error'=>['code'=>$e->apiCode,'message'=>$e->getMessage()]]);
 }catch(VP3BrowserShareExceptionV2010 $e){
