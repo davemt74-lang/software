@@ -127,7 +127,10 @@ function vp3_live_room_public_v2070(PDO $pdo,array $room,int $viewerUserId=0,boo
             'id'=>(string)($room['source_public_id']??''),
             'url'=>(string)($room['source_url']??''),
             'canonical_url'=>(string)($room['source_canonical_url']??''),
-            'title'=>(string)($room['source_title']??''),
+            // Canonical Source titles are mutable shared metadata and can have
+            // originated from a different/private viewer. Live Room payloads
+            // use URL/domain plus the room's own title instead of leaking it.
+            'title'=>'',
             'domain'=>(string)($room['source_domain']??''),
         ],
         'research_project'=>[
