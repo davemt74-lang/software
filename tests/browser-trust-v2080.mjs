@@ -33,6 +33,7 @@ must(service.includes('UNIQUE KEY uq_browser_change_transition'),'source change 
 must(service.includes('UNIQUE KEY uq_browser_notification_event'),'Phase 9 notifications must be deduplicated');
 must(service.includes("browser_source_follows_v2050 WHERE source_id=?"),'source change notification fanout must target source followers');
 must(service.includes("create_notification($userId,'browser_'.$type"),'Phase 9 alerts must bridge into canonical VP3 notifications');
+must(service.includes("'claim-created:'"),'new visible claims must notify authorized source followers');
 mustNot(service.includes('page_text_excerpt'),'Phase 9 must not persist potentially personalized page text');
 mustNot(service.includes('LONGTEXT NOT NULL')&&service.includes('browser_source_change_events_v2080'),'source change ledger should store fingerprints/metadata, not copied page bodies');
 
@@ -71,6 +72,7 @@ must(background.includes("case 'trust_action'"),'Phase 9 action transport missin
 must(panelJs.includes("setView('alerts')"),'Alerts tab navigation missing');
 must(panelJs.includes("trustAction('claim_create'"),'sidebar claim filing missing');
 must(panelJs.includes("target_type:'annotation'"),'sidebar annotation reporting missing');
+must(panelJs.includes("target_type:'comment'"),'sidebar comment reporting missing');
 must(panelJs.includes("target_type:'live_message'"),'sidebar Live reporting missing');
 must(panelJs.includes("target_type:'claim'"),'sidebar claim reporting missing');
 must(panelJs.includes("msg('trust_observe'"),'sidebar source observation missing');

@@ -73,7 +73,8 @@ must(api.includes('vp3_extension_session_authenticate_v2001'),'Live extension AP
 must(api.includes("vp3_live_room_poll_v2070($pdo,$userId,trim((string)($_GET['room']??'')),max(0,(int)($_GET['after']??0)),false)"),'GET polling must not silently refresh presence');
 mustNot(api.includes('ensure_schema_v2070('),'public Live API must never execute schema DDL');
 
-must(/const VP3_EXTENSION_VERSION = '20\\.(?:7[0-9]|[89][0-9])\\./.test(background),'extension runtime must remain v20.70+');
+const runtimeVersion=(background.match(/const VP3_EXTENSION_VERSION = '([0-9.]+)'/)||[])[1]||'';
+must(Number(runtimeVersion.split('.')[0])===20&&Number(runtimeVersion.split('.')[1])>=70,'extension runtime must remain v20.70+');
 must(background.includes("'/api/live-rooms-v2070.php'"),'Browser Companion Live transport missing');
 must(background.includes("case 'live_rooms'"),'Browser Companion source-room transport missing');
 must(background.includes("case 'live_poll'"),'Browser Companion Live poll transport missing');

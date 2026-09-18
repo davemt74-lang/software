@@ -350,6 +350,15 @@ function vp3_browser_trust_claim_create_v2080(PDO $pdo,int $userId,array $input)
       VALUES(?,?,?,'created','','open','',UTC_TIMESTAMP())")->execute([vp3_browser_trust_uuid_v2080(),$claimId,$userId]);
     $row=vp3_browser_trust_claim_row_v2080($pdo,$public);
     if(!$row)throw new RuntimeException('Claim could not be reloaded.');
+    $followers=$pdo->prepare('SELECT user_id FROM browser_source_follows_v2050 WHERE source_id=?');
+    $followers->execute([(int)$source['id']]);
+    foreach(array_map('intval',$followers->fetchAll(PDO::FETCH_COLUMN)?:[]) as $followerId){
+        if($followerId<1||$followerId===$userId||!vp3_browser_trust_claim_access_v2080($pdo,$row,$followerId))continue;
+        vp3_browser_trust_notify_v2080(
+            $pdo,$followerId,'claims','claim-created:'.$claimId.':'.$followerId,'New claim on a followed source',
+            mb_substr($statement,0,500),'/claim.php?id='.rawurlencode($public),(int)$source['id'],$claimId
+        );
+    }
     return vp3_browser_trust_claim_public_v2080($pdo,$row,$userId,true);
 }
 
