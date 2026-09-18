@@ -45,6 +45,8 @@ must(service.includes("browser_source_follows_v2050 WHERE source_id=?"),'source 
 must(service.includes("create_notification($userId,'browser_'.$type"),'Phase 9 alerts must bridge into canonical VP3 notifications');
 must(service.includes("'claim-created:'"),'new visible claims must notify authorized source followers');
 mustNot(service.includes('page_text_excerpt'),'Phase 9 must not persist potentially personalized page text');
+must(service.includes("'title'=>''"),'Phase 9 version payloads must not fan out observer-specific page titles');
+mustNot(service.includes("$identity['title']!==''"),'source-change notification fanout must not reuse observer-specific page titles');
 mustNot(service.includes('LONGTEXT NOT NULL')&&service.includes('browser_source_change_events_v2080'),'source change ledger should store fingerprints/metadata, not copied page bodies');
 
 must(service.includes("['private','team','public']"),'claim visibility boundary missing');

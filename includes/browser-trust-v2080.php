@@ -168,7 +168,7 @@ function vp3_browser_trust_version_public_v2080(?array $row): ?array
         'hash'=>(string)$row['content_hash'],
         'hash_short'=>substr((string)$row['content_hash'],0,12),
         'basis'=>(string)$row['version_basis'],
-        'title'=>(string)$row['source_title'],
+        'title'=>'',
         'captured_at'=>(string)$row['captured_at'],
     ];
 }
@@ -257,7 +257,7 @@ function vp3_browser_trust_compare_change_v2080(PDO $pdo,int $viewerUserId,strin
     $source=vp3_browser_source_row_by_public_id_v2050($pdo,(string)$change['source_public_id']);
     if(!$source)throw new RuntimeException('Source was not found.');
     return [
-        'source'=>vp3_browser_source_public_source_v2050($pdo,$source,$viewerUserId),
+        'source'=>array_replace(vp3_browser_source_public_source_v2050($pdo,$source,$viewerUserId),['title'=>'']),
         'change'=>vp3_browser_trust_source_change_public_v2080($pdo,$change),
         'from_annotations'=>vp3_browser_trust_version_annotations_v2080($pdo,(int)$change['source_id'],(int)$change['from_version_id'],$viewerUserId),
         'to_annotations'=>vp3_browser_trust_version_annotations_v2080($pdo,(int)$change['source_id'],(int)$change['to_version_id'],$viewerUserId),
@@ -325,7 +325,7 @@ function vp3_browser_trust_observe_source_v2080(PDO $pdo,int $userId,string $url
                 vp3_browser_trust_notify_v2080(
                     $pdo,$followerId,'source_changes','source-change:'.$eventId,
                     'Source changed',
-                    ((string)$identity['title']!==''?(string)$identity['title']:(string)$identity['domain']).' has a new observed version.',
+                    (string)$identity['domain'].' has a new observed version.',
                     '/source.php?source='.rawurlencode((string)$source['public_id']),
                     (int)$source['id']
                 );
