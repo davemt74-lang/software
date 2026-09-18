@@ -1,5 +1,10 @@
 name: Browser Companion Rich Capture v20.40+ regression
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+
 on:
   push:
     branches:
