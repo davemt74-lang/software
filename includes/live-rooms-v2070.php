@@ -248,8 +248,11 @@ function vp3_live_room_heartbeat_v2070(PDO $pdo,int $userId,string $roomPublicId
 {
     if($userId<1)return;
     $room=vp3_live_room_require_v2070($pdo,$roomPublicId,$userId,true);
-    $pdo->prepare('UPDATE live_room_members_v2070 SET last_seen_at=UTC_TIMESTAMP(),left_at=NULL,updated_at=UTC_TIMESTAMP() WHERE room_id=? AND user_id=?')
-        ->execute([(int)$room['id'],$userId]);
+    // Heartbeat may revive a stale-but-still-joined presence, but it must never
+    // undo an explicit Leave. Rejoining is an explicit join action.
+    $stmt=$pdo->prepare('UPDATE live_room_members_v2070 SET last_seen_at=UTC_TIMESTAMP(),updated_at=UTC_TIMESTAMP() WHERE room_id=? AND user_id=? AND left_at IS NULL');
+    $stmt->execute([(int)$room['id'],$userId]);
+    if($stmt->rowCount()<1)throw new RuntimeException('Join the Live Room before refreshing presence.');
 }
 
 function vp3_live_room_cloak_v2070(PDO $pdo,int $userId,string $roomPublicId,bool $enabled): array
