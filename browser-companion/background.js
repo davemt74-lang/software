@@ -1,6 +1,6 @@
 const VP3_DEFAULT_BASE = 'https://vp3.me';
 const VP3_CONTRACT_VERSION = '1';
-const VP3_EXTENSION_VERSION = '20.50.0';
+const VP3_EXTENSION_VERSION = '20.60.0';
 const VP3_REQUESTED_CAPABILITIES = [
   'team.destinations.read',
   'team.share.create',
