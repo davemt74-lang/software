@@ -1,4 +1,4 @@
-# VP3 Browser Companion v20.50
+# VP3 Browser Companion v20.60
 
 Chrome Manifest V3 companion for VP3 Browser Share and the Source Feed layer: This Page, Following, source/user follows, comments, read state, Private/Team/Public publishing, plus highlighted text, screenshot regions, source-media moments, and voice commentary.
 
@@ -58,7 +58,7 @@ The optional numeric argument controls the maximum number of jobs processed in t
 
 ## Local Chrome installation
 
-Open `chrome://extensions`, enable **Developer mode**, choose **Load unpacked**, and select this `browser-companion` directory. The CI package `vp3-browser-companion-v20.50.0.zip` is directly loadable/extractable and contains `manifest.json` at the ZIP root.
+Open `chrome://extensions`, enable **Developer mode**, choose **Load unpacked**, and select this `browser-companion` directory. The CI package `vp3-browser-companion-v20.60.0.zip` is directly loadable/extractable and contains `manifest.json` at the ZIP root.
 
 The default VP3 site is `https://vp3.me`. Another HTTPS VP3 installation can be selected in Extension Settings. Local development may use `http://localhost` or `http://127.0.0.1`; Chrome asks for explicit access to the selected origin.
 
@@ -92,3 +92,19 @@ Disconnecting from the extension calls the VP3 self-revoke endpoint before local
 - Public/source views use `/source.php`; annotation context uses `/annotation.php`.
 
 After deploying v20.50, run `/upgrade.php` once to install the Browser Source Feed tables and backfill canonical Source links for existing Phase 4/5 Browser Shares.
+
+
+## Phase 7 — Research Projects + Publishing
+
+- **Add to Research** now opens a project chooser instead of only toggling a generic saved state.
+- Send an annotation to the **Research Inbox**, assign it directly to an existing project, or **Create project + add** without leaving the sidebar.
+- Project assignment references the canonical Browser Share, Source, and pinned Source Version; Research does not copy captured text into a second extension data store.
+- Project roles are **Owner**, **Admin**, **Researcher**, and **Viewer**. Team projects also revalidate live Team membership.
+- Assigning an annotation automatically adds its canonical Source to the project evidence base.
+- Findings move from **Draft → Confirmed → Published** and can link supporting, conflicting, and contextual evidence with pinned Source Versions.
+- Reports are composed from selected Findings, Sources, and annotations. Every publish creates a new immutable JSON snapshot with a SHA-256 integrity hash.
+- Report visibility is **Private**, **Team**, or **Public**. Incompatible annotation text is redacted back to the pinned Source instead of leaking broader content.
+- Unpublishing removes current public/team availability but preserves historical report versions and hashes.
+- Canonical Source pages surface authorized published Research reports that cite that Source.
+
+After deploying v20.60, run `/upgrade.php` once to install the Research Project, Finding, evidence, report, immutable report-version, and report-source provenance tables.
