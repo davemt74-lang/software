@@ -386,6 +386,104 @@ function vp3_cognitive_render_card_v500(PDO $pdo,array $user,string $agentNamesp
     return vp3_cognitive_card_normalize_v500($raw,$request);
 }
 
+function vp3_cognitive_validate_event_envelope_v500(array $event): array
+{
+    $allowed=['event_id','owner_user_id','agent_namespace','source','event_type','occurred_at','received_at','verification','object_refs','correlation_id','causation_id','schema_version'];
+    foreach(array_keys($event) as $key)if(!in_array((string)$key,$allowed,true))throw new InvalidArgumentException('Unknown cognitive event field: '.$key);
+    foreach($allowed as $key)if(!array_key_exists($key,$event))throw new InvalidArgumentException('Missing cognitive event field: '.$key);
+
+    $eventId=vp3_cognitive_text_v500($event['event_id']??'',80);
+    $source=vp3_cognitive_id_v500($event['source']??'',80);
+    $eventType=vp3_cognitive_id_v500($event['event_type']??'',120);
+    $verification=(string)($event['verification']??'');
+    $namespace=(string)($event['agent_namespace']??'system');
+    if($eventId===''||$source===''||$eventType===''||!in_array($verification,['trusted','verified'],true))throw new InvalidArgumentException('Invalid cognitive event envelope.');
+    if($namespace!=='system'&&vp3_cognitive_agent_id_v500($namespace)<1)throw new InvalidArgumentException('Invalid cognitive event Agent namespace.');
+    $registry=vp3_cognitive_registry_storage_v500();
+    if(!isset($registry['events'][$eventType]))throw new InvalidArgumentException('Unregistered cognitive event type: '.$eventType);
+
+    $refs=[];
+    foreach(array_slice((array)$event['object_refs'],0,40) as $ref){
+        if(!is_array($ref))throw new InvalidArgumentException('Cognitive event object references must be structured.');
+        $refs[]=vp3_cognitive_validate_object_ref_v500($ref,true);
+    }
+    if(!$refs)throw new InvalidArgumentException('Cognitive events require at least one registered object reference.');
+
+    $occurred=vp3_cognitive_text_v500($event['occurred_at']??'',64);
+    $received=vp3_cognitive_text_v500($event['received_at']??'',64);
+    if($occurred!==''&&strtotime($occurred)===false)throw new InvalidArgumentException('Invalid cognitive event occurred time.');
+    if($received===''||strtotime($received)===false)throw new InvalidArgumentException('Invalid cognitive event received time.');
+
+    return [
+        'event_id'=>$eventId,
+        'owner_user_id'=>max(0,(int)$event['owner_user_id']),
+        'agent_namespace'=>$namespace,
+        'source'=>$source,
+        'event_type'=>$eventType,
+        'occurred_at'=>$occurred,
+        'received_at'=>$received,
+        'verification'=>$verification,
+        'object_refs'=>$refs,
+        'correlation_id'=>vp3_cognitive_text_v500($event['correlation_id']??'',120),
+        'causation_id'=>vp3_cognitive_text_v500($event['causation_id']??'',120),
+        'schema_version'=>max(1,(int)$event['schema_version']),
+    ];
+}
+
+function vp3_cognitive_event_from_agent_event_v500(array $user,string $agentNamespace,array $event,array $objectRefs): array
+{
+    $uid=(int)($user['id']??0);
+    if($uid<1)throw new RuntimeException('A signed-in VP3 user is required.');
+    return vp3_cognitive_validate_event_envelope_v500([
+        'event_id'=>(string)($event['event_uuid']??$event['id']??''),
+        'owner_user_id'=>$uid,
+        'agent_namespace'=>$agentNamespace,
+        'source'=>(string)($event['source']??''),
+        'event_type'=>(string)($event['event_type']??''),
+        'occurred_at'=>(string)($event['occurred_at']??''),
+        'received_at'=>(string)($event['received_at']??gmdate('c')),
+        'verification'=>(string)($event['verification_status']??'trusted'),
+        'object_refs'=>$objectRefs,
+        'correlation_id'=>(string)($event['correlation_id']??''),
+        'causation_id'=>(string)($event['causation_id']??''),
+        'schema_version'=>max(1,(int)($event['schema_version']??1)),
+    ]);
+}
+
+function vp3_cognitive_context_packet_v500(PDO $pdo,array $user,string $agentNamespace,array $event,array $options=[]): array
+{
+    $agentNamespace=vp3_cognitive_validate_namespace_v500($pdo,$user,$agentNamespace);
+    $event=vp3_cognitive_validate_event_envelope_v500($event);
+    if((int)$event['owner_user_id']!==(int)($user['id']??0))throw new RuntimeException('Cognitive event principal mismatch.');
+    if(!hash_equals((string)$event['agent_namespace'],$agentNamespace))throw new RuntimeException('Cognitive event Agent namespace mismatch.');
+
+    $objects=[];$relationships=[];
+    foreach($event['object_refs'] as $ref){
+        if(!vp3_cognitive_authorize_ref_v500($pdo,$user,$agentNamespace,$ref,'read'))continue;
+        $objects[]=vp3_cognitive_context_for_ref_v500($pdo,$user,$agentNamespace,$ref,$options);
+        foreach(vp3_cognitive_relationships_for_ref_v500($pdo,$user,$agentNamespace,$ref,$options) as $edge)$relationships[]=$edge;
+    }
+    if(!$objects)throw new RuntimeException('No authorized cognitive objects remain for this event.');
+
+    $registry=vp3_cognitive_registry_public_v500();
+    $packet=[
+        'contract'=>VP3_COGNITIVE_CONTRACT_V500,
+        'build'=>VP3_COGNITIVE_RUNTIME_V500,
+        'principal'=>['user_id'=>(int)$user['id'],'agent_namespace'=>$agentNamespace],
+        'trigger'=>$event,
+        'objects'=>$objects,
+        'relationships'=>array_slice($relationships,0,120),
+        'available_tools'=>$registry['tools'],
+        'available_card_types'=>$registry['card_types'],
+        'presentation_context'=>vp3_cognitive_presentation_context_v500($pdo,$user,(array)($options['presentation_context']??[])),
+        'generated_at'=>gmdate('c'),
+    ];
+    $safe=vp3_cognitive_sanitize_value_v500($packet);
+    $json=json_encode($safe,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
+    if(!is_string($json)||strlen($json)>VP3_COGNITIVE_CONTEXT_MAX_BYTES_V500*4)throw new RuntimeException('Cognitive context packet exceeded the bounded packet limit.');
+    return $safe;
+}
+
 function vp3_cognitive_validate_evidence_v500(array $item): array
 {
     $allowed=['truth_type','object_ref','statement','occurred_at'];
@@ -654,6 +752,7 @@ function vp3_cognitive_presentation_context_v500(PDO $pdo,array $user,array $ove
         'idle_minutes'=>0,
         'already_presented'=>false,
         'attention_budget_remaining'=>true,
+        'voice_candidate_allowed'=>false,
     ];
     return array_replace($defaults,$overrides);
 }
@@ -673,7 +772,7 @@ function vp3_cognitive_presentation_decide_v500(array $observation,array $contex
     ];
     $ctx=array_replace([
         'direct_user_request'=>false,'requires_user_response'=>false,'agent_voice_enabled'=>true,'interruptible'=>true,
-        'quiet_hours'=>false,'focus_mode'=>false,'sensitive_for_voice'=>false,'idle_minutes'=>0,'already_presented'=>false,'attention_budget_remaining'=>true,
+        'quiet_hours'=>false,'focus_mode'=>false,'sensitive_for_voice'=>false,'idle_minutes'=>0,'already_presented'=>false,'attention_budget_remaining'=>true,'voice_candidate_allowed'=>false,
     ],$context);
 
     if($obs['valid_until']!==''&&strtotime($obs['valid_until'])!==false&&strtotime($obs['valid_until'])<time())return ['surface'=>'none','paired_surface'=>'','voice'=>false,'reason_code'=>'expired'];
@@ -682,7 +781,7 @@ function vp3_cognitive_presentation_decide_v500(array $observation,array $contex
     if(!empty($ctx['already_presented'])&&$obs['urgency']<0.95)return ['surface'=>'memory','paired_surface'=>'','voice'=>false,'reason_code'=>'already_presented'];
 
     $meaningful=max($obs['impact'],$obs['goal_relevance'],($obs['urgency']*0.9),($obs['novelty']*0.75));
-    $voiceEligible=!empty($ctx['agent_voice_enabled'])&&!empty($ctx['interruptible'])&&empty($ctx['quiet_hours'])&&empty($ctx['focus_mode'])&&empty($ctx['sensitive_for_voice'])&&$obs['voice_safe_summary']!==''&&!empty($ctx['attention_budget_remaining']);
+    $voiceEligible=!empty($ctx['voice_candidate_allowed'])&&!empty($ctx['agent_voice_enabled'])&&!empty($ctx['interruptible'])&&empty($ctx['quiet_hours'])&&empty($ctx['focus_mode'])&&empty($ctx['sensitive_for_voice'])&&$obs['voice_safe_summary']!==''&&!empty($ctx['attention_budget_remaining']);
 
     if($obs['presentation_recommendation']==='voice_announce'&&$voiceEligible&&$obs['confidence']>=0.55){
         return ['surface'=>'voice_announce','paired_surface'=>'notification','voice'=>true,'reason_code'=>'module_voice_recommendation'];

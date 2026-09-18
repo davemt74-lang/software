@@ -15,6 +15,9 @@ for(const fn of [
   'vp3_cognitive_object_ref_v500',
   'vp3_cognitive_context_for_ref_v500',
   'vp3_cognitive_relationships_for_ref_v500',
+  'vp3_cognitive_validate_event_envelope_v500',
+  'vp3_cognitive_event_from_agent_event_v500',
+  'vp3_cognitive_context_packet_v500',
   'vp3_cognitive_validate_observation_v500',
   'vp3_cognitive_observation_store_v500',
   'vp3_cognitive_presentation_decide_v500',
@@ -40,6 +43,7 @@ for(const surface of ['none','memory','brief','away_digest','notification','voic
 assert.match(core,/\$idle>=60/,'normal idle digest threshold must be 60 minutes');
 assert.match(core,/\$idle>=30/,'attention idle threshold must be 30 minutes');
 assert.match(core,/agent_voice_enabled/,'presentation must consume canonical Agent Voice state');
+assert.match(core,/voice_candidate_allowed/,'LLM recommendation alone must not authorize spoken interruption');
 assert.match(core,/paired_surface'=>'notification'/,'voice presentation must retain a paired visual notification');
 
 assert.match(meetings,/vp3_cognitive_register_meetings_v500/);
@@ -48,6 +52,8 @@ for(const tool of ['meeting.context','meeting.prepare_brief','meeting.draft_foll
 assert.match(meetings,/video_meeting_access_v1800/,'meeting access must reuse canonical meeting authorization');
 assert.match(meetings,/video_meeting_intelligence_public_state_v1820/,'meeting cognition must reuse canonical Meeting Intelligence');
 assert.match(meetings,/video_meeting_transcription_session_v1800/,'meeting cognition must reuse canonical transcription linkage');
+assert.match(meetings,/decisions_and_commitments/,'meeting context must map the canonical combined decisions + commitments snapshot');
+assert.match(meetings,/\['questions'\]/,'meeting context must use the canonical questions snapshot');
 assert.doesNotMatch(meetings,/CREATE TABLE|ALTER TABLE/,'meeting adapter must not create a parallel meeting store');
 
 assert.equal(moduleContract.runtime_contract,'cognitive-runtime-v1');
@@ -58,6 +64,7 @@ assert.equal(moduleContract.presentation.voice_decision_owned_by_runtime,true);
 assert.match(api,/render_card/);
 assert.match(api,/context/);
 assert.doesNotMatch(api,/observation_store|presentation_decide/,'public API must not let clients inject cognition or choose presentation');
+assert.doesNotMatch(core,/CREATE TABLE IF NOT EXISTS cognitive_events_v500/,'11B.1 must reuse agent_event_inbox instead of creating a parallel event ledger');
 
 assert.match(bootstrap,/cognitive-runtime-v500\.php/);
 assert.match(bootstrap,/cognitive-runtime-meetings-v500\.php/);
