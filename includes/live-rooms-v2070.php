@@ -49,7 +49,6 @@ function vp3_live_room_access_v2070(PDO $pdo,array $room,int $userId,bool $write
 {
     if(!empty($room['deleted_at']))return false;
     if($write && (string)($room['room_status']??'active')!=='active')return false;
-    if((int)($room['owner_user_id']??0)===$userId && $userId>0)return true;
     $scope=(string)($room['room_scope']??'');
     if($scope==='public')return !$write||$userId>0;
     if($scope==='team'&&$userId>0){
@@ -86,6 +85,14 @@ function vp3_live_room_member_identity_v2070(array $member,bool $forSelf=false):
     ];
 }
 
+function vp3_live_room_presence_count_v2070(PDO $pdo,int $roomId): int
+{
+    $stmt=$pdo->prepare('SELECT COUNT(*) FROM live_room_members_v2070
+      WHERE room_id=? AND left_at IS NULL AND last_seen_at>=DATE_SUB(UTC_TIMESTAMP(),INTERVAL '.VP3_LIVE_ROOM_PRESENCE_SECONDS_V2070.' SECOND)');
+    $stmt->execute([$roomId]);
+    return (int)$stmt->fetchColumn();
+}
+
 function vp3_live_room_participants_v2070(PDO $pdo,array $room,int $viewerUserId): array
 {
     $stmt=$pdo->prepare('SELECT m.*,u.display_name
@@ -102,6 +109,7 @@ function vp3_live_room_public_v2070(PDO $pdo,array $room,int $viewerUserId=0,boo
 {
     $member=$viewerUserId>0?vp3_live_room_member_v2070($pdo,(int)$room['id'],$viewerUserId):null;
     $participants=$withParticipants?vp3_live_room_participants_v2070($pdo,$room,$viewerUserId):[];
+    $participantCount=$withParticipants?count($participants):vp3_live_room_presence_count_v2070($pdo,(int)$room['id']);
     return [
         'id'=>(string)$room['public_id'],
         'title'=>(string)$room['title'],
@@ -114,7 +122,7 @@ function vp3_live_room_public_v2070(PDO $pdo,array $room,int $viewerUserId=0,boo
         'cloak_mode'=>is_array($member)&&!empty($member['cloak_mode']),
         'self_identity'=>is_array($member)?vp3_live_room_member_identity_v2070($member,true):null,
         'participants'=>$participants,
-        'participant_count'=>count($participants),
+        'participant_count'=>$participantCount,
         'source'=>[
             'id'=>(string)($room['source_public_id']??''),
             'url'=>(string)($room['source_url']??''),
@@ -239,7 +247,7 @@ function vp3_live_room_leave_v2070(PDO $pdo,int $userId,string $roomPublicId): a
 function vp3_live_room_heartbeat_v2070(PDO $pdo,int $userId,string $roomPublicId): void
 {
     if($userId<1)return;
-    $room=vp3_live_room_require_v2070($pdo,$roomPublicId,$userId,false);
+    $room=vp3_live_room_require_v2070($pdo,$roomPublicId,$userId,true);
     $pdo->prepare('UPDATE live_room_members_v2070 SET last_seen_at=UTC_TIMESTAMP(),left_at=NULL,updated_at=UTC_TIMESTAMP() WHERE room_id=? AND user_id=?')
         ->execute([(int)$room['id'],$userId]);
 }
