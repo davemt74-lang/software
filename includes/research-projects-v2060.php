@@ -367,6 +367,41 @@ function vp3_research_inbox_v2060(PDO $pdo,int $userId,int $limit=100): array
     return $out;
 }
 
+function vp3_research_share_context_v2060(PDO $pdo,int $userId,string $browserSharePublicId): array
+{
+    if($userId<1)throw new RuntimeException('Sign in to use Research.');
+    $share=vp3_browser_source_authorized_row_v2050($pdo,$userId,$browserSharePublicId);
+    $projects=array_values(array_filter(
+        vp3_research_projects_for_user_v2060($pdo,$userId,false),
+        static fn(array $project): bool=>vp3_research_role_at_least_v2060((string)($project['role']??''),'researcher')
+    ));
+    $placements=[];
+    $stmt=$pdo->prepare("SELECT p.public_id,p.title,i.public_id AS item_public_id
+      FROM research_project_items_v2060 i
+      INNER JOIN research_projects_v2060 p ON p.id=i.project_id AND p.deleted_at IS NULL
+      WHERE i.browser_share_id=? AND i.item_type='annotation' AND i.item_status='active'
+      ORDER BY p.updated_at DESC,p.id DESC");
+    $stmt->execute([(int)$share['id']]);
+    foreach($stmt->fetchAll(PDO::FETCH_ASSOC)?:[] as $row){
+        $project=vp3_research_project_row_v2060($pdo,(string)$row['public_id']);
+        if(!$project||vp3_research_project_role_v2060($pdo,$project,$userId)==='')continue;
+        $placements[]=[
+            'project_id'=>(string)$row['public_id'],
+            'project_title'=>(string)$row['title'],
+            'item_id'=>(string)$row['item_public_id'],
+        ];
+    }
+    $inbox=$pdo->prepare('SELECT 1 FROM browser_research_queue_v2050 WHERE user_id=? AND browser_share_id=? LIMIT 1');
+    $inbox->execute([$userId,(int)$share['id']]);
+    return [
+        'browser_share_id'=>(string)$share['public_id'],
+        'in_inbox'=>(bool)$inbox->fetchColumn(),
+        'projects'=>$projects,
+        'placements'=>$placements,
+        'research_url'=>url('/research.php'),
+    ];
+}
+
 function vp3_research_create_finding_v2060(PDO $pdo,int $actorUserId,string $projectPublicId,string $title,string $body='',string $evidenceItemPublicId='',string $evidenceRole='support'): array
 {
     $project=vp3_research_project_require_v2060($pdo,$projectPublicId,$actorUserId,'researcher');
