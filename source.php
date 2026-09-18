@@ -23,7 +23,10 @@ if(!$source){
     $pageTitle='Source not found';
     $feed=['items'=>[]];
 }else{
-    $pageTitle=trim((string)$source['source_title']) ?: (string)$source['source_domain'];
+    // Never use mutable global Source title metadata as the public heading.
+    // It may have originated from a personalized/private viewer. Promote only
+    // a title pinned to an annotation the current viewer is authorized to see.
+    $pageTitle=(string)$source['source_domain'];
     $feed=vp3_browser_source_this_page_v2050(
         $pdo,$userId,(string)$source['normalized_url'],(string)$source['canonical_url'],'',50,''
     );
