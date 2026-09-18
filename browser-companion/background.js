@@ -201,6 +201,18 @@ async function authorizedMediaDataUrl(path) {
   }
 }
 
+async function activeTabIdentity() {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (!tab?.id || !/^https?:/i.test(String(tab.url || ''))) return { available: false, source_url: '' };
+  return {
+    available: true,
+    tab_id: tab.id,
+    window_id: tab.windowId,
+    source_url: String(tab.url || ''),
+    title: String(tab.title || '').slice(0, 512)
+  };
+}
+
 async function activeCapture(tabHint = null) {
   let tab = tabHint;
   if (!tab?.id) [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -591,6 +603,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     switch (message?.type) {
       case 'state': return publicState();
       case 'capture': return activeCapture();
+      case 'tab_identity': return activeTabIdentity();
       case 'capture_region': return selectScreenshotRegion();
       case 'clear_pending_capture': await storage.remove('pending_capture'); return { ok: true };
       case 'connect': return beginConnect(message.device_name);
