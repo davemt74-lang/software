@@ -239,11 +239,15 @@ try {
 
         $toolSources = !empty($toolResult['sources']) && is_array($toolResult['sources']) ? $toolResult['sources'] : [];
         $publicSources = array_merge($publicSources, $toolSources);
+        $cardRequests = function_exists('vp3_cognitive_cards_chat_requests_v520')
+            ? vp3_cognitive_cards_chat_requests_v520($pdo,$user,'system',$query,8)
+            : [];
         $messageContext = [
             'sources'=>$publicSources,
             'media'=>$media,
             'stem_media'=>!empty($toolResult['stem_media']) && is_array($toolResult['stem_media']) ? $toolResult['stem_media'] : [],
             'actions'=>!empty($toolResult['actions']) && is_array($toolResult['actions']) ? $toolResult['actions'] : [],
+            'cards'=>$cardRequests,
             'playlist_title'=>$playlistTitle,
             'agent_context'=>$agentContext,
         ];
@@ -259,7 +263,7 @@ try {
             'ok'=>true,'conversation_id'=>$conversationId,'user_message_id'=>$userMessageId,
             'assistant_message_id'=>$assistantMessageId,'answer'=>$answer,'sources'=>$publicSources,
             'media'=>$media,'stem_media'=>$messageContext['stem_media'],'actions'=>$messageContext['actions'],
-            'playlist_title'=>$playlistTitle,'input_mode'=>$inputMode,
+            'cards'=>$messageContext['cards'],'playlist_title'=>$playlistTitle,'input_mode'=>$inputMode,
         ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
         exit;
     }
