@@ -256,6 +256,7 @@ function vp3_live_room_join_v2070(PDO $pdo,int $userId,string $roomPublicId,bool
     }
     $fresh=vp3_live_room_row_v2070($pdo,$roomPublicId)??$room;
     if(function_exists('vp3_browser_trust_notify_live_v2080'))vp3_browser_trust_notify_live_v2080($pdo,$fresh,$userId,'joined');
+    if(function_exists('vp3_annotated_mark_milestone_safe_v2100'))vp3_annotated_mark_milestone_safe_v2100($pdo,$userId,'live_used',['surface'=>'live']);
     return vp3_live_room_public_v2070($pdo,$fresh,$userId,true);
 }
 
