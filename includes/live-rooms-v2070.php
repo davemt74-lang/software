@@ -335,6 +335,7 @@ function vp3_live_room_send_v2070(PDO $pdo,int $userId,string $roomPublicId,stri
 
     $shareId=null;
     if(trim($browserSharePublicId)!==''){
+        if(!empty($member['cloak_mode']))throw new RuntimeException('Leave Cloak Mode before attaching an annotation. This prevents the annotation author from deanonymizing your cloaked room identity.');
         $share=vp3_browser_source_share_row_v2050($pdo,trim($browserSharePublicId));
         if(!$share||!vp3_live_room_share_compatible_v2070($pdo,$room,$share,$userId)){
             throw new RuntimeException('That annotation is not visible to everyone who can enter this Live Room.');
