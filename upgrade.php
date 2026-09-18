@@ -97,6 +97,7 @@ function vp3_upgrade_complete(): bool
         && agent_goal_strategy_schema_ready_v1710()
         && agent_goal_planning_schema_ready_v1711()
         && agent_goal_review_schema_ready_v1714()
+        && vp3_cognitive_schema_ready_v500()
         && table_exists('homeserver_connections')
         && table_exists('homeserver_releases')
         && table_exists('homeserver_chat_sessions')
@@ -175,6 +176,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             agent_goal_strategy_ensure_schema_v1710($pdo);
             agent_goal_planning_ensure_schema_v1711($pdo);
             agent_goal_review_ensure_schema_v1714($pdo);
+            vp3_cognitive_ensure_schema_v500($pdo);
             homeserver_vp3_ensure_schema($pdo);
             if (!homeserver_agent_v018_ensure_schema($pdo)) throw new RuntimeException('HomeServer Agent chat schema could not be installed.');
             agent_compute_v020_ensure_schema($pdo);
@@ -211,7 +213,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $complete = vp3_upgrade_complete();
 
             if ($complete) {
-                flash('notice', 'VP3 database upgrade complete: subscriptions, composable product entitlements, canonical plugin lifecycle, canonical human messaging, Browser Companion device authentication + Browser Share backend + private rich media + Live Rooms/Cloak Mode + Source Change Intelligence + Claims + Moderation + Search & Discovery, durable Agent retirement, Agent-scoped Brain memory, native Agent Scheduling, unified User Calendar, external calendar synchronization, Team Scheduling, Appointment Lifecycle + Automation, Video Meetings + Meeting Intelligence + Meeting Agenda orchestration + Meeting Action execution + Follow-Through Intelligence + Meeting Outcome Learning + Adaptive Meeting Planning + Plan-to-Action Handoff + Follow-Through Verification & Closure + Cross-Meeting Continuity + Meeting Closure & Recurring Continuity + manual Calendar meetings, Paid Appointments, Agent Work Control + Dependencies, Objective Verification + Adaptive Replanning, Objective Memory + Outcome Learning, Goals + Strategy + Adaptive Roadmaps + Forecast Review Learning, canonical Agent runtime routing and route-attributed AI accounting, social relationships, Team invitation/lifecycle collaboration, workspace-owned Music resources, Knowledge, Profile Agent, HomeServer Agent continuity, Agent Radar, CRM, transcriptions, and Music/Studio capabilities are ready.');
+                flash('notice', 'VP3 database upgrade complete: subscriptions, composable product entitlements, canonical plugin lifecycle, canonical human messaging, Browser Companion device authentication + Browser Share backend + private rich media + Live Rooms/Cloak Mode + Source Change Intelligence + Claims + Moderation + Search & Discovery, durable Agent retirement, Agent-scoped Brain memory, native Agent Scheduling, unified User Calendar, external calendar synchronization, Team Scheduling, Appointment Lifecycle + Automation, Video Meetings + Meeting Intelligence + Meeting Agenda orchestration + Meeting Action execution + Follow-Through Intelligence + Meeting Outcome Learning + Adaptive Meeting Planning + Plan-to-Action Handoff + Follow-Through Verification & Closure + Cross-Meeting Continuity + Meeting Closure & Recurring Continuity + manual Calendar meetings, Paid Appointments, Agent Work Control + Dependencies, Objective Verification + Adaptive Replanning, Objective Memory + Outcome Learning, Goals + Strategy + Adaptive Roadmaps + Forecast Review Learning, VP3 Cognitive Runtime Core v5.00, canonical Agent runtime routing and route-attributed AI accounting, social relationships, Team invitation/lifecycle collaboration, workspace-owned Music resources, Knowledge, Profile Agent, HomeServer Agent continuity, Agent Radar, CRM, transcriptions, and Music/Studio capabilities are ready.');
                 redirect(url('/admin/users.php'));
             }
         } catch (Throwable $e) {
