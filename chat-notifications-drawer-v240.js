@@ -763,6 +763,7 @@
   }
 
   function startAttentionPolling() {
+    if (window.VP3_COGNITIVE_PRESENTATION_V510?.ownsAttention) return;
     if (!chatCanvasAvailable()) return;
     void pollAttention(true);
     if (attentionTimer) window.clearInterval(attentionTimer);
@@ -772,7 +773,7 @@
   if (!ownNotificationButton()) return;
   ensureDrawer();
   keepBellNextToProfile();
-  observeMainFeedBrainPriorities();
+  if (!window.VP3_COGNITIVE_PRESENTATION_V510?.ownsBrainPresentation) observeMainFeedBrainPriorities();
   const actions = document.querySelector('.chat-topbar-actions');
   if (actions) new MutationObserver(keepBellNextToProfile).observe(actions, {childList:true});
   document.addEventListener('keydown', event => {
@@ -800,9 +801,12 @@
 
   window.STONEFELLOW_NOTIFICATION_CENTER = {
     open:openDrawer,
+    openBrain:() => { activeTab='brain'; openDrawer(); render(); },
+    openHistory:() => { activeTab='history'; openDrawer(); render(); },
     close:closeDrawer,
     refresh,
     pollAttention,
+    announce:text => { queueSpeech(String(text || '')); return true; },
     syncMainFeedOutcomes:syncMainFeedBrainOutcomeControls
   };
   void refresh(false).finally(startAttentionPolling);
