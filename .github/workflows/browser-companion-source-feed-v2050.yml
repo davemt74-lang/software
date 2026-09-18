@@ -1,4 +1,4 @@
-name: Browser Companion Phase 6+7+8 · Source + Research + Live v20.70
+name: Browser Companion Phase 6+7+8+9 · Source + Research + Live + Trust v20.80
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -17,7 +17,7 @@ permissions:
 
 jobs:
   contract:
-    name: Source + Research + Live contract · PHP ${{ matrix.php }}
+    name: Source + Research + Live + Trust contract · PHP ${{ matrix.php }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     strategy:
@@ -48,6 +48,8 @@ jobs:
         run: node tests/research-projects-publishing-v2060.mjs
       - name: Phase 8 Live Rooms + Cloak Mode contract
         run: node tests/live-rooms-cloak-v2070.mjs
+      - name: Phase 9 Source Change + Claims + Moderation contract
+        run: node tests/browser-trust-v2080.mjs
       - name: JavaScript syntax
         run: |
           node --check browser-companion/background.js
@@ -55,6 +57,7 @@ jobs:
           node --check tests/browser-companion-source-feed-v2050.mjs
           node --check tests/research-projects-publishing-v2060.mjs
           node --check tests/live-rooms-cloak-v2070.mjs
+          node --check tests/browser-trust-v2080.mjs
           node --check live-room-v2070.js
           node --check live-directory-v2070.js
       - name: PHP syntax
@@ -76,10 +79,17 @@ jobs:
           php -l api/live-rooms-v2070.php
           php -l live.php
           php -l live-room.php
+          php -l includes/browser-trust-v2080.php
+          php -l api/browser-trust-v2080.php
+          php -l claims.php
+          php -l claim.php
+          php -l moderation.php
+          php -l notification-settings.php
+          php -l source-change.php
           php -l upgrade.php
 
   package:
-    name: Package Browser Companion v20.70
+    name: Package Browser Companion v20.80
     needs: contract
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -89,16 +99,16 @@ jobs:
         run: |
           mkdir -p dist
           cd browser-companion
-          zip -r ../dist/vp3-browser-companion-v20.70.0.zip . -x '*.DS_Store'
+          zip -r ../dist/vp3-browser-companion-v20.80.0.zip . -x '*.DS_Store'
           cd ..
-          unzip -t dist/vp3-browser-companion-v20.70.0.zip
-          unzip -Z1 dist/vp3-browser-companion-v20.70.0.zip | grep -qx 'manifest.json'
-          if unzip -Z1 dist/vp3-browser-companion-v20.70.0.zip | grep -q '^browser-companion/'; then
+          unzip -t dist/vp3-browser-companion-v20.80.0.zip
+          unzip -Z1 dist/vp3-browser-companion-v20.80.0.zip | grep -qx 'manifest.json'
+          if unzip -Z1 dist/vp3-browser-companion-v20.80.0.zip | grep -q '^browser-companion/'; then
             echo 'Extension ZIP contains an unexpected wrapper folder.' >&2
             exit 1
           fi
-          sha256sum dist/vp3-browser-companion-v20.70.0.zip > dist/vp3-browser-companion-v20.70.0.zip.sha256
-          zip -r dist/vp3-phase8-live-deploy.zip \
+          sha256sum dist/vp3-browser-companion-v20.80.0.zip > dist/vp3-browser-companion-v20.80.0.zip.sha256
+          zip -r dist/vp3-phase9-trust-deploy.zip \
             api/browser-source-feed-v2050.php \
             api/browser-share-media-v2040.php \
             includes/browser-source-feed-v2050.php \
@@ -113,16 +123,19 @@ jobs:
             includes/live-rooms-v2070.php \
             api/live-rooms-v2070.php \
             live.php live-room.php live-room-v2070.js live-directory-v2070.js \
+            includes/browser-trust-v2080.php \
+            api/browser-trust-v2080.php \
+            claims.php claim.php moderation.php notification-settings.php source-change.php \
             upgrade.php
-          unzip -t dist/vp3-phase8-live-deploy.zip
-          sha256sum dist/vp3-phase8-live-deploy.zip > dist/vp3-phase8-live-deploy.zip.sha256
+          unzip -t dist/vp3-phase9-trust-deploy.zip
+          sha256sum dist/vp3-phase9-trust-deploy.zip > dist/vp3-phase9-trust-deploy.zip.sha256
       - uses: actions/upload-artifact@v4
         with:
-          name: vp3-browser-companion-v20.70.0
+          name: vp3-browser-companion-v20.80.0
           path: |
-            dist/vp3-browser-companion-v20.70.0.zip
-            dist/vp3-browser-companion-v20.70.0.zip.sha256
-            dist/vp3-phase8-live-deploy.zip
-            dist/vp3-phase8-live-deploy.zip.sha256
+            dist/vp3-browser-companion-v20.80.0.zip
+            dist/vp3-browser-companion-v20.80.0.zip.sha256
+            dist/vp3-phase9-trust-deploy.zip
+            dist/vp3-phase9-trust-deploy.zip.sha256
           if-no-files-found: error
           retention-days: 30

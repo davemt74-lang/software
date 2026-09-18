@@ -32,6 +32,7 @@
         <button id="thisPageTab" class="feed-tab active" type="button" aria-selected="true">This Page</button>
         <button id="followingTab" class="feed-tab" type="button" aria-selected="false">Following</button>
         <button id="liveTab" class="feed-tab" type="button" aria-selected="false">Live</button>
+        <button id="alertsTab" class="feed-tab" type="button" aria-selected="false">Alerts</button>
       </nav>
 
       <section id="thisPageView">
@@ -188,7 +189,50 @@
           <p class="hint">Cloak Mode shows a room-specific pseudonym to participants. VP3 still retains your account identity server-side for access control and abuse handling. Leave Cloak before attaching an annotation.</p>
         </section>
       </section>
+
+      <section id="alertsView" hidden>
+        <section class="card source-card">
+          <div class="row-between">
+            <div><div class="eyebrow">Source integrity</div><div id="alertsSourceTitle" class="page-title">No page selected</div><div id="alertsSourceHost" class="page-host"></div></div>
+            <button id="refreshAlertsBtn" class="text-btn" type="button">Refresh</button>
+          </div>
+          <div class="source-meta">
+            <span id="sourceChangeBadge" class="pill">No observed change</span>
+            <button id="fileClaimBtn" class="compact-btn" type="button">File a claim</button>
+            <button id="notificationSettingsBtn" class="text-btn" type="button">Settings</button>
+          </div>
+        </section>
+        <section class="feed-section">
+          <div class="section-heading"><div><div class="eyebrow">Versions</div><strong>Observed source changes</strong></div></div>
+          <div id="sourceHistoryEmpty" class="empty-state">No source changes have been observed yet.</div>
+          <div id="sourceHistoryList" class="alert-list"></div>
+        </section>
+        <section class="feed-section">
+          <div class="section-heading"><div><div class="eyebrow">Claims</div><strong>Claims on this source</strong></div></div>
+          <div id="sourceClaimsEmpty" class="empty-state">No claims are visible on this source.</div>
+          <div id="sourceClaimsList" class="alert-list"></div>
+        </section>
+        <section class="feed-section">
+          <div class="section-heading"><div><div class="eyebrow">Notifications</div><strong>Activity</strong></div><span id="alertUnreadCount" class="pill unread"></span></div>
+          <div id="notificationsEmpty" class="empty-state">No Browser Companion notifications yet.</div>
+          <div id="notificationsList" class="alert-list"></div>
+        </section>
+      </section>
     </section>
+
+    <dialog id="claimDialog" class="research-dialog">
+      <form method="dialog" class="research-dialog-shell">
+        <div class="dialog-head"><div><div class="eyebrow">File a claim</div><strong>Pin a statement to this source version</strong></div><button id="closeClaimDialogBtn" class="icon-btn" value="cancel" type="submit" aria-label="Close">×</button></div>
+        <label class="field"><span>Claim statement</span><textarea id="claimStatement" rows="3" maxlength="1000" placeholder="State the claim precisely"></textarea></label>
+        <label class="field"><span>Rationale / context</span><textarea id="claimRationale" rows="5" maxlength="12000" placeholder="Add context, qualifications, or supporting reasoning"></textarea></label>
+        <div class="publish-grid">
+          <label class="field"><span>Visibility</span><select id="claimVisibility"><option value="public">Public</option><option value="team">Team</option><option value="private">Private</option></select></label>
+          <label id="claimTeamField" class="field" hidden><span>Team</span><select id="claimTeamSelect"><option value="">Choose team…</option></select></label>
+        </div>
+        <button id="claimSubmitBtn" class="primary" type="button">File claim</button>
+        <p class="hint">The current source version is pinned as evidence. Future source changes will not rewrite the claim’s evidence.</p>
+      </form>
+    </dialog>
 
     <dialog id="researchDialog" class="research-dialog">
       <form method="dialog" class="research-dialog-shell">

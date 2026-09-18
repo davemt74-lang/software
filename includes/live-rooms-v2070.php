@@ -253,6 +253,7 @@ function vp3_live_room_join_v2070(PDO $pdo,int $userId,string $roomPublicId,bool
             ->execute([$cloak?1:0,(int)$member['id']]);
     }
     $fresh=vp3_live_room_row_v2070($pdo,$roomPublicId)??$room;
+    if(function_exists('vp3_browser_trust_notify_live_v2080'))vp3_browser_trust_notify_live_v2080($pdo,$fresh,$userId,'joined');
     return vp3_live_room_public_v2070($pdo,$fresh,$userId,true);
 }
 
@@ -377,6 +378,8 @@ function vp3_live_room_send_v2070(PDO $pdo,int $userId,string $roomPublicId,stri
     $pdo->prepare('UPDATE live_room_members_v2070 SET last_seen_at=UTC_TIMESTAMP(),updated_at=UTC_TIMESTAMP() WHERE id=?')->execute([(int)$member['id']]);
     $row=vp3_live_room_message_row_v2070($pdo,(int)$pdo->lastInsertId());
     if(!$row)throw new RuntimeException('Live Room message could not be reloaded.');
+    if(function_exists('vp3_browser_trust_notify_live_v2080'))vp3_browser_trust_notify_live_v2080($pdo,$room,$userId,'message');
+    if(function_exists('vp3_browser_trust_notify_live_mentions_v2080'))vp3_browser_trust_notify_live_mentions_v2080($pdo,$room,$userId,$body,$publicId);
     return vp3_live_room_message_public_v2070($pdo,$room,$row,$userId);
 }
 

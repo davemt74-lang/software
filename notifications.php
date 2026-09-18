@@ -53,9 +53,9 @@ $unreadCount = notification_unread_count($user);
 $memberHeaderUser = $user;
 $memberHeaderTitle = 'Notifications';
 $memberHeaderSubtitle = 'Account activity and agent alerts';
-$memberHeaderActions = '';
+$memberHeaderActions = '<a class="notification-button" href="' . e(url('/notification-settings.php')) . '">Settings</a>';
 if ($unreadCount > 0) {
-    $memberHeaderActions = '<form method="post" class="notification-header-form">'
+    $memberHeaderActions .= '<form method="post" class="notification-header-form">'
         . csrf_field()
         . '<input type="hidden" name="action" value="all_read">'
         . '<button class="notification-button" type="submit">Mark all read</button>'

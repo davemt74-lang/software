@@ -8,6 +8,8 @@ $userId=(int)($user['id']??0);
 $source=null;
 $publishedResearch=[];
 $liveRooms=[];
+$sourceChanges=[];
+$sourceClaims=[];
 $publicId=trim((string)($_GET['source']??''));
 $urlInput=trim((string)($_GET['url']??''));
 
@@ -40,6 +42,13 @@ if(!$source){
         $livePayload=vp3_live_room_rooms_for_source_v2070($pdo,$userId,(string)$source['normalized_url'],(string)$source['canonical_url'],'');
         $liveRooms=(array)($livePayload['rooms']??[]);
     }
+    if(vp3_browser_trust_schema_ready_v2080($pdo)){
+        try{
+            $history=vp3_browser_trust_source_history_v2080($pdo,$userId,(string)$source['public_id'],10);
+            $sourceChanges=(array)($history['changes']??[]);
+        }catch(Throwable $e){$sourceChanges=[];}
+        try{$sourceClaims=vp3_browser_trust_claims_for_source_v2080($pdo,$userId,(string)$source['public_id'],25);}catch(Throwable $e){$sourceClaims=[];}
+    }
     // A private follow alone must not publish source metadata to anonymous web
     // visitors. A public Source page requires authorized annotation/research,
     // or a Live Room that the current viewer may enter.
@@ -68,7 +77,7 @@ function source_page_media_v2050(array $media): string{
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title><?=source_page_e_v2050($pageTitle)?> · VP3 Source</title>
 <style>
-:root{color-scheme:light}*{box-sizing:border-box}body{margin:0;background:#f5f5f2;color:#171717;font:15px/1.55 Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}a{color:inherit}.shell{max-width:920px;margin:0 auto;padding:28px 18px 70px}.top{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:28px}.brand{font-weight:850;letter-spacing:-.04em;text-decoration:none}.source-head{padding:26px;background:#fff;border:1px solid #e1e1dc;border-radius:20px}.eyebrow{font-size:11px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:#72726b}.source-head h1{font-size:30px;line-height:1.1;letter-spacing:-.04em;margin:8px 0}.domain,.meta{color:#6d6d66;font-size:13px}.source-url{display:block;margin-top:14px;overflow-wrap:anywhere;color:#555}.list{display:grid;gap:12px;margin-top:20px}.card{padding:18px;background:#fff;border:1px solid #e1e1dc;border-radius:16px}.byline{display:flex;justify-content:space-between;gap:12px;color:#696962;font-size:12px}.quote{margin:14px 0 0;padding:12px 14px;border-left:3px solid #d0d0c8;background:#fafaf7;white-space:pre-wrap}.note{margin:12px 0 0;white-space:pre-wrap}.badges{display:flex;gap:6px;flex-wrap:wrap;margin-top:12px}.badge{padding:4px 7px;border-radius:999px;background:#f0f0eb;color:#666;font-size:10px;font-weight:750}.badge.changed{background:#fff1cf;color:#755400}.media{display:grid;gap:8px;margin-top:12px}.media-image{max-width:100%;max-height:500px;object-fit:contain;border-radius:12px;background:#eee}.media audio{width:100%}.actions{margin-top:14px;padding-top:12px;border-top:1px solid #ecece6;font-size:12px}.research-section,.live-section{margin-top:24px}.research-card,.live-card{padding:17px;background:#fff;border:1px solid #e1e1dc;border-radius:16px;margin-top:10px}.research-card strong,.live-card strong{display:block}.research-card p{margin:7px 0;color:#666}.research-meta,.live-meta{font-size:11px;color:#777}.live-card .badges{margin-top:8px}.empty{padding:40px 20px;text-align:center;color:#777;border:1px dashed #d3d3cd;border-radius:16px;margin-top:20px}
+:root{color-scheme:light}*{box-sizing:border-box}body{margin:0;background:#f5f5f2;color:#171717;font:15px/1.55 Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}a{color:inherit}.shell{max-width:920px;margin:0 auto;padding:28px 18px 70px}.top{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:28px}.brand{font-weight:850;letter-spacing:-.04em;text-decoration:none}.source-head{padding:26px;background:#fff;border:1px solid #e1e1dc;border-radius:20px}.eyebrow{font-size:11px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:#72726b}.source-head h1{font-size:30px;line-height:1.1;letter-spacing:-.04em;margin:8px 0}.domain,.meta{color:#6d6d66;font-size:13px}.source-url{display:block;margin-top:14px;overflow-wrap:anywhere;color:#555}.list{display:grid;gap:12px;margin-top:20px}.card{padding:18px;background:#fff;border:1px solid #e1e1dc;border-radius:16px}.byline{display:flex;justify-content:space-between;gap:12px;color:#696962;font-size:12px}.quote{margin:14px 0 0;padding:12px 14px;border-left:3px solid #d0d0c8;background:#fafaf7;white-space:pre-wrap}.note{margin:12px 0 0;white-space:pre-wrap}.badges{display:flex;gap:6px;flex-wrap:wrap;margin-top:12px}.badge{padding:4px 7px;border-radius:999px;background:#f0f0eb;color:#666;font-size:10px;font-weight:750}.badge.changed{background:#fff1cf;color:#755400}.media{display:grid;gap:8px;margin-top:12px}.media-image{max-width:100%;max-height:500px;object-fit:contain;border-radius:12px;background:#eee}.media audio{width:100%}.actions{margin-top:14px;padding-top:12px;border-top:1px solid #ecece6;font-size:12px}.research-section,.live-section,.trust-section{margin-top:24px}.research-card,.live-card,.trust-card{padding:17px;background:#fff;border:1px solid #e1e1dc;border-radius:16px;margin-top:10px}.research-card strong,.live-card strong,.trust-card strong{display:block}.research-card p{margin:7px 0;color:#666}.research-meta,.live-meta,.trust-meta{font-size:11px;color:#777}.live-card .badges{margin-top:8px}.empty{padding:40px 20px;text-align:center;color:#777;border:1px dashed #d3d3cd;border-radius:16px;margin-top:20px}
 </style>
 </head>
 <body><main class="shell">
@@ -81,7 +90,12 @@ function source_page_media_v2050(array $media): string{
 <h1><?=source_page_e_v2050($pageTitle)?></h1>
 <div class="domain"><?=source_page_e_v2050((string)$source['source_domain'])?></div>
 <a class="source-url" rel="noopener noreferrer" target="_blank" href="<?=source_page_e_v2050((string)$source['canonical_url'])?>"><?=source_page_e_v2050((string)$source['canonical_url'])?></a>
+<?php if($userId>0 && vp3_browser_trust_schema_ready_v2080($pdo)): ?><div class="actions"><a href="<?=source_page_e_v2050(url('/claims.php?source='.rawurlencode((string)$source['public_id'])))?>">File a claim</a> · <a href="<?=source_page_e_v2050(url('/notification-settings.php'))?>">Notification settings</a></div><?php endif; ?>
 </section>
+<?php if(!empty($sourceChanges)||!empty($sourceClaims)): ?><section class="trust-section"><div class="eyebrow">Source integrity</div>
+<?php foreach($sourceChanges as $change): ?><article class="trust-card"><strong>Source changed</strong><div><?=source_page_e_v2050((string)$change['summary'])?></div><div class="trust-meta"><?=source_page_e_v2050((string)$change['observed_at'])?><?php if(!empty($change['from']['hash_short'])&&!empty($change['to']['hash_short'])): ?> · <?=source_page_e_v2050((string)$change['from']['hash_short'])?> → <?=source_page_e_v2050((string)$change['to']['hash_short'])?><?php endif; ?></div><div class="actions"><a href="<?=source_page_e_v2050((string)$change['compare_url'])?>">Compare versions</a></div></article><?php endforeach; ?>
+<?php foreach($sourceClaims as $claim): ?><article class="trust-card"><strong><?=source_page_e_v2050((string)$claim['statement'])?></strong><div class="badges"><span class="badge"><?=source_page_e_v2050(str_replace('_',' ',(string)$claim['status']))?></span><span class="badge"><?=source_page_e_v2050((string)$claim['visibility'])?></span></div><div class="actions"><a href="<?=source_page_e_v2050((string)$claim['url'])?>">Open claim</a></div></article><?php endforeach; ?>
+</section><?php endif; ?>
 <?php if(!empty($publishedResearch)): ?><section class="research-section"><div class="eyebrow">Published Research</div>
 <?php foreach($publishedResearch as $report): ?><article class="research-card"><strong><?=source_page_e_v2050((string)$report['title'])?></strong><?php if(!empty($report['summary'])): ?><p><?=source_page_e_v2050((string)$report['summary'])?></p><?php endif; ?><div class="research-meta"><?=source_page_e_v2050(ucfirst((string)$report['visibility']))?> · <?=source_page_e_v2050((string)$report['published_at'])?></div><div class="actions"><a href="<?=source_page_e_v2050((string)$report['url'])?>">Open Research report</a></div></article><?php endforeach; ?></section><?php endif; ?>
 <?php if(!empty($liveRooms)): ?><section class="live-section"><div class="eyebrow">Live now</div>
