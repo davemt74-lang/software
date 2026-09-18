@@ -195,7 +195,8 @@
       let flag = '';
       if (Number(item.count || 1) > 1) flag = '<em>' + Number(item.count) + ' updates</em>';
       else if (item.attention) flag = '<em>Attention</em>';
-      list += '<' + tag + ' class="vp3-return-digest-item' + (item.attention ? ' attention' : '') + '"' + href + '>' +
+      list += '<' + tag + ' class="vp3-return-digest-item' + (item.attention ? ' attention' : '') + '"' + href +
+        (item.card_request ? ' data-has-card="1"' : '') + '>' +
         '<div><strong>' + esc(item.title || 'Update') + '</strong>' +
         (item.body ? '<span>' + esc(item.body) + '</span>' : '') +
         '</div>' + flag + '</' + tag + '>';
@@ -227,6 +228,17 @@
     const welcome = document.getElementById('chatWelcome');
     if (welcome && welcome.parentNode === thread) thread.insertBefore(node,welcome);
     else thread.appendChild(node);
+    const requests = (Array.isArray(digest.items) ? digest.items : [])
+      .map(item => item && item.card_request ? item.card_request : null)
+      .filter(Boolean);
+    if (requests.length && window.VP3_COGNITIVE_CARDS_V520_RUNTIME) {
+      const host = document.createElement('div');
+      host.className = 'vp3-return-digest-card-host vp3-cognitive-card-host';
+      node.appendChild(host);
+      void window.VP3_COGNITIVE_CARDS_V520_RUNTIME.renderRequests(requests,host,{showError:false}).then(result => {
+        if (result && result.rendered > 0) node.classList.add('has-rendered-cards');
+      });
+    }
   }
 
   async function maybeSpeak(candidate) {
