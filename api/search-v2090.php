@@ -47,6 +47,7 @@ try{
     $pdo=vp3_search_require_ready_v2090(db());$auth=vp3_search_api_auth_v2090($pdo);$userId=(int)$auth['user_id'];vp3_search_api_cap_v2090($auth);
     $action=trim((string)($_GET['action']??'search'));
     if($method==='GET'){
+        vp3_annotated_rate_limit_v2100($pdo,$userId,'search_read');
         if($action==='search')vp3_search_api_json_v2090(200,['ok'=>true,'search'=>vp3_search_query_v2090($pdo,$userId,(string)($_GET['q']??''),$_GET,max(1,min(100,(int)($_GET['limit']??50))),true),'options'=>vp3_search_filter_options_v2090($pdo,$userId)]);
         if($action==='discover')vp3_search_api_json_v2090(200,['ok'=>true,'discovery'=>vp3_search_discover_v2090($pdo,$userId,$_GET),'options'=>vp3_search_filter_options_v2090($pdo,$userId)]);
         if($action==='recent')vp3_search_api_json_v2090(200,['ok'=>true,'recent'=>vp3_search_recent_v2090($pdo,$userId,20)]);
@@ -55,11 +56,13 @@ try{
     }
     if($userId<1)vp3_search_api_json_v2090(401,['ok'=>false,'error'=>['code'=>'authentication_required','message'=>'Sign in to manage saved or recent searches.']]);
     $input=vp3_search_api_input_v2090();$action=trim((string)($input['action']??$action));
+    vp3_annotated_rate_limit_v2100($pdo,$userId,'search_write');
     if(empty($auth['extension'])){$csrf=trim((string)($input['csrf_token']??''));if($csrf===''||!hash_equals(csrf_token(),$csrf))vp3_search_api_json_v2090(419,['ok'=>false,'error'=>['code'=>'csrf','message'=>'Session expired.']]);}
     if($action==='save_search')vp3_search_api_json_v2090(201,['ok'=>true,'saved'=>vp3_search_save_query_v2090($pdo,$userId,(string)($input['name']??''),(string)($input['q']??''),is_array($input['filters']??null)?$input['filters']:$input)]);
     if($action==='delete_saved'){vp3_search_delete_saved_v2090($pdo,$userId,(string)($input['id']??''));vp3_search_api_json_v2090(200,['ok'=>true,'saved'=>vp3_search_saved_v2090($pdo,$userId)]);}
     if($action==='clear_recent'){vp3_search_clear_recent_v2090($pdo,$userId);vp3_search_api_json_v2090(200,['ok'=>true,'recent'=>[]]);}
     vp3_search_api_json_v2090(404,['ok'=>false,'error'=>['code'=>'unknown_action','message'=>'Unknown Search action.']]);
+}catch(VP3AnnotatedRateLimitExceptionV2100 $e){header('Retry-After: '.$e->retryAfter);vp3_search_api_json_v2090(429,['ok'=>false,'error'=>['code'=>'rate_limited','message'=>$e->getMessage()]]);
 }catch(VP3ExtensionSecurityExceptionV2001 $e){vp3_search_api_json_v2090($e->httpStatus,['ok'=>false,'error'=>['code'=>$e->apiCode,'message'=>$e->getMessage()]]);
 }catch(InvalidArgumentException $e){vp3_search_api_json_v2090(422,['ok'=>false,'error'=>['code'=>'invalid_request','message'=>$e->getMessage()]]);
 }catch(RuntimeException $e){vp3_search_api_json_v2090(422,['ok'=>false,'error'=>['code'=>'action_unavailable','message'=>$e->getMessage()]]);

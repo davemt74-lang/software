@@ -53,6 +53,7 @@ try{
     $action=trim((string)($_GET['action']??''));
 
     if($method==='GET'){
+        vp3_annotated_rate_limit_v2100($pdo,$userId,'live_read');
         if($action==='list'){
             vp3_live_room_api_cap_v2070($auth,'team.chat.read');
             vp3_live_room_api_json_v2070(200,['ok'=>true,'rooms'=>vp3_live_room_list_v2070($pdo,$userId,max(1,min(100,(int)($_GET['limit']??50))))]);
@@ -89,6 +90,9 @@ try{
         $csrf=trim((string)($input['csrf_token']??''));
         if($csrf===''||!hash_equals(csrf_token(),$csrf))vp3_live_room_api_json_v2070(419,['ok'=>false,'error'=>['code'=>'csrf','message'=>'Session expired.']]);
     }
+    if($action==='create')vp3_annotated_rate_limit_v2100($pdo,$userId,'live_create');
+    elseif($action==='send')vp3_annotated_rate_limit_v2100($pdo,$userId,'live_send');
+    else vp3_annotated_rate_limit_v2100($pdo,$userId,'live_read');
 
     if($action==='create'){
         vp3_live_room_api_cap_v2070($auth,'team.share.create');
@@ -122,6 +126,7 @@ try{
         vp3_live_room_api_json_v2070(200,['ok'=>true,'room'=>vp3_live_room_end_v2070($pdo,$userId,trim((string)($input['room']??'')))]);
     }
     vp3_live_room_api_json_v2070(404,['ok'=>false,'error'=>['code'=>'unknown_action','message'=>'Unknown Live Room action.']]);
+}catch(VP3AnnotatedRateLimitExceptionV2100 $e){header('Retry-After: '.$e->retryAfter);vp3_live_room_api_json_v2070(429,['ok'=>false,'error'=>['code'=>'rate_limited','message'=>$e->getMessage()]]);
 }catch(VP3ExtensionSecurityExceptionV2001 $e){
     vp3_live_room_api_json_v2070($e->httpStatus,['ok'=>false,'error'=>['code'=>$e->apiCode,'message'=>$e->getMessage()]]);
 }catch(InvalidArgumentException $e){
