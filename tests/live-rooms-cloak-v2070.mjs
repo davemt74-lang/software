@@ -57,6 +57,9 @@ must(service.includes("vp3_live_room_require_v2070($pdo,$roomPublicId,$userId,tr
 must(service.includes("WHERE room_id=? AND user_id=? AND left_at IS NULL"),'heartbeat must not undo an explicit Live Room leave');
 must(service.includes("Join the Live Room before refreshing presence."),'heartbeat must require explicit rejoin after leave');
 must(service.includes("vp3_live_room_presence_count_v2070"),'lightweight room cards must still return accurate presence counts');
+must(service.includes("if($enterCloaked&&!$allowCloak)throw new InvalidArgumentException"),'invalid create-time Cloak combination must fail before insert');
+must(service.includes("$owns=!$pdo->inTransaction();if($owns)$pdo->beginTransaction();"),'Live Room create + owner join must be atomic');
+must(service.includes("if($owns&&$pdo->inTransaction())$pdo->rollBack();"),'failed Live Room creation must roll back');
 must(service.includes("$scope==='public'?$sourceTitleInput:''"),'Team Live Rooms must not promote personalized page titles into canonical Source metadata');
 must(service.includes("'title'=>''"),'Live Room payloads must not expose mutable canonical Source titles');
 
