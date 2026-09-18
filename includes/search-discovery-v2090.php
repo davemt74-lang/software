@@ -270,6 +270,13 @@ function vp3_search_index_team_v2090(PDO $pdo,int $ownerUserId): void
     ]);
 }
 
+function vp3_search_prune_stale_v2090(PDO $pdo,int $limit=5000): int
+{
+    $limit=max(1,min(20000,$limit));$rows=$pdo->query("SELECT * FROM search_documents_v2090 WHERE deleted_at IS NULL ORDER BY indexed_at ASC,id ASC LIMIT {$limit}")->fetchAll(PDO::FETCH_ASSOC)?:[];$count=0;
+    foreach($rows as $doc){$before=!empty($doc['deleted_at']);vp3_search_tombstone_if_missing_v2090($pdo,$doc);$stmt=$pdo->prepare('SELECT deleted_at FROM search_documents_v2090 WHERE id=?');$stmt->execute([(int)$doc['id']]);if(!$before&&$stmt->fetchColumn())$count++;}
+    return $count;
+}
+
 function vp3_search_refresh_all_v2090(PDO $pdo,int $limit=VP3_SEARCH_INDEX_BATCH_V2090): array
 {
     $limit=max(1,min(50000,$limit));$counts=['source'=>0,'annotation'=>0,'claim'=>0,'research'=>0,'live'=>0,'user'=>0,'team'=>0];
@@ -287,6 +294,7 @@ function vp3_search_refresh_all_v2090(PDO $pdo,int $limit=VP3_SEARCH_INDEX_BATCH
         try{$rows=$pdo->query($sql)->fetchAll(PDO::FETCH_COLUMN)?:[];}catch(Throwable $e){continue;}
         foreach($rows as $id){try{$fn($pdo,is_numeric($id)?(int)$id:(string)$id);$counts[$type]++;}catch(Throwable $e){error_log('Search index '.$type.' failed: '.$e->getMessage());}}
     }
+    $counts['pruned']=vp3_search_prune_stale_v2090($pdo,min($limit,5000));
     return $counts;
 }
 
@@ -461,7 +469,7 @@ function vp3_search_query_v2090(PDO $pdo,int $viewerUserId,string $query,array $
 function vp3_search_discover_v2090(PDO $pdo,int $viewerUserId,array $input=[]): array
 {
     $filters=vp3_search_filters_v2090($input);
-    $context=$filters['context_source_id']!==''?vp3_search_query_v2090($pdo,$viewerUserId,'',$filters+['context_only'=>true],30,false):['items'=>[]];
+    $context=$filters['context_source_id']!==''?vp3_search_query_v2090($pdo,$viewerUserId,'',array_merge($filters,['context_only'=>true]),30,false):['items'=>[]];
     $trending=vp3_search_query_v2090($pdo,$viewerUserId,'',['types'=>['source']],12,false);
     $active=vp3_search_query_v2090($pdo,$viewerUserId,'',['types'=>['annotation','claim','research','live']],30,false);
     return ['context'=>(array)$context['items'],'trending'=>(array)$trending['items'],'active'=>(array)$active['items']];

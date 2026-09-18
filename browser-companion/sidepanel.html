@@ -197,6 +197,9 @@
           <div class="search-compose"><input id="searchInput" maxlength="500" autocomplete="off" placeholder="Search sources, claims, Research, people…"><button id="searchSubmitBtn" type="button">Search</button></div>
           <div class="search-filters">
             <select id="searchType"><option value="">All types</option><option value="source">Sources</option><option value="annotation">Annotations</option><option value="claim">Claims</option><option value="research">Research</option><option value="live">Live Rooms</option><option value="user">People</option><option value="team">Teams</option></select>
+            <select id="searchVisibility"><option value="">Any visibility</option><option value="public">Public</option><option value="team">Team</option><option value="private">Private</option></select>
+            <select id="searchChanged"><option value="">Any source state</option><option value="1">Source changed</option><option value="0">No recorded change</option></select>
+            <select id="searchTeam"><option value="">Any Team</option></select>
             <label class="live-check"><input id="searchThisSource" type="checkbox"> This source only</label>
           </div>
           <div id="searchContextText" class="hint">Current page context will boost relevant results.</div>
