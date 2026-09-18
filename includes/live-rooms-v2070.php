@@ -235,6 +235,8 @@ function vp3_live_room_create_v2070(PDO $pdo,int $userId,array $input): array
     }
     $room=vp3_live_room_row_v2070($pdo,$publicId);
     if(!$room)throw new RuntimeException('Live Room could not be reloaded.');
+    if(function_exists('vp3_search_index_live_v2090'))vp3_search_index_live_v2090($pdo,$publicId);
+    if(function_exists('vp3_search_index_source_v2090')&&(int)($room['source_id']??0)>0)vp3_search_index_source_v2090($pdo,(int)$room['source_id']);
     return vp3_live_room_public_v2070($pdo,$room,$userId,true);
 }
 
@@ -380,6 +382,7 @@ function vp3_live_room_send_v2070(PDO $pdo,int $userId,string $roomPublicId,stri
     if(!$row)throw new RuntimeException('Live Room message could not be reloaded.');
     if(function_exists('vp3_browser_trust_notify_live_v2080'))vp3_browser_trust_notify_live_v2080($pdo,$room,$userId,'message');
     if(function_exists('vp3_browser_trust_notify_live_mentions_v2080'))vp3_browser_trust_notify_live_mentions_v2080($pdo,$room,$userId,$body,$publicId);
+    if(function_exists('vp3_search_index_live_v2090'))vp3_search_index_live_v2090($pdo,$roomPublicId);
     return vp3_live_room_message_public_v2070($pdo,$room,$row,$userId);
 }
 
@@ -402,6 +405,8 @@ function vp3_live_room_end_v2070(PDO $pdo,int $userId,string $roomPublicId): arr
     $pdo->prepare("UPDATE live_rooms_v2070 SET room_status='ended',ended_at=UTC_TIMESTAMP(),updated_at=UTC_TIMESTAMP() WHERE id=?")->execute([(int)$room['id']]);
     $pdo->prepare('UPDATE live_room_members_v2070 SET left_at=COALESCE(left_at,UTC_TIMESTAMP()),updated_at=UTC_TIMESTAMP() WHERE room_id=?')->execute([(int)$room['id']]);
     $fresh=vp3_live_room_row_v2070($pdo,$roomPublicId)??$room;
+    if(function_exists('vp3_search_index_live_v2090'))vp3_search_index_live_v2090($pdo,$roomPublicId);
+    if(function_exists('vp3_search_index_source_v2090')&&(int)($fresh['source_id']??0)>0)vp3_search_index_source_v2090($pdo,(int)$fresh['source_id']);
     return vp3_live_room_public_v2070($pdo,$fresh,$userId,true);
 }
 

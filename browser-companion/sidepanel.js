@@ -3,7 +3,7 @@ const $=id=>document.getElementById(id);
 const ui={};
 [
 'connectionState','connectControls','pendingControls','shareWorkspace','deviceName','connectBtn','checkConnectionBtn','settingsBtn',
-'thisPageTab','followingTab','liveTab','alertsTab','thisPageView','followingView','liveView','alertsView','refreshCaptureBtn','pageTitle','pageHost','sourceMeta','sourceStatus',
+'thisPageTab','followingTab','liveTab','alertsTab','searchTab','thisPageView','followingView','liveView','alertsView','searchView','refreshCaptureBtn','pageTitle','pageHost','sourceMeta','sourceStatus',
 'followCurrentSourceBtn','openSourcePageBtn','selectedText','selectionCount','captureSummary','captureScreenshotBtn','screenshotPreview',
 'screenshotImage','screenshotMeta','removeScreenshotBtn','captureMediaBtn','mediaDetectedText','mediaPreview','mediaPreviewTitle','mediaStart',
 'mediaEnd','mediaClipHint','removeMediaBtn','recordCommentaryBtn','commentaryStatus','commentaryPreview','commentaryAudio','commentaryMeta',
@@ -12,7 +12,8 @@ const ui={};
 'thisPageEmpty','thisPageCount','loadMoreThisPageBtn','followingFeed','followingEmpty','loadMoreFollowingBtn','refreshFollowingBtn',
 'researchDialog','closeResearchDialogBtn','researchPlacements','researchProjectSelect','researchProjectNote','researchProjectTags','researchInboxBtn','researchAddBtn','newResearchProjectTitle','createResearchProjectBtn','openResearchHubBtn',
 'refreshLiveBtn','liveSourceTitle','liveSourceHost','liveRoomTitle','liveScope','liveTeamField','liveTeamSelect','liveAllowCloak','liveEnterCloaked','startLiveRoomBtn','liveDirectory','liveRoomCount','liveRoomsEmpty','liveRoomsList','liveRoomPanel','joinedLiveTitle','joinedLiveMeta','openLiveRoomBtn','liveCloakBtn','leaveLiveRoomBtn','endLiveRoomBtn','liveParticipants','liveMessages','liveMessageInput','sendLiveMessageBtn',
-'refreshAlertsBtn','alertsSourceTitle','alertsSourceHost','sourceChangeBadge','fileClaimBtn','notificationSettingsBtn','sourceHistoryEmpty','sourceHistoryList','sourceClaimsEmpty','sourceClaimsList','alertUnreadCount','notificationsEmpty','notificationsList','claimDialog','closeClaimDialogBtn','claimStatement','claimRationale','claimVisibility','claimTeamField','claimTeamSelect','claimSubmitBtn','notice'
+'refreshAlertsBtn','alertsSourceTitle','alertsSourceHost','sourceChangeBadge','fileClaimBtn','notificationSettingsBtn','sourceHistoryEmpty','sourceHistoryList','sourceClaimsEmpty','sourceClaimsList','alertUnreadCount','notificationsEmpty','notificationsList',
+'openSearchPageBtn','searchInput','searchSubmitBtn','searchType','searchVisibility','searchChanged','searchTeam','searchThisSource','searchContextText','saveSearchBtn','refreshDiscoveryBtn','searchResultHeading','searchResultCount','searchResultsEmpty','searchResultsList','savedSearchesEmpty','savedSearchesList','recentSearchesEmpty','recentSearchesList','clearRecentSearchesBtn','claimDialog','closeClaimDialogBtn','claimStatement','claimRationale','claimVisibility','claimTeamField','claimTeamSelect','claimSubmitBtn','notice'
 ].forEach(id=>ui[id]=$(id));
 
 const CLIP_MAX_SECONDS = 90;
@@ -24,6 +25,7 @@ let thisCursor='',followingCursor='',thisBusy=false,followingBusy=false,activeVi
 let researchShareId='',researchContextData=null;
 let liveRoomsData=[],liveRoom=null,liveCursor=0,livePollTimer=null,liveHeartbeatTimer=null,liveBusy=false;
 let trustBusy=false,trustObservation=null,trustNotifications=null,trustClaims=[],claimShareId='';
+let searchBusy=false,searchData=null,searchSavedData=[],searchRecentData=[];
 
 function msg(type,data){
   return new Promise((resolve,reject)=>chrome.runtime.sendMessage(Object.assign({type:type},data||{}),r=>{
@@ -65,6 +67,7 @@ function renderCapture(x){
   ui.pageTitle.textContent=capture.title||(capture.available?'Untitled page':'No shareable page');ui.pageHost.textContent=host(capture.source_url)||capture.reason||'';
   ui.liveSourceTitle.textContent=capture.title||(capture.available?'Untitled page':'No shareable page');ui.liveSourceHost.textContent=host(capture.source_url)||capture.reason||'';
   ui.alertsSourceTitle.textContent=capture.title||(capture.available?'Untitled page':'No shareable page');ui.alertsSourceHost.textContent=host(capture.source_url)||capture.reason||'';
+  ui.searchContextText.textContent=capture&&capture.available?'Context: '+(host(capture.source_url)||'current page'):'No current page context.';
   ui.selectedText.value=capture.selected_text||'';ui.selectionCount.textContent=new TextEncoder().encode(ui.selectedText.value).length.toLocaleString()+' / 32,768 bytes';
   const m=capture.media;ui.captureMediaBtn.hidden=!(m&&m.kind&&http(m.source_media_url));if(!ui.captureMediaBtn.hidden)ui.mediaDetectedText.textContent=(m.kind==='youtube_clip'?'YouTube':m.source_media_kind==='audio'?'Audio':'Video')+' at '+sec(m.current_time)+(m.duration?' of '+sec(m.duration):'');
   renderCaps();
@@ -76,8 +79,8 @@ function addOptions(label,rows){
 function renderDestinations(p){
   destinations=(p&&p.destinations)||{recent:[],teams:[],conversations:[]};ui.destinationSelect.replaceChildren(new Option('Choose a team or conversation',''));
   addOptions('Recent',destinations.recent);addOptions('Teams',destinations.teams);addOptions('Conversations',destinations.conversations);
-  ui.visibilityTeamSelect.replaceChildren(new Option('Choose team…',''));ui.liveTeamSelect.replaceChildren(new Option('Choose team…',''));ui.claimTeamSelect.replaceChildren(new Option('Choose team…',''));
-  (destinations.teams||[]).forEach(r=>{if(r.kind==='team_general'&&Number(r.id)){const label=String(r.name||'Team').replace(/ · General$/,'');ui.visibilityTeamSelect.append(new Option(label,String(Number(r.id))));ui.liveTeamSelect.append(new Option(label,String(Number(r.id))));ui.claimTeamSelect.append(new Option(label,String(Number(r.id))));}});renderCaps();
+  ui.visibilityTeamSelect.replaceChildren(new Option('Choose team…',''));ui.liveTeamSelect.replaceChildren(new Option('Choose team…',''));ui.claimTeamSelect.replaceChildren(new Option('Choose team…',''));ui.searchTeam.replaceChildren(new Option('Any Team',''));
+  (destinations.teams||[]).forEach(r=>{if(r.kind==='team_general'&&Number(r.id)){const label=String(r.name||'Team').replace(/ · General$/,'');ui.visibilityTeamSelect.append(new Option(label,String(Number(r.id))));ui.liveTeamSelect.append(new Option(label,String(Number(r.id))));ui.claimTeamSelect.append(new Option(label,String(Number(r.id))));ui.searchTeam.append(new Option(label,String(Number(r.id))));}});renderCaps();
 }
 function renderConnection(x){
   state=x;ui.connectControls.hidden=ui.pendingControls.hidden=ui.shareWorkspace.hidden=true;
@@ -224,12 +227,48 @@ async function loadAlerts(){
   }finally{trustBusy=false;renderCaps();}
 }
 
+
+function searchParams(extra){
+  const p={q:String(ui.searchInput.value||'').trim(),type:ui.searchType.value||'',visibility:ui.searchVisibility.value||'',changed:ui.searchChanged.value||'',team_id:ui.searchTeam.value||'',context_source_id:currentSource&&currentSource.id||'',context_domain:host(capture&&capture.source_url||''),context_only:ui.searchThisSource.checked?'1':''};
+  return Object.assign(p,extra||{});
+}
+function searchResultCard(item){
+  const box=el('article','search-result',''),head=el('div','search-result-head',''),left=el('div','','');
+  left.append(el('div','search-result-type',String(item.type||'result').replace(/_/g,' ')),el('div','search-result-title',item.title||'VP3 result'));
+  head.append(left,el('div','search-result-score','Ranked'));box.append(head);
+  if(item.snippet)box.append(el('div','search-result-snippet',item.snippet));
+  const meta=el('div','search-result-meta','');if(item.domain)meta.append(el('span','pill',item.domain));if(item.visibility)meta.append(el('span','pill',item.visibility));if(item.status)meta.append(el('span','pill',String(item.status).replace(/_/g,' ')));if(item.source_changed)meta.append(el('span','pill changed','Source changed'));if(meta.children.length)box.append(meta);
+  const actions=el('div','search-result-actions',''),open=act('Open','search_open');open.dataset.url=String(item.url||'');actions.append(open);
+  if(item.type==='annotation'){const save=act('Save','search_save');save.dataset.id=item.id||'';const research=act('Research','search_research');research.dataset.id=item.id||'';const claim=act('File claim','search_claim');claim.dataset.sourceId=item.source_id||'';claim.dataset.annotationId=item.id||'';actions.append(save,research,claim);}
+  if(item.type==='source'){const follow=act('Follow','search_follow');follow.dataset.sourceId=item.id||'';const claim=act('File claim','search_claim');claim.dataset.sourceId=item.id||'';actions.append(follow,claim);}
+  if(item.type==='live'&&item.actions&&item.actions.join_live){const join=act('Join','search_join_live');join.dataset.roomId=item.id||'';join.dataset.url=String(item.url||'');actions.append(join);}
+  box.append(actions);return box;
+}
+function renderSearchItems(items,heading){
+  const rows=Array.isArray(items)?items:[];ui.searchResultsList.replaceChildren();rows.forEach(i=>ui.searchResultsList.append(searchResultCard(i)));ui.searchResultsEmpty.hidden=rows.length>0;ui.searchResultCount.textContent=rows.length?String(rows.length):'';ui.searchResultHeading.textContent=heading||'Results';
+}
+function renderSearchHistory(){
+  ui.savedSearchesList.replaceChildren();searchSavedData.forEach(s=>{const row=el('div','search-history-item',''),copy=el('div','search-history-copy','');copy.dataset.action='saved_run';copy.dataset.id=s.id||'';copy.append(el('strong','',s.name||'Saved search'),el('span','',s.query||''));const del=act('Remove','saved_delete');del.dataset.id=s.id||'';row.append(copy,del);ui.savedSearchesList.append(row);});ui.savedSearchesEmpty.hidden=searchSavedData.length>0;
+  ui.recentSearchesList.replaceChildren();searchRecentData.forEach((s,i)=>{const row=el('div','search-history-item',''),copy=el('div','search-history-copy','');copy.dataset.action='recent_run';copy.dataset.index=String(i);copy.append(el('strong','',s.query||''),el('span','',(s.result_count||0)+' results · '+date(s.last_used_at)));row.append(copy);ui.recentSearchesList.append(row);});ui.recentSearchesEmpty.hidden=searchRecentData.length>0;ui.clearRecentSearchesBtn.hidden=!searchRecentData.length;
+}
+async function loadSearchHistory(){
+  const [saved,recent]=await Promise.all([msg('search_saved'),msg('search_recent')]);searchSavedData=Array.isArray(saved&&saved.saved)?saved.saved:[];searchRecentData=Array.isArray(recent&&recent.recent)?recent.recent:[];renderSearchHistory();
+}
+async function runSearch(){
+  if(searchBusy||!state||!state.connected)return;searchBusy=true;busy(ui.searchSubmitBtn,true,'Searching…');
+  try{const p=await msg('search_query',{params:searchParams({limit:50})});searchData=p&&p.search||null;renderSearchItems(searchData&&searchData.items||[],'Search results');await loadSearchHistory();}finally{searchBusy=false;busy(ui.searchSubmitBtn,false);}
+}
+async function loadDiscovery(){
+  if(searchBusy||!state||!state.connected)return;searchBusy=true;
+  try{const p=await msg('search_discover',{params:searchParams()});const d=p&&p.discovery||{},items=[];(d.context||[]).forEach(x=>items.push(x));(d.trending||[]).forEach(x=>{if(!items.some(y=>y.type===x.type&&y.id===x.id))items.push(x);});(d.active||[]).forEach(x=>{if(!items.some(y=>y.type===x.type&&y.id===x.id))items.push(x);});renderSearchItems(items.slice(0,50),currentSource&&currentSource.id?'Related & active':'Discovery');await loadSearchHistory();}finally{searchBusy=false;}
+}
+
 function setView(v){
-  activeView=v;const page=v==='this_page',following=v==='following',live=v==='live',alerts=v==='alerts';
-  ui.thisPageView.hidden=!page;ui.followingView.hidden=!following;ui.liveView.hidden=!live;ui.alertsView.hidden=!alerts;
-  ui.thisPageTab.classList.toggle('active',page);ui.followingTab.classList.toggle('active',following);ui.liveTab.classList.toggle('active',live);ui.alertsTab.classList.toggle('active',alerts);
-  ui.thisPageTab.setAttribute('aria-selected',String(page));ui.followingTab.setAttribute('aria-selected',String(following));ui.liveTab.setAttribute('aria-selected',String(live));ui.alertsTab.setAttribute('aria-selected',String(alerts));
-  if(following)loadFollowing(true).catch(fail);if(live)loadLiveRooms().then(pollLiveRoom).catch(fail);if(alerts)loadAlerts().catch(fail);
+  activeView=v;const page=v==='this_page',following=v==='following',live=v==='live',alerts=v==='alerts',search=v==='search';
+  ui.thisPageView.hidden=!page;ui.followingView.hidden=!following;ui.liveView.hidden=!live;ui.alertsView.hidden=!alerts;ui.searchView.hidden=!search;
+  ui.thisPageTab.classList.toggle('active',page);ui.followingTab.classList.toggle('active',following);ui.liveTab.classList.toggle('active',live);ui.alertsTab.classList.toggle('active',alerts);ui.searchTab.classList.toggle('active',search);
+  ui.thisPageTab.setAttribute('aria-selected',String(page));ui.followingTab.setAttribute('aria-selected',String(following));ui.liveTab.setAttribute('aria-selected',String(live));ui.alertsTab.setAttribute('aria-selected',String(alerts));ui.searchTab.setAttribute('aria-selected',String(search));
+  if(following)loadFollowing(true).catch(fail);if(live)loadLiveRooms().then(pollLiveRoom).catch(fail);if(alerts)loadAlerts().catch(fail);if(search)loadDiscovery().catch(fail);
 }
 function sourceHead(feed){currentSource=(feed&&feed.source)||null;ui.sourceMeta.hidden=!(capture&&capture.available);ui.sourceStatus.textContent=currentSource&&currentSource.id?'Recognized source':'New source';ui.followCurrentSourceBtn.textContent=currentSource&&currentSource.following?'Unfollow source':'Follow source';ui.openSourcePageBtn.hidden=!(currentSource&&currentSource.page_url);renderCaps();}
 function el(tag,cls,text){const x=document.createElement(tag);if(cls)x.className=cls;x.textContent=String(text||'');return x;}
@@ -287,14 +326,20 @@ async function feedClick(e){
     if(a==='context'&&i.annotation_url)await msg('open_url',{url:absolute(i.annotation_url)});
   }catch(err){fail(err);}
 }
-function reload(){return activeView==='following'?loadFollowing(true):activeView==='live'?loadLiveRooms():activeView==='alerts'?loadAlerts():loadThis(true);}
+function reload(){return activeView==='following'?loadFollowing(true):activeView==='live'?loadLiveRooms():activeView==='alerts'?loadAlerts():activeView==='search'?loadDiscovery():loadThis(true);}
 
 ui.connectBtn.onclick=async()=>{busy(ui.connectBtn,true,'Opening VP3…');try{await msg('connect',{device_name:ui.deviceName.value.trim()||'Chrome Browser'});await refreshState();startPoll();}catch(e){fail(e);}finally{busy(ui.connectBtn,false);}};
 ui.checkConnectionBtn.onclick=()=>msg('poll_connect').then(refreshState).catch(fail);ui.settingsBtn.onclick=()=>chrome.runtime.openOptionsPage();
-ui.thisPageTab.onclick=()=>setView('this_page');ui.followingTab.onclick=()=>setView('following');ui.liveTab.onclick=()=>setView('live');ui.alertsTab.onclick=()=>setView('alerts');ui.refreshCaptureBtn.onclick=()=>refreshCapture(true).catch(fail);ui.refreshFollowingBtn.onclick=()=>loadFollowing(true).catch(fail);ui.refreshLiveBtn.onclick=()=>loadLiveRooms().catch(fail);ui.refreshAlertsBtn.onclick=()=>loadAlerts().catch(fail);
+ui.thisPageTab.onclick=()=>setView('this_page');ui.followingTab.onclick=()=>setView('following');ui.liveTab.onclick=()=>setView('live');ui.alertsTab.onclick=()=>setView('alerts');ui.searchTab.onclick=()=>setView('search');ui.refreshCaptureBtn.onclick=()=>refreshCapture(true).catch(fail);ui.refreshFollowingBtn.onclick=()=>loadFollowing(true).catch(fail);ui.refreshLiveBtn.onclick=()=>loadLiveRooms().catch(fail);ui.refreshAlertsBtn.onclick=()=>loadAlerts().catch(fail);
 ui.visibilitySelect.onchange=()=>{ui.visibilityTeamField.hidden=ui.visibilitySelect.value!=='team';renderCaps();};ui.visibilityTeamSelect.onchange=renderCaps;ui.destinationSelect.onchange=renderCaps;
 ui.liveScope.onchange=()=>{ui.liveTeamField.hidden=ui.liveScope.value!=='team';renderCaps();};ui.liveTeamSelect.onchange=renderCaps;
-ui.claimVisibility.onchange=()=>{ui.claimTeamField.hidden=ui.claimVisibility.value!=='team';renderCaps();};ui.claimTeamSelect.onchange=renderCaps;ui.claimStatement.oninput=renderCaps;
+ui.claimVisibility.onchange=()=>{ui.claimTeamField.hidden=ui.claimVisibility.value!=='team';renderCaps();};
+ui.searchSubmitBtn.onclick=()=>runSearch().catch(fail);ui.searchInput.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();runSearch().catch(fail);}};[ui.searchType,ui.searchVisibility,ui.searchChanged,ui.searchTeam].forEach(x=>x.onchange=()=>{if(String(ui.searchInput.value||'').trim())runSearch().catch(fail);else loadDiscovery().catch(fail);});ui.searchThisSource.onchange=()=>{if(ui.searchThisSource.checked&&!(currentSource&&currentSource.id)){ui.searchThisSource.checked=false;return note('This page is not a recognized VP3 Source yet.','error');}if(String(ui.searchInput.value||'').trim())runSearch().catch(fail);else loadDiscovery().catch(fail);};ui.refreshDiscoveryBtn.onclick=()=>loadDiscovery().catch(fail);ui.openSearchPageBtn.onclick=()=>msg('open_url',{url:absolute('/search.php')});
+ui.saveSearchBtn.onclick=async()=>{const q=String(ui.searchInput.value||'').trim();if(!q)return note('Search for something before saving it.','error');const name=prompt('Name this saved search:',q.slice(0,60));if(!name)return;try{await msg('search_action',{action:'save_search',payload:{name:name,q:q,filters:searchParams()}});note('Search saved.','success');await loadSearchHistory();}catch(e){await fail(e);}};
+ui.clearRecentSearchesBtn.onclick=async()=>{try{await msg('search_action',{action:'clear_recent',payload:{}});searchRecentData=[];renderSearchHistory();}catch(e){await fail(e);}};
+ui.savedSearchesList.onclick=async e=>{const target=e.target.closest('[data-action]');if(!target)return;const id=target.dataset.id||'';if(target.dataset.action==='saved_delete'){await msg('search_action',{action:'delete_saved',payload:{id:id}});await loadSearchHistory();return;}const s=searchSavedData.find(x=>String(x.id)===String(id));if(!s)return;ui.searchInput.value=s.query||'';ui.searchType.value=(s.filters&&Array.isArray(s.filters.types)&&s.filters.types[0])||'';ui.searchVisibility.value=s.filters&&s.filters.visibility||'';ui.searchChanged.value=s.filters&&s.filters.changed||'';ui.searchTeam.value=String(s.filters&&s.filters.team_id||'');ui.searchThisSource.checked=Boolean(s.filters&&s.filters.context_only&&currentSource&&currentSource.id);await runSearch();};
+ui.recentSearchesList.onclick=async e=>{const target=e.target.closest('[data-action="recent_run"]');if(!target)return;const s=searchRecentData[Number(target.dataset.index||-1)];if(!s)return;ui.searchInput.value=s.query||'';ui.searchType.value=(s.filters&&Array.isArray(s.filters.types)&&s.filters.types[0])||'';ui.searchVisibility.value=s.filters&&s.filters.visibility||'';ui.searchChanged.value=s.filters&&s.filters.changed||'';ui.searchTeam.value=String(s.filters&&s.filters.team_id||'');ui.searchThisSource.checked=Boolean(s.filters&&s.filters.context_only&&currentSource&&currentSource.id);await runSearch();};
+ui.searchResultsList.onclick=async e=>{const b=e.target.closest('button[data-action]');if(!b)return;try{if(b.dataset.action==='search_open'&&b.dataset.url)return await msg('open_url',{url:absolute(b.dataset.url)});if(b.dataset.action==='search_save')return await sourceAction('save',{browser_share_id:b.dataset.id,enabled:true}).then(()=>note('Saved.','success'));if(b.dataset.action==='search_research')return await sourceAction('research',{browser_share_id:b.dataset.id,enabled:true}).then(()=>note('Added to Research.','success'));if(b.dataset.action==='search_follow')return await sourceAction('follow_source',{source_id:b.dataset.sourceId,follow:true}).then(()=>note('Source followed.','success'));if(b.dataset.action==='search_claim'){const u='/claims.php?source='+encodeURIComponent(b.dataset.sourceId||'')+(b.dataset.annotationId?'&annotation='+encodeURIComponent(b.dataset.annotationId):'');return await msg('open_url',{url:absolute(u)});}if(b.dataset.action==='search_join_live'){await liveAction('join',{room:b.dataset.roomId,cloak_mode:false});note('Joined Live Room.','success');if(b.dataset.url)await msg('open_url',{url:absolute(b.dataset.url)});}}catch(err){await fail(err);}};ui.claimTeamSelect.onchange=renderCaps;ui.claimStatement.oninput=renderCaps;
 ui.liveAllowCloak.onchange=()=>{ui.liveEnterCloaked.disabled=!ui.liveAllowCloak.checked;if(!ui.liveAllowCloak.checked)ui.liveEnterCloaked.checked=false;};
 ui.captureScreenshotBtn.onclick=async()=>{busy(ui.captureScreenshotBtn,true,'Select region on page…');try{const r=await message('capture_region');if(r.cancelled)return;screenshotCapture=r;ui.screenshotImage.src=r.data_url;ui.screenshotMeta.textContent=Number(r.metadata&&r.metadata.width||0)+' × '+Number(r.metadata&&r.metadata.height||0)+' px';ui.screenshotPreview.hidden=false;}catch(e){fail(e);}finally{busy(ui.captureScreenshotBtn,false);renderCaps();}};
 ui.removeScreenshotBtn.onclick=()=>{screenshotCapture=null;ui.screenshotPreview.hidden=true;renderCaps();};
@@ -329,6 +374,6 @@ ui.liveMessageInput.onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefa
 ui.liveMessages.onclick=async e=>{const b=e.target.closest('button[data-action="live_report"]');if(!b)return;const reason=prompt('Why are you reporting this Live message?');if(!reason)return;try{await trustAction('report_create',{target_type:'live_message',target_id:b.dataset.messageId,reason:reason,detail:''});note('Report submitted.','success');}catch(err){await fail(err);}};
 ui.thisPageFeed.onclick=feedClick;ui.followingFeed.onclick=feedClick;ui.loadMoreThisPageBtn.onclick=()=>loadThis(false).catch(fail);ui.loadMoreFollowingBtn.onclick=()=>loadFollowing(false).catch(fail);
 const io=new IntersectionObserver(es=>es.forEach(e=>{if(!e.isIntersecting||e.target.hidden)return;if(e.target===ui.loadMoreThisPageBtn)loadThis(false).catch(fail);if(e.target===ui.loadMoreFollowingBtn)loadFollowing(false).catch(fail);}),{rootMargin:'120px'});io.observe(ui.loadMoreThisPageBtn);io.observe(ui.loadMoreFollowingBtn);
-function pageWatch(){clearInterval(pageTimer);let u=capture&&capture.source_url||'';pageTimer=setInterval(async()=>{if(!state||!state.connected||!['this_page','live','alerts'].includes(activeView))return;try{const x=await msg('tab_identity');if(x.source_url&&x.source_url!==u){u=x.source_url;await refreshCapture(activeView==='this_page');if(activeView==='live'){liveRoom=null;liveCursor=0;ui.liveRoomPanel.hidden=true;await loadLiveRooms();}if(activeView==='alerts')await loadAlerts();}}catch(e){}},2000);}
+function pageWatch(){clearInterval(pageTimer);let u=capture&&capture.source_url||'';pageTimer=setInterval(async()=>{if(!state||!state.connected||!['this_page','live','alerts','search'].includes(activeView))return;try{const x=await msg('tab_identity');if(x.source_url&&x.source_url!==u){u=x.source_url;await refreshCapture(activeView==='this_page');if(activeView==='live'){liveRoom=null;liveCursor=0;ui.liveRoomPanel.hidden=true;await loadLiveRooms();}if(activeView==='alerts')await loadAlerts();if(activeView==='search')await loadDiscovery();}}catch(e){}},2000);}
 window.onbeforeunload=()=>{clearInterval(pageTimer);clearInterval(pollTimer);clearInterval(livePollTimer);clearInterval(liveHeartbeatTimer);stream&&stream.getTracks().forEach(t=>t.stop());};
 refreshState().then(pageWatch).catch(fail);

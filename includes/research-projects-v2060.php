@@ -562,6 +562,7 @@ function vp3_research_create_report_v2060(PDO $pdo,int $actorUserId,string $proj
       VALUES(?,?,?,?,?,?,'draft','private',UTC_TIMESTAMP(),UTC_TIMESTAMP())");
     $stmt->execute([$publicId,(int)$project['id'],$actorUserId,$actorUserId,$title,$summary]);
     vp3_research_event_v2060($pdo,(int)$project['id'],$actorUserId,'report.created','report',$publicId);
+    if(function_exists('vp3_search_index_research_v2090'))vp3_search_index_research_v2090($pdo,$publicId);
     return vp3_research_report_public_v2060($pdo,vp3_research_report_row_v2060($pdo,$publicId)??[], $actorUserId);
 }
 
@@ -619,6 +620,7 @@ function vp3_research_update_report_v2060(PDO $pdo,int $actorUserId,string $proj
     $pdo->prepare('UPDATE research_reports_v2060 SET title=?,summary=?,updated_by_user_id=?,updated_at=UTC_TIMESTAMP() WHERE id=?')
         ->execute([$title,$summary,$actorUserId,(int)$report['id']]);
     vp3_research_event_v2060($pdo,(int)$project['id'],$actorUserId,'report.updated','report',$reportPublicId);
+    if(function_exists('vp3_search_index_research_v2090'))vp3_search_index_research_v2090($pdo,$reportPublicId);
     return vp3_research_report_public_v2060($pdo,vp3_research_report_row_v2060($pdo,$reportPublicId)??$report,$actorUserId);
 }
 
@@ -653,6 +655,14 @@ function vp3_research_set_report_items_v2060(PDO $pdo,int $actorUserId,string $p
         vp3_research_event_v2060($pdo,(int)$project['id'],$actorUserId,'report.items','report',$reportPublicId);
         if($owns)$pdo->commit();
     }catch(Throwable $e){if($owns&&$pdo->inTransaction())$pdo->rollBack();throw $e;}
+    if(function_exists('vp3_search_index_research_v2090'))vp3_search_index_research_v2090($pdo,$reportPublicId);
+    if(function_exists('vp3_search_index_source_v2090')){
+        $fresh=vp3_research_report_row_v2060($pdo,$reportPublicId);
+        if($fresh&&(int)($fresh['current_version_id']??0)>0){
+            $s=$pdo->prepare('SELECT DISTINCT source_id FROM research_report_version_sources_v2060 WHERE report_version_id=?');$s->execute([(int)$fresh['current_version_id']]);
+            foreach(array_map('intval',$s->fetchAll(PDO::FETCH_COLUMN)?:[]) as $sid)vp3_search_index_source_v2090($pdo,$sid);
+        }
+    }
     return vp3_research_report_public_v2060($pdo,vp3_research_report_row_v2060($pdo,$reportPublicId)??$report,$actorUserId);
 }
 

@@ -1,6 +1,6 @@
 const VP3_DEFAULT_BASE = 'https://vp3.me';
 const VP3_CONTRACT_VERSION = '1';
-const VP3_EXTENSION_VERSION = '20.80.0';
+const VP3_EXTENSION_VERSION = '20.90.0';
 const VP3_REQUESTED_CAPABILITIES = [
   'team.destinations.read',
   'team.share.create',
@@ -497,6 +497,16 @@ async function observeSource(capture) {
   });
 }
 
+
+async function browserSearchGet(action, params = {}) {
+  const query = new URLSearchParams({ action, ...Object.fromEntries(Object.entries(params).filter(([,v]) => v !== undefined && v !== null && v !== '').map(([k,v]) => [k, String(v)])) });
+  return authorizedFetch('/api/search-v2090.php?' + query.toString(), { method: 'GET' }, 'team.chat.read');
+}
+
+async function browserSearchAction(action, payload = {}) {
+  return authorizedFetch('/api/search-v2090.php', { method: 'POST', json: { action, ...payload } }, 'team.chat.read');
+}
+
 function fallbackSelection(capture, rich = {}) {
   const selected = utf8Limit(String(capture?.selected_text || '').trim(), 32768);
   if (selected) return selected;
@@ -693,6 +703,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       case 'trust_history': return browserTrustGet('source_history', { source_id: message.source_id || '', limit: message.limit || 25 });
       case 'trust_claims': return browserTrustGet('claims_for_source', { source_id: message.source_id || '' });
       case 'trust_action': return browserTrustAction(message.action, message.payload || {});
+      case 'search_query': return browserSearchGet('search', message.params || {});
+      case 'search_discover': return browserSearchGet('discover', message.params || {});
+      case 'search_recent': return browserSearchGet('recent', {});
+      case 'search_saved': return browserSearchGet('saved', {});
+      case 'search_action': return browserSearchAction(message.action, message.payload || {});
       case 'media_data': return authorizedMediaDataUrl(String(message.path || ''));
       case 'share': return createRichShare(message);
       case 'share_action': return browserShareAction(message.action, message.browser_share_id, message.folder_id);

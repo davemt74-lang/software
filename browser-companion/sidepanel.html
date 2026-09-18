@@ -33,6 +33,7 @@
         <button id="followingTab" class="feed-tab" type="button" aria-selected="false">Following</button>
         <button id="liveTab" class="feed-tab" type="button" aria-selected="false">Live</button>
         <button id="alertsTab" class="feed-tab" type="button" aria-selected="false">Alerts</button>
+        <button id="searchTab" class="feed-tab" type="button" aria-selected="false">Search</button>
       </nav>
 
       <section id="thisPageView">
@@ -188,6 +189,25 @@
           <div class="live-compose"><input id="liveMessageInput" maxlength="4000" autocomplete="off" placeholder="Message the room…"><button id="sendLiveMessageBtn" type="button">Send</button></div>
           <p class="hint">Cloak Mode shows a room-specific pseudonym to participants. VP3 still retains your account identity server-side for access control and abuse handling. Leave Cloak before attaching an annotation.</p>
         </section>
+      </section>
+
+      <section id="searchView" hidden>
+        <section class="card search-card">
+          <div class="row-between"><div><div class="eyebrow">Search & Discovery</div><strong>Find context across VP3</strong></div><button id="openSearchPageBtn" class="text-btn" type="button">Full search</button></div>
+          <div class="search-compose"><input id="searchInput" maxlength="500" autocomplete="off" placeholder="Search sources, claims, Research, people…"><button id="searchSubmitBtn" type="button">Search</button></div>
+          <div class="search-filters">
+            <select id="searchType"><option value="">All types</option><option value="source">Sources</option><option value="annotation">Annotations</option><option value="claim">Claims</option><option value="research">Research</option><option value="live">Live Rooms</option><option value="user">People</option><option value="team">Teams</option></select>
+            <select id="searchVisibility"><option value="">Any visibility</option><option value="public">Public</option><option value="team">Team</option><option value="private">Private</option></select>
+            <select id="searchChanged"><option value="">Any source state</option><option value="1">Source changed</option><option value="0">No recorded change</option></select>
+            <select id="searchTeam"><option value="">Any Team</option></select>
+            <label class="live-check"><input id="searchThisSource" type="checkbox"> This source only</label>
+          </div>
+          <div id="searchContextText" class="hint">Current page context will boost relevant results.</div>
+          <div class="search-toolbar"><button id="saveSearchBtn" class="text-btn" type="button">Save search</button><button id="refreshDiscoveryBtn" class="text-btn" type="button">Discover</button></div>
+        </section>
+        <section class="feed-section"><div class="section-heading"><div><div class="eyebrow">Results</div><strong id="searchResultHeading">Discovery</strong></div><span id="searchResultCount" class="muted"></span></div><div id="searchResultsEmpty" class="empty-state">Search VP3 or explore discovery.</div><div id="searchResultsList" class="search-results"></div></section>
+        <section class="feed-section"><div class="section-heading"><div><div class="eyebrow">Saved</div><strong>Saved searches</strong></div></div><div id="savedSearchesEmpty" class="empty-state">No saved searches yet.</div><div id="savedSearchesList" class="search-history"></div></section>
+        <section class="feed-section"><div class="section-heading"><div><div class="eyebrow">Recent</div><strong>Recent searches</strong></div><button id="clearRecentSearchesBtn" class="text-btn" type="button">Clear</button></div><div id="recentSearchesEmpty" class="empty-state">No recent searches yet.</div><div id="recentSearchesList" class="search-history"></div></section>
       </section>
 
       <section id="alertsView" hidden>

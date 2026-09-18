@@ -332,6 +332,8 @@ function vp3_browser_trust_observe_source_v2080(PDO $pdo,int $userId,string $url
             }
         }
     }
+    if(function_exists('vp3_search_mark_source_changed_v2090')&&$event!==null)vp3_search_mark_source_changed_v2090($pdo,(int)$source['id']);
+    elseif(function_exists('vp3_search_index_source_v2090'))vp3_search_index_source_v2090($pdo,(int)$source['id']);
     return ['changed'=>$event!==null,'change'=>$event]+vp3_browser_trust_source_history_v2080($pdo,$userId,(string)$source['public_id'],10);
 }
 
@@ -459,6 +461,8 @@ function vp3_browser_trust_claim_create_v2080(PDO $pdo,int $userId,array $input)
             mb_substr($statement,0,500),'/claim.php?id='.rawurlencode($public),(int)$source['id'],$claimId
         );
     }
+    if(function_exists('vp3_search_index_claim_v2090'))vp3_search_index_claim_v2090($pdo,$public);
+    if(function_exists('vp3_search_index_source_v2090'))vp3_search_index_source_v2090($pdo,(int)$source['id']);
     return vp3_browser_trust_claim_public_v2080($pdo,$row,$userId,true);
 }
 
@@ -481,6 +485,8 @@ function vp3_browser_trust_claim_status_v2080(PDO $pdo,int $userId,string $claim
         vp3_browser_trust_notify_v2080($pdo,(int)$claim['created_by_user_id'],'claims','claim-status:'.(int)$claim['id'].':'.$status,'Claim updated','Your claim is now '.str_replace('_',' ',$status).'.','/claim.php?id='.rawurlencode((string)$claim['public_id']),(int)$claim['source_id'],(int)$claim['id']);
     }
     $fresh=vp3_browser_trust_claim_row_v2080($pdo,$claimPublicId);
+    if(function_exists('vp3_search_index_claim_v2090'))vp3_search_index_claim_v2090($pdo,$claimPublicId);
+    if(function_exists('vp3_search_index_source_v2090'))vp3_search_index_source_v2090($pdo,(int)$claim['source_id']);
     return vp3_browser_trust_claim_public_v2080($pdo,$fresh?:$claim,$userId,true);
 }
 
