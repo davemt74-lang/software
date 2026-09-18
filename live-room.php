@@ -49,14 +49,15 @@ vp3_public_header($room?((string)$room['title'].' — VP3 Live'):'Live Room not 
     <?php endif; ?>
   </aside>
 </div>
-<script id="liveRoomConfig" type="application/json"><?=json_encode([
+<?php $liveConfig=json_encode([
     'room'=>$room,
     'messages'=>$initial['items'],
     'cursor'=>$initial['cursor'],
     'api'=>url('/api/live-rooms-v2070.php'),
     'csrf'=>$userId>0?csrf_token():'',
     'signed_in'=>$userId>0,
-],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE|JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT)?></script>
+],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE)?:'{}'; ?>
+<div id="liveRoomConfig" hidden data-config="<?=live_room_e_v2070($liveConfig)?>"></div>
 <script src="<?=live_room_e_v2070(url('/live-room-v2070.js'))?>"></script>
 <?php endif; ?>
 </main>
