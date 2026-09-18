@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "VP3 Browser Companion",
-  "version": "20.60.0",
-  "description": "Annotate any page, follow sources and people, and move captured evidence directly into VP3 Research Projects.",
+  "version": "20.70.0",
+  "description": "Annotate pages, organize Research, and join source-linked VP3 Live Rooms with optional Cloak Mode.",
   "minimum_chrome_version": "116",
   "permissions": [
     "activeTab",
