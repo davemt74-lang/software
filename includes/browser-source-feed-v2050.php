@@ -572,6 +572,7 @@ function vp3_browser_source_follow_user_v2050(PDO $pdo,int $userId,int $followed
     if($userId<1||$followedUserId<1||$followedUserId===$userId)throw new InvalidArgumentException('Choose another VP3 user to follow.');
     if(!vp3_social_schema_ready_v320($pdo))throw new RuntimeException('VP3 social relationships are unavailable.');
     vp3_social_follow_v320($pdo,$userId,$followedUserId,$follow);
+    if($follow&&function_exists('vp3_browser_trust_notify_follow_v2080'))vp3_browser_trust_notify_follow_v2080($pdo,$userId,$followedUserId);
     return ['following'=>vp3_social_following_v320($pdo,$userId,$followedUserId),'user_id'=>$followedUserId];
 }
 
@@ -601,6 +602,7 @@ function vp3_browser_source_comment_v2050(PDO $pdo,int $userId,string $browserSh
     $stmt=$pdo->prepare("INSERT INTO browser_share_comments_v2050(public_id,browser_share_id,parent_comment_id,user_id,body,created_at,updated_at)
       VALUES(?,?,?,?,?,UTC_TIMESTAMP(),UTC_TIMESTAMP())");
     $stmt->execute([$publicId,(int)$row['id'],$parentId,$userId,$body]);
+    if(function_exists('vp3_browser_trust_notify_comment_v2080'))vp3_browser_trust_notify_comment_v2080($pdo,$row,$userId,$publicId,trim($parentPublicId));
     return ['comments'=>vp3_browser_source_comments_v2050($pdo,(int)$row['id'],100)];
 }
 
