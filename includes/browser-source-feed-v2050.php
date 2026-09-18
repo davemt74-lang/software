@@ -17,7 +17,7 @@ function vp3_browser_source_feed_schema_ready_v2050(?PDO $pdo=null): bool
         && table_exists('browser_share_sources_v2050')
         && table_exists('browser_share_publications_v2050')
         && table_exists('browser_source_follows_v2050')
-        && table_exists('browser_user_follows_v2050')
+        && vp3_social_schema_ready_v320($pdo)
         && table_exists('browser_share_comments_v2050')
         && table_exists('browser_share_saves_v2050')
         && table_exists('browser_research_queue_v2050')
@@ -318,7 +318,7 @@ function vp3_browser_source_following_flags_v2050(PDO $pdo,int $viewerUserId,arr
         'in_research'=>['SELECT 1 FROM browser_research_queue_v2050 WHERE user_id=? AND browser_share_id=? LIMIT 1',[$viewerUserId,$shareId]],
         'read'=>['SELECT 1 FROM browser_share_reads_v2050 WHERE user_id=? AND browser_share_id=? LIMIT 1',[$viewerUserId,$shareId]],
         'following_source'=>['SELECT 1 FROM browser_source_follows_v2050 WHERE user_id=? AND source_id=? LIMIT 1',[$viewerUserId,$sourceId]],
-        'following_user'=>['SELECT 1 FROM browser_user_follows_v2050 WHERE user_id=? AND followed_user_id=? LIMIT 1',[$viewerUserId,$senderId]],
+        'following_user'=>['SELECT 1 FROM user_follows WHERE follower_user_id=? AND followed_user_id=? LIMIT 1',[$viewerUserId,$senderId]],
     ] as $key=>[$sql,$params]){
         if(($key==='following_source'&&$sourceId<1)||($key==='following_user'&&$senderId<1)){$checks[$key]=false;continue;}
         $stmt=$pdo->prepare($sql);$stmt->execute($params);$checks[$key]=(bool)$stmt->fetchColumn();
@@ -525,8 +525,8 @@ function vp3_browser_source_following_v2050(PDO $pdo,int $viewerUserId,int $limi
       FROM browser_shares_v2010 s
       LEFT JOIN browser_share_sources_v2050 map ON map.browser_share_id=s.id
       LEFT JOIN browser_source_follows_v2050 sf ON sf.source_id=map.source_id AND sf.user_id=?
-      LEFT JOIN browser_user_follows_v2050 uf ON uf.followed_user_id=s.sender_user_id AND uf.user_id=?
-      WHERE s.deleted_at IS NULL AND (sf.user_id IS NOT NULL OR uf.user_id IS NOT NULL)".
+      LEFT JOIN user_follows uf ON uf.followed_user_id=s.sender_user_id AND uf.follower_user_id=?
+      WHERE s.deleted_at IS NULL AND (sf.user_id IS NOT NULL OR uf.follower_user_id IS NOT NULL)".
       ($before>0?' AND s.id<?':'')." ORDER BY s.id DESC LIMIT ".$scan;
     $stmt=$pdo->prepare($sql);
     $params=[$viewerUserId,$viewerUserId];
@@ -570,16 +570,9 @@ function vp3_browser_source_follow_source_v2050(PDO $pdo,int $userId,string $sou
 function vp3_browser_source_follow_user_v2050(PDO $pdo,int $userId,int $followedUserId,bool $follow): array
 {
     if($userId<1||$followedUserId<1||$followedUserId===$userId)throw new InvalidArgumentException('Choose another VP3 user to follow.');
-    $stmt=$pdo->prepare('SELECT 1 FROM users WHERE id=? AND is_active=1 LIMIT 1');$stmt->execute([$followedUserId]);
-    if(!$stmt->fetchColumn())throw new RuntimeException('User was not found.');
-    if($follow){
-        $pdo->prepare('INSERT IGNORE INTO browser_user_follows_v2050(user_id,followed_user_id,created_at) VALUES(?,?,UTC_TIMESTAMP())')
-            ->execute([$userId,$followedUserId]);
-    }else{
-        $pdo->prepare('DELETE FROM browser_user_follows_v2050 WHERE user_id=? AND followed_user_id=?')
-            ->execute([$userId,$followedUserId]);
-    }
-    return ['following'=>$follow,'user_id'=>$followedUserId];
+    if(!vp3_social_schema_ready_v320($pdo))throw new RuntimeException('VP3 social relationships are unavailable.');
+    vp3_social_follow_v320($pdo,$userId,$followedUserId,$follow);
+    return ['following'=>vp3_social_following_v320($pdo,$userId,$followedUserId),'user_id'=>$followedUserId];
 }
 
 function vp3_browser_source_authorized_row_v2050(PDO $pdo,int $userId,string $browserSharePublicId): array
@@ -662,11 +655,20 @@ function vp3_browser_source_backfill_v2050(PDO $pdo,int $limit=5000): int
     return $count;
 }
 
+function vp3_browser_source_migrate_legacy_user_follows_v2050(PDO $pdo): void
+{
+    if(!table_exists('browser_user_follows_v2050')||!vp3_social_schema_ready_v320($pdo))return;
+    $pdo->exec("INSERT IGNORE INTO user_follows(follower_user_id,followed_user_id,created_at)
+      SELECT user_id,followed_user_id,created_at FROM browser_user_follows_v2050");
+}
+
 function vp3_browser_source_feed_ensure_schema_v2050(?PDO $pdo=null): void
 {
     $pdo ??= db();
     if(!$pdo)throw new RuntimeException('Database connection is unavailable.');
+    if(!vp3_social_schema_ready_v320($pdo))vp3_social_ensure_schema_v320($pdo);
     if(vp3_browser_source_feed_schema_ready_v2050($pdo)){
+        vp3_browser_source_migrate_legacy_user_follows_v2050($pdo);
         vp3_browser_source_backfill_v2050($pdo,20000);
         return;
     }
@@ -741,16 +743,6 @@ function vp3_browser_source_feed_ensure_schema_v2050(?PDO $pdo=null): void
       CONSTRAINT fk_browser_source_follow_source FOREIGN KEY (source_id) REFERENCES browser_sources_v2050(id) ON DELETE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 
-    $pdo->exec("CREATE TABLE IF NOT EXISTS browser_user_follows_v2050 (
-      user_id INT UNSIGNED NOT NULL,
-      followed_user_id INT UNSIGNED NOT NULL,
-      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      PRIMARY KEY (user_id,followed_user_id),
-      INDEX idx_browser_user_follow_target (followed_user_id,user_id),
-      CONSTRAINT fk_browser_user_follow_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-      CONSTRAINT fk_browser_user_follow_target FOREIGN KEY (followed_user_id) REFERENCES users(id) ON DELETE CASCADE
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
-
     $pdo->exec("CREATE TABLE IF NOT EXISTS browser_share_comments_v2050 (
       id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
       public_id CHAR(36) NOT NULL,
@@ -791,5 +783,6 @@ function vp3_browser_source_feed_ensure_schema_v2050(?PDO $pdo=null): void
       CONSTRAINT fk_browser_share_read_share FOREIGN KEY (browser_share_id) REFERENCES browser_shares_v2010(id) ON DELETE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 
+    vp3_browser_source_migrate_legacy_user_follows_v2050($pdo);
     vp3_browser_source_backfill_v2050($pdo,20000);
 }
