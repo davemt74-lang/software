@@ -63,6 +63,9 @@ jobs:
       - name: Phase 9 Source Change + Claims + Moderation contract
         run: node tests/browser-trust-v2080.mjs
 
+      - name: Phase 10 Search & Discovery Intelligence contract
+        run: node tests/search-discovery-v2090.mjs
+
       - name: Manifest contract
         run: node -e "const m=require('./browser-companion/manifest.json'); if(m.manifest_version!==3||Number(m.version.split('.')[0])!==20||Number(m.version.split('.')[1])<40) process.exit(1)"
 
@@ -78,6 +81,7 @@ jobs:
           node --check tests/research-projects-publishing-v2060.mjs
           node --check tests/live-rooms-cloak-v2070.mjs
           node --check tests/browser-trust-v2080.mjs
+          node --check tests/search-discovery-v2090.mjs
           node --check live-room-v2070.js
           node --check live-directory-v2070.js
 
@@ -108,6 +112,10 @@ jobs:
           php -l moderation.php
           php -l notification-settings.php
           php -l source-change.php
+          php -l includes/search-discovery-v2090.php
+          php -l api/search-v2090.php
+          php -l search.php
+          php -l includes/profile-agent.php
           php -l upgrade.php
 
   package:
@@ -132,7 +140,7 @@ jobs:
             exit 1
           fi
           sha256sum dist/vp3-browser-companion-current.zip > dist/vp3-browser-companion-current.zip.sha256
-          zip -r dist/vp3-phase9-trust-deploy.zip \
+          zip -r dist/vp3-phase10-search-deploy.zip \
             api/browser-source-feed-v2050.php \
             api/browser-share-media-v2040.php \
             includes/browser-source-feed-v2050.php \
@@ -150,9 +158,12 @@ jobs:
             includes/browser-trust-v2080.php \
             api/browser-trust-v2080.php \
             claims.php claim.php moderation.php notification-settings.php source-change.php \
+            includes/search-discovery-v2090.php \
+            api/search-v2090.php search.php \
+            includes/profile-agent.php \
             upgrade.php
-          unzip -t dist/vp3-phase9-trust-deploy.zip
-          sha256sum dist/vp3-phase9-trust-deploy.zip > dist/vp3-phase9-trust-deploy.zip.sha256
+          unzip -t dist/vp3-phase10-search-deploy.zip
+          sha256sum dist/vp3-phase10-search-deploy.zip > dist/vp3-phase10-search-deploy.zip.sha256
 
       - name: Upload directly loadable Browser Companion
         uses: actions/upload-artifact@v4
@@ -161,7 +172,7 @@ jobs:
           path: |
             dist/vp3-browser-companion-current.zip
             dist/vp3-browser-companion-current.zip.sha256
-            dist/vp3-phase9-trust-deploy.zip
-            dist/vp3-phase9-trust-deploy.zip.sha256
+            dist/vp3-phase10-search-deploy.zip
+            dist/vp3-phase10-search-deploy.zip.sha256
           if-no-files-found: error
           retention-days: 30
