@@ -1,4 +1,4 @@
-# VP3 Browser Companion v20.60
+# VP3 Browser Companion v20.70
 
 Chrome Manifest V3 companion for VP3 Browser Share and the Source Feed layer: This Page, Following, source/user follows, comments, read state, Private/Team/Public publishing, plus highlighted text, screenshot regions, source-media moments, and voice commentary.
 
@@ -58,7 +58,7 @@ The optional numeric argument controls the maximum number of jobs processed in t
 
 ## Local Chrome installation
 
-Open `chrome://extensions`, enable **Developer mode**, choose **Load unpacked**, and select this `browser-companion` directory. The CI package `vp3-browser-companion-v20.60.0.zip` is directly loadable/extractable and contains `manifest.json` at the ZIP root.
+Open `chrome://extensions`, enable **Developer mode**, choose **Load unpacked**, and select this `browser-companion` directory. The CI package `vp3-browser-companion-v20.70.0.zip` is directly loadable/extractable and contains `manifest.json` at the ZIP root.
 
 The default VP3 site is `https://vp3.me`. Another HTTPS VP3 installation can be selected in Extension Settings. Local development may use `http://localhost` or `http://127.0.0.1`; Chrome asks for explicit access to the selected origin.
 
@@ -108,3 +108,19 @@ After deploying v20.50, run `/upgrade.php` once to install the Browser Source Fe
 - Canonical Source pages surface authorized published Research reports that cite that Source.
 
 After deploying v20.60, run `/upgrade.php` once to install the Research Project, Finding, evidence, report, immutable report-version, and report-source provenance tables.
+
+
+## Phase 8 — Live Rooms + Cloak Mode
+
+- The sidebar now includes a **Live** tab for the current canonical Source.
+- Start or join **Public** and **Team** rooms without introducing a separate source/capture store.
+- Live messages use a lightweight cursor poll; presence is refreshed separately by heartbeat and expires when the participant disappears.
+- **Cloak Mode** uses a room-specific pseudonym. Participant payloads never expose the cloaked user's VP3 user ID or real display name.
+- Every message snapshots its cloaked/visible sender identity at send time, so disabling Cloak later does not retroactively deanonymize earlier cloaked messages.
+- Public rooms can be read on the web without signing in; joining, presence, Cloak Mode, and posting require an authenticated VP3 account.
+- Team rooms revalidate live Team authorization server-side.
+- Sharing an annotation into Live never republishes it. Public rooms accept only already-Public annotations; Team rooms accept Public or same-Team annotations.
+- Canonical Source pages surface active authorized Live Rooms.
+- Website surfaces are `/live.php` and `/live-room.php`.
+
+After deploying v20.70, run `/upgrade.php` once to install the Live Room, participant/presence, and message tables.
