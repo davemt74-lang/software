@@ -83,8 +83,8 @@ function research_h_e(string $v): string{return htmlspecialchars($v,ENT_QUOTES|E
 <label class="field"><span>Add to project</span><select name="project_id" required><?php foreach($researcherProjects as $project): ?><option value="<?=research_h_e((string)$project['id'])?>"><?=research_h_e((string)$project['title'])?></option><?php endforeach; ?></select></label>
 <label class="field"><span>Project note <small>optional</small></span><input name="note" maxlength="10000" placeholder="Why this matters"></label>
 <label class="field"><span>Tags <small>comma separated</small></span><input name="tags" placeholder="pricing, competitor"></label>
-<div class="assign-actions"><button class="primary" type="submit">Add to project</button></form>
-<form method="post"><?=csrf_field()?><input type="hidden" name="action" value="remove_inbox"><input type="hidden" name="browser_share_id" value="<?=research_h_e((string)$item['id'])?>"><button type="submit">Dismiss</button></form></div>
+<button class="primary" type="submit">Add to project</button></form>
+<form class="assign-actions" method="post"><?=csrf_field()?><input type="hidden" name="action" value="remove_inbox"><input type="hidden" name="browser_share_id" value="<?=research_h_e((string)$item['id'])?>"><button type="submit">Dismiss from Inbox</button></form>
 <?php else: ?><p class="count">Create a project where you have Researcher access to assign this item.</p><?php endif; ?>
 </div></article><?php endforeach; ?></div><?php endif; ?>
 </section>
