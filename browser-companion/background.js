@@ -1,6 +1,6 @@
 const VP3_DEFAULT_BASE = 'https://vp3.me';
 const VP3_CONTRACT_VERSION = '1';
-const VP3_EXTENSION_VERSION = '20.70.0';
+const VP3_EXTENSION_VERSION = '20.80.0';
 const VP3_REQUESTED_CAPABILITIES = [
   'team.destinations.read',
   'team.share.create',
@@ -471,6 +471,32 @@ async function liveRoomAction(action, payload = {}) {
   }, capability);
 }
 
+
+async function browserTrustGet(action, params = {}) {
+  const query = new URLSearchParams({ action, ...Object.fromEntries(Object.entries(params).map(([k,v]) => [k, String(v ?? '')])) });
+  return authorizedFetch('/api/browser-trust-v2080.php?' + query.toString(), { method: 'GET' }, 'team.chat.read');
+}
+
+async function browserTrustAction(action, payload = {}) {
+  const capability = ['claim_create', 'claim_status'].includes(action) ? 'team.share.create' : 'team.chat.read';
+  return authorizedFetch('/api/browser-trust-v2080.php', {
+    method: 'POST',
+    json: { action, ...payload }
+  }, capability);
+}
+
+async function observeSource(capture) {
+  if (!capture?.available || !/^https?:\/\//i.test(String(capture.source_url || '')) || !/^[a-f0-9]{64}$/i.test(String(capture.page_text_sha256 || ''))) {
+    return { changed: false, source: null, changes: [] };
+  }
+  return browserTrustAction('observe_source', {
+    url: String(capture.source_url || ''),
+    canonical_url: String(capture.canonical_url || capture.source_url || ''),
+    title: String(capture.title || '').slice(0, 512),
+    source_version_hash: String(capture.page_text_sha256 || '').toLowerCase()
+  });
+}
+
 function fallbackSelection(capture, rich = {}) {
   const selected = utf8Limit(String(capture?.selected_text || '').trim(), 32768);
   if (selected) return selected;
@@ -662,6 +688,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       case 'live_rooms': return liveRoomsForSource(message.capture || await activeCapture());
       case 'live_poll': return liveRoomPoll(message.room, message.after || 0);
       case 'live_action': return liveRoomAction(message.action, message.payload || {});
+      case 'trust_observe': return observeSource(message.capture || await activeCapture());
+      case 'trust_notifications': return browserTrustGet('notifications', { limit: message.limit || 50 });
+      case 'trust_history': return browserTrustGet('source_history', { source_id: message.source_id || '', limit: message.limit || 25 });
+      case 'trust_claims': return browserTrustGet('claims_for_source', { source_id: message.source_id || '' });
+      case 'trust_action': return browserTrustAction(message.action, message.payload || {});
       case 'media_data': return authorizedMediaDataUrl(String(message.path || ''));
       case 'share': return createRichShare(message);
       case 'share_action': return browserShareAction(message.action, message.browser_share_id, message.folder_id);
