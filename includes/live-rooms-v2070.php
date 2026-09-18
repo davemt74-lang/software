@@ -379,6 +379,7 @@ function vp3_live_room_send_v2070(PDO $pdo,int $userId,string $roomPublicId,stri
     $row=vp3_live_room_message_row_v2070($pdo,(int)$pdo->lastInsertId());
     if(!$row)throw new RuntimeException('Live Room message could not be reloaded.');
     if(function_exists('vp3_browser_trust_notify_live_v2080'))vp3_browser_trust_notify_live_v2080($pdo,$room,$userId,'message');
+    if(function_exists('vp3_browser_trust_notify_live_mentions_v2080'))vp3_browser_trust_notify_live_mentions_v2080($pdo,$room,$userId,$body,$publicId);
     return vp3_live_room_message_public_v2070($pdo,$room,$row,$userId);
 }
 

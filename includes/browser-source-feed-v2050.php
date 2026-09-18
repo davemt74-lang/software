@@ -603,6 +603,7 @@ function vp3_browser_source_comment_v2050(PDO $pdo,int $userId,string $browserSh
       VALUES(?,?,?,?,?,UTC_TIMESTAMP(),UTC_TIMESTAMP())");
     $stmt->execute([$publicId,(int)$row['id'],$parentId,$userId,$body]);
     if(function_exists('vp3_browser_trust_notify_comment_v2080'))vp3_browser_trust_notify_comment_v2080($pdo,$row,$userId,$publicId,trim($parentPublicId));
+    if(function_exists('vp3_browser_trust_notify_comment_mentions_v2080'))vp3_browser_trust_notify_comment_mentions_v2080($pdo,$row,$userId,$body,$publicId);
     return ['comments'=>vp3_browser_source_comments_v2050($pdo,(int)$row['id'],100)];
 }
 

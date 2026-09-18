@@ -58,8 +58,13 @@ mustNot(api.includes('ensure_schema_v2080('),'public Phase 9 API must never exec
 must(api.includes("vp3_browser_trust_api_cap_v2080($auth,'team.share.create')"),'claim writes must require share capability');
 
 must(sourceService.includes('vp3_browser_trust_notify_comment_v2080'),'annotation comments must feed unified notifications');
+must(sourceService.includes('vp3_browser_trust_notify_comment_mentions_v2080'),'annotation @mentions must feed unified notifications');
 must(sourceService.includes('vp3_browser_trust_notify_follow_v2080'),'new follows must feed unified notifications');
 must(liveService.includes('vp3_browser_trust_notify_live_v2080'),'Live activity must feed unified notifications');
+must(liveService.includes('vp3_browser_trust_notify_live_mentions_v2080'),'Live @mentions must feed unified notifications');
+must(service.includes("$pdo,$uid,'mentions'"),'mentions must use their own notification preference');
+must(service.includes('vp3_browser_source_share_authorized_v2050($pdo,$share,$uid)'),'annotation mentions must not expand content visibility');
+must(service.includes('vp3_live_room_access_v2070($pdo,$room,$uid,false)'),'Live mentions must not expand room visibility');
 
 for(const id of ['alertsTab','alertsView','sourceChangeBadge','sourceHistoryList','sourceClaimsList','notificationsList','fileClaimBtn','claimDialog','claimStatement','claimRationale','claimVisibility','claimSubmitBtn']){
   must(panel.includes('id="'+id+'"'),'Browser Companion Phase 9 UI missing '+id);

@@ -58,7 +58,7 @@ function vp3_browser_trust_pref_v2080(PDO $pdo,int $userId,string $type): bool
 function vp3_browser_trust_preferences_v2080(PDO $pdo,int $userId): array
 {
     if($userId<1)throw new RuntimeException('Sign in to manage notification preferences.');
-    $types=['source_changes','replies','follows','live','claims','moderation'];
+    $types=['source_changes','replies','mentions','follows','live','claims','moderation'];
     $out=[];
     foreach($types as $type)$out[$type]=vp3_browser_trust_pref_v2080($pdo,$userId,$type);
     return $out;
@@ -66,7 +66,7 @@ function vp3_browser_trust_preferences_v2080(PDO $pdo,int $userId): array
 
 function vp3_browser_trust_set_preference_v2080(PDO $pdo,int $userId,string $type,bool $enabled): array
 {
-    $allowed=['source_changes','replies','follows','live','claims','moderation'];
+    $allowed=['source_changes','replies','mentions','follows','live','claims','moderation'];
     $type=strtolower(trim($type));
     if($userId<1)throw new RuntimeException('Sign in to manage notification preferences.');
     if(!in_array($type,$allowed,true))throw new InvalidArgumentException('Unknown notification preference.');
@@ -454,6 +454,44 @@ function vp3_browser_trust_report_action_v2080(PDO $pdo,int $moderatorUserId,str
       VALUES(?,?,?,?,?,UTC_TIMESTAMP())")->execute([vp3_browser_trust_uuid_v2080(),(int)$report['id'],$moderatorUserId,$actionType,$note]);
     vp3_browser_trust_notify_v2080($pdo,(int)$report['reporter_user_id'],'moderation','moderation-report:'.(int)$report['id'].':'.$status,'Report updated','Your report is now '.str_replace('_',' ',$status).'.','/notifications.php',null,null,(int)$report['id']);
     return ['id'=>(string)$report['public_id'],'status'=>$status];
+}
+
+function vp3_browser_trust_mentioned_users_v2080(PDO $pdo,string $body): array
+{
+    if(!table_exists('user_profiles')||trim($body)==='')return [];
+    preg_match_all('/(?:^|[^a-z0-9._-])@([a-z0-9][a-z0-9._-]{1,58}[a-z0-9])/i',$body,$matches);
+    $names=array_values(array_unique(array_filter(array_map(static fn(string $v): string=>function_exists('profile_username_normalize')?profile_username_normalize($v):strtolower(trim($v)),(array)($matches[1]??[])))));
+    if(!$names)return [];
+    $out=[];
+    $stmt=$pdo->prepare('SELECT p.user_id,p.username,u.display_name FROM user_profiles p INNER JOIN users u ON u.id=p.user_id AND u.is_active=1 WHERE p.username=? LIMIT 1');
+    foreach($names as $username){$stmt->execute([$username]);$row=$stmt->fetch(PDO::FETCH_ASSOC);if(is_array($row))$out[(int)$row['user_id']]=$row;}
+    return array_values($out);
+}
+
+function vp3_browser_trust_notify_comment_mentions_v2080(PDO $pdo,array $share,int $actorUserId,string $body,string $commentPublicId): void
+{
+    if(!vp3_browser_trust_schema_ready_v2080($pdo))return;
+    foreach(vp3_browser_trust_mentioned_users_v2080($pdo,$body) as $mentioned){
+        $uid=(int)($mentioned['user_id']??0);
+        if($uid<1||$uid===$actorUserId||!vp3_browser_source_share_authorized_v2050($pdo,$share,$uid))continue;
+        vp3_browser_trust_notify_v2080(
+            $pdo,$uid,'mentions','mention-comment:'.$commentPublicId.':'.$uid,'You were mentioned',
+            'You were mentioned in an annotation comment.','/annotation.php?id='.rawurlencode((string)$share['public_id']),(int)($share['source_id']??0)
+        );
+    }
+}
+
+function vp3_browser_trust_notify_live_mentions_v2080(PDO $pdo,array $room,int $actorUserId,string $body,string $messagePublicId): void
+{
+    if(!vp3_browser_trust_schema_ready_v2080($pdo))return;
+    foreach(vp3_browser_trust_mentioned_users_v2080($pdo,$body) as $mentioned){
+        $uid=(int)($mentioned['user_id']??0);
+        if($uid<1||$uid===$actorUserId||!vp3_live_room_access_v2070($pdo,$room,$uid,false))continue;
+        vp3_browser_trust_notify_v2080(
+            $pdo,$uid,'mentions','mention-live:'.$messagePublicId.':'.$uid,'You were mentioned',
+            'You were mentioned in a Live Room.','/live-room.php?room='.rawurlencode((string)$room['public_id']),(int)($room['source_id']??0)
+        );
+    }
 }
 
 function vp3_browser_trust_notify_comment_v2080(PDO $pdo,array $share,int $actorUserId,string $commentPublicId,string $parentPublicId=''): void
