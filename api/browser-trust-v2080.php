@@ -50,6 +50,7 @@ try{
         if($userId<1)vp3_browser_trust_api_json_v2080(401,['ok'=>false,'error'=>['code'=>'authentication_required','message'=>'Sign in to use Phase 9.']]);
         vp3_browser_trust_api_cap_v2080($auth,'team.chat.read');
         if($action==='notifications')vp3_browser_trust_api_json_v2080(200,['ok'=>true,'notifications'=>vp3_browser_trust_notifications_v2080($pdo,$userId,max(1,min(100,(int)($_GET['limit']??50)))),'preferences'=>vp3_browser_trust_preferences_v2080($pdo,$userId)]);
+        if($action==='source_compare')vp3_browser_trust_api_json_v2080(200,['ok'=>true]+vp3_browser_trust_compare_change_v2080($pdo,$userId,trim((string)($_GET['change_id']??''))));
         if($action==='source_history')vp3_browser_trust_api_json_v2080(200,['ok'=>true]+vp3_browser_trust_source_history_v2080($pdo,$userId,trim((string)($_GET['source_id']??'')),max(1,min(100,(int)($_GET['limit']??25)))));
         if($action==='claims_for_source')vp3_browser_trust_api_json_v2080(200,['ok'=>true,'claims'=>vp3_browser_trust_claims_for_source_v2080($pdo,$userId,trim((string)($_GET['source_id']??'')),50)]);
         if($action==='claim'){

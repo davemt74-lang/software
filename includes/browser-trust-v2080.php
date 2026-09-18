@@ -164,6 +164,70 @@ function vp3_browser_trust_source_change_public_v2080(PDO $pdo,array $row): arra
         'from'=>vp3_browser_trust_version_public_v2080(vp3_browser_trust_source_version_v2080($pdo,(int)($row['from_version_id']??0))),
         'to'=>vp3_browser_trust_version_public_v2080(vp3_browser_trust_source_version_v2080($pdo,(int)($row['to_version_id']??0))),
         'observed_at'=>(string)$row['observed_at'],
+        'compare_url'=>url('/source-change.php?change='.rawurlencode((string)$row['public_id'])),
+    ];
+}
+
+function vp3_browser_trust_source_access_v2080(PDO $pdo,int $sourceId,int $viewerUserId): bool
+{
+    if($sourceId<1)return false;
+    if(vp3_browser_trust_is_moderator_v2080($pdo,$viewerUserId))return true;
+    if($viewerUserId>0){
+        $follow=$pdo->prepare('SELECT 1 FROM browser_source_follows_v2050 WHERE user_id=? AND source_id=? LIMIT 1');
+        $follow->execute([$viewerUserId,$sourceId]);
+        if($follow->fetchColumn())return true;
+    }
+    $stmt=$pdo->prepare('SELECT browser_share_id FROM browser_share_sources_v2050 WHERE source_id=? ORDER BY browser_share_id DESC LIMIT 250');
+    $stmt->execute([$sourceId]);
+    foreach(array_map('intval',$stmt->fetchAll(PDO::FETCH_COLUMN)?:[]) as $shareId){
+        $share=vp3_browser_source_share_row_by_id_v2050($pdo,$shareId);
+        if($share&&vp3_browser_source_share_authorized_v2050($pdo,$share,$viewerUserId))return true;
+    }
+    return false;
+}
+
+function vp3_browser_trust_change_row_v2080(PDO $pdo,string $publicId): ?array
+{
+    $stmt=$pdo->prepare("SELECT e.*,s.public_id source_public_id FROM browser_source_change_events_v2080 e
+      INNER JOIN browser_sources_v2050 s ON s.id=e.source_id WHERE e.public_id=? LIMIT 1");
+    $stmt->execute([trim($publicId)]);$row=$stmt->fetch(PDO::FETCH_ASSOC);
+    return is_array($row)?$row:null;
+}
+
+function vp3_browser_trust_version_annotations_v2080(PDO $pdo,int $sourceId,int $versionId,int $viewerUserId,int $limit=50): array
+{
+    if($sourceId<1||$versionId<1)return [];
+    $limit=max(1,min(100,$limit));
+    $stmt=$pdo->prepare("SELECT browser_share_id FROM browser_share_sources_v2050 WHERE source_id=? AND source_version_id=? ORDER BY browser_share_id DESC LIMIT {$limit}");
+    $stmt->execute([$sourceId,$versionId]);$items=[];
+    foreach(array_map('intval',$stmt->fetchAll(PDO::FETCH_COLUMN)?:[]) as $shareId){
+        $row=vp3_browser_source_share_row_by_id_v2050($pdo,$shareId);
+        if(!$row||!vp3_browser_source_share_authorized_v2050($pdo,$row,$viewerUserId))continue;
+        $item=vp3_browser_source_item_v2050($pdo,$row,$viewerUserId,false);
+        $items[]=[
+            'id'=>(string)$item['id'],
+            'selection'=>(string)($item['selection']??''),
+            'note'=>(string)($item['note']??''),
+            'sender'=>(array)($item['sender']??[]),
+            'visibility'=>(string)($item['publication']['visibility']??''),
+            'annotation_url'=>(string)($item['annotation_url']??''),
+            'created_at'=>(string)($item['publication']['published_at']??$item['created_at']??''),
+        ];
+    }
+    return $items;
+}
+
+function vp3_browser_trust_compare_change_v2080(PDO $pdo,int $viewerUserId,string $changePublicId): array
+{
+    $change=vp3_browser_trust_change_row_v2080($pdo,$changePublicId);
+    if(!$change||!vp3_browser_trust_source_access_v2080($pdo,(int)$change['source_id'],$viewerUserId))throw new RuntimeException('Source change is not available.');
+    $source=vp3_browser_source_row_by_public_id_v2050($pdo,(string)$change['source_public_id']);
+    if(!$source)throw new RuntimeException('Source was not found.');
+    return [
+        'source'=>vp3_browser_source_public_source_v2050($pdo,$source,$viewerUserId),
+        'change'=>vp3_browser_trust_source_change_public_v2080($pdo,$change),
+        'from_annotations'=>vp3_browser_trust_version_annotations_v2080($pdo,(int)$change['source_id'],(int)$change['from_version_id'],$viewerUserId),
+        'to_annotations'=>vp3_browser_trust_version_annotations_v2080($pdo,(int)$change['source_id'],(int)$change['to_version_id'],$viewerUserId),
     ];
 }
 
@@ -171,6 +235,7 @@ function vp3_browser_trust_source_history_v2080(PDO $pdo,int $viewerUserId,strin
 {
     $source=vp3_browser_source_row_by_public_id_v2050($pdo,trim($sourcePublicId));
     if(!$source)throw new RuntimeException('Source was not found.');
+    if(!vp3_browser_trust_source_access_v2080($pdo,(int)$source['id'],$viewerUserId))throw new RuntimeException('Source history is not available.');
     $limit=max(1,min(100,$limit));
     $stmt=$pdo->prepare("SELECT e.*,s.public_id source_public_id FROM browser_source_change_events_v2080 e
       INNER JOIN browser_sources_v2050 s ON s.id=e.source_id WHERE e.source_id=? ORDER BY e.id DESC LIMIT {$limit}");
@@ -189,6 +254,7 @@ function vp3_browser_trust_observe_source_v2080(PDO $pdo,int $userId,string $url
     if(!preg_match('/^[a-f0-9]{64}$/',$contentHash))throw new InvalidArgumentException('A current page fingerprint is required.');
     $identity=vp3_browser_source_identity_v2050($url,$canonicalUrl,$title);
     $source=vp3_browser_source_ensure_v2050($pdo,$identity);
+    if(!vp3_browser_trust_source_access_v2080($pdo,(int)$source['id'],$userId))throw new RuntimeException('Follow or annotate this source before observing changes.');
     $fromId=(int)($source['current_version_id']??0);
     $from=vp3_browser_trust_source_version_v2080($pdo,$fromId);
     if($from && (string)$from['version_basis']==='page_text_sha256' && hash_equals((string)$from['content_hash'],$contentHash)){
@@ -322,6 +388,7 @@ function vp3_browser_trust_claim_create_v2080(PDO $pdo,int $userId,array $input)
     if($userId<1)throw new RuntimeException('Sign in to file a claim.');
     $source=vp3_browser_source_row_by_public_id_v2050($pdo,trim((string)($input['source_id']??'')));
     if(!$source)throw new RuntimeException('Source was not found.');
+    if(!vp3_browser_trust_source_access_v2080($pdo,(int)$source['id'],$userId))throw new RuntimeException('Source is not available.');
     $statement=trim(str_replace("\0",'',(string)($input['statement']??'')));
     $rationale=trim(str_replace("\0",'',(string)($input['rationale']??'')));
     if($statement===''||mb_strlen($statement)>1000)throw new InvalidArgumentException('Claim statement must be between 1 and 1,000 characters.');
