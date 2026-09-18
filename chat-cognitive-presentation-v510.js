@@ -235,8 +235,13 @@
       const host = document.createElement('div');
       host.className = 'vp3-return-digest-card-host vp3-cognitive-card-host';
       node.appendChild(host);
+      const fallbackItems = Array.from(node.querySelectorAll('.vp3-return-digest-item[data-has-card="1"]'));
       void window.VP3_COGNITIVE_CARDS_V520_RUNTIME.renderRequests(requests,host,{showError:false}).then(result => {
-        if (result && result.rendered > 0) node.classList.add('has-rendered-cards');
+        const available = result && Array.isArray(result.availableIndices) ? result.availableIndices : [];
+        available.forEach(index => {
+          const fallback = fallbackItems[Number(index || 0)];
+          if (fallback) fallback.hidden = true;
+        });
       });
     }
   }

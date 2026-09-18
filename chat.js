@@ -1285,7 +1285,7 @@
     }
 
     if (Array.isArray(raw)) {
-      return {sources:raw,media:[],stem_media:[],actions:[],playlist_title:''};
+      return {sources:raw,media:[],stem_media:[],actions:[],cards:[],playlist_title:''};
     }
 
     return {
