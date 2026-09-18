@@ -426,6 +426,21 @@ async function sourceFeedAction(action, payload = {}) {
   }, capability);
 }
 
+async function researchContext(browserShareId) {
+  const query = new URLSearchParams({
+    action: 'placements',
+    browser_share_id: String(browserShareId || '')
+  });
+  return (await authorizedFetch('/api/research-projects-v2060.php?' + query.toString(), { method: 'GET' }, 'team.chat.read')).context;
+}
+
+async function researchAction(action, payload = {}) {
+  return authorizedFetch('/api/research-projects-v2060.php', {
+    method: 'POST',
+    json: { action, ...payload }
+  }, 'knowledge.write');
+}
+
 function fallbackSelection(capture, rich = {}) {
   const selected = utf8Limit(String(capture?.selected_text || '').trim(), 32768);
   if (selected) return selected;
@@ -612,6 +627,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       case 'this_page': return thisPage(message.capture || await activeCapture(), message.cursor || '');
       case 'following': return followingFeed(message.cursor || '');
       case 'source_action': return sourceFeedAction(message.action, message.payload || {});
+      case 'research_context': return researchContext(message.browser_share_id);
+      case 'research_action': return researchAction(message.action, message.payload || {});
       case 'media_data': return authorizedMediaDataUrl(String(message.path || ''));
       case 'share': return createRichShare(message);
       case 'share_action': return browserShareAction(message.action, message.browser_share_id, message.folder_id);
