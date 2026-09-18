@@ -132,12 +132,17 @@ function vp3_research_project_role_v2060(PDO $pdo,array $project,int $userId): s
     return $best;
 }
 
-function vp3_research_project_require_v2060(PDO $pdo,string $publicId,int $userId,string $minimum='viewer'): array
+function vp3_research_project_require_v2060(PDO $pdo,string $publicId,int $userId,string $minimum='viewer',bool $allowArchivedWrite=false): array
 {
     $project=vp3_research_project_row_v2060($pdo,$publicId);
     if(!$project)throw new RuntimeException('Research project was not found.');
     $role=vp3_research_project_role_v2060($pdo,$project,$userId);
     if(!vp3_research_role_at_least_v2060($role,$minimum))throw new RuntimeException('You do not have access to this Research project.');
+    if((string)($project['project_status']??'active')==='archived'
+        && vp3_research_role_rank_v2060($minimum)>=vp3_research_role_rank_v2060('researcher')
+        && !$allowArchivedWrite){
+        throw new RuntimeException('Archived Research projects are read-only. Reactivate the project before editing it.');
+    }
     $project['_role']=$role;
     return $project;
 }
@@ -220,7 +225,7 @@ function vp3_research_create_project_v2060(PDO $pdo,int $actorUserId,string $tit
 
 function vp3_research_update_project_v2060(PDO $pdo,int $actorUserId,string $projectPublicId,array $input): array
 {
-    $project=vp3_research_project_require_v2060($pdo,$projectPublicId,$actorUserId,'admin');
+    $project=vp3_research_project_require_v2060($pdo,$projectPublicId,$actorUserId,'admin',true);
     $title=array_key_exists('title',$input)?vp3_research_clean_title_v2060((string)$input['title'],'Project title'):(string)$project['title'];
     $description=array_key_exists('description',$input)?vp3_research_clean_body_v2060((string)$input['description'],10000):(string)$project['description'];
     $status=(string)($input['status']??$project['project_status']);
@@ -357,6 +362,7 @@ function vp3_research_item_public_v2060(PDO $pdo,array $row,int $viewerUserId): 
             'version'=>[
                 'id'=>(string)($version['public_id']??''),'hash'=>(string)($version['content_hash']??''),
                 'basis'=>(string)($version['version_basis']??''),'captured_at'=>(string)($version['captured_at']??''),
+                'changed'=>(int)($row['source_version_id']??0)>0 && (int)($source['current_version_id']??0)>0 && (int)$row['source_version_id']!==(int)$source['current_version_id'],
             ],
         ],
         'annotation'=>$annotation,
@@ -775,7 +781,7 @@ function vp3_research_publish_report_v2060(PDO $pdo,int $actorUserId,string $pro
 
 function vp3_research_unpublish_report_v2060(PDO $pdo,int $actorUserId,string $projectPublicId,string $reportPublicId): array
 {
-    $project=vp3_research_project_require_v2060($pdo,$projectPublicId,$actorUserId,'admin');
+    $project=vp3_research_project_require_v2060($pdo,$projectPublicId,$actorUserId,'admin',true);
     $report=vp3_research_report_row_v2060($pdo,$reportPublicId);
     if(!$report||(int)$report['project_id']!==(int)$project['id'])throw new RuntimeException('Report was not found.');
     $pdo->prepare("UPDATE research_reports_v2060 SET report_status='unpublished',updated_by_user_id=?,updated_at=UTC_TIMESTAMP() WHERE id=?")->execute([$actorUserId,(int)$report['id']]);
@@ -827,6 +833,24 @@ function vp3_research_reports_for_source_v2060(PDO $pdo,int $sourceId,int $viewe
     return $out;
 }
 
+function vp3_research_project_activity_v2060(PDO $pdo,array $project,int $limit=40): array
+{
+    $limit=max(1,min(100,$limit));
+    $stmt=$pdo->prepare("SELECT e.event_type,e.object_type,e.object_public_id,e.metadata_json,e.created_at,e.actor_user_id,u.display_name
+      FROM research_project_events_v2060 e
+      INNER JOIN users u ON u.id=e.actor_user_id
+      WHERE e.project_id=? ORDER BY e.id DESC LIMIT {$limit}");
+    $stmt->execute([(int)$project['id']]);
+    return array_map(static function(array $row): array{
+        $metadata=json_decode((string)$row['metadata_json'],true);
+        return [
+            'event'=>(string)$row['event_type'],'object_type'=>(string)$row['object_type'],'object_id'=>(string)$row['object_public_id'],
+            'actor'=>['id'=>(int)$row['actor_user_id'],'name'=>(string)$row['display_name']],
+            'metadata'=>is_array($metadata)?$metadata:[],'created_at'=>(string)$row['created_at'],
+        ];
+    },$stmt->fetchAll(PDO::FETCH_ASSOC)?:[]);
+}
+
 function vp3_research_project_bundle_v2060(PDO $pdo,string $projectPublicId,int $viewerUserId): array
 {
     $project=vp3_research_project_require_v2060($pdo,$projectPublicId,$viewerUserId,'viewer');
@@ -836,6 +860,7 @@ function vp3_research_project_bundle_v2060(PDO $pdo,string $projectPublicId,int 
         'items'=>vp3_research_project_items_v2060($pdo,$project,$viewerUserId),
         'findings'=>vp3_research_findings_v2060($pdo,$project,$viewerUserId),
         'reports'=>vp3_research_reports_v2060($pdo,$project,$viewerUserId),
+        'activity'=>vp3_research_project_activity_v2060($pdo,$project,40),
     ];
 }
 
