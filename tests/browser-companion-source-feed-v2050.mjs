@@ -39,9 +39,13 @@ must(panelJs.includes("visibility_team_id"),'Team visibility must be distinct fr
 
 for(const table of [
   'browser_sources_v2050','browser_source_versions_v2050','browser_share_sources_v2050','browser_share_publications_v2050',
-  'browser_source_follows_v2050','browser_user_follows_v2050','browser_share_comments_v2050','browser_share_saves_v2050',
+  'browser_source_follows_v2050','browser_share_comments_v2050','browser_share_saves_v2050',
   'browser_research_queue_v2050','browser_share_reads_v2050'
 ]) must(service.includes(table),'Phase 6 schema missing '+table);
+must(service.includes('LEFT JOIN user_follows uf'),'Following must consume the canonical VP3 user follow graph');
+must(service.includes('vp3_social_follow_v320($pdo,$userId,$followedUserId,$follow)'),'Follow/Unfollow user must reuse canonical VP3 social mutation');
+must(!service.includes('CREATE TABLE IF NOT EXISTS browser_user_follows_v2050'),'Phase 6 must not create a duplicate user follow graph');
+must(service.includes('vp3_browser_source_migrate_legacy_user_follows_v2050'),'pre-merge duplicate follow rows must migrate safely into canonical user_follows');
 
 must(service.includes("str_starts_with($key,'utm_')"),'URL normalization must remove UTM tracking parameters');
 must(service.includes("'fbclid'=>true"),'URL normalization must remove common click trackers');
