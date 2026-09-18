@@ -21,7 +21,7 @@ const reportPage=read('research-report.php');
 const sourcePage=read('source.php');
 
 must(manifest.manifest_version===3,'Research integration must remain Manifest V3');
-must(manifest.version==='20.60.0','Phase 7 Browser Companion version must be v20.60.0');
+must(Number(manifest.version.split('.')[0])===20 && Number(manifest.version.split('.')[1])>=60,'Phase 7 requires Browser Companion v20.60 or newer');
 
 for(const table of [
   'research_projects_v2060','research_project_members_v2060','research_project_items_v2060','research_project_events_v2060',
@@ -112,4 +112,4 @@ must(reportPage.includes('SHA-256'),'Report viewer must expose snapshot integrit
 must(sourcePage.includes('vp3_research_reports_for_source_v2060'),'canonical Source pages must surface authorized published Research');
 must(sourcePage.includes('empty($feed[\'items\']) && empty($publishedResearch)'),'public Source existence must still require visible annotation or Research');
 
-console.log('VP3 Phase 7 Research Projects + Publishing v20.60 contract passed.');
+console.log('VP3 Phase 7 Research Projects + Publishing v20.60+ regression contract passed.');

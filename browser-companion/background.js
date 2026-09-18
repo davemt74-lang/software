@@ -1,6 +1,6 @@
 const VP3_DEFAULT_BASE = 'https://vp3.me';
 const VP3_CONTRACT_VERSION = '1';
-const VP3_EXTENSION_VERSION = '20.60.0';
+const VP3_EXTENSION_VERSION = '20.70.0';
 const VP3_REQUESTED_CAPABILITIES = [
   'team.destinations.read',
   'team.share.create',
@@ -441,6 +441,36 @@ async function researchAction(action, payload = {}) {
   }, 'knowledge.write');
 }
 
+async function liveRoomsForSource(capture) {
+  if (!capture?.available || !/^https?:\/\//i.test(String(capture.source_url || ''))) {
+    return { source: null, rooms: [] };
+  }
+  const query = new URLSearchParams({
+    action: 'source_rooms',
+    url: String(capture.source_url || ''),
+    canonical_url: String(capture.canonical_url || ''),
+    title: String(capture.title || '').slice(0, 512)
+  });
+  return authorizedFetch('/api/live-rooms-v2070.php?' + query.toString(), { method: 'GET' }, 'team.chat.read');
+}
+
+async function liveRoomPoll(roomId, after = 0) {
+  const query = new URLSearchParams({
+    action: 'poll',
+    room: String(roomId || ''),
+    after: String(Math.max(0, Number(after || 0)))
+  });
+  return authorizedFetch('/api/live-rooms-v2070.php?' + query.toString(), { method: 'GET' }, 'team.chat.read');
+}
+
+async function liveRoomAction(action, payload = {}) {
+  const capability = ['create', 'send', 'end'].includes(action) ? 'team.share.create' : 'team.chat.read';
+  return authorizedFetch('/api/live-rooms-v2070.php', {
+    method: 'POST',
+    json: { action, ...payload }
+  }, capability);
+}
+
 function fallbackSelection(capture, rich = {}) {
   const selected = utf8Limit(String(capture?.selected_text || '').trim(), 32768);
   if (selected) return selected;
@@ -629,6 +659,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       case 'source_action': return sourceFeedAction(message.action, message.payload || {});
       case 'research_context': return researchContext(message.browser_share_id);
       case 'research_action': return researchAction(message.action, message.payload || {});
+      case 'live_rooms': return liveRoomsForSource(message.capture || await activeCapture());
+      case 'live_poll': return liveRoomPoll(message.room, message.after || 0);
+      case 'live_action': return liveRoomAction(message.action, message.payload || {});
       case 'media_data': return authorizedMediaDataUrl(String(message.path || ''));
       case 'share': return createRichShare(message);
       case 'share_action': return browserShareAction(message.action, message.browser_share_id, message.folder_id);

@@ -31,6 +31,7 @@
       <nav class="feed-tabs" aria-label="Browser Companion views">
         <button id="thisPageTab" class="feed-tab active" type="button" aria-selected="true">This Page</button>
         <button id="followingTab" class="feed-tab" type="button" aria-selected="false">Following</button>
+        <button id="liveTab" class="feed-tab" type="button" aria-selected="false">Live</button>
       </nav>
 
       <section id="thisPageView">
@@ -140,6 +141,51 @@
           <div id="followingEmpty" class="empty-state">Follow a source or VP3 user to build this feed.</div>
           <div id="followingFeed" class="feed-list"></div>
           <button id="loadMoreFollowingBtn" class="load-more" type="button" hidden>Load more</button>
+        </section>
+      </section>
+
+      <section id="liveView" hidden>
+        <section class="card source-card">
+          <div class="row-between">
+            <div><div class="eyebrow">Live on this source</div><div id="liveSourceTitle" class="page-title">No page selected</div><div id="liveSourceHost" class="page-host"></div></div>
+            <button id="refreshLiveBtn" class="text-btn" type="button">Refresh</button>
+          </div>
+        </section>
+
+        <section id="liveCreateCard" class="card live-create-card">
+          <div class="row-between"><div><div class="eyebrow">Start Live Room</div><strong>Talk around this page</strong></div><span class="pill">v20.70</span></div>
+          <label class="field"><span>Room title</span><input id="liveRoomTitle" maxlength="180" placeholder="Live discussion"></label>
+          <div class="publish-grid">
+            <label class="field"><span>Access</span><select id="liveScope"><option value="public">Public</option><option value="team">Team</option></select></label>
+            <label id="liveTeamField" class="field" hidden><span>Team</span><select id="liveTeamSelect"><option value="">Choose team…</option></select></label>
+          </div>
+          <label class="live-check"><input id="liveAllowCloak" type="checkbox" checked> Allow Cloak Mode</label>
+          <label class="live-check"><input id="liveEnterCloaked" type="checkbox"> Enter cloaked</label>
+          <button id="startLiveRoomBtn" class="primary" type="button">Start Live Room</button>
+        </section>
+
+        <section id="liveDirectory" class="feed-section">
+          <div class="section-heading"><div><div class="eyebrow">Active rooms</div><strong>Current source</strong></div><span id="liveRoomCount" class="muted"></span></div>
+          <div id="liveRoomsEmpty" class="empty-state">No Live Rooms on this source yet.</div>
+          <div id="liveRoomsList" class="live-room-list"></div>
+        </section>
+
+        <section id="liveRoomPanel" class="card live-room-panel" hidden>
+          <div class="row-between">
+            <div><div class="eyebrow">Joined Live Room</div><strong id="joinedLiveTitle">Live Room</strong><div id="joinedLiveMeta" class="page-host"></div></div>
+            <button id="openLiveRoomBtn" class="text-btn" type="button">Open page</button>
+          </div>
+          <div class="live-room-controls">
+            <button id="liveCloakBtn" type="button">Cloak Mode</button>
+            <button id="leaveLiveRoomBtn" type="button">Leave</button>
+            <button id="endLiveRoomBtn" class="danger-text" type="button" hidden>End room</button>
+          </div>
+          <div class="eyebrow live-section-label">Participants</div>
+          <div id="liveParticipants" class="live-participants"></div>
+          <div class="eyebrow live-section-label">Conversation</div>
+          <div id="liveMessages" class="live-messages"></div>
+          <div class="live-compose"><input id="liveMessageInput" maxlength="4000" autocomplete="off" placeholder="Message the room…"><button id="sendLiveMessageBtn" type="button">Send</button></div>
+          <p class="hint">Cloak Mode shows a room-specific pseudonym to participants. VP3 still retains your account identity server-side for access control and abuse handling. Leave Cloak before attaching an annotation.</p>
         </section>
       </section>
     </section>
