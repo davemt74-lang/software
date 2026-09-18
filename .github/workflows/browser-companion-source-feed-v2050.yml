@@ -1,4 +1,4 @@
-name: Browser Companion Phase 6+7 · Source Feed + Research v20.60
+name: Browser Companion Phase 6+7+8 · Source + Research + Live v20.70
 
 on:
   push:
@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   contract:
-    name: Source + Research contract · PHP ${{ matrix.php }}
+    name: Source + Research + Live contract · PHP ${{ matrix.php }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     strategy:
@@ -41,12 +41,17 @@ jobs:
         run: node tests/browser-companion-source-feed-v2050.mjs
       - name: Phase 7 Research Projects + Publishing contract
         run: node tests/research-projects-publishing-v2060.mjs
+      - name: Phase 8 Live Rooms + Cloak Mode contract
+        run: node tests/live-rooms-cloak-v2070.mjs
       - name: JavaScript syntax
         run: |
           node --check browser-companion/background.js
           node --check browser-companion/sidepanel.js
           node --check tests/browser-companion-source-feed-v2050.mjs
           node --check tests/research-projects-publishing-v2060.mjs
+          node --check tests/live-rooms-cloak-v2070.mjs
+          node --check live-room-v2070.js
+          node --check live-directory-v2070.js
       - name: PHP syntax
         run: |
           php -l includes/browser-source-feed-v2050.php
@@ -62,10 +67,14 @@ jobs:
           php -l research-project.php
           php -l research-report-builder.php
           php -l research-report.php
+          php -l includes/live-rooms-v2070.php
+          php -l api/live-rooms-v2070.php
+          php -l live.php
+          php -l live-room.php
           php -l upgrade.php
 
   package:
-    name: Package Browser Companion v20.60
+    name: Package Browser Companion v20.70
     needs: contract
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -75,16 +84,16 @@ jobs:
         run: |
           mkdir -p dist
           cd browser-companion
-          zip -r ../dist/vp3-browser-companion-v20.60.0.zip . -x '*.DS_Store'
+          zip -r ../dist/vp3-browser-companion-v20.70.0.zip . -x '*.DS_Store'
           cd ..
-          unzip -t dist/vp3-browser-companion-v20.60.0.zip
-          unzip -Z1 dist/vp3-browser-companion-v20.60.0.zip | grep -qx 'manifest.json'
-          if unzip -Z1 dist/vp3-browser-companion-v20.60.0.zip | grep -q '^browser-companion/'; then
+          unzip -t dist/vp3-browser-companion-v20.70.0.zip
+          unzip -Z1 dist/vp3-browser-companion-v20.70.0.zip | grep -qx 'manifest.json'
+          if unzip -Z1 dist/vp3-browser-companion-v20.70.0.zip | grep -q '^browser-companion/'; then
             echo 'Extension ZIP contains an unexpected wrapper folder.' >&2
             exit 1
           fi
-          sha256sum dist/vp3-browser-companion-v20.60.0.zip > dist/vp3-browser-companion-v20.60.0.zip.sha256
-          zip -r dist/vp3-phase7-research-deploy.zip \
+          sha256sum dist/vp3-browser-companion-v20.70.0.zip > dist/vp3-browser-companion-v20.70.0.zip.sha256
+          zip -r dist/vp3-phase8-live-deploy.zip \
             api/browser-source-feed-v2050.php \
             api/browser-share-media-v2040.php \
             includes/browser-source-feed-v2050.php \
@@ -96,16 +105,19 @@ jobs:
             includes/research-projects-v2060.php \
             api/research-projects-v2060.php \
             research.php research-project.php research-report-builder.php research-report.php \
+            includes/live-rooms-v2070.php \
+            api/live-rooms-v2070.php \
+            live.php live-room.php live-room-v2070.js live-directory-v2070.js \
             upgrade.php
-          unzip -t dist/vp3-phase7-research-deploy.zip
-          sha256sum dist/vp3-phase7-research-deploy.zip > dist/vp3-phase7-research-deploy.zip.sha256
+          unzip -t dist/vp3-phase8-live-deploy.zip
+          sha256sum dist/vp3-phase8-live-deploy.zip > dist/vp3-phase8-live-deploy.zip.sha256
       - uses: actions/upload-artifact@v4
         with:
-          name: vp3-browser-companion-v20.60.0
+          name: vp3-browser-companion-v20.70.0
           path: |
-            dist/vp3-browser-companion-v20.60.0.zip
-            dist/vp3-browser-companion-v20.60.0.zip.sha256
-            dist/vp3-phase7-research-deploy.zip
-            dist/vp3-phase7-research-deploy.zip.sha256
+            dist/vp3-browser-companion-v20.70.0.zip
+            dist/vp3-browser-companion-v20.70.0.zip.sha256
+            dist/vp3-phase8-live-deploy.zip
+            dist/vp3-phase8-live-deploy.zip.sha256
           if-no-files-found: error
           retention-days: 30
