@@ -45,7 +45,7 @@ vp3_public_header($room?((string)$room['title'].' — VP3 Live'):'Live Room not 
       <button id="leaveRoomBtn" type="button" <?=$room['joined']?'':'hidden'?>>Leave</button>
       <?php if($room['is_owner']): ?><button id="endRoomBtn" type="button">End room</button><?php endif; ?>
     </div>
-    <?php if($room['allow_cloak']): ?><div class="cloak-note">Cloak Mode shows a room-specific pseudonym to participants. VP3 still retains your account identity server-side for access control and abuse handling.</div><?php endif; ?>
+    <?php if($room['allow_cloak']): ?><div class="cloak-note">Cloak Mode shows a room-specific pseudonym to participants. VP3 still retains your account identity server-side for access control and abuse handling. Leave Cloak before attaching identity-bearing evidence.</div><?php endif; ?>
     <?php endif; ?>
   </aside>
 </div>
