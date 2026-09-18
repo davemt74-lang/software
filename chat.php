@@ -16,10 +16,11 @@ $profileActivityBuild = 'profile-activity-overlay-20260905';
 $headerUiBuild = 'live-wiring-20260903-3';
 $teamChatAdminBuild = 'team-chat-bootstrap-v236-20260905';
 $chatSettingsBuild = 'chat-settings-v239-canonical-20260905';
-$notificationDrawerBuild = 'chat-notifications-canvas-v240-20260907-pr81-hotfix1';
+$notificationDrawerBuild = 'chat-notifications-canvas-v240-cognitive-v510-20260918';
 $activityBuild = 'agent-activity-v94-canonical-runtime-20260907';
 $brainLearningBuild = 'brain-learning-history-v317-20260907-pr81-hotfix1';
 $agentIntelligenceBuild = 'agent-chat-intelligence-v171-20260914';
+$cognitivePresentationBuild = 'cognitive-presentation-v510-20260918';
 
 if (!headers_sent()) {
     header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
@@ -216,33 +217,32 @@ $html = preg_replace(
     1
 ) ?? $html;
 
-// Phase 17.1: the Agent Home intelligence layer now lives inside the canonical
-// Agent Chat canvas. It is server-rendered from existing VP3 systems and uses
-// the chat composer for advisory actions instead of creating a second dashboard.
-$agentIntelligenceHtml = '';
-$agentIntelligenceModel = [];
-if ($pdoForAgent instanceof PDO) {
-    require_once __DIR__ . '/includes/agent-chat-intelligence-v171.php';
-    try {
-        $agentIntelligenceModel = vp3_agent_chat_intelligence_model_v171(
-            $pdoForAgent,
-            $user,
-            $activeUserAgent,
-            $agentDisplayName
-        );
-        $agentIntelligenceHtml = vp3_agent_chat_intelligence_render_v171($agentIntelligenceModel);
-    } catch (Throwable $e) {
-        $agentIntelligenceHtml = '';
-        $agentIntelligenceModel = [];
-    }
-}
-if ($agentIntelligenceHtml !== '') {
-    $html = str_replace(
-        '<div class="message assistant" id="chatWelcome" hidden>',
-        $agentIntelligenceHtml . '<div class="message assistant" id="chatWelcome" hidden>',
-        $html
-    );
-}
+// Phase 11B.2: Agent Brief moved out of the Chat timeline and into the footer control.
+// The canonical model is reused by Cognitive Presentation v5.10 on demand.
+
+$cognitiveBriefMarkup = <<<'HTML'
+<section class="chat-agent-brief-popover" id="chatAgentBriefPopover" hidden aria-label="Agent Brief">
+  <header class="chat-agent-brief-head">
+    <div><small>Agent Brief</small><strong>Your Agent status and priorities</strong></div>
+    <button class="chat-agent-brief-close" type="button" data-agent-brief-close aria-label="Close Agent Brief">×</button>
+  </header>
+  <div class="chat-agent-brief-body" data-agent-brief-content>
+    <div class="chat-agent-brief-status"><span><i class="chat-agent-brief-dot"></i>Agent</span><small>Loading…</small></div>
+  </div>
+  <footer class="chat-agent-brief-footer">
+    <button type="button" data-agent-brief-brain>Agent Brain</button>
+    <button type="button" data-agent-brief-history>History</button>
+    <button type="button" data-agent-brief-notifications>Notifications</button>
+  </footer>
+</section>
+HTML;
+$cognitiveBriefButton = '<button class="chat-agent-brief-button" id="chatAgentBriefButton" type="button" aria-label="Agent status" aria-expanded="false" aria-controls="chatAgentBriefPopover">'
+    . '<span aria-hidden="true">✦</span><i class="chat-agent-status-dot" data-agent-status-dot></i><em class="chat-agent-attention-badge" data-agent-attention-badge hidden>0</em></button>';
+$html = str_replace(
+    '<form class="chat-composer" id="chatForm">',
+    $cognitiveBriefMarkup . '<form class="chat-composer" id="chatForm">' . $cognitiveBriefButton,
+    $html
+);
 
 $hardening = '<style data-chat-overlay-removal-v206>.agent-update-overlay,.agent-updates-overlay,#chatRecordingsCanvas,.chat-recordings-canvas{display:none!important}</style>'
     . '<script data-chat-ui-hardening-v206>(function(){"use strict";var selector="#agentNextMovesCanvas,.agent-next-canvas-v97,.agent-next-moves,.agent-proactive-panel,.agent-update-overlay,.agent-updates-overlay,#chatRecordingsCanvas,.chat-recordings-canvas";var purge=function(){document.querySelectorAll(selector).forEach(function(el){el.remove();});};purge();var o=new MutationObserver(purge);o.observe(document.documentElement,{childList:true,subtree:true});window.addEventListener("pagehide",function(){o.disconnect();},{once:true});})();</script>';
@@ -278,14 +278,7 @@ $railLayout = '<style data-team-rail-layout-v111>'
     . '<script data-team-rail-anchor-v111>(function(){var setTop=function(){var h=document.querySelector(".chat-topbar");if(!h)return;document.documentElement.style.setProperty("--sf-chat-header-bottom",Math.ceil(h.getBoundingClientRect().bottom)+"px");};setTop();window.addEventListener("resize",setTop,{passive:true});})();</script>';
 
 $headerUiRuntime = '<link rel="stylesheet" data-chat-header-ui-server href="' . e(url('/chat-header-ui.css?v=' . $headerUiBuild)) . '">';
-$agentIntelligenceRuntime = '<link rel="stylesheet" data-agent-chat-intelligence-v171 href="' . e(url('/chat-agent-intelligence-v171.css?v=' . $agentIntelligenceBuild)) . '">'
-    . '<script data-agent-chat-intelligence-config>window.VP3_AGENT_CHAT_INTELLIGENCE='
-    . json_encode([
-        'build'=>$agentIntelligenceBuild,
-        'storageKey'=>'vp3:agent-chat-intelligence:v171:' . (int)$user['id'],
-    ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
-    . ';</script>'
-    . '<script data-agent-chat-intelligence-v171 src="' . e(url('/chat-agent-intelligence-v171.js?v=' . $agentIntelligenceBuild)) . '"></script>';
+$agentIntelligenceRuntime = '';
 $mediaOverlayRuntime = '<link rel="stylesheet" data-chat-media-overlays href="' . e(url('/chat-media-overlays.css?v=' . $mediaOverlayBuild)) . '">';
 
 $recordingLibraryRuntime = has_permission('artist_listening.access', $user)
@@ -329,6 +322,20 @@ $chatSettingsRuntime = '<link rel="stylesheet" data-chat-settings-canonical href
     . ';</script>'
     . '<script data-chat-settings-canonical src="' . e(url('/chat-settings-v237.js?v=' . $chatSettingsBuild)) . '"></script>';
 
+$cognitivePresentationPre = '<link rel="stylesheet" data-cognitive-presentation-v510 href="' . e(url('/chat-cognitive-presentation-v510.css?v=' . $cognitivePresentationBuild)) . '">'
+    . '<script data-cognitive-presentation-config>window.VP3_COGNITIVE_PRESENTATION_V510='
+    . json_encode([
+        'endpoint'=>url('/api/cognitive-presentation-v510.php'),
+        'csrf'=>csrf_token(),
+        'agentId'=>(int)($activeUserAgent['id'] ?? 0),
+        'pollSeconds'=>30,
+        'ownsAttention'=>true,
+        'ownsBrainPresentation'=>true,
+        'build'=>$cognitivePresentationBuild,
+    ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
+    . ';</script>';
+$cognitivePresentationPost = '<script data-cognitive-presentation-v510 src="' . e(url('/chat-cognitive-presentation-v510.js?v=' . $cognitivePresentationBuild)) . '"></script>';
+
 $notificationDrawerRuntime = '<link rel="stylesheet" data-chat-notification-drawer href="' . e(url('/chat-notifications-drawer-v240.css?v=' . $notificationDrawerBuild)) . '">'
     . '<link rel="stylesheet" data-brain-learning-history-v317 href="' . e(url('/chat-brain-learning-history-v317.css?v=' . $brainLearningBuild)) . '">'
     . '<script data-chat-notification-drawer-config>window.STONEFELLOW_NOTIFICATION_DRAWER='
@@ -356,7 +363,9 @@ $runtime = $headerUiRuntime
          . '<script data-chat-voice data-chat-echo-guard="canonical" data-chat-streaming="enabled" data-chat-processed-input="enabled" data-chat-barge="speech-recognition" data-chat-turn-pause="1800" data-chat-lifecycle="canonical" src="' . e(url('/chat-voice.js?v=' . $voiceCacheBuild)) . '"></script>'
          . $agentIdentityRuntime
          . $profileActivityRuntime
+         . $cognitivePresentationPre
          . $notificationDrawerRuntime
+         . $cognitivePresentationPost
          . '<script data-team-chat-admin-v109 data-team-chat-admin-build="' . e($teamChatAdminBuild) . '" src="' . e(url('/team-chat-admin-v109.js?v=' . $teamChatAdminBuild)) . '"></script>'
          . $railLayout
          . '<span data-stonefellow-build="' . e($runtimeBuild) . '" data-chat-controls-build="' . e($controlBuild) . '" data-premium-voice-build="' . e($premiumVoiceBuild) . '" data-chat-voice-build="' . e($voiceAssetBuild) . '" data-chat-voice-feature-build="' . e($voiceCacheBuild) . '" data-recording-ui-build="' . e($recordingUiBuild) . '" data-recording-persistence-build="' . e($recordingPersistenceBuild) . '" data-transcription-canvas-build="' . e($transcriptionCanvasBuild) . '" data-team-chat-admin-build="' . e($teamChatAdminBuild) . '" data-agent-theme-build="' . e($agentThemeBuild) . '" data-chat-media-overlay-build="' . e($mediaOverlayBuild) . '" data-agent-overlay-build="' . e($agentOverlayBuild) . '" data-user-agent-build="' . e($agentIdentityBuild) . '" data-chat-settings-build="' . e($chatSettingsBuild) . '" data-notification-drawer-build="' . e($notificationDrawerBuild) . '" data-agent-activity-build="' . e($activityBuild) . '" data-brain-learning-build="' . e($brainLearningBuild) . '" data-agent-intelligence-build="' . e($agentIntelligenceBuild) . '" hidden></span>';

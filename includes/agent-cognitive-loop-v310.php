@@ -438,6 +438,11 @@ function agent_cognitive_loop_v310_summary(array $priorities): string
 
 function agent_cognitive_loop_v310_surface(array $user,array $prior,array &$state): bool
 {
+    if(defined('VP3_COGNITIVE_PRESENTATION_V510')){
+        $state['legacy_chat_surface_disabled']=true;
+        $state['presentation_owner']='cognitive_runtime_v510';
+        return false;
+    }
     $priorities=(array)($state['priorities']??[]);
     $top=$priorities[0]??null;
     if(!is_array($top))return false;
