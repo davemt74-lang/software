@@ -1,5 +1,10 @@
 name: Agent Paid Appointments v8.00
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+
 on:
   pull_request:
   push:
