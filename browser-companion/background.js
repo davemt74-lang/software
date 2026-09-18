@@ -114,7 +114,7 @@ async function fetchJson(path, options = {}) {
 }
 
 async function clearRevokedConnection() {
-  await storage.remove(['device_id', 'device_credential', 'connected_user', 'approved_capabilities', 'pending_connection', 'session', 'last_share', 'pending_capture']);
+  await storage.remove(['device_id', 'device_credential', 'connected_user', 'approved_capabilities', 'pending_connection', 'session', 'last_share', 'pending_capture', 'release_state', 'compatibility']);
 }
 
 async function session(force = false) {
@@ -739,7 +739,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           }
         }
         if (!(await ensureOriginPermission(base_url))) throw new Error('VP3 site permission was not granted.');
-        await storage.set({ base_url, session: null });
+        await storage.set({ base_url, session: null, release_state: null, compatibility: null });
         return { base_url };
       }
       default: throw new Error('Unsupported Browser Companion request.');

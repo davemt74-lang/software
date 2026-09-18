@@ -81,6 +81,7 @@ function vp3_extension_apply_cors_v2001(): void
 
     if ($allowed) {
         header('Access-Control-Allow-Origin: '.$origin);
+        header('Access-Control-Expose-Headers: X-VP3-Request-ID, Retry-After');
         header('Vary: Origin');
     }
 }

@@ -46,6 +46,7 @@ must(device2000.includes('CONSTRAINT fk_extension_device_user FOREIGN KEY (user_
 mustNot(service.includes('CREATE TABLE IF NOT EXISTS annotated_users'),'Annotated must not create a separate account identity');
 mustNot(service.includes('CREATE TABLE IF NOT EXISTS extension_users'),'Browser Companion must not create a separate account identity');
 must(device2001.includes("INNER JOIN users u ON u.id=d.user_id"),'extension sessions must live-revalidate canonical VP3 user identity');
+must(device2001.includes('Access-Control-Expose-Headers: X-VP3-Request-ID, Retry-After'),'extension clients must be able to observe request IDs and backoff hints');
 
 must(service.includes("VP3_ANNOTATED_EXTENSION_CURRENT_V2100='21.00.0'"),'current extension compatibility version missing');
 must(service.includes("VP3_ANNOTATED_EXTENSION_MIN_V2100='20.90.0'"),'minimum supported extension version missing');
@@ -56,6 +57,7 @@ must(connectStatus.includes("'annotated'=>")||connectStatus.includes("$payload['
 must(extensionSession.includes("$session['user']['id']"),'session sync must resolve the VP3 identity from the canonical session user payload');
 must(extensionSession.includes("'annotated'=>$annotated"),'session issue must return canonical Annotated state');
 must(background.includes("release_state: payload.annotated || null"),'Browser Companion must cache same-account Annotated state');
+must(background.includes("'pending_capture', 'release_state', 'compatibility'"),'disconnect/revocation must clear cached Annotated release state');
 must(background.includes("'/api/annotated-release-v2100.php?action=state'"),'Browser Companion must be able to refresh canonical release state');
 
 must(signup.includes("vp3_annotated_mark_milestone_safe_v2100($pdo,$userId,'account_created'"),'new VP3 signup must seed Annotated account state');
