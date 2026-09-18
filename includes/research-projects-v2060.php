@@ -661,6 +661,7 @@ function vp3_research_annotation_compatible_v2060(array $annotation,string $repo
 
 function vp3_research_source_snapshot_v2060(PDO $pdo,int $sourceId,int $sourceVersionId): array
 {
+    if($sourceId<1||$sourceVersionId<1)throw new RuntimeException('Research Source provenance requires a pinned Source Version.');
     $stmt=$pdo->prepare('SELECT public_id,normalized_url,canonical_url,source_domain,source_title FROM browser_sources_v2050 WHERE id=? LIMIT 1');
     $stmt->execute([$sourceId]);$source=$stmt->fetch(PDO::FETCH_ASSOC);
     if(!$source)throw new RuntimeException('Research Source is unavailable.');
@@ -753,8 +754,9 @@ function vp3_research_publish_report_v2060(PDO $pdo,int $actorUserId,string $pro
         foreach($snapshot['sources'] as $src){
             $s=$pdo->prepare('SELECT id FROM browser_sources_v2050 WHERE public_id=? LIMIT 1');$s->execute([(string)$src['id']]);$sourceId=(int)$s->fetchColumn();
             if($sourceId<1)continue;
-            $versionIdDb=null;
-            if(!empty($src['version']['id'])){$v=$pdo->prepare('SELECT id FROM browser_source_versions_v2050 WHERE public_id=? AND source_id=? LIMIT 1');$v->execute([(string)$src['version']['id'],$sourceId]);$versionIdDb=(int)$v->fetchColumn()?:null;}
+            $versionIdDb=0;
+            if(!empty($src['version']['id'])){$v=$pdo->prepare('SELECT id FROM browser_source_versions_v2050 WHERE public_id=? AND source_id=? LIMIT 1');$v->execute([(string)$src['version']['id'],$sourceId]);$versionIdDb=(int)($v->fetchColumn()?:0);}
+            if($versionIdDb<1)throw new RuntimeException('Published Research lost its pinned Source Version.');
             $sourceStmt->execute([$versionId,$sourceId,$versionIdDb]);
         }
         $pdo->prepare("UPDATE research_reports_v2060 SET report_status='published',visibility=?,team_owner_user_id=?,current_version_id=?,current_version_no=?,published_at=UTC_TIMESTAMP(),updated_by_user_id=?,updated_at=UTC_TIMESTAMP() WHERE id=?")
@@ -1023,12 +1025,12 @@ function vp3_research_ensure_schema_v2060(?PDO $pdo=null): void
     $pdo->exec("CREATE TABLE IF NOT EXISTS research_report_version_sources_v2060 (
       report_version_id BIGINT UNSIGNED NOT NULL,
       source_id BIGINT UNSIGNED NOT NULL,
-      source_version_id BIGINT UNSIGNED NULL,
+      source_version_id BIGINT UNSIGNED NOT NULL,
       created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       UNIQUE KEY uq_research_report_version_source (report_version_id,source_id,source_version_id),
       INDEX idx_research_report_source (source_id,report_version_id),
       CONSTRAINT fk_research_report_source_version_report FOREIGN KEY (report_version_id) REFERENCES research_report_versions_v2060(id) ON DELETE CASCADE,
       CONSTRAINT fk_research_report_source_source FOREIGN KEY (source_id) REFERENCES browser_sources_v2050(id) ON DELETE CASCADE,
-      CONSTRAINT fk_research_report_source_version FOREIGN KEY (source_version_id) REFERENCES browser_source_versions_v2050(id) ON DELETE SET NULL
+      CONSTRAINT fk_research_report_source_version FOREIGN KEY (source_version_id) REFERENCES browser_source_versions_v2050(id) ON DELETE RESTRICT
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 }
