@@ -65,6 +65,8 @@ assert.match(api,/render_card/);
 assert.match(api,/context/);
 assert.doesNotMatch(api,/observation_store|presentation_decide/,'public API must not let clients inject cognition or choose presentation');
 assert.doesNotMatch(core,/CREATE TABLE IF NOT EXISTS cognitive_events_v500/,'11B.1 must reuse agent_event_inbox instead of creating a parallel event ledger');
+for(const field of ['left_scope','left_workspace_id','right_scope','right_workspace_id']) assert.match(core,new RegExp(field),'relationship graph must preserve '+field);
+assert.match(meetings,/\(\$context\['role'\]\?\?'\'\)===\'organizer\'/,'organizer-only meeting card actions must not leak to participants');
 
 assert.match(bootstrap,/cognitive-runtime-v500\.php/);
 assert.match(bootstrap,/cognitive-runtime-meetings-v500\.php/);

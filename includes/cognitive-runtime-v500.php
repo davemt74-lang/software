@@ -632,18 +632,22 @@ function vp3_cognitive_ensure_schema_v500(?PDO $pdo=null): void
       owner_user_id INT UNSIGNED NOT NULL,
       left_type VARCHAR(80) NOT NULL,
       left_id VARCHAR(190) NOT NULL,
+      left_scope VARCHAR(40) NOT NULL DEFAULT 'personal',
+      left_workspace_id BIGINT UNSIGNED NOT NULL DEFAULT 0,
       relation_type VARCHAR(60) NOT NULL,
       right_type VARCHAR(80) NOT NULL,
       right_id VARCHAR(190) NOT NULL,
+      right_scope VARCHAR(40) NOT NULL DEFAULT 'personal',
+      right_workspace_id BIGINT UNSIGNED NOT NULL DEFAULT 0,
       provenance VARCHAR(120) NOT NULL,
       confidence DECIMAL(6,5) NOT NULL DEFAULT 1,
       confirmation_state VARCHAR(24) NOT NULL DEFAULT 'deterministic',
       valid_until DATETIME NULL,
       created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-      UNIQUE KEY uq_cognitive_relationship_v500 (owner_user_id,left_type,left_id,relation_type,right_type,right_id),
-      INDEX idx_cognitive_relationship_left_v500 (owner_user_id,left_type,left_id,updated_at,id),
-      INDEX idx_cognitive_relationship_right_v500 (owner_user_id,right_type,right_id,updated_at,id),
+      UNIQUE KEY uq_cognitive_relationship_v500 (owner_user_id,left_type,left_id,left_scope,left_workspace_id,relation_type,right_type,right_id,right_scope,right_workspace_id),
+      INDEX idx_cognitive_relationship_left_v500 (owner_user_id,left_type,left_id,left_scope,left_workspace_id,updated_at,id),
+      INDEX idx_cognitive_relationship_right_v500 (owner_user_id,right_type,right_id,right_scope,right_workspace_id,updated_at,id),
       CONSTRAINT fk_cognitive_relationship_owner_v500 FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 }
@@ -859,10 +863,14 @@ function vp3_cognitive_relationship_upsert_v500(PDO $pdo,array $user,string $age
     $confidence=vp3_cognitive_score_v500($meta['confidence']??1);
     $confirmation=in_array((string)($meta['confirmation_state']??'deterministic'),['deterministic','user_confirmed','model_inferred'],true)?(string)$meta['confirmation_state']:'deterministic';
     $validUntil=trim((string)($meta['valid_until']??''));$validUntil=$validUntil!==''&&strtotime($validUntil)!==false?gmdate('Y-m-d H:i:s',strtotime($validUntil)):null;
-    $pdo->prepare("INSERT INTO cognitive_relationships_v500 (owner_user_id,left_type,left_id,relation_type,right_type,right_id,provenance,confidence,confirmation_state,valid_until)
-      VALUES (?,?,?,?,?,?,?,?,?,?)
+    $pdo->prepare("INSERT INTO cognitive_relationships_v500 (owner_user_id,left_type,left_id,left_scope,left_workspace_id,relation_type,right_type,right_id,right_scope,right_workspace_id,provenance,confidence,confirmation_state,valid_until)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
       ON DUPLICATE KEY UPDATE provenance=VALUES(provenance),confidence=VALUES(confidence),confirmation_state=VALUES(confirmation_state),valid_until=VALUES(valid_until),updated_at=UTC_TIMESTAMP()")
-      ->execute([$uid,$left['type'],$left['id'],$relation,$right['type'],$right['id'],$provenance,$confidence,$confirmation,$validUntil]);
+      ->execute([
+          $uid,$left['type'],$left['id'],$left['scope'],(int)($left['workspace_id']??0),$relation,
+          $right['type'],$right['id'],$right['scope'],(int)($right['workspace_id']??0),
+          $provenance,$confidence,$confirmation,$validUntil
+      ]);
 }
 
 function vp3_cognitive_state_v500(PDO $pdo,array $user,string $agentNamespace='system'): array

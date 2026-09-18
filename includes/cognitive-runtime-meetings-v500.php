@@ -147,8 +147,10 @@ function vp3_cognitive_meeting_card_v500(PDO $pdo,array $user,string $agentNames
     if((int)($intel['transcript_session_id']??0)>0){
         $actions[]=['type'=>'open_url','label'=>'Open transcription','url'=>'/artist-listening.php?session='.(int)$intel['transcript_session_id']];
     }
-    if($ref['type']==='meeting_brief')$actions[]=['type'=>'tool','label'=>'Prepare brief','tool_id'=>'meeting.prepare_brief'];
-    if(in_array($ref['type'],['meeting_summary','meeting_followup'],true))$actions[]=['type'=>'tool','label'=>'Draft follow-up','tool_id'=>'meeting.draft_followup'];
+    if(($context['role']??'')==='organizer'){
+        if($ref['type']==='meeting_brief')$actions[]=['type'=>'tool','label'=>'Prepare brief','tool_id'=>'meeting.prepare_brief'];
+        if(in_array($ref['type'],['meeting_summary','meeting_followup'],true))$actions[]=['type'=>'tool','label'=>'Draft follow-up','tool_id'=>'meeting.draft_followup'];
+    }
 
     return [
         'title'=>(string)($meeting['title']??'Meeting'),
