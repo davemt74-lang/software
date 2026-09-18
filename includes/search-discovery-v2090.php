@@ -137,6 +137,7 @@ function vp3_search_touch_viewer_v2090(PDO $pdo,int $userId): void
 {
     if($userId<1)return;
     try{vp3_search_index_user_v2090($pdo,$userId);}catch(Throwable $e){}
+    try{$stmt=$pdo->prepare('SELECT source_id FROM browser_source_follows_v2050 WHERE user_id=? ORDER BY created_at DESC LIMIT 500');$stmt->execute([$userId]);foreach(array_map('intval',$stmt->fetchAll(PDO::FETCH_COLUMN)?:[]) as $sourceId)vp3_search_index_source_v2090($pdo,$sourceId);}catch(Throwable $e){}
     try{foreach(vp3_human_team_workspaces_v370($pdo,$userId) as $workspace)vp3_search_index_team_v2090($pdo,(int)$workspace['owner_user_id']);}catch(Throwable $e){}
 }
 

@@ -53,6 +53,7 @@ must(service.includes("$score+=35"),'current-Source context boost missing');
 must(service.includes('activity_score'),'activity ranking signal missing');
 must(service.includes('object_updated_at'),'recency ranking signal missing');
 must(service.includes('browser_source_follows_v2050'),'followed-source personalization boost missing');
+must(service.includes("SELECT source_id FROM browser_source_follows_v2050 WHERE user_id=?"),'opening Search must refresh the viewer\'s followed Source index');
 
 for(const filter of ['types','visibility','domain','team_id','author_id','claim_status','changed','date_from','date_to','context_source_id','context_only']){
   must(service.includes("'"+filter+"'"),'Search filter missing '+filter);
@@ -102,6 +103,7 @@ must(panelJs.includes("sourceAction('follow_source'"),'Search result Follow Sour
 must(panelJs.includes("search_join_live"),'Search result Join Live action missing');
 must(panelJs.includes("'/claims.php?source='"),'Search result File Claim action missing');
 must(panelJs.includes("action:'save_search'"),'Chrome saved search action missing');
+must(panelJs.includes("ui.searchVisibility.value=s.filters&&s.filters.visibility||''"),'saved/recent Chrome searches must restore compact filters');
 
 must(bootstrap.includes("search-discovery-v2090.php"),'canonical bootstrap must load Search & Discovery');
 must(upgrade.includes('vp3_search_schema_ready_v2090()'),'upgrade readiness must include Phase 10');
