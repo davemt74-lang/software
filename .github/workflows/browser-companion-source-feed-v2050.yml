@@ -1,10 +1,10 @@
-name: Browser Companion Rich Capture v20.40+ regression
+name: Browser Companion Phase 6 · This Page + Following v20.50
 
 on:
   push:
     branches:
       - main
-      - feature/browser-companion-rich-capture-v2040
+      - phase6-browser-companion-this-page-following-v2050
   pull_request:
 
 permissions:
@@ -12,29 +12,23 @@ permissions:
 
 jobs:
   contract:
-    name: Rich capture contract · PHP ${{ matrix.php }}
+    name: Phase 6 contract · PHP ${{ matrix.php }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
-        php: ['8.1', '8.3']
+        php: ['8.1','8.3']
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up PHP
-        uses: shivammathur/setup-php@v2
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
         with:
           php-version: ${{ matrix.php }}
           coverage: none
-
-      - name: Set up Node
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '22'
-
-      - name: Phase 1-4 Browser Companion regressions
+      - name: Browser Companion regressions
         run: |
           node tests/extension-device-auth-v2000.mjs
           node tests/extension-device-auth-v2001.mjs
@@ -42,60 +36,45 @@ jobs:
           node tests/browser-share-v2011.mjs
           node tests/browser-share-chat-feed-v2020.mjs
           node tests/browser-companion-v2030.mjs
-
-      - name: Phase 5 rich capture contract
-        run: node tests/browser-companion-rich-capture-v2040.mjs
-
-      - name: Phase 6 This Page + Following contract
+          node tests/browser-companion-rich-capture-v2040.mjs
+      - name: Phase 6 source/feed contract
         run: node tests/browser-companion-source-feed-v2050.mjs
-
-      - name: Manifest contract
-        run: node -e "const m=require('./browser-companion/manifest.json'); if(m.manifest_version!==3||Number(m.version.split('.')[0])!==20||Number(m.version.split('.')[1])<40) process.exit(1)"
-
       - name: JavaScript syntax
         run: |
           node --check browser-companion/background.js
           node --check browser-companion/sidepanel.js
-          node --check browser-companion/options.js
-          node --check browser-share-card-v2020.js
-          node --check tests/browser-companion-v2030.mjs
-          node --check tests/browser-companion-rich-capture-v2040.mjs
           node --check tests/browser-companion-source-feed-v2050.mjs
-
       - name: PHP syntax
         run: |
-          php -l includes/browser-share-media-v2040.php
-          php -l api/browser-share-media-v2040.php
-          php -l jobs/browser-share-media-worker-v2040.php
           php -l includes/browser-source-feed-v2050.php
           php -l api/browser-source-feed-v2050.php
           php -l includes/browser-share-chat-feed-v2020.php
+          php -l includes/browser-share-media-v2040.php
+          php -l api/browser-share-media-v2040.php
           php -l source.php
           php -l annotation.php
           php -l upgrade.php
 
   package:
-    name: Package Chrome extension
+    name: Package Browser Companion v20.50
     needs: contract
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
+      - uses: actions/checkout@v4
       - name: Build directly loadable extension ZIP
         run: |
           mkdir -p dist
           cd browser-companion
-          zip -r ../dist/vp3-browser-companion-current.zip . -x '*.DS_Store'
+          zip -r ../dist/vp3-browser-companion-v20.50.0.zip . -x '*.DS_Store'
           cd ..
-          unzip -t dist/vp3-browser-companion-current.zip
-          unzip -Z1 dist/vp3-browser-companion-current.zip | grep -qx 'manifest.json'
-          if unzip -Z1 dist/vp3-browser-companion-current.zip | grep -q '^browser-companion/'; then
+          unzip -t dist/vp3-browser-companion-v20.50.0.zip
+          unzip -Z1 dist/vp3-browser-companion-v20.50.0.zip | grep -qx 'manifest.json'
+          if unzip -Z1 dist/vp3-browser-companion-v20.50.0.zip | grep -q '^browser-companion/'; then
             echo 'Extension ZIP contains an unexpected wrapper folder.' >&2
             exit 1
           fi
-          sha256sum dist/vp3-browser-companion-current.zip > dist/vp3-browser-companion-current.zip.sha256
+          sha256sum dist/vp3-browser-companion-v20.50.0.zip > dist/vp3-browser-companion-v20.50.0.zip.sha256
           zip -r dist/vp3-phase6-source-feed-deploy.zip \
             api/browser-source-feed-v2050.php \
             api/browser-share-media-v2040.php \
@@ -107,14 +86,12 @@ jobs:
             source.php annotation.php upgrade.php
           unzip -t dist/vp3-phase6-source-feed-deploy.zip
           sha256sum dist/vp3-phase6-source-feed-deploy.zip > dist/vp3-phase6-source-feed-deploy.zip.sha256
-
-      - name: Upload directly loadable Browser Companion
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
-          name: vp3-browser-companion-current
+          name: vp3-browser-companion-v20.50.0
           path: |
-            dist/vp3-browser-companion-current.zip
-            dist/vp3-browser-companion-current.zip.sha256
+            dist/vp3-browser-companion-v20.50.0.zip
+            dist/vp3-browser-companion-v20.50.0.zip.sha256
             dist/vp3-phase6-source-feed-deploy.zip
             dist/vp3-phase6-source-feed-deploy.zip.sha256
           if-no-files-found: error

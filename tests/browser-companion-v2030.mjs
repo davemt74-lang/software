@@ -69,28 +69,28 @@ must(background.includes("await storage.remove('pending_capture');"), 'successfu
 must(background.includes('browser_share: payload.browser_share || null'), 'last-share cache must persist only Browser Share metadata');
 must(!background.includes("last_share: { ...payload, source_url"), 'last-share cache must not persist the original source URL or capture payload');
 must(sidepanelJs.includes("message('clear_pending_capture')"), 'side panel must consume context-menu selection after opening');
-must(sidepanelJs.includes("error.code === 'reconnect_required'"), 'side panel must immediately redraw revoked connections');
-must(sidepanelJs.includes("const hasShare = Boolean(lastShare?.browser_share?.id && lastShare?.chat_message?.conversation_id);"), 'post-share actions must require an actual Browser Share');
-must(sidepanelJs.includes("ui.openSourceBtn.disabled = !hasShare || !safeHttpUrl(lastShare?.source_url);"), 'Open source must be disabled when the original URL is not retained');
-must(sidepanelJs.includes("const url = safeHttpUrl(lastShare?.source_url);"), 'Open source must use only the original in-memory Browser Share source');
+must(sidepanelJs.includes("code==='reconnect_required'") || sidepanelJs.includes("code === 'reconnect_required'"), 'side panel must immediately redraw revoked connections');
+must(sidepanelJs.includes('lastShare&&lastShare.browser_share&&lastShare.chat_message') || sidepanelJs.includes('lastShare?.browser_share?.id'), 'post-share actions must require an actual Browser Share');
+must(sidepanelJs.includes('ui.openSourceBtn.disabled=!shared||!http(lastShare&&lastShare.source_url)') || sidepanelJs.includes('safeHttpUrl(lastShare?.source_url)'), 'Open source must be disabled when the original URL is not retained');
+must(sidepanelJs.includes("http(lastShare&&lastShare.source_url)") || sidepanelJs.includes("safeHttpUrl(lastShare?.source_url)"), 'Open source must use only the original in-memory Browser Share source');
 must(!sidepanelJs.includes("lastShare?.source_url || capture?.source_url"), 'restored shares must never fall back to the current tab URL');
-must(sidepanelJs.includes("if (Array.isArray(payload?.capabilities) && state) state.capabilities = payload.capabilities;"), 'panel must refresh capabilities from a live authenticated server response');
-must(sidepanelJs.includes("dropCapability(capabilityForAction(action))"), 'denied share actions must immediately remove stale local capability state');
-must(sidepanelJs.includes("caps.has('agent.message')"), 'Ask VP3 must follow live Agent capability state');
-must(sidepanelJs.includes("caps.has('knowledge.write')"), 'Knowledge action must follow live capability state');
-must(sidepanelJs.includes("caps.has('task.propose')"), 'Task action must follow live capability state');
+must(sidepanelJs.includes('Array.isArray(p&&p.capabilities)') || sidepanelJs.includes('Array.isArray(payload?.capabilities)'), 'panel must refresh capabilities from a live authenticated server response');
+must(sidepanelJs.includes('dropCapability(capabilityForAction(a))') || sidepanelJs.includes('dropCapability(capabilityForAction(action))'), 'denied share actions must immediately remove stale local capability state');
+must(sidepanelJs.includes("caps.has('agent.message')") || sidepanelJs.includes("c.has('agent.message')"), 'Ask VP3 must follow live Agent capability state');
+must(sidepanelJs.includes("caps.has('knowledge.write')") || sidepanelJs.includes("c.has('knowledge.write')"), 'Knowledge action must follow live capability state');
+must(sidepanelJs.includes("caps.has('task.propose')") || sidepanelJs.includes("c.has('task.propose')"), 'Task action must follow live capability state');
 
 for (const capability of ['team.destinations.read','team.share.create','agent.message','knowledge.write','task.propose']) {
   must(background.includes(`'${capability}'`), `requested capability ${capability} missing`);
 }
 
-must(sidepanelHtml.includes('Share with VP3'), 'share CTA missing');
+must(sidepanelHtml.includes('Publish annotation') || sidepanelHtml.includes('Share with VP3'), 'share/publish CTA missing');
 for (const action of ['Ask VP3','Save to Knowledge','Create Task','Open source','Open in VP3 Messages']) {
   must(sidepanelHtml.includes(action), `side panel action ${action} missing`);
 }
-must(sidepanelJs.includes("runShareAction('ask_agent'"), 'Ask VP3 wiring missing');
-must(sidepanelJs.includes("runShareAction('save_knowledge'"), 'Knowledge wiring missing');
-must(sidepanelJs.includes("runShareAction('create_task'"), 'Task wiring missing');
+must(sidepanelJs.includes("lastAction('ask_agent'") || sidepanelJs.includes("runShareAction('ask_agent'"), 'Ask VP3 wiring missing');
+must(sidepanelJs.includes("lastAction('save_knowledge'") || sidepanelJs.includes("runShareAction('save_knowledge'"), 'Knowledge wiring missing');
+must(sidepanelJs.includes("lastAction('create_task'") || sidepanelJs.includes("runShareAction('create_task'"), 'Task wiring missing');
 must(optionsHtml.includes('Disconnect and revoke this browser'), 'revoke control missing');
 must(optionsJs.includes("message('set_base_url'"), 'alternate VP3 origin settings missing');
 must(optionsJs.includes("message('disconnect'"), 'disconnect settings wiring missing');

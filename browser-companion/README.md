@@ -1,6 +1,6 @@
-# VP3 Browser Companion v20.40
+# VP3 Browser Companion v20.50
 
-Chrome Manifest V3 companion for VP3 Browser Share, including highlighted text, screenshot regions, source-media moments, and voice commentary.
+Chrome Manifest V3 companion for VP3 Browser Share and the Source Feed layer: This Page, Following, source/user follows, comments, read state, Private/Team/Public publishing, plus highlighted text, screenshot regions, source-media moments, and voice commentary.
 
 ## Capture and share
 
@@ -58,7 +58,7 @@ The optional numeric argument controls the maximum number of jobs processed in t
 
 ## Local Chrome installation
 
-Open `chrome://extensions`, enable **Developer mode**, choose **Load unpacked**, and select this `browser-companion` directory. The CI package `vp3-browser-companion-v20.40.0.zip` is directly loadable/extractable and contains `manifest.json` at the ZIP root.
+Open `chrome://extensions`, enable **Developer mode**, choose **Load unpacked**, and select this `browser-companion` directory. The CI package `vp3-browser-companion-v20.50.0.zip` is directly loadable/extractable and contains `manifest.json` at the ZIP root.
 
 The default VP3 site is `https://vp3.me`. Another HTTPS VP3 installation can be selected in Extension Settings. Local development may use `http://localhost` or `http://127.0.0.1`; Chrome asks for explicit access to the selected origin.
 
@@ -81,3 +81,14 @@ Disconnecting from the extension calls the VP3 self-revoke endpoint before local
 - The extension does not request `tabCapture` and does not call media-element `captureStream()`.
 - **Ask VP3** passes only the Browser Share public ID into the web handoff. VP3 re-resolves authorization and current share state before Agent Chat receives the content.
 - Knowledge and Task actions continue to reuse the existing Personal Knowledge and Agent Workflow systems.
+
+## Phase 6 — This Page + Following
+
+- **This Page** resolves the canonical source without storing passive browsing history. A Source row is persisted only when a user explicitly publishes or follows.
+- **Following** is generated from followed Sources and VP3 users using the same Browser Share + publication model used by the website.
+- Delivery destination and feed visibility are independent. Visibility is **Private**, **Team**, or **Public** and is always enforced server-side.
+- Source versions use SHA-256 page-text fingerprints when Browser Companion can inspect the page; VP3 stores the fingerprint, not the page body.
+- Comments/replies, Save, Add to Research, Follow/Unfollow, read state, Share with Team, Ask VP3, and Save to Knowledge re-resolve current authorization on every action.
+- Public/source views use `/source.php`; annotation context uses `/annotation.php`.
+
+After deploying v20.50, run `/upgrade.php` once to install the Browser Source Feed tables and backfill canonical Source links for existing Phase 4/5 Browser Shares.

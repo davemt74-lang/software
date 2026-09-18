@@ -1,6 +1,6 @@
 const VP3_DEFAULT_BASE = 'https://vp3.me';
 const VP3_CONTRACT_VERSION = '1';
-const VP3_EXTENSION_VERSION = '20.40.0';
+const VP3_EXTENSION_VERSION = '20.50.0';
 const VP3_REQUESTED_CAPABILITIES = [
   'team.destinations.read',
   'team.share.create',
@@ -165,6 +165,54 @@ async function authorizedFetch(path, options = {}, capability = '') {
   }
 }
 
+async function authorizedMediaDataUrl(path) {
+  let current = await session(false);
+  const call = async (token) => {
+    const { base_url } = await config();
+    const response = await fetch(apiUrl(base_url, path), {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'X-VP3-Extension-Version': VP3_EXTENSION_VERSION,
+        'X-VP3-Contract-Version': VP3_CONTRACT_VERSION
+      },
+      cache: 'no-store',
+      credentials: 'omit'
+    });
+    if (!response.ok) {
+      const error = new Error('Browser Share media could not be loaded.');
+      error.status = response.status;
+      throw error;
+    }
+    const blob = await response.blob();
+    if (blob.size > 16 * 1024 * 1024) throw new Error('Browser Share media is too large to preview.');
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    let binary = '';
+    for (let offset = 0; offset < bytes.length; offset += 0x8000) {
+      binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
+    }
+    return `data:${blob.type || 'application/octet-stream'};base64,${btoa(binary)}`;
+  };
+  try { return await call(current.access_token); }
+  catch (error) {
+    if (error.status !== 401) throw error;
+    current = await session(true);
+    return call(current.access_token);
+  }
+}
+
+async function activeTabIdentity() {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (!tab?.id || !/^https?:/i.test(String(tab.url || ''))) return { available: false, source_url: '' };
+  return {
+    available: true,
+    tab_id: tab.id,
+    window_id: tab.windowId,
+    source_url: String(tab.url || ''),
+    title: String(tab.title || '').slice(0, 512)
+  };
+}
+
 async function activeCapture(tabHint = null) {
   let tab = tabHint;
   if (!tab?.id) [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -173,9 +221,15 @@ async function activeCapture(tabHint = null) {
   try {
     const injected = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
-      func: () => {
+      func: async () => {
         const selected_text = String(window.getSelection?.() || '').trim();
         const canonical_url = document.querySelector('link[rel="canonical"]')?.href || '';
+        const pageText = String(document.body?.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 1000000);
+        let page_text_sha256 = '';
+        if (pageText) {
+          const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(pageText));
+          page_text_sha256 = [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('');
+        }
         const candidate = document.querySelector('video, audio');
         let media = null;
         if (candidate) {
@@ -194,7 +248,7 @@ async function activeCapture(tabHint = null) {
             paused: Boolean(candidate.paused)
           };
         }
-        return { selected_text, canonical_url, media };
+        return { selected_text, canonical_url, page_text_sha256, media };
       }
     });
     result = injected?.[0]?.result || result;
@@ -209,6 +263,7 @@ async function activeCapture(tabHint = null) {
     canonical_url: result.canonical_url || tab.url || '',
     title: String(tab.title || '').slice(0, 512),
     selected_text: utf8Limit(String(result.selected_text || ''), 32768),
+    page_text_sha256: /^[a-f0-9]{64}$/i.test(String(result.page_text_sha256 || '')) ? String(result.page_text_sha256).toLowerCase() : '',
     media: result.media || null,
     captured_at: new Date().toISOString()
   };
@@ -337,6 +392,40 @@ async function destinations() {
   return authorizedFetch('/api/extension-share-destinations.php', { method: 'GET' }, 'team.destinations.read');
 }
 
+async function thisPage(capture, cursor = '') {
+  if (!capture?.available || !/^https?:\/\//i.test(String(capture.source_url || ''))) {
+    return { source: null, items: [], next_cursor: '', has_more: false };
+  }
+  const query = new URLSearchParams({
+    action: 'this_page',
+    url: String(capture.source_url || ''),
+    canonical_url: String(capture.canonical_url || ''),
+    title: String(capture.title || '').slice(0, 512),
+    source_version_hash: String(capture.page_text_sha256 || ''),
+    limit: '25'
+  });
+  if (cursor) query.set('cursor', cursor);
+  return (await authorizedFetch('/api/browser-source-feed-v2050.php?' + query.toString(), { method: 'GET' }, 'team.chat.read')).feed;
+}
+
+async function followingFeed(cursor = '') {
+  const query = new URLSearchParams({ action: 'following', limit: '20' });
+  if (cursor) query.set('cursor', cursor);
+  return (await authorizedFetch('/api/browser-source-feed-v2050.php?' + query.toString(), { method: 'GET' }, 'team.chat.read')).feed;
+}
+
+async function sourceFeedAction(action, payload = {}) {
+  const capability = ['save', 'research'].includes(action)
+    ? 'knowledge.write'
+    : ['publish', 'share_team'].includes(action)
+      ? 'team.share.create'
+      : 'team.chat.read';
+  return authorizedFetch('/api/browser-source-feed-v2050.php', {
+    method: 'POST',
+    json: { action, ...payload }
+  }, capability);
+}
+
 function fallbackSelection(capture, rich = {}) {
   const selected = utf8Limit(String(capture?.selected_text || '').trim(), 32768);
   if (selected) return selected;
@@ -443,7 +532,17 @@ async function createRichShare(input) {
       if (result.media) media.push(result.media);
     } catch (error) { media_errors.push(`Commentary: ${error.message}`); }
   }
-  return { ...payload, media, media_errors };
+  const visibility = ['private', 'team', 'public'].includes(String(input?.visibility || ''))
+    ? String(input.visibility)
+    : 'private';
+  const teamId = visibility === 'team' ? Number(input?.visibility_team_id || 0) : 0;
+  const publication = await sourceFeedAction('publish', {
+    browser_share_id: browserShareId,
+    visibility,
+    team_id: teamId,
+    source_version_hash: String(input?.capture?.page_text_sha256 || '')
+  });
+  return { ...payload, media, media_errors, annotation: publication.annotation || null };
 }
 
 async function browserShareAction(action, browserShareId, folderId = 0) {
@@ -504,11 +603,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     switch (message?.type) {
       case 'state': return publicState();
       case 'capture': return activeCapture();
+      case 'tab_identity': return activeTabIdentity();
       case 'capture_region': return selectScreenshotRegion();
       case 'clear_pending_capture': await storage.remove('pending_capture'); return { ok: true };
       case 'connect': return beginConnect(message.device_name);
       case 'poll_connect': return pollConnect();
       case 'destinations': return destinations();
+      case 'this_page': return thisPage(message.capture || await activeCapture(), message.cursor || '');
+      case 'following': return followingFeed(message.cursor || '');
+      case 'source_action': return sourceFeedAction(message.action, message.payload || {});
+      case 'media_data': return authorizedMediaDataUrl(String(message.path || ''));
       case 'share': return createRichShare(message);
       case 'share_action': return browserShareAction(message.action, message.browser_share_id, message.folder_id);
       case 'disconnect': return disconnect();

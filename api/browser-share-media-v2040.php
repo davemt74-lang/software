@@ -32,8 +32,10 @@ function vp3_browser_share_media_auth_v2040(PDO $pdo,bool $write=false): array
     }
     $user=current_user();
     $userId=(int)($user['id']??0);
-    if($userId<1)throw new VP3BrowserShareMediaExceptionV2040('authentication_required',401,'Sign in to view Browser Share media.');
     if($write)throw new VP3BrowserShareMediaExceptionV2040('method_not_allowed',405,'Browser Share media uploads must come from an approved Browser Companion.');
+    // Anonymous GET is allowed to reach the object-level authorization layer.
+    // Only a Phase 6 Public publication can succeed for user_id=0; legacy,
+    // Private, and Team media remain denied there.
     return ['user_id'=>$userId,'extension'=>false,'user'=>$user];
 }
 

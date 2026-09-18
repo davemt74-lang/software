@@ -127,10 +127,24 @@ function vp3_browser_share_media_storage_path_v2040(string $storageKey,bool $cre
 function vp3_browser_share_media_share_row_v2040(PDO $pdo,string $publicId,int $userId): array
 {
     $publicId=trim($publicId);
-    if($publicId===''||$userId<1)throw new VP3BrowserShareMediaExceptionV2040('browser_share_not_found',404,'Browser Share was not found.');
-    $row=vp3_browser_share_by_public_id_v2010($pdo,$publicId,$userId);
-    if(!is_array($row))throw new VP3BrowserShareMediaExceptionV2040('browser_share_not_found',404,'Browser Share is unavailable or access was revoked.');
-    return $row;
+    if($publicId==='')throw new VP3BrowserShareMediaExceptionV2040('browser_share_not_found',404,'Browser Share was not found.');
+    $row=$userId>0?vp3_browser_share_by_public_id_v2010($pdo,$publicId,$userId):null;
+    if(is_array($row))return $row;
+
+    // Phase 6 publication visibility is independent of the original delivery
+    // destination. Public/Team viewers may render the same private attachment
+    // bytes only after this live source-feed authorization succeeds.
+    if(function_exists('vp3_browser_source_feed_schema_ready_v2050')
+        && vp3_browser_source_feed_schema_ready_v2050($pdo)
+        && function_exists('vp3_browser_source_share_row_v2050')){
+        $published=vp3_browser_source_share_row_v2050($pdo,$publicId);
+        if(is_array($published)
+            && function_exists('vp3_browser_source_share_authorized_v2050')
+            && vp3_browser_source_share_authorized_v2050($pdo,$published,$userId)){
+            return $published;
+        }
+    }
+    throw new VP3BrowserShareMediaExceptionV2040('browser_share_not_found',404,'Browser Share is unavailable or access was revoked.');
 }
 
 function vp3_browser_share_media_validate_metadata_v2040(mixed $raw,string $kind): array

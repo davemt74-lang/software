@@ -78,8 +78,25 @@ function vp3_browser_share_public_v2020(array $row): array
 
 function vp3_browser_share_resolve_v2020(PDO $pdo,string $publicId,int $userId): ?array
 {
-    $row=vp3_browser_share_by_public_id_v2010($pdo,trim($publicId),$userId);
-    return is_array($row)?vp3_browser_share_public_v2020($row):null;
+    $publicId=trim($publicId);
+    $row=$userId>0?vp3_browser_share_by_public_id_v2010($pdo,$publicId,$userId):null;
+    if(is_array($row))return vp3_browser_share_public_v2020($row);
+
+    // Phase 6 publications deliberately separate feed visibility from the
+    // original delivery conversation. Re-resolve that live visibility here so
+    // canonical Ask VP3 / Knowledge / Task actions can operate on authorized
+    // Team/Public annotations without copying the capture into a second store.
+    if(function_exists('vp3_browser_source_feed_schema_ready_v2050')
+        && vp3_browser_source_feed_schema_ready_v2050($pdo)
+        && function_exists('vp3_browser_source_share_row_v2050')){
+        $published=vp3_browser_source_share_row_v2050($pdo,$publicId);
+        if(is_array($published)
+            && function_exists('vp3_browser_source_share_authorized_v2050')
+            && vp3_browser_source_share_authorized_v2050($pdo,$published,$userId)){
+            return vp3_browser_share_public_v2020($published);
+        }
+    }
+    return null;
 }
 
 function vp3_browser_share_for_message_public_v2020(PDO $pdo,int $messageId,int $userId): ?array
