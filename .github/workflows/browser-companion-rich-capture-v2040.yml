@@ -107,6 +107,7 @@ jobs:
           php -l claim.php
           php -l moderation.php
           php -l notification-settings.php
+          php -l source-change.php
           php -l upgrade.php
 
   package:
@@ -148,7 +149,7 @@ jobs:
             live.php live-room.php live-room-v2070.js live-directory-v2070.js \
             includes/browser-trust-v2080.php \
             api/browser-trust-v2080.php \
-            claims.php claim.php moderation.php notification-settings.php \
+            claims.php claim.php moderation.php notification-settings.php source-change.php \
             upgrade.php
           unzip -t dist/vp3-phase9-trust-deploy.zip
           sha256sum dist/vp3-phase9-trust-deploy.zip > dist/vp3-phase9-trust-deploy.zip.sha256

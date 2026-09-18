@@ -20,6 +20,7 @@ const claimPage=read('claim.php');
 const moderationPage=read('moderation.php');
 const prefsPage=read('notification-settings.php');
 const annotationPage=read('annotation.php');
+const comparePage=read('source-change.php');
 
 must(manifest.manifest_version===3,'Phase 9 must remain Manifest V3');
 must(manifest.version==='20.80.0','Phase 9 Browser Companion version must be v20.80.0');
@@ -31,6 +32,8 @@ for(const table of ['browser_source_change_events_v2080','browser_notification_p
 must(service.includes("require_once __DIR__.'/live-rooms-v2070.php'"),'Phase 9 must layer on Phase 8');
 must(service.includes("version_basis='page_text_sha256'"),'source change intelligence must reuse canonical source versions');
 must(service.includes('vp3_browser_trust_source_access_v2080'),'source observation/history must have an authorization gate');
+must(service.includes('vp3_research_reports_for_source_v2060'),'Source history access must honor authorized published Research');
+must(service.includes('vp3_live_room_rooms_for_source_v2070'),'Source history access must honor authorized Live Rooms');
 must(service.includes('Follow or annotate this source before observing changes.'),'arbitrary authenticated clients must not inject change events into unrelated sources');
 must(service.includes('vp3_browser_trust_compare_change_v2080'),'source change version comparison service missing');
 must(service.includes('vp3_browser_trust_version_annotations_v2080'),'version comparison must show only authorized annotations pinned to each version');
@@ -92,6 +95,8 @@ must(panelJs.includes("msg('trust_observe'"),'sidebar source observation missing
 
 must(sourcePage.includes('vp3_browser_trust_source_history_v2080'),'Source page must surface version history');
 must(sourcePage.includes('Compare versions'),'Source page must link to version comparison');
+must(comparePage.includes('vp3_browser_trust_compare_change_v2080'),'version comparison page must use canonical Phase 9 authorization/service');
+must(comparePage.includes('does not reconstruct private page text'),'version comparison must disclose the fingerprint/privacy boundary');
 must(sourcePage.includes('vp3_browser_trust_claims_for_source_v2080'),'Source page must surface claims');
 must(sourcePage.includes('File a claim'),'Source page claim entry point missing');
 must(claimsPage.includes('vp3_browser_trust_claim_create_v2080'),'web claim creation must use canonical Phase 9 service');

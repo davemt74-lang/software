@@ -43,9 +43,11 @@ if(!$source){
         $liveRooms=(array)($livePayload['rooms']??[]);
     }
     if(vp3_browser_trust_schema_ready_v2080($pdo)){
-        $history=vp3_browser_trust_source_history_v2080($pdo,$userId,(string)$source['public_id'],10);
-        $sourceChanges=(array)($history['changes']??[]);
-        $sourceClaims=vp3_browser_trust_claims_for_source_v2080($pdo,$userId,(string)$source['public_id'],25);
+        try{
+            $history=vp3_browser_trust_source_history_v2080($pdo,$userId,(string)$source['public_id'],10);
+            $sourceChanges=(array)($history['changes']??[]);
+        }catch(Throwable $e){$sourceChanges=[];}
+        try{$sourceClaims=vp3_browser_trust_claims_for_source_v2080($pdo,$userId,(string)$source['public_id'],25);}catch(Throwable $e){$sourceClaims=[];}
     }
     // A private follow alone must not publish source metadata to anonymous web
     // visitors. A public Source page requires authorized annotation/research,

@@ -202,6 +202,20 @@ function vp3_browser_trust_source_access_v2080(PDO $pdo,int $sourceId,int $viewe
         $share=vp3_browser_source_share_row_by_id_v2050($pdo,$shareId);
         if($share&&vp3_browser_source_share_authorized_v2050($pdo,$share,$viewerUserId))return true;
     }
+    try{
+        if(function_exists('vp3_research_reports_for_source_v2060')&&vp3_research_schema_ready_v2060($pdo)
+            && vp3_research_reports_for_source_v2060($pdo,$sourceId,$viewerUserId))return true;
+    }catch(Throwable $e){}
+    try{
+        if(vp3_live_room_schema_ready_v2070($pdo)){
+            $sourceStmt=$pdo->prepare('SELECT normalized_url,canonical_url FROM browser_sources_v2050 WHERE id=? LIMIT 1');
+            $sourceStmt->execute([$sourceId]);$source=$sourceStmt->fetch(PDO::FETCH_ASSOC);
+            if(is_array($source)){
+                $live=vp3_live_room_rooms_for_source_v2070($pdo,$viewerUserId,(string)$source['normalized_url'],(string)$source['canonical_url'],'');
+                if(!empty($live['rooms']))return true;
+            }
+        }
+    }catch(Throwable $e){}
     return false;
 }
 
