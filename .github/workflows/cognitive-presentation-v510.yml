@@ -1,8 +1,8 @@
 name: VP3 Cognitive Presentation 11B.2 v5.10
 
 concurrency:
-  group: \${{ github.workflow }}-\${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: \${{ github.event_name == 'pull_request' }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 on:
   pull_request:
@@ -16,7 +16,7 @@ permissions:
 
 jobs:
   contract:
-    name: Cognitive Presentation · PHP \${{ matrix.php }}
+    name: Cognitive Presentation · PHP ${{ matrix.php }}
     runs-on: ubuntu-latest
     timeout-minutes: 8
     strategy:
@@ -27,7 +27,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: shivammathur/setup-php@v2
         with:
-          php-version: \${{ matrix.php }}
+          php-version: ${{ matrix.php }}
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
