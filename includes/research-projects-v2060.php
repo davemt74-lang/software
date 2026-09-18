@@ -337,7 +337,7 @@ function vp3_research_item_public_v2060(PDO $pdo,array $row,int $viewerUserId): 
 {
     $source=vp3_browser_source_row_by_public_id_v2050($pdo,(string)($row['source_public_id']??'')) ?: null;
     if(!$source){
-        $stmt=$pdo->prepare('SELECT * FROM browser_sources_v2050 WHERE id=? LIMIT 1');$stmt->execute([(int)$row['source_id']);$source=$stmt->fetch(PDO::FETCH_ASSOC)?:[];
+        $stmt=$pdo->prepare('SELECT * FROM browser_sources_v2050 WHERE id=? LIMIT 1');$stmt->execute([(int)$row['source_id']]);$source=$stmt->fetch(PDO::FETCH_ASSOC)?:[];
     }
     $version=[];
     if((int)($row['source_version_id']??0)>0){
