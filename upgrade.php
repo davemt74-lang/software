@@ -57,6 +57,7 @@ function vp3_upgrade_complete(): bool
         && vp3_browser_share_schema_ready_v2010()
         && vp3_browser_share_media_schema_ready_v2040()
         && vp3_browser_source_feed_schema_ready_v2050()
+        && vp3_research_schema_ready_v2060()
         && midi_v217_schema_ready()
         && (string)setting('midi_permissions_seed_v217','') === '1'
         && artist_listening_v172_schema_ready()
@@ -142,6 +143,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             vp3_browser_share_ensure_schema_v2010();
             vp3_browser_share_media_ensure_schema_v2040();
             vp3_browser_source_feed_ensure_schema_v2050();
+            vp3_research_ensure_schema_v2060();
             midi_v217_ensure_schema();
             artist_listening_v172_ensure_schema();
             artist_listening_v237_ensure_schema();

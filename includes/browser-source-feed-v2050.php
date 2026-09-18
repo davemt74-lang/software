@@ -384,9 +384,9 @@ function vp3_browser_source_public_source_v2050(PDO $pdo,array $row,int $viewerU
     ];
 }
 
-function vp3_browser_source_item_v2050(PDO $pdo,array $row,int $viewerUserId=0,bool $withComments=true): array
+function vp3_browser_source_item_v2050(PDO $pdo,array $row,int $viewerUserId=0,bool $withComments=true,bool $preauthorized=false): array
 {
-    if(!vp3_browser_source_share_authorized_v2050($pdo,$row,$viewerUserId))throw new RuntimeException('This annotation is not available.');
+    if(!$preauthorized&&!vp3_browser_source_share_authorized_v2050($pdo,$row,$viewerUserId))throw new RuntimeException('This annotation is not available.');
     $base=vp3_browser_share_public_v2020($row);
     $deliveryAuthorized=false;
     if($viewerUserId>0){

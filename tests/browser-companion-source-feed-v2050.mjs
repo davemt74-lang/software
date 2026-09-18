@@ -19,7 +19,7 @@ const sourcePage=read('source.php');
 const annotationPage=read('annotation.php');
 
 must(manifest.manifest_version===3,'Phase 6 must remain Manifest V3');
-must(manifest.version==='20.50.0','Phase 6 extension version must be v20.50.0');
+must(Number(manifest.version.split('.')[0])===20 && Number(manifest.version.split('.')[1])>=50,'Phase 6 requires Browser Companion v20.50 or newer');
 must(background.includes("case 'this_page'"),'This Page transport missing');
 must(background.includes("case 'tab_identity'"),'lightweight active-tab identity transport missing');
 must(panelJs.includes("msg('tab_identity')"),'page navigation watch must use lightweight tab identity instead of rehashing page text');
@@ -86,4 +86,4 @@ must(sourcePage.includes("feed['items'][0]['source_identity']['title']"),'public
 must(annotationPage.includes('vp3_browser_source_item_v2050'),'annotation detail must use canonical source item');
 must(annotationPage.includes('vp3_browser_source_comment_v2050'),'website annotation comments must use canonical comment service');
 
-console.log('VP3 Browser Companion Phase 6 This Page + Following v20.50 contract passed.');
+console.log('VP3 Browser Companion Phase 6 This Page + Following v20.50+ regression contract passed.');

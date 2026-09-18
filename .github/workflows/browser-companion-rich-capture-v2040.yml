@@ -49,6 +49,9 @@ jobs:
       - name: Phase 6 This Page + Following contract
         run: node tests/browser-companion-source-feed-v2050.mjs
 
+      - name: Phase 7 Research Projects + Publishing contract
+        run: node tests/research-projects-publishing-v2060.mjs
+
       - name: Manifest contract
         run: node -e "const m=require('./browser-companion/manifest.json'); if(m.manifest_version!==3||Number(m.version.split('.')[0])!==20||Number(m.version.split('.')[1])<40) process.exit(1)"
 
@@ -61,6 +64,7 @@ jobs:
           node --check tests/browser-companion-v2030.mjs
           node --check tests/browser-companion-rich-capture-v2040.mjs
           node --check tests/browser-companion-source-feed-v2050.mjs
+          node --check tests/research-projects-publishing-v2060.mjs
 
       - name: PHP syntax
         run: |
@@ -72,6 +76,12 @@ jobs:
           php -l includes/browser-share-chat-feed-v2020.php
           php -l source.php
           php -l annotation.php
+          php -l includes/research-projects-v2060.php
+          php -l api/research-projects-v2060.php
+          php -l research.php
+          php -l research-project.php
+          php -l research-report-builder.php
+          php -l research-report.php
           php -l upgrade.php
 
   package:
@@ -96,7 +106,7 @@ jobs:
             exit 1
           fi
           sha256sum dist/vp3-browser-companion-current.zip > dist/vp3-browser-companion-current.zip.sha256
-          zip -r dist/vp3-phase6-source-feed-deploy.zip \
+          zip -r dist/vp3-phase7-research-deploy.zip \
             api/browser-source-feed-v2050.php \
             api/browser-share-media-v2040.php \
             includes/browser-source-feed-v2050.php \
@@ -104,9 +114,13 @@ jobs:
             includes/browser-share-media-v2040.php \
             includes/bootstrap.php \
             browser-companion \
-            source.php annotation.php upgrade.php
-          unzip -t dist/vp3-phase6-source-feed-deploy.zip
-          sha256sum dist/vp3-phase6-source-feed-deploy.zip > dist/vp3-phase6-source-feed-deploy.zip.sha256
+            source.php annotation.php \
+            includes/research-projects-v2060.php \
+            api/research-projects-v2060.php \
+            research.php research-project.php research-report-builder.php research-report.php \
+            upgrade.php
+          unzip -t dist/vp3-phase7-research-deploy.zip
+          sha256sum dist/vp3-phase7-research-deploy.zip > dist/vp3-phase7-research-deploy.zip.sha256
 
       - name: Upload directly loadable Browser Companion
         uses: actions/upload-artifact@v4
@@ -115,7 +129,7 @@ jobs:
           path: |
             dist/vp3-browser-companion-current.zip
             dist/vp3-browser-companion-current.zip.sha256
-            dist/vp3-phase6-source-feed-deploy.zip
-            dist/vp3-phase6-source-feed-deploy.zip.sha256
+            dist/vp3-phase7-research-deploy.zip
+            dist/vp3-phase7-research-deploy.zip.sha256
           if-no-files-found: error
           retention-days: 30

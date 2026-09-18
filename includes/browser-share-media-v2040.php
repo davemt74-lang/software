@@ -143,6 +143,16 @@ function vp3_browser_share_media_share_row_v2040(PDO $pdo,string $publicId,int $
             && vp3_browser_source_share_authorized_v2050($pdo,$published,$userId)){
             return $published;
         }
+        // Phase 7 project assignment is an explicit, project-scoped share grant.
+        // It does not alter the annotation's Phase 6 publication visibility.
+        if($userId>0
+            && is_array($published)
+            && function_exists('vp3_research_schema_ready_v2060')
+            && vp3_research_schema_ready_v2060($pdo)
+            && function_exists('vp3_research_share_authorized_v2060')
+            && vp3_research_share_authorized_v2060($pdo,$publicId,$userId)){
+            return $published;
+        }
     }
     throw new VP3BrowserShareMediaExceptionV2040('browser_share_not_found',404,'Browser Share is unavailable or access was revoked.');
 }

@@ -144,6 +144,30 @@
       </section>
     </section>
 
+    <dialog id="researchDialog" class="research-dialog">
+      <form method="dialog" class="research-dialog-shell">
+        <div class="dialog-head">
+          <div><div class="eyebrow">Research</div><strong>Add annotation to Research</strong></div>
+          <button id="closeResearchDialogBtn" class="icon-btn" value="cancel" type="submit" aria-label="Close">×</button>
+        </div>
+        <div id="researchPlacements" class="research-placements" hidden></div>
+        <label class="field">
+          <span>Project</span>
+          <select id="researchProjectSelect"><option value="">Loading projects…</option></select>
+        </label>
+        <label class="field"><span>Project note <small>optional</small></span><input id="researchProjectNote" maxlength="10000" placeholder="Why this matters"></label>
+        <label class="field"><span>Tags <small>comma separated</small></span><input id="researchProjectTags" maxlength="1000" placeholder="pricing, competitor"></label>
+        <div class="dialog-actions">
+          <button id="researchInboxBtn" type="button">Save to Inbox</button>
+          <button id="researchAddBtn" class="primary" type="button">Add to project</button>
+        </div>
+        <div class="dialog-divider"><span>or create a project</span></div>
+        <label class="field"><span>New project title</span><input id="newResearchProjectTitle" maxlength="190" placeholder="New Research project"></label>
+        <button id="createResearchProjectBtn" type="button">Create project + add</button>
+        <button id="openResearchHubBtn" class="text-btn research-hub-link" type="button">Open Research Hub</button>
+      </form>
+    </dialog>
+
     <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
   </main>
   <script src="sidepanel.js"></script>

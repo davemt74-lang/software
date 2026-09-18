@@ -94,6 +94,7 @@ require_once __DIR__.'/browser-share-v2010.php';
 require_once __DIR__.'/browser-share-chat-feed-v2020.php';
 require_once __DIR__.'/browser-share-media-v2040.php';
 require_once __DIR__.'/browser-source-feed-v2050.php';
+require_once __DIR__.'/research-projects-v2060.php';
 require_once __DIR__.'/music-workspace-plugin-v320.php';
 require_once __DIR__.'/plugin-lifecycle-v360.php';
 require_once __DIR__.'/artist-workspace-v181.php';
