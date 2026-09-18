@@ -14,6 +14,8 @@ const chatPage=read('chat.php');
 const presentation=read('includes/cognitive-presentation-v510.php');
 const presentationJs=read('chat-cognitive-presentation-v510.js');
 const bootstrap=read('includes/bootstrap.php');
+const chatApi=read('api/chat-v236.php');
+const fallbackChatApi=read('api/chat.php');
 
 assert.match(cards,/VP3_COGNITIVE_CARDS_V520='vp3-cognitive-cards-v520-20260918'/);
 assert.match(cards,/module'=>'universal_cards'/);
@@ -33,6 +35,14 @@ assert.match(cards,/created_by_user_id=\? AND knowledge_scope='personal'/,'Knowl
 assert.match(cards,/owner_user_id=\? AND agent_namespace=\?/,'observation cards must remain owner + Agent scoped');
 assert.match(cards,/vp3_live_room_require_v2070\(\$pdo,\$id,\$uid,false\)/,'Live Room cards must reauthorize access');
 assert.match(cards,/vp3_cognitive_cards_notification_request_v520/);
+assert.match(cards,/function vp3_cognitive_cards_chat_intent_v520/);
+assert.match(cards,/function vp3_cognitive_cards_chat_requests_v520/);
+assert.match(cards,/profile_visit_sessions s[\s\S]*s\.owner_user_id=\? AND s\.id=\?/,'contact cards must use exact owner-scoped lookup');
+assert.match(cards,/contact_id/,'direct contact intents must use canonical contact_id projection');
+assert.match(cards,/Source titles are intentionally not read from mutable global Source metadata/,'Source card title must avoid cross-viewer mutable metadata');
+assert.match(cards,/\$out\['title'\]=\(string\)\(\$row\['source_domain'\]/,'Source card heading must use safe domain state');
+assert.match(cards,/booking:/,'calendar card refs must distinguish booking ids from event ids');
+assert.match(cards,/event:/,'calendar card refs must distinguish event ids from booking ids');
 assert.match(cards,/vp3_cognitive_register_module_v500\(/);
 assert.match(cards,/'permission_resolver'=>'vp3_cognitive_cards_permission_v520'/);
 assert.match(cards,/'context_provider'=>'vp3_cognitive_cards_context_v520'/);
@@ -85,6 +95,12 @@ assert.match(chatPage,/\$cognitiveCardsBuild = 'cognitive-cards-v520-20260918'/)
 assert.match(chatPage,/chat-cognitive-cards-v520\.css/);
 assert.match(chatPage,/chat-cognitive-cards-v520\.js/);
 assert.match(chatPage,/api\/cognitive-cards-v520\.php/);
+assert.match(chatApi,/vp3_cognitive_cards_chat_requests_v520/,'canonical Agent Chat must attach deterministic direct card requests');
+assert.match(chatApi,/'cards'=>\$cardRequests/,'canonical Agent Chat must persist card requests in context_json');
+assert.match(chatApi,/'cards'=>\$messageContext\['cards'\]/,'canonical Agent Chat response must return cards');
+assert.match(fallbackChatApi,/vp3_cognitive_cards_chat_requests_v520/,'fallback Chat must attach the same card requests');
+assert.match(fallbackChatApi,/'cards'=>\$cardRequests/,'fallback Chat must persist card requests');
+assert.match(fallbackChatApi,/'cards'=>\$messageContext\['cards'\]/,'fallback Chat response must return cards');
 assert.ok(chatPage.indexOf('$cognitiveCardsRuntime') < chatPage.indexOf('$cognitivePresentationPost'),'cards runtime must load before return-digest presentation runtime');
 
 assert.match(presentation,/card_request'=>function_exists\('vp3_cognitive_cards_notification_request_v520'\)/,'new digest groups must retain card requests');

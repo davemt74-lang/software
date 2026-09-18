@@ -52,3 +52,5 @@ jobs:
           php -l includes/cognitive-presentation-v510.php
           php -l includes/cognitive-runtime-meetings-v500.php
           php -l chat.php
+          php -l api/chat-v236.php
+          php -l api/chat.php
