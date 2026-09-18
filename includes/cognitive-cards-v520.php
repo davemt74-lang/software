@@ -46,6 +46,41 @@ function vp3_cognitive_cards_message_v520(PDO $pdo,array $user,int $id): ?array
     return $row;
 }
 
+function vp3_cognitive_cards_contact_v520(PDO $pdo,int $ownerUserId,int $contactId): ?array
+{
+    if($ownerUserId<1||$contactId<1||!table_exists('profile_visit_sessions'))return null;
+    $stmt=$pdo->prepare(
+        "SELECT s.*,
+          COUNT(DISTINCT c.id) AS conversation_count,
+          COUNT(DISTINCT CASE WHEN e.event_type='profile_view' THEN e.id END) AS visit_count,
+          COUNT(DISTINCT CASE WHEN m.sender_type='visitor' THEN m.id END) AS visitor_message_count,
+          MAX(c.last_message_at) AS conversation_last_at
+         FROM profile_visit_sessions s
+         LEFT JOIN profile_events e ON e.owner_user_id=s.owner_user_id AND e.profile_session_id=s.id
+         LEFT JOIN profile_agent_conversations c ON c.owner_user_id=s.owner_user_id AND c.profile_session_id=s.id
+         LEFT JOIN profile_agent_messages m ON m.conversation_id=c.id
+         WHERE s.owner_user_id=? AND s.id=? AND (s.view_count>0 OR c.id IS NOT NULL)
+         GROUP BY s.id LIMIT 1"
+    );
+    $stmt->execute([$ownerUserId,$contactId]);$row=$stmt->fetch();
+    if(!$row)return null;
+    $descriptor=function_exists('profile_runtime_visitor_descriptor')
+        ? profile_runtime_visitor_descriptor($pdo,$ownerUserId,$row)
+        : [];
+    $row=array_merge($row,is_array($descriptor)?$descriptor:[]);
+    $row['contact_id']=(int)$row['id'];
+    $row['visit_count']=(int)($row['visit_count']??0);
+    $row['page_view_count']=(int)($row['view_count']??0);
+    $row['repeat_visitor']=$row['visit_count']>1;
+    $row['conversation_count']=(int)($row['conversation_count']??0);
+    $row['visitor_message_count']=(int)($row['visitor_message_count']??0);
+    $row['stage']=$row['conversation_count']>0
+        ? (!empty($row['signed_in'])?'member_engaged':'guest_engaged')
+        : ($row['visit_count']>1?'returning_visitor':'new_visitor');
+    unset($row['session_key'],$row['visitor_user_id'],$row['view_count']);
+    return $row;
+}
+
 function vp3_cognitive_cards_observation_v520(PDO $pdo,array $user,string $namespace,string $type,string $id): ?array
 {
     if(!vp3_cognitive_schema_ready_v500($pdo))return null;
@@ -138,11 +173,9 @@ function vp3_cognitive_cards_object_v520(PDO $pdo,array $user,string $namespace,
             return ['type'=>$type,'row'=>$row];
         }
         if($type==='contact'){
-            if(!function_exists('profile_visitor_contact_list_v243'))return null;
-            foreach((array)profile_visitor_contact_list_v243($pdo,$uid,500) as $row){
-                if((string)($row['id']??'')===$id)return ['type'=>$type,'row'=>$row];
-            }
-            return null;
+            if(!ctype_digit($id))return null;
+            $row=vp3_cognitive_cards_contact_v520($pdo,$uid,(int)$id);
+            return $row?['type'=>$type,'row'=>$row]:null;
         }
         if($type==='commerce_order'){
             if(!ctype_digit($id)||!function_exists('profile_commerce_order_for_owner_v900'))return null;
@@ -468,7 +501,7 @@ function vp3_cognitive_cards_chat_requests_v520(PDO $pdo,array $user,string $nam
             }
         }elseif($type==='contact'&&function_exists('profile_visitor_contact_list_v243')){
             foreach(array_slice(profile_visitor_contact_list_v243($pdo,$uid,$limit),0,$limit) as $contact){
-                if((int)($contact['id']??0)>0)$add('contact',(int)$contact['id']);
+                if((int)($contact['contact_id']??0)>0)$add('contact',(int)$contact['contact_id']);
             }
         }elseif($type==='browser_companion'&&function_exists('vp3_extension_devices_for_user_v2000')){
             foreach(array_slice(vp3_extension_devices_for_user_v2000($pdo,$uid),0,$limit) as $device){
