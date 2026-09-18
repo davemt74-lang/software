@@ -1,7 +1,7 @@
 (()=>{
 'use strict';
 const cfgEl=document.getElementById('liveRoomConfig');if(!cfgEl)return;
-const cfg=JSON.parse(cfgEl.textContent||'{}'),roomId=String(cfg.room?.id||''),api=String(cfg.api||'');
+const cfg=JSON.parse(cfgEl.dataset.config||'{}'),roomId=String(cfg.room?.id||''),api=String(cfg.api||'');
 let room=cfg.room||{},cursor=Number(cfg.cursor||0),timer=null,heartbeatTimer=null;
 const messages=document.getElementById('liveMessages'),participants=document.getElementById('liveParticipants'),status=document.getElementById('roomStatus'),count=document.getElementById('presenceCount');
 const join=document.getElementById('joinRoomBtn'),cloak=document.getElementById('cloakRoomBtn'),leave=document.getElementById('leaveRoomBtn'),end=document.getElementById('endRoomBtn'),compose=document.getElementById('liveCompose'),input=document.getElementById('liveMessageInput');
