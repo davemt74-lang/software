@@ -232,8 +232,8 @@ function vp3_search_index_live_v2090(PDO $pdo,string $roomPublicId): void
 {
     $row=vp3_live_room_row_v2070($pdo,$roomPublicId);
     if(!$row){vp3_search_tombstone_v2090($pdo,'live',$roomPublicId);return;}
-    $members=$pdo->prepare('SELECT COUNT(*) FROM live_room_members_v2070 WHERE room_id=?');$members->execute([(int)$row['id']);$memberCount=(int)$members->fetchColumn();
-    $messages=$pdo->prepare('SELECT COUNT(*) FROM live_room_messages_v2070 WHERE room_id=? AND deleted_at IS NULL');$messages->execute([(int)$row['id']);$messageCount=(int)$messages->fetchColumn();
+    $members=$pdo->prepare('SELECT COUNT(*) FROM live_room_members_v2070 WHERE room_id=?');$members->execute([(int)$row['id']]);$memberCount=(int)$members->fetchColumn();
+    $messages=$pdo->prepare('SELECT COUNT(*) FROM live_room_messages_v2070 WHERE room_id=? AND deleted_at IS NULL');$messages->execute([(int)$row['id']]);$messageCount=(int)$messages->fetchColumn();
     vp3_search_upsert_document_v2090($pdo,[
         'document_type'=>'live','object_public_id'=>(string)$row['public_id'],'source_id'=>(int)($row['source_id']??0),'owner_user_id'=>(int)$row['owner_user_id'],
         'team_owner_user_id'=>(int)($row['team_owner_user_id']??0),'visibility'=>(string)$row['room_scope'],'source_domain'=>(string)($row['source_domain']??''),
