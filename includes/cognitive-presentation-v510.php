@@ -179,10 +179,14 @@ function vp3_cognitive_presentation_digest_v510(PDO $pdo,array $user,string $nam
     $idle=vp3_cognitive_presentation_idle_minutes_v510($state);
     if($idle<VP3_COGNITIVE_DIGEST_ATTENTION_IDLE_MINUTES_V510)return null;
     $rows=vp3_cognitive_presentation_notification_rows_v510($pdo,$user,(int)($state['baseline_notification_id']??0),100);
-    $items=vp3_cognitive_presentation_digest_items_v510($rows,$idle);$summary=vp3_cognitive_presentation_digest_summary_v510($items);
+    $eligible=array_values(array_filter($rows,static function($row) use($idle): bool {
+        if($idle>=VP3_COGNITIVE_DIGEST_NORMAL_IDLE_MINUTES_V510)return true;
+        return function_exists('notification_requires_attention')&&notification_requires_attention((array)$row);
+    }));
+    $items=vp3_cognitive_presentation_digest_items_v510($eligible,$idle);$summary=vp3_cognitive_presentation_digest_summary_v510($items);
     if($summary==='')return null;
 
-    $ids=array_map(static fn($r)=>max(0,(int)($r['id']??0)),$rows);
+    $ids=array_map(static fn($r)=>max(0,(int)($r['id']??0)),$eligible);
     if(!$ids)return null;
     $start=min($ids);$end=max($ids);$public=vp3_cognitive_uuid_v500();
     try{
@@ -265,6 +269,19 @@ function vp3_cognitive_presentation_brief_v510(PDO $pdo,array $user,int $agentId
         if(is_array($lanes[$lane][0]??null)){$item=$lanes[$lane][0];$current=['lane'=>$lane,'title'=>vp3_cognitive_text_v500($item['title']??'Agent work',160),'detail'=>vp3_cognitive_text_v500($item['detail']??$item['status']??'',240)];break;}
     }
     $suggestion=is_array($model['suggestions'][0]??null)?$model['suggestions'][0]:null;
+    if(function_exists('agent_cognitive_loop_v310_priority_items')){
+        try{
+            $priorities=agent_cognitive_loop_v310_priority_items($user,1);
+            if(is_array($priorities[0]??null)){
+                $priority=$priorities[0];
+                $suggestion=[
+                    'title'=>(string)($priority['title']??'Agent Brain priority'),
+                    'reason'=>(string)($priority['reason']??''),
+                    'prompt'=>(string)($priority['prompt']??''),
+                ];
+            }
+        }catch(Throwable $e){}
+    }
     $calendar=is_array($model['calendar'][0]??null)?$model['calendar'][0]:null;
     return [
         'agent_id'=>$agentId,'agent_name'=>$name,'active'=>$available,'working'=>$working,

@@ -24,6 +24,8 @@ assert.match(core,/vp3_cognitive_presentation_digest_items_v510/);
 assert.match(core,/vp3_cognitive_presentation_voice_allowed_type_v510/);
 assert.match(core,/chat_settings_get_v237/);
 assert.match(core,/vp3_agent_chat_intelligence_model_v171/);
+assert.match(core,/agent_cognitive_loop_v310_priority_items/,'Agent Brief must consume the canonical Brain priority state');
+assert.match(core,/\$eligible=array_values\(array_filter/,'30-minute attention digest must not consume routine 60-minute updates');
 
 assert.doesNotMatch(api,/observation_store|presentation_decide/);
 assert.match(api,/digest_ack/);
