@@ -94,7 +94,7 @@ try{
     }
 
     $writeActions=['create_project','update_project','set_member','remove_member','assign','create_finding','update_finding','finding_status','link_evidence','create_report','update_report','set_report_items','publish_report','unpublish_report'];
-    if(in_array($action,$writeActions,true))vp3_research_api_cap_v2060($auth,'knowledge.write');
+    if(in_array($action,$writeActions,true)){vp3_research_api_cap_v2060($auth,'knowledge.write');vp3_annotated_rate_limit_v2100($pdo,$userId,'research_write');}
 
     if($action==='create_project'){
         $project=vp3_research_create_project_v2060($pdo,$userId,(string)($input['title']??''),(string)($input['description']??''),max(0,(int)($input['team_id']??0)));
@@ -157,6 +157,7 @@ try{
     }
 
     vp3_research_api_json_v2060(404,['ok'=>false,'error'=>['code'=>'unknown_action','message'=>'Unknown Research action.']]);
+}catch(VP3AnnotatedRateLimitExceptionV2100 $e){header('Retry-After: '.$e->retryAfter);vp3_research_api_json_v2060(429,['ok'=>false,'error'=>['code'=>'rate_limited','message'=>$e->getMessage()]]);
 }catch(VP3ExtensionSecurityExceptionV2001 $e){
     vp3_research_api_json_v2060($e->httpStatus,['ok'=>false,'error'=>['code'=>$e->apiCode,'message'=>$e->getMessage()]]);
 }catch(InvalidArgumentException $e){

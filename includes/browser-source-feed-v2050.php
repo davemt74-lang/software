@@ -305,6 +305,7 @@ function vp3_browser_source_publish_v2050(PDO $pdo,int $userId,string $browserSh
     if(!$fresh)throw new RuntimeException('Published annotation could not be reloaded.');
     if(function_exists('vp3_search_index_annotation_v2090'))vp3_search_index_annotation_v2090($pdo,(int)$fresh['id']);
     if(function_exists('vp3_search_index_source_v2090')&&(int)($fresh['source_id']??0)>0)vp3_search_index_source_v2090($pdo,(int)$fresh['source_id']);
+    if(function_exists('vp3_annotated_mark_milestone_safe_v2100'))vp3_annotated_mark_milestone_safe_v2100($pdo,$userId,'first_annotation_created',['visibility'=>$visibility]);
     return vp3_browser_source_item_v2050($pdo,$fresh,$userId,true);
 }
 
@@ -562,6 +563,7 @@ function vp3_browser_source_follow_source_v2050(PDO $pdo,int $userId,string $sou
     if($follow){
         $pdo->prepare('INSERT IGNORE INTO browser_source_follows_v2050(user_id,source_id,created_at) VALUES(?,?,UTC_TIMESTAMP())')
             ->execute([$userId,(int)$source['id']]);
+        if(function_exists('vp3_annotated_mark_milestone_safe_v2100'))vp3_annotated_mark_milestone_safe_v2100($pdo,$userId,'source_followed',['surface'=>'source']);
     }else{
         $pdo->prepare('DELETE FROM browser_source_follows_v2050 WHERE user_id=? AND source_id=?')
             ->execute([$userId,(int)$source['id']]);
@@ -623,6 +625,7 @@ function vp3_browser_source_toggle_share_state_v2050(PDO $pdo,int $userId,string
             ->execute([$userId,(int)$row['id']]);
     }
     if(function_exists('vp3_search_index_annotation_v2090'))vp3_search_index_annotation_v2090($pdo,(int)$row['id']);
+    if($kind==='research'&&$enabled&&function_exists('vp3_annotated_mark_milestone_safe_v2100'))vp3_annotated_mark_milestone_safe_v2100($pdo,$userId,'research_used',['surface'=>'annotation']);
     return [$kind==='research'?'in_research':'saved'=>$enabled];
 }
 

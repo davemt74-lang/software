@@ -220,6 +220,7 @@ function vp3_research_create_project_v2060(PDO $pdo,int $actorUserId,string $tit
     }catch(Throwable $e){if($owns&&$pdo->inTransaction())$pdo->rollBack();throw $e;}
     $row=vp3_research_project_row_v2060($pdo,$publicId);
     if(!$row)throw new RuntimeException('Research project could not be reloaded.');
+    if(function_exists('vp3_annotated_mark_milestone_safe_v2100'))vp3_annotated_mark_milestone_safe_v2100($pdo,$actorUserId,'research_used',['surface'=>'project']);
     return vp3_research_project_public_v2060($pdo,$row,$actorUserId);
 }
 

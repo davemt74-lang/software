@@ -18,7 +18,8 @@ const roomJs=read('live-room-v2070.js');
 const sourcePage=read('source.php');
 
 must(manifest.manifest_version===3,'Phase 8 must remain Manifest V3');
-must(Number(manifest.version.split('.')[0])===20&&Number(manifest.version.split('.')[1])>=70,'Phase 8 Browser Companion version must remain v20.70+');
+const [liveMajor,liveMinor]=manifest.version.split('.').map(Number);
+must(liveMajor>20||(liveMajor===20&&liveMinor>=70),'Phase 8 Browser Companion version must remain v20.70+');
 
 for(const table of ['live_rooms_v2070','live_room_members_v2070','live_room_messages_v2070']){
   must(service.includes(table),'Phase 8 schema missing '+table);
@@ -74,7 +75,8 @@ must(api.includes("vp3_live_room_poll_v2070($pdo,$userId,trim((string)($_GET['ro
 mustNot(api.includes('ensure_schema_v2070('),'public Live API must never execute schema DDL');
 
 const runtimeVersion=(background.match(/const VP3_EXTENSION_VERSION = '([0-9.]+)'/)||[])[1]||'';
-must(Number(runtimeVersion.split('.')[0])===20&&Number(runtimeVersion.split('.')[1])>=70,'extension runtime must remain v20.70+');
+const [liveRuntimeMajor,liveRuntimeMinor]=runtimeVersion.split('.').map(Number);
+must(liveRuntimeMajor>20||(liveRuntimeMajor===20&&liveRuntimeMinor>=70),'extension runtime must remain v20.70+');
 must(background.includes("'/api/live-rooms-v2070.php'"),'Browser Companion Live transport missing');
 must(background.includes("case 'live_rooms'"),'Browser Companion source-room transport missing');
 must(background.includes("case 'live_poll'"),'Browser Companion Live poll transport missing');

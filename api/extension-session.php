@@ -34,13 +34,19 @@ $input=json_decode($raw,true);
 if(!is_array($input))vp3_extension_session_json_v2000(400,['ok'=>false,'error'=>['code'=>'invalid_request','message'=>'A JSON request body is required.']]);
 
 try{
+    $version=trim((string)($_SERVER['HTTP_X_VP3_EXTENSION_VERSION']??''));
+    $compatibility=vp3_annotated_extension_compatibility_v2100($version);
+    if(!$compatibility['supported'])vp3_extension_session_json_v2000(426,['ok'=>false,'compatibility'=>$compatibility,'error'=>['code'=>'extension_update_required','message'=>'Update Browser Companion before starting a VP3 session.']]);
     $session=vp3_extension_session_issue_v2001(
         $pdo,
         (string)($input['device_id']??''),
         (string)($input['installation_id']??''),
         (string)($input['device_credential']??'')
     );
-    vp3_extension_session_json_v2000(200,['ok'=>true,'contract_version'=>1,'session'=>$session]);
+    $userId=(int)($session['user']['id']??0);
+    vp3_annotated_mark_milestone_safe_v2100($pdo,$userId,'extension_connected',['surface'=>'session']);
+    $annotated=$userId>0&&vp3_annotated_schema_ready_v2100($pdo)?vp3_annotated_user_state_v2100($pdo,$userId):['available'=>false];
+    vp3_extension_session_json_v2000(200,['ok'=>true,'contract_version'=>1,'session'=>$session,'compatibility'=>$compatibility,'annotated'=>$annotated]);
 }catch(VP3ExtensionSecurityExceptionV2001 $e){
     vp3_extension_session_json_v2000($e->httpStatus,['ok'=>false,'error'=>['code'=>$e->apiCode,'message'=>$e->getMessage()]]);
 }catch(InvalidArgumentException $e){

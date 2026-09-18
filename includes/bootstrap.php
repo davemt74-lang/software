@@ -98,6 +98,7 @@ require_once __DIR__.'/research-projects-v2060.php';
 require_once __DIR__.'/live-rooms-v2070.php';
 require_once __DIR__.'/browser-trust-v2080.php';
 require_once __DIR__.'/search-discovery-v2090.php';
+require_once __DIR__.'/annotated-release-v2100.php';
 require_once __DIR__.'/music-workspace-plugin-v320.php';
 require_once __DIR__.'/plugin-lifecycle-v360.php';
 require_once __DIR__.'/artist-workspace-v181.php';
@@ -157,6 +158,8 @@ require_once __DIR__.'/chat-onboarding-v241.php';
 require_once __DIR__.'/member-navigation.php';
 require_once __DIR__.'/release-chat-v105.php';
 
+vp3_annotated_request_boot_v2100();
+vp3_annotated_housekeeping_maybe_v2100();
 subscription_lifecycle_boot();
 artist_workspace_v104_boot_contextual_roles();
 subscription_request_gate();

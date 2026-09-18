@@ -45,10 +45,13 @@ if(!is_array($input))vp3_extension_connect_request_json_v2000(400,['ok'=>false,'
 if((int)($input['contract_version']??0)!==1)vp3_extension_connect_request_json_v2000(422,['ok'=>false,'error'=>['code'=>'unsupported_contract','message'=>'Unsupported extension contract version.']]);
 
 try{
+    $compatibility=vp3_annotated_extension_compatibility_v2100((string)($input['extension_version']??''));
+    if(!$compatibility['supported'])vp3_extension_connect_request_json_v2000(426,['ok'=>false,'compatibility'=>$compatibility,'error'=>['code'=>'extension_update_required','message'=>'Update Browser Companion before connecting to VP3.']]);
     $connection=vp3_extension_connection_create_v2000($pdo,$input);
     vp3_extension_connect_request_json_v2000(202,[
         'ok'=>true,
         'contract_version'=>1,
+        'compatibility'=>$compatibility,
         'connection_request'=>$connection,
     ]);
 }catch(InvalidArgumentException $e){

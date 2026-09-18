@@ -94,6 +94,8 @@ try{
         if($userId<1)vp3_browser_source_api_json_v2050(401,['ok'=>false,'error'=>['code'=>'authentication_required','message'=>'Sign in to use this action.']]);
         if($csrf===''||!hash_equals(csrf_token(),$csrf))vp3_browser_source_api_json_v2050(419,['ok'=>false,'error'=>['code'=>'csrf','message'=>'Session expired.']]);
     }
+    $rateScope=match($action){'publish'=>'annotation_publish','comment'=>'annotation_comment','follow_source'=>'source_follow','research'=>'research_write','share_team'=>'annotation_publish',default=>''};
+    if($rateScope!=='')vp3_annotated_rate_limit_v2100($pdo,$userId,$rateScope);
 
     if($action==='publish'){
         vp3_browser_source_api_require_cap_v2050($auth,'team.share.create');
@@ -150,6 +152,7 @@ try{
     }
 
     vp3_browser_source_api_json_v2050(404,['ok'=>false,'error'=>['code'=>'unknown_action','message'=>'Unknown Source Feed action.']]);
+}catch(VP3AnnotatedRateLimitExceptionV2100 $e){header('Retry-After: '.$e->retryAfter);vp3_browser_source_api_json_v2050(429,['ok'=>false,'error'=>['code'=>'rate_limited','message'=>$e->getMessage()]]);
 }catch(VP3ExtensionSecurityExceptionV2001 $e){
     vp3_browser_source_api_json_v2050($e->httpStatus,['ok'=>false,'error'=>['code'=>$e->apiCode,'message'=>$e->getMessage()]]);
 }catch(VP3BrowserShareExceptionV2010 $e){

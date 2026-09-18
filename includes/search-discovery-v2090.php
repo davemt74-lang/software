@@ -467,6 +467,7 @@ function vp3_search_query_v2090(PDO $pdo,int $viewerUserId,string $query,array $
     usort($scored,static fn(array $a,array $b): int=>($b['_rank_score']<=>$a['_rank_score'])?:strcmp((string)$b['updated_at'],(string)$a['updated_at']));
     $items=array_slice($scored,0,$limit);foreach($items as &$item)unset($item['_rank_score']);unset($item);
     if($record)vp3_search_record_recent_v2090($pdo,$viewerUserId,$query,$filters,count($items));
+    if($record&&$query!==''&&$viewerUserId>0&&function_exists('vp3_annotated_mark_milestone_safe_v2100'))vp3_annotated_mark_milestone_safe_v2100($pdo,$viewerUserId,'search_used',['surface'=>'search']);
     return ['query'=>$query,'filters'=>$filters,'items'=>$items,'count'=>count($items),'candidate_count'=>count($scored)];
 }
 

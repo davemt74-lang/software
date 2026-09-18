@@ -65,6 +65,7 @@ if ($isPost) {
                     $trialSubscriptionId = subscription_assign_default_trial($userId);
                     if ($trialSubscriptionId < 1) throw new RuntimeException('The Free Trial package is unavailable. Please try again later.');
                     $pdo->commit();
+                    vp3_annotated_mark_milestone_safe_v2100($pdo,$userId,'account_created',['surface'=>'signup']);
                     session_regenerate_id(true);
                     $_SESSION['user_id'] = $userId;
                     $_SESSION['subscription_onboarding'] = 1;

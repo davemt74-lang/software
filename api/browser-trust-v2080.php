@@ -69,6 +69,8 @@ try{
         $csrf=trim((string)($input['csrf_token']??''));
         if($csrf===''||!hash_equals(csrf_token(),$csrf))vp3_browser_trust_api_json_v2080(419,['ok'=>false,'error'=>['code'=>'csrf','message'=>'Session expired.']]);
     }
+    $rateScope=match($action){'observe_source'=>'source_observe','claim_create'=>'claim_create','report_create'=>'report_create',default=>'release_state'};
+    vp3_annotated_rate_limit_v2100($pdo,$userId,$rateScope);
 
     if($action==='observe_source'){
         vp3_browser_trust_api_cap_v2080($auth,'team.chat.read');
@@ -99,6 +101,7 @@ try{
         vp3_browser_trust_api_json_v2080(201,['ok'=>true,'report'=>vp3_browser_trust_report_create_v2080($pdo,$userId,trim((string)($input['target_type']??'')),trim((string)($input['target_id']??'')),trim((string)($input['reason']??'')),(string)($input['detail']??''))]);
     }
     vp3_browser_trust_api_json_v2080(404,['ok'=>false,'error'=>['code'=>'unknown_action','message'=>'Unknown Phase 9 action.']]);
+}catch(VP3AnnotatedRateLimitExceptionV2100 $e){header('Retry-After: '.$e->retryAfter);vp3_browser_trust_api_json_v2080(429,['ok'=>false,'error'=>['code'=>'rate_limited','message'=>$e->getMessage()]]);
 }catch(VP3ExtensionSecurityExceptionV2001 $e){
     vp3_browser_trust_api_json_v2080($e->httpStatus,['ok'=>false,'error'=>['code'=>$e->apiCode,'message'=>$e->getMessage()]]);
 }catch(InvalidArgumentException $e){

@@ -47,6 +47,12 @@ try{
     if(!empty($result['device_credential']))$payload['device_credential']=$result['device_credential'];
     if(!empty($result['user']))$payload['user']=$result['user'];
     if(isset($result['capabilities']))$payload['capabilities']=$result['capabilities'];
+    $version=trim((string)($_SERVER['HTTP_X_VP3_EXTENSION_VERSION']??''));
+    if($version!=='')$payload['compatibility']=vp3_annotated_extension_compatibility_v2100($version);
+    if(!empty($result['user']['id'])){
+        vp3_annotated_mark_milestone_safe_v2100($pdo,(int)$result['user']['id'],'extension_connected',['surface'=>'browser_companion']);
+        if(vp3_annotated_schema_ready_v2100($pdo))$payload['annotated']=vp3_annotated_user_state_v2100($pdo,(int)$result['user']['id']);
+    }
     vp3_extension_connect_status_json_v2000(200,$payload);
 }catch(InvalidArgumentException $e){
     vp3_extension_connect_status_json_v2000(422,['ok'=>false,'error'=>['code'=>'invalid_request','message'=>$e->getMessage()]]);

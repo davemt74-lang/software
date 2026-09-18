@@ -1,6 +1,6 @@
 const VP3_DEFAULT_BASE = 'https://vp3.me';
 const VP3_CONTRACT_VERSION = '1';
-const VP3_EXTENSION_VERSION = '20.90.0';
+const VP3_EXTENSION_VERSION = '21.00.0';
 const VP3_REQUESTED_CAPABILITIES = [
   'team.destinations.read',
   'team.share.create',
@@ -114,7 +114,7 @@ async function fetchJson(path, options = {}) {
 }
 
 async function clearRevokedConnection() {
-  await storage.remove(['device_id', 'device_credential', 'connected_user', 'approved_capabilities', 'pending_connection', 'session', 'last_share', 'pending_capture']);
+  await storage.remove(['device_id', 'device_credential', 'connected_user', 'approved_capabilities', 'pending_connection', 'session', 'last_share', 'pending_capture', 'release_state', 'compatibility']);
 }
 
 async function session(force = false) {
@@ -145,7 +145,7 @@ async function session(force = false) {
     }
     throw error;
   }
-  await storage.set({ session: payload.session });
+  await storage.set({ session: payload.session, release_state: payload.annotated || null, compatibility: payload.compatibility || null });
   return payload.session;
 }
 
@@ -379,7 +379,9 @@ async function pollConnect() {
       connected_user: payload.user || null,
       approved_capabilities: payload.capabilities || [],
       pending_connection: null,
-      session: null
+      session: null,
+      release_state: payload.annotated || null,
+      compatibility: payload.compatibility || null
     });
     const issued = await session(true);
     return { ...payload, session: issued };
@@ -648,8 +650,14 @@ async function disconnect() {
   return { ok: true };
 }
 
+async function releaseState() {
+  const payload = await authorizedFetch('/api/annotated-release-v2100.php?action=state', { method: 'GET' }, 'team.chat.read');
+  await storage.set({ release_state: payload.state || null, compatibility: payload.compatibility || null });
+  return payload;
+}
+
 async function publicState() {
-  const state = await storage.get(['base_url', 'installation_id', 'device_id', 'connected_user', 'approved_capabilities', 'pending_connection', 'session', 'last_share', 'pending_capture']);
+  const state = await storage.get(['base_url', 'installation_id', 'device_id', 'connected_user', 'approved_capabilities', 'pending_connection', 'session', 'last_share', 'pending_capture', 'release_state', 'compatibility']);
   return {
     base_url: cleanBaseUrl(state.base_url || VP3_DEFAULT_BASE),
     installation_id: state.installation_id || '',
@@ -659,7 +667,9 @@ async function publicState() {
     capabilities: state.session?.capabilities || state.approved_capabilities || [],
     pending_connection: state.pending_connection || null,
     last_share: state.last_share || null,
-    pending_capture: state.pending_capture || null
+    pending_capture: state.pending_capture || null,
+    release_state: state.release_state || null,
+    compatibility: state.compatibility || null
   };
 }
 
@@ -708,6 +718,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       case 'search_recent': return browserSearchGet('recent', {});
       case 'search_saved': return browserSearchGet('saved', {});
       case 'search_action': return browserSearchAction(message.action, message.payload || {});
+      case 'release_state': return releaseState();
       case 'media_data': return authorizedMediaDataUrl(String(message.path || ''));
       case 'share': return createRichShare(message);
       case 'share_action': return browserShareAction(message.action, message.browser_share_id, message.folder_id);
@@ -728,7 +739,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           }
         }
         if (!(await ensureOriginPermission(base_url))) throw new Error('VP3 site permission was not granted.');
-        await storage.set({ base_url, session: null });
+        await storage.set({ base_url, session: null, release_state: null, compatibility: null });
         return { base_url };
       }
       default: throw new Error('Unsupported Browser Companion request.');

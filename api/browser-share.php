@@ -41,6 +41,7 @@ $idempotencyKey=strtolower(trim((string)($_SERVER['HTTP_X_VP3_IDEMPOTENCY_KEY']?
 try{
     $session=vp3_extension_session_authenticate_v2001($pdo);
     if(!$session)throw new VP3BrowserShareExceptionV2010('authentication_required',401,'Browser Companion authentication is required.');
+    vp3_annotated_rate_limit_v2100($pdo,(int)($session['user_id']??0),'browser_share_create');
     $result=vp3_browser_share_create_v2011($pdo,$session,$input,$idempotencyKey);
     $status=!empty($result['idempotent_replay'])?200:201;
     vp3_browser_share_json_v2010($status,[
@@ -51,6 +52,7 @@ try{
         'idempotent_replay'=>(bool)$result['idempotent_replay'],
         'deep_link'=>null,
     ]);
+}catch(VP3AnnotatedRateLimitExceptionV2100 $e){header('Retry-After: '.$e->retryAfter);vp3_browser_share_json_v2010(429,['ok'=>false,'error'=>['code'=>'rate_limited','message'=>$e->getMessage()]]);
 }catch(VP3BrowserShareExceptionV2010 $e){
     vp3_browser_share_json_v2010($e->httpStatus,['ok'=>false,'error'=>['code'=>$e->apiCode,'message'=>$e->getMessage()]]);
 }catch(Throwable $e){
