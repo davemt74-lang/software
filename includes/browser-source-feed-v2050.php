@@ -326,7 +326,7 @@ function vp3_browser_source_following_flags_v2050(PDO $pdo,int $viewerUserId,arr
     return [
         'saved'=>(bool)$checks['saved'],
         'in_research'=>(bool)$checks['in_research'],
-        'unread'=>!(bool)$checks['read'],
+        'unread'=>$senderId!==$viewerUserId && !(bool)$checks['read'],
         'following_source'=>(bool)$checks['following_source'],
         'following_user'=>$senderId!==$viewerUserId && (bool)$checks['following_user'],
     ];
@@ -372,12 +372,13 @@ function vp3_browser_source_public_source_v2050(PDO $pdo,array $row,int $viewerU
         $stmt->execute([$viewerUserId,$sourceId]);
         $followed=(bool)$stmt->fetchColumn();
     }
+    $itemContext=array_key_exists('sender_user_id',$row);
     return [
         'id'=>(string)($row['source_public_id']??$row['public_id']??''),
         'url'=>(string)($row['source_normalized_url']??$row['normalized_url']??''),
         'canonical_url'=>(string)($row['source_canonical_url']??$row['canonical_url']??''),
-        'title'=>(string)($row['canonical_source_title']??$row['source_title']??''),
-        'domain'=>(string)($row['canonical_source_domain']??$row['source_domain']??''),
+        'title'=>$itemContext?(string)($row['source_title']??''):(string)($row['canonical_source_title']??$row['source_title']??''),
+        'domain'=>$itemContext?(string)($row['source_domain']??''):(string)($row['canonical_source_domain']??$row['source_domain']??''),
         'following'=>$followed,
         'page_url'=>url('/source.php?source='.rawurlencode((string)($row['source_public_id']??$row['public_id']??''))),
     ];
@@ -421,7 +422,9 @@ function vp3_browser_source_item_v2050(PDO $pdo,array $row,int $viewerUserId=0,b
     ];
     $base['media']=vp3_browser_source_media_v2050($pdo,(int)$row['id']);
     $base['comments']=$withComments?vp3_browser_source_comments_v2050($pdo,(int)$row['id']):[];
-    $base['comment_count']=count(vp3_browser_source_comments_v2050($pdo,(int)$row['id'],100));
+    $countStmt=$pdo->prepare('SELECT COUNT(*) FROM browser_share_comments_v2050 WHERE browser_share_id=? AND deleted_at IS NULL');
+    $countStmt->execute([(int)$row['id']]);
+    $base['comment_count']=(int)$countStmt->fetchColumn();
     $base['interactions']=$flags;
     $base['annotation_url']=url('/annotation.php?id='.rawurlencode((string)$row['public_id']));
     return $base;
@@ -487,8 +490,24 @@ function vp3_browser_source_this_page_v2050(PDO $pdo,int $viewerUserId,string $u
         $items[]=$item;
         if(count($items)>=$limit)break;
     }
+    $publicSource=vp3_browser_source_public_source_v2050($pdo,$source,$viewerUserId);
+    if(empty($items) && empty($publicSource['following'])){
+        $publicSource=[
+            'id'=>'',
+            'url'=>(string)$identity['normalized_url'],
+            'canonical_url'=>(string)$identity['canonical_url'],
+            'title'=>(string)$identity['title'],
+            'domain'=>(string)$identity['domain'],
+            'following'=>false,
+            'page_url'=>'',
+        ];
+    }elseif((string)$identity['title']!==''){
+        // The current viewer's live tab title is safer than mutable global Source
+        // metadata and avoids leaking another user's personalized page title.
+        $publicSource['title']=(string)$identity['title'];
+    }
     return [
-        'source'=>vp3_browser_source_public_source_v2050($pdo,$source,$viewerUserId),
+        'source'=>$publicSource,
         'items'=>$items,
         'next_cursor'=>$lastScanned>0?vp3_browser_source_cursor_encode_v2050($lastScanned):'',
         'has_more'=>$scannedCount<count($ids)||count($ids)===$scan,
@@ -536,7 +555,7 @@ function vp3_browser_source_follow_source_v2050(PDO $pdo,int $userId,string $sou
     $source=$sourcePublicId!==''?vp3_browser_source_row_by_public_id_v2050($pdo,$sourcePublicId):null;
     if(!$source){
         if(trim($url)==='')throw new RuntimeException('Source was not found.');
-        $source=vp3_browser_source_ensure_v2050($pdo,vp3_browser_source_identity_v2050($url,$canonicalUrl,$title));
+        $source=vp3_browser_source_ensure_v2050($pdo,vp3_browser_source_identity_v2050($url,$canonicalUrl,''));
     }
     if($follow){
         $pdo->prepare('INSERT IGNORE INTO browser_source_follows_v2050(user_id,source_id,created_at) VALUES(?,?,UTC_TIMESTAMP())')
@@ -647,7 +666,10 @@ function vp3_browser_source_feed_ensure_schema_v2050(?PDO $pdo=null): void
 {
     $pdo ??= db();
     if(!$pdo)throw new RuntimeException('Database connection is unavailable.');
-    if(vp3_browser_source_feed_schema_ready_v2050($pdo))return;
+    if(vp3_browser_source_feed_schema_ready_v2050($pdo)){
+        vp3_browser_source_backfill_v2050($pdo,20000);
+        return;
+    }
     if($pdo->inTransaction())throw new RuntimeException('Browser Source Feed schema must be installed before starting a transaction.');
     if(!vp3_browser_share_schema_ready_v2010($pdo))vp3_browser_share_ensure_schema_v2010($pdo);
 
