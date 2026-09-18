@@ -65,7 +65,6 @@ vp3_public_header('Live Rooms — VP3','Join real-time conversations around sour
         <label class="vp3-live-check"><input type="checkbox" name="cloak_mode" value="1"> Enter cloaked</label>
         <button class="vp3-btn primary" type="submit">Start Live Room →</button>
       </form>
-      <script>document.getElementById('liveScope')?.addEventListener('change',e=>{document.getElementById('liveTeamField').hidden=e.target.value!=='team';});</script>
     <?php endif; ?>
   </div>
 </section>
@@ -90,4 +89,5 @@ vp3_public_header('Live Rooms — VP3','Join real-time conversations around sour
   <?php endif; ?>
 </section>
 </main>
+<script src="<?=live_page_e_v2070(url('/live-directory-v2070.js'))?>"></script>
 <?php vp3_public_footer(); ?>
