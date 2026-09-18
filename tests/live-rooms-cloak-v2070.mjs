@@ -53,7 +53,9 @@ must(service.includes("throw new RuntimeException('That annotation is not visibl
 must(service.includes("Leave Cloak Mode before attaching an annotation."),'Cloak Mode must reject annotation attachments that can deanonymize the sender');
 must(service.includes("$scope=(string)($room['room_scope']??'');\n    if($scope==='public')"),'room access must evaluate scope before privileges');
 mustNot(service.includes("if((int)($room['owner_user_id']??0)===$userId && $userId>0)return true;"),'Team-room creators must not bypass live Team authorization');
-must(service.includes("vp3_live_room_require_v2070($pdo,$roomPublicId,$userId,true);\n    $pdo->prepare('UPDATE live_room_members_v2070 SET last_seen_at"),'heartbeats must fail closed after a room ends');
+must(service.includes("vp3_live_room_require_v2070($pdo,$roomPublicId,$userId,true);"),'heartbeats must fail closed after a room ends');
+must(service.includes("WHERE room_id=? AND user_id=? AND left_at IS NULL"),'heartbeat must not undo an explicit Live Room leave');
+must(service.includes("Join the Live Room before refreshing presence."),'heartbeat must require explicit rejoin after leave');
 must(service.includes("vp3_live_room_presence_count_v2070"),'lightweight room cards must still return accurate presence counts');
 
 must(api.includes("action==='source_rooms'"),'current-source Live discovery API missing');
