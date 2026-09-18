@@ -136,6 +136,7 @@ function vp3_cognitive_presentation_digest_items_v510(array $rows,int $idleMinut
                 $groups[$key]['body']=vp3_cognitive_text_v500($row['body']??'',420);
                 $groups[$key]['target_url']=vp3_cognitive_presentation_internal_url_v510((string)($row['target_url']??''));
                 $groups[$key]['created_at']=(string)($row['created_at']??'');
+            if(function_exists('vp3_cognitive_cards_notification_request_v520'))$groups[$key]['card_request']=vp3_cognitive_cards_notification_request_v520($row);
             }
         }
     }

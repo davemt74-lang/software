@@ -364,8 +364,39 @@ function vp3_cognitive_card_normalize_v500(array $card,array $request): array
         'summary'=>vp3_cognitive_text_v500($card['summary']??'',1200),
         'timestamp'=>vp3_cognitive_text_v500($card['timestamp']??'',64),
         'metadata'=>is_array($card['metadata']??null)?vp3_cognitive_sanitize_value_v500($card['metadata']):[],
+        'badges'=>[],
+        'facts'=>[],
+        'sections'=>[],
+        'media'=>[],
         'actions'=>[],
     ];
+    foreach(array_slice((array)($card['badges']??[]),0,8) as $badge){
+        $value=vp3_cognitive_text_v500($badge,80);
+        if($value!=='')$out['badges'][]=$value;
+    }
+    foreach(array_slice((array)($card['facts']??[]),0,10) as $fact){
+        if(!is_array($fact))continue;
+        $label=vp3_cognitive_text_v500($fact['label']??'',80);
+        $value=vp3_cognitive_text_v500($fact['value']??'',240);
+        if($label!==''&&$value!=='')$out['facts'][]=['label'=>$label,'value'=>$value];
+    }
+    foreach(array_slice((array)($card['sections']??[]),0,8) as $section){
+        if(!is_array($section))continue;
+        $label=vp3_cognitive_text_v500($section['label']??'',80);
+        $text=vp3_cognitive_text_v500($section['text']??'',1600);
+        $items=[];
+        foreach(array_slice((array)($section['items']??[]),0,12) as $item){
+            $item=vp3_cognitive_text_v500($item,300);if($item!=='')$items[]=$item;
+        }
+        if($label!==''||$text!==''||$items)$out['sections'][]=['label'=>$label,'text'=>$text,'items'=>$items];
+    }
+    foreach(array_slice((array)($card['media']??[]),0,4) as $media){
+        if(!is_array($media))continue;
+        $kind=in_array((string)($media['kind']??''),['image','audio','video'],true)?(string)$media['kind']:'';
+        $url=trim((string)($media['url']??''));
+        if($kind===''||$url===''||!str_starts_with($url,'/')||str_starts_with($url,'//'))continue;
+        $out['media'][]=['kind'=>$kind,'url'=>mb_strimwidth($url,0,500,''),'label'=>vp3_cognitive_text_v500($media['label']??'',100)];
+    }
     foreach(array_slice((array)($card['actions']??[]),0,VP3_COGNITIVE_CARD_MAX_ACTIONS_V500) as $action){
         if(!is_array($action))continue;
         $normalized=vp3_cognitive_card_action_v500($action);
