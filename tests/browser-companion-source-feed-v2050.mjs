@@ -46,12 +46,18 @@ for(const table of [
 must(service.includes("str_starts_with($key,'utm_')"),'URL normalization must remove UTM tracking parameters');
 must(service.includes("'fbclid'=>true"),'URL normalization must remove common click trackers');
 must(service.includes('if(hash_equals($pageComparable,$canonicalComparable))$preferred=$canonical;'),'page-controlled canonicals must not alias unrelated origins');
+must(service.includes('Malformed page-controlled canonical metadata must not make a valid'),'malformed canonical metadata must fail safely to the current page URL');
 must(service.includes("['private','team','public']"),'Private/Team/Public publication policy missing');
 must(service.includes("$base['conversation_id']=0"),'publication-only viewers must not receive original conversation IDs');
+must(service.includes("if(empty($items) && empty($publicSource['following']))"),'This Page must not reveal persisted Source existence to unauthorized non-followers');
+must(service.includes("vp3_browser_source_identity_v2050($url,$canonicalUrl,'')"),'private Source follows must not persist personalized page-title metadata');
+must(service.includes("'unread'=>$senderId!==$viewerUserId"),'authors must not see their own annotations as unread');
+must(service.includes("SELECT COUNT(*) FROM browser_share_comments_v2050"),'comment counts must remain exact beyond the rendered comment page');
 must(service.includes("vp3_human_team_authorized_v370"),'Team publication must use live server-side team authorization');
 must(service.includes("Legacy Phase 4/5 Browser Shares"),'legacy Browser Share authorization/backfill boundary missing');
 must(service.includes("page_text_sha256"),'source version basis missing');
 must(service.includes("vp3_browser_source_backfill_v2050"),'Phase 4/5 canonical Source backfill missing');
+must(service.includes("if(vp3_browser_source_feed_schema_ready_v2050($pdo)){"),'upgrade reruns must continue incomplete legacy Source backfill');
 must(service.includes("$scannedCount<count($ids)||count($ids)===$scan"),'feed cursors must preserve additional authorized items beyond the first page');
 
 must(api.includes("action==='this_page'"),'This Page API missing');
@@ -70,6 +76,7 @@ must(upgrade.includes("vp3_browser_source_feed_schema_ready_v2050()"),'upgrade r
 must(upgrade.includes("vp3_browser_source_feed_ensure_schema_v2050();"),'upgrade installer missing Phase 6');
 
 must(sourcePage.includes('vp3_browser_source_this_page_v2050'),'website Source page must use canonical This Page service');
+must(sourcePage.includes("feed['items'][0]['source_identity']['title']"),'public Source page title must come from an authorized pinned annotation when available');
 must(annotationPage.includes('vp3_browser_source_item_v2050'),'annotation detail must use canonical source item');
 must(annotationPage.includes('vp3_browser_source_comment_v2050'),'website annotation comments must use canonical comment service');
 
