@@ -50,6 +50,11 @@ must(service.includes("if((string)$room['room_scope']==='public')return $visibil
 must(service.includes("$visibility==='team'&&(int)($share['team_owner_user_id']??0)===(int)($room['team_owner_user_id']??0)"),'Team rooms must require same-Team annotation visibility');
 mustNot(service.includes('vp3_browser_source_publish_v2050('),'Live Rooms must never republish annotations');
 must(service.includes("throw new RuntimeException('That annotation is not visible to everyone who can enter this Live Room.')"),'incompatible annotation shares must fail closed');
+must(service.includes("Leave Cloak Mode before attaching an annotation."),'Cloak Mode must reject annotation attachments that can deanonymize the sender');
+must(service.includes("$scope=(string)($room['room_scope']??'');\n    if($scope==='public')"),'room access must evaluate scope before privileges');
+mustNot(service.includes("if((int)($room['owner_user_id']??0)===$userId && $userId>0)return true;"),'Team-room creators must not bypass live Team authorization');
+must(service.includes("vp3_live_room_require_v2070($pdo,$roomPublicId,$userId,true);\n    $pdo->prepare('UPDATE live_room_members_v2070 SET last_seen_at"),'heartbeats must fail closed after a room ends');
+must(service.includes("vp3_live_room_presence_count_v2070"),'lightweight room cards must still return accurate presence counts');
 
 must(api.includes("action==='source_rooms'"),'current-source Live discovery API missing');
 must(api.includes("action==='poll'"),'Live message polling API missing');
