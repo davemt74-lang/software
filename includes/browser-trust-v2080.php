@@ -114,12 +114,22 @@ function vp3_browser_trust_notifications_v2080(PDO $pdo,int $userId,int $limit=5
 {
     if($userId<1)throw new RuntimeException('Sign in to view notifications.');
     $limit=max(1,min(100,$limit));
-    $stmt=$pdo->prepare("SELECT * FROM browser_notifications_v2080 WHERE user_id=? ORDER BY id DESC LIMIT {$limit}");
+    $stmt=$pdo->prepare("SELECT * FROM browser_notifications_v2080 WHERE user_id=? AND dismissed_at IS NULL ORDER BY id DESC LIMIT {$limit}");
     $stmt->execute([$userId]);
     $items=array_map('vp3_browser_trust_notification_public_v2080',$stmt->fetchAll(PDO::FETCH_ASSOC)?:[]);
-    $count=$pdo->prepare('SELECT COUNT(*) FROM browser_notifications_v2080 WHERE user_id=? AND is_read=0');
+    $count=$pdo->prepare('SELECT COUNT(*) FROM browser_notifications_v2080 WHERE user_id=? AND is_read=0 AND dismissed_at IS NULL');
     $count->execute([$userId]);
     return ['items'=>$items,'unread'=>(int)$count->fetchColumn()];
+}
+
+function vp3_browser_trust_sync_canonical_read_v2080(PDO $pdo,int $userId,int $notificationId=0,bool $all=false): void
+{
+    if(!table_exists('notifications')||$userId<1)return;
+    if($all){
+        $pdo->prepare("UPDATE notifications SET is_read=1,read_at=COALESCE(read_at,UTC_TIMESTAMP()) WHERE user_id=? AND source_type='browser_phase9'")->execute([$userId]);
+    }elseif($notificationId>0){
+        $pdo->prepare("UPDATE notifications SET is_read=1,read_at=COALESCE(read_at,UTC_TIMESTAMP()) WHERE user_id=? AND source_type='browser_phase9' AND source_id=?")->execute([$userId,$notificationId]);
+    }
 }
 
 function vp3_browser_trust_mark_notification_v2080(PDO $pdo,int $userId,int $notificationId=0,bool $all=false): array
@@ -130,6 +140,15 @@ function vp3_browser_trust_mark_notification_v2080(PDO $pdo,int $userId,int $not
     }elseif($notificationId>0){
         $pdo->prepare('UPDATE browser_notifications_v2080 SET is_read=1,read_at=COALESCE(read_at,UTC_TIMESTAMP()) WHERE id=? AND user_id=?')->execute([$notificationId,$userId]);
     }
+    vp3_browser_trust_sync_canonical_read_v2080($pdo,$userId,$notificationId,$all);
+    return vp3_browser_trust_notifications_v2080($pdo,$userId,50);
+}
+
+function vp3_browser_trust_dismiss_notification_v2080(PDO $pdo,int $userId,int $notificationId): array
+{
+    if($userId<1||$notificationId<1)throw new InvalidArgumentException('Choose a notification to dismiss.');
+    $pdo->prepare('UPDATE browser_notifications_v2080 SET is_read=1,read_at=COALESCE(read_at,UTC_TIMESTAMP()),dismissed_at=COALESCE(dismissed_at,UTC_TIMESTAMP()) WHERE id=? AND user_id=?')->execute([$notificationId,$userId]);
+    vp3_browser_trust_sync_canonical_read_v2080($pdo,$userId,$notificationId,false);
     return vp3_browser_trust_notifications_v2080($pdo,$userId,50);
 }
 
@@ -717,6 +736,7 @@ function vp3_browser_trust_ensure_schema_v2080(?PDO $pdo=null): void
       target_url VARCHAR(500) NOT NULL DEFAULT '',
       is_read TINYINT(1) NOT NULL DEFAULT 0,
       read_at DATETIME NULL,
+      dismissed_at DATETIME NULL,
       created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       UNIQUE KEY uq_browser_notification_event (user_id,event_key),
       INDEX idx_browser_notification_user (user_id,is_read,id),

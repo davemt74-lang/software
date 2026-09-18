@@ -78,6 +78,10 @@ try{
         vp3_browser_trust_api_cap_v2080($auth,'team.chat.read');
         vp3_browser_trust_api_json_v2080(200,['ok'=>true,'notifications'=>vp3_browser_trust_mark_notification_v2080($pdo,$userId,max(0,(int)($input['notification_id']??0)),!empty($input['all']))]);
     }
+    if($action==='notification_dismiss'){
+        vp3_browser_trust_api_cap_v2080($auth,'team.chat.read');
+        vp3_browser_trust_api_json_v2080(200,['ok'=>true,'notifications'=>vp3_browser_trust_dismiss_notification_v2080($pdo,$userId,max(0,(int)($input['notification_id']??0)))]);
+    }
     if($action==='preference'){
         vp3_browser_trust_api_cap_v2080($auth,'team.chat.read');
         vp3_browser_trust_api_json_v2080(200,['ok'=>true]+vp3_browser_trust_set_preference_v2080($pdo,$userId,trim((string)($input['type']??'')),!empty($input['enabled'])));

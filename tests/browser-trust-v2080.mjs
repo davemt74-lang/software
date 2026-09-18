@@ -35,6 +35,8 @@ must(service.includes('vp3_browser_trust_compare_change_v2080'),'source change v
 must(service.includes('vp3_browser_trust_version_annotations_v2080'),'version comparison must show only authorized annotations pinned to each version');
 must(service.includes('UNIQUE KEY uq_browser_change_transition'),'source change events must dedupe identical transitions');
 must(service.includes('UNIQUE KEY uq_browser_notification_event'),'Phase 9 notifications must be deduplicated');
+must(service.includes('dismissed_at DATETIME NULL'),'Phase 9 notification dismissal state missing');
+must(service.includes('vp3_browser_trust_sync_canonical_read_v2080'),'Chrome read/dismiss state must sync to canonical VP3 notifications');
 must(service.includes("browser_source_follows_v2050 WHERE source_id=?"),'source change notification fanout must target source followers');
 must(service.includes("create_notification($userId,'browser_'.$type"),'Phase 9 alerts must bridge into canonical VP3 notifications');
 must(service.includes("'claim-created:'"),'new visible claims must notify authorized source followers');
@@ -54,7 +56,7 @@ must(service.includes('vp3_browser_trust_claim_access_v2080'),'claim reports mus
 mustNot(service.includes('UPDATE browser_shares_v2010 SET deleted_at'),'basic moderation must not destructively hide annotations');
 mustNot(service.includes('UPDATE live_room_messages_v2070 SET deleted_at'),'basic moderation must not destructively hide Live messages');
 
-for(const action of ['observe_source','notifications','source_compare','source_history','claims_for_source','claim_create','claim_status','report_create','preference','notification_read']){
+for(const action of ['observe_source','notifications','source_compare','source_history','claims_for_source','claim_create','claim_status','report_create','preference','notification_read','notification_dismiss']){
   must(api.includes(action),'Phase 9 API missing '+action);
 }
 must(api.includes('vp3_extension_session_authenticate_v2001'),'Phase 9 extension API must use canonical bearer auth');
@@ -79,6 +81,7 @@ must(background.includes("case 'trust_notifications'"),'notification transport m
 must(background.includes("case 'trust_claims'"),'claims transport missing');
 must(background.includes("case 'trust_action'"),'Phase 9 action transport missing');
 must(panelJs.includes("setView('alerts')"),'Alerts tab navigation missing');
+must(panelJs.includes("notification_dismiss"),'sidebar notification dismiss action missing');
 must(panelJs.includes("trustAction('claim_create'"),'sidebar claim filing missing');
 must(panelJs.includes("target_type:'annotation'"),'sidebar annotation reporting missing');
 must(panelJs.includes("target_type:'comment'"),'sidebar comment reporting missing');
