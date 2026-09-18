@@ -67,6 +67,10 @@ try{
             $projectId=trim((string)($_GET['project_id']??''));
             vp3_research_api_json_v2060(200,['ok'=>true]+vp3_research_project_bundle_v2060($pdo,$projectId,$userId));
         }
+        if($action==='placements'){
+            $shareId=trim((string)($_GET['browser_share_id']??''));
+            vp3_research_api_json_v2060(200,['ok'=>true,'context'=>vp3_research_share_context_v2060($pdo,$userId,$shareId)]);
+        }
         if($action==='report'){
             $report=vp3_research_report_row_v2060($pdo,trim((string)($_GET['report_id']??'')));
             if(!$report)vp3_research_api_json_v2060(404,['ok'=>false,'error'=>['code'=>'not_found','message'=>'Report was not found.']]);
