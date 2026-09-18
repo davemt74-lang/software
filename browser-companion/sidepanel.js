@@ -9,7 +9,8 @@ const ui={};
 'mediaEnd','mediaClipHint','removeMediaBtn','recordCommentaryBtn','commentaryStatus','commentaryPreview','commentaryAudio','commentaryMeta',
 'removeCommentaryBtn','visibilitySelect','visibilityTeamField','visibilityTeamSelect','destinationSelect','shareNote','shareBtn','successCard',
 'shareResultText','shareMediaResult','askAgentBtn','saveKnowledgeBtn','createTaskBtn','openSourceBtn','openMessagesBtn','thisPageFeed',
-'thisPageEmpty','thisPageCount','loadMoreThisPageBtn','followingFeed','followingEmpty','loadMoreFollowingBtn','refreshFollowingBtn','notice'
+'thisPageEmpty','thisPageCount','loadMoreThisPageBtn','followingFeed','followingEmpty','loadMoreFollowingBtn','refreshFollowingBtn',
+'researchDialog','closeResearchDialogBtn','researchPlacements','researchProjectSelect','researchProjectNote','researchProjectTags','researchInboxBtn','researchAddBtn','newResearchProjectTitle','createResearchProjectBtn','openResearchHubBtn','notice'
 ].forEach(id=>ui[id]=$(id));
 
 const CLIP_MAX_SECONDS = 90;
@@ -18,6 +19,7 @@ const MAX_CLIP=CLIP_MAX_SECONDS,MAX_COMMENTARY=COMMENTARY_MAX_BYTES;
 let state=null,capture=null,destinations=null,lastShare=null,currentSource=null;
 let screenshotCapture=null,mediaReference=null,commentaryCapture=null,recorder=null,stream=null,recordTimer=null,recordStarted=0,pollTimer=null,pageTimer=null;
 let thisCursor='',followingCursor='',thisBusy=false,followingBusy=false,activeView='this_page';
+let researchShareId='',researchContextData=null;
 
 function msg(type,data){
   return new Promise((resolve,reject)=>chrome.runtime.sendMessage(Object.assign({type:type},data||{}),r=>{
@@ -79,6 +81,40 @@ function renderLast(x){
 }
 async function loadDestinations(){const p=await msg('destinations');if(state&&Array.isArray(p&&p.capabilities))state.capabilities=p.capabilities;renderDestinations(p);}
 function sourceAction(action,payload){return msg('source_action',{action:action,payload:payload||{}});}
+function researchAction(action,payload){return msg('research_action',{action:action,payload:payload||{}});}
+function renderResearchContext(context){
+  researchContextData=context||null;
+  const placements=Array.isArray(context&&context.placements)?context.placements:[];
+  ui.researchPlacements.replaceChildren();
+  if(placements.length){
+    ui.researchPlacements.hidden=false;
+    placements.forEach(p=>ui.researchPlacements.append(el('div','research-placement','Already in '+String(p.project_title||'Research project'))));
+  }else ui.researchPlacements.hidden=true;
+  const assigned=new Set(placements.map(p=>String(p.project_id||'')));
+  ui.researchProjectSelect.replaceChildren(new Option('Choose project…',''));
+  const projects=Array.isArray(context&&context.projects)?context.projects:[];
+  projects.forEach(p=>{
+    const option=new Option(String(p.title||'Research project')+(assigned.has(String(p.id))?' · already added':''),String(p.id||''));
+    if(assigned.has(String(p.id)))option.disabled=true;
+    ui.researchProjectSelect.append(option);
+  });
+  const canWrite=caps().has('knowledge.write');
+  ui.researchProjectSelect.disabled=!canWrite||projects.length===0;
+  ui.researchAddBtn.disabled=!canWrite||!ui.researchProjectSelect.value;
+  ui.researchInboxBtn.disabled=!canWrite||Boolean(context&&context.in_inbox);
+  ui.researchInboxBtn.textContent=context&&context.in_inbox?'Already in Inbox':'Save to Inbox';
+  ui.createResearchProjectBtn.disabled=!canWrite;
+}
+async function openResearchDialog(browserShareId){
+  researchShareId=String(browserShareId||'');researchContextData=null;
+  if(!researchShareId)return;
+  ui.researchProjectNote.value='';ui.researchProjectTags.value='';ui.newResearchProjectTitle.value='';
+  ui.researchProjectSelect.replaceChildren(new Option('Loading projects…',''));ui.researchProjectSelect.disabled=true;
+  ui.researchPlacements.hidden=true;ui.researchAddBtn.disabled=true;ui.researchInboxBtn.disabled=true;
+  if(!ui.researchDialog.open)ui.researchDialog.showModal();
+  try{renderResearchContext(await msg('research_context',{browser_share_id:researchShareId}));}
+  catch(e){ui.researchDialog.close();await fail(e);}
+}
 function setView(v){activeView=v;const page=v==='this_page';ui.thisPageView.hidden=!page;ui.followingView.hidden=page;ui.thisPageTab.classList.toggle('active',page);ui.followingTab.classList.toggle('active',!page);if(!page)loadFollowing(true).catch(fail);}
 function sourceHead(feed){currentSource=(feed&&feed.source)||null;ui.sourceMeta.hidden=!(capture&&capture.available);ui.sourceStatus.textContent=currentSource&&currentSource.id?'Recognized source':'New source';ui.followCurrentSourceBtn.textContent=currentSource&&currentSource.following?'Unfollow source':'Follow source';ui.openSourcePageBtn.hidden=!(currentSource&&currentSource.page_url);}
 function el(tag,cls,text){const x=document.createElement(tag);if(cls)x.className=cls;x.textContent=String(text||'');return x;}
@@ -121,7 +157,8 @@ async function feedClick(e){
   try{
     if(a==='reply'){const input=c.querySelector('.comment-compose input');input.dataset.parentId=b.dataset.commentId||'';input.placeholder='Reply…';input.focus();return;}
     if(a==='comment'){const input=c.querySelector('.comment-compose input'),body=input.value.trim();if(!body)return;await sourceAction('comment',{browser_share_id:id,body:body,parent_id:input.dataset.parentId||''});return reload();}
-    if(a==='save'||a==='research'){await sourceAction(a,{browser_share_id:id,enabled:!b.classList.contains('active')});return reload();}
+    if(a==='save'){await sourceAction('save',{browser_share_id:id,enabled:!b.classList.contains('active')});return reload();}
+    if(a==='research'){await openResearchDialog(id);return;}
     if(a==='follow_source'){await sourceAction('follow_source',{source_id:i.source_identity&&i.source_identity.id||'',follow:!b.classList.contains('active')});return reload();}
     if(a==='follow_user'){await sourceAction('follow_user',{user_id:Number(b.dataset.userId||0),follow:!b.classList.contains('active')});return reload();}
     if(a==='read'){await sourceAction('read',{browser_share_id:id});return reload();}
@@ -147,7 +184,13 @@ async function lastAction(a,label){if(!lastShare||!lastShare.browser_share)retur
 ui.askAgentBtn.onclick=()=>lastAction('ask_agent','Opened in VP3.');ui.saveKnowledgeBtn.onclick=()=>lastAction('save_knowledge','Saved to Knowledge.');ui.createTaskBtn.onclick=()=>lastAction('create_task','Task created.');
 ui.openSourceBtn.onclick=()=>{const u=http(lastShare&&lastShare.source_url);if(u)msg('open_url',{url:u});};ui.openMessagesBtn.onclick=()=>{if(lastShare&&lastShare.chat_message)msg('open_url',{url:absolute('/messages.php?conversation_id='+Number(lastShare.chat_message.conversation_id))});};
 ui.followCurrentSourceBtn.onclick=async()=>{if(!capture)return;try{const follow=!(currentSource&&currentSource.following),r=await sourceAction('follow_source',{source_id:currentSource&&currentSource.id||'',url:capture.source_url,canonical_url:capture.canonical_url,title:capture.title,follow:follow});currentSource=r.source;sourceHead({source:r.source});note(follow?'Source followed.':'Source unfollowed.','success');}catch(e){fail(e);}};
-ui.openSourcePageBtn.onclick=()=>{if(currentSource&&currentSource.page_url)msg('open_url',{url:absolute(currentSource.page_url)});};ui.thisPageFeed.onclick=feedClick;ui.followingFeed.onclick=feedClick;ui.loadMoreThisPageBtn.onclick=()=>loadThis(false).catch(fail);ui.loadMoreFollowingBtn.onclick=()=>loadFollowing(false).catch(fail);
+ui.openSourcePageBtn.onclick=()=>{if(currentSource&&currentSource.page_url)msg('open_url',{url:absolute(currentSource.page_url)});};
+ui.researchProjectSelect.onchange=()=>{ui.researchAddBtn.disabled=!caps().has('knowledge.write')||!ui.researchProjectSelect.value;};
+ui.researchInboxBtn.onclick=async()=>{if(!researchShareId)return;busy(ui.researchInboxBtn,true,'Saving…');try{await sourceAction('research',{browser_share_id:researchShareId,enabled:true});ui.researchDialog.close();note('Saved to Research Inbox.','success');await reload();}catch(e){await fail(e);}finally{busy(ui.researchInboxBtn,false);}};
+ui.researchAddBtn.onclick=async()=>{const projectId=String(ui.researchProjectSelect.value||'');if(!researchShareId||!projectId)return;busy(ui.researchAddBtn,true,'Adding…');try{await researchAction('assign',{project_id:projectId,browser_share_id:researchShareId,note:ui.researchProjectNote.value,tags:ui.researchProjectTags.value});ui.researchDialog.close();note('Added to Research project.','success');await reload();}catch(e){await fail(e);}finally{busy(ui.researchAddBtn,false);}};
+ui.createResearchProjectBtn.onclick=async()=>{const title=String(ui.newResearchProjectTitle.value||'').trim();if(!researchShareId||!title)return note('Enter a project title.','error');busy(ui.createResearchProjectBtn,true,'Creating…');try{const created=await researchAction('create_project',{title:title,description:''});const projectId=String(created&&created.project&&created.project.id||'');if(!projectId)throw new Error('Research project could not be created.');await researchAction('assign',{project_id:projectId,browser_share_id:researchShareId,note:ui.researchProjectNote.value,tags:ui.researchProjectTags.value});ui.researchDialog.close();note('Project created and annotation added.','success');await reload();}catch(e){await fail(e);}finally{busy(ui.createResearchProjectBtn,false);}};
+ui.openResearchHubBtn.onclick=()=>{const url=researchContextData&&researchContextData.research_url;if(url)msg('open_url',{url:absolute(url)});};
+ui.thisPageFeed.onclick=feedClick;ui.followingFeed.onclick=feedClick;ui.loadMoreThisPageBtn.onclick=()=>loadThis(false).catch(fail);ui.loadMoreFollowingBtn.onclick=()=>loadFollowing(false).catch(fail);
 const io=new IntersectionObserver(es=>es.forEach(e=>{if(!e.isIntersecting||e.target.hidden)return;if(e.target===ui.loadMoreThisPageBtn)loadThis(false).catch(fail);if(e.target===ui.loadMoreFollowingBtn)loadFollowing(false).catch(fail);}),{rootMargin:'120px'});io.observe(ui.loadMoreThisPageBtn);io.observe(ui.loadMoreFollowingBtn);
 function pageWatch(){clearInterval(pageTimer);let u=capture&&capture.source_url||'';pageTimer=setInterval(async()=>{if(!state||!state.connected||activeView!=='this_page')return;try{const x=await msg('tab_identity');if(x.source_url&&x.source_url!==u){u=x.source_url;await refreshCapture(true);}}catch(e){}},2000);}
 window.onbeforeunload=()=>{clearInterval(pageTimer);clearInterval(pollTimer);stream&&stream.getTracks().forEach(t=>t.stop());};
