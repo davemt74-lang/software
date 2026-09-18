@@ -3,14 +3,15 @@ const $=id=>document.getElementById(id);
 const ui={};
 [
 'connectionState','connectControls','pendingControls','shareWorkspace','deviceName','connectBtn','checkConnectionBtn','settingsBtn',
-'thisPageTab','followingTab','thisPageView','followingView','refreshCaptureBtn','pageTitle','pageHost','sourceMeta','sourceStatus',
+'thisPageTab','followingTab','liveTab','thisPageView','followingView','liveView','refreshCaptureBtn','pageTitle','pageHost','sourceMeta','sourceStatus',
 'followCurrentSourceBtn','openSourcePageBtn','selectedText','selectionCount','captureSummary','captureScreenshotBtn','screenshotPreview',
 'screenshotImage','screenshotMeta','removeScreenshotBtn','captureMediaBtn','mediaDetectedText','mediaPreview','mediaPreviewTitle','mediaStart',
 'mediaEnd','mediaClipHint','removeMediaBtn','recordCommentaryBtn','commentaryStatus','commentaryPreview','commentaryAudio','commentaryMeta',
 'removeCommentaryBtn','visibilitySelect','visibilityTeamField','visibilityTeamSelect','destinationSelect','shareNote','shareBtn','successCard',
 'shareResultText','shareMediaResult','askAgentBtn','saveKnowledgeBtn','createTaskBtn','openSourceBtn','openMessagesBtn','thisPageFeed',
 'thisPageEmpty','thisPageCount','loadMoreThisPageBtn','followingFeed','followingEmpty','loadMoreFollowingBtn','refreshFollowingBtn',
-'researchDialog','closeResearchDialogBtn','researchPlacements','researchProjectSelect','researchProjectNote','researchProjectTags','researchInboxBtn','researchAddBtn','newResearchProjectTitle','createResearchProjectBtn','openResearchHubBtn','notice'
+'researchDialog','closeResearchDialogBtn','researchPlacements','researchProjectSelect','researchProjectNote','researchProjectTags','researchInboxBtn','researchAddBtn','newResearchProjectTitle','createResearchProjectBtn','openResearchHubBtn',
+'refreshLiveBtn','liveSourceTitle','liveSourceHost','liveRoomTitle','liveScope','liveTeamField','liveTeamSelect','liveAllowCloak','liveEnterCloaked','startLiveRoomBtn','liveDirectory','liveRoomCount','liveRoomsEmpty','liveRoomsList','liveRoomPanel','joinedLiveTitle','joinedLiveMeta','openLiveRoomBtn','liveCloakBtn','leaveLiveRoomBtn','endLiveRoomBtn','liveParticipants','liveMessages','liveMessageInput','sendLiveMessageBtn','notice'
 ].forEach(id=>ui[id]=$(id));
 
 const CLIP_MAX_SECONDS = 90;
@@ -20,6 +21,7 @@ let state=null,capture=null,destinations=null,lastShare=null,currentSource=null;
 let screenshotCapture=null,mediaReference=null,commentaryCapture=null,recorder=null,stream=null,recordTimer=null,recordStarted=0,pollTimer=null,pageTimer=null;
 let thisCursor='',followingCursor='',thisBusy=false,followingBusy=false,activeView='this_page';
 let researchShareId='',researchContextData=null;
+let liveRoomsData=[],liveRoom=null,liveCursor=0,livePollTimer=null,liveHeartbeatTimer=null,liveBusy=false;
 
 function msg(type,data){
   return new Promise((resolve,reject)=>chrome.runtime.sendMessage(Object.assign({type:type},data||{}),r=>{
@@ -48,12 +50,16 @@ function renderCaps(){
   ui.openSourceBtn.disabled=!shared||!http(lastShare&&lastShare.source_url);ui.openMessagesBtn.disabled=!shared;
   ui.captureScreenshotBtn.disabled=!(capture&&capture.available);
   ui.shareBtn.disabled=!(state&&state.connected&&c.has('team.share.create')&&capture&&capture.available&&hasCapture()&&destination()&&teamOk&&!(recorder&&recorder.state==='recording'));
+  const liveTeamOk=ui.liveScope.value!=='team'||Number(ui.liveTeamSelect.value)>0;
+  ui.startLiveRoomBtn.disabled=!(state&&state.connected&&c.has('team.share.create')&&capture&&capture.available&&liveTeamOk);
+  ui.sendLiveMessageBtn.disabled=!(liveRoom&&liveRoom.joined&&liveRoom.status==='active'&&c.has('team.share.create'));
   summary();
 }
 function clearRich(){screenshotCapture=mediaReference=commentaryCapture=null;ui.screenshotPreview.hidden=ui.mediaPreview.hidden=ui.commentaryPreview.hidden=true;ui.screenshotImage.removeAttribute('src');ui.commentaryAudio.removeAttribute('src');renderCaps();}
 function renderCapture(x){
   const prev=capture&&capture.source_url;capture=x||{available:false};if(prev&&capture.source_url&&prev!==capture.source_url)clearRich();
   ui.pageTitle.textContent=capture.title||(capture.available?'Untitled page':'No shareable page');ui.pageHost.textContent=host(capture.source_url)||capture.reason||'';
+  ui.liveSourceTitle.textContent=capture.title||(capture.available?'Untitled page':'No shareable page');ui.liveSourceHost.textContent=host(capture.source_url)||capture.reason||'';
   ui.selectedText.value=capture.selected_text||'';ui.selectionCount.textContent=new TextEncoder().encode(ui.selectedText.value).length.toLocaleString()+' / 32,768 bytes';
   const m=capture.media;ui.captureMediaBtn.hidden=!(m&&m.kind&&http(m.source_media_url));if(!ui.captureMediaBtn.hidden)ui.mediaDetectedText.textContent=(m.kind==='youtube_clip'?'YouTube':m.source_media_kind==='audio'?'Audio':'Video')+' at '+sec(m.current_time)+(m.duration?' of '+sec(m.duration):'');
   renderCaps();
@@ -65,7 +71,8 @@ function addOptions(label,rows){
 function renderDestinations(p){
   destinations=(p&&p.destinations)||{recent:[],teams:[],conversations:[]};ui.destinationSelect.replaceChildren(new Option('Choose a team or conversation',''));
   addOptions('Recent',destinations.recent);addOptions('Teams',destinations.teams);addOptions('Conversations',destinations.conversations);
-  ui.visibilityTeamSelect.replaceChildren(new Option('Choose team…',''));(destinations.teams||[]).forEach(r=>{if(r.kind==='team_general'&&Number(r.id))ui.visibilityTeamSelect.append(new Option(String(r.name||'Team').replace(/ · General$/,''),String(Number(r.id))));});renderCaps();
+  ui.visibilityTeamSelect.replaceChildren(new Option('Choose team…',''));ui.liveTeamSelect.replaceChildren(new Option('Choose team…',''));
+  (destinations.teams||[]).forEach(r=>{if(r.kind==='team_general'&&Number(r.id)){const label=String(r.name||'Team').replace(/ · General$/,'');ui.visibilityTeamSelect.append(new Option(label,String(Number(r.id))));ui.liveTeamSelect.append(new Option(label,String(Number(r.id))));}});renderCaps();
 }
 function renderConnection(x){
   state=x;ui.connectControls.hidden=ui.pendingControls.hidden=ui.shareWorkspace.hidden=true;
@@ -115,7 +122,70 @@ async function openResearchDialog(browserShareId){
   try{renderResearchContext(await msg('research_context',{browser_share_id:researchShareId}));}
   catch(e){ui.researchDialog.close();await fail(e);}
 }
-function setView(v){activeView=v;const page=v==='this_page';ui.thisPageView.hidden=!page;ui.followingView.hidden=page;ui.thisPageTab.classList.toggle('active',page);ui.followingTab.classList.toggle('active',!page);if(!page)loadFollowing(true).catch(fail);}
+
+function liveAction(action,payload){return msg('live_action',{action:action,payload:payload||{}});}
+function liveRoomRow(r){
+  const row=el('div','live-room-row',''),head=el('div','live-room-row-head',''),left=el('div','','');
+  left.append(el('div','live-room-title',r.title||'Live Room'),el('div','live-room-meta',(r.scope==='team'?'Team':'Public')+' · '+Number(r.participant_count||0)+' present'+(r.allow_cloak?' · Cloak available':'')));head.append(left);
+  const status=el('span','pill',r.joined?'Joined':'Live');head.append(status);row.append(head);
+  const actions=el('div','live-room-row-actions',''),open=act(r.joined?'Open':'Join','live_room_select');open.dataset.roomId=String(r.id||'');actions.append(open);
+  const page=act('Open page','live_room_page');page.dataset.roomUrl=String(r.url||'');actions.append(page);row.append(actions);return row;
+}
+function appendLiveMessage(m){
+  if(!m||!m.id||ui.liveMessages.querySelector('[data-live-message-id="'+CSS.escape(String(m.id))+'"]'))return;
+  const box=el('div','live-message'+(m.sender&&m.sender.is_self?' self':''),'');box.dataset.liveMessageId=String(m.id);
+  const head=el('div','live-message-head','');head.append(el('span','live-message-name',m.sender&&m.sender.name||'Participant'));
+  if(m.sender&&m.sender.cloaked)head.append(el('span','','Cloaked'));head.append(el('span','',date(m.created_at)));box.append(head);
+  if(m.body)box.append(el('div','live-message-body',m.body));
+  if(m.annotation){const a=el('div','live-message-annotation','');a.append(el('strong','',m.annotation.source_identity&&m.annotation.source_identity.title||'Shared annotation'));if(m.annotation.selection)a.append(el('div','',m.annotation.selection));box.append(a);}
+  ui.liveMessages.append(box);ui.liveMessages.scrollTop=ui.liveMessages.scrollHeight;
+}
+function renderJoinedLiveRoom(r,resetMessages=false){
+  liveRoom=r||null;ui.liveRoomPanel.hidden=!liveRoom;
+  if(!liveRoom)return renderCaps();
+  ui.joinedLiveTitle.textContent=liveRoom.title||'Live Room';ui.joinedLiveMeta.textContent=(liveRoom.scope==='team'?'Team':'Public')+' · '+Number(liveRoom.participant_count||0)+' present';
+  ui.liveCloakBtn.hidden=!liveRoom.joined||!liveRoom.allow_cloak||liveRoom.status!=='active';ui.liveCloakBtn.textContent=liveRoom.cloak_mode?'Leave Cloak':'Cloak Mode';
+  ui.leaveLiveRoomBtn.hidden=!liveRoom.joined;ui.endLiveRoomBtn.hidden=!liveRoom.is_owner||liveRoom.status!=='active';
+  ui.liveParticipants.replaceChildren();(liveRoom.participants||[]).forEach(p=>{const chip=el('span','live-person-chip'+(p.cloaked?' cloaked':''),p.name+(p.is_self?' · You':''));ui.liveParticipants.append(chip);});
+  if(resetMessages){ui.liveMessages.replaceChildren();liveCursor=0;}renderCaps();
+}
+async function loadLiveRooms(){
+  if(!state||!state.connected||!capture||!capture.available||liveBusy)return;liveBusy=true;
+  try{
+    const payload=await msg('live_rooms',{capture:capture});liveRoomsData=Array.isArray(payload&&payload.rooms)?payload.rooms:[];
+    ui.liveRoomsList.replaceChildren();liveRoomsData.forEach(r=>ui.liveRoomsList.append(liveRoomRow(r)));ui.liveRoomsEmpty.hidden=liveRoomsData.length>0;ui.liveRoomCount.textContent=liveRoomsData.length?String(liveRoomsData.length):'';
+    const joined=liveRoomsData.find(r=>r.joined);
+    if(joined&&(!liveRoom||liveRoom.id!==joined.id)){renderJoinedLiveRoom(joined,true);startLiveTimers();await pollLiveRoom();}
+    else if(liveRoom){const fresh=liveRoomsData.find(r=>r.id===liveRoom.id);if(fresh)renderJoinedLiveRoom({...liveRoom,...fresh},false);}
+  }finally{liveBusy=false;}
+}
+async function pollLiveRoom(){
+  if(!liveRoom||!liveRoom.id||activeView!=='live')return;
+  try{const p=await msg('live_poll',{room:liveRoom.id,after:liveCursor});renderJoinedLiveRoom(p.room,false);(p.messages||[]).forEach(appendLiveMessage);liveCursor=Math.max(liveCursor,Number(p.cursor||0));}catch(e){}
+}
+async function heartbeatLiveRoom(){
+  if(!liveRoom||!liveRoom.joined||liveRoom.status!=='active')return;
+  try{await liveAction('heartbeat',{room:liveRoom.id});}catch(e){}
+}
+function startLiveTimers(){
+  clearInterval(livePollTimer);clearInterval(liveHeartbeatTimer);
+  livePollTimer=setInterval(pollLiveRoom,2000);liveHeartbeatTimer=setInterval(heartbeatLiveRoom,15000);heartbeatLiveRoom();
+}
+async function selectLiveRoom(roomId){
+  const found=liveRoomsData.find(r=>String(r.id)===String(roomId));if(!found)return;
+  if(!found.joined){
+    const joined=await liveAction('join',{room:found.id,cloak_mode:Boolean(ui.liveEnterCloaked.checked)});
+    renderJoinedLiveRoom(joined.room,true);note('Joined Live Room.','success');
+  }else renderJoinedLiveRoom(found,true);
+  startLiveTimers();await pollLiveRoom();await loadLiveRooms();
+}
+function setView(v){
+  activeView=v;const page=v==='this_page',following=v==='following',live=v==='live';
+  ui.thisPageView.hidden=!page;ui.followingView.hidden=!following;ui.liveView.hidden=!live;
+  ui.thisPageTab.classList.toggle('active',page);ui.followingTab.classList.toggle('active',following);ui.liveTab.classList.toggle('active',live);
+  ui.thisPageTab.setAttribute('aria-selected',String(page));ui.followingTab.setAttribute('aria-selected',String(following));ui.liveTab.setAttribute('aria-selected',String(live));
+  if(following)loadFollowing(true).catch(fail);if(live)loadLiveRooms().then(pollLiveRoom).catch(fail);
+}
 function sourceHead(feed){currentSource=(feed&&feed.source)||null;ui.sourceMeta.hidden=!(capture&&capture.available);ui.sourceStatus.textContent=currentSource&&currentSource.id?'Recognized source':'New source';ui.followCurrentSourceBtn.textContent=currentSource&&currentSource.following?'Unfollow source':'Follow source';ui.openSourcePageBtn.hidden=!(currentSource&&currentSource.page_url);}
 function el(tag,cls,text){const x=document.createElement(tag);if(cls)x.className=cls;x.textContent=String(text||'');return x;}
 function act(label,a,on){const b=document.createElement('button');b.type='button';b.textContent=label;b.dataset.action=a;if(on)b.classList.add('active');return b;}
@@ -128,7 +198,7 @@ function card(item){
   const badges=el('div','feed-badges',''),vis=String((item.publication&&item.publication.visibility)||'legacy');badges.append(el('span','pill',vis==='legacy'?'Shared':vis.charAt(0).toUpperCase()+vis.slice(1)));
   if(item.source_version&&item.source_version.badge)badges.append(el('span','pill'+(item.source_version.changed?' changed':''),item.source_version.badge));if(item.interactions&&item.interactions.unread)badges.append(el('span','pill unread','Unread'));c.append(badges);
   if(Array.isArray(item.media)&&item.media.length){const media=el('div','feed-media','');item.media.forEach(a=>{if(a.kind==='screenshot'&&a.content_url){const im=document.createElement('img');im.alt='Annotation screenshot';im.dataset.mediaPath=a.content_url;media.append(im);}else if(a.kind==='commentary_audio'&&a.content_url){const au=document.createElement('audio');au.controls=true;au.dataset.mediaPath=a.content_url;media.append(au);}else if(['youtube_clip','audio_reference','video_reference'].includes(a.kind))media.append(el('div','media-ref',String(a.kind).replace(/_/g,' ')+' · '+sec(a.metadata&&a.metadata.start_seconds)+'–'+sec(a.metadata&&a.metadata.end_seconds)));});c.append(media);}
-  const actions=el('div','feed-actions','');actions.append(act(item.interactions&&item.interactions.saved?'Saved':'Save','save',item.interactions&&item.interactions.saved),act(item.interactions&&item.interactions.in_research?'Research Inbox':'Research','research',item.interactions&&item.interactions.in_research),act('Knowledge','knowledge'),act('Ask VP3','ask'),act('Share with Team','share_team'),act(item.source_identity&&item.source_identity.following?'Following source':'Follow source','follow_source',item.source_identity&&item.source_identity.following),act('Open context','context'));if(item.interactions&&item.interactions.unread)actions.append(act('Mark read','read'));c.append(actions);
+  const actions=el('div','feed-actions','');actions.append(act(item.interactions&&item.interactions.saved?'Saved':'Save','save',item.interactions&&item.interactions.saved),act(item.interactions&&item.interactions.in_research?'Research Inbox':'Research','research',item.interactions&&item.interactions.in_research),act('Knowledge','knowledge'),act('Ask VP3','ask'),act('Share with Team','share_team'),act('Live','live'),act(item.source_identity&&item.source_identity.following?'Following source':'Follow source','follow_source',item.source_identity&&item.source_identity.following),act('Open context','context'));if(item.interactions&&item.interactions.unread)actions.append(act('Mark read','read'));c.append(actions);
   const comments=el('div','comments','');(item.comments||[]).forEach(cm=>{const box=el('div','comment'+(cm.parent_id?' reply':''),''),h=el('div','comment-head','');h.append(el('span','comment-author',(cm.user&&cm.user.name)||'VP3 user'),el('span','comment-time',date(cm.created_at)));const r=act('Reply','reply');r.dataset.commentId=cm.id||'';h.append(r);box.append(h,el('div','comment-body',cm.body||''));comments.append(box);});
   const compose=el('div','comment-compose',''),input=document.createElement('input');input.type='text';input.maxLength=4000;input.placeholder='Comment…';input.dataset.parentId='';compose.append(input,act('Send','comment'));comments.append(compose);c.append(comments);return c;
 }
@@ -163,17 +233,19 @@ async function feedClick(e){
     if(a==='follow_user'){await sourceAction('follow_user',{user_id:Number(b.dataset.userId||0),follow:!b.classList.contains('active')});return reload();}
     if(a==='read'){await sourceAction('read',{browser_share_id:id});return reload();}
     if(a==='share_team'){const d=destination();if(!d)return note('Choose a Team or conversation under Deliver to first.','error');await sourceAction('share_team',{browser_share_id:id,destination:d});return note('Annotation shared to VP3 Messages.','success');}
+    if(a==='live'){if(!liveRoom||!liveRoom.joined){setView('live');return note('Join or start a Live Room on this source first.','error');}await liveAction('send',{room:liveRoom.id,body:'',browser_share_id:id});await pollLiveRoom();return note('Annotation shared to Live Room.','success');}
     if(a==='knowledge'){await msg('share_action',{action:'save_knowledge',browser_share_id:id});return note('Saved to Knowledge.','success');}
     if(a==='ask'){const r=await msg('share_action',{action:'ask_agent',browser_share_id:id});if(r&&r.handoff_url)await msg('open_url',{url:r.handoff_url});return;}
     if(a==='context'&&i.annotation_url)await msg('open_url',{url:absolute(i.annotation_url)});
   }catch(err){fail(err);}
 }
-function reload(){return activeView==='following'?loadFollowing(true):loadThis(true);}
+function reload(){return activeView==='following'?loadFollowing(true):activeView==='live'?loadLiveRooms():loadThis(true);}
 
 ui.connectBtn.onclick=async()=>{busy(ui.connectBtn,true,'Opening VP3…');try{await msg('connect',{device_name:ui.deviceName.value.trim()||'Chrome Browser'});await refreshState();startPoll();}catch(e){fail(e);}finally{busy(ui.connectBtn,false);}};
 ui.checkConnectionBtn.onclick=()=>msg('poll_connect').then(refreshState).catch(fail);ui.settingsBtn.onclick=()=>chrome.runtime.openOptionsPage();
-ui.thisPageTab.onclick=()=>setView('this_page');ui.followingTab.onclick=()=>setView('following');ui.refreshCaptureBtn.onclick=()=>refreshCapture(true).catch(fail);ui.refreshFollowingBtn.onclick=()=>loadFollowing(true).catch(fail);
+ui.thisPageTab.onclick=()=>setView('this_page');ui.followingTab.onclick=()=>setView('following');ui.liveTab.onclick=()=>setView('live');ui.refreshCaptureBtn.onclick=()=>refreshCapture(true).catch(fail);ui.refreshFollowingBtn.onclick=()=>loadFollowing(true).catch(fail);ui.refreshLiveBtn.onclick=()=>loadLiveRooms().catch(fail);
 ui.visibilitySelect.onchange=()=>{ui.visibilityTeamField.hidden=ui.visibilitySelect.value!=='team';renderCaps();};ui.visibilityTeamSelect.onchange=renderCaps;ui.destinationSelect.onchange=renderCaps;
+ui.liveScope.onchange=()=>{ui.liveTeamField.hidden=ui.liveScope.value!=='team';renderCaps();};ui.liveTeamSelect.onchange=renderCaps;
 ui.captureScreenshotBtn.onclick=async()=>{busy(ui.captureScreenshotBtn,true,'Select region on page…');try{const r=await message('capture_region');if(r.cancelled)return;screenshotCapture=r;ui.screenshotImage.src=r.data_url;ui.screenshotMeta.textContent=Number(r.metadata&&r.metadata.width||0)+' × '+Number(r.metadata&&r.metadata.height||0)+' px';ui.screenshotPreview.hidden=false;}catch(e){fail(e);}finally{busy(ui.captureScreenshotBtn,false);renderCaps();}};
 ui.removeScreenshotBtn.onclick=()=>{screenshotCapture=null;ui.screenshotPreview.hidden=true;renderCaps();};
 ui.captureMediaBtn.onclick=()=>{const m=capture&&capture.media;if(!m||!http(m.source_media_url))return;const s=Math.max(0,Number(m.current_time||0)),d=Math.max(0,Number(m.duration||0)),e=d?Math.min(d,s+30):s+30;mediaReference={kind:m.kind,metadata:{source_media_url:m.source_media_url,source_media_title:String(m.source_media_title||capture.title||'').slice(0,512),source_media_kind:m.source_media_kind||'',duration_seconds:d,start_seconds:s,end_seconds:e}};ui.mediaPreviewTitle.textContent=m.kind==='youtube_clip'?'YouTube moment':m.source_media_kind==='audio'?'Audio moment':'Video moment';ui.mediaStart.value=s;ui.mediaEnd.value=e;ui.mediaPreview.hidden=false;clip('end');renderCaps();};
@@ -190,8 +262,16 @@ ui.researchInboxBtn.onclick=async()=>{if(!researchShareId)return;busy(ui.researc
 ui.researchAddBtn.onclick=async()=>{const projectId=String(ui.researchProjectSelect.value||'');if(!researchShareId||!projectId)return;busy(ui.researchAddBtn,true,'Adding…');try{await researchAction('assign',{project_id:projectId,browser_share_id:researchShareId,note:ui.researchProjectNote.value,tags:ui.researchProjectTags.value});ui.researchDialog.close();note('Added to Research project.','success');await reload();}catch(e){await fail(e);}finally{busy(ui.researchAddBtn,false);}};
 ui.createResearchProjectBtn.onclick=async()=>{const title=String(ui.newResearchProjectTitle.value||'').trim();if(!researchShareId||!title)return note('Enter a project title.','error');busy(ui.createResearchProjectBtn,true,'Creating…');try{const created=await researchAction('create_project',{title:title,description:''});const projectId=String(created&&created.project&&created.project.id||'');if(!projectId)throw new Error('Research project could not be created.');await researchAction('assign',{project_id:projectId,browser_share_id:researchShareId,note:ui.researchProjectNote.value,tags:ui.researchProjectTags.value});ui.researchDialog.close();note('Project created and annotation added.','success');await reload();}catch(e){await fail(e);}finally{busy(ui.createResearchProjectBtn,false);}};
 ui.openResearchHubBtn.onclick=()=>{const url=researchContextData&&researchContextData.research_url;if(url)msg('open_url',{url:absolute(url)});};
+ui.startLiveRoomBtn.onclick=async()=>{if(!capture||!capture.available)return;busy(ui.startLiveRoomBtn,true,'Starting…');try{const r=await liveAction('create',{title:ui.liveRoomTitle.value,scope:ui.liveScope.value,team_id:Number(ui.liveTeamSelect.value||0),allow_cloak:Boolean(ui.liveAllowCloak.checked),cloak_mode:Boolean(ui.liveEnterCloaked.checked),url:capture.source_url,canonical_url:capture.canonical_url,source_title:capture.title});ui.liveRoomTitle.value='';renderJoinedLiveRoom(r.room,true);startLiveTimers();await loadLiveRooms();await pollLiveRoom();note('Live Room started.','success');}catch(e){await fail(e);}finally{busy(ui.startLiveRoomBtn,false);}};
+ui.liveRoomsList.onclick=async e=>{const b=e.target.closest('button[data-action]');if(!b)return;try{if(b.dataset.action==='live_room_select')await selectLiveRoom(b.dataset.roomId);if(b.dataset.action==='live_room_page'&&b.dataset.roomUrl)await msg('open_url',{url:absolute(b.dataset.roomUrl)});}catch(err){await fail(err);}};
+ui.liveCloakBtn.onclick=async()=>{if(!liveRoom)return;try{await liveAction('cloak',{room:liveRoom.id,enabled:!liveRoom.cloak_mode});await pollLiveRoom();await loadLiveRooms();note(liveRoom.cloak_mode?'Cloak Mode active.':'Cloak Mode off.','success');}catch(e){await fail(e);}};
+ui.leaveLiveRoomBtn.onclick=async()=>{if(!liveRoom)return;try{await liveAction('leave',{room:liveRoom.id});clearInterval(livePollTimer);clearInterval(liveHeartbeatTimer);liveRoom=null;liveCursor=0;ui.liveRoomPanel.hidden=true;await loadLiveRooms();note('Left Live Room.','success');}catch(e){await fail(e);}};
+ui.endLiveRoomBtn.onclick=async()=>{if(!liveRoom||!confirm('End this Live Room?'))return;try{const r=await liveAction('end',{room:liveRoom.id});renderJoinedLiveRoom(r.room,false);clearInterval(liveHeartbeatTimer);await loadLiveRooms();note('Live Room ended.','success');}catch(e){await fail(e);}};
+ui.openLiveRoomBtn.onclick=()=>{if(liveRoom&&liveRoom.url)msg('open_url',{url:absolute(liveRoom.url)});};
+ui.sendLiveMessageBtn.onclick=async()=>{const body=String(ui.liveMessageInput.value||'').trim();if(!liveRoom||!body)return;busy(ui.sendLiveMessageBtn,true,'Sending…');try{const r=await liveAction('send',{room:liveRoom.id,body:body});ui.liveMessageInput.value='';appendLiveMessage(r.message);liveCursor=Math.max(liveCursor,Number(r.message&&r.message.cursor||0));}catch(e){await fail(e);}finally{busy(ui.sendLiveMessageBtn,false);}};
+ui.liveMessageInput.onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();ui.sendLiveMessageBtn.click();}};
 ui.thisPageFeed.onclick=feedClick;ui.followingFeed.onclick=feedClick;ui.loadMoreThisPageBtn.onclick=()=>loadThis(false).catch(fail);ui.loadMoreFollowingBtn.onclick=()=>loadFollowing(false).catch(fail);
 const io=new IntersectionObserver(es=>es.forEach(e=>{if(!e.isIntersecting||e.target.hidden)return;if(e.target===ui.loadMoreThisPageBtn)loadThis(false).catch(fail);if(e.target===ui.loadMoreFollowingBtn)loadFollowing(false).catch(fail);}),{rootMargin:'120px'});io.observe(ui.loadMoreThisPageBtn);io.observe(ui.loadMoreFollowingBtn);
-function pageWatch(){clearInterval(pageTimer);let u=capture&&capture.source_url||'';pageTimer=setInterval(async()=>{if(!state||!state.connected||activeView!=='this_page')return;try{const x=await msg('tab_identity');if(x.source_url&&x.source_url!==u){u=x.source_url;await refreshCapture(true);}}catch(e){}},2000);}
-window.onbeforeunload=()=>{clearInterval(pageTimer);clearInterval(pollTimer);stream&&stream.getTracks().forEach(t=>t.stop());};
+function pageWatch(){clearInterval(pageTimer);let u=capture&&capture.source_url||'';pageTimer=setInterval(async()=>{if(!state||!state.connected||!['this_page','live'].includes(activeView))return;try{const x=await msg('tab_identity');if(x.source_url&&x.source_url!==u){u=x.source_url;await refreshCapture(activeView==='this_page');if(activeView==='live'){liveRoom=null;liveCursor=0;ui.liveRoomPanel.hidden=true;await loadLiveRooms();}}}catch(e){}},2000);}
+window.onbeforeunload=()=>{clearInterval(pageTimer);clearInterval(pollTimer);clearInterval(livePollTimer);clearInterval(liveHeartbeatTimer);stream&&stream.getTracks().forEach(t=>t.stop());};
 refreshState().then(pageWatch).catch(fail);
