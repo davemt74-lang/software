@@ -261,7 +261,11 @@ function vp3_research_members_v2060(PDO $pdo,array $project): array
       WHERE m.project_id=? ORDER BY FIELD(m.member_role,'admin','researcher','viewer'),u.display_name ASC");
     $stmt->execute([(int)$project['id']]);
     $rows=$stmt->fetchAll(PDO::FETCH_ASSOC)?:[];
-    array_unshift($rows,['user_id'=>(int)$project['owner_user_id'],'member_role'=>'owner','display_name'=>'Owner','created_at'=>(string)$project['created_at'],'updated_at'=>(string)$project['updated_at']]);
+    $ownerName='Owner';
+    $ownerStmt=$pdo->prepare('SELECT display_name FROM users WHERE id=? LIMIT 1');
+    $ownerStmt->execute([(int)$project['owner_user_id']]);
+    $ownerName=trim((string)($ownerStmt->fetchColumn()?:'Owner'))?:'Owner';
+    array_unshift($rows,['user_id'=>(int)$project['owner_user_id'],'member_role'=>'owner','display_name'=>$ownerName,'created_at'=>(string)$project['created_at'],'updated_at'=>(string)$project['updated_at']]);
     return array_map(static fn(array $r): array=>[
         'user_id'=>(int)$r['user_id'],'role'=>(string)$r['member_role'],'name'=>(string)$r['display_name'],
         'created_at'=>(string)$r['created_at'],'updated_at'=>(string)$r['updated_at'],
@@ -309,6 +313,21 @@ function vp3_research_assign_share_v2060(PDO $pdo,int $actorUserId,string $proje
     return vp3_research_item_public_v2060($pdo,$annotation,$actorUserId);
 }
 
+function vp3_research_share_authorized_v2060(PDO $pdo,string $browserSharePublicId,int $viewerUserId): bool
+{
+    if($viewerUserId<1||trim($browserSharePublicId)==='')return false;
+    $stmt=$pdo->prepare("SELECT DISTINCT p.id,p.owner_user_id,p.team_owner_user_id,p.deleted_at
+      FROM browser_shares_v2010 s
+      INNER JOIN research_project_items_v2060 i ON i.browser_share_id=s.id AND i.item_type='annotation' AND i.item_status='active'
+      INNER JOIN research_projects_v2060 p ON p.id=i.project_id AND p.deleted_at IS NULL
+      WHERE s.public_id=? AND s.deleted_at IS NULL");
+    $stmt->execute([trim($browserSharePublicId)]);
+    foreach($stmt->fetchAll(PDO::FETCH_ASSOC)?:[] as $project){
+        if(vp3_research_role_at_least_v2060(vp3_research_project_role_v2060($pdo,$project,$viewerUserId),'viewer'))return true;
+    }
+    return false;
+}
+
 function vp3_research_item_public_v2060(PDO $pdo,array $row,int $viewerUserId): array
 {
     $source=vp3_browser_source_row_by_public_id_v2050($pdo,(string)($row['source_public_id']??'')) ?: null;
@@ -323,7 +342,11 @@ function vp3_research_item_public_v2060(PDO $pdo,array $row,int $viewerUserId): 
     $annotation=null;
     if((string)$row['item_type']==='annotation'&&(int)($row['browser_share_id']??0)>0){
         $share=vp3_browser_source_share_row_by_id_v2050($pdo,(int)$row['browser_share_id']);
-        if($share&&vp3_browser_source_share_authorized_v2050($pdo,$share,$viewerUserId))$annotation=vp3_browser_source_item_v2050($pdo,$share,$viewerUserId,true);
+        if($share){
+            $phase6Authorized=vp3_browser_source_share_authorized_v2050($pdo,$share,$viewerUserId);
+            $projectAuthorized=vp3_research_share_authorized_v2060($pdo,(string)$share['public_id'],$viewerUserId);
+            if($phase6Authorized||$projectAuthorized)$annotation=vp3_browser_source_item_v2050($pdo,$share,$viewerUserId,false,$projectAuthorized&&!$phase6Authorized);
+        }
     }
     return [
         'id'=>(string)$row['public_id'],'type'=>(string)$row['item_type'],'status'=>(string)$row['item_status'],
@@ -675,7 +698,7 @@ function vp3_research_build_report_snapshot_v2060(PDO $pdo,array $project,array 
             foreach(vp3_research_finding_evidence_v2060($pdo,(int)$finding['id'],$actorUserId) as $ev){
                 $src=$ev['item']['source'];
                 $sourceIndex[(string)$src['id'].':'.(string)($src['version']['id']??'')]=$src;
-                $evidence[]=['role'=>$ev['role'],'note'=>$ev['note'],'source'=>$src];
+                $evidence[]=['role'=>$ev['role'],'source'=>$src];
             }
             $snapshot['findings'][]=[
                 'id'=>(string)$finding['public_id'],'title'=>(string)$finding['title'],'body'=>(string)$finding['body'],
