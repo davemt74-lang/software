@@ -68,6 +68,9 @@ must(service.includes("'redacted_to_source'=>true"),'incompatible annotation tex
 must(service.includes("if($visibility==='public')"),'public report access branch missing');
 must(service.includes("vp3_human_team_authorized_v370($pdo,$team,$viewerUserId)"),'Team reports must revalidate live Team access');
 must(service.includes("research_report_version_sources_v2060"),'normalized report Source provenance missing');
+must(service.includes("source_version_id BIGINT UNSIGNED NOT NULL"),'published provenance must require a pinned Source Version');
+must(service.includes("Research Source provenance requires a pinned Source Version."),'snapshot construction must fail closed without Source-Version provenance');
+must(service.includes("ON DELETE RESTRICT"),'published Source-Version provenance must not silently null on deletion');
 must(service.includes('vp3_research_reports_for_source_v2060'),'Source-to-published-report lookup missing');
 
 must(api.includes("action==='placements'"),'Browser Companion project-placement endpoint missing');
