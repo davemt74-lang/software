@@ -21,6 +21,8 @@ const annotationPage=read('annotation.php');
 must(manifest.manifest_version===3,'Phase 6 must remain Manifest V3');
 must(manifest.version==='20.50.0','Phase 6 extension version must be v20.50.0');
 must(background.includes("case 'this_page'"),'This Page transport missing');
+must(background.includes("case 'tab_identity'"),'lightweight active-tab identity transport missing');
+must(panelJs.includes("msg('tab_identity')"),'page navigation watch must use lightweight tab identity instead of rehashing page text');
 must(background.includes("case 'following'"),'Following transport missing');
 must(background.includes("case 'source_action'"),'source interaction transport missing');
 must(background.includes("case 'media_data'"),'authorized feed media proxy missing');
