@@ -57,6 +57,8 @@ must(service.includes("vp3_live_room_require_v2070($pdo,$roomPublicId,$userId,tr
 must(service.includes("WHERE room_id=? AND user_id=? AND left_at IS NULL"),'heartbeat must not undo an explicit Live Room leave');
 must(service.includes("Join the Live Room before refreshing presence."),'heartbeat must require explicit rejoin after leave');
 must(service.includes("vp3_live_room_presence_count_v2070"),'lightweight room cards must still return accurate presence counts');
+must(service.includes("$scope==='public'?$sourceTitleInput:''"),'Team Live Rooms must not promote personalized page titles into canonical Source metadata');
+must(service.includes("'title'=>''"),'Live Room payloads must not expose mutable canonical Source titles');
 
 must(api.includes("action==='source_rooms'"),'current-source Live discovery API missing');
 must(api.includes("action==='poll'"),'Live message polling API missing');
@@ -97,6 +99,7 @@ must(roomPage.includes('VP3 still retains your account identity server-side'),'C
 
 must(sourcePage.includes('vp3_live_room_rooms_for_source_v2070'),'canonical Source pages must surface authorized Live Rooms');
 must(sourcePage.includes("empty($publishedResearch) && empty($liveRooms)"),'public Source existence must include authorized Live Rooms without leaking private follows');
+must(sourcePage.includes("$pageTitle=(string)$source['source_domain'];"),'Source pages must not use mutable global Source titles before viewer-authorized evidence resolves');
 
 must(bootstrap.includes("live-rooms-v2070.php"),'canonical bootstrap must load Live Rooms');
 must(upgrade.includes("vp3_live_room_schema_ready_v2070()"),'upgrade readiness must include Live Rooms');
