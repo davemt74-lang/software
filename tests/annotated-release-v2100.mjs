@@ -53,6 +53,7 @@ must(service.includes('function vp3_annotated_extension_compatibility_v2100'),'e
 must(connectRequest.includes("extension_update_required"),'connect flow must reject unsupported extensions');
 must(extensionSession.includes("extension_update_required"),'session issuance must reject unsupported extensions');
 must(connectStatus.includes("'annotated'=>")||connectStatus.includes("$payload['annotated']"),'connect completion must return canonical Annotated state');
+must(extensionSession.includes("$session['user']['id']"),'session sync must resolve the VP3 identity from the canonical session user payload');
 must(extensionSession.includes("'annotated'=>$annotated"),'session issue must return canonical Annotated state');
 must(background.includes("release_state: payload.annotated || null"),'Browser Companion must cache same-account Annotated state');
 must(background.includes("'/api/annotated-release-v2100.php?action=state'"),'Browser Companion must be able to refresh canonical release state');

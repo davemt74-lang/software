@@ -43,7 +43,7 @@ try{
         (string)($input['installation_id']??''),
         (string)($input['device_credential']??'')
     );
-    $userId=(int)($session['user_id']??0);
+    $userId=(int)($session['user']['id']??0);
     vp3_annotated_mark_milestone_safe_v2100($pdo,$userId,'extension_connected',['surface'=>'session']);
     $annotated=$userId>0&&vp3_annotated_schema_ready_v2100($pdo)?vp3_annotated_user_state_v2100($pdo,$userId):['available'=>false];
     vp3_extension_session_json_v2000(200,['ok'=>true,'contract_version'=>1,'session'=>$session,'compatibility'=>$compatibility,'annotated'=>$annotated]);
