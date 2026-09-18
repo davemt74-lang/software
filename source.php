@@ -23,8 +23,11 @@ if(!$source){
 }else{
     $pageTitle=trim((string)$source['source_title']) ?: (string)$source['source_domain'];
     $feed=vp3_browser_source_this_page_v2050(
-        $pdo,$userId,(string)$source['normalized_url'],(string)$source['canonical_url'],(string)$source['source_title'],50,''
+        $pdo,$userId,(string)$source['normalized_url'],(string)$source['canonical_url'],'',50,''
     );
+    if(!empty($feed['items'][0]['source_identity']['title'])){
+        $pageTitle=(string)$feed['items'][0]['source_identity']['title'];
+    }
     // A private follow alone must not publish source metadata to anonymous web
     // visitors. Public source pages exist only when at least one annotation is
     // actually visible under the same server-side authorization rules.
