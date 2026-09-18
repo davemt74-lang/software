@@ -188,8 +188,16 @@ function vp3_live_room_create_v2070(PDO $pdo,int $userId,array $input): array
 
     $source=null;
     $url=trim((string)($input['url']??''));
+    $sourceTitleInput=trim((string)($input['source_title']??''));
     if($url!==''){
-        $identity=vp3_live_room_source_identity_v2070($url,trim((string)($input['canonical_url']??'')),trim((string)($input['source_title']??'')));
+        // Team-room page titles can contain account-specific page metadata.
+        // Preserve that only in the room title; do not promote it into the
+        // canonical Source record unless the room itself is Public.
+        $identity=vp3_live_room_source_identity_v2070(
+            $url,
+            trim((string)($input['canonical_url']??'')),
+            $scope==='public'?$sourceTitleInput:''
+        );
         $source=vp3_browser_source_ensure_v2050($pdo,$identity);
     }
 
@@ -203,7 +211,7 @@ function vp3_live_room_create_v2070(PDO $pdo,int $userId,array $input): array
     }
 
     $title=trim(preg_replace('/\s+/u',' ',(string)($input['title']??''))??'');
-    if($title==='')$title='Live'.($source&&!empty($source['source_title'])?': '.(string)$source['source_title']:' Room');
+    if($title==='')$title=$sourceTitleInput!==''?'Live: '.$sourceTitleInput:'Live Room';
     if(mb_strlen($title)>180)$title=mb_substr($title,0,180);
     $allowCloak=array_key_exists('allow_cloak',$input)?!empty($input['allow_cloak']):true;
     $publicId=vp3_live_room_uuid_v2070();
