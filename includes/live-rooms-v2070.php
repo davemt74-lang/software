@@ -217,14 +217,24 @@ function vp3_live_room_create_v2070(PDO $pdo,int $userId,array $input): array
     if($title==='')$title=$sourceTitleInput!==''?'Live: '.$sourceTitleInput:'Live Room';
     if(mb_strlen($title)>180)$title=mb_substr($title,0,180);
     $allowCloak=array_key_exists('allow_cloak',$input)?!empty($input['allow_cloak']):true;
+    $enterCloaked=!empty($input['cloak_mode']);
+    if($enterCloaked&&!$allowCloak)throw new InvalidArgumentException('Enable Cloak Mode for the room before entering cloaked.');
     $publicId=vp3_live_room_uuid_v2070();
-    $stmt=$pdo->prepare("INSERT INTO live_rooms_v2070(public_id,owner_user_id,team_owner_user_id,source_id,research_project_id,title,room_scope,room_status,allow_cloak,created_at,updated_at)
-      VALUES(?,?,?,?,?,?,?,'active',?,UTC_TIMESTAMP(),UTC_TIMESTAMP())");
-    $stmt->execute([$publicId,$userId,$teamId>0?$teamId:null,$source?(int)$source['id']:null,$projectId,$title,$scope,$allowCloak?1:0]);
+    $owns=!$pdo->inTransaction();if($owns)$pdo->beginTransaction();
+    try{
+        $stmt=$pdo->prepare("INSERT INTO live_rooms_v2070(public_id,owner_user_id,team_owner_user_id,source_id,research_project_id,title,room_scope,room_status,allow_cloak,created_at,updated_at)
+          VALUES(?,?,?,?,?,?,?,'active',?,UTC_TIMESTAMP(),UTC_TIMESTAMP())");
+        $stmt->execute([$publicId,$userId,$teamId>0?$teamId:null,$source?(int)$source['id']:null,$projectId,$title,$scope,$allowCloak?1:0]);
+        $room=vp3_live_room_row_v2070($pdo,$publicId);
+        if(!$room)throw new RuntimeException('Live Room could not be reloaded.');
+        vp3_live_room_join_v2070($pdo,$userId,$publicId,$enterCloaked);
+        if($owns)$pdo->commit();
+    }catch(Throwable $e){
+        if($owns&&$pdo->inTransaction())$pdo->rollBack();
+        throw $e;
+    }
     $room=vp3_live_room_row_v2070($pdo,$publicId);
     if(!$room)throw new RuntimeException('Live Room could not be reloaded.');
-    vp3_live_room_join_v2070($pdo,$userId,$publicId,!empty($input['cloak_mode']));
-    $room=vp3_live_room_row_v2070($pdo,$publicId)??$room;
     return vp3_live_room_public_v2070($pdo,$room,$userId,true);
 }
 
