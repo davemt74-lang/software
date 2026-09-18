@@ -77,8 +77,12 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Resolve extension version
+        id: extension_version
+        shell: bash
         run: |
-          EXT_VERSION="$(node -p "require('./browser-companion/manifest.json').version")"
+          EXT_VERSION="$(node -p 'require("./browser-companion/manifest.json").version')"
+          test -n "$EXT_VERSION"
+          echo "value=$EXT_VERSION" >> "$GITHUB_OUTPUT"
           echo "EXT_VERSION=$EXT_VERSION" >> "$GITHUB_ENV"
 
       - name: Build directly loadable extension ZIP
@@ -98,7 +102,7 @@ jobs:
       - name: Upload directly loadable Browser Companion
         uses: actions/upload-artifact@v4
         with:
-          name: vp3-browser-companion-v${{ env.EXT_VERSION }}
+          name: vp3-browser-companion-v${{ steps.extension_version.outputs.value }}
           path: |
             dist/vp3-browser-companion-v${{ env.EXT_VERSION }}.zip
             dist/vp3-browser-companion-v${{ env.EXT_VERSION }}.zip.sha256
