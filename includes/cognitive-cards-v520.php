@@ -164,12 +164,18 @@ function vp3_cognitive_cards_object_v520(PDO $pdo,array $user,string $namespace,
             return $row?['type'=>$type,'row'=>$row]:null;
         }
         if($type==='calendar_booking'){
-            if(!ctype_digit($id))return null;
-            $event=function_exists('user_calendar_event_v1300')?user_calendar_event_v1300($pdo,$uid,(int)$id):null;
-            if($event)return ['type'=>$type,'row'=>$event,'kind'=>'calendar'];
-            if(table_exists('agent_scheduling_bookings')){
+            $kind='';$numeric=$id;
+            if(str_contains($id,':'))[$kind,$numeric]=array_pad(explode(':',$id,2),2,'');
+            if(!ctype_digit($numeric))return null;
+            $numericId=(int)$numeric;
+            if($kind!=='booking'){
+                $event=function_exists('user_calendar_event_v1300')?user_calendar_event_v1300($pdo,$uid,$numericId):null;
+                if($event)return ['type'=>$type,'row'=>$event,'kind'=>'calendar'];
+                if($kind==='event')return null;
+            }
+            if($kind!=='event'&&table_exists('agent_scheduling_bookings')){
                 $stmt=$pdo->prepare('SELECT * FROM agent_scheduling_bookings WHERE id=? AND owner_user_id=? LIMIT 1');
-                $stmt->execute([(int)$id,$uid]);$booking=$stmt->fetch();
+                $stmt->execute([$numericId,$uid]);$booking=$stmt->fetch();
                 if($booking)return ['type'=>$type,'row'=>$booking,'kind'=>'booking'];
             }
             return null;
@@ -270,7 +276,9 @@ function vp3_cognitive_cards_card_v520(PDO $pdo,array $user,string $namespace,ar
         $out['badges'][]=(string)($row['visibility']??'');
         $out['actions'][]=vp3_cognitive_cards_action_v520('Open annotation','/annotation.php?id='.rawurlencode((string)($row['id']??$ref['id'])));
     }elseif($type==='source'){
-        $out['title']=(string)($row['source_title']??$row['source_domain']??'Source');$out['subtitle']=(string)($row['source_domain']??'Source');
+        // Source titles are intentionally not read from mutable global Source metadata.
+        // That field may originate from a different viewer's personalized capture.
+        $out['title']=(string)($row['source_domain']??'Source');$out['subtitle']='Source';
         $out['summary']=(string)($row['canonical_url']??$row['normalized_url']??'');$out['timestamp']=(string)($row['updated_at']??$row['created_at']??'');
         $out['actions'][]=vp3_cognitive_cards_action_v520('Open Source','/source.php?source='.rawurlencode((string)$row['public_id']));
     }elseif($type==='research'){
@@ -364,6 +372,119 @@ function vp3_cognitive_cards_notification_request_v520(array $row): ?array
     elseif($sourceId>0&&preg_match('/order|payment|refund|commerce/',$type.' '.$source)){$cardType='commerce_order';$objectId=(string)$sourceId;}
     if($cardType===''||$objectId==='')return null;
     return ['card_type'=>$cardType,'object_ref'=>vp3_cognitive_cards_ref_v520($cardType,$objectId),'display_mode'=>'compact'];
+}
+
+
+function vp3_cognitive_cards_chat_intent_v520(string $query): string
+{
+    $q=mb_strtolower(trim($query));
+    if($q===''||!preg_match('/\b(?:show|list|find|open|display|what|which|latest|recent|upcoming|my)\b/u',$q))return '';
+    $map=[
+        'recording'=>'/\b(?:recording|recordings|audio recordings?)\b/u',
+        'transcription'=>'/\b(?:transcript|transcripts|transcription|transcriptions)\b/u',
+        'calendar_booking'=>'/\b(?:booking|bookings|appointment|appointments|calendar|schedule|scheduled)\b/u',
+        'workflow'=>'/\b(?:workflow|workflows|agent work|work queue)\b/u',
+        'goal'=>'/\b(?:goal|goals|objectives?)\b/u',
+        'research'=>'/\b(?:research|research projects?)\b/u',
+        'commerce_order'=>'/\b(?:order|orders|purchases?|commerce)\b/u',
+        'claim'=>'/\b(?:claim|claims)\b/u',
+        'annotation'=>'/\b(?:annotation|annotations|web captures?|browser shares?)\b/u',
+        'live_room'=>'/\b(?:live room|live rooms)\b/u',
+        'knowledge'=>'/\b(?:knowledge|knowledge items?|saved knowledge)\b/u',
+        'contact'=>'/\b(?:contact|contacts|relationships?)\b/u',
+        'browser_companion'=>'/\b(?:browser companion|browser extension|connected browsers?|extension devices?)\b/u',
+        'homeserver'=>'/\b(?:homeserver|home server|local agent)\b/u',
+        'product'=>'/\b(?:product|products|store items?)\b/u',
+    ];
+    foreach($map as $type=>$pattern)if(preg_match($pattern,$q))return $type;
+    return '';
+}
+
+function vp3_cognitive_cards_chat_requests_v520(PDO $pdo,array $user,string $namespace,string $query,int $limit=8): array
+{
+    $type=vp3_cognitive_cards_chat_intent_v520($query);
+    if($type==='')return [];
+    $uid=(int)($user['id']??0);if($uid<1)return [];
+    $limit=max(1,min(12,$limit));$refs=[];
+    $add=static function(string $cardType,string|int $id,string $scope='personal') use(&$refs,$limit): void {
+        if(count($refs)>=$limit)return;
+        $key=$cardType.':'.(string)$id;
+        if(isset($refs[$key]))return;
+        $refs[$key]=[
+            'card_type'=>$cardType,
+            'object_ref'=>vp3_cognitive_cards_ref_v520($cardType,$id,$scope),
+            'display_mode'=>'standard',
+        ];
+    };
+
+    try{
+        if($type==='transcription'||$type==='recording'){
+            foreach((array)(function_exists('artist_listening_v172_list')?artist_listening_v172_list($user,$limit):[]) as $session){
+                $sid=(int)($session['id']??0);if($sid<1)continue;
+                if($type==='transcription'){$add('transcription',$sid);continue;}
+                foreach((array)($session['recordings']??[]) as $recording){
+                    $key=trim((string)($recording['key']??''));if($key!=='')$add('recording',$sid.':'.$key);
+                }
+            }
+        }elseif($type==='calendar_booking'){
+            $from=gmdate('Y-m-d H:i:s',time()-86400);
+            $to=gmdate('Y-m-d H:i:s',time()+180*86400);
+            foreach((array)(function_exists('user_calendar_events_v1300')?user_calendar_events_v1300($pdo,$user,$from,$to):[]) as $event){
+                $eid=(int)($event['id']??0);if($eid<1)continue;
+                $kind=(string)($event['kind']??'calendar');
+                $add('calendar_booking',($kind==='booking'?'booking:':'event:').$eid);
+            }
+        }elseif($type==='workflow'&&table_exists('agent_workflow_runs')){
+            $stmt=$pdo->prepare("SELECT id FROM agent_workflow_runs WHERE owner_user_id=? AND status<>'cancelled' ORDER BY updated_at DESC,id DESC LIMIT {$limit}");
+            $stmt->execute([$uid]);foreach($stmt->fetchAll()?:[] as $row)$add('workflow',(int)$row['id']);
+        }elseif($type==='goal'&&function_exists('agent_goal_list_v1710')){
+            foreach(array_slice(agent_goal_list_v1710($pdo,$user,false),0,$limit) as $state){
+                $gid=(int)($state['goal']['id']??0);if($gid>0)$add('goal',$gid);
+            }
+        }elseif($type==='research'&&function_exists('vp3_research_projects_for_user_v2060')){
+            foreach(array_slice(vp3_research_projects_for_user_v2060($pdo,$uid,false),0,$limit) as $project){
+                $id=trim((string)($project['id']??''));if($id!=='')$add('research',$id,(int)($project['team_id']??0)>0?'team':'personal');
+            }
+        }elseif($type==='commerce_order'&&function_exists('profile_commerce_orders_for_owner_v900')){
+            foreach(array_slice(profile_commerce_orders_for_owner_v900($pdo,$uid,$limit),0,$limit) as $order){
+                if((int)($order['id']??0)>0)$add('commerce_order',(int)$order['id']);
+            }
+        }elseif($type==='claim'&&function_exists('vp3_browser_trust_user_claims_v2080')){
+            foreach(array_slice(vp3_browser_trust_user_claims_v2080($pdo,$uid,$limit),0,$limit) as $claim){
+                $id=trim((string)($claim['id']??$claim['public_id']??''));if($id!=='')$add('claim',$id);
+            }
+        }elseif($type==='annotation'&&table_exists('browser_shares_v2010')){
+            $stmt=$pdo->prepare("SELECT public_id FROM browser_shares_v2010 WHERE sender_user_id=? AND deleted_at IS NULL ORDER BY created_at DESC,id DESC LIMIT {$limit}");
+            $stmt->execute([$uid]);foreach($stmt->fetchAll()?:[] as $row)$add('annotation',(string)$row['public_id']);
+        }elseif($type==='live_room'&&function_exists('vp3_live_room_list_v2070')){
+            $payload=vp3_live_room_list_v2070($pdo,$uid,$limit);
+            foreach(array_slice((array)($payload['rooms']??$payload),0,$limit) as $room){
+                $id=trim((string)($room['id']??$room['public_id']??''));if($id!=='')$add('live_room',$id);
+            }
+        }elseif($type==='knowledge'&&table_exists('knowledge_items')){
+            if(!function_exists('personal_capability_has_v242')||personal_capability_has_v242('personal_knowledge.access',$user)){
+                $stmt=$pdo->prepare("SELECT id FROM knowledge_items WHERE created_by_user_id=? AND knowledge_scope='personal' ORDER BY updated_at DESC,id DESC LIMIT {$limit}");
+                $stmt->execute([$uid]);foreach($stmt->fetchAll()?:[] as $row)$add('knowledge',(int)$row['id']);
+            }
+        }elseif($type==='contact'&&function_exists('profile_visitor_contact_list_v243')){
+            foreach(array_slice(profile_visitor_contact_list_v243($pdo,$uid,$limit),0,$limit) as $contact){
+                if((int)($contact['id']??0)>0)$add('contact',(int)$contact['id']);
+            }
+        }elseif($type==='browser_companion'&&function_exists('vp3_extension_devices_for_user_v2000')){
+            foreach(array_slice(vp3_extension_devices_for_user_v2000($pdo,$uid),0,$limit) as $device){
+                $id=trim((string)($device['public_id']??''));if($id!=='')$add('browser_companion',$id);
+            }
+        }elseif($type==='homeserver'){
+            if(function_exists('homeserver_vp3_connection')&&homeserver_vp3_connection($uid))$add('homeserver','self');
+        }elseif($type==='product'&&table_exists('agent_commerce_products_v800')){
+            $stmt=$pdo->prepare("SELECT id FROM agent_commerce_products_v800 WHERE owner_user_id=? ORDER BY updated_at DESC,id DESC LIMIT {$limit}");
+            $stmt->execute([$uid]);foreach($stmt->fetchAll()?:[] as $row)$add('product',(int)$row['id']);
+        }
+    }catch(Throwable $e){return [];}
+
+    // A direct Chat request still never trusts the list query as final authority:
+    // each returned card will be reauthorized again by vp3_cognitive_render_card_v500.
+    return array_values($refs);
 }
 
 function vp3_cognitive_register_cards_v520(): void
