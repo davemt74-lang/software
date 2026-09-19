@@ -12,6 +12,7 @@ const api=read('api/extension-notifications-v2140.php');
 const voice=read('api/extension-agent-voice-v2140.php');
 const bootstrap=read('includes/bootstrap.php');
 const upgrade=read('upgrade.php');
+const cognitivePresentation=read('includes/cognitive-presentation-v510.php');
 
 const p=String(manifest.version||'').split('.').map(Number);
 must(p.length===3&&(p[0]>21||(p[0]===21&&p[1]>=4)),'v21.40+ manifest version missing');
@@ -69,6 +70,12 @@ must(runtime.includes("'VP3 needs your attention'")&&runtime.includes("'Open VP3
   'sensitive lock-screen content must be minimal');
 must(runtime.includes("'voice_allowed'=>!empty($candidate['voice_allowed'])&&!$sensitive"),
   'sensitive notification voice must fail closed');
+must(cognitivePresentation.includes('function vp3_cognitive_presentation_voice_sensitive_v510'),
+  'canonical Cognitive Presentation must share the sensitive voice gate');
+must(cognitivePresentation.includes("if(vp3_cognitive_presentation_voice_sensitive_v510($row))return false;"),
+  'canonical Agent Voice must fail closed before attention/type eligibility');
+must(!cognitivePresentation.includes("order|payment|message|approval|workflow|security"),
+  'canonical Agent Voice type regex must not re-enable sensitive payment/security categories');
 must(runtime.includes("$safe=vp3_extension_notification_candidate_public_v2140($candidate);"),
   'delivery ledger must store the sanitized/redacted candidate');
 must(runtime.includes("vp3_extension_notification_context_terms_v2140"),'ephemeral page-related delivery scoring missing');
