@@ -35,8 +35,8 @@ must(background.includes("proactiveNotificationApi('voice_failed'"),'voice failu
 must(background.includes("proactiveNotificationApi('snooze'"),'notification snooze missing');
 must(background.includes("proactiveNotificationApi('dismiss'"),'notification dismiss missing');
 must(background.includes("proactiveNotificationApi('open'"),'canonical notification open flow missing');
-must(background.includes("activeVp3AgentTab()"),'active Agent conversation voice suppression missing');
-must(background.indexOf("if (await activeVp3AgentTab()) return false;") < background.indexOf("authorizedVoiceAudioDataUrl(candidate.event_key)"),
+must(background.includes("vp3AgentVoiceBusy()"),'active/audible VP3 Agent Voice suppression missing');
+must(background.indexOf("if (await vp3AgentVoiceBusy()) return false;") < background.indexOf("authorizedVoiceAudioDataUrl(candidate.event_key)"),
   'voice must be suppressed before premium audio is requested');
 must(background.includes("chrome.runtime.getContexts"),'offscreen document detection missing');
 must(background.includes("reasons:['AUDIO_PLAYBACK']"),'offscreen audio-only reason missing');
