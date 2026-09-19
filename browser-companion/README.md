@@ -1,6 +1,26 @@
-# VP3 Browser Companion v21.10
+# VP3 Browser Companion v21.20
 
 Chrome Manifest V3 companion for VP3 Browser Share and the Source Feed layer: This Page, Following, source/user follows, comments, read state, Private/Team/Public publishing, plus highlighted text, screenshot regions, source-media moments, and voice commentary.
+
+## v21.20 Agent Now / Cognitive Sidebar
+
+Browser Companion now opens on **Now**, a Chrome presentation of the same bounded VP3 Cognitive Feed used by Agent Chat.
+
+The extension does not calculate priorities, opportunities, meeting urgency, reminder relevance, or suggested actions. The VP3 server composes the feed from the canonical Cognitive Runtime and reauthorizes every Universal Display Card before returning it to Chrome.
+
+The Now feed can surface:
+
+- **Needs attention** — approvals, failures, live/imminent meetings, timely responses, and high-priority cognitive observations.
+- **Next up** — upcoming meetings, bookings, and calendar work.
+- **Priorities** — active goals, workflows, Agent Brain priorities, accepted plans, and orchestration progress.
+- **Opportunities** — evidence-backed recommendations and proactive plans.
+- **Recent changes** — meaningful unread activity plus significant recurring/reopened memory threads.
+
+Browser Companion supports **Why?**, **Hide**, **Show hidden**, canonical object links, and Cognitive Outcomes & Learning feedback using the dedicated `browser_companion_now` surface identity.
+
+Proactive plans can be **Accepted for review** or **Dismissed** in Chrome. Acceptance remains proposal-only: the extension never executes a Cognitive Runtime tool. Tool/prompt card actions are deliberately downgraded to **review in Agent Chat**, where normal VP3 permissions, confirmation, approval, risk, and execution boundaries remain authoritative.
+
+The v21.20 integration branch contains both Browser Companion v21.00/v21.10 and VP3 Cognitive Runtime v5.00–v5.70. After deploying the server overlay, run `upgrade.php` once so the durable browser authorization-code table and Cognitive Runtime tables are all current.
 
 ## v21.10 account-aware shell
 
@@ -70,7 +90,7 @@ The optional numeric argument controls the maximum number of jobs processed in t
 
 ## Local Chrome installation
 
-Open `chrome://extensions`, enable **Developer mode**, choose **Load unpacked**, and select this `browser-companion` directory. The CI package `vp3-browser-companion-v21.1.0.zip` is directly loadable/extractable and contains `manifest.json` at the ZIP root.
+Open `chrome://extensions`, enable **Developer mode**, choose **Load unpacked**, and select this `browser-companion` directory. The CI package `vp3-browser-companion-v21.2.0.zip` is directly loadable/extractable and contains `manifest.json` at the ZIP root.
 
 The default VP3 site is `https://vp3.me`. Another HTTPS VP3 installation can be selected in Extension Settings. Local development may use `http://localhost` or `http://127.0.0.1`; Chrome asks for explicit access to the selected origin.
 
