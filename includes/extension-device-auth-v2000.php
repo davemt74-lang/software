@@ -497,7 +497,7 @@ function vp3_extension_devices_for_user_v2000(PDO $pdo, int $userId): array
 {
     vp3_extension_require_schema_v2000($pdo);
     if ($userId < 1) return [];
-    $stmt = $pdo->prepare('SELECT public_id,device_name,browser_family,extension_version,capabilities_json,device_status,approved_at,last_used_at,revoked_at,created_at FROM extension_devices_v2000 WHERE user_id=? ORDER BY updated_at DESC,id DESC');
+    $stmt = $pdo->prepare('SELECT public_id,device_name,browser_family,extension_version,capabilities_json,device_status,approved_at,last_used_at,revoked_at,created_at FROM extension_devices_v2000 WHERE user_id=? ORDER BY COALESCE(last_used_at,approved_at,created_at) DESC,id DESC');
     $stmt->execute([$userId]);
     $rows = $stmt->fetchAll() ?: [];
     foreach ($rows as &$row) $row['capabilities'] = vp3_extension_json_array_v2000($row['capabilities_json'] ?? '[]');
