@@ -7,6 +7,7 @@ const api=read('api/cognitive-planning-v550.php');
 const feed=read('includes/cognitive-feed-v530.php');
 const feedJs=read('chat-cognitive-feed-v530.js');
 const cardsJs=read('chat-cognitive-cards-v520.js');
+const cardsPhp=read('includes/cognitive-cards-v520.php');
 const chat=read('chat.php');
 const bootstrap=read('includes/bootstrap.php');
 const upgrade=read('upgrade.php');
@@ -60,6 +61,8 @@ assert.match(feedJs,/cardType==='proactive_plan'/);
 assert.match(feedJs,/Accept plan/);
 assert.match(feedJs,/Dismiss plan/);
 assert.match(cardsJs,/proactive_plan:'→'/);
+assert.match(cardsPhp,/'proactive_plan'=>.*suggested actions/s,'Chat intent must recognize proposed plans and suggested actions');
+assert.match(cardsPhp,/cognitive_plans_v550.*status IN \('proposed','accepted'\)/s,'Chat card retrieval must query only active plan states');
 
 assert.match(bootstrap,/cognitive-planning-v550\.php/);
 assert.match(chat,/cognitive-planning-v550-20260918/);
