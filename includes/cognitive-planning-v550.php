@@ -297,7 +297,7 @@ function vp3_cognitive_planning_card_v550(PDO $pdo,array $user,string $namespace
         'prompt'=>'Review proposed plan '.(string)$row['public_id'].' with me. Explain the evidence, risks, permissions, and each step. Do not execute anything until I explicitly choose an action.'
     ]];
     if($status==='accepted'&&trim((string)$row['tool_id'])!==''){
-        $actions[]=['type'=>'tool','label'=>'Use approved tool','tool_id'=>(string)$row['tool_id']];
+        $actions[]=['type'=>'tool','label'=>'Continue to tool action','tool_id'=>(string)$row['tool_id']];
     }
 
     return [
