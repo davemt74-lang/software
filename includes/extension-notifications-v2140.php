@@ -272,6 +272,7 @@ function vp3_extension_notification_claim_v2140(PDO $pdo,array $session,array $c
     if($uid<1||$device==='')return null;
     $eventKey=(string)($candidate['event_key']??'');if($eventKey==='')return null;
     $token=bin2hex(random_bytes(24));$hash=hash('sha256',$token);$public=vp3_extension_uuid_v2000();
+    $safe=vp3_extension_notification_candidate_public_v2140($candidate);
 
     $pdo->beginTransaction();
     try{
@@ -280,9 +281,9 @@ function vp3_extension_notification_claim_v2140(PDO $pdo,array $session,array $c
           VALUES (?,?,?,?,?,?,?,?,?,?,?,?)");
         $insert->execute([
             $public,$uid,$eventKey,(string)$candidate['source_kind'],(string)$candidate['source_ref'],
-            $candidate['notification_id'],(string)$candidate['title'],(string)$candidate['body'],
-            (string)$candidate['target_url'],(string)$candidate['action_label'],(string)$candidate['voice_text'],
-            !empty($candidate['sensitive'])?1:0,
+            $candidate['notification_id'],(string)$safe['title'],(string)$safe['body'],
+            (string)$safe['target_url'],(string)$safe['action_label'],(string)$safe['voice_text'],
+            !empty($safe['sensitive'])?1:0,
         ]);
 
         $select=$pdo->prepare("SELECT * FROM extension_notification_delivery_v2140
@@ -302,8 +303,8 @@ function vp3_extension_notification_claim_v2140(PDO $pdo,array $session,array $c
           WHERE id=?");
         $update->execute([
             (string)$candidate['source_kind'],(string)$candidate['source_ref'],$candidate['notification_id'],
-            (string)$candidate['title'],(string)$candidate['body'],(string)$candidate['target_url'],
-            (string)$candidate['action_label'],(string)$candidate['voice_text'],!empty($candidate['sensitive'])?1:0,
+            (string)$safe['title'],(string)$safe['body'],(string)$safe['target_url'],
+            (string)$safe['action_label'],(string)$safe['voice_text'],!empty($safe['sensitive'])?1:0,
             $device,$hash,(int)$row['id'],
         ]);
         $pdo->commit();
