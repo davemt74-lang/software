@@ -455,6 +455,7 @@ function vp3_cognitive_cards_chat_intent_v520(string $query): string
         'browser_companion'=>'/\b(?:browser companion|browser extension|connected browsers?|extension devices?)\b/u',
         'homeserver'=>'/\b(?:homeserver|home server|local agent)\b/u',
         'product'=>'/\b(?:product|products|store items?)\b/u',
+        'memory_thread'=>'/\b(?:memory threads?|cross[- ]?time|what keeps coming up|recurring issues?|recurring patterns?|what changed since|seen before|continuity)\b/u',
         'orchestration_run'=>'/\b(?:plan progress|active plan runs?|follow[- ]?through|orchestration runs?)\b/u',
         'proactive_plan'=>'/\b(?:proactive plans?|suggested actions?|suggested plans?|agent plans?)\b/u',
     ];
@@ -547,6 +548,10 @@ function vp3_cognitive_cards_chat_requests_v520(PDO $pdo,array $user,string $nam
         }elseif($type==='orchestration_run'&&table_exists('cognitive_plan_runs_v560')){
             $stmt=$pdo->prepare("SELECT public_id FROM cognitive_plan_runs_v560 WHERE owner_user_id=? AND agent_namespace=? AND status NOT IN ('completed','closed','superseded','cancelled') ORDER BY updated_at DESC,id DESC LIMIT {$limit}");
             $stmt->execute([$uid,$namespace]);foreach($stmt->fetchAll()?:[] as $row)$add('orchestration_run',(string)$row['public_id']);
+        }elseif($type==='memory_thread'&&table_exists('cognitive_memory_threads_v570')){
+            if(function_exists('vp3_cognitive_memory_sync_v570'))vp3_cognitive_memory_sync_v570($pdo,$user,$namespace,[]);
+            $stmt=$pdo->prepare("SELECT public_id FROM cognitive_memory_threads_v570 WHERE owner_user_id=? AND agent_namespace=? ORDER BY (reopened_count*3+unsuccessful_count*2+distinct_object_count) DESC,last_seen_at DESC,id DESC LIMIT {$limit}");
+            $stmt->execute([$uid,$namespace]);foreach($stmt->fetchAll()?:[] as $row)$add('memory_thread',(string)$row['public_id']);
         }
     }catch(Throwable $e){return [];}
 
