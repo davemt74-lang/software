@@ -233,7 +233,15 @@ function vp3_cognitive_presentation_voice_text_v510(array $user,array $row,int $
 
 function vp3_cognitive_presentation_voice_candidate_v510(PDO $pdo,array $user,array $state,?array $digest=null): ?array
 {
-    $settings=function_exists('chat_settings_get_v237')?chat_settings_get_v237($pdo,(int)$user['id']):['agent_voice_enabled'=>true];
+    $settings=['agent_voice_enabled'=>false];
+    if(function_exists('chat_settings_get_v237')){
+        try{
+            $settings=chat_settings_get_v237($pdo,(int)$user['id']);
+        }catch(Throwable $e){
+            error_log('VP3 Cognitive Presentation voice settings unavailable: '.$e->getMessage());
+            $settings=['agent_voice_enabled'=>false];
+        }
+    }
     if(array_key_exists('agent_voice_enabled',$settings)&&empty($settings['agent_voice_enabled']))return null;
     $rows=vp3_cognitive_presentation_notification_rows_v510($pdo,$user,max(0,(int)($state['last_voice_notification_id']??0)),50);
     if(!$rows)return null;
