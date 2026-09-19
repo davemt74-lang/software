@@ -63,6 +63,10 @@ must(runtime.includes("vp3_cognitive_presentation_voice_candidate_v510($pdo,$use
 must(runtime.includes("voice_through_notification_id=?"),'spoken canonical through-id must be persisted before playback');
 must(runtime.includes("vp3_cognitive_presentation_voice_delivered_v510($pdo,$user,$namespace,$through)"),
   'shared voice cursor must advance only with stored spoken through-id');
+must(runtime.includes("$ownsTransaction=!$pdo->inTransaction();")&&runtime.includes("if($ownsTransaction)$pdo->beginTransaction();"),
+  'shared voice cursor and Browser delivery acknowledgement must share one transaction');
+must(runtime.includes("if($ownsTransaction&&$pdo->inTransaction())$pdo->rollBack();"),
+  'shared voice acknowledgement must roll back atomically on failure');
 must(runtime.includes("if((string)($item['source']??'')==='notification')continue;"),
   'Cognitive Feed notification projections must not duplicate canonical notification interruptions');
 
