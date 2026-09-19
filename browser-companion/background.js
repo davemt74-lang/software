@@ -1,6 +1,6 @@
 const VP3_DEFAULT_BASE = 'https://vp3.me';
 const VP3_CONTRACT_VERSION = '1';
-const VP3_EXTENSION_VERSION = '21.3.0';
+const VP3_EXTENSION_VERSION = '21.4.0';
 const VP3_MEDIA_CLIP_MAX_SECONDS = 90;
 
 const storage = {
@@ -358,6 +358,8 @@ async function beginConnect(deviceName) {
 
   await storage.set({ device_token: String(payload.device_token).toLowerCase() });
   await storage.remove(['device_id','device_credential','connected_user','approved_capabilities','pending_connection','session']);
+  await ensureProactiveNotificationAlarm();
+  void pollProactiveNotifications();
   return currentAccount();
 }
 
@@ -666,6 +668,199 @@ async function contextHandoff(payload, prompt = '') {
   return { url:`${cleanBaseUrl(base_url)}/chat.php#vp3-browser-context=${encoded}` };
 }
 
+const VP3_NOTIFICATION_ALARM_V2140 = 'vp3-proactive-notifications-v2140';
+const VP3_NOTIFICATION_PREFIX_V2140 = 'vp3-notify:';
+
+function notificationIdForEvent(eventKey) {
+  return VP3_NOTIFICATION_PREFIX_V2140 + String(eventKey || '');
+}
+
+function eventKeyFromNotificationId(notificationId) {
+  const value = String(notificationId || '');
+  return value.startsWith(VP3_NOTIFICATION_PREFIX_V2140)
+    ? value.slice(VP3_NOTIFICATION_PREFIX_V2140.length)
+    : '';
+}
+
+async function proactiveNotificationApi(action, payload = {}) {
+  return authorizedFetch('/api/extension-notifications-v2140.php', {
+    method:'POST',
+    json:{ action, ...payload }
+  }, 'notifications.read');
+}
+
+async function proactiveNotificationContext() {
+  try {
+    const tab = await activeTabIdentity();
+    return tab?.available ? { source_url:String(tab.source_url || ''), title:String(tab.title || '').slice(0,512) } : {};
+  } catch (_error) {
+    return {};
+  }
+}
+
+async function ensureProactiveNotificationAlarm() {
+  if (!chrome.alarms) return;
+  const existing = await chrome.alarms.get(VP3_NOTIFICATION_ALARM_V2140);
+  if (!existing) {
+    chrome.alarms.create(VP3_NOTIFICATION_ALARM_V2140, { delayInMinutes:0.2, periodInMinutes:1 });
+  }
+}
+
+async function createProactiveNotification(candidate) {
+  if (!candidate?.event_key || !candidate?.claim_token) return null;
+  const id = notificationIdForEvent(candidate.event_key);
+  const message = String(candidate.body || '').trim() || 'Open VP3 to review this update.';
+  const options = {
+    type:'basic',
+    iconUrl:chrome.runtime.getURL('notification-icon.svg'),
+    title:String(candidate.title || 'VP3 update').slice(0,190),
+    message:message.slice(0,420),
+    contextMessage:candidate.context_related ? 'Related to the page you are viewing' : '',
+    buttons:[
+      { title:String(candidate.action_label || 'Open VP3').slice(0,80) },
+      { title:'Snooze 15 min' }
+    ],
+    priority:Number(candidate.priority || 0) >= 90 ? 2 : 1,
+    requireInteraction:Number(candidate.priority || 0) >= 100
+  };
+  try {
+    await chrome.notifications.create(id, options);
+    const delivered = await proactiveNotificationApi('visual_delivered', {
+      event_key:candidate.event_key,
+      claim_token:candidate.claim_token
+    });
+    return delivered?.voice || null;
+  } catch (error) {
+    try {
+      await proactiveNotificationApi('release', {
+        event_key:candidate.event_key,
+        claim_token:candidate.claim_token
+      });
+    } catch (_releaseError) {}
+    throw error;
+  }
+}
+
+async function authorizedVoiceAudioDataUrl(eventKey) {
+  const token = await deviceToken();
+  const { base_url } = await config();
+  if (!(await ensureOriginPermission(base_url))) throw new Error('VP3 site permission was not granted.');
+  const response = await fetch(apiUrl(base_url, '/api/extension-agent-voice-v2140.php'), {
+    method:'POST',
+    headers:{
+      Authorization:`Bearer ${token}`,
+      'Content-Type':'application/json',
+      'X-VP3-Extension-Version':VP3_EXTENSION_VERSION,
+      'X-VP3-Contract-Version':VP3_CONTRACT_VERSION,
+      Accept:'audio/mpeg,application/json'
+    },
+    body:JSON.stringify({ event_key:String(eventKey || '') }),
+    cache:'no-store',
+    credentials:'omit'
+  });
+  if (response.status === 401) {
+    await clearRevokedConnection();
+    const revoked = new Error('This browser connection was revoked. Reconnect to VP3.');
+    revoked.status = 401;
+    revoked.code = 'reconnect_required';
+    throw revoked;
+  }
+  const contentType = String(response.headers.get('Content-Type') || '').toLowerCase();
+  if (!response.ok || !contentType.startsWith('audio/')) {
+    let message = 'Premium Agent Voice is temporarily unavailable.';
+    try {
+      const data = await response.json();
+      if (data?.error?.message) message = String(data.error.message);
+    } catch (_error) {}
+    throw new Error(message);
+  }
+  const blob = await response.blob();
+  if (!blob.size || blob.size > 4 * 1024 * 1024) throw new Error('Agent Voice audio is invalid.');
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  let binary = '';
+  for (let offset = 0; offset < bytes.length; offset += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
+  }
+  return `data:${blob.type || 'audio/mpeg'};base64,${btoa(binary)}`;
+}
+
+async function ensureVoiceOffscreenDocument() {
+  if (!chrome.offscreen) throw new Error('Offscreen Agent Voice playback is unavailable.');
+  const exists = typeof chrome.offscreen.hasDocument === 'function'
+    ? await chrome.offscreen.hasDocument()
+    : false;
+  if (exists) return;
+  await chrome.offscreen.createDocument({
+    url:'offscreen.html',
+    reasons:['AUDIO_PLAYBACK'],
+    justification:'Play VP3 Agent Voice proactive notifications.'
+  });
+}
+
+async function activeVp3AgentTab() {
+  const { base_url } = await config();
+  const base = new URL(cleanBaseUrl(base_url));
+  const tabs = await chrome.tabs.query({ active:true });
+  return tabs.some(tab => {
+    try {
+      const url = new URL(String(tab.url || ''));
+      return url.origin === base.origin && /\/chat(?:\.php)?$/i.test(url.pathname);
+    } catch (_error) {
+      return false;
+    }
+  });
+}
+
+async function playProactiveVoice(candidate) {
+  if (!candidate?.event_key || !candidate?.text) return false;
+  if (await activeVp3AgentTab()) return false;
+  try {
+    const dataUrl = await authorizedVoiceAudioDataUrl(candidate.event_key);
+    await ensureVoiceOffscreenDocument();
+    const result = await chrome.runtime.sendMessage({ type:'vp3_voice_play_v2140', data_url:dataUrl });
+    if (!result?.ok) throw new Error(result?.error || 'Agent Voice playback failed.');
+    await proactiveNotificationApi('voice_delivered', { event_key:candidate.event_key });
+    return true;
+  } catch (error) {
+    try { await proactiveNotificationApi('voice_failed', { event_key:candidate.event_key }); } catch (_error) {}
+    return false;
+  }
+}
+
+async function pollProactiveNotifications() {
+  const state = await storage.get(['device_token']);
+  if (!state.device_token) return { visual:false, voice:false };
+  try {
+    const current_context = await proactiveNotificationContext();
+    const payload = await proactiveNotificationApi('poll', { current_context });
+    let voice = payload?.voice || null;
+    if (payload?.visual) {
+      const immediateVoice = await createProactiveNotification(payload.visual);
+      if (immediateVoice) voice = immediateVoice;
+    }
+    if (voice) await playProactiveVoice(voice);
+    return { visual:Boolean(payload?.visual), voice:Boolean(voice) };
+  } catch (error) {
+    if (error?.code === 'reconnect_required' || error?.status === 401) return { visual:false, voice:false };
+    return { visual:false, voice:false, error:String(error?.message || error || '') };
+  }
+}
+
+async function handleProactiveNotificationAction(eventKey, action) {
+  if (!eventKey) return;
+  if (action === 'open') {
+    const result = await proactiveNotificationApi('open', { event_key:eventKey });
+    const target = String(result?.target_url || '/chat.php');
+    const { base_url } = await config();
+    await chrome.tabs.create({ url:new URL(target, cleanBaseUrl(base_url) + '/').toString() });
+  } else if (action === 'snooze') {
+    await proactiveNotificationApi('snooze', { event_key:eventKey });
+  } else if (action === 'dismiss') {
+    await proactiveNotificationApi('dismiss', { event_key:eventKey });
+  }
+  try { await chrome.notifications.clear(notificationIdForEvent(eventKey)); } catch (_error) {}
+}
+
 async function disconnect() {
   const state = await storage.get(['device_token']);
   if (state.device_token) {
@@ -714,6 +909,7 @@ chrome.runtime.onInstalled.addListener(() => {
     chrome.contextMenus.create({ id: 'vp3-share-selection', title: 'Share selection with VP3', contexts: ['selection'] });
   });
   chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
+  void ensureProactiveNotificationAlarm();
 });
 
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
@@ -723,6 +919,32 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   capture.captured_at = new Date().toISOString();
   await storage.set({ pending_capture: capture });
   try { await chrome.sidePanel.open({ tabId: tab.id }); } catch {}
+});
+
+chrome.runtime.onStartup.addListener(() => {
+  void ensureProactiveNotificationAlarm();
+  void pollProactiveNotifications();
+});
+
+chrome.alarms.onAlarm.addListener(alarm => {
+  if (alarm?.name === VP3_NOTIFICATION_ALARM_V2140) void pollProactiveNotifications();
+});
+
+chrome.notifications.onClicked.addListener(notificationId => {
+  const eventKey = eventKeyFromNotificationId(notificationId);
+  if (eventKey) void handleProactiveNotificationAction(eventKey, 'open');
+});
+
+chrome.notifications.onButtonClicked.addListener((notificationId, buttonIndex) => {
+  const eventKey = eventKeyFromNotificationId(notificationId);
+  if (!eventKey) return;
+  void handleProactiveNotificationAction(eventKey, buttonIndex === 1 ? 'snooze' : 'open');
+});
+
+chrome.notifications.onClosed.addListener((notificationId, byUser) => {
+  if (!byUser) return;
+  const eventKey = eventKeyFromNotificationId(notificationId);
+  if (eventKey) void handleProactiveNotificationAction(eventKey, 'dismiss');
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -761,6 +983,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       case 'cognitive_action': return cognitiveAction(message.action, message.payload || {});
       case 'context_now': return contextualNow(message.capture || await activeCapture(), message.prompt || '');
       case 'context_handoff': return contextHandoff(message.payload || null, message.prompt || '');
+      case 'notification_poll': return pollProactiveNotifications();
       case 'disconnect': return disconnect();
       case 'open_url': {
         const url = String(message.url || '');
