@@ -969,6 +969,9 @@ async function resolveQuickActionV2150(action, capture, tab) {
   if (!capture?.available || !/^https?:\/\//i.test(String(capture.source_url || ''))) {
     throw new Error('Open a normal web page to use VP3 quick actions.');
   }
+  // Composer-only quick actions still require a live VP3 connection. This
+  // avoids leaving a transient selection stranded while the user is signed out.
+  await currentAccount();
 
   if (config.flow) return openQuickActionComposerV2150(capture, config.flow, tab);
 
