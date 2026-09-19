@@ -46,7 +46,7 @@ assert.match(feedJs,/learningEndpoint/);
 assert.match(feedJs,/event_type:'shown'/);
 assert.match(feedJs,/event_type:accepted\?'acted':'engaged'/);
 assert.match(feedJs,/Why\?/);
-assert.match(feedJs,/action:'explain'/);
+assert.match(feedJs,/learningApi\('explain'/);
 
 assert.match(bootstrap,/cognitive-learning-v540\.php/);
 assert.match(chat,/cognitive-learning-v540-20260918/);
