@@ -86,7 +86,8 @@ try{
         $claimToken=strtolower(trim((string)($input['claim_token']??'')));
         $ok=vp3_extension_notification_visual_delivered_v2140($pdo,$session,$eventKey,$claimToken);
         if(!$ok)vp3_extension_notifications_json_v2140(409,['ok'=>false,'error'=>['code'=>'claim_expired','message'=>'Notification delivery claim expired.']]);
-        vp3_extension_notifications_json_v2140(200,['ok'=>true]);
+        $voice=vp3_extension_notification_voice_pending_v2140($pdo,$session,$user,$namespace,[]);
+        vp3_extension_notifications_json_v2140(200,['ok'=>true,'voice'=>$voice]);
     }
     if($action==='release'){
         vp3_extension_notification_release_v2140($pdo,$session,$eventKey,strtolower(trim((string)($input['claim_token']??''))));
