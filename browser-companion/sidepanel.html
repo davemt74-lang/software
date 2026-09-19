@@ -13,12 +13,36 @@
   </header>
 
   <main>
-    <section id="connectionCard" class="card">
-      <div class="eyebrow">Connection</div>
-      <div id="connectionState" class="connection-state">Checking VP3…</div>
-      <div id="connectControls" hidden>
-        <button id="connectBtn" class="primary" type="button">Connect to VP3</button>
-        <p class="hint">VP3 will open its normal sign-in/approval screen. Your password never enters the extension.</p>
+    <section id="connectionCard" class="card connection-card">
+      <div id="connectedAccount" hidden>
+        <div class="account-row">
+          <div id="accountAvatar" class="account-avatar" aria-hidden="true">VP</div>
+          <div class="account-copy">
+            <div class="eyebrow">Connected VP3 account</div>
+            <div id="accountName" class="account-name">VP3 user</div>
+            <div id="accountMeta" class="account-meta"></div>
+          </div>
+          <span class="connected-dot" title="Connected to VP3" aria-label="Connected to VP3"></span>
+        </div>
+        <div id="accountTeams" class="account-teams">Loading VP3 access…</div>
+        <div class="account-actions">
+          <button id="openVp3Btn" type="button">Open VP3</button>
+          <button id="refreshAccountBtn" type="button">Refresh account</button>
+          <button id="accountOptionsBtn" type="button">Extension settings</button>
+        </div>
+      </div>
+
+      <div id="disconnectedAccount">
+        <div class="eyebrow">Connection</div>
+        <div id="connectionState" class="connection-state">Checking VP3…</div>
+        <div id="connectControls" hidden>
+          <button id="connectBtn" class="primary" type="button">Connect to VP3</button>
+          <p class="hint">VP3 will open its normal sign-in/approval screen. Your password never enters the extension.</p>
+        </div>
+      </div>
+
+      <div id="accessNotice" class="access-notice" hidden>
+        This VP3 account is connected, but Browser Companion read access is not currently enabled. Refresh after your VP3 permissions change.
       </div>
     </section>
 
@@ -48,7 +72,7 @@
           </div>
         </section>
 
-        <section class="card composer-card">
+        <section id="composerCard" class="card composer-card">
           <div class="row-between capture-heading">
             <div><div class="eyebrow">Annotate</div><strong>Add context to this page</strong></div>
             <span id="captureSummary" class="capture-summary">Add capture</span>
