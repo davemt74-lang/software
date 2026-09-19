@@ -1,6 +1,20 @@
-# VP3 Browser Companion v21.20
+# VP3 Browser Companion v21.30
 
 Chrome Manifest V3 companion for VP3 Browser Share and the Source Feed layer: This Page, Following, source/user follows, comments, read state, Private/Team/Public publishing, plus highlighted text, screenshot regions, source-media moments, and voice commentary.
+
+## v21.30 Contextual Agent Actions
+
+Browser Companion Now can temporarily use the active web page as **ephemeral Agent context**.
+
+The extension sends only a bounded context envelope: normalized URL/canonical URL, title, up to 12 KB of selected text, a SHA-256 fingerprint of normalized page text, lightweight description/author/site/language metadata, and an optional media reference. The page body itself is not transmitted as contextual metadata.
+
+VP3 resolves that page against the signed-in user's current permissions and can surface authorized relationships including existing Source annotations, Team conversations, Research projects, Knowledge, calendar/meeting items, public VP3 profiles, and admin-only CRM contacts/companies. Existing Cognitive Runtime cards are context-scored on the server so related goals, workflows, meetings, opportunities, and recent changes rise within their existing bounded sections.
+
+The Now canvas adds a **Working with** strip, relationship evidence, evidence-based context insights, **Ignore page / Use page**, and server-proposed contextual actions.
+
+**Ask Agent about this page** uses a fragment-only handoff to Agent Chat. Agent Chat immediately removes the fragment from the address bar, keeps the context only in page memory, visibly shows a removable temporary context strip, and attaches it to the next Agent turn. The Agent server discards client relationship claims, revalidates the page identity, re-resolves relationships for the signed-in user, and removes the full browser context from persisted Agent message metadata.
+
+Merely viewing a page creates no VP3 Source, Browser Share, annotation, Research item, Knowledge item, task, contact, or memory. Persistence remains behind explicit VP3 actions and canonical permissions.
 
 ## v21.20 Agent Now / Cognitive Sidebar
 
@@ -90,7 +104,7 @@ The optional numeric argument controls the maximum number of jobs processed in t
 
 ## Local Chrome installation
 
-Open `chrome://extensions`, enable **Developer mode**, choose **Load unpacked**, and select this `browser-companion` directory. The CI package `vp3-browser-companion-v21.2.0.zip` is directly loadable/extractable and contains `manifest.json` at the ZIP root.
+Open `chrome://extensions`, enable **Developer mode**, choose **Load unpacked**, and select this `browser-companion` directory. The CI package `vp3-browser-companion-v21.3.0.zip` is directly loadable/extractable and contains `manifest.json` at the ZIP root.
 
 The default VP3 site is `https://vp3.me`. Another HTTPS VP3 installation can be selected in Extension Settings. Local development may use `http://localhost` or `http://127.0.0.1`; Chrome asks for explicit access to the selected origin.
 
