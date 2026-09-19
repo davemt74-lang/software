@@ -67,10 +67,10 @@
     if (type === 'tool') {
       if (action.requires_approval) button.dataset.requiresApproval = '1';
       button.addEventListener('click',() => {
-        button.dispatchEvent(new CustomEvent('vp3:cognitive-card-action',{bubbles:true,detail:{action,card}}));
         const detail = {tool_id:clean(action.tool_id),card:card,action:action};
         const event = new CustomEvent('vp3:cognitive-card-tool-request',{detail,cancelable:true});
         const allowed = window.dispatchEvent(event);
+        button.dispatchEvent(new CustomEvent('vp3:cognitive-card-action',{bubbles:true,detail:{action,card,accepted:allowed}}));
         if (allowed) runPrompt('Use ' + clean(action.tool_id) + ' for ' + clean(card.title || 'this item') + '.');
       });
       return button;
