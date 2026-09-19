@@ -377,6 +377,9 @@ function vp3_cognitive_planning_feed_candidates_v550(PDO $pdo,array $user,string
     $out=[];
     foreach($stmt->fetchAll()?:[] as $row){
         try{
+            if((string)$row['status']==='accepted'
+                && function_exists('vp3_cognitive_orchestration_plan_has_run_v560')
+                && vp3_cognitive_orchestration_plan_has_run_v560($pdo,(int)$user['id'],$namespace,(int)$row['id']))continue;
             $underlying=vp3_cognitive_planning_underlying_ref_v550($row);
             if(!vp3_cognitive_authorize_ref_v500($pdo,$user,$namespace,$underlying,'read'))continue;
             $request=vp3_cognitive_feed_request_v530('proactive_plan',(string)$row['public_id'],'personal','standard');

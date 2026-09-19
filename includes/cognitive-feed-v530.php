@@ -348,7 +348,18 @@ function vp3_cognitive_feed_candidates_v530(PDO $pdo,array $user,string $namespa
 
     if(function_exists('vp3_cognitive_planning_schema_ready_v550')&&vp3_cognitive_planning_schema_ready_v550($pdo)){
         vp3_cognitive_planning_sync_v550($pdo,$user,$namespace,$all);
+    }
+    if(function_exists('vp3_cognitive_orchestration_schema_ready_v560')&&vp3_cognitive_orchestration_schema_ready_v560($pdo)){
+        if(function_exists('vp3_cognitive_learning_schema_ready_v540')&&vp3_cognitive_learning_schema_ready_v540($pdo)){
+            vp3_cognitive_learning_reconcile_v540($pdo,$user,$namespace);
+        }
+        vp3_cognitive_orchestration_sync_v560($pdo,$user,$namespace);
+    }
+    if(function_exists('vp3_cognitive_planning_schema_ready_v550')&&vp3_cognitive_planning_schema_ready_v550($pdo)){
         $all=array_merge($all,vp3_cognitive_planning_feed_candidates_v550($pdo,$user,$namespace));
+    }
+    if(function_exists('vp3_cognitive_orchestration_schema_ready_v560')&&vp3_cognitive_orchestration_schema_ready_v560($pdo)){
+        $all=array_merge($all,vp3_cognitive_orchestration_feed_candidates_v560($pdo,$user,$namespace));
     }
 
     $authorized=[];

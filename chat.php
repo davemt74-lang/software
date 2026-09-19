@@ -25,8 +25,9 @@ $cognitiveCardsBuild = 'cognitive-cards-v520-20260918';
 $cognitiveFeedBuild = 'cognitive-feed-v530-20260918';
 $cognitiveLearningBuild = 'cognitive-learning-v540-20260918';
 $cognitivePlanningBuild = 'cognitive-planning-v550-20260918';
-$cognitiveCardsAssetBuild = $cognitiveCardsBuild . '-planning-v550';
-$cognitiveFeedAssetBuild = $cognitiveFeedBuild . '-planning-v550';
+$cognitiveOrchestrationBuild = 'cognitive-orchestration-v560-20260919';
+$cognitiveCardsAssetBuild = $cognitiveCardsBuild . '-orchestration-v560';
+$cognitiveFeedAssetBuild = $cognitiveFeedBuild . '-orchestration-v560';
 
 if (!headers_sent()) {
     header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
@@ -354,6 +355,16 @@ $cognitiveFeedRuntime = '<link rel="stylesheet" data-cognitive-feed-v530 href="'
     . ';</script>'
     . '<script data-cognitive-feed-v530 src="' . e(url('/chat-cognitive-feed-v530.js?v=' . $cognitiveFeedAssetBuild)) . '"></script>';
 
+$cognitiveOrchestrationRuntime = '<script data-cognitive-orchestration-config>window.VP3_COGNITIVE_ORCHESTRATION_V560='
+    . json_encode([
+        'endpoint'=>url('/api/cognitive-orchestration-v560.php'),
+        'csrf'=>csrf_token(),
+        'agentId'=>(int)($activeUserAgent['id'] ?? 0),
+        'build'=>$cognitiveOrchestrationBuild,
+    ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
+    . ';</script>'
+    . '<script data-cognitive-orchestration-v560 src="' . e(url('/chat-cognitive-orchestration-v560.js?v=' . $cognitiveOrchestrationBuild)) . '"></script>';
+
 $cognitivePresentationPre = '<link rel="stylesheet" data-cognitive-presentation-v510 href="' . e(url('/chat-cognitive-presentation-v510.css?v=' . $cognitivePresentationBuild)) . '">'
     . '<script data-cognitive-presentation-config>window.VP3_COGNITIVE_PRESENTATION_V510='
     . json_encode([
@@ -399,10 +410,11 @@ $runtime = $headerUiRuntime
          . $notificationDrawerRuntime
          . $cognitiveCardsRuntime
          . $cognitiveFeedRuntime
+         . $cognitiveOrchestrationRuntime
          . $cognitivePresentationPost
          . '<script data-team-chat-admin-v109 data-team-chat-admin-build="' . e($teamChatAdminBuild) . '" src="' . e(url('/team-chat-admin-v109.js?v=' . $teamChatAdminBuild)) . '"></script>'
          . $railLayout
-         . '<span data-stonefellow-build="' . e($runtimeBuild) . '" data-chat-controls-build="' . e($controlBuild) . '" data-premium-voice-build="' . e($premiumVoiceBuild) . '" data-chat-voice-build="' . e($voiceAssetBuild) . '" data-chat-voice-feature-build="' . e($voiceCacheBuild) . '" data-recording-ui-build="' . e($recordingUiBuild) . '" data-recording-persistence-build="' . e($recordingPersistenceBuild) . '" data-transcription-canvas-build="' . e($transcriptionCanvasBuild) . '" data-team-chat-admin-build="' . e($teamChatAdminBuild) . '" data-agent-theme-build="' . e($agentThemeBuild) . '" data-chat-media-overlay-build="' . e($mediaOverlayBuild) . '" data-agent-overlay-build="' . e($agentOverlayBuild) . '" data-user-agent-build="' . e($agentIdentityBuild) . '" data-chat-settings-build="' . e($chatSettingsBuild) . '" data-notification-drawer-build="' . e($notificationDrawerBuild) . '" data-agent-activity-build="' . e($activityBuild) . '" data-brain-learning-build="' . e($brainLearningBuild) . '" data-agent-intelligence-build="' . e($agentIntelligenceBuild) . '" data-cognitive-cards-build="' . e($cognitiveCardsBuild) . '" data-cognitive-feed-build="' . e($cognitiveFeedBuild) . '" data-cognitive-learning-build="' . e($cognitiveLearningBuild) . '" data-cognitive-planning-build="' . e($cognitivePlanningBuild) . '" hidden></span>';
+         . '<span data-stonefellow-build="' . e($runtimeBuild) . '" data-chat-controls-build="' . e($controlBuild) . '" data-premium-voice-build="' . e($premiumVoiceBuild) . '" data-chat-voice-build="' . e($voiceAssetBuild) . '" data-chat-voice-feature-build="' . e($voiceCacheBuild) . '" data-recording-ui-build="' . e($recordingUiBuild) . '" data-recording-persistence-build="' . e($recordingPersistenceBuild) . '" data-transcription-canvas-build="' . e($transcriptionCanvasBuild) . '" data-team-chat-admin-build="' . e($teamChatAdminBuild) . '" data-agent-theme-build="' . e($agentThemeBuild) . '" data-chat-media-overlay-build="' . e($mediaOverlayBuild) . '" data-agent-overlay-build="' . e($agentOverlayBuild) . '" data-user-agent-build="' . e($agentIdentityBuild) . '" data-chat-settings-build="' . e($chatSettingsBuild) . '" data-notification-drawer-build="' . e($notificationDrawerBuild) . '" data-agent-activity-build="' . e($activityBuild) . '" data-brain-learning-build="' . e($brainLearningBuild) . '" data-agent-intelligence-build="' . e($agentIntelligenceBuild) . '" data-cognitive-cards-build="' . e($cognitiveCardsBuild) . '" data-cognitive-feed-build="' . e($cognitiveFeedBuild) . '" data-cognitive-learning-build="' . e($cognitiveLearningBuild) . '" data-cognitive-planning-build="' . e($cognitivePlanningBuild) . '" data-cognitive-orchestration-build="' . e($cognitiveOrchestrationBuild) . '" hidden></span>';
 
 $html = str_replace('</body>', $runtime . '</body>', $html);
 echo $html;
