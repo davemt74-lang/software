@@ -1,6 +1,6 @@
 const VP3_DEFAULT_BASE = 'https://vp3.me';
 const VP3_CONTRACT_VERSION = '1';
-const VP3_EXTENSION_VERSION = '21.1.0';
+const VP3_EXTENSION_VERSION = '21.2.0';
 const VP3_MEDIA_CLIP_MAX_SECONDS = 90;
 
 const storage = {
@@ -609,6 +609,18 @@ async function browserShareAction(action, browserShareId, folderId = 0) {
   }, capability);
 }
 
+async function cognitiveNow() {
+  const payload = await authorizedFetch('/api/extension-cognitive-now-v2120.php', { method: 'GET' }, 'agent.message');
+  return payload.feed || null;
+}
+
+async function cognitiveAction(action, payload = {}) {
+  return authorizedFetch('/api/extension-cognitive-now-v2120.php', {
+    method: 'POST',
+    json: { action, ...payload }
+  }, 'agent.message');
+}
+
 async function disconnect() {
   const state = await storage.get(['device_token']);
   if (state.device_token) {
@@ -700,6 +712,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       case 'media_data': return authorizedMediaDataUrl(String(message.path || ''));
       case 'share': return createRichShare(message);
       case 'share_action': return browserShareAction(message.action, message.browser_share_id, message.folder_id);
+      case 'cognitive_now': return cognitiveNow();
+      case 'cognitive_action': return cognitiveAction(message.action, message.payload || {});
       case 'disconnect': return disconnect();
       case 'open_url': {
         const url = String(message.url || '');
