@@ -341,6 +341,21 @@ function vp3_browser_context_relationships_v2130(PDO $pdo,array $user,array $con
     ];
 }
 
+function vp3_browser_context_insights_v2130(array $relations): array
+{
+    $out=[];
+    $annotations=count((array)($relations['annotations']??[]));
+    $conversations=count((array)($relations['team_conversations']??[]));
+    if($annotations>0)$out[]='VP3 already has '.$annotations.' authorized annotation'.($annotations===1?'':'s').' on this source.';
+    if($conversations>0)$out[]=$conversations.' authorized Team conversation'.($conversations===1?' references':'s reference').' this source.';
+    if(!empty($relations['research'][0]['title']))$out[]='This source is already part of Research: '.vp3_browser_context_text_v2130($relations['research'][0]['title'],140).'.';
+    if(!empty($relations['calendar'][0]['title']))$out[]='This page appears related to an upcoming calendar item: '.vp3_browser_context_text_v2130($relations['calendar'][0]['title'],140).'.';
+    if(!empty($relations['profiles'][0]['title']))$out[]='This page matches the public VP3 profile for '.vp3_browser_context_text_v2130($relations['profiles'][0]['title'],140).'.';
+    if(!empty($relations['contacts'][0]['title']))$out[]='This page matches a CRM relationship: '.vp3_browser_context_text_v2130($relations['contacts'][0]['title'],140).'.';
+    if(!empty($relations['knowledge'][0]['title']))$out[]='Related VP3 Knowledge is available: '.vp3_browser_context_text_v2130($relations['knowledge'][0]['title'],140).'.';
+    return array_slice($out,0,4);
+}
+
 function vp3_browser_context_suggestions_v2130(array $session,array $context,array $relations): array
 {
     $caps=array_fill_keys((array)($session['capabilities']??[]),true);
@@ -415,6 +430,7 @@ function vp3_browser_contextualize_feed_v2130(array $feed,array $context,array $
         'calendar'=>array_values((array)($relations['calendar']??[])),
         'profiles'=>array_values((array)($relations['profiles']??[])),
         'contacts'=>array_values((array)($relations['contacts']??[])),
+        'insights'=>vp3_browser_context_insights_v2130($relations),
     ];
     return $feed;
 }
