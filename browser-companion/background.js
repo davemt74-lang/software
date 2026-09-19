@@ -723,13 +723,10 @@ async function createProactiveNotification(candidate) {
     priority:Number(candidate.priority || 0) >= 90 ? 2 : 1,
     requireInteraction:Number(candidate.priority || 0) >= 100
   };
+  let created = false;
   try {
     await chrome.notifications.create(id, options);
-    const delivered = await proactiveNotificationApi('visual_delivered', {
-      event_key:candidate.event_key,
-      claim_token:candidate.claim_token
-    });
-    return delivered?.voice || null;
+    created = true;
   } catch (error) {
     try {
       await proactiveNotificationApi('release', {
@@ -739,6 +736,15 @@ async function createProactiveNotification(candidate) {
     } catch (_releaseError) {}
     throw error;
   }
+  if (!created) return null;
+  // Once Chrome has shown the interruption, never release the server claim on
+  // an acknowledgement network failure. Releasing would allow another browser
+  // to display a duplicate while this one is already visible.
+  const delivered = await proactiveNotificationApi('visual_delivered', {
+    event_key:candidate.event_key,
+    claim_token:candidate.claim_token
+  });
+  return delivered?.voice || null;
 }
 
 async function authorizedVoiceAudioDataUrl(eventKey) {
