@@ -332,7 +332,7 @@ function vp3_cognitive_orchestration_recount_v560(PDO $pdo,array $run,string $st
     $steps=vp3_cognitive_orchestration_steps_v560($pdo,(int)$run['id']);
     $current='';
     foreach($steps as $step){
-        if(!in_array((string)$step['status'],['completed','superseded','cancelled'],true)){$current=(string)$step['step_key'];break;}
+        if(!in_array((string)$step['status'],['completed','failed','superseded','cancelled'],true)){$current=(string)$step['step_key'];break;}
     }
     $sets=["completed_steps=?","total_steps=?","current_step_key=?","updated_at=UTC_TIMESTAMP()"];
     $params=[(int)($counts['completed']??0),(int)($counts['total']??0),$current];
