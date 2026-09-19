@@ -1,0 +1,88 @@
+import fs from 'node:fs';
+import assert from 'node:assert/strict';
+
+const read=p=>fs.readFileSync(p,'utf8');
+const must=(v,m)=>assert.equal(Boolean(v),true,m);
+
+const security=read('includes/extension-device-auth-v2001.php');
+const token=read('includes/extension-device-token-v2100.php');
+const cards=read('chat-cognitive-cards-v520.js');
+const orchestration=read('chat-cognitive-orchestration-v560.js');
+const feedJs=read('chat-cognitive-feed-v530.js');
+const feedPhp=read('includes/cognitive-feed-v530.php');
+const presentation=read('includes/cognitive-presentation-v510.php');
+const panel=read('browser-companion/sidepanel.js');
+
+// 1. Legacy Browser Companion sessions must still authenticate before upgrade.php
+// creates the v21 authorization-code table.
+must(
+  security.includes("vp3_extension_device_token_schema_ready_v2100($pdo)")
+    && security.indexOf("vp3_extension_device_token_schema_ready_v2100($pdo)") <
+       security.indexOf("vp3_extension_device_token_authenticate_v2100($pdo, $token)"),
+  'durable-token auth must be schema-gated before attempting v21 authentication'
+);
+must(
+  security.includes("if (!$session && vp3_extension_schema_ready_v2000($pdo))")
+    && security.includes("vp3_extension_session_authenticate_v2000($pdo, $token)"),
+  'legacy v20 session fallback must survive a pre-v21-upgrade deployment'
+);
+
+// 2. Poll-heavy read traffic must not turn every durable-token request into a DB write.
+must(
+  token.includes("last_used_at<DATE_SUB(NOW(),INTERVAL 5 MINUTE)"),
+  'durable device last-used telemetry must be write-throttled'
+);
+must(
+  !token.includes("SET last_used_at=NOW(),updated_at=NOW() WHERE id=?"),
+  'durable token reads must not touch updated_at on every request'
+);
+
+// 3. A Universal Card tool click is a request for authoritative handling, never
+// implicit acceptance. No handler means review-only.
+must(cards.includes("let resolution = 'unhandled';"),'tool request must start unhandled');
+must(cards.includes("accept(){ resolution = 'accepted'; }"),'tool protocol must require explicit accept()');
+must(cards.includes("reject(){ resolution = 'rejected'; }"),'tool protocol must expose explicit reject()');
+must(cards.includes("bubbles:true"),'tool request must bubble to an authoritative handler');
+must(cards.includes("const handled = resolution !== 'unhandled';"),'tool request must distinguish handled from unhandled');
+must(cards.includes("const accepted = resolution === 'accepted';"),'tool request acceptance must be explicit');
+must(cards.includes("detail:{action,card,handled,accepted}"),'card action telemetry must carry handled state');
+must(cards.includes("Do not execute anything until I explicitly confirm"),'unhandled tool actions must degrade to review-only prompt');
+must(!cards.includes("const allowed = window.dispatchEvent(event);"),'dispatchEvent return value must never be treated as authorization');
+must(!cards.includes("if (allowed) runPrompt('Use "), 'unhandled tool clicks must not create execution prompts');
+
+must(
+  orchestration.includes("if(detail.handled!==true)return;"),
+  'orchestration must ignore unhandled tool requests'
+);
+must(
+  orchestration.includes("const accepted=detail.accepted===true;"),
+  'orchestration handoff acceptance must be explicit'
+);
+must(
+  feedJs.includes("type==='tool'&&!handled?'tool_review'"),
+  'unhandled tool clicks must learn as review/engagement, not action'
+);
+
+// 4. Browser Companion must recover immediately when live Agent permission is revoked.
+must(panel.includes("function dropCapability(cap){") && panel.includes("renderConnection(state);"),
+  'dropping a live capability must re-render the account/workspace shell');
+must(panel.includes("if(e.code==='capability_denied')"),'Agent Now must detect live capability revocation');
+must(panel.includes("setView('this_page')"),'Agent Now must fall back to an authorized view');
+must(panel.includes("else renderNow(null);"),'Agent Now must clear inaccessible cognitive content');
+
+// 5. Voice preference/settings failure is a voice-only degradation, not a failure
+// of the entire Cognitive Presentation state.
+must(presentation.includes("try{") && presentation.includes("chat_settings_get_v237($pdo,(int)$user['id'])"),
+  'Agent Voice settings read must be guarded');
+must(presentation.includes("VP3 Cognitive Presentation voice settings unavailable:"),
+  'voice-settings failures must be observable');
+must(presentation.includes("$settings=['agent_voice_enabled'=>false];"),
+  'voice-settings failure must fail closed');
+
+// 6. Learning reconciliation is bounded to once per feed candidate cycle.
+const reconcileCalls=(feedPhp.match(/vp3_cognitive_learning_reconcile_v540\(\$pdo,\$user,\$namespace\)/g)||[]).length;
+assert.equal(reconcileCalls,1,'Cognitive Feed must reconcile learning exactly once per compose/candidate cycle');
+must(feedPhp.includes('Reconciliation already runs once before orchestration sync'),
+  'single-reconciliation boundary must be documented');
+
+console.log('VP3 Browser Companion + Cognitive Runtime review hardening contract passed.');
