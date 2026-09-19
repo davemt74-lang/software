@@ -22,6 +22,15 @@ function vp3_extension_device_token_schema_ready_v2100(?PDO $pdo=null): bool
         && table_exists('extension_device_codes_v2100');
 }
 
+function vp3_extension_device_token_require_schema_v2100(?PDO $pdo=null): PDO
+{
+    $pdo??=db();
+    if(!$pdo||!vp3_extension_device_token_schema_ready_v2100($pdo)){
+        throw new RuntimeException('Run the VP3 database upgrade to enable Browser Companion device tokens.');
+    }
+    return $pdo;
+}
+
 function vp3_extension_device_token_ensure_schema_v2100(?PDO $pdo=null): void
 {
     $pdo??=db();
@@ -100,7 +109,7 @@ function vp3_extension_device_context_v2100(array $input): array
 
 function vp3_extension_device_code_issue_v2100(PDO $pdo,int $userId,array $context): string
 {
-    vp3_extension_device_token_ensure_schema_v2100($pdo);
+    vp3_extension_device_token_require_schema_v2100($pdo);
     if($userId<1)throw new RuntimeException('Sign in to connect this browser.');
     $context=vp3_extension_device_context_v2100($context);
 
@@ -126,7 +135,7 @@ function vp3_extension_device_code_issue_v2100(PDO $pdo,int $userId,array $conte
 
 function vp3_extension_device_code_exchange_v2100(PDO $pdo,string $code,string $installationId): array
 {
-    vp3_extension_device_token_ensure_schema_v2100($pdo);
+    vp3_extension_device_token_require_schema_v2100($pdo);
     $code=strtolower(trim($code));
     $installationId=strtolower(trim($installationId));
     if(!preg_match('/^[a-f0-9]{64}$/',$code)||!vp3_extension_valid_uuid_v2000($installationId)){
@@ -201,7 +210,7 @@ function vp3_extension_device_code_exchange_v2100(PDO $pdo,string $code,string $
 
 function vp3_extension_device_token_authenticate_v2100(PDO $pdo,string $token=''): ?array
 {
-    vp3_extension_device_token_ensure_schema_v2100($pdo);
+    vp3_extension_device_token_require_schema_v2100($pdo);
     $token=$token!==''?$token:vp3_extension_bearer_token_v2000();
     if(!preg_match('/^[a-f0-9]{64}$/',$token))return null;
 
