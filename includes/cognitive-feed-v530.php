@@ -206,12 +206,13 @@ function vp3_cognitive_feed_meeting_candidates_v530(PDO $pdo,array $user): array
         $attention=$status==='live'||($minutes<=15&&$minutes>=-120);
         $brief=$status!=='live'&&$minutes<=1440&&$minutes>=0;
         $cardType=$brief?'meeting_brief':'meeting';
+        $timeBucket=$status==='live'?'live':($minutes<=15?'imminent':($minutes<=60?'hour':($minutes<=1440?'day':'future')));
         $score=$status==='live'?99:($minutes<=15?96:($minutes<=60?91:($minutes<=1440?82:68)));
         $out[]=vp3_cognitive_feed_candidate_v530(
             'meeting:'.$id,$attention?'attention':'next_up',$score,vp3_cognitive_feed_relative_time_v530((string)$meeting['start_at_utc']),
             vp3_cognitive_feed_request_v530($cardType,$id,'personal','standard'),
             'meeting',(string)($meeting['updated_at']??$meeting['start_at_utc']??''),[
-                'status'=>$status,'start_at_utc'=>$meeting['start_at_utc']??'',
+                'status'=>$status,'start_at_utc'=>$meeting['start_at_utc']??'','time_bucket'=>$timeBucket,
                 'calendar_event_id'=>(int)($meeting['calendar_event_id']??0),'booking_id'=>(int)($meeting['booking_id']??0),
             ],$attention
         );
@@ -233,12 +234,13 @@ function vp3_cognitive_feed_calendar_candidates_v530(PDO $pdo,array $user): arra
         }catch(Throwable $e){}
         $start=strtotime((string)($event['start_at_utc']??''))?:$now;$minutes=(int)floor(($start-$now)/60);
         $attention=$minutes<=15&&$minutes>=-60;
+        $timeBucket=$minutes<=15?'imminent':($minutes<=60?'hour':($minutes<=1440?'day':'future'));
         $score=$minutes<=15?90:($minutes<=60?84:($minutes<=1440?74:58));
         $objectId=($kind==='booking'?'booking:':'event:').$id;
         $out[]=vp3_cognitive_feed_candidate_v530(
             'calendar:'.$objectId,$attention?'attention':'next_up',$score,vp3_cognitive_feed_relative_time_v530((string)$event['start_at_utc']),
             vp3_cognitive_feed_request_v530('calendar_booking',$objectId,'personal','standard'),
-            'calendar',(string)($event['start_at_utc']??''),['status'=>$event['status']??'','kind'=>$kind],$attention
+            'calendar',(string)($event['start_at_utc']??''),['status'=>$event['status']??'','kind'=>$kind,'time_bucket'=>$timeBucket],$attention
         );
     }
     return $out;
@@ -404,7 +406,7 @@ function vp3_cognitive_feed_compose_v530(PDO $pdo,array $user,string $namespace,
     }
 
     $order=['attention','next_up','priorities','opportunities','recent'];
-    $caps=['attention'=>4,'next_up'=>3,'priorities'=>4,'opportunities'=>3,'recent'=>4];
+    $caps=['attention'=>4,'next_up'=>2,'priorities'=>3,'opportunities'=>2,'recent'=>1];
     $labels=[
         'attention'=>['label'=>'Needs attention','description'=>'Current items that may need a decision, approval, or timely response.'],
         'next_up'=>['label'=>'Next up','description'=>'Upcoming meetings, bookings, and scheduled work.'],
