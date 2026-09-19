@@ -72,8 +72,8 @@
           tool_id:clean(action.tool_id),
           card:card,
           action:action,
-          accept(){ resolution = 'accepted'; },
-          reject(){ resolution = 'rejected'; }
+          accept(){ if (resolution === 'unhandled') resolution = 'accepted'; },
+          reject(){ if (resolution === 'unhandled') resolution = 'rejected'; }
         };
         button.dispatchEvent(new CustomEvent('vp3:cognitive-card-tool-request',{
           detail,
