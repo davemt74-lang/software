@@ -64,6 +64,7 @@ assert.match(core,/status='superseded'/);
 assert.match(core,/verification_state']==='authorization_lost'/,'temporarily blocked runs must detect restored authorization');
 assert.match(core,/hash_equals\(\(string\)\$run\['source_fingerprint'\],\(string\)\$plan\['source_fingerprint'\]\)/);
 assert.match(core,/verification_state='failed'/);
+assert.match(core,/\$actionable=\['ready','awaiting_approval','awaiting_user','handoff_requested','verifying'\]/,'current-step selection must prefer actionable recovery work');
 assert.match(core,/status='completed'.*status='accepted'/s,'verified closure must retire the accepted proposal');
 
 assert.match(api,/has_permission\('chat\.access',\$user\)/);
