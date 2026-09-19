@@ -670,6 +670,8 @@ async function contextHandoff(payload, prompt = '') {
 
 const VP3_NOTIFICATION_ALARM_V2140 = 'vp3-proactive-notifications-v2140';
 const VP3_NOTIFICATION_PREFIX_V2140 = 'vp3-notify:';
+let proactivePollPromiseV2140 = null;
+let proactiveVoicePromiseV2140 = null;
 
 function notificationIdForEvent(eventKey) {
   return VP3_NOTIFICATION_PREFIX_V2140 + String(eventKey || '');
@@ -814,53 +816,73 @@ async function ensureVoiceOffscreenDocument() {
   }
 }
 
-async function activeVp3AgentTab() {
+async function vp3AgentVoiceBusy() {
   const { base_url } = await config();
   const base = new URL(cleanBaseUrl(base_url));
-  const tabs = await chrome.tabs.query({ active:true });
-  return tabs.some(tab => {
+  const [activeTabs,audibleTabs] = await Promise.all([
+    chrome.tabs.query({ active:true }),
+    chrome.tabs.query({ audible:true })
+  ]);
+  const isVp3Chat = tab => {
     try {
       const url = new URL(String(tab.url || ''));
-      return url.origin === base.origin && /\/chat(?:\.php)?$/i.test(url.pathname);
+      return url.origin === base.origin && /\/chat(?:\.php)?\/?$/i.test(url.pathname);
     } catch (_error) {
       return false;
     }
+  };
+  if (activeTabs.some(isVp3Chat)) return true;
+  // Do not talk over an existing VP3 voice response even when its tab is not
+  // foregrounded. Ignore unrelated audible tabs such as music/video sites.
+  return audibleTabs.some(tab => {
+    try { return new URL(String(tab.url || '')).origin === base.origin; }
+    catch (_error) { return false; }
   });
 }
 
 async function playProactiveVoice(candidate) {
   if (!candidate?.event_key || !candidate?.text) return false;
-  if (await activeVp3AgentTab()) return false;
-  try {
-    const dataUrl = await authorizedVoiceAudioDataUrl(candidate.event_key);
-    await ensureVoiceOffscreenDocument();
-    const result = await chrome.runtime.sendMessage({ type:'vp3_voice_play_v2140', data_url:dataUrl });
-    if (!result?.ok) throw new Error(result?.error || 'Agent Voice playback failed.');
-    await proactiveNotificationApi('voice_delivered', { event_key:candidate.event_key });
-    return true;
-  } catch (error) {
-    try { await proactiveNotificationApi('voice_failed', { event_key:candidate.event_key }); } catch (_error) {}
-    return false;
-  }
+  if (proactiveVoicePromiseV2140) return proactiveVoicePromiseV2140;
+  proactiveVoicePromiseV2140 = (async () => {
+    if (await vp3AgentVoiceBusy()) return false;
+    try {
+      const dataUrl = await authorizedVoiceAudioDataUrl(candidate.event_key);
+      await ensureVoiceOffscreenDocument();
+      const result = await chrome.runtime.sendMessage({ type:'vp3_voice_play_v2140', data_url:dataUrl });
+      if (!result?.ok) throw new Error(result?.error || 'Agent Voice playback failed.');
+      await proactiveNotificationApi('voice_delivered', { event_key:candidate.event_key });
+      return true;
+    } catch (error) {
+      try { await proactiveNotificationApi('voice_failed', { event_key:candidate.event_key }); } catch (_error) {}
+      return false;
+    }
+  })();
+  try { return await proactiveVoicePromiseV2140; }
+  finally { proactiveVoicePromiseV2140 = null; }
 }
 
 async function pollProactiveNotifications() {
-  const state = await storage.get(['device_token']);
-  if (!state.device_token) return { visual:false, voice:false };
-  try {
-    const current_context = await proactiveNotificationContext();
-    const payload = await proactiveNotificationApi('poll', { current_context });
-    let voice = payload?.voice || null;
-    if (payload?.visual) {
-      const immediateVoice = await createProactiveNotification(payload.visual);
-      if (immediateVoice) voice = immediateVoice;
+  if (proactivePollPromiseV2140) return proactivePollPromiseV2140;
+  proactivePollPromiseV2140 = (async () => {
+    const state = await storage.get(['device_token']);
+    if (!state.device_token) return { visual:false, voice:false };
+    try {
+      const current_context = await proactiveNotificationContext();
+      const payload = await proactiveNotificationApi('poll', { current_context });
+      let voice = payload?.voice || null;
+      if (payload?.visual) {
+        const immediateVoice = await createProactiveNotification(payload.visual);
+        if (immediateVoice) voice = immediateVoice;
+      }
+      if (voice) await playProactiveVoice(voice);
+      return { visual:Boolean(payload?.visual), voice:Boolean(voice) };
+    } catch (error) {
+      if (error?.code === 'reconnect_required' || error?.status === 401) return { visual:false, voice:false };
+      return { visual:false, voice:false, error:String(error?.message || error || '') };
     }
-    if (voice) await playProactiveVoice(voice);
-    return { visual:Boolean(payload?.visual), voice:Boolean(voice) };
-  } catch (error) {
-    if (error?.code === 'reconnect_required' || error?.status === 401) return { visual:false, voice:false };
-    return { visual:false, voice:false, error:String(error?.message || error || '') };
-  }
+  })();
+  try { return await proactivePollPromiseV2140; }
+  finally { proactivePollPromiseV2140 = null; }
 }
 
 async function handleProactiveNotificationAction(eventKey, action) {
