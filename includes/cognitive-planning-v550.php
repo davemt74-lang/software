@@ -147,7 +147,12 @@ function vp3_cognitive_planning_sync_v550(PDO $pdo,array $user,string $namespace
         if(!$ref)continue;
         if(!vp3_cognitive_authorize_ref_v500($pdo,$user,$namespace,$ref,'read'))continue;
 
+        $registry=vp3_cognitive_registry_storage_v500();
         $meta=$toolId!==''?vp3_cognitive_planning_tool_meta_v550($toolId):null;
+        $objectModule=(string)($registry['objects'][(string)$ref['type']]??'');
+        if(is_array($meta)&&(string)($meta['module']??'')!==$objectModule){
+            $toolId='';$meta=null;
+        }
         $risk=is_array($meta)?(string)($meta['risk']??'low'):'low';
         $approval=is_array($meta)&&!empty($meta['requires_approval']);
         $confidence=max(.35,min(.98,((float)($candidate['score']??50))/100));
