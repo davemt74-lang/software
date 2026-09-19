@@ -1,0 +1,146 @@
+name: Browser Companion Contextual Agent v21.30
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - browser-companion-contextual-agent-v2130
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    name: Contextual Agent · PHP ${{ matrix.php }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.1','8.3']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: v21.30 contextual Agent contract
+        run: node tests/browser-companion-contextual-agent-v2130.mjs
+
+      - name: Retained review-hardening contract
+        run: node tests/browser-cognitive-review-hardening-v2120.mjs
+
+      - name: Retained Browser Companion contracts
+        run: |
+          node tests/extension-device-token-v2100.mjs
+          node tests/browser-companion-v2030.mjs
+          node tests/browser-companion-account-shell-v2110.mjs
+          node tests/browser-companion-cognitive-now-v2120.mjs
+
+      - name: Retained Cognitive Runtime contracts
+        run: |
+          node tests/vp3-cognitive-runtime-spec-v500.mjs
+          node tests/cognitive-runtime-core-v500.mjs
+          node tests/cognitive-presentation-v510.mjs
+          node tests/cognitive-cards-v520.mjs
+          node tests/cognitive-feed-v530.mjs
+          node tests/cognitive-learning-v540.mjs
+          node tests/cognitive-planning-v550.mjs
+          node tests/cognitive-orchestration-v560.mjs
+          node tests/cognitive-memory-v570.mjs
+
+      - name: JavaScript syntax
+        run: |
+          node --check browser-companion/background.js
+          node --check browser-companion/sidepanel.js
+          node --check chat-browser-context-v2130.js
+          node --check chat.js
+          node --check tests/browser-companion-contextual-agent-v2130.mjs
+
+      - name: PHP syntax
+        run: |
+          php -l includes/browser-context-v2130.php
+          php -l api/extension-cognitive-now-v2120.php
+          php -l api/chat-v236.php
+          php -l chat.php
+
+  package:
+    name: Build v21.30 deploy packages
+    needs: contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Chrome extension and integrated VP3 overlay
+        shell: bash
+        run: |
+          rm -rf dist
+          mkdir -p dist/server/api dist/server/includes dist/server/browser-companion
+
+          (
+            cd browser-companion
+            zip -r ../dist/vp3-browser-companion-extension-v21.30.zip . -x '*.DS_Store'
+          )
+          unzip -t dist/vp3-browser-companion-extension-v21.30.zip
+          unzip -Z1 dist/vp3-browser-companion-extension-v21.30.zip | grep -qx 'manifest.json'
+
+          cp api/extension-token.php api/extension-me.php api/extension-device-disconnect-v2030.php api/extension-cognitive-now-v2120.php dist/server/api/
+          cp api/cognitive-*.php dist/server/api/
+          cp api/chat-v236.php api/chat-notifications-brain-v240.php dist/server/api/
+
+          cp includes/extension-device-token-v2100.php includes/extension-device-auth-v2000.php includes/extension-device-auth-v2001.php dist/server/includes/
+          cp includes/browser-context-v2130.php includes/browser-share-v2010.php includes/browser-source-feed-v2050.php includes/research-projects-v2060.php includes/knowledge.php includes/knowledge-retrieval-v162.php includes/user-calendar-v1300.php includes/crm-v180.php dist/server/includes/
+          cp includes/cognitive-*.php includes/agent-cognitive-loop-v310.php includes/bootstrap.php dist/server/includes/
+
+          cp extension-connect.php upgrade.php chat.php chat.js chat-browser-context-v2130.js chat-browser-context-v2130.css dist/server/
+          cp chat-cognitive-*.js chat-cognitive-*.css chat-notifications-drawer-v240.js chat-notifications-drawer-v240.css dist/server/
+          cp -R browser-companion/. dist/server/browser-companion/
+
+          cat > dist/server/DEPLOY.txt <<'EOF'
+          VP3 Browser Companion Contextual Agent Actions v21.30
+
+          Integrated overlay:
+          - Simple Login v21.00
+          - Account-Aware Shell v21.10
+          - Agent Now / Cognitive Runtime v21.20
+          - Review Hardening / 10-of-10 baseline
+          - Contextual Agent Actions v21.30
+
+          Extract into the VP3 application root and overwrite included files.
+          Run upgrade.php once if the v21/Cognitive Runtime database upgrades have
+          not already been applied.
+
+          v21.30 adds no database table. Merely viewing a page is read-only and
+          creates no VP3 Source, annotation, Research item, Knowledge item, task,
+          contact, memory or Browser Share. Persistence requires an explicit user
+          action through existing VP3 authorization paths.
+          EOF
+
+          (
+            cd dist/server
+            zip -r ../vp3-browser-companion-server-v21.30.zip .
+          )
+          unzip -t dist/vp3-browser-companion-server-v21.30.zip
+
+          sha256sum dist/vp3-browser-companion-extension-v21.30.zip > dist/vp3-browser-companion-extension-v21.30.zip.sha256
+          sha256sum dist/vp3-browser-companion-server-v21.30.zip > dist/vp3-browser-companion-server-v21.30.zip.sha256
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vp3-browser-companion-contextual-agent-v21.30
+          path: |
+            dist/vp3-browser-companion-extension-v21.30.zip
+            dist/vp3-browser-companion-extension-v21.30.zip.sha256
+            dist/vp3-browser-companion-server-v21.30.zip
+            dist/vp3-browser-companion-server-v21.30.zip.sha256
+          if-no-files-found: error
+          retention-days: 30
