@@ -34,6 +34,12 @@ must(
   'durable device last-used telemetry must be write-throttled'
 );
 must(
+  token.includes("DELETE FROM extension_device_codes_v2100")
+    && token.includes("installation_id=?")
+    && token.includes("consumed_at IS NOT NULL OR expires_at<=NOW()"),
+  'stale one-time browser authorization codes must be cleaned per installation'
+);
+must(
   !token.includes("SET last_used_at=NOW(),updated_at=NOW() WHERE id=?"),
   'durable token reads must not touch updated_at on every request'
 );
