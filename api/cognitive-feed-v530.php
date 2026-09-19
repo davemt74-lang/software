@@ -45,6 +45,10 @@ try{
             vp3_cognitive_feed_api_json_v530(409,['ok'=>false,'error'=>'feed_item_changed']);
         }
         vp3_cognitive_feed_hide_v530($pdo,$user,$namespace,$key,$fingerprint);
+        if(function_exists('vp3_cognitive_learning_schema_ready_v540')&&vp3_cognitive_learning_schema_ready_v540($pdo)){
+            vp3_cognitive_learning_observe_candidates_v540($pdo,$user,$namespace,[$candidate]);
+            vp3_cognitive_learning_feedback_v540($pdo,$user,$namespace,$candidate,'hidden',['surface'=>'agent_chat_now'],'hide:'.$fingerprint);
+        }
         vp3_cognitive_feed_api_json_v530(200,['ok'=>true,'feed'=>vp3_cognitive_feed_compose_v530($pdo,$user,$namespace,false)]);
     }
     if($action==='restore'){
