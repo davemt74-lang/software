@@ -455,6 +455,7 @@ function vp3_cognitive_cards_chat_intent_v520(string $query): string
         'browser_companion'=>'/\b(?:browser companion|browser extension|connected browsers?|extension devices?)\b/u',
         'homeserver'=>'/\b(?:homeserver|home server|local agent)\b/u',
         'product'=>'/\b(?:product|products|store items?)\b/u',
+        'orchestration_run'=>'/\b(?:plan progress|active plan runs?|follow[- ]?through|orchestration runs?)\b/u',
         'proactive_plan'=>'/\b(?:proactive plans?|suggested actions?|suggested plans?|agent plans?)\b/u',
     ];
     foreach($map as $type=>$pattern)if(preg_match($pattern,$q))return $type;
@@ -543,6 +544,9 @@ function vp3_cognitive_cards_chat_requests_v520(PDO $pdo,array $user,string $nam
         }elseif($type==='proactive_plan'&&table_exists('cognitive_plans_v550')){
             $stmt=$pdo->prepare("SELECT public_id FROM cognitive_plans_v550 WHERE owner_user_id=? AND agent_namespace=? AND status IN ('proposed','accepted') ORDER BY FIELD(status,'accepted','proposed'),updated_at DESC,id DESC LIMIT {$limit}");
             $stmt->execute([$uid,$namespace]);foreach($stmt->fetchAll()?:[] as $row)$add('proactive_plan',(string)$row['public_id']);
+        }elseif($type==='orchestration_run'&&table_exists('cognitive_plan_runs_v560')){
+            $stmt=$pdo->prepare("SELECT public_id FROM cognitive_plan_runs_v560 WHERE owner_user_id=? AND agent_namespace=? AND status NOT IN ('completed','closed','superseded','cancelled') ORDER BY updated_at DESC,id DESC LIMIT {$limit}");
+            $stmt->execute([$uid,$namespace]);foreach($stmt->fetchAll()?:[] as $row)$add('orchestration_run',(string)$row['public_id']);
         }
     }catch(Throwable $e){return [];}
 
