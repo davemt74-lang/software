@@ -21,7 +21,7 @@ const reportPage=read('research-report.php');
 const sourcePage=read('source.php');
 
 must(manifest.manifest_version===3,'Research integration must remain Manifest V3');
-must(Number(manifest.version.split('.')[0])===20 && Number(manifest.version.split('.')[1])>=60,'Phase 7 requires Browser Companion v20.60 or newer');
+{const [major,minor]=manifest.version.split('.').map(Number);must(major>20||(major===20&&minor>=60),'Phase 7 requires Browser Companion v20.60 or newer');}
 
 for(const table of [
   'research_projects_v2060','research_project_members_v2060','research_project_items_v2060','research_project_events_v2060',
