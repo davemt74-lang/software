@@ -1,6 +1,6 @@
 const VP3_DEFAULT_BASE = 'https://vp3.me';
 const VP3_CONTRACT_VERSION = '1';
-const VP3_EXTENSION_VERSION = '21.0.0';
+const VP3_EXTENSION_VERSION = '21.1.0';
 const VP3_MEDIA_CLIP_MAX_SECONDS = 90;
 
 const storage = {
