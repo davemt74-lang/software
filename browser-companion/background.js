@@ -110,7 +110,7 @@ async function clearRevokedConnection() {
     'device_token',
     // Remove v20.x connection state during upgrade/disconnect.
     'device_id','device_credential','connected_user','approved_capabilities','pending_connection','session',
-    'last_share','pending_capture'
+    'last_share', 'pending_capture'
   ]);
 }
 
