@@ -168,8 +168,7 @@ function vp3_cognitive_planning_sync_v550(PDO $pdo,array $user,string $namespace
             source_kind=VALUES(source_kind),
             risk_level=VALUES(risk_level),
             requires_approval=VALUES(requires_approval),
-            confidence=VALUES(confidence),
-            updated_at=UTC_TIMESTAMP()")
+            confidence=VALUES(confidence)")
           ->execute([
               vp3_cognitive_uuid_v500(),$uid,$namespace,$planKey,$sourceKey,$fingerprint,
               vp3_cognitive_id_v500($candidate['source']??'',80),
