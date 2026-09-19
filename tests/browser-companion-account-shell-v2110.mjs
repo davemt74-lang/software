@@ -11,8 +11,9 @@ const js = read('browser-companion/sidepanel.js');
 const css = read('browser-companion/sidepanel.css');
 const me = read('api/extension-me.php');
 
-must(manifest.version === '21.1.0', 'v21.10 manifest version missing');
-must(background.includes("const VP3_EXTENSION_VERSION = '21.1.0';"), 'v21.10 request version missing');
+const versionParts=String(manifest.version||'').split('.').map(Number);
+must(versionParts.length===3&&(versionParts[0]>21||(versionParts[0]===21&&versionParts[1]>=1)),'v21.10+ manifest version missing');
+must(/const VP3_EXTENSION_VERSION = '21\.(?:[1-9]\d*)\.\d+';/.test(background),'v21.10+ request version missing');
 
 for (const id of ['connectedAccount','accountAvatar','accountName','accountMeta','accountTeams','openVp3Btn','refreshAccountBtn','accountOptionsBtn','accessNotice']) {
   must(html.includes(`id="${id}"`), `account shell element ${id} missing`);
