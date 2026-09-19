@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 require __DIR__ . '/includes/bootstrap.php';
+require_once __DIR__ . '/includes/extension-notifications-v2140.php';
 require_once __DIR__ . '/includes/vp3-public.php';
 require_once __DIR__ . '/includes/artist-listening.php';
 require_once __DIR__ . '/includes/artist-listening-transcript.php';
@@ -47,6 +48,7 @@ function vp3_upgrade_complete(): bool
         && password_reset_schema_ready()
         && vp3_extension_schema_ready_v2000()
         && vp3_extension_device_token_schema_ready_v2100()
+        && vp3_extension_notifications_schema_ready_v2140()
         && chat_settings_schema_ready_v237()
         && permission_v105_playlist_permission_ready()
         && personal_capability_seeded_v242()
@@ -146,6 +148,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             password_reset_ensure_schema();
             vp3_extension_ensure_schema_v2000();
             vp3_extension_device_token_ensure_schema_v2100();
+            vp3_extension_notifications_ensure_schema_v2140();
             chat_settings_ensure_schema_v237();
             permission_v105_seed_playlist_permission();
             personal_capability_seed_v242();

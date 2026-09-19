@@ -17,8 +17,9 @@ const chatContext=read('chat-browser-context-v2130.js');
 const chatApi=read('api/chat-v236.php');
 const agentSurface=read('includes/agent-surface-context-v131.php');
 
-must(manifest.version==='21.3.0','v21.30 manifest version missing');
-must(background.includes("const VP3_EXTENSION_VERSION = '21.3.0';"),'v21.30 request version missing');
+const versionParts=String(manifest.version||'').split('.').map(Number);
+must(versionParts.length===3&&(versionParts[0]>21||(versionParts[0]===21&&versionParts[1]>=3)),'v21.30+ manifest version missing');
+must(/const VP3_EXTENSION_VERSION = '21\.(?:[3-9]|[1-9]\d+)\.\d+';/.test(background),'v21.30+ request version missing');
 
 // Current page capture stays bounded and does not transmit the page body.
 must(background.includes("meta[name=\"description\"]"),'page description metadata capture missing');

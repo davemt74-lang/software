@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "VP3 Browser Companion",
-  "version": "21.3.0",
-  "description": "VP3 Browser Companion with contextual Agent Now intelligence, ephemeral page relationships, capture, sharing, Research, Live Rooms, alerts, and search.",
+  "version": "21.4.0",
+  "description": "VP3 Browser Companion with proactive Cognitive notifications, premium Agent Voice, contextual Agent Now, capture, sharing, Research, Live Rooms, alerts, and search.",
   "minimum_chrome_version": "116",
   "permissions": [
     "activeTab",
@@ -10,7 +10,10 @@
     "contextMenus",
     "scripting",
     "sidePanel",
-    "storage"
+    "storage",
+    "notifications",
+    "alarms",
+    "offscreen"
   ],
   "host_permissions": [
     "https://vp3.me/*"
@@ -24,7 +27,8 @@
     "service_worker": "background.js"
   },
   "action": {
-    "default_title": "Open VP3 Browser Companion"
+    "default_title": "Open VP3 Browser Companion",
+    "default_icon": "notification-icon.png"
   },
   "side_panel": {
     "default_path": "sidepanel.html"
@@ -32,5 +36,8 @@
   "options_page": "options.html",
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'self'"
+  },
+  "icons": {
+    "128": "notification-icon.png"
   }
 }
