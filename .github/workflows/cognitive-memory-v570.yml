@@ -1,0 +1,65 @@
+name: VP3 Cognitive Memory 11B.8 v5.70
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - phase11b8-cognitive-memory-v570
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    name: Cognitive Memory · PHP ${{ matrix.php }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.1','8.3']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Cognitive Runtime specification
+        run: node tests/vp3-cognitive-runtime-spec-v500.mjs
+      - name: 11B.1 Runtime Core
+        run: node tests/cognitive-runtime-core-v500.mjs
+      - name: 11B.2 Cognitive Presentation
+        run: node tests/cognitive-presentation-v510.mjs
+      - name: 11B.3 Universal Cards
+        run: node tests/cognitive-cards-v520.mjs
+      - name: 11B.4 Cognitive Feed
+        run: node tests/cognitive-feed-v530.mjs
+      - name: 11B.5 Cognitive Outcomes & Learning
+        run: node tests/cognitive-learning-v540.mjs
+      - name: 11B.6 Proactive Planning
+        run: node tests/cognitive-planning-v550.mjs
+      - name: 11B.7 Cognitive Orchestration
+        run: node tests/cognitive-orchestration-v560.mjs
+      - name: 11B.8 Cognitive Memory
+        run: node tests/cognitive-memory-v570.mjs
+      - name: JavaScript syntax
+        run: |
+          node --check chat-cognitive-cards-v520.js
+          node --check chat-cognitive-feed-v530.js
+          node --check chat-cognitive-orchestration-v560.js
+      - name: PHP syntax
+        run: |
+          php -l includes/cognitive-memory-v570.php
+          php -l includes/cognitive-orchestration-v560.php
+          php -l includes/cognitive-planning-v550.php
+          php -l includes/cognitive-feed-v530.php
+          php -l includes/cognitive-cards-v520.php
+          php -l chat.php
+          php -l upgrade.php

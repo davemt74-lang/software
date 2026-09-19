@@ -1,6 +1,6 @@
 const VP3_DEFAULT_BASE = 'https://vp3.me';
 const VP3_CONTRACT_VERSION = '1';
-const VP3_EXTENSION_VERSION = '21.1.0';
+const VP3_EXTENSION_VERSION = '21.3.0';
 const VP3_MEDIA_CLIP_MAX_SECONDS = 90;
 
 const storage = {
@@ -200,6 +200,10 @@ async function activeCapture(tabHint = null) {
       func: async () => {
         const selected_text = String(window.getSelection?.() || '').trim();
         const canonical_url = document.querySelector('link[rel="canonical"]')?.href || '';
+        const description = document.querySelector('meta[name="description"]')?.content || document.querySelector('meta[property="og:description"]')?.content || '';
+        const author = document.querySelector('meta[name="author"]')?.content || '';
+        const site_name = document.querySelector('meta[property="og:site_name"]')?.content || '';
+        const language = document.documentElement?.lang || '';
         const pageText = String(document.body?.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 1000000);
         let page_text_sha256 = '';
         if (pageText) {
@@ -224,7 +228,7 @@ async function activeCapture(tabHint = null) {
             paused: Boolean(candidate.paused)
           };
         }
-        return { selected_text, canonical_url, page_text_sha256, media };
+        return { selected_text, canonical_url, page_text_sha256, media, metadata:{ description, author, site_name, language } };
       }
     });
     result = injected?.[0]?.result || result;
@@ -241,6 +245,7 @@ async function activeCapture(tabHint = null) {
     selected_text: utf8Limit(String(result.selected_text || ''), 32768),
     page_text_sha256: /^[a-f0-9]{64}$/i.test(String(result.page_text_sha256 || '')) ? String(result.page_text_sha256).toLowerCase() : '',
     media: result.media || null,
+    metadata: result.metadata || { description:'', author:'', site_name:'', language:'' },
     captured_at: new Date().toISOString()
   };
 }
@@ -609,6 +614,58 @@ async function browserShareAction(action, browserShareId, folderId = 0) {
   }, capability);
 }
 
+async function cognitiveNow() {
+  const payload = await authorizedFetch('/api/extension-cognitive-now-v2120.php', { method: 'GET' }, 'agent.message');
+  return payload.feed || null;
+}
+
+async function cognitiveAction(action, payload = {}) {
+  return authorizedFetch('/api/extension-cognitive-now-v2120.php', {
+    method: 'POST',
+    json: { action, ...payload }
+  }, 'agent.message');
+}
+
+function browserContextPayload(capture) {
+  const x = capture && typeof capture === 'object' ? capture : {};
+  return {
+    source_url:String(x.source_url || ''),
+    canonical_url:String(x.canonical_url || ''),
+    title:String(x.title || '').slice(0,512),
+    selected_text:utf8Limit(String(x.selected_text || ''),12000),
+    page_text_sha256:/^[a-f0-9]{64}$/i.test(String(x.page_text_sha256 || '')) ? String(x.page_text_sha256).toLowerCase() : '',
+    metadata:{
+      description:String(x.metadata?.description || '').slice(0,1000),
+      author:String(x.metadata?.author || '').slice(0,240),
+      site_name:String(x.metadata?.site_name || '').slice(0,240),
+      language:String(x.metadata?.language || '').slice(0,32)
+    },
+    media:x.media || null
+  };
+}
+
+async function contextualNow(capture, prompt = '') {
+  return authorizedFetch('/api/extension-cognitive-now-v2120.php', {
+    method:'POST',
+    json:{ action:'context_feed', context:browserContextPayload(capture), prompt:String(prompt || '').slice(0,1200) }
+  }, 'agent.message');
+}
+
+async function contextHandoff(payload, prompt = '') {
+  if (!payload || payload.contract !== 'browser-context-v2130' || !payload.page) throw new Error('Current page context is unavailable.');
+  const safe = {
+    contract:'browser-context-v2130',
+    ephemeral:true,
+    page:payload.page,
+    relationships:Array.isArray(payload.relationships) ? payload.relationships.slice(0,15) : [],
+    prompt:String(prompt || payload.prompt || '').slice(0,1200)
+  };
+  const encoded = base64UrlJson(safe);
+  if (encoded.length > 24000) throw new Error('Current page context is too large to hand off safely.');
+  const { base_url } = await config();
+  return { url:`${cleanBaseUrl(base_url)}/chat.php#vp3-browser-context=${encoded}` };
+}
+
 async function disconnect() {
   const state = await storage.get(['device_token']);
   if (state.device_token) {
@@ -700,6 +757,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       case 'media_data': return authorizedMediaDataUrl(String(message.path || ''));
       case 'share': return createRichShare(message);
       case 'share_action': return browserShareAction(message.action, message.browser_share_id, message.folder_id);
+      case 'cognitive_now': return cognitiveNow();
+      case 'cognitive_action': return cognitiveAction(message.action, message.payload || {});
+      case 'context_now': return contextualNow(message.capture || await activeCapture(), message.prompt || '');
+      case 'context_handoff': return contextHandoff(message.payload || null, message.prompt || '');
       case 'disconnect': return disconnect();
       case 'open_url': {
         const url = String(message.url || '');

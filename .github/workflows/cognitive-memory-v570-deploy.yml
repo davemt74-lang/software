@@ -1,0 +1,52 @@
+name: VP3 Cognitive Memory 11B.8 Deploy Overlay
+
+on:
+  push:
+    branches:
+      - phase11b8-cognitive-memory-v570
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    name: Build 11B.8 deploy overlay
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Write deploy manifest
+        run: |
+          cat > DEPLOY-11B8.txt <<'EOF'
+          VP3 11B.8 — Cognitive Memory & Cross-Time Continuity v5.70
+
+          Overlay these files into the VP3 application root, preserving paths.
+          Then sign in as owner/admin and run the normal upgrade.php database upgrade once.
+
+          Production files:
+          - chat.php
+          - upgrade.php
+          - chat-cognitive-cards-v520.js
+          - includes/bootstrap.php
+          - includes/cognitive-cards-v520.php
+          - includes/cognitive-feed-v530.php
+          - includes/cognitive-memory-v570.php
+
+          No security key is required.
+          EOF
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vp3-11b8-cognitive-memory-deploy
+          path: |
+            DEPLOY-11B8.txt
+            chat.php
+            upgrade.php
+            chat-cognitive-cards-v520.js
+            includes/bootstrap.php
+            includes/cognitive-cards-v520.php
+            includes/cognitive-feed-v530.php
+            includes/cognitive-memory-v570.php
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 6

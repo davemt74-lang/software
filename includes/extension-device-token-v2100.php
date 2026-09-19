@@ -142,6 +142,16 @@ function vp3_extension_device_code_issue_v2100(PDO $pdo,int $userId,array $conte
     if(!$active->fetchColumn())throw new RuntimeException('This VP3 account is not active.');
 
     $code=vp3_extension_secret_v2000();
+
+    // Keep the one-time code table bounded for browsers that reconnect or
+    // repeatedly restart authorization. The installation index makes this a
+    // narrow cleanup; keep the currently usable code (if any) until it is
+    // explicitly consumed below.
+    $pdo->prepare("DELETE FROM extension_device_codes_v2100
+      WHERE installation_id=?
+        AND (consumed_at IS NOT NULL OR expires_at<=NOW())")
+      ->execute([$context['installation_id']]);
+
     $pdo->prepare("UPDATE extension_device_codes_v2100 SET consumed_at=COALESCE(consumed_at,NOW())
       WHERE installation_id=? AND consumed_at IS NULL")
       ->execute([$context['installation_id']]);
@@ -256,8 +266,13 @@ function vp3_extension_device_token_authenticate_v2100(PDO $pdo,string $token=''
     $row=$stmt->fetch();
     if(!$row||(string)$row['device_status']!=='active'||!empty($row['revoked_at'])||(int)$row['is_active']!==1)return null;
 
-    $pdo->prepare('UPDATE extension_devices_v2000 SET last_used_at=NOW(),updated_at=NOW() WHERE id=?')
-        ->execute([(int)$row['device_db_id']]);
+    // Agent Now and source feeds can make several authenticated requests per
+    // minute. last_used_at is operational telemetry, not request-by-request
+    // state, so avoid turning every read into a row write/lock.
+    $pdo->prepare("UPDATE extension_devices_v2000
+      SET last_used_at=NOW(),updated_at=updated_at
+      WHERE id=? AND (last_used_at IS NULL OR last_used_at<DATE_SUB(NOW(),INTERVAL 5 MINUTE))")
+      ->execute([(int)$row['device_db_id']]);
 
     return [
         'session_id'=>'device:'.(string)$row['device_id'],

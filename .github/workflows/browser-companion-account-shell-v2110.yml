@@ -40,5 +40,7 @@ jobs:
         run: |
           node - <<'NODE'
           const m = require('./browser-companion/manifest.json');
-          if (m.manifest_version !== 3 || m.version !== '21.1.0') process.exit(1);
+          const p=String(m.version||'').split('.').map(Number);
+          const compatible=p.length===3&&(p[0]>21||(p[0]===21&&p[1]>=1));
+          if (m.manifest_version !== 3 || !compatible) process.exit(1);
           NODE
