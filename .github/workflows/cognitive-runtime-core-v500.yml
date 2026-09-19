@@ -1,0 +1,45 @@
+name: VP3 Cognitive Runtime 11B.1 Core v5.00
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - phase11b1-cognitive-runtime-core-v500
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    name: Cognitive Runtime core · PHP ${{ matrix.php }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.1','8.3']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Specification contract
+        run: node tests/vp3-cognitive-runtime-spec-v500.mjs
+      - name: 11B.1 core contract
+        run: node tests/cognitive-runtime-core-v500.mjs
+      - name: PHP syntax
+        run: |
+          php -l includes/cognitive-runtime-v500.php
+          php -l includes/cognitive-runtime-meetings-v500.php
+          php -l api/cognitive-runtime-v500.php
+          php -l upgrade.php
+      - name: JSON contract
+        run: node -e "JSON.parse(require('fs').readFileSync('contracts/cognitive/modules/meeting-intelligence-v1/contract.json','utf8'))"

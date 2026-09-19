@@ -1,0 +1,30 @@
+name: VP3 Cognitive Runtime v5.00 specification
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - phase11b-vp3-cognitive-runtime-spec-v500
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    name: Cognitive Runtime spec contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate canonical cognitive contract
+        run: node tests/vp3-cognitive-runtime-spec-v500.mjs
+      - name: Validate JSON
+        run: node -e "JSON.parse(require('fs').readFileSync('contracts/cognitive/cognitive-runtime-v1/contract.json','utf8'))"

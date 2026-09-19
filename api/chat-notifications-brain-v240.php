@@ -404,6 +404,9 @@ function chat_notifications_v240_activity_context(array $notification): array
 function chat_notifications_v240_present_attention(PDO $pdo, array $user, array $input): array
 {
     $userId = (int)$user['id'];
+    if(function_exists('vp3_cognitive_presentation_owns_attention_v510')&&vp3_cognitive_presentation_owns_attention_v510()){
+        return ['ok'=>true,'handled'=>false,'presentation_owner'=>'cognitive_runtime_v510','notification_id'=>max(0,(int)($input['notification_id']??0))];
+    }
     $notificationId = max(0, (int)($input['notification_id'] ?? 0));
     if ($notificationId < 1) throw new DomainException('Notification is required.');
 
