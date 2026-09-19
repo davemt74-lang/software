@@ -917,7 +917,7 @@ function quickActionMenuIdV2150(action) {
 }
 
 async function registerQuickActionMenusV2150() {
-  await chrome.contextMenus.removeAll();
+  await new Promise(resolve => chrome.contextMenus.removeAll(() => resolve()));
   chrome.contextMenus.create({
     id:'vp3-quick-root',
     title:'VP3',
@@ -944,14 +944,19 @@ async function quickActionCaptureV2150(info, tab) {
 }
 
 async function openQuickActionComposerV2150(capture, flow, tab) {
+  const pendingCapture = {
+    ...capture,
+    selected_text:utf8Limit(String(capture?.selected_text || ''),32768),
+    title:String(capture?.title || '').slice(0,512),
+    captured_at:new Date().toISOString()
+  };
   await chrome.storage.session.set({
     pending_quick_action_v2150:{
       action:String(flow || 'annotate'),
-      capture:browserContextPayload(capture),
+      capture:pendingCapture,
       created_at:Date.now()
     }
   });
-  await storage.set({ pending_capture:capture });
   if (tab?.id) {
     try { await chrome.sidePanel.open({ tabId:tab.id }); } catch (_error) {}
   }
