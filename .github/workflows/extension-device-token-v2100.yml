@@ -39,7 +39,14 @@ jobs:
       - name: Browser Companion v21 simple login contract
         run: node tests/extension-device-token-v2100.mjs
       - name: Browser Companion regression contract
-        run: node tests/browser-companion-v2030.mjs
+        run: |
+          node tests/browser-companion-v2030.mjs
+          node tests/browser-companion-rich-capture-v2040.mjs
+          node tests/browser-companion-source-feed-v2050.mjs
+          node tests/research-projects-publishing-v2060.mjs
+          node tests/live-rooms-cloak-v2070.mjs
+          node tests/browser-trust-v2080.mjs
+          node tests/search-discovery-v2090.mjs
       - name: JavaScript syntax
         run: |
           node --check browser-companion/background.js
