@@ -27,7 +27,8 @@
     "service_worker": "background.js"
   },
   "action": {
-    "default_title": "Open VP3 Browser Companion"
+    "default_title": "Open VP3 Browser Companion",
+    "default_icon": "notification-icon.png"
   },
   "side_panel": {
     "default_path": "sidepanel.html"
@@ -35,5 +36,8 @@
   "options_page": "options.html",
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'self'"
+  },
+  "icons": {
+    "128": "notification-icon.png"
   }
 }
