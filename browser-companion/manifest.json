@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "VP3 Browser Companion",
-  "version": "21.1.0",
-  "description": "VP3 account-aware Browser Companion for live page context, capture, sharing, source activity, Research, Live Rooms, alerts, and search.",
+  "version": "21.2.0",
+  "description": "VP3 Browser Companion with live Agent Now intelligence, page context, capture, sharing, Research, Live Rooms, alerts, and search.",
   "minimum_chrome_version": "116",
   "permissions": [
     "activeTab",
