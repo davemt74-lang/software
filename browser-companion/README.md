@@ -1,6 +1,18 @@
-# VP3 Browser Companion v21.00
+# VP3 Browser Companion v21.10
 
 Chrome Manifest V3 companion for VP3 Browser Share and the Source Feed layer: This Page, Following, source/user follows, comments, read state, Private/Team/Public publishing, plus highlighted text, screenshot regions, source-media moments, and voice commentary.
+
+## v21.10 account-aware shell
+
+The connected sidebar now treats VP3 as the only account authority. It renders the current live display name, role, Team access summary, and capability-aware feature state from the same `/api/extension-me.php` and canonical destination endpoints already used by Browser Companion.
+
+- No browser-side profile or account database is introduced.
+- No login/session polling is reintroduced.
+- Opening/focusing the side panel or using **Refresh account** re-reads current VP3 identity and capabilities.
+- Removing Browser Companion permissions in VP3 collapses protected extension UI without disconnecting the durable device token.
+- Restoring permissions in VP3 makes them available again on the next account refresh.
+- **Open VP3** and **Extension settings** provide direct navigation without duplicating VP3 account settings inside Chrome.
+- Composition controls are hidden when `team.share.create` is not currently granted; read-oriented tabs follow `team.chat.read`.
 
 ## Capture and share
 
@@ -58,7 +70,7 @@ The optional numeric argument controls the maximum number of jobs processed in t
 
 ## Local Chrome installation
 
-Open `chrome://extensions`, enable **Developer mode**, choose **Load unpacked**, and select this `browser-companion` directory. The CI package `vp3-browser-companion-v21.0.0.zip` is directly loadable/extractable and contains `manifest.json` at the ZIP root.
+Open `chrome://extensions`, enable **Developer mode**, choose **Load unpacked**, and select this `browser-companion` directory. The CI package `vp3-browser-companion-v21.1.0.zip` is directly loadable/extractable and contains `manifest.json` at the ZIP root.
 
 The default VP3 site is `https://vp3.me`. Another HTTPS VP3 installation can be selected in Extension Settings. Local development may use `http://localhost` or `http://127.0.0.1`; Chrome asks for explicit access to the selected origin.
 
