@@ -61,6 +61,7 @@ assert.match(core,/in_array\(\$code,\['successful','resolved'\],true\)/);
 assert.match(core,/in_array\(\$code,\['unsuccessful','ignored'\],true\)/);
 assert.match(core,/vp3_cognitive_orchestration_replan_step_v560/);
 assert.match(core,/status='superseded'/);
+assert.match(core,/verification_state']==='authorization_lost'/,'temporarily blocked runs must detect restored authorization');
 assert.match(core,/hash_equals\(\(string\)\$run\['source_fingerprint'\],\(string\)\$plan\['source_fingerprint'\]\)/);
 assert.match(core,/verification_state='failed'/);
 assert.match(core,/status='completed'.*status='accepted'/s,'verified closure must retire the accepted proposal');
