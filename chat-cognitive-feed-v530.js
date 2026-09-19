@@ -44,7 +44,7 @@
       if(!response.ok||!data.ok)throw new Error(data.error||'learning_unavailable');
       return data;
     }
-    const response=await fetch(endpoint,{method:'POST',credentials:'same-origin',cache:'no-store',
+    const response=await fetch(endpoint,{method:'POST',credentials:'same-origin',cache:'no-store',keepalive:true,
       headers:{'Content-Type':'application/json','Accept':'application/json'},
       body:JSON.stringify({action:'feedback',agent_id:Number(cfg.agentId||0),csrf_token:String(cfg.csrf||''),...payload})});
     const data=await response.json().catch(()=>({}));
@@ -265,7 +265,13 @@
       : null;
     if(!item)return;
     const type=clean(event.detail&&event.detail.action&&event.detail.action.type)||'open';
-    void learningApi('feedback',{event_type:'acted',action_type:type,item_key:key,fingerprint:clean(item.fingerprint)}).catch(()=>{});
+    const accepted=!(event.detail&&event.detail.accepted===false);
+    void learningApi('feedback',{
+      event_type:accepted?'acted':'engaged',
+      action_type:accepted?type:(type+'_rejected'),
+      item_key:key,
+      fingerprint:clean(item.fingerprint)
+    }).catch(()=>{});
   });
 
   const observer=new MutationObserver(records=>{
