@@ -2949,12 +2949,22 @@
     const typing = addTyping();
 
     try {
-      const data = await api({
+      const browserContextRuntime=window.VP3_BROWSER_CONTEXT_V2130_RUNTIME;
+      const browserAgentContext=browserContextRuntime&&typeof browserContextRuntime.agentContext==='function'
+        ? browserContextRuntime.agentContext()
+        : null;
+      const payload={
         action:'send',
         conversation_id:conversationId,
         message:message.trim(),
         input_mode:inputMode === 'voice' ? 'voice' : 'text'
-      });
+      };
+      if(browserAgentContext)payload.agent_context=browserAgentContext;
+      const data = await api(payload);
+
+      if(browserAgentContext&&browserContextRuntime&&typeof browserContextRuntime.consume==='function'){
+        browserContextRuntime.consume();
+      }
 
       conversationId = Number(data.conversation_id);
       lastLoadedMessageId=Math.max(lastLoadedMessageId,Number(data.user_message_id||0),Number(data.assistant_message_id||0));
