@@ -66,13 +66,35 @@
             </div>
             <button id="refreshNowBtn" class="text-btn" type="button">Refresh</button>
           </div>
+          <div id="nowContextStrip" class="now-context-strip" hidden>
+            <div class="now-context-copy">
+              <small>Working with</small>
+              <strong id="nowContextTitle">Current page</strong>
+              <span id="nowContextMeta"></span>
+            </div>
+            <button id="toggleNowContextBtn" class="text-btn" type="button">Ignore page</button>
+          </div>
           <div class="now-summary">
             <span id="nowAttentionCount" class="pill unread">0 attention</span>
             <span id="nowItemCount" class="pill">0 current</span>
+            <span id="nowContextualCount" class="pill" hidden>0 related</span>
             <button id="restoreNowBtn" class="text-btn" type="button" hidden>Show hidden</button>
           </div>
           <button id="openAgentChatBtn" class="primary secondary-primary" type="button">Open Agent Chat</button>
         </section>
+
+        <section id="nowContextPanel" class="card now-context-panel" hidden>
+          <div class="row-between">
+            <div><div class="eyebrow">Page relationships</div><strong>What VP3 already knows around this page</strong></div>
+            <span class="pill">Temporary</span>
+          </div>
+          <div id="nowRelationshipSummary" class="now-relationship-summary"></div>
+          <div id="nowRelationshipList" class="now-relationship-list"></div>
+          <div class="eyebrow now-actions-kicker">Suggested actions</div>
+          <div id="nowContextActions" class="now-context-actions"></div>
+          <p class="hint now-context-hint">Viewing this page does not save it to VP3. Knowledge, Research, tasks, follows, annotations, and shares are created only after an explicit action.</p>
+        </section>
+
         <section class="feed-section">
           <div id="nowEmpty" class="empty-state">Nothing needs the Agent canvas right now.</div>
           <div id="nowFeed" class="now-feed"></div>
