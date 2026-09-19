@@ -33,7 +33,7 @@ must(js.includes("msg('cognitive_now')"),'Agent Now live load missing');
 must(js.includes("cognitiveAction('hide'"),'Agent Now hide action missing');
 must(js.includes("cognitiveAction('explain'"),'Agent Now Why explanation missing');
 must(js.includes("cognitiveAction('plan_decide'"),'proposal decision action missing');
-must(js.includes("decision==='accept'?'accept':'dismiss'"),'plan decisions must remain accept/dismiss only');
+must(js.includes("b.dataset.action==='cognitive_plan_accept'?'accept':'dismiss'"),'plan decisions must remain accept/dismiss only');
 must(js.includes("Plan actions remain proposal/review only."),'proposal-only UI boundary missing');
 must(js.includes("cognitiveData&&cognitiveData.agent_url||'/chat.php'"),'Agent Chat handoff missing');
 must(!js.includes('vp3:cognitive-card-tool-request'),'extension must never dispatch Cognitive Runtime tool execution events');
