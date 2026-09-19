@@ -358,7 +358,7 @@ function vp3_browser_context_suggestions_v2130(array $session,array $context,arr
     if(isset($caps['team.share.create']))$suggestions[]=['id'=>'share_team','kind'=>'manual_flow','label'=>'Share with Team','target'=>'this_page'];
     if(isset($caps['knowledge.write']))$suggestions[]=['id'=>'save_knowledge','kind'=>'agent_prompt','label'=>'Save to Knowledge','prompt'=>'I want to save useful context from this page to my VP3 Knowledge. Show me what would be saved and ask for confirmation before creating anything.'];
     if(isset($caps['task.propose']))$suggestions[]=['id'=>'create_task','kind'=>'agent_prompt','label'=>'Create task','prompt'=>'Propose a task based on this page. Show me the task title and details before creating anything.'];
-    if(is_array($relations['source']??null)&&!empty($relations['source']['id']))$suggestions[]=['id'=>'follow_source','kind'=>'manual_follow','label'=>!empty($relations['source']['following'])?'Unfollow source':'Follow source'];
+    if(isset($caps['team.chat.read'])&&is_array($relations['source']??null)&&!empty($relations['source']['id']))$suggestions[]=['id'=>'follow_source','kind'=>'manual_follow','label'=>!empty($relations['source']['following'])?'Unfollow source':'Follow source'];
     return array_slice($suggestions,0,10);
 }
 
