@@ -466,12 +466,35 @@ async function loadFollowing(reset){
   try{const feed=await msg('following',{cursor:reset?'':followingCursor});if(reset){ui.followingFeed.replaceChildren();followingCursor='';}(feed.items||[]).forEach(i=>ui.followingFeed.append(card(i)));followingCursor=feed.next_cursor||'';ui.loadMoreFollowingBtn.hidden=!feed.has_more;ui.followingEmpty.hidden=ui.followingFeed.children.length>0;hydrate(ui.followingFeed);}finally{followingBusy=false;}
 }
 async function refreshCapture(withFeed){const x=await msg('capture');renderCapture(x);if(withFeed!==false)await loadThis(true);}
+async function applyPendingQuickActionV2150(pending){
+  if(!pending||!pending.capture||!pending.capture.source_url)return;
+  const action=String(pending.action||'annotate');
+  renderCapture({...pending.capture,available:true});
+  setView('this_page');
+  if(action==='share_team'){
+    note('Choose a Team or conversation under Deliver to, then publish this annotation.','success');
+    window.setTimeout(()=>ui.destinationSelect.focus(),0);
+    return;
+  }
+  note('Selection loaded into the annotation composer. Nothing is saved until you publish.','success');
+  window.setTimeout(()=>ui.shareNote.focus(),0);
+}
+
 async function refreshState(){
-  const x=await msg('state');renderConnection(x);if(x.connected){renderLast(x.last_share);if(x.pending_capture&&x.pending_capture.available&&x.pending_capture.selected_text){renderCapture(x.pending_capture);await message('clear_pending_capture').catch(()=>{});}else await refreshCapture(false);
+  const x=await msg('state');renderConnection(x);
+  const pendingQuick=await msg('quick_action_consume').catch(()=>null);
+  if(x.connected){
+    renderLast(x.last_share);
+    if(pendingQuick&&pendingQuick.capture&&pendingQuick.capture.source_url){
+      renderCapture({...pendingQuick.capture,available:true});
+    }else if(x.pending_capture&&x.pending_capture.available&&x.pending_capture.selected_text){
+      renderCapture(x.pending_capture);await message('clear_pending_capture').catch(()=>{});
+    }else await refreshCapture(false);
     const c=caps();
     if(activeView==='now'&&!c.has('agent.message')&&(c.has('team.chat.read')||c.has('team.share.create')))setView('this_page');
     if(c.has('team.chat.read')){await loadDestinations();if(activeView==='this_page')await loadThis(true);}else{destinations={recent:[],teams:[],conversations:[]};renderAccountTeams();}
-    if(c.has('agent.message')&&activeView==='now')await loadNow(true);
+    if(pendingQuick)await applyPendingQuickActionV2150(pendingQuick);
+    else if(c.has('agent.message')&&activeView==='now')await loadNow(true);
   }
 }
 function clip(changed){if(!mediaReference)return;const d=Math.max(0,Number(mediaReference.metadata.duration_seconds||0));let s=Math.max(0,Number(ui.mediaStart.value||0)),e=Math.max(s,Number(ui.mediaEnd.value||s));if(d){s=Math.min(s,d);e=Math.min(e,d);}if(e-s>MAX_CLIP){if(changed==='start')s=Math.max(0,e-MAX_CLIP);else e=s+MAX_CLIP;}mediaReference.metadata.start_seconds=Number(s.toFixed(3));mediaReference.metadata.end_seconds=Number(e.toFixed(3));ui.mediaStart.value=s;ui.mediaEnd.value=e;ui.mediaClipHint.textContent='Clip '+sec(s)+'–'+sec(e)+' · '+(e-s).toFixed(1)+'s · source timestamps only · maximum 90s.';}
