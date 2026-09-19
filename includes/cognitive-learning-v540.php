@@ -286,15 +286,19 @@ function vp3_cognitive_learning_observe_candidates_v540(PDO $pdo,array $user,str
           ON DUPLICATE KEY UPDATE
             lifecycle_state=IF(item_fingerprint<>VALUES(item_fingerprint),'active',lifecycle_state),
             current_outcome=IF(item_fingerprint<>VALUES(item_fingerprint),'',current_outcome),
+            updated_at=IF(
+              item_fingerprint<>VALUES(item_fingerprint)
+              OR source_kind<>VALUES(source_kind)
+              OR section_key<>VALUES(section_key)
+              OR object_type<>VALUES(object_type)
+              OR object_id<>VALUES(object_id)
+              OR object_scope<>VALUES(object_scope),
+              UTC_TIMESTAMP(),updated_at
+            ),
             last_seen_at=IF(
               item_fingerprint<>VALUES(item_fingerprint)
               OR last_seen_at<DATE_SUB(UTC_TIMESTAMP(),INTERVAL 5 MINUTE),
               UTC_TIMESTAMP(),last_seen_at
-            ),
-            updated_at=IF(
-              item_fingerprint<>VALUES(item_fingerprint)
-              OR last_seen_at<DATE_SUB(UTC_TIMESTAMP(),INTERVAL 5 MINUTE),
-              UTC_TIMESTAMP(),updated_at
             ),
             source_kind=VALUES(source_kind),
             section_key=VALUES(section_key),
