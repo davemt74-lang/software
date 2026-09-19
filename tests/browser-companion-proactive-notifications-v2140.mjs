@@ -55,7 +55,8 @@ must(runtime.includes('claimed_device_id CHAR(36)'), 'device claim binding missi
 must(runtime.includes('claim_expires_at DATETIME'), 'claim expiry missing');
 must(runtime.includes('voice_through_notification_id BIGINT UNSIGNED'), 'canonical voice through-id ledger missing');
 must(runtime.includes('SELECT * FROM extension_notification_delivery_v2140')&&runtime.includes('FOR UPDATE'),'cross-device claim row lock missing');
-must(runtime.includes("trim((string)$row['claimed_device_id'])!==$device"),'fresh claim must block a second browser');
+must(runtime.includes("if($claimFresh){$pdo->commit();return null;}"),
+  'fresh claim must be exclusive even to the same browser so claim tokens cannot rotate');
 must(runtime.includes("source_kind='notification'")&&runtime.includes("notification_id>? AND notification_id<=?"),
   'canonical voice must bind to the exact canonical cursor window');
 must(runtime.includes("vp3_cognitive_presentation_voice_candidate_v510($pdo,$user,$state,null)"),
