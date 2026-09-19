@@ -12,6 +12,7 @@ const feedJs=read('chat-cognitive-feed-v530.js');
 const feedPhp=read('includes/cognitive-feed-v530.php');
 const presentation=read('includes/cognitive-presentation-v510.php');
 const panel=read('browser-companion/sidepanel.js');
+const cognitiveExtensionApi=read('api/extension-cognitive-now-v2120.php');
 
 // 1. Legacy Browser Companion sessions must still authenticate before upgrade.php
 // creates the v21 authorization-code table.
@@ -85,6 +86,12 @@ must(presentation.includes("try{") && presentation.includes("chat_settings_get_v
   'Agent Voice settings read must be guarded');
 must(presentation.includes("VP3 Cognitive Presentation voice settings unavailable:"),
   'voice-settings failures must be observable');
+must(presentation.includes("last_seen_at<DATE_SUB(UTC_TIMESTAMP(),INTERVAL 5 MINUTE)"),
+  'presentation polling presence writes must be throttled');
+must(presentation.includes("SET last_seen_at=UTC_TIMESTAMP(),updated_at=updated_at"),
+  'presentation presence telemetry must not mutate semantic state timestamps');
+must(presentation.includes("VP3 Cognitive Presentation notification read unavailable:"),
+  'notification read degradation must be observable');
 must(presentation.includes("$settings=['agent_voice_enabled'=>false];"),
   'voice-settings failure must fail closed');
 
@@ -96,6 +103,9 @@ must(runtime.includes("VP3 Cognitive Runtime voice settings unavailable:"),
   'core voice-settings failures must be observable');
 must(runtime.includes("'agent_voice_enabled'=>false"),
   'presentation arbitration defaults must be voice-safe when no canonical context is supplied');
+
+must(cognitiveExtensionApi.includes("VP3 Browser Companion Cognitive card unavailable ["),
+  'extension card render degradation must be observable without weakening fail-closed behavior');
 
 // 6. Learning reconciliation is bounded to once per feed candidate cycle.
 const reconcileCalls=(feedPhp.match(/vp3_cognitive_learning_reconcile_v540\(\$pdo,\$user,\$namespace\)/g)||[]).length;
