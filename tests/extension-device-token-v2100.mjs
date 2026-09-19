@@ -42,6 +42,7 @@ must(background.includes("case 'poll_connect': return pollConnect();"),'legacy p
 must(background.includes("return publicState();"),'legacy poll message must be a no-op state read');
 must(!panelHtml.includes('pendingControls'),'pending approval UI must be removed');
 must(!panelHtml.includes('checkConnectionBtn'),'manual poll button must be removed');
+must(!panelHtml.includes('id="deviceName"'),'connection UI must not ask the user to name the browser');
 must(!panelJs.includes('startPoll'),'panel polling loop must be removed');
 must(!panelJs.includes('pollTimer'),'panel polling timer must be removed');
 must(!optionsJs.includes('pending_connection'),'settings must not expose pending pairing state');
