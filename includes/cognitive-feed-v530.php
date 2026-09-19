@@ -387,6 +387,14 @@ function vp3_cognitive_feed_compose_v530(PDO $pdo,array $user,string $namespace,
     $namespace=vp3_cognitive_validate_namespace_v500($pdo,$user,$namespace);
     $state=vp3_cognitive_feed_state_map_v530($pdo,$user,$namespace);
     $candidates=vp3_cognitive_feed_merge_candidates_v530(vp3_cognitive_feed_candidates_v530($pdo,$user,$namespace));
+    if(function_exists('vp3_cognitive_learning_schema_ready_v540')&&vp3_cognitive_learning_schema_ready_v540($pdo)){
+        vp3_cognitive_learning_observe_candidates_v540($pdo,$user,$namespace,$candidates);
+        vp3_cognitive_learning_reconcile_v540($pdo,$user,$namespace);
+        foreach($candidates as &$candidate){
+            $candidate=vp3_cognitive_learning_adjust_candidate_v540($pdo,$user,$namespace,$candidate);
+        }
+        unset($candidate);
+    }
 
     $visible=[];$hidden=0;
     foreach($candidates as $candidate){
@@ -416,7 +424,7 @@ function vp3_cognitive_feed_compose_v530(PDO $pdo,array $user,string $namespace,
         $items=array_slice($items,0,min($caps[$section],$room));
         if(!$items)continue;
         foreach($items as &$item){
-            unset($item['score']);
+            unset($item['score'],$item['learning_adjustment']);
             $item['signals']=array_values(array_filter(array_map(static fn($v)=>vp3_cognitive_id_v500($v,80),(array)$item['signals'])));
         }unset($item);
         $sections[]=['id'=>$section]+$labels[$section]+['items'=>$items];
