@@ -50,7 +50,9 @@ function vp3_browser_context_validate_v2130(array $input): array
     $cleanMedia=null;
     if($media){
         $kind=vp3_browser_context_text_v2130($media['kind']??'',40);
-        $mediaUrl=trim((string)($media['source_media_url']??''));
+        // Accept both the raw Browser Companion capture shape and the canonical
+        // v21.30 shape used by the fragment handoff to Agent Chat.
+        $mediaUrl=trim((string)($media['source_media_url']??$media['url']??''));
         if($kind!==''&&$mediaUrl!==''){
             try{$mediaInfo=vp3_browser_share_validate_url_v2010($mediaUrl);$mediaUrl=(string)$mediaInfo['url'];}
             catch(Throwable $e){$mediaUrl='';}
@@ -59,7 +61,7 @@ function vp3_browser_context_validate_v2130(array $input): array
             $cleanMedia=[
                 'kind'=>$kind,
                 'url'=>$mediaUrl,
-                'title'=>vp3_browser_context_text_v2130($media['source_media_title']??'',300),
+                'title'=>vp3_browser_context_text_v2130($media['source_media_title']??$media['title']??'',300),
                 'current_time'=>max(0,(float)($media['current_time']??0)),
             ];
         }
