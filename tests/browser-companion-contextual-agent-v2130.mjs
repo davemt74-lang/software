@@ -86,6 +86,8 @@ must(panel.includes("contextSuggestions.forEach"),'contextual suggestion rendere
 must(panel.includes("nowContextIgnored=!nowContextIgnored"),'Use/Ignore page control missing');
 must(panel.includes("['now','this_page','live','alerts','search']"),'active page watcher must include Now');
 must(panel.includes("if(activeView==='now')await loadNow(true)"),'active-tab changes must refresh page-aware Now');
+must(panel.includes("next=(x.source_url||'')+'\\n'+(x.title||'')"),
+  'SPA-style title changes must invalidate current page context');
 must(panel.includes("pill contextual")||css.includes('.pill.contextual'),'contextual card marker missing');
 must(css.includes('.now-context-panel'),'context panel styling missing');
 must(css.includes('.now-context-insight'),'context insight styling missing');
