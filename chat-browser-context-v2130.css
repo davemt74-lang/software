@@ -1,0 +1,8 @@
+.chat-browser-context-v2130{display:flex;align-items:center;gap:12px;margin:0 0 8px;padding:9px 11px;border:1px solid #dfe4ea;border-radius:12px;background:#f8fafc;color:#111827}
+.chat-browser-context-copy{display:grid;min-width:0;gap:2px;flex:1}
+.chat-browser-context-copy small{color:#64748b;font-size:.58rem;font-weight:800;letter-spacing:.07em;text-transform:uppercase}
+.chat-browser-context-copy strong{overflow:hidden;font-size:.74rem;text-overflow:ellipsis;white-space:nowrap}
+.chat-browser-context-copy span{overflow:hidden;color:#64748b;font-size:.62rem;text-overflow:ellipsis;white-space:nowrap}
+.chat-browser-context-remove{flex:0 0 auto;border:0;background:transparent;color:#64748b;font-size:.65rem;font-weight:800;cursor:pointer}
+.chat-browser-context-remove:hover{color:#111827}
+@media(max-width:640px){.chat-browser-context-v2130{align-items:flex-start}.chat-browser-context-copy span{white-space:normal}}

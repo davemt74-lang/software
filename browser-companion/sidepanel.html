@@ -13,25 +13,95 @@
   </header>
 
   <main>
-    <section id="connectionCard" class="card">
-      <div class="eyebrow">Connection</div>
-      <div id="connectionState" class="connection-state">Checking VP3…</div>
-      <div id="connectControls" hidden>
-        <button id="connectBtn" class="primary" type="button">Connect to VP3</button>
-        <p class="hint">VP3 will open its normal sign-in/approval screen. Your password never enters the extension.</p>
+    <section id="connectionCard" class="card connection-card">
+      <div id="connectedAccount" hidden>
+        <div class="account-row">
+          <div id="accountAvatar" class="account-avatar" aria-hidden="true">VP</div>
+          <div class="account-copy">
+            <div class="eyebrow">Connected VP3 account</div>
+            <div id="accountName" class="account-name">VP3 user</div>
+            <div id="accountMeta" class="account-meta"></div>
+          </div>
+          <span class="connected-dot" title="Connected to VP3" aria-label="Connected to VP3"></span>
+        </div>
+        <div id="accountTeams" class="account-teams">Loading VP3 access…</div>
+        <div class="account-actions">
+          <button id="openVp3Btn" type="button">Open VP3</button>
+          <button id="refreshAccountBtn" type="button">Refresh account</button>
+          <button id="accountOptionsBtn" type="button">Extension settings</button>
+        </div>
+      </div>
+
+      <div id="disconnectedAccount">
+        <div class="eyebrow">Connection</div>
+        <div id="connectionState" class="connection-state">Checking VP3…</div>
+        <div id="connectControls" hidden>
+          <button id="connectBtn" class="primary" type="button">Connect to VP3</button>
+          <p class="hint">VP3 will open its normal sign-in/approval screen. Your password never enters the extension.</p>
+        </div>
+      </div>
+
+      <div id="accessNotice" class="access-notice" hidden>
+        This VP3 account is connected, but Browser Companion read access is not currently enabled. Refresh after your VP3 permissions change.
       </div>
     </section>
 
     <section id="shareWorkspace" hidden>
       <nav class="feed-tabs" aria-label="Browser Companion views">
-        <button id="thisPageTab" class="feed-tab active" type="button" aria-selected="true">This Page</button>
+        <button id="nowTab" class="feed-tab active" type="button" aria-selected="true">Now</button>
+        <button id="thisPageTab" class="feed-tab" type="button" aria-selected="false">This Page</button>
         <button id="followingTab" class="feed-tab" type="button" aria-selected="false">Following</button>
         <button id="liveTab" class="feed-tab" type="button" aria-selected="false">Live</button>
         <button id="alertsTab" class="feed-tab" type="button" aria-selected="false">Alerts</button>
         <button id="searchTab" class="feed-tab" type="button" aria-selected="false">Search</button>
       </nav>
 
-      <section id="thisPageView">
+      <section id="nowView">
+        <section class="card now-hero">
+          <div class="row-between">
+            <div>
+              <div class="eyebrow">Agent Now</div>
+              <div class="now-title">What deserves your attention</div>
+              <div id="nowStatus" class="page-host">Loading current VP3 intelligence…</div>
+            </div>
+            <button id="refreshNowBtn" class="text-btn" type="button">Refresh</button>
+          </div>
+          <div id="nowContextStrip" class="now-context-strip" hidden>
+            <div class="now-context-copy">
+              <small>Working with</small>
+              <strong id="nowContextTitle">Current page</strong>
+              <span id="nowContextMeta"></span>
+            </div>
+            <button id="toggleNowContextBtn" class="text-btn" type="button">Ignore page</button>
+          </div>
+          <div class="now-summary">
+            <span id="nowAttentionCount" class="pill unread">0 attention</span>
+            <span id="nowItemCount" class="pill">0 current</span>
+            <span id="nowContextualCount" class="pill" hidden>0 related</span>
+            <button id="restoreNowBtn" class="text-btn" type="button" hidden>Show hidden</button>
+          </div>
+          <button id="openAgentChatBtn" class="primary secondary-primary" type="button">Open Agent Chat</button>
+        </section>
+
+        <section id="nowContextPanel" class="card now-context-panel" hidden>
+          <div class="row-between">
+            <div><div class="eyebrow">Page relationships</div><strong>What VP3 already knows around this page</strong></div>
+            <span class="pill">Temporary</span>
+          </div>
+          <div id="nowRelationshipSummary" class="now-relationship-summary"></div>
+          <div id="nowRelationshipList" class="now-relationship-list"></div>
+          <div class="eyebrow now-actions-kicker">Suggested actions</div>
+          <div id="nowContextActions" class="now-context-actions"></div>
+          <p class="hint now-context-hint">Viewing this page does not save it to VP3. Knowledge, Research, tasks, follows, annotations, and shares are created only after an explicit action.</p>
+        </section>
+
+        <section class="feed-section">
+          <div id="nowEmpty" class="empty-state">Nothing needs the Agent canvas right now.</div>
+          <div id="nowFeed" class="now-feed"></div>
+        </section>
+      </section>
+
+      <section id="thisPageView" hidden>
         <section class="card source-card">
           <div class="row-between">
             <div>
@@ -48,7 +118,7 @@
           </div>
         </section>
 
-        <section class="card composer-card">
+        <section id="composerCard" class="card composer-card">
           <div class="row-between capture-heading">
             <div><div class="eyebrow">Annotate</div><strong>Add context to this page</strong></div>
             <span id="captureSummary" class="capture-summary">Add capture</span>

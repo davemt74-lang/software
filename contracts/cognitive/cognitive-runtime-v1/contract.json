@@ -1,0 +1,343 @@
+{
+  "contract": "cognitive-runtime-v1",
+  "schema_revision": 1,
+  "architecture_version": "5.00",
+  "canonical_owner": "vp3-cloud",
+  "principle": "analyze-broadly-surface-selectively-act-through-deterministic-authority",
+  "principal": {
+    "dimensions": [
+      "user_id",
+      "agent_namespace"
+    ],
+    "authority_sources": [
+      "authenticated_user",
+      "canonical_resource_authorization"
+    ],
+    "llm_grants_authority": false
+  },
+  "pipeline": [
+    "observe",
+    "normalize",
+    "authorize",
+    "correlate",
+    "retrieve",
+    "reason",
+    "verify",
+    "prioritize",
+    "propose",
+    "present_or_act",
+    "learn"
+  ],
+  "event_envelope": {
+    "required": [
+      "event_id",
+      "owner_user_id",
+      "agent_namespace",
+      "source",
+      "event_type",
+      "occurred_at",
+      "received_at",
+      "verification",
+      "object_refs",
+      "correlation_id",
+      "causation_id",
+      "schema_version"
+    ],
+    "optional": [
+      "actor_ref",
+      "changed_fields",
+      "relationship_hints",
+      "urgency_hint",
+      "sensitivity",
+      "external_event_id",
+      "metadata"
+    ],
+    "verification": [
+      "trusted",
+      "verified"
+    ]
+  },
+  "object_ref": {
+    "required": [
+      "type",
+      "id",
+      "scope"
+    ],
+    "optional": [
+      "workspace_id",
+      "version",
+      "fresh_at",
+      "sensitivity",
+      "provenance"
+    ],
+    "authority": false
+  },
+  "registry": {
+    "module_required": [
+      "module",
+      "version",
+      "objects",
+      "events",
+      "context_providers",
+      "relationship_providers",
+      "cards",
+      "tools",
+      "permission_resolver",
+      "freshness_policy",
+      "sensitivity_policy"
+    ],
+    "central_chat_module_rules": false,
+    "unregistered_action_policy": "reject",
+    "unregistered_card_policy": "generic-readonly-or-reject"
+  },
+  "observation": {
+    "categories": [
+      "fact_summary",
+      "opportunity",
+      "risk",
+      "commitment",
+      "unanswered_question",
+      "pattern",
+      "anomaly",
+      "forecast",
+      "recommendation",
+      "decision_support",
+      "action_plan",
+      "memory_candidate"
+    ],
+    "required": [
+      "observation_id",
+      "category",
+      "title",
+      "reason",
+      "evidence_refs",
+      "confidence",
+      "novelty",
+      "urgency",
+      "impact",
+      "goal_relevance"
+    ],
+    "optional": [
+      "valid_until",
+      "proposed_action_ids",
+      "proposed_cards",
+      "presentation_recommendation",
+      "voice_safe_summary"
+    ],
+    "confidence_range": [
+      0,
+      1
+    ]
+  },
+  "evidence": {
+    "truth_types": [
+      "database_fact",
+      "user_confirmed",
+      "external_verified",
+      "source_document",
+      "model_inference",
+      "hypothesis",
+      "forecast",
+      "recommendation"
+    ],
+    "chain_of_thought_persisted": false
+  },
+  "presentation": {
+    "outcomes": [
+      "none",
+      "memory",
+      "brief",
+      "away_digest",
+      "notification",
+      "voice_announce",
+      "ask_user",
+      "chat_response"
+    ],
+    "automatic_individual_chat_turns": false,
+    "default_idle_summary_minutes": 60,
+    "minimum_attention_idle_minutes": 30,
+    "no_material_change_no_summary": true
+  },
+  "voice": {
+    "requires_agent_voice_enabled": true,
+    "paired_visual_presentation": true,
+    "urgency": [
+      "passive",
+      "normal",
+      "attention",
+      "urgent"
+    ],
+    "decision_authority": "deterministic_presentation_policy",
+    "wording_may_use_llm": true
+  },
+  "cards": {
+    "modes": [
+      "compact",
+      "standard",
+      "expanded"
+    ],
+    "llm_generates_html": false,
+    "render_reauthorizes": true,
+    "actions_server_derived": true,
+    "initial_types": [
+      "transcription",
+      "recording",
+      "annotation",
+      "source",
+      "research",
+      "claim",
+      "team_activity",
+      "human_message",
+      "profile_agent_update",
+      "contact",
+      "commerce_order",
+      "commerce_customer",
+      "product",
+      "calendar_booking",
+      "meeting",
+      "meeting_brief",
+      "meeting_summary",
+      "meeting_followup",
+      "workflow",
+      "goal",
+      "commitment",
+      "opportunity",
+      "risk",
+      "decision",
+      "knowledge",
+      "live_room",
+      "homeserver",
+      "browser_companion"
+    ]
+  },
+  "cognitive_objects": {
+    "goal_states": [
+      "active",
+      "paused",
+      "completed",
+      "cancelled"
+    ],
+    "commitment_states": [
+      "proposed",
+      "open",
+      "in_progress",
+      "waiting",
+      "completed",
+      "cancelled",
+      "overdue"
+    ],
+    "opportunity_states": [
+      "new",
+      "presented",
+      "accepted",
+      "dismissed",
+      "acted",
+      "resolved",
+      "expired"
+    ],
+    "decision_states": [
+      "open",
+      "decided",
+      "revisited",
+      "closed"
+    ],
+    "question_states": [
+      "open",
+      "answered",
+      "dismissed"
+    ]
+  },
+  "meetings": {
+    "lifecycle": [
+      "scheduled",
+      "preparation_window",
+      "reminder_due",
+      "imminent",
+      "active",
+      "ended",
+      "followup",
+      "continuity"
+    ],
+    "default_reminders_minutes": [
+      60,
+      15,
+      5
+    ],
+    "required_cards": [
+      "meeting",
+      "meeting_brief",
+      "meeting_summary",
+      "meeting_followup"
+    ],
+    "continuity_inputs": [
+      "prior_summary",
+      "prior_commitments",
+      "unanswered_questions",
+      "followup_outcomes",
+      "material_changes"
+    ],
+    "voice_reminders_supported": true
+  },
+  "model_routing": {
+    "tiers": {
+      "tier0": "deterministic",
+      "tier1": "lightweight_semantic_triage",
+      "tier2": "cognitive_reasoning",
+      "tier3": "reflection"
+    },
+    "uses_agent_runtime_v420": true,
+    "full_database_context": false,
+    "strict_structured_output": true,
+    "direct_tool_execution_from_model": false
+  },
+  "autonomy": [
+    "suggest_only",
+    "draft",
+    "prepare_and_ask",
+    "execute_low_risk",
+    "autonomous_within_policy"
+  ],
+  "specialists": {
+    "examples": [
+      "meetings",
+      "relationships",
+      "commerce",
+      "research",
+      "team",
+      "workflow",
+      "profile_agent",
+      "annotated"
+    ],
+    "may_interrupt_user": false,
+    "primary_agent_owns_presentation": true
+  },
+  "integrations": {
+    "reuse": [
+      "agent_event_inbox",
+      "agent_memory_items",
+      "agent_chat_archive",
+      "agent_proactive_events",
+      "agent_workflow_runs",
+      "ai_execution_ledger",
+      "notifications"
+    ],
+    "v310_priority_chat_injection_when_v500_active": "disabled"
+  },
+  "security": {
+    "authorize_before_context": true,
+    "reauthorize_before_render": true,
+    "reauthorize_before_action": true,
+    "raw_secrets_in_context": false,
+    "unknown_tool_rejected": true,
+    "unknown_action_rejected": true,
+    "llm_html_rejected": true,
+    "llm_sql_rejected": true,
+    "voice_expands_authority": false
+  },
+  "compatibility": {
+    "contract_digest_required": true,
+    "unknown_model_output_fields": "reject",
+    "additive_registry_modules_allowed": true,
+    "breaking_wire_change_requires": "cognitive-runtime-v2"
+  }
+}

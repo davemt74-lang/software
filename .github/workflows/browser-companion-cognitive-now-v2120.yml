@@ -1,0 +1,129 @@
+name: Browser Companion Cognitive Now v21.20
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - browser-companion-cognitive-sidebar-v2120
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    name: Cognitive Now · PHP ${{ matrix.php }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.1','8.3']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Browser Companion v21.20 contract
+        run: node tests/browser-companion-cognitive-now-v2120.mjs
+      - name: Retained Browser Companion contracts
+        run: |
+          node tests/extension-device-token-v2100.mjs
+          node tests/browser-companion-v2030.mjs
+          node tests/browser-companion-account-shell-v2110.mjs
+      - name: Retained Cognitive Runtime contracts
+        run: |
+          node tests/vp3-cognitive-runtime-spec-v500.mjs
+          node tests/cognitive-runtime-core-v500.mjs
+          node tests/cognitive-presentation-v510.mjs
+          node tests/cognitive-cards-v520.mjs
+          node tests/cognitive-feed-v530.mjs
+          node tests/cognitive-learning-v540.mjs
+          node tests/cognitive-planning-v550.mjs
+          node tests/cognitive-orchestration-v560.mjs
+          node tests/cognitive-memory-v570.mjs
+      - name: JavaScript syntax
+        run: |
+          node --check browser-companion/background.js
+          node --check browser-companion/sidepanel.js
+          node --check browser-companion/options.js
+          node --check tests/browser-companion-cognitive-now-v2120.mjs
+      - name: PHP syntax
+        run: |
+          php -l api/extension-cognitive-now-v2120.php
+          php -l includes/bootstrap.php
+          php -l upgrade.php
+
+  package:
+    name: Build v21.20 deploy packages
+    needs: contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build extension and integrated server overlay
+        shell: bash
+        run: |
+          rm -rf dist
+          mkdir -p dist/server/api dist/server/includes dist/server/browser-companion
+
+          (
+            cd browser-companion
+            zip -r ../dist/vp3-browser-companion-extension.zip . -x '*.DS_Store'
+          )
+          unzip -t dist/vp3-browser-companion-extension.zip
+          unzip -Z1 dist/vp3-browser-companion-extension.zip | grep -qx 'manifest.json'
+
+          cp api/extension-token.php api/extension-me.php api/extension-device-disconnect-v2030.php api/extension-cognitive-now-v2120.php dist/server/api/
+          cp api/cognitive-*.php dist/server/api/
+          cp api/chat-notifications-brain-v240.php api/chat-v236.php api/chat.php dist/server/api/
+
+          cp includes/extension-device-token-v2100.php includes/extension-device-auth-v2001.php dist/server/includes/
+          cp includes/cognitive-*.php includes/agent-cognitive-loop-v310.php includes/bootstrap.php dist/server/includes/
+
+          cp extension-connect.php upgrade.php chat.php chat.js chat-notifications-drawer-v240.js dist/server/
+          cp chat-cognitive-*.js chat-cognitive-*.css dist/server/
+          cp -R browser-companion/. dist/server/browser-companion/
+
+          cat > dist/server/DEPLOY.txt <<'EOF'
+          VP3 Browser Companion Cognitive Now v21.20
+
+          This is an integrated overlay containing:
+          - Browser Companion Simple Login v21.00
+          - Account-Aware Shell v21.10
+          - VP3 Cognitive Runtime v5.00 through v5.70
+          - Browser Companion Cognitive Now v21.20
+
+          Extract into the VP3 application root and overwrite the included files.
+          Sign in as owner/admin and run upgrade.php once.
+
+          The Chrome extension uses the durable device token and the same live VP3
+          account/capability authority. Agent Now is server-composed; Chrome does
+          not rank cognitive items or execute Cognitive Runtime tools.
+          EOF
+
+          (
+            cd dist/server
+            zip -r ../vp3-browser-companion-deploy.zip .
+          )
+          unzip -t dist/vp3-browser-companion-deploy.zip
+          sha256sum dist/vp3-browser-companion-extension.zip > dist/vp3-browser-companion-extension.zip.sha256
+          sha256sum dist/vp3-browser-companion-deploy.zip > dist/vp3-browser-companion-deploy.zip.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vp3-browser-companion-cognitive-now-v21.20
+          path: |
+            dist/vp3-browser-companion-extension.zip
+            dist/vp3-browser-companion-extension.zip.sha256
+            dist/vp3-browser-companion-deploy.zip
+            dist/vp3-browser-companion-deploy.zip.sha256
+          if-no-files-found: error
+          retention-days: 30

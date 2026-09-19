@@ -1,0 +1,78 @@
+name: Browser + Cognitive Review Hardening
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - browser-cognitive-review-hardening-v2120
+
+permissions:
+  contents: read
+
+jobs:
+  hardening:
+    name: Review hardening · PHP ${{ matrix.php }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.1','8.3']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Focused review hardening contract
+        run: node tests/browser-cognitive-review-hardening-v2120.mjs
+
+      - name: Retained Browser Companion contracts
+        run: |
+          node tests/extension-device-token-v2100.mjs
+          node tests/browser-companion-account-shell-v2110.mjs
+          node tests/browser-companion-cognitive-now-v2120.mjs
+          node tests/browser-companion-v2030.mjs
+
+      - name: Retained Cognitive Runtime contracts
+        run: |
+          node tests/vp3-cognitive-runtime-spec-v500.mjs
+          node tests/cognitive-runtime-core-v500.mjs
+          node tests/cognitive-presentation-v510.mjs
+          node tests/cognitive-cards-v520.mjs
+          node tests/cognitive-feed-v530.mjs
+          node tests/cognitive-learning-v540.mjs
+          node tests/cognitive-planning-v550.mjs
+          node tests/cognitive-orchestration-v560.mjs
+          node tests/cognitive-memory-v570.mjs
+
+      - name: JavaScript syntax
+        run: |
+          node --check browser-companion/background.js
+          node --check browser-companion/sidepanel.js
+          node --check chat-cognitive-cards-v520.js
+          node --check chat-cognitive-feed-v530.js
+          node --check chat-cognitive-orchestration-v560.js
+          node --check chat-cognitive-presentation-v510.js
+          node --check chat-notifications-drawer-v240.js
+          node --check tests/browser-cognitive-review-hardening-v2120.mjs
+
+      - name: PHP syntax
+        run: |
+          php -l includes/extension-device-auth-v2000.php
+          php -l includes/extension-device-auth-v2001.php
+          php -l includes/extension-device-token-v2100.php
+          php -l includes/cognitive-runtime-v500.php
+          php -l includes/cognitive-feed-v530.php
+          php -l includes/cognitive-learning-v540.php
+          php -l includes/cognitive-presentation-v510.php
+          php -l api/extension-cognitive-now-v2120.php

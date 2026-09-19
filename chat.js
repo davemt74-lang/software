@@ -1281,11 +1281,11 @@
 
   function normalizeContext(raw) {
     if (!raw) {
-      return {sources:[],media:[],stem_media:[],actions:[],playlist_title:''};
+      return {sources:[],media:[],stem_media:[],actions:[],cards:[],playlist_title:''};
     }
 
     if (Array.isArray(raw)) {
-      return {sources:raw,media:[],stem_media:[],actions:[],playlist_title:''};
+      return {sources:raw,media:[],stem_media:[],actions:[],cards:[],playlist_title:''};
     }
 
     return {
@@ -1293,6 +1293,7 @@
       media:Array.isArray(raw.media) ? raw.media : [],
       stem_media:Array.isArray(raw.stem_media) ? raw.stem_media : [],
       actions:Array.isArray(raw.actions) ? raw.actions : [],
+      cards:Array.isArray(raw.cards) ? raw.cards : (Array.isArray(raw.cognitive_cards) ? raw.cognitive_cards : []),
       playlist_title:String(raw.playlist_title || '')
     };
   }
@@ -1331,7 +1332,7 @@
     return `<a class="chat-agent-action" href="${escapeHtml(withStudioReturn(action.url))}">${escapeHtml(action.label||'Open')}</a>`;
   }
 
-  function messageElement(role, text, sources = [], media = [], playlistTitle = '', stemMedia = [], actions = []) {
+  function messageElement(role, text, sources = [], media = [], playlistTitle = '', stemMedia = [], actions = [], cards = []) {
     const wrapper = document.createElement('article');
     wrapper.className = `message ${role}`;
 
@@ -1361,16 +1362,24 @@
         ${stemMedia.length ? `<section class="chat-stem-results"><div class="chat-listening-head"><div><small>Production search</small><strong>Matching stems</strong></div><span>${stemMedia.length} result${stemMedia.length===1?'':'s'}</span></div>${stemMedia.map(stemMediaHtml).join('')}</section>` : ''}
         ${actions.length ? `<div class="chat-agent-actions">${actions.map(agentActionHtml).join('')}</div>` : ''}
         ${sources.length ? `<div class="message-sources">${sources.map(sourceHtml).join('')}</div>` : ''}
+        ${cards.length ? '<div class="vp3-cognitive-card-host" data-cognitive-card-host></div>' : ''}
       </div>`;
 
     wrapper.querySelector('.message-text').textContent = text;
+    if (cards.length) {
+      const cardHost = wrapper.querySelector('[data-cognitive-card-host]');
+      if (cardHost) {
+        cardHost._vp3CognitiveCardRequests = cards;
+        queueMicrotask(() => window.VP3_COGNITIVE_CARDS_V520_RUNTIME?.renderRequests(cards,cardHost,{showError:false}));
+      }
+    }
     attachAudioTracking(wrapper);
     return wrapper;
   }
 
-  function addMessage(role, text, sources = [], media = [], playlistTitle = '', stemMedia = [], actions = []) {
+  function addMessage(role, text, sources = [], media = [], playlistTitle = '', stemMedia = [], actions = [], cards = []) {
     if (welcome) welcome.hidden = true;
-    const el = messageElement(role, text, sources, media, playlistTitle, stemMedia, actions);
+    const el = messageElement(role, text, sources, media, playlistTitle, stemMedia, actions, cards);
     thread.appendChild(el);
     thread.scrollTop = thread.scrollHeight;
     return el;
@@ -2824,7 +2833,7 @@
     );
 
     data.messages.forEach(message => {
-      let context = {sources:[],media:[],stem_media:[],actions:[],playlist_title:''};
+      let context = {sources:[],media:[],stem_media:[],actions:[],cards:[],playlist_title:''};
 
       if (message.context_json) {
         try {
@@ -2839,7 +2848,8 @@
         context.media,
         context.playlist_title,
         context.stem_media || [],
-        context.actions || []
+        context.actions || [],
+        context.cards || []
       );
       lastLoadedMessageId=Math.max(lastLoadedMessageId,Number(message.id||0));
     });
@@ -2859,9 +2869,9 @@
     const data=await api({action:'messages_after',conversation_id:targetId,after_id:lastLoadedMessageId});
     if(targetId!==conversationId||!Array.isArray(data.messages))return;
     data.messages.forEach(message=>{
-      let context={sources:[],media:[],stem_media:[],actions:[],playlist_title:''};
+      let context={sources:[],media:[],stem_media:[],actions:[],cards:[],playlist_title:''};
       if(message.context_json){try{context=normalizeContext(JSON.parse(message.context_json));}catch(error){}}
-      addMessage(message.role==='user'?'user':'assistant',message.message,context.sources,context.media,context.playlist_title,context.stem_media||[],context.actions||[]);
+      addMessage(message.role==='user'?'user':'assistant',message.message,context.sources,context.media,context.playlist_title,context.stem_media||[],context.actions||[],context.cards||[]);
       lastLoadedMessageId=Math.max(lastLoadedMessageId,Number(message.id||0));
     });
     if(data.messages.length)await refreshHistory();
@@ -2939,12 +2949,22 @@
     const typing = addTyping();
 
     try {
-      const data = await api({
+      const browserContextRuntime=window.VP3_BROWSER_CONTEXT_V2130_RUNTIME;
+      const browserAgentContext=browserContextRuntime&&typeof browserContextRuntime.agentContext==='function'
+        ? browserContextRuntime.agentContext()
+        : null;
+      const payload={
         action:'send',
         conversation_id:conversationId,
         message:message.trim(),
         input_mode:inputMode === 'voice' ? 'voice' : 'text'
-      });
+      };
+      if(browserAgentContext)payload.agent_context=browserAgentContext;
+      const data = await api(payload);
+
+      if(browserAgentContext&&browserContextRuntime&&typeof browserContextRuntime.consume==='function'){
+        browserContextRuntime.consume();
+      }
 
       conversationId = Number(data.conversation_id);
       lastLoadedMessageId=Math.max(lastLoadedMessageId,Number(data.user_message_id||0),Number(data.assistant_message_id||0));
@@ -2957,7 +2977,8 @@
         data.media || [],
         data.playlist_title || '',
         data.stem_media || [],
-        data.actions || []
+        data.actions || [],
+        data.cards || data.cognitive_cards || []
       );
       const autoAction=(data.actions||[]).find(action=>action && action.auto && action.url);
       if(autoAction){window.setTimeout(()=>{window.location.href=withStudioReturn(String(autoAction.url));},450);}
