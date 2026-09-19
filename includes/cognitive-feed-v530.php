@@ -372,6 +372,19 @@ function vp3_cognitive_feed_candidates_v530(PDO $pdo,array $user,string $namespa
             $authorized[]=$candidate;
         }catch(Throwable $e){}
     }
+
+    if(function_exists('vp3_cognitive_memory_schema_ready_v570')&&vp3_cognitive_memory_schema_ready_v570($pdo)){
+        vp3_cognitive_memory_sync_v570($pdo,$user,$namespace,$authorized);
+        foreach(vp3_cognitive_memory_feed_candidates_v570($pdo,$user,$namespace) as $candidate){
+            try{
+                $request=vp3_cognitive_validate_card_request_v500($candidate['card_request']);
+                if(!vp3_cognitive_authorize_ref_v500($pdo,$user,$namespace,$request['object_ref'],'read'))continue;
+                $candidate['card_request']=$request;
+                $candidate['group_key']=vp3_cognitive_feed_card_group_v530($request,(string)$candidate['key']);
+                $authorized[]=$candidate;
+            }catch(Throwable $e){}
+        }
+    }
     return $authorized;
 }
 
