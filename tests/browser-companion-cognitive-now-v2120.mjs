@@ -50,7 +50,7 @@ must(api.includes("vp3_extension_session_has_capability_v2001($session,'agent.me
 must(api.includes("has_permission('chat.access',$user)"),'live Agent Chat permission gate missing');
 must(api.includes('vp3_cognitive_feed_compose_v530($pdo,$user,$namespace,false)'),'server-side canonical feed composition missing');
 must(api.includes('vp3_cognitive_render_card_v500($pdo,$user,$namespace,$request)'),'server-side canonical card authorization/rendering missing');
-must(api.includes("['type'=>'agent_review'"),'tool/prompt actions must be downgraded to Agent review');
+must(api.includes("'type'=>'agent_review'"),'tool/prompt actions must be downgraded to Agent review');
 must(api.includes("in_array($type,['prompt','tool'],true)"),'tool/prompt sanitization missing');
 must(api.includes('vp3_cognitive_feed_hide_v530'),'canonical feed hide state missing');
 must(api.includes('vp3_cognitive_learning_explain_v540'),'canonical Why explanation missing');
