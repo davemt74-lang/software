@@ -43,7 +43,8 @@
     const runId=clean(ref.id);
     const toolId=clean(action.tool_id);
     if(!runId||!toolId)return;
-    const accepted=detail.accepted!==false;
+    if(detail.handled!==true)return;
+    const accepted=detail.accepted===true;
     void api(accepted?'handoff_requested':'handoff_rejected',runId,toolId).catch(()=>{});
   });
 
