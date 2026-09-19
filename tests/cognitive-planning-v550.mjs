@@ -38,6 +38,7 @@ assert.match(planning,/Accepting this plan does not execute a tool, approve an a
 assert.match(planning,/Use the registered VP3 tool only after the user explicitly chooses to proceed/);
 assert.match(planning,/requires_approval'=>!empty\(\$row\['requires_approval'\]\)/);
 assert.match(planning,/source_fingerprint<>\?/,'changed source must supersede older proposals');
+assert.match(planning,/\$meta\['module'\].*\$objectModule/s,'suggested tools must belong to the referenced cognitive module');
 assert.match(planning,/hash_equals\(\(string\)\$source\['fingerprint'\],\(string\)\$row\['source_fingerprint'\]\)/,'acceptance must recheck current source fingerprint');
 assert.doesNotMatch(planning,/execute_tool|tool_execute|run_tool|agent_tool_execute/i,'planning core must not execute tools');
 
