@@ -88,6 +88,15 @@ must(presentation.includes("VP3 Cognitive Presentation voice settings unavailabl
 must(presentation.includes("$settings=['agent_voice_enabled'=>false];"),
   'voice-settings failure must fail closed');
 
+const runtime=read('includes/cognitive-runtime-v500.php');
+must(runtime.includes("$voice=false;"),'core presentation context must default Agent Voice off');
+must(runtime.includes("$voice=!empty($settings['agent_voice_enabled']);"),
+  'core presentation context must enable voice only from canonical settings');
+must(runtime.includes("VP3 Cognitive Runtime voice settings unavailable:"),
+  'core voice-settings failures must be observable');
+must(runtime.includes("'agent_voice_enabled'=>false"),
+  'presentation arbitration defaults must be voice-safe when no canonical context is supplied');
+
 // 6. Learning reconciliation is bounded to once per feed candidate cycle.
 const reconcileCalls=(feedPhp.match(/vp3_cognitive_learning_reconcile_v540\(\$pdo,\$user,\$namespace\)/g)||[]).length;
 assert.equal(reconcileCalls,1,'Cognitive Feed must reconcile learning exactly once per compose/candidate cycle');
