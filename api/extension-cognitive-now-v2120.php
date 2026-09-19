@@ -191,6 +191,7 @@ try{
         vp3_extension_cognitive_json_v2120(403,['ok'=>false,'error'=>['code'=>'capability_denied','message'=>'This browser connection cannot access Agent Now.']]);
     }
     $user=vp3_extension_user_for_permission_v2001($pdo,(int)$session['user_id']);
+    if($user)$user['roles']=user_account_types_for_user_id((int)$user['id'],(string)($user['role']??''));
     if(!$user||!has_permission('chat.access',$user))vp3_extension_cognitive_json_v2120(403,['ok'=>false,'error'=>['code'=>'forbidden','message'=>'Agent Chat access is unavailable for this VP3 account.']]);
 
     $namespace=vp3_cognitive_agent_namespace_v500($pdo,$user,0);
