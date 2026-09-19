@@ -2,7 +2,7 @@
 const $=id=>document.getElementById(id);
 const ui={};
 [
-'connectionState','connectControls','pendingControls','shareWorkspace','deviceName','connectBtn','checkConnectionBtn','settingsBtn',
+'connectionState','connectControls','shareWorkspace','deviceName','connectBtn','settingsBtn',
 'thisPageTab','followingTab','liveTab','alertsTab','searchTab','thisPageView','followingView','liveView','alertsView','searchView','refreshCaptureBtn','pageTitle','pageHost','sourceMeta','sourceStatus',
 'followCurrentSourceBtn','openSourcePageBtn','selectedText','selectionCount','captureSummary','captureScreenshotBtn','screenshotPreview',
 'screenshotImage','screenshotMeta','removeScreenshotBtn','captureMediaBtn','mediaDetectedText','mediaPreview','mediaPreviewTitle','mediaStart',
@@ -20,7 +20,7 @@ const CLIP_MAX_SECONDS = 90;
 const COMMENTARY_MAX_BYTES = 16 * 1024 * 1024;
 const MAX_CLIP=CLIP_MAX_SECONDS,MAX_COMMENTARY=COMMENTARY_MAX_BYTES;
 let state=null,capture=null,destinations=null,lastShare=null,currentSource=null;
-let screenshotCapture=null,mediaReference=null,commentaryCapture=null,recorder=null,stream=null,recordTimer=null,recordStarted=0,pollTimer=null,pageTimer=null;
+let screenshotCapture=null,mediaReference=null,commentaryCapture=null,recorder=null,stream=null,recordTimer=null,recordStarted=0,pageTimer=null;
 let thisCursor='',followingCursor='',thisBusy=false,followingBusy=false,activeView='this_page';
 let researchShareId='',researchContextData=null;
 let liveRoomsData=[],liveRoom=null,liveCursor=0,livePollTimer=null,liveHeartbeatTimer=null,liveBusy=false;
@@ -83,9 +83,8 @@ function renderDestinations(p){
   (destinations.teams||[]).forEach(r=>{if(r.kind==='team_general'&&Number(r.id)){const label=String(r.name||'Team').replace(/ · General$/,'');ui.visibilityTeamSelect.append(new Option(label,String(Number(r.id))));ui.liveTeamSelect.append(new Option(label,String(Number(r.id))));ui.claimTeamSelect.append(new Option(label,String(Number(r.id))));ui.searchTeam.append(new Option(label,String(Number(r.id))));}});renderCaps();
 }
 function renderConnection(x){
-  state=x;ui.connectControls.hidden=ui.pendingControls.hidden=ui.shareWorkspace.hidden=true;
+  state=x;ui.connectControls.hidden=ui.shareWorkspace.hidden=true;
   if(x.connected){ui.connectionState.textContent='Connected as '+((x.user&&x.user.display_name)||'VP3 user');ui.shareWorkspace.hidden=false;}
-  else if(x.pending_connection){ui.connectionState.textContent='Waiting for VP3 approval';ui.pendingControls.hidden=false;}
   else{ui.connectionState.textContent='Not connected';ui.connectControls.hidden=false;}renderCaps();
 }
 function renderLast(x){
@@ -299,7 +298,6 @@ async function refreshCapture(withFeed){const x=await msg('capture');renderCaptu
 async function refreshState(){
   const x=await msg('state');renderConnection(x);if(x.connected){renderLast(x.last_share);if(x.pending_capture&&x.pending_capture.available&&x.pending_capture.selected_text){renderCapture(x.pending_capture);await message('clear_pending_capture').catch(()=>{});}else await refreshCapture(false);await loadDestinations();await loadThis(true);}else if(x.pending_connection)startPoll();
 }
-function startPoll(){clearInterval(pollTimer);pollTimer=setInterval(async()=>{try{const r=await msg('poll_connect');if(r.status==='approved'&&r.session){clearInterval(pollTimer);note('Browser connected to VP3.','success');await refreshState();}else if(['denied','expired'].includes(r.status)||r.reconnect_required){clearInterval(pollTimer);await refreshState();}}catch(e){clearInterval(pollTimer);fail(e);}},2000);}
 function clip(changed){if(!mediaReference)return;const d=Math.max(0,Number(mediaReference.metadata.duration_seconds||0));let s=Math.max(0,Number(ui.mediaStart.value||0)),e=Math.max(s,Number(ui.mediaEnd.value||s));if(d){s=Math.min(s,d);e=Math.min(e,d);}if(e-s>MAX_CLIP){if(changed==='start')s=Math.max(0,e-MAX_CLIP);else e=s+MAX_CLIP;}mediaReference.metadata.start_seconds=Number(s.toFixed(3));mediaReference.metadata.end_seconds=Number(e.toFixed(3));ui.mediaStart.value=s;ui.mediaEnd.value=e;ui.mediaClipHint.textContent='Clip '+sec(s)+'–'+sec(e)+' · '+(e-s).toFixed(1)+'s · source timestamps only · maximum 90s.';}
 async function record(){
   stream=await navigator.mediaDevices.getUserMedia({ audio: true });const types=['audio/webm;codecs=opus','audio/ogg;codecs=opus','audio/webm'],type=types.find(t=>MediaRecorder.isTypeSupported(t))||'',parts=[];recorder=new MediaRecorder(stream,type?{mimeType:type}:undefined);recordStarted=Date.now();recorder.ondataavailable=e=>{if(e.data&&e.data.size)parts.push(e.data);};
@@ -328,8 +326,8 @@ async function feedClick(e){
 }
 function reload(){return activeView==='following'?loadFollowing(true):activeView==='live'?loadLiveRooms():activeView==='alerts'?loadAlerts():activeView==='search'?loadDiscovery():loadThis(true);}
 
-ui.connectBtn.onclick=async()=>{busy(ui.connectBtn,true,'Opening VP3…');try{await msg('connect',{device_name:ui.deviceName.value.trim()||'Chrome Browser'});await refreshState();startPoll();}catch(e){fail(e);}finally{busy(ui.connectBtn,false);}};
-ui.checkConnectionBtn.onclick=()=>msg('poll_connect').then(refreshState).catch(fail);ui.settingsBtn.onclick=()=>chrome.runtime.openOptionsPage();
+ui.connectBtn.onclick=async()=>{busy(ui.connectBtn,true,'Connecting…');try{await msg('connect',{device_name:ui.deviceName.value.trim()||'Chrome Browser'});note('Browser connected to VP3.','success');await refreshState();}catch(e){fail(e);}finally{busy(ui.connectBtn,false);}};
+ui.settingsBtn.onclick=()=>chrome.runtime.openOptionsPage();
 ui.thisPageTab.onclick=()=>setView('this_page');ui.followingTab.onclick=()=>setView('following');ui.liveTab.onclick=()=>setView('live');ui.alertsTab.onclick=()=>setView('alerts');ui.searchTab.onclick=()=>setView('search');ui.refreshCaptureBtn.onclick=()=>refreshCapture(true).catch(fail);ui.refreshFollowingBtn.onclick=()=>loadFollowing(true).catch(fail);ui.refreshLiveBtn.onclick=()=>loadLiveRooms().catch(fail);ui.refreshAlertsBtn.onclick=()=>loadAlerts().catch(fail);
 ui.visibilitySelect.onchange=()=>{ui.visibilityTeamField.hidden=ui.visibilitySelect.value!=='team';renderCaps();};ui.visibilityTeamSelect.onchange=renderCaps;ui.destinationSelect.onchange=renderCaps;
 ui.liveScope.onchange=()=>{ui.liveTeamField.hidden=ui.liveScope.value!=='team';renderCaps();};ui.liveTeamSelect.onchange=renderCaps;
@@ -375,5 +373,5 @@ ui.liveMessages.onclick=async e=>{const b=e.target.closest('button[data-action="
 ui.thisPageFeed.onclick=feedClick;ui.followingFeed.onclick=feedClick;ui.loadMoreThisPageBtn.onclick=()=>loadThis(false).catch(fail);ui.loadMoreFollowingBtn.onclick=()=>loadFollowing(false).catch(fail);
 const io=new IntersectionObserver(es=>es.forEach(e=>{if(!e.isIntersecting||e.target.hidden)return;if(e.target===ui.loadMoreThisPageBtn)loadThis(false).catch(fail);if(e.target===ui.loadMoreFollowingBtn)loadFollowing(false).catch(fail);}),{rootMargin:'120px'});io.observe(ui.loadMoreThisPageBtn);io.observe(ui.loadMoreFollowingBtn);
 function pageWatch(){clearInterval(pageTimer);let u=capture&&capture.source_url||'';pageTimer=setInterval(async()=>{if(!state||!state.connected||!['this_page','live','alerts','search'].includes(activeView))return;try{const x=await msg('tab_identity');if(x.source_url&&x.source_url!==u){u=x.source_url;await refreshCapture(activeView==='this_page');if(activeView==='live'){liveRoom=null;liveCursor=0;ui.liveRoomPanel.hidden=true;await loadLiveRooms();}if(activeView==='alerts')await loadAlerts();if(activeView==='search')await loadDiscovery();}}catch(e){}},2000);}
-window.onbeforeunload=()=>{clearInterval(pageTimer);clearInterval(pollTimer);clearInterval(livePollTimer);clearInterval(liveHeartbeatTimer);stream&&stream.getTracks().forEach(t=>t.stop());};
+window.onbeforeunload=()=>{clearInterval(pageTimer);clearInterval(livePollTimer);clearInterval(liveHeartbeatTimer);stream&&stream.getTracks().forEach(t=>t.stop());};
 refreshState().then(pageWatch).catch(fail);
