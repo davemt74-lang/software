@@ -27,6 +27,9 @@ must(html.includes('id="nowTab" class="feed-tab active"'),'Now must be the defau
 must(html.includes('id="thisPageView" hidden'),'This Page must yield to Now on initial load');
 
 must(js.includes("activeView='now'"),'Now must be the initial client view');
+must(js.includes("ui.thisPageTab.disabled=!(state&&state.connected&&(canRead||canShare))"),'This Page must follow live read/share access');
+must(js.includes("activeView==='now'&&!c.has('agent.message')"),'Now must fall back when Agent access is unavailable');
+must(js.includes("setView('this_page')"),'authorized This Page fallback missing');
 must(js.includes("function renderNow(feed)"),'Agent Now renderer missing');
 must(js.includes("function cognitiveCard(section,item)"),'canonical cognitive card renderer missing');
 must(js.includes("msg('cognitive_now')"),'Agent Now live load missing');
