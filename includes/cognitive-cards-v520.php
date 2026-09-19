@@ -18,6 +18,7 @@ function vp3_cognitive_cards_types_v520(): array
         'commerce_order','commerce_customer','product','calendar_booking',
         'workflow','goal','commitment','opportunity','risk','decision',
         'knowledge','live_room','homeserver','browser_companion',
+        'brain_priority','feed_activity',
     ];
 }
 
@@ -252,6 +253,18 @@ function vp3_cognitive_cards_object_v520(PDO $pdo,array $user,string $namespace,
             foreach($devices as $row)if(hash_equals((string)($row['public_id']??''),$id))return ['type'=>$type,'row'=>$row];
             return null;
         }
+        if($type==='brain_priority'){
+            if(!function_exists('agent_cognitive_loop_v310_priority_items'))return null;
+            foreach(agent_cognitive_loop_v310_priority_items($user,10) as $row){
+                if(hash_equals((string)($row['id']??''),$id))return ['type'=>$type,'row'=>$row];
+            }
+            return null;
+        }
+        if($type==='feed_activity'){
+            if(!ctype_digit($id))return null;
+            $row=vp3_cognitive_cards_notification_v520($pdo,$user,(int)$id);
+            return $row?['type'=>$type,'row'=>$row]:null;
+        }
     }catch(Throwable $e){return null;}
     return null;
 }
@@ -379,6 +392,20 @@ function vp3_cognitive_cards_card_v520(PDO $pdo,array $user,string $namespace,ar
         $out['title']=(string)($row['device_name']??'Browser Companion');$out['subtitle']=(string)($row['browser_family']??'Browser Companion');$out['status']=(string)($row['device_status']??'');
         $out['summary']='VP3 Browser Companion · version '.(string)($row['extension_version']??'unknown');$out['timestamp']=(string)($row['last_used_at']??$row['approved_at']??'');
         $out['actions'][]=vp3_cognitive_cards_action_v520('Manage Browser Companion','/account.php#browser-companion');
+    }elseif($type==='brain_priority'){
+        $out['title']=(string)($row['title']??'Agent Brain priority');$out['subtitle']='Agent Brain priority';
+        $risk=(string)($row['risk_level']??'low');$out['status']=!empty($row['requires_approval'])?'approval needed':$risk;
+        $out['summary']=(string)($row['body']??'');$out['timestamp']=(string)($row['created_at']??'');
+        $out['facts'][]=vp3_cognitive_cards_fact_v520('Rank','#'.max(1,(int)($row['rank']??1)));
+        $out['facts'][]=vp3_cognitive_cards_fact_v520('Movement',(string)($row['movement']??'same'));
+        if(!empty($row['requires_approval']))$out['badges'][]='Approval required';
+        $out['actions'][]=vp3_cognitive_cards_prompt_v520('Discuss priority','Show me this Agent Brain priority and the safest next step: '.(string)($row['title']??''));
+    }elseif($type==='feed_activity'){
+        $out['title']=(string)($row['title']??'VP3 update');$out['subtitle']='Recent activity';
+        $out['status']=function_exists('notification_requires_attention')&&notification_requires_attention($row)?'attention':'unread';
+        $out['summary']=(string)($row['body']??'');$out['timestamp']=(string)($row['created_at']??'');
+        $target=trim((string)($row['target_url']??''));
+        if($target!==''&&str_starts_with($target,'/')&&!str_starts_with($target,'//'))$out['actions'][]=vp3_cognitive_cards_action_v520('Open',$target);
     }
 
     $out['metadata']['renderer_build']=VP3_COGNITIVE_CARDS_V520;

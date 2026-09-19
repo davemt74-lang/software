@@ -208,7 +208,7 @@ function vp3_cognitive_feed_meeting_candidates_v530(PDO $pdo,array $user): array
         $cardType=$brief?'meeting_brief':'meeting';
         $score=$status==='live'?99:($minutes<=15?96:($minutes<=60?91:($minutes<=1440?82:68)));
         $out[]=vp3_cognitive_feed_candidate_v530(
-            'meeting:'.$id,'next_up',$score,vp3_cognitive_feed_relative_time_v530((string)$meeting['start_at_utc']),
+            'meeting:'.$id,$attention?'attention':'next_up',$score,vp3_cognitive_feed_relative_time_v530((string)$meeting['start_at_utc']),
             vp3_cognitive_feed_request_v530($cardType,$id,'personal','standard'),
             'meeting',(string)($meeting['updated_at']??$meeting['start_at_utc']??''),[
                 'status'=>$status,'start_at_utc'=>$meeting['start_at_utc']??'',
@@ -236,7 +236,7 @@ function vp3_cognitive_feed_calendar_candidates_v530(PDO $pdo,array $user): arra
         $score=$minutes<=15?90:($minutes<=60?84:($minutes<=1440?74:58));
         $objectId=($kind==='booking'?'booking:':'event:').$id;
         $out[]=vp3_cognitive_feed_candidate_v530(
-            'calendar:'.$objectId,'next_up',$score,vp3_cognitive_feed_relative_time_v530((string)$event['start_at_utc']),
+            'calendar:'.$objectId,$attention?'attention':'next_up',$score,vp3_cognitive_feed_relative_time_v530((string)$event['start_at_utc']),
             vp3_cognitive_feed_request_v530('calendar_booking',$objectId,'personal','standard'),
             'calendar',(string)($event['start_at_utc']??''),['status'=>$event['status']??'','kind'=>$kind],$attention
         );
