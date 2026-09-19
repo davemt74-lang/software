@@ -247,6 +247,46 @@ function vp3_browser_context_calendar_v2130(PDO $pdo,array $user,array $terms): 
     return $out;
 }
 
+function vp3_browser_context_profiles_v2130(PDO $pdo,array $context,array $terms): array
+{
+    if(!table_exists('user_profiles'))return [];
+    $domain=strtolower(preg_replace('/^www\./i','',(string)($context['domain']??''))??'');
+    if($domain===''&&!$terms)return [];
+    try{
+        $rows=$pdo->query("SELECT p.user_id,p.username,p.bio,p.website_url,u.display_name,u.role
+          FROM user_profiles p INNER JOIN users u ON u.id=p.user_id
+          WHERE p.is_public=1 AND u.is_active=1 AND p.username<>''
+          ORDER BY p.updated_at DESC LIMIT 250")->fetchAll()?:[];
+    }catch(Throwable $e){return [];}
+    $scored=[];
+    foreach($rows as $row){
+        $websiteHost='';
+        $website=trim((string)($row['website_url']??''));
+        if($website!==''){
+            $websiteHost=strtolower((string)(parse_url($website,PHP_URL_HOST)??''));
+            $websiteHost=preg_replace('/^www\./i','',$websiteHost)??$websiteHost;
+        }
+        $hay=implode(' ',[(string)$row['display_name'],(string)$row['username'],(string)$row['bio'],$websiteHost]);
+        $score=vp3_browser_context_score_v2130($hay,$terms);
+        if($domain!==''&&$websiteHost!==''&&($websiteHost===$domain||str_ends_with($domain,'.'.$websiteHost)||str_ends_with($websiteHost,'.'.$domain)))$score+=10;
+        if($score<4)continue;
+        $row['_context_score']=$score;$scored[]=$row;
+    }
+    usort($scored,static fn(array $a,array $b):int=>(int)$b['_context_score']<=>(int)$a['_context_score']);
+    $out=[];
+    foreach(array_slice($scored,0,4) as $row){
+        $out[]=[
+            'type'=>'profile',
+            'id'=>(int)$row['user_id'],
+            'title'=>trim((string)$row['display_name'])?:('@'.(string)$row['username']),
+            'detail'=>'Public VP3 profile · @'.(string)$row['username'],
+            'score'=>(int)$row['_context_score'],
+            'url'=>'/profile.php?u='.rawurlencode((string)$row['username']),
+        ];
+    }
+    return $out;
+}
+
 function vp3_browser_context_crm_v2130(PDO $pdo,array $user,array $context,array $terms): array
 {
     if(!crm_v180_can_manage($user)||!crm_v180_schema_ready($pdo))return [];
@@ -295,6 +335,7 @@ function vp3_browser_context_relationships_v2130(PDO $pdo,array $user,array $con
         'research'=>vp3_browser_context_research_v2130($pdo,$user,$source),
         'knowledge'=>vp3_browser_context_knowledge_v2130($user,$context,$terms),
         'calendar'=>vp3_browser_context_calendar_v2130($pdo,$user,$terms),
+        'profiles'=>vp3_browser_context_profiles_v2130($pdo,$context,$terms),
         'contacts'=>vp3_browser_context_crm_v2130($pdo,$user,$context,$terms),
         'terms'=>$terms,
     ];
@@ -310,7 +351,9 @@ function vp3_browser_context_suggestions_v2130(array $session,array $context,arr
     if(!empty($relations['knowledge']))$suggestions[]=['id'=>'compare_knowledge','kind'=>'agent_prompt','label'=>'Compare with Knowledge','prompt'=>'Compare this page with my authorized VP3 Knowledge. Call out agreements, conflicts, and useful connections.'];
     if(!empty($relations['calendar']))$suggestions[]=['id'=>'prepare_meeting','kind'=>'agent_prompt','label'=>'Prepare for related meeting','prompt'=>'Use this page as context for the related upcoming meeting or calendar item. Give me a concise preparation brief.'];
     if(!empty($relations['research']))$suggestions[]=['id'=>'review_research','kind'=>'open','label'=>'Open related Research','url'=>(string)$relations['research'][0]['url']];
+    if(isset($caps['knowledge.write']))$suggestions[]=['id'=>'add_research','kind'=>'agent_prompt','label'=>'Add to Research','prompt'=>'I want to add useful context from this page to a VP3 Research project. Show me the appropriate project or choices and ask for confirmation before creating or saving anything.'];
     if(!empty($relations['team_conversations']))$suggestions[]=['id'=>'review_team','kind'=>'open','label'=>'Review Team discussion','url'=>(string)$relations['team_conversations'][0]['url']];
+    if(!empty($relations['profiles']))$suggestions[]=['id'=>'review_profile','kind'=>'open','label'=>'Open related profile','url'=>(string)$relations['profiles'][0]['url']];
     if(!empty($relations['contacts']))$suggestions[]=['id'=>'review_contact','kind'=>'open','label'=>'Review related contact','url'=>(string)$relations['contacts'][0]['url']];
     if(isset($caps['team.share.create']))$suggestions[]=['id'=>'share_team','kind'=>'manual_flow','label'=>'Share with Team','target'=>'this_page'];
     if(isset($caps['knowledge.write']))$suggestions[]=['id'=>'save_knowledge','kind'=>'agent_prompt','label'=>'Save to Knowledge','prompt'=>'I want to save useful context from this page to my VP3 Knowledge. Show me what would be saved and ask for confirmation before creating anything.'];
@@ -370,6 +413,7 @@ function vp3_browser_contextualize_feed_v2130(array $feed,array $context,array $
         'research'=>array_values((array)($relations['research']??[])),
         'knowledge'=>array_values((array)($relations['knowledge']??[])),
         'calendar'=>array_values((array)($relations['calendar']??[])),
+        'profiles'=>array_values((array)($relations['profiles']??[])),
         'contacts'=>array_values((array)($relations['contacts']??[])),
     ];
     return $feed;
@@ -378,7 +422,7 @@ function vp3_browser_contextualize_feed_v2130(array $feed,array $context,array $
 function vp3_browser_context_agent_payload_v2130(array $context,array $relations,string $prompt=''): array
 {
     $relationshipSummary=[];
-    foreach(['research','knowledge','calendar','contacts','team_conversations'] as $key){
+    foreach(['research','knowledge','calendar','profiles','contacts','team_conversations'] as $key){
         foreach(array_slice((array)($relations[$key]??[]),0,3) as $row){
             if(!is_array($row))continue;
             $relationshipSummary[]=[
