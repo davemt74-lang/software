@@ -53,6 +53,10 @@ must(!/\bUPDATE\s+[a-z_]/i.test(context),'context resolver must not update durab
 must(!/\bDELETE\s+FROM\b/i.test(context),'context resolver must not delete durable records');
 must(!context.includes('vp3_browser_source_ensure_v2050('),'viewing a page must not create a Source');
 must(context.includes('vp3_browser_source_this_page_v2050('),'existing Source/annotation lookup must reuse canonical read path');
+must(context.includes("in_array('team.chat.read',$extensionCapabilities,true)"),
+  'extension relationship UI must gate Source/Team activity on live team.chat.read');
+must(extensionApi.includes("(array)($session['capabilities']??[])"),
+  'extension contextual resolver must receive the live device capability set');
 must(context.includes('vp3_research_project_role_v2060'),'Research relationship discovery must reauthorize membership');
 must(context.includes('search_knowledge($query,$user,5)'),'Knowledge relationship discovery must use scoped Knowledge search');
 must(context.includes('user_calendar_events_v1300($pdo,$user,$from,$to)'),'meeting/calendar discovery must use user-scoped calendar');
