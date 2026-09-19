@@ -367,6 +367,7 @@ function renderContextualNow(payload){
   if(counts.length)counts.forEach(([label,count])=>summary.append(el('span','pill',count+' '+label.toLowerCase())));
   else summary.append(el('span','muted','No existing VP3 relationships found yet.'));
   ui.nowRelationshipList.replaceChildren();
+  (Array.isArray(rel.insights)?rel.insights:[]).slice(0,4).forEach(text=>ui.nowRelationshipList.append(el('div','now-context-insight',text)));
   relationshipRows(rel).forEach(row=>{const box=el('div','now-relationship-row',''),copy=el('div','','');copy.append(el('small','',String(row.type||row._group||'related').replace(/_/g,' ')),el('strong','',row.title||'Related item'));if(row.detail)copy.append(el('span','',row.detail));box.append(copy);if(row.url){const b=act('Open','context_open_relation');b.dataset.url=String(row.url);box.append(b);}ui.nowRelationshipList.append(box);});
   ui.nowContextActions.replaceChildren();
   contextSuggestions.forEach((suggestion,index)=>{const b=act(suggestion.label||'Review','context_suggestion');b.dataset.index=String(index);if(index===0)b.classList.add('primary-inline');ui.nowContextActions.append(b);});
