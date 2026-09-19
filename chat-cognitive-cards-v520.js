@@ -52,12 +52,16 @@
       if (!href) return null;
       const a = el('a','vp3-card-action',label);
       a.href = href;
+      a.addEventListener('click',()=>a.dispatchEvent(new CustomEvent('vp3:cognitive-card-action',{bubbles:true,detail:{action,card}})));
       return a;
     }
     const button = el('button','vp3-card-action',label);
     button.type = 'button';
     if (type === 'prompt') {
-      button.addEventListener('click',() => runPrompt(action.prompt));
+      button.addEventListener('click',() => {
+        button.dispatchEvent(new CustomEvent('vp3:cognitive-card-action',{bubbles:true,detail:{action,card}}));
+        runPrompt(action.prompt);
+      });
       return button;
     }
     if (type === 'tool') {
@@ -66,6 +70,7 @@
         const detail = {tool_id:clean(action.tool_id),card:card,action:action};
         const event = new CustomEvent('vp3:cognitive-card-tool-request',{detail,cancelable:true});
         const allowed = window.dispatchEvent(event);
+        button.dispatchEvent(new CustomEvent('vp3:cognitive-card-action',{bubbles:true,detail:{action,card,accepted:allowed}}));
         if (allowed) runPrompt('Use ' + clean(action.tool_id) + ' for ' + clean(card.title || 'this item') + '.');
       });
       return button;

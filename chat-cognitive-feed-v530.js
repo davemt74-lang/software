@@ -32,6 +32,26 @@
     return url.toString();
   }
 
+  async function learningApi(action,payload={}) {
+    const endpoint=String(cfg.learningEndpoint||'/api/cognitive-learning-v540.php');
+    if(action==='explain'){
+      const url=new URL(endpoint,window.location.origin);
+      url.searchParams.set('action','explain');
+      url.searchParams.set('agent_id',String(Number(cfg.agentId||0)));
+      url.searchParams.set('item_key',clean(payload.item_key));
+      const response=await fetch(url.toString(),{credentials:'same-origin',cache:'no-store',headers:{Accept:'application/json'}});
+      const data=await response.json().catch(()=>({}));
+      if(!response.ok||!data.ok)throw new Error(data.error||'learning_unavailable');
+      return data;
+    }
+    const response=await fetch(endpoint,{method:'POST',credentials:'same-origin',cache:'no-store',keepalive:true,
+      headers:{'Content-Type':'application/json','Accept':'application/json'},
+      body:JSON.stringify({action:'feedback',agent_id:Number(cfg.agentId||0),csrf_token:String(cfg.csrf||''),...payload})});
+    const data=await response.json().catch(()=>({}));
+    if(!response.ok||!data.ok)throw new Error(data.error||'learning_unavailable');
+    return data;
+  }
+
   async function api(action,payload={}) {
     if(action==='state'){
       const response=await fetch(endpointUrl(),{credentials:'same-origin',cache:'no-store',headers:{Accept:'application/json'}});
@@ -117,6 +137,18 @@
     reason.appendChild(el('span','',clean(item.reason)||clean(section.description)));
 
     const actions=el('div','vp3-cognitive-feed-item-controls');
+    const why=el('button','vp3-cognitive-feed-hide','Why?');
+    why.type='button';
+    why.addEventListener('click',async()=>{
+      why.disabled=true;
+      try{
+        const data=await learningApi('explain',{item_key:clean(item.key)});
+        const note=el('div','vp3-cognitive-feed-explain',clean(data.explanation&&data.explanation.explanation));
+        const existing=wrap.querySelector('.vp3-cognitive-feed-explain');
+        if(existing)existing.replaceWith(note); else wrap.insertBefore(note,wrap.querySelector('.vp3-cognitive-feed-card-host'));
+      }catch(_error){status.textContent='Could not explain this ranking right now.';}
+      finally{why.disabled=false;}
+    });
     const hide=el('button','vp3-cognitive-feed-hide','Hide');
     hide.type='button';
     hide.setAttribute('aria-label','Hide this feed item until it changes');
@@ -134,7 +166,7 @@
         hide.disabled=false;
       }
     });
-    actions.appendChild(hide);
+    actions.append(why,hide);
     meta.append(reason,actions);
 
     const host=el('div','vp3-cognitive-feed-card-host vp3-cognitive-card-host');
@@ -143,6 +175,14 @@
     const runtime=window.VP3_COGNITIVE_CARDS_V520_RUNTIME;
     if(runtime&&item.card_request){
       void runtime.renderRequests([item.card_request],host,{showError:false}).then(result=>{
+        if(result&&result.rendered>0){
+          void learningApi('feedback',{
+            event_type:'shown',
+            item_key:clean(item.key),
+            fingerprint:clean(item.fingerprint),
+            dedupe:'render:'+clean(item.fingerprint)+':'+String(Math.floor(Date.now()/21600000))
+          }).catch(()=>{});
+        }
         if(!result||result.rendered<1){
           const sectionNode=wrap.closest('.vp3-cognitive-feed-section');
           wrap.remove();
@@ -220,6 +260,24 @@
     if(timer)window.clearInterval(timer);
     timer=window.setInterval(()=>void refreshFeed(false),Math.max(30,seconds)*1000);
   }
+
+  welcome.addEventListener('vp3:cognitive-card-action',event=>{
+    const itemNode=event.target&&event.target.closest?event.target.closest('.vp3-cognitive-feed-item'):null;
+    if(!itemNode)return;
+    const key=clean(itemNode.dataset.feedItemKey);
+    const item=lastFeed&&Array.isArray(lastFeed.sections)
+      ? lastFeed.sections.flatMap(section=>Array.isArray(section.items)?section.items:[]).find(row=>clean(row.key)===key)
+      : null;
+    if(!item)return;
+    const type=clean(event.detail&&event.detail.action&&event.detail.action.type)||'open';
+    const accepted=!(event.detail&&event.detail.accepted===false);
+    void learningApi('feedback',{
+      event_type:accepted?'acted':'engaged',
+      action_type:accepted?type:(type+'_rejected'),
+      item_key:key,
+      fingerprint:clean(item.fingerprint)
+    }).catch(()=>{});
+  });
 
   const observer=new MutationObserver(records=>{
     if(records.some(record=>record.type==='attributes'&&record.attributeName==='hidden')&&visible()){
