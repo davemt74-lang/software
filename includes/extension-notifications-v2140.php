@@ -46,6 +46,7 @@ function vp3_extension_notifications_ensure_schema_v2140(?PDO $pdo=null): void
       visual_delivered_at DATETIME NULL,
       voice_delivered_at DATETIME NULL,
       voice_retry_after DATETIME NULL,
+      voice_through_notification_id BIGINT UNSIGNED NULL,
       opened_at DATETIME NULL,
       dismissed_at DATETIME NULL,
       snoozed_until DATETIME NULL,
@@ -173,6 +174,7 @@ function vp3_extension_notification_cognitive_candidates_v2140(PDO $pdo,array $u
         if(!is_array($section)||(string)($section['id']??'')!=='attention')continue;
         foreach(array_slice((array)($section['items']??[]),0,8) as $item){
             if(!is_array($item))continue;
+            if((string)($item['source']??'')==='notification')continue;
             $fingerprint=strtolower(trim((string)($item['fingerprint']??'')));
             if(!preg_match('/^[a-f0-9]{64}$/',$fingerprint))continue;
             $request=is_array($item['card_request']??null)?$item['card_request']:[];
@@ -335,9 +337,66 @@ function vp3_extension_notification_voice_pending_v2140(PDO $pdo,array $session,
 {
     if(!vp3_extension_notification_voice_enabled_v2140($pdo,$user))return null;
     $device=(string)($session['device_id']??'');if($device==='')return null;
+
+    // Keep Chrome voice on the exact same canonical cursor/text contract as
+    // Agent Chat. Only use the canonical candidate when the entire covered
+    // voice window is non-sensitive; otherwise Chrome leaves that window for
+    // the web Agent Voice path rather than speaking private text.
+    $state=vp3_cognitive_presentation_state_row_v510($pdo,$user,$namespace);
+    $voice=vp3_cognitive_presentation_voice_candidate_v510($pdo,$user,$state,null);
+    if(is_array($voice)&&isset($voice['skip_through_id'])){
+        vp3_cognitive_presentation_voice_delivered_v510($pdo,$user,$namespace,(int)$voice['skip_through_id']);
+        $state['last_voice_notification_id']=(int)$voice['skip_through_id'];
+        $voice=null;
+    }
+    if(is_array($voice)&&isset($voice['through_id'],$voice['message'])){
+        $from=max(0,(int)($state['last_voice_notification_id']??0));
+        $through=max($from,(int)$voice['through_id']);
+        $rows=vp3_extension_notification_rows_v2140($pdo,$user);
+        $covered=array_values(array_filter($rows,static function(array $row) use($from,$through): bool {
+            $id=max(0,(int)($row['id']??0));
+            return $id>$from&&$id<=$through
+                &&function_exists('vp3_cognitive_presentation_voice_allowed_type_v510')
+                &&vp3_cognitive_presentation_voice_allowed_type_v510($row);
+        }));
+        $safe=$covered!==[];
+        foreach($covered as $row){
+            $probe=[
+                'type'=>(string)($row['type']??''),
+                'source_type'=>(string)($row['source_type']??''),
+                'title'=>(string)($row['title']??''),
+                'body'=>(string)($row['body']??''),
+            ];
+            if(vp3_extension_notification_sensitive_v2140($probe)){$safe=false;break;}
+        }
+        if($safe){
+            $stmt=$pdo->prepare("SELECT * FROM extension_notification_delivery_v2140
+              WHERE owner_user_id=? AND claimed_device_id=? AND source_kind='notification'
+                AND notification_id>? AND notification_id<=?
+                AND visual_delivered_at IS NOT NULL AND voice_delivered_at IS NULL
+                AND dismissed_at IS NULL AND (voice_retry_after IS NULL OR voice_retry_after<=UTC_TIMESTAMP())
+              ORDER BY notification_id DESC,id DESC LIMIT 1");
+            $stmt->execute([(int)$user['id'],$device,$from,$through]);
+            $row=$stmt->fetch();
+            if(is_array($row)){
+                $pdo->prepare("UPDATE extension_notification_delivery_v2140
+                  SET voice_through_notification_id=?,updated_at=UTC_TIMESTAMP() WHERE id=?")
+                  ->execute([$through,(int)$row['id']]);
+                return [
+                    'event_key'=>(string)$row['event_key'],
+                    'text'=>vp3_cognitive_text_v500($voice['message']??'',360),
+                    'kind'=>'notification',
+                    'through_id'=>$through,
+                    'context_related'=>false,
+                ];
+            }
+        }
+    }
+
+    // Cognitive-only attention events have no canonical notification cursor.
     $stmt=$pdo->prepare("SELECT event_key FROM extension_notification_delivery_v2140
-      WHERE owner_user_id=? AND claimed_device_id=? AND visual_delivered_at IS NOT NULL
-        AND voice_delivered_at IS NULL AND dismissed_at IS NULL
+      WHERE owner_user_id=? AND claimed_device_id=? AND source_kind='cognitive'
+        AND visual_delivered_at IS NOT NULL AND voice_delivered_at IS NULL AND dismissed_at IS NULL
         AND (voice_retry_after IS NULL OR voice_retry_after<=UTC_TIMESTAMP())
       ORDER BY visual_delivered_at ASC,id ASC LIMIT 8");
     $stmt->execute([(int)$user['id'],$device]);
@@ -351,7 +410,8 @@ function vp3_extension_notification_voice_pending_v2140(PDO $pdo,array $session,
         return [
             'event_key'=>$key,
             'text'=>(string)$public['voice_text'],
-            'kind'=>(string)$candidate['source_kind'],
+            'kind'=>'cognitive',
+            'through_id'=>0,
             'context_related'=>!empty($candidate['context_related']),
         ];
     }
@@ -399,8 +459,16 @@ function vp3_extension_notification_voice_result_v2140(PDO $pdo,array $session,a
           SET voice_delivered_at=COALESCE(voice_delivered_at,UTC_TIMESTAMP()),voice_retry_after=NULL,updated_at=UTC_TIMESTAMP()
           WHERE id=? AND voice_delivered_at IS NULL");
         $stmt->execute([(int)$row['id']]);
-        if(!empty($row['notification_id'])&&function_exists('vp3_cognitive_presentation_voice_delivered_v510')){
-            vp3_cognitive_presentation_voice_delivered_v510($pdo,$user,$namespace,(int)$row['notification_id']);
+        $through=max(0,(int)($row['voice_through_notification_id']??0));
+        if((string)($row['source_kind']??'')==='notification'&&$through>0
+            &&function_exists('vp3_cognitive_presentation_voice_delivered_v510')){
+            vp3_cognitive_presentation_voice_delivered_v510($pdo,$user,$namespace,$through);
+            $pdo->prepare("UPDATE extension_notification_delivery_v2140
+              SET voice_delivered_at=COALESCE(voice_delivered_at,UTC_TIMESTAMP()),voice_retry_after=NULL,updated_at=UTC_TIMESTAMP()
+              WHERE owner_user_id=? AND source_kind='notification'
+                AND notification_id IS NOT NULL AND notification_id<=?
+                AND visual_delivered_at IS NOT NULL")
+              ->execute([$uid,$through]);
         }
     }else{
         $pdo->prepare("UPDATE extension_notification_delivery_v2140
