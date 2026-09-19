@@ -712,7 +712,7 @@ async function createProactiveNotification(candidate) {
   const message = String(candidate.body || '').trim() || 'Open VP3 to review this update.';
   const options = {
     type:'basic',
-    iconUrl:chrome.runtime.getURL('notification-icon.svg'),
+    iconUrl:chrome.runtime.getURL('notification-icon.png'),
     title:String(candidate.title || 'VP3 update').slice(0,190),
     message:message.slice(0,420),
     contextMessage:candidate.context_related ? 'Related to the page you are viewing' : '',
