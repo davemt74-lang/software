@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__.'/extension-device-token-v2100.php';
+
 /**
  * VP3 v20.01 Browser Companion security/audit hardening.
  *
@@ -172,8 +174,23 @@ function vp3_extension_session_issue_v2001(PDO $pdo, string $devicePublicId, str
 
 function vp3_extension_session_authenticate_v2001(PDO $pdo, string $token = ''): ?array
 {
-    $session = vp3_extension_session_authenticate_v2000($pdo, $token);
+    $token = $token !== '' ? $token : vp3_extension_bearer_token_v2000();
+
+    // v21.00 Browser Companion uses one durable device token. Keep the old
+    // short-lived session primitive as a compatibility fallback for browsers
+    // that have not yet upgraded. A deployment may load this compatibility
+    // layer before upgrade.php has created the v21 code table, so only attempt
+    // durable-token auth when its schema is actually ready.
+    $session = null;
+    if (function_exists('vp3_extension_device_token_schema_ready_v2100')
+        && vp3_extension_device_token_schema_ready_v2100($pdo)) {
+        $session = vp3_extension_device_token_authenticate_v2100($pdo, $token);
+    }
+    if (!$session && vp3_extension_schema_ready_v2000($pdo)) {
+        $session = vp3_extension_session_authenticate_v2000($pdo, $token);
+    }
     if (!$session) return null;
+
     $session['capabilities'] = vp3_extension_live_capabilities_v2001(
         $pdo,
         (int)($session['user_id'] ?? 0),

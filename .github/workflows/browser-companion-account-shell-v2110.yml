@@ -1,0 +1,46 @@
+name: Browser Companion Account-Aware Shell v21.10
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - browser-companion-account-shell-v2110
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    name: Account shell contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: v21.10 account-aware shell contract
+        run: node tests/browser-companion-account-shell-v2110.mjs
+      - name: Retained v21.00 authentication contract
+        run: node tests/extension-device-token-v2100.mjs
+      - name: Retained Browser Companion contract
+        run: node tests/browser-companion-v2030.mjs
+      - name: JavaScript syntax
+        run: |
+          node --check browser-companion/background.js
+          node --check browser-companion/sidepanel.js
+          node --check browser-companion/options.js
+          node --check tests/browser-companion-account-shell-v2110.mjs
+      - name: Manifest contract
+        run: |
+          node - <<'NODE'
+          const m = require('./browser-companion/manifest.json');
+          const p=String(m.version||'').split('.').map(Number);
+          const compatible=p.length===3&&(p[0]>21||(p[0]===21&&p[1]>=1));
+          if (m.manifest_version !== 3 || !compatible) process.exit(1);
+          NODE

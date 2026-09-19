@@ -1,0 +1,76 @@
+{
+  "contract": "meeting-intelligence-cognitive-module-v1",
+  "schema_revision": 1,
+  "runtime_contract": "cognitive-runtime-v1",
+  "module": "meetings",
+  "canonical_owners": {
+    "meeting": "video-meetings-v1800",
+    "transcription": "video-meetings-transcription-v1800",
+    "intelligence": "video-meetings-intelligence-v1820",
+    "continuity": "video-meetings-cross-meeting-continuity-v18210"
+  },
+  "objects": [
+    "meeting",
+    "meeting_brief",
+    "meeting_summary",
+    "meeting_followup"
+  ],
+  "events": [
+    "meeting.created",
+    "meeting.updated",
+    "meeting.reminder_due",
+    "meeting.started",
+    "meeting.ended",
+    "meeting.transcription_ready",
+    "meeting.summary_ready",
+    "meeting.followup_due"
+  ],
+  "cards": [
+    "meeting",
+    "meeting_brief",
+    "meeting_summary",
+    "meeting_followup"
+  ],
+  "tools": {
+    "meeting.context": {
+      "kind": "read",
+      "risk": "low",
+      "requires_approval": false
+    },
+    "meeting.prepare_brief": {
+      "kind": "prepare",
+      "risk": "low",
+      "requires_approval": false
+    },
+    "meeting.draft_followup": {
+      "kind": "prepare",
+      "risk": "low",
+      "requires_approval": false
+    }
+  },
+  "lifecycle": [
+    "scheduled",
+    "preparation_window",
+    "reminder_due",
+    "imminent",
+    "active",
+    "ended",
+    "followup",
+    "continuity"
+  ],
+  "default_reminders_minutes": [
+    60,
+    15,
+    5
+  ],
+  "privacy": {
+    "organizer_private_notes_are_owner_only": true,
+    "transcript_access_reauthorized": true,
+    "llm_does_not_grant_meeting_access": true
+  },
+  "presentation": {
+    "voice_safe": true,
+    "voice_decision_owned_by_runtime": true,
+    "visual_card_required_with_voice": true
+  }
+}

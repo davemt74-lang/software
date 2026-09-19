@@ -46,6 +46,7 @@ function vp3_upgrade_complete(): bool
         && token_pack_schema_ready()
         && password_reset_schema_ready()
         && vp3_extension_schema_ready_v2000()
+        && vp3_extension_device_token_schema_ready_v2100()
         && chat_settings_schema_ready_v237()
         && permission_v105_playlist_permission_ready()
         && personal_capability_seeded_v242()
@@ -97,6 +98,13 @@ function vp3_upgrade_complete(): bool
         && agent_goal_strategy_schema_ready_v1710()
         && agent_goal_planning_schema_ready_v1711()
         && agent_goal_review_schema_ready_v1714()
+        && vp3_cognitive_schema_ready_v500()
+        && vp3_cognitive_presentation_schema_ready_v510()
+        && vp3_cognitive_feed_schema_ready_v530()
+        && vp3_cognitive_learning_schema_ready_v540()
+        && vp3_cognitive_planning_schema_ready_v550()
+        && vp3_cognitive_orchestration_schema_ready_v560()
+        && vp3_cognitive_memory_schema_ready_v570()
         && table_exists('homeserver_connections')
         && table_exists('homeserver_releases')
         && table_exists('homeserver_chat_sessions')
@@ -137,6 +145,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             token_pack_ensure_schema();
             password_reset_ensure_schema();
             vp3_extension_ensure_schema_v2000();
+            vp3_extension_device_token_ensure_schema_v2100();
             chat_settings_ensure_schema_v237();
             permission_v105_seed_playlist_permission();
             personal_capability_seed_v242();
@@ -175,6 +184,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             agent_goal_strategy_ensure_schema_v1710($pdo);
             agent_goal_planning_ensure_schema_v1711($pdo);
             agent_goal_review_ensure_schema_v1714($pdo);
+            vp3_cognitive_ensure_schema_v500($pdo);
+            vp3_cognitive_presentation_ensure_schema_v510($pdo);
+            vp3_cognitive_feed_ensure_schema_v530($pdo);
+            vp3_cognitive_learning_ensure_schema_v540($pdo);
+            vp3_cognitive_planning_ensure_schema_v550($pdo);
+            vp3_cognitive_orchestration_ensure_schema_v560($pdo);
+            vp3_cognitive_memory_ensure_schema_v570($pdo);
             homeserver_vp3_ensure_schema($pdo);
             if (!homeserver_agent_v018_ensure_schema($pdo)) throw new RuntimeException('HomeServer Agent chat schema could not be installed.');
             agent_compute_v020_ensure_schema($pdo);
@@ -211,7 +227,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $complete = vp3_upgrade_complete();
 
             if ($complete) {
-                flash('notice', 'VP3 database upgrade complete: subscriptions, composable product entitlements, canonical plugin lifecycle, canonical human messaging, Browser Companion device authentication + Browser Share backend + private rich media + Live Rooms/Cloak Mode + Source Change Intelligence + Claims + Moderation + Search & Discovery, durable Agent retirement, Agent-scoped Brain memory, native Agent Scheduling, unified User Calendar, external calendar synchronization, Team Scheduling, Appointment Lifecycle + Automation, Video Meetings + Meeting Intelligence + Meeting Agenda orchestration + Meeting Action execution + Follow-Through Intelligence + Meeting Outcome Learning + Adaptive Meeting Planning + Plan-to-Action Handoff + Follow-Through Verification & Closure + Cross-Meeting Continuity + Meeting Closure & Recurring Continuity + manual Calendar meetings, Paid Appointments, Agent Work Control + Dependencies, Objective Verification + Adaptive Replanning, Objective Memory + Outcome Learning, Goals + Strategy + Adaptive Roadmaps + Forecast Review Learning, canonical Agent runtime routing and route-attributed AI accounting, social relationships, Team invitation/lifecycle collaboration, workspace-owned Music resources, Knowledge, Profile Agent, HomeServer Agent continuity, Agent Radar, CRM, transcriptions, and Music/Studio capabilities are ready.');
+                flash('notice', 'VP3 database upgrade complete: subscriptions, composable product entitlements, canonical plugin lifecycle, canonical human messaging, Browser Companion device authentication + Browser Share backend + private rich media + Live Rooms/Cloak Mode + Source Change Intelligence + Claims + Moderation + Search & Discovery, durable Agent retirement, Agent-scoped Brain memory, native Agent Scheduling, unified User Calendar, external calendar synchronization, Team Scheduling, Appointment Lifecycle + Automation, Video Meetings + Meeting Intelligence + Meeting Agenda orchestration + Meeting Action execution + Follow-Through Intelligence + Meeting Outcome Learning + Adaptive Meeting Planning + Plan-to-Action Handoff + Follow-Through Verification & Closure + Cross-Meeting Continuity + Meeting Closure & Recurring Continuity + manual Calendar meetings, Paid Appointments, Agent Work Control + Dependencies, Objective Verification + Adaptive Replanning, Objective Memory + Outcome Learning, Goals + Strategy + Adaptive Roadmaps + Forecast Review Learning, VP3 Cognitive Runtime Core v5.00 + Cognitive Presentation v5.10 + Cognitive Feed Composition v5.30 + Cognitive Outcomes & Learning v5.40 + Proactive Planning & Suggested Actions v5.50 + Cognitive Plan Orchestration & Follow-Through v5.60 + Cognitive Memory & Cross-Time Continuity v5.70, canonical Agent runtime routing and route-attributed AI accounting, social relationships, Team invitation/lifecycle collaboration, workspace-owned Music resources, Knowledge, Profile Agent, HomeServer Agent continuity, Agent Radar, CRM, transcriptions, and Music/Studio capabilities are ready.');
                 redirect(url('/admin/users.php'));
             }
         } catch (Throwable $e) {

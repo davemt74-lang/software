@@ -28,7 +28,7 @@ async function render() {
   baseUrl.value = state.base_url || 'https://vp3.me';
   connectionSummary.textContent = state.connected
     ? `Connected${state.user?.display_name ? ` as ${state.user.display_name}` : ''}`
-    : state.pending_connection ? 'Connection approval pending' : 'Not connected';
+    : 'Not connected';
   disconnectBtn.hidden = !state.connected;
   extensionOrigin.textContent = `Extension origin: chrome-extension://${chrome.runtime.id}`;
 }

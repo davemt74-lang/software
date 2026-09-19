@@ -8,6 +8,123 @@ header('Referrer-Policy: no-referrer');
 
 const VP3_EXTENSION_PENDING_APPROVAL_SESSION_V2000='vp3_extension_pending_approval_v2000';
 
+const VP3_EXTENSION_DEVICE_APPROVAL_SESSION_V2100='vp3_extension_device_approval_v2100';
+
+function vp3_extension_callback_v2100(string $redirectUri,array $params): string
+{
+    if(!vp3_extension_redirect_uri_valid_v2100($redirectUri))throw new RuntimeException('The Browser Companion callback is invalid.');
+    return $redirectUri.'?'.http_build_query($params,'','&',PHP_QUERY_RFC3986);
+}
+
+// v21.00: the extension opens this page directly through
+// chrome.identity.launchWebAuthFlow(). Capture only bounded device metadata and
+// the validated chromiumapp callback, then clean the address bar before login.
+if(($_SERVER['REQUEST_METHOD']??'GET')==='GET'&&isset($_GET['installation_id'])){
+    try{
+        $context=vp3_extension_device_context_v2100($_GET);
+        $_SESSION[VP3_EXTENSION_DEVICE_APPROVAL_SESSION_V2100]=$context+['stored_at'=>time()];
+        redirect(url('/extension-connect.php').'?flow=v21');
+    }catch(Throwable $e){
+        $_SESSION[VP3_EXTENSION_DEVICE_APPROVAL_SESSION_V2100]=[
+            'error'=>$e->getMessage(),
+            'stored_at'=>time(),
+        ];
+        redirect(url('/extension-connect.php').'?flow=v21');
+    }
+}
+
+$v21Pending=$_SESSION[VP3_EXTENSION_DEVICE_APPROVAL_SESSION_V2100]??null;
+$v21Flow=((string)($_GET['flow']??'')==='v21')||is_array($v21Pending);
+if($v21Flow){
+    if(!is_array($v21Pending)||((int)($v21Pending['stored_at']??0))<(time()-1200)){
+        unset($_SESSION[VP3_EXTENSION_DEVICE_APPROVAL_SESSION_V2100]);
+        $v21Pending=['error'=>'This Browser Companion connection expired. Start again from the extension.'];
+    }
+
+    if(!is_logged_in()&&empty($v21Pending['error'])){
+        $returnTo=url('/extension-connect.php').'?flow=v21';
+        redirect(url('/login.php?return_to='.rawurlencode($returnTo)));
+    }
+
+    $v21Error=trim((string)($v21Pending['error']??''));
+    $v21User=current_user();
+    $v21Pdo=db();
+    if($v21Error===''&&(!$v21Pdo||!vp3_extension_device_token_schema_ready_v2100($v21Pdo))){
+        $v21Error='VP3 Browser Companion is not ready. Ask an administrator to run the database upgrade.';
+    }
+
+    if(($_SERVER['REQUEST_METHOD']??'GET')==='POST'&&$v21Error===''&&$v21User){
+        if(!verify_csrf()){
+            $v21Error='Session expired. Please try again.';
+        }else{
+            $decision=(string)($_POST['decision']??'');
+            try{
+                if($decision==='approve'){
+                    $code=vp3_extension_device_code_issue_v2100($v21Pdo,(int)$v21User['id'],$v21Pending);
+                    $redirect=vp3_extension_callback_v2100((string)$v21Pending['redirect_uri'],[
+                        'code'=>$code,
+                        'state'=>(string)$v21Pending['state'],
+                    ]);
+                    unset($_SESSION[VP3_EXTENSION_DEVICE_APPROVAL_SESSION_V2100]);
+                    header('Location: '.$redirect,true,302);
+                    exit;
+                }
+                if($decision==='deny'){
+                    $redirect=vp3_extension_callback_v2100((string)$v21Pending['redirect_uri'],[
+                        'error'=>'access_denied',
+                        'state'=>(string)$v21Pending['state'],
+                    ]);
+                    unset($_SESSION[VP3_EXTENSION_DEVICE_APPROVAL_SESSION_V2100]);
+                    header('Location: '.$redirect,true,302);
+                    exit;
+                }
+                $v21Error='Choose Connect Browser or Cancel.';
+            }catch(Throwable $e){
+                $v21Error=$e->getMessage();
+            }
+        }
+    }
+
+    vp3_public_header('Connect Browser Companion — VP3','Connect Chrome to your signed-in VP3 account.',['compact'=>true]);
+    ?>
+    <main class="vp3-auth-shell">
+      <section class="vp3-auth-visual">
+        <div class="vp3-auth-visual-content">
+          <div class="vp3-kicker">VP3 Browser Companion</div>
+          <h1>Connect Chrome to VP3.</h1>
+          <p>Your password stays on the VP3 website. Chrome receives one revocable device token for this browser.</p>
+        </div>
+      </section>
+      <section class="vp3-auth-form-side">
+        <div class="vp3-auth-card">
+          <div class="vp3-kicker">Browser connection</div>
+          <h1>Connect this browser</h1>
+          <?php if($v21Error): ?>
+            <div class="vp3-alert error" role="alert"><?= e($v21Error) ?></div>
+            <p class="vp3-auth-intro">Return to the Browser Companion and start the connection again.</p>
+          <?php else: ?>
+            <p class="vp3-auth-intro">You're signed in as <strong><?= e((string)($v21User['display_name']??'VP3 user')) ?></strong>.</p>
+            <dl style="display:grid;grid-template-columns:auto 1fr;gap:.6rem 1rem;margin:1.25rem 0;">
+              <dt>Browser</dt><dd>Chrome</dd>
+              <dt>Device</dt><dd><?= e((string)$v21Pending['device_name']) ?></dd>
+              <dt>Extension</dt><dd><?= e((string)$v21Pending['extension_version']) ?></dd>
+            </dl>
+            <p class="vp3-auth-intro">The extension will use your current VP3 account and permissions. Changes to your account, Teams, or permissions apply automatically.</p>
+            <form method="post" action="<?= e(url('/extension-connect.php').'?flow=v21') ?>" style="display:flex;gap:.75rem;flex-wrap:wrap;margin-top:1.5rem;">
+              <?= csrf_field() ?>
+              <button class="vp3-btn primary" type="submit" name="decision" value="approve">Connect Browser →</button>
+              <button class="vp3-btn" type="submit" name="decision" value="deny">Cancel</button>
+            </form>
+          <?php endif; ?>
+        </div>
+      </section>
+    </main>
+    <?php
+    vp3_public_footer();
+    exit;
+}
+
+
 // Approval links necessarily arrive with a one-time secret. Move it into the
 // server-side PHP session immediately, then redirect to a clean URL so the
 // secret does not remain in page markup, subresource referrers, or later POSTs.

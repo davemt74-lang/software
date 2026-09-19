@@ -67,7 +67,7 @@ jobs:
         run: node tests/search-discovery-v2090.mjs
 
       - name: Manifest contract
-        run: node -e "const m=require('./browser-companion/manifest.json'); if(m.manifest_version!==3||Number(m.version.split('.')[0])!==20||Number(m.version.split('.')[1])<40) process.exit(1)"
+        run: node -e "const m=require('./browser-companion/manifest.json'); const p=m.version.split('.').map(Number); if(m.manifest_version!==3||!(p[0]>20||(p[0]===20&&p[1]>=40))) process.exit(1)"
 
       - name: JavaScript syntax
         run: |

@@ -1,6 +1,52 @@
-# VP3 Browser Companion v20.70
+# VP3 Browser Companion v21.30
 
 Chrome Manifest V3 companion for VP3 Browser Share and the Source Feed layer: This Page, Following, source/user follows, comments, read state, Private/Team/Public publishing, plus highlighted text, screenshot regions, source-media moments, and voice commentary.
+
+## v21.30 Contextual Agent Actions
+
+Browser Companion Now can temporarily use the active web page as **ephemeral Agent context**.
+
+The extension sends only a bounded context envelope: normalized URL/canonical URL, title, up to 12 KB of selected text, a SHA-256 fingerprint of normalized page text, lightweight description/author/site/language metadata, and an optional media reference. The page body itself is not transmitted as contextual metadata.
+
+VP3 resolves that page against the signed-in user's current permissions and can surface authorized relationships including existing Source annotations, Team conversations, Research projects, Knowledge, calendar/meeting items, public VP3 profiles, and admin-only CRM contacts/companies. Existing Cognitive Runtime cards are context-scored on the server so related goals, workflows, meetings, opportunities, and recent changes rise within their existing bounded sections.
+
+The Now canvas adds a **Working with** strip, relationship evidence, evidence-based context insights, **Ignore page / Use page**, and server-proposed contextual actions.
+
+**Ask Agent about this page** uses a fragment-only handoff to Agent Chat. Agent Chat immediately removes the fragment from the address bar, keeps the context only in page memory, visibly shows a removable temporary context strip, and attaches it to the next Agent turn. The Agent server discards client relationship claims, revalidates the page identity, re-resolves relationships for the signed-in user, and removes the full browser context from persisted Agent message metadata.
+
+Merely viewing a page creates no VP3 Source, Browser Share, annotation, Research item, Knowledge item, task, contact, or memory. Persistence remains behind explicit VP3 actions and canonical permissions.
+
+## v21.20 Agent Now / Cognitive Sidebar
+
+Browser Companion now opens on **Now**, a Chrome presentation of the same bounded VP3 Cognitive Feed used by Agent Chat.
+
+The extension does not calculate priorities, opportunities, meeting urgency, reminder relevance, or suggested actions. The VP3 server composes the feed from the canonical Cognitive Runtime and reauthorizes every Universal Display Card before returning it to Chrome.
+
+The Now feed can surface:
+
+- **Needs attention** — approvals, failures, live/imminent meetings, timely responses, and high-priority cognitive observations.
+- **Next up** — upcoming meetings, bookings, and calendar work.
+- **Priorities** — active goals, workflows, Agent Brain priorities, accepted plans, and orchestration progress.
+- **Opportunities** — evidence-backed recommendations and proactive plans.
+- **Recent changes** — meaningful unread activity plus significant recurring/reopened memory threads.
+
+Browser Companion supports **Why?**, **Hide**, **Show hidden**, canonical object links, and Cognitive Outcomes & Learning feedback using the dedicated `browser_companion_now` surface identity.
+
+Proactive plans can be **Accepted for review** or **Dismissed** in Chrome. Acceptance remains proposal-only: the extension never executes a Cognitive Runtime tool. Tool/prompt card actions are deliberately downgraded to **review in Agent Chat**, where normal VP3 permissions, confirmation, approval, risk, and execution boundaries remain authoritative.
+
+The v21.20 integration branch contains both Browser Companion v21.00/v21.10 and VP3 Cognitive Runtime v5.00–v5.70. After deploying the server overlay, run `upgrade.php` once so the durable browser authorization-code table and Cognitive Runtime tables are all current.
+
+## v21.10 account-aware shell
+
+The connected sidebar now treats VP3 as the only account authority. It renders the current live display name, role, Team access summary, and capability-aware feature state from the same `/api/extension-me.php` and canonical destination endpoints already used by Browser Companion.
+
+- No browser-side profile or account database is introduced.
+- No login/session polling is reintroduced.
+- Opening/focusing the side panel or using **Refresh account** re-reads current VP3 identity and capabilities.
+- Removing Browser Companion permissions in VP3 collapses protected extension UI without disconnecting the durable device token.
+- Restoring permissions in VP3 makes them available again on the next account refresh.
+- **Open VP3** and **Extension settings** provide direct navigation without duplicating VP3 account settings inside Chrome.
+- Composition controls are hidden when `team.share.create` is not currently granted; read-oriented tabs follow `team.chat.read`.
 
 ## Capture and share
 
@@ -58,17 +104,27 @@ The optional numeric argument controls the maximum number of jobs processed in t
 
 ## Local Chrome installation
 
-Open `chrome://extensions`, enable **Developer mode**, choose **Load unpacked**, and select this `browser-companion` directory. The CI package `vp3-browser-companion-v20.70.0.zip` is directly loadable/extractable and contains `manifest.json` at the ZIP root.
+Open `chrome://extensions`, enable **Developer mode**, choose **Load unpacked**, and select this `browser-companion` directory. The CI package `vp3-browser-companion-v21.3.0.zip` is directly loadable/extractable and contains `manifest.json` at the ZIP root.
 
 The default VP3 site is `https://vp3.me`. Another HTTPS VP3 installation can be selected in Extension Settings. Local development may use `http://localhost` or `http://127.0.0.1`; Chrome asks for explicit access to the selected origin.
 
 ## Connection security
 
-The extension never receives or stores a VP3 password. Pairing uses the existing Browser Companion approval flow. The server delivers a device credential once; the extension stores it in `chrome.storage.local` and exchanges it for short-lived bearer sessions. Every authenticated request intersects the device's approved scopes with the user's current VP3 permissions.
+The connection flow is intentionally simple:
+
+1. Click **Connect to VP3** in the extension.
+2. Chrome opens VP3's normal website sign-in/approval flow with `chrome.identity.launchWebAuthFlow()`.
+3. VP3 redirects Chrome's private `chromiumapp.org` callback with a five-minute, one-time authorization code.
+4. The extension exchanges that code once for a random durable device token.
+5. The device token is stored only in `chrome.storage.local` and is sent as the Bearer credential for Browser Companion API requests.
+
+The extension never receives or stores the user's VP3 password. It does not poll for approval, store a second device credential, or mint/refresh 60-minute extension sessions.
+
+VP3 remains the source of truth for the account. On panel load the extension calls `/api/extension-me.php`, so the current display name, role and effective capabilities come from the live VP3 account. Each protected API request also recalculates effective capabilities against the user's current VP3 permission matrix.
 
 Production VP3 installations should configure the published extension's exact `chrome-extension://...` origin. For unpacked development builds, the existing `extension_allow_unlisted_chrome_origins` site setting can be enabled temporarily. Production should remain fail-closed.
 
-Disconnecting from the extension calls the VP3 self-revoke endpoint before local credentials are removed, revoking active sessions for that browser.
+Disconnecting calls the VP3 self-revoke endpoint before the local device token is removed. Revocation immediately invalidates that token.
 
 ## Privacy and safety boundaries
 

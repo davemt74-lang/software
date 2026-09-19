@@ -661,9 +661,9 @@
   }
 
   async function speakWithExistingVoice(text) {
-    if (!agentVoiceEnabled()) return;
+    if (!agentVoiceEnabled()) return false;
     const message = String(text || '').trim();
-    if (!message) return;
+    if (!message) return false;
     await waitForAgentIdle();
 
     const wasVoice = voiceIsOn();
@@ -694,25 +694,29 @@
         spoken = false;
       }
     }
-    if (!spoken) await browserSpeak(message);
+    if (!spoken) spoken = await browserSpeak(message);
 
     const listening = setVoiceMode(true);
-    if (!listening) return;
-    responseTemporaryVoice = !wasVoice;
-    clearResponseWindow();
-    responseWindowActive = true;
-    responseTimer = window.setTimeout(() => {
-      responseTimer = 0;
-      responseWindowActive = false;
-      if (responseTemporaryVoice) {
-        responseTemporaryVoice = false;
-        setVoiceMode(false);
-      }
-    }, 10000);
+    if (listening) {
+      responseTemporaryVoice = !wasVoice;
+      clearResponseWindow();
+      responseWindowActive = true;
+      responseTimer = window.setTimeout(() => {
+        responseTimer = 0;
+        responseWindowActive = false;
+        if (responseTemporaryVoice) {
+          responseTemporaryVoice = false;
+          setVoiceMode(false);
+        }
+      }, 10000);
+    }
+    return spoken === true;
   }
 
   function queueSpeech(text) {
-    speechQueue = speechQueue.then(() => speakWithExistingVoice(text)).catch(() => {});
+    const queued = speechQueue.then(() => speakWithExistingVoice(text)).catch(() => false);
+    speechQueue = queued.then(() => undefined, () => undefined);
+    return queued;
   }
 
   async function presentAttention(item, speak = true) {
@@ -763,6 +767,7 @@
   }
 
   function startAttentionPolling() {
+    if (window.VP3_COGNITIVE_PRESENTATION_V510?.ownsAttention) return;
     if (!chatCanvasAvailable()) return;
     void pollAttention(true);
     if (attentionTimer) window.clearInterval(attentionTimer);
@@ -772,7 +777,7 @@
   if (!ownNotificationButton()) return;
   ensureDrawer();
   keepBellNextToProfile();
-  observeMainFeedBrainPriorities();
+  if (!window.VP3_COGNITIVE_PRESENTATION_V510?.ownsBrainPresentation) observeMainFeedBrainPriorities();
   const actions = document.querySelector('.chat-topbar-actions');
   if (actions) new MutationObserver(keepBellNextToProfile).observe(actions, {childList:true});
   document.addEventListener('keydown', event => {
@@ -800,9 +805,12 @@
 
   window.STONEFELLOW_NOTIFICATION_CENTER = {
     open:openDrawer,
+    openBrain:() => { activeTab='brain'; openDrawer(); render(); },
+    openHistory:() => { activeTab='history'; openDrawer(); render(); },
     close:closeDrawer,
     refresh,
     pollAttention,
+    announce:text => queueSpeech(String(text || '')),
     syncMainFeedOutcomes:syncMainFeedBrainOutcomeControls
   };
   void refresh(false).finally(startAttentionPolling);
