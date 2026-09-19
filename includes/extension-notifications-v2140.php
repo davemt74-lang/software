@@ -456,20 +456,32 @@ function vp3_extension_notification_voice_result_v2140(PDO $pdo,array $session,a
     $row=vp3_extension_notification_delivery_row_v2140($pdo,$uid,$eventKey);
     if(!$row||trim((string)$row['claimed_device_id'])!==$device||empty($row['visual_delivered_at']))return;
     if($delivered){
-        $stmt=$pdo->prepare("UPDATE extension_notification_delivery_v2140
-          SET voice_delivered_at=COALESCE(voice_delivered_at,UTC_TIMESTAMP()),voice_retry_after=NULL,updated_at=UTC_TIMESTAMP()
-          WHERE id=? AND voice_delivered_at IS NULL");
-        $stmt->execute([(int)$row['id']]);
-        $through=max(0,(int)($row['voice_through_notification_id']??0));
-        if((string)($row['source_kind']??'')==='notification'&&$through>0
-            &&function_exists('vp3_cognitive_presentation_voice_delivered_v510')){
-            vp3_cognitive_presentation_voice_delivered_v510($pdo,$user,$namespace,$through);
-            $pdo->prepare("UPDATE extension_notification_delivery_v2140
-              SET voice_delivered_at=COALESCE(voice_delivered_at,UTC_TIMESTAMP()),voice_retry_after=NULL,updated_at=UTC_TIMESTAMP()
-              WHERE owner_user_id=? AND source_kind='notification'
-                AND notification_id IS NOT NULL AND notification_id<=?
-                AND visual_delivered_at IS NOT NULL")
-              ->execute([$uid,$through]);
+        $ownsTransaction=!$pdo->inTransaction();
+        if($ownsTransaction)$pdo->beginTransaction();
+        try{
+            $through=max(0,(int)($row['voice_through_notification_id']??0));
+            if((string)($row['source_kind']??'')==='notification'&&$through>0
+                &&function_exists('vp3_cognitive_presentation_voice_delivered_v510')){
+                // Advance the shared Agent Chat/Chrome voice cursor in the same
+                // transaction as the Browser delivery ledger. Either both
+                // surfaces agree speech completed or neither one advances.
+                vp3_cognitive_presentation_voice_delivered_v510($pdo,$user,$namespace,$through);
+                $pdo->prepare("UPDATE extension_notification_delivery_v2140
+                  SET voice_delivered_at=COALESCE(voice_delivered_at,UTC_TIMESTAMP()),voice_retry_after=NULL,updated_at=UTC_TIMESTAMP()
+                  WHERE owner_user_id=? AND source_kind='notification'
+                    AND notification_id IS NOT NULL AND notification_id<=?
+                    AND visual_delivered_at IS NOT NULL")
+                  ->execute([$uid,$through]);
+            }else{
+                $pdo->prepare("UPDATE extension_notification_delivery_v2140
+                  SET voice_delivered_at=COALESCE(voice_delivered_at,UTC_TIMESTAMP()),voice_retry_after=NULL,updated_at=UTC_TIMESTAMP()
+                  WHERE id=? AND voice_delivered_at IS NULL")
+                  ->execute([(int)$row['id']]);
+            }
+            if($ownsTransaction)$pdo->commit();
+        }catch(Throwable $e){
+            if($ownsTransaction&&$pdo->inTransaction())$pdo->rollBack();
+            throw $e;
         }
     }else{
         $pdo->prepare("UPDATE extension_notification_delivery_v2140
