@@ -52,6 +52,22 @@
     return data;
   }
 
+  async function planningApi(action,planId) {
+    const response=await fetch(String(cfg.planningEndpoint||'/api/cognitive-planning-v550.php'),{
+      method:'POST',credentials:'same-origin',cache:'no-store',
+      headers:{'Content-Type':'application/json','Accept':'application/json'},
+      body:JSON.stringify({
+        action,
+        plan_id:clean(planId),
+        agent_id:Number(cfg.agentId||0),
+        csrf_token:String(cfg.csrf||'')
+      })
+    });
+    const data=await response.json().catch(()=>({}));
+    if(!response.ok||!data.ok)throw new Error(data.error||'planning_unavailable');
+    return data;
+  }
+
   async function api(action,payload={}) {
     if(action==='state'){
       const response=await fetch(endpointUrl(),{credentials:'same-origin',cache:'no-store',headers:{Accept:'application/json'}});
@@ -137,6 +153,41 @@
     reason.appendChild(el('span','',clean(item.reason)||clean(section.description)));
 
     const actions=el('div','vp3-cognitive-feed-item-controls');
+    const cardType=clean(item&&item.card_request&&item.card_request.card_type);
+    if(cardType==='proactive_plan'){
+      const ref=item&&item.card_request&&item.card_request.object_ref||{};
+      const planId=clean(ref.id);
+      const planStatus=clean(item.plan_status);
+      if(planStatus==='proposed'){
+        const accept=el('button','vp3-cognitive-feed-hide','Accept plan');
+        accept.type='button';
+        accept.addEventListener('click',async()=>{
+          accept.disabled=true;
+          try{
+            const data=await planningApi('accept',planId);
+            renderFeed(data.feed||null);
+          }catch(_error){status.textContent='Could not accept this plan.';}
+          finally{accept.disabled=false;}
+        });
+        actions.appendChild(accept);
+      }else if(planStatus==='accepted'){
+        const accepted=el('button','vp3-cognitive-feed-hide','Accepted');
+        accepted.type='button';
+        accepted.disabled=true;
+        actions.appendChild(accepted);
+      }
+      const dismiss=el('button','vp3-cognitive-feed-hide','Dismiss plan');
+      dismiss.type='button';
+      dismiss.addEventListener('click',async()=>{
+        dismiss.disabled=true;
+        try{
+          const data=await planningApi('dismiss',planId);
+          renderFeed(data.feed||null);
+        }catch(_error){status.textContent='Could not dismiss this plan.';}
+        finally{dismiss.disabled=false;}
+      });
+      actions.appendChild(dismiss);
+    }
     const why=el('button','vp3-cognitive-feed-hide','Why?');
     why.type='button';
     why.addEventListener('click',async()=>{
