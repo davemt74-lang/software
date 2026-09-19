@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require dirname(__DIR__).'/includes/bootstrap.php';
 require_once dirname(__DIR__).'/includes/extension-device-auth-v2001.php';
+require_once dirname(__DIR__).'/includes/browser-context-v2130.php';
 
 header('Content-Type: application/json; charset=UTF-8');
 header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
@@ -208,6 +209,26 @@ try{
 
     $input=vp3_extension_cognitive_input_v2120();
     $action=trim((string)($input['action']??''));
+
+    if($action==='context_feed'){
+        $rawContext=is_array($input['context']??null)?$input['context']:[];
+        $context=vp3_browser_context_validate_v2130($rawContext);
+        $relations=vp3_browser_context_relationships_v2130($pdo,$user,$context);
+        $feed=vp3_extension_cognitive_feed_v2120($pdo,$user,$namespace);
+        $feed=vp3_browser_contextualize_feed_v2130($feed,$context,$relations);
+        $suggestions=vp3_browser_context_suggestions_v2130($session,$context,$relations);
+        $prompt=trim((string)($input['prompt']??''));
+        vp3_extension_cognitive_json_v2120(200,[
+            'ok'=>true,
+            'context_build'=>VP3_BROWSER_CONTEXT_V2130,
+            'context'=>$context,
+            'feed'=>$feed,
+            'relationships'=>$feed['relationships']??[],
+            'suggestions'=>$suggestions,
+            'agent_payload'=>vp3_browser_context_agent_payload_v2130($context,$relations,$prompt),
+            'persistence'=>'none_until_explicit_action',
+        ]);
+    }
 
     if($action==='hide'){
         $candidate=vp3_extension_cognitive_current_candidate_v2120($pdo,$user,$namespace,$input);
