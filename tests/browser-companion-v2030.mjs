@@ -14,14 +14,15 @@ const disconnectApi = read('api/extension-device-disconnect-v2030.php');
 const handoff = read('browser-share-agent-handoff.php');
 const shareApi = read('api/browser-share.php');
 const destinationsApi = read('api/extension-share-destinations.php');
-const sessionApi = read('api/extension-session.php');
+const tokenApi = read('api/extension-token.php');
+const meApi = read('api/extension-me.php');
 const security = read('includes/extension-device-auth-v2001.php');
 const phase3 = read('includes/browser-share-chat-feed-v2020.php');
 
 must(manifest.manifest_version === 3, 'Browser Companion must use Manifest V3');
 must(manifest.background?.service_worker === 'background.js', 'MV3 service worker is required');
 must(manifest.side_panel?.default_path === 'sidepanel.html', 'side panel entry point is required');
-for (const permission of ['activeTab','contextMenus','scripting','sidePanel','storage']) {
+for (const permission of ['activeTab','contextMenus','identity','scripting','sidePanel','storage']) {
   must(manifest.permissions?.includes(permission), `missing Chrome permission ${permission}`);
 }
 must(!manifest.permissions?.includes('<all_urls>'), 'all URLs must never be a normal permission');
@@ -50,8 +51,14 @@ must(background.includes("['team_general', 'conversation'].includes(destination.
 must(background.includes("'X-VP3-Idempotency-Key': idempotencyKey"), 'share idempotency key header missing');
 must(background.includes("schema_version: 1"), 'Browser Share schema version missing');
 must(background.includes("share_type: 'selection'"), 'v20.30 must remain selection-only');
-must(background.includes('Authorization: `Bearer ${token}`'), 'short-lived bearer session header missing');
-must(background.includes("'/api/extension-session.php'"), 'session renewal endpoint missing');
+must(background.includes('Authorization: `Bearer ${token}`'), 'device bearer token header missing');
+must(background.includes('chrome.identity.launchWebAuthFlow'), 'Chrome web-auth connection flow missing');
+must(background.includes("chrome.identity.getRedirectURL('vp3-connect')"), 'Chrome callback URL missing');
+must(background.includes("'/api/extension-token.php'"), 'one-time code exchange endpoint missing');
+must(background.includes("'/api/extension-me.php'"), 'live account sync endpoint missing');
+must(!background.includes("'/api/extension-connect-request.php'"), 'v21 must not create polling connection requests');
+must(!background.includes("'/api/extension-connect-status.php'"), 'v21 must not poll connection status');
+must(!background.includes("'/api/extension-session.php'"), 'v21 must not renew short-lived extension sessions');
 must(background.includes("'/api/extension-share-destinations.php'"), 'destination endpoint missing');
 must(background.includes("'/api/browser-share.php'"), 'canonical Browser Share endpoint missing');
 must(background.includes("'/api/extension-browser-share-actions-v2030.php'"), 'Browser Share action endpoint missing');
@@ -60,8 +67,11 @@ must(background.includes('chrome.storage.local'), 'device state must use extensi
 must(!background.includes('chrome.storage.sync'), 'device credentials must not sync between browsers');
 must(background.includes('async function clearRevokedConnection()'), 'revoked credential cleanup helper missing');
 must(background.includes("'last_share', 'pending_capture'"), 'revocation/disconnect must clear cached share and temporary capture state');
-must(background.includes("revoked.code = 'reconnect_required'"), 'revoked session refresh must return an explicit reconnect state');
-must(background.includes("await storage.get(['device_id', 'pending_connection'])"), 'VP3 site changes must inspect connection state');
+must(background.includes("revoked.code = 'reconnect_required'"), 'revoked device token must return an explicit reconnect state');
+must(background.includes("await storage.get(['device_token'])"), 'VP3 site changes must inspect durable device-token connection state');
+must(background.includes("await storage.set({ device_token:"), 'durable device token must be stored locally');
+must(!background.includes("await storage.set({ pending_connection:"), 'v21 must not persist pending connection state');
+must(!background.includes("await storage.set({ session:"), 'v21 must not persist renewable extension sessions');
 must(background.includes('Disconnect this browser from the current VP3 site before changing the VP3 site.'), 'device credentials must not be carried across VP3 origins');
 must(background.includes("case 'capture': return activeCapture();"), 'normal page capture must remain in memory instead of being persisted');
 must(background.includes("case 'clear_pending_capture': await storage.remove('pending_capture')"), 'context-menu capture must be explicitly consumable');
@@ -79,10 +89,6 @@ must(sidepanelJs.includes('dropCapability(capabilityForAction(a))') || sidepanel
 must(sidepanelJs.includes("caps.has('agent.message')") || sidepanelJs.includes("c.has('agent.message')"), 'Ask VP3 must follow live Agent capability state');
 must(sidepanelJs.includes("caps.has('knowledge.write')") || sidepanelJs.includes("c.has('knowledge.write')"), 'Knowledge action must follow live capability state');
 must(sidepanelJs.includes("caps.has('task.propose')") || sidepanelJs.includes("c.has('task.propose')"), 'Task action must follow live capability state');
-
-for (const capability of ['team.destinations.read','team.share.create','agent.message','knowledge.write','task.propose']) {
-  must(background.includes(`'${capability}'`), `requested capability ${capability} missing`);
-}
 
 must(sidepanelHtml.includes('Publish annotation') || sidepanelHtml.includes('Share with VP3'), 'share/publish CTA missing');
 for (const action of ['Ask VP3','Save to Knowledge','Create Task','Open source','Open in VP3 Messages']) {
@@ -120,10 +126,12 @@ must(!handoff.includes('selected_text'), 'Agent handoff must not copy share cont
 
 // Existing security authorities must remain the sources of truth.
 must(security.includes('vp3_extension_live_capabilities_v2001'), 'live extension permission intersection missing');
-must(sessionApi.includes('vp3_extension_session_issue_v2001'), 'session endpoint must retain hardened issue path');
+must(tokenApi.includes('vp3_extension_device_code_exchange_v2100'), 'device-token exchange must use the reviewed one-time-code primitive');
+must(meApi.includes('vp3_extension_session_authenticate_v2001'), 'account sync must use live hardened auth');
+must(security.includes('vp3_extension_device_token_authenticate_v2100'), 'live auth wrapper must accept durable device tokens');
 must(destinationsApi.includes('vp3_extension_session_authenticate_v2001'), 'destination endpoint must retain hardened auth');
 must(shareApi.includes('vp3_browser_share_create_v2011'), 'share endpoint must retain hardened Browser Share creation');
 must(phase3.includes('vp3_browser_share_save_knowledge_v2020'), 'Phase 3 Knowledge helper missing');
 must(phase3.includes('vp3_browser_share_create_task_v2020'), 'Phase 3 Task helper missing');
 
-console.log('VP3 Browser Companion MV3 v20.30 contract passed.');
+console.log('VP3 Browser Companion MV3 v21.00 contract passed.');
