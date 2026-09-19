@@ -38,7 +38,8 @@ try{
     $result=vp3_extension_device_code_exchange_v2100(
         $pdo,
         (string)($input['code']??''),
-        (string)($input['installation_id']??'')
+        (string)($input['installation_id']??''),
+        (string)($_SERVER['HTTP_ORIGIN']??'')
     );
     $result['capabilities']=vp3_extension_live_capabilities_v2001(
         $pdo,
