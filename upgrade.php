@@ -103,6 +103,7 @@ function vp3_upgrade_complete(): bool
         && vp3_cognitive_learning_schema_ready_v540()
         && vp3_cognitive_planning_schema_ready_v550()
         && vp3_cognitive_orchestration_schema_ready_v560()
+        && vp3_cognitive_memory_schema_ready_v570()
         && table_exists('homeserver_connections')
         && table_exists('homeserver_releases')
         && table_exists('homeserver_chat_sessions')
@@ -187,6 +188,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             vp3_cognitive_learning_ensure_schema_v540($pdo);
             vp3_cognitive_planning_ensure_schema_v550($pdo);
             vp3_cognitive_orchestration_ensure_schema_v560($pdo);
+            vp3_cognitive_memory_ensure_schema_v570($pdo);
             homeserver_vp3_ensure_schema($pdo);
             if (!homeserver_agent_v018_ensure_schema($pdo)) throw new RuntimeException('HomeServer Agent chat schema could not be installed.');
             agent_compute_v020_ensure_schema($pdo);
@@ -223,7 +225,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $complete = vp3_upgrade_complete();
 
             if ($complete) {
-                flash('notice', 'VP3 database upgrade complete: subscriptions, composable product entitlements, canonical plugin lifecycle, canonical human messaging, Browser Companion device authentication + Browser Share backend + private rich media + Live Rooms/Cloak Mode + Source Change Intelligence + Claims + Moderation + Search & Discovery, durable Agent retirement, Agent-scoped Brain memory, native Agent Scheduling, unified User Calendar, external calendar synchronization, Team Scheduling, Appointment Lifecycle + Automation, Video Meetings + Meeting Intelligence + Meeting Agenda orchestration + Meeting Action execution + Follow-Through Intelligence + Meeting Outcome Learning + Adaptive Meeting Planning + Plan-to-Action Handoff + Follow-Through Verification & Closure + Cross-Meeting Continuity + Meeting Closure & Recurring Continuity + manual Calendar meetings, Paid Appointments, Agent Work Control + Dependencies, Objective Verification + Adaptive Replanning, Objective Memory + Outcome Learning, Goals + Strategy + Adaptive Roadmaps + Forecast Review Learning, VP3 Cognitive Runtime Core v5.00 + Cognitive Presentation v5.10 + Cognitive Feed Composition v5.30 + Cognitive Outcomes & Learning v5.40 + Proactive Planning & Suggested Actions v5.50 + Cognitive Plan Orchestration & Follow-Through v5.60, canonical Agent runtime routing and route-attributed AI accounting, social relationships, Team invitation/lifecycle collaboration, workspace-owned Music resources, Knowledge, Profile Agent, HomeServer Agent continuity, Agent Radar, CRM, transcriptions, and Music/Studio capabilities are ready.');
+                flash('notice', 'VP3 database upgrade complete: subscriptions, composable product entitlements, canonical plugin lifecycle, canonical human messaging, Browser Companion device authentication + Browser Share backend + private rich media + Live Rooms/Cloak Mode + Source Change Intelligence + Claims + Moderation + Search & Discovery, durable Agent retirement, Agent-scoped Brain memory, native Agent Scheduling, unified User Calendar, external calendar synchronization, Team Scheduling, Appointment Lifecycle + Automation, Video Meetings + Meeting Intelligence + Meeting Agenda orchestration + Meeting Action execution + Follow-Through Intelligence + Meeting Outcome Learning + Adaptive Meeting Planning + Plan-to-Action Handoff + Follow-Through Verification & Closure + Cross-Meeting Continuity + Meeting Closure & Recurring Continuity + manual Calendar meetings, Paid Appointments, Agent Work Control + Dependencies, Objective Verification + Adaptive Replanning, Objective Memory + Outcome Learning, Goals + Strategy + Adaptive Roadmaps + Forecast Review Learning, VP3 Cognitive Runtime Core v5.00 + Cognitive Presentation v5.10 + Cognitive Feed Composition v5.30 + Cognitive Outcomes & Learning v5.40 + Proactive Planning & Suggested Actions v5.50 + Cognitive Plan Orchestration & Follow-Through v5.60 + Cognitive Memory & Cross-Time Continuity v5.70, canonical Agent runtime routing and route-attributed AI accounting, social relationships, Team invitation/lifecycle collaboration, workspace-owned Music resources, Knowledge, Profile Agent, HomeServer Agent continuity, Agent Radar, CRM, transcriptions, and Music/Studio capabilities are ready.');
                 redirect(url('/admin/users.php'));
             }
         } catch (Throwable $e) {
