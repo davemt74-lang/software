@@ -293,7 +293,10 @@ function vp3_extension_notification_claim_v2140(PDO $pdo,array $session,array $c
         if(!empty($row['dismissed_at'])||!empty($row['visual_delivered_at'])){$pdo->commit();return null;}
         if(!empty($row['snoozed_until'])&&strtotime((string)$row['snoozed_until'])>time()){$pdo->commit();return null;}
         $claimFresh=!empty($row['claim_expires_at'])&&strtotime((string)$row['claim_expires_at'])>time();
-        if($claimFresh&&trim((string)$row['claimed_device_id'])!==$device){$pdo->commit();return null;}
+        // A fresh claim is exclusive even to the same browser. Reissuing it
+        // would rotate the one-time claim token while an earlier Chrome
+        // notification is still being displayed/acknowledged.
+        if($claimFresh){$pdo->commit();return null;}
 
         $update=$pdo->prepare("UPDATE extension_notification_delivery_v2140
           SET source_kind=?,source_ref=?,notification_id=?,title=?,body=?,target_url=?,action_label=?,voice_text=?,sensitive=?,
