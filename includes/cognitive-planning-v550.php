@@ -340,6 +340,15 @@ function vp3_cognitive_planning_decide_v550(PDO $pdo,array $user,string $namespa
     if(!vp3_cognitive_authorize_ref_v500($pdo,$user,$namespace,$underlying,'read'))throw new RuntimeException('Plan source is no longer authorized.');
     if(!in_array((string)$row['status'],['proposed','accepted'],true))throw new RuntimeException('Proactive plan is no longer actionable.');
 
+    if($decision==='accept'&&function_exists('vp3_cognitive_feed_find_candidate_v530')){
+        $source=vp3_cognitive_feed_find_candidate_v530($pdo,$user,$namespace,(string)$row['source_item_key']);
+        if(!is_array($source)||!hash_equals((string)$source['fingerprint'],(string)$row['source_fingerprint'])){
+            $pdo->prepare("UPDATE cognitive_plans_v550 SET status='superseded',superseded_at=UTC_TIMESTAMP(),updated_at=UTC_TIMESTAMP()
+              WHERE id=? AND owner_user_id=?")->execute([(int)$row['id'],(int)$user['id']]);
+            throw new RuntimeException('This proposed plan changed with its source. Refresh to review the current proposal.');
+        }
+    }
+
     $uid=(int)$user['id'];
     if($decision==='accept'){
         $pdo->prepare("UPDATE cognitive_plans_v550 SET status='accepted',accepted_at=COALESCE(accepted_at,UTC_TIMESTAMP()),dismissed_at=NULL,updated_at=UTC_TIMESTAMP()
