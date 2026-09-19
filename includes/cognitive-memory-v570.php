@@ -200,11 +200,12 @@ function vp3_cognitive_memory_observe_candidates_v570(PDO $pdo,array $user,strin
         if($itemKey===''||!preg_match('/^[a-f0-9]{64}$/',$fingerprint))continue;
         $occurred=(string)($candidate['updated_at']??gmdate('Y-m-d H:i:s'));
 
-        $exactKey=vp3_cognitive_memory_thread_key_v570('object_continuity',$source,(string)$ref['type'],(string)$ref['id'],(string)$ref['scope']);
+        $exactKey=vp3_cognitive_memory_thread_key_v570('object_continuity','',(string)$ref['type'],(string)$ref['id'],(string)$ref['scope']);
         $exact=vp3_cognitive_memory_thread_v570($pdo,$uid,$namespace,'object_continuity',$exactKey,$source,(string)$ref['type']);
         $existing=$pdo->prepare("SELECT item_fingerprint FROM cognitive_memory_occurrences_v570 WHERE thread_id=? AND item_key=? ORDER BY occurred_at DESC,id DESC LIMIT 1");
         $existing->execute([(int)$exact['id'],$itemKey]);$previous=(string)($existing->fetchColumn()?:'');
-        $event=$previous!==''&&!hash_equals($previous,$fingerprint)?'reopened':'observed';
+        $changed=$previous!==''&&!hash_equals($previous,$fingerprint);
+        $event=$changed?((string)($exact['status']??'')==='resolved'?'reopened':'changed'):'observed';
         $occurrenceKey=hash('sha256',vp3_cognitive_json_v500(['candidate',$itemKey,$fingerprint]));
         vp3_cognitive_memory_occurrence_v570($pdo,$exact,$uid,$event,$source,$ref,$occurred,$occurrenceKey,$itemKey,$fingerprint);
 
@@ -230,7 +231,7 @@ function vp3_cognitive_memory_sync_outcomes_v570(PDO $pdo,array $user,string $na
         try{$ref=vp3_cognitive_object_ref_v500($type,$id,'personal');}catch(Throwable $e){continue;}
         if(!vp3_cognitive_authorize_ref_v500($pdo,$user,$namespace,$ref,'read'))continue;
         $source=vp3_cognitive_id_v500($row['source_kind']??'',80)?:'cognitive_outcome';
-        $key=vp3_cognitive_memory_thread_key_v570('object_continuity',$source,$type,$id,'personal');
+        $key=vp3_cognitive_memory_thread_key_v570('object_continuity','',$type,$id,'personal');
         $thread=vp3_cognitive_memory_thread_v570($pdo,$uid,$namespace,'object_continuity',$key,$source,$type);
         $occurrence=hash('sha256',vp3_cognitive_json_v500(['outcome',(string)$row['outcome_key']]));
         vp3_cognitive_memory_occurrence_v570(
@@ -260,7 +261,7 @@ function vp3_cognitive_memory_sync_orchestration_v570(PDO $pdo,array $user,strin
         try{$ref=vp3_cognitive_object_ref_v500($type,$id,(string)($row['object_scope']??'personal'));}catch(Throwable $e){continue;}
         if(!vp3_cognitive_authorize_ref_v500($pdo,$user,$namespace,$ref,'read'))continue;
         $source='cognitive_orchestration';
-        $key=vp3_cognitive_memory_thread_key_v570('object_continuity',$source,$type,$id,(string)$ref['scope']);
+        $key=vp3_cognitive_memory_thread_key_v570('object_continuity','',$type,$id,(string)$ref['scope']);
         $thread=vp3_cognitive_memory_thread_v570($pdo,$uid,$namespace,'object_continuity',$key,$source,$type);
         $occurrence=hash('sha256',vp3_cognitive_json_v500(['orchestration',(int)$row['event_id']]));
         vp3_cognitive_memory_occurrence_v570(
