@@ -1,14 +1,6 @@
 const VP3_DEFAULT_BASE = 'https://vp3.me';
 const VP3_CONTRACT_VERSION = '1';
-const VP3_EXTENSION_VERSION = '20.90.0';
-const VP3_REQUESTED_CAPABILITIES = [
-  'team.destinations.read',
-  'team.share.create',
-  'team.chat.read',
-  'agent.message',
-  'knowledge.write',
-  'task.propose'
-];
+const VP3_EXTENSION_VERSION = '21.0.0';
 const VP3_MEDIA_CLIP_MAX_SECONDS = 90;
 
 const storage = {
@@ -114,91 +106,75 @@ async function fetchJson(path, options = {}) {
 }
 
 async function clearRevokedConnection() {
-  await storage.remove(['device_id', 'device_credential', 'connected_user', 'approved_capabilities', 'pending_connection', 'session', 'last_share', 'pending_capture']);
+  await storage.remove([
+    'device_token',
+    // Remove v20.x connection state during upgrade/disconnect.
+    'device_id','device_credential','connected_user','approved_capabilities','pending_connection','session',
+    'last_share','pending_capture'
+  ]);
 }
 
-async function session(force = false) {
-  const state = await storage.get(['device_id', 'device_credential', 'installation_id', 'session']);
-  if (!state.device_id || !state.device_credential || !state.installation_id) throw new Error('Connect this browser to VP3 first.');
-  const current = state.session;
-  if (!force && current?.access_token && current?.expires_at) {
-    const expires = Date.parse(current.expires_at);
-    if (Number.isFinite(expires) && expires > Date.now() + 60_000) return current;
-  }
-  let payload;
-  try {
-    payload = await fetchJson('/api/extension-session.php', {
-      method: 'POST',
-      json: {
-        device_id: state.device_id,
-        installation_id: state.installation_id,
-        device_credential: state.device_credential
-      }
-    });
-  } catch (error) {
-    if (error.status === 401 || error.code === 'reconnect_required' || error.code === 'authentication_required') {
-      await clearRevokedConnection();
-      const revoked = new Error('This browser connection was revoked or expired. Reconnect to VP3.');
-      revoked.status = 401;
-      revoked.code = 'reconnect_required';
-      throw revoked;
-    }
-    throw error;
-  }
-  await storage.set({ session: payload.session });
-  return payload.session;
+async function deviceToken() {
+  const state = await storage.get(['device_token']);
+  const token = String(state.device_token || '').trim();
+  if (!/^[a-f0-9]{64}$/i.test(token)) throw new Error('Connect this browser to VP3 first.');
+  return token.toLowerCase();
 }
 
 async function authorizedFetch(path, options = {}, capability = '') {
-  let current = await session(false);
-  if (capability && !Array.isArray(current.capabilities)) current.capabilities = [];
-  if (capability && !current.capabilities.includes(capability)) throw new Error(`This browser connection does not have ${capability} permission.`);
-  const call = async (token) => fetchJson(path, {
-    ...options,
-    headers: { ...(options.headers || {}), Authorization: `Bearer ${token}` }
-  });
-  try { return await call(current.access_token); }
-  catch (error) {
+  const token = await deviceToken();
+  try {
+    return await fetchJson(path, {
+      ...options,
+      headers: { ...(options.headers || {}), Authorization: `Bearer ${token}` }
+    });
+  } catch (error) {
     if (error.status !== 401) throw error;
-    current = await session(true);
-    return call(current.access_token);
+    await clearRevokedConnection();
+    const revoked = new Error('This browser connection was revoked. Reconnect to VP3.');
+    revoked.status = 401;
+    revoked.code = 'reconnect_required';
+    throw revoked;
   }
 }
 
 async function authorizedMediaDataUrl(path) {
-  let current = await session(false);
-  const call = async (token) => {
-    const { base_url } = await config();
-    const response = await fetch(apiUrl(base_url, path), {
-      method: 'GET',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'X-VP3-Extension-Version': VP3_EXTENSION_VERSION,
-        'X-VP3-Contract-Version': VP3_CONTRACT_VERSION
-      },
-      cache: 'no-store',
-      credentials: 'omit'
-    });
-    if (!response.ok) {
-      const error = new Error('Browser Share media could not be loaded.');
-      error.status = response.status;
-      throw error;
-    }
-    const blob = await response.blob();
-    if (blob.size > 16 * 1024 * 1024) throw new Error('Browser Share media is too large to preview.');
-    const bytes = new Uint8Array(await blob.arrayBuffer());
-    let binary = '';
-    for (let offset = 0; offset < bytes.length; offset += 0x8000) {
-      binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
-    }
-    return `data:${blob.type || 'application/octet-stream'};base64,${btoa(binary)}`;
-  };
-  try { return await call(current.access_token); }
-  catch (error) {
-    if (error.status !== 401) throw error;
-    current = await session(true);
-    return call(current.access_token);
+  const token = await deviceToken();
+  const { base_url } = await config();
+  const response = await fetch(apiUrl(base_url, path), {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'X-VP3-Extension-Version': VP3_EXTENSION_VERSION,
+      'X-VP3-Contract-Version': VP3_CONTRACT_VERSION
+    },
+    cache: 'no-store',
+    credentials: 'omit'
+  });
+  if (response.status === 401) {
+    await clearRevokedConnection();
+    const revoked = new Error('This browser connection was revoked. Reconnect to VP3.');
+    revoked.status = 401;
+    revoked.code = 'reconnect_required';
+    throw revoked;
   }
+  if (!response.ok) {
+    const error = new Error('Browser Share media could not be loaded.');
+    error.status = response.status;
+    throw error;
+  }
+  const blob = await response.blob();
+  if (blob.size > 16 * 1024 * 1024) throw new Error('Browser Share media is too large to preview.');
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  let binary = '';
+  for (let offset = 0; offset < bytes.length; offset += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
+  }
+  return `data:${blob.type || 'application/octet-stream'};base64,${btoa(binary)}`;
+}
+
+async function currentAccount() {
+  return authorizedFetch('/api/extension-me.php', { method: 'GET' });
 }
 
 async function activeTabIdentity() {
@@ -343,49 +319,47 @@ async function selectScreenshotRegion() {
 
 async function beginConnect(deviceName) {
   const installation_id = await ensureInstallation();
-  const payload = await fetchJson('/api/extension-connect-request.php', {
-    method: 'POST',
-    json: {
-      contract_version: 1,
-      installation_id,
-      device_name: String(deviceName || 'Chrome').slice(0, 120),
-      browser_family: 'Chrome',
-      extension_version: VP3_EXTENSION_VERSION,
-      requested_capabilities: VP3_REQUESTED_CAPABILITIES
-    }
+  const { base_url } = await config();
+  if (!(await ensureOriginPermission(base_url))) throw new Error('VP3 site permission was not granted.');
+
+  const redirect_uri = chrome.identity.getRedirectURL('vp3-connect');
+  const state = uuid();
+  const authorization = new URL(apiUrl(base_url, '/extension-connect.php'));
+  authorization.searchParams.set('installation_id', installation_id);
+  authorization.searchParams.set('device_name', String(deviceName || 'Chrome Browser').slice(0, 120));
+  authorization.searchParams.set('extension_version', VP3_EXTENSION_VERSION);
+  authorization.searchParams.set('redirect_uri', redirect_uri);
+  authorization.searchParams.set('state', state);
+
+  const callback = await chrome.identity.launchWebAuthFlow({
+    url: authorization.toString(),
+    interactive: true
   });
-  const pending = payload.connection_request;
-  await storage.set({ pending_connection: pending });
-  await chrome.tabs.create({ url: pending.approval_url });
-  return pending;
+  if (!callback) throw new Error('VP3 connection was cancelled.');
+
+  const result = new URL(callback);
+  if (result.searchParams.get('state') !== state) throw new Error('VP3 connection state did not match.');
+  if (result.searchParams.get('error')) throw new Error('VP3 connection was cancelled.');
+  const code = String(result.searchParams.get('code') || '');
+  if (!/^[a-f0-9]{64}$/i.test(code)) throw new Error('VP3 did not return a valid connection code.');
+
+  const payload = await fetchJson('/api/extension-token.php', {
+    method: 'POST',
+    json: { code, installation_id }
+  });
+  if (!/^[a-f0-9]{64}$/i.test(String(payload.device_token || ''))) {
+    throw new Error('VP3 did not return a valid device token.');
+  }
+
+  await storage.set({ device_token: String(payload.device_token).toLowerCase() });
+  await storage.remove(['device_id','device_credential','connected_user','approved_capabilities','pending_connection','session']);
+  return currentAccount();
 }
 
 async function pollConnect() {
-  const state = await storage.get(['installation_id', 'pending_connection']);
-  const pending = state.pending_connection;
-  if (!pending?.id || !pending?.poll_token || !state.installation_id) return { status: 'none' };
-  const payload = await fetchJson('/api/extension-connect-status.php', {
-    method: 'POST',
-    json: {
-      connection_request_id: pending.id,
-      poll_token: pending.poll_token,
-      installation_id: state.installation_id
-    }
-  });
-  if (payload.status === 'approved' && payload.device_id && payload.device_credential) {
-    await storage.set({
-      device_id: payload.device_id,
-      device_credential: payload.device_credential,
-      connected_user: payload.user || null,
-      approved_capabilities: payload.capabilities || [],
-      pending_connection: null,
-      session: null
-    });
-    const issued = await session(true);
-    return { ...payload, session: issued };
-  }
-  if (['denied', 'expired'].includes(payload.status) || payload.reconnect_required) await storage.set({ pending_connection: null });
-  return payload;
+  // v21 connects synchronously through chrome.identity.launchWebAuthFlow().
+  // Keep this message as a no-op compatibility surface for an older side panel.
+  return publicState();
 }
 
 async function destinations() {
@@ -636,8 +610,8 @@ async function browserShareAction(action, browserShareId, folderId = 0) {
 }
 
 async function disconnect() {
-  const state = await storage.get(['device_id']);
-  if (state.device_id) {
+  const state = await storage.get(['device_token']);
+  if (state.device_token) {
     try {
       await authorizedFetch('/api/extension-device-disconnect-v2030.php', { method: 'POST', json: {} });
     } catch (error) {
@@ -649,18 +623,33 @@ async function disconnect() {
 }
 
 async function publicState() {
-  const state = await storage.get(['base_url', 'installation_id', 'device_id', 'connected_user', 'approved_capabilities', 'pending_connection', 'session', 'last_share', 'pending_capture']);
-  return {
+  const state = await storage.get(['base_url','installation_id','device_token','last_share','pending_capture']);
+  const base = {
     base_url: cleanBaseUrl(state.base_url || VP3_DEFAULT_BASE),
     installation_id: state.installation_id || '',
-    connected: Boolean(state.device_id),
-    device_id: state.device_id || '',
-    user: state.connected_user || state.session?.user || null,
-    capabilities: state.session?.capabilities || state.approved_capabilities || [],
-    pending_connection: state.pending_connection || null,
+    connected: false,
+    device_id: '',
+    user: null,
+    capabilities: [],
+    pending_connection: null,
     last_share: state.last_share || null,
     pending_capture: state.pending_capture || null
   };
+  if (!state.device_token) return base;
+
+  try {
+    const account = await currentAccount();
+    return {
+      ...base,
+      connected: true,
+      device_id: account.device_id || '',
+      user: account.user || null,
+      capabilities: Array.isArray(account.capabilities) ? account.capabilities : []
+    };
+  } catch (error) {
+    if (error.code === 'reconnect_required' || error.status === 401) return base;
+    throw error;
+  }
 }
 
 chrome.runtime.onInstalled.addListener(() => {
@@ -722,13 +711,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const base_url = cleanBaseUrl(message.base_url);
         const current = await config();
         if (base_url !== current.base_url) {
-          const connection = await storage.get(['device_id', 'pending_connection']);
-          if (connection.device_id || connection.pending_connection) {
+          const connection = await storage.get(['device_token']);
+          if (connection.device_token) {
             throw new Error('Disconnect this browser from the current VP3 site before changing the VP3 site.');
           }
         }
         if (!(await ensureOriginPermission(base_url))) throw new Error('VP3 site permission was not granted.');
-        await storage.set({ base_url, session: null });
+        await storage.set({ base_url });
         return { base_url };
       }
       default: throw new Error('Unsupported Browser Companion request.');
