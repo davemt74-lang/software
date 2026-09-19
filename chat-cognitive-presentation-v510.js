@@ -247,13 +247,37 @@
   }
 
   async function maybeSpeak(candidate) {
-    if (!candidate || !candidate.through_id || !candidate.message) return;
+    if (!candidate || !candidate.through_id || !candidate.message) return false;
     const through = Number(candidate.through_id || 0);
-    if (through < 1 || through <= lastVoiceThrough) return;
-    lastVoiceThrough = through;
+    if (through < 1) return false;
+
+    if (through <= lastVoiceThrough) {
+      try {
+        await post('voice_delivered',{through_id:through});
+        return true;
+      } catch (_error) {
+        return false;
+      }
+    }
+
     const center = window.STONEFELLOW_NOTIFICATION_CENTER;
-    if (center && typeof center.announce === 'function') center.announce(String(candidate.message));
-    try { await post('voice_delivered',{through_id:through}); } catch (_error) {}
+    if (!center || typeof center.announce !== 'function') return false;
+
+    let spoken = false;
+    try {
+      spoken = (await Promise.resolve(center.announce(String(candidate.message)))) === true;
+    } catch (_error) {
+      spoken = false;
+    }
+    if (!spoken) return false;
+
+    lastVoiceThrough = through;
+    try {
+      await post('voice_delivered',{through_id:through});
+      return true;
+    } catch (_error) {
+      return false;
+    }
   }
 
   async function refresh() {
