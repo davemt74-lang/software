@@ -130,7 +130,7 @@ function vp3_cognitive_memory_thread_v570(
     $pdo->prepare("INSERT INTO cognitive_memory_threads_v570
       (public_id,owner_user_id,agent_namespace,thread_key,thread_kind,signature_hash,source_kind,object_type,status,occurrence_count,distinct_object_count,first_seen_at,last_seen_at)
       VALUES (?,?,?,?,?,?,?,?,'active',0,0,UTC_TIMESTAMP(),UTC_TIMESTAMP())
-      ON DUPLICATE KEY UPDATE last_seen_at=GREATEST(last_seen_at,UTC_TIMESTAMP())")
+      ON DUPLICATE KEY UPDATE thread_key=VALUES(thread_key)")
       ->execute([vp3_cognitive_uuid_v500(),$uid,$namespace,$key,$kind,$signature,$source,$objectType]);
     $stmt=$pdo->prepare("SELECT * FROM cognitive_memory_threads_v570 WHERE owner_user_id=? AND agent_namespace=? AND thread_key=? LIMIT 1");
     $stmt->execute([$uid,$namespace,$key]);
@@ -223,15 +223,20 @@ function vp3_cognitive_memory_sync_outcomes_v570(PDO $pdo,array $user,string $na
 {
     if(!table_exists('cognitive_outcomes_v540'))return;
     $uid=(int)$user['id'];$limit=VP3_COGNITIVE_MEMORY_SYNC_LIMIT_V570;
-    $stmt=$pdo->prepare("SELECT * FROM cognitive_outcomes_v540 WHERE owner_user_id=? AND agent_namespace=? ORDER BY id DESC LIMIT {$limit}");
+    $stmt=$pdo->prepare("SELECT o.*,COALESCE(NULLIF(l.object_scope,''),'personal') resolved_scope
+      FROM cognitive_outcomes_v540 o
+      LEFT JOIN cognitive_item_lifecycle_v540 l
+        ON l.owner_user_id=o.owner_user_id AND l.agent_namespace=o.agent_namespace AND l.item_key=o.item_key
+      WHERE o.owner_user_id=? AND o.agent_namespace=? ORDER BY o.id DESC LIMIT {$limit}");
     $stmt->execute([$uid,$namespace]);
     foreach($stmt->fetchAll()?:[] as $row){
         $type=vp3_cognitive_id_v500($row['object_type']??'',80);$id=trim((string)($row['object_id']??''));
         if($type===''||$id==='')continue;
-        try{$ref=vp3_cognitive_object_ref_v500($type,$id,'personal');}catch(Throwable $e){continue;}
+        $scope=vp3_cognitive_id_v500($row['resolved_scope']??'personal',40)?:'personal';
+        try{$ref=vp3_cognitive_object_ref_v500($type,$id,$scope);}catch(Throwable $e){continue;}
         if(!vp3_cognitive_authorize_ref_v500($pdo,$user,$namespace,$ref,'read'))continue;
         $source=vp3_cognitive_id_v500($row['source_kind']??'',80)?:'cognitive_outcome';
-        $key=vp3_cognitive_memory_thread_key_v570('object_continuity','',$type,$id,'personal');
+        $key=vp3_cognitive_memory_thread_key_v570('object_continuity','',$type,$id,(string)$ref['scope']);
         $thread=vp3_cognitive_memory_thread_v570($pdo,$uid,$namespace,'object_continuity',$key,$source,$type);
         $occurrence=hash('sha256',vp3_cognitive_json_v500(['outcome',(string)$row['outcome_key']]));
         vp3_cognitive_memory_occurrence_v570(
@@ -311,6 +316,20 @@ function vp3_cognitive_memory_permission_v570(PDO $pdo,array $user,string $names
     return is_array($thread);
 }
 
+function vp3_cognitive_memory_compact_context_v570(mixed $value,int $depth=0): mixed
+{
+    if($depth>=3)return is_scalar($value)?vp3_cognitive_text_v500((string)$value,300):'[bounded]';
+    if($value===null||is_bool($value)||is_int($value)||is_float($value))return $value;
+    if(is_string($value))return vp3_cognitive_text_v500($value,600);
+    if(!is_array($value))return vp3_cognitive_text_v500((string)$value,300);
+    $out=[];$count=0;
+    foreach($value as $key=>$item){
+        if(++$count>8)break;
+        $out[is_int($key)?$key:vp3_cognitive_text_v500((string)$key,60)]=vp3_cognitive_memory_compact_context_v570($item,$depth+1);
+    }
+    return $out;
+}
+
 function vp3_cognitive_memory_resolved_timeline_v570(PDO $pdo,array $user,string $namespace,array $thread): array
 {
     $timeline=[];
@@ -331,7 +350,7 @@ function vp3_cognitive_memory_resolved_timeline_v570(PDO $pdo,array $user,string
             if(count($timeline)<VP3_COGNITIVE_MEMORY_CONTEXT_LIMIT_V570){
                 try{
                     $packet=vp3_cognitive_context_for_ref_v500($pdo,$user,$namespace,$ref,['memory_continuity'=>true]);
-                    $entry['current_context']=$packet['context']??[];
+                    $entry['current_context']=vp3_cognitive_memory_compact_context_v570($packet['context']??[]);
                 }catch(Throwable $e){}
             }
             $timeline[]=$entry;
