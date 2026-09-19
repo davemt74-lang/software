@@ -421,8 +421,11 @@ function vp3_cognitive_feed_compose_v530(PDO $pdo,array $user,string $namespace,
     $state=vp3_cognitive_feed_state_map_v530($pdo,$user,$namespace);
     $candidates=vp3_cognitive_feed_merge_candidates_v530(vp3_cognitive_feed_candidates_v530($pdo,$user,$namespace));
     if(function_exists('vp3_cognitive_learning_schema_ready_v540')&&vp3_cognitive_learning_schema_ready_v540($pdo)){
+        // Reconciliation already runs once before orchestration sync in
+        // vp3_cognitive_feed_candidates_v530(). Observing current candidates
+        // here must not trigger a second full lifecycle reconciliation in the
+        // same read/refresh cycle.
         vp3_cognitive_learning_observe_candidates_v540($pdo,$user,$namespace,$candidates);
-        vp3_cognitive_learning_reconcile_v540($pdo,$user,$namespace);
         foreach($candidates as &$candidate){
             $candidate=vp3_cognitive_learning_adjust_candidate_v540($pdo,$user,$namespace,$candidate);
         }
