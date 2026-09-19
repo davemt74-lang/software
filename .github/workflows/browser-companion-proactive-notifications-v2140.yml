@@ -61,6 +61,7 @@ jobs:
       - name: PHP syntax
         run: |
           php -l includes/extension-notifications-v2140.php
+          php -l includes/cognitive-presentation-v510.php
           php -l api/extension-notifications-v2140.php
           php -l api/extension-agent-voice-v2140.php
           php -l includes/bootstrap.php
