@@ -59,6 +59,8 @@ try{
     ]);
 }catch(DomainException|InvalidArgumentException $e){
     vp3_cognitive_planning_api_json_v550(422,['ok'=>false,'error'=>$e->getMessage()]);
+}catch(RuntimeException $e){
+    vp3_cognitive_planning_api_json_v550(409,['ok'=>false,'error'=>$e->getMessage()]);
 }catch(Throwable $e){
     error_log('VP3 Cognitive Planning v5.50 API: '.$e->getMessage());
     vp3_cognitive_planning_api_json_v550(500,['ok'=>false,'error'=>'planning_unavailable']);
