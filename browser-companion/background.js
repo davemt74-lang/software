@@ -786,15 +786,26 @@ async function authorizedVoiceAudioDataUrl(eventKey) {
 
 async function ensureVoiceOffscreenDocument() {
   if (!chrome.offscreen) throw new Error('Offscreen Agent Voice playback is unavailable.');
-  const exists = typeof chrome.offscreen.hasDocument === 'function'
-    ? await chrome.offscreen.hasDocument()
-    : false;
+  let exists = false;
+  if (typeof chrome.runtime.getContexts === 'function') {
+    const contexts = await chrome.runtime.getContexts({
+      contextTypes:['OFFSCREEN_DOCUMENT'],
+      documentUrls:[chrome.runtime.getURL('offscreen.html')]
+    });
+    exists = Array.isArray(contexts) && contexts.length > 0;
+  } else if (typeof chrome.offscreen.hasDocument === 'function') {
+    exists = await chrome.offscreen.hasDocument();
+  }
   if (exists) return;
-  await chrome.offscreen.createDocument({
-    url:'offscreen.html',
-    reasons:['AUDIO_PLAYBACK'],
-    justification:'Play VP3 Agent Voice proactive notifications.'
-  });
+  try {
+    await chrome.offscreen.createDocument({
+      url:'offscreen.html',
+      reasons:['AUDIO_PLAYBACK'],
+      justification:'Play VP3 Agent Voice proactive notifications.'
+    });
+  } catch (error) {
+    if (!/single offscreen document|already exists/i.test(String(error?.message || error || ''))) throw error;
+  }
 }
 
 async function activeVp3AgentTab() {
