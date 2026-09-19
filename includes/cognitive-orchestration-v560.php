@@ -348,7 +348,7 @@ function vp3_cognitive_orchestration_replan_step_v560(PDO $pdo,array $run,array 
     $key='replan-'.max(1,(int)$run['replan_count']+1);
     if(vp3_cognitive_orchestration_step_v560($pdo,(int)$run['id'],$key))return;
     $stmt=$pdo->prepare("SELECT COALESCE(MAX(sequence_no),50)+10 FROM cognitive_plan_steps_v560 WHERE run_id=?");
-    $stmt->execute([(int)$run['id']);$sequence=(int)$stmt->fetchColumn();
+    $stmt->execute([(int)$run['id']]);$sequence=(int)$stmt->fetchColumn();
     $step=vp3_cognitive_orchestration_insert_step_v560($pdo,$run,$sequence,$key,'replan',$plan,'ready','user_review');
     vp3_cognitive_orchestration_dependency_v560($pdo,$run,$step,$verify,'recovery');
     $pdo->prepare("UPDATE cognitive_plan_runs_v560 SET replan_count=replan_count+1,status='needs_replan',
