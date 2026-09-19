@@ -348,7 +348,9 @@ function vp3_cognitive_memory_visible_stats_v570(PDO $pdo,array $user,string $na
         if($last===''||$at>$last)$last=$at;
         if($index===0){
             $lastEvent=(string)$row['event_kind'];
-            $visibleStatus=in_array($outcome,['successful','resolved'],true)?'resolved':'active';
+            $visibleStatus=(in_array($outcome,['successful','resolved'],true)
+                || in_array($lastEvent,['run_closed','verification_passed','step_cancelled','step_superseded'],true))
+                ? 'resolved':'active';
         }
     }
     return [
