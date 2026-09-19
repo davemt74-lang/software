@@ -6,7 +6,7 @@ declare(strict_types=1);
  *
  * This layer learns bounded relevance from references, lifecycle signals and
  * canonical outcomes. It never grants authority, executes tools, mutates the
- * canonical object, or stores copied titles/messages/transcripts/content.
+ * canonical object, or stores copied domain payloads.
  */
 const VP3_COGNITIVE_LEARNING_V540='vp3-cognitive-learning-v540-20260918';
 const VP3_COGNITIVE_LEARNING_SURFACE_COOLDOWN_V540=21600;
