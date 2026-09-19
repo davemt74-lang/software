@@ -341,10 +341,30 @@ function vp3_cognitive_memory_resolved_timeline_v570(PDO $pdo,array $user,string
     return $timeline;
 }
 
+function vp3_cognitive_memory_behavior_v570(PDO $pdo,array $user,string $namespace,array $thread): array
+{
+    $out=['shown'=>0,'engaged'=>0,'acted'=>0,'hidden'=>0,'dismissed'=>0];
+    if(!table_exists('cognitive_feedback_events_v540'))return $out;
+    $stmt=$pdo->prepare("SELECT f.event_type,COUNT(*) c FROM cognitive_feedback_events_v540 f
+      WHERE f.owner_user_id=? AND f.agent_namespace=? AND f.event_type IN ('shown','engaged','acted','hidden','dismissed')
+        AND EXISTS (
+          SELECT 1 FROM cognitive_memory_occurrences_v570 o
+          WHERE o.thread_id=? AND o.owner_user_id=f.owner_user_id AND o.item_key=f.item_key
+            AND (o.item_fingerprint='' OR o.item_fingerprint=f.item_fingerprint)
+        )
+      GROUP BY f.event_type");
+    $stmt->execute([(int)$user['id'],$namespace,(int)$thread['id']]);
+    foreach($stmt->fetchAll()?:[] as $row){
+        $key=(string)$row['event_type'];if(array_key_exists($key,$out))$out[$key]=(int)$row['c'];
+    }
+    return $out;
+}
+
 function vp3_cognitive_memory_context_v570(PDO $pdo,array $user,string $namespace,array $ref,array $options=[]): array
 {
     $thread=vp3_cognitive_memory_thread_row_v570($pdo,$user,$namespace,(string)($ref['id']??''));
     if(!$thread)throw new RuntimeException('Cognitive memory thread not found.');
+    $behavior=vp3_cognitive_memory_behavior_v570($pdo,$user,$namespace,$thread);
     return [
         'memory_thread'=>[
             'id'=>(string)$thread['public_id'],
@@ -361,6 +381,7 @@ function vp3_cognitive_memory_context_v570(PDO $pdo,array $user,string $namespac
             'last_event_kind'=>(string)$thread['last_event_kind'],
         ],
         'timeline'=>vp3_cognitive_memory_resolved_timeline_v570($pdo,$user,$namespace,$thread),
+        'behavior'=>$behavior,
         'storage_boundary'=>'reference_only',
         'authority'=>'memory_context_only',
     ];
@@ -376,6 +397,7 @@ function vp3_cognitive_memory_card_v570(PDO $pdo,array $user,string $namespace,a
         ? 'VP3 has seen this pattern '.$occurrences.' times across '.$objects.' authorized object'.($objects===1?'':'s').'.'
         : 'VP3 has continuity for this item across '.$occurrences.' recorded state change'.($occurrences===1?'':'s').'.';
     if($reopens>0)$summary.=' It has reopened '.$reopens.' time'.($reopens===1?'':'s').'.';
+    $behavior=vp3_cognitive_memory_behavior_v570($pdo,$user,$namespace,$thread);
     $actions=[[
         'type'=>'prompt','label'=>'Review continuity',
         'prompt'=>'Review cognitive memory thread '.(string)$thread['public_id'].' with me. Re-resolve the authorized source objects, explain the timeline, what changed over time, repeated outcomes, reopenings, and any unresolved pattern. Do not infer missing historical content and do not execute anything.'
@@ -395,6 +417,7 @@ function vp3_cognitive_memory_card_v570(PDO $pdo,array $user,string $namespace,a
             ['label'=>'Objects','value'=>(string)$objects],
             ['label'=>'First seen','value'=>(string)$thread['first_seen_at']],
             ['label'=>'Last seen','value'=>(string)$thread['last_seen_at']],
+            ['label'=>'Actions taken','value'=>(string)$behavior['acted']],
         ],
         'sections'=>[
             ['label'=>'Outcome history','items'=>[
