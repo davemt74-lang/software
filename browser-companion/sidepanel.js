@@ -2,7 +2,7 @@
 const $=id=>document.getElementById(id);
 const ui={};
 [
-'connectionState','connectControls','shareWorkspace','connectBtn','settingsBtn',
+'connectionState','connectControls','shareWorkspace','connectBtn','settingsBtn','connectedAccount','disconnectedAccount','accountAvatar','accountName','accountMeta','accountTeams','openVp3Btn','refreshAccountBtn','accountOptionsBtn','accessNotice','composerCard',
 'thisPageTab','followingTab','liveTab','alertsTab','searchTab','thisPageView','followingView','liveView','alertsView','searchView','refreshCaptureBtn','pageTitle','pageHost','sourceMeta','sourceStatus',
 'followCurrentSourceBtn','openSourcePageBtn','selectedText','selectionCount','captureSummary','captureScreenshotBtn','screenshotPreview',
 'screenshotImage','screenshotMeta','removeScreenshotBtn','captureMediaBtn','mediaDetectedText','mediaPreview','mediaPreviewTitle','mediaStart',
@@ -50,6 +50,9 @@ function hasCapture(){return !!((capture&&String(capture.selected_text||'').trim
 function summary(){const a=[];if(capture&&String(capture.selected_text||'').trim())a.push('Text');if(screenshotCapture)a.push('Screenshot');if(mediaReference)a.push('Media');if(commentaryCapture)a.push('Voice');ui.captureSummary.textContent=a.length?a.join(' + '):'Add capture';}
 function renderCaps(){
   const c=caps(),shared=!!(lastShare&&lastShare.browser_share&&lastShare.chat_message),teamOk=ui.visibilitySelect.value!=='team'||Number(ui.visibilityTeamSelect.value)>0;
+  const canRead=c.has('team.chat.read'),canShare=c.has('team.share.create');
+  [ui.followingTab,ui.liveTab,ui.alertsTab,ui.searchTab].forEach(tab=>{tab.disabled=!(state&&state.connected&&canRead);});
+  if(ui.composerCard)ui.composerCard.hidden=!(state&&state.connected&&canShare);
   ui.askAgentBtn.disabled=!shared||!c.has('agent.message');ui.saveKnowledgeBtn.disabled=!shared||!c.has('knowledge.write');ui.createTaskBtn.disabled=!shared||!c.has('task.propose');
   ui.openSourceBtn.disabled=!shared||!http(lastShare&&lastShare.source_url);ui.openMessagesBtn.disabled=!shared;
   ui.captureScreenshotBtn.disabled=!(capture&&capture.available);
@@ -80,12 +83,50 @@ function renderDestinations(p){
   destinations=(p&&p.destinations)||{recent:[],teams:[],conversations:[]};ui.destinationSelect.replaceChildren(new Option('Choose a team or conversation',''));
   addOptions('Recent',destinations.recent);addOptions('Teams',destinations.teams);addOptions('Conversations',destinations.conversations);
   ui.visibilityTeamSelect.replaceChildren(new Option('Choose team…',''));ui.liveTeamSelect.replaceChildren(new Option('Choose team…',''));ui.claimTeamSelect.replaceChildren(new Option('Choose team…',''));ui.searchTeam.replaceChildren(new Option('Any Team',''));
-  (destinations.teams||[]).forEach(r=>{if(r.kind==='team_general'&&Number(r.id)){const label=String(r.name||'Team').replace(/ · General$/,'');ui.visibilityTeamSelect.append(new Option(label,String(Number(r.id))));ui.liveTeamSelect.append(new Option(label,String(Number(r.id))));ui.claimTeamSelect.append(new Option(label,String(Number(r.id))));ui.searchTeam.append(new Option(label,String(Number(r.id))));}});renderCaps();
+  (destinations.teams||[]).forEach(r=>{if(r.kind==='team_general'&&Number(r.id)){const label=String(r.name||'Team').replace(/ · General$/,'');ui.visibilityTeamSelect.append(new Option(label,String(Number(r.id))));ui.liveTeamSelect.append(new Option(label,String(Number(r.id))));ui.claimTeamSelect.append(new Option(label,String(Number(r.id))));ui.searchTeam.append(new Option(label,String(Number(r.id))));}});renderAccountTeams();renderCaps();
+}
+function initials(name){
+  const parts=String(name||'VP').trim().split(/\s+/).filter(Boolean);
+  if(!parts.length)return 'VP';
+  return (parts.length===1?parts[0].slice(0,2):parts[0][0]+parts[parts.length-1][0]).toUpperCase();
+}
+function roleLabel(role){
+  const value=String(role||'').trim();
+  if(!value)return 'VP3 account';
+  return value.replace(/[_-]+/g,' ').replace(/\b\w/g,m=>m.toUpperCase());
+}
+function hasReadAccess(){
+  const c=caps();
+  return c.has('team.chat.read')||c.has('team.share.create')||c.has('agent.message')||c.has('knowledge.write')||c.has('task.propose');
+}
+function renderAccountTeams(){
+  if(!state||!state.connected){ui.accountTeams.textContent='';return;}
+  const teams=destinations&&Array.isArray(destinations.teams)?destinations.teams:[];
+  const names=[...new Set(teams.filter(r=>r&&r.kind==='team_general').map(r=>String(r.name||'Team').replace(/ · General$/,'')).filter(Boolean))];
+  ui.accountTeams.textContent=names.length?(names.length===1?'Team: '+names[0]:'Teams: '+names.slice(0,3).join(', ')+(names.length>3?' +'+(names.length-3):'')):'Personal VP3 access';
 }
 function renderConnection(x){
   state=x;ui.connectControls.hidden=ui.shareWorkspace.hidden=true;
-  if(x.connected){ui.connectionState.textContent='Connected as '+((x.user&&x.user.display_name)||'VP3 user');ui.shareWorkspace.hidden=false;}
-  else{ui.connectionState.textContent='Not connected';ui.connectControls.hidden=false;}renderCaps();
+  const connected=Boolean(x&&x.connected);
+  ui.connectedAccount.hidden=!connected;
+  ui.disconnectedAccount.hidden=connected;
+  ui.accessNotice.hidden=true;
+  if(connected){
+    const name=(x.user&&x.user.display_name)||'VP3 user';
+    ui.accountAvatar.textContent=initials(name);
+    ui.accountName.textContent=name;
+    ui.accountMeta.textContent=roleLabel(x.user&&x.user.role);
+    ui.connectionState.textContent='Connected as '+name;
+    const readable=hasReadAccess();
+    ui.shareWorkspace.hidden=!readable;
+    ui.accessNotice.hidden=readable;
+    renderAccountTeams();
+  }else{
+    ui.connectionState.textContent='Not connected';
+    ui.connectControls.hidden=false;
+    ui.accountTeams.textContent='';
+  }
+  renderCaps();
 }
 function renderLast(x){
   lastShare=x||null;const ok=!!(x&&x.browser_share&&x.browser_share.id&&x.chat_message&&x.chat_message.conversation_id);ui.successCard.hidden=!ok;if(!ok)return renderCaps();
@@ -296,7 +337,7 @@ async function loadFollowing(reset){
 }
 async function refreshCapture(withFeed){const x=await msg('capture');renderCapture(x);if(withFeed!==false)await loadThis(true);}
 async function refreshState(){
-  const x=await msg('state');renderConnection(x);if(x.connected){renderLast(x.last_share);if(x.pending_capture&&x.pending_capture.available&&x.pending_capture.selected_text){renderCapture(x.pending_capture);await message('clear_pending_capture').catch(()=>{});}else await refreshCapture(false);await loadDestinations();await loadThis(true);}
+  const x=await msg('state');renderConnection(x);if(x.connected){renderLast(x.last_share);if(x.pending_capture&&x.pending_capture.available&&x.pending_capture.selected_text){renderCapture(x.pending_capture);await message('clear_pending_capture').catch(()=>{});}else await refreshCapture(false);if(caps().has('team.chat.read')){await loadDestinations();await loadThis(true);}else{destinations={recent:[],teams:[],conversations:[]};renderAccountTeams();}}
 }
 function clip(changed){if(!mediaReference)return;const d=Math.max(0,Number(mediaReference.metadata.duration_seconds||0));let s=Math.max(0,Number(ui.mediaStart.value||0)),e=Math.max(s,Number(ui.mediaEnd.value||s));if(d){s=Math.min(s,d);e=Math.min(e,d);}if(e-s>MAX_CLIP){if(changed==='start')s=Math.max(0,e-MAX_CLIP);else e=s+MAX_CLIP;}mediaReference.metadata.start_seconds=Number(s.toFixed(3));mediaReference.metadata.end_seconds=Number(e.toFixed(3));ui.mediaStart.value=s;ui.mediaEnd.value=e;ui.mediaClipHint.textContent='Clip '+sec(s)+'–'+sec(e)+' · '+(e-s).toFixed(1)+'s · source timestamps only · maximum 90s.';}
 async function record(){
@@ -328,6 +369,9 @@ function reload(){return activeView==='following'?loadFollowing(true):activeView
 
 ui.connectBtn.onclick=async()=>{busy(ui.connectBtn,true,'Connecting…');try{await msg('connect',{device_name:'Chrome Browser'});note('Browser connected to VP3.','success');await refreshState();}catch(e){fail(e);}finally{busy(ui.connectBtn,false);}};
 ui.settingsBtn.onclick=()=>chrome.runtime.openOptionsPage();
+ui.accountOptionsBtn.onclick=()=>chrome.runtime.openOptionsPage();
+ui.openVp3Btn.onclick=()=>msg('open_url',{url:absolute('/')}).catch(fail);
+ui.refreshAccountBtn.onclick=async()=>{busy(ui.refreshAccountBtn,true,'Refreshing…');try{await refreshState();note('VP3 account refreshed.','success');}catch(e){await fail(e);}finally{busy(ui.refreshAccountBtn,false);}};
 ui.thisPageTab.onclick=()=>setView('this_page');ui.followingTab.onclick=()=>setView('following');ui.liveTab.onclick=()=>setView('live');ui.alertsTab.onclick=()=>setView('alerts');ui.searchTab.onclick=()=>setView('search');ui.refreshCaptureBtn.onclick=()=>refreshCapture(true).catch(fail);ui.refreshFollowingBtn.onclick=()=>loadFollowing(true).catch(fail);ui.refreshLiveBtn.onclick=()=>loadLiveRooms().catch(fail);ui.refreshAlertsBtn.onclick=()=>loadAlerts().catch(fail);
 ui.visibilitySelect.onchange=()=>{ui.visibilityTeamField.hidden=ui.visibilitySelect.value!=='team';renderCaps();};ui.visibilityTeamSelect.onchange=renderCaps;ui.destinationSelect.onchange=renderCaps;
 ui.liveScope.onchange=()=>{ui.liveTeamField.hidden=ui.liveScope.value!=='team';renderCaps();};ui.liveTeamSelect.onchange=renderCaps;
@@ -373,5 +417,6 @@ ui.liveMessages.onclick=async e=>{const b=e.target.closest('button[data-action="
 ui.thisPageFeed.onclick=feedClick;ui.followingFeed.onclick=feedClick;ui.loadMoreThisPageBtn.onclick=()=>loadThis(false).catch(fail);ui.loadMoreFollowingBtn.onclick=()=>loadFollowing(false).catch(fail);
 const io=new IntersectionObserver(es=>es.forEach(e=>{if(!e.isIntersecting||e.target.hidden)return;if(e.target===ui.loadMoreThisPageBtn)loadThis(false).catch(fail);if(e.target===ui.loadMoreFollowingBtn)loadFollowing(false).catch(fail);}),{rootMargin:'120px'});io.observe(ui.loadMoreThisPageBtn);io.observe(ui.loadMoreFollowingBtn);
 function pageWatch(){clearInterval(pageTimer);let u=capture&&capture.source_url||'';pageTimer=setInterval(async()=>{if(!state||!state.connected||!['this_page','live','alerts','search'].includes(activeView))return;try{const x=await msg('tab_identity');if(x.source_url&&x.source_url!==u){u=x.source_url;await refreshCapture(activeView==='this_page');if(activeView==='live'){liveRoom=null;liveCursor=0;ui.liveRoomPanel.hidden=true;await loadLiveRooms();}if(activeView==='alerts')await loadAlerts();if(activeView==='search')await loadDiscovery();}}catch(e){}},2000);}
+window.addEventListener('focus',()=>{if(state&&state.connected)refreshState().catch(()=>{});});
 window.onbeforeunload=()=>{clearInterval(pageTimer);clearInterval(livePollTimer);clearInterval(liveHeartbeatTimer);stream&&stream.getTracks().forEach(t=>t.stop());};
 refreshState().then(pageWatch).catch(fail);
