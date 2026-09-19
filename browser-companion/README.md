@@ -1,4 +1,4 @@
-# VP3 Browser Companion v20.70
+# VP3 Browser Companion v21.00
 
 Chrome Manifest V3 companion for VP3 Browser Share and the Source Feed layer: This Page, Following, source/user follows, comments, read state, Private/Team/Public publishing, plus highlighted text, screenshot regions, source-media moments, and voice commentary.
 
@@ -58,17 +58,27 @@ The optional numeric argument controls the maximum number of jobs processed in t
 
 ## Local Chrome installation
 
-Open `chrome://extensions`, enable **Developer mode**, choose **Load unpacked**, and select this `browser-companion` directory. The CI package `vp3-browser-companion-v20.70.0.zip` is directly loadable/extractable and contains `manifest.json` at the ZIP root.
+Open `chrome://extensions`, enable **Developer mode**, choose **Load unpacked**, and select this `browser-companion` directory. The CI package `vp3-browser-companion-v21.0.0.zip` is directly loadable/extractable and contains `manifest.json` at the ZIP root.
 
 The default VP3 site is `https://vp3.me`. Another HTTPS VP3 installation can be selected in Extension Settings. Local development may use `http://localhost` or `http://127.0.0.1`; Chrome asks for explicit access to the selected origin.
 
 ## Connection security
 
-The extension never receives or stores a VP3 password. Pairing uses the existing Browser Companion approval flow. The server delivers a device credential once; the extension stores it in `chrome.storage.local` and exchanges it for short-lived bearer sessions. Every authenticated request intersects the device's approved scopes with the user's current VP3 permissions.
+The connection flow is intentionally simple:
+
+1. Click **Connect to VP3** in the extension.
+2. Chrome opens VP3's normal website sign-in/approval flow with `chrome.identity.launchWebAuthFlow()`.
+3. VP3 redirects Chrome's private `chromiumapp.org` callback with a five-minute, one-time authorization code.
+4. The extension exchanges that code once for a random durable device token.
+5. The device token is stored only in `chrome.storage.local` and is sent as the Bearer credential for Browser Companion API requests.
+
+The extension never receives or stores the user's VP3 password. It does not poll for approval, store a second device credential, or mint/refresh 60-minute extension sessions.
+
+VP3 remains the source of truth for the account. On panel load the extension calls `/api/extension-me.php`, so the current display name, role and effective capabilities come from the live VP3 account. Each protected API request also recalculates effective capabilities against the user's current VP3 permission matrix.
 
 Production VP3 installations should configure the published extension's exact `chrome-extension://...` origin. For unpacked development builds, the existing `extension_allow_unlisted_chrome_origins` site setting can be enabled temporarily. Production should remain fail-closed.
 
-Disconnecting from the extension calls the VP3 self-revoke endpoint before local credentials are removed, revoking active sessions for that browser.
+Disconnecting calls the VP3 self-revoke endpoint before the local device token is removed. Revocation immediately invalidates that token.
 
 ## Privacy and safety boundaries
 
