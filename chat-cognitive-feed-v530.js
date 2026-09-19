@@ -320,11 +320,14 @@
       ? lastFeed.sections.flatMap(section=>Array.isArray(section.items)?section.items:[]).find(row=>clean(row.key)===key)
       : null;
     if(!item)return;
-    const type=clean(event.detail&&event.detail.action&&event.detail.action.type)||'open';
-    const accepted=!(event.detail&&event.detail.accepted===false);
+    const detail=event.detail||{};
+    const type=clean(detail.action&&detail.action.type)||'open';
+    const handled=detail.handled===true;
+    const accepted=type==='tool'?(handled&&detail.accepted===true):detail.accepted!==false;
+    const actionType=type==='tool'&&!handled?'tool_review':(accepted?type:(type+'_rejected'));
     void learningApi('feedback',{
       event_type:accepted?'acted':'engaged',
-      action_type:accepted?type:(type+'_rejected'),
+      action_type:actionType,
       item_key:key,
       fingerprint:clean(item.fingerprint)
     }).catch(()=>{});

@@ -772,9 +772,17 @@ function vp3_cognitive_recent_observations_v500(PDO $pdo,array $user,string $age
 function vp3_cognitive_presentation_context_v500(PDO $pdo,array $user,array $overrides=[]): array
 {
     $uid=(int)($user['id']??0);
-    $voice=true;
+    // Voice is opt-in presentation state. Missing settings infrastructure or a
+    // settings read failure must never widen presentation into speech.
+    $voice=false;
     if($uid>0&&function_exists('chat_settings_get_v237')){
-        try{$settings=chat_settings_get_v237($pdo,$uid);$voice=$settings['agent_voice_enabled']??true;}catch(Throwable $e){}
+        try{
+            $settings=chat_settings_get_v237($pdo,$uid);
+            $voice=!empty($settings['agent_voice_enabled']);
+        }catch(Throwable $e){
+            error_log('VP3 Cognitive Runtime voice settings unavailable: '.$e->getMessage());
+            $voice=false;
+        }
     }
     $defaults=[
         'direct_user_request'=>false,
@@ -806,7 +814,7 @@ function vp3_cognitive_presentation_decide_v500(array $observation,array $contex
         'valid_until'=>(string)($observation['valid_until']??''),
     ];
     $ctx=array_replace([
-        'direct_user_request'=>false,'requires_user_response'=>false,'agent_voice_enabled'=>true,'interruptible'=>true,
+        'direct_user_request'=>false,'requires_user_response'=>false,'agent_voice_enabled'=>false,'interruptible'=>true,
         'quiet_hours'=>false,'focus_mode'=>false,'sensitive_for_voice'=>false,'idle_minutes'=>0,'already_presented'=>false,'attention_budget_remaining'=>true,'voice_candidate_allowed'=>false,
     ],$context);
 

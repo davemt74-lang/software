@@ -67,11 +67,32 @@
     if (type === 'tool') {
       if (action.requires_approval) button.dataset.requiresApproval = '1';
       button.addEventListener('click',() => {
-        const detail = {tool_id:clean(action.tool_id),card:card,action:action};
-        const event = new CustomEvent('vp3:cognitive-card-tool-request',{detail,cancelable:true});
-        const allowed = window.dispatchEvent(event);
-        button.dispatchEvent(new CustomEvent('vp3:cognitive-card-action',{bubbles:true,detail:{action,card,accepted:allowed}}));
-        if (allowed) runPrompt('Use ' + clean(action.tool_id) + ' for ' + clean(card.title || 'this item') + '.');
+        let resolution = 'unhandled';
+        const detail = {
+          tool_id:clean(action.tool_id),
+          card:card,
+          action:action,
+          accept(){ if (resolution === 'unhandled') resolution = 'accepted'; },
+          reject(){ if (resolution === 'unhandled') resolution = 'rejected'; }
+        };
+        button.dispatchEvent(new CustomEvent('vp3:cognitive-card-tool-request',{
+          detail,
+          cancelable:true,
+          bubbles:true
+        }));
+        const handled = resolution !== 'unhandled';
+        const accepted = resolution === 'accepted';
+        button.dispatchEvent(new CustomEvent('vp3:cognitive-card-action',{
+          bubbles:true,
+          detail:{action,card,handled,accepted}
+        }));
+        if (!handled) {
+          runPrompt(
+            'Review the proposed VP3 tool action "' + (label || clean(action.tool_id)) +
+            '" for ' + clean(card.title || 'this item') +
+            '. Explain what it would do, permissions, approvals, and risks. Do not execute anything until I explicitly confirm in the authoritative action flow.'
+          );
+        }
       });
       return button;
     }

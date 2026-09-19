@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require dirname(__DIR__).'/includes/bootstrap.php';
 require_once dirname(__DIR__).'/includes/extension-device-auth-v2001.php';
+require_once dirname(__DIR__).'/includes/browser-context-v2130.php';
 
 header('Content-Type: application/json; charset=UTF-8');
 header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
@@ -100,7 +101,14 @@ function vp3_extension_cognitive_candidate_v2120(PDO $pdo,array $user,string $na
 {
     $request=is_array($item['card_request']??null)?$item['card_request']:[];
     $card=null;
-    try{$card=vp3_cognitive_render_card_v500($pdo,$user,$namespace,$request);}catch(Throwable $e){}
+    try{
+        $card=vp3_cognitive_render_card_v500($pdo,$user,$namespace,$request);
+    }catch(Throwable $e){
+        error_log(
+            'VP3 Browser Companion Cognitive card unavailable ['.
+            mb_strimwidth((string)($item['key']??''),0,190,'').']: '.$e->getMessage()
+        );
+    }
     if(!is_array($card))return [];
 
     if(function_exists('vp3_cognitive_learning_schema_ready_v540')&&vp3_cognitive_learning_schema_ready_v540($pdo)){
@@ -201,6 +209,26 @@ try{
 
     $input=vp3_extension_cognitive_input_v2120();
     $action=trim((string)($input['action']??''));
+
+    if($action==='context_feed'){
+        $rawContext=is_array($input['context']??null)?$input['context']:[];
+        $context=vp3_browser_context_validate_v2130($rawContext);
+        $relations=vp3_browser_context_relationships_v2130($pdo,$user,$context,(array)($session['capabilities']??[]));
+        $feed=vp3_extension_cognitive_feed_v2120($pdo,$user,$namespace);
+        $feed=vp3_browser_contextualize_feed_v2130($feed,$context,$relations);
+        $suggestions=vp3_browser_context_suggestions_v2130($session,$context,$relations);
+        $prompt=trim((string)($input['prompt']??''));
+        vp3_extension_cognitive_json_v2120(200,[
+            'ok'=>true,
+            'context_build'=>VP3_BROWSER_CONTEXT_V2130,
+            'context'=>$context,
+            'feed'=>$feed,
+            'relationships'=>$feed['relationships']??[],
+            'suggestions'=>$suggestions,
+            'agent_payload'=>vp3_browser_context_agent_payload_v2130($context,$relations,$prompt),
+            'persistence'=>'none_until_explicit_action',
+        ]);
+    }
 
     if($action==='hide'){
         $candidate=vp3_extension_cognitive_current_candidate_v2120($pdo,$user,$namespace,$input);
