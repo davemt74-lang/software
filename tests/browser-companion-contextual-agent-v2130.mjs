@@ -66,8 +66,8 @@ must(context.includes("'label'=>'Add to Research'")&&context.includes('before cr
 
 // Server contextualizes the canonical Cognitive Runtime instead of implementing a second Agent.
 must(context.includes('vp3_browser_contextualize_feed_v2130'),'cognitive feed contextualizer missing');
-must(context.includes("'context_score'=>$score"),'page relevance score missing');
-must(context.includes("'context_reason'=>'Related to the current page context'"),'page relevance reason missing');
+must(context.includes("$item['context_score']=$score;"),'page relevance score missing');
+must(context.includes("$item['context_reason']='Related to the current page context';"),'page relevance reason missing');
 must(context.includes('vp3_browser_context_insights_v2130'),'evidence-based page insights missing');
 
 // Browser Now UX.
