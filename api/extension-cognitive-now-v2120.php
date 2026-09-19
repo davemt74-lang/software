@@ -213,7 +213,7 @@ try{
     if($action==='context_feed'){
         $rawContext=is_array($input['context']??null)?$input['context']:[];
         $context=vp3_browser_context_validate_v2130($rawContext);
-        $relations=vp3_browser_context_relationships_v2130($pdo,$user,$context);
+        $relations=vp3_browser_context_relationships_v2130($pdo,$user,$context,(array)($session['capabilities']??[]));
         $feed=vp3_extension_cognitive_feed_v2120($pdo,$user,$namespace);
         $feed=vp3_browser_contextualize_feed_v2130($feed,$context,$relations);
         $suggestions=vp3_browser_context_suggestions_v2130($session,$context,$relations);
