@@ -42,7 +42,7 @@ must(extensionApi.includes("if($action==='context_feed')"),'server contextual No
 must(extensionApi.includes("vp3_extension_session_has_capability_v2001($session,'agent.message')"),'contextual Now must retain live Agent capability enforcement');
 must(extensionApi.includes("has_permission('chat.access',$user)"),'contextual Now must retain live Chat permission enforcement');
 must(extensionApi.includes('vp3_browser_context_validate_v2130($rawContext)'), 'server page-context validation missing');
-must(extensionApi.includes('vp3_browser_context_relationships_v2130($pdo,$user,$context)'), 'server relationship resolution missing');
+must(extensionApi.includes("vp3_browser_context_relationships_v2130($pdo,$user,$context,(array)($session['capabilities']??[]))"), 'server relationship resolution must receive live extension capabilities');
 must(extensionApi.includes('vp3_browser_contextualize_feed_v2130($feed,$context,$relations)'), 'server cognitive contextualization missing');
 must(extensionApi.includes("'persistence'=>'none_until_explicit_action'"),'explicit no-persistence response contract missing');
 
