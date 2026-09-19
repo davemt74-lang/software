@@ -64,7 +64,7 @@ must(!meApi.includes('ensure_schema'),'account sync endpoint must not run DDL');
 // Approval uses normal VP3 login and explicit approval.
 must(approval.includes('VP3_EXTENSION_DEVICE_APPROVAL_SESSION_V2100'),'v21 approval session missing');
 must(approval.includes("login.php?return_to="),'normal VP3 login must be reused');
-must(approval.includes("chrome.identity.launchWebAuthFlow") || approval.includes("chromiumapp"),'approval copy/code must identify Chrome callback flow');
+must(approval.includes('vp3_extension_callback_v2100'),'approval must redirect only through the validated Chrome callback helper');
 must(approval.includes('verify_csrf()'),'browser approval must require CSRF protection');
 must(approval.includes('value="approve"'),'Connect Browser approval action missing');
 must(approval.includes('value="deny"'),'Cancel action missing');
