@@ -100,7 +100,14 @@ function vp3_extension_cognitive_candidate_v2120(PDO $pdo,array $user,string $na
 {
     $request=is_array($item['card_request']??null)?$item['card_request']:[];
     $card=null;
-    try{$card=vp3_cognitive_render_card_v500($pdo,$user,$namespace,$request);}catch(Throwable $e){}
+    try{
+        $card=vp3_cognitive_render_card_v500($pdo,$user,$namespace,$request);
+    }catch(Throwable $e){
+        error_log(
+            'VP3 Browser Companion Cognitive card unavailable ['.
+            mb_strimwidth((string)($item['key']??''),0,190,'').']: '.$e->getMessage()
+        );
+    }
     if(!is_array($card))return [];
 
     if(function_exists('vp3_cognitive_learning_schema_ready_v540')&&vp3_cognitive_learning_schema_ready_v540($pdo)){
