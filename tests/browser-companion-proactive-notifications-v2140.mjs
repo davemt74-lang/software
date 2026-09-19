@@ -93,7 +93,8 @@ must(voice.includes("https://api.elevenlabs.io/v1/text-to-speech/"),'premium Age
 must(voice.includes("CURLOPT_SSL_VERIFYPEER=>true")&&voice.includes("CURLOPT_FOLLOWLOCATION=>false"),
   'premium voice transport hardening missing');
 
-must(bootstrap.includes("require_once __DIR__.'/extension-notifications-v2140.php';"),'v21.40 bootstrap loader missing');
+must(!bootstrap.includes("require_once __DIR__.'/extension-notifications-v2140.php';"),'v21.40 notification module must not load inside low-level core bootstrap');
+must(upgrade.includes("require_once __DIR__ . '/includes/extension-notifications-v2140.php';"),'v21.40 upgrade must explicitly load notification schema module');
 must(upgrade.includes('vp3_extension_notifications_schema_ready_v2140()'),'v21.40 upgrade readiness missing');
 must(upgrade.includes('vp3_extension_notifications_ensure_schema_v2140();'),'v21.40 schema install missing');
 
