@@ -550,8 +550,18 @@ function vp3_cognitive_cards_chat_requests_v520(PDO $pdo,array $user,string $nam
             $stmt->execute([$uid,$namespace]);foreach($stmt->fetchAll()?:[] as $row)$add('orchestration_run',(string)$row['public_id']);
         }elseif($type==='memory_thread'&&table_exists('cognitive_memory_threads_v570')){
             if(function_exists('vp3_cognitive_memory_sync_v570'))vp3_cognitive_memory_sync_v570($pdo,$user,$namespace,[]);
-            $stmt=$pdo->prepare("SELECT public_id FROM cognitive_memory_threads_v570 WHERE owner_user_id=? AND agent_namespace=? ORDER BY (reopened_count*3+unsuccessful_count*2+distinct_object_count) DESC,last_seen_at DESC,id DESC LIMIT {$limit}");
-            $stmt->execute([$uid,$namespace]);foreach($stmt->fetchAll()?:[] as $row)$add('memory_thread',(string)$row['public_id']);
+            $memoryLimit=max($limit,min(36,$limit*3));
+            $stmt=$pdo->prepare("SELECT public_id FROM cognitive_memory_threads_v570 WHERE owner_user_id=? AND agent_namespace=? ORDER BY (reopened_count*3+unsuccessful_count*2+distinct_object_count) DESC,last_seen_at DESC,id DESC LIMIT {$memoryLimit}");
+            $stmt->execute([$uid,$namespace]);
+            foreach($stmt->fetchAll()?:[] as $row){
+                $memoryId=(string)$row['public_id'];
+                try{
+                    $memoryRef=vp3_cognitive_object_ref_v500('memory_thread',$memoryId,'personal');
+                    if(!vp3_cognitive_authorize_ref_v500($pdo,$user,$namespace,$memoryRef,'read'))continue;
+                    $add('memory_thread',$memoryId);
+                }catch(Throwable $e){}
+                if(count($refs)>=$limit)break;
+            }
         }
     }catch(Throwable $e){return [];}
 
