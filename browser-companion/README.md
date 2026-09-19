@@ -1,6 +1,26 @@
-# VP3 Browser Companion v21.30
+# VP3 Browser Companion v21.40
 
 Chrome Manifest V3 companion for VP3 Browser Share and the Source Feed layer: This Page, Following, source/user follows, comments, read state, Private/Team/Public publishing, plus highlighted text, screenshot regions, source-media moments, and voice commentary.
+
+## v21.40 Proactive Notifications + Agent Voice
+
+Browser Companion can now surface high-value VP3 interruptions through Chrome without creating a second notification or voice authority.
+
+VP3 remains authoritative for notification ownership, current permissions, Cognitive importance, Agent Voice preference, and cross-device delivery state. Chrome polls at most once per minute and can claim only one server-authorized interruption at a time.
+
+Visual delivery includes canonical notification attention plus high-priority Cognitive Feed attention items. Canonical notification projections already present in the Cognitive Feed are suppressed so the same event cannot appear twice.
+
+The server owns a cross-device delivery ledger keyed by user + event. Claims are short-lived and device-bound, which prevents multiple connected browsers from independently displaying the same interruption. Open, dismiss, snooze, visual delivery, voice delivery, and retry state are all server-owned.
+
+Sensitive categories use minimal Chrome notification text and are never spoken. The delivery ledger stores that redacted representation rather than duplicating the sensitive title/body.
+
+When VP3's existing **Agent Voice** setting is enabled, eligible interruptions use the configured premium ElevenLabs Agent Voice through a durable-token voice adapter and MV3 offscreen audio document. The voice endpoint accepts only a currently pending server-owned event key—never arbitrary text. Voice delivery is acknowledged only after audio playback reaches `ended`.
+
+Chrome shares the canonical Cognitive Presentation voice cursor with Agent Chat. It speaks the exact canonical aggregated voice candidate and stores the corresponding through-id before playback, so one Chrome alert cannot silently skip another web Agent Voice item.
+
+If an Agent Chat tab is active, Chrome suppresses spoken interruption while retaining visual delivery. Current page URL/title may temporarily boost relevance and add a “related to this page” notification context message; page context is not written to the delivery ledger.
+
+Notification actions remain bounded to **Open VP3**, contextual canonical routes, **Snooze 15 min**, and dismiss. Browser notifications never execute Cognitive Runtime tools.
 
 ## v21.30 Contextual Agent Actions
 
@@ -104,7 +124,7 @@ The optional numeric argument controls the maximum number of jobs processed in t
 
 ## Local Chrome installation
 
-Open `chrome://extensions`, enable **Developer mode**, choose **Load unpacked**, and select this `browser-companion` directory. The CI package `vp3-browser-companion-v21.3.0.zip` is directly loadable/extractable and contains `manifest.json` at the ZIP root.
+Open `chrome://extensions`, enable **Developer mode**, choose **Load unpacked**, and select this `browser-companion` directory. The CI package `vp3-browser-companion-v21.4.0.zip` is directly loadable/extractable and contains `manifest.json` at the ZIP root.
 
 The default VP3 site is `https://vp3.me`. Another HTTPS VP3 installation can be selected in Extension Settings. Local development may use `http://localhost` or `http://127.0.0.1`; Chrome asks for explicit access to the selected origin.
 
