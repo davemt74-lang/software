@@ -13,6 +13,8 @@ const feedPhp=read('includes/cognitive-feed-v530.php');
 const presentation=read('includes/cognitive-presentation-v510.php');
 const panel=read('browser-companion/sidepanel.js');
 const cognitiveExtensionApi=read('api/extension-cognitive-now-v2120.php');
+const notificationCenter=read('chat-notifications-drawer-v240.js');
+const cognitivePresentationJs=read('chat-cognitive-presentation-v510.js');
 
 // 1. Legacy Browser Companion sessions must still authenticate before upgrade.php
 // creates the v21 authorization-code table.
@@ -109,6 +111,26 @@ must(runtime.includes("VP3 Cognitive Runtime voice settings unavailable:"),
   'core voice-settings failures must be observable');
 must(runtime.includes("'agent_voice_enabled'=>false"),
   'presentation arbitration defaults must be voice-safe when no canonical context is supplied');
+
+must(notificationCenter.includes("if (!agentVoiceEnabled()) return false;"),
+  'shared voice delivery must fail closed when Agent Voice is disabled');
+must(notificationCenter.includes("if (!spoken) spoken = await browserSpeak(message);"),
+  'shared voice delivery must report browser fallback speech');
+must(notificationCenter.includes("return spoken === true;"),
+  'shared voice delivery must return actual speech success');
+must(notificationCenter.includes("announce:text => queueSpeech(String(text || ''))"),
+  'notification center announce() must return the queued speech result');
+
+must(cognitivePresentationJs.includes("if (!center || typeof center.announce !== 'function') return false;"),
+  'Cognitive Presentation must not consume voice when no announcer exists');
+must(cognitivePresentationJs.includes("spoken = (await Promise.resolve(center.announce(String(candidate.message)))) === true;"),
+  'Cognitive Presentation must await actual voice delivery');
+must(cognitivePresentationJs.indexOf("lastVoiceThrough = through;") >
+     cognitivePresentationJs.indexOf("if (!spoken) return false;"),
+  'local voice cursor must advance only after successful speech');
+must(cognitivePresentationJs.includes("if (through <= lastVoiceThrough) {")
+  && cognitivePresentationJs.includes("await post('voice_delivered',{through_id:through});"),
+  'failed server voice acknowledgement must retry without re-speaking');
 
 must(cognitiveExtensionApi.includes("VP3 Browser Companion Cognitive card unavailable ["),
   'extension card render degradation must be observable without weakening fail-closed behavior');
