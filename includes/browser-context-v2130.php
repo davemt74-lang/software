@@ -323,15 +323,18 @@ function vp3_browser_context_crm_v2130(PDO $pdo,array $user,array $context,array
     return $out;
 }
 
-function vp3_browser_context_relationships_v2130(PDO $pdo,array $user,array $context): array
+function vp3_browser_context_relationships_v2130(PDO $pdo,array $user,array $context,?array $extensionCapabilities=null): array
 {
     $terms=vp3_browser_context_terms_v2130($context);
-    $sourceBundle=vp3_browser_context_source_v2130($pdo,$user,$context);
+    $allowSourceActivity=$extensionCapabilities===null||in_array('team.chat.read',$extensionCapabilities,true);
+    $sourceBundle=$allowSourceActivity
+        ?vp3_browser_context_source_v2130($pdo,$user,$context)
+        :['source'=>null,'annotations'=>[],'conversations'=>[]];
     $source=is_array($sourceBundle['source']??null)?$sourceBundle['source']:null;
     return [
         'source'=>$source,
-        'annotations'=>array_slice((array)$sourceBundle['annotations'],0,8),
-        'team_conversations'=>array_slice((array)$sourceBundle['conversations'],0,5),
+        'annotations'=>$allowSourceActivity?array_slice((array)$sourceBundle['annotations'],0,8):[],
+        'team_conversations'=>$allowSourceActivity?array_slice((array)$sourceBundle['conversations'],0,5):[],
         'research'=>vp3_browser_context_research_v2130($pdo,$user,$source),
         'knowledge'=>vp3_browser_context_knowledge_v2130($user,$context,$terms),
         'calendar'=>vp3_browser_context_calendar_v2130($pdo,$user,$terms),
