@@ -384,6 +384,21 @@ function vp3_cognitive_orchestration_reconcile_run_v560(PDO $pdo,array $user,str
         vp3_cognitive_orchestration_recount_v560($pdo,$run,'blocked','authorization_lost');
         return vp3_cognitive_orchestration_run_v560($pdo,$user,$namespace,(int)$run['id'])?:$run;
     }
+    if((string)$run['status']==='blocked'&&(string)$run['verification_state']==='authorization_lost'){
+        $handoff=vp3_cognitive_orchestration_step_v560($pdo,(int)$run['id'],'handoff');
+        $resumeStatus='active';
+        if(is_array($handoff)){
+            $resumeStatus=match((string)$handoff['status']){
+                'awaiting_approval'=>'awaiting_approval',
+                'awaiting_user'=>'awaiting_user',
+                'handoff_requested'=>'verifying',
+                'failed'=>'needs_replan',
+                default=>'active',
+            };
+        }
+        vp3_cognitive_orchestration_recount_v560($pdo,$run,$resumeStatus,$resumeStatus==='verifying'?'waiting':'waiting');
+        $run=vp3_cognitive_orchestration_run_v560($pdo,$user,$namespace,(int)$run['id'])?:$run;
+    }
 
     $outcome=vp3_cognitive_orchestration_latest_outcome_v560($pdo,$run,$plan);
     if(!$outcome)return $run;
