@@ -15,6 +15,7 @@ const chat=read('chat.php');
 const chatJs=read('chat.js');
 const chatContext=read('chat-browser-context-v2130.js');
 const chatApi=read('api/chat-v236.php');
+const agentSurface=read('includes/agent-surface-context-v131.php');
 
 must(manifest.version==='21.3.0','v21.30 manifest version missing');
 must(background.includes("const VP3_EXTENSION_VERSION = '21.3.0';"),'v21.30 request version missing');
@@ -112,6 +113,14 @@ must(chatApi.includes('vp3_browser_context_validate_v2130(['),'Agent server must
 must(chatApi.includes('vp3_browser_context_relationships_v2130($pdo,$user,$browserContext)'), 'Agent server must re-resolve relationships for the signed-in user');
 must(chatApi.includes("$persistedAgentContext=$agentContext;")&&chatApi.includes("unset($persistedAgentContext['browser_context']);"),'full Browser context must not persist into Agent message metadata');
 must(chatApi.includes("'source'=>'browser-context:ephemeral'"),'Agent response may expose only a minimal ephemeral page source marker');
+must(agentSurface.includes("function agent_surface_v131_browser_context"),'canonical Agent Surface must explicitly sanitize Browser context');
+must(agentSurface.includes("'browser_context'=>null"),'Agent Surface schema must declare Browser context');
+must(agentSurface.includes("'authentication_authority'=>false")&&agentSurface.includes("'instructions_authority'=>false"),
+  'Browser page context must be data-only and non-authoritative');
+must(agentSurface.includes("$browserContext=agent_surface_v131_browser_context($raw);"),
+  'Agent Surface sanitizer must preserve only its bounded Browser context representation');
+must(agentSurface.includes("'selected_text'=>agent_surface_v131_text($page['selected_text']??'',12000)"),
+  'Agent Surface selected text must remain bounded');
 
 // No autonomous Cognitive Runtime tool execution is added in v21.30.
 for(const file of [background,panel,context,extensionApi,chatContext]){
