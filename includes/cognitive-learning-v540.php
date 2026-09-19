@@ -284,14 +284,14 @@ function vp3_cognitive_learning_observe_candidates_v540(PDO $pdo,array $user,str
           (owner_user_id,agent_namespace,item_key,item_fingerprint,source_kind,section_key,object_type,object_id,object_scope,lifecycle_state,current_outcome,first_seen_at,last_seen_at)
           VALUES (?,?,?,?,?,?,?,?,?,'active','',UTC_TIMESTAMP(),UTC_TIMESTAMP())
           ON DUPLICATE KEY UPDATE
-            item_fingerprint=VALUES(item_fingerprint),
+            lifecycle_state=IF(item_fingerprint<>VALUES(item_fingerprint),'active',lifecycle_state),
+            current_outcome=IF(item_fingerprint<>VALUES(item_fingerprint),'',current_outcome),
             source_kind=VALUES(source_kind),
             section_key=VALUES(section_key),
             object_type=VALUES(object_type),
             object_id=VALUES(object_id),
             object_scope=VALUES(object_scope),
-            lifecycle_state=IF(item_fingerprint<>VALUES(item_fingerprint),'active',lifecycle_state),
-            current_outcome=IF(item_fingerprint<>VALUES(item_fingerprint),'',current_outcome),
+            item_fingerprint=VALUES(item_fingerprint),
             last_seen_at=UTC_TIMESTAMP(),
             updated_at=UTC_TIMESTAMP()")
           ->execute([$uid,$namespace,$itemKey,$fingerprint,$source,$section,$ref['type'],$ref['id'],$ref['scope']]);
