@@ -59,6 +59,29 @@ function vp3_extension_device_token_ensure_schema_v2100(?PDO $pdo=null): void
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 }
 
+function vp3_extension_allowed_chrome_ids_v2100(): array
+{
+    $configured=site_config('extension_allowed_origins',[]);
+    if(is_string($configured))$configured=preg_split('/\s*,\s*/',trim($configured))?:[];
+    $ids=[];
+    foreach(is_array($configured)?$configured:[] as $origin){
+        if(preg_match('#^chrome-extension://([a-p]{32})$#',trim((string)$origin),$m))$ids[$m[1]]=true;
+    }
+    return array_keys($ids);
+}
+
+function vp3_extension_chrome_origin_valid_v2100(string $origin): bool
+{
+    return (bool)preg_match('#^chrome-extension://[a-p]{32}$#',trim($origin));
+}
+
+function vp3_extension_chrome_id_allowed_v2100(string $extensionId): bool
+{
+    if(!preg_match('/^[a-p]{32}$/',$extensionId))return false;
+    if(in_array($extensionId,vp3_extension_allowed_chrome_ids_v2100(),true))return true;
+    return filter_var(site_config('extension_allow_unlisted_chrome_origins',false),FILTER_VALIDATE_BOOL);
+}
+
 function vp3_extension_redirect_uri_valid_v2100(string $value): bool
 {
     $value=trim($value);
@@ -68,7 +91,8 @@ function vp3_extension_redirect_uri_valid_v2100(string $value): bool
     $scheme=strtolower((string)($parts['scheme']??''));
     $host=strtolower((string)($parts['host']??''));
     $path=(string)($parts['path']??'');
-    if($scheme!=='https'||!preg_match('/^[a-p]{32}\.chromiumapp\.org$/',$host))return false;
+    if($scheme!=='https'||!preg_match('/^([a-p]{32})\.chromiumapp\.org$/',$host,$match))return false;
+    if(!vp3_extension_chrome_id_allowed_v2100($match[1]))return false;
     if($path!=='/vp3-connect')return false;
     if(isset($parts['user'])||isset($parts['pass'])||isset($parts['port'])||isset($parts['query'])||isset($parts['fragment']))return false;
     return true;
@@ -133,11 +157,13 @@ function vp3_extension_device_code_issue_v2100(PDO $pdo,int $userId,array $conte
     return $code;
 }
 
-function vp3_extension_device_code_exchange_v2100(PDO $pdo,string $code,string $installationId): array
+function vp3_extension_device_code_exchange_v2100(PDO $pdo,string $code,string $installationId,string $origin): array
 {
     vp3_extension_device_token_require_schema_v2100($pdo);
     $code=strtolower(trim($code));
     $installationId=strtolower(trim($installationId));
+    $origin=trim($origin);
+    if(!vp3_extension_chrome_origin_valid_v2100($origin))throw new InvalidArgumentException('The extension origin is invalid.');
     if(!preg_match('/^[a-f0-9]{64}$/',$code)||!vp3_extension_valid_uuid_v2000($installationId)){
         throw new InvalidArgumentException('The browser connection code is invalid.');
     }
@@ -150,6 +176,13 @@ function vp3_extension_device_code_exchange_v2100(PDO $pdo,string $code,string $
         $stmt->execute([vp3_extension_hash_v2000($code),$installationId]);
         $row=$stmt->fetch();
         if(!$row)throw new RuntimeException('This browser connection code is invalid or expired.');
+
+        $redirect=parse_url((string)$row['redirect_uri']);
+        $redirectHost=strtolower((string)($redirect['host']??''));
+        if(!preg_match('/^([a-p]{32})\.chromiumapp\.org$/',$redirectHost,$originMatch)
+            || !hash_equals('chrome-extension://'.$originMatch[1],$origin)){
+            throw new RuntimeException('This browser connection code belongs to another extension.');
+        }
 
         $userStmt=$pdo->prepare('SELECT id,display_name,role,is_active FROM users WHERE id=? LIMIT 1 FOR UPDATE');
         $userStmt->execute([(int)$row['user_id']]);
