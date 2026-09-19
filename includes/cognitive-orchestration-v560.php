@@ -396,7 +396,7 @@ function vp3_cognitive_orchestration_reconcile_run_v560(PDO $pdo,array $user,str
                 default=>'active',
             };
         }
-        vp3_cognitive_orchestration_recount_v560($pdo,$run,$resumeStatus,$resumeStatus==='verifying'?'waiting':'waiting');
+        vp3_cognitive_orchestration_recount_v560($pdo,$run,$resumeStatus,'waiting');
         $run=vp3_cognitive_orchestration_run_v560($pdo,$user,$namespace,(int)$run['id'])?:$run;
     }
 
