@@ -65,9 +65,9 @@ must(context.includes('crm_v180_can_manage($user)'),'CRM company/contact discove
 must(context.includes("p.is_public=1 AND u.is_active=1"),'profile relationship discovery must use public active profiles only');
 must(context.includes("isset($caps['team.chat.read'])")&&context.includes("'kind'=>'manual_follow'"),'Follow suggestion must use canonical live capability');
 must(context.includes("'kind'=>'manual_flow'")&&context.includes("'label'=>'Share with Team'"),'Team sharing must hand off to an explicit flow');
-must(context.includes("'label'=>'Save to Knowledge'")&&context.includes('ask for confirmation before creating anything'),'Knowledge suggestion must remain confirmation-first');
-must(context.includes("'label'=>'Create task'")&&context.includes('before creating anything'),'task suggestion must remain confirmation-first');
-must(context.includes("'label'=>'Add to Research'")&&context.includes('before creating or saving anything'),'Research suggestion must remain confirmation-first');
+must(context.includes("'label'=>'Save to Knowledge'")&&context.includes('draft a proposed VP3 Knowledge entry for my approval'),'Knowledge suggestion must remain proposal-only');
+must(context.includes("'label'=>'Create task'")&&context.includes('draft a proposed task for my approval'),'task suggestion must remain proposal-only');
+must(context.includes("'label'=>'Add to Research'")&&context.includes('draft research note and the project choice for my approval'),'Research suggestion must remain proposal-only');
 
 // Server contextualizes the canonical Cognitive Runtime instead of implementing a second Agent.
 must(context.includes('vp3_browser_contextualize_feed_v2130'),'cognitive feed contextualizer missing');
