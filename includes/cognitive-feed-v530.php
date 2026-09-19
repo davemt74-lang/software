@@ -175,13 +175,17 @@ function vp3_cognitive_feed_observation_candidates_v530(PDO $pdo,array $user,str
         foreach(array_slice($requests,0,2) as $index=>$request){
             try{$request=vp3_cognitive_validate_card_request_v500($request);}catch(Throwable $e){continue;}
             $key='observation:'.(string)$obs['id'].':'.$index;
-            $out[]=vp3_cognitive_feed_candidate_v530(
+            $candidate=vp3_cognitive_feed_candidate_v530(
                 $key,$section,$score,(string)($obs['reason']??''),$request,'cognitive_observation',
                 (string)($obs['updated_at']??''),[
                     'category'=>$category,'surface'=>$surface,'confidence'=>$obs['confidence']??0,
                     'urgency'=>$obs['urgency']??0,'impact'=>$obs['impact']??0,'goal_relevance'=>$obs['goal_relevance']??0,
                 ],$attention
             );
+            $candidate['planning_action_ids']=array_values(array_filter(array_map(
+                static fn($v)=>vp3_cognitive_id_v500($v,120),(array)($obs['proposed_action_ids']??[])
+            )));
+            $out[]=$candidate;
         }
     }
     return $out;
@@ -342,6 +346,11 @@ function vp3_cognitive_feed_candidates_v530(PDO $pdo,array $user,string $namespa
         vp3_cognitive_feed_notification_candidates_v530($pdo,$user)
     );
 
+    if(function_exists('vp3_cognitive_planning_schema_ready_v550')&&vp3_cognitive_planning_schema_ready_v550($pdo)){
+        vp3_cognitive_planning_sync_v550($pdo,$user,$namespace,$all);
+        $all=array_merge($all,vp3_cognitive_planning_feed_candidates_v550($pdo,$user,$namespace));
+    }
+
     $authorized=[];
     foreach($all as $candidate){
         if(!is_array($candidate)||!is_array($candidate['card_request']??null))continue;
@@ -426,6 +435,7 @@ function vp3_cognitive_feed_compose_v530(PDO $pdo,array $user,string $namespace,
         foreach($items as &$item){
             unset($item['score']);
             unset($item['learning_adjustment']);
+            unset($item['planning_action_ids']);
             $item['signals']=array_values(array_filter(array_map(static fn($v)=>vp3_cognitive_id_v500($v,80),(array)$item['signals'])));
         }unset($item);
         $sections[]=['id'=>$section]+$labels[$section]+['items'=>$items];
