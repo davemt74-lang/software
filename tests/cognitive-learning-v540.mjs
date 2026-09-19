@@ -36,7 +36,8 @@ assert.match(api,/action==='feedback'/);
 
 assert.match(feed,/vp3_cognitive_learning_observe_candidates_v540/);
 assert.match(feed,/vp3_cognitive_learning_adjust_candidate_v540/);
-assert.match(feed,/unset\(\$item\['score'\],\$item\['learning_adjustment'\]\)/);
+assert.match(feed,/unset\(\$item\['score'\]\)/);
+assert.match(feed,/unset\(\$item\['learning_adjustment'\]\)/);
 assert.match(feedApi,/vp3_cognitive_learning_feedback_v540\(\$pdo,\$user,\$namespace,\$candidate,'hidden'/);
 assert.match(learning,/'hidden'=>'presentation_hides'/);
 
