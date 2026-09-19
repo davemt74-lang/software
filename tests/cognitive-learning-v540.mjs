@@ -44,7 +44,7 @@ assert.match(learning,/'hidden'=>'presentation_hides'/);
 assert.match(cardsJs,/vp3:cognitive-card-action/);
 assert.match(feedJs,/learningEndpoint/);
 assert.match(feedJs,/event_type:'shown'/);
-assert.match(feedJs,/event_type:'acted'/);
+assert.match(feedJs,/event_type:accepted\?'acted':'engaged'/);
 assert.match(feedJs,/Why\?/);
 assert.match(feedJs,/action:'explain'/);
 
