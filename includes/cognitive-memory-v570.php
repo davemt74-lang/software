@@ -310,7 +310,7 @@ function vp3_cognitive_memory_thread_row_v570(PDO $pdo,array $user,string $names
 
 function vp3_cognitive_memory_occurrences_for_thread_v570(PDO $pdo,int $threadId,int $limit=20): array
 {
-    $limit=max(1,min(50,$limit));
+    $limit=max(1,min(120,$limit));
     $stmt=$pdo->prepare("SELECT * FROM cognitive_memory_occurrences_v570 WHERE thread_id=? ORDER BY occurred_at DESC,id DESC LIMIT {$limit}");
     $stmt->execute([$threadId]);
     return $stmt->fetchAll()?:[];
@@ -335,7 +335,8 @@ function vp3_cognitive_memory_visible_stats_v570(PDO $pdo,array $user,string $na
 {
     $rows=vp3_cognitive_memory_authorized_occurrences_v570($pdo,$user,$namespace,$thread,120);
     $objects=[];$reopened=0;$successful=0;$resolved=0;$unsuccessful=0;$first='';$last='';
-    foreach($rows as $row){
+    $lastEvent='';$visibleStatus='active';
+    foreach($rows as $index=>$row){
         $objects[(string)$row['object_type'].'|'.(string)$row['object_id'].'|'.(string)$row['object_scope']]=true;
         if((string)$row['event_kind']==='reopened')$reopened++;
         $outcome=(string)$row['outcome_code'];
@@ -345,6 +346,10 @@ function vp3_cognitive_memory_visible_stats_v570(PDO $pdo,array $user,string $na
         $at=(string)$row['occurred_at'];
         if($first===''||$at<$first)$first=$at;
         if($last===''||$at>$last)$last=$at;
+        if($index===0){
+            $lastEvent=(string)$row['event_kind'];
+            $visibleStatus=in_array($outcome,['successful','resolved'],true)?'resolved':'active';
+        }
     }
     return [
         'occurrence_count'=>count($rows),
@@ -355,6 +360,8 @@ function vp3_cognitive_memory_visible_stats_v570(PDO $pdo,array $user,string $na
         'unsuccessful_count'=>$unsuccessful,
         'first_seen_at'=>$first,
         'last_seen_at'=>$last,
+        'last_event_kind'=>$lastEvent,
+        'status'=>$visibleStatus,
         'rows'=>$rows,
     ];
 }
@@ -445,7 +452,7 @@ function vp3_cognitive_memory_context_v570(PDO $pdo,array $user,string $namespac
         'memory_thread'=>[
             'id'=>(string)$thread['public_id'],
             'kind'=>(string)$thread['thread_kind'],
-            'status'=>(string)$thread['status'],
+            'status'=>(string)$stats['status'],
             'occurrence_count'=>(int)$stats['occurrence_count'],
             'distinct_object_count'=>(int)$stats['distinct_object_count'],
             'reopened_count'=>(int)$stats['reopened_count'],
@@ -454,7 +461,7 @@ function vp3_cognitive_memory_context_v570(PDO $pdo,array $user,string $namespac
             'unsuccessful_count'=>(int)$stats['unsuccessful_count'],
             'first_seen_at'=>(string)$stats['first_seen_at'],
             'last_seen_at'=>(string)$stats['last_seen_at'],
-            'last_event_kind'=>(string)$thread['last_event_kind'],
+            'last_event_kind'=>(string)$stats['last_event_kind'],
         ],
         'timeline'=>vp3_cognitive_memory_resolved_timeline_v570($pdo,$user,$namespace,$thread),
         'behavior'=>$behavior,
@@ -483,9 +490,9 @@ function vp3_cognitive_memory_card_v570(PDO $pdo,array $user,string $namespace,a
     return [
         'title'=>$kind==='recurring_pattern'?'Recurring pattern':'Cross-time continuity',
         'subtitle'=>'Cognitive memory · reference-based',
-        'status'=>(string)$thread['status'],
+        'status'=>(string)$stats['status'],
         'summary'=>$summary,
-        'timestamp'=>(string)$thread['last_seen_at'],
+        'timestamp'=>(string)$stats['last_seen_at'],
         'badges'=>array_values(array_filter([
             $reopens>0?$reopens.' reopened':null,
             (int)$stats['unsuccessful_count']>0?(int)$stats['unsuccessful_count'].' unsuccessful':null,
@@ -513,7 +520,7 @@ function vp3_cognitive_memory_feed_candidates_v570(PDO $pdo,array $user,string $
 {
     if(!vp3_cognitive_memory_schema_ready_v570($pdo))return [];
     $stmt=$pdo->prepare("SELECT * FROM cognitive_memory_threads_v570
-      WHERE owner_user_id=? AND agent_namespace=? AND status='active'
+      WHERE owner_user_id=? AND agent_namespace=?
         AND ((thread_kind='recurring_pattern' AND occurrence_count>=3 AND distinct_object_count>=2)
           OR (thread_kind='object_continuity' AND reopened_count>=1))
       ORDER BY (reopened_count*3+unsuccessful_count*2+distinct_object_count) DESC,last_seen_at DESC
@@ -522,6 +529,7 @@ function vp3_cognitive_memory_feed_candidates_v570(PDO $pdo,array $user,string $
     foreach($stmt->fetchAll()?:[] as $row){
         try{
             $stats=vp3_cognitive_memory_visible_stats_v570($pdo,$user,$namespace,$row);
+            if((string)$stats['status']!=='active')continue;
             $significant=(string)$row['thread_kind']==='recurring_pattern'
                 ? ((int)$stats['occurrence_count']>=3&&(int)$stats['distinct_object_count']>=2)
                 : ((int)$stats['reopened_count']>=1);
