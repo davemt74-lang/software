@@ -36,12 +36,17 @@ must(
   !token.includes("SET last_used_at=NOW(),updated_at=NOW() WHERE id=?"),
   'durable token reads must not touch updated_at on every request'
 );
+const legacyDeviceAuth=read('includes/extension-device-auth-v2000.php');
+must(
+  legacyDeviceAuth.includes("ORDER BY COALESCE(last_used_at,approved_at,created_at) DESC,id DESC"),
+  'device listing must sort by actual activity after durable-token telemetry is decoupled from updated_at'
+);
 
 // 3. A Universal Card tool click is a request for authoritative handling, never
 // implicit acceptance. No handler means review-only.
 must(cards.includes("let resolution = 'unhandled';"),'tool request must start unhandled');
-must(cards.includes("accept(){ resolution = 'accepted'; }"),'tool protocol must require explicit accept()');
-must(cards.includes("reject(){ resolution = 'rejected'; }"),'tool protocol must expose explicit reject()');
+must(cards.includes("accept(){ if (resolution === 'unhandled') resolution = 'accepted'; }"),'tool protocol must require explicit one-shot accept()');
+must(cards.includes("reject(){ if (resolution === 'unhandled') resolution = 'rejected'; }"),'tool protocol must expose explicit one-shot reject()');
 must(cards.includes("bubbles:true"),'tool request must bubble to an authoritative handler');
 must(cards.includes("const handled = resolution !== 'unhandled';"),'tool request must distinguish handled from unhandled');
 must(cards.includes("const accepted = resolution === 'accepted';"),'tool request acceptance must be explicit');
@@ -84,5 +89,15 @@ const reconcileCalls=(feedPhp.match(/vp3_cognitive_learning_reconcile_v540\(\$pd
 assert.equal(reconcileCalls,1,'Cognitive Feed must reconcile learning exactly once per compose/candidate cycle');
 must(feedPhp.includes('Reconciliation already runs once before orchestration sync'),
   'single-reconciliation boundary must be documented');
+
+const learning=read('includes/cognitive-learning-v540.php');
+must(
+  learning.includes("last_seen_at<DATE_SUB(UTC_TIMESTAMP(),INTERVAL 5 MINUTE)"),
+  'unchanged cognitive lifecycle sightings must be write-throttled'
+);
+must(
+  learning.includes("item_fingerprint<>VALUES(item_fingerprint)"),
+  'cognitive lifecycle fingerprint changes must still persist immediately'
+);
 
 console.log('VP3 Browser Companion + Cognitive Runtime review hardening contract passed.');
