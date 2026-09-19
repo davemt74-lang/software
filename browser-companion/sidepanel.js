@@ -3,7 +3,7 @@ const $=id=>document.getElementById(id);
 const ui={};
 [
 'connectionState','connectControls','shareWorkspace','connectBtn','settingsBtn','connectedAccount','disconnectedAccount','accountAvatar','accountName','accountMeta','accountTeams','openVp3Btn','refreshAccountBtn','accountOptionsBtn','accessNotice','composerCard',
-'nowTab','thisPageTab','followingTab','liveTab','alertsTab','searchTab','nowView','thisPageView','followingView','liveView','alertsView','searchView','refreshNowBtn','openAgentChatBtn','restoreNowBtn','nowStatus','nowAttentionCount','nowItemCount','nowEmpty','nowFeed','refreshCaptureBtn','pageTitle','pageHost','sourceMeta','sourceStatus',
+'nowTab','thisPageTab','followingTab','liveTab','alertsTab','searchTab','nowView','thisPageView','followingView','liveView','alertsView','searchView','refreshNowBtn','openAgentChatBtn','restoreNowBtn','nowStatus','nowAttentionCount','nowItemCount','nowContextualCount','nowContextStrip','nowContextTitle','nowContextMeta','toggleNowContextBtn','nowContextPanel','nowRelationshipSummary','nowRelationshipList','nowContextActions','nowEmpty','nowFeed','refreshCaptureBtn','pageTitle','pageHost','sourceMeta','sourceStatus',
 'followCurrentSourceBtn','openSourcePageBtn','selectedText','selectionCount','captureSummary','captureScreenshotBtn','screenshotPreview',
 'screenshotImage','screenshotMeta','removeScreenshotBtn','captureMediaBtn','mediaDetectedText','mediaPreview','mediaPreviewTitle','mediaStart',
 'mediaEnd','mediaClipHint','removeMediaBtn','recordCommentaryBtn','commentaryStatus','commentaryPreview','commentaryAudio','commentaryMeta',
@@ -23,6 +23,7 @@ let state=null,capture=null,destinations=null,lastShare=null,currentSource=null;
 let screenshotCapture=null,mediaReference=null,commentaryCapture=null,recorder=null,stream=null,recordTimer=null,recordStarted=0,pageTimer=null;
 let thisCursor='',followingCursor='',thisBusy=false,followingBusy=false,activeView='now';
 let cognitiveBusy=false,cognitiveData=null,cognitiveTimer=null;
+let nowContextIgnored=false,contextAgentPayload=null,contextRelationships=null,contextSuggestions=[];
 let researchShareId='',researchContextData=null;
 let liveRoomsData=[],liveRoom=null,liveCursor=0,livePollTimer=null,liveHeartbeatTimer=null,liveBusy=false;
 let trustBusy=false,trustObservation=null,trustNotifications=null,trustClaims=[],claimShareId='';
@@ -312,6 +313,7 @@ function cognitiveCard(section,item){
   const cardData=item&&item.card||{},box=el('article','now-card','');box.dataset.attention=item&&item.attention?'1':'0';box.dataset.itemKey=String(item&&item.key||'');box.dataset.fingerprint=String(item&&item.fingerprint||'');box._item=item;
   const head=el('div','now-card-head',''),copy=el('div','','');copy.append(el('div','now-card-type',cognitiveTypeLabel(cardData.card_type||item.source||'Agent item')),el('div','now-card-title',cardData.title||'VP3 item'));head.append(copy);
   if(cardData.status)head.append(el('span','now-card-status',cognitiveTypeLabel(cardData.status)));box.append(head);
+  if(item.context_score>0){const contextual=el('div','now-badges','');contextual.append(el('span','pill contextual','Current page'));box.append(contextual);}
   if(item.reason)box.append(el('div','now-reason',item.reason));
   if(cardData.summary)box.append(el('p','now-summary-text',cardData.summary));
   if(Array.isArray(cardData.badges)&&cardData.badges.length){const row=el('div','now-badges','');cardData.badges.forEach(v=>row.append(el('span','pill',v)));box.append(row);}
@@ -332,8 +334,66 @@ function renderNow(feed){
   let attention=0,total=0;
   (cognitiveData&&Array.isArray(cognitiveData.sections)?cognitiveData.sections:[]).forEach(section=>{const items=Array.isArray(section.items)?section.items:[];if(!items.length)return;total+=items.length;if(section.id==='attention')attention+=items.length;const wrap=el('section','now-section',''),head=el('div','now-section-head',''),copy=el('div','now-section-copy','');copy.append(el('strong','',section.label||'Updates'));if(section.description)copy.append(el('span','',section.description));head.append(copy,el('span','now-section-count',String(items.length)));wrap.append(head);const list=el('div','now-feed','');items.forEach(item=>list.append(cognitiveCard(section,item)));wrap.append(list);ui.nowFeed.append(wrap);});
   ui.nowAttentionCount.textContent=attention+' attention';ui.nowItemCount.textContent=total+' current';ui.nowEmpty.hidden=total>0;
+  const contextual=Math.max(0,Number(cognitiveData&&cognitiveData.contextual_item_count||0));ui.nowContextualCount.hidden=contextual<1;ui.nowContextualCount.textContent=contextual+' page-related';
   const hidden=Number(cognitiveData&&cognitiveData.hidden_count||0);ui.restoreNowBtn.hidden=hidden<1;ui.restoreNowBtn.textContent=hidden>0?'Show hidden ('+hidden+')':'Show hidden';
   ui.nowStatus.textContent=total?(attention?attention+' item'+(attention===1?'':'s')+' need attention · '+(date(cognitiveData.generated_at)||'updated now'):'Current · '+(date(cognitiveData.generated_at)||'updated now')):(hidden?'All current items are hidden.':'Nothing needs the Agent canvas right now.');
+}
+function clearNowContextUi(){
+  contextAgentPayload=null;contextRelationships=null;contextSuggestions=[];
+  ui.nowContextStrip.hidden=true;ui.nowContextPanel.hidden=true;ui.nowRelationshipSummary.replaceChildren();ui.nowRelationshipList.replaceChildren();ui.nowContextActions.replaceChildren();ui.nowContextualCount.hidden=true;
+  ui.openAgentChatBtn.textContent='Open Agent Chat';
+}
+function relationshipRows(rel){
+  const rows=[];for(const key of ['calendar','research','knowledge','team_conversations','profiles','contacts']){for(const row of (Array.isArray(rel&&rel[key])?rel[key]:[]).slice(0,3)){if(row&&row.title)rows.push({...row,_group:key});}}
+  return rows.slice(0,8);
+}
+function renderContextualNow(payload){
+  const feed=payload&&payload.feed||null,context=feed&&feed.context||null,rel=payload&&payload.relationships||{};
+  contextAgentPayload=payload&&payload.agent_payload||null;contextRelationships=rel;contextSuggestions=Array.isArray(payload&&payload.suggestions)?payload.suggestions:[];
+  if(!context||context.ignored){clearNowContextUi();return;}
+  ui.nowContextStrip.hidden=false;ui.nowContextPanel.hidden=false;ui.nowContextTitle.textContent=context.title||context.domain||'Current page';
+  ui.nowContextMeta.textContent=(context.domain||host(context.url)||'')+(context.selected?' · highlighted text attached':'')+' · temporary';
+  ui.toggleNowContextBtn.textContent='Ignore page';ui.openAgentChatBtn.textContent='Ask Agent about this page';
+  const summary=ui.nowRelationshipSummary;summary.replaceChildren();
+  const counts=[
+    ['Annotations',Number(rel.annotation_count||0)],
+    ['Team',Array.isArray(rel.team_conversations)?rel.team_conversations.length:0],
+    ['Research',Array.isArray(rel.research)?rel.research.length:0],
+    ['Knowledge',Array.isArray(rel.knowledge)?rel.knowledge.length:0],
+    ['Meetings',Array.isArray(rel.calendar)?rel.calendar.length:0],
+    ['Profiles',Array.isArray(rel.profiles)?rel.profiles.length:0],
+    ['Contacts',Array.isArray(rel.contacts)?rel.contacts.length:0]
+  ].filter(x=>x[1]>0);
+  if(counts.length)counts.forEach(([label,count])=>summary.append(el('span','pill',count+' '+label.toLowerCase())));
+  else summary.append(el('span','muted','No existing VP3 relationships found yet.'));
+  ui.nowRelationshipList.replaceChildren();
+  (Array.isArray(rel.insights)?rel.insights:[]).slice(0,4).forEach(text=>ui.nowRelationshipList.append(el('div','now-context-insight',text)));
+  relationshipRows(rel).forEach(row=>{const box=el('div','now-relationship-row',''),copy=el('div','','');copy.append(el('small','',String(row.type||row._group||'related').replace(/_/g,' ')),el('strong','',row.title||'Related item'));if(row.detail)copy.append(el('span','',row.detail));box.append(copy);if(row.url){const b=act('Open','context_open_relation');b.dataset.url=String(row.url);box.append(b);}ui.nowRelationshipList.append(box);});
+  ui.nowContextActions.replaceChildren();
+  contextSuggestions.forEach((suggestion,index)=>{const b=act(suggestion.label||'Review','context_suggestion');b.dataset.index=String(index);if(index===0)b.classList.add('primary-inline');ui.nowContextActions.append(b);});
+  const src=rel&&rel.source;if(src&&src.id)currentSource={...(currentSource||{}),...src};
+}
+async function openContextAgent(prompt){
+  if(!contextAgentPayload)return msg('open_url',{url:absolute('/chat.php')});
+  const handoff=await msg('context_handoff',{payload:contextAgentPayload,prompt:String(prompt||'')});
+  if(handoff&&handoff.url)await msg('open_url',{url:handoff.url});
+}
+async function contextSuggestionClick(e){
+  const open=e.target.closest('button[data-action="context_open_relation"]');
+  if(open&&open.dataset.url){await msg('open_url',{url:absolute(open.dataset.url)});return;}
+  const button=e.target.closest('button[data-action="context_suggestion"]');if(!button)return;
+  const suggestion=contextSuggestions[Number(button.dataset.index||-1)];if(!suggestion)return;
+  try{
+    if(suggestion.kind==='agent_prompt'){await openContextAgent(suggestion.prompt||'');return;}
+    if(suggestion.kind==='open'&&suggestion.url){await msg('open_url',{url:absolute(suggestion.url)});return;}
+    if(suggestion.kind==='manual_flow'){setView('this_page');note('Use the explicit page controls to choose what to share or save.','success');return;}
+    if(suggestion.kind==='manual_follow'){
+      if(!caps().has('team.chat.read'))return note('Following sources is not enabled for this account.','error');
+      const src=contextRelationships&&contextRelationships.source;if(!src||!src.id)return;
+      const follow=!src.following;await sourceAction('follow_source',{source_id:src.id,url:capture&&capture.source_url||'',canonical_url:capture&&capture.canonical_url||'',title:capture&&capture.title||'',follow});
+      note(follow?'Source followed.':'Source unfollowed.','success');await loadNow(true);return;
+    }
+  }catch(err){await fail(err);}
 }
 function scheduleNow(seconds){
   clearInterval(cognitiveTimer);cognitiveTimer=null;
@@ -343,7 +403,15 @@ function scheduleNow(seconds){
 async function loadNow(force){
   if(cognitiveBusy||!state||!state.connected||!caps().has('agent.message'))return;cognitiveBusy=true;
   if(force)ui.nowStatus.textContent='Refreshing current VP3 intelligence…';
-  try{const feed=await msg('cognitive_now');renderNow(feed);scheduleNow(feed&&feed.refresh_seconds||60);}
+  try{
+    if(capture&&capture.available&&!nowContextIgnored){
+      const payload=await msg('context_now',{capture:capture});renderNow(payload&&payload.feed||null);renderContextualNow(payload);scheduleNow(payload&&payload.feed&&payload.feed.refresh_seconds||60);
+    }else{
+      const feed=await msg('cognitive_now');renderNow(feed);clearNowContextUi();
+      if(capture&&capture.available&&nowContextIgnored){ui.nowContextStrip.hidden=false;ui.nowContextTitle.textContent=capture.title||host(capture.source_url)||'Current page';ui.nowContextMeta.textContent=(host(capture.source_url)||'')+' · page context ignored';ui.toggleNowContextBtn.textContent='Use page';}
+      scheduleNow(feed&&feed.refresh_seconds||60);
+    }
+  }
   catch(e){
     ui.nowStatus.textContent=e.message||'Agent Now is unavailable.';
     if(e.code==='capability_denied'){
@@ -358,11 +426,11 @@ async function loadNow(force){
 async function cognitiveClick(e){
   const b=e.target.closest('button[data-action]');if(!b||b.dataset.action==='cognitive_noop')return;const box=b.closest('.now-card'),item=box&&box._item;if(!item)return;const payload={item_key:String(item.key||''),fingerprint:String(item.fingerprint||'')};
   try{
-    if(b.dataset.action==='cognitive_hide'){const r=await cognitiveAction('hide',payload);renderNow(r.feed);return;}
+    if(b.dataset.action==='cognitive_hide'){await cognitiveAction('hide',payload);await loadNow(true);return;}
     if(b.dataset.action==='cognitive_explain'){const r=await cognitiveAction('explain',payload),x=box.querySelector('.now-explanation');x.textContent=String(r.explanation&&r.explanation.explanation||'This item is ranked from current VP3 state and authorized cognitive context.');x.hidden=!x.hidden;return;}
     if(b.dataset.action==='cognitive_open'){await cognitiveAction('feedback',{...payload,event:'engaged',action_type:'open_object'});if(b.dataset.url)await msg('open_url',{url:absolute(b.dataset.url)});return;}
     if(b.dataset.action==='cognitive_agent_review'){await cognitiveAction('feedback',{...payload,event:'engaged',action_type:'agent_review'});await msg('open_url',{url:absolute(cognitiveData&&cognitiveData.agent_url||'/chat.php')});return;}
-    if(b.dataset.action==='cognitive_plan_accept'||b.dataset.action==='cognitive_plan_dismiss'){const planId=String(item.key||'').replace(/^plan:/,'');const decision=b.dataset.action==='cognitive_plan_accept'?'accept':'dismiss';const r=await cognitiveAction('plan_decide',{plan_id:planId,decision:decision});renderNow(r.feed);note(decision==='accept'?'Plan accepted for review.':'Plan dismissed.','success');return;}
+    if(b.dataset.action==='cognitive_plan_accept'||b.dataset.action==='cognitive_plan_dismiss'){const planId=String(item.key||'').replace(/^plan:/,'');const decision=b.dataset.action==='cognitive_plan_accept'?'accept':'dismiss';await cognitiveAction('plan_decide',{plan_id:planId,decision:decision});await loadNow(true);note(decision==='accept'?'Plan accepted for review.':'Plan dismissed.','success');return;}
   }catch(err){await fail(err);if(err.code==='state_changed')await loadNow(true).catch(()=>{});}
 }
 function setView(v){
@@ -439,7 +507,7 @@ ui.settingsBtn.onclick=()=>chrome.runtime.openOptionsPage();
 ui.accountOptionsBtn.onclick=()=>chrome.runtime.openOptionsPage();
 ui.openVp3Btn.onclick=()=>msg('open_url',{url:absolute('/')}).catch(fail);
 ui.refreshAccountBtn.onclick=async()=>{busy(ui.refreshAccountBtn,true,'Refreshing…');try{await refreshState();note('VP3 account refreshed.','success');}catch(e){await fail(e);}finally{busy(ui.refreshAccountBtn,false);}};
-ui.refreshNowBtn.onclick=()=>loadNow(true).catch(fail);ui.openAgentChatBtn.onclick=()=>msg('open_url',{url:absolute(cognitiveData&&cognitiveData.agent_url||'/chat.php')}).catch(fail);ui.restoreNowBtn.onclick=async()=>{try{const r=await cognitiveAction('restore_all',{});renderNow(r.feed);note('Hidden Agent items restored.','success');}catch(e){await fail(e);}};ui.nowFeed.onclick=cognitiveClick;
+ui.refreshNowBtn.onclick=()=>loadNow(true).catch(fail);ui.openAgentChatBtn.onclick=()=>{if(contextAgentPayload)return openContextAgent('Review this page with me. Start with what is most relevant to my current VP3 work.').catch(fail);return msg('open_url',{url:absolute(cognitiveData&&cognitiveData.agent_url||'/chat.php')}).catch(fail);};ui.restoreNowBtn.onclick=async()=>{try{await cognitiveAction('restore_all',{});await loadNow(true);note('Hidden Agent items restored.','success');}catch(e){await fail(e);}};ui.toggleNowContextBtn.onclick=()=>{nowContextIgnored=!nowContextIgnored;loadNow(true).catch(fail);};ui.nowContextActions.onclick=contextSuggestionClick;ui.nowRelationshipList.onclick=contextSuggestionClick;ui.nowFeed.onclick=cognitiveClick;
 ui.nowTab.onclick=()=>setView('now');ui.thisPageTab.onclick=()=>setView('this_page');ui.followingTab.onclick=()=>setView('following');ui.liveTab.onclick=()=>setView('live');ui.alertsTab.onclick=()=>setView('alerts');ui.searchTab.onclick=()=>setView('search');ui.refreshCaptureBtn.onclick=()=>refreshCapture(true).catch(fail);ui.refreshFollowingBtn.onclick=()=>loadFollowing(true).catch(fail);ui.refreshLiveBtn.onclick=()=>loadLiveRooms().catch(fail);ui.refreshAlertsBtn.onclick=()=>loadAlerts().catch(fail);
 ui.visibilitySelect.onchange=()=>{ui.visibilityTeamField.hidden=ui.visibilitySelect.value!=='team';renderCaps();};ui.visibilityTeamSelect.onchange=renderCaps;ui.destinationSelect.onchange=renderCaps;
 ui.liveScope.onchange=()=>{ui.liveTeamField.hidden=ui.liveScope.value!=='team';renderCaps();};ui.liveTeamSelect.onchange=renderCaps;
@@ -484,7 +552,7 @@ ui.liveMessageInput.onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefa
 ui.liveMessages.onclick=async e=>{const b=e.target.closest('button[data-action="live_report"]');if(!b)return;const reason=prompt('Why are you reporting this Live message?');if(!reason)return;try{await trustAction('report_create',{target_type:'live_message',target_id:b.dataset.messageId,reason:reason,detail:''});note('Report submitted.','success');}catch(err){await fail(err);}};
 ui.thisPageFeed.onclick=feedClick;ui.followingFeed.onclick=feedClick;ui.loadMoreThisPageBtn.onclick=()=>loadThis(false).catch(fail);ui.loadMoreFollowingBtn.onclick=()=>loadFollowing(false).catch(fail);
 const io=new IntersectionObserver(es=>es.forEach(e=>{if(!e.isIntersecting||e.target.hidden)return;if(e.target===ui.loadMoreThisPageBtn)loadThis(false).catch(fail);if(e.target===ui.loadMoreFollowingBtn)loadFollowing(false).catch(fail);}),{rootMargin:'120px'});io.observe(ui.loadMoreThisPageBtn);io.observe(ui.loadMoreFollowingBtn);
-function pageWatch(){clearInterval(pageTimer);let u=capture&&capture.source_url||'';pageTimer=setInterval(async()=>{if(!state||!state.connected||!['this_page','live','alerts','search'].includes(activeView))return;try{const x=await msg('tab_identity');if(x.source_url&&x.source_url!==u){u=x.source_url;await refreshCapture(activeView==='this_page');if(activeView==='live'){liveRoom=null;liveCursor=0;ui.liveRoomPanel.hidden=true;await loadLiveRooms();}if(activeView==='alerts')await loadAlerts();if(activeView==='search')await loadDiscovery();}}catch(e){}},2000);}
+function pageWatch(){clearInterval(pageTimer);let identity=(capture&&capture.source_url||'')+'\n'+(capture&&capture.title||'');pageTimer=setInterval(async()=>{if(!state||!state.connected||!['now','this_page','live','alerts','search'].includes(activeView))return;try{const x=await msg('tab_identity'),next=(x.source_url||'')+'\n'+(x.title||'');if(x.source_url&&next!==identity){identity=next;nowContextIgnored=false;await refreshCapture(activeView==='this_page');if(activeView==='now')await loadNow(true);if(activeView==='live'){liveRoom=null;liveCursor=0;ui.liveRoomPanel.hidden=true;await loadLiveRooms();}if(activeView==='alerts')await loadAlerts();if(activeView==='search')await loadDiscovery();}}catch(e){}},2000);}
 window.addEventListener('focus',()=>{if(state&&state.connected)refreshState().catch(()=>{});});
 window.onbeforeunload=()=>{clearInterval(pageTimer);clearInterval(livePollTimer);clearInterval(liveHeartbeatTimer);clearInterval(cognitiveTimer);stream&&stream.getTracks().forEach(t=>t.stop());};
 refreshState().then(pageWatch).catch(fail);
