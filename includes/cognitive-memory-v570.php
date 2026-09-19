@@ -205,11 +205,18 @@ function vp3_cognitive_memory_observe_candidates_v570(PDO $pdo,array $user,strin
         $existing=$pdo->prepare("SELECT item_fingerprint FROM cognitive_memory_occurrences_v570 WHERE thread_id=? AND item_key=? ORDER BY occurred_at DESC,id DESC LIMIT 1");
         $existing->execute([(int)$exact['id'],$itemKey]);$previous=(string)($existing->fetchColumn()?:'');
         $changed=$previous!==''&&!hash_equals($previous,$fingerprint);
-        $event=$changed?((string)($exact['status']??'')==='resolved'?'reopened':'changed'):'observed';
+        $knownReopened=0;
+        if(table_exists('cognitive_item_lifecycle_v540')){
+            $life=$pdo->prepare("SELECT reopened_count FROM cognitive_item_lifecycle_v540 WHERE owner_user_id=? AND agent_namespace=? AND item_key=? LIMIT 1");
+            $life->execute([$uid,$namespace,$itemKey]);$knownReopened=(int)($life->fetchColumn()?:0);
+        }
+        $event=$changed
+            ? ((string)($exact['status']??'')==='resolved'||$knownReopened>0?'reopened':'changed')
+            : ($previous===''&&$knownReopened>0?'reopened':'observed');
         $occurrenceKey=hash('sha256',vp3_cognitive_json_v500(['candidate',$itemKey,$fingerprint]));
         vp3_cognitive_memory_occurrence_v570($pdo,$exact,$uid,$event,$source,$ref,$occurred,$occurrenceKey,$itemKey,$fingerprint);
 
-        $signature=vp3_cognitive_memory_signature_v570($candidate);
+        $signature=$source==='cognitive_observation'?vp3_cognitive_memory_signature_v570($candidate):'';
         if($signature!==''){
             $patternKey=vp3_cognitive_memory_thread_key_v570('recurring_pattern',$source,(string)$ref['type'],'','personal',$signature);
             $pattern=vp3_cognitive_memory_thread_v570($pdo,$uid,$namespace,'recurring_pattern',$patternKey,$source,(string)$ref['type'],$signature);
