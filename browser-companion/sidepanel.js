@@ -40,7 +40,7 @@ function note(text,kind){ui.notice.textContent=text;ui.notice.className='notice 
 async function fail(e){note(e.message,'error');if(e.code==='reconnect_required')await refreshState().catch(()=>{});}
 function caps(){return new Set(Array.isArray(state&&state.capabilities)?state.capabilities:[]);}
 function capabilityForAction(action){return action==='save_knowledge'?'knowledge.write':action==='create_task'?'task.propose':action==='ask_agent'?'agent.message':'';}
-function dropCapability(cap){if(!state||!cap)return;state.capabilities=(state.capabilities||[]).filter(x=>x!==cap);renderCaps();}
+function dropCapability(cap){if(!state||!cap)return;state.capabilities=(state.capabilities||[]).filter(x=>x!==cap);renderConnection(state);}
 function http(v){try{const u=new URL(String(v||''));return /^https?:$/.test(u.protocol)?u.href:'';}catch(e){return '';}}
 function host(v){try{return new URL(v).hostname;}catch(e){return '';}}
 function sec(v){v=Math.max(0,Math.floor(Number(v||0)));return Math.floor(v/60)+':'+String(v%60).padStart(2,'0');}
@@ -344,7 +344,15 @@ async function loadNow(force){
   if(cognitiveBusy||!state||!state.connected||!caps().has('agent.message'))return;cognitiveBusy=true;
   if(force)ui.nowStatus.textContent='Refreshing current VP3 intelligence…';
   try{const feed=await msg('cognitive_now');renderNow(feed);scheduleNow(feed&&feed.refresh_seconds||60);}
-  catch(e){ui.nowStatus.textContent=e.message||'Agent Now is unavailable.';if(e.code==='capability_denied')dropCapability('agent.message');throw e;}
+  catch(e){
+    ui.nowStatus.textContent=e.message||'Agent Now is unavailable.';
+    if(e.code==='capability_denied'){
+      dropCapability('agent.message');
+      if(caps().has('team.chat.read')||caps().has('team.share.create'))setView('this_page');
+      else renderNow(null);
+    }
+    throw e;
+  }
   finally{cognitiveBusy=false;}
 }
 async function cognitiveClick(e){
