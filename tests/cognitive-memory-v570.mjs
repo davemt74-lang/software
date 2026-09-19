@@ -64,6 +64,7 @@ assert.match(feed,/vp3_cognitive_memory_sync_v570\(\$pdo,\$user,\$namespace,\$au
 assert.match(feed,/vp3_cognitive_memory_feed_candidates_v570/);
 assert.match(cardsPhp,/'memory_thread'=>.*what keeps coming up/s);
 assert.match(cardsPhp,/cognitive_memory_threads_v570/);
+assert.match(cardsPhp,/vp3_cognitive_authorize_ref_v500\(\$pdo,\$user,\$namespace,\$memoryRef,'read'\)/,'direct memory retrieval must permission-filter candidate threads');
 assert.match(cardsPhp,/vp3_cognitive_memory_sync_v570\(\$pdo,\$user,\$namespace,\[\]\)/);
 assert.match(cardsJs,/memory_thread:'⌁'/);
 
