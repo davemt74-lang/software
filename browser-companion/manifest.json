@@ -1,11 +1,12 @@
 {
   "manifest_version": 3,
   "name": "VP3 Browser Companion",
-  "version": "20.90.0",
+  "version": "21.0.0",
   "description": "Annotate pages, search and discover source-linked context, track source changes, file claims, organize Research, and join VP3 Live Rooms.",
   "minimum_chrome_version": "116",
   "permissions": [
     "activeTab",
+    "identity",
     "contextMenus",
     "scripting",
     "sidePanel",
