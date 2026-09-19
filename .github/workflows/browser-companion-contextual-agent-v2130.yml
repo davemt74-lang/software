@@ -69,6 +69,7 @@ jobs:
       - name: PHP syntax
         run: |
           php -l includes/browser-context-v2130.php
+          php -l includes/agent-surface-context-v131.php
           php -l api/extension-cognitive-now-v2120.php
           php -l api/chat-v236.php
           php -l chat.php
@@ -98,7 +99,7 @@ jobs:
           cp api/chat-v236.php api/chat-notifications-brain-v240.php dist/server/api/
 
           cp includes/extension-device-token-v2100.php includes/extension-device-auth-v2000.php includes/extension-device-auth-v2001.php dist/server/includes/
-          cp includes/browser-context-v2130.php includes/browser-share-v2010.php includes/browser-source-feed-v2050.php includes/research-projects-v2060.php includes/knowledge.php includes/knowledge-retrieval-v162.php includes/user-calendar-v1300.php includes/crm-v180.php dist/server/includes/
+          cp includes/browser-context-v2130.php includes/agent-surface-context-v131.php includes/browser-share-v2010.php includes/browser-source-feed-v2050.php includes/research-projects-v2060.php includes/knowledge.php includes/knowledge-retrieval-v162.php includes/user-calendar-v1300.php includes/crm-v180.php dist/server/includes/
           cp includes/cognitive-*.php includes/agent-cognitive-loop-v310.php includes/bootstrap.php dist/server/includes/
 
           cp extension-connect.php upgrade.php chat.php chat.js chat-browser-context-v2130.js chat-browser-context-v2130.css dist/server/
