@@ -107,7 +107,10 @@ function vp3_cognitive_presentation_notification_rows_v510(PDO $pdo,array $user,
         $s=$pdo->prepare("SELECT n.* FROM notifications n WHERE n.user_id=? AND n.id>? AND n.is_read=0 AND {$predicate} ORDER BY n.id ASC LIMIT {$limit}");
         $s->execute([$uid,max(0,$afterId)]);
         return $s->fetchAll()?:[];
-    }catch(Throwable $e){return [];}
+    }catch(Throwable $e){
+        error_log('VP3 Cognitive Presentation notification read unavailable: '.$e->getMessage());
+        return [];
+    }
 }
 
 function vp3_cognitive_presentation_digest_items_v510(array $rows,int $idleMinutes): array
@@ -323,8 +326,14 @@ function vp3_cognitive_presentation_state_v510(PDO $pdo,array $user,string $name
     if(is_array($voice)&&isset($voice['skip_through_id'])){
         vp3_cognitive_presentation_voice_delivered_v510($pdo,$user,$namespace,(int)$voice['skip_through_id']);$voice=null;
     }
-    $pdo->prepare('UPDATE cognitive_presentation_state_v510 SET last_seen_at=UTC_TIMESTAMP(),updated_at=UTC_TIMESTAMP() WHERE owner_user_id=? AND agent_namespace=?')
-        ->execute([(int)$user['id'],$namespace]);
+    // The client polls presentation state every 30 seconds, but idle/digest
+    // semantics use last_meaningful_at. Keep last_seen_at as coarse presence
+    // telemetry without creating a write/lock on every poll.
+    $pdo->prepare("UPDATE cognitive_presentation_state_v510
+      SET last_seen_at=UTC_TIMESTAMP(),updated_at=updated_at
+      WHERE owner_user_id=? AND agent_namespace=?
+        AND last_seen_at<DATE_SUB(UTC_TIMESTAMP(),INTERVAL 5 MINUTE)")
+      ->execute([(int)$user['id'],$namespace]);
     return [
         'build'=>VP3_COGNITIVE_PRESENTATION_V510,'agent_namespace'=>$namespace,
         'idle_minutes'=>vp3_cognitive_presentation_idle_minutes_v510($row),
