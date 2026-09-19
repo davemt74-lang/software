@@ -3,7 +3,7 @@ const $=id=>document.getElementById(id);
 const ui={};
 [
 'connectionState','connectControls','shareWorkspace','connectBtn','settingsBtn','connectedAccount','disconnectedAccount','accountAvatar','accountName','accountMeta','accountTeams','openVp3Btn','refreshAccountBtn','accountOptionsBtn','accessNotice','composerCard',
-'thisPageTab','followingTab','liveTab','alertsTab','searchTab','thisPageView','followingView','liveView','alertsView','searchView','refreshCaptureBtn','pageTitle','pageHost','sourceMeta','sourceStatus',
+'nowTab','thisPageTab','followingTab','liveTab','alertsTab','searchTab','nowView','thisPageView','followingView','liveView','alertsView','searchView','refreshNowBtn','openAgentChatBtn','restoreNowBtn','nowStatus','nowAttentionCount','nowItemCount','nowEmpty','nowFeed','refreshCaptureBtn','pageTitle','pageHost','sourceMeta','sourceStatus',
 'followCurrentSourceBtn','openSourcePageBtn','selectedText','selectionCount','captureSummary','captureScreenshotBtn','screenshotPreview',
 'screenshotImage','screenshotMeta','removeScreenshotBtn','captureMediaBtn','mediaDetectedText','mediaPreview','mediaPreviewTitle','mediaStart',
 'mediaEnd','mediaClipHint','removeMediaBtn','recordCommentaryBtn','commentaryStatus','commentaryPreview','commentaryAudio','commentaryMeta',
@@ -21,7 +21,8 @@ const COMMENTARY_MAX_BYTES = 16 * 1024 * 1024;
 const MAX_CLIP=CLIP_MAX_SECONDS,MAX_COMMENTARY=COMMENTARY_MAX_BYTES;
 let state=null,capture=null,destinations=null,lastShare=null,currentSource=null;
 let screenshotCapture=null,mediaReference=null,commentaryCapture=null,recorder=null,stream=null,recordTimer=null,recordStarted=0,pageTimer=null;
-let thisCursor='',followingCursor='',thisBusy=false,followingBusy=false,activeView='this_page';
+let thisCursor='',followingCursor='',thisBusy=false,followingBusy=false,activeView='now';
+let cognitiveBusy=false,cognitiveData=null,cognitiveTimer=null;
 let researchShareId='',researchContextData=null;
 let liveRoomsData=[],liveRoom=null,liveCursor=0,livePollTimer=null,liveHeartbeatTimer=null,liveBusy=false;
 let trustBusy=false,trustObservation=null,trustNotifications=null,trustClaims=[],claimShareId='';
@@ -51,6 +52,7 @@ function summary(){const a=[];if(capture&&String(capture.selected_text||'').trim
 function renderCaps(){
   const c=caps(),shared=!!(lastShare&&lastShare.browser_share&&lastShare.chat_message),teamOk=ui.visibilitySelect.value!=='team'||Number(ui.visibilityTeamSelect.value)>0;
   const canRead=c.has('team.chat.read'),canShare=c.has('team.share.create');
+  ui.nowTab.disabled=!(state&&state.connected&&c.has('agent.message'));
   [ui.followingTab,ui.liveTab,ui.alertsTab,ui.searchTab].forEach(tab=>{tab.disabled=!(state&&state.connected&&canRead);});
   if(ui.composerCard)ui.composerCard.hidden=!(state&&state.connected&&canShare);
   ui.askAgentBtn.disabled=!shared||!c.has('agent.message');ui.saveKnowledgeBtn.disabled=!shared||!c.has('knowledge.write');ui.createTaskBtn.disabled=!shared||!c.has('task.propose');
@@ -303,12 +305,63 @@ async function loadDiscovery(){
   try{const p=await msg('search_discover',{params:searchParams()});const d=p&&p.discovery||{},items=[];(d.context||[]).forEach(x=>items.push(x));(d.trending||[]).forEach(x=>{if(!items.some(y=>y.type===x.type&&y.id===x.id))items.push(x);});(d.active||[]).forEach(x=>{if(!items.some(y=>y.type===x.type&&y.id===x.id))items.push(x);});renderSearchItems(items.slice(0,50),currentSource&&currentSource.id?'Related & active':'Discovery');await loadSearchHistory();}finally{searchBusy=false;}
 }
 
+function cognitiveTypeLabel(v){return String(v||'item').replace(/[_-]+/g,' ').replace(/\b\w/g,m=>m.toUpperCase());}
+function cognitiveAction(action,payload){return msg('cognitive_action',{action:action,payload:payload||{}});}
+function cognitiveCard(section,item){
+  const cardData=item&&item.card||{},box=el('article','now-card','');box.dataset.attention=item&&item.attention?'1':'0';box.dataset.itemKey=String(item&&item.key||'');box.dataset.fingerprint=String(item&&item.fingerprint||'');box._item=item;
+  const head=el('div','now-card-head',''),copy=el('div','','');copy.append(el('div','now-card-type',cognitiveTypeLabel(cardData.card_type||item.source||'Agent item')),el('div','now-card-title',cardData.title||'VP3 item'));head.append(copy);
+  if(cardData.status)head.append(el('span','now-card-status',cognitiveTypeLabel(cardData.status)));box.append(head);
+  if(item.reason)box.append(el('div','now-reason',item.reason));
+  if(cardData.summary)box.append(el('p','now-summary-text',cardData.summary));
+  if(Array.isArray(cardData.badges)&&cardData.badges.length){const row=el('div','now-badges','');cardData.badges.forEach(v=>row.append(el('span','pill',v)));box.append(row);}
+  if(Array.isArray(cardData.facts)&&cardData.facts.length){const grid=el('div','now-facts','');cardData.facts.forEach(f=>{const x=el('div','now-fact','');x.append(el('small','',f.label||''),el('strong','',f.value||''));grid.append(x);});box.append(grid);}
+  if(Array.isArray(cardData.sections)&&cardData.sections.length&&cardData.display_mode!=='compact'){const wrap=el('div','now-card-sections','');cardData.sections.forEach(part=>{const x=el('section','now-card-section','');if(part.label)x.append(el('small','',part.label));if(part.text)x.append(el('p','',part.text));if(Array.isArray(part.items)&&part.items.length){const ul=document.createElement('ul');part.items.forEach(v=>ul.append(el('li','',v)));x.append(ul);}if(x.children.length)wrap.append(x);});if(wrap.children.length)box.append(wrap);}
+  const actions=el('div','now-card-actions','');
+  if(cardData.card_type==='proactive_plan'&&item.plan_status==='proposed'){const a=act('Accept plan','cognitive_plan_accept');a.classList.add('primary-inline');actions.append(a,act('Dismiss','cognitive_plan_dismiss'));}
+  else if(cardData.card_type==='proactive_plan'&&item.plan_status==='accepted'){const a=act('Accepted for review','cognitive_noop');a.disabled=true;actions.append(a);}
+  (cardData.actions||[]).forEach(a=>{if(a.type==='open_url'){const b=act(a.label||'Open','cognitive_open');b.dataset.url=String(a.url||'');actions.append(b);}else if(a.type==='agent_review'){const b=act(a.label||'Review in Agent','cognitive_agent_review');if(a.requires_approval)b.dataset.requiresApproval='1';actions.append(b);}});
+  actions.append(act('Why?','cognitive_explain'),act('Hide','cognitive_hide'));box.append(actions);
+  const explanation=el('div','now-explanation','');explanation.hidden=true;box.append(explanation);
+  if(cardData.card_type==='proactive_plan')box.append(el('div','now-plan-note','Plan actions remain proposal/review only. Tool execution still requires the normal VP3 approval path.'));
+  if(cardData.timestamp)box.append(el('time','now-card-time',date(cardData.timestamp)||cardData.timestamp));
+  return box;
+}
+function renderNow(feed){
+  cognitiveData=feed&&typeof feed==='object'?feed:null;ui.nowFeed.replaceChildren();
+  let attention=0,total=0;
+  (cognitiveData&&Array.isArray(cognitiveData.sections)?cognitiveData.sections:[]).forEach(section=>{const items=Array.isArray(section.items)?section.items:[];if(!items.length)return;total+=items.length;if(section.id==='attention')attention+=items.length;const wrap=el('section','now-section',''),head=el('div','now-section-head',''),copy=el('div','now-section-copy','');copy.append(el('strong','',section.label||'Updates'));if(section.description)copy.append(el('span','',section.description));head.append(copy,el('span','now-section-count',String(items.length)));wrap.append(head);const list=el('div','now-feed','');items.forEach(item=>list.append(cognitiveCard(section,item)));wrap.append(list);ui.nowFeed.append(wrap);});
+  ui.nowAttentionCount.textContent=attention+' attention';ui.nowItemCount.textContent=total+' current';ui.nowEmpty.hidden=total>0;
+  const hidden=Number(cognitiveData&&cognitiveData.hidden_count||0);ui.restoreNowBtn.hidden=hidden<1;ui.restoreNowBtn.textContent=hidden>0?'Show hidden ('+hidden+')':'Show hidden';
+  ui.nowStatus.textContent=total?(attention?attention+' item'+(attention===1?'':'s')+' need attention · '+(date(cognitiveData.generated_at)||'updated now'):'Current · '+(date(cognitiveData.generated_at)||'updated now')):(hidden?'All current items are hidden.':'Nothing needs the Agent canvas right now.');
+}
+function scheduleNow(seconds){
+  clearInterval(cognitiveTimer);cognitiveTimer=null;
+  if(activeView!=='now')return;
+  cognitiveTimer=setInterval(()=>{if(state&&state.connected&&caps().has('agent.message'))loadNow(false).catch(()=>{});},Math.max(60,Number(seconds||60))*1000);
+}
+async function loadNow(force){
+  if(cognitiveBusy||!state||!state.connected||!caps().has('agent.message'))return;cognitiveBusy=true;
+  if(force)ui.nowStatus.textContent='Refreshing current VP3 intelligence…';
+  try{const feed=await msg('cognitive_now');renderNow(feed);scheduleNow(feed&&feed.refresh_seconds||60);}
+  catch(e){ui.nowStatus.textContent=e.message||'Agent Now is unavailable.';if(e.code==='capability_denied')dropCapability('agent.message');throw e;}
+  finally{cognitiveBusy=false;}
+}
+async function cognitiveClick(e){
+  const b=e.target.closest('button[data-action]');if(!b||b.dataset.action==='cognitive_noop')return;const box=b.closest('.now-card'),item=box&&box._item;if(!item)return;const payload={item_key:String(item.key||''),fingerprint:String(item.fingerprint||'')};
+  try{
+    if(b.dataset.action==='cognitive_hide'){const r=await cognitiveAction('hide',payload);renderNow(r.feed);return;}
+    if(b.dataset.action==='cognitive_explain'){const r=await cognitiveAction('explain',payload),x=box.querySelector('.now-explanation');x.textContent=String(r.explanation&&r.explanation.explanation||'This item is ranked from current VP3 state and authorized cognitive context.');x.hidden=!x.hidden;return;}
+    if(b.dataset.action==='cognitive_open'){await cognitiveAction('feedback',{...payload,event:'engaged',action_type:'open_object'});if(b.dataset.url)await msg('open_url',{url:absolute(b.dataset.url)});return;}
+    if(b.dataset.action==='cognitive_agent_review'){await cognitiveAction('feedback',{...payload,event:'engaged',action_type:'agent_review'});await msg('open_url',{url:absolute(cognitiveData&&cognitiveData.agent_url||'/chat.php')});return;}
+    if(b.dataset.action==='cognitive_plan_accept'||b.dataset.action==='cognitive_plan_dismiss'){const planId=String(item.key||'').replace(/^plan:/,'');const decision=b.dataset.action==='cognitive_plan_accept'?'accept':'dismiss';const r=await cognitiveAction('plan_decide',{plan_id:planId,decision:decision});renderNow(r.feed);note(decision==='accept'?'Plan accepted for review.':'Plan dismissed.','success');return;}
+  }catch(err){await fail(err);if(err.code==='state_changed')await loadNow(true).catch(()=>{});}
+}
 function setView(v){
-  activeView=v;const page=v==='this_page',following=v==='following',live=v==='live',alerts=v==='alerts',search=v==='search';
-  ui.thisPageView.hidden=!page;ui.followingView.hidden=!following;ui.liveView.hidden=!live;ui.alertsView.hidden=!alerts;ui.searchView.hidden=!search;
-  ui.thisPageTab.classList.toggle('active',page);ui.followingTab.classList.toggle('active',following);ui.liveTab.classList.toggle('active',live);ui.alertsTab.classList.toggle('active',alerts);ui.searchTab.classList.toggle('active',search);
-  ui.thisPageTab.setAttribute('aria-selected',String(page));ui.followingTab.setAttribute('aria-selected',String(following));ui.liveTab.setAttribute('aria-selected',String(live));ui.alertsTab.setAttribute('aria-selected',String(alerts));ui.searchTab.setAttribute('aria-selected',String(search));
-  if(following)loadFollowing(true).catch(fail);if(live)loadLiveRooms().then(pollLiveRoom).catch(fail);if(alerts)loadAlerts().catch(fail);if(search)loadDiscovery().catch(fail);
+  activeView=v;const now=v==='now',page=v==='this_page',following=v==='following',live=v==='live',alerts=v==='alerts',search=v==='search';
+  ui.nowView.hidden=!now;ui.thisPageView.hidden=!page;ui.followingView.hidden=!following;ui.liveView.hidden=!live;ui.alertsView.hidden=!alerts;ui.searchView.hidden=!search;
+  ui.nowTab.classList.toggle('active',now);ui.thisPageTab.classList.toggle('active',page);ui.followingTab.classList.toggle('active',following);ui.liveTab.classList.toggle('active',live);ui.alertsTab.classList.toggle('active',alerts);ui.searchTab.classList.toggle('active',search);
+  ui.nowTab.setAttribute('aria-selected',String(now));ui.thisPageTab.setAttribute('aria-selected',String(page));ui.followingTab.setAttribute('aria-selected',String(following));ui.liveTab.setAttribute('aria-selected',String(live));ui.alertsTab.setAttribute('aria-selected',String(alerts));ui.searchTab.setAttribute('aria-selected',String(search));
+  if(!now){clearInterval(cognitiveTimer);cognitiveTimer=null;}if(now)loadNow(true).catch(fail);if(page)loadThis(true).catch(fail);if(following)loadFollowing(true).catch(fail);if(live)loadLiveRooms().then(pollLiveRoom).catch(fail);if(alerts)loadAlerts().catch(fail);if(search)loadDiscovery().catch(fail);
 }
 function sourceHead(feed){currentSource=(feed&&feed.source)||null;ui.sourceMeta.hidden=!(capture&&capture.available);ui.sourceStatus.textContent=currentSource&&currentSource.id?'Recognized source':'New source';ui.followCurrentSourceBtn.textContent=currentSource&&currentSource.following?'Unfollow source':'Follow source';ui.openSourcePageBtn.hidden=!(currentSource&&currentSource.page_url);renderCaps();}
 function el(tag,cls,text){const x=document.createElement(tag);if(cls)x.className=cls;x.textContent=String(text||'');return x;}
@@ -337,7 +390,7 @@ async function loadFollowing(reset){
 }
 async function refreshCapture(withFeed){const x=await msg('capture');renderCapture(x);if(withFeed!==false)await loadThis(true);}
 async function refreshState(){
-  const x=await msg('state');renderConnection(x);if(x.connected){renderLast(x.last_share);if(x.pending_capture&&x.pending_capture.available&&x.pending_capture.selected_text){renderCapture(x.pending_capture);await message('clear_pending_capture').catch(()=>{});}else await refreshCapture(false);if(caps().has('team.chat.read')){await loadDestinations();await loadThis(true);}else{destinations={recent:[],teams:[],conversations:[]};renderAccountTeams();}}
+  const x=await msg('state');renderConnection(x);if(x.connected){renderLast(x.last_share);if(x.pending_capture&&x.pending_capture.available&&x.pending_capture.selected_text){renderCapture(x.pending_capture);await message('clear_pending_capture').catch(()=>{});}else await refreshCapture(false);if(caps().has('team.chat.read')){await loadDestinations();if(activeView==='this_page')await loadThis(true);}else{destinations={recent:[],teams:[],conversations:[]};renderAccountTeams();}if(caps().has('agent.message')&&activeView==='now')await loadNow(true);}
 }
 function clip(changed){if(!mediaReference)return;const d=Math.max(0,Number(mediaReference.metadata.duration_seconds||0));let s=Math.max(0,Number(ui.mediaStart.value||0)),e=Math.max(s,Number(ui.mediaEnd.value||s));if(d){s=Math.min(s,d);e=Math.min(e,d);}if(e-s>MAX_CLIP){if(changed==='start')s=Math.max(0,e-MAX_CLIP);else e=s+MAX_CLIP;}mediaReference.metadata.start_seconds=Number(s.toFixed(3));mediaReference.metadata.end_seconds=Number(e.toFixed(3));ui.mediaStart.value=s;ui.mediaEnd.value=e;ui.mediaClipHint.textContent='Clip '+sec(s)+'–'+sec(e)+' · '+(e-s).toFixed(1)+'s · source timestamps only · maximum 90s.';}
 async function record(){
@@ -365,14 +418,15 @@ async function feedClick(e){
     if(a==='context'&&i.annotation_url)await msg('open_url',{url:absolute(i.annotation_url)});
   }catch(err){fail(err);}
 }
-function reload(){return activeView==='following'?loadFollowing(true):activeView==='live'?loadLiveRooms():activeView==='alerts'?loadAlerts():activeView==='search'?loadDiscovery():loadThis(true);}
+function reload(){return activeView==='now'?loadNow(true):activeView==='following'?loadFollowing(true):activeView==='live'?loadLiveRooms():activeView==='alerts'?loadAlerts():activeView==='search'?loadDiscovery():loadThis(true);}
 
 ui.connectBtn.onclick=async()=>{busy(ui.connectBtn,true,'Connecting…');try{await msg('connect',{device_name:'Chrome Browser'});note('Browser connected to VP3.','success');await refreshState();}catch(e){fail(e);}finally{busy(ui.connectBtn,false);}};
 ui.settingsBtn.onclick=()=>chrome.runtime.openOptionsPage();
 ui.accountOptionsBtn.onclick=()=>chrome.runtime.openOptionsPage();
 ui.openVp3Btn.onclick=()=>msg('open_url',{url:absolute('/')}).catch(fail);
 ui.refreshAccountBtn.onclick=async()=>{busy(ui.refreshAccountBtn,true,'Refreshing…');try{await refreshState();note('VP3 account refreshed.','success');}catch(e){await fail(e);}finally{busy(ui.refreshAccountBtn,false);}};
-ui.thisPageTab.onclick=()=>setView('this_page');ui.followingTab.onclick=()=>setView('following');ui.liveTab.onclick=()=>setView('live');ui.alertsTab.onclick=()=>setView('alerts');ui.searchTab.onclick=()=>setView('search');ui.refreshCaptureBtn.onclick=()=>refreshCapture(true).catch(fail);ui.refreshFollowingBtn.onclick=()=>loadFollowing(true).catch(fail);ui.refreshLiveBtn.onclick=()=>loadLiveRooms().catch(fail);ui.refreshAlertsBtn.onclick=()=>loadAlerts().catch(fail);
+ui.refreshNowBtn.onclick=()=>loadNow(true).catch(fail);ui.openAgentChatBtn.onclick=()=>msg('open_url',{url:absolute(cognitiveData&&cognitiveData.agent_url||'/chat.php')}).catch(fail);ui.restoreNowBtn.onclick=async()=>{try{const r=await cognitiveAction('restore_all',{});renderNow(r.feed);note('Hidden Agent items restored.','success');}catch(e){await fail(e);}};ui.nowFeed.onclick=cognitiveClick;
+ui.nowTab.onclick=()=>setView('now');ui.thisPageTab.onclick=()=>setView('this_page');ui.followingTab.onclick=()=>setView('following');ui.liveTab.onclick=()=>setView('live');ui.alertsTab.onclick=()=>setView('alerts');ui.searchTab.onclick=()=>setView('search');ui.refreshCaptureBtn.onclick=()=>refreshCapture(true).catch(fail);ui.refreshFollowingBtn.onclick=()=>loadFollowing(true).catch(fail);ui.refreshLiveBtn.onclick=()=>loadLiveRooms().catch(fail);ui.refreshAlertsBtn.onclick=()=>loadAlerts().catch(fail);
 ui.visibilitySelect.onchange=()=>{ui.visibilityTeamField.hidden=ui.visibilitySelect.value!=='team';renderCaps();};ui.visibilityTeamSelect.onchange=renderCaps;ui.destinationSelect.onchange=renderCaps;
 ui.liveScope.onchange=()=>{ui.liveTeamField.hidden=ui.liveScope.value!=='team';renderCaps();};ui.liveTeamSelect.onchange=renderCaps;
 ui.claimVisibility.onchange=()=>{ui.claimTeamField.hidden=ui.claimVisibility.value!=='team';renderCaps();};
@@ -418,5 +472,5 @@ ui.thisPageFeed.onclick=feedClick;ui.followingFeed.onclick=feedClick;ui.loadMore
 const io=new IntersectionObserver(es=>es.forEach(e=>{if(!e.isIntersecting||e.target.hidden)return;if(e.target===ui.loadMoreThisPageBtn)loadThis(false).catch(fail);if(e.target===ui.loadMoreFollowingBtn)loadFollowing(false).catch(fail);}),{rootMargin:'120px'});io.observe(ui.loadMoreThisPageBtn);io.observe(ui.loadMoreFollowingBtn);
 function pageWatch(){clearInterval(pageTimer);let u=capture&&capture.source_url||'';pageTimer=setInterval(async()=>{if(!state||!state.connected||!['this_page','live','alerts','search'].includes(activeView))return;try{const x=await msg('tab_identity');if(x.source_url&&x.source_url!==u){u=x.source_url;await refreshCapture(activeView==='this_page');if(activeView==='live'){liveRoom=null;liveCursor=0;ui.liveRoomPanel.hidden=true;await loadLiveRooms();}if(activeView==='alerts')await loadAlerts();if(activeView==='search')await loadDiscovery();}}catch(e){}},2000);}
 window.addEventListener('focus',()=>{if(state&&state.connected)refreshState().catch(()=>{});});
-window.onbeforeunload=()=>{clearInterval(pageTimer);clearInterval(livePollTimer);clearInterval(liveHeartbeatTimer);stream&&stream.getTracks().forEach(t=>t.stop());};
+window.onbeforeunload=()=>{clearInterval(pageTimer);clearInterval(livePollTimer);clearInterval(liveHeartbeatTimer);clearInterval(cognitiveTimer);stream&&stream.getTracks().forEach(t=>t.stop());};
 refreshState().then(pageWatch).catch(fail);
