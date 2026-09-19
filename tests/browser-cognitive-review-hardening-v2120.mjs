@@ -36,6 +36,10 @@ must(
   !token.includes("SET last_used_at=NOW(),updated_at=NOW() WHERE id=?"),
   'durable token reads must not touch updated_at on every request'
 );
+must(
+  token.includes("SET last_used_at=NOW(),updated_at=updated_at"),
+  'activity telemetry must not mutate the device configuration timestamp'
+);
 const legacyDeviceAuth=read('includes/extension-device-auth-v2000.php');
 must(
   legacyDeviceAuth.includes("ORDER BY COALESCE(last_used_at,approved_at,created_at) DESC,id DESC"),
@@ -98,6 +102,11 @@ must(
 must(
   learning.includes("item_fingerprint<>VALUES(item_fingerprint)"),
   'cognitive lifecycle fingerprint changes must still persist immediately'
+);
+must(
+  learning.includes("OR source_kind<>VALUES(source_kind)")
+    && learning.includes("OR object_scope<>VALUES(object_scope)"),
+  'cognitive lifecycle updated_at must represent state/reference changes, not routine sightings'
 );
 
 console.log('VP3 Browser Companion + Cognitive Runtime review hardening contract passed.');
