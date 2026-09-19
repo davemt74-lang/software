@@ -144,6 +144,7 @@ require_once __DIR__.'/cognitive-cards-v520.php';
 require_once __DIR__.'/cognitive-learning-v540.php';
 require_once __DIR__.'/cognitive-planning-v550.php';
 require_once __DIR__.'/cognitive-orchestration-v560.php';
+require_once __DIR__.'/cognitive-memory-v570.php';
 require_once __DIR__.'/cognitive-feed-v530.php';
 require_once __DIR__.'/cognitive-presentation-v510.php';
 require_once __DIR__.'/agent-cognitive-loop-v310.php';
