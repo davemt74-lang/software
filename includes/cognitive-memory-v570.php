@@ -316,11 +316,56 @@ function vp3_cognitive_memory_occurrences_for_thread_v570(PDO $pdo,int $threadId
     return $stmt->fetchAll()?:[];
 }
 
+function vp3_cognitive_memory_authorized_occurrences_v570(PDO $pdo,array $user,string $namespace,array $thread,int $limit=120): array
+{
+    $rows=vp3_cognitive_memory_occurrences_for_thread_v570($pdo,(int)$thread['id'],max(1,min(120,$limit)));
+    $out=[];
+    foreach($rows as $row){
+        try{
+            $ref=vp3_cognitive_object_ref_v500((string)$row['object_type'],(string)$row['object_id'],(string)$row['object_scope']);
+            if(!vp3_cognitive_authorize_ref_v500($pdo,$user,$namespace,$ref,'read'))continue;
+            $row['_object_ref']=$ref;
+            $out[]=$row;
+        }catch(Throwable $e){}
+    }
+    return $out;
+}
+
+function vp3_cognitive_memory_visible_stats_v570(PDO $pdo,array $user,string $namespace,array $thread): array
+{
+    $rows=vp3_cognitive_memory_authorized_occurrences_v570($pdo,$user,$namespace,$thread,120);
+    $objects=[];$reopened=0;$successful=0;$resolved=0;$unsuccessful=0;$first='';$last='';
+    foreach($rows as $row){
+        $objects[(string)$row['object_type'].'|'.(string)$row['object_id'].'|'.(string)$row['object_scope']]=true;
+        if((string)$row['event_kind']==='reopened')$reopened++;
+        $outcome=(string)$row['outcome_code'];
+        if($outcome==='successful')$successful++;
+        elseif($outcome==='resolved')$resolved++;
+        elseif(in_array($outcome,['unsuccessful','ignored'],true))$unsuccessful++;
+        $at=(string)$row['occurred_at'];
+        if($first===''||$at<$first)$first=$at;
+        if($last===''||$at>$last)$last=$at;
+    }
+    return [
+        'occurrence_count'=>count($rows),
+        'distinct_object_count'=>count($objects),
+        'reopened_count'=>$reopened,
+        'successful_count'=>$successful,
+        'resolved_count'=>$resolved,
+        'unsuccessful_count'=>$unsuccessful,
+        'first_seen_at'=>$first,
+        'last_seen_at'=>$last,
+        'rows'=>$rows,
+    ];
+}
+
 function vp3_cognitive_memory_permission_v570(PDO $pdo,array $user,string $namespace,array $ref,string $operation='read'): bool
 {
     if((string)($ref['type']??'')!=='memory_thread'||$operation!=='read')return false;
     $thread=vp3_cognitive_memory_thread_row_v570($pdo,$user,$namespace,(string)($ref['id']??''));
-    return is_array($thread);
+    if(!$thread)return false;
+    $stats=vp3_cognitive_memory_visible_stats_v570($pdo,$user,$namespace,$thread);
+    return (int)$stats['occurrence_count']>0;
 }
 
 function vp3_cognitive_memory_compact_context_v570(mixed $value,int $depth=0): mixed
@@ -340,10 +385,9 @@ function vp3_cognitive_memory_compact_context_v570(mixed $value,int $depth=0): m
 function vp3_cognitive_memory_resolved_timeline_v570(PDO $pdo,array $user,string $namespace,array $thread): array
 {
     $timeline=[];
-    foreach(vp3_cognitive_memory_occurrences_for_thread_v570($pdo,(int)$thread['id'],12) as $row){
+    foreach(array_slice(vp3_cognitive_memory_authorized_occurrences_v570($pdo,$user,$namespace,$thread,24),0,12) as $row){
         try{
-            $ref=vp3_cognitive_object_ref_v500((string)$row['object_type'],(string)$row['object_id'],(string)$row['object_scope']);
-            if(!vp3_cognitive_authorize_ref_v500($pdo,$user,$namespace,$ref,'read'))continue;
+            $ref=(array)$row['_object_ref'];
             $entry=[
                 'occurred_at'=>(string)$row['occurred_at'],
                 'event_kind'=>(string)$row['event_kind'],
@@ -371,17 +415,22 @@ function vp3_cognitive_memory_behavior_v570(PDO $pdo,array $user,string $namespa
 {
     $out=['shown'=>0,'engaged'=>0,'acted'=>0,'hidden'=>0,'dismissed'=>0];
     if(!table_exists('cognitive_feedback_events_v540'))return $out;
-    $stmt=$pdo->prepare("SELECT f.event_type,COUNT(*) c FROM cognitive_feedback_events_v540 f
-      WHERE f.owner_user_id=? AND f.agent_namespace=? AND f.event_type IN ('shown','engaged','acted','hidden','dismissed')
-        AND EXISTS (
-          SELECT 1 FROM cognitive_memory_occurrences_v570 o
-          WHERE o.thread_id=? AND o.owner_user_id=f.owner_user_id AND o.item_key=f.item_key
-            AND (o.item_fingerprint='' OR o.item_fingerprint=f.item_fingerprint)
-        )
-      GROUP BY f.event_type");
-    $stmt->execute([(int)$user['id'],$namespace,(int)$thread['id']]);
+    $pairs=[];$items=[];
+    foreach(vp3_cognitive_memory_authorized_occurrences_v570($pdo,$user,$namespace,$thread,120) as $row){
+        $item=trim((string)$row['item_key']);if($item==='')continue;
+        $fingerprint=(string)$row['item_fingerprint'];
+        $pairs[$item.'|'.$fingerprint]=true;$items[$item]=true;
+    }
+    if(!$items)return $out;
+    $stmt=$pdo->prepare("SELECT event_type,item_key,item_fingerprint FROM cognitive_feedback_events_v540
+      WHERE owner_user_id=? AND agent_namespace=? AND event_type IN ('shown','engaged','acted','hidden','dismissed')
+      ORDER BY id DESC LIMIT 500");
+    $stmt->execute([(int)$user['id'],$namespace]);
     foreach($stmt->fetchAll()?:[] as $row){
-        $key=(string)$row['event_type'];if(array_key_exists($key,$out))$out[$key]=(int)$row['c'];
+        $item=(string)$row['item_key'];if(!isset($items[$item]))continue;
+        $fingerprint=(string)$row['item_fingerprint'];
+        if(!isset($pairs[$item.'|'.$fingerprint])&&!isset($pairs[$item.'|']))continue;
+        $key=(string)$row['event_type'];if(array_key_exists($key,$out))$out[$key]++;
     }
     return $out;
 }
@@ -390,20 +439,21 @@ function vp3_cognitive_memory_context_v570(PDO $pdo,array $user,string $namespac
 {
     $thread=vp3_cognitive_memory_thread_row_v570($pdo,$user,$namespace,(string)($ref['id']??''));
     if(!$thread)throw new RuntimeException('Cognitive memory thread not found.');
+    $stats=vp3_cognitive_memory_visible_stats_v570($pdo,$user,$namespace,$thread);
     $behavior=vp3_cognitive_memory_behavior_v570($pdo,$user,$namespace,$thread);
     return [
         'memory_thread'=>[
             'id'=>(string)$thread['public_id'],
             'kind'=>(string)$thread['thread_kind'],
             'status'=>(string)$thread['status'],
-            'occurrence_count'=>(int)$thread['occurrence_count'],
-            'distinct_object_count'=>(int)$thread['distinct_object_count'],
-            'reopened_count'=>(int)$thread['reopened_count'],
-            'successful_count'=>(int)$thread['successful_count'],
-            'resolved_count'=>(int)$thread['resolved_count'],
-            'unsuccessful_count'=>(int)$thread['unsuccessful_count'],
-            'first_seen_at'=>(string)$thread['first_seen_at'],
-            'last_seen_at'=>(string)$thread['last_seen_at'],
+            'occurrence_count'=>(int)$stats['occurrence_count'],
+            'distinct_object_count'=>(int)$stats['distinct_object_count'],
+            'reopened_count'=>(int)$stats['reopened_count'],
+            'successful_count'=>(int)$stats['successful_count'],
+            'resolved_count'=>(int)$stats['resolved_count'],
+            'unsuccessful_count'=>(int)$stats['unsuccessful_count'],
+            'first_seen_at'=>(string)$stats['first_seen_at'],
+            'last_seen_at'=>(string)$stats['last_seen_at'],
             'last_event_kind'=>(string)$thread['last_event_kind'],
         ],
         'timeline'=>vp3_cognitive_memory_resolved_timeline_v570($pdo,$user,$namespace,$thread),
@@ -417,8 +467,10 @@ function vp3_cognitive_memory_card_v570(PDO $pdo,array $user,string $namespace,a
 {
     $thread=vp3_cognitive_memory_thread_row_v570($pdo,$user,$namespace,(string)($ref['id']??''));
     if(!$thread)throw new RuntimeException('Cognitive memory thread not found.');
+    $stats=vp3_cognitive_memory_visible_stats_v570($pdo,$user,$namespace,$thread);
+    if((int)$stats['occurrence_count']<1)throw new RuntimeException('Cognitive memory sources are no longer authorized.');
     $kind=(string)$thread['thread_kind'];
-    $occurrences=(int)$thread['occurrence_count'];$objects=(int)$thread['distinct_object_count'];$reopens=(int)$thread['reopened_count'];
+    $occurrences=(int)$stats['occurrence_count'];$objects=(int)$stats['distinct_object_count'];$reopens=(int)$stats['reopened_count'];
     $summary=$kind==='recurring_pattern'
         ? 'VP3 has seen this pattern '.$occurrences.' times across '.$objects.' authorized object'.($objects===1?'':'s').'.'
         : 'VP3 has continuity for this item across '.$occurrences.' recorded state change'.($occurrences===1?'':'s').'.';
@@ -436,20 +488,20 @@ function vp3_cognitive_memory_card_v570(PDO $pdo,array $user,string $namespace,a
         'timestamp'=>(string)$thread['last_seen_at'],
         'badges'=>array_values(array_filter([
             $reopens>0?$reopens.' reopened':null,
-            (int)$thread['unsuccessful_count']>0?(int)$thread['unsuccessful_count'].' unsuccessful':null,
+            (int)$stats['unsuccessful_count']>0?(int)$stats['unsuccessful_count'].' unsuccessful':null,
         ])),
         'facts'=>[
             ['label'=>'Occurrences','value'=>(string)$occurrences],
             ['label'=>'Objects','value'=>(string)$objects],
-            ['label'=>'First seen','value'=>(string)$thread['first_seen_at']],
-            ['label'=>'Last seen','value'=>(string)$thread['last_seen_at']],
+            ['label'=>'First seen','value'=>(string)$stats['first_seen_at']],
+            ['label'=>'Last seen','value'=>(string)$stats['last_seen_at']],
             ['label'=>'Actions taken','value'=>(string)$behavior['acted']],
         ],
         'sections'=>[
             ['label'=>'Outcome history','items'=>[
-                'Successful: '.(int)$thread['successful_count'],
-                'Resolved: '.(int)$thread['resolved_count'],
-                'Unsuccessful/ignored: '.(int)$thread['unsuccessful_count'],
+                'Successful: '.(int)$stats['successful_count'],
+                'Resolved: '.(int)$stats['resolved_count'],
+                'Unsuccessful/ignored: '.(int)$stats['unsuccessful_count'],
             ]],
             ['label'=>'Memory boundary','text'=>'VP3 stores references, hashes, lifecycle classes, and timestamps here. Current source content is re-authorized and resolved only when needed.'],
         ],
@@ -469,14 +521,19 @@ function vp3_cognitive_memory_feed_candidates_v570(PDO $pdo,array $user,string $
     $stmt->execute([(int)$user['id'],$namespace]);$out=[];
     foreach($stmt->fetchAll()?:[] as $row){
         try{
+            $stats=vp3_cognitive_memory_visible_stats_v570($pdo,$user,$namespace,$row);
+            $significant=(string)$row['thread_kind']==='recurring_pattern'
+                ? ((int)$stats['occurrence_count']>=3&&(int)$stats['distinct_object_count']>=2)
+                : ((int)$stats['reopened_count']>=1);
+            if(!$significant)continue;
             $request=vp3_cognitive_feed_request_v530('memory_thread',(string)$row['public_id'],'personal','standard');
             $reason=(string)$row['thread_kind']==='recurring_pattern'
                 ? 'A recurring cross-time pattern has appeared across multiple authorized objects.'
                 : 'This item has reopened after an earlier state change or resolution.';
             $out[]=vp3_cognitive_feed_candidate_v530(
-                'memory:'.(string)$row['public_id'],'priorities',74,$reason,$request,'cognitive_memory',(string)$row['last_seen_at'],[
-                    'occurrences'=>$row['occurrence_count'],'objects'=>$row['distinct_object_count'],
-                    'reopened'=>$row['reopened_count'],'unsuccessful'=>$row['unsuccessful_count'],
+                'memory:'.(string)$row['public_id'],'priorities',74,$reason,$request,'cognitive_memory',(string)$stats['last_seen_at'],[
+                    'occurrences'=>$stats['occurrence_count'],'objects'=>$stats['distinct_object_count'],
+                    'reopened'=>$stats['reopened_count'],'unsuccessful'=>$stats['unsuccessful_count'],
                 ],false
             );
         }catch(Throwable $e){}
