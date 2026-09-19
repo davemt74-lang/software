@@ -348,7 +348,7 @@ $cognitiveFeedRuntime = '<link rel="stylesheet" data-cognitive-feed-v530 href="'
     . ';</script>'
     . '<script data-cognitive-feed-v530 src="' . e(url('/chat-cognitive-feed-v530.js?v=' . $cognitiveFeedBuild)) . '"></script>';
 
-$cognitivePresentationPre = '<link rel="stylesheet" data-cognitive-presentation-v510 href="' . e(url('/chat-cognitive-presentation-v510.css?v=' . $cognitivePresentationBuild)) . '">' 
+$cognitivePresentationPre = '<link rel="stylesheet" data-cognitive-presentation-v510 href="' . e(url('/chat-cognitive-presentation-v510.css?v=' . $cognitivePresentationBuild)) . '">'
     . '<script data-cognitive-presentation-config>window.VP3_COGNITIVE_PRESENTATION_V510='
     . json_encode([
         'endpoint'=>url('/api/cognitive-presentation-v510.php'),

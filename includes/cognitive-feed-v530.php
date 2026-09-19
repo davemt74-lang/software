@@ -42,14 +42,6 @@ function vp3_cognitive_feed_text_v530(mixed $value,int $limit=500): string
     return vp3_cognitive_text_v500($value,$limit);
 }
 
-function vp3_cognitive_feed_internal_url_v530(string $url): string
-{
-    $url=trim($url);
-    return $url!==''&&str_starts_with($url,'/')&&!str_starts_with($url,'//')
-        ? mb_strimwidth($url,0,500,'')
-        : '';
-}
-
 function vp3_cognitive_feed_fingerprint_v530(array $parts): string
 {
     return hash('sha256',vp3_cognitive_json_v500(vp3_cognitive_sanitize_value_v500($parts)));

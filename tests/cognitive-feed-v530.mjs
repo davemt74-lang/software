@@ -72,6 +72,7 @@ assert.doesNotMatch(api,/notification.*is_read.*=|agent_workflow_approve|UPDATE 
 assert.doesNotThrow(()=>new Function(js),'Cognitive Feed canvas must be valid JavaScript');
 assert.doesNotMatch(js,/\.innerHTML\s*=|insertAdjacentHTML|document\.write/,'feed renderer must use DOM APIs, not injected HTML');
 assert.match(js,/document\.getElementById\('chatWelcome'\)/,'feed must mount only in welcome/new-chat canvas');
+assert.doesNotMatch(js,/thread\.appendChild|thread\.insertBefore|chat_messages|messageElement\(/,'feed shell must never append itself into the active Chat thread');
 assert.match(js,/welcome\.insertBefore\(root,starters\)/);
 assert.match(js,/VP3_COGNITIVE_CARDS_V520_RUNTIME/,'feed must reuse Universal Card renderer');
 assert.match(js,/renderRequests\(\[item\.card_request\]/);
