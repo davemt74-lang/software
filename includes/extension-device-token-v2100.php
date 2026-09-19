@@ -142,6 +142,16 @@ function vp3_extension_device_code_issue_v2100(PDO $pdo,int $userId,array $conte
     if(!$active->fetchColumn())throw new RuntimeException('This VP3 account is not active.');
 
     $code=vp3_extension_secret_v2000();
+
+    // Keep the one-time code table bounded for browsers that reconnect or
+    // repeatedly restart authorization. The installation index makes this a
+    // narrow cleanup; keep the currently usable code (if any) until it is
+    // explicitly consumed below.
+    $pdo->prepare("DELETE FROM extension_device_codes_v2100
+      WHERE installation_id=?
+        AND (consumed_at IS NOT NULL OR expires_at<=NOW())")
+      ->execute([$context['installation_id']]);
+
     $pdo->prepare("UPDATE extension_device_codes_v2100 SET consumed_at=COALESCE(consumed_at,NOW())
       WHERE installation_id=? AND consumed_at IS NULL")
       ->execute([$context['installation_id']]);
