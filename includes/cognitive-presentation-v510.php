@@ -216,12 +216,22 @@ function vp3_cognitive_presentation_digest_ack_v510(PDO $pdo,array $user,string 
     $pdo->prepare($sql)->execute([$publicId,(int)$user['id'],$namespace]);
 }
 
+function vp3_cognitive_presentation_voice_sensitive_v510(array $row): bool
+{
+    $text=strtolower(implode(' ',[
+        (string)($row['type']??''),(string)($row['source_type']??''),
+        (string)($row['title']??''),(string)($row['body']??'')
+    ]));
+    return (bool)preg_match('/(?:security|password|credential|token|billing|payment|financial|medical|health|private|secret)/',$text);
+}
+
 function vp3_cognitive_presentation_voice_allowed_type_v510(array $row): bool
 {
+    if(vp3_cognitive_presentation_voice_sensitive_v510($row))return false;
     if(function_exists('notification_requires_attention')&&notification_requires_attention($row))return true;
     $type=strtolower(trim((string)($row['type']??'')));$source=strtolower(trim((string)($row['source_type']??'')));
     if($source==='profile_event'&&str_starts_with($type,'profile_'))return true;
-    return (bool)preg_match('/(?:meeting|appointment|booking|calendar|profile|order|payment|message|approval|workflow|security|failed|failure)/',$type);
+    return (bool)preg_match('/(?:meeting|appointment|booking|calendar|profile|order|message|approval|workflow|failed|failure)/',$type);
 }
 
 function vp3_cognitive_presentation_voice_text_v510(array $user,array $row,int $count=1): string
