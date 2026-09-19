@@ -56,7 +56,10 @@ must(auth.includes("extension_devices_v2000"),'existing device registry must be 
 must(auth.includes("credential_hash"),'durable device token must be stored hashed');
 must(auth.includes("vp3_extension_secret_v2000()"),'device token must use cryptographic randomness');
 must(auth.includes("vp3_extension_hash_v2000($deviceToken)"),'device token plaintext must never be stored');
-must(auth.includes("^[a-p]{32}\\.chromiumapp\\.org$"),'Chrome callback host must be strictly validated');
+must(auth.includes("chromiumapp\\.org"),'Chrome callback host must be strictly validated');
+must(auth.includes("extension_allowed_origins"),'production callback must bind to configured extension origins');
+must(auth.includes("extension_allow_unlisted_chrome_origins"),'unpacked development callback must use the explicit development escape hatch');
+must(auth.includes("hash_equals('chrome-extension://'.$originMatch[1],$origin)"),'one-time code exchange must bind to the same Chrome extension origin');
 must(auth.includes("$path!=='/vp3-connect'"),'Chrome callback path must be fixed');
 must(auth.includes("vp3_extension_device_token_require_schema_v2100"),'runtime must fail closed when upgrade is missing');
 must(!tokenApi.includes('ensure_schema'),'public token exchange must not run DDL');
@@ -74,6 +77,7 @@ must(!approval.includes("'device_token'=>") && !approval.includes('name="device_
 
 // Exchange returns the token once; account sync and every protected API re-resolve live permissions.
 must(tokenApi.includes('vp3_extension_device_code_exchange_v2100'),'token API must exchange one-time code');
+must(tokenApi.includes("$_SERVER['HTTP_ORIGIN']"),'token exchange must pass the live Chrome extension origin');
 must(tokenApi.includes('vp3_extension_live_capabilities_v2001'),'initial capability response must use live permission matrix');
 must(meApi.includes('vp3_extension_session_authenticate_v2001($pdo)'),'account sync must use the shared live auth wrapper');
 must(meApi.includes('vp3_extension_user_for_permission_v2001'),'account identity must come from live VP3 user');
