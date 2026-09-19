@@ -424,7 +424,8 @@ function vp3_cognitive_feed_compose_v530(PDO $pdo,array $user,string $namespace,
         $items=array_slice($items,0,min($caps[$section],$room));
         if(!$items)continue;
         foreach($items as &$item){
-            unset($item['score'],$item['learning_adjustment']);
+            unset($item['score']);
+            unset($item['learning_adjustment']);
             $item['signals']=array_values(array_filter(array_map(static fn($v)=>vp3_cognitive_id_v500($v,80),(array)$item['signals'])));
         }unset($item);
         $sections[]=['id'=>$section]+$labels[$section]+['items'=>$items];
