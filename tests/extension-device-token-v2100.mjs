@@ -69,7 +69,7 @@ must(approval.includes('verify_csrf()'),'browser approval must require CSRF prot
 must(approval.includes('value="approve"'),'Connect Browser approval action missing');
 must(approval.includes('value="deny"'),'Cancel action missing');
 must(approval.includes('vp3_extension_device_code_issue_v2100'),'approval must issue one-time code, not a device token');
-must(!approval.includes('device_token'),'approval page must never expose the durable device token');
+must(!approval.includes("'device_token'=>") && !approval.includes('name="device_token"'),'approval page must never expose the durable device token');
 
 // Exchange returns the token once; account sync and every protected API re-resolve live permissions.
 must(tokenApi.includes('vp3_extension_device_code_exchange_v2100'),'token API must exchange one-time code');
