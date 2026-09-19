@@ -63,6 +63,7 @@ jobs:
           node --check chat-cognitive-feed-v530.js
           node --check chat-cognitive-orchestration-v560.js
           node --check chat-cognitive-presentation-v510.js
+          node --check chat-notifications-drawer-v240.js
           node --check tests/browser-cognitive-review-hardening-v2120.mjs
 
       - name: PHP syntax
