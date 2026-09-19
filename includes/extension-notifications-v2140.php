@@ -118,6 +118,7 @@ function vp3_extension_notification_candidate_public_v2140(array $candidate): ar
         'voice_allowed'=>!empty($candidate['voice_allowed'])&&!$sensitive,
         'voice_text'=>$sensitive?'':mb_strimwidth(trim((string)($candidate['voice_text']??'')),0,360,'…'),
         'context_related'=>!empty($candidate['context_related']),
+        'priority'=>max(0,min(100,(int)($candidate['priority']??0))),
         'created_at'=>(string)($candidate['created_at']??''),
     ];
 }
