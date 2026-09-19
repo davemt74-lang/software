@@ -176,7 +176,12 @@
     if(runtime&&item.card_request){
       void runtime.renderRequests([item.card_request],host,{showError:false}).then(result=>{
         if(result&&result.rendered>0){
-          void learningApi('feedback',{event_type:'shown',item_key:clean(item.key),fingerprint:clean(item.fingerprint),dedupe:'render:'+clean(item.fingerprint)}).catch(()=>{});
+          void learningApi('feedback',{
+            event_type:'shown',
+            item_key:clean(item.key),
+            fingerprint:clean(item.fingerprint),
+            dedupe:'render:'+clean(item.fingerprint)+':'+String(Math.floor(Date.now()/21600000))
+          }).catch(()=>{});
         }
         if(!result||result.rendered<1){
           const sectionNode=wrap.closest('.vp3-cognitive-feed-section');
