@@ -88,9 +88,11 @@ function renderCapture(x){
   ui.liveSourceTitle.textContent=capture.title||(capture.available?'Untitled page':'No shareable page');ui.liveSourceHost.textContent=host(capture.source_url)||capture.reason||'';
   ui.alertsSourceTitle.textContent=capture.title||(capture.available?'Untitled page':'No shareable page');ui.alertsSourceHost.textContent=host(capture.source_url)||capture.reason||'';
   ui.searchContextText.textContent=capture&&capture.available?'Context: '+(host(capture.source_url)||'current page'):'No current page context.';
-  if(ui.agentContextLabel)ui.agentContextLabel.textContent=capture&&capture.available
-    ?'Temporary context: '+(capture.title||host(capture.source_url)||'current page')
-    :'No current page context.';
+  if(ui.agentContextLabel)ui.agentContextLabel.textContent=!ui.agentUsePageContext.checked
+    ?'Page context disabled for this turn.'
+    :(capture&&capture.available
+      ?'Temporary context: '+(capture.title||host(capture.source_url)||'current page')
+      :'No current page context.');
   ui.selectedText.value=capture.selected_text||'';ui.selectionCount.textContent=new TextEncoder().encode(ui.selectedText.value).length.toLocaleString()+' / 32,768 bytes';
   const m=capture.media;ui.captureMediaBtn.hidden=!(m&&m.kind&&http(m.source_media_url));if(!ui.captureMediaBtn.hidden)ui.mediaDetectedText.textContent=(m.kind==='youtube_clip'?'YouTube':m.source_media_kind==='audio'?'Audio':'Video')+' at '+sec(m.current_time)+(m.duration?' of '+sec(m.duration):'');
   renderCaps();
@@ -620,7 +622,10 @@ async function refreshState(){
       renderCapture(x.pending_capture);await message('clear_pending_capture').catch(()=>{});
     }else await refreshCapture(false);
     const c=caps();
-    if(activeView==='now'&&!c.has('agent.message')&&(c.has('team.chat.read')||c.has('team.share.create')))setView('this_page');
+    if(['now','agent'].includes(activeView)&&!c.has('agent.message')){
+      if(c.has('team.chat.read')||c.has('team.share.create'))setView('this_page');
+      else if(c.has('notifications.read'))setView('alerts');
+    }
     if(c.has('team.destinations.read'))await loadDestinations();else{destinations={recent:[],teams:[],conversations:[]};renderAccountTeams();}
     if(c.has('team.chat.read')&&activeView==='this_page')await loadThis(true);
     if(pendingQuick)await applyPendingQuickActionV2150(pendingQuick);
