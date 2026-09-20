@@ -63,7 +63,7 @@ must(runtime.includes("knowledge_retrieval_v162_generate_answer"),'shared runtim
 must(runtime.includes("homeserver_agent_v025_chat"),'shared runtime must retain HomeServer route');
 must(runtime.includes("ai_usage_accounting_v032"),'shared runtime must retain AI usage accounting');
 must(runtime.includes("vp3_cognitive_cards_chat_requests_v520"),'shared runtime must retain Cognitive cards');
-must(!/chat_v236_[A-Za-z0-9_]+(/.test(runtime),'shared runtime must not depend on web-endpoint-only helpers');
+must(!runtime.includes('chat_v236_'),'shared runtime must not depend on web-endpoint-only helpers');
 
 // Page context stays bounded, server-revalidated and non-persistent.
 must(background.includes("function browserAgentContextV2160(capture)"),'Browser Agent page-context adapter missing');
