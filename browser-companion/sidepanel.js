@@ -529,7 +529,8 @@ async function refreshState(){
     }else await refreshCapture(false);
     const c=caps();
     if(activeView==='now'&&!c.has('agent.message')&&(c.has('team.chat.read')||c.has('team.share.create')))setView('this_page');
-    if(c.has('team.chat.read')){await loadDestinations();if(activeView==='this_page')await loadThis(true);}else{destinations={recent:[],teams:[],conversations:[]};renderAccountTeams();}
+    if(c.has('team.destinations.read'))await loadDestinations();else{destinations={recent:[],teams:[],conversations:[]};renderAccountTeams();}
+    if(c.has('team.chat.read')&&activeView==='this_page')await loadThis(true);
     if(pendingQuick)await applyPendingQuickActionV2150(pendingQuick);
     else if(c.has('agent.message')&&activeView==='now')await loadNow(true);
   }
