@@ -2,8 +2,8 @@
 const $=id=>document.getElementById(id);
 const ui={};
 [
-'connectionState','connectControls','shareWorkspace','connectBtn','settingsBtn','connectedAccount','disconnectedAccount','accountAvatar','accountName','accountMeta','accountTeams','openVp3Btn','refreshAccountBtn','accountOptionsBtn','accessNotice','quickActionsCard','composerCard','agentWorkspaceName','agentWorkspaceStatus','agentRefreshBtn','agentConversationSelect','agentNewChatBtn','agentOpenFullBtn','agentUsePageContext','agentContextLabel','agentMessages','agentEmpty','agentMessageInput','agentSendBtn',
-'nowTab','agentTab','thisPageTab','followingTab','liveTab','alertsTab','searchTab','nowView','agentView','thisPageView','followingView','liveView','alertsView','searchView','refreshNowBtn','openAgentChatBtn','restoreNowBtn','nowStatus','nowAttentionCount','nowItemCount','nowContextualCount','nowContextStrip','nowContextTitle','nowContextMeta','toggleNowContextBtn','nowContextPanel','nowRelationshipSummary','nowRelationshipList','nowContextActions','nowEmpty','nowFeed','refreshCaptureBtn','pageTitle','pageHost','sourceMeta','sourceStatus',
+'connectionState','connectControls','shareWorkspace','connectBtn','settingsBtn','connectedAccount','disconnectedAccount','accountAvatar','accountName','accountMeta','accountTeams','openVp3Btn','refreshAccountBtn','accountOptionsBtn','accessNotice','quickActionsCard','composerCard','agentWorkspaceName','agentWorkspaceStatus','agentRefreshBtn','agentConversationSelect','agentNewChatBtn','agentOpenFullBtn','agentUsePageContext','agentContextLabel','agentMessages','agentEmpty','agentMessageInput','agentSendBtn','memoryAgentName','memoryStatus','memoryRefreshBtn','memoryPageLabel','memoryCandidates','memoryCandidatesEmpty','memoryRemembered','memoryRememberedEmpty','memoryCount',
+'nowTab','agentTab','memoryTab','thisPageTab','followingTab','liveTab','alertsTab','searchTab','nowView','agentView','memoryView','thisPageView','followingView','liveView','alertsView','searchView','refreshNowBtn','openAgentChatBtn','restoreNowBtn','nowStatus','nowAttentionCount','nowItemCount','nowContextualCount','nowContextStrip','nowContextTitle','nowContextMeta','toggleNowContextBtn','nowContextPanel','nowRelationshipSummary','nowRelationshipList','nowContextActions','nowEmpty','nowFeed','refreshCaptureBtn','pageTitle','pageHost','sourceMeta','sourceStatus',
 'followCurrentSourceBtn','openSourcePageBtn','quickAskBtn','quickSummarizeBtn','quickCompareBtn','quickResearchBtn','quickKnowledgeBtn','quickTaskBtn','quickTeamBtn','quickAnnotateBtn','selectedText','selectionCount','captureSummary','captureScreenshotBtn','screenshotPreview',
 'screenshotImage','screenshotMeta','removeScreenshotBtn','captureMediaBtn','mediaDetectedText','mediaPreview','mediaPreviewTitle','mediaStart',
 'mediaEnd','mediaClipHint','removeMediaBtn','recordCommentaryBtn','commentaryStatus','commentaryPreview','commentaryAudio','commentaryMeta',
@@ -24,6 +24,7 @@ let screenshotCapture=null,mediaReference=null,commentaryCapture=null,recorder=n
 let thisCursor='',followingCursor='',thisBusy=false,followingBusy=false,activeView='now';
 let cognitiveBusy=false,cognitiveData=null,cognitiveTimer=null;
 let agentConversationId=0,agentWorkspaceAgentId=0,agentLastMessageId=0,agentPollTimer=null,agentBusy=false,agentConversations=[];
+let memoryBusy=false,memoryCandidatesData=[],memoryRememberedData=[];
 let nowContextIgnored=false,contextAgentPayload=null,contextRelationships=null,contextSuggestions=[];
 let researchShareId='',researchContextData=null;
 let liveRoomsData=[],liveRoom=null,liveCursor=0,livePollTimer=null,liveHeartbeatTimer=null,liveBusy=false;
@@ -56,6 +57,7 @@ function renderCaps(){
   const canRead=c.has('team.chat.read'),canShare=c.has('team.share.create');
   ui.nowTab.disabled=!(state&&state.connected&&c.has('agent.message'));
   ui.agentTab.disabled=!(state&&state.connected&&c.has('agent.message'));
+  ui.memoryTab.disabled=!(state&&state.connected&&c.has('agent.message'));
   ui.agentSendBtn.disabled=!(state&&state.connected&&c.has('agent.message')&&!agentBusy&&String(ui.agentMessageInput.value||'').trim());
   ui.thisPageTab.disabled=!(state&&state.connected&&(canRead||canShare));
   [ui.followingTab,ui.liveTab,ui.alertsTab,ui.searchTab].forEach(tab=>{tab.disabled=!(state&&state.connected&&canRead);});
@@ -93,6 +95,9 @@ function renderCapture(x){
     :(capture&&capture.available
       ?'Temporary context: '+(capture.title||host(capture.source_url)||'current page')
       :'No current page context.');
+  if(ui.memoryPageLabel)ui.memoryPageLabel.textContent=capture&&capture.available
+    ?'Current page: '+(capture.title||host(capture.source_url)||'current page')
+    :'No current page context.';
   ui.selectedText.value=capture.selected_text||'';ui.selectionCount.textContent=new TextEncoder().encode(ui.selectedText.value).length.toLocaleString()+' / 32,768 bytes';
   const m=capture.media;ui.captureMediaBtn.hidden=!(m&&m.kind&&http(m.source_media_url));if(!ui.captureMediaBtn.hidden)ui.mediaDetectedText.textContent=(m.kind==='youtube_clip'?'YouTube':m.source_media_kind==='audio'?'Audio':'Video')+' at '+sec(m.current_time)+(m.duration?' of '+sec(m.duration):'');
   renderCaps();
@@ -546,13 +551,98 @@ async function sendAgentMessageV2160(){
     optimistic.remove();ui.agentMessageInput.value=message;await fail(e);
   }finally{agentBusy=false;renderCaps();}
 }
+function memoryRequestV2170(action,payload={}){
+  const request=Object.assign({},payload||{});
+  if(agentWorkspaceAgentId>0)request.agent_id=agentWorkspaceAgentId;
+  return msg('memory_action',{action:action,payload:request});
+}
+function memoryRowV2170(item,source){
+  const row=el('div','memory-row'+(item.approved?' remembered':''),'');
+  row.dataset.targetType=String(item.target_type||'');
+  row.dataset.targetId=String(item.target_id||'');
+  row.dataset.approvalId=String(item.approval_id||'');
+  const copy=el('div','memory-row-copy','');
+  copy.append(
+    el('small','',String(item.target_type||'VP3 object').replace(/_/g,' ')),
+    el('strong','',item.title||'VP3 object')
+  );
+  if(item.detail)copy.append(el('span','',item.detail));
+  if(item.approved_at)copy.append(el('span','', 'Approved '+date(item.approved_at)));
+  const actions=el('div','memory-row-actions','');
+  if(item.url){const open=act('Open','memory_open');open.dataset.url=String(item.url);actions.append(open);}
+  if(item.approved){
+    const forget=act('Forget','memory_forget');actions.append(forget);
+  }else if(source==='candidate'){
+    const remember=act('Remember','memory_remember');actions.append(remember);
+  }
+  row.append(copy,actions);
+  return row;
+}
+function renderMemoryV2170(payload){
+  const agent=payload&&payload.agent||null;
+  if(agent){
+    agentWorkspaceAgentId=Math.max(0,Number(agent.id||agentWorkspaceAgentId||0));
+    ui.memoryAgentName.textContent=String(agent.name||'VP3 Agent');
+  }
+  memoryCandidatesData=Array.isArray(payload&&payload.candidates)?payload.candidates:[];
+  memoryRememberedData=Array.isArray(payload&&payload.remembered)?payload.remembered:[];
+  ui.memoryCandidates.replaceChildren();
+  memoryCandidatesData.forEach(item=>ui.memoryCandidates.append(memoryRowV2170(item,'candidate')));
+  ui.memoryCandidatesEmpty.hidden=memoryCandidatesData.length>0;
+  ui.memoryRemembered.replaceChildren();
+  memoryRememberedData.forEach(item=>ui.memoryRemembered.append(memoryRowV2170(item,'remembered')));
+  ui.memoryRememberedEmpty.hidden=memoryRememberedData.length>0;
+  ui.memoryCount.textContent=memoryRememberedData.length+' remembered';
+  ui.memoryStatus.textContent='Reference-only memory · '+memoryRememberedData.length+' approved';
+}
+async function loadMemoryV2170(){
+  if(memoryBusy||!state||!state.connected||!caps().has('agent.message'))return;
+  memoryBusy=true;ui.memoryStatus.textContent='Refreshing approved VP3 references…';
+  try{
+    const payload=capture&&capture.available
+      ?await memoryRequestV2170('candidates',{context:capture})
+      :await memoryRequestV2170('list',{});
+    renderMemoryV2170(payload);
+  }catch(e){
+    ui.memoryStatus.textContent=e.message||'Browser Memory is unavailable.';
+    if(e.code==='capability_denied')dropCapability('agent.message');
+    throw e;
+  }finally{memoryBusy=false;renderCaps();}
+}
+async function memoryClickV2170(e){
+  const b=e.target.closest('button[data-action]');if(!b)return;
+  const row=b.closest('.memory-row');if(!row)return;
+  try{
+    if(b.dataset.action==='memory_open'){
+      const path=String(b.dataset.url||'');if(path)await msg('open_url',{url:absolute(path)});
+      return;
+    }
+    if(b.dataset.action==='memory_remember'){
+      busy(b,true,'Remembering…');
+      await memoryRequestV2170('approve',{
+        target_type:String(row.dataset.targetType||''),
+        target_id:String(row.dataset.targetId||'')
+      });
+      note('Approved for VP3 Agent Memory.','success');await loadMemoryV2170();return;
+    }
+    if(b.dataset.action==='memory_forget'){
+      const approvalId=String(row.dataset.approvalId||'');if(!approvalId)return;
+      busy(b,true,'Forgetting…');
+      await memoryRequestV2170('revoke',{approval_id:approvalId});
+      note('Browser Memory approval revoked.','success');await loadMemoryV2170();return;
+    }
+  }catch(err){await fail(err);}
+  finally{if(b.isConnected)busy(b,false);}
+}
+
 function setView(v){
-  activeView=v;const now=v==='now',agent=v==='agent',page=v==='this_page',following=v==='following',live=v==='live',alerts=v==='alerts',search=v==='search';
-  ui.nowView.hidden=!now;ui.agentView.hidden=!agent;ui.thisPageView.hidden=!page;ui.followingView.hidden=!following;ui.liveView.hidden=!live;ui.alertsView.hidden=!alerts;ui.searchView.hidden=!search;
-  ui.nowTab.classList.toggle('active',now);ui.agentTab.classList.toggle('active',agent);ui.thisPageTab.classList.toggle('active',page);ui.followingTab.classList.toggle('active',following);ui.liveTab.classList.toggle('active',live);ui.alertsTab.classList.toggle('active',alerts);ui.searchTab.classList.toggle('active',search);
-  ui.nowTab.setAttribute('aria-selected',String(now));ui.agentTab.setAttribute('aria-selected',String(agent));ui.thisPageTab.setAttribute('aria-selected',String(page));ui.followingTab.setAttribute('aria-selected',String(following));ui.liveTab.setAttribute('aria-selected',String(live));ui.alertsTab.setAttribute('aria-selected',String(alerts));ui.searchTab.setAttribute('aria-selected',String(search));
+  activeView=v;const now=v==='now',agent=v==='agent',memory=v==='memory',page=v==='this_page',following=v==='following',live=v==='live',alerts=v==='alerts',search=v==='search';
+  ui.nowView.hidden=!now;ui.agentView.hidden=!agent;ui.memoryView.hidden=!memory;ui.thisPageView.hidden=!page;ui.followingView.hidden=!following;ui.liveView.hidden=!live;ui.alertsView.hidden=!alerts;ui.searchView.hidden=!search;
+  ui.nowTab.classList.toggle('active',now);ui.agentTab.classList.toggle('active',agent);ui.memoryTab.classList.toggle('active',memory);ui.thisPageTab.classList.toggle('active',page);ui.followingTab.classList.toggle('active',following);ui.liveTab.classList.toggle('active',live);ui.alertsTab.classList.toggle('active',alerts);ui.searchTab.classList.toggle('active',search);
+  ui.nowTab.setAttribute('aria-selected',String(now));ui.agentTab.setAttribute('aria-selected',String(agent));ui.memoryTab.setAttribute('aria-selected',String(memory));ui.thisPageTab.setAttribute('aria-selected',String(page));ui.followingTab.setAttribute('aria-selected',String(following));ui.liveTab.setAttribute('aria-selected',String(live));ui.alertsTab.setAttribute('aria-selected',String(alerts));ui.searchTab.setAttribute('aria-selected',String(search));
   if(!now){clearInterval(cognitiveTimer);cognitiveTimer=null;}if(now)loadNow(true).catch(fail);
   if(!agent){clearInterval(agentPollTimer);agentPollTimer=null;}if(agent)refreshAgentWorkspaceV2160().catch(fail);
+  if(memory)loadMemoryV2170().catch(fail);
   if(page&&caps().has('team.chat.read'))loadThis(true).catch(fail);if(following)loadFollowing(true).catch(fail);if(live)loadLiveRooms().then(pollLiveRoom).catch(fail);if(alerts)loadAlerts().catch(fail);if(search)loadDiscovery().catch(fail);
 }
 function sourceHead(feed){currentSource=(feed&&feed.source)||null;ui.sourceMeta.hidden=!(capture&&capture.available);ui.sourceStatus.textContent=currentSource&&currentSource.id?'Recognized source':'New source';ui.followCurrentSourceBtn.textContent=currentSource&&currentSource.following?'Unfollow source':'Follow source';ui.openSourcePageBtn.hidden=!(currentSource&&currentSource.page_url);renderCaps();}
@@ -633,7 +723,7 @@ async function refreshState(){
       renderCapture(x.pending_capture);await message('clear_pending_capture').catch(()=>{});
     }else await refreshCapture(false);
     const c=caps();
-    if(['now','agent'].includes(activeView)&&!c.has('agent.message')){
+    if(['now','agent','memory'].includes(activeView)&&!c.has('agent.message')){
       if(c.has('team.chat.read')||c.has('team.share.create'))setView('this_page');
       else if(c.has('notifications.read'))setView('alerts');
     }
@@ -642,6 +732,7 @@ async function refreshState(){
     if(pendingQuick)await applyPendingQuickActionV2150(pendingQuick);
     else if(c.has('agent.message')&&activeView==='now')await loadNow(true);
     else if(c.has('agent.message')&&activeView==='agent')await refreshAgentWorkspaceV2160();
+    else if(c.has('agent.message')&&activeView==='memory')await loadMemoryV2170();
   }
 }
 function clip(changed){if(!mediaReference)return;const d=Math.max(0,Number(mediaReference.metadata.duration_seconds||0));let s=Math.max(0,Number(ui.mediaStart.value||0)),e=Math.max(s,Number(ui.mediaEnd.value||s));if(d){s=Math.min(s,d);e=Math.min(e,d);}if(e-s>MAX_CLIP){if(changed==='start')s=Math.max(0,e-MAX_CLIP);else e=s+MAX_CLIP;}mediaReference.metadata.start_seconds=Number(s.toFixed(3));mediaReference.metadata.end_seconds=Number(e.toFixed(3));ui.mediaStart.value=s;ui.mediaEnd.value=e;ui.mediaClipHint.textContent='Clip '+sec(s)+'–'+sec(e)+' · '+(e-s).toFixed(1)+'s · source timestamps only · maximum 90s.';}
@@ -678,8 +769,9 @@ ui.accountOptionsBtn.onclick=()=>chrome.runtime.openOptionsPage();
 ui.openVp3Btn.onclick=()=>msg('open_url',{url:absolute('/')}).catch(fail);
 ui.refreshAccountBtn.onclick=async()=>{busy(ui.refreshAccountBtn,true,'Refreshing…');try{await refreshState();note('VP3 account refreshed.','success');}catch(e){await fail(e);}finally{busy(ui.refreshAccountBtn,false);}};
 ui.refreshNowBtn.onclick=()=>loadNow(true).catch(fail);ui.openAgentChatBtn.onclick=()=>{if(contextAgentPayload)return openContextAgent('Review this page with me. Start with what is most relevant to my current VP3 work.').catch(fail);return msg('open_url',{url:absolute(cognitiveData&&cognitiveData.agent_url||'/chat.php')}).catch(fail);};ui.restoreNowBtn.onclick=async()=>{try{await cognitiveAction('restore_all',{});await loadNow(true);note('Hidden Agent items restored.','success');}catch(e){await fail(e);}};ui.toggleNowContextBtn.onclick=()=>{nowContextIgnored=!nowContextIgnored;loadNow(true).catch(fail);};ui.nowContextActions.onclick=contextSuggestionClick;ui.nowRelationshipList.onclick=contextSuggestionClick;ui.nowFeed.onclick=cognitiveClick;
-ui.nowTab.onclick=()=>setView('now');ui.agentTab.onclick=()=>setView('agent');ui.thisPageTab.onclick=()=>setView('this_page');ui.followingTab.onclick=()=>setView('following');ui.liveTab.onclick=()=>setView('live');ui.alertsTab.onclick=()=>setView('alerts');ui.searchTab.onclick=()=>setView('search');ui.refreshCaptureBtn.onclick=()=>refreshCapture(true).catch(fail);ui.refreshFollowingBtn.onclick=()=>loadFollowing(true).catch(fail);ui.refreshLiveBtn.onclick=()=>loadLiveRooms().catch(fail);ui.refreshAlertsBtn.onclick=()=>loadAlerts().catch(fail);
+ui.nowTab.onclick=()=>setView('now');ui.agentTab.onclick=()=>setView('agent');ui.memoryTab.onclick=()=>setView('memory');ui.thisPageTab.onclick=()=>setView('this_page');ui.followingTab.onclick=()=>setView('following');ui.liveTab.onclick=()=>setView('live');ui.alertsTab.onclick=()=>setView('alerts');ui.searchTab.onclick=()=>setView('search');ui.refreshCaptureBtn.onclick=()=>refreshCapture(true).catch(fail);ui.refreshFollowingBtn.onclick=()=>loadFollowing(true).catch(fail);ui.refreshLiveBtn.onclick=()=>loadLiveRooms().catch(fail);ui.refreshAlertsBtn.onclick=()=>loadAlerts().catch(fail);
 ui.agentRefreshBtn.onclick=()=>refreshAgentWorkspaceV2160().catch(fail);
+ui.memoryRefreshBtn.onclick=()=>loadMemoryV2170().catch(fail);ui.memoryCandidates.onclick=memoryClickV2170;ui.memoryRemembered.onclick=memoryClickV2170;
 ui.agentConversationSelect.onchange=()=>loadAgentConversationV2160(Number(ui.agentConversationSelect.value||0)).catch(fail);
 ui.agentNewChatBtn.onclick=()=>loadAgentConversationV2160(0).catch(fail);
 ui.agentOpenFullBtn.onclick=()=>{
@@ -743,7 +835,7 @@ ui.liveMessageInput.onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefa
 ui.liveMessages.onclick=async e=>{const b=e.target.closest('button[data-action="live_report"]');if(!b)return;const reason=prompt('Why are you reporting this Live message?');if(!reason)return;try{await trustAction('report_create',{target_type:'live_message',target_id:b.dataset.messageId,reason:reason,detail:''});note('Report submitted.','success');}catch(err){await fail(err);}};
 ui.thisPageFeed.onclick=feedClick;ui.followingFeed.onclick=feedClick;ui.loadMoreThisPageBtn.onclick=()=>loadThis(false).catch(fail);ui.loadMoreFollowingBtn.onclick=()=>loadFollowing(false).catch(fail);
 const io=new IntersectionObserver(es=>es.forEach(e=>{if(!e.isIntersecting||e.target.hidden)return;if(e.target===ui.loadMoreThisPageBtn)loadThis(false).catch(fail);if(e.target===ui.loadMoreFollowingBtn)loadFollowing(false).catch(fail);}),{rootMargin:'120px'});io.observe(ui.loadMoreThisPageBtn);io.observe(ui.loadMoreFollowingBtn);
-function pageWatch(){clearInterval(pageTimer);let identity=(capture&&capture.source_url||'')+'\n'+(capture&&capture.title||'');pageTimer=setInterval(async()=>{if(!state||!state.connected||!['now','agent','this_page','live','alerts','search'].includes(activeView))return;try{const x=await msg('tab_identity'),next=(x.source_url||'')+'\n'+(x.title||'');if(x.source_url&&next!==identity){identity=next;nowContextIgnored=false;await refreshCapture(activeView==='this_page');if(activeView==='now')await loadNow(true);if(activeView==='agent'&&ui.agentUsePageContext.checked)ui.agentContextLabel.textContent='Temporary context: '+(capture.title||host(capture.source_url)||'current page');if(activeView==='live'){liveRoom=null;liveCursor=0;ui.liveRoomPanel.hidden=true;await loadLiveRooms();}if(activeView==='alerts')await loadAlerts();if(activeView==='search')await loadDiscovery();}}catch(e){}},2000);}
+function pageWatch(){clearInterval(pageTimer);let identity=(capture&&capture.source_url||'')+'\n'+(capture&&capture.title||'');pageTimer=setInterval(async()=>{if(!state||!state.connected||!['now','agent','memory','this_page','live','alerts','search'].includes(activeView))return;try{const x=await msg('tab_identity'),next=(x.source_url||'')+'\n'+(x.title||'');if(x.source_url&&next!==identity){identity=next;nowContextIgnored=false;await refreshCapture(activeView==='this_page');if(activeView==='now')await loadNow(true);if(activeView==='agent'&&ui.agentUsePageContext.checked)ui.agentContextLabel.textContent='Temporary context: '+(capture.title||host(capture.source_url)||'current page');if(activeView==='memory')await loadMemoryV2170();if(activeView==='live'){liveRoom=null;liveCursor=0;ui.liveRoomPanel.hidden=true;await loadLiveRooms();}if(activeView==='alerts')await loadAlerts();if(activeView==='search')await loadDiscovery();}}catch(e){}},2000);}
 window.addEventListener('focus',()=>{if(state&&state.connected)refreshState().catch(()=>{});});
 window.onbeforeunload=()=>{clearInterval(pageTimer);clearInterval(livePollTimer);clearInterval(liveHeartbeatTimer);clearInterval(cognitiveTimer);clearInterval(agentPollTimer);stream&&stream.getTracks().forEach(t=>t.stop());};
 refreshState().then(pageWatch).catch(fail);
