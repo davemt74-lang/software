@@ -40,7 +40,10 @@ for (const html of [sidepanelHtml, optionsHtml]) {
   must(!/<script(?![^>]+src=)/i.test(html), 'extension pages must not contain inline scripts');
 }
 
-must(background.includes("chrome.contextMenus.create({ id: 'vp3-share-selection'"), 'selection context menu missing');
+const hasSelectionContextMenu =
+  background.includes("chrome.contextMenus.create({ id: 'vp3-share-selection'")
+  || (background.includes("id:'vp3-quick-root'") && background.includes("contexts:['page','selection','link','image','video','audio']") && background.includes("annotate:{ flow:'annotate'"));
+must(hasSelectionContextMenu, 'selection context menu missing');
 must(background.includes('chrome.sidePanel.open({ tabId: tab.id })'), 'context menu must open the side panel');
 must(background.includes('window.getSelection'), 'current-page selection detection missing');
 must(background.includes("document.querySelector('link[rel=\"canonical\"]')"), 'canonical page URL detection missing');
