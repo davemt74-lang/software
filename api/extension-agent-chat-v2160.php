@@ -81,7 +81,9 @@ try{
     $input=vp3_extension_agent_input_v2160();
     $action=trim((string)($input['action']??'list'));
     $requestedAgentId=max(0,(int)($input['agent_id']??0));
-    $activeAgent=vp3_agent_chat_resolve_agent_v380($pdo,$user,$requestedAgentId);
+    $activeAgent=$requestedAgentId>0
+        ?vp3_agent_chat_resolve_agent_v380($pdo,$user,$requestedAgentId)
+        :vp3_agent_chat_runtime_default_agent_v2160($pdo,$user);
     $principal=vp3_agent_chat_principal_v380($user,$activeAgent);
     $userId=(int)$user['id'];
 
