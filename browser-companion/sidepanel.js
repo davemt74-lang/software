@@ -666,7 +666,7 @@ ui.nowTab.onclick=()=>setView('now');ui.agentTab.onclick=()=>setView('agent');ui
 ui.agentRefreshBtn.onclick=()=>refreshAgentWorkspaceV2160().catch(fail);
 ui.agentConversationSelect.onchange=()=>loadAgentConversationV2160(Number(ui.agentConversationSelect.value||0)).catch(fail);
 ui.agentNewChatBtn.onclick=()=>loadAgentConversationV2160(0).catch(fail);
-ui.agentOpenFullBtn.onclick=()=>msg('open_url',{url:absolute(agentConversationId?'/chat.php?conversation_id='+agentConversationId:'/chat.php')});
+ui.agentOpenFullBtn.onclick=()=>msg('open_url',{url:absolute('/chat.php')});
 ui.agentSendBtn.onclick=()=>sendAgentMessageV2160().catch(fail);
 ui.agentMessageInput.oninput=renderCaps;
 ui.agentMessageInput.onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendAgentMessageV2160().catch(fail);}};
