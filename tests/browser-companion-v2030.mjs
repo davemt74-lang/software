@@ -44,7 +44,10 @@ const hasSelectionContextMenu =
   background.includes("chrome.contextMenus.create({ id: 'vp3-share-selection'")
   || (background.includes("id:'vp3-quick-root'") && background.includes("contexts:['page','selection','link','image','video','audio']") && background.includes("annotate:{ flow:'annotate'"));
 must(hasSelectionContextMenu, 'selection context menu missing');
-must(background.includes('chrome.sidePanel.open({ tabId: tab.id })'), 'context menu must open the side panel');
+const opensContextSidePanel =
+  background.includes('chrome.sidePanel.open({ tabId: tab.id })')
+  || background.includes('chrome.sidePanel.open({ tabId:tab.id })');
+must(opensContextSidePanel, 'context menu must open the side panel');
 must(background.includes('window.getSelection'), 'current-page selection detection missing');
 must(background.includes("document.querySelector('link[rel=\"canonical\"]')"), 'canonical page URL detection missing');
 must(background.includes('utf8Limit'), 'UTF-8 byte payload bounding missing');
