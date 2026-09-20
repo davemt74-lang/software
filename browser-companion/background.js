@@ -936,8 +936,29 @@ async function registerQuickActionMenusV2150() {
 async function quickActionCaptureV2150(info, tab) {
   const capture = await activeCapture(tab);
   if (info?.selectionText) capture.selected_text = utf8Limit(String(info.selectionText).trim(), 12000);
-  if (info?.linkUrl && !capture.selected_text) {
-    capture.selected_text = utf8Limit('Link: ' + String(info.linkUrl), 12000);
+
+  const linkUrl = String(info?.linkUrl || '').trim();
+  const srcUrl = String(info?.srcUrl || '').trim();
+  const mediaType = String(info?.mediaType || '').toLowerCase();
+  if (linkUrl && !capture.selected_text) {
+    capture.selected_text = utf8Limit('Link: ' + linkUrl, 12000);
+  }
+  if (srcUrl) {
+    const label = mediaType === 'image' ? 'Image' : mediaType === 'video' ? 'Video' : mediaType === 'audio' ? 'Audio' : 'Media';
+    if (!capture.selected_text) capture.selected_text = utf8Limit(label + ': ' + srcUrl, 12000);
+    if (mediaType === 'video' || mediaType === 'audio') {
+      capture.media = {
+        kind:mediaType === 'audio' ? 'audio_reference' : 'video_reference',
+        source_media_kind:mediaType,
+        source_media_url:srcUrl,
+        source_media_title:String(capture.title || '').slice(0,300),
+        current_time:0,
+        duration:0
+      };
+    }
+    capture.quick_target_v2150 = { kind:mediaType || 'media', url:srcUrl.slice(0,2048) };
+  } else if (linkUrl) {
+    capture.quick_target_v2150 = { kind:'link', url:linkUrl.slice(0,2048) };
   }
   capture.captured_at = new Date().toISOString();
   return capture;
