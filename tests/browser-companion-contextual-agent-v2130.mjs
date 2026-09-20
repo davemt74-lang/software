@@ -89,7 +89,8 @@ must(
   panel.includes("['now','this_page','live','alerts','search']")
     ||panel.includes("['now','agent','this_page','live','alerts','search']")
     ||panel.includes("['now','agent','memory','this_page','live','alerts','search']")
-    ||panel.includes("['now','agent','execution','memory','this_page','live','alerts','search']"),
+    ||panel.includes("['now','agent','execution','memory','this_page','live','alerts','search']")
+    ||panel.includes("['now','agent','delegation','execution','memory','this_page','live','alerts','search']"),
   'active page watcher must include Now'
 );
 must(panel.includes("if(activeView==='now')await loadNow(true)"),'active-tab changes must refresh page-aware Now');
