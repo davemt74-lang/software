@@ -573,3 +573,4 @@ function vp3_cognitive_memory_register_v570(): void
 }
 
 vp3_cognitive_memory_register_v570();
+require_once __DIR__.'/browser-memory-v2170.php';
