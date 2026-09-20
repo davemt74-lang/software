@@ -16,7 +16,7 @@ const upgrade=read('upgrade.php');
 
 const memoryVersion=String(manifest.version||'').split('.').map(Number);
 must(memoryVersion.length===3&&(memoryVersion[0]>21||(memoryVersion[0]===21&&memoryVersion[1]>=7)),'v21.70+ manifest version missing');
-must(/const VP3_EXTENSION_VERSION = '21\\.(?:[7-9]|[1-9]\\d+)\\.\\d+';/.test(background),'v21.70+ request version missing');
+must(/const VP3_EXTENSION_VERSION = '21\.(?:[7-9]|[1-9]\d+)\.\d+';/.test(background),'v21.70+ request version missing');
 must(background.includes("if(['candidates','approve'].includes(normalizedAction)&&request.context){")
   &&background.includes("request.context=browserContextPayload(request.context);"),
   'Memory discovery and approval must reuse the bounded v21.30 page-context envelope');
