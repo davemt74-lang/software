@@ -133,7 +133,7 @@ try{
     }
 
     if($action==='verify_navigation'){
-        [$context]=$tmp=vp3_extension_delegation_context_v2190($pdo,$user,$session,$input);
+        [$context,$relations]=vp3_extension_delegation_context_v2190($pdo,$user,$session,$input);
         $delegation=vp3_browser_delegation_verify_navigation_v2190(
             $pdo,$user,$namespace,$delegationId,max(0,(int)($input['action_id']??0)),$context
         );
