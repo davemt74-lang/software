@@ -470,7 +470,10 @@ function browserMultiSiteGuardTabV2220(tabId,changeInfo,tab){
     browserMultiSiteReleaseTabV2220(tabId).catch(()=>{});
     return;
   }
-  if(domain)row.domain=domain;
+  if(domain&&domain!==row.domain){
+    row.domain=domain;
+    browserMultiSiteRegisterTabV2220(tabId,domain,Boolean(row.opened_by_runtime),'popup').catch(()=>{});
+  }
 }
 async function browserWebInteractionApiV2210(action, payload = {}) {
   return authorizedFetch('/api/extension-web-interaction-v2210.php', {
@@ -556,8 +559,8 @@ async function browserWebInteractionObserveV2210(payload = {}) {
         const placeholder=clip(el.getAttribute('placeholder'),160);
         const ariaLabel=clip(el.getAttribute('aria-label'),160);
         const autocomplete=clip(el.getAttribute('autocomplete'),80).toLowerCase();
-        let targetHost='',formActionHost='';
-        if(tag==='a'&&el.href){try{targetHost=new URL(el.href,location.href).hostname.toLowerCase();}catch(_error){}}
+        let targetHost='',targetUrl='',formActionHost='';
+        if(tag==='a'&&el.href){try{const parsed=new URL(el.href,location.href);targetHost=parsed.hostname.toLowerCase();targetUrl=parsed.href;}catch(_error){}}
         if(el.form){try{formActionHost=new URL(el.form.action||location.href,location.href).hostname.toLowerCase();}catch(_error){}}
         const semantic=[tag,inputType,role,name,autocomplete,label,placeholder,ariaLabel,targetHost,formActionHost].join('|').toLowerCase();
         const fingerprint=await sha(semantic);
@@ -571,7 +574,7 @@ async function browserWebInteractionObserveV2210(payload = {}) {
         const options=kind==='select'?[...el.options].slice(0,30).map(option=>({value:clip(option.value,160),label:clip(option.textContent,160)})):[];
         elements.push({
           element_key:key,element_fingerprint:fingerprint,kind,tag,input_type:inputType,role,
-          label,name,placeholder,aria_label:ariaLabel,autocomplete,target_host:targetHost,form_action_host:formActionHost,
+          label,name,placeholder,aria_label:ariaLabel,autocomplete,target_host:targetHost,target_url:targetUrl,form_action_host:formActionHost,
           disabled:Boolean(el.disabled)||el.getAttribute('aria-disabled')==='true',
           checked:'checked'in el?Boolean(el.checked):null,
           sensitive,submit_like:submitLike,dangerous,options
