@@ -16,6 +16,8 @@ const upgrade=read('upgrade.php');
 
 must(manifest.version==='21.7.0','v21.70 manifest version missing');
 must(background.includes("const VP3_EXTENSION_VERSION = '21.7.0';"),'v21.70 request version missing');
+must(background.includes("if(normalizedAction==='candidates'&&request.context){")&&background.includes("request.context=browserContextPayload(request.context);"),
+  'Memory candidate transport must reuse the bounded v21.30 page-context envelope');
 
 // Reference-only schema: no copied page/browser content columns.
 const schemaStart=memory.indexOf('CREATE TABLE IF NOT EXISTS browser_memory_approvals_v2170');
