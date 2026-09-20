@@ -89,11 +89,10 @@ try{
 
     if($action==='list'){
         [$scope,$params]=vp3_agent_chat_scope_sql_v380($activeAgent,'c');
-        $stmt=$pdo->prepare("SELECT c.id,c.title,c.created_at,c.updated_at,COALESCE(MAX(m.id),0) latest_message_id
+        $stmt=$pdo->prepare("SELECT c.id,c.title,c.created_at,c.updated_at,
+            (SELECT COALESCE(MAX(m.id),0) FROM chat_messages m WHERE m.conversation_id=c.id) latest_message_id
           FROM chat_conversations c
-          LEFT JOIN chat_messages m ON m.conversation_id=c.id
           WHERE c.user_id=? AND {$scope}
-          GROUP BY c.id
           ORDER BY latest_message_id DESC,c.updated_at DESC,c.id DESC
           LIMIT 30");
         $stmt->execute(array_merge([$userId],$params));
