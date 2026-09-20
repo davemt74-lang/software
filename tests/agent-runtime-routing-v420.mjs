@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 const read = (path) => fs.readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
 const runtime = read('includes/agent-runtime-routing-v420.php');
-const textChat = read('api/chat-v236.php');
+const textChat = [read('api/chat-v236.php'),read('includes/agent-chat-runtime-v2160.php')].join('\n');
 const streamChat = read('api/chat-stream-v121.php');
 const accounting = read('includes/ai-usage-accounting-v032.php');
 const status = read('api/agent-runtime-status-v034.php');

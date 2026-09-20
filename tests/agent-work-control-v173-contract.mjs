@@ -4,7 +4,10 @@ import assert from 'node:assert/strict';
 const control = fs.readFileSync('includes/agent-work-control-v173.php','utf8');
 const engine = fs.readFileSync('includes/agent-job-engine-v1900.php','utf8');
 const api = fs.readFileSync('api/agent-workflow-runs-v1400.php','utf8');
-const canonicalChat = fs.readFileSync('api/chat-v236.php','utf8');
+const canonicalChat = [
+  fs.readFileSync('api/chat-v236.php','utf8'),
+  fs.readFileSync('includes/agent-chat-runtime-v2160.php','utf8')
+].join('\n');
 const sharedChat = fs.readFileSync('includes/release-chat-v105.php','utf8');
 const queue = fs.readFileSync('includes/agent-chat-intelligence-v171.php','utf8');
 const upgrade = fs.readFileSync('agent-work-control-upgrade-v173.php','utf8');

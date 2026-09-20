@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 const read = path => fs.readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
 const boundary = read('includes/agent-chat-boundary-v380.php');
-const textApi = read('api/chat-v236.php');
+const textApi = [read('api/chat-v236.php'),read('includes/agent-chat-runtime-v2160.php')].join('\n');
 const streamApi = read('api/chat-stream-v121.php');
 const policy = read('includes/chat-agent-policy-v236.php');
 const legacyEngine = read('includes/chat-engine.php');

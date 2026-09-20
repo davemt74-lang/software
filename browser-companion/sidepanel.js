@@ -2,8 +2,8 @@
 const $=id=>document.getElementById(id);
 const ui={};
 [
-'connectionState','connectControls','shareWorkspace','connectBtn','settingsBtn','connectedAccount','disconnectedAccount','accountAvatar','accountName','accountMeta','accountTeams','openVp3Btn','refreshAccountBtn','accountOptionsBtn','accessNotice','quickActionsCard','composerCard',
-'nowTab','thisPageTab','followingTab','liveTab','alertsTab','searchTab','nowView','thisPageView','followingView','liveView','alertsView','searchView','refreshNowBtn','openAgentChatBtn','restoreNowBtn','nowStatus','nowAttentionCount','nowItemCount','nowContextualCount','nowContextStrip','nowContextTitle','nowContextMeta','toggleNowContextBtn','nowContextPanel','nowRelationshipSummary','nowRelationshipList','nowContextActions','nowEmpty','nowFeed','refreshCaptureBtn','pageTitle','pageHost','sourceMeta','sourceStatus',
+'connectionState','connectControls','shareWorkspace','connectBtn','settingsBtn','connectedAccount','disconnectedAccount','accountAvatar','accountName','accountMeta','accountTeams','openVp3Btn','refreshAccountBtn','accountOptionsBtn','accessNotice','quickActionsCard','composerCard','agentWorkspaceName','agentWorkspaceStatus','agentRefreshBtn','agentConversationSelect','agentNewChatBtn','agentOpenFullBtn','agentUsePageContext','agentContextLabel','agentMessages','agentEmpty','agentMessageInput','agentSendBtn',
+'nowTab','agentTab','thisPageTab','followingTab','liveTab','alertsTab','searchTab','nowView','agentView','thisPageView','followingView','liveView','alertsView','searchView','refreshNowBtn','openAgentChatBtn','restoreNowBtn','nowStatus','nowAttentionCount','nowItemCount','nowContextualCount','nowContextStrip','nowContextTitle','nowContextMeta','toggleNowContextBtn','nowContextPanel','nowRelationshipSummary','nowRelationshipList','nowContextActions','nowEmpty','nowFeed','refreshCaptureBtn','pageTitle','pageHost','sourceMeta','sourceStatus',
 'followCurrentSourceBtn','openSourcePageBtn','quickAskBtn','quickSummarizeBtn','quickCompareBtn','quickResearchBtn','quickKnowledgeBtn','quickTaskBtn','quickTeamBtn','quickAnnotateBtn','selectedText','selectionCount','captureSummary','captureScreenshotBtn','screenshotPreview',
 'screenshotImage','screenshotMeta','removeScreenshotBtn','captureMediaBtn','mediaDetectedText','mediaPreview','mediaPreviewTitle','mediaStart',
 'mediaEnd','mediaClipHint','removeMediaBtn','recordCommentaryBtn','commentaryStatus','commentaryPreview','commentaryAudio','commentaryMeta',
@@ -23,6 +23,7 @@ let state=null,capture=null,destinations=null,lastShare=null,currentSource=null;
 let screenshotCapture=null,mediaReference=null,commentaryCapture=null,recorder=null,stream=null,recordTimer=null,recordStarted=0,pageTimer=null;
 let thisCursor='',followingCursor='',thisBusy=false,followingBusy=false,activeView='now';
 let cognitiveBusy=false,cognitiveData=null,cognitiveTimer=null;
+let agentConversationId=0,agentWorkspaceAgentId=0,agentLastMessageId=0,agentPollTimer=null,agentBusy=false,agentConversations=[];
 let nowContextIgnored=false,contextAgentPayload=null,contextRelationships=null,contextSuggestions=[];
 let researchShareId='',researchContextData=null;
 let liveRoomsData=[],liveRoom=null,liveCursor=0,livePollTimer=null,liveHeartbeatTimer=null,liveBusy=false;
@@ -54,6 +55,8 @@ function renderCaps(){
   const c=caps(),shared=!!(lastShare&&lastShare.browser_share&&lastShare.chat_message),teamOk=ui.visibilitySelect.value!=='team'||Number(ui.visibilityTeamSelect.value)>0;
   const canRead=c.has('team.chat.read'),canShare=c.has('team.share.create');
   ui.nowTab.disabled=!(state&&state.connected&&c.has('agent.message'));
+  ui.agentTab.disabled=!(state&&state.connected&&c.has('agent.message'));
+  ui.agentSendBtn.disabled=!(state&&state.connected&&c.has('agent.message')&&!agentBusy&&String(ui.agentMessageInput.value||'').trim());
   ui.thisPageTab.disabled=!(state&&state.connected&&(canRead||canShare));
   [ui.followingTab,ui.liveTab,ui.alertsTab,ui.searchTab].forEach(tab=>{tab.disabled=!(state&&state.connected&&canRead);});
   if(ui.quickActionsCard)ui.quickActionsCard.hidden=!(state&&state.connected&&capture&&capture.available);
@@ -85,6 +88,11 @@ function renderCapture(x){
   ui.liveSourceTitle.textContent=capture.title||(capture.available?'Untitled page':'No shareable page');ui.liveSourceHost.textContent=host(capture.source_url)||capture.reason||'';
   ui.alertsSourceTitle.textContent=capture.title||(capture.available?'Untitled page':'No shareable page');ui.alertsSourceHost.textContent=host(capture.source_url)||capture.reason||'';
   ui.searchContextText.textContent=capture&&capture.available?'Context: '+(host(capture.source_url)||'current page'):'No current page context.';
+  if(ui.agentContextLabel)ui.agentContextLabel.textContent=!ui.agentUsePageContext.checked
+    ?'Page context disabled for this turn.'
+    :(capture&&capture.available
+      ?'Temporary context: '+(capture.title||host(capture.source_url)||'current page')
+      :'No current page context.');
   ui.selectedText.value=capture.selected_text||'';ui.selectionCount.textContent=new TextEncoder().encode(ui.selectedText.value).length.toLocaleString()+' / 32,768 bytes';
   const m=capture.media;ui.captureMediaBtn.hidden=!(m&&m.kind&&http(m.source_media_url));if(!ui.captureMediaBtn.hidden)ui.mediaDetectedText.textContent=(m.kind==='youtube_clip'?'YouTube':m.source_media_kind==='audio'?'Audio':'Video')+' at '+sec(m.current_time)+(m.duration?' of '+sec(m.duration):'');
   renderCaps();
@@ -443,12 +451,109 @@ async function cognitiveClick(e){
     if(b.dataset.action==='cognitive_plan_accept'||b.dataset.action==='cognitive_plan_dismiss'){const planId=String(item.key||'').replace(/^plan:/,'');const decision=b.dataset.action==='cognitive_plan_accept'?'accept':'dismiss';await cognitiveAction('plan_decide',{plan_id:planId,decision:decision});await loadNow(true);note(decision==='accept'?'Plan accepted for review.':'Plan dismissed.','success');return;}
   }catch(err){await fail(err);if(err.code==='state_changed')await loadNow(true).catch(()=>{});}
 }
+function agentWorkspaceRequestV2160(action,payload){
+  const request=Object.assign({},payload||{});
+  if(agentWorkspaceAgentId>0)request.agent_id=agentWorkspaceAgentId;
+  return msg('agent_workspace',{action:action,payload:request});
+}
+function agentMessageNodeV2160(message){
+  const role=message&&message.role==='user'?'user':'assistant';
+  const box=el('div','agent-message '+role,message&&message.message||'');
+  const meta=el('span','agent-message-meta',role==='user'?'You':'VP3 Agent');
+  if(message&&message.created_at){const when=date(message.created_at);if(when)meta.textContent+=' · '+when;}
+  box.append(meta);box.dataset.messageId=String(Number(message&&message.id||0));return box;
+}
+function renderAgentMessagesV2160(messages,append){
+  if(!append){ui.agentMessages.replaceChildren();agentLastMessageId=0;}
+  for(const message of Array.isArray(messages)?messages:[]){
+    const id=Number(message&&message.id||0);if(id&&ui.agentMessages.querySelector('[data-message-id="'+id+'"]'))continue;
+    ui.agentMessages.append(agentMessageNodeV2160(message));agentLastMessageId=Math.max(agentLastMessageId,id);
+  }
+  ui.agentEmpty.hidden=ui.agentMessages.children.length>0;
+  if(!ui.agentEmpty.parentNode)ui.agentMessages.prepend(ui.agentEmpty);
+  ui.agentMessages.scrollTop=ui.agentMessages.scrollHeight;
+}
+function renderAgentConversationsV2160(payload){
+  agentConversations=Array.isArray(payload&&payload.conversations)?payload.conversations:[];
+  if(payload&&payload.agent){
+    agentWorkspaceAgentId=Math.max(0,Number(payload.agent.id||0));
+    if(payload.agent.name)ui.agentWorkspaceName.textContent=payload.agent.name;
+  }
+  const current=agentConversationId;
+  ui.agentConversationSelect.replaceChildren(new Option('New chat',''));
+  agentConversations.forEach(row=>ui.agentConversationSelect.append(new Option(row.title||'Chat',String(Number(row.id||0)))));
+  ui.agentConversationSelect.value=current?String(current):'';
+}
+async function loadAgentConversationsV2160(){
+  const payload=await agentWorkspaceRequestV2160('list',{});
+  renderAgentConversationsV2160(payload);return payload;
+}
+async function loadAgentConversationV2160(id){
+  id=Math.max(0,Number(id||0));agentConversationId=id;
+  if(!id){renderAgentMessagesV2160([],false);ui.agentConversationSelect.value='';return;}
+  const payload=await agentWorkspaceRequestV2160('load',{conversation_id:id});
+  if(payload&&payload.agent){
+    agentWorkspaceAgentId=Math.max(0,Number(payload.agent.id||0));
+    if(payload.agent.name)ui.agentWorkspaceName.textContent=payload.agent.name;
+  }
+  renderAgentMessagesV2160(payload&&payload.messages||[],false);ui.agentConversationSelect.value=String(id);
+}
+async function pollAgentMessagesV2160(){
+  if(activeView!=='agent'||!agentConversationId||agentBusy)return;
+  try{
+    const payload=await agentWorkspaceRequestV2160('messages_after',{conversation_id:agentConversationId,after_id:agentLastMessageId});
+    renderAgentMessagesV2160(payload&&payload.messages||[],true);
+  }catch(e){if(e.code==='capability_denied')dropCapability('agent.message');}
+}
+function scheduleAgentPollV2160(){
+  clearInterval(agentPollTimer);agentPollTimer=null;
+  if(activeView==='agent')agentPollTimer=setInterval(()=>pollAgentMessagesV2160(),4000);
+}
+async function refreshAgentWorkspaceV2160(){
+  if(!state||!state.connected||!caps().has('agent.message'))return;
+  const list=await loadAgentConversationsV2160();
+  if(agentConversationId){
+    if(agentConversations.some(row=>Number(row.id)===agentConversationId))await loadAgentConversationV2160(agentConversationId);
+    else await loadAgentConversationV2160(0);
+  }
+  ui.agentWorkspaceStatus.textContent=(list&&list.agent&&list.agent.name?list.agent.name:'VP3 Agent')+' · canonical VP3 Chat history';
+  scheduleAgentPollV2160();
+}
+async function sendAgentMessageV2160(){
+  const message=String(ui.agentMessageInput.value||'').trim();if(!message||agentBusy)return;
+  agentBusy=true;renderCaps();
+  const optimistic=agentMessageNodeV2160({id:0,role:'user',message:message,created_at:new Date().toISOString()});
+  optimistic.dataset.pending='1';ui.agentMessages.append(optimistic);ui.agentEmpty.hidden=true;ui.agentMessages.scrollTop=ui.agentMessages.scrollHeight;
+  ui.agentMessageInput.value='';
+  try{
+    const payload=await agentWorkspaceRequestV2160('send',{
+      conversation_id:agentConversationId,
+      message:message,
+      use_context:Boolean(ui.agentUsePageContext.checked&&capture&&capture.available),
+      capture:capture&&capture.available?capture:null
+    });
+    optimistic.remove();
+    agentConversationId=Number(payload&&payload.conversation_id||0);
+    agentWorkspaceAgentId=Math.max(0,Number(payload&&payload.agent_id||agentWorkspaceAgentId||0));
+    const now=new Date().toISOString();
+    renderAgentMessagesV2160([
+      {id:Number(payload&&payload.user_message_id||0),role:'user',message:message,created_at:now},
+      {id:Number(payload&&payload.assistant_message_id||0),role:'assistant',message:payload&&payload.answer||'',created_at:now}
+    ],true);
+    await loadAgentConversationsV2160();
+    ui.agentConversationSelect.value=String(agentConversationId);
+  }catch(e){
+    optimistic.remove();ui.agentMessageInput.value=message;await fail(e);
+  }finally{agentBusy=false;renderCaps();}
+}
 function setView(v){
-  activeView=v;const now=v==='now',page=v==='this_page',following=v==='following',live=v==='live',alerts=v==='alerts',search=v==='search';
-  ui.nowView.hidden=!now;ui.thisPageView.hidden=!page;ui.followingView.hidden=!following;ui.liveView.hidden=!live;ui.alertsView.hidden=!alerts;ui.searchView.hidden=!search;
-  ui.nowTab.classList.toggle('active',now);ui.thisPageTab.classList.toggle('active',page);ui.followingTab.classList.toggle('active',following);ui.liveTab.classList.toggle('active',live);ui.alertsTab.classList.toggle('active',alerts);ui.searchTab.classList.toggle('active',search);
-  ui.nowTab.setAttribute('aria-selected',String(now));ui.thisPageTab.setAttribute('aria-selected',String(page));ui.followingTab.setAttribute('aria-selected',String(following));ui.liveTab.setAttribute('aria-selected',String(live));ui.alertsTab.setAttribute('aria-selected',String(alerts));ui.searchTab.setAttribute('aria-selected',String(search));
-  if(!now){clearInterval(cognitiveTimer);cognitiveTimer=null;}if(now)loadNow(true).catch(fail);if(page&&caps().has('team.chat.read'))loadThis(true).catch(fail);if(following)loadFollowing(true).catch(fail);if(live)loadLiveRooms().then(pollLiveRoom).catch(fail);if(alerts)loadAlerts().catch(fail);if(search)loadDiscovery().catch(fail);
+  activeView=v;const now=v==='now',agent=v==='agent',page=v==='this_page',following=v==='following',live=v==='live',alerts=v==='alerts',search=v==='search';
+  ui.nowView.hidden=!now;ui.agentView.hidden=!agent;ui.thisPageView.hidden=!page;ui.followingView.hidden=!following;ui.liveView.hidden=!live;ui.alertsView.hidden=!alerts;ui.searchView.hidden=!search;
+  ui.nowTab.classList.toggle('active',now);ui.agentTab.classList.toggle('active',agent);ui.thisPageTab.classList.toggle('active',page);ui.followingTab.classList.toggle('active',following);ui.liveTab.classList.toggle('active',live);ui.alertsTab.classList.toggle('active',alerts);ui.searchTab.classList.toggle('active',search);
+  ui.nowTab.setAttribute('aria-selected',String(now));ui.agentTab.setAttribute('aria-selected',String(agent));ui.thisPageTab.setAttribute('aria-selected',String(page));ui.followingTab.setAttribute('aria-selected',String(following));ui.liveTab.setAttribute('aria-selected',String(live));ui.alertsTab.setAttribute('aria-selected',String(alerts));ui.searchTab.setAttribute('aria-selected',String(search));
+  if(!now){clearInterval(cognitiveTimer);cognitiveTimer=null;}if(now)loadNow(true).catch(fail);
+  if(!agent){clearInterval(agentPollTimer);agentPollTimer=null;}if(agent)refreshAgentWorkspaceV2160().catch(fail);
+  if(page&&caps().has('team.chat.read'))loadThis(true).catch(fail);if(following)loadFollowing(true).catch(fail);if(live)loadLiveRooms().then(pollLiveRoom).catch(fail);if(alerts)loadAlerts().catch(fail);if(search)loadDiscovery().catch(fail);
 }
 function sourceHead(feed){currentSource=(feed&&feed.source)||null;ui.sourceMeta.hidden=!(capture&&capture.available);ui.sourceStatus.textContent=currentSource&&currentSource.id?'Recognized source':'New source';ui.followCurrentSourceBtn.textContent=currentSource&&currentSource.following?'Unfollow source':'Follow source';ui.openSourcePageBtn.hidden=!(currentSource&&currentSource.page_url);renderCaps();}
 function el(tag,cls,text){const x=document.createElement(tag);if(cls)x.className=cls;x.textContent=String(text||'');return x;}
@@ -528,11 +633,15 @@ async function refreshState(){
       renderCapture(x.pending_capture);await message('clear_pending_capture').catch(()=>{});
     }else await refreshCapture(false);
     const c=caps();
-    if(activeView==='now'&&!c.has('agent.message')&&(c.has('team.chat.read')||c.has('team.share.create')))setView('this_page');
+    if(['now','agent'].includes(activeView)&&!c.has('agent.message')){
+      if(c.has('team.chat.read')||c.has('team.share.create'))setView('this_page');
+      else if(c.has('notifications.read'))setView('alerts');
+    }
     if(c.has('team.destinations.read'))await loadDestinations();else{destinations={recent:[],teams:[],conversations:[]};renderAccountTeams();}
     if(c.has('team.chat.read')&&activeView==='this_page')await loadThis(true);
     if(pendingQuick)await applyPendingQuickActionV2150(pendingQuick);
     else if(c.has('agent.message')&&activeView==='now')await loadNow(true);
+    else if(c.has('agent.message')&&activeView==='agent')await refreshAgentWorkspaceV2160();
   }
 }
 function clip(changed){if(!mediaReference)return;const d=Math.max(0,Number(mediaReference.metadata.duration_seconds||0));let s=Math.max(0,Number(ui.mediaStart.value||0)),e=Math.max(s,Number(ui.mediaEnd.value||s));if(d){s=Math.min(s,d);e=Math.min(e,d);}if(e-s>MAX_CLIP){if(changed==='start')s=Math.max(0,e-MAX_CLIP);else e=s+MAX_CLIP;}mediaReference.metadata.start_seconds=Number(s.toFixed(3));mediaReference.metadata.end_seconds=Number(e.toFixed(3));ui.mediaStart.value=s;ui.mediaEnd.value=e;ui.mediaClipHint.textContent='Clip '+sec(s)+'–'+sec(e)+' · '+(e-s).toFixed(1)+'s · source timestamps only · maximum 90s.';}
@@ -569,7 +678,20 @@ ui.accountOptionsBtn.onclick=()=>chrome.runtime.openOptionsPage();
 ui.openVp3Btn.onclick=()=>msg('open_url',{url:absolute('/')}).catch(fail);
 ui.refreshAccountBtn.onclick=async()=>{busy(ui.refreshAccountBtn,true,'Refreshing…');try{await refreshState();note('VP3 account refreshed.','success');}catch(e){await fail(e);}finally{busy(ui.refreshAccountBtn,false);}};
 ui.refreshNowBtn.onclick=()=>loadNow(true).catch(fail);ui.openAgentChatBtn.onclick=()=>{if(contextAgentPayload)return openContextAgent('Review this page with me. Start with what is most relevant to my current VP3 work.').catch(fail);return msg('open_url',{url:absolute(cognitiveData&&cognitiveData.agent_url||'/chat.php')}).catch(fail);};ui.restoreNowBtn.onclick=async()=>{try{await cognitiveAction('restore_all',{});await loadNow(true);note('Hidden Agent items restored.','success');}catch(e){await fail(e);}};ui.toggleNowContextBtn.onclick=()=>{nowContextIgnored=!nowContextIgnored;loadNow(true).catch(fail);};ui.nowContextActions.onclick=contextSuggestionClick;ui.nowRelationshipList.onclick=contextSuggestionClick;ui.nowFeed.onclick=cognitiveClick;
-ui.nowTab.onclick=()=>setView('now');ui.thisPageTab.onclick=()=>setView('this_page');ui.followingTab.onclick=()=>setView('following');ui.liveTab.onclick=()=>setView('live');ui.alertsTab.onclick=()=>setView('alerts');ui.searchTab.onclick=()=>setView('search');ui.refreshCaptureBtn.onclick=()=>refreshCapture(true).catch(fail);ui.refreshFollowingBtn.onclick=()=>loadFollowing(true).catch(fail);ui.refreshLiveBtn.onclick=()=>loadLiveRooms().catch(fail);ui.refreshAlertsBtn.onclick=()=>loadAlerts().catch(fail);
+ui.nowTab.onclick=()=>setView('now');ui.agentTab.onclick=()=>setView('agent');ui.thisPageTab.onclick=()=>setView('this_page');ui.followingTab.onclick=()=>setView('following');ui.liveTab.onclick=()=>setView('live');ui.alertsTab.onclick=()=>setView('alerts');ui.searchTab.onclick=()=>setView('search');ui.refreshCaptureBtn.onclick=()=>refreshCapture(true).catch(fail);ui.refreshFollowingBtn.onclick=()=>loadFollowing(true).catch(fail);ui.refreshLiveBtn.onclick=()=>loadLiveRooms().catch(fail);ui.refreshAlertsBtn.onclick=()=>loadAlerts().catch(fail);
+ui.agentRefreshBtn.onclick=()=>refreshAgentWorkspaceV2160().catch(fail);
+ui.agentConversationSelect.onchange=()=>loadAgentConversationV2160(Number(ui.agentConversationSelect.value||0)).catch(fail);
+ui.agentNewChatBtn.onclick=()=>loadAgentConversationV2160(0).catch(fail);
+ui.agentOpenFullBtn.onclick=()=>{
+  const params=new URLSearchParams();
+  params.set('agent',agentWorkspaceAgentId>0?String(agentWorkspaceAgentId):'system');
+  if(agentConversationId>0)params.set('conversation_id',String(agentConversationId));
+  msg('open_url',{url:absolute('/chat.php?'+params.toString())});
+};
+ui.agentSendBtn.onclick=()=>sendAgentMessageV2160().catch(fail);
+ui.agentMessageInput.oninput=renderCaps;
+ui.agentMessageInput.onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendAgentMessageV2160().catch(fail);}};
+ui.agentUsePageContext.onchange=()=>{ui.agentContextLabel.textContent=ui.agentUsePageContext.checked?(capture&&capture.available?'Temporary context: '+(capture.title||host(capture.source_url)||'current page'):'No current page context.'):'Page context disabled for this turn.';};
 ui.visibilitySelect.onchange=()=>{ui.visibilityTeamField.hidden=ui.visibilitySelect.value!=='team';renderCaps();};ui.visibilityTeamSelect.onchange=renderCaps;ui.destinationSelect.onchange=renderCaps;
 ui.liveScope.onchange=()=>{ui.liveTeamField.hidden=ui.liveScope.value!=='team';renderCaps();};ui.liveTeamSelect.onchange=renderCaps;
 ui.claimVisibility.onchange=()=>{ui.claimTeamField.hidden=ui.claimVisibility.value!=='team';renderCaps();};
@@ -621,7 +743,7 @@ ui.liveMessageInput.onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefa
 ui.liveMessages.onclick=async e=>{const b=e.target.closest('button[data-action="live_report"]');if(!b)return;const reason=prompt('Why are you reporting this Live message?');if(!reason)return;try{await trustAction('report_create',{target_type:'live_message',target_id:b.dataset.messageId,reason:reason,detail:''});note('Report submitted.','success');}catch(err){await fail(err);}};
 ui.thisPageFeed.onclick=feedClick;ui.followingFeed.onclick=feedClick;ui.loadMoreThisPageBtn.onclick=()=>loadThis(false).catch(fail);ui.loadMoreFollowingBtn.onclick=()=>loadFollowing(false).catch(fail);
 const io=new IntersectionObserver(es=>es.forEach(e=>{if(!e.isIntersecting||e.target.hidden)return;if(e.target===ui.loadMoreThisPageBtn)loadThis(false).catch(fail);if(e.target===ui.loadMoreFollowingBtn)loadFollowing(false).catch(fail);}),{rootMargin:'120px'});io.observe(ui.loadMoreThisPageBtn);io.observe(ui.loadMoreFollowingBtn);
-function pageWatch(){clearInterval(pageTimer);let identity=(capture&&capture.source_url||'')+'\n'+(capture&&capture.title||'');pageTimer=setInterval(async()=>{if(!state||!state.connected||!['now','this_page','live','alerts','search'].includes(activeView))return;try{const x=await msg('tab_identity'),next=(x.source_url||'')+'\n'+(x.title||'');if(x.source_url&&next!==identity){identity=next;nowContextIgnored=false;await refreshCapture(activeView==='this_page');if(activeView==='now')await loadNow(true);if(activeView==='live'){liveRoom=null;liveCursor=0;ui.liveRoomPanel.hidden=true;await loadLiveRooms();}if(activeView==='alerts')await loadAlerts();if(activeView==='search')await loadDiscovery();}}catch(e){}},2000);}
+function pageWatch(){clearInterval(pageTimer);let identity=(capture&&capture.source_url||'')+'\n'+(capture&&capture.title||'');pageTimer=setInterval(async()=>{if(!state||!state.connected||!['now','agent','this_page','live','alerts','search'].includes(activeView))return;try{const x=await msg('tab_identity'),next=(x.source_url||'')+'\n'+(x.title||'');if(x.source_url&&next!==identity){identity=next;nowContextIgnored=false;await refreshCapture(activeView==='this_page');if(activeView==='now')await loadNow(true);if(activeView==='agent'&&ui.agentUsePageContext.checked)ui.agentContextLabel.textContent='Temporary context: '+(capture.title||host(capture.source_url)||'current page');if(activeView==='live'){liveRoom=null;liveCursor=0;ui.liveRoomPanel.hidden=true;await loadLiveRooms();}if(activeView==='alerts')await loadAlerts();if(activeView==='search')await loadDiscovery();}}catch(e){}},2000);}
 window.addEventListener('focus',()=>{if(state&&state.connected)refreshState().catch(()=>{});});
-window.onbeforeunload=()=>{clearInterval(pageTimer);clearInterval(livePollTimer);clearInterval(liveHeartbeatTimer);clearInterval(cognitiveTimer);stream&&stream.getTracks().forEach(t=>t.stop());};
+window.onbeforeunload=()=>{clearInterval(pageTimer);clearInterval(livePollTimer);clearInterval(liveHeartbeatTimer);clearInterval(cognitiveTimer);clearInterval(agentPollTimer);stream&&stream.getTracks().forEach(t=>t.stop());};
 refreshState().then(pageWatch).catch(fail);

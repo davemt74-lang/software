@@ -14,7 +14,7 @@ const extensionApi=read('api/extension-cognitive-now-v2120.php');
 const chat=read('chat.php');
 const chatJs=read('chat.js');
 const chatContext=read('chat-browser-context-v2130.js');
-const chatApi=read('api/chat-v236.php');
+const chatApi=[read('api/chat-v236.php'),read('includes/agent-chat-runtime-v2160.php')].join('\n');
 const agentSurface=read('includes/agent-surface-context-v131.php');
 
 const versionParts=String(manifest.version||'').split('.').map(Number);
@@ -85,7 +85,8 @@ must(panel.includes("const payload=await msg('context_now',{capture:capture})"),
 must(panel.includes("ui.openAgentChatBtn.textContent='Ask Agent about this page'"),'Ask Agent page action missing');
 must(panel.includes("contextSuggestions.forEach"),'contextual suggestion renderer missing');
 must(panel.includes("nowContextIgnored=!nowContextIgnored"),'Use/Ignore page control missing');
-must(panel.includes("['now','this_page','live','alerts','search']"),'active page watcher must include Now');
+must(panel.includes("['now','this_page','live','alerts','search']")||panel.includes("['now','agent','this_page','live','alerts','search']"),
+  'active page watcher must include Now');
 must(panel.includes("if(activeView==='now')await loadNow(true)"),'active-tab changes must refresh page-aware Now');
 must(panel.includes("next=(x.source_url||'')+'\\n'+(x.title||'')"),
   'SPA-style title changes must invalidate current page context');

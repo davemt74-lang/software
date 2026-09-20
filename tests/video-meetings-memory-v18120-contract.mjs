@@ -11,7 +11,7 @@ const api=read('api/video-meeting-memory.php');
 const ui=read('video-meetings-memory-v18120.js');
 const bridge=read('video-meetings-intelligence-v1820.js');
 const meeting=read('meeting.php');
-const chat=read('api/chat-v236.php');
+const chat=[read('api/chat-v236.php'),read('includes/agent-chat-runtime-v2160.php')].join('\n');
 
 // Phase 18.12 reuses canonical meeting artifacts and adds no parallel schema.
 assert.ok(master.includes("VP3_VIDEO_MEETINGS_MEMORY_APP_V18120='meeting_memory_v18120'"));

@@ -34,3 +34,17 @@
 .quick-action-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}
 .quick-action-grid button{min-width:0;padding:8px 9px;font-size:10px}
 @media(max-width:360px){.quick-action-grid{grid-template-columns:1fr}}
+
+.agent-workspace-head,.agent-workspace-card{display:grid;gap:10px}
+.agent-conversation-controls{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:6px}
+.agent-conversation-controls select,.agent-conversation-controls button{min-width:0}
+.agent-context-toggle{display:flex;align-items:center;gap:7px;font-size:10px}
+.agent-context-toggle input{width:auto}
+.agent-messages{display:flex;flex-direction:column;gap:8px;min-height:220px;max-height:52vh;overflow:auto;padding:2px}
+.agent-message{max-width:92%;padding:9px 10px;border:1px solid var(--line);border-radius:12px;font-size:11px;line-height:1.45;white-space:pre-wrap;overflow-wrap:anywhere}
+.agent-message.user{align-self:flex-end;background:#111;color:#fff;border-color:#111}
+.agent-message.assistant{align-self:flex-start;background:#fff}
+.agent-message-meta{display:block;margin-top:4px;font-size:8px;opacity:.6}
+.agent-compose{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:7px;align-items:end}
+.agent-compose textarea{resize:vertical;min-height:62px}
+@media(max-width:390px){.agent-conversation-controls{grid-template-columns:1fr 1fr}.agent-conversation-controls select{grid-column:1/-1}.agent-compose{grid-template-columns:1fr}.agent-compose button{width:100%}}

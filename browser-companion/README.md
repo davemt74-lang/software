@@ -1,6 +1,18 @@
-# VP3 Browser Companion v21.50
+# VP3 Browser Companion v21.60
 
 Chrome Manifest V3 companion for VP3 Browser Share and the Source Feed layer: This Page, Following, source/user follows, comments, read state, Private/Team/Public publishing, plus highlighted text, screenshot regions, source-media moments, and voice commentary.
+
+## v21.60 Browser Agent Workspace
+
+Browser Companion now includes an inline **Agent** workspace backed by the same canonical VP3 Agent Chat conversations and send runtime used on the website.
+
+The web `/api/chat-v236.php` send path and the durable-token Browser adapter both delegate to `vp3_agent_chat_send_v2160()`. Tools, calendar/meeting awareness, Knowledge retrieval, HomeServer/cloud routing, AI usage accounting, Cognitive cards, sources, media authorization, and assistant-message persistence therefore have one implementation.
+
+Chrome stores no conversation database or Agent memory. The selected conversation ID exists only in sidepanel page memory; conversation lists, message history, new messages, and cross-surface updates are read from VP3. A four-second poll while the Agent tab is visible pulls only messages newer than the last canonical message ID.
+
+**Use current page as temporary context** attaches the bounded v21.30 Browser context to that single turn. VP3 revalidates the page and relationships on the server, and the full Browser context remains excluded from persisted Agent message metadata.
+
+The Browser Agent endpoint uses the durable device token, live `agent.message`, and live `chat.access` authorization on every request. It does not accept CSRF/session credentials from Chrome and does not create a separate Agent identity.
 
 ## v21.50 Contextual Quick Actions
 

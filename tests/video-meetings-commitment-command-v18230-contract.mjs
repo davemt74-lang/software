@@ -4,7 +4,7 @@ import fs from 'node:fs';
 const read=p=>fs.readFileSync(p,'utf8');
 const core=read('includes/video-meetings-commitment-command-v18230.php');
 const adapter=read('includes/video-meetings-commitment-command-v18230-chat.php');
-const chat=read('api/chat-v236.php');
+const chat=[read('api/chat-v236.php'),read('includes/agent-chat-runtime-v2160.php')].join('\n');
 
 assert.ok(core.includes("VP3_VIDEO_MEETINGS_COMMITMENT_COMMAND_V18230='video-meetings-commitment-command-v18230-20260917'"),'18.23 version marker missing');
 assert.ok(core.includes('video_meeting_commitment_command_query_relevant_v18230'),'commitment-oriented Agent queries must be recognized');

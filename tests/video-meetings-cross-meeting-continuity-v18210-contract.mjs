@@ -9,7 +9,7 @@ const prepApi=read('api/video-meeting-automation.php');
 const ui=read('video-meetings-cross-meeting-continuity-v18210.js');
 const verificationUi=read('video-meetings-followthrough-verification-v18200.js');
 const memory=read('includes/video-meetings-memory-v18120-part3.php');
-const chat=read('api/chat-v236.php');
+const chat=[read('api/chat-v236.php'),read('includes/agent-chat-runtime-v2160.php')].join('\n');
 const upgrade=read('upgrade.php');
 
 assert.ok(core.includes("VP3_VIDEO_MEETINGS_CONTINUITY_V18210='video-meetings-cross-meeting-continuity-v18210-20260917'"));

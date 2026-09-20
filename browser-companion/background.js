@@ -1,6 +1,6 @@
 const VP3_DEFAULT_BASE = 'https://vp3.me';
 const VP3_CONTRACT_VERSION = '1';
-const VP3_EXTENSION_VERSION = '21.5.0';
+const VP3_EXTENSION_VERSION = '21.6.0';
 const VP3_MEDIA_CLIP_MAX_SECONDS = 90;
 
 const storage = {
@@ -646,6 +646,45 @@ function browserContextPayload(capture) {
   };
 }
 
+function browserAgentContextV2160(capture) {
+  const page = browserContextPayload(capture);
+  if (!page.source_url) return null;
+  return {
+    browser_context:{
+      contract:'browser-context-v2130',
+      ephemeral:true,
+      page:{
+        url:page.source_url,
+        canonical_url:page.canonical_url,
+        title:page.title,
+        selected_text:page.selected_text,
+        metadata:page.metadata,
+        media:page.media
+      },
+      relationships:[],
+      prompt:''
+    }
+  };
+}
+
+async function agentWorkspaceV2160(action, payload = {}) {
+  const request = { action:String(action || 'list'), ...payload };
+  if (request.use_context) {
+    const capture = request.capture || await activeCapture();
+    delete request.capture;
+    delete request.use_context;
+    const agentContext = browserAgentContextV2160(capture);
+    if (agentContext) request.agent_context = agentContext;
+  } else {
+    delete request.capture;
+    delete request.use_context;
+  }
+  return authorizedFetch('/api/extension-agent-chat-v2160.php', {
+    method:'POST',
+    json:request
+  }, 'agent.message');
+}
+
 async function contextualNow(capture, prompt = '') {
   return authorizedFetch('/api/extension-cognitive-now-v2120.php', {
     method:'POST',
@@ -1178,6 +1217,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       case 'cognitive_action': return cognitiveAction(message.action, message.payload || {});
       case 'context_now': return contextualNow(message.capture || await activeCapture(), message.prompt || '');
       case 'context_handoff': return contextHandoff(message.payload || null, message.prompt || '');
+      case 'agent_workspace': return agentWorkspaceV2160(message.action, message.payload || {});
       case 'notification_poll': return pollProactiveNotifications();
       case 'quick_action_consume': return consumeQuickActionV2150();
       case 'quick_action_run': {

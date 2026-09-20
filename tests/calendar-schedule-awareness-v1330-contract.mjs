@@ -8,7 +8,7 @@ const bootstrap = read('includes/bootstrap.php');
 const proactive = read('includes/agent-proactive-operations-v036.php');
 const proactivePipeline = read('includes/agent-proactive-v123.php');
 const cognitive = read('includes/agent-cognitive-loop-v310.php');
-const chat = read('api/chat-v236.php');
+const chat = [read('api/chat-v236.php'),read('includes/agent-chat-runtime-v2160.php')].join('\n');
 
 assert.match(awareness, /user_calendar_events_v1300\(\$pdo,\$user,/,
   'awareness must project from the canonical User Calendar instead of duplicating booking/event reads');
@@ -51,7 +51,7 @@ assert.match(chat, /calendar_schedule_awareness_snapshot_v1330\(\$pdo,\$user\)/,
   'chat must derive a fresh owner-scoped schedule snapshot');
 assert.match(chat, /\$agentContext\['calendar_awareness'\]=\$calendarAwareness/,
   'HomeServer Agent context must receive the structured server-derived awareness snapshot');
-assert.match(chat, /chat_v236_calendar_context_events\(\$calendarAwareness\)/,
+assert.match(chat, /(?:chat_v236_calendar_context_events|vp3_agent_chat_runtime_calendar_events_v2160)\(\$calendarAwareness\)/,
   'Cloud Agent context must receive sanitized schedule events through the existing surface context');
 assert.match(chat, /array_merge\(\$calendarContextEvents,\$clientEvents\)/,
   'server-derived schedule events must be placed before client-supplied surface events');

@@ -14,7 +14,7 @@ const chatPage=read('chat.php');
 const presentation=read('includes/cognitive-presentation-v510.php');
 const presentationJs=read('chat-cognitive-presentation-v510.js');
 const bootstrap=read('includes/bootstrap.php');
-const chatApi=read('api/chat-v236.php');
+const chatApi=[read('api/chat-v236.php'),read('includes/agent-chat-runtime-v2160.php')].join('\n');
 const fallbackChatApi=read('api/chat.php');
 
 assert.match(cards,/VP3_COGNITIVE_CARDS_V520='vp3-cognitive-cards-v520-20260918'/);
