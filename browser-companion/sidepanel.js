@@ -509,9 +509,9 @@ async function refreshAgentWorkspaceV2160(){
 }
 async function sendAgentMessageV2160(){
   const message=String(ui.agentMessageInput.value||'').trim();if(!message||agentBusy)return;
-  agentBusy=true;renderCaps();const tempId='temp-'+Date.now();
-  const optimistic={id:tempId,role:'user',message:message,created_at:new Date().toISOString()};
-  ui.agentMessages.append(agentMessageNodeV2160(optimistic));ui.agentEmpty.hidden=true;ui.agentMessages.scrollTop=ui.agentMessages.scrollHeight;
+  agentBusy=true;renderCaps();
+  const optimistic=agentMessageNodeV2160({id:0,role:'user',message:message,created_at:new Date().toISOString()});
+  optimistic.dataset.pending='1';ui.agentMessages.append(optimistic);ui.agentEmpty.hidden=true;ui.agentMessages.scrollTop=ui.agentMessages.scrollHeight;
   ui.agentMessageInput.value='';
   try{
     const payload=await agentWorkspaceRequestV2160('send',{
@@ -520,7 +520,7 @@ async function sendAgentMessageV2160(){
       use_context:Boolean(ui.agentUsePageContext.checked&&capture&&capture.available),
       capture:capture&&capture.available?capture:null
     });
-    ui.agentMessages.querySelector('[data-message-id="'+tempId+'"]')?.remove();
+    optimistic.remove();
     agentConversationId=Number(payload&&payload.conversation_id||0);
     const now=new Date().toISOString();
     renderAgentMessagesV2160([
@@ -530,7 +530,7 @@ async function sendAgentMessageV2160(){
     await loadAgentConversationsV2160();
     ui.agentConversationSelect.value=String(agentConversationId);
   }catch(e){
-    ui.agentMessages.querySelector('[data-message-id="'+tempId+'"]')?.remove();ui.agentMessageInput.value=message;await fail(e);
+    optimistic.remove();ui.agentMessageInput.value=message;await fail(e);
   }finally{agentBusy=false;renderCaps();}
 }
 function setView(v){
