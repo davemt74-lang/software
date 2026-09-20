@@ -1979,3 +1979,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   run().then(value => sendResponse({ ok: true, value })).catch(error => sendResponse({ ok: false, error: error.message, code: error.code || '' }));
   return true;
 });
+chrome.tabs.onUpdated.addListener((tabId,changeInfo,tab)=>{
+  browserMultiSiteGuardTabV2220(tabId,changeInfo,tab);
+});
+chrome.tabs.onRemoved.addListener(tabId=>{
+  browserMultiSiteReleaseTabV2220(tabId).catch(()=>{});
+});
+chrome.tabs.onCreated.addListener(tab=>{
+  const opener=Number(tab&&tab.openerTabId||0);
+  if(!opener||!runtimeMultiSiteTabsV2220.has(opener)||!runtimeMultiSiteContextV2220)return;
+  const openerRow=runtimeMultiSiteTabsV2220.get(opener);
+  runtimeMultiSiteTabKeyV2220(tab.id,true,openerRow&&openerRow.domain||'');
+});
+if(chrome.downloads&&chrome.downloads.onCreated){
+  chrome.downloads.onCreated.addListener(item=>{
+    browserMultiSiteRecordDownloadV2220(item).catch(()=>{});
+  });
+}
