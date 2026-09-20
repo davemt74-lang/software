@@ -15,7 +15,7 @@ const upgrade=read('upgrade.php');
 
 const versionParts=String(manifest.version||'').split('.').map(Number);
 must(versionParts.length===3&&(versionParts[0]>21||(versionParts[0]===21&&versionParts[1]>=2)),'v21.20+ manifest version missing');
-must(/const VP3_EXTENSION_VERSION = '21\.(?:[2-9]|[1-9]\d+)\.\d+';/.test(background),'v21.20+ request version missing');
+must(background.includes(`const VP3_EXTENSION_VERSION = '${manifest.version}';`),'retained Browser Companion request version must match the manifest');
 must(background.includes("'/api/extension-cognitive-now-v2120.php'"),'Cognitive Now extension endpoint missing');
 must(background.includes("case 'cognitive_now': return cognitiveNow();"),'Cognitive Now state bridge missing');
 must(background.includes("case 'cognitive_action': return cognitiveAction("),'Cognitive Now action bridge missing');
