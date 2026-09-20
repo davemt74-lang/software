@@ -14,7 +14,7 @@ const extensionApi=read('api/extension-cognitive-now-v2120.php');
 const chat=read('chat.php');
 const chatJs=read('chat.js');
 const chatContext=read('chat-browser-context-v2130.js');
-const chatApi=read('api/chat-v236.php');
+const chatApi=[read('api/chat-v236.php'),read('includes/agent-chat-runtime-v2160.php')].join('\n');
 const agentSurface=read('includes/agent-surface-context-v131.php');
 
 const versionParts=String(manifest.version||'').split('.').map(Number);
