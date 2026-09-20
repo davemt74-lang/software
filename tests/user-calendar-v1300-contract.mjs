@@ -5,7 +5,7 @@ const read = p => fs.readFileSync(p, 'utf8');
 const service = read('includes/user-calendar-v1300.php');
 const agent = read('includes/user-calendar-agent-v1300.php');
 const api = read('api/user-calendar-v1300.php');
-const chat = read('api/chat-v236.php');
+const chat = [read('api/chat-v236.php'),read('includes/agent-chat-runtime-v2160.php')].join('\n');
 const calendarSync = read('includes/agent-calendar-sync-v500.php');
 const calendar = read('calendar.php');
 const calendarCss = read('calendar-v1300.css');
