@@ -3,7 +3,7 @@ import fs from 'node:fs';
 
 const context = fs.readFileSync('agent-context-v131.js', 'utf8');
 const scopeApi = fs.readFileSync('api/knowledge-scopes-v162.php', 'utf8');
-const chat = fs.readFileSync('api/chat-v236.php', 'utf8');
+const chat = [fs.readFileSync('api/chat-v236.php', 'utf8'),fs.readFileSync('includes/agent-chat-runtime-v2160.php', 'utf8')].join('\n');
 const stream = fs.readFileSync('api/chat-stream-v121.php', 'utf8');
 
 assert.match(context, /chatKnowledgeScopeV162/, 'Agent Chat renders a first-class Knowledge scope selector');
