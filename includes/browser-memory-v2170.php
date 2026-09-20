@@ -58,7 +58,7 @@ function vp3_browser_memory_uuid_v2170(): string
 function vp3_browser_memory_target_type_v2170(mixed $value): string
 {
     $type=vp3_cognitive_id_v500($value,40);
-    return in_array($type,['browser_source','research_project','knowledge_item','public_profile','crm_contact'],true)?$type:'';
+    return in_array($type,['browser_source','research_project','knowledge_item','meeting','public_profile','crm_contact'],true)?$type:'';
 }
 
 function vp3_browser_memory_target_id_v2170(mixed $value): string
@@ -148,6 +148,30 @@ function vp3_browser_memory_target_v2170(PDO $pdo,array $user,string $type,strin
         ];
     }
 
+    if($type==='meeting'){
+        if(!ctype_digit($id))return null;
+        try{
+            $ref=vp3_cognitive_object_ref_v500('meeting',$id,'personal',['provenance'=>'browser_memory_v2170']);
+            if(!vp3_cognitive_authorize_ref_v500($pdo,$user,'system',$ref,'read')){
+                // The actual Agent namespace is checked again through the
+                // Browser Memory wrapper; this first pass only rejects objects
+                // outside the user's canonical meeting permission boundary.
+                return null;
+            }
+            $resolved=vp3_cognitive_context_for_ref_v500($pdo,$user,'system',$ref,['browser_memory'=>true]);
+            $ctx=is_array($resolved['context']??null)?$resolved['context']:[];
+            $meeting=is_array($ctx['meeting']??null)?$ctx['meeting']:$ctx;
+            $title=vp3_cognitive_text_v500($meeting['title']??$meeting['name']??'Meeting',190);
+            $when=vp3_cognitive_text_v500($meeting['start_at']??$meeting['start_at_utc']??$meeting['scheduled_at']??'',120);
+            return [
+                'type'=>$type,'id'=>$id,'scope'=>'personal',
+                'title'=>$title!==''?$title:'Meeting',
+                'detail'=>$when!==''?'Upcoming meeting · '.$when:'Authorized VP3 meeting',
+                'url'=>'/calendar.php',
+            ];
+        }catch(Throwable $e){return null;}
+    }
+
     if($type==='public_profile'){
         if(!table_exists('user_profiles')||!table_exists('users')||!ctype_digit($id))return null;
         $stmt=$pdo->prepare("SELECT p.user_id,p.username,p.bio,p.website_url,u.display_name
@@ -220,6 +244,8 @@ function vp3_browser_memory_candidates_v2170(PDO $pdo,array $user,string $namesp
         if(is_array($row)&&!empty($row['id']))$refs[]=['research_project',(string)$row['id']];
     foreach(array_slice((array)($relations['knowledge']??[]),0,6) as $row)
         if(is_array($row)&&!empty($row['id']))$refs[]=['knowledge_item',(string)$row['id']];
+    foreach(array_slice((array)($relations['calendar']??[]),0,4) as $row)
+        if(is_array($row)&&(string)($row['type']??'')==='meeting'&&!empty($row['id']))$refs[]=['meeting',(string)$row['id']];
     foreach(array_slice((array)($relations['profiles']??[]),0,4) as $row)
         if(is_array($row)&&!empty($row['id']))$refs[]=['public_profile',(string)$row['id']];
     foreach(array_slice((array)($relations['contacts']??[]),0,4) as $row)
