@@ -29,3 +29,8 @@
 @media(max-width:360px){.now-context-strip{align-items:flex-start}.now-context-copy span{white-space:normal}.now-relationship-row{align-items:flex-start}}
 
 .now-context-insight{padding:8px 9px;border-radius:9px;background:#f5f7fa;color:#334155;font-size:10px;line-height:1.4}
+
+.quick-actions-card{display:grid;gap:10px}
+.quick-action-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}
+.quick-action-grid button{min-width:0;padding:8px 9px;font-size:10px}
+@media(max-width:360px){.quick-action-grid{grid-template-columns:1fr}}
