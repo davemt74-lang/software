@@ -50,7 +50,7 @@
       <nav class="feed-tabs" aria-label="Browser Companion views">
         <button id="nowTab" class="feed-tab active" type="button" aria-selected="true">Now</button>
         <button id="agentTab" class="feed-tab" type="button" aria-selected="false">Agent</button>
-        <button id="delegationTab" class="feed-tab" type="button" aria-selected="false">Delegate</button>
+        <button id="delegationTab" class="feed-tab" type="button" aria-selected="false">Runtime</button>
         <button id="executionTab" class="feed-tab" type="button" aria-selected="false">Execute</button>
         <button id="memoryTab" class="feed-tab" type="button" aria-selected="false">Memory</button>
         <button id="thisPageTab" class="feed-tab" type="button" aria-selected="false">This Page</button>
@@ -143,20 +143,20 @@
         <section class="card delegation-head">
           <div class="row-between">
             <div>
-              <div class="eyebrow">Delegated Browser Workflows</div>
+              <div class="eyebrow">Browser Agent Runtime</div>
               <strong id="delegationAgentName">VP3 Agent</strong>
-              <div id="delegationStatus" class="page-host">Intent → Plan → Delegate → Execute → Verify</div>
+              <div id="delegationStatus" class="page-host">Goal → Plan → Runtime → Observe → Act → Verify</div>
             </div>
             <button id="delegationRefreshBtn" class="text-btn" type="button">Refresh</button>
           </div>
           <div class="delegation-boundary">
-            <strong>Bounded authority, not permanent autonomy.</strong>
-            <span>The Agent may continue only inside the plan you approve. Step count, actions, domains, risk and expiration are enforced server-side. Consequential writes still stop at a checkpoint.</span>
+            <strong>Reusable runtime, bounded authority.</strong>
+            <span>v22.00 runs reusable Browser skills inside the v21.90 delegation you approve. Live permissions and VP3 targets are rechecked per step; observations expire with the job and consequential writes still stop at a checkpoint.</span>
           </div>
         </section>
 
         <section class="card delegation-card">
-          <div class="eyebrow">New delegation</div>
+          <div class="eyebrow">Delegate a job</div>
           <label class="field">
             <span>What should the Agent do?</span>
             <textarea id="delegationInstruction" rows="4" maxlength="2000" placeholder="Example: Review this source, open the related research, and prepare a follow-up task for my approval."></textarea>
@@ -182,7 +182,7 @@
           </div>
           <div class="delegation-form-actions">
             <button id="delegationPreviewBtn" type="button">Preview plan</button>
-            <button id="delegationStartBtn" class="primary" type="button" disabled>Start delegation</button>
+            <button id="delegationStartBtn" class="primary" type="button" disabled>Start runtime</button>
           </div>
           <div id="delegationPlan" class="delegation-plan" hidden></div>
         </section>
@@ -203,6 +203,37 @@
             <button id="delegationCancelBtn" class="danger-text" type="button">Cancel</button>
             <button id="delegationOpenWorkflowBtn" type="button">Open VP3 Workflow</button>
           </div>
+          <section id="runtimePanel" class="runtime-panel" hidden>
+            <div class="row-between">
+              <div>
+                <div class="eyebrow">Runtime session</div>
+                <strong id="runtimeSessionBadge">Not attached</strong>
+              </div>
+              <span id="runtimePlanRevision" class="pill">r1</span>
+            </div>
+            <div class="runtime-status-grid">
+              <div><small>Current skill</small><strong id="runtimeCurrentSkill">Waiting</strong></div>
+              <div><small>Recovery</small><strong id="runtimeRecovery">Clear</strong></div>
+              <div><small>Observations</small><strong id="runtimeObservationCount">0</strong></div>
+              <div><small>Verified</small><strong id="runtimeLastVerified">—</strong></div>
+            </div>
+            <div class="delegation-controls runtime-controls">
+              <button id="runtimeReplanBtn" type="button">Replan</button>
+              <button id="runtimeSkipBtn" type="button">Skip step</button>
+            </div>
+            <div class="runtime-columns">
+              <div>
+                <div class="runtime-subhead"><strong>Timeline</strong><span>Observe → Act → Verify</span></div>
+                <div id="runtimeTimeline" class="runtime-timeline"></div>
+                <div id="runtimeTimelineEmpty" class="empty-state">No runtime events yet.</div>
+              </div>
+              <div>
+                <div class="runtime-subhead"><strong>Tabs</strong><span>Reference-only</span></div>
+                <div id="runtimeTabs" class="runtime-tabs"></div>
+                <div id="runtimeTabsEmpty" class="empty-state">No runtime-opened VP3 tabs yet.</div>
+              </div>
+            </div>
+          </section>
           <div id="delegationCheckpoint" class="delegation-checkpoint" hidden>
             <strong>Checkpoint requires you</strong>
             <span id="delegationCheckpointText"></span>
