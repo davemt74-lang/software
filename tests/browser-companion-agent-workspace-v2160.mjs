@@ -91,7 +91,11 @@ must(chat.includes("WHERE id=? AND user_id=? AND user_agent_id=? LIMIT 1"),'cust
 must(chat.includes("WHERE id=? AND user_id=? AND user_agent_id IS NULL LIMIT 1"),'system-Agent conversation deep link must be ownership scoped');
 
 // Live capability revocation and lifecycle.
-must(panel.includes("['now','agent'].includes(activeView)&&!c.has('agent.message')"),'Agent view must leave revoked capability immediately');
+must(
+  panel.includes("['now','agent','memory'].includes(activeView)&&!c.has('agent.message')")
+    || panel.includes("['now','agent'].includes(activeView)&&!c.has('agent.message')"),
+  'Agent view must leave revoked capability immediately'
+);
 must(panel.includes("ui.agentSendBtn.disabled=!(state&&state.connected&&c.has('agent.message')"),'Agent send button live capability gate missing');
 must(panel.includes("clearInterval(agentPollTimer);agentPollTimer=null;"),'Agent poll interval must stop off-view');
 
