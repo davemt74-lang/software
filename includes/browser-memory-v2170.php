@@ -335,6 +335,18 @@ function vp3_browser_memory_sync_approval_v2170(PDO $pdo,array $user,string $nam
     vp3_cognitive_memory_observe_candidates_v570($pdo,$user,$namespace,[vp3_browser_memory_candidate_v2170($approval)]);
 }
 
+function vp3_browser_memory_cognitive_signal_exists_v2170(PDO $pdo,array $approval): bool
+{
+    if(!vp3_cognitive_memory_schema_ready_v570($pdo))return false;
+    $uid=(int)($approval['owner_user_id']??0);
+    $public=(string)($approval['public_id']??'');
+    if($uid<1||$public==='')return false;
+    $stmt=$pdo->prepare("SELECT 1 FROM cognitive_memory_occurrences_v570
+      WHERE owner_user_id=? AND object_type='browser_memory_ref' AND object_id=? LIMIT 1");
+    $stmt->execute([$uid,$public]);
+    return (bool)$stmt->fetchColumn();
+}
+
 function vp3_browser_memory_approve_v2170(PDO $pdo,array $user,string $namespace,string $type,string $id): array
 {
     $target=vp3_browser_memory_target_v2170($pdo,$user,$type,$id);
@@ -354,6 +366,9 @@ function vp3_browser_memory_approve_v2170(PDO $pdo,array $user,string $namespace
         $approval=vp3_browser_memory_approval_row_v2170($pdo,$uid,$namespace,$type,$id);
         if(!$approval)throw new RuntimeException('Browser Memory approval could not be reloaded.');
         vp3_browser_memory_sync_approval_v2170($pdo,$user,$namespace,$approval);
+        if(!vp3_browser_memory_cognitive_signal_exists_v2170($pdo,$approval)){
+            throw new RuntimeException('Browser Memory could not register the approved VP3 reference.');
+        }
         $publicItem=vp3_browser_memory_public_v2170($target,$approval);
         if($ownsTransaction)$pdo->commit();
         return $publicItem;
