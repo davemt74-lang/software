@@ -218,7 +218,7 @@ async function browserWebPageIdentityV2210(tabId) {
       };
       return {
         domain:String(location.hostname||'').toLowerCase(),
-        page_fingerprint:await sha(String(location.origin||'')+String(location.pathname||'/'))
+        page_fingerprint:await sha(String(location.href||''))
       };
     }
   });
@@ -308,7 +308,7 @@ async function browserWebInteractionObserveV2210(payload = {}) {
       }
       return {
         domain:String(location.hostname||'').toLowerCase(),
-        page_fingerprint:await sha(String(location.origin||'')+String(location.pathname||'/')),
+        page_fingerprint:await sha(String(location.href||'')),
         dom_fingerprint:await sha(fingerprints.sort().join('|')),
         mutation_epoch:Number(state.epoch||0),
         elements
@@ -424,7 +424,7 @@ async function browserWebInteractionExecuteV2210(payload = {}) {
         const dangerous=submitLike||/\b(?:submit|send|publish|post|delete|remove|destroy|purchase|buy|order|checkout|pay|book|reserve|confirm|transfer|wire|sign|accept|agree|save changes|update account|create account|close account|cancel subscription|unsubscribe|invite|share)\b/i.test(semantic);
         if(sensitive&&['type','clear','select','toggle','submit'].includes(args.action_key))return {verified:false,result_code:'sensitive_manual_only',reacquired};
         if(dangerous&&!args.requires_checkpoint)return {verified:false,result_code:'checkpoint_mismatch',reacquired};
-        const beforeEpoch=Number(state.epoch||0),beforeExpanded=el.getAttribute('aria-expanded'),beforePressed=el.getAttribute('aria-pressed'),beforeChecked='checked'in el?Boolean(el.checked):null;
+        const beforeEpoch=Number(state.epoch||0),beforeExpanded=el.getAttribute('aria-expanded'),beforePressed=el.getAttribute('aria-pressed'),beforeAriaChecked=el.getAttribute('aria-checked'),beforeChecked='checked'in el?Boolean(el.checked):null;
         const setValue=value=>{
           const proto=tag==='textarea'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;
           const desc=Object.getOwnPropertyDescriptor(proto,'value');
@@ -454,11 +454,17 @@ async function browserWebInteractionExecuteV2210(payload = {}) {
           return {verified:ok,result_code:ok?'option_verified':'option_unverified',reacquired};
         }
         if(args.action_key==='toggle'){
-          if(!('checked'in el)||!['checkbox','radio'].includes(inputType)&&!['checkbox','radio'].includes(String(el.getAttribute('role')||'').toLowerCase()))return {verified:false,result_code:'control_not_toggle',reacquired};
+          const toggleRole=String(el.getAttribute('role')||'').toLowerCase();
+          const nativeToggle=('checked'in el)&&['checkbox','radio'].includes(inputType);
+          const ariaToggle=['checkbox','radio'].includes(toggleRole);
+          if(!nativeToggle&&!ariaToggle)return {verified:false,result_code:'control_not_toggle',reacquired};
           const desired=String(args.value||'')==='true';
-          if(inputType==='radio'&&!desired)return {verified:false,result_code:'radio_uncheck_unsupported',reacquired};
-          if(Boolean(el.checked)!==desired)el.click();
-          const ok=Boolean(el.checked)===desired;
+          if((inputType==='radio'||toggleRole==='radio')&&!desired)return {verified:false,result_code:'radio_uncheck_unsupported',reacquired};
+          const current=nativeToggle?Boolean(el.checked):el.getAttribute('aria-checked')==='true';
+          if(current!==desired)el.click();
+          await new Promise(r=>setTimeout(r,120));
+          const after=nativeToggle?Boolean(el.checked):el.getAttribute('aria-checked')==='true';
+          const ok=after===desired;
           return {verified:ok,result_code:ok?'checked_verified':'checked_unverified',reacquired};
         }
         if(args.action_key==='open_link'){
@@ -477,7 +483,7 @@ async function browserWebInteractionExecuteV2210(payload = {}) {
         if(args.action_key==='click'){
           if(tag==='a'&&el.href)return {verified:false,result_code:'use_open_link',reacquired};
           el.scrollIntoView({block:'center',inline:'nearest'});el.click();await new Promise(r=>setTimeout(r,350));
-          const changed=Number(state.epoch||0)>beforeEpoch||el.getAttribute('aria-expanded')!==beforeExpanded||el.getAttribute('aria-pressed')!==beforePressed||('checked'in el&&Boolean(el.checked)!==beforeChecked);
+          const changed=Number(state.epoch||0)>beforeEpoch||el.getAttribute('aria-expanded')!==beforeExpanded||el.getAttribute('aria-pressed')!==beforePressed||el.getAttribute('aria-checked')!==beforeAriaChecked||('checked'in el&&Boolean(el.checked)!==beforeChecked);
           return {verified:changed,result_code:changed?'click_verified':'click_unverified',reacquired};
         }
         return {verified:false,result_code:'action_unsupported',reacquired};
