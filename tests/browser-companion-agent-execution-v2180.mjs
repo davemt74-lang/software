@@ -13,8 +13,9 @@ const execution=read('includes/browser-execution-v2180.php');
 const api=read('api/extension-execution-v2180.php');
 const upgrade=read('upgrade.php');
 
-must(manifest.version==='21.8.0','v21.80 manifest version missing');
-must(background.includes("const VP3_EXTENSION_VERSION = '21.8.0';"),'v21.80 request version missing');
+const executionVersion=String(manifest.version||'').split('.').map(Number);
+must(executionVersion.length===3&&(executionVersion[0]>21||(executionVersion[0]===21&&executionVersion[1]>=8)),'v21.80+ manifest version missing');
+must(/const VP3_EXTENSION_VERSION = '21\\.(?:[8-9]|[1-9]\\d+)\\.\\d+';/.test(background),'v21.80+ request version missing');
 must(background.includes("authorizedFetch('/api/extension-execution-v2180.php'"),'Browser Execution API adapter missing');
 must(background.includes("case 'execution_action': return browserExecutionActionV2180"),'Browser Execution message route missing');
 
@@ -81,9 +82,9 @@ must(!panel.includes("sendAgentMessageV2160().catch(fail);/*v2180-auto*/"),'Exec
 must(!panel.includes('localStorage')&&!panel.includes('sessionStorage'),'Execution Center must not create a Chrome-side durable ledger');
 
 // Page changes refresh candidates and invalidate stale execution context.
-must(panel.includes("['now','agent','execution','memory','this_page','live','alerts','search']"),'page watcher must include Execution');
+must(panel.includes("['now','agent','delegation','execution','memory','this_page','live','alerts','search']")||panel.includes("['now','agent','execution','memory','this_page','live','alerts','search']"),'page watcher must include Execution');
 must(panel.includes("if(activeView==='execution')await loadExecutionV2180();"),'page changes must refresh Execution candidates');
-must(panel.includes("['now','agent','execution','memory'].includes(activeView)&&!c.has('agent.message')"),'Execution view must leave on Agent capability revocation');
+must(panel.includes("['now','agent','delegation','execution','memory'].includes(activeView)&&!c.has('agent.message')")||panel.includes("['now','agent','execution','memory'].includes(activeView)&&!c.has('agent.message')"),'Execution view must leave on Agent capability revocation');
 
 // Upgrade integration.
 must(upgrade.includes("require_once __DIR__ . '/includes/browser-execution-v2180.php';"),'upgrade include missing');
