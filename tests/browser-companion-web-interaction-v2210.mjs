@@ -16,8 +16,9 @@ const runtime=read('includes/browser-agent-runtime-v2200.php');
 const workflows=read('agent-workflows.php');
 const upgrade=read('upgrade.php');
 
-must(manifest.version==='22.1.0','v22.10 manifest version missing');
-must(background.includes("const VP3_EXTENSION_VERSION = '22.1.0';"),'v22.10 request version missing');
+const webVersion=String(manifest.version||'').split('.').map(Number);
+must(webVersion.length===3&&(webVersion[0]>22||(webVersion[0]===22&&webVersion[1]>=1)),'v22.10+ manifest version missing');
+must(background.includes(`const VP3_EXTENSION_VERSION = '${manifest.version}';`),'v22.10+ request version must match manifest');
 must(background.includes("authorizedFetch('/api/extension-web-interaction-v2210.php'"),'Controlled Web Interaction API adapter missing');
 must(background.includes("case 'web_interaction_observe': return browserWebInteractionObserveV2210"),'Web observation message route missing');
 must(background.includes("case 'web_interaction_execute': return browserWebInteractionExecuteV2210"),'Web execution message route missing');
