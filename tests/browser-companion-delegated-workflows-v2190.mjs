@@ -76,7 +76,7 @@ must(panel.includes("delegationRequestV2190('detail'"),'delegation recovery deta
 // Explicit user checkpoint completion.
 must(api.includes("$action==='complete_checkpoint'"),'checkpoint completion API missing');
 must(delegation.includes("User confirmed the delegated checkpoint was completed."),'checkpoint audit message missing');
-must(panel.includes("delegation_checkpoint_done"),'checkpoint completion control missing');
+must(panel.includes("delegationRequestV2190('complete_checkpoint'"),'checkpoint completion control missing');
 
 // Browser workspace controls.
 for(const id of ['delegationTab','delegationView','delegationInstruction','delegationPreviewBtn','delegationStartBtn','delegationPlan','delegationActive','delegationSteps','delegationPauseBtn','delegationResumeBtn','delegationCancelBtn','delegationRunBtn']){
