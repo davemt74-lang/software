@@ -16,7 +16,7 @@ const cognitivePresentation=read('includes/cognitive-presentation-v510.php');
 
 const p=String(manifest.version||'').split('.').map(Number);
 must(p.length===3&&(p[0]>21||(p[0]===21&&p[1]>=4)),'v21.40+ manifest version missing');
-must(/const VP3_EXTENSION_VERSION = '21\.(?:[4-9]|[1-9]\d+)\.\d+';/.test(background),'v21.40+ request version missing');
+must(background.includes(`const VP3_EXTENSION_VERSION = '${manifest.version}';`),'retained Browser Companion request version must match the manifest');
 
 for(const permission of ['notifications','alarms','offscreen']) must(manifest.permissions.includes(permission),`missing MV3 permission ${permission}`);
 must(manifest.icons?.['128']==='notification-icon.png','PNG extension icon missing');
