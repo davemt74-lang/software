@@ -290,6 +290,28 @@ function vp3_browser_web_observe_v2210(PDO $pdo,array $user,string $namespace,ar
     ];
 }
 
+function vp3_browser_web_notify_v2210(array $runtime,array $row,string $kind): void
+{
+    if(!function_exists('create_notification'))return;
+    $uid=(int)$runtime['owner_user_id'];$runId=(int)$runtime['workflow_run_id'];$sourceId=(int)($row['id']??0);
+    if($uid<1||$runId<1||$sourceId<1)return;
+    if($kind==='checkpoint'){
+        create_notification(
+            $uid,'browser_web_interaction_approval_required',
+            'Browser Agent needs interaction approval',
+            'A consequential Web interaction is waiting for your confirmation.',
+            '/agent-workflows.php?id='.$runId,'browser_web_interaction',$sourceId
+        );
+    }elseif($kind==='failed'){
+        create_notification(
+            $uid,'browser_web_interaction_action_required',
+            'Browser Agent could not verify a Web interaction',
+            'Review the Browser Runtime interaction receipt before continuing.',
+            '/agent-workflows.php?id='.$runId,'browser_web_interaction',$sourceId
+        );
+    }
+}
+
 function vp3_browser_web_preview_v2210(PDO $pdo,array $user,string $namespace,array $session,string $runtimePublicId,array $input): array
 {
     $runtime=vp3_browser_web_runtime_v2210($pdo,$user,$namespace,$runtimePublicId);
@@ -345,9 +367,12 @@ function vp3_browser_web_preview_v2210(PDO $pdo,array $user,string $namespace,ar
     vp3_browser_runtime_event_v2200($pdo,$runtime,'interaction_proposed','Controlled Web interaction proposed: '.(string)$action['label'].'.','web.'.$actionKey,null,$checkpoint?'checkpoint':'proposed',[
         'verification_mode'=>(string)$action['verification_mode']
     ]);
-    if($checkpoint)vp3_browser_runtime_event_v2200($pdo,$runtime,'interaction_checkpoint','This Web interaction requires explicit confirmation before Chrome can claim an execution permit.','web.'.$actionKey,null,'checkpoint',[
-        'verification_mode'=>(string)$action['verification_mode']
-    ]);
+    if($checkpoint){
+        vp3_browser_runtime_event_v2200($pdo,$runtime,'interaction_checkpoint','This Web interaction requires explicit confirmation before Chrome can claim an execution permit.','web.'.$actionKey,null,'checkpoint',[
+            'verification_mode'=>(string)$action['verification_mode']
+        ]);
+        vp3_browser_web_notify_v2210($runtime,$row,'checkpoint');
+    }
     return [
         'proposal'=>vp3_browser_web_public_v2210($row),
         'verification_mode'=>(string)$action['verification_mode'],
@@ -431,6 +456,7 @@ function vp3_browser_web_complete_v2210(PDO $pdo,array $user,string $namespace,s
             ->execute([(int)$runtime['id'],(int)$runtime['owner_user_id']]);
     }
     vp3_browser_runtime_event_v2200($pdo,$runtime,$verified?'interaction_verified':'interaction_failed',$verified?'Controlled Web interaction completed and its expected state was verified.':'Controlled Web interaction could not verify its expected state.','web.'.(string)$row['action_key'],null,$code);
+    if(!$verified)vp3_browser_web_notify_v2210($runtime,$row,'failed');
     $fresh=vp3_browser_web_row_v2210($pdo,$runtime,$publicId);
     return [
         'proposal'=>vp3_browser_web_public_v2210($fresh?:$row),
