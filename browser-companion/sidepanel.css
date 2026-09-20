@@ -82,3 +82,31 @@
 .execution-row.ticket.awaiting_user{border-color:#eadfbf;background:#fffdf7}
 .execution-status-line{display:flex;gap:5px;flex-wrap:wrap}
 @media(max-width:380px){.execution-row{display:grid}.execution-row-actions{justify-content:flex-start}}
+
+
+.delegation-head,.delegation-card{display:grid;gap:10px}
+.delegation-boundary{display:grid;gap:3px;padding:9px 10px;border:1px solid var(--line);border-radius:10px;background:#f8fafc}
+.delegation-boundary strong{font-size:10px;color:#111827}
+.delegation-boundary span{font-size:9px;line-height:1.45;color:var(--muted)}
+.delegation-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px}
+.delegation-actions-scope{display:grid;grid-template-columns:1fr 1fr;gap:6px 10px;padding:9px;border:1px solid var(--line);border-radius:10px}
+.delegation-actions-scope>span{grid-column:1/-1;font-size:9px;font-weight:850}
+.delegation-actions-scope label{display:flex;align-items:flex-start;gap:6px;font-size:9px;line-height:1.35}
+.delegation-actions-scope input{width:auto;margin-top:1px}
+.delegation-form-actions,.delegation-controls{display:flex;gap:6px;flex-wrap:wrap}
+.delegation-plan{display:grid;gap:7px;padding-top:4px}
+.delegation-plan-step,.delegation-step{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:8px;align-items:start;padding:8px 9px;border:1px solid var(--line);border-radius:9px;background:#fff}
+.delegation-step-index{display:grid;place-items:center;width:22px;height:22px;border-radius:999px;background:#f1f5f9;font-size:9px;font-weight:900}
+.delegation-step-copy{display:grid;gap:2px;min-width:0}
+.delegation-step-copy strong{font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.delegation-step-copy span{font-size:9px;color:var(--muted);line-height:1.4}
+.delegation-step .pill,.delegation-plan-step .pill{align-self:start}
+.delegation-checkpoint{display:grid;gap:6px;padding:10px;border:1px solid #eadfbf;border-radius:10px;background:#fffdf7}
+.delegation-checkpoint strong{font-size:10px}
+.delegation-checkpoint span{font-size:9px;color:var(--muted);line-height:1.45}
+.delegation-recent{display:grid;gap:7px}
+.delegation-recent-row{display:flex;gap:8px;align-items:center;padding:8px 9px;border:1px solid var(--line);border-radius:9px;background:#fff}
+.delegation-recent-copy{display:grid;gap:2px;min-width:0;flex:1}
+.delegation-recent-copy strong{font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.delegation-recent-copy span{font-size:9px;color:var(--muted)}
+@media(max-width:410px){.delegation-grid{grid-template-columns:1fr}.delegation-actions-scope{grid-template-columns:1fr}.delegation-plan-step,.delegation-step{grid-template-columns:auto minmax(0,1fr)}.delegation-plan-step>.pill,.delegation-step>.pill{grid-column:2}.delegation-recent-row{align-items:flex-start}}

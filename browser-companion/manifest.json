@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "VP3 Browser Companion",
-  "version": "21.8.0",
-  "description": "VP3 Browser Companion with explicit Agent Execution & Follow-Through, cross-web Cognitive Memory, Browser Agent Workspace, contextual quick actions, proactive Agent Voice, page-aware Agent Now, capture, sharing, Research, Live Rooms, alerts, and search.",
+  "version": "21.9.0",
+  "description": "VP3 Browser Companion with bounded Delegated Browser Workflows, Agent Execution & Follow-Through, cross-web Cognitive Memory, Browser Agent Workspace, proactive Agent Voice, capture, sharing, Research, Live Rooms, alerts, and search.",
   "minimum_chrome_version": "116",
   "permissions": [
     "activeTab",

@@ -1,6 +1,26 @@
-# VP3 Browser Companion v21.80
+# VP3 Browser Companion v21.90
 
 Chrome Manifest V3 companion for VP3 Browser Share and the Source Feed layer: This Page, Following, source/user follows, comments, read state, Private/Team/Public publishing, plus highlighted text, screenshot regions, source-media moments, and voice commentary.
+
+## v21.90 Delegated Browser Workflows
+
+Browser Companion now has a first-class **Delegate** workspace for handing the Agent a bounded multi-step job.
+
+A delegation starts with a user-authored instruction plus explicit limits: allowed domains, allowed actions, maximum steps, risk budget, and expiration. **Preview plan** is read-only. **Start delegation** is the explicit approval that creates the canonical VP3 Agent Workflow run and the Browser delegation envelope.
+
+The persistent Browser delegation table stores only the Agent namespace, canonical workflow/run reference, source VP3 reference, approved domain/action constraints, plan hash, step/time/risk limits, progress and lifecycle timestamps. The user-authored task itself lives in the canonical Agent Workflow goal. Passive browsing history, page URLs, selected text, page text, excerpts and page content are not copied into the delegation ledger.
+
+Low-risk steps may continue automatically after the displayed plan is approved. Source follow/unfollow uses the existing canonical Source Feed service and verifies the returned state. Related Research/Profile/CRM navigation is generated from a freshly reauthorized VP3 object, is limited to the connected VP3 installation, and is verified against the active tab before the step completes.
+
+Task drafting, Knowledge drafting, and Team sharing remain **checkpoints**. The delegated runner can hand the user into the existing Agent or Team-share surface, but it cannot silently create, assign, save, send, or publish those downstream objects.
+
+Delegations support **Pause, Resume, Cancel, bounded Retry, checkpoint completion, expiration, progress, and recovery**. Chrome does not keep a durable task database: reopening the Delegate workspace reloads canonical server state and continues from the Agent Workflow/Browser delegation ledger.
+
+The delegated workflow loop is:
+
+**Intent → Plan → Delegate → Execute → Checkpoint → Verify → Recover → Complete**
+
+The existing v21.40 proactive notification/Agent Voice system remains the notification surface for canonical workflow changes; v21.90 does not create a second Chrome-side voice or notification authority.
 
 ## v21.80 Agent Execution & Follow-Through
 
@@ -186,7 +206,7 @@ The optional numeric argument controls the maximum number of jobs processed in t
 
 ## Local Chrome installation
 
-Open `chrome://extensions`, enable **Developer mode**, choose **Load unpacked**, and select this `browser-companion` directory. The CI package `vp3-browser-companion-extension-v21.80.zip` is directly loadable/extractable and contains `manifest.json` at the ZIP root.
+Open `chrome://extensions`, enable **Developer mode**, choose **Load unpacked**, and select this `browser-companion` directory. The CI package `vp3-browser-companion-extension-v21.90.zip` is directly loadable/extractable and contains `manifest.json` at the ZIP root.
 
 The default VP3 site is `https://vp3.me`. Another HTTPS VP3 installation can be selected in Extension Settings. Local development may use `http://localhost` or `http://127.0.0.1`; Chrome asks for explicit access to the selected origin.
 

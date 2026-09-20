@@ -1,6 +1,6 @@
 const VP3_DEFAULT_BASE = 'https://vp3.me';
 const VP3_CONTRACT_VERSION = '1';
-const VP3_EXTENSION_VERSION = '21.8.0';
+const VP3_EXTENSION_VERSION = '21.9.0';
 const VP3_MEDIA_CLIP_MAX_SECONDS = 90;
 
 const storage = {
@@ -199,6 +199,38 @@ async function browserExecutionActionV2180(action, payload = {}) {
     method:'POST',
     json:{ action:normalizedAction, ...request }
   }, 'agent.message');
+}
+
+async function browserDelegationActionV2190(action, payload = {}) {
+  const normalizedAction=String(action || 'list');
+  const request={ ...payload };
+  if(['preview','create','verify_navigation'].includes(normalizedAction)&&request.context){
+    request.context=browserContextPayload(request.context);
+  }
+  return authorizedFetch('/api/extension-delegation-v2190.php', {
+    method:'POST',
+    json:{ action:normalizedAction, ...request }
+  }, 'agent.message');
+}
+
+async function browserDelegationNavigateV2190(rawUrl) {
+  const { base_url }=await config();
+  const base=new URL(cleanBaseUrl(base_url));
+  const url=new URL(String(rawUrl || ''),base.origin+'/');
+  if(!/^https?:$/.test(url.protocol)||url.origin!==base.origin){
+    throw new Error('Delegated navigation is limited to the authorized VP3 installation in v21.90.');
+  }
+  const tab=await chrome.tabs.create({url:url.toString(),active:true});
+  if(!tab?.id)throw new Error('Delegated navigation could not open a VP3 tab.');
+  await new Promise(resolve=>{
+    let settled=false;
+    const finish=()=>{if(settled)return;settled=true;chrome.tabs.onUpdated.removeListener(onUpdated);clearTimeout(timer);resolve();};
+    const onUpdated=(tabId,changeInfo)=>{if(tabId===tab.id&&changeInfo.status==='complete')finish();};
+    const timer=setTimeout(finish,12000);
+    chrome.tabs.onUpdated.addListener(onUpdated);
+  });
+  const finalTab=await chrome.tabs.get(tab.id).catch(()=>tab);
+  return {ok:true,tab_id:tab.id,source_url:String(finalTab?.url||url.toString()),title:String(finalTab?.title||'').slice(0,512)};
 }
 
 async function activeTabIdentity() {
@@ -1244,6 +1276,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       case 'agent_workspace': return agentWorkspaceV2160(message.action, message.payload || {});
       case 'memory_action': return browserMemoryActionV2170(message.action, message.payload || {});
       case 'execution_action': return browserExecutionActionV2180(message.action, message.payload || {});
+      case 'delegation_action': return browserDelegationActionV2190(message.action, message.payload || {});
+      case 'delegation_navigate': return browserDelegationNavigateV2190(message.url || '');
       case 'notification_poll': return pollProactiveNotifications();
       case 'quick_action_consume': return consumeQuickActionV2150();
       case 'quick_action_run': {

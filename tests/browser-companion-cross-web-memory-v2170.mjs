@@ -134,7 +134,7 @@ must(panel.includes("await memoryRequestV2170('approve'"),'Remember click action
 must(panel.includes("context:capture"),'Remember click must bind approval to the current page context');
 must(panel.includes("await memoryRequestV2170('revoke'"),'Forget click action missing');
 must(panel.includes("ui.quickMemoryBtn.onclick=()=>setView('memory');"),'This Page Memory shortcut must only open approval view');
-must(panel.includes("['now','agent','execution','memory'].includes(activeView)&&!c.has('agent.message')")||panel.includes("['now','agent','memory'].includes(activeView)&&!c.has('agent.message')"),'Memory view must leave immediately if Agent access is revoked');
+must(panel.includes("['now','agent','delegation','execution','memory'].includes(activeView)&&!c.has('agent.message')")||panel.includes("['now','agent','execution','memory'].includes(activeView)&&!c.has('agent.message')")||panel.includes("['now','agent','memory'].includes(activeView)&&!c.has('agent.message')"),'Memory view must leave immediately if Agent access is revoked');
 must(panel.includes("if(activeView==='memory')await loadMemoryV2170();"),'page changes must refresh Memory candidates without writing');
 
 // No Chrome-side Browser Memory store/history.
