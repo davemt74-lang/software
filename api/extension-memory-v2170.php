@@ -102,6 +102,25 @@ try{
         $type=vp3_browser_memory_target_type_v2170($input['target_type']??'');
         $id=vp3_browser_memory_target_id_v2170($input['target_id']??'');
         if($type===''||$id==='')throw new InvalidArgumentException('Choose a valid VP3 object to remember.');
+
+        // Never trust a client-supplied reference merely because the user can
+        // access it elsewhere in VP3. Re-derive the current page's authorized
+        // candidates and require the selected target to be present now.
+        $rawContext=is_array($input['context']??null)?$input['context']:[];
+        $context=vp3_browser_context_validate_v2130($rawContext);
+        $relations=vp3_browser_context_relationships_v2130(
+            $pdo,$user,$context,(array)($session['capabilities']??[])
+        );
+        $candidates=vp3_browser_memory_candidates_v2170($pdo,$user,$namespace,$relations);
+        $allowed=false;
+        foreach($candidates as $candidate){
+            if((string)($candidate['target_type']??'')===$type
+                &&(string)($candidate['target_id']??'')===$id){
+                $allowed=true;break;
+            }
+        }
+        if(!$allowed)throw new RuntimeException('That VP3 object is no longer a current-page Memory candidate.');
+
         $item=vp3_browser_memory_approve_v2170($pdo,$user,$namespace,$type,$id);
         vp3_extension_memory_json_v2170(200,[
             'ok'=>true,'item'=>$item,
