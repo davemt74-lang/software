@@ -38,6 +38,14 @@ must(extensionApi.includes("has_permission('chat.access',$user)"),'live Chat per
 must(extensionApi.includes("vp3_agent_chat_conversation_v380($pdo,$conversationId,$userId,$agent)"),'conversation ownership/Agent scoping must use canonical boundary');
 must(extensionApi.includes("LIMIT 30"),'Browser conversation list must remain bounded');
 must(extensionApi.includes("LIMIT 80"),'Browser message history/poll must remain bounded');
+must(extensionApi.includes("strlen($raw)>65536"),'Browser Agent request body must be bounded');
+must(extensionApi.includes("mb_strlen($message)>6000"),'Browser Agent message length must be bounded');
+must(!extensionApi.includes("csrf_token()")&&!extensionApi.includes("hash_equals(csrf_token()"),
+  'durable-token Browser Agent endpoint must not depend on web CSRF/session credentials');
+must(webApi.includes("hash_equals(csrf_token(),$csrf)"),'web Agent Chat must retain CSRF protection');
+must(extensionApi.includes("(SELECT COALESCE(MAX(m.id),0) FROM chat_messages m WHERE m.conversation_id=c.id) latest_message_id"),
+  'conversation list must use SQL-mode-portable latest-message projection');
+must(!extensionApi.includes("GROUP BY c.id"),'Browser conversation list must not rely on GROUP BY functional-dependency behavior');
 
 // Same default Agent and namespace continuity as web Chat.
 must(runtime.includes("function vp3_agent_chat_runtime_default_agent_v2160"),'shared default Agent resolver missing');
