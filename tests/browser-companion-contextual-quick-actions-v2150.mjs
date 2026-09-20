@@ -12,7 +12,7 @@ const css=read('browser-companion/sidepanel.css');
 
 const quickVersion=String(manifest.version||'').split('.').map(Number);
 must(quickVersion.length===3&&(quickVersion[0]>21||(quickVersion[0]===21&&quickVersion[1]>=5)),'v21.50+ manifest version missing');
-must(/const VP3_EXTENSION_VERSION = '21\.(?:[5-9]|[1-9]\d+)\.\d+';/.test(background),'v21.50+ request version missing');
+must(background.includes(`const VP3_EXTENSION_VERSION = '${manifest.version}';`),'retained Browser Companion request version must match the manifest');
 
 // One VP3 context-menu tree, no duplicated legacy selection command.
 must(background.includes("id:'vp3-quick-root'"),'VP3 quick-action root missing');
