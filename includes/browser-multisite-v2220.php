@@ -478,14 +478,15 @@ function vp3_browser_multisite_fact_add_v2220(PDO $pdo,array $runtime,array $ses
       (public_id,multisite_session_id,owner_user_id,fact_key,value_text,value_hash,source_domain,page_fingerprint,status,expires_at)
       VALUES (?,?,?,?,?,?,?,?,?,?)");
     $insert->execute([$public,(int)$session['id'],(int)$runtime['owner_user_id'],$key,$value,$hash,$domain,$page,'active',$expires]);
+    $newFactId=(int)$pdo->lastInsertId();
 
-    $conflict=$pdo->prepare("SELECT id,value_hash FROM browser_multisite_facts_v2220 WHERE multisite_session_id=? AND fact_key=? AND id<>LAST_INSERT_ID() AND status IN ('active','conflict') AND expires_at>UTC_TIMESTAMP()");
-    $conflict->execute([(int)$session['id'],$key]);$conflictFound=false;
+    $conflict=$pdo->prepare("SELECT id,value_hash FROM browser_multisite_facts_v2220 WHERE multisite_session_id=? AND fact_key=? AND id<>? AND status IN ('active','conflict') AND expires_at>UTC_TIMESTAMP()");
+    $conflict->execute([(int)$session['id'],$key,$newFactId]);$conflictFound=false;
     foreach($conflict->fetchAll(PDO::FETCH_ASSOC)?:[] as $other){
         if(!hash_equals((string)$other['value_hash'],$hash)){
             $conflictFound=true;
-            $pdo->prepare("UPDATE browser_multisite_facts_v2220 SET status='conflict',updated_at=UTC_TIMESTAMP() WHERE id IN (?,LAST_INSERT_ID())")
-                ->execute([(int)$other['id']]);
+            $pdo->prepare("UPDATE browser_multisite_facts_v2220 SET status='conflict',updated_at=UTC_TIMESTAMP() WHERE id IN (?,?)")
+                ->execute([(int)$other['id'],$newFactId]);
         }
     }
     vp3_browser_runtime_event_v2200($pdo,$runtime,$conflictFound?'multisite_fact_conflict':'multisite_fact_added',$conflictFound?'Structured fact conflict detected across approved sources.':'Structured fact added with approved-source provenance.','multisite.fact',null,$conflictFound?'conflict':'active');
@@ -493,7 +494,7 @@ function vp3_browser_multisite_fact_add_v2220(PDO $pdo,array $runtime,array $ses
         (int)$runtime['owner_user_id'],'browser_multisite_fact_conflict',
         'Browser Agent found conflicting source data',
         'Two approved sources disagree on a structured fact. Review the runtime before continuing.',
-        '/agent-workflows.php?id='.(int)$runtime['workflow_run_id'],'browser_multisite_fact',(int)$pdo->lastInsertId()
+        '/agent-workflows.php?id='.(int)$runtime['workflow_run_id'],'browser_multisite_fact',$newFactId
     );
     return vp3_browser_multisite_state_v2220($pdo,$runtime);
 }
