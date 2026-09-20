@@ -74,7 +74,7 @@ try{
     if($runtimeId==='')throw new InvalidArgumentException('Browser Runtime session is required.');
 
     if($action==='observe'){
-        vp3_extension_web_json_v2210(200,$base+['observation'=>vp3_browser_web_observe_v2210($pdo,$user,$namespace,$session,$runtimeId,$input)]);
+        vp3_extension_web_json_v2210(200,$base+['observation'=>vp3_browser_web_observe_v2210($pdo,$user,$namespace,$session,$runtimeId,$input),'actions'=>vp3_browser_web_public_actions_v2210()]);
     }
     if($action==='list'){
         $runtime=vp3_browser_web_runtime_v2210($pdo,$user,$namespace,$runtimeId);
