@@ -81,6 +81,10 @@ must(!memory.includes("ON DUPLICATE KEY UPDATE public_id=VALUES(public_id)"),
   'duplicate approval must never rotate public reference ID');
 must(memory.includes("$ownsTransaction=!$pdo->inTransaction();")&&memory.includes("vp3_browser_memory_sync_approval_v2170($pdo,$user,$namespace,$approval);"),
   'approval row and Cognitive Memory registration must be atomic');
+must(memory.includes("vp3_browser_memory_cognitive_signal_exists_v2170($pdo,$approval)"),
+  'Remember must verify the v5.70 browser_memory_ref occurrence exists before commit');
+must(memory.includes("throw new RuntimeException('Browser Memory could not register the approved VP3 reference.')"),
+  'Remember must fail closed if Cognitive Memory registration did not materialize');
 must(memory.includes("if($ownsTransaction&&$pdo->inTransaction())$pdo->rollBack();"),
   'failed Remember must roll back approval state');
 
