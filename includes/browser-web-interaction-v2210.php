@@ -428,6 +428,26 @@ function vp3_browser_web_complete_v2210(PDO $pdo,array $user,string $namespace,s
     ];
 }
 
+function vp3_browser_web_for_workflow_v2210(PDO $pdo,int $uid,int $workflowRunId): array
+{
+    if($uid<1||$workflowRunId<1||!vp3_browser_web_schema_ready_v2210($pdo))return ['count'=>0,'verified'=>0,'failed'=>0,'checkpointed'=>0,'interactions'=>[]];
+    $stmt=$pdo->prepare("SELECT i.* FROM browser_web_interactions_v2210 i
+      INNER JOIN browser_agent_runtime_sessions_v2200 r ON r.id=i.runtime_session_id
+      WHERE i.owner_user_id=? AND r.owner_user_id=? AND r.workflow_run_id=?
+      ORDER BY i.id DESC LIMIT 40");
+    $stmt->execute([$uid,$uid,$workflowRunId]);$rows=$stmt->fetchAll(PDO::FETCH_ASSOC)?:[];
+    $verified=0;$failed=0;$checkpointed=0;
+    foreach($rows as $row){
+        if(!empty($row['verified']))$verified++;
+        if((string)$row['status']==='failed')$failed++;
+        if(!empty($row['requires_checkpoint']))$checkpointed++;
+    }
+    return [
+        'count'=>count($rows),'verified'=>$verified,'failed'=>$failed,'checkpointed'=>$checkpointed,
+        'interactions'=>array_map('vp3_browser_web_public_v2210',$rows),
+    ];
+}
+
 function vp3_browser_web_cancel_v2210(PDO $pdo,array $user,string $namespace,string $runtimePublicId,string $publicId): array
 {
     $runtime=vp3_browser_web_runtime_v2210($pdo,$user,$namespace,$runtimePublicId);
