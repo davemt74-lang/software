@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 $root = dirname(__DIR__);
 $service = (string)file_get_contents($root . '/includes/knowledge-retrieval-v162.php');
-$chat = (string)file_get_contents($root . '/api/chat-v236.php');
+$chat = (string)file_get_contents($root . '/api/chat-v236.php') . "\n" . (string)file_get_contents($root . '/includes/agent-chat-runtime-v2160.php');
 $stream = (string)file_get_contents($root . '/api/chat-stream-v121.php');
 $home = (string)file_get_contents($root . '/includes/homeserver-knowledge-v062.php');
 
