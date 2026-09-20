@@ -155,6 +155,22 @@ function vp3_browser_delegation_plan_v2190(
         'mode'=>'server'
     ]];
 
+    if(in_array('multisite_handoff',$allowedActions,true)&&count($domains)>1&&count($steps)<$maxSteps){
+        $steps[]=[
+            'step_key'=>'step_'.(count($steps)+1).'_multisite_handoff',
+            'action_key'=>'multisite_handoff',
+            'label'=>'Coordinate approved multi-site workflow',
+            'step_kind'=>'checkpoint',
+            'target_type'=>'browser_source',
+            'target_id'=>(string)$source['id'],
+            'target_scope'=>'personal',
+            'risk_level'=>'low',
+            'requires_checkpoint'=>true,
+            'verification_mode'=>'user_confirmation',
+            'mode'=>'checkpoint',
+        ];
+    }
+
     foreach($candidates as $candidate){
         $action=(string)($candidate['action_key']??'');
         if(!in_array($action,$allowedActions,true))continue;
