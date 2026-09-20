@@ -937,8 +937,14 @@ async function quickActionCaptureV2150(info, tab) {
   const capture = await activeCapture(tab);
   if (info?.selectionText) capture.selected_text = utf8Limit(String(info.selectionText).trim(), 12000);
 
-  const linkUrl = String(info?.linkUrl || '').trim();
-  const srcUrl = String(info?.srcUrl || '').trim();
+  const safeContextUrl = value => {
+    try {
+      const url = new URL(String(value || '').trim());
+      return /^https?:$/.test(url.protocol) ? url.href : '';
+    } catch (_error) { return ''; }
+  };
+  const linkUrl = safeContextUrl(info?.linkUrl);
+  const srcUrl = safeContextUrl(info?.srcUrl);
   const mediaType = String(info?.mediaType || '').toLowerCase();
   if (linkUrl && !capture.selected_text) {
     capture.selected_text = utf8Limit('Link: ' + linkUrl, 12000);
