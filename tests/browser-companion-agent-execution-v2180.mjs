@@ -15,7 +15,7 @@ const upgrade=read('upgrade.php');
 
 const executionVersion=String(manifest.version||'').split('.').map(Number);
 must(executionVersion.length===3&&(executionVersion[0]>21||(executionVersion[0]===21&&executionVersion[1]>=8)),'v21.80+ manifest version missing');
-must(/const VP3_EXTENSION_VERSION = '21\\.(?:[8-9]|[1-9]\\d+)\\.\\d+';/.test(background),'v21.80+ request version missing');
+must(/const VP3_EXTENSION_VERSION = '21\.(?:[8-9]|[1-9]\d+)\.\d+';/.test(background),'v21.80+ request version missing');
 must(background.includes("authorizedFetch('/api/extension-execution-v2180.php'"),'Browser Execution API adapter missing');
 must(background.includes("case 'execution_action': return browserExecutionActionV2180"),'Browser Execution message route missing');
 
