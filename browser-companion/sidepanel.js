@@ -23,7 +23,7 @@ let state=null,capture=null,destinations=null,lastShare=null,currentSource=null;
 let screenshotCapture=null,mediaReference=null,commentaryCapture=null,recorder=null,stream=null,recordTimer=null,recordStarted=0,pageTimer=null;
 let thisCursor='',followingCursor='',thisBusy=false,followingBusy=false,activeView='now';
 let cognitiveBusy=false,cognitiveData=null,cognitiveTimer=null;
-let agentConversationId=0,agentLastMessageId=0,agentPollTimer=null,agentBusy=false,agentConversations=[];
+let agentConversationId=0,agentWorkspaceAgentId=0,agentLastMessageId=0,agentPollTimer=null,agentBusy=false,agentConversations=[];
 let nowContextIgnored=false,contextAgentPayload=null,contextRelationships=null,contextSuggestions=[];
 let researchShareId='',researchContextData=null;
 let liveRoomsData=[],liveRoom=null,liveCursor=0,livePollTimer=null,liveHeartbeatTimer=null,liveBusy=false;
@@ -471,7 +471,10 @@ function renderAgentMessagesV2160(messages,append){
 }
 function renderAgentConversationsV2160(payload){
   agentConversations=Array.isArray(payload&&payload.conversations)?payload.conversations:[];
-  if(payload&&payload.agent&&payload.agent.name)ui.agentWorkspaceName.textContent=payload.agent.name;
+  if(payload&&payload.agent){
+    agentWorkspaceAgentId=Math.max(0,Number(payload.agent.id||0));
+    if(payload.agent.name)ui.agentWorkspaceName.textContent=payload.agent.name;
+  }
   const current=agentConversationId;
   ui.agentConversationSelect.replaceChildren(new Option('New chat',''));
   agentConversations.forEach(row=>ui.agentConversationSelect.append(new Option(row.title||'Chat',String(Number(row.id||0)))));
@@ -485,7 +488,10 @@ async function loadAgentConversationV2160(id){
   id=Math.max(0,Number(id||0));agentConversationId=id;
   if(!id){renderAgentMessagesV2160([],false);ui.agentConversationSelect.value='';return;}
   const payload=await agentWorkspaceRequestV2160('load',{conversation_id:id});
-  if(payload&&payload.agent&&payload.agent.name)ui.agentWorkspaceName.textContent=payload.agent.name;
+  if(payload&&payload.agent){
+    agentWorkspaceAgentId=Math.max(0,Number(payload.agent.id||0));
+    if(payload.agent.name)ui.agentWorkspaceName.textContent=payload.agent.name;
+  }
   renderAgentMessagesV2160(payload&&payload.messages||[],false);ui.agentConversationSelect.value=String(id);
 }
 async function pollAgentMessagesV2160(){
@@ -524,6 +530,7 @@ async function sendAgentMessageV2160(){
     });
     optimistic.remove();
     agentConversationId=Number(payload&&payload.conversation_id||0);
+    agentWorkspaceAgentId=Math.max(0,Number(payload&&payload.agent_id||agentWorkspaceAgentId||0));
     const now=new Date().toISOString();
     renderAgentMessagesV2160([
       {id:Number(payload&&payload.user_message_id||0),role:'user',message:message,created_at:now},
@@ -671,7 +678,12 @@ ui.nowTab.onclick=()=>setView('now');ui.agentTab.onclick=()=>setView('agent');ui
 ui.agentRefreshBtn.onclick=()=>refreshAgentWorkspaceV2160().catch(fail);
 ui.agentConversationSelect.onchange=()=>loadAgentConversationV2160(Number(ui.agentConversationSelect.value||0)).catch(fail);
 ui.agentNewChatBtn.onclick=()=>loadAgentConversationV2160(0).catch(fail);
-ui.agentOpenFullBtn.onclick=()=>msg('open_url',{url:absolute('/chat.php')});
+ui.agentOpenFullBtn.onclick=()=>{
+  const params=new URLSearchParams();
+  params.set('agent',agentWorkspaceAgentId>0?String(agentWorkspaceAgentId):'system');
+  if(agentConversationId>0)params.set('conversation_id',String(agentConversationId));
+  msg('open_url',{url:absolute('/chat.php?'+params.toString())});
+};
 ui.agentSendBtn.onclick=()=>sendAgentMessageV2160().catch(fail);
 ui.agentMessageInput.oninput=renderCaps;
 ui.agentMessageInput.onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendAgentMessageV2160().catch(fail);}};
