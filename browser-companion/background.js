@@ -178,9 +178,14 @@ async function currentAccount() {
 }
 
 async function browserMemoryActionV2170(action, payload = {}) {
+  const normalizedAction=String(action || 'list');
+  const request={ ...payload };
+  if(normalizedAction==='candidates'&&request.context){
+    request.context=browserContextPayload(request.context);
+  }
   return authorizedFetch('/api/extension-memory-v2170.php', {
     method:'POST',
-    json:{ action:String(action || 'list'), ...payload }
+    json:{ action:normalizedAction, ...request }
   }, 'agent.message');
 }
 
