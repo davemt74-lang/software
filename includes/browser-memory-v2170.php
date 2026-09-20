@@ -354,15 +354,56 @@ function vp3_browser_memory_approve_v2170(PDO $pdo,array $user,string $namespace
     return vp3_browser_memory_public_v2170($target,$approval);
 }
 
+function vp3_browser_memory_remove_cognitive_signal_v2170(PDO $pdo,array $approval): void
+{
+    if(!vp3_cognitive_memory_schema_ready_v570($pdo))return;
+    $uid=(int)($approval['owner_user_id']??0);
+    $namespace=(string)($approval['agent_namespace']??'');
+    $public=(string)($approval['public_id']??'');
+    if($uid<1||$namespace===''||$public==='')return;
+
+    $stmt=$pdo->prepare("SELECT DISTINCT thread_id FROM cognitive_memory_occurrences_v570
+      WHERE owner_user_id=? AND object_type='browser_memory_ref' AND object_id=?");
+    $stmt->execute([$uid,$public]);
+    $threadIds=array_map('intval',$stmt->fetchAll(PDO::FETCH_COLUMN)?:[]);
+
+    $pdo->prepare("DELETE FROM cognitive_memory_occurrences_v570
+      WHERE owner_user_id=? AND object_type='browser_memory_ref' AND object_id=?")
+      ->execute([$uid,$public]);
+
+    foreach($threadIds as $threadId){
+        if($threadId<1)continue;
+        $count=$pdo->prepare('SELECT COUNT(*) FROM cognitive_memory_occurrences_v570 WHERE thread_id=?');
+        $count->execute([$threadId]);
+        if((int)$count->fetchColumn()<1){
+            $pdo->prepare("DELETE FROM cognitive_memory_threads_v570
+              WHERE id=? AND owner_user_id=? AND agent_namespace=?")
+              ->execute([$threadId,$uid,$namespace]);
+        }else{
+            vp3_cognitive_memory_refresh_thread_v570($pdo,$threadId);
+        }
+    }
+}
+
 function vp3_browser_memory_revoke_v2170(PDO $pdo,array $user,string $namespace,string $approvalPublicId): void
 {
     $approval=vp3_browser_memory_approval_by_public_v2170($pdo,$approvalPublicId);
     if(!$approval||(int)$approval['owner_user_id']!==(int)$user['id']||(string)$approval['agent_namespace']!==$namespace){
         throw new RuntimeException('Browser Memory approval was not found.');
     }
-    $pdo->prepare("UPDATE browser_memory_approvals_v2170
-      SET revoked_at=COALESCE(revoked_at,UTC_TIMESTAMP()),updated_at=UTC_TIMESTAMP()
-      WHERE id=?")->execute([(int)$approval['id']]);
+
+    $ownsTransaction=!$pdo->inTransaction();
+    if($ownsTransaction)$pdo->beginTransaction();
+    try{
+        $pdo->prepare("UPDATE browser_memory_approvals_v2170
+          SET revoked_at=COALESCE(revoked_at,UTC_TIMESTAMP()),updated_at=UTC_TIMESTAMP()
+          WHERE id=?")->execute([(int)$approval['id']]);
+        vp3_browser_memory_remove_cognitive_signal_v2170($pdo,$approval);
+        if($ownsTransaction)$pdo->commit();
+    }catch(Throwable $e){
+        if($ownsTransaction&&$pdo->inTransaction())$pdo->rollBack();
+        throw $e;
+    }
 }
 
 function vp3_browser_memory_register_v2170(): void
