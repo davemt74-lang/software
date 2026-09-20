@@ -4,6 +4,7 @@ require __DIR__ . '/includes/bootstrap.php';
 require_once __DIR__ . '/includes/agent-workflow-runs-v1400.php';
 require_once __DIR__ . '/includes/agent-job-engine-v1900.php';
 require_once __DIR__ . '/includes/agent-worker-runtime-v1910.php';
+require_once __DIR__ . '/includes/browser-agent-runtime-v2200.php';
 require_permission('account.access');
 $pdo=db();$user=current_user();if(!$pdo||!$user)redirect(url('/login.php'));
 if(!agent_workflow_schema_ready_v1400($pdo))redirect(url('/agent-workflow-upgrade-v1400.php'));
@@ -39,6 +40,7 @@ $priorities=array_values(array_filter((array)($brain['priorities']??[]),'is_arra
 $runs=agent_workflow_recent_v1400($pdo,$user,30);
 $detail=null;$detailId=max(0,(int)($_GET['id']??0));
 if($detailId>0){$row=agent_workflow_row_v1400($pdo,(int)$user['id'],$detailId);if($row)$detail=$durable?agent_job_public_run_v1900($pdo,$row,true):agent_workflow_public_run_v1400($pdo,$row,true);}
+$browserRuntime=$detail&&vp3_browser_runtime_schema_ready_v2200($pdo)?vp3_browser_runtime_for_workflow_v2200($pdo,(int)$user['id'],$detailId):null;
 
 function workflow_v1400_status_label(string $status): string{return str_replace('_',' ',ucwords($status,'_'));}
 function workflow_v1400_time(string $value): string{$ts=strtotime($value);return $ts?date('M j, g:i A',$ts):'—';}
@@ -84,6 +86,41 @@ function workflow_v1400_time(string $value): string{$ts=strtotime($value);return
     <div><small>Updated</small><strong><?= e(workflow_v1400_time((string)$detail['updated_at'])) ?></strong></div>
     <?php if($durable): ?><div><small>Progress</small><strong><?= (int)($detail['progress_percent']??0) ?>%<?= !empty($detail['progress_message'])?' · '.e((string)$detail['progress_message']):'' ?></strong></div><div><small>Attempts</small><strong><?= (int)($detail['attempt_count']??0) ?> / <?= (int)($detail['max_attempts']??3) ?></strong></div><?php endif; ?>
   </div>
+  <?php if($browserRuntime): ?>
+  <section class="workflow-panel" aria-labelledby="browserRuntimeTitle">
+    <div class="workflow-panel-head">
+      <div><small>Browser Companion v22.00</small><h3 id="browserRuntimeTitle">Browser Agent Runtime</h3></div>
+      <span class="workflow-status <?= e((string)$browserRuntime['status']) ?>"><?= e(workflow_v1400_status_label((string)$browserRuntime['status'])) ?></span>
+    </div>
+    <div class="workflow-summary-grid">
+      <div><small>Runtime session</small><strong><?= e(substr((string)$browserRuntime['runtime_id'],0,8)) ?>…</strong></div>
+      <div><small>Current skill</small><strong><?= e((string)($browserRuntime['current_skill_key']??'')!==''?str_replace('_',' ',(string)$browserRuntime['current_skill_key']):'Waiting') ?></strong></div>
+      <div><small>Plan revision</small><strong>r<?= (int)($browserRuntime['plan_revision']??1) ?> · <?= (int)($browserRuntime['replan_count']??0) ?>/<?= (int)($browserRuntime['max_replans']??3) ?> replans</strong></div>
+      <div><small>Observations</small><strong><?= (int)($browserRuntime['observation_count']??0) ?> task-scoped</strong></div>
+      <div><small>Recovery</small><strong><?= e((string)($browserRuntime['recovery_code']??'')!==''?str_replace('_',' ',(string)$browserRuntime['recovery_code']):'Clear') ?></strong></div>
+      <div><small>Last verified</small><strong><?= e(workflow_v1400_time((string)($browserRuntime['last_verified_at']??''))) ?></strong></div>
+    </div>
+    <div class="workflow-two-col">
+      <section class="workflow-panel">
+        <div class="workflow-panel-head"><h3>Runtime timeline</h3><span><?= count((array)($browserRuntime['timeline']??[])) ?> events</span></div>
+        <div class="workflow-event-list">
+          <?php foreach(array_slice((array)($browserRuntime['timeline']??[]),0,20) as $event): ?>
+          <article><strong><?= e(workflow_v1400_status_label((string)$event['event_type'])) ?></strong><p><?= e((string)$event['summary']) ?></p><small><?= e(workflow_v1400_time((string)$event['created_at'])) ?><?= !empty($event['skill_key'])?' · '.e(str_replace('_',' ',(string)$event['skill_key'])):'' ?></small></article>
+          <?php endforeach; ?>
+          <?php if(!(array)($browserRuntime['timeline']??[])): ?><div class="workflow-empty">No Browser Runtime events yet.</div><?php endif; ?>
+        </div>
+      </section>
+      <section class="workflow-panel">
+        <div class="workflow-panel-head"><h3>Runtime context</h3><span>Reference-only</span></div>
+        <div class="workflow-event-list">
+          <article><strong><?= count((array)($browserRuntime['tabs']??[])) ?> runtime tabs</strong><p>Opaque Browser tab references are tied to authorized VP3 objects; URLs and titles are not stored.</p></article>
+          <article><strong><?= count((array)($browserRuntime['observations']??[])) ?> live observations</strong><p>Task-scoped canonical state and fingerprints expire with runtime authority.</p></article>
+          <article><strong>Authority remains bounded</strong><p>v21.90 Source, action, risk, step and expiration limits remain authoritative.</p></article>
+        </div>
+      </section>
+    </div>
+  </section>
+  <?php endif; ?>
   <div class="workflow-actions-bar">
     <?php if((string)$detail['status']==='approval_pending'): ?><form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="approve"><input type="hidden" name="run_id" value="<?= (int)$detail['id'] ?>"><button class="workflow-button primary" type="submit">Approve workflow</button></form><?php endif; ?>
     <?php if((string)$detail['status']==='failed'): ?><form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="retry"><input type="hidden" name="run_id" value="<?= (int)$detail['id'] ?>"><button class="workflow-button primary" type="submit">Retry</button></form><?php endif; ?>
