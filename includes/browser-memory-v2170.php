@@ -343,15 +343,24 @@ function vp3_browser_memory_approve_v2170(PDO $pdo,array $user,string $namespace
     $existing=vp3_browser_memory_approval_row_v2170($pdo,$uid,$namespace,$type,$id);
     $public=$existing?(string)$existing['public_id']:vp3_browser_memory_uuid_v2170();
 
-    $stmt=$pdo->prepare("INSERT INTO browser_memory_approvals_v2170
-      (public_id,owner_user_id,agent_namespace,target_type,target_id,target_scope,approved_at,revoked_at)
-      VALUES (?,?,?,?,?,'personal',UTC_TIMESTAMP(),NULL)
-      ON DUPLICATE KEY UPDATE approved_at=UTC_TIMESTAMP(),revoked_at=NULL,updated_at=UTC_TIMESTAMP()");
-    $stmt->execute([$public,$uid,$namespace,$type,$id]);
-    $approval=vp3_browser_memory_approval_row_v2170($pdo,$uid,$namespace,$type,$id);
-    if(!$approval)throw new RuntimeException('Browser Memory approval could not be reloaded.');
-    vp3_browser_memory_sync_approval_v2170($pdo,$user,$namespace,$approval);
-    return vp3_browser_memory_public_v2170($target,$approval);
+    $ownsTransaction=!$pdo->inTransaction();
+    if($ownsTransaction)$pdo->beginTransaction();
+    try{
+        $stmt=$pdo->prepare("INSERT INTO browser_memory_approvals_v2170
+          (public_id,owner_user_id,agent_namespace,target_type,target_id,target_scope,approved_at,revoked_at)
+          VALUES (?,?,?,?,?,'personal',UTC_TIMESTAMP(),NULL)
+          ON DUPLICATE KEY UPDATE approved_at=UTC_TIMESTAMP(),revoked_at=NULL,updated_at=UTC_TIMESTAMP()");
+        $stmt->execute([$public,$uid,$namespace,$type,$id]);
+        $approval=vp3_browser_memory_approval_row_v2170($pdo,$uid,$namespace,$type,$id);
+        if(!$approval)throw new RuntimeException('Browser Memory approval could not be reloaded.');
+        vp3_browser_memory_sync_approval_v2170($pdo,$user,$namespace,$approval);
+        $publicItem=vp3_browser_memory_public_v2170($target,$approval);
+        if($ownsTransaction)$pdo->commit();
+        return $publicItem;
+    }catch(Throwable $e){
+        if($ownsTransaction&&$pdo->inTransaction())$pdo->rollBack();
+        throw $e;
+    }
 }
 
 function vp3_browser_memory_remove_cognitive_signal_v2170(PDO $pdo,array $approval): void
