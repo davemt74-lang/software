@@ -88,6 +88,8 @@ must(web.includes("status='executing',permit_hash=?"),'atomic permit claim missi
 must(web.includes("hash_equals((string)$row['permit_hash'],hash('sha256',$permitToken))"),'permit verification missing');
 must(background.includes("browserWebInteractionApiV2210('claim'"),'Chrome must claim server permit before execution');
 must(background.includes("browserWebInteractionApiV2210('complete'"),'Chrome must report verification after execution');
+must(background.includes("await failClaim('permit_contract_mismatch')"),'permit contract mismatch must be failed immediately');
+must(background.includes("await failClaim('value_changed_after_preview')"),'changed local value must fail the claimed permit immediately');
 
 // Hardcoded primitives only. No user-supplied selectors or arbitrary script execution.
 const webExecutor=background.slice(background.indexOf('async function browserWebInteractionExecuteV2210'),background.indexOf('async function browserAgentRuntimeActionV2200'));
@@ -116,6 +118,9 @@ must(web.includes('last_verified_at=UTC_TIMESTAMP()'),'v22.00 runtime verificati
 // Same-domain link boundary in v22.10.
 must(web.includes("if($targetHost!==$domain)"),'server same-domain link gate missing');
 must(background.includes("url.hostname.toLowerCase()!==currentHost"),'Chrome same-domain navigation gate missing');
+must(web.includes('v22.10 form submission is limited to the current approved domain.'),'server same-domain form submission gate missing');
+must(background.includes('submission_domain_blocked'),'Chrome same-domain form submission gate missing');
+must(background.includes('navigation_outside_scope'),'unexpected cross-domain navigation must fail verification');
 must(web.includes('Multi-site navigation belongs to the next runtime phase.'),'v22.10 multi-site boundary missing');
 
 // Interaction count is bounded from the approved delegation step budget.
