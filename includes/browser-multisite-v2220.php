@@ -403,6 +403,14 @@ function vp3_browser_multisite_handoff_complete_v2220(PDO $pdo,array $runtime,ar
             ->execute([(int)$runtime['id'],(int)$runtime['owner_user_id']]);
     }
     vp3_browser_runtime_event_v2200($pdo,$runtime,$verified?'domain_handoff_verified':'domain_handoff_failed',$verified?'Cross-domain handoff reached the approved destination and was verified.':'Cross-domain handoff did not reach the approved destination.','multisite.handoff',null,$code);
+    if(function_exists('create_notification')){
+        create_notification(
+            (int)$runtime['owner_user_id'],$verified?'browser_multisite_handoff_verified':'browser_multisite_handoff_failed',
+            $verified?'Browser Agent reached an approved domain':'Browser Agent multi-site handoff needs attention',
+            $verified?'The Browser Agent verified its approved cross-domain destination.':'The Browser Agent stopped because its approved cross-domain destination could not be verified.',
+            '/agent-workflows.php?id='.(int)$runtime['workflow_run_id'],'browser_multisite_handoff',(int)$row['id']
+        );
+    }
     $fresh=vp3_browser_multisite_handoff_row_v2220($pdo,$session,$handoffId);
     return ['handoff'=>vp3_browser_multisite_public_handoff_v2220($fresh?:$row),'state'=>vp3_browser_multisite_state_v2220($pdo,$runtime)];
 }
