@@ -3,7 +3,7 @@ import fs from 'node:fs';
 
 const read=path=>fs.readFileSync(new URL(`../${path}`,import.meta.url),'utf8');
 const boundary=read('includes/agent-tool-authorization-v400.php');
-const chat=read('api/chat-v236.php');
+const chat=[read('api/chat-v236.php'),read('includes/agent-chat-runtime-v2160.php')].join('\n');
 const legacyTools=read('includes/agent-tools-v84.php');
 const resources=read('includes/music-workspace-resources-v330.php');
 const releaseWorkspace=read('includes/release-workspace-v332.php');
