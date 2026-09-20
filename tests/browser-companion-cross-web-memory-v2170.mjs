@@ -16,8 +16,9 @@ const upgrade=read('upgrade.php');
 
 must(manifest.version==='21.7.0','v21.70 manifest version missing');
 must(background.includes("const VP3_EXTENSION_VERSION = '21.7.0';"),'v21.70 request version missing');
-must(background.includes("if(normalizedAction==='candidates'&&request.context){")&&background.includes("request.context=browserContextPayload(request.context);"),
-  'Memory candidate transport must reuse the bounded v21.30 page-context envelope');
+must(background.includes("if(['candidates','approve'].includes(normalizedAction)&&request.context){")
+  &&background.includes("request.context=browserContextPayload(request.context);"),
+  'Memory discovery and approval must reuse the bounded v21.30 page-context envelope');
 
 // Reference-only schema: no copied page/browser content columns.
 const schemaStart=memory.indexOf('CREATE TABLE IF NOT EXISTS browser_memory_approvals_v2170');
@@ -40,6 +41,13 @@ const candidateBlock=memory.slice(candidateStart,candidateEnd);
 must(candidateStart>=0&&candidateEnd>candidateStart,'candidate resolver missing');
 must(!/\b(?:INSERT|UPDATE|DELETE)\b/i.test(candidateBlock),'candidate discovery must be read-only');
 must(memoryApi.includes("if($action==='approve')"),'explicit Remember action missing');
+must(memoryApi.includes("vp3_browser_context_validate_v2130($rawContext)"),
+  'Remember must revalidate the current bounded page context');
+must(memoryApi.includes("vp3_browser_context_relationships_v2130(")
+  &&memoryApi.includes("$candidates=vp3_browser_memory_candidates_v2170"),
+  'Remember must re-derive authorized current-page candidates server-side');
+must(memoryApi.includes("if(!$allowed)throw new RuntimeException('That VP3 object is no longer a current-page Memory candidate.')"),
+  'Remember must reject stale or client-invented target references');
 must(memoryApi.includes("if($action==='revoke')"),'explicit Forget action missing');
 must(!memoryApi.includes("$input['page_url']")&&!memoryApi.includes("$input['selected_text']"),
   'approve/revoke API must not accept page content fields');
@@ -71,6 +79,10 @@ must(memory.includes("ON DUPLICATE KEY UPDATE approved_at=UTC_TIMESTAMP(),revoke
   'reapproval must reactivate stable target reference');
 must(!memory.includes("ON DUPLICATE KEY UPDATE public_id=VALUES(public_id)"),
   'duplicate approval must never rotate public reference ID');
+must(memory.includes("$ownsTransaction=!$pdo->inTransaction();")&&memory.includes("vp3_browser_memory_sync_approval_v2170($pdo,$user,$namespace,$approval);"),
+  'approval row and Cognitive Memory registration must be atomic');
+must(memory.includes("if($ownsTransaction&&$pdo->inTransaction())$pdo->rollBack();"),
+  'failed Remember must roll back approval state');
 
 // Integration with reference-only Cognitive Memory v5.70.
 must(cognitiveMemory.includes("require_once __DIR__.'/browser-memory-v2170.php';"),'Cognitive Memory must register Browser Memory object type');
@@ -78,6 +90,15 @@ must(memory.includes("vp3_cognitive_memory_observe_candidates_v570"),'approved B
 must(memory.includes("'source'=>'browser_memory_approval'"),'Cognitive Memory provenance missing');
 must(memory.includes("'object_ref'=>$ref"),'approved memory candidate must carry registered object reference');
 must(memory.includes("'reference_only'=>true"),'resolved Browser Memory context must declare reference-only storage');
+must(memory.includes("function vp3_browser_memory_remove_cognitive_signal_v2170"),'Forget must remove its Cognitive Memory signal');
+must(memory.includes("DELETE FROM cognitive_memory_occurrences_v570")
+  &&memory.includes("object_type='browser_memory_ref' AND object_id=?"),
+  'Forget must delete browser-approved v5.70 occurrences');
+must(memory.includes("DELETE FROM cognitive_memory_threads_v570"),
+  'Forget must remove empty Browser Memory continuity threads');
+must(memory.includes("vp3_cognitive_memory_refresh_thread_v570($pdo,$threadId)"),
+  'Forget must refresh any shared surviving memory thread');
+
 
 // Durable-token API + same Agent namespace as Browser Agent Workspace.
 must(memoryApi.includes("vp3_extension_session_authenticate_v2001($pdo)"),'Browser Memory durable-token auth missing');
@@ -105,6 +126,7 @@ const loadEnd=panel.indexOf('async function memoryClickV2170',loadStart);
 const loadBlock=panel.slice(loadStart,loadEnd);
 must(!loadBlock.includes("'approve'")&&!loadBlock.includes("'revoke'"),'loading Memory view must never mutate approvals');
 must(panel.includes("await memoryRequestV2170('approve'"),'Remember click action missing');
+must(panel.includes("context:capture"),'Remember click must bind approval to the current page context');
 must(panel.includes("await memoryRequestV2170('revoke'"),'Forget click action missing');
 must(panel.includes("ui.quickMemoryBtn.onclick=()=>setView('memory');"),'This Page Memory shortcut must only open approval view');
 must(panel.includes("['now','agent','memory'].includes(activeView)&&!c.has('agent.message')"),'Memory view must leave immediately if Agent access is revoked');
