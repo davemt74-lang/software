@@ -385,7 +385,7 @@ function vp3_browser_runtime_attach_v2200(PDO $pdo,array $user,string $namespace
     $status=vp3_browser_runtime_status_from_delegation_v2200((string)$delegation['status']);
     $stmt=$pdo->prepare("INSERT INTO browser_agent_runtime_sessions_v2200
       (public_id,owner_user_id,agent_namespace,delegation_id,workflow_run_id,status,max_replans,expires_at,started_at,paused_at,completed_at,cancelled_at)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)");
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?)");
     $stmt->execute([
         $publicId,$uid,$namespace,(int)$delegation['id'],(int)$delegation['workflow_run_id'],$status,
         VP3_BROWSER_RUNTIME_MAX_REPLANS_V2200,(string)$delegation['expires_at'],
@@ -500,7 +500,8 @@ function vp3_browser_runtime_tick_v2200(PDO $pdo,array $user,string $namespace,a
     $uid=(int)($user['id']??0);$runtime=vp3_browser_runtime_row_v2200($pdo,$uid,$namespace,$runtimePublicId);
     if(!$runtime)throw new RuntimeException('Browser Agent Runtime session was not found.');
     if(strtotime((string)$runtime['expires_at'])<time()){
-        vp3_browser_delegation_expire_v2190($pdo,$runtime);
+        $delegationRow=vp3_browser_delegation_row_v2190($pdo,$uid,$namespace,(string)$runtime['delegation_public_id']);
+        if($delegationRow)vp3_browser_delegation_expire_v2190($pdo,$delegationRow);
         vp3_browser_runtime_set_state_v2200($pdo,$runtime,'expired');
         vp3_browser_runtime_event_v2200($pdo,$runtime,'expired','Browser Agent Runtime authority expired.','','','expired');
         return ['state'=>'expired','runtime'=>vp3_browser_runtime_public_v2200($pdo,$user,$namespace,$runtimePublicId,true)];
@@ -695,8 +696,8 @@ function vp3_browser_runtime_skip_v2200(PDO $pdo,array $user,string $namespace,s
     $pdo->prepare("UPDATE agent_workflow_actions SET status='skipped',result_summary='Skipped explicitly by user in Browser Runtime.',error_class='',completed_at=UTC_TIMESTAMP(),updated_at=UTC_TIMESTAMP() WHERE id=? AND run_id=? AND owner_user_id=?")->execute([$actionId,(int)$runtime['workflow_run_id'],$uid]);
     $pdo->prepare("UPDATE browser_delegations_v2190 SET status='active',updated_at=UTC_TIMESTAMP() WHERE id=? AND owner_user_id=?")->execute([(int)$runtime['delegation_id'],$uid]);
     $pdo->prepare("UPDATE agent_workflow_runs SET status='approved',current_action_id=NULL,progress_message='Runtime step skipped by user',next_attempt_at=UTC_TIMESTAMP() WHERE id=? AND owner_user_id=?")->execute([(int)$runtime['workflow_run_id'],$uid]);
-    $runtime['workflow_status']='approved';
-    vp3_browser_delegation_complete_if_done_v2190($pdo,$runtime);
+    $delegationRow=vp3_browser_delegation_row_v2190($pdo,$uid,$namespace,(string)$runtime['delegation_public_id']);
+    if($delegationRow)vp3_browser_delegation_complete_if_done_v2190($pdo,$delegationRow);
     $delegation=vp3_browser_delegation_public_v2190($pdo,$user,$namespace,(string)$runtime['delegation_public_id'],true);
     $terminal=$delegation&&(string)$delegation['status']==='completed';
     vp3_browser_runtime_set_state_v2200($pdo,$runtime,$terminal?'completed':'ready');
