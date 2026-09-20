@@ -62,9 +62,9 @@ function renderCaps(){
   ui.quickAskBtn.disabled=!quickPageOk||!c.has('agent.message');
   ui.quickSummarizeBtn.disabled=!quickPageOk||!c.has('agent.message');
   ui.quickCompareBtn.disabled=!quickPageOk||!c.has('agent.message');
-  ui.quickResearchBtn.disabled=!quickPageOk||!c.has('knowledge.write');
-  ui.quickKnowledgeBtn.disabled=!quickPageOk||!c.has('knowledge.write');
-  ui.quickTaskBtn.disabled=!quickPageOk||!c.has('task.propose');
+  ui.quickResearchBtn.disabled=!quickPageOk||!c.has('agent.message')||!c.has('knowledge.write');
+  ui.quickKnowledgeBtn.disabled=!quickPageOk||!c.has('agent.message')||!c.has('knowledge.write');
+  ui.quickTaskBtn.disabled=!quickPageOk||!c.has('agent.message')||!c.has('task.propose');
   ui.quickTeamBtn.disabled=!quickPageOk||!c.has('team.share.create');
   ui.quickAnnotateBtn.disabled=!quickPageOk||!c.has('team.share.create');
   ui.askAgentBtn.disabled=!shared||!c.has('agent.message');ui.saveKnowledgeBtn.disabled=!shared||!c.has('knowledge.write');ui.createTaskBtn.disabled=!shared||!c.has('task.propose');
