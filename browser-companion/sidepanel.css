@@ -63,3 +63,22 @@
 .memory-row-actions button{padding:6px 8px;font-size:9px}
 .memory-row.remembered{border-color:#d8e8fa;background:#f8fbff}
 @media(max-width:380px){.memory-row{display:grid}.memory-row-actions{justify-content:flex-start}}
+
+
+.execution-head,.execution-card{display:grid;gap:10px}
+.execution-boundary{display:grid;gap:3px;padding:9px 10px;border:1px solid var(--line);border-radius:10px;background:#f8fafc}
+.execution-boundary strong{font-size:10px;color:#111827}
+.execution-boundary span{font-size:9px;line-height:1.45;color:var(--muted)}
+.execution-list{display:grid;gap:7px}
+.execution-row{display:flex;align-items:flex-start;gap:9px;padding:9px 10px;border:1px solid var(--line);border-radius:10px;background:#fff}
+.execution-row-copy{display:grid;min-width:0;gap:2px;flex:1}
+.execution-row-copy small{font-size:8px;font-weight:850;text-transform:capitalize;color:var(--muted)}
+.execution-row-copy strong{overflow:hidden;font-size:10px;text-overflow:ellipsis;white-space:nowrap}
+.execution-row-copy span{font-size:9px;line-height:1.4;color:var(--muted)}
+.execution-row-actions{display:flex;flex:0 0 auto;gap:5px;align-items:center;flex-wrap:wrap}
+.execution-row-actions button{padding:6px 8px;font-size:9px}
+.execution-row.ticket.completed{border-color:#dbead9;background:#fbfefb}
+.execution-row.ticket.failed{border-color:#f2d5d5;background:#fffafa}
+.execution-row.ticket.awaiting_user{border-color:#eadfbf;background:#fffdf7}
+.execution-status-line{display:flex;gap:5px;flex-wrap:wrap}
+@media(max-width:380px){.execution-row{display:grid}.execution-row-actions{justify-content:flex-start}}

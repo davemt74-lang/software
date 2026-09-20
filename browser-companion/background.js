@@ -1,6 +1,6 @@
 const VP3_DEFAULT_BASE = 'https://vp3.me';
 const VP3_CONTRACT_VERSION = '1';
-const VP3_EXTENSION_VERSION = '21.7.0';
+const VP3_EXTENSION_VERSION = '21.8.0';
 const VP3_MEDIA_CLIP_MAX_SECONDS = 90;
 
 const storage = {
@@ -184,6 +184,18 @@ async function browserMemoryActionV2170(action, payload = {}) {
     request.context=browserContextPayload(request.context);
   }
   return authorizedFetch('/api/extension-memory-v2170.php', {
+    method:'POST',
+    json:{ action:normalizedAction, ...request }
+  }, 'agent.message');
+}
+
+async function browserExecutionActionV2180(action, payload = {}) {
+  const normalizedAction=String(action || 'list');
+  const request={ ...payload };
+  if(['candidates','propose','execute'].includes(normalizedAction)&&request.context){
+    request.context=browserContextPayload(request.context);
+  }
+  return authorizedFetch('/api/extension-execution-v2180.php', {
     method:'POST',
     json:{ action:normalizedAction, ...request }
   }, 'agent.message');
@@ -1231,6 +1243,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       case 'context_handoff': return contextHandoff(message.payload || null, message.prompt || '');
       case 'agent_workspace': return agentWorkspaceV2160(message.action, message.payload || {});
       case 'memory_action': return browserMemoryActionV2170(message.action, message.payload || {});
+      case 'execution_action': return browserExecutionActionV2180(message.action, message.payload || {});
       case 'notification_poll': return pollProactiveNotifications();
       case 'quick_action_consume': return consumeQuickActionV2150();
       case 'quick_action_run': {

@@ -50,6 +50,7 @@
       <nav class="feed-tabs" aria-label="Browser Companion views">
         <button id="nowTab" class="feed-tab active" type="button" aria-selected="true">Now</button>
         <button id="agentTab" class="feed-tab" type="button" aria-selected="false">Agent</button>
+        <button id="executionTab" class="feed-tab" type="button" aria-selected="false">Execute</button>
         <button id="memoryTab" class="feed-tab" type="button" aria-selected="false">Memory</button>
         <button id="thisPageTab" class="feed-tab" type="button" aria-selected="false">This Page</button>
         <button id="followingTab" class="feed-tab" type="button" aria-selected="false">Following</button>
@@ -134,6 +135,60 @@
             <button id="agentSendBtn" class="primary" type="button">Send</button>
           </div>
           <p class="hint">Page context is attached only to the turn you send. The conversation itself is stored in the same VP3 Agent Chat history used on the website.</p>
+        </section>
+      </section>
+
+      <section id="executionView" hidden>
+        <section class="card execution-head">
+          <div class="row-between">
+            <div>
+              <div class="eyebrow">Agent Execution</div>
+              <strong id="executionAgentName">VP3 Agent</strong>
+              <div id="executionStatus" class="page-host">Propose → Confirm → Execute → Verify</div>
+            </div>
+            <button id="executionRefreshBtn" class="text-btn" type="button">Refresh</button>
+          </div>
+          <div class="execution-boundary">
+            <strong>Nothing executes silently.</strong>
+            <span>VP3 re-checks the current page relationship and your live permissions before execution. The durable ledger stores VP3 references and lifecycle state, not browser history or page content.</span>
+          </div>
+        </section>
+
+        <section class="card execution-card">
+          <div class="row-between">
+            <div>
+              <div class="eyebrow">This page</div>
+              <strong>Available actions</strong>
+            </div>
+            <span class="pill">Explicit control</span>
+          </div>
+          <div id="executionPageLabel" class="page-host">No current page context.</div>
+          <div id="executionCandidates" class="execution-list"></div>
+          <div id="executionCandidatesEmpty" class="empty-state">No executable VP3 relationship is available for this page yet.</div>
+        </section>
+
+        <section class="card execution-card">
+          <div class="row-between">
+            <div>
+              <div class="eyebrow">Execution ledger</div>
+              <strong>Recent actions</strong>
+            </div>
+            <span class="pill">Reference-only</span>
+          </div>
+          <div id="executionTickets" class="execution-list"></div>
+          <div id="executionTicketsEmpty" class="empty-state">No Browser Agent actions have been prepared yet.</div>
+        </section>
+
+        <section class="card execution-card">
+          <div class="row-between">
+            <div>
+              <div class="eyebrow">Follow-through</div>
+              <strong>Ongoing VP3 plans</strong>
+            </div>
+            <span class="pill">Cognitive v5.60</span>
+          </div>
+          <div id="executionContinuity" class="execution-list"></div>
+          <div id="executionContinuityEmpty" class="empty-state">No active Cognitive Plan runs need continuation.</div>
         </section>
       </section>
 

@@ -1,6 +1,20 @@
-# VP3 Browser Companion v21.70
+# VP3 Browser Companion v21.80
 
 Chrome Manifest V3 companion for VP3 Browser Share and the Source Feed layer: This Page, Following, source/user follows, comments, read state, Private/Team/Public publishing, plus highlighted text, screenshot regions, source-media moments, and voice commentary.
+
+## v21.80 Agent Execution & Follow-Through
+
+Browser Companion now has an explicit **Execute** workspace that turns authorized page context into bounded VP3 actions using the lifecycle **Propose → Confirm → Execute → Verify**.
+
+The durable execution ledger is reference-only. It stores the signed-in user, Agent namespace, VP3 target reference, action key, risk/confirmation state, lifecycle timestamps, attempts, and verification state. It does **not** store browser history, page URLs, page titles, selected text, page content, summaries, excerpts, or Agent prompts.
+
+Candidate discovery and proposal are based on the current v21.30 bounded page context. Before execution, the server independently revalidates that context, re-derives authorized VP3 relationships, checks the live Browser capability set, and requires the ticket target/action to still be a valid current-page candidate.
+
+Low-risk reversible Source follow/unfollow actions execute through the existing canonical Source Feed service and are immediately verified against returned server state. Task, Knowledge, and Team-share operations remain explicit handoffs: Browser Companion can prepare the next step, but it does not silently create, publish, send, assign, or save the downstream object.
+
+Task and Knowledge handoffs can open the canonical Browser Agent Workspace with a prepared prompt. The prompt is **not auto-sent**. Team sharing opens the existing annotation/share flow, where the user still chooses the destination and publishes. Safe related Research/Profile/CRM navigation can also be prepared and opened through the same execution lifecycle.
+
+The Execute workspace shows recent Browser execution tickets plus active Cognitive Orchestration v5.60 runs so interrupted work can be resumed from canonical VP3 state without adding a Chrome-side task or history database.
 
 ## v21.70 Cross-Web Cognitive Memory
 
@@ -172,7 +186,7 @@ The optional numeric argument controls the maximum number of jobs processed in t
 
 ## Local Chrome installation
 
-Open `chrome://extensions`, enable **Developer mode**, choose **Load unpacked**, and select this `browser-companion` directory. The CI package `vp3-browser-companion-extension-v21.70.zip` is directly loadable/extractable and contains `manifest.json` at the ZIP root.
+Open `chrome://extensions`, enable **Developer mode**, choose **Load unpacked**, and select this `browser-companion` directory. The CI package `vp3-browser-companion-extension-v21.80.zip` is directly loadable/extractable and contains `manifest.json` at the ZIP root.
 
 The default VP3 site is `https://vp3.me`. Another HTTPS VP3 installation can be selected in Extension Settings. Local development may use `http://localhost` or `http://127.0.0.1`; Chrome asks for explicit access to the selected origin.
 
