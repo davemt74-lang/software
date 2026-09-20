@@ -285,9 +285,10 @@ async function browserWebInteractionObserveV2210(payload = {}) {
         const placeholder=clip(el.getAttribute('placeholder'),160);
         const ariaLabel=clip(el.getAttribute('aria-label'),160);
         const autocomplete=clip(el.getAttribute('autocomplete'),80).toLowerCase();
-        let targetHost='';
+        let targetHost='',formActionHost='';
         if(tag==='a'&&el.href){try{targetHost=new URL(el.href,location.href).hostname.toLowerCase();}catch(_error){}}
-        const semantic=[tag,inputType,role,name,autocomplete,label,placeholder,ariaLabel,targetHost].join('|').toLowerCase();
+        if(el.form){try{formActionHost=new URL(el.form.action||location.href,location.href).hostname.toLowerCase();}catch(_error){}}
+        const semantic=[tag,inputType,role,name,autocomplete,label,placeholder,ariaLabel,targetHost,formActionHost].join('|').toLowerCase();
         const fingerprint=await sha(semantic);
         let key=state.keys.get(el);
         if(!key){key=crypto.randomUUID();state.keys.set(el,key);}
@@ -299,7 +300,7 @@ async function browserWebInteractionObserveV2210(payload = {}) {
         const options=kind==='select'?[...el.options].slice(0,30).map(option=>({value:clip(option.value,160),label:clip(option.textContent,160)})):[];
         elements.push({
           element_key:key,element_fingerprint:fingerprint,kind,tag,input_type:inputType,role,
-          label,name,placeholder,aria_label:ariaLabel,autocomplete,target_host:targetHost,
+          label,name,placeholder,aria_label:ariaLabel,autocomplete,target_host:targetHost,form_action_host:formActionHost,
           disabled:Boolean(el.disabled)||el.getAttribute('aria-disabled')==='true',
           checked:'checked'in el?Boolean(el.checked):null,
           sensitive,submit_like:submitLike,dangerous,options
@@ -366,11 +367,21 @@ async function browserWebInteractionExecuteV2210(payload = {}) {
   if(!contract||!permitToken)throw new Error('The Web interaction permit could not be claimed.');
   const requestedAction=String(payload.action_key||'');
   const requestedFp=String(payload.element_fingerprint||'');
+  const failClaim=async code=>{
+    try{
+      await browserWebInteractionApiV2210('complete',{
+        runtime_id:String(payload.runtime_id||''),agent_id:Number(payload.agent_id||0),
+        interaction_id:String(payload.interaction_id||''),permit_token:permitToken,verified:false,result_code:String(code||'permit_contract_mismatch')
+      });
+    }catch(_error){}
+  };
   if(requestedAction!==String(contract.action_key||'')||requestedFp!==String(contract.element_fingerprint||'')){
+    await failClaim('permit_contract_mismatch');
     throw new Error('The local interaction no longer matches the server-authorized permit.');
   }
   const rawValue=String(payload.value??'').slice(0,4000);
   if(Number(contract.value_length||0)!==rawValue.length&&['type','select','toggle'].includes(requestedAction)){
+    await failClaim('value_changed_after_preview');
     throw new Error('The interaction value changed after preview. Preview it again.');
   }
   const beforeUrl=String(tab.url||'');
@@ -402,8 +413,9 @@ async function browserWebInteractionExecuteV2210(payload = {}) {
           const tag=String(el.tagName||'').toLowerCase();
           const inputType=tag==='input'?String(el.getAttribute('type')||'text').toLowerCase():'';
           const role=String(el.getAttribute('role')||'').toLowerCase();
-          let host='';if(tag==='a'&&el.href){try{host=new URL(el.href,location.href).hostname.toLowerCase();}catch(_error){}}
-          return sha([tag,inputType,role,clip(el.getAttribute('name'),120),clip(el.getAttribute('autocomplete'),80).toLowerCase(),labelFor(el),clip(el.getAttribute('placeholder'),160),clip(el.getAttribute('aria-label'),160),host].join('|').toLowerCase());
+          let host='',formHost='';if(tag==='a'&&el.href){try{host=new URL(el.href,location.href).hostname.toLowerCase();}catch(_error){}}
+          if(el.form){try{formHost=new URL(el.form.action||location.href,location.href).hostname.toLowerCase();}catch(_error){}}
+          return sha([tag,inputType,role,clip(el.getAttribute('name'),120),clip(el.getAttribute('autocomplete'),80).toLowerCase(),labelFor(el),clip(el.getAttribute('placeholder'),160),clip(el.getAttribute('aria-label'),160),host,formHost].join('|').toLowerCase());
         };
         let el=nodes.find(node=>state.keys.get(node)===args.element_key)||null;
         if(el&&(await fingerprint(el))!==args.element_fingerprint)el=null;
@@ -475,6 +487,9 @@ async function browserWebInteractionExecuteV2210(payload = {}) {
         }
         if(args.action_key==='submit'){
           if(!submitLike)return {verified:false,result_code:'control_not_submit',reacquired};
+          let submitHost=String(location.hostname||'').toLowerCase();
+          if(el.form){try{submitHost=new URL(el.form.action||location.href,location.href).hostname.toLowerCase();}catch(_error){return {verified:false,result_code:'submission_target_invalid',reacquired};}}
+          if(submitHost!==String(location.hostname||'').toLowerCase()||(args.target_host&&submitHost!==String(args.target_host||'').toLowerCase()))return {verified:false,result_code:'submission_domain_blocked',reacquired};
           if(el.form&&typeof el.form.requestSubmit==='function')el.form.requestSubmit(el);else el.click();
           await new Promise(r=>setTimeout(r,450));
           const changed=Number(state.epoch||0)>beforeEpoch;
@@ -505,13 +520,22 @@ async function browserWebInteractionExecuteV2210(payload = {}) {
       }
     }else if(!outcome?.verified&&['click','submit'].includes(requestedAction)){
       const after=await browserWebWaitForTabV2210(tab.id,beforeUrl,1800);
-      if(after?.url&&String(after.url)!==beforeUrl)outcome={verified:true,result_code:'navigation_verified'};
+      if(after?.url&&String(after.url)!==beforeUrl){
+        let afterHost='';try{afterHost=new URL(String(after.url)).hostname.toLowerCase();}catch(_error){}
+        outcome=afterHost===String(identity.domain||'').toLowerCase()
+          ?{verified:true,result_code:'navigation_verified'}
+          :{verified:false,result_code:'navigation_outside_scope'};
+      }
     }
   }catch(error){
     if(['click','submit'].includes(requestedAction)){
       const after=await browserWebWaitForTabV2210(tab.id,beforeUrl,1800);
-      if(after?.url&&String(after.url)!==beforeUrl)outcome={verified:true,result_code:'navigation_verified'};
-      else outcome={verified:false,result_code:'execution_context_lost'};
+      if(after?.url&&String(after.url)!==beforeUrl){
+        let afterHost='';try{afterHost=new URL(String(after.url)).hostname.toLowerCase();}catch(_error){}
+        outcome=afterHost===String(identity.domain||'').toLowerCase()
+          ?{verified:true,result_code:'navigation_verified'}
+          :{verified:false,result_code:'navigation_outside_scope'};
+      }else outcome={verified:false,result_code:'execution_context_lost'};
     }else outcome={verified:false,result_code:'execution_error'};
   }
   let completion=null;
