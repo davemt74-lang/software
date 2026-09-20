@@ -15,6 +15,21 @@ require_once __DIR__.'/browser-context-v2130.php';
 require_once __DIR__.'/video-meetings-memory-v18120.php';
 require_once __DIR__.'/video-meetings-commitment-command-v18230-chat.php';
 
+function vp3_agent_chat_runtime_default_agent_v2160(PDO $pdo,array $user): ?array
+{
+    $userId=(int)($user['id']??0);
+    if($userId<1||!function_exists('user_agents_list_v236'))return null;
+    $agents=user_agents_list_v236($pdo,$userId,true);
+    if(!$agents)return null;
+    foreach($agents as $agent){
+        if(is_array($agent)&&!empty($agent['is_active'])&&!empty($agent['is_default']))return $agent;
+    }
+    foreach($agents as $agent){
+        if(is_array($agent)&&!empty($agent['is_active']))return $agent;
+    }
+    return null;
+}
+
 function vp3_agent_chat_runtime_conversation_v2160(PDO $pdo,int $conversationId,int $userId,?array $agent): ?array
 {
     return vp3_agent_chat_conversation_v380($pdo,$conversationId,$userId,$agent);
