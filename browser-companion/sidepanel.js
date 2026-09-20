@@ -2,7 +2,7 @@
 const $=id=>document.getElementById(id);
 const ui={};
 [
-'connectionState','connectControls','shareWorkspace','connectBtn','settingsBtn','connectedAccount','disconnectedAccount','accountAvatar','accountName','accountMeta','accountTeams','openVp3Btn','refreshAccountBtn','accountOptionsBtn','accessNotice','quickActionsCard','composerCard','agentWorkspaceName','agentWorkspaceStatus','agentRefreshBtn','agentConversationSelect','agentNewChatBtn','agentOpenFullBtn','agentUsePageContext','agentContextLabel','agentMessages','agentEmpty','agentMessageInput','agentSendBtn','delegationAgentName','delegationStatus','delegationRefreshBtn','delegationInstruction','delegationMaxSteps','delegationExpiry','delegationRisk','delegationDomains','delegationPreviewBtn','delegationStartBtn','delegationPlan','delegationActive','delegationActiveTitle','delegationActiveMeta','delegationProgress','delegationRunBtn','delegationPauseBtn','delegationResumeBtn','delegationCancelBtn','delegationOpenWorkflowBtn','runtimePanel','runtimeSessionBadge','runtimePlanRevision','runtimeCurrentSkill','runtimeRecovery','runtimeObservationCount','runtimeLastVerified','runtimeReplanBtn','runtimeSkipBtn','runtimeTimeline','runtimeTimelineEmpty','runtimeTabs','runtimeTabsEmpty','runtimeWebPanel','runtimeWebStatus','runtimeWebScanBtn','runtimeWebControlCount','runtimeWebInteractionCount','runtimeWebElements','runtimeWebElementsEmpty','runtimeWebComposer','runtimeWebSelectedLabel','runtimeWebSelectedMeta','runtimeWebActionSelect','runtimeWebValueField','runtimeWebValueLabel','runtimeWebValueInput','runtimeWebOptionField','runtimeWebOptionSelect','runtimeWebToggleField','runtimeWebToggleSelect','runtimeWebPreviewBtn','runtimeWebClearSelectionBtn','runtimeWebProposal','runtimeWebProposalTitle','runtimeWebProposalDetail','runtimeWebCheckpointNotice','runtimeWebRunBtn','runtimeWebConfirmRunBtn','runtimeWebCancelBtn','runtimeWebRecent','runtimeWebRecentEmpty','delegationCheckpoint','delegationCheckpointText','delegationCheckpointOpenBtn','delegationCheckpointDoneBtn','delegationSteps','delegationRecent','delegationRecentEmpty','executionAgentName','executionStatus','executionRefreshBtn','executionPageLabel','executionCandidates','executionCandidatesEmpty','executionTickets','executionTicketsEmpty','executionContinuity','executionContinuityEmpty','memoryAgentName','memoryStatus','memoryRefreshBtn','memoryPageLabel','memoryCandidates','memoryCandidatesEmpty','memoryRemembered','memoryRememberedEmpty','memoryCount',
+'connectionState','connectControls','shareWorkspace','connectBtn','settingsBtn','connectedAccount','disconnectedAccount','accountAvatar','accountName','accountMeta','accountTeams','openVp3Btn','refreshAccountBtn','accountOptionsBtn','accessNotice','quickActionsCard','composerCard','agentWorkspaceName','agentWorkspaceStatus','agentRefreshBtn','agentConversationSelect','agentNewChatBtn','agentOpenFullBtn','agentUsePageContext','agentContextLabel','agentMessages','agentEmpty','agentMessageInput','agentSendBtn','delegationAgentName','delegationStatus','delegationRefreshBtn','delegationInstruction','delegationMaxSteps','delegationExpiry','delegationRisk','delegationDomains','delegationPreviewBtn','delegationStartBtn','delegationPlan','delegationActive','delegationActiveTitle','delegationActiveMeta','delegationProgress','delegationRunBtn','delegationPauseBtn','delegationResumeBtn','delegationCancelBtn','delegationOpenWorkflowBtn','runtimePanel','runtimeSessionBadge','runtimePlanRevision','runtimeCurrentSkill','runtimeRecovery','runtimeObservationCount','runtimeLastVerified','runtimeReplanBtn','runtimeSkipBtn','runtimeMultiPanel','runtimeMultiStatus','runtimeMultiAttachBtn','runtimeMultiCurrentDomain','runtimeMultiHandoffCount','runtimeMultiTabCount','runtimeMultiConflictCount','runtimeMultiDomains','runtimeMultiDomainsEmpty','runtimeMultiHandoffComposer','runtimeMultiTargetUrl','runtimeMultiGoBtn','runtimeMultiFactComposer','runtimeMultiFactKey','runtimeMultiFactValue','runtimeMultiFactAddBtn','runtimeMultiFacts','runtimeMultiFactsEmpty','runtimeMultiHandoffs','runtimeMultiHandoffsEmpty','runtimeMultiArtifacts','runtimeMultiArtifactsEmpty','runtimeTimeline','runtimeTimelineEmpty','runtimeTabs','runtimeTabsEmpty','runtimeWebPanel','runtimeWebStatus','runtimeWebScanBtn','runtimeWebControlCount','runtimeWebInteractionCount','runtimeWebElements','runtimeWebElementsEmpty','runtimeWebComposer','runtimeWebSelectedLabel','runtimeWebSelectedMeta','runtimeWebActionSelect','runtimeWebValueField','runtimeWebValueLabel','runtimeWebValueInput','runtimeWebOptionField','runtimeWebOptionSelect','runtimeWebToggleField','runtimeWebToggleSelect','runtimeWebPreviewBtn','runtimeWebClearSelectionBtn','runtimeWebProposal','runtimeWebProposalTitle','runtimeWebProposalDetail','runtimeWebCheckpointNotice','runtimeWebRunBtn','runtimeWebConfirmRunBtn','runtimeWebCancelBtn','runtimeWebRecent','runtimeWebRecentEmpty','delegationCheckpoint','delegationCheckpointText','delegationCheckpointOpenBtn','delegationCheckpointDoneBtn','delegationSteps','delegationRecent','delegationRecentEmpty','executionAgentName','executionStatus','executionRefreshBtn','executionPageLabel','executionCandidates','executionCandidatesEmpty','executionTickets','executionTicketsEmpty','executionContinuity','executionContinuityEmpty','memoryAgentName','memoryStatus','memoryRefreshBtn','memoryPageLabel','memoryCandidates','memoryCandidatesEmpty','memoryRemembered','memoryRememberedEmpty','memoryCount',
 'nowTab','agentTab','delegationTab','executionTab','memoryTab','thisPageTab','followingTab','liveTab','alertsTab','searchTab','nowView','agentView','delegationView','executionView','memoryView','thisPageView','followingView','liveView','alertsView','searchView','refreshNowBtn','openAgentChatBtn','restoreNowBtn','nowStatus','nowAttentionCount','nowItemCount','nowContextualCount','nowContextStrip','nowContextTitle','nowContextMeta','toggleNowContextBtn','nowContextPanel','nowRelationshipSummary','nowRelationshipList','nowContextActions','nowEmpty','nowFeed','refreshCaptureBtn','pageTitle','pageHost','sourceMeta','sourceStatus',
 'followCurrentSourceBtn','openSourcePageBtn','quickAskBtn','quickSummarizeBtn','quickCompareBtn','quickResearchBtn','quickKnowledgeBtn','quickTaskBtn','quickMemoryBtn','quickTeamBtn','quickAnnotateBtn','selectedText','selectionCount','captureSummary','captureScreenshotBtn','screenshotPreview',
 'screenshotImage','screenshotMeta','removeScreenshotBtn','captureMediaBtn','mediaDetectedText','mediaPreview','mediaPreviewTitle','mediaStart',
@@ -29,6 +29,7 @@ let agentConversationId=0,agentWorkspaceAgentId=0,agentLastMessageId=0,agentPoll
 let delegationBusy=false,delegationRunnerBusy=false,delegationPreviewData=null,delegationActiveData=null,delegationRecentData=[],delegationCheckpointData=null;
 let runtimeBusyV2200=false,runtimeRunnerBusyV2200=false,runtimeDataV2200=null,runtimeSkillsV2200=[],runtimeOpenedTabsV2200=[];
 let runtimeWebBusyV2210=false,runtimeWebObservationV2210=null,runtimeWebElementsV2210=[],runtimeWebActionsV2210=[],runtimeWebSelectedV2210=null,runtimeWebProposalV2210=null,runtimeWebReceiptsV2210=[];
+let runtimeMultiBusyV2220=false,runtimeMultiStateV2220=null;
 let executionBusy=false,executionCandidatesData=[],executionTicketsData=[],executionContinuityData=[];
 let memoryBusy=false,memoryCandidatesData=[],memoryRememberedData=[];
 let nowContextIgnored=false,contextAgentPayload=null,contextRelationships=null,contextSuggestions=[];
@@ -563,6 +564,137 @@ async function sendAgentMessageV2160(){
     optimistic.remove();ui.agentMessageInput.value=message;await fail(e);
   }finally{agentBusy=false;renderCaps();}
 }
+function normalizeDomainV2220(value){return String(value||'').trim().toLowerCase().replace(/^www\./,'');}
+function runtimeMultiResetV2220(){
+  runtimeMultiStateV2220=null;
+  ui.runtimeMultiStatus.textContent='Attach the approved domain envelope to coordinate cross-site work.';
+  ui.runtimeMultiCurrentDomain.textContent='Current: —';
+  ui.runtimeMultiHandoffCount.textContent='0 / 0 handoffs';
+  ui.runtimeMultiTabCount.textContent='0 / 0 tabs';
+  ui.runtimeMultiConflictCount.textContent='0 conflicts';
+  ui.runtimeMultiDomains.replaceChildren();ui.runtimeMultiDomainsEmpty.hidden=false;
+  ui.runtimeMultiHandoffComposer.hidden=true;ui.runtimeMultiFactComposer.hidden=true;
+  ui.runtimeMultiFacts.replaceChildren();ui.runtimeMultiFactsEmpty.hidden=false;
+  ui.runtimeMultiHandoffs.replaceChildren();ui.runtimeMultiHandoffsEmpty.hidden=false;
+  ui.runtimeMultiArtifacts.replaceChildren();ui.runtimeMultiArtifactsEmpty.hidden=false;
+}
+function runtimeMultiPolicyV2220(domain){
+  const d=normalizeDomainV2220(domain);
+  return (runtimeMultiStateV2220&&Array.isArray(runtimeMultiStateV2220.domains)?runtimeMultiStateV2220.domains:[]).find(item=>normalizeDomainV2220(item.domain)===d)||null;
+}
+function runtimeMultiDomainRowV2220(item){
+  const row=el('div','runtime-multi-domain'+(normalizeDomainV2220(item.domain)===normalizeDomainV2220(runtimeMultiStateV2220&&runtimeMultiStateV2220.current_domain)?' current':''),'');
+  const copy=el('div','runtime-multi-domain-copy','');
+  copy.append(el('strong','',String(item.domain||'Approved domain')));
+  copy.append(el('span','',(item.visit_count||0)+' visits'+(item.last_visited_at?' · '+date(item.last_visited_at):'')+' · '+(item.allowed_actions||[]).length+' skills'));
+  const controls=el('div','runtime-multi-policy','');
+  const select=document.createElement('select');select.dataset.multiPolicyDomain=String(item.domain||'');
+  for(const mode of [['browse','Browse'],['delegated','Delegated'],['blocked','Blocked']]){
+    const option=document.createElement('option');option.value=mode[0];option.textContent=mode[1];option.selected=String(item.policy_mode||'browse')===mode[0];select.append(option);
+  }
+  controls.append(select);row.append(copy,controls);return row;
+}
+function runtimeMultiRowV2220(title,detail,status=''){
+  const row=el('div','runtime-multi-row '+String(status||''),'');
+  const copy=el('div','runtime-multi-row-copy','');
+  copy.append(el('strong','',String(title||'Runtime item')),el('span','',String(detail||'')));
+  row.append(copy);return row;
+}
+function renderRuntimeMultiV2220(state){
+  runtimeMultiStateV2220=state&&state.attached?state:null;
+  if(!runtimeMultiStateV2220){runtimeMultiResetV2220();return;}
+  ui.runtimeMultiStatus.textContent=String(state.status||'active')+' · '+(state.domains||[]).length+' approved domains · URLs stay local in Chrome';
+  ui.runtimeMultiCurrentDomain.textContent='Current: '+String(state.current_domain||'—');
+  ui.runtimeMultiHandoffCount.textContent=String(state.handoff_count||0)+' / '+String(state.max_handoffs||0)+' handoffs';
+  const openTabs=(state.tabs||[]).filter(x=>String(x.status||'')==='open').length;
+  ui.runtimeMultiTabCount.textContent=openTabs+' / '+String(state.max_tabs||0)+' tabs';
+  const conflicts=(state.facts||[]).filter(x=>String(x.status||'')==='conflict').length;
+  ui.runtimeMultiConflictCount.textContent=conflicts+' conflicts';
+
+  ui.runtimeMultiDomains.replaceChildren();(state.domains||[]).forEach(item=>ui.runtimeMultiDomains.append(runtimeMultiDomainRowV2220(item)));
+  ui.runtimeMultiDomainsEmpty.hidden=(state.domains||[]).length>0;
+  ui.runtimeMultiHandoffComposer.hidden=false;ui.runtimeMultiFactComposer.hidden=false;
+
+  ui.runtimeMultiFacts.replaceChildren();
+  (state.facts||[]).forEach(item=>ui.runtimeMultiFacts.append(runtimeMultiRowV2220(
+    String(item.fact_key||'Fact')+' · '+String(item.value||''),
+    String(item.source_domain||'')+(item.created_at?' · '+date(item.created_at):''),
+    String(item.status||'')
+  )));
+  ui.runtimeMultiFactsEmpty.hidden=(state.facts||[]).length>0;
+
+  ui.runtimeMultiHandoffs.replaceChildren();
+  (state.handoffs||[]).forEach(item=>ui.runtimeMultiHandoffs.append(runtimeMultiRowV2220(
+    String(item.source_domain||'')+' → '+String(item.target_domain||''),
+    String(item.status||'')+(item.result_code?' · '+String(item.result_code):'')+(item.created_at?' · '+date(item.created_at):''),
+    String(item.status||'')
+  )));
+  ui.runtimeMultiHandoffsEmpty.hidden=(state.handoffs||[]).length>0;
+
+  ui.runtimeMultiArtifacts.replaceChildren();
+  (state.artifacts||[]).forEach(item=>ui.runtimeMultiArtifacts.append(runtimeMultiRowV2220(
+    (item.file_ext?'.'+String(item.file_ext):'download')+' · '+String(item.mime_type||'unknown type'),
+    String(item.source_domain||'')+' · '+String(item.byte_size||0)+' bytes · recorded only',
+    String(item.status||'')
+  )));
+  ui.runtimeMultiArtifactsEmpty.hidden=(state.artifacts||[]).length>0;
+}
+async function attachRuntimeMultiV2220(){
+  if(runtimeMultiBusyV2220||!runtimeDataV2200||!runtimeDataV2200.runtime_id)return;
+  runtimeMultiBusyV2220=true;busy(ui.runtimeMultiAttachBtn,true,'Attaching…');
+  try{
+    const result=await msg('multisite_attach',{payload:{runtime_id:runtimeDataV2200.runtime_id,agent_id:agentWorkspaceAgentId}});
+    renderRuntimeMultiV2220(result&&result.state||null);
+    note('Multi-site Runtime attached to the approved domain envelope.','success');
+    await loadRuntimeDetailV2200();
+  }finally{runtimeMultiBusyV2220=false;busy(ui.runtimeMultiAttachBtn,false);}
+}
+async function loadRuntimeMultiV2220(){
+  if(!runtimeDataV2200||!runtimeDataV2200.runtime_id)return null;
+  try{
+    const state=await msg('multisite_state',{payload:{runtime_id:runtimeDataV2200.runtime_id,agent_id:agentWorkspaceAgentId}});
+    renderRuntimeMultiV2220(state||null);return state||null;
+  }catch(error){
+    if(String(error.message||'').includes('Attach the multi-site runtime')){runtimeMultiResetV2220();return null;}
+    throw error;
+  }
+}
+async function updateRuntimeMultiPolicyV2220(domain,mode){
+  if(!runtimeDataV2200||!runtimeDataV2200.runtime_id)return;
+  const state=await msg('multisite_policy',{payload:{runtime_id:runtimeDataV2200.runtime_id,agent_id:agentWorkspaceAgentId,domain,policy_mode:mode}});
+  renderRuntimeMultiV2220(state||null);await loadRuntimeDetailV2200();
+}
+async function runRuntimeMultiHandoffV2220(targetUrl){
+  if(!runtimeDataV2200||!runtimeDataV2200.runtime_id)throw new Error('Browser Runtime is not attached.');
+  if(!runtimeMultiStateV2220)throw new Error('Attach Multi-Site Runtime before moving between domains.');
+  const raw=String(targetUrl||'').trim();if(!raw)throw new Error('Enter an approved destination URL.');
+  const result=await msg('multisite_handoff',{payload:{runtime_id:runtimeDataV2200.runtime_id,agent_id:agentWorkspaceAgentId,target_url:raw}});
+  renderRuntimeMultiV2220(result&&result.state||null);
+  const ok=Boolean(result&&result.outcome&&result.outcome.verified);
+  note(ok?'Cross-domain handoff completed and verified.':'Cross-domain handoff stopped because the approved destination could not be verified.',ok?'success':'error');
+  await refreshCapture(false).catch(()=>{});
+  await loadRuntimeDetailV2200();
+  return result;
+}
+async function addRuntimeMultiFactV2220(){
+  if(runtimeMultiBusyV2220||!runtimeDataV2200||!runtimeDataV2200.runtime_id)return;
+  const factKey=String(ui.runtimeMultiFactKey.value||'').trim(),value=String(ui.runtimeMultiFactValue.value||'').trim();
+  if(!factKey||!value)throw new Error('Enter both a fact name and value.');
+  runtimeMultiBusyV2220=true;busy(ui.runtimeMultiFactAddBtn,true,'Adding…');
+  try{
+    const state=await msg('multisite_fact_add',{payload:{runtime_id:runtimeDataV2200.runtime_id,agent_id:agentWorkspaceAgentId,fact_key:factKey,value}});
+    renderRuntimeMultiV2220(state||null);
+    ui.runtimeMultiFactKey.value='';ui.runtimeMultiFactValue.value='';
+    const conflicts=(state&&state.facts||[]).filter(x=>String(x.status||'')==='conflict').length;
+    note(conflicts?'Structured fact added; a source conflict needs review.':'Structured fact added with source provenance.',conflicts?'error':'success');
+    await loadRuntimeDetailV2200();
+  }finally{runtimeMultiBusyV2220=false;busy(ui.runtimeMultiFactAddBtn,false);}
+}
+async function runtimeMultiDomainChangeV2220(event){
+  const select=event.target.closest('[data-multi-policy-domain]');if(!select)return;
+  await updateRuntimeMultiPolicyV2220(String(select.dataset.multiPolicyDomain||''),String(select.value||'browse'));
+}
+
 function webInteractionRequestV2210(action,payload={}){
   const request=Object.assign({},payload||{});
   if(agentWorkspaceAgentId>0)request.agent_id=agentWorkspaceAgentId;
@@ -606,15 +738,23 @@ function runtimeWebActionRegistryV2210(key){
   return runtimeWebActionsV2210.find(item=>String(item.key||'')===String(key||''))||null;
 }
 function runtimeWebActionsForElementV2210(item){
-  return runtimeWebActionsV2210.filter(action=>{
+  const source=normalizeDomainV2220(runtimeWebObservationV2210&&runtimeWebObservationV2210.domain);
+  const target=normalizeDomainV2220(item&&item.target_host);
+  const crossDomain=String(item&&item.kind||'')==='link'&&target&&source&&target!==source;
+  const actions=runtimeWebActionsV2210.filter(action=>{
     const key=String(action.key||'');
     if(!Array.isArray(action.kinds)||!action.kinds.includes(String(item.kind||'control')))return false;
     if(key==='submit'&&!item.submit_like)return false;
-    if(key==='open_link'&&(!item.target_host||String(item.kind)!=='link'))return false;
+    if(key==='open_link'&&(!item.target_host||String(item.kind)!=='link'||crossDomain))return false;
     if(item.sensitive&&['type','clear','select','toggle','submit'].includes(key))return false;
     if(String(item.kind)==='radio'&&key==='toggle')return true;
     return true;
   });
+  const policy=crossDomain?runtimeMultiPolicyV2220(target):null;
+  if(crossDomain&&policy&&String(policy.policy_mode||'')!=='blocked'&&item.target_url){
+    actions.unshift({key:'handoff',label:'Move to approved domain',risk_level:'low',kinds:['link']});
+  }
+  return actions;
 }
 function runtimeWebElementRowV2210(item,index){
   const row=el('button','runtime-web-element','');
@@ -698,6 +838,13 @@ async function previewRuntimeWebInteractionV2210(){
   if(action==='type'&&!value)throw new Error('Enter the field value before previewing this interaction.');
   runtimeWebBusyV2210=true;busy(ui.runtimeWebPreviewBtn,true,'Previewing…');
   try{
+    if(action==='handoff'){
+      runtimeWebProposalV2210={proposal:{label:'Move to approved domain',requires_checkpoint:false,risk_level:'low'},action,item,value:''};
+      ui.runtimeWebProposal.hidden=false;ui.runtimeWebCheckpointNotice.hidden=true;ui.runtimeWebRunBtn.hidden=false;ui.runtimeWebConfirmRunBtn.hidden=true;
+      ui.runtimeWebProposalTitle.textContent='Ready · Move to approved domain';
+      ui.runtimeWebProposalDetail.textContent='Move from '+String(runtimeWebObservationV2210.domain||'this site')+' to '+String(item.target_host||'the approved destination')+'. The destination URL stays local in Chrome.';
+      note('Cross-domain handoff preview ready.','success');return;
+    }
     const payload=await webInteractionRequestV2210('preview',{
       runtime_id:runtimeDataV2200.runtime_id,domain:runtimeWebObservationV2210.domain,
       page_fingerprint:runtimeWebObservationV2210.page_fingerprint,dom_fingerprint:runtimeWebObservationV2210.dom_fingerprint,
@@ -766,6 +913,12 @@ async function executeRuntimeWebProposalV2210(confirmCheckpoint=false){
   runtimeWebBusyV2210=true;
   const button=confirmCheckpoint?ui.runtimeWebConfirmRunBtn:ui.runtimeWebRunBtn;busy(button,true,'Running…');
   try{
+    if(local.action==='handoff'){
+      const result=await runRuntimeMultiHandoffV2220(local.item&&local.item.target_url||'');
+      runtimeWebResetProposalV2210();
+      await scanRuntimeWebControlsV2210().catch(()=>{});
+      return result;
+    }
     if(local.proposal.requires_checkpoint){
       const confirmed=await webInteractionRequestV2210('confirm',{runtime_id:runtimeDataV2200.runtime_id,interaction_id:local.proposal.interaction_id});
       if(confirmed&&confirmed.proposal)local.proposal=confirmed.proposal;
@@ -821,10 +974,10 @@ function renderRuntimeV2200(runtime){
   runtimeDataV2200=runtime||null;
   if(!runtime){
     ui.runtimePanel.hidden=true;
-    runtimeWebResetV2210();
+    runtimeWebResetV2210();runtimeMultiResetV2220();
     return;
   }
-  if(previousRuntimeId&&previousRuntimeId!==String(runtime.runtime_id||''))runtimeWebResetV2210();
+  if(previousRuntimeId&&previousRuntimeId!==String(runtime.runtime_id||'')){runtimeWebResetV2210();runtimeMultiResetV2220();}
   ui.runtimePanel.hidden=false;
   ui.runtimeSessionBadge.textContent=(runtime.status||'ready')+' · '+String(runtime.runtime_id||'').slice(0,8);
   ui.runtimePlanRevision.textContent='r'+String(runtime.plan_revision||1);
@@ -840,6 +993,7 @@ function renderRuntimeV2200(runtime){
   ui.runtimeTabsEmpty.hidden=(runtime.tabs||[]).length>0;
   const terminal=['completed','cancelled','expired'].includes(String(runtime.status||''));
   ui.runtimeWebPanel.hidden=terminal;
+  ui.runtimeMultiPanel.hidden=terminal;
   const current=runtime.current_step||null;
   ui.runtimeReplanBtn.disabled=terminal||Number(runtime.replan_count||0)>=Number(runtime.max_replans||0)||String(runtime.status||'')==='checkpoint';
   ui.runtimeSkipBtn.disabled=terminal||!current||!['queued','failed','approval_pending','executing'].includes(String(current.status||''));
@@ -849,6 +1003,7 @@ async function attachRuntimeV2200(delegationId){
   const payload=await runtimeRequestV2200('attach',{delegation_id:String(delegationId)});
   if(payload&&payload.agent){agentWorkspaceAgentId=Math.max(0,Number(payload.agent.id||agentWorkspaceAgentId||0));}
   renderRuntimeV2200(payload&&payload.runtime||null);
+  await loadRuntimeMultiV2220().catch(()=>{});
   return payload&&payload.runtime||null;
 }
 async function loadRuntimeDetailV2200(){
@@ -1127,6 +1282,13 @@ function showDelegationCheckpointV2190(result){
   ui.delegationRunBtn.hidden=true;
 }
 async function openDelegationCheckpointV2190(){
+  const step=delegationCheckpointData&&delegationCheckpointData.step||null;
+  if(step&&String(step.action_key||'')==='multisite_handoff'){
+    if(!runtimeMultiStateV2220)await attachRuntimeMultiV2220();
+    ui.runtimeMultiPanel.scrollIntoView({behavior:'smooth',block:'start'});
+    note('Multi-site checkpoint opened. Complete the approved-domain work, then mark this step done.','success');
+    return;
+  }
   const handoff=delegationCheckpointData&&delegationCheckpointData.handoff||null;if(!handoff)return;
   if(handoff.kind==='agent_prompt'){
     setView('agent');ui.agentMessageInput.value=String(handoff.prompt||'');renderCaps();ui.agentMessageInput.focus();
@@ -1578,6 +1740,10 @@ ui.delegationCheckpointOpenBtn.onclick=()=>openDelegationCheckpointV2190().catch
 ui.delegationCheckpointDoneBtn.onclick=async()=>{try{if(!delegationActiveData||!delegationCheckpointData||!delegationCheckpointData.step)return;if(runtimeDataV2200&&runtimeDataV2200.runtime_id){const payload=await runtimeRequestV2200('complete_checkpoint',{runtime_id:runtimeDataV2200.runtime_id,action_id:Number(delegationCheckpointData.step.id||0)});if(payload&&payload.runtime)renderRuntimeV2200(payload.runtime);if(payload&&payload.delegation)renderDelegationActiveV2190(payload.delegation);ui.delegationCheckpoint.hidden=true;delegationCheckpointData=null;await runRuntimeV2200();return;}const payload=await delegationRequestV2190('complete_checkpoint',{delegation_id:delegationActiveData.delegation_id,action_id:Number(delegationCheckpointData.step.id||0)});renderDelegationActiveV2190(payload&&payload.delegation||null);ui.delegationCheckpoint.hidden=true;delegationCheckpointData=null;await runDelegationV2190();}catch(e){await fail(e);}};
 ui.runtimeReplanBtn.onclick=()=>runtimeReplanV2200().catch(fail);
 ui.runtimeSkipBtn.onclick=()=>runtimeSkipV2200().catch(fail);
+ui.runtimeMultiAttachBtn.onclick=()=>attachRuntimeMultiV2220().catch(fail);
+ui.runtimeMultiGoBtn.onclick=()=>runRuntimeMultiHandoffV2220(String(ui.runtimeMultiTargetUrl.value||'')).catch(fail);
+ui.runtimeMultiFactAddBtn.onclick=()=>addRuntimeMultiFactV2220().catch(fail);
+ui.runtimeMultiDomains.onchange=e=>runtimeMultiDomainChangeV2220(e).catch(fail);
 ui.runtimeWebScanBtn.onclick=()=>scanRuntimeWebControlsV2210().catch(fail);
 ui.runtimeWebElements.onclick=e=>runtimeWebElementClickV2210(e).catch(fail);
 ui.runtimeWebActionSelect.onchange=()=>{runtimeWebInvalidateProposalV2210().catch(()=>{});runtimeWebConfigureValueV2210();};

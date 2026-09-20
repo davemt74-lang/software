@@ -102,7 +102,7 @@ function vp3_browser_delegation_allowed_actions_v2190(array $input): array
         'follow_source','unfollow_source',
         'open_research','open_profile','open_contact',
         'draft_task','draft_knowledge','share_team',
-        'web_click','web_focus','web_type','web_clear','web_select','web_toggle','web_scroll','web_open_link','web_submit'
+        'web_click','web_focus','web_type','web_clear','web_select','web_toggle','web_scroll','web_open_link','web_submit','multisite_handoff'
     ];
     $out=[];
     foreach(array_slice($input,0,24) as $value){
@@ -154,6 +154,22 @@ function vp3_browser_delegation_plan_v2190(
         'verification_mode'=>'server_reference',
         'mode'=>'server'
     ]];
+
+    if(in_array('multisite_handoff',$allowedActions,true)&&count($domains)>1&&count($steps)<$maxSteps){
+        $steps[]=[
+            'step_key'=>'step_'.(count($steps)+1).'_multisite_handoff',
+            'action_key'=>'multisite_handoff',
+            'label'=>'Coordinate approved multi-site workflow',
+            'step_kind'=>'checkpoint',
+            'target_type'=>'browser_source',
+            'target_id'=>(string)$source['id'],
+            'target_scope'=>'personal',
+            'risk_level'=>'low',
+            'requires_checkpoint'=>true,
+            'verification_mode'=>'user_confirmation',
+            'mode'=>'checkpoint',
+        ];
+    }
 
     foreach($candidates as $candidate){
         $action=(string)($candidate['action_key']??'');

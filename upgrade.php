@@ -7,6 +7,7 @@ require_once __DIR__ . '/includes/browser-execution-v2180.php';
 require_once __DIR__ . '/includes/browser-delegation-v2190.php';
 require_once __DIR__ . '/includes/browser-agent-runtime-v2200.php';
 require_once __DIR__ . '/includes/browser-web-interaction-v2210.php';
+require_once __DIR__ . '/includes/browser-multisite-v2220.php';
 require_once __DIR__ . '/includes/extension-notifications-v2140.php';
 require_once __DIR__ . '/includes/vp3-public.php';
 require_once __DIR__ . '/includes/artist-listening.php';
@@ -60,6 +61,7 @@ function vp3_upgrade_complete(): bool
         && vp3_browser_delegation_schema_ready_v2190()
         && vp3_browser_runtime_schema_ready_v2200()
         && vp3_browser_web_schema_ready_v2210()
+        && vp3_browser_multisite_schema_ready_v2220()
         && chat_settings_schema_ready_v237()
         && permission_v105_playlist_permission_ready()
         && personal_capability_seeded_v242()
@@ -165,6 +167,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             vp3_browser_delegation_ensure_schema_v2190();
             vp3_browser_runtime_ensure_schema_v2200();
             vp3_browser_web_ensure_schema_v2210();
+            vp3_browser_multisite_ensure_schema_v2220();
             chat_settings_ensure_schema_v237();
             permission_v105_seed_playlist_permission();
             personal_capability_seed_v242();

@@ -6,6 +6,7 @@ require_once __DIR__ . '/includes/agent-job-engine-v1900.php';
 require_once __DIR__ . '/includes/agent-worker-runtime-v1910.php';
 require_once __DIR__ . '/includes/browser-agent-runtime-v2200.php';
 require_once __DIR__ . '/includes/browser-web-interaction-v2210.php';
+require_once __DIR__ . '/includes/browser-multisite-v2220.php';
 require_permission('account.access');
 $pdo=db();$user=current_user();if(!$pdo||!$user)redirect(url('/login.php'));
 if(!agent_workflow_schema_ready_v1400($pdo))redirect(url('/agent-workflow-upgrade-v1400.php'));
@@ -43,6 +44,7 @@ $detail=null;$detailId=max(0,(int)($_GET['id']??0));
 if($detailId>0){$row=agent_workflow_row_v1400($pdo,(int)$user['id'],$detailId);if($row)$detail=$durable?agent_job_public_run_v1900($pdo,$row,true):agent_workflow_public_run_v1400($pdo,$row,true);}
 $browserRuntime=$detail&&vp3_browser_runtime_schema_ready_v2200($pdo)?vp3_browser_runtime_for_workflow_v2200($pdo,(int)$user['id'],$detailId):null;
 $browserWeb=$detail&&vp3_browser_web_schema_ready_v2210($pdo)?vp3_browser_web_for_workflow_v2210($pdo,(int)$user['id'],$detailId):['count'=>0,'verified'=>0,'failed'=>0,'checkpointed'=>0,'interactions'=>[]];
+$browserMulti=$detail&&vp3_browser_multisite_schema_ready_v2220($pdo)?vp3_browser_multisite_for_workflow_v2220($pdo,(int)$user['id'],$detailId):['attached'=>false];
 
 function workflow_v1400_status_label(string $status): string{return str_replace('_',' ',ucwords($status,'_'));}
 function workflow_v1400_time(string $value): string{$ts=strtotime($value);return $ts?date('M j, g:i A',$ts):'—';}
@@ -122,6 +124,41 @@ function workflow_v1400_time(string $value): string{$ts=strtotime($value);return
       </section>
     </div>
   </section>
+  <?php if(!empty($browserMulti['attached'])): ?>
+  <section class="workflow-panel" aria-labelledby="browserMultiSiteTitle">
+    <div class="workflow-panel-head">
+      <div><small>Browser Companion v22.20</small><h3 id="browserMultiSiteTitle">Multi-Site Workflow Runtime</h3></div>
+      <span><?= (int)($browserMulti['handoff_count']??0) ?> handoffs · <?= count((array)($browserMulti['domains']??[])) ?> domains</span>
+    </div>
+    <div class="workflow-summary-grid">
+      <div><small>Current domain</small><strong><?= e((string)($browserMulti['current_domain']??'—')) ?></strong></div>
+      <div><small>Open runtime tabs</small><strong><?= count(array_filter((array)($browserMulti['tabs']??[]),static fn($x): bool=>(string)($x['status']??'')==='open')) ?> / <?= (int)($browserMulti['max_tabs']??0) ?></strong></div>
+      <div><small>Structured facts</small><strong><?= count((array)($browserMulti['facts']??[])) ?> task-scoped</strong></div>
+      <div><small>Conflicts</small><strong><?= count(array_filter((array)($browserMulti['facts']??[]),static fn($x): bool=>(string)($x['status']??'')==='conflict')) ?> need review</strong></div>
+    </div>
+    <div class="workflow-two-col">
+      <section class="workflow-panel">
+        <div class="workflow-panel-head"><h3>Approved domain map</h3><span>Never expands silently</span></div>
+        <div class="workflow-event-list">
+          <?php foreach((array)($browserMulti['domains']??[]) as $domain): ?>
+          <article><strong><?= e((string)($domain['domain']??'')) ?> · <?= e(workflow_v1400_status_label((string)($domain['policy_mode']??'browse'))) ?></strong><p><?= count((array)($domain['allowed_actions']??[])) ?> permitted skills · <?= (int)($domain['visit_count']??0) ?> visits</p><small><?= !empty($domain['last_visited_at'])?e(workflow_v1400_time((string)$domain['last_visited_at'])):'Not visited yet' ?></small></article>
+          <?php endforeach; ?>
+        </div>
+      </section>
+      <section class="workflow-panel">
+        <div class="workflow-panel-head"><h3>Cross-site receipts</h3><span>URL fingerprints only</span></div>
+        <div class="workflow-event-list">
+          <?php foreach(array_slice((array)($browserMulti['handoffs']??[]),0,20) as $handoff): ?>
+          <article><strong><?= e((string)($handoff['source_domain']??'')) ?> → <?= e((string)($handoff['target_domain']??'')) ?></strong><p><?= e(workflow_v1400_status_label((string)($handoff['status']??''))) ?><?= !empty($handoff['result_code'])?' · '.e((string)$handoff['result_code']):'' ?></p><small><?= e(workflow_v1400_time((string)($handoff['created_at']??''))) ?></small></article>
+          <?php endforeach; ?>
+          <?php if(!(array)($browserMulti['handoffs']??[])): ?><div class="workflow-empty">No cross-domain handoffs yet.</div><?php endif; ?>
+        </div>
+      </section>
+    </div>
+    <div class="workflow-notice" role="note" style="margin:14px 0 0">Raw URLs, browser history, cookies, credentials, MFA codes and tokens are not persisted by v22.20. Structured facts are task-scoped, source-attributed and removed when runtime authority ends.</div>
+  </section>
+  <?php endif; ?>
+
   <?php if((int)($browserWeb['count']??0)>0): ?>
   <section class="workflow-panel" aria-labelledby="browserWebInteractionTitle">
     <div class="workflow-panel-head">

@@ -1,6 +1,65 @@
-# VP3 Browser Companion v22.10
+# VP3 Browser Companion v22.20
 
 Chrome Manifest V3 companion for VP3 Browser Share and the Source Feed layer: This Page, Following, source/user follows, comments, read state, Private/Team/Public publishing, plus highlighted text, screenshot regions, source-media moments, and voice commentary.
+
+## v22.20 Multi-Site Workflow Automation
+
+v22.20 extends the controlled v22.10 Web interaction layer into a bounded **multi-site runtime** without turning Browser Companion into unrestricted browser automation.
+
+The cross-site loop is:
+
+**Goal → Approved domain → Observe / Act / Verify → Handoff permit → Approved domain → Continue → VP3 checkpoint → Complete**
+
+Authority and runtime model:
+
+- **v21.90 remains authoritative.** Domains, actions, risk budget, maximum steps and expiration are still the outer delegation envelope.
+- **v22.00 remains the canonical runtime.** Multi-site activity is attached to the same Agent Workflow and runtime timeline.
+- **v22.10 remains the interaction primitive.** Same-domain page controls still use Controlled Web Interaction. Crossing domains is a separate v22.20 handoff primitive.
+- **Multi-site handoff is explicit delegation authority.** It must be selected when the job is approved, and the delegation must contain at least two approved domains.
+- **A canonical multi-site checkpoint is added to the Agent Workflow.** Cross-site work happens while that checkpoint is active, then the user marks the checkpoint complete.
+
+Cross-domain controls:
+
+- Approved domains are limited to the existing v21.90 domain list.
+- Every cross-domain move receives a short-lived, one-time server permit.
+- Raw destination URLs remain local in Chrome; VP3 stores URL fingerprints, source/target domains and verification status.
+- Same-approved-domain redirects are allowed and recorded as verified redirects; redirects to any unapproved domain fail closed.
+- Runtime-owned tabs may be reused for their approved domain. Browser Companion does not close unrelated user tabs.
+- Popups opened from runtime-owned tabs are watched; unapproved destinations are stopped and runtime-owned popups are closed.
+- Chrome may use the user's existing signed-in browser session, but v22.20 does not read or persist cookies, passwords, MFA codes, access tokens or session tokens.
+- Site access still requires Chrome host permission for the approved destination.
+
+Per-domain policy:
+
+- Each approved domain has a **Browse**, **Delegated**, or **Blocked** runtime policy.
+- The policy can only narrow or restore actions already inside the original delegation envelope; it cannot add a new skill or domain.
+- Secondary domains begin in Browse mode. Promoting one to Delegated is an explicit user action.
+- Browse mode permits only the approved low-risk browse/handoff skills.
+- Delegated mode permits the subset of Web skills already approved globally for the job.
+
+Runtime coordination:
+
+- Cross-domain handoffs, tab references, domain visits and download observations are attached to the canonical Browser Runtime.
+- Server tab records use opaque hashes plus approved domains; they do not store URLs or titles.
+- Runtime-owned external tabs are tracked separately from the v22.00 VP3-object tab references.
+- Handoff, tab and interaction counts are bounded from the approved delegation and hard-capped.
+- The Runtime Map shows current domain, approved domain policies, visit counts, handoff receipts, active runtime tabs, structured facts and download receipts.
+
+Structured task facts:
+
+- v22.20 can hold small, explicit task facts such as company names, identifiers, dates, prices or status values with the approved source domain and page fingerprint.
+- Facts are **task-scoped**, expire with runtime authority and are removed when the runtime closes.
+- Credentials, authentication secrets, payment/account data and health/medical data are blocked from structured fact storage.
+- When two approved sources provide different values for the same fact key, both are marked as a **conflict** rather than silently choosing one.
+- Conflicts use the existing proactive notification pipeline, so Agent Voice may announce that source data needs review without speaking the conflicting values.
+
+Download awareness:
+
+- Chrome observes downloads only while a multi-site runtime is active.
+- The server stores source domain, file extension, MIME type, byte count and a filename fingerprint—not the file URL or raw filename.
+- Browser Companion never executes downloaded files.
+
+v22.20 intentionally does not add credential capture, login/MFA bypass, silent domain expansion, arbitrary JavaScript, generalized browsing-history collection or uncontrolled cross-site form submission.
 
 ## v22.10 Controlled Web Interaction Runtime
 

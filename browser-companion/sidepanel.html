@@ -189,6 +189,8 @@
             <label><input type="checkbox" data-delegation-action="web_select"> Select options · medium risk</label>
             <label><input type="checkbox" data-delegation-action="web_toggle"> Toggle controls · medium risk</label>
             <label><input type="checkbox" data-delegation-action="web_submit"> Submit forms · checkpoint + medium risk</label>
+            <span>Multi-site workflow · v22.20</span>
+            <label><input type="checkbox" data-delegation-action="multisite_handoff" checked> Move between explicitly approved domains</label>
           </div>
           <div class="delegation-form-actions">
             <button id="delegationPreviewBtn" type="button">Preview plan</button>
@@ -231,6 +233,57 @@
               <button id="runtimeReplanBtn" type="button">Replan</button>
               <button id="runtimeSkipBtn" type="button">Skip step</button>
             </div>
+
+            <section id="runtimeMultiPanel" class="runtime-multi-panel">
+              <div class="row-between">
+                <div>
+                  <div class="eyebrow">Multi-Site Workflow Automation · v22.20</div>
+                  <strong>Runtime map</strong>
+                  <div id="runtimeMultiStatus" class="page-host">Attach the approved domain envelope to coordinate cross-site work.</div>
+                </div>
+                <button id="runtimeMultiAttachBtn" type="button">Attach multi-site</button>
+              </div>
+              <div class="runtime-web-boundary">
+                <strong>Domains never expand silently.</strong>
+                <span>Only domains already approved in the v21.90 delegation can participate. Cross-domain movement uses a separate short-lived permit. Redirects and popups outside the approved set fail closed. Chrome uses existing signed-in sessions without reading cookies, passwords, MFA codes, or tokens.</span>
+              </div>
+              <div class="runtime-web-summary">
+                <span id="runtimeMultiCurrentDomain" class="pill">Current: —</span>
+                <span id="runtimeMultiHandoffCount" class="pill">0 / 0 handoffs</span>
+                <span id="runtimeMultiTabCount" class="pill">0 / 0 tabs</span>
+                <span id="runtimeMultiConflictCount" class="pill">0 conflicts</span>
+              </div>
+              <div class="runtime-subhead"><strong>Approved domain map</strong><span>Policy can only narrow the delegation</span></div>
+              <div id="runtimeMultiDomains" class="runtime-multi-domains"></div>
+              <div id="runtimeMultiDomainsEmpty" class="empty-state">Multi-site runtime is not attached yet.</div>
+
+              <div id="runtimeMultiHandoffComposer" class="runtime-web-composer" hidden>
+                <label class="field">
+                  <span>Approved destination URL <small>URL stays local in Chrome</small></span>
+                  <input id="runtimeMultiTargetUrl" type="url" maxlength="4000" autocomplete="off" placeholder="https://approved-domain.example/path">
+                </label>
+                <div class="delegation-controls">
+                  <button id="runtimeMultiGoBtn" class="primary" type="button">Move to approved domain</button>
+                </div>
+              </div>
+
+              <div class="runtime-subhead"><strong>Structured task facts</strong><span>Task-scoped + source provenance</span></div>
+              <div id="runtimeMultiFactComposer" class="runtime-multi-fact-composer" hidden>
+                <label class="field"><span>Fact</span><input id="runtimeMultiFactKey" type="text" maxlength="120" autocomplete="off" placeholder="Company size"></label>
+                <label class="field"><span>Value</span><input id="runtimeMultiFactValue" type="text" maxlength="500" autocomplete="off" placeholder="250 employees"></label>
+                <button id="runtimeMultiFactAddBtn" type="button">Add from current approved page</button>
+              </div>
+              <div id="runtimeMultiFacts" class="runtime-multi-facts"></div>
+              <div id="runtimeMultiFactsEmpty" class="empty-state">No structured facts collected for this runtime.</div>
+
+              <div class="runtime-subhead"><strong>Domain handoffs</strong><span>Verified cross-site receipts</span></div>
+              <div id="runtimeMultiHandoffs" class="runtime-multi-handoffs"></div>
+              <div id="runtimeMultiHandoffsEmpty" class="empty-state">No cross-domain handoffs yet.</div>
+
+              <div class="runtime-subhead"><strong>Downloads observed</strong><span>Recorded, never executed</span></div>
+              <div id="runtimeMultiArtifacts" class="runtime-multi-artifacts"></div>
+              <div id="runtimeMultiArtifactsEmpty" class="empty-state">No downloads observed from approved runtime domains.</div>
+            </section>
 
             <section id="runtimeWebPanel" class="runtime-web-panel">
               <div class="row-between">
