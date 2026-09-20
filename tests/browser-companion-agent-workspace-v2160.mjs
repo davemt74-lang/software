@@ -92,7 +92,8 @@ must(chat.includes("WHERE id=? AND user_id=? AND user_agent_id IS NULL LIMIT 1")
 
 // Live capability revocation and lifecycle.
 must(
-  panel.includes("['now','agent','execution','memory'].includes(activeView)&&!c.has('agent.message')")
+  panel.includes("['now','agent','delegation','execution','memory'].includes(activeView)&&!c.has('agent.message')")
+    || panel.includes("['now','agent','execution','memory'].includes(activeView)&&!c.has('agent.message')")
     || panel.includes("['now','agent','memory'].includes(activeView)&&!c.has('agent.message')")
     || panel.includes("['now','agent'].includes(activeView)&&!c.has('agent.message')"),
   'Agent view must leave revoked capability immediately'
