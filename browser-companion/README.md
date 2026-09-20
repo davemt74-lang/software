@@ -1,6 +1,28 @@
-# VP3 Browser Companion v21.60
+# VP3 Browser Companion v21.70
 
 Chrome Manifest V3 companion for VP3 Browser Share and the Source Feed layer: This Page, Following, source/user follows, comments, read state, Private/Team/Public publishing, plus highlighted text, screenshot regions, source-media moments, and voice commentary.
+
+## v21.70 Cross-Web Cognitive Memory
+
+Browser Companion now has an explicit **Memory** view for cross-web Agent continuity.
+
+This phase does **not** turn browsing history into Agent memory. Opening a page, highlighting text, asking Agent, or refreshing Now creates no Browser Memory approval.
+
+Memory candidates are derived only from durable VP3 objects already related to the current page and already authorized for the signed-in user:
+
+- recognized Browser Sources with an authorized share/follow relationship
+- Research projects the user can access
+- Knowledge items the user can currently read
+- public active VP3 profiles
+- CRM contacts only for existing CRM admins
+
+The user must click **Remember** on a specific object. VP3 then stores only a reference approval: user ID, Agent namespace, target type, target ID, target scope, and approval/revocation timestamps. It does not store the page URL, page title, page body, selected text, source excerpt, relationship summary, or a browsing-history record.
+
+Each approval becomes a registered `browser_memory_ref` Cognitive object. Cognitive Memory v5.70 records continuity around that reference, while the Browser Memory module reauthorizes and resolves the underlying VP3 object on every read.
+
+**Forget** revokes the approval. The reference-only audit occurrence can remain, but permission resolution immediately makes that remembered object unavailable to Cognitive Memory until the user explicitly approves it again.
+
+The Memory view is Agent-specific. It shares the same resolved Agent namespace as the Browser Agent Workspace, so approved references do not silently move between Agents.
 
 ## v21.60 Browser Agent Workspace
 
