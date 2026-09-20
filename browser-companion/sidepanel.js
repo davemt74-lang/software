@@ -620,9 +620,11 @@ async function memoryClickV2170(e){
     }
     if(b.dataset.action==='memory_remember'){
       busy(b,true,'Remembering…');
+      if(!capture||!capture.available)throw new Error('The current page changed. Refresh Browser Memory before remembering this item.');
       await memoryRequestV2170('approve',{
         target_type:String(row.dataset.targetType||''),
-        target_id:String(row.dataset.targetId||'')
+        target_id:String(row.dataset.targetId||''),
+        context:capture
       });
       note('Approved for VP3 Agent Memory.','success');await loadMemoryV2170();return;
     }
