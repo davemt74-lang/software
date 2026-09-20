@@ -25,6 +25,8 @@ must(background.includes("contexts:['page','selection','link','image','video','a
 must(background.includes("utf8Limit(String(info.selectionText).trim(), 12000)"),'selection must stay bounded');
 must(background.includes("info?.linkUrl"),'link target context missing');
 must(background.includes("info?.srcUrl"),'media/image target context missing');
+must(background.includes("return /^https?:$/.test(url.protocol) ? url.href : '';"),
+  'quick-action link/media targets must be restricted to HTTP(S)');
 must(background.includes("kind:mediaType === 'audio' ? 'audio_reference' : 'video_reference'"),'audio/video quick target reference missing');
 must(background.includes("chrome.storage.session.set"),'composer quick-action handoff must use session storage');
 must(background.includes("pending_quick_action_v2150"),'pending quick-action session key missing');
@@ -50,6 +52,8 @@ must(panel.includes("ui.quickResearchBtn.disabled=!quickPageOk||!c.has('agent.me
 must(panel.includes("ui.quickKnowledgeBtn.disabled=!quickPageOk||!c.has('agent.message')||!c.has('knowledge.write')"),'Knowledge quick action capability gate missing');
 must(panel.includes("ui.quickTaskBtn.disabled=!quickPageOk||!c.has('agent.message')||!c.has('task.propose')"),'Task quick action capability gate missing');
 must(panel.includes("ui.quickTeamBtn.disabled=!quickPageOk||!c.has('team.share.create')"),'Team quick action capability gate missing');
+must(panel.includes("if(c.has('team.destinations.read'))await loadDestinations();"),
+  'Team destination loading must use its canonical live capability');
 must(panel.includes("ui.quickAnnotateBtn.disabled=!quickPageOk||!c.has('team.share.create')"),'Annotate quick action capability gate missing');
 
 // Persistence-capable actions remain explicit composer/proposal flows.
