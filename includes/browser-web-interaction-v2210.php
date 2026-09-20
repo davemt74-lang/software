@@ -338,6 +338,10 @@ function vp3_browser_web_preview_v2210(PDO $pdo,array $user,string $namespace,ar
     if($actionKey==='open_link'){
         if($kind!=='link'||$targetHost==='')throw new RuntimeException('Open Link requires a normal HTTP(S) link.');
         if($targetHost!==$domain)throw new RuntimeException('v22.10 Open Link is limited to the current approved domain. Multi-site navigation belongs to the next runtime phase.');
+    }elseif($actionKey==='submit'){
+        $formHost=vp3_browser_web_domain_v2210($element['form_action_host']??$targetHost);
+        $targetHost=$formHost!==''?$formHost:$domain;
+        if($targetHost!==$domain)throw new RuntimeException('v22.10 form submission is limited to the current approved domain.');
     }else $targetHost='';
 
     $danger=vp3_browser_web_dangerous_v2210($element,$actionKey);
