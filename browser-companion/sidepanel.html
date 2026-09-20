@@ -50,6 +50,7 @@
       <nav class="feed-tabs" aria-label="Browser Companion views">
         <button id="nowTab" class="feed-tab active" type="button" aria-selected="true">Now</button>
         <button id="agentTab" class="feed-tab" type="button" aria-selected="false">Agent</button>
+        <button id="delegationTab" class="feed-tab" type="button" aria-selected="false">Delegate</button>
         <button id="executionTab" class="feed-tab" type="button" aria-selected="false">Execute</button>
         <button id="memoryTab" class="feed-tab" type="button" aria-selected="false">Memory</button>
         <button id="thisPageTab" class="feed-tab" type="button" aria-selected="false">This Page</button>
@@ -135,6 +136,91 @@
             <button id="agentSendBtn" class="primary" type="button">Send</button>
           </div>
           <p class="hint">Page context is attached only to the turn you send. The conversation itself is stored in the same VP3 Agent Chat history used on the website.</p>
+        </section>
+      </section>
+
+      <section id="delegationView" hidden>
+        <section class="card delegation-head">
+          <div class="row-between">
+            <div>
+              <div class="eyebrow">Delegated Browser Workflows</div>
+              <strong id="delegationAgentName">VP3 Agent</strong>
+              <div id="delegationStatus" class="page-host">Intent → Plan → Delegate → Execute → Verify</div>
+            </div>
+            <button id="delegationRefreshBtn" class="text-btn" type="button">Refresh</button>
+          </div>
+          <div class="delegation-boundary">
+            <strong>Bounded authority, not permanent autonomy.</strong>
+            <span>The Agent may continue only inside the plan you approve. Step count, actions, domains, risk and expiration are enforced server-side. Consequential writes still stop at a checkpoint.</span>
+          </div>
+        </section>
+
+        <section class="card delegation-card">
+          <div class="eyebrow">New delegation</div>
+          <label class="field">
+            <span>What should the Agent do?</span>
+            <textarea id="delegationInstruction" rows="4" maxlength="2000" placeholder="Example: Review this source, open the related research, and prepare a follow-up task for my approval."></textarea>
+          </label>
+          <div class="delegation-grid">
+            <label class="field"><span>Max steps</span><select id="delegationMaxSteps"><option value="3">3</option><option value="5" selected>5</option><option value="8">8</option></select></label>
+            <label class="field"><span>Expires</span><select id="delegationExpiry"><option value="30">30 min</option><option value="120" selected>2 hours</option><option value="480">8 hours</option><option value="1440">24 hours</option></select></label>
+            <label class="field"><span>Risk budget</span><select id="delegationRisk"><option value="low" selected>Low</option><option value="medium">Medium</option></select></label>
+          </div>
+          <label class="field">
+            <span>Extra allowed domains <small>optional, comma-separated</small></span>
+            <input id="delegationDomains" type="text" maxlength="800" placeholder="example.com, docs.example.com">
+          </label>
+          <div class="delegation-actions-scope">
+            <span>Allowed actions</span>
+            <label><input type="checkbox" data-delegation-action="follow_source" checked> Source follow state</label>
+            <label><input type="checkbox" data-delegation-action="open_research" checked> Open related Research</label>
+            <label><input type="checkbox" data-delegation-action="open_profile" checked> Open related Profile</label>
+            <label><input type="checkbox" data-delegation-action="open_contact" checked> Open related CRM</label>
+            <label><input type="checkbox" data-delegation-action="draft_task"> Prepare Task checkpoint</label>
+            <label><input type="checkbox" data-delegation-action="draft_knowledge"> Prepare Knowledge checkpoint</label>
+            <label><input type="checkbox" data-delegation-action="share_team"> Prepare Team-share checkpoint</label>
+          </div>
+          <div class="delegation-form-actions">
+            <button id="delegationPreviewBtn" type="button">Preview plan</button>
+            <button id="delegationStartBtn" class="primary" type="button" disabled>Start delegation</button>
+          </div>
+          <div id="delegationPlan" class="delegation-plan" hidden></div>
+        </section>
+
+        <section id="delegationActive" class="card delegation-card" hidden>
+          <div class="row-between">
+            <div>
+              <div class="eyebrow">Active / recovered job</div>
+              <strong id="delegationActiveTitle">Delegated Browser job</strong>
+              <div id="delegationActiveMeta" class="page-host"></div>
+            </div>
+            <span id="delegationProgress" class="pill">0%</span>
+          </div>
+          <div class="delegation-controls">
+            <button id="delegationRunBtn" class="primary" type="button">Run next</button>
+            <button id="delegationPauseBtn" type="button">Pause</button>
+            <button id="delegationResumeBtn" type="button" hidden>Resume</button>
+            <button id="delegationCancelBtn" class="danger-text" type="button">Cancel</button>
+            <button id="delegationOpenWorkflowBtn" type="button">Open VP3 Workflow</button>
+          </div>
+          <div id="delegationCheckpoint" class="delegation-checkpoint" hidden>
+            <strong>Checkpoint requires you</strong>
+            <span id="delegationCheckpointText"></span>
+            <div class="delegation-controls">
+              <button id="delegationCheckpointOpenBtn" type="button">Open checkpoint</button>
+              <button id="delegationCheckpointDoneBtn" type="button">Mark step done</button>
+            </div>
+          </div>
+          <div id="delegationSteps" class="delegation-step-list"></div>
+        </section>
+
+        <section class="card delegation-card">
+          <div class="row-between">
+            <div><div class="eyebrow">Recovery</div><strong>Recent delegated jobs</strong></div>
+            <span class="pill">Canonical VP3 state</span>
+          </div>
+          <div id="delegationRecent" class="delegation-recent"></div>
+          <div id="delegationRecentEmpty" class="empty-state">No delegated Browser jobs yet.</div>
         </section>
       </section>
 
