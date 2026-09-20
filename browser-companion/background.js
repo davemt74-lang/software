@@ -990,11 +990,19 @@ async function resolveQuickActionV2150(action, capture, tab) {
   if (!capture?.available || !/^https?:\/\//i.test(String(capture.source_url || ''))) {
     throw new Error('Open a normal web page to use VP3 quick actions.');
   }
-  // Composer-only quick actions still require a live VP3 connection. This
-  // avoids leaving a transient selection stranded while the user is signed out.
-  await currentAccount();
-
-  if (config.flow) return openQuickActionComposerV2150(capture, config.flow, tab);
+  // Composer-only quick actions still require a live VP3 connection and
+  // the same live capability as the canonical annotation/Team publish flow.
+  // This avoids leaving a transient selection stranded behind a hidden composer.
+  const account = await currentAccount();
+  const liveCapabilities = new Set(Array.isArray(account?.capabilities) ? account.capabilities : []);
+  if (config.flow) {
+    if (!liveCapabilities.has('team.share.create')) {
+      const error = new Error('This VP3 account cannot publish Browser annotations or Team shares.');
+      error.code = 'capability_denied';
+      throw error;
+    }
+    return openQuickActionComposerV2150(capture, config.flow, tab);
+  }
 
   const contextual = await contextualNow(capture);
   const suggestion = (Array.isArray(contextual?.suggestions) ? contextual.suggestions : [])
