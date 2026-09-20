@@ -2,9 +2,9 @@
 const $=id=>document.getElementById(id);
 const ui={};
 [
-'connectionState','connectControls','shareWorkspace','connectBtn','settingsBtn','connectedAccount','disconnectedAccount','accountAvatar','accountName','accountMeta','accountTeams','openVp3Btn','refreshAccountBtn','accountOptionsBtn','accessNotice','composerCard',
+'connectionState','connectControls','shareWorkspace','connectBtn','settingsBtn','connectedAccount','disconnectedAccount','accountAvatar','accountName','accountMeta','accountTeams','openVp3Btn','refreshAccountBtn','accountOptionsBtn','accessNotice','quickActionsCard','composerCard',
 'nowTab','thisPageTab','followingTab','liveTab','alertsTab','searchTab','nowView','thisPageView','followingView','liveView','alertsView','searchView','refreshNowBtn','openAgentChatBtn','restoreNowBtn','nowStatus','nowAttentionCount','nowItemCount','nowContextualCount','nowContextStrip','nowContextTitle','nowContextMeta','toggleNowContextBtn','nowContextPanel','nowRelationshipSummary','nowRelationshipList','nowContextActions','nowEmpty','nowFeed','refreshCaptureBtn','pageTitle','pageHost','sourceMeta','sourceStatus',
-'followCurrentSourceBtn','openSourcePageBtn','selectedText','selectionCount','captureSummary','captureScreenshotBtn','screenshotPreview',
+'followCurrentSourceBtn','openSourcePageBtn','quickAskBtn','quickSummarizeBtn','quickCompareBtn','quickResearchBtn','quickKnowledgeBtn','quickTaskBtn','quickTeamBtn','quickAnnotateBtn','selectedText','selectionCount','captureSummary','captureScreenshotBtn','screenshotPreview',
 'screenshotImage','screenshotMeta','removeScreenshotBtn','captureMediaBtn','mediaDetectedText','mediaPreview','mediaPreviewTitle','mediaStart',
 'mediaEnd','mediaClipHint','removeMediaBtn','recordCommentaryBtn','commentaryStatus','commentaryPreview','commentaryAudio','commentaryMeta',
 'removeCommentaryBtn','visibilitySelect','visibilityTeamField','visibilityTeamSelect','destinationSelect','shareNote','shareBtn','successCard',
@@ -56,7 +56,17 @@ function renderCaps(){
   ui.nowTab.disabled=!(state&&state.connected&&c.has('agent.message'));
   ui.thisPageTab.disabled=!(state&&state.connected&&(canRead||canShare));
   [ui.followingTab,ui.liveTab,ui.alertsTab,ui.searchTab].forEach(tab=>{tab.disabled=!(state&&state.connected&&canRead);});
+  if(ui.quickActionsCard)ui.quickActionsCard.hidden=!(state&&state.connected&&capture&&capture.available);
   if(ui.composerCard)ui.composerCard.hidden=!(state&&state.connected&&canShare);
+  const quickPageOk=!!(state&&state.connected&&capture&&capture.available);
+  ui.quickAskBtn.disabled=!quickPageOk||!c.has('agent.message');
+  ui.quickSummarizeBtn.disabled=!quickPageOk||!c.has('agent.message');
+  ui.quickCompareBtn.disabled=!quickPageOk||!c.has('agent.message');
+  ui.quickResearchBtn.disabled=!quickPageOk||!c.has('agent.message')||!c.has('knowledge.write');
+  ui.quickKnowledgeBtn.disabled=!quickPageOk||!c.has('agent.message')||!c.has('knowledge.write');
+  ui.quickTaskBtn.disabled=!quickPageOk||!c.has('agent.message')||!c.has('task.propose');
+  ui.quickTeamBtn.disabled=!quickPageOk||!c.has('team.share.create');
+  ui.quickAnnotateBtn.disabled=!quickPageOk||!c.has('team.share.create');
   ui.askAgentBtn.disabled=!shared||!c.has('agent.message');ui.saveKnowledgeBtn.disabled=!shared||!c.has('knowledge.write');ui.createTaskBtn.disabled=!shared||!c.has('task.propose');
   ui.openSourceBtn.disabled=!shared||!http(lastShare&&lastShare.source_url);ui.openMessagesBtn.disabled=!shared;
   ui.captureScreenshotBtn.disabled=!(capture&&capture.available);
@@ -466,12 +476,63 @@ async function loadFollowing(reset){
   try{const feed=await msg('following',{cursor:reset?'':followingCursor});if(reset){ui.followingFeed.replaceChildren();followingCursor='';}(feed.items||[]).forEach(i=>ui.followingFeed.append(card(i)));followingCursor=feed.next_cursor||'';ui.loadMoreFollowingBtn.hidden=!feed.has_more;ui.followingEmpty.hidden=ui.followingFeed.children.length>0;hydrate(ui.followingFeed);}finally{followingBusy=false;}
 }
 async function refreshCapture(withFeed){const x=await msg('capture');renderCapture(x);if(withFeed!==false)await loadThis(true);}
+async function runSidebarQuickActionV2150(action,button){
+  if(!capture||!capture.available)return note('Open a normal web page first.','error');
+  if(action==='annotate'||action==='share_team'){
+    setView('this_page');
+    if(action==='share_team'){
+      note('Choose a Team or conversation under Deliver to, then publish this annotation.','success');
+      window.setTimeout(()=>ui.destinationSelect.focus(),0);
+    }else{
+      note('Add your note or capture, then publish when ready.','success');
+      window.setTimeout(()=>ui.shareNote.focus(),0);
+    }
+    return;
+  }
+  busy(button,true,'Opening…');
+  try{
+    const result=await msg('quick_action_run',{action:action,capture:capture});
+    if(result&&result.mode==='agent')note('Opened with temporary page context in Agent Chat.','success');
+    else if(result&&result.mode==='open')note('Opened related VP3 context.','success');
+  }catch(e){
+    if(e.code==='capability_denied')dropCapability(
+      action==='add_research'||action==='save_knowledge'?'knowledge.write':
+      action==='create_task'?'task.propose':'agent.message'
+    );
+    await fail(e);
+  }finally{busy(button,false);}
+}
+
+async function applyPendingQuickActionV2150(pending){
+  if(!pending||!pending.capture||!pending.capture.source_url)return;
+  const action=String(pending.action||'annotate');
+  renderCapture({...pending.capture,available:true});
+  setView('this_page');
+  if(action==='share_team'){
+    note('Choose a Team or conversation under Deliver to, then publish this annotation.','success');
+    window.setTimeout(()=>ui.destinationSelect.focus(),0);
+    return;
+  }
+  note('Selection loaded into the annotation composer. Nothing is saved until you publish.','success');
+  window.setTimeout(()=>ui.shareNote.focus(),0);
+}
+
 async function refreshState(){
-  const x=await msg('state');renderConnection(x);if(x.connected){renderLast(x.last_share);if(x.pending_capture&&x.pending_capture.available&&x.pending_capture.selected_text){renderCapture(x.pending_capture);await message('clear_pending_capture').catch(()=>{});}else await refreshCapture(false);
+  const x=await msg('state');renderConnection(x);
+  const pendingQuick=await msg('quick_action_consume').catch(()=>null);
+  if(x.connected){
+    renderLast(x.last_share);
+    if(pendingQuick&&pendingQuick.capture&&pendingQuick.capture.source_url){
+      renderCapture({...pendingQuick.capture,available:true});
+    }else if(x.pending_capture&&x.pending_capture.available&&x.pending_capture.selected_text){
+      renderCapture(x.pending_capture);await message('clear_pending_capture').catch(()=>{});
+    }else await refreshCapture(false);
     const c=caps();
     if(activeView==='now'&&!c.has('agent.message')&&(c.has('team.chat.read')||c.has('team.share.create')))setView('this_page');
-    if(c.has('team.chat.read')){await loadDestinations();if(activeView==='this_page')await loadThis(true);}else{destinations={recent:[],teams:[],conversations:[]};renderAccountTeams();}
-    if(c.has('agent.message')&&activeView==='now')await loadNow(true);
+    if(c.has('team.destinations.read'))await loadDestinations();else{destinations={recent:[],teams:[],conversations:[]};renderAccountTeams();}
+    if(c.has('team.chat.read')&&activeView==='this_page')await loadThis(true);
+    if(pendingQuick)await applyPendingQuickActionV2150(pendingQuick);
+    else if(c.has('agent.message')&&activeView==='now')await loadNow(true);
   }
 }
 function clip(changed){if(!mediaReference)return;const d=Math.max(0,Number(mediaReference.metadata.duration_seconds||0));let s=Math.max(0,Number(ui.mediaStart.value||0)),e=Math.max(s,Number(ui.mediaEnd.value||s));if(d){s=Math.min(s,d);e=Math.min(e,d);}if(e-s>MAX_CLIP){if(changed==='start')s=Math.max(0,e-MAX_CLIP);else e=s+MAX_CLIP;}mediaReference.metadata.start_seconds=Number(s.toFixed(3));mediaReference.metadata.end_seconds=Number(e.toFixed(3));ui.mediaStart.value=s;ui.mediaEnd.value=e;ui.mediaClipHint.textContent='Clip '+sec(s)+'–'+sec(e)+' · '+(e-s).toFixed(1)+'s · source timestamps only · maximum 90s.';}
@@ -524,6 +585,14 @@ ui.removeScreenshotBtn.onclick=()=>{screenshotCapture=null;ui.screenshotPreview.
 ui.captureMediaBtn.onclick=()=>{const m=capture&&capture.media;if(!m||!http(m.source_media_url))return;const s=Math.max(0,Number(m.current_time||0)),d=Math.max(0,Number(m.duration||0)),e=d?Math.min(d,s+30):s+30;mediaReference={kind:m.kind,metadata:{source_media_url:m.source_media_url,source_media_title:String(m.source_media_title||capture.title||'').slice(0,512),source_media_kind:m.source_media_kind||'',duration_seconds:d,start_seconds:s,end_seconds:e}};ui.mediaPreviewTitle.textContent=m.kind==='youtube_clip'?'YouTube moment':m.source_media_kind==='audio'?'Audio moment':'Video moment';ui.mediaStart.value=s;ui.mediaEnd.value=e;ui.mediaPreview.hidden=false;clip('end');renderCaps();};
 ui.mediaStart.onchange=()=>clip('start');ui.mediaEnd.onchange=()=>clip('end');ui.removeMediaBtn.onclick=()=>{mediaReference=null;ui.mediaPreview.hidden=true;renderCaps();};
 ui.recordCommentaryBtn.onclick=()=>{if(recorder&&recorder.state==='recording')recorder.stop();else record().catch(fail);};ui.removeCommentaryBtn.onclick=()=>{commentaryCapture=null;ui.commentaryPreview.hidden=true;ui.commentaryAudio.pause();ui.commentaryAudio.removeAttribute('src');renderCaps();};
+ui.quickAskBtn.onclick=()=>runSidebarQuickActionV2150('ask_page',ui.quickAskBtn);
+ui.quickSummarizeBtn.onclick=()=>runSidebarQuickActionV2150('summarize',ui.quickSummarizeBtn);
+ui.quickCompareBtn.onclick=()=>runSidebarQuickActionV2150('compare_knowledge',ui.quickCompareBtn);
+ui.quickResearchBtn.onclick=()=>runSidebarQuickActionV2150('add_research',ui.quickResearchBtn);
+ui.quickKnowledgeBtn.onclick=()=>runSidebarQuickActionV2150('save_knowledge',ui.quickKnowledgeBtn);
+ui.quickTaskBtn.onclick=()=>runSidebarQuickActionV2150('create_task',ui.quickTaskBtn);
+ui.quickTeamBtn.onclick=()=>runSidebarQuickActionV2150('share_team',ui.quickTeamBtn);
+ui.quickAnnotateBtn.onclick=()=>runSidebarQuickActionV2150('annotate',ui.quickAnnotateBtn);
 ui.shareBtn.onclick=async()=>{const d=destination();if(!d)return note('Choose where to deliver this annotation.','error');if(ui.visibilitySelect.value==='team'&&!Number(ui.visibilityTeamSelect.value))return note('Choose a Team for visibility.','error');busy(ui.shareBtn,true,'Publishing…');try{const r=await msg('share',{capture:capture,destination:d,visibility:ui.visibilitySelect.value,visibility_team_id:Number(ui.visibilityTeamSelect.value||0),note:ui.shareNote.value,rich_media:{screenshot:screenshotCapture,media_reference:mediaReference,commentary:commentaryCapture},idempotency_key:crypto.randomUUID()});r.source_url=capture.source_url;renderLast(r);ui.shareNote.value='';clearRich();note('Annotation published.','success');await loadThis(true);}catch(e){fail(e);}finally{busy(ui.shareBtn,false);}};
 async function lastAction(a,label){if(!lastShare||!lastShare.browser_share)return;try{const r=await msg('share_action',{action:a,browser_share_id:lastShare.browser_share.id});if(a==='ask_agent'&&r.handoff_url)await msg('open_url',{url:r.handoff_url});else note(label,'success');}catch(e){if(e.code==='capability_denied')dropCapability(capabilityForAction(a));fail(e);}}
 ui.askAgentBtn.onclick=()=>lastAction('ask_agent','Opened in VP3.');ui.saveKnowledgeBtn.onclick=()=>lastAction('save_knowledge','Saved to Knowledge.');ui.createTaskBtn.onclick=()=>lastAction('create_task','Task created.');

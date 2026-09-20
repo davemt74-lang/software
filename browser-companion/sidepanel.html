@@ -118,6 +118,24 @@
           </div>
         </section>
 
+        <section id="quickActionsCard" class="card quick-actions-card">
+          <div class="row-between">
+            <div><div class="eyebrow">Quick actions</div><strong>Work with this page</strong></div>
+            <span class="pill">v21.50</span>
+          </div>
+          <div class="quick-action-grid">
+            <button id="quickAskBtn" type="button">Ask Agent</button>
+            <button id="quickSummarizeBtn" type="button">Summarize</button>
+            <button id="quickCompareBtn" type="button">Compare Knowledge</button>
+            <button id="quickResearchBtn" type="button">Research</button>
+            <button id="quickKnowledgeBtn" type="button">Knowledge</button>
+            <button id="quickTaskBtn" type="button">Task</button>
+            <button id="quickTeamBtn" type="button">Share Team</button>
+            <button id="quickAnnotateBtn" type="button">Annotate</button>
+          </div>
+          <p class="hint">Agent actions use temporary page context. Research, Knowledge, Task, Team sharing, and annotation remain explicit review/publish flows.</p>
+        </section>
+
         <section id="composerCard" class="card composer-card">
           <div class="row-between capture-heading">
             <div><div class="eyebrow">Annotate</div><strong>Add context to this page</strong></div>
@@ -126,7 +144,7 @@
 
           <label class="field">
             <span>Highlighted text <small>optional with rich capture</small></span>
-            <textarea id="selectedText" rows="4" readonly placeholder="Highlight text on the page, then click Refresh—or right-click the selection and choose “Share selection with VP3.”"></textarea>
+            <textarea id="selectedText" rows="4" readonly placeholder="Highlight text on the page, then click Refresh—or right-click and choose VP3 → Annotate / Capture."></textarea>
           </label>
           <div id="selectionCount" class="counter">0 / 32,768 bytes</div>
 

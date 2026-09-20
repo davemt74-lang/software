@@ -1,6 +1,6 @@
 const VP3_DEFAULT_BASE = 'https://vp3.me';
 const VP3_CONTRACT_VERSION = '1';
-const VP3_EXTENSION_VERSION = '21.4.0';
+const VP3_EXTENSION_VERSION = '21.5.0';
 const VP3_MEDIA_CLIP_MAX_SECONDS = 90;
 
 const storage = {
@@ -900,6 +900,160 @@ async function handleProactiveNotificationAction(eventKey, action) {
   try { await chrome.notifications.clear(notificationIdForEvent(eventKey)); } catch (_error) {}
 }
 
+const VP3_QUICK_ACTIONS_V2150 = Object.freeze({
+  ask_page:{ suggestion:'ask_page', title:'Ask VP3 Agent' },
+  summarize:{ suggestion:'summarize', title:'Summarize with VP3' },
+  compare_knowledge:{ suggestion:'compare_knowledge', title:'Compare with Knowledge' },
+  prepare_meeting:{ suggestion:'prepare_meeting', title:'Prepare for related meeting' },
+  add_research:{ suggestion:'add_research', title:'Draft Research note' },
+  save_knowledge:{ suggestion:'save_knowledge', title:'Draft Knowledge entry' },
+  create_task:{ suggestion:'create_task', title:'Propose Task' },
+  share_team:{ flow:'share_team', title:'Share with Team' },
+  annotate:{ flow:'annotate', title:'Annotate / Capture' }
+});
+
+function quickActionMenuIdV2150(action) {
+  return 'vp3-quick-' + String(action || '');
+}
+
+async function registerQuickActionMenusV2150() {
+  await new Promise(resolve => chrome.contextMenus.removeAll(() => resolve()));
+  chrome.contextMenus.create({
+    id:'vp3-quick-root',
+    title:'VP3',
+    contexts:['page','selection','link','image','video','audio']
+  });
+  for (const [action,config] of Object.entries(VP3_QUICK_ACTIONS_V2150)) {
+    chrome.contextMenus.create({
+      id:quickActionMenuIdV2150(action),
+      parentId:'vp3-quick-root',
+      title:config.title,
+      contexts:['page','selection','link','image','video','audio']
+    });
+  }
+}
+
+async function quickActionCaptureV2150(info, tab) {
+  const capture = await activeCapture(tab);
+  if (info?.selectionText) capture.selected_text = utf8Limit(String(info.selectionText).trim(), 12000);
+
+  const safeContextUrl = value => {
+    try {
+      const url = new URL(String(value || '').trim());
+      return /^https?:$/.test(url.protocol) ? url.href : '';
+    } catch (_error) { return ''; }
+  };
+  const linkUrl = safeContextUrl(info?.linkUrl);
+  const srcUrl = safeContextUrl(info?.srcUrl);
+  const mediaType = String(info?.mediaType || '').toLowerCase();
+  if (linkUrl && !capture.selected_text) {
+    capture.selected_text = utf8Limit('Link: ' + linkUrl, 12000);
+  }
+  if (srcUrl) {
+    const label = mediaType === 'image' ? 'Image' : mediaType === 'video' ? 'Video' : mediaType === 'audio' ? 'Audio' : 'Media';
+    if (!capture.selected_text) capture.selected_text = utf8Limit(label + ': ' + srcUrl, 12000);
+    if (mediaType === 'video' || mediaType === 'audio') {
+      capture.media = {
+        kind:mediaType === 'audio' ? 'audio_reference' : 'video_reference',
+        source_media_kind:mediaType,
+        source_media_url:srcUrl,
+        source_media_title:String(capture.title || '').slice(0,300),
+        current_time:0,
+        duration:0
+      };
+    }
+    capture.quick_target_v2150 = { kind:mediaType || 'media', url:srcUrl.slice(0,2048) };
+  } else if (linkUrl) {
+    capture.quick_target_v2150 = { kind:'link', url:linkUrl.slice(0,2048) };
+  }
+  capture.captured_at = new Date().toISOString();
+  return capture;
+}
+
+async function openQuickActionComposerV2150(capture, flow, tab) {
+  const pendingCapture = {
+    ...capture,
+    selected_text:utf8Limit(String(capture?.selected_text || ''),32768),
+    title:String(capture?.title || '').slice(0,512),
+    captured_at:new Date().toISOString()
+  };
+  await chrome.storage.session.set({
+    pending_quick_action_v2150:{
+      action:String(flow || 'annotate'),
+      capture:pendingCapture,
+      created_at:Date.now()
+    }
+  });
+  if (tab?.id) {
+    try { await chrome.sidePanel.open({ tabId:tab.id }); } catch (_error) {}
+  }
+  return { mode:'sidepanel', action:flow };
+}
+
+async function resolveQuickActionV2150(action, capture, tab) {
+  const config = VP3_QUICK_ACTIONS_V2150[action];
+  if (!config) throw new Error('Unknown VP3 quick action.');
+  if (!capture?.available || !/^https?:\/\//i.test(String(capture.source_url || ''))) {
+    throw new Error('Open a normal web page to use VP3 quick actions.');
+  }
+  // Composer-only quick actions still require a live VP3 connection and
+  // the same live capability as the canonical annotation/Team publish flow.
+  // This avoids leaving a transient selection stranded behind a hidden composer.
+  const account = await currentAccount();
+  const liveCapabilities = new Set(Array.isArray(account?.capabilities) ? account.capabilities : []);
+  if (config.flow) {
+    if (!liveCapabilities.has('team.share.create')) {
+      const error = new Error('This VP3 account cannot publish Browser annotations or Team shares.');
+      error.code = 'capability_denied';
+      throw error;
+    }
+    return openQuickActionComposerV2150(capture, config.flow, tab);
+  }
+
+  const contextual = await contextualNow(capture);
+  const suggestion = (Array.isArray(contextual?.suggestions) ? contextual.suggestions : [])
+    .find(item => item && item.id === config.suggestion);
+  if (!suggestion) throw new Error(config.title + ' is not available for this page or account.');
+
+  if (suggestion.kind === 'agent_prompt') {
+    const handoff = await contextHandoff(contextual.agent_payload, suggestion.prompt || '');
+    await chrome.tabs.create({ url:handoff.url });
+    return { mode:'agent', action, suggestion_id:suggestion.id };
+  }
+  if (suggestion.kind === 'open' && suggestion.url) {
+    const { base_url } = await config();
+    await chrome.tabs.create({ url:new URL(String(suggestion.url), cleanBaseUrl(base_url) + '/').toString() });
+    return { mode:'open', action, suggestion_id:suggestion.id };
+  }
+  if (suggestion.kind === 'manual_flow') {
+    return openQuickActionComposerV2150(capture, suggestion.target === 'this_page' ? 'share_team' : action, tab);
+  }
+  throw new Error(config.title + ' requires review in VP3.');
+}
+
+async function consumeQuickActionV2150() {
+  const state = await chrome.storage.session.get(['pending_quick_action_v2150']);
+  const pending = state.pending_quick_action_v2150;
+  await chrome.storage.session.remove('pending_quick_action_v2150');
+  if (!pending || typeof pending !== 'object') return null;
+  const age = Date.now() - Number(pending.created_at || 0);
+  if (!Number.isFinite(age) || age < 0 || age > 5 * 60 * 1000) return null;
+  return pending;
+}
+
+async function quickActionFailureV2150(error) {
+  const message = String(error?.message || error || 'VP3 quick action is unavailable.').slice(0,240);
+  try {
+    await chrome.notifications.create('vp3-quick-error', {
+      type:'basic',
+      iconUrl:chrome.runtime.getURL('notification-icon.png'),
+      title:'VP3 quick action',
+      message,
+      priority:0
+    });
+  } catch (_error) {}
+}
+
 async function disconnect() {
   const state = await storage.get(['device_token']);
   if (state.device_token) {
@@ -944,23 +1098,25 @@ async function publicState() {
 }
 
 chrome.runtime.onInstalled.addListener(() => {
-  chrome.contextMenus.removeAll(() => {
-    chrome.contextMenus.create({ id: 'vp3-share-selection', title: 'Share selection with VP3', contexts: ['selection'] });
-  });
+  void registerQuickActionMenusV2150();
   chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
   void ensureProactiveNotificationAlarm();
 });
 
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
-  if (info.menuItemId !== 'vp3-share-selection' || !tab?.id) return;
-  const capture = await activeCapture(tab);
-  if (info.selectionText) capture.selected_text = utf8Limit(String(info.selectionText).trim(), 32768);
-  capture.captured_at = new Date().toISOString();
-  await storage.set({ pending_capture: capture });
-  try { await chrome.sidePanel.open({ tabId: tab.id }); } catch {}
+  const menuId = String(info?.menuItemId || '');
+  if (!menuId.startsWith('vp3-quick-') || menuId === 'vp3-quick-root' || !tab?.id) return;
+  const action = menuId.slice('vp3-quick-'.length);
+  try {
+    const capture = await quickActionCaptureV2150(info, tab);
+    await resolveQuickActionV2150(action, capture, tab);
+  } catch (error) {
+    await quickActionFailureV2150(error);
+  }
 });
 
 chrome.runtime.onStartup.addListener(() => {
+  void registerQuickActionMenusV2150();
   void ensureProactiveNotificationAlarm();
   void pollProactiveNotifications();
 });
@@ -1023,6 +1179,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       case 'context_now': return contextualNow(message.capture || await activeCapture(), message.prompt || '');
       case 'context_handoff': return contextHandoff(message.payload || null, message.prompt || '');
       case 'notification_poll': return pollProactiveNotifications();
+      case 'quick_action_consume': return consumeQuickActionV2150();
+      case 'quick_action_run': {
+        const action = String(message.action || '');
+        const capture = message.capture || await activeCapture();
+        return resolveQuickActionV2150(action, capture, null);
+      }
       case 'disconnect': return disconnect();
       case 'open_url': {
         const url = String(message.url || '');

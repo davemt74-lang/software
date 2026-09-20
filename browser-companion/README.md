@@ -1,6 +1,20 @@
-# VP3 Browser Companion v21.40
+# VP3 Browser Companion v21.50
 
 Chrome Manifest V3 companion for VP3 Browser Share and the Source Feed layer: This Page, Following, source/user follows, comments, read state, Private/Team/Public publishing, plus highlighted text, screenshot regions, source-media moments, and voice commentary.
+
+## v21.50 Contextual Quick Actions
+
+The active page, selection, link, image, audio, or video can now enter VP3 through a single contextual quick-action surface without creating a second Chrome-side memory or persistence system.
+
+Right-click **VP3** actions include Ask Agent, Summarize, Compare with Knowledge, Research, Knowledge, Task, Share with Team, and Annotate/Capture. The same actions are available in the **This Page** sidebar toolbar.
+
+Agent-oriented actions reuse the v21.30 ephemeral page-context contract and server-proposed Cognitive Runtime suggestions. Chrome does not construct its own prompts or execute Cognitive tools autonomously.
+
+Share with Team and Annotate open the existing explicit Browser Companion composer. The selected content is held only in `chrome.storage.session` for up to five minutes and is consumed once by the sidepanel. Nothing is persisted until the user chooses a destination/visibility and publishes.
+
+Research, Knowledge, and Task quick actions are confirmation-first Agent proposals. They do not create durable records directly from a context-menu click.
+
+Link and media context is preserved. Audio/video right-click targets are passed as bounded source references; image/link targets remain temporary selected context. Existing v21.30 server validation decides what reaches Agent Chat.
 
 ## v21.40 Proactive Notifications + Agent Voice
 
