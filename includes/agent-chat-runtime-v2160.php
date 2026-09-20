@@ -79,6 +79,8 @@ function vp3_agent_chat_send_v2160(
     bool $brainAllowed
 ): array {
 
+$userId=(int)($user['id']??0);
+if($userId<1)throw new RuntimeException('Agent Chat user context is invalid.');
 $query=trim((string)($input['message']??''));$conversationId=(int)($input['conversation_id']??0);$inputMode=(string)($input['input_mode']??'text');$inputMode=$inputMode==='voice'?'voice':'text';if($query==='')throw new RuntimeException('Enter a message.');if(mb_strlen($query)>6000)throw new RuntimeException('That message is too long.');
 $activeAgentId=vp3_agent_chat_agent_id_v380($activeAgent);
 if($conversationId<1){$workspaceId=artist_workspace_v181_scope_id($user);$conversation=vp3_agent_chat_create_conversation_v380($pdo,$user,$activeAgent,$query,$workspaceId);$conversationId=(int)$conversation['id'];}elseif(!vp3_agent_chat_runtime_conversation_v2160($pdo,$conversationId,$userId,$activeAgent))throw new RuntimeException('Conversation not found for this agent.');
