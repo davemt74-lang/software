@@ -186,6 +186,7 @@ function vp3_browser_web_runtime_v2210(PDO $pdo,array $user,string $namespace,st
     if(!$runtime)throw new RuntimeException('Browser Agent Runtime session was not found.');
     if(strtotime((string)$runtime['expires_at'])<time())throw new RuntimeException('Browser Agent Runtime authority has expired.');
     if((string)$runtime['status']==='paused')throw new RuntimeException('Resume the Browser Agent Runtime before interacting with this page.');
+    if((string)$runtime['status']==='checkpoint')throw new RuntimeException('Complete the current Browser Runtime checkpoint before interacting with this page.');
     if(in_array((string)$runtime['status'],['completed','cancelled','expired'],true))throw new RuntimeException('This Browser Agent Runtime is no longer active.');
     return $runtime;
 }
@@ -201,6 +202,14 @@ function vp3_browser_web_max_interactions_v2210(array $runtime): int
     return max(4,min(VP3_BROWSER_WEB_MAX_INTERACTIONS_V2210,max(1,(int)($runtime['max_steps']??1))*4));
 }
 
+function vp3_browser_web_expire_permits_v2210(PDO $pdo,array $runtime): void
+{
+    $pdo->prepare("UPDATE browser_web_interactions_v2210
+      SET status='failed',result_code='permit_expired',permit_hash=NULL,permit_expires_at=NULL,failed_at=UTC_TIMESTAMP(),updated_at=UTC_TIMESTAMP()
+      WHERE runtime_session_id=? AND owner_user_id=? AND status='executing' AND permit_expires_at IS NOT NULL AND permit_expires_at<UTC_TIMESTAMP()")
+      ->execute([(int)$runtime['id'],(int)$runtime['owner_user_id']]);
+}
+
 function vp3_browser_web_used_interactions_v2210(PDO $pdo,array $runtime): int
 {
     $stmt=$pdo->prepare("SELECT COUNT(*) FROM browser_web_interactions_v2210
@@ -211,6 +220,7 @@ function vp3_browser_web_used_interactions_v2210(PDO $pdo,array $runtime): int
 
 function vp3_browser_web_remaining_v2210(PDO $pdo,array $runtime): int
 {
+    vp3_browser_web_expire_permits_v2210($pdo,$runtime);
     return max(0,vp3_browser_web_max_interactions_v2210($runtime)-vp3_browser_web_used_interactions_v2210($pdo,$runtime));
 }
 
