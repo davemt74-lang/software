@@ -346,7 +346,7 @@ function vp3_browser_memory_approve_v2170(PDO $pdo,array $user,string $namespace
     $stmt=$pdo->prepare("INSERT INTO browser_memory_approvals_v2170
       (public_id,owner_user_id,agent_namespace,target_type,target_id,target_scope,approved_at,revoked_at)
       VALUES (?,?,?,?,?,'personal',UTC_TIMESTAMP(),NULL)
-      ON DUPLICATE KEY UPDATE public_id=VALUES(public_id),approved_at=UTC_TIMESTAMP(),revoked_at=NULL,updated_at=UTC_TIMESTAMP()");
+      ON DUPLICATE KEY UPDATE approved_at=UTC_TIMESTAMP(),revoked_at=NULL,updated_at=UTC_TIMESTAMP()");
     $stmt->execute([$public,$uid,$namespace,$type,$id]);
     $approval=vp3_browser_memory_approval_row_v2170($pdo,$uid,$namespace,$type,$id);
     if(!$approval)throw new RuntimeException('Browser Memory approval could not be reloaded.');
