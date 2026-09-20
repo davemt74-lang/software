@@ -4,7 +4,7 @@ const read=(path)=>fs.readFileSync(path,'utf8');
 const must=(condition,message)=>{if(!condition){console.error(`FAIL: ${message}`);process.exit(1);}};
 
 const helper=read('includes/ai-usage-accounting-v032.php');
-const chat=read('api/chat-v236.php');
+const chat=[read('api/chat-v236.php'),read('includes/agent-chat-runtime-v2160.php')].join('\n');
 const bootstrap=read('includes/bootstrap.php');
 const upgrade=read('upgrade.php');
 const member=read('ai-usage.php');
