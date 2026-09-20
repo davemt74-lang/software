@@ -117,8 +117,9 @@ jobs:
           source excerpts are not stored in Browser Memory.
 
           Merely opening a page or Memory view creates no memory. Remember is an
-          explicit user action. Forget revokes the reference and future reads are
-          denied until explicitly approved again.
+          explicit user action bound to a server-rederived current-page candidate.
+          Forget revokes the reference and removes its browser-approved Cognitive
+          Memory occurrence/thread signal. Re-approval creates a fresh signal.
           EOF
 
           (
