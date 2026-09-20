@@ -180,7 +180,7 @@ async function currentAccount() {
 async function browserMemoryActionV2170(action, payload = {}) {
   const normalizedAction=String(action || 'list');
   const request={ ...payload };
-  if(normalizedAction==='candidates'&&request.context){
+  if(['candidates','approve'].includes(normalizedAction)&&request.context){
     request.context=browserContextPayload(request.context);
   }
   return authorizedFetch('/api/extension-memory-v2170.php', {
