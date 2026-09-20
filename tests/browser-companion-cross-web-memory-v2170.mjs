@@ -14,8 +14,9 @@ const memoryApi=read('api/extension-memory-v2170.php');
 const cognitiveMemory=read('includes/cognitive-memory-v570.php');
 const upgrade=read('upgrade.php');
 
-must(manifest.version==='21.7.0','v21.70 manifest version missing');
-must(background.includes("const VP3_EXTENSION_VERSION = '21.7.0';"),'v21.70 request version missing');
+const memoryVersion=String(manifest.version||'').split('.').map(Number);
+must(memoryVersion.length===3&&(memoryVersion[0]>21||(memoryVersion[0]===21&&memoryVersion[1]>=7)),'v21.70+ manifest version missing');
+must(/const VP3_EXTENSION_VERSION = '21\\.(?:[7-9]|[1-9]\\d+)\\.\\d+';/.test(background),'v21.70+ request version missing');
 must(background.includes("if(['candidates','approve'].includes(normalizedAction)&&request.context){")
   &&background.includes("request.context=browserContextPayload(request.context);"),
   'Memory discovery and approval must reuse the bounded v21.30 page-context envelope');
@@ -133,7 +134,7 @@ must(panel.includes("await memoryRequestV2170('approve'"),'Remember click action
 must(panel.includes("context:capture"),'Remember click must bind approval to the current page context');
 must(panel.includes("await memoryRequestV2170('revoke'"),'Forget click action missing');
 must(panel.includes("ui.quickMemoryBtn.onclick=()=>setView('memory');"),'This Page Memory shortcut must only open approval view');
-must(panel.includes("['now','agent','memory'].includes(activeView)&&!c.has('agent.message')"),'Memory view must leave immediately if Agent access is revoked');
+must(panel.includes("['now','agent','execution','memory'].includes(activeView)&&!c.has('agent.message')")||panel.includes("['now','agent','memory'].includes(activeView)&&!c.has('agent.message')"),'Memory view must leave immediately if Agent access is revoked');
 must(panel.includes("if(activeView==='memory')await loadMemoryV2170();"),'page changes must refresh Memory candidates without writing');
 
 // No Chrome-side Browser Memory store/history.
