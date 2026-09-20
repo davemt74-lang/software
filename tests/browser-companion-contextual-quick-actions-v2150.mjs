@@ -10,8 +10,9 @@ const panel=read('browser-companion/sidepanel.js');
 const html=read('browser-companion/sidepanel.html');
 const css=read('browser-companion/sidepanel.css');
 
-must(manifest.version==='21.5.0','v21.50 manifest version missing');
-must(background.includes("const VP3_EXTENSION_VERSION = '21.5.0';"),'v21.50 request version missing');
+const quickVersion=String(manifest.version||'').split('.').map(Number);
+must(quickVersion.length===3&&(quickVersion[0]>21||(quickVersion[0]===21&&quickVersion[1]>=5)),'v21.50+ manifest version missing');
+must(/const VP3_EXTENSION_VERSION = '21\.(?:[5-9]|[1-9]\d+)\.\d+';/.test(background),'v21.50+ request version missing');
 
 // One VP3 context-menu tree, no duplicated legacy selection command.
 must(background.includes("id:'vp3-quick-root'"),'VP3 quick-action root missing');
