@@ -701,12 +701,13 @@ async function previewRuntimeWebInteractionV2210(){
     const payload=await webInteractionRequestV2210('preview',{
       runtime_id:runtimeDataV2200.runtime_id,domain:runtimeWebObservationV2210.domain,
       page_fingerprint:runtimeWebObservationV2210.page_fingerprint,dom_fingerprint:runtimeWebObservationV2210.dom_fingerprint,
-      action_key:action,element_fingerprint:item.element_fingerprint,target_host:item.target_host||'',
+      action_key:action,element_fingerprint:item.element_fingerprint,
+      target_host:action==='submit'?String(item.form_action_host||''):String(item.target_host||''),
       value_length:value.length,
       element:{
         kind:item.kind,tag:item.tag,input_type:item.input_type,role:item.role,label:item.label,name:item.name,
         placeholder:item.placeholder,aria_label:item.aria_label,autocomplete:item.autocomplete,
-        submit_like:Boolean(item.submit_like),dangerous:Boolean(item.dangerous)
+        form_action_host:item.form_action_host||'',submit_like:Boolean(item.submit_like),dangerous:Boolean(item.dangerous)
       }
     });
     const proposal=payload&&payload.proposal||null;if(!proposal)throw new Error('VP3 did not return an interaction preview.');
