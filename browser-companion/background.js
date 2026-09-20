@@ -1,6 +1,6 @@
 const VP3_DEFAULT_BASE = 'https://vp3.me';
 const VP3_CONTRACT_VERSION = '1';
-const VP3_EXTENSION_VERSION = '22.1.0';
+const VP3_EXTENSION_VERSION = '22.2.0';
 const VP3_MEDIA_CLIP_MAX_SECONDS = 90;
 
 const storage = {
@@ -201,6 +201,277 @@ async function browserExecutionActionV2180(action, payload = {}) {
   }, 'agent.message');
 }
 
+const runtimeMultiSiteTabsV2220=new Map();
+let runtimeMultiSiteContextV2220=null;
+
+function normalizeRuntimeDomainV2220(value){
+  return String(value||'').trim().toLowerCase().replace(/^www\./,'');
+}
+async function sha256HexV2220(value){
+  const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(String(value||'')));
+  return [...new Uint8Array(digest)].map(byte=>byte.toString(16).padStart(2,'0')).join('');
+}
+async function browserMultiSiteApiV2220(action,payload={}){
+  return authorizedFetch('/api/extension-multisite-v2220.php',{
+    method:'POST',
+    json:{action:String(action||'state'),...payload}
+  },'agent.message');
+}
+function runtimeMultiSitePolicyV2220(state,domain){
+  const normalized=normalizeRuntimeDomainV2220(domain);
+  return (Array.isArray(state&&state.domains)?state.domains:[]).find(item=>normalizeRuntimeDomainV2220(item&&item.domain)===normalized)||null;
+}
+function runtimeMultiSiteAllowedDomainsV2220(state){
+  return new Set((Array.isArray(state&&state.domains)?state.domains:[])
+    .filter(item=>String(item&&item.policy_mode||'')!=='blocked')
+    .map(item=>normalizeRuntimeDomainV2220(item&&item.domain)).filter(Boolean));
+}
+function runtimeMultiSiteTabKeyV2220(tabId,openedByRuntime=false,domain=''){
+  const id=Number(tabId||0);
+  if(id<1)return null;
+  let row=runtimeMultiSiteTabsV2220.get(id);
+  if(!row){
+    row={client_tab_key:crypto.randomUUID(),opened_by_runtime:Boolean(openedByRuntime),domain:normalizeRuntimeDomainV2220(domain)};
+    runtimeMultiSiteTabsV2220.set(id,row);
+  }else{
+    if(openedByRuntime)row.opened_by_runtime=true;
+    if(domain)row.domain=normalizeRuntimeDomainV2220(domain);
+  }
+  return row;
+}
+async function browserMultiSiteRegisterTabV2220(tabId,domain,openedByRuntime=false,role='runtime'){
+  if(!runtimeMultiSiteContextV2220||!runtimeMultiSiteContextV2220.runtime_id)return null;
+  const row=runtimeMultiSiteTabKeyV2220(tabId,openedByRuntime,domain);
+  if(!row)return null;
+  const response=await browserMultiSiteApiV2220('tab_register',{
+    runtime_id:runtimeMultiSiteContextV2220.runtime_id,
+    agent_id:Number(runtimeMultiSiteContextV2220.agent_id||0),
+    client_tab_key:row.client_tab_key,domain:normalizeRuntimeDomainV2220(domain),
+    tab_role:String(role||'runtime').slice(0,40),opened_by_runtime:Boolean(row.opened_by_runtime)
+  });
+  if(response&&response.state)runtimeMultiSiteContextV2220.state=response.state;
+  return response&&response.state||null;
+}
+async function browserMultiSiteReleaseTabV2220(tabId){
+  const row=runtimeMultiSiteTabsV2220.get(Number(tabId||0));
+  runtimeMultiSiteTabsV2220.delete(Number(tabId||0));
+  if(!row||!runtimeMultiSiteContextV2220||!runtimeMultiSiteContextV2220.runtime_id)return;
+  try{
+    const response=await browserMultiSiteApiV2220('tab_release',{
+      runtime_id:runtimeMultiSiteContextV2220.runtime_id,
+      agent_id:Number(runtimeMultiSiteContextV2220.agent_id||0),
+      client_tab_key:row.client_tab_key
+    });
+    if(response&&response.state)runtimeMultiSiteContextV2220.state=response.state;
+  }catch(_error){}
+}
+async function browserMultiSiteAttachV2220(payload={}){
+  const [tab]=await chrome.tabs.query({active:true,currentWindow:true});
+  if(!tab?.id||!/^https?:/i.test(String(tab.url||'')))throw new Error('Open an approved web page before attaching Multi-Site Runtime.');
+  const identity=await browserWebPageIdentityV2210(tab.id);
+  const response=await browserMultiSiteApiV2220('attach',{
+    runtime_id:String(payload.runtime_id||''),agent_id:Number(payload.agent_id||0),
+    current_domain:normalizeRuntimeDomainV2220(identity.domain)
+  });
+  const state=response&&response.state||null;
+  if(!state||!state.attached)throw new Error('Multi-Site Runtime could not be attached.');
+  runtimeMultiSiteContextV2220={
+    runtime_id:String(payload.runtime_id||''),agent_id:Number(payload.agent_id||0),state
+  };
+  await browserMultiSiteRegisterTabV2220(tab.id,identity.domain,false,'source');
+  return {state:runtimeMultiSiteContextV2220.state,tab_id:tab.id,page_fingerprint:identity.page_fingerprint};
+}
+async function browserMultiSiteStateV2220(payload={}){
+  const response=await browserMultiSiteApiV2220('state',{
+    runtime_id:String(payload.runtime_id||''),agent_id:Number(payload.agent_id||0)
+  });
+  const state=response&&response.state||null;
+  if(state){
+    runtimeMultiSiteContextV2220={runtime_id:String(payload.runtime_id||''),agent_id:Number(payload.agent_id||0),state};
+  }
+  return state;
+}
+async function browserMultiSiteSetPolicyV2220(payload={}){
+  const response=await browserMultiSiteApiV2220('set_policy',{
+    runtime_id:String(payload.runtime_id||''),agent_id:Number(payload.agent_id||0),
+    domain:normalizeRuntimeDomainV2220(payload.domain),policy_mode:String(payload.policy_mode||'browse')
+  });
+  if(response&&response.state){
+    runtimeMultiSiteContextV2220={runtime_id:String(payload.runtime_id||''),agent_id:Number(payload.agent_id||0),state:response.state};
+  }
+  return response&&response.state||null;
+}
+async function ensureRuntimeOriginPermissionV2220(rawUrl){
+  const url=new URL(String(rawUrl||''));
+  if(!/^https?:$/.test(url.protocol))throw new Error('Multi-site navigation supports HTTP(S) pages only.');
+  const origin=url.origin+'/*';
+  const has=await chrome.permissions.contains({origins:[origin]});
+  if(has)return true;
+  const granted=await chrome.permissions.request({origins:[origin]});
+  if(!granted)throw new Error('Chrome site access is required before the Agent can inspect this approved domain.');
+  return true;
+}
+async function waitForGuardedNavigationV2220(tabId,targetDomain,targetFingerprint,openedByRuntime,timeoutMs=15000){
+  const normalizedTarget=normalizeRuntimeDomainV2220(targetDomain);
+  return new Promise(resolve=>{
+    let settled=false;
+    const finish=async result=>{
+      if(settled)return;settled=true;chrome.tabs.onUpdated.removeListener(onUpdated);clearTimeout(timer);resolve(result);
+    };
+    const inspect=async()=>{
+      const tab=await chrome.tabs.get(tabId).catch(()=>null);
+      const raw=String(tab&&tab.url||'');
+      if(!raw)return finish({verified:false,result_code:'tab_unavailable',tab:null});
+      let host='';try{host=normalizeRuntimeDomainV2220(new URL(raw).hostname);}catch(_error){}
+      if(host&&host!==normalizedTarget){
+        try{await chrome.tabs.stop(tabId);}catch(_error){}
+        if(openedByRuntime){try{await chrome.tabs.remove(tabId);}catch(_error){}}
+        return finish({verified:false,result_code:'redirect_outside_scope',tab});
+      }
+      if(tab&&tab.status==='complete'){
+        const fingerprint=await sha256HexV2220(raw);
+        const ok=host===normalizedTarget&&fingerprint===targetFingerprint;
+        return finish({verified:ok,result_code:ok?'handoff_verified':'target_changed',tab,target_url_fingerprint:fingerprint});
+      }
+    };
+    const onUpdated=(id,changeInfo)=>{
+      if(id!==tabId)return;
+      if(changeInfo.url||changeInfo.status==='complete')inspect().catch(()=>finish({verified:false,result_code:'navigation_error',tab:null}));
+    };
+    const timer=setTimeout(()=>inspect().catch(()=>finish({verified:false,result_code:'navigation_timeout',tab:null})),timeoutMs);
+    chrome.tabs.onUpdated.addListener(onUpdated);
+    inspect().catch(()=>{});
+  });
+}
+async function browserMultiSiteHandoffV2220(payload={}){
+  const runtimeId=String(payload.runtime_id||'');
+  const targetUrlRaw=String(payload.target_url||'');
+  if(!runtimeId||!targetUrlRaw)throw new Error('Runtime and target link are required for a cross-domain handoff.');
+  const targetUrl=new URL(targetUrlRaw);
+  if(!/^https?:$/.test(targetUrl.protocol))throw new Error('Only HTTP(S) links can be used for multi-site handoff.');
+  const targetDomain=normalizeRuntimeDomainV2220(targetUrl.hostname);
+  let state=runtimeMultiSiteContextV2220&&runtimeMultiSiteContextV2220.runtime_id===runtimeId?runtimeMultiSiteContextV2220.state:null;
+  if(!state)state=await browserMultiSiteStateV2220(payload);
+  const targetPolicy=runtimeMultiSitePolicyV2220(state,targetDomain);
+  if(!targetPolicy||String(targetPolicy.policy_mode||'')==='blocked')throw new Error('That link is outside the approved multi-site domain scope.');
+
+  const [sourceTab]=await chrome.tabs.query({active:true,currentWindow:true});
+  if(!sourceTab?.id||!/^https?:/i.test(String(sourceTab.url||'')))throw new Error('Open the approved source page before moving to another domain.');
+  const sourceIdentity=await browserWebPageIdentityV2210(sourceTab.id);
+  const sourceDomain=normalizeRuntimeDomainV2220(sourceIdentity.domain);
+  if(sourceDomain===targetDomain)throw new Error('Use Controlled Web Interaction for same-domain navigation.');
+  const targetFingerprint=await sha256HexV2220(targetUrl.href);
+
+  const preview=await browserMultiSiteApiV2220('handoff_preview',{
+    runtime_id:runtimeId,agent_id:Number(payload.agent_id||0),
+    source_domain:sourceDomain,target_domain:targetDomain,
+    source_page_fingerprint:String(sourceIdentity.page_fingerprint||''),
+    target_url_fingerprint:targetFingerprint
+  });
+  const handoff=preview&&preview.handoff||null;
+  if(!handoff)throw new Error('VP3 did not create a cross-domain handoff preview.');
+
+  const claim=await browserMultiSiteApiV2220('handoff_claim',{
+    runtime_id:runtimeId,agent_id:Number(payload.agent_id||0),
+    handoff_id:String(handoff.handoff_id||''),source_domain:sourceDomain,
+    source_page_fingerprint:String(sourceIdentity.page_fingerprint||''),target_url_fingerprint:targetFingerprint
+  });
+  const contract=claim&&claim.contract||null,permitToken=String(claim&&claim.permit_token||'');
+  if(!contract||!permitToken)throw new Error('The cross-domain handoff permit could not be claimed.');
+
+  const fail=async code=>{
+    try{
+      const done=await browserMultiSiteApiV2220('handoff_complete',{
+        runtime_id:runtimeId,agent_id:Number(payload.agent_id||0),handoff_id:String(handoff.handoff_id||''),
+        permit_token:permitToken,verified:false,result_code:String(code||'handoff_failed'),
+        target_domain:targetDomain,target_url_fingerprint:targetFingerprint
+      });
+      if(done&&done.state)runtimeMultiSiteContextV2220.state=done.state;
+    }catch(_error){}
+  };
+  if(normalizeRuntimeDomainV2220(contract.target_domain)!==targetDomain||String(contract.target_url_fingerprint||'')!==targetFingerprint){
+    await fail('permit_contract_mismatch');throw new Error('The handoff no longer matches the server-authorized destination.');
+  }
+
+  await ensureRuntimeOriginPermissionV2220(targetUrl.href);
+
+  let targetTab=null,openedByRuntime=false;
+  for(const [tabId,row] of runtimeMultiSiteTabsV2220.entries()){
+    if(row&&row.opened_by_runtime&&normalizeRuntimeDomainV2220(row.domain)===targetDomain){
+      const existing=await chrome.tabs.get(tabId).catch(()=>null);
+      if(existing){targetTab=existing;break;}
+      runtimeMultiSiteTabsV2220.delete(tabId);
+    }
+  }
+  if(targetTab){
+    await chrome.tabs.update(targetTab.id,{active:true,url:targetUrl.href});
+  }else{
+    targetTab=await chrome.tabs.create({active:true,url:targetUrl.href});
+    openedByRuntime=true;
+    if(!targetTab?.id){await fail('tab_open_failed');throw new Error('Chrome could not open the approved destination tab.');}
+    runtimeMultiSiteTabKeyV2220(targetTab.id,true,targetDomain);
+  }
+
+  const nav=await waitForGuardedNavigationV2220(targetTab.id,targetDomain,targetFingerprint,openedByRuntime);
+  const done=await browserMultiSiteApiV2220('handoff_complete',{
+    runtime_id:runtimeId,agent_id:Number(payload.agent_id||0),handoff_id:String(handoff.handoff_id||''),
+    permit_token:permitToken,verified:Boolean(nav.verified),result_code:String(nav.result_code||'handoff_unverified'),
+    target_domain:targetDomain,target_url_fingerprint:String(nav.target_url_fingerprint||targetFingerprint)
+  });
+  if(done&&done.state)runtimeMultiSiteContextV2220.state=done.state;
+  if(nav.verified&&targetTab?.id){
+    await browserMultiSiteRegisterTabV2220(targetTab.id,targetDomain,openedByRuntime,'handoff');
+  }else if(openedByRuntime&&targetTab?.id){
+    runtimeMultiSiteTabsV2220.delete(targetTab.id);
+  }
+  return {handoff:done&&done.handoff||handoff,state:runtimeMultiSiteContextV2220.state,tab_id:targetTab&&targetTab.id||0,outcome:nav};
+}
+async function browserMultiSiteFactAddV2220(payload={}){
+  const [tab]=await chrome.tabs.query({active:true,currentWindow:true});
+  if(!tab?.id||!/^https?:/i.test(String(tab.url||'')))throw new Error('Open an approved source page before adding a structured fact.');
+  const identity=await browserWebPageIdentityV2210(tab.id);
+  const response=await browserMultiSiteApiV2220('fact_add',{
+    runtime_id:String(payload.runtime_id||''),agent_id:Number(payload.agent_id||0),
+    fact_key:String(payload.fact_key||'').slice(0,120),value:String(payload.value||'').slice(0,500),
+    source_domain:normalizeRuntimeDomainV2220(identity.domain),page_fingerprint:String(identity.page_fingerprint||'')
+  });
+  if(response&&response.state){
+    runtimeMultiSiteContextV2220={runtime_id:String(payload.runtime_id||''),agent_id:Number(payload.agent_id||0),state:response.state};
+  }
+  return response&&response.state||null;
+}
+async function browserMultiSiteRecordDownloadV2220(item){
+  const ctx=runtimeMultiSiteContextV2220;
+  if(!ctx||!ctx.runtime_id||!ctx.state||String(ctx.state.status||'')==='closed')return;
+  const source=String(item&&item.referrer||item&&item.finalUrl||item&&item.url||'');
+  let domain='';try{domain=normalizeRuntimeDomainV2220(new URL(source).hostname);}catch(_error){}
+  if(!domain||!runtimeMultiSiteAllowedDomainsV2220(ctx.state).has(domain))return;
+  const filename=String(item&&item.filename||'');
+  const filenameHash=await sha256HexV2220(filename);
+  const leaf=filename.split(/[\\/]/).pop()||'';
+  const ext=(leaf.includes('.')?leaf.split('.').pop():'').toLowerCase().replace(/[^a-z0-9]/g,'').slice(0,20);
+  const response=await browserMultiSiteApiV2220('artifact_add',{
+    runtime_id:ctx.runtime_id,agent_id:Number(ctx.agent_id||0),source_domain:domain,
+    filename_hash:filenameHash,file_ext:ext,mime_type:String(item&&item.mime||'').slice(0,120),
+    byte_size:Math.max(0,Number(item&&item.totalBytes||0))
+  });
+  if(response&&response.state)ctx.state=response.state;
+}
+function browserMultiSiteGuardTabV2220(tabId,changeInfo,tab){
+  const ctx=runtimeMultiSiteContextV2220,row=runtimeMultiSiteTabsV2220.get(Number(tabId||0));
+  if(!ctx||!ctx.state||!row)return;
+  const raw=String(changeInfo&&changeInfo.url||tab&&tab.url||'');
+  if(!/^https?:/i.test(raw))return;
+  let domain='';try{domain=normalizeRuntimeDomainV2220(new URL(raw).hostname);}catch(_error){}
+  const allowed=runtimeMultiSiteAllowedDomainsV2220(ctx.state);
+  if(domain&&!allowed.has(domain)){
+    chrome.tabs.stop(tabId).catch(()=>{});
+    if(row.opened_by_runtime)chrome.tabs.remove(tabId).catch(()=>{});
+    browserMultiSiteReleaseTabV2220(tabId).catch(()=>{});
+    return;
+  }
+  if(domain)row.domain=domain;
+}
 async function browserWebInteractionApiV2210(action, payload = {}) {
   return authorizedFetch('/api/extension-web-interaction-v2210.php', {
     method:'POST',
@@ -1667,6 +1938,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       case 'web_interaction_observe': return browserWebInteractionObserveV2210(message.payload || {});
       case 'web_interaction_action': return browserWebInteractionApiV2210(message.action, message.payload || {});
       case 'web_interaction_execute': return browserWebInteractionExecuteV2210(message.payload || {});
+      case 'multisite_attach': return browserMultiSiteAttachV2220(message.payload || {});
+      case 'multisite_state': return browserMultiSiteStateV2220(message.payload || {});
+      case 'multisite_policy': return browserMultiSiteSetPolicyV2220(message.payload || {});
+      case 'multisite_handoff': return browserMultiSiteHandoffV2220(message.payload || {});
+      case 'multisite_fact_add': return browserMultiSiteFactAddV2220(message.payload || {});
       case 'notification_poll': return pollProactiveNotifications();
       case 'quick_action_consume': return consumeQuickActionV2150();
       case 'quick_action_run': {
