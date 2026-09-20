@@ -504,6 +504,15 @@ function vp3_browser_runtime_set_state_v2200(PDO $pdo,array $runtime,string $sta
         $pdo->prepare("UPDATE browser_agent_runtime_tabs_v2200 SET status='released',last_seen_at=UTC_TIMESTAMP()
           WHERE runtime_session_id=? AND owner_user_id=? AND status='open'")
             ->execute([(int)$runtime['id'],(int)$runtime['owner_user_id']]);
+        if(table_exists('browser_multisite_sessions_v2220')){
+            $stmt=$pdo->prepare("SELECT id FROM browser_multisite_sessions_v2220 WHERE runtime_session_id=? AND owner_user_id=? LIMIT 1");
+            $stmt->execute([(int)$runtime['id'],(int)$runtime['owner_user_id']]);$multiId=(int)$stmt->fetchColumn();
+            if($multiId>0){
+                if(table_exists('browser_multisite_facts_v2220'))$pdo->prepare("DELETE FROM browser_multisite_facts_v2220 WHERE multisite_session_id=?")->execute([$multiId]);
+                if(table_exists('browser_multisite_tabs_v2220'))$pdo->prepare("DELETE FROM browser_multisite_tabs_v2220 WHERE multisite_session_id=?")->execute([$multiId]);
+                $pdo->prepare("UPDATE browser_multisite_sessions_v2220 SET status='closed',updated_at=UTC_TIMESTAMP() WHERE id=?")->execute([$multiId]);
+            }
+        }
     }
 }
 
