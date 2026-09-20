@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "VP3 Browser Companion",
-  "version": "21.6.0",
-  "description": "VP3 Browser Companion with inline Agent Workspace, contextual quick actions, proactive Agent Voice, page-aware Agent Now, capture, sharing, Research, Live Rooms, alerts, and search.",
+  "version": "21.7.0",
+  "description": "VP3 Browser Companion with explicit cross-web Cognitive Memory, Browser Agent Workspace, contextual quick actions, proactive Agent Voice, page-aware Agent Now, capture, sharing, Research, Live Rooms, alerts, and search.",
   "minimum_chrome_version": "116",
   "permissions": [
     "activeTab",

@@ -50,6 +50,7 @@
       <nav class="feed-tabs" aria-label="Browser Companion views">
         <button id="nowTab" class="feed-tab active" type="button" aria-selected="true">Now</button>
         <button id="agentTab" class="feed-tab" type="button" aria-selected="false">Agent</button>
+        <button id="memoryTab" class="feed-tab" type="button" aria-selected="false">Memory</button>
         <button id="thisPageTab" class="feed-tab" type="button" aria-selected="false">This Page</button>
         <button id="followingTab" class="feed-tab" type="button" aria-selected="false">Following</button>
         <button id="liveTab" class="feed-tab" type="button" aria-selected="false">Live</button>
@@ -136,6 +137,48 @@
         </section>
       </section>
 
+      <section id="memoryView" hidden>
+        <section class="card memory-head">
+          <div class="row-between">
+            <div>
+              <div class="eyebrow">Cross-Web Cognitive Memory</div>
+              <strong id="memoryAgentName">VP3 Agent</strong>
+              <div id="memoryStatus" class="page-host">Only references you explicitly approve are remembered.</div>
+            </div>
+            <button id="memoryRefreshBtn" class="text-btn" type="button">Refresh</button>
+          </div>
+          <div class="memory-boundary">
+            <strong>No browsing-history memory.</strong>
+            <span>VP3 remembers only durable VP3 objects you approve. Page URLs, selected text, and page content are not stored in Browser Memory.</span>
+          </div>
+        </section>
+
+        <section class="card memory-card">
+          <div class="row-between">
+            <div>
+              <div class="eyebrow">This page</div>
+              <strong>Available to remember</strong>
+            </div>
+            <span class="pill">Explicit approval</span>
+          </div>
+          <div id="memoryPageLabel" class="page-host">No current page context.</div>
+          <div id="memoryCandidates" class="memory-list"></div>
+          <div id="memoryCandidatesEmpty" class="empty-state">No durable VP3 object is connected to this page yet. Save it to Knowledge or Research, annotate/follow it, or connect it to an existing VP3 object first.</div>
+        </section>
+
+        <section class="card memory-card">
+          <div class="row-between">
+            <div>
+              <div class="eyebrow">Approved references</div>
+              <strong>Remembered by this Agent</strong>
+            </div>
+            <span id="memoryCount" class="pill">0 remembered</span>
+          </div>
+          <div id="memoryRemembered" class="memory-list"></div>
+          <div id="memoryRememberedEmpty" class="empty-state">No Browser Memory references approved yet.</div>
+        </section>
+      </section>
+
       <section id="thisPageView" hidden>
         <section class="card source-card">
           <div class="row-between">
@@ -165,6 +208,7 @@
             <button id="quickResearchBtn" type="button">Research</button>
             <button id="quickKnowledgeBtn" type="button">Knowledge</button>
             <button id="quickTaskBtn" type="button">Task</button>
+            <button id="quickMemoryBtn" type="button">Memory</button>
             <button id="quickTeamBtn" type="button">Share Team</button>
             <button id="quickAnnotateBtn" type="button">Annotate</button>
           </div>

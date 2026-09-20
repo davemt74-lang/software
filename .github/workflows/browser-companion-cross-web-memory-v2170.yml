@@ -1,0 +1,143 @@
+name: Browser Companion Cross-Web Cognitive Memory v21.70
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - browser-companion-cross-web-memory-v2170
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    name: Cross-Web Memory · PHP ${{ matrix.php }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.1','8.3']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: v21.70 explicit Browser Memory contract
+        run: node tests/browser-companion-cross-web-memory-v2170.mjs
+
+      - name: Retained Browser Companion contracts
+        run: |
+          node tests/extension-device-token-v2100.mjs
+          node tests/browser-companion-v2030.mjs
+          node tests/browser-companion-account-shell-v2110.mjs
+          node tests/browser-companion-cognitive-now-v2120.mjs
+          node tests/browser-cognitive-review-hardening-v2120.mjs
+          node tests/browser-companion-contextual-agent-v2130.mjs
+          node tests/browser-companion-proactive-notifications-v2140.mjs
+          node tests/browser-companion-contextual-quick-actions-v2150.mjs
+          node tests/browser-companion-agent-workspace-v2160.mjs
+
+      - name: Retained Cognitive Runtime contracts
+        run: |
+          node tests/vp3-cognitive-runtime-spec-v500.mjs
+          node tests/cognitive-runtime-core-v500.mjs
+          node tests/cognitive-presentation-v510.mjs
+          node tests/cognitive-cards-v520.mjs
+          node tests/cognitive-feed-v530.mjs
+          node tests/cognitive-learning-v540.mjs
+          node tests/cognitive-planning-v550.mjs
+          node tests/cognitive-orchestration-v560.mjs
+          node tests/cognitive-memory-v570.mjs
+
+      - name: JavaScript syntax
+        run: |
+          node --check browser-companion/background.js
+          node --check browser-companion/sidepanel.js
+          node --check browser-companion/offscreen.js
+          node --check chat.js
+          node --check tests/browser-companion-cross-web-memory-v2170.mjs
+
+      - name: PHP syntax
+        run: |
+          php -l includes/browser-memory-v2170.php
+          php -l includes/cognitive-memory-v570.php
+          php -l api/extension-memory-v2170.php
+          php -l upgrade.php
+
+  package:
+    name: Build v21.70 deploy packages
+    needs: contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build cumulative extension and server overlay
+        shell: bash
+        run: |
+          rm -rf dist
+          mkdir -p dist/server/api dist/server/includes dist/server/browser-companion
+          (
+            cd browser-companion
+            zip -r ../dist/vp3-browser-companion-extension-v21.70.zip . -x '*.DS_Store'
+          )
+          unzip -t dist/vp3-browser-companion-extension-v21.70.zip
+
+          cp api/extension-token.php api/extension-me.php api/extension-device-disconnect-v2030.php api/extension-cognitive-now-v2120.php api/extension-notifications-v2140.php api/extension-agent-voice-v2140.php api/extension-agent-chat-v2160.php api/extension-memory-v2170.php dist/server/api/
+          cp api/cognitive-*.php api/chat-v236.php api/chat-notifications-brain-v240.php dist/server/api/
+
+          cp includes/extension-device-auth-v2000.php includes/extension-device-auth-v2001.php includes/extension-device-token-v2100.php includes/extension-notifications-v2140.php includes/agent-chat-runtime-v2160.php includes/browser-memory-v2170.php dist/server/includes/
+          cp includes/browser-context-v2130.php includes/agent-surface-context-v131.php includes/browser-share-v2010.php includes/browser-source-feed-v2050.php includes/research-projects-v2060.php includes/knowledge.php includes/knowledge-retrieval-v162.php includes/user-calendar-v1300.php includes/crm-v180.php dist/server/includes/
+          cp includes/cognitive-*.php includes/agent-cognitive-loop-v310.php includes/bootstrap.php dist/server/includes/
+
+          cp extension-connect.php upgrade.php chat.php chat.js chat-browser-context-v2130.js chat-browser-context-v2130.css chat-notifications-drawer-v240.js chat-notifications-drawer-v240.css dist/server/
+          cp chat-cognitive-*.js chat-cognitive-*.css dist/server/
+          cp -R browser-companion/. dist/server/browser-companion/
+
+          cat > dist/server/DEPLOY.txt <<'EOF'
+          VP3 Browser Companion v21.70 — Cross-Web Cognitive Memory
+          Cumulative overlay through v21.70.
+
+          Extract into the VP3 application root and overwrite included files.
+          Sign in as owner/admin and run upgrade.php once.
+
+          v21.70 adds browser_memory_approvals_v2170. The table stores only
+          user/Agent/object references and approval/revocation timestamps.
+          Browser history, page URLs, titles, page content, selected text and
+          source excerpts are not stored in Browser Memory.
+
+          Merely opening a page or Memory view creates no memory. Remember is an
+          explicit user action bound to a server-rederived current-page candidate.
+          Forget revokes the reference and removes its browser-approved Cognitive
+          Memory occurrence/thread signal. Re-approval creates a fresh signal.
+          EOF
+
+          (
+            cd dist/server
+            zip -r ../vp3-browser-companion-server-v21.70.zip .
+          )
+          unzip -t dist/vp3-browser-companion-server-v21.70.zip
+
+          sha256sum dist/vp3-browser-companion-extension-v21.70.zip > dist/vp3-browser-companion-extension-v21.70.zip.sha256
+          sha256sum dist/vp3-browser-companion-server-v21.70.zip > dist/vp3-browser-companion-server-v21.70.zip.sha256
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vp3-browser-companion-cross-web-memory-v21.70
+          path: |
+            dist/vp3-browser-companion-extension-v21.70.zip
+            dist/vp3-browser-companion-extension-v21.70.zip.sha256
+            dist/vp3-browser-companion-server-v21.70.zip
+            dist/vp3-browser-companion-server-v21.70.zip.sha256
+          if-no-files-found: error
+          retention-days: 30

@@ -14,15 +14,16 @@ const webApi=read('api/chat-v236.php');
 const runtime=read('includes/agent-chat-runtime-v2160.php');
 const chat=read('chat.php');
 
-must(manifest.version==='21.6.0','v21.60 manifest version missing');
-must(background.includes("const VP3_EXTENSION_VERSION = '21.6.0';"),'v21.60 request version missing');
+const workspaceVersion=String(manifest.version||'').split('.').map(Number);
+must(workspaceVersion.length===3&&(workspaceVersion[0]>21||(workspaceVersion[0]===21&&workspaceVersion[1]>=6)),'v21.60+ manifest version missing');
+must(/const VP3_EXTENSION_VERSION = '21\.(?:[6-9]|[1-9]\d+)\.\d+';/.test(background),'v21.60+ request version missing');
 
 // Browser workspace UI.
 for(const id of ['agentTab','agentView','agentWorkspaceName','agentWorkspaceStatus','agentRefreshBtn','agentConversationSelect','agentNewChatBtn','agentOpenFullBtn','agentUsePageContext','agentContextLabel','agentMessages','agentMessageInput','agentSendBtn']){
   must(html.includes(`id="${id}"`),`missing Agent workspace element ${id}`);
 }
 must(css.includes('.agent-workspace-card')&&css.includes('.agent-messages'),'Agent workspace styling missing');
-must(panel.includes("activeView=v;const now=v==='now',agent=v==='agent'"),'Agent workspace must be a first-class sidebar view');
+must(panel.includes("activeView=v;const now=v==='now',agent=v==='agent'"),'Agent workspace must remain a first-class sidebar view');
 must(panel.includes("setInterval(()=>pollAgentMessagesV2160(),4000)"),'visible Agent workspace must poll canonical messages');
 must(panel.includes("clearInterval(agentPollTimer)")&&panel.includes("window.onbeforeunload"),'Agent poller cleanup missing');
 
@@ -90,7 +91,11 @@ must(chat.includes("WHERE id=? AND user_id=? AND user_agent_id=? LIMIT 1"),'cust
 must(chat.includes("WHERE id=? AND user_id=? AND user_agent_id IS NULL LIMIT 1"),'system-Agent conversation deep link must be ownership scoped');
 
 // Live capability revocation and lifecycle.
-must(panel.includes("['now','agent'].includes(activeView)&&!c.has('agent.message')"),'Agent view must leave revoked capability immediately');
+must(
+  panel.includes("['now','agent','memory'].includes(activeView)&&!c.has('agent.message')")
+    || panel.includes("['now','agent'].includes(activeView)&&!c.has('agent.message')"),
+  'Agent view must leave revoked capability immediately'
+);
 must(panel.includes("ui.agentSendBtn.disabled=!(state&&state.connected&&c.has('agent.message')"),'Agent send button live capability gate missing');
 must(panel.includes("clearInterval(agentPollTimer);agentPollTimer=null;"),'Agent poll interval must stop off-view');
 

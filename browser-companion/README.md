@@ -1,6 +1,28 @@
-# VP3 Browser Companion v21.60
+# VP3 Browser Companion v21.70
 
 Chrome Manifest V3 companion for VP3 Browser Share and the Source Feed layer: This Page, Following, source/user follows, comments, read state, Private/Team/Public publishing, plus highlighted text, screenshot regions, source-media moments, and voice commentary.
+
+## v21.70 Cross-Web Cognitive Memory
+
+Browser Companion now has an explicit **Memory** view for cross-web Agent continuity.
+
+This phase does **not** turn browsing history into Agent memory. Opening a page, highlighting text, asking Agent, or refreshing Now creates no Browser Memory approval.
+
+Memory candidates are derived only from durable VP3 objects already related to the current page and already authorized for the signed-in user:
+
+- recognized Browser Sources with an authorized share/follow relationship
+- Research projects the user can access
+- Knowledge items the user can currently read
+- public active VP3 profiles
+- CRM contacts only for existing CRM admins
+
+The user must click **Remember** on a specific object. VP3 then stores only a reference approval: user ID, Agent namespace, target type, target ID, target scope, and approval/revocation timestamps. It does not store the page URL, page title, page body, selected text, source excerpt, relationship summary, or a browsing-history record.
+
+Each approval becomes a registered `browser_memory_ref` Cognitive object. Cognitive Memory v5.70 records continuity around that reference, while the Browser Memory module reauthorizes and resolves the underlying VP3 object on every read.
+
+**Forget** revokes the approval and removes the Browser-approved occurrence from Cognitive Memory v5.70. If that Browser Memory continuity thread has no remaining occurrences, the thread is deleted; otherwise its aggregates are recalculated. Re-approval creates a fresh user-approved signal.
+
+The Memory view is Agent-specific. It shares the same resolved Agent namespace as the Browser Agent Workspace, so approved references do not silently move between Agents.
 
 ## v21.60 Browser Agent Workspace
 
@@ -107,7 +129,7 @@ The connected sidebar now treats VP3 as the only account authority. It renders t
 5. Choose a Team or conversation, optionally add a note, and share.
 6. Use **Ask VP3**, **Save to Knowledge**, **Create Task**, **Open source**, or **Open in VP3 Messages**.
 
-The existing right-click **Share selection with VP3** path remains available for text selections.
+The unified **VP3** right-click menu from v21.50 replaces the old standalone selection-share command.
 
 ## What rich capture stores
 
@@ -150,7 +172,7 @@ The optional numeric argument controls the maximum number of jobs processed in t
 
 ## Local Chrome installation
 
-Open `chrome://extensions`, enable **Developer mode**, choose **Load unpacked**, and select this `browser-companion` directory. The CI package `vp3-browser-companion-v21.4.0.zip` is directly loadable/extractable and contains `manifest.json` at the ZIP root.
+Open `chrome://extensions`, enable **Developer mode**, choose **Load unpacked**, and select this `browser-companion` directory. The CI package `vp3-browser-companion-extension-v21.70.zip` is directly loadable/extractable and contains `manifest.json` at the ZIP root.
 
 The default VP3 site is `https://vp3.me`. Another HTTPS VP3 installation can be selected in Extension Settings. Local development may use `http://localhost` or `http://127.0.0.1`; Chrome asks for explicit access to the selected origin.
 
