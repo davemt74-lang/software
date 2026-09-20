@@ -134,6 +134,13 @@ must(panel.includes('async function scanRuntimeWebControlsV2210'),'scan controll
 must(panel.includes('async function previewRuntimeWebInteractionV2210'),'preview controller missing');
 must(panel.includes('async function executeRuntimeWebProposalV2210'),'execution controller missing');
 
+// Consequential checkpoints and failed verification reuse the existing notification / Agent Voice surface.
+must(web.includes("create_notification("),'Web interaction notification integration missing');
+must(web.includes("'browser_web_interaction_approval_required'"),'Web checkpoint notification missing');
+must(web.includes("'browser_web_interaction_action_required'"),'Web failure notification missing');
+must(web.includes("'Browser Agent needs interaction approval'"),'checkpoint notification copy missing');
+must(!web.includes('typed value')&&!web.includes('field value:'),'notification path must not expose typed values');
+
 // Agent Workflows / upgrade integration.
 must(workflows.includes("require_once __DIR__ . '/includes/browser-web-interaction-v2210.php';"),'Agent Workflows v22.10 include missing');
 must(workflows.includes('Controlled Web Interaction Receipts'),'Agent Workflows receipt panel missing');
