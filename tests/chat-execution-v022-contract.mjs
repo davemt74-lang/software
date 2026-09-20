@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import assert from 'node:assert/strict';
 
 const root = new URL('../', import.meta.url);
-const api = fs.readFileSync(new URL('api/chat-v236.php', root), 'utf8');
+const api = [fs.readFileSync(new URL('api/chat-v236.php', root), 'utf8'),fs.readFileSync(new URL('includes/agent-chat-runtime-v2160.php', root), 'utf8')].join('\n');
 const home = fs.readFileSync(new URL('includes/homeserver-agent-v018.php', root), 'utf8');
 const delegation = fs.readFileSync(new URL('includes/homeserver-agent-v025.php', root), 'utf8');
 const execution = fs.readFileSync(new URL('includes/chat-execution-v019.php', root), 'utf8');
