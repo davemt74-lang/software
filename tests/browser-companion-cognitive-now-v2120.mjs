@@ -30,7 +30,8 @@ must(html.includes('id="thisPageView" hidden'),'This Page must yield to Now on i
 must(js.includes("activeView='now'"),'Now must be the initial client view');
 must(js.includes("ui.thisPageTab.disabled=!(state&&state.connected&&(canRead||canShare))"),'This Page must follow live read/share access');
 must(
-  js.includes("['now','agent','execution','memory'].includes(activeView)&&!c.has('agent.message')")
+  js.includes("['now','agent','delegation','execution','memory'].includes(activeView)&&!c.has('agent.message')")
+    ||js.includes("['now','agent','execution','memory'].includes(activeView)&&!c.has('agent.message')")
     ||js.includes("['now','agent','memory'].includes(activeView)&&!c.has('agent.message')")
     ||js.includes("['now','agent'].includes(activeView)&&!c.has('agent.message')")
     ||js.includes("activeView==='now'&&!c.has('agent.message')"),
