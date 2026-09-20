@@ -883,6 +883,8 @@ function showDelegationCheckpointV2190(result){
   delegationCheckpointData=result||null;
   const step=result&&result.step||{};
   ui.delegationCheckpoint.hidden=false;
+  ui.delegationCheckpointOpenBtn.hidden=false;
+  ui.delegationCheckpointDoneBtn.hidden=false;
   ui.delegationCheckpointText.textContent=(step.label||'This step')+' requires your explicit completion before the delegation can continue.';
   ui.delegationRunBtn.hidden=true;
 }
