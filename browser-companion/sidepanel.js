@@ -2,7 +2,7 @@
 const $=id=>document.getElementById(id);
 const ui={};
 [
-'connectionState','connectControls','shareWorkspace','connectBtn','settingsBtn','connectedAccount','disconnectedAccount','accountAvatar','accountName','accountMeta','accountTeams','openVp3Btn','refreshAccountBtn','accountOptionsBtn','accessNotice','quickActionsCard','composerCard','agentWorkspaceName','agentWorkspaceStatus','agentRefreshBtn','agentConversationSelect','agentNewChatBtn','agentOpenFullBtn','agentUsePageContext','agentContextLabel','agentMessages','agentEmpty','agentMessageInput','agentSendBtn','delegationAgentName','delegationStatus','delegationRefreshBtn','delegationInstruction','delegationMaxSteps','delegationExpiry','delegationRisk','delegationDomains','delegationPreviewBtn','delegationStartBtn','delegationPlan','delegationActive','delegationActiveTitle','delegationActiveMeta','delegationProgress','delegationRunBtn','delegationPauseBtn','delegationResumeBtn','delegationCancelBtn','delegationOpenWorkflowBtn','delegationCheckpoint','delegationCheckpointText','delegationCheckpointOpenBtn','delegationCheckpointDoneBtn','delegationSteps','delegationRecent','delegationRecentEmpty','executionAgentName','executionStatus','executionRefreshBtn','executionPageLabel','executionCandidates','executionCandidatesEmpty','executionTickets','executionTicketsEmpty','executionContinuity','executionContinuityEmpty','memoryAgentName','memoryStatus','memoryRefreshBtn','memoryPageLabel','memoryCandidates','memoryCandidatesEmpty','memoryRemembered','memoryRememberedEmpty','memoryCount',
+'connectionState','connectControls','shareWorkspace','connectBtn','settingsBtn','connectedAccount','disconnectedAccount','accountAvatar','accountName','accountMeta','accountTeams','openVp3Btn','refreshAccountBtn','accountOptionsBtn','accessNotice','quickActionsCard','composerCard','agentWorkspaceName','agentWorkspaceStatus','agentRefreshBtn','agentConversationSelect','agentNewChatBtn','agentOpenFullBtn','agentUsePageContext','agentContextLabel','agentMessages','agentEmpty','agentMessageInput','agentSendBtn','delegationAgentName','delegationStatus','delegationRefreshBtn','delegationInstruction','delegationMaxSteps','delegationExpiry','delegationRisk','delegationDomains','delegationPreviewBtn','delegationStartBtn','delegationPlan','delegationActive','delegationActiveTitle','delegationActiveMeta','delegationProgress','delegationRunBtn','delegationPauseBtn','delegationResumeBtn','delegationCancelBtn','delegationOpenWorkflowBtn','runtimePanel','runtimeSessionBadge','runtimePlanRevision','runtimeCurrentSkill','runtimeRecovery','runtimeObservationCount','runtimeLastVerified','runtimeReplanBtn','runtimeSkipBtn','runtimeTimeline','runtimeTimelineEmpty','runtimeTabs','runtimeTabsEmpty','delegationCheckpoint','delegationCheckpointText','delegationCheckpointOpenBtn','delegationCheckpointDoneBtn','delegationSteps','delegationRecent','delegationRecentEmpty','executionAgentName','executionStatus','executionRefreshBtn','executionPageLabel','executionCandidates','executionCandidatesEmpty','executionTickets','executionTicketsEmpty','executionContinuity','executionContinuityEmpty','memoryAgentName','memoryStatus','memoryRefreshBtn','memoryPageLabel','memoryCandidates','memoryCandidatesEmpty','memoryRemembered','memoryRememberedEmpty','memoryCount',
 'nowTab','agentTab','delegationTab','executionTab','memoryTab','thisPageTab','followingTab','liveTab','alertsTab','searchTab','nowView','agentView','delegationView','executionView','memoryView','thisPageView','followingView','liveView','alertsView','searchView','refreshNowBtn','openAgentChatBtn','restoreNowBtn','nowStatus','nowAttentionCount','nowItemCount','nowContextualCount','nowContextStrip','nowContextTitle','nowContextMeta','toggleNowContextBtn','nowContextPanel','nowRelationshipSummary','nowRelationshipList','nowContextActions','nowEmpty','nowFeed','refreshCaptureBtn','pageTitle','pageHost','sourceMeta','sourceStatus',
 'followCurrentSourceBtn','openSourcePageBtn','quickAskBtn','quickSummarizeBtn','quickCompareBtn','quickResearchBtn','quickKnowledgeBtn','quickTaskBtn','quickMemoryBtn','quickTeamBtn','quickAnnotateBtn','selectedText','selectionCount','captureSummary','captureScreenshotBtn','screenshotPreview',
 'screenshotImage','screenshotMeta','removeScreenshotBtn','captureMediaBtn','mediaDetectedText','mediaPreview','mediaPreviewTitle','mediaStart',
@@ -20,12 +20,14 @@ const CLIP_MAX_SECONDS = 90;
 const COMMENTARY_MAX_BYTES = 16 * 1024 * 1024;
 const MAX_CLIP=CLIP_MAX_SECONDS,MAX_COMMENTARY=COMMENTARY_MAX_BYTES;
 const VP3_DELEGATION_CLIENT_STEP_LIMIT_V2190=12;
+const VP3_RUNTIME_CLIENT_STEP_LIMIT_V2200=16;
 let state=null,capture=null,destinations=null,lastShare=null,currentSource=null;
 let screenshotCapture=null,mediaReference=null,commentaryCapture=null,recorder=null,stream=null,recordTimer=null,recordStarted=0,pageTimer=null;
 let thisCursor='',followingCursor='',thisBusy=false,followingBusy=false,activeView='now';
 let cognitiveBusy=false,cognitiveData=null,cognitiveTimer=null;
 let agentConversationId=0,agentWorkspaceAgentId=0,agentLastMessageId=0,agentPollTimer=null,agentBusy=false,agentConversations=[];
 let delegationBusy=false,delegationRunnerBusy=false,delegationPreviewData=null,delegationActiveData=null,delegationRecentData=[],delegationCheckpointData=null;
+let runtimeBusyV2200=false,runtimeRunnerBusyV2200=false,runtimeDataV2200=null,runtimeSkillsV2200=[],runtimeOpenedTabsV2200=[];
 let executionBusy=false,executionCandidatesData=[],executionTicketsData=[],executionContinuityData=[];
 let memoryBusy=false,memoryCandidatesData=[],memoryRememberedData=[];
 let nowContextIgnored=false,contextAgentPayload=null,contextRelationships=null,contextSuggestions=[];
@@ -560,6 +562,183 @@ async function sendAgentMessageV2160(){
     optimistic.remove();ui.agentMessageInput.value=message;await fail(e);
   }finally{agentBusy=false;renderCaps();}
 }
+function runtimeRequestV2200(action,payload={}){
+  const request=Object.assign({},payload||{});
+  if(agentWorkspaceAgentId>0)request.agent_id=agentWorkspaceAgentId;
+  return msg('runtime_action',{action:action,payload:request});
+}
+function runtimeEventRowV2200(item){
+  const row=el('div','runtime-event','');
+  row.dataset.kind=String(item.event_type||'');
+  row.append(el('strong','',String(item.event_type||'runtime event').replace(/_/g,' ')));
+  if(item.summary)row.append(el('span','',String(item.summary)));
+  const meta=[item.skill_key?String(item.skill_key).replace(/_/g,' '):'',item.created_at?date(item.created_at):''].filter(Boolean).join(' · ');
+  if(meta)row.append(el('span','',meta));
+  return row;
+}
+function runtimeTabRowV2200(item){
+  const row=el('div','runtime-tab','');
+  row.append(el('strong','',(item.role||'runtime')+' · '+String(item.target_type||'VP3 object').replace(/_/g,' ')));
+  row.append(el('span','',(item.status||'open')+' · '+(item.target_id||'')+(item.last_seen_at?' · '+date(item.last_seen_at):'')));
+  return row;
+}
+function renderRuntimeV2200(runtime){
+  runtimeDataV2200=runtime||null;
+  if(!runtime){
+    ui.runtimePanel.hidden=true;
+    return;
+  }
+  ui.runtimePanel.hidden=false;
+  ui.runtimeSessionBadge.textContent=(runtime.status||'ready')+' · '+String(runtime.runtime_id||'').slice(0,8);
+  ui.runtimePlanRevision.textContent='r'+String(runtime.plan_revision||1);
+  ui.runtimeCurrentSkill.textContent=runtime.current_skill_key?String(runtime.current_skill_key).replace(/_/g,' '):'Waiting';
+  ui.runtimeRecovery.textContent=runtime.recovery_code?String(runtime.recovery_code).replace(/_/g,' '):'Clear';
+  ui.runtimeObservationCount.textContent=String(runtime.observation_count||0);
+  ui.runtimeLastVerified.textContent=runtime.last_verified_at?date(runtime.last_verified_at):'—';
+  ui.runtimeTimeline.replaceChildren();
+  (runtime.timeline||[]).slice(0,20).forEach(item=>ui.runtimeTimeline.append(runtimeEventRowV2200(item)));
+  ui.runtimeTimelineEmpty.hidden=(runtime.timeline||[]).length>0;
+  ui.runtimeTabs.replaceChildren();
+  (runtime.tabs||[]).forEach(item=>ui.runtimeTabs.append(runtimeTabRowV2200(item)));
+  ui.runtimeTabsEmpty.hidden=(runtime.tabs||[]).length>0;
+  const terminal=['completed','cancelled','expired'].includes(String(runtime.status||''));
+  const current=runtime.current_step||null;
+  ui.runtimeReplanBtn.disabled=terminal||Number(runtime.replan_count||0)>=Number(runtime.max_replans||0)||String(runtime.status||'')==='checkpoint';
+  ui.runtimeSkipBtn.disabled=terminal||!current||!['queued','failed','approval_pending','executing'].includes(String(current.status||''));
+}
+async function attachRuntimeV2200(delegationId){
+  if(!delegationId)return null;
+  const payload=await runtimeRequestV2200('attach',{delegation_id:String(delegationId)});
+  if(payload&&payload.agent){agentWorkspaceAgentId=Math.max(0,Number(payload.agent.id||agentWorkspaceAgentId||0));}
+  renderRuntimeV2200(payload&&payload.runtime||null);
+  return payload&&payload.runtime||null;
+}
+async function loadRuntimeDetailV2200(){
+  if(!runtimeDataV2200||!runtimeDataV2200.runtime_id)return null;
+  const payload=await runtimeRequestV2200('detail',{runtime_id:String(runtimeDataV2200.runtime_id)});
+  renderRuntimeV2200(payload&&payload.runtime||null);
+  return payload&&payload.runtime||null;
+}
+async function closeRuntimeOpenedTabsV2200(){
+  if(!runtimeOpenedTabsV2200.length)return;
+  const ids=[...new Set(runtimeOpenedTabsV2200)];
+  if(runtimeDataV2200&&runtimeDataV2200.runtime_id){
+    for(const id of ids){
+      try{await runtimeRequestV2200('tab_closed',{runtime_id:runtimeDataV2200.runtime_id,tab_id:id});}catch(_error){}
+    }
+  }
+  await msg('runtime_close_tabs',{tab_ids:ids}).catch(()=>{});
+  runtimeOpenedTabsV2200=[];
+}
+async function runRuntimeV2200(){
+  if(runtimeRunnerBusyV2200||!runtimeDataV2200||!runtimeDataV2200.runtime_id)return;
+  if(!capture||!capture.available)throw new Error('Open the authorized Browser source before continuing this runtime.');
+  runtimeRunnerBusyV2200=true;renderCaps();
+  try{
+    for(let guard=0;guard<VP3_RUNTIME_CLIENT_STEP_LIMIT_V2200;guard++){
+      const runtimeId=String(runtimeDataV2200.runtime_id||'');
+      const result=await runtimeRequestV2200('tick',{runtime_id:runtimeId,context:capture});
+      if(result&&result.runtime)renderRuntimeV2200(result.runtime);
+      if(result&&result.delegation)renderDelegationActiveV2190(result.delegation);
+      if(result.state==='advanced'||result.state==='ready'){
+        await refreshCapture(false);
+        continue;
+      }
+      if(result.state==='navigate'){
+        if(!result.navigation||!result.navigation.url||!result.step)throw new Error('Runtime navigation is incomplete.');
+        const opened=await msg('runtime_navigate',{url:absolute(result.navigation.url)});
+        const tabId=Number(opened&&opened.tab_id||0);
+        if(tabId>0){
+          runtimeOpenedTabsV2200.push(tabId);
+          await runtimeRequestV2200('tab_seen',{
+            runtime_id:runtimeId,tab_id:tabId,role:'runtime',
+            target_type:String(result.navigation.target_type||result.step.target_type||''),
+            target_id:String(result.navigation.target_id||result.step.target_id||'')
+          });
+        }
+        await refreshCapture(false);
+        const verified=await runtimeRequestV2200('verify_navigation',{
+          runtime_id:runtimeId,action_id:Number(result.step.id||0),tab_id:tabId,context:capture
+        });
+        if(verified&&verified.runtime)renderRuntimeV2200(verified.runtime);
+        if(verified&&verified.delegation)renderDelegationActiveV2190(verified.delegation);
+        continue;
+      }
+      if(result.state==='checkpoint'){
+        showDelegationCheckpointV2190(result);
+        note('Browser Runtime reached a user checkpoint.','success');
+        break;
+      }
+      if(result.state==='authority_required'){
+        delegationCheckpointData=result||null;
+        ui.delegationCheckpoint.hidden=false;
+        ui.delegationCheckpointText.textContent=result.message||('This runtime step requires '+String(result.required_capability||'additional authority')+'.');
+        ui.delegationCheckpointOpenBtn.hidden=true;
+        ui.delegationCheckpointDoneBtn.hidden=true;
+        note('Browser Runtime needs additional authority before it can continue.','error');
+        break;
+      }
+      if(result.state==='recovering'||result.state==='failed'){
+        note('Browser Runtime needs recovery. Retry, skip, or replan within the approved scope.','error');
+        break;
+      }
+      if(result.state==='completed'){
+        note('Browser Agent Runtime completed and verified the delegated job.','success');
+        await closeRuntimeOpenedTabsV2200();
+        await loadDelegationsV2190();
+        break;
+      }
+      if(['paused','cancelled','expired'].includes(String(result.state||''))){
+        if(result.state==='cancelled'||result.state==='expired')await closeRuntimeOpenedTabsV2200();
+        break;
+      }
+      break;
+    }
+  }finally{
+    runtimeRunnerBusyV2200=false;renderCaps();
+  }
+}
+async function runtimeLifecycleV2200(action){
+  if(!runtimeDataV2200||!runtimeDataV2200.runtime_id)return delegationLifecycleV2190(action);
+  const payload=await runtimeRequestV2200(action,{runtime_id:runtimeDataV2200.runtime_id});
+  if(payload&&payload.runtime)renderRuntimeV2200(payload.runtime);
+  if(payload&&payload.delegation)renderDelegationActiveV2190(payload.delegation);
+  await loadDelegationsV2190();
+  if(action==='resume')await runRuntimeV2200();
+  if(action==='cancel')await closeRuntimeOpenedTabsV2200();
+}
+async function runtimeReplanV2200(){
+  if(!runtimeDataV2200||!runtimeDataV2200.runtime_id||!capture||!capture.available)return;
+  busy(ui.runtimeReplanBtn,true,'Replanning…');
+  try{
+    const payload=await runtimeRequestV2200('replan',{runtime_id:runtimeDataV2200.runtime_id,context:capture});
+    if(payload&&payload.runtime)renderRuntimeV2200(payload.runtime);
+    note('Remaining runtime steps replanned inside the original authority.','success');
+    await runRuntimeV2200();
+  }finally{busy(ui.runtimeReplanBtn,false);}
+}
+async function runtimeSkipV2200(){
+  if(!runtimeDataV2200||!runtimeDataV2200.runtime_id||!runtimeDataV2200.current_step)return;
+  busy(ui.runtimeSkipBtn,true,'Skipping…');
+  try{
+    const payload=await runtimeRequestV2200('skip',{
+      runtime_id:runtimeDataV2200.runtime_id,
+      action_id:Number(runtimeDataV2200.current_step.id||0)
+    });
+    if(payload&&payload.runtime)renderRuntimeV2200(payload.runtime);
+    if(payload&&payload.delegation)renderDelegationActiveV2190(payload.delegation);
+    note('Runtime step skipped explicitly.','success');
+    await runRuntimeV2200();
+  }finally{busy(ui.runtimeSkipBtn,false);}
+}
+async function runtimeRetryV2200(actionId){
+  if(!runtimeDataV2200||!runtimeDataV2200.runtime_id)return;
+  const payload=await runtimeRequestV2200('retry',{runtime_id:runtimeDataV2200.runtime_id,action_id:Number(actionId||0)});
+  if(payload&&payload.runtime)renderRuntimeV2200(payload.runtime);
+  if(payload&&payload.delegation)renderDelegationActiveV2190(payload.delegation);
+  await runRuntimeV2200();
+}
+
 function delegationRequestV2190(action,payload={}){
   const request=Object.assign({},payload||{});
   if(agentWorkspaceAgentId>0)request.agent_id=agentWorkspaceAgentId;
@@ -668,6 +847,7 @@ async function loadDelegationsV2190(){
 async function loadDelegationDetailV2190(id){
   const payload=await delegationRequestV2190('detail',{delegation_id:String(id||'')});
   renderDelegationActiveV2190(payload&&payload.delegation||null);
+  try{await attachRuntimeV2200(String(id||''));}catch(e){ui.delegationStatus.textContent='Delegation loaded · Runtime upgrade may be required';}
   return payload&&payload.delegation||null;
 }
 async function previewDelegationV2190(){
@@ -694,14 +874,17 @@ async function startDelegationV2190(){
     renderDelegationActiveV2190(payload&&payload.delegation||null);
     renderDelegationRecentV2190(payload&&payload.delegations||[]);
     delegationInvalidatePreviewV2190();
-    note('Delegation approved. Running bounded low-risk steps.','success');
-    await runDelegationV2190();
+    await attachRuntimeV2200(payload&&payload.delegation&&payload.delegation.delegation_id||'');
+    note('Runtime attached. Running bounded Browser skills.','success');
+    await runRuntimeV2200();
   }finally{busy(ui.delegationStartBtn,false);}
 }
 function showDelegationCheckpointV2190(result){
   delegationCheckpointData=result||null;
   const step=result&&result.step||{};
   ui.delegationCheckpoint.hidden=false;
+  ui.delegationCheckpointOpenBtn.hidden=false;
+  ui.delegationCheckpointDoneBtn.hidden=false;
   ui.delegationCheckpointText.textContent=(step.label||'This step')+' requires your explicit completion before the delegation can continue.';
   ui.delegationRunBtn.hidden=true;
 }
@@ -756,6 +939,7 @@ async function delegationClickV2190(e){
     await loadDelegationDetailV2190(String(b.dataset.delegationId||''));return;
   }
   if(b.dataset.action==='delegation_retry'){
+    if(runtimeDataV2200&&runtimeDataV2200.runtime_id)return runtimeRetryV2200(Number(b.dataset.actionId||0));
     if(!delegationActiveData)return;
     const payload=await delegationRequestV2190('retry',{delegation_id:delegationActiveData.delegation_id,action_id:Number(b.dataset.actionId||0)});
     renderDelegationActiveV2190(payload&&payload.delegation||null);await runDelegationV2190();
@@ -1147,13 +1331,15 @@ ui.agentRefreshBtn.onclick=()=>refreshAgentWorkspaceV2160().catch(fail);
 ui.delegationRefreshBtn.onclick=()=>loadDelegationsV2190().catch(fail);
 ui.delegationPreviewBtn.onclick=()=>previewDelegationV2190().catch(fail);
 ui.delegationStartBtn.onclick=()=>startDelegationV2190().catch(fail);
-ui.delegationRunBtn.onclick=()=>runDelegationV2190().catch(fail);
-ui.delegationPauseBtn.onclick=()=>delegationLifecycleV2190('pause').catch(fail);
-ui.delegationResumeBtn.onclick=()=>delegationLifecycleV2190('resume').catch(fail);
-ui.delegationCancelBtn.onclick=()=>delegationLifecycleV2190('cancel').catch(fail);
+ui.delegationRunBtn.onclick=()=>((runtimeDataV2200&&runtimeDataV2200.runtime_id)?runRuntimeV2200():runDelegationV2190()).catch(fail);
+ui.delegationPauseBtn.onclick=()=>runtimeLifecycleV2200('pause').catch(fail);
+ui.delegationResumeBtn.onclick=()=>runtimeLifecycleV2200('resume').catch(fail);
+ui.delegationCancelBtn.onclick=()=>runtimeLifecycleV2200('cancel').catch(fail);
 ui.delegationOpenWorkflowBtn.onclick=()=>{if(delegationActiveData&&delegationActiveData.agent_workflow_url)msg('open_url',{url:absolute(delegationActiveData.agent_workflow_url)}).catch(fail);};
 ui.delegationCheckpointOpenBtn.onclick=()=>openDelegationCheckpointV2190().catch(fail);
-ui.delegationCheckpointDoneBtn.onclick=async()=>{try{if(!delegationActiveData||!delegationCheckpointData||!delegationCheckpointData.step)return;const payload=await delegationRequestV2190('complete_checkpoint',{delegation_id:delegationActiveData.delegation_id,action_id:Number(delegationCheckpointData.step.id||0)});renderDelegationActiveV2190(payload&&payload.delegation||null);ui.delegationCheckpoint.hidden=true;delegationCheckpointData=null;await runDelegationV2190();}catch(e){await fail(e);}};
+ui.delegationCheckpointDoneBtn.onclick=async()=>{try{if(!delegationActiveData||!delegationCheckpointData||!delegationCheckpointData.step)return;if(runtimeDataV2200&&runtimeDataV2200.runtime_id){const payload=await runtimeRequestV2200('complete_checkpoint',{runtime_id:runtimeDataV2200.runtime_id,action_id:Number(delegationCheckpointData.step.id||0)});if(payload&&payload.runtime)renderRuntimeV2200(payload.runtime);if(payload&&payload.delegation)renderDelegationActiveV2190(payload.delegation);ui.delegationCheckpoint.hidden=true;delegationCheckpointData=null;await runRuntimeV2200();return;}const payload=await delegationRequestV2190('complete_checkpoint',{delegation_id:delegationActiveData.delegation_id,action_id:Number(delegationCheckpointData.step.id||0)});renderDelegationActiveV2190(payload&&payload.delegation||null);ui.delegationCheckpoint.hidden=true;delegationCheckpointData=null;await runDelegationV2190();}catch(e){await fail(e);}};
+ui.runtimeReplanBtn.onclick=()=>runtimeReplanV2200().catch(fail);
+ui.runtimeSkipBtn.onclick=()=>runtimeSkipV2200().catch(fail);
 ui.delegationRecent.onclick=e=>delegationClickV2190(e).catch(fail);
 ui.delegationSteps.onclick=e=>delegationClickV2190(e).catch(fail);
 ui.delegationInstruction.oninput=delegationInvalidatePreviewV2190;

@@ -16,7 +16,7 @@ const chat=read('chat.php');
 
 const workspaceVersion=String(manifest.version||'').split('.').map(Number);
 must(workspaceVersion.length===3&&(workspaceVersion[0]>21||(workspaceVersion[0]===21&&workspaceVersion[1]>=6)),'v21.60+ manifest version missing');
-must(/const VP3_EXTENSION_VERSION = '21\.(?:[6-9]|[1-9]\d+)\.\d+';/.test(background),'v21.60+ request version missing');
+must(background.includes(`const VP3_EXTENSION_VERSION = '${manifest.version}';`),'retained Browser Companion request version must match the manifest');
 
 // Browser workspace UI.
 for(const id of ['agentTab','agentView','agentWorkspaceName','agentWorkspaceStatus','agentRefreshBtn','agentConversationSelect','agentNewChatBtn','agentOpenFullBtn','agentUsePageContext','agentContextLabel','agentMessages','agentMessageInput','agentSendBtn']){

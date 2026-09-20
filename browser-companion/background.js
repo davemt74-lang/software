@@ -1,6 +1,6 @@
 const VP3_DEFAULT_BASE = 'https://vp3.me';
 const VP3_CONTRACT_VERSION = '1';
-const VP3_EXTENSION_VERSION = '21.9.0';
+const VP3_EXTENSION_VERSION = '22.0.0';
 const VP3_MEDIA_CLIP_MAX_SECONDS = 90;
 
 const storage = {
@@ -199,6 +199,38 @@ async function browserExecutionActionV2180(action, payload = {}) {
     method:'POST',
     json:{ action:normalizedAction, ...request }
   }, 'agent.message');
+}
+
+async function browserAgentRuntimeActionV2200(action, payload = {}) {
+  const normalizedAction=String(action || 'list');
+  const request={ ...payload };
+  if(['tick','observe','verify_navigation','replan'].includes(normalizedAction)&&request.context){
+    request.context=browserContextPayload(request.context);
+  }
+  return authorizedFetch('/api/extension-agent-runtime-v2200.php', {
+    method:'POST',
+    json:{ action:normalizedAction, ...request }
+  }, 'agent.message');
+}
+
+async function browserAgentRuntimeNavigateV2200(rawUrl) {
+  const { base_url }=await config();
+  const base=new URL(cleanBaseUrl(base_url));
+  const url=new URL(String(rawUrl || ''),base.origin+'/');
+  if(!/^https?:$/.test(url.protocol)||url.origin!==base.origin){
+    throw new Error('Browser Agent Runtime navigation is limited to the connected VP3 installation.');
+  }
+  return browserDelegationNavigateV2190(url.toString());
+}
+
+async function browserAgentRuntimeCloseTabsV2200(tabIds) {
+  const ids=[...new Set((Array.isArray(tabIds)?tabIds:[]).map(Number).filter(id=>Number.isInteger(id)&&id>0))].slice(0,24);
+  if(!ids.length)return {closed:[]};
+  const closed=[];
+  for(const id of ids){
+    try{await chrome.tabs.remove(id);closed.push(id);}catch(_error){}
+  }
+  return {closed};
 }
 
 async function browserDelegationActionV2190(action, payload = {}) {
@@ -1278,6 +1310,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       case 'execution_action': return browserExecutionActionV2180(message.action, message.payload || {});
       case 'delegation_action': return browserDelegationActionV2190(message.action, message.payload || {});
       case 'delegation_navigate': return browserDelegationNavigateV2190(message.url || '');
+      case 'runtime_action': return browserAgentRuntimeActionV2200(message.action, message.payload || {});
+      case 'runtime_navigate': return browserAgentRuntimeNavigateV2200(message.url || '');
+      case 'runtime_close_tabs': return browserAgentRuntimeCloseTabsV2200(message.tab_ids || []);
       case 'notification_poll': return pollProactiveNotifications();
       case 'quick_action_consume': return consumeQuickActionV2150();
       case 'quick_action_run': {

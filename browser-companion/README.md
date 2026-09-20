@@ -1,6 +1,30 @@
-# VP3 Browser Companion v21.90
+# VP3 Browser Companion v22.00
 
 Chrome Manifest V3 companion for VP3 Browser Share and the Source Feed layer: This Page, Following, source/user follows, comments, read state, Private/Team/Public publishing, plus highlighted text, screenshot regions, source-media moments, and voice commentary.
+
+## v22.00 Browser Agent Runtime
+
+v22.00 turns the bounded v21.90 delegation loop into a reusable **Browser Agent Runtime**.
+
+The user still starts with a natural-language job and explicit v21.90 authority envelope. Starting the job creates/attaches a canonical runtime session with a declarative Browser Skill registry, task-scoped observations, cross-tab target references, a runtime timeline, verification state and bounded recovery/replanning.
+
+The execution loop is:
+
+**Goal → Plan → Runtime → Observe → Act → Verify → Replan / Checkpoint → Complete**
+
+Key boundaries:
+
+- **v21.90 remains authoritative.** Runtime cannot expand the approved Source, allowed actions, risk budget, step limit or expiration.
+- **Planner and executor are separated.** Replanning can revise remaining steps only inside the original authority envelope; execution goes through registered skills and existing canonical VP3 services.
+- **Every skill declares capability, risk, target types, verification mode and checkpoint behavior.** Live capabilities and durable VP3 targets are rechecked before each step.
+- **Observations are task-scoped and expiring.** Runtime stores canonical VP3 references, high-level state and fingerprints only—not page URLs, titles, selected text, page text, excerpts or page content.
+- **Cross-tab state is reference-only.** The server stores opaque tab keys plus authorized VP3 target references, never a browser-history ledger.
+- **Recovery is explicit.** Pause, Resume, Cancel, Retry, Skip and bounded Replan are available without widening authority.
+- **Consequential writes still checkpoint.** Task, Knowledge and Team-share work remains user-confirmed.
+- **Notifications and Agent Voice are reused.** Runtime checkpoint/failure/completion events use the existing VP3 notification pipeline, so voice behavior still follows the existing Agent Voice setting.
+- **Agent Workflows is canonical.** Runtime status and timeline are visible alongside the underlying durable Agent Workflow run.
+
+v22.00 intentionally does **not** add unrestricted DOM clicking, form submission or arbitrary site automation. Those belong to a later controlled Web Interaction Runtime after this execution core is proven reliable.
 
 ## v21.90 Delegated Browser Workflows
 
@@ -206,7 +230,7 @@ The optional numeric argument controls the maximum number of jobs processed in t
 
 ## Local Chrome installation
 
-Open `chrome://extensions`, enable **Developer mode**, choose **Load unpacked**, and select this `browser-companion` directory. The CI package `vp3-browser-companion-extension-v21.90.zip` is directly loadable/extractable and contains `manifest.json` at the ZIP root.
+Open `chrome://extensions`, enable **Developer mode**, choose **Load unpacked**, and select this `browser-companion` directory. The CI package `vp3-browser-companion-extension-v22.00.zip` is directly loadable/extractable and contains `manifest.json` at the ZIP root.
 
 The default VP3 site is `https://vp3.me`. Another HTTPS VP3 installation can be selected in Extension Settings. Local development may use `http://localhost` or `http://127.0.0.1`; Chrome asks for explicit access to the selected origin.
 

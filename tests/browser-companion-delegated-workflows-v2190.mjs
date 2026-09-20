@@ -13,8 +13,9 @@ const delegation=read('includes/browser-delegation-v2190.php');
 const api=read('api/extension-delegation-v2190.php');
 const upgrade=read('upgrade.php');
 
-must(manifest.version==='21.9.0','v21.90 manifest version missing');
-must(background.includes("const VP3_EXTENSION_VERSION = '21.9.0';"),'v21.90 request version missing');
+const delegationVersion=String(manifest.version||'').split('.').map(Number);
+must(delegationVersion.length===3&&(delegationVersion[0]>21||(delegationVersion[0]===21&&delegationVersion[1]>=9)),'v21.90+ manifest version missing');
+must(background.includes(`const VP3_EXTENSION_VERSION = '${manifest.version}';`),'v21.90+ request version must match manifest');
 must(background.includes("authorizedFetch('/api/extension-delegation-v2190.php'"),'delegation API adapter missing');
 must(background.includes("case 'delegation_action': return browserDelegationActionV2190"),'delegation message route missing');
 must(background.includes("case 'delegation_navigate': return browserDelegationNavigateV2190"),'bounded navigation route missing');
