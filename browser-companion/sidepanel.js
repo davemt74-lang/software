@@ -451,7 +451,11 @@ async function cognitiveClick(e){
     if(b.dataset.action==='cognitive_plan_accept'||b.dataset.action==='cognitive_plan_dismiss'){const planId=String(item.key||'').replace(/^plan:/,'');const decision=b.dataset.action==='cognitive_plan_accept'?'accept':'dismiss';await cognitiveAction('plan_decide',{plan_id:planId,decision:decision});await loadNow(true);note(decision==='accept'?'Plan accepted for review.':'Plan dismissed.','success');return;}
   }catch(err){await fail(err);if(err.code==='state_changed')await loadNow(true).catch(()=>{});}
 }
-function agentWorkspaceRequestV2160(action,payload){return msg('agent_workspace',{action:action,payload:payload||{}});}
+function agentWorkspaceRequestV2160(action,payload){
+  const request=Object.assign({},payload||{});
+  if(agentWorkspaceAgentId>0)request.agent_id=agentWorkspaceAgentId;
+  return msg('agent_workspace',{action:action,payload:request});
+}
 function agentMessageNodeV2160(message){
   const role=message&&message.role==='user'?'user':'assistant';
   const box=el('div','agent-message '+role,message&&message.message||'');
