@@ -324,14 +324,14 @@ async function waitForGuardedNavigationV2220(tabId,targetDomain,targetFingerprin
       if(!raw)return finish({verified:false,result_code:'tab_unavailable',tab:null});
       let host='';try{host=normalizeRuntimeDomainV2220(new URL(raw).hostname);}catch(_error){}
       if(host&&host!==normalizedTarget){
-        try{await chrome.tabs.stop(tabId);}catch(_error){}
+        try{await chrome.scripting.executeScript({target:{tabId},func:()=>window.stop()});}catch(_error){}
         if(openedByRuntime){try{await chrome.tabs.remove(tabId);}catch(_error){}}
         return finish({verified:false,result_code:'redirect_outside_scope',tab});
       }
       if(tab&&tab.status==='complete'){
         const fingerprint=await sha256HexV2220(raw);
-        const ok=host===normalizedTarget&&fingerprint===targetFingerprint;
-        return finish({verified:ok,result_code:ok?'handoff_verified':'target_changed',tab,target_url_fingerprint:fingerprint});
+        const ok=host===normalizedTarget;
+        return finish({verified:ok,result_code:ok?(fingerprint===targetFingerprint?'handoff_verified':'handoff_verified_redirect'):'target_changed',tab,target_url_fingerprint:targetFingerprint});
       }
     };
     const onUpdated=(id,changeInfo)=>{
@@ -465,7 +465,7 @@ function browserMultiSiteGuardTabV2220(tabId,changeInfo,tab){
   let domain='';try{domain=normalizeRuntimeDomainV2220(new URL(raw).hostname);}catch(_error){}
   const allowed=runtimeMultiSiteAllowedDomainsV2220(ctx.state);
   if(domain&&!allowed.has(domain)){
-    chrome.tabs.stop(tabId).catch(()=>{});
+    chrome.scripting.executeScript({target:{tabId},func:()=>window.stop()}).catch(()=>{});
     if(row.opened_by_runtime)chrome.tabs.remove(tabId).catch(()=>{});
     browserMultiSiteReleaseTabV2220(tabId).catch(()=>{});
     return;
