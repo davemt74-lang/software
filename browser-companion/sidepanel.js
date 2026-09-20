@@ -1282,6 +1282,13 @@ function showDelegationCheckpointV2190(result){
   ui.delegationRunBtn.hidden=true;
 }
 async function openDelegationCheckpointV2190(){
+  const step=delegationCheckpointData&&delegationCheckpointData.step||null;
+  if(step&&String(step.action_key||'')==='multisite_handoff'){
+    if(!runtimeMultiStateV2220)await attachRuntimeMultiV2220();
+    ui.runtimeMultiPanel.scrollIntoView({behavior:'smooth',block:'start'});
+    note('Multi-site checkpoint opened. Complete the approved-domain work, then mark this step done.','success');
+    return;
+  }
   const handoff=delegationCheckpointData&&delegationCheckpointData.handoff||null;if(!handoff)return;
   if(handoff.kind==='agent_prompt'){
     setView('agent');ui.agentMessageInput.value=String(handoff.prompt||'');renderCaps();ui.agentMessageInput.focus();
