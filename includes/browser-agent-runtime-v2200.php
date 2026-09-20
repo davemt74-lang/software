@@ -493,6 +493,13 @@ function vp3_browser_runtime_set_state_v2200(PDO $pdo,array $runtime,string $sta
         $status,$skill,$terminal?null:$actionId,$recovery,$status,$status,$status,$status,
         (int)$runtime['id'],(int)$runtime['owner_user_id']
     ]);
+    if($terminal){
+        $pdo->prepare("DELETE FROM browser_agent_runtime_observations_v2200 WHERE runtime_session_id=? AND owner_user_id=?")
+            ->execute([(int)$runtime['id'],(int)$runtime['owner_user_id']]);
+        $pdo->prepare("UPDATE browser_agent_runtime_tabs_v2200 SET status='released',last_seen_at=UTC_TIMESTAMP()
+          WHERE runtime_session_id=? AND owner_user_id=? AND status='open'")
+            ->execute([(int)$runtime['id'],(int)$runtime['owner_user_id']]);
+    }
 }
 
 function vp3_browser_runtime_tick_v2200(PDO $pdo,array $user,string $namespace,array $session,string $runtimePublicId,array $context,array $relations): array
@@ -520,6 +527,15 @@ function vp3_browser_runtime_tick_v2200(PDO $pdo,array $user,string $namespace,a
             vp3_browser_runtime_notify_v2200($pdo,$runtime,'completed');
         }
         return ['state'=>'completed','runtime'=>vp3_browser_runtime_public_v2200($pdo,$user,$namespace,$runtimePublicId,true)];
+    }
+
+    if((string)$step['status']==='failed'){
+        vp3_browser_runtime_set_state_v2200($pdo,$runtime,'recovering','',(int)$step['id'],'step_failed');
+        return [
+            'state'=>'recovering','replan_available'=>(int)$runtime['replan_count']<(int)$runtime['max_replans'],
+            'recovery_code'=>'step_failed','step'=>vp3_browser_delegation_public_step_v2190($step),
+            'runtime'=>vp3_browser_runtime_public_v2200($pdo,$user,$namespace,$runtimePublicId,true)
+        ];
     }
 
     $check=vp3_browser_runtime_skill_check_v2200($runtime,$session,$step);
