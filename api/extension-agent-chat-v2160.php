@@ -123,6 +123,18 @@ try{
         ]);
     }
 
+    if($action==='messages_after'){
+        $conversationId=max(0,(int)($input['conversation_id']??0));
+        if(!vp3_extension_agent_conversation_v2160($pdo,$conversationId,$userId,$activeAgent)){
+            vp3_extension_agent_json_v2160(404,['ok'=>false,'error'=>['code'=>'not_found','message'=>'Conversation not found for this Agent.']]);
+        }
+        $afterId=max(0,(int)($input['after_id']??0));
+        $stmt=$pdo->prepare('SELECT id,role,message,created_at FROM chat_messages WHERE conversation_id=? AND id>? ORDER BY id ASC LIMIT 80');
+        $stmt->execute([$conversationId,$afterId]);
+        $messages=array_map('vp3_extension_agent_message_v2160',$stmt->fetchAll()?:[]);
+        vp3_extension_agent_json_v2160(200,['ok'=>true,'conversation_id'=>$conversationId,'messages'=>$messages]);
+    }
+
     if($action==='send'){
         $message=trim((string)($input['message']??''));
         if($message==='')vp3_extension_agent_json_v2160(422,['ok'=>false,'error'=>['code'=>'message_required','message'=>'Enter a message.']]);
