@@ -101,10 +101,11 @@ function vp3_browser_delegation_allowed_actions_v2190(array $input): array
     $allowed=[
         'follow_source','unfollow_source',
         'open_research','open_profile','open_contact',
-        'draft_task','draft_knowledge','share_team'
+        'draft_task','draft_knowledge','share_team',
+        'web_click','web_focus','web_type','web_clear','web_select','web_toggle','web_scroll','web_open_link','web_submit'
     ];
     $out=[];
-    foreach(array_slice($input,0,12) as $value){
+    foreach(array_slice($input,0,24) as $value){
         $action=trim((string)$value);
         if(in_array($action,$allowed,true))$out[$action]=true;
     }

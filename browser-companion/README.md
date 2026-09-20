@@ -1,6 +1,48 @@
-# VP3 Browser Companion v22.00
+# VP3 Browser Companion v22.10
 
 Chrome Manifest V3 companion for VP3 Browser Share and the Source Feed layer: This Page, Following, source/user follows, comments, read state, Private/Team/Public publishing, plus highlighted text, screenshot regions, source-media moments, and voice commentary.
+
+## v22.10 Controlled Web Interaction Runtime
+
+v22.10 extends the v22.00 Browser Agent Runtime with a **controlled semantic interaction layer** for the currently approved web page.
+
+The interaction loop is:
+
+**Observe controls → Resolve semantic target → Preview → Authorize → Act → Verify → Recover / Continue**
+
+The v21.90 delegation still defines authority. Web interaction skills must be explicitly included in the approved action scope, the active domain must be in the approved domain list, the interaction must fit the approved risk budget, and the runtime must still be active.
+
+Registered interaction skills:
+
+- **Click control**
+- **Focus field**
+- **Type into field**
+- **Clear field**
+- **Select option**
+- **Toggle checkbox/radio**
+- **Scroll to control**
+- **Open same-domain link**
+- **Submit form**
+
+Safety and privacy boundaries:
+
+- Chrome never accepts arbitrary JavaScript, arbitrary CSS selectors, or a user-supplied script payload.
+- DOM observation is bounded to semantic interactive controls such as buttons, links, inputs, selects and accessible role-based controls.
+- Element handles are ephemeral Chrome-side keys. Durable receipts store only hashes/fingerprints, control kind, action, domain, risk, checkpoint state and verification result.
+- Raw DOM, page text, selectors and typed values are not persisted to VP3.
+- Type/select/toggle operations require the delegation's **medium** risk budget.
+- Password, payment-card, security-code, authentication-token, banking and medical/health fields stay manual and are blocked from runtime mutation.
+- Submit, send, publish, delete, purchase, booking, transfer, account-change, sharing and similar consequential controls are upgraded to explicit checkpoints.
+- Web interaction permits are one-time and short-lived.
+- Every interaction is rechecked server-side immediately before Chrome claims its execution permit.
+- Chrome independently rechecks sensitive/dangerous semantics before changing the page.
+- Stale controls are reacquired by semantic fingerprint; ambiguous or missing targets fail closed.
+- Clicks and submissions must show a verifiable DOM/state/navigation change or the runtime records the interaction as unverified.
+- v22.10 link navigation is same-domain only. Cross-site orchestration remains reserved for the next multi-site runtime phase.
+- The runtime interaction count is bounded from the approved delegation step budget and hard-capped.
+- Interaction events flow into the existing v22.00 runtime timeline and Agent Workflow view.
+
+The Runtime workspace includes **Scan controls**, semantic control selection, local-only value entry, interaction preview, explicit checkpoint confirmation, execution results and fingerprint-only receipts.
 
 ## v22.00 Browser Agent Runtime
 
@@ -230,7 +272,7 @@ The optional numeric argument controls the maximum number of jobs processed in t
 
 ## Local Chrome installation
 
-Open `chrome://extensions`, enable **Developer mode**, choose **Load unpacked**, and select this `browser-companion` directory. The CI package `vp3-browser-companion-extension-v22.00.zip` is directly loadable/extractable and contains `manifest.json` at the ZIP root.
+Open `chrome://extensions`, enable **Developer mode**, choose **Load unpacked**, and select this `browser-companion` directory. The CI package `vp3-browser-companion-extension-v22.10.zip` is directly loadable/extractable and contains `manifest.json` at the ZIP root.
 
 The default VP3 site is `https://vp3.me`. Another HTTPS VP3 installation can be selected in Extension Settings. Local development may use `http://localhost` or `http://127.0.0.1`; Chrome asks for explicit access to the selected origin.
 

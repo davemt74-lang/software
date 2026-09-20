@@ -5,6 +5,7 @@ require_once __DIR__ . '/includes/agent-workflow-runs-v1400.php';
 require_once __DIR__ . '/includes/agent-job-engine-v1900.php';
 require_once __DIR__ . '/includes/agent-worker-runtime-v1910.php';
 require_once __DIR__ . '/includes/browser-agent-runtime-v2200.php';
+require_once __DIR__ . '/includes/browser-web-interaction-v2210.php';
 require_permission('account.access');
 $pdo=db();$user=current_user();if(!$pdo||!$user)redirect(url('/login.php'));
 if(!agent_workflow_schema_ready_v1400($pdo))redirect(url('/agent-workflow-upgrade-v1400.php'));
@@ -41,6 +42,7 @@ $runs=agent_workflow_recent_v1400($pdo,$user,30);
 $detail=null;$detailId=max(0,(int)($_GET['id']??0));
 if($detailId>0){$row=agent_workflow_row_v1400($pdo,(int)$user['id'],$detailId);if($row)$detail=$durable?agent_job_public_run_v1900($pdo,$row,true):agent_workflow_public_run_v1400($pdo,$row,true);}
 $browserRuntime=$detail&&vp3_browser_runtime_schema_ready_v2200($pdo)?vp3_browser_runtime_for_workflow_v2200($pdo,(int)$user['id'],$detailId):null;
+$browserWeb=$detail&&vp3_browser_web_schema_ready_v2210($pdo)?vp3_browser_web_for_workflow_v2210($pdo,(int)$user['id'],$detailId):['count'=>0,'verified'=>0,'failed'=>0,'checkpointed'=>0,'interactions'=>[]];
 
 function workflow_v1400_status_label(string $status): string{return str_replace('_',' ',ucwords($status,'_'));}
 function workflow_v1400_time(string $value): string{$ts=strtotime($value);return $ts?date('M j, g:i A',$ts):'—';}
@@ -120,6 +122,29 @@ function workflow_v1400_time(string $value): string{$ts=strtotime($value);return
       </section>
     </div>
   </section>
+  <?php if((int)($browserWeb['count']??0)>0): ?>
+  <section class="workflow-panel" aria-labelledby="browserWebInteractionTitle">
+    <div class="workflow-panel-head">
+      <div><small>Browser Companion v22.10</small><h3 id="browserWebInteractionTitle">Controlled Web Interaction Receipts</h3></div>
+      <span><?= (int)($browserWeb['verified']??0) ?> verified · <?= (int)($browserWeb['failed']??0) ?> failed</span>
+    </div>
+    <div class="workflow-summary-grid">
+      <div><small>Interactions</small><strong><?= (int)($browserWeb['count']??0) ?></strong></div>
+      <div><small>Checkpointed</small><strong><?= (int)($browserWeb['checkpointed']??0) ?></strong></div>
+      <div><small>Persistence</small><strong>Fingerprint-only · no typed values</strong></div>
+      <div><small>Authority</small><strong>v21.90 delegation + v22.00 runtime</strong></div>
+    </div>
+    <div class="workflow-event-list">
+      <?php foreach(array_slice((array)($browserWeb['interactions']??[]),0,20) as $interaction): ?>
+      <article>
+        <strong><?= e((string)($interaction['label']??'Web interaction')) ?> · <?= e(workflow_v1400_status_label((string)($interaction['status']??''))) ?></strong>
+        <p><?= e((string)($interaction['domain']??'')) ?> · <?= e((string)($interaction['element_kind']??'control')) ?> · <?= e((string)($interaction['result_code']??'')) ?></p>
+        <small><?= e(workflow_v1400_time((string)($interaction['created_at']??''))) ?> · <?= e((string)($interaction['risk_level']??'low')) ?> risk<?= !empty($interaction['requires_checkpoint'])?' · checkpoint':'' ?></small>
+      </article>
+      <?php endforeach; ?>
+    </div>
+  </section>
+  <?php endif; ?>
   <?php endif; ?>
   <div class="workflow-actions-bar">
     <?php if((string)$detail['status']==='approval_pending'): ?><form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="approve"><input type="hidden" name="run_id" value="<?= (int)$detail['id'] ?>"><button class="workflow-button primary" type="submit">Approve workflow</button></form><?php endif; ?>

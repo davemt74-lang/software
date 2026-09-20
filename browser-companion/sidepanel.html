@@ -179,6 +179,16 @@
             <label><input type="checkbox" data-delegation-action="draft_task"> Prepare Task checkpoint</label>
             <label><input type="checkbox" data-delegation-action="draft_knowledge"> Prepare Knowledge checkpoint</label>
             <label><input type="checkbox" data-delegation-action="share_team"> Prepare Team-share checkpoint</label>
+            <span>Controlled Web skills · v22.10</span>
+            <label><input type="checkbox" data-delegation-action="web_click" checked> Click page controls</label>
+            <label><input type="checkbox" data-delegation-action="web_focus" checked> Focus page fields</label>
+            <label><input type="checkbox" data-delegation-action="web_scroll" checked> Scroll to controls</label>
+            <label><input type="checkbox" data-delegation-action="web_open_link" checked> Open same-domain links</label>
+            <label><input type="checkbox" data-delegation-action="web_type"> Type into fields · medium risk</label>
+            <label><input type="checkbox" data-delegation-action="web_clear"> Clear fields · medium risk</label>
+            <label><input type="checkbox" data-delegation-action="web_select"> Select options · medium risk</label>
+            <label><input type="checkbox" data-delegation-action="web_toggle"> Toggle controls · medium risk</label>
+            <label><input type="checkbox" data-delegation-action="web_submit"> Submit forms · checkpoint + medium risk</label>
           </div>
           <div class="delegation-form-actions">
             <button id="delegationPreviewBtn" type="button">Preview plan</button>
@@ -221,6 +231,76 @@
               <button id="runtimeReplanBtn" type="button">Replan</button>
               <button id="runtimeSkipBtn" type="button">Skip step</button>
             </div>
+
+            <section id="runtimeWebPanel" class="runtime-web-panel">
+              <div class="row-between">
+                <div>
+                  <div class="eyebrow">Controlled Web Interaction · v22.10</div>
+                  <strong>Page controls</strong>
+                  <div id="runtimeWebStatus" class="page-host">Scan the current approved page to inspect interactive controls.</div>
+                </div>
+                <button id="runtimeWebScanBtn" type="button">Scan controls</button>
+              </div>
+              <div class="runtime-web-boundary">
+                <strong>No arbitrary scripts or selectors.</strong>
+                <span>Chrome exposes bounded semantic controls only. Password/payment/security/medical fields stay manual. Submit, send, publish, delete, purchase, booking, account-change and similar controls require an explicit checkpoint.</span>
+              </div>
+              <div class="runtime-web-summary">
+                <span id="runtimeWebControlCount" class="pill">0 controls</span>
+                <span id="runtimeWebInteractionCount" class="pill">0 / 0 interactions</span>
+                <span class="pill">Same-domain links only</span>
+              </div>
+              <div id="runtimeWebElements" class="runtime-web-elements"></div>
+              <div id="runtimeWebElementsEmpty" class="empty-state">No page controls scanned yet.</div>
+
+              <div id="runtimeWebComposer" class="runtime-web-composer" hidden>
+                <div class="runtime-web-selected">
+                  <small>Selected control</small>
+                  <strong id="runtimeWebSelectedLabel">Control</strong>
+                  <span id="runtimeWebSelectedMeta"></span>
+                </div>
+                <label class="field">
+                  <span>Interaction</span>
+                  <select id="runtimeWebActionSelect"></select>
+                </label>
+                <label id="runtimeWebValueField" class="field" hidden>
+                  <span id="runtimeWebValueLabel">Value</span>
+                  <input id="runtimeWebValueInput" type="text" maxlength="4000" autocomplete="off" placeholder="Enter the value locally in Chrome">
+                </label>
+                <label id="runtimeWebOptionField" class="field" hidden>
+                  <span>Option</span>
+                  <select id="runtimeWebOptionSelect"></select>
+                </label>
+                <label id="runtimeWebToggleField" class="field" hidden>
+                  <span>State</span>
+                  <select id="runtimeWebToggleSelect"><option value="true">On / checked</option><option value="false">Off / unchecked</option></select>
+                </label>
+                <div class="delegation-controls">
+                  <button id="runtimeWebPreviewBtn" type="button">Preview interaction</button>
+                  <button id="runtimeWebClearSelectionBtn" type="button">Clear</button>
+                </div>
+              </div>
+
+              <div id="runtimeWebProposal" class="runtime-web-proposal" hidden>
+                <div>
+                  <small>Interaction preview</small>
+                  <strong id="runtimeWebProposalTitle">Ready to run</strong>
+                  <span id="runtimeWebProposalDetail"></span>
+                </div>
+                <div id="runtimeWebCheckpointNotice" class="runtime-web-checkpoint" hidden>
+                  This interaction can create an external commitment or change data. Confirm it explicitly before Chrome receives an execution permit.
+                </div>
+                <div class="delegation-controls">
+                  <button id="runtimeWebRunBtn" class="primary" type="button">Run interaction</button>
+                  <button id="runtimeWebConfirmRunBtn" class="primary" type="button" hidden>Confirm & run</button>
+                  <button id="runtimeWebCancelBtn" type="button">Cancel</button>
+                </div>
+              </div>
+
+              <div class="runtime-subhead"><strong>Interaction receipts</strong><span>Fingerprint-only audit</span></div>
+              <div id="runtimeWebRecent" class="runtime-web-recent"></div>
+              <div id="runtimeWebRecentEmpty" class="empty-state">No Web interactions in this runtime yet.</div>
+            </section>
             <div class="runtime-columns">
               <div>
                 <div class="runtime-subhead"><strong>Timeline</strong><span>Observe → Act → Verify</span></div>

@@ -15,8 +15,9 @@ const delegation=read('includes/browser-delegation-v2190.php');
 const workflows=read('agent-workflows.php');
 const upgrade=read('upgrade.php');
 
-must(manifest.version==='22.0.0','v22.00 manifest version missing');
-must(background.includes("const VP3_EXTENSION_VERSION = '22.0.0';"),'v22.00 request version missing');
+const runtimeVersion=String(manifest.version||'').split('.').map(Number);
+must(runtimeVersion.length===3&&(runtimeVersion[0]>22||(runtimeVersion[0]===22&&runtimeVersion[1]>=0)),'v22.00+ manifest version missing');
+must(background.includes(`const VP3_EXTENSION_VERSION = '${manifest.version}';`),'v22.00+ request version must match manifest');
 must(background.includes("authorizedFetch('/api/extension-agent-runtime-v2200.php'"),'Browser Agent Runtime API adapter missing');
 must(background.includes("case 'runtime_action': return browserAgentRuntimeActionV2200"),'Browser Agent Runtime message route missing');
 must(background.includes("case 'runtime_navigate': return browserAgentRuntimeNavigateV2200"),'Browser Agent Runtime navigation route missing');

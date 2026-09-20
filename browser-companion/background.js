@@ -1,6 +1,6 @@
 const VP3_DEFAULT_BASE = 'https://vp3.me';
 const VP3_CONTRACT_VERSION = '1';
-const VP3_EXTENSION_VERSION = '22.0.0';
+const VP3_EXTENSION_VERSION = '22.1.0';
 const VP3_MEDIA_CLIP_MAX_SECONDS = 90;
 
 const storage = {
@@ -199,6 +199,357 @@ async function browserExecutionActionV2180(action, payload = {}) {
     method:'POST',
     json:{ action:normalizedAction, ...request }
   }, 'agent.message');
+}
+
+async function browserWebInteractionApiV2210(action, payload = {}) {
+  return authorizedFetch('/api/extension-web-interaction-v2210.php', {
+    method:'POST',
+    json:{ action:String(action || 'actions'), ...payload }
+  }, 'agent.message');
+}
+
+async function browserWebPageIdentityV2210(tabId) {
+  const injected=await chrome.scripting.executeScript({
+    target:{tabId},
+    func:async()=>{
+      const sha=async value=>{
+        const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(String(value||'')));
+        return [...new Uint8Array(digest)].map(byte=>byte.toString(16).padStart(2,'0')).join('');
+      };
+      return {
+        domain:String(location.hostname||'').toLowerCase(),
+        page_fingerprint:await sha(String(location.href||''))
+      };
+    }
+  });
+  const identity=injected?.[0]?.result;
+  if(!identity?.domain||!/^[a-f0-9]{64}$/.test(String(identity.page_fingerprint||'')))throw new Error('The active page could not be identified for controlled interaction.');
+  return identity;
+}
+
+async function browserWebInteractionObserveV2210(payload = {}) {
+  const [tab]=await chrome.tabs.query({active:true,currentWindow:true});
+  if(!tab?.id||!/^https?:/i.test(String(tab.url||'')))throw new Error('Open a normal web page before scanning controls.');
+  const injected=await chrome.scripting.executeScript({
+    target:{tabId:tab.id},
+    func:async()=>{
+      const sha=async value=>{
+        const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(String(value||'')));
+        return [...new Uint8Array(digest)].map(byte=>byte.toString(16).padStart(2,'0')).join('');
+      };
+      const clip=(value,max=180)=>String(value||'').replace(/\s+/g,' ').trim().slice(0,max);
+      const visible=el=>{
+        if(!(el instanceof Element))return false;
+        const style=getComputedStyle(el);
+        if(style.display==='none'||style.visibility==='hidden'||Number(style.opacity||1)===0)return false;
+        const rect=el.getBoundingClientRect();
+        return rect.width>1&&rect.height>1&&rect.bottom>=0&&rect.right>=0&&rect.top<=innerHeight&&rect.left<=innerWidth;
+      };
+      const labelFor=el=>{
+        const aria=clip(el.getAttribute('aria-label'));
+        if(aria)return aria;
+        if(el.id){
+          try{
+            const label=document.querySelector('label[for="'+CSS.escape(el.id)+'"]');
+            if(label)return clip(label.innerText||label.textContent);
+          }catch(_error){}
+        }
+        const parent=el.closest('label');
+        if(parent)return clip(parent.innerText||parent.textContent);
+        return clip(el.innerText||el.textContent||el.getAttribute('placeholder')||el.getAttribute('title')||el.getAttribute('name'));
+      };
+      const state=globalThis.__vp3WebRuntimeV2210||(globalThis.__vp3WebRuntimeV2210={epoch:0,keys:new WeakMap(),observer:null});
+      if(!state.observer){
+        state.observer=new MutationObserver(()=>{state.epoch+=1;});
+        state.observer.observe(document.documentElement,{subtree:true,childList:true,attributes:true,characterData:true});
+      }
+      const selector='a[href],button,input,textarea,select,[role="button"],[role="link"],[role="checkbox"],[role="radio"],[contenteditable="true"],[tabindex]';
+      const nodes=[...document.querySelectorAll(selector)].filter(visible).slice(0,240);
+      const elements=[];
+      const fingerprints=[];
+      for(const el of nodes){
+        if(elements.length>=80)break;
+        const tag=String(el.tagName||'').toLowerCase();
+        const inputType=tag==='input'?String(el.getAttribute('type')||'text').toLowerCase():'';
+        const role=String(el.getAttribute('role')||'').toLowerCase();
+        let kind='control';
+        if(tag==='a'&&el.href)kind='link';
+        else if(tag==='button'||role==='button'||['submit','button','reset'].includes(inputType))kind='button';
+        else if(inputType==='checkbox'||role==='checkbox')kind='checkbox';
+        else if(inputType==='radio'||role==='radio')kind='radio';
+        else if(tag==='select')kind='select';
+        else if(tag==='textarea')kind='textarea';
+        else if(tag==='input')kind='input';
+        const label=labelFor(el);
+        const name=clip(el.getAttribute('name'),120);
+        const placeholder=clip(el.getAttribute('placeholder'),160);
+        const ariaLabel=clip(el.getAttribute('aria-label'),160);
+        const autocomplete=clip(el.getAttribute('autocomplete'),80).toLowerCase();
+        let targetHost='',formActionHost='';
+        if(tag==='a'&&el.href){try{targetHost=new URL(el.href,location.href).hostname.toLowerCase();}catch(_error){}}
+        if(el.form){try{formActionHost=new URL(el.form.action||location.href,location.href).hostname.toLowerCase();}catch(_error){}}
+        const semantic=[tag,inputType,role,name,autocomplete,label,placeholder,ariaLabel,targetHost,formActionHost].join('|').toLowerCase();
+        const fingerprint=await sha(semantic);
+        let key=state.keys.get(el);
+        if(!key){key=crypto.randomUUID();state.keys.set(el,key);}
+        const sensitive=inputType==='password'
+          ||/(?:current-password|new-password|one-time-code|cc-(?:number|csc|exp|name)|transaction-|webauthn)/i.test(autocomplete)
+          ||/\b(?:password|passcode|pin|security code|verification code|one[- ]time|otp|2fa|mfa|credit card|card number|cvv|cvc|social security|ssn|access token|api key|secret key|private key|medical|diagnosis|prescription|insurance member|bank account|routing number)\b/i.test(semantic);
+        const submitLike=(tag==='button'&&String(el.getAttribute('type')||'submit').toLowerCase()==='submit')||inputType==='submit';
+        const dangerous=submitLike||/\b(?:submit|send|publish|post|delete|remove|destroy|purchase|buy|order|checkout|pay|book|reserve|confirm|transfer|wire|sign|accept|agree|save changes|update account|create account|close account|cancel subscription|unsubscribe|invite|share)\b/i.test(semantic);
+        const options=kind==='select'?[...el.options].slice(0,30).map(option=>({value:clip(option.value,160),label:clip(option.textContent,160)})):[];
+        elements.push({
+          element_key:key,element_fingerprint:fingerprint,kind,tag,input_type:inputType,role,
+          label,name,placeholder,aria_label:ariaLabel,autocomplete,target_host:targetHost,form_action_host:formActionHost,
+          disabled:Boolean(el.disabled)||el.getAttribute('aria-disabled')==='true',
+          checked:'checked'in el?Boolean(el.checked):null,
+          sensitive,submit_like:submitLike,dangerous,options
+        });
+        fingerprints.push(fingerprint);
+      }
+      return {
+        domain:String(location.hostname||'').toLowerCase(),
+        page_fingerprint:await sha(String(location.href||'')),
+        dom_fingerprint:await sha(fingerprints.sort().join('|')),
+        mutation_epoch:Number(state.epoch||0),
+        elements
+      };
+    }
+  });
+  const observation=injected?.[0]?.result;
+  if(!observation?.domain||!Array.isArray(observation.elements))throw new Error('Chrome could not inspect interactive controls on this page.');
+  const authority=await browserWebInteractionApiV2210('observe',{
+    runtime_id:String(payload.runtime_id||''),
+    agent_id:Number(payload.agent_id||0),
+    domain:String(observation.domain||''),
+    page_fingerprint:String(observation.page_fingerprint||''),
+    dom_fingerprint:String(observation.dom_fingerprint||''),
+    mutation_epoch:Number(observation.mutation_epoch||0),
+    element_count:observation.elements.length
+  });
+  return {
+    tab_id:tab.id,title:String(tab.title||'').slice(0,180),
+    domain:observation.domain,page_fingerprint:observation.page_fingerprint,
+    dom_fingerprint:observation.dom_fingerprint,mutation_epoch:observation.mutation_epoch,
+    elements:observation.elements,authority:authority?.observation||null,
+    actions:authority?.actions||null
+  };
+}
+
+async function browserWebWaitForTabV2210(tabId, beforeUrl, timeoutMs=6000) {
+  return new Promise(resolve=>{
+    let settled=false;
+    const finish=async()=>{
+      if(settled)return;settled=true;chrome.tabs.onUpdated.removeListener(onUpdated);clearTimeout(timer);
+      const tab=await chrome.tabs.get(tabId).catch(()=>null);
+      resolve(tab);
+    };
+    const onUpdated=(id,changeInfo)=>{
+      if(id!==tabId)return;
+      if(changeInfo.url&&changeInfo.url!==beforeUrl)return finish();
+      if(changeInfo.status==='complete')return finish();
+    };
+    const timer=setTimeout(finish,timeoutMs);
+    chrome.tabs.onUpdated.addListener(onUpdated);
+  });
+}
+
+async function browserWebInteractionExecuteV2210(payload = {}) {
+  const [tab]=await chrome.tabs.query({active:true,currentWindow:true});
+  if(!tab?.id||!/^https?:/i.test(String(tab.url||'')))throw new Error('Open the approved web page before running this interaction.');
+  const identity=await browserWebPageIdentityV2210(tab.id);
+  const claim=await browserWebInteractionApiV2210('claim',{
+    runtime_id:String(payload.runtime_id||''),agent_id:Number(payload.agent_id||0),
+    interaction_id:String(payload.interaction_id||''),
+    domain:String(identity.domain||''),page_fingerprint:String(identity.page_fingerprint||'')
+  });
+  const contract=claim?.contract||null,permitToken=String(claim?.permit_token||'');
+  if(!contract||!permitToken)throw new Error('The Web interaction permit could not be claimed.');
+  const requestedAction=String(payload.action_key||'');
+  const requestedFp=String(payload.element_fingerprint||'');
+  const failClaim=async code=>{
+    try{
+      await browserWebInteractionApiV2210('complete',{
+        runtime_id:String(payload.runtime_id||''),agent_id:Number(payload.agent_id||0),
+        interaction_id:String(payload.interaction_id||''),permit_token:permitToken,verified:false,result_code:String(code||'permit_contract_mismatch')
+      });
+    }catch(_error){}
+  };
+  if(requestedAction!==String(contract.action_key||'')||requestedFp!==String(contract.element_fingerprint||'')){
+    await failClaim('permit_contract_mismatch');
+    throw new Error('The local interaction no longer matches the server-authorized permit.');
+  }
+  const rawValue=String(payload.value??'').slice(0,4000);
+  if(Number(contract.value_length||0)!==rawValue.length&&['type','select','toggle'].includes(requestedAction)){
+    await failClaim('value_changed_after_preview');
+    throw new Error('The interaction value changed after preview. Preview it again.');
+  }
+  const beforeUrl=String(tab.url||'');
+  let outcome={verified:false,result_code:'unverified'};
+  try{
+    const injected=await chrome.scripting.executeScript({
+      target:{tabId:tab.id},
+      args:[{
+        element_key:String(payload.element_key||''),element_fingerprint:requestedFp,
+        action_key:requestedAction,value:rawValue,
+        requires_checkpoint:Boolean(contract.requires_checkpoint),target_host:String(contract.target_host||'')
+      }],
+      func:async args=>{
+        const sha=async value=>{
+          const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(String(value||'')));
+          return [...new Uint8Array(digest)].map(byte=>byte.toString(16).padStart(2,'0')).join('');
+        };
+        const clip=(value,max=180)=>String(value||'').replace(/\s+/g,' ').trim().slice(0,max);
+        const labelFor=el=>{
+          const aria=clip(el.getAttribute('aria-label'));if(aria)return aria;
+          if(el.id){try{const l=document.querySelector('label[for="'+CSS.escape(el.id)+'"]');if(l)return clip(l.innerText||l.textContent);}catch(_error){}}
+          const parent=el.closest('label');if(parent)return clip(parent.innerText||parent.textContent);
+          return clip(el.innerText||el.textContent||el.getAttribute('placeholder')||el.getAttribute('title')||el.getAttribute('name'));
+        };
+        const state=globalThis.__vp3WebRuntimeV2210||(globalThis.__vp3WebRuntimeV2210={epoch:0,keys:new WeakMap(),observer:null});
+        if(!state.observer){state.observer=new MutationObserver(()=>{state.epoch+=1;});state.observer.observe(document.documentElement,{subtree:true,childList:true,attributes:true,characterData:true});}
+        const nodes=[...document.querySelectorAll('a[href],button,input,textarea,select,[role="button"],[role="link"],[role="checkbox"],[role="radio"],[contenteditable="true"],[tabindex]')].slice(0,320);
+        const fingerprint=async el=>{
+          const tag=String(el.tagName||'').toLowerCase();
+          const inputType=tag==='input'?String(el.getAttribute('type')||'text').toLowerCase():'';
+          const role=String(el.getAttribute('role')||'').toLowerCase();
+          let host='',formHost='';if(tag==='a'&&el.href){try{host=new URL(el.href,location.href).hostname.toLowerCase();}catch(_error){}}
+          if(el.form){try{formHost=new URL(el.form.action||location.href,location.href).hostname.toLowerCase();}catch(_error){}}
+          return sha([tag,inputType,role,clip(el.getAttribute('name'),120),clip(el.getAttribute('autocomplete'),80).toLowerCase(),labelFor(el),clip(el.getAttribute('placeholder'),160),clip(el.getAttribute('aria-label'),160),host,formHost].join('|').toLowerCase());
+        };
+        let el=nodes.find(node=>state.keys.get(node)===args.element_key)||null;
+        if(el&&(await fingerprint(el))!==args.element_fingerprint)el=null;
+        let reacquired=false;
+        if(!el){
+          const matches=[];
+          for(const node of nodes){if((await fingerprint(node))===args.element_fingerprint)matches.push(node);if(matches.length>1)break;}
+          if(matches.length!==1)return {verified:false,result_code:matches.length>1?'stale_ambiguous':'stale_missing'};
+          el=matches[0];state.keys.set(el,args.element_key||crypto.randomUUID());reacquired=true;
+        }
+        if(el.disabled||el.getAttribute('aria-disabled')==='true')return {verified:false,result_code:'control_disabled',reacquired};
+        const tag=String(el.tagName||'').toLowerCase();
+        const inputType=tag==='input'?String(el.getAttribute('type')||'text').toLowerCase():'';
+        const autocomplete=clip(el.getAttribute('autocomplete'),80).toLowerCase();
+        const semantic=[tag,inputType,String(el.getAttribute('role')||''),clip(el.getAttribute('name'),120),autocomplete,labelFor(el),clip(el.getAttribute('placeholder'),160),clip(el.getAttribute('aria-label'),160)].join(' ').toLowerCase();
+        const sensitive=inputType==='password'||/(?:current-password|new-password|one-time-code|cc-(?:number|csc|exp|name)|transaction-|webauthn)/i.test(autocomplete)||/\b(?:password|passcode|pin|security code|verification code|one[- ]time|otp|2fa|mfa|credit card|card number|cvv|cvc|social security|ssn|access token|api key|secret key|private key|medical|diagnosis|prescription|insurance member|bank account|routing number)\b/i.test(semantic);
+        const submitLike=(tag==='button'&&String(el.getAttribute('type')||'submit').toLowerCase()==='submit')||inputType==='submit';
+        const dangerous=submitLike||/\b(?:submit|send|publish|post|delete|remove|destroy|purchase|buy|order|checkout|pay|book|reserve|confirm|transfer|wire|sign|accept|agree|save changes|update account|create account|close account|cancel subscription|unsubscribe|invite|share)\b/i.test(semantic);
+        if(sensitive&&['type','clear','select','toggle','submit'].includes(args.action_key))return {verified:false,result_code:'sensitive_manual_only',reacquired};
+        if(dangerous&&!args.requires_checkpoint)return {verified:false,result_code:'checkpoint_mismatch',reacquired};
+        const beforeEpoch=Number(state.epoch||0),beforeExpanded=el.getAttribute('aria-expanded'),beforePressed=el.getAttribute('aria-pressed'),beforeAriaChecked=el.getAttribute('aria-checked'),beforeChecked='checked'in el?Boolean(el.checked):null;
+        const setValue=value=>{
+          const proto=tag==='textarea'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;
+          const desc=Object.getOwnPropertyDescriptor(proto,'value');
+          if(desc?.set)desc.set.call(el,value);else el.value=value;
+          el.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:null}));
+          el.dispatchEvent(new Event('change',{bubbles:true}));
+        };
+        if(args.action_key==='focus'){
+          el.scrollIntoView({block:'center',inline:'nearest'});el.focus({preventScroll:true});
+          return {verified:document.activeElement===el,result_code:document.activeElement===el?'focus_verified':'focus_unverified',reacquired};
+        }
+        if(args.action_key==='scroll'){
+          el.scrollIntoView({block:'center',inline:'nearest'});await new Promise(r=>setTimeout(r,80));
+          const rect=el.getBoundingClientRect(),ok=rect.bottom>=0&&rect.top<=innerHeight&&rect.right>=0&&rect.left<=innerWidth;
+          return {verified:ok,result_code:ok?'viewport_verified':'viewport_unverified',reacquired};
+        }
+        if(args.action_key==='type'||args.action_key==='clear'){
+          if(!['input','textarea'].includes(tag)||['password','file','hidden','checkbox','radio','submit','button','reset'].includes(inputType))return {verified:false,result_code:'field_not_typable',reacquired};
+          const value=args.action_key==='clear'?'':String(args.value||'');setValue(value);
+          const ok=String(el.value||'')===value;
+          return {verified:ok,result_code:ok?(args.action_key==='clear'?'clear_verified':'value_verified'):'value_unverified',reacquired};
+        }
+        if(args.action_key==='select'){
+          if(tag!=='select')return {verified:false,result_code:'control_not_select',reacquired};
+          el.value=String(args.value||'');el.dispatchEvent(new Event('input',{bubbles:true}));el.dispatchEvent(new Event('change',{bubbles:true}));
+          const ok=String(el.value||'')===String(args.value||'');
+          return {verified:ok,result_code:ok?'option_verified':'option_unverified',reacquired};
+        }
+        if(args.action_key==='toggle'){
+          const toggleRole=String(el.getAttribute('role')||'').toLowerCase();
+          const nativeToggle=('checked'in el)&&['checkbox','radio'].includes(inputType);
+          const ariaToggle=['checkbox','radio'].includes(toggleRole);
+          if(!nativeToggle&&!ariaToggle)return {verified:false,result_code:'control_not_toggle',reacquired};
+          const desired=String(args.value||'')==='true';
+          if((inputType==='radio'||toggleRole==='radio')&&!desired)return {verified:false,result_code:'radio_uncheck_unsupported',reacquired};
+          const current=nativeToggle?Boolean(el.checked):el.getAttribute('aria-checked')==='true';
+          if(current!==desired)el.click();
+          await new Promise(r=>setTimeout(r,120));
+          const after=nativeToggle?Boolean(el.checked):el.getAttribute('aria-checked')==='true';
+          const ok=after===desired;
+          return {verified:ok,result_code:ok?'checked_verified':'checked_unverified',reacquired};
+        }
+        if(args.action_key==='open_link'){
+          if(tag!=='a'||!el.href)return {verified:false,result_code:'control_not_link',reacquired};
+          let url;try{url=new URL(el.href,location.href);}catch(_error){return {verified:false,result_code:'link_invalid',reacquired};}
+          if(!/^https?:$/.test(url.protocol))return {verified:false,result_code:'link_protocol_blocked',reacquired};
+          return {verified:false,result_code:'navigation_ready',navigate_url:url.href,target_host:url.hostname.toLowerCase(),reacquired};
+        }
+        if(args.action_key==='submit'){
+          if(!submitLike)return {verified:false,result_code:'control_not_submit',reacquired};
+          let submitHost=String(location.hostname||'').toLowerCase();
+          if(el.form){try{submitHost=new URL(el.form.action||location.href,location.href).hostname.toLowerCase();}catch(_error){return {verified:false,result_code:'submission_target_invalid',reacquired};}}
+          if(submitHost!==String(location.hostname||'').toLowerCase()||(args.target_host&&submitHost!==String(args.target_host||'').toLowerCase()))return {verified:false,result_code:'submission_domain_blocked',reacquired};
+          if(el.form&&typeof el.form.requestSubmit==='function')el.form.requestSubmit(el);else el.click();
+          await new Promise(r=>setTimeout(r,450));
+          const changed=Number(state.epoch||0)>beforeEpoch;
+          return {verified:changed,result_code:changed?'submission_verified':'submission_unverified',reacquired};
+        }
+        if(args.action_key==='click'){
+          if(tag==='a'&&el.href)return {verified:false,result_code:'use_open_link',reacquired};
+          el.scrollIntoView({block:'center',inline:'nearest'});el.click();await new Promise(r=>setTimeout(r,350));
+          const changed=Number(state.epoch||0)>beforeEpoch||el.getAttribute('aria-expanded')!==beforeExpanded||el.getAttribute('aria-pressed')!==beforePressed||el.getAttribute('aria-checked')!==beforeAriaChecked||('checked'in el&&Boolean(el.checked)!==beforeChecked);
+          return {verified:changed,result_code:changed?'click_verified':'click_unverified',reacquired};
+        }
+        return {verified:false,result_code:'action_unsupported',reacquired};
+      }
+    });
+    outcome=injected?.[0]?.result||outcome;
+    if(outcome?.navigate_url){
+      const url=new URL(String(outcome.navigate_url));
+      const currentHost=String(identity.domain||'').toLowerCase();
+      if(url.hostname.toLowerCase()!==currentHost||url.hostname.toLowerCase()!==String(contract.target_host||'').toLowerCase()){
+        outcome={verified:false,result_code:'navigation_domain_blocked'};
+      }else{
+        await chrome.tabs.update(tab.id,{url:url.href});
+        const after=await browserWebWaitForTabV2210(tab.id,beforeUrl);
+        outcome={
+          verified:Boolean(after?.url)&&String(after.url)===url.href,
+          result_code:Boolean(after?.url)&&String(after.url)===url.href?'navigation_verified':'navigation_unverified'
+        };
+      }
+    }else if(!outcome?.verified&&['click','submit'].includes(requestedAction)){
+      const after=await browserWebWaitForTabV2210(tab.id,beforeUrl,1800);
+      if(after?.url&&String(after.url)!==beforeUrl){
+        let afterHost='';try{afterHost=new URL(String(after.url)).hostname.toLowerCase();}catch(_error){}
+        outcome=afterHost===String(identity.domain||'').toLowerCase()
+          ?{verified:true,result_code:'navigation_verified'}
+          :{verified:false,result_code:'navigation_outside_scope'};
+      }
+    }
+  }catch(error){
+    if(['click','submit'].includes(requestedAction)){
+      const after=await browserWebWaitForTabV2210(tab.id,beforeUrl,1800);
+      if(after?.url&&String(after.url)!==beforeUrl){
+        let afterHost='';try{afterHost=new URL(String(after.url)).hostname.toLowerCase();}catch(_error){}
+        outcome=afterHost===String(identity.domain||'').toLowerCase()
+          ?{verified:true,result_code:'navigation_verified'}
+          :{verified:false,result_code:'navigation_outside_scope'};
+      }else outcome={verified:false,result_code:'execution_context_lost'};
+    }else outcome={verified:false,result_code:'execution_error'};
+  }
+  let completion=null;
+  try{
+    completion=await browserWebInteractionApiV2210('complete',{
+      runtime_id:String(payload.runtime_id||''),agent_id:Number(payload.agent_id||0),
+      interaction_id:String(payload.interaction_id||''),permit_token:permitToken,
+      verified:Boolean(outcome?.verified),result_code:String(outcome?.result_code||'unverified')
+    });
+  }catch(error){
+    const wrapped=new Error('The browser interaction ran, but VP3 could not record its verification result. '+error.message);
+    wrapped.code='verification_record_failed';throw wrapped;
+  }
+  return {outcome,proposal:completion?.proposal||null,remaining_interactions:completion?.remaining_interactions};
 }
 
 async function browserAgentRuntimeActionV2200(action, payload = {}) {
@@ -1313,6 +1664,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       case 'runtime_action': return browserAgentRuntimeActionV2200(message.action, message.payload || {});
       case 'runtime_navigate': return browserAgentRuntimeNavigateV2200(message.url || '');
       case 'runtime_close_tabs': return browserAgentRuntimeCloseTabsV2200(message.tab_ids || []);
+      case 'web_interaction_observe': return browserWebInteractionObserveV2210(message.payload || {});
+      case 'web_interaction_action': return browserWebInteractionApiV2210(message.action, message.payload || {});
+      case 'web_interaction_execute': return browserWebInteractionExecuteV2210(message.payload || {});
       case 'notification_poll': return pollProactiveNotifications();
       case 'quick_action_consume': return consumeQuickActionV2150();
       case 'quick_action_run': {
