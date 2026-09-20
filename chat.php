@@ -130,6 +130,20 @@ try {
             $stmt->execute([(int)$user['id']]);
         }
         $agentInitialConversationId = (int)$stmt->fetchColumn();
+
+        $requestedConversationId=max(0,(int)($_GET['conversation_id']??0));
+        if($requestedConversationId>0){
+            if($activeUserAgent){
+                $requestedConversation=$pdoForAgent->prepare('SELECT id FROM chat_conversations WHERE id=? AND user_id=? AND user_agent_id=? LIMIT 1');
+                $requestedConversation->execute([$requestedConversationId,(int)$user['id'],(int)$activeUserAgent['id']]);
+            }else{
+                $requestedConversation=$pdoForAgent->prepare('SELECT id FROM chat_conversations WHERE id=? AND user_id=? AND user_agent_id IS NULL LIMIT 1');
+                $requestedConversation->execute([$requestedConversationId,(int)$user['id']]);
+            }
+            $validatedConversationId=(int)$requestedConversation->fetchColumn();
+            if($validatedConversationId>0)$agentInitialConversationId=$validatedConversationId;
+        }
+
         $agentOnboarding = !$activeUserAgent
             && !$explicitSystemAgent
             && !user_agents_list_v236($pdoForAgent, (int)$user['id'])
