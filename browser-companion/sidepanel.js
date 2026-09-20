@@ -2,7 +2,7 @@
 const $=id=>document.getElementById(id);
 const ui={};
 [
-'connectionState','connectControls','shareWorkspace','connectBtn','settingsBtn','connectedAccount','disconnectedAccount','accountAvatar','accountName','accountMeta','accountTeams','openVp3Btn','refreshAccountBtn','accountOptionsBtn','accessNotice','quickActionsCard','composerCard','agentWorkspaceName','agentWorkspaceStatus','agentRefreshBtn','agentConversationSelect','agentNewChatBtn','agentOpenFullBtn','agentUsePageContext','agentContextLabel','agentMessages','agentEmpty','agentMessageInput','agentSendBtn','delegationAgentName','delegationStatus','delegationRefreshBtn','delegationInstruction','delegationMaxSteps','delegationExpiry','delegationRisk','delegationDomains','delegationPreviewBtn','delegationStartBtn','delegationPlan','delegationActive','delegationActiveTitle','delegationActiveMeta','delegationProgress','delegationRunBtn','delegationPauseBtn','delegationResumeBtn','delegationCancelBtn','delegationOpenWorkflowBtn','runtimePanel','runtimeSessionBadge','runtimePlanRevision','runtimeCurrentSkill','runtimeRecovery','runtimeObservationCount','runtimeLastVerified','runtimeReplanBtn','runtimeSkipBtn','runtimeTimeline','runtimeTimelineEmpty','runtimeTabs','runtimeTabsEmpty','delegationCheckpoint','delegationCheckpointText','delegationCheckpointOpenBtn','delegationCheckpointDoneBtn','delegationSteps','delegationRecent','delegationRecentEmpty','executionAgentName','executionStatus','executionRefreshBtn','executionPageLabel','executionCandidates','executionCandidatesEmpty','executionTickets','executionTicketsEmpty','executionContinuity','executionContinuityEmpty','memoryAgentName','memoryStatus','memoryRefreshBtn','memoryPageLabel','memoryCandidates','memoryCandidatesEmpty','memoryRemembered','memoryRememberedEmpty','memoryCount',
+'connectionState','connectControls','shareWorkspace','connectBtn','settingsBtn','connectedAccount','disconnectedAccount','accountAvatar','accountName','accountMeta','accountTeams','openVp3Btn','refreshAccountBtn','accountOptionsBtn','accessNotice','quickActionsCard','composerCard','agentWorkspaceName','agentWorkspaceStatus','agentRefreshBtn','agentConversationSelect','agentNewChatBtn','agentOpenFullBtn','agentUsePageContext','agentContextLabel','agentMessages','agentEmpty','agentMessageInput','agentSendBtn','delegationAgentName','delegationStatus','delegationRefreshBtn','delegationInstruction','delegationMaxSteps','delegationExpiry','delegationRisk','delegationDomains','delegationPreviewBtn','delegationStartBtn','delegationPlan','delegationActive','delegationActiveTitle','delegationActiveMeta','delegationProgress','delegationRunBtn','delegationPauseBtn','delegationResumeBtn','delegationCancelBtn','delegationOpenWorkflowBtn','runtimePanel','runtimeSessionBadge','runtimePlanRevision','runtimeCurrentSkill','runtimeRecovery','runtimeObservationCount','runtimeLastVerified','runtimeReplanBtn','runtimeSkipBtn','runtimeTimeline','runtimeTimelineEmpty','runtimeTabs','runtimeTabsEmpty','runtimeWebPanel','runtimeWebStatus','runtimeWebScanBtn','runtimeWebControlCount','runtimeWebInteractionCount','runtimeWebElements','runtimeWebElementsEmpty','runtimeWebComposer','runtimeWebSelectedLabel','runtimeWebSelectedMeta','runtimeWebActionSelect','runtimeWebValueField','runtimeWebValueLabel','runtimeWebValueInput','runtimeWebOptionField','runtimeWebOptionSelect','runtimeWebToggleField','runtimeWebToggleSelect','runtimeWebPreviewBtn','runtimeWebClearSelectionBtn','runtimeWebProposal','runtimeWebProposalTitle','runtimeWebProposalDetail','runtimeWebCheckpointNotice','runtimeWebRunBtn','runtimeWebConfirmRunBtn','runtimeWebCancelBtn','runtimeWebRecent','runtimeWebRecentEmpty','delegationCheckpoint','delegationCheckpointText','delegationCheckpointOpenBtn','delegationCheckpointDoneBtn','delegationSteps','delegationRecent','delegationRecentEmpty','executionAgentName','executionStatus','executionRefreshBtn','executionPageLabel','executionCandidates','executionCandidatesEmpty','executionTickets','executionTicketsEmpty','executionContinuity','executionContinuityEmpty','memoryAgentName','memoryStatus','memoryRefreshBtn','memoryPageLabel','memoryCandidates','memoryCandidatesEmpty','memoryRemembered','memoryRememberedEmpty','memoryCount',
 'nowTab','agentTab','delegationTab','executionTab','memoryTab','thisPageTab','followingTab','liveTab','alertsTab','searchTab','nowView','agentView','delegationView','executionView','memoryView','thisPageView','followingView','liveView','alertsView','searchView','refreshNowBtn','openAgentChatBtn','restoreNowBtn','nowStatus','nowAttentionCount','nowItemCount','nowContextualCount','nowContextStrip','nowContextTitle','nowContextMeta','toggleNowContextBtn','nowContextPanel','nowRelationshipSummary','nowRelationshipList','nowContextActions','nowEmpty','nowFeed','refreshCaptureBtn','pageTitle','pageHost','sourceMeta','sourceStatus',
 'followCurrentSourceBtn','openSourcePageBtn','quickAskBtn','quickSummarizeBtn','quickCompareBtn','quickResearchBtn','quickKnowledgeBtn','quickTaskBtn','quickMemoryBtn','quickTeamBtn','quickAnnotateBtn','selectedText','selectionCount','captureSummary','captureScreenshotBtn','screenshotPreview',
 'screenshotImage','screenshotMeta','removeScreenshotBtn','captureMediaBtn','mediaDetectedText','mediaPreview','mediaPreviewTitle','mediaStart',
@@ -28,6 +28,7 @@ let cognitiveBusy=false,cognitiveData=null,cognitiveTimer=null;
 let agentConversationId=0,agentWorkspaceAgentId=0,agentLastMessageId=0,agentPollTimer=null,agentBusy=false,agentConversations=[];
 let delegationBusy=false,delegationRunnerBusy=false,delegationPreviewData=null,delegationActiveData=null,delegationRecentData=[],delegationCheckpointData=null;
 let runtimeBusyV2200=false,runtimeRunnerBusyV2200=false,runtimeDataV2200=null,runtimeSkillsV2200=[],runtimeOpenedTabsV2200=[];
+let runtimeWebBusyV2210=false,runtimeWebObservationV2210=null,runtimeWebElementsV2210=[],runtimeWebActionsV2210=[],runtimeWebSelectedV2210=null,runtimeWebProposalV2210=null,runtimeWebReceiptsV2210=[];
 let executionBusy=false,executionCandidatesData=[],executionTicketsData=[],executionContinuityData=[];
 let memoryBusy=false,memoryCandidatesData=[],memoryRememberedData=[];
 let nowContextIgnored=false,contextAgentPayload=null,contextRelationships=null,contextSuggestions=[];
@@ -562,6 +563,238 @@ async function sendAgentMessageV2160(){
     optimistic.remove();ui.agentMessageInput.value=message;await fail(e);
   }finally{agentBusy=false;renderCaps();}
 }
+function webInteractionRequestV2210(action,payload={}){
+  const request=Object.assign({},payload||{});
+  if(agentWorkspaceAgentId>0)request.agent_id=agentWorkspaceAgentId;
+  return msg('web_interaction_action',{action:action,payload:request});
+}
+function runtimeWebElementLabelV2210(item){
+  return String(item&&item.label||item&&item.aria_label||item&&item.placeholder||item&&item.name||item&&item.kind||'Page control').trim()||'Page control';
+}
+function runtimeWebElementMetaV2210(item){
+  const bits=[String(item&&item.kind||'control').replace(/_/g,' ')];
+  if(item&&item.input_type)bits.push(String(item.input_type));
+  if(item&&item.target_host)bits.push(String(item.target_host));
+  if(item&&item.sensitive)bits.push('manual sensitive field');
+  if(item&&item.submit_like)bits.push('submit control');
+  return bits.join(' · ');
+}
+function runtimeWebResetProposalV2210(){
+  runtimeWebProposalV2210=null;
+  ui.runtimeWebProposal.hidden=true;
+  ui.runtimeWebCheckpointNotice.hidden=true;
+  ui.runtimeWebRunBtn.hidden=false;
+  ui.runtimeWebConfirmRunBtn.hidden=true;
+}
+async function runtimeWebInvalidateProposalV2210(){
+  const current=runtimeWebProposalV2210;
+  runtimeWebResetProposalV2210();
+  if(current&&current.proposal&&current.proposal.interaction_id&&runtimeDataV2200&&runtimeDataV2200.runtime_id){
+    try{await webInteractionRequestV2210('cancel',{runtime_id:runtimeDataV2200.runtime_id,interaction_id:current.proposal.interaction_id});}catch(_error){}
+  }
+}
+function runtimeWebResetV2210(){
+  runtimeWebObservationV2210=null;runtimeWebElementsV2210=[];runtimeWebActionsV2210=[];runtimeWebSelectedV2210=null;runtimeWebReceiptsV2210=[];
+  ui.runtimeWebStatus.textContent='Scan the current approved page to inspect interactive controls.';
+  ui.runtimeWebControlCount.textContent='0 controls';
+  ui.runtimeWebInteractionCount.textContent='0 / 0 interactions';
+  ui.runtimeWebElements.replaceChildren();ui.runtimeWebElementsEmpty.hidden=false;
+  ui.runtimeWebComposer.hidden=true;ui.runtimeWebRecent.replaceChildren();ui.runtimeWebRecentEmpty.hidden=false;
+  runtimeWebResetProposalV2210();
+}
+function runtimeWebActionRegistryV2210(key){
+  return runtimeWebActionsV2210.find(item=>String(item.key||'')===String(key||''))||null;
+}
+function runtimeWebActionsForElementV2210(item){
+  return runtimeWebActionsV2210.filter(action=>{
+    const key=String(action.key||'');
+    if(!Array.isArray(action.kinds)||!action.kinds.includes(String(item.kind||'control')))return false;
+    if(key==='submit'&&!item.submit_like)return false;
+    if(key==='open_link'&&(!item.target_host||String(item.kind)!=='link'))return false;
+    if(item.sensitive&&['type','clear','select','toggle','submit'].includes(key))return false;
+    if(String(item.kind)==='radio'&&key==='toggle')return true;
+    return true;
+  });
+}
+function runtimeWebElementRowV2210(item,index){
+  const row=el('button','runtime-web-element','');
+  row.type='button';row.dataset.webElementIndex=String(index);
+  if(runtimeWebSelectedV2210&&runtimeWebSelectedV2210.element_fingerprint===item.element_fingerprint)row.classList.add('selected');
+  const copy=el('div','runtime-web-element-copy','');
+  copy.append(el('strong','',runtimeWebElementLabelV2210(item)),el('span','',runtimeWebElementMetaV2210(item)));
+  const flags=el('div','runtime-web-element-flags','');
+  if(item.sensitive)flags.append(el('span','pill','manual'));
+  if(item.dangerous||item.submit_like)flags.append(el('span','pill','checkpoint'));
+  if(item.disabled)flags.append(el('span','pill','disabled'));
+  row.append(copy,flags);return row;
+}
+function renderRuntimeWebElementsV2210(){
+  ui.runtimeWebElements.replaceChildren();
+  runtimeWebElementsV2210.forEach((item,index)=>ui.runtimeWebElements.append(runtimeWebElementRowV2210(item,index)));
+  ui.runtimeWebElementsEmpty.hidden=runtimeWebElementsV2210.length>0;
+  ui.runtimeWebControlCount.textContent=runtimeWebElementsV2210.length+' controls';
+}
+function runtimeWebConfigureValueV2210(){
+  const action=String(ui.runtimeWebActionSelect.value||'');
+  const item=runtimeWebSelectedV2210;
+  ui.runtimeWebValueField.hidden=true;ui.runtimeWebOptionField.hidden=true;ui.runtimeWebToggleField.hidden=true;
+  if(action==='type'){
+    ui.runtimeWebValueField.hidden=false;ui.runtimeWebValueLabel.textContent='Value · stays local in Chrome';
+  }else if(action==='select'){
+    ui.runtimeWebOptionField.hidden=false;ui.runtimeWebOptionSelect.replaceChildren();
+    (item&&Array.isArray(item.options)?item.options:[]).forEach(option=>{
+      const opt=document.createElement('option');opt.value=String(option.value??'');opt.textContent=String(option.label||option.value||'Option');ui.runtimeWebOptionSelect.append(opt);
+    });
+  }else if(action==='toggle'){
+    ui.runtimeWebToggleField.hidden=false;
+    const off=ui.runtimeWebToggleSelect.querySelector('option[value="false"]');
+    if(off)off.disabled=String(item&&item.kind||'')==='radio';
+    if(String(item&&item.kind||'')==='radio')ui.runtimeWebToggleSelect.value='true';
+    else if(item&&typeof item.checked==='boolean')ui.runtimeWebToggleSelect.value=item.checked?'false':'true';
+  }
+}
+async function runtimeWebSelectV2210(index){
+  await runtimeWebInvalidateProposalV2210();
+  const item=runtimeWebElementsV2210[Number(index)];
+  if(!item)return;
+  runtimeWebSelectedV2210=item;
+  renderRuntimeWebElementsV2210();
+  ui.runtimeWebComposer.hidden=false;
+  ui.runtimeWebSelectedLabel.textContent=runtimeWebElementLabelV2210(item);
+  ui.runtimeWebSelectedMeta.textContent=runtimeWebElementMetaV2210(item);
+  ui.runtimeWebActionSelect.replaceChildren();
+  for(const action of runtimeWebActionsForElementV2210(item)){
+    const opt=document.createElement('option');opt.value=String(action.key||'');opt.textContent=String(action.label||action.key||'Interaction')+' · '+String(action.risk_level||'low')+' risk';
+    ui.runtimeWebActionSelect.append(opt);
+  }
+  ui.runtimeWebPreviewBtn.disabled=!ui.runtimeWebActionSelect.options.length||Boolean(item.disabled);
+  ui.runtimeWebValueInput.value='';
+  runtimeWebConfigureValueV2210();
+}
+function runtimeWebLocalValueV2210(){
+  const action=String(ui.runtimeWebActionSelect.value||'');
+  if(action==='type')return String(ui.runtimeWebValueInput.value||'').slice(0,4000);
+  if(action==='select')return String(ui.runtimeWebOptionSelect.value??'');
+  if(action==='toggle')return String(ui.runtimeWebToggleSelect.value||'true');
+  return '';
+}
+function runtimeWebPreviewDetailV2210(action,item,value,proposal){
+  const label=runtimeWebElementLabelV2210(item);
+  if(action==='type')return 'Type “'+value.slice(0,120)+(value.length>120?'…':'')+'” into '+label+'. The value remains local in Chrome.';
+  if(action==='clear')return 'Clear '+label+'.';
+  if(action==='select'){
+    const option=(item.options||[]).find(x=>String(x.value??'')===value);
+    return 'Select “'+String(option&&option.label||value)+'” in '+label+'.';
+  }
+  if(action==='toggle')return (value==='true'?'Turn on / check ':'Turn off / uncheck ')+label+'.';
+  if(action==='open_link')return 'Open '+label+' on '+String(item.target_host||'the current domain')+'.';
+  return String(proposal&&proposal.label||action.replace(/_/g,' '))+' · '+label+'.';
+}
+async function previewRuntimeWebInteractionV2210(){
+  if(runtimeWebBusyV2210||!runtimeDataV2200||!runtimeDataV2200.runtime_id||!runtimeWebObservationV2210||!runtimeWebSelectedV2210)return;
+  await runtimeWebInvalidateProposalV2210();
+  const action=String(ui.runtimeWebActionSelect.value||''),item=runtimeWebSelectedV2210,value=runtimeWebLocalValueV2210();
+  if(!action)throw new Error('Choose an interaction first.');
+  if(action==='type'&&!value)throw new Error('Enter the field value before previewing this interaction.');
+  runtimeWebBusyV2210=true;busy(ui.runtimeWebPreviewBtn,true,'Previewing…');
+  try{
+    const payload=await webInteractionRequestV2210('preview',{
+      runtime_id:runtimeDataV2200.runtime_id,domain:runtimeWebObservationV2210.domain,
+      page_fingerprint:runtimeWebObservationV2210.page_fingerprint,dom_fingerprint:runtimeWebObservationV2210.dom_fingerprint,
+      action_key:action,element_fingerprint:item.element_fingerprint,target_host:item.target_host||'',
+      value_length:value.length,
+      element:{
+        kind:item.kind,tag:item.tag,input_type:item.input_type,role:item.role,label:item.label,name:item.name,
+        placeholder:item.placeholder,aria_label:item.aria_label,autocomplete:item.autocomplete,
+        submit_like:Boolean(item.submit_like),dangerous:Boolean(item.dangerous)
+      }
+    });
+    const proposal=payload&&payload.proposal||null;if(!proposal)throw new Error('VP3 did not return an interaction preview.');
+    runtimeWebProposalV2210={proposal,action,item,value};
+    ui.runtimeWebProposal.hidden=false;
+    ui.runtimeWebProposalTitle.textContent=(proposal.requires_checkpoint?'Checkpoint required · ':'Ready · ')+(proposal.label||action.replace(/_/g,' '));
+    ui.runtimeWebProposalDetail.textContent=runtimeWebPreviewDetailV2210(action,item,value,proposal)+' '+String(proposal.risk_level||'low')+' risk.';
+    ui.runtimeWebCheckpointNotice.hidden=!proposal.requires_checkpoint;
+    ui.runtimeWebRunBtn.hidden=Boolean(proposal.requires_checkpoint);
+    ui.runtimeWebConfirmRunBtn.hidden=!proposal.requires_checkpoint;
+    note(proposal.requires_checkpoint?'Interaction preview ready. Confirm the checkpoint to run it.':'Interaction preview ready.','success');
+  }finally{runtimeWebBusyV2210=false;busy(ui.runtimeWebPreviewBtn,false);}
+}
+async function loadRuntimeWebReceiptsV2210(){
+  if(!runtimeDataV2200||!runtimeDataV2200.runtime_id)return;
+  const payload=await webInteractionRequestV2210('list',{runtime_id:runtimeDataV2200.runtime_id});
+  runtimeWebReceiptsV2210=Array.isArray(payload&&payload.interactions)?payload.interactions:[];
+  ui.runtimeWebRecent.replaceChildren();
+  for(const item of runtimeWebReceiptsV2210){
+    const row=el('div','runtime-web-receipt '+String(item.status||''),'');
+    const copy=el('div','runtime-web-receipt-copy','');
+    copy.append(el('strong','',String(item.label||item.action_key||'Web interaction')),el('span','',String(item.status||'')+(item.result_code?' · '+String(item.result_code):'')+(item.created_at?' · '+date(item.created_at):'')));
+    row.append(copy,el('span','pill',String(item.risk_level||'low')));
+    ui.runtimeWebRecent.append(row);
+  }
+  ui.runtimeWebRecentEmpty.hidden=runtimeWebReceiptsV2210.length>0;
+  const max=Number(payload&&payload.max_interactions||runtimeWebObservationV2210&&runtimeWebObservationV2210.authority&&runtimeWebObservationV2210.authority.max_interactions||0);
+  const remaining=Number(payload&&payload.remaining_interactions||0);
+  if(max>0)ui.runtimeWebInteractionCount.textContent=(max-remaining)+' / '+max+' interactions';
+}
+async function scanRuntimeWebControlsV2210(){
+  if(runtimeWebBusyV2210||!runtimeDataV2200||!runtimeDataV2200.runtime_id)return;
+  runtimeWebBusyV2210=true;busy(ui.runtimeWebScanBtn,true,'Scanning…');
+  try{
+    await runtimeWebInvalidateProposalV2210();
+    runtimeWebSelectedV2210=null;ui.runtimeWebComposer.hidden=true;
+    const observation=await msg('web_interaction_observe',{payload:{runtime_id:runtimeDataV2200.runtime_id,agent_id:agentWorkspaceAgentId}});
+    runtimeWebObservationV2210=observation||null;
+    runtimeWebElementsV2210=Array.isArray(observation&&observation.elements)?observation.elements:[];
+    runtimeWebActionsV2210=Array.isArray(observation&&observation.actions)?observation.actions:[];
+    renderRuntimeWebElementsV2210();
+    const auth=observation&&observation.authority||{};
+    const max=Number(auth.max_interactions||0),remaining=Number(auth.remaining_interactions||0);
+    if(max>0)ui.runtimeWebInteractionCount.textContent=(max-remaining)+' / '+max+' interactions';
+    ui.runtimeWebStatus.textContent=runtimeWebElementsV2210.length
+      ?'Observed '+runtimeWebElementsV2210.length+' semantic controls on '+String(observation.domain||'this page')+'. Mutation epoch '+String(observation.mutation_epoch||0)+'.'
+      :'No visible interactive controls were found on this page.';
+    await loadRuntimeWebReceiptsV2210();
+    await loadRuntimeDetailV2200();
+  }finally{runtimeWebBusyV2210=false;busy(ui.runtimeWebScanBtn,false);}
+}
+async function executeRuntimeWebProposalV2210(confirmCheckpoint=false){
+  const local=runtimeWebProposalV2210;
+  if(!local||!local.proposal||!runtimeDataV2200||!runtimeDataV2200.runtime_id||!runtimeWebObservationV2210)return;
+  if(Boolean(local.proposal.requires_checkpoint)!==Boolean(confirmCheckpoint)&&local.proposal.requires_checkpoint)throw new Error('Confirm this checkpoint before running the interaction.');
+  runtimeWebBusyV2210=true;
+  const button=confirmCheckpoint?ui.runtimeWebConfirmRunBtn:ui.runtimeWebRunBtn;busy(button,true,'Running…');
+  try{
+    if(local.proposal.requires_checkpoint){
+      const confirmed=await webInteractionRequestV2210('confirm',{runtime_id:runtimeDataV2200.runtime_id,interaction_id:local.proposal.interaction_id});
+      if(confirmed&&confirmed.proposal)local.proposal=confirmed.proposal;
+    }
+    const result=await msg('web_interaction_execute',{payload:{
+      runtime_id:runtimeDataV2200.runtime_id,agent_id:agentWorkspaceAgentId,
+      interaction_id:local.proposal.interaction_id,action_key:local.action,
+      element_key:local.item.element_key,element_fingerprint:local.item.element_fingerprint,
+      value:local.value
+    }});
+    const ok=Boolean(result&&result.outcome&&result.outcome.verified);
+    note(ok?'Web interaction completed and verified.':'Web interaction ran but its expected state could not be verified. Rescan before retrying.',ok?'success':'error');
+    runtimeWebResetProposalV2210();
+    await loadRuntimeWebReceiptsV2210();
+    await loadRuntimeDetailV2200();
+    await scanRuntimeWebControlsV2210();
+  }finally{runtimeWebBusyV2210=false;busy(button,false);}
+}
+async function cancelRuntimeWebProposalV2210(){
+  await runtimeWebInvalidateProposalV2210();
+  note('Web interaction preview cancelled.','success');
+}
+async function clearRuntimeWebSelectionV2210(){
+  await runtimeWebInvalidateProposalV2210();runtimeWebSelectedV2210=null;ui.runtimeWebComposer.hidden=true;renderRuntimeWebElementsV2210();
+}
+async function runtimeWebElementClickV2210(event){
+  const row=event.target.closest('[data-web-element-index]');if(!row)return;
+  await runtimeWebSelectV2210(Number(row.dataset.webElementIndex||0));
+}
+
 function runtimeRequestV2200(action,payload={}){
   const request=Object.assign({},payload||{});
   if(agentWorkspaceAgentId>0)request.agent_id=agentWorkspaceAgentId;
@@ -583,11 +816,14 @@ function runtimeTabRowV2200(item){
   return row;
 }
 function renderRuntimeV2200(runtime){
+  const previousRuntimeId=runtimeDataV2200&&runtimeDataV2200.runtime_id||'';
   runtimeDataV2200=runtime||null;
   if(!runtime){
     ui.runtimePanel.hidden=true;
+    runtimeWebResetV2210();
     return;
   }
+  if(previousRuntimeId&&previousRuntimeId!==String(runtime.runtime_id||''))runtimeWebResetV2210();
   ui.runtimePanel.hidden=false;
   ui.runtimeSessionBadge.textContent=(runtime.status||'ready')+' · '+String(runtime.runtime_id||'').slice(0,8);
   ui.runtimePlanRevision.textContent='r'+String(runtime.plan_revision||1);
@@ -602,6 +838,7 @@ function renderRuntimeV2200(runtime){
   (runtime.tabs||[]).forEach(item=>ui.runtimeTabs.append(runtimeTabRowV2200(item)));
   ui.runtimeTabsEmpty.hidden=(runtime.tabs||[]).length>0;
   const terminal=['completed','cancelled','expired'].includes(String(runtime.status||''));
+  ui.runtimeWebPanel.hidden=terminal;
   const current=runtime.current_step||null;
   ui.runtimeReplanBtn.disabled=terminal||Number(runtime.replan_count||0)>=Number(runtime.max_replans||0)||String(runtime.status||'')==='checkpoint';
   ui.runtimeSkipBtn.disabled=terminal||!current||!['queued','failed','approval_pending','executing'].includes(String(current.status||''));
@@ -1340,6 +1577,17 @@ ui.delegationCheckpointOpenBtn.onclick=()=>openDelegationCheckpointV2190().catch
 ui.delegationCheckpointDoneBtn.onclick=async()=>{try{if(!delegationActiveData||!delegationCheckpointData||!delegationCheckpointData.step)return;if(runtimeDataV2200&&runtimeDataV2200.runtime_id){const payload=await runtimeRequestV2200('complete_checkpoint',{runtime_id:runtimeDataV2200.runtime_id,action_id:Number(delegationCheckpointData.step.id||0)});if(payload&&payload.runtime)renderRuntimeV2200(payload.runtime);if(payload&&payload.delegation)renderDelegationActiveV2190(payload.delegation);ui.delegationCheckpoint.hidden=true;delegationCheckpointData=null;await runRuntimeV2200();return;}const payload=await delegationRequestV2190('complete_checkpoint',{delegation_id:delegationActiveData.delegation_id,action_id:Number(delegationCheckpointData.step.id||0)});renderDelegationActiveV2190(payload&&payload.delegation||null);ui.delegationCheckpoint.hidden=true;delegationCheckpointData=null;await runDelegationV2190();}catch(e){await fail(e);}};
 ui.runtimeReplanBtn.onclick=()=>runtimeReplanV2200().catch(fail);
 ui.runtimeSkipBtn.onclick=()=>runtimeSkipV2200().catch(fail);
+ui.runtimeWebScanBtn.onclick=()=>scanRuntimeWebControlsV2210().catch(fail);
+ui.runtimeWebElements.onclick=e=>runtimeWebElementClickV2210(e).catch(fail);
+ui.runtimeWebActionSelect.onchange=()=>{runtimeWebInvalidateProposalV2210().catch(()=>{});runtimeWebConfigureValueV2210();};
+ui.runtimeWebValueInput.oninput=()=>runtimeWebInvalidateProposalV2210().catch(()=>{});
+ui.runtimeWebOptionSelect.onchange=()=>runtimeWebInvalidateProposalV2210().catch(()=>{});
+ui.runtimeWebToggleSelect.onchange=()=>runtimeWebInvalidateProposalV2210().catch(()=>{});
+ui.runtimeWebPreviewBtn.onclick=()=>previewRuntimeWebInteractionV2210().catch(fail);
+ui.runtimeWebRunBtn.onclick=()=>executeRuntimeWebProposalV2210(false).catch(fail);
+ui.runtimeWebConfirmRunBtn.onclick=()=>executeRuntimeWebProposalV2210(true).catch(fail);
+ui.runtimeWebCancelBtn.onclick=()=>cancelRuntimeWebProposalV2210().catch(fail);
+ui.runtimeWebClearSelectionBtn.onclick=()=>clearRuntimeWebSelectionV2210().catch(fail);
 ui.delegationRecent.onclick=e=>delegationClickV2190(e).catch(fail);
 ui.delegationSteps.onclick=e=>delegationClickV2190(e).catch(fail);
 ui.delegationInstruction.oninput=delegationInvalidatePreviewV2190;
