@@ -406,12 +406,13 @@ function vp3_browser_delegation_mark_step_v2190(
     PDO $pdo,array $row,array $step,string $status,string $summary,string $error=''
 ): void {
     $completed=in_array($status,['completed','failed','cancelled','skipped'],true);
-    $pdo->prepare("UPDATE agent_workflow_actions SET status=?,attempt_count=attempt_count+1,
+    $attemptIncrement=in_array($status,['executing','failed'],true)?1:0;
+    $pdo->prepare("UPDATE agent_workflow_actions SET status=?,attempt_count=attempt_count+?,
       result_summary=?,error_class=?,started_at=COALESCE(started_at,UTC_TIMESTAMP()),
       completed_at=?,progress_percent=?,progress_message=?,updated_at=UTC_TIMESTAMP()
       WHERE id=? AND run_id=? AND owner_user_id=?")
       ->execute([
-          $status,agent_workflow_text_v1400($summary,1500),agent_workflow_text_v1400($error,80),
+          $status,$attemptIncrement,agent_workflow_text_v1400($summary,1500),agent_workflow_text_v1400($error,80),
           $completed?gmdate('Y-m-d H:i:s'):null,$status==='completed'?100:0,
           agent_workflow_text_v1400($summary,500),(int)$step['id'],(int)$row['workflow_run_id'],(int)$row['owner_user_id']
       ]);
@@ -464,7 +465,10 @@ function vp3_browser_delegation_next_v2190(PDO $pdo,array $user,string $namespac
     }
 
     if(!empty($step['requires_approval'])){
-        if((string)$step['status']!=='approval_pending')vp3_browser_delegation_mark_step_v2190($pdo,$row,$step,'approval_pending','Waiting for explicit user checkpoint.');
+        if((string)$step['status']!=='approval_pending'){
+            vp3_browser_delegation_mark_step_v2190($pdo,$row,$step,'approval_pending','Waiting for explicit user checkpoint.');
+            foreach(vp3_browser_delegation_steps_v2190($pdo,$uid,(int)$row['workflow_run_id']) as $freshStep)if((int)$freshStep['id']===(int)$step['id']){$step=$freshStep;break;}
+        }
         $handoff=vp3_browser_execution_handoff_v2180([
             'action_key'=>$action,'url'=>(string)($resolved['url']??'')
         ]);
