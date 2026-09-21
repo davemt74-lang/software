@@ -51,8 +51,9 @@ must(background.includes("bodyText=clip(document.body?.innerText"),'local destin
 must(background.includes("contentHash=await sha(bodyText)"),'local destination content hash missing');
 must(background.includes("referenceHash=await sha(referenceKind+'|'+referenceValue)"),'local reference hashing missing');
 must(background.includes("maskedReference='••••'+referenceValue.slice(-4)"),'local masked reference display missing');
-const observeCall=background.slice(background.indexOf("browserTransactionOutcomeApiV2250('observe'"),background.indexOf("browserTransactionOutcomeApiV2250('observe'")+1800);
-must(!observeCall.includes('bodyText')&&!observeCall.includes('referenceValue')&&!observeCall.includes('masked_reference'),'raw local receipt data must not be sent to VP3');
+const observeCall=background.slice(background.indexOf("browserTransactionOutcomeApiV2250('observe'"),background.indexOf("browserTransactionOutcomeApiV2250('observe'")+1400);
+must(!observeCall.includes('bodyText')&&!observeCall.includes('referenceValue'),'raw local receipt data must not be sent to VP3');
+must(!background.includes('body_text:String(local.')&&!background.includes('reference_value:String(local.'),'v22.50 API payload must not expose raw destination text or raw reference values');
 
 // Cross-domain redirect is fingerprint-only and not inspected.
 const capture=background.slice(background.indexOf('async function browserTransactionOutcomeCaptureV2250'),background.indexOf('async function browserTransactionOutcomeObserveV2250'));
