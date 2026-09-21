@@ -94,6 +94,8 @@ If a plan has a registered `tool_id`, v23.30 resolves its existing registry meta
 
 The contract can only preserve or strengthen that boundary. It may never weaken registry risk or approval requirements.
 
+If the live capability's module no longer matches the plan source authority, the capability fails closed. If live risk increases or a new approval requirement appears after the proposal was created, the contract becomes **replan required** rather than silently strengthening an already-accepted plan. v5.60 rechecks the same boundary at materialization, card rendering, and handoff.
+
 If a plan references a tool that is no longer registered, the contract fails closed as **capability unavailable**.
 
 If a plan has no tool, the Action Plan Contract is **review-only**. It does not invent a tool. The user must choose a concrete existing VP3 action before execution can begin.
@@ -142,6 +144,9 @@ Browser Companion receives these changes through the same Universal Card path; n
 - source is reauthorized every time the contract is built
 - registered tool metadata is authoritative
 - missing tool registration fails closed
+- capability-module drift fails closed
+- increased risk / newly-added approval requirements require replan
+- v5.60 rechecks the live boundary before materialization and handoff
 - review-only plans cannot claim execution readiness
 - handoff request is never completion
 - canonical outcome evidence is required for executable-plan completion
