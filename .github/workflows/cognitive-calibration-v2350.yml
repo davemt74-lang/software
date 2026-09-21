@@ -7,6 +7,7 @@ on:
       - 'includes/cognitive-calibration-v2350.php'
       - 'includes/cognitive-learning-v540.php'
       - 'api/cognitive-planning-v550.php'
+      - 'api/extension-cognitive-now-v2120.php'
       - 'includes/cognitive-orchestration-v560.php'
       - 'includes/cognitive-proactive-now-v2340.php'
       - 'chat-cognitive-feed-v530.js'
@@ -40,6 +41,7 @@ jobs:
           php -l includes/cognitive-calibration-v2350.php
           php -l includes/cognitive-learning-v540.php
           php -l api/cognitive-planning-v550.php
+          php -l api/extension-cognitive-now-v2120.php
           php -l includes/cognitive-orchestration-v560.php
           php -l includes/cognitive-proactive-now-v2340.php
           php -l includes/bootstrap.php
