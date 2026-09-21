@@ -491,8 +491,9 @@ function vp3_cognitive_orchestration_handoff_v560(PDO $pdo,array $user,string $n
     if(!hash_equals((string)$step['tool_id'],vp3_cognitive_id_v500($toolId,120)))throw new RuntimeException('Handoff tool changed.');
     if(is_array($actionContract)){
         $capability=(array)($actionContract['capability']??[]);
-        if(!empty($capability['requires_approval'])&&empty($step['requires_approval'])){
-            throw new RuntimeException('Cognitive plan approval boundary changed. Replan before handoff.');
+        if(function_exists('vp3_cognitive_action_planning_handoff_compatible_v2330')
+            &&!vp3_cognitive_action_planning_handoff_compatible_v2330($capability,$step)){
+            throw new RuntimeException('Cognitive plan capability boundary changed. Replan before handoff.');
         }
     }
     if(!in_array((string)$step['status'],['ready','awaiting_approval','handoff_requested'],true))throw new RuntimeException('Handoff is not currently actionable.');
@@ -598,9 +599,11 @@ function vp3_cognitive_orchestration_card_v560(PDO $pdo,array $user,string $name
         $liveCapability=is_array($actionContract['capability']??null)?$actionContract['capability']:[];
         foreach($steps as $step){
             if((string)$step['step_kind']!=='handoff'||trim((string)$step['tool_id'])==='')continue;
-            $capabilityMatches=!empty($liveCapability['available'])
-                &&(string)($liveCapability['mode']??'')==='existing_capability'
-                &&hash_equals((string)($liveCapability['id']??''),vp3_cognitive_id_v500($step['tool_id']??'',120));
+            $capabilityMatches=function_exists('vp3_cognitive_action_planning_handoff_compatible_v2330')
+                ? vp3_cognitive_action_planning_handoff_compatible_v2330($liveCapability,$step)
+                : (!empty($liveCapability['available'])
+                    &&(string)($liveCapability['mode']??'')==='existing_capability'
+                    &&hash_equals((string)($liveCapability['id']??''),vp3_cognitive_id_v500($step['tool_id']??'',120)));
             if($capabilityMatches&&in_array((string)$step['status'],['ready','awaiting_approval'],true)){
                 $actions[]=['type'=>'tool','label'=>'Continue to tool action','tool_id'=>(string)$liveCapability['id']];
             }
