@@ -90,13 +90,18 @@ must(intelligence.includes("SET status='dismissed',resolved_at=UTC_TIMESTAMP()")
 
 for(const id of [
   'runtimeIntelligencePanel','runtimeIntelligenceCount','runtimeIntelligenceSummary',
-  'runtimeIntelligenceExposure','runtimeIntelligenceCases','runtimeIntelligenceRefreshBtn'
+  'runtimeIntelligenceExposure','runtimeIntelligenceCases','runtimeIntelligenceRefreshBtn','runtimeIntelligenceAcknowledgeBtn'
 ]) must(html.includes('id="'+id+'"'),'missing v22.70 UI '+id);
 must(css.includes('.runtime-intelligence-panel')&&css.includes('.runtime-intelligence-case'),'v22.70 styling missing');
 must(panel.includes('function renderRuntimeIntelligenceV2270'),'v22.70 inbox renderer missing');
 must(panel.includes('async function loadRuntimeIntelligenceV2270'),'v22.70 inbox loader missing');
 must(panel.includes('intelligenceCaseActionV2270'),'v22.70 case action missing');
 must(panel.includes('intelligenceProposalActionV2270'),'v22.70 proposal action missing');
+must(panel.includes('intelligenceBatchAcknowledgeV2270'),'v22.70 bounded batch review UI missing');
+must(api.includes("if($action==='batch_acknowledge')"),'v22.70 batch review API missing');
+must(intelligence.includes('vp3_browser_intelligence_batch_acknowledge_v2270'),'v22.70 batch review runtime missing');
+must(intelligence.includes('array_slice(is_array($caseIds)?$caseIds:[],0,20)'),'v22.70 batch review bound missing');
+must(intelligence.includes("'external_actions_executed'=>0"),'v22.70 batch review must never execute external actions');
 must(panel.includes('fresh v22.40 authorization required'),'v22.40 UI handoff disclosure missing');
 
 must(workflows.includes("browser-transaction-intelligence-v2270.php"),'Agent Workflows v22.70 include missing');
