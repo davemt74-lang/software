@@ -341,7 +341,10 @@ function vp3_browser_continuity_ensure_v2260(
 
     $referenceKind=(string)($outcomeRow['reference_kind']??'');
     $referenceHash=vp3_browser_continuity_sha_v2260($outcomeRow['reference_hash']??'');
-    $matchMode=$referenceHash!==''?'reference':'manual';
+    if($referenceKind===''||$referenceHash===''){
+        throw new RuntimeException('Transaction continuity requires a reusable hashed v22.50 reference. Transactions without a reference remain available in the v22.50 outcome ledger but are not tracked across later browsing.');
+    }
+    $matchMode='reference';
     $family=vp3_browser_continuity_family_v2260((string)$intent['submission_kind']);
     $state=vp3_browser_continuity_initial_state_v2260($family);
     $public=vp3_extension_uuid_v2000();
@@ -357,9 +360,7 @@ function vp3_browser_continuity_ensure_v2260(
     if(!$row)throw new RuntimeException('Transaction continuity could not be created.');
 
     create_notification($uid,'browser_transaction_continuity_started','Transaction follow-through started',
-        $matchMode==='reference'
-            ?'VP3 can recognize return pages for this transaction by its hashed reference on the approved domain.'
-            :'This transaction has no reusable reference fingerprint, so return-page matching remains manual.',
+        'VP3 can recognize return pages for this transaction by its hashed reference on the approved domain.',
         '/agent-workflows.php?id='.(int)$runtime['workflow_run_id'],'browser_transaction_continuity',(int)$row['id']);
 
     vp3_browser_runtime_event_v2200($pdo,$runtime,'transaction_continuity_started',
@@ -411,16 +412,15 @@ function vp3_browser_continuity_create_proposals_v2260(PDO $pdo,array $row,array
     if($family==='commerce'&&in_array($state,['shipped','out_for_delivery'],true)){
         $proposals[]=['task_review','delivery_follow_up',false];
     }
+    if(in_array('amount_changed',$changes,true)){
+        $proposals[]=['transaction_review','amount_changed',false];
+    }
     if($family==='communication'&&$state==='replied'){
         $proposals[]=['reply_review','reply_received',true];
     }
     if(in_array('cancellation',$changes,true)||in_array($state,['rejected','exception'],true)){
         $proposals[]=['corrective_action_review',$state,true];
     }
-    if(in_array($state,vp3_browser_continuity_terminal_states_v2260($family),true)){
-        $proposals[]=['close_tracking','terminal_state',false];
-    }
-
     $created=[];
     foreach($proposals as [$type,$reason,$write]){
         $public=vp3_extension_uuid_v2000();
