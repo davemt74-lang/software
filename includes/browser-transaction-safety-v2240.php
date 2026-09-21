@@ -201,10 +201,19 @@ function vp3_browser_transaction_notify_v2240(array $runtime,array $row,string $
 
 function vp3_browser_transaction_expire_v2240(PDO $pdo,array $runtime): void
 {
+    $expired=$pdo->prepare("SELECT public_id,duplicate_key FROM browser_submission_intents_v2240
+      WHERE runtime_session_id=? AND owner_user_id=? AND status='executing' AND permit_expires_at IS NOT NULL AND permit_expires_at<UTC_TIMESTAMP()");
+    $expired->execute([(int)$runtime['id'],(int)$runtime['owner_user_id']]);
+    $rows=$expired->fetchAll(PDO::FETCH_ASSOC)?:[];
     $pdo->prepare("UPDATE browser_submission_intents_v2240
       SET status='failed',result_code='permit_expired',permit_hash=NULL,permit_expires_at=NULL,failed_at=UTC_TIMESTAMP(),updated_at=UTC_TIMESTAMP()
       WHERE runtime_session_id=? AND owner_user_id=? AND status='executing' AND permit_expires_at IS NOT NULL AND permit_expires_at<UTC_TIMESTAMP()")
       ->execute([(int)$runtime['id'],(int)$runtime['owner_user_id']]);
+    foreach($rows as $row){
+        $guardKey=hash('sha256',(int)$runtime['owner_user_id'].'|'.(string)$row['duplicate_key']);
+        $pdo->prepare("DELETE FROM browser_submission_dispatch_guards_v2240 WHERE guard_key=? AND intent_public_id=?")
+            ->execute([$guardKey,(string)$row['public_id']]);
+    }
 }
 
 function vp3_browser_transaction_preview_v2240(
@@ -385,11 +394,13 @@ function vp3_browser_transaction_complete_v2240(
         $pdo->prepare("DELETE FROM browser_submission_dispatch_guards_v2240 WHERE guard_key=? AND intent_public_id=?")
             ->execute([$guardKey,(string)$row['public_id']]);
     }
-    $pdo->prepare("UPDATE browser_submission_intents_v2240 SET status=?,permit_hash=NULL,permit_expires_at=NULL,result_code=?,
+    $consume=$pdo->prepare("UPDATE browser_submission_intents_v2240 SET status=?,permit_hash=NULL,permit_expires_at=NULL,result_code=?,
       dispatched_at=CASE WHEN ?=1 THEN UTC_TIMESTAMP() ELSE dispatched_at END,
       verified_at=CASE WHEN ?=1 THEN UTC_TIMESTAMP() ELSE verified_at END,
       failed_at=CASE WHEN ?=0 THEN UTC_TIMESTAMP() ELSE failed_at END,updated_at=UTC_TIMESTAMP()
-      WHERE id=?")->execute([$status,$code,$dispatched?1:0,$verified?1:0,$dispatched?1:0,(int)$row['id']]);
+      WHERE id=? AND status='executing' AND permit_hash=?");
+    $consume->execute([$status,$code,$dispatched?1:0,$verified?1:0,$dispatched?1:0,(int)$row['id'],hash('sha256',$permitToken)]);
+    if($consume->rowCount()!==1)throw new RuntimeException('The final-submission permit was already consumed or changed.');
 
     $web=vp3_browser_web_row_v2210($pdo,$runtime,(string)$row['web_interaction_public_id'],true);
     if($web){
