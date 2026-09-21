@@ -120,6 +120,9 @@ try{
     if(!vp3_extension_session_has_capability_v2001($session,'agent.message')){
         vp3_extension_research_json_v2230(403,['ok'=>false,'error'=>['code'=>'capability_denied','message'=>'Browser Research requires Agent Chat access.']]);
     }
+    if(!vp3_extension_session_has_capability_v2001($session,'team.chat.read')){
+        vp3_extension_research_json_v2230(403,['ok'=>false,'error'=>['code'=>'capability_denied','message'=>'This Browser Companion connection does not have permission for Research.']]);
+    }
     $user=vp3_extension_user_for_permission_v2001($pdo,(int)$session['user_id']);
     if($user)$user['roles']=user_account_types_for_user_id((int)$user['id'],(string)($user['role']??''));
     if(!$user||!has_permission('chat.access',$user)){
@@ -238,6 +241,9 @@ try{
         $policy=vp3_browser_multisite_policy_v2220($pdo,(array)$runtime['_multisite'],$domain);
         if(!$policy||(string)$policy['policy_mode']==='blocked')throw new RuntimeException('This domain is blocked by the active multi-site policy.');
 
+        $priorConflictStmt=$pdo->prepare("SELECT COUNT(*) FROM browser_research_claims_v2230 WHERE mission_id=? AND evidence_state='conflicted'");
+        $priorConflictStmt->execute([(int)$mission['id']]);$priorConflictCount=(int)$priorConflictStmt->fetchColumn();
+
         $relations=vp3_browser_context_relationships_v2130($pdo,$user,$context);
         $source=is_array($relations['source']??null)?$relations['source']:[];
         $sourceRefs=vp3_extension_research_source_version_v2230($pdo,(string)($source['id']??''));
@@ -286,7 +292,7 @@ try{
             'Analyze approved research source: '.$domain,
             'Source analyzed. Mission now has '.(int)($progress['claims']??0).' claims, '.(int)($progress['corroborated']??0).' corroborated, '.(int)($progress['conflicted']??0).' conflicted, and '.count((array)($fresh['gaps']??[])).' recorded research gaps.'
         );
-        if((int)($fresh['progress']['conflicted']??0)>0&&function_exists('create_notification'))create_notification(
+        if((int)($fresh['progress']['conflicted']??0)>$priorConflictCount&&function_exists('create_notification'))create_notification(
             (int)$user['id'],'browser_research_conflict','Browser Research found conflicting evidence',
             'Approved research sources disagree on one or more claims. Review the mission before saving findings.',
             '/agent-workflows.php?id='.(int)$mission['workflow_run_id'],'browser_research',(int)$mission['id']
