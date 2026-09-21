@@ -12,6 +12,7 @@ const checks = [
   ['projection-only core', /mode'=>'projection_only'/.test(operations)],
   ['no v23 persistence', !/\b(?:INSERT|UPDATE|DELETE|CREATE TABLE|ALTER TABLE)\b/i.test(operations)],
   ['no independent ranking', /independent_v2300_ranking'=>false/.test(operations)],
+  ['ranking score stays server-private', /unset\(\$item\['_rank_score'\]\)/.test(operations) && !/'priority_score'=>/.test(operations)],
   ['existing execution authority', /existing_execution_runtimes/.test(operations)],
   ['model cannot execute', /model_may_execute'=>false/.test(operations)],
   ['no automatic external writes', /automatic_external_writes'=>false/.test(operations)],
