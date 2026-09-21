@@ -16,8 +16,9 @@ const safety=read('includes/browser-transaction-safety-v2240.php');
 const workflows=read('agent-workflows.php');
 const upgrade=read('upgrade.php');
 
-must(manifest.version==='22.7.0','v22.70 extension version missing');
-must(background.includes("const VP3_EXTENSION_VERSION = '22.7.0';"),'v22.70 background version missing');
+const v=String(manifest.version||'').split('.').map(Number);
+must(v.length===3&&v[0]===22&&v[1]>=7,'v22.70-or-later extension version missing');
+must(background.includes("const VP3_EXTENSION_VERSION = '"+manifest.version+"';"),'Browser Companion request version must match manifest');
 must(manifest.description.includes('Transaction Intelligence & Exception Management'),'v22.70 manifest description missing');
 
 for(const table of [
