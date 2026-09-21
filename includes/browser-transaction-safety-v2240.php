@@ -396,10 +396,6 @@ function vp3_browser_transaction_complete_v2240(
     $code=mb_strimwidth($code?:($verified?'submission_dispatched':'submission_failed'),0,80,'');
     $status=$verified?'completed':($dispatched?'uncertain':'failed');
     $guardKey=hash('sha256',(int)$runtime['owner_user_id'].'|'.(string)$row['duplicate_key']);
-    if(!$dispatched){
-        $pdo->prepare("DELETE FROM browser_submission_dispatch_guards_v2240 WHERE guard_key=? AND intent_public_id=?")
-            ->execute([$guardKey,(string)$row['public_id']]);
-    }
     $consume=$pdo->prepare("UPDATE browser_submission_intents_v2240 SET status=?,permit_hash=NULL,permit_expires_at=NULL,result_code=?,
       dispatched_at=CASE WHEN ?=1 THEN UTC_TIMESTAMP() ELSE dispatched_at END,
       verified_at=CASE WHEN ?=1 THEN UTC_TIMESTAMP() ELSE verified_at END,
@@ -407,6 +403,10 @@ function vp3_browser_transaction_complete_v2240(
       WHERE id=? AND status='executing' AND permit_hash=?");
     $consume->execute([$status,$code,$dispatched?1:0,$verified?1:0,$dispatched?1:0,(int)$row['id'],hash('sha256',$permitToken)]);
     if($consume->rowCount()!==1)throw new RuntimeException('The final-submission permit was already consumed or changed.');
+    if(!$dispatched){
+        $pdo->prepare("DELETE FROM browser_submission_dispatch_guards_v2240 WHERE guard_key=? AND intent_public_id=?")
+            ->execute([$guardKey,(string)$row['public_id']]);
+    }
 
     $web=vp3_browser_web_row_v2210($pdo,$runtime,(string)$row['web_interaction_public_id'],true);
     if($web){
