@@ -1133,8 +1133,9 @@ async function executeRuntimeWebProposalV2210(confirmCheckpoint=false){
         value:local.value
       }});
     }
-    const ok=local.action==='submit'?Boolean(result&&result.dispatched):Boolean(result&&result.outcome&&result.outcome.verified);
-    note(ok?(local.action==='submit'?'External submission dispatched once. Review the site response for final business outcome.':'Web interaction completed and verified.'):(local.action==='submit'?'Nothing was submitted or dispatch could not be verified. Review before retrying.':'Web interaction ran but its expected state could not be verified. Rescan before retrying.'),ok?'success':'error');
+    const ok=local.action==='submit'?Boolean(result&&result.verified):Boolean(result&&result.outcome&&result.outcome.verified);
+    const uncertain=local.action==='submit'&&Boolean(result&&result.uncertain);
+    note(ok?(local.action==='submit'?'External submission dispatched once and the immediate browser state was verified. Review the site for final business outcome.':'Web interaction completed and verified.'):(uncertain?'Submission may have been sent but could not be verified. Do not retry until you review the destination.':(local.action==='submit'?'Nothing was submitted. Review before retrying.':'Web interaction ran but its expected state could not be verified. Rescan before retrying.')),ok?'success':'error');
     runtimeWebResetProposalV2210();
     await loadRuntimeWebReceiptsV2210();
     await loadRuntimeDetailV2200();
