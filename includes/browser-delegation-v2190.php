@@ -102,7 +102,7 @@ function vp3_browser_delegation_allowed_actions_v2190(array $input): array
         'follow_source','unfollow_source',
         'open_research','open_profile','open_contact',
         'draft_task','draft_knowledge','share_team',
-        'web_click','web_focus','web_type','web_clear','web_select','web_toggle','web_scroll','web_open_link','web_submit','multisite_handoff','browser_research'
+        'web_click','web_focus','web_type','web_clear','web_select','web_toggle','web_scroll','web_open_link','web_submit','transaction_submit','multisite_handoff','browser_research'
     ];
     $out=[];
     foreach(array_slice($input,0,24) as $value){
@@ -165,6 +165,22 @@ function vp3_browser_delegation_plan_v2190(
             'target_id'=>(string)$source['id'],
             'target_scope'=>'personal',
             'risk_level'=>'low',
+            'requires_checkpoint'=>true,
+            'verification_mode'=>'user_confirmation',
+            'mode'=>'checkpoint',
+        ];
+    }
+
+    if(in_array('transaction_submit',$allowedActions,true)&&in_array('web_submit',$allowedActions,true)&&count($steps)<$maxSteps){
+        $steps[]=[
+            'step_key'=>'step_'.(count($steps)+1).'_transaction_submit',
+            'action_key'=>'transaction_submit',
+            'label'=>'Authorize reviewed external submission',
+            'step_kind'=>'checkpoint',
+            'target_type'=>'browser_source',
+            'target_id'=>(string)$source['id'],
+            'target_scope'=>'personal',
+            'risk_level'=>'medium',
             'requires_checkpoint'=>true,
             'verification_mode'=>'user_confirmation',
             'mode'=>'checkpoint',
