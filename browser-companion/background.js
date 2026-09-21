@@ -639,7 +639,7 @@ async function browserTransactionCaptureV2240(tabId,payload={}){
         target_label:formAction.origin+formAction.pathname,
         field_count:fields.length,
         sensitive_field_count:sensitiveCount,
-        semantic_text:clip([labelFor(submit),heading,...structural.map(x=>x.label)].filter(Boolean).join(' '),2000),
+        semantic_text:clip([labelFor(submit),heading,clip(form.getAttribute('name'),120)].filter(Boolean).join(' '),600),
         fields:reviewFields
       };
     }
@@ -656,7 +656,7 @@ async function browserTransactionReviewV2240(payload={}){
   const response=await browserTransactionApiV2240('preview',{
     runtime_id:String(payload.runtime_id||''),agent_id:Number(payload.agent_id||0),
     web_interaction_id:String(payload.web_interaction_id||''),
-    domain:String(review.domain||''),page_fingerprint:String(review.page_fingerprint||''),
+    domain:String(review.domain||''),target_host:String(review.target_host||''),page_fingerprint:String(review.page_fingerprint||''),
     form_fingerprint:String(review.form_fingerprint||''),submit_fingerprint:String(review.submit_fingerprint||''),
     review_hash:String(review.review_hash||''),field_count:Number(review.field_count||0),
     sensitive_field_count:Number(review.sensitive_field_count||0),semantic_text:String(review.semantic_text||'')
