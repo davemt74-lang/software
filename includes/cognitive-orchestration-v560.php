@@ -243,6 +243,17 @@ function vp3_cognitive_orchestration_materialize_v560(PDO $pdo,array $user,strin
     $namespace=vp3_cognitive_validate_namespace_v500($pdo,$user,$namespace);
     $ref=vp3_cognitive_orchestration_underlying_ref_v560($plan);
     if(!vp3_cognitive_authorize_ref_v500($pdo,$user,$namespace,$ref,'read'))return null;
+    if(function_exists('vp3_cognitive_action_planning_contract_v2330')){
+        $actionContract=vp3_cognitive_action_planning_contract_v2330($pdo,$user,$namespace,$plan);
+        $capability=(array)($actionContract['capability']??[]);
+        if(trim((string)($plan['tool_id']??''))!==''&&(
+            empty($capability['available'])||(string)($capability['mode']??'')!=='existing_capability'
+        ))return null;
+        if(!empty($capability['available'])){
+            $plan['risk_level']=(string)($capability['risk']??$plan['risk_level']??'low');
+            $plan['requires_approval']=!empty($capability['requires_approval'])?1:0;
+        }
+    }
 
     $pdo->prepare("INSERT IGNORE INTO cognitive_plan_runs_v560
       (public_id,plan_id,owner_user_id,agent_namespace,plan_public_id,source_fingerprint,status,verification_state,current_step_key,completed_steps,total_steps,started_at)
@@ -463,10 +474,27 @@ function vp3_cognitive_orchestration_handoff_v560(PDO $pdo,array $user,string $n
     if((string)$plan['status']!=='accepted')throw new RuntimeException('Cognitive plan is no longer accepted.');
     $ref=vp3_cognitive_orchestration_underlying_ref_v560($plan);
     if(!vp3_cognitive_authorize_ref_v500($pdo,$user,$namespace,$ref,'read'))throw new RuntimeException('Cognitive plan source is no longer authorized.');
+    $actionContract=null;
+    if(function_exists('vp3_cognitive_action_planning_contract_v2330')){
+        $actionContract=vp3_cognitive_action_planning_contract_v2330($pdo,$user,$namespace,$plan);
+        $capability=(array)($actionContract['capability']??[]);
+        if(empty($capability['available'])||(string)($capability['mode']??'')!=='existing_capability'){
+            throw new RuntimeException('Cognitive plan capability is unavailable.');
+        }
+        if(!hash_equals((string)$capability['id'],vp3_cognitive_id_v500($toolId,120))){
+            throw new RuntimeException('Cognitive plan capability changed.');
+        }
+    }
 
     $step=vp3_cognitive_orchestration_step_v560($pdo,(int)$run['id'],'handoff');
     if(!$step)throw new RuntimeException('Handoff step is unavailable.');
     if(!hash_equals((string)$step['tool_id'],vp3_cognitive_id_v500($toolId,120)))throw new RuntimeException('Handoff tool changed.');
+    if(is_array($actionContract)){
+        $capability=(array)($actionContract['capability']??[]);
+        if(!empty($capability['requires_approval'])&&empty($step['requires_approval'])){
+            throw new RuntimeException('Cognitive plan approval boundary changed. Replan before handoff.');
+        }
+    }
     if(!in_array((string)$step['status'],['ready','awaiting_approval','handoff_requested'],true))throw new RuntimeException('Handoff is not currently actionable.');
 
     if(!$accepted){
@@ -517,6 +545,9 @@ function vp3_cognitive_orchestration_context_v560(PDO $pdo,array $user,string $n
     $plan=vp3_cognitive_orchestration_plan_row_v560($pdo,$run);if(!$plan)throw new RuntimeException('Cognitive plan is unavailable.');
     $underlying=vp3_cognitive_orchestration_underlying_ref_v560($plan);
     if(!vp3_cognitive_authorize_ref_v500($pdo,$user,$namespace,$underlying,'read'))throw new RuntimeException('Plan source is no longer authorized.');
+    $actionContract=function_exists('vp3_cognitive_action_planning_contract_v2330')
+        ? vp3_cognitive_action_planning_contract_v2330($pdo,$user,$namespace,$plan)
+        : null;
     $steps=[];
     foreach(vp3_cognitive_orchestration_steps_v560($pdo,(int)$run['id']) as $step){
         $steps[]=[
@@ -535,6 +566,7 @@ function vp3_cognitive_orchestration_context_v560(PDO $pdo,array $user,string $n
             'steps'=>$steps,
         ],
         'source_object_ref'=>$underlying,
+        'action_contract'=>$actionContract,
         'authority'=>'orchestration_only',
     ];
 }
@@ -544,6 +576,12 @@ function vp3_cognitive_orchestration_card_v560(PDO $pdo,array $user,string $name
     $run=vp3_cognitive_orchestration_run_v560($pdo,$user,$namespace,(string)($ref['id']??''));
     if(!$run)throw new RuntimeException('Cognitive plan run not found.');
     $plan=vp3_cognitive_orchestration_plan_row_v560($pdo,$run);if(!$plan)throw new RuntimeException('Cognitive plan is unavailable.');
+    $actionContract=function_exists('vp3_cognitive_action_planning_contract_v2330')
+        ? vp3_cognitive_action_planning_contract_v2330($pdo,$user,$namespace,$plan)
+        : [];
+    $actionProjection=$actionContract&&function_exists('vp3_cognitive_action_planning_card_sections_v2330')
+        ? vp3_cognitive_action_planning_card_sections_v2330($actionContract)
+        : ['facts'=>[],'sections'=>[]];
     $steps=vp3_cognitive_orchestration_steps_v560($pdo,(int)$run['id']);
     $items=[];foreach($steps as $step)$items[]=vp3_cognitive_orchestration_step_label_v560($step).' — '.str_replace('_',' ',(string)$step['status']);
     $actions=[[
@@ -557,10 +595,14 @@ function vp3_cognitive_orchestration_card_v560(PDO $pdo,array $user,string $name
             'prompt'=>'Replan cognitive plan run '.(string)$run['public_id'].' from current canonical evidence. Preserve completed history, explain what failed or changed, and propose a new safe plan. Do not execute anything.'
         ];
     }else{
+        $liveCapability=is_array($actionContract['capability']??null)?$actionContract['capability']:[];
         foreach($steps as $step){
             if((string)$step['step_kind']!=='handoff'||trim((string)$step['tool_id'])==='')continue;
-            if(in_array((string)$step['status'],['ready','awaiting_approval'],true)){
-                $actions[]=['type'=>'tool','label'=>'Continue to tool action','tool_id'=>(string)$step['tool_id']];
+            $capabilityMatches=!empty($liveCapability['available'])
+                &&(string)($liveCapability['mode']??'')==='existing_capability'
+                &&hash_equals((string)($liveCapability['id']??''),vp3_cognitive_id_v500($step['tool_id']??'',120));
+            if($capabilityMatches&&in_array((string)$step['status'],['ready','awaiting_approval'],true)){
+                $actions[]=['type'=>'tool','label'=>'Continue to tool action','tool_id'=>(string)$liveCapability['id']];
             }
             break;
         }
@@ -583,15 +625,16 @@ function vp3_cognitive_orchestration_card_v560(PDO $pdo,array $user,string $name
             (int)$run['replan_count']>0?'Replanned '.(int)$run['replan_count'].'×':null,
             ucfirst(str_replace('_',' ',(string)$run['verification_state'])),
         ])),
-        'facts'=>[
+        'facts'=>array_merge([
             ['label'=>'Progress','value'=>$progress.'%'],
             ['label'=>'Current step','value'=>(string)$run['current_step_key']],
             ['label'=>'Authority','value'=>'Orchestration only'],
-        ],
-        'sections'=>[
+        ],(array)($actionProjection['facts']??[])),
+        'sections'=>array_merge([
             ['label'=>'Run steps','items'=>$items],
+        ],(array)($actionProjection['sections']??[]),[
             ['label'=>'Verification boundary','text'=>'A handoff request is not completion. This run closes only from canonical outcome evidence or an explicit authoritative resolution.'],
-        ],
+        ]),
         'actions'=>$actions,
     ];
 }

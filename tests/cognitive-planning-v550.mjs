@@ -34,7 +34,7 @@ for(const fn of [
   'vp3_cognitive_planning_permission_v550'
 ]) assert.ok(planning.includes('function '+fn),'missing '+fn);
 
-assert.match(planning,/if\(\$status==='accepted'&&trim\(\(string\)\$row\['tool_id'\]\)!==''\)/,'tool action must only appear after plan acceptance');
+assert.match(planning,/if\(\$status==='accepted'[\s\S]*!empty\(\$liveCapability\['available'\]\)[\s\S]*existing_capability[\s\S]*hash_equals/,'tool action must only appear after acceptance and a matching live registered capability');
 assert.match(planning,/Accepting this plan does not execute a tool, approve an action, or mutate the underlying VP3 object/);
 assert.match(planning,/Use the registered VP3 tool only after the user explicitly chooses to proceed/);
 assert.match(planning,/requires_approval'=>!empty\(\$row\['requires_approval'\]\)/);
