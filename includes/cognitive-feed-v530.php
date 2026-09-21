@@ -542,7 +542,7 @@ function vp3_cognitive_feed_compose_v530(PDO $pdo,array $user,string $namespace,
     $proactiveBrief=null;
     if(function_exists('vp3_cognitive_proactive_now_compose_v2340')&&is_array($priorityQueue)){
         $proactiveBrief=vp3_cognitive_proactive_now_compose_v2340(
-            $pdo,$user,$namespace,$priorityQueue,is_array($operations)?$operations:null
+            $pdo,$user,$namespace,$priorityQueue
         );
     }
 
