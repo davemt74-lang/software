@@ -26,7 +26,8 @@ for(const table of [
   'browser_transaction_control_settings_v2280',
   'browser_transaction_scan_leases_v2280',
   'browser_transaction_control_receipts_v2280',
-  'browser_transaction_notification_state_v2280'
+  'browser_transaction_notification_state_v2280',
+  'browser_transaction_control_pauses_v2280'
 ]) must(control.includes(table),'missing v22.80 schema '+table);
 
 must(control.includes("require_once __DIR__.'/browser-transaction-intelligence-v2270.php';"),'v22.80 must layer on v22.70');
@@ -44,7 +45,11 @@ must(control.includes("if((string)$row['tracking_status']!=='closed')"),'forget 
 must(control.includes("DELETE FROM browser_transaction_continuities_v2260"),'forget must delete continuity root so v22.60-v22.80 descendants cascade');
 must(control.includes("'submission_history_retained'=>true"),'forget must explicitly preserve v22.40/v22.50 history');
 must(control.includes("closure_reason='user_closed'"),'global stop closure boundary missing');
-must(control.includes("match_mode='reference' AND reference_hash<>''"),'resume must require reusable reference authority');
+must(control.includes("pause_scope='global'"),'global pause scope missing');
+must(control.includes("pause_scope='tracker'"),'per-tracker pause scope missing');
+must(control.includes("INNER JOIN browser_transaction_control_pauses_v2280"),'global resume must target only globally paused trackers');
+must(control.includes("match_mode='reference' AND")&&control.includes("reference_hash<>''"),'resume must require reusable reference authority');
+must(control.includes("Resume global transaction monitoring before resuming this tracker."),'global pause must block per-tracker resume');
 
 // Retention + bounded settings.
 for(const constant of [
@@ -55,6 +60,7 @@ for(const constant of [
   'VP3_BROWSER_CONTROL_NOTIFY_MIN_V2280=5',
   'VP3_BROWSER_CONTROL_NOTIFY_MAX_V2280=1440'
 ]) must(control.includes(constant),'missing bounded control '+constant);
+must(!control.includes("array_key_exists('monitoring_enabled',$input)"),'settings update must not bypass Stop/Resume monitoring semantics');
 must(control.includes('vp3_browser_control_prune_v2280'),'retention prune missing');
 must(control.includes("tracking_status='closed'")&&control.includes('closed_at<DATE_SUB'),'prune must target old closed trackers only');
 
@@ -65,9 +71,14 @@ must(control.includes('scan_cooldown'),'minimum scan cadence suppression missing
 must(control.includes("SELECT 1 FROM browser_transaction_continuities_v2260 WHERE owner_user_id=? AND domain=? AND tracking_status='active'"),'scan permit must require active owner/domain tracker');
 must(control.includes('vp3_browser_control_device_hash_v2280'),'device identity hashing missing');
 must(control.includes("'device_identity_persisted_as_hash'=>true"),'device hash privacy declaration missing');
+must(control.includes("'minimal_forget_control_receipt_retained'=>true"),'minimal forget audit disclosure missing');
 must(background.includes("browserTransactionControlApiV2280('scan_permit',{domain})"),'Chrome scan must request v22.80 permit before page capture');
 must(background.indexOf("browserTransactionControlApiV2280('scan_permit',{domain})")<background.indexOf('browserTransactionContinuityCaptureV2260(tab.id)'),'scan permit must happen before page capture');
 must(background.includes("browserTransactionControlApiV2280('scan_result'"),'scan result receipt missing');
+must(background.includes('browserTransactionNextScanByDomainV2280'),'client-side scan throttle missing');
+must(background.includes("reason:'control_unavailable'"),'v22.80 control-unavailable scan must fail closed');
+must(background.includes("reason:'local_scan_cooldown'"),'local scan cooldown missing');
+must(control.includes("'next_scan_after_seconds'=>$min"),'server scan cadence handoff missing');
 must(background.includes("resultCode=/auth|reconnect/"),'scan failure classification missing');
 
 // Failure recovery + health.
