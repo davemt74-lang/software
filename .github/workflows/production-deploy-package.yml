@@ -56,7 +56,7 @@ jobs:
 
           test -s _deploy/VP3_RELEASE.json
           python3 -m json.tool _deploy/VP3_RELEASE.json >/dev/null
-          grep -Fq '"commit": "'"${GITHUB_SHA}"'"' _deploy/VP3_RELEASE.json
+          grep -Fq '"commit": "'"${VP3_RELEASE_SHA}"'"' _deploy/VP3_RELEASE.json
           test -f _deploy/chat.php
           test -f _deploy/.htaccess
 
