@@ -15,12 +15,14 @@ Authority and execution:
 - v21.90 remains the outer delegation authority. Browser Research must be explicitly selected as an allowed action.
 - v22.00 remains the canonical Browser Agent Runtime and workflow timeline.
 - v22.20 remains the cross-site transport and approved-domain envelope. A Research mission cannot add a domain that was not already delegated.
+- At mission start, the active Agent may prioritize and explain a source plan, but the server filters that plan back to the exact approved-domain set before the mission is created.
 - Browser Research is a canonical user checkpoint in the existing Agent Workflow. It does not create a parallel automation authority system.
 
 Transient extraction:
 
 - Chrome captures a bounded readable-text snapshot from the active approved page only when the user runs Analyze current page.
 - The snapshot is sent directly by the service worker for that extraction call; it is not stored in sidepanel state.
+- Planning and extraction use a non-persistent Agent protocol turn. The machine instruction, raw model JSON, and ephemeral Browser source URL are not written into Agent Chat history; v22.30 writes back only clean mission summaries.
 - The server validates the SHA-256 fingerprint of the transient full page URL and re-checks the approved domain policy.
 - Page text is passed through the existing ephemeral Browser Context → Agent Chat path. Browser Context is removed from persisted Agent message context by the existing Agent Chat runtime.
 - The Agent is instructed to return a strict structured payload with observed claims, normalized values, short evidence excerpts, directness, freshness/as-of dates, source kind, and explicit research gaps.
@@ -50,6 +52,7 @@ Duplicate and conflict behavior:
 Research persistence:
 
 - A mission can run without immediately choosing a Research project.
+- When collection authority ends, an active mission becomes Ready: analysis stops, but the already-collected structured evidence can still be explicitly saved as draft Research.
 - Save draft to Research is an explicit user action and requires Research/Knowledge write capability.
 - Saving creates draft canonical Research Findings and a draft Research Report.
 - When a page resolves to a canonical VP3 Source/version, the corresponding Research source item is linked as evidence.
