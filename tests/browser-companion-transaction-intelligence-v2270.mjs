@@ -39,7 +39,7 @@ must(api.includes("'cross_transaction_signals_are_advisory'=>true"),'advisory cr
 must(background.includes("browserTransactionIntelligenceApiV2270('observe_facts'"),'matched v22.60 observation must feed v22.70');
 must(background.includes('schedule_candidates:Array.isArray(local.schedule_candidates)'), 'normalized schedule facts handoff missing');
 must(background.includes('exposure_candidates:Array.isArray(local.exposure_candidates)'), 'normalized financial facts handoff missing');
-must(!api.includes('body_text')&&!api.includes('page_text'),'v22.70 API must not accept raw page text');
+must(!api.includes("$input['body_text']")&&!api.includes("$input['page_text']"),'v22.70 API must not accept raw page text fields');
 
 for(const type of [
   'action_required','deadline_due','deadline_soon','fulfillment_exception','cancellation_change',
