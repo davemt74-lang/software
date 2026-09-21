@@ -720,7 +720,6 @@ async function browserTransactionOutcomeCaptureV2250(tabId,payload={}){
       if(pendingRe.test(lower))evidence.push('pending_phrase');
       if(rejectionRe.test(lower))evidence.push('rejection_phrase');
       if(rejectionRe.test(alertText))evidence.push('error_role');
-      if(confirmationRe.test(headingText)&&/[role="status"]|aria-live/i.test(document.documentElement.innerHTML.slice(0,0))){} // keep classifier DOM-only; no HTML transport.
       const statusNodes=[...document.querySelectorAll('[role="status"],[aria-live]')].slice(0,20);
       if(statusNodes.some(el=>confirmationRe.test(String(el.innerText||el.textContent||''))))evidence.push('status_region');
 
@@ -747,14 +746,14 @@ async function browserTransactionOutcomeCaptureV2250(tabId,payload={}){
       }
 
       const unique=[...new Set(evidence)];
-      const positive=unique.filter(code=>['confirmation_heading','confirmation_phrase','confirmation_url_hint','reference_present','receipt_keyword','status_region'].includes(code));
       const explicit=unique.includes('confirmation_heading')||unique.includes('confirmation_phrase');
+      const auxiliary=unique.filter(code=>['confirmation_url_hint','reference_present','receipt_keyword','status_region','form_absent'].includes(code));
       let outcomeState='ambiguous',strength='weak';
       if(unique.includes('rejection_phrase')||unique.includes('error_role')){
         outcomeState='rejected';strength=unique.includes('error_role')?'strong':'moderate';
-      }else if(unique.includes('pending_phrase')&&positive.length<2){
+      }else if(unique.includes('pending_phrase')&&auxiliary.length<1){
         outcomeState='pending';strength='moderate';
-      }else if(explicit&&positive.length>=2){
+      }else if(explicit&&auxiliary.length>=1){
         outcomeState='confirmed';strength='strong';
       }else if(unique.includes('pending_phrase')){
         outcomeState='pending';strength='moderate';
