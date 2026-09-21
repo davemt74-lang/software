@@ -81,6 +81,7 @@ jobs:
           php -l includes/browser-research-runtime-v2230.php
           php -l includes/browser-research-save-v2230.php
           php -l api/extension-research-agent-v2230.php
+          php -l includes/agent-chat-runtime-v2160.php
           php -l api/extension-multisite-v2220.php
           php -l includes/browser-web-interaction-v2210.php
           php -l includes/browser-agent-runtime-v2200.php
