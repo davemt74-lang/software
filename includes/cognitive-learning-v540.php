@@ -203,6 +203,9 @@ function vp3_cognitive_learning_profile_apply_v540(PDO $pdo,array $user,string $
         'acted'=>'actions_taken',
         'hidden'=>'presentation_hides',
         'dismissed'=>'ignored',
+        'plan_accepted'=>'engagements',
+        'plan_dismissed'=>'ignored',
+        'handoff_requested'=>'actions_taken',
         'outcome_successful'=>'successful',
         'outcome_resolved'=>'resolved',
         'outcome_unsuccessful'=>'unsuccessful',
@@ -225,7 +228,11 @@ function vp3_cognitive_learning_feedback_v540(
     PDO $pdo,array $user,string $namespace,array $candidate,string $eventType,array $meta=[],string $dedupe=''
 ): bool {
     if(!vp3_cognitive_learning_schema_ready_v540($pdo))return false;
-    $allowed=['shown','engaged','acted','hidden','restored','dismissed','outcome_successful','outcome_resolved','outcome_unsuccessful','outcome_ignored'];
+    $allowed=[
+        'shown','engaged','acted','hidden','restored','dismissed',
+        'plan_accepted','plan_dismissed','handoff_requested','handoff_postponed','plan_completed',
+        'outcome_successful','outcome_resolved','outcome_unsuccessful','outcome_ignored'
+    ];
     if(!in_array($eventType,$allowed,true))throw new InvalidArgumentException('Unsupported cognitive feedback event.');
     $uid=(int)($user['id']??0);if($uid<1)return false;
     $itemKey=mb_strimwidth(trim((string)($candidate['key']??'')),0,190,'');
@@ -248,8 +255,8 @@ function vp3_cognitive_learning_feedback_v540(
 
     $counterSql='';
     if($eventType==='shown')$counterSql=',surface_count=surface_count+1,last_surfaced_at=UTC_TIMESTAMP()';
-    elseif($eventType==='engaged')$counterSql=',engagement_count=engagement_count+1,last_engaged_at=UTC_TIMESTAMP()';
-    elseif($eventType==='acted')$counterSql=',action_count=action_count+1,engagement_count=engagement_count+1,last_engaged_at=UTC_TIMESTAMP()';
+    elseif(in_array($eventType,['engaged','plan_accepted'],true))$counterSql=',engagement_count=engagement_count+1,last_engaged_at=UTC_TIMESTAMP()';
+    elseif(in_array($eventType,['acted','handoff_requested'],true))$counterSql=',action_count=action_count+1,engagement_count=engagement_count+1,last_engaged_at=UTC_TIMESTAMP()';
     elseif($eventType==='hidden')$counterSql=',hidden_count=hidden_count+1';
     $pdo->prepare("UPDATE cognitive_item_lifecycle_v540 SET updated_at=UTC_TIMESTAMP() {$counterSql}
       WHERE owner_user_id=? AND agent_namespace=? AND item_key=?")

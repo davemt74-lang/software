@@ -150,6 +150,7 @@ require_once __DIR__.'/cognitive-operations-v2300.php';
 require_once __DIR__.'/cognitive-priority-queue-v2310.php';
 require_once __DIR__.'/cognitive-opportunities-v2320.php';
 require_once __DIR__.'/cognitive-action-planning-v2330.php';
+require_once __DIR__.'/cognitive-calibration-v2350.php';
 require_once __DIR__.'/cognitive-proactive-now-v2340.php';
 require_once __DIR__.'/cognitive-feed-v530.php';
 require_once __DIR__.'/cognitive-presentation-v510.php';

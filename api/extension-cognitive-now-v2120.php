@@ -272,13 +272,11 @@ try{
         $planId=mb_strimwidth(trim((string)($input['plan_id']??'')),0,190,'');
         if($planId==='')throw new InvalidArgumentException('Plan identity is required.');
         $plan=vp3_cognitive_planning_decide_v550($pdo,$user,$namespace,$planId,$decision);
-        $source=vp3_cognitive_feed_find_candidate_v530($pdo,$user,$namespace,(string)($plan['source_item_key']??''));
-        if(is_array($source)
-            &&hash_equals((string)($source['fingerprint']??''),(string)($plan['source_fingerprint']??''))
-            &&function_exists('vp3_cognitive_learning_feedback_v540')){
-            vp3_cognitive_learning_feedback_v540(
-                $pdo,$user,$namespace,$source,$decision==='accept'?'acted':'engaged',
-                ['action_type'=>'plan_'.$decision,'surface'=>'browser_companion_now'],
+        if(function_exists('vp3_cognitive_calibration_feedback_plan_v2350')){
+            vp3_cognitive_calibration_feedback_plan_v2350(
+                $pdo,$user,$namespace,$plan,
+                $decision==='accept'?'plan_accepted':'plan_dismissed',
+                ['surface'=>'browser_companion_now'],
                 'browser_companion_plan:'.(string)$plan['public_id'].':'.$decision
             );
         }

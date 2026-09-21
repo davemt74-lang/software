@@ -299,8 +299,20 @@
           ? 'Immediate speech uses the existing canonical notification cursor. Opportunities remain visual unless included in a persisted return briefing.'
           : 'Turn on Agent Voice from the Agent + Voice menu to hear eligible canonical alerts and return briefings.';
 
+        const cognitiveCalibration=proactive.calibration&&typeof proactive.calibration==='object'?proactive.calibration:null;
+        const badges=el('div','vp3-cognitive-proactive-badges');
+        badges.appendChild(voiceBadge);
+        if(cognitiveCalibration){
+          const rawMode=clean(cognitiveCalibration.mode)||'balanced';
+          const modeLabel=rawMode.charAt(0).toUpperCase()+rawMode.slice(1);
+          const evidence=Math.max(0,Number(cognitiveCalibration.evidence_count||0));
+          const calibrationBadge=el('span','vp3-cognitive-proactive-calibration','Calibration · '+modeLabel+(evidence>0?' · '+evidence:''));
+          calibrationBadge.title=clean(cognitiveCalibration.explanation)||'Outcome learning calibrates proactive presentation only; deterministic attention and queue ranking authority remain unchanged.';
+          badges.appendChild(calibrationBadge);
+        }
+
         const top=el('header','vp3-cognitive-proactive-head');
-        top.append(intro,voiceBadge);
+        top.append(intro,badges);
         proactiveBrief.appendChild(top);
 
         const focusItems=Array.isArray(proactive.focus_items)?proactive.focus_items:[];
