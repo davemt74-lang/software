@@ -762,8 +762,10 @@ async function browserTransactionContinuityCaptureV2260(tabId){
       ).filter(Boolean).sort();
       const scheduleHash=scheduleTokens.length?await sha(JSON.stringify(scheduleTokens)):'';
 
-      const amountTokens=[...new Set((bodyText.match(/(?:[$€£]\s?\d{1,7}(?:[,.]\d{2})?|\b\d{1,7}(?:[,.]\d{2})\s?(?:USD|EUR|GBP)\b)/gi)||[])
-        .map(x=>String(x).replace(/\s+/g,' ').trim().toUpperCase()))].sort().slice(0,30);
+      const amountText=[...document.querySelector('[data-total],[data-amount],[class*="order-total"],[class*="grand-total"],[class*="total-amount"],[aria-label*="total" i]')?document.querySelectorAll('[data-total],[data-amount],[class*="order-total"],[class*="grand-total"],[class*="total-amount"],[aria-label*="total" i]'):[]]
+        .slice(0,20).map(el=>String(el.innerText||el.textContent||el.getAttribute('data-total')||el.getAttribute('data-amount')||'')).join(' ');
+      const amountTokens=[...new Set((amountText.match(/(?:[$€£]\s?\d{1,7}(?:[,.]\d{2})?|\b\d{1,7}(?:[,.]\d{2})\s?(?:USD|EUR|GBP)\b)/gi)||[])
+        .map(x=>String(x).replace(/\s+/g,' ').trim().toUpperCase()))].sort().slice(0,12);
       const amountHash=amountTokens.length?await sha(JSON.stringify(amountTokens)):'';
 
       const observationFingerprint=await sha(JSON.stringify({
@@ -788,6 +790,18 @@ async function browserTransactionContinuityCaptureV2260(tabId){
 async function browserTransactionContinuityScanV2260(){
   const [tab]=await chrome.tabs.query({active:true,currentWindow:true});
   if(!tab?.id||!/^https?:/i.test(String(tab.url||'')))return {ok:true,matched:false,reason:'unsupported_page',continuities:[]};
+  let domain='';
+  try{domain=new URL(tab.url).hostname.toLowerCase();}catch(_error){}
+  if(!domain)return {ok:true,matched:false,reason:'unsupported_page',continuities:[]};
+
+  const preflight=await browserTransactionContinuityApiV2260('list',{domain});
+  const entries=Array.isArray(preflight&&preflight.continuities)?preflight.continuities:[];
+  const activeReference=entries.some(entry=>{
+    const tracker=entry&&entry.continuity||{};
+    return String(tracker.tracking_status||'')==='active'&&String(tracker.match_mode||'')==='reference'&&Boolean(tracker.reference_present);
+  });
+  if(!activeReference)return {...preflight,matched:false,reason:entries.length?'tracking_inactive_or_manual':'no_tracked_transactions'};
+
   const local=await browserTransactionContinuityCaptureV2260(tab.id);
   const response=await browserTransactionContinuityApiV2260('observe',{
     domain:String(local.domain||''),page_fingerprint:String(local.page_fingerprint||''),
