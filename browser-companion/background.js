@@ -845,6 +845,7 @@ async function browserTransactionContinuityScanV2260(){
   if(response&&response.matched&&response.continuity&&response.continuity.continuity_id){
     intelligence=await browserTransactionIntelligenceApiV2270('observe_facts',{
       continuity_id:String(response.continuity.continuity_id||''),
+      event_id:String(response.event&&response.event.event_id||''),
       schedule_candidates:Array.isArray(local.schedule_candidates)?local.schedule_candidates:[],
       exposure_candidates:Array.isArray(local.exposure_candidates)?local.exposure_candidates:[]
     }).catch(()=>null);
