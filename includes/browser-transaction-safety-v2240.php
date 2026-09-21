@@ -21,6 +21,7 @@ function vp3_browser_transaction_schema_ready_v2240(?PDO $pdo=null): bool
     $pdo??=db();
     return (bool)$pdo
         && table_exists('browser_submission_intents_v2240')
+        && table_exists('browser_submission_dispatch_guards_v2240')
         && vp3_browser_web_schema_ready_v2210($pdo);
 }
 
@@ -66,6 +67,17 @@ function vp3_browser_transaction_ensure_schema_v2240(?PDO $pdo=null): void
       INDEX idx_browser_submission_duplicate_v2240 (duplicate_key,status,created_at),
       CONSTRAINT fk_browser_submission_runtime_v2240 FOREIGN KEY (runtime_session_id) REFERENCES browser_agent_runtime_sessions_v2200(id) ON DELETE CASCADE,
       CONSTRAINT fk_browser_submission_owner_v2240 FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+    $pdo->exec("CREATE TABLE IF NOT EXISTS browser_submission_dispatch_guards_v2240 (
+      guard_key CHAR(64) NOT NULL,
+      owner_user_id INT UNSIGNED NOT NULL,
+      intent_public_id CHAR(36) NOT NULL,
+      expires_at DATETIME NOT NULL,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (guard_key),
+      INDEX idx_browser_submission_guard_expiry_v2240 (expires_at),
+      INDEX idx_browser_submission_guard_owner_v2240 (owner_user_id,created_at),
+      CONSTRAINT fk_browser_submission_guard_owner_v2240 FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 }
 
@@ -313,12 +325,17 @@ function vp3_browser_transaction_claim_v2240(
     $domain=vp3_browser_web_domain_v2210($input['domain']??'');
     if($domain!==(string)$row['domain'])throw new RuntimeException('The active domain changed after approval.');
 
-    $dup=$pdo->prepare("SELECT public_id FROM browser_submission_intents_v2240
-      WHERE owner_user_id=? AND duplicate_key=? AND id<>? AND status IN ('executing','completed','uncertain')
-        AND created_at>=DATE_SUB(UTC_TIMESTAMP(),INTERVAL ".VP3_BROWSER_TRANSACTION_DUPLICATE_WINDOW_SECONDS_V2240." SECOND)
-      ORDER BY id DESC LIMIT 1 FOR UPDATE");
-    $dup->execute([(int)$runtime['owner_user_id'],(string)$row['duplicate_key'],(int)$row['id']]);
-    if((string)($dup->fetchColumn()?:'')!=='')throw new RuntimeException('Duplicate final submission blocked. Review the prior receipt before submitting again.');
+    $guardKey=hash('sha256',(int)$runtime['owner_user_id'].'|'.(string)$row['duplicate_key']);
+    $pdo->prepare("DELETE FROM browser_submission_dispatch_guards_v2240 WHERE guard_key=? AND expires_at<UTC_TIMESTAMP()")
+        ->execute([$guardKey]);
+    try{
+        $pdo->prepare("INSERT INTO browser_submission_dispatch_guards_v2240 (guard_key,owner_user_id,intent_public_id,expires_at)
+          VALUES (?,?,?,DATE_ADD(UTC_TIMESTAMP(),INTERVAL ".VP3_BROWSER_TRANSACTION_DUPLICATE_WINDOW_SECONDS_V2240." SECOND))")
+          ->execute([$guardKey,(int)$runtime['owner_user_id'],(string)$row['public_id']]);
+    }catch(PDOException $e){
+        if((string)$e->getCode()==='23000')throw new RuntimeException('Duplicate final submission blocked. Review the prior receipt before submitting again.');
+        throw $e;
+    }
 
     $token=bin2hex(random_bytes(24));$hash=hash('sha256',$token);
     $pdo->prepare("UPDATE browser_submission_intents_v2240
@@ -363,6 +380,11 @@ function vp3_browser_transaction_complete_v2240(
     $code=preg_replace('/[^a-z0-9_\-]/','',strtolower(trim((string)($input['result_code']??($verified?'submission_dispatched':'submission_failed')))));
     $code=mb_strimwidth($code?:($verified?'submission_dispatched':'submission_failed'),0,80,'');
     $status=$verified?'completed':($dispatched?'uncertain':'failed');
+    $guardKey=hash('sha256',(int)$runtime['owner_user_id'].'|'.(string)$row['duplicate_key']);
+    if(!$dispatched){
+        $pdo->prepare("DELETE FROM browser_submission_dispatch_guards_v2240 WHERE guard_key=? AND intent_public_id=?")
+            ->execute([$guardKey,(string)$row['public_id']]);
+    }
     $pdo->prepare("UPDATE browser_submission_intents_v2240 SET status=?,permit_hash=NULL,permit_expires_at=NULL,result_code=?,
       dispatched_at=CASE WHEN ?=1 THEN UTC_TIMESTAMP() ELSE dispatched_at END,
       verified_at=CASE WHEN ?=1 THEN UTC_TIMESTAMP() ELSE verified_at END,
@@ -378,7 +400,7 @@ function vp3_browser_transaction_complete_v2240(
           WHERE id=? AND owner_user_id=?")
           ->execute([$webStatus,$verified?1:0,'v2240_'.$code,$verified?1:0,$verified?1:0,(int)$web['id'],(int)$runtime['owner_user_id']]);
     }
-    if($dispatched){
+    if($verified){
         $pdo->prepare("UPDATE browser_agent_runtime_sessions_v2200 SET last_verified_at=UTC_TIMESTAMP(),updated_at=UTC_TIMESTAMP() WHERE id=? AND owner_user_id=?")
             ->execute([(int)$runtime['id'],(int)$runtime['owner_user_id']]);
     }
@@ -389,7 +411,7 @@ function vp3_browser_transaction_complete_v2240(
             ?'Submission dispatch was attempted but the immediate browser result could not be verified. Do not retry until the destination state is reviewed.'
             :'The approved external submission was not dispatched.');
     vp3_browser_runtime_event_v2200($pdo,$runtime,$event,$summary,'transaction.submit',null,$code);
-    if(!$dispatched)vp3_browser_transaction_notify_v2240($runtime,$row,'failed');
+    if(!$verified)vp3_browser_transaction_notify_v2240($runtime,$row,'failed');
     $fresh=vp3_browser_transaction_row_v2240($pdo,$runtime,$intentId);
     return ['intent'=>vp3_browser_transaction_public_v2240($fresh?:$row)];
 }
@@ -400,6 +422,9 @@ function vp3_browser_transaction_cancel_v2240(PDO $pdo,array $user,string $names
     $row=vp3_browser_transaction_row_v2240($pdo,$runtime,$intentId,true);
     if(!$row)throw new RuntimeException('Final submission review was not found.');
     if(!in_array((string)$row['status'],['approval_pending','approved'],true))throw new RuntimeException('This final submission review can no longer be cancelled.');
+    $guardKey=hash('sha256',(int)$runtime['owner_user_id'].'|'.(string)$row['duplicate_key']);
+    $pdo->prepare("DELETE FROM browser_submission_dispatch_guards_v2240 WHERE guard_key=? AND intent_public_id=?")
+        ->execute([$guardKey,(string)$row['public_id']]);
     $pdo->prepare("UPDATE browser_submission_intents_v2240 SET status='cancelled',permit_hash=NULL,permit_expires_at=NULL,cancelled_at=UTC_TIMESTAMP(),updated_at=UTC_TIMESTAMP() WHERE id=?")
         ->execute([(int)$row['id']]);
     vp3_browser_runtime_event_v2200($pdo,$runtime,'submission_cancelled','Final external submission review cancelled.','transaction.submit',null,'cancelled');
