@@ -694,18 +694,24 @@ async function browserTransactionExecuteV2240(payload={}){
       throw new Error('The reviewed form changed after authorization. Nothing was submitted.');
     }
   }
+  let dispatchStarted=false;
   try{
+    dispatchStarted=true;
     const webResult=await browserWebInteractionExecuteV2210({
       runtime_id:runtimeId,agent_id:Number(payload.agent_id||0),
       interaction_id:String(payload.web_interaction_id||''),action_key:'submit',
       element_key:String(payload.element_key||''),element_fingerprint:String(payload.element_fingerprint||''),value:''
     });
-    const dispatched=Boolean(webResult&&webResult.outcome&&webResult.outcome.verified);
-    await complete(dispatched,dispatched,dispatched?'submission_dispatched':'submission_not_verified');
-    return {intent_id:intentId,outcome:webResult&&webResult.outcome||null,dispatched};
+    const verified=Boolean(webResult&&webResult.outcome&&webResult.outcome.verified);
+    await complete(true,verified,verified?'submission_verified':'submission_dispatch_uncertain');
+    return {intent_id:intentId,outcome:webResult&&webResult.outcome||null,dispatched:true,verified,uncertain:!verified};
   }catch(error){
-    await complete(false,false,'submission_dispatch_error');
-    throw error;
+    await complete(dispatchStarted,false,dispatchStarted?'submission_dispatch_uncertain':'submission_not_dispatched');
+    const wrapped=new Error(dispatchStarted
+      ?'Submission dispatch may have started but could not be verified. Review the destination before any retry.'
+      :String(error&&error.message||'Submission was not dispatched.'));
+    wrapped.code=dispatchStarted?'submission_dispatch_uncertain':String(error&&error.code||'submission_not_dispatched');
+    throw wrapped;
   }
 }
 
