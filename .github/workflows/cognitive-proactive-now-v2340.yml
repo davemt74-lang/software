@@ -14,6 +14,7 @@ on:
       - 'chat.php'
       - 'includes/bootstrap.php'
       - 'tests/cognitive-proactive-now-v2340.mjs'
+      - 'tests/browser-companion-proactive-notifications-v2140.mjs'
       - '.github/workflows/cognitive-proactive-now-v2340.yml'
   push:
     branches:
