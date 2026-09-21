@@ -2,7 +2,7 @@
 const $=id=>document.getElementById(id);
 const ui={};
 [
-'connectionState','connectControls','shareWorkspace','connectBtn','settingsBtn','connectedAccount','disconnectedAccount','accountAvatar','accountName','accountMeta','accountTeams','openVp3Btn','refreshAccountBtn','accountOptionsBtn','accessNotice','quickActionsCard','composerCard','agentWorkspaceName','agentWorkspaceStatus','agentRefreshBtn','agentConversationSelect','agentNewChatBtn','agentOpenFullBtn','agentUsePageContext','agentContextLabel','agentMessages','agentEmpty','agentMessageInput','agentSendBtn','delegationAgentName','delegationStatus','delegationRefreshBtn','delegationInstruction','delegationMaxSteps','delegationExpiry','delegationRisk','delegationDomains','delegationPreviewBtn','delegationStartBtn','delegationPlan','delegationActive','delegationActiveTitle','delegationActiveMeta','delegationProgress','delegationRunBtn','delegationPauseBtn','delegationResumeBtn','delegationCancelBtn','delegationOpenWorkflowBtn','runtimePanel','runtimeSessionBadge','runtimePlanRevision','runtimeCurrentSkill','runtimeRecovery','runtimeObservationCount','runtimeLastVerified','runtimeReplanBtn','runtimeSkipBtn','runtimeMultiPanel','runtimeMultiStatus','runtimeMultiAttachBtn','runtimeMultiCurrentDomain','runtimeMultiHandoffCount','runtimeMultiTabCount','runtimeMultiConflictCount','runtimeMultiDomains','runtimeMultiDomainsEmpty','runtimeMultiHandoffComposer','runtimeMultiTargetUrl','runtimeMultiGoBtn','runtimeMultiFactComposer','runtimeMultiFactKey','runtimeMultiFactValue','runtimeMultiFactAddBtn','runtimeMultiFacts','runtimeMultiFactsEmpty','runtimeMultiHandoffs','runtimeMultiHandoffsEmpty','runtimeMultiArtifacts','runtimeMultiArtifactsEmpty','runtimeResearchPanel','runtimeResearchStatus','runtimeResearchRefreshBtn','runtimeResearchStart','runtimeResearchQuestion','runtimeResearchProject','runtimeResearchMaxSources','runtimeResearchMaxPages','runtimeResearchMaxClaims','runtimeResearchDuration','runtimeResearchStartBtn','runtimeResearchActive','runtimeResearchPageCount','runtimeResearchClaimCount','runtimeResearchCorroborated','runtimeResearchConflicts','runtimeResearchAnalyzeBtn','runtimeResearchOpenChatBtn','runtimeResearchSaveBtn','runtimeResearchCancelBtn','runtimeResearchOpenReportBtn','runtimeResearchSources','runtimeResearchSourcesEmpty','runtimeResearchClaims','runtimeResearchClaimsEmpty','runtimeResearchMemo','runtimeResearchGaps','runtimeResearchGapsEmpty','runtimeResearchHandoffs','runtimeResearchKnowledgeBtn','runtimeResearchCrmBtn','runtimeResearchTaskBtn','runtimeTimeline','runtimeTimelineEmpty','runtimeTabs','runtimeTabsEmpty','runtimeWebPanel','runtimeWebStatus','runtimeWebScanBtn','runtimeWebControlCount','runtimeWebInteractionCount','runtimeWebElements','runtimeWebElementsEmpty','runtimeWebComposer','runtimeWebSelectedLabel','runtimeWebSelectedMeta','runtimeWebActionSelect','runtimeWebValueField','runtimeWebValueLabel','runtimeWebValueInput','runtimeWebOptionField','runtimeWebOptionSelect','runtimeWebToggleField','runtimeWebToggleSelect','runtimeWebPreviewBtn','runtimeWebClearSelectionBtn','runtimeWebProposal','runtimeWebProposalTitle','runtimeWebProposalDetail','runtimeWebCheckpointNotice','runtimeWebRunBtn','runtimeWebConfirmRunBtn','runtimeWebCancelBtn','runtimeWebRecent','runtimeWebRecentEmpty','delegationCheckpoint','delegationCheckpointText','delegationCheckpointOpenBtn','delegationCheckpointDoneBtn','delegationSteps','delegationRecent','delegationRecentEmpty','executionAgentName','executionStatus','executionRefreshBtn','executionPageLabel','executionCandidates','executionCandidatesEmpty','executionTickets','executionTicketsEmpty','executionContinuity','executionContinuityEmpty','memoryAgentName','memoryStatus','memoryRefreshBtn','memoryPageLabel','memoryCandidates','memoryCandidatesEmpty','memoryRemembered','memoryRememberedEmpty','memoryCount',
+'connectionState','connectControls','shareWorkspace','connectBtn','settingsBtn','connectedAccount','disconnectedAccount','accountAvatar','accountName','accountMeta','accountTeams','openVp3Btn','refreshAccountBtn','accountOptionsBtn','accessNotice','quickActionsCard','composerCard','agentWorkspaceName','agentWorkspaceStatus','agentRefreshBtn','agentConversationSelect','agentNewChatBtn','agentOpenFullBtn','agentUsePageContext','agentContextLabel','agentMessages','agentEmpty','agentMessageInput','agentSendBtn','delegationAgentName','delegationStatus','delegationRefreshBtn','delegationInstruction','delegationMaxSteps','delegationExpiry','delegationRisk','delegationDomains','delegationPreviewBtn','delegationStartBtn','delegationPlan','delegationActive','delegationActiveTitle','delegationActiveMeta','delegationProgress','delegationRunBtn','delegationPauseBtn','delegationResumeBtn','delegationCancelBtn','delegationOpenWorkflowBtn','runtimePanel','runtimeSessionBadge','runtimePlanRevision','runtimeCurrentSkill','runtimeRecovery','runtimeObservationCount','runtimeLastVerified','runtimeReplanBtn','runtimeSkipBtn','runtimeMultiPanel','runtimeMultiStatus','runtimeMultiAttachBtn','runtimeMultiCurrentDomain','runtimeMultiHandoffCount','runtimeMultiTabCount','runtimeMultiConflictCount','runtimeMultiDomains','runtimeMultiDomainsEmpty','runtimeMultiHandoffComposer','runtimeMultiTargetUrl','runtimeMultiGoBtn','runtimeMultiFactComposer','runtimeMultiFactKey','runtimeMultiFactValue','runtimeMultiFactAddBtn','runtimeMultiFacts','runtimeMultiFactsEmpty','runtimeMultiHandoffs','runtimeMultiHandoffsEmpty','runtimeMultiArtifacts','runtimeMultiArtifactsEmpty','runtimeResearchPanel','runtimeResearchStatus','runtimeResearchRefreshBtn','runtimeResearchStart','runtimeResearchQuestion','runtimeResearchProject','runtimeResearchMaxSources','runtimeResearchMaxPages','runtimeResearchMaxClaims','runtimeResearchDuration','runtimeResearchStartBtn','runtimeResearchActive','runtimeResearchPageCount','runtimeResearchClaimCount','runtimeResearchCorroborated','runtimeResearchConflicts','runtimeResearchAnalyzeBtn','runtimeResearchOpenChatBtn','runtimeResearchSaveBtn','runtimeResearchCancelBtn','runtimeResearchOpenReportBtn','runtimeResearchSources','runtimeResearchSourcesEmpty','runtimeResearchClaims','runtimeResearchClaimsEmpty','runtimeResearchMemo','runtimeResearchGaps','runtimeResearchGapsEmpty','runtimeResearchHandoffs','runtimeResearchKnowledgeBtn','runtimeResearchCrmBtn','runtimeResearchTaskBtn','runtimeTimeline','runtimeTimelineEmpty','runtimeTabs','runtimeTabsEmpty','runtimeWebPanel','runtimeWebStatus','runtimeWebScanBtn','runtimeWebControlCount','runtimeWebInteractionCount','runtimeWebElements','runtimeWebElementsEmpty','runtimeWebComposer','runtimeWebSelectedLabel','runtimeWebSelectedMeta','runtimeWebActionSelect','runtimeWebValueField','runtimeWebValueLabel','runtimeWebValueInput','runtimeWebOptionField','runtimeWebOptionSelect','runtimeWebToggleField','runtimeWebToggleSelect','runtimeWebPreviewBtn','runtimeWebClearSelectionBtn','runtimeWebProposal','runtimeWebProposalTitle','runtimeWebProposalDetail','runtimeWebCheckpointNotice','runtimeTransactionReview','runtimeTransactionKind','runtimeTransactionWarning','runtimeTransactionFields','runtimeWebRunBtn','runtimeWebConfirmRunBtn','runtimeWebCancelBtn','runtimeWebRecent','runtimeWebRecentEmpty','delegationCheckpoint','delegationCheckpointText','delegationCheckpointOpenBtn','delegationCheckpointDoneBtn','delegationSteps','delegationRecent','delegationRecentEmpty','executionAgentName','executionStatus','executionRefreshBtn','executionPageLabel','executionCandidates','executionCandidatesEmpty','executionTickets','executionTicketsEmpty','executionContinuity','executionContinuityEmpty','memoryAgentName','memoryStatus','memoryRefreshBtn','memoryPageLabel','memoryCandidates','memoryCandidatesEmpty','memoryRemembered','memoryRememberedEmpty','memoryCount',
 'nowTab','agentTab','delegationTab','executionTab','memoryTab','thisPageTab','followingTab','liveTab','alertsTab','searchTab','nowView','agentView','delegationView','executionView','memoryView','thisPageView','followingView','liveView','alertsView','searchView','refreshNowBtn','openAgentChatBtn','restoreNowBtn','nowStatus','nowAttentionCount','nowItemCount','nowContextualCount','nowContextStrip','nowContextTitle','nowContextMeta','toggleNowContextBtn','nowContextPanel','nowRelationshipSummary','nowRelationshipList','nowContextActions','nowEmpty','nowFeed','refreshCaptureBtn','pageTitle','pageHost','sourceMeta','sourceStatus',
 'followCurrentSourceBtn','openSourcePageBtn','quickAskBtn','quickSummarizeBtn','quickCompareBtn','quickResearchBtn','quickKnowledgeBtn','quickTaskBtn','quickMemoryBtn','quickTeamBtn','quickAnnotateBtn','selectedText','selectionCount','captureSummary','captureScreenshotBtn','screenshotPreview',
 'screenshotImage','screenshotMeta','removeScreenshotBtn','captureMediaBtn','mediaDetectedText','mediaPreview','mediaPreviewTitle','mediaStart',
@@ -28,7 +28,7 @@ let cognitiveBusy=false,cognitiveData=null,cognitiveTimer=null;
 let agentConversationId=0,agentWorkspaceAgentId=0,agentLastMessageId=0,agentPollTimer=null,agentBusy=false,agentConversations=[];
 let delegationBusy=false,delegationRunnerBusy=false,delegationPreviewData=null,delegationActiveData=null,delegationRecentData=[],delegationCheckpointData=null;
 let runtimeBusyV2200=false,runtimeRunnerBusyV2200=false,runtimeDataV2200=null,runtimeSkillsV2200=[],runtimeOpenedTabsV2200=[];
-let runtimeWebBusyV2210=false,runtimeWebObservationV2210=null,runtimeWebElementsV2210=[],runtimeWebActionsV2210=[],runtimeWebSelectedV2210=null,runtimeWebProposalV2210=null,runtimeWebReceiptsV2210=[];
+let runtimeWebBusyV2210=false,runtimeWebObservationV2210=null,runtimeWebElementsV2210=[],runtimeWebActionsV2210=[],runtimeWebSelectedV2210=null,runtimeWebProposalV2210=null,runtimeWebReceiptsV2210=[],runtimeTransactionReviewV2240=null;
 let runtimeMultiBusyV2220=false,runtimeMultiStateV2220=null;
 let runtimeResearchBusyV2230=false,runtimeResearchMissionV2230=null,runtimeResearchProjectsV2230=[];
 let executionBusy=false,executionCandidatesData=[],executionTicketsData=[],executionContinuityData=[];
@@ -869,15 +869,20 @@ function runtimeWebElementMetaV2210(item){
   return bits.join(' · ');
 }
 function runtimeWebResetProposalV2210(){
-  runtimeWebProposalV2210=null;
+  runtimeWebProposalV2210=null;runtimeTransactionReviewV2240=null;
   ui.runtimeWebProposal.hidden=true;
   ui.runtimeWebCheckpointNotice.hidden=true;
+  ui.runtimeTransactionReview.hidden=true;
+  ui.runtimeTransactionFields.replaceChildren();
   ui.runtimeWebRunBtn.hidden=false;
   ui.runtimeWebConfirmRunBtn.hidden=true;
 }
 async function runtimeWebInvalidateProposalV2210(){
-  const current=runtimeWebProposalV2210;
+  const current=runtimeWebProposalV2210,transaction=runtimeTransactionReviewV2240;
   runtimeWebResetProposalV2210();
+  if(transaction&&transaction.intent&&transaction.intent.intent_id&&runtimeDataV2200&&runtimeDataV2200.runtime_id){
+    try{await msg('transaction_action',{action:'cancel',payload:{runtime_id:runtimeDataV2200.runtime_id,agent_id:agentWorkspaceAgentId,intent_id:transaction.intent.intent_id}});}catch(_error){}
+  }
   if(current&&current.proposal&&current.proposal.interaction_id&&runtimeDataV2200&&runtimeDataV2200.runtime_id){
     try{await webInteractionRequestV2210('cancel',{runtime_id:runtimeDataV2200.runtime_id,interaction_id:current.proposal.interaction_id});}catch(_error){}
   }
@@ -1022,7 +1027,35 @@ async function previewRuntimeWebInteractionV2210(){
     ui.runtimeWebCheckpointNotice.hidden=!proposal.requires_checkpoint;
     ui.runtimeWebRunBtn.hidden=Boolean(proposal.requires_checkpoint);
     ui.runtimeWebConfirmRunBtn.hidden=!proposal.requires_checkpoint;
-    note(proposal.requires_checkpoint?'Interaction preview ready. Confirm the checkpoint to run it.':'Interaction preview ready.','success');
+    if(action==='submit'){
+      const transaction=await msg('transaction_review',{payload:{
+        runtime_id:runtimeDataV2200.runtime_id,agent_id:agentWorkspaceAgentId,
+        web_interaction_id:proposal.interaction_id,element_key:item.element_key,element_fingerprint:item.element_fingerprint
+      }});
+      if(!transaction||!transaction.intent||!transaction.review)throw new Error('VP3 could not create the final submission review.');
+      runtimeTransactionReviewV2240=transaction;
+      runtimeWebProposalV2210.transaction=transaction;
+      ui.runtimeTransactionReview.hidden=false;
+      const flags=Array.isArray(transaction.intent.consequence_flags)?transaction.intent.consequence_flags:[];
+      ui.runtimeTransactionKind.textContent=String(transaction.intent.submission_kind||'form submission').replace(/_/g,' ')+' · '+flags.map(x=>String(x).replace(/_/g,' ')).join(', ');
+      ui.runtimeTransactionFields.replaceChildren();
+      for(const field of Array.isArray(transaction.review.fields)?transaction.review.fields:[]){
+        const row=el('div','runtime-transaction-field','');
+        const copy=el('div','runtime-transaction-field-copy','');
+        copy.append(el('strong','',String(field.label||field.name||'Field')),el('span','',String(field.value||'Empty')));
+        row.append(copy,el('span','pill',field.sensitive?'masked':String(field.type||'field')));
+        ui.runtimeTransactionFields.append(row);
+      }
+      ui.runtimeWebProposalDetail.textContent='Final submission to '+String(transaction.review.target_label||transaction.review.target_host||'this site')+' · '+String(transaction.review.method||'POST')+' · '+String(transaction.review.field_count||0)+' reviewed fields.';
+      if(transaction.intent.manual_only){
+        ui.runtimeTransactionWarning.textContent='VP3 classified this as high impact. Review the form, then submit it manually on the page; the Agent will not dispatch it.';
+        ui.runtimeWebConfirmRunBtn.hidden=true;
+      }else{
+        ui.runtimeTransactionWarning.textContent='Review every value below. Confirm & submit authorizes only this exact form state, once. Any change invalidates approval.';
+        ui.runtimeWebConfirmRunBtn.textContent='Confirm exact form & submit';
+      }
+    }
+    note(action==='submit'?'Final form review ready. Check every field before authorizing submission.':(proposal.requires_checkpoint?'Interaction preview ready. Confirm the checkpoint to run it.':'Interaction preview ready.'),'success');
   }finally{runtimeWebBusyV2210=false;busy(ui.runtimeWebPreviewBtn,false);}
 }
 async function loadRuntimeWebReceiptsV2210(){
@@ -1076,18 +1109,31 @@ async function executeRuntimeWebProposalV2210(confirmCheckpoint=false){
       await scanRuntimeWebControlsV2210().catch(()=>{});
       return result;
     }
-    if(local.proposal.requires_checkpoint){
-      const confirmed=await webInteractionRequestV2210('confirm',{runtime_id:runtimeDataV2200.runtime_id,interaction_id:local.proposal.interaction_id});
-      if(confirmed&&confirmed.proposal)local.proposal=confirmed.proposal;
+    let result;
+    if(local.action==='submit'){
+      const transaction=local.transaction||runtimeTransactionReviewV2240;
+      if(!transaction||!transaction.intent||!transaction.review)throw new Error('Review the exact form state before submitting.');
+      if(transaction.intent.manual_only)throw new Error('This high-impact submission is manual-only.');
+      result=await msg('transaction_execute',{payload:{
+        runtime_id:runtimeDataV2200.runtime_id,agent_id:agentWorkspaceAgentId,
+        intent_id:transaction.intent.intent_id,review_hash:transaction.review.review_hash,
+        web_interaction_id:local.proposal.interaction_id,
+        element_key:local.item.element_key,element_fingerprint:local.item.element_fingerprint
+      }});
+    }else{
+      if(local.proposal.requires_checkpoint){
+        const confirmed=await webInteractionRequestV2210('confirm',{runtime_id:runtimeDataV2200.runtime_id,interaction_id:local.proposal.interaction_id});
+        if(confirmed&&confirmed.proposal)local.proposal=confirmed.proposal;
+      }
+      result=await msg('web_interaction_execute',{payload:{
+        runtime_id:runtimeDataV2200.runtime_id,agent_id:agentWorkspaceAgentId,
+        interaction_id:local.proposal.interaction_id,action_key:local.action,
+        element_key:local.item.element_key,element_fingerprint:local.item.element_fingerprint,
+        value:local.value
+      }});
     }
-    const result=await msg('web_interaction_execute',{payload:{
-      runtime_id:runtimeDataV2200.runtime_id,agent_id:agentWorkspaceAgentId,
-      interaction_id:local.proposal.interaction_id,action_key:local.action,
-      element_key:local.item.element_key,element_fingerprint:local.item.element_fingerprint,
-      value:local.value
-    }});
-    const ok=Boolean(result&&result.outcome&&result.outcome.verified);
-    note(ok?'Web interaction completed and verified.':'Web interaction ran but its expected state could not be verified. Rescan before retrying.',ok?'success':'error');
+    const ok=local.action==='submit'?Boolean(result&&result.dispatched):Boolean(result&&result.outcome&&result.outcome.verified);
+    note(ok?(local.action==='submit'?'External submission dispatched once. Review the site response for final business outcome.':'Web interaction completed and verified.'):(local.action==='submit'?'Nothing was submitted or dispatch could not be verified. Review before retrying.':'Web interaction ran but its expected state could not be verified. Rescan before retrying.'),ok?'success':'error');
     runtimeWebResetProposalV2210();
     await loadRuntimeWebReceiptsV2210();
     await loadRuntimeDetailV2200();
