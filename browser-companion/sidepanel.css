@@ -251,3 +251,8 @@
 .runtime-control-audit-item{display:grid;gap:2px;padding:8px 9px;border:1px solid var(--border,#e2e2dd);border-radius:9px;background:var(--surface-soft,#f8f8f5);font-size:12px}
 .runtime-control-audit-item span{opacity:.76;overflow-wrap:anywhere}
 @media(max-width:700px){.runtime-control-grid{grid-template-columns:1fr}}
+
+.runtime-control-trackers{display:grid;gap:8px;margin-top:10px}
+.runtime-control-tracker{display:grid;gap:5px;padding:9px 10px;border:1px solid var(--border,#e2e2dd);border-radius:10px;background:var(--surface-soft,#f8f8f5)}
+.runtime-control-tracker-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.runtime-control-tracker p{margin:0;font-size:12px;line-height:1.4;opacity:.82}
