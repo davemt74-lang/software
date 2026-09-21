@@ -69,16 +69,31 @@ function vp3_browser_research_start_v2230(PDO $pdo,array $user,string $namespace
     $maxPages=max(1,min(VP3_BROWSER_RESEARCH_MAX_PAGES_V2230,(int)($input['max_pages']??10)));
     $maxClaims=max(5,min(VP3_BROWSER_RESEARCH_MAX_CLAIMS_V2230,(int)($input['max_claims']??50)));
     $duration=max(15,min(VP3_BROWSER_RESEARCH_MAX_DURATION_V2230,(int)($input['duration_minutes']??60)));
-    $domains=array_slice($domains,0,$maxSources);
+
+    $allowedSet=array_fill_keys($domains,true);$sourcePlan=[];$seen=[];
+    foreach(is_array($input['source_plan']??null)?$input['source_plan']:[] as $raw){
+        if(!is_array($raw))continue;
+        $domain=vp3_browser_delegation_domain_v2190($raw['domain']??'');
+        if($domain===''||!isset($allowedSet[$domain])||isset($seen[$domain]))continue;
+        $seen[$domain]=true;$sourcePlan[]=['domain'=>$domain,'reason'=>vp3_browser_research_text_v2230($raw['reason']??'',300)];
+        if(count($sourcePlan)>=$maxSources)break;
+    }
+    foreach($domains as $domain){
+        if(count($sourcePlan)>=$maxSources)break;
+        if(isset($seen[$domain]))continue;
+        $seen[$domain]=true;$sourcePlan[]=['domain'=>$domain,'reason'=>'Approved source available to this Browser Research mission.'];
+    }
+    $domains=array_column($sourcePlan,'domain');
     $expires=min(strtotime((string)$runtime['expires_at']),time()+$duration*60);
     $public=vp3_browser_research_uuid_v2230();
 
     $pdo->prepare("INSERT INTO browser_research_missions_v2230
-      (public_id,runtime_session_id,multisite_session_id,owner_user_id,agent_id,workflow_run_id,project_id,question,approved_domains_json,max_sources,max_pages,max_claims,duration_minutes,status,expires_at)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'active',?)")
+      (public_id,runtime_session_id,multisite_session_id,owner_user_id,agent_id,conversation_id,workflow_run_id,project_id,question,approved_domains_json,source_plan_json,max_sources,max_pages,max_claims,duration_minutes,status,expires_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'active',?)")
       ->execute([
-          $public,(int)$runtime['id'],(int)$multi['id'],$uid,(int)($agent['id']??0)?:null,(int)$runtime['workflow_run_id'],
+          $public,(int)$runtime['id'],(int)$multi['id'],$uid,(int)($agent['id']??0)?:null,max(0,(int)($input['conversation_id']??0))?:null,(int)$runtime['workflow_run_id'],
           $project?(int)$project['id']:null,$question,json_encode($domains,JSON_UNESCAPED_SLASHES),
+          json_encode($sourcePlan,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE),
           $maxSources,$maxPages,$maxClaims,$duration,gmdate('Y-m-d H:i:s',$expires)
       ]);
     vp3_browser_runtime_event_v2200($pdo,$runtime,'research_mission_started','Browser Research mission started inside the approved domain envelope.','browser_research',null,'active');
@@ -224,6 +239,11 @@ function vp3_browser_research_public_v2230(PDO $pdo,array $user,string $missionP
     $pages=vp3_browser_research_pages_v2230($pdo,$mission);$claims=vp3_browser_research_claims_v2230($pdo,$mission);
     $domains=[];foreach(vp3_browser_research_json_v2230($mission['approved_domains_json']??'') as $d)$domains[(string)$d]=0;
     foreach($pages as $p)$domains[(string)$p['domain']]=($domains[(string)$p['domain']]??0)+1;
+    $planRows=vp3_browser_research_json_v2230($mission['source_plan_json']??'');$sourcePlan=[];
+    foreach($planRows as $plan){
+        if(!is_array($plan))continue;$domain=(string)($plan['domain']??'');if($domain===''||!array_key_exists($domain,$domains))continue;
+        $sourcePlan[]=['domain'=>$domain,'reason'=>(string)($plan['reason']??''),'pages'=>$domains[$domain],'checked'=>$domains[$domain]>0];
+    }
     $counts=['corroborated'=>0,'conflicted'=>0,'single_source'=>0];
     foreach($claims as $claim)$counts[(string)$claim['evidence_state']]=($counts[(string)$claim['evidence_state']]??0)+1;
     $project=null;if((int)($mission['project_id']??0)>0){$row=vp3_research_project_row_by_id_v2060($pdo,(int)$mission['project_id']);if($row)$project=vp3_research_project_public_v2060($pdo,$row,$uid);}
@@ -233,7 +253,7 @@ function vp3_browser_research_public_v2230(PDO $pdo,array $user,string $missionP
         'conversation_id'=>(int)($mission['conversation_id']??0),'expires_at'=>(string)$mission['expires_at'],
         'budgets'=>['sources'=>(int)$mission['max_sources'],'pages'=>(int)$mission['max_pages'],'claims'=>(int)$mission['max_claims'],'duration_minutes'=>(int)$mission['duration_minutes']],
         'progress'=>['pages'=>count($pages),'claims'=>count($claims),'corroborated'=>$counts['corroborated'],'conflicted'=>$counts['conflicted'],'single_source'=>$counts['single_source'],'domains_checked'=>count(array_filter($domains,static fn(int $n): bool=>$n>0))],
-        'source_plan'=>array_map(static fn(string $d,int $n): array=>['domain'=>$d,'pages'=>$n,'checked'=>$n>0],array_keys($domains),array_values($domains)),
+        'source_plan'=>$sourcePlan?:array_map(static fn(string $d,int $n): array=>['domain'=>$d,'reason'=>'','pages'=>$n,'checked'=>$n>0],array_keys($domains),array_values($domains)),
         'pages'=>array_map(static fn(array $p): array=>['id'=>(string)$p['public_id'],'domain'=>(string)$p['domain'],'fingerprint'=>(string)$p['page_fingerprint'],'source_kind'=>(string)$p['source_kind'],'freshness_date'=>(string)($p['freshness_date']??''),'status'=>(string)$p['extraction_status'],'claims'=>(int)$p['claim_count'],'canonical_source_id'=>(string)$p['source_public_id'],'source_version_id'=>(string)$p['source_version_public_id']],$pages),
         'claims'=>array_map(fn(array $c): array=>vp3_browser_research_public_claim_v2230($pdo,$c),$claims),
         'gaps'=>array_values(vp3_browser_research_json_v2230($mission['gaps_json']??'')),'memo'=>(string)($mission['memo_text']??''),'project'=>$project,'report'=>$report,
