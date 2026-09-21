@@ -258,6 +258,75 @@ function workflow_v1400_time(string $value): string{$ts=strtotime($value);return
   </section>
   <?php endforeach; ?>
 
+  <?php if((int)($browserContinuity['count']??0)>0): ?>
+  <section class="workflow-panel" aria-labelledby="browserContinuityTitle">
+    <div class="workflow-panel-head">
+      <div><small>Browser Companion v22.60</small><h3 id="browserContinuityTitle">Transaction Continuity & Follow-Through</h3></div>
+      <span><?= (int)($browserContinuity['active']??0) ?> active · <?= (int)($browserContinuity['closed']??0) ?> closed · <?= (int)($browserContinuity['proposals']??0) ?> proposals</span>
+    </div>
+    <div class="workflow-summary-grid">
+      <div><small>Tracked transactions</small><strong><?= (int)($browserContinuity['count']??0) ?></strong></div>
+      <div><small>Meaningful changes</small><strong><?= (int)($browserContinuity['changes']??0) ?></strong></div>
+      <div><small>Return-page match</small><strong>Domain + hashed reference</strong></div>
+      <div><small>External writes</small><strong>Fresh v22.40 required</strong></div>
+    </div>
+    <div class="workflow-two-col">
+      <section class="workflow-panel">
+        <div class="workflow-panel-head"><h3>Lifecycle trackers</h3><span>Reference-only continuity</span></div>
+        <div class="workflow-event-list">
+          <?php foreach((array)($browserContinuity['continuities']??[]) as $tracker): ?>
+          <article>
+            <strong><?= e(workflow_v1400_status_label((string)($tracker['lifecycle_family']??'generic'))) ?> · <?= e(workflow_v1400_status_label((string)($tracker['lifecycle_state']??'active'))) ?></strong>
+            <p><?= e((string)($tracker['domain']??'')) ?> · <?= e(workflow_v1400_status_label((string)($tracker['tracking_status']??'active'))) ?><?= !empty($tracker['reference_present'])?' · hashed '.e(workflow_v1400_status_label((string)($tracker['reference_kind']??'reference'))).' reference':' · manual matching only' ?></p>
+            <small><?= !empty($tracker['last_change_at'])?'Changed '.e(workflow_v1400_time((string)$tracker['last_change_at'])):'Started '.e(workflow_v1400_time((string)($tracker['created_at']??''))) ?></small>
+            <div class="workflow-actions-bar" style="margin-top:8px">
+              <?php if((string)($tracker['tracking_status']??'active')==='active'): ?>
+              <form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="browser_continuity_close"><input type="hidden" name="run_id" value="<?= (int)$detailId ?>"><input type="hidden" name="continuity_id" value="<?= e((string)($tracker['continuity_id']??'')) ?>"><button class="workflow-button" type="submit">Stop tracking</button></form>
+              <?php elseif((string)($tracker['match_mode']??'')==='reference'): ?>
+              <form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="browser_continuity_reopen"><input type="hidden" name="run_id" value="<?= (int)$detailId ?>"><input type="hidden" name="continuity_id" value="<?= e((string)($tracker['continuity_id']??'')) ?>"><button class="workflow-button" type="submit">Resume tracking</button></form>
+              <?php endif; ?>
+            </div>
+          </article>
+          <?php endforeach; ?>
+        </div>
+      </section>
+      <section class="workflow-panel">
+        <div class="workflow-panel-head"><h3>Lifecycle changes</h3><span>Structured fingerprints</span></div>
+        <div class="workflow-event-list">
+          <?php foreach(array_slice((array)($browserContinuity['events']??[]),0,30) as $event): ?>
+          <article>
+            <strong><?= e(workflow_v1400_status_label((string)($event['lifecycle_state']??'active'))) ?><?= !empty($event['prior_state'])?' ← '.e(workflow_v1400_status_label((string)$event['prior_state'])):'' ?></strong>
+            <p><?= (array)($event['change_codes']??[])?e(implode(' · ',array_map('workflow_v1400_status_label',(array)$event['change_codes']))):'Return page recognized with no meaningful lifecycle change.' ?></p>
+            <small><?= e(workflow_v1400_time((string)($event['observed_at']??''))) ?><?= !empty($event['terminal_observed'])?' · terminal state observed':'' ?></small>
+          </article>
+          <?php endforeach; ?>
+          <?php if(!(array)($browserContinuity['events']??[])): ?><div class="workflow-empty">No return-page lifecycle observations yet.</div><?php endif; ?>
+        </div>
+      </section>
+    </div>
+    <section class="workflow-panel" style="margin-top:14px">
+      <div class="workflow-panel-head"><h3>Follow-through proposals</h3><span>Proposal-first</span></div>
+      <div class="workflow-event-list">
+        <?php foreach(array_slice((array)($browserContinuity['followthrough']??[]),0,30) as $proposal): ?>
+        <article>
+          <strong><?= e(workflow_v1400_status_label((string)($proposal['proposal_type']??'follow_through'))) ?> · <?= e(workflow_v1400_status_label((string)($proposal['status']??'proposed'))) ?></strong>
+          <p><?= e(workflow_v1400_status_label((string)($proposal['reason_code']??'transaction_update'))) ?><?= !empty($proposal['requires_external_write'])?' · any external action requires a fresh v22.40 exact-form review':' · local VP3 follow-through review' ?></p>
+          <small><?= e(workflow_v1400_time((string)($proposal['created_at']??''))) ?></small>
+          <?php if((string)($proposal['status']??'')==='proposed'): ?>
+          <div class="workflow-actions-bar" style="margin-top:8px">
+            <form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="browser_followthrough_ack"><input type="hidden" name="run_id" value="<?= (int)$detailId ?>"><input type="hidden" name="proposal_id" value="<?= e((string)($proposal['proposal_id']??'')) ?>"><button class="workflow-button" type="submit">Acknowledge</button></form>
+            <form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="browser_followthrough_dismiss"><input type="hidden" name="run_id" value="<?= (int)$detailId ?>"><input type="hidden" name="proposal_id" value="<?= e((string)($proposal['proposal_id']??'')) ?>"><button class="workflow-button" type="submit">Dismiss</button></form>
+          </div>
+          <?php endif; ?>
+        </article>
+        <?php endforeach; ?>
+        <?php if(!(array)($browserContinuity['followthrough']??[])): ?><div class="workflow-empty">No follow-through proposals yet.</div><?php endif; ?>
+      </div>
+    </section>
+    <div class="workflow-notice" role="note" style="margin:14px 0 0">v22.60 recognizes return pages only through the signed-in owner, approved domain and hashed transaction reference. It stores lifecycle states, fingerprints and structured change codes—not browser history, raw URLs, raw page text or raw transaction identifiers. Calendar/task/reply/corrective follow-through is proposal-first; any consequential external write must begin a new v22.40 review.</div>
+  </section>
+  <?php endif; ?>
+
   <?php if((int)($browserOutcomes['count']??0)>0||(int)($browserOutcomes['resolved']??0)>0): ?>
   <section class="workflow-panel" aria-labelledby="browserOutcomeTitle">
     <div class="workflow-panel-head">
