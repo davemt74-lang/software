@@ -5,30 +5,7 @@ require_once __DIR__.'/browser-research-runtime-v2230.php';
 
 function vp3_browser_research_memo_v2230(PDO $pdo,array $mission): string
 {
-    $groups=[];
-    foreach(vp3_browser_research_claims_v2230($pdo,$mission) as $claim){
-        $claim['evidence']=vp3_browser_research_evidence_v2230($pdo,(int)$claim['id']);
-        $groups[(string)$claim['claim_key']][]=$claim;
-    }
-    $lines=['# Browser Research Memo','',trim((string)$mission['question']),''];
-    if(!$groups)$lines[]='No supported claims have been extracted yet.';
-    foreach($groups as $key=>$claims){
-        $lines[]='## '.ucwords(str_replace(['.','_','-'],' ',$key));
-        if(count($claims)>1)$lines[]='Conflict: approved sources report different observed values.';
-        foreach($claims as $claim){
-            $domains=[];foreach($claim['evidence'] as $e)$domains[(string)$e['domain']]=true;
-            $lines[]='- '.$claim['value_text'].' — '.$claim['statement_text'].' ['.str_replace('_',' ',(string)$claim['evidence_state']).'; sources: '.implode(', ',array_keys($domains)).']';
-        }
-        $lines[]='';
-    }
-    $gaps=vp3_browser_research_json_v2230($mission['gaps_json']??'');
-    if($gaps){
-        $lines[]='## Research gaps';
-        foreach($gaps as $gap)$lines[]='- '.vp3_browser_research_text_v2230($gap,500);
-        $lines[]='';
-    }
-    $lines[]='Corroborated means the same observed value appears in at least two non-duplicate evidence groups. Conflicted means different values were observed for the same claim key. Freshness is descriptive and does not determine correctness.';
-    return mb_strimwidth(implode("\n",$lines),0,30000,'');
+    return vp3_browser_research_memo_preview_v2230($pdo,$mission);
 }
 
 function vp3_browser_research_save_v2230(PDO $pdo,array $user,string $missionPublicId,string $projectPublicId=''): array
