@@ -398,10 +398,34 @@ function vp3_browser_intelligence_create_proposal_v2270(PDO $pdo,array $caseRow,
     }
 }
 
+function vp3_browser_intelligence_monitoring_enabled_v2270(PDO $pdo,int $uid): bool
+{
+    if(!table_exists('browser_transaction_control_settings_v2280'))return true;
+    $stmt=$pdo->prepare("SELECT monitoring_enabled FROM browser_transaction_control_settings_v2280 WHERE owner_user_id=? LIMIT 1");
+    $stmt->execute([$uid]);$value=$stmt->fetchColumn();
+    return $value===false?true:(bool)$value;
+}
+
 function vp3_browser_intelligence_notify_v2270(PDO $pdo,array $continuity,array $caseRow): void
 {
     if((int)$caseRow['priority_score']<70)return;
-    $label=str_replace('_',' ',(string)$caseRow['exception_type']);
+    $uid=(int)$continuity['owner_user_id'];
+    if(!vp3_browser_intelligence_monitoring_enabled_v2270($pdo,$uid))return;
+    $cooldown=60;
+    if(table_exists('browser_transaction_control_settings_v2280')){
+        $s=$pdo->prepare("SELECT notification_cooldown_minutes FROM browser_transaction_control_settings_v2280 WHERE owner_user_id=? LIMIT 1");
+        $s->execute([$uid]);$v=$s->fetchColumn();if($v!==false)$cooldown=max(5,min(1440,(int)$v));
+    }
+    $type=(string)$caseRow['exception_type'];$score=(int)$caseRow['priority_score'];
+    if(table_exists('browser_transaction_notification_state_v2280')){
+        $n=$pdo->prepare("SELECT last_priority_score,last_notified_at FROM browser_transaction_notification_state_v2280 WHERE owner_user_id=? AND continuity_id=? AND exception_type=? LIMIT 1");
+        $n->execute([$uid,(int)$continuity['id'],$type]);$prior=$n->fetch(PDO::FETCH_ASSOC);
+        if(is_array($prior)&&!empty($prior['last_notified_at'])){
+            $age=time()-strtotime((string)$prior['last_notified_at']);
+            if($age<($cooldown*60)&&$score<=(int)$prior['last_priority_score'])return;
+        }
+    }
+    $label=str_replace('_',' ',$type);
     create_notification(
         (int)$continuity['owner_user_id'],
         'browser_transaction_needs_attention',
@@ -410,6 +434,13 @@ function vp3_browser_intelligence_notify_v2270(PDO $pdo,array $continuity,array 
         (int)$continuity['workflow_run_id']>0?'/agent-workflows.php?id='.(int)$continuity['workflow_run_id']:'/agent-workflows.php',
         'browser_transaction_intelligence',(int)$caseRow['id']
     );
+    if(table_exists('browser_transaction_notification_state_v2280')){
+        $pdo->prepare("INSERT INTO browser_transaction_notification_state_v2280
+          (owner_user_id,continuity_id,exception_type,last_priority_score,last_notified_at)
+          VALUES (?,?,?,?,UTC_TIMESTAMP())
+          ON DUPLICATE KEY UPDATE last_priority_score=VALUES(last_priority_score),last_notified_at=UTC_TIMESTAMP(),updated_at=UTC_TIMESTAMP()")
+          ->execute([$uid,(int)$continuity['id'],$type,$score]);
+    }
     $runtime=$pdo->prepare("SELECT * FROM browser_agent_runtime_sessions_v2200 WHERE public_id=? AND owner_user_id=? LIMIT 1");
     $runtime->execute([(string)$continuity['original_runtime_public_id'],(int)$continuity['owner_user_id']]);
     $runtimeRow=$runtime->fetch(PDO::FETCH_ASSOC);
@@ -535,6 +566,7 @@ function vp3_browser_intelligence_evaluate_continuity_v2270(
     PDO $pdo,array $user,array $continuity,?array $event=null,array $changes=[],array $input=[]
 ): array {
     $uid=(int)($user['id']??0);
+    if(!vp3_browser_intelligence_monitoring_enabled_v2270($pdo,$uid))return [];
     if($uid<1||$uid!==(int)$continuity['owner_user_id'])throw new RuntimeException('Transaction intelligence ownership mismatch.');
     if((string)$continuity['tracking_status']==='closed'){
         vp3_browser_intelligence_resolve_closed_v2270($pdo,$continuity);
@@ -683,7 +715,7 @@ function vp3_browser_intelligence_observe_facts_v2270(PDO $pdo,array $user,strin
 
 function vp3_browser_intelligence_evaluate_all_v2270(PDO $pdo,array $user): void
 {
-    $uid=(int)($user['id']??0);if($uid<1)return;
+    $uid=(int)($user['id']??0);if($uid<1||!vp3_browser_intelligence_monitoring_enabled_v2270($pdo,$uid))return;
     $stmt=$pdo->prepare("SELECT * FROM browser_transaction_continuities_v2260 WHERE owner_user_id=? ORDER BY tracking_status='active' DESC,updated_at DESC,id DESC LIMIT ".VP3_BROWSER_INTELLIGENCE_MAX_ACTIVE_V2270);
     $stmt->execute([$uid]);
     foreach($stmt->fetchAll(PDO::FETCH_ASSOC)?:[] as $continuity){
