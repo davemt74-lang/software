@@ -10,6 +10,7 @@ const chromeDownload=read('chrome-extension-download.php');
 const annotations=read('annotations.php');
 const agentAnalytics=read('agent-analytics.php');
 const marketing=read('includes/vp3-marketing-pages.php');
+const services=read('services.php');
 const manifest=JSON.parse(read('browser-companion/manifest.json'));
 
 const count=(haystack,needle)=>haystack.split(needle).length-1;
