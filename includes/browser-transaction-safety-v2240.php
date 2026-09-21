@@ -132,7 +132,7 @@ function vp3_browser_transaction_runtime_v2240(PDO $pdo,array $user,string $name
 {
     $runtime=vp3_browser_web_runtime_v2210($pdo,$user,$namespace,$runtimePublicId);
     $actions=vp3_browser_delegation_json_array_v2190($runtime['allowed_actions_json']??'');
-    if(!in_array('web_submit',$actions,true)||!in_array('transaction_submit',$actions,true)){
+    if(!in_array('transaction_submit',$actions,true)){
         throw new RuntimeException('Final submission is outside the approved Browser delegation.');
     }
     if(vp3_browser_runtime_risk_rank_v2200((string)$runtime['risk_budget'])<vp3_browser_runtime_risk_rank_v2200('medium')){
@@ -232,8 +232,10 @@ function vp3_browser_transaction_preview_v2240(
 
     $webId=trim((string)($input['web_interaction_id']??''));
     $web=vp3_browser_web_row_v2210($pdo,$runtime,$webId,true);
-    if(!$web||(string)$web['action_key']!=='submit')throw new RuntimeException('A v22.10 submit checkpoint is required before final submission review.');
-    if((string)$web['status']!=='approval_pending')throw new RuntimeException('The underlying submit checkpoint is no longer waiting for approval.');
+    if(!$web||!in_array((string)$web['action_key'],['submit','click'],true)||empty($web['requires_checkpoint'])){
+        throw new RuntimeException('A consequential v22.10 form-action checkpoint is required before final submission review.');
+    }
+    if((string)$web['status']!=='approval_pending')throw new RuntimeException('The underlying final-action checkpoint is no longer waiting for approval.');
     if((string)$web['domain']!==$domain||!hash_equals((string)$web['page_fingerprint'],$page)||!hash_equals((string)$web['element_fingerprint'],$submit)){
         throw new RuntimeException('The v22.10 submit checkpoint no longer matches this page. Rescan and preview again.');
     }
