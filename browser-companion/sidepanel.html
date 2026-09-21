@@ -434,6 +434,29 @@
               <div id="runtimeWebRecent" class="runtime-web-recent"></div>
               <div id="runtimeWebRecentEmpty" class="empty-state">No Web interactions in this runtime yet.</div>
             </section>
+
+            <section id="runtimeOutcomePanel" class="runtime-outcome-panel" hidden>
+              <div class="row-between">
+                <div>
+                  <div class="eyebrow">Transaction Outcome Verification & Recovery · v22.50</div>
+                  <strong>Destination outcome</strong>
+                </div>
+                <span id="runtimeOutcomeState" class="pill">Unverified</span>
+              </div>
+              <div id="runtimeOutcomeSummary" class="runtime-outcome-summary">No destination outcome has been checked yet.</div>
+              <div id="runtimeOutcomeEvidence" class="runtime-outcome-evidence"></div>
+              <div id="runtimeOutcomeReference" class="runtime-outcome-reference" hidden></div>
+              <div class="runtime-outcome-boundary">
+                <strong>No blind retry.</strong>
+                <span>VP3 rechecks the destination read-only. Raw page text and raw confirmation numbers stay local in Chrome. An uncertain dispatch remains duplicate-blocked until you explicitly resolve it.</span>
+              </div>
+              <div class="delegation-controls">
+                <button id="runtimeOutcomeRecheckBtn" type="button">Recheck destination</button>
+                <button id="runtimeOutcomeCompletedBtn" type="button">I confirmed it completed</button>
+                <button id="runtimeOutcomeNotSubmittedBtn" type="button">I confirmed nothing was submitted</button>
+              </div>
+            </section>
+
             <div class="runtime-columns">
               <div>
                 <div class="runtime-subhead"><strong>Timeline</strong><span>Observe → Act → Verify</span></div>

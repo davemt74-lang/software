@@ -17,8 +17,9 @@ const api=read('api/extension-transaction-safety-v2240.php');
 const workflows=read('agent-workflows.php');
 const upgrade=read('upgrade.php');
 
-must(manifest.version==='22.4.0','v22.40 manifest version missing');
-must(background.includes("const VP3_EXTENSION_VERSION = '22.4.0';"),'v22.40 request version missing');
+const transactionVersion=String(manifest.version||'').split('.').map(Number);
+must(transactionVersion.length===3&&(transactionVersion[0]>22||(transactionVersion[0]===22&&transactionVersion[1]>=4)),'v22.40+ manifest version missing');
+must(background.includes(`const VP3_EXTENSION_VERSION = '${manifest.version}';`),'v22.40+ request version must match manifest');
 must(!manifest.permissions.includes('cookies'),'Transaction Safety must not request cookies permission');
 
 // Authority chain and explicit opt-in.
