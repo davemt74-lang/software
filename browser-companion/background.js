@@ -1,6 +1,6 @@
 const VP3_DEFAULT_BASE = 'https://vp3.me';
 const VP3_CONTRACT_VERSION = '1';
-const VP3_EXTENSION_VERSION = '22.4.0';
+const VP3_EXTENSION_VERSION = '22.5.0';
 const VP3_MEDIA_CLIP_MAX_SECONDS = 90;
 
 const storage = {
@@ -665,6 +665,143 @@ async function browserTransactionReviewV2240(payload={}){
   return {intent:response&&response.intent||null,review_contract:response&&response.review_contract||null,review};
 }
 
+async function browserTransactionOutcomeApiV2250(action,payload={}){
+  return authorizedFetch('/api/extension-transaction-outcome-v2250.php',{
+    method:'POST',json:{action:String(action||'list'),...payload}
+  },'agent.message');
+}
+
+async function browserTransactionOutcomeCaptureV2250(tabId,payload={}){
+  const expectedDomain=String(payload.expected_domain||'').toLowerCase();
+  const injected=await chrome.scripting.executeScript({
+    target:{tabId},
+    args:[{expected_domain:expectedDomain}],
+    func:async args=>{
+      const sha=async value=>{
+        const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(String(value||'')));
+        return [...new Uint8Array(digest)].map(byte=>byte.toString(16).padStart(2,'0')).join('');
+      };
+      const clip=(value,max=12000)=>String(value||'').replace(/\s+/g,' ').trim().slice(0,max);
+      const host=String(location.hostname||'').toLowerCase();
+      const pageFingerprint=await sha(String(location.href||''));
+      if(!args.expected_domain||host!==String(args.expected_domain||'').toLowerCase()){
+        const observedDomainHash=await sha(host);
+        const contentHash=await sha('');
+        const evidence=['domain_changed_after_dispatch'];
+        const observationFingerprint=await sha(JSON.stringify({
+          state:'external_redirect',page_fingerprint:pageFingerprint,domain_hash:observedDomainHash,evidence
+        }));
+        return {
+          domain_matches:false,domain:'',observed_domain_hash:observedDomainHash,
+          page_fingerprint:pageFingerprint,content_hash:contentHash,observation_fingerprint:observationFingerprint,
+          outcome_state:'external_redirect',evidence_strength:'weak',evidence_codes:evidence,
+          reference_kind:'',reference_hash:'',masked_reference:''
+        };
+      }
+
+      const bodyText=clip(document.body?.innerText||document.documentElement?.innerText||'',12000);
+      const lower=bodyText.toLowerCase();
+      const headingText=clip([...document.querySelectorAll('h1,h2,h3,[role="status"],[aria-live]')]
+        .slice(0,24).map(el=>el.innerText||el.textContent||'').join(' '),2400).toLowerCase();
+      const alertText=clip([...document.querySelectorAll('[role="alert"],.error,.errors,.alert-error,.validation-error')]
+        .slice(0,20).map(el=>el.innerText||el.textContent||'').join(' '),1800).toLowerCase();
+      const path=String(location.pathname||'').toLowerCase();
+
+      const confirmationRe=/(?:thank you|order (?:is )?confirmed|booking (?:is )?confirmed|reservation (?:is )?confirmed|application (?:was )?submitted|message (?:was )?sent|payment (?:was )?successful|purchase (?:is )?complete|successfully submitted|submission (?:was )?received|we received your (?:order|application|submission)|your (?:order|booking|reservation) is confirmed)/i;
+      const pendingRe=/(?:processing|pending|under review|being reviewed|verification required|awaiting confirmation|we are reviewing|we'll review|we will review|pending approval)/i;
+      const rejectionRe=/(?:declined|payment failed|transaction failed|submission failed|unable to process|could not (?:process|complete|submit)|not submitted|was not submitted|order failed|booking failed|reservation failed|application rejected)/i;
+      const receiptRe=/(?:order|confirmation|reservation|booking|application|reference|receipt|ticket)\s*(?:number|no\.?|#|id)?\s*[:#-]?\s*[a-z0-9][a-z0-9-]{3,30}/i;
+
+      const evidence=[];
+      if(confirmationRe.test(headingText))evidence.push('confirmation_heading');
+      if(confirmationRe.test(lower))evidence.push('confirmation_phrase');
+      if(/(?:confirm|success|thank|receipt|complete|submitted)/i.test(path))evidence.push('confirmation_url_hint');
+      if(receiptRe.test(bodyText))evidence.push('receipt_keyword');
+      if(pendingRe.test(lower))evidence.push('pending_phrase');
+      if(rejectionRe.test(lower))evidence.push('rejection_phrase');
+      if(rejectionRe.test(alertText))evidence.push('error_role');
+      if(confirmationRe.test(headingText)&&/[role="status"]|aria-live/i.test(document.documentElement.innerHTML.slice(0,0))){} // keep classifier DOM-only; no HTML transport.
+      const statusNodes=[...document.querySelectorAll('[role="status"],[aria-live]')].slice(0,20);
+      if(statusNodes.some(el=>confirmationRe.test(String(el.innerText||el.textContent||''))))evidence.push('status_region');
+
+      let referenceKind='',referenceValue='';
+      const refPatterns=[
+        ['order',/(?:order)\s*(?:number|no\.?|#|id)?\s*[:#-]?\s*([a-z0-9][a-z0-9-]{3,30})/i],
+        ['confirmation',/(?:confirmation)\s*(?:number|no\.?|#|id)?\s*[:#-]?\s*([a-z0-9][a-z0-9-]{3,30})/i],
+        ['booking',/(?:booking)\s*(?:number|no\.?|#|id)?\s*[:#-]?\s*([a-z0-9][a-z0-9-]{3,30})/i],
+        ['reservation',/(?:reservation)\s*(?:number|no\.?|#|id)?\s*[:#-]?\s*([a-z0-9][a-z0-9-]{3,30})/i],
+        ['application',/(?:application)\s*(?:number|no\.?|#|id)?\s*[:#-]?\s*([a-z0-9][a-z0-9-]{3,30})/i],
+        ['reference',/(?:reference)\s*(?:number|no\.?|#|id)?\s*[:#-]?\s*([a-z0-9][a-z0-9-]{3,30})/i],
+        ['receipt',/(?:receipt)\s*(?:number|no\.?|#|id)?\s*[:#-]?\s*([a-z0-9][a-z0-9-]{3,30})/i],
+        ['ticket',/(?:ticket)\s*(?:number|no\.?|#|id)?\s*[:#-]?\s*([a-z0-9][a-z0-9-]{3,30})/i]
+      ];
+      for(const [kind,re] of refPatterns){
+        const match=bodyText.match(re);
+        if(match&&match[1]){referenceKind=kind;referenceValue=String(match[1]);break;}
+      }
+      let referenceHash='',maskedReference='';
+      if(referenceValue){
+        referenceHash=await sha(referenceKind+'|'+referenceValue);
+        maskedReference='••••'+referenceValue.slice(-4);
+        evidence.push('reference_present');
+      }
+
+      const unique=[...new Set(evidence)];
+      const positive=unique.filter(code=>['confirmation_heading','confirmation_phrase','confirmation_url_hint','reference_present','receipt_keyword','status_region'].includes(code));
+      const explicit=unique.includes('confirmation_heading')||unique.includes('confirmation_phrase');
+      let outcomeState='ambiguous',strength='weak';
+      if(unique.includes('rejection_phrase')||unique.includes('error_role')){
+        outcomeState='rejected';strength=unique.includes('error_role')?'strong':'moderate';
+      }else if(unique.includes('pending_phrase')&&positive.length<2){
+        outcomeState='pending';strength='moderate';
+      }else if(explicit&&positive.length>=2){
+        outcomeState='confirmed';strength='strong';
+      }else if(unique.includes('pending_phrase')){
+        outcomeState='pending';strength='moderate';
+      }
+
+      const contentHash=await sha(bodyText);
+      const observationFingerprint=await sha(JSON.stringify({
+        state:outcomeState,strength,evidence:unique,page_fingerprint:pageFingerprint,
+        content_hash:contentHash,reference_hash:referenceHash
+      }));
+      return {
+        domain_matches:true,domain:host,observed_domain_hash:'',
+        page_fingerprint:pageFingerprint,content_hash:contentHash,observation_fingerprint:observationFingerprint,
+        outcome_state:outcomeState,evidence_strength:strength,evidence_codes:unique,
+        reference_kind:referenceKind,reference_hash:referenceHash,masked_reference:maskedReference
+      };
+    }
+  });
+  const result=injected?.[0]?.result;
+  if(!result||!/^[a-f0-9]{64}$/.test(String(result.observation_fingerprint||''))){
+    throw new Error('Chrome could not create the destination outcome fingerprint.');
+  }
+  return result;
+}
+
+async function browserTransactionOutcomeObserveV2250(payload={}){
+  const [tab]=await chrome.tabs.query({active:true,currentWindow:true});
+  if(!tab?.id||!/^https?:/i.test(String(tab.url||'')))throw new Error('Open the transaction destination before checking its outcome.');
+  const local=await browserTransactionOutcomeCaptureV2250(tab.id,payload);
+  const response=await browserTransactionOutcomeApiV2250('observe',{
+    runtime_id:String(payload.runtime_id||''),agent_id:Number(payload.agent_id||0),intent_id:String(payload.intent_id||''),
+    domain_matches:Boolean(local.domain_matches),domain:String(local.domain||''),observed_domain_hash:String(local.observed_domain_hash||''),
+    page_fingerprint:String(local.page_fingerprint||''),content_hash:String(local.content_hash||''),
+    observation_fingerprint:String(local.observation_fingerprint||''),outcome_state:String(local.outcome_state||'ambiguous'),
+    evidence_strength:String(local.evidence_strength||'weak'),evidence_codes:Array.isArray(local.evidence_codes)?local.evidence_codes:[],
+    reference_kind:String(local.reference_kind||''),reference_hash:String(local.reference_hash||'')
+  });
+  return {...response,local:{masked_reference:String(local.masked_reference||'')}};
+}
+
+async function browserTransactionOutcomeResolveV2250(payload={}){
+  return browserTransactionOutcomeApiV2250('resolve',{
+    runtime_id:String(payload.runtime_id||''),agent_id:Number(payload.agent_id||0),intent_id:String(payload.intent_id||''),
+    resolution:String(payload.resolution||''),acknowledgement:String(payload.acknowledgement||'')
+  });
+}
+
 async function browserTransactionExecuteV2240(payload={}){
   const runtimeId=String(payload.runtime_id||''),intentId=String(payload.intent_id||''),reviewHash=String(payload.review_hash||'');
   const [tab]=await chrome.tabs.query({active:true,currentWindow:true});
@@ -705,13 +842,37 @@ async function browserTransactionExecuteV2240(payload={}){
     });
     const verified=Boolean(webResult&&webResult.outcome&&webResult.outcome.verified);
     await complete(true,verified,verified?'submission_verified':'submission_dispatch_uncertain');
-    return {intent_id:intentId,outcome:webResult&&webResult.outcome||null,dispatched:true,verified,uncertain:!verified};
+    let outcomeVerification=null;
+    try{
+      await new Promise(resolve=>setTimeout(resolve,450));
+      outcomeVerification=await browserTransactionOutcomeObserveV2250({
+        runtime_id:runtimeId,agent_id:Number(payload.agent_id||0),intent_id:intentId,expected_domain:String(current.domain||'')
+      });
+    }catch(_error){}
+    const outcomeConfirmed=String(outcomeVerification?.outcome?.outcome_state||'')==='confirmed';
+    return {
+      intent_id:intentId,outcome:webResult&&webResult.outcome||null,dispatched:true,verified,
+      uncertain:!verified&&!outcomeConfirmed,outcome_confirmed:outcomeConfirmed,outcome_verification:outcomeVerification
+    };
   }catch(error){
     await complete(dispatchStarted,false,dispatchStarted?'submission_dispatch_uncertain':'submission_not_dispatched');
-    const wrapped=new Error(dispatchStarted
-      ?'Submission dispatch may have started but could not be verified. Review the destination before any retry.'
-      :String(error&&error.message||'Submission was not dispatched.'));
-    wrapped.code=dispatchStarted?'submission_dispatch_uncertain':String(error&&error.code||'submission_not_dispatched');
+    if(dispatchStarted){
+      let outcomeVerification=null;
+      try{
+        await new Promise(resolve=>setTimeout(resolve,650));
+        outcomeVerification=await browserTransactionOutcomeObserveV2250({
+          runtime_id:runtimeId,agent_id:Number(payload.agent_id||0),intent_id:intentId,expected_domain:String(current.domain||'')
+        });
+      }catch(_error){}
+      const outcomeConfirmed=String(outcomeVerification?.outcome?.outcome_state||'')==='confirmed';
+      return {
+        intent_id:intentId,outcome:null,dispatched:true,verified:false,uncertain:!outcomeConfirmed,
+        outcome_confirmed:outcomeConfirmed,outcome_verification:outcomeVerification,
+        execution_error:String(error&&error.message||'Submission dispatch could not be immediately verified.')
+      };
+    }
+    const wrapped=new Error(String(error&&error.message||'Submission was not dispatched.'));
+    wrapped.code=String(error&&error.code||'submission_not_dispatched');
     throw wrapped;
   }
 }
@@ -2192,6 +2353,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       case 'transaction_review': return browserTransactionReviewV2240(message.payload || {});
       case 'transaction_execute': return browserTransactionExecuteV2240(message.payload || {});
       case 'transaction_action': return browserTransactionApiV2240(message.action, message.payload || {});
+      case 'transaction_outcome_recheck': return browserTransactionOutcomeObserveV2250(message.payload || {});
+      case 'transaction_outcome_resolve': return browserTransactionOutcomeResolveV2250(message.payload || {});
+      case 'transaction_outcome_action': return browserTransactionOutcomeApiV2250(message.action, message.payload || {});
       case 'notification_poll': return pollProactiveNotifications();
       case 'quick_action_consume': return consumeQuickActionV2150();
       case 'quick_action_run': {
