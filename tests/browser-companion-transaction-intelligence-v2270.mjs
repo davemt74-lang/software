@@ -79,6 +79,9 @@ must(intelligence.includes('active attention was removed while history was retai
 must(intelligence.includes('vp3_browser_intelligence_resolve_absent_v2270'),'stale exception cleanup missing');
 must(intelligence.includes('exception_signal_cleared'),'signal-cleared receipt missing');
 must(intelligence.includes('cross_signal_cleared'),'cleared cross-transaction advisory receipt missing');
+must(intelligence.includes('exception_reopened'),'recurring auto-resolved exception reopen receipt missing');
+must(intelligence.includes("SET status='open',priority_score=?"),'auto-resolved exception reopen path missing');
+must(intelligence.includes("SET status='proposed',resolved_at=NULL"),'reopened recovery proposal path missing');
 must(intelligence.includes('vp3_browser_intelligence_case_fingerprint_v2270'),'cross-transaction advisory fingerprint helper missing');
 must(intelligence.includes("SET status='dismissed',resolved_at=UTC_TIMESTAMP()")||intelligence.includes("status='dismissed'"),'stale proposal cleanup missing');
 
