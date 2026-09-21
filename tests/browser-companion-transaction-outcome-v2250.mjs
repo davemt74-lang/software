@@ -64,9 +64,10 @@ must(capture.includes("observedDomainHash=await sha(host)"),'changed domain must
 must(outcome.includes('Cross-domain destination pages are not inspected by v22.50.'),'server cross-domain inspection boundary missing');
 
 // Confirmed means explicit confirmation plus an independent signal, not a single thank-you phrase.
-must(background.includes("const auxiliary=unique.filter(code=>['confirmation_url_hint','reference_present','receipt_keyword','status_region','form_absent']"),'independent client evidence set missing');
+must(background.includes("const auxiliary=unique.filter(code=>['confirmation_url_hint','reference_present','receipt_keyword','form_absent']"),'independent client evidence set missing');
+must(background.includes("document.querySelectorAll('form').length===0"),'form disappearance evidence missing');
 must(background.includes("explicit&&auxiliary.length>=1"),'client confirmation threshold missing');
-must(outcome.includes("$auxiliary=array_intersect($evidence,['confirmation_url_hint','reference_present','receipt_keyword','form_absent','status_region'])"),'server independent evidence set missing');
+must(outcome.includes("$auxiliary=array_intersect($evidence,['confirmation_url_hint','reference_present','receipt_keyword','form_absent'])"),'server independent evidence set missing');
 must(outcome.includes('explicit confirmation message plus an independent local signal'),'server confirmation threshold missing');
 for(const state of ['confirmed','pending','rejected','ambiguous','external_redirect']){
   must(outcome.includes("'"+state+"'"),'missing outcome state '+state);
