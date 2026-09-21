@@ -505,16 +505,16 @@ function vp3_browser_intelligence_resolve_closed_v2270(PDO $pdo,array $continuit
     }
 }
 
-function vp3_browser_intelligence_resolve_absent_v2270(PDO $pdo,array $continuity,array $activeTypes): void
+function vp3_browser_intelligence_resolve_absent_v2270(PDO $pdo,array $continuity,array $activeFingerprints): void
 {
     $uid=(int)$continuity['owner_user_id'];$cid=(int)$continuity['id'];
-    $active=array_fill_keys(array_values(array_unique(array_map('strval',$activeTypes))),true);
+    $active=array_fill_keys(array_values(array_unique(array_map('strval',$activeFingerprints))),true);
     $stmt=$pdo->prepare("SELECT * FROM browser_transaction_intelligence_cases_v2270
       WHERE owner_user_id=? AND continuity_id=? AND status IN ('open','acknowledged')
         AND exception_type NOT IN ('potential_schedule_conflict','potential_duplicate_transaction')");
     $stmt->execute([$uid,$cid]);
     foreach($stmt->fetchAll(PDO::FETCH_ASSOC)?:[] as $case){
-        if(isset($active[(string)$case['exception_type']]))continue;
+        if(isset($active[(string)$case['exception_fingerprint']]))continue;
         $pdo->prepare("UPDATE browser_transaction_intelligence_cases_v2270
           SET status='resolved',resolved_at=UTC_TIMESTAMP(),updated_at=UTC_TIMESTAMP()
           WHERE id=? AND owner_user_id=?")->execute([(int)$case['id'],$uid]);
@@ -568,8 +568,11 @@ function vp3_browser_intelligence_evaluate_continuity_v2270(
     if($family==='communication'&&$state==='sent'&&$age>5*86400)$signals[]=['response_overdue',['sent_without_response_5d']];
     if($family==='account'&&$state==='pending'&&$age>3*86400)$signals[]=['account_pending',['pending_72h']];
 
-    $activeTypes=array_values(array_unique(array_map(static fn(array $signal)=>(string)$signal[0],$signals)));
-    vp3_browser_intelligence_resolve_absent_v2270($pdo,$continuity,$activeTypes);
+    $activeFingerprints=[];
+    foreach($signals as [$type,$reasons]){
+        $activeFingerprints[]=vp3_browser_intelligence_case_fingerprint_v2270($type,$eventId,'',$reasons);
+    }
+    vp3_browser_intelligence_resolve_absent_v2270($pdo,$continuity,$activeFingerprints);
 
     $opened=[];
     foreach($signals as [$type,$reasons]){
