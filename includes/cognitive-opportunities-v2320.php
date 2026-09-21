@@ -231,19 +231,17 @@ function vp3_cognitive_opportunity_store_v2320(
 }
 
 function vp3_cognitive_opportunity_resolve_stale_v2320(
-    PDO $pdo,array $user,string $namespace,array $activeKeys
+    PDO $pdo,array $user,string $namespace,array $activeKeys=[]
 ): void {
     $uid=(int)($user['id']??0);if($uid<1)return;
-    $params=[$uid,$namespace,VP3_COGNITIVE_OPPORTUNITIES_SOURCE_V2320];
-    $sql="UPDATE cognitive_observations_v500
-          SET state='resolved',updated_at=UTC_TIMESTAMP()
-          WHERE owner_user_id=? AND agent_namespace=? AND source=? AND state='active'";
-    if($activeKeys){
-        $placeholders=implode(',',array_fill(0,count($activeKeys),'?'));
-        $sql.=" AND observation_key NOT IN ({$placeholders})";
-        foreach($activeKeys as $key)$params[]=$key;
-    }
-    $pdo->prepare($sql)->execute($params);
+    // v23.20 scans are deliberately bounded. Absence from one scan is not
+    // evidence that an opportunity disappeared, so cleanup may only resolve
+    // observations whose own validity window has objectively expired.
+    $pdo->prepare("UPDATE cognitive_observations_v500
+      SET state='resolved',updated_at=UTC_TIMESTAMP()
+      WHERE owner_user_id=? AND agent_namespace=? AND source=? AND state='active'
+        AND valid_until IS NOT NULL AND valid_until<UTC_TIMESTAMP()")
+      ->execute([$uid,$namespace,VP3_COGNITIVE_OPPORTUNITIES_SOURCE_V2320]);
 }
 
 function vp3_cognitive_opportunity_sync_v2320(
@@ -251,14 +249,14 @@ function vp3_cognitive_opportunity_sync_v2320(
 ): array {
     if(!vp3_cognitive_schema_ready_v500($pdo))return ['detected'=>0,'keys'=>[]];
     $namespace=vp3_cognitive_validate_namespace_v500($pdo,$user,$namespace);
-    $active=[];$detected=0;$anchors=0;
+    $active=[];$detected=0;$anchors=0;$truncated=false;
 
     foreach($candidates as $candidate){
         if(!is_array($candidate))continue;
         $request=is_array($candidate['card_request']??null)?$candidate['card_request']:[];
         $cardType=vp3_cognitive_id_v500($request['card_type']??'',80);
         if(!in_array($cardType,['meeting','meeting_brief','goal','workflow'],true))continue;
-        if(++$anchors>VP3_COGNITIVE_OPPORTUNITIES_MAX_ANCHORS_V2320)break;
+        if(++$anchors>VP3_COGNITIVE_OPPORTUNITIES_MAX_ANCHORS_V2320){$truncated=true;break;}
         $anchor=vp3_cognitive_opportunity_ref_v2320($candidate);
         if(!$anchor)continue;
         try{
@@ -273,10 +271,10 @@ function vp3_cognitive_opportunity_sync_v2320(
                 $key=vp3_cognitive_opportunity_store_v2320($pdo,$user,$namespace,$anchor,$target,$edge,$pattern);
                 $active[$key]=true;$detected++;
             }catch(Throwable $e){}
-            if($detected>=VP3_COGNITIVE_OPPORTUNITIES_MAX_DETECTIONS_V2320)break 2;
+            if($detected>=VP3_COGNITIVE_OPPORTUNITIES_MAX_DETECTIONS_V2320){$truncated=true;break 2;}
         }
     }
 
     vp3_cognitive_opportunity_resolve_stale_v2320($pdo,$user,$namespace,array_keys($active));
-    return ['detected'=>$detected,'keys'=>array_keys($active)];
+    return ['detected'=>$detected,'keys'=>array_keys($active),'truncated'=>$truncated,'cleanup'=>'expired_only'];
 }
