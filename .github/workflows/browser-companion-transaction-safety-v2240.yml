@@ -54,6 +54,20 @@ jobs:
           node tests/browser-companion-multisite-v2220.mjs
           node tests/browser-companion-research-agent-v2230.mjs
 
+      - name: Retained workflow/runtime contracts
+        run: |
+          node tests/agent-job-engine-v1900-contract.mjs
+          node tests/agent-worker-runtime-v1910-contract.mjs
+          node tests/vp3-cognitive-runtime-spec-v500.mjs
+          node tests/cognitive-runtime-core-v500.mjs
+          node tests/cognitive-presentation-v510.mjs
+          node tests/cognitive-cards-v520.mjs
+          node tests/cognitive-feed-v530.mjs
+          node tests/cognitive-learning-v540.mjs
+          node tests/cognitive-planning-v550.mjs
+          node tests/cognitive-orchestration-v560.mjs
+          node tests/cognitive-memory-v570.mjs
+
       - name: JavaScript syntax
         run: |
           node --check browser-companion/background.js
@@ -115,8 +129,10 @@ jobs:
           values remain local and masked in the Chrome review.
 
           High-impact money transfers and destructive account actions are manual-only.
-          Completed receipts mean the reviewed external submission was dispatched
-          once; they do not assert downstream merchant, booking or application success.
+          Verified receipts mean the reviewed external submission was dispatched and
+          its immediate browser result was verified. Uncertain receipts mean dispatch
+          may have occurred and must be reviewed before retrying. Neither state asserts
+          downstream merchant, booking, application or account success.
           EOF
 
           (
