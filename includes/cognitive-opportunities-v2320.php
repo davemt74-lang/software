@@ -160,7 +160,7 @@ function vp3_cognitive_opportunity_existing_v2320(
     PDO $pdo,int $uid,string $namespace,string $observationKey
 ): ?array {
     $stmt=$pdo->prepare(
-        "SELECT id,state,valid_until,reason FROM cognitive_observations_v500
+        "SELECT id,state,valid_until,title,reason,confidence,novelty,urgency,impact,goal_relevance FROM cognitive_observations_v500
          WHERE owner_user_id=? AND agent_namespace=? AND observation_key=? AND source=? LIMIT 1"
     );
     $stmt->execute([$uid,$namespace,$observationKey,VP3_COGNITIVE_OPPORTUNITIES_SOURCE_V2320]);
@@ -179,22 +179,34 @@ function vp3_cognitive_opportunity_store_v2320(
         (string)($edge['relation']??'relates_to'),
     ];
     $observationKey='opp2320:'.substr(hash('sha256',vp3_cognitive_json_v500($identity)),0,48);
-    $existing=vp3_cognitive_opportunity_existing_v2320($pdo,$uid,$namespace,$observationKey);
-    $refresh=false;
-    if(is_array($existing)){
-        $validTs=strtotime((string)($existing['valid_until']??''))?:0;
-        $refresh=(string)($existing['state']??'')!=='active'
-            ||$validTs<time()+21600
-            ||(string)($existing['reason']??'')!==(string)$pattern['reason'];
-    }else $refresh=true;
-
-    if(!$refresh)return $observationKey;
-
     $truth=(string)($edge['confirmation_state']??'')==='user_confirmed'?'user_confirmed':'database_fact';
     $confidence=max(
         VP3_COGNITIVE_OPPORTUNITIES_MIN_RELATION_CONFIDENCE_V2320,
         min(.99,(float)($edge['confidence']??.85))
     );
+    $validUntil=gmdate('Y-m-d H:i:s',time()+((int)$pattern['ttl_hours']*3600));
+    $existing=vp3_cognitive_opportunity_existing_v2320($pdo,$uid,$namespace,$observationKey);
+    if(is_array($existing)){
+        $sameSemantic=(string)($existing['state']??'')==='active'
+            &&(string)($existing['title']??'')===(string)$pattern['title']
+            &&(string)($existing['reason']??'')===(string)$pattern['reason']
+            &&abs((float)($existing['confidence']??0)-$confidence)<0.00001
+            &&abs((float)($existing['novelty']??0)-0.68)<0.00001
+            &&abs((float)($existing['urgency']??0)-(float)$pattern['urgency'])<0.00001
+            &&abs((float)($existing['impact']??0)-(float)$pattern['impact'])<0.00001
+            &&abs((float)($existing['goal_relevance']??0)-(float)$pattern['goal_relevance'])<0.00001;
+        if($sameSemantic){
+            $validTs=strtotime((string)($existing['valid_until']??''))?:0;
+            if($validTs<time()+21600){
+                // Extend validity without touching updated_at. Feed fingerprints
+                // and Hide/suppression therefore remain stable until the
+                // opportunity's actual evidence/meaning changes.
+                $pdo->prepare("UPDATE cognitive_observations_v500 SET valid_until=? WHERE id=? AND owner_user_id=? AND source=?")
+                    ->execute([$validUntil,(int)$existing['id'],$uid,VP3_COGNITIVE_OPPORTUNITIES_SOURCE_V2320]);
+            }
+            return $observationKey;
+        }
+    }
     vp3_cognitive_observation_store_v500($pdo,$user,$namespace,[
         'observation_id'=>$observationKey,
         'category'=>'opportunity',
@@ -219,7 +231,7 @@ function vp3_cognitive_opportunity_store_v2320(
         'urgency'=>(float)$pattern['urgency'],
         'impact'=>(float)$pattern['impact'],
         'goal_relevance'=>(float)$pattern['goal_relevance'],
-        'valid_until'=>gmdate(DATE_ATOM,time()+((int)$pattern['ttl_hours']*3600)),
+        'valid_until'=>gmdate(DATE_ATOM,strtotime($validUntil)),
         'proposed_action_ids'=>[],
         'proposed_cards'=>[],
         'presentation_recommendation'=>'brief',
