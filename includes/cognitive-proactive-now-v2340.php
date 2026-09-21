@@ -116,6 +116,7 @@ function vp3_cognitive_proactive_now_compose_v2340(
         $key=mb_strimwidth(trim((string)($item['key']??'')),0,190,'');
         if($key==='')continue;
         if(in_array((string)($item['source']??''),['cognitive_plan','cognitive_orchestration'],true))$plans++;
+        if(count($focus)>=$focusLimit)continue;
         $focus[]=[
             'key'=>$key,
             'lane'=>$lane,
@@ -123,7 +124,6 @@ function vp3_cognitive_proactive_now_compose_v2340(
             'title'=>vp3_cognitive_text_v500($item['title']??'VP3 item',190),
             'status'=>vp3_cognitive_text_v500($item['status']??'',80),
         ];
-        if(count($focus)>=$focusLimit)break;
     }
 
     $voiceEnabled=false;
