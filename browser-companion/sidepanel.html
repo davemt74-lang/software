@@ -193,6 +193,8 @@
             <label><input type="checkbox" data-delegation-action="multisite_handoff" checked> Move between explicitly approved domains</label>
             <span>Browser Research Agent · v22.30</span>
             <label><input type="checkbox" data-delegation-action="browser_research" checked> Research approved sources and compare evidence</label>
+            <span>Transaction & Submission Safety · v22.40</span>
+            <label><input type="checkbox" data-delegation-action="transaction_submit"> Authorize exact reviewed form submissions · medium risk</label>
           </div>
           <div class="delegation-form-actions">
             <button id="delegationPreviewBtn" type="button">Preview plan</button>
@@ -414,6 +416,12 @@
                 </div>
                 <div id="runtimeWebCheckpointNotice" class="runtime-web-checkpoint" hidden>
                   This interaction can create an external commitment or change data. Confirm it explicitly before Chrome receives an execution permit.
+                </div>
+                <div id="runtimeTransactionReview" class="runtime-transaction-review" hidden>
+                  <div class="runtime-subhead"><strong>Final submission review · v22.40</strong><span id="runtimeTransactionKind">External write</span></div>
+                  <div id="runtimeTransactionWarning" class="runtime-web-checkpoint">Review every value below. Approval applies only to this exact form state and can be used once.</div>
+                  <div id="runtimeTransactionFields" class="runtime-transaction-fields"></div>
+                  <p class="hint">Sensitive values are masked here and are never sent to VP3. Their local values still affect the approval hash, so any change invalidates approval.</p>
                 </div>
                 <div class="delegation-controls">
                   <button id="runtimeWebRunBtn" class="primary" type="button">Run interaction</button>
