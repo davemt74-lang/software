@@ -258,13 +258,6 @@ function vp3_browser_outcome_observe_v2250(
         throw new RuntimeException('Outcome verification is available only after a dispatched submission.');
     }
 
-    $countStmt=$pdo->prepare("SELECT COUNT(*) FROM browser_transaction_outcomes_v2250
-      WHERE runtime_session_id=? AND owner_user_id=? AND submission_intent_public_id=?");
-    $countStmt->execute([(int)$runtime['id'],(int)$runtime['owner_user_id'],$intentId]);
-    if((int)$countStmt->fetchColumn()>=VP3_BROWSER_OUTCOME_MAX_OBSERVATIONS_V2250){
-        throw new RuntimeException('This transaction reached its bounded destination recheck limit.');
-    }
-
     $domainMatches=!empty($input['domain_matches']);
     $domain=(string)$intent['domain'];
     $observedDomainHash=vp3_browser_outcome_sha_v2250($input['observed_domain_hash']??'');
@@ -306,6 +299,13 @@ function vp3_browser_outcome_observe_v2250(
         ];
     }
 
+    $countStmt=$pdo->prepare("SELECT COUNT(*) FROM browser_transaction_outcomes_v2250
+      WHERE runtime_session_id=? AND owner_user_id=? AND submission_intent_public_id=?");
+    $countStmt->execute([(int)$runtime['id'],(int)$runtime['owner_user_id'],$intentId]);
+    if((int)$countStmt->fetchColumn()>=VP3_BROWSER_OUTCOME_MAX_OBSERVATIONS_V2250){
+        throw new RuntimeException('This transaction reached its bounded destination recheck limit.');
+    }
+
     $public=vp3_extension_uuid_v2000();
     $stmt=$pdo->prepare("INSERT INTO browser_transaction_outcomes_v2250
       (public_id,runtime_session_id,owner_user_id,submission_intent_public_id,domain,observed_domain_hash,page_fingerprint,content_hash,observation_fingerprint,outcome_state,evidence_strength,evidence_codes_json,reference_kind,reference_hash)
@@ -330,10 +330,12 @@ function vp3_browser_outcome_observe_v2250(
         $pdo->prepare("UPDATE browser_submission_intents_v2240 SET result_code=?,updated_at=UTC_TIMESTAMP()
           WHERE id=? AND owner_user_id=? AND status='uncertain'")
           ->execute([$code,(int)$intent['id'],(int)$runtime['owner_user_id']]);
-        $pdo->prepare("UPDATE browser_submission_dispatch_guards_v2240
-          SET expires_at='9999-12-31 23:59:59'
-          WHERE owner_user_id=? AND intent_public_id=?")
-          ->execute([(int)$runtime['owner_user_id'],$intentId]);
+        $guardKey=hash('sha256',(int)$runtime['owner_user_id'].'|'.(string)$intent['duplicate_key']);
+        $pdo->prepare("INSERT INTO browser_submission_dispatch_guards_v2240
+          (guard_key,owner_user_id,intent_public_id,expires_at)
+          VALUES (?,?,?,'9999-12-31 23:59:59')
+          ON DUPLICATE KEY UPDATE intent_public_id=VALUES(intent_public_id),expires_at=VALUES(expires_at)")
+          ->execute([$guardKey,(int)$runtime['owner_user_id'],$intentId]);
         $intent=vp3_browser_outcome_intent_v2250($pdo,$runtime,$intentId);
     }
 
