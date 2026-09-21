@@ -173,22 +173,6 @@ function vp3_browser_delegation_plan_v2190(
         ];
     }
 
-    if(in_array('transaction_submit',$allowedActions,true)&&count($steps)<$maxSteps){
-        $steps[]=[
-            'step_key'=>'step_'.(count($steps)+1).'_transaction_submit',
-            'action_key'=>'transaction_submit',
-            'label'=>'Authorize reviewed external submission',
-            'step_kind'=>'checkpoint',
-            'target_type'=>'browser_source',
-            'target_id'=>(string)$source['id'],
-            'target_scope'=>'personal',
-            'risk_level'=>'medium',
-            'requires_checkpoint'=>true,
-            'verification_mode'=>'user_confirmation',
-            'mode'=>'checkpoint',
-        ];
-    }
-
     if(in_array('browser_research',$allowedActions,true)&&count($steps)<$maxSteps){
         $steps[]=[
             'step_key'=>'step_'.(count($steps)+1).'_browser_research',
