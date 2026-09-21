@@ -446,6 +446,8 @@ function vp3_browser_intelligence_open_case_v2270(
               WHERE id=? AND owner_user_id=?")
               ->execute([$score,$band,json_encode($reasons,JSON_UNESCAPED_SLASHES),(int)$existing['id'],$uid]);
             $existing['priority_score']=$score;$existing['priority_band']=$band;$existing['reason_codes_json']=json_encode($reasons,JSON_UNESCAPED_SLASHES);
+        }elseif($existingStatus==='dismissed'){
+            return null;
         }elseif($existingStatus==='resolved'){
             $pdo->prepare("UPDATE browser_transaction_intelligence_cases_v2270
               SET status='open',priority_score=?,priority_band=?,reason_codes_json=?,opened_at=UTC_TIMESTAMP(),
