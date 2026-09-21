@@ -38,6 +38,7 @@ must(api.includes("'cross_transaction_signals_are_advisory'=>true"),'advisory cr
 
 must(background.includes("browserTransactionIntelligenceApiV2270('observe_facts'"),'matched v22.60 observation must feed v22.70');
 must(background.includes('schedule_candidates:Array.isArray(local.schedule_candidates)'), 'normalized schedule facts handoff missing');
+must(background.includes('transactionScheduleContext')&&background.includes('booking|reservation|appointment'), 'transaction schedule context filter missing');
 must(background.includes('exposure_candidates:Array.isArray(local.exposure_candidates)'), 'normalized financial facts handoff missing');
 must(background.includes("event_id:String(response.event&&response.event.event_id||'')"),'v22.70 facts must bind to the exact matched v22.60 event');
 must(intelligence.includes("hash_equals((string)$event['public_id'],$eventId)")&&intelligence.includes("empty($event['reference_match'])"),'v22.70 server event authority check missing');
