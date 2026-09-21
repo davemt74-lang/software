@@ -31,6 +31,7 @@ function vp3_public_mega_nav(string $active = ''): void
               <span class="mega-column-label">Your assistant</span>
               <a class="mega-link" href="<?= e(url('/ai-assistant.php')) ?>"><strong>AI Assistant</strong><small>Your main agent for conversations, knowledge, planning, workflows, and follow-through.</small></a>
               <a class="mega-link" href="<?= e(url('/profile-agent-overview.php')) ?>"><strong>Profile Agent</strong><small>A public-facing agent that can represent you within the permissions you set.</small></a>
+              <a class="mega-link" href="<?= e(url('/chrome-extension.php')) ?>"><strong>Chrome Extension</strong><small>Bring VP3 Browser Companion into Chrome for page-aware Agent help, research, notifications, and approved browser actions.</small></a>
             </div>
             <div class="mega-column">
               <span class="mega-column-label">Your presence</span>
@@ -59,6 +60,7 @@ function vp3_public_mega_nav(string $active = ''): void
             <div class="mega-column">
               <span class="mega-column-label">Coordinate</span>
               <a class="mega-link" href="<?= e(url('/teams.php')) ?>"><strong>Teams</strong><small>Shared workspaces, conversations, permissions, context, and collaborative Agent workflows.</small></a>
+              <a class="mega-link" href="<?= e(url('/video-meetings.php')) ?>"><strong>Meetings</strong><small>Video meetings with transcripts, Meeting Intelligence, action items, follow-through, and connected Agent context.</small></a>
               <a class="mega-link" href="<?= e(url('/calendar-service.php')) ?>"><strong>Calendar</strong><small>Availability, calendar intelligence, sync, scheduling context, and Agent-managed coordination.</small></a>
             </div>
             <div class="mega-column">
@@ -159,12 +161,14 @@ function vp3_public_mobile_nav(): void
           <a href="<?= e(url('/ai-assistant.php')) ?>"><strong>AI Assistant</strong><small>Your main VP3 agent and workspace.</small></a>
           <a href="<?= e(url('/personal-url.php')) ?>"><strong>Personal URL</strong><small>Your shareable VP3 destination.</small></a>
           <a href="<?= e(url('/profile-agent-overview.php')) ?>"><strong>Profile Agent</strong><small>An agent on your public profile.</small></a>
+          <a href="<?= e(url('/chrome-extension.php')) ?>"><strong>Chrome Extension</strong><small>VP3 Browser Companion across the web.</small></a>
           <a href="<?= e(url('/homeserver.php')) ?>"><strong>HomeServer</strong><small>Private local knowledge and capabilities.</small></a>
         </div></details>
         <details class="mobile-nav-group"><summary>Services</summary><div class="mobile-nav-links">
           <a href="<?= e(url('/transcriptions.php')) ?>"><strong>Transcription</strong><small>Capture and organize conversations.</small></a>
           <a href="<?= e(url('/ai-summary.php')) ?>"><strong>AI Summary</strong><small>Decisions, actions, and reusable knowledge.</small></a>
           <a href="<?= e(url('/teams.php')) ?>"><strong>Teams</strong><small>Shared context and collaboration.</small></a>
+          <a href="<?= e(url('/video-meetings.php')) ?>"><strong>Meetings</strong><small>Video meetings, intelligence, and follow-through.</small></a>
           <a href="<?= e(url('/calendar-service.php')) ?>"><strong>Calendar</strong><small>Availability and calendar intelligence.</small></a>
           <a href="<?= e(url('/booking.php')) ?>"><strong>Booking</strong><small>Free and paid appointment workflows.</small></a>
           <a href="<?= e(url('/ecommerce.php')) ?>"><strong>Ecommerce</strong><small>Products, orders, and fulfillment.</small></a>

@@ -1,0 +1,41 @@
+name: Public Mega Menu Meetings + Chrome Extension
+
+on:
+  pull_request:
+    paths:
+      - 'index.php'
+      - 'includes/vp3-public.php'
+      - 'video-meetings.php'
+      - 'chrome-extension.php'
+      - 'tests/public-mega-menu-meetings-browser.mjs'
+      - '.github/workflows/public-mega-menu-meetings-browser.yml'
+  push:
+    branches:
+      - 'public-nav-meetings-chrome-extension'
+
+jobs:
+  contract:
+    name: Public navigation contract · PHP ${{ matrix.php }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.1','8.3']
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: PHP syntax
+        run: |
+          php -l index.php
+          php -l includes/vp3-public.php
+          php -l video-meetings.php
+          php -l chrome-extension.php
+      - name: Public mega menu contract
+        run: node tests/public-mega-menu-meetings-browser.mjs
