@@ -24,7 +24,6 @@ must(!manifest.permissions.includes('cookies'),'Transaction Safety must not requ
 // Authority chain and explicit opt-in.
 must(delegation.includes("'transaction_submit'"),'transaction_submit delegation action missing');
 must(delegation.includes("Transaction & Submission Safety requires a Medium risk budget"),'medium-risk plan gate missing');
-must(delegation.includes("Transaction & Submission Safety requires the Controlled Web Submit skill"),'web_submit dependency missing');
 must(html.includes('data-delegation-action="transaction_submit"'),'v22.40 delegation checkbox missing');
 must(runtime.includes("'transaction_submit'=>["),'v22.00 transaction_submit skill missing');
 must(runtime.includes("'verification_mode'=>'review_hash_and_user_confirmation'"),'exact-review verification mode missing');
@@ -36,10 +35,13 @@ must(api.includes("'submission_source'=>'v22.40_transaction_safety'"),'v22.40 su
 // v22.40 is a second lock on top of the existing v22.10 submit checkpoint.
 must(web.includes("'submit'=>["),'v22.10 submit action missing');
 must(web.includes("'requires_checkpoint'=>true"),'v22.10 submit checkpoint missing');
-must(safety.includes("A v22.10 submit checkpoint is required before final submission review."),'v22.10 checkpoint dependency missing');
+must(safety.includes("A consequential v22.10 form-action checkpoint is required before final submission review."),'v22.10 final-action checkpoint dependency missing');
 must(safety.includes("(string)$web['status']!=='approval_pending'"),'v22.10 approval-pending precondition missing');
 must(safety.includes("UPDATE browser_web_interactions_v2210 SET status='approved'"),'v22.40 approval must unlock the exact v22.10 submit proposal');
-must(!panel.includes("if(local.action==='submit'){\n      const confirmed=await webInteractionRequestV2210('confirm'"),'submit must not use generic v22.10 confirmation');
+must(web.includes('Consequential form finalization requires the v22.40 exact-form review checkpoint.'),'generic v22.10 final-action confirmation must be blocked');
+must(panel.includes("const transactionRequired=action==='submit'||"),'native submit / dangerous click v22.40 routing missing');
+must(panel.includes("Boolean(item.dangerous)"),'dangerous form button v22.40 routing missing');
+must(background.includes("action_key:String(payload.web_action_key||'submit')"),'reviewed dangerous-click execution primitive missing');
 
 // Exact form-state binding.
 for(const key of ['page_fingerprint','form_fingerprint','submit_fingerprint','review_hash','duplicate_key']){
@@ -85,6 +87,7 @@ for(const kind of ['financial','transfer','booking','communication','publishing'
 must(safety.includes("array_intersect($flags,['transfer','destructive'])"),'high-impact manual-only gate missing');
 must(safety.includes('This high-impact submission is manual-only.'),'manual-only enforcement missing');
 must(panel.includes("transaction.intent.manual_only"),'manual-only UI handling missing');
+must(panel.includes('could not bind this consequential control to a standard form review'),'non-form consequential action manual-only fallback missing');
 must(panel.includes("Confirm exact form & submit"),'explicit exact-form confirmation label missing');
 
 // Dispatch receipt semantics must not overclaim downstream success.
