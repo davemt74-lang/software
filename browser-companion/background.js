@@ -867,7 +867,7 @@ async function browserTransactionExecuteV2240(payload={}){
       return {
         intent_id:intentId,outcome:null,dispatched:true,verified:false,uncertain:!outcomeConfirmed,
         outcome_confirmed:outcomeConfirmed,outcome_verification:outcomeVerification,
-        execution_error:String(error&&error.message||'Submission dispatch could not be immediately verified.')
+        execution_error:'Submission dispatch may have started but could not be verified. '+String(error&&error.message||'Review the destination before any retry.')
       };
     }
     const wrapped=new Error(String(error&&error.message||'Submission was not dispatched.'));
