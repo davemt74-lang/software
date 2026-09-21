@@ -285,7 +285,7 @@ function workflow_v1400_time(string $value): string{$ts=strtotime($value);return
           <?php foreach((array)($browserContinuity['continuities']??[]) as $tracker): ?>
           <article>
             <strong><?= e(workflow_v1400_status_label((string)($tracker['lifecycle_family']??'generic'))) ?> · <?= e(workflow_v1400_status_label((string)($tracker['lifecycle_state']??'active'))) ?></strong>
-            <p><?= e((string)($tracker['domain']??'')) ?> · <?= e(workflow_v1400_status_label((string)($tracker['tracking_status']??'active'))) ?><?= !empty($tracker['reference_present'])?' · hashed '.e(workflow_v1400_status_label((string)($tracker['reference_kind']??'reference'))).' reference':' · manual matching only' ?></p>
+            <p><?= e((string)($tracker['domain']??'')) ?> · <?= e(workflow_v1400_status_label((string)($tracker['tracking_status']??'active'))) ?><?= !empty($tracker['reference_present'])?' · hashed '.e(workflow_v1400_status_label((string)($tracker['reference_kind']??'reference'))).' reference':'' ?></p>
             <small><?= !empty($tracker['last_change_at'])?'Changed '.e(workflow_v1400_time((string)$tracker['last_change_at'])):'Started '.e(workflow_v1400_time((string)($tracker['created_at']??''))) ?></small>
             <div class="workflow-actions-bar" style="margin-top:8px">
               <?php if((string)($tracker['tracking_status']??'active')==='active'): ?>
