@@ -7,6 +7,8 @@ on:
       - 'includes/vp3-public.php'
       - 'video-meetings.php'
       - 'chrome-extension.php'
+      - 'chrome-extension-download.php'
+      - 'browser-companion/manifest.json'
       - 'tests/public-mega-menu-meetings-browser.mjs'
       - '.github/workflows/public-mega-menu-meetings-browser.yml'
   push:
@@ -37,5 +39,6 @@ jobs:
           php -l includes/vp3-public.php
           php -l video-meetings.php
           php -l chrome-extension.php
+          php -l chrome-extension-download.php
       - name: Public mega menu contract
         run: node tests/public-mega-menu-meetings-browser.mjs
