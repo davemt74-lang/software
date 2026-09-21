@@ -1,6 +1,6 @@
 const VP3_DEFAULT_BASE = 'https://vp3.me';
 const VP3_CONTRACT_VERSION = '1';
-const VP3_EXTENSION_VERSION = '22.2.0';
+const VP3_EXTENSION_VERSION = '22.3.0';
 const VP3_MEDIA_CLIP_MAX_SECONDS = 90;
 
 const storage = {
@@ -475,6 +475,59 @@ function browserMultiSiteGuardTabV2220(tabId,changeInfo,tab){
     browserMultiSiteRegisterTabV2220(tabId,domain,Boolean(row.opened_by_runtime),'popup').catch(()=>{});
   }
 }
+async function browserResearchApiV2230(action,payload={}){
+  return authorizedFetch('/api/extension-research-agent-v2230.php',{
+    method:'POST',json:{action:String(action||'list'),...payload}
+  },'agent.message');
+}
+async function browserResearchCaptureV2230(){
+  const [tab]=await chrome.tabs.query({active:true,currentWindow:true});
+  if(!tab?.id||!/^https?:/i.test(String(tab.url||'')))throw new Error('Open an approved web page before analyzing research evidence.');
+  const injected=await chrome.scripting.executeScript({
+    target:{tabId:tab.id},
+    func:async()=>{
+      const sha=async value=>{
+        const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(String(value||'')));
+        return [...new Uint8Array(digest)].map(byte=>byte.toString(16).padStart(2,'0')).join('');
+      };
+      const clip=(value,max)=>String(value||'').replace(/\s+/g,' ').trim().slice(0,max);
+      const selected=clip(String(getSelection?.()||''),4000);
+      const root=document.querySelector('main,article,[role="main"]')||document.body;
+      const clone=root?root.cloneNode(true):null;
+      if(clone)clone.querySelectorAll('script,style,noscript,svg,canvas,nav,footer,form,input,textarea,select,button').forEach(node=>node.remove());
+      let text=clip(clone?clone.innerText||clone.textContent:'',12000);
+      if(selected&&text&&!text.includes(selected))text=clip(selected+'\n\n'+text,12000);
+      else if(selected&&!text)text=selected;
+      const canonical=document.querySelector('link[rel="canonical"]')?.href||'';
+      const meta=name=>document.querySelector('meta[name="'+name+'"]')?.content||document.querySelector('meta[property="'+name+'"]')?.content||'';
+      const url=String(location.href||'');
+      return {
+        url,
+        canonical_url:String(canonical||''),
+        title:clip(document.title,512),
+        page_text:text,
+        page_fingerprint:await sha(url),
+        content_hash:await sha(text),
+        metadata:{
+          description:clip(meta('description')||meta('og:description'),1000),
+          author:clip(meta('author'),240),
+          site_name:clip(meta('og:site_name'),240),
+          language:clip(document.documentElement.lang,32)
+        }
+      };
+    }
+  });
+  const page=injected?.[0]?.result;
+  if(!page?.url||!/^[a-f0-9]{64}$/.test(String(page.page_fingerprint||'')))throw new Error('The active page could not be captured for Browser Research.');
+  return page;
+}
+async function browserResearchAnalyzeCurrentV2230(payload={}){
+  const page=await browserResearchCaptureV2230();
+  return browserResearchApiV2230('analyze_page',{
+    mission_id:String(payload.mission_id||''),agent_id:Number(payload.agent_id||0),page
+  });
+}
+
 async function browserWebInteractionApiV2210(action, payload = {}) {
   return authorizedFetch('/api/extension-web-interaction-v2210.php', {
     method:'POST',
@@ -1946,6 +1999,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       case 'multisite_policy': return browserMultiSiteSetPolicyV2220(message.payload || {});
       case 'multisite_handoff': return browserMultiSiteHandoffV2220(message.payload || {});
       case 'multisite_fact_add': return browserMultiSiteFactAddV2220(message.payload || {});
+      case 'research_action': return browserResearchApiV2230(message.action, message.payload || {});
+      case 'research_analyze_current': return browserResearchAnalyzeCurrentV2230(message.payload || {});
       case 'notification_poll': return pollProactiveNotifications();
       case 'quick_action_consume': return consumeQuickActionV2150();
       case 'quick_action_run': {

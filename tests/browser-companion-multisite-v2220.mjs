@@ -17,8 +17,9 @@ const delegation=read('includes/browser-delegation-v2190.php');
 const workflows=read('agent-workflows.php');
 const upgrade=read('upgrade.php');
 
-must(manifest.version==='22.2.0','v22.20 manifest version missing');
-must(background.includes("const VP3_EXTENSION_VERSION = '22.2.0';"),'v22.20 request version missing');
+const multiVersion=String(manifest.version||'').split('.').map(Number);
+must(multiVersion.length===3&&(multiVersion[0]>22||(multiVersion[0]===22&&multiVersion[1]>=2)),'v22.20+ manifest version missing');
+must(background.includes(`const VP3_EXTENSION_VERSION = '${manifest.version}';`),'v22.20+ request version must match manifest');
 must(Array.isArray(manifest.permissions)&&manifest.permissions.includes('downloads'),'download observation permission missing');
 must(!manifest.permissions.includes('cookies'),'v22.20 must not request cookies permission');
 

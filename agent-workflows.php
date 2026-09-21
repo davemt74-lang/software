@@ -7,6 +7,7 @@ require_once __DIR__ . '/includes/agent-worker-runtime-v1910.php';
 require_once __DIR__ . '/includes/browser-agent-runtime-v2200.php';
 require_once __DIR__ . '/includes/browser-web-interaction-v2210.php';
 require_once __DIR__ . '/includes/browser-multisite-v2220.php';
+require_once __DIR__ . '/includes/browser-research-save-v2230.php';
 require_permission('account.access');
 $pdo=db();$user=current_user();if(!$pdo||!$user)redirect(url('/login.php'));
 if(!agent_workflow_schema_ready_v1400($pdo))redirect(url('/agent-workflow-upgrade-v1400.php'));
@@ -45,6 +46,7 @@ if($detailId>0){$row=agent_workflow_row_v1400($pdo,(int)$user['id'],$detailId);i
 $browserRuntime=$detail&&vp3_browser_runtime_schema_ready_v2200($pdo)?vp3_browser_runtime_for_workflow_v2200($pdo,(int)$user['id'],$detailId):null;
 $browserWeb=$detail&&vp3_browser_web_schema_ready_v2210($pdo)?vp3_browser_web_for_workflow_v2210($pdo,(int)$user['id'],$detailId):['count'=>0,'verified'=>0,'failed'=>0,'checkpointed'=>0,'interactions'=>[]];
 $browserMulti=$detail&&vp3_browser_multisite_schema_ready_v2220($pdo)?vp3_browser_multisite_for_workflow_v2220($pdo,(int)$user['id'],$detailId):['attached'=>false];
+$browserResearch=$detail&&vp3_browser_research_schema_ready_v2230($pdo)?vp3_browser_research_for_workflow_v2230($pdo,(int)$user['id'],$detailId):[];
 
 function workflow_v1400_status_label(string $status): string{return str_replace('_',' ',ucwords($status,'_'));}
 function workflow_v1400_time(string $value): string{$ts=strtotime($value);return $ts?date('M j, g:i A',$ts):'—';}
@@ -158,6 +160,47 @@ function workflow_v1400_time(string $value): string{$ts=strtotime($value);return
     <div class="workflow-notice" role="note" style="margin:14px 0 0">Raw URLs, browser history, cookies, credentials, MFA codes and tokens are not persisted by v22.20. Structured facts are task-scoped, source-attributed and removed when runtime authority ends.</div>
   </section>
   <?php endif; ?>
+
+  <?php foreach((array)$browserResearch as $researchMission): $rp=(array)($researchMission['progress']??[]); ?>
+  <section class="workflow-panel" aria-labelledby="browserResearchAgentTitle">
+    <div class="workflow-panel-head">
+      <div><small>Browser Companion v22.30</small><h3 id="browserResearchAgentTitle">Browser Research Agent</h3></div>
+      <span><?= (int)($rp['pages']??0) ?> pages · <?= (int)($rp['claims']??0) ?> claims</span>
+    </div>
+    <div class="workflow-summary-grid">
+      <div><small>Status</small><strong><?= e(workflow_v1400_status_label((string)($researchMission['status']??''))) ?></strong></div>
+      <div><small>Corroborated</small><strong><?= (int)($rp['corroborated']??0) ?></strong></div>
+      <div><small>Conflicted</small><strong><?= (int)($rp['conflicted']??0) ?></strong></div>
+      <div><small>Research gaps</small><strong><?= count((array)($researchMission['gaps']??[])) ?></strong></div>
+    </div>
+    <div class="workflow-notice" role="note"><?= e((string)($researchMission['question']??'')) ?></div>
+    <div class="workflow-two-col">
+      <section class="workflow-panel">
+        <div class="workflow-panel-head"><h3>Approved source plan</h3><span>v22.20 envelope</span></div>
+        <div class="workflow-event-list">
+          <?php foreach((array)($researchMission['source_plan']??[]) as $source): ?>
+          <article><strong><?= e((string)($source['domain']??'')) ?></strong><p><?= !empty($source['checked'])?(int)($source['pages']??0).' page(s) analyzed':'Not checked yet' ?></p></article>
+          <?php endforeach; ?>
+        </div>
+      </section>
+      <section class="workflow-panel">
+        <div class="workflow-panel-head"><h3>Claim ledger</h3><span>Evidence-aware</span></div>
+        <div class="workflow-event-list">
+          <?php foreach(array_slice((array)($researchMission['claims']??[]),0,20) as $claim): ?>
+          <article>
+            <strong><?= e((string)($claim['value']??$claim['statement']??'Claim')) ?> · <?= e(workflow_v1400_status_label((string)($claim['state']??'single_source'))) ?></strong>
+            <p><?= e((string)($claim['statement']??'')) ?></p>
+            <small><?= (int)($claim['support_sources']??0) ?> source groups · <?= (int)($claim['primary_sources']??0) ?> primary · <?= (int)($claim['direct_sources']??0) ?> direct<?= !empty($claim['freshest_at'])?' · freshest '.e((string)$claim['freshest_at']):'' ?></small>
+          </article>
+          <?php endforeach; ?>
+          <?php if(!(array)($researchMission['claims']??[])): ?><div class="workflow-empty">No structured claims yet.</div><?php endif; ?>
+        </div>
+      </section>
+    </div>
+    <?php if(!empty($researchMission['report']['url'])): ?><div class="workflow-actions-bar"><a class="workflow-button" href="<?= e((string)$researchMission['report']['url']) ?>">Open draft Research Report</a></div><?php endif; ?>
+    <div class="workflow-notice" role="note" style="margin:14px 0 0">Raw page text, URLs and browser history are not persisted by the Browser Research mission. Durable state is limited to structured claims, bounded evidence excerpts, fingerprints, source domains, freshness metadata and canonical VP3 Research references. Saving creates drafts; it does not publish.</div>
+  </section>
+  <?php endforeach; ?>
 
   <?php if((int)($browserWeb['count']??0)>0): ?>
   <section class="workflow-panel" aria-labelledby="browserWebInteractionTitle">

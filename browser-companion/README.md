@@ -1,6 +1,82 @@
-# VP3 Browser Companion v22.20
+# VP3 Browser Companion v22.30
 
 Chrome Manifest V3 companion for VP3 Browser Share and the Source Feed layer: This Page, Following, source/user follows, comments, read state, Private/Team/Public publishing, plus highlighted text, screenshot regions, source-media moments, and voice commentary.
+
+## v22.30 Browser Research Agent
+
+v22.30 turns the bounded v22.20 multi-site runtime into an evidence-aware research workspace without adding unrestricted scraping or a second Research database.
+
+The research loop is:
+
+**Research goal → approved source plan → gather → structured extraction → compare → conflict/corroboration → gaps → draft Research save / Agent handoff**
+
+Authority and execution:
+
+- v21.90 remains the outer delegation authority. Browser Research must be explicitly selected as an allowed action.
+- v22.00 remains the canonical Browser Agent Runtime and workflow timeline.
+- v22.20 remains the cross-site transport and approved-domain envelope. A Research mission cannot add a domain that was not already delegated.
+- At mission start, the active Agent may prioritize and explain a source plan, but the server filters that plan back to the exact approved-domain set before the mission is created.
+- Browser Research is a canonical user checkpoint in the existing Agent Workflow. It does not create a parallel automation authority system.
+
+Transient extraction:
+
+- Chrome captures a bounded readable-text snapshot from the active approved page only when the user runs Analyze current page.
+- The snapshot is sent directly by the service worker for that extraction call; it is not stored in sidepanel state.
+- Planning and extraction use a non-persistent Agent protocol turn. The machine instruction, raw model JSON, and ephemeral Browser source URL are not written into Agent Chat history; v22.30 writes back only clean mission summaries.
+- The server validates the SHA-256 fingerprint of the transient full page URL and re-checks the approved domain policy.
+- Page text is passed through the existing ephemeral Browser Context → Agent Chat path. Browser Context is removed from persisted Agent message context by the existing Agent Chat runtime.
+- The Agent is instructed to return a strict structured payload with observed claims, normalized values, short evidence excerpts, directness, freshness/as-of dates, source kind, and explicit research gaps.
+
+Durable mission evidence:
+
+- Mission storage does not contain raw page URLs, raw page text, browser history, cookies, credentials, tab titles, or selectors.
+- Each analyzed page stores approved domain, page fingerprint, content hash, duplicate-group hash, optional canonical VP3 Source/version references, source kind, and freshness date.
+- Each claim stores a stable claim key, observed statement/value, evidence state, independent support count, primary-source count, direct-evidence count, and freshest dated evidence.
+- Evidence excerpts are bounded to 700 characters and retain domain, page fingerprint, directness, source type, and as-of date.
+- Direct evidence is server-grounded against the transient readable page text; if the Agent returns an excerpt that is not present on the page, v22.30 downgrades it to inferred rather than counting it as direct evidence.
+- If an analyzed page does not resolve to a canonical VP3 Source/version, the mission records an explicit fingerprint-only citation gap instead of pretending the evidence is canonically pinned.
+
+Evidence states are deterministic descriptions, not truth scores:
+
+- **Single source** — one non-duplicate evidence group supports the observed value.
+- **Corroborated** — the same observed value appears in at least two non-duplicate evidence groups.
+- **Conflicted** — different observed values exist for the same normalized claim key.
+- Primary-source, directness, corroboration, and freshness are shown as factual signals. v22.30 does not compute an overall truth score or silently choose a winner.
+- Freshness is descriptive only. A newer source is not automatically treated as more correct.
+
+Duplicate and conflict behavior:
+
+- Pages with the same content hash share a duplicate group and do not count as independent corroboration.
+- Different values for the same claim key remain separate variants and are marked conflicted.
+- Conflict notifications use generic copy and do not speak the conflicting values through Agent Voice.
+- Research gaps are retained explicitly so the mission can show what remains unestablished.
+
+Research persistence:
+
+- A mission can run without immediately choosing a Research project.
+- When collection authority ends, an active mission becomes Ready: analysis stops, but the already-collected structured evidence can still be explicitly saved as draft Research.
+- Save draft to Research is an explicit user action and requires Research/Knowledge write capability.
+- Saving creates draft canonical Research Findings and a draft Research Report.
+- Saving Findings, evidence links, Report items and the mission completion marker is atomic inside one database transaction; a failed save rolls back rather than leaving a partially materialized Research draft.
+- When a page resolves to a canonical VP3 Source/version, the corresponding Research source item is linked as evidence.
+- Supporting source items use Research support evidence links; alternate conflicting source variants use conflict links.
+- v22.30 does not auto-publish Findings or Reports.
+
+Agent follow-through:
+
+- Open research chat returns to the canonical Agent Chat conversation used for the extraction mission.
+- Draft Knowledge, Draft CRM enrichment, and Draft follow-up task only prefill an Agent Chat prompt. They do not save Knowledge, modify CRM, create Tasks, send messages, or commit external actions.
+- Saved Research projects already render through the existing Research cognitive-card path in Agent Chat.
+
+Bounded mission defaults and hard limits:
+
+- up to 5 approved source domains
+- up to 12 analyzed pages
+- up to 60 structured claims
+- up to 120 minutes, never beyond the underlying Browser Runtime expiry
+- one active Research mission per Browser Runtime
+
+v22.30 remains research-oriented. Consequential submissions, sends, bookings, purchases, publishing, destructive changes, and similar external commitments stay outside this phase.
 
 ## v22.20 Multi-Site Workflow Automation
 

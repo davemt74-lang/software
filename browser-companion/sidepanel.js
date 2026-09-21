@@ -2,7 +2,7 @@
 const $=id=>document.getElementById(id);
 const ui={};
 [
-'connectionState','connectControls','shareWorkspace','connectBtn','settingsBtn','connectedAccount','disconnectedAccount','accountAvatar','accountName','accountMeta','accountTeams','openVp3Btn','refreshAccountBtn','accountOptionsBtn','accessNotice','quickActionsCard','composerCard','agentWorkspaceName','agentWorkspaceStatus','agentRefreshBtn','agentConversationSelect','agentNewChatBtn','agentOpenFullBtn','agentUsePageContext','agentContextLabel','agentMessages','agentEmpty','agentMessageInput','agentSendBtn','delegationAgentName','delegationStatus','delegationRefreshBtn','delegationInstruction','delegationMaxSteps','delegationExpiry','delegationRisk','delegationDomains','delegationPreviewBtn','delegationStartBtn','delegationPlan','delegationActive','delegationActiveTitle','delegationActiveMeta','delegationProgress','delegationRunBtn','delegationPauseBtn','delegationResumeBtn','delegationCancelBtn','delegationOpenWorkflowBtn','runtimePanel','runtimeSessionBadge','runtimePlanRevision','runtimeCurrentSkill','runtimeRecovery','runtimeObservationCount','runtimeLastVerified','runtimeReplanBtn','runtimeSkipBtn','runtimeMultiPanel','runtimeMultiStatus','runtimeMultiAttachBtn','runtimeMultiCurrentDomain','runtimeMultiHandoffCount','runtimeMultiTabCount','runtimeMultiConflictCount','runtimeMultiDomains','runtimeMultiDomainsEmpty','runtimeMultiHandoffComposer','runtimeMultiTargetUrl','runtimeMultiGoBtn','runtimeMultiFactComposer','runtimeMultiFactKey','runtimeMultiFactValue','runtimeMultiFactAddBtn','runtimeMultiFacts','runtimeMultiFactsEmpty','runtimeMultiHandoffs','runtimeMultiHandoffsEmpty','runtimeMultiArtifacts','runtimeMultiArtifactsEmpty','runtimeTimeline','runtimeTimelineEmpty','runtimeTabs','runtimeTabsEmpty','runtimeWebPanel','runtimeWebStatus','runtimeWebScanBtn','runtimeWebControlCount','runtimeWebInteractionCount','runtimeWebElements','runtimeWebElementsEmpty','runtimeWebComposer','runtimeWebSelectedLabel','runtimeWebSelectedMeta','runtimeWebActionSelect','runtimeWebValueField','runtimeWebValueLabel','runtimeWebValueInput','runtimeWebOptionField','runtimeWebOptionSelect','runtimeWebToggleField','runtimeWebToggleSelect','runtimeWebPreviewBtn','runtimeWebClearSelectionBtn','runtimeWebProposal','runtimeWebProposalTitle','runtimeWebProposalDetail','runtimeWebCheckpointNotice','runtimeWebRunBtn','runtimeWebConfirmRunBtn','runtimeWebCancelBtn','runtimeWebRecent','runtimeWebRecentEmpty','delegationCheckpoint','delegationCheckpointText','delegationCheckpointOpenBtn','delegationCheckpointDoneBtn','delegationSteps','delegationRecent','delegationRecentEmpty','executionAgentName','executionStatus','executionRefreshBtn','executionPageLabel','executionCandidates','executionCandidatesEmpty','executionTickets','executionTicketsEmpty','executionContinuity','executionContinuityEmpty','memoryAgentName','memoryStatus','memoryRefreshBtn','memoryPageLabel','memoryCandidates','memoryCandidatesEmpty','memoryRemembered','memoryRememberedEmpty','memoryCount',
+'connectionState','connectControls','shareWorkspace','connectBtn','settingsBtn','connectedAccount','disconnectedAccount','accountAvatar','accountName','accountMeta','accountTeams','openVp3Btn','refreshAccountBtn','accountOptionsBtn','accessNotice','quickActionsCard','composerCard','agentWorkspaceName','agentWorkspaceStatus','agentRefreshBtn','agentConversationSelect','agentNewChatBtn','agentOpenFullBtn','agentUsePageContext','agentContextLabel','agentMessages','agentEmpty','agentMessageInput','agentSendBtn','delegationAgentName','delegationStatus','delegationRefreshBtn','delegationInstruction','delegationMaxSteps','delegationExpiry','delegationRisk','delegationDomains','delegationPreviewBtn','delegationStartBtn','delegationPlan','delegationActive','delegationActiveTitle','delegationActiveMeta','delegationProgress','delegationRunBtn','delegationPauseBtn','delegationResumeBtn','delegationCancelBtn','delegationOpenWorkflowBtn','runtimePanel','runtimeSessionBadge','runtimePlanRevision','runtimeCurrentSkill','runtimeRecovery','runtimeObservationCount','runtimeLastVerified','runtimeReplanBtn','runtimeSkipBtn','runtimeMultiPanel','runtimeMultiStatus','runtimeMultiAttachBtn','runtimeMultiCurrentDomain','runtimeMultiHandoffCount','runtimeMultiTabCount','runtimeMultiConflictCount','runtimeMultiDomains','runtimeMultiDomainsEmpty','runtimeMultiHandoffComposer','runtimeMultiTargetUrl','runtimeMultiGoBtn','runtimeMultiFactComposer','runtimeMultiFactKey','runtimeMultiFactValue','runtimeMultiFactAddBtn','runtimeMultiFacts','runtimeMultiFactsEmpty','runtimeMultiHandoffs','runtimeMultiHandoffsEmpty','runtimeMultiArtifacts','runtimeMultiArtifactsEmpty','runtimeResearchPanel','runtimeResearchStatus','runtimeResearchRefreshBtn','runtimeResearchStart','runtimeResearchQuestion','runtimeResearchProject','runtimeResearchMaxSources','runtimeResearchMaxPages','runtimeResearchMaxClaims','runtimeResearchDuration','runtimeResearchStartBtn','runtimeResearchActive','runtimeResearchPageCount','runtimeResearchClaimCount','runtimeResearchCorroborated','runtimeResearchConflicts','runtimeResearchAnalyzeBtn','runtimeResearchOpenChatBtn','runtimeResearchSaveBtn','runtimeResearchCancelBtn','runtimeResearchOpenReportBtn','runtimeResearchSources','runtimeResearchSourcesEmpty','runtimeResearchClaims','runtimeResearchClaimsEmpty','runtimeResearchMemo','runtimeResearchGaps','runtimeResearchGapsEmpty','runtimeResearchHandoffs','runtimeResearchKnowledgeBtn','runtimeResearchCrmBtn','runtimeResearchTaskBtn','runtimeTimeline','runtimeTimelineEmpty','runtimeTabs','runtimeTabsEmpty','runtimeWebPanel','runtimeWebStatus','runtimeWebScanBtn','runtimeWebControlCount','runtimeWebInteractionCount','runtimeWebElements','runtimeWebElementsEmpty','runtimeWebComposer','runtimeWebSelectedLabel','runtimeWebSelectedMeta','runtimeWebActionSelect','runtimeWebValueField','runtimeWebValueLabel','runtimeWebValueInput','runtimeWebOptionField','runtimeWebOptionSelect','runtimeWebToggleField','runtimeWebToggleSelect','runtimeWebPreviewBtn','runtimeWebClearSelectionBtn','runtimeWebProposal','runtimeWebProposalTitle','runtimeWebProposalDetail','runtimeWebCheckpointNotice','runtimeWebRunBtn','runtimeWebConfirmRunBtn','runtimeWebCancelBtn','runtimeWebRecent','runtimeWebRecentEmpty','delegationCheckpoint','delegationCheckpointText','delegationCheckpointOpenBtn','delegationCheckpointDoneBtn','delegationSteps','delegationRecent','delegationRecentEmpty','executionAgentName','executionStatus','executionRefreshBtn','executionPageLabel','executionCandidates','executionCandidatesEmpty','executionTickets','executionTicketsEmpty','executionContinuity','executionContinuityEmpty','memoryAgentName','memoryStatus','memoryRefreshBtn','memoryPageLabel','memoryCandidates','memoryCandidatesEmpty','memoryRemembered','memoryRememberedEmpty','memoryCount',
 'nowTab','agentTab','delegationTab','executionTab','memoryTab','thisPageTab','followingTab','liveTab','alertsTab','searchTab','nowView','agentView','delegationView','executionView','memoryView','thisPageView','followingView','liveView','alertsView','searchView','refreshNowBtn','openAgentChatBtn','restoreNowBtn','nowStatus','nowAttentionCount','nowItemCount','nowContextualCount','nowContextStrip','nowContextTitle','nowContextMeta','toggleNowContextBtn','nowContextPanel','nowRelationshipSummary','nowRelationshipList','nowContextActions','nowEmpty','nowFeed','refreshCaptureBtn','pageTitle','pageHost','sourceMeta','sourceStatus',
 'followCurrentSourceBtn','openSourcePageBtn','quickAskBtn','quickSummarizeBtn','quickCompareBtn','quickResearchBtn','quickKnowledgeBtn','quickTaskBtn','quickMemoryBtn','quickTeamBtn','quickAnnotateBtn','selectedText','selectionCount','captureSummary','captureScreenshotBtn','screenshotPreview',
 'screenshotImage','screenshotMeta','removeScreenshotBtn','captureMediaBtn','mediaDetectedText','mediaPreview','mediaPreviewTitle','mediaStart',
@@ -30,6 +30,7 @@ let delegationBusy=false,delegationRunnerBusy=false,delegationPreviewData=null,d
 let runtimeBusyV2200=false,runtimeRunnerBusyV2200=false,runtimeDataV2200=null,runtimeSkillsV2200=[],runtimeOpenedTabsV2200=[];
 let runtimeWebBusyV2210=false,runtimeWebObservationV2210=null,runtimeWebElementsV2210=[],runtimeWebActionsV2210=[],runtimeWebSelectedV2210=null,runtimeWebProposalV2210=null,runtimeWebReceiptsV2210=[];
 let runtimeMultiBusyV2220=false,runtimeMultiStateV2220=null;
+let runtimeResearchBusyV2230=false,runtimeResearchMissionV2230=null,runtimeResearchProjectsV2230=[];
 let executionBusy=false,executionCandidatesData=[],executionTicketsData=[],executionContinuityData=[];
 let memoryBusy=false,memoryCandidatesData=[],memoryRememberedData=[];
 let nowContextIgnored=false,contextAgentPayload=null,contextRelationships=null,contextSuggestions=[];
@@ -695,6 +696,162 @@ async function runtimeMultiDomainChangeV2220(event){
   await updateRuntimeMultiPolicyV2220(String(select.dataset.multiPolicyDomain||''),String(select.value||'browse'));
 }
 
+function researchRequestV2230(action,payload={}){
+  const request=Object.assign({},payload||{});
+  if(agentWorkspaceAgentId>0)request.agent_id=agentWorkspaceAgentId;
+  return msg('research_action',{action:String(action||'list'),payload:request});
+}
+function runtimeResearchResetV2230(){
+  runtimeResearchMissionV2230=null;
+  ui.runtimeResearchStatus.textContent='Start a bounded mission inside the approved Browser Runtime.';
+  ui.runtimeResearchStart.hidden=false;ui.runtimeResearchActive.hidden=true;
+  ui.runtimeResearchPageCount.textContent='0 / 0 pages';ui.runtimeResearchClaimCount.textContent='0 / 0 claims';
+  ui.runtimeResearchCorroborated.textContent='0 corroborated';ui.runtimeResearchConflicts.textContent='0 conflicts';
+  ui.runtimeResearchSources.replaceChildren();ui.runtimeResearchSourcesEmpty.hidden=false;
+  ui.runtimeResearchClaims.replaceChildren();ui.runtimeResearchClaimsEmpty.hidden=false;
+  ui.runtimeResearchMemo.textContent='No supported claims have been extracted yet.';
+  ui.runtimeResearchGaps.replaceChildren();ui.runtimeResearchGapsEmpty.hidden=false;
+  ui.runtimeResearchHandoffs.hidden=true;ui.runtimeResearchOpenReportBtn.hidden=true;
+}
+function renderResearchProjectsV2230(projects){
+  runtimeResearchProjectsV2230=Array.isArray(projects)?projects:[];
+  const current=String(ui.runtimeResearchProject.value||'');
+  ui.runtimeResearchProject.replaceChildren();
+  const none=document.createElement('option');none.value='';none.textContent='Choose later';ui.runtimeResearchProject.append(none);
+  runtimeResearchProjectsV2230.forEach(project=>{
+    const opt=document.createElement('option');opt.value=String(project.id||'');opt.textContent=String(project.title||'Research project');ui.runtimeResearchProject.append(opt);
+  });
+  if(current&&runtimeResearchProjectsV2230.some(x=>String(x.id)===current))ui.runtimeResearchProject.value=current;
+}
+function researchSourceRowV2230(item){
+  const row=el('div','runtime-research-source '+(item.checked?'checked':''),'');
+  row.append(el('strong','',String(item.domain||'Approved source')),el('span','',item.checked?String(item.pages||0)+' page'+(Number(item.pages||0)===1?'':'s')+' analyzed':'Not checked yet'));
+  if(item.reason)row.append(el('small','',String(item.reason)));
+  return row;
+}
+function researchClaimRowV2230(item){
+  const state=String(item.state||'single_source');
+  const row=el('div','runtime-research-claim '+state,'');
+  const top=el('div','row-between','');
+  top.append(el('strong','',String(item.value||item.statement||'Claim')),el('span','pill',state.replace(/_/g,' ')));
+  row.append(top);
+  if(item.statement&&item.statement!==item.value)row.append(el('span','',String(item.statement)));
+  const meta=[Number(item.support_sources||0)+' source group'+(Number(item.support_sources||0)===1?'':'s')];
+  if(Number(item.primary_sources||0)>0)meta.push(Number(item.primary_sources)+' primary');
+  if(Number(item.direct_sources||0)>0)meta.push(Number(item.direct_sources)+' direct');
+  if(item.freshest_at)meta.push('freshest '+String(item.freshest_at));
+  row.append(el('small','',meta.join(' · ')));
+  const evidence=Array.isArray(item.evidence)?item.evidence:[];
+  evidence.slice(0,6).forEach(e=>{
+    const ev=el('div','runtime-research-evidence','');
+    ev.append(el('strong','',String(e.domain||'source')+(e.source_kind&&e.source_kind!=='unknown'?' · '+String(e.source_kind):'')),el('span','',String(e.excerpt||'')));
+    row.append(ev);
+  });
+  return row;
+}
+function renderRuntimeResearchV2230(mission){
+  runtimeResearchMissionV2230=mission||null;
+  if(!mission){runtimeResearchResetV2230();return;}
+  const status=String(mission.status||'active');
+  const progress=mission.progress||{},budgets=mission.budgets||{};
+  ui.runtimeResearchStatus.textContent=status.replace(/_/g,' ')+' · '+String(mission.question||'Browser Research mission');
+  ui.runtimeResearchStart.hidden=true;ui.runtimeResearchActive.hidden=false;
+  ui.runtimeResearchPageCount.textContent=String(progress.pages||0)+' / '+String(budgets.pages||0)+' pages';
+  ui.runtimeResearchClaimCount.textContent=String(progress.claims||0)+' / '+String(budgets.claims||0)+' claims';
+  ui.runtimeResearchCorroborated.textContent=String(progress.corroborated||0)+' corroborated';
+  ui.runtimeResearchConflicts.textContent=String(progress.conflicted||0)+' conflicts';
+  ui.runtimeResearchSources.replaceChildren();(mission.source_plan||[]).forEach(item=>ui.runtimeResearchSources.append(researchSourceRowV2230(item)));
+  ui.runtimeResearchSourcesEmpty.hidden=(mission.source_plan||[]).length>0;
+  ui.runtimeResearchClaims.replaceChildren();(mission.claims||[]).forEach(item=>ui.runtimeResearchClaims.append(researchClaimRowV2230(item)));
+  ui.runtimeResearchClaimsEmpty.hidden=(mission.claims||[]).length>0;
+  ui.runtimeResearchMemo.textContent=String(mission.memo_preview||mission.memo||'No supported claims have been extracted yet.');
+  ui.runtimeResearchGaps.replaceChildren();(mission.gaps||[]).forEach(gap=>ui.runtimeResearchGaps.append(el('div','runtime-research-gap',String(gap))));
+  ui.runtimeResearchGapsEmpty.hidden=(mission.gaps||[]).length>0;
+  const active=status==='active',saveable=['active','ready'].includes(status);
+  ui.runtimeResearchAnalyzeBtn.disabled=!active;ui.runtimeResearchCancelBtn.hidden=!saveable;
+  ui.runtimeResearchSaveBtn.hidden=!saveable||Number(progress.claims||0)<1;
+  ui.runtimeResearchHandoffs.hidden=!(mission.report&&mission.report.id);
+  ui.runtimeResearchOpenReportBtn.hidden=!(mission.report&&mission.report.url);
+  if(mission.project&&mission.project.id)ui.runtimeResearchProject.value=String(mission.project.id);
+}
+async function loadRuntimeResearchV2230(){
+  if(!runtimeDataV2200||!runtimeDataV2200.runtime_id)return null;
+  try{
+    const payload=await researchRequestV2230('list',{});
+    renderResearchProjectsV2230(payload&&payload.projects||[]);
+    const missions=Array.isArray(payload&&payload.missions)?payload.missions:[];
+    const current=missions.find(item=>String(item.runtime_id||'')===String(runtimeDataV2200.runtime_id||'')&&!['cancelled','expired'].includes(String(item.status||'')))
+      ||missions.find(item=>String(item.runtime_id||'')===String(runtimeDataV2200.runtime_id||''))||null;
+    renderRuntimeResearchV2230(current);return current;
+  }catch(error){
+    if(String(error.message||'').includes('upgrade')){runtimeResearchResetV2230();return null;}
+    throw error;
+  }
+}
+async function startRuntimeResearchV2230(){
+  if(runtimeResearchBusyV2230||!runtimeDataV2200||!runtimeDataV2200.runtime_id)return;
+  const question=String(ui.runtimeResearchQuestion.value||'').trim();if(question.length<5)throw new Error('Describe the research question or goal.');
+  if(!runtimeMultiStateV2220)await attachRuntimeMultiV2220();
+  runtimeResearchBusyV2230=true;busy(ui.runtimeResearchStartBtn,true,'Starting…');
+  try{
+    const payload=await researchRequestV2230('start',{
+      runtime_id:runtimeDataV2200.runtime_id,question,project_id:String(ui.runtimeResearchProject.value||''),
+      max_sources:Number(ui.runtimeResearchMaxSources.value||3),max_pages:Number(ui.runtimeResearchMaxPages.value||10),
+      max_claims:Number(ui.runtimeResearchMaxClaims.value||50),duration_minutes:Number(ui.runtimeResearchDuration.value||60)
+    });
+    renderRuntimeResearchV2230(payload&&payload.mission||null);
+    note('Browser Research mission started inside the approved source envelope.','success');
+    await loadRuntimeDetailV2200();
+  }finally{runtimeResearchBusyV2230=false;busy(ui.runtimeResearchStartBtn,false);}
+}
+async function analyzeRuntimeResearchPageV2230(){
+  if(runtimeResearchBusyV2230||!runtimeResearchMissionV2230)return;
+  runtimeResearchBusyV2230=true;busy(ui.runtimeResearchAnalyzeBtn,true,'Analyzing…');
+  try{
+    const payload=await msg('research_analyze_current',{payload:{mission_id:String(runtimeResearchMissionV2230.mission_id||''),agent_id:agentWorkspaceAgentId}});
+    renderRuntimeResearchV2230(payload&&payload.mission||null);
+    const conflicts=Number(payload&&payload.mission&&payload.mission.progress&&payload.mission.progress.conflicted||0);
+    note(conflicts?'Page analyzed. Conflicting evidence needs review.':'Page analyzed and evidence ledger updated.',conflicts?'error':'success');
+    await loadRuntimeDetailV2200();
+  }finally{runtimeResearchBusyV2230=false;busy(ui.runtimeResearchAnalyzeBtn,false);}
+}
+async function saveRuntimeResearchV2230(){
+  if(runtimeResearchBusyV2230||!runtimeResearchMissionV2230)return;
+  const projectId=String(ui.runtimeResearchProject.value||runtimeResearchMissionV2230.project&&runtimeResearchMissionV2230.project.id||'');
+  if(!projectId)throw new Error('Choose a Research project before saving the mission.');
+  runtimeResearchBusyV2230=true;busy(ui.runtimeResearchSaveBtn,true,'Saving…');
+  try{
+    const payload=await researchRequestV2230('save',{mission_id:runtimeResearchMissionV2230.mission_id,project_id:projectId});
+    renderRuntimeResearchV2230(payload&&payload.mission||null);
+    note('Draft Findings and Research Report saved for review. Nothing was published.','success');
+    await loadRuntimeDetailV2200();
+  }finally{runtimeResearchBusyV2230=false;busy(ui.runtimeResearchSaveBtn,false);}
+}
+async function cancelRuntimeResearchV2230(){
+  if(!runtimeResearchMissionV2230)return;
+  const payload=await researchRequestV2230('cancel',{mission_id:runtimeResearchMissionV2230.mission_id});
+  renderRuntimeResearchV2230(payload&&payload.mission||null);note('Browser Research mission cancelled.','success');
+}
+async function openRuntimeResearchChatV2230(){
+  if(!runtimeResearchMissionV2230)return;
+  setView('agent');
+  const cid=Number(runtimeResearchMissionV2230.conversation_id||0);
+  if(cid>0)await loadAgentConversationV2160(cid);else await loadAgentConversationV2160(0);
+  note(cid>0?'Research extraction conversation opened.':'No research extraction conversation exists yet. Analyze a page first.','success');
+}
+async function draftRuntimeResearchHandoffV2230(kind){
+  if(!runtimeResearchMissionV2230)return;
+  const prompt=String(runtimeResearchMissionV2230.handoffs&&runtimeResearchMissionV2230.handoffs[kind]||'');if(!prompt)return;
+  setView('agent');
+  const cid=Number(runtimeResearchMissionV2230.conversation_id||0);
+  if(cid>0)await loadAgentConversationV2160(cid);
+  ui.agentMessageInput.value=prompt;renderCaps();ui.agentMessageInput.focus();
+  note('Draft handoff prepared in the Research conversation. Review it before sending.','success');
+}
+async function openRuntimeResearchReportV2230(){
+  const url=runtimeResearchMissionV2230&&runtimeResearchMissionV2230.report&&runtimeResearchMissionV2230.report.url;if(url)await msg('open_url',{url:absolute(url)});
+}
+
 function webInteractionRequestV2210(action,payload={}){
   const request=Object.assign({},payload||{});
   if(agentWorkspaceAgentId>0)request.agent_id=agentWorkspaceAgentId;
@@ -974,10 +1131,10 @@ function renderRuntimeV2200(runtime){
   runtimeDataV2200=runtime||null;
   if(!runtime){
     ui.runtimePanel.hidden=true;
-    runtimeWebResetV2210();runtimeMultiResetV2220();
+    runtimeWebResetV2210();runtimeMultiResetV2220();runtimeResearchResetV2230();
     return;
   }
-  if(previousRuntimeId&&previousRuntimeId!==String(runtime.runtime_id||'')){runtimeWebResetV2210();runtimeMultiResetV2220();}
+  if(previousRuntimeId&&previousRuntimeId!==String(runtime.runtime_id||'')){runtimeWebResetV2210();runtimeMultiResetV2220();runtimeResearchResetV2230();}
   ui.runtimePanel.hidden=false;
   ui.runtimeSessionBadge.textContent=(runtime.status||'ready')+' · '+String(runtime.runtime_id||'').slice(0,8);
   ui.runtimePlanRevision.textContent='r'+String(runtime.plan_revision||1);
@@ -994,6 +1151,8 @@ function renderRuntimeV2200(runtime){
   const terminal=['completed','cancelled','expired'].includes(String(runtime.status||''));
   ui.runtimeWebPanel.hidden=terminal;
   ui.runtimeMultiPanel.hidden=terminal;
+  const researchAllowed=Array.isArray(delegationActiveData&&delegationActiveData.allowed_actions)&&delegationActiveData.allowed_actions.includes('browser_research');
+  ui.runtimeResearchPanel.hidden=!researchAllowed;
   const current=runtime.current_step||null;
   ui.runtimeReplanBtn.disabled=terminal||Number(runtime.replan_count||0)>=Number(runtime.max_replans||0)||String(runtime.status||'')==='checkpoint';
   ui.runtimeSkipBtn.disabled=terminal||!current||!['queued','failed','approval_pending','executing'].includes(String(current.status||''));
@@ -1004,6 +1163,7 @@ async function attachRuntimeV2200(delegationId){
   if(payload&&payload.agent){agentWorkspaceAgentId=Math.max(0,Number(payload.agent.id||agentWorkspaceAgentId||0));}
   renderRuntimeV2200(payload&&payload.runtime||null);
   await loadRuntimeMultiV2220().catch(()=>{});
+  await loadRuntimeResearchV2230().catch(()=>{});
   return payload&&payload.runtime||null;
 }
 async function loadRuntimeDetailV2200(){
@@ -1287,6 +1447,13 @@ async function openDelegationCheckpointV2190(){
     if(!runtimeMultiStateV2220)await attachRuntimeMultiV2220();
     ui.runtimeMultiPanel.scrollIntoView({behavior:'smooth',block:'start'});
     note('Multi-site checkpoint opened. Complete the approved-domain work, then mark this step done.','success');
+    return;
+  }
+  if(step&&String(step.action_key||'')==='browser_research'){
+    if(!runtimeMultiStateV2220)await attachRuntimeMultiV2220();
+    await loadRuntimeResearchV2230();
+    ui.runtimeResearchPanel.scrollIntoView({behavior:'smooth',block:'start'});
+    note('Browser Research checkpoint opened. Run or review the mission, then mark this step done.','success');
     return;
   }
   const handoff=delegationCheckpointData&&delegationCheckpointData.handoff||null;if(!handoff)return;
@@ -1740,6 +1907,16 @@ ui.delegationCheckpointOpenBtn.onclick=()=>openDelegationCheckpointV2190().catch
 ui.delegationCheckpointDoneBtn.onclick=async()=>{try{if(!delegationActiveData||!delegationCheckpointData||!delegationCheckpointData.step)return;if(runtimeDataV2200&&runtimeDataV2200.runtime_id){const payload=await runtimeRequestV2200('complete_checkpoint',{runtime_id:runtimeDataV2200.runtime_id,action_id:Number(delegationCheckpointData.step.id||0)});if(payload&&payload.runtime)renderRuntimeV2200(payload.runtime);if(payload&&payload.delegation)renderDelegationActiveV2190(payload.delegation);ui.delegationCheckpoint.hidden=true;delegationCheckpointData=null;await runRuntimeV2200();return;}const payload=await delegationRequestV2190('complete_checkpoint',{delegation_id:delegationActiveData.delegation_id,action_id:Number(delegationCheckpointData.step.id||0)});renderDelegationActiveV2190(payload&&payload.delegation||null);ui.delegationCheckpoint.hidden=true;delegationCheckpointData=null;await runDelegationV2190();}catch(e){await fail(e);}};
 ui.runtimeReplanBtn.onclick=()=>runtimeReplanV2200().catch(fail);
 ui.runtimeSkipBtn.onclick=()=>runtimeSkipV2200().catch(fail);
+ui.runtimeResearchRefreshBtn.onclick=()=>loadRuntimeResearchV2230().catch(fail);
+ui.runtimeResearchStartBtn.onclick=()=>startRuntimeResearchV2230().catch(fail);
+ui.runtimeResearchAnalyzeBtn.onclick=()=>analyzeRuntimeResearchPageV2230().catch(fail);
+ui.runtimeResearchSaveBtn.onclick=()=>saveRuntimeResearchV2230().catch(fail);
+ui.runtimeResearchCancelBtn.onclick=()=>cancelRuntimeResearchV2230().catch(fail);
+ui.runtimeResearchOpenChatBtn.onclick=()=>openRuntimeResearchChatV2230().catch(fail);
+ui.runtimeResearchOpenReportBtn.onclick=()=>openRuntimeResearchReportV2230().catch(fail);
+ui.runtimeResearchKnowledgeBtn.onclick=()=>draftRuntimeResearchHandoffV2230('knowledge').catch(fail);
+ui.runtimeResearchCrmBtn.onclick=()=>draftRuntimeResearchHandoffV2230('crm').catch(fail);
+ui.runtimeResearchTaskBtn.onclick=()=>draftRuntimeResearchHandoffV2230('task').catch(fail);
 ui.runtimeMultiAttachBtn.onclick=()=>attachRuntimeMultiV2220().catch(fail);
 ui.runtimeMultiGoBtn.onclick=()=>runRuntimeMultiHandoffV2220(String(ui.runtimeMultiTargetUrl.value||'')).catch(fail);
 ui.runtimeMultiFactAddBtn.onclick=()=>addRuntimeMultiFactV2220().catch(fail);

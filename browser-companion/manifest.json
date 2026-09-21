@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "VP3 Browser Companion",
-  "version": "22.2.0",
-  "description": "VP3 Browser Companion with Multi-Site Workflow Automation, Controlled Web Interaction Runtime, server-authoritative Browser Agent Runtime, bounded delegation, cross-web Cognitive Memory, Agent Workspace, proactive Agent Voice, capture, Research, Live Rooms, alerts, and search.",
+  "version": "22.3.0",
+  "description": "VP3 Browser Companion with Browser Research Agent, Multi-Site Workflow Automation, Controlled Web Interaction Runtime, server-authoritative Browser Agent Runtime, bounded delegation, Cognitive Memory, Agent Workspace, proactive Agent Voice, capture, Research, Live Rooms, alerts, and search.",
   "minimum_chrome_version": "116",
   "permissions": [
     "activeTab",

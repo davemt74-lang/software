@@ -8,6 +8,7 @@ require_once __DIR__ . '/includes/browser-delegation-v2190.php';
 require_once __DIR__ . '/includes/browser-agent-runtime-v2200.php';
 require_once __DIR__ . '/includes/browser-web-interaction-v2210.php';
 require_once __DIR__ . '/includes/browser-multisite-v2220.php';
+require_once __DIR__ . '/includes/browser-research-save-v2230.php';
 require_once __DIR__ . '/includes/extension-notifications-v2140.php';
 require_once __DIR__ . '/includes/vp3-public.php';
 require_once __DIR__ . '/includes/artist-listening.php';
@@ -62,6 +63,7 @@ function vp3_upgrade_complete(): bool
         && vp3_browser_runtime_schema_ready_v2200()
         && vp3_browser_web_schema_ready_v2210()
         && vp3_browser_multisite_schema_ready_v2220()
+        && vp3_browser_research_schema_ready_v2230()
         && chat_settings_schema_ready_v237()
         && permission_v105_playlist_permission_ready()
         && personal_capability_seeded_v242()
@@ -178,6 +180,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             vp3_browser_share_media_ensure_schema_v2040();
             vp3_browser_source_feed_ensure_schema_v2050();
             vp3_research_ensure_schema_v2060();
+            vp3_browser_research_ensure_schema_v2230();
             vp3_live_room_ensure_schema_v2070();
             vp3_browser_trust_ensure_schema_v2080();
             vp3_search_ensure_schema_v2090();
