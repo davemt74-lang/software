@@ -245,7 +245,11 @@ function vp3_cognitive_feed_calendar_candidates_v530(PDO $pdo,array $user): arra
 function vp3_cognitive_feed_workflow_candidates_v530(PDO $pdo,array $user): array
 {
     if(function_exists('vp3_agent_work_queue_model_v172')){
-        try{$queue=vp3_agent_work_queue_model_v172($pdo,$user,'UTC');}catch(Throwable $e){$queue=[];}
+        $timezone='UTC';
+        if(function_exists('user_calendar_default_timezone_v1300')){
+            try{$timezone=(string)user_calendar_default_timezone_v1300($pdo,$user)?:'UTC';}catch(Throwable $e){$timezone='UTC';}
+        }
+        try{$queue=vp3_agent_work_queue_model_v172($pdo,$user,$timezone);}catch(Throwable $e){$queue=[];}
         if(!empty($queue['available'])&&is_array($queue['lanes']??null)){
             $out=[];
             $laneMeta=[
@@ -269,13 +273,13 @@ function vp3_cognitive_feed_workflow_candidates_v530(PDO $pdo,array $user): arra
                     $candidate=vp3_cognitive_feed_candidate_v530(
                         'workflow:'.$id,(string)$meta['section'],$score,$reason,
                         vp3_cognitive_feed_request_v530('workflow',$id,'personal','standard'),
-                        'workflow',(string)($row['updated_at']??''),[
+                        'workflow',(string)($row['updated_at_utc']??$row['updated_at']??''),[
                             'status'=>$row['status']??'',
                             'progress'=>$row['progress']??0,
                             'work_queue_lane'=>$lane,
                             'work_priority'=>$priority,
                             'target'=>$row['target']??'',
-                            'next_attempt_at'=>$row['next_attempt_at']??'',
+                            'next_attempt_at'=>$row['next_attempt_at_utc']??'',
                             'blocked'=>!empty($row['blocked']),
                         ],!empty($meta['attention'])
                     );
