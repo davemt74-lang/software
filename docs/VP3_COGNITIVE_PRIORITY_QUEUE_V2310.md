@@ -94,6 +94,8 @@ The Priority Queue uses a deterministic tuple:
 
 The numeric values are server-private. The client receives only the resulting order.
 
+Workflow timestamps have two separate contracts: raw UTC database timestamps drive cognitive ordering/fingerprints, while localized strings are presentation-only and use the user's calendar timezone. A timezone/display change therefore cannot reorder work or create a false cognitive-state change.
+
 ## Client contract
 
 The queue appears inside the existing Agent Now canvas above the existing Universal Card sections.
@@ -132,3 +134,5 @@ No internal score, prompt, raw context, tool payload, credential, model reasonin
 - Universal Card rendering remains the detailed object surface
 - workflow controls continue through v17.3/v17.4/Phase 19
 - hidden Cognitive Feed items remain hidden from the queue
+- workflow cognitive ordering/fingerprints use raw canonical UTC timestamps
+- localized workflow time strings are presentation-only
