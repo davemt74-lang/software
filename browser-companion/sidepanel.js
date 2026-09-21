@@ -876,6 +876,7 @@ function runtimeWebResetProposalV2210(){
   ui.runtimeTransactionFields.replaceChildren();
   ui.runtimeWebRunBtn.hidden=false;
   ui.runtimeWebConfirmRunBtn.hidden=true;
+  ui.runtimeWebConfirmRunBtn.textContent='Confirm & run';
 }
 async function runtimeWebInvalidateProposalV2210(){
   const current=runtimeWebProposalV2210,transaction=runtimeTransactionReviewV2240;
