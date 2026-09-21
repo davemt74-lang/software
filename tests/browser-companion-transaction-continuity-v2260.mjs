@@ -16,8 +16,9 @@ const safety=read('includes/browser-transaction-safety-v2240.php');
 const workflows=read('agent-workflows.php');
 const upgrade=read('upgrade.php');
 
-must(manifest.version==='22.6.0','v22.60 manifest version missing');
-must(background.includes("const VP3_EXTENSION_VERSION = '22.6.0';"),'v22.60 request version missing');
+const versionParts=String(manifest.version||'').split('.').map(Number);
+must(versionParts.length===3&&versionParts[0]===22&&versionParts[1]>=6,'v22.60-or-later manifest version missing');
+must(background.includes("const VP3_EXTENSION_VERSION = '"+manifest.version+"';"),'Browser Companion request version must match manifest');
 must(!manifest.permissions.includes('cookies'),'Continuity must not request cookies permission');
 
 // v22.60 layers on verified v22.50 outcomes and never creates an execution bypass.
