@@ -100,6 +100,22 @@ function vp3_cognitive_operations_work_item_v2300(array $candidate): ?array
     ];
 }
 
+function vp3_cognitive_operations_public_v2300(array $state): array
+{
+    return [
+        'contract'=>(string)($state['contract']??VP3_COGNITIVE_OPERATIONS_CONTRACT_V2300),
+        'build'=>(string)($state['build']??VP3_COGNITIVE_OPERATIONS_V2300),
+        'mode'=>'projection_summary',
+        'all_systems_listening'=>is_array($state['all_systems_listening']??null)?$state['all_systems_listening']:[],
+        'ranking'=>is_array($state['ranking']??null)?$state['ranking']:[],
+        'execution'=>is_array($state['execution']??null)?$state['execution']:[],
+        'work_item_count'=>max(0,(int)($state['work_item_count']??0)),
+        'attention_count'=>max(0,(int)($state['attention_count']??0)),
+        'plan_count'=>max(0,(int)($state['plan_count']??0)),
+        'lane_counts'=>is_array($state['lane_counts']??null)?$state['lane_counts']:[],
+    ];
+}
+
 function vp3_cognitive_operations_compose_v2300(array $candidates): array
 {
     $items=[];$sources=[];$authorities=[];$laneCounts=array_fill_keys(vp3_cognitive_operations_lanes_v2300(),0);
