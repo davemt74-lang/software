@@ -176,6 +176,12 @@ function vp3_browser_intelligence_base_score_v2270(string $type): int
     };
 }
 
+function vp3_browser_intelligence_case_fingerprint_v2270(string $type,string $sourceEventId,string $salt,array $reasons): string
+{
+    $clean=array_values(array_unique(array_filter(array_map(static fn($x)=>preg_replace('/[^a-z0-9_:-]/','',strtolower((string)$x))??'',$reasons))));
+    return hash('sha256',$type.'|'.$sourceEventId.'|'.$salt.'|'.implode('|',$clean));
+}
+
 function vp3_browser_intelligence_score_v2270(
     string $type,string $consequenceLevel,?string $deadlineAt=null,bool $externalProposal=false
 ): int {
@@ -427,7 +433,7 @@ function vp3_browser_intelligence_open_case_v2270(
     $score=vp3_browser_intelligence_score_v2270($type,$consequence,$deadline,$external);
     $band=vp3_browser_intelligence_priority_band_v2270($score);
     $reasons=array_values(array_unique(array_filter(array_map(static fn($x)=>preg_replace('/[^a-z0-9_:-]/','',strtolower((string)$x))??'',$reasons))));
-    $fingerprint=hash('sha256',$type.'|'.$sourceEventId.'|'.$salt.'|'.implode('|',$reasons));
+    $fingerprint=vp3_browser_intelligence_case_fingerprint_v2270($type,$sourceEventId,$salt,$reasons);
 
     $stmt=$pdo->prepare("SELECT * FROM browser_transaction_intelligence_cases_v2270
       WHERE owner_user_id=? AND continuity_id=? AND exception_fingerprint=? LIMIT 1");
@@ -564,14 +570,19 @@ function vp3_browser_intelligence_cross_signals_v2270(PDO $pdo,array $user): voi
       WHERE c.owner_user_id=? AND c.tracking_status='active'
       ORDER BY c.created_at DESC,c.id DESC LIMIT ".VP3_BROWSER_INTELLIGENCE_MAX_ACTIVE_V2270);
     $stmt->execute([$uid]);$rows=$stmt->fetchAll(PDO::FETCH_ASSOC)?:[];
+    $activeCross=[];
 
     $bookings=array_values(array_filter($rows,static fn(array $r)=>(string)$r['lifecycle_family']==='booking'&&!empty($r['next_event_at'])));
     for($i=0;$i<count($bookings);$i++)for($j=$i+1;$j<count($bookings);$j++){
         $a=$bookings[$i];$b=$bookings[$j];
         if(abs(strtotime((string)$a['next_event_at'])-strtotime((string)$b['next_event_at']))>7200)continue;
         $pair=min((int)$a['id'],(int)$b['id']).':'.max((int)$a['id'],(int)$b['id']);
-        vp3_browser_intelligence_open_case_v2270($pdo,$a,'potential_schedule_conflict',['booking_times_within_2h'],'',vp3_browser_intelligence_fact_row_v2270($pdo,$uid,(int)$a['id']),'pair:'.$pair);
-        vp3_browser_intelligence_open_case_v2270($pdo,$b,'potential_schedule_conflict',['booking_times_within_2h'],'',vp3_browser_intelligence_fact_row_v2270($pdo,$uid,(int)$b['id']),'pair:'.$pair);
+        $reasons=['booking_times_within_2h'];$salt='pair:'.$pair;
+        foreach([$a,$b] as $row){
+            $fp=vp3_browser_intelligence_case_fingerprint_v2270('potential_schedule_conflict','',$salt,$reasons);
+            $activeCross[(int)$row['id'].'|'.$fp]=true;
+            vp3_browser_intelligence_open_case_v2270($pdo,$row,'potential_schedule_conflict',$reasons,'',vp3_browser_intelligence_fact_row_v2270($pdo,$uid,(int)$row['id']),$salt);
+        }
     }
 
     for($i=0;$i<count($rows);$i++)for($j=$i+1;$j<count($rows);$j++){
@@ -583,8 +594,32 @@ function vp3_browser_intelligence_cross_signals_v2270(PDO $pdo,array $user): voi
         if($amountA<1||$amountA!==$amountB||$currencyA===''||$currencyA!==$currencyB)continue;
         if(abs(strtotime((string)$a['created_at'])-strtotime((string)$b['created_at']))>21600)continue;
         $pair=min((int)$a['id'],(int)$b['id']).':'.max((int)$a['id'],(int)$b['id']);
-        vp3_browser_intelligence_open_case_v2270($pdo,$a,'potential_duplicate_transaction',['same_domain_family_amount_within_6h'],'',vp3_browser_intelligence_fact_row_v2270($pdo,$uid,(int)$a['id']),'pair:'.$pair);
-        vp3_browser_intelligence_open_case_v2270($pdo,$b,'potential_duplicate_transaction',['same_domain_family_amount_within_6h'],'',vp3_browser_intelligence_fact_row_v2270($pdo,$uid,(int)$b['id']),'pair:'.$pair);
+        $reasons=['same_domain_family_amount_within_6h'];$salt='pair:'.$pair;
+        foreach([$a,$b] as $row){
+            $fp=vp3_browser_intelligence_case_fingerprint_v2270('potential_duplicate_transaction','',$salt,$reasons);
+            $activeCross[(int)$row['id'].'|'.$fp]=true;
+            vp3_browser_intelligence_open_case_v2270($pdo,$row,'potential_duplicate_transaction',$reasons,'',vp3_browser_intelligence_fact_row_v2270($pdo,$uid,(int)$row['id']),$salt);
+        }
+    }
+
+    $cases=$pdo->prepare("SELECT * FROM browser_transaction_intelligence_cases_v2270
+      WHERE owner_user_id=? AND status IN ('open','acknowledged')
+        AND exception_type IN ('potential_schedule_conflict','potential_duplicate_transaction')");
+    $cases->execute([$uid]);
+    foreach($cases->fetchAll(PDO::FETCH_ASSOC)?:[] as $case){
+        $key=(int)$case['continuity_id'].'|'.(string)$case['exception_fingerprint'];
+        if(isset($activeCross[$key]))continue;
+        $pdo->prepare("UPDATE browser_transaction_intelligence_cases_v2270
+          SET status='resolved',resolved_at=UTC_TIMESTAMP(),updated_at=UTC_TIMESTAMP()
+          WHERE id=? AND owner_user_id=?")->execute([(int)$case['id'],$uid]);
+        $pdo->prepare("UPDATE browser_transaction_recovery_proposals_v2270
+          SET status='dismissed',resolved_at=UTC_TIMESTAMP()
+          WHERE case_id=? AND owner_user_id=? AND status='proposed'")->execute([(int)$case['id'],$uid]);
+        vp3_browser_intelligence_receipt_v2270(
+            $pdo,$uid,(int)$case['continuity_id'],(int)$case['id'],'cross_signal_cleared',
+            'Advisory cross-transaction signal cleared; active attention was removed while history was retained.',
+            'cross-cleared|'.(string)$case['public_id'].'|'.(string)$case['exception_fingerprint']
+        );
     }
 }
 
