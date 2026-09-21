@@ -2,7 +2,7 @@
 const $=id=>document.getElementById(id);
 const ui={};
 [
-'connectionState','connectControls','shareWorkspace','connectBtn','settingsBtn','connectedAccount','disconnectedAccount','accountAvatar','accountName','accountMeta','accountTeams','openVp3Btn','refreshAccountBtn','accountOptionsBtn','accessNotice','quickActionsCard','composerCard','agentWorkspaceName','agentWorkspaceStatus','agentRefreshBtn','agentConversationSelect','agentNewChatBtn','agentOpenFullBtn','agentUsePageContext','agentContextLabel','agentMessages','agentEmpty','agentMessageInput','agentSendBtn','delegationAgentName','delegationStatus','delegationRefreshBtn','delegationInstruction','delegationMaxSteps','delegationExpiry','delegationRisk','delegationDomains','delegationPreviewBtn','delegationStartBtn','delegationPlan','delegationActive','delegationActiveTitle','delegationActiveMeta','delegationProgress','delegationRunBtn','delegationPauseBtn','delegationResumeBtn','delegationCancelBtn','delegationOpenWorkflowBtn','runtimePanel','runtimeSessionBadge','runtimePlanRevision','runtimeCurrentSkill','runtimeRecovery','runtimeObservationCount','runtimeLastVerified','runtimeReplanBtn','runtimeSkipBtn','runtimeMultiPanel','runtimeMultiStatus','runtimeMultiAttachBtn','runtimeMultiCurrentDomain','runtimeMultiHandoffCount','runtimeMultiTabCount','runtimeMultiConflictCount','runtimeMultiDomains','runtimeMultiDomainsEmpty','runtimeMultiHandoffComposer','runtimeMultiTargetUrl','runtimeMultiGoBtn','runtimeMultiFactComposer','runtimeMultiFactKey','runtimeMultiFactValue','runtimeMultiFactAddBtn','runtimeMultiFacts','runtimeMultiFactsEmpty','runtimeMultiHandoffs','runtimeMultiHandoffsEmpty','runtimeMultiArtifacts','runtimeMultiArtifactsEmpty','runtimeResearchPanel','runtimeResearchStatus','runtimeResearchRefreshBtn','runtimeResearchStart','runtimeResearchQuestion','runtimeResearchProject','runtimeResearchMaxSources','runtimeResearchMaxPages','runtimeResearchMaxClaims','runtimeResearchDuration','runtimeResearchStartBtn','runtimeResearchActive','runtimeResearchPageCount','runtimeResearchClaimCount','runtimeResearchCorroborated','runtimeResearchConflicts','runtimeResearchAnalyzeBtn','runtimeResearchOpenChatBtn','runtimeResearchSaveBtn','runtimeResearchCancelBtn','runtimeResearchOpenReportBtn','runtimeResearchSources','runtimeResearchSourcesEmpty','runtimeResearchClaims','runtimeResearchClaimsEmpty','runtimeResearchMemo','runtimeResearchGaps','runtimeResearchGapsEmpty','runtimeResearchHandoffs','runtimeResearchKnowledgeBtn','runtimeResearchCrmBtn','runtimeResearchTaskBtn','runtimeTimeline','runtimeTimelineEmpty','runtimeTabs','runtimeTabsEmpty','runtimeWebPanel','runtimeWebStatus','runtimeWebScanBtn','runtimeWebControlCount','runtimeWebInteractionCount','runtimeWebElements','runtimeWebElementsEmpty','runtimeWebComposer','runtimeWebSelectedLabel','runtimeWebSelectedMeta','runtimeWebActionSelect','runtimeWebValueField','runtimeWebValueLabel','runtimeWebValueInput','runtimeWebOptionField','runtimeWebOptionSelect','runtimeWebToggleField','runtimeWebToggleSelect','runtimeWebPreviewBtn','runtimeWebClearSelectionBtn','runtimeWebProposal','runtimeWebProposalTitle','runtimeWebProposalDetail','runtimeWebCheckpointNotice','runtimeTransactionReview','runtimeTransactionKind','runtimeTransactionWarning','runtimeTransactionFields','runtimeWebRunBtn','runtimeWebConfirmRunBtn','runtimeWebCancelBtn','runtimeWebRecent','runtimeWebRecentEmpty','delegationCheckpoint','delegationCheckpointText','delegationCheckpointOpenBtn','delegationCheckpointDoneBtn','delegationSteps','delegationRecent','delegationRecentEmpty','executionAgentName','executionStatus','executionRefreshBtn','executionPageLabel','executionCandidates','executionCandidatesEmpty','executionTickets','executionTicketsEmpty','executionContinuity','executionContinuityEmpty','memoryAgentName','memoryStatus','memoryRefreshBtn','memoryPageLabel','memoryCandidates','memoryCandidatesEmpty','memoryRemembered','memoryRememberedEmpty','memoryCount',
+'connectionState','connectControls','shareWorkspace','connectBtn','settingsBtn','connectedAccount','disconnectedAccount','accountAvatar','accountName','accountMeta','accountTeams','openVp3Btn','refreshAccountBtn','accountOptionsBtn','accessNotice','quickActionsCard','composerCard','agentWorkspaceName','agentWorkspaceStatus','agentRefreshBtn','agentConversationSelect','agentNewChatBtn','agentOpenFullBtn','agentUsePageContext','agentContextLabel','agentMessages','agentEmpty','agentMessageInput','agentSendBtn','delegationAgentName','delegationStatus','delegationRefreshBtn','delegationInstruction','delegationMaxSteps','delegationExpiry','delegationRisk','delegationDomains','delegationPreviewBtn','delegationStartBtn','delegationPlan','delegationActive','delegationActiveTitle','delegationActiveMeta','delegationProgress','delegationRunBtn','delegationPauseBtn','delegationResumeBtn','delegationCancelBtn','delegationOpenWorkflowBtn','runtimePanel','runtimeSessionBadge','runtimePlanRevision','runtimeCurrentSkill','runtimeRecovery','runtimeObservationCount','runtimeLastVerified','runtimeReplanBtn','runtimeSkipBtn','runtimeMultiPanel','runtimeMultiStatus','runtimeMultiAttachBtn','runtimeMultiCurrentDomain','runtimeMultiHandoffCount','runtimeMultiTabCount','runtimeMultiConflictCount','runtimeMultiDomains','runtimeMultiDomainsEmpty','runtimeMultiHandoffComposer','runtimeMultiTargetUrl','runtimeMultiGoBtn','runtimeMultiFactComposer','runtimeMultiFactKey','runtimeMultiFactValue','runtimeMultiFactAddBtn','runtimeMultiFacts','runtimeMultiFactsEmpty','runtimeMultiHandoffs','runtimeMultiHandoffsEmpty','runtimeMultiArtifacts','runtimeMultiArtifactsEmpty','runtimeResearchPanel','runtimeResearchStatus','runtimeResearchRefreshBtn','runtimeResearchStart','runtimeResearchQuestion','runtimeResearchProject','runtimeResearchMaxSources','runtimeResearchMaxPages','runtimeResearchMaxClaims','runtimeResearchDuration','runtimeResearchStartBtn','runtimeResearchActive','runtimeResearchPageCount','runtimeResearchClaimCount','runtimeResearchCorroborated','runtimeResearchConflicts','runtimeResearchAnalyzeBtn','runtimeResearchOpenChatBtn','runtimeResearchSaveBtn','runtimeResearchCancelBtn','runtimeResearchOpenReportBtn','runtimeResearchSources','runtimeResearchSourcesEmpty','runtimeResearchClaims','runtimeResearchClaimsEmpty','runtimeResearchMemo','runtimeResearchGaps','runtimeResearchGapsEmpty','runtimeResearchHandoffs','runtimeResearchKnowledgeBtn','runtimeResearchCrmBtn','runtimeResearchTaskBtn','runtimeTimeline','runtimeTimelineEmpty','runtimeTabs','runtimeTabsEmpty','runtimeWebPanel','runtimeWebStatus','runtimeWebScanBtn','runtimeWebControlCount','runtimeWebInteractionCount','runtimeWebElements','runtimeWebElementsEmpty','runtimeWebComposer','runtimeWebSelectedLabel','runtimeWebSelectedMeta','runtimeWebActionSelect','runtimeWebValueField','runtimeWebValueLabel','runtimeWebValueInput','runtimeWebOptionField','runtimeWebOptionSelect','runtimeWebToggleField','runtimeWebToggleSelect','runtimeWebPreviewBtn','runtimeWebClearSelectionBtn','runtimeWebProposal','runtimeWebProposalTitle','runtimeWebProposalDetail','runtimeWebCheckpointNotice','runtimeTransactionReview','runtimeTransactionKind','runtimeTransactionWarning','runtimeTransactionFields','runtimeWebRunBtn','runtimeWebConfirmRunBtn','runtimeWebCancelBtn','runtimeWebRecent','runtimeWebRecentEmpty','runtimeOutcomePanel','runtimeOutcomeState','runtimeOutcomeSummary','runtimeOutcomeEvidence','runtimeOutcomeReference','runtimeOutcomeRecheckBtn','runtimeOutcomeCompletedBtn','runtimeOutcomeNotSubmittedBtn','delegationCheckpoint','delegationCheckpointText','delegationCheckpointOpenBtn','delegationCheckpointDoneBtn','delegationSteps','delegationRecent','delegationRecentEmpty','executionAgentName','executionStatus','executionRefreshBtn','executionPageLabel','executionCandidates','executionCandidatesEmpty','executionTickets','executionTicketsEmpty','executionContinuity','executionContinuityEmpty','memoryAgentName','memoryStatus','memoryRefreshBtn','memoryPageLabel','memoryCandidates','memoryCandidatesEmpty','memoryRemembered','memoryRememberedEmpty','memoryCount',
 'nowTab','agentTab','delegationTab','executionTab','memoryTab','thisPageTab','followingTab','liveTab','alertsTab','searchTab','nowView','agentView','delegationView','executionView','memoryView','thisPageView','followingView','liveView','alertsView','searchView','refreshNowBtn','openAgentChatBtn','restoreNowBtn','nowStatus','nowAttentionCount','nowItemCount','nowContextualCount','nowContextStrip','nowContextTitle','nowContextMeta','toggleNowContextBtn','nowContextPanel','nowRelationshipSummary','nowRelationshipList','nowContextActions','nowEmpty','nowFeed','refreshCaptureBtn','pageTitle','pageHost','sourceMeta','sourceStatus',
 'followCurrentSourceBtn','openSourcePageBtn','quickAskBtn','quickSummarizeBtn','quickCompareBtn','quickResearchBtn','quickKnowledgeBtn','quickTaskBtn','quickMemoryBtn','quickTeamBtn','quickAnnotateBtn','selectedText','selectionCount','captureSummary','captureScreenshotBtn','screenshotPreview',
 'screenshotImage','screenshotMeta','removeScreenshotBtn','captureMediaBtn','mediaDetectedText','mediaPreview','mediaPreviewTitle','mediaStart',
@@ -29,6 +29,7 @@ let agentConversationId=0,agentWorkspaceAgentId=0,agentLastMessageId=0,agentPoll
 let delegationBusy=false,delegationRunnerBusy=false,delegationPreviewData=null,delegationActiveData=null,delegationRecentData=[],delegationCheckpointData=null;
 let runtimeBusyV2200=false,runtimeRunnerBusyV2200=false,runtimeDataV2200=null,runtimeSkillsV2200=[],runtimeOpenedTabsV2200=[];
 let runtimeWebBusyV2210=false,runtimeWebObservationV2210=null,runtimeWebElementsV2210=[],runtimeWebActionsV2210=[],runtimeWebSelectedV2210=null,runtimeWebProposalV2210=null,runtimeWebReceiptsV2210=[],runtimeTransactionReviewV2240=null;
+let runtimeTransactionOutcomeV2250=null;
 let runtimeMultiBusyV2220=false,runtimeMultiStateV2220=null;
 let runtimeResearchBusyV2230=false,runtimeResearchMissionV2230=null,runtimeResearchProjectsV2230=[];
 let executionBusy=false,executionCandidatesData=[],executionTicketsData=[],executionContinuityData=[];
@@ -1145,9 +1146,21 @@ async function executeRuntimeWebProposalV2210(confirmCheckpoint=false){
         value:local.value
       }});
     }
-    const ok=local.transactionRequired?Boolean(result&&result.verified):Boolean(result&&result.outcome&&result.outcome.verified);
+    if(local.transactionRequired){
+      const transaction=local.transaction||runtimeTransactionReviewV2240;
+      if(result&&result.outcome_verification)renderRuntimeOutcomeV2250(result.outcome_verification);
+      else if(transaction&&transaction.intent){
+        renderRuntimeOutcomeV2250({
+          outcome:{intent_id:transaction.intent.intent_id,domain:String(transaction.review&&transaction.review.domain||''),outcome_state:'ambiguous',evidence_strength:'weak',evidence_codes:[],reference_present:false},
+          intent:transaction.intent,recovery:null,
+          recovery_options:{recheck:true,confirm_completed:true,confirm_not_submitted:Boolean(result&&result.uncertain),retry_allowed:false}
+        });
+      }
+    }
+    const ok=local.transactionRequired?Boolean(result&&(result.verified||result.outcome_confirmed)):Boolean(result&&result.outcome&&result.outcome.verified);
     const uncertain=local.transactionRequired&&Boolean(result&&result.uncertain);
-    note(ok?(local.transactionRequired?'External submission dispatched once and the immediate browser state was verified. Review the site for final business outcome.':'Web interaction completed and verified.'):(uncertain?'Submission may have been sent but could not be verified. Do not retry until you review the destination.':(local.transactionRequired?'Nothing was submitted. Review before retrying.':'Web interaction ran but its expected state could not be verified. Rescan before retrying.')),ok?'success':'error');
+    const outcomeConfirmed=local.transactionRequired&&Boolean(result&&result.outcome_confirmed);
+    note(ok?(outcomeConfirmed?'Destination confirmation observed after the approved submission.':'External submission dispatched once and the immediate browser state was verified. v22.50 will keep the destination receipt separate from downstream business success.'):(uncertain?'Submission may have been sent but could not be verified. v22.50 keeps it duplicate-blocked until you resolve the destination outcome.':(local.transactionRequired?'Nothing was submitted. Review before retrying.':'Web interaction ran but its expected state could not be verified. Rescan before retrying.')),ok?'success':'error');
     runtimeWebResetProposalV2210();
     await loadRuntimeWebReceiptsV2210();
     await loadRuntimeDetailV2200();
@@ -1172,6 +1185,129 @@ async function clearRuntimeWebSelectionV2210(){
 async function runtimeWebElementClickV2210(event){
   const row=event.target.closest('[data-web-element-index]');if(!row)return;
   await runtimeWebSelectV2210(Number(row.dataset.webElementIndex||0));
+}
+
+function runtimeOutcomeResetV2250(){
+  runtimeTransactionOutcomeV2250=null;
+  ui.runtimeOutcomePanel.hidden=true;
+  ui.runtimeOutcomePanel.dataset.state='';
+  ui.runtimeOutcomeState.textContent='Unverified';
+  ui.runtimeOutcomeSummary.textContent='No destination outcome has been checked yet.';
+  ui.runtimeOutcomeEvidence.replaceChildren();
+  ui.runtimeOutcomeReference.hidden=true;
+  ui.runtimeOutcomeReference.textContent='';
+  ui.runtimeOutcomeRecheckBtn.hidden=true;
+  ui.runtimeOutcomeCompletedBtn.hidden=true;
+  ui.runtimeOutcomeNotSubmittedBtn.hidden=true;
+}
+
+function runtimeOutcomeSummaryV2250(state){
+  if(state==='confirmed')return 'Strong destination confirmation signals were observed. This confirms the destination page state, not payment settlement, fulfillment, booking performance, or any later business outcome.';
+  if(state==='pending')return 'The destination explicitly reports a pending or review state. Keep the duplicate guard in place and recheck later.';
+  if(state==='rejected')return 'The destination shows an explicit rejection or error signal. Do not retry automatically; review the site before deciding whether no submission occurred.';
+  if(state==='external_redirect')return 'The transaction moved to a different domain. VP3 did not inspect that page. Review it manually before any retry.';
+  return 'The destination does not provide enough strong evidence to determine the outcome. The transaction remains protected from duplicate retry.';
+}
+
+function renderRuntimeOutcomeV2250(payload){
+  const data=payload&&payload.latest?payload.latest:payload;
+  if(!data||!data.outcome){runtimeOutcomeResetV2250();return;}
+  const previous=runtimeTransactionOutcomeV2250||{};
+  runtimeTransactionOutcomeV2250={
+    ...previous,...data,
+    local:(payload&&payload.local)||data.local||previous.local||{}
+  };
+  const outcome=runtimeTransactionOutcomeV2250.outcome||{};
+  const recovery=runtimeTransactionOutcomeV2250.recovery||null;
+  const options=runtimeTransactionOutcomeV2250.recovery_options||{};
+  const state=String(outcome.outcome_state||'ambiguous');
+  ui.runtimeOutcomePanel.hidden=false;
+  ui.runtimeOutcomePanel.dataset.state=state;
+  ui.runtimeOutcomeState.textContent=state.replace(/_/g,' ');
+  let summary=runtimeOutcomeSummaryV2250(state);
+  if(recovery){
+    if(recovery.resolution_key==='confirmed_not_submitted'){
+      summary='Resolved by you: no submission occurred. The duplicate guard was released. Any new attempt still requires a fresh v22.40 exact-form review and new approval.';
+    }else if(recovery.resolution_key==='confirmed_completed'){
+      summary='Resolved by you as completed. The duplicate guard remains in place; this resolution does not assert settlement, fulfillment, or later business success.';
+    }
+  }
+  ui.runtimeOutcomeSummary.textContent=summary;
+  ui.runtimeOutcomeEvidence.replaceChildren();
+  for(const code of Array.isArray(outcome.evidence_codes)?outcome.evidence_codes:[]){
+    ui.runtimeOutcomeEvidence.append(el('span','pill',String(code).replace(/_/g,' ')));
+  }
+  if(outcome.evidence_strength)ui.runtimeOutcomeEvidence.append(el('span','pill',String(outcome.evidence_strength)+' evidence'));
+
+  const masked=String(runtimeTransactionOutcomeV2250.local&&runtimeTransactionOutcomeV2250.local.masked_reference||'');
+  if(masked||outcome.reference_present){
+    ui.runtimeOutcomeReference.hidden=false;
+    ui.runtimeOutcomeReference.textContent=(outcome.reference_kind?String(outcome.reference_kind).replace(/_/g,' ')+' reference · ':'Reference detected · ')+(masked||'fingerprint stored; raw value stays local');
+  }else{
+    ui.runtimeOutcomeReference.hidden=true;
+    ui.runtimeOutcomeReference.textContent='';
+  }
+
+  ui.runtimeOutcomeRecheckBtn.hidden=!options.recheck;
+  ui.runtimeOutcomeCompletedBtn.hidden=!options.confirm_completed;
+  ui.runtimeOutcomeNotSubmittedBtn.hidden=!options.confirm_not_submitted;
+}
+
+async function loadRuntimeTransactionOutcomeV2250(){
+  if(!runtimeDataV2200||!runtimeDataV2200.runtime_id){runtimeOutcomeResetV2250();return null;}
+  const payload=await msg('transaction_outcome_action',{
+    action:'list',
+    payload:{runtime_id:runtimeDataV2200.runtime_id,agent_id:agentWorkspaceAgentId}
+  });
+  if(payload&&payload.latest)renderRuntimeOutcomeV2250(payload);
+  else runtimeOutcomeResetV2250();
+  return payload;
+}
+
+async function recheckRuntimeOutcomeV2250(){
+  const current=runtimeTransactionOutcomeV2250;
+  const outcome=current&&current.outcome||{};
+  const intent=current&&current.intent||{};
+  const intentId=String(intent.intent_id||outcome.intent_id||'');
+  const expectedDomain=String(outcome.domain||intent.domain||'');
+  if(!runtimeDataV2200||!runtimeDataV2200.runtime_id||!intentId||!expectedDomain)throw new Error('No transaction outcome is available to recheck.');
+  busy(ui.runtimeOutcomeRecheckBtn,true,'Checking…');
+  try{
+    const payload=await msg('transaction_outcome_recheck',{payload:{
+      runtime_id:runtimeDataV2200.runtime_id,agent_id:agentWorkspaceAgentId,
+      intent_id:intentId,expected_domain:expectedDomain
+    }});
+    renderRuntimeOutcomeV2250(payload);
+    const state=String(payload&&payload.outcome&&payload.outcome.outcome_state||'ambiguous');
+    note(state==='confirmed'?'Destination confirmation observed.':'Destination outcome rechecked. No retry was performed.',state==='confirmed'?'success':'');
+    await loadRuntimeDetailV2200().catch(()=>{});
+    return payload;
+  }finally{busy(ui.runtimeOutcomeRecheckBtn,false);}
+}
+
+async function resolveRuntimeOutcomeV2250(resolution){
+  const current=runtimeTransactionOutcomeV2250;
+  const outcome=current&&current.outcome||{};
+  const intent=current&&current.intent||{};
+  const intentId=String(intent.intent_id||outcome.intent_id||'');
+  if(!runtimeDataV2200||!runtimeDataV2200.runtime_id||!intentId)throw new Error('No transaction outcome is available to resolve.');
+  const notSubmitted=resolution==='confirmed_not_submitted';
+  const messageText=notSubmitted
+    ?'Confirm that you reviewed the destination and determined that no submission occurred. This releases duplicate protection, but any new attempt will still require a fresh exact-form review.'
+    :'Confirm that you reviewed the destination and determined that the submission completed. This does not assert settlement, fulfillment, or later business success.';
+  if(!globalThis.confirm(messageText))return null;
+  const button=notSubmitted?ui.runtimeOutcomeNotSubmittedBtn:ui.runtimeOutcomeCompletedBtn;
+  busy(button,true,'Saving…');
+  try{
+    const payload=await msg('transaction_outcome_resolve',{payload:{
+      runtime_id:runtimeDataV2200.runtime_id,agent_id:agentWorkspaceAgentId,intent_id:intentId,resolution,
+      acknowledgement:notSubmitted?'reviewed_destination_not_submitted':'reviewed_destination_completed'
+    }});
+    renderRuntimeOutcomeV2250({...current,...payload,outcome:current.outcome,local:current.local});
+    note(notSubmitted?'Outcome resolved. A future attempt requires a new v22.40 review.':'Outcome marked completed.','success');
+    await loadRuntimeDetailV2200().catch(()=>{});
+    return payload;
+  }finally{busy(button,false);}
 }
 
 function runtimeRequestV2200(action,payload={}){
@@ -1199,10 +1335,10 @@ function renderRuntimeV2200(runtime){
   runtimeDataV2200=runtime||null;
   if(!runtime){
     ui.runtimePanel.hidden=true;
-    runtimeWebResetV2210();runtimeMultiResetV2220();runtimeResearchResetV2230();
+    runtimeWebResetV2210();runtimeMultiResetV2220();runtimeResearchResetV2230();runtimeOutcomeResetV2250();
     return;
   }
-  if(previousRuntimeId&&previousRuntimeId!==String(runtime.runtime_id||'')){runtimeWebResetV2210();runtimeMultiResetV2220();runtimeResearchResetV2230();}
+  if(previousRuntimeId&&previousRuntimeId!==String(runtime.runtime_id||'')){runtimeWebResetV2210();runtimeMultiResetV2220();runtimeResearchResetV2230();runtimeOutcomeResetV2250();}
   ui.runtimePanel.hidden=false;
   ui.runtimeSessionBadge.textContent=(runtime.status||'ready')+' · '+String(runtime.runtime_id||'').slice(0,8);
   ui.runtimePlanRevision.textContent='r'+String(runtime.plan_revision||1);
@@ -1232,6 +1368,7 @@ async function attachRuntimeV2200(delegationId){
   renderRuntimeV2200(payload&&payload.runtime||null);
   await loadRuntimeMultiV2220().catch(()=>{});
   await loadRuntimeResearchV2230().catch(()=>{});
+  await loadRuntimeTransactionOutcomeV2250().catch(()=>{});
   return payload&&payload.runtime||null;
 }
 async function loadRuntimeDetailV2200(){
@@ -2000,6 +2137,9 @@ ui.runtimeWebRunBtn.onclick=()=>executeRuntimeWebProposalV2210(false).catch(fail
 ui.runtimeWebConfirmRunBtn.onclick=()=>executeRuntimeWebProposalV2210(true).catch(fail);
 ui.runtimeWebCancelBtn.onclick=()=>cancelRuntimeWebProposalV2210().catch(fail);
 ui.runtimeWebClearSelectionBtn.onclick=()=>clearRuntimeWebSelectionV2210().catch(fail);
+ui.runtimeOutcomeRecheckBtn.onclick=()=>recheckRuntimeOutcomeV2250().catch(fail);
+ui.runtimeOutcomeCompletedBtn.onclick=()=>resolveRuntimeOutcomeV2250('confirmed_completed').catch(fail);
+ui.runtimeOutcomeNotSubmittedBtn.onclick=()=>resolveRuntimeOutcomeV2250('confirmed_not_submitted').catch(fail);
 ui.delegationRecent.onclick=e=>delegationClickV2190(e).catch(fail);
 ui.delegationSteps.onclick=e=>delegationClickV2190(e).catch(fail);
 ui.delegationInstruction.oninput=delegationInvalidatePreviewV2190;
