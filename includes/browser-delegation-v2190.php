@@ -134,6 +134,12 @@ function vp3_browser_delegation_plan_v2190(
     $allowedActions=vp3_browser_delegation_allowed_actions_v2190(
         is_array($constraints['allowed_actions']??null)?$constraints['allowed_actions']:[]
     );
+    if(in_array('transaction_submit',$allowedActions,true)&&$riskBudget!=='medium'){
+        throw new InvalidArgumentException('Transaction & Submission Safety requires a Medium risk budget because every final external submission is an explicit checkpoint.');
+    }
+    if(in_array('transaction_submit',$allowedActions,true)&&!in_array('web_submit',$allowedActions,true)){
+        throw new InvalidArgumentException('Transaction & Submission Safety requires the Controlled Web Submit skill.');
+    }
 
     $candidates=vp3_browser_execution_candidates_v2180($pdo,$user,$namespace,$session,$context,$relations);
     $source=is_array($relations['source']??null)?$relations['source']:null;
