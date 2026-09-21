@@ -1,6 +1,6 @@
 const VP3_DEFAULT_BASE = 'https://vp3.me';
 const VP3_CONTRACT_VERSION = '1';
-const VP3_EXTENSION_VERSION = '22.6.0';
+const VP3_EXTENSION_VERSION = '22.7.0';
 const VP3_MEDIA_CLIP_MAX_SECONDS = 90;
 
 const storage = {
@@ -671,6 +671,12 @@ async function browserTransactionContinuityApiV2260(action,payload={}){
   },'agent.message');
 }
 
+async function browserTransactionIntelligenceApiV2270(action,payload={}){
+  return authorizedFetch('/api/extension-transaction-intelligence-v2270.php',{
+    method:'POST',json:{action:String(action||'inbox'),...payload}
+  },'agent.message');
+}
+
 async function browserTransactionContinuityEnsureV2260(payload={}){
   return browserTransactionContinuityApiV2260('ensure',{
     runtime_id:String(payload.runtime_id||''),agent_id:Number(payload.agent_id||0),intent_id:String(payload.intent_id||'')
@@ -757,16 +763,40 @@ async function browserTransactionContinuityCaptureV2260(tabId){
       add('changed','account_changed_phrase',/(?:account updated|changes saved|plan changed|subscription changed)/i);
       add('pending','pending_phrase',/(?:pending|awaiting|waiting for|verification required)/i);
 
-      const scheduleTokens=[...document.querySelectorAll('time[datetime],[data-date],[data-time]')].slice(0,30).map(el=>
+      const scheduleNodes=[...document.querySelectorAll('time[datetime],[data-date],[data-time]')].slice(0,30);
+      const scheduleTokens=scheduleNodes.map(el=>
         String(el.getAttribute('datetime')||el.getAttribute('data-date')||el.getAttribute('data-time')||'').trim()
       ).filter(Boolean).sort();
       const scheduleHash=scheduleTokens.length?await sha(JSON.stringify(scheduleTokens)):'';
+      const scheduleCandidates=[];
+      for(const el of scheduleNodes){
+        const raw=String(el.getAttribute('datetime')||el.getAttribute('data-date')||el.getAttribute('data-time')||'').trim();
+        const ts=Date.parse(raw);if(!raw||!Number.isFinite(ts))continue;
+        const context=String(el.closest('[class],[role],section,article,li,div')?.innerText||el.parentElement?.innerText||'').toLowerCase().slice(0,500);
+        const kind=/(?:deadline|due by|complete by|respond by|cancel by|expires?)/i.test(context)?'deadline':/(?:delivery|arrives?|estimated delivery)/i.test(context)?'delivery':'event';
+        scheduleCandidates.push({kind,at:new Date(ts).toISOString()});
+        if(scheduleCandidates.length>=8)break;
+      }
 
       const amountNodes=[...document.querySelectorAll('[data-total],[data-amount],[class*="order-total"],[class*="grand-total"],[class*="total-amount"],[aria-label*="total" i]')];
       const amountText=amountNodes.slice(0,20).map(el=>String(el.innerText||el.textContent||el.getAttribute('data-total')||el.getAttribute('data-amount')||'')).join(' ');
       const amountTokens=[...new Set((amountText.match(/(?:[$€£]\s?\d{1,7}(?:[,.]\d{2})?|\b\d{1,7}(?:[,.]\d{2})\s?(?:USD|EUR|GBP)\b)/gi)||[])
         .map(x=>String(x).replace(/\s+/g,' ').trim().toUpperCase()))].sort().slice(0,12);
       const amountHash=amountTokens.length?await sha(JSON.stringify(amountTokens)):'';
+      const exposureCandidates=[];
+      for(const node of amountNodes.slice(0,12)){
+        const raw=String(node.innerText||node.textContent||node.getAttribute('data-total')||node.getAttribute('data-amount')||'').replace(/\s+/g,' ').trim();
+        const match=raw.match(/([$€£])\s?(\d{1,7}(?:[,.]\d{2})?)|\b(\d{1,7}(?:[,.]\d{2}))\s?(USD|EUR|GBP)\b/i);
+        if(!match)continue;
+        const symbol=match[1]||'';const numberText=String(match[2]||match[3]||'').replace(/,/g,'');
+        const value=Number(numberText);if(!Number.isFinite(value)||value<=0)continue;
+        const currency=(match[4]||({$: 'USD','€':'EUR','£':'GBP'}[symbol])||'').toUpperCase();
+        if(!['USD','EUR','GBP'].includes(currency))continue;
+        const context=raw.toLowerCase();
+        const kind=/(?:refund)/i.test(context)?'refund_expected':/(?:deposit)/i.test(context)?'deposit':/(?:due|outstanding|balance)/i.test(context)?'outstanding':'current_total';
+        exposureCandidates.push({kind,currency,minor:Math.round(value*100)});
+        if(exposureCandidates.length>=8)break;
+      }
 
       const observationFingerprint=await sha(JSON.stringify({
         domain:host,page_fingerprint:pageFingerprint,content_hash:contentHash,
@@ -776,7 +806,8 @@ async function browserTransactionContinuityCaptureV2260(tabId){
         domain:host,page_fingerprint:pageFingerprint,content_hash:contentHash,
         observation_fingerprint:observationFingerprint,reference_candidates:referenceCandidates,
         masked_references:maskedReferences,state_candidates:stateCandidates,
-        schedule_hash:scheduleHash,amount_hash:amountHash
+        schedule_hash:scheduleHash,amount_hash:amountHash,
+        schedule_candidates:scheduleCandidates,exposure_candidates:exposureCandidates
       };
     }
   });
@@ -810,7 +841,15 @@ async function browserTransactionContinuityScanV2260(){
     state_candidates:Array.isArray(local.state_candidates)?local.state_candidates:[],
     schedule_hash:String(local.schedule_hash||''),amount_hash:String(local.amount_hash||'')
   });
-  return {...response,local:{masked_references:Array.isArray(local.masked_references)?local.masked_references:[]}};
+  let intelligence=null;
+  if(response&&response.matched&&response.continuity&&response.continuity.continuity_id){
+    intelligence=await browserTransactionIntelligenceApiV2270('observe_facts',{
+      continuity_id:String(response.continuity.continuity_id||''),
+      schedule_candidates:Array.isArray(local.schedule_candidates)?local.schedule_candidates:[],
+      exposure_candidates:Array.isArray(local.exposure_candidates)?local.exposure_candidates:[]
+    }).catch(()=>null);
+  }
+  return {...response,intelligence,local:{masked_references:Array.isArray(local.masked_references)?local.masked_references:[]}};
 }
 
 async function browserTransactionContinuityListV2260(){
@@ -2527,6 +2566,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       case 'transaction_continuity_scan': return browserTransactionContinuityScanV2260();
       case 'transaction_continuity_list': return browserTransactionContinuityListV2260();
       case 'transaction_continuity_action': return browserTransactionContinuityApiV2260(message.action, message.payload || {});
+      case 'transaction_intelligence_action': return browserTransactionIntelligenceApiV2270(message.action, message.payload || {});
+      case 'transaction_intelligence_inbox': return browserTransactionIntelligenceApiV2270('inbox', message.payload || {});
       case 'notification_poll': return pollProactiveNotifications();
       case 'quick_action_consume': return consumeQuickActionV2150();
       case 'quick_action_run': {
