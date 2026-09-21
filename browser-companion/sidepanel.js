@@ -1021,7 +1021,7 @@ async function previewRuntimeWebInteractionV2210(){
       }
     });
     const proposal=payload&&payload.proposal||null;if(!proposal)throw new Error('VP3 did not return an interaction preview.');
-    const transactionRequired=action==='submit'||(Boolean(proposal.requires_checkpoint)&&Boolean(item.dangerous)&&String(item.kind||'')==='button');
+    const transactionRequired=action==='submit'||(Boolean(proposal.requires_checkpoint)&&(Boolean(item.dangerous)||Boolean(item.submit_like))&&String(item.kind||'')==='button');
     runtimeWebProposalV2210={proposal,action,item,value,transactionRequired};
     ui.runtimeWebProposal.hidden=false;
     ui.runtimeWebProposalTitle.textContent=(proposal.requires_checkpoint?'Checkpoint required · ':'Ready · ')+(proposal.label||action.replace(/_/g,' '));
@@ -1152,6 +1152,14 @@ async function executeRuntimeWebProposalV2210(confirmCheckpoint=false){
     await loadRuntimeWebReceiptsV2210();
     await loadRuntimeDetailV2200();
     await scanRuntimeWebControlsV2210();
+  }catch(error){
+    if(local.transactionRequired){
+      runtimeWebResetProposalV2210();
+      await loadRuntimeWebReceiptsV2210().catch(()=>{});
+      await loadRuntimeDetailV2200().catch(()=>{});
+      await scanRuntimeWebControlsV2210().catch(()=>{});
+    }
+    throw error;
   }finally{runtimeWebBusyV2210=false;busy(button,false);}
 }
 async function cancelRuntimeWebProposalV2210(){
