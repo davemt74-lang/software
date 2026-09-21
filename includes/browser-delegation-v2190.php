@@ -102,7 +102,7 @@ function vp3_browser_delegation_allowed_actions_v2190(array $input): array
         'follow_source','unfollow_source',
         'open_research','open_profile','open_contact',
         'draft_task','draft_knowledge','share_team',
-        'web_click','web_focus','web_type','web_clear','web_select','web_toggle','web_scroll','web_open_link','web_submit','multisite_handoff'
+        'web_click','web_focus','web_type','web_clear','web_select','web_toggle','web_scroll','web_open_link','web_submit','multisite_handoff','browser_research'
     ];
     $out=[];
     foreach(array_slice($input,0,24) as $value){
@@ -160,6 +160,22 @@ function vp3_browser_delegation_plan_v2190(
             'step_key'=>'step_'.(count($steps)+1).'_multisite_handoff',
             'action_key'=>'multisite_handoff',
             'label'=>'Coordinate approved multi-site workflow',
+            'step_kind'=>'checkpoint',
+            'target_type'=>'browser_source',
+            'target_id'=>(string)$source['id'],
+            'target_scope'=>'personal',
+            'risk_level'=>'low',
+            'requires_checkpoint'=>true,
+            'verification_mode'=>'user_confirmation',
+            'mode'=>'checkpoint',
+        ];
+    }
+
+    if(in_array('browser_research',$allowedActions,true)&&count($steps)<$maxSteps){
+        $steps[]=[
+            'step_key'=>'step_'.(count($steps)+1).'_browser_research',
+            'action_key'=>'browser_research',
+            'label'=>'Run Browser Research mission',
             'step_kind'=>'checkpoint',
             'target_type'=>'browser_source',
             'target_id'=>(string)$source['id'],
