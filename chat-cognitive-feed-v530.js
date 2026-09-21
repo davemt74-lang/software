@@ -123,13 +123,16 @@
     head.append(copy,controls);
 
     body=el('div','vp3-cognitive-feed-body');
+    const proactiveBrief=el('section','vp3-cognitive-proactive-brief-v2340');
+    proactiveBrief.dataset.cognitiveProactiveBrief='1';
+    proactiveBrief.hidden=true;
     const operationsStrip=el('div','vp3-cognitive-operations-strip');
     operationsStrip.dataset.cognitiveOperations='1';
     operationsStrip.hidden=true;
     const priorityQueue=el('section','vp3-cognitive-priority-queue-v2310');
     priorityQueue.dataset.cognitivePriorityQueue='1';
     priorityQueue.hidden=true;
-    root.append(head,operationsStrip,priorityQueue,body);
+    root.append(head,proactiveBrief,operationsStrip,priorityQueue,body);
 
     const starters=welcome.querySelector('.chat-starters');
     if(starters)welcome.insertBefore(root,starters);
@@ -144,8 +147,19 @@
   function updateEmptyState() {
     if(!root||!body)return;
     const any=Boolean(body.querySelector('.vp3-cognitive-feed-item'));
+    const proactive=Boolean(root.querySelector('[data-cognitive-proactive-brief]:not([hidden])'));
     const hidden=Number(lastFeed&&lastFeed.hidden_count||0);
-    root.hidden=!any&&hidden<1;
+    root.hidden=!any&&!proactive&&hidden<1;
+  }
+
+  function focusFeedItem(key) {
+    key=clean(key);
+    if(!key||!root)return;
+    const target=root.querySelector('[data-feed-item-key="'+CSS.escape(key)+'"]');
+    if(!target)return;
+    target.scrollIntoView({behavior:'smooth',block:'center'});
+    target.setAttribute('tabindex','-1');
+    target.focus({preventScroll:true});
   }
 
   function feedItem(section,item) {
@@ -265,6 +279,51 @@
       restore.textContent=hiddenCount>0?'Show hidden ('+hiddenCount+')':'Show hidden';
     }
 
+    const proactiveBrief=root.querySelector('[data-cognitive-proactive-brief]');
+    const proactive=lastFeed&&lastFeed.proactive_brief&&typeof lastFeed.proactive_brief==='object'?lastFeed.proactive_brief:null;
+    if(proactiveBrief){
+      proactiveBrief.replaceChildren();
+      if(proactive){
+        const intro=el('div','vp3-cognitive-proactive-copy');
+        intro.append(
+          el('small','','AGENT NOW'),
+          el('strong','',clean(proactive.greeting)||'Your Agent brief.'),
+          el('span','',clean(proactive.headline))
+        );
+        const summary=clean(proactive.summary);
+        if(summary)intro.appendChild(el('em','',summary));
+
+        const voice=proactive.voice&&typeof proactive.voice==='object'?proactive.voice:{};
+        const voiceBadge=el('span','vp3-cognitive-proactive-voice',voice.enabled?'Agent Voice on':'Agent Voice off');
+        voiceBadge.title=voice.enabled
+          ? 'Immediate speech uses the existing canonical notification cursor. Opportunities remain visual unless included in a persisted return briefing.'
+          : 'Turn on Agent Voice from the Agent + Voice menu to hear eligible canonical alerts and return briefings.';
+
+        const top=el('header','vp3-cognitive-proactive-head');
+        top.append(intro,voiceBadge);
+        proactiveBrief.appendChild(top);
+
+        const focusItems=Array.isArray(proactive.focus_items)?proactive.focus_items:[];
+        if(focusItems.length){
+          const list=el('div','vp3-cognitive-proactive-focus');
+          focusItems.forEach(item=>{
+            const button=el('button','vp3-cognitive-proactive-focus-item');
+            button.type='button';
+            button.dataset.proactiveFocus=clean(item.key);
+            button.append(
+              el('small','',clean(item.lane_label)||'Priority'),
+              el('strong','',clean(item.title)||'VP3 item'),
+              el('span','',clean(item.status))
+            );
+            button.addEventListener('click',()=>focusFeedItem(item.key));
+            list.appendChild(button);
+          });
+          proactiveBrief.appendChild(list);
+        }
+        proactiveBrief.hidden=false;
+      }else proactiveBrief.hidden=true;
+    }
+
     const operations=root.querySelector('[data-cognitive-operations]');
     const ops=lastFeed&&lastFeed.operations&&typeof lastFeed.operations==='object'?lastFeed.operations:null;
     if(operations){
@@ -312,13 +371,7 @@
           const text=el('span','vp3-cognitive-priority-copy');
           text.append(el('strong','',clean(item.title)||'VP3 item'),el('small','',clean(item.reason)||clean(item.authority)));
           button.append(meta,text);
-          button.addEventListener('click',()=>{
-            const target=root.querySelector('[data-feed-item-key="'+CSS.escape(clean(item.key))+'"]');
-            if(!target)return;
-            target.scrollIntoView({behavior:'smooth',block:'center'});
-            target.setAttribute('tabindex','-1');
-            target.focus({preventScroll:true});
-          });
+          button.addEventListener('click',()=>focusFeedItem(item.key));
           list.appendChild(button);
         });
         priorityQueue.appendChild(list);
