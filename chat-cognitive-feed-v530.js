@@ -276,14 +276,14 @@
           ['Listening',sourceCount+' system'+(sourceCount===1?'':'s')],
           ['Needs attention',String(attentionCount)],
           ['Plans',String(planCount)],
-          ['Execution','Approval-gated']
+          ['Execution','Authority-gated']
         ];
         items.forEach(([label,value])=>{
           const node=el('span','vp3-cognitive-operations-pill');
           node.append(el('small','',label),el('strong','',value));
           operations.appendChild(node);
         });
-        operations.title='All Systems Listening feeds the existing Cognitive Runtime and Agent Brain. v23.00 adds no separate execution authority.';
+        operations.title='All Systems Listening feeds the existing Cognitive Runtime and Agent Brain. Execution remains inside existing authority and approval boundaries.';
         operations.hidden=false;
       }else operations.hidden=true;
     }
