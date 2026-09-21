@@ -197,7 +197,7 @@ function workflow_v1400_time(string $value): string{$ts=strtotime($value);return
         </div>
       </section>
     </div>
-    <?php if(!empty($researchMission['report']['url'])): ?><div class="workflow-actions-bar"><a class="workflow-button" href="<?= e(url((string)$researchMission['report']['url'])) ?>">Open draft Research Report</a></div><?php endif; ?>
+    <?php if(!empty($researchMission['report']['url'])): ?><div class="workflow-actions-bar"><a class="workflow-button" href="<?= e((string)$researchMission['report']['url']) ?>">Open draft Research Report</a></div><?php endif; ?>
     <div class="workflow-notice" role="note" style="margin:14px 0 0">Raw page text, URLs and browser history are not persisted by the Browser Research mission. Durable state is limited to structured claims, bounded evidence excerpts, fingerprints, source domains, freshness metadata and canonical VP3 Research references. Saving creates drafts; it does not publish.</div>
   </section>
   <?php endforeach; ?>
