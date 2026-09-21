@@ -1395,7 +1395,7 @@ function renderRuntimeContinuityV2260(payload){
       const row=el('div','runtime-continuity-change','');
       const copy=el('div','runtime-continuity-copy','');
       copy.append(el('strong','',runtimeContinuityLabelV2260(tracker.lifecycle_family||'transaction')),el('span','',runtimeContinuityLabelV2260(tracker.lifecycle_state||'active')+' · '+runtimeContinuityLabelV2260(tracker.tracking_status||'active')));
-      row.append(copy,el('span','pill',tracker.reference_present?'reference only':'manual match'));
+      row.append(copy,el('span','pill','reference only'));
       ui.runtimeContinuityChanges.append(row);
     }
     ui.runtimeContinuityCloseBtn.hidden=true;
