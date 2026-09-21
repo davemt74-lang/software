@@ -44,12 +44,16 @@ must(control.includes('vp3_browser_control_forget_v2280'),'forget control missin
 must(control.includes("if((string)$row['tracking_status']!=='closed')"),'forget must require stopped tracker');
 must(control.includes("DELETE FROM browser_transaction_continuities_v2260"),'forget must delete continuity root so v22.60-v22.80 descendants cascade');
 must(control.includes("'submission_history_retained'=>true"),'forget must explicitly preserve v22.40/v22.50 history');
+must(control.includes("'minimal_control_receipt_retained'=>true"),'Forget must disclose retained minimal control receipt');
 must(control.includes("closure_reason='user_closed'"),'global stop closure boundary missing');
 must(control.includes("pause_scope='global'"),'global pause scope missing');
 must(control.includes("pause_scope='tracker'"),'per-tracker pause scope missing');
 must(control.includes("INNER JOIN browser_transaction_control_pauses_v2280"),'global resume must target only globally paused trackers');
 must(control.includes("match_mode='reference' AND")&&control.includes("reference_hash<>''"),'resume must require reusable reference authority');
 must(control.includes("Resume global transaction monitoring before resuming this tracker."),'global pause must block per-tracker resume');
+must(control.includes("if(empty($settings['monitoring_enabled']))"),'global monitoring switch must block per-tracker resume');
+must((control.match(/\$pdo->beginTransaction\(\)/g)||[]).length>=5,'v22.80 control mutations must be transactional');
+must(control.includes("FOR UPDATE"),'v22.80 control mutations must lock authoritative rows');
 
 // Retention + bounded settings.
 for(const constant of [
