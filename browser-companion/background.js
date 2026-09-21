@@ -699,7 +699,7 @@ async function browserTransactionExecuteV2240(payload={}){
     dispatchStarted=true;
     const webResult=await browserWebInteractionExecuteV2210({
       runtime_id:runtimeId,agent_id:Number(payload.agent_id||0),
-      interaction_id:String(payload.web_interaction_id||''),action_key:'submit',
+      interaction_id:String(payload.web_interaction_id||''),action_key:String(payload.web_action_key||'submit'),
       element_key:String(payload.element_key||''),element_fingerprint:String(payload.element_fingerprint||''),value:''
     });
     const verified=Boolean(webResult&&webResult.outcome&&webResult.outcome.verified);
