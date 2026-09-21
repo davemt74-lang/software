@@ -223,6 +223,10 @@ function vp3_browser_transaction_preview_v2240(
     vp3_browser_transaction_expire_v2240($pdo,$runtime);
     $domain=vp3_browser_web_domain_v2210($input['domain']??'');
     if(!vp3_browser_web_allowed_domain_v2210($runtime,$domain))throw new RuntimeException('This domain is outside the approved Browser delegation.');
+    $targetHost=vp3_browser_web_domain_v2210($input['target_host']??'');
+    if($targetHost===''||$targetHost!==$domain){
+        throw new RuntimeException('v22.40 final form actions are limited to the current approved domain. Use an approved multi-site handoff before finalizing on another site.');
+    }
 
     $page=vp3_browser_transaction_sha_v2240($input['page_fingerprint']??'');
     $form=vp3_browser_transaction_sha_v2240($input['form_fingerprint']??'');
