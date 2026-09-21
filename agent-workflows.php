@@ -12,6 +12,7 @@ require_once __DIR__ . '/includes/browser-transaction-safety-v2240.php';
 require_once __DIR__ . '/includes/browser-transaction-outcome-v2250.php';
 require_once __DIR__ . '/includes/browser-transaction-continuity-v2260.php';
 require_once __DIR__ . '/includes/browser-transaction-intelligence-v2270.php';
+require_once __DIR__ . '/includes/browser-transaction-control-v2280.php';
 require_permission('account.access');
 $pdo=db();$user=current_user();if(!$pdo||!$user)redirect(url('/login.php'));
 if(!agent_workflow_schema_ready_v1400($pdo))redirect(url('/agent-workflow-upgrade-v1400.php'));
@@ -136,6 +137,7 @@ $browserTransactions=$detail&&vp3_browser_transaction_schema_ready_v2240($pdo)?v
 $browserOutcomes=$detail&&vp3_browser_outcome_schema_ready_v2250($pdo)?vp3_browser_outcome_for_workflow_v2250($pdo,(int)$user['id'],$detailId):['count'=>0,'confirmed'=>0,'pending'=>0,'rejected'=>0,'ambiguous'=>0,'external_redirect'=>0,'resolved'=>0,'retry_allowed'=>0,'outcomes'=>[],'recoveries'=>[]];
 $browserContinuity=$detail&&vp3_browser_continuity_schema_ready_v2260($pdo)?vp3_browser_continuity_for_workflow_v2260($pdo,(int)$user['id'],$detailId):['count'=>0,'active'=>0,'closed'=>0,'changes'=>0,'proposals'=>0,'continuities'=>[],'events'=>[],'followthrough'=>[]];
 $browserIntelligence=$detail&&vp3_browser_intelligence_schema_ready_v2270($pdo)?vp3_browser_intelligence_for_workflow_v2270($pdo,(int)$user['id'],$detailId):['count'=>0,'open'=>0,'urgent'=>0,'high'=>0,'cases'=>[],'proposals'=>[],'receipts'=>[]];
+$browserControl=$detail&&vp3_browser_control_schema_ready_v2280($pdo)?vp3_browser_control_status_v2280($pdo,$user):['settings'=>['monitoring_enabled'=>true,'retention_days'=>90,'notification_cooldown_minutes'=>60,'scan_min_interval_seconds'=>120],'counts'=>['total'=>0,'active'=>0,'closed'=>0],'health'=>['failing_scopes'=>0,'max_failures'=>0,'last_scan_at'=>''],'trackers'=>[],'audit'=>[]];
 
 function workflow_v1400_status_label(string $status): string{return str_replace('_',' ',ucwords($status,'_'));}
 function workflow_v1400_time(string $value): string{$ts=strtotime($value);return $ts?date('M j, g:i A',$ts):'—';}
@@ -290,6 +292,49 @@ function workflow_v1400_time(string $value): string{$ts=strtotime($value);return
     <div class="workflow-notice" role="note" style="margin:14px 0 0">Raw page text, URLs and browser history are not persisted by the Browser Research mission. Durable state is limited to structured claims, bounded evidence excerpts, fingerprints, source domains, freshness metadata and canonical VP3 Research references. Saving creates drafts; it does not publish.</div>
   </section>
   <?php endforeach; ?>
+
+  <?php if(vp3_browser_control_schema_ready_v2280($pdo)): ?>
+  <section class="workflow-panel" aria-labelledby="browserControlTitle">
+    <div class="workflow-panel-head">
+      <div><small>Browser Companion v22.80</small><h3 id="browserControlTitle">Transaction Trust, Control & Production Hardening</h3></div>
+      <span><?= !empty($browserControl['settings']['monitoring_enabled'])?'Monitoring on':'Monitoring stopped' ?> · <?= (int)($browserControl['counts']['active']??0) ?> active</span>
+    </div>
+    <div class="workflow-summary-grid">
+      <div><small>Retained trackers</small><strong><?= (int)($browserControl['counts']['total']??0) ?></strong></div>
+      <div><small>Retention</small><strong><?= (int)($browserControl['settings']['retention_days']??90) ?> days</strong></div>
+      <div><small>Notification cooldown</small><strong><?= (int)($browserControl['settings']['notification_cooldown_minutes']??60) ?> min</strong></div>
+      <div><small>Scan failures</small><strong><?= (int)($browserControl['health']['failing_scopes']??0) ?> scopes</strong></div>
+    </div>
+    <div class="workflow-two-col">
+      <section class="workflow-panel">
+        <div class="workflow-panel-head"><h3>Owner controls</h3><span>Server-authoritative across devices</span></div>
+        <div class="workflow-event-list">
+          <?php foreach(array_slice((array)($browserControl['trackers']??[]),0,20) as $tracker): ?>
+          <article>
+            <strong><?= e(workflow_v1400_status_label((string)($tracker['lifecycle_family']??'transaction'))) ?> · <?= e(workflow_v1400_status_label((string)($tracker['lifecycle_state']??'active'))) ?></strong>
+            <p><?= e((string)($tracker['domain']??'')) ?> · <?= e(workflow_v1400_status_label((string)($tracker['tracking_status']??'active'))) ?></p>
+            <small><?= e(workflow_v1400_time((string)($tracker['updated_at']??''))) ?></small>
+          </article>
+          <?php endforeach; ?>
+          <?php if(!(array)($browserControl['trackers']??[])): ?><div class="workflow-empty">No retained transaction trackers.</div><?php endif; ?>
+        </div>
+      </section>
+      <section class="workflow-panel">
+        <div class="workflow-panel-head"><h3>Audit chain</h3><span>v22.40 → v22.80</span></div>
+        <div class="workflow-event-list">
+          <?php foreach(array_slice((array)($browserControl['audit']??[]),0,30) as $event): ?>
+          <article>
+            <strong><?= e((string)($event['phase']??'')) ?> · <?= e(workflow_v1400_status_label((string)($event['state']??$event['kind']??'event'))) ?></strong>
+            <p><?= e((string)($event['status']??'')) ?><?= !empty($event['domain'])?' · '.e((string)$event['domain']):'' ?><?= !empty($event['detail'])?' · '.e((string)$event['detail']):'' ?></p>
+            <small><?= e(workflow_v1400_time((string)($event['at']??''))) ?></small>
+          </article>
+          <?php endforeach; ?>
+        </div>
+      </section>
+    </div>
+    <div class="workflow-notice" role="note" style="margin:14px 0 0">v22.80 is the final transaction-family control layer. Stop preserves the audit chain; Forget removes the selected v22.60-v22.80 tracker/intelligence record after it is stopped while retaining the original v22.40 submission and v22.50 outcome history. Cross-device scan leases and notification cooldowns suppress duplicate work without authorizing external actions.</div>
+  </section>
+  <?php endif; ?>
 
   <?php if((int)($browserIntelligence['count']??0)>0): ?>
   <section class="workflow-panel" aria-labelledby="browserIntelligenceTitle">
