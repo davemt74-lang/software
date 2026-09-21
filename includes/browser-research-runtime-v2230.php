@@ -214,6 +214,34 @@ function vp3_browser_research_add_page_v2230(PDO $pdo,array $mission,array $inpu
         ->execute([json_encode(array_slice(array_keys($set),0,20),JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE),(int)$mission['id']]);
 }
 
+function vp3_browser_research_memo_preview_v2230(PDO $pdo,array $mission): string
+{
+    $groups=[];
+    foreach(vp3_browser_research_claims_v2230($pdo,$mission) as $claim){
+        $groups[(string)$claim['claim_key']][]=$claim;
+    }
+    $lines=['Browser Research Memo','',trim((string)$mission['question']),''];
+    if(!$groups)$lines[]='No supported claims have been extracted yet.';
+    foreach($groups as $key=>$claims){
+        $lines[]=ucwords(str_replace(['.','_','-'],' ',$key));
+        if(count($claims)>1)$lines[]='Conflict: approved sources report different observed values.';
+        foreach($claims as $claim){
+            $domains=[];
+            foreach(vp3_browser_research_evidence_v2230($pdo,(int)$claim['id']) as $e)$domains[(string)$e['domain']]=true;
+            $lines[]='- '.$claim['value_text'].' — '.$claim['statement_text'].' ['.str_replace('_',' ',(string)$claim['evidence_state']).'; sources: '.implode(', ',array_keys($domains)).']';
+        }
+        $lines[]='';
+    }
+    $gaps=vp3_browser_research_json_v2230($mission['gaps_json']??'');
+    if($gaps){
+        $lines[]='Research gaps';
+        foreach($gaps as $gap)$lines[]='- '.vp3_browser_research_text_v2230($gap,500);
+        $lines[]='';
+    }
+    $lines[]='Evidence states describe the collected record; they are not truth scores. Freshness does not determine correctness.';
+    return mb_strimwidth(implode("\n",$lines),0,30000,'');
+}
+
 function vp3_browser_research_public_claim_v2230(PDO $pdo,array $claim): array
 {
     $evidence=vp3_browser_research_evidence_v2230($pdo,(int)$claim['id']);
@@ -256,7 +284,8 @@ function vp3_browser_research_public_v2230(PDO $pdo,array $user,string $missionP
         'source_plan'=>$sourcePlan?:array_map(static fn(string $d,int $n): array=>['domain'=>$d,'reason'=>'','pages'=>$n,'checked'=>$n>0],array_keys($domains),array_values($domains)),
         'pages'=>array_map(static fn(array $p): array=>['id'=>(string)$p['public_id'],'domain'=>(string)$p['domain'],'fingerprint'=>(string)$p['page_fingerprint'],'source_kind'=>(string)$p['source_kind'],'freshness_date'=>(string)($p['freshness_date']??''),'status'=>(string)$p['extraction_status'],'claims'=>(int)$p['claim_count'],'canonical_source_id'=>(string)$p['source_public_id'],'source_version_id'=>(string)$p['source_version_public_id']],$pages),
         'claims'=>array_map(fn(array $c): array=>vp3_browser_research_public_claim_v2230($pdo,$c),$claims),
-        'gaps'=>array_values(vp3_browser_research_json_v2230($mission['gaps_json']??'')),'memo'=>(string)($mission['memo_text']??''),'project'=>$project,'report'=>$report,
+        'gaps'=>array_values(vp3_browser_research_json_v2230($mission['gaps_json']??'')),
+        'memo_preview'=>vp3_browser_research_memo_preview_v2230($pdo,$mission),'memo'=>(string)($mission['memo_text']??''),'project'=>$project,'report'=>$report,
         'handoffs'=>[
             'knowledge'=>'Review this Browser Research memo and prepare a Knowledge draft. Do not save anything until I approve it.',
             'crm'=>'Review these Browser Research findings and prepare proposed CRM enrichment changes. Do not modify CRM until I approve them.',
