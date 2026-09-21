@@ -68,6 +68,7 @@ must(schema.includes('source_public_id CHAR(36)'),'canonical Source reference mi
 must(schema.includes('source_version_public_id CHAR(36)'),'canonical Source version reference missing');
 must(schema.includes('source_kind VARCHAR(24)'),'source-kind evidence signal missing');
 must(schema.includes('freshness_date DATE'),'page freshness date missing');
+must(schema.includes('source_plan_json TEXT'),'bounded source-plan storage missing');
 must(schema.includes('evidence_excerpt VARCHAR(700)'),'bounded evidence excerpt missing');
 must(schema.includes('directness VARCHAR(20)'),'evidence directness missing');
 must(schema.includes('as_of_date DATE'),'claim evidence date missing');
@@ -94,9 +95,17 @@ must(!schema.includes('source_url')&&!schema.includes('canonical_url'),'Research
 must(api.includes('vp3_browser_context_validate_v2130'),'Browser Context validation missing');
 must(api.includes('vp3_browser_context_relationships_v2130'),'canonical Source relationship resolution missing');
 must(api.includes('vp3_agent_chat_send_v2160'),'canonical Agent Chat extraction missing');
+must(api.includes('Do not invent or add domains.'),'Agent source planner expansion boundary missing');
+must(runtime.includes('isset($allowedSet[$domain])'),'Agent source plan must be sanitized against approved domains');
+must(api.includes("'ephemeral_protocol'=>true"),'Research planning/extraction must use non-persistent protocol turns');
+must(chat.includes("$ephemeralProtocol=!empty($input['ephemeral_protocol']);"),'Agent Chat ephemeral protocol switch missing');
+must(chat.includes('if(!$ephemeralProtocol){$stmt=$pdo->prepare'),'Agent Chat normal persistence must be conditionally skipped for protocol turns');
 must(api.includes("'browser_context'=>["),'ephemeral browser_context payload missing');
 must(api.includes('Temporary Browser Research extraction context'),'ephemeral extraction prompt missing');
 must(chat.includes("unset($persistedAgentContext['browser_context'])"),'Agent Chat must strip Browser Context before durable context persistence');
+must(api.includes('vp3_extension_research_chat_note_v2230'),'clean Research chat-note writer missing');
+must(api.includes("'card_type'=>'research'"),'saved mission must surface through native Research cognitive card');
+must(api.includes('Source analyzed. Mission now has '),'clean extraction summary missing');
 must(api.includes('Return ONLY valid JSON using exactly this structure'),'strict structured extraction contract missing');
 must(api.includes('array_slice($payload[\'claims\'],0,12)'),'per-page claim extraction limit missing');
 must(api.includes('Do not invent missing facts.'),'anti-fabrication extraction instruction missing');
@@ -119,6 +128,7 @@ must(save.includes('vp3_research_create_finding_v2060'),'draft Research Finding 
 must(save.includes("'support'"),'support evidence links missing');
 must(save.includes("'conflict'"),'conflict evidence links missing');
 must(save.includes('vp3_research_create_report_v2060'),'draft Research Report creation missing');
+must(save.includes("SELECT id FROM browser_source_versions_v2050 WHERE public_id=? AND source_id=?"),'saved evidence must pin analyzed Source version');
 must(save.includes('vp3_research_set_report_items_v2060'),'Research Report finding composition missing');
 must(!save.includes('vp3_research_publish_report_v2060'),'Browser Research must not auto-publish reports');
 must(!save.includes('vp3_research_publish_finding'),'Browser Research must not auto-publish findings');
@@ -141,6 +151,10 @@ must(panel.includes('function renderRuntimeResearchV2230'),'Research mission ren
 must(panel.includes('async function startRuntimeResearchV2230'),'mission start controller missing');
 must(panel.includes('async function analyzeRuntimeResearchPageV2230'),'page analysis controller missing');
 must(panel.includes('async function saveRuntimeResearchV2230'),'Research save controller missing');
+must(runtime.includes('function vp3_browser_research_memo_preview_v2230'),'live research memo builder missing');
+must(html.includes('id="runtimeResearchMemo"'),'live memo UI missing');
+must(panel.includes('runtimeResearchMemo.textContent'),'live memo renderer missing');
+must(runtime.includes("status='ready'"),'authority-end ready-to-save lifecycle missing');
 must(panel.includes("String(step.action_key||'')==='browser_research'"),'canonical research checkpoint opener missing');
 must(css.includes('.runtime-research-panel')&&css.includes('.runtime-research-claim.corroborated')&&css.includes('.runtime-research-claim.conflicted'),'Research workspace styling missing');
 
