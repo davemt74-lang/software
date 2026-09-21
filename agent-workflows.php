@@ -9,6 +9,7 @@ require_once __DIR__ . '/includes/browser-web-interaction-v2210.php';
 require_once __DIR__ . '/includes/browser-multisite-v2220.php';
 require_once __DIR__ . '/includes/browser-research-save-v2230.php';
 require_once __DIR__ . '/includes/browser-transaction-safety-v2240.php';
+require_once __DIR__ . '/includes/browser-transaction-outcome-v2250.php';
 require_permission('account.access');
 $pdo=db();$user=current_user();if(!$pdo||!$user)redirect(url('/login.php'));
 if(!agent_workflow_schema_ready_v1400($pdo))redirect(url('/agent-workflow-upgrade-v1400.php'));
@@ -49,6 +50,7 @@ $browserWeb=$detail&&vp3_browser_web_schema_ready_v2210($pdo)?vp3_browser_web_fo
 $browserMulti=$detail&&vp3_browser_multisite_schema_ready_v2220($pdo)?vp3_browser_multisite_for_workflow_v2220($pdo,(int)$user['id'],$detailId):['attached'=>false];
 $browserResearch=$detail&&vp3_browser_research_schema_ready_v2230($pdo)?vp3_browser_research_for_workflow_v2230($pdo,(int)$user['id'],$detailId):[];
 $browserTransactions=$detail&&vp3_browser_transaction_schema_ready_v2240($pdo)?vp3_browser_transaction_for_workflow_v2240($pdo,(int)$user['id'],$detailId):['count'=>0,'completed'=>0,'uncertain'=>0,'failed'=>0,'manual_only'=>0,'intents'=>[]];
+$browserOutcomes=$detail&&vp3_browser_outcome_schema_ready_v2250($pdo)?vp3_browser_outcome_for_workflow_v2250($pdo,(int)$user['id'],$detailId):['count'=>0,'confirmed'=>0,'pending'=>0,'rejected'=>0,'ambiguous'=>0,'external_redirect'=>0,'resolved'=>0,'retry_allowed'=>0,'outcomes'=>[],'recoveries'=>[]];
 
 function workflow_v1400_status_label(string $status): string{return str_replace('_',' ',ucwords($status,'_'));}
 function workflow_v1400_time(string $value): string{$ts=strtotime($value);return $ts?date('M j, g:i A',$ts):'—';}
