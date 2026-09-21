@@ -347,7 +347,10 @@ function vp3_extension_notification_voice_pending_v2140(PDO $pdo,array $session,
     // voice window is non-sensitive; otherwise Chrome leaves that window for
     // the web Agent Voice path rather than speaking private text.
     $state=vp3_cognitive_presentation_state_row_v510($pdo,$user,$namespace);
-    $voice=vp3_cognitive_presentation_voice_candidate_v510($pdo,$user,$state,null);
+    $digest=function_exists('vp3_cognitive_presentation_open_digest_v510')
+        ? vp3_cognitive_presentation_open_digest_v510($pdo,$user,$namespace)
+        : null;
+    $voice=vp3_cognitive_presentation_voice_candidate_v510($pdo,$user,$state,$digest);
     if(is_array($voice)&&isset($voice['skip_through_id'])){
         vp3_cognitive_presentation_voice_delivered_v510($pdo,$user,$namespace,(int)$voice['skip_through_id']);
         $state['last_voice_notification_id']=(int)$voice['skip_through_id'];
