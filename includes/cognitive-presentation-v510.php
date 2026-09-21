@@ -194,6 +194,9 @@ function vp3_cognitive_presentation_digest_v510(PDO $pdo,array $user,string $nam
     }));
     $items=vp3_cognitive_presentation_digest_items_v510($eligible,$idle);$summary=vp3_cognitive_presentation_digest_summary_v510($items);
     if($summary==='')return null;
+    if(function_exists('vp3_cognitive_proactive_now_digest_summary_v2340')){
+        $summary=vp3_cognitive_proactive_now_digest_summary_v2340($pdo,$user,$namespace,$summary);
+    }
 
     $ids=array_map(static fn($r)=>max(0,(int)($r['id']??0)),$eligible);
     if(!$ids)return null;
