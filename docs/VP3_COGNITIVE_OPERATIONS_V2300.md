@@ -53,7 +53,7 @@ Required fields:
 - `lane` — `needs_attention | next_up | priorities | opportunities | waiting | recent_changes`
 - `source` — existing candidate source
 - `authority` — canonical subsystem that owns the fact
-- `priority_score` — existing Cognitive Feed/Brain-derived score; v23.00 does not independently rank
+- `lane` + existing order — preserves Cognitive Feed/Brain prioritization without exposing its internal numeric score
 - `reason` — bounded existing rationale
 - `object_ref` — currently authorized canonical object reference when available
 - `proposed_action_ids` — registered Cognitive Runtime actions only
@@ -62,7 +62,7 @@ Required fields:
 - `updated_at` — source time
 - `execution_boundary` — always existing-runtime-only
 
-The projection is rebuilt from currently authorized state on every read. Hidden feed items remain a presentation preference and do not mutate source authority.
+The projection is rebuilt from currently authorized state on every read. Internal Cognitive Feed/Brain numeric ranking scores remain server-private. Hidden feed items remain a presentation preference and do not mutate source authority.
 
 ## Source-of-truth rule
 
