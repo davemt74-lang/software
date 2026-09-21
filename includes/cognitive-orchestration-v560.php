@@ -440,6 +440,13 @@ function vp3_cognitive_orchestration_reconcile_run_v560(PDO $pdo,array $user,str
         vp3_cognitive_orchestration_recount_v560($pdo,$run,$runStatus,$code==='successful'?'verified':'resolved');
         $pdo->prepare("UPDATE cognitive_plans_v550 SET status='completed',updated_at=UTC_TIMESTAMP() WHERE id=? AND owner_user_id=? AND status='accepted'")
             ->execute([(int)$plan['id'],(int)$run['owner_user_id']]);
+        if(function_exists('vp3_cognitive_calibration_feedback_plan_v2350')){
+            vp3_cognitive_calibration_feedback_plan_v2350(
+                $pdo,$user,$namespace,$plan,'plan_completed',
+                ['outcome_code'=>$code,'surface'=>'cognitive_orchestration'],
+                'plan-completed:'.(string)($run['public_id']??'').':'.(string)($outcome['id']??0)
+            );
+        }
     }elseif(in_array($code,['unsuccessful','ignored'],true)){
         if($handoff)$handoff=vp3_cognitive_orchestration_set_step_v560($pdo,$run,$handoff,'failed','handoff_outcome_failed','outcome:'.$outcome['id']);
         if($verify)$verify=vp3_cognitive_orchestration_set_step_v560($pdo,$run,$verify,'failed','verification_failed','outcome:'.$outcome['id']);
@@ -502,6 +509,13 @@ function vp3_cognitive_orchestration_handoff_v560(PDO $pdo,array $user,string $n
 
     if(!$accepted){
         vp3_cognitive_orchestration_event_v560($pdo,$run,$step,'handoff_rejected',(string)$step['status'],(string)$step['status'],'reject:'.(string)$step['attempt_count']);
+        if(function_exists('vp3_cognitive_calibration_feedback_plan_v2350')){
+            vp3_cognitive_calibration_feedback_plan_v2350(
+                $pdo,$user,$namespace,$plan,'handoff_postponed',
+                ['run_id'=>(string)($run['public_id']??''),'surface'=>'cognitive_orchestration'],
+                'handoff-postponed:'.(string)($run['public_id']??'').':'.(string)$step['attempt_count']
+            );
+        }
         return $run;
     }
 
@@ -511,6 +525,13 @@ function vp3_cognitive_orchestration_handoff_v560(PDO $pdo,array $user,string $n
       ->execute([(int)$step['id'],(int)$run['id']]);
     $step=vp3_cognitive_orchestration_step_v560($pdo,(int)$run['id'],'handoff')?:$step;
     vp3_cognitive_orchestration_event_v560($pdo,$run,$step,'handoff_requested',$from,'handoff_requested','attempt:'.(string)$step['attempt_count']);
+    if(function_exists('vp3_cognitive_calibration_feedback_plan_v2350')){
+        vp3_cognitive_calibration_feedback_plan_v2350(
+            $pdo,$user,$namespace,$plan,'handoff_requested',
+            ['run_id'=>(string)($run['public_id']??''),'surface'=>'cognitive_orchestration'],
+            'handoff-requested:'.(string)($run['public_id']??'').':'.(string)$step['attempt_count']
+        );
+    }
 
     $verify=vp3_cognitive_orchestration_step_v560($pdo,(int)$run['id'],'verify');
     if($verify&&(string)$verify['status']==='blocked')vp3_cognitive_orchestration_set_step_v560($pdo,$run,$verify,'verifying','verification_started','attempt:'.(string)$step['attempt_count']);
