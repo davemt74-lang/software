@@ -241,7 +241,7 @@ function vp3_public_header(string $title, string $description = '', array $optio
 <link rel="stylesheet" href="<?= e(url('/vp3-public.css?v=vp3-public-20260915-editorial')) ?>">
 <link rel="stylesheet" href="<?= e(url('/vp3-index-mega-menu.css?v=20260915-public')) ?>">
 <link rel="stylesheet" href="<?= e(url('/vp3-public-nav.css?v=vp3-public-20260914-index')) ?>">
-<link rel="stylesheet" href="<?= e(url('/vp3-marketing-pages.css?v=20260915-editorial')) ?>">
+<link rel="stylesheet" href="<?= e(url('/vp3-marketing-pages.css?v=20260921-services')) ?>">
 <link rel="stylesheet" href="<?= e(url('/vp3-public-accessibility.css?v=20260914-1')) ?>">
 <link rel="stylesheet" href="<?= e(url('/vp3-public-editorial.css?v=20260915-1')) ?>">
 </head>
