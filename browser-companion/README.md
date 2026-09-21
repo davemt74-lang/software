@@ -33,6 +33,8 @@ Durable mission evidence:
 - Each analyzed page stores approved domain, page fingerprint, content hash, duplicate-group hash, optional canonical VP3 Source/version references, source kind, and freshness date.
 - Each claim stores a stable claim key, observed statement/value, evidence state, independent support count, primary-source count, direct-evidence count, and freshest dated evidence.
 - Evidence excerpts are bounded to 700 characters and retain domain, page fingerprint, directness, source type, and as-of date.
+- Direct evidence is server-grounded against the transient readable page text; if the Agent returns an excerpt that is not present on the page, v22.30 downgrades it to inferred rather than counting it as direct evidence.
+- If an analyzed page does not resolve to a canonical VP3 Source/version, the mission records an explicit fingerprint-only citation gap instead of pretending the evidence is canonically pinned.
 
 Evidence states are deterministic descriptions, not truth scores:
 
@@ -55,6 +57,7 @@ Research persistence:
 - When collection authority ends, an active mission becomes Ready: analysis stops, but the already-collected structured evidence can still be explicitly saved as draft Research.
 - Save draft to Research is an explicit user action and requires Research/Knowledge write capability.
 - Saving creates draft canonical Research Findings and a draft Research Report.
+- Saving Findings, evidence links, Report items and the mission completion marker is atomic inside one database transaction; a failed save rolls back rather than leaving a partially materialized Research draft.
 - When a page resolves to a canonical VP3 Source/version, the corresponding Research source item is linked as evidence.
 - Supporting source items use Research support evidence links; alternate conflicting source variants use conflict links.
 - v22.30 does not auto-publish Findings or Reports.
