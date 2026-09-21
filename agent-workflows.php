@@ -33,6 +33,27 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
                 $notice='Workflow approved.';
             }elseif($action==='cancel'){$run=$durable?agent_job_cancel_v1900($pdo,$user,(int)($_POST['run_id']??0)):agent_workflow_cancel_v1400($pdo,$user,(int)($_POST['run_id']??0));$notice='Workflow cancelled.';}
             elseif($action==='retry'){$run=$durable?agent_job_retry_v1900($pdo,$user,(int)($_POST['run_id']??0)):agent_workflow_retry_v1400($pdo,$user,(int)($_POST['run_id']??0));$notice='Workflow retry queued.';}
+            elseif(in_array($action,['browser_outcome_confirm_completed','browser_outcome_confirm_not_submitted'],true)){
+                $runId=max(0,(int)($_POST['run_id']??0));
+                $intentId=trim((string)($_POST['intent_id']??''));
+                if($runId<1||!preg_match('/^[a-f0-9-]{36}$/i',$intentId))throw new RuntimeException('Transaction recovery context is invalid.');
+                $ctx=$pdo->prepare("SELECT r.public_id,r.agent_namespace FROM browser_submission_intents_v2240 s
+                  INNER JOIN browser_agent_runtime_sessions_v2200 r ON r.id=s.runtime_session_id
+                  WHERE s.public_id=? AND s.owner_user_id=? AND r.owner_user_id=? AND r.workflow_run_id=? LIMIT 1");
+                $ctx->execute([$intentId,(int)$user['id'],(int)$user['id'],$runId]);
+                $runtimeCtx=$ctx->fetch(PDO::FETCH_ASSOC);
+                if(!is_array($runtimeCtx))throw new RuntimeException('Transaction recovery context is no longer available.');
+                $notSubmitted=$action==='browser_outcome_confirm_not_submitted';
+                vp3_browser_outcome_resolve_v2250(
+                    $pdo,$user,(string)$runtimeCtx['agent_namespace'],(string)$runtimeCtx['public_id'],$intentId,
+                    $notSubmitted?'confirmed_not_submitted':'confirmed_completed',
+                    $notSubmitted?'reviewed_destination_not_submitted':'reviewed_destination_completed'
+                );
+                $notice=$notSubmitted
+                    ?'Outcome resolved as not submitted. Duplicate protection was released; any new attempt requires a fresh v22.40 review.'
+                    :'Outcome resolved as completed. Duplicate protection remains in place.';
+                redirect(url('/agent-workflows.php?id='.$runId.'&notice='.rawurlencode($notice)));
+            }
             else throw new RuntimeException('Unknown workflow action.');
             if(is_array($run)&&!empty($run['id']))redirect(url('/agent-workflows.php?id='.(int)$run['id'].'&notice='.rawurlencode($notice)));
         }catch(Throwable $e){$error=$e->getMessage();}
@@ -222,11 +243,30 @@ function workflow_v1400_time(string $value): string{$ts=strtotime($value);return
       <section class="workflow-panel">
         <div class="workflow-panel-head"><h3>Destination receipts</h3><span>Structured evidence only</span></div>
         <div class="workflow-event-list">
-          <?php foreach(array_slice((array)($browserOutcomes['outcomes']??[]),0,20) as $outcome): ?>
+          <?php
+            $browserRecoveryByIntent=[];
+            foreach((array)($browserOutcomes['recoveries']??[]) as $rx)$browserRecoveryByIntent[(string)($rx['intent_id']??'')]=$rx;
+            $browserTransactionStatusById=[];
+            foreach((array)($browserTransactions['intents']??[]) as $tx)$browserTransactionStatusById[(string)($tx['intent_id']??'')]=(string)($tx['status']??'');
+            $shownOutcomeIntents=[];
+          ?>
+          <?php foreach(array_slice((array)($browserOutcomes['outcomes']??[]),0,40) as $outcome):
+            $outcomeIntentId=(string)($outcome['intent_id']??'');
+            if($outcomeIntentId===''||isset($shownOutcomeIntents[$outcomeIntentId]))continue;
+            $shownOutcomeIntents[$outcomeIntentId]=true;
+            $outcomeRecovery=$browserRecoveryByIntent[$outcomeIntentId]??null;
+            $outcomeSubmissionStatus=$browserTransactionStatusById[$outcomeIntentId]??'';
+          ?>
           <article>
             <strong><?= e(workflow_v1400_status_label((string)($outcome['outcome_state']??'ambiguous'))) ?> · <?= e((string)($outcome['evidence_strength']??'weak')) ?> evidence</strong>
             <p><?= e((string)($outcome['domain']??'')) ?><?= !empty($outcome['reference_present'])?' · '.e(workflow_v1400_status_label((string)($outcome['reference_kind']??'reference'))).' reference fingerprint':'' ?></p>
             <small><?= e(workflow_v1400_time((string)($outcome['observed_at']??''))) ?> · <?= count((array)($outcome['evidence_codes']??[])) ?> structured signals</small>
+            <?php if(!$outcomeRecovery): ?>
+            <div class="workflow-actions-bar" style="margin-top:8px">
+              <form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="browser_outcome_confirm_completed"><input type="hidden" name="run_id" value="<?= (int)$detailId ?>"><input type="hidden" name="intent_id" value="<?= e($outcomeIntentId) ?>"><button class="workflow-button" type="submit">Confirm completed</button></form>
+              <?php if($outcomeSubmissionStatus==='uncertain'): ?><form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="browser_outcome_confirm_not_submitted"><input type="hidden" name="run_id" value="<?= (int)$detailId ?>"><input type="hidden" name="intent_id" value="<?= e($outcomeIntentId) ?>"><button class="workflow-button danger" type="submit">Confirm nothing submitted</button></form><?php endif; ?>
+            </div>
+            <?php endif; ?>
           </article>
           <?php endforeach; ?>
           <?php if(!(array)($browserOutcomes['outcomes']??[])): ?><div class="workflow-empty">No destination checks recorded yet.</div><?php endif; ?>
