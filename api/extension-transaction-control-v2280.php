@@ -25,7 +25,7 @@ try{
   if(!vp3_extension_session_has_capability_v2001($session,'agent.message'))vp3_extension_control_json_v2280(403,['ok'=>false,'error'=>['code'=>'capability_denied','message'=>'Transaction controls require Browser Agent access.']]);
   $user=vp3_extension_user_for_permission_v2001($pdo,(int)$session['user_id']);if($user)$user['roles']=user_account_types_for_user_id((int)$user['id'],(string)($user['role']??''));
   if(!$user||!has_permission('chat.access',$user))vp3_extension_control_json_v2280(403,['ok'=>false,'error'=>['code'=>'forbidden','message'=>'Transaction controls are unavailable for this VP3 account.']]);
-  $input=vp3_extension_control_input_v2280();$action=trim((string)($input['action']??'status'));$device=(string)($session['device_id']??'');
+  $input=vp3_extension_control_input_v2280();$action=trim((string)($input['action']??'status'));$device=(string)($session['device_id']??$session['session_id']??'legacy-browser-session');
   $base=['ok'=>true,'server_authoritative'=>true,'automatic_external_writes'=>false,'external_write_requires_fresh_v2240'=>true,'transaction_family_frozen_at'=>'v22.80'];
   if($action==='status')vp3_extension_control_json_v2280(200,$base+['control'=>vp3_browser_control_status_v2280($pdo,$user)]);
   if($action==='settings_update')vp3_extension_control_json_v2280(200,$base+['settings'=>vp3_browser_control_update_settings_v2280($pdo,$user,$input,$device),'control'=>vp3_browser_control_status_v2280($pdo,$user)]);
