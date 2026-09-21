@@ -43,6 +43,7 @@ function vp3_browser_research_ensure_schema_v2230(?PDO $pdo=null): void
       project_id BIGINT UNSIGNED NULL,
       question VARCHAR(2000) NOT NULL,
       approved_domains_json TEXT NULL,
+      source_plan_json TEXT NULL,
       max_sources TINYINT UNSIGNED NOT NULL DEFAULT 5,
       max_pages TINYINT UNSIGNED NOT NULL DEFAULT 10,
       max_claims SMALLINT UNSIGNED NOT NULL DEFAULT 50,
