@@ -107,9 +107,12 @@ must(api.includes('vp3_extension_research_chat_note_v2230'),'clean Research chat
 must(api.includes("'card_type'=>'research'"),'saved mission must surface through native Research cognitive card');
 must(api.includes('Source analyzed. Mission now has '),'clean extraction summary missing');
 must(api.includes('Return ONLY valid JSON using exactly this structure'),'strict structured extraction contract missing');
-must(api.includes('array_slice($payload[\'claims\'],0,12)'),'per-page claim extraction limit missing');
+must(api.includes('foreach(array_slice($claims,0,12) as $raw)'),'per-page claim extraction limit missing');
 must(api.includes('Do not invent missing facts.'),'anti-fabrication extraction instruction missing');
 must(api.includes('Treat opinions or disputed assertions as attributed claims.'),'attribution instruction missing');
+must(api.includes("if($directness==='direct'&&!str_contains($pageNormalized,$normalize($evidence)))$directness='inferred';"),'direct evidence must be page-grounded');
+must(api.includes('fingerprint-only because this analyzed page does not currently resolve to a canonical VP3 Source version.'),'fingerprint-only citation gap disclosure missing');
+must(api.includes("vp3_extension_session_has_capability_v2001($session,'team.chat.read')"),'Research read capability parity missing');
 
 // Evidence model and deterministic states.
 must(runtime.includes("$state=$conflicted?'conflicted':(count($groups)>=2?'corroborated':'single_source')"),'deterministic evidence-state calculation missing');
@@ -130,6 +133,7 @@ must(save.includes("'conflict'"),'conflict evidence links missing');
 must(save.includes('vp3_research_create_report_v2060'),'draft Research Report creation missing');
 must(save.includes("SELECT id FROM browser_source_versions_v2050 WHERE public_id=? AND source_id=?"),'saved evidence must pin analyzed Source version');
 must(save.includes('vp3_research_set_report_items_v2060'),'Research Report finding composition missing');
+must(save.includes("$owns=!$pdo->inTransaction()")&&save.includes('$pdo->beginTransaction()')&&save.includes('$pdo->rollBack()'),'atomic Research save transaction missing');
 must(!save.includes('vp3_research_publish_report_v2060'),'Browser Research must not auto-publish reports');
 must(!save.includes('vp3_research_publish_finding'),'Browser Research must not auto-publish findings');
 
