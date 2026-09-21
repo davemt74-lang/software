@@ -83,7 +83,7 @@ function vp3_cognitive_operations_work_item_v2300(array $candidate): ?array
         'lane'=>vp3_cognitive_operations_lane_v2300($candidate),
         'source'=>$source,
         'authority'=>vp3_cognitive_operations_authority_v2300($source),
-        'priority_score'=>round(max(0,min(100,(float)($candidate['score']??0))),3),
+        '_rank_score'=>round(max(0,min(100,(float)($candidate['score']??0))),3),
         'reason'=>vp3_cognitive_text_v500($candidate['reason']??'',420),
         'object_ref'=>$ref,
         'proposed_action_ids'=>$actions,
@@ -121,9 +121,11 @@ function vp3_cognitive_operations_compose_v2300(array $candidates): array
         $laneOrder=['needs_attention'=>0,'next_up'=>1,'priorities'=>2,'opportunities'=>3,'waiting'=>4,'recent_changes'=>5];
         $lane=($laneOrder[$a['lane']]??9)<=>($laneOrder[$b['lane']]??9);
         if($lane!==0)return $lane;
-        $score=((float)$b['priority_score'])<=>((float)$a['priority_score']);
+        $score=((float)$b['_rank_score'])<=>((float)$a['_rank_score']);
         return $score!==0?$score:strcmp((string)$b['updated_at'],(string)$a['updated_at']);
     });
+
+    foreach($items as &$item)unset($item['_rank_score']);unset($item);
 
     $sourceList=array_keys($sources);sort($sourceList,SORT_STRING);
     $authorityList=array_keys($authorities);sort($authorityList,SORT_STRING);
