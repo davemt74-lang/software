@@ -380,14 +380,22 @@ function vp3_cognitive_feed_notification_candidates_v530(PDO $pdo,array $user): 
 
 function vp3_cognitive_feed_candidates_v530(PDO $pdo,array $user,string $namespace): array
 {
-    $all=array_merge(
-        vp3_cognitive_feed_observation_candidates_v530($pdo,$user,$namespace),
+    $base=array_merge(
         vp3_cognitive_feed_meeting_candidates_v530($pdo,$user),
         vp3_cognitive_feed_calendar_candidates_v530($pdo,$user),
         vp3_cognitive_feed_workflow_candidates_v530($pdo,$user),
         vp3_cognitive_feed_goal_candidates_v530($pdo,$user),
         vp3_cognitive_feed_brain_candidates_v530($user),
         vp3_cognitive_feed_notification_candidates_v530($pdo,$user)
+    );
+
+    if(function_exists('vp3_cognitive_opportunity_sync_v2320')){
+        try{vp3_cognitive_opportunity_sync_v2320($pdo,$user,$namespace,$base);}catch(Throwable $e){}
+    }
+
+    $all=array_merge(
+        vp3_cognitive_feed_observation_candidates_v530($pdo,$user,$namespace),
+        $base
     );
 
     if(function_exists('vp3_cognitive_planning_schema_ready_v550')&&vp3_cognitive_planning_schema_ready_v550($pdo)){
