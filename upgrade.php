@@ -170,7 +170,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             vp3_browser_runtime_ensure_schema_v2200();
             vp3_browser_web_ensure_schema_v2210();
             vp3_browser_multisite_ensure_schema_v2220();
-            vp3_browser_research_ensure_schema_v2230();
             chat_settings_ensure_schema_v237();
             permission_v105_seed_playlist_permission();
             personal_capability_seed_v242();
@@ -181,6 +180,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             vp3_browser_share_media_ensure_schema_v2040();
             vp3_browser_source_feed_ensure_schema_v2050();
             vp3_research_ensure_schema_v2060();
+            vp3_browser_research_ensure_schema_v2230();
             vp3_live_room_ensure_schema_v2070();
             vp3_browser_trust_ensure_schema_v2080();
             vp3_search_ensure_schema_v2090();
