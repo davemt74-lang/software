@@ -13,6 +13,8 @@ assert.match(intelligence, /status<>\'cancelled\'/, 'Cancelled work must not occ
 assert.match(intelligence, /next_attempt_at/, 'Scheduled and retry work must reuse the durable job engine timing field');
 assert.match(intelligence, /last_error_class/, 'Retry classification must reuse the durable job engine failure signal');
 assert.match(intelligence, /progress_message/, 'Queue status must reuse durable job progress instead of inventing a second state store');
+assert.match(intelligence, /updated_at_utc/, 'Queue must preserve raw canonical update time for cognitive ordering');
+assert.match(intelligence, /next_attempt_at_utc/, 'Queue must preserve raw canonical schedule time for cognitive fingerprints');
 assert.match(intelligence, /approval_status<>\'pending\'/, 'Active and future lanes must exclude work that is waiting on approval');
 
 for (const lane of ['active','approval','scheduled','failed_retry','completed']) {
