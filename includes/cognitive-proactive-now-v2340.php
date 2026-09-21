@@ -73,16 +73,17 @@ function vp3_cognitive_proactive_now_summary_v2340(array $counts,int $plans): st
 function vp3_cognitive_proactive_now_voice_context_v2340(array $counts,int $plans): string
 {
     $parts=[];
-    $attention=max(0,(int)($counts['needs_attention']??0));
-    $next=max(0,(int)($counts['next_up']??0));
+    // The persisted return digest already summarizes notification/attention
+    // volume. Only append non-interruptive cognitive context here so spoken
+    // briefings do not double-count the same alert.
     $opportunities=max(0,(int)($counts['opportunities']??0));
     $waiting=max(0,(int)($counts['waiting']??0));
+    $priorities=max(0,(int)($counts['priorities']??0));
 
-    if($attention>0)$parts[]=$attention.' item'.($attention===1?' needs':'s need').' attention';
-    if($next>0)$parts[]=$next.' thing'.($next===1?'':'s').' next up';
     if($opportunities>0)$parts[]=$opportunities.' opportunit'.($opportunities===1?'y':'ies').' to review';
-    if($waiting>0)$parts[]=$waiting.' item'.($waiting===1?'':'s').' waiting';
     if($plans>0)$parts[]=$plans.' active plan'.($plans===1?'':'s');
+    if($waiting>0)$parts[]=$waiting.' item'.($waiting===1?'':'s').' waiting';
+    if($priorities>0&&count($parts)<3)$parts[]=$priorities.' current priorit'.($priorities===1?'y':'ies');
 
     if(!$parts)return '';
     $parts=array_slice($parts,0,3);
@@ -95,12 +96,11 @@ function vp3_cognitive_proactive_now_voice_context_v2340(array $counts,int $plan
 }
 
 function vp3_cognitive_proactive_now_compose_v2340(
-    PDO $pdo,array $user,string $namespace,array $priorityQueue,?array $operations=null
+    PDO $pdo,array $user,string $namespace,array $priorityQueue
 ): array {
     $namespace=vp3_cognitive_validate_namespace_v500($pdo,$user,$namespace);
     $counts=vp3_cognitive_proactive_now_counts_v2340($priorityQueue);
-    $plans=max(0,(int)($operations['plan_count']??0));
-    $focus=[];
+    $plans=0;$focus=[];
 
     foreach((array)($priorityQueue['items']??[]) as $item){
         if(!is_array($item))continue;
@@ -108,6 +108,7 @@ function vp3_cognitive_proactive_now_compose_v2340(
         if(!in_array($lane,['needs_attention','next_up','opportunities','priorities','waiting','recent_changes'],true))continue;
         $key=mb_strimwidth(trim((string)($item['key']??'')),0,190,'');
         if($key==='')continue;
+        if(in_array((string)($item['source']??''),['cognitive_plan','cognitive_orchestration'],true))$plans++;
         $focus[]=[
             'key'=>$key,
             'lane'=>$lane,
