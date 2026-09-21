@@ -198,3 +198,5 @@
 .runtime-research-evidence span{font-size:8px;color:var(--muted);line-height:1.4}
 .runtime-research-gap{padding:7px 8px;border:1px dashed var(--line);border-radius:8px;font-size:8px;line-height:1.4;color:var(--muted);background:#fff}
 @media(max-width:540px){.runtime-research-budgets{grid-template-columns:1fr 1fr}}
+
+.runtime-research-memo{margin:0;max-height:260px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;padding:8px;border:1px solid var(--line);border-radius:8px;background:#fafafa;font:8px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--text)}
