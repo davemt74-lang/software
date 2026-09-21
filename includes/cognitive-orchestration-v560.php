@@ -247,7 +247,9 @@ function vp3_cognitive_orchestration_materialize_v560(PDO $pdo,array $user,strin
         $actionContract=vp3_cognitive_action_planning_contract_v2330($pdo,$user,$namespace,$plan);
         $capability=(array)($actionContract['capability']??[]);
         if(trim((string)($plan['tool_id']??''))!==''&&(
-            empty($capability['available'])||(string)($capability['mode']??'')!=='existing_capability'
+            empty($capability['available'])
+            ||(string)($capability['mode']??'')!=='existing_capability'
+            ||!empty($capability['boundary_changed'])
         ))return null;
         if(!empty($capability['available'])){
             $plan['risk_level']=(string)($capability['risk']??$plan['risk_level']??'low');
