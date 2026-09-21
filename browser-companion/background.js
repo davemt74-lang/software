@@ -592,7 +592,8 @@ async function browserTransactionCaptureV2240(tabId,payload={}){
         const label=labelFor(el)||name||('Field '+(index+1));
         const autocomplete=clip(el.getAttribute('autocomplete'),80).toLowerCase();
         const semantic=[type,name,label,autocomplete].join(' ').toLowerCase();
-        const sensitive=type==='password'||type==='hidden'
+        const hiddenSecret=type==='hidden'&&/\b(?:csrf|xsrf|token|nonce|secret|signature|session|auth|client[_ -]?secret|payment[_ -]?intent|credential)\b/i.test(semantic);
+        const sensitive=type==='password'||hiddenSecret
           ||/(?:current-password|new-password|one-time-code|cc-(?:number|csc|exp|name)|transaction-|webauthn)/i.test(autocomplete)
           ||/\b(?:password|passcode|pin|security code|verification code|one[- ]time|otp|2fa|mfa|credit card|card number|cvv|cvc|social security|ssn|access token|api key|secret key|private key|bank account|routing number)\b/i.test(semantic);
         if(sensitive)sensitiveCount++;
