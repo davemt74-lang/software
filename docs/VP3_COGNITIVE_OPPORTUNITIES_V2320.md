@@ -91,7 +91,7 @@ The detector avoids rewriting an unchanged active observation on every feed refr
 - existing hide/suppression fingerprints remain stable;
 - duplicate plans are not created.
 
-When exact supporting evidence disappears from the current opportunity set, v23.20 resolves its own prior active observation instead of leaving a stale opportunity active.
+Because detection is intentionally bounded, absence from one scan is **not** treated as proof that an opportunity disappeared. Unchanged opportunities extend their validity window without changing `updated_at`, preserving Hide/suppression fingerprints. Detector-owned observations are resolved automatically only after their own validity window expires; a future exact invalidation path may resolve them sooner when the canonical relationship system provides explicit deletion/revocation evidence.
 
 ## Planning and execution
 
@@ -134,5 +134,7 @@ No separate opportunities dashboard is introduced.
 - exact evidence refs reauthorized before storage
 - opportunity observation does not copy source object content
 - unchanged detections do not churn fingerprints
-- stale detector-owned opportunities resolve
+- bounded scans never resolve unseen-but-still-valid opportunities
+- TTL-only refresh does not change the feed fingerprint
+- expired detector-owned opportunities resolve
 - v23.00 and v23.10 remain authoritative integration/presentation layers
