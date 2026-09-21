@@ -124,6 +124,30 @@ try{
     if($action==='start'){
         $runtimeId=trim((string)($input['runtime_id']??''));
         if($runtimeId==='')throw new InvalidArgumentException('Browser Runtime session is required.');
+        $runtime=vp3_browser_research_runtime_v2230($pdo,$user,$namespace,$runtimeId);
+        $approved=vp3_browser_research_allowed_domains_v2230($pdo,(array)$runtime['_multisite']);
+        $maxSources=max(1,min(VP3_BROWSER_RESEARCH_MAX_SOURCES_V2230,(int)($input['max_sources']??count($approved)),count($approved)));
+        $question=vp3_browser_research_text_v2230($input['question']??'',2000);
+        if(mb_strlen($question)<5)throw new InvalidArgumentException('Describe the research question or goal.');
+        $planMessage="Plan a Browser Research mission for this question: ".$question."\n".
+            "You may use ONLY these already-approved domains: ".implode(', ',$approved).".\n".
+            "Choose up to ".$maxSources." domains and order them by research usefulness. Return ONLY JSON: ".
+            '{"sources":[{"domain":"exact approved domain","reason":"what this source should establish"}]}. '.
+            "Do not invent or add domains.";
+        $planResult=vp3_agent_chat_send_v2160(
+            $pdo,$user,$activeAgent,$principal,
+            ['message'=>$planMessage,'conversation_id'=>0,'input_mode'=>'text','agent_context'=>[]],
+            function_exists('personal_capability_has_v242')?personal_capability_has_v242('agent_brain.access',$user):false
+        );
+        $sourcePlan=[];
+        try{
+            $planned=vp3_extension_research_parse_agent_v2230((string)($planResult['answer']??''));
+            if(is_array($planned['sources']??null))$sourcePlan=array_slice($planned['sources'],0,$maxSources);
+        }catch(Throwable $e){
+            $sourcePlan=[];
+        }
+        $input['source_plan']=$sourcePlan;
+        $input['conversation_id']=(int)($planResult['conversation_id']??0);
         vp3_extension_research_json_v2230(201,$base+[
             'mission'=>vp3_browser_research_start_v2230($pdo,$user,$namespace,$activeAgent,$runtimeId,$input)
         ]);
