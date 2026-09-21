@@ -123,7 +123,10 @@
     head.append(copy,controls);
 
     body=el('div','vp3-cognitive-feed-body');
-    root.append(head,body);
+    const operationsStrip=el('div','vp3-cognitive-operations-strip');
+    operationsStrip.dataset.cognitiveOperations='1';
+    operationsStrip.hidden=true;
+    root.append(head,operationsStrip,body);
 
     const starters=welcome.querySelector('.chat-starters');
     if(starters)welcome.insertBefore(root,starters);
@@ -257,6 +260,32 @@
     if(restore){
       restore.hidden=hiddenCount<1;
       restore.textContent=hiddenCount>0?'Show hidden ('+hiddenCount+')':'Show hidden';
+    }
+
+    const operations=root.querySelector('[data-cognitive-operations]');
+    const ops=lastFeed&&lastFeed.operations&&typeof lastFeed.operations==='object'?lastFeed.operations:null;
+    if(operations){
+      operations.replaceChildren();
+      if(ops){
+        const listening=ops.all_systems_listening||{};
+        const counts=ops.lane_counts||{};
+        const sourceCount=Number(listening.source_count||0);
+        const attentionCount=Number(ops.attention_count||0);
+        const planCount=Number(ops.plan_count||0);
+        const items=[
+          ['Listening',sourceCount+' system'+(sourceCount===1?'':'s')],
+          ['Needs attention',String(attentionCount)],
+          ['Plans',String(planCount)],
+          ['Execution','Authority-gated']
+        ];
+        items.forEach(([label,value])=>{
+          const node=el('span','vp3-cognitive-operations-pill');
+          node.append(el('small','',label),el('strong','',value));
+          operations.appendChild(node);
+        });
+        operations.title='All Systems Listening feeds the existing Cognitive Runtime and Agent Brain. Execution remains inside existing authority and approval boundaries.';
+        operations.hidden=false;
+      }else operations.hidden=true;
     }
 
     const sections=Array.isArray(lastFeed&&lastFeed.sections)?lastFeed.sections:[];
