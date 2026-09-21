@@ -29,7 +29,7 @@ $cognitiveOrchestrationBuild = 'cognitive-orchestration-v560-20260919';
 $cognitiveMemoryBuild = 'cognitive-memory-v570-20260919';
 $browserContextBuild = 'browser-context-v2130-20260919';
 $cognitiveCardsAssetBuild = $cognitiveCardsBuild . '-memory-v570';
-$cognitiveFeedAssetBuild = $cognitiveFeedBuild . '-orchestration-v560';
+$cognitiveFeedAssetBuild = $cognitiveFeedBuild . '-orchestration-v560-priority-v2310';
 
 if (!headers_sent()) {
     header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
