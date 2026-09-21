@@ -62,7 +62,7 @@ Required fields:
 - `updated_at` — source time
 - `execution_boundary` — always existing-runtime-only
 
-The projection is rebuilt from currently authorized state on every read. Internal Cognitive Feed/Brain numeric ranking scores remain server-private. Hidden feed items remain a presentation preference and do not mutate source authority.
+The projection is rebuilt from currently authorized state on every read. Full normalized work items remain server-side. Client surfaces receive only a bounded operations summary, so v23.00 cannot bypass the existing Cognitive Feed attention budget. Internal Cognitive Feed/Brain numeric ranking scores remain server-private. Hidden feed items remain a presentation preference and do not mutate source authority.
 
 ## Source-of-truth rule
 
@@ -108,11 +108,11 @@ The existing `vp3_cognitive_feed_compose_v530()` response gains an `operations` 
 - attention count
 - proposal/plan count
 - execution boundary
-- top bounded work-item projections
+- no raw work-item list; the existing Cognitive Feed sections remain the only client item surface
 
 Agent Chat renders this as a small operations strip inside the existing **NOW — What deserves your attention** canvas.
 
-Browser Companion already consumes the same canonical Cognitive Feed lineage; the operations projection therefore remains available without creating Chrome-only cognition.
+Browser Companion already consumes the same canonical Cognitive Feed lineage; its Now endpoint receives the same summary-only operations projection without creating Chrome-only cognition or bypassing Universal Card reauthorization.
 
 ## Non-negotiable invariants
 
