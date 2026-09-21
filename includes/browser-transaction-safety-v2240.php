@@ -187,10 +187,19 @@ function vp3_browser_transaction_notify_v2240(array $runtime,array $row,string $
     }
 }
 
+function vp3_browser_transaction_expire_v2240(PDO $pdo,array $runtime): void
+{
+    $pdo->prepare("UPDATE browser_submission_intents_v2240
+      SET status='failed',result_code='permit_expired',permit_hash=NULL,permit_expires_at=NULL,failed_at=UTC_TIMESTAMP(),updated_at=UTC_TIMESTAMP()
+      WHERE runtime_session_id=? AND owner_user_id=? AND status='executing' AND permit_expires_at IS NOT NULL AND permit_expires_at<UTC_TIMESTAMP()")
+      ->execute([(int)$runtime['id'],(int)$runtime['owner_user_id']]);
+}
+
 function vp3_browser_transaction_preview_v2240(
     PDO $pdo,array $user,string $namespace,array $session,string $runtimePublicId,array $input
 ): array {
     $runtime=vp3_browser_transaction_runtime_v2240($pdo,$user,$namespace,$runtimePublicId);
+    vp3_browser_transaction_expire_v2240($pdo,$runtime);
     $domain=vp3_browser_web_domain_v2210($input['domain']??'');
     if(!vp3_browser_web_allowed_domain_v2210($runtime,$domain))throw new RuntimeException('This domain is outside the approved Browser delegation.');
 
@@ -252,19 +261,27 @@ function vp3_browser_transaction_approve_v2240(
     PDO $pdo,array $user,string $namespace,string $runtimePublicId,string $intentId,string $reviewHash,string $ack
 ): array {
     $runtime=vp3_browser_transaction_runtime_v2240($pdo,$user,$namespace,$runtimePublicId);
-    $row=vp3_browser_transaction_row_v2240($pdo,$runtime,$intentId,true);
-    if(!$row)throw new RuntimeException('Final submission review was not found.');
-    if((string)$row['status']!=='approval_pending')throw new RuntimeException('This final submission review is no longer waiting for approval.');
-    if(!hash_equals((string)$row['review_hash'],vp3_browser_transaction_sha_v2240($reviewHash)))throw new RuntimeException('The reviewed form state changed. Review it again.');
-    if($ack!=='reviewed_exact_submission')throw new InvalidArgumentException('Explicit final-submission acknowledgement is required.');
-    if(!empty($row['manual_only']))throw new RuntimeException('This high-impact submission is manual-only. VP3 will not dispatch it.');
+    $started=!$pdo->inTransaction();
+    if($started)$pdo->beginTransaction();
+    try{
+        $row=vp3_browser_transaction_row_v2240($pdo,$runtime,$intentId,true);
+        if(!$row)throw new RuntimeException('Final submission review was not found.');
+        if((string)$row['status']!=='approval_pending')throw new RuntimeException('This final submission review is no longer waiting for approval.');
+        if(!hash_equals((string)$row['review_hash'],vp3_browser_transaction_sha_v2240($reviewHash)))throw new RuntimeException('The reviewed form state changed. Review it again.');
+        if($ack!=='reviewed_exact_submission')throw new InvalidArgumentException('Explicit final-submission acknowledgement is required.');
+        if(!empty($row['manual_only']))throw new RuntimeException('This high-impact submission is manual-only. VP3 will not dispatch it.');
 
-    $web=vp3_browser_web_row_v2210($pdo,$runtime,(string)$row['web_interaction_public_id'],true);
-    if(!$web||(string)$web['status']!=='approval_pending')throw new RuntimeException('The underlying v22.10 submit checkpoint changed. Review the form again.');
-    $pdo->prepare("UPDATE browser_web_interactions_v2210 SET status='approved',confirmed_at=UTC_TIMESTAMP(),updated_at=UTC_TIMESTAMP()
-      WHERE id=? AND owner_user_id=?")->execute([(int)$web['id'],(int)$runtime['owner_user_id']]);
-    $pdo->prepare("UPDATE browser_submission_intents_v2240 SET status='approved',approved_at=UTC_TIMESTAMP(),updated_at=UTC_TIMESTAMP()
-      WHERE id=?")->execute([(int)$row['id']]);
+        $web=vp3_browser_web_row_v2210($pdo,$runtime,(string)$row['web_interaction_public_id'],true);
+        if(!$web||(string)$web['status']!=='approval_pending')throw new RuntimeException('The underlying v22.10 submit checkpoint changed. Review the form again.');
+        $pdo->prepare("UPDATE browser_web_interactions_v2210 SET status='approved',confirmed_at=UTC_TIMESTAMP(),updated_at=UTC_TIMESTAMP()
+          WHERE id=? AND owner_user_id=?")->execute([(int)$web['id'],(int)$runtime['owner_user_id']]);
+        $pdo->prepare("UPDATE browser_submission_intents_v2240 SET status='approved',approved_at=UTC_TIMESTAMP(),updated_at=UTC_TIMESTAMP()
+          WHERE id=?")->execute([(int)$row['id']]);
+        if($started)$pdo->commit();
+    }catch(Throwable $e){
+        if($started&&$pdo->inTransaction())$pdo->rollBack();
+        throw $e;
+    }
     vp3_browser_runtime_event_v2200($pdo,$runtime,'submission_approved',
         'User approved the exact locally-reviewed form state for one final external submission.',
         'transaction.submit',null,'approved');
@@ -276,10 +293,14 @@ function vp3_browser_transaction_claim_v2240(
     PDO $pdo,array $user,string $namespace,array $session,string $runtimePublicId,string $intentId,array $input
 ): array {
     $runtime=vp3_browser_transaction_runtime_v2240($pdo,$user,$namespace,$runtimePublicId);
-    $row=vp3_browser_transaction_row_v2240($pdo,$runtime,$intentId,true);
-    if(!$row)throw new RuntimeException('Final submission review was not found.');
-    if((string)$row['status']!=='approved')throw new RuntimeException('This final submission is not approved for dispatch.');
-    if(!empty($row['manual_only']))throw new RuntimeException('This submission is manual-only.');
+    vp3_browser_transaction_expire_v2240($pdo,$runtime);
+    $started=!$pdo->inTransaction();
+    if($started)$pdo->beginTransaction();
+    try{
+        $row=vp3_browser_transaction_row_v2240($pdo,$runtime,$intentId,true);
+        if(!$row)throw new RuntimeException('Final submission review was not found.');
+        if((string)$row['status']!=='approved')throw new RuntimeException('This final submission is not approved for dispatch.');
+        if(!empty($row['manual_only']))throw new RuntimeException('This submission is manual-only.');
 
     foreach(['page_fingerprint','form_fingerprint','submit_fingerprint','review_hash'] as $key){
         $actual=vp3_browser_transaction_sha_v2240($input[$key]??'');
@@ -293,16 +314,21 @@ function vp3_browser_transaction_claim_v2240(
     if($domain!==(string)$row['domain'])throw new RuntimeException('The active domain changed after approval.');
 
     $dup=$pdo->prepare("SELECT public_id FROM browser_submission_intents_v2240
-      WHERE owner_user_id=? AND duplicate_key=? AND id<>? AND status IN ('executing','completed')
+      WHERE owner_user_id=? AND duplicate_key=? AND id<>? AND status IN ('executing','completed','uncertain')
         AND created_at>=DATE_SUB(UTC_TIMESTAMP(),INTERVAL ".VP3_BROWSER_TRANSACTION_DUPLICATE_WINDOW_SECONDS_V2240." SECOND)
-      ORDER BY id DESC LIMIT 1");
+      ORDER BY id DESC LIMIT 1 FOR UPDATE");
     $dup->execute([(int)$runtime['owner_user_id'],(string)$row['duplicate_key'],(int)$row['id']]);
     if((string)($dup->fetchColumn()?:'')!=='')throw new RuntimeException('Duplicate final submission blocked. Review the prior receipt before submitting again.');
 
     $token=bin2hex(random_bytes(24));$hash=hash('sha256',$token);
     $pdo->prepare("UPDATE browser_submission_intents_v2240
       SET status='executing',permit_hash=?,permit_expires_at=DATE_ADD(UTC_TIMESTAMP(),INTERVAL ".VP3_BROWSER_TRANSACTION_PERMIT_SECONDS_V2240." SECOND),claimed_at=UTC_TIMESTAMP(),updated_at=UTC_TIMESTAMP()
-      WHERE id=?")->execute([$hash,(int)$row['id']]);
+      WHERE id=? AND status='approved'")->execute([$hash,(int)$row['id']]);
+    if($started)$pdo->commit();
+    }catch(Throwable $e){
+        if($started&&$pdo->inTransaction())$pdo->rollBack();
+        throw $e;
+    }
     vp3_browser_runtime_event_v2200($pdo,$runtime,'submission_permit_claimed',
         'Chrome claimed a one-time final-submission permit bound to the reviewed form hash.',
         'transaction.submit',null,'executing');
@@ -336,7 +362,7 @@ function vp3_browser_transaction_complete_v2240(
     $verified=!empty($input['verified']);
     $code=preg_replace('/[^a-z0-9_\-]/','',strtolower(trim((string)($input['result_code']??($verified?'submission_dispatched':'submission_failed')))));
     $code=mb_strimwidth($code?:($verified?'submission_dispatched':'submission_failed'),0,80,'');
-    $status=$dispatched?'completed':'failed';
+    $status=$verified?'completed':($dispatched?'uncertain':'failed');
     $pdo->prepare("UPDATE browser_submission_intents_v2240 SET status=?,permit_hash=NULL,permit_expires_at=NULL,result_code=?,
       dispatched_at=CASE WHEN ?=1 THEN UTC_TIMESTAMP() ELSE dispatched_at END,
       verified_at=CASE WHEN ?=1 THEN UTC_TIMESTAMP() ELSE verified_at END,
@@ -345,19 +371,24 @@ function vp3_browser_transaction_complete_v2240(
 
     $web=vp3_browser_web_row_v2210($pdo,$runtime,(string)$row['web_interaction_public_id'],true);
     if($web){
+        $webStatus=$verified?'completed':'failed';
         $pdo->prepare("UPDATE browser_web_interactions_v2210 SET status=?,verified=?,result_code=?,permit_hash=NULL,permit_expires_at=NULL,
           verified_at=CASE WHEN ?=1 THEN UTC_TIMESTAMP() ELSE verified_at END,
           failed_at=CASE WHEN ?=0 THEN UTC_TIMESTAMP() ELSE failed_at END,updated_at=UTC_TIMESTAMP()
           WHERE id=? AND owner_user_id=?")
-          ->execute([$status,$dispatched?1:0,'v2240_'.$code,$dispatched?1:0,$dispatched?1:0,(int)$web['id'],(int)$runtime['owner_user_id']]);
+          ->execute([$webStatus,$verified?1:0,'v2240_'.$code,$verified?1:0,$verified?1:0,(int)$web['id'],(int)$runtime['owner_user_id']]);
     }
     if($dispatched){
         $pdo->prepare("UPDATE browser_agent_runtime_sessions_v2200 SET last_verified_at=UTC_TIMESTAMP(),updated_at=UTC_TIMESTAMP() WHERE id=? AND owner_user_id=?")
             ->execute([(int)$runtime['id'],(int)$runtime['owner_user_id']]);
     }
-    vp3_browser_runtime_event_v2200($pdo,$runtime,$dispatched?'submission_dispatched':'submission_failed',
-        $dispatched?'The approved external submission was dispatched once. The receipt does not claim downstream business success.':'The approved external submission was not dispatched.',
-        'transaction.submit',null,$code);
+    $event=$verified?'submission_verified':($dispatched?'submission_dispatch_uncertain':'submission_failed');
+    $summary=$verified
+        ?'The approved external submission was dispatched once and the immediate expected browser state was verified. This does not claim downstream business success.'
+        :($dispatched
+            ?'Submission dispatch was attempted but the immediate browser result could not be verified. Do not retry until the destination state is reviewed.'
+            :'The approved external submission was not dispatched.');
+    vp3_browser_runtime_event_v2200($pdo,$runtime,$event,$summary,'transaction.submit',null,$code);
     if(!$dispatched)vp3_browser_transaction_notify_v2240($runtime,$row,'failed');
     $fresh=vp3_browser_transaction_row_v2240($pdo,$runtime,$intentId);
     return ['intent'=>vp3_browser_transaction_public_v2240($fresh?:$row)];
@@ -379,6 +410,7 @@ function vp3_browser_transaction_cancel_v2240(PDO $pdo,array $user,string $names
 function vp3_browser_transaction_list_v2240(PDO $pdo,array $runtime,int $limit=30): array
 {
     $limit=max(1,min(30,$limit));
+    vp3_browser_transaction_expire_v2240($pdo,$runtime);
     $stmt=$pdo->prepare("SELECT * FROM browser_submission_intents_v2240 WHERE runtime_session_id=? AND owner_user_id=? ORDER BY id DESC LIMIT ".$limit);
     $stmt->execute([(int)$runtime['id'],(int)$runtime['owner_user_id']]);
     return array_map('vp3_browser_transaction_public_v2240',$stmt->fetchAll(PDO::FETCH_ASSOC)?:[]);
@@ -386,16 +418,17 @@ function vp3_browser_transaction_list_v2240(PDO $pdo,array $runtime,int $limit=3
 
 function vp3_browser_transaction_for_workflow_v2240(PDO $pdo,int $uid,int $workflowRunId): array
 {
-    if($uid<1||$workflowRunId<1||!vp3_browser_transaction_schema_ready_v2240($pdo))return ['count'=>0,'completed'=>0,'failed'=>0,'manual_only'=>0,'intents'=>[]];
+    if($uid<1||$workflowRunId<1||!vp3_browser_transaction_schema_ready_v2240($pdo))return ['count'=>0,'completed'=>0,'uncertain'=>0,'failed'=>0,'manual_only'=>0,'intents'=>[]];
     $stmt=$pdo->prepare("SELECT s.* FROM browser_submission_intents_v2240 s
       INNER JOIN browser_agent_runtime_sessions_v2200 r ON r.id=s.runtime_session_id
       WHERE s.owner_user_id=? AND r.owner_user_id=? AND r.workflow_run_id=? ORDER BY s.id DESC LIMIT 40");
     $stmt->execute([$uid,$uid,$workflowRunId]);$rows=$stmt->fetchAll(PDO::FETCH_ASSOC)?:[];
-    $completed=0;$failed=0;$manual=0;
+    $completed=0;$uncertain=0;$failed=0;$manual=0;
     foreach($rows as $row){
         if((string)$row['status']==='completed')$completed++;
+        if((string)$row['status']==='uncertain')$uncertain++;
         if((string)$row['status']==='failed')$failed++;
         if(!empty($row['manual_only']))$manual++;
     }
-    return ['count'=>count($rows),'completed'=>$completed,'failed'=>$failed,'manual_only'=>$manual,'intents'=>array_map('vp3_browser_transaction_public_v2240',$rows)];
+    return ['count'=>count($rows),'completed'=>$completed,'uncertain'=>$uncertain,'failed'=>$failed,'manual_only'=>$manual,'intents'=>array_map('vp3_browser_transaction_public_v2240',$rows)];
 }
