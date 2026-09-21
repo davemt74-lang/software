@@ -683,6 +683,8 @@ async function browserTransactionControlApiV2280(action,payload={}){
   },'agent.message');
 }
 
+const browserTransactionNextScanByDomainV2280=new Map();
+
 async function browserTransactionContinuityEnsureV2260(payload={}){
   return browserTransactionContinuityApiV2260('ensure',{
     runtime_id:String(payload.runtime_id||''),agent_id:Number(payload.agent_id||0),intent_id:String(payload.intent_id||'')
@@ -833,8 +835,16 @@ async function browserTransactionContinuityScanV2260(){
   try{domain=new URL(tab.url).hostname.toLowerCase();}catch(_error){}
   if(!domain)return {ok:true,matched:false,reason:'unsupported_page',continuities:[]};
 
-  const permit=await browserTransactionControlApiV2280('scan_permit',{domain}).catch(()=>null);
-  if(permit&&!permit.allowed)return {ok:true,matched:false,reason:String(permit.reason||'scan_suppressed'),retry_after_seconds:Number(permit.retry_after_seconds||0),continuities:[],control:permit};
+  const localNext=Number(browserTransactionNextScanByDomainV2280.get(domain)||0);
+  if(localNext>Date.now())return {ok:true,matched:false,reason:'local_scan_cooldown',retry_after_seconds:Math.max(1,Math.ceil((localNext-Date.now())/1000)),continuities:[]};
+  const permit=await browserTransactionControlApiV2280('scan_permit',{domain}).catch(()=>({allowed:false,reason:'control_unavailable',retry_after_seconds:30}));
+  if(!permit||!permit.allowed){
+    const retry=Math.max(1,Number(permit&&permit.retry_after_seconds||30));
+    browserTransactionNextScanByDomainV2280.set(domain,Date.now()+retry*1000);
+    return {ok:true,matched:false,reason:String(permit&&permit.reason||'control_unavailable'),retry_after_seconds:retry,continuities:[],control:permit};
+  }
+  const nextScan=Math.max(30,Number(permit.next_scan_after_seconds||120));
+  browserTransactionNextScanByDomainV2280.set(domain,Date.now()+nextScan*1000);
   const scopeKey=String(permit&&permit.scope_key||'');
   let resultCode='unknown';
   try{
