@@ -180,11 +180,12 @@ function vp3_cognitive_opportunity_store_v2320(
     ];
     $observationKey='opp2320:'.substr(hash('sha256',vp3_cognitive_json_v500($identity)),0,48);
     $truth=(string)($edge['confirmation_state']??'')==='user_confirmed'?'user_confirmed':'database_fact';
-    $confidence=max(
+    $confidence=vp3_cognitive_score_v500(max(
         VP3_COGNITIVE_OPPORTUNITIES_MIN_RELATION_CONFIDENCE_V2320,
         min(.99,(float)($edge['confidence']??.85))
-    );
-    $validUntil=gmdate('Y-m-d H:i:s',time()+((int)$pattern['ttl_hours']*3600));
+    ));
+    $expiresAt=time()+((int)$pattern['ttl_hours']*3600);
+    $validUntil=gmdate('Y-m-d H:i:s',$expiresAt);
     $existing=vp3_cognitive_opportunity_existing_v2320($pdo,$uid,$namespace,$observationKey);
     if(is_array($existing)){
         $sameSemantic=(string)($existing['state']??'')==='active'
@@ -231,7 +232,7 @@ function vp3_cognitive_opportunity_store_v2320(
         'urgency'=>(float)$pattern['urgency'],
         'impact'=>(float)$pattern['impact'],
         'goal_relevance'=>(float)$pattern['goal_relevance'],
-        'valid_until'=>gmdate(DATE_ATOM,strtotime($validUntil)),
+        'valid_until'=>gmdate(DATE_ATOM,$expiresAt),
         'proposed_action_ids'=>[],
         'proposed_cards'=>[],
         'presentation_recommendation'=>'brief',
