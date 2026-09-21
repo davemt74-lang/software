@@ -158,6 +158,7 @@ function vp3_extension_cognitive_feed_v2120(PDO $pdo,array $user,string $namespa
     return [
         'agent_namespace'=>(string)($feed['agent_namespace']??$namespace),
         'generated_at'=>(string)($feed['generated_at']??gmdate(DATE_ATOM)),
+        'operations'=>is_array($feed['operations']??null)?$feed['operations']:null,
         'sections'=>$sections,
         'item_count'=>$count,
         'hidden_count'=>max(0,(int)($feed['hidden_count']??0)),
