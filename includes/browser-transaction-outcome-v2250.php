@@ -144,7 +144,14 @@ function vp3_browser_outcome_validate_v2250(string $state,string $strength,array
 
 function vp3_browser_outcome_runtime_v2250(PDO $pdo,array $user,string $namespace,string $runtimePublicId): array
 {
-    return vp3_browser_transaction_runtime_v2240($pdo,$user,$namespace,$runtimePublicId);
+    $uid=(int)($user['id']??0);
+    $runtime=vp3_browser_runtime_row_v2200($pdo,$uid,$namespace,$runtimePublicId);
+    if(!$runtime)throw new RuntimeException('Browser Agent Runtime session was not found.');
+    $actions=vp3_browser_delegation_json_array_v2190($runtime['allowed_actions_json']??'');
+    if(!in_array('transaction_submit',$actions,true)){
+        throw new RuntimeException('Transaction outcome recovery is outside the original Browser delegation.');
+    }
+    return $runtime;
 }
 
 function vp3_browser_outcome_intent_v2250(PDO $pdo,array $runtime,string $intentId,bool $lock=false): array
@@ -427,7 +434,23 @@ function vp3_browser_outcome_list_v2250(PDO $pdo,array $runtime,int $limit=40): 
     $rec->execute([(int)$runtime['id'],(int)$runtime['owner_user_id']]);
     $recoveries=array_map('vp3_browser_recovery_public_v2250',$rec->fetchAll(PDO::FETCH_ASSOC)?:[]);
 
-    return ['outcomes'=>$outcomes,'recoveries'=>$recoveries];
+    $latest=null;
+    if($outcomes){
+        $intentId=(string)($outcomes[0]['intent_id']??'');
+        if($intentId!==''){
+            $intent=vp3_browser_transaction_row_v2240($pdo,$runtime,$intentId,false);
+            $recovery=vp3_browser_recovery_for_intent_v2250($pdo,$runtime,$intentId);
+            if($intent){
+                $latest=[
+                    'outcome'=>$outcomes[0],
+                    'intent'=>vp3_browser_transaction_public_v2240($intent),
+                    'recovery'=>$recovery?vp3_browser_recovery_public_v2250($recovery):null,
+                    'recovery_options'=>vp3_browser_outcome_options_v2250($intent,$recovery),
+                ];
+            }
+        }
+    }
+    return ['outcomes'=>$outcomes,'recoveries'=>$recoveries,'latest'=>$latest];
 }
 
 function vp3_browser_outcome_for_workflow_v2250(PDO $pdo,int $uid,int $workflowRunId): array
