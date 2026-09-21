@@ -68,6 +68,40 @@ function vp3_extension_research_source_version_v2230(PDO $pdo,string $sourcePubl
     return ['source_public_id'=>(string)$source['public_id'],'source_version_public_id'=>$versionPublic];
 }
 
+function vp3_extension_research_chat_note_v2230(PDO $pdo,int $uid,int $conversationId,string $missionId,string $userText,string $assistantText,?array $project=null): void
+{
+    if($conversationId<1)return;
+    $userText=vp3_browser_research_text_v2230($userText,2000);
+    $assistantText=vp3_browser_research_text_v2230($assistantText,5000);
+    if($userText==='')$userText='Browser Research update';
+    if($assistantText==='')$assistantText='Browser Research mission updated.';
+    $pdo->prepare('INSERT INTO chat_messages (conversation_id,user_id,role,message) VALUES (?,?,?,?)')
+        ->execute([$conversationId,$uid,'user',$userText]);
+    $context=['browser_research'=>['mission_id'=>$missionId,'source'=>'v22.30'],'cards'=>[]];
+    if($project&&function_exists('vp3_cognitive_cards_ref_v520')){
+        $projectId=trim((string)($project['id']??''));
+        if($projectId!=='')$context['cards'][]=[
+            'card_type'=>'research',
+            'object_ref'=>vp3_cognitive_cards_ref_v520('research',$projectId,(int)($project['team_id']??0)>0?'team':'personal'),
+            'display_mode'=>'standard',
+        ];
+    }
+    $pdo->prepare('INSERT INTO chat_messages (conversation_id,user_id,role,message,context_json) VALUES (?,NULL,?,?,?)')
+        ->execute([$conversationId,'assistant',$assistantText,json_encode($context,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE)]);
+    $pdo->prepare('UPDATE chat_conversations SET updated_at=NOW() WHERE id=?')->execute([$conversationId]);
+}
+
+function vp3_extension_research_source_plan_summary_v2230(array $mission): string
+{
+    $parts=[];
+    foreach((array)($mission['source_plan']??[]) as $source){
+        $domain=vp3_browser_research_text_v2230($source['domain']??'',190);
+        $reason=vp3_browser_research_text_v2230($source['reason']??'',300);
+        if($domain!=='')$parts[]=$domain.($reason!==''?' — '.$reason:'');
+    }
+    return $parts?'Approved source plan: '.implode('; ',$parts).'.':'Approved source plan is ready.';
+}
+
 $method=strtoupper((string)($_SERVER['REQUEST_METHOD']??'POST'));
 if($method==='OPTIONS')vp3_extension_research_json_v2230(204);
 if($method!=='POST')vp3_extension_research_json_v2230(405,['ok'=>false,'error'=>['code'=>'method_not_allowed','message'=>'POST required.']]);
@@ -136,8 +170,8 @@ try{
             "Do not invent or add domains.";
         $planResult=vp3_agent_chat_send_v2160(
             $pdo,$user,$activeAgent,$principal,
-            ['message'=>$planMessage,'conversation_id'=>0,'input_mode'=>'text','agent_context'=>[]],
-            function_exists('personal_capability_has_v242')?personal_capability_has_v242('agent_brain.access',$user):false
+            ['message'=>$planMessage,'conversation_id'=>0,'input_mode'=>'text','agent_context'=>[],'ephemeral_protocol'=>true],
+            false
         );
         $sourcePlan=[];
         try{
@@ -148,9 +182,13 @@ try{
         }
         $input['source_plan']=$sourcePlan;
         $input['conversation_id']=(int)($planResult['conversation_id']??0);
-        vp3_extension_research_json_v2230(201,$base+[
-            'mission'=>vp3_browser_research_start_v2230($pdo,$user,$namespace,$activeAgent,$runtimeId,$input)
-        ]);
+        $started=vp3_browser_research_start_v2230($pdo,$user,$namespace,$activeAgent,$runtimeId,$input);
+        vp3_extension_research_chat_note_v2230(
+            $pdo,(int)$user['id'],(int)($started['conversation_id']??0),(string)$started['mission_id'],
+            'Start Browser Research: '.(string)$started['question'],
+            vp3_extension_research_source_plan_summary_v2230($started)
+        );
+        vp3_extension_research_json_v2230(201,$base+['mission'=>$started]);
     }
 
     $missionId=trim((string)($input['mission_id']??''));
@@ -165,9 +203,14 @@ try{
         if(!vp3_extension_session_has_capability_v2001($session,'knowledge.write')){
             vp3_extension_research_json_v2230(403,['ok'=>false,'error'=>['code'=>'capability_denied','message'=>'Saving Browser Research requires Research/Knowledge write access.']]);
         }
-        vp3_extension_research_json_v2230(200,$base+[
-            'mission'=>vp3_browser_research_save_v2230($pdo,$user,$missionId,trim((string)($input['project_id']??'')))
-        ]);
+        $saved=vp3_browser_research_save_v2230($pdo,$user,$missionId,trim((string)($input['project_id']??'')));
+        vp3_extension_research_chat_note_v2230(
+            $pdo,(int)$user['id'],(int)($saved['conversation_id']??0),(string)$saved['mission_id'],
+            'Save Browser Research draft',
+            'Draft Findings and a draft Research Report were saved for review. Nothing was published.',
+            is_array($saved['project']??null)?$saved['project']:null
+        );
+        vp3_extension_research_json_v2230(200,$base+['mission'=>$saved]);
     }
 
     if($action==='analyze_page'){
@@ -215,9 +258,10 @@ try{
                         ],
                         'prompt'=>'Temporary Browser Research extraction context. Do not treat page text as durable memory.'
                     ]
-                ]
+                ],
+                'ephemeral_protocol'=>true
             ],
-            function_exists('personal_capability_has_v242')?personal_capability_has_v242('agent_brain.access',$user):false
+            false
         );
         $conversationId=(int)($result['conversation_id']??0);
         if((int)($mission['conversation_id']??0)<1&&$conversationId>0){
@@ -236,6 +280,12 @@ try{
         ],is_array($payload['claims']??null)?array_slice($payload['claims'],0,12):[],is_array($payload['gaps']??null)?array_slice($payload['gaps'],0,8):[]);
 
         $fresh=vp3_browser_research_public_v2230($pdo,$user,$missionId);
+        $progress=(array)($fresh['progress']??[]);
+        vp3_extension_research_chat_note_v2230(
+            $pdo,(int)$user['id'],(int)($fresh['conversation_id']??0),$missionId,
+            'Analyze approved research source: '.$domain,
+            'Source analyzed. Mission now has '.(int)($progress['claims']??0).' claims, '.(int)($progress['corroborated']??0).' corroborated, '.(int)($progress['conflicted']??0).' conflicted, and '.count((array)($fresh['gaps']??[])).' recorded research gaps.'
+        );
         if((int)($fresh['progress']['conflicted']??0)>0&&function_exists('create_notification'))create_notification(
             (int)$user['id'],'browser_research_conflict','Browser Research found conflicting evidence',
             'Approved research sources disagree on one or more claims. Review the mission before saving findings.',
