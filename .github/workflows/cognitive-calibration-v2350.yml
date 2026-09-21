@@ -1,0 +1,67 @@
+name: Cognitive Calibration v23.50
+
+on:
+  pull_request:
+    paths:
+      - 'docs/VP3_COGNITIVE_CALIBRATION_V2350.md'
+      - 'includes/cognitive-calibration-v2350.php'
+      - 'includes/cognitive-learning-v540.php'
+      - 'api/cognitive-planning-v550.php'
+      - 'includes/cognitive-orchestration-v560.php'
+      - 'includes/cognitive-proactive-now-v2340.php'
+      - 'chat-cognitive-feed-v530.js'
+      - 'chat-cognitive-feed-v530.css'
+      - 'chat.php'
+      - 'includes/bootstrap.php'
+      - 'tests/cognitive-calibration-v2350.mjs'
+      - '.github/workflows/cognitive-calibration-v2350.yml'
+  push:
+    branches:
+      - 'cognitive-calibration-v2350'
+
+jobs:
+  contract:
+    name: Cognitive Calibration v23.50 · PHP ${{ matrix.php }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.1','8.3']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: PHP syntax
+        run: |
+          php -l includes/cognitive-calibration-v2350.php
+          php -l includes/cognitive-learning-v540.php
+          php -l api/cognitive-planning-v550.php
+          php -l includes/cognitive-orchestration-v560.php
+          php -l includes/cognitive-proactive-now-v2340.php
+          php -l includes/bootstrap.php
+          php -l chat.php
+      - name: JavaScript syntax
+        run: node --check chat-cognitive-feed-v530.js
+      - name: v23.50 architecture contract
+        run: node tests/cognitive-calibration-v2350.mjs
+      - name: Retained v23.x and cognitive contracts
+        run: |
+          node tests/cognitive-proactive-now-v2340.mjs
+          node tests/cognitive-stack-audit-v23x.mjs
+          node tests/cognitive-action-planning-v2330.mjs
+          node tests/cognitive-opportunities-v2320.mjs
+          node tests/cognitive-priority-queue-v2310.mjs
+          node tests/cognitive-operations-v2300.mjs
+          node tests/cognitive-runtime-core-v500.mjs
+          node tests/cognitive-presentation-v510.mjs
+          node tests/cognitive-feed-v530.mjs
+          node tests/cognitive-learning-v540.mjs
+          node tests/cognitive-planning-v550.mjs
+          node tests/cognitive-orchestration-v560.mjs
+          node tests/cognitive-memory-v570.mjs
+          node tests/browser-companion-cognitive-now-v2120.mjs
+          node tests/browser-companion-proactive-notifications-v2140.mjs
