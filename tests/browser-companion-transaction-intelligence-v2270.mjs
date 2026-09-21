@@ -80,6 +80,7 @@ must(intelligence.includes('vp3_browser_intelligence_resolve_absent_v2270'),'sta
 must(intelligence.includes("exception_fingerprint']"),'active exception cleanup must use exact fingerprints');
 must(intelligence.includes('exception_signal_cleared'),'signal-cleared receipt missing');
 must(intelligence.includes('cross_signal_cleared'),'cleared cross-transaction advisory receipt missing');
+must(intelligence.includes("existingStatus==='dismissed'")&&intelligence.includes('return null;'),'dismissed exceptions must stay out of active evaluation');
 must(intelligence.includes('exception_reopened'),'recurring auto-resolved exception reopen receipt missing');
 must(intelligence.includes("SET status='open',priority_score=?"),'auto-resolved exception reopen path missing');
 must(intelligence.includes("SET status='proposed',resolved_at=NULL"),'reopened recovery proposal path missing');
