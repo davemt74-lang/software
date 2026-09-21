@@ -308,6 +308,7 @@ function vp3_cognitive_planning_card_v550(PDO $pdo,array $user,string $namespace
     if($status==='accepted'
         &&!empty($liveCapability['available'])
         &&(string)($liveCapability['mode']??'')==='existing_capability'
+        &&empty($liveCapability['boundary_changed'])
         &&hash_equals((string)($liveCapability['id']??''),vp3_cognitive_id_v500($row['tool_id']??'',120))){
         $actions[]=['type'=>'tool','label'=>'Continue to tool action','tool_id'=>(string)$liveCapability['id']];
     }
