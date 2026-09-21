@@ -11,6 +11,7 @@ require_once __DIR__ . '/includes/browser-research-save-v2230.php';
 require_once __DIR__ . '/includes/browser-transaction-safety-v2240.php';
 require_once __DIR__ . '/includes/browser-transaction-outcome-v2250.php';
 require_once __DIR__ . '/includes/browser-transaction-continuity-v2260.php';
+require_once __DIR__ . '/includes/browser-transaction-intelligence-v2270.php';
 require_permission('account.access');
 $pdo=db();$user=current_user();if(!$pdo||!$user)redirect(url('/login.php'));
 if(!agent_workflow_schema_ready_v1400($pdo))redirect(url('/agent-workflow-upgrade-v1400.php'));
@@ -80,6 +81,29 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
                     $notice='Transaction follow-through tracking resumed using its hashed reference.';
                 }
                 redirect(url('/agent-workflows.php?id='.$runId.'&notice='.rawurlencode($notice)));
+            }elseif(in_array($action,['browser_intelligence_ack','browser_intelligence_dismiss','browser_intelligence_proposal_ack','browser_intelligence_proposal_dismiss'],true)){
+                $runId=max(0,(int)($_POST['run_id']??0));
+                if($runId<1)throw new RuntimeException('Transaction intelligence workflow context is invalid.');
+                if(str_starts_with($action,'browser_intelligence_proposal_')){
+                    $proposalId=trim((string)($_POST['proposal_id']??''));
+                    $check=$pdo->prepare("SELECT p.public_id FROM browser_transaction_recovery_proposals_v2270 p
+                      INNER JOIN browser_transaction_intelligence_cases_v2270 x ON x.id=p.case_id
+                      WHERE p.public_id=? AND p.owner_user_id=? AND x.owner_user_id=? AND x.workflow_run_id=? LIMIT 1");
+                    $check->execute([$proposalId,(int)$user['id'],(int)$user['id'],$runId]);
+                    if(!(string)$check->fetchColumn())throw new RuntimeException('Recovery proposal context is invalid.');
+                    $proposalAction=$action==='browser_intelligence_proposal_ack'?'acknowledge':'dismiss';
+                    vp3_browser_intelligence_proposal_action_v2270($pdo,$user,$proposalId,$proposalAction);
+                    $notice=$proposalAction==='acknowledge'?'Recovery proposal acknowledged. Any external write still requires a fresh v22.40 review.':'Recovery proposal dismissed.';
+                }else{
+                    $caseId=trim((string)($_POST['case_id']??''));
+                    $check=$pdo->prepare("SELECT public_id FROM browser_transaction_intelligence_cases_v2270 WHERE public_id=? AND owner_user_id=? AND workflow_run_id=? LIMIT 1");
+                    $check->execute([$caseId,(int)$user['id'],$runId]);
+                    if(!(string)$check->fetchColumn())throw new RuntimeException('Transaction exception context is invalid.');
+                    $caseAction=$action==='browser_intelligence_ack'?'acknowledge':'dismiss';
+                    vp3_browser_intelligence_case_action_v2270($pdo,$user,$caseId,$caseAction);
+                    $notice=$caseAction==='acknowledge'?'Transaction exception acknowledged.':'Transaction exception dismissed.';
+                }
+                redirect(url('/agent-workflows.php?id='.$runId.'&notice='.rawurlencode($notice)));
             }elseif(in_array($action,['browser_followthrough_ack','browser_followthrough_dismiss'],true)){
                 $runId=max(0,(int)($_POST['run_id']??0));
                 $proposalId=trim((string)($_POST['proposal_id']??''));
@@ -111,6 +135,7 @@ $browserResearch=$detail&&vp3_browser_research_schema_ready_v2230($pdo)?vp3_brow
 $browserTransactions=$detail&&vp3_browser_transaction_schema_ready_v2240($pdo)?vp3_browser_transaction_for_workflow_v2240($pdo,(int)$user['id'],$detailId):['count'=>0,'completed'=>0,'uncertain'=>0,'failed'=>0,'manual_only'=>0,'intents'=>[]];
 $browserOutcomes=$detail&&vp3_browser_outcome_schema_ready_v2250($pdo)?vp3_browser_outcome_for_workflow_v2250($pdo,(int)$user['id'],$detailId):['count'=>0,'confirmed'=>0,'pending'=>0,'rejected'=>0,'ambiguous'=>0,'external_redirect'=>0,'resolved'=>0,'retry_allowed'=>0,'outcomes'=>[],'recoveries'=>[]];
 $browserContinuity=$detail&&vp3_browser_continuity_schema_ready_v2260($pdo)?vp3_browser_continuity_for_workflow_v2260($pdo,(int)$user['id'],$detailId):['count'=>0,'active'=>0,'closed'=>0,'changes'=>0,'proposals'=>0,'continuities'=>[],'events'=>[],'followthrough'=>[]];
+$browserIntelligence=$detail&&vp3_browser_intelligence_schema_ready_v2270($pdo)?vp3_browser_intelligence_for_workflow_v2270($pdo,(int)$user['id'],$detailId):['count'=>0,'open'=>0,'urgent'=>0,'high'=>0,'cases'=>[],'proposals'=>[],'receipts'=>[]];
 
 function workflow_v1400_status_label(string $status): string{return str_replace('_',' ',ucwords($status,'_'));}
 function workflow_v1400_time(string $value): string{$ts=strtotime($value);return $ts?date('M j, g:i A',$ts):'—';}
@@ -265,6 +290,61 @@ function workflow_v1400_time(string $value): string{$ts=strtotime($value);return
     <div class="workflow-notice" role="note" style="margin:14px 0 0">Raw page text, URLs and browser history are not persisted by the Browser Research mission. Durable state is limited to structured claims, bounded evidence excerpts, fingerprints, source domains, freshness metadata and canonical VP3 Research references. Saving creates drafts; it does not publish.</div>
   </section>
   <?php endforeach; ?>
+
+  <?php if((int)($browserIntelligence['count']??0)>0): ?>
+  <section class="workflow-panel" aria-labelledby="browserIntelligenceTitle">
+    <div class="workflow-panel-head">
+      <div><small>Browser Companion v22.70</small><h3 id="browserIntelligenceTitle">Transaction Intelligence & Exception Management</h3></div>
+      <span><?= (int)($browserIntelligence['open']??0) ?> active · <?= (int)($browserIntelligence['urgent']??0) ?> urgent · <?= (int)($browserIntelligence['high']??0) ?> high</span>
+    </div>
+    <div class="workflow-summary-grid">
+      <div><small>Exception cases</small><strong><?= (int)($browserIntelligence['count']??0) ?></strong></div>
+      <div><small>Open attention</small><strong><?= (int)($browserIntelligence['open']??0) ?></strong></div>
+      <div><small>Cross-transaction signals</small><strong>Advisory only</strong></div>
+      <div><small>External writes</small><strong>Fresh v22.40 required</strong></div>
+    </div>
+    <div class="workflow-two-col">
+      <section class="workflow-panel">
+        <div class="workflow-panel-head"><h3>Priority inbox</h3><span>Urgency · consequence · deadline</span></div>
+        <div class="workflow-event-list">
+          <?php foreach((array)($browserIntelligence['cases']??[]) as $case): ?>
+          <article>
+            <strong><?= e(workflow_v1400_status_label((string)($case['exception_type']??'transaction_attention'))) ?> · <?= e(workflow_v1400_status_label((string)($case['priority_band']??'low'))) ?> <?= (int)($case['priority_score']??0) ?></strong>
+            <p><?= e((string)($case['domain']??'')) ?> · <?= e(workflow_v1400_status_label((string)($case['lifecycle_family']??'generic'))) ?> · <?= e(workflow_v1400_status_label((string)($case['lifecycle_state']??'active'))) ?></p>
+            <small><?= e(implode(' · ',array_map('workflow_v1400_status_label',(array)($case['reason_codes']??[])))) ?> · <?= e(workflow_v1400_time((string)($case['opened_at']??''))) ?></small>
+            <?php if(in_array((string)($case['status']??''),['open','acknowledged'],true)): ?>
+            <div class="workflow-actions-bar" style="margin-top:8px">
+              <form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="browser_intelligence_ack"><input type="hidden" name="run_id" value="<?= (int)$detailId ?>"><input type="hidden" name="case_id" value="<?= e((string)($case['case_id']??'')) ?>"><button class="workflow-button" type="submit">Acknowledge</button></form>
+              <form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="browser_intelligence_dismiss"><input type="hidden" name="run_id" value="<?= (int)$detailId ?>"><input type="hidden" name="case_id" value="<?= e((string)($case['case_id']??'')) ?>"><button class="workflow-button" type="submit">Dismiss</button></form>
+            </div>
+            <?php endif; ?>
+          </article>
+          <?php endforeach; ?>
+        </div>
+      </section>
+      <section class="workflow-panel">
+        <div class="workflow-panel-head"><h3>Recovery proposals</h3><span>Prepare, do not silently execute</span></div>
+        <div class="workflow-event-list">
+          <?php foreach((array)($browserIntelligence['proposals']??[]) as $proposal): ?>
+          <article>
+            <strong><?= e(workflow_v1400_status_label((string)($proposal['proposal_type']??'review_transaction'))) ?> · <?= e(workflow_v1400_status_label((string)($proposal['status']??'proposed'))) ?></strong>
+            <p><?= e(workflow_v1400_status_label((string)($proposal['reason_code']??'transaction_attention'))) ?><?= !empty($proposal['requires_external_write'])?' · fresh v22.40 exact-form authorization required':' · internal review only' ?></p>
+            <small><?= e(workflow_v1400_time((string)($proposal['created_at']??''))) ?></small>
+            <?php if((string)($proposal['status']??'')==='proposed'): ?>
+            <div class="workflow-actions-bar" style="margin-top:8px">
+              <form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="browser_intelligence_proposal_ack"><input type="hidden" name="run_id" value="<?= (int)$detailId ?>"><input type="hidden" name="proposal_id" value="<?= e((string)($proposal['proposal_id']??'')) ?>"><button class="workflow-button" type="submit">Review next step</button></form>
+              <form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="browser_intelligence_proposal_dismiss"><input type="hidden" name="run_id" value="<?= (int)$detailId ?>"><input type="hidden" name="proposal_id" value="<?= e((string)($proposal['proposal_id']??'')) ?>"><button class="workflow-button" type="submit">Dismiss</button></form>
+            </div>
+            <?php endif; ?>
+          </article>
+          <?php endforeach; ?>
+          <?php if(!(array)($browserIntelligence['proposals']??[])): ?><div class="workflow-empty">No recovery proposals.</div><?php endif; ?>
+        </div>
+      </section>
+    </div>
+    <div class="workflow-notice" role="note" style="margin:14px 0 0">v22.70 prioritizes existing v22.60 transaction continuity using structured lifecycle state, change codes, consequence level, bounded timestamps and normalized financial totals. Potential conflicts and duplicates are review signals, not conclusions. Raw page text, URLs and transaction identifiers remain outside the durable intelligence layer.</div>
+  </section>
+  <?php endif; ?>
 
   <?php if((int)($browserContinuity['count']??0)>0): ?>
   <section class="workflow-panel" aria-labelledby="browserContinuityTitle">

@@ -229,3 +229,13 @@
 .runtime-continuity-copy span{font-size:12px;opacity:.78}
 .runtime-continuity-boundary{display:grid;gap:4px;margin-top:12px;padding:10px;border-radius:10px;background:var(--surface-soft,#f8f8f5);font-size:12px;line-height:1.4}
 .runtime-continuity-panel[data-state="closed"]{opacity:.9}
+
+/* Browser Companion v22.70 — transaction intelligence & exception management */
+.runtime-intelligence-panel{margin-top:14px;padding:14px;border:1px solid var(--border,#d8d8d3);border-radius:14px;background:var(--surface,#fff)}
+.runtime-intelligence-summary{margin-top:10px;font-size:13px;line-height:1.45}
+.runtime-intelligence-exposure{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.runtime-intelligence-cases{display:grid;gap:8px;margin-top:10px}
+.runtime-intelligence-case{display:grid;gap:5px;padding:10px;border:1px solid var(--border,#e2e2dd);border-radius:10px;background:var(--surface-soft,#f8f8f5)}
+.runtime-intelligence-case-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.runtime-intelligence-case p{margin:0;font-size:12px;line-height:1.4;opacity:.82}
+.runtime-intelligence-case[data-priority="urgent"],.runtime-intelligence-case[data-priority="high"]{font-weight:500}
