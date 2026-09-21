@@ -126,7 +126,10 @@
     const operationsStrip=el('div','vp3-cognitive-operations-strip');
     operationsStrip.dataset.cognitiveOperations='1';
     operationsStrip.hidden=true;
-    root.append(head,operationsStrip,body);
+    const priorityQueue=el('section','vp3-cognitive-priority-queue-v2310');
+    priorityQueue.dataset.cognitivePriorityQueue='1';
+    priorityQueue.hidden=true;
+    root.append(head,operationsStrip,priorityQueue,body);
 
     const starters=welcome.querySelector('.chat-starters');
     if(starters)welcome.insertBefore(root,starters);
@@ -286,6 +289,41 @@
         operations.title='All Systems Listening feeds the existing Cognitive Runtime and Agent Brain. Execution remains inside existing authority and approval boundaries.';
         operations.hidden=false;
       }else operations.hidden=true;
+    }
+
+    const priorityQueue=root.querySelector('[data-cognitive-priority-queue]');
+    const queue=lastFeed&&lastFeed.priority_queue&&typeof lastFeed.priority_queue==='object'?lastFeed.priority_queue:null;
+    if(priorityQueue){
+      priorityQueue.replaceChildren();
+      const queueItems=Array.isArray(queue&&queue.items)?queue.items:[];
+      if(queueItems.length){
+        const head=el('header','vp3-cognitive-priority-head');
+        const copy=el('div','');
+        copy.append(el('small','','PRIORITY QUEUE'),el('strong','','One queue across Agent work and cognitive signals'));
+        head.append(copy,el('span','vp3-cognitive-priority-count',String(queueItems.length)));
+        priorityQueue.appendChild(head);
+        const list=el('div','vp3-cognitive-priority-list');
+        queueItems.forEach(item=>{
+          const button=el('button','vp3-cognitive-priority-row');
+          button.type='button';
+          button.dataset.queueTarget=clean(item.key);
+          const meta=el('span','vp3-cognitive-priority-meta');
+          meta.append(el('small','',clean(item.lane_label)||'Priority'),el('em','',clean(item.status)));
+          const text=el('span','vp3-cognitive-priority-copy');
+          text.append(el('strong','',clean(item.title)||'VP3 item'),el('small','',clean(item.reason)||clean(item.authority)));
+          button.append(meta,text);
+          button.addEventListener('click',()=>{
+            const target=root.querySelector('[data-feed-item-key="'+CSS.escape(clean(item.key))+'"]');
+            if(!target)return;
+            target.scrollIntoView({behavior:'smooth',block:'center'});
+            target.setAttribute('tabindex','-1');
+            target.focus({preventScroll:true});
+          });
+          list.appendChild(button);
+        });
+        priorityQueue.appendChild(list);
+        priorityQueue.hidden=false;
+      }else priorityQueue.hidden=true;
     }
 
     const sections=Array.isArray(lastFeed&&lastFeed.sections)?lastFeed.sections:[];
