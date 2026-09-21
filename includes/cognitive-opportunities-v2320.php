@@ -261,6 +261,9 @@ function vp3_cognitive_opportunity_sync_v2320(
         if(++$anchors>VP3_COGNITIVE_OPPORTUNITIES_MAX_ANCHORS_V2320)break;
         $anchor=vp3_cognitive_opportunity_ref_v2320($candidate);
         if(!$anchor)continue;
+        try{
+            if(!vp3_cognitive_authorize_ref_v500($pdo,$user,$namespace,$anchor,'read'))continue;
+        }catch(Throwable $e){continue;}
 
         foreach(vp3_cognitive_opportunity_edges_v2320($pdo,$user,$namespace,$anchor) as $edge){
             $target=is_array($edge['object_ref']??null)?$edge['object_ref']:[];
