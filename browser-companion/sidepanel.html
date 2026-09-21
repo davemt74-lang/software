@@ -480,6 +480,37 @@
               </div>
             </section>
 
+            <section id="runtimeControlPanel" class="runtime-control-panel">
+              <div class="row-between">
+                <div>
+                  <div class="eyebrow">Transaction Trust & Control · v22.80</div>
+                  <strong>Transaction control center</strong>
+                </div>
+                <span id="runtimeControlState" class="pill">Loading…</span>
+              </div>
+              <div id="runtimeControlSummary" class="runtime-control-summary">Server-authoritative monitoring, retention, notification and cross-device controls.</div>
+              <div class="runtime-control-grid">
+                <label class="field"><span>Closed tracker retention</span><select id="runtimeControlRetention"><option value="30">30 days</option><option value="90">90 days</option><option value="180">180 days</option><option value="365">365 days</option></select></label>
+                <label class="field"><span>Notification cooldown</span><select id="runtimeControlCooldown"><option value="15">15 minutes</option><option value="60">60 minutes</option><option value="240">4 hours</option><option value="1440">24 hours</option></select></label>
+                <label class="field"><span>Minimum scan interval</span><select id="runtimeControlScanInterval"><option value="60">1 minute</option><option value="120">2 minutes</option><option value="300">5 minutes</option><option value="900">15 minutes</option></select></label>
+              </div>
+              <div id="runtimeControlHealth" class="runtime-control-health"></div>
+              <div id="runtimeControlPrivacy" class="runtime-continuity-boundary">
+                <strong>What VP3 keeps</strong>
+                <span>Structured lifecycle, exception and control receipts only. Raw page text, raw URLs and raw transaction identifiers remain out of durable transaction tracking.</span>
+              </div>
+              <div class="delegation-controls">
+                <button id="runtimeControlSaveBtn" type="button">Save controls</button>
+                <button id="runtimeControlStopAllBtn" type="button">Stop all monitoring</button>
+                <button id="runtimeControlResumeAllBtn" type="button" hidden>Resume monitoring</button>
+                <button id="runtimeControlPruneBtn" type="button">Prune expired</button>
+              </div>
+              <details class="runtime-control-audit">
+                <summary>Audit timeline</summary>
+                <div id="runtimeControlAudit" class="runtime-control-audit-list"></div>
+              </details>
+            </section>
+
             <section id="runtimeIntelligencePanel" class="runtime-intelligence-panel" hidden>
               <div class="row-between">
                 <div>
