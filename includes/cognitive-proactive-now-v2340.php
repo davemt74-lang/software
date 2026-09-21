@@ -100,6 +100,13 @@ function vp3_cognitive_proactive_now_compose_v2340(
 ): array {
     $namespace=vp3_cognitive_validate_namespace_v500($pdo,$user,$namespace);
     $counts=vp3_cognitive_proactive_now_counts_v2340($priorityQueue);
+    $calibration=function_exists('vp3_cognitive_calibration_state_v2350')
+        ? vp3_cognitive_calibration_state_v2350($pdo,$user,$namespace)
+        : ['mode'=>'balanced','effective_mode'=>'balanced','focus_limit'=>VP3_COGNITIVE_PROACTIVE_NOW_MAX_FOCUS_V2340,'return_voice_context_enabled'=>true];
+    $focusLimit=max(1,min(
+        VP3_COGNITIVE_PROACTIVE_NOW_MAX_FOCUS_V2340,
+        (int)($calibration['focus_limit']??VP3_COGNITIVE_PROACTIVE_NOW_MAX_FOCUS_V2340)
+    ));
     $plans=0;$focus=[];
 
     foreach((array)($priorityQueue['items']??[]) as $item){
@@ -116,7 +123,7 @@ function vp3_cognitive_proactive_now_compose_v2340(
             'title'=>vp3_cognitive_text_v500($item['title']??'VP3 item',190),
             'status'=>vp3_cognitive_text_v500($item['status']??'',80),
         ];
-        if(count($focus)>=VP3_COGNITIVE_PROACTIVE_NOW_MAX_FOCUS_V2340)break;
+        if(count($focus)>=$focusLimit)break;
     }
 
     $voiceEnabled=false;
@@ -141,8 +148,11 @@ function vp3_cognitive_proactive_now_compose_v2340(
             'immediate_alerts'=>'canonical_notification_cursor_only',
             'return_briefing'=>'persisted_return_digest',
             'standalone_opportunity_voice'=>false,
-            'context'=>vp3_cognitive_proactive_now_voice_context_v2340($counts,$plans),
+            'context'=>!empty($calibration['return_voice_context_enabled'])
+                ? vp3_cognitive_proactive_now_voice_context_v2340($counts,$plans)
+                : '',
         ],
+        'calibration'=>$calibration,
         'authority'=>[
             'item_set'=>'cognitive_feed_v530_selected_items',
             'ranking'=>'cognitive_priority_queue_v2310',
