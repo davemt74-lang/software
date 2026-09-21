@@ -722,6 +722,7 @@ async function browserTransactionOutcomeCaptureV2250(tabId,payload={}){
       if(rejectionRe.test(alertText))evidence.push('error_role');
       const statusNodes=[...document.querySelectorAll('[role="status"],[aria-live]')].slice(0,20);
       if(statusNodes.some(el=>confirmationRe.test(String(el.innerText||el.textContent||''))))evidence.push('status_region');
+      if(document.querySelectorAll('form').length===0)evidence.push('form_absent');
 
       let referenceKind='',referenceValue='';
       const refPatterns=[
@@ -747,7 +748,7 @@ async function browserTransactionOutcomeCaptureV2250(tabId,payload={}){
 
       const unique=[...new Set(evidence)];
       const explicit=unique.includes('confirmation_heading')||unique.includes('confirmation_phrase');
-      const auxiliary=unique.filter(code=>['confirmation_url_hint','reference_present','receipt_keyword','status_region','form_absent'].includes(code));
+      const auxiliary=unique.filter(code=>['confirmation_url_hint','reference_present','receipt_keyword','form_absent'].includes(code));
       let outcomeState='ambiguous',strength='weak';
       if(unique.includes('rejection_phrase')||unique.includes('error_role')){
         outcomeState='rejected';strength=unique.includes('error_role')?'strong':'moderate';
