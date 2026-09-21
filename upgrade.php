@@ -13,6 +13,7 @@ require_once __DIR__ . '/includes/browser-transaction-safety-v2240.php';
 require_once __DIR__ . '/includes/browser-transaction-outcome-v2250.php';
 require_once __DIR__ . '/includes/browser-transaction-continuity-v2260.php';
 require_once __DIR__ . '/includes/browser-transaction-intelligence-v2270.php';
+require_once __DIR__ . '/includes/browser-transaction-control-v2280.php';
 require_once __DIR__ . '/includes/extension-notifications-v2140.php';
 require_once __DIR__ . '/includes/vp3-public.php';
 require_once __DIR__ . '/includes/artist-listening.php';
@@ -72,6 +73,7 @@ function vp3_upgrade_complete(): bool
         && vp3_browser_outcome_schema_ready_v2250()
         && vp3_browser_continuity_schema_ready_v2260()
         && vp3_browser_intelligence_schema_ready_v2270()
+        && vp3_browser_control_schema_ready_v2280()
         && chat_settings_schema_ready_v237()
         && permission_v105_playlist_permission_ready()
         && personal_capability_seeded_v242()
@@ -193,6 +195,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             vp3_browser_outcome_ensure_schema_v2250();
             vp3_browser_continuity_ensure_schema_v2260();
             vp3_browser_intelligence_ensure_schema_v2270();
+            vp3_browser_control_ensure_schema_v2280();
             vp3_live_room_ensure_schema_v2070();
             vp3_browser_trust_ensure_schema_v2080();
             vp3_search_ensure_schema_v2090();

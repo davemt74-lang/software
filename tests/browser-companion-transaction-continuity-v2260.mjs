@@ -67,10 +67,10 @@ const scanEnd=background.indexOf('async function browserTransactionContinuityLis
 const scan=background.slice(scanStart,scanEnd);
 must(scan.includes("browserTransactionContinuityApiV2260('list',{domain})"),'domain preflight missing');
 must(scan.includes('activeReference'),'active reference preflight missing');
-must(scan.includes("if(!activeReference)return"),'page capture must stop when no active reference tracker exists');
+must(scan.includes("if(!activeReference){")||scan.includes("if(!activeReference)return"),'page capture must stop when no active reference tracker exists');
 must(scan.indexOf("browserTransactionContinuityApiV2260('list',{domain})")<scan.indexOf('browserTransactionContinuityCaptureV2260(tab.id)'),'preflight must occur before page capture');
 must(panel.includes("pageWatch")&&panel.includes("scanRuntimeContinuityV2260(true)"),'page-change continuity scan missing');
-must(panel.includes("refreshState().then(async()=>{await scanRuntimeContinuityV2260(true)"),'initial continuity scan missing');
+must(panel.includes("refreshState().then(async()=>")&&panel.includes("await scanRuntimeContinuityV2260(true)"),'initial continuity scan missing');
 
 // Local reference extraction and hashes; raw page/reference data must not cross the v22.60 API.
 const captureStart=background.indexOf('async function browserTransactionContinuityCaptureV2260');

@@ -239,3 +239,20 @@
 .runtime-intelligence-case-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
 .runtime-intelligence-case p{margin:0;font-size:12px;line-height:1.4;opacity:.82}
 .runtime-intelligence-case[data-priority="urgent"],.runtime-intelligence-case[data-priority="high"]{font-weight:500}
+
+/* Browser Companion v22.80 — transaction trust, control & production hardening */
+.runtime-control-panel{margin-top:14px;padding:14px;border:1px solid var(--border,#d8d8d3);border-radius:14px;background:var(--surface,#fff)}
+.runtime-control-summary{margin-top:10px;font-size:13px;line-height:1.45}
+.runtime-control-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:12px}
+.runtime-control-health{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.runtime-control-audit{margin-top:12px;border-top:1px solid var(--border,#e2e2dd);padding-top:10px}
+.runtime-control-audit summary{cursor:pointer;font-size:12px;font-weight:600}
+.runtime-control-audit-list{display:grid;gap:7px;margin-top:9px}
+.runtime-control-audit-item{display:grid;gap:2px;padding:8px 9px;border:1px solid var(--border,#e2e2dd);border-radius:9px;background:var(--surface-soft,#f8f8f5);font-size:12px}
+.runtime-control-audit-item span{opacity:.76;overflow-wrap:anywhere}
+@media(max-width:700px){.runtime-control-grid{grid-template-columns:1fr}}
+
+.runtime-control-trackers{display:grid;gap:8px;margin-top:10px}
+.runtime-control-tracker{display:grid;gap:5px;padding:9px 10px;border:1px solid var(--border,#e2e2dd);border-radius:10px;background:var(--surface-soft,#f8f8f5)}
+.runtime-control-tracker-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.runtime-control-tracker p{margin:0;font-size:12px;line-height:1.4;opacity:.82}
