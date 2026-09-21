@@ -177,6 +177,11 @@ function vp3_browser_runtime_skills_v2200(): array
             'mode'=>'checkpoint','verification_mode'=>'user_confirmation','requires_checkpoint'=>true,
             'target_types'=>['browser_source'],
         ],
+        'browser_research'=>[
+            'label'=>'Run Browser Research mission','capability'=>'agent.message','risk_level'=>'low',
+            'mode'=>'checkpoint','verification_mode'=>'user_confirmation','requires_checkpoint'=>true,
+            'target_types'=>['browser_source'],
+        ],
     ];
 }
 
