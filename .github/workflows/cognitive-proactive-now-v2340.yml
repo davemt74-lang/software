@@ -7,6 +7,7 @@ on:
       - 'includes/cognitive-proactive-now-v2340.php'
       - 'includes/cognitive-feed-v530.php'
       - 'includes/cognitive-presentation-v510.php'
+      - 'includes/extension-notifications-v2140.php'
       - 'api/extension-cognitive-now-v2120.php'
       - 'chat-cognitive-feed-v530.js'
       - 'chat-cognitive-feed-v530.css'
@@ -39,6 +40,7 @@ jobs:
           php -l includes/cognitive-proactive-now-v2340.php
           php -l includes/cognitive-feed-v530.php
           php -l includes/cognitive-presentation-v510.php
+          php -l includes/extension-notifications-v2140.php
           php -l api/extension-cognitive-now-v2120.php
           php -l includes/bootstrap.php
           php -l chat.php
