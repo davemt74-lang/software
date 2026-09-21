@@ -9,6 +9,7 @@ on:
       - 'includes/cognitive-orchestration-v560.php'
       - 'includes/bootstrap.php'
       - 'tests/cognitive-action-planning-v2330.mjs'
+      - 'tests/cognitive-planning-v550.mjs'
       - '.github/workflows/cognitive-action-planning-v2330.yml'
   push:
     branches:
