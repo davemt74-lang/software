@@ -40,6 +40,18 @@ jobs:
             --exclude='*.md' \
             --exclude='*.zip'
 
+          cat > _deploy/VP3_RELEASE.json <<EOF
+          {
+            "release": "Cognitive Loop v23.60",
+            "build": "vp3-cognitive-loop-release-v2360-20260921",
+            "commit": "${GITHUB_SHA}",
+            "repository": "${GITHUB_REPOSITORY}",
+            "workflow_run_id": "${GITHUB_RUN_ID}"
+          }
+          EOF
+
+          test -s _deploy/VP3_RELEASE.json
+          grep -Fq '"commit": "'"${GITHUB_SHA}"'"' _deploy/VP3_RELEASE.json
           test -f _deploy/chat.php
           test -f _deploy/.htaccess
 
