@@ -77,6 +77,8 @@ const scenarios=[
     checks:[
       control.includes('vp3_browser_control_stop_all_v2280'),
       control.includes('vp3_browser_control_resume_all_v2280'),
+      control.includes("pause_scope='global'"),
+      control.includes("pause_scope='tracker'"),
       control.includes('vp3_browser_control_tracker_action_v2280'),
       control.includes("match_mode='reference' AND reference_hash<>''")
     ]
@@ -95,7 +97,7 @@ const scenarios=[
       control.includes("monitoring_enabled=0"),
       control.includes("'monitoring_stopped'"),
       intelligence.includes('vp3_browser_intelligence_monitoring_enabled_v2270'),
-      background.includes("if(permit&&!permit.allowed)return")
+      background.includes("if(!permit||!permit.allowed){")
     ]
   },
   {
