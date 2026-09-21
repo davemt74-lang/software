@@ -89,6 +89,8 @@ must(outcome.includes("elseif($resolution==='confirmed_not_submitted')"),'not-su
 must(outcome.includes("'reviewed_destination_not_submitted'"),'explicit no-submission acknowledgement missing');
 must(outcome.includes('DELETE FROM browser_submission_dispatch_guards_v2240'),'guard release path missing');
 must(outcome.includes("SET status='failed',result_code='v2250_user_confirmed_not_submitted'"),'old uncertain intent must be terminal before retry unlock');
+must(outcome.includes("SET expires_at='9999-12-31 23:59:59'"),'unresolved uncertain dispatch must pin duplicate protection');
+must(outcome.includes('VP3_BROWSER_TRANSACTION_DUPLICATE_WINDOW_SECONDS_V2240'), 'resolved completion must restore the bounded duplicate window');
 must(outcome.includes("$retryAllowed=true"),'fresh retry eligibility receipt missing');
 must(outcome.includes('any retry requires a fresh v22.40 exact-form review'),'fresh-review recovery boundary missing');
 must(!api.includes("action==='retry'")&&!api.includes("action==='submit'"),'v22.50 API must not expose retry or submit actions');
