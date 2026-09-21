@@ -31,6 +31,7 @@ function vp3_browser_control_schema_ready_v2280(?PDO $pdo=null): bool
         && table_exists('browser_transaction_scan_leases_v2280')
         && table_exists('browser_transaction_control_receipts_v2280')
         && table_exists('browser_transaction_notification_state_v2280')
+        && table_exists('browser_transaction_control_pauses_v2280')
         && vp3_browser_intelligence_schema_ready_v2270($pdo);
 }
 
@@ -95,6 +96,17 @@ function vp3_browser_control_ensure_schema_v2280(?PDO $pdo=null): void
       CONSTRAINT fk_browser_notify_owner_v2280 FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE,
       CONSTRAINT fk_browser_notify_continuity_v2280 FOREIGN KEY (continuity_id) REFERENCES browser_transaction_continuities_v2260(id) ON DELETE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+    $pdo->exec("CREATE TABLE IF NOT EXISTS browser_transaction_control_pauses_v2280 (
+      owner_user_id INT UNSIGNED NOT NULL,
+      continuity_id BIGINT UNSIGNED NOT NULL,
+      pause_scope VARCHAR(16) NOT NULL,
+      paused_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (owner_user_id,continuity_id),
+      INDEX idx_browser_control_pause_scope_v2280 (owner_user_id,pause_scope,paused_at),
+      CONSTRAINT fk_browser_control_pause_owner_v2280 FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE,
+      CONSTRAINT fk_browser_control_pause_continuity_v2280 FOREIGN KEY (continuity_id) REFERENCES browser_transaction_continuities_v2260(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 }
 
 function vp3_browser_control_uuid_v2280(): string
@@ -141,9 +153,8 @@ function vp3_browser_control_update_settings_v2280(PDO $pdo,array $user,array $i
       $ret=max(VP3_BROWSER_CONTROL_RETENTION_MIN_V2280,min(VP3_BROWSER_CONTROL_RETENTION_MAX_V2280,(int)($input['retention_days']??$row['retention_days'])));
       $cool=max(VP3_BROWSER_CONTROL_NOTIFY_MIN_V2280,min(VP3_BROWSER_CONTROL_NOTIFY_MAX_V2280,(int)($input['notification_cooldown_minutes']??$row['notification_cooldown_minutes'])));
       $scan=max(VP3_BROWSER_CONTROL_SCAN_MIN_MIN_V2280,min(VP3_BROWSER_CONTROL_SCAN_MIN_MAX_V2280,(int)($input['scan_min_interval_seconds']??$row['scan_min_interval_seconds'])));
-      $enabled=array_key_exists('monitoring_enabled',$input)?(!empty($input['monitoring_enabled'])?1:0):(int)$row['monitoring_enabled'];
-      $pdo->prepare("UPDATE browser_transaction_control_settings_v2280 SET monitoring_enabled=?,retention_days=?,notification_cooldown_minutes=?,scan_min_interval_seconds=?,revision=revision+1,stopped_at=CASE WHEN ?=0 THEN COALESCE(stopped_at,UTC_TIMESTAMP()) ELSE NULL END,updated_at=UTC_TIMESTAMP() WHERE owner_user_id=?")
-        ->execute([$enabled,$ret,$cool,$scan,$enabled,$uid]);
+      $pdo->prepare("UPDATE browser_transaction_control_settings_v2280 SET retention_days=?,notification_cooldown_minutes=?,scan_min_interval_seconds=?,revision=revision+1,updated_at=UTC_TIMESTAMP() WHERE owner_user_id=?")
+        ->execute([$ret,$cool,$scan,$uid]);
       vp3_browser_control_receipt_v2280($pdo,$uid,null,'settings_updated','ok','revision_updated',vp3_browser_control_device_hash_v2280($deviceId));
       $pdo->commit();
     }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();throw $e;}
@@ -155,9 +166,11 @@ function vp3_browser_control_stop_all_v2280(PDO $pdo,array $user,string $deviceI
     try{
       vp3_browser_control_settings_v2280($pdo,$uid,true);
       $pdo->prepare("UPDATE browser_transaction_control_settings_v2280 SET monitoring_enabled=0,revision=revision+1,stopped_at=UTC_TIMESTAMP(),updated_at=UTC_TIMESTAMP() WHERE owner_user_id=?")->execute([$uid]);
-      $stmt=$pdo->prepare("SELECT public_id FROM browser_transaction_continuities_v2260 WHERE owner_user_id=? AND tracking_status='active' ORDER BY id");
-      $stmt->execute([$uid]);$ids=array_map('strval',$stmt->fetchAll(PDO::FETCH_COLUMN)?:[]);
+      $stmt=$pdo->prepare("SELECT id,public_id FROM browser_transaction_continuities_v2260 WHERE owner_user_id=? AND tracking_status='active' ORDER BY id");
+      $stmt->execute([$uid]);$rows=$stmt->fetchAll(PDO::FETCH_ASSOC)?:[];$ids=array_map(static fn(array $r)=>(string)$r['public_id'],$rows);
+      foreach($rows as $r)$pdo->prepare("INSERT INTO browser_transaction_control_pauses_v2280 (owner_user_id,continuity_id,pause_scope) VALUES (?,?,'global') ON DUPLICATE KEY UPDATE pause_scope='global',paused_at=UTC_TIMESTAMP()")->execute([$uid,(int)$r['id']]);
       $pdo->prepare("UPDATE browser_transaction_continuities_v2260 SET tracking_status='closed',closure_reason='user_closed',closed_at=UTC_TIMESTAMP(),updated_at=UTC_TIMESTAMP() WHERE owner_user_id=? AND tracking_status='active'")->execute([$uid]);
+      $pdo->prepare("UPDATE browser_transaction_followthrough_proposals_v2260 SET status='dismissed',resolved_at=UTC_TIMESTAMP() WHERE owner_user_id=? AND status='proposed'")->execute([$uid]);
       $pdo->prepare("UPDATE browser_transaction_intelligence_cases_v2270 SET status='resolved',resolved_at=UTC_TIMESTAMP(),updated_at=UTC_TIMESTAMP() WHERE owner_user_id=? AND status IN ('open','acknowledged')")->execute([$uid]);
       $pdo->prepare("UPDATE browser_transaction_recovery_proposals_v2270 SET status='dismissed',resolved_at=UTC_TIMESTAMP() WHERE owner_user_id=? AND status='proposed'")->execute([$uid]);
       vp3_browser_control_receipt_v2280($pdo,$uid,null,'stop_all','ok','closed_'.count($ids),vp3_browser_control_device_hash_v2280($deviceId));
@@ -170,9 +183,9 @@ function vp3_browser_control_resume_all_v2280(PDO $pdo,array $user,string $devic
     $uid=(int)($user['id']??0);$pdo->beginTransaction();
     try{
       vp3_browser_control_settings_v2280($pdo,$uid,true);
-      $stmt=$pdo->prepare("SELECT id FROM browser_transaction_continuities_v2260 WHERE owner_user_id=? AND tracking_status='closed' AND closure_reason='user_closed' AND match_mode='reference' AND reference_hash<>''");
+      $stmt=$pdo->prepare("SELECT c.id FROM browser_transaction_continuities_v2260 c INNER JOIN browser_transaction_control_pauses_v2280 p ON p.continuity_id=c.id AND p.owner_user_id=c.owner_user_id WHERE c.owner_user_id=? AND p.pause_scope='global' AND c.tracking_status='closed' AND c.match_mode='reference' AND c.reference_hash<>''");
       $stmt->execute([$uid]);$ids=array_map('intval',$stmt->fetchAll(PDO::FETCH_COLUMN)?:[]);
-      if($ids){$marks=implode(',',array_fill(0,count($ids),'?'));$pdo->prepare("UPDATE browser_transaction_continuities_v2260 SET tracking_status='active',closure_reason='',closed_at=NULL,updated_at=UTC_TIMESTAMP() WHERE owner_user_id=? AND id IN ($marks)")->execute(array_merge([$uid],$ids));}
+      if($ids){$marks=implode(',',array_fill(0,count($ids),'?'));$pdo->prepare("UPDATE browser_transaction_continuities_v2260 SET tracking_status='active',closure_reason='',closed_at=NULL,updated_at=UTC_TIMESTAMP() WHERE owner_user_id=? AND id IN ($marks)")->execute(array_merge([$uid],$ids));$pdo->prepare("DELETE FROM browser_transaction_control_pauses_v2280 WHERE owner_user_id=? AND pause_scope='global' AND continuity_id IN ($marks)")->execute(array_merge([$uid],$ids));}
       $pdo->prepare("UPDATE browser_transaction_control_settings_v2280 SET monitoring_enabled=1,revision=revision+1,stopped_at=NULL,updated_at=UTC_TIMESTAMP() WHERE owner_user_id=?")->execute([$uid]);
       vp3_browser_control_receipt_v2280($pdo,$uid,null,'resume_all','ok','reopened_'.count($ids),vp3_browser_control_device_hash_v2280($deviceId));
       $pdo->commit();
@@ -184,9 +197,18 @@ function vp3_browser_control_tracker_action_v2280(PDO $pdo,array $user,string $c
     if(!in_array($action,['stop','resume'],true))throw new InvalidArgumentException('Unsupported transaction tracker action.');
     $uid=(int)($user['id']??0);$row=vp3_browser_continuity_row_v2260($pdo,$uid,$continuityPublicId,true);
     if(!$row)throw new RuntimeException('Transaction tracker was not found.');
-    $result=$action==='stop'
-      ?vp3_browser_continuity_close_v2260($pdo,$user,$continuityPublicId,'user_closed')
-      :vp3_browser_continuity_reopen_v2260($pdo,$user,$continuityPublicId);
+    if($action==='stop'){
+      $result=vp3_browser_continuity_close_v2260($pdo,$user,$continuityPublicId,'no_longer_track');
+      $pdo->prepare("INSERT INTO browser_transaction_control_pauses_v2280 (owner_user_id,continuity_id,pause_scope) VALUES (?,?,'tracker') ON DUPLICATE KEY UPDATE pause_scope='tracker',paused_at=UTC_TIMESTAMP()")->execute([$uid,(int)$row['id']]);
+      $pdo->prepare("UPDATE browser_transaction_followthrough_proposals_v2260 SET status='dismissed',resolved_at=UTC_TIMESTAMP() WHERE owner_user_id=? AND continuity_id=? AND status='proposed'")->execute([$uid,(int)$row['id']]);
+      $pdo->prepare("UPDATE browser_transaction_intelligence_cases_v2270 SET status='resolved',resolved_at=UTC_TIMESTAMP(),updated_at=UTC_TIMESTAMP() WHERE owner_user_id=? AND continuity_id=? AND status IN ('open','acknowledged')")->execute([$uid,(int)$row['id']]);
+      $pdo->prepare("UPDATE browser_transaction_recovery_proposals_v2270 SET status='dismissed',resolved_at=UTC_TIMESTAMP() WHERE owner_user_id=? AND continuity_id=? AND status='proposed'")->execute([$uid,(int)$row['id']]);
+    }else{
+      $pause=$pdo->prepare("SELECT pause_scope FROM browser_transaction_control_pauses_v2280 WHERE owner_user_id=? AND continuity_id=? LIMIT 1");$pause->execute([$uid,(int)$row['id']]);$scope=(string)$pause->fetchColumn();
+      if($scope==='global')throw new RuntimeException('Resume global transaction monitoring before resuming this tracker.');
+      $result=vp3_browser_continuity_reopen_v2260($pdo,$user,$continuityPublicId);
+      $pdo->prepare("DELETE FROM browser_transaction_control_pauses_v2280 WHERE owner_user_id=? AND continuity_id=?")->execute([$uid,(int)$row['id']]);
+    }
     vp3_browser_control_receipt_v2280($pdo,$uid,(int)$row['id'],'tracker_'.$action,'ok',(string)$row['lifecycle_family'],vp3_browser_control_device_hash_v2280($deviceId));
     return $result;
 }
@@ -242,7 +264,7 @@ function vp3_browser_control_scan_permit_v2280(PDO $pdo,array $user,string $devi
       }
       $pdo->commit();
     }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();throw $e;}
-    return ['allowed'=>true,'reason'=>'permit_granted','scope_key'=>$scope,'lease_seconds'=>VP3_BROWSER_CONTROL_LEASE_SECONDS_V2280];
+    return ['allowed'=>true,'reason'=>'permit_granted','scope_key'=>$scope,'lease_seconds'=>VP3_BROWSER_CONTROL_LEASE_SECONDS_V2280,'next_scan_after_seconds'=>$min];
 }
 function vp3_browser_control_scan_result_v2280(PDO $pdo,array $user,string $deviceId,string $scopeKey,string $resultCode): array
 {
@@ -250,13 +272,17 @@ function vp3_browser_control_scan_result_v2280(PDO $pdo,array $user,string $devi
     if(!preg_match('/^[a-f0-9]{64}$/',$scopeKey))throw new InvalidArgumentException('Transaction scan scope is invalid.');
     if($resultCode==='')$resultCode='unknown';
     $deviceHash=vp3_browser_control_device_hash_v2280($deviceId);
-    $stmt=$pdo->prepare("SELECT * FROM browser_transaction_scan_leases_v2280 WHERE owner_user_id=? AND scope_key=? LIMIT 1 FOR UPDATE");
-    $stmt->execute([$uid,$scopeKey]);$row=$stmt->fetch(PDO::FETCH_ASSOC);
-    if(!is_array($row)||!hash_equals((string)$row['device_hash'],$deviceHash))throw new RuntimeException('Transaction scan lease is no longer owned by this browser.');
-    $failure=in_array($resultCode,['api_error','capture_error','auth_error','timeout'],true);
-    $pdo->prepare("UPDATE browser_transaction_scan_leases_v2280 SET lease_until=NULL,last_scan_at=UTC_TIMESTAMP(),last_result_code=?,consecutive_failures=CASE WHEN ?=1 THEN LEAST(consecutive_failures+1,65535) ELSE 0 END,updated_at=UTC_TIMESTAMP() WHERE owner_user_id=? AND scope_key=?")
-      ->execute([$resultCode,$failure?1:0,$uid,$scopeKey]);
-    if($failure)vp3_browser_control_receipt_v2280($pdo,$uid,null,'scan_failure','warning',$resultCode,$deviceHash);
+    $pdo->beginTransaction();
+    try{
+      $stmt=$pdo->prepare("SELECT * FROM browser_transaction_scan_leases_v2280 WHERE owner_user_id=? AND scope_key=? LIMIT 1 FOR UPDATE");
+      $stmt->execute([$uid,$scopeKey]);$row=$stmt->fetch(PDO::FETCH_ASSOC);
+      if(!is_array($row)||!hash_equals((string)$row['device_hash'],$deviceHash))throw new RuntimeException('Transaction scan lease is no longer owned by this browser.');
+      $failure=in_array($resultCode,['api_error','capture_error','auth_error','timeout'],true);
+      $pdo->prepare("UPDATE browser_transaction_scan_leases_v2280 SET lease_until=NULL,last_scan_at=UTC_TIMESTAMP(),last_result_code=?,consecutive_failures=CASE WHEN ?=1 THEN LEAST(consecutive_failures+1,65535) ELSE 0 END,updated_at=UTC_TIMESTAMP() WHERE owner_user_id=? AND scope_key=?")
+        ->execute([$resultCode,$failure?1:0,$uid,$scopeKey]);
+      if($failure)vp3_browser_control_receipt_v2280($pdo,$uid,null,'scan_failure','warning',$resultCode,$deviceHash);
+      $pdo->commit();
+    }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();throw $e;}
     return ['recorded'=>true,'result_code'=>$resultCode];
 }
 function vp3_browser_control_audit_v2280(PDO $pdo,array $user,int $limit=80): array
@@ -298,7 +324,7 @@ function vp3_browser_control_status_v2280(PDO $pdo,array $user): array
       'health'=>['failing_scopes'=>(int)($h['failing_scopes']??0),'max_failures'=>(int)($h['max_failures']??0),'last_scan_at'=>(string)($h['last_scan_at']??'')],
       'privacy'=>[
         'raw_page_text_persisted'=>false,'raw_url_persisted'=>false,'raw_reference_values_persisted'=>false,
-        'device_identity_persisted_as_hash'=>true,'submission_history_survives_forget'=>true
+        'device_identity_persisted_as_hash'=>true,'submission_history_survives_forget'=>true,'minimal_forget_control_receipt_retained'=>true
       ],
       'audit'=>vp3_browser_control_audit_v2280($pdo,$user,40),
     ];
