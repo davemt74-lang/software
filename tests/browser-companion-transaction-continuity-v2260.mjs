@@ -84,7 +84,7 @@ must(capture.includes('amountHash'),'local amount fingerprint missing');
 must(capture.includes('observationFingerprint'),'local observation fingerprint missing');
 
 const observeStart=scan.indexOf("browserTransactionContinuityApiV2260('observe'");
-const observeEnd=scan.indexOf("});\n  return",observeStart);
+const observeEnd=scan.indexOf("\n  });\n  let intelligence=",observeStart);
 const observePayload=scan.slice(observeStart,observeEnd>observeStart?observeEnd:scan.length);
 must(!observePayload.includes('bodyText'),'raw page text must not be sent to v22.60 API');
 must(!observePayload.includes('masked_references'),'masked reference display must remain local');
