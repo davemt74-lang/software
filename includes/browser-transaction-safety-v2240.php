@@ -201,19 +201,14 @@ function vp3_browser_transaction_notify_v2240(array $runtime,array $row,string $
 
 function vp3_browser_transaction_expire_v2240(PDO $pdo,array $runtime): void
 {
-    $expired=$pdo->prepare("SELECT public_id,duplicate_key FROM browser_submission_intents_v2240
-      WHERE runtime_session_id=? AND owner_user_id=? AND status='executing' AND permit_expires_at IS NOT NULL AND permit_expires_at<UTC_TIMESTAMP()");
-    $expired->execute([(int)$runtime['id'],(int)$runtime['owner_user_id']]);
-    $rows=$expired->fetchAll(PDO::FETCH_ASSOC)?:[];
     $pdo->prepare("UPDATE browser_submission_intents_v2240
       SET status='failed',result_code='permit_expired',permit_hash=NULL,permit_expires_at=NULL,failed_at=UTC_TIMESTAMP(),updated_at=UTC_TIMESTAMP()
       WHERE runtime_session_id=? AND owner_user_id=? AND status='executing' AND permit_expires_at IS NOT NULL AND permit_expires_at<UTC_TIMESTAMP()")
       ->execute([(int)$runtime['id'],(int)$runtime['owner_user_id']]);
-    foreach($rows as $row){
-        $guardKey=hash('sha256',(int)$runtime['owner_user_id'].'|'.(string)$row['duplicate_key']);
-        $pdo->prepare("DELETE FROM browser_submission_dispatch_guards_v2240 WHERE guard_key=? AND intent_public_id=?")
-            ->execute([$guardKey,(string)$row['public_id']]);
-    }
+    $pdo->prepare("DELETE g FROM browser_submission_dispatch_guards_v2240 g
+      INNER JOIN browser_submission_intents_v2240 s ON s.public_id=g.intent_public_id AND s.owner_user_id=g.owner_user_id
+      WHERE s.runtime_session_id=? AND s.owner_user_id=? AND s.status='failed' AND s.result_code='permit_expired'")
+      ->execute([(int)$runtime['id'],(int)$runtime['owner_user_id']]);
 }
 
 function vp3_browser_transaction_preview_v2240(
