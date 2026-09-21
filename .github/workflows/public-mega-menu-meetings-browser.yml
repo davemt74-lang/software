@@ -10,6 +10,10 @@ on:
       - 'chrome-extension-download.php'
       - 'annotations.php'
       - 'agent-analytics.php'
+      - 'services.php'
+      - 'sitemap.php'
+      - 'vp3-marketing-pages.css'
+      - 'tests/public-services-completion.mjs'
       - 'includes/vp3-marketing-pages.php'
       - 'browser-companion/manifest.json'
       - 'tests/public-mega-menu-meetings-browser.mjs'
@@ -18,6 +22,7 @@ on:
     branches:
       - 'public-nav-meetings-chrome-extension'
       - 'public-nav-annotations-agent-analytics'
+      - 'public-services-completion'
 
 jobs:
   contract:
@@ -46,6 +51,10 @@ jobs:
           php -l chrome-extension-download.php
           php -l annotations.php
           php -l agent-analytics.php
+          php -l services.php
+          php -l sitemap.php
           php -l includes/vp3-marketing-pages.php
       - name: Public mega menu contract
         run: node tests/public-mega-menu-meetings-browser.mjs
+      - name: Public Services completion contract
+        run: node tests/public-services-completion.mjs
