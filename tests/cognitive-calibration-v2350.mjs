@@ -35,6 +35,7 @@ const checks=[
  ['deterministic sections still protected', /\['priorities','opportunities','recent'\]/.test(learning)],
  ['calibration cannot reorder queue', /'queue_reordering'=>false/.test(cal)],
  ['calibration only reduces focus', /\$mode==='conservative'\?1:3/.test(cal)],
+ ['focus reduction does not truncate plan counting', /if\(count\(\$focus\)>=\$focusLimit\)continue/.test(proactive) && !/if\(count\(\$focus\)>=\$focusLimit\)break/.test(proactive)],
  ['conservative suppresses optional return voice suffix', /return_voice_context_enabled/.test(cal) && /return_voice_context_enabled/.test(proactive)],
  ['proactive brief exposes calibration', /'calibration'=>\$calibration/.test(proactive)],
  ['UI exposes calibration state', /cognitiveCalibration/.test(chatJs) && /Calibration/.test(chatJs)],
