@@ -1151,7 +1151,8 @@ function renderRuntimeV2200(runtime){
   const terminal=['completed','cancelled','expired'].includes(String(runtime.status||''));
   ui.runtimeWebPanel.hidden=terminal;
   ui.runtimeMultiPanel.hidden=terminal;
-  ui.runtimeResearchPanel.hidden=terminal;
+  const researchAllowed=Array.isArray(delegationActiveData&&delegationActiveData.allowed_actions)&&delegationActiveData.allowed_actions.includes('browser_research');
+  ui.runtimeResearchPanel.hidden=!researchAllowed;
   const current=runtime.current_step||null;
   ui.runtimeReplanBtn.disabled=terminal||Number(runtime.replan_count||0)>=Number(runtime.max_replans||0)||String(runtime.status||'')==='checkpoint';
   ui.runtimeSkipBtn.disabled=terminal||!current||!['queued','failed','approval_pending','executing'].includes(String(current.status||''));
