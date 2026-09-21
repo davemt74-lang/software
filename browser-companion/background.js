@@ -773,6 +773,8 @@ async function browserTransactionContinuityCaptureV2260(tabId){
         const raw=String(el.getAttribute('datetime')||el.getAttribute('data-date')||el.getAttribute('data-time')||'').trim();
         const ts=Date.parse(raw);if(!raw||!Number.isFinite(ts))continue;
         const context=String(el.closest('[class],[role],section,article,li,div')?.innerText||el.parentElement?.innerText||'').toLowerCase().slice(0,500);
+        const transactionScheduleContext=/(?:booking|reservation|appointment|scheduled|check[- ]?in|flight|departure|arrival|delivery|arrives?|deadline|due by|complete by|respond by|cancel by|expires?)/i.test(context);
+        if(!transactionScheduleContext)continue;
         const kind=/(?:deadline|due by|complete by|respond by|cancel by|expires?)/i.test(context)?'deadline':/(?:delivery|arrives?|estimated delivery)/i.test(context)?'delivery':'event';
         scheduleCandidates.push({kind,at:new Date(ts).toISOString()});
         if(scheduleCandidates.length>=8)break;
