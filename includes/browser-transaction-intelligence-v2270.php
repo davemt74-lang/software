@@ -774,6 +774,22 @@ function vp3_browser_intelligence_case_action_v2270(PDO $pdo,array $user,string 
     return ['case'=>vp3_browser_intelligence_case_public_v2270($row)];
 }
 
+function vp3_browser_intelligence_batch_acknowledge_v2270(PDO $pdo,array $user,mixed $caseIds): array
+{
+    $ids=[];
+    foreach(array_slice(is_array($caseIds)?$caseIds:[],0,20) as $value){
+        $id=trim((string)$value);
+        if(preg_match('/^[a-f0-9-]{36}$/i',$id))$ids[$id]=true;
+    }
+    if(!$ids)throw new InvalidArgumentException('At least one transaction exception is required for batch review.');
+    $cases=[];
+    foreach(array_keys($ids) as $id){
+        $result=vp3_browser_intelligence_case_action_v2270($pdo,$user,$id,'acknowledge');
+        if(!empty($result['case']))$cases[]=$result['case'];
+    }
+    return ['cases'=>$cases,'reviewed_count'=>count($cases),'external_actions_executed'=>0];
+}
+
 function vp3_browser_intelligence_proposal_action_v2270(PDO $pdo,array $user,string $proposalId,string $action): array
 {
     $uid=(int)($user['id']??0);
