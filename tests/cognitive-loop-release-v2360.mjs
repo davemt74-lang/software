@@ -41,7 +41,7 @@ const checks=[
  ['priority queue derives selected feed items', /selected_feed_projection/.test(queue) && /selectedForQueue/.test(feed)],
  ['action planning remains contract not executor', /model_may_execute'=>false/.test(action) && /automatic_external_writes'=>false/.test(action)],
  ['plan acceptance is not execution', /plan_accepted/.test(calibration) && /plan_accepted/.test(learning) && !/plan_accepted'=>'actions_taken'/.test(learning)],
- ['handoff requested is action but not completion', /'handoff_requested'=>'actions_taken'/.test(learning) && /handoff_requested/.test(orchestration) && /handoff is not completion/i.test(spec)],
+ ['handoff requested is action but not completion', /'handoff_requested'=>'actions_taken'/.test(learning) && /handoff_requested/.test(orchestration) && /handoff request is not completion/i.test(spec)],
  ['canonical outcome closes executable run', /in_array\(\$code,\['successful','resolved'\],true\)/.test(orchestration) && /canonical_outcome/.test(orchestration)],
  ['unsuccessful outcome replans', /\['unsuccessful','ignored'\]/.test(orchestration) && /replan_required/.test(orchestration)],
  ['calibration cannot reorder queue', /'queue_reordering'=>false/.test(calibration)],
