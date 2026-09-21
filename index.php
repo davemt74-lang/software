@@ -72,6 +72,7 @@ $servicesUrl = url('/services.php');
             <span class="mega-column-label">Capture + understand</span>
             <a class="mega-link" href="<?= e($transcriptionsUrl) ?>"><strong>Transcription</strong><small>Record and organize meetings, calls, interviews, voice notes, and other conversations.</small></a>
             <a class="mega-link" href="<?= e(url('/ai-summary.php')) ?>"><strong>AI Summary</strong><small>Turn long conversations into decisions, action items, questions, and reusable knowledge.</small></a>
+            <a class="mega-link" href="<?= e(url('/annotations.php')) ?>"><strong>Annotations</strong><small>Capture highlights, screenshots, notes, and source context from the web, then organize and reuse them in VP3 research.</small></a>
           </div>
           <div class="mega-column">
             <span class="mega-column-label">Coordinate</span>
@@ -83,6 +84,7 @@ $servicesUrl = url('/services.php');
             <span class="mega-column-label">Book + sell</span>
             <a class="mega-link" href="<?= e(url('/booking.php')) ?>"><strong>Booking — free or paid</strong><small>Public scheduling, appointment lifecycle, deposits, paid appointments, reminders, and follow-up.</small></a>
             <a class="mega-link" href="<?= e(url('/ecommerce.php')) ?>"><strong>Ecommerce</strong><small>Public products, checkout, paid orders, fulfillment, refunds, seller alerts, and Agent commerce.</small></a>
+            <a class="mega-link" href="<?= e(url('/agent-analytics.php')) ?>"><strong>Agent Analytics</strong><small>See profile visits, booking and product intent, conversions, attributed revenue, traffic sources, and Agent-identified opportunities.</small></a>
           </div>
         </div>
       </div>
@@ -186,11 +188,13 @@ $servicesUrl = url('/services.php');
           <div class="mobile-nav-links">
             <a href="<?= e($transcriptionsUrl) ?>"><strong>Transcription</strong><small>Capture and organize conversations.</small></a>
             <a href="<?= e(url('/ai-summary.php')) ?>"><strong>AI Summary</strong><small>Decisions, actions, and reusable knowledge.</small></a>
+            <a href="<?= e(url('/annotations.php')) ?>"><strong>Annotations</strong><small>Capture web highlights, screenshots, notes, and source context.</small></a>
             <a href="<?= e($teamsUrl) ?>"><strong>Teams</strong><small>Shared context and collaborative workspaces.</small></a>
             <a href="<?= e(url('/video-meetings.php')) ?>"><strong>Meetings</strong><small>Video meetings, intelligence, and follow-through.</small></a>
             <a href="<?= e(url('/calendar-service.php')) ?>"><strong>Calendar</strong><small>Availability and calendar intelligence.</small></a>
             <a href="<?= e(url('/booking.php')) ?>"><strong>Booking</strong><small>Free and paid appointment workflows.</small></a>
             <a href="<?= e(url('/ecommerce.php')) ?>"><strong>Ecommerce</strong><small>Products, orders, checkout, and fulfillment.</small></a>
+            <a href="<?= e(url('/agent-analytics.php')) ?>"><strong>Agent Analytics</strong><small>Visits, intent, conversions, revenue, sources, and opportunities.</small></a>
           </div>
         </details>
         <details class="mobile-nav-group">
