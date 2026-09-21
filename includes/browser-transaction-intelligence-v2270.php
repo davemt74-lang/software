@@ -481,6 +481,30 @@ function vp3_browser_intelligence_resolve_closed_v2270(PDO $pdo,array $continuit
     }
 }
 
+function vp3_browser_intelligence_resolve_absent_v2270(PDO $pdo,array $continuity,array $activeTypes): void
+{
+    $uid=(int)$continuity['owner_user_id'];$cid=(int)$continuity['id'];
+    $active=array_fill_keys(array_values(array_unique(array_map('strval',$activeTypes))),true);
+    $stmt=$pdo->prepare("SELECT * FROM browser_transaction_intelligence_cases_v2270
+      WHERE owner_user_id=? AND continuity_id=? AND status IN ('open','acknowledged')
+        AND exception_type NOT IN ('potential_schedule_conflict','potential_duplicate_transaction')");
+    $stmt->execute([$uid,$cid]);
+    foreach($stmt->fetchAll(PDO::FETCH_ASSOC)?:[] as $case){
+        if(isset($active[(string)$case['exception_type']]))continue;
+        $pdo->prepare("UPDATE browser_transaction_intelligence_cases_v2270
+          SET status='resolved',resolved_at=UTC_TIMESTAMP(),updated_at=UTC_TIMESTAMP()
+          WHERE id=? AND owner_user_id=?")->execute([(int)$case['id'],$uid]);
+        $pdo->prepare("UPDATE browser_transaction_recovery_proposals_v2270
+          SET status='dismissed',resolved_at=UTC_TIMESTAMP()
+          WHERE case_id=? AND owner_user_id=? AND status='proposed'")->execute([(int)$case['id'],$uid]);
+        vp3_browser_intelligence_receipt_v2270(
+            $pdo,$uid,$cid,(int)$case['id'],'exception_signal_cleared',
+            'Transaction exception signal cleared; active attention was removed while history was retained.',
+            'signal-cleared|'.(string)$case['public_id'].'|'.(string)$continuity['lifecycle_state'].'|'.(string)($continuity['last_observation_fingerprint']??'')
+        );
+    }
+}
+
 function vp3_browser_intelligence_evaluate_continuity_v2270(
     PDO $pdo,array $user,array $continuity,?array $event=null,array $changes=[],array $input=[]
 ): array {
@@ -519,6 +543,9 @@ function vp3_browser_intelligence_evaluate_continuity_v2270(
     if($family==='application'&&$state==='under_review'&&$age>14*86400)$signals[]=['application_stale',['under_review_14d']];
     if($family==='communication'&&$state==='sent'&&$age>5*86400)$signals[]=['response_overdue',['sent_without_response_5d']];
     if($family==='account'&&$state==='pending'&&$age>3*86400)$signals[]=['account_pending',['pending_72h']];
+
+    $activeTypes=array_values(array_unique(array_map(static fn(array $signal)=>(string)$signal[0],$signals)));
+    vp3_browser_intelligence_resolve_absent_v2270($pdo,$continuity,$activeTypes);
 
     $opened=[];
     foreach($signals as [$type,$reasons]){
@@ -579,8 +606,12 @@ function vp3_browser_intelligence_observe_facts_v2270(PDO $pdo,array $user,strin
         vp3_browser_intelligence_resolve_closed_v2270($pdo,$continuity);
         return ['continuity'=>vp3_browser_continuity_public_v2260($continuity),'cases'=>[],'fact'=>null];
     }
+    $eventId=trim((string)($input['event_id']??''));
+    if(!preg_match('/^[a-f0-9-]{36}$/i',$eventId))throw new InvalidArgumentException('Matched v22.60 lifecycle event is required.');
     $event=vp3_browser_continuity_latest_event_v2260($pdo,$uid,(int)$continuity['id']);
-    if(!$event)throw new RuntimeException('A v22.60 lifecycle observation is required before transaction facts can be evaluated.');
+    if(!$event||!hash_equals((string)$event['public_id'],$eventId)||empty($event['reference_match'])){
+        throw new RuntimeException('Normalized transaction facts must be bound to the exact latest reference-matched v22.60 observation.');
+    }
     $changes=array_values(array_map('strval',vp3_browser_intelligence_json_v2270($event['change_codes_json']??'[]')));
     $cases=vp3_browser_intelligence_evaluate_continuity_v2270($pdo,$user,$continuity,$event,$changes,$input);
     vp3_browser_intelligence_cross_signals_v2270($pdo,$user);
