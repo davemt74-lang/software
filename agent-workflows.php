@@ -48,7 +48,7 @@ $browserRuntime=$detail&&vp3_browser_runtime_schema_ready_v2200($pdo)?vp3_browse
 $browserWeb=$detail&&vp3_browser_web_schema_ready_v2210($pdo)?vp3_browser_web_for_workflow_v2210($pdo,(int)$user['id'],$detailId):['count'=>0,'verified'=>0,'failed'=>0,'checkpointed'=>0,'interactions'=>[]];
 $browserMulti=$detail&&vp3_browser_multisite_schema_ready_v2220($pdo)?vp3_browser_multisite_for_workflow_v2220($pdo,(int)$user['id'],$detailId):['attached'=>false];
 $browserResearch=$detail&&vp3_browser_research_schema_ready_v2230($pdo)?vp3_browser_research_for_workflow_v2230($pdo,(int)$user['id'],$detailId):[];
-$browserTransactions=$detail&&vp3_browser_transaction_schema_ready_v2240($pdo)?vp3_browser_transaction_for_workflow_v2240($pdo,(int)$user['id'],$detailId):['count'=>0,'completed'=>0,'failed'=>0,'manual_only'=>0,'intents'=>[]];
+$browserTransactions=$detail&&vp3_browser_transaction_schema_ready_v2240($pdo)?vp3_browser_transaction_for_workflow_v2240($pdo,(int)$user['id'],$detailId):['count'=>0,'completed'=>0,'uncertain'=>0,'failed'=>0,'manual_only'=>0,'intents'=>[]];
 
 function workflow_v1400_status_label(string $status): string{return str_replace('_',' ',ucwords($status,'_'));}
 function workflow_v1400_time(string $value): string{$ts=strtotime($value);return $ts?date('M j, g:i A',$ts):'—';}
@@ -208,7 +208,7 @@ function workflow_v1400_time(string $value): string{$ts=strtotime($value);return
   <section class="workflow-panel" aria-labelledby="browserTransactionTitle">
     <div class="workflow-panel-head">
       <div><small>Browser Companion v22.40</small><h3 id="browserTransactionTitle">Transaction & Submission Safety</h3></div>
-      <span><?= (int)($browserTransactions['completed']??0) ?> dispatched · <?= (int)($browserTransactions['failed']??0) ?> stopped</span>
+      <span><?= (int)($browserTransactions['completed']??0) ?> verified · <?= (int)($browserTransactions['uncertain']??0) ?> uncertain · <?= (int)($browserTransactions['failed']??0) ?> stopped</span>
     </div>
     <div class="workflow-summary-grid">
       <div><small>Final reviews</small><strong><?= (int)($browserTransactions['count']??0) ?></strong></div>
@@ -225,7 +225,7 @@ function workflow_v1400_time(string $value): string{$ts=strtotime($value);return
       </article>
       <?php endforeach; ?>
     </div>
-    <div class="workflow-notice" role="note" style="margin:14px 0 0">v22.40 records hashes, consequence metadata, lifecycle state and dispatch receipts—not form values, passwords, payment details, MFA codes, hidden tokens, or browser history. A completed receipt means the approved form was dispatched once; it does not assert downstream merchant, booking, application, or account success.</div>
+    <div class="workflow-notice" role="note" style="margin:14px 0 0">v22.40 records hashes, consequence metadata, lifecycle state and dispatch receipts—not form values, passwords, payment details, MFA codes, hidden tokens, or browser history. A completed receipt means dispatch was immediately verified; an uncertain receipt means dispatch may have occurred and must be reviewed before retrying. Neither state asserts downstream merchant, booking, application, or account success.</div>
   </section>
   <?php endif; ?>
 
