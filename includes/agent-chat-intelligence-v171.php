@@ -113,6 +113,8 @@ function vp3_agent_work_queue_item_v172(array $row, string $lane, string $timezo
         'prompt'=>$prompt,
         'updated_at'=>$updated,
         'next_attempt_at'=>$next,
+        'updated_at_utc'=>vp3_agent_chat_intelligence_text_v171((string)($row['updated_at']??''),64),
+        'next_attempt_at_utc'=>vp3_agent_chat_intelligence_text_v171((string)($row['next_attempt_at']??''),64),
     ];
 }
 
