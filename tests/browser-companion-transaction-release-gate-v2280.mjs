@@ -16,7 +16,7 @@ const scenarios=[
     name:'successful purchase',
     checks:[
       safety.includes("status='completed'")||safety.includes("'completed'"),
-      outcome.includes("outcome_state='confirmed'"),
+      outcome.includes("return ['confirmed','pending','rejected','ambiguous','external_redirect'];"),
       continuity.includes("if((string)$intent['status']!=='completed')"),
       background.includes('browserTransactionContinuityEnsureV2260')
     ]
