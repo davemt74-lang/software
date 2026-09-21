@@ -71,6 +71,9 @@ must(safety.includes('VP3_BROWSER_TRANSACTION_PERMIT_SECONDS_V2240=60'),'short f
 must(safety.includes("status='executing',permit_hash=?"),'one-time execution claim missing');
 must(safety.includes("permit_hash=NULL,permit_expires_at=NULL"),'permit consumption missing');
 must(safety.includes('VP3_BROWSER_TRANSACTION_DUPLICATE_WINDOW_SECONDS_V2240=600'),'duplicate window missing');
+must(safety.includes('browser_submission_dispatch_guards_v2240'),'atomic dispatch guard table missing');
+must(safety.includes('PRIMARY KEY (guard_key)'),'atomic dispatch guard uniqueness missing');
+must(safety.includes("status IN ('executing','completed','uncertain')")||safety.includes("'uncertain'"),'uncertain submissions must remain duplicate-blocking');
 must(safety.includes('Duplicate final submission blocked.'),'duplicate-submit block missing');
 must(api.includes("'approval_reusable'=>false"),'non-reusable approval declaration missing');
 must(background.includes("for(const key of ['page_fingerprint','form_fingerprint','submit_fingerprint','review_hash'])"),'Chrome post-claim exact-state check missing');
@@ -85,8 +88,10 @@ must(panel.includes("transaction.intent.manual_only"),'manual-only UI handling m
 must(panel.includes("Confirm exact form & submit"),'explicit exact-form confirmation label missing');
 
 // Dispatch receipt semantics must not overclaim downstream success.
-must(safety.includes('The approved external submission was dispatched once. The receipt does not claim downstream business success.'),'bounded dispatch receipt semantics missing');
-must(workflows.includes('A completed receipt means the approved form was dispatched once; it does not assert downstream'),'workflow receipt disclaimer missing');
+must(safety.includes('submission_dispatch_uncertain'),'uncertain dispatch state missing');
+must(safety.includes('Do not retry until the destination state is reviewed.'),'uncertain retry warning missing');
+must(background.includes('Submission dispatch may have started but could not be verified.'),'Chrome uncertainty warning missing');
+must(workflows.includes('an uncertain receipt means dispatch may have occurred and must be reviewed before retrying'),'workflow uncertain receipt disclaimer missing');
 must(workflows.includes('Transaction & Submission Safety'),'workflow receipt panel missing');
 
 // Upgrade and Chrome wiring.
