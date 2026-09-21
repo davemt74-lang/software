@@ -316,6 +316,22 @@ function vp3_browser_transaction_approve_v2240(
     return ['intent'=>vp3_browser_transaction_public_v2240($fresh?:$row)];
 }
 
+function vp3_browser_transaction_invalidate_approval_v2240(PDO $pdo,array $runtime,array $row,string $code): void
+{
+    $code=preg_replace('/[^a-z0-9_\-]/','',strtolower($code))?:'approval_invalidated';
+    $pdo->prepare("UPDATE browser_submission_intents_v2240
+      SET status='failed',result_code=?,permit_hash=NULL,permit_expires_at=NULL,failed_at=UTC_TIMESTAMP(),updated_at=UTC_TIMESTAMP()
+      WHERE id=? AND status IN ('approval_pending','approved')")
+      ->execute([$code,(int)$row['id']]);
+    $web=vp3_browser_web_row_v2210($pdo,$runtime,(string)$row['web_interaction_public_id'],true);
+    if($web&&in_array((string)$web['status'],['approval_pending','approved'],true)){
+        $pdo->prepare("UPDATE browser_web_interactions_v2210
+          SET status='failed',verified=0,result_code=?,permit_hash=NULL,permit_expires_at=NULL,failed_at=UTC_TIMESTAMP(),updated_at=UTC_TIMESTAMP()
+          WHERE id=? AND owner_user_id=?")
+          ->execute(['v2240_'.$code,(int)$web['id'],(int)$runtime['owner_user_id']]);
+    }
+}
+
 function vp3_browser_transaction_claim_v2240(
     PDO $pdo,array $user,string $namespace,array $session,string $runtimePublicId,string $intentId,array $input
 ): array {
@@ -332,13 +348,17 @@ function vp3_browser_transaction_claim_v2240(
     foreach(['page_fingerprint','form_fingerprint','submit_fingerprint','review_hash'] as $key){
         $actual=vp3_browser_transaction_sha_v2240($input[$key]??'');
         if($actual===''||!hash_equals((string)$row[$key],$actual)){
-            $pdo->prepare("UPDATE browser_submission_intents_v2240 SET status='failed',result_code='review_state_changed',failed_at=UTC_TIMESTAMP(),updated_at=UTC_TIMESTAMP() WHERE id=?")
-                ->execute([(int)$row['id']]);
+            vp3_browser_transaction_invalidate_approval_v2240($pdo,$runtime,$row,'review_state_changed');
+            if($started){$pdo->commit();$started=false;}
             throw new RuntimeException('The page or reviewed form changed after approval. Review the current submission again.');
         }
     }
     $domain=vp3_browser_web_domain_v2210($input['domain']??'');
-    if($domain!==(string)$row['domain'])throw new RuntimeException('The active domain changed after approval.');
+    if($domain!==(string)$row['domain']){
+        vp3_browser_transaction_invalidate_approval_v2240($pdo,$runtime,$row,'domain_changed_after_approval');
+        if($started){$pdo->commit();$started=false;}
+        throw new RuntimeException('The active domain changed after approval. Review the current submission again.');
+    }
 
     $guardKey=hash('sha256',(int)$runtime['owner_user_id'].'|'.(string)$row['duplicate_key']);
     $pdo->prepare("DELETE FROM browser_submission_dispatch_guards_v2240 WHERE guard_key=? AND expires_at<UTC_TIMESTAMP()")
@@ -348,7 +368,11 @@ function vp3_browser_transaction_claim_v2240(
           VALUES (?,?,?,DATE_ADD(UTC_TIMESTAMP(),INTERVAL ".VP3_BROWSER_TRANSACTION_DUPLICATE_WINDOW_SECONDS_V2240." SECOND))")
           ->execute([$guardKey,(int)$runtime['owner_user_id'],(string)$row['public_id']]);
     }catch(PDOException $e){
-        if((string)$e->getCode()==='23000')throw new RuntimeException('Duplicate final submission blocked. Review the prior receipt before submitting again.');
+        if((string)$e->getCode()==='23000'){
+            vp3_browser_transaction_invalidate_approval_v2240($pdo,$runtime,$row,'duplicate_submission_blocked');
+            if($started){$pdo->commit();$started=false;}
+            throw new RuntimeException('Duplicate final submission blocked. Review the prior receipt before submitting again.');
+        }
         throw $e;
     }
 
