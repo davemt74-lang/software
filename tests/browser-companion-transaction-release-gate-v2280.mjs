@@ -80,7 +80,7 @@ const scenarios=[
       control.includes("pause_scope='global'"),
       control.includes("pause_scope='tracker'"),
       control.includes('vp3_browser_control_tracker_action_v2280'),
-      control.includes("match_mode='reference' AND reference_hash<>''")
+      control.includes("match_mode='reference'")&&control.includes("reference_hash<>''")
     ]
   },
   {
