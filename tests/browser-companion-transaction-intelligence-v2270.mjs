@@ -77,6 +77,7 @@ must(intelligence.includes("vp3_browser_intelligence_resolve_closed_v2270"),'exp
 must(intelligence.includes("status='resolved'"),'resolved exception history missing');
 must(intelligence.includes('active attention was removed while history was retained'),'closure receipt missing');
 must(intelligence.includes('vp3_browser_intelligence_resolve_absent_v2270'),'stale exception cleanup missing');
+must(intelligence.includes("exception_fingerprint']"),'active exception cleanup must use exact fingerprints');
 must(intelligence.includes('exception_signal_cleared'),'signal-cleared receipt missing');
 must(intelligence.includes('cross_signal_cleared'),'cleared cross-transaction advisory receipt missing');
 must(intelligence.includes('exception_reopened'),'recurring auto-resolved exception reopen receipt missing');
