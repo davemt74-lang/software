@@ -725,6 +725,7 @@ function renderResearchProjectsV2230(projects){
 function researchSourceRowV2230(item){
   const row=el('div','runtime-research-source '+(item.checked?'checked':''),'');
   row.append(el('strong','',String(item.domain||'Approved source')),el('span','',item.checked?String(item.pages||0)+' page'+(Number(item.pages||0)===1?'':'s')+' analyzed':'Not checked yet'));
+  if(item.reason)row.append(el('small','',String(item.reason)));
   return row;
 }
 function researchClaimRowV2230(item){
