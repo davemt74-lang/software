@@ -439,11 +439,29 @@ function vp3_browser_intelligence_open_case_v2270(
       WHERE owner_user_id=? AND continuity_id=? AND exception_fingerprint=? LIMIT 1");
     $stmt->execute([$uid,$cid,$fingerprint]);$existing=$stmt->fetch(PDO::FETCH_ASSOC);
     if(is_array($existing)){
-        if(in_array((string)$existing['status'],['open','acknowledged'],true)){
+        $existingStatus=(string)$existing['status'];
+        if(in_array($existingStatus,['open','acknowledged'],true)){
             $pdo->prepare("UPDATE browser_transaction_intelligence_cases_v2270
               SET priority_score=?,priority_band=?,reason_codes_json=?,last_evaluated_at=UTC_TIMESTAMP(),updated_at=UTC_TIMESTAMP()
               WHERE id=? AND owner_user_id=?")
               ->execute([$score,$band,json_encode($reasons,JSON_UNESCAPED_SLASHES),(int)$existing['id'],$uid]);
+            $existing['priority_score']=$score;$existing['priority_band']=$band;$existing['reason_codes_json']=json_encode($reasons,JSON_UNESCAPED_SLASHES);
+        }elseif($existingStatus==='resolved'){
+            $pdo->prepare("UPDATE browser_transaction_intelligence_cases_v2270
+              SET status='open',priority_score=?,priority_band=?,reason_codes_json=?,opened_at=UTC_TIMESTAMP(),
+                  acknowledged_at=NULL,resolved_at=NULL,last_evaluated_at=UTC_TIMESTAMP(),updated_at=UTC_TIMESTAMP()
+              WHERE id=? AND owner_user_id=?")
+              ->execute([$score,$band,json_encode($reasons,JSON_UNESCAPED_SLASHES),(int)$existing['id'],$uid]);
+            $pdo->prepare("UPDATE browser_transaction_recovery_proposals_v2270
+              SET status='proposed',resolved_at=NULL WHERE case_id=? AND owner_user_id=?")
+              ->execute([(int)$existing['id'],$uid]);
+            vp3_browser_intelligence_receipt_v2270(
+                $pdo,$uid,$cid,(int)$existing['id'],'exception_reopened',
+                'A previously cleared transaction exception became active again.',
+                'reopened|'.(string)$existing['public_id'].'|'.$fingerprint.'|'.gmdate('Y-m-d-H')
+            );
+            $existing['status']='open';$existing['priority_score']=$score;$existing['priority_band']=$band;$existing['reason_codes_json']=json_encode($reasons,JSON_UNESCAPED_SLASHES);
+            vp3_browser_intelligence_notify_v2270($pdo,$continuity,$existing);
         }
         return $existing;
     }
