@@ -31,6 +31,7 @@ try{
   if($action==='settings_update')vp3_extension_control_json_v2280(200,$base+['settings'=>vp3_browser_control_update_settings_v2280($pdo,$user,$input,$device),'control'=>vp3_browser_control_status_v2280($pdo,$user)]);
   if($action==='stop_all')vp3_extension_control_json_v2280(200,$base+vp3_browser_control_stop_all_v2280($pdo,$user,$device)+['control'=>vp3_browser_control_status_v2280($pdo,$user)]);
   if($action==='resume_all')vp3_extension_control_json_v2280(200,$base+vp3_browser_control_resume_all_v2280($pdo,$user,$device)+['control'=>vp3_browser_control_status_v2280($pdo,$user)]);
+  if($action==='tracker_action')vp3_extension_control_json_v2280(200,$base+vp3_browser_control_tracker_action_v2280($pdo,$user,trim((string)($input['continuity_id']??'')),trim((string)($input['tracker_action']??'')),$device)+['control'=>vp3_browser_control_status_v2280($pdo,$user)]);
   if($action==='forget')vp3_extension_control_json_v2280(200,$base+vp3_browser_control_forget_v2280($pdo,$user,trim((string)($input['continuity_id']??'')),$device)+['control'=>vp3_browser_control_status_v2280($pdo,$user)]);
   if($action==='prune')vp3_extension_control_json_v2280(200,$base+vp3_browser_control_prune_v2280($pdo,$user,$device)+['control'=>vp3_browser_control_status_v2280($pdo,$user)]);
   if($action==='scan_permit')vp3_extension_control_json_v2280(200,$base+vp3_browser_control_scan_permit_v2280($pdo,$user,$device,trim((string)($input['domain']??''))));
