@@ -86,15 +86,15 @@ function vp3_browser_transaction_flags_v2240(string $semantic): array
     $s=mb_strtolower($semantic);
     $flags=[];
     $tests=[
-        'financial'=>/\b(?:purchase|buy|checkout|pay|payment|order|charge|subscribe|subscription)\b/u,
-        'transfer'=>/\b(?:wire|bank transfer|transfer funds|send money|crypto|cryptocurrency|withdraw)\b/u,
-        'booking'=>/\b(?:book|booking|reserve|reservation|appointment|ticket)\b/u,
-        'communication'=>/\b(?:send|message|email|invite|share)\b/u,
-        'publishing'=>/\b(?:publish|post|submit for review|make public)\b/u,
-        'application'=>/\b(?:application|apply|enroll|registration|register)\b/u,
-        'account_change'=>/\b(?:save changes|update account|create account|change plan|cancel subscription|unsubscribe)\b/u,
-        'destructive'=>/\b(?:delete|remove|destroy|close account|terminate account)\b/u,
-        'agreement'=>/\b(?:sign|signature|accept|agree|terms|consent|authorize)\b/u,
+        'financial'=>'/\\b(?:purchase|buy|checkout|pay|payment|order|charge|subscribe|subscription)\\b/u',
+        'transfer'=>'/\\b(?:wire|bank transfer|transfer funds|send money|crypto|cryptocurrency|withdraw)\\b/u',
+        'booking'=>'/\\b(?:book|booking|reserve|reservation|appointment|ticket)\\b/u',
+        'communication'=>'/\\b(?:send|message|email|invite|share)\\b/u',
+        'publishing'=>'/\\b(?:publish|post|submit for review|make public)\\b/u',
+        'application'=>'/\\b(?:application|apply|enroll|registration|register)\\b/u',
+        'account_change'=>'/\\b(?:save changes|update account|create account|change plan|cancel subscription|unsubscribe)\\b/u',
+        'destructive'=>'/\\b(?:delete|remove|destroy|close account|terminate account)\\b/u',
+        'agreement'=>'/\\b(?:sign|signature|accept|agree|terms|consent|authorize)\\b/u',
     ];
     foreach($tests as $key=>$pattern)if(preg_match($pattern,$s))$flags[]=$key;
     if(!$flags)$flags[]='external_write';
