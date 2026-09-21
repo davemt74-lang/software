@@ -287,6 +287,73 @@
               <div id="runtimeMultiArtifactsEmpty" class="empty-state">No downloads observed from approved runtime domains.</div>
             </section>
 
+            <section id="runtimeResearchPanel" class="runtime-research-panel">
+              <div class="row-between">
+                <div>
+                  <div class="eyebrow">Browser Research Agent · v22.30</div>
+                  <strong>Evidence-aware research mission</strong>
+                  <div id="runtimeResearchStatus" class="page-host">Start a bounded mission inside the approved Browser Runtime.</div>
+                </div>
+                <button id="runtimeResearchRefreshBtn" type="button">Refresh</button>
+              </div>
+              <div class="runtime-web-boundary">
+                <strong>Temporary page text, durable structured evidence.</strong>
+                <span>Readable page text is sent only through the existing ephemeral Browser Context → Agent path for extraction. The mission stores claims, bounded evidence excerpts, source domains, fingerprints, freshness dates and canonical VP3 Source references—not raw page text, URLs or browser history.</span>
+              </div>
+
+              <div id="runtimeResearchStart" class="runtime-research-start">
+                <label class="field">
+                  <span>Research question / goal</span>
+                  <textarea id="runtimeResearchQuestion" maxlength="2000" rows="3" placeholder="Research this company’s products, pricing, leadership, locations, and recent changes. Compare the approved sources."></textarea>
+                </label>
+                <label class="field">
+                  <span>Research project <small>optional now; required to save findings</small></span>
+                  <select id="runtimeResearchProject"><option value="">Choose later</option></select>
+                </label>
+                <div class="runtime-research-budgets">
+                  <label class="field"><span>Sources</span><select id="runtimeResearchMaxSources"><option value="2">2</option><option value="3" selected>3</option><option value="4">4</option><option value="5">5</option></select></label>
+                  <label class="field"><span>Pages</span><select id="runtimeResearchMaxPages"><option value="5">5</option><option value="8">8</option><option value="10" selected>10</option><option value="12">12</option></select></label>
+                  <label class="field"><span>Claims</span><select id="runtimeResearchMaxClaims"><option value="20">20</option><option value="30">30</option><option value="40">40</option><option value="50" selected>50</option><option value="60">60</option></select></label>
+                  <label class="field"><span>Duration</span><select id="runtimeResearchDuration"><option value="30">30 min</option><option value="60" selected>60 min</option><option value="90">90 min</option><option value="120">120 min</option></select></label>
+                </div>
+                <button id="runtimeResearchStartBtn" class="primary" type="button">Start research mission</button>
+              </div>
+
+              <div id="runtimeResearchActive" hidden>
+                <div class="runtime-web-summary">
+                  <span id="runtimeResearchPageCount" class="pill">0 / 0 pages</span>
+                  <span id="runtimeResearchClaimCount" class="pill">0 / 0 claims</span>
+                  <span id="runtimeResearchCorroborated" class="pill">0 corroborated</span>
+                  <span id="runtimeResearchConflicts" class="pill">0 conflicts</span>
+                </div>
+                <div class="delegation-controls">
+                  <button id="runtimeResearchAnalyzeBtn" class="primary" type="button">Analyze current page</button>
+                  <button id="runtimeResearchOpenChatBtn" type="button">Open research chat</button>
+                  <button id="runtimeResearchSaveBtn" type="button">Save draft to Research</button>
+                  <button id="runtimeResearchCancelBtn" class="danger-text" type="button">Cancel mission</button>
+                  <button id="runtimeResearchOpenReportBtn" type="button" hidden>Open draft report</button>
+                </div>
+
+                <div class="runtime-subhead"><strong>Source plan</strong><span>Approved domains only</span></div>
+                <div id="runtimeResearchSources" class="runtime-research-sources"></div>
+                <div id="runtimeResearchSourcesEmpty" class="empty-state">No approved source plan loaded.</div>
+
+                <div class="runtime-subhead"><strong>Claims & evidence</strong><span>Corroboration / conflict ledger</span></div>
+                <div id="runtimeResearchClaims" class="runtime-research-claims"></div>
+                <div id="runtimeResearchClaimsEmpty" class="empty-state">Analyze an approved page to extract structured claims.</div>
+
+                <div class="runtime-subhead"><strong>Research gaps</strong><span>What is not established yet</span></div>
+                <div id="runtimeResearchGaps" class="runtime-research-gaps"></div>
+                <div id="runtimeResearchGapsEmpty" class="empty-state">No research gaps recorded yet.</div>
+
+                <div id="runtimeResearchHandoffs" class="delegation-controls" hidden>
+                  <button id="runtimeResearchKnowledgeBtn" type="button">Draft Knowledge</button>
+                  <button id="runtimeResearchCrmBtn" type="button">Draft CRM enrichment</button>
+                  <button id="runtimeResearchTaskBtn" type="button">Draft follow-up task</button>
+                </div>
+              </div>
+            </section>
+
             <section id="runtimeWebPanel" class="runtime-web-panel">
               <div class="row-between">
                 <div>
