@@ -469,9 +469,14 @@ function vp3_cognitive_feed_compose_v530(PDO $pdo,array $user,string $namespace,
         $used+=count($items);
     }
 
+    $operations=function_exists('vp3_cognitive_operations_compose_v2300')
+        ? vp3_cognitive_operations_compose_v2300($visible)
+        : null;
+
     return [
         'build'=>VP3_COGNITIVE_FEED_V530,
         'agent_namespace'=>$namespace,
+        'operations'=>$operations,
         'generated_at'=>gmdate(DATE_ATOM),
         'sections'=>$sections,
         'item_count'=>$used,
