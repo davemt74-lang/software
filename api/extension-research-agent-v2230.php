@@ -54,6 +54,21 @@ function vp3_extension_research_prompt_v2230(array $mission): string
         "If the page is not useful for this mission, return an empty claims array and explain the gap.";
 }
 
+function vp3_extension_research_validate_claims_v2230(array $claims,string $pageText): array
+{
+    $normalize=static fn(string $text): string=>mb_strtolower(trim(preg_replace('/\s+/u',' ',$text)??''));
+    $pageNormalized=$normalize($pageText);$out=[];
+    foreach(array_slice($claims,0,12) as $raw){
+        if(!is_array($raw))continue;
+        $evidence=vp3_browser_research_text_v2230($raw['evidence']??'',VP3_BROWSER_RESEARCH_MAX_EVIDENCE_V2230);
+        if($evidence==='')continue;
+        $directness=in_array((string)($raw['directness']??''),['direct','inferred'],true)?(string)$raw['directness']:'direct';
+        if($directness==='direct'&&!str_contains($pageNormalized,$normalize($evidence)))$directness='inferred';
+        $raw['evidence']=$evidence;$raw['directness']=$directness;$out[]=$raw;
+    }
+    return $out;
+}
+
 function vp3_extension_research_source_version_v2230(PDO $pdo,string $sourcePublicId): array
 {
     $sourcePublicId=trim($sourcePublicId);
@@ -278,12 +293,17 @@ try{
         $payload=vp3_extension_research_parse_agent_v2230((string)($result['answer']??''));
         $contentHash=strtolower(trim((string)($page['content_hash']??'')));
         if(!preg_match('/^[a-f0-9]{64}$/',$contentHash))$contentHash=hash('sha256',$pageText);
+        $validatedClaims=vp3_extension_research_validate_claims_v2230(is_array($payload['claims']??null)?$payload['claims']:[],$pageText);
+        $gaps=is_array($payload['gaps']??null)?array_slice($payload['gaps'],0,8):[];
+        if((string)$sourceRefs['source_public_id']===''||(string)$sourceRefs['source_version_public_id']===''){
+            $gaps[]='Evidence from '.$domain.' is fingerprint-only because this analyzed page does not currently resolve to a canonical VP3 Source version.';
+        }
         vp3_browser_research_add_page_v2230($pdo,$mission,[
             'domain'=>$domain,'page_fingerprint'=>$pageFingerprint,'content_hash'=>$contentHash,
             'source_kind'=>in_array((string)($payload['source_kind']??''),['primary','secondary','unknown'],true)?(string)$payload['source_kind']:'unknown',
             'freshness_date'=>vp3_browser_research_date_v2230($payload['freshness_date']??''),
             'source_public_id'=>$sourceRefs['source_public_id'],'source_version_public_id'=>$sourceRefs['source_version_public_id'],
-        ],is_array($payload['claims']??null)?array_slice($payload['claims'],0,12):[],is_array($payload['gaps']??null)?array_slice($payload['gaps'],0,8):[]);
+        ],$validatedClaims,$gaps);
 
         $fresh=vp3_browser_research_public_v2230($pdo,$user,$missionId);
         $progress=(array)($fresh['progress']??[]);
