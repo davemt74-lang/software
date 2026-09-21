@@ -1,6 +1,6 @@
 const VP3_DEFAULT_BASE = 'https://vp3.me';
 const VP3_CONTRACT_VERSION = '1';
-const VP3_EXTENSION_VERSION = '22.7.0';
+const VP3_EXTENSION_VERSION = '22.8.0';
 const VP3_MEDIA_CLIP_MAX_SECONDS = 90;
 
 const storage = {
@@ -677,6 +677,12 @@ async function browserTransactionIntelligenceApiV2270(action,payload={}){
   },'agent.message');
 }
 
+async function browserTransactionControlApiV2280(action,payload={}){
+  return authorizedFetch('/api/extension-transaction-control-v2280.php',{
+    method:'POST',json:{action:String(action||'status'),...payload}
+  },'agent.message');
+}
+
 async function browserTransactionContinuityEnsureV2260(payload={}){
   return browserTransactionContinuityApiV2260('ensure',{
     runtime_id:String(payload.runtime_id||''),agent_id:Number(payload.agent_id||0),intent_id:String(payload.intent_id||'')
@@ -827,32 +833,47 @@ async function browserTransactionContinuityScanV2260(){
   try{domain=new URL(tab.url).hostname.toLowerCase();}catch(_error){}
   if(!domain)return {ok:true,matched:false,reason:'unsupported_page',continuities:[]};
 
-  const preflight=await browserTransactionContinuityApiV2260('list',{domain});
-  const entries=Array.isArray(preflight&&preflight.continuities)?preflight.continuities:[];
-  const activeReference=entries.some(entry=>{
-    const tracker=entry&&entry.continuity||{};
-    return String(tracker.tracking_status||'')==='active'&&String(tracker.match_mode||'')==='reference'&&Boolean(tracker.reference_present);
-  });
-  if(!activeReference)return {...preflight,matched:false,reason:entries.length?'tracking_inactive_or_manual':'no_tracked_transactions'};
+  const permit=await browserTransactionControlApiV2280('scan_permit',{domain}).catch(()=>null);
+  if(permit&&!permit.allowed)return {ok:true,matched:false,reason:String(permit.reason||'scan_suppressed'),retry_after_seconds:Number(permit.retry_after_seconds||0),continuities:[],control:permit};
+  const scopeKey=String(permit&&permit.scope_key||'');
+  let resultCode='unknown';
+  try{
+    const preflight=await browserTransactionContinuityApiV2260('list',{domain});
+    const entries=Array.isArray(preflight&&preflight.continuities)?preflight.continuities:[];
+    const activeReference=entries.some(entry=>{
+      const tracker=entry&&entry.continuity||{};
+      return String(tracker.tracking_status||'')==='active'&&String(tracker.match_mode||'')==='reference'&&Boolean(tracker.reference_present);
+    });
+    if(!activeReference){
+      resultCode=entries.length?'tracking_inactive_or_manual':'no_tracked_transactions';
+      return {...preflight,matched:false,reason:resultCode,control:permit};
+    }
 
-  const local=await browserTransactionContinuityCaptureV2260(tab.id);
-  const response=await browserTransactionContinuityApiV2260('observe',{
-    domain:String(local.domain||''),page_fingerprint:String(local.page_fingerprint||''),
-    content_hash:String(local.content_hash||''),observation_fingerprint:String(local.observation_fingerprint||''),
-    reference_candidates:Array.isArray(local.reference_candidates)?local.reference_candidates:[],
-    state_candidates:Array.isArray(local.state_candidates)?local.state_candidates:[],
-    schedule_hash:String(local.schedule_hash||''),amount_hash:String(local.amount_hash||'')
-  });
-  let intelligence=null;
-  if(response&&response.matched&&response.continuity&&response.continuity.continuity_id){
-    intelligence=await browserTransactionIntelligenceApiV2270('observe_facts',{
-      continuity_id:String(response.continuity.continuity_id||''),
-      event_id:String(response.event&&response.event.event_id||''),
-      schedule_candidates:Array.isArray(local.schedule_candidates)?local.schedule_candidates:[],
-      exposure_candidates:Array.isArray(local.exposure_candidates)?local.exposure_candidates:[]
-    }).catch(()=>null);
+    const local=await browserTransactionContinuityCaptureV2260(tab.id);
+    const response=await browserTransactionContinuityApiV2260('observe',{
+      domain:String(local.domain||''),page_fingerprint:String(local.page_fingerprint||''),
+      content_hash:String(local.content_hash||''),observation_fingerprint:String(local.observation_fingerprint||''),
+      reference_candidates:Array.isArray(local.reference_candidates)?local.reference_candidates:[],
+      state_candidates:Array.isArray(local.state_candidates)?local.state_candidates:[],
+      schedule_hash:String(local.schedule_hash||''),amount_hash:String(local.amount_hash||'')
+    });
+    let intelligence=null;
+    if(response&&response.matched&&response.continuity&&response.continuity.continuity_id){
+      intelligence=await browserTransactionIntelligenceApiV2270('observe_facts',{
+        continuity_id:String(response.continuity.continuity_id||''),
+        event_id:String(response.event&&response.event.event_id||''),
+        schedule_candidates:Array.isArray(local.schedule_candidates)?local.schedule_candidates:[],
+        exposure_candidates:Array.isArray(local.exposure_candidates)?local.exposure_candidates:[]
+      }).catch(()=>null);
+    }
+    resultCode=response&&response.matched?'matched':'no_match';
+    return {...response,intelligence,control:permit,local:{masked_references:Array.isArray(local.masked_references)?local.masked_references:[]}};
+  }catch(error){
+    resultCode=/auth|reconnect/i.test(String(error&&error.message||''))?'auth_error':/capture|page/i.test(String(error&&error.message||''))?'capture_error':'api_error';
+    throw error;
+  }finally{
+    if(scopeKey)await browserTransactionControlApiV2280('scan_result',{scope_key:scopeKey,result_code:resultCode}).catch(()=>{});
   }
-  return {...response,intelligence,local:{masked_references:Array.isArray(local.masked_references)?local.masked_references:[]}};
 }
 
 async function browserTransactionContinuityListV2260(){
@@ -2571,6 +2592,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       case 'transaction_continuity_action': return browserTransactionContinuityApiV2260(message.action, message.payload || {});
       case 'transaction_intelligence_action': return browserTransactionIntelligenceApiV2270(message.action, message.payload || {});
       case 'transaction_intelligence_inbox': return browserTransactionIntelligenceApiV2270('inbox', message.payload || {});
+      case 'transaction_control_action': return browserTransactionControlApiV2280(message.action, message.payload || {});
+      case 'transaction_control_status': return browserTransactionControlApiV2280('status', message.payload || {});
       case 'notification_poll': return pollProactiveNotifications();
       case 'quick_action_consume': return consumeQuickActionV2150();
       case 'quick_action_run': {
