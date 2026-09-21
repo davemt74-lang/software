@@ -75,6 +75,31 @@ function vp3_marketing_page_data(string $slug): ?array
                 ['Ecommerce','Publish products, accept orders, manage delivery, refunds, and seller activity.','/ecommerce.php'],
             ],
         ],
+        'annotations' => [
+            'title' => 'Annotations — VP3', 'active' => 'services', 'kicker' => 'Annotations',
+            'headline' => 'Capture what matters on the web and keep the source attached.',
+            'intro' => 'VP3 Annotations let you capture highlights, screenshots, notes, and source context from the browser, then organize, discuss, save, and reuse that material across research and Agent workflows.',
+            'why' => 'Useful research needs more than a copied quote. VP3 keeps the annotation connected to its source and captured context so people and Agents can review what was saved, discuss it, add it to research, and return to the original material.',
+            'cards' => [
+                ['Capture source context','Save selected text, screenshots, notes, and source details while you work in the browser.','/chrome-extension.php'],
+                ['Research workflow','Save annotations, add them to research, and keep useful source material connected to later work.','/services.php'],
+                ['Discussion + sharing','Publish or share approved annotations and keep comments and collaboration attached to the item.','/teams.php'],
+                ['Agent follow-through','Bring captured source material into VP3 so the Agent can use approved context for summaries, questions, and next actions.','/ai-assistant.php'],
+            ],
+        ],
+        'agent-analytics' => [
+            'title' => 'Agent Analytics — VP3', 'active' => 'services', 'kicker' => 'Agent Analytics',
+            'headline' => 'See what your Profile Agent and public offers are turning into.',
+            'intro' => 'Agent Analytics connects profile visits, booking and product intent, verified conversions, attributed revenue, traffic sources, and opportunity signals in one owner-facing view.',
+            'why' => 'Analytics are more useful when they connect attention to outcomes. VP3 can compare visits, intent, conversions, booking and product performance, source attribution, and revenue without turning visitor identity into the reporting product.',
+            'cards' => [
+                ['Profile activity','See profile visits and public conversion activity across the same Profile Agent experience.','/profile-agent-overview.php'],
+                ['Booking + product intent','Understand which booking offers and products are attracting measurable intent.','/booking.php'],
+                ['Conversions + revenue','Connect confirmed booking and product outcomes to conversion rates and per-currency revenue reporting.','/ecommerce.php'],
+                ['Sources + opportunities','Review attributed traffic sources, period comparisons, top performers, and Agent-identified conversion opportunities.','/ai-assistant.php'],
+            ],
+        ],
+
         'ai-summary' => [
             'title' => 'AI Summary — VP3', 'active' => 'services', 'kicker' => 'AI Summary',
             'headline' => 'Get the useful parts without rereading the whole conversation.',

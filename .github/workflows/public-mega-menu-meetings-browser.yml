@@ -1,4 +1,4 @@
-name: Public Mega Menu Meetings + Chrome Extension
+name: Public Mega Menu Services
 
 on:
   pull_request:
@@ -8,12 +8,16 @@ on:
       - 'video-meetings.php'
       - 'chrome-extension.php'
       - 'chrome-extension-download.php'
+      - 'annotations.php'
+      - 'agent-analytics.php'
+      - 'includes/vp3-marketing-pages.php'
       - 'browser-companion/manifest.json'
       - 'tests/public-mega-menu-meetings-browser.mjs'
       - '.github/workflows/public-mega-menu-meetings-browser.yml'
   push:
     branches:
       - 'public-nav-meetings-chrome-extension'
+      - 'public-nav-annotations-agent-analytics'
 
 jobs:
   contract:
@@ -40,5 +44,8 @@ jobs:
           php -l video-meetings.php
           php -l chrome-extension.php
           php -l chrome-extension-download.php
+          php -l annotations.php
+          php -l agent-analytics.php
+          php -l includes/vp3-marketing-pages.php
       - name: Public mega menu contract
         run: node tests/public-mega-menu-meetings-browser.mjs
