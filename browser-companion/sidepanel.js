@@ -839,11 +839,14 @@ async function openRuntimeResearchChatV2230(){
   if(cid>0)await loadAgentConversationV2160(cid);else await loadAgentConversationV2160(0);
   note(cid>0?'Research extraction conversation opened.':'No research extraction conversation exists yet. Analyze a page first.','success');
 }
-function draftRuntimeResearchHandoffV2230(kind){
+async function draftRuntimeResearchHandoffV2230(kind){
   if(!runtimeResearchMissionV2230)return;
   const prompt=String(runtimeResearchMissionV2230.handoffs&&runtimeResearchMissionV2230.handoffs[kind]||'');if(!prompt)return;
-  setView('agent');ui.agentMessageInput.value=prompt;renderCaps();ui.agentMessageInput.focus();
-  note('Draft handoff prepared in Agent. Review it before sending.','success');
+  setView('agent');
+  const cid=Number(runtimeResearchMissionV2230.conversation_id||0);
+  if(cid>0)await loadAgentConversationV2160(cid);
+  ui.agentMessageInput.value=prompt;renderCaps();ui.agentMessageInput.focus();
+  note('Draft handoff prepared in the Research conversation. Review it before sending.','success');
 }
 async function openRuntimeResearchReportV2230(){
   const url=runtimeResearchMissionV2230&&runtimeResearchMissionV2230.report&&runtimeResearchMissionV2230.report.url;if(url)await msg('open_url',{url:absolute(url)});
@@ -1910,9 +1913,9 @@ ui.runtimeResearchSaveBtn.onclick=()=>saveRuntimeResearchV2230().catch(fail);
 ui.runtimeResearchCancelBtn.onclick=()=>cancelRuntimeResearchV2230().catch(fail);
 ui.runtimeResearchOpenChatBtn.onclick=()=>openRuntimeResearchChatV2230().catch(fail);
 ui.runtimeResearchOpenReportBtn.onclick=()=>openRuntimeResearchReportV2230().catch(fail);
-ui.runtimeResearchKnowledgeBtn.onclick=()=>draftRuntimeResearchHandoffV2230('knowledge');
-ui.runtimeResearchCrmBtn.onclick=()=>draftRuntimeResearchHandoffV2230('crm');
-ui.runtimeResearchTaskBtn.onclick=()=>draftRuntimeResearchHandoffV2230('task');
+ui.runtimeResearchKnowledgeBtn.onclick=()=>draftRuntimeResearchHandoffV2230('knowledge').catch(fail);
+ui.runtimeResearchCrmBtn.onclick=()=>draftRuntimeResearchHandoffV2230('crm').catch(fail);
+ui.runtimeResearchTaskBtn.onclick=()=>draftRuntimeResearchHandoffV2230('task').catch(fail);
 ui.runtimeMultiAttachBtn.onclick=()=>attachRuntimeMultiV2220().catch(fail);
 ui.runtimeMultiGoBtn.onclick=()=>runRuntimeMultiHandoffV2220(String(ui.runtimeMultiTargetUrl.value||'')).catch(fail);
 ui.runtimeMultiFactAddBtn.onclick=()=>addRuntimeMultiFactV2220().catch(fail);
