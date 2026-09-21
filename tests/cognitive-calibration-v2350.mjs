@@ -6,6 +6,7 @@ const cal=read('includes/cognitive-calibration-v2350.php');
 const learning=read('includes/cognitive-learning-v540.php');
 const planningApi=read('api/cognitive-planning-v550.php');
 const orchestration=read('includes/cognitive-orchestration-v560.php');
+const browser=read('api/extension-cognitive-now-v2120.php');
 const proactive=read('includes/cognitive-proactive-now-v2340.php');
 const chatJs=read('chat-cognitive-feed-v530.js');
 const bootstrap=read('includes/bootstrap.php');
@@ -23,6 +24,7 @@ const checks=[
  ['plan candidate exact fingerprint lifecycle', /item_key=\? AND item_fingerprint=\?/.test(cal)],
  ['accept is engagement not execution', /plan_accepted/.test(planningApi) && !/\$action==='accept'\?'acted'/.test(planningApi)],
  ['dismiss is explicit negative signal', /plan_dismissed/.test(planningApi)],
+ ['Browser plan semantics match Agent Chat', /plan_accepted/.test(browser) && /plan_dismissed/.test(browser) && !/decision==='accept'\?'acted'/.test(browser)],
  ['handoff requested feeds action signal', /handoff_requested/.test(orchestration) && /vp3_cognitive_calibration_feedback_plan_v2350/.test(orchestration)],
  ['handoff reject is postpone signal', /handoff_postponed/.test(orchestration)],
  ['canonical completion feeds plan completion', /plan_completed/.test(orchestration)],
