@@ -102,7 +102,7 @@ function vp3_browser_delegation_allowed_actions_v2190(array $input): array
         'follow_source','unfollow_source',
         'open_research','open_profile','open_contact',
         'draft_task','draft_knowledge','share_team',
-        'web_click','web_focus','web_type','web_clear','web_select','web_toggle','web_scroll','web_open_link','web_submit','multisite_handoff','browser_research'
+        'web_click','web_focus','web_type','web_clear','web_select','web_toggle','web_scroll','web_open_link','web_submit','transaction_submit','multisite_handoff','browser_research'
     ];
     $out=[];
     foreach(array_slice($input,0,24) as $value){
@@ -134,7 +134,9 @@ function vp3_browser_delegation_plan_v2190(
     $allowedActions=vp3_browser_delegation_allowed_actions_v2190(
         is_array($constraints['allowed_actions']??null)?$constraints['allowed_actions']:[]
     );
-
+    if(in_array('transaction_submit',$allowedActions,true)&&$riskBudget!=='medium'){
+        throw new InvalidArgumentException('Transaction & Submission Safety requires a Medium risk budget because every final external submission is an explicit checkpoint.');
+    }
     $candidates=vp3_browser_execution_candidates_v2180($pdo,$user,$namespace,$session,$context,$relations);
     $source=is_array($relations['source']??null)?$relations['source']:null;
     if(!$source||trim((string)($source['id']??''))===''){

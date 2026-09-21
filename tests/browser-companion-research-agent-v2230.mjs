@@ -21,8 +21,9 @@ const research=read('includes/research-projects-v2060.php');
 const workflows=read('agent-workflows.php');
 const upgrade=read('upgrade.php');
 
-must(manifest.version==='22.3.0','v22.30 manifest version missing');
-must(background.includes("const VP3_EXTENSION_VERSION = '22.3.0';"),'v22.30 request version missing');
+const researchVersion=String(manifest.version||'').split('.').map(Number);
+must(researchVersion.length===3&&(researchVersion[0]>22||(researchVersion[0]===22&&researchVersion[1]>=3)),'v22.30+ manifest version missing');
+must(background.includes(`const VP3_EXTENSION_VERSION = '${manifest.version}';`),'v22.30+ request version must match manifest');
 must(!manifest.permissions.includes('cookies'),'Browser Research must not request cookies permission');
 must(background.includes("authorizedFetch('/api/extension-research-agent-v2230.php'"),'Browser Research API adapter missing');
 must(background.includes("case 'research_action'"),'Browser Research message route missing');

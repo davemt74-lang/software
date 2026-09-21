@@ -182,6 +182,11 @@ function vp3_browser_runtime_skills_v2200(): array
             'mode'=>'checkpoint','verification_mode'=>'user_confirmation','requires_checkpoint'=>true,
             'target_types'=>['browser_source'],
         ],
+        'transaction_submit'=>[
+            'label'=>'Authorize reviewed external submission','capability'=>'agent.message','risk_level'=>'medium',
+            'mode'=>'checkpoint','verification_mode'=>'review_hash_and_user_confirmation','requires_checkpoint'=>true,
+            'target_types'=>['browser_source'],
+        ],
     ];
 }
 

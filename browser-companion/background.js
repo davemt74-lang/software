@@ -1,6 +1,6 @@
 const VP3_DEFAULT_BASE = 'https://vp3.me';
 const VP3_CONTRACT_VERSION = '1';
-const VP3_EXTENSION_VERSION = '22.3.0';
+const VP3_EXTENSION_VERSION = '22.4.0';
 const VP3_MEDIA_CLIP_MAX_SECONDS = 90;
 
 const storage = {
@@ -526,6 +526,194 @@ async function browserResearchAnalyzeCurrentV2230(payload={}){
   return browserResearchApiV2230('analyze_page',{
     mission_id:String(payload.mission_id||''),agent_id:Number(payload.agent_id||0),page
   });
+}
+
+async function browserTransactionApiV2240(action,payload={}){
+  return authorizedFetch('/api/extension-transaction-safety-v2240.php',{
+    method:'POST',json:{action:String(action||'list'),...payload}
+  },'agent.message');
+}
+
+async function browserTransactionCaptureV2240(tabId,payload={}){
+  const injected=await chrome.scripting.executeScript({
+    target:{tabId},
+    args:[{
+      element_key:String(payload.element_key||''),
+      element_fingerprint:String(payload.element_fingerprint||'')
+    }],
+    func:async args=>{
+      const sha=async value=>{
+        const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(String(value||'')));
+        return [...new Uint8Array(digest)].map(byte=>byte.toString(16).padStart(2,'0')).join('');
+      };
+      const clip=(value,max=180)=>String(value||'').replace(/\s+/g,' ').trim().slice(0,max);
+      const labelFor=el=>{
+        const aria=clip(el.getAttribute('aria-label'));if(aria)return aria;
+        if(el.id){try{const l=document.querySelector('label[for="'+CSS.escape(el.id)+'"]');if(l)return clip(l.innerText||l.textContent);}catch(_error){}}
+        const parent=el.closest('label');if(parent)return clip(parent.innerText||parent.textContent);
+        return clip(el.getAttribute('placeholder')||el.getAttribute('title')||el.getAttribute('name')||el.innerText||el.textContent);
+      };
+      const elementFingerprint=async el=>{
+        const tag=String(el.tagName||'').toLowerCase();
+        const inputType=tag==='input'?String(el.getAttribute('type')||'text').toLowerCase():'';
+        const role=String(el.getAttribute('role')||'').toLowerCase();
+        let host='',formHost='';
+        if(tag==='a'&&el.href){try{host=new URL(el.href,location.href).hostname.toLowerCase();}catch(_error){}}
+        if(el.form){try{formHost=new URL(el.form.action||location.href,location.href).hostname.toLowerCase();}catch(_error){}}
+        return sha([tag,inputType,role,clip(el.getAttribute('name'),120),clip(el.getAttribute('autocomplete'),80).toLowerCase(),labelFor(el),clip(el.getAttribute('placeholder'),160),clip(el.getAttribute('aria-label'),160),host,formHost].join('|').toLowerCase());
+      };
+      const state=globalThis.__vp3WebRuntimeV2210||(globalThis.__vp3WebRuntimeV2210={epoch:0,keys:new WeakMap(),observer:null});
+      const controls=[...document.querySelectorAll('button,input,[role="button"]')].slice(0,500);
+      let submit=controls.find(node=>state.keys.get(node)===args.element_key)||null;
+      if(submit&&(await elementFingerprint(submit))!==args.element_fingerprint)submit=null;
+      if(!submit){
+        const matches=[];
+        for(const node of controls){if((await elementFingerprint(node))===args.element_fingerprint)matches.push(node);if(matches.length>1)break;}
+        if(matches.length!==1)throw new Error(matches.length>1?'Submission control is ambiguous. Rescan the page.':'Submission control changed. Rescan the page.');
+        submit=matches[0];
+      }
+      const form=submit.form||submit.closest('form');
+      if(!form)throw new Error('Final Submission Safety requires a standard form. This control must remain a manual checkpoint.');
+      const formAction=new URL(form.action||location.href,location.href);
+      if(!/^https?:$/.test(formAction.protocol))throw new Error('This form target is not an HTTP(S) destination.');
+      const method=String(form.method||'get').toUpperCase();
+      const fields=[];
+      const structural=[];
+      const reviewFields=[];
+      let sensitiveCount=0;
+      const all=[...form.elements].slice(0,80);
+      for(let index=0;index<all.length;index++){
+        const el=all[index];
+        if(!el||el.disabled)continue;
+        const tag=String(el.tagName||'').toLowerCase();
+        const type=tag==='input'?String(el.getAttribute('type')||'text').toLowerCase():tag;
+        if(['submit','button','reset','image'].includes(type)||tag==='button')continue;
+        const name=clip(el.getAttribute('name'),120);
+        const label=labelFor(el)||name||('Field '+(index+1));
+        const autocomplete=clip(el.getAttribute('autocomplete'),80).toLowerCase();
+        const semantic=[type,name,label,autocomplete].join(' ').toLowerCase();
+        const hiddenSecret=type==='hidden'&&/\b(?:csrf|xsrf|token|nonce|secret|signature|session|auth|client[_ -]?secret|payment[_ -]?intent|credential)\b/i.test(semantic);
+        const sensitive=type==='password'||hiddenSecret
+          ||/(?:current-password|new-password|one-time-code|cc-(?:number|csc|exp|name)|transaction-|webauthn)/i.test(autocomplete)
+          ||/\b(?:password|passcode|pin|security code|verification code|one[- ]time|otp|2fa|mfa|credit card|card number|cvv|cvc|social security|ssn|access token|api key|secret key|private key|bank account|routing number)\b/i.test(semantic);
+        if(sensitive)sensitiveCount++;
+        let exactValue=null,displayValue='';
+        if(type==='checkbox'||type==='radio'){
+          exactValue={checked:Boolean(el.checked),value:String(el.value||'')};
+          displayValue=el.checked?'Selected':'Not selected';
+        }else if(tag==='select'){
+          const selected=[...el.selectedOptions].map(option=>({value:String(option.value||''),label:clip(option.textContent,160)}));
+          exactValue=selected;
+          displayValue=selected.map(x=>x.label||x.value).join(', ')||'No selection';
+        }else if(type==='file'){
+          const files=[...(el.files||[])].map(file=>({name:String(file.name||''),size:Number(file.size||0),type:String(file.type||''),lastModified:Number(file.lastModified||0)}));
+          exactValue=files;
+          displayValue=files.length?files.map(file=>file.name).join(', '):'No file selected';
+        }else{
+          exactValue=String(el.value??'');
+          if(sensitive)displayValue=exactValue?'•••••• · value entered':'No value entered';
+          else displayValue=clip(exactValue,220)||'Empty';
+        }
+        fields.push({index,name,type,tag,value:exactValue});
+        structural.push({index,name,type,tag,label:clip(label,180),autocomplete});
+        reviewFields.push({label:clip(label,180),name,type,value:displayValue,sensitive});
+      }
+      if(!fields.length)throw new Error('No reviewable form fields were found.');
+      const submitFingerprint=await elementFingerprint(submit);
+      if(submitFingerprint!==args.element_fingerprint)throw new Error('Submission control changed. Rescan and preview again.');
+      const pageFingerprint=await sha(String(location.href||''));
+      const formFingerprint=await sha(JSON.stringify({
+        method,action_origin:formAction.origin,action_path:formAction.pathname,fields:structural
+      }));
+      const reviewHash=await sha(JSON.stringify({
+        page:String(location.href||''),method,action:String(formAction.href||''),submit_fingerprint:submitFingerprint,fields
+      }));
+      const heading=clip(form.getAttribute('aria-label')||form.querySelector('legend,h1,h2,h3')?.textContent||'',240);
+      return {
+        domain:String(location.hostname||'').toLowerCase(),
+        page_fingerprint:pageFingerprint,
+        form_fingerprint:formFingerprint,
+        submit_fingerprint:submitFingerprint,
+        review_hash:reviewHash,
+        method,
+        target_host:String(formAction.hostname||'').toLowerCase(),
+        target_label:formAction.origin+formAction.pathname,
+        field_count:fields.length,
+        sensitive_field_count:sensitiveCount,
+        semantic_text:clip([labelFor(submit),heading,clip(form.getAttribute('name'),120)].filter(Boolean).join(' '),600),
+        fields:reviewFields
+      };
+    }
+  });
+  const review=injected?.[0]?.result;
+  if(!review||!/^[a-f0-9]{64}$/.test(String(review.review_hash||'')))throw new Error('Chrome could not create the final submission review.');
+  return review;
+}
+
+async function browserTransactionReviewV2240(payload={}){
+  const [tab]=await chrome.tabs.query({active:true,currentWindow:true});
+  if(!tab?.id||!/^https?:/i.test(String(tab.url||'')))throw new Error('Open the approved form before reviewing the final submission.');
+  const review=await browserTransactionCaptureV2240(tab.id,payload);
+  const response=await browserTransactionApiV2240('preview',{
+    runtime_id:String(payload.runtime_id||''),agent_id:Number(payload.agent_id||0),
+    web_interaction_id:String(payload.web_interaction_id||''),
+    domain:String(review.domain||''),target_host:String(review.target_host||''),page_fingerprint:String(review.page_fingerprint||''),
+    form_fingerprint:String(review.form_fingerprint||''),submit_fingerprint:String(review.submit_fingerprint||''),
+    review_hash:String(review.review_hash||''),field_count:Number(review.field_count||0),
+    sensitive_field_count:Number(review.sensitive_field_count||0),semantic_text:String(review.semantic_text||'')
+  });
+  return {intent:response&&response.intent||null,review_contract:response&&response.review_contract||null,review};
+}
+
+async function browserTransactionExecuteV2240(payload={}){
+  const runtimeId=String(payload.runtime_id||''),intentId=String(payload.intent_id||''),reviewHash=String(payload.review_hash||'');
+  const [tab]=await chrome.tabs.query({active:true,currentWindow:true});
+  if(!tab?.id||!runtimeId||!intentId)throw new Error('Final submission review is incomplete.');
+  await browserTransactionApiV2240('approve',{
+    runtime_id:runtimeId,agent_id:Number(payload.agent_id||0),intent_id:intentId,
+    review_hash:reviewHash,acknowledgement:'reviewed_exact_submission'
+  });
+  let current=await browserTransactionCaptureV2240(tab.id,payload);
+  const claim=await browserTransactionApiV2240('claim',{
+    runtime_id:runtimeId,agent_id:Number(payload.agent_id||0),intent_id:intentId,
+    domain:String(current.domain||''),page_fingerprint:String(current.page_fingerprint||''),
+    form_fingerprint:String(current.form_fingerprint||''),submit_fingerprint:String(current.submit_fingerprint||''),
+    review_hash:String(current.review_hash||'')
+  });
+  const permitToken=String(claim&&claim.permit_token||''),contract=claim&&claim.contract||null;
+  if(!permitToken||!contract)throw new Error('Final-submission permit could not be claimed.');
+  const complete=async(dispatched,verified,code)=>{
+    try{return await browserTransactionApiV2240('complete',{
+      runtime_id:runtimeId,agent_id:Number(payload.agent_id||0),intent_id:intentId,permit_token:permitToken,
+      dispatched:Boolean(dispatched),verified:Boolean(verified),result_code:String(code||'submission_failed')
+    });}catch(_error){return null;}
+  };
+  current=await browserTransactionCaptureV2240(tab.id,payload);
+  for(const key of ['page_fingerprint','form_fingerprint','submit_fingerprint','review_hash']){
+    if(String(current[key]||'')!==String(contract[key]||'')){
+      await complete(false,false,'review_state_changed_after_permit');
+      throw new Error('The reviewed form changed after authorization. Nothing was submitted.');
+    }
+  }
+  let dispatchStarted=false;
+  try{
+    dispatchStarted=true;
+    const webResult=await browserWebInteractionExecuteV2210({
+      runtime_id:runtimeId,agent_id:Number(payload.agent_id||0),
+      interaction_id:String(payload.web_interaction_id||''),action_key:String(payload.web_action_key||'submit'),
+      element_key:String(payload.element_key||''),element_fingerprint:String(payload.element_fingerprint||''),value:''
+    });
+    const verified=Boolean(webResult&&webResult.outcome&&webResult.outcome.verified);
+    await complete(true,verified,verified?'submission_verified':'submission_dispatch_uncertain');
+    return {intent_id:intentId,outcome:webResult&&webResult.outcome||null,dispatched:true,verified,uncertain:!verified};
+  }catch(error){
+    await complete(dispatchStarted,false,dispatchStarted?'submission_dispatch_uncertain':'submission_not_dispatched');
+    const wrapped=new Error(dispatchStarted
+      ?'Submission dispatch may have started but could not be verified. Review the destination before any retry.'
+      :String(error&&error.message||'Submission was not dispatched.'));
+    wrapped.code=dispatchStarted?'submission_dispatch_uncertain':String(error&&error.code||'submission_not_dispatched');
+    throw wrapped;
+  }
 }
 
 async function browserWebInteractionApiV2210(action, payload = {}) {
@@ -2001,6 +2189,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       case 'multisite_fact_add': return browserMultiSiteFactAddV2220(message.payload || {});
       case 'research_action': return browserResearchApiV2230(message.action, message.payload || {});
       case 'research_analyze_current': return browserResearchAnalyzeCurrentV2230(message.payload || {});
+      case 'transaction_review': return browserTransactionReviewV2240(message.payload || {});
+      case 'transaction_execute': return browserTransactionExecuteV2240(message.payload || {});
+      case 'transaction_action': return browserTransactionApiV2240(message.action, message.payload || {});
       case 'notification_poll': return pollProactiveNotifications();
       case 'quick_action_consume': return consumeQuickActionV2150();
       case 'quick_action_run': {

@@ -390,6 +390,11 @@ function vp3_browser_web_confirm_v2210(PDO $pdo,array $user,string $namespace,st
     $row=vp3_browser_web_row_v2210($pdo,$runtime,$publicId,true);
     if(!$row)throw new RuntimeException('Web interaction proposal was not found.');
     if((string)$row['status']!=='approval_pending')throw new RuntimeException('This Web interaction is not waiting for confirmation.');
+    $v2240Protected=(string)$row['action_key']==='submit'
+        ||((string)$row['action_key']==='click'&&!empty($row['requires_checkpoint'])&&(string)$row['risk_level']==='medium');
+    if($v2240Protected){
+        throw new RuntimeException('Consequential form finalization requires the v22.40 exact-form review checkpoint.');
+    }
     $pdo->prepare("UPDATE browser_web_interactions_v2210 SET status='approved',confirmed_at=UTC_TIMESTAMP(),updated_at=UTC_TIMESTAMP() WHERE id=? AND owner_user_id=?")
         ->execute([(int)$row['id'],(int)$runtime['owner_user_id']]);
     vp3_browser_runtime_event_v2200($pdo,$runtime,'interaction_confirmed','User explicitly confirmed the controlled Web interaction.','web.'.(string)$row['action_key'],null,'approved');

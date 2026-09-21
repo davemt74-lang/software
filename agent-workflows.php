@@ -8,6 +8,7 @@ require_once __DIR__ . '/includes/browser-agent-runtime-v2200.php';
 require_once __DIR__ . '/includes/browser-web-interaction-v2210.php';
 require_once __DIR__ . '/includes/browser-multisite-v2220.php';
 require_once __DIR__ . '/includes/browser-research-save-v2230.php';
+require_once __DIR__ . '/includes/browser-transaction-safety-v2240.php';
 require_permission('account.access');
 $pdo=db();$user=current_user();if(!$pdo||!$user)redirect(url('/login.php'));
 if(!agent_workflow_schema_ready_v1400($pdo))redirect(url('/agent-workflow-upgrade-v1400.php'));
@@ -47,6 +48,7 @@ $browserRuntime=$detail&&vp3_browser_runtime_schema_ready_v2200($pdo)?vp3_browse
 $browserWeb=$detail&&vp3_browser_web_schema_ready_v2210($pdo)?vp3_browser_web_for_workflow_v2210($pdo,(int)$user['id'],$detailId):['count'=>0,'verified'=>0,'failed'=>0,'checkpointed'=>0,'interactions'=>[]];
 $browserMulti=$detail&&vp3_browser_multisite_schema_ready_v2220($pdo)?vp3_browser_multisite_for_workflow_v2220($pdo,(int)$user['id'],$detailId):['attached'=>false];
 $browserResearch=$detail&&vp3_browser_research_schema_ready_v2230($pdo)?vp3_browser_research_for_workflow_v2230($pdo,(int)$user['id'],$detailId):[];
+$browserTransactions=$detail&&vp3_browser_transaction_schema_ready_v2240($pdo)?vp3_browser_transaction_for_workflow_v2240($pdo,(int)$user['id'],$detailId):['count'=>0,'completed'=>0,'uncertain'=>0,'failed'=>0,'manual_only'=>0,'intents'=>[]];
 
 function workflow_v1400_status_label(string $status): string{return str_replace('_',' ',ucwords($status,'_'));}
 function workflow_v1400_time(string $value): string{$ts=strtotime($value);return $ts?date('M j, g:i A',$ts):'—';}
@@ -201,6 +203,31 @@ function workflow_v1400_time(string $value): string{$ts=strtotime($value);return
     <div class="workflow-notice" role="note" style="margin:14px 0 0">Raw page text, URLs and browser history are not persisted by the Browser Research mission. Durable state is limited to structured claims, bounded evidence excerpts, fingerprints, source domains, freshness metadata and canonical VP3 Research references. Saving creates drafts; it does not publish.</div>
   </section>
   <?php endforeach; ?>
+
+  <?php if((int)($browserTransactions['count']??0)>0): ?>
+  <section class="workflow-panel" aria-labelledby="browserTransactionTitle">
+    <div class="workflow-panel-head">
+      <div><small>Browser Companion v22.40</small><h3 id="browserTransactionTitle">Transaction & Submission Safety</h3></div>
+      <span><?= (int)($browserTransactions['completed']??0) ?> verified · <?= (int)($browserTransactions['uncertain']??0) ?> uncertain · <?= (int)($browserTransactions['failed']??0) ?> stopped</span>
+    </div>
+    <div class="workflow-summary-grid">
+      <div><small>Final reviews</small><strong><?= (int)($browserTransactions['count']??0) ?></strong></div>
+      <div><small>Manual-only</small><strong><?= (int)($browserTransactions['manual_only']??0) ?></strong></div>
+      <div><small>Approval binding</small><strong>Exact form hash · one use</strong></div>
+      <div><small>Persistence</small><strong>No raw field values</strong></div>
+    </div>
+    <div class="workflow-event-list">
+      <?php foreach(array_slice((array)($browserTransactions['intents']??[]),0,20) as $intent): ?>
+      <article>
+        <strong><?= e(workflow_v1400_status_label((string)($intent['submission_kind']??'form_submission'))) ?> · <?= e(workflow_v1400_status_label((string)($intent['status']??''))) ?></strong>
+        <p><?= e((string)($intent['domain']??'')) ?> · <?= (int)($intent['field_count']??0) ?> reviewed fields<?= !empty($intent['manual_only'])?' · manual-only':'' ?></p>
+        <small><?= e(workflow_v1400_time((string)($intent['created_at']??''))) ?><?= !empty($intent['result_code'])?' · '.e((string)$intent['result_code']):'' ?></small>
+      </article>
+      <?php endforeach; ?>
+    </div>
+    <div class="workflow-notice" role="note" style="margin:14px 0 0">v22.40 records hashes, consequence metadata, lifecycle state and dispatch receipts—not form values, passwords, payment details, MFA codes, hidden tokens, or browser history. A completed receipt means dispatch was immediately verified; an uncertain receipt means dispatch may have occurred and must be reviewed before retrying. Neither state asserts downstream merchant, booking, application, or account success.</div>
+  </section>
+  <?php endif; ?>
 
   <?php if((int)($browserWeb['count']??0)>0): ?>
   <section class="workflow-panel" aria-labelledby="browserWebInteractionTitle">
