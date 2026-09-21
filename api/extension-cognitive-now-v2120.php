@@ -160,6 +160,7 @@ function vp3_extension_cognitive_feed_v2120(PDO $pdo,array $user,string $namespa
         'generated_at'=>(string)($feed['generated_at']??gmdate(DATE_ATOM)),
         'operations'=>is_array($feed['operations']??null)?$feed['operations']:null,
         'priority_queue'=>is_array($feed['priority_queue']??null)?$feed['priority_queue']:null,
+        'proactive_brief'=>is_array($feed['proactive_brief']??null)?$feed['proactive_brief']:null,
         'sections'=>$sections,
         'item_count'=>$count,
         'hidden_count'=>max(0,(int)($feed['hidden_count']??0)),
