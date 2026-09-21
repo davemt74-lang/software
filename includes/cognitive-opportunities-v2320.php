@@ -254,11 +254,11 @@ function vp3_cognitive_opportunity_sync_v2320(
     $active=[];$detected=0;$anchors=0;
 
     foreach($candidates as $candidate){
-        if(++$anchors>VP3_COGNITIVE_OPPORTUNITIES_MAX_ANCHORS_V2320)break;
         if(!is_array($candidate))continue;
         $request=is_array($candidate['card_request']??null)?$candidate['card_request']:[];
         $cardType=vp3_cognitive_id_v500($request['card_type']??'',80);
         if(!in_array($cardType,['meeting','meeting_brief','goal','workflow'],true))continue;
+        if(++$anchors>VP3_COGNITIVE_OPPORTUNITIES_MAX_ANCHORS_V2320)break;
         $anchor=vp3_cognitive_opportunity_ref_v2320($candidate);
         if(!$anchor)continue;
 
