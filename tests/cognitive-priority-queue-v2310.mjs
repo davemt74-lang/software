@@ -27,6 +27,8 @@ const checks=[
   ['universal cards title projection', /vp3_cognitive_render_card_v500/.test(queue)],
   ['feed emits queue', /vp3_cognitive_priority_queue_compose_v2310/.test(feed) && /'priority_queue'=>\$priorityQueue/.test(feed)],
   ['workflow provider covers paused/blocked/retry', /work_queue_lane/.test(feed) && /failed_retry/.test(feed) && /paused/.test(feed) && /blocked/.test(feed)],
+  ['workflow cognition uses raw UTC timestamps', /updated_at_utc/.test(work) && /next_attempt_at_utc/.test(work) && /row\['updated_at_utc'\]/.test(feed) && /row\['next_attempt_at_utc'\]/.test(feed)],
+  ['workflow display uses user calendar timezone', /user_calendar_default_timezone_v1300/.test(feed) && /vp3_agent_work_queue_model_v172\(\$pdo,\$user,\$timezone\)/.test(feed)],
   ['chat renders one queue projection', /vp3-cognitive-priority-queue-v2310/.test(chatJs)],
   ['queue rows focus existing cards', /scrollIntoView/.test(chatJs) && /data-feed-item-key/.test(chatJs)],
   ['chat queue styling present', /vp3-cognitive-priority-queue-v2310/.test(chatCss)],
