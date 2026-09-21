@@ -51,7 +51,12 @@ function vp3_browser_research_save_v2230(PDO $pdo,array $user,string $missionPub
     foreach(vp3_browser_research_pages_v2230($pdo,$mission) as $page){
         $sourcePublic=(string)$page['source_public_id'];if($sourcePublic==='')continue;
         $source=vp3_browser_source_row_by_public_id_v2050($pdo,$sourcePublic);if(!$source)continue;
-        $versionId=(int)($source['current_version_id']??0);if($versionId<1)continue;
+        $versionPublic=trim((string)($page['source_version_public_id']??''));$versionId=0;
+        if($versionPublic!==''){
+            $versionStmt=$pdo->prepare('SELECT id FROM browser_source_versions_v2050 WHERE public_id=? AND source_id=? LIMIT 1');
+            $versionStmt->execute([$versionPublic,(int)$source['id']]);$versionId=(int)$versionStmt->fetchColumn();
+        }
+        if($versionId<1)continue;
         $item=vp3_research_insert_item_v2060($pdo,$project,$uid,'source',null,(int)$source['id'],$versionId,'Browser Research Agent evidence source.',['browser-research-v2230']);
         $pageItems[(int)$page['id']]=(string)$item['public_id'];
     }
