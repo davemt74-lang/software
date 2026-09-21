@@ -15,6 +15,7 @@ const checks=[
  ['no new schema', !/CREATE TABLE|ALTER TABLE/i.test(opp)],
  ['no model calls', !/openai|anthropic|gemini|chat_remote_answer|ai_generate|curl_exec/i.test(opp)],
  ['relationship evidence only', /cognitive_relationships_v500/.test(opp) && /vp3_cognitive_relationships_for_ref_v500/.test(opp)],
+ ['anchor explicitly reauthorized', /vp3_cognitive_authorize_ref_v500\(\$pdo,\$user,\$namespace,\$anchor,'read'\)/.test(opp)],
  ['model inferred relationships excluded', /deterministic','user_confirmed/.test(opp) && !/\['deterministic','user_confirmed','model_inferred'\]/.test(opp)],
  ['confidence floor', /MIN_RELATION_CONFIDENCE_V2320=0\.80/.test(opp)],
  ['bounded anchors', /MAX_ANCHORS_V2320=16/.test(opp)],
