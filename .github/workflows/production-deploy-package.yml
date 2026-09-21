@@ -21,9 +21,13 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Build production deploy archive
         shell: bash
+        env:
+          VP3_RELEASE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -euo pipefail
 
@@ -44,7 +48,7 @@ jobs:
           {
             "release": "Cognitive Loop v23.60",
             "build": "vp3-cognitive-loop-release-v2360-20260921",
-            "commit": "${GITHUB_SHA}",
+            "commit": "${VP3_RELEASE_SHA}",
             "repository": "${GITHUB_REPOSITORY}",
             "workflow_run_id": "${GITHUB_RUN_ID}"
           }
