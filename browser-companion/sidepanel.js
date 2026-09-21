@@ -767,9 +767,9 @@ function renderRuntimeResearchV2230(mission){
   ui.runtimeResearchMemo.textContent=String(mission.memo_preview||mission.memo||'No supported claims have been extracted yet.');
   ui.runtimeResearchGaps.replaceChildren();(mission.gaps||[]).forEach(gap=>ui.runtimeResearchGaps.append(el('div','runtime-research-gap',String(gap))));
   ui.runtimeResearchGapsEmpty.hidden=(mission.gaps||[]).length>0;
-  const active=status==='active';
-  ui.runtimeResearchAnalyzeBtn.disabled=!active;ui.runtimeResearchCancelBtn.hidden=!active;
-  ui.runtimeResearchSaveBtn.hidden=!active||Number(progress.claims||0)<1;
+  const active=status==='active',saveable=['active','ready'].includes(status);
+  ui.runtimeResearchAnalyzeBtn.disabled=!active;ui.runtimeResearchCancelBtn.hidden=!saveable;
+  ui.runtimeResearchSaveBtn.hidden=!saveable||Number(progress.claims||0)<1;
   ui.runtimeResearchHandoffs.hidden=!(mission.report&&mission.report.id);
   ui.runtimeResearchOpenReportBtn.hidden=!(mission.report&&mission.report.url);
   if(mission.project&&mission.project.id)ui.runtimeResearchProject.value=String(mission.project.id);
