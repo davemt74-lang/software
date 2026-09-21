@@ -54,7 +54,7 @@ jobs:
           node tests/cognitive-priority-queue-v2310.mjs
           node tests/cognitive-operations-v2300.mjs
           node tests/cognitive-runtime-core-v500.mjs
-          node tests/cognitive-presentation-v510-contract.mjs
+          node tests/cognitive-presentation-v510.mjs
           node tests/cognitive-feed-v530.mjs
           node tests/cognitive-learning-v540.mjs
           node tests/cognitive-planning-v550.mjs
