@@ -244,6 +244,50 @@ function vp3_cognitive_feed_calendar_candidates_v530(PDO $pdo,array $user): arra
 
 function vp3_cognitive_feed_workflow_candidates_v530(PDO $pdo,array $user): array
 {
+    if(function_exists('vp3_agent_work_queue_model_v172')){
+        try{$queue=vp3_agent_work_queue_model_v172($pdo,$user,'UTC');}catch(Throwable $e){$queue=[];}
+        if(!empty($queue['available'])&&is_array($queue['lanes']??null)){
+            $out=[];
+            $laneMeta=[
+                'approval'=>['section'=>'attention','base'=>94,'attention'=>true],
+                'failed_retry'=>['section'=>'attention','base'=>93,'attention'=>true],
+                'blocked'=>['section'=>'attention','base'=>91,'attention'=>true],
+                'scheduled'=>['section'=>'next_up','base'=>80,'attention'=>false],
+                'active'=>['section'=>'priorities','base'=>78,'attention'=>false],
+                'paused'=>['section'=>'priorities','base'=>61,'attention'=>false],
+                'completed'=>['section'=>'recent','base'=>42,'attention'=>false],
+            ];
+            foreach($laneMeta as $lane=>$meta){
+                $rows=is_array($queue['lanes'][$lane]??null)?$queue['lanes'][$lane]:[];
+                if($lane==='completed')$rows=array_slice($rows,0,2);
+                foreach($rows as $row){
+                    if(!is_array($row))continue;
+                    $id=(int)($row['id']??0);if($id<1)continue;
+                    $priority=max(1,min(100,(int)($row['priority']??50)));
+                    $score=min(99,(float)$meta['base']+($priority*.05));
+                    $reason=vp3_cognitive_feed_text_v530($row['detail']??'Agent workflow.',420);
+                    $candidate=vp3_cognitive_feed_candidate_v530(
+                        'workflow:'.$id,(string)$meta['section'],$score,$reason,
+                        vp3_cognitive_feed_request_v530('workflow',$id,'personal','standard'),
+                        'workflow',(string)($row['updated_at']??''),[
+                            'status'=>$row['status']??'',
+                            'progress'=>$row['progress']??0,
+                            'work_queue_lane'=>$lane,
+                            'work_priority'=>$priority,
+                            'target'=>$row['target']??'',
+                            'next_attempt_at'=>$row['next_attempt_at']??'',
+                            'blocked'=>!empty($row['blocked']),
+                        ],!empty($meta['attention'])
+                    );
+                    $candidate['work_queue_lane']=$lane;
+                    $candidate['work_priority']=$priority;
+                    $out[]=$candidate;
+                }
+            }
+            return $out;
+        }
+    }
+
     if(!function_exists('agent_workflow_active_summary_v1400'))return [];
     $out=[];
     foreach(agent_workflow_active_summary_v1400($pdo,$user,8) as $row){
@@ -451,7 +495,7 @@ function vp3_cognitive_feed_compose_v530(PDO $pdo,array $user,string $namespace,
         'recent'=>['label'=>'Recent changes','description'=>'Meaningful unread activity not already represented above.'],
     ];
 
-    $sections=[];$used=0;
+    $sections=[];$selectedForQueue=[];$used=0;
     foreach($order as $section){
         $items=array_values(array_filter($visible,static fn(array $c): bool=>(string)($c['section']??'')===$section&&!$c['hidden']));
         usort($items,static fn(array $a,array $b): int=>((float)$b['score']<=>((float)$a['score']))?:strcmp((string)$b['updated_at'],(string)$a['updated_at']));
@@ -459,6 +503,7 @@ function vp3_cognitive_feed_compose_v530(PDO $pdo,array $user,string $namespace,
         if($room<1)break;
         $items=array_slice($items,0,min($caps[$section],$room));
         if(!$items)continue;
+        foreach($items as $selected)$selectedForQueue[]=$selected;
         foreach($items as &$item){
             unset($item['score']);
             unset($item['learning_adjustment']);
@@ -467,6 +512,11 @@ function vp3_cognitive_feed_compose_v530(PDO $pdo,array $user,string $namespace,
         }unset($item);
         $sections[]=['id'=>$section]+$labels[$section]+['items'=>$items];
         $used+=count($items);
+    }
+
+    $priorityQueue=null;
+    if(function_exists('vp3_cognitive_priority_queue_compose_v2310')){
+        $priorityQueue=vp3_cognitive_priority_queue_compose_v2310($pdo,$user,$namespace,$selectedForQueue);
     }
 
     $operations=null;
@@ -481,6 +531,7 @@ function vp3_cognitive_feed_compose_v530(PDO $pdo,array $user,string $namespace,
         'build'=>VP3_COGNITIVE_FEED_V530,
         'agent_namespace'=>$namespace,
         'operations'=>$operations,
+        'priority_queue'=>$priorityQueue,
         'generated_at'=>gmdate(DATE_ATOM),
         'sections'=>$sections,
         'item_count'=>$used,
