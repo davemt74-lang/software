@@ -39,6 +39,8 @@ must(api.includes("'cross_transaction_signals_are_advisory'=>true"),'advisory cr
 must(background.includes("browserTransactionIntelligenceApiV2270('observe_facts'"),'matched v22.60 observation must feed v22.70');
 must(background.includes('schedule_candidates:Array.isArray(local.schedule_candidates)'), 'normalized schedule facts handoff missing');
 must(background.includes('exposure_candidates:Array.isArray(local.exposure_candidates)'), 'normalized financial facts handoff missing');
+must(background.includes("event_id:String(response.event&&response.event.event_id||'')"),'v22.70 facts must bind to the exact matched v22.60 event');
+must(intelligence.includes("hash_equals((string)$event['public_id'],$eventId)")&&intelligence.includes("empty($event['reference_match'])"),'v22.70 server event authority check missing');
 must(!api.includes("$input['body_text']")&&!api.includes("$input['page_text']"),'v22.70 API must not accept raw page text fields');
 
 for(const type of [
@@ -74,6 +76,9 @@ must(intelligence.includes("'transaction_exception_detected'"),'transaction exce
 must(intelligence.includes("vp3_browser_intelligence_resolve_closed_v2270"),'explicit closure cleanup missing');
 must(intelligence.includes("status='resolved'"),'resolved exception history missing');
 must(intelligence.includes('active attention was removed while history was retained'),'closure receipt missing');
+must(intelligence.includes('vp3_browser_intelligence_resolve_absent_v2270'),'stale exception cleanup missing');
+must(intelligence.includes('exception_signal_cleared'),'signal-cleared receipt missing');
+must(intelligence.includes("SET status='dismissed',resolved_at=UTC_TIMESTAMP()")||intelligence.includes("status='dismissed'"),'stale proposal cleanup missing');
 
 for(const id of [
   'runtimeIntelligencePanel','runtimeIntelligenceCount','runtimeIntelligenceSummary',
