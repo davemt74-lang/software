@@ -119,12 +119,13 @@ function vp3_cognitive_operations_public_v2300(array $state): array
 function vp3_cognitive_operations_compose_v2300(array $candidates): array
 {
     $items=[];$sources=[];$authorities=[];$laneCounts=array_fill_keys(vp3_cognitive_operations_lanes_v2300(),0);
-    $attention=0;$plans=0;
+    $attention=0;$plans=0;$total=0;
 
     foreach($candidates as $candidate){
         if(!is_array($candidate)||!empty($candidate['hidden']))continue;
         $item=vp3_cognitive_operations_work_item_v2300($candidate);
         if(!$item)continue;
+        $total++;
         $sources[$item['source']?:'vp3']=true;
         $authorities[$item['authority']]=true;
         $laneCounts[$item['lane']]=($laneCounts[$item['lane']]??0)+1;
@@ -169,7 +170,7 @@ function vp3_cognitive_operations_compose_v2300(array $candidates): array
             'approval_bypass'=>false,
             'authority_bypass'=>false,
         ],
-        'work_item_count'=>count($items),
+        'work_item_count'=>$total,
         'attention_count'=>$attention,
         'plan_count'=>$plans,
         'lane_counts'=>$laneCounts,
