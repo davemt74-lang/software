@@ -1021,42 +1021,54 @@ async function previewRuntimeWebInteractionV2210(){
       }
     });
     const proposal=payload&&payload.proposal||null;if(!proposal)throw new Error('VP3 did not return an interaction preview.');
-    runtimeWebProposalV2210={proposal,action,item,value};
+    const transactionRequired=action==='submit'||(Boolean(proposal.requires_checkpoint)&&Boolean(item.dangerous)&&String(item.kind||'')==='button');
+    runtimeWebProposalV2210={proposal,action,item,value,transactionRequired};
     ui.runtimeWebProposal.hidden=false;
     ui.runtimeWebProposalTitle.textContent=(proposal.requires_checkpoint?'Checkpoint required · ':'Ready · ')+(proposal.label||action.replace(/_/g,' '));
     ui.runtimeWebProposalDetail.textContent=runtimeWebPreviewDetailV2210(action,item,value,proposal)+' '+String(proposal.risk_level||'low')+' risk.';
     ui.runtimeWebCheckpointNotice.hidden=!proposal.requires_checkpoint;
     ui.runtimeWebRunBtn.hidden=Boolean(proposal.requires_checkpoint);
     ui.runtimeWebConfirmRunBtn.hidden=!proposal.requires_checkpoint;
-    if(action==='submit'){
-      const transaction=await msg('transaction_review',{payload:{
-        runtime_id:runtimeDataV2200.runtime_id,agent_id:agentWorkspaceAgentId,
-        web_interaction_id:proposal.interaction_id,element_key:item.element_key,element_fingerprint:item.element_fingerprint
-      }});
-      if(!transaction||!transaction.intent||!transaction.review)throw new Error('VP3 could not create the final submission review.');
-      runtimeTransactionReviewV2240=transaction;
-      runtimeWebProposalV2210.transaction=transaction;
-      ui.runtimeTransactionReview.hidden=false;
-      const flags=Array.isArray(transaction.intent.consequence_flags)?transaction.intent.consequence_flags:[];
-      ui.runtimeTransactionKind.textContent=String(transaction.intent.submission_kind||'form submission').replace(/_/g,' ')+' · '+flags.map(x=>String(x).replace(/_/g,' ')).join(', ');
-      ui.runtimeTransactionFields.replaceChildren();
-      for(const field of Array.isArray(transaction.review.fields)?transaction.review.fields:[]){
-        const row=el('div','runtime-transaction-field','');
-        const copy=el('div','runtime-transaction-field-copy','');
-        copy.append(el('strong','',String(field.label||field.name||'Field')),el('span','',String(field.value||'Empty')));
-        row.append(copy,el('span','pill',field.sensitive?'masked':String(field.type||'field')));
-        ui.runtimeTransactionFields.append(row);
-      }
-      ui.runtimeWebProposalDetail.textContent='Final submission to '+String(transaction.review.target_label||transaction.review.target_host||'this site')+' · '+String(transaction.review.method||'POST')+' · '+String(transaction.review.field_count||0)+' reviewed fields.';
-      if(transaction.intent.manual_only){
-        ui.runtimeTransactionWarning.textContent='VP3 classified this as high impact. Review the form, then submit it manually on the page; the Agent will not dispatch it.';
+    if(transactionRequired){
+      try{
+        const transaction=await msg('transaction_review',{payload:{
+          runtime_id:runtimeDataV2200.runtime_id,agent_id:agentWorkspaceAgentId,
+          web_interaction_id:proposal.interaction_id,element_key:item.element_key,element_fingerprint:item.element_fingerprint
+        }});
+        if(!transaction||!transaction.intent||!transaction.review)throw new Error('VP3 could not create the final submission review.');
+        runtimeTransactionReviewV2240=transaction;
+        runtimeWebProposalV2210.transaction=transaction;
+        ui.runtimeTransactionReview.hidden=false;
+        const flags=Array.isArray(transaction.intent.consequence_flags)?transaction.intent.consequence_flags:[];
+        ui.runtimeTransactionKind.textContent=String(transaction.intent.submission_kind||'form submission').replace(/_/g,' ')+' · '+flags.map(x=>String(x).replace(/_/g,' ')).join(', ');
+        ui.runtimeTransactionFields.replaceChildren();
+        for(const field of Array.isArray(transaction.review.fields)?transaction.review.fields:[]){
+          const row=el('div','runtime-transaction-field','');
+          const copy=el('div','runtime-transaction-field-copy','');
+          copy.append(el('strong','',String(field.label||field.name||'Field')),el('span','',String(field.value||'Empty')));
+          row.append(copy,el('span','pill',field.sensitive?'masked':String(field.type||'field')));
+          ui.runtimeTransactionFields.append(row);
+        }
+        ui.runtimeWebProposalDetail.textContent='Final action on '+String(transaction.review.target_label||transaction.review.target_host||'this site')+' · '+String(transaction.review.method||'POST')+' · '+String(transaction.review.field_count||0)+' reviewed fields.';
+        if(transaction.intent.manual_only){
+          ui.runtimeTransactionWarning.textContent='VP3 classified this as high impact. Review the form, then complete this action manually on the page; the Agent will not dispatch it.';
+          ui.runtimeWebConfirmRunBtn.hidden=true;
+        }else{
+          ui.runtimeTransactionWarning.textContent='Review every value below. Confirm & submit authorizes only this exact form state and final action, once. Any change invalidates approval.';
+          ui.runtimeWebConfirmRunBtn.textContent='Confirm exact form & submit';
+        }
+      }catch(error){
+        runtimeWebProposalV2210.transactionRequired=true;
+        ui.runtimeTransactionReview.hidden=false;
+        ui.runtimeTransactionKind.textContent='Manual final action';
+        ui.runtimeTransactionFields.replaceChildren();
+        ui.runtimeTransactionWarning.textContent='VP3 could not bind this consequential control to a standard form review. Complete it manually on the page; Agent dispatch is disabled.';
         ui.runtimeWebConfirmRunBtn.hidden=true;
-      }else{
-        ui.runtimeTransactionWarning.textContent='Review every value below. Confirm & submit authorizes only this exact form state, once. Any change invalidates approval.';
-        ui.runtimeWebConfirmRunBtn.textContent='Confirm exact form & submit';
+        note(String(error&&error.message||'This consequential action is manual-only.'),'error');
+        return;
       }
     }
-    note(action==='submit'?'Final form review ready. Check every field before authorizing submission.':(proposal.requires_checkpoint?'Interaction preview ready. Confirm the checkpoint to run it.':'Interaction preview ready.'),'success');
+    note(transactionRequired?'Final form review ready. Check every field before authorizing the final action.':(proposal.requires_checkpoint?'Interaction preview ready. Confirm the checkpoint to run it.':'Interaction preview ready.'),'success');
   }finally{runtimeWebBusyV2210=false;busy(ui.runtimeWebPreviewBtn,false);}
 }
 async function loadRuntimeWebReceiptsV2210(){
@@ -1111,14 +1123,14 @@ async function executeRuntimeWebProposalV2210(confirmCheckpoint=false){
       return result;
     }
     let result;
-    if(local.action==='submit'){
+    if(local.transactionRequired){
       const transaction=local.transaction||runtimeTransactionReviewV2240;
-      if(!transaction||!transaction.intent||!transaction.review)throw new Error('Review the exact form state before submitting.');
-      if(transaction.intent.manual_only)throw new Error('This high-impact submission is manual-only.');
+      if(!transaction||!transaction.intent||!transaction.review)throw new Error('This consequential final action must be completed manually because no exact form review is available.');
+      if(transaction.intent.manual_only)throw new Error('This high-impact final action is manual-only.');
       result=await msg('transaction_execute',{payload:{
         runtime_id:runtimeDataV2200.runtime_id,agent_id:agentWorkspaceAgentId,
         intent_id:transaction.intent.intent_id,review_hash:transaction.review.review_hash,
-        web_interaction_id:local.proposal.interaction_id,
+        web_interaction_id:local.proposal.interaction_id,web_action_key:local.action,
         element_key:local.item.element_key,element_fingerprint:local.item.element_fingerprint
       }});
     }else{
@@ -1133,9 +1145,9 @@ async function executeRuntimeWebProposalV2210(confirmCheckpoint=false){
         value:local.value
       }});
     }
-    const ok=local.action==='submit'?Boolean(result&&result.verified):Boolean(result&&result.outcome&&result.outcome.verified);
-    const uncertain=local.action==='submit'&&Boolean(result&&result.uncertain);
-    note(ok?(local.action==='submit'?'External submission dispatched once and the immediate browser state was verified. Review the site for final business outcome.':'Web interaction completed and verified.'):(uncertain?'Submission may have been sent but could not be verified. Do not retry until you review the destination.':(local.action==='submit'?'Nothing was submitted. Review before retrying.':'Web interaction ran but its expected state could not be verified. Rescan before retrying.')),ok?'success':'error');
+    const ok=local.transactionRequired?Boolean(result&&result.verified):Boolean(result&&result.outcome&&result.outcome.verified);
+    const uncertain=local.transactionRequired&&Boolean(result&&result.uncertain);
+    note(ok?(local.transactionRequired?'External submission dispatched once and the immediate browser state was verified. Review the site for final business outcome.':'Web interaction completed and verified.'):(uncertain?'Submission may have been sent but could not be verified. Do not retry until you review the destination.':(local.transactionRequired?'Nothing was submitted. Review before retrying.':'Web interaction ran but its expected state could not be verified. Rescan before retrying.')),ok?'success':'error');
     runtimeWebResetProposalV2210();
     await loadRuntimeWebReceiptsV2210();
     await loadRuntimeDetailV2200();
