@@ -304,8 +304,12 @@ function vp3_cognitive_planning_card_v550(PDO $pdo,array $user,string $namespace
         'label'=>'Review with Agent',
         'prompt'=>'Review proposed plan '.(string)$row['public_id'].' with me. Explain the evidence, risks, permissions, and each step. Do not execute anything until I explicitly choose an action.'
     ]];
-    if($status==='accepted'&&trim((string)$row['tool_id'])!==''){
-        $actions[]=['type'=>'tool','label'=>'Continue to tool action','tool_id'=>(string)$row['tool_id']];
+    $liveCapability=is_array($actionContract['capability']??null)?$actionContract['capability']:[];
+    if($status==='accepted'
+        &&!empty($liveCapability['available'])
+        &&(string)($liveCapability['mode']??'')==='existing_capability'
+        &&hash_equals((string)($liveCapability['id']??''),vp3_cognitive_id_v500($row['tool_id']??'',120))){
+        $actions[]=['type'=>'tool','label'=>'Continue to tool action','tool_id'=>(string)$liveCapability['id']];
     }
 
     return [
