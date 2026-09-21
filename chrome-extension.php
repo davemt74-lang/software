@@ -60,9 +60,22 @@ vp3_public_header(
 
   <section class="vp3-section">
     <div class="vp3-wrap">
+      <div class="vp3-section-head">
+        <div class="vp3-kicker">Install in Chrome</div>
+        <h2>Load the Browser Companion in four steps.</h2>
+      </div>
+      <div class="vp3-about-points" style="margin-bottom:2rem">
+        <div class="vp3-about-point"><b>1. Download + unzip</b><span>Download the Browser Companion ZIP and extract it to a folder on your computer.</span></div>
+        <div class="vp3-about-point"><b>2. Open Chrome Extensions</b><span>Go to <code>chrome://extensions</code> and turn on Developer mode.</span></div>
+        <div class="vp3-about-point"><b>3. Load unpacked</b><span>Choose Load unpacked and select the extracted Browser Companion folder containing <code>manifest.json</code>.</span></div>
+        <div class="vp3-about-point"><b>4. Connect VP3</b><span>Open the extension, choose Connect to VP3, sign in normally, and approve this browser.</span></div>
+      </div>
       <div class="vp3-cta-box">
-        <div><h2>See Browser Companion working with VP3 Agent Now.</h2><p>Walk through page-aware context, research capture, notifications, memory, and approved browser actions.</p></div>
-        <a class="vp3-btn primary" href="<?= e(url('/book-demo.php')) ?>">Book Demo →</a>
+        <div><h2>Install VP3 Browser Companion for Chrome.</h2><p>Download the current extension package, unzip it, then load the folder from Chrome's Extensions page.</p></div>
+        <div style="display:flex;gap:.75rem;flex-wrap:wrap">
+          <a class="vp3-btn primary" href="<?= e(url('/chrome-extension-download.php')) ?>">Download Chrome Extension →</a>
+          <a class="vp3-btn" href="<?= e(url('/book-demo.php')) ?>">Book Demo</a>
+        </div>
       </div>
     </div>
   </section>
