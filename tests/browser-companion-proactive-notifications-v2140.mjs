@@ -59,8 +59,8 @@ must(runtime.includes("if($claimFresh){$pdo->commit();return null;}"),
   'fresh claim must be exclusive even to the same browser so claim tokens cannot rotate');
 must(runtime.includes("source_kind='notification'")&&runtime.includes("notification_id>? AND notification_id<=?"),
   'canonical voice must bind to the exact canonical cursor window');
-must(runtime.includes("vp3_cognitive_presentation_voice_candidate_v510($pdo,$user,$state,null)"),
-  'Chrome voice must reuse canonical Cognitive Presentation voice candidate');
+must(runtime.includes("vp3_cognitive_presentation_open_digest_v510")&&runtime.includes("vp3_cognitive_presentation_voice_candidate_v510($pdo,$user,$state,$digest)"),
+  'Chrome voice must reuse the canonical persisted return digest and Cognitive Presentation voice candidate');
 must(runtime.includes("voice_through_notification_id=?"),'spoken canonical through-id must be persisted before playback');
 must(runtime.includes("vp3_cognitive_presentation_voice_delivered_v510($pdo,$user,$namespace,$through)"),
   'shared voice cursor must advance only with stored spoken through-id');
