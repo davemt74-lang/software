@@ -130,10 +130,10 @@ function vp3_browser_outcome_validate_v2250(string $state,string $strength,array
     if($state==='external_redirect')throw new InvalidArgumentException('External redirect state requires a changed destination domain.');
 
     if($state==='confirmed'){
-        $positive=array_intersect($evidence,['confirmation_heading','confirmation_phrase','confirmation_url_hint','reference_present','receipt_keyword','form_absent','status_region']);
         $explicit=array_intersect($evidence,['confirmation_heading','confirmation_phrase']);
-        if($strength!=='strong'||count($positive)<2||count($explicit)<1){
-            throw new RuntimeException('Destination confirmation requires multiple strong local signals including an explicit confirmation message.');
+        $auxiliary=array_intersect($evidence,['confirmation_url_hint','reference_present','receipt_keyword','form_absent','status_region']);
+        if($strength!=='strong'||count($explicit)<1||count($auxiliary)<1){
+            throw new RuntimeException('Destination confirmation requires an explicit confirmation message plus an independent local signal.');
         }
     }elseif($state==='pending'&&!in_array('pending_phrase',$evidence,true)){
         throw new RuntimeException('Pending outcome requires an explicit pending signal.');
