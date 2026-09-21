@@ -1,6 +1,6 @@
 const VP3_DEFAULT_BASE = 'https://vp3.me';
 const VP3_CONTRACT_VERSION = '1';
-const VP3_EXTENSION_VERSION = '22.5.0';
+const VP3_EXTENSION_VERSION = '22.6.0';
 const VP3_MEDIA_CLIP_MAX_SECONDS = 90;
 
 const storage = {
@@ -665,6 +665,149 @@ async function browserTransactionReviewV2240(payload={}){
   return {intent:response&&response.intent||null,review_contract:response&&response.review_contract||null,review};
 }
 
+async function browserTransactionContinuityApiV2260(action,payload={}){
+  return authorizedFetch('/api/extension-transaction-continuity-v2260.php',{
+    method:'POST',json:{action:String(action||'list'),...payload}
+  },'agent.message');
+}
+
+async function browserTransactionContinuityEnsureV2260(payload={}){
+  return browserTransactionContinuityApiV2260('ensure',{
+    runtime_id:String(payload.runtime_id||''),agent_id:Number(payload.agent_id||0),intent_id:String(payload.intent_id||'')
+  });
+}
+
+async function browserTransactionContinuityCaptureV2260(tabId){
+  const injected=await chrome.scripting.executeScript({
+    target:{tabId},
+    func:async()=>{
+      const sha=async value=>{
+        const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(String(value||'')));
+        return [...new Uint8Array(digest)].map(byte=>byte.toString(16).padStart(2,'0')).join('');
+      };
+      const clip=(value,max=16000)=>String(value||'').replace(/\s+/g,' ').trim().slice(0,max);
+      const host=String(location.hostname||'').toLowerCase();
+      const bodyText=clip(document.body?.innerText||document.documentElement?.innerText||'',16000);
+      const lower=bodyText.toLowerCase();
+      const pageFingerprint=await sha(String(location.href||''));
+      const contentHash=await sha(bodyText);
+
+      const referenceCandidates=[];
+      const maskedReferences=[];
+      const refPatterns=[
+        ['order',/(?:order)\s*(?:number|no\.?|#|id)?\s*[:#-]?\s*([a-z0-9][a-z0-9-]{3,30})/ig],
+        ['confirmation',/(?:confirmation)\s*(?:number|no\.?|#|id)?\s*[:#-]?\s*([a-z0-9][a-z0-9-]{3,30})/ig],
+        ['booking',/(?:booking)\s*(?:number|no\.?|#|id)?\s*[:#-]?\s*([a-z0-9][a-z0-9-]{3,30})/ig],
+        ['reservation',/(?:reservation)\s*(?:number|no\.?|#|id)?\s*[:#-]?\s*([a-z0-9][a-z0-9-]{3,30})/ig],
+        ['application',/(?:application)\s*(?:number|no\.?|#|id)?\s*[:#-]?\s*([a-z0-9][a-z0-9-]{3,30})/ig],
+        ['reference',/(?:reference)\s*(?:number|no\.?|#|id)?\s*[:#-]?\s*([a-z0-9][a-z0-9-]{3,30})/ig],
+        ['receipt',/(?:receipt)\s*(?:number|no\.?|#|id)?\s*[:#-]?\s*([a-z0-9][a-z0-9-]{3,30})/ig],
+        ['ticket',/(?:ticket)\s*(?:number|no\.?|#|id)?\s*[:#-]?\s*([a-z0-9][a-z0-9-]{3,30})/ig]
+      ];
+      const seen=new Set();
+      for(const [kind,re] of refPatterns){
+        let match;let count=0;
+        while((match=re.exec(bodyText))&&count<4){
+          const value=String(match[1]||'').trim();
+          if(value){
+            const hash=await sha(kind+'|'+value);
+            const key=kind+'|'+hash;
+            if(!seen.has(key)){
+              seen.add(key);referenceCandidates.push({kind,hash});
+              maskedReferences.push({kind,masked:'••••'+value.slice(-4)});
+            }
+          }
+          count++;
+        }
+        if(referenceCandidates.length>=12)break;
+      }
+
+      const stateCandidates=[];
+      const add=(state,evidence,re)=>{if(re.test(lower))stateCandidates.push({state,evidence_code:evidence});};
+      add('cancelled','cancelled_phrase',/(?:cancelled|canceled|has been cancelled|has been canceled)/i);
+      add('refunded','refunded_phrase',/(?:refunded|refund issued|refund complete)/i);
+      add('returned','returned_phrase',/(?:returned|return received|return complete)/i);
+      add('delivered','delivered_phrase',/(?:delivered|was delivered|delivery complete)/i);
+      add('out_for_delivery','out_for_delivery_phrase',/(?:out for delivery|with courier|on the way today)/i);
+      add('shipped','shipped_phrase',/(?:shipped|has shipped|in transit|dispatched)/i);
+      add('exception','exception_phrase',/(?:delivery exception|shipment exception|problem with your order|unable to deliver)/i);
+      add('processing','processing_phrase',/(?:processing|preparing your order|order is being prepared)/i);
+      add('ordered','order_confirmed',/(?:order confirmed|order placed|we received your order)/i);
+
+      add('changed','schedule_changed_phrase',/(?:rescheduled|schedule changed|time changed|date changed|reservation changed|booking changed)/i);
+      add('upcoming','upcoming_phrase',/(?:upcoming appointment|upcoming reservation|upcoming booking|see you on|scheduled for)/i);
+      add('no_show','no_show_phrase',/(?:no[- ]show|missed appointment|did not attend)/i);
+      add('confirmed','booking_confirmed',/(?:booking confirmed|reservation confirmed|appointment confirmed)/i);
+      add('completed','completed_phrase',/(?:completed|appointment complete|visit complete|service completed)/i);
+
+      add('approved','approved_phrase',/(?:approved|application approved|request approved)/i);
+      add('rejected','rejected_phrase',/(?:rejected|application rejected|request denied|not approved)/i);
+      add('needs_action','needs_action_phrase',/(?:action required|needs your attention|additional documents|required document|more information required|complete the following)/i);
+      add('under_review','under_review_phrase',/(?:under review|being reviewed|in review|review in progress)/i);
+      add('submitted','application_submitted',/(?:application submitted|submission received|we received your application)/i);
+      add('withdrawn','withdrawn_phrase',/(?:withdrawn|application withdrawn)/i);
+
+      add('replied','replied_phrase',/(?:replied|new reply|response received|has responded)/i);
+      add('acknowledged','acknowledged_phrase',/(?:acknowledged|received your message|request received)/i);
+      add('resolved','resolved_phrase',/(?:resolved|issue resolved|case resolved)/i);
+      add('closed','closed_phrase',/(?:closed|case closed|account closed)/i);
+      add('sent','sent_phrase',/(?:message sent|request sent|successfully sent)/i);
+
+      add('active','account_active_phrase',/(?:account active|subscription active|membership active)/i);
+      add('changed','account_changed_phrase',/(?:account updated|changes saved|plan changed|subscription changed)/i);
+      add('pending','pending_phrase',/(?:pending|awaiting|waiting for|verification required)/i);
+
+      const scheduleTokens=[...document.querySelectorAll('time[datetime],[data-date],[data-time]')].slice(0,30).map(el=>
+        String(el.getAttribute('datetime')||el.getAttribute('data-date')||el.getAttribute('data-time')||'').trim()
+      ).filter(Boolean).sort();
+      const scheduleHash=scheduleTokens.length?await sha(JSON.stringify(scheduleTokens)):'';
+
+      const amountTokens=[...new Set((bodyText.match(/(?:[$€£]\s?\d{1,7}(?:[,.]\d{2})?|\b\d{1,7}(?:[,.]\d{2})\s?(?:USD|EUR|GBP)\b)/gi)||[])
+        .map(x=>String(x).replace(/\s+/g,' ').trim().toUpperCase()))].sort().slice(0,30);
+      const amountHash=amountTokens.length?await sha(JSON.stringify(amountTokens)):'';
+
+      const observationFingerprint=await sha(JSON.stringify({
+        domain:host,page_fingerprint:pageFingerprint,content_hash:contentHash,
+        references:referenceCandidates,state_candidates:stateCandidates,schedule_hash:scheduleHash,amount_hash:amountHash
+      }));
+      return {
+        domain:host,page_fingerprint:pageFingerprint,content_hash:contentHash,
+        observation_fingerprint:observationFingerprint,reference_candidates:referenceCandidates,
+        masked_references:maskedReferences,state_candidates:stateCandidates,
+        schedule_hash:scheduleHash,amount_hash:amountHash
+      };
+    }
+  });
+  const result=injected?.[0]?.result;
+  if(!result||!result.domain||!/^[a-f0-9]{64}$/.test(String(result.observation_fingerprint||''))){
+    throw new Error('Chrome could not create the transaction continuity observation.');
+  }
+  return result;
+}
+
+async function browserTransactionContinuityScanV2260(){
+  const [tab]=await chrome.tabs.query({active:true,currentWindow:true});
+  if(!tab?.id||!/^https?:/i.test(String(tab.url||'')))return {ok:true,matched:false,reason:'unsupported_page',continuities:[]};
+  const local=await browserTransactionContinuityCaptureV2260(tab.id);
+  const response=await browserTransactionContinuityApiV2260('observe',{
+    domain:String(local.domain||''),page_fingerprint:String(local.page_fingerprint||''),
+    content_hash:String(local.content_hash||''),observation_fingerprint:String(local.observation_fingerprint||''),
+    reference_candidates:Array.isArray(local.reference_candidates)?local.reference_candidates:[],
+    state_candidates:Array.isArray(local.state_candidates)?local.state_candidates:[],
+    schedule_hash:String(local.schedule_hash||''),amount_hash:String(local.amount_hash||'')
+  });
+  return {...response,local:{masked_references:Array.isArray(local.masked_references)?local.masked_references:[]}};
+}
+
+async function browserTransactionContinuityListV2260(){
+  const [tab]=await chrome.tabs.query({active:true,currentWindow:true});
+  let domain='';
+  if(tab?.url&&/^https?:/i.test(String(tab.url))){
+    try{domain=new URL(tab.url).hostname.toLowerCase();}catch(_error){}
+  }
+  return browserTransactionContinuityApiV2260('list',{domain});
+}
+
 async function browserTransactionOutcomeApiV2250(action,payload={}){
   return authorizedFetch('/api/extension-transaction-outcome-v2250.php',{
     method:'POST',json:{action:String(action||'list'),...payload}
@@ -792,14 +935,25 @@ async function browserTransactionOutcomeObserveV2250(payload={}){
     evidence_strength:String(local.evidence_strength||'weak'),evidence_codes:Array.isArray(local.evidence_codes)?local.evidence_codes:[],
     reference_kind:String(local.reference_kind||''),reference_hash:String(local.reference_hash||'')
   });
+  if(String(response&&response.outcome&&response.outcome.outcome_state||'')==='confirmed'){
+    try{await browserTransactionContinuityEnsureV2260({
+      runtime_id:String(payload.runtime_id||''),agent_id:Number(payload.agent_id||0),intent_id:String(payload.intent_id||'')
+    });}catch(_error){}
+  }
   return {...response,local:{masked_reference:String(local.masked_reference||'')}};
 }
 
 async function browserTransactionOutcomeResolveV2250(payload={}){
-  return browserTransactionOutcomeApiV2250('resolve',{
+  const response=await browserTransactionOutcomeApiV2250('resolve',{
     runtime_id:String(payload.runtime_id||''),agent_id:Number(payload.agent_id||0),intent_id:String(payload.intent_id||''),
     resolution:String(payload.resolution||''),acknowledgement:String(payload.acknowledgement||'')
   });
+  if(String(payload.resolution||'')==='confirmed_completed'){
+    try{await browserTransactionContinuityEnsureV2260({
+      runtime_id:String(payload.runtime_id||''),agent_id:Number(payload.agent_id||0),intent_id:String(payload.intent_id||'')
+    });}catch(_error){}
+  }
+  return response;
 }
 
 async function browserTransactionExecuteV2240(payload={}){
@@ -2356,6 +2510,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       case 'transaction_outcome_recheck': return browserTransactionOutcomeObserveV2250(message.payload || {});
       case 'transaction_outcome_resolve': return browserTransactionOutcomeResolveV2250(message.payload || {});
       case 'transaction_outcome_action': return browserTransactionOutcomeApiV2250(message.action, message.payload || {});
+      case 'transaction_continuity_scan': return browserTransactionContinuityScanV2260();
+      case 'transaction_continuity_list': return browserTransactionContinuityListV2260();
+      case 'transaction_continuity_action': return browserTransactionContinuityApiV2260(message.action, message.payload || {});
       case 'notification_poll': return pollProactiveNotifications();
       case 'quick_action_consume': return consumeQuickActionV2150();
       case 'quick_action_run': {
