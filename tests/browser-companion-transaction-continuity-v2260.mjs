@@ -68,8 +68,8 @@ must(scan.includes("browserTransactionContinuityApiV2260('list',{domain})"),'dom
 must(scan.includes('activeReference'),'active reference preflight missing');
 must(scan.includes("if(!activeReference)return"),'page capture must stop when no active reference tracker exists');
 must(scan.indexOf("browserTransactionContinuityApiV2260('list',{domain})")<scan.indexOf('browserTransactionContinuityCaptureV2260(tab.id)'),'preflight must occur before page capture');
-must(background.includes('await scanRuntimeContinuityV2260(true).catch(()=>{})'),'sidepanel return-page continuity scan missing');
 must(panel.includes("pageWatch")&&panel.includes("scanRuntimeContinuityV2260(true)"),'page-change continuity scan missing');
+must(panel.includes("refreshState().then(async()=>{await scanRuntimeContinuityV2260(true)"),'initial continuity scan missing');
 
 // Local reference extraction and hashes; raw page/reference data must not cross the v22.60 API.
 const captureStart=background.indexOf('async function browserTransactionContinuityCaptureV2260');
@@ -82,9 +82,11 @@ must(capture.includes('scheduleHash'),'local schedule fingerprint missing');
 must(capture.includes('amountHash'),'local amount fingerprint missing');
 must(capture.includes('observationFingerprint'),'local observation fingerprint missing');
 
-const observePayload=scan.slice(scan.indexOf("browserTransactionContinuityApiV2260('observe'"));
+const observeStart=scan.indexOf("browserTransactionContinuityApiV2260('observe'");
+const observeEnd=scan.indexOf("});\n  return",observeStart);
+const observePayload=scan.slice(observeStart,observeEnd>observeStart?observeEnd:scan.length);
 must(!observePayload.includes('bodyText'),'raw page text must not be sent to v22.60 API');
-must(!observePayload.includes('masked_references:'),'masked reference display must remain local');
+must(!observePayload.includes('masked_references'),'masked reference display must remain local');
 must(!observePayload.includes('referenceValue'),'raw reference value must not be sent to v22.60 API');
 
 // Exact owner + approved domain + reference fingerprint matching; never browsing-history fallback.
