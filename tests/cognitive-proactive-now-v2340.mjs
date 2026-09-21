@@ -29,6 +29,7 @@ const checks=[
  ['return digest enriched before persistence', /vp3_cognitive_proactive_now_digest_summary_v2340/.test(presentation) && presentation.indexOf('vp3_cognitive_proactive_now_digest_summary_v2340')<presentation.indexOf('INSERT INTO cognitive_return_digests_v510')],
  ['immediate voice function unchanged authority', /vp3_cognitive_presentation_voice_candidate_v510/.test(presentation) && /last_voice_notification_id/.test(presentation)],
  ['shared Chrome cursor retained', /vp3_cognitive_presentation_voice_candidate_v510/.test(extension) && /voice_through_notification_id/.test(extension)],
+ ['Chrome reuses persisted return digest', /vp3_cognitive_presentation_open_digest_v510/.test(extension) && /voice_candidate_v510\(\$pdo,\$user,\$state,\$digest\)/.test(extension)],
  ['bootstrap order', bootstrap.indexOf('cognitive-proactive-now-v2340.php')<bootstrap.indexOf('cognitive-feed-v530.php') && bootstrap.indexOf('cognitive-feed-v530.php')<bootstrap.indexOf('cognitive-presentation-v510.php')],
  ['no second voice ledger invariant', /no new voice-delivery table/.test(spec)],
  ['pure opportunities visual only invariant', /Pure opportunities remain visual\/proposal-only/.test(spec)],
