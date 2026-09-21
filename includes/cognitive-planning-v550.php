@@ -269,6 +269,9 @@ function vp3_cognitive_planning_context_v550(PDO $pdo,array $user,string $namesp
     if(!$row)throw new RuntimeException('Proactive plan not found.');
     $underlying=vp3_cognitive_planning_underlying_ref_v550($row);
     if(!vp3_cognitive_authorize_ref_v500($pdo,$user,$namespace,$underlying,'read'))throw new RuntimeException('Plan source is no longer authorized.');
+    $actionContract=function_exists('vp3_cognitive_action_planning_contract_v2330')
+        ? vp3_cognitive_action_planning_contract_v2330($pdo,$user,$namespace,$row)
+        : null;
     return [
         'plan'=>[
             'id'=>(string)$row['public_id'],
@@ -281,6 +284,7 @@ function vp3_cognitive_planning_context_v550(PDO $pdo,array $user,string $namesp
             'steps'=>vp3_cognitive_planning_steps_v550($row),
         ],
         'source_object_ref'=>$underlying,
+        'action_contract'=>$actionContract,
         'authority'=>'proposal_only',
     ];
 }
@@ -290,6 +294,10 @@ function vp3_cognitive_planning_card_v550(PDO $pdo,array $user,string $namespace
     $row=vp3_cognitive_planning_row_v550($pdo,$user,$namespace,(string)($ref['id']??''));
     if(!$row)throw new RuntimeException('Proactive plan not found.');
     $context=vp3_cognitive_planning_context_v550($pdo,$user,$namespace,$ref,['card'=>true]);
+    $actionContract=is_array($context['action_contract']??null)?$context['action_contract']:[];
+    $actionProjection=$actionContract&&function_exists('vp3_cognitive_action_planning_card_sections_v2330')
+        ? vp3_cognitive_action_planning_card_sections_v2330($actionContract)
+        : ['facts'=>[],'sections'=>[]];
     $status=(string)$row['status'];
     $actions=[[
         'type'=>'prompt',
@@ -312,14 +320,15 @@ function vp3_cognitive_planning_card_v550(PDO $pdo,array $user,string $namespace
             ucfirst((string)$row['risk_level']).' risk',
             !empty($row['requires_approval'])?'Approval required':null,
         ])),
-        'facts'=>[
+        'facts'=>array_merge([
             ['label'=>'Confidence','value'=>(string)round(((float)$row['confidence'])*100).'%'],
             ['label'=>'Authority','value'=>'Proposal only'],
-        ],
-        'sections'=>[
+        ],(array)($actionProjection['facts']??[])),
+        'sections'=>array_merge([
             ['label'=>'Proposed sequence','items'=>vp3_cognitive_planning_steps_v550($row)],
+        ],(array)($actionProjection['sections']??[]),[
             ['label'=>'Execution boundary','text'=>'Accepting this plan does not execute a tool, approve an action, or mutate the underlying VP3 object.'],
-        ],
+        ]),
         'actions'=>$actions,
     ];
 }
