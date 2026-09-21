@@ -50,14 +50,22 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
                     $notSubmitted?'confirmed_not_submitted':'confirmed_completed',
                     $notSubmitted?'reviewed_destination_not_submitted':'reviewed_destination_completed'
                 );
+                $continuityStarted=false;
                 if(!$notSubmitted){
-                    vp3_browser_continuity_ensure_v2260(
-                        $pdo,$user,(string)$runtimeCtx['agent_namespace'],(string)$runtimeCtx['public_id'],$intentId
-                    );
+                    try{
+                        vp3_browser_continuity_ensure_v2260(
+                            $pdo,$user,(string)$runtimeCtx['agent_namespace'],(string)$runtimeCtx['public_id'],$intentId
+                        );
+                        $continuityStarted=true;
+                    }catch(RuntimeException $continuityError){
+                        if(!str_contains($continuityError->getMessage(),'requires a reusable hashed v22.50 reference'))throw $continuityError;
+                    }
                 }
                 $notice=$notSubmitted
                     ?'Outcome resolved as not submitted. Duplicate protection was released; any new attempt requires a fresh v22.40 review.'
-                    :'Outcome resolved as completed. Transaction continuity is now available for reference-only follow-through.';
+                    :($continuityStarted
+                        ?'Outcome resolved as completed. Transaction continuity is now available for reference-only follow-through.'
+                        :'Outcome resolved as completed. No reusable reference was available, so cross-time transaction tracking was not started.');
                 redirect(url('/agent-workflows.php?id='.$runId.'&notice='.rawurlencode($notice)));
             }elseif(in_array($action,['browser_continuity_close','browser_continuity_reopen'],true)){
                 $runId=max(0,(int)($_POST['run_id']??0));
