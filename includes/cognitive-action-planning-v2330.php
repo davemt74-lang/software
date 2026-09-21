@@ -11,6 +11,11 @@ const VP3_COGNITIVE_ACTION_PLANNING_V2330='vp3-cognitive-action-planning-v2330-2
 const VP3_COGNITIVE_ACTION_PLANNING_CONTRACT_V2330='cognitive-action-plan-v1';
 const VP3_COGNITIVE_ACTION_PLANNING_STEP_COUNT_V2330=5;
 
+function vp3_cognitive_action_planning_risk_rank_v2330(string $risk): int
+{
+    return match($risk){'high'=>3,'medium'=>2,default=>1};
+}
+
 function vp3_cognitive_action_planning_tool_v2330(array $plan): array
 {
     $toolId=vp3_cognitive_id_v500($plan['tool_id']??'',120);
@@ -46,6 +51,8 @@ function vp3_cognitive_action_planning_tool_v2330(array $plan): array
     $planRisk=in_array((string)($plan['risk_level']??''),array_keys($riskOrder),true)?(string)$plan['risk_level']:'low';
     $toolRisk=in_array((string)($meta['risk']??''),array_keys($riskOrder),true)?(string)$meta['risk']:'low';
     $risk=($riskOrder[$toolRisk]??1)>=($riskOrder[$planRisk]??1)?$toolRisk:$planRisk;
+    $approvalAdded=!empty($meta['requires_approval'])&&empty($plan['requires_approval']);
+    $riskIncreased=vp3_cognitive_action_planning_risk_rank_v2330($toolRisk)>vp3_cognitive_action_planning_risk_rank_v2330($planRisk);
 
     return [
         'id'=>$toolId,
@@ -56,7 +63,23 @@ function vp3_cognitive_action_planning_tool_v2330(array $plan): array
         'kind'=>in_array((string)($meta['kind']??'read'),['read','prepare','write','external'],true)?(string)$meta['kind']:'read',
         'risk'=>$risk,
         'requires_approval'=>!empty($plan['requires_approval'])||!empty($meta['requires_approval']),
+        'boundary_changed'=>$approvalAdded||$riskIncreased,
+        'boundary_changes'=>array_values(array_filter([
+            $approvalAdded?'approval_added':null,
+            $riskIncreased?'risk_increased':null,
+        ])),
     ];
+}
+
+function vp3_cognitive_action_planning_handoff_compatible_v2330(array $capability,array $step): bool
+{
+    if(empty($capability['available'])||(string)($capability['mode']??'')!=='existing_capability')return false;
+    if(!hash_equals((string)($capability['id']??''),vp3_cognitive_id_v500($step['tool_id']??'',120)))return false;
+    if(!empty($capability['boundary_changed']))return false;
+    if(!empty($capability['requires_approval'])&&empty($step['requires_approval']))return false;
+    if(vp3_cognitive_action_planning_risk_rank_v2330((string)($capability['risk']??'low'))
+        >vp3_cognitive_action_planning_risk_rank_v2330((string)($step['risk_level']??'low')))return false;
+    return true;
 }
 
 function vp3_cognitive_action_planning_success_v2330(array $plan,array $capability): array
@@ -117,9 +140,21 @@ function vp3_cognitive_action_planning_contract_v2330(
     if($sourceModule==='')throw new RuntimeException('Action plan source module is unavailable.');
 
     $capability=vp3_cognitive_action_planning_tool_v2330($plan);
+    if((string)($capability['mode']??'')==='existing_capability'
+        &&!hash_equals((string)($capability['module']??''),$sourceModule)){
+        $capability['available']=false;
+        $capability['mode']='capability_module_mismatch';
+        $capability['requires_approval']=true;
+        $capability['boundary_changed']=true;
+        $capability['boundary_changes']=array_values(array_unique(array_merge(
+            (array)($capability['boundary_changes']??[]),['module_changed']
+        )));
+    }
     $success=vp3_cognitive_action_planning_success_v2330($plan,$capability);
     $approval=!empty($capability['requires_approval']);
-    $ready=(string)$capability['mode']==='existing_capability'&&!empty($capability['available']);
+    $ready=(string)$capability['mode']==='existing_capability'
+        &&!empty($capability['available'])
+        &&empty($capability['boundary_changed']);
 
     $steps=[
         [
@@ -172,7 +207,8 @@ function vp3_cognitive_action_planning_contract_v2330(
             'authority'=>$sourceModule,
         ],
         'capability'=>$capability,
-        'execution_readiness'=>$ready?($approval?'approval_required':'handoff_available'):(string)$capability['mode'],
+        'execution_readiness'=>$ready?($approval?'approval_required':'handoff_available')
+            :(!empty($capability['boundary_changed'])?'replan_required':(string)$capability['mode']),
         'success'=>$success,
         'supersession'=>[
             'source_fingerprint_change'=>'supersede',
