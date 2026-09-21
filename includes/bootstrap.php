@@ -148,6 +148,7 @@ require_once __DIR__.'/cognitive-orchestration-v560.php';
 require_once __DIR__.'/cognitive-memory-v570.php';
 require_once __DIR__.'/cognitive-operations-v2300.php';
 require_once __DIR__.'/cognitive-priority-queue-v2310.php';
+require_once __DIR__.'/cognitive-opportunities-v2320.php';
 require_once __DIR__.'/cognitive-feed-v530.php';
 require_once __DIR__.'/cognitive-presentation-v510.php';
 require_once __DIR__.'/agent-cognitive-loop-v310.php';
