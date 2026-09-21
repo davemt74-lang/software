@@ -131,7 +131,7 @@ function vp3_browser_outcome_validate_v2250(string $state,string $strength,array
 
     if($state==='confirmed'){
         $explicit=array_intersect($evidence,['confirmation_heading','confirmation_phrase']);
-        $auxiliary=array_intersect($evidence,['confirmation_url_hint','reference_present','receipt_keyword','form_absent','status_region']);
+        $auxiliary=array_intersect($evidence,['confirmation_url_hint','reference_present','receipt_keyword','form_absent']);
         if($strength!=='strong'||count($explicit)<1||count($auxiliary)<1){
             throw new RuntimeException('Destination confirmation requires an explicit confirmation message plus an independent local signal.');
         }
