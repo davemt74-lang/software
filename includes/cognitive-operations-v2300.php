@@ -69,8 +69,13 @@ function vp3_cognitive_operations_work_item_v2300(array $candidate): ?array
         if($action!==''&&!in_array($action,$actions,true))$actions[]=$action;
     }
 
-    $requiresApproval=!empty($candidate['attention']);
-    if((string)($candidate['plan_status']??'')==='accepted')$requiresApproval=true;
+    $requiresApproval=false;
+    if($actions){
+        $registry=vp3_cognitive_registry_storage_v500();
+        foreach($actions as $action){
+            if(!empty($registry['tools'][$action]['requires_approval'])){$requiresApproval=true;break;}
+        }
+    }
 
     return [
         'key'=>$key,
@@ -89,7 +94,8 @@ function vp3_cognitive_operations_work_item_v2300(array $candidate): ?array
             'mode'=>'existing_runtime_only',
             'model_may_execute'=>false,
             'automatic_external_writes'=>false,
-            'existing_approval_required'=>true,
+            'existing_authority_required'=>true,
+            'approval_when_required_by_existing_runtime'=>true,
         ],
     ];
 }
@@ -103,13 +109,12 @@ function vp3_cognitive_operations_compose_v2300(array $candidates): array
         if(!is_array($candidate)||!empty($candidate['hidden']))continue;
         $item=vp3_cognitive_operations_work_item_v2300($candidate);
         if(!$item)continue;
-        $items[]=$item;
         $sources[$item['source']?:'vp3']=true;
         $authorities[$item['authority']]=true;
         $laneCounts[$item['lane']]=($laneCounts[$item['lane']]??0)+1;
         if($item['attention'])$attention++;
         if(in_array((string)($candidate['source']??''),['cognitive_plan','cognitive_orchestration'],true))$plans++;
-        if(count($items)>=VP3_COGNITIVE_OPERATIONS_MAX_ITEMS_V2300)break;
+        if(count($items)<VP3_COGNITIVE_OPERATIONS_MAX_ITEMS_V2300)$items[]=$item;
     }
 
     usort($items,static function(array $a,array $b): int {
@@ -144,6 +149,7 @@ function vp3_cognitive_operations_compose_v2300(array $candidates): array
             'model_may_execute'=>false,
             'automatic_external_writes'=>false,
             'approval_bypass'=>false,
+            'authority_bypass'=>false,
         ],
         'work_item_count'=>count($items),
         'attention_count'=>$attention,
