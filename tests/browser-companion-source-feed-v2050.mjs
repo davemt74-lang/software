@@ -28,7 +28,10 @@ must(background.includes("case 'source_action'"),'source interaction transport m
 must(background.includes("case 'media_data'"),'authorized feed media proxy missing');
 must(background.includes("page_text_sha256"),'source-version page fingerprint missing');
 must(background.includes("crypto.subtle.digest('SHA-256'"),'page version fingerprint must use SHA-256');
-mustNot(background.includes('page_text:'),'raw page text must not be sent to VP3');
+const rawPageTextFields=(background.match(/page_text:/g)||[]).length;
+must(rawPageTextFields===1,'raw page text may only exist in the explicit v22.30 Browser Research capture path');
+must(background.includes('async function browserResearchCaptureV2230')&&background.includes("browserResearchApiV2230('analyze_page'"),'the sole raw page-text transport must be the bounded Browser Research extraction path');
+mustNot(background.slice(0,background.indexOf('async function browserResearchCaptureV2230')).includes('page_text:'),'Phase 6 Source Feed must never send raw page text to VP3');
 
 for(const id of ['thisPageTab','followingTab','visibilitySelect','visibilityTeamSelect','thisPageFeed','followingFeed','followCurrentSourceBtn']){
   must(panel.includes('id="'+id+'"'),'sidebar control missing: '+id);
