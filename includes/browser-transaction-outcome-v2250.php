@@ -320,12 +320,20 @@ function vp3_browser_outcome_observe_v2250(
           SET status='completed',result_code='v2250_destination_confirmation_observed',verified_at=COALESCE(verified_at,UTC_TIMESTAMP()),updated_at=UTC_TIMESTAMP()
           WHERE id=? AND owner_user_id=? AND status='uncertain'")
           ->execute([(int)$intent['id'],(int)$runtime['owner_user_id']]);
+        $pdo->prepare("UPDATE browser_submission_dispatch_guards_v2240
+          SET expires_at=DATE_ADD(UTC_TIMESTAMP(),INTERVAL ".VP3_BROWSER_TRANSACTION_DUPLICATE_WINDOW_SECONDS_V2240." SECOND)
+          WHERE owner_user_id=? AND intent_public_id=?")
+          ->execute([(int)$runtime['owner_user_id'],$intentId]);
         $intent=vp3_browser_outcome_intent_v2250($pdo,$runtime,$intentId);
     }elseif((string)$intent['status']==='uncertain'){
         $code='v2250_destination_'.$state;
         $pdo->prepare("UPDATE browser_submission_intents_v2240 SET result_code=?,updated_at=UTC_TIMESTAMP()
           WHERE id=? AND owner_user_id=? AND status='uncertain'")
           ->execute([$code,(int)$intent['id'],(int)$runtime['owner_user_id']]);
+        $pdo->prepare("UPDATE browser_submission_dispatch_guards_v2240
+          SET expires_at='9999-12-31 23:59:59'
+          WHERE owner_user_id=? AND intent_public_id=?")
+          ->execute([(int)$runtime['owner_user_id'],$intentId]);
         $intent=vp3_browser_outcome_intent_v2250($pdo,$runtime,$intentId);
     }
 
@@ -376,6 +384,10 @@ function vp3_browser_outcome_resolve_v2250(
                   SET status='completed',result_code='v2250_user_confirmed_completed',verified_at=COALESCE(verified_at,UTC_TIMESTAMP()),updated_at=UTC_TIMESTAMP()
                   WHERE id=? AND owner_user_id=? AND status='uncertain'")
                   ->execute([(int)$intent['id'],(int)$runtime['owner_user_id']]);
+                $pdo->prepare("UPDATE browser_submission_dispatch_guards_v2240
+                  SET expires_at=DATE_ADD(UTC_TIMESTAMP(),INTERVAL ".VP3_BROWSER_TRANSACTION_DUPLICATE_WINDOW_SECONDS_V2240." SECOND)
+                  WHERE owner_user_id=? AND intent_public_id=?")
+                  ->execute([(int)$runtime['owner_user_id'],$intentId]);
             }
         }elseif($resolution==='confirmed_not_submitted'){
             if($ack!=='reviewed_destination_not_submitted')throw new InvalidArgumentException('Explicit no-submission acknowledgement is required.');
