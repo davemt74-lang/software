@@ -570,6 +570,28 @@ function vp3_browser_intelligence_sync_continuity_v2270(
     return ['enabled'=>true,'cases'=>array_map('vp3_browser_intelligence_case_public_v2270',$cases)];
 }
 
+function vp3_browser_intelligence_observe_facts_v2270(PDO $pdo,array $user,string $continuityId,array $input): array
+{
+    $uid=(int)($user['id']??0);
+    $continuity=vp3_browser_continuity_row_v2260($pdo,$uid,$continuityId);
+    if(!$continuity)throw new RuntimeException('Transaction continuity was not found.');
+    if((string)$continuity['tracking_status']!=='active'){
+        vp3_browser_intelligence_resolve_closed_v2270($pdo,$continuity);
+        return ['continuity'=>vp3_browser_continuity_public_v2260($continuity),'cases'=>[],'fact'=>null];
+    }
+    $event=vp3_browser_continuity_latest_event_v2260($pdo,$uid,(int)$continuity['id']);
+    if(!$event)throw new RuntimeException('A v22.60 lifecycle observation is required before transaction facts can be evaluated.');
+    $changes=array_values(array_map('strval',vp3_browser_intelligence_json_v2270($event['change_codes_json']??'[]')));
+    $cases=vp3_browser_intelligence_evaluate_continuity_v2270($pdo,$user,$continuity,$event,$changes,$input);
+    vp3_browser_intelligence_cross_signals_v2270($pdo,$user);
+    $fact=vp3_browser_intelligence_fact_row_v2270($pdo,$uid,(int)$continuity['id']);
+    return [
+        'continuity'=>vp3_browser_continuity_public_v2260($continuity),
+        'cases'=>array_map('vp3_browser_intelligence_case_public_v2270',$cases),
+        'fact'=>$fact?vp3_browser_intelligence_fact_public_v2270($fact):null,
+    ];
+}
+
 function vp3_browser_intelligence_evaluate_all_v2270(PDO $pdo,array $user): void
 {
     $uid=(int)($user['id']??0);if($uid<1)return;
