@@ -103,8 +103,10 @@ function vp3_browser_research_start_v2230(PDO $pdo,array $user,string $namespace
 function vp3_browser_research_expire_v2230(PDO $pdo,array $mission): void
 {
     if((string)$mission['status']!=='active')return;
-    if(strtotime((string)$mission['expires_at'])>=time()&&strtotime((string)$mission['runtime_expires_at'])>=time())return;
-    $pdo->prepare("UPDATE browser_research_missions_v2230 SET status='expired',completed_at=UTC_TIMESTAMP(),updated_at=UTC_TIMESTAMP() WHERE id=?")
+    $runtimeTerminal=in_array((string)($mission['runtime_status']??''),['completed','cancelled','expired'],true);
+    $authorityExpired=strtotime((string)$mission['expires_at'])<time()||strtotime((string)$mission['runtime_expires_at'])<time();
+    if(!$runtimeTerminal&&!$authorityExpired)return;
+    $pdo->prepare("UPDATE browser_research_missions_v2230 SET status='ready',updated_at=UTC_TIMESTAMP() WHERE id=?")
         ->execute([(int)$mission['id']]);
 }
 
