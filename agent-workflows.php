@@ -50,9 +50,38 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
                     $notSubmitted?'confirmed_not_submitted':'confirmed_completed',
                     $notSubmitted?'reviewed_destination_not_submitted':'reviewed_destination_completed'
                 );
+                if(!$notSubmitted){
+                    vp3_browser_continuity_ensure_v2260(
+                        $pdo,$user,(string)$runtimeCtx['agent_namespace'],(string)$runtimeCtx['public_id'],$intentId
+                    );
+                }
                 $notice=$notSubmitted
                     ?'Outcome resolved as not submitted. Duplicate protection was released; any new attempt requires a fresh v22.40 review.'
-                    :'Outcome resolved as completed. Duplicate protection remains in place.';
+                    :'Outcome resolved as completed. Transaction continuity is now available for reference-only follow-through.';
+                redirect(url('/agent-workflows.php?id='.$runId.'&notice='.rawurlencode($notice)));
+            }elseif(in_array($action,['browser_continuity_close','browser_continuity_reopen'],true)){
+                $runId=max(0,(int)($_POST['run_id']??0));
+                $continuityId=trim((string)($_POST['continuity_id']??''));
+                $continuity=vp3_browser_continuity_row_v2260($pdo,(int)$user['id'],$continuityId,true);
+                if($runId<1||!$continuity||(int)$continuity['workflow_run_id']!==$runId)throw new RuntimeException('Transaction continuity context is invalid.');
+                if($action==='browser_continuity_close'){
+                    vp3_browser_continuity_close_v2260($pdo,$user,$continuityId,'user_closed');
+                    $notice='Transaction follow-through tracking stopped. Historical receipts remain available.';
+                }else{
+                    vp3_browser_continuity_reopen_v2260($pdo,$user,$continuityId);
+                    $notice='Transaction follow-through tracking resumed using its hashed reference.';
+                }
+                redirect(url('/agent-workflows.php?id='.$runId.'&notice='.rawurlencode($notice)));
+            }elseif(in_array($action,['browser_followthrough_ack','browser_followthrough_dismiss'],true)){
+                $runId=max(0,(int)($_POST['run_id']??0));
+                $proposalId=trim((string)($_POST['proposal_id']??''));
+                $check=$pdo->prepare("SELECT p.public_id FROM browser_transaction_followthrough_proposals_v2260 p
+                  INNER JOIN browser_transaction_continuities_v2260 c ON c.id=p.continuity_id
+                  WHERE p.public_id=? AND p.owner_user_id=? AND c.owner_user_id=? AND c.workflow_run_id=? LIMIT 1");
+                $check->execute([$proposalId,(int)$user['id'],(int)$user['id'],$runId]);
+                if($runId<1||!(string)$check->fetchColumn())throw new RuntimeException('Follow-through proposal context is invalid.');
+                vp3_browser_followthrough_resolve_v2260($pdo,$user,$proposalId,$action==='browser_followthrough_ack'?'acknowledge':'dismiss');
+                $notice=$action==='browser_followthrough_ack'?'Follow-through proposal acknowledged.':'Follow-through proposal dismissed.';
                 redirect(url('/agent-workflows.php?id='.$runId.'&notice='.rawurlencode($notice)));
             }
             else throw new RuntimeException('Unknown workflow action.');
