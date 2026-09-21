@@ -67,6 +67,12 @@ try{
         'external_write_requires_fresh_v2240'=>true,
     ];
 
+    if($action==='observe_facts'){
+        $continuityId=trim((string)($input['continuity_id']??''));
+        if(!preg_match('/^[a-f0-9-]{36}$/i',$continuityId))throw new InvalidArgumentException('Matched transaction continuity is required.');
+        $result=vp3_browser_intelligence_observe_facts_v2270($pdo,$user,$continuityId,$input);
+        vp3_extension_intelligence_json_v2270(200,$base+$result+['inbox'=>vp3_browser_intelligence_inbox_v2270($pdo,$user)]);
+    }
     if($action==='inbox'){
         vp3_browser_intelligence_evaluate_all_v2270($pdo,$user);
         vp3_extension_intelligence_json_v2270(200,$base+['inbox'=>vp3_browser_intelligence_inbox_v2270($pdo,$user)]);
