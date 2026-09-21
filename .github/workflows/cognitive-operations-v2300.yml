@@ -9,6 +9,7 @@ on:
       - 'includes/bootstrap.php'
       - 'chat-cognitive-feed-v530.js'
       - 'chat-cognitive-feed-v530.css'
+      - 'api/extension-cognitive-now-v2120.php'
       - 'tests/cognitive-operations-v2300.mjs'
       - '.github/workflows/cognitive-operations-v2300.yml'
   push:
@@ -36,6 +37,7 @@ jobs:
           php -l includes/cognitive-operations-v2300.php
           php -l includes/cognitive-feed-v530.php
           php -l includes/bootstrap.php
+          php -l api/extension-cognitive-now-v2120.php
       - name: JavaScript syntax
         run: node --check chat-cognitive-feed-v530.js
       - name: v23.00 architecture contract
@@ -48,3 +50,4 @@ jobs:
           node tests/cognitive-planning-v550.mjs
           node tests/cognitive-orchestration-v560.mjs
           node tests/cognitive-memory-v570.mjs
+          node tests/browser-companion-cognitive-now-v2120.mjs
