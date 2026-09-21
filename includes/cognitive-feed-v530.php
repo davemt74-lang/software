@@ -469,9 +469,13 @@ function vp3_cognitive_feed_compose_v530(PDO $pdo,array $user,string $namespace,
         $used+=count($items);
     }
 
-    $operations=function_exists('vp3_cognitive_operations_compose_v2300')
-        ? vp3_cognitive_operations_compose_v2300($visible)
-        : null;
+    $operations=null;
+    if(function_exists('vp3_cognitive_operations_compose_v2300')){
+        $operations=vp3_cognitive_operations_compose_v2300($visible);
+        if(function_exists('vp3_cognitive_operations_public_v2300')){
+            $operations=vp3_cognitive_operations_public_v2300($operations);
+        }
+    }
 
     return [
         'build'=>VP3_COGNITIVE_FEED_V530,
