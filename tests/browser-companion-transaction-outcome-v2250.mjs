@@ -110,6 +110,10 @@ must(panel.includes('async function resolveRuntimeOutcomeV2250'),'outcome resolu
 must(panel.includes("resolution==='confirmed_not_submitted'"),'no-submission resolution UI path missing');
 must(workflows.includes('Transaction Outcome Verification & Recovery'),'Agent Workflow v22.50 panel missing');
 must(workflows.includes('VP3 never retries automatically.'),'workflow no-auto-retry disclosure missing');
+must(workflows.includes("browser_outcome_confirm_completed"),'durable Agent Workflow completed-resolution action missing');
+must(workflows.includes("browser_outcome_confirm_not_submitted"),'durable Agent Workflow no-submission resolution action missing');
+must(workflows.includes('vp3_browser_outcome_resolve_v2250'),'durable Agent Workflow recovery must use canonical v22.50 resolver');
+must(workflows.includes('Confirm nothing submitted'),'durable no-submission recovery control missing');
 
 // Upgrade integration.
 must(upgrade.includes("require_once __DIR__ . '/includes/browser-transaction-outcome-v2250.php';"),'upgrade v22.50 include missing');
