@@ -446,9 +446,17 @@ function vp3_browser_continuity_notify_change_v2260(array $row,array $event,arra
     if(!$important)return;
     $summary=[];
     foreach($changes as $change)$summary[]=str_replace('_',' ',$change);
+    $family=(string)$row['lifecycle_family'];
+    $attention=(bool)array_intersect($changes,['needs_action','cancellation','decision_received']);
+    $type=$attention?'browser_transaction_needs_attention':match($family){
+        'commerce'=>'browser_transaction_order_update',
+        'booking'=>'browser_transaction_booking_update',
+        'communication'=>'browser_transaction_message_update',
+        default=>'browser_transaction_workflow_update',
+    };
     create_notification(
         (int)$row['owner_user_id'],
-        'browser_transaction_continuity_change',
+        $type,
         'Transaction update: '.ucwords($state),
         'VP3 recognized a return page for an existing transaction and detected '.implode(', ',$summary).'. Review the transaction before taking any external action.',
         (int)$row['workflow_run_id']>0?'/agent-workflows.php?id='.(int)$row['workflow_run_id']:'/agent-workflows.php',
