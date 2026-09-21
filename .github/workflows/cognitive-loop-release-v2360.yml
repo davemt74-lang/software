@@ -1,0 +1,93 @@
+name: Cognitive Loop Release v23.60
+
+on:
+  pull_request:
+    paths:
+      - 'docs/VP3_COGNITIVE_LOOP_RELEASE_V2360.md'
+      - 'includes/cognitive-release-v2360.php'
+      - 'includes/bootstrap.php'
+      - 'includes/cognitive-*.php'
+      - 'api/cognitive-*.php'
+      - 'api/extension-cognitive-now-v2120.php'
+      - 'includes/extension-notifications-v2140.php'
+      - 'chat-cognitive-feed-v530.js'
+      - 'chat-cognitive-feed-v530.css'
+      - 'chat.php'
+      - 'upgrade.php'
+      - 'tests/cognitive-*.mjs'
+      - 'tests/browser-companion-cognitive-now-v2120.mjs'
+      - 'tests/browser-companion-proactive-notifications-v2140.mjs'
+      - '.github/workflows/production-deploy-package.yml'
+      - '.github/workflows/cognitive-loop-release-v2360.yml'
+  push:
+    branches:
+      - 'cognitive-loop-release-v2360'
+
+jobs:
+  release:
+    name: Cognitive Loop Release · PHP ${{ matrix.php }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.1','8.3']
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: PHP syntax
+        run: |
+          php -l includes/cognitive-release-v2360.php
+          php -l includes/cognitive-runtime-v500.php
+          php -l includes/cognitive-presentation-v510.php
+          php -l includes/cognitive-cards-v520.php
+          php -l includes/cognitive-feed-v530.php
+          php -l includes/cognitive-learning-v540.php
+          php -l includes/cognitive-planning-v550.php
+          php -l includes/cognitive-orchestration-v560.php
+          php -l includes/cognitive-memory-v570.php
+          php -l includes/cognitive-operations-v2300.php
+          php -l includes/cognitive-priority-queue-v2310.php
+          php -l includes/cognitive-opportunities-v2320.php
+          php -l includes/cognitive-action-planning-v2330.php
+          php -l includes/cognitive-proactive-now-v2340.php
+          php -l includes/cognitive-calibration-v2350.php
+          php -l api/cognitive-feed-v530.php
+          php -l api/cognitive-planning-v550.php
+          php -l api/cognitive-orchestration-v560.php
+          php -l api/extension-cognitive-now-v2120.php
+          php -l includes/extension-notifications-v2140.php
+          php -l includes/bootstrap.php
+          php -l upgrade.php
+      - name: JavaScript syntax
+        run: node --check chat-cognitive-feed-v530.js
+      - name: End-to-end release contract
+        run: node tests/cognitive-loop-release-v2360.mjs
+      - name: v23.x feature family
+        run: |
+          node tests/cognitive-calibration-v2350.mjs
+          node tests/cognitive-proactive-now-v2340.mjs
+          node tests/cognitive-stack-audit-v23x.mjs
+          node tests/cognitive-action-planning-v2330.mjs
+          node tests/cognitive-opportunities-v2320.mjs
+          node tests/cognitive-priority-queue-v2310.mjs
+          node tests/cognitive-operations-v2300.mjs
+      - name: Canonical cognitive runtime
+        run: |
+          node tests/cognitive-runtime-core-v500.mjs
+          node tests/cognitive-presentation-v510.mjs
+          node tests/cognitive-feed-v530.mjs
+          node tests/cognitive-learning-v540.mjs
+          node tests/cognitive-planning-v550.mjs
+          node tests/cognitive-orchestration-v560.mjs
+          node tests/cognitive-memory-v570.mjs
+      - name: Browser and voice cross-surface contracts
+        run: |
+          node tests/browser-companion-cognitive-now-v2120.mjs
+          node tests/browser-companion-proactive-notifications-v2140.mjs

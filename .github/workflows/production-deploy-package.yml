@@ -21,9 +21,13 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Build production deploy archive
         shell: bash
+        env:
+          VP3_RELEASE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -euo pipefail
 
@@ -40,8 +44,48 @@ jobs:
             --exclude='*.md' \
             --exclude='*.zip'
 
+          cat > _deploy/VP3_RELEASE.json <<EOF
+          {
+            "release": "Cognitive Loop v23.60",
+            "build": "vp3-cognitive-loop-release-v2360-20260921",
+            "commit": "${VP3_RELEASE_SHA}",
+            "repository": "${GITHUB_REPOSITORY}",
+            "workflow_run_id": "${GITHUB_RUN_ID}"
+          }
+          EOF
+
+          test -s _deploy/VP3_RELEASE.json
+          python3 -m json.tool _deploy/VP3_RELEASE.json >/dev/null
+          grep -Fq '"commit": "'"${VP3_RELEASE_SHA}"'"' _deploy/VP3_RELEASE.json
           test -f _deploy/chat.php
           test -f _deploy/.htaccess
+
+          # v23.60 release hardening: the production artifact must contain
+          # the complete canonical cognitive loop and both user surfaces.
+          test -f _deploy/includes/cognitive-runtime-v500.php
+          test -f _deploy/includes/cognitive-presentation-v510.php
+          test -f _deploy/includes/cognitive-cards-v520.php
+          test -f _deploy/includes/cognitive-feed-v530.php
+          test -f _deploy/includes/cognitive-learning-v540.php
+          test -f _deploy/includes/cognitive-planning-v550.php
+          test -f _deploy/includes/cognitive-orchestration-v560.php
+          test -f _deploy/includes/cognitive-memory-v570.php
+          test -f _deploy/includes/cognitive-operations-v2300.php
+          test -f _deploy/includes/cognitive-priority-queue-v2310.php
+          test -f _deploy/includes/cognitive-opportunities-v2320.php
+          test -f _deploy/includes/cognitive-action-planning-v2330.php
+          test -f _deploy/includes/cognitive-proactive-now-v2340.php
+          test -f _deploy/includes/cognitive-calibration-v2350.php
+          test -f _deploy/includes/cognitive-release-v2360.php
+          test -f _deploy/api/cognitive-feed-v530.php
+          test -f _deploy/api/cognitive-planning-v550.php
+          test -f _deploy/api/cognitive-orchestration-v560.php
+          test -f _deploy/api/extension-cognitive-now-v2120.php
+          test -f _deploy/includes/extension-notifications-v2140.php
+          test -f _deploy/chat-cognitive-feed-v530.js
+          test -f _deploy/chat-cognitive-feed-v530.css
+          test -f _deploy/includes/bootstrap.php
+          test -f _deploy/upgrade.php
 
           if find _deploy -type f \( -path '*/tests/*' -o -path '*/tools/*' -o -path '*/.github/*' \) | grep -q .; then
             echo 'Development-only files leaked into the deploy package.' >&2
