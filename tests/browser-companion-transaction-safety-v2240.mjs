@@ -40,6 +40,7 @@ must(safety.includes("(string)$web['status']!=='approval_pending'"),'v22.10 appr
 must(safety.includes("UPDATE browser_web_interactions_v2210 SET status='approved'"),'v22.40 approval must unlock the exact v22.10 submit proposal');
 must(web.includes('Consequential form finalization requires the v22.40 exact-form review checkpoint.'),'generic v22.10 final-action confirmation must be blocked');
 must(panel.includes("const transactionRequired=action==='submit'||"),'native submit / dangerous click v22.40 routing missing');
+must(panel.includes('Boolean(item.submit_like)'),'submit-like click v22.40 routing missing');
 must(panel.includes("Boolean(item.dangerous)"),'dangerous form button v22.40 routing missing');
 must(background.includes("action_key:String(payload.web_action_key||'submit')"),'reviewed dangerous-click execution primitive missing');
 
@@ -49,12 +50,15 @@ for(const key of ['page_fingerprint','form_fingerprint','submit_fingerprint','re
 }
 must(background.includes('browserTransactionCaptureV2240'),'local final form capture missing');
 must(background.includes("review_hash:reviewHash"),'review hash missing from local capture');
+must(background.includes("semantic_text:clip([labelFor(submit),heading"),'server semantics must exclude field labels/values');
+must(background.includes("target_host:String(review.target_host||'')"),'final target host must be sent for server boundary validation');
 must(background.includes("form_fingerprint:formFingerprint"),'form fingerprint missing from local capture');
 must(background.includes("page_fingerprint:pageFingerprint"),'page fingerprint missing from local capture');
 must(background.includes("submit_fingerprint:submitFingerprint"),'submit fingerprint missing from local capture');
 must(background.includes("fields.push({index,name,type,tag,value:exactValue})"),'exact form values must participate in local review hash');
 must(background.includes("reviewHash=await sha(JSON.stringify"),'exact review hash calculation missing');
 must(safety.includes("The page or reviewed form changed after approval."),'server fail-closed changed-state gate missing');
+must(safety.includes('v22.40 final form actions are limited to the current approved domain.'),'same-domain finalization gate missing');
 must(background.includes("review_state_changed_after_permit"),'post-permit local recheck missing');
 
 // Values stay local; secrets are masked.
@@ -72,6 +76,7 @@ must(html.includes('Sensitive values are masked here and are never sent to VP3.'
 must(safety.includes('VP3_BROWSER_TRANSACTION_PERMIT_SECONDS_V2240=60'),'short final-submit permit missing');
 must(safety.includes("status='executing',permit_hash=?"),'one-time execution claim missing');
 must(safety.includes("permit_hash=NULL,permit_expires_at=NULL"),'permit consumption missing');
+must(safety.includes("WHERE id=? AND status='executing' AND permit_hash=?"),'single-use conditional permit consumption missing');
 must(safety.includes('VP3_BROWSER_TRANSACTION_DUPLICATE_WINDOW_SECONDS_V2240=600'),'duplicate window missing');
 must(safety.includes('browser_submission_dispatch_guards_v2240'),'atomic dispatch guard table missing');
 must(safety.includes('PRIMARY KEY (guard_key)'),'atomic dispatch guard uniqueness missing');
