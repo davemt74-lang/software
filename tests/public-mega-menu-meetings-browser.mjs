@@ -6,6 +6,8 @@ const index=read('index.php');
 const publicNav=read('includes/vp3-public.php');
 const meetings=read('video-meetings.php');
 const chrome=read('chrome-extension.php');
+const chromeDownload=read('chrome-extension-download.php');
+const manifest=JSON.parse(read('browser-companion/manifest.json'));
 
 const count=(haystack,needle)=>haystack.split(needle).length-1;
 
@@ -23,6 +25,11 @@ const checks=[
   ['Meetings page describes intelligence and follow-through', /Meeting Intelligence/.test(meetings) && /follow-through/i.test(meetings)],
   ['Chrome page describes Browser Companion and approval boundaries', /Browser Companion/.test(chrome) && /approved browser actions/i.test(chrome)],
   ['Chrome public page does not expose extension approval flow', !/approval_token|installation_id|device_code/.test(chrome)],
+  ['Chrome page links real extension download', /chrome-extension-download\.php/.test(chrome) && /Download Chrome Extension/.test(chrome)],
+  ['Download endpoint uses current manifest version', /manifest\.json/.test(chromeDownload) && /\$manifest\['version'\]/.test(chromeDownload) && manifest.version==='22.8.0'],
+  ['Download package has manifest at ZIP root', /\$zip->addFile\(\$root \. '\/' \. \$file, \$file\)/.test(chromeDownload)],
+  ['Download package excludes README and dev material', !/README\.md/.test(chromeDownload) && !/tests\//.test(chromeDownload)],
+  ['Download endpoint is public and bounded', !/require_permission\(|require_login\(/.test(chromeDownload) && /\$files = \[/.test(chromeDownload) && /Content-Type: application\/zip/.test(chromeDownload)],
 ];
 
 for(const [name,ok] of checks){assert.equal(ok,true,name);console.log('PASS',name);}
