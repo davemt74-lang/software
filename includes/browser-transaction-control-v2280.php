@@ -179,6 +179,18 @@ function vp3_browser_control_resume_all_v2280(PDO $pdo,array $user,string $devic
     }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();throw $e;}
     return ['resumed_count'=>count($ids),'settings'=>vp3_browser_control_settings_public_v2280(vp3_browser_control_settings_v2280($pdo,$uid))];
 }
+function vp3_browser_control_tracker_action_v2280(PDO $pdo,array $user,string $continuityPublicId,string $action,string $deviceId=''): array
+{
+    if(!in_array($action,['stop','resume'],true))throw new InvalidArgumentException('Unsupported transaction tracker action.');
+    $uid=(int)($user['id']??0);$row=vp3_browser_continuity_row_v2260($pdo,$uid,$continuityPublicId,true);
+    if(!$row)throw new RuntimeException('Transaction tracker was not found.');
+    $result=$action==='stop'
+      ?vp3_browser_continuity_close_v2260($pdo,$user,$continuityPublicId,'user_closed')
+      :vp3_browser_continuity_reopen_v2260($pdo,$user,$continuityPublicId);
+    vp3_browser_control_receipt_v2280($pdo,$uid,(int)$row['id'],'tracker_'.$action,'ok',(string)$row['lifecycle_family'],vp3_browser_control_device_hash_v2280($deviceId));
+    return $result;
+}
+
 function vp3_browser_control_forget_v2280(PDO $pdo,array $user,string $continuityPublicId,string $deviceId=''): array
 {
     $uid=(int)($user['id']??0);$row=vp3_browser_continuity_row_v2260($pdo,$uid,$continuityPublicId,true);
@@ -251,18 +263,25 @@ function vp3_browser_control_audit_v2280(PDO $pdo,array $user,int $limit=80): ar
 {
     $uid=(int)($user['id']??0);$limit=max(10,min(VP3_BROWSER_CONTROL_MAX_AUDIT_V2280,$limit));
     $timeline=[];
+    $q=$pdo->prepare("SELECT public_id,domain,submission_kind,status,result_code,consequence_level,created_at,updated_at FROM browser_submission_intents_v2240 WHERE owner_user_id=? ORDER BY updated_at DESC,id DESC LIMIT ".$limit);
+    $q->execute([$uid]);
+    foreach($q->fetchAll(PDO::FETCH_ASSOC)?:[] as $r)$timeline[]=['kind'=>'submission','phase'=>'v22.40','at'=>(string)$r['updated_at'],'id'=>(string)$r['public_id'],'domain'=>(string)$r['domain'],'state'=>(string)$r['submission_kind'],'status'=>(string)$r['status'],'detail'=>(string)($r['result_code']?:$r['consequence_level'])];
+    $q=$pdo->prepare("SELECT public_id,domain,outcome_state,evidence_strength,observed_at FROM browser_transaction_outcomes_v2250 WHERE owner_user_id=? ORDER BY id DESC LIMIT ".$limit);
+    $q->execute([$uid]);
+    foreach($q->fetchAll(PDO::FETCH_ASSOC)?:[] as $r)$timeline[]=['kind'=>'outcome','phase'=>'v22.50','at'=>(string)$r['observed_at'],'id'=>(string)$r['public_id'],'domain'=>(string)$r['domain'],'state'=>(string)$r['outcome_state'],'status'=>(string)$r['evidence_strength'],'detail'=>'structured destination evidence'];
     $q=$pdo->prepare("SELECT public_id,domain,lifecycle_family,lifecycle_state,tracking_status,closure_reason,created_at,updated_at FROM browser_transaction_continuities_v2260 WHERE owner_user_id=? ORDER BY updated_at DESC,id DESC LIMIT ".$limit);
     $q->execute([$uid]);
-    foreach($q->fetchAll(PDO::FETCH_ASSOC)?:[] as $r)$timeline[]=['kind'=>'continuity','at'=>(string)$r['updated_at'],'id'=>(string)$r['public_id'],'domain'=>(string)$r['domain'],'state'=>(string)$r['lifecycle_state'],'status'=>(string)$r['tracking_status'],'detail'=>(string)$r['closure_reason']];
+    foreach($q->fetchAll(PDO::FETCH_ASSOC)?:[] as $r)$timeline[]=['kind'=>'continuity','phase'=>'v22.60','at'=>(string)$r['updated_at'],'id'=>(string)$r['public_id'],'domain'=>(string)$r['domain'],'state'=>(string)$r['lifecycle_state'],'status'=>(string)$r['tracking_status'],'detail'=>(string)($r['closure_reason']?:$r['lifecycle_family'])];
     $q=$pdo->prepare("SELECT public_id,exception_type,priority_band,status,opened_at,updated_at FROM browser_transaction_intelligence_cases_v2270 WHERE owner_user_id=? ORDER BY updated_at DESC,id DESC LIMIT ".$limit);
     $q->execute([$uid]);
-    foreach($q->fetchAll(PDO::FETCH_ASSOC)?:[] as $r)$timeline[]=['kind'=>'exception','at'=>(string)$r['updated_at'],'id'=>(string)$r['public_id'],'state'=>(string)$r['exception_type'],'status'=>(string)$r['status'],'detail'=>(string)$r['priority_band']];
+    foreach($q->fetchAll(PDO::FETCH_ASSOC)?:[] as $r)$timeline[]=['kind'=>'exception','phase'=>'v22.70','at'=>(string)$r['updated_at'],'id'=>(string)$r['public_id'],'domain'=>'','state'=>(string)$r['exception_type'],'status'=>(string)$r['status'],'detail'=>(string)$r['priority_band']];
     $q=$pdo->prepare("SELECT public_id,action_key,result_code,detail_code,created_at FROM browser_transaction_control_receipts_v2280 WHERE owner_user_id=? ORDER BY id DESC LIMIT ".$limit);
     $q->execute([$uid]);
-    foreach($q->fetchAll(PDO::FETCH_ASSOC)?:[] as $r)$timeline[]=['kind'=>'control','at'=>(string)$r['created_at'],'id'=>(string)$r['public_id'],'state'=>(string)$r['action_key'],'status'=>(string)$r['result_code'],'detail'=>(string)$r['detail_code']];
+    foreach($q->fetchAll(PDO::FETCH_ASSOC)?:[] as $r)$timeline[]=['kind'=>'control','phase'=>'v22.80','at'=>(string)$r['created_at'],'id'=>(string)$r['public_id'],'domain'=>'','state'=>(string)$r['action_key'],'status'=>(string)$r['result_code'],'detail'=>(string)$r['detail_code']];
     usort($timeline,static fn(array $a,array $b)=>strcmp((string)$b['at'],(string)$a['at']));
     return array_slice($timeline,0,$limit);
 }
+
 function vp3_browser_control_status_v2280(PDO $pdo,array $user): array
 {
     $uid=(int)($user['id']??0);$settings=vp3_browser_control_settings_v2280($pdo,$uid);
@@ -270,9 +289,12 @@ function vp3_browser_control_status_v2280(PDO $pdo,array $user): array
     $counts->execute([$uid]);$c=$counts->fetch(PDO::FETCH_ASSOC)?:[];
     $health=$pdo->prepare("SELECT SUM(consecutive_failures>0) failing_scopes,MAX(consecutive_failures) max_failures,MAX(last_scan_at) last_scan_at FROM browser_transaction_scan_leases_v2280 WHERE owner_user_id=?");
     $health->execute([$uid]);$h=$health->fetch(PDO::FETCH_ASSOC)?:[];
+    $trackers=$pdo->prepare("SELECT * FROM browser_transaction_continuities_v2260 WHERE owner_user_id=? ORDER BY tracking_status='active' DESC,updated_at DESC,id DESC LIMIT 40");
+    $trackers->execute([$uid]);$trackerRows=$trackers->fetchAll(PDO::FETCH_ASSOC)?:[];
     return [
       'settings'=>vp3_browser_control_settings_public_v2280($settings),
       'counts'=>['total'=>(int)($c['total']??0),'active'=>(int)($c['active']??0),'closed'=>(int)($c['closed']??0)],
+      'trackers'=>array_map('vp3_browser_continuity_public_v2260',$trackerRows),
       'health'=>['failing_scopes'=>(int)($h['failing_scopes']??0),'max_failures'=>(int)($h['max_failures']??0),'last_scan_at'=>(string)($h['last_scan_at']??'')],
       'privacy'=>[
         'raw_page_text_persisted'=>false,'raw_url_persisted'=>false,'raw_reference_values_persisted'=>false,
