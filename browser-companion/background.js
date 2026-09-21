@@ -762,8 +762,8 @@ async function browserTransactionContinuityCaptureV2260(tabId){
       ).filter(Boolean).sort();
       const scheduleHash=scheduleTokens.length?await sha(JSON.stringify(scheduleTokens)):'';
 
-      const amountText=[...document.querySelector('[data-total],[data-amount],[class*="order-total"],[class*="grand-total"],[class*="total-amount"],[aria-label*="total" i]')?document.querySelectorAll('[data-total],[data-amount],[class*="order-total"],[class*="grand-total"],[class*="total-amount"],[aria-label*="total" i]'):[]]
-        .slice(0,20).map(el=>String(el.innerText||el.textContent||el.getAttribute('data-total')||el.getAttribute('data-amount')||'')).join(' ');
+      const amountNodes=[...document.querySelectorAll('[data-total],[data-amount],[class*="order-total"],[class*="grand-total"],[class*="total-amount"],[aria-label*="total" i]')];
+      const amountText=amountNodes.slice(0,20).map(el=>String(el.innerText||el.textContent||el.getAttribute('data-total')||el.getAttribute('data-amount')||'')).join(' ');
       const amountTokens=[...new Set((amountText.match(/(?:[$€£]\s?\d{1,7}(?:[,.]\d{2})?|\b\d{1,7}(?:[,.]\d{2})\s?(?:USD|EUR|GBP)\b)/gi)||[])
         .map(x=>String(x).replace(/\s+/g,' ').trim().toUpperCase()))].sort().slice(0,12);
       const amountHash=amountTokens.length?await sha(JSON.stringify(amountTokens)):'';
