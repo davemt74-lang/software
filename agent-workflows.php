@@ -206,6 +206,50 @@ function workflow_v1400_time(string $value): string{$ts=strtotime($value);return
   </section>
   <?php endforeach; ?>
 
+  <?php if((int)($browserOutcomes['count']??0)>0||(int)($browserOutcomes['resolved']??0)>0): ?>
+  <section class="workflow-panel" aria-labelledby="browserOutcomeTitle">
+    <div class="workflow-panel-head">
+      <div><small>Browser Companion v22.50</small><h3 id="browserOutcomeTitle">Transaction Outcome Verification & Recovery</h3></div>
+      <span><?= (int)($browserOutcomes['confirmed']??0) ?> confirmed · <?= (int)($browserOutcomes['pending']??0) ?> pending · <?= (int)($browserOutcomes['ambiguous']??0)+(int)($browserOutcomes['external_redirect']??0) ?> unresolved</span>
+    </div>
+    <div class="workflow-summary-grid">
+      <div><small>Destination checks</small><strong><?= (int)($browserOutcomes['count']??0) ?></strong></div>
+      <div><small>Rejected signals</small><strong><?= (int)($browserOutcomes['rejected']??0) ?></strong></div>
+      <div><small>User resolutions</small><strong><?= (int)($browserOutcomes['resolved']??0) ?></strong></div>
+      <div><small>Fresh retry unlocked</small><strong><?= (int)($browserOutcomes['retry_allowed']??0) ?></strong></div>
+    </div>
+    <div class="workflow-two-col">
+      <section class="workflow-panel">
+        <div class="workflow-panel-head"><h3>Destination receipts</h3><span>Structured evidence only</span></div>
+        <div class="workflow-event-list">
+          <?php foreach(array_slice((array)($browserOutcomes['outcomes']??[]),0,20) as $outcome): ?>
+          <article>
+            <strong><?= e(workflow_v1400_status_label((string)($outcome['outcome_state']??'ambiguous'))) ?> · <?= e((string)($outcome['evidence_strength']??'weak')) ?> evidence</strong>
+            <p><?= e((string)($outcome['domain']??'')) ?><?= !empty($outcome['reference_present'])?' · '.e(workflow_v1400_status_label((string)($outcome['reference_kind']??'reference'))).' reference fingerprint':'' ?></p>
+            <small><?= e(workflow_v1400_time((string)($outcome['observed_at']??''))) ?> · <?= count((array)($outcome['evidence_codes']??[])) ?> structured signals</small>
+          </article>
+          <?php endforeach; ?>
+          <?php if(!(array)($browserOutcomes['outcomes']??[])): ?><div class="workflow-empty">No destination checks recorded yet.</div><?php endif; ?>
+        </div>
+      </section>
+      <section class="workflow-panel">
+        <div class="workflow-panel-head"><h3>Recovery resolutions</h3><span>No automatic resubmit</span></div>
+        <div class="workflow-event-list">
+          <?php foreach(array_slice((array)($browserOutcomes['recoveries']??[]),0,20) as $recovery): ?>
+          <article>
+            <strong><?= e(workflow_v1400_status_label((string)($recovery['resolution_key']??''))) ?></strong>
+            <p><?= !empty($recovery['retry_allowed'])?'Duplicate guard released; a new attempt still requires a fresh v22.40 exact-form review.':'Duplicate guard retained.' ?></p>
+            <small><?= e(workflow_v1400_time((string)($recovery['created_at']??''))) ?> · prior <?= e(workflow_v1400_status_label((string)($recovery['prior_submission_status']??''))) ?></small>
+          </article>
+          <?php endforeach; ?>
+          <?php if(!(array)($browserOutcomes['recoveries']??[])): ?><div class="workflow-empty">No user recovery resolution yet.</div><?php endif; ?>
+        </div>
+      </section>
+    </div>
+    <div class="workflow-notice" role="note" style="margin:14px 0 0">v22.50 performs read-only destination checks. Raw page text, raw URLs and raw confirmation/reference values are not persisted. A <strong>confirmed</strong> outcome means the destination page showed multiple strong confirmation signals; it does not prove payment settlement, fulfillment, attendance, approval or any later business result. VP3 never retries automatically.</div>
+  </section>
+  <?php endif; ?>
+
   <?php if((int)($browserTransactions['count']??0)>0): ?>
   <section class="workflow-panel" aria-labelledby="browserTransactionTitle">
     <div class="workflow-panel-head">
