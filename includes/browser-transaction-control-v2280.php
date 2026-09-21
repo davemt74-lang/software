@@ -206,6 +206,8 @@ function vp3_browser_control_tracker_action_v2280(PDO $pdo,array $user,string $c
         $pdo->prepare("UPDATE browser_transaction_intelligence_cases_v2270 SET status='resolved',resolved_at=UTC_TIMESTAMP(),updated_at=UTC_TIMESTAMP() WHERE owner_user_id=? AND continuity_id=? AND status IN ('open','acknowledged')")->execute([$uid,(int)$row['id']]);
         $pdo->prepare("UPDATE browser_transaction_recovery_proposals_v2270 SET status='dismissed',resolved_at=UTC_TIMESTAMP() WHERE owner_user_id=? AND continuity_id=? AND status='proposed'")->execute([$uid,(int)$row['id']]);
       }else{
+        $settings=vp3_browser_control_settings_v2280($pdo,$uid,true);
+        if(empty($settings['monitoring_enabled']))throw new RuntimeException('Resume global transaction monitoring before resuming this tracker.');
         $pause=$pdo->prepare("SELECT pause_scope FROM browser_transaction_control_pauses_v2280 WHERE owner_user_id=? AND continuity_id=? LIMIT 1 FOR UPDATE");$pause->execute([$uid,(int)$row['id']]);$scope=(string)$pause->fetchColumn();
         if($scope==='global')throw new RuntimeException('Resume global transaction monitoring before resuming this tracker.');
         $result=vp3_browser_continuity_reopen_v2260($pdo,$user,$continuityPublicId);
