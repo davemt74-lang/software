@@ -81,6 +81,10 @@ try{
         vp3_browser_intelligence_evaluate_all_v2270($pdo,$user);
         vp3_extension_intelligence_json_v2270(200,$base+['inbox'=>vp3_browser_intelligence_inbox_v2270($pdo,$user)]);
     }
+    if($action==='batch_acknowledge'){
+        $result=vp3_browser_intelligence_batch_acknowledge_v2270($pdo,$user,$input['case_ids']??[]);
+        vp3_extension_intelligence_json_v2270(200,$base+$result+['inbox'=>vp3_browser_intelligence_inbox_v2270($pdo,$user)]);
+    }
     if($action==='case_action'){
         $result=vp3_browser_intelligence_case_action_v2270(
             $pdo,$user,trim((string)($input['case_id']??'')),trim((string)($input['case_action']??''))
