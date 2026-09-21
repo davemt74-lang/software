@@ -2,7 +2,7 @@
 const $=id=>document.getElementById(id);
 const ui={};
 [
-'connectionState','connectControls','shareWorkspace','connectBtn','settingsBtn','connectedAccount','disconnectedAccount','accountAvatar','accountName','accountMeta','accountTeams','openVp3Btn','refreshAccountBtn','accountOptionsBtn','accessNotice','quickActionsCard','composerCard','agentWorkspaceName','agentWorkspaceStatus','agentRefreshBtn','agentConversationSelect','agentNewChatBtn','agentOpenFullBtn','agentUsePageContext','agentContextLabel','agentMessages','agentEmpty','agentMessageInput','agentSendBtn','delegationAgentName','delegationStatus','delegationRefreshBtn','delegationInstruction','delegationMaxSteps','delegationExpiry','delegationRisk','delegationDomains','delegationPreviewBtn','delegationStartBtn','delegationPlan','delegationActive','delegationActiveTitle','delegationActiveMeta','delegationProgress','delegationRunBtn','delegationPauseBtn','delegationResumeBtn','delegationCancelBtn','delegationOpenWorkflowBtn','runtimePanel','runtimeSessionBadge','runtimePlanRevision','runtimeCurrentSkill','runtimeRecovery','runtimeObservationCount','runtimeLastVerified','runtimeReplanBtn','runtimeSkipBtn','runtimeMultiPanel','runtimeMultiStatus','runtimeMultiAttachBtn','runtimeMultiCurrentDomain','runtimeMultiHandoffCount','runtimeMultiTabCount','runtimeMultiConflictCount','runtimeMultiDomains','runtimeMultiDomainsEmpty','runtimeMultiHandoffComposer','runtimeMultiTargetUrl','runtimeMultiGoBtn','runtimeMultiFactComposer','runtimeMultiFactKey','runtimeMultiFactValue','runtimeMultiFactAddBtn','runtimeMultiFacts','runtimeMultiFactsEmpty','runtimeMultiHandoffs','runtimeMultiHandoffsEmpty','runtimeMultiArtifacts','runtimeMultiArtifactsEmpty','runtimeResearchPanel','runtimeResearchStatus','runtimeResearchRefreshBtn','runtimeResearchStart','runtimeResearchQuestion','runtimeResearchProject','runtimeResearchMaxSources','runtimeResearchMaxPages','runtimeResearchMaxClaims','runtimeResearchDuration','runtimeResearchStartBtn','runtimeResearchActive','runtimeResearchPageCount','runtimeResearchClaimCount','runtimeResearchCorroborated','runtimeResearchConflicts','runtimeResearchAnalyzeBtn','runtimeResearchOpenChatBtn','runtimeResearchSaveBtn','runtimeResearchCancelBtn','runtimeResearchOpenReportBtn','runtimeResearchSources','runtimeResearchSourcesEmpty','runtimeResearchClaims','runtimeResearchClaimsEmpty','runtimeResearchMemo','runtimeResearchGaps','runtimeResearchGapsEmpty','runtimeResearchHandoffs','runtimeResearchKnowledgeBtn','runtimeResearchCrmBtn','runtimeResearchTaskBtn','runtimeTimeline','runtimeTimelineEmpty','runtimeTabs','runtimeTabsEmpty','runtimeWebPanel','runtimeWebStatus','runtimeWebScanBtn','runtimeWebControlCount','runtimeWebInteractionCount','runtimeWebElements','runtimeWebElementsEmpty','runtimeWebComposer','runtimeWebSelectedLabel','runtimeWebSelectedMeta','runtimeWebActionSelect','runtimeWebValueField','runtimeWebValueLabel','runtimeWebValueInput','runtimeWebOptionField','runtimeWebOptionSelect','runtimeWebToggleField','runtimeWebToggleSelect','runtimeWebPreviewBtn','runtimeWebClearSelectionBtn','runtimeWebProposal','runtimeWebProposalTitle','runtimeWebProposalDetail','runtimeWebCheckpointNotice','runtimeTransactionReview','runtimeTransactionKind','runtimeTransactionWarning','runtimeTransactionFields','runtimeWebRunBtn','runtimeWebConfirmRunBtn','runtimeWebCancelBtn','runtimeWebRecent','runtimeWebRecentEmpty','runtimeOutcomePanel','runtimeOutcomeState','runtimeOutcomeSummary','runtimeOutcomeEvidence','runtimeOutcomeReference','runtimeOutcomeRecheckBtn','runtimeOutcomeCompletedBtn','runtimeOutcomeNotSubmittedBtn','delegationCheckpoint','delegationCheckpointText','delegationCheckpointOpenBtn','delegationCheckpointDoneBtn','delegationSteps','delegationRecent','delegationRecentEmpty','executionAgentName','executionStatus','executionRefreshBtn','executionPageLabel','executionCandidates','executionCandidatesEmpty','executionTickets','executionTicketsEmpty','executionContinuity','executionContinuityEmpty','memoryAgentName','memoryStatus','memoryRefreshBtn','memoryPageLabel','memoryCandidates','memoryCandidatesEmpty','memoryRemembered','memoryRememberedEmpty','memoryCount',
+'connectionState','connectControls','shareWorkspace','connectBtn','settingsBtn','connectedAccount','disconnectedAccount','accountAvatar','accountName','accountMeta','accountTeams','openVp3Btn','refreshAccountBtn','accountOptionsBtn','accessNotice','quickActionsCard','composerCard','agentWorkspaceName','agentWorkspaceStatus','agentRefreshBtn','agentConversationSelect','agentNewChatBtn','agentOpenFullBtn','agentUsePageContext','agentContextLabel','agentMessages','agentEmpty','agentMessageInput','agentSendBtn','delegationAgentName','delegationStatus','delegationRefreshBtn','delegationInstruction','delegationMaxSteps','delegationExpiry','delegationRisk','delegationDomains','delegationPreviewBtn','delegationStartBtn','delegationPlan','delegationActive','delegationActiveTitle','delegationActiveMeta','delegationProgress','delegationRunBtn','delegationPauseBtn','delegationResumeBtn','delegationCancelBtn','delegationOpenWorkflowBtn','runtimePanel','runtimeSessionBadge','runtimePlanRevision','runtimeCurrentSkill','runtimeRecovery','runtimeObservationCount','runtimeLastVerified','runtimeReplanBtn','runtimeSkipBtn','runtimeMultiPanel','runtimeMultiStatus','runtimeMultiAttachBtn','runtimeMultiCurrentDomain','runtimeMultiHandoffCount','runtimeMultiTabCount','runtimeMultiConflictCount','runtimeMultiDomains','runtimeMultiDomainsEmpty','runtimeMultiHandoffComposer','runtimeMultiTargetUrl','runtimeMultiGoBtn','runtimeMultiFactComposer','runtimeMultiFactKey','runtimeMultiFactValue','runtimeMultiFactAddBtn','runtimeMultiFacts','runtimeMultiFactsEmpty','runtimeMultiHandoffs','runtimeMultiHandoffsEmpty','runtimeMultiArtifacts','runtimeMultiArtifactsEmpty','runtimeResearchPanel','runtimeResearchStatus','runtimeResearchRefreshBtn','runtimeResearchStart','runtimeResearchQuestion','runtimeResearchProject','runtimeResearchMaxSources','runtimeResearchMaxPages','runtimeResearchMaxClaims','runtimeResearchDuration','runtimeResearchStartBtn','runtimeResearchActive','runtimeResearchPageCount','runtimeResearchClaimCount','runtimeResearchCorroborated','runtimeResearchConflicts','runtimeResearchAnalyzeBtn','runtimeResearchOpenChatBtn','runtimeResearchSaveBtn','runtimeResearchCancelBtn','runtimeResearchOpenReportBtn','runtimeResearchSources','runtimeResearchSourcesEmpty','runtimeResearchClaims','runtimeResearchClaimsEmpty','runtimeResearchMemo','runtimeResearchGaps','runtimeResearchGapsEmpty','runtimeResearchHandoffs','runtimeResearchKnowledgeBtn','runtimeResearchCrmBtn','runtimeResearchTaskBtn','runtimeTimeline','runtimeTimelineEmpty','runtimeTabs','runtimeTabsEmpty','runtimeWebPanel','runtimeWebStatus','runtimeWebScanBtn','runtimeWebControlCount','runtimeWebInteractionCount','runtimeWebElements','runtimeWebElementsEmpty','runtimeWebComposer','runtimeWebSelectedLabel','runtimeWebSelectedMeta','runtimeWebActionSelect','runtimeWebValueField','runtimeWebValueLabel','runtimeWebValueInput','runtimeWebOptionField','runtimeWebOptionSelect','runtimeWebToggleField','runtimeWebToggleSelect','runtimeWebPreviewBtn','runtimeWebClearSelectionBtn','runtimeWebProposal','runtimeWebProposalTitle','runtimeWebProposalDetail','runtimeWebCheckpointNotice','runtimeTransactionReview','runtimeTransactionKind','runtimeTransactionWarning','runtimeTransactionFields','runtimeWebRunBtn','runtimeWebConfirmRunBtn','runtimeWebCancelBtn','runtimeWebRecent','runtimeWebRecentEmpty','runtimeOutcomePanel','runtimeOutcomeState','runtimeOutcomeSummary','runtimeOutcomeEvidence','runtimeOutcomeReference','runtimeOutcomeRecheckBtn','runtimeOutcomeCompletedBtn','runtimeOutcomeNotSubmittedBtn','runtimeContinuityPanel','runtimeContinuityState','runtimeContinuitySummary','runtimeContinuityMatch','runtimeContinuityChanges','runtimeContinuityProposals','runtimeContinuityScanBtn','runtimeContinuityCloseBtn','runtimeContinuityReopenBtn','delegationCheckpoint','delegationCheckpointText','delegationCheckpointOpenBtn','delegationCheckpointDoneBtn','delegationSteps','delegationRecent','delegationRecentEmpty','executionAgentName','executionStatus','executionRefreshBtn','executionPageLabel','executionCandidates','executionCandidatesEmpty','executionTickets','executionTicketsEmpty','executionContinuity','executionContinuityEmpty','memoryAgentName','memoryStatus','memoryRefreshBtn','memoryPageLabel','memoryCandidates','memoryCandidatesEmpty','memoryRemembered','memoryRememberedEmpty','memoryCount',
 'nowTab','agentTab','delegationTab','executionTab','memoryTab','thisPageTab','followingTab','liveTab','alertsTab','searchTab','nowView','agentView','delegationView','executionView','memoryView','thisPageView','followingView','liveView','alertsView','searchView','refreshNowBtn','openAgentChatBtn','restoreNowBtn','nowStatus','nowAttentionCount','nowItemCount','nowContextualCount','nowContextStrip','nowContextTitle','nowContextMeta','toggleNowContextBtn','nowContextPanel','nowRelationshipSummary','nowRelationshipList','nowContextActions','nowEmpty','nowFeed','refreshCaptureBtn','pageTitle','pageHost','sourceMeta','sourceStatus',
 'followCurrentSourceBtn','openSourcePageBtn','quickAskBtn','quickSummarizeBtn','quickCompareBtn','quickResearchBtn','quickKnowledgeBtn','quickTaskBtn','quickMemoryBtn','quickTeamBtn','quickAnnotateBtn','selectedText','selectionCount','captureSummary','captureScreenshotBtn','screenshotPreview',
 'screenshotImage','screenshotMeta','removeScreenshotBtn','captureMediaBtn','mediaDetectedText','mediaPreview','mediaPreviewTitle','mediaStart',
@@ -30,6 +30,7 @@ let delegationBusy=false,delegationRunnerBusy=false,delegationPreviewData=null,d
 let runtimeBusyV2200=false,runtimeRunnerBusyV2200=false,runtimeDataV2200=null,runtimeSkillsV2200=[],runtimeOpenedTabsV2200=[];
 let runtimeWebBusyV2210=false,runtimeWebObservationV2210=null,runtimeWebElementsV2210=[],runtimeWebActionsV2210=[],runtimeWebSelectedV2210=null,runtimeWebProposalV2210=null,runtimeWebReceiptsV2210=[],runtimeTransactionReviewV2240=null;
 let runtimeTransactionOutcomeV2250=null;
+let runtimeTransactionContinuityV2260=null;
 let runtimeMultiBusyV2220=false,runtimeMultiStateV2220=null;
 let runtimeResearchBusyV2230=false,runtimeResearchMissionV2230=null,runtimeResearchProjectsV2230=[];
 let executionBusy=false,executionCandidatesData=[],executionTicketsData=[],executionContinuityData=[];
@@ -1306,8 +1307,147 @@ async function resolveRuntimeOutcomeV2250(resolution){
     renderRuntimeOutcomeV2250({...current,...payload,outcome:current.outcome,local:current.local});
     note(notSubmitted?'Outcome resolved. A future attempt requires a new v22.40 review.':'Outcome marked completed.','success');
     await loadRuntimeDetailV2200().catch(()=>{});
+    await scanRuntimeContinuityV2260(true).catch(()=>{});
     return payload;
   }finally{busy(button,false);}
+}
+
+function runtimeContinuityResetV2260(){
+  runtimeTransactionContinuityV2260=null;
+  ui.runtimeContinuityPanel.hidden=true;
+  ui.runtimeContinuityPanel.dataset.state='';
+  ui.runtimeContinuityState.textContent='Not tracked';
+  ui.runtimeContinuitySummary.textContent='VP3 can recognize a verified transaction when you later return to the approved site.';
+  ui.runtimeContinuityMatch.hidden=true;
+  ui.runtimeContinuityMatch.textContent='';
+  ui.runtimeContinuityChanges.replaceChildren();
+  ui.runtimeContinuityProposals.replaceChildren();
+  ui.runtimeContinuityCloseBtn.hidden=true;
+  ui.runtimeContinuityReopenBtn.hidden=true;
+}
+
+function runtimeContinuityLabelV2260(value){
+  return String(value||'').replace(/_/g,' ').replace(/\b\w/g,m=>m.toUpperCase());
+}
+
+function renderRuntimeContinuityV2260(payload){
+  if(!payload){runtimeContinuityResetV2260();return;}
+  runtimeTransactionContinuityV2260=payload;
+  const matched=Boolean(payload.matched&&payload.continuity);
+  const entries=Array.isArray(payload.continuities)?payload.continuities:[];
+  if(!matched&&!entries.length){runtimeContinuityResetV2260();return;}
+
+  ui.runtimeContinuityPanel.hidden=false;
+  ui.runtimeContinuityChanges.replaceChildren();
+  ui.runtimeContinuityProposals.replaceChildren();
+
+  if(matched){
+    const tracker=payload.continuity||{};
+    const event=payload.event||null;
+    const proposals=Array.isArray(payload.proposals)?payload.proposals:[];
+    const state=String(tracker.lifecycle_state||'active');
+    ui.runtimeContinuityPanel.dataset.state=String(tracker.tracking_status||'active');
+    ui.runtimeContinuityState.textContent=runtimeContinuityLabelV2260(state);
+    ui.runtimeContinuitySummary.textContent=runtimeContinuityLabelV2260(tracker.lifecycle_family||'transaction')+' · '+runtimeContinuityLabelV2260(tracker.tracking_status||'active')+(tracker.tracking_status==='closed'&&tracker.closure_reason?' · '+runtimeContinuityLabelV2260(tracker.closure_reason):'');
+
+    const masked=(payload.local&&Array.isArray(payload.local.masked_references)?payload.local.masked_references:[])
+      .find(x=>String(x.kind||'')===String(tracker.reference_kind||''));
+    ui.runtimeContinuityMatch.hidden=false;
+    ui.runtimeContinuityMatch.textContent='Matched this page by approved domain + hashed '+runtimeContinuityLabelV2260(tracker.reference_kind||'transaction')+' reference'+(masked&&masked.masked?' · '+masked.masked:'')+'.';
+
+    if(event){
+      const changes=Array.isArray(event.change_codes)?event.change_codes:[];
+      const row=el('div','runtime-continuity-change','');
+      const copy=el('div','runtime-continuity-copy','');
+      copy.append(
+        el('strong','',changes.length?'Detected changes':'Return page recognized'),
+        el('span','',changes.length?changes.map(runtimeContinuityLabelV2260).join(' · '):'No meaningful lifecycle change detected.')
+      );
+      row.append(copy,el('span','pill',runtimeContinuityLabelV2260(event.lifecycle_state||state)));
+      ui.runtimeContinuityChanges.append(row);
+    }
+
+    for(const proposal of proposals.filter(x=>String(x.status||'')==='proposed')){
+      const row=el('div','runtime-continuity-proposal','');
+      const copy=el('div','runtime-continuity-copy','');
+      const title=runtimeContinuityLabelV2260(proposal.proposal_type||'follow through');
+      const detail=runtimeContinuityLabelV2260(proposal.reason_code||'transaction update')+(proposal.requires_external_write?' · Any external write requires a fresh v22.40 review.':' · Review before applying.');
+      copy.append(el('strong','',title),el('span','',detail));
+      const controls=el('div','delegation-controls','');
+      const acknowledge=el('button','compact-btn','Acknowledge');acknowledge.type='button';acknowledge.dataset.action='continuity_proposal_ack';acknowledge.dataset.proposalId=String(proposal.proposal_id||'');
+      const dismiss=el('button','text-btn','Dismiss');dismiss.type='button';dismiss.dataset.action='continuity_proposal_dismiss';dismiss.dataset.proposalId=String(proposal.proposal_id||'');
+      controls.append(acknowledge,dismiss);
+      row.append(copy,controls);ui.runtimeContinuityProposals.append(row);
+    }
+
+    ui.runtimeContinuityCloseBtn.hidden=String(tracker.tracking_status||'active')!=='active';
+    ui.runtimeContinuityReopenBtn.hidden=String(tracker.tracking_status||'active')!=='closed'||String(tracker.match_mode||'')!=='reference';
+  }else{
+    ui.runtimeContinuityPanel.dataset.state='unmatched';
+    ui.runtimeContinuityState.textContent=entries.length+' tracked';
+    ui.runtimeContinuitySummary.textContent=payload.reason==='ambiguous_reference_match'
+      ?'More than one transaction shares this reference fingerprint. VP3 did not attach the page to either record.'
+      :'Tracked transactions exist for this domain, but this page did not contain an exact hashed reference match.';
+    ui.runtimeContinuityMatch.hidden=false;
+    ui.runtimeContinuityMatch.textContent='No page was attached to a transaction. General browsing history and page content are not used as fallback matching.';
+    for(const entry of entries.slice(0,8)){
+      const tracker=entry&&entry.continuity||{};
+      const row=el('div','runtime-continuity-change','');
+      const copy=el('div','runtime-continuity-copy','');
+      copy.append(el('strong','',runtimeContinuityLabelV2260(tracker.lifecycle_family||'transaction')),el('span','',runtimeContinuityLabelV2260(tracker.lifecycle_state||'active')+' · '+runtimeContinuityLabelV2260(tracker.tracking_status||'active')));
+      row.append(copy,el('span','pill','reference only'));
+      ui.runtimeContinuityChanges.append(row);
+    }
+    ui.runtimeContinuityCloseBtn.hidden=true;
+    ui.runtimeContinuityReopenBtn.hidden=true;
+  }
+}
+
+async function scanRuntimeContinuityV2260(silent=false){
+  if(!state||!state.connected){runtimeContinuityResetV2260();return null;}
+  if(!silent)busy(ui.runtimeContinuityScanBtn,true,'Checking…');
+  try{
+    const payload=await msg('transaction_continuity_scan');
+    renderRuntimeContinuityV2260(payload);
+    if(!silent&&payload&&payload.matched){
+      const changes=Array.isArray(payload.event&&payload.event.change_codes)?payload.event.change_codes:[];
+      note(changes.length?'Transaction lifecycle update detected.':'Existing transaction recognized with no meaningful change.',changes.length?'success':'');
+    }else if(!silent&&payload&&!payload.matched){
+      note('No exact tracked transaction reference matched this page.');
+    }
+    return payload;
+  }finally{if(!silent)busy(ui.runtimeContinuityScanBtn,false);}
+}
+
+async function loadRuntimeContinuityV2260(){
+  if(!state||!state.connected){runtimeContinuityResetV2260();return null;}
+  const payload=await msg('transaction_continuity_list');
+  const entries=Array.isArray(payload&&payload.continuities)?payload.continuities:[];
+  if(entries.length)renderRuntimeContinuityV2260({matched:false,reason:'list_only',continuities:entries});
+  else runtimeContinuityResetV2260();
+  return payload;
+}
+
+async function continuityTrackerActionV2260(action){
+  const current=runtimeTransactionContinuityV2260;
+  const tracker=current&&current.continuity||null;
+  if(!tracker||!tracker.continuity_id)throw new Error('No matched transaction continuity is available.');
+  const close=action==='close';
+  const button=close?ui.runtimeContinuityCloseBtn:ui.runtimeContinuityReopenBtn;
+  if(close&&!globalThis.confirm('Stop tracking this transaction? Its continuity history stays in VP3, but return pages will no longer be matched until you resume tracking.'))return;
+  busy(button,true,close?'Closing…':'Resuming…');
+  try{
+    await msg('transaction_continuity_action',{action,payload:{continuity_id:tracker.continuity_id,reason:'user_closed'}});
+    await scanRuntimeContinuityV2260(true);
+    note(close?'Transaction tracking stopped.':'Transaction tracking resumed.','success');
+  }finally{busy(button,false);}
+}
+
+async function continuityProposalActionV2260(proposalId,proposalAction){
+  if(!proposalId)return;
+  await msg('transaction_continuity_action',{action:'proposal_action',payload:{proposal_id:proposalId,proposal_action:proposalAction}});
+  await scanRuntimeContinuityV2260(true);
+  note(proposalAction==='acknowledge'?'Follow-through proposal acknowledged.':'Follow-through proposal dismissed.','success');
 }
 
 function runtimeRequestV2200(action,payload={}){
@@ -1335,10 +1475,10 @@ function renderRuntimeV2200(runtime){
   runtimeDataV2200=runtime||null;
   if(!runtime){
     ui.runtimePanel.hidden=true;
-    runtimeWebResetV2210();runtimeMultiResetV2220();runtimeResearchResetV2230();runtimeOutcomeResetV2250();
+    runtimeWebResetV2210();runtimeMultiResetV2220();runtimeResearchResetV2230();runtimeOutcomeResetV2250();runtimeContinuityResetV2260();
     return;
   }
-  if(previousRuntimeId&&previousRuntimeId!==String(runtime.runtime_id||'')){runtimeWebResetV2210();runtimeMultiResetV2220();runtimeResearchResetV2230();runtimeOutcomeResetV2250();}
+  if(previousRuntimeId&&previousRuntimeId!==String(runtime.runtime_id||'')){runtimeWebResetV2210();runtimeMultiResetV2220();runtimeResearchResetV2230();runtimeOutcomeResetV2250();runtimeContinuityResetV2260();}
   ui.runtimePanel.hidden=false;
   ui.runtimeSessionBadge.textContent=(runtime.status||'ready')+' · '+String(runtime.runtime_id||'').slice(0,8);
   ui.runtimePlanRevision.textContent='r'+String(runtime.plan_revision||1);
@@ -1369,6 +1509,7 @@ async function attachRuntimeV2200(delegationId){
   await loadRuntimeMultiV2220().catch(()=>{});
   await loadRuntimeResearchV2230().catch(()=>{});
   await loadRuntimeTransactionOutcomeV2250().catch(()=>{});
+  await scanRuntimeContinuityV2260(true).catch(()=>{});
   return payload&&payload.runtime||null;
 }
 async function loadRuntimeDetailV2200(){
@@ -2140,6 +2281,10 @@ ui.runtimeWebClearSelectionBtn.onclick=()=>clearRuntimeWebSelectionV2210().catch
 ui.runtimeOutcomeRecheckBtn.onclick=()=>recheckRuntimeOutcomeV2250().catch(fail);
 ui.runtimeOutcomeCompletedBtn.onclick=()=>resolveRuntimeOutcomeV2250('confirmed_completed').catch(fail);
 ui.runtimeOutcomeNotSubmittedBtn.onclick=()=>resolveRuntimeOutcomeV2250('confirmed_not_submitted').catch(fail);
+ui.runtimeContinuityScanBtn.onclick=()=>scanRuntimeContinuityV2260(false).catch(fail);
+ui.runtimeContinuityCloseBtn.onclick=()=>continuityTrackerActionV2260('close').catch(fail);
+ui.runtimeContinuityReopenBtn.onclick=()=>continuityTrackerActionV2260('reopen').catch(fail);
+ui.runtimeContinuityProposals.onclick=e=>{const b=e.target.closest('button[data-action]');if(!b)return;if(b.dataset.action==='continuity_proposal_ack')continuityProposalActionV2260(b.dataset.proposalId,'acknowledge').catch(fail);if(b.dataset.action==='continuity_proposal_dismiss')continuityProposalActionV2260(b.dataset.proposalId,'dismiss').catch(fail);};
 ui.delegationRecent.onclick=e=>delegationClickV2190(e).catch(fail);
 ui.delegationSteps.onclick=e=>delegationClickV2190(e).catch(fail);
 ui.delegationInstruction.oninput=delegationInvalidatePreviewV2190;
@@ -2211,7 +2356,7 @@ ui.liveMessageInput.onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefa
 ui.liveMessages.onclick=async e=>{const b=e.target.closest('button[data-action="live_report"]');if(!b)return;const reason=prompt('Why are you reporting this Live message?');if(!reason)return;try{await trustAction('report_create',{target_type:'live_message',target_id:b.dataset.messageId,reason:reason,detail:''});note('Report submitted.','success');}catch(err){await fail(err);}};
 ui.thisPageFeed.onclick=feedClick;ui.followingFeed.onclick=feedClick;ui.loadMoreThisPageBtn.onclick=()=>loadThis(false).catch(fail);ui.loadMoreFollowingBtn.onclick=()=>loadFollowing(false).catch(fail);
 const io=new IntersectionObserver(es=>es.forEach(e=>{if(!e.isIntersecting||e.target.hidden)return;if(e.target===ui.loadMoreThisPageBtn)loadThis(false).catch(fail);if(e.target===ui.loadMoreFollowingBtn)loadFollowing(false).catch(fail);}),{rootMargin:'120px'});io.observe(ui.loadMoreThisPageBtn);io.observe(ui.loadMoreFollowingBtn);
-function pageWatch(){clearInterval(pageTimer);let identity=(capture&&capture.source_url||'')+'\n'+(capture&&capture.title||'');pageTimer=setInterval(async()=>{if(!state||!state.connected||!['now','agent','delegation','execution','memory','this_page','live','alerts','search'].includes(activeView))return;try{const x=await msg('tab_identity'),next=(x.source_url||'')+'\n'+(x.title||'');if(x.source_url&&next!==identity){identity=next;nowContextIgnored=false;await refreshCapture(activeView==='this_page');if(activeView==='now')await loadNow(true);if(activeView==='agent'&&ui.agentUsePageContext.checked)ui.agentContextLabel.textContent='Temporary context: '+(capture.title||host(capture.source_url)||'current page');if(activeView==='execution')await loadExecutionV2180();if(activeView==='memory')await loadMemoryV2170();if(activeView==='live'){liveRoom=null;liveCursor=0;ui.liveRoomPanel.hidden=true;await loadLiveRooms();}if(activeView==='alerts')await loadAlerts();if(activeView==='search')await loadDiscovery();}}catch(e){}},2000);}
+function pageWatch(){clearInterval(pageTimer);let identity=(capture&&capture.source_url||'')+'\n'+(capture&&capture.title||'');pageTimer=setInterval(async()=>{if(!state||!state.connected||!['now','agent','delegation','execution','memory','this_page','live','alerts','search'].includes(activeView))return;try{const x=await msg('tab_identity'),next=(x.source_url||'')+'\n'+(x.title||'');if(x.source_url&&next!==identity){identity=next;nowContextIgnored=false;await refreshCapture(activeView==='this_page');if(activeView==='now')await loadNow(true);if(activeView==='agent'&&ui.agentUsePageContext.checked)ui.agentContextLabel.textContent='Temporary context: '+(capture.title||host(capture.source_url)||'current page');if(activeView==='execution')await loadExecutionV2180();if(activeView==='memory')await loadMemoryV2170();if(activeView==='live'){liveRoom=null;liveCursor=0;ui.liveRoomPanel.hidden=true;await loadLiveRooms();}if(activeView==='alerts')await loadAlerts();if(activeView==='search')await loadDiscovery();await scanRuntimeContinuityV2260(true).catch(()=>{});}}catch(e){}},2000);}
 window.addEventListener('focus',()=>{if(state&&state.connected)refreshState().catch(()=>{});});
 window.onbeforeunload=()=>{clearInterval(pageTimer);clearInterval(livePollTimer);clearInterval(liveHeartbeatTimer);clearInterval(cognitiveTimer);clearInterval(agentPollTimer);stream&&stream.getTracks().forEach(t=>t.stop());};
-refreshState().then(pageWatch).catch(fail);
+refreshState().then(async()=>{await scanRuntimeContinuityV2260(true).catch(()=>{});pageWatch();}).catch(fail);

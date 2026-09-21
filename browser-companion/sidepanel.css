@@ -217,3 +217,15 @@
 .runtime-outcome-boundary{display:grid;gap:4px;margin-top:12px;padding:10px;border-radius:10px;background:var(--surface-soft,#f8f8f5);font-size:12px;line-height:1.4}
 .runtime-outcome-panel[data-state="confirmed"] .runtime-outcome-summary{font-weight:600}
 .runtime-outcome-panel[data-state="rejected"] .runtime-outcome-summary,.runtime-outcome-panel[data-state="external_redirect"] .runtime-outcome-summary{font-weight:600}
+
+/* Browser Companion v22.60 — transaction continuity & follow-through */
+.runtime-continuity-panel{margin-top:14px;padding:14px;border:1px solid var(--border,#d8d8d3);border-radius:14px;background:var(--surface,#fff)}
+.runtime-continuity-summary{margin-top:10px;font-size:13px;line-height:1.45}
+.runtime-continuity-match{margin-top:10px;padding:9px 10px;border:1px solid var(--border,#e2e2dd);border-radius:10px;font-size:12px}
+.runtime-continuity-changes,.runtime-continuity-proposals{display:grid;gap:8px;margin-top:10px}
+.runtime-continuity-change,.runtime-continuity-proposal{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;padding:9px 10px;border:1px solid var(--border,#e2e2dd);border-radius:10px;background:var(--surface-soft,#f8f8f5)}
+.runtime-continuity-copy{display:grid;gap:3px;min-width:0}
+.runtime-continuity-copy strong,.runtime-continuity-copy span{overflow-wrap:anywhere}
+.runtime-continuity-copy span{font-size:12px;opacity:.78}
+.runtime-continuity-boundary{display:grid;gap:4px;margin-top:12px;padding:10px;border-radius:10px;background:var(--surface-soft,#f8f8f5);font-size:12px;line-height:1.4}
+.runtime-continuity-panel[data-state="closed"]{opacity:.9}

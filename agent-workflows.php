@@ -10,6 +10,7 @@ require_once __DIR__ . '/includes/browser-multisite-v2220.php';
 require_once __DIR__ . '/includes/browser-research-save-v2230.php';
 require_once __DIR__ . '/includes/browser-transaction-safety-v2240.php';
 require_once __DIR__ . '/includes/browser-transaction-outcome-v2250.php';
+require_once __DIR__ . '/includes/browser-transaction-continuity-v2260.php';
 require_permission('account.access');
 $pdo=db();$user=current_user();if(!$pdo||!$user)redirect(url('/login.php'));
 if(!agent_workflow_schema_ready_v1400($pdo))redirect(url('/agent-workflow-upgrade-v1400.php'));
@@ -49,9 +50,46 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
                     $notSubmitted?'confirmed_not_submitted':'confirmed_completed',
                     $notSubmitted?'reviewed_destination_not_submitted':'reviewed_destination_completed'
                 );
+                $continuityStarted=false;
+                if(!$notSubmitted){
+                    try{
+                        vp3_browser_continuity_ensure_v2260(
+                            $pdo,$user,(string)$runtimeCtx['agent_namespace'],(string)$runtimeCtx['public_id'],$intentId
+                        );
+                        $continuityStarted=true;
+                    }catch(RuntimeException $continuityError){
+                        if(!str_contains($continuityError->getMessage(),'requires a reusable hashed v22.50 reference'))throw $continuityError;
+                    }
+                }
                 $notice=$notSubmitted
                     ?'Outcome resolved as not submitted. Duplicate protection was released; any new attempt requires a fresh v22.40 review.'
-                    :'Outcome resolved as completed. Duplicate protection remains in place.';
+                    :($continuityStarted
+                        ?'Outcome resolved as completed. Transaction continuity is now available for reference-only follow-through.'
+                        :'Outcome resolved as completed. No reusable reference was available, so cross-time transaction tracking was not started.');
+                redirect(url('/agent-workflows.php?id='.$runId.'&notice='.rawurlencode($notice)));
+            }elseif(in_array($action,['browser_continuity_close','browser_continuity_reopen'],true)){
+                $runId=max(0,(int)($_POST['run_id']??0));
+                $continuityId=trim((string)($_POST['continuity_id']??''));
+                $continuity=vp3_browser_continuity_row_v2260($pdo,(int)$user['id'],$continuityId,true);
+                if($runId<1||!$continuity||(int)$continuity['workflow_run_id']!==$runId)throw new RuntimeException('Transaction continuity context is invalid.');
+                if($action==='browser_continuity_close'){
+                    vp3_browser_continuity_close_v2260($pdo,$user,$continuityId,'user_closed');
+                    $notice='Transaction follow-through tracking stopped. Historical receipts remain available.';
+                }else{
+                    vp3_browser_continuity_reopen_v2260($pdo,$user,$continuityId);
+                    $notice='Transaction follow-through tracking resumed using its hashed reference.';
+                }
+                redirect(url('/agent-workflows.php?id='.$runId.'&notice='.rawurlencode($notice)));
+            }elseif(in_array($action,['browser_followthrough_ack','browser_followthrough_dismiss'],true)){
+                $runId=max(0,(int)($_POST['run_id']??0));
+                $proposalId=trim((string)($_POST['proposal_id']??''));
+                $check=$pdo->prepare("SELECT p.public_id FROM browser_transaction_followthrough_proposals_v2260 p
+                  INNER JOIN browser_transaction_continuities_v2260 c ON c.id=p.continuity_id
+                  WHERE p.public_id=? AND p.owner_user_id=? AND c.owner_user_id=? AND c.workflow_run_id=? LIMIT 1");
+                $check->execute([$proposalId,(int)$user['id'],(int)$user['id'],$runId]);
+                if($runId<1||!(string)$check->fetchColumn())throw new RuntimeException('Follow-through proposal context is invalid.');
+                vp3_browser_followthrough_resolve_v2260($pdo,$user,$proposalId,$action==='browser_followthrough_ack'?'acknowledge':'dismiss');
+                $notice=$action==='browser_followthrough_ack'?'Follow-through proposal acknowledged.':'Follow-through proposal dismissed.';
                 redirect(url('/agent-workflows.php?id='.$runId.'&notice='.rawurlencode($notice)));
             }
             else throw new RuntimeException('Unknown workflow action.');
@@ -72,6 +110,7 @@ $browserMulti=$detail&&vp3_browser_multisite_schema_ready_v2220($pdo)?vp3_browse
 $browserResearch=$detail&&vp3_browser_research_schema_ready_v2230($pdo)?vp3_browser_research_for_workflow_v2230($pdo,(int)$user['id'],$detailId):[];
 $browserTransactions=$detail&&vp3_browser_transaction_schema_ready_v2240($pdo)?vp3_browser_transaction_for_workflow_v2240($pdo,(int)$user['id'],$detailId):['count'=>0,'completed'=>0,'uncertain'=>0,'failed'=>0,'manual_only'=>0,'intents'=>[]];
 $browserOutcomes=$detail&&vp3_browser_outcome_schema_ready_v2250($pdo)?vp3_browser_outcome_for_workflow_v2250($pdo,(int)$user['id'],$detailId):['count'=>0,'confirmed'=>0,'pending'=>0,'rejected'=>0,'ambiguous'=>0,'external_redirect'=>0,'resolved'=>0,'retry_allowed'=>0,'outcomes'=>[],'recoveries'=>[]];
+$browserContinuity=$detail&&vp3_browser_continuity_schema_ready_v2260($pdo)?vp3_browser_continuity_for_workflow_v2260($pdo,(int)$user['id'],$detailId):['count'=>0,'active'=>0,'closed'=>0,'changes'=>0,'proposals'=>0,'continuities'=>[],'events'=>[],'followthrough'=>[]];
 
 function workflow_v1400_status_label(string $status): string{return str_replace('_',' ',ucwords($status,'_'));}
 function workflow_v1400_time(string $value): string{$ts=strtotime($value);return $ts?date('M j, g:i A',$ts):'—';}
@@ -226,6 +265,75 @@ function workflow_v1400_time(string $value): string{$ts=strtotime($value);return
     <div class="workflow-notice" role="note" style="margin:14px 0 0">Raw page text, URLs and browser history are not persisted by the Browser Research mission. Durable state is limited to structured claims, bounded evidence excerpts, fingerprints, source domains, freshness metadata and canonical VP3 Research references. Saving creates drafts; it does not publish.</div>
   </section>
   <?php endforeach; ?>
+
+  <?php if((int)($browserContinuity['count']??0)>0): ?>
+  <section class="workflow-panel" aria-labelledby="browserContinuityTitle">
+    <div class="workflow-panel-head">
+      <div><small>Browser Companion v22.60</small><h3 id="browserContinuityTitle">Transaction Continuity & Follow-Through</h3></div>
+      <span><?= (int)($browserContinuity['active']??0) ?> active · <?= (int)($browserContinuity['closed']??0) ?> closed · <?= (int)($browserContinuity['proposals']??0) ?> proposals</span>
+    </div>
+    <div class="workflow-summary-grid">
+      <div><small>Tracked transactions</small><strong><?= (int)($browserContinuity['count']??0) ?></strong></div>
+      <div><small>Meaningful changes</small><strong><?= (int)($browserContinuity['changes']??0) ?></strong></div>
+      <div><small>Return-page match</small><strong>Domain + hashed reference</strong></div>
+      <div><small>External writes</small><strong>Fresh v22.40 required</strong></div>
+    </div>
+    <div class="workflow-two-col">
+      <section class="workflow-panel">
+        <div class="workflow-panel-head"><h3>Lifecycle trackers</h3><span>Reference-only continuity</span></div>
+        <div class="workflow-event-list">
+          <?php foreach((array)($browserContinuity['continuities']??[]) as $tracker): ?>
+          <article>
+            <strong><?= e(workflow_v1400_status_label((string)($tracker['lifecycle_family']??'generic'))) ?> · <?= e(workflow_v1400_status_label((string)($tracker['lifecycle_state']??'active'))) ?></strong>
+            <p><?= e((string)($tracker['domain']??'')) ?> · <?= e(workflow_v1400_status_label((string)($tracker['tracking_status']??'active'))) ?><?= !empty($tracker['reference_present'])?' · hashed '.e(workflow_v1400_status_label((string)($tracker['reference_kind']??'reference'))).' reference':'' ?></p>
+            <small><?= !empty($tracker['last_change_at'])?'Changed '.e(workflow_v1400_time((string)$tracker['last_change_at'])):'Started '.e(workflow_v1400_time((string)($tracker['created_at']??''))) ?></small>
+            <div class="workflow-actions-bar" style="margin-top:8px">
+              <?php if((string)($tracker['tracking_status']??'active')==='active'): ?>
+              <form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="browser_continuity_close"><input type="hidden" name="run_id" value="<?= (int)$detailId ?>"><input type="hidden" name="continuity_id" value="<?= e((string)($tracker['continuity_id']??'')) ?>"><button class="workflow-button" type="submit">Stop tracking</button></form>
+              <?php elseif((string)($tracker['match_mode']??'')==='reference'): ?>
+              <form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="browser_continuity_reopen"><input type="hidden" name="run_id" value="<?= (int)$detailId ?>"><input type="hidden" name="continuity_id" value="<?= e((string)($tracker['continuity_id']??'')) ?>"><button class="workflow-button" type="submit">Resume tracking</button></form>
+              <?php endif; ?>
+            </div>
+          </article>
+          <?php endforeach; ?>
+        </div>
+      </section>
+      <section class="workflow-panel">
+        <div class="workflow-panel-head"><h3>Lifecycle changes</h3><span>Structured fingerprints</span></div>
+        <div class="workflow-event-list">
+          <?php foreach(array_slice((array)($browserContinuity['events']??[]),0,30) as $event): ?>
+          <article>
+            <strong><?= e(workflow_v1400_status_label((string)($event['lifecycle_state']??'active'))) ?><?= !empty($event['prior_state'])?' ← '.e(workflow_v1400_status_label((string)$event['prior_state'])):'' ?></strong>
+            <p><?= (array)($event['change_codes']??[])?e(implode(' · ',array_map('workflow_v1400_status_label',(array)$event['change_codes']))):'Return page recognized with no meaningful lifecycle change.' ?></p>
+            <small><?= e(workflow_v1400_time((string)($event['observed_at']??''))) ?><?= !empty($event['terminal_observed'])?' · terminal state observed':'' ?></small>
+          </article>
+          <?php endforeach; ?>
+          <?php if(!(array)($browserContinuity['events']??[])): ?><div class="workflow-empty">No return-page lifecycle observations yet.</div><?php endif; ?>
+        </div>
+      </section>
+    </div>
+    <section class="workflow-panel" style="margin-top:14px">
+      <div class="workflow-panel-head"><h3>Follow-through proposals</h3><span>Proposal-first</span></div>
+      <div class="workflow-event-list">
+        <?php foreach(array_slice((array)($browserContinuity['followthrough']??[]),0,30) as $proposal): ?>
+        <article>
+          <strong><?= e(workflow_v1400_status_label((string)($proposal['proposal_type']??'follow_through'))) ?> · <?= e(workflow_v1400_status_label((string)($proposal['status']??'proposed'))) ?></strong>
+          <p><?= e(workflow_v1400_status_label((string)($proposal['reason_code']??'transaction_update'))) ?><?= !empty($proposal['requires_external_write'])?' · any external action requires a fresh v22.40 exact-form review':' · local VP3 follow-through review' ?></p>
+          <small><?= e(workflow_v1400_time((string)($proposal['created_at']??''))) ?></small>
+          <?php if((string)($proposal['status']??'')==='proposed'): ?>
+          <div class="workflow-actions-bar" style="margin-top:8px">
+            <form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="browser_followthrough_ack"><input type="hidden" name="run_id" value="<?= (int)$detailId ?>"><input type="hidden" name="proposal_id" value="<?= e((string)($proposal['proposal_id']??'')) ?>"><button class="workflow-button" type="submit">Acknowledge</button></form>
+            <form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="browser_followthrough_dismiss"><input type="hidden" name="run_id" value="<?= (int)$detailId ?>"><input type="hidden" name="proposal_id" value="<?= e((string)($proposal['proposal_id']??'')) ?>"><button class="workflow-button" type="submit">Dismiss</button></form>
+          </div>
+          <?php endif; ?>
+        </article>
+        <?php endforeach; ?>
+        <?php if(!(array)($browserContinuity['followthrough']??[])): ?><div class="workflow-empty">No follow-through proposals yet.</div><?php endif; ?>
+      </div>
+    </section>
+    <div class="workflow-notice" role="note" style="margin:14px 0 0">v22.60 recognizes return pages only through the signed-in owner, approved domain and hashed transaction reference. It stores lifecycle states, fingerprints and structured change codes—not browser history, raw URLs, raw page text or raw transaction identifiers. Calendar/task/reply/corrective follow-through is proposal-first; any consequential external write must begin a new v22.40 review.</div>
+  </section>
+  <?php endif; ?>
 
   <?php if((int)($browserOutcomes['count']??0)>0||(int)($browserOutcomes['resolved']??0)>0): ?>
   <section class="workflow-panel" aria-labelledby="browserOutcomeTitle">

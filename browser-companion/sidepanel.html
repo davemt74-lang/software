@@ -457,6 +457,29 @@
               </div>
             </section>
 
+            <section id="runtimeContinuityPanel" class="runtime-continuity-panel" hidden>
+              <div class="row-between">
+                <div>
+                  <div class="eyebrow">Transaction Continuity & Follow-Through · v22.60</div>
+                  <strong>Ongoing transaction lifecycle</strong>
+                </div>
+                <span id="runtimeContinuityState" class="pill">Not tracked</span>
+              </div>
+              <div id="runtimeContinuitySummary" class="runtime-continuity-summary">VP3 can recognize a verified transaction when you later return to the approved site.</div>
+              <div id="runtimeContinuityMatch" class="runtime-continuity-match" hidden></div>
+              <div id="runtimeContinuityChanges" class="runtime-continuity-changes"></div>
+              <div id="runtimeContinuityProposals" class="runtime-continuity-proposals"></div>
+              <div class="runtime-continuity-boundary">
+                <strong>Observe and propose, never silently act.</strong>
+                <span>Return-page matching uses the approved domain plus a hashed transaction reference. Raw page text, raw URLs and raw order/booking/reference values are not persisted. Any new external write still requires a fresh v22.40 review.</span>
+              </div>
+              <div class="delegation-controls">
+                <button id="runtimeContinuityScanBtn" type="button">Check this page</button>
+                <button id="runtimeContinuityCloseBtn" type="button" hidden>Stop tracking</button>
+                <button id="runtimeContinuityReopenBtn" type="button" hidden>Resume tracking</button>
+              </div>
+            </section>
+
             <div class="runtime-columns">
               <div>
                 <div class="runtime-subhead"><strong>Timeline</strong><span>Observe → Act → Verify</span></div>

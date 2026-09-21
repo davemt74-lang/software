@@ -15,8 +15,9 @@ const api=read('api/extension-transaction-outcome-v2250.php');
 const workflows=read('agent-workflows.php');
 const upgrade=read('upgrade.php');
 
-must(manifest.version==='22.5.0','v22.50 manifest version missing');
-must(background.includes("const VP3_EXTENSION_VERSION = '22.5.0';"),'v22.50 request version missing');
+const outcomeVersion=String(manifest.version||'').split('.').map(Number);
+must(outcomeVersion.length===3&&(outcomeVersion[0]>22||(outcomeVersion[0]===22&&outcomeVersion[1]>=5)),'v22.50+ manifest version missing');
+must(background.includes(`const VP3_EXTENSION_VERSION = '${manifest.version}';`),'v22.50+ request version must match manifest');
 must(!manifest.permissions.includes('cookies'),'Outcome verification must not request cookies permission');
 
 // Layer over the exact reviewed v22.40 transaction; no new external-action authority.
