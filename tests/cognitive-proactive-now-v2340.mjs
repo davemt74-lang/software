@@ -24,7 +24,7 @@ const checks=[
  ['existing delivery authority retained', /cognitive_presentation_v510_and_extension_notifications_v2140/.test(proactive)],
  ['feed exposes proactive brief', /vp3_cognitive_proactive_now_compose_v2340/.test(feed) && /'proactive_brief'=>\$proactiveBrief/.test(feed)],
  ['chat renders proactive brief', /data-cognitive-proactive-brief/.test(chatJs) && /vp3-cognitive-proactive-brief-v2340/.test(chatCss)],
- ['focus links existing cards', /data-proactive-focus/.test(chatJs) && /scrollIntoView/.test(chatJs)],
+ ['focus links existing cards', /dataset\.proactiveFocus/.test(chatJs) && /focusFeedItem/.test(chatJs) && /scrollIntoView/.test(chatJs)],
  ['browser receives same brief', /'proactive_brief'=>is_array\(\$feed\['proactive_brief'\]/.test(browser)],
  ['return digest enriched before persistence', /vp3_cognitive_proactive_now_digest_summary_v2340/.test(presentation) && presentation.indexOf('vp3_cognitive_proactive_now_digest_summary_v2340')<presentation.indexOf('INSERT INTO cognitive_return_digests_v510')],
  ['immediate voice function unchanged authority', /vp3_cognitive_presentation_voice_candidate_v510/.test(presentation) && /last_voice_notification_id/.test(presentation)],
