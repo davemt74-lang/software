@@ -195,44 +195,58 @@ function vp3_browser_control_resume_all_v2280(PDO $pdo,array $user,string $devic
 function vp3_browser_control_tracker_action_v2280(PDO $pdo,array $user,string $continuityPublicId,string $action,string $deviceId=''): array
 {
     if(!in_array($action,['stop','resume'],true))throw new InvalidArgumentException('Unsupported transaction tracker action.');
-    $uid=(int)($user['id']??0);$row=vp3_browser_continuity_row_v2260($pdo,$uid,$continuityPublicId,true);
-    if(!$row)throw new RuntimeException('Transaction tracker was not found.');
-    if($action==='stop'){
-      $result=vp3_browser_continuity_close_v2260($pdo,$user,$continuityPublicId,'no_longer_track');
-      $pdo->prepare("INSERT INTO browser_transaction_control_pauses_v2280 (owner_user_id,continuity_id,pause_scope) VALUES (?,?,'tracker') ON DUPLICATE KEY UPDATE pause_scope='tracker',paused_at=UTC_TIMESTAMP()")->execute([$uid,(int)$row['id']]);
-      $pdo->prepare("UPDATE browser_transaction_followthrough_proposals_v2260 SET status='dismissed',resolved_at=UTC_TIMESTAMP() WHERE owner_user_id=? AND continuity_id=? AND status='proposed'")->execute([$uid,(int)$row['id']]);
-      $pdo->prepare("UPDATE browser_transaction_intelligence_cases_v2270 SET status='resolved',resolved_at=UTC_TIMESTAMP(),updated_at=UTC_TIMESTAMP() WHERE owner_user_id=? AND continuity_id=? AND status IN ('open','acknowledged')")->execute([$uid,(int)$row['id']]);
-      $pdo->prepare("UPDATE browser_transaction_recovery_proposals_v2270 SET status='dismissed',resolved_at=UTC_TIMESTAMP() WHERE owner_user_id=? AND continuity_id=? AND status='proposed'")->execute([$uid,(int)$row['id']]);
-    }else{
-      $pause=$pdo->prepare("SELECT pause_scope FROM browser_transaction_control_pauses_v2280 WHERE owner_user_id=? AND continuity_id=? LIMIT 1");$pause->execute([$uid,(int)$row['id']]);$scope=(string)$pause->fetchColumn();
-      if($scope==='global')throw new RuntimeException('Resume global transaction monitoring before resuming this tracker.');
-      $result=vp3_browser_continuity_reopen_v2260($pdo,$user,$continuityPublicId);
-      $pdo->prepare("DELETE FROM browser_transaction_control_pauses_v2280 WHERE owner_user_id=? AND continuity_id=?")->execute([$uid,(int)$row['id']]);
-    }
-    vp3_browser_control_receipt_v2280($pdo,$uid,(int)$row['id'],'tracker_'.$action,'ok',(string)$row['lifecycle_family'],vp3_browser_control_device_hash_v2280($deviceId));
-    return $result;
+    $uid=(int)($user['id']??0);$pdo->beginTransaction();
+    try{
+      $row=vp3_browser_continuity_row_v2260($pdo,$uid,$continuityPublicId,true);
+      if(!$row)throw new RuntimeException('Transaction tracker was not found.');
+      if($action==='stop'){
+        $result=vp3_browser_continuity_close_v2260($pdo,$user,$continuityPublicId,'no_longer_track');
+        $pdo->prepare("INSERT INTO browser_transaction_control_pauses_v2280 (owner_user_id,continuity_id,pause_scope) VALUES (?,?,'tracker') ON DUPLICATE KEY UPDATE pause_scope='tracker',paused_at=UTC_TIMESTAMP()")->execute([$uid,(int)$row['id']]);
+        $pdo->prepare("UPDATE browser_transaction_followthrough_proposals_v2260 SET status='dismissed',resolved_at=UTC_TIMESTAMP() WHERE owner_user_id=? AND continuity_id=? AND status='proposed'")->execute([$uid,(int)$row['id']]);
+        $pdo->prepare("UPDATE browser_transaction_intelligence_cases_v2270 SET status='resolved',resolved_at=UTC_TIMESTAMP(),updated_at=UTC_TIMESTAMP() WHERE owner_user_id=? AND continuity_id=? AND status IN ('open','acknowledged')")->execute([$uid,(int)$row['id']]);
+        $pdo->prepare("UPDATE browser_transaction_recovery_proposals_v2270 SET status='dismissed',resolved_at=UTC_TIMESTAMP() WHERE owner_user_id=? AND continuity_id=? AND status='proposed'")->execute([$uid,(int)$row['id']]);
+      }else{
+        $pause=$pdo->prepare("SELECT pause_scope FROM browser_transaction_control_pauses_v2280 WHERE owner_user_id=? AND continuity_id=? LIMIT 1 FOR UPDATE");$pause->execute([$uid,(int)$row['id']]);$scope=(string)$pause->fetchColumn();
+        if($scope==='global')throw new RuntimeException('Resume global transaction monitoring before resuming this tracker.');
+        $result=vp3_browser_continuity_reopen_v2260($pdo,$user,$continuityPublicId);
+        $pdo->prepare("DELETE FROM browser_transaction_control_pauses_v2280 WHERE owner_user_id=? AND continuity_id=?")->execute([$uid,(int)$row['id']]);
+      }
+      vp3_browser_control_receipt_v2280($pdo,$uid,(int)$row['id'],'tracker_'.$action,'ok',(string)$row['lifecycle_family'],vp3_browser_control_device_hash_v2280($deviceId));
+      $pdo->commit();
+      return $result;
+    }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();throw $e;}
 }
 
 function vp3_browser_control_forget_v2280(PDO $pdo,array $user,string $continuityPublicId,string $deviceId=''): array
 {
-    $uid=(int)($user['id']??0);$row=vp3_browser_continuity_row_v2260($pdo,$uid,$continuityPublicId,true);
-    if(!$row)throw new RuntimeException('Transaction tracker was not found.');
-    if((string)$row['tracking_status']!=='closed')throw new RuntimeException('Stop tracking this transaction before forgetting its continuity record.');
-    $cid=(int)$row['id'];
-    vp3_browser_control_receipt_v2280($pdo,$uid,$cid,'forget_tracker','ok','continuity_deleted',vp3_browser_control_device_hash_v2280($deviceId));
-    $pdo->prepare("DELETE FROM browser_transaction_continuities_v2260 WHERE id=? AND owner_user_id=?")->execute([$cid,$uid]);
-    return ['forgotten'=>true,'continuity_id'=>$continuityPublicId,'submission_history_retained'=>true];
+    $uid=(int)($user['id']??0);$pdo->beginTransaction();
+    try{
+      $row=vp3_browser_continuity_row_v2260($pdo,$uid,$continuityPublicId,true);
+      if(!$row)throw new RuntimeException('Transaction tracker was not found.');
+      if((string)$row['tracking_status']!=='closed')throw new RuntimeException('Stop tracking this transaction before forgetting its continuity record.');
+      $cid=(int)$row['id'];
+      vp3_browser_control_receipt_v2280($pdo,$uid,$cid,'forget_tracker','ok','continuity_deleted',vp3_browser_control_device_hash_v2280($deviceId));
+      $pdo->prepare("DELETE FROM browser_transaction_continuities_v2260 WHERE id=? AND owner_user_id=?")->execute([$cid,$uid]);
+      $pdo->commit();
+      return ['forgotten'=>true,'continuity_id'=>$continuityPublicId,'submission_history_retained'=>true,'minimal_control_receipt_retained'=>true];
+    }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();throw $e;}
 }
+
 function vp3_browser_control_prune_v2280(PDO $pdo,array $user,string $deviceId=''): array
 {
     $uid=(int)($user['id']??0);$settings=vp3_browser_control_settings_v2280($pdo,$uid);$days=(int)$settings['retention_days'];
-    $stmt=$pdo->prepare("SELECT id FROM browser_transaction_continuities_v2260 WHERE owner_user_id=? AND tracking_status='closed' AND closed_at IS NOT NULL AND closed_at<DATE_SUB(UTC_TIMESTAMP(),INTERVAL ".$days." DAY)");
-    $stmt->execute([$uid]);$ids=array_map('intval',$stmt->fetchAll(PDO::FETCH_COLUMN)?:[]);
-    if($ids){$marks=implode(',',array_fill(0,count($ids),'?'));$pdo->prepare("DELETE FROM browser_transaction_continuities_v2260 WHERE owner_user_id=? AND id IN ($marks)")->execute(array_merge([$uid],$ids));}
-    $pdo->prepare("DELETE FROM browser_transaction_scan_leases_v2280 WHERE owner_user_id=? AND updated_at<DATE_SUB(UTC_TIMESTAMP(),INTERVAL 7 DAY)")->execute([$uid]);
-    vp3_browser_control_receipt_v2280($pdo,$uid,null,'retention_prune','ok','deleted_'.count($ids),vp3_browser_control_device_hash_v2280($deviceId));
-    return ['pruned_count'=>count($ids),'retention_days'=>$days,'submission_history_retained'=>true];
+    $pdo->beginTransaction();
+    try{
+      $stmt=$pdo->prepare("SELECT id FROM browser_transaction_continuities_v2260 WHERE owner_user_id=? AND tracking_status='closed' AND closed_at IS NOT NULL AND closed_at<DATE_SUB(UTC_TIMESTAMP(),INTERVAL ".$days." DAY) FOR UPDATE");
+      $stmt->execute([$uid]);$ids=array_map('intval',$stmt->fetchAll(PDO::FETCH_COLUMN)?:[]);
+      if($ids){$marks=implode(',',array_fill(0,count($ids),'?'));$pdo->prepare("DELETE FROM browser_transaction_continuities_v2260 WHERE owner_user_id=? AND id IN ($marks)")->execute(array_merge([$uid],$ids));}
+      $pdo->prepare("DELETE FROM browser_transaction_scan_leases_v2280 WHERE owner_user_id=? AND updated_at<DATE_SUB(UTC_TIMESTAMP(),INTERVAL 7 DAY)")->execute([$uid]);
+      vp3_browser_control_receipt_v2280($pdo,$uid,null,'retention_prune','ok','deleted_'.count($ids),vp3_browser_control_device_hash_v2280($deviceId));
+      $pdo->commit();
+      return ['pruned_count'=>count($ids),'retention_days'=>$days,'submission_history_retained'=>true];
+    }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();throw $e;}
 }
+
 function vp3_browser_control_scan_permit_v2280(PDO $pdo,array $user,string $deviceId,string $domain): array
 {
     $uid=(int)($user['id']??0);$domain=strtolower(trim($domain));
