@@ -38,7 +38,7 @@ function vp3_extension_notifications_ensure_schema_v2140(?PDO $pdo=null): void
       target_url VARCHAR(500) NOT NULL DEFAULT '',
       action_label VARCHAR(80) NOT NULL DEFAULT 'Open VP3',
       voice_text VARCHAR(360) NOT NULL DEFAULT '',
-      sensitive TINYINT(1) NOT NULL DEFAULT 0,
+      `sensitive` TINYINT(1) NOT NULL DEFAULT 0,
       claimed_device_id CHAR(36) NULL,
       claim_token_hash CHAR(64) NULL,
       claimed_at DATETIME NULL,
@@ -281,7 +281,7 @@ function vp3_extension_notification_claim_v2140(PDO $pdo,array $session,array $c
     $pdo->beginTransaction();
     try{
         $insert=$pdo->prepare("INSERT IGNORE INTO extension_notification_delivery_v2140
-          (public_id,owner_user_id,event_key,source_kind,source_ref,notification_id,title,body,target_url,action_label,voice_text,sensitive)
+          (public_id,owner_user_id,event_key,source_kind,source_ref,notification_id,title,body,target_url,action_label,voice_text,`sensitive`)
           VALUES (?,?,?,?,?,?,?,?,?,?,?,?)");
         $insert->execute([
             $public,$uid,$eventKey,(string)$candidate['source_kind'],(string)$candidate['source_ref'],
@@ -303,7 +303,7 @@ function vp3_extension_notification_claim_v2140(PDO $pdo,array $session,array $c
         if($claimFresh){$pdo->commit();return null;}
 
         $update=$pdo->prepare("UPDATE extension_notification_delivery_v2140
-          SET source_kind=?,source_ref=?,notification_id=?,title=?,body=?,target_url=?,action_label=?,voice_text=?,sensitive=?,
+          SET source_kind=?,source_ref=?,notification_id=?,title=?,body=?,target_url=?,action_label=?,voice_text=?,`sensitive`=?,
               claimed_device_id=?,claim_token_hash=?,claimed_at=UTC_TIMESTAMP(),
               claim_expires_at=DATE_ADD(UTC_TIMESTAMP(),INTERVAL ".VP3_EXTENSION_NOTIFICATION_CLAIM_SECONDS_V2140." SECOND),
               attempts=attempts+1,updated_at=UTC_TIMESTAMP()
