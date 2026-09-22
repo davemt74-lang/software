@@ -128,7 +128,7 @@ assert.ok(admin.includes('No forced installs'));
 assert.ok(admin.includes('Maintenance Recommendations'));
 assert.ok(admin.includes('Browser ↔ HomeServer Compatibility'));
 
-assert.match(workflow,/Client Release Operations v1\.(?:60|70)/);
+assert.match(workflow,/Client Release Operations v1\.(?:60|70|80)/);
 assert.ok(workflow.includes('client-fleet-maintenance-v160.php'));
 assert.ok(workflow.includes('client-fleet-maintenance-v160.mjs'));
 assert.ok(recovery.includes('client-fleet-maintenance-v160.mjs'));
