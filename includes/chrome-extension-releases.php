@@ -276,6 +276,10 @@ function chrome_extension_release_set_state(int $releaseId, string $action): voi
         throw new RuntimeException('Database connection is unavailable.');
     }
     chrome_extension_releases_ensure_schema($pdo);
+    if(function_exists('client_release_rollout_sync_legacy_action_v110')&&in_array($action,['publish','unpublish','latest'],true)){
+        client_release_rollout_sync_legacy_action_v110($pdo,'browser_companion',$releaseId,$action,0);
+        return;
+    }
 
     $stmt = $pdo->prepare('SELECT * FROM chrome_extension_releases WHERE id=? LIMIT 1');
     $stmt->execute([$releaseId]);
