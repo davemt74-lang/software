@@ -353,7 +353,7 @@ if ($action === 'warm') {
     header('X-Stonefellow-Voice-Format: ' . $outputFormat);
     header('X-Stonefellow-Voice-Ready: ' . ($ready ? '1' : '0'));
     stonefellow_voice_v117_json([
-        'ok' => $ready,
+        'ok' => true,
         'ready' => $ready,
         'verified' => !empty($verification['verified']),
         'upstream_status' => (int)($verification['status'] ?? 0),
