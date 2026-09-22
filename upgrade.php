@@ -135,6 +135,7 @@ function vp3_upgrade_complete(): bool
         && table_exists('homeserver_connections')
         && table_exists('homeserver_releases')
         && client_release_rollouts_schema_ready_v110()
+        && client_release_health_schema_ready_v120()
         && table_exists('homeserver_chat_sessions')
         && table_exists('agent_compute_preferences')
         && table_exists('agent_compute_overrides')
@@ -235,6 +236,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             homeserver_vp3_ensure_schema($pdo);
             chrome_extension_releases_ensure_schema($pdo);
             client_release_rollouts_ensure_schema_v110($pdo);
+            client_release_health_ensure_schema_v120($pdo);
             if (!homeserver_agent_v018_ensure_schema($pdo)) throw new RuntimeException('HomeServer Agent chat schema could not be installed.');
             agent_compute_v020_ensure_schema($pdo);
             agent_compute_v023_ensure_schema($pdo);
