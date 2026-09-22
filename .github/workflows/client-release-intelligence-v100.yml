@@ -46,6 +46,7 @@ on:
       - 'includes/member-navigation.php'
       - 'admin/homeserver.php'
       - 'admin/release-command-center.php'
+      - 'admin/_header.php'
       - 'includes/bootstrap.php'
       - 'browser-companion/manifest.json'
       - 'browser-companion/background.js'
@@ -107,6 +108,7 @@ jobs:
           php -l includes/member-navigation.php
           php -l admin/homeserver.php
           php -l admin/release-command-center.php
+          php -l admin/_header.php
           php -l includes/bootstrap.php
       - name: Browser syntax
         run: |
