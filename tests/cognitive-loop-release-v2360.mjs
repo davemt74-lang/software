@@ -56,8 +56,9 @@ const checks=[
  ['pure opportunities cannot standalone speak', /standalone_opportunity_voice'=>false/.test(proactive)],
  ['v5 schema chain remains upgrade authority', ['v500','v510','v530','v540','v550','v560','v570'].every(v=>upgrade.includes('schema_ready_'+v))],
  ['production package includes release-critical runtime checks', /cognitive-release-v2360\.php/.test(packageWorkflow) && /extension-cognitive-now-v2120\.php/.test(packageWorkflow) && /extension-notifications-v2140\.php/.test(packageWorkflow)],
- ['release workflows check out exact PR head', /pull_request\.head\.sha/.test(packageWorkflow) && /pull_request\.head\.sha/.test(read('.github/workflows/cognitive-loop-release-v2360.yml'))],
- ['production artifact embeds exact release identity', /VP3_RELEASE\.json/.test(packageWorkflow) && /VP3_RELEASE_SHA/.test(packageWorkflow) && /pull_request\.head\.sha/.test(packageWorkflow) && /python3 -m json\.tool/.test(packageWorkflow)],
+ ['PR release workflow checks out exact PR head', /pull_request\.head\.sha/.test(read('.github/workflows/cognitive-loop-release-v2360.yml'))],
+ ['production deploy is merged-main authority', !/pull_request:/.test(packageWorkflow) && /push:\s*\n\s*branches:\s*\[main\]/.test(packageWorkflow) && /github\.sha/.test(packageWorkflow)],
+ ['production artifact embeds exact merged release identity', /VP3_RELEASE\.json/.test(packageWorkflow) && /VP3_RELEASE_SHA/.test(packageWorkflow) && /github\.sha/.test(packageWorkflow) && /python3 -m json\.tool/.test(packageWorkflow)],
  ['production package still excludes dev-only trees', /--exclude='tests\/'/.test(packageWorkflow) && /--exclude='tools\/'/.test(packageWorkflow) && /--exclude='\.github\/'/.test(packageWorkflow)],
  ['release spec defines exact-tree gate', /zero file differences/.test(spec)],
 ];
