@@ -12,6 +12,7 @@
 
   const source = document.querySelector('[data-agent-voice-menu-config]') || document.getElementById('chatSidebar');
   const cfg = {
+    userId:Number(source?.dataset.userId || 0),
     agentEndpoint: source?.dataset.agentEndpoint || '/api/user-agent-system-v236.php',
     voiceEndpoint: source?.dataset.voiceEndpoint || '/api/studio-voice-profile.php',
     chatSettingsEndpoint: source?.dataset.chatSettingsEndpoint || '/api/chat-settings-v237.php',
@@ -21,8 +22,11 @@
     accountAgentsUrl: source?.dataset.accountAgentsUrl || '/account.php#agents-data'
   };
 
+  const agentVoiceSyncKey = `vp3:agent-voice-sync:${cfg.userId || 0}`;
+
   let agentState = null;
   let voiceState = null;
+  let agentVoiceAllowed = true;
   let selectedAgentId = 0;
   let busy = false;
 
@@ -88,7 +92,7 @@
           </div>
 
           <label class="vp3-agent-voice-toggle-row">
-            <span><strong>Agent Voice</strong><small>Speak proactive and Profile Agent responses aloud.</small></span>
+            <span><strong>Agent Voice</strong><small>Master switch for spoken Agent responses and notification announcements.</small></span>
             <input type="checkbox" data-vp3-global-agent-voice aria-label="Agent Voice">
             <i aria-hidden="true"></i>
           </label>
@@ -209,7 +213,16 @@
   }
 
   function renderAgentVoice(enabled) {
-    if (el.agentVoice) el.agentVoice.checked = enabled !== false;
+    if (!el.agentVoice) return;
+    el.agentVoice.disabled = !agentVoiceAllowed;
+    el.agentVoice.checked = agentVoiceAllowed && enabled !== false;
+  }
+
+  function publishAgentVoice(enabled) {
+    if (cfg.userId < 1) return;
+    try {
+      localStorage.setItem(agentVoiceSyncKey, JSON.stringify({enabled:enabled !== false, at:Date.now()}));
+    } catch (_error) {}
   }
 
   function render() {
@@ -223,7 +236,7 @@
     const tasks = [
       json(cfg.agentEndpoint).then(data => { agentState = data.state || {}; }),
       json(`${cfg.voiceEndpoint}?action=state`).then(data => { voiceState = data.state || {}; }).catch(() => { voiceState = null; }),
-      json(`${cfg.chatSettingsEndpoint}?action=state`).then(data => renderAgentVoice(data.chat?.agent_voice_enabled !== false)).catch(() => renderAgentVoice(true))
+      json(`${cfg.chatSettingsEndpoint}?action=state`).then(data => { agentVoiceAllowed=data.agent_voice_allowed!==false; const enabled=agentVoiceAllowed&&data.chat?.agent_voice_enabled!==false; renderAgentVoice(enabled); publishAgentVoice(enabled); }).catch(() => { agentVoiceAllowed=false; renderAgentVoice(false); publishAgentVoice(false); })
     ];
     try {
       await Promise.all(tasks);
@@ -286,6 +299,7 @@
 
   el.agentVoice?.addEventListener('change', event => {
     event.stopPropagation();
+    if(!agentVoiceAllowed){renderAgentVoice(false);return;}
     const requested = Boolean(el.agentVoice.checked);
     void (async () => {
       try {
@@ -300,6 +314,10 @@
     })();
   });
 
-  window.addEventListener('stonefellow:agent-voice', event => renderAgentVoice(event.detail?.enabled !== false));
+  window.addEventListener('stonefellow:agent-voice', event => { const enabled=event.detail?.enabled !== false; renderAgentVoice(enabled); publishAgentVoice(enabled); });
+  window.addEventListener('storage', event => {
+    if (event.key !== agentVoiceSyncKey || !event.newValue) return;
+    try { const sync=JSON.parse(event.newValue); renderAgentVoice(sync?.enabled !== false); } catch (_error) {}
+  });
   void load();
 })();

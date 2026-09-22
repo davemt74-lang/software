@@ -97,6 +97,7 @@ function vp3_extension_notification_voice_enabled_v2140(PDO $pdo,array $user): b
 {
     if(!function_exists('chat_settings_get_v237'))return false;
     try{
+        if(function_exists('chat_settings_agent_voice_enabled_v237'))return chat_settings_agent_voice_enabled_v237($pdo,$user);
         $settings=chat_settings_get_v237($pdo,(int)$user['id']);
         return !empty($settings['agent_voice_enabled']);
     }catch(Throwable $e){

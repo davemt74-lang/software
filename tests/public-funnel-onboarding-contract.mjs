@@ -19,6 +19,7 @@ assert.match(funnel, /rawurldecode\(/, 'safe return validation must inspect enco
 assert.match(funnel, /function vp3_funnel_capture_public_source/, 'shared public pages must have a canonical source capture helper');
 assert.match(funnel, /'origin'/, 'funnel must preserve first-touch public origin separately from current source');
 for (const source of ['chrome-extension','annotations','video-meetings','agent-analytics']) assert.ok(funnel.includes(`'${source}'`), `current public source must be recognized: ${source}`);
+for (const workflow of ['workflow.browser','workflow.meetings','workflow.analytics','workflow.commerce','workflow.homeserver','workflow.calendar','workflow.booking','workflow.teams']) assert.ok(funnel.includes(workflow), `public funnel must seed onboarding interest ${workflow}`);
 assert.match(funnel, /function vp3_funnel_finish_auth/, 'auth completion must have one canonical funnel handoff');
 assert.match(funnel, /onboarding_intelligence_save_progress/, 'funnel intent must reuse canonical onboarding intelligence');
 assert.match(funnel, /featureInterests/, 'public source must be able to become onboarding feature interest');

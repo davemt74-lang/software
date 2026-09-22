@@ -46,9 +46,6 @@
   let attentionCursor = 0;
   let attentionTimer = 0;
   let attentionBusy = false;
-  let responseTimer = 0;
-  let responseTemporaryVoice = false;
-  let responseWindowActive = false;
   let speechQueue = Promise.resolve();
   let agentVoicePreference = cfg.agentVoiceEnabled !== false;
   let mainFeedOutcomeBusy = false;
@@ -588,18 +585,6 @@
     return false;
   }
 
-  function clearResponseWindow() {
-    if (responseTimer) window.clearTimeout(responseTimer);
-    responseTimer = 0;
-    responseWindowActive = false;
-  }
-
-  function markUserResponse() {
-    if (!responseWindowActive) return;
-    clearResponseWindow();
-    responseTemporaryVoice = false;
-  }
-
   function voiceButton() {
     return document.getElementById('chatVoiceButton');
   }
@@ -696,19 +681,8 @@
     }
     if (!spoken) spoken = await browserSpeak(message);
 
-    const listening = setVoiceMode(true);
-    if (listening) {
-      responseTemporaryVoice = !wasVoice;
-      clearResponseWindow();
-      responseWindowActive = true;
-      responseTimer = window.setTimeout(() => {
-        responseTimer = 0;
-        responseWindowActive = false;
-        if (responseTemporaryVoice) {
-          responseTemporaryVoice = false;
-          setVoiceMode(false);
-        }
-      }, 10000);
+    if (wasVoice) {
+      setVoiceMode(true);
     }
     return spoken === true;
   }
@@ -782,10 +756,6 @@
   if (actions) new MutationObserver(keepBellNextToProfile).observe(actions, {childList:true});
   document.addEventListener('keydown', event => {
     if (event.key === 'Escape' && drawer?.classList.contains('open')) closeDrawer();
-  });
-  document.getElementById('chatForm')?.addEventListener('submit', markUserResponse, true);
-  window.addEventListener('stonefellow:chat-voice', event => {
-    if (String(event.detail?.type || '') === 'TRANSCRIPT_SUBMIT') markUserResponse();
   });
   window.addEventListener('stonefellow:agent-voice', event => {
     agentVoicePreference = event.detail?.enabled !== false;

@@ -11,7 +11,7 @@ $recordingPersistenceBuild = 'chat-recordings-v242-20260902';
 $transcriptionCanvasBuild = 'transcription-intelligence-home-v308-20260907';
 $mediaOverlayBuild = 'chat-media-overlays-source-light-20260905';
 $agentOverlayBuild = 'agent-updates-hidden-v206-20260901';
-$agentIdentityBuild = 'chat-attention-canvas-20260905';
+$agentIdentityBuild = 'chat-onboarding-current-systems-v242-20260921';
 $profileActivityBuild = 'profile-activity-overlay-20260905';
 $headerUiBuild = 'live-wiring-20260903-3';
 $teamChatAdminBuild = 'team-chat-bootstrap-v236-20260905';
@@ -83,6 +83,7 @@ $html = str_replace('id="chatCreateMenu"', 'id="chatCreateMenu" hidden', $html);
 $agentFeatureReady = false;
 $activeUserAgent = null;
 $requestedAgentRaw = trim((string)($_GET['agent'] ?? ''));
+$setupRequested = (string)($_GET['setup'] ?? '') === '1';
 $explicitSystemAgent = strcasecmp($requestedAgentRaw, 'system') === 0;
 $requestedAgentId = (!$explicitSystemAgent && ctype_digit($requestedAgentRaw))
     ? max(0, (int)$requestedAgentRaw)
@@ -144,10 +145,12 @@ try {
             if($validatedConversationId>0)$agentInitialConversationId=$validatedConversationId;
         }
 
-        $agentOnboarding = !$activeUserAgent
+        $agentOnboarding = $setupRequested || (
+            !$activeUserAgent
             && !$explicitSystemAgent
             && !user_agents_list_v236($pdoForAgent, (int)$user['id'])
-            && !user_agent_onboarding_dismissed_v236($pdoForAgent, (int)$user['id']);
+            && !user_agent_onboarding_dismissed_v236($pdoForAgent, (int)$user['id'])
+        );
     }
 } catch (Throwable $e) {
     $agentFeatureReady = false;
@@ -193,6 +196,9 @@ $agentChatBootstrap = '<script data-user-agent-chat-v236>(function(){"use strict
     . ',systemName:' . json_encode($systemAgentName, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
     . ',agentId:' . (int)($activeUserAgent['id'] ?? 0)
     . ',showOnboarding:' . ($agentFeatureReady && $agentOnboarding ? 'true' : 'false')
+    . ',forceOnboarding:' . ($agentFeatureReady && $setupRequested ? 'true' : 'false')
+    . ',agentVoiceEnabled:' . (member_agent_voice_enabled($user) ? 'true' : 'false')
+    . ',chatSettingsEndpoint:' . json_encode(url('/api/chat-settings-v237.php'), JSON_UNESCAPED_SLASHES)
     . ',endpoint:' . json_encode(url('/api/user-agent-system-v236.php'), JSON_UNESCAPED_SLASHES)
     . ',chatBaseUrl:' . json_encode(url('/chat.php'), JSON_UNESCAPED_SLASHES)
     . ',accountUrl:' . json_encode(url('/account.php#agents-data'), JSON_UNESCAPED_SLASHES)

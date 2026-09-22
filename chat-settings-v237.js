@@ -70,7 +70,7 @@
               <div class="chat-settings-section-title"><strong>Social Chat</strong><span>Control direct user-to-user conversations and incoming message alerts.</span></div>
               <label class="chat-settings-toggle"><span><strong>Allow user-to-user chat</strong><small>Other eligible users can find you and send direct messages.</small></span><input type="checkbox" name="social_chat_enabled"></label>
               <label class="chat-settings-toggle"><span><strong>Incoming message sound</strong><small>Play one notification sound when a new direct message arrives.</small></span><input type="checkbox" name="sound_enabled"></label>
-              <label class="chat-settings-toggle"><span><strong>Agent Voice</strong><small>Speak proactive and Profile Agent attention messages aloud.</small></span><input type="checkbox" name="agent_voice_enabled"></label>
+              <label class="chat-settings-toggle"><span><strong>Agent Voice</strong><small>Master switch for spoken Agent responses and notification announcements. Voice Conversation still requires an explicit microphone start.</small></span><input type="checkbox" name="agent_voice_enabled"></label>
             </section>
             <section class="chat-settings-section" id="chatSettingsProfileAgentSection">
               <div class="chat-settings-section-title"><strong>Profile Agent Chat</strong><span>Use the same public Profile Agent controls already owned by your profile.</span></div>
@@ -131,19 +131,21 @@
 
   function ensureAgentVoiceToggle() {
     const existing = document.querySelector('[data-agent-voice-toggle]');
+    if (state?.agent_voice_allowed === false) { existing?.closest('.member-agent-voice-toggle')?.remove(); return null; }
     if (existing) return existing;
     const summary = document.querySelector('#chatProfileDropdown .chat-profile-summary');
     if (!summary) return null;
     const host = document.createElement('label');
     host.className = 'member-agent-voice-toggle';
-    host.title = 'Speak proactive and Profile Agent messages';
+    host.title = 'Allow spoken Agent responses and notification announcements';
     host.innerHTML = '<span class="member-agent-voice-label">Agent Voice</span><input type="checkbox" data-agent-voice-toggle aria-label="Agent Voice"><span class="member-agent-voice-switch" aria-hidden="true"><span></span></span>';
     summary.appendChild(host);
     return host.querySelector('[data-agent-voice-toggle]');
   }
 
   function applyAgentVoice(enabled) {
-    const active = enabled !== false;
+    const allowed = state?.agent_voice_allowed !== false;
+    const active = allowed && enabled !== false;
     ensureAgentVoiceToggle();
     document.querySelectorAll('[data-agent-voice-toggle]').forEach(toggle => {
       toggle.checked = active;
@@ -190,6 +192,7 @@
 
   function renderState() {
     const chat = state?.chat || { presence_mode:'online', social_chat_enabled:true, sound_enabled:true, agent_voice_enabled:true };
+    const voiceAllowed = state?.agent_voice_allowed !== false;
     if (form) {
       const mode = form.elements.namedItem('presence_mode');
       const social = form.elements.namedItem('social_chat_enabled');
@@ -198,10 +201,10 @@
       if (mode) mode.value = String(chat.presence_mode || 'online');
       if (social) social.checked = chat.social_chat_enabled !== false;
       if (sound) sound.checked = chat.sound_enabled !== false;
-      if (voice) voice.checked = chat.agent_voice_enabled !== false;
+      if (voice) { voice.checked = voiceAllowed && chat.agent_voice_enabled !== false; voice.disabled = !voiceAllowed; }
     }
     renderProfileAgent(state?.profile_agent || null);
-    applyRuntimeSettings(chat);
+    applyRuntimeSettings({...chat, agent_voice_enabled:voiceAllowed && chat.agent_voice_enabled !== false});
   }
 
   async function syncState(showError = false) {
@@ -271,7 +274,7 @@
         profileAgent = profileResponse.profile_agent || profileAgent;
       }
 
-      state = { ok:true, chat:chatResponse.chat, profile_agent:profileAgent };
+      state = { ok:true, agent_voice_allowed:chatResponse.agent_voice_allowed ?? state?.agent_voice_allowed ?? false, chat:chatResponse.chat, profile_agent:profileAgent };
       renderState();
       setStatus('Chat settings saved.', 'success');
       window.setTimeout(closeModal, 450);
@@ -295,7 +298,7 @@
     const requested = Boolean(toggle.checked);
     try {
       const response = await request('save_agent_voice', {agent_voice_enabled:requested});
-      state = {...(state || {}), ok:true, chat:response.chat || state?.chat || {}};
+      state = {...(state || {}), ok:true, agent_voice_allowed:response.agent_voice_allowed ?? state?.agent_voice_allowed ?? false, chat:response.chat || state?.chat || {}};
       applyRuntimeSettings(response.chat || {agent_voice_enabled:requested});
     } catch (error) {
       applyAgentVoice(!requested);

@@ -11,6 +11,14 @@ if (!$user || !has_permission('chat.access', $user)) {
     exit;
 }
 
+$voicePdo = db();
+if (!$voicePdo || !function_exists('chat_settings_agent_voice_enabled_v237') || !chat_settings_agent_voice_enabled_v237($voicePdo, $user)) {
+    http_response_code(403);
+    header('Content-Type: application/json; charset=UTF-8');
+    echo json_encode(['ok' => false, 'error' => 'Agent Voice is turned off or unavailable for this account.']);
+    exit;
+}
+
 function stonefellow_voice_v117_models(): array
 {
     return ['eleven_flash_v2_5','eleven_flash_v2','eleven_turbo_v2_5','eleven_multilingual_v2'];

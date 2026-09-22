@@ -90,8 +90,12 @@ must(panel.includes("else renderNow(null);"),'Agent Now must clear inaccessible 
 
 // 5. Voice preference/settings failure is a voice-only degradation, not a failure
 // of the entire Cognitive Presentation state.
-must(presentation.includes("try{") && presentation.includes("chat_settings_get_v237($pdo,(int)$user['id'])"),
-  'Agent Voice settings read must be guarded');
+must(
+  presentation.includes("try{")
+    && presentation.includes("chat_settings_agent_voice_enabled_v237($pdo,$user)")
+    && presentation.includes("chat_settings_get_v237($pdo,(int)$user['id'])"),
+  'Agent Voice settings read must be guarded through the canonical helper with legacy fallback'
+);
 must(presentation.includes("VP3 Cognitive Presentation voice settings unavailable:"),
   'voice-settings failures must be observable');
 must(presentation.includes("last_seen_at<DATE_SUB(UTC_TIMESTAMP(),INTERVAL 5 MINUTE)"),
@@ -100,8 +104,12 @@ must(presentation.includes("SET last_seen_at=UTC_TIMESTAMP(),updated_at=updated_
   'presentation presence telemetry must not mutate semantic state timestamps');
 must(presentation.includes("VP3 Cognitive Presentation notification read unavailable:"),
   'notification read degradation must be observable');
-must(presentation.includes("$settings=['agent_voice_enabled'=>false];"),
-  'voice-settings failure must fail closed');
+must(
+  presentation.includes("if(!chat_settings_agent_voice_enabled_v237($pdo,$user))return null;")
+    && presentation.includes("catch(Throwable $e)")
+    && presentation.includes("return null;"),
+  'voice-settings failure must fail closed'
+);
 
 const runtime=read('includes/cognitive-runtime-v500.php');
 must(runtime.includes("$voice=false;"),'core presentation context must default Agent Voice off');

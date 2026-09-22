@@ -19,7 +19,7 @@ const identity = read('chat-agent-identity-v236.js');
 assert.doesNotThrow(() => new Function(ui), 'Activity Center runtime must be valid JavaScript');
 assert.doesNotThrow(() => new Function(identity), 'Agent identity runtime must be valid JavaScript');
 assert.match(chat, /\$notificationDrawerBuild = 'chat-notifications-canvas-v240-cognitive-v510-20260918'/, 'Activity Center cache key must identify the PR81 runtime wiring fix');
-assert.match(chat, /\$agentIdentityBuild = 'chat-attention-canvas-20260905'/);
+assert.match(chat, /\$agentIdentityBuild = 'chat-onboarding-current-systems-v242-20260921'/);
 assert.match(chat, /window\.STONEFELLOW_NOTIFICATION_DRAWER=/);
 assert.match(chat, /chat-notifications-drawer-v240\.css\?v=/);
 assert.match(chat, /chat-notifications-drawer-v240\.js\?v=/);
@@ -84,10 +84,11 @@ assert.match(ui, /Keep the cursor unchanged so a failed canvas presentation is r
 assert.doesNotMatch(identity, /agent-attention\.js|agent-attention\.css/, 'legacy Profile Agent top-banner runtime must not load in Agent Chat');
 assert.match(ui, /StonefellowPremiumVoiceV122/, 'attention uses the existing ElevenLabs voice runtime');
 assert.match(ui, /SpeechSynthesisUtterance/, 'attention speech retains system voice fallback');
-assert.match(ui, /responseTimer = window\.setTimeout\([\s\S]*?, 10000\)/, 'attention opens a 10-second response window');
-assert.match(ui, /setVoiceMode\(false\)/, 'temporary listening can be shut off when the response window expires');
+assert.match(ui, /if \(wasVoice\) setVoiceMode\(false\)|if \(wasVoice\) \{[\s\S]*setVoiceMode\(false\)/, 'spoken attention may pause an already-active voice conversation');
+assert.match(ui, /if \(wasVoice\) \{[\s\S]*setVoiceMode\(true\)/, 'spoken attention restores listening only when it was already active');
+assert.doesNotMatch(ui, /responseTemporaryVoice/, 'notifications must never create temporary microphone authority');
 assert.match(ui, /return Boolean\(continuity\(\)\.isVoice\?\.\(\)\)/, 'attention reads voice state through the canonical continuity fallback');
-assert.match(ui, /TRANSCRIPT_SUBMIT/, 'spoken user responses cancel the temporary response timeout');
-assert.match(ui, /chatForm[\s\S]*markUserResponse/, 'typed user responses cancel the temporary response timeout');
+assert.doesNotMatch(ui, /markUserResponse|responseWindowActive|responseTimer/, 'notification runtime must not retain obsolete temporary microphone response-window state');
+assert.doesNotMatch(ui, /TRANSCRIPT_SUBMIT[\s\S]{0,220}markUserResponse|chatForm[\s\S]{0,220}markUserResponse/, 'typed and spoken replies must not be coupled to removed temporary listening authority');
 
 console.log('chat-notifications-brain-v240 contract: PASS');

@@ -6,14 +6,15 @@ const css = fs.readFileSync('vp3-index-ai-assistants.css', 'utf8');
 const megaCss = fs.readFileSync('vp3-index-mega-menu.css', 'utf8');
 
 assert.match(index, /redirect_logged_in_public_page\(\)/, 'homepage must preserve logged-in redirect behavior');
-assert.match(index, /<title>VP3 AI Assistants — Turn Every Conversation Into What’s Next<\/title>/, 'homepage must use the AI Assistants positioning');
-assert.match(index, /VP3 AI Assistants[\s\S]*Turn every conversation[\s\S]*into what’s next\./, 'hero must present the AI Assistants headline');
+assert.match(index, /<title>VP3 AI Assistants — From Signal to Outcome<\/title>/, 'homepage must use the current AI Assistants positioning');
+assert.match(index, /One Agent\. Every surface\./, 'hero must position one Agent across VP3');
+assert.match(index, /From signal to outcome\./, 'hero must present the current lifecycle headline');
 assert.match(index, /vp3-main-header_bg\.png/, 'homepage must use the supplied VP3 hero background image');
 assert.match(css, /\.hero\{[^}]*min-height:/, 'homepage must define a full hero stage');
 assert.match(css, /\.hero-image\{[^}]*object-fit:cover/, 'hero image must fill the hero responsively');
 
-for (const route of ['/signup.php', '/book-demo.php', '/login.php', '/pricing.php', '/about.php', '/transcriptions.php', '/teams.php', '/product.php', '/services.php', '/homeserver.php']) {
-  assert.ok(index.includes(`url('${route}')`), `homepage must preserve ${route}`);
+for (const route of ['/signup.php','/book-demo.php','/login.php','/pricing.php','/about.php','/transcriptions.php','/teams.php','/product.php','/services.php','/homeserver.php','/chrome-extension.php','/annotations.php','/video-meetings.php','/booking.php','/ecommerce.php','/agent-analytics.php']) {
+  assert.ok(index.includes(route), `homepage must preserve ${route}`);
 }
 assert.match(index, /require_once __DIR__ \. '\/includes\/vp3-public\.php'/, 'homepage must load the canonical VP3 public brand component');
 assert.match(index, /class="brand vp3-home-brand"[\s\S]*vp3_public_brand\(\)/, 'homepage header must render the canonical VP3 mark and wordmark');
@@ -30,40 +31,28 @@ assert.match(megaCss, /grid-template-columns:repeat\(2,8px\)[\s\S]*grid-template
 assert.doesNotMatch(index, /homeserver-download\.php/, 'homepage must not link to a missing HomeServer download route');
 assert.doesNotMatch(index, /App Store|Google Play|VP3 for iPhone|VP3 for Android/, 'homepage must not expose obsolete app-store CTAs');
 
-assert.match(index, /Built for real work\./, 'homepage must include the real-work section');
-for (const asset of [
-  'feature-transcription.webp',
-  'feature-mobile.webp',
-  'feature-ai-summaries.webp',
-  'feature-teams.webp'
-]) {
-  assert.ok(index.includes(`/assets/home/${asset}`), `homepage must use ${asset}`);
+for (const stage of ['Capture','Understand','Coordinate','Sell','Measure','Agent follows through']) {
+  assert.ok(index.includes(stage), `homepage operating loop must include ${stage}`);
 }
-for (const copy of ['Transcription, organized.', 'Capture anywhere.', 'Summaries that matter.', 'Work together, better.']) {
-  assert.ok(index.includes(copy), `homepage must include feature card: ${copy}`);
+assert.match(index, /One Agent from capture to follow-through\./, 'homepage must explain the connected Agent operating loop');
+assert.match(index, /The surface changes\. The Agent does not start over\./, 'homepage must explain cross-surface Agent continuity');
+for (const surface of ['Browser','Meetings','Profile','Teams','Booking + commerce','HomeServer']) {
+  assert.ok(index.includes(surface), `homepage must include current surface: ${surface}`);
 }
+assert.match(index, /Research can become a meeting\.[\s\S]*Analytics can become the next action\./, 'homepage must show the connected outcome journey');
+assert.match(index, /devices-everything-you-need\.webp/, 'homepage must use the desktop and mobile artwork');
+assert.match(index, /Start where the work happens\. Keep the context\./, 'homepage must retain the multi-device continuity section');
+assert.match(index, /HomeServer gives the same Agent a private local side\./, 'homepage must explain Cloud + HomeServer continuity');
+assert.match(index, /Cloud \+ self-hosted capability/, 'homepage must explain hybrid deployment');
+assert.match(index, /Put one VP3 Agent across the work\./, 'homepage must include the current closing CTA');
+assert.match(index, /<footer class="footer">/, 'homepage must include the marketing footer');
 
-assert.match(index, /A platform for how[\s\S]*you actually work\./, 'homepage must include the platform section');
-assert.match(index, /Your profile agent/, 'homepage must position the personal profile agent');
-assert.match(index, /Personal link/, 'homepage must expose personal-link capability');
-assert.match(index, /Everything you need\.[\s\S]*Nothing in the way\./, 'homepage must include the desktop and phone showcase');
-assert.match(index, /devices-everything-you-need\.webp/, 'homepage must use the desktop and phone artwork');
-
-assert.match(index, /HomeServer keeps your[\s\S]*AI close to home\./, 'homepage must include the HomeServer section');
-assert.match(index, /self-hosted AI/i, 'homepage must explain self-hosted AI');
-assert.match(index, /secure data access/i, 'homepage must explain secure data access');
-assert.match(index, /private storage/i, 'homepage must explain private storage');
-assert.match(index, /user-controlled/i, 'homepage must explain user-controlled data');
-
-assert.match(index, /The assistant[\s\S]*is the experience\./, 'homepage must include the dark product-positioning section');
-assert.match(index, /Put a VP3 assistant to work\./, 'homepage must include the closing CTA');
-assert.match(index, /<footer class="footer">/, 'homepage must include the new marketing footer');
-
-assert.match(css, /@media\(max-width:1050px\)/, 'homepage must include tablet responsive rules');
-assert.match(css, /@media\(max-width:720px\)/, 'homepage must include small-screen responsive rules');
-assert.match(css, /\.feature-grid\{[^}]*grid-template-columns:repeat\(4,1fr\)/, 'desktop real-work section must use four columns');
-assert.match(css, /@media\(max-width:1050px\)[\s\S]*\.feature-grid,.value-grid\{grid-template-columns:repeat\(2,1fr\)/, 'feature cards must collapse on tablet');
-assert.match(css, /@media\(max-width:720px\)[\s\S]*\.feature-grid,.value-grid,.proof-grid\{grid-template-columns:1fr\}/, 'feature cards must collapse to one column on small screens');
+assert.match(css, /\.home-lifecycle-grid\{[^}]*grid-template-columns:repeat\(6,minmax\(0,1fr\)\)/, 'desktop operating loop must use six stages');
+assert.match(css, /\.home-surface-grid\{[^}]*grid-template-columns:repeat\(3,minmax\(0,1fr\)\)/, 'desktop surface grid must use three columns');
+assert.match(css, /\.home-journey-steps\{[^}]*grid-template-columns:repeat\(6,minmax\(0,1fr\)\)/, 'desktop outcome journey must use six steps');
+assert.match(css, /@media\(max-width:1100px\)[\s\S]*home-lifecycle-grid/, 'homepage must collapse lifecycle/journey grids on tablet');
+assert.match(css, /@media\(max-width:820px\)[\s\S]*home-surface-grid/, 'homepage must collapse surface grid on smaller screens');
+assert.match(css, /@media\(max-width:620px\)[\s\S]*home-lifecycle-grid/, 'homepage must collapse current grids to one column on mobile');
 assert.match(css, /\.check-list li\{[^}]*grid-template-columns:28px 1fr/, 'timeline checklist must use a two-column icon/content grid');
 assert.match(megaCss, /@media\(max-width:/, 'mega menu must include responsive rules');
 

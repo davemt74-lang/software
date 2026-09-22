@@ -24,8 +24,8 @@ const htaccess = read('.htaccess');
 assert.doesNotThrow(() => new Function(ui), 'Agent onboarding runtime must remain valid JavaScript');
 assert.match(ui, /chat-onboarding-v241\.php/);
 assert.match(ui, /Choose your onboarding experience/);
-assert.match(ui, /Turn on voice/);
-assert.match(ui, /Keep voice off/);
+assert.match(ui, /Turn on Agent Voice/);
+assert.match(ui, /Keep Agent Voice off/);
 assert.match(ui, /Name your agent/);
 assert.ok(ui.indexOf("key:'voice'") < ui.indexOf("key:'agent'"), 'Voice must remain the first onboarding question and agent name second');
 assert.match(ui, /StonefellowPremiumVoiceV122/);
@@ -35,6 +35,11 @@ assert.match(ui, /Show my profile/);
 assert.match(ui, /Online user-to-user chat/);
 assert.match(ui, /Incoming chat sound/);
 assert.match(ui, /Make a Voice Clone/);
+assert.match(ui, /key:'workspace'/, 'current VP3 systems must extend the existing guided flow');
+assert.match(ui, /Connect the parts of VP3 you want to use/);
+assert.match(ui, /chat-agent-workflow-grid-v242/);
+assert.match(ui, /workflow_interests/);
+assert.match(ui, /cfg\.forceOnboarding/, 'existing users must be able to explicitly reopen guided setup');
 assert.match(ui, /window\.STONEFELLOW_ONBOARDING_STATE/);
 assert.match(ui, /stonefellow:onboarding-state/);
 assert.match(ui, /onboardingRequest\('save_progress'/);
@@ -58,7 +63,9 @@ assert.match(api, /ack_trial_notice/);
 assert.match(api, /beginTransaction\(\)/);
 assert.match(api, /rollBack\(\)/);
 assert.match(api, /user_agent_create_v236/);
-assert.match(api, /'voice_enabled' => \$voiceEnabled \? 1 : 0/);
+assert.match(api, /'voice_enabled' => 0/, 'new Agent creation must not confuse global Agent Voice with clone/source selection');
+assert.match(api, /'voice_enabled' => !empty\(\$agent\['voice_enabled'\]\) \? 1 : 0/, 'existing per-Agent voice source must be preserved');
+assert.match(api, /chat_settings_save_agent_voice_v237/, 'onboarding voice choice must update canonical Agent Voice');
 assert.match(api, /profile_save/);
 assert.match(api, /chat_settings_save_v237/);
 assert.match(api, /profile_configure_agent/);
@@ -70,6 +77,8 @@ assert.match(domain, /profile_runtime_owner_state/);
 assert.match(domain, /chat_settings_get_v237/);
 assert.match(domain, /studio_voice_profile_state/);
 assert.match(domain, /function chat_onboarding_v241_capabilities/);
+assert.match(domain, /function chat_onboarding_v241_workspace_state/);
+for (const key of ['browser','transcription','meetings','calendar','booking','commerce','analytics','teams','homeserver']) assert.match(domain, new RegExp(`'${key}'\\s*=>`), `workspace inventory must include ${key}`);
 assert.match(domain, /'configured'/);
 assert.match(domain, /'available'/);
 assert.match(domain, /'required_setup_complete'/);
@@ -122,6 +131,9 @@ require 'includes/release-chat-v105.php';
 $cases = [
     ['is my Profile Agent enabled?', true],
     ['do I have a voice clone?', true],
+    ['is Agent Voice on?', true],
+    ['is my Browser Companion connected?', true],
+    ['are Meetings set up?', true],
     ['what setup am I missing?', true],
     ['what do I still need to set up?', true],
     ['is my profile public?', true],

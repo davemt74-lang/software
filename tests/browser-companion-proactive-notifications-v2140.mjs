@@ -49,6 +49,7 @@ must(offscreen.indexOf("sendResponse({ ok:true })") > offscreen.indexOf("play(me
 must(!offscreen.includes('localStorage')&&!offscreen.includes('sessionStorage'),'offscreen voice must not create local delivery state');
 
 must(runtime.includes('CREATE TABLE IF NOT EXISTS extension_notification_delivery_v2140'),'server-owned delivery ledger missing');
+must(runtime.includes('chat_settings_agent_voice_enabled_v237'),'Browser Agent Voice must use the canonical account voice authority');
 must(runtime.includes('UNIQUE KEY uq_extension_notification_event_v2140 (owner_user_id,event_key)'),'cross-device event dedupe key missing');
 must(runtime.includes('claim_token_hash CHAR(64)'), 'hashed claim token missing');
 must(runtime.includes('claimed_device_id CHAR(36)'), 'device claim binding missing');
