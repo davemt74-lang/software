@@ -45,10 +45,11 @@ assert.match(runtime, /'actual_route'/);
 assert.match(runtime, /'attempted_route'/);
 assert.match(runtime, /'fallback_reason'/);
 
-// Existing Chat source rendering is deliberately reused: the compute badge is
-// visible on the immediate response, a conversation reload, and messages_after.
+// Compute provenance remains durable across the immediate response, reload,
+// and messages_after, while v2.44 keeps source labels out of user-facing Chat.
 assert.match(chat, /function sourceHtml\(source\)/);
-assert.match(chat, /sources\.map\(sourceHtml\)/);
+const messageRenderer=chat.slice(chat.indexOf('function messageElement('),chat.indexOf('function addMessage('));
+assert.doesNotMatch(messageRenderer, /message-sources|sources\.map\(sourceHtml\)/);
 assert.match(chat, /JSON\.parse\(message\.context_json\)/);
 assert.match(chat, /context\.sources/);
 assert.match(chat, /action:'messages_after'/);
