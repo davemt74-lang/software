@@ -379,7 +379,7 @@ require __DIR__ . '/_header.php';
 
   <div class="admin-card-head" style="margin-top:18px"><div><h3>Automation Policies</h3><p><strong>Recommend only</strong> never auto-executes a transition. <strong>Auto low risk</strong> may execute only non-GA rollout/fleet cohort advancement when v1.20 health, v1.40 risk, v1.50 readiness, and v1.60 fleet rules all continue to pass.</p></div></div>
   <div class="admin-table-wrap"><table class="admin-table">
-    <thead><tr><th>Client</th><th>Channel</th><th>Mode</th><th>Safety</th><th>Fleet gates</th><th></th></tr></thead>
+    <thead><tr><th>Client</th><th>Channel</th><th>Policy</th></tr></thead>
     <tbody>
     <?php foreach(['browser_companion'=>'Browser Companion','homeserver'=>'HomeServer'] as $autoProduct=>$autoLabel): ?>
       <?php foreach(['stable','beta','dev'] as $autoChannel): $autoPolicy=(array)($automationPolicies[$autoProduct][$autoChannel]??client_release_automation_default_policy_v170()); ?>
@@ -389,21 +389,22 @@ require __DIR__ . '/_header.php';
           <td>
             <form method="post" class="admin-form">
               <?= csrf_field() ?><input type="hidden" name="action" value="automation_policy_update"><input type="hidden" name="product" value="<?= e($autoProduct) ?>"><input type="hidden" name="channel" value="<?= e($autoChannel) ?>">
-              <label><input type="checkbox" name="policy_enabled" value="1" <?= !empty($autoPolicy['policy_enabled'])?'checked':'' ?>> Policy enabled</label>
-              <label>Execution<select name="execution_mode"><option value="recommend_only" <?= (string)$autoPolicy['execution_mode']==='recommend_only'?'selected':'' ?>>Recommend only</option><option value="auto_low_risk" <?= (string)$autoPolicy['execution_mode']==='auto_low_risk'?'selected':'' ?>>Auto low risk</option></select></label>
+              <div class="form-row">
+                <label><input type="checkbox" name="policy_enabled" value="1" <?= !empty($autoPolicy['policy_enabled'])?'checked':'' ?>> Policy enabled</label>
+                <label>Execution<select name="execution_mode"><option value="recommend_only" <?= (string)$autoPolicy['execution_mode']==='recommend_only'?'selected':'' ?>>Recommend only</option><option value="auto_low_risk" <?= (string)$autoPolicy['execution_mode']==='auto_low_risk'?'selected':'' ?>>Auto low risk</option></select></label>
+                <label><input type="checkbox" name="auto_hold_enabled" value="1" <?= !empty($autoPolicy['auto_hold_enabled'])?'checked':'' ?>> Automatic holds</label>
+                <label><input type="checkbox" name="rollout_progression_enabled" value="1" <?= !empty($autoPolicy['rollout_progression_enabled'])?'checked':'' ?>> Rollout progression</label>
+                <label><input type="checkbox" name="fleet_progression_enabled" value="1" <?= !empty($autoPolicy['fleet_progression_enabled'])?'checked':'' ?>> Fleet progression</label>
+              </div>
+              <div class="form-row">
+                <label>Proposal expiry hours<input type="number" name="proposal_expiry_hours" min="1" max="168" value="<?= (int)$autoPolicy['proposal_expiry_hours'] ?>"></label>
+                <label>Cooldown minutes<input type="number" name="cooldown_minutes" min="0" max="1440" value="<?= (int)$autoPolicy['cooldown_minutes'] ?>"></label>
+                <label>Completion gate bps<input type="number" name="fleet_completion_gate_bps" min="5000" max="10000" value="<?= (int)$autoPolicy['fleet_completion_gate_bps'] ?>"></label>
+                <label>Failure hold bps<input type="number" name="fleet_failure_hold_bps" min="0" max="5000" value="<?= (int)$autoPolicy['fleet_failure_hold_bps'] ?>"></label>
+              </div>
+              <button class="button button-small" type="submit">Save policy</button>
+            </form>
           </td>
-          <td>
-              <label><input type="checkbox" name="auto_hold_enabled" value="1" <?= !empty($autoPolicy['auto_hold_enabled'])?'checked':'' ?>> Automatic holds</label>
-              <label><input type="checkbox" name="rollout_progression_enabled" value="1" <?= !empty($autoPolicy['rollout_progression_enabled'])?'checked':'' ?>> Rollout progression</label>
-              <label><input type="checkbox" name="fleet_progression_enabled" value="1" <?= !empty($autoPolicy['fleet_progression_enabled'])?'checked':'' ?>> Fleet progression</label>
-              <label>Proposal expiry hours<input type="number" name="proposal_expiry_hours" min="1" max="168" value="<?= (int)$autoPolicy['proposal_expiry_hours'] ?>"></label>
-              <label>Cooldown minutes<input type="number" name="cooldown_minutes" min="0" max="1440" value="<?= (int)$autoPolicy['cooldown_minutes'] ?>"></label>
-          </td>
-          <td>
-              <label>Completion gate bps<input type="number" name="fleet_completion_gate_bps" min="5000" max="10000" value="<?= (int)$autoPolicy['fleet_completion_gate_bps'] ?>"></label>
-              <label>Failure hold bps<input type="number" name="fleet_failure_hold_bps" min="0" max="5000" value="<?= (int)$autoPolicy['fleet_failure_hold_bps'] ?>"></label>
-          </td>
-          <td><button class="button button-small" type="submit">Save policy</button></form></td>
         </tr>
       <?php endforeach; ?>
     <?php endforeach; ?>
