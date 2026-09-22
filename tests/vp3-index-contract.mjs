@@ -44,7 +44,10 @@ assert.match(index, /devices-everything-you-need\.webp/, 'homepage must use the 
 assert.match(index, /Start where the work happens\. Keep the context\./, 'homepage must retain the multi-device continuity section');
 assert.match(index, /HomeServer gives the same Agent a private local side\./, 'homepage must explain Cloud + HomeServer continuity');
 assert.match(index, /Cloud \+ self-hosted capability/, 'homepage must explain hybrid deployment');
-assert.match(index, /Put one VP3 Agent across the work\./, 'homepage must include the current closing CTA');
+assert.match(index, /Use one service or connect the whole loop\./, 'homepage must retain the single pre-footer service CTA');
+assert.doesNotMatch(index, /class="final-cta"/, 'homepage must not restore the redundant second pre-footer CTA');
+assert.match(index, /\$chromeDownloadUrl\s*=\s*url\('\/chrome-extension-download\.php'\)/, 'homepage Chrome download must target the managed public endpoint');
+assert.match(index, /data-vp3-cta="home_devices_chrome_download"/, 'homepage must expose a direct Chrome Extension download CTA');
 assert.match(index, /<footer class="footer">/, 'homepage must include the marketing footer');
 
 assert.match(css, /\.home-lifecycle-grid\{[^}]*grid-template-columns:repeat\(6,minmax\(0,1fr\)\)/, 'desktop operating loop must use six stages');

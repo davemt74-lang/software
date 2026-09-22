@@ -2,9 +2,43 @@
 declare(strict_types=1);
 
 require __DIR__ . '/includes/bootstrap.php';
+require_once __DIR__ . '/includes/chrome-extension-releases.php';
 
 header('X-Content-Type-Options: nosniff');
 header('Cache-Control: no-store, private');
+
+$managedRelease = chrome_extension_latest_release('stable');
+if ($managedRelease) {
+    $storedPath = (string)($managedRelease['package_path'] ?? '');
+    $base = realpath(chrome_extension_release_private_dir());
+    $real = $storedPath !== '' && is_file($storedPath) ? realpath($storedPath) : false;
+    $size = $real ? filesize($real) : false;
+    if (!$base || !$real || !str_starts_with($real, $base . DIRECTORY_SEPARATOR) || !is_int($size) || $size < 1) {
+        http_response_code(503);
+        header('Content-Type: text/plain; charset=utf-8');
+        echo "The current VP3 Chrome Extension package is temporarily unavailable.";
+        exit;
+    }
+
+    $filename = basename((string)($managedRelease['package_name'] ?? ''));
+    if ($filename === '' || strtolower(pathinfo($filename, PATHINFO_EXTENSION)) !== 'zip') {
+        $filename = 'vp3-browser-companion-v' . (string)$managedRelease['version'] . '.zip';
+    }
+    $filename = str_replace(['"', "\r", "\n"], '', $filename);
+
+    header('Content-Type: application/zip');
+    header('Content-Disposition: attachment; filename="' . $filename . '"');
+    header('Content-Length: ' . (string)$size);
+    header('X-Chrome-Extension-Version: ' . (string)$managedRelease['version']);
+    if (!empty($managedRelease['package_sha256'])) {
+        header('X-Chrome-Extension-SHA256: ' . (string)$managedRelease['package_sha256']);
+    }
+    if (strtoupper((string)($_SERVER['REQUEST_METHOD'] ?? 'GET')) === 'HEAD') {
+        exit;
+    }
+    readfile($real);
+    exit;
+}
 
 $root = __DIR__ . '/browser-companion';
 $manifestPath = $root . '/manifest.json';

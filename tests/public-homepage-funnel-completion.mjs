@@ -20,6 +20,8 @@ add('Homepage uses funnel-aware signup and demo URLs',/vp3_funnel_url\('\/signup
 add('Homepage operating loop',['Capture','Understand','Coordinate','Sell','Measure','Agent follows through'].every(x=>index.includes(x)));
 add('Homepage current surface coverage',['/chrome-extension.php','/annotations.php','/video-meetings.php','/profile-agent-overview.php','/teams.php','/booking.php','/ecommerce.php','/agent-analytics.php','/homeserver.php'].every(x=>index.includes(x)));
 add('Homepage explicit CTA instrumentation',/home_hero_get_vp3/.test(index)&&/home_hero_book_demo/.test(index)&&/home_capability/.test(index)&&/home_choice_pricing/.test(index));
+add('Homepage exposes direct Chrome Extension download',/home_devices_chrome_download/.test(index)&&/chrome-extension-download\.php/.test(index));
+add('Homepage uses one pre-footer CTA section',/home-choice/.test(index)&&!/class="final-cta"/.test(index));
 add('Homepage styles responsive current story',/\.home-lifecycle-grid/.test(css)&&/\.home-surface-grid/.test(css)&&/\.home-journey-steps/.test(css)&&/@media\(max-width:620px\)/.test(css));
 add('Demo choices cover current platform',['Browser Companion + Annotations','Meetings + Transcription + AI Summary','Calendar + Booking','Ecommerce + Agent Analytics','HomeServer + private AI'].every(x=>demo.includes(x)));
 add('Funnel recognizes current public sources',['chrome-extension','annotations','video-meetings','agent-analytics'].every(x=>funnel.includes("'"+x+"'")));

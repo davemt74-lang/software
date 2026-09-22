@@ -3,6 +3,7 @@ import fs from 'node:fs';
 
 const read = path => fs.readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
 const runtime = read('includes/homeserver-vp3.php');
+const chromeReleaseRuntime = read('includes/chrome-extension-releases.php');
 const approvalRuntime = read('includes/homeserver-approvals-v028.php');
 const cloudActions = read('includes/homeserver-cloud-pairing-actions-v1200.php');
 const sidebar = read('includes/main-sidebar.php');
@@ -12,6 +13,7 @@ const admin = read('admin/homeserver.php');
 const statusApi = read('api/homeserver-status.php');
 const releaseApi = read('api/homeserver-release.php');
 const download = read('homeserver-download.php');
+const chromeDownload = read('chrome-extension-download.php');
 const migration = read('upgrade-vp3-homeserver-integration.sql');
 const config = read('config-example.php');
 
@@ -52,11 +54,33 @@ assert.match(runtime, /pair\.request/);
 assert.match(runtime, /pair\.status/);
 assert.doesNotMatch(runtime, /shell_exec\s*\(|proc_open\s*\(|passthru\s*\(/);
 
+assert.match(chromeReleaseRuntime, /CREATE TABLE IF NOT EXISTS chrome_extension_releases/);
+assert.match(chromeReleaseRuntime, /private\/chrome-extension-releases/);
+assert.match(chromeReleaseRuntime, /information_schema\.tables/);
+assert.match(chromeReleaseRuntime, /is_uploaded_file\(\$tmp\)/);
+assert.match(chromeReleaseRuntime, /ZipArchive/);
+assert.match(chromeReleaseRuntime, /Chrome Manifest V3/);
+assert.match(chromeReleaseRuntime, /VP3 Browser Companion/);
+assert.match(chromeReleaseRuntime, /256 MB safety limit/);
+assert.match(chromeReleaseRuntime, /hash_file\('sha256'/);
+assert.doesNotMatch(chromeReleaseRuntime, /shell_exec\s*\(|proc_open\s*\(|passthru\s*\(/);
+assert.match(chromeDownload, /chrome_extension_latest_release\('stable'\)/);
+assert.match(chromeDownload, /X-Chrome-Extension-SHA256/);
+assert.match(chromeDownload, /browser-companion/,'managed Chrome download must retain the repository package fallback');
+assert.doesNotMatch(chromeDownload, /require_login\(|require_permission\(/);
+
 assert.match(admin, /require_permission\('users\.manage'\)/);
 assert.match(admin, /portable_exe/);
 assert.match(admin, /installer_exe/);
 assert.match(admin, /Make Current/);
 assert.match(admin, /SHA256|sha256/i);
+assert.match(admin, /\$adminTitle = 'Client Releases'/);
+assert.match(admin, /Chrome Extension \+ HomeServer/);
+assert.match(admin, /name="chrome_zip"/);
+assert.match(admin, /chrome_publish/);
+assert.match(admin, /chrome_latest/);
+assert.match(admin, /Chrome Extension History/);
+assert.match(admin, /HomeServer History/);
 
 assert.match(releaseApi, /homeserver_vp3_latest_release/);
 assert.match(download, /is_published=1/);
