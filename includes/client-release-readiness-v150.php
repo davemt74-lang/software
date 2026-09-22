@@ -583,11 +583,24 @@ function client_release_readiness_admin_summary_v150(PDO $pdo): array
         foreach(client_release_admin_rollouts_v110($pdo,$product) as $release){
             $rid=(int)$release['id'];
             try{
-                $evaluation=client_release_readiness_evaluate_v150($pdo,$product,$rid);
-                $evaluation['current']=client_release_readiness_current_v150($pdo,$product,$rid);
-                $evaluation['latest_snapshot']=client_release_readiness_latest_snapshot_v150($pdo,$product,$rid);
-                $evaluation['ci']=client_release_readiness_ci_rows_v150($pdo,$product,$rid);
-                $out[$product][]=$evaluation;
+                $snapshot=client_release_readiness_latest_snapshot_v150($pdo,$product,$rid);
+                $signoff=$snapshot?client_release_readiness_latest_signoff_v150($pdo,$product,$rid,(int)$snapshot['id']):null;
+                $fingerprint=client_release_readiness_fingerprint_v150($pdo,$product,$rid);
+                $state='incomplete';$reason='No readiness snapshot exists.';
+                if($snapshot){
+                    if(!hash_equals((string)$snapshot['fingerprint_sha256'],$fingerprint)){$state='stale';$reason='Readiness inputs changed after evaluation.';}
+                    elseif((string)$snapshot['readiness_status']==='blocked'){$state='blocked';$reason='Latest snapshot contains blocking gates.';}
+                    elseif(!$signoff||!in_array((string)$signoff['decision'],['approved','approved_with_warnings'],true)){$state='unsigned';$reason='Latest snapshot has not been approved.';}
+                    else{$state=(string)$snapshot['readiness_status'];$reason='Snapshot is signed; live artifact integrity is rechecked when readiness is enforced.';}
+                }
+                $out[$product][]=[
+                    'product'=>$product,'release_id'=>$rid,'version'=>(string)($release['version']??''),
+                    'channel'=>(string)($release['channel']??'stable'),'release'=>$release,
+                    'rollout'=>client_release_rollout_for_v110($pdo,$product,$rid,$release),
+                    'manifest'=>client_release_readiness_manifest_v150($pdo,$product,$rid),
+                    'latest_snapshot'=>$snapshot,'signoff'=>$signoff,'state'=>$state,'state_reason'=>$reason,
+                    'ci'=>client_release_readiness_ci_rows_v150($pdo,$product,$rid),
+                ];
             }catch(Throwable $e){
                 $out[$product][]=['product'=>$product,'release_id'=>$rid,'version'=>(string)($release['version']??''),'error'=>$e->getMessage()];
             }
