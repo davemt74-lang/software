@@ -18,8 +18,11 @@ function member_navigation_profile_url(?array $user = null): string
 
 function member_agent_voice_enabled(?array $user = null): bool
 {
-    $user??=current_user();if(!$user||(int)($user['id']??0)<1)return true;$pdo=db();if(!$pdo||!function_exists('chat_settings_get_v237'))return true;
-    try{$settings=chat_settings_get_v237($pdo,(int)$user['id']);return ($settings['agent_voice_enabled']??true)!==false;}catch(Throwable $e){return true;}
+    $user??=current_user();if(!$user||(int)($user['id']??0)<1)return false;$pdo=db();if(!$pdo)return false;
+    try{
+        if(function_exists('chat_settings_agent_voice_enabled_v237'))return chat_settings_agent_voice_enabled_v237($pdo,$user);
+        if(!function_exists('chat_settings_get_v237'))return false;$settings=chat_settings_get_v237($pdo,(int)$user['id']);return !empty($settings['agent_voice_enabled']);
+    }catch(Throwable $e){return false;}
 }
 
 function member_navigation_entitled(?array $user,string $capability,bool $legacyFallback=true): bool
@@ -119,7 +122,7 @@ function member_agent_voice_toggle_html(?array $user = null): string
     $user??=current_user();
     if(!$user||!member_navigation_package_permission($user,'chat.access',has_permission('chat.access',$user))||!member_navigation_entitled($user,'voice.access',true))return '';
     $checked=member_agent_voice_enabled($user)?' checked':'';
-    return '<label class="member-agent-voice-toggle" title="Speak proactive and Profile Agent messages"><span class="member-agent-voice-label">Agent Voice</span><input type="checkbox" data-agent-voice-toggle aria-label="Agent Voice"'.$checked.'><span class="member-agent-voice-switch" aria-hidden="true"><span></span></span></label>';
+    return '<label class="member-agent-voice-toggle" title="Allow spoken Agent responses and notification announcements"><span class="member-agent-voice-label">Agent Voice</span><input type="checkbox" data-agent-voice-toggle aria-label="Agent Voice"'.$checked.'><span class="member-agent-voice-switch" aria-hidden="true"><span></span></span></label>';
 }
 
 function member_navigation_menu_links(?array $user = null): array
