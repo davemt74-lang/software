@@ -36,7 +36,7 @@ const editorAdapters=[stemAdapter,videoAdapter];
 
 assert(activePages.every(value=>value.includes('conversation-integration-v131-20260826')),'all three active surfaces emit the v131 server/runtime marker');
 assert(chatPage.includes('chat-voice.js?v=')&&!chatPage.includes('conversation-voice-v122.js'),'Agent Chat uses the direct canonical voice owner instead of shared v122');
-assert(chatVoice.includes("const BUILD='chat-voice-canonical-20260903'")&&chatVoice.includes('STONEFELLOW_CHAT_VOICE'),'Agent Chat explicitly reports direct single-API voice ownership');
+assert(chatVoice.includes("const BUILD='chat-voice-proactive-v244-20260922'")&&chatVoice.includes('STONEFELLOW_CHAT_VOICE'),'Agent Chat explicitly reports direct single-API voice ownership through the v2.44 proactive runtime');
 assert(sharedVoice.includes('StonefellowConversationVoiceV122'),'v122 remains the shared editor conversation owner');
 assert(!sharedVoice.includes('StonefellowConversationVoiceV120')&&!sharedVoice.includes('StonefellowConversationVoiceV121'),'controller does not export or probe V120 conversation ownership');
 assert(!sharedVoice.includes('ConversationVoiceV120')&&!sharedVoice.includes('ConversationVoiceV121'),'controller does not export or probe V121 conversation ownership');
