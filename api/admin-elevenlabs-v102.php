@@ -20,9 +20,10 @@ $allowedModels = [
 
 $readState = static function () use ($allowedModels): array {
     $encrypted = trim((string)setting('ai_elevenlabs_api_key', ''));
-    $plain = $encrypted !== '' ? ai_decrypt_secret($encrypted) : '';
+    $credentialState = ai_encrypted_secret_state($encrypted);
+    $plain = $credentialState === 'ready' ? ai_decrypt_secret($encrypted) : '';
     $saved = $plain !== '';
-    $credentialError = $encrypted !== '' && $plain === '';
+    $credentialError = !in_array($credentialState, ['empty','ready'], true);
     $suffix = '';
     if ($saved) {
         $suffix = mb_strlen($plain) > 6 ? mb_substr($plain, -6) : $plain;
@@ -44,6 +45,8 @@ $readState = static function () use ($allowedModels): array {
         'saved' => $saved,
         'verified' => $verified,
         'credential_error' => $credentialError,
+        'credential_state' => $credentialState,
+        'credential_message' => $credentialError ? ai_credential_state_message($credentialState, 'ElevenLabs') : '',
         'key_suffix' => $suffix,
         'voice_id' => $voiceId,
         'model_id' => $modelId,
