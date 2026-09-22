@@ -84,8 +84,9 @@ assert.match(ui, /Keep the cursor unchanged so a failed canvas presentation is r
 assert.doesNotMatch(identity, /agent-attention\.js|agent-attention\.css/, 'legacy Profile Agent top-banner runtime must not load in Agent Chat');
 assert.match(ui, /StonefellowPremiumVoiceV122/, 'attention uses the existing ElevenLabs voice runtime');
 assert.match(ui, /SpeechSynthesisUtterance/, 'attention speech retains system voice fallback');
-assert.match(ui, /responseTimer = window\.setTimeout\([\s\S]*?, 10000\)/, 'attention opens a 10-second response window');
-assert.match(ui, /setVoiceMode\(false\)/, 'temporary listening can be shut off when the response window expires');
+assert.match(ui, /if \(wasVoice\) setVoiceMode\(false\)|if \(wasVoice\) \{[\s\S]*setVoiceMode\(false\)/, 'spoken attention may pause an already-active voice conversation');
+assert.match(ui, /if \(wasVoice\) \{[\s\S]*setVoiceMode\(true\)/, 'spoken attention restores listening only when it was already active');
+assert.doesNotMatch(ui, /responseTemporaryVoice/, 'notifications must never create temporary microphone authority');
 assert.match(ui, /return Boolean\(continuity\(\)\.isVoice\?\.\(\)\)/, 'attention reads voice state through the canonical continuity fallback');
 assert.match(ui, /TRANSCRIPT_SUBMIT/, 'spoken user responses cancel the temporary response timeout');
 assert.match(ui, /chatForm[\s\S]*markUserResponse/, 'typed user responses cancel the temporary response timeout');
