@@ -47,6 +47,8 @@
   let attentionTimer = 0;
   let attentionBusy = false;
   let speechQueue = Promise.resolve();
+  let speechGeneration = 0;
+  let activeSpeechCancel = null;
   let agentVoicePreference = cfg.agentVoiceEnabled !== false;
   let mainFeedOutcomeBusy = false;
   let mainFeedObserver = null;
@@ -620,7 +622,25 @@
     });
   }
 
-  function browserSpeak(text) {
+  function announceSpeechState(state, text = '') {
+    try {
+      window.dispatchEvent(new CustomEvent('stonefellow:agent-proactive-speech',{
+        detail:{state:String(state||''),text:String(text||'')}
+      }));
+    } catch (_error) {}
+  }
+
+  function cancelSpeech() {
+    speechGeneration += 1;
+    const cancel = activeSpeechCancel;
+    activeSpeechCancel = null;
+    try { cancel?.(); } catch (_error) {}
+    try { window.speechSynthesis?.cancel(); } catch (_error) {}
+    announceSpeechState('end');
+    return true;
+  }
+
+  function browserSpeak(text, generation) {
     return new Promise(resolve => {
       const message = String(text || '').trim();
       if (!message || !('speechSynthesis' in window) || !window.SpeechSynthesisUtterance) {
@@ -628,31 +648,56 @@
         return;
       }
       const utterance = new window.SpeechSynthesisUtterance(message);
-      let done = false;
-      const finish = ok => {
-        if (done) return;
-        done = true;
+      let started = false;
+      let settled = false;
+      let closed = false;
+      const settle = ok => {
+        if (settled) return;
+        settled = true;
         resolve(ok);
       };
-      utterance.onend = () => finish(true);
-      utterance.onerror = () => finish(false);
+      const close = () => {
+        if (closed) return;
+        closed = true;
+        if (activeSpeechCancel === cancel) activeSpeechCancel = null;
+        announceSpeechState('end', message);
+      };
+      const cancel = () => {
+        try { window.speechSynthesis.cancel(); } catch (_error) {}
+        close();
+        if (!started) settle(false);
+      };
+      activeSpeechCancel = cancel;
+      utterance.onstart = () => {
+        if (generation !== speechGeneration) {
+          cancel();
+          return;
+        }
+        started = true;
+        announceSpeechState('start', message);
+        settle(true);
+      };
+      utterance.onend = () => close();
+      utterance.onerror = () => {
+        close();
+        if (!started) settle(false);
+      };
       try {
         window.speechSynthesis.cancel();
         window.speechSynthesis.speak(utterance);
       } catch (_error) {
-        finish(false);
+        close();
+        settle(false);
       }
     });
   }
 
-  async function speakWithExistingVoice(text) {
-    if (!agentVoiceEnabled()) return false;
+  async function speakWithExistingVoice(text, generation) {
+    if (!agentVoiceEnabled() || generation !== speechGeneration) return false;
     const message = String(text || '').trim();
     if (!message) return false;
     await waitForAgentIdle();
-
-    const wasVoice = voiceIsOn();
-    if (wasVoice) setVoiceMode(false);
+    if (generation !== speechGeneration) return false;
 
     let spoken = false;
     const PremiumVoice = window.StonefellowPremiumVoiceV122;
@@ -662,33 +707,66 @@
           agentEndpoint:String(window.STONEFELLOW_CHAT?.endpoint || '/api/chat-v236.php'),
           csrf:String(cfg.csrf || '')
         });
-        spoken = await new Promise(async resolve => {
+        spoken = await new Promise(resolve => {
+          let started = false;
           let settled = false;
-          const finish = ok => {
+          let closed = false;
+          const settle = ok => {
             if (settled) return;
             settled = true;
             resolve(ok);
           };
-          try {
-            await premium.speak(message, {onEnd:() => finish(true), onError:() => finish(false)});
-          } catch (_error) {
-            finish(false);
-          }
+          const close = () => {
+            if (closed) return;
+            closed = true;
+            if (activeSpeechCancel === cancel) activeSpeechCancel = null;
+            announceSpeechState('end', message);
+          };
+          const cancel = () => {
+            try { premium.stop?.(); } catch (_error) {}
+            close();
+            if (!started) settle(false);
+          };
+          activeSpeechCancel = cancel;
+          Promise.resolve(premium.speak(message, {
+            onStart:() => {
+              if (generation !== speechGeneration) {
+                cancel();
+                return;
+              }
+              started = true;
+              announceSpeechState('start', message);
+              settle(true);
+            },
+            onEnd:() => close(),
+            onError:() => {
+              close();
+              if (!started) settle(false);
+            }
+          })).then(ok => {
+            if (ok === true && !started && generation === speechGeneration) {
+              started = true;
+              announceSpeechState('start', message);
+              settle(true);
+            }
+          }).catch(() => {
+            close();
+            if (!started) settle(false);
+          });
         });
       } catch (_error) {
         spoken = false;
       }
     }
-    if (!spoken) spoken = await browserSpeak(message);
-
-    if (wasVoice) {
-      setVoiceMode(true);
-    }
+    if (!spoken && generation === speechGeneration) spoken = await browserSpeak(message, generation);
     return spoken === true;
   }
 
   function queueSpeech(text) {
-    const queued = speechQueue.then(() => speakWithExistingVoice(text)).catch(() => false);
+    const generation = speechGeneration;
+    const queued = speechQueue
+      .then(() => generation === speechGeneration ? speakWithExistingVoice(text, generation) : false)
+      .catch(() => false);
     speechQueue = queued.then(() => undefined, () => undefined);
     return queued;
   }
@@ -770,6 +848,7 @@
     mainFeedRefreshTimer = 0;
     mainFeedObserver?.disconnect();
     mainFeedObserver = null;
+    cancelSpeech();
     clearResponseWindow();
   }, {once:true});
 
@@ -781,6 +860,7 @@
     refresh,
     pollAttention,
     announce:text => queueSpeech(String(text || '')),
+    cancelSpeech,
     syncMainFeedOutcomes:syncMainFeedBrainOutcomeControls
   };
   void refresh(false).finally(startAttentionPolling);
