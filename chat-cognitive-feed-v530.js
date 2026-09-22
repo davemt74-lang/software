@@ -507,7 +507,7 @@
     timer=null;
   },{once:true});
 
-  const runtime={build:'vp3-cognitive-feed-v531-20260921',refresh:refreshFeed,render:renderFeed};
+  const runtime={build:'vp3-cognitive-feed-v530-20260918',activationBuild:'onboarding-activation-v243-20260921',refresh:refreshFeed,render:renderFeed};
   window.VP3_COGNITIVE_FEED_V530_RUNTIME=runtime;
   mount();
   if(visible())void refreshFeed(true);
