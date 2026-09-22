@@ -37,6 +37,18 @@ try{
     if($method!=='POST')vp3_cognitive_feed_api_json_v530(405,['ok'=>false,'error'=>'method_not_allowed']);
     if(!hash_equals(csrf_token(),trim((string)($input['csrf_token']??''))))vp3_cognitive_feed_api_json_v530(419,['ok'=>false,'error'=>'csrf']);
 
+    if(in_array($action,['activation_defer','activation_dismiss','activation_restore'],true)){
+        $workflow=trim((string)($input['workflow']??''));
+        $state=chat_onboarding_v241_state($pdo,$user);
+        $item=(array)($state['activation']['items'][$workflow]??[]);
+        if(!$item)vp3_cognitive_feed_api_json_v530(404,['ok'=>false,'error'=>'activation_item_unavailable']);
+        if(in_array($action,['activation_defer','activation_dismiss'],true)&&($item['activation_status']??'')!=='pending'){
+            vp3_cognitive_feed_api_json_v530(409,['ok'=>false,'error'=>'activation_item_changed']);
+        }
+        $domainAction=$action==='activation_defer'?'defer':($action==='activation_dismiss'?'dismiss':'restore');
+        onboarding_intelligence_activation_action($pdo,$user,$workflow,$domainAction,(int)($input['defer_days']??3));
+        vp3_cognitive_feed_api_json_v530(200,['ok'=>true,'feed'=>vp3_cognitive_feed_compose_v530($pdo,$user,$namespace,false)]);
+    }
     if($action==='hide'){
         $key=mb_strimwidth(trim((string)($input['item_key']??'')),0,190,'');
         $fingerprint=strtolower(trim((string)($input['fingerprint']??'')));
