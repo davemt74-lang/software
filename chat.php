@@ -11,7 +11,7 @@ $recordingPersistenceBuild = 'chat-recordings-v242-20260902';
 $transcriptionCanvasBuild = 'transcription-intelligence-home-v308-20260907';
 $mediaOverlayBuild = 'chat-media-overlays-source-light-20260905';
 $agentOverlayBuild = 'agent-updates-hidden-v206-20260901';
-$agentIdentityBuild = 'chat-onboarding-activation-v243-20260921';
+$agentIdentityBuild = 'chat-onboarding-current-systems-v242-20260921';
 $profileActivityBuild = 'profile-activity-overlay-20260905';
 $headerUiBuild = 'live-wiring-20260903-3';
 $teamChatAdminBuild = 'team-chat-bootstrap-v236-20260905';
@@ -21,15 +21,16 @@ $activityBuild = 'agent-activity-v94-canonical-runtime-20260907';
 $brainLearningBuild = 'brain-learning-history-v317-20260907-pr81-hotfix1';
 $agentIntelligenceBuild = 'agent-chat-intelligence-v171-20260914';
 $cognitivePresentationBuild = 'cognitive-presentation-v510-20260918';
-$cognitiveCardsBuild = 'cognitive-cards-v521-activation-20260921';
-$cognitiveFeedBuild = 'cognitive-feed-v531-activation-20260921';
+$cognitiveCardsBuild = 'cognitive-cards-v520-20260918';
+$cognitiveFeedBuild = 'cognitive-feed-v530-20260918';
 $cognitiveLearningBuild = 'cognitive-learning-v540-20260918';
 $cognitivePlanningBuild = 'cognitive-planning-v550-20260918';
 $cognitiveOrchestrationBuild = 'cognitive-orchestration-v560-20260919';
 $cognitiveMemoryBuild = 'cognitive-memory-v570-20260919';
 $browserContextBuild = 'browser-context-v2130-20260919';
-$cognitiveCardsAssetBuild = $cognitiveCardsBuild . '-memory-v570';
-$cognitiveFeedAssetBuild = $cognitiveFeedBuild . '-orchestration-v560-priority-v2310-proactive-v2340-calibration-v2350';
+$agentIdentityAssetBuild = $agentIdentityBuild . '-activation-v243';
+$cognitiveCardsAssetBuild = $cognitiveCardsBuild . '-activation-v243-memory-v570';
+$cognitiveFeedAssetBuild = $cognitiveFeedBuild . '-activation-v243-orchestration-v560-priority-v2310-proactive-v2340-calibration-v2350';
 
 if (!headers_sent()) {
     header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
@@ -332,8 +333,8 @@ $recordingLibraryRuntime = has_permission('artist_listening.access', $user)
 $voiceConfig = '<script data-chat-voice-config>window.STONEFELLOW_AGENT_CONTEXT={userId:' . (int)$user['id'] . ',surface:"chat",trackId:0,projectId:0,conversationId:' . (int)$agentInitialConversationId . ',taskTitle:"Agent Chat",taskKey:"chat",csrf:' . json_encode(csrf_token()) . ',proactiveEndpoint:' . json_encode(url('/api/agent-proactive-v93.php')) . '};</script>';
 
 $agentIdentityRuntime = $agentFeatureReady
-    ? '<link rel="stylesheet" data-chat-agent-identity-v236 href="' . e(url('/chat-agent-identity-v236.css?v=' . $agentIdentityBuild)) . '">'
-        . '<script data-chat-agent-identity-v236 src="' . e(url('/chat-agent-identity-v236.js?v=' . $agentIdentityBuild)) . '"></script>'
+    ? '<link rel="stylesheet" data-chat-agent-identity-v236 href="' . e(url('/chat-agent-identity-v236.css?v=' . $agentIdentityAssetBuild)) . '">'
+        . '<script data-chat-agent-identity-v236 src="' . e(url('/chat-agent-identity-v236.js?v=' . $agentIdentityAssetBuild)) . '"></script>'
     : '';
 
 $profileActivityRuntime = $agentFeatureReady && $pdoForAgent && profile_agent_schema_ready($pdoForAgent)
