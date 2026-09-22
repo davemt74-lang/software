@@ -619,15 +619,62 @@ function client_release_automation_execute_proposal_v170(PDO $pdo,int $proposalI
     return client_release_automation_proposal_v170($pdo,$proposalId)??[];
 }
 
-function client_release_automation_decide_proposal_v170(PDO $pdo,int $proposalId,string $decision,int $actorUserId,string $note=''): array
+function client_release_automation_execute_modified_proposal_v170(PDO $pdo,array $proposal,int $modifiedPercent,int $actorUserId,string $note): array
+{
+    $type=(string)$proposal['proposal_type'];
+    $fromPercent=(int)$proposal['from_percent'];$originalTo=(int)$proposal['to_percent'];
+    if($modifiedPercent<1||$modifiedPercent>=$originalTo||$modifiedPercent<=$fromPercent){
+        throw new RuntimeException('Modified cohort must be larger than the current cohort and smaller than the proposed cohort.');
+    }
+    if($type==='fleet_advance'){
+        if(!in_array($modifiedPercent,[10,25,50],true))throw new RuntimeException('Fleet cohort modifications must use 10%, 25%, or 50%.');
+        client_release_automation_validate_proposal_v170($pdo,$proposal);
+        client_fleet_campaign_set_v160($pdo,(int)$proposal['campaign_id'],'active',$modifiedPercent,$actorUserId);
+    }elseif($type==='rollout_promote'){
+        if((string)$proposal['to_state']==='general_availability')throw new RuntimeException('General Availability promotion cannot be modified; approve or reject it explicitly.');
+        $validated=client_release_automation_validate_proposal_v170($pdo,$proposal);
+        $release=(array)$validated['release'];$roll=(array)$validated['rollout'];
+        $health=client_release_health_snapshot_v120($pdo,(string)$proposal['product'],(int)$proposal['release_id'],$actorUserId);
+        if((string)$health['recommendation']!=='promote')throw new RuntimeException('Release health no longer recommends promotion.');
+        client_release_rollout_update_v110($pdo,(string)$proposal['product'],(int)$proposal['release_id'],[
+            'lifecycle_state'=>'limited','rollout_percent'=>$modifiedPercent,
+            'summary'=>(string)($roll['summary']??''),'known_issues'=>(string)($roll['known_issues']??''),
+            'compatibility_notes'=>(string)($roll['compatibility_notes']??''),
+        ],$actorUserId);
+        $stmt=$pdo->prepare("INSERT INTO client_release_promotion_decisions_v120
+          (actor_user_id,product,release_id,health_snapshot_id,decision,from_state,from_percent,to_state,to_percent,rationale)
+          VALUES (?,?,?,?,?,?,?,?,?,?)");
+        $stmt->execute([
+            $actorUserId>0?$actorUserId:null,(string)$proposal['product'],(int)$proposal['release_id'],
+            (int)$health['snapshot_id'],'approved_modified',(string)$proposal['from_state'],$fromPercent,'limited',$modifiedPercent,$note
+        ]);
+        client_release_audit_v110($pdo,$actorUserId,(string)$proposal['product'],(int)$proposal['release_id'],'health_promotion_approved_modified',
+            (string)$proposal['from_state'],'limited',[
+                'from_percent'=>$fromPercent,'to_percent'=>$modifiedPercent,'health_snapshot_id'=>(int)$health['snapshot_id'],
+                'automation_proposal_id'=>(int)$proposal['id'],'rationale'=>$note
+            ]);
+    }else{
+        throw new RuntimeException('Only rollout and fleet advancement proposals can be modified.');
+    }
+    $pdo->prepare("UPDATE client_release_automation_proposals_v170 SET proposal_status='executed',
+      to_percent=?,decided_by_user_id=?,decision_note=?,decided_at=NOW(),executed_by_user_id=?,executed_at=NOW() WHERE id=?")
+      ->execute([$modifiedPercent,$actorUserId>0?$actorUserId:null,$note,$actorUserId>0?$actorUserId:null,(int)$proposal['id']]);
+    client_release_automation_event_v170($pdo,(int)($proposal['run_id']??0),(int)$proposal['id'],$actorUserId,'proposal_modified_and_executed',[
+        'original_to_percent'=>$originalTo,'modified_to_percent'=>$modifiedPercent,'note'=>$note
+    ]);
+    return client_release_automation_proposal_v170($pdo,(int)$proposal['id'])??[];
+}
+
+function client_release_automation_decide_proposal_v170(PDO $pdo,int $proposalId,string $decision,int $actorUserId,string $note='',int $modifiedPercent=0): array
 {
     $proposal=client_release_automation_proposal_v170($pdo,$proposalId);
     if(!$proposal)throw new RuntimeException('Automation proposal was not found.');
     if(!in_array((string)$proposal['proposal_status'],['pending','deferred'],true))throw new RuntimeException('Automation proposal is no longer awaiting a decision.');
     $decision=strtolower(trim($decision));
-    if(!in_array($decision,['approve','reject','defer'],true))throw new RuntimeException('Choose a valid automation decision.');
+    if(!in_array($decision,['approve','reject','defer','modify'],true))throw new RuntimeException('Choose a valid automation decision.');
     $note=mb_strimwidth(trim($note),0,1000,'');
-    if(in_array($decision,['reject','defer'],true)&&$note==='')throw new RuntimeException('Add an operator note when rejecting or deferring automation.');
+    if(in_array($decision,['reject','defer','modify'],true)&&$note==='')throw new RuntimeException('Add an operator note when rejecting, deferring, or modifying automation.');
+    if($decision==='modify')return client_release_automation_execute_modified_proposal_v170($pdo,$proposal,$modifiedPercent,$actorUserId,$note);
 
     if($decision==='approve'){
         if(in_array((string)$proposal['proposal_type'],['rollout_promote','fleet_advance'],true)){
