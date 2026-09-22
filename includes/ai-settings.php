@@ -60,6 +60,9 @@ function ai_master_key_file(): string
 
 function ai_saved_encrypted_credentials_exist(): bool
 {
+    if (!function_exists('setting')) {
+        return false;
+    }
     foreach (['ai_openai_api_key','ai_anthropic_api_key','ai_elevenlabs_api_key'] as $settingKey) {
         if (trim((string)setting($settingKey, '')) !== '') {
             return true;
