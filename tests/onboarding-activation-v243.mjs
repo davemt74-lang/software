@@ -10,6 +10,7 @@ const feed=read('includes/cognitive-feed-v530.php');
 const feedApi=read('api/cognitive-feed-v530.php');
 const feedJs=read('chat-cognitive-feed-v530.js');
 const chat=read('chat.php');
+const onboardingUi=read('chat-agent-identity-v236.js');
 
 assert.match(intelligence,/onboarding-intelligence-20260921-v4/);
 assert.match(intelligence,/function onboarding_intelligence_activation_interest/);
@@ -70,6 +71,10 @@ assert.match(feedJs,/defer_days:3/);
 assert.match(feedJs,/if\(cardType!=='onboarding_setup'\)actions\.append\(why,hide\)/,'setup cards must use defer/dismiss rather than generic hide');
 assert.doesNotMatch(feedJs,/requestSubmit\([\s\S]{0,600}activation_defer/,'activation preference actions must not submit Chat prompts');
 
+assert.doesNotThrow(()=>new Function(onboardingUi),'activation-aware guided setup JS must parse');
+assert.match(onboardingUi,/Deferred until/,'reopened VP3 Setup must show deferred state');
+assert.match(onboardingUi,/Keeping a deferred system selected and continuing reactivates it now/);
+assert.match(chat,/\$agentIdentityBuild = 'chat-onboarding-activation-v243-20260921'/);
 assert.match(chat,/\$cognitiveCardsBuild = 'cognitive-cards-v521-activation-20260921'/);
 assert.match(chat,/\$cognitiveFeedBuild = 'cognitive-feed-v531-activation-20260921'/);
 
