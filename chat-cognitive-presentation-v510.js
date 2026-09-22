@@ -34,10 +34,24 @@
   }
 
   async function getState() {
-    const response = await fetch(endpoint('state'), {credentials:'same-origin',headers:{Accept:'application/json'}});
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok || !data.ok) throw new Error(data.error || 'Cognitive presentation is unavailable.');
-    return data.state || {};
+    const controller = typeof AbortController === 'function' ? new AbortController() : null;
+    const timeout = controller ? window.setTimeout(() => controller.abort(), 10000) : 0;
+    try {
+      const response = await fetch(endpoint('state'), {
+        credentials:'same-origin',
+        cache:'no-store',
+        headers:{Accept:'application/json'},
+        signal:controller ? controller.signal : undefined
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data.ok) throw new Error(data.error || 'Cognitive presentation is unavailable.');
+      return data.state || {};
+    } catch (error) {
+      if (error && error.name === 'AbortError') throw new Error('Agent status request timed out.');
+      throw error;
+    } finally {
+      if (timeout) window.clearTimeout(timeout);
+    }
   }
 
   async function post(action, payload) {
@@ -64,6 +78,7 @@
   function openPopup() {
     popup.hidden = false;
     button.setAttribute('aria-expanded','true');
+    void refresh(true);
   }
 
   function openBrain() {
@@ -187,6 +202,17 @@
     content.innerHTML = briefMarkup(brief || {});
   }
 
+  function renderBriefError(error) {
+    if (statusDot) statusDot.classList.remove('active');
+    button.dataset.active='0';
+    const message = String(error && error.message || 'Agent status is temporarily unavailable.');
+    content.innerHTML =
+      '<div class="chat-agent-brief-status"><span><i class="chat-agent-brief-dot"></i>Agent</span><small>Unavailable</small></div>' +
+      '<article class="chat-agent-brief-card"><small>Status</small><strong>Agent Brief could not load.</strong>' +
+      '<p>' + esc(message) + '</p><div class="chat-agent-brief-actions">' +
+      '<button type="button" class="primary" data-agent-brief-retry>Retry</button></div></article>';
+  }
+
   function digestMarkup(digest) {
     const items = Array.isArray(digest && digest.items) ? digest.items : [];
     let list = '';
@@ -287,17 +313,16 @@
     }
   }
 
-  async function refresh() {
-    if (busy || document.hidden) return;
+  async function refresh(force = false) {
+    if (busy || (document.hidden && !force)) return;
     busy = true;
     try {
       state = await getState();
       renderBrief(state.brief || {});
       renderDigest(state.digest || null);
       await maybeSpeak(state.voice_candidate || null);
-    } catch (_error) {
-      if (statusDot) statusDot.classList.remove('active');
-      button.dataset.active='0';
+    } catch (error) {
+      renderBriefError(error);
     } finally {
       busy = false;
     }
@@ -323,6 +348,12 @@
   if (notifications) notifications.addEventListener('click',openNotifications);
 
   popup.addEventListener('click', event => {
+    const retry = event.target.closest('[data-agent-brief-retry]');
+    if (retry) {
+      retry.disabled = true;
+      void refresh(true).finally(() => { retry.disabled = false; });
+      return;
+    }
     const prompt = event.target.closest('[data-agent-brief-prompt]');
     if (prompt) runPrompt(prompt.dataset.agentBriefPrompt || '');
   });
