@@ -7,7 +7,7 @@ declare(strict_types=1);
  * The feed is a bounded presentation projection. It does not create Chat turns,
  * grant authority, execute tools, or copy canonical objects into feed storage.
  */
-const VP3_COGNITIVE_FEED_V530='vp3-cognitive-feed-v531-20260921';
+const VP3_COGNITIVE_FEED_V530='vp3-cognitive-feed-v530-20260918';
 const VP3_COGNITIVE_FEED_MAX_ITEMS_V530=12;
 const VP3_COGNITIVE_FEED_LOOKAHEAD_DAYS_V530=7;
 
