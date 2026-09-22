@@ -7,7 +7,7 @@ declare(strict_types=1);
  * This extends the existing user_agent_preferences record. It does not create
  * a parallel onboarding identity or entitlement system.
  */
-const VP3_ONBOARDING_INTELLIGENCE_BUILD='onboarding-intelligence-20260921-v4';
+const VP3_ONBOARDING_INTELLIGENCE_BUILD='onboarding-intelligence-20260921-v3';
 
 function onboarding_intelligence_schema_ready(?PDO $pdo=null): bool
 {
