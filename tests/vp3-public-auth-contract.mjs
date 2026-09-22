@@ -117,7 +117,9 @@ assert.match(privacy, /VP3 contact page/, 'privacy requests must route through t
 assert.match(terms, /Last updated September 6, 2026/, 'terms revision date must reflect the VP3 rewrite');
 assert.match(terms, /You retain ownership of content you submit to VP3/, 'terms must preserve user content ownership');
 assert.match(terms, /VP3 contact page/, 'terms questions must route through the VP3 public contact surface');
-assert.match(demo, /Transcriptions & AI summaries/, 'demo request must reflect VP3 capabilities');
+for (const capability of ['Browser Companion + Annotations','Meetings + Transcription + AI Summary','Calendar + Booking','Ecommerce + Agent Analytics','HomeServer + private AI']) {
+  assert.ok(demo.includes(capability), `demo request must reflect current VP3 capability: ${capability}`);
+}
 assert.match(demo, /Public requests never perform schema DDL/, 'demo requests must retain the no-public-DDL CRM boundary');
 
 assert.match(shows, /redirect\(url\('\/index\.php'\)\)/, 'the obsolete Stonefellow public shows route must retire into the VP3 public site');
