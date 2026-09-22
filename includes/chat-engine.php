@@ -427,6 +427,42 @@ function chat_context(string $query, array $user): array
     return array_slice($context, 0, $brainHistoryIntent ? 24 : 28);
 }
 
+function chat_context_is_internal_source(string $source): bool
+{
+    $source = strtolower(trim($source));
+    if ($source === '') return true;
+    foreach (['agent-brain:', 'agent-context:', 'agent:', 'system:', 'execution:', 'runtime:'] as $prefix) {
+        if (str_starts_with($source, $prefix)) return true;
+    }
+    return false;
+}
+
+function chat_context_public_items(array $context): array
+{
+    return array_values(array_filter(
+        $context,
+        static fn(array $item): bool => !chat_context_is_internal_source((string)($item['source'] ?? ''))
+    ));
+}
+
+function chat_context_fallback_actions(string $query, array $context): array
+{
+    $hasInternal = false;
+    foreach ($context as $item) {
+        if (is_array($item) && chat_context_is_internal_source((string)($item['source'] ?? ''))) {
+            $hasInternal = true;
+            break;
+        }
+    }
+    if (!$hasInternal) return [];
+
+    return [
+        ['type'=>'prompt','label'=>'Continue current work','prompt'=>'Use the relevant background context you already have and help me continue the highest-value current task.'],
+        ['type'=>'prompt','label'=>'Review open items','prompt'=>'Review the relevant open tasks and commitments and show me only the items that actually need my attention, with clear options.'],
+        ['type'=>'prompt','label'=>'Summarize what changed','prompt'=>'Summarize the relevant recent changes in plain language. Hide internal retrieval details and give me concrete next-step options.'],
+    ];
+}
+
 function chat_local_answer(string $query, array $context): string
 {
     if (!$context) {
@@ -487,46 +523,24 @@ function chat_local_answer(string $query, array $context): string
         }
     }
 
-    $lines = [];
-
-    foreach (
-        array_slice($context, 0, 7)
-        as $item
-    ) {
-        $text = trim(
-            preg_replace(
-                '/\s+/',
-                ' ',
-                (string)$item['text']
-            ) ?? ''
-        );
-
-        if (
-            mb_strlen($text) >
-            480
-        ) {
-            $text =
-                mb_substr(
-                    $text,
-                    0,
-                    477
-                )
-                . '...';
-        }
-
-        $lines[] =
-            '• '
-            . (string)$item['title']
-            . ': '
-            . $text;
+    $publicContext = chat_context_public_items($context);
+    if (!$publicContext) {
+        return "I found relevant background context for this, but I’m keeping the internal memory, retrieval, tool and cognitive records behind the scenes. Choose one of the next-step options below and I’ll turn that context into something useful.";
     }
 
-    return
-        "Here’s what I found in the Stonefellow data available to your account:\n\n"
-        . implode(
-            "\n\n",
-            $lines
-        );
+    $lines = [];
+    foreach (array_slice($publicContext, 0, 5) as $item) {
+        $text = trim(preg_replace('/\s+/', ' ', (string)($item['text'] ?? '')) ?? '');
+        if ($text === '') continue;
+        if (mb_strlen($text) > 360) $text = mb_substr($text, 0, 357) . '...';
+        $lines[] = '• ' . $text;
+    }
+
+    if (!$lines) {
+        return "I found relevant information, but there isn’t a clean user-facing summary available yet.";
+    }
+
+    return "Here’s the useful information I found:\n\n" . implode("\n", $lines);
 }
 
 function chat_remote_answer(string $query, array $history, array $context, array $user): ?string
