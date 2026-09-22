@@ -406,6 +406,18 @@ function client_release_readiness_fingerprint_v150(PDO $pdo,string $product,int 
     return hash('sha256',json_encode(client_release_readiness_fingerprint_payload_v150($pdo,$product,$releaseId),JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE));
 }
 
+function client_release_readiness_risk_accepted_v150(PDO $pdo,string $product,int $releaseId): bool
+{
+    if(!client_release_risk_schema_ready_v140($pdo))return false;
+    $snapshot=client_release_risk_latest_snapshot_v140($pdo,$product,$releaseId);
+    if(!$snapshot||!in_array((string)($snapshot['risk_level']??''),['high','critical'],true))return false;
+    $stmt=$pdo->prepare("SELECT 1 FROM client_release_risk_reviews_v140
+      WHERE product=? AND release_id=? AND risk_snapshot_id=? AND decision='accepted_risk'
+      ORDER BY id DESC LIMIT 1");
+    $stmt->execute([$product,$releaseId,(int)$snapshot['id']]);
+    return (bool)$stmt->fetchColumn();
+}
+
 function client_release_readiness_evaluate_v150(PDO $pdo,string $product,int $releaseId): array
 {
     if(!client_release_product_valid_v110($product))throw new RuntimeException('Unsupported release product.');
@@ -433,8 +445,10 @@ function client_release_readiness_evaluate_v150(PDO $pdo,string $product,int $re
     }
     $risk=client_release_risk_assess_v140($pdo,$product,$releaseId);
     $riskLevel=(string)($risk['risk_level']??'critical');
-    if($riskLevel==='critical')$gates[]=['key'=>'risk_assessment','status'=>'blocked','detail'=>'Current v1.40 risk is critical; resolve or explicitly review risk before preflight sign-off.'];
-    elseif($riskLevel==='high')$gates[]=['key'=>'risk_assessment','status'=>'warning','detail'=>'Current v1.40 risk is high; use a conservative Canary and document operator review.'];
+    if($riskLevel==='critical'){
+        if(client_release_readiness_risk_accepted_v150($pdo,$product,$releaseId))$gates[]=['key'=>'risk_assessment','status'=>'warning','detail'=>'Current v1.40 risk is critical but has an explicit accepted-risk review; conservative Canary and warning sign-off are required.'];
+        else $gates[]=['key'=>'risk_assessment','status'=>'blocked','detail'=>'Current v1.40 risk is critical; record an explicit accepted-risk review before preflight sign-off.'];
+    }elseif($riskLevel==='high')$gates[]=['key'=>'risk_assessment','status'=>'warning','detail'=>'Current v1.40 risk is high; use a conservative Canary and document operator review.'];
     else $gates[]=['key'=>'risk_assessment','status'=>'pass','detail'=>'Current v1.40 risk is '.$riskLevel.'.'];
 
     if(!empty($manifest['requires_migration'])){
@@ -543,6 +557,8 @@ function client_release_readiness_latest_signoff_v150(PDO $pdo,string $product,i
 function client_release_readiness_current_v150(PDO $pdo,string $product,int $releaseId): array
 {
     if(!client_release_readiness_schema_ready_v150($pdo))return ['ready'=>false,'status'=>'missing','reason'=>'v1.50 readiness schema is not installed.'];
+    $live=client_release_readiness_evaluate_v150($pdo,$product,$releaseId);
+    if((string)$live['status']==='blocked')return ['ready'=>false,'status'=>'blocked','reason'=>'Current preflight inputs have blocking gates.','evaluation'=>$live];
     $snapshot=client_release_readiness_latest_snapshot_v150($pdo,$product,$releaseId);
     if(!$snapshot)return ['ready'=>false,'status'=>'incomplete','reason'=>'No v1.50 readiness snapshot exists.'];
     $currentFingerprint=client_release_readiness_fingerprint_v150($pdo,$product,$releaseId);
