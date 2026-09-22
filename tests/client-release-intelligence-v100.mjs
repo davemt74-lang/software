@@ -50,10 +50,10 @@ assert.match(notifications,/\$type === 'client_release_update'/,'client update m
 assert.match(cognitive,/client_release_intelligence_reconcile_user_v100/,'Agent Now must reconcile client updates before reading notifications');
 assert.match(extNotifications,/client_release_intelligence_reconcile_user_v100/,'Browser proactive notifications must reconcile release updates before delivery');
 
-assert.match(clientPage,/Client Release Intelligence v1\.00/);
+assert.match(clientPage,/Client Release Operations[\s\S]*Controlled Rollouts v1\.10/);
 assert.match(clientPage,/id="browser-companion"/);
 assert.match(clientPage,/id="homeserver"/);
-assert.match(clientPage,/never installs a HomeServer build automatically/);
+assert.match(clientPage,/never installs (?:a HomeServer build|them) automatically/);
 assert.match(clientPage,/Agent Now and Browser Companion notifications/);
 assert.match(clientCss,/\.client-release-card/);
 assert.match(browserPage,/Client Updates/);
