@@ -57,6 +57,7 @@ assert.ok(automation.includes('kill_switch'));
 assert.ok(automation.includes('dry_run'));
 assert.ok(automation.includes('proposal_expiry_hours'));
 assert.ok(automation.includes('cooldown_minutes'));
+assert.ok(automation.includes('created_at>=?'),'proposal cooldown must suppress immediate churn after recent decisions');
 assert.ok(automation.includes('fleet_completion_gate_bps'));
 assert.ok(automation.includes('fleet_failure_hold_bps'));
 
@@ -64,6 +65,7 @@ assert.match(automation,/client_release_health_calculate_v120/,'automation must 
 assert.match(automation,/client_release_health_snapshot_v120/,'rollout proposals must bind to a health snapshot');
 assert.match(automation,/client_release_health_approve_promotion_v120/,'approved rollout automation must execute through v1.20 promotion ledger');
 assert.match(automation,/client_release_incident_active_for_release_v130/,'active v1.30 incidents must suspend normal automation');
+assert.match(automation,/client_release_incident_recovery_candidate_v130/,'rollback review should include the known-good recovery candidate');
 assert.match(automation,/client_release_risk_assess_v140/,'automation must consume v1.40 risk');
 assert.match(automation,/client_release_readiness_current_v150/,'automation must enforce v1.50 readiness');
 assert.match(automation,/client_fleet_campaign_set_v160/,'fleet progression must execute through v1.60 campaign controls');
@@ -73,6 +75,8 @@ assert.ok(automation.includes('General Availability promotion cannot be modified
 assert.ok(automation.includes('Policy-authorized low-risk automation.'));
 assert.ok(automation.includes("['low','moderate']"));
 assert.ok(automation.includes('client_release_automation_live_actions_allowed_v170'));
+assert.ok(automation.includes('client_release_automation_hold_blocks_release_v170'));
+assert.ok(automation.includes('client_release_automation_hold_blocks_campaign_v170'));
 assert.ok(automation.includes('idempotencyKey'));
 
 const runStart=automation.indexOf('function client_release_automation_run_v170');
