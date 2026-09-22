@@ -351,6 +351,8 @@ function client_release_applicable_release_v110(PDO $pdo,string $product,string 
     if(function_exists('client_fleet_maintenance_applicable_release_v160')){
         $maintenance=client_fleet_maintenance_applicable_release_v160($pdo,$product,$channel,$userId,$scopeKey);
         if($maintenance)return $maintenance;
+        if(function_exists('client_fleet_maintenance_governs_scope_v160')
+            &&client_fleet_maintenance_governs_scope_v160($pdo,$product,$channel,$userId,$scopeKey))return null;
     }
     foreach(client_release_release_candidates_v110($pdo,$product,$channel) as $release){
         $rollout=client_release_rollout_for_v110($pdo,$product,(int)$release['id'],$release);
