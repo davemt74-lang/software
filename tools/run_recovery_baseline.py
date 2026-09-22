@@ -115,6 +115,7 @@ NODE_TESTS = [
     'tests/cloud-schema-upgrade-contract.mjs',
     'tests/client-release-controlled-rollouts-v110.mjs',
     'tests/client-release-health-v120.mjs',
+    'tests/client-release-incidents-v130.mjs',
 ]
 
 HISTORICAL_WORKFLOW_COUPLED_TESTS = [

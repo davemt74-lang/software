@@ -196,6 +196,12 @@ function client_release_rollout_update_v110(PDO $pdo,string $product,int $releas
 
     $state=strtolower(trim((string)($input['lifecycle_state']??'draft')));
     if(!client_release_lifecycle_valid_v110($state))throw new RuntimeException('Choose a valid rollout lifecycle state.');
+    if(function_exists('client_release_incident_active_for_release_v130')){
+        $incident=client_release_incident_active_for_release_v130($pdo,$product,$releaseId);
+        if($incident&&!in_array($state,['paused','withdrawn'],true)){
+            throw new RuntimeException('An active release incident governs this build. Use the incident recovery controls until it is resolved.');
+        }
+    }
     $percent=client_release_rollout_percent_v110($state,(int)($input['rollout_percent']??0));
     $summary=mb_strimwidth(trim((string)($input['summary']??'')),0,500,'');
     $known=mb_strimwidth(trim((string)($input['known_issues']??'')),0,10000,'');
@@ -328,6 +334,10 @@ function client_release_release_candidates_v110(PDO $pdo,string $product,string 
 
 function client_release_applicable_release_v110(PDO $pdo,string $product,string $channel,int $userId,string $scopeKey='account'): ?array
 {
+    if(function_exists('client_release_recovery_applicable_release_v130')){
+        $recovery=client_release_recovery_applicable_release_v130($pdo,$product,$channel,$userId,$scopeKey);
+        if($recovery)return $recovery;
+    }
     foreach(client_release_release_candidates_v110($pdo,$product,$channel) as $release){
         $rollout=client_release_rollout_for_v110($pdo,$product,(int)$release['id'],$release);
         $bucket=client_release_cohort_bucket_v110($product,(int)$release['id'],$userId,$scopeKey);
@@ -394,6 +404,8 @@ function client_release_sync_update_state_v110(PDO $pdo,int $userId,string $prod
     $releaseId=(int)($release['id']??0);
     $version=(string)($release['version']??'');
     $versionState=function_exists('client_release_version_state_v100')?client_release_version_state_v100($installed,$version):'unknown';
+    $isIncidentRecovery=!empty($release['_incident_id']);
+    if($isIncidentRecovery&&$installed!==''&&$version!==''&&$installed!==$version)$versionState='update_available';
     $schemaReady=client_release_rollouts_schema_ready_v110($pdo);
     $current=$schemaReady?client_release_update_state_v110($pdo,$userId,$product,$scopeKey,$releaseId):null;
     if(in_array($versionState,['current','ahead'],true)){
