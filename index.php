@@ -338,7 +338,7 @@ $servicesUrl = url('/services.php');
     <div class="footer-brand"><?= vp3_public_brand() ?><span>AI assistants for real work.</span></div>
     <nav aria-label="Footer navigation">
       <a href="<?= e($productUrl) ?>">Product</a>
-      <a href="<?= e($teamsUrl) ?>">Teams</a>
+      <a href="<?= e($servicesUrl) ?>">Services</a>
       <a href="<?= e($homeServerUrl) ?>">HomeServer</a>
       <a href="<?= e($pricingUrl) ?>">Pricing</a>
       <a href="<?= e($aboutUrl) ?>">About</a>
