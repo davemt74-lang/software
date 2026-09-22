@@ -57,7 +57,8 @@ for (const nav of [desktopNav, mobileNav, footerNav]) {
 }
 assert.doesNotMatch(footerNav, />Features</, 'shared public footer must not link to the removed Features section');
 
-assert.match(services, /vp3_render_marketing_page\('services'\)/, 'Services must use the shared marketing page renderer');
+assert.match(services, /canonical'\s*=>\s*'\/services\.php'/, 'Services must expose canonical public metadata');
+for (const route of ['/transcriptions.php','/ai-summary.php','/annotations.php','/teams.php','/video-meetings.php','/calendar-service.php','/booking.php','/ecommerce.php','/agent-analytics.php']) assert.ok(services.includes(route), `Services must expose ${route}`);
 assert.match(renderer, /\['Transcription',[\s\S]*'\/transcriptions\.php'\]/, 'Services data must expose the standalone Transcriptions page');
 assert.match(renderer, /Team scheduling[\s\S]*'\/teams\.php'/, 'marketing data must preserve the standalone Teams destination');
 assert.match(index, /href="<\?= e\(\$transcriptionsUrl\) \?>"/, 'homepage mega menu must expose Transcriptions');
