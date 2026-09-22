@@ -67,7 +67,7 @@ const checks=[
   ['architecture docs explicitly keep existing Agent Chat', /second Agent Chat/.test(docs) && /existing Agent Chat/.test(docs)],
 ];
 
-for(const domain of domains)checks.push([`manifest includes domain: ${domain}`,new RegExp(`'\${domain}'\\s*=>`).test(manifest)]);
+for(const domain of domains)checks.push([`manifest includes domain: ${domain}`,new RegExp(`'${domain}'\\s*=>`).test(manifest)]);
 for(const event of eventFamilies)checks.push([`manifest includes event: ${event}`,manifest.includes(`'${event}'`)]);
 
 for(const [name,ok] of checks){
