@@ -61,6 +61,7 @@ try {
     if ($action === 'state') {
         chat_settings_json_v237([
             'ok' => true,
+            'agent_voice_allowed' => chat_settings_agent_voice_allowed_v237($user),
             'chat' => chat_settings_get_v237($pdo, (int)$user['id']),
             'profile_agent' => chat_settings_profile_payload_v237($pdo, $user),
         ]);
@@ -72,14 +73,15 @@ try {
     chat_settings_require_csrf_v237($input);
 
     if ($action === 'save_chat') {
+        if(!empty($input['agent_voice_enabled'])&&!chat_settings_agent_voice_allowed_v237($user))throw new RuntimeException('Agent Voice is not included for this account.');
         $settings = chat_settings_save_v237($pdo, $user, $input);
-        chat_settings_json_v237(['ok'=>true,'chat'=>$settings]);
+        chat_settings_json_v237(['ok'=>true,'agent_voice_allowed'=>chat_settings_agent_voice_allowed_v237($user),'chat'=>$settings]);
     }
 
     if ($action === 'save_agent_voice') {
         $enabled = !empty($input['agent_voice_enabled']);
         $settings = chat_settings_save_agent_voice_v237($pdo, $user, $enabled);
-        chat_settings_json_v237(['ok'=>true,'chat'=>$settings]);
+        chat_settings_json_v237(['ok'=>true,'agent_voice_allowed'=>chat_settings_agent_voice_allowed_v237($user),'chat'=>$settings]);
     }
 
     if ($action === 'save_profile_agent') {
