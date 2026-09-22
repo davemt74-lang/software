@@ -305,16 +305,17 @@ function client_release_incident_start_recovery_v130(PDO $pdo,int $incidentId,in
     $allowed=[10,25,50,100];
     if(!in_array($percent,$allowed,true))$percent=10;
     $from=(string)$incident['status'];
+    $recoveryStatus=$percent===100?'monitoring':'recovering';
     $stmt=$pdo->prepare("UPDATE client_release_incidents_v130
-        SET recovery_release_id=?,recovery_percent=?,status='recovering',recovery_started_at=COALESCE(recovery_started_at,NOW())
+        SET recovery_release_id=?,recovery_percent=?,status=?,recovery_started_at=COALESCE(recovery_started_at,NOW())
         WHERE id=?");
-    $stmt->execute([$recoveryReleaseId,$percent,$incidentId]);
+    $stmt->execute([$recoveryReleaseId,$percent,$recoveryStatus,$incidentId]);
     client_release_incident_collect_affected_v130($pdo,$incidentId);
     client_release_incident_refresh_v130($pdo,$incidentId,0,false);
-    client_release_incident_event_v130($pdo,$incidentId,$actorUserId,'recovery_started',$from,'recovering',[
+    client_release_incident_event_v130($pdo,$incidentId,$actorUserId,'recovery_started',$from,$recoveryStatus,[
         'recovery_release_id'=>$recoveryReleaseId,'recovery_percent'=>$percent
     ]);
-    client_release_audit_v110($pdo,$actorUserId,(string)$incident['product'],(int)$incident['release_id'],'incident_recovery_started',$from,'recovering',[
+    client_release_audit_v110($pdo,$actorUserId,(string)$incident['product'],(int)$incident['release_id'],'incident_recovery_started',$from,$recoveryStatus,[
         'incident_id'=>$incidentId,'recovery_release_id'=>$recoveryReleaseId,'recovery_percent'=>$percent
     ]);
     return client_release_incident_v130($pdo,$incidentId)??[];
@@ -329,7 +330,7 @@ function client_release_incident_set_cohort_v130(PDO $pdo,int $incidentId,int $p
     if(!in_array($percent,$allowed,true))throw new RuntimeException('Choose a supported recovery cohort.');
     if($percent>0&&!(int)($incident['recovery_release_id']??0))throw new RuntimeException('Choose a recovery release before opening a recovery cohort.');
     $fromPercent=(int)$incident['recovery_percent'];
-    $status=$percent===0?'contained':'recovering';
+    $status=$percent===0?'contained':($percent===100?'monitoring':'recovering');
     $pdo->prepare('UPDATE client_release_incidents_v130 SET recovery_percent=?,status=? WHERE id=?')->execute([$percent,$status,$incidentId]);
     client_release_incident_refresh_v130($pdo,$incidentId,0,false);
     client_release_incident_event_v130($pdo,$incidentId,$actorUserId,$percent===0?'recovery_paused':'recovery_cohort_changed',
