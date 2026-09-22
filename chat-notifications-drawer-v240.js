@@ -47,7 +47,6 @@
   let attentionTimer = 0;
   let attentionBusy = false;
   let responseTimer = 0;
-  let responseTemporaryVoice = false;
   let responseWindowActive = false;
   let speechQueue = Promise.resolve();
   let agentVoicePreference = cfg.agentVoiceEnabled !== false;
@@ -597,7 +596,6 @@
   function markUserResponse() {
     if (!responseWindowActive) return;
     clearResponseWindow();
-    responseTemporaryVoice = false;
   }
 
   function voiceButton() {
@@ -696,19 +694,8 @@
     }
     if (!spoken) spoken = await browserSpeak(message);
 
-    const listening = setVoiceMode(true);
-    if (listening) {
-      responseTemporaryVoice = !wasVoice;
-      clearResponseWindow();
-      responseWindowActive = true;
-      responseTimer = window.setTimeout(() => {
-        responseTimer = 0;
-        responseWindowActive = false;
-        if (responseTemporaryVoice) {
-          responseTemporaryVoice = false;
-          setVoiceMode(false);
-        }
-      }, 10000);
+    if (wasVoice) {
+      setVoiceMode(true);
     }
     return spoken === true;
   }
