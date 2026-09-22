@@ -35,11 +35,30 @@ if(!$session)vp3_extension_me_json_v2100(401,['ok'=>false,'error'=>['code'=>'aut
 $user=vp3_extension_user_for_permission_v2001($pdo,(int)$session['user_id']);
 if(!$user)vp3_extension_me_json_v2100(401,['ok'=>false,'error'=>['code'=>'authentication_required','message'=>'This VP3 account is not active.']]);
 
-$releaseLatest=function_exists('client_release_browser_latest_v100')?client_release_browser_latest_v100():null;
 $installedVersion=trim((string)($session['extension_version']??($_SERVER['HTTP_X_VP3_EXTENSION_VERSION']??'')));
-$releaseState=function_exists('client_release_version_state_v100')
-    ?client_release_version_state_v100($installedVersion,(string)($releaseLatest['version']??''))
-    :'unknown';
+$releaseLatest=null;
+$releaseState='unknown';
+$releaseRollout=[];
+$updateStatus='unknown';
+$deferredUntil=null;
+if(function_exists('client_release_rollouts_schema_ready_v110')&&client_release_rollouts_schema_ready_v110($pdo)){
+    $scope=(string)($session['device_id']??'account');
+    $channel=client_release_channel_for_v110($pdo,(int)$user['id'],'browser_companion',$scope);
+    $releaseLatest=client_release_applicable_release_v110($pdo,'browser_companion',$channel,(int)$user['id'],$scope);
+    if($releaseLatest){
+        $releaseRollout=(array)($releaseLatest['_rollout']??[]);
+        $sync=client_release_sync_update_state_v110($pdo,(int)$user['id'],'browser_companion',$scope,$releaseLatest,$installedVersion);
+        $releaseState=(string)$sync['version_state'];
+        $updateStatus=(string)$sync['update_state'];
+        $deferredUntil=$sync['defer_until']??null;
+        $releaseLatest['download_url']=client_release_download_url_v110('browser_companion',(int)$releaseLatest['id'],$scope,'package');
+    }
+}else{
+    $releaseLatest=function_exists('client_release_browser_latest_v100')?client_release_browser_latest_v100():null;
+    $releaseState=function_exists('client_release_version_state_v100')
+        ?client_release_version_state_v100($installedVersion,(string)($releaseLatest['version']??''))
+        :'unknown';
+}
 
 vp3_extension_me_json_v2100(200,[
     'ok'=>true,
@@ -60,5 +79,9 @@ vp3_extension_me_json_v2100(200,[
         'version_state'=>$releaseState,
         'update_available'=>$releaseState==='update_available',
         'download_url'=>(string)($releaseLatest['download_url']??url('/chrome-extension-download.php')),
+        'rollout_state'=>(string)($releaseRollout['lifecycle_state']??'general_availability'),
+        'rollout_percent'=>(int)($releaseRollout['rollout_percent']??100),
+        'update_status'=>$updateStatus,
+        'deferred_until'=>$deferredUntil,
     ],
 ]);
