@@ -58,6 +58,16 @@ function ai_master_key_file(): string
     return ai_private_dir() . '/ai-key.php';
 }
 
+function ai_saved_encrypted_credentials_exist(): bool
+{
+    foreach (['ai_openai_api_key','ai_anthropic_api_key','ai_elevenlabs_api_key'] as $settingKey) {
+        if (trim((string)setting($settingKey, '')) !== '') {
+            return true;
+        }
+    }
+    return false;
+}
+
 function ai_master_key(bool $create = false): ?string
 {
     static $cached = null;
@@ -67,8 +77,9 @@ function ai_master_key(bool $create = false): ?string
     }
 
     $path = ai_master_key_file();
+    $keyFileExists = is_file($path);
 
-    if (is_file($path)) {
+    if ($keyFileExists) {
         try {
             $encoded = require $path;
             if (is_string($encoded)) {
@@ -79,12 +90,24 @@ function ai_master_key(bool $create = false): ?string
                 }
             }
         } catch (Throwable $e) {
+            if (!$create) {
+                return null;
+            }
+            throw new RuntimeException('The existing API credential encryption key cannot be read. Restore /private/ai-key.php before saving credentials.');
+        }
+
+        if (!$create) {
             return null;
         }
+        throw new RuntimeException('The existing API credential encryption key is invalid. Restore /private/ai-key.php before saving credentials.');
     }
 
     if (!$create) {
         return null;
+    }
+
+    if (ai_saved_encrypted_credentials_exist()) {
+        throw new RuntimeException('The API credential encryption key is missing while encrypted credentials still exist. Restore /private/ai-key.php before saving credentials, or remove all saved AI provider credentials before creating a new key.');
     }
 
     $dir = ai_private_dir();
