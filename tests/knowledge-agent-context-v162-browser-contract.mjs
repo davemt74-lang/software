@@ -22,6 +22,7 @@ assert.match(context, /setKnowledgeScopeOptions\(\[\],\{finalize:false\}\)/, 'in
 assert.match(context, /if\(finalize\)persistKnowledgeScope\(next\)/, 'stored scope is only rewritten after authoritative folder discovery');
 assert.match(context, /AbortController/, 'folder discovery has a bounded network request');
 assert.match(context, /Knowledge folders request timed out\./, 'folder timeout becomes an actionable UI state');
+assert.match(context, /Saved folder · unavailable/, 'failed discovery must not leave a stale loading label');
 assert.match(context, /dataset\.knowledgeScopeReady='0'/, 'folder discovery failures remain observable');
 assert.match(context, /addEventListener\('focus'/, 'focusing a failed selector retries folder discovery');
 assert.doesNotMatch(context, /window\.fetch\s*=/, 'Knowledge scope must never replace the global fetch implementation');
@@ -34,6 +35,9 @@ assert.match(scopeApi, /has_permission\('chat\.access', \$user\)/, 'folder disco
 assert.match(scopeApi, /FROM artist_transcript_folders_v177/, 'folder discovery uses the canonical shared-folder table');
 assert.match(scopeApi, /WHERE created_by_user_id=\?/, 'folder discovery is owner-scoped at SQL level');
 assert.doesNotMatch(scopeApi, /native_path|filesystem|folder_path|local_path/i, 'folder discovery never exposes native filesystem paths');
+assert.match(scopeApi, /Knowledge folders need the latest VP3 database upgrade\./, 'missing folder schema must fail visibly instead of silently erasing a saved scope');
+assert.match(scopeApi, /Knowledge folders are temporarily unavailable\./, 'folder query failures must return a retryable API error');
+assert.doesNotMatch(scopeApi, /catch \(Throwable \$e\) \{\s*\$folders = \[\];/, 'folder query failures must not masquerade as an authoritative empty folder list');
 
 assert.match(chat, /\$input\['knowledge_scope'\]\?\?null/, 'normal Agent Chat consumes the browser Knowledge scope');
 assert.match(stream, /\$input\['knowledge_scope'\]\?\?null/, 'streamed Agent Chat consumes the browser Knowledge scope');
