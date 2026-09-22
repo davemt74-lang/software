@@ -216,7 +216,7 @@ function chat_onboarding_v241_activation_state(array $workspace,array $intellige
         if($milestoneLabel!=='')$usageMilestones[]=['key'=>$key,'label'=>$milestoneLabel,'achieved'=>(int)($item['usage_count']??0)>0,'count'=>(int)($item['usage_count']??0)];
     }
     $draft=(array)($intelligence['draft']??[]);
-    $attribution=['origin'=>(string)($draft['origin']??''),'source'=>(string)($draft['source']??''),'selected_workflows'=>array_values(array_map(static fn(array $row): string=>(string)$row['interest_key'],array_filter($items,static fn(array $row): bool=>!empty($row['selected'])))),'configured_workflows'=>array_values(array_map(static fn(array $row): string=>(string)$row['interest_key'],array_filter($items,static fn(array $row): bool=>!empty($row['selected'])&&!empty($row['configured']))))];
+    $attribution=['origin'=>(string)($interests['activation.origin']??$draft['origin']??''),'source'=>(string)($interests['activation.source']??$draft['source']??''),'selected_workflows'=>array_values(array_map(static fn(array $row): string=>(string)$row['interest_key'],array_filter($items,static fn(array $row): bool=>!empty($row['selected'])))),'configured_workflows'=>array_values(array_map(static fn(array $row): string=>(string)$row['interest_key'],array_filter($items,static fn(array $row): bool=>!empty($row['selected'])&&!empty($row['configured']))))];
     $percent=$selectedCount>0?(int)round(($configuredCount/$selectedCount)*100):100;
     return [
         'build'=>'onboarding-activation-v243-20260921','items'=>$items,'next_action'=>$pending[0]??null,
