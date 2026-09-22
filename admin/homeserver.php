@@ -104,10 +104,10 @@ require __DIR__ . '/_header.php';
 <section class="admin-card" style="margin-bottom:24px">
   <div class="admin-card-head"><div><h3>Release Intelligence</h3><p>Current stable adoption across connected VP3 clients. Version telemetry is account-scoped and contains no browsing history or HomeServer content.</p></div><span class="eyebrow">v1.00</span></div>
   <div class="admin-table-wrap"><table class="admin-table">
-    <thead><tr><th>Client</th><th>Current stable</th><th>Tracked clients</th><th>Current / ahead</th><th>Update available</th><th>Channel</th></tr></thead>
+    <thead><tr><th>Client</th><th>Current stable</th><th>Tracked clients</th><th>Current / ahead</th><th>Update available</th><th>Unknown</th><th>Channel</th></tr></thead>
     <tbody>
-      <tr><td><strong>Browser Companion</strong></td><td><?= ($browserIntel['latest_version']??'')!==''?'v'.e((string)$browserIntel['latest_version']):'Not published' ?></td><td><?= (int)($browserIntel['active_clients']??0) ?></td><td><?= (int)($browserIntel['current_clients']??0) ?></td><td><?= (int)($browserIntel['outdated_clients']??0) ?></td><td><?= e((string)($browserIntel['channel']??'stable')) ?></td></tr>
-      <tr><td><strong>HomeServer</strong></td><td><?= ($homeIntel['latest_version']??'')!==''?'v'.e((string)$homeIntel['latest_version']):'Not published' ?></td><td><?= (int)($homeIntel['paired_clients']??0) ?></td><td><?= (int)($homeIntel['current_clients']??0) ?></td><td><?= (int)($homeIntel['outdated_clients']??0) ?></td><td><?= e((string)($homeIntel['channel']??'stable')) ?></td></tr>
+      <tr><td><strong>Browser Companion</strong></td><td><?= ($browserIntel['latest_version']??'')!==''?'v'.e((string)$browserIntel['latest_version']):'Not published' ?></td><td><?= (int)($browserIntel['active_clients']??0) ?></td><td><?= (int)($browserIntel['current_clients']??0) ?></td><td><?= (int)($browserIntel['outdated_clients']??0) ?></td><td><?= (int)($browserIntel['unknown_clients']??0) ?></td><td><?= e((string)($browserIntel['channel']??'stable')) ?></td></tr>
+      <tr><td><strong>HomeServer</strong></td><td><?= ($homeIntel['latest_version']??'')!==''?'v'.e((string)$homeIntel['latest_version']):'Not published' ?></td><td><?= (int)($homeIntel['paired_clients']??0) ?></td><td><?= (int)($homeIntel['current_clients']??0) ?></td><td><?= (int)($homeIntel['outdated_clients']??0) ?></td><td><?= (int)($homeIntel['unknown_clients']??0) ?></td><td><?= e((string)($homeIntel['channel']??'stable')) ?></td></tr>
     </tbody>
   </table></div>
 </section>
