@@ -229,6 +229,12 @@ function client_fleet_version_policy_update_v160(PDO $pdo,string $product,string
     if(!client_release_version_valid_v100($version))throw new RuntimeException('Choose a valid client version.');
     $status=strtolower(trim((string)($input['support_status']??'supported')));
     if(!in_array($status,client_fleet_support_statuses_v160(),true))throw new RuntimeException('Choose a valid support status.');
+    $knownRelease=client_fleet_release_by_version_v160($pdo,$product,$channel,$version,false);
+    if(!$knownRelease)throw new RuntimeException('Version support policy must reference a known release on this channel.');
+    if($status==='current'){
+        $latest=client_fleet_latest_release_v160($pdo,$product,$channel);
+        if(!$latest||(string)$latest['version']!==$version)throw new RuntimeException('Only the current General Availability release can be marked current.');
+    }
     $deprecated=trim((string)($input['deprecated_at']??''));
     if($deprecated==='')$deprecated=null;
     else{
@@ -286,6 +292,7 @@ function client_fleet_support_status_v160(PDO $pdo,string $product,string $chann
         $status='unsupported';$reason='Installed version is missing or invalid.';
     }elseif($versionPolicy){
         $status=(string)$versionPolicy['support_status'];
+        if($status==='supported'&&$latestVersion!==''&&version_compare($version,$latestVersion,'=='))$status='current';
         $deprecatedAt=(string)($versionPolicy['deprecated_at']??'');
         $unsupportedAt=(string)($versionPolicy['unsupported_at']??'');
         if($unsupportedAt!==''&&strtotime($unsupportedAt)!==false&&strtotime($unsupportedAt)<=time()){
@@ -469,6 +476,7 @@ function client_fleet_upgrade_path_save_v160(PDO $pdo,array $input,int $actorUse
     if($intermediate>0){
         $mid=client_release_release_row_v110($pdo,$product,$intermediate);
         if(!$mid||(string)$mid['channel']!==$channel||empty($mid['is_published']))throw new RuntimeException('Intermediate release must be a published release on the same channel.');
+        if(client_release_incident_active_for_release_v130($pdo,$product,$intermediate))throw new RuntimeException('A release under active incident cannot be used as an intermediate maintenance target.');
         if($intermediate===$target)throw new RuntimeException('Intermediate release must differ from the final target.');
     }
     $min=trim((string)($input['from_min_version']??''));$max=trim((string)($input['from_max_version']??''));
@@ -658,7 +666,9 @@ function client_fleet_target_risk_v160(PDO $pdo,string $product,int $releaseId):
 function client_fleet_risk_override_v160(PDO $pdo,string $product,int $releaseId): bool
 {
     $snapshot=client_release_risk_latest_snapshot_v140($pdo,$product,$releaseId);
-    if(!$snapshot)return false;
+    if(!$snapshot||!in_array((string)($snapshot['risk_level']??''),['high','critical'],true))return false;
+    $assessedAt=strtotime((string)($snapshot['assessed_at']??''));
+    if($assessedAt===false||$assessedAt<time()-86400)return false;
     $stmt=$pdo->prepare("SELECT 1 FROM client_release_risk_reviews_v140
       WHERE product=? AND release_id=? AND risk_snapshot_id=? AND decision='accepted_risk'
       ORDER BY id DESC LIMIT 1");
