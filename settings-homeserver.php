@@ -24,7 +24,7 @@ if (!$user) redirect(url('/login.php'));
     <header class="chat-topbar">
       <button class="chat-icon-button mobile-only" id="openChatSidebar" type="button" aria-label="Open settings menu">☰</button>
       <div class="chat-topbar-title"><strong>Settings</strong><span>HomeServer</span></div>
-      <div class="chat-topbar-actions"><a class="account-shell-button" href="<?= e(url('/account.php')) ?>">My Account</a></div>
+      <div class="chat-topbar-actions"><a class="account-shell-button" href="<?= e(url('/client-updates.php#homeserver')) ?>">Client Updates</a><a class="account-shell-button" href="<?= e(url('/account.php')) ?>">My Account</a></div>
     </header>
 
     <section class="hs-settings" data-homeserver-settings data-api="<?= e(url('/api/homeserver-connection-v1200.php')) ?>" data-csrf="<?= e(csrf_token()) ?>">

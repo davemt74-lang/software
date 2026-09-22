@@ -21,6 +21,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($action === 'chrome_create') {
                 $user = current_user();
                 $id = chrome_extension_release_create($_POST, $_FILES, (int)($user['id'] ?? 0));
+                if(function_exists('client_release_intelligence_reconcile_all_v100'))client_release_intelligence_reconcile_all_v100($pdo);
                 flash('notice', 'Chrome Extension release uploaded and verified.');
                 redirect(url('/admin/homeserver.php#chrome-release-' . $id));
             }
@@ -28,6 +29,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $releaseId = max(0, (int)($_POST['release_id'] ?? 0));
                 $stateAction = substr($action, 7);
                 chrome_extension_release_set_state($releaseId, $stateAction);
+                if(in_array($stateAction,['publish','latest'],true)&&function_exists('client_release_intelligence_reconcile_all_v100'))client_release_intelligence_reconcile_all_v100($pdo);
                 flash('notice', $stateAction === 'latest' ? 'Chrome Extension release is now current for its channel.' : 'Chrome Extension release updated.');
                 redirect(url('/admin/homeserver.php#chrome-extension-releases'));
             }
@@ -41,12 +43,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($action === 'create') {
                 $user = current_user();
                 $id = homeserver_vp3_create_release($_POST, $_FILES, (int)($user['id'] ?? 0));
+                if(function_exists('client_release_intelligence_reconcile_all_v100'))client_release_intelligence_reconcile_all_v100($pdo);
                 flash('notice', 'HomeServer release uploaded and verified.');
                 redirect(url('/admin/homeserver.php#homeserver-release-' . $id));
             }
             $releaseId = max(0, (int)($_POST['release_id'] ?? 0));
             if (in_array($action, ['publish','unpublish','latest'], true)) {
                 homeserver_vp3_set_release_state($releaseId, $action);
+                if(in_array($action,['publish','latest'],true)&&function_exists('client_release_intelligence_reconcile_all_v100'))client_release_intelligence_reconcile_all_v100($pdo);
                 flash('notice', $action === 'latest' ? 'HomeServer release is now the current release.' : 'HomeServer release updated.');
                 redirect(url('/admin/homeserver.php#homeserver-releases'));
             }
@@ -75,6 +79,9 @@ if (!homeserver_vp3_channel_valid($selectedChannel)) $selectedChannel = 'stable'
 
 $phpUploadMax = (string)ini_get('upload_max_filesize');
 $phpPostMax = (string)ini_get('post_max_size');
+$releaseIntelligence = function_exists('client_release_intelligence_admin_summary_v100')
+    ? client_release_intelligence_admin_summary_v100($pdo)
+    : ['browser_companion'=>[],'homeserver'=>[]];
 $adminTitle = 'Client Releases';
 $adminActive = 'homeserver';
 require __DIR__ . '/_header.php';
@@ -92,6 +99,18 @@ require __DIR__ . '/_header.php';
 </div>
 
 <?php if ($error): ?><div class="notice error"><?= e($error) ?></div><?php endif; ?>
+
+<?php $browserIntel=(array)($releaseIntelligence['browser_companion']??[]);$homeIntel=(array)($releaseIntelligence['homeserver']??[]); ?>
+<section class="admin-card" style="margin-bottom:24px">
+  <div class="admin-card-head"><div><h3>Release Intelligence</h3><p>Current stable adoption across connected VP3 clients. Version telemetry is account-scoped and contains no browsing history or HomeServer content.</p></div><span class="eyebrow">v1.00</span></div>
+  <div class="admin-table-wrap"><table class="admin-table">
+    <thead><tr><th>Client</th><th>Current stable</th><th>Tracked clients</th><th>Current / ahead</th><th>Update available</th><th>Unknown</th><th>Channel</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Browser Companion</strong></td><td><?= ($browserIntel['latest_version']??'')!==''?'v'.e((string)$browserIntel['latest_version']):'Not published' ?></td><td><?= (int)($browserIntel['active_clients']??0) ?></td><td><?= (int)($browserIntel['current_clients']??0) ?></td><td><?= (int)($browserIntel['outdated_clients']??0) ?></td><td><?= (int)($browserIntel['unknown_clients']??0) ?></td><td><?= e((string)($browserIntel['channel']??'stable')) ?></td></tr>
+      <tr><td><strong>HomeServer</strong></td><td><?= ($homeIntel['latest_version']??'')!==''?'v'.e((string)$homeIntel['latest_version']):'Not published' ?></td><td><?= (int)($homeIntel['paired_clients']??0) ?></td><td><?= (int)($homeIntel['current_clients']??0) ?></td><td><?= (int)($homeIntel['outdated_clients']??0) ?></td><td><?= (int)($homeIntel['unknown_clients']??0) ?></td><td><?= e((string)($homeIntel['channel']??'stable')) ?></td></tr>
+    </tbody>
+  </table></div>
+</section>
 
 <section id="chrome-extension-releases">
   <div class="admin-section-heading">

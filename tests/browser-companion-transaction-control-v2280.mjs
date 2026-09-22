@@ -18,8 +18,9 @@ const safety=read('includes/browser-transaction-safety-v2240.php');
 const workflows=read('agent-workflows.php');
 const upgrade=read('upgrade.php');
 
-must(manifest.version==='22.8.0','v22.80 extension version missing');
-must(background.includes("const VP3_EXTENSION_VERSION = '22.8.0';"),'v22.80 background version missing');
+const controlVersion=String(manifest.version||'').split('.').map(Number);
+must(controlVersion.length===3&&(controlVersion[0]>22||(controlVersion[0]===22&&controlVersion[1]>=8)),'v22.80-or-later extension version missing');
+must(background.includes("const VP3_EXTENSION_VERSION = '"+manifest.version+"';"),'v22.80-or-later background version must match manifest');
 must(manifest.description.includes('Transaction Trust, Control & Production Hardening'),'v22.80 manifest description missing');
 
 for(const table of [

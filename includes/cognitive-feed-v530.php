@@ -352,6 +352,9 @@ function vp3_cognitive_feed_brain_candidates_v530(array $user): array
 
 function vp3_cognitive_feed_notification_candidates_v530(PDO $pdo,array $user): array
 {
+    if(function_exists('client_release_intelligence_reconcile_user_v100')){
+        try{client_release_intelligence_reconcile_user_v100($pdo,(int)($user['id']??0));}catch(Throwable $e){}
+    }
     if(!table_exists('notifications'))return [];
     $uid=(int)$user['id'];$predicate=function_exists('notification_system_sql_predicate')?notification_system_sql_predicate('n'):'1=1';
     try{

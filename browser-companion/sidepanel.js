@@ -159,7 +159,11 @@ function renderConnection(x){
     const name=(x.user&&x.user.display_name)||'VP3 user';
     ui.accountAvatar.textContent=initials(name);
     ui.accountName.textContent=name;
-    ui.accountMeta.textContent=roleLabel(x.user&&x.user.role);
+    const release=x.release&&typeof x.release==='object'?x.release:null;
+    const releaseMeta=release&&release.installed_version
+      ?' · v'+String(release.installed_version)+(release.update_available?' · Update available':'')
+      :'';
+    ui.accountMeta.textContent=roleLabel(x.user&&x.user.role)+releaseMeta;
     ui.connectionState.textContent='Connected as '+name;
     const readable=hasReadAccess();
     ui.shareWorkspace.hidden=!readable;

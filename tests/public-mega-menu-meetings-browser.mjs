@@ -39,7 +39,7 @@ const checks=[
   ['Annotations page covers source-linked capture and research', /highlights, screenshots, notes, and source context/i.test(annotations) && /research/i.test(annotations)],
   ['Agent Analytics page covers outcomes and revenue', /booking and product intent/i.test(agentAnalytics) && /attributed revenue/i.test(agentAnalytics)],
   ['Chrome page links real extension download', /chrome-extension-download\.php/.test(chrome) && /Download Chrome Extension/.test(chrome)],
-  ['Download endpoint uses current manifest version', /manifest\.json/.test(chromeDownload) && /\$manifest\['version'\]/.test(chromeDownload) && manifest.version==='22.8.0'],
+  ['Download endpoint uses current manifest version', /manifest\.json/.test(chromeDownload) && /\$manifest\['version'\]/.test(chromeDownload) && manifest.version==='22.9.0'],
   ['Download package has manifest at ZIP root', /\$zip->addFile\(\$root \. '\/' \. \$file, \$file\)/.test(chromeDownload)],
   ['Download package excludes README and dev material', !/README\.md/.test(chromeDownload) && !/tests\//.test(chromeDownload)],
   ['Download endpoint is public and bounded', !/require_permission\(|require_login\(/.test(chromeDownload) && /\$files = \[/.test(chromeDownload) && /Content-Type: application\/zip/.test(chromeDownload)],

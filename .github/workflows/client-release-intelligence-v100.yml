@@ -1,0 +1,80 @@
+name: Client Release Intelligence v1.00
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+on:
+  pull_request:
+    paths:
+      - 'includes/client-release-intelligence-v100.php'
+      - 'includes/extension-device-token-v2100.php'
+      - 'api/extension-me.php'
+      - 'includes/notifications.php'
+      - 'includes/cognitive-feed-v530.php'
+      - 'includes/extension-notifications-v2140.php'
+      - 'connected-browsers.php'
+      - 'settings-homeserver.php'
+      - 'client-updates.php'
+      - 'client-updates-v100.css'
+      - 'includes/member-navigation.php'
+      - 'admin/homeserver.php'
+      - 'includes/bootstrap.php'
+      - 'browser-companion/manifest.json'
+      - 'browser-companion/background.js'
+      - 'browser-companion/sidepanel.js'
+      - 'tests/client-release-intelligence-v100.mjs'
+      - '.github/workflows/client-release-intelligence-v100.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    name: Client Release Intelligence · PHP ${{ matrix.php }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.1','8.3']
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: PHP syntax
+        run: |
+          php -l includes/client-release-intelligence-v100.php
+          php -l includes/extension-device-token-v2100.php
+          php -l api/extension-me.php
+          php -l includes/notifications.php
+          php -l includes/cognitive-feed-v530.php
+          php -l includes/extension-notifications-v2140.php
+          php -l connected-browsers.php
+          php -l settings-homeserver.php
+          php -l client-updates.php
+          php -l includes/member-navigation.php
+          php -l admin/homeserver.php
+          php -l includes/bootstrap.php
+      - name: Browser syntax
+        run: |
+          node --check browser-companion/background.js
+          node --check browser-companion/sidepanel.js
+          node --check tests/client-release-intelligence-v100.mjs
+      - name: Client Release Intelligence contracts
+        run: |
+          node tests/client-release-intelligence-v100.mjs
+          node tests/client-releases-manager.mjs
+          node tests/extension-device-token-v2100.mjs
+          node tests/browser-companion-proactive-notifications-v2140.mjs
+          node tests/cognitive-feed-v530.mjs
+          node tests/member-navigation-contract.mjs
+          node tests/homeserver-vp3-integration-contract.mjs

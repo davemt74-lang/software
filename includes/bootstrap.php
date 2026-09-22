@@ -79,6 +79,7 @@ require_once __DIR__.'/extension-device-auth-v2000.php';
 require_once __DIR__.'/extension-device-token-v2100.php';
 require_once __DIR__.'/subscription-request-gates.php';
 require_once __DIR__.'/notifications.php';
+require_once __DIR__.'/client-release-intelligence-v100.php';
 require_once __DIR__.'/agent-chat-activity.php';
 require_once __DIR__.'/artist-workspaces-v104.php';
 require_once __DIR__.'/team-workspace-lifecycle-v350.php';

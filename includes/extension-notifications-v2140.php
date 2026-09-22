@@ -233,6 +233,9 @@ function vp3_extension_notification_context_terms_v2140(array $contextInput): ar
 
 function vp3_extension_notification_candidates_v2140(PDO $pdo,array $user,string $namespace,array $contextInput=[]): array
 {
+    if(function_exists('client_release_intelligence_reconcile_user_v100')){
+        try{client_release_intelligence_reconcile_user_v100($pdo,(int)($user['id']??0));}catch(Throwable $e){}
+    }
     $terms=vp3_extension_notification_context_terms_v2140($contextInput);
     $out=[];
     foreach(vp3_extension_notification_rows_v2140($pdo,$user) as $row){

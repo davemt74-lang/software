@@ -1,6 +1,6 @@
 const VP3_DEFAULT_BASE = 'https://vp3.me';
 const VP3_CONTRACT_VERSION = '1';
-const VP3_EXTENSION_VERSION = '22.8.0';
+const VP3_EXTENSION_VERSION = '22.9.0';
 const VP3_MEDIA_CLIP_MAX_SECONDS = 90;
 
 const storage = {
@@ -2471,6 +2471,7 @@ async function publicState() {
     device_id: '',
     user: null,
     capabilities: [],
+    release: null,
     pending_connection: null,
     last_share: state.last_share || null,
     pending_capture: state.pending_capture || null
@@ -2484,7 +2485,8 @@ async function publicState() {
       connected: true,
       device_id: account.device_id || '',
       user: account.user || null,
-      capabilities: Array.isArray(account.capabilities) ? account.capabilities : []
+      capabilities: Array.isArray(account.capabilities) ? account.capabilities : [],
+      release: account.release || null
     };
   } catch (error) {
     if (error.code === 'reconnect_required' || error.status === 401) return base;
