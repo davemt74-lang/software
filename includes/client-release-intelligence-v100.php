@@ -257,6 +257,8 @@ function client_release_intelligence_admin_summary_v100(PDO $pdo): array
     $browserVersions = [];
     $browserActive = 0;
     $browserOutdated = 0;
+    $browserCurrent = 0;
+    $browserUnknown = 0;
     if (table_exists('extension_devices_v2000')) {
         $stmt = $pdo->query(
             "SELECT extension_version,COUNT(*) AS total
@@ -268,10 +270,11 @@ function client_release_intelligence_admin_summary_v100(PDO $pdo): array
             $version = trim((string)($row['extension_version'] ?? ''));
             $total = (int)($row['total'] ?? 0);
             $browserActive += $total;
-            if (client_release_version_state_v100($version, (string)($browserLatest['version'] ?? '')) === 'update_available') {
-                $browserOutdated += $total;
-            }
-            $browserVersions[] = ['version' => $version, 'count' => $total];
+            $state = client_release_version_state_v100($version, (string)($browserLatest['version'] ?? ''));
+            if ($state === 'update_available') $browserOutdated += $total;
+            elseif (in_array($state, ['current','ahead'], true)) $browserCurrent += $total;
+            else $browserUnknown += $total;
+            $browserVersions[] = ['version' => $version, 'count' => $total, 'state' => $state];
         }
     }
 
@@ -281,6 +284,8 @@ function client_release_intelligence_admin_summary_v100(PDO $pdo): array
     $homeVersions = [];
     $homePaired = 0;
     $homeOutdated = 0;
+    $homeCurrent = 0;
+    $homeUnknown = 0;
     if (table_exists('homeserver_connections')) {
         $stmt = $pdo->query(
             "SELECT installed_version,COUNT(*) AS total
@@ -292,10 +297,11 @@ function client_release_intelligence_admin_summary_v100(PDO $pdo): array
             $version = trim((string)($row['installed_version'] ?? ''));
             $total = (int)($row['total'] ?? 0);
             $homePaired += $total;
-            if (client_release_version_state_v100($version, $homeLatestVersion) === 'update_available') {
-                $homeOutdated += $total;
-            }
-            $homeVersions[] = ['version' => $version, 'count' => $total];
+            $state = client_release_version_state_v100($version, $homeLatestVersion);
+            if ($state === 'update_available') $homeOutdated += $total;
+            elseif (in_array($state, ['current','ahead'], true)) $homeCurrent += $total;
+            else $homeUnknown += $total;
+            $homeVersions[] = ['version' => $version, 'count' => $total, 'state' => $state];
         }
     }
 
@@ -306,7 +312,8 @@ function client_release_intelligence_admin_summary_v100(PDO $pdo): array
             'channel' => (string)($browserLatest['channel'] ?? 'stable'),
             'active_clients' => $browserActive,
             'outdated_clients' => $browserOutdated,
-            'current_clients' => max(0, $browserActive - $browserOutdated),
+            'current_clients' => $browserCurrent,
+            'unknown_clients' => $browserUnknown,
             'versions' => $browserVersions,
         ],
         'homeserver' => [
@@ -314,7 +321,8 @@ function client_release_intelligence_admin_summary_v100(PDO $pdo): array
             'channel' => (string)($homeLatestRow['channel'] ?? 'stable'),
             'paired_clients' => $homePaired,
             'outdated_clients' => $homeOutdated,
-            'current_clients' => max(0, $homePaired - $homeOutdated),
+            'current_clients' => $homeCurrent,
+            'unknown_clients' => $homeUnknown,
             'versions' => $homeVersions,
         ],
     ];
