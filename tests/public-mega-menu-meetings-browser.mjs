@@ -9,7 +9,7 @@ const chrome=read('chrome-extension.php');
 const chromeDownload=read('chrome-extension-download.php');
 const annotations=read('annotations.php');
 const agentAnalytics=read('agent-analytics.php');
-const marketing=read('includes/vp3-marketing-pages.php');
+const services=read('services.php');
 const manifest=JSON.parse(read('browser-companion/manifest.json'));
 
 const count=(haystack,needle)=>haystack.split(needle).length-1;
@@ -34,15 +34,16 @@ const checks=[
   ['Meetings page describes intelligence and follow-through', /Meeting Intelligence/.test(meetings) && /follow-through/i.test(meetings)],
   ['Chrome page describes Browser Companion and approval boundaries', /Browser Companion/.test(chrome) && /approved browser actions/i.test(chrome)],
   ['Chrome public page does not expose extension approval flow', !/approval_token|installation_id|device_code/.test(chrome)],
-  ['Annotations page is a public marketing surface', /vp3_render_marketing_page\('annotations'\)/.test(annotations) && !/require_permission\(/.test(annotations)],
-  ['Agent Analytics page is a public marketing surface', /vp3_render_marketing_page\('agent-analytics'\)/.test(agentAnalytics) && !/require_permission\(/.test(agentAnalytics)],
-  ['Annotations marketing copy covers source-linked capture and research', /'annotations'\s*=>/.test(marketing) && /highlights, screenshots, notes, and source context/i.test(marketing) && /add them to research/i.test(marketing)],
-  ['Agent Analytics marketing copy covers outcomes and revenue', /'agent-analytics'\s*=>/.test(marketing) && /booking and product intent/i.test(marketing) && /attributed revenue/i.test(marketing)],
+  ['Annotations page is a public marketing surface', /vp3_public_header/.test(annotations) && /canonical'\s*=>\s*'\/annotations\.php'/.test(annotations) && !/require_permission\(/.test(annotations)],
+  ['Agent Analytics page is a public marketing surface', /vp3_public_header/.test(agentAnalytics) && /canonical'\s*=>\s*'\/agent-analytics\.php'/.test(agentAnalytics) && !/require_permission\(/.test(agentAnalytics)],
+  ['Annotations page covers source-linked capture and research', /highlights, screenshots, notes, and source context/i.test(annotations) && /research/i.test(annotations)],
+  ['Agent Analytics page covers outcomes and revenue', /booking and product intent/i.test(agentAnalytics) && /attributed revenue/i.test(agentAnalytics)],
   ['Chrome page links real extension download', /chrome-extension-download\.php/.test(chrome) && /Download Chrome Extension/.test(chrome)],
   ['Download endpoint uses current manifest version', /manifest\.json/.test(chromeDownload) && /\$manifest\['version'\]/.test(chromeDownload) && manifest.version==='22.8.0'],
   ['Download package has manifest at ZIP root', /\$zip->addFile\(\$root \. '\/' \. \$file, \$file\)/.test(chromeDownload)],
   ['Download package excludes README and dev material', !/README\.md/.test(chromeDownload) && !/tests\//.test(chromeDownload)],
   ['Download endpoint is public and bounded', !/require_permission\(|require_login\(/.test(chromeDownload) && /\$files = \[/.test(chromeDownload) && /Content-Type: application\/zip/.test(chromeDownload)],
+  ['Services page links complete public service set', ['/transcriptions.php','/ai-summary.php','/annotations.php','/teams.php','/video-meetings.php','/calendar-service.php','/booking.php','/ecommerce.php','/agent-analytics.php'].every(path=>services.includes(path))],
 ];
 
 for(const [name,ok] of checks){assert.equal(ok,true,name);console.log('PASS',name);}
