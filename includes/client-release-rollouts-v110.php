@@ -358,6 +358,8 @@ function client_release_applicable_release_v110(PDO $pdo,string $product,string 
         $rollout=client_release_rollout_for_v110($pdo,$product,(int)$release['id'],$release);
         $bucket=client_release_cohort_bucket_v110($product,(int)$release['id'],$userId,$scopeKey);
         if(client_release_rollout_eligible_v110($rollout,$bucket)){
+            if(function_exists('client_fleet_release_compatible_for_scope_v160')
+                &&!client_fleet_release_compatible_for_scope_v160($pdo,$product,$userId,$scopeKey,$release))continue;
             $release['_rollout']=$rollout;
             $release['_cohort_bucket']=$bucket;
             return $release;
