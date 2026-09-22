@@ -14,7 +14,9 @@ on:
       - 'api/chat-settings-v237.php'
       - 'chat-settings-v237.js'
       - 'includes/member-navigation.php'
+      - 'includes/member-user-menu.php'
       - 'member-agent-voice-menu.js'
+      - 'notification-settings.php'
       - 'chat-voice.js'
       - 'chat-notifications-drawer-v240.js'
       - 'includes/cognitive-presentation-v510.php'
@@ -55,6 +57,8 @@ jobs:
           php -l includes/chat-settings-v237.php
           php -l api/chat-settings-v237.php
           php -l includes/member-navigation.php
+          php -l includes/member-user-menu.php
+          php -l notification-settings.php
           php -l includes/cognitive-presentation-v510.php
           php -l includes/extension-notifications-v2140.php
           php -l api/agent-voice-v117.php
