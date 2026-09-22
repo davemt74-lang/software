@@ -26,6 +26,7 @@ for(const fn of [
   'client_release_incident_set_cohort_v130',
   'client_release_incident_collect_affected_v130',
   'client_release_incident_refresh_v130',
+  'client_release_incident_policy_update_v130',
   'client_release_incident_closure_readiness_v130',
   'client_release_incident_resolve_v130',
   'client_release_recovery_applicable_release_v130',
@@ -55,6 +56,7 @@ assert.ok(incidents.includes('resolution_summary'));
 assert.ok(incidents.includes('lessons_learned'));
 assert.ok(incidents.includes('client_exception_acknowledged'));
 assert.ok(incidents.includes('incident_resolved'));
+assert.ok(incidents.includes('closure_policy_updated'));
 
 const openStart=incidents.indexOf('function client_release_incident_open_v130');
 const openEnd=incidents.indexOf('function client_release_incident_contain_v130');
@@ -78,6 +80,8 @@ assert.ok(recoveryFn.includes('acknowledged_at'));
 assert.doesNotMatch(recoveryFn,/client_release_rollout_update_v110\s*\(/);
 
 assert.match(rollouts,/client_release_recovery_applicable_release_v130/,'v1.10 assignment path must honor v1.30 recovery overrides');
+assert.match(rollouts,/client_release_incident_active_for_release_v130/,'active incidents must lock affected release promotions');
+assert.ok(rollouts.includes("Use the incident recovery controls until it is resolved"));
 assert.match(rollouts,/function_exists\('client_release_recovery_applicable_release_v130'\)/);
 assert.ok(health.includes('rollback_review'));
 
@@ -111,8 +115,10 @@ assert.ok(admin.includes('incident_start_recovery'));
 assert.ok(admin.includes('incident_cohort'));
 assert.ok(admin.includes('incident_refresh'));
 assert.ok(admin.includes('incident_acknowledge'));
+assert.ok(admin.includes('incident_policy'));
 assert.ok(admin.includes('incident_resolve'));
 assert.ok(admin.includes('operator-approved'));
+assert.ok(admin.includes('Save closure gates'));
 assert.ok(admin.includes('does not auto-rollback'));
 
 assert.match(workflow,/Client Release Operations v1\.30/);
