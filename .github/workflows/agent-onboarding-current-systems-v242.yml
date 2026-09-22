@@ -1,0 +1,88 @@
+name: Agent Onboarding Current Systems v2.42
+
+on:
+  pull_request:
+    paths:
+      - 'includes/onboarding-intelligence.php'
+      - 'includes/chat-onboarding-v241.php'
+      - 'api/chat-onboarding-v241.php'
+      - 'chat-agent-identity-v236.js'
+      - 'chat-agent-identity-v236.css'
+      - 'chat.php'
+      - 'includes/vp3-funnel.php'
+      - 'includes/chat-settings-v237.php'
+      - 'api/chat-settings-v237.php'
+      - 'chat-settings-v237.js'
+      - 'includes/member-navigation.php'
+      - 'member-agent-voice-menu.js'
+      - 'chat-voice.js'
+      - 'chat-notifications-drawer-v240.js'
+      - 'includes/cognitive-presentation-v510.php'
+      - 'includes/extension-notifications-v2140.php'
+      - 'api/agent-voice-v117.php'
+      - 'tests/agent-onboarding-current-systems-v242.mjs'
+      - 'tests/chat-onboarding-v241.mjs'
+      - 'tests/chat-settings-v237.mjs'
+      - 'tests/chat-notifications-brain-v240.mjs'
+      - 'tests/browser-companion-proactive-notifications-v2140.mjs'
+      - 'tests/public-funnel-onboarding-contract.mjs'
+      - 'tests/public-funnel-runtime.php'
+      - '.github/workflows/agent-onboarding-current-systems-v242.yml'
+  workflow_dispatch:
+
+jobs:
+  contract:
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.1','8.3']
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: PHP syntax
+        run: |
+          php -l includes/onboarding-intelligence.php
+          php -l includes/chat-onboarding-v241.php
+          php -l api/chat-onboarding-v241.php
+          php -l chat.php
+          php -l includes/vp3-funnel.php
+          php -l includes/chat-settings-v237.php
+          php -l api/chat-settings-v237.php
+          php -l includes/member-navigation.php
+          php -l includes/cognitive-presentation-v510.php
+          php -l includes/extension-notifications-v2140.php
+          php -l api/agent-voice-v117.php
+          php -l tests/public-funnel-runtime.php
+      - name: JavaScript syntax
+        run: |
+          node --check chat-agent-identity-v236.js
+          node --check chat-settings-v237.js
+          node --check member-agent-voice-menu.js
+          node --check chat-voice.js
+          node --check chat-notifications-drawer-v240.js
+          node --check tests/agent-onboarding-current-systems-v242.mjs
+          node --check tests/chat-onboarding-v241.mjs
+          node --check tests/chat-settings-v237.mjs
+          node --check tests/chat-notifications-brain-v240.mjs
+          node --check tests/browser-companion-proactive-notifications-v2140.mjs
+          node --check tests/public-funnel-onboarding-contract.mjs
+      - name: Current systems + voice authority
+        run: node tests/agent-onboarding-current-systems-v242.mjs
+      - name: Retained onboarding
+        run: node tests/chat-onboarding-v241.mjs
+      - name: Retained chat settings
+        run: node tests/chat-settings-v237.mjs
+      - name: Retained notifications + voice
+        run: node tests/chat-notifications-brain-v240.mjs
+      - name: Retained Browser Companion voice
+        run: node tests/browser-companion-proactive-notifications-v2140.mjs
+      - name: Public funnel onboarding
+        run: |
+          node tests/public-funnel-onboarding-contract.mjs
+          php tests/public-funnel-runtime.php
