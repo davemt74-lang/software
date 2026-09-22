@@ -57,9 +57,9 @@ assert.ok(attentionUi.includes('await chat.openConversation(id)'), 'new attentio
 assert.ok(!attentionUi.includes('ensureHistoryButton'), 'attention flow must not fabricate or depend on temporary chat-history UI');
 assert.ok(attentionUi.includes('StonefellowPremiumVoiceV122'), 'attention turns should use the existing ElevenLabs voice runtime');
 assert.ok(attentionUi.includes('speechSynthesis'), 'attention speech must retain system voice fallback');
-assert.ok(attentionUi.includes('const wasVoice = voiceIsOn()'), 'notification speech must observe whether Voice Conversation was already active');
-assert.ok(attentionUi.includes('if (wasVoice) setVoiceMode(false)'), 'notification speech may pause only an already-active voice conversation');
-assert.match(attentionUi, /if \(wasVoice\) \{[\s\S]*setVoiceMode\(true\)/, 'notification speech may restore listening only when it was active before speech');
+assert.ok(attentionUi.includes('stonefellow:agent-proactive-speech'), 'notification speech must publish its lifecycle into the canonical Voice Conversation runtime');
+assert.ok(attentionUi.includes('function cancelSpeech()'), 'notification speech must expose canonical interruption without changing voice authority');
+assert.ok(!attentionUi.includes('setVoiceMode(false)'), 'notification speech must not toggle Voice Conversation off to announce an update');
 assert.ok(!attentionUi.includes('responseTemporaryVoice'), 'notification speech must not create temporary microphone authority');
 assert.ok(!attentionUi.includes('responseWindowActive'), 'removed temporary microphone response-window state must stay removed');
 assert.ok(attentionUi.includes('5000'), 'actionable notification polling should be near-real-time without busy polling');
