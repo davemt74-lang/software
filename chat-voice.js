@@ -21,6 +21,7 @@
   const button=boot.button||document.getElementById('chatVoiceButtonLegacyDormant')||document.getElementById('chatVoiceButton');
   const SpeechRecognitionCtor=window.SpeechRecognition||window.webkitSpeechRecognition||null;
   const AgentContext=window.StonefellowAgentContext||null;
+  const identityCfg=window.STONEFELLOW_AGENT_IDENTITY_V236||{};
   const PremiumVoice=window.StonefellowPremiumVoiceV122||null;
 
   if(!form||!input||!send||!button)return;
@@ -37,8 +38,9 @@
   const chatStreamUrl=(()=>{try{return chatUrl?new URL('chat-stream-v121.php',chatUrl).toString():'';}catch(error){return '';}})();
   const premium=typeof PremiumVoice==='function'?PremiumVoice({agentEndpoint:String(cfg.endpoint||'/api/chat.php'),csrf:String(cfg.csrf||'')}):null;
 
+  let agentVoiceMaster=identityCfg.agentVoiceEnabled!==false;
   let voiceOn=false;
-  try{voiceOn=localStorage.getItem(MODE_KEY)==='1';}catch(error){}
+  try{voiceOn=agentVoiceMaster&&localStorage.getItem(MODE_KEY)==='1';}catch(error){}
 
   let recognition=null;
   let recognitionStarting=false;
@@ -230,6 +232,28 @@
     try{localStorage.setItem(MODE_KEY,voiceOn?'1':'0');}catch(error){}
     syncButton();
     try{window.dispatchEvent(new CustomEvent('stonefellow:voice-mode',{detail:{userId,enabled:voiceOn,source:'agent-chat'}}));}catch(error){}
+  }
+
+  async function setAgentVoiceMaster(enabled){
+    const endpoint=String(identityCfg.chatSettingsEndpoint||'').trim();
+    if(!endpoint){agentVoiceMaster=Boolean(enabled);return agentVoiceMaster;}
+    try{
+      const response=await nativeFetch(endpoint,{method:'POST',credentials:'same-origin',cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'save_agent_voice',csrf_token:String(cfg.csrf||''),agent_voice_enabled:Boolean(enabled)})});
+      const data=await response.json().catch(()=>null);
+      if(!response.ok||!data?.ok)throw new Error(data?.error||'Agent Voice could not be updated.');
+      agentVoiceMaster=data.chat?.agent_voice_enabled!==false;
+      window.dispatchEvent(new CustomEvent('stonefellow:agent-voice',{detail:{enabled:agentVoiceMaster,source:'agent-chat'}}));
+      return agentVoiceMaster;
+    }catch(error){
+      proof.lastError=String(error?.message||error||'Agent Voice could not be updated.');
+      setAgentState('error',proof.lastError);
+      return false;
+    }
+  }
+
+  async function ensureAgentVoiceMaster(){
+    if(agentVoiceMaster)return true;
+    return await setAgentVoiceMaster(true);
   }
 
   function activeConversationId(){
@@ -544,9 +568,9 @@
 
   function submitVoiceTranscript(text){const transcript=String(text||'').trim();if(!transcript)return;resetPendingFinal();if(isLowValueTranscript(transcript)&&!isImmediateBargeCommand(transcript)){proof.fillerRejects+=1;processing=false;voiceSubmitPending=false;updateComposer('');log('TRANSCRIPT_FILLER_REJECTED',{text:transcript,count:proof.fillerRejects});if(voiceOn)scheduleListening(40,'filler');return;}if(processing||speaking||textBusy||activeRequest){queuedTranscript=transcript;log('TRANSCRIPT_QUEUED',{text:transcript});return;}proof.submits+=1;voiceSubmitPending=true;processing=true;updateComposer(transcript);setAgentState('processing','Thinking…');log('TRANSCRIPT_SUBMIT',{text:transcript,count:proof.submits});try{form.requestSubmit();}catch(error){processing=false;voiceSubmitPending=false;proof.lastError=String(error?.message||error||'Submit failed');setAgentState('error',proof.lastError);}}
 
-  function enableVoice({persist=true,start=true}={}){if(typeof SpeechRecognitionCtor!=='function'){voiceOn=false;if(persist)writeMode();else syncButton();setAgentState('error','Browser speech recognition is unavailable.');return;}voiceOn=true;if(persist)writeMode();else syncButton();recognition=null;setAgentState('listening','Listening…');if(start)startListening('enable');else void ensureProcessedMic();}
+  function enableVoice({persist=true,start=true}={}){if(!agentVoiceMaster){voiceOn=false;if(persist)writeMode();else syncButton();setAgentState('error','Turn on Agent Voice before starting a voice conversation.');return false;}if(typeof SpeechRecognitionCtor!=='function'){voiceOn=false;if(persist)writeMode();else syncButton();setAgentState('error','Browser speech recognition is unavailable.');return false;}voiceOn=true;if(persist)writeMode();else syncButton();recognition=null;setAgentState('listening','Listening…');if(start)startListening('enable');else void ensureProcessedMic();return true;}
   function disableVoice({persist=true}={}){voiceOn=false;if(persist)writeMode();else syncButton();resetPendingFinal();pendingIntroSpeech='';introRetryScheduled=false;bargeArmPending=false;clearBargeArmTimer();clearRestart();clearStartWatchdog();clearBargeRestart();stopRecognition('off',true);releaseProcessedMic('voice-off');recognition=null;recognitionStarting=false;recognitionListening=false;stopBarge('off');bargeCapturing=false;bargeLastText='';activeSpeechEpoch=++speechEpoch;currentSpokenText='';lastSpokenText='';lastSpeechEndedAt=0;try{premium?.stop?.();}catch(error){}try{window.speechSynthesis?.cancel();}catch(error){}if(activeRequest&&!activeRequest.controller.signal.aborted)activeRequest.controller.abort();activeRequest=null;processing=false;speaking=false;queuedTranscript='';setAgentState('idle');}
-  function toggleVoice(){if(voiceOn)disableVoice({persist:true});else if(!introPresented&&boot.intro?.greeting){enableVoice({persist:true,start:false});presentIntro();}else enableVoice({persist:true,start:true});}
+  async function toggleVoice(){if(voiceOn){disableVoice({persist:true});return;}if(!(await ensureAgentVoiceMaster()))return;if(!introPresented&&boot.intro?.greeting){enableVoice({persist:true,start:false});presentIntro();}else enableVoice({persist:true,start:true});}
 
   function introTexts(intro){const greeting=String(intro?.greeting||'').trim();const updates=Array.isArray(intro?.updates)?intro.updates:[];const display=updates.length?`${greeting}\n\nHere’s what changed:\n${updates.map(update=>`• ${String(update?.title||'Update')}${update?.body?` — ${String(update.body)}`:''}`).join('\n')}`:greeting;const spoken=updates.length?`${greeting} Here are the priorities I found. ${updates.map(update=>`${String(update?.title||'Update')}. ${String(update?.body||'')}`).join(' ')}`:greeting;return {display,spoken,updates};}
   function presentIntro(){
@@ -562,14 +586,15 @@
 
   function renderDebug(){if(!new URLSearchParams(location.search).has('voice_debug'))return;let panel=document.getElementById('stonefellowVoiceDebug');if(!panel){panel=document.createElement('aside');panel.id='stonefellowVoiceDebug';panel.style.cssText='position:fixed;right:12px;bottom:12px;width:min(460px,calc(100vw - 24px));max-height:52vh;overflow:auto;z-index:99999;background:#111;color:#ddd;border:1px solid #444;border-radius:10px;padding:10px;font:11px/1.4 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap;box-shadow:0 10px 35px rgba(0,0,0,.35)';document.body.appendChild(panel);}const premiumProof=window.STONEFELLOW_PREMIUM_VOICE_V122||{};const latest=events.slice(-34).map(item=>`${item.at.slice(11,19)} ${item.type} ${JSON.stringify(item.detail)}`).join('\n');panel.textContent=`Stonefellow Voice Debug ${BUILD}\n\nvoice=${voiceOn?'ON':'OFF'} listening=${recognitionListening?'yes':'no'} processing=${processing?'yes':'no'} speaking=${speaking?'yes':'no'}\npause window=${TURN_END_PAUSE_MS}ms extensions=${proof.pauseExtensions} pending=${pendingFinalTranscript||'-'}\nnormal starts=${proof.starts} finals=${proof.finals} submits=${proof.submits}\nbarge starts=${proof.bargeStarts} results=${proof.bargeResults} captures=${proof.bargeSubmits} errors=${proof.bargeErrors}\nbarge candidates=${proof.bargeCandidates} fastCuts=${proof.bargeFastCuts} timeouts=${proof.bargeCaptureTimeouts}\necho rejects=${proof.echoRejects} bargeEcho=${proof.bargeEchoRejects} postSpeechEcho=${proof.postSpeechEchoRejects} commandOverrides=${proof.echoCommandOverrides}\nelevenLabs ready=${proof.premiumReady?'yes':'no'} credential=${premiumProof.credentialState||'unknown'} unlocked=${premiumProof.audioUnlocked?'yes':'no'} unlocks=${premiumProof.unlockSuccesses||0}/${premiumProof.unlockAttempts||0} playback=${premiumProof.lastPlaybackError||'ok'}\ninterruptions=${proof.interruptions} api=${proof.apiSuccess}/${proof.apiTurns} apiErrors=${proof.apiErrors}\nautoplay blocks=${proof.autoplayBlocks}\nlast transcript=${proof.lastTranscript||'-'}\nlast barge=${proof.lastBargeTranscript||'-'}\nlast error=${proof.lastError||'-'}\n\n${latest}`;}
 
-  button.addEventListener('click',event=>{const unlockOnly=voiceOn&&!!pendingIntroSpeech&&!speaking&&!processing;void requestPremiumUnlock('listen-button');if(unlockOnly){event.preventDefault();event.stopImmediatePropagation();return;}if(voiceOn&&(speaking||processing)){event.preventDefault();event.stopImmediatePropagation();interruptResponse('button');return;}toggleVoice();},true);
+  button.addEventListener('click',event=>{const unlockOnly=voiceOn&&!!pendingIntroSpeech&&!speaking&&!processing;void requestPremiumUnlock('listen-button');if(unlockOnly){event.preventDefault();event.stopImmediatePropagation();return;}if(voiceOn&&(speaking||processing)){event.preventDefault();event.stopImmediatePropagation();interruptResponse('button');return;}void toggleVoice();},true);
   const unlockFromGesture=event=>{if(event?.type==='keydown'&&event.repeat)return;void requestPremiumUnlock(event?.type||'user-gesture');};document.addEventListener('pointerdown',unlockFromGesture,{capture:true,once:true,passive:true});document.addEventListener('keydown',unlockFromGesture,{capture:true,once:true});
   document.addEventListener('click',event=>{const link=event.target.closest?.('a[href*="/admin/stems.php"],a[href*="/video-editor.php"]');if(!link)return;try{const target=new URL(link.href,location.href);if(target.origin!==location.origin)return;if(voiceOn)target.searchParams.set('voice','1');const cid=activeConversationId();if(cid>0)target.searchParams.set('conversation_id',String(cid));link.href=target.toString();}catch(error){}},true);
 
   const continuity={isVoice:()=>voiceOn,conversationId:activeConversationId,startListening,interrupt:interruptResponse};window.STONEFELLOW_CHAT_CONTINUITY=continuity;
 
-  syncConversation(lastConversationId);syncButton();if(button.disabled){voiceOn=false;writeMode();setAgentState('error','Voice recognition is not available in this browser.');}else{if(voiceOn){setAgentState('listening','Listening…');scheduleListening(0,'boot-persisted');}else setAgentState('idle');setTimeout(()=>void waitForInitialConversationRestore().then(presentIntro),80);}renderDebug();
-  window.addEventListener('storage',event=>{if(event.key!==MODE_KEY)return;const next=event.newValue==='1';if(next===voiceOn)return;if(next)enableVoice({persist:false,start:true});else disableVoice({persist:false});});
+  syncConversation(lastConversationId);if(!agentVoiceMaster&&voiceOn){voiceOn=false;try{localStorage.setItem(MODE_KEY,'0');}catch(error){}}syncButton();if(button.disabled){voiceOn=false;writeMode();setAgentState('error','Voice recognition is not available in this browser.');}else{if(voiceOn){setAgentState('listening','Listening…');scheduleListening(0,'boot-persisted');}else setAgentState('idle');setTimeout(()=>void waitForInitialConversationRestore().then(presentIntro),80);}renderDebug();
+  window.addEventListener('storage',event=>{if(event.key!==MODE_KEY)return;const next=event.newValue==='1'&&agentVoiceMaster;if(next===voiceOn)return;if(next)enableVoice({persist:false,start:true});else disableVoice({persist:false});});
+  window.addEventListener('stonefellow:agent-voice',event=>{const enabled=event.detail?.enabled!==false;agentVoiceMaster=enabled;if(!enabled&&voiceOn)disableVoice({persist:true});});
   window.dispatchEvent(new CustomEvent('stonefellow:conversation-engine-ready',{detail:{build:BUILD,source:'agent-chat'}}));log('READY',{voiceOn,ctor:typeof SpeechRecognitionCtor,barge:'speech-recognition',echoGuard:'canonical',fastVoice:'streaming',premiumUnlock:true,pauseWindowMs:TURN_END_PAUSE_MS,lifecycle:'canonical'});
 
   window.addEventListener('pagehide',()=>{resetPendingFinal();pendingIntroSpeech='';introRetryScheduled=false;bargeArmPending=false;clearBargeArmTimer();clearRestart();clearStartWatchdog();clearBargeRestart();clearBargeCaptureTimer();stopBarge('pagehide');bargeCapturing=false;stopRecognition('pagehide',true);releaseProcessedMic('pagehide');recognition=null;recognitionStarting=false;recognitionListening=false;activeSpeechEpoch=++speechEpoch;currentSpokenText='';lastSpokenText='';lastSpeechEndedAt=0;try{premium?.stop?.();}catch(error){}try{window.speechSynthesis?.cancel();}catch(error){}if(activeRequest&&!activeRequest.controller.signal.aborted)activeRequest.controller.abort();activeRequest=null;if(window.fetch===routedFetch)window.fetch=previousFetch;delete document.body.dataset.stonefellowAgentState;},{once:true});
