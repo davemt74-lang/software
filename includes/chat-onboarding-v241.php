@@ -189,7 +189,7 @@ function chat_onboarding_v241_empty_tool_result(): array{return ['handled'=>fals
 function chat_onboarding_v241_tool(string $query,array $user): array
 {
     $empty=chat_onboarding_v241_empty_tool_result();$q=mb_strtolower(trim($query));if($q==='')return $empty;
-    $intent=(bool)preg_match('/\b(onboarding|setup|set up|package|plan|subscription|trial|tokens?|quota|usage|upgrade|recommend|best plan|stem editor|video editor|profile agent|voice clone|browser companion|annotations?|meetings?|calendar|booking|ecommerce|commerce|agent analytics|analytics|homeserver|teams?|team seats?|what.*missing|finish.*setup)\b/u',$q);if(!$intent)return $empty;
+    $intent=(bool)preg_match('/\b(onboarding|setup|set up|package|plan|subscription|trial|tokens?|quota|usage|upgrade|recommend|best plan|stem editor|video editor|profile agent|agent voice|voice clone|browser companion|annotations?|meetings?|calendar|booking|ecommerce|commerce|agent analytics|analytics|homeserver|teams?|team seats?|what.*missing|finish.*setup)\b/u',$q);if(!$intent)return $empty;
     $pdo=db();if(!$pdo)return $empty;
     try{if(!user_agent_system_schema_ready_v236($pdo)||!profile_agent_schema_ready($pdo)||!chat_settings_schema_ready_v237($pdo))return $empty;$state=chat_onboarding_v241_state($pdo,$user);}catch(Throwable $e){return $empty;}
     $result=$empty;$result['handled']=true;$result['sources'][]=['source'=>'account:onboarding-state','title'=>'Package and account setup state'];$pkg=$state['package']??[];$balance=$pkg['ai']??[];$cap=$state['capabilities']??[];$intel=$state['intelligence']??[];$recommendation=$intel['package_recommendation']??null;
@@ -214,6 +214,13 @@ function chat_onboarding_v241_tool(string $query,array $user): array
             else{$reasons=array_slice((array)($recommendation['reasons']??[]),0,3);$result['answer'].=' Based on your recent feature usage, '.$recommendation['package_name'].' is the lowest available package that matches what you are using'.($reasons?' ('.implode('; ',$reasons).')':'').'.';}
         }else$result['answer'].=' I do not have enough actual feature-usage signals yet to recommend a different package.';
         $result['actions'][]=['type'=>'open_url','label'=>'View Plans','url'=>url('/subscription.php')];return $result;
+    }
+    if(str_contains($q,'agent voice')){
+        $allowed=function_exists('chat_settings_agent_voice_allowed_v237')?chat_settings_agent_voice_allowed_v237($user):!empty($state['permissions']['voice_profile']);
+        $enabled=$allowed&&!empty($state['chat']['agent_voice_enabled']);
+        $result['answer']=$allowed?('Agent Voice is '.($enabled?'on. Spoken Agent responses and eligible notification announcements are enabled.':'off. Agent Chat stays text-first and notifications will not be spoken.')):'Agent Voice is not included for this account.';
+        $result['actions'][]=['type'=>'open_url','label'=>$allowed?'Open Chat Settings':'View Plans','url'=>$allowed?url('/chat.php'):url('/subscription.php')];
+        return $result;
     }
     if(str_contains($q,'profile agent')){$item=$cap['profile_agent']??[];$result['answer']=empty($item['permitted'])?'Profile Agent is not included in your current package. This does not reduce your onboarding completion.':(!empty($item['available'])?'Your Profile Agent is enabled and live.':'Profile Agent is included but still needs setup or activation.');if(!empty($item['permitted']))$result['actions'][]=['type'=>'open_url','label'=>'Open Profile Agent','url'=>(string)$item['setup_url']];else$result['actions'][]=['type'=>'open_url','label'=>'View Packages','url'=>url('/subscription.php')];return $result;}
     if(str_contains($q,'voice clone')){$item=$cap['voice_clone']??[];$result['answer']=empty($item['permitted'])?'Voice Clone is not included in your current package.':(!empty($item['available'])?'Your voice clone is ready.':'Voice Clone is included but has not been created yet.');$result['actions'][]=['type'=>'open_url','label'=>empty($item['permitted'])?'View Packages':'Open Voice Profile','url'=>empty($item['permitted'])?url('/subscription.php'):(string)$item['setup_url']];return $result;}
