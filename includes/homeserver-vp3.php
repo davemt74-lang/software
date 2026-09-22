@@ -534,6 +534,9 @@ function homeserver_vp3_create_release(array $input, array $files, int $createdB
     if (!homeserver_vp3_channel_valid($channel)) {
         throw new RuntimeException('Choose a valid release channel.');
     }
+    if(!empty($input['is_published'])&&!empty($input['is_latest'])&&function_exists('client_release_readiness_current_v150')){
+        throw new RuntimeException('Upload the HomeServer release as Draft/Testing, complete v1.50 preflight, then promote it.');
+    }
     $portable = homeserver_vp3_store_exe($files['portable_exe'] ?? [], 'portable', $version);
     $installer = null;
     try {
@@ -548,9 +551,6 @@ function homeserver_vp3_create_release(array $input, array $files, int $createdB
         homeserver_vp3_ensure_schema($pdo);
         $published = !empty($input['is_published']) ? 1 : 0;
         $latest = $published && !empty($input['is_latest']) ? 1 : 0;
-        if($latest&&function_exists('client_release_readiness_current_v150')){
-            throw new RuntimeException('Upload the HomeServer release as Draft/Testing, complete v1.50 preflight, then promote it.');
-        }
         $pdo->beginTransaction();
         if ($latest) {
             $pdo->prepare('UPDATE homeserver_releases SET is_latest=0 WHERE channel=?')->execute([$channel]);
