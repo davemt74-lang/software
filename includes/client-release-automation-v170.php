@@ -698,10 +698,11 @@ function client_release_automation_decide_proposal_v170(PDO $pdo,int $proposalId
 
     if($decision==='approve'){
         if(in_array((string)$proposal['proposal_type'],['rollout_promote','fleet_advance'],true)){
-            $pdo->prepare("UPDATE client_release_automation_proposals_v170 SET proposal_status='approved',decided_by_user_id=?,decision_note=?,decided_at=NOW() WHERE id=?")
-                ->execute([$actorUserId>0?$actorUserId:null,$note,$proposalId]);
+            $result=client_release_automation_execute_proposal_v170($pdo,$proposalId,$actorUserId,$note,false);
+            $pdo->prepare('UPDATE client_release_automation_proposals_v170 SET decided_by_user_id=?,decided_at=COALESCE(decided_at,NOW()) WHERE id=?')
+                ->execute([$actorUserId>0?$actorUserId:null,$proposalId]);
             client_release_automation_event_v170($pdo,(int)($proposal['run_id']??0),$proposalId,$actorUserId,'proposal_approved',['note'=>$note]);
-            return client_release_automation_execute_proposal_v170($pdo,$proposalId,$actorUserId,$note,false);
+            return client_release_automation_proposal_v170($pdo,$proposalId)??$result;
         }
         $pdo->prepare("UPDATE client_release_automation_proposals_v170 SET proposal_status='acknowledged',decided_by_user_id=?,decision_note=?,decided_at=NOW() WHERE id=?")
             ->execute([$actorUserId>0?$actorUserId:null,$note,$proposalId]);
