@@ -7,7 +7,7 @@ declare(strict_types=1);
  * This extends the existing user_agent_preferences record. It does not create
  * a parallel onboarding identity or entitlement system.
  */
-const VP3_ONBOARDING_INTELLIGENCE_BUILD='onboarding-intelligence-20260906-v2';
+const VP3_ONBOARDING_INTELLIGENCE_BUILD='onboarding-intelligence-20260921-v3';
 
 function onboarding_intelligence_schema_ready(?PDO $pdo=null): bool
 {
@@ -74,7 +74,7 @@ function onboarding_intelligence_ensure_preference_row(PDO $pdo,int $userId): vo
 
 function onboarding_intelligence_valid_step(string $step): string
 {
-    $allowed=['voice','agent','profile','profile_agent','chat','voice_clone','review','complete'];
+    $allowed=['voice','agent','profile','profile_agent','chat','voice_clone','workspace','review','complete'];
     return in_array($step,$allowed,true)?$step:'voice';
 }
 
