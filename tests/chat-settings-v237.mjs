@@ -46,6 +46,8 @@ assert.match(settingsUi, /Allow user-to-user chat/);
 assert.match(settingsUi, /Incoming message sound/);
 assert.match(settingsUi, /Master switch for spoken Agent responses and notification announcements/);
 assert.match(settingsUi, /voiceAllowed/);
+assert.match(settingsUi, /agent_voice_allowed:chatResponse\.agent_voice_allowed/, 'full Chat Settings save must preserve server Agent Voice availability');
+assert.match(settingsUi, /agent_voice_allowed:response\.agent_voice_allowed/, 'quick Agent Voice save must preserve server Agent Voice availability');
 assert.match(settingsUi, /Accept Profile Agent conversations/);
 assert.match(settingsUi, /chatNowPlayingClose/);
 assert.match(settingsUi, /Close audio player/);
