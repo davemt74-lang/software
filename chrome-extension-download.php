@@ -7,7 +7,11 @@ require_once __DIR__ . '/includes/chrome-extension-releases.php';
 header('X-Content-Type-Options: nosniff');
 header('Cache-Control: no-store, private');
 
-$managedRelease = chrome_extension_latest_release('stable');
+$pdo=db();
+$rolloutsReady=$pdo && function_exists('client_release_rollouts_schema_ready_v110') && client_release_rollouts_schema_ready_v110($pdo);
+$managedRelease = $rolloutsReady
+    ? client_release_public_release_v110($pdo,'browser_companion','stable')
+    : chrome_extension_latest_release('stable');
 if ($managedRelease) {
     $storedPath = (string)($managedRelease['package_path'] ?? '');
     $base = realpath(chrome_extension_release_private_dir());
@@ -37,6 +41,13 @@ if ($managedRelease) {
         exit;
     }
     readfile($real);
+    exit;
+}
+
+if($rolloutsReady && !client_release_public_fallback_allowed_v110($pdo,'browser_companion')){
+    http_response_code(503);
+    header('Content-Type: text/plain; charset=utf-8');
+    echo "The VP3 Chrome Extension public rollout is currently paused or withdrawn.";
     exit;
 }
 

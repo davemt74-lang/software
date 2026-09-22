@@ -9,6 +9,9 @@ $pdo = db();
 if (!$pdo) throw new RuntimeException('Database connection is unavailable.');
 homeserver_vp3_ensure_schema($pdo);
 chrome_extension_releases_ensure_schema($pdo);
+client_release_rollouts_ensure_schema_v110($pdo);
+$adminUser=current_user();
+$adminUserId=(int)($adminUser['id']??0);
 $error = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -18,9 +21,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         try {
             $action = (string)($_POST['action'] ?? '');
 
+            if ($action === 'rollout_update') {
+                $product=(string)($_POST['product']??'');
+                $releaseId=max(0,(int)($_POST['release_id']??0));
+                client_release_rollout_update_v110($pdo,$product,$releaseId,$_POST,$adminUserId);
+                if(function_exists('client_release_intelligence_reconcile_all_v100'))client_release_intelligence_reconcile_all_v100($pdo);
+                flash('notice','Controlled rollout updated.');
+                redirect(url('/admin/homeserver.php#controlled-rollouts'));
+            }
+
             if ($action === 'chrome_create') {
                 $user = current_user();
                 $id = chrome_extension_release_create($_POST, $_FILES, (int)($user['id'] ?? 0));
+                $initialState=!empty($_POST['is_latest'])?'general_availability':(!empty($_POST['is_published'])?'testing':'draft');
+                client_release_rollout_update_v110($pdo,'browser_companion',$id,['lifecycle_state'=>$initialState,'rollout_percent'=>$initialState==='general_availability'?100:0],$adminUserId);
                 if(function_exists('client_release_intelligence_reconcile_all_v100'))client_release_intelligence_reconcile_all_v100($pdo);
                 flash('notice', 'Chrome Extension release uploaded and verified.');
                 redirect(url('/admin/homeserver.php#chrome-release-' . $id));
@@ -29,12 +43,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $releaseId = max(0, (int)($_POST['release_id'] ?? 0));
                 $stateAction = substr($action, 7);
                 chrome_extension_release_set_state($releaseId, $stateAction);
-                if(in_array($stateAction,['publish','latest'],true)&&function_exists('client_release_intelligence_reconcile_all_v100'))client_release_intelligence_reconcile_all_v100($pdo);
+                client_release_rollout_sync_legacy_action_v110($pdo,'browser_companion',$releaseId,$stateAction,$adminUserId);
+                if(function_exists('client_release_intelligence_reconcile_all_v100'))client_release_intelligence_reconcile_all_v100($pdo);
                 flash('notice', $stateAction === 'latest' ? 'Chrome Extension release is now current for its channel.' : 'Chrome Extension release updated.');
                 redirect(url('/admin/homeserver.php#chrome-extension-releases'));
             }
             if ($action === 'chrome_delete') {
                 $releaseId = max(0, (int)($_POST['release_id'] ?? 0));
+                client_release_rollout_delete_v110($pdo,'browser_companion',$releaseId,$adminUserId);
                 chrome_extension_release_delete($releaseId);
                 flash('notice', 'Chrome Extension release and stored ZIP deleted.');
                 redirect(url('/admin/homeserver.php#chrome-extension-releases'));
@@ -43,6 +59,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($action === 'create') {
                 $user = current_user();
                 $id = homeserver_vp3_create_release($_POST, $_FILES, (int)($user['id'] ?? 0));
+                $initialState=!empty($_POST['is_latest'])?'general_availability':(!empty($_POST['is_published'])?'testing':'draft');
+                client_release_rollout_update_v110($pdo,'homeserver',$id,['lifecycle_state'=>$initialState,'rollout_percent'=>$initialState==='general_availability'?100:0],$adminUserId);
                 if(function_exists('client_release_intelligence_reconcile_all_v100'))client_release_intelligence_reconcile_all_v100($pdo);
                 flash('notice', 'HomeServer release uploaded and verified.');
                 redirect(url('/admin/homeserver.php#homeserver-release-' . $id));
@@ -50,11 +68,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $releaseId = max(0, (int)($_POST['release_id'] ?? 0));
             if (in_array($action, ['publish','unpublish','latest'], true)) {
                 homeserver_vp3_set_release_state($releaseId, $action);
-                if(in_array($action,['publish','latest'],true)&&function_exists('client_release_intelligence_reconcile_all_v100'))client_release_intelligence_reconcile_all_v100($pdo);
+                client_release_rollout_sync_legacy_action_v110($pdo,'homeserver',$releaseId,$action,$adminUserId);
+                if(function_exists('client_release_intelligence_reconcile_all_v100'))client_release_intelligence_reconcile_all_v100($pdo);
                 flash('notice', $action === 'latest' ? 'HomeServer release is now the current release.' : 'HomeServer release updated.');
                 redirect(url('/admin/homeserver.php#homeserver-releases'));
             }
             if ($action === 'delete') {
+                client_release_rollout_delete_v110($pdo,'homeserver',$releaseId,$adminUserId);
                 homeserver_vp3_delete_release($releaseId);
                 flash('notice', 'HomeServer release and stored binaries deleted.');
                 redirect(url('/admin/homeserver.php#homeserver-releases'));
@@ -82,6 +102,8 @@ $phpPostMax = (string)ini_get('post_max_size');
 $releaseIntelligence = function_exists('client_release_intelligence_admin_summary_v100')
     ? client_release_intelligence_admin_summary_v100($pdo)
     : ['browser_companion'=>[],'homeserver'=>[]];
+$rolloutAdoption=client_release_adoption_summary_v110($pdo);
+$rolloutAudit=client_release_audit_recent_v110($pdo,20);
 $adminTitle = 'Client Releases';
 $adminActive = 'homeserver';
 require __DIR__ . '/_header.php';
@@ -110,6 +132,49 @@ require __DIR__ . '/_header.php';
       <tr><td><strong>HomeServer</strong></td><td><?= ($homeIntel['latest_version']??'')!==''?'v'.e((string)$homeIntel['latest_version']):'Not published' ?></td><td><?= (int)($homeIntel['paired_clients']??0) ?></td><td><?= (int)($homeIntel['current_clients']??0) ?></td><td><?= (int)($homeIntel['outdated_clients']??0) ?></td><td><?= (int)($homeIntel['unknown_clients']??0) ?></td><td><?= e((string)($homeIntel['channel']??'stable')) ?></td></tr>
     </tbody>
   </table></div>
+</section>
+
+<section class="admin-card" id="controlled-rollouts" style="margin-bottom:24px">
+  <div class="admin-card-head"><div><h3>Controlled Rollouts</h3><p>Move each client release through Draft → Testing → Canary/Limited → General Availability. Paused, superseded, and withdrawn releases are never offered to new client cohorts.</p></div><span class="eyebrow">v1.10</span></div>
+  <div class="admin-table-wrap"><table class="admin-table">
+    <thead><tr><th>Client release</th><th>Adoption</th><th>Lifecycle</th><th>Release guidance</th></tr></thead>
+    <tbody>
+    <?php foreach(['browser_companion'=>'Browser Companion','homeserver'=>'HomeServer'] as $product=>$productLabel): ?>
+      <?php foreach((array)($rolloutAdoption[$product]??[]) as $roll): $rid=(int)$roll['release_id']; $releaseRow=client_release_release_row_v110($pdo,$product,$rid); $meta=$releaseRow?client_release_rollout_for_v110($pdo,$product,$rid,$releaseRow):[]; ?>
+      <tr>
+        <td><strong><?= e($productLabel) ?> v<?= e((string)$roll['version']) ?></strong><br><small><?= e((string)$roll['channel']) ?> · release #<?= $rid ?></small></td>
+        <td><strong><?= (int)$roll['installed_clients'] ?></strong> installed<br><small><?= e(ucwords(str_replace('_',' ',(string)$roll['lifecycle_state']))) ?> · <?= (int)$roll['rollout_percent'] ?>%</small></td>
+        <td>
+          <form method="post" class="admin-form">
+            <?= csrf_field() ?>
+            <input type="hidden" name="action" value="rollout_update">
+            <input type="hidden" name="product" value="<?= e($product) ?>">
+            <input type="hidden" name="release_id" value="<?= $rid ?>">
+            <div class="form-row">
+              <label>State<select name="lifecycle_state">
+                <?php foreach(client_release_lifecycle_states_v110() as $state): ?><option value="<?= e($state) ?>" <?= (string)($meta['lifecycle_state']??'draft')===$state?'selected':'' ?>><?= e(ucwords(str_replace('_',' ',$state))) ?></option><?php endforeach; ?>
+              </select></label>
+              <label>Rollout %<input type="number" name="rollout_percent" min="0" max="100" value="<?= (int)($meta['rollout_percent']??0) ?>"></label>
+            </div>
+            <label>Summary<input name="summary" maxlength="500" value="<?= e((string)($meta['summary']??'')) ?>" placeholder="What changed in this release"></label>
+            <label>Known issues<textarea name="known_issues" rows="2" maxlength="10000"><?= e((string)($meta['known_issues']??'')) ?></textarea></label>
+            <label>Compatibility notes<input name="compatibility_notes" maxlength="1000" value="<?= e((string)($meta['compatibility_notes']??'')) ?>" placeholder="OS, architecture, or prerequisite notes"></label>
+            <div class="form-actions"><button class="button button-small" type="submit">Update rollout</button></div>
+          </form>
+        </td>
+        <td><small>Canary/Limited cohorts are deterministic per account/client. Choosing General Availability makes this the channel's current public release and supersedes the prior GA release. Selecting an older release as General Availability performs a controlled rollback.</small></td>
+      </tr>
+      <?php endforeach; ?>
+    <?php endforeach; ?>
+    <?php if(empty($rolloutAdoption['browser_companion'])&&empty($rolloutAdoption['homeserver'])): ?><tr><td colspan="4">Upload a client release to begin a controlled rollout.</td></tr><?php endif; ?>
+    </tbody>
+  </table></div>
+  <?php if($rolloutAudit): ?>
+  <div class="admin-card-head" style="margin-top:18px"><div><h3>Release Audit Ledger</h3><p>Recent lifecycle, channel, download, defer, and rollback events.</p></div></div>
+  <div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>When</th><th>Client</th><th>Release</th><th>Action</th><th>Transition</th></tr></thead><tbody>
+    <?php foreach($rolloutAudit as $event): ?><tr><td><?= e((string)$event['created_at']) ?></td><td><?= e((string)$event['product']) ?></td><td><?= (int)($event['release_id']??0)>0?'#'.(int)$event['release_id']:'—' ?></td><td><?= e(ucwords(str_replace('_',' ',(string)$event['action']))) ?></td><td><?= e((string)$event['from_state']) ?><?= (string)$event['to_state']!==''?' → '.e((string)$event['to_state']):'' ?></td></tr><?php endforeach; ?>
+  </tbody></table></div>
+  <?php endif; ?>
 </section>
 
 <section id="chrome-extension-releases">

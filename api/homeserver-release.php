@@ -12,7 +12,10 @@ try {
         echo json_encode(['ok'=>false,'error'=>'Invalid HomeServer release channel.']);
         exit;
     }
-    $release = homeserver_vp3_latest_release($channel);
+    $pdo=db();
+    $release = ($pdo && function_exists('client_release_rollouts_schema_ready_v110') && client_release_rollouts_schema_ready_v110($pdo))
+        ? client_release_public_release_v110($pdo,'homeserver',$channel)
+        : homeserver_vp3_latest_release($channel);
     echo json_encode([
         'ok'=>true,
         'service'=>'VP3 HomeServer Releases',
