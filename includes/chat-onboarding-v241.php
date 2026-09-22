@@ -96,7 +96,7 @@ function chat_onboarding_v241_workspace_state(PDO $pdo,array $user,array $permis
     $analyticsReady=$profileAllowed&&function_exists('profile_agent_schema_ready')&&profile_agent_schema_ready($pdo);
 
     $teamReady=function_exists('workspace_team_v350_schema_ready')&&workspace_team_v350_schema_ready($pdo);
-    $teamState=function_exists('team_subscription_state')?team_subscription_state($user,$pdo):[];
+    $teamState=[];if($teamReady&&function_exists('team_subscription_state')){try{$teamState=team_subscription_state($user,$pdo);}catch(Throwable $e){$teamState=[];}}
     $teamPermitted=$teamReady&&(!empty($teamState['authorized'])||!empty($teamState['included']));
     $teamCount=$teamReady?$count("SELECT COUNT(*) FROM workspace_memberships_v350 WHERE (workspace_owner_user_id=? OR member_user_id=?) AND membership_status='active'",[$uid,$uid]):0;
 
