@@ -229,13 +229,18 @@ function client_fleet_version_policy_update_v160(PDO $pdo,string $product,string
     if(!client_release_version_valid_v100($version))throw new RuntimeException('Choose a valid client version.');
     $status=strtolower(trim((string)($input['support_status']??'supported')));
     if(!in_array($status,client_fleet_support_statuses_v160(),true))throw new RuntimeException('Choose a valid support status.');
-    $deprecated=trim((string)($input['deprecated_at']??''));$unsupported=trim((string)($input['unsupported_at']??''));
-    foreach(['deprecated_at'=>&$deprecated,'unsupported_at'=>&$unsupported] as $key=>&$value){
-        if($value===''){$value=null;continue;}
-        $ts=strtotime($value);if($ts===false)throw new RuntimeException('Choose valid deprecation/support dates.');
-        $value=gmdate('Y-m-d H:i:s',$ts);
+    $deprecated=trim((string)($input['deprecated_at']??''));
+    if($deprecated==='')$deprecated=null;
+    else{
+        $ts=strtotime($deprecated);if($ts===false)throw new RuntimeException('Choose a valid deprecation date.');
+        $deprecated=gmdate('Y-m-d H:i:s',$ts);
     }
-    unset($value);
+    $unsupported=trim((string)($input['unsupported_at']??''));
+    if($unsupported==='')$unsupported=null;
+    else{
+        $ts=strtotime($unsupported);if($ts===false)throw new RuntimeException('Choose a valid unsupported date.');
+        $unsupported=gmdate('Y-m-d H:i:s',$ts);
+    }
     if($deprecated&&$unsupported&&strtotime($unsupported)<strtotime($deprecated))throw new RuntimeException('Unsupported date cannot precede deprecation date.');
     $notes=mb_strimwidth(trim((string)($input['notes']??'')),0,1000,'');
     client_fleet_ensure_schema_v160($pdo);
@@ -293,7 +298,7 @@ function client_fleet_support_status_v160(PDO $pdo,string $product,string $chann
     }elseif((string)$policy['minimum_supported_version']!==''&&client_release_version_valid_v100((string)$policy['minimum_supported_version'])
         && version_compare($version,(string)$policy['minimum_supported_version'],'<')){
         $status='unsupported';$reason='Installed version is below the minimum supported version.';
-    }elseif($latestVersion!==''&&version_compare($version,$latestVersion,'===')){
+    }elseif($latestVersion!==''&&version_compare($version,$latestVersion,'==')){
         $status='current';$reason='Installed version is the current General Availability release.';
     }elseif($latestVersion!==''&&version_compare($version,$latestVersion,'>')){
         $status='maintenance';$reason='Installed version is ahead of the current General Availability release.';
