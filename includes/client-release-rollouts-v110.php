@@ -196,6 +196,12 @@ function client_release_rollout_update_v110(PDO $pdo,string $product,int $releas
 
     $state=strtolower(trim((string)($input['lifecycle_state']??'draft')));
     if(!client_release_lifecycle_valid_v110($state))throw new RuntimeException('Choose a valid rollout lifecycle state.');
+    if(function_exists('client_release_incident_active_for_release_v130')){
+        $incident=client_release_incident_active_for_release_v130($pdo,$product,$releaseId);
+        if($incident&&!in_array($state,['paused','withdrawn'],true)){
+            throw new RuntimeException('An active release incident governs this build. Use the incident recovery controls until it is resolved.');
+        }
+    }
     $percent=client_release_rollout_percent_v110($state,(int)($input['rollout_percent']??0));
     $summary=mb_strimwidth(trim((string)($input['summary']??'')),0,500,'');
     $known=mb_strimwidth(trim((string)($input['known_issues']??'')),0,10000,'');
