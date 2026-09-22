@@ -536,6 +536,9 @@ function client_release_automation_fleet_proposal_v170(PDO $pdo,array $campaign,
 
     if($state!=='active'||$percent<1)return null;
     if(client_release_automation_hold_blocks_campaign_v170($pdo,$campaignId))return null;
+    $updatedAt=strtotime((string)($campaign['updated_at']??''));
+    $observationMinutes=max(0,(int)($policy['fleet_observation_minutes']??60));
+    if($observationMinutes>0&&$updatedAt!==false&&time()-$updatedAt<$observationMinutes*60)return null;
     if((int)$stats['completion_rate_bps']<(int)$policy['fleet_completion_gate_bps'])return null;
     $next=client_release_automation_next_fleet_percent_v170($percent,$riskMax);
     if($next<=$percent)return null;
@@ -610,6 +613,21 @@ function client_release_automation_execute_proposal_v170(PDO $pdo,int $proposalI
     }
     $validated=client_release_automation_validate_proposal_v170($pdo,$proposal);
     $type=(string)$proposal['proposal_type'];$product=(string)$proposal['product'];
+    if($systemExecution){
+        $policy=client_release_automation_policy_v170($pdo,$product,(string)$proposal['channel']);
+        if(empty($policy['policy_enabled'])||(string)$policy['execution_mode']!=='auto_low_risk'){
+            throw new RuntimeException('Current automation policy no longer permits automatic execution.');
+        }
+        if($type==='rollout_promote'&&empty($policy['rollout_progression_enabled'])){
+            throw new RuntimeException('Current automation policy no longer permits rollout progression.');
+        }
+        if($type==='fleet_advance'&&empty($policy['fleet_progression_enabled'])){
+            throw new RuntimeException('Current automation policy no longer permits fleet progression.');
+        }
+        if(!client_release_automation_risk_allows_auto_v170((array)($validated['risk']??[]))){
+            throw new RuntimeException('Current v1.40 risk no longer permits automatic execution.');
+        }
+    }
     $note=mb_strimwidth(trim($note),0,1000,'');
 
     if($type==='rollout_promote'){
