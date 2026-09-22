@@ -328,6 +328,10 @@ function client_release_release_candidates_v110(PDO $pdo,string $product,string 
 
 function client_release_applicable_release_v110(PDO $pdo,string $product,string $channel,int $userId,string $scopeKey='account'): ?array
 {
+    if(function_exists('client_release_recovery_applicable_release_v130')){
+        $recovery=client_release_recovery_applicable_release_v130($pdo,$product,$channel,$userId,$scopeKey);
+        if($recovery)return $recovery;
+    }
     foreach(client_release_release_candidates_v110($pdo,$product,$channel) as $release){
         $rollout=client_release_rollout_for_v110($pdo,$product,(int)$release['id'],$release);
         $bucket=client_release_cohort_bucket_v110($product,(int)$release['id'],$userId,$scopeKey);
