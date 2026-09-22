@@ -534,6 +534,9 @@ function homeserver_vp3_create_release(array $input, array $files, int $createdB
     if (!homeserver_vp3_channel_valid($channel)) {
         throw new RuntimeException('Choose a valid release channel.');
     }
+    if(!empty($input['is_published'])&&!empty($input['is_latest'])&&function_exists('client_release_readiness_current_v150')){
+        throw new RuntimeException('Upload the HomeServer release as Draft/Testing, complete v1.50 preflight, then promote it.');
+    }
     $portable = homeserver_vp3_store_exe($files['portable_exe'] ?? [], 'portable', $version);
     $installer = null;
     try {
@@ -589,6 +592,10 @@ function homeserver_vp3_set_release_state(int $releaseId, string $action): void
         throw new RuntimeException('Database connection is unavailable.');
     }
     homeserver_vp3_ensure_schema($pdo);
+    if(function_exists('client_release_rollout_sync_legacy_action_v110')&&in_array($action,['publish','unpublish','latest'],true)){
+        client_release_rollout_sync_legacy_action_v110($pdo,'homeserver',$releaseId,$action,0);
+        return;
+    }
     $stmt = $pdo->prepare('SELECT * FROM homeserver_releases WHERE id=? LIMIT 1');
     $stmt->execute([$releaseId]);
     $release = $stmt->fetch();
@@ -604,6 +611,10 @@ function homeserver_vp3_set_release_state(int $releaseId, string $action): void
         return;
     }
     if ($action === 'latest') {
+        if(function_exists('client_release_readiness_current_v150')){
+            $readiness=client_release_readiness_current_v150($pdo,'homeserver',$releaseId);
+            if(empty($readiness['ready']))throw new RuntimeException('Release preflight is not approved: '.(string)($readiness['reason']??'readiness gate failed'));
+        }
         $pdo->beginTransaction();
         try {
             $pdo->prepare('UPDATE homeserver_releases SET is_latest=0 WHERE channel=?')->execute([(string)$release['channel']]);

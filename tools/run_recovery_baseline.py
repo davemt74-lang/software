@@ -117,6 +117,7 @@ NODE_TESTS = [
     'tests/client-release-health-v120.mjs',
     'tests/client-release-incidents-v130.mjs',
     'tests/client-release-risk-v140.mjs',
+    'tests/client-release-readiness-v150.mjs',
     'tests/client-fleet-maintenance-v160.mjs',
 ]
 
