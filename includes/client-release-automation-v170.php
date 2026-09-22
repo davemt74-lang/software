@@ -590,12 +590,14 @@ function client_release_automation_execute_proposal_v170(PDO $pdo,int $proposalI
 
     if($type==='rollout_promote'){
         if((string)$proposal['to_state']==='general_availability'&&$systemExecution)throw new RuntimeException('General Availability promotion always requires an operator.');
-        $releaseId=(int)$proposal['release_id'];$roll=(array)$validated['rollout'];
-        client_release_rollout_update_v110($pdo,$product,$releaseId,[
-            'lifecycle_state'=>(string)$proposal['to_state'],'rollout_percent'=>(int)$proposal['to_percent'],
-            'summary'=>(string)($roll['summary']??''),'known_issues'=>(string)($roll['known_issues']??''),
-            'compatibility_notes'=>(string)($roll['compatibility_notes']??''),
-        ],$actorUserId);
+        $releaseId=(int)$proposal['release_id'];
+        $evidence=json_decode((string)($proposal['evidence_json']??''),true);
+        $snapshotId=is_array($evidence)?(int)($evidence['health_snapshot_id']??0):0;
+        if($snapshotId<1)throw new RuntimeException('Automation proposal is missing its v1.20 health snapshot.');
+        client_release_health_approve_promotion_v120(
+            $pdo,$product,$releaseId,$snapshotId,$actorUserId,
+            $note!==''?$note:'v1.70 governed automation approval.'
+        );
     }elseif($type==='fleet_advance'){
         client_fleet_campaign_set_v160($pdo,(int)$proposal['campaign_id'],'active',(int)$proposal['to_percent'],$actorUserId);
     }else{
