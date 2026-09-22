@@ -162,6 +162,13 @@ if(!empty($toolResult['handled'])){
     $capabilityRoute=vp3_agent_runtime_capability_route_v420($runtimePlan,$execution,$homeAttempted);
 }
 $execution['capability_route']=$capabilityRoute;
+if(function_exists('chat_presentation_violation_v2370')&&chat_presentation_violation_v2370((string)$answer)){
+    error_log('VP3 v23.70 presentation firewall replaced an internal-context echo from the selected Agent runtime.');
+    $answer=chat_local_answer($query,is_array($context??null)?$context:[]);
+    if(function_exists('chat_context_fallback_actions')){
+        $responseActions=array_values(array_merge($responseActions,chat_context_fallback_actions($query,is_array($context??null)?$context:[])));
+    }
+}
 ai_usage_accounting_v032_record($pdo,$user,$activeAgentId,$conversationId,$execution);
 $publicSources=[];
 if(is_array($browserContext)){
