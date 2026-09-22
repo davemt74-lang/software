@@ -1,4 +1,4 @@
-name: Client Release Intelligence v1.00
+name: Client Release Operations v1.10
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -8,6 +8,15 @@ on:
   pull_request:
     paths:
       - 'includes/client-release-intelligence-v100.php'
+      - 'includes/client-release-rollouts-v110.php'
+      - 'client-release-download.php'
+      - 'client-updates-v110.css'
+      - 'api/homeserver-release.php'
+      - 'homeserver-download.php'
+      - 'chrome-extension-download.php'
+      - 'upgrade.php'
+      - 'tools/run_recovery_baseline.py'
+      - 'tests/client-release-controlled-rollouts-v110.mjs'
       - 'includes/extension-device-token-v2100.php'
       - 'api/extension-me.php'
       - 'includes/notifications.php'
@@ -32,7 +41,7 @@ permissions:
 
 jobs:
   contract:
-    name: Client Release Intelligence · PHP ${{ matrix.php }}
+    name: Client Release Operations · PHP ${{ matrix.php }}
     runs-on: ubuntu-latest
     timeout-minutes: 12
     strategy:
@@ -53,6 +62,12 @@ jobs:
       - name: PHP syntax
         run: |
           php -l includes/client-release-intelligence-v100.php
+          php -l includes/client-release-rollouts-v110.php
+          php -l client-release-download.php
+          php -l api/homeserver-release.php
+          php -l homeserver-download.php
+          php -l chrome-extension-download.php
+          php -l upgrade.php
           php -l includes/extension-device-token-v2100.php
           php -l api/extension-me.php
           php -l includes/notifications.php
@@ -69,8 +84,10 @@ jobs:
           node --check browser-companion/background.js
           node --check browser-companion/sidepanel.js
           node --check tests/client-release-intelligence-v100.mjs
+          node --check tests/client-release-controlled-rollouts-v110.mjs
       - name: Client Release Intelligence contracts
         run: |
+          node tests/client-release-controlled-rollouts-v110.mjs
           node tests/client-release-intelligence-v100.mjs
           node tests/client-releases-manager.mjs
           node tests/extension-device-token-v2100.mjs
