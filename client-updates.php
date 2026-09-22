@@ -114,7 +114,10 @@ $memberHeaderActions='<a class="client-release-button" href="'.e(url('/connected
               <?php if(!empty($home['update_available'])): ?>
                 <span class="client-release-badge">Update available</span>
                 <?php $homeFile=$homeLatest['installer']??$homeLatest['portable']??null; if(is_array($homeFile)&&!empty($homeFile['url'])): ?><a class="client-release-button primary" href="<?= e((string)$homeFile['url']) ?>">Download v<?= e((string)$homeLatest['version']) ?></a><?php endif; ?>
-              <?php elseif(!empty($home['paired'])): ?><span class="client-release-badge">Current</span><?php else: ?><a class="client-release-button" href="<?= e(url('/settings-homeserver.php')) ?>">Connect HomeServer</a><?php endif; ?>
+              <?php elseif(!empty($home['paired'])):
+                $homeState=(string)($home['version_state']??'unknown');
+                $homeLabel=match($homeState){'current'=>'Current','ahead'=>'Ahead of stable','unavailable'=>'No managed release',default=>'Version unknown'};
+              ?><span class="client-release-badge"><?= e($homeLabel) ?></span><?php else: ?><a class="client-release-button" href="<?= e(url('/settings-homeserver.php')) ?>">Connect HomeServer</a><?php endif; ?>
             </div>
           </article>
           <div class="client-release-footer">
