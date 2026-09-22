@@ -1328,6 +1328,9 @@
     if (action.type === 'media_capture') {
       return `<button class="chat-agent-action-button" type="button" data-media-agent-mode="${escapeHtml(action.mode||'camera')}" data-media-camera-index="${Number(action.camera_index||0)}">${escapeHtml(action.label||'Open Camera')}</button>`;
     }
+    if (action.type === 'prompt' && action.prompt) {
+      return `<button class="chat-agent-action-button" type="button" data-chat-prompt-action="${escapeHtml(action.prompt)}">${escapeHtml(action.label||'Continue')}</button>`;
+    }
     if (!action.url) return '';
     return `<a class="chat-agent-action" href="${escapeHtml(withStudioReturn(action.url))}">${escapeHtml(action.label||'Open')}</a>`;
   }
@@ -1361,7 +1364,6 @@
           </section>` : ''}
         ${stemMedia.length ? `<section class="chat-stem-results"><div class="chat-listening-head"><div><small>Production search</small><strong>Matching stems</strong></div><span>${stemMedia.length} result${stemMedia.length===1?'':'s'}</span></div>${stemMedia.map(stemMediaHtml).join('')}</section>` : ''}
         ${actions.length ? `<div class="chat-agent-actions">${actions.map(agentActionHtml).join('')}</div>` : ''}
-        ${sources.length ? `<div class="message-sources">${sources.map(sourceHtml).join('')}</div>` : ''}
         ${cards.length ? '<div class="vp3-cognitive-card-host" data-cognitive-card-host></div>' : ''}
       </div>`;
 
@@ -3004,6 +3006,15 @@
       }
     }
   }
+
+  thread.addEventListener('click', event => {
+    const promptAction = event.target.closest('[data-chat-prompt-action]');
+    if (!promptAction) return;
+    event.preventDefault();
+    const prompt = String(promptAction.dataset.chatPromptAction || '').trim();
+    if (!prompt || busy) return;
+    sendMessage(prompt);
+  });
 
   form.addEventListener('submit', event => {
     event.preventDefault();

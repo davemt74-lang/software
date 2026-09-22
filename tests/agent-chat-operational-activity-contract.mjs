@@ -74,6 +74,6 @@ assert.doesNotMatch(learning, /cleanupMainSidebar|chatMyTeam|data-chat-view-targ
 
 assert.match(notificationsPage, /WHERE user_id=\? AND '\s*\.\s*notification_system_sql_predicate\(\)/, 'standalone Notifications page must exclude Agent Brain activity');
 assert.match(notificationsPage, /id=\? AND user_id=\? AND '\s*\.\s*notification_system_sql_predicate\(\)/, 'direct notification opens must not expose Agent Brain carrier rows');
-assert.match(memberHeader, /activity-center-brain-routing-20260906/, 'member header must cache-bust the new Activity Center routing build');
+assert.match(memberHeader, /activity-center-proactive-v244-20260922/, 'member header must cache-bust the v2.44 proactive Activity Center runtime');
 
 console.log('agent-brain-notification-routing contract: PASS');

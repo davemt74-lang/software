@@ -30,6 +30,7 @@ assert.match(core,/\$eligible=array_values\(array_filter/,'30-minute attention d
 assert.doesNotMatch(api,/observation_store|presentation_decide/);
 assert.match(api,/digest_ack/);
 assert.match(api,/voice_delivered/);
+assert.match(api,/voice_suppressed/,'user stop must persist proactive voice suppression');
 assert.match(api,/interaction/);
 
 assert.doesNotThrow(()=>new Function(js));
@@ -37,6 +38,9 @@ assert.match(js,/data-agent-brief-prompt/);
 assert.match(js,/While you were away/);
 assert.match(js,/STONEFELLOW_NOTIFICATION_CENTER/);
 assert.match(js,/voice_delivered/);
+assert.match(js,/voice_suppressed/,'interrupted proactive reports must not replay');
+assert.match(js,/stonefellow:agent-stop/,'presentation runtime must consume canonical stop control');
+assert.match(js,/cancelSpeech/,'presentation runtime must stop the active proactive audio');
 assert.match(js,/TRANSCRIPT_SUBMIT/);
 assert.match(js,/setInterval\(refresh/);
 assert.match(css,/chat-agent-status-dot\.active/);

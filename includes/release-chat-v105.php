@@ -202,7 +202,8 @@ function chat_generate_answer_v105(string $query,array $history,array $user,arra
         }
     }catch(Throwable $e){}
 
-    $context=array_slice($context,0,32);$answer=chat_remote_answer($query,$history,$context,$user);if($answer===null)$answer=chat_local_answer($query,$context);
+    $context=array_slice($context,0,32);$answer=chat_remote_answer($query,$history,$context,$user);$actions=[];
+    if($answer===null){$answer=chat_local_answer($query,$context);if(function_exists('chat_context_fallback_actions'))$actions=chat_context_fallback_actions($query,$context);}
     if($proactiveObjectiveNudge!=='')$answer=rtrim((string)$answer)."\n\n".$proactiveObjectiveNudge;
-    return ['answer'=>$answer,'context'=>$context];
+    return ['answer'=>$answer,'context'=>$context,'actions'=>$actions];
 }

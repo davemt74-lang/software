@@ -15,6 +15,7 @@
     userId:Number(source?.dataset.userId || 0),
     agentEndpoint: source?.dataset.agentEndpoint || '/api/user-agent-system-v236.php',
     voiceEndpoint: source?.dataset.voiceEndpoint || '/api/studio-voice-profile.php',
+    ttsEndpoint: source?.dataset.ttsEndpoint || '/api/agent-voice-v117.php',
     chatSettingsEndpoint: source?.dataset.chatSettingsEndpoint || '/api/chat-settings-v237.php',
     csrf: source?.dataset.csrf || '',
     voiceProfileUrl: source?.dataset.voiceProfileUrl || '/voice-profile.php',
@@ -26,7 +27,9 @@
 
   let agentState = null;
   let voiceState = null;
+  let ttsState = null;
   let agentVoiceAllowed = true;
+  let agentVoiceEnabled = false;
   let selectedAgentId = 0;
   let busy = false;
 
@@ -123,6 +126,7 @@
 
   const el = {
     status: dashboard.querySelector('[data-vp3-agent-voice-status]'),
+    provider: dashboard.querySelector('[data-vp3-voice-provider]'),
     body: dashboard.querySelector('[data-vp3-agent-voice-body]'),
     selectorWrap: dashboard.querySelector('[data-vp3-agent-selector-wrap]'),
     selector: dashboard.querySelector('[data-vp3-agent-selector]'),
@@ -201,21 +205,36 @@
 
   function renderVoice() {
     const ready = cloneReady();
+    const runtimeReady = ttsState?.ready === true;
+    const runtimeVerified = ttsState?.verified === true;
     const cloneOption = el.voiceSource?.querySelector('option[value="clone"]');
     if (cloneOption) cloneOption.disabled = !ready;
+    if (el.provider) {
+      el.provider.textContent = runtimeVerified ? 'ElevenLabs Ready' : (runtimeReady ? 'ElevenLabs Configured' : 'ElevenLabs Offline');
+      el.provider.dataset.ready = runtimeReady ? '1' : '0';
+    }
     if (el.cloneState) el.cloneState.textContent = cloneLabel();
     if (el.cloneDetail) {
-      el.cloneDetail.textContent = ready
-        ? 'Use the voice source selector above to assign your existing clone to this agent.'
-        : 'Record or upload a sample in Voice Profile to create your ElevenLabs clone.';
+      const source = String(ttsState?.voice_source || '');
+      const voiceName = clean(ttsState?.voice_name || '', 90);
+      if (runtimeReady) {
+        el.cloneDetail.textContent = source === 'agent_clone'
+          ? `Agent Chat is using your ElevenLabs clone${voiceName ? ` · ${voiceName}` : ''}.`
+          : `Agent Chat is using the configured ElevenLabs default voice${voiceName ? ` · ${voiceName}` : ''}.`;
+      } else {
+        el.cloneDetail.textContent = ready
+          ? 'Your clone exists, but Agent Chat cannot currently verify ElevenLabs playback.'
+          : 'Record or upload a sample in Voice Profile to create your ElevenLabs clone.';
+      }
     }
     if (!ready && el.voiceSource?.value === 'clone') el.voiceSource.value = 'default';
   }
 
   function renderAgentVoice(enabled) {
+    agentVoiceEnabled = agentVoiceAllowed && enabled !== false;
     if (!el.agentVoice) return;
     el.agentVoice.disabled = !agentVoiceAllowed;
-    el.agentVoice.checked = agentVoiceAllowed && enabled !== false;
+    el.agentVoice.checked = agentVoiceEnabled;
   }
 
   function publishAgentVoice(enabled) {
@@ -229,7 +248,50 @@
     renderAgents();
     renderVoice();
     if (el.body) el.body.hidden = false;
-    if (activeAgents().length) setStatus('');
+    if (!activeAgents().length) return;
+    if (!agentVoiceAllowed) {
+      setStatus('Agent Voice is not available for this account.', 'info');
+      return;
+    }
+    if (!agentVoiceEnabled) {
+      setStatus('Agent Voice is off.', 'info');
+      return;
+    }
+    if (ttsState && ttsState.ready === false) {
+      setStatus(clean(ttsState.error || 'ElevenLabs is not ready for Agent Chat.', 240), 'error');
+      return;
+    }
+    setStatus('');
+  }
+
+  async function refreshTtsState(showStatus = false) {
+    if (!agentVoiceAllowed) {
+      ttsState = {ready:false,verified:false,error:'Agent Voice is not available for this account.'};
+      renderVoice();
+      return false;
+    }
+    if (!agentVoiceEnabled) {
+      ttsState = null;
+      renderVoice();
+      if (showStatus) setStatus('Agent Voice is off.', 'info');
+      return false;
+    }
+    try {
+      const data = await post(cfg.ttsEndpoint, 'warm', {agent:selectedAgentId});
+      ttsState = data || {ready:false,verified:false};
+      renderVoice();
+      if (showStatus) {
+        setStatus(ttsState.ready
+          ? `ElevenLabs is ready${ttsState.voice_name ? ` · ${clean(ttsState.voice_name,90)}` : ''}.`
+          : clean(ttsState.error || 'ElevenLabs is not ready.', 240), ttsState.ready ? 'success' : 'error');
+      }
+      return ttsState.ready === true;
+    } catch (error) {
+      ttsState = {ready:false,verified:false,error:error instanceof Error ? error.message : 'ElevenLabs readiness check failed.'};
+      renderVoice();
+      if (showStatus) setStatus(ttsState.error, 'error');
+      return false;
+    }
   }
 
   async function load() {
@@ -240,6 +302,8 @@
     ];
     try {
       await Promise.all(tasks);
+      renderAgents();
+      await refreshTtsState(false);
       render();
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Agent settings could not be loaded.', 'error');
@@ -249,7 +313,7 @@
 
   async function saveAgent(changes, successMessage) {
     const agent = selectedAgent();
-    if (!agent || busy) return;
+    if (!agent || busy) return false;
     busy = true;
     dashboard.dataset.saving = 'true';
     try {
@@ -257,9 +321,11 @@
       agentState = data.state || agentState;
       render();
       setStatus(successMessage, 'success');
+      return true;
     } catch (error) {
       render();
       setStatus(error instanceof Error ? error.message : 'Agent settings could not be saved.', 'error');
+      return false;
     } finally {
       busy = false;
       delete dashboard.dataset.saving;
@@ -269,6 +335,7 @@
   el.selector?.addEventListener('change', () => {
     selectedAgentId = Number(el.selector.value || 0);
     render();
+    void refreshTtsState(false).then(() => render());
   });
 
   el.saveName?.addEventListener('click', () => {
@@ -294,7 +361,7 @@
       setStatus('Create your ElevenLabs clone in Voice Profile first.', 'error');
       return;
     }
-    void saveAgent({voice_enabled:useClone}, useClone ? 'ElevenLabs clone assigned to this agent.' : 'VP3 default voice selected.');
+    void saveAgent({voice_enabled:useClone}, useClone ? 'ElevenLabs clone assigned to this agent.' : 'VP3 default voice selected.').then(() => refreshTtsState(true));
   });
 
   el.agentVoice?.addEventListener('change', event => {
@@ -306,7 +373,8 @@
         const data = await post(cfg.chatSettingsEndpoint, 'save_agent_voice', {agent_voice_enabled:requested});
         renderAgentVoice(data.chat?.agent_voice_enabled !== false);
         window.dispatchEvent(new CustomEvent('stonefellow:agent-voice', {detail:{enabled:data.chat?.agent_voice_enabled !== false}}));
-        setStatus(requested ? 'Agent Voice is on.' : 'Agent Voice is off.', 'success');
+        if (requested) await refreshTtsState(true);
+        else { ttsState = null; renderVoice(); setStatus('Agent Voice is off.', 'success'); }
       } catch (error) {
         renderAgentVoice(!requested);
         setStatus(error instanceof Error ? error.message : 'Agent Voice could not be saved.', 'error');

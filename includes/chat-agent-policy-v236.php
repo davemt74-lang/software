@@ -244,6 +244,10 @@ function chat_generate_answer_policy_v236(string $query,array $history,array $us
     $context=chat_policy_context_v236($query,$user,$principal,$conversationId);
     if($agentContext&&function_exists('agent_surface_v131_context_item'))array_unshift($context,agent_surface_v131_context_item($agentContext));
     $answer=chat_remote_answer($query,$history,$context,$user);
-    if($answer===null)$answer=chat_local_answer($query,$context);
-    return ['answer'=>$answer,'context'=>$context];
+    $actions=[];
+    if($answer===null){
+        $answer=chat_local_answer($query,$context);
+        if(function_exists('chat_context_fallback_actions'))$actions=chat_context_fallback_actions($query,$context);
+    }
+    return ['answer'=>$answer,'context'=>$context,'actions'=>$actions];
 }

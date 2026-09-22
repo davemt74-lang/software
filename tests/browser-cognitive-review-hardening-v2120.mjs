@@ -120,10 +120,10 @@ must(runtime.includes("VP3 Cognitive Runtime voice settings unavailable:"),
 must(runtime.includes("'agent_voice_enabled'=>false"),
   'presentation arbitration defaults must be voice-safe when no canonical context is supplied');
 
-must(notificationCenter.includes("if (!agentVoiceEnabled()) return false;"),
-  'shared voice delivery must fail closed when Agent Voice is disabled');
-must(notificationCenter.includes("if (!spoken) spoken = await browserSpeak(message);"),
-  'shared voice delivery must report browser fallback speech');
+must(notificationCenter.includes("if (!agentVoiceEnabled() || generation !== speechGeneration) return false;"),
+  'shared voice delivery must fail closed when Agent Voice is disabled or the proactive speech generation was cancelled');
+must(notificationCenter.includes("if (!spoken && generation === speechGeneration) spoken = await browserSpeak(message, generation);"),
+  'shared voice delivery must report browser fallback speech only while the proactive generation remains active');
 must(notificationCenter.includes("return spoken === true;"),
   'shared voice delivery must return actual speech success');
 must(notificationCenter.includes("announce:text => queueSpeech(String(text || ''))"),
@@ -134,11 +134,11 @@ must(cognitivePresentationJs.includes("if (!center || typeof center.announce !==
 must(cognitivePresentationJs.includes("spoken = (await Promise.resolve(center.announce(String(candidate.message)))) === true;"),
   'Cognitive Presentation must await actual voice delivery');
 must(cognitivePresentationJs.indexOf("lastVoiceThrough = through;") >
-     cognitivePresentationJs.indexOf("if (!spoken) return false;"),
+     cognitivePresentationJs.indexOf("if (!spoken) {"),
   'local voice cursor must advance only after successful speech');
-must(cognitivePresentationJs.includes("if (through <= lastVoiceThrough) {")
-  && cognitivePresentationJs.includes("await post('voice_delivered',{through_id:through});"),
-  'failed server voice acknowledgement must retry without re-speaking');
+must(cognitivePresentationJs.includes("if (through <= Math.max(lastVoiceThrough, suppressedVoiceThrough)) {")
+  && cognitivePresentationJs.includes("await post(through <= suppressedVoiceThrough ? 'voice_suppressed' : 'voice_delivered',{through_id:through});"),
+  'failed server voice acknowledgement must retry without re-speaking, including explicitly suppressed reports');
 
 must(cognitiveExtensionApi.includes("VP3 Browser Companion Cognitive card unavailable ["),
   'extension card render degradation must be observable without weakening fail-closed behavior');
