@@ -1,4 +1,4 @@
-name: Client Release Operations v1.10
+name: Client Release Operations v1.20
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -9,6 +9,7 @@ on:
     paths:
       - 'includes/client-release-intelligence-v100.php'
       - 'includes/client-release-rollouts-v110.php'
+      - 'includes/client-release-health-v120.php'
       - 'client-release-download.php'
       - 'client-updates-v110.css'
       - 'api/homeserver-release.php'
@@ -17,6 +18,7 @@ on:
       - 'upgrade.php'
       - 'tools/run_recovery_baseline.py'
       - 'tests/client-release-controlled-rollouts-v110.mjs'
+      - 'tests/client-release-health-v120.mjs'
       - 'includes/extension-device-token-v2100.php'
       - 'api/extension-me.php'
       - 'includes/notifications.php'
@@ -63,6 +65,7 @@ jobs:
         run: |
           php -l includes/client-release-intelligence-v100.php
           php -l includes/client-release-rollouts-v110.php
+          php -l includes/client-release-health-v120.php
           php -l client-release-download.php
           php -l api/homeserver-release.php
           php -l homeserver-download.php
@@ -85,9 +88,11 @@ jobs:
           node --check browser-companion/sidepanel.js
           node --check tests/client-release-intelligence-v100.mjs
           node --check tests/client-release-controlled-rollouts-v110.mjs
+          node --check tests/client-release-health-v120.mjs
       - name: Client Release Intelligence contracts
         run: |
           node tests/client-release-controlled-rollouts-v110.mjs
+          node tests/client-release-health-v120.mjs
           node tests/client-release-intelligence-v100.mjs
           node tests/client-releases-manager.mjs
           node tests/extension-device-token-v2100.mjs
