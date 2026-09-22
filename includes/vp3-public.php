@@ -198,7 +198,7 @@ function vp3_public_mobile_nav(): void
           <a href="<?= e(url('/contact.php')) ?>"><strong>Contact us</strong><small>Demos, support, and partnerships.</small></a>
         </div></details>
         <a class="mobile-nav-direct" href="<?= e(url('/pricing.php')) ?>">Pricing</a>
-        <div class="mobile-nav-actions"><a href="<?= e(vp3_public_link('/login.php')) ?>">Log in</a><a href="<?= e(vp3_public_link('/signup.php')) ?>">Get VP3 →</a></div>
+        <div class="mobile-nav-actions"><a href="<?= e(vp3_public_link('/login.php')) ?>">Log in</a><a data-vp3-cta="public_mobile_get_vp3" data-vp3-target="signup" href="<?= e(vp3_public_link('/signup.php')) ?>">Get VP3 →</a></div>
       </nav>
     </details>
     <?php
@@ -244,6 +244,7 @@ function vp3_public_header(string $title, string $description = '', array $optio
 <link rel="stylesheet" href="<?= e(url('/vp3-marketing-pages.css?v=20260921-services')) ?>">
 <link rel="stylesheet" href="<?= e(url('/vp3-public-accessibility.css?v=20260914-1')) ?>">
 <link rel="stylesheet" href="<?= e(url('/vp3-public-editorial.css?v=20260915-1')) ?>">
+<script defer src="<?= e(url('/vp3-public-funnel.js?v=20260921-1')) ?>" data-vp3-funnel-endpoint="<?= e(url('/api/public-funnel-event.php')) ?>"></script>
 </head>
 <body class="vp3-public<?= $bodyClass !== '' ? ' ' . e($bodyClass) : '' ?>">
 <?php if ($skipLink): ?><a class="vp3-skip-link" href="#main-content">Skip to main content</a><?php endif; ?>
@@ -257,7 +258,7 @@ function vp3_public_header(string $title, string $description = '', array $optio
           <a class="vp3-public-primary" href="<?= e($openUrl) ?>">Open VP3 <span aria-hidden="true">→</span></a>
         <?php else: ?>
           <a class="vp3-public-signin" href="<?= e(vp3_public_link('/login.php')) ?>">Log in</a>
-          <a class="vp3-public-primary" href="<?= e(vp3_public_link('/signup.php')) ?>">Get VP3 <span aria-hidden="true">→</span></a>
+          <a class="vp3-public-primary" data-vp3-cta="public_header_get_vp3" data-vp3-target="signup" href="<?= e(vp3_public_link('/signup.php')) ?>">Get VP3 <span aria-hidden="true">→</span></a>
         <?php endif; ?>
         <?php vp3_public_mobile_nav(); ?>
       </div>
