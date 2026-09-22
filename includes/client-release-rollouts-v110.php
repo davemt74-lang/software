@@ -612,3 +612,17 @@ function client_release_audit_recent_v110(PDO $pdo,int $limit=30): array
     $limit=max(1,min(100,$limit));
     return $pdo->query("SELECT * FROM client_release_audit_v110 ORDER BY id DESC LIMIT {$limit}")->fetchAll()?:[];
 }
+
+
+function client_release_public_fallback_allowed_v110(PDO $pdo,string $product): bool
+{
+    if(!client_release_rollouts_schema_ready_v110($pdo))return true;
+    $stmt=$pdo->prepare("SELECT lifecycle_state FROM client_release_rollouts_v110 WHERE product=? ORDER BY updated_at DESC,release_id DESC");
+    $stmt->execute([$product]);
+    $states=$stmt->fetchAll(PDO::FETCH_COLUMN)?:[];
+    if(!$states)return true;
+    foreach($states as $state){
+        if(in_array((string)$state,['paused','withdrawn'],true))return false;
+    }
+    return true;
+}
