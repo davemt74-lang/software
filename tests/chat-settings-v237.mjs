@@ -26,6 +26,8 @@ assert.match(settingsPhp, /sound_enabled/);
 assert.match(settingsPhp, /function chat_settings_agent_voice_allowed_v237/);
 assert.match(settingsPhp, /function chat_settings_agent_voice_enabled_v237/);
 assert.match(settingsPhp, /subscription_has_entitlement\(\$user,'voice\.access'\)/);
+assert.match(settingsPhp, /\$voiceAllowed=chat_settings_agent_voice_allowed_v237\(\$user\)/, 'shared persistence must re-check Agent Voice availability');
+assert.match(settingsPhp, /\$agentVoiceEnabled = \$voiceAllowed[\s\S]*: 0;/, 'unavailable Agent Voice must persist off rather than silently remain enabled');
 assert.match(settingsPhp, /ALTER TABLE team_user_presence/);
 assert.match(settingsPhp, /ON DUPLICATE KEY UPDATE/);
 assert.match(bootstrap, /chat-settings-v237\.php/);
