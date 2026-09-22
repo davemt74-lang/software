@@ -13,6 +13,7 @@ client_release_rollouts_ensure_schema_v110($pdo);
 client_release_health_ensure_schema_v120($pdo);
 client_release_incident_ensure_schema_v130($pdo);
 client_release_risk_ensure_schema_v140($pdo);
+client_fleet_ensure_schema_v160($pdo);
 $adminUser=current_user();
 $adminUserId=(int)($adminUser['id']??0);
 $error = '';
@@ -23,6 +24,55 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } else {
         try {
             $action = (string)($_POST['action'] ?? '');
+
+            if (in_array($action,['fleet_policy_update','fleet_version_policy','fleet_compatibility_save','fleet_compatibility_delete','fleet_pin_set','fleet_pin_clear','fleet_upgrade_path_save','fleet_upgrade_path_delete','fleet_campaign_create','fleet_campaign_set','fleet_campaign_refresh'],true)) {
+                if($action==='fleet_policy_update'){
+                    client_fleet_policy_update_v160($pdo,(string)($_POST['product']??''),(string)($_POST['channel']??'stable'),$_POST,$adminUserId);
+                    flash('notice','Fleet support policy updated.');
+                }elseif($action==='fleet_version_policy'){
+                    client_fleet_version_policy_update_v160(
+                        $pdo,(string)($_POST['product']??''),(string)($_POST['channel']??'stable'),
+                        (string)($_POST['version']??''),$_POST,$adminUserId
+                    );
+                    flash('notice','Version support policy updated.');
+                }elseif($action==='fleet_compatibility_save'){
+                    client_fleet_compatibility_rule_save_v160($pdo,$_POST,$adminUserId);
+                    flash('notice','Compatibility rule saved.');
+                }elseif($action==='fleet_compatibility_delete'){
+                    client_fleet_compatibility_rule_delete_v160($pdo,max(0,(int)($_POST['rule_id']??0)),$adminUserId);
+                    flash('notice','Compatibility rule deleted.');
+                }elseif($action==='fleet_pin_set'){
+                    client_fleet_pin_set_v160(
+                        $pdo,max(0,(int)($_POST['user_id']??0)),(string)($_POST['product']??''),
+                        (string)($_POST['scope_key']??'account'),(string)($_POST['pinned_version']??''),
+                        (string)($_POST['reason']??''),(string)($_POST['expires_at']??''),$adminUserId
+                    );
+                    flash('notice','Temporary fleet version pin saved.');
+                }elseif($action==='fleet_pin_clear'){
+                    client_fleet_pin_clear_v160($pdo,max(0,(int)($_POST['pin_id']??0)),$adminUserId);
+                    flash('notice','Fleet version pin cleared.');
+                }elseif($action==='fleet_upgrade_path_save'){
+                    client_fleet_upgrade_path_save_v160($pdo,$_POST,$adminUserId);
+                    flash('notice','Fleet upgrade path saved.');
+                }elseif($action==='fleet_upgrade_path_delete'){
+                    client_fleet_upgrade_path_delete_v160($pdo,max(0,(int)($_POST['path_id']??0)),$adminUserId);
+                    flash('notice','Fleet upgrade path deleted.');
+                }elseif($action==='fleet_campaign_create'){
+                    $campaign=client_fleet_campaign_create_v160($pdo,$_POST,$adminUserId);
+                    flash('notice','Maintenance campaign created in draft state.');
+                }elseif($action==='fleet_campaign_set'){
+                    client_fleet_campaign_set_v160(
+                        $pdo,max(0,(int)($_POST['campaign_id']??0)),(string)($_POST['campaign_state']??'paused'),
+                        (int)($_POST['cohort_percent']??0),$adminUserId
+                    );
+                    flash('notice','Maintenance campaign updated. No forced installs were performed.');
+                }elseif($action==='fleet_campaign_refresh'){
+                    client_fleet_campaign_refresh_v160($pdo,max(0,(int)($_POST['campaign_id']??0)),$adminUserId);
+                    flash('notice','Maintenance campaign fleet state refreshed.');
+                }
+                if(function_exists('client_release_intelligence_reconcile_all_v100'))client_release_intelligence_reconcile_all_v100($pdo);
+                redirect(url('/admin/homeserver.php#fleet-maintenance'));
+            }
 
             if (in_array($action,['risk_profile_update','risk_policy_update','risk_assess','risk_review'],true)) {
                 $product=(string)($_POST['product']??'');
@@ -197,6 +247,13 @@ $healthDecisions=client_release_health_recent_decisions_v120($pdo,12);
 $releaseIncidents=client_release_incident_list_v130($pdo,30);
 $releaseRisk=client_release_risk_admin_summary_v140($pdo);
 $riskReviews=client_release_risk_recent_reviews_v140($pdo,16);
+$fleetState=client_fleet_summary_v160($pdo);
+$fleetInventory=(array)($fleetState['inventory']??['browser_companion'=>[],'homeserver'=>[]]);
+$fleetSummary=(array)($fleetState['summary']??[]);
+$fleetCompatibility=(array)($fleetState['compatibility']??[]);
+$fleetRecommendations=client_fleet_recommendations_v160($pdo,$fleetState);
+$fleetCompatibilityRules=client_fleet_compatibility_rules_v160($pdo);
+$fleetCampaigns=client_fleet_campaigns_v160($pdo,40);
 $rolloutAudit=client_release_audit_recent_v110($pdo,20);
 $adminTitle = 'Client Releases';
 $adminActive = 'homeserver';
@@ -226,6 +283,213 @@ require __DIR__ . '/_header.php';
       <tr><td><strong>HomeServer</strong></td><td><?= ($homeIntel['latest_version']??'')!==''?'v'.e((string)$homeIntel['latest_version']):'Not published' ?></td><td><?= (int)($homeIntel['paired_clients']??0) ?></td><td><?= (int)($homeIntel['current_clients']??0) ?></td><td><?= (int)($homeIntel['outdated_clients']??0) ?></td><td><?= (int)($homeIntel['unknown_clients']??0) ?></td><td><?= e((string)($homeIntel['channel']??'stable')) ?></td></tr>
     </tbody>
   </table></div>
+</section>
+
+<section class="admin-card" id="fleet-maintenance" style="margin-bottom:24px">
+  <div class="admin-card-head">
+    <div>
+      <h3>Fleet Maintenance &amp; Compatibility</h3>
+      <p>Keep Browser Companion and HomeServer clients current, supported, compatible, and recoverable over time. <strong>No forced installs:</strong> v1.60 classifies clients and controls which maintenance update may be offered; installation remains client/operator initiated.</p>
+    </div>
+    <span class="eyebrow">v1.60</span>
+  </div>
+
+  <div class="admin-table-wrap"><table class="admin-table">
+    <thead><tr><th>Fleet</th><th>Total</th><th>Current</th><th>Supported old</th><th>Maintenance</th><th>Deprecated</th><th>Unsupported</th><th>Stale</th><th>Pinned</th><th>Incident</th><th>Drift</th></tr></thead>
+    <tbody>
+    <?php foreach(['browser_companion'=>'Browser Companion','homeserver'=>'HomeServer'] as $fleetProduct=>$fleetLabel): $counts=(array)($fleetSummary[$fleetProduct]??[]); ?>
+      <tr>
+        <td><strong><?= e($fleetLabel) ?></strong></td>
+        <?php foreach(['total','current','supported','maintenance','deprecated','unsupported','stale','pinned','incident','drift'] as $metric): ?><td><?= (int)($counts[$metric]??0) ?></td><?php endforeach; ?>
+      </tr>
+    <?php endforeach; ?>
+    </tbody>
+  </table></div>
+
+  <?php if($fleetRecommendations): ?>
+    <div class="admin-card-head" style="margin-top:14px"><div><h3>Maintenance Recommendations</h3><p>Derived from support policy, fleet telemetry, drift, staleness, and cross-client compatibility. Recommendations never execute maintenance automatically.</p></div></div>
+    <div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>Severity</th><th>Area</th><th>Recommendation</th></tr></thead><tbody>
+      <?php foreach($fleetRecommendations as $recommendation): ?><tr><td><?= e(ucfirst((string)$recommendation['severity'])) ?></td><td><?= e((string)$recommendation['product']) ?></td><td><?= e((string)$recommendation['message']) ?></td></tr><?php endforeach; ?>
+    </tbody></table></div>
+  <?php else: ?>
+    <p style="margin-top:12px"><small>No fleet maintenance recommendations are currently open.</small></p>
+  <?php endif; ?>
+
+  <div class="admin-card-head" style="margin-top:18px"><div><h3>Support &amp; Maintenance Policy</h3><p>Set minimum supported versions, stale-client thresholds, UTC maintenance windows, default cohort sizes, and deprecation warning periods by channel.</p></div></div>
+  <?php foreach(['browser_companion'=>'Browser Companion','homeserver'=>'HomeServer'] as $fleetProduct=>$fleetLabel): ?>
+    <div class="admin-card-head" style="margin-top:12px"><div><strong><?= e($fleetLabel) ?></strong></div></div>
+    <div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>Channel</th><th>Policy</th></tr></thead><tbody>
+    <?php foreach(['stable','beta','dev'] as $fleetChannel): $fleetPolicy=client_fleet_policy_v160($pdo,$fleetProduct,$fleetChannel); ?>
+      <tr>
+        <td><strong><?= e(ucfirst($fleetChannel)) ?></strong><br><small><?= client_fleet_window_open_v160($fleetPolicy)?'Window open now':'Window closed now' ?> · UTC</small></td>
+        <td>
+          <form method="post" class="admin-form">
+            <?= csrf_field() ?><input type="hidden" name="action" value="fleet_policy_update"><input type="hidden" name="product" value="<?= e($fleetProduct) ?>"><input type="hidden" name="channel" value="<?= e($fleetChannel) ?>">
+            <div class="form-row">
+              <label>Minimum supported<input name="minimum_supported_version" maxlength="64" placeholder="e.g. 22.8.0" value="<?= e((string)$fleetPolicy['minimum_supported_version']) ?>"></label>
+              <label>Stale after hours<input type="number" name="stale_after_hours" min="24" max="8760" value="<?= (int)$fleetPolicy['stale_after_hours'] ?>"></label>
+              <label>Default cohort %<input type="number" name="default_cohort_percent" min="1" max="100" value="<?= (int)$fleetPolicy['default_cohort_percent'] ?>"></label>
+            </div>
+            <div class="form-row">
+              <label>Maintenance days (1=Mon)<input name="maintenance_days" maxlength="32" value="<?= e((string)$fleetPolicy['maintenance_days']) ?>"></label>
+              <label>Window start UTC<input type="time" name="maintenance_window_start" value="<?= e((string)$fleetPolicy['maintenance_window_start']) ?>"></label>
+              <label>Window end UTC<input type="time" name="maintenance_window_end" value="<?= e((string)$fleetPolicy['maintenance_window_end']) ?>"></label>
+              <label>Deprecation warning days<input type="number" name="deprecation_warning_days" min="0" max="365" value="<?= (int)$fleetPolicy['deprecation_warning_days'] ?>"></label>
+            </div>
+            <button class="button button-small" type="submit">Save fleet policy</button>
+          </form>
+        </td>
+      </tr>
+    <?php endforeach; ?>
+    </tbody></table></div>
+  <?php endforeach; ?>
+
+  <div class="admin-card-head" style="margin-top:18px"><div><h3>Version Support Lifecycle</h3><p>Explicit version policy overrides the channel minimum and supports Current → Supported → Maintenance → Deprecated → Unsupported lifecycle management.</p></div></div>
+  <?php foreach(['browser_companion'=>'Browser Companion','homeserver'=>'HomeServer'] as $fleetProduct=>$fleetLabel): ?>
+    <div class="admin-table-wrap" style="margin-top:10px"><table class="admin-table">
+      <thead><tr><th><?= e($fleetLabel) ?> release</th><th>Installed</th><th>Support policy</th></tr></thead><tbody>
+      <?php foreach(client_release_admin_rollouts_v110($pdo,$fleetProduct) as $fleetRelease):
+        $fv=(string)$fleetRelease['version'];$fc=(string)$fleetRelease['channel'];
+        $vp=client_fleet_version_policy_v160($pdo,$fleetProduct,$fc,$fv);
+        $installedCount=0;foreach((array)($fleetInventory[$fleetProduct]??[]) as $inventoryRow)if((string)$inventoryRow['installed_version']===$fv)$installedCount++;
+      ?>
+        <tr>
+          <td><strong>v<?= e($fv) ?></strong><br><small><?= e($fc) ?> · <?= e((string)($fleetRelease['_rollout']['lifecycle_state']??'draft')) ?></small></td>
+          <td><?= $installedCount ?></td>
+          <td>
+            <form method="post" class="admin-form">
+              <?= csrf_field() ?><input type="hidden" name="action" value="fleet_version_policy"><input type="hidden" name="product" value="<?= e($fleetProduct) ?>"><input type="hidden" name="channel" value="<?= e($fc) ?>"><input type="hidden" name="version" value="<?= e($fv) ?>">
+              <div class="form-row">
+                <label>Status<select name="support_status"><?php foreach(client_fleet_support_statuses_v160() as $supportStatus): ?><option value="<?= e($supportStatus) ?>" <?= (string)($vp['support_status']??'supported')===$supportStatus?'selected':'' ?>><?= e(ucfirst($supportStatus)) ?></option><?php endforeach; ?></select></label>
+                <label>Deprecated at<input type="datetime-local" name="deprecated_at" value="<?= !empty($vp['deprecated_at'])?e(str_replace(' ','T',substr((string)$vp['deprecated_at'],0,16))):'' ?>"></label>
+                <label>Unsupported at<input type="datetime-local" name="unsupported_at" value="<?= !empty($vp['unsupported_at'])?e(str_replace(' ','T',substr((string)$vp['unsupported_at'],0,16))):'' ?>"></label>
+              </div>
+              <label>Notes<input name="notes" maxlength="1000" value="<?= e((string)($vp['notes']??'')) ?>"></label>
+              <button class="button button-small" type="submit">Save version policy</button>
+            </form>
+          </td>
+        </tr>
+      <?php endforeach; ?>
+      </tbody>
+    </table></div>
+  <?php endforeach; ?>
+
+  <div class="admin-card-head" style="margin-top:18px"><div><h3>Browser ↔ HomeServer Compatibility</h3><p>Define explicit compatible, warning, or incompatible version ranges. The most restrictive matching active rule wins.</p></div></div>
+  <form method="post" class="admin-form">
+    <?= csrf_field() ?><input type="hidden" name="action" value="fleet_compatibility_save"><input type="hidden" name="is_active" value="1">
+    <div class="form-row">
+      <label>Browser min<input name="browser_min_version" maxlength="64"></label><label>Browser max<input name="browser_max_version" maxlength="64"></label>
+      <label>HomeServer min<input name="homeserver_min_version" maxlength="64"></label><label>HomeServer max<input name="homeserver_max_version" maxlength="64"></label>
+      <label>Status<select name="compatibility_status"><option value="compatible">Compatible</option><option value="warning">Warning</option><option value="incompatible">Incompatible</option></select></label>
+    </div>
+    <label>Notes<input name="notes" maxlength="1000" placeholder="Reason, prerequisite, or migration guidance"></label>
+    <button class="button button-small" type="submit">Add compatibility rule</button>
+  </form>
+  <?php if($fleetCompatibilityRules): ?><div class="admin-table-wrap" style="margin-top:10px"><table class="admin-table"><thead><tr><th>Browser range</th><th>HomeServer range</th><th>Status</th><th>Notes</th><th>Actions</th></tr></thead><tbody>
+    <?php foreach($fleetCompatibilityRules as $rule): ?><tr>
+      <td><?= e((string)($rule['browser_min_version']?:'any')) ?> → <?= e((string)($rule['browser_max_version']?:'any')) ?></td>
+      <td><?= e((string)($rule['homeserver_min_version']?:'any')) ?> → <?= e((string)($rule['homeserver_max_version']?:'any')) ?></td>
+      <td><?= e((string)$rule['compatibility_status']) ?><?= empty($rule['is_active'])?' · inactive':'' ?></td><td><?= e((string)$rule['notes']) ?></td>
+      <td>
+        <form method="post" class="admin-form"><?= csrf_field() ?><input type="hidden" name="action" value="fleet_compatibility_save"><input type="hidden" name="rule_id" value="<?= (int)$rule['id'] ?>">
+          <input type="hidden" name="browser_min_version" value="<?= e((string)$rule['browser_min_version']) ?>"><input type="hidden" name="browser_max_version" value="<?= e((string)$rule['browser_max_version']) ?>"><input type="hidden" name="homeserver_min_version" value="<?= e((string)$rule['homeserver_min_version']) ?>"><input type="hidden" name="homeserver_max_version" value="<?= e((string)$rule['homeserver_max_version']) ?>"><input type="hidden" name="compatibility_status" value="<?= e((string)$rule['compatibility_status']) ?>"><input type="hidden" name="notes" value="<?= e((string)$rule['notes']) ?>"><label><input type="checkbox" name="is_active" value="1" <?= !empty($rule['is_active'])?'checked':'' ?>> Active</label><button class="button button-small" type="submit">Update</button>
+        </form>
+        <form method="post" onsubmit="return confirm('Delete this compatibility rule?');"><?= csrf_field() ?><input type="hidden" name="action" value="fleet_compatibility_delete"><input type="hidden" name="rule_id" value="<?= (int)$rule['id'] ?>"><button class="button button-small" type="submit">Delete</button></form>
+      </td>
+    </tr><?php endforeach; ?>
+  </tbody></table></div><?php endif; ?>
+
+  <?php $compatCounts=(array)($fleetCompatibility['counts']??[]); ?>
+  <p style="margin-top:10px"><small>Observed account pairs: <?= array_sum(array_map('intval',$compatCounts)) ?> · compatible <?= (int)($compatCounts['compatible']??0) ?> · warnings <?= (int)($compatCounts['warning']??0) ?> · incompatible <?= (int)($compatCounts['incompatible']??0) ?> · unknown <?= (int)($compatCounts['unknown']??0) ?></small></p>
+
+  <div class="admin-card-head" style="margin-top:18px"><div><h3>Upgrade Paths</h3><p>Define optional intermediate releases for clients that cannot safely move directly to a final GA maintenance target.</p></div></div>
+  <?php foreach(['browser_companion'=>'Browser Companion','homeserver'=>'HomeServer'] as $fleetProduct=>$fleetLabel): ?>
+    <?php $fleetReleases=client_release_admin_rollouts_v110($pdo,$fleetProduct); ?>
+    <form method="post" class="admin-form" style="margin-top:10px">
+      <?= csrf_field() ?><input type="hidden" name="action" value="fleet_upgrade_path_save"><input type="hidden" name="product" value="<?= e($fleetProduct) ?>"><input type="hidden" name="is_active" value="1">
+      <strong><?= e($fleetLabel) ?></strong>
+      <div class="form-row">
+        <label>Channel<select name="channel"><?php foreach(['stable','beta','dev'] as $ch): ?><option value="<?= e($ch) ?>"><?= e(ucfirst($ch)) ?></option><?php endforeach; ?></select></label>
+        <label>From min<input name="from_min_version" maxlength="64"></label><label>From max<input name="from_max_version" maxlength="64"></label>
+        <label>Final target<select name="target_release_id"><?php foreach($fleetReleases as $rr): ?><option value="<?= (int)$rr['id'] ?>">v<?= e((string)$rr['version']) ?> · <?= e((string)$rr['channel']) ?></option><?php endforeach; ?></select></label>
+        <label>Intermediate<select name="intermediate_release_id"><option value="0">None</option><?php foreach($fleetReleases as $rr): ?><option value="<?= (int)$rr['id'] ?>">v<?= e((string)$rr['version']) ?> · <?= e((string)$rr['channel']) ?></option><?php endforeach; ?></select></label>
+      </div>
+      <label>Notes<input name="notes" maxlength="1000"></label>
+      <button class="button button-small" type="submit">Add upgrade path</button>
+    </form>
+    <?php foreach(['stable','beta','dev'] as $ch): $paths=client_fleet_upgrade_paths_v160($pdo,$fleetProduct,$ch); if(!$paths)continue; ?>
+      <div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>Channel</th><th>From</th><th>Final</th><th>Intermediate</th><th>Notes</th><th></th></tr></thead><tbody>
+      <?php foreach($paths as $path): $target=client_release_release_row_v110($pdo,$fleetProduct,(int)$path['target_release_id']);$mid=(int)($path['intermediate_release_id']??0)>0?client_release_release_row_v110($pdo,$fleetProduct,(int)$path['intermediate_release_id']):null; ?>
+        <tr><td><?= e($ch) ?></td><td><?= e((string)($path['from_min_version']?:'any')) ?> → <?= e((string)($path['from_max_version']?:'any')) ?></td><td><?= $target?'v'.e((string)$target['version']):'#'.(int)$path['target_release_id'] ?></td><td><?= $mid?'v'.e((string)$mid['version']):'Direct' ?></td><td><?= e((string)$path['notes']) ?></td><td><form method="post" onsubmit="return confirm('Delete this upgrade path?');"><?= csrf_field() ?><input type="hidden" name="action" value="fleet_upgrade_path_delete"><input type="hidden" name="path_id" value="<?= (int)$path['id'] ?>"><button class="button button-small" type="submit">Delete</button></form></td></tr>
+      <?php endforeach; ?></tbody></table></div>
+    <?php endforeach; ?>
+  <?php endforeach; ?>
+
+  <div class="admin-card-head" style="margin-top:18px"><div><h3>Maintenance Campaigns</h3><p>Create explicit maintenance cohorts from the current fleet. v1.40 risk limits the maximum active cohort; active incidents and pinned clients are excluded.</p></div></div>
+  <?php foreach(['browser_companion'=>'Browser Companion','homeserver'=>'HomeServer'] as $fleetProduct=>$fleetLabel): $fleetReleases=client_release_admin_rollouts_v110($pdo,$fleetProduct); ?>
+    <form method="post" class="admin-form" style="margin-top:10px">
+      <?= csrf_field() ?><input type="hidden" name="action" value="fleet_campaign_create"><input type="hidden" name="product" value="<?= e($fleetProduct) ?>">
+      <strong><?= e($fleetLabel) ?></strong>
+      <div class="form-row">
+        <label>Title<input name="title" maxlength="180" placeholder="Optional campaign name"></label>
+        <label>Channel<select name="channel"><?php foreach(['stable','beta','dev'] as $ch): ?><option value="<?= e($ch) ?>"><?= e(ucfirst($ch)) ?></option><?php endforeach; ?></select></label>
+        <label>GA target<select name="target_release_id"><?php foreach($fleetReleases as $rr): ?><option value="<?= (int)$rr['id'] ?>">v<?= e((string)$rr['version']) ?> · <?= e((string)$rr['channel']) ?> · <?= e((string)($rr['_rollout']['lifecycle_state']??'draft')) ?></option><?php endforeach; ?></select></label>
+        <label>Eligibility<select name="eligibility_mode"><option value="outdated">Outdated</option><option value="unsupported">Unsupported</option><option value="deprecated">Deprecated + unsupported</option><option value="maintenance">Maintenance/deprecated/unsupported</option><option value="all_supported_old">All older supported</option><option value="stale">Stale</option></select></label>
+        <label><input type="checkbox" name="window_enforced" value="1" checked> Enforce maintenance window</label>
+      </div>
+      <button class="button button-small" type="submit">Create draft campaign</button>
+    </form>
+  <?php endforeach; ?>
+
+  <?php if($fleetCampaigns): ?><div class="admin-table-wrap" style="margin-top:10px"><table class="admin-table"><thead><tr><th>Campaign</th><th>Target</th><th>Fleet</th><th>Risk cap</th><th>Control</th></tr></thead><tbody>
+    <?php foreach($fleetCampaigns as $campaign): $cs=(array)$campaign['_stats'];$target=(array)($campaign['_target_release']??[]);$maxCohort=client_fleet_max_cohort_for_target_v160($pdo,(string)$campaign['product'],(int)$campaign['target_release_id']); ?>
+      <tr>
+        <td><strong>#<?= (int)$campaign['id'] ?> · <?= e((string)$campaign['title']) ?></strong><br><small><?= e((string)$campaign['product']) ?> · <?= e((string)$campaign['channel']) ?> · <?= e((string)$campaign['campaign_state']) ?> · <?= (int)$campaign['cohort_percent'] ?>%</small></td>
+        <td><?= $target?'v'.e((string)$target['version']):'#'.(int)$campaign['target_release_id'] ?><br><small><?= e((string)$campaign['eligibility_mode']) ?><?= !empty($campaign['window_enforced'])?' · window enforced':'' ?></small></td>
+        <td><small><?= (int)$cs['total'] ?> total · <?= (int)$cs['queued'] ?> queued · <?= (int)$cs['offered'] ?> offered · <?= (int)$cs['downloaded'] ?> downloaded · <?= (int)$cs['installed'] ?> installed · <?= (int)$cs['failed'] ?> failed · <?= (int)$cs['offline'] ?> offline · <?= (int)$cs['excluded'] ?> excluded</small></td>
+        <td><?= $maxCohort ?>%</td>
+        <td>
+          <form method="post" class="admin-form"><?= csrf_field() ?><input type="hidden" name="action" value="fleet_campaign_set"><input type="hidden" name="campaign_id" value="<?= (int)$campaign['id'] ?>">
+            <div class="form-row"><label>State<select name="campaign_state"><?php foreach(['draft','active','paused','completed','cancelled'] as $st): ?><option value="<?= e($st) ?>" <?= (string)$campaign['campaign_state']===$st?'selected':'' ?>><?= e(ucfirst($st)) ?></option><?php endforeach; ?></select></label><label>Cohort %<input type="number" name="cohort_percent" min="0" max="100" value="<?= (int)$campaign['cohort_percent'] ?>"></label></div>
+            <button class="button button-small" type="submit">Apply campaign</button>
+          </form>
+          <form method="post" style="margin-top:6px"><?= csrf_field() ?><input type="hidden" name="action" value="fleet_campaign_refresh"><input type="hidden" name="campaign_id" value="<?= (int)$campaign['id'] ?>"><button class="button button-small" type="submit">Refresh fleet state</button></form>
+        </td>
+      </tr>
+    <?php endforeach; ?>
+  </tbody></table></div><?php endif; ?>
+
+  <div class="admin-card-head" style="margin-top:18px"><div><h3>Fleet Inventory &amp; Exceptions</h3><p>Version, channel, support status, staleness, drift, incident state, and temporary version pins. Inventory display is capped at 100 clients per product.</p></div></div>
+  <?php foreach(['browser_companion'=>'Browser Companion','homeserver'=>'HomeServer'] as $fleetProduct=>$fleetLabel): ?>
+    <div class="admin-table-wrap" style="margin-top:10px"><table class="admin-table"><thead><tr><th><?= e($fleetLabel) ?></th><th>Installed</th><th>Support</th><th>State</th><th>Temporary pin</th></tr></thead><tbody>
+    <?php foreach(array_slice((array)($fleetInventory[$fleetProduct]??[]),0,100) as $client): $pin=is_array($client['pinned']??null)?$client['pinned']:null; ?>
+      <tr>
+        <td><strong>#<?= (int)$client['user_id'] ?> · <?= e((string)$client['name']) ?></strong><br><small><?= e((string)$client['scope_key']) ?> · <?= e((string)$client['channel']) ?></small></td>
+        <td>v<?= e((string)$client['installed_version']) ?><br><small>Latest <?= e((string)$client['latest_version']) ?></small></td>
+        <td><strong><?= e(ucfirst((string)$client['support_status'])) ?></strong><br><small><?= e((string)$client['support_reason']) ?></small></td>
+        <td><small><?= !empty($client['stale'])?'Stale · ':'' ?><?= !empty($client['drift'])?'Drift · ':'' ?><?= !empty($client['incident'])?'Incident-controlled · ':'' ?>Last seen <?= e((string)($client['last_seen_at']??'unknown')) ?></small></td>
+        <td>
+          <?php if($pin): ?><strong>v<?= e((string)$pin['pinned_version']) ?></strong><br><small><?= e((string)$pin['reason']) ?><?= !empty($pin['expires_at'])?' · until '.e((string)$pin['expires_at']):'' ?></small><form method="post" style="margin-top:6px"><?= csrf_field() ?><input type="hidden" name="action" value="fleet_pin_clear"><input type="hidden" name="pin_id" value="<?= (int)$pin['id'] ?>"><button class="button button-small" type="submit">Clear pin</button></form>
+          <?php else: ?>
+            <form method="post" class="admin-form"><?= csrf_field() ?><input type="hidden" name="action" value="fleet_pin_set"><input type="hidden" name="product" value="<?= e($fleetProduct) ?>"><input type="hidden" name="user_id" value="<?= (int)$client['user_id'] ?>"><input type="hidden" name="scope_key" value="<?= e((string)$client['scope_key']) ?>">
+              <label>Version<input name="pinned_version" maxlength="64" required placeholder="Published version"></label><label>Reason<input name="reason" maxlength="500" required></label><label>Expires<input type="datetime-local" name="expires_at"></label><button class="button button-small" type="submit">Pin version</button>
+            </form>
+          <?php endif; ?>
+        </td>
+      </tr>
+    <?php endforeach; ?>
+    <?php if(empty($fleetInventory[$fleetProduct])): ?><tr><td colspan="5">No connected clients.</td></tr><?php endif; ?>
+    </tbody></table></div>
+  <?php endforeach; ?>
+
+  <?php $compatRows=array_slice((array)($fleetCompatibility['rows']??[]),0,50); if($compatRows): ?>
+    <div class="admin-card-head" style="margin-top:18px"><div><h3>Observed Compatibility Pairs</h3><p>Up to 50 Browser Companion ↔ HomeServer pairs for accounts with both clients connected.</p></div></div>
+    <div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>Account</th><th>Browser</th><th>HomeServer</th><th>Compatibility</th></tr></thead><tbody>
+    <?php foreach($compatRows as $pair): $compat=(array)$pair['compatibility']; ?>
+      <tr><td>#<?= (int)$pair['user_id'] ?></td><td>v<?= e((string)$pair['browser']['installed_version']) ?></td><td>v<?= e((string)$pair['homeserver']['installed_version']) ?></td><td><strong><?= e(ucfirst((string)$compat['status'])) ?></strong><br><small><?= e((string)$compat['notes']) ?></small></td></tr>
+    <?php endforeach; ?>
+    </tbody></table></div>
+  <?php endif; ?>
 </section>
 
 <section class="admin-card" id="release-risk" style="margin-bottom:24px">

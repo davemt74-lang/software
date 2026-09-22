@@ -92,7 +92,7 @@ assert.ok(admin.includes('risk_review'));
 assert.ok(admin.includes('Advisory only'));
 assert.ok(admin.includes('Historical learning'));
 
-assert.match(workflow,/Client Release Operations v1\.40/);
+assert.match(workflow,/Client Release Operations v1\.(?:40|60)/);
 assert.ok(workflow.includes('client-release-risk-v140.php'));
 assert.ok(workflow.includes('client-release-risk-v140.mjs'));
 assert.ok(recovery.includes('client-release-risk-v140.mjs'));

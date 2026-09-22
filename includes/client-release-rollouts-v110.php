@@ -8,6 +8,12 @@ function client_release_product_valid_v110(string $product): bool
     return in_array($product, ['browser_companion','homeserver'], true);
 }
 
+function client_release_channel_v110(string $channel): string
+{
+    $channel=strtolower(trim($channel));
+    return in_array($channel,['stable','beta','dev'],true)?$channel:'stable';
+}
+
 function client_release_lifecycle_states_v110(): array
 {
     return ['draft','testing','canary','limited','general_availability','paused','superseded','withdrawn'];
@@ -338,10 +344,22 @@ function client_release_applicable_release_v110(PDO $pdo,string $product,string 
         $recovery=client_release_recovery_applicable_release_v130($pdo,$product,$channel,$userId,$scopeKey);
         if($recovery)return $recovery;
     }
+    if(function_exists('client_fleet_pin_applicable_release_v160')){
+        $pin=client_fleet_pin_applicable_release_v160($pdo,$product,$channel,$userId,$scopeKey);
+        if($pin)return $pin;
+    }
+    if(function_exists('client_fleet_maintenance_applicable_release_v160')){
+        $maintenance=client_fleet_maintenance_applicable_release_v160($pdo,$product,$channel,$userId,$scopeKey);
+        if($maintenance)return $maintenance;
+        if(function_exists('client_fleet_maintenance_governs_scope_v160')
+            &&client_fleet_maintenance_governs_scope_v160($pdo,$product,$channel,$userId,$scopeKey))return null;
+    }
     foreach(client_release_release_candidates_v110($pdo,$product,$channel) as $release){
         $rollout=client_release_rollout_for_v110($pdo,$product,(int)$release['id'],$release);
         $bucket=client_release_cohort_bucket_v110($product,(int)$release['id'],$userId,$scopeKey);
         if(client_release_rollout_eligible_v110($rollout,$bucket)){
+            if(function_exists('client_fleet_release_compatible_for_scope_v160')
+                &&!client_fleet_release_compatible_for_scope_v160($pdo,$product,$userId,$scopeKey,$release))continue;
             $release['_rollout']=$rollout;
             $release['_cohort_bucket']=$bucket;
             return $release;
@@ -405,7 +423,8 @@ function client_release_sync_update_state_v110(PDO $pdo,int $userId,string $prod
     $version=(string)($release['version']??'');
     $versionState=function_exists('client_release_version_state_v100')?client_release_version_state_v100($installed,$version):'unknown';
     $isIncidentRecovery=!empty($release['_incident_id']);
-    if($isIncidentRecovery&&$installed!==''&&$version!==''&&$installed!==$version)$versionState='update_available';
+    $isFleetOverride=!empty($release['_fleet_override']);
+    if(($isIncidentRecovery||$isFleetOverride)&&$installed!==''&&$version!==''&&$installed!==$version)$versionState='update_available';
     $schemaReady=client_release_rollouts_schema_ready_v110($pdo);
     $current=$schemaReady?client_release_update_state_v110($pdo,$userId,$product,$scopeKey,$releaseId):null;
     if(in_array($versionState,['current','ahead'],true)){
@@ -443,6 +462,9 @@ function client_release_browser_snapshot_v110(PDO $pdo,int $userId): array
         $channel=client_release_channel_for_v110($pdo,$userId,'browser_companion',$scope);
         $release=$isActive?client_release_applicable_release_v110($pdo,'browser_companion',$channel,$userId,$scope):null;
         $installed=trim((string)($device['extension_version']??''));
+        $fleet=function_exists('client_fleet_client_state_v160')
+            ?client_fleet_client_state_v160($pdo,$userId,'browser_companion',$scope,$installed,$device['last_used_at']??null)
+            :[];
         $sync=$release?client_release_sync_update_state_v110($pdo,$userId,'browser_companion',$scope,$release,$installed):['version_state'=>'unavailable','update_state'=>'unavailable','deferred'=>false,'defer_until'=>null];
         $available=$isActive&&$release&&$sync['version_state']==='update_available';
         if($available)$updates++;
@@ -472,6 +494,12 @@ function client_release_browser_snapshot_v110(PDO $pdo,int $userId): array
             'compatibility_notes'=>(string)($rollout['compatibility_notes']??''),
             'status'=>(string)($device['device_status']??''),
             'last_used_at'=>$device['last_used_at']??null,
+            'support_status'=>(string)($fleet['support_status']??'unknown'),
+            'support_reason'=>(string)($fleet['support_reason']??''),
+            'stale'=>(bool)($fleet['stale']??false),
+            'maintenance_pin'=>$fleet['pin']??null,
+            'incident_controlled'=>(bool)($fleet['incident']??false),
+            'maintenance_campaign_id'=>(int)($release['_fleet_campaign_id']??0),
         ];
     }
     $public=client_release_public_release_v110($pdo,'browser_companion','stable');
@@ -491,6 +519,9 @@ function client_release_homeserver_snapshot_v110(PDO $pdo,int $userId): array
     $paired=!empty($connection['homeserver_token_enc']);
     $release=$paired?client_release_applicable_release_v110($pdo,'homeserver',$channel,$userId,$scope):null;
     $installed=trim((string)($connection['installed_version']??''));
+    $fleet=function_exists('client_fleet_client_state_v160')
+        ?client_fleet_client_state_v160($pdo,$userId,'homeserver',$scope,$installed,$connection['last_seen_at']??null)
+        :[];
     $sync=$release?client_release_sync_update_state_v110($pdo,$userId,'homeserver',$scope,$release,$installed):['version_state'=>'unavailable','update_state'=>'unavailable','deferred'=>false,'defer_until'=>null];
     $available=$paired&&$release&&$sync['version_state']==='update_available';
     $rollout=is_array($release['_rollout']??null)?$release['_rollout']:[];
@@ -512,6 +543,12 @@ function client_release_homeserver_snapshot_v110(PDO $pdo,int $userId): array
         'update_available'=>$available,'attention_required'=>$available&&!$sync['deferred'],
         'paired'=>$paired,'connection_state'=>strtolower(trim((string)($connection['status']??'unpaired'))),
         'last_seen_at'=>$connection['last_seen_at']??null,
+        'support_status'=>(string)($fleet['support_status']??'unknown'),
+        'support_reason'=>(string)($fleet['support_reason']??''),
+        'stale'=>(bool)($fleet['stale']??false),
+        'maintenance_pin'=>$fleet['pin']??null,
+        'incident_controlled'=>(bool)($fleet['incident']??false),
+        'maintenance_campaign_id'=>(int)($release['_fleet_campaign_id']??0),
         'summary'=>(string)($rollout['summary']??''),'known_issues'=>(string)($rollout['known_issues']??''),
         'compatibility_notes'=>(string)($rollout['compatibility_notes']??''),
         'manage_url'=>url('/settings-homeserver.php')
