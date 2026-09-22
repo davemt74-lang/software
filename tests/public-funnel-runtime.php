@@ -93,8 +93,6 @@ $_SESSION = [];
 vp3_funnel_capture(['source'=>'teams']);
 expect((vp3_funnel_feature_interests(vp3_funnel_intent())['team_seats'] ?? false) === true, 'teams should map to team-seat interest');
 
-fwrite(STDOUT, "public funnel runtime: PASS\n");
-
 $_SESSION = [];
 vp3_funnel_capture(['source'=>'annotations','origin'=>'index']);
 $annotationInterests=vp3_funnel_feature_interests(vp3_funnel_intent());
@@ -106,3 +104,5 @@ vp3_funnel_capture(['source'=>'video-meetings','origin'=>'index']);
 $meetingInterests=vp3_funnel_feature_interests(vp3_funnel_intent());
 expect(($meetingInterests['main_ai.access']??false)===true, 'meetings should map to main AI interest');
 expect(($meetingInterests['transcription.access']??false)===true, 'meetings should map to transcription interest');
+
+fwrite(STDOUT, "public funnel runtime: PASS\n");
