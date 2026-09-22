@@ -104,6 +104,58 @@ function ai_master_key(bool $create = false): ?string
     return $cached;
 }
 
+function ai_master_key_state(): string
+{
+    $path = ai_master_key_file();
+    if (!is_file($path)) {
+        return 'missing_key';
+    }
+    if (!is_readable($path)) {
+        return 'unreadable_key';
+    }
+
+    $key = ai_master_key(false);
+    return is_string($key) && strlen($key) === 32 ? 'ready' : 'invalid_key';
+}
+
+function ai_encrypted_secret_state(string $encrypted): string
+{
+    $encrypted = trim($encrypted);
+    if ($encrypted === '') {
+        return 'empty';
+    }
+
+    $keyState = ai_master_key_state();
+    if ($keyState !== 'ready') {
+        return $keyState;
+    }
+
+    if (str_starts_with($encrypted, 'sbx1:') && !function_exists('sodium_crypto_secretbox_open')) {
+        return 'crypto_unavailable';
+    }
+    if (str_starts_with($encrypted, 'gcm1:') && !function_exists('openssl_decrypt')) {
+        return 'crypto_unavailable';
+    }
+    if (!str_starts_with($encrypted, 'sbx1:') && !str_starts_with($encrypted, 'gcm1:')) {
+        return 'unsupported_format';
+    }
+
+    return ai_decrypt_secret($encrypted) !== '' ? 'ready' : 'key_mismatch';
+}
+
+function ai_credential_state_message(string $state, string $label = 'AI'): string
+{
+    return match ($state) {
+        'missing_key' => 'The local AI credential encryption key is missing. Restore /private/ai-key.php from the previous installation or backup before replacing saved credentials.',
+        'unreadable_key' => 'The local AI credential encryption key exists but PHP cannot read it. Restore readable permissions on /private/ai-key.php.',
+        'invalid_key' => 'The local AI credential encryption key is invalid. Restore the original /private/ai-key.php from the previous installation or backup.',
+        'crypto_unavailable' => 'This server is missing the crypto extension required to decrypt the saved ' . $label . ' credential.',
+        'unsupported_format' => 'The saved ' . $label . ' credential uses an unsupported encrypted format.',
+        'key_mismatch' => 'The saved ' . $label . ' credential was encrypted with a different local key. Restore the original /private/ai-key.php or, if it cannot be recovered, re-enter all saved AI provider credentials.',
+        default => '',
+    };
+}
+
 function ai_encrypt_secret(string $plaintext): string
 {
     $plaintext = trim($plaintext);
