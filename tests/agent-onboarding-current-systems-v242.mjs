@@ -14,6 +14,8 @@ const settingsApi=read('api/chat-settings-v237.php');
 const settingsUi=read('chat-settings-v237.js');
 const memberNav=read('includes/member-navigation.php');
 const memberVoice=read('member-agent-voice-menu.js');
+const memberMenu=read('includes/member-user-menu.php');
+const notificationSettings=read('notification-settings.php');
 const chatVoice=read('chat-voice.js');
 const notificationVoice=read('chat-notifications-drawer-v240.js');
 const cognitive=read('includes/cognitive-presentation-v510.php');
@@ -71,6 +73,11 @@ assert.match(chatVoice,/ensureAgentVoiceMaster/);
 assert.match(chatVoice,/save_agent_voice/);
 assert.match(chatVoice,/stonefellow:agent-voice/);
 assert.match(chatVoice,/if\(!enabled&&voiceOn\)disableVoice/,'master off must stop active Voice Conversation');
+assert.match(memberMenu,/data-user-id=/,'header voice sync must be scoped to the signed-in user');
+assert.match(memberVoice,/vp3:agent-voice-sync:/,'header must publish user-scoped cross-tab voice state');
+assert.match(memberVoice,/publishAgentVoice/,'header must broadcast canonical voice changes');
+assert.match(chatVoice,/AGENT_VOICE_SYNC_KEY/,'Chat voice must observe cross-tab Agent Voice shutdown');
+assert.match(chatVoice,/sync\?\.enabled===false[\s\S]*disableVoice/,'cross-tab signal may revoke listening immediately');
 assert.match(chatVoice,/if\(!agentVoiceMaster\)/,'Voice Conversation must fail closed when master is off');
 
 assert.match(notificationVoice,/if \(wasVoice\) \{[\s\S]*setVoiceMode\(true\)/,'notification speech may only restore an already-active mic session');
@@ -78,6 +85,9 @@ assert.doesNotMatch(notificationVoice,/responseTemporaryVoice/,'notification spe
 assert.doesNotMatch(notificationVoice,/setVoiceMode\(true\)[\s\S]{0,240}responseWindowActive = true/,'notification speech must not open a fresh listening window');
 
 assert.match(settingsUi,/Master switch for spoken Agent responses and notification announcements/);
+assert.match(notificationSettings,/name="agent_voice_enabled"/,'Notification Settings must expose the canonical Agent Voice master');
+assert.match(notificationSettings,/does not turn on your microphone/,'Notification Settings must distinguish speech from microphone listening');
+assert.match(notificationSettings,/chat_settings_save_agent_voice_v237/,'Notification Settings must save through the canonical voice authority');
 assert.match(memberVoice,/Master switch for spoken Agent responses and notification announcements/);
 assert.match(ui,/Turn on Agent Voice/);
 assert.match(ui,/Voice Conversation and spoken notifications stay off/);
