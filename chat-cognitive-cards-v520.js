@@ -18,7 +18,7 @@
     meeting:'◷',meeting_brief:'◷',meeting_summary:'◷',meeting_followup:'◷',
     workflow:'W',goal:'G',commitment:'✓',opportunity:'↗',risk:'!',decision:'D',
     knowledge:'K',live_room:'L',homeserver:'H',browser_companion:'B',
-    brain_priority:'P',feed_activity:'•',proactive_plan:'→',orchestration_run:'↻',memory_thread:'⌁'
+    brain_priority:'P',feed_activity:'•',onboarding_setup:'→',proactive_plan:'→',orchestration_run:'↻',memory_thread:'⌁'
   };
 
   function el(tag,className,textValue) {
