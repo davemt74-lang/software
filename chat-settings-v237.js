@@ -274,7 +274,7 @@
         profileAgent = profileResponse.profile_agent || profileAgent;
       }
 
-      state = { ok:true, chat:chatResponse.chat, profile_agent:profileAgent };
+      state = { ok:true, agent_voice_allowed:chatResponse.agent_voice_allowed ?? state?.agent_voice_allowed ?? false, chat:chatResponse.chat, profile_agent:profileAgent };
       renderState();
       setStatus('Chat settings saved.', 'success');
       window.setTimeout(closeModal, 450);
@@ -298,7 +298,7 @@
     const requested = Boolean(toggle.checked);
     try {
       const response = await request('save_agent_voice', {agent_voice_enabled:requested});
-      state = {...(state || {}), ok:true, chat:response.chat || state?.chat || {}};
+      state = {...(state || {}), ok:true, agent_voice_allowed:response.agent_voice_allowed ?? state?.agent_voice_allowed ?? false, chat:response.chat || state?.chat || {}};
       applyRuntimeSettings(response.chat || {agent_voice_enabled:requested});
     } catch (error) {
       applyAgentVoice(!requested);
