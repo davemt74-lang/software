@@ -2,7 +2,7 @@
 declare(strict_types=1);
 
 $runtimeBuild = 'conversation-integration-v131-20260826';
-$controlBuild = 'chat-footer-runtime-v245-20260922';
+$controlBuild = 'chat-footer-runtime-v2451-20260922';
 $premiumVoiceBuild = 'premium-voice-agent-routing-v244-20260922';
 $voiceAssetBuild = 'chat-voice-proactive-v244-20260922';
 $voiceCacheBuild = 'chat-voice-proactive-v244-20260922-stop-control1';
@@ -20,7 +20,7 @@ $notificationDrawerBuild = 'chat-notifications-proactive-v244-20260922';
 $activityBuild = 'agent-activity-v94-canonical-runtime-20260907';
 $brainLearningBuild = 'brain-learning-history-v317-20260907-pr81-hotfix1';
 $agentIntelligenceBuild = 'agent-chat-intelligence-v171-20260914';
-$cognitivePresentationBuild = 'cognitive-presentation-footer-v245-20260922';
+$cognitivePresentationBuild = 'cognitive-presentation-footer-v2451-20260922';
 $cognitiveCardsBuild = 'cognitive-cards-v520-20260918';
 $cognitiveFeedBuild = 'cognitive-feed-v530-20260918';
 $cognitiveLearningBuild = 'cognitive-learning-v540-20260918';
@@ -257,7 +257,7 @@ $cognitiveBriefMarkup = <<<'HTML'
     <div><small>Agent Brief</small><strong>Your Agent status and priorities</strong></div>
     <button class="chat-agent-brief-close" type="button" data-agent-brief-close aria-label="Close Agent Brief">×</button>
   </header>
-  <div class="chat-agent-brief-body" data-agent-brief-content>
+  <div class="chat-agent-brief-body" data-agent-brief-content aria-live="polite" aria-busy="true">
     <div class="chat-agent-brief-status"><span><i class="chat-agent-brief-dot"></i>Agent</span><small>Loading…</small></div>
   </div>
   <footer class="chat-agent-brief-footer">
