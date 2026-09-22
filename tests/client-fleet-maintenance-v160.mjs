@@ -66,6 +66,7 @@ const campaignPos=applicable.indexOf('client_fleet_maintenance_applicable_releas
 assert.ok(recoveryPos>=0&&pinPos>recoveryPos&&campaignPos>pinPos,'release priority must remain incident recovery → pin → maintenance → normal rollout');
 
 assert.ok(rollouts.includes("$isFleetOverride=!empty($release['_fleet_override'])"));
+assert.ok(rollouts.includes('client_fleet_maintenance_governs_scope_v160'),'maintenance campaign must block normal GA fallback while governing a member');
 assert.ok(rollouts.includes("'support_status'"));
 assert.ok(rollouts.includes("'maintenance_campaign_id'"));
 
@@ -92,6 +93,9 @@ assert.ok(campaignSet.includes('client_fleet_max_cohort_for_target_v160'));
 assert.ok(campaignSet.includes('Risk policy limits this maintenance target'));
 
 assert.match(fleet,/client_fleet_upgrade_plan_v160/);
+assert.match(fleet,/client_fleet_target_compatibility_v160/,'maintenance targeting must re-check Browser Companion ↔ HomeServer compatibility');
+assert.match(fleet,/client_fleet_recommendations_v160/);
+assert.ok(fleet.includes('Maintenance campaign cannot be completed until every member is installed or explicitly excluded.'));
 assert.ok(fleet.includes('intermediate_release_id'));
 assert.ok(fleet.includes('General Availability final target'));
 assert.ok(fleet.includes('maintenance_window_start'));
@@ -117,6 +121,8 @@ assert.ok(admin.includes('fleet_campaign_create'));
 assert.ok(admin.includes('fleet_campaign_set'));
 assert.ok(admin.includes('fleet_campaign_refresh'));
 assert.ok(admin.includes('No forced installs'));
+assert.ok(admin.includes('Maintenance Recommendations'));
+assert.ok(admin.includes('Browser ↔ HomeServer Compatibility'));
 
 assert.match(workflow,/Client Release Operations v1\.60/);
 assert.ok(workflow.includes('client-fleet-maintenance-v160.php'));
