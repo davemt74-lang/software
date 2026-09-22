@@ -49,6 +49,7 @@ assert.ok(incidents.includes('recovery_bucket'));
 assert.ok(incidents.includes('recovery_rate_bps'));
 assert.ok(incidents.includes('recovery_failure_rate_bps'));
 assert.ok(incidents.includes('verification_hours'));
+assert.ok(incidents.includes('monitoring_started_at'));
 assert.ok(incidents.includes('root_cause'));
 assert.ok(incidents.includes('resolution_summary'));
 assert.ok(incidents.includes('lessons_learned'));
@@ -87,6 +88,7 @@ assert.ok(closure.includes('recovery_percent'));
 assert.ok(closure.includes('min_recovery_rate_bps'));
 assert.ok(closure.includes('max_recovery_failure_rate_bps'));
 assert.ok(closure.includes('verification_hours'));
+assert.ok(closure.includes('monitoring_started_at'));
 assert.ok(closure.includes('Every remaining recovery exception'));
 
 const resolveStart=incidents.indexOf('function client_release_incident_resolve_v130');
