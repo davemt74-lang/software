@@ -166,14 +166,14 @@ function client_release_rollouts_seed_v110(PDO $pdo): void
         if(!client_release_table_ready_v110($pdo,$table))continue;
         $rows=$pdo->query("SELECT id,is_published,is_latest,created_by_user_id FROM {$table} ORDER BY id")->fetchAll();
         $stmt=$pdo->prepare("INSERT IGNORE INTO client_release_rollouts_v110
-            (product,release_id,lifecycle_state,rollout_percent,created_by_user_id,updated_by_user_id)
-            VALUES (?,?,?,?,?,?)");
+            (product,release_id,lifecycle_state,rollout_percent,summary,known_issues,compatibility_notes,created_by_user_id,updated_by_user_id)
+            VALUES (?,?,?,?,?,?,?,?,?)");
         foreach($rows?:[] as $row){
             $synthetic=client_release_synthetic_rollout_v110($row);
             $creator=(int)($row['created_by_user_id']??0);
             $stmt->execute([
                 $product,(int)$row['id'],$synthetic['lifecycle_state'],$synthetic['rollout_percent'],
-                $creator>0?$creator:null,$creator>0?$creator:null
+                '','','',$creator>0?$creator:null,$creator>0?$creator:null
             ]);
         }
     }
@@ -617,12 +617,9 @@ function client_release_audit_recent_v110(PDO $pdo,int $limit=30): array
 function client_release_public_fallback_allowed_v110(PDO $pdo,string $product): bool
 {
     if(!client_release_rollouts_schema_ready_v110($pdo))return true;
-    $stmt=$pdo->prepare("SELECT lifecycle_state FROM client_release_rollouts_v110 WHERE product=? ORDER BY updated_at DESC,release_id DESC");
+    $stmt=$pdo->prepare("SELECT lifecycle_state FROM client_release_rollouts_v110 WHERE product=? ORDER BY updated_at DESC,release_id DESC LIMIT 1");
     $stmt->execute([$product]);
-    $states=$stmt->fetchAll(PDO::FETCH_COLUMN)?:[];
-    if(!$states)return true;
-    foreach($states as $state){
-        if(in_array((string)$state,['paused','withdrawn'],true))return false;
-    }
-    return true;
+    $state=(string)$stmt->fetchColumn();
+    if($state==='')return true;
+    return !in_array($state,['paused','withdrawn'],true);
 }
