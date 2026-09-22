@@ -42,7 +42,8 @@ assert.match(api, /homeserver_agent_v025_chat/);
 assert.match(delegation, /homeserver_agent_v018_chat/);
 assert.match(api, /chat_execution_v019_fallback/);
 assert.match(chat, /function sourceHtml\(source\)/);
-assert.match(chat, /sources\.map\(sourceHtml\)/);
+const messageRenderer=chat.slice(chat.indexOf('function messageElement('),chat.indexOf('function addMessage('));
+assert.doesNotMatch(messageRenderer, /message-sources|sources\.map\(sourceHtml\)/);
 assert.match(chat, /JSON\.parse\(message\.context_json\)/);
 assert.match(chat, /action:'messages_after'/);
 
