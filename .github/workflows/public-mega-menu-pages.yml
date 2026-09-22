@@ -33,7 +33,7 @@ jobs:
           php -l index.php
           php -l includes/vp3-public.php
           php -l includes/vp3-marketing-pages.php
-          for file in product.php ai-assistant.php profile-agent-overview.php personal-url.php services.php ai-summary.php calendar-service.php booking.php ecommerce.php homeserver.php cloud-vs-self-hosted.php paired-devices.php openrouter.php model-choice.php local-knowledge-overview.php tools-skills.php pricing-monthly.php pricing-weekly.php pricing-yearly.php token-packages.php about-team.php mission.php case-studies.php testimonials.php social.php; do php -l "$file"; done
+          for file in product.php ai-assistant.php profile-agent-overview.php personal-url.php chrome-extension.php services.php ai-summary.php annotations.php teams.php video-meetings.php calendar-service.php booking.php ecommerce.php agent-analytics.php homeserver.php cloud-vs-self-hosted.php paired-devices.php openrouter.php model-choice.php local-knowledge-overview.php tools-skills.php pricing-monthly.php pricing-weekly.php pricing-yearly.php token-packages.php about-team.php mission.php case-studies.php testimonials.php social.php; do php -l "$file"; done
       - name: Contract syntax
         run: node --check tests/public-mega-menu-pages-contract.mjs
       - name: Public page contracts

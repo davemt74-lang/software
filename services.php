@@ -15,8 +15,8 @@ vp3_public_header(
   <h1>From signal to outcome, in one Agent system.</h1>
   <p>VP3 connects capture, understanding, collaboration, meetings, scheduling, commerce, analytics, and Agent follow-through so every service can contribute to the same approved context instead of creating another disconnected tool.</p>
   <div class="vp3-marketing-hero-actions">
-    <a class="vp3-btn primary" href="<?= e(url('/signup.php')) ?>">Get VP3 →</a>
-    <a class="vp3-btn" href="<?= e(url('/book-demo.php')) ?>">Book a demo</a>
+    <a class="vp3-btn primary" data-vp3-cta="services_get_vp3" data-vp3-target="signup" href="<?= e(url('/signup.php')) ?>">Get VP3 →</a>
+    <a class="vp3-btn" data-vp3-cta="services_book_demo" data-vp3-target="demo" href="<?= e(url('/book-demo.php')) ?>">Book a demo</a>
   </div>
 </section>
 
@@ -47,9 +47,9 @@ vp3_public_header(
           <p>Keep the source attached while VP3 helps organize what matters.</p>
         </header>
         <div class="vp3-service-list">
-          <a class="vp3-service-row" href="<?= e(url('/transcriptions.php')) ?>"><span class="vp3-service-number">01</span><div><h3>Transcription</h3><p>Record and organize meetings, calls, interviews, voice notes, and other conversations.</p></div><b>Explore →</b></a>
-          <a class="vp3-service-row" href="<?= e(url('/ai-summary.php')) ?>"><span class="vp3-service-number">02</span><div><h3>AI Summary</h3><p>Turn long conversations into decisions, action items, questions, and reusable knowledge.</p></div><b>Explore →</b></a>
-          <a class="vp3-service-row" href="<?= e(url('/annotations.php')) ?>"><span class="vp3-service-number">03</span><div><h3>Annotations</h3><p>Capture highlights, screenshots, notes, and source context from the web and reuse them across research and Agent workflows.</p></div><b>Explore →</b></a>
+          <a class="vp3-service-row" data-vp3-cta="service_discovery" data-vp3-target="transcription" href="<?= e(url('/transcriptions.php')) ?>"><span class="vp3-service-number">01</span><div><h3>Transcription</h3><p>Record and organize meetings, calls, interviews, voice notes, and other conversations.</p></div><b>Explore →</b></a>
+          <a class="vp3-service-row" data-vp3-cta="service_discovery" data-vp3-target="ai_summary" href="<?= e(url('/ai-summary.php')) ?>"><span class="vp3-service-number">02</span><div><h3>AI Summary</h3><p>Turn long conversations into decisions, action items, questions, and reusable knowledge.</p></div><b>Explore →</b></a>
+          <a class="vp3-service-row" data-vp3-cta="service_discovery" data-vp3-target="annotations" href="<?= e(url('/annotations.php')) ?>"><span class="vp3-service-number">03</span><div><h3>Annotations</h3><p>Capture highlights, screenshots, notes, and source context from the web and reuse them across research and Agent workflows.</p></div><b>Explore →</b></a>
         </div>
       </div>
     </div>
@@ -63,9 +63,9 @@ vp3_public_header(
           <p>Collaboration stays tied to the context that created it.</p>
         </header>
         <div class="vp3-service-list">
-          <a class="vp3-service-row" href="<?= e(url('/teams.php')) ?>"><span class="vp3-service-number">04</span><div><h3>Teams</h3><p>Shared workspaces, conversations, permissions, context, and collaborative Agent workflows.</p></div><b>Explore →</b></a>
-          <a class="vp3-service-row" href="<?= e(url('/video-meetings.php')) ?>"><span class="vp3-service-number">05</span><div><h3>Meetings</h3><p>Video meetings with transcripts, Meeting Intelligence, action items, commitments, and connected follow-through.</p></div><b>Explore →</b></a>
-          <a class="vp3-service-row" href="<?= e(url('/calendar-service.php')) ?>"><span class="vp3-service-number">06</span><div><h3>Calendar</h3><p>Availability, calendar intelligence, sync, scheduling context, and Agent-managed coordination.</p></div><b>Explore →</b></a>
+          <a class="vp3-service-row" data-vp3-cta="service_discovery" data-vp3-target="teams" href="<?= e(url('/teams.php')) ?>"><span class="vp3-service-number">04</span><div><h3>Teams</h3><p>Shared workspaces, conversations, permissions, context, and collaborative Agent workflows.</p></div><b>Explore →</b></a>
+          <a class="vp3-service-row" data-vp3-cta="service_discovery" data-vp3-target="meetings" href="<?= e(url('/video-meetings.php')) ?>"><span class="vp3-service-number">05</span><div><h3>Meetings</h3><p>Video meetings with transcripts, Meeting Intelligence, action items, commitments, and connected follow-through.</p></div><b>Explore →</b></a>
+          <a class="vp3-service-row" data-vp3-cta="service_discovery" data-vp3-target="calendar" href="<?= e(url('/calendar-service.php')) ?>"><span class="vp3-service-number">06</span><div><h3>Calendar</h3><p>Availability, calendar intelligence, sync, scheduling context, and Agent-managed coordination.</p></div><b>Explore →</b></a>
         </div>
       </div>
     </div>
@@ -79,9 +79,9 @@ vp3_public_header(
           <p>Bookings, orders, and conversion intelligence use authoritative lifecycle records rather than disconnected marketing counters.</p>
         </header>
         <div class="vp3-service-list">
-          <a class="vp3-service-row" href="<?= e(url('/booking.php')) ?>"><span class="vp3-service-number">07</span><div><h3>Booking — free or paid</h3><p>Public scheduling, appointment lifecycle, deposits, paid appointments, reminders, preparation, and follow-up.</p></div><b>Explore →</b></a>
-          <a class="vp3-service-row" href="<?= e(url('/ecommerce.php')) ?>"><span class="vp3-service-number">08</span><div><h3>Ecommerce</h3><p>Public products, checkout, paid orders, fulfillment, refunds, seller alerts, and Agent commerce.</p></div><b>Explore →</b></a>
-          <a class="vp3-service-row" href="<?= e(url('/agent-analytics.php')) ?>"><span class="vp3-service-number">09</span><div><h3>Agent Analytics</h3><p>See profile visits, booking and product intent, verified conversions, attributed revenue, traffic sources, trends, and Agent-identified opportunities.</p></div><b>Explore →</b></a>
+          <a class="vp3-service-row" data-vp3-cta="service_discovery" data-vp3-target="booking" href="<?= e(url('/booking.php')) ?>"><span class="vp3-service-number">07</span><div><h3>Booking — free or paid</h3><p>Public scheduling, appointment lifecycle, deposits, paid appointments, reminders, preparation, and follow-up.</p></div><b>Explore →</b></a>
+          <a class="vp3-service-row" data-vp3-cta="service_discovery" data-vp3-target="ecommerce" href="<?= e(url('/ecommerce.php')) ?>"><span class="vp3-service-number">08</span><div><h3>Ecommerce</h3><p>Public products, checkout, paid orders, fulfillment, refunds, seller alerts, and Agent commerce.</p></div><b>Explore →</b></a>
+          <a class="vp3-service-row" data-vp3-cta="service_discovery" data-vp3-target="agent_analytics" href="<?= e(url('/agent-analytics.php')) ?>"><span class="vp3-service-number">09</span><div><h3>Agent Analytics</h3><p>See profile visits, booking and product intent, verified conversions, attributed revenue, traffic sources, trends, and Agent-identified opportunities.</p></div><b>Explore →</b></a>
         </div>
       </div>
     </div>

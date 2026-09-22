@@ -45,11 +45,18 @@ foreach ([
 vp3_funnel_capture_public_source();
 $intent = vp3_funnel_intent();
 expect(($intent['source'] ?? '') === 'product', 'public product page should become the funnel source');
+expect(($intent['origin'] ?? '') === 'product', 'first public product page should become the funnel origin');
 expect((vp3_funnel_feature_interests($intent)['main_ai.access'] ?? false) === true, 'product source should map to main AI interest');
+
+$_SERVER['SCRIPT_NAME'] = '/services.php';
+vp3_funnel_capture_public_source();
+expect((vp3_funnel_intent()['source'] ?? '') === 'services', 'later public page should become current source');
+expect((vp3_funnel_intent()['origin'] ?? '') === 'product', 'later public page must not overwrite first-touch origin');
 
 $_SERVER['SCRIPT_NAME'] = '/signup.php';
 vp3_funnel_capture_public_source();
-expect((vp3_funnel_intent()['source'] ?? '') === 'product', 'auth pages must not overwrite the marketing source');
+expect((vp3_funnel_intent()['source'] ?? '') === 'services', 'auth pages must not overwrite the current marketing source');
+expect((vp3_funnel_intent()['origin'] ?? '') === 'product', 'auth pages must preserve first-touch origin');
 
 vp3_funnel_capture(['plan'=>'42','billing'=>'yearly','return_to'=>'/chat.php?from=pricing']);
 $intent = vp3_funnel_intent();
@@ -58,12 +65,14 @@ expect(($intent['billing'] ?? '') === 'annual', 'yearly should normalize to annu
 expect(($intent['return_to'] ?? '') === '/chat.php?from=pricing', 'safe return target should persist');
 
 $query = vp3_funnel_query($intent);
-expect(str_contains($query, 'source=product'), 'query should preserve source');
+expect(str_contains($query, 'source=services'), 'query should preserve current source');
+expect(str_contains($query, 'origin=product'), 'query should preserve first-touch origin');
 expect(str_contains($query, 'plan=42'), 'query should preserve plan');
 expect(str_contains($query, 'billing=annual'), 'query should preserve billing');
 
 $draft = vp3_funnel_onboarding_draft($intent);
-expect(($draft['public_funnel']['source'] ?? '') === 'product', 'onboarding draft should preserve source');
+expect(($draft['public_funnel']['source'] ?? '') === 'services', 'onboarding draft should preserve current source');
+expect(($draft['public_funnel']['origin'] ?? '') === 'product', 'onboarding draft should preserve first-touch origin');
 expect(($draft['public_funnel']['plan'] ?? '') === '42', 'onboarding draft should preserve plan');
 expect(($draft['public_funnel']['billing'] ?? '') === 'annual', 'onboarding draft should preserve billing');
 expect(!array_key_exists('return_to', $draft['public_funnel']), 'return target must not become durable onboarding data');
@@ -83,5 +92,17 @@ expect((vp3_funnel_feature_interests(vp3_funnel_intent())['transcription.access'
 $_SESSION = [];
 vp3_funnel_capture(['source'=>'teams']);
 expect((vp3_funnel_feature_interests(vp3_funnel_intent())['team_seats'] ?? false) === true, 'teams should map to team-seat interest');
+
+$_SESSION = [];
+vp3_funnel_capture(['source'=>'annotations','origin'=>'index']);
+$annotationInterests=vp3_funnel_feature_interests(vp3_funnel_intent());
+expect(($annotationInterests['main_ai.access']??false)===true, 'annotations should map to main AI interest');
+expect(($annotationInterests['knowledge.access']??false)===true, 'annotations should map to knowledge interest');
+
+$_SESSION = [];
+vp3_funnel_capture(['source'=>'video-meetings','origin'=>'index']);
+$meetingInterests=vp3_funnel_feature_interests(vp3_funnel_intent());
+expect(($meetingInterests['main_ai.access']??false)===true, 'meetings should map to main AI interest');
+expect(($meetingInterests['transcription.access']??false)===true, 'meetings should map to transcription interest');
 
 fwrite(STDOUT, "public funnel runtime: PASS\n");

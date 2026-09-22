@@ -1,8 +1,8 @@
 import fs from 'node:fs';
 
 const requiredRoutes = [
-  'product.php','ai-assistant.php','profile-agent-overview.php','personal-url.php',
-  'services.php','transcriptions.php','ai-summary.php','teams.php','calendar-service.php','booking.php','ecommerce.php',
+  'product.php','ai-assistant.php','profile-agent-overview.php','personal-url.php','chrome-extension.php',
+  'services.php','transcriptions.php','ai-summary.php','annotations.php','teams.php','video-meetings.php','calendar-service.php','booking.php','ecommerce.php','agent-analytics.php',
   'homeserver.php','cloud-vs-self-hosted.php','paired-devices.php','openrouter.php','model-choice.php','local-knowledge-overview.php','tools-skills.php',
   'pricing.php','pricing-monthly.php','pricing-weekly.php','pricing-yearly.php','token-packages.php',
   'about.php','about-team.php','mission.php','case-studies.php','testimonials.php','contact.php','social.php'
@@ -14,8 +14,8 @@ for (const file of requiredRoutes) {
 
 const index = fs.readFileSync('index.php', 'utf8');
 const expectedMenuTargets = [
-  '/ai-assistant.php','/profile-agent-overview.php','/personal-url.php','/homeserver.php',
-  '/transcriptions.php','/ai-summary.php','/teams.php','/calendar-service.php','/booking.php','/ecommerce.php',
+  '/ai-assistant.php','/profile-agent-overview.php','/personal-url.php','/chrome-extension.php','/homeserver.php',
+  '/transcriptions.php','/ai-summary.php','/annotations.php','/teams.php','/video-meetings.php','/calendar-service.php','/booking.php','/ecommerce.php','/agent-analytics.php',
   '/cloud-vs-self-hosted.php','/paired-devices.php','/openrouter.php','/model-choice.php','/local-knowledge-overview.php','/tools-skills.php',
   '/pricing-monthly.php','/pricing-weekly.php','/pricing-yearly.php','/token-packages.php',
   '/about-team.php','/mission.php','/case-studies.php','/testimonials.php','/contact.php','/social.php'
@@ -48,7 +48,7 @@ for (const [file, needles] of Object.entries(protectedContracts)) {
 
 const renderer = fs.readFileSync('includes/vp3-marketing-pages.php', 'utf8');
 for (const slug of [
-  'product','ai-assistant','profile-agent','personal-url','services','ai-summary','calendar','booking','ecommerce',
+  'product','ai-assistant','profile-agent','personal-url','services','annotations','agent-analytics','ai-summary','calendar','booking','ecommerce',
   'homeserver','cloud-vs-self-hosted','paired-devices','openrouter','model-choice','local-knowledge','tools-skills',
   'pricing-monthly','pricing-weekly','pricing-yearly','token-packages','team','mission','case-studies','testimonials','social'
 ]) {

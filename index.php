@@ -4,9 +4,10 @@ declare(strict_types=1);
 require __DIR__ . '/includes/bootstrap.php';
 require_once __DIR__ . '/includes/vp3-public.php';
 redirect_logged_in_public_page();
+vp3_funnel_capture_public_source('index');
 
-$signupUrl = url('/signup.php');
-$demoUrl = url('/book-demo.php');
+$signupUrl = vp3_funnel_url('/signup.php');
+$demoUrl = vp3_funnel_url('/book-demo.php');
 $loginUrl = url('/login.php');
 $pricingUrl = url('/pricing.php');
 $aboutUrl = url('/about.php');
@@ -22,10 +23,20 @@ $servicesUrl = url('/services.php');
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="description" content="VP3 AI Assistants bring transcription, AI summaries, teams, a personal profile agent, and self-hosted HomeServer AI into one private workspace.">
+<meta name="description" content="VP3 connects Browser Companion, annotations, meetings, transcription, teams, booking, ecommerce, Agent Analytics, and HomeServer through one AI Agent and cognitive runtime.">
 <meta name="theme-color" content="#0b0d0f">
-<title>VP3 AI Assistants — Turn Every Conversation Into What’s Next</title>
-<link rel="stylesheet" href="<?= e(url('/vp3-index-ai-assistants.css?v=20260910-2')) ?>">
+<link rel="canonical" href="<?= e(url('/index.php')) ?>">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="VP3">
+<meta property="og:title" content="VP3 AI Assistants — From Signal to Outcome">
+<meta property="og:description" content="One VP3 Agent across the browser, meetings, profile, teams, scheduling, commerce, analytics, and private HomeServer capabilities.">
+<meta property="og:url" content="<?= e(url('/index.php')) ?>">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="VP3 AI Assistants — From Signal to Outcome">
+<meta name="twitter:description" content="One VP3 Agent across the browser, meetings, profile, teams, scheduling, commerce, analytics, and HomeServer.">
+<title>VP3 AI Assistants — From Signal to Outcome</title>
+<link rel="stylesheet" href="<?= e(url('/vp3-index-ai-assistants.css?v=20260921-3')) ?>">
+<script defer src="<?= e(url('/vp3-public-funnel.js?v=20260921-1')) ?>" data-vp3-funnel-endpoint="<?= e(url('/api/public-funnel-event.php')) ?>"></script>
 <link rel="stylesheet" href="<?= e(url('/vp3-index-mega-menu.css?v=20260914-2')) ?>">
 </head>
 <body>
@@ -237,197 +248,89 @@ $servicesUrl = url('/services.php');
 
 <main>
   <section class="hero" aria-labelledby="hero-title">
-    <img class="hero-image" src="<?= e(url('/assets/home/vp3-main-header_bg.png')) ?>" alt="VP3 AI Assistants home office hero">
+    <img class="hero-image" src="<?= e(url('/assets/home/vp3-main-header_bg.png')) ?>" alt="VP3 AI Assistants workspace">
     <div class="hero-shade" aria-hidden="true"></div>
     <div class="hero-content wrap">
-      <p class="eyebrow light">Your AI workforce</p>
-      <h1 id="hero-title"><span>VP3 AI Assistants</span>Turn every conversation<br>into what’s next.</h1>
-      <p class="hero-copy">Transcribe on desktop and mobile, get useful AI summaries, work with your team, and give your personal profile an AI agent — with private knowledge and HomeServer when you want AI on your own hardware.</p>
+      <p class="eyebrow light">One Agent. Every surface.</p>
+      <h1 id="hero-title"><span>VP3 AI Assistants</span>From signal to outcome.</h1>
+      <p class="hero-copy">Bring browser research, meetings, conversations, teams, scheduling, commerce, analytics, and private HomeServer capabilities into one Agent system that can keep context connected and help move the work forward.</p>
       <div class="hero-actions">
-        <a class="button button-light" href="<?= e($signupUrl) ?>">Get started <span aria-hidden="true">→</span></a>
-        <a class="button button-ghost" href="<?= e($demoUrl) ?>"><span class="play" aria-hidden="true">▶</span> Book a demo</a>
+        <a class="button button-light" data-vp3-cta="home_hero_get_vp3" data-vp3-target="signup" href="<?= e($signupUrl) ?>">Get VP3 <span aria-hidden="true">→</span></a>
+        <a class="button button-ghost" data-vp3-cta="home_hero_book_demo" data-vp3-target="demo" href="<?= e($demoUrl) ?>"><span class="play" aria-hidden="true">▶</span> Book a demo</a>
       </div>
-      <div class="hero-notes" aria-label="VP3 product highlights">
-        <span>✓ Desktop + mobile</span>
-        <span>✓ Personal + team workspaces</span>
-        <span>✓ Self-hosted AI option</span>
-      </div>
+      <div class="hero-notes" aria-label="VP3 product highlights"><span>✓ Browser + meetings + profile</span><span>✓ One cognitive runtime</span><span>✓ Cloud + HomeServer</span></div>
     </div>
   </section>
 
-  <section class="capability-strip" aria-label="VP3 capabilities">
-    <div class="capability-track">
-      <a href="<?= e($transcriptionsUrl) ?>"><span aria-hidden="true">≋</span>Transcription</a>
-      <a href="<?= e($transcriptionsUrl) ?>"><span aria-hidden="true">▯</span>Mobile capture</a>
-      <a href="<?= e(url('/ai-summary.php')) ?>"><span aria-hidden="true">▤</span>AI summaries</a>
-      <a href="<?= e($teamsUrl) ?>"><span aria-hidden="true">◎</span>Teams</a>
-      <a href="<?= e(url('/profile-agent-overview.php')) ?>"><span aria-hidden="true">♙</span>Profile agent</a>
-      <a href="<?= e(url('/personal-url.php')) ?>"><span aria-hidden="true">↗</span>Personal link</a>
-      <a href="<?= e(url('/local-knowledge-overview.php')) ?>"><span aria-hidden="true">◇</span>Knowledge</a>
-      <a href="<?= e($homeServerUrl) ?>"><span aria-hidden="true">▣</span>HomeServer</a>
-      <a href="<?= e(url('/cloud-vs-self-hosted.php')) ?>"><span aria-hidden="true">⌾</span>Private data</a>
-      <a href="<?= e($servicesUrl) ?>"><span aria-hidden="true">✓</span>Action items</a>
-    </div>
-  </section>
+  <section class="capability-strip" aria-label="VP3 capabilities"><div class="capability-track">
+    <a data-vp3-cta="home_capability" data-vp3-target="chrome_extension" href="<?= e(url('/chrome-extension.php')) ?>"><span aria-hidden="true">⌘</span>Browser Companion</a>
+    <a data-vp3-cta="home_capability" data-vp3-target="annotations" href="<?= e(url('/annotations.php')) ?>"><span aria-hidden="true">✎</span>Annotations</a>
+    <a data-vp3-cta="home_capability" data-vp3-target="meetings" href="<?= e(url('/video-meetings.php')) ?>"><span aria-hidden="true">◉</span>Meetings</a>
+    <a data-vp3-cta="home_capability" data-vp3-target="transcription" href="<?= e($transcriptionsUrl) ?>"><span aria-hidden="true">≋</span>Transcription</a>
+    <a data-vp3-cta="home_capability" data-vp3-target="teams" href="<?= e($teamsUrl) ?>"><span aria-hidden="true">◎</span>Teams</a>
+    <a data-vp3-cta="home_capability" data-vp3-target="calendar" href="<?= e(url('/calendar-service.php')) ?>"><span aria-hidden="true">□</span>Calendar</a>
+    <a data-vp3-cta="home_capability" data-vp3-target="booking" href="<?= e(url('/booking.php')) ?>"><span aria-hidden="true">↗</span>Booking</a>
+    <a data-vp3-cta="home_capability" data-vp3-target="ecommerce" href="<?= e(url('/ecommerce.php')) ?>"><span aria-hidden="true">◇</span>Ecommerce</a>
+    <a data-vp3-cta="home_capability" data-vp3-target="agent_analytics" href="<?= e(url('/agent-analytics.php')) ?>"><span aria-hidden="true">▤</span>Agent Analytics</a>
+    <a data-vp3-cta="home_capability" data-vp3-target="homeserver" href="<?= e($homeServerUrl) ?>"><span aria-hidden="true">▣</span>HomeServer</a>
+  </div></section>
 
-  <section class="section" id="features" aria-labelledby="work-title">
-    <div class="wrap">
-      <div class="section-heading split-heading">
-        <div>
-          <p class="eyebrow">Built for real work</p>
-          <h2 id="work-title">Built for real work.</h2>
-        </div>
-        <p>From a quick voice note to a long meeting, VP3 captures what matters, keeps the context, and helps turn the conversation into useful next steps.</p>
-      </div>
-
-      <div class="feature-grid">
-        <article class="feature-card">
-          <img src="<?= e(url('/assets/home/feature-transcription.webp')) ?>" alt="VP3 transcription workspace on a laptop" loading="lazy">
-          <div class="card-copy">
-            <p class="card-label">Desktop</p>
-            <h3>Transcription, organized.</h3>
-            <p>Record meetings, calls, interviews, and ideas. Keep the transcript searchable and connected to the work that follows.</p>
-            <a href="<?= e($transcriptionsUrl) ?>">Explore transcription <span aria-hidden="true">→</span></a>
-          </div>
-        </article>
-        <article class="feature-card">
-          <img src="<?= e(url('/assets/home/feature-mobile.webp')) ?>" alt="VP3 mobile voice capture interface" loading="lazy">
-          <div class="card-copy">
-            <p class="card-label">Mobile</p>
-            <h3>Capture anywhere.</h3>
-            <p>Use your phone for voice notes and conversations, then keep the transcript, summary, and actions with you across devices.</p>
-            <a href="#everything">See mobile workflow <span aria-hidden="true">→</span></a>
-          </div>
-        </article>
-        <article class="feature-card">
-          <img src="<?= e(url('/assets/home/feature-ai-summaries.webp')) ?>" alt="VP3 AI summary and product planning interface" loading="lazy">
-          <div class="card-copy">
-            <p class="card-label">AI</p>
-            <h3>Summaries that matter.</h3>
-            <p>Turn long conversations into key points, decisions, action items, open questions, and reusable project knowledge.</p>
-            <a href="<?= e(url('/ai-summary.php')) ?>">Explore AI summaries <span aria-hidden="true">→</span></a>
-          </div>
-        </article>
-        <article class="feature-card">
-          <img src="<?= e(url('/assets/home/feature-teams.webp')) ?>" alt="VP3 team workspace dashboard" loading="lazy">
-          <div class="card-copy">
-            <p class="card-label">Teams</p>
-            <h3>Work together, better.</h3>
-            <p>Share the right conversations and context with your team while keeping personal knowledge and permissions under control.</p>
-            <a href="<?= e($teamsUrl) ?>">Explore teams <span aria-hidden="true">→</span></a>
-          </div>
-        </article>
-      </div>
+  <section class="section home-loop" aria-labelledby="loop-title"><div class="wrap">
+    <div class="section-heading split-heading"><div><p class="eyebrow">The VP3 operating loop</p><h2 id="loop-title">One Agent from capture to follow-through.</h2></div><p>VP3 does not treat every feature as a new AI silo. Each surface can contribute approved signals to the same Agent and cognitive runtime while the underlying application records stay authoritative.</p></div>
+    <div class="home-lifecycle-grid">
+      <a class="home-lifecycle-card" data-vp3-cta="home_lifecycle" data-vp3-target="capture" href="<?= e(url('/annotations.php')) ?>"><span>01</span><h3>Capture</h3><p>Browser research, annotations, conversations, voice notes, and meeting transcripts.</p></a>
+      <a class="home-lifecycle-card" data-vp3-cta="home_lifecycle" data-vp3-target="understand" href="<?= e(url('/ai-summary.php')) ?>"><span>02</span><h3>Understand</h3><p>Summaries, decisions, questions, knowledge, and source-linked context.</p></a>
+      <a class="home-lifecycle-card" data-vp3-cta="home_lifecycle" data-vp3-target="coordinate" href="<?= e(url('/video-meetings.php')) ?>"><span>03</span><h3>Coordinate</h3><p>Teams, meetings, calendar context, commitments, and shared follow-through.</p></a>
+      <a class="home-lifecycle-card" data-vp3-cta="home_lifecycle" data-vp3-target="sell" href="<?= e(url('/booking.php')) ?>"><span>04</span><h3>Sell</h3><p>Public booking, products, checkout, appointments, fulfillment, and customer lifecycle.</p></a>
+      <a class="home-lifecycle-card" data-vp3-cta="home_lifecycle" data-vp3-target="measure" href="<?= e(url('/agent-analytics.php')) ?>"><span>05</span><h3>Measure</h3><p>Visits, intent, verified conversions, attributed revenue, sources, and opportunities.</p></a>
+      <a class="home-lifecycle-card accent" data-vp3-cta="home_lifecycle" data-vp3-target="agent_followthrough" href="<?= e(url('/ai-assistant.php')) ?>"><span>06</span><h3>Agent follows through</h3><p>Relevant signals return to Agent Now, workflows, reminders, suggestions, and next actions.</p></a>
     </div>
-  </section>
+    <div class="home-loop-action"><a class="text-link" data-vp3-cta="home_services_overview" data-vp3-target="services" href="<?= e($servicesUrl) ?>">Explore all VP3 services <span aria-hidden="true">→</span></a></div>
+  </div></section>
 
-  <section class="section section-soft" id="platform" aria-labelledby="platform-title">
-    <div class="wrap">
-      <div class="section-heading split-heading">
-        <div>
-          <p class="eyebrow">More than a chatbot</p>
-          <h2 id="platform-title">A platform for how<br>you actually work.</h2>
-        </div>
-        <p>VP3 connects conversations, files, people, assistants, and private knowledge so the AI has useful context without turning your work into another pile of disconnected tools.</p>
-      </div>
-      <div class="value-grid">
-        <article><span class="value-icon" aria-hidden="true">◉</span><h3>Your knowledge</h3><p>Keep transcripts, files, notes, and conversations connected so your assistants can work from context you control.</p></article>
-        <article><span class="value-icon" aria-hidden="true">⌘</span><h3>Your work, unified</h3><p>Bring meetings, summaries, tasks, team conversations, and AI assistance into one workspace instead of another tab.</p></article>
-        <article><span class="value-icon" aria-hidden="true">♙</span><h3>Your profile agent</h3><p>Share a personal VP3 link with an AI agent that can represent you, answer permitted questions, and help people connect with you.</p></article>
-        <article><span class="value-icon" aria-hidden="true">▣</span><h3>Built for private AI</h3><p>Pair VP3 with HomeServer for local models, private tools, and secure access to knowledge that stays under your control.</p></article>
-      </div>
+  <section class="section section-soft" aria-labelledby="surfaces-title"><div class="wrap">
+    <div class="section-heading split-heading"><div><p class="eyebrow">One Agent across VP3</p><h2 id="surfaces-title">The surface changes. The Agent does not start over.</h2></div><p>Use VP3 where the work happens, with explicit permissions and one connected cognitive system instead of separate assistants that forget each other.</p></div>
+    <div class="home-surface-grid">
+      <a class="home-surface-card" data-vp3-cta="home_surface" data-vp3-target="browser" href="<?= e(url('/chrome-extension.php')) ?>"><span>Browser</span><h3>Research and act across the web.</h3><p>Page-aware Agent help, annotations, explicit memory, Teams sharing, notifications, and approved browser actions.</p><b>Browser Companion →</b></a>
+      <a class="home-surface-card" data-vp3-cta="home_surface" data-vp3-target="meetings" href="<?= e(url('/video-meetings.php')) ?>"><span>Meetings</span><h3>Keep the conversation connected.</h3><p>Video meetings, transcripts, Meeting Intelligence, decisions, commitments, and verified follow-through.</p><b>VP3 Meetings →</b></a>
+      <a class="home-surface-card" data-vp3-cta="home_surface" data-vp3-target="profile" href="<?= e(url('/profile-agent-overview.php')) ?>"><span>Profile</span><h3>Put an Agent on your public presence.</h3><p>Let visitors discover you, ask permitted questions, book time, and find public products from one personal destination.</p><b>Profile Agent →</b></a>
+      <a class="home-surface-card" data-vp3-cta="home_surface" data-vp3-target="teams" href="<?= e($teamsUrl) ?>"><span>Teams</span><h3>Shared context with boundaries.</h3><p>Collaborate around conversations, research, projects, meetings, and Agent workflows without flattening private and team context.</p><b>VP3 Teams →</b></a>
+      <a class="home-surface-card" data-vp3-cta="home_surface" data-vp3-target="commerce" href="<?= e(url('/ecommerce.php')) ?>"><span>Booking + commerce</span><h3>Turn public interest into real outcomes.</h3><p>Schedule free or paid appointments, sell products, manage orders, and keep the lifecycle connected to the relationship.</p><b>Book + sell →</b></a>
+      <a class="home-surface-card" data-vp3-cta="home_surface" data-vp3-target="homeserver" href="<?= e($homeServerUrl) ?>"><span>HomeServer</span><h3>Keep private capabilities under your control.</h3><p>Pair Cloud convenience with local knowledge, tools, skills, models, and compute on hardware you control.</p><b>Explore HomeServer →</b></a>
     </div>
-  </section>
+  </div></section>
 
-  <section class="everything" id="everything" aria-labelledby="everything-title">
-    <div class="wrap everything-grid">
-      <div class="device-art">
-        <img src="<?= e(url('/assets/home/devices-everything-you-need.webp')) ?>" alt="VP3 desktop and mobile apps shown together" loading="lazy">
-      </div>
-      <div class="everything-copy">
-        <p class="eyebrow">All your work. Everywhere.</p>
-        <h2 id="everything-title">Everything you need.<br>Nothing in the way.</h2>
-        <p>VP3 stays with you from capture to follow-through. Start on your desktop, continue on your phone, and let the same assistant carry the context forward.</p>
-        <ul class="check-list">
-          <li><span>✓</span><div><b>Before</b><p>Prepare with your knowledge, people, and goals in context.</p></div></li>
-          <li><span>✓</span><div><b>During</b><p>Capture voice and conversations and turn them into searchable text.</p></div></li>
-          <li><span>✓</span><div><b>After</b><p>Summarize, organize, assign, and continue the work with your AI assistants.</p></div></li>
-        </ul>
-        <div class="inline-actions">
-          <a class="button button-dark" href="<?= e($signupUrl) ?>">Get started <span aria-hidden="true">→</span></a>
-          <a class="text-link" href="<?= e($demoUrl) ?>">See VP3 in action <span aria-hidden="true">→</span></a>
-        </div>
-      </div>
+  <section class="home-journey" aria-labelledby="journey-title"><div class="wrap">
+    <div class="home-journey-head"><div><p class="eyebrow light">A connected outcome</p><h2 id="journey-title">Research can become a meeting. A meeting can become a booking. Analytics can become the next action.</h2></div><p>VP3 keeps each system authoritative while giving the Agent enough approved context to understand what changed and what deserves attention next.</p></div>
+    <div class="home-journey-steps">
+      <a data-vp3-cta="home_journey" data-vp3-target="annotations" href="<?= e(url('/annotations.php')) ?>"><span>01</span><strong>Capture research</strong><small>Source-linked annotations</small></a>
+      <a data-vp3-cta="home_journey" data-vp3-target="meetings" href="<?= e(url('/video-meetings.php')) ?>"><span>02</span><strong>Meet + decide</strong><small>Transcript and commitments</small></a>
+      <a data-vp3-cta="home_journey" data-vp3-target="booking" href="<?= e(url('/booking.php')) ?>"><span>03</span><strong>Book + coordinate</strong><small>Calendar and appointment state</small></a>
+      <a data-vp3-cta="home_journey" data-vp3-target="ecommerce" href="<?= e(url('/ecommerce.php')) ?>"><span>04</span><strong>Sell + fulfill</strong><small>Orders and lifecycle</small></a>
+      <a data-vp3-cta="home_journey" data-vp3-target="analytics" href="<?= e(url('/agent-analytics.php')) ?>"><span>05</span><strong>Measure outcomes</strong><small>Conversion and revenue intelligence</small></a>
+      <a data-vp3-cta="home_journey" data-vp3-target="agent" href="<?= e(url('/ai-assistant.php')) ?>"><span>06</span><strong>Agent follows through</strong><small>Next action in context</small></a>
     </div>
-  </section>
+  </div></section>
 
-  <section class="proof" aria-label="VP3 platform highlights">
-    <div class="wrap">
-      <div class="proof-heading">
-        <div><p class="eyebrow">One platform</p><h2>Built for how AI should work.</h2></div>
-        <p>Use VP3 as an individual, bring it to a team, or pair it with HomeServer when private local compute and storage matter.</p>
-      </div>
-      <div class="proof-grid">
-        <article><strong>Desktop + mobile</strong><span>Capture and continue anywhere</span></article>
-        <article><strong>Personal profile agent</strong><span>Your link, your context, your rules</span></article>
-        <article><strong>Self-hosted AI</strong><span>Local models and private tools with HomeServer</span></article>
-        <article><strong>User-controlled data</strong><span>Private access, storage, and permissions</span></article>
-      </div>
+  <section class="everything" id="everything" aria-labelledby="everything-title"><div class="wrap everything-grid">
+    <div class="device-art"><img src="<?= e(url('/assets/home/devices-everything-you-need.webp')) ?>" alt="VP3 desktop and mobile experiences shown together" loading="lazy"></div>
+    <div class="everything-copy"><p class="eyebrow">One identity across devices</p><h2 id="everything-title">Start where the work happens. Keep the context.</h2><p>Use VP3 on the web, desktop, mobile, and in Chrome. The same account, permissions, Agent, and approved context can carry the work forward without rebuilding your workflow on every surface.</p>
+      <ul class="check-list"><li><span>✓</span><div><b>Before</b><p>Prepare with people, goals, research, calendar context, and prior commitments.</p></div></li><li><span>✓</span><div><b>During</b><p>Capture meetings, conversations, browser findings, annotations, and decisions.</p></div></li><li><span>✓</span><div><b>After</b><p>Follow through with tasks, booking, commerce, analytics, reminders, and Agent suggestions.</p></div></li></ul>
+      <div class="inline-actions"><a class="button button-dark" data-vp3-cta="home_devices_get_vp3" data-vp3-target="signup" href="<?= e($signupUrl) ?>">Get VP3 <span aria-hidden="true">→</span></a><a class="text-link" data-vp3-cta="home_devices_demo" data-vp3-target="demo" href="<?= e($demoUrl) ?>">See VP3 in action <span aria-hidden="true">→</span></a></div>
     </div>
-  </section>
+  </div></section>
 
-  <section class="homeserver" id="homeserver" aria-labelledby="homeserver-title">
-    <div class="wrap homeserver-grid">
-      <div class="homeserver-visual" aria-label="VP3 HomeServer private AI diagram">
-        <div class="hs-badge">Private by design</div>
-        <div class="hs-monitor"><span>VP3</span><i></i><i></i><i></i><i></i></div>
-        <div class="hs-node"><b>VP3</b><small>HomeServer</small><em></em></div>
-        <div class="hs-phone"><span>VP3</span><i>My assistant</i><i>Local files</i><i>Knowledge</i><i>Automations</i></div>
-        <svg class="hs-lines" viewBox="0 0 620 360" role="presentation" aria-hidden="true"><path d="M205 180H300M370 180H465M335 100V150M335 215V285"/></svg>
-        <div class="hs-data">Your data. Your control.</div>
-      </div>
-      <div class="homeserver-copy">
-        <p class="eyebrow">Private AI infrastructure</p>
-        <h2 id="homeserver-title">HomeServer keeps your<br>AI close to home.</h2>
-        <p>Pair VP3 with HomeServer for self-hosted AI, secure data access, and private storage you control. Keep sensitive files, knowledge, tools, and workflows in a user-controlled environment while your VP3 assistants stay available across desktop and mobile.</p>
-        <ul class="simple-list">
-          <li><span>▣</span>Self-hosted AI and local private memory</li>
-          <li><span>⌑</span>Secure access with user-controlled permissions</li>
-          <li><span>□</span>Private file, knowledge, and workflow storage</li>
-          <li><span>▱</span>Paired desktop and mobile assistants</li>
-        </ul>
-        <a class="button button-dark" href="<?= e($homeServerUrl) ?>">Explore HomeServer <span aria-hidden="true">→</span></a>
-      </div>
-    </div>
-  </section>
+  <section class="homeserver" id="homeserver" aria-labelledby="homeserver-title"><div class="wrap homeserver-grid">
+    <div class="homeserver-visual" aria-label="VP3 HomeServer private AI diagram"><div class="hs-badge">Private by design</div><div class="hs-monitor"><span>VP3</span><i></i><i></i><i></i><i></i></div><div class="hs-node"><b>VP3</b><small>HomeServer</small><em></em></div><div class="hs-phone"><span>VP3</span><i>My Agent</i><i>Local files</i><i>Knowledge</i><i>Tools</i></div><svg class="hs-lines" viewBox="0 0 620 360" role="presentation" aria-hidden="true"><path d="M205 180H300M370 180H465M335 100V150M335 215V285"/></svg><div class="hs-data">Your data. Your control.</div></div>
+    <div class="homeserver-copy"><p class="eyebrow">Cloud + self-hosted capability</p><h2 id="homeserver-title">HomeServer gives the same Agent a private local side.</h2><p>Use VP3 Cloud for connected public and account experiences, then pair HomeServer when files, knowledge, tools, models, or execution should stay on hardware you control.</p><ul class="simple-list"><li><span>▣</span>Local knowledge and private collections</li><li><span>⌑</span>Approved tools and skills</li><li><span>□</span>Local or private model execution</li><li><span>▱</span>Explicit paired-device authority</li></ul><a class="button button-dark" data-vp3-cta="home_homeserver" data-vp3-target="homeserver" href="<?= e($homeServerUrl) ?>">Explore HomeServer <span aria-hidden="true">→</span></a></div>
+  </div></section>
 
-  <section class="dark-section" aria-labelledby="experience-title">
-    <div class="wrap">
-      <div class="dark-heading">
-        <div><p class="eyebrow light">The VP3 difference</p><h2 id="experience-title">The assistant<br>is the experience.</h2></div>
-        <p>VP3 is designed around assistants that understand context, stay connected to the work, and operate within the access you give them.</p>
-      </div>
-      <div class="dark-grid">
-        <article><span>01 · Individual</span><h3>An assistant that works with you.</h3><p>Capture thoughts and conversations, build useful personal knowledge, and give your profile an agent that can help people reach you.</p><a href="<?= e($signupUrl) ?>">Start with VP3 <b>→</b></a></article>
-        <article><span>02 · Teams</span><h3>Shared context without the chaos.</h3><p>Bring assistants into team workspaces, preserve the important decisions, and move from conversation to coordinated action.</p><a href="<?= e($teamsUrl) ?>">Explore teams <b>→</b></a></article>
-        <article><span>03 · Private AI</span><h3>Your intelligence on your terms.</h3><p>Pair with HomeServer to keep private knowledge, models, tools, and storage under your control while VP3 stays useful everywhere.</p><a href="<?= e($homeServerUrl) ?>">Explore HomeServer <b>→</b></a></article>
-      </div>
-    </div>
-  </section>
+  <section class="home-choice" aria-labelledby="choice-title"><div class="wrap home-choice-grid">
+    <div><p class="eyebrow">Start with what you need</p><h2 id="choice-title">Use one service or connect the whole loop.</h2><p>VP3 can start with transcription, browser research, meetings, booking, commerce, or a public Profile Agent. The system becomes more useful as you intentionally connect the parts that fit your work.</p></div>
+    <div class="home-choice-actions"><a class="button button-dark" data-vp3-cta="home_choice_services" data-vp3-target="services" href="<?= e($servicesUrl) ?>">Explore services →</a><a class="button button-outline" data-vp3-cta="home_choice_pricing" data-vp3-target="pricing" href="<?= e($pricingUrl) ?>">View pricing</a></div>
+  </div></section>
 
-  <section class="final-cta">
-    <div class="wrap final-cta-grid">
-      <div>
-        <p class="eyebrow">Ready when you are</p>
-        <h2>Put a VP3 assistant to work.</h2>
-        <p>Create your account, capture your first conversation, and start building an AI workspace around the way you actually work.</p>
-      </div>
-      <div class="final-actions">
-        <a class="button button-dark" href="<?= e($signupUrl) ?>">Get VP3 <span aria-hidden="true">→</span></a>
-        <a class="button button-outline" href="<?= e($demoUrl) ?>">Book a demo</a>
-      </div>
-    </div>
-  </section>
+  <section class="final-cta"><div class="wrap final-cta-grid"><div><p class="eyebrow">Ready when you are</p><h2>Put one VP3 Agent across the work.</h2><p>Create your account or walk through the full browser-to-meeting-to-outcome workflow in a demo.</p></div><div class="final-actions"><a class="button button-dark" data-vp3-cta="home_final_get_vp3" data-vp3-target="signup" href="<?= e($signupUrl) ?>">Get VP3 <span aria-hidden="true">→</span></a><a class="button button-outline" data-vp3-cta="home_final_demo" data-vp3-target="demo" href="<?= e($demoUrl) ?>">Book a demo</a></div></div></section>
 </main>
 
 <footer class="footer">
@@ -435,7 +338,7 @@ $servicesUrl = url('/services.php');
     <div class="footer-brand"><?= vp3_public_brand() ?><span>AI assistants for real work.</span></div>
     <nav aria-label="Footer navigation">
       <a href="<?= e($productUrl) ?>">Product</a>
-      <a href="<?= e($teamsUrl) ?>">Teams</a>
+      <a href="<?= e($servicesUrl) ?>">Services</a>
       <a href="<?= e($homeServerUrl) ?>">HomeServer</a>
       <a href="<?= e($pricingUrl) ?>">Pricing</a>
       <a href="<?= e($aboutUrl) ?>">About</a>
