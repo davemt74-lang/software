@@ -13,10 +13,35 @@ on:
       - 'chat-cognitive-feed-v530.js'
       - 'chat-cognitive-feed-v530.css'
       - 'chat.php'
+      - 'chat.js'
+      - 'chat-voice.js'
+      - 'premium-voice-v117.js'
+      - 'chat-cognitive-presentation-v510.js'
+      - 'chat-notifications-drawer-v240.js'
+      - 'member-agent-voice-menu.js'
+      - 'includes/member-header.php'
+      - 'includes/member-user-menu.php'
+      - 'includes/chat-engine.php'
+      - 'includes/chat-agent-policy-v236.php'
+      - 'includes/release-chat-v105.php'
+      - 'includes/agent-chat-runtime-v2160.php'
+      - 'api/agent-voice-v117.php'
+      - 'tools/run_recovery_baseline.py'
       - 'upgrade.php'
       - 'tests/cognitive-*.mjs'
       - 'tests/browser-companion-cognitive-now-v2120.mjs'
       - 'tests/browser-companion-proactive-notifications-v2140.mjs'
+      - 'tests/chat-proactive-voice-hardening-v244.mjs'
+      - 'tests/chat-fast-voice-v144.mjs'
+      - 'tests/chat-elevenlabs-retry-v146.mjs'
+      - 'tests/chat-notifications-brain-v240.mjs'
+      - 'tests/browser-cognitive-review-hardening-v2120.mjs'
+      - 'tests/chat-execution-v019-contract.mjs'
+      - 'tests/chat-execution-v022-contract.mjs'
+      - 'tests/profile-activity-chat-contract.mjs'
+      - 'tests/profile-agent-chat-order-voice-contract.mjs'
+      - 'tests/conversation-consolidation-v131.mjs'
+      - 'tests/agent-chat-operational-activity-contract.mjs'
       - '.github/workflows/production-deploy-package.yml'
       - '.github/workflows/cognitive-loop-release-v2360.yml'
   push:
@@ -63,10 +88,26 @@ jobs:
           php -l api/cognitive-orchestration-v560.php
           php -l api/extension-cognitive-now-v2120.php
           php -l includes/extension-notifications-v2140.php
+          php -l chat.php
+          php -l api/agent-voice-v117.php
+          php -l api/cognitive-presentation-v510.php
+          php -l includes/chat-engine.php
+          php -l includes/chat-agent-policy-v236.php
+          php -l includes/release-chat-v105.php
+          php -l includes/agent-chat-runtime-v2160.php
+          php -l includes/member-header.php
+          php -l includes/member-user-menu.php
           php -l includes/bootstrap.php
           php -l upgrade.php
       - name: JavaScript syntax
-        run: node --check chat-cognitive-feed-v530.js
+        run: |
+          node --check chat-cognitive-feed-v530.js
+          node --check chat.js
+          node --check chat-voice.js
+          node --check premium-voice-v117.js
+          node --check chat-cognitive-presentation-v510.js
+          node --check chat-notifications-drawer-v240.js
+          node --check member-agent-voice-menu.js
       - name: End-to-end release contract
         run: node tests/cognitive-loop-release-v2360.mjs
       - name: v23.x feature family
@@ -91,3 +132,18 @@ jobs:
         run: |
           node tests/browser-companion-cognitive-now-v2120.mjs
           node tests/browser-companion-proactive-notifications-v2140.mjs
+      - name: Agent Chat v2.44 proactive interaction contract
+        run: node tests/chat-proactive-voice-hardening-v244.mjs
+      - name: Agent Chat v2.44 retained voice and presentation contracts
+        run: |
+          node tests/chat-fast-voice-v144.mjs
+          node tests/chat-elevenlabs-retry-v146.mjs
+          node tests/chat-notifications-brain-v240.mjs
+          node tests/cognitive-presentation-v510.mjs
+          node tests/browser-cognitive-review-hardening-v2120.mjs
+          node tests/chat-execution-v019-contract.mjs
+          node tests/chat-execution-v022-contract.mjs
+          node tests/profile-activity-chat-contract.mjs
+          node tests/profile-agent-chat-order-voice-contract.mjs
+          node tests/conversation-consolidation-v131.mjs
+          node tests/agent-chat-operational-activity-contract.mjs
