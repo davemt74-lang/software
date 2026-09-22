@@ -16,6 +16,7 @@ assert.match(intelligence,/function onboarding_intelligence_activation_interest/
 assert.match(intelligence,/function onboarding_intelligence_activation_action/);
 assert.match(intelligence,/activation\.defer\./);
 assert.match(intelligence,/activation\.dismiss\./);
+assert.match(intelligence,/\$publicFunnel=is_array\(\$mergedDraft\['public_funnel'\]/,'activation persistence must read the canonical nested public funnel draft');
 assert.match(intelligence,/\$mergedInterests\['activation\.'\.\$attributionKey\]=\$value/,'origin/source attribution must survive onboarding draft cleanup');
 assert.match(intelligence,/\$days=max\(1,min\(30,\$deferDays\)\)/,'defer window must be bounded');
 assert.match(intelligence,/elseif\(\$action==='dismiss'\)[\s\S]*\$patch\[\$interest\]=false/,'not interested must turn off the workflow interest');
@@ -32,6 +33,7 @@ assert.match(onboarding,/usage_milestones/);
 assert.match(onboarding,/attribution/);
 assert.match(onboarding,/\$interests\['activation\.origin'\]/,'activation attribution must read the durable origin');
 assert.match(onboarding,/\$interests\['activation\.source'\]/,'activation attribution must read the durable current source');
+assert.match(onboarding,/\$publicFunnel=is_array\(\$draft\['public_funnel'\]/,'activation state must retain compatibility with the canonical nested funnel draft');
 for(const signal of ['First Browser Companion connected','First VP3 meeting created','First calendar event added','First booking received','First product published','First Team relationship created','HomeServer paired']) assert.ok(onboarding.includes(signal),`missing activation milestone ${signal}`);
 assert.match(onboarding,/Your next selected VP3 setup step is/,'Agent Chat must answer next setup from activation state');
 assert.match(onboarding,/Open VP3 Setup/);
