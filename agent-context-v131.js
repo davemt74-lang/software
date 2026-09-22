@@ -164,6 +164,8 @@
     if(!select||knowledgeScopeLoadPromise)return knowledgeScopeLoadPromise;
     select.dataset.knowledgeScopeReady='loading';
     select.setAttribute('aria-busy','true');
+    const selectedOption=select.selectedOptions?.[0]||null;
+    if(selectedOption?.textContent==='Saved folder · unavailable')selectedOption.textContent='Saved folder · loading…';
     select.removeAttribute('data-knowledge-scope-error');
     select.removeAttribute('title');
     knowledgeScopeLoadPromise=loadKnowledgeScopeFolders()
@@ -178,6 +180,8 @@
         select.dataset.knowledgeScopeReady='0';
         select.dataset.knowledgeScopeError=message;
         select.setAttribute('aria-busy','false');
+        const selectedOption=select.selectedOptions?.[0]||null;
+        if(selectedOption?.textContent==='Saved folder · loading…')selectedOption.textContent='Saved folder · unavailable';
         select.title=message+' Focus this selector to retry.';
         knowledgeScopeLoadPromise=null;
         return [];
