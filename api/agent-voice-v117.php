@@ -29,7 +29,39 @@ function stonefellow_voice_v117_formats(): array
     return ['mp3_22050_32','mp3_44100_128'];
 }
 
-function stonefellow_voice_v117_settings(): array
+function stonefellow_voice_v244_agent_selection(array $user, int $agentId): array
+{
+    $selection = ['requested'=>false,'voice_id'=>'','local_verified'=>false,'source'=>'global'];
+    if ($agentId < 1) return $selection;
+    $pdo = db();
+    if (!$pdo || !function_exists('user_agent_get_v236')) return $selection;
+    $agent = user_agent_get_v236($pdo, (int)$user['id'], $agentId);
+    if (!$agent || empty($agent['is_active']) || empty($agent['voice_enabled'])) return $selection;
+
+    $selection['requested'] = true;
+    $selection['source'] = 'agent_clone';
+    try {
+        require_once dirname(__DIR__) . '/includes/studio-participants.php';
+        require_once dirname(__DIR__) . '/includes/studio-voice-profile.php';
+        if (!table_exists('studio_participant_voices')) return $selection;
+        $self = studio_voice_profile_self($pdo, $user);
+        $stmt = $pdo->prepare(
+            "SELECT clone_provider_voice_id,clone_verified
+             FROM studio_participant_voices
+             WHERE owner_user_id=? AND participant_id=? AND provider='elevenlabs'
+             LIMIT 1"
+        );
+        $stmt->execute([(int)$user['id'], (int)$self['id']]);
+        $row = $stmt->fetch() ?: [];
+        $selection['voice_id'] = trim((string)($row['clone_provider_voice_id'] ?? ''));
+        $selection['local_verified'] = !empty($row['clone_verified']);
+    } catch (Throwable $error) {
+        error_log('Stonefellow Agent clone selection failed: ' . mb_strimwidth($error->getMessage(), 0, 220, '…'));
+    }
+    return $selection;
+}
+
+function stonefellow_voice_v117_settings(?array $user = null, int $agentId = 0): array
 {
     $apiKey = trim((string)(getenv('ELEVENLABS_API_KEY') ?: ''));
     $credentialState = $apiKey !== '' ? 'environment' : 'missing';
@@ -40,11 +72,19 @@ function stonefellow_voice_v117_settings(): array
         elseif ($encrypted !== '') $credentialState = 'unreadable';
     }
     $voiceId = trim((string)(getenv('ELEVENLABS_VOICE_ID') ?: setting('ai_elevenlabs_voice_id', 'JBFqnCBsd6RMkjVDRZzb')));
+    $voiceSource = 'global';
+    if ($user && $agentId > 0) {
+        $selection = stonefellow_voice_v244_agent_selection($user, $agentId);
+        if (!empty($selection['requested'])) {
+            $voiceId = trim((string)$selection['voice_id']);
+            $voiceSource = 'agent_clone';
+        }
+    }
     $modelId = trim((string)(getenv('ELEVENLABS_MODEL_ID') ?: setting('ai_elevenlabs_model_id', 'eleven_flash_v2_5')));
     if (!in_array($modelId, stonefellow_voice_v117_models(), true)) $modelId = 'eleven_flash_v2_5';
     $outputFormat = trim((string)(getenv('ELEVENLABS_OUTPUT_FORMAT') ?: 'mp3_22050_32'));
     if (!in_array($outputFormat, stonefellow_voice_v117_formats(), true)) $outputFormat = 'mp3_22050_32';
-    return [$apiKey, $voiceId, $modelId, $outputFormat, $credentialState];
+    return [$apiKey, $voiceId, $modelId, $outputFormat, $credentialState, $voiceSource];
 }
 
 function stonefellow_voice_v117_json(array $payload, int $status = 200): never
@@ -85,6 +125,55 @@ function stonefellow_voice_v157_upstream_error(int $status, string $detail = '')
     };
 }
 
+function stonefellow_voice_v244_verify(string $apiKey, string $voiceId): array
+{
+    if ($apiKey === '' || !preg_match('/^[A-Za-z0-9_-]{8,128}$/', $voiceId)) {
+        return ['ready'=>false,'verified'=>false,'status'=>0,'voice_name'=>'','error'=>'ElevenLabs voice is not configured.'];
+    }
+    if (!function_exists('curl_init')) {
+        return ['ready'=>false,'verified'=>false,'status'=>0,'voice_name'=>'','error'=>'Voice transport is unavailable.'];
+    }
+    $curl = curl_init('https://api.elevenlabs.io/v1/voices/' . rawurlencode($voiceId));
+    curl_setopt_array($curl, [
+        CURLOPT_HTTPGET=>true,
+        CURLOPT_RETURNTRANSFER=>true,
+        CURLOPT_CONNECTTIMEOUT=>4,
+        CURLOPT_TIMEOUT=>8,
+        CURLOPT_HTTPHEADER=>['xi-api-key: ' . $apiKey, 'Accept: application/json'],
+        CURLOPT_FOLLOWLOCATION=>false,
+        CURLOPT_SSL_VERIFYPEER=>true,
+        CURLOPT_SSL_VERIFYHOST=>2,
+    ]);
+    if (defined('CURLOPT_PROTOCOLS') && defined('CURLPROTO_HTTPS')) curl_setopt($curl, CURLOPT_PROTOCOLS, CURLPROTO_HTTPS);
+    $raw = curl_exec($curl);
+    $status = (int)curl_getinfo($curl, CURLINFO_HTTP_CODE);
+    $transportError = curl_error($curl);
+    curl_close($curl);
+    $decoded = is_string($raw) ? json_decode($raw, true) : null;
+    if ($status >= 200 && $status < 300 && is_array($decoded) && trim((string)($decoded['voice_id'] ?? '')) !== '') {
+        return [
+            'ready'=>true,
+            'verified'=>true,
+            'status'=>$status,
+            'voice_name'=>mb_strimwidth(trim((string)($decoded['name'] ?? '')), 0, 120, ''),
+            'error'=>'',
+        ];
+    }
+    $detail = '';
+    if (is_array($decoded)) {
+        $rawDetail = $decoded['detail'] ?? $decoded['message'] ?? '';
+        $detail = is_array($rawDetail) ? trim((string)($rawDetail['message'] ?? '')) : trim((string)$rawDetail);
+    }
+    if ($detail === '' && $transportError !== '') $detail = $transportError;
+    return [
+        'ready'=>false,
+        'verified'=>false,
+        'status'=>$status,
+        'voice_name'=>'',
+        'error'=>stonefellow_voice_v157_upstream_error($status, $detail),
+    ];
+}
+
 $requestMethod = strtoupper((string)($_SERVER['REQUEST_METHOD'] ?? 'GET'));
 
 if ($requestMethod === 'GET') {
@@ -111,7 +200,8 @@ if ($requestMethod === 'GET') {
     // before the long-lived audio stream begins.
     if (session_status() === PHP_SESSION_ACTIVE) session_write_close();
 
-    [$apiKey, $voiceId, $configuredModelId, $configuredOutputFormat] = stonefellow_voice_v117_settings();
+    [$apiKey, $configuredVoiceId, $configuredModelId, $configuredOutputFormat] = stonefellow_voice_v117_settings();
+    $voiceId = trim((string)($ticket['voice_id'] ?? $configuredVoiceId));
     if ($apiKey === '' || !preg_match('/^[A-Za-z0-9_-]{8,128}$/', $voiceId)) {
         stonefellow_voice_v117_json(['ok' => false, 'error' => 'ElevenLabs voice is not configured.'], 503);
     }
@@ -249,13 +339,15 @@ if (!hash_equals(csrf_token(), (string)($input['csrf_token'] ?? ''))) {
 
 $action = (string)($input['action'] ?? 'ticket');
 if ($action === 'warm') {
-    [$apiKey, $voiceId, $modelId, $outputFormat, $credentialState] = stonefellow_voice_v117_settings();
-    $ready = $apiKey !== '' && preg_match('/^[A-Za-z0-9_-]{8,128}$/', $voiceId) === 1;
-    $error = '';
-    if (!$ready) {
-        $error = $credentialState === 'unreadable'
-            ? 'The saved ElevenLabs credential cannot be decrypted. Re-enter it in Admin AI settings.'
-            : 'ElevenLabs is not configured.';
+    $agentId = max(0, (int)($_GET['agent'] ?? $input['agent'] ?? 0));
+    [$apiKey, $voiceId, $modelId, $outputFormat, $credentialState, $voiceSource] = stonefellow_voice_v117_settings($user, $agentId);
+    $verification = stonefellow_voice_v244_verify($apiKey, $voiceId);
+    $ready = !empty($verification['ready']);
+    $error = (string)($verification['error'] ?? '');
+    if (!$ready && $credentialState === 'unreadable') {
+        $error = 'The saved ElevenLabs credential cannot be decrypted. Re-enter it in Admin AI settings.';
+    } elseif (!$ready && $voiceSource === 'agent_clone' && $voiceId === '') {
+        $error = 'This Agent is set to use your ElevenLabs clone, but no clone is currently available.';
     }
     header('X-Stonefellow-Voice-Model: ' . $modelId);
     header('X-Stonefellow-Voice-Format: ' . $outputFormat);
@@ -263,15 +355,17 @@ if ($action === 'warm') {
     stonefellow_voice_v117_json([
         'ok' => $ready,
         'ready' => $ready,
-        'verified' => false,
-        'upstream_status' => 0,
+        'verified' => !empty($verification['verified']),
+        'upstream_status' => (int)($verification['status'] ?? 0),
         'model_id' => $modelId,
         'output_format' => $outputFormat,
+        'voice_source' => $voiceSource,
+        'voice_name' => (string)($verification['voice_name'] ?? ''),
         'streaming' => true,
         'chunked' => true,
         'latency_profile' => 'fast',
         'credential_state' => $credentialState,
-        'readiness_authority' => 'tts-stream',
+        'readiness_authority' => 'elevenlabs-get-voice',
         'error' => $error,
     ], 200);
 }
@@ -287,7 +381,8 @@ if (mb_strlen($text) > 2000) {
     stonefellow_voice_v117_json(['ok' => false, 'error' => 'Voice chunk is too long.'], 422);
 }
 
-[$apiKey, $voiceId, $modelId, $outputFormat] = stonefellow_voice_v117_settings();
+$agentId = max(0, (int)($_GET['agent'] ?? $input['agent'] ?? 0));
+[$apiKey, $voiceId, $modelId, $outputFormat] = stonefellow_voice_v117_settings($user, $agentId);
 if ($apiKey === '' || !preg_match('/^[A-Za-z0-9_-]{8,128}$/', $voiceId)) {
     stonefellow_voice_v117_json(['ok' => false, 'error' => 'ElevenLabs voice is not configured.'], 503);
 }
@@ -301,6 +396,7 @@ try {
 $_SESSION['stonefellow_voice_v117'][$token] = [
     'user_id' => (int)$user['id'],
     'text' => $text,
+    'voice_id' => $voiceId,
     'model_id' => $modelId,
     'output_format' => $outputFormat,
     'expires' => time() + 180,
