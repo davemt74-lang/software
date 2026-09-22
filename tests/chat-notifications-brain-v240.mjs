@@ -18,7 +18,7 @@ const identity = read('chat-agent-identity-v236.js');
 
 assert.doesNotThrow(() => new Function(ui), 'Activity Center runtime must be valid JavaScript');
 assert.doesNotThrow(() => new Function(identity), 'Agent identity runtime must be valid JavaScript');
-assert.match(chat, /\$notificationDrawerBuild = 'chat-notifications-canvas-v240-cognitive-v510-20260918'/, 'Activity Center cache key must identify the PR81 runtime wiring fix');
+assert.match(chat, /\$notificationDrawerBuild = 'chat-notifications-proactive-v244-20260922'/, 'Activity Center cache key must identify the v2.44 proactive interaction runtime');
 assert.match(chat, /\$agentIdentityBuild = 'chat-onboarding-current-systems-v242-20260921'/);
 assert.match(chat, /window\.STONEFELLOW_NOTIFICATION_DRAWER=/);
 assert.match(chat, /chat-notifications-drawer-v240\.css\?v=/);
@@ -84,8 +84,10 @@ assert.match(ui, /Keep the cursor unchanged so a failed canvas presentation is r
 assert.doesNotMatch(identity, /agent-attention\.js|agent-attention\.css/, 'legacy Profile Agent top-banner runtime must not load in Agent Chat');
 assert.match(ui, /StonefellowPremiumVoiceV122/, 'attention uses the existing ElevenLabs voice runtime');
 assert.match(ui, /SpeechSynthesisUtterance/, 'attention speech retains system voice fallback');
-assert.match(ui, /if \(wasVoice\) setVoiceMode\(false\)|if \(wasVoice\) \{[\s\S]*setVoiceMode\(false\)/, 'spoken attention may pause an already-active voice conversation');
-assert.match(ui, /if \(wasVoice\) \{[\s\S]*setVoiceMode\(true\)/, 'spoken attention restores listening only when it was already active');
+assert.match(ui, /function cancelSpeech\(\)/, 'spoken attention exposes a canonical cancellation primitive');
+assert.match(ui, /speechGeneration \+= 1/, 'cancelling speech invalidates queued proactive announcements');
+assert.match(ui, /stonefellow:agent-proactive-speech/, 'proactive announcements publish speech lifecycle into canonical Chat voice');
+assert.doesNotMatch(ui, /setVoiceMode\(false\)/, 'proactive speech must not toggle the canonical voice conversation off');
 assert.doesNotMatch(ui, /responseTemporaryVoice/, 'notifications must never create temporary microphone authority');
 assert.match(ui, /return Boolean\(continuity\(\)\.isVoice\?\.\(\)\)/, 'attention reads voice state through the canonical continuity fallback');
 assert.doesNotMatch(ui, /markUserResponse|responseWindowActive|responseTimer/, 'notification runtime must not retain obsolete temporary microphone response-window state');
