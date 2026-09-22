@@ -408,7 +408,14 @@ function vp3_cognitive_cards_card_v520(PDO $pdo,array $user,string $namespace,ar
         $out['facts'][]=vp3_cognitive_cards_fact_v520('Selected','During VP3 onboarding');
         $out['badges'][]='Optional setup';
         $target=trim((string)($row['setup_url']??''));
-        if($target!=='')$out['actions'][]=vp3_cognitive_cards_action_v520((string)($row['action_label']??'Open setup'),$target);
+        if($target!==''){
+            $parts=parse_url($target);
+            if(is_array($parts)&&isset($parts['scheme'])){
+                $target=(string)($parts['path']??'/');
+                if(!empty($parts['query']))$target.='?'.$parts['query'];
+            }
+            if(str_starts_with($target,'/')&&!str_starts_with($target,'//'))$out['actions'][]=vp3_cognitive_cards_action_v520((string)($row['action_label']??'Open setup'),$target);
+        }
         $out['actions'][]=vp3_cognitive_cards_prompt_v520('Ask Agent','What should I set up next in VP3?');
     }elseif($type==='brain_priority'){
         $out['title']=(string)($row['title']??'Agent Brain priority');$out['subtitle']='Agent Brain priority';
