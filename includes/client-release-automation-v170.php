@@ -749,10 +749,16 @@ function client_release_automation_run_v170(PDO $pdo,string $triggerType='manual
         $existing=$existingStmt->fetch();
         if($existing)return $existing;
     }
-    $stmt=$pdo->prepare("INSERT INTO client_release_automation_runs_v170
+    $insertSql=($idempotencyKey!==''?'INSERT IGNORE':'INSERT')." INTO client_release_automation_runs_v170
       (run_key,trigger_type,dry_run,automation_enabled,kill_switch,status,triggered_by_user_id)
-      VALUES (?,?,?,?,?,'running',?)");
+      VALUES (?,?,?,?,?,'running',?)";
+    $stmt=$pdo->prepare($insertSql);
     $stmt->execute([$runKey,$triggerType,!empty($control['dry_run'])?1:0,!empty($control['automation_enabled'])?1:0,!empty($control['kill_switch'])?1:0,$actorUserId>0?$actorUserId:null]);
+    if($idempotencyKey!==''&&$stmt->rowCount()<1){
+        $existingStmt=$pdo->prepare('SELECT * FROM client_release_automation_runs_v170 WHERE run_key=? LIMIT 1');
+        $existingStmt->execute([$runKey]);$existing=$existingStmt->fetch();
+        if($existing)return $existing;
+    }
     $runId=(int)$pdo->lastInsertId();
 
     $created=0;$holdsBefore=(int)$pdo->query("SELECT COUNT(*) FROM client_release_automation_holds_v170 WHERE is_active=1")->fetchColumn();
