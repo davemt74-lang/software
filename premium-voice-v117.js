@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const BUILD = 'premium-voice-verified-v157-20260829';
+  const BUILD = 'premium-voice-agent-routing-v244-20260922';
   // Keep the first utterance deliberately short so streamed LLM output reaches
   // ElevenLabs quickly. Later chunks stay larger and are prefetched while the
   // current chunk is playing, preserving natural cadence without startup lag.
