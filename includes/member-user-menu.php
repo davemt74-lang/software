@@ -10,6 +10,7 @@ $memberMenuRoleSummary = implode(' · ', user_role_labels($memberMenuUser));
   class="chat-top-menu member-profile-menu"
   id="chatProfileMenu"
   data-agent-voice-menu-config
+  data-user-id="<?= (int)($memberMenuUser['id'] ?? 0) ?>"
   data-agent-endpoint="<?= e(url('/api/user-agent-system-v236.php')) ?>"
   data-voice-endpoint="<?= e(url('/api/studio-voice-profile.php')) ?>"
   data-chat-settings-endpoint="<?= e(url('/api/chat-settings-v237.php')) ?>"
