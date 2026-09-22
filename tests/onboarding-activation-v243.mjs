@@ -12,7 +12,7 @@ const feedJs=read('chat-cognitive-feed-v530.js');
 const chat=read('chat.php');
 const onboardingUi=read('chat-agent-identity-v236.js');
 
-assert.match(intelligence,/onboarding-intelligence-20260921-v4/);
+assert.match(intelligence,/onboarding-intelligence-20260921-v3/,'activation must preserve the stable onboarding-intelligence build id');
 assert.match(intelligence,/function onboarding_intelligence_activation_interest/);
 assert.match(intelligence,/function onboarding_intelligence_activation_action/);
 assert.match(intelligence,/activation\.defer\./);
@@ -48,7 +48,7 @@ assert.match(cards,/parse_url\(\$target\)/,'setup links must be normalized befor
 assert.match(cards,/str_starts_with\(\$target,'\/'\)/,'setup card actions must remain internal routes');
 assert.match(cardJs,/onboarding_setup:'→'/);
 
-assert.match(feed,/VP3_COGNITIVE_FEED_V530='vp3-cognitive-feed-v531-20260921'/);
+assert.match(feed,/VP3_COGNITIVE_FEED_V530='vp3-cognitive-feed-v530-20260918'/,'activation must preserve the stable Cognitive Feed build id');
 assert.match(feed,/function vp3_cognitive_feed_activation_candidates_v530/);
 assert.match(feed,/'activation:'\.\(string\)\$key,'setup'/);
 assert.match(feed,/vp3_cognitive_feed_request_v530\('onboarding_setup'/);
@@ -74,8 +74,11 @@ assert.doesNotMatch(feedJs,/requestSubmit\([\s\S]{0,600}activation_defer/,'activ
 assert.doesNotThrow(()=>new Function(onboardingUi),'activation-aware guided setup JS must parse');
 assert.match(onboardingUi,/Deferred until/,'reopened VP3 Setup must show deferred state');
 assert.match(onboardingUi,/Keeping a deferred system selected and continuing reactivates it now/);
-assert.match(chat,/\$agentIdentityBuild = 'chat-onboarding-activation-v243-20260921'/);
-assert.match(chat,/\$cognitiveCardsBuild = 'cognitive-cards-v521-activation-20260921'/);
-assert.match(chat,/\$cognitiveFeedBuild = 'cognitive-feed-v531-activation-20260921'/);
+assert.match(chat,/\$agentIdentityBuild = 'chat-onboarding-current-systems-v242-20260921'/,'activation must preserve the stable onboarding UI build id');
+assert.match(chat,/\$agentIdentityAssetBuild = \$agentIdentityBuild \. '-activation-v243'/,'guided setup must cache-bust only its assets');
+assert.match(chat,/\$cognitiveCardsBuild = 'cognitive-cards-v520-20260918'/,'activation must preserve Universal Cards v5.20 build id');
+assert.match(chat,/\$cognitiveCardsAssetBuild = \$cognitiveCardsBuild \. '-activation-v243-memory-v570'/,'activation card JS must receive an asset-only cache bust');
+assert.match(chat,/\$cognitiveFeedBuild = 'cognitive-feed-v530-20260918'/,'activation must preserve Cognitive Feed v5.30 build id');
+assert.match(chat,/\$cognitiveFeedAssetBuild = \$cognitiveFeedBuild \. '-activation-v243-orchestration-v560-priority-v2310-proactive-v2340-calibration-v2350'/,'activation feed JS must receive an asset-only cache bust');
 
 console.log('Onboarding Activation + Agent Follow-Through v2.43 contract: PASS');
