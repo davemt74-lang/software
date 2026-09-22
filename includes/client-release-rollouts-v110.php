@@ -8,6 +8,12 @@ function client_release_product_valid_v110(string $product): bool
     return in_array($product, ['browser_companion','homeserver'], true);
 }
 
+function client_release_channel_v110(string $channel): string
+{
+    $channel=strtolower(trim($channel));
+    return in_array($channel,['stable','beta','dev'],true)?$channel:'stable';
+}
+
 function client_release_lifecycle_states_v110(): array
 {
     return ['draft','testing','canary','limited','general_availability','paused','superseded','withdrawn'];
