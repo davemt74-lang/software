@@ -11,6 +11,7 @@ homeserver_vp3_ensure_schema($pdo);
 chrome_extension_releases_ensure_schema($pdo);
 client_release_rollouts_ensure_schema_v110($pdo);
 client_release_health_ensure_schema_v120($pdo);
+client_release_incident_ensure_schema_v130($pdo);
 $adminUser=current_user();
 $adminUserId=(int)($adminUser['id']??0);
 $error = '';
@@ -21,6 +22,43 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } else {
         try {
             $action = (string)($_POST['action'] ?? '');
+
+            if (in_array($action,['incident_open','incident_contain','incident_start_recovery','incident_cohort','incident_refresh','incident_acknowledge','incident_resolve'],true)) {
+                if($action==='incident_open'){
+                    $product=(string)($_POST['product']??'');
+                    $releaseId=max(0,(int)($_POST['release_id']??0));
+                    $incident=client_release_incident_open_v130($pdo,$product,$releaseId,$_POST,$adminUserId);
+                    flash('notice','Release incident opened. No rollout state changed until containment is explicitly approved.');
+                }else{
+                    $incidentId=max(0,(int)($_POST['incident_id']??0));
+                    if($action==='incident_contain'){
+                        client_release_incident_contain_v130($pdo,$incidentId,$adminUserId);
+                        flash('notice','Affected rollout contained and paused.');
+                    }elseif($action==='incident_start_recovery'){
+                        client_release_incident_start_recovery_v130(
+                            $pdo,$incidentId,max(0,(int)($_POST['recovery_release_id']??0)),(int)($_POST['recovery_percent']??10),$adminUserId
+                        );
+                        flash('notice','Operator-approved recovery cohort started.');
+                    }elseif($action==='incident_cohort'){
+                        client_release_incident_set_cohort_v130($pdo,$incidentId,(int)($_POST['recovery_percent']??0),$adminUserId);
+                        flash('notice','Recovery cohort updated.');
+                    }elseif($action==='incident_refresh'){
+                        client_release_incident_refresh_v130($pdo,$incidentId,$adminUserId,true);
+                        flash('notice','Affected fleet recovery state refreshed.');
+                    }elseif($action==='incident_acknowledge'){
+                        client_release_incident_acknowledge_client_v130(
+                            $pdo,$incidentId,max(0,(int)($_POST['user_id']??0)),(string)($_POST['scope_key']??'account'),
+                            (string)($_POST['reason']??''),$adminUserId
+                        );
+                        flash('notice','Recovery exception acknowledged.');
+                    }elseif($action==='incident_resolve'){
+                        client_release_incident_resolve_v130($pdo,$incidentId,$_POST,$adminUserId);
+                        flash('notice','Release incident resolved and archived.');
+                    }
+                }
+                if(function_exists('client_release_intelligence_reconcile_all_v100'))client_release_intelligence_reconcile_all_v100($pdo);
+                redirect(url('/admin/homeserver.php#release-incidents'));
+            }
 
             if (in_array($action,['health_policy_update','health_evaluate','health_promote','health_reject'],true)) {
                 $product=(string)($_POST['product']??'');
@@ -130,6 +168,7 @@ $releaseIntelligence = function_exists('client_release_intelligence_admin_summar
 $rolloutAdoption=client_release_adoption_summary_v110($pdo);
 $releaseHealth=client_release_health_admin_summary_v120($pdo);
 $healthDecisions=client_release_health_recent_decisions_v120($pdo,12);
+$releaseIncidents=client_release_incident_list_v130($pdo,30);
 $rolloutAudit=client_release_audit_recent_v110($pdo,20);
 $adminTitle = 'Client Releases';
 $adminActive = 'homeserver';
@@ -161,6 +200,116 @@ require __DIR__ . '/_header.php';
   </table></div>
 </section>
 
+<section class="admin-card" id="release-incidents" style="margin-bottom:24px">
+  <div class="admin-card-head"><div><h3>Release Incidents &amp; Fleet Recovery</h3><p>Contain a problematic client release, recover affected clients through deterministic cohorts, verify the fleet, and preserve the incident record. v1.30 does not auto-rollback: containment and recovery are operator-approved actions.</p></div><span class="eyebrow">v1.30</span></div>
+  <?php if(!$releaseIncidents): ?>
+    <p>No release incidents have been opened.</p>
+  <?php endif; ?>
+  <?php foreach($releaseIncidents as $incident):
+    $iid=(int)$incident['id'];
+    $affectedRelease=is_array($incident['_affected_release']??null)?$incident['_affected_release']:null;
+    $recoveryRelease=is_array($incident['_recovery_release']??null)?$incident['_recovery_release']:null;
+    $stats=(array)($incident['_stats']??[]);
+    $closure=is_array($incident['_closure']??null)?$incident['_closure']:null;
+    $clients=client_release_incident_clients_v130($pdo,$iid);
+    $events=client_release_incident_events_v130($pdo,$iid,8);
+    $status=(string)$incident['status'];
+  ?>
+  <section class="admin-card" id="incident-<?= $iid ?>" style="margin:14px 0">
+    <div class="admin-card-head">
+      <div>
+        <h3>#<?= $iid ?> · <?= e((string)$incident['title']) ?></h3>
+        <p><?= e(ucfirst((string)$incident['severity'])) ?> · <?= e(ucwords(str_replace('_',' ',$status))) ?> · <?= e((string)$incident['product']) ?> <?= $affectedRelease?'v'.e((string)$affectedRelease['version']):'#'.(int)$incident['release_id'] ?></p>
+        <?php if((string)$incident['symptoms']!==''): ?><p><?= nl2br(e((string)$incident['symptoms'])) ?></p><?php endif; ?>
+      </div>
+      <span class="eyebrow"><?= (int)($incident['recovery_percent']??0) ?>% recovery</span>
+    </div>
+    <div class="admin-table-wrap"><table class="admin-table"><tbody>
+      <tr><td>Affected</td><td><strong><?= (int)($stats['affected']??0) ?></strong></td><td>Recovered</td><td><strong><?= (int)($stats['recovered']??0) ?></strong> · <?= e(client_release_health_percent_v120((int)($stats['recovery_rate_bps']??0))) ?></td><td>Failed</td><td><?= (int)($stats['recovery_failed']??0) ?></td></tr>
+      <tr><td>Pending</td><td><?= (int)($stats['pending']??0) ?></td><td>Offline</td><td><?= (int)($stats['offline']??0) ?></td><td>Acknowledged</td><td><?= (int)($stats['acknowledged']??0) ?></td></tr>
+      <tr><td>Bad release</td><td><?= $affectedRelease?'v'.e((string)$affectedRelease['version']):'Unavailable' ?></td><td>Recovery target</td><td><?= $recoveryRelease?'v'.e((string)$recoveryRelease['version']):'Not selected' ?></td><td>Opened</td><td><?= e((string)$incident['opened_at']) ?></td></tr>
+    </tbody></table></div>
+
+    <?php if($status==='open'): ?>
+      <form method="post" style="margin-top:12px" onsubmit="return confirm('Pause this affected rollout and stop offering it to new clients?');">
+        <?= csrf_field() ?><input type="hidden" name="action" value="incident_contain"><input type="hidden" name="incident_id" value="<?= $iid ?>">
+        <button class="button button-small primary" type="submit">Contain affected rollout</button>
+      </form>
+    <?php endif; ?>
+
+    <?php if($status==='contained'): ?>
+      <?php
+        $recoveryChoices=[];
+        foreach(client_release_admin_rollouts_v110($pdo,(string)$incident['product']) as $candidate){
+          if((int)$candidate['id']===(int)$incident['release_id'])continue;
+          if($affectedRelease&&(string)($candidate['channel']??'stable')!==(string)($affectedRelease['channel']??'stable'))continue;
+          $candidateRoll=(array)($candidate['_rollout']??[]);
+          if(!in_array((string)($candidateRoll['lifecycle_state']??''),['superseded','general_availability'],true))continue;
+          $recoveryChoices[]=$candidate;
+        }
+      ?>
+      <form method="post" class="admin-form" style="margin-top:12px">
+        <?= csrf_field() ?><input type="hidden" name="action" value="incident_start_recovery"><input type="hidden" name="incident_id" value="<?= $iid ?>">
+        <div class="form-row">
+          <label>Known-good release<select name="recovery_release_id" required>
+            <?php foreach($recoveryChoices as $candidate): ?><option value="<?= (int)$candidate['id'] ?>" <?= (int)($incident['recovery_release_id']??0)===(int)$candidate['id']?'selected':'' ?>>v<?= e((string)$candidate['version']) ?> · <?= e((string)$candidate['channel']) ?></option><?php endforeach; ?>
+          </select></label>
+          <label>Initial cohort<select name="recovery_percent"><?php foreach([10,25,50,100] as $pct): ?><option value="<?= $pct ?>"><?= $pct ?>%</option><?php endforeach; ?></select></label>
+        </div>
+        <?php if($recoveryChoices): ?><button class="button button-small primary" type="submit">Start operator-approved recovery</button><?php else: ?><small>No prior known-good release is available on this channel.</small><?php endif; ?>
+      </form>
+    <?php endif; ?>
+
+    <?php if(in_array($status,['recovering','monitoring'],true)): ?>
+      <div class="form-actions" style="margin-top:12px">
+        <form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="incident_cohort"><input type="hidden" name="incident_id" value="<?= $iid ?>"><label>Recovery cohort <select name="recovery_percent"><?php foreach([0,10,25,50,100] as $pct): ?><option value="<?= $pct ?>" <?= (int)$incident['recovery_percent']===$pct?'selected':'' ?>><?= $pct===0?'Paused':$pct.'%' ?></option><?php endforeach; ?></select></label><button class="button button-small" type="submit">Apply cohort</button></form>
+        <form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="incident_refresh"><input type="hidden" name="incident_id" value="<?= $iid ?>"><button class="button button-small" type="submit">Refresh fleet state</button></form>
+      </div>
+    <?php endif; ?>
+
+    <?php if($clients): ?>
+      <div class="admin-card-head" style="margin-top:16px"><div><h3>Affected Clients</h3><p>Recovery eligibility is deterministic by incident/client scope. Offline, failed, or otherwise stranded clients remain visible until recovered or explicitly acknowledged.</p></div></div>
+      <div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>Account</th><th>Scope</th><th>Cohort</th><th>Recovery state</th><th>Last seen</th><th>Exception</th></tr></thead><tbody>
+      <?php foreach($clients as $client): ?>
+        <tr>
+          <td>#<?= (int)$client['user_id'] ?></td><td><?= e((string)$client['scope_key']) ?></td><td><?= (int)$client['recovery_bucket'] ?></td>
+          <td><?= e(ucwords(str_replace('_',' ',(string)$client['recovery_state']))) ?></td><td><?= e((string)($client['last_seen_at']??'Unknown')) ?></td>
+          <td>
+            <?php if((string)$client['recovery_state']==='acknowledged'): ?><small><?= e((string)$client['acknowledged_reason']) ?></small>
+            <?php elseif(!in_array((string)$client['recovery_state'],['recovered'],true)&&$status!=='resolved'): ?>
+              <form method="post" class="admin-form"><?= csrf_field() ?><input type="hidden" name="action" value="incident_acknowledge"><input type="hidden" name="incident_id" value="<?= $iid ?>"><input type="hidden" name="user_id" value="<?= (int)$client['user_id'] ?>"><input type="hidden" name="scope_key" value="<?= e((string)$client['scope_key']) ?>"><label>Reason<input name="reason" maxlength="500" required placeholder="Manual recovery, retired device, unreachable client…"></label><button class="button button-small" type="submit">Acknowledge exception</button></form>
+            <?php else: ?>—<?php endif; ?>
+          </td>
+        </tr>
+      <?php endforeach; ?>
+      </tbody></table></div>
+    <?php endif; ?>
+
+    <?php if($status!=='resolved'&&$closure): ?>
+      <div style="margin-top:14px"><strong>Closure readiness: <?= !empty($closure['ready'])?'Ready':'Not ready' ?></strong>
+        <?php foreach((array)($closure['reasons']??[]) as $reason): ?><br><small><?= e((string)$reason) ?></small><?php endforeach; ?>
+      </div>
+      <?php if(!empty($closure['ready'])): ?>
+        <form method="post" class="admin-form" style="margin-top:12px">
+          <?= csrf_field() ?><input type="hidden" name="action" value="incident_resolve"><input type="hidden" name="incident_id" value="<?= $iid ?>">
+          <label>Root cause<textarea name="root_cause" rows="2" maxlength="2000" required></textarea></label>
+          <label>Resolution summary<textarea name="resolution_summary" rows="2" maxlength="2000" required></textarea></label>
+          <label>Lessons learned<textarea name="lessons_learned" rows="2" maxlength="4000"></textarea></label>
+          <button class="button button-small primary" type="submit">Resolve incident</button>
+        </form>
+      <?php endif; ?>
+    <?php elseif($status==='resolved'): ?>
+      <div style="margin-top:14px"><strong>Resolved <?= e((string)$incident['resolved_at']) ?></strong><br><small>Root cause: <?= e((string)$incident['root_cause']) ?></small><br><small>Resolution: <?= e((string)$incident['resolution_summary']) ?></small><?php if((string)$incident['lessons_learned']!==''): ?><br><small>Lessons: <?= e((string)$incident['lessons_learned']) ?></small><?php endif; ?></div>
+    <?php endif; ?>
+
+    <?php if($events): ?>
+      <div class="admin-card-head" style="margin-top:16px"><div><h3>Incident Timeline</h3><p>Latest containment, recovery, verification, exception, and closure events.</p></div></div>
+      <div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>When</th><th>Event</th><th>Transition</th></tr></thead><tbody><?php foreach($events as $event): ?><tr><td><?= e((string)$event['created_at']) ?></td><td><?= e(ucwords(str_replace('_',' ',(string)$event['event_type']))) ?></td><td><?= e((string)$event['from_state']) ?><?= (string)$event['to_state']!==''?' → '.e((string)$event['to_state']):'' ?></td></tr><?php endforeach; ?></tbody></table></div>
+    <?php endif; ?>
+  </section>
+  <?php endforeach; ?>
+</section>
+
 <section class="admin-card" id="release-health" style="margin-bottom:24px">
   <div class="admin-card-head"><div><h3>Release Health &amp; Promotion</h3><p>Evaluate cohort health before expanding a rollout. Health produces guidance only; a release moves forward only after an administrator explicitly approves a current healthy snapshot.</p></div><span class="eyebrow">v1.20</span></div>
   <div class="admin-table-wrap"><table class="admin-table">
@@ -175,6 +324,7 @@ require __DIR__ . '/_header.php';
         $snapshot=is_array($health['latest_snapshot']??null)?$health['latest_snapshot']:null;
         $recommendation=(string)($health['recommendation']??'manual_validation');
         $next=is_array($health['next_transition']??null)?$health['next_transition']:null;
+        $activeIncident=client_release_incident_active_for_release_v130($pdo,$product,$rid);
       ?>
       <tr>
         <td><strong><?= e($productLabel) ?> v<?= e((string)$health['version']) ?></strong><br><small><?= e((string)$health['channel']) ?> · #<?= $rid ?><br><?= e(ucwords(str_replace('_',' ',(string)($roll['lifecycle_state']??'draft')))) ?> · <?= (int)($roll['rollout_percent']??0) ?>%</small></td>
@@ -224,6 +374,16 @@ require __DIR__ . '/_header.php';
             <strong>Review rollback</strong><br><small>v1.20 does not auto-rollback. Use the v1.10 lifecycle controls after reviewing the failure evidence.</small>
           <?php else: ?>
             <small>No promotion action is available until a freshly evaluated snapshot passes all configured gates.</small>
+          <?php endif; ?>
+          <?php if($activeIncident): ?>
+            <br><small>Incident #<?= (int)$activeIncident['id'] ?> is <?= e((string)$activeIncident['status']) ?>.</small>
+          <?php elseif(in_array((string)($roll['lifecycle_state']??''),['canary','limited','general_availability','paused'],true)): ?>
+            <form method="post" class="admin-form" style="margin-top:8px">
+              <?= csrf_field() ?><input type="hidden" name="action" value="incident_open"><input type="hidden" name="product" value="<?= e($product) ?>"><input type="hidden" name="release_id" value="<?= $rid ?>">
+              <input type="hidden" name="severity" value="<?= $recommendation==='rollback_review'?'critical':'high' ?>">
+              <input type="hidden" name="symptoms" value="<?= e('v1.20 health: '.(string)$health['health_status'].' / '.$recommendation) ?>">
+              <button class="button button-small" type="submit">Open release incident</button>
+            </form>
           <?php endif; ?>
         </td>
       </tr>
