@@ -2961,6 +2961,10 @@
         message:message.trim(),
         input_mode:inputMode === 'voice' ? 'voice' : 'text'
       };
+      const knowledgeScopeRuntime=window.StonefellowKnowledgeScopeV162;
+      if(knowledgeScopeRuntime&&typeof knowledgeScopeRuntime.value==='function'){
+        payload.knowledge_scope=knowledgeScopeRuntime.value();
+      }
       if(browserAgentContext)payload.agent_context=browserAgentContext;
       const data = await api(payload);
 
