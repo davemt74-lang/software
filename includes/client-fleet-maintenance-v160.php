@@ -341,6 +341,8 @@ function client_fleet_pin_set_v160(PDO $pdo,int $userId,string $product,string $
     $channel=client_release_channel_for_v110($pdo,$userId,$product,$scopeKey);
     $release=client_fleet_release_by_version_v160($pdo,$product,$channel,$version,true);
     if(!$release)throw new RuntimeException('Pinned version must be a published release on the client channel.');
+    $compat=client_fleet_target_compatibility_v160($pdo,$product,$userId,$scopeKey,$release);
+    if((string)($compat['status']??'unknown')==='incompatible')throw new RuntimeException('That version pin violates an explicit Browser Companion ↔ HomeServer compatibility rule.');
     $reason=mb_strimwidth(trim($reason),0,500,'');
     if($reason==='')throw new RuntimeException('Add a reason for the maintenance exception.');
     $expires=null;
@@ -736,13 +738,20 @@ function client_fleet_target_compatibility_v160(PDO $pdo,string $product,int $us
     return $worst;
 }
 
+function client_fleet_release_compatible_for_scope_v160(PDO $pdo,string $product,int $userId,string $scopeKey,array $release): bool
+{
+    if(!client_fleet_schema_ready_v160($pdo))return true;
+    $compat=client_fleet_target_compatibility_v160($pdo,$product,$userId,$scopeKey,$release);
+    return (string)($compat['status']??'unknown')!=='incompatible';
+}
+
 function client_fleet_maintenance_governs_scope_v160(PDO $pdo,string $product,string $channel,int $userId,string $scopeKey): bool
 {
     if(!client_fleet_schema_ready_v160($pdo))return false;
     $stmt=$pdo->prepare("SELECT 1 FROM client_fleet_maintenance_campaigns_v160 c
       JOIN client_fleet_maintenance_members_v160 m ON m.campaign_id=c.id
       WHERE c.product=? AND c.channel=? AND c.campaign_state IN ('active','paused')
-        AND m.user_id=? AND m.scope_key=? AND m.maintenance_state NOT IN ('installed','excluded')
+        AND m.user_id=? AND m.scope_key=? AND m.maintenance_state<>'installed'
       LIMIT 1");
     $stmt->execute([$product,client_release_channel_v110($channel),$userId,client_release_scope_key_v110($scopeKey)]);
     return (bool)$stmt->fetchColumn();
