@@ -144,6 +144,12 @@ function client_release_automation_control_v170(PDO $pdo): array
     return $row?:['automation_enabled'=>0,'kill_switch'=>0,'dry_run'=>1];
 }
 
+function client_release_automation_live_actions_allowed_v170(PDO $pdo): bool
+{
+    $control=client_release_automation_control_v170($pdo);
+    return !empty($control['automation_enabled'])&&empty($control['kill_switch'])&&empty($control['dry_run']);
+}
+
 function client_release_automation_control_update_v170(PDO $pdo,array $input,int $actorUserId): array
 {
     client_release_automation_ensure_schema_v170($pdo);
