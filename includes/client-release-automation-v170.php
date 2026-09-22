@@ -401,6 +401,13 @@ function client_release_automation_rollout_proposal_v170(PDO $pdo,string $produc
 
     $recommendation=(string)($health['recommendation']??'manual_validation');
     if(in_array($recommendation,['hold','rollback_review'],true)){
+        if($recommendation==='rollback_review'){
+            $candidate=client_release_incident_recovery_candidate_v130($pdo,$product,$releaseId);
+            if($candidate)$evidence['rollback_candidate']=[
+                'release_id'=>(int)$candidate['id'],'version'=>(string)($candidate['version']??''),
+                'channel'=>(string)($candidate['channel']??$channel)
+            ];
+        }
         if(!empty($policy['auto_hold_enabled'])&&client_release_automation_live_actions_allowed_v170($pdo)){
             client_release_automation_hold_v170($pdo,'release',$product,$releaseId,null,
                 implode(' ',(array)($health['reasons']??[])),[
@@ -421,6 +428,7 @@ function client_release_automation_rollout_proposal_v170(PDO $pdo,string $produc
     }
 
     if($state==='general_availability'||empty($policy['rollout_progression_enabled']))return null;
+    if(client_release_automation_hold_blocks_release_v170($pdo,$product,$releaseId))return null;
     if($recommendation!=='promote'||empty($health['next_transition']))return null;
     if(empty($readiness['ready']))return client_release_automation_create_proposal_v170($pdo,[
         'product'=>$product,'channel'=>$channel,'release_id'=>$releaseId,'proposal_type'=>'readiness_block',
@@ -522,6 +530,7 @@ function client_release_automation_fleet_proposal_v170(PDO $pdo,array $campaign,
     }
 
     if($state!=='active'||$percent<1)return null;
+    if(client_release_automation_hold_blocks_campaign_v170($pdo,$campaignId))return null;
     if((int)$stats['completion_rate_bps']<(int)$policy['fleet_completion_gate_bps'])return null;
     $next=client_release_automation_next_fleet_percent_v170($percent,$riskMax);
     if($next<=$percent)return null;
