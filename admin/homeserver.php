@@ -12,6 +12,7 @@ chrome_extension_releases_ensure_schema($pdo);
 client_release_rollouts_ensure_schema_v110($pdo);
 client_release_health_ensure_schema_v120($pdo);
 client_release_incident_ensure_schema_v130($pdo);
+client_release_risk_ensure_schema_v140($pdo);
 $adminUser=current_user();
 $adminUserId=(int)($adminUser['id']??0);
 $error = '';
@@ -22,6 +23,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } else {
         try {
             $action = (string)($_POST['action'] ?? '');
+
+            if (in_array($action,['risk_profile_update','risk_policy_update','risk_assess','risk_review'],true)) {
+                $product=(string)($_POST['product']??'');
+                $releaseId=max(0,(int)($_POST['release_id']??0));
+                if($action==='risk_profile_update'){
+                    client_release_risk_profile_update_v140($pdo,$product,$releaseId,$_POST,$adminUserId);
+                    flash('notice','Release risk profile updated.');
+                }elseif($action==='risk_policy_update'){
+                    client_release_risk_policy_update_v140($pdo,$product,(string)($_POST['channel']??'stable'),$_POST,$adminUserId);
+                    flash('notice','Release risk policy updated.');
+                }elseif($action==='risk_assess'){
+                    client_release_risk_snapshot_v140($pdo,$product,$releaseId,$adminUserId);
+                    flash('notice','Release risk assessed. Advisory only; no rollout or incident state changed.');
+                }else{
+                    client_release_risk_review_v140(
+                        $pdo,$product,$releaseId,max(0,(int)($_POST['snapshot_id']??0)),
+                        (string)($_POST['decision']??'reviewed'),(string)($_POST['note']??''),$adminUserId
+                    );
+                    flash('notice','Risk review recorded. No release action was performed.');
+                }
+                redirect(url('/admin/homeserver.php#release-risk'));
+            }
 
             if (in_array($action,['incident_open','incident_contain','incident_start_recovery','incident_cohort','incident_refresh','incident_acknowledge','incident_policy','incident_resolve'],true)) {
                 if($action==='incident_open'){
@@ -172,6 +195,8 @@ $rolloutAdoption=client_release_adoption_summary_v110($pdo);
 $releaseHealth=client_release_health_admin_summary_v120($pdo);
 $healthDecisions=client_release_health_recent_decisions_v120($pdo,12);
 $releaseIncidents=client_release_incident_list_v130($pdo,30);
+$releaseRisk=client_release_risk_admin_summary_v140($pdo);
+$riskReviews=client_release_risk_recent_reviews_v140($pdo,16);
 $rolloutAudit=client_release_audit_recent_v110($pdo,20);
 $adminTitle = 'Client Releases';
 $adminActive = 'homeserver';
@@ -201,6 +226,109 @@ require __DIR__ . '/_header.php';
       <tr><td><strong>HomeServer</strong></td><td><?= ($homeIntel['latest_version']??'')!==''?'v'.e((string)$homeIntel['latest_version']):'Not published' ?></td><td><?= (int)($homeIntel['paired_clients']??0) ?></td><td><?= (int)($homeIntel['current_clients']??0) ?></td><td><?= (int)($homeIntel['outdated_clients']??0) ?></td><td><?= (int)($homeIntel['unknown_clients']??0) ?></td><td><?= e((string)($homeIntel['channel']??'stable')) ?></td></tr>
     </tbody>
   </table></div>
+</section>
+
+<section class="admin-card" id="release-risk" style="margin-bottom:24px">
+  <div class="admin-card-head"><div><h3>Release Learning &amp; Risk Prediction</h3><p>Use current health plus prior release and incident outcomes to estimate rollout risk before expansion. <strong>Advisory only:</strong> v1.40 never promotes, pauses, contains, rolls back, or installs software.</p></div><span class="eyebrow">v1.40</span></div>
+
+  <?php foreach(['browser_companion'=>'Browser Companion','homeserver'=>'HomeServer'] as $product=>$productLabel): ?>
+    <?php
+      $channelLearning=[];
+      foreach(['stable','beta','dev'] as $riskChannel)$channelLearning[$riskChannel]=client_release_risk_learning_summary_v140($pdo,$product,$riskChannel);
+    ?>
+    <div class="admin-card-head" style="margin-top:16px"><div><h3><?= e($productLabel) ?> Historical learning</h3><p>Resolved incident postmortems are converted into explainable risk domains and reused only as evidence for future advisory assessments.</p></div></div>
+    <div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>Channel</th><th>Incident history</th><th>Recurring domains</th><th>Risk policy</th></tr></thead><tbody>
+    <?php foreach(['stable','beta','dev'] as $riskChannel):
+      $learn=(array)$channelLearning[$riskChannel];
+      $riskPolicy=client_release_risk_policy_v140($pdo,$product,$riskChannel);
+    ?>
+      <tr>
+        <td><strong><?= e(ucfirst($riskChannel)) ?></strong></td>
+        <td><?= (int)$learn['incidents'] ?> incidents · <?= (int)$learn['resolved'] ?> resolved</td>
+        <td><small><?php if(!empty($learn['domains'])): ?><?php foreach(array_slice((array)$learn['domains'],0,4,true) as $domain=>$count): ?><?= e((string)($domain)) ?> ×<?= (int)$count ?> &nbsp;<?php endforeach; ?><?php else: ?>No recurring domains yet<?php endif; ?></small></td>
+        <td>
+          <form method="post" class="admin-form">
+            <?= csrf_field() ?><input type="hidden" name="action" value="risk_policy_update"><input type="hidden" name="product" value="<?= e($product) ?>"><input type="hidden" name="channel" value="<?= e($riskChannel) ?>">
+            <div class="form-row">
+              <label>Lookback<input type="number" name="lookback_releases" min="3" max="50" value="<?= (int)$riskPolicy['lookback_releases'] ?>"></label>
+              <label>Min comparable<input type="number" name="min_comparable_releases" min="1" max="20" value="<?= (int)$riskPolicy['min_comparable_releases'] ?>"></label>
+            </div>
+            <div class="form-row">
+              <label>Low max<input type="number" name="low_max_score" min="5" max="40" value="<?= (int)$riskPolicy['low_max_score'] ?>"></label>
+              <label>Moderate max<input type="number" name="moderate_max_score" min="20" max="70" value="<?= (int)$riskPolicy['moderate_max_score'] ?>"></label>
+              <label>High max<input type="number" name="high_max_score" min="40" max="95" value="<?= (int)$riskPolicy['high_max_score'] ?>"></label>
+            </div>
+            <div class="form-row">
+              <label>Incident warn bps<input type="number" name="incident_rate_warning_bps" min="0" max="10000" value="<?= (int)$riskPolicy['incident_rate_warning_bps'] ?>"></label>
+              <label>Failure warn bps<input type="number" name="failure_rate_warning_bps" min="0" max="10000" value="<?= (int)$riskPolicy['failure_rate_warning_bps'] ?>"></label>
+              <label>Compat warn bps<input type="number" name="compatibility_rate_warning_bps" min="0" max="10000" value="<?= (int)$riskPolicy['compatibility_rate_warning_bps'] ?>"></label>
+            </div>
+            <button class="button button-small" type="submit">Save risk policy</button>
+          </form>
+        </td>
+      </tr>
+    <?php endforeach; ?>
+    </tbody></table></div>
+
+    <div class="admin-table-wrap" style="margin-top:14px"><table class="admin-table">
+      <thead><tr><th>Release</th><th>Predicted risk</th><th>Evidence</th><th>Change profile</th><th>Operator review</th></tr></thead>
+      <tbody>
+      <?php foreach((array)($releaseRisk[$product]??[]) as $risk):
+        if(!empty($risk['error']))continue;
+        $rid=(int)$risk['release_id'];
+        $profile=(array)$risk['profile'];
+        $learning=(array)$risk['learning'];
+        $latestRisk=client_release_risk_latest_snapshot_v140($pdo,$product,$rid);
+      ?>
+        <tr>
+          <td><strong>v<?= e((string)$risk['version']) ?></strong><br><small><?= e((string)$risk['channel']) ?> · release #<?= $rid ?><br><?= e((string)($risk['health']['rollout']['lifecycle_state']??'draft')) ?></small></td>
+          <td><strong><?= (int)$risk['risk_score'] ?>/100 · <?= e(ucfirst((string)$risk['risk_level'])) ?></strong><br><small><?= e(client_release_risk_recommendation_label_v140((string)$risk['recommendation'])) ?><br>Confidence: <?= e((string)$risk['confidence']) ?></small>
+            <form method="post" style="margin-top:8px"><?= csrf_field() ?><input type="hidden" name="action" value="risk_assess"><input type="hidden" name="product" value="<?= e($product) ?>"><input type="hidden" name="release_id" value="<?= $rid ?>"><button class="button button-small" type="submit">Assess &amp; snapshot</button></form>
+          </td>
+          <td><small>
+            <?= (int)$learning['comparable_releases'] ?> comparable releases · <?= (int)$learning['incident_releases'] ?> had incidents<br>
+            Historical incident rate <?= e(client_release_health_percent_v120((int)$learning['historical_incident_rate_bps'])) ?><br>
+            Historical avg failure <?= e(client_release_health_percent_v120((int)$learning['historical_avg_failure_rate_bps'])) ?><br>
+            Matching prior incident domains <?= (int)$learning['matching_incident_domains'] ?>
+            <?php foreach((array)$risk['factors'] as $factor): ?><br><?= e((string)$factor['factor']) ?><?= $factor['points']!==null?' +'.(int)$factor['points']:'' ?>: <?= e((string)$factor['detail']) ?><?php endforeach; ?>
+          </small></td>
+          <td>
+            <form method="post" class="admin-form">
+              <?= csrf_field() ?><input type="hidden" name="action" value="risk_profile_update"><input type="hidden" name="product" value="<?= e($product) ?>"><input type="hidden" name="release_id" value="<?= $rid ?>">
+              <div class="form-row">
+                <label>Change size<select name="change_size"><?php foreach(['unknown','small','medium','large'] as $size): ?><option value="<?= e($size) ?>" <?= (string)$profile['change_size']===$size?'selected':'' ?>><?= e(ucfirst($size)) ?></option><?php endforeach; ?></select></label>
+                <label>Rollback<select name="rollback_complexity"><?php foreach(['easy','normal','hard'] as $complexity): ?><option value="<?= e($complexity) ?>" <?= (string)$profile['rollback_complexity']===$complexity?'selected':'' ?>><?= e(ucfirst($complexity)) ?></option><?php endforeach; ?></select></label>
+              </div>
+              <div class="admin-check-grid">
+                <?php foreach(client_release_risk_domains_v140() as $domain=>$label): ?><label><input type="checkbox" name="touches_<?= e($domain) ?>" value="1" <?= !empty($profile['touches_'.$domain])?'checked':'' ?>> <?= e($label) ?></label><?php endforeach; ?>
+              </div>
+              <label>Notes<textarea name="notes" rows="2" maxlength="2000"><?= e((string)$profile['notes']) ?></textarea></label>
+              <button class="button button-small" type="submit">Save change profile</button>
+            </form>
+          </td>
+          <td>
+            <?php if($latestRisk): ?>
+              <small>Snapshot #<?= (int)$latestRisk['id'] ?> · <?= (int)$latestRisk['risk_score'] ?>/100 · <?= e((string)$latestRisk['risk_level']) ?><br><?= e((string)$latestRisk['assessed_at']) ?></small>
+              <form method="post" class="admin-form" style="margin-top:8px">
+                <?= csrf_field() ?><input type="hidden" name="action" value="risk_review"><input type="hidden" name="product" value="<?= e($product) ?>"><input type="hidden" name="release_id" value="<?= $rid ?>"><input type="hidden" name="snapshot_id" value="<?= (int)$latestRisk['id'] ?>">
+                <label>Decision<select name="decision"><option value="reviewed">Reviewed</option><option value="accepted_risk">Accept risk</option><option value="defer">Defer release</option></select></label>
+                <label>Note<input name="note" maxlength="1000" placeholder="Required for accept/defer"></label>
+                <button class="button button-small" type="submit">Record review</button>
+              </form>
+            <?php else: ?><small>Create a risk snapshot before recording a review.</small><?php endif; ?>
+          </td>
+        </tr>
+      <?php endforeach; ?>
+      </tbody>
+    </table></div>
+  <?php endforeach; ?>
+
+  <?php if($riskReviews): ?>
+    <div class="admin-card-head" style="margin-top:16px"><div><h3>Recent Risk Reviews</h3><p>Human review remains separate from rollout execution.</p></div></div>
+    <div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>When</th><th>Client</th><th>Release</th><th>Decision</th><th>Note</th></tr></thead><tbody>
+      <?php foreach($riskReviews as $review): ?><tr><td><?= e((string)$review['created_at']) ?></td><td><?= e((string)$review['product']) ?></td><td>#<?= (int)$review['release_id'] ?></td><td><?= e(ucwords(str_replace('_',' ',(string)$review['decision']))) ?></td><td><?= e((string)$review['note']) ?></td></tr><?php endforeach; ?>
+    </tbody></table></div>
+  <?php endif; ?>
 </section>
 
 <section class="admin-card" id="release-incidents" style="margin-bottom:24px">
