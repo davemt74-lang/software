@@ -26,7 +26,11 @@
 
   function resolveEndpoint(agentEndpoint) {
     try {
-      return new URL('agent-voice-v117.php', new URL(String(agentEndpoint || '/api/chat.php'), window.location.href)).toString();
+      const chatEndpoint = new URL(String(agentEndpoint || '/api/chat.php'), window.location.href);
+      const voiceEndpoint = new URL('agent-voice-v117.php', chatEndpoint);
+      const agentId = Math.max(0, Number(chatEndpoint.searchParams.get('agent') || 0));
+      if (agentId > 0) voiceEndpoint.searchParams.set('agent', String(agentId));
+      return voiceEndpoint.toString();
     } catch (error) {
       return '';
     }
