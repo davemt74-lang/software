@@ -116,7 +116,7 @@ vp3_public_header('Create account — VP3', 'Create your VP3 personal AI assista
       <?php if ($error): ?><div class="vp3-alert error" role="alert" aria-live="polite"><?= e($error) ?></div><?php endif; ?>
       <form class="vp3-auth-form" method="post" action="<?= e(url('/signup.php')) ?>">
         <?= csrf_field() ?>
-        <?php foreach(['plan','billing','source','return_to'] as $intentKey): if(isset($funnelIntent[$intentKey])): ?><input type="hidden" name="<?= e($intentKey) ?>" value="<?= e((string)$funnelIntent[$intentKey]) ?>"><?php endif; endforeach; ?>
+        <?php foreach(['plan','billing','origin','source','return_to'] as $intentKey): if(isset($funnelIntent[$intentKey])): ?><input type="hidden" name="<?= e($intentKey) ?>" value="<?= e((string)$funnelIntent[$intentKey]) ?>"><?php endif; endforeach; ?>
         <div style="position:absolute;left:-9999px" aria-hidden="true"><label for="website">Website</label><input id="website" name="website" type="text" tabindex="-1" autocomplete="off"></div>
         <div class="vp3-field"><label for="display_name">Full name</label><input id="display_name" name="display_name" maxlength="120" autocomplete="name" required placeholder="Your name" value="<?= e($displayName) ?>"></div>
         <div class="vp3-field"><label for="email">Email address</label><input id="email" name="email" type="email" maxlength="190" autocomplete="email" required placeholder="you@example.com" value="<?= e($email) ?>"></div>
