@@ -197,6 +197,8 @@ $agentChatBootstrap = '<script data-user-agent-chat-v236>(function(){"use strict
     . ',agentId:' . (int)($activeUserAgent['id'] ?? 0)
     . ',showOnboarding:' . ($agentFeatureReady && $agentOnboarding ? 'true' : 'false')
     . ',forceOnboarding:' . ($agentFeatureReady && $setupRequested ? 'true' : 'false')
+    . ',agentVoiceEnabled:' . (member_agent_voice_enabled($user) ? 'true' : 'false')
+    . ',chatSettingsEndpoint:' . json_encode(url('/api/chat-settings-v237.php'), JSON_UNESCAPED_SLASHES)
     . ',endpoint:' . json_encode(url('/api/user-agent-system-v236.php'), JSON_UNESCAPED_SLASHES)
     . ',chatBaseUrl:' . json_encode(url('/chat.php'), JSON_UNESCAPED_SLASHES)
     . ',accountUrl:' . json_encode(url('/account.php#agents-data'), JSON_UNESCAPED_SLASHES)
