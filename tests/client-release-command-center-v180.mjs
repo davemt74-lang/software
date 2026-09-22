@@ -74,6 +74,7 @@ assert.ok(bootstrap.includes('client-release-command-center-v180.php'));
 assert.match(workflow,/Client Release Operations v1\.80/);
 assert.ok(workflow.includes('includes/client-release-command-center-v180.php'));
 assert.ok(workflow.includes('admin/release-command-center.php'));
+assert.ok(workflow.includes('admin/_header.php'));
 assert.ok(workflow.includes('tests/client-release-command-center-v180.mjs'));
 assert.ok(recovery.includes('tests/client-release-command-center-v180.mjs'));
 
