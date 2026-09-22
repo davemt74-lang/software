@@ -143,9 +143,15 @@ function chat_settings_save_v237(PDO $pdo, array $user, array $input): array
     $soundEnabled = array_key_exists('sound_enabled', $input)
         ? (!empty($input['sound_enabled']) ? 1 : 0)
         : (!empty($current['sound_enabled']) ? 1 : 0);
-    $agentVoiceEnabled = array_key_exists('agent_voice_enabled', $input)
-        ? (!empty($input['agent_voice_enabled']) ? 1 : 0)
-        : (!empty($current['agent_voice_enabled']) ? 1 : 0);
+    $voiceAllowed=chat_settings_agent_voice_allowed_v237($user);
+    if(array_key_exists('agent_voice_enabled',$input)&&!empty($input['agent_voice_enabled'])&&!$voiceAllowed){
+        throw new RuntimeException('Agent Voice is not included for this account.');
+    }
+    $agentVoiceEnabled = $voiceAllowed
+        ? (array_key_exists('agent_voice_enabled', $input)
+            ? (!empty($input['agent_voice_enabled']) ? 1 : 0)
+            : (!empty($current['agent_voice_enabled']) ? 1 : 0))
+        : 0;
 
     $stmt = $pdo->prepare(
         'INSERT INTO team_user_presence
