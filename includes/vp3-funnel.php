@@ -315,31 +315,31 @@ function vp3_funnel_feature_interests(array $intent): array
         'product' => ['main_ai.access'],
         'ai-assistant' => ['main_ai.access'],
         'services' => ['main_ai.access'],
-        'transcriptions' => ['transcription.access'],
-        'ai-summary' => ['transcription.access'],
-        'personal-url' => ['profile_agent.access'],
-        'profile-agent-overview' => ['profile_agent.access'],
-        'chrome-extension' => ['main_ai.access', 'knowledge.access'],
-        'annotations' => ['main_ai.access', 'knowledge.access'],
-        'video-meetings' => ['main_ai.access', 'transcription.access'],
-        'agent-analytics' => ['profile_agent.access', 'main_ai.access'],
-        'ecommerce' => ['profile_agent.access', 'main_ai.access'],
-        'homeserver' => ['knowledge.access'],
-        'cloud-vs-self-hosted' => ['knowledge.access'],
-        'paired-devices' => ['knowledge.access'],
+        'transcriptions' => ['transcription.access','workflow.transcription'],
+        'ai-summary' => ['transcription.access','workflow.transcription'],
+        'personal-url' => ['profile_agent.access','workflow.profile'],
+        'profile-agent-overview' => ['profile_agent.access','workflow.profile'],
+        'chrome-extension' => ['main_ai.access', 'knowledge.access','workflow.browser'],
+        'annotations' => ['main_ai.access', 'knowledge.access','workflow.browser'],
+        'video-meetings' => ['main_ai.access', 'transcription.access','workflow.meetings'],
+        'agent-analytics' => ['profile_agent.access', 'main_ai.access','workflow.analytics'],
+        'ecommerce' => ['profile_agent.access', 'main_ai.access','workflow.commerce'],
+        'homeserver' => ['knowledge.access','workflow.homeserver'],
+        'cloud-vs-self-hosted' => ['knowledge.access','workflow.homeserver'],
+        'paired-devices' => ['knowledge.access','workflow.homeserver'],
         'local-knowledge-overview' => ['knowledge.access'],
         'tools-skills' => ['knowledge.access'],
         'openrouter' => ['main_ai.access'],
         'model-choice' => ['main_ai.access'],
-        'calendar-service' => ['main_ai.access'],
-        'booking' => ['main_ai.access'],
-        'teams' => ['team_seats'],
+        'calendar-service' => ['main_ai.access','workflow.calendar'],
+        'booking' => ['main_ai.access','workflow.booking'],
+        'teams' => ['team_seats','workflow.teams'],
     ];
 
     $catalog = function_exists('subscription_capability_catalog') ? subscription_capability_catalog() : [];
     $interests = [];
     foreach ($map[$source] ?? [] as $key) {
-        if ($catalog === [] || array_key_exists($key, $catalog)) {
+        if (str_starts_with($key,'workflow.') || $catalog === [] || array_key_exists($key, $catalog)) {
             $interests[$key] = true;
         }
     }
