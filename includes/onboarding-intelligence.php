@@ -87,8 +87,9 @@ function onboarding_intelligence_save_progress(PDO $pdo,array $user,string $step
     $current=onboarding_intelligence_preferences($pdo,$uid);
     $mergedDraft=array_replace(is_array($current['draft']??null)?$current['draft']:[],$draft);
     $mergedInterests=array_replace(is_array($current['feature_interests']??null)?$current['feature_interests']:[],$featureInterests);
+    $publicFunnel=is_array($mergedDraft['public_funnel']??null)?$mergedDraft['public_funnel']:[];
     foreach(['origin','source'] as $attributionKey){
-        $value=trim((string)($mergedDraft[$attributionKey]??''));
+        $value=trim((string)($mergedDraft[$attributionKey]??$publicFunnel[$attributionKey]??''));
         if($value!==''&&preg_match('/^[a-z0-9._:-]{1,80}$/i',$value))$mergedInterests['activation.'.$attributionKey]=$value;
     }
     foreach($featureInterests as $key=>$enabled){
