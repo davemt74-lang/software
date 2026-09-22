@@ -29,6 +29,7 @@
   let voiceState = null;
   let ttsState = null;
   let agentVoiceAllowed = true;
+  let agentVoiceEnabled = false;
   let selectedAgentId = 0;
   let busy = false;
 
@@ -230,9 +231,10 @@
   }
 
   function renderAgentVoice(enabled) {
+    agentVoiceEnabled = agentVoiceAllowed && enabled !== false;
     if (!el.agentVoice) return;
     el.agentVoice.disabled = !agentVoiceAllowed;
-    el.agentVoice.checked = agentVoiceAllowed && enabled !== false;
+    el.agentVoice.checked = agentVoiceEnabled;
   }
 
   function publishAgentVoice(enabled) {
@@ -251,6 +253,10 @@
       setStatus('Agent Voice is not available for this account.', 'info');
       return;
     }
+    if (!agentVoiceEnabled) {
+      setStatus('Agent Voice is off.', 'info');
+      return;
+    }
     if (ttsState && ttsState.ready === false) {
       setStatus(clean(ttsState.error || 'ElevenLabs is not ready for Agent Chat.', 240), 'error');
       return;
@@ -262,6 +268,12 @@
     if (!agentVoiceAllowed) {
       ttsState = {ready:false,verified:false,error:'Agent Voice is not available for this account.'};
       renderVoice();
+      return false;
+    }
+    if (!agentVoiceEnabled) {
+      ttsState = null;
+      renderVoice();
+      if (showStatus) setStatus('Agent Voice is off.', 'info');
       return false;
     }
     try {
