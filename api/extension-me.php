@@ -35,6 +35,12 @@ if(!$session)vp3_extension_me_json_v2100(401,['ok'=>false,'error'=>['code'=>'aut
 $user=vp3_extension_user_for_permission_v2001($pdo,(int)$session['user_id']);
 if(!$user)vp3_extension_me_json_v2100(401,['ok'=>false,'error'=>['code'=>'authentication_required','message'=>'This VP3 account is not active.']]);
 
+$releaseLatest=function_exists('client_release_browser_latest_v100')?client_release_browser_latest_v100():null;
+$installedVersion=trim((string)($session['extension_version']??($_SERVER['HTTP_X_VP3_EXTENSION_VERSION']??'')));
+$releaseState=function_exists('client_release_version_state_v100')
+    ?client_release_version_state_v100($installedVersion,(string)($releaseLatest['version']??''))
+    :'unknown';
+
 vp3_extension_me_json_v2100(200,[
     'ok'=>true,
     'contract_version'=>1,
@@ -47,4 +53,12 @@ vp3_extension_me_json_v2100(200,[
         'role'=>(string)($user['role']??''),
     ],
     'capabilities'=>array_values($session['capabilities']??[]),
+    'release'=>[
+        'installed_version'=>$installedVersion,
+        'latest_version'=>(string)($releaseLatest['version']??''),
+        'channel'=>(string)($releaseLatest['channel']??'stable'),
+        'version_state'=>$releaseState,
+        'update_available'=>$releaseState==='update_available',
+        'download_url'=>(string)($releaseLatest['download_url']??url('/chrome-extension-download.php')),
+    ],
 ]);
