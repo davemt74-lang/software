@@ -431,7 +431,7 @@ function chat_context_is_internal_source(string $source): bool
 {
     $source = strtolower(trim($source));
     if ($source === '') return true;
-    foreach (['agent-brain:', 'agent-context:', 'agent:', 'system:', 'execution:', 'runtime:', 'profile:activity', 'knowledge-v162', 'calendar_awareness'] as $prefix) {
+    foreach (['agent-brain:', 'agent-context:', 'agent:', 'system:', 'execution:', 'runtime:', 'compute-routing:', 'profile:activity', 'knowledge-v162', 'calendar_awareness'] as $prefix) {
         if (str_starts_with($source, $prefix)) return true;
     }
     return false;
