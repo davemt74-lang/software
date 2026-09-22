@@ -16,6 +16,7 @@ assert.match(intelligence,/function onboarding_intelligence_activation_interest/
 assert.match(intelligence,/function onboarding_intelligence_activation_action/);
 assert.match(intelligence,/activation\.defer\./);
 assert.match(intelligence,/activation\.dismiss\./);
+assert.match(intelligence,/\$mergedInterests\['activation\.'\.\$attributionKey\]=\$value/,'origin/source attribution must survive onboarding draft cleanup');
 assert.match(intelligence,/\$days=max\(1,min\(30,\$deferDays\)\)/,'defer window must be bounded');
 assert.match(intelligence,/elseif\(\$action==='dismiss'\)[\s\S]*\$patch\[\$interest\]=false/,'not interested must turn off the workflow interest');
 assert.match(intelligence,/elseif\(\$action==='restore'\)[\s\S]*\$patch\[\$interest\]=true/,'restore must reselect the workflow');
@@ -29,8 +30,8 @@ assert.match(onboarding,/next_action/);
 assert.match(onboarding,/activation_percent/);
 assert.match(onboarding,/usage_milestones/);
 assert.match(onboarding,/attribution/);
-assert.match(onboarding,/'origin'=>\(string\)\(\$draft\['origin'\]/);
-assert.match(onboarding,/'source'=>\(string\)\(\$draft\['source'\]/);
+assert.match(onboarding,/\$interests\['activation\.origin'\]/,'activation attribution must read the durable origin');
+assert.match(onboarding,/\$interests\['activation\.source'\]/,'activation attribution must read the durable current source');
 for(const signal of ['First Browser Companion connected','First VP3 meeting created','First calendar event added','First booking received','First product published','First Team relationship created','HomeServer paired']) assert.ok(onboarding.includes(signal),`missing activation milestone ${signal}`);
 assert.match(onboarding,/Your next selected VP3 setup step is/,'Agent Chat must answer next setup from activation state');
 assert.match(onboarding,/Open VP3 Setup/);
@@ -40,6 +41,8 @@ assert.match(cards,/\(\$row\['activation_status'\]\?\?'\'\)!=='pending'/,'setup 
 assert.match(cards,/\$state=chat_onboarding_v241_state\(\$pdo,\$user\)/,'setup card must re-resolve canonical onboarding state');
 assert.match(cards,/\$out\['subtitle'\]='Getting started'/);
 assert.match(cards,/Optional setup/);
+assert.match(cards,/parse_url\(\$target\)/,'setup links must be normalized before reaching the internal-only card renderer');
+assert.match(cards,/str_starts_with\(\$target,'\/'\)/,'setup card actions must remain internal routes');
 assert.match(cardJs,/onboarding_setup:'→'/);
 
 assert.match(feed,/VP3_COGNITIVE_FEED_V530='vp3-cognitive-feed-v531-20260921'/);
