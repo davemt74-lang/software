@@ -62,6 +62,8 @@ function vp3_upgrade_complete(): bool
         && vp3_extension_schema_ready_v2000()
         && vp3_extension_device_token_schema_ready_v2100()
         && vp3_extension_notifications_schema_ready_v2140()
+        && agent_event_schema_ready_v1920()
+        && vp3_live_session_schema_ready_v2370()
         && vp3_browser_memory_schema_ready_v2170()
         && vp3_browser_execution_schema_ready_v2180()
         && vp3_browser_delegation_schema_ready_v2190()
@@ -181,6 +183,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             vp3_extension_ensure_schema_v2000();
             vp3_extension_device_token_ensure_schema_v2100();
             vp3_extension_notifications_ensure_schema_v2140();
+            agent_event_ensure_schema_v1920($pdo);
+            vp3_live_session_ensure_schema_v2370($pdo);
             vp3_browser_memory_ensure_schema_v2170();
             vp3_browser_execution_ensure_schema_v2180();
             vp3_browser_delegation_ensure_schema_v2190();
@@ -282,7 +286,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $complete = vp3_upgrade_complete();
 
             if ($complete) {
-                flash('notice', 'VP3 database upgrade complete: subscriptions, composable product entitlements, canonical plugin lifecycle, canonical human messaging, Browser Companion device authentication + Browser Share backend + private rich media + Live Rooms/Cloak Mode + Source Change Intelligence + Claims + Moderation + Search & Discovery, durable Agent retirement, Agent-scoped Brain memory, native Agent Scheduling, unified User Calendar, external calendar synchronization, Team Scheduling, Appointment Lifecycle + Automation, Video Meetings + Meeting Intelligence + Meeting Agenda orchestration + Meeting Action execution + Follow-Through Intelligence + Meeting Outcome Learning + Adaptive Meeting Planning + Plan-to-Action Handoff + Follow-Through Verification & Closure + Cross-Meeting Continuity + Meeting Closure & Recurring Continuity + manual Calendar meetings, Paid Appointments, Agent Work Control + Dependencies, Objective Verification + Adaptive Replanning, Objective Memory + Outcome Learning, Goals + Strategy + Adaptive Roadmaps + Forecast Review Learning, VP3 Cognitive Runtime Core v5.00 + Cognitive Presentation v5.10 + Cognitive Feed Composition v5.30 + Cognitive Outcomes & Learning v5.40 + Proactive Planning & Suggested Actions v5.50 + Cognitive Plan Orchestration & Follow-Through v5.60 + Cognitive Memory & Cross-Time Continuity v5.70, canonical Agent runtime routing and route-attributed AI accounting, social relationships, Team invitation/lifecycle collaboration, workspace-owned Music resources, Knowledge, Profile Agent, HomeServer Agent continuity, Agent Radar, CRM, transcriptions, and Music/Studio capabilities are ready.');
+                flash('notice', 'VP3 database upgrade complete: subscriptions, composable product entitlements, canonical plugin lifecycle, canonical human messaging, Browser Companion device authentication + Browser Share backend + private rich media + Live Rooms/Cloak Mode + Source Change Intelligence + Claims + Moderation + Search & Discovery, durable Agent retirement, Agent-scoped Brain memory, native Agent Scheduling, unified User Calendar, external calendar synchronization, Team Scheduling, Appointment Lifecycle + Automation, Video Meetings + Meeting Intelligence + Meeting Agenda orchestration + Meeting Action execution + Follow-Through Intelligence + Meeting Outcome Learning + Adaptive Meeting Planning + Plan-to-Action Handoff + Follow-Through Verification & Closure + Cross-Meeting Continuity + Meeting Closure & Recurring Continuity + manual Calendar meetings, Paid Appointments, Agent Work Control + Dependencies, Objective Verification + Adaptive Replanning, Objective Memory + Outcome Learning, Goals + Strategy + Adaptive Roadmaps + Forecast Review Learning, VP3 Cognitive Runtime Core v5.00 + Cognitive Presentation v5.10 + Cognitive Feed Composition v5.30 + Cognitive Outcomes & Learning v5.40 + Proactive Planning & Suggested Actions v5.50 + Cognitive Plan Orchestration & Follow-Through v5.60 + Cognitive Memory & Cross-Time Continuity v5.70 + Unified Live Session & Event Foundation v23.70, canonical Agent runtime routing and route-attributed AI accounting, social relationships, Team invitation/lifecycle collaboration, workspace-owned Music resources, Knowledge, Profile Agent, HomeServer Agent continuity, Agent Radar, CRM, transcriptions, and Music/Studio capabilities are ready.');
                 redirect(url('/admin/users.php'));
             }
         } catch (Throwable $e) {
