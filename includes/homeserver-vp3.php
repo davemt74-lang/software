@@ -592,6 +592,10 @@ function homeserver_vp3_set_release_state(int $releaseId, string $action): void
         throw new RuntimeException('Database connection is unavailable.');
     }
     homeserver_vp3_ensure_schema($pdo);
+    if(function_exists('client_release_rollout_sync_legacy_action_v110')&&in_array($action,['publish','unpublish','latest'],true)){
+        client_release_rollout_sync_legacy_action_v110($pdo,'homeserver',$releaseId,$action,0);
+        return;
+    }
     $stmt = $pdo->prepare('SELECT * FROM homeserver_releases WHERE id=? LIMIT 1');
     $stmt->execute([$releaseId]);
     $release = $stmt->fetch();
