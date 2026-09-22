@@ -10,7 +10,7 @@ const index=read('index.php');
 const css=read('vp3-index-ai-assistants.css');
 
 assert.match(runtime,/CREATE TABLE IF NOT EXISTS chrome_extension_releases/);
-assert.match(runtime,/SHOW TABLES LIKE \?/,'public release lookup must not depend on optional table helper loading');
+assert.match(runtime,/information_schema\.tables/,'public release lookup must use a deterministic MySQL\/MariaDB table probe');
 assert.doesNotMatch(runtime,/table_exists\('chrome_extension_releases'\)/);
 assert.match(runtime,/private\/chrome-extension-releases/);
 assert.match(runtime,/is_uploaded_file\(\$tmp\)/);
