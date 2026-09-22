@@ -36,6 +36,11 @@ jobs:
             --exclude='.git/' \
             --exclude='.github/' \
             --exclude='.gitignore' \
+            --exclude='config.php' \
+            --exclude='.env' \
+            --exclude='.env.*' \
+            --exclude='private/' \
+            --exclude='uploads/' \
             --exclude='tests/' \
             --exclude='tools/' \
             --exclude='_deploy/' \
@@ -48,7 +53,8 @@ jobs:
             "build": "vp3-cognitive-loop-release-v2360-20260921",
             "commit": "${VP3_RELEASE_SHA}",
             "repository": "${GITHUB_REPOSITORY}",
-            "workflow_run_id": "${GITHUB_RUN_ID}"
+            "workflow_run_id": "${GITHUB_RUN_ID}",
+            "preserve_runtime_paths": ["config.php", ".env", "private/", "uploads/"]
           }
           EOF
 
@@ -84,6 +90,15 @@ jobs:
           test -f _deploy/chat-cognitive-feed-v530.css
           test -f _deploy/includes/bootstrap.php
           test -f _deploy/upgrade.php
+
+          # Production updates must never touch local secrets or user/runtime data.
+          test ! -e _deploy/config.php
+          test ! -e _deploy/private
+          test ! -e _deploy/uploads
+          if find _deploy -maxdepth 1 -type f -name '.env*' | grep -q .; then
+            echo 'Runtime environment files leaked into the deploy package.' >&2
+            exit 1
+          fi
 
           if find _deploy -type f \( -path '*/tests/*' -o -path '*/tools/*' -o -path '*/.github/*' \) | grep -q .; then
             echo 'Development-only files leaked into the deploy package.' >&2
