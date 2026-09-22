@@ -13,6 +13,7 @@ client_release_rollouts_ensure_schema_v110($pdo);
 client_release_health_ensure_schema_v120($pdo);
 client_release_incident_ensure_schema_v130($pdo);
 client_release_risk_ensure_schema_v140($pdo);
+client_release_readiness_ensure_schema_v150($pdo);
 client_fleet_ensure_schema_v160($pdo);
 $adminUser=current_user();
 $adminUserId=(int)($adminUser['id']??0);
@@ -24,6 +25,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } else {
         try {
             $action = (string)($_POST['action'] ?? '');
+
+            if (in_array($action,['readiness_manifest_update','readiness_ci_save','readiness_ci_delete','readiness_evaluate','readiness_signoff'],true)) {
+                $product=(string)($_POST['product']??'');
+                $releaseId=max(0,(int)($_POST['release_id']??0));
+                if($action==='readiness_manifest_update'){
+                    client_release_readiness_manifest_update_v150($pdo,$product,$releaseId,$_POST,$adminUserId);
+                    flash('notice','Release preflight manifest updated. Existing sign-off is invalidated until the release is re-evaluated.');
+                }elseif($action==='readiness_ci_save'){
+                    client_release_readiness_ci_save_v150($pdo,$product,$releaseId,$_POST,$adminUserId);
+                    flash('notice','CI evidence saved. Re-evaluate preflight before sign-off.');
+                }elseif($action==='readiness_ci_delete'){
+                    client_release_readiness_ci_delete_v150($pdo,max(0,(int)($_POST['evidence_id']??0)),$adminUserId);
+                    flash('notice','CI evidence removed. Re-evaluate preflight before sign-off.');
+                }elseif($action==='readiness_evaluate'){
+                    $result=client_release_readiness_snapshot_v150($pdo,$product,$releaseId,$adminUserId);
+                    flash('notice','Release preflight evaluated: '.ucwords(str_replace('_',' ',(string)$result['status'])).'.');
+                }else{
+                    client_release_readiness_signoff_v150(
+                        $pdo,$product,$releaseId,max(0,(int)($_POST['snapshot_id']??0)),
+                        (string)($_POST['decision']??'rejected'),(string)($_POST['note']??''),$adminUserId
+                    );
+                    flash('notice','Preflight approval decision recorded.');
+                }
+                redirect(url('/admin/homeserver.php#release-readiness'));
+            }
 
             if (in_array($action,['fleet_policy_update','fleet_version_policy','fleet_compatibility_save','fleet_compatibility_delete','fleet_pin_set','fleet_pin_clear','fleet_upgrade_path_save','fleet_upgrade_path_delete','fleet_campaign_create','fleet_campaign_set','fleet_campaign_refresh'],true)) {
                 if($action==='fleet_policy_update'){
@@ -247,6 +273,7 @@ $healthDecisions=client_release_health_recent_decisions_v120($pdo,12);
 $releaseIncidents=client_release_incident_list_v130($pdo,30);
 $releaseRisk=client_release_risk_admin_summary_v140($pdo);
 $riskReviews=client_release_risk_recent_reviews_v140($pdo,16);
+$releaseReadiness=client_release_readiness_admin_summary_v150($pdo);
 $fleetState=client_fleet_summary_v160($pdo);
 $fleetInventory=(array)($fleetState['inventory']??['browser_companion'=>[],'homeserver'=>[]]);
 $fleetSummary=(array)($fleetState['summary']??[]);
