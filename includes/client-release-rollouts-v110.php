@@ -344,6 +344,14 @@ function client_release_applicable_release_v110(PDO $pdo,string $product,string 
         $recovery=client_release_recovery_applicable_release_v130($pdo,$product,$channel,$userId,$scopeKey);
         if($recovery)return $recovery;
     }
+    if(function_exists('client_fleet_pin_applicable_release_v160')){
+        $pin=client_fleet_pin_applicable_release_v160($pdo,$product,$channel,$userId,$scopeKey);
+        if($pin)return $pin;
+    }
+    if(function_exists('client_fleet_maintenance_applicable_release_v160')){
+        $maintenance=client_fleet_maintenance_applicable_release_v160($pdo,$product,$channel,$userId,$scopeKey);
+        if($maintenance)return $maintenance;
+    }
     foreach(client_release_release_candidates_v110($pdo,$product,$channel) as $release){
         $rollout=client_release_rollout_for_v110($pdo,$product,(int)$release['id'],$release);
         $bucket=client_release_cohort_bucket_v110($product,(int)$release['id'],$userId,$scopeKey);
@@ -411,7 +419,8 @@ function client_release_sync_update_state_v110(PDO $pdo,int $userId,string $prod
     $version=(string)($release['version']??'');
     $versionState=function_exists('client_release_version_state_v100')?client_release_version_state_v100($installed,$version):'unknown';
     $isIncidentRecovery=!empty($release['_incident_id']);
-    if($isIncidentRecovery&&$installed!==''&&$version!==''&&$installed!==$version)$versionState='update_available';
+    $isFleetOverride=!empty($release['_fleet_override']);
+    if(($isIncidentRecovery||$isFleetOverride)&&$installed!==''&&$version!==''&&$installed!==$version)$versionState='update_available';
     $schemaReady=client_release_rollouts_schema_ready_v110($pdo);
     $current=$schemaReady?client_release_update_state_v110($pdo,$userId,$product,$scopeKey,$releaseId):null;
     if(in_array($versionState,['current','ahead'],true)){
