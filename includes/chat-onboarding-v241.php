@@ -68,6 +68,101 @@ function chat_onboarding_v241_capabilities(array $profile,array $publicAgent,arr
     ];
 }
 
+function chat_onboarding_v241_workspace_state(PDO $pdo,array $user,array $permissions=[]): array
+{
+    $uid=(int)($user['id']??0);
+    $count=static function(string $sql,array $args=[]) use($pdo): int {
+        try{$stmt=$pdo->prepare($sql);$stmt->execute($args);return (int)$stmt->fetchColumn();}catch(Throwable $e){return 0;}
+    };
+
+    $browserReady=function_exists('vp3_extension_schema_ready_v2000')&&vp3_extension_schema_ready_v2000($pdo);
+    $browserConnections=$browserReady?$count("SELECT COUNT(*) FROM extension_devices_v2000 WHERE user_id=? AND device_status='active'",[$uid]):0;
+
+    $meetingReady=function_exists('video_meeting_schema_ready_v1800')&&video_meeting_schema_ready_v1800($pdo)
+        &&function_exists('video_meeting_transcription_schema_ready_v1800')&&video_meeting_transcription_schema_ready_v1800($pdo)
+        &&function_exists('video_meeting_intelligence_schema_ready_v1820')&&video_meeting_intelligence_schema_ready_v1820($pdo);
+
+    $calendarReady=function_exists('user_calendar_schema_ready_v1300')&&user_calendar_schema_ready_v1300($pdo);
+
+    $bookingReady=function_exists('agent_scheduling_schema_ready_v430')&&agent_scheduling_schema_ready_v430($pdo)
+        &&function_exists('agent_appointment_lifecycle_schema_ready_v700')&&agent_appointment_lifecycle_schema_ready_v700($pdo);
+    $bookingTypes=$bookingReady?$count("SELECT COUNT(*) FROM agent_scheduling_event_types et INNER JOIN agent_scheduling_schedules s ON s.id=et.schedule_id WHERE s.owner_user_id=? AND s.is_active=1 AND et.is_active=1",[$uid]):0;
+
+    $commerceReady=function_exists('agent_commerce_schema_ready_v800')&&agent_commerce_schema_ready_v800($pdo);
+    $commerceConnections=$commerceReady?$count("SELECT COUNT(*) FROM agent_commerce_provider_connections_v800 WHERE owner_user_id=? AND status='connected'",[$uid]):0;
+    $commerceProducts=$commerceReady?$count("SELECT COUNT(*) FROM agent_commerce_products_v800 WHERE owner_user_id=? AND is_active=1",[$uid]):0;
+
+    $profileAllowed=!empty($permissions['profile_agent']);
+    $analyticsReady=$profileAllowed&&function_exists('profile_agent_schema_ready')&&profile_agent_schema_ready($pdo);
+
+    $teamReady=function_exists('workspace_team_v350_schema_ready')&&workspace_team_v350_schema_ready($pdo);
+    $teamState=function_exists('team_subscription_state')?team_subscription_state($user,$pdo):[];
+    $teamPermitted=$teamReady&&(!empty($teamState['authorized'])||!empty($teamState['included']));
+    $teamCount=$teamReady?$count("SELECT COUNT(*) FROM workspace_memberships_v350 WHERE (workspace_owner_user_id=? OR member_user_id=?) AND membership_status='active'",[$uid,$uid]):0;
+
+    $homeReady=table_exists('homeserver_connections');
+    $homeState='unpaired';
+    if($homeReady&&$uid>0){
+        try{$stmt=$pdo->prepare('SELECT status FROM homeserver_connections WHERE user_id=? LIMIT 1');$stmt->execute([$uid]);$homeState=(string)($stmt->fetchColumn()?:'unpaired');}catch(Throwable $e){}
+    }
+    $homeConnected=in_array($homeState,['connected','paired'],true);
+
+    $transcriptionAllowed=!empty($permissions['transcriptions']);
+
+    return [
+        'browser'=>[
+            'label'=>'Browser Companion + Annotations','description'=>'Bring page-aware Agent help, source-linked annotations and approved browser actions into Chrome.',
+            'interest_key'=>'workflow.browser','permitted'=>!empty($permissions['main_ai']),'configured'=>$browserConnections>0,'available'=>$browserReady&&!empty($permissions['main_ai']),
+            'status'=>$browserConnections>0?$browserConnections.' connected browser'.($browserConnections===1?'':'s'):($browserReady?'Not connected yet':'System upgrade required'),
+            'setup_url'=>url('/connected-browsers.php'),'action_label'=>'Connected Browsers',
+        ],
+        'transcription'=>[
+            'label'=>'Transcription + AI Summary','description'=>'Capture conversations and turn them into searchable transcripts, summaries and action items.',
+            'interest_key'=>'workflow.transcription','permitted'=>$transcriptionAllowed,'configured'=>$transcriptionAllowed,'available'=>$transcriptionAllowed,
+            'status'=>$transcriptionAllowed?'Ready to use':'Not included in current package','setup_url'=>url('/artist-listening.php'),'action_label'=>'Open Transcription',
+        ],
+        'meetings'=>[
+            'label'=>'Meetings','description'=>'Schedule VP3 video meetings with transcription, Meeting Intelligence, commitments and follow-through.',
+            'interest_key'=>'workflow.meetings','permitted'=>!empty($permissions['main_ai']),'configured'=>$meetingReady,'available'=>$meetingReady&&!empty($permissions['main_ai']),
+            'status'=>$meetingReady?'Ready to use':'System upgrade required','setup_url'=>url('/meetings.php'),'action_label'=>'Open Meetings',
+        ],
+        'calendar'=>[
+            'label'=>'Calendar','description'=>'Keep personal events, bookings, meetings and Agent-managed time in one calendar.',
+            'interest_key'=>'workflow.calendar','permitted'=>!empty($permissions['main_ai']),'configured'=>$calendarReady,'available'=>$calendarReady&&!empty($permissions['main_ai']),
+            'status'=>$calendarReady?'Ready to use':'System upgrade required','setup_url'=>url('/calendar.php'),'action_label'=>'Open Calendar',
+        ],
+        'booking'=>[
+            'label'=>'Booking','description'=>'Create public scheduling offers, availability, reminders, intake and appointment follow-through.',
+            'interest_key'=>'workflow.booking','permitted'=>!empty($permissions['main_ai']),'configured'=>$bookingTypes>0,'available'=>$bookingReady&&!empty($permissions['main_ai']),
+            'status'=>$bookingTypes>0?$bookingTypes.' active booking type'.($bookingTypes===1?'':'s'):($bookingReady?'No booking offer configured yet':'System upgrade required'),
+            'setup_url'=>url('/scheduling.php'),'action_label'=>'Set Up Booking',
+        ],
+        'commerce'=>[
+            'label'=>'Ecommerce','description'=>'Connect a payment provider, publish products and keep orders, fulfillment and refunds in VP3.',
+            'interest_key'=>'workflow.commerce','permitted'=>!empty($permissions['main_ai']),'configured'=>$commerceConnections>0||$commerceProducts>0,'available'=>$commerceReady&&!empty($permissions['main_ai']),
+            'status'=>$commerceConnections>0?$commerceConnections.' payment connection'.($commerceConnections===1?'':'s'):($commerceProducts>0?$commerceProducts.' active product'.($commerceProducts===1?'':'s'):($commerceReady?'No provider or product configured yet':'System upgrade required')),
+            'setup_url'=>url('/commerce.php'),'action_label'=>'Open Commerce',
+        ],
+        'analytics'=>[
+            'label'=>'Agent Analytics','description'=>'See Profile visits, intent, conversions, attributed revenue, sources and Agent opportunities.',
+            'interest_key'=>'workflow.analytics','permitted'=>$profileAllowed,'configured'=>$analyticsReady,'available'=>$analyticsReady,
+            'status'=>$analyticsReady?'Ready in Profile Agent':'Profile Agent access required','setup_url'=>url('/profile-agent.php#analytics'),'action_label'=>'Open Analytics',
+        ],
+        'teams'=>[
+            'label'=>'Teams','description'=>'Invite collaborators into permission-aware shared workspaces and Agent workflows.',
+            'interest_key'=>'workflow.teams','permitted'=>$teamPermitted,'configured'=>$teamCount>0,'available'=>$teamPermitted,
+            'status'=>$teamCount>0?$teamCount.' active Team relationship'.($teamCount===1?'':'s'):($teamPermitted?'Ready to invite your Team':'Team access is not included'),
+            'setup_url'=>url('/team.php'),'action_label'=>'Manage Team',
+        ],
+        'homeserver'=>[
+            'label'=>'HomeServer','description'=>'Pair private local knowledge, tools, models and compute with the same VP3 Agent.',
+            'interest_key'=>'workflow.homeserver','permitted'=>!empty($permissions['personal_knowledge']),'configured'=>$homeConnected,'available'=>$homeReady&&!empty($permissions['personal_knowledge']),
+            'status'=>$homeConnected?'Paired with HomeServer':($homeReady?'Not paired yet':'System upgrade required'),
+            'setup_url'=>url('/settings-homeserver.php'),'action_label'=>'HomeServer Settings',
+        ],
+    ];
+}
+
 function chat_onboarding_v241_package_state(array $user): array
 {
     if(!function_exists('subscription_current'))return ['available'=>false];
@@ -84,8 +179,9 @@ function chat_onboarding_v241_state(PDO $pdo,array $user): array
     $capabilities=chat_onboarding_v241_capabilities($profile,$publicAgent,$chat,$voice,$onboardingComplete,$permissions);$unavailable=[];$locked=[];$setupCandidates=[];$setupReady=0;
     foreach($capabilities as $key=>$capability){if(empty($capability['permitted'])){$locked[]=$key;continue;}if(empty($capability['available']))$unavailable[]=$key;if(in_array($key,['profile_view','profile_agent','voice_profile'],true)){$setupCandidates[]=$key;if(!empty($capability['configured']))$setupReady++;}}
     $requiredCount=count($requiredSetup);$requiredReady=$requiredCount-count($missingRequired);$denominator=max(1,$requiredCount+count($setupCandidates));$completion=(int)round((($requiredReady+$setupReady)/$denominator)*100);
-    $package=chat_onboarding_v241_package_state($user);$intelligence=onboarding_intelligence_state($pdo,$user);
-    return ['build'=>STONEFELLOW_CHAT_ONBOARDING_V241,'user'=>['id'=>(int)$user['id'],'display_name'=>(string)($user['display_name']??'')],'system_agent_name'=>system_agent_name(),'agent'=>$defaultAgent,'profile'=>$profile,'profile_url'=>(string)($profileState['profile_url']??''),'suggested_username'=>chat_onboarding_v241_username($pdo,$user,$profile),'public_agent_status'=>$publicAgent,'chat'=>$chat,'voice'=>$voice,'permissions'=>$permissions,'package'=>$package,'intelligence'=>$intelligence,'setup'=>$requiredSetup,'capabilities'=>$capabilities,'missing'=>$missingRequired,'unavailable'=>$unavailable,'locked'=>$locked,'completion_percent'=>$completion,'required_setup_complete'=>!$missingRequired,'onboarding_dismissed'=>$onboardingComplete];
+    $package=chat_onboarding_v241_package_state($user);$intelligence=onboarding_intelligence_state($pdo,$user);$workspace=chat_onboarding_v241_workspace_state($pdo,$user,$permissions);
+    $interests=(array)($intelligence['feature_interests']??[]);foreach($workspace as $key=>&$item){$interest=(string)($item['interest_key']??'');$item['selected']=$interest!==''&&!empty($interests[$interest]);}unset($item);
+    return ['build'=>STONEFELLOW_CHAT_ONBOARDING_V241,'user'=>['id'=>(int)$user['id'],'display_name'=>(string)($user['display_name']??'')],'system_agent_name'=>system_agent_name(),'agent'=>$defaultAgent,'profile'=>$profile,'profile_url'=>(string)($profileState['profile_url']??''),'suggested_username'=>chat_onboarding_v241_username($pdo,$user,$profile),'public_agent_status'=>$publicAgent,'chat'=>$chat,'voice'=>$voice,'permissions'=>$permissions,'package'=>$package,'intelligence'=>$intelligence,'workspace'=>$workspace,'setup'=>$requiredSetup,'capabilities'=>$capabilities,'missing'=>$missingRequired,'unavailable'=>$unavailable,'locked'=>$locked,'completion_percent'=>$completion,'required_setup_complete'=>!$missingRequired,'onboarding_dismissed'=>$onboardingComplete];
 }
 
 function chat_onboarding_v241_empty_tool_result(): array{return ['handled'=>false,'answer'=>'','stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[]];}
@@ -93,7 +189,7 @@ function chat_onboarding_v241_empty_tool_result(): array{return ['handled'=>fals
 function chat_onboarding_v241_tool(string $query,array $user): array
 {
     $empty=chat_onboarding_v241_empty_tool_result();$q=mb_strtolower(trim($query));if($q==='')return $empty;
-    $intent=(bool)preg_match('/\b(onboarding|setup|set up|package|plan|subscription|trial|tokens?|quota|usage|upgrade|recommend|best plan|stem editor|video editor|profile agent|voice clone|team seats?|what.*missing|finish.*setup)\b/u',$q);if(!$intent)return $empty;
+    $intent=(bool)preg_match('/\b(onboarding|setup|set up|package|plan|subscription|trial|tokens?|quota|usage|upgrade|recommend|best plan|stem editor|video editor|profile agent|voice clone|browser companion|annotations?|meetings?|calendar|booking|ecommerce|commerce|agent analytics|analytics|homeserver|teams?|team seats?|what.*missing|finish.*setup)\b/u',$q);if(!$intent)return $empty;
     $pdo=db();if(!$pdo)return $empty;
     try{if(!user_agent_system_schema_ready_v236($pdo)||!profile_agent_schema_ready($pdo)||!chat_settings_schema_ready_v237($pdo))return $empty;$state=chat_onboarding_v241_state($pdo,$user);}catch(Throwable $e){return $empty;}
     $result=$empty;$result['handled']=true;$result['sources'][]=['source'=>'account:onboarding-state','title'=>'Package and account setup state'];$pkg=$state['package']??[];$balance=$pkg['ai']??[];$cap=$state['capabilities']??[];$intel=$state['intelligence']??[];$recommendation=$intel['package_recommendation']??null;
@@ -121,6 +217,30 @@ function chat_onboarding_v241_tool(string $query,array $user): array
     }
     if(str_contains($q,'profile agent')){$item=$cap['profile_agent']??[];$result['answer']=empty($item['permitted'])?'Profile Agent is not included in your current package. This does not reduce your onboarding completion.':(!empty($item['available'])?'Your Profile Agent is enabled and live.':'Profile Agent is included but still needs setup or activation.');if(!empty($item['permitted']))$result['actions'][]=['type'=>'open_url','label'=>'Open Profile Agent','url'=>(string)$item['setup_url']];else$result['actions'][]=['type'=>'open_url','label'=>'View Packages','url'=>url('/subscription.php')];return $result;}
     if(str_contains($q,'voice clone')){$item=$cap['voice_clone']??[];$result['answer']=empty($item['permitted'])?'Voice Clone is not included in your current package.':(!empty($item['available'])?'Your voice clone is ready.':'Voice Clone is included but has not been created yet.');$result['actions'][]=['type'=>'open_url','label'=>empty($item['permitted'])?'View Packages':'Open Voice Profile','url'=>empty($item['permitted'])?url('/subscription.php'):(string)$item['setup_url']];return $result;}
+
+    $workspace=(array)($state['workspace']??[]);
+    $workspaceAliases=[
+        'browser'=>['browser companion','annotation','annotations'],
+        'meetings'=>['meeting','meetings'],
+        'calendar'=>['calendar'],
+        'booking'=>['booking','schedule','scheduling'],
+        'commerce'=>['ecommerce','commerce','store','payment provider'],
+        'analytics'=>['agent analytics','analytics'],
+        'teams'=>['team','teams'],
+        'homeserver'=>['homeserver','home server'],
+        'transcription'=>['transcription','transcriptions','ai summary'],
+    ];
+    foreach($workspaceAliases as $key=>$aliases){
+        $matched=false;foreach($aliases as $alias)if(str_contains($q,$alias)){$matched=true;break;}if(!$matched)continue;
+        $item=$workspace[$key]??[];if(!$item)break;
+        $label=(string)($item['label']??$key);$status=(string)($item['status']??'');
+        if(empty($item['permitted']))$result['answer']=$label.' is not available with your current account/package configuration.';
+        elseif(empty($item['available']))$result['answer']=$label.' is not ready on this VP3 installation yet.';
+        elseif(!empty($item['configured']))$result['answer']=$label.' is ready. '.($status!==''?$status.'.':'');
+        else$result['answer']=$label.' is available but still has setup remaining. '.($status!==''?$status.'.':'');
+        $result['actions'][]=['type'=>'open_url','label'=>empty($item['permitted'])?'View Plans':(string)($item['action_label']??('Open '.$label)),'url'=>empty($item['permitted'])?url('/subscription.php'):(string)($item['setup_url']??url('/chat.php?setup=1'))];
+        return $result;
+    }
 
     $missing=is_array($state['missing']??null)?$state['missing']:[];$tasks=[];if(in_array('agent_named',$missing,true))$tasks[]='name your agent';if(in_array('profile_username',$missing,true))$tasks[]='choose your profile address';foreach($state['unavailable']??[] as $key){if(in_array($key,['profile_view','profile_agent','voice_profile'],true))$tasks[]='finish '.strtolower((string)($cap[$key]['label']??$key));}
     $completion=(int)($state['completion_percent']??0);$result['answer']='Your '.((string)($pkg['package_name']??'account')).' onboarding is '.$completion.'% complete.';
