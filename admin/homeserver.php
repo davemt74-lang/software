@@ -15,6 +15,7 @@ client_release_incident_ensure_schema_v130($pdo);
 client_release_risk_ensure_schema_v140($pdo);
 client_release_readiness_ensure_schema_v150($pdo);
 client_fleet_ensure_schema_v160($pdo);
+client_release_automation_ensure_schema_v170($pdo);
 $adminUser=current_user();
 $adminUserId=(int)($adminUser['id']??0);
 $error = '';
@@ -25,6 +26,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } else {
         try {
             $action = (string)($_POST['action'] ?? '');
+
+            if (in_array($action,['automation_control_update','automation_policy_update','automation_run','automation_decide','automation_hold_release'],true)) {
+                if($action==='automation_control_update'){
+                    client_release_automation_control_update_v170($pdo,$_POST,$adminUserId);
+                    flash('notice','Release automation controls updated.');
+                }elseif($action==='automation_policy_update'){
+                    client_release_automation_policy_update_v170(
+                        $pdo,(string)($_POST['product']??''),(string)($_POST['channel']??'stable'),$_POST,$adminUserId
+                    );
+                    flash('notice','Release automation policy updated.');
+                }elseif($action==='automation_run'){
+                    $run=client_release_automation_run_v170($pdo,'manual',$adminUserId,true);
+                    flash('notice','Automation evaluation completed: '.(int)($run['proposals_created']??0).' proposal(s), '.(int)($run['actions_executed']??0).' action(s), '.(int)($run['holds_created']??0).' hold(s).');
+                }elseif($action==='automation_decide'){
+                    client_release_automation_decide_proposal_v170(
+                        $pdo,max(0,(int)($_POST['proposal_id']??0)),(string)($_POST['decision']??'defer'),
+                        $adminUserId,(string)($_POST['note']??''),(int)($_POST['modified_percent']??0)
+                    );
+                    flash('notice','Automation proposal decision recorded.');
+                }elseif($action==='automation_hold_release'){
+                    client_release_automation_release_hold_v170(
+                        $pdo,max(0,(int)($_POST['hold_id']??0)),$adminUserId,(string)($_POST['note']??'')
+                    );
+                    flash('notice','Automation hold released.');
+                }
+                if(function_exists('client_release_intelligence_reconcile_all_v100'))client_release_intelligence_reconcile_all_v100($pdo);
+                redirect(url('/admin/homeserver.php#release-automation'));
+            }
 
             if (in_array($action,['readiness_manifest_update','readiness_ci_save','readiness_ci_delete','readiness_evaluate','readiness_signoff'],true)) {
                 $product=(string)($_POST['product']??'');
@@ -272,6 +301,7 @@ $releaseIncidents=client_release_incident_list_v130($pdo,30);
 $releaseRisk=client_release_risk_admin_summary_v140($pdo);
 $riskReviews=client_release_risk_recent_reviews_v140($pdo,16);
 $releaseReadiness=client_release_readiness_admin_summary_v150($pdo);
+$releaseAutomation=client_release_automation_admin_summary_v170($pdo);
 $fleetState=client_fleet_summary_v160($pdo);
 $fleetInventory=(array)($fleetState['inventory']??['browser_companion'=>[],'homeserver'=>[]]);
 $fleetSummary=(array)($fleetState['summary']??[]);
