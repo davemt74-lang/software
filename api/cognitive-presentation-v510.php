@@ -50,6 +50,10 @@ try{
         vp3_cognitive_presentation_voice_delivered_v510($pdo,$user,$namespace,max(0,(int)($input['through_id']??0)));
         vp3_cognitive_presentation_api_json_v510(200,['ok'=>true]);
     }
+    if($action==='voice_suppressed'){
+        vp3_cognitive_presentation_voice_suppressed_v510($pdo,$user,$namespace,max(0,(int)($input['through_id']??0)));
+        vp3_cognitive_presentation_api_json_v510(200,['ok'=>true]);
+    }
     vp3_cognitive_presentation_api_json_v510(422,['ok'=>false,'error'=>'unknown_action']);
 }catch(DomainException|InvalidArgumentException $e){
     vp3_cognitive_presentation_api_json_v510(422,['ok'=>false,'error'=>$e->getMessage()]);
