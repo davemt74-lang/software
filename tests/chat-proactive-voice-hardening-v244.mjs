@@ -17,6 +17,7 @@ const notifications = read('chat-notifications-drawer-v240.js');
 const memberMenu = read('member-agent-voice-menu.js');
 const memberUserMenu = read('includes/member-user-menu.php');
 const chat = read('chat.php');
+const agentContext = read('agent-context-v131.js');
 const memberHeader = read('includes/member-header.php');
 
 for (const [name, source] of [
@@ -44,6 +45,10 @@ assert.match(presentation,/suppressedVoiceThrough/);
 assert.match(presentation,/voice_suppressed/,'interrupted proactive voice must persist suppression');
 assert.match(presentation,/stonefellow:agent-stop/);
 assert.match(presentation,/cancelSpeech/);
+assert.match(presentation,/function renderBriefError\(/,'Agent Brief failures must render a retryable state instead of hanging on Loading');
+assert.match(presentation,/data-agent-brief-retry/,'Agent Brief must expose a retry control after load failure');
+assert.match(presentation,/void refresh\(true\)/,'opening Agent Brief must force a fresh state request');
+assert.match(presentation,/AbortController/,'Agent Brief state fetch must have a bounded timeout');
 assert.match(presentationCore,/function vp3_cognitive_presentation_voice_suppressed_v510/);
 assert.match(presentationApi,/\$action==='voice_suppressed'/);
 
@@ -59,6 +64,11 @@ assert.ok(messageElementStart >= 0 && addMessageStart > messageElementStart,'Cha
 const messageRenderer = chatUi.slice(messageElementStart,addMessageStart);
 assert.doesNotMatch(messageRenderer,/message-sources/,'chat results must not render source labels/tags at the end');
 assert.match(chatUi,/data-chat-prompt-action/,'fallback presentation must expose concrete prompt buttons');
+assert.match(chatUi,/payload\.knowledge_scope=knowledgeScopeRuntime\.value\(\)/,'selected Knowledge scope must be attached by the canonical Chat send path');
+assert.match(agentContext,/knowledge-agent-context-v245-20260922/,'Knowledge selector must cache-bust the repaired binding runtime');
+assert.match(agentContext,/knowledgeScopeLoadPromise/,'Knowledge selector folder loading must be idempotent');
+assert.doesNotMatch(agentContext,/installKnowledgeScopeFetch/,'Knowledge scope must not monkey-patch global fetch');
+assert.match(agentContext,/dataset\.knowledgeScopeReady='1'/,'Knowledge selector must expose its ready state');
 
 assert.match(chatEngine,/function chat_context_is_internal_source\(/);
 assert.match(chatEngine,/agent-brain:/);
@@ -88,7 +98,8 @@ assert.match(chat,/\$premiumVoiceBuild = 'premium-voice-agent-routing-v244-20260
 assert.match(chat,/\$voiceAssetBuild = 'chat-voice-proactive-v244-20260922'/);
 assert.match(chat,/\$voiceCacheBuild = 'chat-voice-proactive-v244-20260922-stop-control1'/);
 assert.match(chat,/\$notificationDrawerBuild = 'chat-notifications-proactive-v244-20260922'/);
-assert.match(chat,/\$cognitivePresentationBuild = 'cognitive-presentation-proactive-v244-20260922'/);
+assert.match(chat,/\$controlBuild = 'chat-footer-runtime-v245-20260922'/);
+assert.match(chat,/\$cognitivePresentationBuild = 'cognitive-presentation-footer-v245-20260922'/);
 assert.match(memberHeader,/\$memberAgentVoiceMenuBuild = 'agent-voice-menu-v244-20260922'/);
 
 console.log('Agent Chat v2.44 proactive interaction + ElevenLabs hardening contract: PASS');

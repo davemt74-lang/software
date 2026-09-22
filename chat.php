@@ -2,7 +2,7 @@
 declare(strict_types=1);
 
 $runtimeBuild = 'conversation-integration-v131-20260826';
-$controlBuild = 'chat-voice-canonical-20260903';
+$controlBuild = 'chat-footer-runtime-v245-20260922';
 $premiumVoiceBuild = 'premium-voice-agent-routing-v244-20260922';
 $voiceAssetBuild = 'chat-voice-proactive-v244-20260922';
 $voiceCacheBuild = 'chat-voice-proactive-v244-20260922-stop-control1';
@@ -20,7 +20,7 @@ $notificationDrawerBuild = 'chat-notifications-proactive-v244-20260922';
 $activityBuild = 'agent-activity-v94-canonical-runtime-20260907';
 $brainLearningBuild = 'brain-learning-history-v317-20260907-pr81-hotfix1';
 $agentIntelligenceBuild = 'agent-chat-intelligence-v171-20260914';
-$cognitivePresentationBuild = 'cognitive-presentation-proactive-v244-20260922';
+$cognitivePresentationBuild = 'cognitive-presentation-footer-v245-20260922';
 $cognitiveCardsBuild = 'cognitive-cards-v520-20260918';
 $cognitiveFeedBuild = 'cognitive-feed-v530-20260918';
 $cognitiveLearningBuild = 'cognitive-learning-v540-20260918';
