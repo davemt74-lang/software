@@ -47,6 +47,7 @@ function client_release_automation_ensure_schema_v170(?PDO $pdo=null): void
         fleet_progression_enabled TINYINT(1) NOT NULL DEFAULT 1,
         proposal_expiry_hours SMALLINT UNSIGNED NOT NULL DEFAULT 24,
         cooldown_minutes SMALLINT UNSIGNED NOT NULL DEFAULT 30,
+        fleet_observation_minutes SMALLINT UNSIGNED NOT NULL DEFAULT 60,
         fleet_completion_gate_bps SMALLINT UNSIGNED NOT NULL DEFAULT 9000,
         fleet_failure_hold_bps SMALLINT UNSIGNED NOT NULL DEFAULT 500,
         updated_by_user_id INT UNSIGNED NULL,
@@ -174,6 +175,7 @@ function client_release_automation_default_policy_v170(): array
         'fleet_progression_enabled'=>1,
         'proposal_expiry_hours'=>24,
         'cooldown_minutes'=>30,
+        'fleet_observation_minutes'=>60,
         'fleet_completion_gate_bps'=>9000,
         'fleet_failure_hold_bps'=>500,
     ];
@@ -204,23 +206,24 @@ function client_release_automation_policy_update_v170(PDO $pdo,string $product,s
         'fleet_progression_enabled'=>!empty($input['fleet_progression_enabled'])?1:0,
         'proposal_expiry_hours'=>max(1,min(168,(int)($input['proposal_expiry_hours']??24))),
         'cooldown_minutes'=>max(0,min(1440,(int)($input['cooldown_minutes']??30))),
+        'fleet_observation_minutes'=>max(0,min(10080,(int)($input['fleet_observation_minutes']??60))),
         'fleet_completion_gate_bps'=>max(5000,min(10000,(int)($input['fleet_completion_gate_bps']??9000))),
         'fleet_failure_hold_bps'=>max(0,min(5000,(int)($input['fleet_failure_hold_bps']??500))),
     ];
     client_release_automation_ensure_schema_v170($pdo);
     $stmt=$pdo->prepare("INSERT INTO client_release_automation_policy_v170
       (product,channel,policy_enabled,execution_mode,auto_hold_enabled,rollout_progression_enabled,fleet_progression_enabled,
-       proposal_expiry_hours,cooldown_minutes,fleet_completion_gate_bps,fleet_failure_hold_bps,updated_by_user_id)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+       proposal_expiry_hours,cooldown_minutes,fleet_observation_minutes,fleet_completion_gate_bps,fleet_failure_hold_bps,updated_by_user_id)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
       ON DUPLICATE KEY UPDATE policy_enabled=VALUES(policy_enabled),execution_mode=VALUES(execution_mode),
        auto_hold_enabled=VALUES(auto_hold_enabled),rollout_progression_enabled=VALUES(rollout_progression_enabled),
        fleet_progression_enabled=VALUES(fleet_progression_enabled),proposal_expiry_hours=VALUES(proposal_expiry_hours),
-       cooldown_minutes=VALUES(cooldown_minutes),fleet_completion_gate_bps=VALUES(fleet_completion_gate_bps),
+       cooldown_minutes=VALUES(cooldown_minutes),fleet_observation_minutes=VALUES(fleet_observation_minutes),fleet_completion_gate_bps=VALUES(fleet_completion_gate_bps),
        fleet_failure_hold_bps=VALUES(fleet_failure_hold_bps),updated_by_user_id=VALUES(updated_by_user_id)");
     $stmt->execute([
         $product,$channel,$policy['policy_enabled'],$policy['execution_mode'],$policy['auto_hold_enabled'],
         $policy['rollout_progression_enabled'],$policy['fleet_progression_enabled'],$policy['proposal_expiry_hours'],
-        $policy['cooldown_minutes'],$policy['fleet_completion_gate_bps'],$policy['fleet_failure_hold_bps'],
+        $policy['cooldown_minutes'],$policy['fleet_observation_minutes'],$policy['fleet_completion_gate_bps'],$policy['fleet_failure_hold_bps'],
         $actorUserId>0?$actorUserId:null
     ]);
     client_release_audit_v110($pdo,$actorUserId,$product,null,'automation_policy_update','','',$policy+['channel'=>$channel]);
