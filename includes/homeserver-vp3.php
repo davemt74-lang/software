@@ -548,6 +548,9 @@ function homeserver_vp3_create_release(array $input, array $files, int $createdB
         homeserver_vp3_ensure_schema($pdo);
         $published = !empty($input['is_published']) ? 1 : 0;
         $latest = $published && !empty($input['is_latest']) ? 1 : 0;
+        if($latest&&function_exists('client_release_readiness_current_v150')){
+            throw new RuntimeException('Upload the HomeServer release as Draft/Testing, complete v1.50 preflight, then promote it.');
+        }
         $pdo->beginTransaction();
         if ($latest) {
             $pdo->prepare('UPDATE homeserver_releases SET is_latest=0 WHERE channel=?')->execute([$channel]);
@@ -604,6 +607,10 @@ function homeserver_vp3_set_release_state(int $releaseId, string $action): void
         return;
     }
     if ($action === 'latest') {
+        if(function_exists('client_release_readiness_current_v150')){
+            $readiness=client_release_readiness_current_v150($pdo,'homeserver',$releaseId);
+            if(empty($readiness['ready']))throw new RuntimeException('Release preflight is not approved: '.(string)($readiness['reason']??'readiness gate failed'));
+        }
         $pdo->beginTransaction();
         try {
             $pdo->prepare('UPDATE homeserver_releases SET is_latest=0 WHERE channel=?')->execute([(string)$release['channel']]);
