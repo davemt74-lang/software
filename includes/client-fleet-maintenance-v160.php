@@ -713,6 +713,57 @@ function client_fleet_eligible_for_mode_v160(array $row,string $mode,string $tar
     };
 }
 
+function client_fleet_target_compatibility_v160(PDO $pdo,string $product,int $userId,string $scopeKey,array $targetRelease): array
+{
+    $targetVersion=(string)($targetRelease['version']??'');
+    if($product==='browser_companion'){
+        if(!client_release_table_ready_v110($pdo,'homeserver_connections'))return ['status'=>'unknown','notes'=>'No HomeServer telemetry table.'];
+        $stmt=$pdo->prepare("SELECT installed_version FROM homeserver_connections WHERE user_id=? AND homeserver_token_enc IS NOT NULL LIMIT 1");
+        $stmt->execute([$userId]);
+        $home=trim((string)$stmt->fetchColumn());
+        if($home==='')return ['status'=>'unknown','notes'=>'No paired HomeServer version for this account.'];
+        return client_fleet_compatibility_v160($pdo,$targetVersion,$home);
+    }
+    if(!client_release_table_ready_v110($pdo,'extension_devices_v2000'))return ['status'=>'unknown','notes'=>'No Browser Companion telemetry table.'];
+    $stmt=$pdo->prepare("SELECT extension_version FROM extension_devices_v2000 WHERE user_id=? AND device_status='active' AND revoked_at IS NULL");
+    $stmt->execute([$userId]);
+    $worst=['status'=>'unknown','notes'=>'No active Browser Companion version for this account.'];
+    $rank=['unknown'=>0,'compatible'=>1,'warning'=>2,'incompatible'=>3];
+    foreach($stmt->fetchAll(PDO::FETCH_COLUMN)?:[] as $browserVersion){
+        $compat=client_fleet_compatibility_v160($pdo,(string)$browserVersion,$targetVersion);
+        if(($rank[(string)$compat['status']]??0)>($rank[(string)$worst['status']]??0))$worst=$compat;
+    }
+    return $worst;
+}
+
+function client_fleet_maintenance_governs_scope_v160(PDO $pdo,string $product,string $channel,int $userId,string $scopeKey): bool
+{
+    if(!client_fleet_schema_ready_v160($pdo))return false;
+    $stmt=$pdo->prepare("SELECT 1 FROM client_fleet_maintenance_campaigns_v160 c
+      JOIN client_fleet_maintenance_members_v160 m ON m.campaign_id=c.id
+      WHERE c.product=? AND c.channel=? AND c.campaign_state IN ('active','paused')
+        AND m.user_id=? AND m.scope_key=? AND m.maintenance_state NOT IN ('installed','excluded')
+      LIMIT 1");
+    $stmt->execute([$product,client_release_channel_v110($channel),$userId,client_release_scope_key_v110($scopeKey)]);
+    return (bool)$stmt->fetchColumn();
+}
+
+function client_fleet_recommendations_v160(PDO $pdo,array $fleetState): array
+{
+    $out=[];
+    foreach(['browser_companion'=>'Browser Companion','homeserver'=>'HomeServer'] as $product=>$label){
+        $counts=(array)($fleetState['summary'][$product]??[]);
+        if((int)($counts['unsupported']??0)>0)$out[]=['severity'=>'high','product'=>$product,'message'=>$label.': '.(int)$counts['unsupported'].' unsupported client(s) should be moved to a supported GA target.'];
+        if((int)($counts['deprecated']??0)>0)$out[]=['severity'=>'medium','product'=>$product,'message'=>$label.': '.(int)$counts['deprecated'].' deprecated client(s) should enter a maintenance cohort.'];
+        if((int)($counts['stale']??0)>0)$out[]=['severity'=>'medium','product'=>$product,'message'=>$label.': '.(int)$counts['stale'].' stale client(s) need reconnect/retirement review before maintenance.'];
+        if((int)($counts['drift']??0)>0)$out[]=['severity'=>'high','product'=>$product,'message'=>$label.': '.(int)$counts['drift'].' client(s) report versions not registered on their assigned channel.'];
+    }
+    $compat=(array)($fleetState['compatibility']['counts']??[]);
+    if((int)($compat['incompatible']??0)>0)$out[]=['severity'=>'high','product'=>'cross_client','message'=>(int)$compat['incompatible'].' Browser Companion ↔ HomeServer pair(s) violate an explicit compatibility rule.'];
+    if((int)($compat['warning']??0)>0)$out[]=['severity'=>'medium','product'=>'cross_client','message'=>(int)$compat['warning'].' cross-client pair(s) match compatibility warning rules.'];
+    return $out;
+}
+
 function client_fleet_campaign_create_v160(PDO $pdo,array $input,int $actorUserId): array
 {
     client_fleet_ensure_schema_v160($pdo);
