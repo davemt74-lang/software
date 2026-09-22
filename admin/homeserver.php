@@ -312,6 +312,122 @@ require __DIR__ . '/_header.php';
   </table></div>
 </section>
 
+<section class="admin-card" id="release-readiness" style="margin-bottom:24px">
+  <div class="admin-card-head">
+    <div><h3>Release Readiness &amp; Preflight Gates</h3><p>Verify artifact integrity, CI evidence, migration and rollback preparation, compatibility review, v1.40 risk, and Canary ownership before a release can leave Draft/Testing.</p></div>
+    <span class="eyebrow">v1.50</span>
+  </div>
+
+  <?php foreach(['browser_companion'=>'Browser Companion','homeserver'=>'HomeServer'] as $readyProduct=>$readyLabel): ?>
+    <div class="admin-card-head" style="margin-top:16px"><div><h3><?= e($readyLabel) ?> Preflight</h3><p>Preflight approval is fingerprint-bound. Changing release inputs after sign-off makes the approval stale.</p></div></div>
+    <?php foreach((array)($releaseReadiness[$readyProduct]??[]) as $ready):
+      if(!empty($ready['error']))continue;
+      $rid=(int)$ready['release_id'];
+      $manifest=(array)$ready['manifest'];
+      $snapshot=is_array($ready['latest_snapshot']??null)?$ready['latest_snapshot']:null;
+      $signoff=is_array($ready['signoff']??null)?$ready['signoff']:null;
+      $ciRows=(array)($ready['ci']??[]);
+      $requiredChecks=client_release_readiness_required_ci_v150($manifest);
+      $rollbackOptions=client_release_admin_rollouts_v110($pdo,$readyProduct);
+      $snapshotGates=$snapshot?json_decode((string)($snapshot['gates_json']??'[]'),true):[];
+      if(!is_array($snapshotGates))$snapshotGates=[];
+    ?>
+    <section class="admin-card" style="margin:12px 0">
+      <div class="admin-card-head">
+        <div>
+          <h3>v<?= e((string)$ready['version']) ?> · <?= e((string)$ready['channel']) ?></h3>
+          <p><?= e(ucwords(str_replace('_',' ',(string)$ready['state']))) ?> · <?= e((string)$ready['state_reason']) ?></p>
+        </div>
+        <span class="eyebrow"><?= e((string)($ready['rollout']['lifecycle_state']??'draft')) ?></span>
+      </div>
+
+      <div class="admin-table-wrap"><table class="admin-table"><tbody>
+        <tr><td><strong>Artifact integrity</strong></td><td>
+          <?php
+            $artifactGates=array_values(array_filter($snapshotGates,static fn($gate)=>is_array($gate)&&str_starts_with((string)($gate['key']??''),'artifact')));
+            if(!$snapshot): ?><small>Not evaluated yet. Evaluate preflight to re-hash and validate the stored artifact.</small>
+          <?php elseif(!$artifactGates): ?><small>No artifact gate result stored in this snapshot.</small>
+          <?php else: foreach($artifactGates as $gate): ?><small><?= e(ucfirst((string)$gate['status'])) ?> — <?= e((string)$gate['detail']) ?></small><br><?php endforeach; endif; ?>
+        </td></tr>
+        <tr><td><strong>Snapshot</strong></td><td><?php if($snapshot): ?>#<?= (int)$snapshot['id'] ?> · <?= e((string)$snapshot['readiness_status']) ?> · <?= (int)$snapshot['passed_count'] ?> passed · <?= (int)$snapshot['warning_count'] ?> warnings · <?= (int)$snapshot['blocked_count'] ?> blocked · <?= e((string)$snapshot['evaluated_at']) ?><?php else: ?>None<?php endif; ?></td></tr>
+        <tr><td><strong>Preflight approval</strong></td><td><?php if($signoff): ?><?= e(ucwords(str_replace('_',' ',(string)$signoff['decision']))) ?> · <?= e((string)$signoff['created_at']) ?><?php if((string)$signoff['note']!==''): ?><br><small><?= e((string)$signoff['note']) ?></small><?php endif; ?><?php else: ?>Unsigned<?php endif; ?></td></tr>
+      </tbody></table></div>
+
+      <form method="post" class="admin-form" style="margin-top:14px">
+        <?= csrf_field() ?><input type="hidden" name="action" value="readiness_manifest_update"><input type="hidden" name="product" value="<?= e($readyProduct) ?>"><input type="hidden" name="release_id" value="<?= $rid ?>">
+        <div class="form-row">
+          <label>Source commit SHA<input name="source_commit_sha" maxlength="40" value="<?= e((string)$manifest['source_commit_sha']) ?>" placeholder="40-character Git SHA"></label>
+          <label>Canary initial %<input type="number" name="canary_initial_percent" min="1" max="25" value="<?= (int)$manifest['canary_initial_percent'] ?>"></label>
+          <label>Observe hours<input type="number" name="canary_observation_hours" min="1" max="168" value="<?= (int)$manifest['canary_observation_hours'] ?>"></label>
+          <label>Escalation owner user ID<input type="number" name="escalation_owner_user_id" min="1" value="<?= (int)($manifest['escalation_owner_user_id']??$adminUserId) ?>"></label>
+        </div>
+        <label>Required CI checks<textarea name="required_ci_checks" rows="2"><?= e(implode("
+",$requiredChecks)) ?></textarea></label>
+        <div class="form-row">
+          <label><input type="checkbox" name="known_issues_reviewed" value="1" <?= !empty($manifest['known_issues_reviewed'])?'checked':'' ?>> Known issues reviewed</label>
+          <label><input type="checkbox" name="compatibility_reviewed" value="1" <?= !empty($manifest['compatibility_reviewed'])?'checked':'' ?>> Compatibility reviewed</label>
+          <label><input type="checkbox" name="requires_migration" value="1" <?= !empty($manifest['requires_migration'])?'checked':'' ?>> Requires migration</label>
+          <label><input type="checkbox" name="migration_reversible" value="1" <?= !empty($manifest['migration_reversible'])?'checked':'' ?>> Migration reversible</label>
+          <label><input type="checkbox" name="rollback_required" value="1" <?= !empty($manifest['rollback_required'])?'checked':'' ?>> Rollback target required</label>
+        </div>
+        <label>Migration / upgrade notes<textarea name="migration_notes" rows="2" maxlength="3000"><?= e((string)$manifest['migration_notes']) ?></textarea></label>
+        <div class="form-row">
+          <label>Known-good rollback release<select name="rollback_release_id"><option value="0">None / waived</option>
+            <?php foreach($rollbackOptions as $candidate): if((int)$candidate['id']===$rid||(string)$candidate['channel']!==(string)$ready['channel'])continue; ?>
+              <option value="<?= (int)$candidate['id'] ?>" <?= (int)($manifest['rollback_release_id']??0)===(int)$candidate['id']?'selected':'' ?>>v<?= e((string)$candidate['version']) ?> · <?= e((string)($candidate['_rollout']['lifecycle_state']??'draft')) ?></option>
+            <?php endforeach; ?>
+          </select></label>
+        </div>
+        <label>Rollback / forward-recovery plan<textarea name="rollback_plan" rows="2" maxlength="3000"><?= e((string)$manifest['rollback_plan']) ?></textarea></label>
+        <label>Rollback waiver reason<textarea name="rollback_waiver_reason" rows="2" maxlength="1000"><?= e((string)$manifest['rollback_waiver_reason']) ?></textarea></label>
+        <label>Compatibility prerequisites<textarea name="compatibility_prerequisites" rows="2" maxlength="2000"><?= e((string)$manifest['compatibility_prerequisites']) ?></textarea></label>
+        <label>Operator notes<textarea name="operator_notes" rows="2" maxlength="3000"><?= e((string)$manifest['operator_notes']) ?></textarea></label>
+        <button class="button button-small" type="submit">Save preflight manifest</button>
+      </form>
+
+      <div class="admin-card-head" style="margin-top:14px"><div><h3>Required CI Evidence</h3><p>Each required check must be recorded as successful against the same source commit SHA as the preflight manifest.</p></div></div>
+      <?php if($ciRows): ?><div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>Check</th><th>Conclusion</th><th>Commit</th><th>Run</th><th></th></tr></thead><tbody>
+        <?php foreach($ciRows as $ci): ?><tr>
+          <td><?= e((string)$ci['check_name']) ?></td><td><?= e((string)$ci['conclusion']) ?></td><td><small><?= e((string)$ci['source_commit_sha']) ?></small></td>
+          <td><?php if((string)$ci['details_url']!=='': ?><a href="<?= e((string)$ci['details_url']) ?>" target="_blank" rel="noopener"><?= e((string)($ci['run_id']?:'details')) ?></a><?php else: ?><?= e((string)$ci['run_id']) ?><?php endif; ?></td>
+          <td><form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="readiness_ci_delete"><input type="hidden" name="product" value="<?= e($readyProduct) ?>"><input type="hidden" name="release_id" value="<?= $rid ?>"><input type="hidden" name="evidence_id" value="<?= (int)$ci['id'] ?>"><button class="button button-small" type="submit">Remove</button></form></td>
+        </tr><?php endforeach; ?>
+      </tbody></table></div><?php endif; ?>
+      <form method="post" class="admin-form" style="margin-top:8px">
+        <?= csrf_field() ?><input type="hidden" name="action" value="readiness_ci_save"><input type="hidden" name="product" value="<?= e($readyProduct) ?>"><input type="hidden" name="release_id" value="<?= $rid ?>">
+        <div class="form-row">
+          <label>Check name<input name="check_name" maxlength="180" required placeholder="e.g. Recovery Baseline"></label>
+          <label>Conclusion<select name="conclusion"><option value="success">Success</option><option value="failure">Failure</option><option value="cancelled">Cancelled</option><option value="skipped">Skipped</option><option value="pending">Pending</option></select></label>
+          <label>Source SHA<input name="source_commit_sha" maxlength="40" value="<?= e((string)$manifest['source_commit_sha']) ?>"></label>
+          <label>Run ID<input name="run_id" maxlength="80"></label>
+        </div>
+        <label>HTTPS details URL<input name="details_url" maxlength="1000"></label>
+        <label>Evidence notes<input name="evidence_notes" maxlength="1000"></label>
+        <button class="button button-small" type="submit">Save CI evidence</button>
+      </form>
+
+      <div class="form-actions" style="margin-top:12px">
+        <form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="readiness_evaluate"><input type="hidden" name="product" value="<?= e($readyProduct) ?>"><input type="hidden" name="release_id" value="<?= $rid ?>"><button class="button button-small primary" type="submit">Evaluate preflight</button></form>
+      </div>
+
+      <?php if($snapshot): ?>
+        <?php $snapStatus=(string)$snapshot['readiness_status']; ?>
+        <form method="post" class="admin-form" style="margin-top:12px">
+          <?= csrf_field() ?><input type="hidden" name="action" value="readiness_signoff"><input type="hidden" name="product" value="<?= e($readyProduct) ?>"><input type="hidden" name="release_id" value="<?= $rid ?>"><input type="hidden" name="snapshot_id" value="<?= (int)$snapshot['id'] ?>">
+          <div class="form-row"><label>Preflight decision<select name="decision">
+            <?php if($snapStatus==='ready'): ?><option value="approved">Approve</option><?php endif; ?>
+            <?php if($snapStatus==='warnings'): ?><option value="approved_with_warnings">Approve with warnings</option><?php endif; ?>
+            <option value="rejected">Reject</option>
+          </select></label></div>
+          <label>Approval note<input name="note" maxlength="1500" placeholder="Required for warning approval or rejection"></label>
+          <button class="button button-small" type="submit">Record preflight approval</button>
+        </form>
+      <?php endif; ?>
+    </section>
+    <?php endforeach; ?>
+  <?php endforeach; ?>
+</section>
+
 <section class="admin-card" id="fleet-maintenance" style="margin-bottom:24px">
   <div class="admin-card-head">
     <div>
