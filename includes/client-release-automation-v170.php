@@ -420,7 +420,9 @@ function client_release_automation_rollout_proposal_v170(PDO $pdo,string $produc
         'proposal_expiry_hours'=>(int)$policy['proposal_expiry_hours']
     ],$runId);
 
-    $next=(array)$health['next_transition'];$toState=(string)$next['state'];$toPercent=(int)$next['percent'];
+    $healthSnapshot=client_release_health_snapshot_v120($pdo,$product,$releaseId,0);
+    $evidence['health_snapshot_id']=(int)$healthSnapshot['snapshot_id'];
+    $next=(array)$healthSnapshot['next_transition'];$toState=(string)$next['state'];$toPercent=(int)$next['percent'];
     $isGa=$toState==='general_availability';
     $autoAllowed=!$isGa&&(string)$policy['execution_mode']==='auto_low_risk'&&client_release_automation_risk_allows_auto_v170($risk);
     return client_release_automation_create_proposal_v170($pdo,[
