@@ -13,6 +13,7 @@ client_release_rollouts_ensure_schema_v110($pdo);
 client_release_health_ensure_schema_v120($pdo);
 client_release_incident_ensure_schema_v130($pdo);
 client_release_risk_ensure_schema_v140($pdo);
+client_fleet_ensure_schema_v160($pdo);
 $adminUser=current_user();
 $adminUserId=(int)($adminUser['id']??0);
 $error = '';
@@ -23,6 +24,55 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } else {
         try {
             $action = (string)($_POST['action'] ?? '');
+
+            if (in_array($action,['fleet_policy_update','fleet_version_policy','fleet_compatibility_save','fleet_compatibility_delete','fleet_pin_set','fleet_pin_clear','fleet_upgrade_path_save','fleet_upgrade_path_delete','fleet_campaign_create','fleet_campaign_set','fleet_campaign_refresh'],true)) {
+                if($action==='fleet_policy_update'){
+                    client_fleet_policy_update_v160($pdo,(string)($_POST['product']??''),(string)($_POST['channel']??'stable'),$_POST,$adminUserId);
+                    flash('notice','Fleet support policy updated.');
+                }elseif($action==='fleet_version_policy'){
+                    client_fleet_version_policy_update_v160(
+                        $pdo,(string)($_POST['product']??''),(string)($_POST['channel']??'stable'),
+                        (string)($_POST['version']??''),$_POST,$adminUserId
+                    );
+                    flash('notice','Version support policy updated.');
+                }elseif($action==='fleet_compatibility_save'){
+                    client_fleet_compatibility_rule_save_v160($pdo,$_POST,$adminUserId);
+                    flash('notice','Compatibility rule saved.');
+                }elseif($action==='fleet_compatibility_delete'){
+                    client_fleet_compatibility_rule_delete_v160($pdo,max(0,(int)($_POST['rule_id']??0)),$adminUserId);
+                    flash('notice','Compatibility rule deleted.');
+                }elseif($action==='fleet_pin_set'){
+                    client_fleet_pin_set_v160(
+                        $pdo,max(0,(int)($_POST['user_id']??0)),(string)($_POST['product']??''),
+                        (string)($_POST['scope_key']??'account'),(string)($_POST['pinned_version']??''),
+                        (string)($_POST['reason']??''),(string)($_POST['expires_at']??''),$adminUserId
+                    );
+                    flash('notice','Temporary fleet version pin saved.');
+                }elseif($action==='fleet_pin_clear'){
+                    client_fleet_pin_clear_v160($pdo,max(0,(int)($_POST['pin_id']??0)),$adminUserId);
+                    flash('notice','Fleet version pin cleared.');
+                }elseif($action==='fleet_upgrade_path_save'){
+                    client_fleet_upgrade_path_save_v160($pdo,$_POST,$adminUserId);
+                    flash('notice','Fleet upgrade path saved.');
+                }elseif($action==='fleet_upgrade_path_delete'){
+                    client_fleet_upgrade_path_delete_v160($pdo,max(0,(int)($_POST['path_id']??0)),$adminUserId);
+                    flash('notice','Fleet upgrade path deleted.');
+                }elseif($action==='fleet_campaign_create'){
+                    $campaign=client_fleet_campaign_create_v160($pdo,$_POST,$adminUserId);
+                    flash('notice','Maintenance campaign created in draft state.');
+                }elseif($action==='fleet_campaign_set'){
+                    client_fleet_campaign_set_v160(
+                        $pdo,max(0,(int)($_POST['campaign_id']??0)),(string)($_POST['campaign_state']??'paused'),
+                        (int)($_POST['cohort_percent']??0),$adminUserId
+                    );
+                    flash('notice','Maintenance campaign updated. No forced installs were performed.');
+                }elseif($action==='fleet_campaign_refresh'){
+                    client_fleet_campaign_refresh_v160($pdo,max(0,(int)($_POST['campaign_id']??0)),$adminUserId);
+                    flash('notice','Maintenance campaign fleet state refreshed.');
+                }
+                if(function_exists('client_release_intelligence_reconcile_all_v100'))client_release_intelligence_reconcile_all_v100($pdo);
+                redirect(url('/admin/homeserver.php#fleet-maintenance'));
+            }
 
             if (in_array($action,['risk_profile_update','risk_policy_update','risk_assess','risk_review'],true)) {
                 $product=(string)($_POST['product']??'');
@@ -197,6 +247,12 @@ $healthDecisions=client_release_health_recent_decisions_v120($pdo,12);
 $releaseIncidents=client_release_incident_list_v130($pdo,30);
 $releaseRisk=client_release_risk_admin_summary_v140($pdo);
 $riskReviews=client_release_risk_recent_reviews_v140($pdo,16);
+$fleetState=client_fleet_summary_v160($pdo);
+$fleetInventory=(array)($fleetState['inventory']??['browser_companion'=>[],'homeserver'=>[]]);
+$fleetSummary=(array)($fleetState['summary']??[]);
+$fleetCompatibility=(array)($fleetState['compatibility']??[]);
+$fleetCompatibilityRules=client_fleet_compatibility_rules_v160($pdo);
+$fleetCampaigns=client_fleet_campaigns_v160($pdo,40);
 $rolloutAudit=client_release_audit_recent_v110($pdo,20);
 $adminTitle = 'Client Releases';
 $adminActive = 'homeserver';
