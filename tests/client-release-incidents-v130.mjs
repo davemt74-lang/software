@@ -121,7 +121,7 @@ assert.ok(admin.includes('operator-approved'));
 assert.ok(admin.includes('Save closure gates'));
 assert.ok(admin.includes('does not auto-rollback'));
 
-assert.match(workflow,/Client Release Operations v1\.(?:30|40|60|70)/);
+assert.match(workflow,/Client Release Operations v1\.(?:30|40|60|70|80)/);
 assert.ok(workflow.includes('client-release-incidents-v130.php'));
 assert.ok(workflow.includes('client-release-incidents-v130.mjs'));
 assert.ok(recovery.includes('client-release-incidents-v130.mjs'));
