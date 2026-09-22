@@ -174,6 +174,12 @@ function client_release_intelligence_reconcile_user_v100(
     ?array $browserSnapshot = null,
     ?array $homeserverSnapshot = null
 ): void {
+    if (function_exists('client_release_intelligence_reconcile_user_v110')
+        && function_exists('client_release_rollouts_schema_ready_v110')
+        && client_release_rollouts_schema_ready_v110($pdo)) {
+        client_release_intelligence_reconcile_user_v110($pdo, $userId);
+        return;
+    }
     if ($userId < 1 || !table_exists('notifications') || !function_exists('create_notification')) return;
 
     $browserSnapshot ??= client_release_browser_snapshot_v100($pdo, $userId);
