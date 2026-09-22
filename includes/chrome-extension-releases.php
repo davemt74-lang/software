@@ -217,6 +217,9 @@ function chrome_extension_release_create(array $input, array $files, int $create
     if (!chrome_extension_release_channel_valid($channel)) {
         throw new RuntimeException('Choose a valid Chrome Extension release channel.');
     }
+    if(!empty($input['is_published'])&&!empty($input['is_latest'])&&function_exists('client_release_readiness_current_v150')){
+        throw new RuntimeException('Upload the Browser Companion release as Draft/Testing, complete v1.50 preflight, then promote it.');
+    }
 
     $stored = chrome_extension_release_store_zip($files['chrome_zip'] ?? []);
     $pdo = db();
@@ -228,9 +231,6 @@ function chrome_extension_release_create(array $input, array $files, int $create
 
     $published = !empty($input['is_published']) ? 1 : 0;
     $latest = $published && !empty($input['is_latest']) ? 1 : 0;
-    if($latest&&function_exists('client_release_readiness_current_v150')){
-        throw new RuntimeException('Upload the Browser Companion release as Draft/Testing, complete v1.50 preflight, then promote it.');
-    }
 
     try {
         $pdo->beginTransaction();
