@@ -1,0 +1,55 @@
+name: Client Releases Manager
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+on:
+  pull_request:
+    paths:
+      - 'index.php'
+      - 'vp3-index-ai-assistants.css'
+      - 'chrome-extension-download.php'
+      - 'includes/chrome-extension-releases.php'
+      - 'admin/homeserver.php'
+      - 'admin/_header.php'
+      - 'tests/client-releases-manager.mjs'
+      - 'tests/public-homepage-funnel-completion.mjs'
+      - '.github/workflows/client-releases-manager.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    name: Client releases contract · PHP ${{ matrix.php }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.1','8.3']
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: PHP syntax
+        run: |
+          php -l includes/chrome-extension-releases.php
+          php -l chrome-extension-download.php
+          php -l admin/homeserver.php
+          php -l admin/_header.php
+          php -l index.php
+      - name: Client release contracts
+        run: |
+          node tests/client-releases-manager.mjs
+          node tests/public-homepage-funnel-completion.mjs
+          node tests/public-mega-menu-meetings-browser.mjs
+          node tests/homeserver-vp3-integration-contract.mjs
