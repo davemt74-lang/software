@@ -153,6 +153,7 @@ require_once __DIR__.'/agent-ecosystem-v118.php';
 require_once __DIR__.'/agent-proactive-operations-v036.php';
 require_once __DIR__.'/cognitive-runtime-v500.php';
 require_once __DIR__.'/cognitive-runtime-meetings-v500.php';
+require_once __DIR__.'/cognitive-runtime-session-v2370.php';
 require_once __DIR__.'/cognitive-cards-v520.php';
 require_once __DIR__.'/cognitive-learning-v540.php';
 require_once __DIR__.'/cognitive-planning-v550.php';
