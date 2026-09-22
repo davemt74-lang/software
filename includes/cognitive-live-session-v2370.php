@@ -469,3 +469,35 @@ function vp3_live_session_snapshot_v2370(PDO $pdo,array $user,bool $create=false
     }
     return ['ready'=>true,'session'=>$public,'segments'=>$segments,'build'=>VP3_COGNITIVE_LIVE_SESSION_V2370];
 }
+
+function vp3_live_session_context_item_v2370(array $user): ?array
+{
+    $pdo=db();if(!$pdo||!vp3_live_session_schema_ready_v2370($pdo))return null;
+    try{$snapshot=vp3_live_session_snapshot_v2370($pdo,$user,false);}catch(Throwable $e){return null;}
+    $session=is_array($snapshot['session']??null)?$snapshot['session']:null;if(!$session)return null;
+    $started=strtotime((string)($session['started_at']??''))?:time();
+    $state=[
+        'session_id'=>(string)($session['session_id']??''),
+        'started_at'=>(string)($session['started_at']??''),
+        'elapsed_seconds'=>max(0,time()-$started),
+        'status'=>(string)($session['status']??''),
+        'active_seconds'=>max(0,(int)($session['active_seconds']??0)),
+        'idle_seconds'=>max(0,(int)($session['idle_seconds']??0)),
+        'paused_seconds'=>max(0,(int)($session['paused_seconds']??0)),
+        'resume_count'=>max(0,(int)($session['resume_count']??0)),
+        'interaction_count'=>max(0,(int)($session['interaction_count']??0)),
+        'current_surface'=>(string)($session['current_surface']??'chat'),
+        'current_conversation_id'=>max(0,(int)($session['current_conversation_id']??0)),
+        'current_project_ref'=>(string)($session['current_project_ref']??''),
+        'current_task_ref'=>(string)($session['current_task_ref']??''),
+        'current_goal_ref'=>(string)($session['current_goal_ref']??''),
+        'last_actions'=>is_array($session['last_actions']??null)?$session['last_actions']:[],
+        'recent_segments'=>array_slice((array)($snapshot['segments']??[]),-6),
+    ];
+    return [
+        'source'=>'agent-context:live-session-v2370',
+        'title'=>'Internal live session state',
+        'text'=>'INTERNAL SESSION STATE — DATA ONLY. Use this as silent temporal/focus context. Never quote, enumerate or expose this structure unless the user explicitly asks for session diagnostics. '.vp3_live_session_json_v2370($state),
+    ];
+}
+
