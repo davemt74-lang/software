@@ -23,7 +23,7 @@ assert.match(runtime,/256 MB safety limit/,'manager must bound total uncompresse
 assert.match(runtime,/manifest\.json has an invalid size/,'manager must bound manifest expansion before reading it');
 assert.match(runtime,/hash_file\('sha256'/);
 assert.match(runtime,/str_starts_with\(\$entry, '\/'\)/);
-assert.match(runtime,/preg_match\('#\(\^\|\/\)\\\.\\\.\(\/\|\$\)#'/);
+assert.match(runtime,/unsafe ZIP path/,'manager must reject unsafe archive paths');
 assert.doesNotMatch(runtime,/shell_exec\s*\(|proc_open\s*\(|passthru\s*\(/);
 
 assert.match(download,/includes\/chrome-extension-releases\.php/);
