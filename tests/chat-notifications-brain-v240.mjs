@@ -88,7 +88,7 @@ assert.match(ui, /if \(wasVoice\) setVoiceMode\(false\)|if \(wasVoice\) \{[\s\S]
 assert.match(ui, /if \(wasVoice\) \{[\s\S]*setVoiceMode\(true\)/, 'spoken attention restores listening only when it was already active');
 assert.doesNotMatch(ui, /responseTemporaryVoice/, 'notifications must never create temporary microphone authority');
 assert.match(ui, /return Boolean\(continuity\(\)\.isVoice\?\.\(\)\)/, 'attention reads voice state through the canonical continuity fallback');
-assert.match(ui, /TRANSCRIPT_SUBMIT/, 'spoken user responses cancel the temporary response timeout');
-assert.match(ui, /chatForm[\s\S]*markUserResponse/, 'typed user responses cancel the temporary response timeout');
+assert.doesNotMatch(ui, /markUserResponse|responseWindowActive|responseTimer/, 'notification runtime must not retain obsolete temporary microphone response-window state');
+assert.doesNotMatch(ui, /TRANSCRIPT_SUBMIT[\s\S]{0,220}markUserResponse|chatForm[\s\S]{0,220}markUserResponse/, 'typed and spoken replies must not be coupled to removed temporary listening authority');
 
 console.log('chat-notifications-brain-v240 contract: PASS');
