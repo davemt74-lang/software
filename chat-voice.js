@@ -32,6 +32,7 @@
 
   const userId=Number(cfg.userId||0);
   const MODE_KEY=`stonefellow:voice-mode:${userId}`;
+  const AGENT_VOICE_SYNC_KEY=`vp3:agent-voice-sync:${userId}`;
   const previousFetch=window.fetch;
   const nativeFetch=previousFetch.bind(window);
   const chatUrl=(()=>{try{return new URL(String(cfg.endpoint||''),location.href);}catch(error){return null;}})();
@@ -593,7 +594,7 @@
   const continuity={isVoice:()=>voiceOn,conversationId:activeConversationId,startListening,interrupt:interruptResponse};window.STONEFELLOW_CHAT_CONTINUITY=continuity;
 
   syncConversation(lastConversationId);if(!agentVoiceMaster&&voiceOn){voiceOn=false;try{localStorage.setItem(MODE_KEY,'0');}catch(error){}}syncButton();if(button.disabled){voiceOn=false;writeMode();setAgentState('error','Voice recognition is not available in this browser.');}else{if(voiceOn){setAgentState('listening','Listening…');scheduleListening(0,'boot-persisted');}else setAgentState('idle');setTimeout(()=>void waitForInitialConversationRestore().then(presentIntro),80);}renderDebug();
-  window.addEventListener('storage',event=>{if(event.key!==MODE_KEY)return;const next=event.newValue==='1'&&agentVoiceMaster;if(next===voiceOn)return;if(next)enableVoice({persist:false,start:true});else disableVoice({persist:false});});
+  window.addEventListener('storage',event=>{if(event.key===AGENT_VOICE_SYNC_KEY&&event.newValue){try{const sync=JSON.parse(event.newValue);if(sync?.enabled===false){agentVoiceMaster=false;if(voiceOn)disableVoice({persist:true});}}catch(error){}return;}if(event.key!==MODE_KEY)return;const next=event.newValue==='1'&&agentVoiceMaster;if(next===voiceOn)return;if(next)enableVoice({persist:false,start:true});else disableVoice({persist:false});});
   window.addEventListener('stonefellow:agent-voice',event=>{const enabled=event.detail?.enabled!==false;agentVoiceMaster=enabled;if(!enabled&&voiceOn)disableVoice({persist:true});});
   window.dispatchEvent(new CustomEvent('stonefellow:conversation-engine-ready',{detail:{build:BUILD,source:'agent-chat'}}));log('READY',{voiceOn,ctor:typeof SpeechRecognitionCtor,barge:'speech-recognition',echoGuard:'canonical',fastVoice:'streaming',premiumUnlock:true,pauseWindowMs:TURN_END_PAUSE_MS,lifecycle:'canonical'});
 
