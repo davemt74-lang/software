@@ -222,6 +222,9 @@ function chat_policy_context_v236(string $query,array $user,array $principal,int
       $brain=function_exists('agent_brain_v99_context')?agent_brain_v99_context($user,$query,8):agent_brain_context($user,$query,8);
       foreach($brain as $item)$context[]=$item;
     }
+    if(function_exists('vp3_live_session_context_item_v2370')){
+      try{$liveSessionItem=vp3_live_session_context_item_v2370($user);if(is_array($liveSessionItem))$context[]=$liveSessionItem;}catch(Throwable $e){}
+    }
     if(($principal['kind']??'system')==='user_agent'){
       $agent=user_agent_get_v236($pdo,(int)$user['id'],(int)$principal['agent_id']);
       if($agent){
