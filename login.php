@@ -63,7 +63,7 @@ vp3_public_header('Sign in — VP3', 'Sign in to your VP3 personal AI assistant.
       <?php if ($error): ?><div class="vp3-alert error" role="alert" aria-live="polite"><?= e((string)$error) ?></div><?php endif; ?>
       <form class="vp3-auth-form" method="post" action="<?= e(url('/login.php')) ?>">
         <?= csrf_field() ?>
-        <?php foreach(['plan','billing','source','return_to'] as $intentKey): if(isset($funnelIntent[$intentKey])): ?><input type="hidden" name="<?= e($intentKey) ?>" value="<?= e((string)$funnelIntent[$intentKey]) ?>"><?php endif; endforeach; ?>
+        <?php foreach(['plan','billing','origin','source','return_to'] as $intentKey): if(isset($funnelIntent[$intentKey])): ?><input type="hidden" name="<?= e($intentKey) ?>" value="<?= e((string)$funnelIntent[$intentKey]) ?>"><?php endif; endforeach; ?>
         <div class="vp3-field"><label for="email">Email address</label><input id="email" name="email" type="email" maxlength="190" autocomplete="username" required placeholder="you@example.com" value="<?= e($email) ?>"></div>
         <div class="vp3-field"><label for="password">Password</label><div class="vp3-password-wrap"><input id="password" name="password" type="password" autocomplete="current-password" required placeholder="Enter your password"><button class="vp3-password-toggle" type="button" data-password-toggle="password" aria-controls="password">Show</button></div></div>
         <div class="vp3-form-row"><span>Secure session</span><a class="vp3-text-link" href="<?= e(url('/forgot-password.php')) ?>">Forgot password?</a></div>
