@@ -78,8 +78,13 @@ function chat_onboarding_v241_workspace_state(PDO $pdo,array $user,array $permis
     $browserReady=function_exists('vp3_extension_schema_ready_v2000')&&vp3_extension_schema_ready_v2000($pdo);
     $browserConnections=$browserReady?$count("SELECT COUNT(*) FROM extension_devices_v2000 WHERE user_id=? AND device_status='active'",[$uid]):0;
 
+    if(function_exists('vp3_cognitive_meeting_load_v500')){
+        try{vp3_cognitive_meeting_load_v500();}catch(Throwable $e){}
+    }
     $meetingReady=function_exists('video_meeting_schema_ready_v1800')&&video_meeting_schema_ready_v1800($pdo)
-        &&function_exists('video_meeting_transcription_schema_ready_v1800')&&video_meeting_transcription_schema_ready_v1800($pdo)
+        &&table_exists('video_meeting_transcription_links')
+        &&column_exists('video_meeting_transcript_segments','source_key')
+        &&function_exists('video_meeting_external_calendar_schema_ready_v1801')&&video_meeting_external_calendar_schema_ready_v1801($pdo)
         &&function_exists('video_meeting_intelligence_schema_ready_v1820')&&video_meeting_intelligence_schema_ready_v1820($pdo);
 
     $calendarReady=function_exists('user_calendar_schema_ready_v1300')&&user_calendar_schema_ready_v1300($pdo);
