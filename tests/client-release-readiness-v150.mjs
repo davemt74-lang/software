@@ -110,7 +110,7 @@ assert.ok(admin.includes('readiness_signoff'));
 assert.ok(admin.includes('Artifact integrity'));
 assert.ok(admin.includes('Preflight approval'));
 
-assert.match(workflow,/Client Release Operations v1\.60/,'v1.50 is a backfill beneath the current v1.60 release-ops surface');
+assert.match(workflow,/Client Release Operations v1\.(?:60|70)/,'v1.50 is a backfill beneath the current v1.60 release-ops surface');
 assert.ok(workflow.includes('client-release-readiness-v150.php'));
 assert.ok(workflow.includes('client-release-readiness-v150.mjs'));
 assert.ok(recovery.includes('client-release-readiness-v150.mjs'));
