@@ -23,7 +23,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         try {
             $action = (string)($_POST['action'] ?? '');
 
-            if (in_array($action,['incident_open','incident_contain','incident_start_recovery','incident_cohort','incident_refresh','incident_acknowledge','incident_resolve'],true)) {
+            if (in_array($action,['incident_open','incident_contain','incident_start_recovery','incident_cohort','incident_refresh','incident_acknowledge','incident_policy','incident_resolve'],true)) {
                 if($action==='incident_open'){
                     $product=(string)($_POST['product']??'');
                     $releaseId=max(0,(int)($_POST['release_id']??0));
@@ -45,6 +45,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }elseif($action==='incident_refresh'){
                         client_release_incident_refresh_v130($pdo,$incidentId,$adminUserId,true);
                         flash('notice','Affected fleet recovery state refreshed.');
+                    }elseif($action==='incident_policy'){
+                        client_release_incident_policy_update_v130($pdo,$incidentId,$_POST,$adminUserId);
+                        flash('notice','Incident closure policy updated.');
                     }elseif($action==='incident_acknowledge'){
                         client_release_incident_acknowledge_client_v130(
                             $pdo,$incidentId,max(0,(int)($_POST['user_id']??0)),(string)($_POST['scope_key']??'account'),
@@ -283,6 +286,18 @@ require __DIR__ . '/_header.php';
         </tr>
       <?php endforeach; ?>
       </tbody></table></div>
+    <?php endif; ?>
+
+    <?php if($status!=='resolved'): ?>
+      <form method="post" class="admin-form" style="margin-top:14px">
+        <?= csrf_field() ?><input type="hidden" name="action" value="incident_policy"><input type="hidden" name="incident_id" value="<?= $iid ?>">
+        <div class="form-row">
+          <label>Min recovery bps<input type="number" name="min_recovery_rate_bps" min="5000" max="10000" value="<?= (int)$incident['min_recovery_rate_bps'] ?>"></label>
+          <label>Max failure bps<input type="number" name="max_recovery_failure_rate_bps" min="0" max="5000" value="<?= (int)$incident['max_recovery_failure_rate_bps'] ?>"></label>
+          <label>Verify hours<input type="number" name="verification_hours" min="0" max="168" value="<?= (int)$incident['verification_hours'] ?>"></label>
+        </div>
+        <button class="button button-small" type="submit">Save closure gates</button>
+      </form>
     <?php endif; ?>
 
     <?php if($status!=='resolved'&&$closure): ?>
