@@ -82,6 +82,7 @@ require_once __DIR__.'/notifications.php';
 require_once __DIR__.'/client-release-intelligence-v100.php';
 require_once __DIR__.'/client-release-rollouts-v110.php';
 require_once __DIR__.'/client-release-health-v120.php';
+require_once __DIR__.'/client-release-incidents-v130.php';
 require_once __DIR__.'/agent-chat-activity.php';
 require_once __DIR__.'/artist-workspaces-v104.php';
 require_once __DIR__.'/team-workspace-lifecycle-v350.php';
