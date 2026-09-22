@@ -73,8 +73,8 @@ vp3_public_header(
       <div class="vp3-cta-box">
         <div><h2>Install VP3 Browser Companion for Chrome.</h2><p>Download the current extension package, unzip it, then load the folder from Chrome's Extensions page.</p></div>
         <div style="display:flex;gap:.75rem;flex-wrap:wrap">
-          <a class="vp3-btn primary" href="<?= e(url('/chrome-extension-download.php')) ?>">Download Chrome Extension →</a>
-          <a class="vp3-btn" href="<?= e(url('/book-demo.php')) ?>">Book Demo</a>
+          <a class="vp3-btn primary" data-vp3-cta="chrome_download" data-vp3-target="chrome_extension" href="<?= e(url('/chrome-extension-download.php')) ?>">Download Chrome Extension →</a>
+          <a class="vp3-btn" data-vp3-cta="chrome_book_demo" data-vp3-target="demo" href="<?= e(url('/book-demo.php')) ?>">Book Demo</a>
         </div>
       </div>
     </div>
