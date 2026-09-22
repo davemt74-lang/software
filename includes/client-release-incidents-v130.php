@@ -46,6 +46,7 @@ function client_release_incident_ensure_schema_v130(?PDO $pdo=null): void
         opened_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
         contained_at DATETIME NULL,
         recovery_started_at DATETIME NULL,
+        monitoring_started_at DATETIME NULL,
         resolved_at DATETIME NULL,
         updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         INDEX idx_client_release_incident_release (product,release_id,status,opened_at),
@@ -296,8 +297,8 @@ function client_release_incident_start_recovery_v130(PDO $pdo,int $incidentId,in
 {
     $incident=client_release_incident_v130($pdo,$incidentId);
     if(!$incident)throw new RuntimeException('Release incident was not found.');
-    if(!in_array((string)$incident['status'],['contained','recovering','monitoring'],true)){
-        throw new RuntimeException('Contain the affected rollout before starting fleet recovery.');
+    if((string)$incident['status']!=='contained'){
+        throw new RuntimeException('Contain the affected rollout before starting or changing the recovery target.');
     }
     if(!client_release_incident_recovery_release_valid_v130($pdo,$incident,$recoveryReleaseId)){
         throw new RuntimeException('Choose a prior known-good release from the same channel.');
@@ -306,8 +307,9 @@ function client_release_incident_start_recovery_v130(PDO $pdo,int $incidentId,in
     if(!in_array($percent,$allowed,true))$percent=10;
     $from=(string)$incident['status'];
     $recoveryStatus=$percent===100?'monitoring':'recovering';
+    $monitoringSql=$percent===100?'NOW()':'NULL';
     $stmt=$pdo->prepare("UPDATE client_release_incidents_v130
-        SET recovery_release_id=?,recovery_percent=?,status=?,recovery_started_at=COALESCE(recovery_started_at,NOW())
+        SET recovery_release_id=?,recovery_percent=?,status=?,recovery_started_at=COALESCE(recovery_started_at,NOW()),monitoring_started_at={$monitoringSql}
         WHERE id=?");
     $stmt->execute([$recoveryReleaseId,$percent,$recoveryStatus,$incidentId]);
     client_release_incident_collect_affected_v130($pdo,$incidentId);
@@ -331,7 +333,8 @@ function client_release_incident_set_cohort_v130(PDO $pdo,int $incidentId,int $p
     if($percent>0&&!(int)($incident['recovery_release_id']??0))throw new RuntimeException('Choose a recovery release before opening a recovery cohort.');
     $fromPercent=(int)$incident['recovery_percent'];
     $status=$percent===0?'contained':($percent===100?'monitoring':'recovering');
-    $pdo->prepare('UPDATE client_release_incidents_v130 SET recovery_percent=?,status=? WHERE id=?')->execute([$percent,$status,$incidentId]);
+    $monitoringSql=$percent===100?'NOW()':'NULL';
+    $pdo->prepare("UPDATE client_release_incidents_v130 SET recovery_percent=?,status=?,monitoring_started_at={$monitoringSql} WHERE id=?")->execute([$percent,$status,$incidentId]);
     client_release_incident_refresh_v130($pdo,$incidentId,0,false);
     client_release_incident_event_v130($pdo,$incidentId,$actorUserId,$percent===0?'recovery_paused':'recovery_cohort_changed',
         (string)$incident['status'],$status,['from_percent'=>$fromPercent,'to_percent'=>$percent]);
@@ -498,9 +501,9 @@ function client_release_incident_closure_readiness_v130(PDO $pdo,int $incidentId
     if((int)$stats['recovery_rate_bps']<(int)$incident['min_recovery_rate_bps'])$reasons[]='Recovered-client rate is below the closure threshold.';
     if((int)$stats['recovery_failure_rate_bps']>(int)$incident['max_recovery_failure_rate_bps'])$reasons[]='Recovery failure rate exceeds the closure threshold.';
     if((int)$stats['unresolved']>0)$reasons[]='Every remaining recovery exception must be recovered or explicitly acknowledged.';
-    $started=(string)($incident['recovery_started_at']??'');
+    $started=(string)($incident['monitoring_started_at']??'');
     $hours=$started!==''&&strtotime($started)!==false?max(0.0,(time()-strtotime($started))/3600):0.0;
-    if($hours<(int)$incident['verification_hours'])$reasons[]='The post-recovery verification window is still open.';
+    if($hours<(int)$incident['verification_hours'])$reasons[]='The 100% recovery verification window is still open.';
     return ['ready'=>!$reasons,'reasons'=>$reasons,'stats'=>$stats,'verification_elapsed_hours'=>round($hours,2)];
 }
 
@@ -509,6 +512,7 @@ function client_release_incident_resolve_v130(PDO $pdo,int $incidentId,array $in
     $incident=client_release_incident_v130($pdo,$incidentId);
     if(!$incident)throw new RuntimeException('Release incident was not found.');
     if((string)$incident['status']==='resolved')return $incident;
+    if((string)$incident['status']!=='monitoring')throw new RuntimeException('Move recovery to 100% monitoring before resolving the incident.');
     $root=mb_strimwidth(trim((string)($input['root_cause']??'')),0,2000,'');
     $summary=mb_strimwidth(trim((string)($input['resolution_summary']??'')),0,2000,'');
     $lessons=mb_strimwidth(trim((string)($input['lessons_learned']??'')),0,4000,'');
