@@ -228,6 +228,9 @@ function chrome_extension_release_create(array $input, array $files, int $create
 
     $published = !empty($input['is_published']) ? 1 : 0;
     $latest = $published && !empty($input['is_latest']) ? 1 : 0;
+    if($latest&&function_exists('client_release_readiness_current_v150')){
+        throw new RuntimeException('Upload the Browser Companion release as Draft/Testing, complete v1.50 preflight, then promote it.');
+    }
 
     try {
         $pdo->beginTransaction();
@@ -290,6 +293,10 @@ function chrome_extension_release_set_state(int $releaseId, string $action): voi
         return;
     }
     if ($action === 'latest') {
+        if(function_exists('client_release_readiness_current_v150')){
+            $readiness=client_release_readiness_current_v150($pdo,'browser_companion',$releaseId);
+            if(empty($readiness['ready']))throw new RuntimeException('Release preflight is not approved: '.(string)($readiness['reason']??'readiness gate failed'));
+        }
         $pdo->beginTransaction();
         try {
             $pdo->prepare('UPDATE chrome_extension_releases SET is_latest=0 WHERE channel=?')->execute([(string)$release['channel']]);
