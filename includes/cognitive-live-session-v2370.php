@@ -388,6 +388,9 @@ function vp3_live_session_note_action_v2370(array $user,string $actor,string $ev
     $context['surface']=(string)($context['surface']??'chat');
 
     try{
+        if($actor==='user'){
+            vp3_live_session_record_activity_v2370($user,(string)$context['surface'],'working',$context,'user_action',false);
+        }
         $session=vp3_live_session_current_v2370($pdo,$user,$context,true);if(!$session)return ['ready'=>false,'build'=>VP3_COGNITIVE_LIVE_SESSION_V2370];
         $actions=json_decode((string)($session['last_actions_json']??''),true);if(!is_array($actions))$actions=[];
         $actions[$actor]=['event_type'=>$eventType,'summary'=>$summary,'at'=>gmdate('c')];
