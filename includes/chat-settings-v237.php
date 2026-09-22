@@ -1,7 +1,35 @@
 <?php
 declare(strict_types=1);
 
-const STONEFELLOW_CHAT_SETTINGS_V237 = 'chat-settings-v237-20260905';
+const STONEFELLOW_CHAT_SETTINGS_V237 = 'chat-settings-v237-20260921-voice-authority';
+
+function chat_settings_agent_voice_allowed_v237(?array $user=null): bool
+{
+    $user??=current_user();
+    if(!$user||(int)($user['id']??0)<1)return false;
+    if(function_exists('user_has_role')&&user_has_role('admin',$user))return true;
+    if(function_exists('subscription_schema_ready')&&subscription_schema_ready()){
+        $sub=function_exists('subscription_current')?subscription_current($user):null;
+        if(!$sub)return false;
+        if(function_exists('subscription_has_entitlement')&&subscription_has_entitlement($user,'legacy.permissions')){
+            return function_exists('personal_capability_has_v242')
+                ? personal_capability_has_v242('voice_profile.access',$user)
+                : true;
+        }
+        return function_exists('subscription_has_entitlement')
+            && subscription_has_entitlement($user,'voice.access');
+    }
+    return function_exists('personal_capability_has_v242')
+        ? personal_capability_has_v242('voice_profile.access',$user)
+        : true;
+}
+
+function chat_settings_agent_voice_enabled_v237(PDO $pdo,array $user): bool
+{
+    if(!chat_settings_agent_voice_allowed_v237($user))return false;
+    $settings=chat_settings_get_v237($pdo,(int)($user['id']??0));
+    return !empty($settings['agent_voice_enabled']);
+}
 
 function chat_settings_defaults_v237(): array
 {
@@ -137,6 +165,7 @@ function chat_settings_save_v237(PDO $pdo, array $user, array $input): array
 
 function chat_settings_save_agent_voice_v237(PDO $pdo, array $user, bool $enabled): array
 {
+    if($enabled&&!chat_settings_agent_voice_allowed_v237($user))throw new RuntimeException('Agent Voice is not included for this account.');
     $current = chat_settings_get_v237($pdo, (int)($user['id'] ?? 0));
     return chat_settings_save_v237($pdo, $user, [
         'presence_mode' => (string)($current['presence_mode'] ?? 'online'),
