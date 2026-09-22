@@ -25,7 +25,7 @@ function chat_account_state_intent_v241(string $query): bool
     if(preg_match('/\b(?:what|which)\s+(?:plan|package)\s+(?:should|would|do)\b|\b(?:recommend|suggest)\s+(?:a\s+|the\s+)?(?:plan|package)\b|\bbest\s+(?:plan|package)\b/u',$q))return true;
     if(preg_match('/\bwhat\s+(?:plan|package)\s+am\s+i\s+on\b/u',$q))return true;
 
-    $subject='(?:profile agent|voice clone|social chat|direct chat|user[- ]to[- ]user chat|online presence|chat presence|public profile|profile visibility|profile\s+(?:public|private|visible)|incoming chat sound|message sound|notification sound|browser companion|annotations?|meetings?|calendar|booking|ecommerce|commerce|agent analytics|analytics|homeserver|home server|teams?|transcriptions?|ai summary)';
+    $subject='(?:profile agent|voice clone|social chat|direct chat|user[- ]to[- ]user chat|online presence|chat presence|public profile|profile visibility|profile\s+(?:public|private|visible)|incoming chat sound|message sound|notification sound|agent voice|browser companion|annotations?|meetings?|calendar|booking|ecommerce|commerce|agent analytics|analytics|homeserver|home server|teams?|transcriptions?|ai summary)';
     if(!preg_match('/\b'.$subject.'\b/u',$q))return false;
     if(preg_match('/\b(?:my|mine|am i|do i|have i|status|setup|set up|enabled|disabled|turned on|turned off|configured|ready|active|live|online|offline)\b/u',$q))return true;
     return (bool)preg_match('/\b(?:is|are)\s+(?:my\s+)?(?:the\s+)?'.$subject.'\s+(?:on|off)\b/u',$q);
