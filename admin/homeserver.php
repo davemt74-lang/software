@@ -387,7 +387,7 @@ require __DIR__ . '/_header.php';
       <?php if($ciRows): ?><div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>Check</th><th>Conclusion</th><th>Commit</th><th>Run</th><th></th></tr></thead><tbody>
         <?php foreach($ciRows as $ci): ?><tr>
           <td><?= e((string)$ci['check_name']) ?></td><td><?= e((string)$ci['conclusion']) ?></td><td><small><?= e((string)$ci['source_commit_sha']) ?></small></td>
-          <td><?php if((string)$ci['details_url']!=='': ?><a href="<?= e((string)$ci['details_url']) ?>" target="_blank" rel="noopener"><?= e((string)($ci['run_id']?:'details')) ?></a><?php else: ?><?= e((string)$ci['run_id']) ?><?php endif; ?></td>
+          <td><?php if((string)$ci['details_url']!==''): ?><a href="<?= e((string)$ci['details_url']) ?>" target="_blank" rel="noopener"><?= e((string)($ci['run_id']?:'details')) ?></a><?php else: ?><?= e((string)$ci['run_id']) ?><?php endif; ?></td>
           <td><form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="readiness_ci_delete"><input type="hidden" name="product" value="<?= e($readyProduct) ?>"><input type="hidden" name="release_id" value="<?= $rid ?>"><input type="hidden" name="evidence_id" value="<?= (int)$ci['id'] ?>"><button class="button button-small" type="submit">Remove</button></form></td>
         </tr><?php endforeach; ?>
       </tbody></table></div><?php endif; ?>
