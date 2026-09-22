@@ -67,10 +67,10 @@ if (!$memberHeaderRuntimeRendered):
     $GLOBALS['STONEFELLOW_MEMBER_HEADER_RUNTIME_RENDERED'] = true; // legacy compatibility
     $memberHeaderUiBuild = 'universal-member-header-layout-20260906';
     $memberHeaderScrollBuild = 'member-page-scroll-20260912-calendar-flex';
-    $memberHeaderNotificationBuild = 'activity-center-brain-routing-20260906';
+    $memberHeaderNotificationBuild = 'activity-center-proactive-v244-20260922';
     $memberHeaderTranscriptionBuild = 'chat-transcription-canvas-v243-layout-20260905';
     $memberHeaderRecordingUiBuild = 'chat-recording-results-v206-20260901';
-    $memberAgentVoiceMenuBuild = 'agent-voice-menu-20260913';
+    $memberAgentVoiceMenuBuild = 'agent-voice-menu-v244-20260922';
     $memberRuntimeBridgeBuild = 'authenticated-vp3-runtime-cleanup-20260914';
 ?>
 <link rel="stylesheet" data-member-header-ui href="<?= e(url('/chat-header-ui.css?v=' . $memberHeaderUiBuild)) ?>">
