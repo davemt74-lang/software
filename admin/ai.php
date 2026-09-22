@@ -101,12 +101,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 $catalog = ai_model_catalog();
 $activeProvider = ai_active_provider();
+$credentialKeyState = ai_master_key_state();
+$encryptedCredentialsExist = ai_saved_encrypted_credentials_exist();
+$openaiCredentialState = ai_encrypted_secret_state((string)setting('ai_openai_api_key', ''));
+$anthropicCredentialState = ai_encrypted_secret_state((string)setting('ai_anthropic_api_key', ''));
+$credentialRecoveryMessage = $encryptedCredentialsExist && $credentialKeyState !== 'ready'
+    ? ai_credential_state_message($credentialKeyState, 'AI')
+    : '';
 
 $adminTitle = 'AI / API Settings';
 $adminActive = 'ai';
 require __DIR__ . '/_header.php';
 ?>
 <div class="ai-admin-page">
+<?php if ($credentialRecoveryMessage !== ''): ?>
+<div class="vp3-alert error" role="alert">
+  <strong>AI credential recovery required.</strong>
+  <?= e($credentialRecoveryMessage) ?>
+  The deploy process must preserve <code>/private/ai-key.php</code>; do not create a replacement key unless the original cannot be recovered.
+</div>
+<?php endif; ?>
 <div class="panel ai-overview-panel">
   <div class="ai-settings-heading">
     <div>
@@ -170,8 +184,8 @@ require __DIR__ . '/_header.php';
 
         <div class="field">
           <label for="openai_api_key">OpenAI API Key</label>
-          <input id="openai_api_key" name="openai_api_key" type="password" autocomplete="new-password" placeholder="<?= ai_provider_has_saved_key('openai') ? 'Saved key ••••••' . e(ai_key_suffix('openai')) : 'sk-…' ?>">
-          <small><?= ai_provider_has_saved_key('openai') ? 'An encrypted API key is saved. Leave blank to keep it.' : 'No OpenAI API key is saved.' ?></small>
+          <input id="openai_api_key" name="openai_api_key" type="password" autocomplete="new-password" placeholder="<?= ai_provider_has_saved_key('openai') ? 'Saved encrypted key' . ($openaiCredentialState === 'ready' ? ' ••••••' . e(ai_key_suffix('openai')) : '') : 'sk-…' ?>">
+          <small><?= ai_provider_has_saved_key('openai') ? e($openaiCredentialState === 'ready' ? 'An encrypted API key is saved. Leave blank to keep it.' : ai_credential_state_message($openaiCredentialState, 'OpenAI')) : 'No OpenAI API key is saved.' ?></small>
         </div>
       </div>
 
@@ -215,8 +229,8 @@ require __DIR__ . '/_header.php';
 
         <div class="field">
           <label for="anthropic_api_key">Anthropic API Key</label>
-          <input id="anthropic_api_key" name="anthropic_api_key" type="password" autocomplete="new-password" placeholder="<?= ai_provider_has_saved_key('anthropic') ? 'Saved key ••••••' . e(ai_key_suffix('anthropic')) : 'sk-ant-…' ?>">
-          <small><?= ai_provider_has_saved_key('anthropic') ? 'An encrypted API key is saved. Leave blank to keep it.' : 'No Anthropic API key is saved.' ?></small>
+          <input id="anthropic_api_key" name="anthropic_api_key" type="password" autocomplete="new-password" placeholder="<?= ai_provider_has_saved_key('anthropic') ? 'Saved encrypted key' . ($anthropicCredentialState === 'ready' ? ' ••••••' . e(ai_key_suffix('anthropic')) : '') : 'sk-ant-…' ?>">
+          <small><?= ai_provider_has_saved_key('anthropic') ? e($anthropicCredentialState === 'ready' ? 'An encrypted API key is saved. Leave blank to keep it.' : ai_credential_state_message($anthropicCredentialState, 'Anthropic')) : 'No Anthropic API key is saved.' ?></small>
         </div>
       </div>
 
@@ -260,7 +274,7 @@ require __DIR__ . '/_header.php';
 
 <div class="panel">
   <h2>Credential Security</h2>
-  <p class="muted">API keys are encrypted before being stored in the database. The local encryption key is created at <code>/private/ai-key.php</code> the first time a credential is saved. Back up that file with your private site configuration; without it, saved API keys cannot be decrypted.</p>
+  <p class="muted">API keys are encrypted before being stored in the database. The local encryption key is created at <code>/private/ai-key.php</code> the first time a credential is saved. Back up that file with your private site configuration. Production deploy packages must never replace the <code>/private</code> runtime directory; without the original key, existing saved API credentials cannot be decrypted.</p>
 </div>
 </div>
 <?php require __DIR__ . '/_footer.php'; ?>

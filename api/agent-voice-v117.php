@@ -67,9 +67,9 @@ function stonefellow_voice_v117_settings(?array $user = null, int $agentId = 0):
     $credentialState = $apiKey !== '' ? 'environment' : 'missing';
     if ($apiKey === '') {
         $encrypted = trim((string)setting('ai_elevenlabs_api_key', ''));
-        $apiKey = ai_decrypt_secret($encrypted);
+        $credentialState = $encrypted === '' ? 'missing' : ai_encrypted_secret_state($encrypted);
+        $apiKey = $credentialState === 'ready' ? ai_decrypt_secret($encrypted) : '';
         if ($apiKey !== '') $credentialState = 'saved';
-        elseif ($encrypted !== '') $credentialState = 'unreadable';
     }
     $voiceId = trim((string)(getenv('ELEVENLABS_VOICE_ID') ?: setting('ai_elevenlabs_voice_id', 'JBFqnCBsd6RMkjVDRZzb')));
     $voiceSource = 'global';
@@ -344,8 +344,8 @@ if ($action === 'warm') {
     $verification = stonefellow_voice_v244_verify($apiKey, $voiceId);
     $ready = !empty($verification['ready']);
     $error = (string)($verification['error'] ?? '');
-    if (!$ready && $credentialState === 'unreadable') {
-        $error = 'The saved ElevenLabs credential cannot be decrypted. Re-enter it in Admin AI settings.';
+    if (!$ready && !in_array($credentialState, ['environment','saved','missing'], true)) {
+        $error = ai_credential_state_message($credentialState, 'ElevenLabs');
     } elseif (!$ready && $voiceSource === 'agent_clone' && $voiceId === '') {
         $error = 'This Agent is set to use your ElevenLabs clone, but no clone is currently available.';
     }
