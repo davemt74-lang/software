@@ -87,12 +87,22 @@ function chrome_extension_release_validate_zip(string $path): array
     }
 
     try {
+        $totalUncompressed = 0;
         for ($i = 0; $i < $zip->numFiles; $i++) {
             $entry = $zip->getNameIndex($i);
             if (!is_string($entry) || $entry === '' || str_contains($entry, "\0")
                 || str_starts_with($entry, '/') || str_contains($entry, '\\')
                 || preg_match('#(^|/)\\.\\.(/|$)#', $entry)) {
                 throw new RuntimeException('Chrome Extension package contains an unsafe ZIP path.');
+            }
+            $stat = $zip->statIndex($i);
+            $entrySize = is_array($stat) ? (int)($stat['size'] ?? 0) : 0;
+            if ($entrySize < 0 || $entrySize > 67108864) {
+                throw new RuntimeException('Chrome Extension package contains an oversized file.');
+            }
+            $totalUncompressed += $entrySize;
+            if ($totalUncompressed > 268435456) {
+                throw new RuntimeException('Chrome Extension package expands beyond the 256 MB safety limit.');
             }
         }
 
@@ -115,6 +125,11 @@ function chrome_extension_release_validate_zip(string $path): array
             }
         }
 
+        $manifestIndex = $zip->locateName('manifest.json');
+        $manifestStat = $manifestIndex !== false ? $zip->statIndex($manifestIndex) : false;
+        if (!is_array($manifestStat) || (int)($manifestStat['size'] ?? 0) < 2 || (int)($manifestStat['size'] ?? 0) > 1048576) {
+            throw new RuntimeException('Chrome Extension manifest.json has an invalid size.');
+        }
         $manifestRaw = $zip->getFromName('manifest.json');
         $manifest = is_string($manifestRaw) ? json_decode($manifestRaw, true) : null;
         if (!is_array($manifest)) {
@@ -129,8 +144,8 @@ function chrome_extension_release_validate_zip(string $path): array
             throw new RuntimeException('Chrome Extension manifest version is invalid.');
         }
         $name = trim((string)($manifest['name'] ?? ''));
-        if ($name === '') {
-            throw new RuntimeException('Chrome Extension manifest name is missing.');
+        if ($name !== 'VP3 Browser Companion') {
+            throw new RuntimeException('Chrome Extension package is not the VP3 Browser Companion.');
         }
 
         return [
