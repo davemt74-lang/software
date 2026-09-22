@@ -29,8 +29,9 @@ $cognitiveOrchestrationBuild = 'cognitive-orchestration-v560-20260919';
 $cognitiveMemoryBuild = 'cognitive-memory-v570-20260919';
 $browserContextBuild = 'browser-context-v2130-20260919';
 $agentIdentityAssetBuild = $agentIdentityBuild . '-activation-v243';
-$cognitiveCardsAssetBuild = $cognitiveCardsBuild . '-activation-v243-memory-v570';
-$cognitiveFeedAssetBuild = $cognitiveFeedBuild . '-activation-v243-orchestration-v560-priority-v2310-proactive-v2340-calibration-v2350';
+$cognitiveCardsAssetBuild = $cognitiveCardsBuild . '-memory-v570';
+$cognitiveFeedAssetBuild = $cognitiveFeedBuild . '-orchestration-v560-priority-v2310-proactive-v2340-calibration-v2350';
+$onboardingActivationAssetBuild = 'activation-v243';
 
 if (!headers_sent()) {
     header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
