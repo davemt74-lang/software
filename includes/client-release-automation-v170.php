@@ -310,13 +310,21 @@ function client_release_automation_expire_proposals_v170(PDO $pdo): void
       WHERE proposal_status IN ('pending','deferred') AND expires_at IS NOT NULL AND expires_at<=NOW()");
 }
 
-function client_release_automation_existing_proposal_v170(PDO $pdo,string $fingerprint): ?array
+function client_release_automation_existing_proposal_v170(PDO $pdo,string $fingerprint,int $cooldownMinutes=0): ?array
 {
     $stmt=$pdo->prepare("SELECT * FROM client_release_automation_proposals_v170
       WHERE fingerprint_sha256=? AND proposal_status IN ('pending','approved','deferred','executed')
       ORDER BY id DESC LIMIT 1");
     $stmt->execute([$fingerprint]);$row=$stmt->fetch();
-    return $row?:null;
+    if($row)return $row;
+    if($cooldownMinutes>0){
+        $cutoff=gmdate('Y-m-d H:i:s',time()-max(0,$cooldownMinutes)*60);
+        $stmt=$pdo->prepare("SELECT * FROM client_release_automation_proposals_v170
+          WHERE fingerprint_sha256=? AND created_at>=? ORDER BY id DESC LIMIT 1");
+        $stmt->execute([$fingerprint,$cutoff]);$row=$stmt->fetch();
+        if($row)return $row;
+    }
+    return null;
 }
 
 function client_release_automation_create_proposal_v170(PDO $pdo,array $proposal,int $runId=0): array
@@ -329,9 +337,11 @@ function client_release_automation_create_proposal_v170(PDO $pdo,array $proposal
         'to_percent'=>(int)($proposal['to_percent']??0),
         'evidence_version'=>(string)($proposal['evidence_version']??''),
     ]);
-    $existing=client_release_automation_existing_proposal_v170($pdo,$fingerprint);
+    $policy=client_release_automation_policy_v170($pdo,(string)$proposal['product'],(string)$proposal['channel']);
+    $cooldown=max(0,min(1440,(int)($proposal['cooldown_minutes']??$policy['cooldown_minutes']??30)));
+    $existing=client_release_automation_existing_proposal_v170($pdo,$fingerprint,$cooldown);
     if($existing)return $existing;
-    $expiresHours=max(1,min(168,(int)($proposal['proposal_expiry_hours']??24)));
+    $expiresHours=max(1,min(168,(int)($proposal['proposal_expiry_hours']??$policy['proposal_expiry_hours']??24)));
     $expires=gmdate('Y-m-d H:i:s',time()+$expiresHours*3600);
     $stmt=$pdo->prepare("INSERT INTO client_release_automation_proposals_v170
       (run_id,product,channel,release_id,campaign_id,proposal_type,proposal_status,requires_approval,auto_executable,
@@ -627,7 +637,6 @@ function client_release_automation_execute_modified_proposal_v170(PDO $pdo,array
         throw new RuntimeException('Modified cohort must be larger than the current cohort and smaller than the proposed cohort.');
     }
     if($type==='fleet_advance'){
-        if(!in_array($modifiedPercent,[10,25,50],true))throw new RuntimeException('Fleet cohort modifications must use 10%, 25%, or 50%.');
         client_release_automation_validate_proposal_v170($pdo,$proposal);
         client_fleet_campaign_set_v160($pdo,(int)$proposal['campaign_id'],'active',$modifiedPercent,$actorUserId);
     }elseif($type==='rollout_promote'){
