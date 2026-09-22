@@ -95,7 +95,9 @@ assert.match(css,/@media\(max-width:520px\)/);
 assert.match(css,/prefers-reduced-motion:reduce/);
 
 assert.match(chat,/\$cognitiveFeedBuild = 'cognitive-feed-v530-20260918'/);
-assert.match(chat,/\$cognitiveFeedAssetBuild = \$cognitiveFeedBuild \. '-activation-v243-orchestration-v560-priority-v2310-proactive-v2340-calibration-v2350'/,'activation must cache-bust feed assets without changing the stable v5.30 build id');
+assert.match(chat,/\$cognitiveFeedAssetBuild = \$cognitiveFeedBuild \. '-orchestration-v560-priority-v2310-proactive-v2340-calibration-v2350'/,'the retained feed asset build chain must remain stable');
+assert.match(chat,/\$onboardingActivationAssetBuild = 'activation-v243'/,'activation must use a feature-specific asset suffix');
+assert.match(chat,/chat-cognitive-feed-v530\.js\?v=' \. \$cognitiveFeedAssetBuild \. '-' \. \$onboardingActivationAssetBuild/,'activation must cache-bust the feed asset URL without changing the retained build chain');
 assert.match(chat,/api\/cognitive-feed-v530\.php/);
 assert.match(chat,/chat-cognitive-feed-v530\.css/);
 assert.match(chat,/chat-cognitive-feed-v530\.js/);
