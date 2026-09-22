@@ -398,6 +398,8 @@ function client_release_sync_update_state_v110(PDO $pdo,int $userId,string $prod
     $releaseId=(int)($release['id']??0);
     $version=(string)($release['version']??'');
     $versionState=function_exists('client_release_version_state_v100')?client_release_version_state_v100($installed,$version):'unknown';
+    $isIncidentRecovery=!empty($release['_incident_id']);
+    if($isIncidentRecovery&&$installed!==''&&$version!==''&&$installed!==$version)$versionState='update_available';
     $schemaReady=client_release_rollouts_schema_ready_v110($pdo);
     $current=$schemaReady?client_release_update_state_v110($pdo,$userId,$product,$scopeKey,$releaseId):null;
     if(in_array($versionState,['current','ahead'],true)){
