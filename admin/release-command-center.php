@@ -77,8 +77,8 @@ require __DIR__.'/_header.php';
 .release-command-status-main p{margin:0;color:#727b86}
 .release-command-metrics{grid-template-columns:repeat(4,minmax(0,1fr))!important;margin-bottom:18px}
 .release-command-severity{display:inline-flex;align-items:center;min-height:24px;padding:3px 8px;border:1px solid #d7dce1;border-radius:999px;background:#f7f8f9;color:#58616b;font-size:.6rem;font-weight:900;letter-spacing:.05em;text-transform:uppercase}
-.release-command-severity[data-level="critical"],.release-command-severity[data-level="high"]{border-color:#ddc1c1;background:#fff7f7;color:#8c4040}
-.release-command-severity[data-level="action"]{border-color:#dfd2b6;background:#fffaf0;color:#765d2b}
+.release-command-severity[data-level="incident"],.release-command-severity[data-level="critical"],.release-command-severity[data-level="high"],.release-command-severity[data-level="action_required"]{border-color:#ddc1c1;background:#fff7f7;color:#8c4040}
+.release-command-severity[data-level="action"],.release-command-severity[data-level="attention"]{border-color:#dfd2b6;background:#fffaf0;color:#765d2b}
 .release-command-severity[data-level="normal"]{border-color:#c6d9cb;background:#f6fbf7;color:#396348}
 .release-command-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
 .release-command-stack{display:grid;gap:18px;margin-bottom:18px}
