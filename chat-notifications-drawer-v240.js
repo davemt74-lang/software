@@ -757,9 +757,6 @@
   document.addEventListener('keydown', event => {
     if (event.key === 'Escape' && drawer?.classList.contains('open')) closeDrawer();
   });
-  window.addEventListener('stonefellow:chat-voice', event => {
-    if (String(event.detail?.type || '') === 'TRANSCRIPT_SUBMIT') markUserResponse();
-  });
   window.addEventListener('stonefellow:agent-voice', event => {
     agentVoicePreference = event.detail?.enabled !== false;
   });
