@@ -23,6 +23,7 @@
 
   let agentState = null;
   let voiceState = null;
+  let agentVoiceAllowed = true;
   let selectedAgentId = 0;
   let busy = false;
 
@@ -88,7 +89,7 @@
           </div>
 
           <label class="vp3-agent-voice-toggle-row">
-            <span><strong>Agent Voice</strong><small>Speak proactive and Profile Agent responses aloud.</small></span>
+            <span><strong>Agent Voice</strong><small>Master switch for spoken Agent responses and notification announcements.</small></span>
             <input type="checkbox" data-vp3-global-agent-voice aria-label="Agent Voice">
             <i aria-hidden="true"></i>
           </label>
@@ -209,7 +210,9 @@
   }
 
   function renderAgentVoice(enabled) {
-    if (el.agentVoice) el.agentVoice.checked = enabled !== false;
+    if (!el.agentVoice) return;
+    el.agentVoice.disabled = !agentVoiceAllowed;
+    el.agentVoice.checked = agentVoiceAllowed && enabled !== false;
   }
 
   function render() {
@@ -223,7 +226,7 @@
     const tasks = [
       json(cfg.agentEndpoint).then(data => { agentState = data.state || {}; }),
       json(`${cfg.voiceEndpoint}?action=state`).then(data => { voiceState = data.state || {}; }).catch(() => { voiceState = null; }),
-      json(`${cfg.chatSettingsEndpoint}?action=state`).then(data => renderAgentVoice(data.chat?.agent_voice_enabled !== false)).catch(() => renderAgentVoice(true))
+      json(`${cfg.chatSettingsEndpoint}?action=state`).then(data => { agentVoiceAllowed=data.agent_voice_allowed!==false; renderAgentVoice(data.chat?.agent_voice_enabled !== false); }).catch(() => { agentVoiceAllowed=false; renderAgentVoice(false); })
     ];
     try {
       await Promise.all(tasks);
@@ -286,6 +289,7 @@
 
   el.agentVoice?.addEventListener('change', event => {
     event.stopPropagation();
+    if(!agentVoiceAllowed){renderAgentVoice(false);return;}
     const requested = Boolean(el.agentVoice.checked);
     void (async () => {
       try {
