@@ -67,6 +67,7 @@ assert.ok(recoveryPos>=0&&pinPos>recoveryPos&&campaignPos>pinPos,'release priori
 
 assert.ok(rollouts.includes("$isFleetOverride=!empty($release['_fleet_override'])"));
 assert.ok(rollouts.includes('client_fleet_maintenance_governs_scope_v160'),'maintenance campaign must block normal GA fallback while governing a member');
+assert.ok(rollouts.includes('client_fleet_release_compatible_for_scope_v160'),'normal governed rollouts must honor explicit v1.60 incompatibility');
 assert.ok(rollouts.includes("'support_status'"));
 assert.ok(rollouts.includes("'maintenance_campaign_id'"));
 
@@ -94,8 +95,11 @@ assert.ok(campaignSet.includes('Risk policy limits this maintenance target'));
 
 assert.match(fleet,/client_fleet_upgrade_plan_v160/);
 assert.match(fleet,/client_fleet_target_compatibility_v160/,'maintenance targeting must re-check Browser Companion ↔ HomeServer compatibility');
+assert.match(fleet,/client_fleet_release_compatible_for_scope_v160/);
 assert.match(fleet,/client_fleet_recommendations_v160/);
 assert.ok(fleet.includes('Maintenance campaign cannot be completed until every member is installed or explicitly excluded.'));
+assert.ok(fleet.includes("m.maintenance_state<>'installed'"),'active/paused campaigns must hold unresolved and excluded members from normal GA fallback');
+assert.ok(fleet.includes("That version pin violates an explicit Browser Companion ↔ HomeServer compatibility rule."));
 assert.ok(fleet.includes('intermediate_release_id'));
 assert.ok(fleet.includes('General Availability final target'));
 assert.ok(fleet.includes('maintenance_window_start'));
