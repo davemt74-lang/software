@@ -1,4 +1,4 @@
-name: Client Release Operations v1.60
+name: Client Release Operations v1.70
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -16,6 +16,8 @@ on:
       - 'includes/client-release-risk-v140.php'
       - 'includes/client-release-readiness-v150.php'
       - 'includes/client-fleet-maintenance-v160.php'
+      - 'includes/client-release-automation-v170.php'
+      - 'tools/client-release-automation-v170.php'
       - 'client-release-download.php'
       - 'client-updates-v110.css'
       - 'api/homeserver-release.php'
@@ -29,6 +31,7 @@ on:
       - 'tests/client-release-risk-v140.mjs'
       - 'tests/client-release-readiness-v150.mjs'
       - 'tests/client-fleet-maintenance-v160.mjs'
+      - 'tests/client-release-automation-v170.mjs'
       - 'includes/extension-device-token-v2100.php'
       - 'api/extension-me.php'
       - 'includes/notifications.php'
@@ -82,6 +85,8 @@ jobs:
           php -l includes/client-release-risk-v140.php
           php -l includes/client-release-readiness-v150.php
           php -l includes/client-fleet-maintenance-v160.php
+          php -l includes/client-release-automation-v170.php
+          php -l tools/client-release-automation-v170.php
           php -l client-release-download.php
           php -l api/homeserver-release.php
           php -l homeserver-download.php
@@ -109,6 +114,7 @@ jobs:
           node --check tests/client-release-risk-v140.mjs
           node --check tests/client-release-readiness-v150.mjs
           node --check tests/client-fleet-maintenance-v160.mjs
+          node --check tests/client-release-automation-v170.mjs
       - name: Client Release Intelligence contracts
         run: |
           node tests/client-release-controlled-rollouts-v110.mjs
@@ -117,6 +123,7 @@ jobs:
           node tests/client-release-risk-v140.mjs
           node tests/client-release-readiness-v150.mjs
           node tests/client-fleet-maintenance-v160.mjs
+          node tests/client-release-automation-v170.mjs
           node tests/client-release-intelligence-v100.mjs
           node tests/client-releases-manager.mjs
           node tests/extension-device-token-v2100.mjs
