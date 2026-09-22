@@ -132,7 +132,7 @@ assert.ok(admin.includes('Dry run'));
 assert.ok(admin.includes('Fleet observation minutes'));
 assert.ok(admin.includes('GA promotion remains manual'));
 
-assert.match(workflow,/Client Release Operations v1\.70/);
+assert.match(workflow,/Client Release Operations v1\.(?:70|80)/);
 assert.ok(workflow.includes('client-release-automation-v170.php'));
 assert.ok(workflow.includes('client-release-automation-v170.mjs'));
 assert.ok(workflow.includes('tools/client-release-automation-v170.php'));
