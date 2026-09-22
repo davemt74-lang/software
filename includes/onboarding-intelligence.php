@@ -7,7 +7,7 @@ declare(strict_types=1);
  * This extends the existing user_agent_preferences record. It does not create
  * a parallel onboarding identity or entitlement system.
  */
-const VP3_ONBOARDING_INTELLIGENCE_BUILD='onboarding-intelligence-20260921-v3';
+const VP3_ONBOARDING_INTELLIGENCE_BUILD='onboarding-intelligence-20260921-v4';
 
 function onboarding_intelligence_schema_ready(?PDO $pdo=null): bool
 {
@@ -87,6 +87,13 @@ function onboarding_intelligence_save_progress(PDO $pdo,array $user,string $step
     $current=onboarding_intelligence_preferences($pdo,$uid);
     $mergedDraft=array_replace(is_array($current['draft']??null)?$current['draft']:[],$draft);
     $mergedInterests=array_replace(is_array($current['feature_interests']??null)?$current['feature_interests']:[],$featureInterests);
+    foreach($featureInterests as $key=>$enabled){
+        $key=(string)$key;
+        if(str_starts_with($key,'workflow.')&&!empty($enabled)){
+            $mergedInterests['activation.defer.'.$key]=false;
+            $mergedInterests['activation.dismiss.'.$key]=false;
+        }
+    }
     $voice=$voicePreference??($current['voice_preference']??null);
     // Voice preference is authoritative. Turning Voice off must also clear the
     // upgrade-interest signal so plan recommendations do not remain stale.
@@ -100,6 +107,40 @@ function onboarding_intelligence_save_progress(PDO $pdo,array $user,string $step
         $uid,
     ]);
     return onboarding_intelligence_preferences($pdo,$uid);
+}
+
+function onboarding_intelligence_activation_interest(string $workflow): string
+{
+    $workflow=mb_strtolower(trim($workflow));
+    if(str_starts_with($workflow,'workflow.'))$workflow=substr($workflow,9);
+    if(!preg_match('/^[a-z0-9][a-z0-9._-]{0,63}$/',$workflow))throw new InvalidArgumentException('Unknown activation workflow.');
+    return 'workflow.'.$workflow;
+}
+
+function onboarding_intelligence_activation_action(PDO $pdo,array $user,string $workflow,string $action,int $deferDays=3): array
+{
+    $uid=(int)($user['id']??0);if($uid<1)throw new RuntimeException('A signed-in account is required.');
+    $interest=onboarding_intelligence_activation_interest($workflow);
+    $prefs=onboarding_intelligence_preferences($pdo,$uid);
+    $interests=(array)($prefs['feature_interests']??[]);
+    $step=onboarding_intelligence_valid_step((string)($prefs['onboarding_step']??'complete'));
+    $draft=(array)($prefs['draft']??[]);
+    $voice=array_key_exists('voice_preference',$prefs)?($prefs['voice_preference']!==null?(string)$prefs['voice_preference']:null):null;
+    $action=mb_strtolower(trim($action));
+    $patch=[];
+    if($action==='defer'){
+        if(empty($interests[$interest]))throw new RuntimeException('That setup item is not selected.');
+        $days=max(1,min(30,$deferDays));
+        $patch['activation.defer.'.$interest]=gmdate(DATE_ATOM,time()+($days*86400));
+        $patch['activation.dismiss.'.$interest]=false;
+    }elseif($action==='dismiss'){
+        $patch[$interest]=false;
+        $patch['activation.dismiss.'.$interest]=true;
+        $patch['activation.defer.'.$interest]=false;
+    }elseif($action==='restore'){
+        $patch[$interest]=true;
+    }else throw new InvalidArgumentException('Unknown activation action.');
+    return onboarding_intelligence_save_progress($pdo,$user,$step,$draft,$voice,$patch);
 }
 
 function onboarding_intelligence_mark_complete(PDO $pdo,int $userId): void
