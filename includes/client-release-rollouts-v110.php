@@ -289,7 +289,7 @@ function client_release_channel_for_v110(PDO $pdo,int $userId,string $product,st
 
 function client_release_set_channel_v110(PDO $pdo,int $userId,string $product,string $scopeKey,string $channel,int $actorUserId): void
 {
-    client_release_rollouts_ensure_schema_v110($pdo);
+    if(!client_release_rollouts_schema_ready_v110($pdo))throw new RuntimeException('Client release rollout schema is not ready.');
     $channel=strtolower(trim($channel));
     if(!in_array($channel,['stable','beta','dev'],true))throw new RuntimeException('Choose a valid release channel.');
     $scopeKey=client_release_scope_key_v110($scopeKey);
@@ -365,7 +365,7 @@ function client_release_set_update_state_v110(PDO $pdo,int $userId,string $produ
 {
     $allowed=['available','downloaded','installed','deferred','failed','superseded'];
     if(!in_array($state,$allowed,true))throw new RuntimeException('Unsupported client update state.');
-    client_release_rollouts_ensure_schema_v110($pdo);
+    if(!client_release_rollouts_schema_ready_v110($pdo))throw new RuntimeException('Client release rollout schema is not ready.');
     $stmt=$pdo->prepare("INSERT INTO client_release_update_state_v110
       (user_id,product,scope_key,release_id,update_state,defer_until,details)
       VALUES (?,?,?,?,?,?,?)
@@ -394,9 +394,10 @@ function client_release_sync_update_state_v110(PDO $pdo,int $userId,string $prod
     $releaseId=(int)($release['id']??0);
     $version=(string)($release['version']??'');
     $versionState=function_exists('client_release_version_state_v100')?client_release_version_state_v100($installed,$version):'unknown';
-    $current=client_release_update_state_v110($pdo,$userId,$product,$scopeKey,$releaseId);
+    $schemaReady=client_release_rollouts_schema_ready_v110($pdo);
+    $current=$schemaReady?client_release_update_state_v110($pdo,$userId,$product,$scopeKey,$releaseId):null;
     if(in_array($versionState,['current','ahead'],true)){
-        if(!$current||($current['update_state']??'')!=='installed')client_release_set_update_state_v110($pdo,$userId,$product,$scopeKey,$releaseId,'installed',null,'Observed from client version telemetry');
+        if($schemaReady&&(!$current||($current['update_state']??'')!=='installed'))client_release_set_update_state_v110($pdo,$userId,$product,$scopeKey,$releaseId,'installed',null,'Observed from client version telemetry');
         return ['version_state'=>$versionState,'update_state'=>'installed','deferred'=>false,'defer_until'=>null];
     }
     $state=(string)($current['update_state']??'available');
@@ -405,7 +406,7 @@ function client_release_sync_update_state_v110(PDO $pdo,int $userId,string $prod
     if($state==='deferred'&&!$deferred){
         $state='available';$deferUntil=null;
         client_release_set_update_state_v110($pdo,$userId,$product,$scopeKey,$releaseId,'available',null,'Deferral expired');
-    }elseif(!$current&&$versionState==='update_available'){
+    }elseif($schemaReady&&!$current&&$versionState==='update_available'){
         client_release_set_update_state_v110($pdo,$userId,$product,$scopeKey,$releaseId,'available',null,'');
     }
     return ['version_state'=>$versionState,'update_state'=>$state,'deferred'=>$deferred,'defer_until'=>$deferUntil];
@@ -593,4 +594,21 @@ function client_release_adoption_summary_v110(PDO $pdo): array
         }
     }
     return $summary;
+}
+
+
+function client_release_rollout_delete_v110(PDO $pdo,string $product,int $releaseId,int $actorUserId): void
+{
+    if(!client_release_rollouts_schema_ready_v110($pdo)||!client_release_product_valid_v110($product)||$releaseId<1)return;
+    $rollout=client_release_rollout_for_v110($pdo,$product,$releaseId);
+    client_release_audit_v110($pdo,$actorUserId,$product,$releaseId,'release_deleted',(string)($rollout['lifecycle_state']??''),'deleted');
+    $pdo->prepare('DELETE FROM client_release_update_state_v110 WHERE product=? AND release_id=?')->execute([$product,$releaseId]);
+    $pdo->prepare('DELETE FROM client_release_rollouts_v110 WHERE product=? AND release_id=?')->execute([$product,$releaseId]);
+}
+
+function client_release_audit_recent_v110(PDO $pdo,int $limit=30): array
+{
+    if(!client_release_rollouts_schema_ready_v110($pdo))return [];
+    $limit=max(1,min(100,$limit));
+    return $pdo->query("SELECT * FROM client_release_audit_v110 ORDER BY id DESC LIMIT {$limit}")->fetchAll()?:[];
 }
