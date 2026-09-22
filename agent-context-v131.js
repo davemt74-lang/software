@@ -2,7 +2,7 @@
   'use strict';
 
   const BUILD='conversation-integration-v131-20260826';
-  const KNOWLEDGE_SCOPE_BUILD='knowledge-agent-context-v245-20260922';
+  const KNOWLEDGE_SCOPE_BUILD='knowledge-agent-context-v2451-20260922';
   const EDITOR_AGENT_ASSET='editor-agent-capabilities-20260903';
   const PARTICIPANT_ASSET='studio-participants-20260903';
   const cfg=window.STONEFELLOW_AGENT_CONTEXT||{};
@@ -41,6 +41,7 @@
   let participantLoadRequested=false;
   let knowledgeScopeSelect=null;
   let knowledgeScopeLoadPromise=null;
+  let knowledgeScopeDesiredValue='';
 
   const cleanText=(value,limit=280)=>String(value??'').replace(/\s+/g,' ').trim().slice(0,limit);
   const safeSuggestion=row=>({
@@ -85,11 +86,12 @@
     if(match&&Number(match[1])>0)return {mode:'folder',folder_id:Number(match[1])};
     return {mode:'all',folder_id:0};
   };
-  const currentKnowledgeScope=()=>normalizeKnowledgeScopeValue(knowledgeScopeSelect?.value||storedKnowledgeScope());
   const storedKnowledgeScope=()=>{
     try{return String(localStorage.getItem(knowledgeScopeKey)||'all');}
     catch(error){return 'all';}
   };
+  const desiredKnowledgeScope=()=>String(knowledgeScopeDesiredValue||storedKnowledgeScope()||'all');
+  const currentKnowledgeScope=()=>normalizeKnowledgeScopeValue(knowledgeScopeSelect?.value||desiredKnowledgeScope());
   const persistKnowledgeScope=value=>{
     try{localStorage.setItem(knowledgeScopeKey,String(value||'all'));}
     catch(error){}
@@ -101,10 +103,10 @@
       }));
     }catch(error){}
   };
-  const setKnowledgeScopeOptions=folders=>{
+  const setKnowledgeScopeOptions=(folders,{finalize=true}={})=>{
     if(!knowledgeScopeSelect)return;
     const liveValue=String(knowledgeScopeSelect.value||'').trim();
-    const previous=liveValue||storedKnowledgeScope();
+    const previous=liveValue||desiredKnowledgeScope();
     knowledgeScopeSelect.textContent='';
     const add=(value,label)=>{
       const option=document.createElement('option');
@@ -120,51 +122,89 @@
       const name=cleanText(folder?.name||`Folder ${id}`,120)||`Folder ${id}`;
       add(`folder:${id}`,`Folder · ${name}`);
     });
-    const allowed=[...knowledgeScopeSelect.options].some(option=>option.value===previous);
-    knowledgeScopeSelect.value=allowed?previous:'all';
-    persistKnowledgeScope(knowledgeScopeSelect.value);
-    knowledgeScopeSelect.dataset.knowledgeScopeReady='1';
+    let allowed=[...knowledgeScopeSelect.options].some(option=>option.value===previous);
+    if(!finalize&&!allowed&&/^folder:\d+$/.test(previous)){
+      add(previous,'Saved folder · loading…');
+      allowed=true;
+    }
+    const next=allowed?previous:'all';
+    knowledgeScopeSelect.value=next;
+    knowledgeScopeDesiredValue=next;
+    if(finalize)persistKnowledgeScope(next);
+    knowledgeScopeSelect.dataset.knowledgeScopeReady=finalize?'1':'loading';
+    knowledgeScopeSelect.setAttribute('aria-busy',finalize?'false':'true');
   };
   async function loadKnowledgeScopeFolders(){
     const chatUrl=knowledgeChatUrl();
     if(!chatUrl||!knowledgeScopeSupported())return [];
     const endpoint=new URL('knowledge-scopes-v162.php',chatUrl).toString();
-    const response=await fetch(endpoint,{
-      method:'GET',
-      credentials:'same-origin',
-      cache:'no-store',
-      headers:{'Accept':'application/json'}
-    });
-    const data=await response.json().catch(()=>null);
-    if(!response.ok||!data?.ok||!Array.isArray(data.folders)){
-      throw new Error(String(data?.error||'Knowledge scopes are unavailable.'));
+    const controller=typeof AbortController==='function'?new AbortController():null;
+    const timeout=controller?window.setTimeout(()=>controller.abort(),8000):0;
+    try{
+      const response=await fetch(endpoint,{
+        method:'GET',
+        credentials:'same-origin',
+        cache:'no-store',
+        headers:{'Accept':'application/json'},
+        signal:controller?controller.signal:undefined
+      });
+      const data=await response.json().catch(()=>null);
+      if(!response.ok||!data?.ok||!Array.isArray(data.folders)){
+        throw new Error(String(data?.error||'Knowledge scopes are unavailable.'));
+      }
+      return data.folders;
+    }catch(error){
+      if(error?.name==='AbortError')throw new Error('Knowledge folders request timed out.');
+      throw error;
+    }finally{
+      if(timeout)window.clearTimeout(timeout);
     }
-    return data.folders;
+  }
+  function startKnowledgeScopeLoad(select){
+    if(!select||knowledgeScopeLoadPromise)return knowledgeScopeLoadPromise;
+    select.dataset.knowledgeScopeReady='loading';
+    select.setAttribute('aria-busy','true');
+    const selectedOption=select.selectedOptions?.[0]||null;
+    if(selectedOption?.textContent==='Saved folder · unavailable')selectedOption.textContent='Saved folder · loading…';
+    select.removeAttribute('data-knowledge-scope-error');
+    select.removeAttribute('title');
+    knowledgeScopeLoadPromise=loadKnowledgeScopeFolders()
+      .then(folders=>{
+        setKnowledgeScopeOptions(folders,{finalize:true});
+        select.removeAttribute('data-knowledge-scope-error');
+        select.removeAttribute('title');
+        return folders;
+      })
+      .catch(error=>{
+        const message=cleanText(error?.message||'Knowledge scopes are unavailable.',180);
+        select.dataset.knowledgeScopeReady='0';
+        select.dataset.knowledgeScopeError=message;
+        select.setAttribute('aria-busy','false');
+        const selectedOption=select.selectedOptions?.[0]||null;
+        if(selectedOption?.textContent==='Saved folder · loading…')selectedOption.textContent='Saved folder · unavailable';
+        select.title=message+' Focus this selector to retry.';
+        knowledgeScopeLoadPromise=null;
+        return [];
+      });
+    return knowledgeScopeLoadPromise;
   }
   function bindKnowledgeScopeSelect(select){
     if(!select)return false;
     knowledgeScopeSelect=select;
-    if(!select.options.length)setKnowledgeScopeOptions([]);
+    if(!knowledgeScopeDesiredValue)knowledgeScopeDesiredValue=storedKnowledgeScope();
+    if(!select.options.length)setKnowledgeScopeOptions([],{finalize:false});
     if(select.dataset.knowledgeScopeBound!=='1'){
       select.dataset.knowledgeScopeBound='1';
       select.addEventListener('change',()=>{
-        persistKnowledgeScope(select.value);
+        knowledgeScopeDesiredValue=String(select.value||'all');
+        persistKnowledgeScope(knowledgeScopeDesiredValue);
         emitKnowledgeScope();
       });
+      select.addEventListener('focus',()=>{
+        if(select.dataset.knowledgeScopeReady==='0'&&!knowledgeScopeLoadPromise)void startKnowledgeScopeLoad(select);
+      });
     }
-    if(!knowledgeScopeLoadPromise){
-      knowledgeScopeLoadPromise=loadKnowledgeScopeFolders()
-        .then(folders=>{
-          setKnowledgeScopeOptions(folders);
-          return folders;
-        })
-        .catch(error=>{
-          select.dataset.knowledgeScopeReady='0';
-          select.dataset.knowledgeScopeError=cleanText(error?.message||'Knowledge scopes are unavailable.',180);
-          return [];
-        });
-    }
-    void knowledgeScopeLoadPromise;
+    void startKnowledgeScopeLoad(select);
     return true;
   }
   function ensureKnowledgeScopeUi(){
@@ -343,7 +383,7 @@
     value:currentKnowledgeScope,
     raw:()=>knowledgeScopeSelect?.value||storedKnowledgeScope(),
     payload:()=>({knowledge_scope:currentKnowledgeScope()}),
-    refresh:()=>{knowledgeScopeLoadPromise=null;return ensureKnowledgeScopeUi();}
+    refresh:()=>{knowledgeScopeLoadPromise=null;const select=knowledgeScopeSelect||document.getElementById('chatKnowledgeScopeV162');if(select){bindKnowledgeScopeSelect(select);return knowledgeScopeLoadPromise;}return ensureKnowledgeScopeUi();}
   };
   if(window.STONEFELLOW_ACTIVITY&&conversationId>0)window.STONEFELLOW_ACTIVITY.conversationId=conversationId;
   ensureKnowledgeScopeUi();

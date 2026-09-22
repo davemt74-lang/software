@@ -199,16 +199,36 @@
 
   function renderBrief(brief) {
     renderStatus(brief || {});
+    content.setAttribute('aria-busy','false');
     content.innerHTML = briefMarkup(brief || {});
+  }
+
+  function briefErrorMessage(error) {
+    const raw = String(error && error.message || '').trim();
+    if (/presentation_schema_not_ready/i.test(raw)) {
+      return 'Agent status needs the latest VP3 database upgrade. Apply the database upgrade, then retry.';
+    }
+    if (/database_unavailable/i.test(raw)) {
+      return 'Agent status cannot reach its database right now. Retry in a moment.';
+    }
+    if (/forbidden|login_required/i.test(raw)) {
+      return 'Agent status is not available for this signed-in account.';
+    }
+    if (/timed out/i.test(raw)) {
+      return 'Agent status took too long to respond. Retry the request.';
+    }
+    return 'Agent status is temporarily unavailable. Retry in a moment.';
   }
 
   function renderBriefError(error) {
     if (statusDot) statusDot.classList.remove('active');
     button.dataset.active='0';
-    const message = String(error && error.message || 'Agent status is temporarily unavailable.');
+    button.setAttribute('aria-label','Agent · status unavailable');
+    content.setAttribute('aria-busy','false');
+    const message = briefErrorMessage(error);
     content.innerHTML =
       '<div class="chat-agent-brief-status"><span><i class="chat-agent-brief-dot"></i>Agent</span><small>Unavailable</small></div>' +
-      '<article class="chat-agent-brief-card"><small>Status</small><strong>Agent Brief could not load.</strong>' +
+      '<article class="chat-agent-brief-card" role="status"><small>Status</small><strong>Agent Brief could not load.</strong>' +
       '<p>' + esc(message) + '</p><div class="chat-agent-brief-actions">' +
       '<button type="button" class="primary" data-agent-brief-retry>Retry</button></div></article>';
   }
@@ -316,6 +336,7 @@
   async function refresh(force = false) {
     if (busy || (document.hidden && !force)) return;
     busy = true;
+    content.setAttribute('aria-busy','true');
     try {
       state = await getState();
       renderBrief(state.brief || {});
@@ -324,6 +345,7 @@
     } catch (error) {
       renderBriefError(error);
     } finally {
+      content.setAttribute('aria-busy','false');
       busy = false;
     }
   }
