@@ -18,8 +18,13 @@ const VP3_FUNNEL_PUBLIC_SOURCES = [
     'ai-assistant',
     'profile-agent-overview',
     'personal-url',
+    'chrome-extension',
     'services',
+    'transcriptions',
     'ai-summary',
+    'annotations',
+    'video-meetings',
+    'agent-analytics',
     'calendar-service',
     'booking',
     'ecommerce',
@@ -35,7 +40,6 @@ const VP3_FUNNEL_PUBLIC_SOURCES = [
     'pricing-weekly',
     'pricing-yearly',
     'token-packages',
-    'transcriptions',
     'teams',
     'about',
     'about-team',
@@ -59,6 +63,7 @@ const VP3_FUNNEL_ALLOWED_EVENTS = [
     'demo_submit',
     'demo_success',
     'demo_failure',
+    'cta_click',
 ];
 
 function vp3_funnel_token(mixed $value, int $maxLength = 64): ?string
@@ -166,8 +171,13 @@ function vp3_funnel_normalize_intent(array $intent): array
     }
 
     $source = vp3_funnel_source($intent['source'] ?? null);
-    if ($source !== null) {
+    if ($source !== null && in_array($source, VP3_FUNNEL_PUBLIC_SOURCES, true)) {
         $normalized['source'] = $source;
+    }
+
+    $origin = vp3_funnel_source($intent['origin'] ?? null);
+    if ($origin !== null && in_array($origin, VP3_FUNNEL_PUBLIC_SOURCES, true)) {
+        $normalized['origin'] = $origin;
     }
 
     $return = vp3_funnel_safe_return($intent['return_to'] ?? ($intent['return'] ?? null));
@@ -231,7 +241,13 @@ function vp3_funnel_capture_public_source(?string $source = null): array
         return vp3_funnel_intent();
     }
 
-    return vp3_funnel_capture(['source' => $source]);
+    $intent = vp3_funnel_intent();
+    $capture = ['source' => $source];
+    if (!isset($intent['origin'])) {
+        $capture['origin'] = $source;
+    }
+
+    return vp3_funnel_capture($capture);
 }
 
 function vp3_funnel_clear(): void
@@ -303,6 +319,10 @@ function vp3_funnel_feature_interests(array $intent): array
         'ai-summary' => ['transcription.access'],
         'personal-url' => ['profile_agent.access'],
         'profile-agent-overview' => ['profile_agent.access'],
+        'chrome-extension' => ['main_ai.access', 'knowledge.access'],
+        'annotations' => ['main_ai.access', 'knowledge.access'],
+        'video-meetings' => ['main_ai.access', 'transcription.access'],
+        'agent-analytics' => ['profile_agent.access', 'main_ai.access'],
         'ecommerce' => ['profile_agent.access', 'main_ai.access'],
         'homeserver' => ['knowledge.access'],
         'cloud-vs-self-hosted' => ['knowledge.access'],
@@ -330,7 +350,7 @@ function vp3_funnel_feature_interests(array $intent): array
 function vp3_funnel_onboarding_draft(array $intent): array
 {
     $publicFunnel = [];
-    foreach (['source', 'plan', 'billing'] as $key) {
+    foreach (['origin', 'source', 'plan', 'billing'] as $key) {
         if (isset($intent[$key])) {
             $publicFunnel[$key] = (string) $intent[$key];
         }
@@ -428,12 +448,25 @@ function vp3_funnel_event_context(array $extra = []): array
         'path' => is_string($path) ? substr($path, 0, 160) : '',
         'plan' => $intent['plan'] ?? null,
         'billing' => $intent['billing'] ?? null,
+        'origin' => $intent['origin'] ?? null,
         'source' => $intent['source'] ?? null,
     ];
 
-    foreach (['plan', 'billing', 'source'] as $key) {
+    foreach (['plan', 'billing'] as $key) {
         if (array_key_exists($key, $extra)) {
-            $context[$key] = $extra[$key];
+            $context[$key] = $key === 'billing' ? vp3_funnel_billing($extra[$key]) : vp3_funnel_plan($extra[$key]);
+        }
+    }
+    foreach (['origin', 'source'] as $key) {
+        if (array_key_exists($key, $extra)) {
+            $candidate = vp3_funnel_source($extra[$key]);
+            if ($candidate !== null && in_array($candidate, VP3_FUNNEL_PUBLIC_SOURCES, true)) $context[$key] = $candidate;
+        }
+    }
+    foreach (['cta', 'target'] as $key) {
+        if (array_key_exists($key, $extra)) {
+            $candidate = vp3_funnel_token($extra[$key], 80);
+            if ($candidate !== null) $context[$key] = $candidate;
         }
     }
 
