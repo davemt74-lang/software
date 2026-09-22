@@ -28,8 +28,10 @@ $cognitivePlanningBuild = 'cognitive-planning-v550-20260918';
 $cognitiveOrchestrationBuild = 'cognitive-orchestration-v560-20260919';
 $cognitiveMemoryBuild = 'cognitive-memory-v570-20260919';
 $browserContextBuild = 'browser-context-v2130-20260919';
+$agentIdentityAssetBuild = $agentIdentityBuild . '-activation-v243';
 $cognitiveCardsAssetBuild = $cognitiveCardsBuild . '-memory-v570';
 $cognitiveFeedAssetBuild = $cognitiveFeedBuild . '-orchestration-v560-priority-v2310-proactive-v2340-calibration-v2350';
+$onboardingActivationAssetBuild = 'activation-v243';
 
 if (!headers_sent()) {
     header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
@@ -332,8 +334,8 @@ $recordingLibraryRuntime = has_permission('artist_listening.access', $user)
 $voiceConfig = '<script data-chat-voice-config>window.STONEFELLOW_AGENT_CONTEXT={userId:' . (int)$user['id'] . ',surface:"chat",trackId:0,projectId:0,conversationId:' . (int)$agentInitialConversationId . ',taskTitle:"Agent Chat",taskKey:"chat",csrf:' . json_encode(csrf_token()) . ',proactiveEndpoint:' . json_encode(url('/api/agent-proactive-v93.php')) . '};</script>';
 
 $agentIdentityRuntime = $agentFeatureReady
-    ? '<link rel="stylesheet" data-chat-agent-identity-v236 href="' . e(url('/chat-agent-identity-v236.css?v=' . $agentIdentityBuild)) . '">'
-        . '<script data-chat-agent-identity-v236 src="' . e(url('/chat-agent-identity-v236.js?v=' . $agentIdentityBuild)) . '"></script>'
+    ? '<link rel="stylesheet" data-chat-agent-identity-v236 href="' . e(url('/chat-agent-identity-v236.css?v=' . $agentIdentityAssetBuild)) . '">'
+        . '<script data-chat-agent-identity-v236 src="' . e(url('/chat-agent-identity-v236.js?v=' . $agentIdentityAssetBuild)) . '"></script>'
     : '';
 
 $profileActivityRuntime = $agentFeatureReady && $pdoForAgent && profile_agent_schema_ready($pdoForAgent)
@@ -351,7 +353,7 @@ $chatSettingsRuntime = '<link rel="stylesheet" data-chat-settings-canonical href
     . ';</script>'
     . '<script data-chat-settings-canonical src="' . e(url('/chat-settings-v237.js?v=' . $chatSettingsBuild)) . '"></script>';
 
-$cognitiveCardsRuntime = '<link rel="stylesheet" data-cognitive-cards-v520 href="' . e(url('/chat-cognitive-cards-v520.css?v=' . $cognitiveCardsAssetBuild)) . '">'
+$cognitiveCardsRuntime = '<link rel="stylesheet" data-cognitive-cards-v520 href="' . e(url('/chat-cognitive-cards-v520.css?v=' . $cognitiveCardsAssetBuild . '-' . $onboardingActivationAssetBuild)) . '">'
     . '<script data-cognitive-cards-config>window.VP3_COGNITIVE_CARDS_V520='
     . json_encode([
         'endpoint'=>url('/api/cognitive-cards-v520.php'),
@@ -361,9 +363,9 @@ $cognitiveCardsRuntime = '<link rel="stylesheet" data-cognitive-cards-v520 href=
         'build'=>$cognitiveCardsBuild,
     ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
     . ';</script>'
-    . '<script data-cognitive-cards-v520 src="' . e(url('/chat-cognitive-cards-v520.js?v=' . $cognitiveCardsAssetBuild)) . '"></script>';
+    . '<script data-cognitive-cards-v520 src="' . e(url('/chat-cognitive-cards-v520.js?v=' . $cognitiveCardsAssetBuild . '-' . $onboardingActivationAssetBuild)) . '"></script>';
 
-$cognitiveFeedRuntime = '<link rel="stylesheet" data-cognitive-feed-v530 href="' . e(url('/chat-cognitive-feed-v530.css?v=' . $cognitiveFeedAssetBuild)) . '">'
+$cognitiveFeedRuntime = '<link rel="stylesheet" data-cognitive-feed-v530 href="' . e(url('/chat-cognitive-feed-v530.css?v=' . $cognitiveFeedAssetBuild . '-' . $onboardingActivationAssetBuild)) . '">'
     . '<script data-cognitive-feed-config>window.VP3_COGNITIVE_FEED_V530='
     . json_encode([
         'endpoint'=>url('/api/cognitive-feed-v530.php'),
@@ -375,7 +377,7 @@ $cognitiveFeedRuntime = '<link rel="stylesheet" data-cognitive-feed-v530 href="'
         'build'=>$cognitiveFeedBuild,
     ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
     . ';</script>'
-    . '<script data-cognitive-feed-v530 src="' . e(url('/chat-cognitive-feed-v530.js?v=' . $cognitiveFeedAssetBuild)) . '"></script>';
+    . '<script data-cognitive-feed-v530 src="' . e(url('/chat-cognitive-feed-v530.js?v=' . $cognitiveFeedAssetBuild . '-' . $onboardingActivationAssetBuild)) . '"></script>';
 
 $cognitiveOrchestrationRuntime = '<script data-cognitive-orchestration-config>window.VP3_COGNITIVE_ORCHESTRATION_V560='
     . json_encode([

@@ -74,7 +74,7 @@ function vp3_cognitive_feed_candidate_v530(
 ): array {
     $key=mb_strimwidth(trim($key),0,190,'');
     if($key==='')throw new InvalidArgumentException('Feed item key is required.');
-    $sections=['attention','next_up','priorities','opportunities','recent'];
+    $sections=['attention','next_up','setup','priorities','opportunities','recent'];
     if(!in_array($section,$sections,true))$section='recent';
     $score=max(0,min(100,$score));
     $fingerprint=vp3_cognitive_feed_fingerprint_v530([$key,$source,$updatedAt,$cardRequest,$fingerprintParts]);
@@ -382,9 +382,35 @@ function vp3_cognitive_feed_notification_candidates_v530(PDO $pdo,array $user): 
     return $out;
 }
 
+function vp3_cognitive_feed_activation_candidates_v530(PDO $pdo,array $user): array
+{
+    if(!function_exists('chat_onboarding_v241_state'))return [];
+    try{$state=chat_onboarding_v241_state($pdo,$user);}catch(Throwable $e){return [];}
+    $activation=(array)($state['activation']??[]);$items=(array)($activation['items']??[]);$out=[];
+    foreach($items as $key=>$item){
+        if(!is_array($item)||($item['activation_status']??'')!=='pending')continue;
+        $priority=max(1,min(100,(int)($item['priority']??60)));
+        $reason='Selected during onboarding · '.trim((string)($item['current_status']??'Setup remaining.'));
+        $out[]=vp3_cognitive_feed_candidate_v530(
+            'activation:'.(string)$key,'setup',$priority,$reason,
+            vp3_cognitive_feed_request_v530('onboarding_setup',(string)$key,'personal','standard'),
+            'onboarding_activation','activation-v243',[
+                'activation_status'=>$item['activation_status']??'pending',
+                'configured'=>!empty($item['configured']),
+                'selected'=>!empty($item['selected']),
+                'permitted'=>!empty($item['permitted']),
+                'available'=>!empty($item['available']),
+            ],false
+        );
+        $last=count($out)-1;$out[$last]['activation_key']=(string)$key;
+    }
+    return $out;
+}
+
 function vp3_cognitive_feed_candidates_v530(PDO $pdo,array $user,string $namespace): array
 {
     $base=array_merge(
+        vp3_cognitive_feed_activation_candidates_v530($pdo,$user),
         vp3_cognitive_feed_meeting_candidates_v530($pdo,$user),
         vp3_cognitive_feed_calendar_candidates_v530($pdo,$user),
         vp3_cognitive_feed_workflow_candidates_v530($pdo,$user),
@@ -497,11 +523,12 @@ function vp3_cognitive_feed_compose_v530(PDO $pdo,array $user,string $namespace,
         $visible[]=$candidate;
     }
 
-    $order=['attention','next_up','priorities','opportunities','recent'];
-    $caps=['attention'=>4,'next_up'=>2,'priorities'=>3,'opportunities'=>2,'recent'=>1];
+    $order=['attention','next_up','setup','priorities','opportunities','recent'];
+    $caps=['attention'=>4,'next_up'=>2,'setup'=>2,'priorities'=>3,'opportunities'=>2,'recent'=>1];
     $labels=[
         'attention'=>['label'=>'Needs attention','description'=>'Current items that may need a decision, approval, or timely response.'],
         'next_up'=>['label'=>'Next up','description'=>'Upcoming meetings, bookings, and scheduled work.'],
+        'setup'=>['label'=>'Getting started','description'=>'Selected VP3 systems that still have an authoritative setup step remaining.'],
         'priorities'=>['label'=>'Priorities','description'=>'Current goals and active Agent work with the strongest relevance.'],
         'opportunities'=>['label'=>'Opportunities','description'=>'Evidence-backed suggestions worth considering.'],
         'recent'=>['label'=>'Recent changes','description'=>'Meaningful unread activity not already represented above.'],
@@ -515,7 +542,7 @@ function vp3_cognitive_feed_compose_v530(PDO $pdo,array $user,string $namespace,
         if($room<1)break;
         $items=array_slice($items,0,min($caps[$section],$room));
         if(!$items)continue;
-        foreach($items as $selected)$selectedForQueue[]=$selected;
+        if($section!=='setup')foreach($items as $selected)$selectedForQueue[]=$selected;
         foreach($items as &$item){
             unset($item['score']);
             unset($item['learning_adjustment']);

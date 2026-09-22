@@ -236,12 +236,17 @@
       const available=Boolean(item.available);
       const configured=Boolean(item.configured);
       const stateClass=!allowed?'locked':(configured?'ready':(available?'setup':'unavailable'));
-      const status=String(item.status||'');
+      const activation=onboardingState?.activation?.items?.[key]||{};
+      const deferred=String(activation.activation_status||'')==='deferred';
+      const deferUntil=String(activation.defer_until||'');
+      let deferredLabel='';
+      if(deferred&&deferUntil){const date=new Date(deferUntil);if(!Number.isNaN(date.getTime()))deferredLabel='Deferred until '+date.toLocaleDateString();}
+      const status=(deferredLabel?deferredLabel+' · ':'')+String(item.status||'');
       const href=String(item.setup_url||'');
       const action=href&&allowed?'<a class="chat-agent-workflow-link-v242" href="'+esc(href)+'" target="_blank" rel="noopener">'+esc(item.action_label||'Open')+' ↗</a>':'';
       return '<article class="chat-agent-workflow-card-v242 '+stateClass+'" data-workflow="'+esc(key)+'"><label><input type="checkbox" data-workflow-interest="'+esc(interest)+'"'+(checked?' checked':'')+'><span><strong>'+esc(item.label||key)+'</strong><small>'+esc(item.description||'')+'</small></span></label><div class="chat-agent-workflow-status-v242"><i></i><span>'+esc(status)+'</span>'+action+'</div></article>';
     }).join('');
-    return copy+'<div class="chat-agent-panel-v241"><strong>Optional by design</strong><p>Selecting a system tells your Agent what you want help with. It does not enable permissions, purchase a plan, connect an external account, or count against core onboarding completion.</p></div><div class="chat-agent-workflow-grid-v242">'+cards+'</div><div class="chat-agent-name-status-v236" role="status" aria-live="polite"></div>'+actionsMarkup({nextLabel:'Continue'});
+    return copy+'<div class="chat-agent-panel-v241"><strong>Optional by design</strong><p>Selecting a system tells your Agent what you want help with. It does not enable permissions, purchase a plan, connect an external account, or count against core onboarding completion. Keeping a deferred system selected and continuing reactivates it now.</p></div><div class="chat-agent-workflow-grid-v242">'+cards+'</div><div class="chat-agent-name-status-v236" role="status" aria-live="polite"></div>'+actionsMarkup({nextLabel:'Continue'});
   }
   function stepBodyMarkup() {
     const step=steps[currentStep]; const copy=copyMarkup(step);

@@ -18,7 +18,7 @@ function vp3_cognitive_cards_types_v520(): array
         'commerce_order','commerce_customer','product','calendar_booking',
         'workflow','goal','commitment','opportunity','risk','decision',
         'knowledge','live_room','homeserver','browser_companion',
-        'brain_priority','feed_activity',
+        'brain_priority','feed_activity','onboarding_setup',
     ];
 }
 
@@ -253,6 +253,13 @@ function vp3_cognitive_cards_object_v520(PDO $pdo,array $user,string $namespace,
             foreach($devices as $row)if(hash_equals((string)($row['public_id']??''),$id))return ['type'=>$type,'row'=>$row];
             return null;
         }
+        if($type==='onboarding_setup'){
+            if(!preg_match('/^[a-z0-9][a-z0-9._-]{0,63}$/',$id)||!function_exists('chat_onboarding_v241_state'))return null;
+            $state=chat_onboarding_v241_state($pdo,$user);
+            $row=(array)($state['activation']['items'][$id]??[]);
+            if(!$row||($row['activation_status']??'')!=='pending')return null;
+            return ['type'=>$type,'row'=>$row];
+        }
         if($type==='brain_priority'){
             if(!function_exists('agent_cognitive_loop_v310_priority_items'))return null;
             foreach(agent_cognitive_loop_v310_priority_items($user,10) as $row){
@@ -392,6 +399,24 @@ function vp3_cognitive_cards_card_v520(PDO $pdo,array $user,string $namespace,ar
         $out['title']=(string)($row['device_name']??'Browser Companion');$out['subtitle']=(string)($row['browser_family']??'Browser Companion');$out['status']=(string)($row['device_status']??'');
         $out['summary']='VP3 Browser Companion · version '.(string)($row['extension_version']??'unknown');$out['timestamp']=(string)($row['last_used_at']??$row['approved_at']??'');
         $out['actions'][]=vp3_cognitive_cards_action_v520('Manage Browser Companion','/account.php#browser-companion');
+    }elseif($type==='onboarding_setup'){
+        $out['title']=(string)($row['label']??'VP3 setup');
+        $out['subtitle']='Getting started';
+        $out['status']='Ready to set up';
+        $out['summary']=(string)($row['description']??'');
+        $out['facts'][]=vp3_cognitive_cards_fact_v520('Current state',(string)($row['current_status']??'Not configured yet'));
+        $out['facts'][]=vp3_cognitive_cards_fact_v520('Selected','During VP3 onboarding');
+        $out['badges'][]='Optional setup';
+        $target=trim((string)($row['setup_url']??''));
+        if($target!==''){
+            $parts=parse_url($target);
+            if(is_array($parts)&&isset($parts['scheme'])){
+                $target=(string)($parts['path']??'/');
+                if(!empty($parts['query']))$target.='?'.$parts['query'];
+            }
+            if(str_starts_with($target,'/')&&!str_starts_with($target,'//'))$out['actions'][]=vp3_cognitive_cards_action_v520((string)($row['action_label']??'Open setup'),$target);
+        }
+        $out['actions'][]=vp3_cognitive_cards_prompt_v520('Ask Agent','What should I set up next in VP3?');
     }elseif($type==='brain_priority'){
         $out['title']=(string)($row['title']??'Agent Brain priority');$out['subtitle']='Agent Brain priority';
         $risk=(string)($row['risk_level']??'low');$out['status']=!empty($row['requires_approval'])?'approval needed':$risk;

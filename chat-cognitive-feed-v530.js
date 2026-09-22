@@ -208,6 +208,33 @@
       });
       actions.appendChild(dismiss);
     }
+    if(cardType==='onboarding_setup'){
+      const ref=item&&item.card_request&&item.card_request.object_ref||{};
+      const workflow=clean(ref.id);
+      const later=el('button','vp3-cognitive-feed-hide','Do later');
+      later.type='button';
+      later.addEventListener('click',async()=>{
+        later.disabled=true;
+        try{
+          const data=await api('activation_defer',{workflow,defer_days:3});
+          renderFeed(data.feed||null);
+          status.textContent='I’ll bring this setup step back in 3 days.';
+        }catch(_error){status.textContent='Could not defer this setup step.';}
+        finally{later.disabled=false;}
+      });
+      const dismissSetup=el('button','vp3-cognitive-feed-hide','Not interested');
+      dismissSetup.type='button';
+      dismissSetup.addEventListener('click',async()=>{
+        dismissSetup.disabled=true;
+        try{
+          const data=await api('activation_dismiss',{workflow});
+          renderFeed(data.feed||null);
+          status.textContent='Removed from your selected VP3 setup.';
+        }catch(_error){status.textContent='Could not update this setup preference.';}
+        finally{dismissSetup.disabled=false;}
+      });
+      actions.append(later,dismissSetup);
+    }
     const why=el('button','vp3-cognitive-feed-hide','Why?');
     why.type='button';
     why.addEventListener('click',async()=>{
@@ -237,7 +264,7 @@
         hide.disabled=false;
       }
     });
-    actions.append(why,hide);
+    if(cardType!=='onboarding_setup')actions.append(why,hide);
     meta.append(reason,actions);
 
     const host=el('div','vp3-cognitive-feed-card-host vp3-cognitive-card-host');
@@ -480,7 +507,7 @@
     timer=null;
   },{once:true});
 
-  const runtime={build:'vp3-cognitive-feed-v530-20260918',refresh:refreshFeed,render:renderFeed};
+  const runtime={build:'vp3-cognitive-feed-v530-20260918',activationBuild:'onboarding-activation-v243-20260921',refresh:refreshFeed,render:renderFeed};
   window.VP3_COGNITIVE_FEED_V530_RUNTIME=runtime;
   mount();
   if(visible())void refreshFeed(true);

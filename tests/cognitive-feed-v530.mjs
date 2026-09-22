@@ -29,6 +29,7 @@ for(const fn of [
   'vp3_cognitive_feed_goal_candidates_v530',
   'vp3_cognitive_feed_brain_candidates_v530',
   'vp3_cognitive_feed_notification_candidates_v530',
+  'vp3_cognitive_feed_activation_candidates_v530',
   'vp3_cognitive_feed_merge_candidates_v530',
   'vp3_cognitive_feed_compose_v530'
 ]) assert.match(feed,new RegExp('function '+fn.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')),'missing feed function '+fn);
@@ -41,7 +42,9 @@ assert.match(feed,/if\(!isset\(\$groups\[\$group\]\)\)/,'feed must collapse dupl
 assert.match(feed,/video_meeting_for_calendar_event_v1800/,'calendar event with Meeting must dedupe to Meeting');
 assert.match(feed,/video_meeting_for_booking_v1800/,'booking with Meeting must dedupe to Meeting');
 assert.match(feed,/time_bucket/,'scheduled items must resurface as time relevance changes');
-assert.match(feed,/\$caps=\['attention'=>4,'next_up'=>2,'priorities'=>3,'opportunities'=>2,'recent'=>1\]/,'feed must enforce bounded attention budget');
+assert.match(feed,/\$caps=\['attention'=>4,'next_up'=>2,'setup'=>2,'priorities'=>3,'opportunities'=>2,'recent'=>1\]/,'feed must enforce bounded attention and setup budgets');
+assert.match(feed,/'setup'=>\['label'=>'Getting started'/,'feed must expose a dedicated setup lane');
+assert.match(feed,/if\(\$section!==\'setup\'\)foreach\(\$items as \$selected\)\$selectedForQueue\[\]=\$selected;/,'setup guidance must not enter the operational priority queue');
 assert.match(feed,/unset\(\$item\['score'\]\)/,'internal ranking score must not be exposed to client');
 assert.match(feed,/DATE_SUB\(UTC_TIMESTAMP\(\),INTERVAL 7 DAY\)/,'recent activity must be time bounded');
 assert.match(feed,/status NOT IN \('completed','cancelled'\)|agent_workflow_active_summary_v1400/,'workflow candidates must use active state');
@@ -54,13 +57,15 @@ assert.doesNotMatch(feed,/chat_remote_answer|ai_generate|openai|anthropic|gemini
 assert.doesNotMatch(feed,/INSERT INTO chat_messages|UPDATE chat_messages|DELETE FROM chat_messages/i,'feed must never create or mutate Chat turns');
 assert.doesNotMatch(feed,/agent_workflow_approve|agent_workflow_retry|agent_workflow_cancel|profile_commerce_refund|user_calendar_create/i,'feed composition must not execute domain actions');
 
-assert.match(cards,/'brain_priority','feed_activity'/,'Universal Cards must register feed projection cards');
+assert.match(cards,/'brain_priority','feed_activity','onboarding_setup'/,'Universal Cards must register feed and onboarding projection cards');
 assert.match(cards,/if\(\$type==='brain_priority'\)/);
 assert.match(cards,/if\(\$type==='feed_activity'\)/);
+assert.match(cards,/if\(\$type==='onboarding_setup'\)/,'setup cards must reauthorize against current onboarding state');
 assert.match(cards,/vp3_cognitive_cards_notification_v520\(\$pdo,\$user,\(int\)\$id\)/,'activity card must resolve owner-scoped notification');
 assert.match(cards,/agent_cognitive_loop_v310_priority_items\(\$user,10\)/,'Brain priority card must re-resolve current user Brain state');
 assert.match(cardJs,/brain_priority:'P'/);
 assert.match(cardJs,/feed_activity:'•'/);
+assert.match(cardJs,/onboarding_setup:'→'/);
 
 assert.match(api,/vp3_cognitive_agent_namespace_v500\(/,'API must bind exact Agent namespace');
 assert.match(api,/vp3_cognitive_feed_compose_v530\(/);
@@ -90,6 +95,9 @@ assert.match(css,/@media\(max-width:520px\)/);
 assert.match(css,/prefers-reduced-motion:reduce/);
 
 assert.match(chat,/\$cognitiveFeedBuild = 'cognitive-feed-v530-20260918'/);
+assert.match(chat,/\$cognitiveFeedAssetBuild = \$cognitiveFeedBuild \. '-orchestration-v560-priority-v2310-proactive-v2340-calibration-v2350'/,'the retained feed asset build chain must remain stable');
+assert.match(chat,/\$onboardingActivationAssetBuild = 'activation-v243'/,'activation must use a feature-specific asset suffix');
+assert.match(chat,/chat-cognitive-feed-v530\.js\?v=' \. \$cognitiveFeedAssetBuild \. '-' \. \$onboardingActivationAssetBuild/,'activation must cache-bust the feed asset URL without changing the retained build chain');
 assert.match(chat,/api\/cognitive-feed-v530\.php/);
 assert.match(chat,/chat-cognitive-feed-v530\.css/);
 assert.match(chat,/chat-cognitive-feed-v530\.js/);

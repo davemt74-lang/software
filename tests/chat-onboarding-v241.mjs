@@ -78,6 +78,8 @@ assert.match(domain, /chat_settings_get_v237/);
 assert.match(domain, /studio_voice_profile_state/);
 assert.match(domain, /function chat_onboarding_v241_capabilities/);
 assert.match(domain, /function chat_onboarding_v241_workspace_state/);
+assert.match(domain, /function chat_onboarding_v241_activation_state/);
+assert.match(domain, /Your next selected VP3 setup step is/);
 for (const key of ['browser','transcription','meetings','calendar','booking','commerce','analytics','teams','homeserver']) assert.match(domain, new RegExp(`'${key}'\\s*=>`), `workspace inventory must include ${key}`);
 assert.match(domain, /'configured'/);
 assert.match(domain, /'available'/);
