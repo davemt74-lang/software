@@ -36,6 +36,8 @@ assert.match(shell, /vp3-public-mobile-mega/, 'canonical public shell must expos
 assert.match(shell, /Open VP3/, 'authenticated visitors must get a product entry action instead of Sign in');
 assert.match(shell, /vp3-index-mega-menu\.css/, 'public shell must reuse the homepage mega-menu stylesheet');
 assert.match(shell, /vp3-public-editorial\.css/, 'public shell must load the editorial public-page layer');
+assert.match(shell, /vp3-public-funnel\.js\?v=20260921-1/, 'public shell must load the first-party public funnel instrumentation');
+assert.match(shell, /rel="sitemap"[^>]*\/sitemap\.php/, 'public shell must advertise the canonical public sitemap');
 assert.match(editorialCss, /position:absolute[\s\S]*background:linear-gradient/, 'public header must be transparent/overlaid on hero artwork');
 assert.match(editorialCss, /Compact auth header: brand only/, 'auth header must explicitly remain brand-only');
 
@@ -43,7 +45,7 @@ for (const state of ['', ':visited', ':hover', ':focus']) {
   assert.ok(navCss.includes(`body.vp3-public a.vp3-public-primary${state}`), `legacy public CTA safety rule must exist in ${state || 'default'} state`);
 }
 assert.match(shell, /vp3-public\.css\?v=vp3-public-20260915-editorial/, 'public shell must cache-bust the editorial public styles');
-assert.match(shell, /vp3-marketing-pages\.css\?v=20260915-editorial/, 'public shell must cache-bust the editorial marketing styles');
+assert.match(shell, /vp3-marketing-pages\.css\?v=20260921-services/, 'public shell must cache-bust the current Services marketing styles');
 assert.match(css, /--vp3-ink:#0b0c0e/, 'public/auth system must use the homepage ink token');
 assert.match(css, /--vp3-paper:#f6f4ef/, 'public/auth system must use the homepage paper token');
 assert.match(css, /--vp3-blue:#5d55ff/, 'public/auth system must use the homepage blue accent');
