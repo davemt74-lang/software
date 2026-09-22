@@ -134,11 +134,11 @@ must(cognitivePresentationJs.includes("if (!center || typeof center.announce !==
 must(cognitivePresentationJs.includes("spoken = (await Promise.resolve(center.announce(String(candidate.message)))) === true;"),
   'Cognitive Presentation must await actual voice delivery');
 must(cognitivePresentationJs.indexOf("lastVoiceThrough = through;") >
-     cognitivePresentationJs.indexOf("if (!spoken) return false;"),
+     cognitivePresentationJs.indexOf("if (!spoken) {"),
   'local voice cursor must advance only after successful speech');
-must(cognitivePresentationJs.includes("if (through <= lastVoiceThrough) {")
-  && cognitivePresentationJs.includes("await post('voice_delivered',{through_id:through});"),
-  'failed server voice acknowledgement must retry without re-speaking');
+must(cognitivePresentationJs.includes("if (through <= Math.max(lastVoiceThrough, suppressedVoiceThrough)) {")
+  && cognitivePresentationJs.includes("await post(through <= suppressedVoiceThrough ? 'voice_suppressed' : 'voice_delivered',{through_id:through});"),
+  'failed server voice acknowledgement must retry without re-speaking, including explicitly suppressed reports');
 
 must(cognitiveExtensionApi.includes("VP3 Browser Companion Cognitive card unavailable ["),
   'extension card render degradation must be observable without weakening fail-closed behavior');
