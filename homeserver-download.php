@@ -22,6 +22,13 @@ if (!$release) {
     http_response_code(404);
     exit('Release not found.');
 }
+if (function_exists('client_release_rollouts_schema_ready_v110') && client_release_rollouts_schema_ready_v110($pdo)) {
+    $publicRelease=client_release_public_release_v110($pdo,'homeserver',(string)($release['channel']??'stable'));
+    if(!$publicRelease||(int)($publicRelease['id']??0)!==$releaseId){
+        http_response_code(404);
+        exit('Release not found.');
+    }
+}
 
 $pathKey = $type . '_path';
 $nameKey = $type . '_name';
