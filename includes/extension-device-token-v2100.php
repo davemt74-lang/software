@@ -131,6 +131,13 @@ function vp3_extension_device_context_v2100(array $input): array
     ];
 }
 
+function vp3_extension_reported_version_v2100(): string
+{
+    $version=trim((string)($_SERVER['HTTP_X_VP3_EXTENSION_VERSION']??''));
+    if($version===''||strlen($version)>40)return '';
+    return preg_match('/^\d+(?:\.\d+){1,3}$/',$version)?$version:'';
+}
+
 function vp3_extension_device_code_issue_v2100(PDO $pdo,int $userId,array $context): string
 {
     vp3_extension_device_token_require_schema_v2100($pdo);
@@ -257,7 +264,7 @@ function vp3_extension_device_token_authenticate_v2100(PDO $pdo,string $token=''
     $token=$token!==''?$token:vp3_extension_bearer_token_v2000();
     if(!preg_match('/^[a-f0-9]{64}$/',$token))return null;
 
-    $stmt=$pdo->prepare("SELECT d.id device_db_id,d.public_id device_id,d.user_id,d.capabilities_json,d.device_status,d.revoked_at,
+    $stmt=$pdo->prepare("SELECT d.id device_db_id,d.public_id device_id,d.user_id,d.capabilities_json,d.device_status,d.revoked_at,d.extension_version,
       u.display_name,u.role,u.is_active
       FROM extension_devices_v2000 d
       INNER JOIN users u ON u.id=d.user_id
@@ -266,13 +273,22 @@ function vp3_extension_device_token_authenticate_v2100(PDO $pdo,string $token=''
     $row=$stmt->fetch();
     if(!$row||(string)$row['device_status']!=='active'||!empty($row['revoked_at'])||(int)$row['is_active']!==1)return null;
 
-    // Agent Now and source feeds can make several authenticated requests per
-    // minute. last_used_at is operational telemetry, not request-by-request
-    // state, so avoid turning every read into a row write/lock.
-    $pdo->prepare("UPDATE extension_devices_v2000
-      SET last_used_at=NOW(),updated_at=updated_at
-      WHERE id=? AND (last_used_at IS NULL OR last_used_at<DATE_SUB(NOW(),INTERVAL 5 MINUTE))")
-      ->execute([(int)$row['device_db_id']]);
+    $reportedVersion=vp3_extension_reported_version_v2100();
+    if($reportedVersion!==''&&!hash_equals((string)($row['extension_version']??''),$reportedVersion)){
+        $pdo->prepare("UPDATE extension_devices_v2000
+          SET extension_version=?,last_used_at=NOW(),updated_at=NOW()
+          WHERE id=?")
+          ->execute([$reportedVersion,(int)$row['device_db_id']]);
+        $row['extension_version']=$reportedVersion;
+    }else{
+        // Agent Now and source feeds can make several authenticated requests per
+        // minute. last_used_at is operational telemetry, not request-by-request
+        // state, so avoid turning every read into a row write/lock.
+        $pdo->prepare("UPDATE extension_devices_v2000
+          SET last_used_at=NOW(),updated_at=updated_at
+          WHERE id=? AND (last_used_at IS NULL OR last_used_at<DATE_SUB(NOW(),INTERVAL 5 MINUTE))")
+          ->execute([(int)$row['device_db_id']]);
+    }
 
     return [
         'session_id'=>'device:'.(string)$row['device_id'],
@@ -280,6 +296,7 @@ function vp3_extension_device_token_authenticate_v2100(PDO $pdo,string $token=''
         'user_id'=>(int)$row['user_id'],
         'display_name'=>(string)$row['display_name'],
         'role'=>(string)($row['role']??''),
+        'extension_version'=>(string)($row['extension_version']??''),
         'capabilities'=>vp3_extension_capability_filter_v2000(vp3_extension_json_array_v2000($row['capabilities_json'])),
         'expires_at'=>null,
         'auth_type'=>'device_token',
