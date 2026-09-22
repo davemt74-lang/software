@@ -214,6 +214,19 @@ function client_release_rollout_update_v110(PDO $pdo,string $product,int $releas
     $compat=mb_strimwidth(trim((string)($input['compatibility_notes']??'')),0,1000,'');
     $current=client_release_rollout_for_v110($pdo,$product,$releaseId,$release);
     $from=(string)($current['lifecycle_state']??'draft');
+    if(function_exists('client_release_readiness_current_v150')
+        &&in_array($from,['draft','testing'],true)
+        &&in_array($state,['canary','limited','general_availability'],true)){
+        if($summary!==(string)($current['summary']??'')
+            ||$known!==(string)($current['known_issues']??'')
+            ||$compat!==(string)($current['compatibility_notes']??'')){
+            throw new RuntimeException('Save rollout documentation changes before preflight evaluation and sign-off.');
+        }
+        $readiness=client_release_readiness_current_v150($pdo,$product,$releaseId);
+        if(empty($readiness['ready'])){
+            throw new RuntimeException('Release preflight is not approved: '.(string)($readiness['reason']??'readiness gate failed'));
+        }
+    }
     $table=client_release_release_table_v110($product);
     $channel=(string)($release['channel']??'stable');
 
