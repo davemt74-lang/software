@@ -127,7 +127,7 @@ function chat_onboarding_v241_workspace_state(PDO $pdo,array $user,array $permis
         'transcription'=>[
             'label'=>'Transcription + AI Summary','description'=>'Capture conversations and turn them into searchable transcripts, summaries and action items.',
             'interest_key'=>'workflow.transcription','permitted'=>$transcriptionAllowed,'configured'=>$transcriptionAllowed,'available'=>$transcriptionAllowed,
-            'status'=>$transcriptionAllowed?'Ready to use':'Not included in current package','setup_url'=>url('/artist-listening.php'),'action_label'=>'Open Transcription','usage_count'=>0,'milestone_label'=>'First transcription captured',
+            'status'=>$transcriptionAllowed?'Ready to use':'Not included in current package','setup_url'=>url('/artist-listening.php'),'action_label'=>'Open Transcription','usage_count'=>0,'milestone_label'=>'',
         ],
         'meetings'=>[
             'label'=>'Meetings','description'=>'Schedule VP3 video meetings with transcription, Meeting Intelligence, commitments and follow-through.',
@@ -154,7 +154,7 @@ function chat_onboarding_v241_workspace_state(PDO $pdo,array $user,array $permis
         'analytics'=>[
             'label'=>'Agent Analytics','description'=>'See Profile visits, intent, conversions, attributed revenue, sources and Agent opportunities.',
             'interest_key'=>'workflow.analytics','permitted'=>$profileAllowed,'configured'=>$analyticsReady,'available'=>$analyticsReady,
-            'status'=>$analyticsReady?'Ready in Profile Agent':'Profile Agent access required','setup_url'=>url('/profile-agent.php#analytics'),'action_label'=>'Open Analytics','usage_count'=>0,'milestone_label'=>'First Agent Analytics signal',
+            'status'=>$analyticsReady?'Ready in Profile Agent':'Profile Agent access required','setup_url'=>url('/profile-agent.php#analytics'),'action_label'=>'Open Analytics','usage_count'=>0,'milestone_label'=>'',
         ],
         'teams'=>[
             'label'=>'Teams','description'=>'Invite collaborators into permission-aware shared workspaces and Agent workflows.',
