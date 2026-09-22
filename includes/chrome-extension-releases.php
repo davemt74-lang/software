@@ -66,7 +66,9 @@ function chrome_extension_release_schema_ready(?PDO $pdo = null): bool
         return false;
     }
     try {
-        return table_exists('chrome_extension_releases');
+        $stmt = $pdo->prepare('SHOW TABLES LIKE ?');
+        $stmt->execute(['chrome_extension_releases']);
+        return (bool)$stmt->fetchColumn();
     } catch (Throwable $e) {
         return false;
     }
