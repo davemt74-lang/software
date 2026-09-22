@@ -846,6 +846,7 @@ function client_fleet_campaign_refresh_v160(PDO $pdo,int $campaignId,int $actorU
     $campaign=client_fleet_campaign_v160($pdo,$campaignId);
     if(!$campaign)throw new RuntimeException('Maintenance campaign was not found.');
     $product=(string)$campaign['product'];$policy=client_fleet_policy_v160($pdo,$product,(string)$campaign['channel']);
+    $windowOpen=empty($campaign['window_enforced'])||client_fleet_window_open_v160($policy);
     $stmt=$pdo->prepare('SELECT * FROM client_fleet_maintenance_members_v160 WHERE campaign_id=? ORDER BY user_id,scope_key');$stmt->execute([$campaignId]);
     $update=$pdo->prepare("UPDATE client_fleet_maintenance_members_v160 SET installed_version=?,target_release_id=?,maintenance_state=?,last_seen_at=? WHERE campaign_id=? AND user_id=? AND scope_key=?");
     foreach($stmt->fetchAll()?:[] as $member){
@@ -858,16 +859,23 @@ function client_fleet_campaign_refresh_v160(PDO $pdo,int $campaignId,int $actorU
             $targetRelease=client_release_release_row_v110($pdo,$product,$target);$targetVersion=(string)($targetRelease['version']??'');
             if($targetVersion!==''&&$installed===$targetVersion){
                 if($target!==$final){
-                    $target=$final;$state='queued';
+                    $target=$final;
+                    $finalRelease=client_release_release_row_v110($pdo,$product,$final);
+                    $compat=$finalRelease?client_fleet_target_compatibility_v160($pdo,$product,$uid,$scope,$finalRelease):['status'=>'incompatible'];
+                    $state=(string)($compat['status']??'unknown')==='incompatible'?'excluded':'queued';
                 }else{$state='installed';}
             }else{
-                $updateState=client_release_update_state_v110($pdo,$uid,$product,$scope,$target);
-                $reported=(string)($updateState['update_state']??'');
-                if($reported==='failed')$state='failed';
-                elseif($reported==='downloaded')$state='downloaded';
-                elseif(client_fleet_is_stale_v160($seen['last_seen_at']??null,(int)$policy['stale_after_hours']))$state='offline';
-                elseif((int)$member['cohort_bucket']<=(int)$campaign['cohort_percent']&&(string)$campaign['campaign_state']==='active')$state='offered';
-                else $state='queued';
+                $compat=$targetRelease?client_fleet_target_compatibility_v160($pdo,$product,$uid,$scope,$targetRelease):['status'=>'incompatible'];
+                if((string)($compat['status']??'unknown')==='incompatible')$state='excluded';
+                else{
+                    $updateState=client_release_update_state_v110($pdo,$uid,$product,$scope,$target);
+                    $reported=(string)($updateState['update_state']??'');
+                    if($reported==='failed')$state='failed';
+                    elseif($reported==='downloaded')$state='downloaded';
+                    elseif(client_fleet_is_stale_v160($seen['last_seen_at']??null,(int)$policy['stale_after_hours']))$state='offline';
+                    elseif($windowOpen&&(int)$member['cohort_bucket']<=(int)$campaign['cohort_percent']&&(string)$campaign['campaign_state']==='active')$state='offered';
+                    else $state='queued';
+                }
             }
             $member['installed_version']=$installed;$member['last_seen_at']=$seen['last_seen_at']??null;
         }
@@ -886,6 +894,11 @@ function client_fleet_campaign_set_v160(PDO $pdo,int $campaignId,string $state,i
     $max=client_fleet_max_cohort_for_target_v160($pdo,(string)$campaign['product'],(int)$campaign['target_release_id']);
     if($state==='active'&&$max<1)throw new RuntimeException('Target release risk currently blocks maintenance activation.');
     $percent=max(0,min(100,$percent));
+    if($state==='completed'){
+        $beforeComplete=client_fleet_campaign_refresh_v160($pdo,$campaignId,0);
+        $resolved=(int)$beforeComplete['installed']+(int)$beforeComplete['excluded'];
+        if((int)$beforeComplete['total']!==$resolved)throw new RuntimeException('Maintenance campaign cannot be completed until every member is installed or explicitly excluded.');
+    }
     if($state==='active'){
         if($percent<1)$percent=1;
         if($percent>$max)throw new RuntimeException('Risk policy limits this maintenance target to '.$max.'% at a time.');
@@ -926,6 +939,8 @@ function client_fleet_maintenance_applicable_release_v160(PDO $pdo,string $produ
     $release=client_release_release_row_v110($pdo,$product,(int)$row['member_target']);
     if(!$release||empty($release['is_published'])||(string)$release['channel']!==$channel)return null;
     if(client_release_incident_active_for_release_v130($pdo,$product,(int)$release['id']))return null;
+    $compat=client_fleet_target_compatibility_v160($pdo,$product,$userId,$scopeKey,$release);
+    if((string)($compat['status']??'unknown')==='incompatible')return null;
     $release['_rollout']=client_release_rollout_for_v110($pdo,$product,(int)$release['id'],$release);
     $release['_cohort_bucket']=(int)$row['cohort_bucket'];
     $release['_fleet_campaign_id']=(int)$row['id'];
