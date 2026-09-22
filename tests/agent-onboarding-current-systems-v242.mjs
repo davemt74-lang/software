@@ -55,6 +55,7 @@ assert.match(funnel,/str_starts_with\(\$key,'workflow\.'\)/,'workflow interests 
 assert.match(settings,/function chat_settings_agent_voice_allowed_v237/);
 assert.match(settings,/function chat_settings_agent_voice_enabled_v237/);
 assert.match(settings,/subscription_has_entitlement\(\$user,'voice\.access'\)/);
+assert.match(settings,/\$voiceAllowed=chat_settings_agent_voice_allowed_v237\(\$user\)/,'generic settings writes must enforce canonical Agent Voice availability');
 assert.match(settingsApi,/agent_voice_allowed/);
 assert.match(memberNav,/chat_settings_agent_voice_enabled_v237/);
 assert.match(cognitive,/chat_settings_agent_voice_enabled_v237/);
