@@ -140,6 +140,7 @@ function vp3_upgrade_complete(): bool
         && client_release_risk_schema_ready_v140()
         && client_release_readiness_schema_ready_v150()
         && client_fleet_schema_ready_v160()
+        && client_release_automation_schema_ready_v170()
         && table_exists('homeserver_chat_sessions')
         && table_exists('agent_compute_preferences')
         && table_exists('agent_compute_overrides')
@@ -245,6 +246,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             client_release_risk_ensure_schema_v140($pdo);
             client_release_readiness_ensure_schema_v150($pdo);
             client_fleet_ensure_schema_v160($pdo);
+            client_release_automation_ensure_schema_v170($pdo);
             if (!homeserver_agent_v018_ensure_schema($pdo)) throw new RuntimeException('HomeServer Agent chat schema could not be installed.');
             agent_compute_v020_ensure_schema($pdo);
             agent_compute_v023_ensure_schema($pdo);

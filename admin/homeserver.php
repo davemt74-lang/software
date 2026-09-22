@@ -15,6 +15,7 @@ client_release_incident_ensure_schema_v130($pdo);
 client_release_risk_ensure_schema_v140($pdo);
 client_release_readiness_ensure_schema_v150($pdo);
 client_fleet_ensure_schema_v160($pdo);
+client_release_automation_ensure_schema_v170($pdo);
 $adminUser=current_user();
 $adminUserId=(int)($adminUser['id']??0);
 $error = '';
@@ -25,6 +26,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } else {
         try {
             $action = (string)($_POST['action'] ?? '');
+
+            if (in_array($action,['automation_control_update','automation_policy_update','automation_run','automation_decide','automation_hold_release'],true)) {
+                if($action==='automation_control_update'){
+                    client_release_automation_control_update_v170($pdo,$_POST,$adminUserId);
+                    flash('notice','Release automation controls updated.');
+                }elseif($action==='automation_policy_update'){
+                    client_release_automation_policy_update_v170(
+                        $pdo,(string)($_POST['product']??''),(string)($_POST['channel']??'stable'),$_POST,$adminUserId
+                    );
+                    flash('notice','Release automation policy updated.');
+                }elseif($action==='automation_run'){
+                    $run=client_release_automation_run_v170($pdo,'manual',$adminUserId,true);
+                    flash('notice','Automation evaluation completed: '.(int)($run['proposals_created']??0).' proposal(s), '.(int)($run['actions_executed']??0).' action(s), '.(int)($run['holds_created']??0).' hold(s).');
+                }elseif($action==='automation_decide'){
+                    client_release_automation_decide_proposal_v170(
+                        $pdo,max(0,(int)($_POST['proposal_id']??0)),(string)($_POST['decision']??'defer'),
+                        $adminUserId,(string)($_POST['note']??''),(int)($_POST['modified_percent']??0)
+                    );
+                    flash('notice','Automation proposal decision recorded.');
+                }elseif($action==='automation_hold_release'){
+                    client_release_automation_release_hold_v170(
+                        $pdo,max(0,(int)($_POST['hold_id']??0)),$adminUserId,(string)($_POST['note']??'')
+                    );
+                    flash('notice','Automation hold released.');
+                }
+                if(function_exists('client_release_intelligence_reconcile_all_v100'))client_release_intelligence_reconcile_all_v100($pdo);
+                redirect(url('/admin/homeserver.php#release-automation'));
+            }
 
             if (in_array($action,['readiness_manifest_update','readiness_ci_save','readiness_ci_delete','readiness_evaluate','readiness_signoff'],true)) {
                 $product=(string)($_POST['product']??'');
@@ -272,6 +301,7 @@ $releaseIncidents=client_release_incident_list_v130($pdo,30);
 $releaseRisk=client_release_risk_admin_summary_v140($pdo);
 $riskReviews=client_release_risk_recent_reviews_v140($pdo,16);
 $releaseReadiness=client_release_readiness_admin_summary_v150($pdo);
+$releaseAutomation=client_release_automation_admin_summary_v170($pdo);
 $fleetState=client_fleet_summary_v160($pdo);
 $fleetInventory=(array)($fleetState['inventory']??['browser_companion'=>[],'homeserver'=>[]]);
 $fleetSummary=(array)($fleetState['summary']??[]);
@@ -308,6 +338,126 @@ require __DIR__ . '/_header.php';
       <tr><td><strong>HomeServer</strong></td><td><?= ($homeIntel['latest_version']??'')!==''?'v'.e((string)$homeIntel['latest_version']):'Not published' ?></td><td><?= (int)($homeIntel['paired_clients']??0) ?></td><td><?= (int)($homeIntel['current_clients']??0) ?></td><td><?= (int)($homeIntel['outdated_clients']??0) ?></td><td><?= (int)($homeIntel['unknown_clients']??0) ?></td><td><?= e((string)($homeIntel['channel']??'stable')) ?></td></tr>
     </tbody>
   </table></div>
+</section>
+
+<section class="admin-card" id="release-automation" style="margin-bottom:24px">
+  <?php
+    $automationControl=(array)($releaseAutomation['control']??[]);
+    $automationPolicies=(array)($releaseAutomation['policies']??[]);
+    $automationPending=(array)($releaseAutomation['pending']??[]);
+    $automationHolds=(array)($releaseAutomation['holds']??[]);
+    $automationRuns=(array)($releaseAutomation['runs']??[]);
+  ?>
+  <div class="admin-card-head">
+    <div>
+      <h3>Governed Release Automation</h3>
+      <p>Evaluate release health, readiness, risk, incidents, and fleet maintenance; prepare the next safe action; and optionally execute explicitly permitted low-risk cohort steps. GA promotion remains manual, as do rollback, incident resolution, unsupported-version enforcement, and compatibility overrides.</p>
+    </div>
+    <span class="eyebrow">v1.70</span>
+  </div>
+
+  <div class="admin-table-wrap"><table class="admin-table"><tbody>
+    <tr><td><strong>Automation</strong></td><td><?= !empty($automationControl['automation_enabled'])?'Enabled':'Disabled' ?></td></tr>
+    <tr><td><strong>Dry run</strong></td><td><?= !empty($automationControl['dry_run'])?'On — proposals only':'Off — policy-authorized low-risk actions may execute' ?></td></tr>
+    <tr><td><strong>Global kill switch</strong></td><td><?= !empty($automationControl['kill_switch'])?'ACTIVE — automatic execution blocked':'Inactive' ?></td></tr>
+    <tr><td><strong>Scheduled runner</strong></td><td><code>php tools/client-release-automation-v170.php</code><br><small>Default CLI idempotency key is the current UTC hour.</small></td></tr>
+  </tbody></table></div>
+
+  <form method="post" class="admin-form" style="margin-top:12px">
+    <?= csrf_field() ?><input type="hidden" name="action" value="automation_control_update">
+    <div class="form-row">
+      <label><input type="checkbox" name="automation_enabled" value="1" <?= !empty($automationControl['automation_enabled'])?'checked':'' ?>> Enable automation runner</label>
+      <label><input type="checkbox" name="dry_run" value="1" <?= !empty($automationControl['dry_run'])?'checked':'' ?>> Dry run</label>
+      <label><input type="checkbox" name="kill_switch" value="1" <?= !empty($automationControl['kill_switch'])?'checked':'' ?>> Global kill switch</label>
+    </div>
+    <button class="button button-small" type="submit">Save automation controls</button>
+  </form>
+
+  <div class="form-actions" style="margin-top:10px">
+    <form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="automation_run"><button class="button button-small primary" type="submit">Run automation evaluation now</button></form>
+  </div>
+
+  <div class="admin-card-head" style="margin-top:18px"><div><h3>Automation Policies</h3><p><strong>Recommend only</strong> never auto-executes a transition. <strong>Auto low risk</strong> may execute only non-GA rollout/fleet cohort advancement when v1.20 health, v1.40 risk, v1.50 readiness, and v1.60 fleet rules all continue to pass.</p></div></div>
+  <div class="admin-table-wrap"><table class="admin-table">
+    <thead><tr><th>Client</th><th>Channel</th><th>Policy</th></tr></thead>
+    <tbody>
+    <?php foreach(['browser_companion'=>'Browser Companion','homeserver'=>'HomeServer'] as $autoProduct=>$autoLabel): ?>
+      <?php foreach(['stable','beta','dev'] as $autoChannel): $autoPolicy=(array)($automationPolicies[$autoProduct][$autoChannel]??client_release_automation_default_policy_v170()); ?>
+        <tr>
+          <td><strong><?= e($autoLabel) ?></strong></td>
+          <td><?= e(ucfirst($autoChannel)) ?></td>
+          <td>
+            <form method="post" class="admin-form">
+              <?= csrf_field() ?><input type="hidden" name="action" value="automation_policy_update"><input type="hidden" name="product" value="<?= e($autoProduct) ?>"><input type="hidden" name="channel" value="<?= e($autoChannel) ?>">
+              <div class="form-row">
+                <label><input type="checkbox" name="policy_enabled" value="1" <?= !empty($autoPolicy['policy_enabled'])?'checked':'' ?>> Policy enabled</label>
+                <label>Execution<select name="execution_mode"><option value="recommend_only" <?= (string)$autoPolicy['execution_mode']==='recommend_only'?'selected':'' ?>>Recommend only</option><option value="auto_low_risk" <?= (string)$autoPolicy['execution_mode']==='auto_low_risk'?'selected':'' ?>>Auto low risk</option></select></label>
+                <label><input type="checkbox" name="auto_hold_enabled" value="1" <?= !empty($autoPolicy['auto_hold_enabled'])?'checked':'' ?>> Automatic holds</label>
+                <label><input type="checkbox" name="rollout_progression_enabled" value="1" <?= !empty($autoPolicy['rollout_progression_enabled'])?'checked':'' ?>> Rollout progression</label>
+                <label><input type="checkbox" name="fleet_progression_enabled" value="1" <?= !empty($autoPolicy['fleet_progression_enabled'])?'checked':'' ?>> Fleet progression</label>
+              </div>
+              <div class="form-row">
+                <label>Proposal expiry hours<input type="number" name="proposal_expiry_hours" min="1" max="168" value="<?= (int)$autoPolicy['proposal_expiry_hours'] ?>"></label>
+                <label>Cooldown minutes<input type="number" name="cooldown_minutes" min="0" max="1440" value="<?= (int)$autoPolicy['cooldown_minutes'] ?>"></label>
+                <label>Fleet observation minutes<input type="number" name="fleet_observation_minutes" min="0" max="10080" value="<?= (int)$autoPolicy['fleet_observation_minutes'] ?>"></label>
+                <label>Completion gate bps<input type="number" name="fleet_completion_gate_bps" min="5000" max="10000" value="<?= (int)$autoPolicy['fleet_completion_gate_bps'] ?>"></label>
+                <label>Failure hold bps<input type="number" name="fleet_failure_hold_bps" min="0" max="5000" value="<?= (int)$autoPolicy['fleet_failure_hold_bps'] ?>"></label>
+              </div>
+              <button class="button button-small" type="submit">Save policy</button>
+            </form>
+          </td>
+        </tr>
+      <?php endforeach; ?>
+    <?php endforeach; ?>
+    </tbody>
+  </table></div>
+
+  <div class="admin-card-head" style="margin-top:18px"><div><h3>Approval Queue</h3><p>Approve, reject, defer, or reduce a proposed cohort. GA promotion remains manual and cannot be modified into a different percentage.</p></div></div>
+  <?php if($automationPending): ?>
+    <div class="admin-table-wrap"><table class="admin-table">
+      <thead><tr><th>Proposal</th><th>Transition</th><th>Rationale</th><th>Authority</th><th>Decision</th></tr></thead><tbody>
+      <?php foreach($automationPending as $proposal): ?>
+        <tr>
+          <td><strong>#<?= (int)$proposal['id'] ?> · <?= e(ucwords(str_replace('_',' ',(string)$proposal['proposal_type']))) ?></strong><br><small><?= e((string)$proposal['product']) ?> · <?= e((string)$proposal['channel']) ?><?php if((int)($proposal['release_id']??0)>0): ?> · release #<?= (int)$proposal['release_id'] ?><?php endif; ?><?php if((int)($proposal['campaign_id']??0)>0): ?> · campaign #<?= (int)$proposal['campaign_id'] ?><?php endif; ?><br><?= e((string)$proposal['proposal_status']) ?> · expires <?= e((string)($proposal['expires_at']??'')) ?></small></td>
+          <td><?= e((string)$proposal['from_state']) ?> <?= (int)$proposal['from_percent'] ?>% → <?= e((string)$proposal['to_state']) ?> <?= (int)$proposal['to_percent'] ?>%</td>
+          <td><small><?= e((string)$proposal['rationale']) ?></small></td>
+          <td><small><?= !empty($proposal['requires_approval'])?'Operator approval required':'Policy may auto-execute' ?><?= !empty($proposal['auto_executable'])?' · auto eligible':'' ?></small></td>
+          <td>
+            <?php if(in_array((string)$proposal['proposal_status'],['pending','deferred'],true)): ?>
+            <form method="post" class="admin-form">
+              <?= csrf_field() ?><input type="hidden" name="action" value="automation_decide"><input type="hidden" name="proposal_id" value="<?= (int)$proposal['id'] ?>">
+              <label>Decision<select name="decision"><option value="approve">Approve</option><option value="reject">Reject</option><option value="defer">Defer</option><?php if(in_array((string)$proposal['proposal_type'],['rollout_promote','fleet_advance'],true)&&(string)$proposal['to_state']!=='general_availability'): ?><option value="modify">Modify + approve</option><?php endif; ?></select></label>
+              <label>Modified cohort %<input type="number" name="modified_percent" min="1" max="99" placeholder="Only for Modify"></label>
+              <label>Operator note<input name="note" maxlength="1000" placeholder="Required for reject, defer, or modify"></label>
+              <button class="button button-small" type="submit">Apply decision</button>
+            </form>
+            <?php else: ?><small>Approved and awaiting/recording execution state.</small><?php endif; ?>
+          </td>
+        </tr>
+      <?php endforeach; ?>
+      </tbody>
+    </table></div>
+  <?php else: ?><p>No automation proposals are awaiting action.</p><?php endif; ?>
+
+  <div class="admin-card-head" style="margin-top:18px"><div><h3>Active Automation Holds</h3><p>Automation holds stop v1.70 progression without withdrawing the currently exposed cohort. Manual release controls remain available to an operator.</p></div></div>
+  <?php if($automationHolds): ?>
+    <div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>Hold</th><th>Scope</th><th>Reason</th><th>Since</th><th></th></tr></thead><tbody>
+      <?php foreach($automationHolds as $hold): ?><tr>
+        <td>#<?= (int)$hold['id'] ?></td><td><?= e((string)$hold['scope_type']) ?> · <?= e((string)$hold['product']) ?><?php if((int)($hold['release_id']??0)>0): ?> · release #<?= (int)$hold['release_id'] ?><?php endif; ?><?php if((int)($hold['campaign_id']??0)>0): ?> · campaign #<?= (int)$hold['campaign_id'] ?><?php endif; ?></td>
+        <td><small><?= e((string)$hold['hold_reason']) ?></small></td><td><?= e((string)$hold['created_at']) ?></td>
+        <td><form method="post" class="admin-form"><?= csrf_field() ?><input type="hidden" name="action" value="automation_hold_release"><input type="hidden" name="hold_id" value="<?= (int)$hold['id'] ?>"><label>Release note<input name="note" maxlength="1000"></label><button class="button button-small" type="submit">Release hold</button></form></td>
+      </tr><?php endforeach; ?>
+    </tbody></table></div>
+  <?php else: ?><p>No active automation holds.</p><?php endif; ?>
+
+  <div class="admin-card-head" style="margin-top:18px"><div><h3>Recent Automation Runs</h3><p>Durable run ledger for manual, scheduled, and CLI evaluations.</p></div></div>
+  <?php if($automationRuns): ?><div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>Run</th><th>Trigger</th><th>Mode</th><th>Results</th><th>Status</th><th>Started</th></tr></thead><tbody>
+    <?php foreach($automationRuns as $run): ?><tr>
+      <td>#<?= (int)$run['id'] ?></td><td><?= e((string)$run['trigger_type']) ?></td><td><?= !empty($run['dry_run'])?'Dry run':'Live' ?><?= !empty($run['kill_switch'])?' · kill switch':'' ?></td>
+      <td><?= (int)$run['proposals_created'] ?> proposal(s) · <?= (int)$run['actions_executed'] ?> action(s) · <?= (int)$run['holds_created'] ?> hold(s)</td>
+      <td><?= e((string)$run['status']) ?></td><td><?= e((string)$run['started_at']) ?></td>
+    </tr><?php endforeach; ?>
+  </tbody></table></div><?php endif; ?>
 </section>
 
 <section class="admin-card" id="release-readiness" style="margin-bottom:24px">
