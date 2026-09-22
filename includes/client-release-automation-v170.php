@@ -391,7 +391,7 @@ function client_release_automation_rollout_proposal_v170(PDO $pdo,string $produc
 
     $recommendation=(string)($health['recommendation']??'manual_validation');
     if(in_array($recommendation,['hold','rollback_review'],true)){
-        if(!empty($policy['auto_hold_enabled'])){
+        if(!empty($policy['auto_hold_enabled'])&&client_release_automation_live_actions_allowed_v170($pdo)){
             client_release_automation_hold_v170($pdo,'release',$product,$releaseId,null,
                 implode(' ',(array)($health['reasons']??[])),[
                     'health_status'=>$health['health_status'],'recommendation'=>$recommendation,
@@ -475,7 +475,7 @@ function client_release_automation_fleet_proposal_v170(PDO $pdo,array $campaign,
     $evidence=['campaign'=>$campaign,'readiness'=>$readiness,'risk'=>$risk,'cohort_stats'=>$stats,'risk_max_cohort'=>$riskMax];
 
     if(client_release_incident_active_for_release_v130($pdo,$product,$targetId)){
-        if(!empty($policy['auto_hold_enabled']))client_release_automation_hold_v170($pdo,'fleet_campaign',$product,null,$campaignId,'Maintenance target is under an active incident.',$evidence,0,'automation');
+        if(!empty($policy['auto_hold_enabled'])&&client_release_automation_live_actions_allowed_v170($pdo))client_release_automation_hold_v170($pdo,'fleet_campaign',$product,null,$campaignId,'Maintenance target is under an active incident.',$evidence,0,'automation');
         return client_release_automation_create_proposal_v170($pdo,[
             'product'=>$product,'channel'=>$channel,'campaign_id'=>$campaignId,'release_id'=>$targetId,
             'proposal_type'=>'fleet_hold','requires_approval'=>1,'auto_executable'=>0,
@@ -486,7 +486,7 @@ function client_release_automation_fleet_proposal_v170(PDO $pdo,array $campaign,
     }
 
     if(empty($readiness['ready'])){
-        if(!empty($policy['auto_hold_enabled']))client_release_automation_hold_v170($pdo,'fleet_campaign',$product,null,$campaignId,'v1.50 readiness is no longer approved.',$evidence,0,'automation');
+        if(!empty($policy['auto_hold_enabled'])&&client_release_automation_live_actions_allowed_v170($pdo))client_release_automation_hold_v170($pdo,'fleet_campaign',$product,null,$campaignId,'v1.50 readiness is no longer approved.',$evidence,0,'automation');
         return client_release_automation_create_proposal_v170($pdo,[
             'product'=>$product,'channel'=>$channel,'campaign_id'=>$campaignId,'release_id'=>$targetId,
             'proposal_type'=>'fleet_hold','requires_approval'=>1,'auto_executable'=>0,
@@ -498,7 +498,7 @@ function client_release_automation_fleet_proposal_v170(PDO $pdo,array $campaign,
     }
 
     if((int)$stats['failure_rate_bps']>(int)$policy['fleet_failure_hold_bps']){
-        if(!empty($policy['auto_hold_enabled']))client_release_automation_hold_v170($pdo,'fleet_campaign',$product,null,$campaignId,'Fleet failure rate crossed the automation hold threshold.',$evidence,0,'automation');
+        if(!empty($policy['auto_hold_enabled'])&&client_release_automation_live_actions_allowed_v170($pdo))client_release_automation_hold_v170($pdo,'fleet_campaign',$product,null,$campaignId,'Fleet failure rate crossed the automation hold threshold.',$evidence,0,'automation');
         return client_release_automation_create_proposal_v170($pdo,[
             'product'=>$product,'channel'=>$channel,'campaign_id'=>$campaignId,'release_id'=>$targetId,
             'proposal_type'=>'fleet_hold','requires_approval'=>1,'auto_executable'=>0,
