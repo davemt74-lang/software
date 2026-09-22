@@ -207,7 +207,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (in_array($action, ['chrome_publish','chrome_unpublish','chrome_latest'], true)) {
                 $releaseId = max(0, (int)($_POST['release_id'] ?? 0));
                 $stateAction = substr($action, 7);
-                chrome_extension_release_set_state($releaseId, $stateAction);
                 client_release_rollout_sync_legacy_action_v110($pdo,'browser_companion',$releaseId,$stateAction,$adminUserId);
                 if(function_exists('client_release_intelligence_reconcile_all_v100'))client_release_intelligence_reconcile_all_v100($pdo);
                 flash('notice', $stateAction === 'latest' ? 'Chrome Extension release is now current for its channel.' : 'Chrome Extension release updated.');
@@ -232,7 +231,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             $releaseId = max(0, (int)($_POST['release_id'] ?? 0));
             if (in_array($action, ['publish','unpublish','latest'], true)) {
-                homeserver_vp3_set_release_state($releaseId, $action);
                 client_release_rollout_sync_legacy_action_v110($pdo,'homeserver',$releaseId,$action,$adminUserId);
                 if(function_exists('client_release_intelligence_reconcile_all_v100'))client_release_intelligence_reconcile_all_v100($pdo);
                 flash('notice', $action === 'latest' ? 'HomeServer release is now the current release.' : 'HomeServer release updated.');
