@@ -10,6 +10,7 @@ if (!$pdo) throw new RuntimeException('Database connection is unavailable.');
 homeserver_vp3_ensure_schema($pdo);
 chrome_extension_releases_ensure_schema($pdo);
 client_release_rollouts_ensure_schema_v110($pdo);
+client_release_health_ensure_schema_v120($pdo);
 $adminUser=current_user();
 $adminUserId=(int)($adminUser['id']??0);
 $error = '';
@@ -20,6 +21,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } else {
         try {
             $action = (string)($_POST['action'] ?? '');
+
+            if (in_array($action,['health_policy_update','health_evaluate','health_promote','health_reject'],true)) {
+                $product=(string)($_POST['product']??'');
+                $releaseId=max(0,(int)($_POST['release_id']??0));
+                if($action==='health_policy_update'){
+                    client_release_health_policy_update_v120($pdo,$product,$releaseId,$_POST,$adminUserId);
+                    flash('notice','Release health policy updated.');
+                }elseif($action==='health_evaluate'){
+                    client_release_health_snapshot_v120($pdo,$product,$releaseId,$adminUserId);
+                    flash('notice','Release health evaluated. No rollout state was changed.');
+                }elseif($action==='health_promote'){
+                    client_release_health_approve_promotion_v120(
+                        $pdo,$product,$releaseId,max(0,(int)($_POST['snapshot_id']??0)),$adminUserId,(string)($_POST['rationale']??'')
+                    );
+                    if(function_exists('client_release_intelligence_reconcile_all_v100'))client_release_intelligence_reconcile_all_v100($pdo);
+                    flash('notice','Health-approved rollout promotion applied.');
+                }else{
+                    client_release_health_record_rejection_v120(
+                        $pdo,$product,$releaseId,max(0,(int)($_POST['snapshot_id']??0)),$adminUserId,(string)($_POST['rationale']??'')
+                    );
+                    flash('notice','Promotion recommendation rejected; rollout state was left unchanged.');
+                }
+                redirect(url('/admin/homeserver.php#release-health'));
+            }
 
             if ($action === 'rollout_update') {
                 $product=(string)($_POST['product']??'');
@@ -103,6 +128,8 @@ $releaseIntelligence = function_exists('client_release_intelligence_admin_summar
     ? client_release_intelligence_admin_summary_v100($pdo)
     : ['browser_companion'=>[],'homeserver'=>[]];
 $rolloutAdoption=client_release_adoption_summary_v110($pdo);
+$releaseHealth=client_release_health_admin_summary_v120($pdo);
+$healthDecisions=client_release_health_recent_decisions_v120($pdo,12);
 $rolloutAudit=client_release_audit_recent_v110($pdo,20);
 $adminTitle = 'Client Releases';
 $adminActive = 'homeserver';
@@ -132,6 +159,82 @@ require __DIR__ . '/_header.php';
       <tr><td><strong>HomeServer</strong></td><td><?= ($homeIntel['latest_version']??'')!==''?'v'.e((string)$homeIntel['latest_version']):'Not published' ?></td><td><?= (int)($homeIntel['paired_clients']??0) ?></td><td><?= (int)($homeIntel['current_clients']??0) ?></td><td><?= (int)($homeIntel['outdated_clients']??0) ?></td><td><?= (int)($homeIntel['unknown_clients']??0) ?></td><td><?= e((string)($homeIntel['channel']??'stable')) ?></td></tr>
     </tbody>
   </table></div>
+</section>
+
+<section class="admin-card" id="release-health" style="margin-bottom:24px">
+  <div class="admin-card-head"><div><h3>Release Health &amp; Promotion</h3><p>Evaluate cohort health before expanding a rollout. Health produces guidance only; a release moves forward only after an administrator explicitly approves a current healthy snapshot.</p></div><span class="eyebrow">v1.20</span></div>
+  <div class="admin-table-wrap"><table class="admin-table">
+    <thead><tr><th>Release</th><th>Health</th><th>Signals</th><th>Policy</th><th>Operator decision</th></tr></thead>
+    <tbody>
+    <?php foreach(['browser_companion'=>'Browser Companion','homeserver'=>'HomeServer'] as $product=>$productLabel): ?>
+      <?php foreach((array)($releaseHealth[$product]??[]) as $health):
+        if(!empty($health['error']))continue;
+        $rid=(int)$health['release_id'];
+        $roll=(array)($health['rollout']??[]);
+        $policy=(array)($health['policy']??[]);
+        $snapshot=is_array($health['latest_snapshot']??null)?$health['latest_snapshot']:null;
+        $recommendation=(string)($health['recommendation']??'manual_validation');
+        $next=is_array($health['next_transition']??null)?$health['next_transition']:null;
+      ?>
+      <tr>
+        <td><strong><?= e($productLabel) ?> v<?= e((string)$health['version']) ?></strong><br><small><?= e((string)$health['channel']) ?> · #<?= $rid ?><br><?= e(ucwords(str_replace('_',' ',(string)($roll['lifecycle_state']??'draft')))) ?> · <?= (int)($roll['rollout_percent']??0) ?>%</small></td>
+        <td><strong><?= e(ucwords(str_replace('_',' ',(string)$health['health_status']))) ?></strong><br><small><?= e(client_release_health_recommendation_label_v120($recommendation)) ?></small><?php foreach((array)($health['reasons']??[]) as $reason): ?><br><small><?= e((string)$reason) ?></small><?php endforeach; ?></td>
+        <td>
+          <small>
+            <?= (int)$health['observed_clients'] ?> observed · <?= (int)$health['installed_clients'] ?> installed · <?= (int)$health['failed_clients'] ?> failed<br>
+            Failure <?= e(client_release_health_percent_v120((int)$health['failure_rate_bps'])) ?> · compatibility <?= e(client_release_health_percent_v120((int)$health['compatibility_failure_rate_bps'])) ?><br>
+            Install <?= e(client_release_health_percent_v120((int)$health['install_rate_bps'])) ?> · <?= e(number_format((float)$health['observation_hours'],1)) ?>h observed<br>
+            Adoption velocity <?= e(number_format((float)$health['adoption_velocity_per_day'],2)) ?>/day
+          </small>
+          <form method="post" style="margin-top:8px"><?= csrf_field() ?><input type="hidden" name="action" value="health_evaluate"><input type="hidden" name="product" value="<?= e($product) ?>"><input type="hidden" name="release_id" value="<?= $rid ?>"><button class="button button-small" type="submit">Evaluate now</button></form>
+        </td>
+        <td>
+          <form method="post" class="admin-form">
+            <?= csrf_field() ?><input type="hidden" name="action" value="health_policy_update"><input type="hidden" name="product" value="<?= e($product) ?>"><input type="hidden" name="release_id" value="<?= $rid ?>">
+            <div class="form-row">
+              <label>Min clients<input type="number" name="min_observed_clients" min="1" max="100000" value="<?= (int)($policy['min_observed_clients']??3) ?>"></label>
+              <label>Observe hours<input type="number" name="min_observation_hours" min="0" max="720" value="<?= (int)($policy['min_observation_hours']??6) ?>"></label>
+            </div>
+            <div class="form-row">
+              <label>Max failure bps<input type="number" name="max_failure_rate_bps" min="0" max="10000" value="<?= (int)($policy['max_failure_rate_bps']??500) ?>"></label>
+              <label>Max compat bps<input type="number" name="max_compat_failure_rate_bps" min="0" max="10000" value="<?= (int)($policy['max_compat_failure_rate_bps']??200) ?>"></label>
+            </div>
+            <div class="form-row">
+              <label>Min install bps<input type="number" name="min_install_rate_bps" min="0" max="10000" value="<?= (int)($policy['min_install_rate_bps']??5000) ?>"></label>
+              <label>Rollback bps<input type="number" name="rollback_failure_rate_bps" min="0" max="10000" value="<?= (int)($policy['rollback_failure_rate_bps']??1500) ?>"></label>
+            </div>
+            <label>Limited step %<input type="number" name="limited_step_percent" min="1" max="50" value="<?= (int)($policy['limited_step_percent']??25) ?>"></label>
+            <button class="button button-small" type="submit">Save health gates</button>
+          </form>
+        </td>
+        <td>
+          <?php if($snapshot&&$recommendation==='promote'&&$next): ?>
+            <strong>Suggested: <?= e(ucwords(str_replace('_',' ',(string)$next['state']))) ?> <?= (int)$next['percent'] ?>%</strong>
+            <form method="post" class="admin-form" style="margin-top:8px">
+              <?= csrf_field() ?><input type="hidden" name="action" value="health_promote"><input type="hidden" name="product" value="<?= e($product) ?>"><input type="hidden" name="release_id" value="<?= $rid ?>"><input type="hidden" name="snapshot_id" value="<?= (int)$snapshot['id'] ?>">
+              <label>Rationale<input name="rationale" maxlength="500" placeholder="Optional operator note"></label>
+              <button class="button button-small primary" type="submit">Approve promotion</button>
+            </form>
+            <form method="post" class="admin-form" style="margin-top:6px">
+              <?= csrf_field() ?><input type="hidden" name="action" value="health_reject"><input type="hidden" name="product" value="<?= e($product) ?>"><input type="hidden" name="release_id" value="<?= $rid ?>"><input type="hidden" name="snapshot_id" value="<?= (int)$snapshot['id'] ?>">
+              <label>Reason<input name="rationale" maxlength="500" placeholder="Why keep this cohort"></label>
+              <button class="button button-small" type="submit">Reject recommendation</button>
+            </form>
+          <?php elseif($recommendation==='rollback_review'): ?>
+            <strong>Review rollback</strong><br><small>v1.20 does not auto-rollback. Use the v1.10 lifecycle controls after reviewing the failure evidence.</small>
+          <?php else: ?>
+            <small>No promotion action is available until a freshly evaluated snapshot passes all configured gates.</small>
+          <?php endif; ?>
+        </td>
+      </tr>
+      <?php endforeach; ?>
+    <?php endforeach; ?>
+    </tbody>
+  </table></div>
+  <?php if($healthDecisions): ?><div class="admin-card-head" style="margin-top:18px"><div><h3>Promotion Decisions</h3><p>Recent explicit operator approvals and rejections.</p></div></div>
+  <div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>When</th><th>Client</th><th>Release</th><th>Decision</th><th>Transition</th><th>Rationale</th></tr></thead><tbody>
+    <?php foreach($healthDecisions as $decision): ?><tr><td><?= e((string)$decision['created_at']) ?></td><td><?= e((string)$decision['product']) ?></td><td>#<?= (int)$decision['release_id'] ?></td><td><?= e(ucfirst((string)$decision['decision'])) ?></td><td><?= e((string)$decision['from_state']) ?> <?= (int)$decision['from_percent'] ?>% → <?= e((string)$decision['to_state']) ?> <?= (int)$decision['to_percent'] ?>%</td><td><?= e((string)$decision['rationale']) ?></td></tr><?php endforeach; ?>
+  </tbody></table></div><?php endif; ?>
 </section>
 
 <section class="admin-card" id="controlled-rollouts" style="margin-bottom:24px">
