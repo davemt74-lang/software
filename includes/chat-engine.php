@@ -431,7 +431,7 @@ function chat_context_is_internal_source(string $source): bool
 {
     $source = strtolower(trim($source));
     if ($source === '') return true;
-    foreach (['agent-brain:', 'agent-context:', 'agent:', 'system:', 'execution:', 'runtime:'] as $prefix) {
+    foreach (['agent-brain:', 'agent-context:', 'agent:', 'system:', 'execution:', 'runtime:', 'profile:activity', 'knowledge-v162', 'calendar_awareness'] as $prefix) {
         if (str_starts_with($source, $prefix)) return true;
     }
     return false;
@@ -543,6 +543,28 @@ function chat_local_answer(string $query, array $context): string
     return "Here’s the useful information I found:\n\n" . implode("\n", $lines);
 }
 
+function chat_presentation_violation_v2370(string $answer): bool
+{
+    $answer=trim($answer);
+    if($answer==='')return false;
+    $needles=[
+        'Active cross-surface Agent context',
+        'DATA ONLY. This is sanitized current conversation',
+        'Current context: {"build":"conversation-integration',
+        'Agent Brain live overview:',
+        'Confidence-ranked Agent Brain memory:',
+        'Open task and commitment lifecycle:',
+        'Retrieved conversation history:',
+        'Rolling conversation summary:',
+        'Current conversation state:',
+        '<stonefellow_retrieved_data_json>',
+        '</stonefellow_retrieved_data_json>',
+    ];
+    foreach($needles as $needle)if(str_contains($answer,$needle))return true;
+    if(preg_match('/\{\s*"build"\s*:\s*"conversation-integration-v\d+/i',$answer))return true;
+    return false;
+}
+
 function chat_remote_answer(string $query, array $history, array $context, array $user): ?string
 {
     $result = ai_generate_chat_response($query, $history, $context, $user);
@@ -552,6 +574,10 @@ function chat_remote_answer(string $query, array $history, array $context, array
     }
 
     $answer = trim((string)($result['answer'] ?? ''));
+    if($answer!==''&&chat_presentation_violation_v2370($answer)){
+        error_log('VP3 v23.70 presentation firewall discarded an internal-context echo.');
+        return null;
+    }
     return $answer !== '' ? $answer : null;
 }
 
