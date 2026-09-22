@@ -542,7 +542,7 @@ function vp3_cognitive_feed_compose_v530(PDO $pdo,array $user,string $namespace,
         if($room<1)break;
         $items=array_slice($items,0,min($caps[$section],$room));
         if(!$items)continue;
-        foreach($items as $selected)$selectedForQueue[]=$selected;
+        if($section!=='setup')foreach($items as $selected)$selectedForQueue[]=$selected;
         foreach($items as &$item){
             unset($item['score']);
             unset($item['learning_adjustment']);
