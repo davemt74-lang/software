@@ -46,8 +46,6 @@
   let attentionCursor = 0;
   let attentionTimer = 0;
   let attentionBusy = false;
-  let responseTimer = 0;
-  let responseWindowActive = false;
   let speechQueue = Promise.resolve();
   let agentVoicePreference = cfg.agentVoiceEnabled !== false;
   let mainFeedOutcomeBusy = false;
@@ -587,17 +585,6 @@
     return false;
   }
 
-  function clearResponseWindow() {
-    if (responseTimer) window.clearTimeout(responseTimer);
-    responseTimer = 0;
-    responseWindowActive = false;
-  }
-
-  function markUserResponse() {
-    if (!responseWindowActive) return;
-    clearResponseWindow();
-  }
-
   function voiceButton() {
     return document.getElementById('chatVoiceButton');
   }
@@ -770,7 +757,6 @@
   document.addEventListener('keydown', event => {
     if (event.key === 'Escape' && drawer?.classList.contains('open')) closeDrawer();
   });
-  document.getElementById('chatForm')?.addEventListener('submit', markUserResponse, true);
   window.addEventListener('stonefellow:chat-voice', event => {
     if (String(event.detail?.type || '') === 'TRANSCRIPT_SUBMIT') markUserResponse();
   });
