@@ -77,8 +77,11 @@ assert.match(onboardingUi,/Keeping a deferred system selected and continuing rea
 assert.match(chat,/\$agentIdentityBuild = 'chat-onboarding-current-systems-v242-20260921'/,'activation must preserve the stable onboarding UI build id');
 assert.match(chat,/\$agentIdentityAssetBuild = \$agentIdentityBuild \. '-activation-v243'/,'guided setup must cache-bust only its assets');
 assert.match(chat,/\$cognitiveCardsBuild = 'cognitive-cards-v520-20260918'/,'activation must preserve Universal Cards v5.20 build id');
-assert.match(chat,/\$cognitiveCardsAssetBuild = \$cognitiveCardsBuild \. '-activation-v243-memory-v570'/,'activation card JS must receive an asset-only cache bust');
+assert.match(chat,/\$cognitiveCardsAssetBuild = \$cognitiveCardsBuild \. '-memory-v570'/,'the retained Universal Cards asset build chain must remain stable');
+assert.match(chat,/\$onboardingActivationAssetBuild = 'activation-v243'/,'activation must use a feature-specific asset suffix');
+assert.match(chat,/chat-cognitive-cards-v520\.js\?v=' \. \$cognitiveCardsAssetBuild \. '-' \. \$onboardingActivationAssetBuild/,'activation card JS must receive an asset-only cache bust');
 assert.match(chat,/\$cognitiveFeedBuild = 'cognitive-feed-v530-20260918'/,'activation must preserve Cognitive Feed v5.30 build id');
-assert.match(chat,/\$cognitiveFeedAssetBuild = \$cognitiveFeedBuild \. '-activation-v243-orchestration-v560-priority-v2310-proactive-v2340-calibration-v2350'/,'activation feed JS must receive an asset-only cache bust');
+assert.match(chat,/\$cognitiveFeedAssetBuild = \$cognitiveFeedBuild \. '-orchestration-v560-priority-v2310-proactive-v2340-calibration-v2350'/,'the retained Cognitive Feed asset build chain must remain stable');
+assert.match(chat,/chat-cognitive-feed-v530\.js\?v=' \. \$cognitiveFeedAssetBuild \. '-' \. \$onboardingActivationAssetBuild/,'activation feed JS must receive an asset-only cache bust');
 
 console.log('Onboarding Activation + Agent Follow-Through v2.43 contract: PASS');
