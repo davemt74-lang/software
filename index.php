@@ -15,6 +15,7 @@ $contactUrl = url('/contact.php');
 $transcriptionsUrl = url('/transcriptions.php');
 $teamsUrl = url('/teams.php');
 $homeServerUrl = url('/homeserver.php');
+$chromeDownloadUrl = url('/chrome-extension-download.php');
 $productUrl = url('/product.php');
 $servicesUrl = url('/services.php');
 ?>
@@ -316,7 +317,7 @@ $servicesUrl = url('/services.php');
     <div class="device-art"><img src="<?= e(url('/assets/home/devices-everything-you-need.webp')) ?>" alt="VP3 desktop and mobile experiences shown together" loading="lazy"></div>
     <div class="everything-copy"><p class="eyebrow">One identity across devices</p><h2 id="everything-title">Start where the work happens. Keep the context.</h2><p>Use VP3 on the web, desktop, mobile, and in Chrome. The same account, permissions, Agent, and approved context can carry the work forward without rebuilding your workflow on every surface.</p>
       <ul class="check-list"><li><span>✓</span><div><b>Before</b><p>Prepare with people, goals, research, calendar context, and prior commitments.</p></div></li><li><span>✓</span><div><b>During</b><p>Capture meetings, conversations, browser findings, annotations, and decisions.</p></div></li><li><span>✓</span><div><b>After</b><p>Follow through with tasks, booking, commerce, analytics, reminders, and Agent suggestions.</p></div></li></ul>
-      <div class="inline-actions"><a class="button button-dark" data-vp3-cta="home_devices_get_vp3" data-vp3-target="signup" href="<?= e($signupUrl) ?>">Get VP3 <span aria-hidden="true">→</span></a><a class="text-link" data-vp3-cta="home_devices_demo" data-vp3-target="demo" href="<?= e($demoUrl) ?>">See VP3 in action <span aria-hidden="true">→</span></a></div>
+      <div class="inline-actions"><a class="button button-dark" data-vp3-cta="home_devices_get_vp3" data-vp3-target="signup" href="<?= e($signupUrl) ?>">Get VP3 <span aria-hidden="true">→</span></a><a class="button button-outline" data-vp3-cta="home_devices_chrome_download" data-vp3-target="chrome_extension" href="<?= e($chromeDownloadUrl) ?>">Download Chrome Extension</a><a class="text-link" data-vp3-cta="home_devices_demo" data-vp3-target="demo" href="<?= e($demoUrl) ?>">See VP3 in action <span aria-hidden="true">→</span></a></div>
     </div>
   </div></section>
 
@@ -330,7 +331,6 @@ $servicesUrl = url('/services.php');
     <div class="home-choice-actions"><a class="button button-dark" data-vp3-cta="home_choice_services" data-vp3-target="services" href="<?= e($servicesUrl) ?>">Explore services →</a><a class="button button-outline" data-vp3-cta="home_choice_pricing" data-vp3-target="pricing" href="<?= e($pricingUrl) ?>">View pricing</a></div>
   </div></section>
 
-  <section class="final-cta"><div class="wrap final-cta-grid"><div><p class="eyebrow">Ready when you are</p><h2>Put one VP3 Agent across the work.</h2><p>Create your account or walk through the full browser-to-meeting-to-outcome workflow in a demo.</p></div><div class="final-actions"><a class="button button-dark" data-vp3-cta="home_final_get_vp3" data-vp3-target="signup" href="<?= e($signupUrl) ?>">Get VP3 <span aria-hidden="true">→</span></a><a class="button button-outline" data-vp3-cta="home_final_demo" data-vp3-target="demo" href="<?= e($demoUrl) ?>">Book a demo</a></div></div></section>
 </main>
 
 <footer class="footer">
