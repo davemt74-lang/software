@@ -797,11 +797,14 @@ function client_fleet_campaign_create_v160(PDO $pdo,array $input,int $actorUserI
     foreach((array)$inventory[$product] as $row){
         if((string)$row['channel']!==$channel)continue;
         if(!client_fleet_eligible_for_mode_v160($row,$mode,(string)$target['version']))continue;
-        if(!empty($row['incident'])||!empty($row['pinned']))continue;
         $plan=client_fleet_upgrade_plan_v160($pdo,$product,$channel,(string)$row['installed_version'],$targetId);
         $memberTarget=(int)($plan['intermediate_release_id']??0)>0?(int)$plan['intermediate_release_id']:$targetId;
+        $memberRelease=client_release_release_row_v110($pdo,$product,$memberTarget);
+        $compat=$memberRelease?client_fleet_target_compatibility_v160($pdo,$product,(int)$row['user_id'],(string)$row['scope_key'],$memberRelease):['status'=>'incompatible'];
+        $excluded=!empty($row['incident'])||!empty($row['pinned'])||(string)($compat['status']??'unknown')==='incompatible';
+        $memberState=$excluded?'excluded':'queued';
         $bucket=client_fleet_campaign_bucket_v160($campaignId,(int)$row['user_id'],(string)$row['scope_key']);
-        $insert->execute([$campaignId,(int)$row['user_id'],(string)$row['scope_key'],(string)$row['installed_version'],$memberTarget,$targetId,$bucket,'queued',$row['last_seen_at']??null]);
+        $insert->execute([$campaignId,(int)$row['user_id'],(string)$row['scope_key'],(string)$row['installed_version'],$memberTarget,$targetId,$bucket,$memberState,$row['last_seen_at']??null]);
         $added+=$insert->rowCount()>0?1:0;
     }
     client_release_audit_v110($pdo,$actorUserId,$product,$targetId,'fleet_campaign_created','','draft',[
