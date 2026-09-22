@@ -62,7 +62,7 @@ assert.match(controlledDownload,/require_permission\('account\.access'\)/);
 assert.match(controlledDownload,/client_release_scope_authorized_v110/);
 assert.match(controlledDownload,/client_release_set_update_state_v110/);
 
-assert.match(workflow,/Client Release Operations v1\.10/);
+assert.match(workflow,/Client Release Operations v1\.(?:10|20)/);
 assert.match(workflow,/client-release-rollouts-v110\.php/);
 assert.match(workflow,/client-release-controlled-rollouts-v110\.mjs/);
 assert.match(recovery,/client-release-controlled-rollouts-v110\.mjs/);
