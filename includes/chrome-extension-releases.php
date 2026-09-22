@@ -66,7 +66,9 @@ function chrome_extension_release_schema_ready(?PDO $pdo = null): bool
         return false;
     }
     try {
-        $stmt = $pdo->prepare('SHOW TABLES LIKE ?');
+        $stmt = $pdo->prepare(
+            'SELECT 1 FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name=? LIMIT 1'
+        );
         $stmt->execute(['chrome_extension_releases']);
         return (bool)$stmt->fetchColumn();
     } catch (Throwable $e) {
