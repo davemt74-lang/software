@@ -340,7 +340,7 @@ function client_release_automation_create_proposal_v170(PDO $pdo,array $proposal
     $policy=client_release_automation_policy_v170($pdo,(string)$proposal['product'],(string)$proposal['channel']);
     $cooldown=max(0,min(1440,(int)($proposal['cooldown_minutes']??$policy['cooldown_minutes']??30)));
     $existing=client_release_automation_existing_proposal_v170($pdo,$fingerprint,$cooldown);
-    if($existing)return $existing;
+    if($existing){$existing['_automation_created']=false;return $existing;}
     $expiresHours=max(1,min(168,(int)($proposal['proposal_expiry_hours']??$policy['proposal_expiry_hours']??24)));
     $expires=gmdate('Y-m-d H:i:s',time()+$expiresHours*3600);
     $stmt=$pdo->prepare("INSERT INTO client_release_automation_proposals_v170
@@ -363,7 +363,9 @@ function client_release_automation_create_proposal_v170(PDO $pdo,array $proposal
         'proposal_type'=>(string)$proposal['proposal_type'],'fingerprint'=>$fingerprint
     ]);
     $stmt=$pdo->prepare('SELECT * FROM client_release_automation_proposals_v170 WHERE id=?');$stmt->execute([$id]);
-    return $stmt->fetch()?:[];
+    $row=$stmt->fetch()?:[];
+    $row['_automation_created']=true;
+    return $row;
 }
 
 function client_release_automation_rollout_evidence_v170(PDO $pdo,string $product,int $releaseId): array
@@ -701,7 +703,7 @@ function client_release_automation_decide_proposal_v170(PDO $pdo,int $proposalId
             client_release_automation_event_v170($pdo,(int)($proposal['run_id']??0),$proposalId,$actorUserId,'proposal_approved',['note'=>$note]);
             return client_release_automation_execute_proposal_v170($pdo,$proposalId,$actorUserId,$note,false);
         }
-        $pdo->prepare("UPDATE client_release_automation_proposals_v170 SET proposal_status='approved',decided_by_user_id=?,decision_note=?,decided_at=NOW() WHERE id=?")
+        $pdo->prepare("UPDATE client_release_automation_proposals_v170 SET proposal_status='acknowledged',decided_by_user_id=?,decision_note=?,decided_at=NOW() WHERE id=?")
             ->execute([$actorUserId>0?$actorUserId:null,$note,$proposalId]);
     }else{
         $status=$decision==='reject'?'rejected':'deferred';
@@ -764,14 +766,14 @@ function client_release_automation_run_v170(PDO $pdo,string $triggerType='manual
             foreach(client_release_admin_rollouts_v110($pdo,$product) as $release){
                 $channel=(string)($release['channel']??'stable');$policy=client_release_automation_policy_v170($pdo,$product,$channel);
                 if(empty($policy['policy_enabled'])){$summary['skipped_policies']++;continue;}
-                try{$proposal=client_release_automation_rollout_proposal_v170($pdo,$product,$release,$policy,$runId);if($proposal){$created++;$summary['release_proposals']++;}}
+                try{$proposal=client_release_automation_rollout_proposal_v170($pdo,$product,$release,$policy,$runId);if($proposal&&!empty($proposal['_automation_created'])){$created++;$summary['release_proposals']++;}}
                 catch(Throwable $e){$summary['errors'][]=$product.' release #'.(int)$release['id'].': '.$e->getMessage();}
             }
         }
         foreach(client_fleet_campaigns_v160($pdo,100) as $campaign){
             $policy=client_release_automation_policy_v170($pdo,(string)$campaign['product'],(string)$campaign['channel']);
             if(empty($policy['policy_enabled']))continue;
-            try{$proposal=client_release_automation_fleet_proposal_v170($pdo,$campaign,$policy,$runId);if($proposal){$created++;$summary['fleet_proposals']++;}}
+            try{$proposal=client_release_automation_fleet_proposal_v170($pdo,$campaign,$policy,$runId);if($proposal&&!empty($proposal['_automation_created'])){$created++;$summary['fleet_proposals']++;}}
             catch(Throwable $e){$summary['errors'][]='fleet campaign #'.(int)$campaign['id'].': '.$e->getMessage();}
         }
     }
