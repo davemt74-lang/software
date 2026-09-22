@@ -7,7 +7,10 @@ require_once __DIR__ . '/includes/chrome-extension-releases.php';
 header('X-Content-Type-Options: nosniff');
 header('Cache-Control: no-store, private');
 
-$managedRelease = chrome_extension_latest_release('stable');
+$pdo=db();
+$managedRelease = ($pdo && function_exists('client_release_rollouts_schema_ready_v110') && client_release_rollouts_schema_ready_v110($pdo))
+    ? client_release_public_release_v110($pdo,'browser_companion','stable')
+    : chrome_extension_latest_release('stable');
 if ($managedRelease) {
     $storedPath = (string)($managedRelease['package_path'] ?? '');
     $base = realpath(chrome_extension_release_private_dir());
