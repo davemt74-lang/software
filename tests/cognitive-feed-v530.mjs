@@ -14,7 +14,7 @@ const upgrade=read('upgrade.php');
 const runtime=read('includes/cognitive-runtime-v500.php');
 const presentation=read('includes/cognitive-presentation-v510.php');
 
-assert.match(feed,/VP3_COGNITIVE_FEED_V530='vp3-cognitive-feed-v531-20260921'/);
+assert.match(feed,/VP3_COGNITIVE_FEED_V530='vp3-cognitive-feed-v530-20260918'/);
 assert.match(feed,/VP3_COGNITIVE_FEED_MAX_ITEMS_V530=12/);
 assert.match(feed,/CREATE TABLE IF NOT EXISTS cognitive_feed_item_state_v530/);
 assert.match(feed,/PRIMARY KEY \(owner_user_id,agent_namespace,item_key\)/,'feed state must be user + Agent scoped');
@@ -94,7 +94,8 @@ assert.match(css,/@media\(max-width:820px\)/);
 assert.match(css,/@media\(max-width:520px\)/);
 assert.match(css,/prefers-reduced-motion:reduce/);
 
-assert.match(chat,/\$cognitiveFeedBuild = 'cognitive-feed-v531-activation-20260921'/);
+assert.match(chat,/\$cognitiveFeedBuild = 'cognitive-feed-v530-20260918'/);
+assert.match(chat,/\$cognitiveFeedAssetBuild = \$cognitiveFeedBuild \. '-activation-v243-orchestration-v560-priority-v2310-proactive-v2340-calibration-v2350'/,'activation must cache-bust feed assets without changing the stable v5.30 build id');
 assert.match(chat,/api\/cognitive-feed-v530\.php/);
 assert.match(chat,/chat-cognitive-feed-v530\.css/);
 assert.match(chat,/chat-cognitive-feed-v530\.js/);
