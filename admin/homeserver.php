@@ -399,6 +399,7 @@ require __DIR__ . '/_header.php';
               <div class="form-row">
                 <label>Proposal expiry hours<input type="number" name="proposal_expiry_hours" min="1" max="168" value="<?= (int)$autoPolicy['proposal_expiry_hours'] ?>"></label>
                 <label>Cooldown minutes<input type="number" name="cooldown_minutes" min="0" max="1440" value="<?= (int)$autoPolicy['cooldown_minutes'] ?>"></label>
+                <label>Fleet observation minutes<input type="number" name="fleet_observation_minutes" min="0" max="10080" value="<?= (int)$autoPolicy['fleet_observation_minutes'] ?>"></label>
                 <label>Completion gate bps<input type="number" name="fleet_completion_gate_bps" min="5000" max="10000" value="<?= (int)$autoPolicy['fleet_completion_gate_bps'] ?>"></label>
                 <label>Failure hold bps<input type="number" name="fleet_failure_hold_bps" min="0" max="5000" value="<?= (int)$autoPolicy['fleet_failure_hold_bps'] ?>"></label>
               </div>
