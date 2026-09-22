@@ -91,6 +91,7 @@
   let lastSpeechEndedAt=0;
   let speechEpoch=0;
   let activeSpeechEpoch=0;
+  let externalSpeechEpoch=0;
   const events=[];
   let systemFallbackAnnounced=false;
 
@@ -608,7 +609,26 @@
   syncConversation(lastConversationId);if(!agentVoiceMaster&&voiceOn){voiceOn=false;try{localStorage.setItem(MODE_KEY,'0');}catch(error){}}syncButton();if(button.disabled){voiceOn=false;writeMode();setAgentState('error','Voice recognition is not available in this browser.');}else{if(voiceOn){setAgentState('listening','Listening…');scheduleListening(0,'boot-persisted');}else setAgentState('idle');setTimeout(()=>void waitForInitialConversationRestore().then(presentIntro),80);}renderDebug();
   window.addEventListener('storage',event=>{if(event.key===AGENT_VOICE_SYNC_KEY&&event.newValue){try{const sync=JSON.parse(event.newValue);if(sync?.enabled===false){agentVoiceMaster=false;if(voiceOn)disableVoice({persist:true});}}catch(error){}return;}if(event.key!==MODE_KEY)return;const next=event.newValue==='1'&&agentVoiceMaster;if(next===voiceOn)return;if(next)enableVoice({persist:false,start:true});else disableVoice({persist:false});});
   window.addEventListener('stonefellow:agent-voice',event=>{const enabled=event.detail?.enabled!==false;agentVoiceMaster=enabled;if(!enabled&&voiceOn)disableVoice({persist:true});});
+  window.addEventListener('stonefellow:agent-proactive-speech',event=>{
+    const state=String(event.detail?.state||'');
+    if(state==='start'){
+      if(!voiceOn)return;
+      const message=String(event.detail?.text||'').trim();
+      if(!message)return;
+      stopRecognition('proactive-response',true);resetPendingFinal();
+      currentSpokenText=message;lastSpokenText=message;lastSpeechEndedAt=0;
+      externalSpeechEpoch=++speechEpoch;activeSpeechEpoch=externalSpeechEpoch;
+      onSpeechStart(externalSpeechEpoch);
+      log('PROACTIVE_SPEECH_ATTACHED',{epoch:externalSpeechEpoch,chars:message.length});
+      return;
+    }
+    if(state==='end'&&externalSpeechEpoch>0){
+      const epoch=externalSpeechEpoch;externalSpeechEpoch=0;
+      if(epoch===activeSpeechEpoch&&speaking)onSpeechEnd(epoch);
+      log('PROACTIVE_SPEECH_RELEASED',{epoch});
+    }
+  });
   window.dispatchEvent(new CustomEvent('stonefellow:conversation-engine-ready',{detail:{build:BUILD,source:'agent-chat'}}));log('READY',{voiceOn,ctor:typeof SpeechRecognitionCtor,barge:'speech-recognition',echoGuard:'canonical',fastVoice:'streaming',premiumUnlock:true,pauseWindowMs:TURN_END_PAUSE_MS,lifecycle:'canonical'});
 
-  window.addEventListener('pagehide',()=>{resetPendingFinal();pendingIntroSpeech='';introRetryScheduled=false;bargeArmPending=false;clearBargeArmTimer();clearRestart();clearStartWatchdog();clearBargeRestart();clearBargeCaptureTimer();stopBarge('pagehide');bargeCapturing=false;stopRecognition('pagehide',true);releaseProcessedMic('pagehide');recognition=null;recognitionStarting=false;recognitionListening=false;activeSpeechEpoch=++speechEpoch;currentSpokenText='';lastSpokenText='';lastSpeechEndedAt=0;try{premium?.stop?.();}catch(error){}try{window.speechSynthesis?.cancel();}catch(error){}if(activeRequest&&!activeRequest.controller.signal.aborted)activeRequest.controller.abort();activeRequest=null;if(window.fetch===routedFetch)window.fetch=previousFetch;delete document.body.dataset.stonefellowAgentState;},{once:true});
+  window.addEventListener('pagehide',()=>{externalSpeechEpoch=0;resetPendingFinal();pendingIntroSpeech='';introRetryScheduled=false;bargeArmPending=false;clearBargeArmTimer();clearRestart();clearStartWatchdog();clearBargeRestart();clearBargeCaptureTimer();stopBarge('pagehide');bargeCapturing=false;stopRecognition('pagehide',true);releaseProcessedMic('pagehide');recognition=null;recognitionStarting=false;recognitionListening=false;activeSpeechEpoch=++speechEpoch;currentSpokenText='';lastSpokenText='';lastSpeechEndedAt=0;try{premium?.stop?.();}catch(error){}try{window.speechSynthesis?.cancel();}catch(error){}if(activeRequest&&!activeRequest.controller.signal.aborted)activeRequest.controller.abort();activeRequest=null;if(window.fetch===routedFetch)window.fetch=previousFetch;delete document.body.dataset.stonefellowAgentState;},{once:true});
 })();
