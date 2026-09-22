@@ -11,6 +11,9 @@ on:
       - main
       - recovery/**
   pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 9 * * *'
 
 permissions:
   contents: read
@@ -42,3 +45,6 @@ jobs:
 
       - name: Run recovered baseline suite
         run: python3 tools/run_recovery_baseline.py
+
+      - name: CI workflow governance
+        run: node tests/ci-workflow-consolidation.mjs
