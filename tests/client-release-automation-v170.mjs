@@ -57,6 +57,7 @@ assert.ok(automation.includes('kill_switch'));
 assert.ok(automation.includes('dry_run'));
 assert.ok(automation.includes('proposal_expiry_hours'));
 assert.ok(automation.includes('cooldown_minutes'));
+assert.ok(automation.includes('fleet_observation_minutes'));
 assert.ok(automation.includes('created_at>=?'),'proposal cooldown must suppress immediate churn after recent decisions');
 assert.ok(automation.includes('fleet_completion_gate_bps'));
 assert.ok(automation.includes('fleet_failure_hold_bps'));
@@ -99,6 +100,8 @@ const execute=automation.slice(executeStart,executeEnd);
 assert.ok(execute.includes('client_release_health_approve_promotion_v120'));
 assert.ok(execute.includes('client_fleet_campaign_set_v160'));
 assert.ok(execute.includes("if($systemExecution&&(empty($control['automation_enabled'])||!empty($control['kill_switch'])||!empty($control['dry_run'])))"));
+assert.ok(execute.includes('Current automation policy no longer permits automatic execution.'));
+assert.ok(execute.includes('Current v1.40 risk no longer permits automatic execution.'));
 
 assert.doesNotMatch(automation,/shell_exec\s*\(|proc_open\s*\(|passthru\s*\(/,'automation runtime must not execute client software');
 assert.ok(rollouts.includes('client_release_rollout_update_v110'));
@@ -115,6 +118,7 @@ assert.ok(upgrade.includes('client_release_automation_ensure_schema_v170'));
 assert.ok(cli.includes("PHP_SAPI!=='cli'"));
 assert.ok(cli.includes("client_release_automation_run_v170($pdo,'cli'"));
 assert.ok(cli.includes("gmdate('Y-m-d-H')"));
+assert.ok(automation.includes("INSERT IGNORE"),'scheduled runner must be concurrency-safe and idempotent');
 
 assert.ok(admin.includes('Governed Release Automation'));
 assert.ok(admin.includes('automation_control_update'));
@@ -125,6 +129,7 @@ assert.ok(admin.includes('automation_hold_release'));
 assert.ok(admin.includes('Global kill switch'));
 assert.ok(admin.includes('Approval Queue'));
 assert.ok(admin.includes('Dry run'));
+assert.ok(admin.includes('Fleet observation minutes'));
 assert.ok(admin.includes('GA promotion remains manual'));
 
 assert.match(workflow,/Client Release Operations v1\.70/);
