@@ -168,6 +168,54 @@ function chat_onboarding_v241_workspace_state(PDO $pdo,array $user,array $permis
     ];
 }
 
+function chat_onboarding_v241_activation_state(array $workspace,array $intelligence,bool $requiredSetupComplete): array
+{
+    $interests=(array)($intelligence['feature_interests']??[]);
+    $priority=['browser'=>95,'booking'=>92,'commerce'=>90,'teams'=>86,'homeserver'=>84,'transcription'=>76,'meetings'=>74,'calendar'=>72,'analytics'=>70];
+    $items=[];$pending=[];$selectedCount=0;$configuredCount=0;$deferredCount=0;$blockedCount=0;
+    foreach($workspace as $key=>$item){
+        $interest=(string)($item['interest_key']??'');if($interest==='')continue;
+        $selected=!empty($interests[$interest]);
+        $dismissed=!empty($interests['activation.dismiss.'.$interest]);
+        $deferRaw=$interests['activation.defer.'.$interest]??false;
+        $deferUntil=is_string($deferRaw)?trim($deferRaw):'';
+        $deferTs=$deferUntil!==''?strtotime($deferUntil):false;
+        $configured=!empty($item['configured']);
+        $permitted=!empty($item['permitted']);
+        $available=!empty($item['available']);
+        $deferred=$selected&&!$configured&&!$dismissed&&$deferTs!==false&&$deferTs>time();
+        if($configured)$status='complete';
+        elseif($dismissed||!$selected)$status='not_interested';
+        elseif(!$permitted)$status='locked';
+        elseif(!$available)$status='unavailable';
+        elseif($deferred)$status='deferred';
+        else$status='pending';
+        if($selected){
+            $selectedCount++;
+            if($configured)$configuredCount++;
+            elseif($status==='deferred')$deferredCount++;
+            elseif(in_array($status,['locked','unavailable'],true))$blockedCount++;
+        }
+        $row=$item+[
+            'key'=>(string)$key,'selected'=>$selected,'dismissed'=>$dismissed,'deferred'=>$deferred,
+            'defer_until'=>$deferred?$deferUntil:'','activation_status'=>$status,'priority'=>(int)($priority[$key]??60),
+            'current_status'=>(string)($item['status']??''),
+        ];
+        $items[(string)$key]=$row;
+        if($status==='pending')$pending[]=$row;
+    }
+    usort($pending,static fn(array $a,array $b): int=>((int)$b['priority']<=>((int)$a['priority']))?:strcmp((string)$a['label'],(string)$b['label']));
+    $milestones=[['key'=>'core','label'=>'Agent + profile ready','complete'=>$requiredSetupComplete]];
+    foreach($items as $key=>$item)if(!empty($item['selected']))$milestones[]=['key'=>$key,'label'=>(string)$item['label'],'complete'=>!empty($item['configured'])];
+    $percent=$selectedCount>0?(int)round(($configuredCount/$selectedCount)*100):100;
+    return [
+        'build'=>'onboarding-activation-v243-20260921','items'=>$items,'next_action'=>$pending[0]??null,
+        'pending_count'=>count($pending),'deferred_count'=>$deferredCount,'blocked_count'=>$blockedCount,
+        'selected_count'=>$selectedCount,'configured_count'=>$configuredCount,'activation_percent'=>$percent,
+        'milestones'=>$milestones,'complete'=>$requiredSetupComplete&&$selectedCount===$configuredCount,
+    ];
+}
+
 function chat_onboarding_v241_package_state(array $user): array
 {
     if(!function_exists('subscription_current'))return ['available'=>false];
@@ -186,7 +234,8 @@ function chat_onboarding_v241_state(PDO $pdo,array $user): array
     $requiredCount=count($requiredSetup);$requiredReady=$requiredCount-count($missingRequired);$denominator=max(1,$requiredCount+count($setupCandidates));$completion=(int)round((($requiredReady+$setupReady)/$denominator)*100);
     $package=chat_onboarding_v241_package_state($user);$intelligence=onboarding_intelligence_state($pdo,$user);$workspace=chat_onboarding_v241_workspace_state($pdo,$user,$permissions);
     $interests=(array)($intelligence['feature_interests']??[]);foreach($workspace as $key=>&$item){$interest=(string)($item['interest_key']??'');$item['selected']=$interest!==''&&!empty($interests[$interest]);}unset($item);
-    return ['build'=>STONEFELLOW_CHAT_ONBOARDING_V241,'user'=>['id'=>(int)$user['id'],'display_name'=>(string)($user['display_name']??'')],'system_agent_name'=>system_agent_name(),'agent'=>$defaultAgent,'profile'=>$profile,'profile_url'=>(string)($profileState['profile_url']??''),'suggested_username'=>chat_onboarding_v241_username($pdo,$user,$profile),'public_agent_status'=>$publicAgent,'chat'=>$chat,'voice'=>$voice,'permissions'=>$permissions,'package'=>$package,'intelligence'=>$intelligence,'workspace'=>$workspace,'setup'=>$requiredSetup,'capabilities'=>$capabilities,'missing'=>$missingRequired,'unavailable'=>$unavailable,'locked'=>$locked,'completion_percent'=>$completion,'required_setup_complete'=>!$missingRequired,'onboarding_dismissed'=>$onboardingComplete];
+    $activation=chat_onboarding_v241_activation_state($workspace,$intelligence,!$missingRequired);
+    return ['build'=>STONEFELLOW_CHAT_ONBOARDING_V241,'user'=>['id'=>(int)$user['id'],'display_name'=>(string)($user['display_name']??'')],'system_agent_name'=>system_agent_name(),'agent'=>$defaultAgent,'profile'=>$profile,'profile_url'=>(string)($profileState['profile_url']??''),'suggested_username'=>chat_onboarding_v241_username($pdo,$user,$profile),'public_agent_status'=>$publicAgent,'chat'=>$chat,'voice'=>$voice,'permissions'=>$permissions,'package'=>$package,'intelligence'=>$intelligence,'workspace'=>$workspace,'activation'=>$activation,'setup'=>$requiredSetup,'capabilities'=>$capabilities,'missing'=>$missingRequired,'unavailable'=>$unavailable,'locked'=>$locked,'completion_percent'=>$completion,'required_setup_complete'=>!$missingRequired,'onboarding_dismissed'=>$onboardingComplete];
 }
 
 function chat_onboarding_v241_empty_tool_result(): array{return ['handled'=>false,'answer'=>'','stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[]];}
@@ -194,7 +243,7 @@ function chat_onboarding_v241_empty_tool_result(): array{return ['handled'=>fals
 function chat_onboarding_v241_tool(string $query,array $user): array
 {
     $empty=chat_onboarding_v241_empty_tool_result();$q=mb_strtolower(trim($query));if($q==='')return $empty;
-    $intent=(bool)preg_match('/\b(onboarding|setup|set up|package|plan|subscription|trial|tokens?|quota|usage|upgrade|recommend|best plan|stem editor|video editor|profile agent|agent voice|voice clone|browser companion|annotations?|meetings?|calendar|booking|ecommerce|commerce|agent analytics|analytics|homeserver|teams?|team seats?|what.*missing|finish.*setup)\b/u',$q);if(!$intent)return $empty;
+    $intent=(bool)preg_match('/\b(onboarding|setup|set up|package|plan|subscription|trial|tokens?|quota|usage|upgrade|recommend|best plan|stem editor|video editor|profile agent|agent voice|voice clone|browser companion|annotations?|meetings?|calendar|booking|ecommerce|commerce|agent analytics|analytics|homeserver|teams?|team seats?|what.*missing|finish.*setup|set up next|setup next|getting started|activation|what.*left.*setup)\b/u',$q);if(!$intent)return $empty;
     $pdo=db();if(!$pdo)return $empty;
     try{if(!user_agent_system_schema_ready_v236($pdo)||!profile_agent_schema_ready($pdo)||!chat_settings_schema_ready_v237($pdo))return $empty;$state=chat_onboarding_v241_state($pdo,$user);}catch(Throwable $e){return $empty;}
     $result=$empty;$result['handled']=true;$result['sources'][]=['source'=>'account:onboarding-state','title'=>'Package and account setup state'];$pkg=$state['package']??[];$balance=$pkg['ai']??[];$cap=$state['capabilities']??[];$intel=$state['intelligence']??[];$recommendation=$intel['package_recommendation']??null;
@@ -228,6 +277,18 @@ function chat_onboarding_v241_tool(string $query,array $user): array
         return $result;
     }
     if(str_contains($q,'profile agent')){$item=$cap['profile_agent']??[];$result['answer']=empty($item['permitted'])?'Profile Agent is not included in your current package. This does not reduce your onboarding completion.':(!empty($item['available'])?'Your Profile Agent is enabled and live.':'Profile Agent is included but still needs setup or activation.');if(!empty($item['permitted']))$result['actions'][]=['type'=>'open_url','label'=>'Open Profile Agent','url'=>(string)$item['setup_url']];else$result['actions'][]=['type'=>'open_url','label'=>'View Packages','url'=>url('/subscription.php')];return $result;}
+    $activation=(array)($state['activation']??[]);
+    if(preg_match('/\b(set up next|setup next|getting started|activation|what.*left.*setup|what.*set up next)\b/u',$q)){
+        $next=is_array($activation['next_action']??null)?$activation['next_action']:null;
+        if($next){
+            $result['answer']='Your next selected VP3 setup step is '.(string)$next['label'].'. '.(string)($next['current_status']??'');
+            $result['actions'][]=['type'=>'open_url','label'=>(string)($next['action_label']??('Open '.(string)$next['label'])),'url'=>(string)($next['setup_url']??url('/chat.php?setup=1'))];
+        }elseif((int)($activation['deferred_count']??0)>0)$result['answer']='Your selected setup items are either complete or deferred for later. I will surface deferred items again when their reminder date arrives.';
+        elseif((int)($activation['blocked_count']??0)>0)$result['answer']='Your selected setup has no immediate action, but one or more items are currently unavailable or outside this package.';
+        else$result['answer']='Your selected VP3 systems are activated. You can reopen VP3 Setup any time to add another system.';
+        $result['actions'][]=['type'=>'open_url','label'=>'Open VP3 Setup','url'=>url('/chat.php?setup=1')];
+        return $result;
+    }
     if(str_contains($q,'voice clone')){$item=$cap['voice_clone']??[];$result['answer']=empty($item['permitted'])?'Voice Clone is not included in your current package.':(!empty($item['available'])?'Your voice clone is ready.':'Voice Clone is included but has not been created yet.');$result['actions'][]=['type'=>'open_url','label'=>empty($item['permitted'])?'View Packages':'Open Voice Profile','url'=>empty($item['permitted'])?url('/subscription.php'):(string)$item['setup_url']];return $result;}
 
     $workspace=(array)($state['workspace']??[]);
