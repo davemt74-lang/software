@@ -134,7 +134,7 @@ function vp3_upgrade_complete(): bool
         && vp3_cognitive_memory_schema_ready_v570()
         && table_exists('homeserver_connections')
         && table_exists('homeserver_releases')
-        && client_release_rollouts_schema_ready_v110($pdo ?? db())
+        && client_release_rollouts_schema_ready_v110()
         && table_exists('homeserver_chat_sessions')
         && table_exists('agent_compute_preferences')
         && table_exists('agent_compute_overrides')
