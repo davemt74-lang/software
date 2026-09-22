@@ -5,6 +5,8 @@ require_permission('account.access');
 
 $pdo=db();$user=current_user();
 if(!$pdo||!$user){http_response_code(401);exit('Authentication required.');}
+if(!client_release_rollouts_schema_ready_v110($pdo)){http_response_code(503);exit('Client release service is not ready.');}
+
 $product=(string)($_GET['product']??'');
 $releaseId=max(0,(int)($_GET['release_id']??0));
 $scope=client_release_scope_key_v110((string)($_GET['scope']??'account'));
