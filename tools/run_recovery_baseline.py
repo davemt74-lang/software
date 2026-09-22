@@ -119,6 +119,7 @@ NODE_TESTS = [
     'tests/client-release-risk-v140.mjs',
     'tests/client-release-readiness-v150.mjs',
     'tests/client-fleet-maintenance-v160.mjs',
+    'tests/client-release-automation-v170.mjs',
 ]
 
 HISTORICAL_WORKFLOW_COUPLED_TESTS = [
