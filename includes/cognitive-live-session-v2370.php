@@ -418,6 +418,12 @@ function vp3_live_session_note_action_v2370(array $user,string $actor,string $ev
             vp3_live_session_record_activity_v2370($user,(string)$context['surface'],'working',$context,'user_action',false);
         }
         $session=vp3_live_session_current_v2370($pdo,$user,$context,true);if(!$session)return ['ready'=>false,'build'=>VP3_COGNITIVE_LIVE_SESSION_V2370];
+        $existingState=json_decode((string)($session['state_json']??''),true);if(!is_array($existingState))$existingState=[];
+        $knowledgeChanged=false;$knowledgeScope=null;
+        if(array_key_exists('knowledge_scope',$context)){
+            $knowledgeScope=$context['knowledge_scope'];
+            $knowledgeChanged=vp3_live_session_json_v2370($existingState['knowledge_scope']??null)!==vp3_live_session_json_v2370($knowledgeScope);
+        }
         $actions=json_decode((string)($session['last_actions_json']??''),true);if(!is_array($actions))$actions=[];
         $actions[$actor]=['event_type'=>$eventType,'summary'=>$summary,'at'=>gmdate('c')];
         $actions=array_intersect_key($actions,array_flip(['user','agent','tool','browser','external']));
@@ -426,16 +432,23 @@ function vp3_live_session_note_action_v2370(array $user,string $actor,string $ev
         $params=[$summary,vp3_live_session_json_v2370($actions)];
         if($actor==='user')$sql.=",last_activity_at=UTC_TIMESTAMP()";
         if(isset($context['conversation_id'])){$sql.=",current_conversation_id=?";$params[]=max(0,(int)$context['conversation_id']);}
-        if(isset($context['knowledge_scope'])){
-            $state=json_decode((string)($session['state_json']??''),true);if(!is_array($state))$state=[];
-            $state['knowledge_scope']=$context['knowledge_scope'];$sql.=",state_json=?";$params[]=vp3_live_session_json_v2370($state);
+        if(array_key_exists('knowledge_scope',$context)){
+            $state=$existingState;$state['knowledge_scope']=$knowledgeScope;$sql.=",state_json=?";$params[]=vp3_live_session_json_v2370($state);
         }
         $sql.=" WHERE id=? AND owner_user_id=?";$params[]=(int)$session['id'];$params[]=$uid;
         $pdo->prepare($sql)->execute($params);
         $fresh=vp3_live_session_open_row_v2370($pdo,$uid)?:$session;
+        $refs=vp3_live_session_object_refs_v2370($fresh,$context);
         vp3_live_session_record_event_v2370($pdo,$user,$fresh,$eventType,[
             'actor'=>$actor,'summary'=>$summary,'surface'=>(string)($context['surface']??'chat'),'conversation_id'=>max(0,(int)($context['conversation_id']??0))
-        ],vp3_live_session_object_refs_v2370($fresh,$context));
+        ],$refs);
+        if($knowledgeChanged){
+            $safeScope=is_array($knowledgeScope)?$knowledgeScope:[];
+            vp3_live_session_record_event_v2370($pdo,$user,$fresh,'chat.knowledge_scope_changed',[
+                'mode'=>(string)($safeScope['mode']??'off'),
+                'folder_id'=>max(0,(int)($safeScope['folder_id']??0)),
+            ],$refs);
+        }
         return vp3_live_session_public_v2370($fresh);
     }catch(Throwable $e){
         error_log('VP3 v23.70 live-session action failed: '.$e->getMessage());
