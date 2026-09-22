@@ -557,6 +557,7 @@ function chat_presentation_violation_v2370(string $answer): bool
         'Retrieved conversation history:',
         'Rolling conversation summary:',
         'Current conversation state:',
+        'INTERNAL SESSION STATE',
         '<stonefellow_retrieved_data_json>',
         '</stonefellow_retrieved_data_json>',
     ];
