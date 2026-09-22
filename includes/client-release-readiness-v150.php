@@ -189,6 +189,10 @@ function client_release_readiness_manifest_update_v150(PDO $pdo,string $product,
         if(!$rollback||(string)($rollback['channel']??'stable')!==(string)($release['channel']??'stable')||$rollbackReleaseId===$releaseId){
             throw new RuntimeException('Rollback target must be a different release on the same channel.');
         }
+        if(client_release_version_valid_v100((string)($rollback['version']??''))&&client_release_version_valid_v100((string)($release['version']??''))
+            &&version_compare((string)$rollback['version'],(string)$release['version'],'>=')){
+            throw new RuntimeException('Rollback target must be older than the release being prepared.');
+        }
     }
 
     $stmt=$pdo->prepare("INSERT INTO client_release_readiness_manifest_v150
@@ -321,6 +325,14 @@ function client_release_readiness_rollback_gate_v150(PDO $pdo,string $product,ar
     if(!$target||(string)($target['channel']??'stable')!==(string)($release['channel']??'stable')||empty($target['is_published'])){
         return ['key'=>'rollback','status'=>'blocked','detail'=>'Rollback release must be a published release on the same channel.'];
     }
+    if(client_release_version_valid_v100((string)($target['version']??''))&&client_release_version_valid_v100((string)($release['version']??''))
+        &&version_compare((string)$target['version'],(string)$release['version'],'>=')){
+        return ['key'=>'rollback','status'=>'blocked','detail'=>'Rollback release must be older than the release being prepared.'];
+    }
+    $targetRollout=client_release_rollout_for_v110($pdo,$product,$rid,$target);
+    if(!in_array((string)($targetRollout['lifecycle_state']??''),['superseded','general_availability'],true)){
+        return ['key'=>'rollback','status'=>'blocked','detail'=>'Rollback target must be a known-good GA or superseded release.'];
+    }
     if(client_release_incident_active_for_release_v130($pdo,$product,$rid)){
         return ['key'=>'rollback','status'=>'blocked','detail'=>'Rollback target is currently governed by an active incident.'];
     }
@@ -411,6 +423,8 @@ function client_release_readiness_risk_accepted_v150(PDO $pdo,string $product,in
     if(!client_release_risk_schema_ready_v140($pdo))return false;
     $snapshot=client_release_risk_latest_snapshot_v140($pdo,$product,$releaseId);
     if(!$snapshot||!in_array((string)($snapshot['risk_level']??''),['high','critical'],true))return false;
+    $assessedAt=strtotime((string)($snapshot['assessed_at']??''));
+    if($assessedAt===false||$assessedAt<time()-86400)return false;
     $stmt=$pdo->prepare("SELECT 1 FROM client_release_risk_reviews_v140
       WHERE product=? AND release_id=? AND risk_snapshot_id=? AND decision='accepted_risk'
       ORDER BY id DESC LIMIT 1");
