@@ -87,6 +87,7 @@ require_once __DIR__.'/client-release-risk-v140.php';
 require_once __DIR__.'/client-release-readiness-v150.php';
 require_once __DIR__.'/client-fleet-maintenance-v160.php';
 require_once __DIR__.'/client-release-automation-v170.php';
+require_once __DIR__.'/client-release-command-center-v180.php';
 require_once __DIR__.'/agent-chat-activity.php';
 require_once __DIR__.'/artist-workspaces-v104.php';
 require_once __DIR__.'/team-workspace-lifecycle-v350.php';

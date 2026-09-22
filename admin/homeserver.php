@@ -321,6 +321,7 @@ require __DIR__ . '/_header.php';
     <p>Manage the downloadable VP3 Browser Companion package and Windows HomeServer releases from one controlled release surface.</p>
   </div>
   <div class="form-actions">
+    <a class="button primary" href="<?= e(url('/admin/release-command-center.php')) ?>">Release Command Center</a>
     <a class="button" href="<?= e(url('/chrome-extension-download.php')) ?>" target="_blank" rel="noopener">Download Chrome Extension</a>
     <a class="button" href="<?= e(url('/api/homeserver-release.php')) ?>" target="_blank" rel="noopener">HomeServer Release API</a>
   </div>
