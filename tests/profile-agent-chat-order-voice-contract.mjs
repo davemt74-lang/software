@@ -38,7 +38,7 @@ assert.match(settingsJs, /ensureAgentVoiceToggle/, 'legacy Main Feed profile men
 assert.match(settingsJs, /stonefellow:agent-voice/, 'legacy Agent Voice changes are broadcast to active Chat runtime');
 assert.match(attentionApi, /'agent_voice_enabled'=>member_agent_voice_enabled\(\$user\)/, 'Activity Center state must include persisted Agent Voice preference');
 assert.match(attentionJs, /function agentVoiceEnabled\(/, 'attention speech must read Agent Voice preference');
-assert.match(attentionJs, /if \(!agentVoiceEnabled\(\)\) return/, 'voice-off attention stays visual without speaking');
+assert.match(attentionJs, /if \(!agentVoiceEnabled\(\) \|\| generation !== speechGeneration\) return false;/, 'voice-off or cancelled attention stays visual without speaking');
 assert.match(attentionJs, /state = await request\('state'\)[\s\S]*agent_voice_enabled[\s\S]*agentVoicePreference = state\.agent_voice_enabled !== false/, 'Activity Center must apply persisted Agent Voice before polling');
 assert.match(attentionJs, /refresh\(false\)\.finally\(startAttentionPolling\)/, 'initial attention polling waits for the voice preference state request');
 assert.match(attentionJs, /function chatCanvasAvailable\(/, 'Activity Center can run on member pages without pretending they are Chat canvases');
