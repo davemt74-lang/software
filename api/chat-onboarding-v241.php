@@ -74,6 +74,7 @@ try {
         $draft=is_array($input['draft']??null)?$input['draft']:[];
         $voice=array_key_exists('voice_preference',$input)?(string)$input['voice_preference']:null;
         $interests=is_array($input['feature_interests']??null)?$input['feature_interests']:[];
+        if($voice==='on'||$voice==='off')chat_settings_save_agent_voice_v237($pdo,$user,$voice==='on');
         onboarding_intelligence_save_progress($pdo,$user,$step,$draft,$voice,$interests);
         chat_onboarding_v241_json(['ok'=>true,'state'=>chat_onboarding_v241_full_state($pdo,$user)]);
     }
@@ -106,9 +107,10 @@ try {
     $permissions=chat_onboarding_v241_permission_state($user);
     $profileAgentAllowed=!empty($permissions['profile_agent']);
     $profileChatAllowed=!empty($permissions['profile_chat']);
-    $voiceAllowed=!empty($permissions['voice_profile']);
-    $voiceRequested=(string)($prefs['voice_preference']??'off')==='on';
-    $voiceEnabled=$voiceRequested&&$voiceAllowed;
+    $voiceAllowed=chat_settings_agent_voice_allowed_v237($user);
+    $savedVoicePreference=(string)($prefs['voice_preference']??'');
+    $voiceCurrent=chat_settings_agent_voice_enabled_v237($pdo,$user);
+    $voiceEnabled=$savedVoicePreference==='on'?($voiceAllowed?true:false):($savedVoicePreference==='off'?false:$voiceCurrent);
     $enableProfileAgent = $profileAgentAllowed && $profileChatAllowed && !empty($merged['profile_agent_enabled']);
     $profilePublic = !empty($merged['profile_public']);
     $socialChat = !empty($merged['social_chat_enabled']);
@@ -128,7 +130,9 @@ try {
                 'display_name' => $agentName,
                 'agent_role' => 'personal',
                 'is_default' => 1,
-                'voice_enabled' => $voiceEnabled ? 1 : 0,
+                // Per-Agent voice_enabled is the selected voice-source flag (default vs clone),
+                // not the account-wide spoken Agent Voice master.
+                'voice_enabled' => 0,
             ]);
         } else {
             $agent = user_agent_update_v236($pdo, $user, [
@@ -139,7 +143,9 @@ try {
                 'is_default' => 1,
                 'is_profile_agent' => $enableProfileAgent ? 1 : (int)($agent['is_profile_agent'] ?? 0),
                 'is_active' => 1,
-                'voice_enabled' => $voiceEnabled ? 1 : 0,
+                // Preserve an existing per-Agent voice-source choice. The global
+                // Agent Voice master is saved through chat_settings below.
+                'voice_enabled' => !empty($agent['voice_enabled']) ? 1 : 0,
             ]);
         }
 
@@ -160,6 +166,7 @@ try {
             'presence_mode' => $presenceMode,
             'social_chat_enabled' => $socialChat ? 1 : 0,
             'sound_enabled' => $sound ? 1 : 0,
+            'agent_voice_enabled' => $voiceEnabled ? 1 : 0,
         ]);
 
         if ($profileAgentAllowed) {
