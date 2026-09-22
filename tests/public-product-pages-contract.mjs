@@ -42,8 +42,8 @@ for (const route of ['/product.php', '/services.php', '/homeserver.php', '/prici
 }
 
 for (const route of [
-  '/ai-assistant.php','/personal-url.php','/profile-agent-overview.php',
-  '/transcriptions.php','/ai-summary.php','/teams.php','/calendar-service.php','/booking.php','/ecommerce.php',
+  '/ai-assistant.php','/personal-url.php','/profile-agent-overview.php','/chrome-extension.php',
+  '/transcriptions.php','/ai-summary.php','/annotations.php','/teams.php','/video-meetings.php','/calendar-service.php','/booking.php','/ecommerce.php','/agent-analytics.php',
   '/cloud-vs-self-hosted.php','/paired-devices.php','/model-choice.php','/local-knowledge-overview.php','/tools-skills.php',
   '/pricing-monthly.php','/pricing-weekly.php','/pricing-yearly.php','/token-packages.php',
   '/about-team.php','/mission.php','/case-studies.php','/testimonials.php','/contact.php'
