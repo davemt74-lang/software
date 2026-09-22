@@ -285,6 +285,7 @@ function client_release_incident_contain_v130(PDO $pdo,int $incidentId,int $acto
 function client_release_incident_recovery_release_valid_v130(PDO $pdo,array $incident,int $recoveryReleaseId): bool
 {
     if($recoveryReleaseId<1||(int)$incident['release_id']===$recoveryReleaseId)return false;
+    if(client_release_incident_active_for_release_v130($pdo,(string)$incident['product'],$recoveryReleaseId))return false;
     $affected=client_release_release_row_v110($pdo,(string)$incident['product'],(int)$incident['release_id']);
     $recovery=client_release_release_row_v110($pdo,(string)$incident['product'],$recoveryReleaseId);
     if(!$affected||!$recovery)return false;
@@ -481,6 +482,7 @@ function client_release_recovery_applicable_release_v130(PDO $pdo,string $produc
     if((int)$incident['recovery_bucket']>(int)$incident['recovery_percent'])return null;
     $release=client_release_release_row_v110($pdo,$product,(int)$incident['recovery_release_id']);
     if(!$release||(string)($release['channel']??'stable')!==$channel)return null;
+    if(client_release_incident_active_for_release_v130($pdo,$product,(int)$release['id']))return null;
     $release['_rollout']=[
         'lifecycle_state'=>'limited','rollout_percent'=>(int)$incident['recovery_percent'],
         'summary'=>'Recovery release for incident #'.(int)$incident['id'],
@@ -489,6 +491,27 @@ function client_release_recovery_applicable_release_v130(PDO $pdo,string $produc
     $release['_cohort_bucket']=(int)$incident['recovery_bucket'];
     $release['_incident_id']=(int)$incident['id'];
     return $release;
+}
+
+function client_release_incident_policy_update_v130(PDO $pdo,int $incidentId,array $input,int $actorUserId): array
+{
+    $incident=client_release_incident_v130($pdo,$incidentId);
+    if(!$incident)throw new RuntimeException('Release incident was not found.');
+    if((string)$incident['status']==='resolved')throw new RuntimeException('Resolved incident policy cannot be changed.');
+    $minRecovery=max(5000,min(10000,(int)($input['min_recovery_rate_bps']??9500)));
+    $maxFailure=max(0,min(5000,(int)($input['max_recovery_failure_rate_bps']??500)));
+    $hours=max(0,min(168,(int)($input['verification_hours']??12)));
+    $stmt=$pdo->prepare('UPDATE client_release_incidents_v130 SET min_recovery_rate_bps=?,max_recovery_failure_rate_bps=?,verification_hours=? WHERE id=?');
+    $stmt->execute([$minRecovery,$maxFailure,$hours,$incidentId]);
+    client_release_incident_event_v130($pdo,$incidentId,$actorUserId,'closure_policy_updated',(string)$incident['status'],(string)$incident['status'],[
+        'min_recovery_rate_bps'=>$minRecovery,'max_recovery_failure_rate_bps'=>$maxFailure,'verification_hours'=>$hours
+    ]);
+    client_release_audit_v110($pdo,$actorUserId,(string)$incident['product'],(int)$incident['release_id'],'incident_policy_update',
+        (string)$incident['status'],(string)$incident['status'],[
+            'incident_id'=>$incidentId,'min_recovery_rate_bps'=>$minRecovery,
+            'max_recovery_failure_rate_bps'=>$maxFailure,'verification_hours'=>$hours
+        ]);
+    return client_release_incident_v130($pdo,$incidentId)??[];
 }
 
 function client_release_incident_closure_readiness_v130(PDO $pdo,int $incidentId): array
