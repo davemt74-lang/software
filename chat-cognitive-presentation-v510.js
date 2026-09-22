@@ -18,6 +18,8 @@
   let timer = 0;
   let busy = false;
   let lastVoiceThrough = 0;
+  let activeVoiceThrough = 0;
+  let suppressedVoiceThrough = 0;
   let currentDigestId = '';
 
   const esc = value => String(value == null ? '' : value).replace(/[&<>"']/g, char => ({
@@ -251,9 +253,9 @@
     const through = Number(candidate.through_id || 0);
     if (through < 1) return false;
 
-    if (through <= lastVoiceThrough) {
+    if (through <= Math.max(lastVoiceThrough, suppressedVoiceThrough)) {
       try {
-        await post('voice_delivered',{through_id:through});
+        await post(through <= suppressedVoiceThrough ? 'voice_suppressed' : 'voice_delivered',{through_id:through});
         return true;
       } catch (_error) {
         return false;
@@ -264,14 +266,19 @@
     if (!center || typeof center.announce !== 'function') return false;
 
     let spoken = false;
+    activeVoiceThrough = through;
     try {
       spoken = (await Promise.resolve(center.announce(String(candidate.message)))) === true;
     } catch (_error) {
       spoken = false;
     }
-    if (!spoken) return false;
+    if (!spoken) {
+      if (activeVoiceThrough === through) activeVoiceThrough = 0;
+      return false;
+    }
 
     lastVoiceThrough = through;
+    if (activeVoiceThrough === through) activeVoiceThrough = 0;
     try {
       await post('voice_delivered',{through_id:through});
       return true;
@@ -351,6 +358,17 @@
     if (String(event.detail && event.detail.type || '') === 'TRANSCRIPT_SUBMIT') {
       void post('interaction').catch(() => {});
     }
+  });
+
+  window.addEventListener('stonefellow:agent-stop', () => {
+    const center = window.STONEFELLOW_NOTIFICATION_CENTER;
+    try { center?.cancelSpeech?.(); } catch (_error) {}
+    const through = Math.max(0, Number(activeVoiceThrough || 0));
+    if (through < 1) return;
+    suppressedVoiceThrough = Math.max(suppressedVoiceThrough, through);
+    lastVoiceThrough = Math.max(lastVoiceThrough, through);
+    activeVoiceThrough = 0;
+    void post('voice_suppressed',{through_id:through}).catch(() => {});
   });
 
   document.addEventListener('visibilitychange', () => {
