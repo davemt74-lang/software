@@ -665,13 +665,22 @@ function client_release_automation_auto_execute_pending_v170(PDO $pdo,int $runId
     return $count;
 }
 
-function client_release_automation_run_v170(PDO $pdo,string $triggerType='manual',int $actorUserId=0,bool $forceEvaluation=false): array
+function client_release_automation_run_v170(PDO $pdo,string $triggerType='manual',int $actorUserId=0,bool $forceEvaluation=false,string $idempotencyKey=''): array
 {
     client_release_automation_ensure_schema_v170($pdo);
     client_release_automation_expire_proposals_v170($pdo);
     $control=client_release_automation_control_v170($pdo);
     $triggerType=in_array($triggerType,['manual','scheduled','cli'],true)?$triggerType:'manual';
-    $runKey=hash('sha256',$triggerType.'|'.gmdate('Y-m-d H:i:s').'|'.$actorUserId.'|'.microtime(true));
+    $idempotencyKey=trim($idempotencyKey);
+    $runKey=$idempotencyKey!==''
+        ?hash('sha256',$triggerType.'|'.$idempotencyKey)
+        :hash('sha256',$triggerType.'|'.gmdate('Y-m-d H:i:s').'|'.$actorUserId.'|'.microtime(true));
+    if($idempotencyKey!==''){
+        $existingStmt=$pdo->prepare('SELECT * FROM client_release_automation_runs_v170 WHERE run_key=? LIMIT 1');
+        $existingStmt->execute([$runKey]);
+        $existing=$existingStmt->fetch();
+        if($existing)return $existing;
+    }
     $stmt=$pdo->prepare("INSERT INTO client_release_automation_runs_v170
       (run_key,trigger_type,dry_run,automation_enabled,kill_switch,status,triggered_by_user_id)
       VALUES (?,?,?,?,?,'running',?)");
