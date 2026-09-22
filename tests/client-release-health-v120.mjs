@@ -87,7 +87,7 @@ assert.ok(admin.includes('Approve promotion'));
 assert.ok(admin.includes('does not auto-rollback'));
 assert.ok(admin.includes('explicitly approves'));
 
-assert.match(workflow,/Client Release Operations v1\\.(?:20|30)/);
+assert.match(workflow,/Client Release Operations v1\.(?:20|30)/);
 assert.ok(workflow.includes('client-release-health-v120.php'));
 assert.ok(workflow.includes('client-release-health-v120.mjs'));
 assert.ok(recovery.includes('client-release-health-v120.mjs'));
