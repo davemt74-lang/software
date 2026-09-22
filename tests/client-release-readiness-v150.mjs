@@ -6,6 +6,8 @@ const readiness=read('includes/client-release-readiness-v150.php');
 const rollouts=read('includes/client-release-rollouts-v110.php');
 const risk=read('includes/client-release-risk-v140.php');
 const fleet=read('includes/client-fleet-maintenance-v160.php');
+const chrome=read('includes/chrome-extension-releases.php');
+const homeserver=read('includes/homeserver-vp3.php');
 const bootstrap=read('includes/bootstrap.php');
 const upgrade=read('upgrade.php');
 const admin=read('admin/homeserver.php');
@@ -61,6 +63,8 @@ assert.match(readiness,/client_release_incident_active_for_release_v130/,'active
 assert.match(readiness,/client_release_readiness_risk_accepted_v150/,'critical risk needs explicit accepted-risk review');
 assert.ok(readiness.includes("Required CI check"));
 assert.ok(readiness.includes("different source commit"));
+assert.ok(readiness.includes('Rollback target must be older than the release being prepared.'));
+assert.ok(readiness.includes('known-good GA or superseded release'));
 
 const currentStart=readiness.indexOf('function client_release_readiness_current_v150');
 const currentEnd=readiness.indexOf('function client_release_readiness_admin_summary_v150');
@@ -83,6 +87,10 @@ assert.match(rollout,/client_release_readiness_current_v150/,'Draft/Testing expo
 assert.ok(rollout.includes("in_array($from,['draft','testing'],true)"));
 assert.ok(rollout.includes("in_array($state,['canary','limited','general_availability'],true)"));
 assert.ok(rollout.includes('Save rollout documentation changes before preflight evaluation and sign-off.'));
+assert.match(chrome,/client_release_rollout_sync_legacy_action_v110/,'direct Browser release-state changes must delegate to governed rollout controls');
+assert.match(homeserver,/client_release_rollout_sync_legacy_action_v110/,'direct HomeServer release-state changes must delegate to governed rollout controls');
+assert.ok(chrome.includes('Upload the Browser Companion release as Draft/Testing, complete v1.50 preflight, then promote it.'));
+assert.ok(homeserver.includes('Upload the HomeServer release as Draft/Testing, complete v1.50 preflight, then promote it.'));
 
 assert.match(fleet,/client_release_readiness_current_v150/,'v1.60 maintenance must consume v1.50 readiness when installed');
 assert.ok(risk.includes('client_release_risk_assess_v140'));
