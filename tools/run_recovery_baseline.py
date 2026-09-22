@@ -113,6 +113,7 @@ NODE_TESTS = [
     'tests/homeserver-scope-v026-contract.mjs',
     'tests/homeserver-acceptance-v027-contract.mjs',
     'tests/cloud-schema-upgrade-contract.mjs',
+    'tests/client-release-controlled-rollouts-v110.mjs',
 ]
 
 HISTORICAL_WORKFLOW_COUPLED_TESTS = [
