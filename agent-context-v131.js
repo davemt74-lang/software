@@ -2,7 +2,7 @@
   'use strict';
 
   const BUILD='conversation-integration-v131-20260826';
-  const KNOWLEDGE_SCOPE_BUILD='knowledge-agent-context-v162-20260913';
+  const KNOWLEDGE_SCOPE_BUILD='knowledge-agent-context-v245-20260922';
   const EDITOR_AGENT_ASSET='editor-agent-capabilities-20260903';
   const PARTICIPANT_ASSET='studio-participants-20260903';
   const cfg=window.STONEFELLOW_AGENT_CONTEXT||{};
