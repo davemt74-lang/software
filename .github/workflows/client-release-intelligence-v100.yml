@@ -12,6 +12,7 @@ on:
       - 'includes/client-release-health-v120.php'
       - 'includes/client-release-incidents-v130.php'
       - 'includes/client-release-risk-v140.php'
+      - 'includes/client-release-readiness-v150.php'
       - 'includes/client-fleet-maintenance-v160.php'
       - 'client-release-download.php'
       - 'client-updates-v110.css'
@@ -24,6 +25,7 @@ on:
       - 'tests/client-release-health-v120.mjs'
       - 'tests/client-release-incidents-v130.mjs'
       - 'tests/client-release-risk-v140.mjs'
+      - 'tests/client-release-readiness-v150.mjs'
       - 'tests/client-fleet-maintenance-v160.mjs'
       - 'includes/extension-device-token-v2100.php'
       - 'api/extension-me.php'
@@ -74,6 +76,7 @@ jobs:
           php -l includes/client-release-health-v120.php
           php -l includes/client-release-incidents-v130.php
           php -l includes/client-release-risk-v140.php
+          php -l includes/client-release-readiness-v150.php
           php -l includes/client-fleet-maintenance-v160.php
           php -l client-release-download.php
           php -l api/homeserver-release.php
@@ -100,6 +103,7 @@ jobs:
           node --check tests/client-release-health-v120.mjs
           node --check tests/client-release-incidents-v130.mjs
           node --check tests/client-release-risk-v140.mjs
+          node --check tests/client-release-readiness-v150.mjs
           node --check tests/client-fleet-maintenance-v160.mjs
       - name: Client Release Intelligence contracts
         run: |
@@ -107,6 +111,7 @@ jobs:
           node tests/client-release-health-v120.mjs
           node tests/client-release-incidents-v130.mjs
           node tests/client-release-risk-v140.mjs
+          node tests/client-release-readiness-v150.mjs
           node tests/client-fleet-maintenance-v160.mjs
           node tests/client-release-intelligence-v100.mjs
           node tests/client-releases-manager.mjs
