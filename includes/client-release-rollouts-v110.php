@@ -268,16 +268,24 @@ function client_release_rollout_update_v110(PDO $pdo,string $product,int $releas
 function client_release_rollout_sync_legacy_action_v110(PDO $pdo,string $product,int $releaseId,string $action,int $actorUserId): void
 {
     client_release_rollouts_ensure_schema_v110($pdo);
+    $release=client_release_release_row_v110($pdo,$product,$releaseId);
+    if(!$release)throw new RuntimeException('Client release was not found.');
+    $current=client_release_rollout_for_v110($pdo,$product,$releaseId,$release);
+    $base=[
+        'summary'=>(string)($current['summary']??''),
+        'known_issues'=>(string)($current['known_issues']??''),
+        'compatibility_notes'=>(string)($current['compatibility_notes']??''),
+    ];
     if($action==='latest'){
-        client_release_rollout_update_v110($pdo,$product,$releaseId,['lifecycle_state'=>'general_availability','rollout_percent'=>100],$actorUserId);
+        client_release_rollout_update_v110($pdo,$product,$releaseId,$base+['lifecycle_state'=>'general_availability','rollout_percent'=>100],$actorUserId);
         return;
     }
     if($action==='publish'){
-        client_release_rollout_update_v110($pdo,$product,$releaseId,['lifecycle_state'=>'testing','rollout_percent'=>0],$actorUserId);
+        client_release_rollout_update_v110($pdo,$product,$releaseId,$base+['lifecycle_state'=>'testing','rollout_percent'=>0],$actorUserId);
         return;
     }
     if($action==='unpublish'){
-        client_release_rollout_update_v110($pdo,$product,$releaseId,['lifecycle_state'=>'withdrawn','rollout_percent'=>0],$actorUserId);
+        client_release_rollout_update_v110($pdo,$product,$releaseId,$base+['lifecycle_state'=>'withdrawn','rollout_percent'=>0],$actorUserId);
     }
 }
 
