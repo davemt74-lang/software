@@ -1,4 +1,4 @@
-name: Client Release Operations v1.70
+name: Client Release Operations v1.80
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -17,6 +17,7 @@ on:
       - 'includes/client-release-readiness-v150.php'
       - 'includes/client-fleet-maintenance-v160.php'
       - 'includes/client-release-automation-v170.php'
+      - 'includes/client-release-command-center-v180.php'
       - 'tools/client-release-automation-v170.php'
       - 'client-release-download.php'
       - 'client-updates-v110.css'
@@ -32,6 +33,7 @@ on:
       - 'tests/client-release-readiness-v150.mjs'
       - 'tests/client-fleet-maintenance-v160.mjs'
       - 'tests/client-release-automation-v170.mjs'
+      - 'tests/client-release-command-center-v180.mjs'
       - 'includes/extension-device-token-v2100.php'
       - 'api/extension-me.php'
       - 'includes/notifications.php'
@@ -43,6 +45,7 @@ on:
       - 'client-updates-v100.css'
       - 'includes/member-navigation.php'
       - 'admin/homeserver.php'
+      - 'admin/release-command-center.php'
       - 'includes/bootstrap.php'
       - 'browser-companion/manifest.json'
       - 'browser-companion/background.js'
@@ -86,6 +89,7 @@ jobs:
           php -l includes/client-release-readiness-v150.php
           php -l includes/client-fleet-maintenance-v160.php
           php -l includes/client-release-automation-v170.php
+          php -l includes/client-release-command-center-v180.php
           php -l tools/client-release-automation-v170.php
           php -l client-release-download.php
           php -l api/homeserver-release.php
@@ -102,6 +106,7 @@ jobs:
           php -l client-updates.php
           php -l includes/member-navigation.php
           php -l admin/homeserver.php
+          php -l admin/release-command-center.php
           php -l includes/bootstrap.php
       - name: Browser syntax
         run: |
@@ -115,6 +120,7 @@ jobs:
           node --check tests/client-release-readiness-v150.mjs
           node --check tests/client-fleet-maintenance-v160.mjs
           node --check tests/client-release-automation-v170.mjs
+          node --check tests/client-release-command-center-v180.mjs
       - name: Client Release Intelligence contracts
         run: |
           node tests/client-release-controlled-rollouts-v110.mjs
@@ -124,6 +130,7 @@ jobs:
           node tests/client-release-readiness-v150.mjs
           node tests/client-fleet-maintenance-v160.mjs
           node tests/client-release-automation-v170.mjs
+          node tests/client-release-command-center-v180.mjs
           node tests/client-release-intelligence-v100.mjs
           node tests/client-releases-manager.mjs
           node tests/extension-device-token-v2100.mjs
