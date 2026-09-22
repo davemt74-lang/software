@@ -71,7 +71,7 @@ assert.match(chatUi,/payload\.knowledge_scope=knowledgeScopeRuntime\.value\(\)/,
 assert.match(agentContext,/knowledge-agent-context-v2451-20260922/,'Knowledge selector must cache-bust the audited binding runtime');
 assert.match(agentContext,/knowledgeScopeLoadPromise/,'Knowledge selector folder loading must be idempotent');
 assert.doesNotMatch(agentContext,/installKnowledgeScopeFetch/,'Knowledge scope must not monkey-patch global fetch');
-assert.match(agentContext,/dataset\.knowledgeScopeReady='1'/,'Knowledge selector must expose its ready state');
+assert.match(agentContext,/dataset\.knowledgeScopeReady=finalize\?'1':'loading'/,'Knowledge selector must expose explicit loading and ready states');
 assert.match(agentContext,/Saved folder · loading…/,'Knowledge selector must preserve a stored folder while discovery is pending');
 assert.match(agentContext,/setKnowledgeScopeOptions\(\[\],\{finalize:false\}\)/,'Knowledge selector must not erase a stored folder during provisional hydration');
 assert.match(agentContext,/Knowledge folders request timed out\./,'Knowledge folder discovery must fail visibly and retryably');
