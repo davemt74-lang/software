@@ -135,6 +135,24 @@ function vp3_live_session_task_ref_v2370(array $context): string
     return $title!==''?'title:'.mb_strimwidth($title,0,180,''):'';
 }
 
+function vp3_live_session_goal_ref_v2370(array $context): string
+{
+    $key=trim((string)($context['goal_key']??$context['goal_id']??''));
+    if($key!=='')return 'goal:'.mb_strimwidth($key,0,180,'');
+    $title=trim((string)($context['goal_title']??''));
+    return $title!==''?'title:'.mb_strimwidth($title,0,180,''):'';
+}
+
+function vp3_live_session_last_meaningful_at_v2370(array $session): int
+{
+    $times=[];
+    foreach(['last_activity_at','last_action_at','started_at'] as $field){
+        $ts=strtotime((string)($session[$field]??''))?:0;
+        if($ts>0)$times[]=$ts;
+    }
+    return $times?max($times):0;
+}
+
 function vp3_live_session_object_refs_v2370(array $session,array $context=[]): array
 {
     $refs=[['type'=>'live_session','id'=>(string)($session['public_id']??''),'scope'=>'personal']];
@@ -257,10 +275,10 @@ function vp3_live_session_start_v2370(PDO $pdo,array $user,string $surface='chat
         'project_id'=>max(0,(int)($context['project_id']??0)),
         'path'=>mb_strimwidth(trim((string)($context['path']??'')),0,500,''),
     ];
-    $stmt=$pdo->prepare("INSERT INTO agent_live_sessions_v2370 (public_id,owner_user_id,agent_namespace,status,current_surface,current_context_key,current_conversation_id,current_project_ref,current_task_ref,state_json,last_actions_json,started_at,last_activity_at,last_heartbeat_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,UTC_TIMESTAMP(),UTC_TIMESTAMP(),UTC_TIMESTAMP())");
+    $stmt=$pdo->prepare("INSERT INTO agent_live_sessions_v2370 (public_id,owner_user_id,agent_namespace,status,current_surface,current_context_key,current_conversation_id,current_project_ref,current_task_ref,current_goal_ref,state_json,last_actions_json,started_at,last_activity_at,last_heartbeat_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,UTC_TIMESTAMP(),UTC_TIMESTAMP(),UTC_TIMESTAMP())");
     $stmt->execute([
         vp3_live_session_uuid_v2370(),$uid,$namespace,$status,$surface,$contextKey,max(0,(int)($context['conversation_id']??0)),
-        vp3_live_session_project_ref_v2370($context),vp3_live_session_task_ref_v2370($context),vp3_live_session_json_v2370($stateJson),'{}'
+        vp3_live_session_project_ref_v2370($context),vp3_live_session_task_ref_v2370($context),vp3_live_session_goal_ref_v2370($context),vp3_live_session_json_v2370($stateJson),'{}'
     ]);
     $id=(int)$pdo->lastInsertId();
     $row=$pdo->query("SELECT * FROM agent_live_sessions_v2370 WHERE id={$id}")->fetch()?:[];
@@ -287,7 +305,7 @@ function vp3_live_session_current_v2370(PDO $pdo,array $user,array $context=[],b
     $uid=(int)($user['id']??0);if($uid<1||!vp3_live_session_schema_ready_v2370($pdo))return null;
     $row=vp3_live_session_open_row_v2370($pdo,$uid);
     if($row){
-        $last=strtotime((string)($row['last_heartbeat_at']??$row['last_activity_at']??''))?:0;
+        $last=vp3_live_session_last_meaningful_at_v2370($row);
         if($last>0&&time()-$last>VP3_LIVE_SESSION_STALE_SECONDS_V2370){
             $cutoff=gmdate('Y-m-d H:i:s',$last+VP3_LIVE_SESSION_STALE_SECONDS_V2370);
             vp3_live_session_finalize_v2370($pdo,$user,$row,'stale_session_expired',$cutoff);
@@ -310,7 +328,7 @@ function vp3_live_session_record_activity_v2370(array $user,string $surface,stri
         $pdo->beginTransaction();
         $session=vp3_live_session_open_row_v2370($pdo,$uid,true);
         if($session){
-            $last=strtotime((string)($session['last_heartbeat_at']??''))?:0;
+            $last=vp3_live_session_last_meaningful_at_v2370($session);
             if($last>0&&time()-$last>VP3_LIVE_SESSION_STALE_SECONDS_V2370){
                 $pdo->commit();
                 vp3_live_session_finalize_v2370($pdo,$user,$session,'stale_session_expired',gmdate('Y-m-d H:i:s',$last+VP3_LIVE_SESSION_STALE_SECONDS_V2370));
@@ -336,25 +354,33 @@ function vp3_live_session_record_activity_v2370(array $user,string $surface,stri
         $previousType=(string)($open['segment_type']??($session['status']==='idle'?'idle':($session['status']==='paused'?'paused':'active')));
         $surfaceChanged=(string)($session['current_surface']??'')!==$surface;
         $contextChanged=(string)($session['current_context_key']??'')!==$contextKey;
-        $segmentChanged=!$open||$previousType!==$segmentType||$surfaceChanged||$contextChanged;
+        $projectRef=vp3_live_session_project_ref_v2370($context);
+        $taskRef=vp3_live_session_task_ref_v2370($context);
+        $goalRef=vp3_live_session_goal_ref_v2370($context);
+        $focusChanged=(string)($session['current_project_ref']??'')!==$projectRef
+            ||(string)($session['current_task_ref']??'')!==$taskRef
+            ||(string)($session['current_goal_ref']??'')!==$goalRef;
+        $segmentChanged=!$open||$previousType!==$segmentType||$surfaceChanged||$contextChanged||$focusChanged;
 
         if($segmentChanged&&$open)vp3_live_session_close_segment_v2370($pdo,$open,gmdate('Y-m-d H:i:s'));
         if($segmentChanged)vp3_live_session_insert_segment_v2370($pdo,$session,$segmentType,$surface,$contextKey,$reason,vp3_live_session_object_refs_v2370($session,$context));
 
         $resumed=in_array($previousType,['idle','paused'],true)&&$segmentType==='active';
         $status=$segmentType==='active'?'active':$segmentType;
-        $stateJson=[
+        $stateJson=json_decode((string)($session['state_json']??''),true);if(!is_array($stateJson))$stateJson=[];
+        $stateJson=array_replace($stateJson,[
             'task_title'=>mb_strimwidth(trim((string)($context['task_title']??'')),0,190,''),
             'task_kind'=>mb_strimwidth(trim((string)($context['task_kind']??'')),0,60,''),
             'track_id'=>max(0,(int)($context['track_id']??0)),
             'project_id'=>max(0,(int)($context['project_id']??0)),
+            'goal_ref'=>$goalRef,
             'path'=>mb_strimwidth(trim((string)($context['path']??'')),0,500,''),
             'visible'=>!empty($context['visible']),
-        ];
-        $sql="UPDATE agent_live_sessions_v2370 SET agent_namespace=?,status=?,current_surface=?,current_context_key=?,current_conversation_id=?,current_project_ref=?,current_task_ref=?,state_json=?,last_heartbeat_at=UTC_TIMESTAMP()";
+        ]);
+        $sql="UPDATE agent_live_sessions_v2370 SET agent_namespace=?,status=?,current_surface=?,current_context_key=?,current_conversation_id=?,current_project_ref=?,current_task_ref=?,current_goal_ref=?,state_json=?,last_heartbeat_at=UTC_TIMESTAMP()";
         $params=[
             vp3_live_session_agent_namespace_v2370($pdo,$user,$context),$status,$surface,$contextKey,max(0,(int)($context['conversation_id']??0)),
-            vp3_live_session_project_ref_v2370($context),vp3_live_session_task_ref_v2370($context),vp3_live_session_json_v2370($stateJson)
+            $projectRef,$taskRef,$goalRef,vp3_live_session_json_v2370($stateJson)
         ];
         if($segmentType==='active')$sql.=",last_activity_at=UTC_TIMESTAMP()";
         if($resumed){$sql.=",resumed_at=UTC_TIMESTAMP(),resume_count=resume_count+1";}
@@ -368,7 +394,7 @@ function vp3_live_session_record_activity_v2370(array $user,string $surface,stri
         if($previousType==='idle'&&$segmentType==='active')vp3_live_session_record_event_v2370($pdo,$user,$fresh,'session.idle_ended',['surface'=>$surface,'context_key'=>$contextKey,'reason'=>$reason],$refs);
         if($resumed)vp3_live_session_record_event_v2370($pdo,$user,$fresh,'session.resumed',['surface'=>$surface,'context_key'=>$contextKey,'reason'=>$reason],$refs);
         if($surfaceChanged)vp3_live_session_record_event_v2370($pdo,$user,$fresh,'session.surface_changed',['from'=>(string)($session['current_surface']??''),'to'=>$surface,'reason'=>$reason],$refs);
-        if($contextChanged&&!$surfaceChanged)vp3_live_session_record_event_v2370($pdo,$user,$fresh,'session.focus_changed',['context_key'=>$contextKey,'reason'=>$reason],$refs);
+        if(($contextChanged||$focusChanged)&&!$surfaceChanged)vp3_live_session_record_event_v2370($pdo,$user,$fresh,'session.focus_changed',['context_key'=>$contextKey,'project_ref'=>$projectRef,'task_ref'=>$taskRef,'goal_ref'=>$goalRef,'reason'=>$reason],$refs);
 
         return vp3_live_session_snapshot_v2370($pdo,$user,false);
     }catch(Throwable $e){
