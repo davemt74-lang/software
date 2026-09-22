@@ -158,6 +158,7 @@ function notification_requires_attention(array $notification): bool
         'profile_conversation_started',
     ];
     if (in_array($type, $profileAgentAttention, true)) return true;
+    if ($type === 'client_release_update') return true;
 
     $informational = [
         'conversation_started',
