@@ -13,6 +13,8 @@ const manifest=read('includes/cognitive-domain-manifest-v2370.php');
 const release=read('includes/cognitive-release-v2370.php');
 const chatEngine=read('includes/chat-engine.php');
 const chatRuntime=read('includes/agent-chat-runtime-v2160.php');
+const chatPolicy=read('includes/chat-agent-policy-v236.php');
+const aiRuntime=read('includes/ai-runtime-v100.php');
 const upgrade=read('upgrade.php');
 const setup=read('setup.php');
 const docs=read('docs/VP3_COGNITIVE_LIVE_SESSION_V2370.md');
@@ -55,7 +57,15 @@ const checks=[
   ['Agent Chat records user action', /'user','chat\.message_sent'/.test(chatRuntime)],
   ['Agent Chat records Agent completion', /'agent','chat\.response_completed'/.test(chatRuntime)],
   ['Agent Chat records handled tool completion', /'tool','tool\.completed'/.test(chatRuntime)],
+  ['direct user action resumes idle session', /vp3_live_session_record_activity_v2370\(\$user,\(string\)\$context\['surface'\],'working'/.test(session)],
+  ['session expiration uses meaningful activity not idle heartbeat', /vp3_live_session_last_meaningful_at_v2370/.test(session)],
+  ['activity state merge preserves prior session fields', /array_replace\(\$stateJson/.test(session)],
+  ['task project and goal changes are focus transitions', /\$focusChanged=/.test(session) && /current_goal_ref/.test(session)],
+  ['Agent Chat synthesis receives compact live session context', /vp3_live_session_context_item_v2370/.test(chatPolicy)],
+  ['live-session packet is explicitly internal only', /INTERNAL SESSION STATE/.test(session) && /INTERNAL SESSION STATE/.test(chatEngine)],
+  ['response discipline treats live-session state as silent evidence', /live-session timing\/state/.test(aiRuntime) && /raw JSON/.test(aiRuntime)],
   ['public Chat sources use canonical internal-source filter', /chat_context_is_internal_source\(\$source\)/.test(chatRuntime)],
+  ['compute routing is not a visible source chip', /compute-routing:/.test(chatEngine) && /array_filter\(\$publicSources/.test(chatRuntime)],
   ['presentation firewall blocks raw cross-surface context', /Active cross-surface Agent context/.test(chatEngine) && /Confidence-ranked Agent Brain memory/.test(chatEngine) && /Retrieved conversation history/.test(chatEngine)],
   ['presentation firewall applies after runtime routing', /presentation firewall replaced an internal-context echo/.test(chatRuntime)],
   ['internal Profile and Knowledge evidence are not public source labels', /profile:activity/.test(chatEngine) && /knowledge-v162/.test(chatEngine)],
