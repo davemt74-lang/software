@@ -28,7 +28,7 @@ assert.doesNotThrow(()=>new Function(memberVoice),'member Agent Voice menu JS mu
 assert.doesNotThrow(()=>new Function(chatVoice),'Chat voice runtime must parse');
 assert.doesNotThrow(()=>new Function(notificationVoice),'notification runtime must parse');
 
-assert.match(onboarding,/onboarding-intelligence-20260921-v4/);
+assert.match(onboarding,/onboarding-intelligence-20260921-v3/);
 assert.match(onboarding,/['"]workspace['"]/,'workspace is a canonical persisted onboarding step');
 assert.doesNotMatch(onboarding,/ADD COLUMN .*workspace/i,'current-system onboarding must reuse existing preference storage');
 
