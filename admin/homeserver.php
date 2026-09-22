@@ -251,6 +251,7 @@ $fleetState=client_fleet_summary_v160($pdo);
 $fleetInventory=(array)($fleetState['inventory']??['browser_companion'=>[],'homeserver'=>[]]);
 $fleetSummary=(array)($fleetState['summary']??[]);
 $fleetCompatibility=(array)($fleetState['compatibility']??[]);
+$fleetRecommendations=client_fleet_recommendations_v160($pdo,$fleetState);
 $fleetCompatibilityRules=client_fleet_compatibility_rules_v160($pdo);
 $fleetCampaigns=client_fleet_campaigns_v160($pdo,40);
 $rolloutAudit=client_release_audit_recent_v110($pdo,20);
@@ -304,6 +305,15 @@ require __DIR__ . '/_header.php';
     <?php endforeach; ?>
     </tbody>
   </table></div>
+
+  <?php if($fleetRecommendations): ?>
+    <div class="admin-card-head" style="margin-top:14px"><div><h3>Maintenance Recommendations</h3><p>Derived from support policy, fleet telemetry, drift, staleness, and cross-client compatibility. Recommendations never execute maintenance automatically.</p></div></div>
+    <div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>Severity</th><th>Area</th><th>Recommendation</th></tr></thead><tbody>
+      <?php foreach($fleetRecommendations as $recommendation): ?><tr><td><?= e(ucfirst((string)$recommendation['severity'])) ?></td><td><?= e((string)$recommendation['product']) ?></td><td><?= e((string)$recommendation['message']) ?></td></tr><?php endforeach; ?>
+    </tbody></table></div>
+  <?php else: ?>
+    <p style="margin-top:12px"><small>No fleet maintenance recommendations are currently open.</small></p>
+  <?php endif; ?>
 
   <div class="admin-card-head" style="margin-top:18px"><div><h3>Support &amp; Maintenance Policy</h3><p>Set minimum supported versions, stale-client thresholds, UTC maintenance windows, default cohort sizes, and deprecation warning periods by channel.</p></div></div>
   <?php foreach(['browser_companion'=>'Browser Companion','homeserver'=>'HomeServer'] as $fleetProduct=>$fleetLabel): ?>
