@@ -36,13 +36,19 @@ jobs:
           php -l login.php
           php -l pricing.php
           php -l book-demo.php
+          php -l api/public-funnel-event.php
           php -l tests/public-funnel-runtime.php
       - name: Runtime redirect and source contract
         run: php tests/public-funnel-runtime.php
       - name: Static contract syntax
-        run: node --check tests/public-funnel-onboarding-contract.mjs
+        run: |
+          node --check vp3-public-funnel.js
+          node --check tests/public-funnel-onboarding-contract.mjs
+          node --check tests/public-homepage-funnel-completion.mjs
       - name: Public funnel and onboarding contract
         run: node tests/public-funnel-onboarding-contract.mjs
+      - name: Homepage and funnel completion contract
+        run: node tests/public-homepage-funnel-completion.mjs
       - name: Retained public/auth contract
         run: node tests/vp3-public-auth-contract.mjs
       - name: Retained mega-menu pages contract
