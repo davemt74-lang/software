@@ -8,6 +8,8 @@ on:
   pull_request:
     paths:
       - 'includes/client-release-intelligence-v100.php'
+      - 'includes/chrome-extension-releases.php'
+      - 'includes/homeserver-vp3.php'
       - 'includes/client-release-rollouts-v110.php'
       - 'includes/client-release-health-v120.php'
       - 'includes/client-release-incidents-v130.php'
@@ -72,6 +74,8 @@ jobs:
       - name: PHP syntax
         run: |
           php -l includes/client-release-intelligence-v100.php
+          php -l includes/chrome-extension-releases.php
+          php -l includes/homeserver-vp3.php
           php -l includes/client-release-rollouts-v110.php
           php -l includes/client-release-health-v120.php
           php -l includes/client-release-incidents-v130.php
