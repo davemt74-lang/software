@@ -45,6 +45,10 @@ assert.match(presentation,/suppressedVoiceThrough/);
 assert.match(presentation,/voice_suppressed/,'interrupted proactive voice must persist suppression');
 assert.match(presentation,/stonefellow:agent-stop/);
 assert.match(presentation,/cancelSpeech/);
+assert.match(presentation,/function renderBriefError\(/,'Agent Brief failures must render a retryable state instead of hanging on Loading');
+assert.match(presentation,/data-agent-brief-retry/,'Agent Brief must expose a retry control after load failure');
+assert.match(presentation,/void refresh\(true\)/,'opening Agent Brief must force a fresh state request');
+assert.match(presentation,/AbortController/,'Agent Brief state fetch must have a bounded timeout');
 assert.match(presentationCore,/function vp3_cognitive_presentation_voice_suppressed_v510/);
 assert.match(presentationApi,/\$action==='voice_suppressed'/);
 
@@ -64,7 +68,7 @@ assert.match(chatUi,/payload\.knowledge_scope=knowledgeScopeRuntime\.value\(\)/,
 assert.match(agentContext,/knowledge-agent-context-v245-20260922/,'Knowledge selector must cache-bust the repaired binding runtime');
 assert.match(agentContext,/knowledgeScopeLoadPromise/,'Knowledge selector folder loading must be idempotent');
 assert.doesNotMatch(agentContext,/installKnowledgeScopeFetch/,'Knowledge scope must not monkey-patch global fetch');
-assert.match(agentContext,/data\.knowledgeScopeReady='1'|knowledgeScopeReady='1'/,'Knowledge selector must expose its ready state');
+assert.match(agentContext,/dataset\.knowledgeScopeReady='1'/,'Knowledge selector must expose its ready state');
 
 assert.match(chatEngine,/function chat_context_is_internal_source\(/);
 assert.match(chatEngine,/agent-brain:/);
