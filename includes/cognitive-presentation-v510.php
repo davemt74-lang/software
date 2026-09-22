@@ -283,6 +283,14 @@ function vp3_cognitive_presentation_voice_delivered_v510(PDO $pdo,array $user,st
         ->execute([max(0,$throughId),(int)$user['id'],$namespace]);
 }
 
+function vp3_cognitive_presentation_voice_suppressed_v510(PDO $pdo,array $user,string $namespace,int $throughId): void
+{
+    // A user stop/cancel is an explicit consumption decision. Advance the
+    // proactive voice cursor so the same report is not announced again.
+    vp3_cognitive_presentation_voice_delivered_v510($pdo,$user,$namespace,$throughId);
+    vp3_cognitive_presentation_touch_v510($pdo,$user,$namespace);
+}
+
 function vp3_cognitive_presentation_brief_v510(PDO $pdo,array $user,int $agentId=0): array
 {
     require_once __DIR__.'/agent-chat-intelligence-v171.php';
