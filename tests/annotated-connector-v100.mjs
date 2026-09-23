@@ -33,7 +33,7 @@ assert.ok(!core.includes('CREATE TABLE IF NOT EXISTS video_meeting_transcript_se
 assert.ok(!core.includes('CREATE TABLE IF NOT EXISTS video_meeting_intelligence'),'does not duplicate intelligence store');
 
 assert.ok(boot.includes("require_once __DIR__.'/connected-sites-v100.php'"),'bootstrap loads Connected Sites');
-assert.ok(account.includes('/connected-sites.php')&&account.includes('Connected Sites'),'account exposes Connected Sites');
+assert.ok(account.includes('/connected-sites.php')&&account.includes('Connected Sites')&&account.includes('accountActiveConnectedSites'),'account exposes Connected Sites with an active-connection summary');
 assert.ok(authorize.includes('verify_csrf()')&&authorize.includes('Requested access')&&authorize.includes("decision==='approve'"),'authorization requires user consent + CSRF');
 assert.ok(token.includes('client_secret')&&token.includes('authorization_code')&&token.includes('refresh_token'),'token endpoint supports authenticated code/refresh grants');
 assert.ok(me.includes("vp3_connected_site_auth_v100($pdo,'account.identity.read')"),'identity endpoint scope guarded');
