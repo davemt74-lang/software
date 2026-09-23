@@ -328,6 +328,17 @@ function vp3_cognitive_decision_capture_v2580(
     $forecastItems=vp3_cognitive_decision_item_map_v2580((array)($forecast['items']??[]));
     $valueItems=vp3_cognitive_decision_item_map_v2580((array)($valueRoi['goals']??[]));
     $econItems=vp3_cognitive_decision_item_map_v2580((array)($portfolio['economics']['goals']??[]));
+    $accountUsage=(array)($portfolio['economics']['usage']??[]);
+    $projectionCalibration=[
+        'cloud'=>[
+            'cost'=>vp3_cognitive_decision_factor_v2580($pdo,$user,'cost','cloud'),
+            'tokens'=>vp3_cognitive_decision_factor_v2580($pdo,$user,'tokens','cloud'),
+        ],
+        'homeserver'=>[
+            'cost'=>['factor'=>1.0,'sample_count'=>0],
+            'tokens'=>['factor'=>1.0,'sample_count'=>0],
+        ],
+    ];
     $reservationItems=vp3_cognitive_decision_reservation_map_v2580($resourceBudget?:((array)($portfolio['resource_budget']??[])));
     $replanItems=vp3_cognitive_decision_item_map_v2580((array)($replanning['issues']??[]));
     if(!$replanItems)$replanItems=vp3_cognitive_decision_item_map_v2580((array)($replanning['changes']??[]));
@@ -339,23 +350,36 @@ function vp3_cognitive_decision_capture_v2580(
         if(in_array((string)($item['execution_state']??''),['achieved','objective_achieved','archived'],true))continue;
 
         $value=$valueItems[$goalId]??[];$econ=$econItems[$goalId]??[];$reservation=$reservationItems[$goalId]??[];
+        $executor=in_array((string)($f['executor']??$item['executor']??''),['cloud','homeserver'],true)
+            ?(string)($f['executor']??$item['executor']):'cloud';
+        $fallbackProjection=function_exists('vp3_cognitive_budget_goal_projection_v2560')
+            ?vp3_cognitive_budget_goal_projection_v2560(
+                $item,$econ?:null,$accountUsage,$projectionCalibration[$executor]??[]
+            )
+            :[];
         $budgetProjection=(array)($item['budget_projection']??[]);
         $rawLikely=vp3_cognitive_decision_sql_datetime_v2580($f['raw_likely_completion_at']??$f['likely_completion_at']??null);
         $likely=vp3_cognitive_decision_sql_datetime_v2580($f['likely_completion_at']??null);
         $capturedAt=time();
         $rawForecastSeconds=$rawLikely?((strtotime($rawLikely.' UTC')?:$capturedAt)-$capturedAt):0;
         $payload=[
-            'goal_id'=>$goalId,'executor'=>(string)($f['executor']??$item['executor']??'cloud'),
+            'goal_id'=>$goalId,'executor'=>$executor,
             'execution_state'=>(string)($item['execution_state']??''),'sequence_rank'=>(int)($f['sequence_rank']??0),
             'target_date'=>(string)($f['target_date']??$item['target_date']??''),
             'raw_forecast_seconds'=>max(0,$rawForecastSeconds),
             'forecast_calibration_factor'=>(float)($f['calibration_factor']??1.0),
-            'raw_projected_remaining_cost_micros'=>$item['budget_raw_projected_remaining_cost_micros']??($value['raw_projected_remaining_cost_micros']??null),
-            'projected_remaining_cost_micros'=>$item['budget_projected_remaining_cost_micros']??($value['projected_remaining_cost_micros']??null),
-            'raw_projected_remaining_tokens'=>$item['budget_raw_projected_remaining_tokens']??null,
-            'projected_remaining_tokens'=>$item['budget_projected_remaining_tokens']??null,
-            'cost_calibration_factor'=>(float)($item['budget_cost_calibration_factor']??1.0),
-            'token_calibration_factor'=>(float)($item['budget_token_calibration_factor']??1.0),
+            'raw_projected_remaining_cost_micros'=>$item['budget_raw_projected_remaining_cost_micros']
+                ??($value['raw_projected_remaining_cost_micros']??($fallbackProjection['raw_cost_micros']??null)),
+            'projected_remaining_cost_micros'=>$item['budget_projected_remaining_cost_micros']
+                ??($value['projected_remaining_cost_micros']??($fallbackProjection['cost_micros']??null)),
+            'raw_projected_remaining_tokens'=>$item['budget_raw_projected_remaining_tokens']
+                ??($value['raw_projected_remaining_tokens']??($fallbackProjection['raw_tokens']??null)),
+            'projected_remaining_tokens'=>$item['budget_projected_remaining_tokens']
+                ??($value['projected_remaining_tokens']??($fallbackProjection['tokens']??null)),
+            'cost_calibration_factor'=>(float)($item['budget_cost_calibration_factor']
+                ??($value['cost_calibration_factor']??($fallbackProjection['cost_calibration_factor']??1.0))),
+            'token_calibration_factor'=>(float)($item['budget_token_calibration_factor']
+                ??($value['token_calibration_factor']??($fallbackProjection['token_calibration_factor']??1.0))),
             'value_profile_id'=>(int)($item['value_profile_id']??0),
             'expected_value_micros'=>$item['expected_value_micros']??null,
             'expected_value_score'=>$item['expected_value_score']??null,
