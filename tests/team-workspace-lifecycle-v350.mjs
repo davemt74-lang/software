@@ -75,6 +75,16 @@ assert.match(team, /workspace_team_v350_set_status\(\$pdo,\$ownerUserId,\$target
 assert.match(team, /workspace_team_v350_set_status\(\$pdo,\$ownerUserId,\$targetId,'active'\)/);
 assert.match(team, /workspace_team_v350_set_status\(\$pdo,\$ownerUserId,\$targetId,'removed'\)/);
 
+// Campaigns & Rewards extends Team with plugin-specific scope, never a second Team lifecycle.
+assert.match(team, /Basic Team/);
+assert.match(team, /Merchant Team/);
+assert.match(team, /Both/);
+assert.match(team, /campaigns_rewards_set_invite_scope_v100/);
+assert.match(team, /campaigns_rewards_set_team_scope_v100/);
+assert.match(lifecycle, /campaigns_rewards_apply_invite_scope_v100/);
+assert.match(lifecycle, /campaigns_rewards_clear_invite_scope_v100/);
+assert.match(lifecycle, /campaigns_rewards_team_membership_status_v100/);
+
 // Invite acceptance is tied to the signed-in account and survives auth without open redirect input.
 assert.match(invite, /workspace_team_v350_accept_invitation/);
 assert.match(invite, /workspace_team_v350_decline_invitation/);
