@@ -352,8 +352,30 @@ function vp3_extension_notification_claim_next_v2140(PDO $pdo,array $session,arr
 {
     vp3_extension_notification_prune_v2140($pdo,(int)$user['id']);
     foreach(vp3_extension_notification_candidates_v2140($pdo,$user,$namespace,$contextInput) as $candidate){
+        // Claim the existing delivery ledger first, then reserve the central
+        // attention budget. If another surface consumed the budget between
+        // preview and claim, release this lease and continue without surfacing.
         $claimed=vp3_extension_notification_claim_v2140($pdo,$session,$candidate);
-        if($claimed)return $claimed;
+        if(!$claimed)continue;
+        if(function_exists('vp3_cognitive_attention_extension_candidate_v2410')){
+            $attentionContext=function_exists('vp3_cognitive_presentation_context_v500')
+                ?vp3_cognitive_presentation_context_v500($pdo,$user,[
+                    'agent_voice_enabled'=>vp3_extension_notification_voice_enabled_v2140($pdo,$user),
+                    'voice_candidate_allowed'=>!empty($candidate['voice_allowed']),
+                    'sensitive_for_voice'=>!empty($candidate['sensitive']),
+                ])
+                :['interruptible'=>true,'agent_voice_enabled'=>false,'voice_candidate_allowed'=>false];
+            $approved=vp3_cognitive_attention_extension_candidate_v2410(
+                $pdo,$user,$namespace,$candidate,$attentionContext,true
+            );
+            if(!$approved){
+                vp3_extension_notification_release_v2140($pdo,$session,(string)$candidate['event_key'],(string)$claimed['claim_token']);
+                continue;
+            }
+            $claimed=['claim_token'=>(string)$claimed['claim_token']]
+                +vp3_extension_notification_candidate_public_v2140($approved);
+        }
+        return $claimed;
     }
     return null;
 }
