@@ -61,6 +61,10 @@ const checks=[
   &&runtime.includes("'campaign_fulfillment'")
   &&campaigns.includes('Campaign fulfillment')
   &&campaigns.includes('Fulfill + Issue')],
+ ['Fulfillment UI is gated by enrollment-management plus Reward-issuance authority',
+  campaigns.includes("$canCampaignEnrollment=$merchant?campaigns_rewards_platform_can_v100($pdo,$merchantId,$uid,'campaigns.enrollment.manage')")
+  &&campaigns.includes("$canRewardIssue=$merchant?campaigns_rewards_platform_can_v100($pdo,$merchantId,$uid,'rewards.issue')")
+  &&campaigns.includes('$canRewardIssue&&$canCampaignEnrollment')],
  ['Public landing delegates participation to V1.18 behavior runtime',
   publicPage.includes('campaigns_rewards_public_participate_v118')&&publicPage.includes('$behavior')
   &&publicPage.includes('$publicCopy')],
