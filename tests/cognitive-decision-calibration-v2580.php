@@ -23,7 +23,7 @@ $low=vp3_cognitive_decision_ratio_factor_v2580([0,0,0,0,0],0.75,1.35);
 v2580_assert(abs($low['factor']-0.75)<0.0001,'zero observed ratio remains evidence and is lower bounded');
 
 $valueLow=vp3_cognitive_decision_ratio_factor_v2580([0,0.2,0.4,0.5,0.6],0.70,1.15);
-v2580_assert(abs($valueLow['factor']-0.4)<0.0001,'value reliability uses its independent bounded range');
+v2580_assert(abs($valueLow['factor']-0.70)<0.0001,'value reliability lower bound is enforced independently');
 
 $valueHigh=vp3_cognitive_decision_ratio_factor_v2580([1.5,1.6,1.7,1.8,1.9],0.70,1.15);
 v2580_assert(abs($valueHigh['factor']-1.15)<0.0001,'value reliability upper bound is enforced');
