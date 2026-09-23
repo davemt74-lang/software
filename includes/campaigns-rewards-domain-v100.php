@@ -1255,33 +1255,52 @@ function campaigns_rewards_cognitive_relationships_canonical_v100(PDO $pdo,array
     $type=(string)($ref['type']??'');$scope=(string)($ref['scope']??'workspace');$edges=[];
     $add=static function(array &$edges,string $relation,string $type,mixed $id,string $scope): void{
         if((string)$id==='')return;
-        $edges[]=['relation'=>$relation,'object_ref'=>campaigns_rewards_ref_v100($type,$id,$scope),'provenance'=>'campaigns_rewards_domain_v100','confidence'=>1,'confirmation_state'=>'deterministic'];
+        try{$objectRef=campaigns_rewards_ref_v100($type,$id,$scope);}catch(Throwable $e){return;}
+        $edges[]=['relation'=>$relation,'object_ref'=>$objectRef,'provenance'=>'campaigns_rewards_domain_v100','confidence'=>1,'confirmation_state'=>'deterministic'];
     };
+    $merchantId=(int)($row['_merchant_id']??$row['merchant_id']??($type==='merchant'?($row['id']??0):0));
+    $merchant=$merchantId>0?campaigns_rewards_platform_merchant_v100($pdo,$merchantId):null;
+    $ownerUserId=(int)($merchant['owner_user_id']??0);
+
     if($type==='merchant'){
+        if($ownerUserId>0)$add($edges,'owned_by','profile',$ownerUserId,'personal');
+        $q=$pdo->prepare("SELECT user_id FROM merchant_members WHERE merchant_id=? AND status='active' ORDER BY is_owner DESC,id LIMIT 20");$q->execute([(int)$row['id']]);
+        foreach($q->fetchAll(PDO::FETCH_COLUMN)?:[] as $memberUserId)if($ownerUserId>0)$add($edges,'has_member','team_member',$ownerUserId.':'.(int)$memberUserId,'workspace');
+        $q=$pdo->prepare("SELECT contact_id FROM crm_merchant_relationships WHERE merchant_id=? ORDER BY updated_at DESC,id DESC LIMIT 20");$q->execute([(int)$row['id']]);
+        foreach($q->fetchAll(PDO::FETCH_COLUMN)?:[] as $contactId)$add($edges,'related_to','contact',(int)$contactId,'personal');
         $q=$pdo->prepare("SELECT public_id FROM campaigns WHERE merchant_id=? AND status<>'archived' ORDER BY updated_at DESC,id DESC LIMIT 20");$q->execute([(int)$row['id']]);
         foreach($q->fetchAll(PDO::FETCH_COLUMN)?:[] as $id)$add($edges,'owns','campaign',$id,$scope);
         $q=$pdo->prepare("SELECT public_id FROM merchant_locations WHERE merchant_id=? AND is_active=1 ORDER BY id LIMIT 20");$q->execute([(int)$row['id']]);
         foreach($q->fetchAll(PDO::FETCH_COLUMN)?:[] as $id)$add($edges,'has_location','merchant_location',$id,$scope);
     }elseif($type==='merchant_location'){
-        $m=campaigns_rewards_platform_merchant_v100($pdo,(int)$row['merchant_id']);if($m)$add($edges,'location_of','merchant',$m['public_id'],$scope);
+        if($merchant)$add($edges,'location_of','merchant',$merchant['public_id'],$scope);
+    }elseif($type==='merchant_team_member'){
+        if($merchant)$add($edges,'member_of','merchant',$merchant['public_id'],$scope);
+        if($ownerUserId>0&&!empty($row['user_id']))$add($edges,'represents','team_member',$ownerUserId.':'.(int)$row['user_id'],'workspace');
     }elseif($type==='campaign'){
-        $m=campaigns_rewards_platform_merchant_v100($pdo,(int)$row['merchant_id']);if($m)$add($edges,'owned_by','merchant',$m['public_id'],$scope);
+        if($merchant)$add($edges,'owned_by','merchant',$merchant['public_id'],$scope);
         $q=$pdo->prepare("SELECT DISTINCT rp.public_id FROM campaign_reward_sets rs INNER JOIN campaign_reward_set_items i ON i.reward_set_id=rs.id INNER JOIN reward_products rp ON rp.id=i.reward_product_id WHERE rs.campaign_id=? ORDER BY rp.id LIMIT 20");
         $q->execute([(int)$row['id']]);foreach($q->fetchAll(PDO::FETCH_COLUMN)?:[] as $id)$add($edges,'offers','reward_product',$id,$scope);
     }elseif($type==='campaign_enrollment'){
-        $c=campaigns_rewards_campaign_platform_v100($pdo,(int)$row['campaign_id']);if($c)$add($edges,'enrolled_in','campaign',$c['public_id'],$scope);
+        $cp=campaigns_rewards_campaign_platform_v100($pdo,(int)$row['campaign_id']);if($cp)$add($edges,'enrolled_in','campaign',$cp['public_id'],$scope);
+        if(!empty($row['contact_id']))$add($edges,'related_to','contact',(int)$row['contact_id'],'personal');
     }elseif($type==='campaign_case'){
-        $c=campaigns_rewards_campaign_platform_v100($pdo,(int)$row['campaign_id']);if($c)$add($edges,'case_for','campaign',$c['public_id'],$scope);
+        $cp=campaigns_rewards_campaign_platform_v100($pdo,(int)$row['campaign_id']);if($cp)$add($edges,'case_for','campaign',$cp['public_id'],$scope);
+        if(!empty($row['contact_id']))$add($edges,'related_to','contact',(int)$row['contact_id'],'personal');
     }elseif($type==='reward_product'){
         $q=$pdo->prepare("SELECT DISTINCT c.public_id FROM campaign_reward_sets rs INNER JOIN campaign_reward_set_items i ON i.reward_set_id=rs.id INNER JOIN campaigns c ON c.id=rs.campaign_id WHERE i.reward_product_id=? ORDER BY c.id DESC LIMIT 20");
         $q->execute([(int)$row['id']]);foreach($q->fetchAll(PDO::FETCH_COLUMN)?:[] as $id)$add($edges,'offered_by','campaign',$id,$scope);
     }elseif($type==='reward_issuance'){
-        $c=campaigns_rewards_campaign_platform_v100($pdo,(int)$row['campaign_id']);if($c)$add($edges,'issued_by_campaign','campaign',$c['public_id'],$scope);
+        $cp=campaigns_rewards_campaign_platform_v100($pdo,(int)$row['campaign_id']);if($cp)$add($edges,'issued_by','campaign',$cp['public_id'],$scope);
         $rp=campaigns_rewards_reward_product_v100($pdo,(int)$row['reward_product_id']);if($rp)$add($edges,'instance_of','reward_product',$rp['public_id'],$scope);
+        if(!empty($row['recipient_contact_id']))$add($edges,'issued_to','contact',(int)$row['recipient_contact_id'],'personal');
+        $q=$pdo->prepare("SELECT public_id FROM reward_claims WHERE reward_issuance_id=? ORDER BY id DESC LIMIT 1");$q->execute([(int)$row['id']]);$claim=$q->fetchColumn();if($claim)$add($edges,'resulted_in','reward_claim',$claim,$scope);
     }elseif($type==='reward_claim'){
         $q=$pdo->prepare("SELECT public_id FROM reward_issuances WHERE id=? LIMIT 1");$q->execute([(int)$row['reward_issuance_id']]);$id=$q->fetchColumn();if($id)$add($edges,'claims','reward_issuance',$id,$scope);
+        if(!empty($row['location_id'])){$q=$pdo->prepare("SELECT public_id FROM merchant_locations WHERE id=? AND merchant_id=? LIMIT 1");$q->execute([(int)$row['location_id'],$merchantId]);$location=$q->fetchColumn();if($location)$add($edges,'fulfilled_by','merchant_location',$location,$scope);}
+        if($ownerUserId>0&&!empty($row['processed_by_user_id']))$add($edges,'processed_by','team_member',$ownerUserId.':'.(int)$row['processed_by_user_id'],'workspace');
     }elseif($type==='claim_code'){
-        $m=campaigns_rewards_platform_merchant_v100($pdo,(int)$row['merchant_id']);if($m)$add($edges,'authorizes_for','merchant',$m['public_id'],$scope);
+        if($merchant)$add($edges,'authorizes_for','merchant',$merchant['public_id'],$scope);
     }
-    return array_slice($edges,0,30);
+    return array_slice($edges,0,40);
 }
