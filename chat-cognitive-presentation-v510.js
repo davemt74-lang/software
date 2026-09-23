@@ -182,6 +182,9 @@
     const budgetGovernance = brief.budget_focus || null;
     const budgetCounts = brief.budget_counts || {};
     const budgetManageUrl = String(brief.budget_manage_url || '/budget-governance.php');
+    const valueFocus = brief.value_focus || null;
+    const valueCounts = brief.value_counts || {};
+    const valueManageUrl = String(brief.value_manage_url || '/outcome-value.php');
     const counts = brief.counts || {};
     let html = '<div class="chat-agent-brief-status"><span><i class="chat-agent-brief-dot ' +
       (brief.active !== false ? 'active' : '') + '"></i>' +
@@ -217,6 +220,28 @@
         actionButton('Review budget',
           ' data-agent-brief-prompt="' + esc('Review my explicit AI budget guardrails. Explain current-period usage, projected burn, held autonomous work, commitment conflicts, and any override I need to approve. Do not change budgets, packages, tokens, executors, deadlines, or workflow approvals.') + '"',false) +
         '<a href="' + esc(budgetManageUrl) + '">Manage budgets ↗</a></div></article>';
+    }
+
+    if (valueFocus) {
+      const row = valueFocus.profile ? valueFocus : null;
+      const profile = row?.profile || valueFocus.profile || {};
+      const realization = row?.realization || valueFocus.realization || {};
+      const money = String(profile.value_kind || '') === 'money';
+      const expected = money
+        ? String(profile.currency || '') + ' ' + (Number(profile.expected_value_micros || 0) / 1000000).toFixed(2)
+        : Number(profile.expected_score || 0) + '/100 score';
+      const realized = realization.verified
+        ? (money ? String(realization.currency || profile.currency || '') + ' ' + (Number(realization.value_micros || 0) / 1000000).toFixed(2) : Number(realization.score_value || 0) + '/100 score')
+        : 'not verified';
+      const roi = row && row.expected_roi_percent !== null && row.expected_roi_percent !== undefined ? Number(row.expected_roi_percent).toFixed(1) + '% expected AI-cost ROI' : 'ROI unavailable';
+      html += '<article class="chat-agent-brief-card"><small>Outcome value & ROI · explicit value</small><strong>' +
+        esc(row?.title || profile.label || 'Outcome value') + '</strong>' +
+        '<p>Expected ' + esc(expected) + ' · realized ' + esc(realized) + '</p>' +
+        '<p><small>' + esc(roi) + ' · ' + Number(valueCounts.value_at_risk || 0) + ' value-at-risk goal(s) · ' + Number(valueCounts.verified_outcomes || 0) + ' verified outcome(s)</small></p>' +
+        '<div class="chat-agent-brief-actions">' +
+        actionButton('Review value',
+          ' data-agent-brief-prompt="' + esc('Review my explicit outcome value and ROI. Separate expected value from verified realized value, explain value at risk and AI-cost ROI only where the evidence supports it, and do not invent monetary value, convert currencies, change budgets, commitments, executors, deadlines, approvals, or execution state.') + '"',false) +
+        '<a href="' + esc(valueManageUrl) + '">Manage value ↗</a></div></article>';
     }
 
     if (economics || economicsUsage.available || economicsQuota.available) {
