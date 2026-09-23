@@ -306,6 +306,8 @@ function campaigns_rewards_save_campaign_v100(PDO $pdo,int $merchantId,int $acto
         $campaign=campaigns_rewards_campaign_platform_v100($pdo,$campaignId)?:throw new RuntimeException('Campaign not found.');
         if((int)$campaign['merchant_id']!==$merchantId)throw new RuntimeException('Campaign not found.');
         campaigns_rewards_platform_assert_can_v100($pdo,$merchantId,$actorUserId,'campaigns.edit');
+        $wasActive=(string)$campaign['status']==='active';
+        if($wasActive)campaigns_rewards_platform_assert_can_v100($pdo,$merchantId,$actorUserId,'campaigns.publish');
         $title=campaigns_rewards_text_v100($input['title']??$campaign['name'],190);if($title==='')throw new RuntimeException('Campaign title is required.');
         $slug=campaigns_rewards_slug_v100((string)($input['slug']??$campaign['slug']),120)?:$campaign['slug'];
         $check=$pdo->prepare('SELECT 1 FROM campaigns WHERE slug=? AND id<>? LIMIT 1');$check->execute([$slug,$campaignId]);if($check->fetchColumn())throw new RuntimeException('That public Campaign slug is already in use.');
@@ -336,6 +338,7 @@ function campaigns_rewards_save_campaign_v100(PDO $pdo,int $merchantId,int $acto
     $merchant=campaigns_rewards_platform_merchant_v100($pdo,$merchantId);
     $profileUserId=(int)($merchant['owner_user_id']??0);
     if($profileUserId>0)campaigns_rewards_publish_profile_v100($pdo,$campaignId,$actorUserId,$profileUserId,!empty($input['profile_visible']));
+    if(!empty($wasActive))campaigns_rewards_snapshot_campaign_v100($pdo,$campaignId,$actorUserId,'published');
     return campaigns_rewards_campaign_v100($pdo,$campaignId)?:throw new RuntimeException('Campaign could not be reloaded.');
 }
 
