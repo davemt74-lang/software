@@ -301,6 +301,7 @@ $accountBrainTools = agent_brain_tools($user);
             <a href="#security">Security</a>
             <a href="#agent-brain">Agent Brain</a>
             <a href="#access">Your Access</a>
+            <a href="<?= e(url('/connected-sites.php')) ?>">Connected Sites</a>
           </nav>
 
           <div class="account-canvas-content">
