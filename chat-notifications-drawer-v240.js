@@ -377,6 +377,10 @@
     const replanChanges = Array.isArray(replanning.changes) ? replanning.changes : [];
     const commitmentProtection = brain.commitment_protection || {};
     const protectedCommitments = Array.isArray(commitmentProtection.commitments) ? commitmentProtection.commitments : [];
+    const economics = brain.economics || {};
+    const economicsGoals = Array.isArray(economics.goals) ? economics.goals : [];
+    const economicsUsage = economics.usage || {};
+    const economicsQuota = economics.quota || {};
     const autonomyItems = Array.isArray(autonomy.items) ? autonomy.items : [];
     const supervisionIssues = Array.isArray(supervision.issues) ? supervision.issues : [];
     const supervisionByRef = new Map(supervisionIssues.map(item => [String(item.continuity_ref || ''), item]));
@@ -539,6 +543,33 @@
         </div>
       </section>` : ''}
 
+      ${(economicsUsage.available || economicsQuota.available || economicsGoals.length) ? `
+      <section class="chat-activity-section">
+        <div class="chat-activity-section-head">
+          <div><strong>Cost & Resource Economics</strong><span>v25.50 reads canonical AI usage and configured rate estimates plus token balance. Estimated cost is ledger-derived, not an invoice; unknown pricing is never treated as zero, and economics cannot override commitments or execution authority.</span></div>
+        </div>
+        <div class="chat-brain-metrics">
+          ${brainMetric('30d est. cost', '$' + (Number(economicsUsage.known_cost_micros || 0) / 1000000).toFixed(Number(economicsUsage.known_cost_micros || 0) > 0 && Number(economicsUsage.known_cost_micros || 0) < 10000 ? 4 : 2))}
+          ${brainMetric('Unknown pricing', Number(economicsUsage.unknown_cost_requests || 0) + ' request(s)')}
+          ${brainMetric('30d tokens', Number(economicsUsage.total_tokens || 0).toLocaleString())}
+          ${brainMetric('Cloud tokens charged', Number(economicsUsage.cloud_tokens_charged || 0).toLocaleString())}
+          ${brainMetric('Quota state', String(economicsQuota.state || 'unavailable').replaceAll('_',' '))}
+          ${brainMetric('Remaining', economicsQuota.unlimited ? 'Unlimited' : Number(economicsQuota.remaining || 0).toLocaleString() + ' tokens')}
+        </div>
+        ${economicsGoals.length ? `<div class="chat-brain-memory-list">
+          ${economicsGoals.map(item => {
+            const micros = Number(item.attributed_known_cost_micros || 0);
+            const cost = '$' + (micros / 1000000).toFixed(micros > 0 && micros < 10000 ? 4 : 2);
+            const adjustment = Number(item.planning_adjustment || 0);
+            return `<article>
+              <span>${esc(String(item.recommendation || 'neutral').replaceAll('_',' '))} · ${esc(item.executor || 'cloud')}</span>
+              <strong>${esc(item.title || ('Goal #' + Number(item.goal_id || 0)))}</strong>
+              <p>${cost} attributed estimated cost${Number(item.unknown_cost_requests || 0) ? ` · ${Number(item.unknown_cost_requests || 0)} unknown-priced request(s)` : ''}</p>
+              <small>${item.cost_known ? `relative cost ${Number(item.relative_cost_index || 0).toFixed(2)}× cloud average` : 'no priced run evidence'} · adjustment ${adjustment >= 0 ? '+' : ''}${adjustment.toFixed(3)}${item.commitment_exempt ? ' · commitment exempt' : ''} · shared runs proportionally attributed</small>
+            </article>`;
+          }).join('')}
+        </div>` : ''}
+      </section>` : ''}
       ${replanning.health && replanning.health !== 'unavailable' ? `
       <section class="chat-activity-section">
         <div class="chat-activity-section-head">

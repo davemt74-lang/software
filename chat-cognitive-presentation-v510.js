@@ -175,6 +175,10 @@
     const replanningCounts = brief.replanning_counts || {};
     const commitment = brief.commitment_focus || null;
     const commitmentCounts = brief.commitment_counts || {};
+    const economics = brief.economics_focus || null;
+    const economicsCounts = brief.economics_counts || {};
+    const economicsUsage = brief.economics_usage || {};
+    const economicsQuota = brief.economics_quota || {};
     const counts = brief.counts || {};
     let html = '<div class="chat-agent-brief-status"><span><i class="chat-agent-brief-dot ' +
       (brief.active !== false ? 'active' : '') + '"></i>' +
@@ -193,6 +197,22 @@
         '<div class="chat-agent-brief-actions">' +
         actionButton('Review commitments',
           ' data-agent-brief-prompt="' + esc('Review my protected commitments and deadlines. Explain what is at risk, what is waiting on me, any capacity conflicts, and what can safely be reprioritized without changing commitments or executors.') + '"',false) +
+        '</div></article>';
+    }
+
+    if (economics || economicsUsage.available || economicsQuota.available) {
+      const knownMicros = Number(economicsUsage.known_cost_micros || 0);
+      const knownCost = '$' + (knownMicros / 1000000).toFixed(knownMicros > 0 && knownMicros < 10000 ? 4 : 2);
+      const unknown = Number(economicsUsage.unknown_cost_requests || 0);
+      const quotaState = String(economicsQuota.state || 'unavailable').replaceAll('_',' ');
+      const remaining = economicsQuota.unlimited ? 'unlimited' : Number(economicsQuota.remaining || 0).toLocaleString() + ' tokens remaining';
+      html += '<article class="chat-agent-brief-card"><small>Cost & resource economics · 30-day ledger estimate</small><strong>' +
+        esc(economics?.title || 'AI resource economics') + '</strong>' +
+        '<p>' + esc(knownCost) + ' estimated AI cost from recorded usage' + (unknown ? ' + ' + unknown + ' unknown-priced request(s)' : '') + '</p>' +
+        '<p><small>' + esc(quotaState) + ' · ' + esc(remaining) + ' · ' + Number(economicsCounts.planning_adjusted || 0) + ' autonomous goal(s) economically adjusted</small></p>' +
+        '<div class="chat-agent-brief-actions">' +
+        actionButton('Review economics',
+          ' data-agent-brief-prompt="' + esc('Review my AI cost and resource economics. Separate ledger-estimated cost from unknown pricing, explain token pressure and any autonomous planning adjustments, and do not change commitments, executors, deadlines, packages, or token balances.') + '"',false) +
         '</div></article>';
     }
 

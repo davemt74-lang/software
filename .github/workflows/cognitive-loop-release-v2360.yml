@@ -1,4 +1,4 @@
-name: Cognitive Runtime Release v25.40
+name: Cognitive Runtime Release v25.50
 
 on:
   pull_request:
@@ -23,6 +23,7 @@ on:
       - 'docs/VP3_COGNITIVE_RESOURCE_BUDGET_V2520.md'
       - 'docs/VP3_COGNITIVE_REPLANNING_V2530.md'
       - 'docs/VP3_COGNITIVE_COMMITMENT_PROTECTION_V2540.md'
+      - 'docs/VP3_COGNITIVE_ECONOMICS_V2550.md'
       - 'api/cognitive-*.php'
       - 'api/chat-notifications-brain-v240.php'
       - 'api/extension-cognitive-now-v2120.php'
@@ -76,11 +77,11 @@ on:
       - '.github/workflows/cognitive-loop-release-v2360.yml'
   push:
     branches:
-      - 'cognitive-commitment-protection-v2540'
+      - 'cognitive-cost-resource-economics-v2550'
 
 jobs:
   release:
-    name: Cognitive Runtime v25.40 · PHP ${{ matrix.php }}
+    name: Cognitive Runtime v25.50 · PHP ${{ matrix.php }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -136,6 +137,8 @@ jobs:
           php -l includes/cognitive-release-v2530.php
           php -l includes/cognitive-commitment-protection-v2540.php
           php -l includes/cognitive-release-v2540.php
+          php -l includes/cognitive-economics-v2550.php
+          php -l includes/cognitive-release-v2550.php
           php -l includes/cognitive-presentation-v510.php
           php -l includes/cognitive-cards-v520.php
           php -l includes/cognitive-feed-v530.php
@@ -226,6 +229,10 @@ jobs:
         run: |
           php tests/cognitive-commitment-protection-v2540.php
           node tests/cognitive-commitment-protection-v2540.mjs
+      - name: v25.50 cost and resource economics
+        run: |
+          php tests/cognitive-economics-v2550.php
+          node tests/cognitive-economics-v2550.mjs
       - name: v23.x feature family
         run: |
           node tests/cognitive-calibration-v2350.mjs
