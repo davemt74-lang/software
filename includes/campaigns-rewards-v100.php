@@ -364,20 +364,46 @@ function campaigns_rewards_reward_v100(PDO $pdo,int $rewardId,bool $forUpdate=fa
 function campaigns_rewards_rewards_v100(PDO $pdo,int $campaignId,bool $publicOnly=false): array
 {
     $campaign=campaigns_rewards_campaign_platform_v100($pdo,$campaignId);if(!$campaign)return [];
+    if($publicOnly){
+        if((int)$campaign['current_version_no']<1)return [];
+        $q=$pdo->prepare('SELECT * FROM campaign_versions WHERE campaign_id=? AND version_no=? LIMIT 1');
+        $q->execute([$campaignId,(int)$campaign['current_version_no']]);$version=$q->fetch();if(!$version)return [];
+        $items=json_decode((string)($version['reward_snapshot_json']??''),true);if(!is_array($items))return [];
+        $rows=[];
+        foreach($items as $item){
+            if(!is_array($item))continue;$rewardId=(int)($item['reward_product_id']??0);if($rewardId<1)continue;
+            $current=campaigns_rewards_reward_v100($pdo,$rewardId);if(!$current||($current['status']??'')!=='active')continue;
+            $settings=json_decode((string)($item['settings_json']??''),true);if(!is_array($settings))$settings=[];
+            $row=$current;
+            $row['public_id']=(string)($item['reward_product_public_id']??$current['public_id']);
+            $row['name']=$row['title']=(string)($item['reward_name']??$current['name']);
+            $row['description']=(string)($item['reward_description']??'');
+            $row['reward_type']=(string)($item['reward_type_key']??$current['reward_type']);
+            $row['value_label']=(string)($settings['value_label']??'');
+            $row['inventory_limit']=(int)($settings['inventory_limit']??0);
+            $row['per_customer_limit']=max(1,(int)($item['claim_limit']??1));
+            $row['status']=!empty($item['is_active'])?'active':'inactive';
+            $row['campaign_id']=$campaignId;$row['merchant_account_id']=(int)$campaign['merchant_id'];
+            if($row['status']==='active')$rows[]=$row;
+        }
+        return $rows;
+    }
     $sql="SELECT DISTINCT rp.id FROM campaign_reward_sets rs
       INNER JOIN campaign_reward_set_items i ON i.reward_set_id=rs.id
       INNER JOIN reward_products rp ON rp.id=i.reward_product_id
-      WHERE rs.campaign_id=?";
-    if($publicOnly)$sql.=" AND rp.is_active=1";
-    $sql.=" ORDER BY rp.id";
+      WHERE rs.campaign_id=? ORDER BY rp.id";
     $stmt=$pdo->prepare($sql);$stmt->execute([$campaignId]);$rows=[];
-    foreach($stmt->fetchAll(PDO::FETCH_COLUMN)?:[] as $id){$row=campaigns_rewards_reward_v100($pdo,(int)$id);if($row){$row['campaign_id']=$campaignId;$row['merchant_account_id']=(int)$campaign['merchant_id'];$rows[]=$row;}}
+    foreach($stmt->fetchAll(PDO::FETCH_COLUMN)?:[] as $id){
+        $row=campaigns_rewards_reward_v100($pdo,(int)$id);
+        if($row){$row['campaign_id']=$campaignId;$row['merchant_account_id']=(int)$campaign['merchant_id'];$rows[]=$row;}
+    }
     return $rows;
 }
-
 function campaigns_rewards_save_reward_v100(PDO $pdo,int $campaignId,int $actorUserId,array $input,int $rewardId=0): array
 {
     $campaign=campaigns_rewards_campaign_platform_v100($pdo,$campaignId)?:throw new RuntimeException('Campaign not found.');
+    $wasActive=(string)$campaign['status']==='active';
+    if($wasActive)campaigns_rewards_platform_assert_can_v100($pdo,(int)$campaign['merchant_id'],$actorUserId,'campaigns.publish');
     $legacyType=(string)($input['reward_type']??'gift');
     $typeMap=['offer'=>'custom','gift'=>'free_product','discount'=>'percentage_discount','access'=>'membership_access','recognition'=>'custom'];
     $type=$typeMap[$legacyType]??$legacyType;$inventory=max(0,(int)($input['inventory_limit']??0));
@@ -400,6 +426,7 @@ function campaigns_rewards_save_reward_v100(PDO $pdo,int $campaignId,int $actorU
         $delta=$inventory-$old;if($delta!==0)$pdo->prepare("INSERT INTO reward_inventory_ledger (reward_product_id,variant_id,location_id,movement_type,quantity_delta,on_hand_delta,reserved_delta,source_type,source_id,actor_user_id,metadata_json)
           VALUES (?,0,0,'adjust',?,?,0,'reward_product',?,?,?)")->execute([(int)$reward['id'],$delta,$delta,(string)$reward['id'],$actorUserId,campaigns_rewards_json_v100(['target_on_hand'=>$inventory])]);
     }
+    if($wasActive)campaigns_rewards_snapshot_campaign_v100($pdo,$campaignId,$actorUserId,'published');
     return campaigns_rewards_reward_v100($pdo,(int)$reward['id'])?:throw new RuntimeException('Reward Product could not be reloaded.');
 }
 function campaigns_rewards_campaign_by_slug_v100(PDO $pdo,string $slug,bool $publicOnly=true): ?array
