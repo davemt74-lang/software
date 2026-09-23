@@ -76,8 +76,8 @@ Immediate issuance:
 - Referral Reward
 - Partner Offer
 
-Immediate when attached:
-- Contest / Giveaway participation reward
+Verification/selection gated:
+- Contest / Giveaway winner Reward
 
 Triggered later:
 - Birthday / VIP
