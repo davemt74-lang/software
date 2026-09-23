@@ -35,9 +35,9 @@ const checks=[
  ['Campaigns & Rewards is visible in primary sidebar Plan & Sell',sidebar.includes("$mainSidebarPrimaryOrder = ['home','chat','profile_agent','messages','contacts','knowledge','transcriptions','calendar','scheduling','profile_commerce','campaigns','team'];")&&sidebar.includes("'campaigns'=>'Campaigns & Rewards'")&&sidebar.includes("'campaigns'=>'Plan & Sell'")],
  ['Campaigns & Rewards is intentionally duplicated in bottom sidebar user menu',sidebar.includes('Campaigns & Rewards is intentionally available in both Plan & Sell')&&sidebar.includes('array_unshift($mainSidebarFooterLinks,$campaignsFooterLink)')],
  ['navigation catalog still gates Campaigns by actual plugin access',/campaigns_rewards_user_has_access_v100/.test(nav)&&/'campaigns','Campaigns & Rewards'/.test(nav)],
- ['dedicated cognitive workflow is v26.10 aware',/Cognitive Runtime Release v26\\.10/.test(workflow)&&/cognitive-entity-graph-v2610\\.php/.test(workflow)&&/cognitive-entity-graph-v2610\\.mjs/.test(workflow)],
- ['Recovery Baseline includes both v26.10 contracts',/cognitive-entity-graph-v2610\\.mjs/.test(recovery)&&/cognitive-entity-graph-v2610\\.php/.test(recovery)],
- ['production package requires v26.10 graph and release files',/Cognitive Runtime v26\\.10/.test(packageWorkflow)&&/cognitive-entity-graph-v2610\\.php/.test(packageWorkflow)&&/cognitive-release-v2610\\.php/.test(packageWorkflow)],
+ ['dedicated cognitive workflow is v26.10 aware',workflow.includes('name: Cognitive Runtime Release v26.10')&&workflow.includes('cognitive-entity-graph-v2610.php')&&workflow.includes('cognitive-entity-graph-v2610.mjs')],
+ ['Recovery Baseline includes both v26.10 contracts',recovery.includes("'tests/cognitive-entity-graph-v2610.mjs'")&&recovery.includes("'tests/cognitive-entity-graph-v2610.php'")],
+ ['production package requires v26.10 graph and release files',packageWorkflow.includes('"release": "Cognitive Runtime v26.10"')&&packageWorkflow.includes('cognitive-entity-graph-v2610.php')&&packageWorkflow.includes('cognitive-release-v2610.php')],
  ['documentation states no duplicate domain data and no fuzzy identity merge',/does not create a graph database/i.test(docs)&&/does not merge records because names, email addresses/i.test(docs)&&/Model-inferred links/.test(docs)],
 ];
 for(const [name,ok] of checks){assert.equal(ok,true,name);console.log('PASS',name);}
