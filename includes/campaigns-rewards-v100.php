@@ -47,7 +47,11 @@ function campaigns_rewards_team_categories_v100(): array
 
 function campaigns_rewards_merchant_roles_v100(): array
 {
-    return ['owner'=>'Owner','admin'=>'Admin','member'=>'Member'];
+    return [
+        'owner'=>'Owner','administrator'=>'Administrator','manager'=>'Manager','marketing'=>'Marketing',
+        'customer_service'=>'Customer Service','claim_processor'=>'Claim Processor',
+        'fulfillment'=>'Fulfillment','analyst'=>'Analyst','custom'=>'Custom',
+    ];
 }
 
 function campaigns_rewards_schema_ready_v100(?PDO $pdo=null): bool
@@ -295,36 +299,58 @@ function campaigns_rewards_owner_plugin_enabled_v100(PDO $pdo,int $ownerUserId):
 
 function campaigns_rewards_merchant_v100(PDO $pdo,int $merchantId,bool $forUpdate=false): ?array
 {
-    if($merchantId<1||!campaigns_rewards_schema_ready_v100($pdo))return null;
+    if($merchantId<1)return null;
+    if(function_exists('campaigns_rewards_platform_schema_ready_v100')&&campaigns_rewards_platform_schema_ready_v100($pdo)){
+        $stmt=$pdo->prepare("SELECT m.*,m.owner_user_id profile_user_id,mp.description,mp.website_url,
+          '' contact_email,'' contact_phone FROM merchant_accounts m
+          LEFT JOIN merchant_profiles mp ON mp.merchant_id=m.id WHERE m.id=? LIMIT 1".($forUpdate?' FOR UPDATE':''));
+        $stmt->execute([$merchantId]);$row=$stmt->fetch();return $row?:null;
+    }
+    if(!campaigns_rewards_schema_ready_v100($pdo))return null;
     $stmt=$pdo->prepare('SELECT * FROM campaign_merchant_accounts_v100 WHERE id=? LIMIT 1'.($forUpdate?' FOR UPDATE':''));
     $stmt->execute([$merchantId]);$row=$stmt->fetch();return $row?:null;
 }
 
 function campaigns_rewards_merchant_member_v100(PDO $pdo,int $merchantId,int $userId,bool $forUpdate=false): ?array
 {
-    if($merchantId<1||$userId<1||!campaigns_rewards_schema_ready_v100($pdo))return null;
+    if($merchantId<1||$userId<1)return null;
+    if(function_exists('campaigns_rewards_platform_schema_ready_v100')&&campaigns_rewards_platform_schema_ready_v100($pdo)){
+        $stmt=$pdo->prepare("SELECT mm.*,mr.role_key member_role,mm.status member_status,
+          IF(mm.is_owner=1,'direct','projected') source
+          FROM merchant_members mm INNER JOIN merchant_roles mr ON mr.id=mm.role_id
+          WHERE mm.merchant_id=? AND mm.user_id=? LIMIT 1".($forUpdate?' FOR UPDATE':''));
+        $stmt->execute([$merchantId,$userId]);$row=$stmt->fetch();
+        if($row){
+            $sources=$pdo->prepare("SELECT source_type,role_key,status FROM merchant_member_access_sources WHERE merchant_id=? AND user_id=? ORDER BY FIELD(source_type,'owner','direct','team'),id");
+            $sources->execute([$merchantId,$userId]);$row['access_sources']=$sources->fetchAll()?:[];
+        }
+        return $row?:null;
+    }
+    if(!campaigns_rewards_schema_ready_v100($pdo))return null;
     $stmt=$pdo->prepare('SELECT * FROM campaign_merchant_members_v100 WHERE merchant_account_id=? AND user_id=? LIMIT 1'.($forUpdate?' FOR UPDATE':''));
     $stmt->execute([$merchantId,$userId]);$row=$stmt->fetch();return $row?:null;
 }
 
 function campaigns_rewards_member_role_v100(PDO $pdo,int $merchantId,int $userId): string
 {
-    $merchant=campaigns_rewards_merchant_v100($pdo,$merchantId);if(!$merchant)return '';
-    if((int)$merchant['owner_user_id']===$userId)return 'owner';
     $member=campaigns_rewards_merchant_member_v100($pdo,$merchantId,$userId);
-    if(!$member)return '';
-    if(($member['member_status']??'')==='active'&&($member['source']??'')==='direct')return (string)$member['member_role'];
-    if(!empty($member['team_scope_active'])||(($member['member_status']??'')==='active'&&($member['source']??'')==='team_scope'))return 'member';
-    return '';
+    if(!$member||($member['member_status']??'')!=='active')return '';
+    $role=(string)($member['member_role']??'');
+    return $role==='administrator'?'admin':($role==='merchant_team'?'member':$role);
 }
 
 function campaigns_rewards_can_manage_merchant_v100(PDO $pdo,int $merchantId,int $userId): bool
 {
+    if(function_exists('campaigns_rewards_platform_can_v100')&&function_exists('campaigns_rewards_platform_schema_ready_v100')&&campaigns_rewards_platform_schema_ready_v100($pdo)){
+        return campaigns_rewards_platform_can_v100($pdo,$merchantId,$userId,'merchant.manage');
+    }
     return in_array(campaigns_rewards_member_role_v100($pdo,$merchantId,$userId),['owner','admin'],true);
 }
 
 function campaigns_rewards_can_own_merchant_v100(PDO $pdo,int $merchantId,int $userId): bool
 {
+    $member=campaigns_rewards_merchant_member_v100($pdo,$merchantId,$userId);
+    if($member&&array_key_exists('is_owner',$member))return ($member['member_status']??'')==='active'&&!empty($member['is_owner']);
     return campaigns_rewards_member_role_v100($pdo,$merchantId,$userId)==='owner';
 }
 
