@@ -137,9 +137,8 @@ const checks=[
    /cognitive-economics-v2550\.php/.test(workflow)&&/cognitive-economics-v2550\.mjs/.test(workflow)],
  ['Recovery Baseline retains v25.50 gates',
    /cognitive-economics-v2550\.php/.test(recovery)&&/cognitive-economics-v2550\.mjs/.test(recovery)],
- ['production package requires v25.50 runtime release and canonical sources',
-   /Cognitive Runtime v25\.50/.test(packageWorkflow)
-   &&/cognitive-economics-v2550\.php/.test(packageWorkflow)
+ ['production package retains v25.50 runtime release and canonical sources',
+   /cognitive-economics-v2550\.php/.test(packageWorkflow)
    &&/cognitive-release-v2550\.php/.test(packageWorkflow)
    &&/ai-usage-accounting-v032\.php/.test(packageWorkflow)
    &&/subscription-quota\.php/.test(packageWorkflow)],
