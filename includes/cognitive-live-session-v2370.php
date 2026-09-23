@@ -121,6 +121,8 @@ function vp3_live_session_segment_type_v2370(string $state): string
 
 function vp3_live_session_project_ref_v2370(array $context): string
 {
+    $ref=trim((string)($context['project_ref']??''));
+    if($ref!=='')return mb_strimwidth($ref,0,190,'');
     $project=max(0,(int)($context['project_id']??0));
     if($project>0)return 'project:'.$project;
     $track=max(0,(int)($context['track_id']??0));
@@ -129,6 +131,8 @@ function vp3_live_session_project_ref_v2370(array $context): string
 
 function vp3_live_session_task_ref_v2370(array $context): string
 {
+    $ref=trim((string)($context['task_ref']??''));
+    if($ref!=='')return mb_strimwidth($ref,0,190,'');
     $key=trim((string)($context['task_key']??''));
     if($key!=='')return mb_strimwidth($key,0,190,'');
     $title=trim((string)($context['task_title']??''));
@@ -137,6 +141,8 @@ function vp3_live_session_task_ref_v2370(array $context): string
 
 function vp3_live_session_goal_ref_v2370(array $context): string
 {
+    $ref=trim((string)($context['goal_ref']??''));
+    if($ref!=='')return mb_strimwidth($ref,0,190,'');
     $key=trim((string)($context['goal_key']??$context['goal_id']??''));
     if($key!=='')return 'goal:'.mb_strimwidth($key,0,180,'');
     $title=trim((string)($context['goal_title']??''));
@@ -432,6 +438,9 @@ function vp3_live_session_note_action_v2370(array $user,string $actor,string $ev
         $params=[$summary,vp3_live_session_json_v2370($actions)];
         if($actor==='user')$sql.=",last_activity_at=UTC_TIMESTAMP()";
         if(isset($context['conversation_id'])){$sql.=",current_conversation_id=?";$params[]=max(0,(int)$context['conversation_id']);}
+        $projectRef=vp3_live_session_project_ref_v2370($context);if($projectRef!==''){$sql.=",current_project_ref=?";$params[]=$projectRef;}
+        $taskRef=vp3_live_session_task_ref_v2370($context);if($taskRef!==''){$sql.=",current_task_ref=?";$params[]=$taskRef;}
+        $goalRef=vp3_live_session_goal_ref_v2370($context);if($goalRef!==''){$sql.=",current_goal_ref=?";$params[]=$goalRef;}
         if(array_key_exists('knowledge_scope',$context)){
             $state=$existingState;$state['knowledge_scope']=$knowledgeScope;$sql.=",state_json=?";$params[]=vp3_live_session_json_v2370($state);
         }

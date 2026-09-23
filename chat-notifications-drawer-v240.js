@@ -358,6 +358,9 @@
     const themes = Array.isArray(brain.themes) ? brain.themes : [];
     const working = brain.working_context || {};
     const turn = brain.turn_state || {};
+    const continuity = brain.continuity || {};
+    const continuityItems = Array.isArray(continuity.items) ? continuity.items : [];
+    const continuityFocus = continuity.focus || {};
     const counts = working.counts || {};
     const budget = working.attention?.budget || {};
     const currentState = stateLabel(activity.state || 'idle');
@@ -384,6 +387,21 @@
       action_proposed:'Action proposed',
       suppressed:'Quiet'
     }[turnStatus] || turnStatus.replaceAll('_',' ') || 'No status');
+    const continuityStateLabel = value => ({
+      needs_approval:'Needs approval',
+      needs_user:'Waiting for you',
+      repair_needed:'Repair needed',
+      blocked:'Blocked',
+      working:'Working',
+      ready:'Ready',
+      needs_planning:'Needs planning',
+      verifying:'Verifying',
+      needs_review:'Needs review',
+      planned:'Planned',
+      scheduled:'Scheduled',
+      tracking:'Tracking',
+      paused:'Paused'
+    }[String(value || '')] || String(value || '').replaceAll('_',' ') || 'Open');
 
     return `
       <section class="chat-activity-section chat-brain-overview">
@@ -422,6 +440,26 @@
           ${brainMetric('Relevant context', `${Number(turn.context_item_count || 0)} items`)}
         </div>
         ${turn.task_ref || turn.goal_ref || turn.context_key ? `<div class="chat-brain-memory-list"><article><span>Continuity</span><strong>${esc(turn.task_ref || turn.goal_ref || turn.context_key || 'Active work')}</strong><p>${esc(turn.goal_ref ? `Goal: ${turn.goal_ref}` : turn.context_key || '')}</p><small>${esc(relative(turn.created_at))}</small></article></div>` : ''}
+      </section>` : ''}
+
+      ${continuityItems.length ? `
+      <section class="chat-activity-section">
+        <div class="chat-activity-section-head">
+          <div><strong>Open Work</strong><span>v24.40 resumes existing goals, tasks, workflows and commitments instead of creating duplicates.</span></div>
+        </div>
+        <div class="chat-brain-metrics">
+          ${brainMetric('Open items', Number(continuity.open_count || continuityItems.length))}
+          ${brainMetric('Waiting on you', Number(continuity.waiting_for_user || 0))}
+          ${brainMetric('Focus', continuityStateLabel(continuityFocus.state || ''))}
+        </div>
+        <div class="chat-brain-memory-list">
+          ${continuityItems.map(item => `<article>
+            <span>${esc(continuityStateLabel(item.state))}</span>
+            <strong>${esc(item.title || item.ref || 'Open work')}</strong>
+            <p>${esc(item.summary || item.resume_action || '')}</p>
+            <small>${esc(String(item.kind || '').replaceAll('_',' '))}${item.blocked_by ? ` · ${Number(item.blocked_by)} blocker${Number(item.blocked_by) === 1 ? '' : 's'}` : ''}</small>
+          </article>`).join('')}
+        </div>
       </section>` : ''}
 
       <section class="chat-activity-section chat-brain-priorities-section">
