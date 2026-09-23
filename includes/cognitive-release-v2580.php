@@ -63,6 +63,8 @@ function vp3_cognitive_release_manifest_v2580(): array
             'raw_forecast_is_retained'=>true,
             'raw_cost_projection_is_retained'=>true,
             'raw_token_projection_is_retained'=>true,
+            'cost_token_projection_capture_does_not_require_budget_or_value_profile'=>true,
+            'projection_capture_does_not_create_governance_policy'=>true,
             'user_expected_value_is_not_rewritten'=>true,
             'hard_budget_authority_unchanged'=>true,
             'commitment_authority_unchanged'=>true,
