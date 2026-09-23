@@ -105,6 +105,9 @@ function vp3_cognitive_replanning_goal_analysis_v2530(
     )));
     $capacityPressure=$ready?($free<1?1.0:max(0.0,min(1.0,1.0-($free/max(1,$max))))):1.0;
     $commitment=max(0.0,min(1.25,(float)($item['commitment_protection_score']??0.0)));
+    $economicAdjustment=max(-0.10,min(0.08,(float)($item['economic_planning_adjustment']??0.0)));
+    $economicAttention=max(0.0,min(1.5,(float)($item['economic_attention_score']??0.0)));
+    $economicQuotaState=(string)($item['economic_quota_state']??'unavailable');
     $commitmentAtRisk=!empty($item['commitment_at_risk']);
     $commitmentConflict=(string)($item['commitment_conflict_code']??'');
 
@@ -118,10 +121,11 @@ function vp3_cognitive_replanning_goal_analysis_v2530(
         if($urgent&&$capacityPressure>=0.75)$issues[]='urgent_capacity_pressure';
         if($commitmentAtRisk)$issues[]='protected_commitment_at_risk';
         if($commitmentConflict!=='')$issues[]='commitment_'.$commitmentConflict;
+        if($economicAdjustment<0)$issues[]='economic_pressure';
     }
 
     $score=($deadline*0.28)+($priority*0.17)+($leverage*0.15)+($optimized*0.12)
-        +($commitment*0.18)+($capacityPressure*0.06)+($progress*0.04);
+        +($commitment*0.18)+($capacityPressure*0.06)+($progress*0.04)+$economicAdjustment;
     if($deadlineThreat)$score+=0.16;
     if($urgent)$score+=0.07;
     if($commitmentAtRisk)$score+=0.18;
@@ -144,6 +148,7 @@ function vp3_cognitive_replanning_goal_analysis_v2530(
     elseif($commitmentAtRisk)$action='protect_commitment';
     elseif($deadlineThreat)$action='protect_deadline';
     elseif($urgent&&$capacityPressure>=0.75)$action='protect_capacity';
+    elseif($economicAdjustment<0)$action='defer_if_safe_for_budget';
     elseif($leverage>=0.67)$action='unlock_downstream_work';
 
     return [
@@ -167,6 +172,9 @@ function vp3_cognitive_replanning_goal_analysis_v2530(
         'commitment_protection_score'=>$commitment,
         'commitment_at_risk'=>$commitmentAtRisk,
         'commitment_conflict_code'=>$commitmentConflict,
+        'economic_planning_adjustment'=>$economicAdjustment,
+        'economic_attention_score'=>$economicAttention,
+        'economic_quota_state'=>$economicQuotaState,
         'dependency_leverage_goal_ids'=>array_values(array_map(
             'intval',(array)($item['dependency_leverage_goal_ids']??[])
         )),
