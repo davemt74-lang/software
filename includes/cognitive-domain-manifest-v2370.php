@@ -36,10 +36,10 @@ function vp3_cognitive_domain_manifest_v2370(): array
                 'phase'=>'v23.70',
             ],
             'agent_brain_history'=>[
-                'authority'=>['agent_memory_items','agent_learning_history','agent_edit_events','agent_tool_history'],
+                'authority'=>['agent_memory_items','cognitive_memory_threads_v570','cognitive_memory_occurrences_v570','cognitive_memory_promotion_receipts_v2400','agent_learning_history','agent_edit_events','agent_tool_history'],
                 'objects'=>['brain_memory','brain_task','history_episode'],
                 'events'=>['brain.memory_promoted','brain.memory_superseded','brain.task_changed','history.episode_closed'],
-                'phase'=>'v24.00',
+                'phase'=>'integrated-v24.00',
             ],
             'profile_agent'=>[
                 'authority'=>['profile_visit_sessions','profile_events','profile_agent_conversations','vp3_agent_contacts'],
