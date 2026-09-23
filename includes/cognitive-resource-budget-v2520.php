@@ -87,12 +87,13 @@ function vp3_cognitive_resource_reservation_score_v2520(array $item,array $capac
     $commitment=max(0.0,min(1.0,(float)($item['commitment_protection_score']??0.0)));
     $economicAdjustment=max(-0.10,min(0.08,(float)($item['economic_planning_adjustment']??0.0)));
     $budgetAdjustment=max(-0.10,min(0.0,(float)($item['budget_planning_adjustment']??0.0)));
+    $valueAdjustment=max(-0.08,min(0.08,(float)($item['value_planning_adjustment']??0.0)));
     $capacityPressure=0.0;
     if(function_exists('vp3_cognitive_forecast_capacity_pressure_v2490')){
         try{$capacityPressure=vp3_cognitive_forecast_capacity_pressure_v2490($item,$capacity);}
         catch(Throwable $e){$capacityPressure=0.0;}
     }
-    $score=($deadline*0.34)+($priority*0.22)+($optimized*0.13)+($leverage*0.09)+($commitment*0.12)+($progress*0.05)+($capacityPressure*0.05)-($blockers*0.06)+$economicAdjustment+$budgetAdjustment;
+    $score=($deadline*0.34)+($priority*0.22)+($optimized*0.13)+($leverage*0.09)+($commitment*0.12)+($progress*0.05)+($capacityPressure*0.05)-($blockers*0.06)+$economicAdjustment+$budgetAdjustment+$valueAdjustment;
     return round(max(0.0,min(1.25,$score)),4);
 }
 
