@@ -257,8 +257,14 @@ function campaigns_rewards_automation_recipients_v119(PDO $pdo,array $rule,array
 {
     if(!campaigns_rewards_automation_payload_matches_v119($rule,$payload))return [];
     $merchantId=(int)$rule['merchant_id'];$conditions=(array)$rule['conditions'];$mode=(string)($rule['actions']['recipient_mode']??'event_contact');
-    $base=campaigns_rewards_automation_audience_contacts_v119($pdo,$merchantId,$conditions,$payload,$limit);
-    if((string)$rule['trigger_event']!=='referral_qualified'||$mode==='event_contact')return $base;
+    $trigger=(string)$rule['trigger_event'];$triggerMeta=campaigns_rewards_automation_triggers_v119()[$trigger]??[];
+    $eventContact=campaigns_rewards_automation_event_contact_v119($pdo,$merchantId,$payload);
+    if(($triggerMeta['mode']??'')==='event'&&$eventContact>0){
+        $base=campaigns_rewards_automation_contact_matches_v119($pdo,$merchantId,$eventContact,$conditions)?[$eventContact]:[];
+    }else{
+        $base=campaigns_rewards_automation_audience_contacts_v119($pdo,$merchantId,$conditions,$payload,$limit);
+    }
+    if($trigger!=='referral_qualified'||$mode==='event_contact')return $base;
     $referrer=max(0,(int)($payload['referrer_contact_id']??0));
     if($referrer<1)return $mode==='referrer'?[]:$base;
     if(!campaigns_rewards_automation_contact_matches_v119($pdo,$merchantId,$referrer,$conditions))return $mode==='referrer'?[]:$base;
@@ -347,10 +353,10 @@ function campaigns_rewards_automation_run_trigger_v119(PDO $pdo,string $trigger,
     return $summary;
 }
 
-function campaigns_rewards_automation_run_due_v119(PDO $pdo): array
+function campaigns_rewards_automation_run_due_v119(PDO $pdo,int $merchantId=0): array
 {
-    $out=['birthday_trigger'=>campaigns_rewards_automation_run_trigger_v119($pdo,'birthday_trigger',[],'birthday:'.gmdate('Y-m-d')),
-      'crm_lapse'=>campaigns_rewards_automation_run_trigger_v119($pdo,'crm_lapse',[],'winback:'.gmdate('Y-m-d'))];
+    $out=['birthday_trigger'=>campaigns_rewards_automation_run_trigger_v119($pdo,'birthday_trigger',[],'birthday:'.gmdate('Y-m-d'),$merchantId),
+      'crm_lapse'=>campaigns_rewards_automation_run_trigger_v119($pdo,'crm_lapse',[],'winback:'.gmdate('Y-m-d'),$merchantId)];
     return $out;
 }
 
