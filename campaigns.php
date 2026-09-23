@@ -46,6 +46,35 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
                 ];
             }
             flash('notice','Campaign participant fulfilled and Reward issued.');
+        }elseif($action==='automation_save'){
+            $campaignId=max(0,(int)($_POST['campaign_id']??0));
+            $rule=campaigns_rewards_automation_save_rule_v119($pdo,$merchantId,$campaignId,$uid,$_POST,max(0,(int)($_POST['rule_id']??0)));
+            flash('notice','Campaign automation saved.');
+            $redirectMerchant($merchantId,'&edit_campaign='.$campaignId.'&edit_rule='.(int)$rule['id'].'#campaign-automation');
+        }elseif($action==='automation_status'){
+            $rule=campaigns_rewards_automation_set_status_v119($pdo,max(0,(int)($_POST['rule_id']??0)),$uid,(string)($_POST['status']??'paused'));
+            flash('notice','Campaign automation status updated.');
+            $redirectMerchant($merchantId,'&edit_campaign='.(int)$rule['campaign_id'].'&edit_rule='.(int)$rule['id'].'#campaign-automation');
+        }elseif($action==='automation_evaluate_due'){
+            campaigns_rewards_platform_assert_can_v100($pdo,$merchantId,$uid,'campaigns.publish');
+            campaigns_rewards_platform_assert_can_v100($pdo,$merchantId,$uid,'rewards.issue');
+            $summary=campaigns_rewards_automation_run_due_v119($pdo,$merchantId);
+            $executed=(int)($summary['birthday_trigger']['executed']??0)+(int)($summary['crm_lapse']['executed']??0);
+            flash('notice','Due Campaign automations evaluated. '.$executed.' Reward'.($executed===1?'':'s').' issued.');
+        }elseif($action==='automation_event'){
+            campaigns_rewards_platform_assert_can_v100($pdo,$merchantId,$uid,'campaigns.enrollment.manage');
+            campaigns_rewards_platform_assert_can_v100($pdo,$merchantId,$uid,'rewards.issue');
+            $trigger=(string)($_POST['trigger_event']??'manual');
+            $allowed=['referral_qualified','winner_selected','attendance_confirmed','proof_approved','loyalty_milestone','product_available','allocation_approved','agent_action','manual'];
+            if(!in_array($trigger,$allowed,true))throw new RuntimeException('Choose a supported governed Campaign event.');
+            $contactId=max(0,(int)($_POST['contact_id']??0));$referrerId=max(0,(int)($_POST['referrer_contact_id']??0));
+            $eventId='merchant-event:'.$trigger.':'.$merchantId.':'.($contactId?:0).':'.bin2hex(random_bytes(8));
+            $summary=campaigns_rewards_automation_run_trigger_v119($pdo,$trigger,[
+                'contact_id'=>$contactId,'referrer_contact_id'=>$referrerId,
+                'balance'=>max(0,(int)($_POST['balance']??0)),
+                'amount_paid_cents'=>max(0,(int)($_POST['amount_paid_cents']??0)),
+            ],$eventId,$merchantId);
+            flash('notice','Campaign event processed. '.(int)$summary['executed'].' Reward'.((int)$summary['executed']===1?'':'s').' issued.');
         }elseif($action==='merchant_member_save'){
             if(!campaigns_rewards_can_own_merchant_v100($pdo,$merchantId,$uid))throw new RuntimeException('Merchant Owner access is required.');
             $email=strtolower(trim((string)($_POST['member_email']??'')));if(!filter_var($email,FILTER_VALIDATE_EMAIL))throw new RuntimeException('Enter an active VP3 user email.');
@@ -73,6 +102,7 @@ $canLocations=$merchant?campaigns_rewards_platform_can_v100($pdo,$merchantId,$ui
 $canCampaignEdit=$merchant?campaigns_rewards_platform_can_v100($pdo,$merchantId,$uid,'campaigns.edit'):false;
 $canCampaignEnrollment=$merchant?campaigns_rewards_platform_can_v100($pdo,$merchantId,$uid,'campaigns.enrollment.manage'):false;
 $canRewardIssue=$merchant?campaigns_rewards_platform_can_v100($pdo,$merchantId,$uid,'rewards.issue'):false;
+$canCampaignPublish=$merchant?campaigns_rewards_platform_can_v100($pdo,$merchantId,$uid,'campaigns.publish'):false;
 $canAnalytics=$merchant?campaigns_rewards_platform_can_v100($pdo,$merchantId,$uid,'analytics.view'):false;
 
 $locations=$merchant?campaigns_rewards_locations_v100($pdo,$merchantId):[];
@@ -80,6 +110,9 @@ $campaigns=$merchant?campaigns_rewards_campaigns_v100($pdo,$merchantId):[];
 $members=$merchant?campaigns_rewards_merchant_members_v100($pdo,$merchantId):[];
 $report=$merchant&&$canAnalytics?campaigns_rewards_reporting_v100($pdo,$merchantId,$uid):['active_campaigns'=>0,'landing_views'=>0,'customers'=>0,'claims_redeemed'=>0];
 $recentEnrollments=$merchant&&function_exists('campaigns_rewards_recent_enrollments_v118')?campaigns_rewards_recent_enrollments_v118($pdo,$merchantId,$uid,40):[];
+$automationRules=$merchant?campaigns_rewards_automation_rules_v119($pdo,$merchantId):[];
+$crmSegments=$merchant?campaigns_rewards_automation_crm_segments_v119($pdo,$merchantId):[];
+$campaignFunnels=[];$campaignInsights=[];
 $campaignTypes=[];$campaignTypesByCategory=[];$rewardProducts=[];$editCampaignRewardIds=[];$campaignRewardOptions=[];
 if($merchant){
     $s=$pdo->prepare("SELECT type_key,name,description,field_schema_json,reward_rules_schema_json,landing_schema_json FROM campaign_types WHERE is_active=1 AND (merchant_id=? OR merchant_id IS NULL) ORDER BY is_system DESC,name");
@@ -99,12 +132,19 @@ if($merchant){
         foreach($campaigns as $campaignRow){
             $ids=campaigns_rewards_campaign_reward_ids_v118($pdo,(int)$campaignRow['id']);
             $campaignRewardOptions[(int)$campaignRow['id']]=array_values(array_filter($rewardProducts,static fn(array $rp):bool=>in_array((int)$rp['id'],$ids,true)&&!empty($rp['is_active'])));
+            if($canAnalytics){
+                $campaignFunnels[(int)$campaignRow['id']]=campaigns_rewards_campaign_funnel_v119($pdo,(int)$campaignRow['id'],$uid);
+                $campaignInsights[(int)$campaignRow['id']]=campaigns_rewards_lifecycle_insights_v119($pdo,(int)$campaignRow['id'],$uid);
+            }
         }
     }
 }
 
 $editCampaignId=max(0,(int)($_GET['edit_campaign']??0));$editCampaign=null;foreach($campaigns as $row)if((int)$row['id']===$editCampaignId)$editCampaign=$row;
 if($editCampaign&&function_exists('campaigns_rewards_campaign_reward_ids_v118'))$editCampaignRewardIds=campaigns_rewards_campaign_reward_ids_v118($pdo,(int)$editCampaign['id']);
+$editRuleId=max(0,(int)($_GET['edit_rule']??0));$editRule=null;
+foreach($automationRules as $ruleRow)if((int)$ruleRow['id']===$editRuleId&&(!$editCampaign||(int)$ruleRow['campaign_id']===(int)$editCampaign['id'])){$editRule=$ruleRow;break;}
+$editCampaignRules=$editCampaign?array_values(array_filter($automationRules,static fn(array $r):bool=>(int)$r['campaign_id']===(int)$editCampaign['id'])):[];
 $editLocationId=max(0,(int)($_GET['edit_location']??0));$editLocation=null;foreach($locations as $row)if((int)$row['id']===$editLocationId)$editLocation=$row;
 $notice=(string)(flash('notice')??'');$error=(string)(flash('error')??'');
 $fulfillmentOnce=session_status()===PHP_SESSION_ACTIVE?($_SESSION['campaign_fulfillment_once']??null):null;
@@ -115,7 +155,7 @@ $actions=['<a class="cr-btn primary" href="'.e(url('/rewards.php'.($merchantId?'
 if($canCreate)$actions[]='<a class="cr-btn" href="'.e(url('/campaigns.php?new_merchant=1#new-merchant')).'">+ Merchant</a>';
 $memberHeaderActions=implode(' ',$actions);
 ?><!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#f7f7f8"><title>VP3 | Campaigns</title>
-<link rel="stylesheet" href="<?= e(url('/chat.css?v=82')) ?>"><link rel="stylesheet" href="<?= e(url('/campaigns-v100.css?v=118')) ?>"></head>
+<link rel="stylesheet" href="<?= e(url('/chat.css?v=82')) ?>"><link rel="stylesheet" href="<?= e(url('/campaigns-v100.css?v=119')) ?>"></head>
 <body class="cr-page"><div class="chat-app"><?php $workspaceSidebarUser=$user;$workspaceSidebarActive='campaigns';require __DIR__.'/includes/workspace-sidebar-v82.php'; ?><div class="chat-sidebar-backdrop" id="chatSidebarBackdrop"></div>
 <main class="chat-main cr-main"><?php require __DIR__.'/includes/member-header.php'; ?><div class="cr-wrap">
 <?php if($notice!==''):?><div class="cr-notice success"><?= e($notice) ?></div><?php endif;?><?php if($error!==''):?><div class="cr-notice error"><?= e($error) ?></div><?php endif;?>
