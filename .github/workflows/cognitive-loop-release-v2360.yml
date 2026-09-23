@@ -276,6 +276,10 @@ jobs:
         run: |
           php tests/cognitive-current-state-v2590.php
           node tests/cognitive-current-state-v2590.mjs
+      - name: v25.90 unified current state and presentation firewall
+        run: |
+          php tests/cognitive-current-state-v2590.php
+          node tests/cognitive-current-state-v2590.mjs
       - name: v23.x feature family
         run: |
           node tests/cognitive-calibration-v2350.mjs
