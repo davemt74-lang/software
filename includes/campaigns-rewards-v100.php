@@ -301,14 +301,14 @@ function campaigns_rewards_merchant_v100(PDO $pdo,int $merchantId,bool $forUpdat
 {
     if($merchantId<1)return null;
     if(function_exists('campaigns_rewards_platform_schema_ready_v100')&&campaigns_rewards_platform_schema_ready_v100($pdo)){
-        $stmt=$pdo->prepare("SELECT m.*,m.owner_user_id profile_user_id,mp.description,mp.website_url,
-          '' contact_email,'' contact_phone FROM merchant_accounts m
-          LEFT JOIN merchant_profiles mp ON mp.merchant_id=m.id WHERE m.id=? LIMIT 1".($forUpdate?' FOR UPDATE':''));
-        $stmt->execute([$merchantId]);$row=$stmt->fetch();return $row?:null;
+        $stmt=$pdo->prepare("SELECT m.*,m.owner_user_id profile_user_id,mp.description,mp.website_url,mp.public_contact_json
+          FROM merchant_accounts m LEFT JOIN merchant_profiles mp ON mp.merchant_id=m.id WHERE m.id=? LIMIT 1".($forUpdate?' FOR UPDATE':''));
+        $stmt->execute([$merchantId]);$row=$stmt->fetch();if(!$row)return null;
+        $contact=json_decode((string)($row['public_contact_json']??''),true);if(!is_array($contact))$contact=[];
+        $row['contact_email']=(string)($contact['email']??'');$row['contact_phone']=(string)($contact['phone']??'');
+        return $row;
     }
-    if(!campaigns_rewards_schema_ready_v100($pdo))return null;
-    $stmt=$pdo->prepare('SELECT * FROM campaign_merchant_accounts_v100 WHERE id=? LIMIT 1'.($forUpdate?' FOR UPDATE':''));
-    $stmt->execute([$merchantId]);$row=$stmt->fetch();return $row?:null;
+    return null;
 }
 
 function campaigns_rewards_merchant_member_v100(PDO $pdo,int $merchantId,int $userId,bool $forUpdate=false): ?array
@@ -403,30 +403,8 @@ function campaigns_rewards_record_activity_v100(PDO $pdo,int $merchantId,string 
 
 function campaigns_rewards_create_merchant_v100(PDO $pdo,array $user,array $input): array
 {
-    $uid=(int)($user['id']??0);if($uid<1)throw new RuntimeException('Sign in to create a merchant account.');
-    if(!campaigns_rewards_enabled_v100($user,$pdo))throw new RuntimeException('Enable Campaigns & Rewards before creating a merchant account.');
-    campaigns_rewards_ensure_schema_v100($pdo);
-    $name=campaigns_rewards_text_v100($input['name']??'',190);if($name==='')throw new RuntimeException('Merchant name is required.');
-    $slug=campaigns_rewards_unique_slug_v100($pdo,'campaign_merchant_accounts_v100',(string)($input['slug']??$name));
-    $description=mb_strimwidth(trim((string)($input['description']??'')),0,4000,'…');
-    $website=campaigns_rewards_safe_url_v100((string)($input['website_url']??''));
-    $email=strtolower(trim((string)($input['contact_email']??$user['email']??'')));if($email!==''&&!filter_var($email,FILTER_VALIDATE_EMAIL))throw new RuntimeException('Enter a valid merchant email.');
-    $phone=campaigns_rewards_text_v100($input['contact_phone']??'',80);$public=campaigns_rewards_uuid_v100();
-    $pdo->beginTransaction();
-    try{
-        $stmt=$pdo->prepare("INSERT INTO campaign_merchant_accounts_v100
-          (public_id,owner_user_id,profile_user_id,name,slug,description,website_url,contact_email,contact_phone,status,created_by_user_id)
-          VALUES (?,?,?,?,?,?,?,?,?,'active',?)");
-        $stmt->execute([$public,$uid,$uid,$name,$slug,$description,$website,$email,$phone,$uid]);$merchantId=(int)$pdo->lastInsertId();
-        $pdo->prepare("INSERT INTO campaign_merchant_members_v100
-          (merchant_account_id,user_id,member_role,member_status,source,created_by_user_id)
-          VALUES (?,?,'owner','active','direct',?)")->execute([$merchantId,$uid,$uid]);
-        $pdo->commit();
-    }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();throw $e;}
-    $merchant=campaigns_rewards_merchant_v100($pdo,$merchantId)?:throw new RuntimeException('Merchant account could not be loaded.');
-    campaigns_rewards_record_activity_v100($pdo,$merchantId,'merchant.created',['actor_user_id'=>$uid],['merchant_public_id'=>$public]);
-    campaigns_rewards_emit_v100($pdo,$uid,'merchant.created',[campaigns_rewards_ref_v100('merchant_account',$public)],['merchant_id'=>$public],['external_event_id'=>'merchant:'.$public.':created']);
-    return $merchant;
+    if(function_exists('campaigns_rewards_create_platform_merchant_v100'))return campaigns_rewards_create_platform_merchant_v100($pdo,$user,$input);
+    throw new RuntimeException('Campaigns & Rewards V1 Merchant runtime is unavailable.');
 }
 
 function campaigns_rewards_update_merchant_v100(PDO $pdo,int $merchantId,int $actorUserId,array $input): array
@@ -687,7 +665,7 @@ function campaigns_rewards_profile_campaigns_v100(PDO $pdo,int $profileUserId,in
 }
 
 function campaigns_rewards_campaign_url_v100(string $slug): string{return url('/campaign/'.rawurlencode(campaigns_rewards_slug_v100($slug)));}
-function campaigns_rewards_claim_url_v100(string $code): string{return url('/campaign-claim/'.rawurlencode(strtoupper(trim($code))));}
+function campaigns_rewards_claim_url_v100(string $code=''): string{return url('/campaign-claim.php');}
 
 function campaigns_rewards_customer_upsert_v100(PDO $pdo,array $campaign,string $name,string $email,string $phone=''): array
 {
