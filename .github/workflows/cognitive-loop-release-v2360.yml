@@ -37,6 +37,7 @@ on:
       - 'includes/ai-settings.php'
       - 'includes/release-chat-v105.php'
       - 'includes/agent-chat-runtime-v2160.php'
+      - 'includes/agent-cognitive-loop-v310.php'
       - 'api/agent-voice-v117.php'
       - 'tools/run_recovery_baseline.py'
       - 'upgrade.php'
