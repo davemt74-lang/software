@@ -29,6 +29,10 @@ function chat_notifications_v240_require_csrf(array $input): void
 function chat_notifications_v240_activity_events(PDO $pdo, int $userId, int $limit = 40): array
 {
     if ($userId < 1 || !table_exists('agent_activity_events')) return [];
+    if (function_exists('vp3_agent_memory_scope_current_context_v410')) {
+        $scope = vp3_agent_memory_scope_current_context_v410();
+        if ((int)($scope['user_id'] ?? 0) === $userId && (int)($scope['user_agent_id'] ?? 0) > 0) return [];
+    }
     $limit = max(1, min(80, $limit));
     try {
         $stmt = $pdo->prepare(
@@ -85,6 +89,7 @@ function chat_notifications_v240_history(PDO $pdo, int $userId, int $limit = 50)
 
 function chat_notifications_v240_brain_operations(array $user, int $limit = 60): array
 {
+    if (function_exists('vp3_agent_memory_scope_current_v410') && vp3_agent_memory_scope_current_v410($user) > 0) return [];
     return array_map(static fn(array $row): array => [
         'id'=>(int)($row['id'] ?? 0),
         'type'=>(string)($row['type'] ?? ''),
@@ -191,6 +196,7 @@ function chat_notifications_v313_priority_outcome_map(PDO $pdo, int $userId, arr
 
 function chat_notifications_v313_brain_priorities(array $user, PDO $pdo): array
 {
+    if (function_exists('vp3_agent_memory_scope_current_v410') && vp3_agent_memory_scope_current_v410($user) > 0) return [];
     if (!function_exists('agent_cognitive_loop_v310_state') || !function_exists('agent_cognitive_loop_v310_state_fresh')) return [];
     $state = agent_cognitive_loop_v310_state($user);
     if (!agent_cognitive_loop_v310_state_fresh($state)) return [];
@@ -320,8 +326,6 @@ function chat_notifications_v240_state(array $user, PDO $pdo, int $agentId=0): a
     ] : ($agentId < 1 && $brainAllowed ? agent_activity_v94_snapshot($user, 'chat', []) : [
         'state'=>'idle','surface'=>'chat','task_title'=>'Agent Chat'
     ]);
-    $systemOnly = $namespace === 'system';
-
     return [
         'ok'=>true,
         'agent_voice_enabled'=>member_agent_voice_enabled($user),
@@ -342,9 +346,9 @@ function chat_notifications_v240_state(array $user, PDO $pdo, int $agentId=0): a
             'recent'=>array_values(is_array($brain['recent'] ?? null) ? $brain['recent'] : []),
             'activity'=>$activity,
             'working_context'=>$workingContext,
-            'priorities'=>$brainAllowed && $systemOnly ? chat_notifications_v313_brain_priorities($user, $pdo) : [],
-            'operations'=>$brainAllowed && $systemOnly ? chat_notifications_v240_brain_operations($user, 60) : [],
-            'events'=>$brainAllowed && $systemOnly ? chat_notifications_v240_activity_events($pdo, $userId, 50) : [],
+            'priorities'=>$brainAllowed ? chat_notifications_v313_brain_priorities($user, $pdo) : [],
+            'operations'=>$brainAllowed ? chat_notifications_v240_brain_operations($user, 60) : [],
+            'events'=>$brainAllowed ? chat_notifications_v240_activity_events($pdo, $userId, 50) : [],
         ],
         'history'=>$brainAllowed && function_exists('vp3_cognitive_context_history_rows_v2420')
             ? vp3_cognitive_context_history_rows_v2420($pdo, $user, $namespace, 60)
