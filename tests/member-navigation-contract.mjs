@@ -53,6 +53,8 @@ assert.ok(nav.includes("personal_capability_has_v242('voice_profile.access'"), '
 assert.ok(nav.includes("has_permission('artist_listening.access'"), 'My Transcriptions must remain permission gated');
 assert.ok(nav.includes("team_subscription_state($user)"), 'My Team navigation must use canonical workspace/package Team state');
 assert.ok(nav.includes('music_workspace_enabled_v320($user)'), 'Music Workspace navigation must use explicit plugin/workspace state');
+assert.ok(nav.includes("$campaignNavVisible=!empty($campaignState['enabled'])"), 'Campaigns and Rewards navigation must stay visible for an enabled plugin even before its domain schema finishes upgrading');
+assert.ok(nav.includes("'reward-inbox.php'=>'chat'") && nav.includes("'reward-sent.php'=>'chat'") && nav.includes("'reward-claimed.php'=>'chat'"), 'dedicated Reward certificate pages must retain the canonical Agent shell mapping');
 assert.ok(nav.includes('artist_workspace_v104_memberships_for_user'), 'Team Workspaces visibility must derive from contextual memberships');
 assert.ok(!nav.includes("user_has_role('artist'"), 'member navigation must not depend on the retired global Artist identity');
 assert.ok(!nav.includes('Artist Workspace'), 'retired Artist Workspace product naming must not return to canonical navigation');

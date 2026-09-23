@@ -141,7 +141,7 @@ function workspace_team_v350_ensure_schema(?PDO $pdo=null): void
           SET atm.team_role=wm.team_role,atm.updated_at=wm.updated_at
           WHERE wm.membership_status='active'");
         $pdo->exec("INSERT IGNORE INTO artist_team_members (artist_user_id,member_user_id,team_role,created_at,updated_at)
-          SELECT workspace_owner_user_id,member_user_id,team_role,COALESCE(activated_at,created_at),updated_at
+          SELECT wm.workspace_owner_user_id,wm.member_user_id,wm.team_role,COALESCE(wm.activated_at,wm.created_at),wm.updated_at
           FROM workspace_memberships_v350 wm
           LEFT JOIN workspace_team_access_v1 wa
             ON wa.workspace_owner_user_id=wm.workspace_owner_user_id AND wa.member_user_id=wm.member_user_id

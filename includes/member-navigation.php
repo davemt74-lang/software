@@ -81,6 +81,9 @@ function member_navigation_active_key(?string $scriptName = null): string
         'commerce.php'=>'commerce',
         'campaigns.php'=>'campaigns',
         'rewards.php'=>'rewards',
+        'reward-inbox.php'=>'chat',
+        'reward-sent.php'=>'chat',
+        'reward-claimed.php'=>'chat',
         'rewards-wallet.php'=>'chat',
         'campaign-claim.php'=>'claim_terminal',
         'profile-commerce-products.php'=>'profile_commerce',
@@ -169,13 +172,21 @@ function member_navigation_menu_links(?array $user = null): array
         $add($links,'profile_commerce_refunds','Refund Requests',url('/profile-commerce-refund-requests.php'),'agent');
     }
     $pdo=db();
-    if($pdo&&function_exists('campaigns_rewards_user_has_access_v100')){
+    if($pdo&&function_exists('campaigns_rewards_plugin_state_v100')){
         try{
-            if(campaigns_rewards_user_has_access_v100($pdo,$user)){
+            $campaignState=campaigns_rewards_plugin_state_v100($user,$pdo);
+            $campaignNavVisible=!empty($campaignState['enabled']);
+            if(!$campaignNavVisible&&function_exists('campaigns_rewards_user_has_access_v100')){
+                $campaignNavVisible=campaigns_rewards_user_has_access_v100($pdo,$user);
+            }
+            if($campaignNavVisible){
                 $add($links,'campaigns','Campaigns',url('/campaigns.php'),'agent');
                 $add($links,'rewards','Rewards',url('/rewards.php'),'agent');
-                $canClaim=false;foreach(campaigns_rewards_accessible_merchants_v100($pdo,$user) as $merchant){
-                    if(function_exists('campaigns_rewards_platform_can_v100')&&campaigns_rewards_platform_can_v100($pdo,(int)$merchant['id'],(int)$user['id'],'claims.process')){$canClaim=true;break;}
+                $canClaim=false;
+                if(function_exists('campaigns_rewards_schema_ready_v100')&&campaigns_rewards_schema_ready_v100($pdo)){
+                    foreach(campaigns_rewards_accessible_merchants_v100($pdo,$user) as $merchant){
+                        if(function_exists('campaigns_rewards_platform_can_v100')&&campaigns_rewards_platform_can_v100($pdo,(int)$merchant['id'],(int)$user['id'],'claims.process')){$canClaim=true;break;}
+                    }
                 }
                 if($canClaim)$add($links,'claim_terminal','Claim Terminal',url('/campaign-claim.php'),'agent');
             }

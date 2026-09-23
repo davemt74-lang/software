@@ -49,6 +49,8 @@ assert.ok(statusBody.indexOf("workspace_team_v350_membership($pdo,$ownerId,$memb
 // Legacy Team storage is active-only projection; lifecycle history is durable.
 assert.match(lifecycle, /WHERE wm\.membership_status<>'active'/);
 assert.match(lifecycle, /FROM workspace_memberships_v350 wm[\s\S]*?WHERE wm\.membership_status='active' AND COALESCE\(wa\.basic_team_enabled,1\)=1/);
+assert.match(lifecycle, /SELECT wm\.workspace_owner_user_id,wm\.member_user_id,wm\.team_role,COALESCE\(wm\.activated_at,wm\.created_at\),wm\.updated_at[\s\S]*?LEFT JOIN workspace_team_access_v1 wa/, 'legacy Team projection upgrade must fully qualify joined workspace columns');
+assert.doesNotMatch(lifecycle, /SELECT workspace_owner_user_id,member_user_id,team_role,COALESCE\(activated_at,created_at\),updated_at[\s\S]*?LEFT JOIN workspace_team_access_v1 wa/, 'upgrade must not reintroduce ambiguous joined workspace columns');
 assert.match(lifecycle, /membership_status='suspended'/);
 assert.match(lifecycle, /membership_status='removed'/);
 assert.match(legacy, /workspace_team_v350_activate_member/);

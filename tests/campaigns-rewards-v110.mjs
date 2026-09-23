@@ -11,6 +11,11 @@ const sidebar=read('includes/main-sidebar.php');
 const campaigns=read('campaigns.php');
 const rewards=read('rewards.php');
 const wallet=read('rewards-wallet.php');
+const inboxPage=read('reward-inbox.php');
+const sentPage=read('reward-sent.php');
+const claimedPage=read('reward-claimed.php');
+const trayPage=read('includes/reward-tray-page-v113.php');
+const memberHeader=read('includes/member-header.php');
 const claim=read('campaign-claim.php');
 const chat=read('chat.php');
 const api=read('api/reward-tray-v110.php');
@@ -34,13 +39,13 @@ const checks=[
  ['Tray claim delegates to canonical online three-factor engine',runtime.includes('campaigns_rewards_process_claim_v100')&&runtime.includes("'online'=>true")&&runtime.includes("'expected_merchant_id'=>$merchantId")&&runtime.includes("campaigns_rewards_platform_assert_can_v100($pdo,$merchantId,$actorUserId,'claims.process')")],
  ['API requires login chat access CSRF and no-store',api.includes('current_user()')&&api.includes("'chat.access'")&&api.includes('hash_equals(csrf_token()')&&api.includes('Cache-Control: no-store')],
  ['API exposes state send prepare_claim and claim actions',api.includes("$action==='state'")&&api.includes("$action==='send'")&&api.includes("$action==='prepare_claim'")&&api.includes("$action==='claim'")],
- ['Agent Chat loads V1.12 Reward Tray CSS local QR and tray runtime',chat.includes('reward-tray-v110.css?v=112')&&chat.includes('reward-qr-v110.js?v=112')&&chat.includes('reward-tray-v110.js?v=112')&&chat.includes('/api/reward-tray-v110.php')],
- ['Header tray contains INBOX SENT CLAIMED tabs with live count badges',tray.includes("['inbox','sent','claimed']")&&tray.includes('data-reward-count')&&tray.includes('reward-tray-tabs')],
+ ['Agent Chat loads V1.13 Reward Tray CSS local QR and routed tabs',chat.includes('reward-tray-v110.css?v=113')&&chat.includes('reward-qr-v110.js?v=113')&&chat.includes('reward-tray-v110.js?v=113')&&chat.includes('/reward-inbox.php')&&chat.includes('/reward-sent.php')&&chat.includes('/reward-claimed.php')],
+ ['Header tray contains routed INBOX SENT CLAIMED links with live count badges',tray.includes("['inbox','sent','claimed']")&&tray.includes('data-reward-count')&&tray.includes('reward-tray-tabs')&&tray.includes("href=\"'+esc(routes[key])+'\"")],
  ['Reward certificate tabs stay out of the left sidebar',!sidebar.includes('reward-sidebar-subnav')&&!sidebar.includes('data-reward-tray-tab="<?= e($rewardBucket) ?>"')],
- ['Header tabs insert before the flexible spacer so they float left in the right-column header',tray.includes("const top=qs('.chat-topbar'),actions=qs('.chat-topbar-actions'),spacer=qs('.chat-topbar-spacer')")&&tray.includes('top.insertBefore(nav,spacer||actions)')],
+ ['Header tabs insert before the flexible spacer so they float left in the right-column header',tray.includes("const actions=qs('.chat-topbar-actions',top),spacer=qs('.chat-topbar-spacer',top)")&&tray.includes('top.insertBefore(nav,spacer||actions||top.firstChild)')],
  ['Reward header counts update every matching badge hook',tray.includes("document.querySelectorAll('[data-reward-count=\"'+k+'\"]')")],
- ['Reward tray UI does not disappear when the V1.10 schema needs an upgrade',chat.includes("$rewardTrayRuntime = function_exists('campaigns_rewards_v110_schema_ready')")&&!chat.includes("campaigns_rewards_v110_schema_ready(db())")],
- ['Header tabs are touch sized horizontally scrollable and mobile grid-safe',css.includes('min-height:44px')&&css.includes('overflow-x:auto')&&css.includes('touch-action:manipulation')&&css.includes('body.reward-tray-ready .chat-main{grid-template-rows:auto minmax(0,1fr) auto}')&&css.includes('.reward-tray-tab{flex:1 0 92px')],
+ ['Reward tabs remain visible while schema upgrade is pending',chat.includes("$rewardTrayRuntime = function_exists('campaigns_rewards_v110_schema_ready')")&&!chat.includes("campaigns_rewards_v110_schema_ready(db())")&&trayPage.includes("$schemaReady=(bool)$pdo")],
+ ['Mobile uses a true second-row Reward subheader with touch-sized routed tabs',css.includes('.reward-tray-subheader{display:none')&&css.includes('body.reward-tray-ready .chat-main{grid-template-rows:58px auto minmax(0,1fr) auto}')&&css.includes('.reward-tray-subheader{display:flex')&&css.includes('min-height:46px')&&css.includes('touch-action:manipulation')],
  ['Inbox cards contain SEND and CLAIM controls',tray.includes('data-reward-send')&&tray.includes('>SEND<')&&tray.includes('data-reward-claim')&&tray.includes('>CLAIM<')],
  ['SEND modal selects from returned CRM contacts',tray.includes('Send to CRM Contact')&&tray.includes('state.contacts')&&tray.includes('contact_id')&&tray.includes('idempotency_key')],
  ['CLAIM modal renders QR and Merchant Claim Code input',tray.includes('rewardClaimQr')&&tray.includes('Merchant Claim Code')&&tray.includes('merchant_claim_code')&&tray.includes('VP3RewardQR')],
@@ -52,7 +57,11 @@ const checks=[
  ['Rewards is a separate Merchant workspace',rewards.includes("$memberHeaderTitle='Rewards'")&&rewards.includes("$action==='reward_save'")&&rewards.includes("$action==='reward_issue'")&&rewards.includes("$action==='claim_code_create'")&&rewards.includes("$action==='make_good'")&&rewards.includes("$action==='reconcile'")],
  ['Rewards manages reusable products inventory Campaign attachments and CRM issuance',rewards.includes('campaigns_rewards_save_reward_workspace_v110')&&rewards.includes('inventory_on_hand')&&rewards.includes('campaign_ids[]')&&rewards.includes('CRM Contact')],
  ['Navigation has separate Campaigns and Rewards destinations',nav.includes("$add($links,'campaigns','Campaigns',url('/campaigns.php'),'agent')")&&nav.includes("$add($links,'rewards','Rewards',url('/rewards.php'),'agent')")],
- ['Reward Wallet is absent from nav and legacy route redirects to Chat Inbox',!nav.includes("$add($links,'reward_wallet','Reward Wallet'")&&nav.includes("'rewards-wallet.php'=>'chat'")&&wallet.includes('/chat.php?reward_tray=inbox')],
+ ['Reward Wallet is absent from nav and legacy route redirects to dedicated Inbox',!nav.includes("$add($links,'reward_wallet','Reward Wallet'")&&nav.includes("'rewards-wallet.php'=>'chat'")&&wallet.includes('/reward-inbox.php')],
+ ['Dedicated Inbox Sent and Claimed routes each load the shared Reward page shell',inboxPage.includes("$rewardTrayPageBucket='inbox'")&&sentPage.includes("$rewardTrayPageBucket='sent'")&&claimedPage.includes("$rewardTrayPageBucket='claimed'")&&trayPage.includes("require __DIR__.'/workspace-sidebar-v82.php'")],
+ ['Each Reward tab is a real page link and SEND/CLAIM navigate to the resulting page',trayPage.includes("href=\"<?= e($routes[$key]) ?>\"")&&tray.includes('location.assign(routes.sent)')&&tray.includes('location.assign(routes.claimed)')],
+ ['Shared member header supports left-side Reward tabs without moving user actions',memberHeader.includes('$memberHeaderLeadingHtml')&&memberHeader.includes('<?= $memberHeaderLeadingHtml ?>')&&memberHeader.indexOf('<?= $memberHeaderLeadingHtml ?>')<memberHeader.indexOf('chat-topbar-title member-header-title')],
+ ['Enabled Campaigns plugin stays visible in navigation even before schema readiness',nav.includes("$campaignNavVisible=!empty($campaignState['enabled'])")&&nav.includes("$add($links,'campaigns','Campaigns'")&&nav.includes("$add($links,'rewards','Rewards'")],
  ['Primary sidebar order contains Campaigns then Rewards then Team',sidebar.includes("'profile_commerce','campaigns','rewards','team'")&&sidebar.includes("'campaigns'=>'Campaigns'")&&sidebar.includes("'rewards'=>'Rewards'")],
  ['Campaigns and Rewards duplicate into bottom user menu',sidebar.includes("array_reverse(['campaigns','rewards'])")&&sidebar.includes('$dualFooterLink')],
  ['Reward Wallet is not a sidebar key',!sidebar.includes('reward_wallet')],
