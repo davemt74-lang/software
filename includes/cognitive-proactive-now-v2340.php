@@ -147,6 +147,9 @@ function vp3_cognitive_proactive_now_compose_v2340(
     $resourceBudget=function_exists('vp3_cognitive_resource_activity_projection_v2520')
         ?vp3_cognitive_resource_activity_projection_v2520($pdo,$user,$namespace)
         :['focus'=>null,'reservations'=>[],'executors'=>[],'counts'=>[]];
+    $replanning=function_exists('vp3_cognitive_replanning_activity_projection_v2530')
+        ?vp3_cognitive_replanning_activity_projection_v2530($pdo,$user,$namespace)
+        :['health'=>'unavailable','replan_needed'=>false,'focus'=>null,'issues'=>[],'changes'=>[],'counts'=>[]];
     $voiceEnabled=false;
     if(function_exists('chat_settings_get_v237')){
         try{$voiceEnabled=!empty(chat_settings_get_v237($pdo,(int)($user['id']??0))['agent_voice_enabled']);}
@@ -198,6 +201,14 @@ function vp3_cognitive_proactive_now_compose_v2340(
             'executors'=>$resourceBudget['executors']??[],
             'reservations'=>$resourceBudget['reservations']??[],
         ],
+        'replanning'=>[
+            'health'=>$replanning['health']??'unavailable',
+            'replan_needed'=>!empty($replanning['replan_needed']),
+            'focus'=>$replanning['focus']??null,
+            'counts'=>$replanning['counts']??[],
+            'issues'=>$replanning['issues']??[],
+            'changes'=>$replanning['changes']??[],
+        ],
         'voice'=>[
             'enabled'=>$voiceEnabled,
             'delivery_authority'=>'cognitive_presentation_v510_and_extension_notifications_v2140',
@@ -221,6 +232,7 @@ function vp3_cognitive_proactive_now_compose_v2340(
             'forecast'=>'cognitive_forecast_v2490',
             'optimization'=>'cognitive_optimization_v2510',
             'resource_budget'=>'cognitive_resource_budget_v2520',
+            'replanning'=>'cognitive_replanning_v2530',
             'automatic_external_writes'=>false,
             'approval_bypass'=>false,
             'execution_bypass'=>false,
