@@ -126,6 +126,7 @@ function vp3_upgrade_complete(): bool
         && agent_objective_memory_schema_ready_v177()
         && agent_goal_strategy_schema_ready_v1710()
         && agent_goal_planning_schema_ready_v1711()
+        && vp3_cognitive_autonomy_schema_ready_v2470()
         && agent_goal_review_schema_ready_v1714()
         && vp3_cognitive_schema_ready_v500()
         && vp3_cognitive_presentation_schema_ready_v510()
