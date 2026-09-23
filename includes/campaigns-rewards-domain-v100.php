@@ -711,10 +711,6 @@ function campaigns_rewards_issue_reward_v100(PDO $pdo,int $campaignId,int $rewar
 
     $reward=campaigns_rewards_reward_product_v100($pdo,$rewardProductId)?:throw new RuntimeException('Reward Product not found.');
     if((int)$reward['merchant_id']!==(int)$campaign['merchant_id']||!(int)$reward['is_active'])throw new RuntimeException('Reward Product is not available to this Campaign.');
-    $attached=$pdo->prepare("SELECT 1 FROM campaign_reward_sets rs INNER JOIN campaign_reward_set_items i ON i.reward_set_id=rs.id
-      WHERE rs.campaign_id=? AND i.reward_product_id=? LIMIT 1");
-    $attached->execute([$campaignId,$rewardProductId]);if(!$attached->fetchColumn())throw new RuntimeException('Reward Product is not attached to this Campaign.');
-
     campaigns_rewards_ensure_merchant_relationship_v100($pdo,(int)$campaign['merchant_id'],$contactId,['acquisition_source'=>$options['source']??($publicFlow?'public_signup':'reward_issue')]);
     if((int)$campaign['current_version_no']<1){
         if($publicFlow)throw new RuntimeException('This Campaign has not been published yet.');
@@ -723,6 +719,20 @@ function campaigns_rewards_issue_reward_v100(PDO $pdo,int $campaignId,int $rewar
         $q=$pdo->prepare('SELECT * FROM campaign_versions WHERE campaign_id=? AND version_no=? LIMIT 1');$q->execute([$campaignId,(int)$campaign['current_version_no']]);
         $version=$q->fetch()?:throw new RuntimeException('Campaign version unavailable.');
     }
+    $frozenReward=campaigns_rewards_version_reward_snapshot_v100($version,$rewardProductId);
+    if(!$frozenReward)throw new RuntimeException('Reward Product is not part of the published Campaign Version.');
+    $frozenSettings=json_decode((string)($frozenReward['settings_json']??''),true);if(!is_array($frozenSettings))$frozenSettings=[];
+    $claimLimit=max(1,(int)($frozenReward['claim_limit']??1));
+    $inventoryMode=(string)($frozenReward['inventory_mode']??'none');
+    $unitRetail=array_key_exists('retail_value_minor',$frozenReward)&&$frozenReward['retail_value_minor']!==null?(int)$frozenReward['retail_value_minor']:null;
+    $unitCost=array_key_exists('internal_cost_minor',$frozenReward)&&$frozenReward['internal_cost_minor']!==null?(int)$frozenReward['internal_cost_minor']:null;
+    $unitCurrency=(string)($frozenReward['currency']??$reward['currency']??'USD');
+    $rewardName=(string)($frozenReward['reward_name']??$reward['name']);
+    $rewardTypeKey=(string)($frozenReward['reward_type_key']??$reward['reward_type_key']);
+    $rewardTerms=(string)($frozenReward['terms']??'');
+    $expirationDays=max(0,(int)($frozenReward['expiration_days']??0));
+    $transferable=!empty($frozenReward['transferable']);
+    $regiftable=!empty($frozenReward['regiftable']);
 
     $idempotency=(string)($options['idempotency_key']??'issue:'.$campaignId.':'.$rewardProductId.':'.$contactId.':'.$version['id']);
     $quantity=max(1,(int)($options['quantity']??1));
@@ -738,19 +748,19 @@ function campaigns_rewards_issue_reward_v100(PDO $pdo,int $campaignId,int $rewar
         }
 
         if($locked['max_rewards']!==null){
-            $q=$pdo->prepare("SELECT COALESCE(SUM(quantity),0) FROM reward_issuances WHERE campaign_id=? AND status NOT IN ('voided','expired') FOR UPDATE");
+            $q=$pdo->prepare("SELECT COALESCE(SUM(quantity),0) FROM reward_issuances WHERE campaign_id=? AND status NOT IN ('voided','expired')");
             $q->execute([$campaignId]);if((int)$q->fetchColumn()+$quantity>(int)$locked['max_rewards'])throw new RuntimeException('Campaign Reward limit has been reached.');
         }
         if($locked['per_contact_limit']!==null){
             $q=$pdo->prepare("SELECT COUNT(*) FROM reward_issuances WHERE campaign_id=? AND recipient_contact_id=? AND status NOT IN ('voided','expired')");
             $q->execute([$campaignId,$contactId]);if((int)$q->fetchColumn()>=(int)$locked['per_contact_limit'])throw new RuntimeException('You have reached this Campaign Reward limit.');
         }
-        if((int)($reward['claim_limit']??1)>0){
+        if($claimLimit>0){
             $q=$pdo->prepare("SELECT COUNT(*) FROM reward_issuances WHERE reward_product_id=? AND recipient_contact_id=? AND status NOT IN ('voided','expired')");
-            $q->execute([$rewardProductId,$contactId]);if((int)$q->fetchColumn()>=(int)$reward['claim_limit'])throw new RuntimeException('You have reached this Reward limit.');
+            $q->execute([$rewardProductId,$contactId]);if((int)$q->fetchColumn()>=$claimLimit)throw new RuntimeException('You have reached this Reward limit.');
         }
         $inventoryBalanceId=null;
-        if((string)$reward['inventory_mode']==='tracked'){
+        if($inventoryMode==='tracked'){
             $q=$pdo->prepare("SELECT COALESCE(SUM(on_hand-reserved),0) FROM reward_inventory_balances WHERE reward_product_id=?");
             $q->execute([$rewardProductId]);if((int)$q->fetchColumn()<$quantity)throw new RuntimeException('This Reward is out of inventory.');
             $reserve=$pdo->prepare("SELECT id FROM reward_inventory_balances WHERE reward_product_id=? AND on_hand-reserved>=? ORDER BY location_id,variant_id LIMIT 1 FOR UPDATE");
@@ -763,22 +773,22 @@ function campaigns_rewards_issue_reward_v100(PDO $pdo,int $campaignId,int $rewar
               ->execute([$quantity,(string)$campaignId,$actorUserId?:null,$balanceId]);
         }
 
-        if($locked['budget_minor']!==null&&$reward['retail_value_minor']!==null){
+        if($locked['budget_minor']!==null&&$unitRetail!==null){
             $q=$pdo->prepare("SELECT COALESCE(SUM(COALESCE(face_value_minor,0)*quantity),0) FROM reward_issuances WHERE campaign_id=? AND status NOT IN ('voided','expired')");
-            $q->execute([$campaignId]);$projected=(int)$q->fetchColumn()+((int)$reward['retail_value_minor']*$quantity);
+            $q->execute([$campaignId]);$projected=(int)$q->fetchColumn()+($unitRetail*$quantity);
             if($projected>(int)$locked['budget_minor'])throw new RuntimeException('Campaign budget would be exceeded.');
         }
 
         $credential=campaigns_rewards_secret_v100(24);$hash=campaigns_rewards_secret_hash_v100($credential);$last4=substr($credential,-4);
         $public=campaigns_rewards_uuid_v100();
         $expiresAt=null;if(!empty($options['expires_at']))$expiresAt=campaigns_rewards_datetime_v100((string)$options['expires_at']);
-        elseif((int)($reward['expiration_days']??0)>0)$expiresAt=gmdate('Y-m-d H:i:s',time()+86400*(int)$reward['expiration_days']);
+        elseif($expirationDays>0)$expiresAt=gmdate('Y-m-d H:i:s',time()+86400*$expirationDays);
         elseif(!empty($campaign['ends_at']))$expiresAt=(string)$campaign['ends_at'];
         $terms=[
-            'reward_product_public_id'=>$reward['public_id'],'name'=>$reward['name'],'reward_type'=>$reward['reward_type_key'],
-            'terms'=>$reward['terms'],'retail_value_minor'=>$reward['retail_value_minor'],'internal_cost_minor'=>$reward['internal_cost_minor'],
-            'currency'=>$reward['currency'],'claim_limit'=>$reward['claim_limit'],'transferable'=>(bool)$reward['transferable'],'regiftable'=>(bool)$reward['regiftable'],
-            'campaign_version'=>(int)$version['version_no'],
+            'reward_product_public_id'=>$reward['public_id'],'name'=>$rewardName,'reward_type'=>$rewardTypeKey,
+            'terms'=>$rewardTerms,'retail_value_minor'=>$unitRetail,'internal_cost_minor'=>$unitCost,
+            'currency'=>$unitCurrency,'claim_limit'=>$claimLimit,'transferable'=>$transferable,'regiftable'=>$regiftable,
+            'campaign_version'=>(int)$version['version_no'],'value_label'=>(string)($frozenSettings['value_label']??''),
         ];
         $recipientUserId=isset($options['recipient_user_id'])?max(0,(int)$options['recipient_user_id']):0;
         $pdo->prepare("INSERT INTO reward_issuances
@@ -787,14 +797,14 @@ function campaigns_rewards_issue_reward_v100(PDO $pdo,int $campaignId,int $rewar
           ->execute([
             $public,(int)$campaign['merchant_id'],$campaignId,(int)$version['id'],((int)($options['campaign_enrollment_id']??0))?:null,((int)($options['campaign_case_id']??0))?:null,
             $rewardProductId,((int)($options['reward_variant_id']??0))?:null,$inventoryBalanceId,$contactId,$recipientUserId?:null,$actorUserId?:null,$actorType,(string)$campaign['environment'],
-            $hash,$last4,$quantity,$quantity,$reward['retail_value_minor'],$reward['currency'],campaigns_rewards_json_v100($terms),$expiresAt,
+            $hash,$last4,$quantity,$quantity,$unitRetail,$unitCurrency,campaigns_rewards_json_v100($terms),$expiresAt,
           ]);
         $issuanceId=(int)$pdo->lastInsertId();
         if((string)$campaign['environment']==='production'){
             $pdo->prepare("INSERT INTO reward_liability_ledger
               (merchant_id,campaign_id,reward_issuance_id,entry_type,face_value_delta_minor,estimated_cost_delta_minor,currency,source_type,source_id,metadata_json)
               VALUES (?,?,?,'issued',?,?,?,?,?,'{}')")
-              ->execute([(int)$campaign['merchant_id'],$campaignId,$issuanceId,$reward['retail_value_minor']===null?null:(int)$reward['retail_value_minor']*$quantity,$reward['internal_cost_minor']===null?null:(int)$reward['internal_cost_minor']*$quantity,$reward['currency'],'reward_issuance',(string)$issuanceId]);
+              ->execute([(int)$campaign['merchant_id'],$campaignId,$issuanceId,$unitRetail===null?null:$unitRetail*$quantity,$unitCost===null?null:$unitCost*$quantity,$unitCurrency,'reward_issuance',(string)$issuanceId]);
         }
         campaigns_rewards_idempotency_complete_v100($pdo,(int)$idem['id'],'reward_issuance',$issuanceId);
         if($owns)$pdo->commit();
