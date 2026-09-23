@@ -71,6 +71,7 @@ $canManage=$merchant?campaigns_rewards_platform_can_v100($pdo,$merchantId,$uid,'
 $canOwn=$merchant?campaigns_rewards_can_own_merchant_v100($pdo,$merchantId,$uid):false;
 $canLocations=$merchant?campaigns_rewards_platform_can_v100($pdo,$merchantId,$uid,'locations.manage'):false;
 $canCampaignEdit=$merchant?campaigns_rewards_platform_can_v100($pdo,$merchantId,$uid,'campaigns.edit'):false;
+$canCampaignEnrollment=$merchant?campaigns_rewards_platform_can_v100($pdo,$merchantId,$uid,'campaigns.enrollment.manage'):false;
 $canRewardIssue=$merchant?campaigns_rewards_platform_can_v100($pdo,$merchantId,$uid,'rewards.issue'):false;
 $canAnalytics=$merchant?campaigns_rewards_platform_can_v100($pdo,$merchantId,$uid,'analytics.view'):false;
 
@@ -225,7 +226,7 @@ $memberHeaderActions=implode(' ',$actions);
 <strong><?= e((string)($enrollment['contact_name']?:$enrollment['contact_email']?:'Campaign participant')) ?></strong>
 <small><?= e((string)$enrollment['campaign_name']) ?> · <?= e((string)$enrollment['campaign_type_name']) ?> · <?= e(ucwords(str_replace('_',' ',(string)$enrollment['status']))) ?> · <?= e(date('M j, Y g:i A',strtotime((string)$enrollment['enrolled_at']))) ?> UTC</small>
 </div>
-<?php if($canRewardIssue&&$canCampaignEdit&&(string)$enrollment['status']!=='completed'&&$options):?>
+<?php if($canRewardIssue&&$canCampaignEnrollment&&(string)$enrollment['status']!=='completed'&&$options):?>
 <form method="post" class="cr-inline"><?= csrf_field() ?>
 <input type="hidden" name="action" value="campaign_fulfill">
 <input type="hidden" name="merchant_id" value="<?= $merchantId ?>">
