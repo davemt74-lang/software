@@ -517,18 +517,28 @@ function vp3_cognitive_context_history_rows_v2420(
     $params=$agentId>0?[$uid,$agentId]:[$uid];
     try{
         $stmt=$pdo->prepare(
-            "SELECT a.id,a.conversation_id,a.source_message_id,a.role,a.input_mode,a.message_text,a.created_at,a.archived_at
+            "SELECT a.id,a.conversation_id,a.source_message_id,a.role,a.input_mode,a.message_text,a.created_at,a.archived_at,
+                    m.context_json
              FROM agent_chat_archive a
              INNER JOIN chat_conversations c ON c.id=a.conversation_id AND c.user_id=a.user_id
+             LEFT JOIN chat_messages m ON m.id=a.source_message_id AND m.conversation_id=a.conversation_id
              WHERE a.user_id=? AND {$scope}
              ORDER BY a.id DESC LIMIT {$limit}"
         );
         $stmt->execute($params);
-        return array_map(static fn(array $row): array => [
-            'id'=>(int)$row['id'],'conversation_id'=>(int)$row['conversation_id'],
-            'source_message_id'=>(int)$row['source_message_id'],'role'=>(string)$row['role'],
-            'input_mode'=>(string)$row['input_mode'],'message'=>(string)$row['message_text'],
-            'created_at'=>(string)$row['created_at'],'archived_at'=>(string)$row['archived_at'],
-        ],$stmt->fetchAll()?:[]);
+        return array_map(static function(array $row): array {
+            $turnType='';
+            $ctx=json_decode((string)($row['context_json']??''),true);
+            if(is_array($ctx)&&is_array($ctx['cognitive_turn']??null)){
+                $turnType=vp3_cognitive_text_v500($ctx['cognitive_turn']['turn_type']??'',80);
+            }
+            return [
+                'id'=>(int)$row['id'],'conversation_id'=>(int)$row['conversation_id'],
+                'source_message_id'=>(int)$row['source_message_id'],'role'=>(string)$row['role'],
+                'input_mode'=>(string)$row['input_mode'],'message'=>(string)$row['message_text'],
+                'turn_type'=>$turnType,
+                'created_at'=>(string)$row['created_at'],'archived_at'=>(string)$row['archived_at'],
+            ];
+        },$stmt->fetchAll()?:[]);
     }catch(Throwable $e){return [];}
 }
