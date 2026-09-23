@@ -174,6 +174,12 @@ function vp3_cognitive_proactive_now_compose_v2340(
     $currentStatePresentation=function_exists('vp3_cognitive_presentation_from_current_state_v2590')
         ?vp3_cognitive_presentation_from_current_state_v2590($currentState)
         :[];
+    $entityGraph=function_exists('vp3_cognitive_entity_graph_projection_v2610')
+        ?vp3_cognitive_entity_graph_projection_v2610($pdo,$user,$namespace)
+        :['build'=>'','ready'=>false,'counts'=>[],'domain_counts'=>[],'diagnostics'=>[],'authority'=>[],'privacy'=>[]];
+    $entityGraphPresentation=function_exists('vp3_cognitive_entity_graph_presentation_v2610')
+        ?vp3_cognitive_entity_graph_presentation_v2610($entityGraph)
+        :[];
     $voiceEnabled=false;
     if(function_exists('chat_settings_get_v237')){
         try{$voiceEnabled=!empty(chat_settings_get_v237($pdo,(int)($user['id']??0))['agent_voice_enabled']);}
@@ -263,6 +269,12 @@ function vp3_cognitive_proactive_now_compose_v2340(
         ],
         'current_state'=>$currentState,
         'current_state_presentation'=>$currentStatePresentation,
+        'entity_graph'=>[
+            'build'=>$entityGraph['build']??'','ready'=>!empty($entityGraph['ready']),
+            'counts'=>$entityGraph['counts']??[],'domain_counts'=>$entityGraph['domain_counts']??[],
+            'health'=>function_exists('vp3_cognitive_entity_graph_health_v2610')?vp3_cognitive_entity_graph_health_v2610($entityGraph):[],
+        ],
+        'entity_graph_presentation'=>$entityGraphPresentation,
         'decision_calibration'=>[
             'ready'=>!empty($decisionCalibration['ready']),
             'calibration'=>$decisionCalibration['calibration']??[],
@@ -300,6 +312,7 @@ function vp3_cognitive_proactive_now_compose_v2340(
             'value_roi'=>'cognitive_value_roi_v2570',
             'decision_calibration'=>'cognitive_decision_calibration_v2580',
             'current_state'=>'cognitive_current_state_v2590',
+            'entity_graph'=>'cognitive_entity_graph_v2610_ephemeral_projection',
             'presentation_firewall'=>'cognitive_presentation_firewall_v2590',
             'automatic_external_writes'=>false,
             'approval_bypass'=>false,
