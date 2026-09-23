@@ -110,6 +110,7 @@ require_once __DIR__.'/browser-trust-v2080.php';
 require_once __DIR__.'/search-discovery-v2090.php';
 require_once __DIR__.'/music-workspace-plugin-v320.php';
 require_once __DIR__.'/plugin-lifecycle-v360.php';
+require_once __DIR__.'/connected-sites-v100.php';
 require_once __DIR__.'/artist-workspace-v181.php';
 require_once __DIR__.'/music-workspace-release-schema-v330.php';
 require_once __DIR__.'/music-workspace-resources-v330.php';
