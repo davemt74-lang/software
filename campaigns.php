@@ -349,7 +349,7 @@ $memberHeaderActions=implode(' ',$actions);
 <header><div><span>Participation</span><h2>Campaign fulfillment</h2></div><small><?= number_format(count($recentEnrollments)) ?> recent</small></header>
 <p class="cr-help">Triggered and verification-gated Campaign Types land here. Verify the condition, then issue one of that Campaign's attached Rewards. Immediate Campaigns are completed automatically when their Reward is issued.</p>
 <div class="cr-list">
-<?php foreach($recentEnrollments as $enrollment): $options=$campaignRewardOptions[(int)$enrollment['campaign_id']]??[]; ?>
+<?php foreach($recentEnrollments as $enrollment): $options=$campaignRewardOptions[(int)$enrollment['campaign_id']]??[];$enrollmentMeta=json_decode((string)($enrollment['metadata_json']??''),true);if(!is_array($enrollmentMeta))$enrollmentMeta=[];$governedTrigger=campaigns_rewards_automation_default_trigger_v119((string)$enrollment['campaign_type_key']); ?>
 <article>
 <div>
 <strong><?= e((string)($enrollment['contact_name']?:$enrollment['contact_email']?:'Campaign participant')) ?></strong>
@@ -364,6 +364,18 @@ $memberHeaderActions=implode(' ',$actions);
 <select name="reward_product_id" required><?php foreach($options as $rewardOption):?><option value="<?= (int)$rewardOption['id'] ?>"><?= e((string)$rewardOption['name']) ?></option><?php endforeach;?></select>
 <button>Fulfill + Issue</button>
 </form>
+<?php if(in_array($governedTrigger,['referral_qualified','winner_selected','attendance_confirmed','proof_approved','loyalty_milestone','product_available','allocation_approved','agent_action'],true)):?>
+<form method="post" class="cr-inline cr-automation-event"><?= csrf_field() ?>
+<input type="hidden" name="action" value="automation_event">
+<input type="hidden" name="merchant_id" value="<?= $merchantId ?>">
+<input type="hidden" name="campaign_id" value="<?= (int)$enrollment['campaign_id'] ?>">
+<input type="hidden" name="enrollment_id" value="<?= (int)$enrollment['id'] ?>">
+<input type="hidden" name="contact_id" value="<?= (int)$enrollment['contact_id'] ?>">
+<input type="hidden" name="referrer_contact_id" value="<?= (int)($enrollmentMeta['referrer_contact_id']??0) ?>">
+<input type="hidden" name="trigger_event" value="<?= e($governedTrigger) ?>">
+<button type="submit">Verify + trigger <?= e((string)($automationTriggerCatalog[$governedTrigger]['label']??'automation')) ?></button>
+</form>
+<?php endif;?>
 <?php elseif((string)$enrollment['status']!=='completed'&&!$options):?><small>No active Reward is attached to this Campaign.</small><?php endif;?>
 </article>
 <?php endforeach;?>
