@@ -4,7 +4,7 @@ v25.90 formalizes the missing boundary between VP3's canonical event/session evi
 
 ## Purpose
 
-VP3 already has one durable event ingress in `agent_event_inbox` (v19.20), one live-session authority in `agent_live_sessions_v2370` (v23.70), broad domain event adapters (v23.80/v23.90), unified working context (v24.20), and bounded decision calibration (v25.80). v25.90 does **not create another event ledger** and does not replace any of those systems.
+VP3 already has one durable event ingress in `agent_event_inbox` (v19.20), one live-session authority in `agent_live_sessions_v2370` (v23.70), broad domain event adapters (v23.80/v23.90), unified working context (v24.20), and bounded decision calibration (v25.80). v25.90 does not create another event ledger and does not replace any of those systems.
 
 It adds two read-only layers:
 
