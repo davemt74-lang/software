@@ -119,7 +119,7 @@ function campaigns_rewards_automation_save_rule_v119(PDO $pdo,int $merchantId,in
         $q=$pdo->prepare("SELECT id FROM crm_segments WHERE id=? AND owner_user_id=? AND status='active' LIMIT 1");$q->execute([$segmentId,(int)$merchant['owner_user_id']]);
         if(!(int)$q->fetchColumn())throw new RuntimeException('Choose an active CRM segment owned by this Merchant workspace.');
     }else $segmentId=0;
-    $status=in_array((string)($input['status']??'draft'),['draft','active','paused'],true)?(string)$input['status']:'draft';
+    $requestedStatus=(string)($input['status']??'draft');$status=in_array($requestedStatus,['draft','active','paused'],true)?$requestedStatus:'draft';
     if($status==='active'){
         campaigns_rewards_platform_assert_can_v100($pdo,$merchantId,$actorUserId,'campaigns.publish');
         campaigns_rewards_platform_assert_can_v100($pdo,$merchantId,$actorUserId,'rewards.issue');
