@@ -83,6 +83,10 @@ jobs:
           test -f _deploy/includes/agent-goal-strategy-v1710.php
           test -f _deploy/includes/agent-goal-execution-v1712.php
           test -f _deploy/includes/agent-objective-verification-v176.php
+          test -f _deploy/includes/agent-objective-portfolio-v179.php
+          test -f _deploy/includes/agent-work-dependencies-v174.php
+          test -f _deploy/includes/agent-job-engine-v1900.php
+          test -f _deploy/includes/agent-worker-runtime-v1910.php
           test -f _deploy/includes/cognitive-calibration-v2350.php
           test -f _deploy/includes/cognitive-release-v2360.php
           test -f _deploy/includes/cognitive-domain-manifest-v2370.php
