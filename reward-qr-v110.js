@@ -1,6 +1,6 @@
 (function(global){
   'use strict';
-  const VERSION=3,SIZE=29,DATA_CODEWORDS=55,EC_CODEWORDS=15;
+  const VERSION=5,SIZE=37,DATA_CODEWORDS=108,EC_CODEWORDS=26;
 
   function gfTables(){
     const exp=new Array(512).fill(0),log=new Array(256).fill(0);
@@ -27,7 +27,7 @@
 
   function bitsToData(text){
     const bytes=Array.from(new TextEncoder().encode(text));
-    if(bytes.length>52)throw new Error('QR payload is too long.');
+    if(bytes.length>105)throw new Error('QR payload is too long.');
     const bits=[];
     const push=(value,count)=>{for(let i=count-1;i>=0;i--)bits.push((value>>>i)&1);};
     push(0b0100,4);push(bytes.length,8);
@@ -87,7 +87,7 @@
   function drawFunctionPatterns(m){
     finder(m,0,0);finder(m,0,SIZE-7);finder(m,SIZE-7,0);
     for(let i=8;i<SIZE-8;i++){set(m,6,i,i%2===0,true);set(m,i,6,i%2===0,true);}
-    alignment(m,22,22);
+    alignment(m,30,30);
     set(m,SIZE-8,8,1,true);
     const [a,b]=formatPositions();a.concat(b).forEach(([r,c])=>set(m,r,c,0,true));
   }
