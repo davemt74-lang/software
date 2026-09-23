@@ -232,10 +232,12 @@ function campaigns_rewards_automation_contact_matches_v119(PDO $pdo,int $merchan
         $meta=json_decode((string)($row['metadata_json']??''),true);if(!is_array($meta))$meta=[];
         $birthday=trim((string)($meta['birthday']??''));$ts=$birthday!==''?strtotime($birthday):false;if(!$ts)return false;
         $window=max(0,min(31,(int)($conditions['birthday_window_days']??0)));$today=new DateTimeImmutable('today',new DateTimeZone('UTC'));
-        $year=(int)$today->format('Y');$month=(int)gmdate('n',$ts);$day=(int)gmdate('j',$ts);
-        try{$candidate=new DateTimeImmutable(sprintf('%04d-%02d-%02d',$year,$month,$day),new DateTimeZone('UTC'));}catch(Throwable $e){return false;}
-        $diff=(int)$today->diff($candidate)->format('%r%a');
-        if(abs($diff)>$window)return false;
+        $year=(int)$today->format('Y');$month=(int)gmdate('n',$ts);$day=(int)gmdate('j',$ts);$distance=9999;
+        foreach([$year-1,$year,$year+1] as $candidateYear){
+            try{$candidate=new DateTimeImmutable(sprintf('%04d-%02d-%02d',$candidateYear,$month,$day),new DateTimeZone('UTC'));}catch(Throwable $e){continue;}
+            $distance=min($distance,abs((int)$today->diff($candidate)->format('%r%a')));
+        }
+        if($distance>$window)return false;
     }
     return true;
 }
@@ -302,8 +304,9 @@ function campaigns_rewards_automation_execution_v119(PDO $pdo,int $ruleId,int $c
 function campaigns_rewards_automation_cooldown_blocked_v119(PDO $pdo,array $rule,int $contactId): bool
 {
     $days=max(0,(int)($rule['conditions']['cooldown_days']??0));if($days<1)return false;
-    $q=$pdo->prepare("SELECT 1 FROM campaign_rule_executions WHERE rule_id=? AND contact_id=? AND status='completed' AND executed_at>DATE_SUB(UTC_TIMESTAMP(),INTERVAL ? DAY) LIMIT 1");
-    $q->execute([(int)$rule['id'],$contactId,$days]);return (bool)$q->fetchColumn();
+    $cutoff=gmdate('Y-m-d H:i:s',time()-($days*86400));
+    $q=$pdo->prepare("SELECT 1 FROM campaign_rule_executions WHERE rule_id=? AND contact_id=? AND status='completed' AND executed_at>? LIMIT 1");
+    $q->execute([(int)$rule['id'],$contactId,$cutoff]);return (bool)$q->fetchColumn();
 }
 
 function campaigns_rewards_automation_execute_contact_v119(PDO $pdo,array $rule,int $contactId,string $triggerEventId,array $payload=[]): array
@@ -314,8 +317,13 @@ function campaigns_rewards_automation_execute_contact_v119(PDO $pdo,array $rule,
     if($existing=campaigns_rewards_automation_execution_v119($pdo,$ruleId,$contactId,$key))return ['duplicate'=>true,'execution'=>$existing];
     if(campaigns_rewards_automation_cooldown_blocked_v119($pdo,$rule,$contactId))return ['duplicate'=>false,'suppressed'=>true,'reason'=>'cooldown'];
     if(!campaigns_rewards_automation_contact_matches_v119($pdo,$merchantId,$contactId,(array)$rule['conditions']))return ['duplicate'=>false,'suppressed'=>true,'reason'=>'audience'];
-    $pdo->prepare("INSERT INTO campaign_rule_executions (rule_id,trigger_event_id,contact_id,campaign_id,idempotency_key,status,environment,result_json)
-      VALUES (?,?,?,?,?,'running','production','{}')")->execute([$ruleId,$triggerEventId,$contactId,$campaignId,$key]);
+    $insert=$pdo->prepare("INSERT IGNORE INTO campaign_rule_executions (rule_id,trigger_event_id,contact_id,campaign_id,idempotency_key,status,environment,result_json)
+      VALUES (?,?,?,?,?,'running','production','{}')");
+    $insert->execute([$ruleId,$triggerEventId,$contactId,$campaignId,$key]);
+    if($insert->rowCount()!==1){
+        $existing=campaigns_rewards_automation_execution_v119($pdo,$ruleId,$contactId,$key);
+        return ['duplicate'=>true,'execution'=>$existing];
+    }
     $executionId=(int)$pdo->lastInsertId();
     try{
         $issuance=campaigns_rewards_issue_reward_v100($pdo,$campaignId,$rewardId,$contactId,0,[
