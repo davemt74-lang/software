@@ -49,6 +49,11 @@ jobs:
           php tests/campaigns-rewards-v110.php
           node tests/campaigns-rewards-v110.mjs
 
+      - name: Campaigns & Rewards V1.18 contract
+        run: |
+          php tests/campaigns-rewards-v118.php
+          node tests/campaigns-rewards-v118.mjs
+
       - name: Full MySQL 8 upgrade audit
         run: python3 tests/upgrade-mysql8-static-audit.py
 
@@ -57,6 +62,7 @@ jobs:
           node --check tests/team-workspace-lifecycle-v350.mjs
           node --check tests/campaigns-rewards-v100.mjs
           node --check tests/campaigns-rewards-v110.mjs
+          node --check tests/campaigns-rewards-v118.mjs
           node --check reward-tray-v110.js
           node --check reward-qr-v110.js
 
@@ -72,6 +78,10 @@ jobs:
           php -l includes/campaigns-rewards-release-v100.php
           php -l includes/campaigns-rewards-v110.php
           php -l includes/campaigns-rewards-release-v110.php
+          php -l includes/campaigns-rewards-types-v118.php
+          php -l includes/campaigns-rewards-v118.php
+          php -l includes/campaigns-rewards-release-v118.php
+          php -l tests/campaigns-rewards-v118.php
           php -l api/reward-tray-v110.php
           php -l team.php
           php -l campaigns.php
