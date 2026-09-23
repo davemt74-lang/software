@@ -25,10 +25,10 @@ $base=[
     'commitment_protection_score'=>0.0,
 ];
 
-v2550_assert(vp3_cognitive_economics_adjustment_v2550($base+['commitment_protection_score'=>0.9],1.0,0.1,true)===0.0,'protected commitment is economics-exempt');
-v2550_assert(vp3_cognitive_economics_adjustment_v2550($base+['execution_mode'=>'manual'],1.0,0.1,true)===0.0,'manual work is not economically reordered');
-v2550_assert(vp3_cognitive_economics_adjustment_v2550($base+['execution_mode'=>'supervised'],1.0,0.1,true)===0.0,'supervised work is not economically reordered');
-v2550_assert(vp3_cognitive_economics_adjustment_v2550($base+['executor'=>'homeserver'],1.0,0.1,true)===0.0,'HomeServer work is not penalized by cloud economics');
+v2550_assert(vp3_cognitive_economics_adjustment_v2550(array_merge($base,['commitment_protection_score'=>0.9]),1.0,0.1,true)===0.0,'protected commitment is economics-exempt');
+v2550_assert(vp3_cognitive_economics_adjustment_v2550(array_merge($base,['execution_mode'=>'manual']),1.0,0.1,true)===0.0,'manual work is not economically reordered');
+v2550_assert(vp3_cognitive_economics_adjustment_v2550(array_merge($base,['execution_mode'=>'supervised']),1.0,0.1,true)===0.0,'supervised work is not economically reordered');
+v2550_assert(vp3_cognitive_economics_adjustment_v2550(array_merge($base,['executor'=>'homeserver']),1.0,0.1,true)===0.0,'HomeServer work is not penalized by cloud economics');
 v2550_assert(vp3_cognitive_economics_adjustment_v2550($base,1.0,0.1,false)===0.0,'unknown pricing creates no planning penalty');
 v2550_assert(vp3_cognitive_economics_adjustment_v2550($base,0.20,0.1,true)===0.0,'low token pressure creates no planning penalty');
 
