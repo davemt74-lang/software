@@ -61,6 +61,7 @@
     if (!post) {
       const target = new URL(cfg.endpoint, window.location.href);
       target.searchParams.set('action', action);
+      target.searchParams.set('agent_id', String(Number(cfg.agentId || 0)));
       Object.entries(query || {}).forEach(([key,value]) => target.searchParams.set(key, String(value)));
       url = target.toString();
     }
@@ -69,7 +70,7 @@
       credentials:'same-origin',
       cache:'no-store',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({action, csrf_token:cfg.csrf, ...payload})
+      body:JSON.stringify({action, csrf_token:cfg.csrf, agent_id:Number(cfg.agentId || 0), ...payload})
     } : {credentials:'same-origin', cache:'no-store'};
     const response = await fetch(url, options);
     const data = await response.json().catch(() => null);
@@ -355,7 +356,15 @@
     const events = Array.isArray(brain.events) ? brain.events : [];
     const recent = Array.isArray(brain.recent) ? brain.recent : [];
     const themes = Array.isArray(brain.themes) ? brain.themes : [];
+    const working = brain.working_context || {};
+    const counts = working.counts || {};
+    const budget = working.attention?.budget || {};
     const currentState = stateLabel(activity.state || 'idle');
+    const namespace = String(working.agent_namespace || brain.namespace || 'system');
+    const namespaceLabel = namespace === 'system' ? 'System Agent' : `Agent ${namespace.replace('agent:','')}`;
+    const attentionLabel = Number.isFinite(Number(budget.limit))
+      ? `${Math.max(0, Number(budget.limit || 0) - Number(budget.used || 0))} of ${Number(budget.limit || 0)} interruption slots available`
+      : 'Attention budget unavailable';
 
     return `
       <section class="chat-activity-section chat-brain-overview">
@@ -365,24 +374,36 @@
           <em>${esc(activity.surface || 'chat')}</em>
         </div>
         <div class="chat-brain-metrics">
-          ${brainMetric('Memories', Number(brain.memory_count || 0))}
+          ${brainMetric('Memories', Number(brain.memory_count || counts.durable_memories || 0))}
           ${brainMetric('Archived messages', Number(brain.archive_count || 0))}
-          ${brainMetric('Operations', operations.length)}
-        </div>
-      </section>
-
-      <section class="chat-activity-section chat-brain-priorities-section">
-        <div class="chat-activity-section-head">
-          <div><strong>Current Priorities</strong><span>Ranked by Agent Brain. Record the real outcome so future priorities learn from what happened.</span></div>
-        </div>
-        <div class="chat-brain-priority-list">
-          ${priorities.length ? priorities.map(brainPriorityCard).join('') : '<div class="chat-activity-empty">No fresh high-value Brain priorities right now.</div>'}
+          ${brainMetric('Episodic threads', Number(counts.episodic_threads || 0))}
+          ${brainMetric('Priorities', Number(counts.priorities || priorities.length))}
         </div>
       </section>
 
       <section class="chat-activity-section">
         <div class="chat-activity-section-head">
-          <div><strong>Operational Activity</strong><span>Tools, edits, transcriptions, knowledge saves and agent opportunities</span></div>
+          <div><strong>Working Context</strong><span>v24.20 assembles one bounded, authorized context set for each Agent turn.</span></div>
+        </div>
+        <div class="chat-brain-metrics">
+          ${brainMetric('Agent scope', namespaceLabel)}
+          ${brainMetric('Context limit', `${Number(working.limits?.max_items || 28)} items`, 'Ephemeral; not stored')}
+          ${brainMetric('Attention', attentionLabel)}
+        </div>
+      </section>
+
+      <section class="chat-activity-section chat-brain-priorities-section">
+        <div class="chat-activity-section-head">
+          <div><strong>Current Priorities</strong><span>${namespace === 'system' ? 'Ranked by Agent Brain. Record the real outcome so future priorities learn from what happened.' : 'Named-Agent priorities appear only when the priority engine provides that Agent namespace.'}</span></div>
+        </div>
+        <div class="chat-brain-priority-list">
+          ${priorities.length ? priorities.map(brainPriorityCard).join('') : '<div class="chat-activity-empty">No fresh high-value priorities for this Agent scope right now.</div>'}
+        </div>
+      </section>
+
+      <section class="chat-activity-section">
+        <div class="chat-activity-section-head">
+          <div><strong>Operational Activity</strong><span>${namespace === 'system' ? 'Tools, edits, transcriptions, knowledge saves and Agent opportunities' : 'Account-wide operations stay with the System Agent to avoid crossing Agent scopes.'}</span></div>
         </div>
         <div class="chat-notification-list chat-brain-operation-list">
           ${operations.length ? operations.map(item => `
@@ -394,25 +415,25 @@
                 <small>${esc(brainSourceLabel(item.source_type))} · ${esc(relative(item.created_at))}</small>
               </div>
               ${item.target_url ? `<a href="${esc(item.target_url)}">Open</a>` : ''}
-            </article>`).join('') : '<div class="chat-activity-empty">No operational Agent Brain activity in the last 14 days.</div>'}
+            </article>`).join('') : '<div class="chat-activity-empty">No operational activity for this Agent scope.</div>'}
         </div>
       </section>
 
       <section class="chat-activity-section">
-        <div class="chat-activity-section-head"><div><strong>Agent State Timeline</strong><span>Working, paused and idle state transitions across Stonefellow</span></div></div>
+        <div class="chat-activity-section-head"><div><strong>Agent State Timeline</strong><span>Live-state history shown only where its scope is authoritative</span></div></div>
         <div class="chat-brain-timeline">
           ${events.length ? events.slice(0,30).map(event => `
             <article class="chat-brain-event">
               <span class="chat-brain-event-state ${esc(event.activity_state || 'idle')}"></span>
               <div><strong>${esc(event.task_title || stateLabel(event.activity_state))}</strong><p>${esc(stateLabel(event.previous_state))} → ${esc(stateLabel(event.activity_state))}${event.reason ? ` · ${esc(String(event.reason).replaceAll('_',' '))}` : ''}</p><small>${esc(event.surface || 'chat')} · ${esc(relative(event.created_at))}</small></div>
-            </article>`).join('') : '<div class="chat-activity-empty">No Agent state history yet.</div>'}
+            </article>`).join('') : '<div class="chat-activity-empty">No scoped Agent state history yet.</div>'}
         </div>
       </section>
 
       <section class="chat-activity-section">
-        <div class="chat-activity-section-head"><div><strong>Recent Memory</strong><span>Structured facts and decisions the Agent Brain is retaining</span></div></div>
+        <div class="chat-activity-section-head"><div><strong>Recent Memory</strong><span>Durable memories retained by this Agent Brain scope</span></div></div>
         <div class="chat-brain-memory-list">
-          ${recent.length ? recent.map(memory => `<article><span>${esc(memory.memory_type || 'memory')}</span><strong>${esc(memory.subject || 'Memory')}</strong><p>${esc(memory.memory_text || '')}</p><small>${Number(memory.occurrence_count || 1)} occurrence${Number(memory.occurrence_count || 1) === 1 ? '' : 's'} · ${esc(relative(memory.last_seen_at))}</small></article>`).join('') : '<div class="chat-activity-empty">No structured memory yet.</div>'}
+          ${recent.length ? recent.map(memory => `<article><span>${esc(memory.memory_type || 'memory')}</span><strong>${esc(memory.subject || 'Memory')}</strong><p>${esc(memory.memory_text || '')}</p><small>${Number(memory.occurrence_count || 1)} occurrence${Number(memory.occurrence_count || 1) === 1 ? '' : 's'} · ${esc(relative(memory.last_seen_at))}</small></article>`).join('') : '<div class="chat-activity-empty">No durable memory in this Agent scope yet.</div>'}
         </div>
         ${themes.length ? `<div class="chat-brain-themes"><strong>Recurring themes</strong><div>${themes.slice(0,10).map(theme => `<span>${esc(theme.subject || '')}<small>${Number(theme.occurrence_count || 0)}</small></span>`).join('')}</div></div>` : ''}
       </section>`;
@@ -423,7 +444,7 @@
     let lastDay = '';
     return `
       <section class="chat-activity-section">
-        <div class="chat-activity-section-head"><div><strong>Agent History</strong><span>Chronological conversation archive used by the Agent Brain</span></div></div>
+        <div class="chat-activity-section-head"><div><strong>Agent History</strong><span>Authorized conversation archive for the selected Agent identity</span></div></div>
         <div class="chat-brain-history">
           ${rows.length ? rows.map(row => {
             const date = new Date(String(row.created_at || '').replace(' ', 'T'));
@@ -431,7 +452,7 @@
             const divider = day && day !== lastDay ? `<div class="chat-brain-history-day">${esc(day)}</div>` : '';
             lastDay = day || lastDay;
             return `${divider}<article class="${esc(row.role || 'user')}"><div><strong>${row.role === 'assistant' ? 'Agent' : 'You'}</strong><span>${esc(row.input_mode || 'text')}</span><small>${esc(relative(row.created_at))}</small></div><p>${esc(row.message || '')}</p><footer>Conversation ${Number(row.conversation_id || 0)}</footer></article>`;
-          }).join('') : '<div class="chat-activity-empty">No Agent Brain conversation history yet.</div>'}
+          }).join('') : '<div class="chat-activity-empty">No conversation history in this Agent scope yet.</div>'}
         </div>
       </section>`;
   }
