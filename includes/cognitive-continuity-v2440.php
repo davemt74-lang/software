@@ -113,7 +113,7 @@ function vp3_cognitive_continuity_workflows_v2440(PDO $pdo,array $user,string $n
             "SELECT * FROM agent_workflow_runs
              WHERE owner_user_id=? AND {$where}
                AND status NOT IN ('completed','cancelled')
-             ORDER BY updated_at DESC,id DESC LIMIT 24"
+             ORDER BY updated_at DESC,id DESC LIMIT 12"
         );
         $stmt->execute($params);$rows=$stmt->fetchAll()?:[];
     }catch(Throwable $e){return [];}
@@ -180,7 +180,7 @@ function vp3_cognitive_continuity_goals_v2440(PDO $pdo,array $user,string $names
     if($namespace!=='system'||!function_exists('agent_goal_strategy_schema_ready_v1710')||!agent_goal_strategy_schema_ready_v1710($pdo))return [];
     try{$goals=agent_goal_list_v1710($pdo,$user,false);}catch(Throwable $e){return [];}
     $out=[];
-    foreach(array_slice($goals,0,10) as $entry){
+    foreach(array_slice($goals,0,4) as $entry){
         $goal=is_array($entry['goal']??null)?$entry['goal']:[];
         $goalId=(int)($goal['id']??0);if($goalId<1)continue;
         try{
@@ -254,7 +254,7 @@ function vp3_cognitive_continuity_orchestration_v2440(PDO $pdo,array $user,strin
             "SELECT * FROM cognitive_plan_runs_v560
              WHERE owner_user_id=? AND agent_namespace=?
                AND status NOT IN ('completed','closed','superseded','cancelled')
-             ORDER BY updated_at DESC,id DESC LIMIT 16"
+             ORDER BY updated_at DESC,id DESC LIMIT 8"
         );
         $stmt->execute([(int)$user['id'],$namespace]);$rows=$stmt->fetchAll()?:[];
     }catch(Throwable $e){return [];}
@@ -307,7 +307,7 @@ function vp3_cognitive_continuity_orchestration_v2440(PDO $pdo,array $user,strin
 function vp3_cognitive_continuity_meetings_v2440(PDO $pdo,array $user,string $namespace): array
 {
     if($namespace!=='system'||!function_exists('video_meeting_commitment_command_state_v18230'))return [];
-    try{$state=video_meeting_commitment_command_state_v18230($pdo,(int)$user['id'],40);}catch(Throwable $e){return [];}
+    try{$state=video_meeting_commitment_command_state_v18230($pdo,(int)$user['id'],20);}catch(Throwable $e){return [];}
     if(empty($state['available']))return [];
     $out=[];
     foreach((array)($state['commitments']??[]) as $item){
@@ -346,20 +346,37 @@ function vp3_cognitive_continuity_meetings_v2440(PDO $pdo,array $user,string $na
             ]
         );
     }
-    return array_slice($out,0,8);
+    return array_slice($out,0,4);
 }
 
 function vp3_cognitive_continuity_browser_v2440(PDO $pdo,array $user,string $namespace): array
 {
     if($namespace!=='system'||!function_exists('vp3_browser_continuity_schema_ready_v2260')||!vp3_browser_continuity_schema_ready_v2260($pdo))return [];
-    try{$rows=vp3_browser_continuity_list_v2260($pdo,(int)$user['id']);}catch(Throwable $e){return [];}
+    $uid=(int)($user['id']??0);if($uid<1)return [];
+    try{
+        $stmt=$pdo->prepare("SELECT * FROM browser_transaction_continuities_v2260
+          WHERE owner_user_id=? AND tracking_status='active'
+          ORDER BY updated_at DESC,id DESC LIMIT 8");
+        $stmt->execute([$uid]);$rows=$stmt->fetchAll(PDO::FETCH_ASSOC)?:[];
+        if(!$rows)return [];
+        $ids=array_values(array_map(static fn(array $row): int => (int)$row['id'],$rows));
+        $marks=implode(',',array_fill(0,count($ids),'?'));
+        $proposalCounts=[];
+        if($marks!==''&&table_exists('browser_transaction_followthrough_proposals_v2260')){
+            $p=$pdo->prepare("SELECT continuity_id,COUNT(*) AS c
+              FROM browser_transaction_followthrough_proposals_v2260
+              WHERE owner_user_id=? AND status='proposed' AND continuity_id IN ({$marks})
+              GROUP BY continuity_id");
+            $p->execute(array_merge([$uid],$ids));
+            foreach($p->fetchAll(PDO::FETCH_ASSOC)?:[] as $row)$proposalCounts[(int)$row['continuity_id']]=(int)$row['c'];
+        }
+    }catch(Throwable $e){return [];}
+
     $out=[];
-    foreach($rows as $entry){
-        if(!is_array($entry))continue;
-        $continuity=is_array($entry['continuity']??null)?$entry['continuity']:[];
-        if((string)($continuity['tracking_status']??'')!=='active')continue;
-        $proposals=array_values(array_filter((array)($entry['proposals']??[]),static fn($p): bool => is_array($p)&&(string)($p['status']??'')==='proposed'));
-        $requiresUser=count($proposals)>0;
+    foreach($rows as $row){
+        $continuity=vp3_browser_continuity_public_v2260($row);
+        $proposalCount=max(0,(int)($proposalCounts[(int)$row['id']]??0));
+        $requiresUser=$proposalCount>0;
         $state=$requiresUser?'needs_user':'tracking';
         $domain=vp3_cognitive_text_v500($continuity['domain']??'Browser transaction',190);
         $life=vp3_cognitive_text_v500($continuity['lifecycle_state']??'active',80);
@@ -378,13 +395,13 @@ function vp3_cognitive_continuity_browser_v2440(PDO $pdo,array $user,string $nam
                 'metadata'=>[
                     'lifecycle_family'=>(string)($continuity['lifecycle_family']??''),
                     'lifecycle_state'=>$life,
-                    'proposal_count'=>count($proposals),
+                    'proposal_count'=>$proposalCount,
                     'last_change_at'=>(string)($continuity['last_change_at']??''),
                 ],
             ]
         );
     }
-    return array_slice($out,0,8);
+    return array_slice($out,0,4);
 }
 
 function vp3_cognitive_continuity_sort_v2440(array $items): array
