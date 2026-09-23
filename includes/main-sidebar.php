@@ -13,6 +13,8 @@ $mainSidebarScript = basename((string)($_SERVER['SCRIPT_NAME'] ?? ''));
 $mainSidebarIsChat = $mainSidebarActive === 'chat' || $mainSidebarScript === 'chat.php';
 $mainSidebarCanChat = $mainSidebarUser && has_permission('chat.access', $mainSidebarUser);
 $mainSidebarCurrentSection = function_exists('member_navigation_section_label') ? member_navigation_section_label($mainSidebarActive) : 'Workspace';
+$mainSidebarRewardTrayBucket = trim((string)($_GET['reward_tray'] ?? ''));
+if (!in_array($mainSidebarRewardTrayBucket, ['inbox','sent','claimed'], true)) $mainSidebarRewardTrayBucket = '';
 
 $mainSidebarPrimaryOrder = ['home','chat','profile_agent','messages','contacts','knowledge','transcriptions','calendar','scheduling','profile_commerce','campaigns','rewards','team'];
 $mainSidebarPrimaryKeys = array_fill_keys($mainSidebarPrimaryOrder, true);
@@ -129,6 +131,13 @@ if ($mainSidebarRenderAgentVoiceAssets) $GLOBALS['VP3_MEMBER_AGENT_VOICE_MENU_AS
         ?>
           <?php if ($section !== $lastPrimarySection): ?><div class="agent-nav-group-label"><?= e($section) ?></div><?php endif; ?>
           <a class="chat-sidebar-nav-link<?= $isActive ? ' active' : '' ?>" href="<?= e((string)$link['url']) ?>" data-vp3-nav-key="<?= e($key) ?>"<?= $isActive ? ' aria-current="page"' : '' ?>><span><?= e((string)($mainSidebarPrimaryIcons[$key]??'•')) ?></span><strong><?= e((string)($mainSidebarPrimaryLabels[$key]??$link['label']??$key)) ?></strong></a>
+          <?php if ($key === 'rewards'): ?>
+            <nav class="reward-sidebar-subnav" aria-label="Reward certificates">
+              <?php foreach (['inbox'=>'INBOX','sent'=>'SENT','claimed'=>'CLAIMED'] as $rewardBucket=>$rewardLabel): $rewardActive=$mainSidebarIsChat&&$mainSidebarRewardTrayBucket===$rewardBucket; ?>
+                <a class="reward-sidebar-subnav-link<?= $rewardActive?' active':'' ?>" href="<?= e(url('/chat.php?reward_tray='.$rewardBucket)) ?>" data-reward-tray-tab="<?= e($rewardBucket) ?>"<?= $rewardActive?' aria-current="page"':'' ?>><span><?= e($rewardLabel) ?></span><span class="reward-sidebar-count" data-reward-count="<?= e($rewardBucket) ?>">0</span></a>
+              <?php endforeach; ?>
+            </nav>
+          <?php endif; ?>
         <?php $lastPrimarySection=$section; endforeach; ?>
       </nav>
     </section>
