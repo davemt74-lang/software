@@ -24,6 +24,10 @@ function vp3_cognitive_current_state_domain_v2590(string $source,string $eventTy
 {
     $source=strtolower(trim($source));
     $eventType=strtolower(trim($eventType));
+    if(function_exists('vp3_cognitive_current_state_domain_v2600')){
+        $registered=vp3_cognitive_current_state_domain_v2600($source,$eventType);
+        if($registered!=='')return $registered;
+    }
     $prefix=str_contains($eventType,'.')?strstr($eventType,'.',true):$eventType;
     return match($prefix){
         'session','chat'=>'session',
@@ -69,7 +73,8 @@ function vp3_cognitive_current_state_refs_v2590(array $payload): array
         'appointment_id','calendar_event_id','order_id','product_id','contact_id',
         'relationship_id','workflow_id','run_id','commitment_id','notification_id',
         'research_project_id','source_id','annotation_id','recording_id',
-        'transcription_id','device_id','room_id','release_id','object_type','object_id',
+        'transcription_id','device_id','room_id','release_id','merchant_id','merchant_account_id',
+        'merchant_location_id','campaign_id','reward_id','claim_id','customer_id','object_type','object_id',
         'surface','state','status'
     ];
     $refs=[];
