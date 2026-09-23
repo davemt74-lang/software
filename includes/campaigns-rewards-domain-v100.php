@@ -925,6 +925,7 @@ function campaigns_rewards_process_claim_v100(PDO $pdo,string $rewardCredential,
         $expectedMerchant=max(0,(int)($context['expected_merchant_id']??0));
         if($expectedMerchant>0&&$expectedMerchant!==$merchantId)throw new RuntimeException('Reward Credential belongs to a different Merchant.');
         if((string)$issuance['merchant_status']!=='active')throw new RuntimeException('Merchant is not accepting Claims.');
+        campaigns_rewards_platform_assert_can_v100($pdo,$merchantId,$actorUserId,'claims.process');
         if(!in_array((string)$issuance['campaign_status'],['active','completed'],true))throw new RuntimeException('Campaign is not claimable.');
         if(!in_array((string)$issuance['status'],['issued','sent','viewed'],true)||((int)$issuance['remaining_quantity'])<1)throw new RuntimeException('Reward is no longer claimable.');
         if(!empty($issuance['expires_at'])&&strtotime((string)$issuance['expires_at'])<=time())throw new RuntimeException('Reward has expired.');
@@ -934,7 +935,6 @@ function campaigns_rewards_process_claim_v100(PDO $pdo,string $rewardCredential,
         if((int)$code['merchant_id']!==$merchantId||($code['status']??'')!=='active')throw new RuntimeException('Merchant Claim Code is not active for this Merchant.');
         if(!empty($code['active_from'])&&strtotime((string)$code['active_from'])>time())throw new RuntimeException('Merchant Claim Code is not active yet.');
         if(!empty($code['active_until'])&&strtotime((string)$code['active_until'])<=time())throw new RuntimeException('Merchant Claim Code has expired.');
-        campaigns_rewards_platform_assert_can_v100($pdo,$merchantId,$actorUserId,'claims.process');
         if(!empty($code['merchant_member_id'])){
             $member=campaigns_rewards_platform_member_v100($pdo,$merchantId,$actorUserId);
             if(!$member||(int)$member['id']!==(int)$code['merchant_member_id'])throw new RuntimeException('Merchant Claim Code is assigned to a different Team Member.');
