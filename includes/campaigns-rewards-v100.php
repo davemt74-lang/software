@@ -329,9 +329,13 @@ function campaigns_rewards_save_campaign_v100(PDO $pdo,int $merchantId,int $acto
         }
 
         $campaignRow=campaigns_rewards_campaign_platform_v100($pdo,$campaignId)?:throw new RuntimeException('Campaign could not be loaded.');
+        $typeBehavior=function_exists('campaigns_rewards_campaign_type_behavior_v118')
+            ?campaigns_rewards_campaign_type_behavior_v118($pdo,$merchantId,(string)$campaignRow['campaign_type_key']):[];
+        $ctaLabel=campaigns_rewards_text_v100($input['cta_label']??'',80);
+        if($ctaLabel==='')$ctaLabel=campaigns_rewards_text_v100($typeBehavior['default_cta']??'Continue',80);
         $pdo->prepare("UPDATE campaign_landing_pages SET slug=?,visibility=?,headline=?,subheadline=?,cta_label=?,terms_json=?,updated_at=UTC_TIMESTAMP() WHERE campaign_id=?")
           ->execute([(string)$campaignRow['slug'],!empty($input['profile_visible'])?'profile_public':'unlisted',(string)$campaignRow['name'],
-            campaigns_rewards_text_v100($input['subtitle']??'',500),campaigns_rewards_text_v100($input['cta_label']??'Claim reward',80),
+            campaigns_rewards_text_v100($input['subtitle']??'',500),$ctaLabel,
             campaigns_rewards_json_v100(['text'=>mb_strimwidth(trim((string)($input['terms']??'')),0,12000,'…')]),$campaignId]);
 
         $locationId=max(0,(int)($input['location_id']??0));
@@ -341,6 +345,9 @@ function campaigns_rewards_save_campaign_v100(PDO $pdo,int $merchantId,int $acto
             if(!$locationPublic)throw new RuntimeException('Choose a valid Merchant Location.');
             $pdo->prepare("INSERT INTO campaigns_rewards_object_bindings (merchant_id,subject_type,subject_id,purpose,target_type,target_id,target_public_id,settings_json)
               VALUES (?,'campaign',?,'location','merchant_location',?,?, '{}')")->execute([$merchantId,$campaignId,(string)$locationId,(string)$locationPublic]);
+        }
+        if(array_key_exists('reward_selection_present',$input)&&function_exists('campaigns_rewards_sync_campaign_rewards_v118')){
+            campaigns_rewards_sync_campaign_rewards_v118($pdo,$merchantId,$campaignId,$actorUserId,(array)($input['reward_ids']??[]),false);
         }
         $merchant=campaigns_rewards_platform_merchant_v100($pdo,$merchantId)?:throw new RuntimeException('Merchant not found.');
         $profileUserId=(int)$merchant['owner_user_id'];
@@ -450,9 +457,11 @@ function campaigns_rewards_campaign_by_slug_v100(PDO $pdo,string $slug,bool $pub
     $slug=campaigns_rewards_slug_v100($slug);if($slug==='')return null;
     $sql="SELECT c.*,c.merchant_id merchant_account_id,c.name title,m.public_id merchant_public_id,m.owner_user_id,m.owner_user_id profile_user_id,
       m.name merchant_name,m.slug merchant_slug,mp.description merchant_description,mp.website_url merchant_website_url,mp.public_contact_json,
+      ct.type_key campaign_type_key,ct.name campaign_type_name,ct.base_handler_key,ct.supports_public_signup,ct.supports_existing_contacts,ct.supports_cases,ct.supports_automation,ct.supports_agent,
       lp.subheadline subtitle,lp.cta_label,lp.terms_json,lp.visibility,lp.is_published,lp.published_at,
       u.display_name profile_display_name,u.avatar_path profile_avatar_path,p.username profile_username,p.is_public profile_is_public
       FROM campaigns c INNER JOIN merchant_accounts m ON m.id=c.merchant_id AND m.status='active'
+      INNER JOIN campaign_types ct ON ct.id=c.campaign_type_id AND ct.is_active=1
       INNER JOIN campaign_landing_pages lp ON lp.campaign_id=c.id
       LEFT JOIN merchant_profiles mp ON mp.merchant_id=m.id LEFT JOIN users u ON u.id=m.owner_user_id
       LEFT JOIN user_profiles p ON p.user_id=m.owner_user_id WHERE c.slug=?";
@@ -564,8 +573,9 @@ function campaigns_rewards_record_landing_view_v100(PDO $pdo,array $campaign,str
     $dedupe=$pdo->prepare("SELECT 1 FROM campaign_public_events WHERE campaign_id=? AND session_id=? AND event_type='landing_view' AND occurred_at>=DATE_FORMAT(UTC_TIMESTAMP(),'%Y-%m-%d %H:00:00') LIMIT 1");
     $dedupe->execute([$campaignId,$sessionId]);if($dedupe->fetchColumn())return;
     $pdo->prepare("INSERT INTO campaign_public_events (campaign_id,session_id,event_type,occurred_at,metadata_json) VALUES (?,?,'landing_view',UTC_TIMESTAMP(),'{}')")->execute([$campaignId,$sessionId]);
-    campaigns_rewards_activity_event_v100($pdo,$merchantId,'campaign.signup_started',['campaign_id'=>$campaignId],[
+    campaigns_rewards_activity_event_v100($pdo,$merchantId,'campaign.landing_viewed',['campaign_id'=>$campaignId],[
       'summary'=>'Campaign landing viewed','merchant_public_id'=>$campaign['merchant_public_id']??'','campaign_public_id'=>$campaign['public_id']??'',
+      'campaign_type'=>$campaign['campaign_type_key']??'',
     ],(string)($campaign['environment']??'production'),null,'system');
 }
 
