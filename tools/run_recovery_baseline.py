@@ -51,6 +51,7 @@ NODE_TESTS = [
     'tests/cognitive-supervision-v2460.mjs',
     'tests/cognitive-autonomy-v2470.mjs',
     'tests/cognitive-portfolio-v2480.mjs',
+    'tests/cognitive-forecast-v2490.mjs',
     'tests/knowledge-agent-context-v162-browser-contract.mjs',
     'tests/agent-brain-learning-history-v317.mjs',
     'tests/chat-onboarding-v241.mjs',
