@@ -17,7 +17,6 @@ const api=read('api/reward-tray-v110.php');
 const tray=read('reward-tray-v110.js');
 const qr=read('reward-qr-v110.js');
 const css=read('reward-tray-v110.css');
-const agentUiCss=read('agent-ui-v034.css');
 const docs=read('docs/CAMPAIGNS_REWARDS_V110.md');
 const setup=read('setup.php');
 const upgrade=read('upgrade.php');
@@ -35,12 +34,13 @@ const checks=[
  ['Tray claim delegates to canonical online three-factor engine',runtime.includes('campaigns_rewards_process_claim_v100')&&runtime.includes("'online'=>true")&&runtime.includes("'expected_merchant_id'=>$merchantId")&&runtime.includes("campaigns_rewards_platform_assert_can_v100($pdo,$merchantId,$actorUserId,'claims.process')")],
  ['API requires login chat access CSRF and no-store',api.includes('current_user()')&&api.includes("'chat.access'")&&api.includes('hash_equals(csrf_token()')&&api.includes('Cache-Control: no-store')],
  ['API exposes state send prepare_claim and claim actions',api.includes("$action==='state'")&&api.includes("$action==='send'")&&api.includes("$action==='prepare_claim'")&&api.includes("$action==='claim'")],
- ['Agent Chat loads Reward Tray CSS local QR and tray runtime',chat.includes('reward-tray-v110.css')&&chat.includes('reward-qr-v110.js')&&chat.includes('reward-tray-v110.js')&&chat.includes('/api/reward-tray-v110.php')],
+ ['Agent Chat loads V1.12 Reward Tray CSS local QR and tray runtime',chat.includes('reward-tray-v110.css?v=112')&&chat.includes('reward-qr-v110.js?v=112')&&chat.includes('reward-tray-v110.js?v=112')&&chat.includes('/api/reward-tray-v110.php')],
  ['Header tray contains INBOX SENT CLAIMED tabs with live count badges',tray.includes("['inbox','sent','claimed']")&&tray.includes('data-reward-count')&&tray.includes('reward-tray-tabs')],
- ['Rewards sidebar exposes INBOX SENT CLAIMED links with count badges',sidebar.includes('reward-sidebar-subnav')&&sidebar.includes("['inbox'=>'INBOX','sent'=>'SENT','claimed'=>'CLAIMED']")&&sidebar.includes("data-reward-count=\"<?= e($rewardBucket) ?>\"")&&sidebar.includes("url('/chat.php?reward_tray='.$rewardBucket)")],
- ['Reward counts synchronize across sidebar and header badges',tray.includes("document.querySelectorAll('[data-reward-count=\"'+k+'\"]')")],
+ ['Reward certificate tabs stay out of the left sidebar',!sidebar.includes('reward-sidebar-subnav')&&!sidebar.includes('data-reward-tray-tab="<?= e($rewardBucket) ?>"')],
+ ['Header tabs insert before the flexible spacer so they float left in the right-column header',tray.includes("const top=qs('.chat-topbar'),actions=qs('.chat-topbar-actions'),spacer=qs('.chat-topbar-spacer')")&&tray.includes('top.insertBefore(nav,spacer||actions)')],
+ ['Reward header counts update every matching badge hook',tray.includes("document.querySelectorAll('[data-reward-count=\"'+k+'\"]')")],
  ['Reward tray UI does not disappear when the V1.10 schema needs an upgrade',chat.includes("$rewardTrayRuntime = function_exists('campaigns_rewards_v110_schema_ready')")&&!chat.includes("campaigns_rewards_v110_schema_ready(db())")],
- ['Sidebar reward certificate links are visibly styled',agentUiCss.includes('.reward-sidebar-subnav{')&&agentUiCss.includes('.reward-sidebar-subnav-link{')&&agentUiCss.includes('.reward-sidebar-count{')],
+ ['Header tabs are touch sized horizontally scrollable and mobile grid-safe',css.includes('min-height:44px')&&css.includes('overflow-x:auto')&&css.includes('touch-action:manipulation')&&css.includes('body.reward-tray-ready .chat-main{grid-template-rows:auto minmax(0,1fr) auto}')&&css.includes('.reward-tray-tab{flex:1 0 92px')],
  ['Inbox cards contain SEND and CLAIM controls',tray.includes('data-reward-send')&&tray.includes('>SEND<')&&tray.includes('data-reward-claim')&&tray.includes('>CLAIM<')],
  ['SEND modal selects from returned CRM contacts',tray.includes('Send to CRM Contact')&&tray.includes('state.contacts')&&tray.includes('contact_id')&&tray.includes('idempotency_key')],
  ['CLAIM modal renders QR and Merchant Claim Code input',tray.includes('rewardClaimQr')&&tray.includes('Merchant Claim Code')&&tray.includes('merchant_claim_code')&&tray.includes('VP3RewardQR')],

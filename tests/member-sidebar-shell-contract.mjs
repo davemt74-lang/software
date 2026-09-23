@@ -35,10 +35,8 @@ assert.match(mainSidebar, /foreach \(\$mainSidebarPrimaryOrder as \$key\)/, 'can
 assert.match(mainSidebar, /data-agent-primary-nav/, 'canonical Agent sidebar must expose one primary navigation block');
 assert.match(mainSidebar, /data-vp3-nav-key=/, 'primary navigation rows must expose canonical destination keys');
 assert.match(mainSidebar, /aria-current="page"/, 'active primary destination must expose aria-current');
-assert.match(mainSidebar, /class="reward-sidebar-subnav"/, 'Rewards must expose persistent certificate sub-navigation in the canonical sidebar');
-assert.ok(mainSidebar.includes('data-reward-tray-tab="<?= e($rewardBucket) ?>"') && mainSidebar.includes('data-reward-count="<?= e($rewardBucket) ?>"'), 'Reward sidebar sub-navigation must expose tray action and count hooks');
-assert.ok(mainSidebar.includes("url('/chat.php?reward_tray='.$rewardBucket)"), 'Reward sidebar sub-navigation must route to Agent Chat reward canvas');
-assert.match(agentUiCss, /\.reward-sidebar-subnav\{[^}]*display:grid/, 'Reward certificate sub-navigation must be visibly styled');
+assert.doesNotMatch(mainSidebar, /reward-sidebar-subnav|data-reward-tray-tab|data-reward-count/, 'Reward certificate tabs must not appear in the left sidebar');
+assert.doesNotMatch(agentUiCss, /\.reward-sidebar-subnav|\.reward-sidebar-subnav-link|\.reward-sidebar-count/, 'obsolete Reward sidebar sub-navigation styles must remain removed');
 assert.ok(!mainSidebar.includes("'approvals'=>"), 'canonical Agent navigation must not restore the removed Approvals shortcut');
 
 assert.match(mainSidebar, /class="chat-history-heading"/, 'Chats section must expose a dedicated heading row');
