@@ -1,0 +1,57 @@
+/* VP3 Campaigns & Rewards V1.10 — Reward Tray */
+.reward-tray-tabs{display:flex;align-items:center;gap:4px;margin-left:auto;margin-right:10px}
+.reward-tray-tab{appearance:none;border:0;background:transparent;color:#6b7280;font:700 11px/1 system-ui,sans-serif;letter-spacing:.055em;padding:10px 8px 9px;cursor:pointer;border-bottom:2px solid transparent;display:inline-flex;align-items:center;gap:6px}
+.reward-tray-tab:hover,.reward-tray-tab:focus-visible{color:#111827}
+.reward-tray-tab.active{color:#111827;border-bottom-color:#111827}
+.reward-tray-count{display:inline-grid;place-items:center;min-width:18px;height:18px;padding:0 5px;border-radius:999px;background:#eef0f3;color:#4b5563;font-size:10px;letter-spacing:0}
+.reward-tray-tab.active .reward-tray-count{background:#111827;color:#fff}
+.reward-tray-canvas{min-height:100%;padding:24px 28px 120px;background:#f7f7f8}
+.reward-tray-head{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;margin-bottom:20px}
+.reward-tray-head small{display:block;color:#8b93a1;font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase}
+.reward-tray-head h1{margin:5px 0 4px;font-size:26px;line-height:1.15;color:#111827}
+.reward-tray-head p{margin:0;color:#6b7280;font-size:13px}
+.reward-tray-close{width:34px;height:34px;border:1px solid #d8dce2;border-radius:9px;background:#fff;color:#4b5563;font-size:21px;cursor:pointer}
+.reward-tray-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px}
+.reward-cert{display:grid;gap:13px;border:1px solid #e1e4e8;border-radius:13px;background:#fff;padding:17px;box-shadow:0 1px 1px rgba(17,24,39,.02)}
+.reward-cert-top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.reward-cert-kicker{color:#6b7280;font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase}
+.reward-cert h3{margin:3px 0 0;color:#111827;font-size:17px;line-height:1.2}
+.reward-cert-value{white-space:nowrap;border:1px solid #e5e7eb;border-radius:999px;padding:5px 8px;color:#374151;font-size:11px;font-weight:700}
+.reward-cert-meta{display:grid;gap:4px;color:#6b7280;font-size:12px}
+.reward-cert-actions{display:flex;gap:8px;margin-top:2px}
+.reward-cert-actions button,.reward-tray-btn{appearance:none;border:1px solid #d7dbe1;border-radius:8px;background:#fff;color:#111827;padding:8px 11px;font:700 11px/1 system-ui,sans-serif;cursor:pointer}
+.reward-cert-actions button.primary,.reward-tray-btn.primary{background:#111827;color:#fff;border-color:#111827}
+.reward-cert-actions button:disabled{opacity:.45;cursor:not-allowed}
+.reward-tray-empty{grid-column:1/-1;border:1px dashed #d6dae0;border-radius:12px;padding:30px;text-align:center;background:#fff;color:#6b7280}
+.reward-tray-empty strong{display:block;color:#111827;margin-bottom:5px}
+.reward-tray-status{margin-bottom:14px;padding:10px 12px;border-radius:9px;background:#eef6ff;color:#1f4b7a;font-size:12px}
+.reward-tray-status.error{background:#fff0f0;color:#9b1c1c}
+.reward-tray-modal{position:fixed;inset:0;z-index:1500;display:grid;place-items:center;padding:22px}
+.reward-tray-modal[hidden]{display:none!important}
+.reward-tray-modal-backdrop{position:absolute;inset:0;background:rgba(17,24,39,.42);border:0}
+.reward-tray-dialog{position:relative;width:min(560px,100%);max-height:min(760px,92vh);overflow:auto;border:1px solid #dfe3e8;border-radius:14px;background:#fff;box-shadow:0 24px 80px rgba(17,24,39,.24)}
+.reward-tray-dialog>header{display:flex;justify-content:space-between;gap:14px;align-items:flex-start;padding:18px 19px 13px;border-bottom:1px solid #eceef1}
+.reward-tray-dialog>header small{display:block;color:#8b93a1;text-transform:uppercase;letter-spacing:.08em;font-size:10px;font-weight:800}
+.reward-tray-dialog>header h2{margin:4px 0 0;font-size:19px;color:#111827}
+.reward-tray-dialog-close{border:0;background:transparent;font-size:24px;color:#6b7280;cursor:pointer}
+.reward-tray-form{display:grid;gap:13px;padding:18px 19px 20px}
+.reward-tray-form label{display:grid;gap:6px;color:#4b5563;font-size:11px;font-weight:700}
+.reward-tray-form select,.reward-tray-form input,.reward-tray-form textarea{width:100%;box-sizing:border-box;border:1px solid #d9dde3;border-radius:8px;background:#fff;color:#111827;padding:9px 10px;font:500 13px/1.3 system-ui,sans-serif}
+.reward-tray-form textarea{min-height:80px;resize:vertical}
+.reward-tray-form-actions{display:flex;justify-content:flex-end;gap:8px;padding-top:4px}
+.reward-claim-layout{display:grid;grid-template-columns:180px 1fr;gap:17px;align-items:start}
+.reward-claim-qr{display:grid;place-items:center;border:1px solid #e5e7eb;border-radius:10px;background:#fff;padding:10px}
+.reward-claim-qr svg{display:block;width:160px;height:160px;max-width:100%}
+.reward-claim-copy{display:grid;gap:8px;color:#6b7280;font-size:12px}
+.reward-claim-copy strong{color:#111827;font-size:14px}
+.reward-claim-warning{padding:10px;border-radius:8px;background:#fff7e8;color:#805b15;font-size:11px;line-height:1.45}
+.reward-claim-success{padding:12px;border-radius:9px;background:#ecfdf3;color:#146c43;font-size:12px;font-weight:700}
+body.reward-tray-open .chat-composer-shell{display:none!important}
+@media(max-width:760px){
+  .reward-tray-tabs{order:2;width:100%;justify-content:center;margin:5px 0 0;padding-top:4px;border-top:1px solid #eef0f2}
+  .chat-topbar{flex-wrap:wrap}
+  .reward-tray-canvas{padding:18px 14px 90px}
+  .reward-tray-list{grid-template-columns:1fr}
+  .reward-claim-layout{grid-template-columns:1fr}
+  .reward-claim-qr{justify-self:center}
+}
