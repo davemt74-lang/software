@@ -73,8 +73,8 @@ function vp3_cognitive_campaigns_rewards_contract_v2600(): array
     return [
         'id'=>'campaigns_rewards',
         'label'=>'Campaigns & Rewards',
-        'phase'=>'campaigns-rewards-v1.18',
-        'implementation_status'=>'integrated-v1.18',
+        'phase'=>'campaigns-rewards-v1.19',
+        'implementation_status'=>'integrated-v1.19',
         'plugin_key'=>'campaigns_rewards',
         'plugin_catalog_registered'=>true,
         'authority'=>[
@@ -83,7 +83,8 @@ function vp3_cognitive_campaigns_rewards_contract_v2600(): array
             'campaign_landing_pages','campaign_profile_publications','reward_types','reward_products',
             'campaign_reward_sets','reward_issuances','reward_transfers','merchant_claim_codes','reward_claims',
             'loyalty_accounts','loyalty_ledger','reward_inventory_ledger','reward_liability_ledger',
-            'campaign_activity_events','campaign_idempotency_keys','campaign_reconciliation_runs',
+            'campaign_activity_events','campaign_automation_rules','campaign_rule_executions','campaign_agent_recommendations',
+            'campaign_idempotency_keys','campaign_reconciliation_runs',
         ],
         'planned_authority'=>[],
         'objects'=>[
@@ -102,7 +103,8 @@ function vp3_cognitive_campaigns_rewards_contract_v2600(): array
             'campaign.signup_started','campaign.signup_completed','campaign.contact_acquired',
             'campaign.newsletter_signup','campaign.contest_entry','campaign.qr_claim','campaign.referral_signup','campaign.birthday_signup',
             'campaign.proof_submit','campaign.instant_claim','campaign.interest_signup','campaign.event_rsvp','campaign.partner_signup','campaign.community_signup',
-            'campaign.rewards_updated','campaign.enrollment_qualified','campaign.enrollment_created','campaign.enrollment_completed',
+            'campaign.rewards_updated','campaign.automation_saved','campaign.automation_executed','campaign.recommendation_proposed',
+            'campaign.enrollment_qualified','campaign.enrollment_created','campaign.enrollment_completed',
             'campaign.enrollment_disqualified','campaign.case_opened','campaign.case_resolved','campaign.case_reopened',
             'reward.product_created','reward.product_updated','reward.issued','reward.sent','reward.viewed',
             'reward.expiring','reward.expired','reward.voided','reward.reissued',
@@ -123,7 +125,8 @@ function vp3_cognitive_campaigns_rewards_contract_v2600(): array
             'campaign.page_published'=>'completion','campaign.landing_viewed'=>'informational','campaign.signup_started'=>'informational','campaign.signup_completed'=>'completion','campaign.contact_acquired'=>'outcome',
             'campaign.newsletter_signup'=>'outcome','campaign.contest_entry'=>'informational','campaign.qr_claim'=>'outcome','campaign.referral_signup'=>'outcome','campaign.birthday_signup'=>'informational',
             'campaign.proof_submit'=>'actionable','campaign.instant_claim'=>'outcome','campaign.interest_signup'=>'informational','campaign.event_rsvp'=>'informational','campaign.partner_signup'=>'outcome','campaign.community_signup'=>'informational',
-            'campaign.rewards_updated'=>'informational','campaign.enrollment_qualified'=>'informational','campaign.enrollment_created'=>'actionable','campaign.enrollment_completed'=>'completion','campaign.enrollment_disqualified'=>'completion',
+            'campaign.rewards_updated'=>'informational','campaign.automation_saved'=>'informational','campaign.automation_executed'=>'outcome','campaign.recommendation_proposed'=>'actionable',
+            'campaign.enrollment_qualified'=>'informational','campaign.enrollment_created'=>'actionable','campaign.enrollment_completed'=>'completion','campaign.enrollment_disqualified'=>'completion',
             'campaign.case_opened'=>'actionable','campaign.case_resolved'=>'outcome','campaign.case_reopened'=>'actionable',
             'reward.product_created'=>'informational','reward.product_updated'=>'informational','reward.issued'=>'actionable','reward.sent'=>'informational','reward.viewed'=>'informational',
             'reward.expiring'=>'actionable','reward.expired'=>'completion','reward.voided'=>'completion','reward.reissued'=>'actionable',
@@ -141,8 +144,10 @@ function vp3_cognitive_campaigns_rewards_contract_v2600(): array
         'current_state'=>'cognitive_current_state_v2590',
         'presentation'=>'cognitive_presentation_firewall_v2590',
         'notes'=>[
-            'Campaigns & Rewards V1.18 carries forward the modular Microgifter Campaign Type model as governed VP3 behavior metadata.',
-            'Signup Reward is a newsletter/email-list acquisition flow that writes Core CRM marketing consent and issues the attached welcome Reward.',
+            'Campaigns & Rewards V1.19 activates the existing Campaign Automation Rule and Rule Execution authorities for governed lifecycle triggers.',
+            'Event automations are constrained to the triggering CRM contact; scheduled birthday and win-back rules may evaluate configured CRM audiences.',
+            'Lifecycle intelligence creates human-review recommendations only and never auto-activates Campaigns or automation rules.',
+            'Signup Reward remains a newsletter/email-list acquisition flow that writes Core CRM marketing consent and issues the attached welcome Reward.'
             'CRM contact identity and Team human lifecycle remain VP3 Core authorities and are referenced rather than duplicated.',
             'INBOX, SENT and CLAIMED are projections over Reward Issuance, Reward Transfer and Claim state; no second mutable Wallet ledger exists.',
             'Plugin disable pauses surfaces without deleting Merchant, CRM relationship, Campaign, Reward, Claim, Loyalty or audit history.',
