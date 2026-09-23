@@ -518,6 +518,13 @@ $accountBrainTools = agent_brain_tools($user);
                   <span>Open Agent Chat ↗</span>
                 </a>
 
+                <a class="account-access-card" href="<?= e(url('/budget-governance.php')) ?>">
+                  <small>Agent Governance</small>
+                  <strong>AI Budget Governance</strong>
+                  <p>Set explicit AI cost and Cloud-token guardrails, review projected burn, and approve bounded overrides.</p>
+                  <span>Manage Budgets ↗</span>
+                </a>
+
                 <a class="account-access-card" href="<?= e(url('/chat.php?view=player')) ?>">
                   <small>Music</small>
                   <strong><?= e(system_agent_name()) ?> Player</strong>
