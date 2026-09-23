@@ -104,6 +104,9 @@ function vp3_cognitive_replanning_goal_analysis_v2530(
         ??0.0
     )));
     $capacityPressure=$ready?($free<1?1.0:max(0.0,min(1.0,1.0-($free/max(1,$max))))):1.0;
+    $commitment=max(0.0,min(1.25,(float)($item['commitment_protection_score']??0.0)));
+    $commitmentAtRisk=!empty($item['commitment_at_risk']);
+    $commitmentConflict=(string)($item['commitment_conflict_code']??'');
 
     $issues=[];
     if($mode==='autonomous'){
@@ -113,12 +116,15 @@ function vp3_cognitive_replanning_goal_analysis_v2530(
         if($requiresUser)$issues[]='approval_or_user_gate';
         if($semanticHold)$issues[]='semantic_overlap';
         if($urgent&&$capacityPressure>=0.75)$issues[]='urgent_capacity_pressure';
+        if($commitmentAtRisk)$issues[]='protected_commitment_at_risk';
+        if($commitmentConflict!=='')$issues[]='commitment_'.$commitmentConflict;
     }
 
-    $score=($deadline*0.34)+($priority*0.20)+($leverage*0.18)+($optimized*0.14)
-        +($capacityPressure*0.08)+($progress*0.06);
-    if($deadlineThreat)$score+=0.18;
-    if($urgent)$score+=0.08;
+    $score=($deadline*0.28)+($priority*0.17)+($leverage*0.15)+($optimized*0.12)
+        +($commitment*0.18)+($capacityPressure*0.06)+($progress*0.04);
+    if($deadlineThreat)$score+=0.16;
+    if($urgent)$score+=0.07;
+    if($commitmentAtRisk)$score+=0.18;
     if($blocked)$score-=0.20;
     if($requiresUser)$score-=0.22;
     if(!$ready)$score-=0.30;
@@ -135,6 +141,7 @@ function vp3_cognitive_replanning_goal_analysis_v2530(
     elseif($requiresUser)$action='request_user_or_approval';
     elseif($semanticHold)$action='review_overlap';
     elseif($blocked)$action='prioritize_dependency_unlock';
+    elseif($commitmentAtRisk)$action='protect_commitment';
     elseif($deadlineThreat)$action='protect_deadline';
     elseif($urgent&&$capacityPressure>=0.75)$action='protect_capacity';
     elseif($leverage>=0.67)$action='unlock_downstream_work';
@@ -157,6 +164,9 @@ function vp3_cognitive_replanning_goal_analysis_v2530(
         'blocked'=>$blocked,
         'requires_user'=>$requiresUser,
         'semantic_overlap'=>$semanticHold,
+        'commitment_protection_score'=>$commitment,
+        'commitment_at_risk'=>$commitmentAtRisk,
+        'commitment_conflict_code'=>$commitmentConflict,
         'dependency_leverage_goal_ids'=>array_values(array_map(
             'intval',(array)($item['dependency_leverage_goal_ids']??[])
         )),

@@ -173,11 +173,28 @@
     const replanning = brief.replanning_focus || null;
     const replanningHealth = String(brief.replanning_health || 'unavailable');
     const replanningCounts = brief.replanning_counts || {};
+    const commitment = brief.commitment_focus || null;
+    const commitmentCounts = brief.commitment_counts || {};
     const counts = brief.counts || {};
     let html = '<div class="chat-agent-brief-status"><span><i class="chat-agent-brief-dot ' +
       (brief.active !== false ? 'active' : '') + '"></i>' +
       esc(brief.agent_name || 'Agent') + ' · ' + esc(brief.status_label || 'Active') +
       '</span><small>' + esc(brief.activity_title || 'Ready') + '</small></div>';
+
+    if (commitment) {
+      const state = String(commitment.deadline_state || commitment.status || 'protected').replaceAll('_',' ');
+      const source = String(commitment.source_kind || 'commitment').replaceAll('_',' ');
+      html += '<article class="chat-agent-brief-card"><small>Commitment protection · ' + esc(source) + '</small><strong>' +
+        esc(commitment.title || 'Protected commitment') + '</strong>' +
+        '<p>' + esc(state) + ' · protection ' + Number(commitment.protection_score || 0).toFixed(2) + '</p>' +
+        '<p><small>' + Number(commitmentCounts.protected || 0) + ' protected · ' +
+        Number(commitmentCounts.at_risk || 0) + ' at risk · ' + Number(commitmentCounts.conflicts || 0) + ' conflict(s) · ' +
+        Number(commitmentCounts.verified_complete || 0) + ' verified complete</small></p>' +
+        '<div class="chat-agent-brief-actions">' +
+        actionButton('Review commitments',
+          ' data-agent-brief-prompt="' + esc('Review my protected commitments and deadlines. Explain what is at risk, what is waiting on me, any capacity conflicts, and what can safely be reprioritized without changing commitments or executors.') + '"',false) +
+        '</div></article>';
+    }
 
     if (replanning && replanningHealth !== 'unavailable') {
       const health = replanningHealth.replaceAll('_',' ');

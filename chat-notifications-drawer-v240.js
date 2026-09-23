@@ -375,6 +375,8 @@
     const replanning = brain.replanning || {};
     const replanIssues = Array.isArray(replanning.issues) ? replanning.issues : [];
     const replanChanges = Array.isArray(replanning.changes) ? replanning.changes : [];
+    const commitmentProtection = brain.commitment_protection || {};
+    const protectedCommitments = Array.isArray(commitmentProtection.commitments) ? commitmentProtection.commitments : [];
     const autonomyItems = Array.isArray(autonomy.items) ? autonomy.items : [];
     const supervisionIssues = Array.isArray(supervision.issues) ? supervision.issues : [];
     const supervisionByRef = new Map(supervisionIssues.map(item => [String(item.continuity_ref || ''), item]));
@@ -510,6 +512,29 @@
             <strong>${esc(issue.title || issue.continuity_ref || 'Supervised work')}</strong>
             <p>${esc(issue.reason || '')}</p>
             <small>${esc(String(issue.health_state || '').replaceAll('_',' '))}${issue.supervisor_action ? ` · ${esc(String(issue.supervisor_action).replaceAll('_',' '))}` : ''}${issue.auto_reconcile ? ' · governed auto-reconcile' : ''}</small>
+          </article>`).join('')}
+        </div>
+      </section>` : ''}
+
+      ${protectedCommitments.length ? `
+      <section class="chat-activity-section">
+        <div class="chat-activity-section-head">
+          <div><strong>Commitment Protection</strong><span>v25.40 unifies canonical goal, meeting, and Agent Brain commitments; it protects ordering without changing deadlines, executors, approvals, or verified completion authority.</span></div>
+        </div>
+        <div class="chat-brain-metrics">
+          ${brainMetric('Protected', Number(commitmentProtection.counts?.protected || 0))}
+          ${brainMetric('At risk', Number(commitmentProtection.counts?.at_risk || 0))}
+          ${brainMetric('Waiting on you', Number(commitmentProtection.counts?.needs_user || 0))}
+          ${brainMetric('Conflicts', Number(commitmentProtection.counts?.conflicts || 0))}
+          ${brainMetric('Verified complete', Number(commitmentProtection.counts?.verified_complete || 0))}
+          ${brainMetric('Meeting commitments', Number(commitmentProtection.counts?.meetings || 0))}
+        </div>
+        <div class="chat-brain-memory-list">
+          ${protectedCommitments.map(item => `<article>
+            <span>${esc(String(item.deadline_state || item.status || 'protected').replaceAll('_',' '))} · ${esc(String(item.source_kind || 'commitment').replaceAll('_',' '))}</span>
+            <strong>${esc(item.title || item.key || 'Commitment')}</strong>
+            <p>${esc(item.summary || '')}</p>
+            <small>Protection ${Number(item.protection_score || 0).toFixed(2)}${item.due_at ? ` · due ${esc(item.due_at)}` : ''}${item.conflict_code ? ` · ${esc(String(item.conflict_code).replaceAll('_',' '))}` : ''}${item.requires_user ? ' · needs user/approval' : ''}${item.verified_complete ? ' · verified complete' : ''}</small>
           </article>`).join('')}
         </div>
       </section>` : ''}

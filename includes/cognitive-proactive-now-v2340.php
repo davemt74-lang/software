@@ -150,6 +150,9 @@ function vp3_cognitive_proactive_now_compose_v2340(
     $replanning=function_exists('vp3_cognitive_replanning_activity_projection_v2530')
         ?vp3_cognitive_replanning_activity_projection_v2530($pdo,$user,$namespace)
         :['health'=>'unavailable','replan_needed'=>false,'focus'=>null,'issues'=>[],'changes'=>[],'counts'=>[]];
+    $commitmentProtection=function_exists('vp3_cognitive_commitment_activity_projection_v2540')
+        ?vp3_cognitive_commitment_activity_projection_v2540($pdo,$user,$namespace)
+        :['focus'=>null,'commitments'=>[],'counts'=>[]];
     $voiceEnabled=false;
     if(function_exists('chat_settings_get_v237')){
         try{$voiceEnabled=!empty(chat_settings_get_v237($pdo,(int)($user['id']??0))['agent_voice_enabled']);}
@@ -209,6 +212,11 @@ function vp3_cognitive_proactive_now_compose_v2340(
             'issues'=>$replanning['issues']??[],
             'changes'=>$replanning['changes']??[],
         ],
+        'commitment_protection'=>[
+            'focus'=>$commitmentProtection['focus']??null,
+            'counts'=>$commitmentProtection['counts']??[],
+            'commitments'=>$commitmentProtection['commitments']??[],
+        ],
         'voice'=>[
             'enabled'=>$voiceEnabled,
             'delivery_authority'=>'cognitive_presentation_v510_and_extension_notifications_v2140',
@@ -233,6 +241,7 @@ function vp3_cognitive_proactive_now_compose_v2340(
             'optimization'=>'cognitive_optimization_v2510',
             'resource_budget'=>'cognitive_resource_budget_v2520',
             'replanning'=>'cognitive_replanning_v2530',
+            'commitment_protection'=>'cognitive_commitment_protection_v2540',
             'automatic_external_writes'=>false,
             'approval_bypass'=>false,
             'execution_bypass'=>false,

@@ -1,4 +1,4 @@
-name: Cognitive Runtime Release v25.30
+name: Cognitive Runtime Release v25.40
 
 on:
   pull_request:
@@ -22,6 +22,7 @@ on:
       - 'docs/VP3_COGNITIVE_OPTIMIZATION_V2510.md'
       - 'docs/VP3_COGNITIVE_RESOURCE_BUDGET_V2520.md'
       - 'docs/VP3_COGNITIVE_REPLANNING_V2530.md'
+      - 'docs/VP3_COGNITIVE_COMMITMENT_PROTECTION_V2540.md'
       - 'api/cognitive-*.php'
       - 'api/chat-notifications-brain-v240.php'
       - 'api/extension-cognitive-now-v2120.php'
@@ -75,11 +76,11 @@ on:
       - '.github/workflows/cognitive-loop-release-v2360.yml'
   push:
     branches:
-      - 'cognitive-portfolio-replanning-v2530'
+      - 'cognitive-commitment-protection-v2540'
 
 jobs:
   release:
-    name: Cognitive Runtime v25.30 · PHP ${{ matrix.php }}
+    name: Cognitive Runtime v25.40 · PHP ${{ matrix.php }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -133,6 +134,8 @@ jobs:
           php -l includes/cognitive-release-v2520.php
           php -l includes/cognitive-replanning-v2530.php
           php -l includes/cognitive-release-v2530.php
+          php -l includes/cognitive-commitment-protection-v2540.php
+          php -l includes/cognitive-release-v2540.php
           php -l includes/cognitive-presentation-v510.php
           php -l includes/cognitive-cards-v520.php
           php -l includes/cognitive-feed-v530.php
@@ -219,6 +222,10 @@ jobs:
         run: |
           php tests/cognitive-replanning-v2530.php
           node tests/cognitive-replanning-v2530.mjs
+      - name: v25.40 commitment and deadline protection
+        run: |
+          php tests/cognitive-commitment-protection-v2540.php
+          node tests/cognitive-commitment-protection-v2540.mjs
       - name: v23.x feature family
         run: |
           node tests/cognitive-calibration-v2350.mjs
