@@ -119,6 +119,8 @@ If v25.80 is unavailable or under-sampled, the factor is exactly 1.0 and v24.90 
 
 ## Cost and token calibration
 
+v25.80 captures raw projected remaining AI cost/tokens for every eligible active portfolio goal by reusing v25.60's pure projection function. This evidence capture does **not** require a budget policy or value profile and does not create either one.
+
 v25.60 retains:
 - raw projected remaining AI cost,
 - raw projected remaining Cloud tokens.
