@@ -136,3 +136,23 @@ v24.00 decides **what deserves durable memory**.
 v24.10 decides **what deserves the user's attention now**.
 
 Those are intentionally separate decisions: something can be important enough to remember without being important enough to interrupt.
+
+
+## Context-sensitive deferral
+
+A signal that needs a user response does not become an interruptive `ask_user` turn while the live session is non-interruptible. It is deferred to a brief and may be reconsidered when the user's context changes.
+
+The following policy outcomes are intentionally reconsiderable rather than final:
+
+- non-interruptible activity,
+- user-response deferral while non-interruptible,
+- quiet/focus suppression,
+- response deferral by focus,
+- exhausted attention budget,
+- an explicitly released Browser delivery reservation.
+
+Delivered and dismissed receipts remain final for the same signal fingerprint.
+
+## Reservation recovery
+
+A Browser claim that is explicitly released also releases its matching central attention reservation. If a client disappears without releasing, an undelivered planned receipt stops consuming budget after five minutes. This avoids a dead client or abandoned delivery claim monopolizing the cross-surface interruption budget.
