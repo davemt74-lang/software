@@ -25,6 +25,8 @@ function agent_tool_log(array $user, string $toolKey, string $requestText, strin
             mb_substr($status, 0, 30),
             json_encode($result, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
         ]);
+        $historyId=(int)$pdo->lastInsertId();
+        if($historyId>0&&function_exists('vp3_cognitive_tool_event_v2390'))vp3_cognitive_tool_event_v2390($pdo,$userId,$historyId,$status,$toolKey,$conversationId);
     } catch (Throwable $e) {}
 }
 
