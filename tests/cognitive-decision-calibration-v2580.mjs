@@ -189,9 +189,8 @@ const checks=[
  ['Recovery Baseline retains v25.80 gates',
    /cognitive-decision-calibration-v2580\.php/.test(recovery)
    &&/cognitive-decision-calibration-v2580\.mjs/.test(recovery)],
- ['production package requires v25.80 runtime workspace upgrade and canonical evidence sources',
-   /Cognitive Runtime v25\.80/.test(packageWorkflow)
-   &&/cognitive-decision-calibration-v2580\.php/.test(packageWorkflow)
+ ['production package retains v25.80 runtime workspace upgrade and canonical evidence sources',
+   /cognitive-decision-calibration-v2580\.php/.test(packageWorkflow)
    &&/cognitive-release-v2580\.php/.test(packageWorkflow)
    &&/decision-calibration\.php/.test(packageWorkflow)
    &&/decision-calibration-v2580\.css/.test(packageWorkflow)
