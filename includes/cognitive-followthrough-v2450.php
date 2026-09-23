@@ -301,7 +301,7 @@ function vp3_cognitive_followthrough_prepare_turn_v2450(
 }
 
 function vp3_cognitive_followthrough_state_v2450(
-    PDO $pdo,array $user,string $namespace='system'
+    PDO $pdo,array $user,string $namespace='system',bool $prepareTurn=true
 ): array {
     $namespace=vp3_cognitive_validate_namespace_v500($pdo,$user,$namespace);
     $items=[];
@@ -310,7 +310,7 @@ function vp3_cognitive_followthrough_state_v2450(
         catch(Throwable $e){}
         if(count($items)>=VP3_COGNITIVE_FOLLOWTHROUGH_MAX_PRESENTATION_V2450)break;
     }
-    if(isset($items[0])){
+    if($prepareTurn&&isset($items[0])){
         $preparedTurn=vp3_cognitive_followthrough_prepare_turn_v2450($pdo,$user,$namespace,$items[0]);
         if($preparedTurn)$items[0]['prepared_turn']=$preparedTurn;
     }
@@ -428,7 +428,7 @@ function vp3_cognitive_followthrough_brief_v2450(
 function vp3_cognitive_followthrough_activity_projection_v2450(
     PDO $pdo,array $user,string $namespace
 ): array {
-    $state=vp3_cognitive_followthrough_state_v2450($pdo,$user,$namespace);
+    $state=vp3_cognitive_followthrough_state_v2450($pdo,$user,$namespace,false);
     return [
         'build'=>VP3_COGNITIVE_FOLLOWTHROUGH_V2450,
         'focus'=>$state['focus'],
