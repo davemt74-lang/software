@@ -34,9 +34,8 @@ const checks=[
  ['budget is three delivered interruptions per thirty minutes',
    /ATTENTION_MAX_INTERRUPTS_V2410=3/.test(attention)&&/ATTENTION_WINDOW_MINUTES_V2410=30/.test(attention)],
  ['planned reservations expire after five minutes',
-   /ATTENTION_PLAN_TTL_MINUTES_V2410=5/.test(attention)
-   &&/status='planned'/.test(attention)
-   &&/DATE_SUB\\(UTC_TIMESTAMP\\(\\),INTERVAL [\\s\\S]*ATTENTION_PLAN_TTL_MINUTES_V2410[\\s\\S]* MINUTE\\)/.test(attention)],
+   attention.includes('ATTENTION_PLAN_TTL_MINUTES_V2410=5')
+   &&attention.includes("status='planned' AND created_at>=DATE_SUB(UTC_TIMESTAMP(),INTERVAL \".VP3_COGNITIVE_ATTENTION_PLAN_TTL_MINUTES_V2410.\" MINUTE)")],
  ['budget query is user-global rather than namespace-scoped',
    /WHERE owner_user_id=\? AND interruptive=1/.test(attention)
    &&!/WHERE owner_user_id=\? AND agent_namespace=\? AND interruptive=1[\s\S]{0,180}ATTENTION_WINDOW_MINUTES/.test(attention)],
@@ -44,10 +43,8 @@ const checks=[
    /ATTENTION_REPEAT_COOLDOWN_MINUTES_V2410=30/.test(attention)
    &&/WHERE owner_user_id=\? AND signal_key=\?/.test(attention)],
  ['only delivered or fresh planned interruptions start repeat cooldown',
-   /status='delivered'/.test(attention)
-   &&/ATTENTION_REPEAT_COOLDOWN_MINUTES_V2410/.test(attention)
-   &&/status='planned'/.test(attention)
-   &&/ATTENTION_PLAN_TTL_MINUTES_V2410/.test(attention)],
+   attention.includes("status='delivered' AND COALESCE(delivered_at,created_at)>=DATE_SUB(UTC_TIMESTAMP(),INTERVAL \".VP3_COGNITIVE_ATTENTION_REPEAT_COOLDOWN_MINUTES_V2410.\" MINUTE)")
+   &&attention.includes("status='planned' AND created_at>=DATE_SUB(UTC_TIMESTAMP(),INTERVAL \".VP3_COGNITIVE_ATTENTION_PLAN_TTL_MINUTES_V2410.\" MINUTE)")],
  ['critical attention can bypass budget while noncritical respects it',
    /budget_bypass/.test(attention)&&/attention_budget_exhausted/.test(attention)&&/critical_attention/.test(attention)],
  ['focus and quiet state suppress noncritical interruptions',
