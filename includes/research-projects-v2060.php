@@ -96,6 +96,8 @@ function vp3_research_event_v2060(PDO $pdo,int $projectId,int $actorUserId,strin
     $stmt=$pdo->prepare("INSERT INTO research_project_events_v2060(project_id,actor_user_id,event_type,object_type,object_public_id,metadata_json,created_at)
       VALUES(?,?,?,?,?,?,UTC_TIMESTAMP())");
     $stmt->execute([$projectId,$actorUserId,mb_substr($eventType,0,80),mb_substr($objectType,0,40),mb_substr($objectPublicId,0,64),$encoded]);
+    $eventId=(int)$pdo->lastInsertId();
+    if(function_exists('vp3_cognitive_research_event_bridge_v2390'))vp3_cognitive_research_event_bridge_v2390($pdo,$projectId,$actorUserId,$eventType,$objectType,$objectPublicId,$safe,$eventId);
 }
 
 function vp3_research_project_row_v2060(PDO $pdo,string $publicId): ?array

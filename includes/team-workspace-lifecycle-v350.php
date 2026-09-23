@@ -205,6 +205,10 @@ function workspace_team_v350_activate_member(PDO $pdo,int $ownerId,int $memberId
         artist_workspace_v104_sync_context_role_permissions($pdo);
         artist_workspace_v104_sync_member_context_roles($pdo,$memberId);
         if($owns)$pdo->commit();
+        if(function_exists('vp3_cognitive_team_member_event_v2390')){
+            $event=(!$before||(string)($before['membership_status']??'')==='removed')?'team.member_joined':'team.member_status_changed';
+            vp3_cognitive_team_member_event_v2390($pdo,$ownerId,$memberId,$event,['role'=>$teamRole,'status'=>'active']);
+        }
     }catch(Throwable $e){if($owns&&$pdo->inTransaction())$pdo->rollBack();throw $e;}
 }
 
@@ -224,6 +228,7 @@ function workspace_team_v350_change_role(PDO $pdo,int $ownerId,int $memberId,str
         $stmt->execute([$teamRole,$teamRole,$ownerId,$memberId]);
         workspace_team_v350_sync_projection($pdo,$ownerId,$memberId);
         if($owns)$pdo->commit();
+        if($oldRole!==$teamRole&&function_exists('vp3_cognitive_team_member_event_v2390'))vp3_cognitive_team_member_event_v2390($pdo,$ownerId,$memberId,'team.member_role_changed',['from_role'=>$oldRole,'to_role'=>$teamRole,'status'=>(string)$row['membership_status']]);
     }catch(Throwable $e){if($owns&&$pdo->inTransaction())$pdo->rollBack();throw $e;}
 }
 
@@ -257,6 +262,10 @@ function workspace_team_v350_set_status(PDO $pdo,int $ownerId,int $memberId,stri
         workspace_team_v350_sync_projection($pdo,$ownerId,$memberId);
         artist_workspace_v104_sync_member_context_roles($pdo,$memberId);
         if($owns)$pdo->commit();
+        if(function_exists('vp3_cognitive_team_member_event_v2390')){
+            $event=$status==='removed'?'team.member_left':'team.member_status_changed';
+            vp3_cognitive_team_member_event_v2390($pdo,$ownerId,$memberId,$event,['from_status'=>(string)$row['membership_status'],'to_status'=>$status,'role'=>(string)$row['team_role']]);
+        }
     }catch(Throwable $e){if($owns&&$pdo->inTransaction())$pdo->rollBack();throw $e;}
 }
 

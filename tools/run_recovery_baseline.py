@@ -41,6 +41,7 @@ NODE_TESTS = [
     'tests/ai-credential-key-preservation-v2453.mjs',
     'tests/cognitive-live-session-v2370.mjs',
     'tests/cognitive-domain-integration-v2380.mjs',
+    'tests/cognitive-domain-integration-v2390.mjs',
     'tests/knowledge-agent-context-v162-browser-contract.mjs',
     'tests/agent-brain-learning-history-v317.mjs',
     'tests/chat-onboarding-v241.mjs',

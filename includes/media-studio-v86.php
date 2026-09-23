@@ -214,6 +214,7 @@ function media_studio_create_asset(
     ]);
 
     $assetId = (int)$pdo->lastInsertId();
+    if($assetId>0&&function_exists('vp3_cognitive_media_event_v2390'))vp3_cognitive_media_event_v2390($pdo,$userId,$assetId,$type,$source);
 
     if (function_exists('agent_brain_store_memory')) {
         agent_brain_store_memory(

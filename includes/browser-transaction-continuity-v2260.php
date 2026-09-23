@@ -358,6 +358,7 @@ function vp3_browser_continuity_ensure_v2260(
     ]);
     $row=vp3_browser_continuity_row_v2260($pdo,$uid,$public);
     if(!$row)throw new RuntimeException('Transaction continuity could not be created.');
+    if(function_exists('vp3_cognitive_browser_transaction_event_v2390'))vp3_cognitive_browser_transaction_event_v2390($pdo,$uid,$row,'browser.transaction_started');
 
     create_notification($uid,'browser_transaction_continuity_started','Transaction follow-through started',
         'VP3 can recognize return pages for this transaction by its hashed reference on the approved domain.',
@@ -549,6 +550,12 @@ function vp3_browser_continuity_observe_v2260(PDO $pdo,array $user,array $input)
 
     $proposals=vp3_browser_continuity_create_proposals_v2260($pdo,$fresh,$eventRow,$changes);
     vp3_browser_continuity_notify_change_v2260($fresh,$eventRow,$changes);
+    if(($changes||$terminal)&&function_exists('vp3_cognitive_browser_transaction_event_v2390')){
+        vp3_cognitive_browser_transaction_event_v2390($pdo,$uid,$fresh,$terminal?'browser.transaction_completed':'browser.transaction_changed',[
+            'change_codes'=>array_values(array_slice($changes,0,12)),
+            'terminal'=>$terminal,
+        ]);
+    }
 
     $runtime=$pdo->prepare("SELECT * FROM browser_agent_runtime_sessions_v2200 WHERE public_id=? AND owner_user_id=? LIMIT 1");
     $runtime->execute([(string)$fresh['original_runtime_public_id'],$uid]);

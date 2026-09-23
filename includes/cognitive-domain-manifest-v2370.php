@@ -86,13 +86,13 @@ function vp3_cognitive_domain_manifest_v2370(): array
             'browser'=>[
                 'authority'=>['extension_devices_v2000','browser_shares_v2010','browser_submission_intents_v2240','browser_web_interactions_v2210','browser_agent_runtime_sessions_v2200'],
                 'objects'=>['browser_companion','browser_page_context','browser_transaction','annotation'],
-                'events'=>['browser.session_connected','browser.page_context_changed','browser.research_saved','browser.annotation_created','browser.transaction_started','browser.transaction_completed','browser.transaction_changed','browser.transaction_followup_due'],
+                'events'=>['browser.session_connected','browser.page_context_changed','browser.research_saved','browser.annotation_created','browser.transaction_started','browser.transaction_completed','browser.transaction_changed','browser.transaction_followup_due','browser.recovery_required'],
                 'phase'=>'v23.90',
             ],
             'knowledge_research'=>[
                 'authority'=>['knowledge_items','knowledge_chunks','research_projects_v2060','research_project_items_v2060','research_project_events_v2060','research_findings_v2060'],
                 'objects'=>['knowledge','research','source','annotation','claim'],
-                'events'=>['knowledge.created','knowledge.updated','knowledge.deleted','research.created','research.updated','research.source_added','annotation.created','source.changed','claim.updated'],
+                'events'=>['knowledge.created','knowledge.updated','knowledge.deleted','research.created','research.updated','research.source_added','research.finding_created','research.finding_updated','research.finding_status_changed','research.report_published','annotation.created','source.changed','claim.updated'],
                 'phase'=>'v23.90',
             ],
             'workflows_tools_approvals'=>[
@@ -104,13 +104,13 @@ function vp3_cognitive_domain_manifest_v2370(): array
             'messaging_team'=>[
                 'authority'=>['human_conversations','human_conversation_members','human_messages','workspace_memberships_v350','workspace_team_invitations_v350'],
                 'objects'=>['human_message','team_activity','team_assignment'],
-                'events'=>['team.message_received','team.message_sent','team.assignment_created','team.assignment_completed','team.member_joined','team.member_left'],
+                'events'=>['team.message_received','team.message_sent','team.assignment_created','team.assignment_completed','team.member_joined','team.member_left','team.member_role_changed','team.member_status_changed'],
                 'phase'=>'v23.90',
             ],
             'media_studio'=>[
                 'authority'=>['tracks','agent_edit_events','artist_transcript_sessions_v172','recordings'],
                 'objects'=>['track','recording','transcription','studio_project'],
-                'events'=>['project.opened','project.updated','track.played','track.updated','recording.started','recording.completed','transcription.completed','edit.completed','export.completed'],
+                'events'=>['project.opened','project.updated','track.played','track.updated','recording.started','recording.completed','transcription.completed','edit.completed','export.completed','media.asset_created'],
                 'phase'=>'v23.90',
             ],
             'homeserver'=>[

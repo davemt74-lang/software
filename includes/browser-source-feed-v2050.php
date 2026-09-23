@@ -305,6 +305,7 @@ function vp3_browser_source_publish_v2050(PDO $pdo,int $userId,string $browserSh
     if(!$fresh)throw new RuntimeException('Published annotation could not be reloaded.');
     if(function_exists('vp3_search_index_annotation_v2090'))vp3_search_index_annotation_v2090($pdo,(int)$fresh['id']);
     if(function_exists('vp3_search_index_source_v2090')&&(int)($fresh['source_id']??0)>0)vp3_search_index_source_v2090($pdo,(int)$fresh['source_id']);
+    if(function_exists('vp3_cognitive_annotation_event_v2390'))vp3_cognitive_annotation_event_v2390($pdo,$userId,$fresh);
     return vp3_browser_source_item_v2050($pdo,$fresh,$userId,true);
 }
 

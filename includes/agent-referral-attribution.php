@@ -130,6 +130,7 @@ function vp3_agent_referral_record(PDO $pdo,array $referral,int $propertyId,stri
     $stmt=$pdo->prepare('INSERT IGNORE INTO vp3_agent_referral_events (referral_id,owner_user_id,agent_contact_id,property_id,session_hash,event_type,value_amount,occurred_at) VALUES (?,?,?,?,?,?,?,NOW())');
     $stmt->execute([$referralId,$owner,$contactId,$propertyId?:null,$sessionHash,$dedupeType,$value]);
     if($stmt->rowCount()<1)return false;
+    $attributionEventId=(int)$pdo->lastInsertId();
     if($conversion){
         $pdo->prepare('UPDATE vp3_agent_referrals SET conversion_count=conversion_count+1,last_conversion_at=NOW(),updated_at=NOW() WHERE id=?')->execute([$referralId]);
         $pdo->prepare('UPDATE vp3_agent_contacts SET conversion_count=conversion_count+1,updated_at=NOW() WHERE id=? AND owner_user_id=?')->execute([$contactId,$owner]);
@@ -137,6 +138,7 @@ function vp3_agent_referral_record(PDO $pdo,array $referral,int $propertyId,stri
         $pdo->prepare('UPDATE vp3_agent_referrals SET click_count=click_count+1,first_clicked_at=COALESCE(first_clicked_at,NOW()),last_clicked_at=NOW(),updated_at=NOW() WHERE id=?')->execute([$referralId]);
         $pdo->prepare('UPDATE vp3_agent_contacts SET referral_count=referral_count+1,updated_at=NOW() WHERE id=? AND owner_user_id=?')->execute([$contactId,$owner]);
     }
+    if(function_exists('vp3_cognitive_attribution_event_v2390'))vp3_cognitive_attribution_event_v2390($pdo,$owner,$referralId,$contactId,$conversion,$eventName,$value,$attributionEventId);
     $property=$propertyId>0?$propertyId:(int)($referral['source_property_id']??0);if($property<1)return true;
     $contactName=(trim((string)($referral['operator_name']??''))!==''?trim((string)$referral['operator_name']).' · ':'').trim((string)($referral['display_name']??'Automated agent'));
     $summary=$conversion?$contactName.' was attributed to a human conversion ('.$eventName.').':$contactName.' generated an attributed human visit.';
