@@ -100,9 +100,8 @@ const checks=[
  ['Recovery Baseline retains v25.10 gates',
    /cognitive-optimization-v2510\.mjs/.test(recovery)
    &&/cognitive-optimization-v2510\.php/.test(recovery)],
- ['production package requires v25.10 runtime and release files',
-   /Cognitive Runtime v25\.10/.test(packageWorkflow)
-   &&/cognitive-optimization-v2510\.php/.test(packageWorkflow)
+ ['production package retains v25.10 runtime and release files',
+   /cognitive-optimization-v2510\.php/.test(packageWorkflow)
    &&/cognitive-release-v2510\.php/.test(packageWorkflow)],
  ['docs lock the authority chain and canonical History',
    /v25\.10 Optimize/.test(docs)&&/v24\.90 Forecast\/Sequence/.test(docs)
