@@ -1,4 +1,4 @@
-name: Cognitive Runtime Release v25.70
+name: Cognitive Runtime Release v25.80
 
 on:
   pull_request:
@@ -26,6 +26,9 @@ on:
       - 'docs/VP3_COGNITIVE_ECONOMICS_V2550.md'
       - 'docs/VP3_COGNITIVE_BUDGET_GOVERNANCE_V2560.md'
       - 'docs/VP3_COGNITIVE_VALUE_ROI_V2570.md'
+      - 'docs/VP3_COGNITIVE_DECISION_CALIBRATION_V2580.md'
+      - 'decision-calibration.php'
+      - 'decision-calibration-v2580.css'
       - 'budget-governance.php'
       - 'budget-governance-v2560.css'
       - 'outcome-value.php'
@@ -83,11 +86,11 @@ on:
       - '.github/workflows/cognitive-loop-release-v2360.yml'
   push:
     branches:
-      - 'cognitive-outcome-value-roi-v2570'
+      - 'cognitive-decision-calibration-v2580'
 
 jobs:
   release:
-    name: Cognitive Runtime v25.70 · PHP ${{ matrix.php }}
+    name: Cognitive Runtime v25.80 · PHP ${{ matrix.php }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -149,6 +152,9 @@ jobs:
           php -l includes/cognitive-release-v2560.php
           php -l includes/cognitive-value-roi-v2570.php
           php -l includes/cognitive-release-v2570.php
+          php -l includes/cognitive-decision-calibration-v2580.php
+          php -l includes/cognitive-release-v2580.php
+          php -l decision-calibration.php
           php -l budget-governance.php
           php -l outcome-value.php
           php -l includes/cognitive-presentation-v510.php
@@ -253,6 +259,10 @@ jobs:
         run: |
           php tests/cognitive-value-roi-v2570.php
           node tests/cognitive-value-roi-v2570.mjs
+      - name: v25.80 portfolio learning and decision calibration
+        run: |
+          php tests/cognitive-decision-calibration-v2580.php
+          node tests/cognitive-decision-calibration-v2580.mjs
       - name: v23.x feature family
         run: |
           node tests/cognitive-calibration-v2350.mjs
