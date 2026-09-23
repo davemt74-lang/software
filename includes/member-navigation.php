@@ -175,7 +175,7 @@ function member_navigation_menu_links(?array $user = null): array
     if($pdo&&function_exists('campaigns_rewards_plugin_state_v100')){
         try{
             $campaignState=campaigns_rewards_plugin_state_v100($user,$pdo);
-            $campaignNavVisible=!empty($campaignState['enabled'])||!empty($campaignState['entitled']);
+            $campaignNavVisible=!empty($campaignState['enabled']);
             if(!$campaignNavVisible&&function_exists('campaigns_rewards_user_has_access_v100')){
                 $campaignNavVisible=campaigns_rewards_user_has_access_v100($pdo,$user);
             }
