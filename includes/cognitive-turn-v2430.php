@@ -145,8 +145,10 @@ function vp3_cognitive_turn_section_counts_v2430(array $items): array
 function vp3_cognitive_turn_preferred_type_v2430(array $intent,array $continuity,array $options=[]): string
 {
     if(!empty($options['proactive'])){
-        if(!empty($options['attention_allowed']))return 'present_update';
-        return 'remain_silent';
+        if(empty($options['attention_allowed']))return 'remain_silent';
+        if(!empty($continuity['requires_approval']))return 'request_approval';
+        if(!empty($continuity['requires_user']))return 'ask_user';
+        return 'present_update';
     }
     if(!empty($intent['continuation'])){
         if(!empty($continuity['requires_approval']))return 'request_approval';
