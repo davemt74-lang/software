@@ -265,9 +265,6 @@ function vp3_cognitive_presentation_voice_candidate_v510(PDO $pdo,array $user,ar
     $maxId=max(array_map(static fn($r)=>max(0,(int)($r['id']??0)),$rows));
     $eligible=array_values(array_filter($rows,'vp3_cognitive_presentation_voice_allowed_type_v510'));
     if(!$eligible)return ['skip_through_id'=>$maxId];
-    if($digest&&(int)($digest['idle_minutes']??0)>=VP3_COGNITIVE_DIGEST_ATTENTION_IDLE_MINUTES_V510){
-        return ['through_id'=>$maxId,'message'=>vp3_cognitive_text_v500($digest['summary']??'',360),'kind'=>'return_digest'];
-    }
     usort($eligible,static function($a,$b){
         $aa=function_exists('notification_requires_attention')&&notification_requires_attention($a)?1:0;
         $bb=function_exists('notification_requires_attention')&&notification_requires_attention($b)?1:0;
