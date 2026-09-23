@@ -138,7 +138,7 @@ function vp3_cognitive_decision_ratio_factor_v2580(array $values,float $min,floa
     $clean=[];
     foreach($values as $value){
         $n=(float)$value;
-        if($n>0&&is_finite($n))$clean[]=$n;
+        if($n>=0&&is_finite($n))$clean[]=$n;
     }
     sort($clean,SORT_NUMERIC);
     $count=count($clean);
@@ -161,6 +161,27 @@ function vp3_cognitive_decision_factor_v2580(
     $default=['factor'=>1.0,'sample_count'=>0,'calibrated'=>false,'median_ratio'=>null,'metric'=>$metric,'dimension'=>$dimension];
     if($uid<1||!vp3_cognitive_decision_schema_ready_v2580($pdo))return $default;
 
+    if(in_array($metric,['value_money','value_score'],true)
+        &&function_exists('vp3_cognitive_value_profile_rows_v2570')
+        &&function_exists('vp3_cognitive_value_realization_v2570')){
+        $kind=$metric==='value_money'?'money':'score';$ratios=[];
+        try{
+            foreach(vp3_cognitive_value_profile_rows_v2570($pdo,$user,true) as $profile){
+                if((string)($profile['value_kind']??'')!==$kind)continue;
+                $realization=vp3_cognitive_value_realization_v2570($pdo,$user,$profile);
+                if(empty($realization['verified']))continue;
+                $expected=$kind==='money'?($profile['expected_value_micros']??null):($profile['expected_score']??null);
+                $realized=$kind==='money'?($realization['value_micros']??null):($realization['score_value']??null);
+                if($expected===null||$realized===null||(float)$expected<=0)continue;
+                $ratio=max(0.0,(float)$realized/(float)$expected);
+                if(is_finite($ratio))$ratios[]=$ratio;
+            }
+        }catch(Throwable $e){$ratios=[];}
+        return array_merge($default,vp3_cognitive_decision_ratio_factor_v2580($ratios,.70,1.15),[
+            'evidence_unit'=>'verified_value_profile'
+        ]);
+    }
+
     $where=["s.owner_user_id=?","x.settled_at>=DATE_SUB(UTC_TIMESTAMP(),INTERVAL ".VP3_COGNITIVE_DECISION_CALIBRATION_WINDOW_DAYS_V2580." DAY)"];
     $params=[$uid];
     $expr='NULL';$min=.75;$max=1.35;
@@ -175,10 +196,6 @@ function vp3_cognitive_decision_factor_v2580(
     }elseif($metric==='tokens'){
         $expr='x.actual_incremental_tokens / NULLIF(s.raw_projected_remaining_tokens,0)';
         if(in_array($dimension,['cloud','homeserver'],true)){$where[]='s.executor=?';$params[]=$dimension;}
-    }elseif($metric==='value_money'){
-        $expr='x.value_realization_ratio';$where[]="s.value_kind='money'";$min=.70;$max=1.15;
-    }elseif($metric==='value_score'){
-        $expr='x.value_realization_ratio';$where[]="s.value_kind='score'";$min=.70;$max=1.15;
     }else return $default;
 
     try{
@@ -203,7 +220,9 @@ function vp3_cognitive_decision_factor_v2580(
             if($row['ratio']===null)continue;
             $ratio=(float)$row['ratio'];if($ratio>0&&is_finite($ratio))$values[]=$ratio;
         }
-        return array_merge($default,vp3_cognitive_decision_ratio_factor_v2580($values,$min,$max));
+        return array_merge($default,vp3_cognitive_decision_ratio_factor_v2580($values,$min,$max),[
+            'evidence_unit'=>'latest_settled_goal'
+        ]);
     }catch(Throwable $e){return $default;}
 }
 
@@ -303,7 +322,7 @@ function vp3_cognitive_decision_capture_v2580(
         $rawLikely=vp3_cognitive_decision_sql_datetime_v2580($f['raw_likely_completion_at']??$f['likely_completion_at']??null);
         $likely=vp3_cognitive_decision_sql_datetime_v2580($f['likely_completion_at']??null);
         $capturedAt=time();
-        $rawForecastSeconds=$rawLikely?(strtotime($rawLikely)-$capturedAt):0;
+        $rawForecastSeconds=$rawLikely?((strtotime($rawLikely.' UTC')?:$capturedAt)-$capturedAt):0;
         $payload=[
             'goal_id'=>$goalId,'executor'=>(string)($f['executor']??$item['executor']??'cloud'),
             'execution_state'=>(string)($item['execution_state']??''),'sequence_rank'=>(int)($f['sequence_rank']??0),
@@ -552,7 +571,8 @@ function vp3_cognitive_decision_accuracy_v2580(PDO $pdo,array $user): array
         $out['settled_goals']=count($rows);
         $forecast=[];$rawForecast=[];$hits=[];$cost=[];$tokens=[];$value=[];$reservation=[];
         foreach($rows as $row){
-            if($row['forecast_error_seconds']!==null){$forecast[]=abs((int)$row['forecast_error_seconds']);$hits[]=(int)($row['forecast_window_hit']??0);}
+            if($row['forecast_error_seconds']!==null)$forecast[]=abs((int)$row['forecast_error_seconds']);
+            if($row['forecast_window_hit']!==null)$hits[]=(int)$row['forecast_window_hit'];
             if($row['raw_forecast_error_seconds']!==null)$rawForecast[]=abs((int)$row['raw_forecast_error_seconds']);
             if($row['cost_error_ratio']!==null&&(float)$row['cost_error_ratio']>0)$cost[]=(float)$row['cost_error_ratio'];
             if($row['token_error_ratio']!==null&&(float)$row['token_error_ratio']>0)$tokens[]=(float)$row['token_error_ratio'];
