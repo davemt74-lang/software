@@ -72,7 +72,7 @@ vp3_public_header('Decision Calibration — VP3','Portfolio forecast, cost, toke
   <section class="decision-panel">
     <header>
       <div><small>Bounded factors</small><h2>Current calibration</h2></div>
-      <p>Each factor stays at 1.00× until at least <?= (int)($cal['minimum_samples']??5) ?> independent settled goals provide valid evidence.</p>
+      <p>Each factor stays at 1.00× until at least <?= (int)($cal['minimum_samples']??5) ?> independent evidence units are available: settled goals for forecast/cost/tokens, verified value profiles for value reliability.</p>
     </header>
     <div class="decision-factor-grid">
       <article><span>Forecast · Cloud</span><strong><?= e(vp3_decision_ui_factor_v2580((array)($cal['forecast']['cloud']??[]))) ?></strong><p>Bounds 0.75–1.35×.</p></article>
