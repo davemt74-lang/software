@@ -204,6 +204,7 @@ function workspace_team_v350_activate_member(PDO $pdo,int $ownerId,int $memberId
         workspace_team_v350_sync_projection($pdo,$ownerId,$memberId);
         artist_workspace_v104_sync_context_role_permissions($pdo);
         artist_workspace_v104_sync_member_context_roles($pdo,$memberId);
+        if(function_exists('campaigns_rewards_team_membership_status_v100'))campaigns_rewards_team_membership_status_v100($pdo,$ownerId,$memberId,'active');
         if($owns)$pdo->commit();
         if(function_exists('vp3_cognitive_team_member_event_v2390')){
             $event=(!$before||(string)($before['membership_status']??'')==='removed')?'team.member_joined':'team.member_status_changed';
@@ -261,6 +262,7 @@ function workspace_team_v350_set_status(PDO $pdo,int $ownerId,int $memberId,stri
         $stmt->execute([$ownerId,$memberId]);
         workspace_team_v350_sync_projection($pdo,$ownerId,$memberId);
         artist_workspace_v104_sync_member_context_roles($pdo,$memberId);
+        if(function_exists('campaigns_rewards_team_membership_status_v100'))campaigns_rewards_team_membership_status_v100($pdo,$ownerId,$memberId,$status);
         if($owns)$pdo->commit();
         if(function_exists('vp3_cognitive_team_member_event_v2390')){
             $event=$status==='removed'?'team.member_left':'team.member_status_changed';
@@ -368,6 +370,7 @@ function workspace_team_v350_accept_invitation(PDO $pdo,int $inviteId,int $userI
         $stmt=$pdo->prepare("UPDATE workspace_team_invitations_v350 SET existing_user_id=?,invitation_status='accepted',accepted_at=NOW(),resolved_at=NOW(),updated_at=NOW() WHERE id=? AND invitation_status='pending'");
         $stmt->execute([$userId,$inviteId]);
         if($stmt->rowCount()!==1)throw new RuntimeException('This Team invitation is no longer available.');
+        if(function_exists('campaigns_rewards_apply_invite_scope_v100'))campaigns_rewards_apply_invite_scope_v100($pdo,$inviteId,$ownerId,$userId);
         if($owns)$pdo->commit();
         if(function_exists('create_notification'))create_notification($ownerId,'team_invitation_accepted',(string)$user['display_name'].' joined your workspace','The Team invitation was accepted.',url('/team.php'),'workspace_team_invitation_accept',$inviteId);
     }catch(Throwable $e){if($owns&&$pdo->inTransaction())$pdo->rollBack();throw $e;}
@@ -386,6 +389,7 @@ function workspace_team_v350_decline_invitation(PDO $pdo,int $inviteId,int $user
         if(!hash_equals(strtolower((string)$invite['invited_email']),strtolower((string)$user['email'])))throw new RuntimeException('This invitation was sent to a different email address.');
         $stmt=$pdo->prepare("UPDATE workspace_team_invitations_v350 SET invitation_status='declined',existing_user_id=COALESCE(existing_user_id,?),resolved_at=NOW(),updated_at=NOW() WHERE id=? AND invitation_status='pending'");
         $stmt->execute([$userId,$inviteId]);if($stmt->rowCount()!==1)throw new RuntimeException('This Team invitation is no longer available.');
+        if(function_exists('campaigns_rewards_clear_invite_scope_v100'))campaigns_rewards_clear_invite_scope_v100($pdo,$inviteId);
         if($owns)$pdo->commit();
     }catch(Throwable $e){if($owns&&$pdo->inTransaction())$pdo->rollBack();throw $e;}
 }
@@ -395,4 +399,5 @@ function workspace_team_v350_revoke_invitation(PDO $pdo,int $ownerId,int $invite
     workspace_team_v350_ensure_schema($pdo);
     $stmt=$pdo->prepare("UPDATE workspace_team_invitations_v350 SET invitation_status='revoked',resolved_at=NOW(),updated_at=NOW() WHERE id=? AND workspace_owner_user_id=? AND invitation_status='pending'");
     $stmt->execute([$inviteId,$ownerId]);if($stmt->rowCount()<1)throw new RuntimeException('That pending invitation is not available.');
+    if(function_exists('campaigns_rewards_clear_invite_scope_v100'))campaigns_rewards_clear_invite_scope_v100($pdo,$inviteId);
 }
