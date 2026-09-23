@@ -265,33 +265,7 @@ function campaigns_rewards_ensure_schema_v100(?PDO $pdo=null): void
       CONSTRAINT fk_campaign_activity_actor FOREIGN KEY (actor_user_id) REFERENCES users(id) ON DELETE SET NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 
-    $pdo->exec("CREATE TABLE IF NOT EXISTS campaign_team_scopes_v100 (
-      workspace_owner_user_id INT UNSIGNED NOT NULL,
-      member_user_id INT UNSIGNED NOT NULL,
-      team_category VARCHAR(20) NOT NULL DEFAULT 'basic',
-      merchant_account_id BIGINT UNSIGNED NULL,
-      created_by_user_id INT UNSIGNED NULL,
-      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-      PRIMARY KEY (workspace_owner_user_id,member_user_id),
-      INDEX idx_campaign_team_scope_merchant (merchant_account_id,team_category,member_user_id),
-      CONSTRAINT fk_campaign_team_scope_owner FOREIGN KEY (workspace_owner_user_id) REFERENCES users(id) ON DELETE CASCADE,
-      CONSTRAINT fk_campaign_team_scope_member FOREIGN KEY (member_user_id) REFERENCES users(id) ON DELETE CASCADE,
-      CONSTRAINT fk_campaign_team_scope_merchant FOREIGN KEY (merchant_account_id) REFERENCES campaign_merchant_accounts_v100(id) ON DELETE SET NULL,
-      CONSTRAINT fk_campaign_team_scope_creator FOREIGN KEY (created_by_user_id) REFERENCES users(id) ON DELETE SET NULL
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 
-    $pdo->exec("CREATE TABLE IF NOT EXISTS campaign_team_invite_scopes_v100 (
-      invitation_id BIGINT UNSIGNED NOT NULL PRIMARY KEY,
-      workspace_owner_user_id INT UNSIGNED NOT NULL,
-      team_category VARCHAR(20) NOT NULL DEFAULT 'basic',
-      merchant_account_id BIGINT UNSIGNED NULL,
-      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-      INDEX idx_campaign_invite_scope_owner (workspace_owner_user_id,team_category,invitation_id),
-      CONSTRAINT fk_campaign_invite_scope_owner FOREIGN KEY (workspace_owner_user_id) REFERENCES users(id) ON DELETE CASCADE,
-      CONSTRAINT fk_campaign_invite_scope_merchant FOREIGN KEY (merchant_account_id) REFERENCES campaign_merchant_accounts_v100(id) ON DELETE SET NULL
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 }
 
 function campaigns_rewards_plugin_state_v100(?array $user=null,?PDO $pdo=null): array
@@ -730,7 +704,6 @@ function campaigns_rewards_team_scope_v100(PDO $pdo,int $ownerUserId,int $member
 {
     if(!campaigns_rewards_schema_ready_v100($pdo))return ['team_category'=>'basic','merchant_account_id'=>0];
     $basic=function_exists('workspace_team_v350_basic_enabled_v1')?workspace_team_v350_basic_enabled_v1($pdo,$ownerUserId,$memberUserId):true;
-    $stmt=$pdo->prepare("SELECT scope_id FROM workspace_team_invitation_scopes_v1 WHERE 1=0");
     $merchantId=0;
     $merchant=$pdo->prepare("SELECT mm.merchant_account_id
       FROM campaign_merchant_members_v100 mm
