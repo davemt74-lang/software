@@ -320,6 +320,33 @@ function vp3_cognitive_budget_active_override_v2560(
     ];
 }
 
+function vp3_cognitive_budget_active_overrides_v2560(PDO $pdo,array $user,int $now=0): array
+{
+    $uid=(int)($user['id']??0);$now=$now>0?$now:time();
+    if($uid<1||!vp3_cognitive_budget_schema_ready_v2560($pdo))return [];
+    $stmt=$pdo->prepare("SELECT d.*,p.label AS policy_label,p.period_kind
+      FROM cognitive_budget_decisions_v2560 d
+      INNER JOIN cognitive_budget_policies_v2560 p ON p.id=d.policy_id AND p.owner_user_id=d.owner_user_id
+      WHERE d.owner_user_id=? AND d.decision_type IN ('override_granted','override_revoked')
+      ORDER BY d.id DESC LIMIT ".VP3_COGNITIVE_BUDGET_MAX_AUDIT_V2560);
+    $stmt->execute([$uid]);$seen=[];$out=[];
+    foreach($stmt->fetchAll(PDO::FETCH_ASSOC)?:[] as $row){
+        $key=(int)$row['policy_id'].'|'.(string)$row['subject_kind'].'|'.(string)$row['subject_key'];
+        if(isset($seen[$key]))continue;$seen[$key]=true;
+        if((string)$row['decision_type']!=='override_granted')continue;
+        $expires=strtotime((string)($row['expires_at']??''))?:0;
+        if($expires>0&&$expires<=$now)continue;
+        $out[]=[
+            'id'=>(int)$row['id'],'policy_id'=>(int)$row['policy_id'],
+            'policy_label'=>(string)$row['policy_label'],
+            'subject_kind'=>(string)$row['subject_kind'],'subject_key'=>(string)$row['subject_key'],
+            'reason'=>(string)$row['reason'],'expires_at'=>(string)($row['expires_at']??''),
+            'created_at'=>(string)$row['created_at'],
+        ];
+    }
+    return $out;
+}
+
 function vp3_cognitive_budget_audit_rows_v2560(PDO $pdo,array $user,int $limit=30): array
 {
     $uid=(int)($user['id']??0);$limit=max(1,min(VP3_COGNITIVE_BUDGET_MAX_AUDIT_V2560,$limit));
@@ -393,6 +420,15 @@ function vp3_cognitive_budget_usage_v2560(
     $kind=(string)($policy['scope_kind']??'account');$key=(string)($policy['scope_key']??'');
     if($kind==='goal'){
         $runIds=array_values(array_unique(array_filter(array_map('intval',(array)($context['run_ids']??[])),static fn(int $id): bool=>$id>0)));
+        if(!$runIds&&table_exists('agent_goal_objectives')){
+            try{
+                $q=$pdo->prepare('SELECT objective_run_id FROM agent_goal_objectives WHERE owner_user_id=? AND goal_id=? ORDER BY id');
+                $q->execute([$uid,(int)$key]);
+                $runIds=array_values(array_unique(array_filter(array_map(
+                    'intval',array_column($q->fetchAll(PDO::FETCH_ASSOC)?:[],'objective_run_id')
+                ),static fn(int $id): bool=>$id>0)));
+            }catch(Throwable $e){$runIds=[];}
+        }
         if(!$runIds)return $empty;
         $where[]='l.run_id IN ('.implode(',',array_fill(0,count($runIds),'?')).')';
         $params=array_merge($params,$runIds);
@@ -632,7 +668,7 @@ function vp3_cognitive_budget_apply_v2560(
                 'policies'=>count($policySnapshots),'hard_policies'=>count($hardPolicies),
                 'attention_policies'=>count($watchPolicies),'held_goals'=>count($heldGoalIds),
                 'commitment_conflicts'=>count($conflictGoals),
-                'active_overrides'=>array_sum(array_map(static fn(array $x): int=>count((array)$x['override_goal_ids']),$policySnapshots)),
+                'active_overrides'=>count(vp3_cognitive_budget_active_overrides_v2560($pdo,$user,$now)),
             ],
             'authority'=>[
                 'budget_configuration'=>'cognitive_budget_policies_v2560',
