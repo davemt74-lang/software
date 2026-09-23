@@ -456,6 +456,16 @@ $notificationDrawerRuntime = '<link rel="stylesheet" data-chat-notification-draw
     . '<script data-chat-notification-drawer src="' . e(url('/chat-notifications-drawer-v240.js?v=' . $notificationDrawerAssetBuild)) . '"></script>'
     . '<script data-brain-learning-history-v317 src="' . e(url('/chat-brain-learning-history-v317.js?v=' . $brainLearningBuild)) . '"></script>';
 
+$rewardTrayRuntime = function_exists('campaigns_rewards_v110_schema_ready') && campaigns_rewards_v110_schema_ready(db())
+    ? '<link rel="stylesheet" data-reward-tray-v110 href="' . e(url('/reward-tray-v110.css?v=110')) . '">'
+        . '<script data-reward-tray-config-v110>window.VP3_REWARD_TRAY_V110={endpoint:'
+        . json_encode(url('/api/reward-tray-v110.php'),JSON_UNESCAPED_SLASHES)
+        . ',csrf:' . json_encode(csrf_token(),JSON_UNESCAPED_SLASHES)
+        . '};</script>'
+        . '<script data-reward-qr-v110 src="' . e(url('/reward-qr-v110.js?v=110')) . '"></script>'
+        . '<script data-reward-tray-v110 src="' . e(url('/reward-tray-v110.js?v=110')) . '"></script>'
+    : '';
+
 $runtime = $headerUiRuntime
          . $agentIntelligenceRuntime
          . $mediaOverlayRuntime
@@ -479,6 +489,7 @@ $runtime = $headerUiRuntime
          . $cognitivePresentationPost
          . '<script data-team-chat-admin-v109 data-team-chat-admin-build="' . e($teamChatAdminBuild) . '" src="' . e(url('/team-chat-admin-v109.js?v=' . $teamChatAdminBuild)) . '"></script>'
          . $railLayout
+         . $rewardTrayRuntime
          . '<span data-stonefellow-build="' . e($runtimeBuild) . '" data-chat-controls-build="' . e($controlBuild) . '" data-premium-voice-build="' . e($premiumVoiceBuild) . '" data-chat-voice-build="' . e($voiceAssetBuild) . '" data-chat-voice-feature-build="' . e($voiceCacheBuild) . '" data-recording-ui-build="' . e($recordingUiBuild) . '" data-recording-persistence-build="' . e($recordingPersistenceBuild) . '" data-transcription-canvas-build="' . e($transcriptionCanvasBuild) . '" data-team-chat-admin-build="' . e($teamChatAdminBuild) . '" data-agent-theme-build="' . e($agentThemeBuild) . '" data-chat-media-overlay-build="' . e($mediaOverlayBuild) . '" data-agent-overlay-build="' . e($agentOverlayBuild) . '" data-user-agent-build="' . e($agentIdentityBuild) . '" data-chat-settings-build="' . e($chatSettingsBuild) . '" data-notification-drawer-build="' . e($notificationDrawerBuild) . '" data-agent-activity-build="' . e($activityBuild) . '" data-brain-learning-build="' . e($brainLearningBuild) . '" data-agent-intelligence-build="' . e($agentIntelligenceBuild) . '" data-cognitive-cards-build="' . e($cognitiveCardsBuild) . '" data-cognitive-feed-build="' . e($cognitiveFeedBuild) . '" data-cognitive-learning-build="' . e($cognitiveLearningBuild) . '" data-cognitive-planning-build="' . e($cognitivePlanningBuild) . '" data-cognitive-orchestration-build="' . e($cognitiveOrchestrationBuild) . '" data-cognitive-memory-build="' . e($cognitiveMemoryBuild) . '" data-cognitive-context-build="' . e($cognitiveContextBuild) . '" data-cognitive-turn-build="' . e($cognitiveTurnBuild) . '" data-cognitive-continuity-build="' . e($cognitiveContinuityBuild) . '" data-cognitive-followthrough-build="' . e($cognitiveFollowthroughBuild) . '" data-cognitive-supervision-build="' . e($cognitiveSupervisionBuild) . '" data-cognitive-autonomy-build="' . e($cognitiveAutonomyBuild) . '" data-cognitive-portfolio-build="' . e($cognitivePortfolioBuild) . '" data-cognitive-forecast-build="' . e($cognitiveForecastBuild) . '" data-cognitive-optimization-build="' . e($cognitiveOptimizationBuild) . '" data-cognitive-resource-budget-build="' . e($cognitiveResourceBudgetBuild) . '" data-cognitive-replanning-build="' . e($cognitiveReplanningBuild) . '" data-cognitive-commitment-protection-build="' . e($cognitiveCommitmentProtectionBuild) . '" data-cognitive-economics-build="' . e($cognitiveEconomicsBuild) . '" data-cognitive-budget-governance-build="' . e($cognitiveBudgetGovernanceBuild) . '" data-cognitive-value-roi-build="' . e($cognitiveValueRoiBuild) . '" data-cognitive-decision-calibration-build="' . e($cognitiveDecisionCalibrationBuild) . '" data-cognitive-current-state-build="' . e($cognitiveCurrentStateBuild) . '" data-browser-context-build="' . e($browserContextBuild) . '" hidden></span>';
 
 $html = str_replace('</body>', $runtime . '</body>', $html);
