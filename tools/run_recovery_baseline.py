@@ -53,6 +53,7 @@ NODE_TESTS = [
     'tests/cognitive-portfolio-v2480.mjs',
     'tests/cognitive-forecast-v2490.mjs',
     'tests/cognitive-optimization-v2510.mjs',
+    'tests/cognitive-resource-budget-v2520.mjs',
     'tests/knowledge-agent-context-v162-browser-contract.mjs',
     'tests/agent-brain-learning-history-v317.mjs',
     'tests/chat-onboarding-v241.mjs',
@@ -159,6 +160,7 @@ PHP_TESTS = [
     'tests/homeserver-scope-v026.php',
     'tests/homeserver-acceptance-v027.php',
     'tests/cognitive-optimization-v2510.php',
+    'tests/cognitive-resource-budget-v2520.php',
 ]
 
 

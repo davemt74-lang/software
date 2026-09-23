@@ -391,8 +391,20 @@ function vp3_cognitive_portfolio_snapshot_v2480(PDO $pdo,array $user): array
         }
     }
 
+    // v25.20 derives bounded admission reservations from the already-ranked
+    // portfolio. These are not worker leases: they can only protect v24.80
+    // autonomous admission capacity. Failure preserves the v24.80 behavior.
+    $resourceBudget=[
+        'build'=>'','focus'=>null,'reservations'=>[],'executors'=>[],'counts'=>[],
+        'projection_only'=>true,
+    ];
+    if(function_exists('vp3_cognitive_resource_budget_plan_v2520')){
+        try{$resourceBudget=vp3_cognitive_resource_budget_plan_v2520($items,$capacity);}
+        catch(Throwable $e){}
+    }
+
     $claimAdmitted=['cloud'=>[],'homeserver'=>[]];
-    $remainingFree=[];
+    $remainingFree=[];$reservationAdmission=[];
     foreach(['cloud','homeserver'] as $executor){
         $free=max(0,(int)($capacity['executors'][$executor]['free']??0));
         $candidates=array_values(array_filter($items,static fn(array $item): bool=>
@@ -405,8 +417,25 @@ function vp3_cognitive_portfolio_snapshot_v2480(PDO $pdo,array $user): array
             if($aActive!==$bActive)return $aActive<=>$bActive;
             return ((float)($b['score']??0))<=>((float)($a['score']??0));
         });
+
+        if(function_exists('vp3_cognitive_resource_claim_budget_v2520')&&!empty($resourceBudget['build'])){
+            try{
+                $budget=vp3_cognitive_resource_claim_budget_v2520($executor,$free,$candidates,$resourceBudget);
+                $claimAdmitted[$executor]=array_values(array_map('intval',(array)($budget['admitted_goal_ids']??[])));
+                $remainingFree[$executor]=max(0,(int)($budget['remaining_unreserved_free']??0));
+                $reservationAdmission[$executor]=$budget;
+                continue;
+            }catch(Throwable $e){}
+        }
+
         foreach(array_slice($candidates,0,$free) as $candidate)$claimAdmitted[$executor][]=(int)$candidate['goal_id'];
         $remainingFree[$executor]=max(0,$free-count($claimAdmitted[$executor]));
+        $reservationAdmission[$executor]=[
+            'executor'=>$executor,'free_before'=>$free,'active_reserved_goal_ids'=>[],
+            'reserved_admitted_goal_ids'=>[],'unreserved_admitted_goal_ids'=>$claimAdmitted[$executor],
+            'admitted_goal_ids'=>$claimAdmitted[$executor],'held_reserved_slots'=>0,
+            'remaining_unreserved_free'=>$remainingFree[$executor],'admission_only'=>true,
+        ];
     }
 
     $materialize=[];$repairs=[];$actionByGoal=[];
@@ -422,9 +451,15 @@ function vp3_cognitive_portfolio_snapshot_v2480(PDO $pdo,array $user): array
         if($state==='needs_objective'){
             if((string)$item['hold_reason']!=='')continue;
             $executor=in_array((string)$item['executor'],['cloud','homeserver'],true)?(string)$item['executor']:'cloud';
-            if(($remainingFree[$executor]??0)>0&&count($materialize)<VP3_COGNITIVE_PORTFOLIO_MAX_MATERIALIZE_V2480){
+            $activeReserved=in_array(
+                $goalId,
+                array_map('intval',(array)($resourceBudget['executors'][$executor]['active_reserved_goal_ids']??[])),
+                true
+            );
+            if(($activeReserved||($remainingFree[$executor]??0)>0)&&count($materialize)<VP3_COGNITIVE_PORTFOLIO_MAX_MATERIALIZE_V2480){
                 $materialize[]=$goalId;$actionByGoal[$goalId]='materialize_objective';
-                $remainingFree[$executor]--;$item['coordination_action']='admit_next_milestone';
+                if(!$activeReserved)$remainingFree[$executor]--;
+                $item['coordination_action']=$activeReserved?'admit_reserved_milestone':'admit_next_milestone';
             }else{
                 $item['hold_reason']='worker_capacity';
                 $item['coordination_action']='hold_for_capacity';
@@ -458,8 +493,17 @@ function vp3_cognitive_portfolio_snapshot_v2480(PDO $pdo,array $user): array
             'claim_admitted'=>count($claimAdmitted['cloud'])+count($claimAdmitted['homeserver']),
             'materialize_admitted'=>count($materialize),
             'repair_admitted'=>count($repairs),
+            'capacity_reservations'=>(int)($resourceBudget['counts']['selected']??0),
+            'active_reserved_slots'=>(int)($resourceBudget['counts']['active']??0),
+            'conditional_reservations'=>(int)($resourceBudget['counts']['conditional']??0),
+            'held_reserved_slots'=>array_sum(array_map(
+                static fn(array $budget): int=>max(0,(int)($budget['held_reserved_slots']??0)),
+                array_values($reservationAdmission)
+            )),
         ],
         'capacity'=>$capacity,
+        'resource_budget'=>$resourceBudget,
+        'reservation_admission'=>$reservationAdmission,
         'claim_admitted_goal_ids'=>$claimAdmitted,
         'materialize_goal_ids'=>$materialize,
         'repair_goal_ids'=>$repairs,
@@ -475,6 +519,7 @@ function vp3_cognitive_portfolio_snapshot_v2480(PDO $pdo,array $user): array
             'objective_store'=>'agent_workflow_runs',
             'dependencies'=>'agent_workflow_run_dependencies',
             'capacity'=>'agent_worker_runtime_v1910',
+            'resource_budget'=>'cognitive_resource_budget_v2520_admission_policy',
             'claimant'=>'agent_job_engine_v1900',
             'autonomous_mutations'=>'cognitive_autonomy_v2470',
             'projection_only'=>true,

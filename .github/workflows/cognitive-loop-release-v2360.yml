@@ -1,4 +1,4 @@
-name: Cognitive Runtime Release v25.10
+name: Cognitive Runtime Release v25.20
 
 on:
   pull_request:
@@ -20,6 +20,7 @@ on:
       - 'docs/VP3_COGNITIVE_PORTFOLIO_V2480.md'
       - 'docs/VP3_COGNITIVE_FORECAST_V2490.md'
       - 'docs/VP3_COGNITIVE_OPTIMIZATION_V2510.md'
+      - 'docs/VP3_COGNITIVE_RESOURCE_BUDGET_V2520.md'
       - 'api/cognitive-*.php'
       - 'api/chat-notifications-brain-v240.php'
       - 'api/extension-cognitive-now-v2120.php'
@@ -73,11 +74,11 @@ on:
       - '.github/workflows/cognitive-loop-release-v2360.yml'
   push:
     branches:
-      - 'cognitive-strategic-portfolio-optimization-v2510'
+      - 'cognitive-resource-budgeting-v2520'
 
 jobs:
   release:
-    name: Cognitive Runtime v25.10 · PHP ${{ matrix.php }}
+    name: Cognitive Runtime v25.20 · PHP ${{ matrix.php }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -127,6 +128,8 @@ jobs:
           php -l includes/cognitive-release-v2490.php
           php -l includes/cognitive-optimization-v2510.php
           php -l includes/cognitive-release-v2510.php
+          php -l includes/cognitive-resource-budget-v2520.php
+          php -l includes/cognitive-release-v2520.php
           php -l includes/cognitive-presentation-v510.php
           php -l includes/cognitive-cards-v520.php
           php -l includes/cognitive-feed-v530.php
@@ -205,6 +208,10 @@ jobs:
         run: |
           php tests/cognitive-optimization-v2510.php
           node tests/cognitive-optimization-v2510.mjs
+      - name: v25.20 resource budgeting and capacity reservations
+        run: |
+          php tests/cognitive-resource-budget-v2520.php
+          node tests/cognitive-resource-budget-v2520.mjs
       - name: v23.x feature family
         run: |
           node tests/cognitive-calibration-v2350.mjs

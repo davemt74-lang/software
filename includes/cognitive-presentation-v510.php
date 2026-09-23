@@ -408,6 +408,9 @@ function vp3_cognitive_presentation_state_v510(PDO $pdo,array $user,string $name
     $optimization=function_exists('vp3_cognitive_optimization_activity_projection_v2510')
         ?vp3_cognitive_optimization_activity_projection_v2510($pdo,$user,$namespace)
         :['build'=>'','recommended_strategy'=>'','focus'=>null,'items'=>[],'scenarios'=>[],'counts'=>[]];
+    $resourceBudget=function_exists('vp3_cognitive_resource_activity_projection_v2520')
+        ?vp3_cognitive_resource_activity_projection_v2520($pdo,$user,$namespace)
+        :['build'=>'','focus'=>null,'reservations'=>[],'executors'=>[],'counts'=>[]];
     $brief['followthrough']=$followthrough['focus']??null;
     $brief['followthrough_counts']=$followthrough['counts']??[];
     $brief['away_followthrough']=$followthrough['away']??['count'=>0,'summary'=>'','items'=>[]];
@@ -425,6 +428,9 @@ function vp3_cognitive_presentation_state_v510(PDO $pdo,array $user,string $name
     $brief['optimization_strategy']=$optimization['recommended_strategy']??'';
     $brief['optimization_counts']=$optimization['counts']??[];
     $brief['optimization_scenarios']=$optimization['scenarios']??[];
+    $brief['resource_budget_focus']=$resourceBudget['focus']??null;
+    $brief['resource_budget_counts']=$resourceBudget['counts']??[];
+    $brief['resource_budget_executors']=$resourceBudget['executors']??[];
     return [
         'build'=>VP3_COGNITIVE_PRESENTATION_V510,'agent_namespace'=>$namespace,
         'idle_minutes'=>vp3_cognitive_presentation_idle_minutes_v510($row),
@@ -435,6 +441,7 @@ function vp3_cognitive_presentation_state_v510(PDO $pdo,array $user,string $name
         'portfolio'=>$portfolio,
         'forecast'=>$forecast,
         'optimization'=>$optimization,
+        'resource_budget'=>$resourceBudget,
         'digest'=>$digest,'voice_candidate'=>$voice,'attention'=>$attentionStatus,
         'poll_seconds'=>VP3_COGNITIVE_PRESENTATION_POLL_SECONDS_V510,
     ];

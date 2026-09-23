@@ -369,6 +369,9 @@
     const optimization = brain.optimization || {};
     const optimizationItems = Array.isArray(optimization.items) ? optimization.items : [];
     const optimizationScenarios = Array.isArray(optimization.scenarios) ? optimization.scenarios : [];
+    const resourceBudget = brain.resource_budget || {};
+    const resourceReservations = Array.isArray(resourceBudget.reservations) ? resourceBudget.reservations : [];
+    const resourceExecutors = resourceBudget.executors || {};
     const autonomyItems = Array.isArray(autonomy.items) ? autonomy.items : [];
     const supervisionIssues = Array.isArray(supervision.issues) ? supervision.issues : [];
     const supervisionByRef = new Map(supervisionIssues.map(item => [String(item.continuity_ref || ''), item]));
@@ -504,6 +507,28 @@
             <strong>${esc(issue.title || issue.continuity_ref || 'Supervised work')}</strong>
             <p>${esc(issue.reason || '')}</p>
             <small>${esc(String(issue.health_state || '').replaceAll('_',' '))}${issue.supervisor_action ? ` · ${esc(String(issue.supervisor_action).replaceAll('_',' '))}` : ''}${issue.auto_reconcile ? ' · governed auto-reconcile' : ''}</small>
+          </article>`).join('')}
+        </div>
+      </section>` : ''}
+
+      ${resourceReservations.length ? `
+      <section class="chat-activity-section">
+        <div class="chat-activity-section-head">
+          <div><strong>Capacity Reservations</strong><span>v25.20 protects bounded autonomous admission capacity around important deadlines without creating worker leases or replacing Phase 19.</span></div>
+        </div>
+        <div class="chat-brain-metrics">
+          ${brainMetric('Active', Number(resourceBudget.counts?.active || 0))}
+          ${brainMetric('Planned', Number(resourceBudget.counts?.planned || 0))}
+          ${brainMetric('Conditional', Number(resourceBudget.counts?.conditional || 0))}
+          ${brainMetric('Cloud reserved', Number(resourceExecutors.cloud?.active_reserved_slots || 0))}
+          ${brainMetric('HomeServer reserved', Number(resourceExecutors.homeserver?.active_reserved_slots || 0))}
+        </div>
+        <div class="chat-brain-memory-list">
+          ${resourceReservations.map(item => `<article>
+            <span>${esc(String(item.reservation_state || 'planned').replaceAll('_',' '))} · ${esc(item.executor || 'cloud')}</span>
+            <strong>${esc(item.title || ('Goal #' + Number(item.goal_id || 0)))}</strong>
+            <p>Reserved ${esc(item.reserved_from || 'unknown')} → ${esc(item.reserved_until || 'unknown')}</p>
+            <small>Score ${Number(item.reservation_score || 0).toFixed(2)} · target ${esc(item.target_date || 'none')} · admission only</small>
           </article>`).join('')}
         </div>
       </section>` : ''}
