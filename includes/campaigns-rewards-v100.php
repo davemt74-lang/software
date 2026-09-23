@@ -56,8 +56,9 @@ function campaigns_rewards_schema_ready_v100(?PDO $pdo=null): bool
     foreach([
         'campaign_merchant_accounts_v100','campaign_merchant_members_v100','campaign_merchant_locations_v100',
         'campaigns_v100','campaign_rewards_v100','campaign_customers_v100','campaign_reward_claims_v100',
-        'campaign_activity_v100','campaign_team_scopes_v100','campaign_team_invite_scopes_v100'
+        'campaign_activity_v100'
     ] as $table)if(!table_exists($table))return false;
+    if(!table_exists('workspace_team_access_v1')||!table_exists('workspace_team_invitation_scopes_v1'))return false;
     if(function_exists('column_exists')&&!column_exists('campaign_merchant_members_v100','team_scope_active'))return false;
     return true;
 }
@@ -728,70 +729,146 @@ function campaigns_rewards_set_member_role_v100(PDO $pdo,int $merchantId,int $ac
 function campaigns_rewards_team_scope_v100(PDO $pdo,int $ownerUserId,int $memberUserId): array
 {
     if(!campaigns_rewards_schema_ready_v100($pdo))return ['team_category'=>'basic','merchant_account_id'=>0];
-    $stmt=$pdo->prepare('SELECT * FROM campaign_team_scopes_v100 WHERE workspace_owner_user_id=? AND member_user_id=? LIMIT 1');$stmt->execute([$ownerUserId,$memberUserId]);$row=$stmt->fetch();
-    return $row?:['workspace_owner_user_id'=>$ownerUserId,'member_user_id'=>$memberUserId,'team_category'=>'basic','merchant_account_id'=>0];
+    $basic=function_exists('workspace_team_v350_basic_enabled_v1')?workspace_team_v350_basic_enabled_v1($pdo,$ownerUserId,$memberUserId):true;
+    $stmt=$pdo->prepare("SELECT scope_id FROM workspace_team_invitation_scopes_v1 WHERE 1=0");
+    $merchantId=0;
+    $merchant=$pdo->prepare("SELECT mm.merchant_account_id
+      FROM campaign_merchant_members_v100 mm
+      INNER JOIN campaign_merchant_accounts_v100 m ON m.id=mm.merchant_account_id
+      WHERE m.owner_user_id=? AND mm.user_id=? AND mm.team_scope_active=1 AND m.status='active'
+      ORDER BY mm.updated_at DESC,mm.merchant_account_id DESC LIMIT 1");
+    $merchant->execute([$ownerUserId,$memberUserId]);$merchantId=(int)$merchant->fetchColumn();
+    $category=$merchantId>0?($basic?'both':'merchant'):'basic';
+    return ['workspace_owner_user_id'=>$ownerUserId,'member_user_id'=>$memberUserId,'team_category'=>$category,'merchant_account_id'=>$merchantId];
 }
 
 function campaigns_rewards_team_scopes_v100(PDO $pdo,int $ownerUserId): array
 {
-    if(!campaigns_rewards_schema_ready_v100($pdo))return [];$stmt=$pdo->prepare('SELECT * FROM campaign_team_scopes_v100 WHERE workspace_owner_user_id=?');$stmt->execute([$ownerUserId]);$out=[];
-    foreach($stmt->fetchAll()?:[] as $row)$out[(int)$row['member_user_id']]=$row;return $out;
+    if(!campaigns_rewards_schema_ready_v100($pdo))return [];
+    $stmt=$pdo->prepare("SELECT wm.member_user_id,COALESCE(wa.basic_team_enabled,1) basic_team_enabled,
+      (SELECT mm.merchant_account_id FROM campaign_merchant_members_v100 mm
+       INNER JOIN campaign_merchant_accounts_v100 m ON m.id=mm.merchant_account_id
+       WHERE mm.user_id=wm.member_user_id AND mm.team_scope_active=1 AND m.owner_user_id=wm.workspace_owner_user_id AND m.status='active'
+       ORDER BY mm.updated_at DESC,mm.merchant_account_id DESC LIMIT 1) merchant_account_id
+      FROM workspace_memberships_v350 wm
+      LEFT JOIN workspace_team_access_v1 wa ON wa.workspace_owner_user_id=wm.workspace_owner_user_id AND wa.member_user_id=wm.member_user_id
+      WHERE wm.workspace_owner_user_id=?");
+    $stmt->execute([$ownerUserId]);$out=[];
+    foreach($stmt->fetchAll()?:[] as $row){
+        $merchantId=(int)($row['merchant_account_id']??0);$basic=!empty($row['basic_team_enabled']);
+        $row['team_category']=$merchantId>0?($basic?'both':'merchant'):'basic';
+        $out[(int)$row['member_user_id']]=$row;
+    }
+    return $out;
 }
 
 function campaigns_rewards_assert_team_merchant_v100(PDO $pdo,int $ownerUserId,int $merchantId): array
 {
-    $merchant=campaigns_rewards_merchant_v100($pdo,$merchantId)?:throw new RuntimeException('Choose a valid merchant account.');if((int)$merchant['owner_user_id']!==$ownerUserId)throw new RuntimeException('Team merchant scope must belong to this workspace owner.');return $merchant;
+    $merchant=campaigns_rewards_merchant_v100($pdo,$merchantId)?:throw new RuntimeException('Choose a valid merchant account.');
+    if((int)$merchant['owner_user_id']!==$ownerUserId)throw new RuntimeException('Team merchant scope must belong to this workspace owner.');
+    return $merchant;
 }
 
 function campaigns_rewards_sync_team_merchant_member_v100(PDO $pdo,int $ownerUserId,int $memberUserId,string $category,int $merchantId,?int $actorUserId=null): void
 {
     $old=campaigns_rewards_team_scope_v100($pdo,$ownerUserId,$memberUserId);$oldMerchant=(int)($old['merchant_account_id']??0);
-    if($oldMerchant>0&&($oldMerchant!==$merchantId||$category==='basic'))$pdo->prepare("UPDATE campaign_merchant_members_v100 SET team_scope_active=0,member_status=IF(source='team_scope','removed',member_status),removed_at=IF(source='team_scope',UTC_TIMESTAMP(),removed_at),updated_at=UTC_TIMESTAMP() WHERE merchant_account_id=? AND user_id=?")->execute([$oldMerchant,$memberUserId]);
-    if(in_array($category,['merchant','both'],true)){campaigns_rewards_assert_team_merchant_v100($pdo,$ownerUserId,$merchantId);$pdo->prepare("INSERT INTO campaign_merchant_members_v100 (merchant_account_id,user_id,member_role,member_status,source,team_scope_active,created_by_user_id,joined_at) VALUES (?,?,'member','active','team_scope',1,?,UTC_TIMESTAMP()) ON DUPLICATE KEY UPDATE team_scope_active=1,member_status=IF(source='team_scope','active',member_status),suspended_at=IF(source='team_scope',NULL,suspended_at),removed_at=IF(source='team_scope',NULL,removed_at),updated_at=UTC_TIMESTAMP()")->execute([$merchantId,$memberUserId,$actorUserId?:$ownerUserId]);}
+    if($oldMerchant>0&&($oldMerchant!==$merchantId||$category==='basic')){
+        $pdo->prepare("UPDATE campaign_merchant_members_v100 SET team_scope_active=0,member_status=IF(source='team_scope','removed',member_status),removed_at=IF(source='team_scope',UTC_TIMESTAMP(),removed_at),updated_at=UTC_TIMESTAMP() WHERE merchant_account_id=? AND user_id=?")
+            ->execute([$oldMerchant,$memberUserId]);
+    }
+    if(in_array($category,['merchant','both'],true)){
+        campaigns_rewards_assert_team_merchant_v100($pdo,$ownerUserId,$merchantId);
+        $pdo->prepare("INSERT INTO campaign_merchant_members_v100 (merchant_account_id,user_id,member_role,member_status,source,team_scope_active,created_by_user_id,joined_at)
+          VALUES (?,?,'member','active','team_scope',1,?,UTC_TIMESTAMP())
+          ON DUPLICATE KEY UPDATE team_scope_active=1,member_status=IF(source='team_scope','active',member_status),
+            suspended_at=IF(source='team_scope',NULL,suspended_at),removed_at=IF(source='team_scope',NULL,removed_at),updated_at=UTC_TIMESTAMP()")
+          ->execute([$merchantId,$memberUserId,$actorUserId?:$ownerUserId]);
+    }
 }
 
 function campaigns_rewards_set_team_scope_v100(PDO $pdo,int $ownerUserId,int $memberUserId,string $category,int $merchantId=0,?int $actorUserId=null): array
 {
     if(!isset(campaigns_rewards_team_categories_v100()[$category]))throw new RuntimeException('Choose Basic Team, Merchant Team or Both.');
-    if(in_array($category,['merchant','both'],true)){if($merchantId<1)throw new RuntimeException('Choose a merchant account for Merchant Team access.');campaigns_rewards_assert_team_merchant_v100($pdo,$ownerUserId,$merchantId);}else{$merchantId=0;}
+    $membership=workspace_team_v350_membership($pdo,$ownerUserId,$memberUserId);
+    if(!$membership||($membership['membership_status']??'')==='removed')throw new RuntimeException('A canonical VP3 Team relationship is required.');
+    if(in_array($category,['merchant','both'],true)){
+        if($merchantId<1)throw new RuntimeException('Choose a merchant account for Merchant Team access.');
+        campaigns_rewards_assert_team_merchant_v100($pdo,$ownerUserId,$merchantId);
+    }else{$merchantId=0;}
+    $basic=$category!=='merchant';
+    if(function_exists('workspace_team_v350_set_basic_enabled_v1'))workspace_team_v350_set_basic_enabled_v1($pdo,$ownerUserId,$memberUserId,$basic);
     campaigns_rewards_sync_team_merchant_member_v100($pdo,$ownerUserId,$memberUserId,$category,$merchantId,$actorUserId);
-    $pdo->prepare("INSERT INTO campaign_team_scopes_v100 (workspace_owner_user_id,member_user_id,team_category,merchant_account_id,created_by_user_id) VALUES (?,?,?,?,?) ON DUPLICATE KEY UPDATE team_category=VALUES(team_category),merchant_account_id=VALUES(merchant_account_id),created_by_user_id=VALUES(created_by_user_id),updated_at=UTC_TIMESTAMP()")->execute([$ownerUserId,$memberUserId,$category,$merchantId?:null,$actorUserId?:$ownerUserId]);
     return campaigns_rewards_team_scope_v100($pdo,$ownerUserId,$memberUserId);
 }
 
 function campaigns_rewards_set_invite_scope_v100(PDO $pdo,int $inviteId,int $ownerUserId,string $category,int $merchantId=0): void
 {
-    if($inviteId<1)return;if(!isset(campaigns_rewards_team_categories_v100()[$category]))throw new RuntimeException('Choose Basic Team, Merchant Team or Both.');
-    if(in_array($category,['merchant','both'],true)){if($merchantId<1)throw new RuntimeException('Choose a merchant account for Merchant Team access.');campaigns_rewards_assert_team_merchant_v100($pdo,$ownerUserId,$merchantId);}else{$merchantId=0;}
-    $pdo->prepare("INSERT INTO campaign_team_invite_scopes_v100 (invitation_id,workspace_owner_user_id,team_category,merchant_account_id) VALUES (?,?,?,?) ON DUPLICATE KEY UPDATE team_category=VALUES(team_category),merchant_account_id=VALUES(merchant_account_id),updated_at=UTC_TIMESTAMP()")->execute([$inviteId,$ownerUserId,$category,$merchantId?:null]);
+    if($inviteId<1)return;
+    if(!isset(campaigns_rewards_team_categories_v100()[$category]))throw new RuntimeException('Choose Basic Team, Merchant Team or Both.');
+    if(in_array($category,['merchant','both'],true)){
+        if($merchantId<1)throw new RuntimeException('Choose a merchant account for Merchant Team access.');
+        campaigns_rewards_assert_team_merchant_v100($pdo,$ownerUserId,$merchantId);
+    }else{$merchantId=0;}
+    $pdo->prepare('DELETE FROM workspace_team_invitation_scopes_v1 WHERE invitation_id=?')->execute([$inviteId]);
+    if($category!=='merchant'){
+        $pdo->prepare("INSERT INTO workspace_team_invitation_scopes_v1 (invitation_id,scope_type,scope_id,role_key,metadata_json) VALUES (?,'basic_team',NULL,NULL,NULL)")
+            ->execute([$inviteId]);
+    }
+    if($merchantId>0){
+        $pdo->prepare("INSERT INTO workspace_team_invitation_scopes_v1 (invitation_id,scope_type,scope_id,role_key,metadata_json) VALUES (?,'merchant',?,'member',NULL)")
+            ->execute([$inviteId,$merchantId]);
+    }
 }
 
 function campaigns_rewards_pending_invite_scopes_v100(PDO $pdo,int $ownerUserId): array
 {
-    if(!campaigns_rewards_schema_ready_v100($pdo))return [];$stmt=$pdo->prepare('SELECT * FROM campaign_team_invite_scopes_v100 WHERE workspace_owner_user_id=?');$stmt->execute([$ownerUserId]);$out=[];
-    foreach($stmt->fetchAll()?:[] as $row)$out[(int)$row['invitation_id']]=$row;return $out;
+    if(!campaigns_rewards_schema_ready_v100($pdo))return [];
+    $stmt=$pdo->prepare("SELECT i.id invitation_id,
+      MAX(CASE WHEN s.scope_type='basic_team' THEN 1 ELSE 0 END) basic_enabled,
+      MAX(CASE WHEN s.scope_type='merchant' THEN s.scope_id ELSE 0 END) merchant_account_id
+      FROM workspace_team_invitations_v350 i
+      LEFT JOIN workspace_team_invitation_scopes_v1 s ON s.invitation_id=i.id
+      WHERE i.workspace_owner_user_id=? AND i.invitation_status='pending'
+      GROUP BY i.id");
+    $stmt->execute([$ownerUserId]);$out=[];
+    foreach($stmt->fetchAll()?:[] as $row){
+        $merchantId=(int)($row['merchant_account_id']??0);$basic=!empty($row['basic_enabled']);
+        $row['team_category']=$merchantId>0?($basic?'both':'merchant'):'basic';
+        $out[(int)$row['invitation_id']]=$row;
+    }
+    return $out;
 }
 
 function campaigns_rewards_apply_invite_scope_v100(PDO $pdo,int $inviteId,int $ownerUserId,int $memberUserId): void
 {
-    if(!campaigns_rewards_schema_ready_v100($pdo))return;$stmt=$pdo->prepare('SELECT * FROM campaign_team_invite_scopes_v100 WHERE invitation_id=? AND workspace_owner_user_id=? LIMIT 1');$stmt->execute([$inviteId,$ownerUserId]);$scope=$stmt->fetch();
-    if($scope)campaigns_rewards_set_team_scope_v100($pdo,$ownerUserId,$memberUserId,(string)$scope['team_category'],(int)($scope['merchant_account_id']??0),$ownerUserId);$pdo->prepare('DELETE FROM campaign_team_invite_scopes_v100 WHERE invitation_id=?')->execute([$inviteId]);
+    if(!campaigns_rewards_schema_ready_v100($pdo))return;
+    $stmt=$pdo->prepare("SELECT scope_type,scope_id,role_key FROM workspace_team_invitation_scopes_v1 WHERE invitation_id=? ORDER BY id");
+    $stmt->execute([$inviteId]);$rows=$stmt->fetchAll()?:[];
+    $basic=false;$merchantId=0;
+    foreach($rows as $scope){
+        if(($scope['scope_type']??'')==='basic_team')$basic=true;
+        if(($scope['scope_type']??'')==='merchant')$merchantId=(int)($scope['scope_id']??0);
+    }
+    if(!$rows)$basic=true;
+    $category=$merchantId>0?($basic?'both':'merchant'):'basic';
+    campaigns_rewards_set_team_scope_v100($pdo,$ownerUserId,$memberUserId,$category,$merchantId,$ownerUserId);
+    $pdo->prepare('DELETE FROM workspace_team_invitation_scopes_v1 WHERE invitation_id=?')->execute([$inviteId]);
 }
 
 function campaigns_rewards_clear_invite_scope_v100(PDO $pdo,int $inviteId): void
 {
-    if(campaigns_rewards_schema_ready_v100($pdo))$pdo->prepare('DELETE FROM campaign_team_invite_scopes_v100 WHERE invitation_id=?')->execute([$inviteId]);
+    if(table_exists('workspace_team_invitation_scopes_v1'))$pdo->prepare('DELETE FROM workspace_team_invitation_scopes_v1 WHERE invitation_id=?')->execute([$inviteId]);
 }
 
 function campaigns_rewards_team_membership_status_v100(PDO $pdo,int $ownerUserId,int $memberUserId,string $status): void
 {
-    if(!campaigns_rewards_schema_ready_v100($pdo))return;$scope=campaigns_rewards_team_scope_v100($pdo,$ownerUserId,$memberUserId);$merchantId=(int)($scope['merchant_account_id']??0);$category=(string)($scope['team_category']??'basic');
+    if(!campaigns_rewards_schema_ready_v100($pdo))return;
+    $scope=campaigns_rewards_team_scope_v100($pdo,$ownerUserId,$memberUserId);$merchantId=(int)($scope['merchant_account_id']??0);$category=(string)($scope['team_category']??'basic');
     if($merchantId<1||!in_array($category,['merchant','both'],true))return;
     if($status==='active')$pdo->prepare("UPDATE campaign_merchant_members_v100 SET team_scope_active=1,member_status=IF(source='team_scope','active',member_status),suspended_at=IF(source='team_scope',NULL,suspended_at),removed_at=IF(source='team_scope',NULL,removed_at),updated_at=UTC_TIMESTAMP() WHERE merchant_account_id=? AND user_id=?")->execute([$merchantId,$memberUserId]);
     elseif($status==='suspended')$pdo->prepare("UPDATE campaign_merchant_members_v100 SET team_scope_active=0,member_status=IF(source='team_scope','suspended',member_status),suspended_at=IF(source='team_scope',UTC_TIMESTAMP(),suspended_at),updated_at=UTC_TIMESTAMP() WHERE merchant_account_id=? AND user_id=?")->execute([$merchantId,$memberUserId]);
     elseif($status==='removed')$pdo->prepare("UPDATE campaign_merchant_members_v100 SET team_scope_active=0,member_status=IF(source='team_scope','removed',member_status),removed_at=IF(source='team_scope',UTC_TIMESTAMP(),removed_at),updated_at=UTC_TIMESTAMP() WHERE merchant_account_id=? AND user_id=?")->execute([$merchantId,$memberUserId]);
 }
-
 
 function campaigns_rewards_cognitive_object_v100(PDO $pdo,array $user,array $ref): ?array
 {
