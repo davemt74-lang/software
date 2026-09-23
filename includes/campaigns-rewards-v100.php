@@ -308,7 +308,7 @@ function campaigns_rewards_save_campaign_v100(PDO $pdo,int $merchantId,int $acto
         campaigns_rewards_platform_assert_can_v100($pdo,$merchantId,$actorUserId,'campaigns.edit');
         $title=campaigns_rewards_text_v100($input['title']??$campaign['name'],190);if($title==='')throw new RuntimeException('Campaign title is required.');
         $slug=campaigns_rewards_slug_v100((string)($input['slug']??$campaign['slug']),120)?:$campaign['slug'];
-        $check=$pdo->prepare('SELECT 1 FROM campaigns WHERE merchant_id=? AND slug=? AND id<>? LIMIT 1');$check->execute([$merchantId,$slug,$campaignId]);if($check->fetchColumn())throw new RuntimeException('That Campaign slug is already in use.');
+        $check=$pdo->prepare('SELECT 1 FROM campaigns WHERE slug=? AND id<>? LIMIT 1');$check->execute([$slug,$campaignId]);if($check->fetchColumn())throw new RuntimeException('That public Campaign slug is already in use.');
         $starts=campaigns_rewards_datetime_v100((string)($input['starts_at']??$campaign['starts_at']??''));$ends=campaigns_rewards_datetime_v100((string)($input['ends_at']??$campaign['ends_at']??''));
         if($starts&&$ends&&strtotime($ends)<=strtotime($starts))throw new RuntimeException('Campaign end must be after its start.');
         $typeKey=campaigns_rewards_slug_v100((string)($input['campaign_type']??$campaign['campaign_type_key']??'signup'),80)?:'signup';
