@@ -162,11 +162,25 @@
     const portfolio = brief.portfolio_focus || null;
     const portfolioCounts = brief.portfolio_counts || {};
     const portfolioCapacity = brief.portfolio_capacity || {};
+    const forecast = brief.forecast_focus || null;
+    const forecastCounts = brief.forecast_counts || {};
     const counts = brief.counts || {};
     let html = '<div class="chat-agent-brief-status"><span><i class="chat-agent-brief-dot ' +
       (brief.active !== false ? 'active' : '') + '"></i>' +
       esc(brief.agent_name || 'Agent') + ' · ' + esc(brief.status_label || 'Active') +
       '</span><small>' + esc(brief.activity_title || 'Ready') + '</small></div>';
+
+    if (forecast) {
+      const risk = String(forecast.risk || 'on_track').replaceAll('_',' ');
+      const confidence = String(forecast.confidence?.label || 'low');
+      html += '<article class="chat-agent-brief-card"><small>Portfolio forecast · ' +
+        esc(forecast.executor || 'cloud') + '</small><strong>' +
+        esc(forecast.title || ('Goal #' + Number(forecast.goal_id || 0))) + '</strong>' +
+        '<p>' + esc(risk) + ' · ' + esc(confidence) + ' confidence</p>' +
+        '<p><small>Likely completion ' + esc(forecast.likely_completion_at || 'unknown') +
+        (Number(forecastCounts.conflicts || 0) ? ' · ' + Number(forecastCounts.conflicts || 0) + ' projected conflict(s)' : '') +
+        '</small></p></article>';
+    }
 
     if (portfolio) {
       const action = String(portfolio.coordination_action || 'observe').replaceAll('_',' ');
