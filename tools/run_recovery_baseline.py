@@ -229,6 +229,7 @@ def main() -> int:
         if (ROOT / path).is_file():
             run(['node', path], path, failures)
 
+    run(['python3', 'tests/upgrade-mysql8-static-audit.py'], 'full MySQL 8 upgrade static audit', failures)
     run(['python3', 'tools/recovery_inventory.py'], 'deterministic recovery inventory', failures)
 
     if failures:

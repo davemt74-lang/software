@@ -52,7 +52,7 @@ function vp3_cognitive_attention_ensure_schema_v2410(?PDO $pdo=null): void
       paired_surface VARCHAR(32) NOT NULL DEFAULT '',
       reason_code VARCHAR(80) NOT NULL DEFAULT '',
       voice_allowed TINYINT(1) NOT NULL DEFAULT 0,
-      sensitive TINYINT(1) NOT NULL DEFAULT 0,
+      `sensitive` TINYINT(1) NOT NULL DEFAULT 0,
       interruptive TINYINT(1) NOT NULL DEFAULT 0,
       status VARCHAR(24) NOT NULL DEFAULT 'planned',
       delivered_at DATETIME NULL,
@@ -382,7 +382,7 @@ function vp3_cognitive_attention_arbitrate_v2410(
         if(is_array($row)&&vp3_cognitive_attention_reconsiderable_v2410($row)){
             $pdo->prepare("UPDATE cognitive_attention_receipts_v2410 SET
               attention_score=?,attention_band=?,requested_surface=?,selected_surface=?,paired_surface=?,reason_code=?,
-              voice_allowed=?,sensitive=?,interruptive=?,status=?,delivered_at=NULL,dismissed_at=NULL,updated_at=UTC_TIMESTAMP()
+              voice_allowed=?,`sensitive`=?,interruptive=?,status=?,delivered_at=NULL,dismissed_at=NULL,updated_at=UTC_TIMESTAMP()
               WHERE id=? AND owner_user_id=? AND agent_namespace=?")
               ->execute([
                   (float)$decision['attention_score'],(string)$decision['attention_band'],(string)$decision['requested_surface'],
@@ -395,7 +395,7 @@ function vp3_cognitive_attention_arbitrate_v2410(
         }
         $public=vp3_cognitive_uuid_v500();
         $stmt=$pdo->prepare("INSERT IGNORE INTO cognitive_attention_receipts_v2410
-          (public_id,owner_user_id,agent_namespace,signal_key,signal_fingerprint,source_kind,category,attention_score,attention_band,requested_surface,selected_surface,paired_surface,reason_code,voice_allowed,sensitive,interruptive,status)
+          (public_id,owner_user_id,agent_namespace,signal_key,signal_fingerprint,source_kind,category,attention_score,attention_band,requested_surface,selected_surface,paired_surface,reason_code,voice_allowed,`sensitive`,interruptive,status)
           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
         $stmt->execute([
             $public,$uid,$namespace,(string)$s['key'],$fingerprint,(string)$s['source'],(string)$s['category'],

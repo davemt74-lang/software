@@ -110,7 +110,7 @@ function vp3_browser_runtime_ensure_schema_v2200(?PDO $pdo=null): void
       runtime_session_id BIGINT UNSIGNED NOT NULL,
       owner_user_id INT UNSIGNED NOT NULL,
       client_tab_key CHAR(64) NOT NULL,
-      role VARCHAR(32) NOT NULL DEFAULT 'runtime',
+      `role` VARCHAR(32) NOT NULL DEFAULT 'runtime',
       target_type VARCHAR(40) NOT NULL DEFAULT '',
       target_id VARCHAR(190) NOT NULL DEFAULT '',
       status VARCHAR(24) NOT NULL DEFAULT 'open',
@@ -308,7 +308,7 @@ function vp3_browser_runtime_observations_v2200(PDO $pdo,int $uid,int $runtimeId
 function vp3_browser_runtime_tabs_v2200(PDO $pdo,int $uid,int $runtimeId,int $limit=VP3_BROWSER_RUNTIME_TAB_LIMIT_V2200): array
 {
     $limit=max(1,min(VP3_BROWSER_RUNTIME_TAB_LIMIT_V2200,$limit));
-    $stmt=$pdo->prepare("SELECT id,client_tab_key,role,target_type,target_id,status,opened_at,last_seen_at,closed_at
+    $stmt=$pdo->prepare("SELECT id,client_tab_key,`role`,target_type,target_id,status,opened_at,last_seen_at,closed_at
       FROM browser_agent_runtime_tabs_v2200 WHERE runtime_session_id=? AND owner_user_id=? ORDER BY last_seen_at DESC,id DESC LIMIT ".$limit);
     $stmt->execute([$runtimeId,$uid]);$out=[];
     foreach($stmt->fetchAll(PDO::FETCH_ASSOC)?:[] as $row)$out[]=[
@@ -651,9 +651,9 @@ function vp3_browser_runtime_tab_seen_v2200(PDO $pdo,array $user,string $namespa
     if($targetType===''||$targetId===''||!vp3_browser_memory_target_v2170($pdo,$user,$targetType,$targetId))throw new RuntimeException('Runtime tab target is no longer authorized.');
     $key=vp3_browser_runtime_tab_key_v2200($runtime,$tabId);
     $pdo->prepare("INSERT INTO browser_agent_runtime_tabs_v2200
-      (runtime_session_id,owner_user_id,client_tab_key,role,target_type,target_id,status)
+      (runtime_session_id,owner_user_id,client_tab_key,`role`,target_type,target_id,status)
       VALUES (?,?,?,?,?,?,'open')
-      ON DUPLICATE KEY UPDATE role=VALUES(role),target_type=VALUES(target_type),target_id=VALUES(target_id),status='open',closed_at=NULL,last_seen_at=UTC_TIMESTAMP()")
+      ON DUPLICATE KEY UPDATE `role`=VALUES(`role`),target_type=VALUES(target_type),target_id=VALUES(target_id),status='open',closed_at=NULL,last_seen_at=UTC_TIMESTAMP()")
       ->execute([(int)$runtime['id'],$uid,$key,$role,$targetType,$targetId]);
     vp3_browser_runtime_event_v2200($pdo,$runtime,'tab_seen','Runtime tab reference registered without storing its URL or title.',(string)$runtime['current_skill_key'],(int)($runtime['current_action_id']??0),'tab_open',[
         'tab_role'=>$role,'target_type'=>$targetType,'target_id'=>$targetId
