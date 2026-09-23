@@ -49,6 +49,9 @@ jobs:
           php tests/campaigns-rewards-v110.php
           node tests/campaigns-rewards-v110.mjs
 
+      - name: Full MySQL 8 upgrade audit
+        run: python3 tests/upgrade-mysql8-static-audit.py
+
       - name: JavaScript syntax
         run: |
           node --check tests/team-workspace-lifecycle-v350.mjs
