@@ -73,15 +73,15 @@ function vp3_cognitive_campaigns_rewards_contract_v2600(): array
     return [
         'id'=>'campaigns_rewards',
         'label'=>'Campaigns & Rewards',
-        'phase'=>'campaigns-rewards-v1.00',
-        'implementation_status'=>'integrated-v1.00',
+        'phase'=>'campaigns-rewards-v1.10',
+        'implementation_status'=>'integrated-v1.10',
         'plugin_key'=>'campaigns_rewards',
         'plugin_catalog_registered'=>true,
         'authority'=>[
             'merchant_accounts','merchant_members','merchant_locations','crm_merchant_relationships',
             'campaign_types','campaigns','campaign_versions','campaign_enrollments','campaign_cases',
             'campaign_landing_pages','campaign_profile_publications','reward_types','reward_products',
-            'campaign_reward_sets','reward_issuances','merchant_claim_codes','reward_claims',
+            'campaign_reward_sets','reward_issuances','reward_transfers','merchant_claim_codes','reward_claims',
             'loyalty_accounts','loyalty_ledger','reward_inventory_ledger','reward_liability_ledger',
             'campaign_activity_events','campaign_idempotency_keys','campaign_reconciliation_runs',
         ],
@@ -137,9 +137,9 @@ function vp3_cognitive_campaigns_rewards_contract_v2600(): array
         'current_state'=>'cognitive_current_state_v2590',
         'presentation'=>'cognitive_presentation_firewall_v2590',
         'notes'=>[
-            'Campaigns & Rewards V1.00 uses canonical Merchant, Campaign, Reward Issuance and Claim domain records.',
+            'Campaigns & Rewards V1.10 adds the Rewards workspace and Agent Chat Reward Tray over canonical Reward Issuance records.',
             'CRM contact identity and Team human lifecycle remain VP3 Core authorities and are referenced rather than duplicated.',
-            'Wallet is a projection over Reward Issuance and Claim state; no second mutable Wallet ledger exists.',
+            'INBOX, SENT and CLAIMED are projections over Reward Issuance, Reward Transfer and Claim state; no second mutable Wallet ledger exists.',
             'Plugin disable pauses surfaces without deleting Merchant, CRM relationship, Campaign, Reward, Claim, Loyalty or audit history.',
         ],
     ];

@@ -64,6 +64,7 @@ NODE_TESTS = [
     'tests/cognitive-domain-registry-v2600.mjs',
     'tests/cognitive-entity-graph-v2610.mjs',
     'tests/campaigns-rewards-v100.mjs',
+    'tests/campaigns-rewards-v110.mjs',
     'tests/knowledge-agent-context-v162-browser-contract.mjs',
     'tests/agent-brain-learning-history-v317.mjs',
     'tests/chat-onboarding-v241.mjs',
@@ -181,6 +182,7 @@ PHP_TESTS = [
     'tests/cognitive-domain-registry-v2600.php',
     'tests/cognitive-entity-graph-v2610.php',
     'tests/campaigns-rewards-v100.php',
+    'tests/campaigns-rewards-v110.php',
 ]
 
 

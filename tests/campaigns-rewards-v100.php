@@ -17,7 +17,7 @@ cr_v100_assert(strlen($secret)>=22&&campaigns_rewards_secret_hash_v100($secret)=
 cr_v100_assert(array_keys(campaigns_rewards_team_categories_v100())===['basic','merchant','both'],'Team categories remain Basic Merchant and Both');
 
 $registry=vp3_cognitive_domain_registry_v2600();$campaign=$registry['domains']['campaigns_rewards']??[];
-cr_v100_assert(($campaign['implementation_status']??'')==='integrated-v1.00','v26.00 declares Campaigns & Rewards integrated V1');
+cr_v100_assert(str_starts_with((string)($campaign['implementation_status']??''),'integrated-v1.'),'v26.00 declares Campaigns & Rewards integrated V1 family');
 cr_v100_assert(in_array('campaign.conversion_attributed',$campaign['events']??[],true),'v26.00 carries canonical Campaign conversion attribution');
 cr_v100_assert(in_array('claim.accepted',$campaign['events']??[],true),'v26.00 carries accepted Claim outcomes');
 cr_v100_assert(vp3_cognitive_domain_event_class_v2600('campaigns_rewards','claim.rejected')==='failure_recovery','Claim rejection remains a recovery event');

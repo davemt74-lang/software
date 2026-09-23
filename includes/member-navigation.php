@@ -80,7 +80,8 @@ function member_navigation_active_key(?string $scriptName = null): string
         'appointment-lifecycle.php'=>'appointment_lifecycle',
         'commerce.php'=>'commerce',
         'campaigns.php'=>'campaigns',
-        'rewards-wallet.php'=>'reward_wallet',
+        'rewards.php'=>'rewards',
+        'rewards-wallet.php'=>'chat',
         'campaign-claim.php'=>'claim_terminal',
         'profile-commerce-products.php'=>'profile_commerce',
         'profile-commerce-delivery.php'=>'profile_commerce_delivery',
@@ -98,7 +99,7 @@ function member_navigation_section_label(string $key): string
     return match($key){
         'home','chat','profile_agent','voice_profile'=>'Agent',
         'messages','contacts','knowledge','local_knowledge','memory','transcriptions','calendar'=>'Workspace',
-        'meetings','scheduling','appointment_lifecycle','commerce','campaigns','reward_wallet','claim_terminal','profile_commerce','profile_commerce_delivery','profile_commerce_refunds'=>'Business',
+        'meetings','scheduling','appointment_lifecycle','commerce','campaigns','rewards','claim_terminal','profile_commerce','profile_commerce_delivery','profile_commerce_refunds'=>'Business',
         'team','team_scheduling','team_workspaces'=>'Team',
         'music_workspace'=>'Creator',
         'account','homeserver','client_updates','plugins','subscription','token_packs','ai_usage'=>'Account',
@@ -171,8 +172,8 @@ function member_navigation_menu_links(?array $user = null): array
     if($pdo&&function_exists('campaigns_rewards_user_has_access_v100')){
         try{
             if(campaigns_rewards_user_has_access_v100($pdo,$user)){
-                $add($links,'campaigns','Campaigns & Rewards',url('/campaigns.php'),'agent');
-                $add($links,'reward_wallet','Reward Wallet',url('/rewards-wallet.php'),'agent');
+                $add($links,'campaigns','Campaigns',url('/campaigns.php'),'agent');
+                $add($links,'rewards','Rewards',url('/rewards.php'),'agent');
                 $canClaim=false;foreach(campaigns_rewards_accessible_merchants_v100($pdo,$user) as $merchant){
                     if(function_exists('campaigns_rewards_platform_can_v100')&&campaigns_rewards_platform_can_v100($pdo,(int)$merchant['id'],(int)$user['id'],'claims.process')){$canClaim=true;break;}
                 }

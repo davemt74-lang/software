@@ -68,7 +68,7 @@ assert.match(sidebar, /require __DIR__ \. '\/main-sidebar\.php';/, 'workspace si
 
 // The consolidated authenticated shell renders Contacts from canonical keyed member
 // navigation. Agent Home now leads the same canonical primary order.
-assert.match(mainSidebar, /\$mainSidebarPrimaryOrder = \['home','chat','profile_agent','messages','contacts','knowledge','transcriptions','calendar','scheduling','profile_commerce','campaigns','team'\]/, 'canonical Agent sidebar keeps Contacts in the Home-first primary order');
+assert.match(mainSidebar, /\$mainSidebarPrimaryOrder = \['home','chat','profile_agent','messages','contacts','knowledge','transcriptions','calendar','scheduling','profile_commerce','campaigns','rewards','team'\]/, 'canonical Agent sidebar keeps Contacts in the Home-first primary order');
 assert.match(mainSidebar, /'contacts'=>'Contacts'/, 'canonical Agent sidebar keeps the Contacts display label');
 assert.match(mainSidebar, /member_navigation_menu_links\(\$mainSidebarUser\)/, 'canonical Agent sidebar consumes member-navigation authority');
 assert.match(mainSidebar, /\$isActive=\$mainSidebarActive===\$key/, 'canonical Agent sidebar derives active state from the current navigation key');

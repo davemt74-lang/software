@@ -11,6 +11,7 @@ on:
       - main
       - feature/canonical-teams-workspaces-v350
       - campaigns-rewards-v100
+      - campaigns-rewards-v110-reward-tray
   pull_request:
 
 permissions:
@@ -43,10 +44,18 @@ jobs:
           php tests/campaigns-rewards-v100.php
           node tests/campaigns-rewards-v100.mjs
 
+      - name: Campaigns & Rewards V1.10 contract
+        run: |
+          php tests/campaigns-rewards-v110.php
+          node tests/campaigns-rewards-v110.mjs
+
       - name: JavaScript syntax
         run: |
           node --check tests/team-workspace-lifecycle-v350.mjs
           node --check tests/campaigns-rewards-v100.mjs
+          node --check tests/campaigns-rewards-v110.mjs
+          node --check reward-tray-v110.js
+          node --check reward-qr-v110.js
 
       - name: PHP syntax
         run: |
@@ -58,8 +67,12 @@ jobs:
           php -l includes/campaigns-rewards-platform-v100.php
           php -l includes/campaigns-rewards-domain-v100.php
           php -l includes/campaigns-rewards-release-v100.php
+          php -l includes/campaigns-rewards-v110.php
+          php -l includes/campaigns-rewards-release-v110.php
+          php -l api/reward-tray-v110.php
           php -l team.php
           php -l campaigns.php
+          php -l rewards.php
           php -l campaign.php
           php -l campaign-claim.php
           php -l rewards-wallet.php
