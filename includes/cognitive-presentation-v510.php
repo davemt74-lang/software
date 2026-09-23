@@ -414,6 +414,9 @@ function vp3_cognitive_presentation_state_v510(PDO $pdo,array $user,string $name
     $replanning=function_exists('vp3_cognitive_replanning_activity_projection_v2530')
         ?vp3_cognitive_replanning_activity_projection_v2530($pdo,$user,$namespace)
         :['build'=>'','health'=>'unavailable','replan_needed'=>false,'focus'=>null,'issues'=>[],'changes'=>[],'counts'=>[]];
+    $commitmentProtection=function_exists('vp3_cognitive_commitment_activity_projection_v2540')
+        ?vp3_cognitive_commitment_activity_projection_v2540($pdo,$user,$namespace)
+        :['build'=>'','focus'=>null,'commitments'=>[],'counts'=>[]];
     $brief['followthrough']=$followthrough['focus']??null;
     $brief['followthrough_counts']=$followthrough['counts']??[];
     $brief['away_followthrough']=$followthrough['away']??['count'=>0,'summary'=>'','items'=>[]];
@@ -439,6 +442,9 @@ function vp3_cognitive_presentation_state_v510(PDO $pdo,array $user,string $name
     $brief['replanning_focus']=$replanning['focus']??null;
     $brief['replanning_counts']=$replanning['counts']??[];
     $brief['replanning_changes']=$replanning['changes']??[];
+    $brief['commitment_focus']=$commitmentProtection['focus']??null;
+    $brief['commitment_counts']=$commitmentProtection['counts']??[];
+    $brief['commitments']=$commitmentProtection['commitments']??[];
     return [
         'build'=>VP3_COGNITIVE_PRESENTATION_V510,'agent_namespace'=>$namespace,
         'idle_minutes'=>vp3_cognitive_presentation_idle_minutes_v510($row),
@@ -451,6 +457,7 @@ function vp3_cognitive_presentation_state_v510(PDO $pdo,array $user,string $name
         'optimization'=>$optimization,
         'resource_budget'=>$resourceBudget,
         'replanning'=>$replanning,
+        'commitment_protection'=>$commitmentProtection,
         'digest'=>$digest,'voice_candidate'=>$voice,'attention'=>$attentionStatus,
         'poll_seconds'=>VP3_COGNITIVE_PRESENTATION_POLL_SECONDS_V510,
     ];
