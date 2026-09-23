@@ -185,6 +185,9 @@
     const valueFocus = brief.value_focus || null;
     const valueCounts = brief.value_counts || {};
     const valueManageUrl = String(brief.value_manage_url || '/outcome-value.php');
+    const decisionCalibration = brief.decision_calibration || {};
+    const decisionAccuracy = brief.decision_accuracy || {};
+    const decisionManageUrl = String(brief.decision_manage_url || '/decision-calibration.php');
     const counts = brief.counts || {};
     let html = '<div class="chat-agent-brief-status"><span><i class="chat-agent-brief-dot ' +
       (brief.active !== false ? 'active' : '') + '"></i>' +
@@ -242,6 +245,20 @@
         actionButton('Review value',
           ' data-agent-brief-prompt="' + esc('Review my explicit outcome value and ROI. Separate expected value from verified realized value, explain value at risk and AI-cost ROI only where the evidence supports it, and do not invent monetary value, convert currencies, change budgets, commitments, executors, deadlines, approvals, or execution state.') + '"',false) +
         '<a href="' + esc(valueManageUrl) + '">Manage value ↗</a></div></article>';
+    }
+
+    if (decisionCalibration && Object.keys(decisionCalibration).length) {
+      const fc = decisionCalibration.forecast?.cloud || {};
+      const cost = decisionCalibration.cost?.cloud || {};
+      const value = decisionCalibration.value?.money || {};
+      const hit = decisionAccuracy.forecast_window_hit_rate === null || decisionAccuracy.forecast_window_hit_rate === undefined ? 'n/a' : (Number(decisionAccuracy.forecast_window_hit_rate) * 100).toFixed(0) + '% window hit';
+      html += '<article class="chat-agent-brief-card"><small>Decision calibration · bounded learning</small><strong>Portfolio calibration</strong>' +
+        '<p>Forecast ×' + Number(fc.factor || 1).toFixed(2) + ' · cost ×' + Number(cost.factor || 1).toFixed(2) + ' · value reliability ×' + Number(value.factor || 1).toFixed(2) + '</p>' +
+        '<p><small>' + esc(hit) + ' · ' + Number(decisionAccuracy.settled_goals || 0) + ' settled goal(s) · minimum 5 independent goals per calibrated factor</small></p>' +
+        '<div class="chat-agent-brief-actions">' +
+        actionButton('Review calibration',
+          ' data-agent-brief-prompt="' + esc('Review my portfolio decision calibration. Compare raw versus calibrated forecast accuracy, cost/token projection accuracy, value realization reliability, and the evidence sample counts. Do not change budgets, expected values, commitments, executors, deadlines, approvals, or execution state.') + '"',false) +
+        '<a href="' + esc(decisionManageUrl) + '">Calibration details ↗</a></div></article>';
     }
 
     if (economics || economicsUsage.available || economicsQuota.available) {
