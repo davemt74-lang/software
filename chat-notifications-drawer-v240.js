@@ -381,6 +381,9 @@
     const economicsGoals = Array.isArray(economics.goals) ? economics.goals : [];
     const economicsUsage = economics.usage || {};
     const economicsQuota = economics.quota || {};
+    const budgetGovernance = brain.budget_governance || {};
+    const budgetPolicies = Array.isArray(budgetGovernance.policies) ? budgetGovernance.policies : [];
+    const budgetHeldGoals = Array.isArray(budgetGovernance.held_goals) ? budgetGovernance.held_goals : [];
     const autonomyItems = Array.isArray(autonomy.items) ? autonomy.items : [];
     const supervisionIssues = Array.isArray(supervision.issues) ? supervision.issues : [];
     const supervisionByRef = new Map(supervisionIssues.map(item => [String(item.continuity_ref || ''), item]));
@@ -543,6 +546,36 @@
         </div>
       </section>` : ''}
 
+      ${budgetGovernance.configured ? `
+      <section class="chat-activity-section">
+        <div class="chat-activity-section-head">
+          <div><strong>Budget Governance</strong><span>v25.60 applies only explicit user-created AI budget policies. Hard policies can hold new autonomous Cloud work; subscription/token charging and Phase 19 execution remain canonical.</span></div>
+        </div>
+        <div class="chat-brain-metrics">
+          ${brainMetric('Policies', Number(budgetGovernance.counts?.policies || budgetPolicies.length))}
+          ${brainMetric('Hard policies', Number(budgetGovernance.counts?.hard_policies || 0))}
+          ${brainMetric('Held goals', Number(budgetGovernance.counts?.held_goals || budgetHeldGoals.length))}
+          ${brainMetric('Commitment conflicts', Number(budgetGovernance.counts?.commitment_conflicts || 0))}
+          ${brainMetric('Active overrides', Number(budgetGovernance.counts?.active_overrides || 0))}
+        </div>
+        ${budgetPolicies.length ? `<div class="chat-brain-memory-list">
+          ${budgetPolicies.map(row => {
+            const policy = row.policy || {};
+            const usage = row.usage || {};
+            const state = String(row.state?.state || 'healthy').replaceAll('_',' ');
+            const costLimit = policy.cost_limit_micros === null || policy.cost_limit_micros === undefined ? 'no cost cap' : '$' + (Number(policy.cost_limit_micros) / 1000000).toFixed(2) + ' cap';
+            const tokenLimit = policy.token_limit === null || policy.token_limit === undefined ? 'no token cap' : Number(policy.token_limit).toLocaleString() + ' token cap';
+            const usedCost = '$' + (Number(usage.known_cost_micros || 0) / 1000000).toFixed(2);
+            return `<article>
+              <span>${esc(state)} · ${esc(String(policy.enforcement_mode || 'soft'))} · ${esc(String(policy.period_kind || 'monthly'))}</span>
+              <strong>${esc(policy.label || 'AI budget')}</strong>
+              <p>${usedCost} est. used · ${Number(usage.cloud_tokens_charged || 0).toLocaleString()} cloud tokens</p>
+              <small>${esc(costLimit)} · ${esc(tokenLimit)} · ${Number(row.held_goal_ids?.length || 0)} held · projected remaining $${(Number(row.projected_remaining_cost_micros || 0) / 1000000).toFixed(2)} / ${Number(row.projected_remaining_tokens || 0).toLocaleString()} tokens</small>
+            </article>`;
+          }).join('')}
+        </div>` : ''}
+        <div class="chat-activity-section-head"><a href="${esc(budgetGovernance.manage_url || '/budget-governance.php')}">Manage Budget Governance ↗</a></div>
+      </section>` : ''}
       ${(economicsUsage.available || economicsQuota.available || economicsGoals.length) ? `
       <section class="chat-activity-section">
         <div class="chat-activity-section-head">
