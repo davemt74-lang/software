@@ -242,10 +242,24 @@ function vp3_extension_notification_candidates_v2140(PDO $pdo,array $user,string
         $candidate=vp3_extension_notification_from_row_v2140($user,$row);
         if($candidate)$out[]=$candidate;
     }
-    foreach(vp3_extension_notification_cognitive_candidates_v2140($pdo,$user,$namespace) as $candidate)$out[]=$candidate;
+    $followthrough=[];
+    $followthroughRefs=[];
     if(function_exists('vp3_cognitive_followthrough_extension_candidates_v2450')){
-        foreach(vp3_cognitive_followthrough_extension_candidates_v2450($pdo,$user,$namespace) as $candidate)$out[]=$candidate;
+        $followthrough=vp3_cognitive_followthrough_extension_candidates_v2450($pdo,$user,$namespace);
+        foreach($followthrough as $candidate){
+            $ref=(string)($candidate['source_ref']??'');
+            if($ref!=='')$followthroughRefs[$ref]=true;
+        }
     }
+    foreach(vp3_extension_notification_cognitive_candidates_v2140($pdo,$user,$namespace) as $candidate){
+        // v24.50 becomes the handoff owner when the same canonical continuity
+        // ref is already represented. This avoids a second Browser alert from
+        // the older Cognitive Feed projection for the same workflow/goal.
+        $ref=(string)($candidate['source_ref']??'');
+        if($ref!==''&&isset($followthroughRefs[$ref]))continue;
+        $out[]=$candidate;
+    }
+    foreach($followthrough as $candidate)$out[]=$candidate;
 
     $dedup=[];
     foreach($out as $candidate){
