@@ -126,6 +126,10 @@ function vp3_connected_sites_for_user_v100(PDO $pdo,int $userId): array
 {
     if(!vp3_connected_sites_schema_ready_v100($pdo))return [];$q=$pdo->prepare("SELECT id,app_key,app_label,client_id,scopes_json,status,connected_at,last_used_at,revoked_at,updated_at FROM user_connected_sites WHERE user_id=? ORDER BY status='active' DESC,updated_at DESC,id DESC");$q->execute([$userId]);$rows=$q->fetchAll()?:[];foreach($rows as &$row)$row['scopes']=json_decode((string)$row['scopes_json'],true)?:[];unset($row);return $rows;
 }
+function vp3_connected_site_meeting_rows_v100(PDO $pdo,int $userId,int $limit=80): array
+{
+    return video_meeting_recent_for_user_v1800($pdo,$userId,max(1,min(100,$limit)));
+}
 function vp3_connected_site_meeting_access_v100(PDO $pdo,int $userId,string $publicId): ?array
 {
     $m=video_meeting_by_public_id_v1800($pdo,$publicId);if(!$m)return null;if((int)$m['owner_user_id']===$userId)return $m;$q=$pdo->prepare('SELECT 1 FROM video_meeting_participants WHERE meeting_id=? AND user_id=? LIMIT 1');$q->execute([(int)$m['id'],$userId]);return $q->fetchColumn()?$m:null;
