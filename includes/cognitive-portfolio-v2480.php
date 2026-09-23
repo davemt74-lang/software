@@ -421,10 +421,26 @@ function vp3_cognitive_portfolio_snapshot_v2480(PDO $pdo,array $user): array
         }catch(Throwable $e){}
     }
 
-    // v25.30 may apply a bounded recovery overlay after commitment annotation.
-    // It can only reorder existing autonomous portfolio items and annotate
-    // recovery intent. v24.80 remains admission authority, and failure
-    // preserves the proven v24.80 order.
+    // v25.50 reads canonical usage/cost/token authorities after v25.40
+    // commitment protection. It may annotate autonomous planning economics,
+    // but cannot create a budget, block execution, change executors/deadlines,
+    // or weaken an explicit protected commitment.
+    $economics=[
+        'build'=>'','focus'=>null,'goals'=>[],'usage'=>[],'quota'=>[],
+        'counts'=>[],'projection_only'=>true,
+    ];
+    if(function_exists('vp3_cognitive_economics_apply_v2550')){
+        try{
+            $economicApplied=vp3_cognitive_economics_apply_v2550($pdo,$user,$items,$capacity);
+            if(is_array($economicApplied['items']??null))$items=$economicApplied['items'];
+            if(is_array($economicApplied['economics']??null))$economics=$economicApplied['economics'];
+        }catch(Throwable $e){}
+    }
+
+    // v25.30 may apply a bounded recovery overlay after commitment/economic
+    // annotation. It can only reorder existing autonomous portfolio items and
+    // annotate recovery intent. v24.80 remains admission authority, and
+    // failure preserves the proven v24.80 order.
     $replanning=[
         'build'=>'','health'=>'unavailable','replan_needed'=>false,
         'replan_applied'=>false,'focus'=>null,'issues'=>[],'changes'=>[],
@@ -557,9 +573,13 @@ function vp3_cognitive_portfolio_snapshot_v2480(PDO $pdo,array $user): array
             'protected_commitments'=>(int)($commitmentProtection['counts']['protected']??0),
             'commitments_at_risk'=>(int)($commitmentProtection['counts']['at_risk']??0),
             'commitment_conflicts'=>(int)($commitmentProtection['counts']['conflicts']??0),
+            'economics_priced_goals'=>(int)($economics['counts']['priced_goals']??0),
+            'economics_unknown_pricing_goals'=>(int)($economics['counts']['unknown_pricing_goals']??0),
+            'economics_planning_adjusted'=>(int)($economics['counts']['planning_adjusted']??0),
         ],
         'capacity'=>$capacity,
         'commitment_protection'=>$commitmentProtection,
+        'economics'=>$economics,
         'replanning'=>$replanning,
         'resource_budget'=>$resourceBudget,
         'reservation_admission'=>$reservationAdmission,
@@ -579,6 +599,7 @@ function vp3_cognitive_portfolio_snapshot_v2480(PDO $pdo,array $user): array
             'dependencies'=>'agent_workflow_run_dependencies',
             'capacity'=>'agent_worker_runtime_v1910',
             'commitment_protection'=>'cognitive_commitment_protection_v2540_projection',
+            'economics'=>'cognitive_economics_v2550_projection',
             'replanning'=>'cognitive_replanning_v2530_recovery_overlay',
             'resource_budget'=>'cognitive_resource_budget_v2520_admission_policy',
             'claimant'=>'agent_job_engine_v1900',
