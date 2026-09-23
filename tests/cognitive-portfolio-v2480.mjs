@@ -50,7 +50,7 @@ const checks=[
     portfolio.includes("items[$i]['execution_state']!=='needs_objective'")
     &&portfolio.includes("items[$j]['execution_state']!=='needs_objective'")
     &&portfolio.includes("items[$j]['hold_reason']='semantic_overlap'")
-    &&/existing canonical objectives are never cancelled or blocked merely by similarity/.test(portfolio)],
+    &&/existing canonical objectives are never cancelled or blocked merely by similarity/i.test(portfolio)],
   ['worker capacity is lightweight projection not live readiness refresh',
     /agent_worker_runtime_active_count_v1910/.test(portfolio)
     &&/homeserver_vp3_connection/.test(portfolio)
