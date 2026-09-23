@@ -10,6 +10,7 @@ $memberHeaderActions = (string)($memberHeaderActions ?? '');
 $memberHeaderLeadingHtml = (string)($memberHeaderLeadingHtml ?? '');
 $memberHeaderClass = trim((string)($memberHeaderClass ?? ''));
 $memberHeaderShowSidebarToggle = (bool)($memberHeaderShowSidebarToggle ?? true);
+$memberHeaderShowTitle = (bool)($memberHeaderShowTitle ?? true);
 $memberHeaderActiveKey = trim((string)($memberHeaderActiveKey ?? $mainSidebarActive ?? $workspaceSidebarActive ?? ''));
 if ($memberHeaderActiveKey === '' && function_exists('member_navigation_active_key')) {
     $memberHeaderActiveKey = member_navigation_active_key();
@@ -29,11 +30,13 @@ if ($memberHeaderRenderAgentVoiceAssets) $GLOBALS['VP3_MEMBER_AGENT_VOICE_MENU_A
   <?php if ($memberHeaderShowSidebarToggle): ?><button class="chat-icon-button mobile-only" id="openChatSidebar" type="button" aria-label="Open VP3 navigation" aria-controls="chatSidebar">☰</button><?php endif; ?>
   <?= $memberHeaderLeadingHtml ?>
 
+  <?php if ($memberHeaderShowTitle): ?>
   <div class="chat-topbar-title member-header-title">
     <?php if ($memberHeaderSection !== ''): ?><small class="member-header-context">VP3 · <?= e($memberHeaderSection) ?></small><?php endif; ?>
     <?php if ($memberHeaderTitle !== ''): ?><strong><?= e($memberHeaderTitle) ?></strong><?php endif; ?>
     <?php if ($memberHeaderSubtitle !== ''): ?><span><?= e($memberHeaderSubtitle) ?></span><?php endif; ?>
   </div>
+  <?php endif; ?>
 
   <div class="chat-topbar-actions member-header-actions">
     <?= $memberHeaderActions ?>
