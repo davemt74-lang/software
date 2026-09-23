@@ -532,6 +532,13 @@ $accountBrainTools = agent_brain_tools($user);
                   <span>Manage Value ↗</span>
                 </a>
 
+                <a class="account-access-card" href="<?= e(url('/decision-calibration.php')) ?>">
+                  <small>Portfolio Learning</small>
+                  <strong>Decision Calibration</strong>
+                  <p>Compare raw and calibrated forecasts, cost/token projections, value reliability, and verified outcomes.</p>
+                  <span>Review Calibration ↗</span>
+                </a>
+
                 <a class="account-access-card" href="<?= e(url('/chat.php?view=player')) ?>">
                   <small>Music</small>
                   <strong><?= e(system_agent_name()) ?> Player</strong>
