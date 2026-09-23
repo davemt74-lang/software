@@ -28,24 +28,20 @@ $error='';$issued=null;$issuedReward=null;$participation=null;$completionMessage
 
 if($_SERVER['REQUEST_METHOD']==='POST'){
     if(!verify_csrf())$error='Session expired. Reload the page and try again.';
-    elseif(trim((string)($_POST['website']??''))!=='')$error='Reward request could not be submitted.';
-    elseif(!hash_equals($requestToken,(string)($_POST['request_key']??'')))$error='This Reward request has expired. Reload the page and try again.';
+    elseif(trim((string)($_POST['website']??''))!=='')$error='Campaign request could not be submitted.';
+    elseif(!hash_equals($requestToken,(string)($_POST['request_key']??'')))$error='This Campaign request has expired. Reload the page and try again.';
     else{
         try{
             campaigns_rewards_public_claim_rate_limit_v100((string)$campaign['public_id']);
+            if(empty($behavior['public']))throw new RuntimeException('This Campaign is not accepting public participation.');
             $rewardPublic=trim((string)($_POST['reward_public_id']??''));$selected=null;
-            foreach($rewards as $candidate)if(hash_equals((string)$candidate['public_id'],$rewardPublic)){$selected=$candidate;break;}
-            if(!$selected)throw new RuntimeException('That Reward is not currently available.');
-            $contact=campaigns_rewards_customer_upsert_v100($pdo,$campaign,(string)($_POST['name']??''),(string)($_POST['email']??''),(string)($_POST['phone']??''));
-            $contactId=(int)$contact['crm_contact_id'];
-            $enrollment=campaigns_rewards_public_enroll_v100($pdo,(int)$campaign['id'],$contactId,'public-enroll:'.$campaign['public_id'].':'.$contactId);
-            $issued=campaigns_rewards_issue_reward_v100($pdo,(int)$campaign['id'],(int)$selected['id'],$contactId,0,[
-                'actor_type'=>'public','source'=>'public_signup','campaign_enrollment_id'=>(int)$enrollment['id'],
-                'recipient_user_id'=>(int)($contact['vp3_user_id']??0),
-                'idempotency_key'=>'public-reward:'.hash('sha256',$requestToken),
-            ]);
-            $issuedReward=$selected;
-            if(empty($issued['credential']))throw new RuntimeException('This Reward was already issued. Sign in to your VP3 Reward Wallet to view its status.');
+            if($rewardPublic!=='')foreach($rewards as $candidate)if(hash_equals((string)$candidate['public_id'],$rewardPublic)){$selected=$candidate;break;}
+            if(!$selected&&count($rewards)===1)$selected=$rewards[0];
+            $participation=campaigns_rewards_public_participate_v118($pdo,$campaign,$_POST,$requestToken,$selected);
+            $issued=is_array($participation['issued']??null)?$participation['issued']:null;
+            $issuedReward=is_array($participation['reward']??null)?$participation['reward']:null;
+            $completionMessage=(string)($participation['message']??'Campaign participation completed.');
+            if($issued&&empty($issued['credential']))$completionMessage='Your Reward was already issued. Sign in to VP3 to view its current status.';
             if(session_status()===PHP_SESSION_ACTIVE)$_SESSION['campaign_public_request_tokens'][$campaign['public_id']]=bin2hex(random_bytes(20));
         }catch(Throwable $e){$error=$e->getMessage();}
     }
