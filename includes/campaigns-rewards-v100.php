@@ -58,6 +58,7 @@ function campaigns_rewards_schema_ready_v100(?PDO $pdo=null): bool
         'campaigns_v100','campaign_rewards_v100','campaign_customers_v100','campaign_reward_claims_v100',
         'campaign_activity_v100','campaign_team_scopes_v100','campaign_team_invite_scopes_v100'
     ] as $table)if(!table_exists($table))return false;
+    if(function_exists('column_exists')&&!column_exists('campaign_merchant_members_v100','team_scope_active'))return false;
     return true;
 }
 
@@ -96,6 +97,7 @@ function campaigns_rewards_ensure_schema_v100(?PDO $pdo=null): void
       member_role VARCHAR(20) NOT NULL DEFAULT 'member',
       member_status VARCHAR(20) NOT NULL DEFAULT 'active',
       source VARCHAR(30) NOT NULL DEFAULT 'direct',
+      team_scope_active TINYINT(1) NOT NULL DEFAULT 0,
       created_by_user_id INT UNSIGNED NULL,
       joined_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       suspended_at DATETIME NULL,
@@ -109,6 +111,10 @@ function campaigns_rewards_ensure_schema_v100(?PDO $pdo=null): void
       CONSTRAINT fk_campaign_merchant_member_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
       CONSTRAINT fk_campaign_merchant_member_creator FOREIGN KEY (created_by_user_id) REFERENCES users(id) ON DELETE SET NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+    if(function_exists('column_exists')&&!column_exists('campaign_merchant_members_v100','team_scope_active')){
+        $pdo->exec("ALTER TABLE campaign_merchant_members_v100 ADD COLUMN team_scope_active TINYINT(1) NOT NULL DEFAULT 0 AFTER source");
+    }
 
     $pdo->exec("CREATE TABLE IF NOT EXISTS campaign_merchant_locations_v100 (
       id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
@@ -331,7 +337,10 @@ function campaigns_rewards_member_role_v100(PDO $pdo,int $merchantId,int $userId
     $merchant=campaigns_rewards_merchant_v100($pdo,$merchantId);if(!$merchant)return '';
     if((int)$merchant['owner_user_id']===$userId)return 'owner';
     $member=campaigns_rewards_merchant_member_v100($pdo,$merchantId,$userId);
-    return $member&&($member['member_status']??'')==='active'?(string)$member['member_role']:'';
+    if(!$member)return '';
+    if(($member['member_status']??'')==='active'&&($member['source']??'')==='direct')return (string)$member['member_role'];
+    if(!empty($member['team_scope_active'])||(($member['member_status']??'')==='active'&&($member['source']??'')==='team_scope'))return 'member';
+    return '';
 }
 
 function campaigns_rewards_can_manage_merchant_v100(PDO $pdo,int $merchantId,int $userId): bool
@@ -704,7 +713,7 @@ function campaigns_rewards_reporting_v100(PDO $pdo,int $merchantId,int $userId):
 
 function campaigns_rewards_merchant_members_v100(PDO $pdo,int $merchantId): array
 {
-    $stmt=$pdo->prepare("SELECT mm.*,u.display_name,u.email,u.avatar_path,u.is_active FROM campaign_merchant_members_v100 mm INNER JOIN users u ON u.id=mm.user_id WHERE mm.merchant_account_id=? AND mm.member_status<>'removed' ORDER BY FIELD(mm.member_role,'owner','admin','member'),u.display_name,u.id");
+    $stmt=$pdo->prepare("SELECT mm.*,CASE WHEN mm.member_status='active' AND mm.source='direct' THEN mm.member_role WHEN mm.team_scope_active=1 THEN 'member' ELSE mm.member_role END effective_role,u.display_name,u.email,u.avatar_path,u.is_active FROM campaign_merchant_members_v100 mm INNER JOIN users u ON u.id=mm.user_id WHERE mm.merchant_account_id=? AND (mm.member_status<>'removed' OR mm.team_scope_active=1) ORDER BY FIELD(CASE WHEN mm.member_status='active' AND mm.source='direct' THEN mm.member_role WHEN mm.team_scope_active=1 THEN 'member' ELSE mm.member_role END,'owner','admin','member'),u.display_name,u.id");
     $stmt->execute([$merchantId]);return $stmt->fetchAll()?:[];
 }
 
@@ -737,8 +746,8 @@ function campaigns_rewards_assert_team_merchant_v100(PDO $pdo,int $ownerUserId,i
 function campaigns_rewards_sync_team_merchant_member_v100(PDO $pdo,int $ownerUserId,int $memberUserId,string $category,int $merchantId,?int $actorUserId=null): void
 {
     $old=campaigns_rewards_team_scope_v100($pdo,$ownerUserId,$memberUserId);$oldMerchant=(int)($old['merchant_account_id']??0);
-    if($oldMerchant>0&&($oldMerchant!==$merchantId||$category==='basic'))$pdo->prepare("UPDATE campaign_merchant_members_v100 SET member_status='removed',removed_at=UTC_TIMESTAMP(),updated_at=UTC_TIMESTAMP() WHERE merchant_account_id=? AND user_id=? AND member_role='member' AND source='team_scope'")->execute([$oldMerchant,$memberUserId]);
-    if(in_array($category,['merchant','both'],true)){campaigns_rewards_assert_team_merchant_v100($pdo,$ownerUserId,$merchantId);$pdo->prepare("INSERT INTO campaign_merchant_members_v100 (merchant_account_id,user_id,member_role,member_status,source,created_by_user_id,joined_at) VALUES (?,?,'member','active','team_scope',?,UTC_TIMESTAMP()) ON DUPLICATE KEY UPDATE member_status='active',suspended_at=NULL,removed_at=NULL,updated_at=UTC_TIMESTAMP()")->execute([$merchantId,$memberUserId,$actorUserId?:$ownerUserId]);}
+    if($oldMerchant>0&&($oldMerchant!==$merchantId||$category==='basic'))$pdo->prepare("UPDATE campaign_merchant_members_v100 SET team_scope_active=0,member_status=IF(source='team_scope','removed',member_status),removed_at=IF(source='team_scope',UTC_TIMESTAMP(),removed_at),updated_at=UTC_TIMESTAMP() WHERE merchant_account_id=? AND user_id=?")->execute([$oldMerchant,$memberUserId]);
+    if(in_array($category,['merchant','both'],true)){campaigns_rewards_assert_team_merchant_v100($pdo,$ownerUserId,$merchantId);$pdo->prepare("INSERT INTO campaign_merchant_members_v100 (merchant_account_id,user_id,member_role,member_status,source,team_scope_active,created_by_user_id,joined_at) VALUES (?,?,'member','active','team_scope',1,?,UTC_TIMESTAMP()) ON DUPLICATE KEY UPDATE team_scope_active=1,member_status=IF(source='team_scope','active',member_status),suspended_at=IF(source='team_scope',NULL,suspended_at),removed_at=IF(source='team_scope',NULL,removed_at),updated_at=UTC_TIMESTAMP()")->execute([$merchantId,$memberUserId,$actorUserId?:$ownerUserId]);}
 }
 
 function campaigns_rewards_set_team_scope_v100(PDO $pdo,int $ownerUserId,int $memberUserId,string $category,int $merchantId=0,?int $actorUserId=null): array
@@ -778,9 +787,9 @@ function campaigns_rewards_team_membership_status_v100(PDO $pdo,int $ownerUserId
 {
     if(!campaigns_rewards_schema_ready_v100($pdo))return;$scope=campaigns_rewards_team_scope_v100($pdo,$ownerUserId,$memberUserId);$merchantId=(int)($scope['merchant_account_id']??0);$category=(string)($scope['team_category']??'basic');
     if($merchantId<1||!in_array($category,['merchant','both'],true))return;
-    if($status==='active')$pdo->prepare("UPDATE campaign_merchant_members_v100 SET member_status='active',suspended_at=NULL,removed_at=NULL,updated_at=UTC_TIMESTAMP() WHERE merchant_account_id=? AND user_id=? AND member_role='member' AND source='team_scope'")->execute([$merchantId,$memberUserId]);
-    elseif($status==='suspended')$pdo->prepare("UPDATE campaign_merchant_members_v100 SET member_status='suspended',suspended_at=UTC_TIMESTAMP(),updated_at=UTC_TIMESTAMP() WHERE merchant_account_id=? AND user_id=? AND member_role='member' AND source='team_scope'")->execute([$merchantId,$memberUserId]);
-    elseif($status==='removed')$pdo->prepare("UPDATE campaign_merchant_members_v100 SET member_status='removed',removed_at=UTC_TIMESTAMP(),updated_at=UTC_TIMESTAMP() WHERE merchant_account_id=? AND user_id=? AND member_role='member' AND source='team_scope'")->execute([$merchantId,$memberUserId]);
+    if($status==='active')$pdo->prepare("UPDATE campaign_merchant_members_v100 SET team_scope_active=1,member_status=IF(source='team_scope','active',member_status),suspended_at=IF(source='team_scope',NULL,suspended_at),removed_at=IF(source='team_scope',NULL,removed_at),updated_at=UTC_TIMESTAMP() WHERE merchant_account_id=? AND user_id=?")->execute([$merchantId,$memberUserId]);
+    elseif($status==='suspended')$pdo->prepare("UPDATE campaign_merchant_members_v100 SET team_scope_active=0,member_status=IF(source='team_scope','suspended',member_status),suspended_at=IF(source='team_scope',UTC_TIMESTAMP(),suspended_at),updated_at=UTC_TIMESTAMP() WHERE merchant_account_id=? AND user_id=?")->execute([$merchantId,$memberUserId]);
+    elseif($status==='removed')$pdo->prepare("UPDATE campaign_merchant_members_v100 SET team_scope_active=0,member_status=IF(source='team_scope','removed',member_status),removed_at=IF(source='team_scope',UTC_TIMESTAMP(),removed_at),updated_at=UTC_TIMESTAMP() WHERE merchant_account_id=? AND user_id=?")->execute([$merchantId,$memberUserId]);
 }
 
 
