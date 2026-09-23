@@ -50,6 +50,8 @@ function vp3_cognitive_release_manifest_v2590(): array
             'agent_brief_gets_firewalled_current_state'=>true,
             'proactive_now_gets_same_current_state_projection'=>true,
             'agent_brain_gets_same_current_state_projection'=>true,
+            'agent_brain_user_facing_state_uses_presentation_firewall'=>true,
+            'proactive_now_carries_firewalled_presentation'=>true,
             'v540_remains_relevance_learning_authority'=>true,
             'v2350_remains_proactive_presentation_calibration_authority'=>true,
             'v2580_remains_decision_calibration_authority'=>true,
