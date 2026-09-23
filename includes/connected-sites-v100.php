@@ -64,8 +64,8 @@ function vp3_connected_site_registered_apps_v100(): array
         'app_key'=>'annotated','label'=>'Annotated','client_id'=>'annotated','client_secret'=>$secret,'base_url'=>$base,'redirect_uri'=>$redirect,
         'scopes'=>[
             'account.identity.read'=>'Read your VP3 account identity',
-            'meetings.transcripts.read'=>'Read VP3 meeting transcripts you can access',
-            'meetings.intelligence.read'=>'Read Meeting Intelligence and AI summaries you can access',
+            'transcriptions.read'=>'Read VP3 transcriptions and meeting transcripts you can access',
+            'transcriptions.intelligence.read'=>'Read VP3 Transcription / Meeting Intelligence and AI summaries you can access',
         ],
     ]];
 }
@@ -75,7 +75,7 @@ function vp3_connected_site_app_v100(string $clientId): ?array
 }
 function vp3_connected_site_scopes_v100(array $app,string|array $requested): array
 {
-    $parts=is_array($requested)?$requested:(preg_split('/[s,]+/',trim($requested))?:[]);
+    $parts=is_array($requested)?$requested:(preg_split('/[\\s,]+/',trim($requested))?:[]);
     $allowed=array_keys((array)$app['scopes']);$out=[];foreach($parts as $scope){$scope=trim((string)$scope);if($scope!==''&&in_array($scope,$allowed,true))$out[$scope]=true;}
     if(!$out)$out=array_fill_keys($allowed,true);return array_keys($out);
 }
@@ -115,7 +115,7 @@ function vp3_connected_site_refresh_v100(PDO $pdo,array $app,string $refresh): a
 }
 function vp3_connected_site_auth_v100(PDO $pdo,string $requiredScope=''): array
 {
-    vp3_connected_sites_ensure_schema_v100($pdo);$header=(string)($_SERVER['HTTP_AUTHORIZATION']??'');if(!preg_match('/^Bearers+([A-Fa-f0-9]{64})$/',$header,$m))throw new RuntimeException('Connected-site bearer token is required.');
+    vp3_connected_sites_ensure_schema_v100($pdo);$header=(string)($_SERVER['HTTP_AUTHORIZATION']??'');if(!preg_match('/^Bearer\\s+([A-Fa-f0-9]{64})$/',$header,$m))throw new RuntimeException('Connected-site bearer token is required.');
     $q=$pdo->prepare("SELECT t.id token_id,t.connection_id,s.*,u.display_name,u.email,u.is_active FROM user_connected_site_tokens t JOIN user_connected_sites s ON s.id=t.connection_id JOIN users u ON u.id=s.user_id WHERE t.access_token_hash=? AND t.revoked_at IS NULL AND t.access_expires_at>NOW() AND s.status='active' LIMIT 1");$q->execute([hash('sha256',strtolower($m[1]))]);$row=$q->fetch();if(!$row||empty($row['is_active']))throw new RuntimeException('Connected-site token is invalid or expired.');$scopes=json_decode((string)$row['scopes_json'],true)?:[];if($requiredScope!==''&&!in_array($requiredScope,$scopes,true))throw new RuntimeException('Connected-site scope is not authorized.');$pdo->prepare('UPDATE user_connected_site_tokens SET last_used_at=NOW() WHERE id=?')->execute([(int)$row['token_id']]);$pdo->prepare('UPDATE user_connected_sites SET last_used_at=NOW() WHERE id=?')->execute([(int)$row['connection_id']]);$row['scopes']=$scopes;return $row;
 }
 function vp3_connected_site_revoke_v100(PDO $pdo,int $userId,int $connectionId): void
@@ -141,6 +141,38 @@ function vp3_connected_site_meeting_summary_v100(PDO $pdo,array $meeting,int $us
 }
 function vp3_connected_site_meeting_descriptor_v100(PDO $pdo,array $meeting,int $userId,array $scopes): array
 {
-    $t=vp3_connected_site_meeting_transcript_v100($pdo,$meeting);$summary=in_array('meetings.intelligence.read',$scopes,true)?vp3_connected_site_meeting_summary_v100($pdo,$meeting,$userId):null;$version=hash('sha256',$t['source_hash'].'|'.($summary['source_hash']??'').'|'.(string)$meeting['updated_at']);
+    $t=vp3_connected_site_meeting_transcript_v100($pdo,$meeting);$summary=in_array('transcriptions.intelligence.read',$scopes,true)?vp3_connected_site_meeting_summary_v100($pdo,$meeting,$userId):null;$version=hash('sha256',$t['source_hash'].'|'.($summary['source_hash']??'').'|'.(string)$meeting['updated_at']);
     return ['id'=>(string)$meeting['public_id'],'type'=>'meeting','title'=>(string)$meeting['title'],'status'=>(string)$meeting['status'],'start_at_utc'=>(string)$meeting['start_at_utc'],'ended_at'=>$meeting['ended_at']??null,'updated_at'=>(string)$meeting['updated_at'],'original_url'=>url('/meeting.php?meeting='.(string)$meeting['public_id'].'&review=1'),'transcript_available'=>$t['segment_count']>0,'summary_available'=>$summary!==null,'segment_count'=>$t['segment_count'],'version_hash'=>$version];
+}
+
+function vp3_connected_site_transcription_rows_v100(PDO $pdo,int $userId,int $limit=80): array
+{
+    if(!table_exists('artist_transcript_sessions_v172'))return [];$limit=max(1,min(100,$limit));$q=$pdo->prepare("SELECT * FROM artist_transcript_sessions_v172 WHERE created_by_user_id=? AND status<>'discarded' ORDER BY last_activity_at DESC,id DESC LIMIT ".$limit);$q->execute([$userId]);return $q->fetchAll()?:[];
+}
+function vp3_connected_site_transcription_access_v100(PDO $pdo,int $userId,string $artifactId): ?array
+{
+    if(!str_starts_with($artifactId,'transcription-'))return null;$key=substr($artifactId,14);if(!preg_match('/^[a-z0-9-]{16,64}$/',$key))return null;$q=$pdo->prepare("SELECT * FROM artist_transcript_sessions_v172 WHERE created_by_user_id=? AND client_session_key=? AND status<>'discarded' LIMIT 1");$q->execute([$userId,$key]);return $q->fetch()?:null;
+}
+function vp3_connected_site_transcription_text_v100(PDO $pdo,array $session): array
+{
+    $segments=function_exists('artist_listening_v172_segments')?artist_listening_v172_segments($pdo,(int)$session['id']):[];$rows=[];$lines=[];foreach($segments as $s){if((string)($s['segment_type']??'transcript')!=='transcript')continue;$text=trim((string)($s['transcript_text']??''));if($text==='')continue;$speaker=trim((string)($s['speaker_label']??''))?:'Speaker';$rows[]=$s;$lines[]=$speaker.': '.$text;}$text=implode("\n",$lines);return ['text'=>$text,'segments'=>$rows,'segment_count'=>count($rows),'source_hash'=>hash('sha256',$text)];
+}
+function vp3_connected_site_summary_rows_v100(array $rows,string $primary): array
+{
+    $out=[];foreach(array_slice($rows,0,20) as $row){if(!is_array($row))continue;$text=trim((string)($row[$primary]??$row['text']??''));if($text==='')continue;$out[]=$row+['text'=>$text];}return $out;
+}
+function vp3_connected_site_transcription_summary_v100(PDO $pdo,array $session): ?array
+{
+    if(!function_exists('artist_listening_v172_segments')||!function_exists('artist_listening_transcript_page_map')||!function_exists('artist_listening_v237_analysis_status'))return null;
+    try{$segments=artist_listening_v172_segments($pdo,(int)$session['id']);$map=artist_listening_transcript_page_map($segments);$status=artist_listening_v237_analysis_status($pdo,(int)$session['id'],$map);$master=is_array($status['master']??null)?$status['master']:null;if(!$master)return null;$analysis=is_array($master['analysis']??null)?$master['analysis']:[];
+        $module=null;if(function_exists('transcription_app_modules_v306')){$modules=transcription_app_modules_v306($analysis,$master);$module=is_array($modules['summary_output']??null)?$modules['summary_output']:null;}
+        $result=is_array($module['result']??null)?$module['result']:[];
+        $overview=vp3_connected_site_summary_rows_v100((array)($result['overview']??[]),'summary');$summary=implode(' ',array_map(static fn($r)=>(string)$r['text'],$overview));if($summary==='')$summary=trim((string)($analysis['summary']??$master['summary']??''));if($summary===''&&!$result)return null;
+        return ['summary'=>$summary,'key_points'=>vp3_connected_site_summary_rows_v100((array)($result['key_points']??[]),'point'),'decisions'=>vp3_connected_site_summary_rows_v100((array)($result['decisions']??[]),'decision'),'actions'=>vp3_connected_site_summary_rows_v100((array)($result['next_steps']??[]),'next_step'),'questions'=>vp3_connected_site_summary_rows_v100((array)($result['open_questions']??[]),'question'),'risks'=>vp3_connected_site_summary_rows_v100((array)($result['risks']??[]),'risk'),'topics'=>[],'source_hash'=>(string)($map['source_hash']??$module['source_hash']??''),'generated_at'=>(string)($module['generated_at']??$master['generated_at']??'')];
+    }catch(Throwable $e){return null;}
+}
+function vp3_connected_site_transcription_descriptor_v100(PDO $pdo,array $session,array $scopes): array
+{
+    $t=vp3_connected_site_transcription_text_v100($pdo,$session);$summary=in_array('transcriptions.intelligence.read',$scopes,true)?vp3_connected_site_transcription_summary_v100($pdo,$session):null;$version=hash('sha256',$t['source_hash'].'|'.($summary['source_hash']??'').'|'.(string)$session['updated_at']);
+    return ['id'=>'transcription-'.(string)$session['client_session_key'],'type'=>'transcription','title'=>(string)$session['title'],'status'=>(string)$session['status'],'start_at_utc'=>(string)$session['started_at'],'ended_at'=>$session['stopped_at']??null,'updated_at'=>(string)$session['updated_at'],'original_url'=>url('/artist-listening.php?session_id='.(int)$session['id']),'transcript_available'=>$t['segment_count']>0,'summary_available'=>$summary!==null,'segment_count'=>$t['segment_count'],'version_hash'=>$version];
 }
