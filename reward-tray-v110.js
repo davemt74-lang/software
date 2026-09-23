@@ -91,11 +91,12 @@ async function prepareClaim(id){
  }catch(err){showError(err);}
 }
 function wire(){
- const top=qs('.chat-topbar'),actions=qs('.chat-topbar-actions');
+ const top=qs('.chat-topbar'),actions=qs('.chat-topbar-actions'),spacer=qs('.chat-topbar-spacer');
  if(top&&actions&&!qs('#rewardTrayTabs')){
-   const nav=document.createElement('nav');nav.id='rewardTrayTabs';nav.className='reward-tray-tabs';nav.setAttribute('aria-label','Rewards');
-   nav.innerHTML=['inbox','sent','claimed'].map(k=>'<button class="reward-tray-tab" type="button" data-reward-tray-tab="'+k+'">'+k.toUpperCase()+' <span class="reward-tray-count" data-reward-count="'+k+'">0</span></button>').join('');
-   top.insertBefore(nav,actions);
+   const nav=document.createElement('nav');nav.id='rewardTrayTabs';nav.className='reward-tray-tabs';nav.setAttribute('aria-label','Reward certificates');
+   nav.innerHTML=['inbox','sent','claimed'].map(k=>'<button class="reward-tray-tab" type="button" data-reward-tray-tab="'+k+' aria-controls="rewardTrayCanvas">'+k.toUpperCase()+' <span class="reward-tray-count" data-reward-count="'+k+'">0</span></button>').join('');
+   top.insertBefore(nav,spacer||actions);
+   document.body.classList.add('reward-tray-ready');
  }
  const thread=qs('#chatThread');
  if(thread&&!qs('#rewardTrayCanvas')){
