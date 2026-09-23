@@ -47,9 +47,17 @@ issues=[]
 if missing:
     issues.append('Missing upgrade installer definitions: '+', '.join(missing))
 
+audit_files=set(ensure_files)
+for file in list(ensure_files):
+    for ref in re.findall(r"['\"](/?[^'\"]+\.sql)['\"]", sources[file]):
+        candidate=ROOT/ref.lstrip('/')
+        if candidate.is_file():
+            audit_files.add(candidate)
+            sources[candidate]=candidate.read_text(errors='ignore')
+
 table_count=0
 create_re=re.compile(r'CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?`?([A-Za-z0-9_]+)`?\s*\((.*?)\)\s*ENGINE\s*=', re.I|re.S)
-for file in sorted(ensure_files):
+for file in sorted(audit_files):
     src=sources[file]
     rel=file.relative_to(ROOT).as_posix()
     create_positions={}
@@ -106,7 +114,7 @@ for file in sorted(ensure_files):
         if key in create_positions and m.start() < create_positions[key]:
             issues.append(f'{rel}: ALTER TABLE {m.group(1)} appears before its CREATE TABLE')
 
-if table_count < 350:
+if table_count < 357:
     issues.append(f'Upgrade audit only found {table_count} CREATE TABLE definitions; expected at least 350')
 
 if issues:
