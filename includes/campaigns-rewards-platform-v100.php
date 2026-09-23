@@ -184,10 +184,6 @@ function campaigns_rewards_platform_ensure_schema_v100(?PDO $pdo=null): void
       merchant_member_id BIGINT UNSIGNED NOT NULL,location_id BIGINT UNSIGNED NOT NULL,role_key VARCHAR(80) NULL,created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,PRIMARY KEY(merchant_member_id,location_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 
-    if(function_exists('column_exists')&&!column_exists('reward_issuances','inventory_balance_id')){
-        $pdo->exec("ALTER TABLE reward_issuances ADD COLUMN inventory_balance_id BIGINT UNSIGNED NULL AFTER reward_variant_id");
-    }
-
     $exec("CREATE TABLE IF NOT EXISTS merchant_claim_codes (
       id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,public_id CHAR(36) NOT NULL,merchant_id BIGINT UNSIGNED NOT NULL,display_name VARCHAR(190) NOT NULL,code_hash CHAR(64) NOT NULL,code_last4 VARCHAR(8) NOT NULL,location_id BIGINT UNSIGNED NULL,merchant_member_id BIGINT UNSIGNED NULL,device_label VARCHAR(120) NULL,status VARCHAR(20) NOT NULL DEFAULT 'active',active_from DATETIME NULL,active_until DATETIME NULL,daily_claim_limit INT UNSIGNED NULL,total_claim_limit INT UNSIGNED NULL,max_value_minor BIGINT UNSIGNED NULL,currency CHAR(3) NULL,rules_json LONGTEXT NULL,created_by_user_id INT UNSIGNED NOT NULL,last_used_at DATETIME NULL,created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       UNIQUE KEY uq_claim_code_public (public_id),UNIQUE KEY uq_claim_code_hash (code_hash),INDEX idx_claim_code_merchant (merchant_id,status,id)
@@ -290,6 +286,9 @@ function campaigns_rewards_platform_ensure_schema_v100(?PDO $pdo=null): void
       id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,public_id CHAR(36) NOT NULL,merchant_id BIGINT UNSIGNED NOT NULL,campaign_id BIGINT UNSIGNED NOT NULL,campaign_version_id BIGINT UNSIGNED NOT NULL,campaign_enrollment_id BIGINT UNSIGNED NULL,campaign_case_id BIGINT UNSIGNED NULL,reward_product_id BIGINT UNSIGNED NOT NULL,reward_variant_id BIGINT UNSIGNED NULL,inventory_balance_id BIGINT UNSIGNED NULL,recipient_contact_id BIGINT UNSIGNED NOT NULL,recipient_user_id INT UNSIGNED NULL,issued_by_user_id INT UNSIGNED NULL,issued_by_actor_type VARCHAR(30) NOT NULL DEFAULT 'user',environment VARCHAR(12) NOT NULL DEFAULT 'production',status VARCHAR(20) NOT NULL DEFAULT 'issued',credential_hash CHAR(64) NOT NULL,credential_last4 VARCHAR(8) NOT NULL,quantity INT UNSIGNED NOT NULL DEFAULT 1,remaining_quantity INT UNSIGNED NOT NULL DEFAULT 1,face_value_minor BIGINT UNSIGNED NULL,currency CHAR(3) NOT NULL DEFAULT 'USD',terms_snapshot_json LONGTEXT NOT NULL,issued_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,sent_at DATETIME NULL,viewed_at DATETIME NULL,claimed_at DATETIME NULL,expires_at DATETIME NULL,voided_at DATETIME NULL,created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       UNIQUE KEY uq_reward_issuance_public (public_id),UNIQUE KEY uq_reward_credential_hash (credential_hash),INDEX idx_wallet_contact (recipient_contact_id,status,expires_at,id),INDEX idx_reward_issuance_campaign (campaign_id,status,id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+    if(function_exists('column_exists')&&!column_exists('reward_issuances','inventory_balance_id')){
+        $pdo->exec("ALTER TABLE reward_issuances ADD COLUMN inventory_balance_id BIGINT UNSIGNED NULL AFTER reward_variant_id");
+    }
 
     $exec("CREATE TABLE IF NOT EXISTS reward_transfers (
       id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,

@@ -115,6 +115,7 @@ const checks=[
 
  ['fresh setup installs canonical Campaigns platform schema after CRM',setup.indexOf('crm_v180_ensure_schema')<setup.indexOf('campaigns_rewards_platform_ensure_schema_v100')&&/campaigns_rewards_platform_ensure_schema_v100\(\$pdo\)/.test(setup)],
  ['upgrade readiness includes canonical Campaigns platform schema',/campaigns_rewards_platform_schema_ready_v100/.test(upgrade)&&/campaigns_rewards_platform_ensure_schema_v100/.test(upgrade)],
+ ['fresh/partial upgrade creates Reward Issuance before any compatibility ALTER',schema.indexOf('CREATE TABLE IF NOT EXISTS reward_issuances')>=0&&schema.indexOf('ALTER TABLE reward_issuances ADD COLUMN inventory_balance_id')>schema.indexOf('CREATE TABLE IF NOT EXISTS reward_issuances')],
  ['Recovery Baseline includes Campaigns PHP and Node contracts',/campaigns-rewards-v100\.php/.test(recovery)&&/campaigns-rewards-v100\.mjs/.test(recovery)],
  ['consolidated Team workflow runs and lints canonical Campaigns V1',/Campaigns & Rewards V1 contract/.test(workflow)&&/campaigns-rewards-platform-v100\.php/.test(workflow)&&/campaigns-rewards-domain-v100\.php/.test(workflow)&&/rewards-wallet\.php/.test(workflow)],
  ['production package retains canonical Campaigns runtime and user surfaces in later releases',/campaigns-rewards-platform-v100\.php/.test(packageWorkflow)&&/campaigns-rewards-domain-v100\.php/.test(packageWorkflow)&&/campaigns\.php/.test(packageWorkflow)&&/campaign\.php/.test(packageWorkflow)&&/campaign-claim\.php/.test(packageWorkflow)&&/rewards-wallet\.php/.test(packageWorkflow)],
