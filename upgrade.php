@@ -236,6 +236,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             agent_objective_memory_ensure_schema_v177($pdo);
             agent_goal_strategy_ensure_schema_v1710($pdo);
             agent_goal_planning_ensure_schema_v1711($pdo);
+            vp3_cognitive_autonomy_ensure_schema_v2470($pdo);
             agent_goal_review_ensure_schema_v1714($pdo);
             vp3_cognitive_ensure_schema_v500($pdo);
             vp3_cognitive_presentation_ensure_schema_v510($pdo);
