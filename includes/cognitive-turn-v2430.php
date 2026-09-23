@@ -64,31 +64,52 @@ function vp3_cognitive_turn_intent_v2430(string $query): array
 
 function vp3_cognitive_turn_continuity_v2430(PDO $pdo,array $user,string $namespace): array
 {
-    if(!function_exists('vp3_live_session_snapshot_v2370'))return [
+    $base=[
         'active'=>false,'surface'=>'','context_key'=>'','conversation_id'=>0,
         'project_ref'=>'','task_ref'=>'','goal_ref'=>'','last_activity_at'=>'',
+        'resumable'=>false,'continuity_ref'=>'','continuity_kind'=>'','continuity_state'=>'',
+        'continuity_title'=>'','resume_action'=>'','requires_user'=>false,
+        'requires_approval'=>false,'continuity_source'=>'',
     ];
-    try{$snapshot=vp3_live_session_snapshot_v2370($pdo,$user,false);}catch(Throwable $e){$snapshot=[];}
-    $session=is_array($snapshot['session']??null)?$snapshot['session']:null;
-    if(!$session)return [
-        'active'=>false,'surface'=>'','context_key'=>'','conversation_id'=>0,
-        'project_ref'=>'','task_ref'=>'','goal_ref'=>'','last_activity_at'=>'',
-    ];
-    $sessionNamespace=trim((string)($session['agent_namespace']??'system'))?:'system';
-    if(!hash_equals($namespace,$sessionNamespace))return [
-        'active'=>false,'surface'=>'','context_key'=>'','conversation_id'=>0,
-        'project_ref'=>'','task_ref'=>'','goal_ref'=>'','last_activity_at'=>'',
-    ];
-    return [
-        'active'=>(string)($session['status']??'')==='active',
-        'surface'=>vp3_cognitive_text_v500($session['current_surface']??'',80),
-        'context_key'=>vp3_cognitive_text_v500($session['current_context_key']??'',180),
-        'conversation_id'=>max(0,(int)($session['current_conversation_id']??0)),
-        'project_ref'=>vp3_cognitive_text_v500($session['current_project_ref']??'',180),
-        'task_ref'=>vp3_cognitive_text_v500($session['current_task_ref']??'',180),
-        'goal_ref'=>vp3_cognitive_text_v500($session['current_goal_ref']??'',180),
-        'last_activity_at'=>(string)($session['last_activity_at']??''),
-    ];
+
+    if(function_exists('vp3_live_session_snapshot_v2370')){
+        try{$snapshot=vp3_live_session_snapshot_v2370($pdo,$user,false);}catch(Throwable $e){$snapshot=[];}
+        $session=is_array($snapshot['session']??null)?$snapshot['session']:null;
+        if($session){
+            $sessionNamespace=trim((string)($session['agent_namespace']??'system'))?:'system';
+            if(hash_equals($namespace,$sessionNamespace)){
+                $base=array_merge($base,[
+                    'active'=>(string)($session['status']??'')==='active',
+                    'surface'=>vp3_cognitive_text_v500($session['current_surface']??'',80),
+                    'context_key'=>vp3_cognitive_text_v500($session['current_context_key']??'',180),
+                    'conversation_id'=>max(0,(int)($session['current_conversation_id']??0)),
+                    'project_ref'=>vp3_cognitive_text_v500($session['current_project_ref']??'',180),
+                    'task_ref'=>vp3_cognitive_text_v500($session['current_task_ref']??'',180),
+                    'goal_ref'=>vp3_cognitive_text_v500($session['current_goal_ref']??'',180),
+                    'last_activity_at'=>(string)($session['last_activity_at']??''),
+                ]);
+            }
+        }
+    }
+
+    if(function_exists('vp3_cognitive_continuity_resume_v2440')){
+        try{$resume=vp3_cognitive_continuity_resume_v2440($pdo,$user,$namespace);}catch(Throwable $e){$resume=[];}
+        if(!empty($resume['resumable'])){
+            $base['resumable']=true;
+            $base['continuity_ref']=(string)($resume['ref']??'');
+            $base['continuity_kind']=(string)($resume['kind']??'');
+            $base['continuity_state']=(string)($resume['state']??'');
+            $base['continuity_title']=(string)($resume['title']??'');
+            $base['resume_action']=(string)($resume['resume_action']??'');
+            $base['requires_user']=!empty($resume['requires_user']);
+            $base['requires_approval']=!empty($resume['requires_approval']);
+            $base['continuity_source']=(string)($resume['source']??'');
+            if($base['goal_ref']==='')$base['goal_ref']=(string)($resume['goal_ref']??'');
+            if($base['task_ref']==='')$base['task_ref']=(string)($resume['task_ref']??'');
+            if($base['project_ref']==='')$base['project_ref']=(string)($resume['project_ref']??'');
+        }
+    }
+    return $base;
 }
 
 function vp3_cognitive_turn_context_refs_v2430(array $items): array
@@ -127,7 +148,11 @@ function vp3_cognitive_turn_preferred_type_v2430(array $intent,array $continuity
         if(!empty($options['attention_allowed']))return 'present_update';
         return 'remain_silent';
     }
-    if(!empty($intent['continuation'])&&!empty($continuity['active']))return 'present_update';
+    if(!empty($intent['continuation'])){
+        if(!empty($continuity['requires_approval']))return 'request_approval';
+        if(!empty($continuity['requires_user']))return 'ask_user';
+        if(!empty($continuity['active'])||!empty($continuity['resumable']))return 'present_update';
+    }
     if(!empty($intent['action_request']))return 'propose_action';
     return 'answer';
 }
@@ -231,9 +256,12 @@ function vp3_cognitive_turn_system_prompt_v2430(array $control): string
         'role'=>(string)($identity['role']??''),
         'role_instructions'=>(string)($identity['role_instructions']??''),
     ],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE)?:'{}';
-    $continuityText=!empty($continuity['active'])
-        ?' Continue from the active authorized task/session when relevant; do not pretend a prior action completed unless server execution evidence confirms it.'
-        :'';
+    $continuityText='';
+    if(!empty($continuity['active'])||!empty($continuity['resumable'])){
+        $continuityText=' An authorized continuity item exists for this Agent. Resume only through its existing canonical goal/task/workflow controls; do not create a duplicate task and do not pretend prior work completed without authoritative evidence.';
+        if(!empty($continuity['requires_approval']))$continuityText.=' The continuity item is waiting for explicit approval; request approval instead of executing.';
+        elseif(!empty($continuity['requires_user']))$continuityText.=' The continuity item needs a user decision; ask for that decision before advancing.';
+    }
 
     return "SERVER TURN CONTROL — VP3 v24.30. This controls response shape only and grants no execution, approval, authentication, or permission authority. "
         ."Preferred turn type: {$preferred}. Allowed turn types: ".implode(', ',$allowed).". "
@@ -290,6 +318,12 @@ function vp3_cognitive_turn_finalize_v2430(
     }elseif($safeActions){
         $turnType='propose_action';
         $status='action_proposed';
+    }elseif($preferred==='request_approval'){
+        $turnType='request_approval';
+        $status='approval_required';
+    }elseif($preferred==='ask_user'){
+        $turnType='ask_user';
+        $status='needs_input';
     }elseif($preferred==='remain_silent'&&empty($control['direct_user_turn'])){
         $turnType='remain_silent';
         $status='suppressed';
