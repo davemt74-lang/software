@@ -342,6 +342,9 @@ function campaigns_rewards_save_campaign_v100(PDO $pdo,int $merchantId,int $acto
             $pdo->prepare("INSERT INTO campaigns_rewards_object_bindings (merchant_id,subject_type,subject_id,purpose,target_type,target_id,target_public_id,settings_json)
               VALUES (?,'campaign',?,'location','merchant_location',?,?, '{}')")->execute([$merchantId,$campaignId,(string)$locationId,(string)$locationPublic]);
         }
+        if(array_key_exists('reward_selection_present',$input)&&function_exists('campaigns_rewards_sync_campaign_rewards_v118')){
+            campaigns_rewards_sync_campaign_rewards_v118($pdo,$merchantId,$campaignId,$actorUserId,(array)($input['reward_ids']??[]),false);
+        }
         $merchant=campaigns_rewards_platform_merchant_v100($pdo,$merchantId)?:throw new RuntimeException('Merchant not found.');
         $profileUserId=(int)$merchant['owner_user_id'];
         if($profileUserId>0)campaigns_rewards_publish_profile_v100($pdo,$campaignId,$actorUserId,$profileUserId,!empty($input['profile_visible']));
