@@ -177,10 +177,18 @@ function vp3_cognitive_memory_promotion_claim_v2400(PDO $pdo,int $uid,string $na
 
 function vp3_cognitive_memory_promotion_recurrence_v2400(PDO $pdo,int $uid,string $namespace,string $eventType,array $ref): int
 {
-    $stmt=$pdo->prepare("SELECT COUNT(*) FROM cognitive_memory_promotion_receipts_v2400
-      WHERE owner_user_id=? AND agent_namespace=? AND event_type=? AND object_type=? AND object_id=? AND object_scope=?
-        AND created_at>=DATE_SUB(UTC_TIMESTAMP(),INTERVAL ".VP3_COGNITIVE_MEMORY_PROMOTION_RECUR_DAYS_V2400." DAY)");
-    $stmt->execute([$uid,$namespace,$eventType,(string)$ref['type'],(string)$ref['id'],(string)$ref['scope']]);
+    $crossObject=in_array($eventType,['booking.cancelled','booking.rescheduled','refund.requested'],true);
+    if($crossObject){
+        $stmt=$pdo->prepare("SELECT COUNT(*) FROM cognitive_memory_promotion_receipts_v2400
+          WHERE owner_user_id=? AND agent_namespace=? AND event_type=? AND object_type=? AND object_scope=?
+            AND created_at>=DATE_SUB(UTC_TIMESTAMP(),INTERVAL ".VP3_COGNITIVE_MEMORY_PROMOTION_RECUR_DAYS_V2400." DAY)");
+        $stmt->execute([$uid,$namespace,$eventType,(string)$ref['type'],(string)$ref['scope']]);
+    }else{
+        $stmt=$pdo->prepare("SELECT COUNT(*) FROM cognitive_memory_promotion_receipts_v2400
+          WHERE owner_user_id=? AND agent_namespace=? AND event_type=? AND object_type=? AND object_id=? AND object_scope=?
+            AND created_at>=DATE_SUB(UTC_TIMESTAMP(),INTERVAL ".VP3_COGNITIVE_MEMORY_PROMOTION_RECUR_DAYS_V2400." DAY)");
+        $stmt->execute([$uid,$namespace,$eventType,(string)$ref['type'],(string)$ref['id'],(string)$ref['scope']]);
+    }
     return max(1,(int)$stmt->fetchColumn());
 }
 
@@ -214,7 +222,9 @@ function vp3_cognitive_memory_promotion_write_brain_v2400(
     }
     $uid=(int)($user['id']??0);if($uid<1)return ['memory_id'=>0,'subject'=>''];
     $eventType=(string)$event['event_type'];
-    $subject=mb_strimwidth('cognitive-promotion:'.$eventType.':'.$ref['type'].':'.$ref['id'],0,190,'');
+    $crossObject=in_array($eventType,['booking.cancelled','booking.rescheduled','refund.requested'],true);
+    $identity=$crossObject?'pattern':substr(hash('sha256',(string)$ref['id']),0,24);
+    $subject=mb_strimwidth('cognitive-promotion:'.$eventType.':'.$ref['type'].':'.$identity,0,190,'');
     $text=vp3_cognitive_memory_promotion_label_v2400($eventType);
     $metadata=[
         'source'=>'cognitive_memory_promotion_v2400',
@@ -306,7 +316,10 @@ function vp3_cognitive_memory_promotion_scan_v2400(PDO $pdo,array $user,string $
     $stmt=$pdo->prepare("SELECT e.* FROM agent_event_inbox e
       LEFT JOIN cognitive_memory_promotion_receipts_v2400 r
         ON r.owner_user_id=e.owner_user_id AND r.agent_namespace=? AND r.source_event_id=e.id
-      WHERE e.owner_user_id=? AND e.processing_status='processed' AND e.verification_status IN ('trusted','verified') AND r.id IS NULL
+      WHERE e.owner_user_id=? AND e.processing_status='processed' AND e.verification_status IN ('trusted','verified')
+        AND e.payload_json LIKE '%\"record_only\":true%'
+        AND e.payload_json LIKE '%\"brain_promotion_deferred\":true%'
+        AND r.id IS NULL
       ORDER BY e.id ASC LIMIT {$limit}");
     $stmt->execute([$namespace,$uid]);$rows=$stmt->fetchAll()?:[];
     $stats=['evaluated'=>0,'promoted'=>0,'episodic'=>0,'suppressed'=>0,'duplicates'=>0,'skipped'=>0];
