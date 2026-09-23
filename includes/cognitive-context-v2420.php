@@ -18,7 +18,7 @@ const VP3_COGNITIVE_CONTEXT_MAX_PACKET_BYTES_V2420=65536;
 function vp3_cognitive_context_section_order_v2420(): array
 {
     return [
-        'current_state','live_session','continuity','supervision','autonomy','portfolio','forecast','optimization','resource_budget','commitment_protection','budget_governance','value_roi','decision_calibration','economics','replanning','conversation','current_priorities','active_objects',
+        'current_state','entity_graph','live_session','continuity','supervision','autonomy','portfolio','forecast','optimization','resource_budget','commitment_protection','budget_governance','value_roi','decision_calibration','economics','replanning','conversation','current_priorities','active_objects',
         'attention','episodic_memory','durable_memory','domain','knowledge',
         'capabilities','external',
     ];
@@ -28,6 +28,7 @@ function vp3_cognitive_context_section_limit_v2420(string $section): int
 {
     return match($section){
         'current_state'=>1,
+        'entity_graph'=>1,
         'live_session'=>1,
         'continuity'=>1,
         'supervision'=>1,
@@ -59,7 +60,7 @@ function vp3_cognitive_context_section_weight_v2420(string $section,bool $histor
 {
     if($historyIntent){
         return match($section){
-            'conversation'=>98.0,'current_state'=>96.10,'budget_governance'=>96.05,'value_roi'=>96.04,'decision_calibration'=>96.03,'durable_memory'=>96.0,'commitment_protection'=>95.99,'economics'=>95.985,'replanning'=>95.97,'resource_budget'=>95.95,'optimization'=>95.9,'forecast'=>95.8,'portfolio'=>95.7,'autonomy'=>95.5,'supervision'=>95.0,'continuity'=>94.0,'episodic_memory'=>92.0,
+            'conversation'=>98.0,'current_state'=>96.10,'entity_graph'=>93.5,'entity_graph'=>93.5,'budget_governance'=>96.05,'value_roi'=>96.04,'decision_calibration'=>96.03,'durable_memory'=>96.0,'commitment_protection'=>95.99,'economics'=>95.985,'replanning'=>95.97,'resource_budget'=>95.95,'optimization'=>95.9,'forecast'=>95.8,'portfolio'=>95.7,'autonomy'=>95.5,'supervision'=>95.0,'continuity'=>94.0,'episodic_memory'=>92.0,
             'live_session'=>88.0,'current_priorities'=>86.0,'active_objects'=>84.0,
             'attention'=>80.0,'knowledge'=>74.0,'domain'=>72.0,'capabilities'=>50.0,
             default=>48.0,
@@ -114,6 +115,7 @@ function vp3_cognitive_context_authority_v2420(string $section,string $source): 
 {
     return match($section){
         'current_state'=>'cognitive_current_state_v2590_ephemeral_projection',
+        'entity_graph'=>'cognitive_entity_graph_v2610_ephemeral_projection',
         'live_session'=>'agent_live_sessions_v2370',
         'continuity'=>'cognitive_continuity_v2440_projection',
         'supervision'=>'cognitive_supervision_v2460_projection',
@@ -401,6 +403,13 @@ function vp3_cognitive_context_assemble_v2420(
     if(function_exists('vp3_cognitive_current_state_context_item_v2590')){
         try{$currentStateItem=vp3_cognitive_current_state_context_item_v2590($pdo,$user,$namespace);if($currentStateItem)$items[]=$currentStateItem;}catch(Throwable $e){}
     }
+    if(function_exists('vp3_cognitive_entity_graph_context_item_v2610')){
+        try{
+            $graphRefs=is_array($options['object_refs']??null)?$options['object_refs']:[];
+            $entityGraphItem=vp3_cognitive_entity_graph_context_item_v2610($pdo,$user,$namespace,$graphRefs);
+            if($entityGraphItem)$items[]=$entityGraphItem;
+        }catch(Throwable $e){}
+    }
     foreach(vp3_cognitive_context_live_items_v2420($pdo,$user,$namespace) as $item)$items[]=$item;
     if(function_exists('vp3_cognitive_continuity_context_item_v2440')){
         try{$continuityItem=vp3_cognitive_continuity_context_item_v2440($pdo,$user,$namespace);if($continuityItem)$items[]=$continuityItem;}catch(Throwable $e){}
@@ -467,6 +476,7 @@ function vp3_cognitive_context_assemble_v2420(
         'authority'=>[
             'working_memory'=>'ephemeral_projection_only',
             'current_state'=>'cognitive_current_state_v2590_ephemeral_projection',
+            'entity_graph'=>'cognitive_entity_graph_v2610_ephemeral_projection',
             'durable_memory'=>'agent_memory_items',
             'episodic_memory'=>'cognitive_memory_v570_reference_layer',
             'live_session'=>'agent_live_sessions_v2370',
