@@ -424,7 +424,21 @@ function chat_context(string $query, array $user): array
         }
     }
 
-    return array_slice($context, 0, $brainHistoryIntent ? 24 : 28);
+    $legacyContext = array_slice($context, 0, $brainHistoryIntent ? 24 : 28);
+    if (function_exists('vp3_cognitive_context_chat_items_v2420')) {
+        $pdo = db();
+        if ($pdo) {
+            try {
+                return vp3_cognitive_context_chat_items_v2420($pdo, $user, $query, $legacyContext, [
+                    'history_intent'=>$brainHistoryIntent,
+                    'direct_user_request'=>true,
+                ]);
+            } catch (Throwable $e) {
+                error_log('VP3 Cognitive Context v24.20 Chat projection unavailable: ' . $e->getMessage());
+            }
+        }
+    }
+    return $legacyContext;
 }
 
 function chat_context_is_internal_source(string $source): bool
