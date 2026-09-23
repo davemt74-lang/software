@@ -76,10 +76,12 @@ const checks=[
  ['forecast cost token factors use only latest settled snapshot per goal',
    /SELECT s2\.goal_id,MAX\(s2\.id\) snapshot_id/.test(decision)
    &&/'one_latest_settlement_per_goal_drives_forecast_cost_token_factors'=>true/.test(release)],
- ['value reliability uses latest canonical v25.70 realized evidence',
-   /vp3_cognitive_value_profile_rows_v2570/.test(decision)
+ ['value reliability freezes expected decision value and uses latest canonical v25.70 realized evidence',
+   /SELECT s2\.value_profile_id,MAX\(s2\.id\) snapshot_id/.test(decision)
+   &&/expected_value_micros/.test(decision)&&/expected_value_score/.test(decision)
    &&/vp3_cognitive_value_realization_v2570/.test(decision)
-   &&/'latest_canonical_verified_value_profiles_drive_value_reliability'=>true/.test(release)],
+   &&/'expected_value_is_frozen_from_settled_decision_snapshot'=>true/.test(release)
+   &&/'one_latest_settled_snapshot_per_value_profile_drives_reliability'=>true/.test(release)],
  ['zero actual or realized ratios remain valid calibration evidence',
    /\$n>=0&&is_finite/.test(decision)
    &&/\$ratio>=0&&is_finite/.test(decision)
