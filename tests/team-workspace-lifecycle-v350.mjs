@@ -48,7 +48,7 @@ assert.ok(statusBody.indexOf("workspace_team_v350_membership($pdo,$ownerId,$memb
 
 // Legacy Team storage is active-only projection; lifecycle history is durable.
 assert.match(lifecycle, /WHERE wm\.membership_status<>'active'/);
-assert.match(lifecycle, /FROM workspace_memberships_v350 WHERE membership_status='active'/);
+assert.match(lifecycle, /FROM workspace_memberships_v350 wm[\s\S]*?WHERE wm\.membership_status='active' AND COALESCE\(wa\.basic_team_enabled,1\)=1/);
 assert.match(lifecycle, /membership_status='suspended'/);
 assert.match(lifecycle, /membership_status='removed'/);
 assert.match(legacy, /workspace_team_v350_activate_member/);
