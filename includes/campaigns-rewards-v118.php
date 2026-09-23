@@ -146,19 +146,6 @@ function campaigns_rewards_public_participate_v118(PDO $pdo,array $campaign,arra
     $contactId=(int)$contact['id'];
     $marketingConsent=!empty($input['marketing_consent']);
     $marketingStatus=$marketingConsent?'subscribed':'unknown';
-    campaigns_rewards_ensure_merchant_relationship_v100($pdo,$merchantId,$contactId,[
-        'customer_status'=>'prospect',
-        'acquisition_source'=>'campaign:'.(string)$campaign['campaign_type_key'],
-        'marketing_status'=>$marketingStatus,
-        'metadata'=>[
-            'campaign_public_id'=>$campaign['public_id'],
-            'campaign_type'=>$campaign['campaign_type_key'],
-            'birthday'=>campaigns_rewards_public_field_value_v118($input,'birthday'),
-            'social_handle'=>campaigns_rewards_public_field_value_v118($input,'social_handle'),
-            'proof_url'=>campaigns_rewards_public_field_value_v118($input,'proof_url'),
-            'referral_ref'=>campaigns_rewards_public_field_value_v118($input,'referral_ref')?:trim((string)($_GET['ref']??'')),
-        ],
-    ]);
 
     $enrollment=campaigns_rewards_public_enroll_v100($pdo,$campaignId,$contactId,'public-v118:'.$campaign['public_id'].':'.$contactId);
     $metadata=[
@@ -173,13 +160,20 @@ function campaigns_rewards_public_participate_v118(PDO $pdo,array $campaign,arra
     $pdo->prepare("UPDATE campaign_enrollments SET source=?,metadata_json=?,updated_at=UTC_TIMESTAMP() WHERE id=?")
       ->execute([(string)($behavior['public_action']??'public_signup'),campaigns_rewards_json_v100($metadata),(int)$enrollment['id']]);
 
+    campaigns_rewards_ensure_merchant_relationship_v100($pdo,$merchantId,$contactId,[
+        'customer_status'=>'prospect',
+        'acquisition_source'=>'campaign:'.(string)$campaign['campaign_type_key'],
+        'marketing_status'=>$marketingStatus,
+        'metadata'=>$metadata+['campaign_public_id'=>$campaign['public_id']],
+    ]);
+
     $merchant=campaigns_rewards_platform_merchant_v100($pdo,$merchantId);
     if($merchant){
         $pdo->prepare("INSERT INTO crm_contact_events_v1 (owner_user_id,contact_id,event_type,summary,source_kind,source_id,actor_type,metadata_json)
-          VALUES (?,?,?,?,?,'','public',?)")
+          VALUES (?,?,?,?,?,?,'public',?)")
           ->execute([
               (int)$merchant['owner_user_id'],$contactId,'campaign.'.(string)($behavior['public_action']??'participated'),
-              (string)($behavior['name']??'Campaign').' participation','campaign',
+              (string)($behavior['name']??'Campaign').' participation','campaign',(string)$campaign['public_id'],
               campaigns_rewards_json_v100($metadata+['campaign_public_id'=>$campaign['public_id']]),
           ]);
     }
