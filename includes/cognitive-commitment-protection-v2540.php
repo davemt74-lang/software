@@ -63,7 +63,7 @@ function vp3_cognitive_commitment_strength_v2540(string $kind,bool $explicit,flo
 function vp3_cognitive_commitment_goal_projection_v2540(
     PDO $pdo,array $user,array $items,int $now=0
 ): array {
-    $now=$now>0?$now:time();$out=[];$byGoal=[];
+    $now=$now>0?$now:time();$out=[];$byGoal=[];$verifiedCount=0;
     foreach($items as $item){
         if(!is_array($item))continue;
         $goalId=(int)($item['goal_id']??0);if($goalId<1)continue;
@@ -82,7 +82,8 @@ function vp3_cognitive_commitment_goal_projection_v2540(
                 $verified=$derived==='achieved'||$decision==='completed';
             }catch(Throwable $e){}
         }
-        if($verified||in_array($status,['archived'],true))continue;
+        if($verified){$verifiedCount++;continue;}
+        if(in_array($status,['archived'],true))continue;
         $deadlineState=vp3_cognitive_commitment_deadline_state_v2540($dueTs,$now);
         $atRisk=in_array($deadlineState,['overdue','urgent'],true)
             ||in_array($decision,['revise_or_recommit','replan_or_recommit'],true);
@@ -111,7 +112,7 @@ function vp3_cognitive_commitment_goal_projection_v2540(
         ];
         $out[]=$row;$byGoal[$goalId]=$row;
     }
-    return ['items'=>$out,'by_goal'=>$byGoal];
+    return ['items'=>$out,'by_goal'=>$byGoal,'verified_count'=>$verifiedCount];
 }
 
 function vp3_cognitive_commitment_meeting_rows_v2540(
@@ -145,11 +146,11 @@ function vp3_cognitive_commitment_meeting_rows_v2540(
 function vp3_cognitive_commitment_meeting_projection_v2540(
     PDO $pdo,array $user,int $now=0
 ): array {
-    $uid=(int)($user['id']??0);$now=$now>0?$now:time();$out=[];$runMap=[];
+    $uid=(int)($user['id']??0);$now=$now>0?$now:time();$out=[];$runMap=[];$verifiedCount=0;
     foreach(vp3_cognitive_commitment_meeting_rows_v2540($pdo,$uid) as $row){
         if(!is_array($row))continue;
         $closure=(string)($row['closure_status']??'');
-        if($closure==='verified')continue;
+        if($closure==='verified'){$verifiedCount++;continue;}
         $target=(string)($row['target_at']??'');$dueTs=vp3_cognitive_commitment_ts_v2540($target);
         $ready=(string)($row['readiness']??'')==='ready';
         $criteria=trim((string)($row['verification_criteria']??''));
@@ -215,16 +216,19 @@ function vp3_cognitive_commitment_meeting_projection_v2540(
         ];
         $out[]=$item;if($runId>0)$runMap[$runId]=$item;
     }
-    return ['items'=>$out,'by_run'=>$runMap];
+    return ['items'=>$out,'by_run'=>$runMap,'verified_count'=>$verifiedCount];
 }
 
 function vp3_cognitive_commitment_memory_projection_v2540(array $user,int $now=0): array
 {
-    $now=$now>0?$now:time();$out=[];
-    if(!function_exists('agent_memory_v123_tasks'))return $out;
-    try{$tasks=agent_memory_v123_tasks($user,false);}catch(Throwable $e){return $out;}
+    $now=$now>0?$now:time();$out=[];$verifiedCount=0;
+    if(!function_exists('agent_memory_v123_tasks'))return ['items'=>[],'verified_count'=>0];
+    try{$tasks=agent_memory_v123_tasks($user,true);}catch(Throwable $e){return ['items'=>[],'verified_count'=>0];}
     foreach(array_slice($tasks,0,VP3_COGNITIVE_COMMITMENT_MAX_ITEMS_V2540) as $task){
         if(!is_array($task))continue;
+        $status=(string)($task['status']??'open');
+        if($status==='completed'){$verifiedCount++;continue;}
+        if($status==='cancelled')continue;
         $due=(string)($task['due_at']??'');$dueTs=vp3_cognitive_commitment_ts_v2540($due);
         if($dueTs<1)continue;
         $kind=(string)($task['kind']??'task');
@@ -235,7 +239,6 @@ function vp3_cognitive_commitment_memory_projection_v2540(array $user,int $now=0
             $explicit,(float)($task['confidence']??0.7)
         );
         $deadlineState=vp3_cognitive_commitment_deadline_state_v2540($dueTs,$now);
-        $status=(string)($task['status']??'open');
         $out[]=[
             'key'=>'memory:'.(string)($task['task_key']??$task['memory_id']??''),
             'source_kind'=>$kind==='commitment'?'memory_commitment':'memory_task',
@@ -253,7 +256,7 @@ function vp3_cognitive_commitment_memory_projection_v2540(array $user,int $now=0
             'review_path'=>(string)($task['source_url']??''),'claim_protectable'=>false,
         ];
     }
-    return $out;
+    return ['items'=>$out,'verified_count'=>$verifiedCount];
 }
 
 function vp3_cognitive_commitment_apply_capacity_conflicts_v2540(
@@ -306,7 +309,8 @@ function vp3_cognitive_commitment_apply_v2540(
     $now=$now>0?$now:time();
     $goals=vp3_cognitive_commitment_goal_projection_v2540($pdo,$user,$items,$now);
     $meetings=vp3_cognitive_commitment_meeting_projection_v2540($pdo,$user,$now);
-    $memory=vp3_cognitive_commitment_memory_projection_v2540($user,$now);
+    $memoryProjection=vp3_cognitive_commitment_memory_projection_v2540($user,$now);
+    $memory=(array)($memoryProjection['items']??[]);
     $commitments=array_merge((array)$goals['items'],(array)$meetings['items'],$memory);
     $commitments=vp3_cognitive_commitment_apply_capacity_conflicts_v2540($commitments,$capacity,$now);
 
@@ -353,6 +357,7 @@ function vp3_cognitive_commitment_apply_v2540(
                 'total'=>count($commitments),'protected'=>count($protected),
                 'at_risk'=>count($atRisk),'needs_user'=>count($needsUser),
                 'conflicts'=>count($conflicts),
+                'verified_complete'=>(int)($goals['verified_count']??0)+(int)($meetings['verified_count']??0)+(int)($memoryProjection['verified_count']??0),
                 'goals'=>count(array_filter($commitments,static fn(array $x): bool=>(string)$x['source_kind']==='goal')),
                 'meetings'=>count(array_filter($commitments,static fn(array $x): bool=>(string)$x['source_kind']==='meeting')),
                 'memory'=>count(array_filter($commitments,static fn(array $x): bool=>str_starts_with((string)$x['source_kind'],'memory_'))),
