@@ -273,6 +273,33 @@ function vp3_cognitive_presentation_voice_candidate_v510(PDO $pdo,array $user,ar
         $bb=function_exists('notification_requires_attention')&&notification_requires_attention($b)?1:0;
         return $aa!==$bb?$bb<=>$aa:((int)($b['id']??0)<=>((int)($a['id']??0)));
     });
+
+    if(function_exists('vp3_cognitive_attention_notification_row_signal_v2410')
+        &&function_exists('vp3_cognitive_attention_arbitrate_v2410')){
+        $namespace=(string)($state['agent_namespace']??'system');
+        $signal=vp3_cognitive_attention_notification_row_signal_v2410($user,$eligible[0],count($eligible));
+        $context=function_exists('vp3_cognitive_presentation_context_v500')
+            ?vp3_cognitive_presentation_context_v500($pdo,$user,[
+                'agent_voice_enabled'=>true,
+                'voice_candidate_allowed'=>true,
+                'idle_minutes'=>vp3_cognitive_presentation_idle_minutes_v510($state),
+            ])
+            :['agent_voice_enabled'=>true,'voice_candidate_allowed'=>true,'interruptible'=>true];
+        $attention=vp3_cognitive_attention_arbitrate_v2410($pdo,$user,$namespace,$signal,$context);
+        if(empty($attention['voice'])){
+            return ['skip_through_id'=>$maxId,'attention_reason'=>(string)($attention['reason_code']??'attention_policy')];
+        }
+        $message=$digest&&(int)($digest['idle_minutes']??0)>=VP3_COGNITIVE_DIGEST_ATTENTION_IDLE_MINUTES_V510
+            ?vp3_cognitive_text_v500($digest['summary']??'',360)
+            :vp3_cognitive_presentation_voice_text_v510($user,$eligible[0],count($eligible));
+        return [
+            'through_id'=>$maxId,'message'=>$message,'kind'=>$digest?'return_digest':'notification',
+            'attention_score'=>(float)($attention['score']??$attention['attention_score']??0),
+            'attention_band'=>(string)($attention['band']??$attention['attention_band']??''),
+            'attention_reason'=>(string)($attention['reason_code']??''),
+        ];
+    }
+
     return ['through_id'=>$maxId,'message'=>vp3_cognitive_presentation_voice_text_v510($user,$eligible[0],count($eligible)),'kind'=>'notification'];
 }
 
@@ -356,10 +383,14 @@ function vp3_cognitive_presentation_state_v510(PDO $pdo,array $user,string $name
       WHERE owner_user_id=? AND agent_namespace=?
         AND last_seen_at<DATE_SUB(UTC_TIMESTAMP(),INTERVAL 5 MINUTE)")
       ->execute([(int)$user['id'],$namespace]);
+    $attentionStatus=function_exists('vp3_cognitive_attention_status_v2410')
+        ?vp3_cognitive_attention_status_v2410($pdo,$user,$namespace)
+        :['ready'=>false];
     return [
         'build'=>VP3_COGNITIVE_PRESENTATION_V510,'agent_namespace'=>$namespace,
         'idle_minutes'=>vp3_cognitive_presentation_idle_minutes_v510($row),
         'brief'=>vp3_cognitive_presentation_brief_v510($pdo,$user,$agentId),
-        'digest'=>$digest,'voice_candidate'=>$voice,'poll_seconds'=>VP3_COGNITIVE_PRESENTATION_POLL_SECONDS_V510,
+        'digest'=>$digest,'voice_candidate'=>$voice,'attention'=>$attentionStatus,
+        'poll_seconds'=>VP3_COGNITIVE_PRESENTATION_POLL_SECONDS_V510,
     ];
 }
