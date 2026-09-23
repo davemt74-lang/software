@@ -450,23 +450,36 @@ function campaigns_rewards_update_merchant_v100(PDO $pdo,int $merchantId,int $ac
 
 function campaigns_rewards_accessible_merchants_v100(PDO $pdo,array $user): array
 {
-    $uid=(int)($user['id']??0);if($uid<1||!campaigns_rewards_schema_ready_v100($pdo))return [];
+    $uid=(int)($user['id']??0);if($uid<1)return [];
+    if(function_exists('campaigns_rewards_platform_schema_ready_v100')&&campaigns_rewards_platform_schema_ready_v100($pdo)){
+        $stmt=$pdo->prepare("SELECT m.*,mp.description,mp.website_url,mr.role_key access_role,mm.status access_status
+          FROM merchant_members mm INNER JOIN merchant_accounts m ON m.id=mm.merchant_id
+          INNER JOIN merchant_roles mr ON mr.id=mm.role_id LEFT JOIN merchant_profiles mp ON mp.merchant_id=m.id
+          WHERE mm.user_id=? AND mm.status='active' AND m.status='active' ORDER BY m.name,m.id");
+        $stmt->execute([$uid]);return $stmt->fetchAll()?:[];
+    }
+    if(!campaigns_rewards_schema_ready_v100($pdo))return [];
     $stmt=$pdo->prepare("SELECT m.*,COALESCE(mm.member_role,IF(m.owner_user_id=?,'owner','')) access_role,
       COALESCE(mm.member_status,IF(m.owner_user_id=?,'active','')) access_status
       FROM campaign_merchant_accounts_v100 m
       LEFT JOIN campaign_merchant_members_v100 mm ON mm.merchant_account_id=m.id AND mm.user_id=?
       WHERE m.status='active' AND (m.owner_user_id=? OR (mm.user_id=? AND mm.member_status='active'))
       ORDER BY m.name,m.id");
-    $stmt->execute([$uid,$uid,$uid,$uid,$uid]);$rows=[];
-    foreach($stmt->fetchAll()?:[] as $row)if(campaigns_rewards_owner_plugin_enabled_v100($pdo,(int)$row['owner_user_id']))$rows[]=$row;
-    return $rows;
+    $stmt->execute([$uid,$uid,$uid,$uid,$uid]);return $stmt->fetchAll()?:[];
 }
 
 function campaigns_rewards_owned_merchants_v100(PDO $pdo,int $ownerUserId): array
 {
-    if($ownerUserId<1||!campaigns_rewards_schema_ready_v100($pdo))return [];
-    $stmt=$pdo->prepare("SELECT * FROM campaign_merchant_accounts_v100 WHERE owner_user_id=? AND status='active' ORDER BY name,id");$stmt->execute([$ownerUserId]);
-    return $stmt->fetchAll()?:[];
+    if($ownerUserId<1)return [];
+    if(function_exists('campaigns_rewards_platform_schema_ready_v100')&&campaigns_rewards_platform_schema_ready_v100($pdo)){
+        $stmt=$pdo->prepare("SELECT m.*,mp.description,mp.website_url FROM merchant_accounts m
+          LEFT JOIN merchant_profiles mp ON mp.merchant_id=m.id
+          WHERE m.owner_user_id=? AND m.status='active' ORDER BY m.name,m.id");
+        $stmt->execute([$ownerUserId]);return $stmt->fetchAll()?:[];
+    }
+    if(!campaigns_rewards_schema_ready_v100($pdo))return [];
+    $stmt=$pdo->prepare("SELECT * FROM campaign_merchant_accounts_v100 WHERE owner_user_id=? AND status='active' ORDER BY name,id");
+    $stmt->execute([$ownerUserId]);return $stmt->fetchAll()?:[];
 }
 
 function campaigns_rewards_user_has_access_v100(PDO $pdo,array $user): bool
@@ -714,16 +727,31 @@ function campaigns_rewards_reporting_v100(PDO $pdo,int $merchantId,int $userId):
 
 function campaigns_rewards_merchant_members_v100(PDO $pdo,int $merchantId): array
 {
-    $stmt=$pdo->prepare("SELECT mm.*,CASE WHEN mm.member_status='active' AND mm.source='direct' THEN mm.member_role WHEN mm.team_scope_active=1 THEN 'member' ELSE mm.member_role END effective_role,u.display_name,u.email,u.avatar_path,u.is_active FROM campaign_merchant_members_v100 mm INNER JOIN users u ON u.id=mm.user_id WHERE mm.merchant_account_id=? AND (mm.member_status<>'removed' OR mm.team_scope_active=1) ORDER BY FIELD(CASE WHEN mm.member_status='active' AND mm.source='direct' THEN mm.member_role WHEN mm.team_scope_active=1 THEN 'member' ELSE mm.member_role END,'owner','admin','member'),u.display_name,u.id");
+    if(function_exists('campaigns_rewards_platform_schema_ready_v100')&&campaigns_rewards_platform_schema_ready_v100($pdo)){
+        $stmt=$pdo->prepare("SELECT mm.*,mr.role_key member_role,mr.name role_name,mm.status member_status,
+          CASE WHEN mm.is_owner=1 THEN 'owner' WHEN mr.role_key='administrator' THEN 'admin' WHEN mr.role_key='merchant_team' THEN 'member' ELSE mr.role_key END effective_role,
+          EXISTS(SELECT 1 FROM merchant_member_access_sources src WHERE src.merchant_id=mm.merchant_id AND src.user_id=mm.user_id AND src.source_type='team' AND src.status='active') team_scope_active,
+          u.display_name,u.email,u.avatar_path,u.is_active
+          FROM merchant_members mm INNER JOIN merchant_roles mr ON mr.id=mm.role_id INNER JOIN users u ON u.id=mm.user_id
+          WHERE mm.merchant_id=? AND mm.status<>'removed'
+          ORDER BY mm.is_owner DESC,FIELD(mr.role_key,'administrator','manager','marketing','customer_service','claim_processor','fulfillment','analyst','merchant_team','custom'),u.display_name,u.id");
+        $stmt->execute([$merchantId]);return $stmt->fetchAll()?:[];
+    }
+    $stmt=$pdo->prepare("SELECT mm.*,CASE WHEN mm.member_status='active' AND mm.source='direct' THEN mm.member_role WHEN mm.team_scope_active=1 THEN 'member' ELSE mm.member_role END effective_role,u.display_name,u.email,u.avatar_path,u.is_active FROM campaign_merchant_members_v100 mm INNER JOIN users u ON u.id=mm.user_id WHERE mm.merchant_account_id=? AND (mm.member_status<>'removed' OR mm.team_scope_active=1) ORDER BY u.display_name,u.id");
     $stmt->execute([$merchantId]);return $stmt->fetchAll()?:[];
 }
 
 function campaigns_rewards_set_member_role_v100(PDO $pdo,int $merchantId,int $actorUserId,int $targetUserId,string $role): void
 {
-    if(!campaigns_rewards_can_own_merchant_v100($pdo,$merchantId,$actorUserId))throw new RuntimeException('Merchant owner access is required to change merchant roles.');
-    if(!isset(campaigns_rewards_merchant_roles_v100()[$role]))throw new RuntimeException('Choose a valid merchant role.');if(!campaigns_rewards_user_row_v100($pdo,$targetUserId))throw new RuntimeException('VP3 user not found.');
-    $existing=campaigns_rewards_merchant_member_v100($pdo,$merchantId,$targetUserId);if($existing&&$existing['member_role']==='owner'&&$role!=='owner'){$s=$pdo->prepare("SELECT COUNT(*) FROM campaign_merchant_members_v100 WHERE merchant_account_id=? AND member_role='owner' AND member_status='active'");$s->execute([$merchantId]);if((int)$s->fetchColumn()<=1)throw new RuntimeException('A merchant account must keep at least one active owner.');}
-    $pdo->prepare("INSERT INTO campaign_merchant_members_v100 (merchant_account_id,user_id,member_role,member_status,source,created_by_user_id,joined_at) VALUES (?,?,?,'active','direct',?,UTC_TIMESTAMP()) ON DUPLICATE KEY UPDATE member_role=VALUES(member_role),member_status='active',source='direct',created_by_user_id=COALESCE(created_by_user_id,VALUES(created_by_user_id)),suspended_at=NULL,removed_at=NULL,updated_at=UTC_TIMESTAMP()")->execute([$merchantId,$targetUserId,$role,$actorUserId]);
+    if(function_exists('campaigns_rewards_platform_schema_ready_v100')&&campaigns_rewards_platform_schema_ready_v100($pdo)){
+        if(!campaigns_rewards_can_own_merchant_v100($pdo,$merchantId,$actorUserId))throw new RuntimeException('Merchant Owner access is required to change Merchant roles.');
+        $canonical=$role==='admin'?'administrator':$role;
+        if(!isset(campaigns_rewards_merchant_roles_v100()[$canonical]))throw new RuntimeException('Choose a valid Merchant role.');
+        if($canonical==='owner')campaigns_rewards_grant_platform_member_v100($pdo,$merchantId,$actorUserId,$targetUserId,'owner',true);
+        else campaigns_rewards_grant_platform_member_v100($pdo,$merchantId,$actorUserId,$targetUserId,$canonical,false);
+        return;
+    }
+    throw new RuntimeException('Run the VP3 database upgrade before changing Merchant roles.');
 }
 
 function campaigns_rewards_team_scope_v100(PDO $pdo,int $ownerUserId,int $memberUserId): array
