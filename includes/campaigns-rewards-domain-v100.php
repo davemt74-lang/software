@@ -1026,8 +1026,8 @@ function campaigns_rewards_process_claim_v100(PDO $pdo,string $rewardCredential,
         $pdo->prepare("UPDATE reward_issuances SET remaining_quantity=?,status=?,claimed_at=IF(?=0,UTC_TIMESTAMP(),claimed_at),updated_at=UTC_TIMESTAMP() WHERE id=?")
             ->execute([$remaining,$remaining===0?'claimed':(string)$issuance['status'],$remaining,$issuanceId]);
         $pdo->prepare("UPDATE merchant_claim_codes SET last_used_at=UTC_TIMESTAMP(),updated_at=UTC_TIMESTAMP() WHERE id=?")->execute([$claimCodeId]);
-        if((string)$issuance['inventory_mode']==='tracked'){
-            if(empty($issuance['inventory_balance_id']))throw new RuntimeException('Reward inventory reservation is missing.');
+        if(!empty($issuance['inventory_balance_id'])){
+            if((int)$issuance['inventory_balance_id']<1)throw new RuntimeException('Reward inventory reservation is missing.');
             $balance=$pdo->prepare("SELECT id,reward_product_id,variant_id,location_id,on_hand,reserved FROM reward_inventory_balances
               WHERE id=? AND reward_product_id=? AND reserved>=? AND on_hand>=? LIMIT 1 FOR UPDATE");
             $balance->execute([(int)$issuance['inventory_balance_id'],(int)$issuance['reward_product_id'],$quantity,$quantity]);$inventoryRow=$balance->fetch();
