@@ -15,6 +15,16 @@ v2590_assert(vp3_cognitive_current_state_domain_v2590('browser','browser.transac
 v2590_assert(vp3_cognitive_current_state_event_attention_v2590('approval.requested','processed')===true,'approval requests are attention candidates');
 v2590_assert(vp3_cognitive_current_state_event_attention_v2590('order.paid','processed')===false,'normal terminal events are not attention candidates');
 
+$materialized=vp3_cognitive_current_state_materialize_events_v2590([
+    ['domain'=>'calendar','event_type'=>'calendar.event_updated','label'=>'Updated','attention'=>false,'fresh'=>true],
+    ['domain'=>'calendar','event_type'=>'calendar.event_failed','label'=>'Older failure','attention'=>true,'fresh'=>true],
+    ['domain'=>'subscription_billing','event_type'=>'billing.payment_failed','label'=>'Payment failed','attention'=>true,'fresh'=>true],
+    ['domain'=>'research_knowledge','event_type'=>'research.failed','label'=>'Stale research failure','attention'=>true,'fresh'=>false],
+]);
+v2590_assert(($materialized['domains']['calendar']['event_type']??'')==='calendar.event_updated','latest domain event supersedes older failed state');
+v2590_assert(($materialized['attention_candidate']['event_type']??'')==='billing.payment_failed','attention comes from latest fresh domain state');
+v2590_assert((int)($materialized['attention_count']??0)===1,'stale or superseded failures do not inflate current attention');
+
 $event=vp3_cognitive_current_state_event_v2590([
     'id'=>7,'source'=>'calendar','event_type'=>'calendar.event_updated','processing_status'=>'processed','verification_status'=>'trusted',
     'occurred_at'=>gmdate('Y-m-d H:i:s'),'received_at'=>gmdate('Y-m-d H:i:s'),
