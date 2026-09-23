@@ -357,10 +357,7 @@ function campaigns_rewards_transfer_ownership_v100(PDO $pdo,int $merchantId,int 
         $fromUserId=(int)$merchant['owner_user_id'];
         if($fromUserId!==$actorUserId&&!campaigns_rewards_platform_can_v100($pdo,$merchantId,$actorUserId,'merchant.settings.manage'))throw new RuntimeException('Ownership transfer is restricted.');
         $to=campaigns_rewards_platform_user_v100($toUserId);if(!$to||(int)$to['is_active']!==1)throw new RuntimeException('New Owner must be an active VP3 user.');
-        $ownerRole=campaigns_rewards_system_role_id_v100($pdo,'owner');if($ownerRole<1)throw new RuntimeException('Owner role unavailable.');
-        $pdo->prepare("INSERT INTO merchant_members (merchant_id,user_id,role_id,status,is_owner,joined_at)
-          VALUES (?,?,?,'active',1,UTC_TIMESTAMP()) ON DUPLICATE KEY UPDATE role_id=VALUES(role_id),status='active',is_owner=1,suspended_at=NULL,removed_at=NULL,updated_at=UTC_TIMESTAMP()")
-          ->execute([$merchantId,$toUserId,$ownerRole]);
+        campaigns_rewards_set_access_source_v100($pdo,$merchantId,$toUserId,'owner','owner:'.$toUserId,'owner','active',$actorUserId);
         $pdo->prepare("UPDATE merchant_accounts SET owner_user_id=?,updated_at=UTC_TIMESTAMP() WHERE id=?")->execute([$toUserId,$merchantId]);
         $pdo->prepare("INSERT INTO merchant_ownership_events (merchant_id,event_type,from_user_id,to_user_id,actor_user_id,reason)
           VALUES (?,'ownership_transferred',?,?,?,?)")->execute([$merchantId,$fromUserId,$toUserId,$actorUserId,campaigns_rewards_text_v100($reason,500)]);
@@ -372,7 +369,6 @@ function campaigns_rewards_transfer_ownership_v100(PDO $pdo,int $merchantId,int 
     ],!empty($saved['sandbox_mode'])?'sandbox':'production',$actorUserId);
     return $saved;
 }
-
 function campaigns_rewards_save_platform_location_v100(PDO $pdo,int $merchantId,int $actorUserId,array $input,int $locationId=0): array
 {
     campaigns_rewards_platform_assert_can_v100($pdo,$merchantId,$actorUserId,'locations.manage');
@@ -404,21 +400,20 @@ function campaigns_rewards_save_platform_location_v100(PDO $pdo,int $merchantId,
 function campaigns_rewards_resolve_contact_v100(PDO $pdo,int $merchantId,array $data): array
 {
     $merchant=campaigns_rewards_platform_merchant_v100($pdo,$merchantId)?:throw new RuntimeException('Merchant not found.');
-    $owner=(int)$merchant['owner_user_id'];
+    $owner=(int)$merchant['owner_user_id'];$email=strtolower(trim((string)($data['email']??'')));
+    $vp3UserId=max(0,(int)($data['vp3_user_id']??0));
+    if($vp3UserId<1&&$email!==''){
+        $u=$pdo->prepare('SELECT id FROM users WHERE email=? AND is_active=1 LIMIT 1');$u->execute([$email]);$vp3UserId=(int)$u->fetchColumn();
+    }
     $contactId=crm_v180_upsert_contact($pdo,[
-        'owner_user_id'=>$owner,
-        'vp3_user_id'=>(int)($data['vp3_user_id']??0),
-        'name'=>$data['name']??'',
-        'email'=>$data['email']??'',
-        'phone'=>$data['phone']??'',
-        'company'=>$data['company']??'',
-        'source'=>$data['source']??'campaign',
+        'owner_user_id'=>$owner,'vp3_user_id'=>$vp3UserId,
+        'name'=>$data['name']??'','email'=>$email,'phone'=>$data['phone']??'',
+        'company'=>$data['company']??'','source'=>$data['source']??'campaign',
     ]);
     $contact=function_exists('crm_v180_contact_for_owner')?crm_v180_contact_for_owner($pdo,$owner,$contactId):null;
     if(!$contact)throw new RuntimeException('CRM Contact could not be resolved.');
     return $contact;
 }
-
 function campaigns_rewards_merchant_relationship_v100(PDO $pdo,int $merchantId,int $contactId,bool $forUpdate=false): ?array
 {
     if($merchantId<1||$contactId<1)return null;
@@ -457,7 +452,7 @@ function campaigns_rewards_campaign_type_v100(PDO $pdo,int $merchantId,string $t
 function campaigns_rewards_campaign_platform_v100(PDO $pdo,int $campaignId,bool $forUpdate=false): ?array
 {
     if($campaignId<1)return null;
-    $stmt=$pdo->prepare("SELECT c.*,ct.type_key campaign_type_key,ct.name campaign_type_name,m.public_id merchant_public_id,m.owner_user_id merchant_owner_user_id,m.sandbox_mode merchant_sandbox_mode,m.status merchant_status
+    $stmt=$pdo->prepare("SELECT c.*,ct.type_key campaign_type_key,ct.name campaign_type_name,ct.supports_public_signup,ct.supports_cases,m.public_id merchant_public_id,m.owner_user_id merchant_owner_user_id,m.sandbox_mode merchant_sandbox_mode,m.status merchant_status
       FROM campaigns c INNER JOIN campaign_types ct ON ct.id=c.campaign_type_id INNER JOIN merchant_accounts m ON m.id=c.merchant_id
       WHERE c.id=? LIMIT 1".($forUpdate?' FOR UPDATE':''));
     $stmt->execute([$campaignId]);$row=$stmt->fetch();return $row?:null;
