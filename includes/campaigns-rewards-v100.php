@@ -541,71 +541,93 @@ function campaigns_rewards_campaigns_v100(PDO $pdo,int $merchantId,bool $activeO
 
 function campaigns_rewards_save_campaign_v100(PDO $pdo,int $merchantId,int $actorUserId,array $input,int $campaignId=0): array
 {
-    if(!campaigns_rewards_can_manage_merchant_v100($pdo,$merchantId,$actorUserId))throw new RuntimeException('Merchant admin access is required.');
-    $merchant=campaigns_rewards_merchant_v100($pdo,$merchantId)?:throw new RuntimeException('Merchant account not found.');
-    $existing=$campaignId>0?campaigns_rewards_campaign_v100($pdo,$campaignId):null;if($campaignId>0&&(!$existing||(int)$existing['merchant_account_id']!==$merchantId))throw new RuntimeException('Campaign not found.');
-    $title=campaigns_rewards_text_v100($input['title']??$existing['title']??'',190);if($title==='')throw new RuntimeException('Campaign title is required.');
-    $slug=campaigns_rewards_unique_slug_v100($pdo,'campaigns_v100',(string)($input['slug']??$existing['slug']??$title),$campaignId);
-    $subtitle=campaigns_rewards_text_v100($input['subtitle']??$existing['subtitle']??'',255);$description=mb_strimwidth(trim((string)($input['description']??$existing['description']??'')),0,8000,'…');
-    $cta=campaigns_rewards_text_v100($input['cta_label']??$existing['cta_label']??'Claim reward',80)?:'Claim reward';$terms=mb_strimwidth(trim((string)($input['terms']??$existing['terms']??'')),0,6000,'…');
-    $starts=campaigns_rewards_datetime_v100((string)($input['starts_at']??$existing['starts_at']??''));$ends=campaigns_rewards_datetime_v100((string)($input['ends_at']??$existing['ends_at']??''));
-    if($starts&&$ends&&strtotime($ends)<=strtotime($starts))throw new RuntimeException('Campaign end must be after its start.');
-    $locationId=max(0,(int)($input['location_id']??$existing['location_id']??0));
-    if($locationId>0){$s=$pdo->prepare("SELECT id FROM campaign_merchant_locations_v100 WHERE id=? AND merchant_account_id=? AND status='active' LIMIT 1");$s->execute([$locationId,$merchantId]);if(!$s->fetchColumn())throw new RuntimeException('Choose a valid merchant location.');}
-    $profileVisible=!empty($input['profile_visible'])?1:0;
-    if($existing){
-        $pdo->prepare("UPDATE campaigns_v100 SET location_id=?,slug=?,title=?,subtitle=?,description=?,cta_label=?,terms=?,profile_visible=?,starts_at=?,ends_at=? WHERE id=? AND merchant_account_id=?")->execute([$locationId?:null,$slug,$title,$subtitle,$description,$cta,$terms,$profileVisible,$starts,$ends,$campaignId,$merchantId]);$event='campaign.updated';
+    if(!function_exists('campaigns_rewards_create_campaign_v100'))throw new RuntimeException('Campaigns & Rewards V1 runtime is unavailable.');
+    if($campaignId<1){
+        $created=campaigns_rewards_create_campaign_v100($pdo,$merchantId,$actorUserId,[
+            'name'=>$input['title']??'','slug'=>$input['slug']??'','description'=>$input['description']??'',
+            'campaign_type'=>$input['campaign_type']??'signup','objective'=>$input['objective']??'',
+            'starts_at'=>$input['starts_at']??'','ends_at'=>$input['ends_at']??'','visibility'=>!empty($input['profile_visible'])?'profile_public':'unlisted',
+            'subheadline'=>$input['subtitle']??'','cta_label'=>$input['cta_label']??'Claim reward',
+        ]);
+        $campaignId=(int)$created['id'];
     }else{
-        $stmt=$pdo->prepare("INSERT INTO campaigns_v100 (public_id,merchant_account_id,location_id,created_by_user_id,slug,title,subtitle,description,cta_label,terms,status,profile_visible,starts_at,ends_at) VALUES (?,?,?,?,?,?,?,?,?,?,'draft',?,?,?)");
-        $stmt->execute([campaigns_rewards_uuid_v100(),$merchantId,$locationId?:null,$actorUserId,$slug,$title,$subtitle,$description,$cta,$terms,$profileVisible,$starts,$ends]);$campaignId=(int)$pdo->lastInsertId();$event='campaign.created';
+        $campaign=campaigns_rewards_campaign_platform_v100($pdo,$campaignId)?:throw new RuntimeException('Campaign not found.');
+        if((int)$campaign['merchant_id']!==$merchantId)throw new RuntimeException('Campaign not found.');
+        campaigns_rewards_platform_assert_can_v100($pdo,$merchantId,$actorUserId,'campaigns.edit');
+        $title=campaigns_rewards_text_v100($input['title']??$campaign['name'],190);if($title==='')throw new RuntimeException('Campaign title is required.');
+        $slug=campaigns_rewards_slug_v100((string)($input['slug']??$campaign['slug']),120)?:$campaign['slug'];
+        $check=$pdo->prepare('SELECT 1 FROM campaigns WHERE merchant_id=? AND slug=? AND id<>? LIMIT 1');$check->execute([$merchantId,$slug,$campaignId]);if($check->fetchColumn())throw new RuntimeException('That Campaign slug is already in use.');
+        $starts=campaigns_rewards_datetime_v100((string)($input['starts_at']??$campaign['starts_at']??''));$ends=campaigns_rewards_datetime_v100((string)($input['ends_at']??$campaign['ends_at']??''));
+        if($starts&&$ends&&strtotime($ends)<=strtotime($starts))throw new RuntimeException('Campaign end must be after its start.');
+        $typeKey=campaigns_rewards_slug_v100((string)($input['campaign_type']??$campaign['campaign_type_key']??'signup'),80)?:'signup';
+        $type=campaigns_rewards_campaign_type_v100($pdo,$merchantId,$typeKey)?:throw new RuntimeException('Campaign Type is unavailable.');
+        $pdo->prepare("UPDATE campaigns SET campaign_type_id=?,name=?,slug=?,description=?,objective=?,starts_at=?,ends_at=?,updated_at=UTC_TIMESTAMP() WHERE id=? AND merchant_id=?")
+          ->execute([(int)$type['id'],$title,$slug,mb_strimwidth(trim((string)($input['description']??$campaign['description']??'')),0,8000,'…'),campaigns_rewards_text_v100($input['objective']??$campaign['objective']??'',500),$starts,$ends,$campaignId,$merchantId]);
+        $pdo->prepare("UPDATE campaign_landing_pages SET slug=?,visibility=?,headline=?,subheadline=?,cta_label=?,terms_json=?,updated_at=UTC_TIMESTAMP() WHERE campaign_id=?")
+          ->execute([$slug,!empty($input['profile_visible'])?'profile_public':'unlisted',$title,campaigns_rewards_text_v100($input['subtitle']??'',500),campaigns_rewards_text_v100($input['cta_label']??'Claim reward',80),campaigns_rewards_json_v100(['text'=>mb_strimwidth(trim((string)($input['terms']??'')),0,12000,'…')]),$campaignId]);
+        campaigns_rewards_activity_event_v100($pdo,$merchantId,'campaign.updated',['campaign_id'=>$campaignId],['summary'=>'Campaign updated','campaign_public_id'=>$campaign['public_id'],'merchant_public_id'=>$campaign['merchant_public_id']],(string)$campaign['environment'],$actorUserId);
     }
-    $saved=campaigns_rewards_campaign_v100($pdo,$campaignId)?:throw new RuntimeException('Campaign could not be loaded.');
-    campaigns_rewards_record_activity_v100($pdo,$merchantId,$event,['campaign_id'=>$campaignId,'actor_user_id'=>$actorUserId],[]);
-    campaigns_rewards_emit_v100($pdo,(int)$merchant['owner_user_id'],$event,[campaigns_rewards_ref_v100('merchant_account',$merchant['public_id']),campaigns_rewards_ref_v100('campaign',$saved['public_id'])],['campaign_id'=>$saved['public_id']]);
-    return $saved;
+    $locationId=max(0,(int)($input['location_id']??0));
+    $pdo->prepare("DELETE FROM campaigns_rewards_object_bindings WHERE merchant_id=? AND subject_type='campaign' AND subject_id=? AND purpose='location'")->execute([$merchantId,$campaignId]);
+    if($locationId>0){
+        $q=$pdo->prepare('SELECT public_id FROM merchant_locations WHERE id=? AND merchant_id=? AND is_active=1 LIMIT 1');$q->execute([$locationId,$merchantId]);$locationPublic=$q->fetchColumn();
+        if(!$locationPublic)throw new RuntimeException('Choose a valid Merchant Location.');
+        $pdo->prepare("INSERT INTO campaigns_rewards_object_bindings (merchant_id,subject_type,subject_id,purpose,target_type,target_id,target_public_id,settings_json)
+          VALUES (?,'campaign',?,'location','merchant_location',?,?, '{}')")->execute([$merchantId,$campaignId,(string)$locationId,(string)$locationPublic]);
+    }
+    $merchant=campaigns_rewards_platform_merchant_v100($pdo,$merchantId);
+    $profileUserId=(int)($merchant['owner_user_id']??0);
+    if($profileUserId>0)campaigns_rewards_publish_profile_v100($pdo,$campaignId,$actorUserId,$profileUserId,!empty($input['profile_visible']));
+    return campaigns_rewards_campaign_v100($pdo,$campaignId)?:throw new RuntimeException('Campaign could not be reloaded.');
 }
 
 function campaigns_rewards_set_campaign_status_v100(PDO $pdo,int $campaignId,int $actorUserId,string $status): array
 {
-    if(!in_array($status,['draft','active','paused','ended'],true))throw new RuntimeException('Choose a valid campaign status.');
-    $campaign=campaigns_rewards_campaign_v100($pdo,$campaignId)?:throw new RuntimeException('Campaign not found.');$merchant=campaigns_rewards_merchant_v100($pdo,(int)$campaign['merchant_account_id'])?:throw new RuntimeException('Merchant account not found.');
-    if(!campaigns_rewards_can_manage_merchant_v100($pdo,(int)$merchant['id'],$actorUserId))throw new RuntimeException('Merchant admin access is required.');
-    $before=(string)$campaign['status'];$published=$status==='active'?gmdate('Y-m-d H:i:s'):($campaign['published_at']??null);
-    $pdo->prepare("UPDATE campaigns_v100 SET status=?,published_at=?,updated_at=UTC_TIMESTAMP() WHERE id=?")->execute([$status,$published,$campaignId]);
-    $event=match($status){'active'=>'campaign.launched','paused'=>'campaign.paused','ended'=>'campaign.ended',default=>'campaign.updated'};$saved=campaigns_rewards_campaign_v100($pdo,$campaignId)?:throw new RuntimeException('Campaign could not be reloaded.');
-    campaigns_rewards_record_activity_v100($pdo,(int)$merchant['id'],$event,['campaign_id'=>$campaignId,'actor_user_id'=>$actorUserId],['from_status'=>$before,'to_status'=>$status]);
-    campaigns_rewards_emit_v100($pdo,(int)$merchant['owner_user_id'],$event,[campaigns_rewards_ref_v100('merchant_account',$merchant['public_id']),campaigns_rewards_ref_v100('campaign',$saved['public_id'])],['campaign_id'=>$saved['public_id'],'status'=>$status]);
-    return $saved;
+    $map=['draft'=>'draft','active'=>'active','paused'=>'paused','ended'=>'completed','completed'=>'completed','archived'=>'archived','scheduled'=>'scheduled'];
+    if(!isset($map[$status]))throw new RuntimeException('Choose a valid Campaign status.');
+    return campaigns_rewards_set_campaign_lifecycle_v100($pdo,$campaignId,$actorUserId,$map[$status]);
 }
 
 function campaigns_rewards_reward_v100(PDO $pdo,int $rewardId,bool $forUpdate=false): ?array
 {
-    if($rewardId<1)return null;$stmt=$pdo->prepare('SELECT * FROM campaign_rewards_v100 WHERE id=? LIMIT 1'.($forUpdate?' FOR UPDATE':''));
-    $stmt->execute([$rewardId]);$row=$stmt->fetch();return $row?:null;
+    if($rewardId<1)return null;
+    $sql="SELECT rp.*,rt.type_key reward_type FROM reward_products rp INNER JOIN reward_types rt ON rt.id=rp.reward_type_id WHERE rp.id=? LIMIT 1".($forUpdate?' FOR UPDATE':'');
+    $stmt=$pdo->prepare($sql);$stmt->execute([$rewardId]);$row=$stmt->fetch();if(!$row)return null;
+    $settings=json_decode((string)($row['settings_json']??''),true);if(!is_array($settings))$settings=[];
+    $row['title']=$row['name'];$row['value_label']=(string)($settings['value_label']??'');
+    $row['inventory_limit']=(int)($settings['inventory_limit']??0);$row['per_customer_limit']=(int)($row['claim_limit']??1);
+    $row['status']=!empty($row['is_active'])?'active':'inactive';
+    return $row;
 }
 
 function campaigns_rewards_rewards_v100(PDO $pdo,int $campaignId,bool $publicOnly=false): array
 {
-    $sql='SELECT * FROM campaign_rewards_v100 WHERE campaign_id=?';if($publicOnly)$sql.=" AND status='active' AND (starts_at IS NULL OR starts_at<=UTC_TIMESTAMP()) AND (ends_at IS NULL OR ends_at>UTC_TIMESTAMP())";
-    $sql.=' ORDER BY id';$stmt=$pdo->prepare($sql);$stmt->execute([$campaignId]);return $stmt->fetchAll()?:[];
+    $campaign=campaigns_rewards_campaign_platform_v100($pdo,$campaignId);if(!$campaign)return [];
+    $sql="SELECT DISTINCT rp.id FROM campaign_reward_sets rs
+      INNER JOIN campaign_reward_set_items i ON i.reward_set_id=rs.id
+      INNER JOIN reward_products rp ON rp.id=i.reward_product_id
+      WHERE rs.campaign_id=?";
+    if($publicOnly)$sql.=" AND rp.is_active=1";
+    $sql.=" ORDER BY rp.id";
+    $stmt=$pdo->prepare($sql);$stmt->execute([$campaignId]);$rows=[];
+    foreach($stmt->fetchAll(PDO::FETCH_COLUMN)?:[] as $id){$row=campaigns_rewards_reward_v100($pdo,(int)$id);if($row){$row['campaign_id']=$campaignId;$row['merchant_account_id']=(int)$campaign['merchant_id'];$rows[]=$row;}}
+    return $rows;
 }
 
 function campaigns_rewards_save_reward_v100(PDO $pdo,int $campaignId,int $actorUserId,array $input,int $rewardId=0): array
 {
-    $campaign=campaigns_rewards_campaign_v100($pdo,$campaignId)?:throw new RuntimeException('Campaign not found.');$merchantId=(int)$campaign['merchant_account_id'];
-    if(!campaigns_rewards_can_manage_merchant_v100($pdo,$merchantId,$actorUserId))throw new RuntimeException('Merchant admin access is required.');
-    $existing=$rewardId>0?campaigns_rewards_reward_v100($pdo,$rewardId):null;if($rewardId>0&&(!$existing||(int)$existing['campaign_id']!==$campaignId))throw new RuntimeException('Reward not found.');
-    $title=campaigns_rewards_text_v100($input['title']??$existing['title']??'',190);if($title==='')throw new RuntimeException('Reward title is required.');
-    $description=mb_strimwidth(trim((string)($input['description']??$existing['description']??'')),0,5000,'…');$type=(string)($input['reward_type']??$existing['reward_type']??'offer');if(!in_array($type,['offer','gift','discount','access','recognition'],true))$type='offer';
-    $value=campaigns_rewards_text_v100($input['value_label']??$existing['value_label']??'',120);$inventory=max(0,(int)($input['inventory_limit']??$existing['inventory_limit']??0));$per=max(1,min(25,(int)($input['per_customer_limit']??$existing['per_customer_limit']??1)));
-    $status=(string)($input['status']??$existing['status']??'active');if(!in_array($status,['active','inactive'],true))$status='active';$starts=campaigns_rewards_datetime_v100((string)($input['starts_at']??$existing['starts_at']??''));$ends=campaigns_rewards_datetime_v100((string)($input['ends_at']??$existing['ends_at']??''));
-    if($starts&&$ends&&strtotime($ends)<=strtotime($starts))throw new RuntimeException('Reward end must be after its start.');
-    if($existing){$pdo->prepare("UPDATE campaign_rewards_v100 SET title=?,description=?,reward_type=?,value_label=?,inventory_limit=?,per_customer_limit=?,status=?,starts_at=?,ends_at=? WHERE id=? AND campaign_id=?")->execute([$title,$description,$type,$value,$inventory,$per,$status,$starts,$ends,$rewardId,$campaignId]);$event='reward.updated';}
-    else{$stmt=$pdo->prepare("INSERT INTO campaign_rewards_v100 (public_id,merchant_account_id,campaign_id,title,description,reward_type,value_label,inventory_limit,per_customer_limit,status,starts_at,ends_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)");$stmt->execute([campaigns_rewards_uuid_v100(),$merchantId,$campaignId,$title,$description,$type,$value,$inventory,$per,$status,$starts,$ends]);$rewardId=(int)$pdo->lastInsertId();$event='reward.created';}
-    $saved=campaigns_rewards_reward_v100($pdo,$rewardId)?:throw new RuntimeException('Reward could not be loaded.');$merchant=campaigns_rewards_merchant_v100($pdo,$merchantId)?:throw new RuntimeException('Merchant account not found.');
-    campaigns_rewards_record_activity_v100($pdo,$merchantId,$event,['campaign_id'=>$campaignId,'reward_id'=>$rewardId,'actor_user_id'=>$actorUserId],[]);
-    campaigns_rewards_emit_v100($pdo,(int)$merchant['owner_user_id'],$event,[campaigns_rewards_ref_v100('campaign',$campaign['public_id']),campaigns_rewards_ref_v100('reward',$saved['public_id'])],['campaign_id'=>$campaign['public_id'],'reward_id'=>$saved['public_id']]);
-    return $saved;
+    $campaign=campaigns_rewards_campaign_platform_v100($pdo,$campaignId)?:throw new RuntimeException('Campaign not found.');
+    $legacyType=(string)($input['reward_type']??'gift');
+    $typeMap=['offer'=>'custom','gift'=>'free_product','discount'=>'percentage_discount','access'=>'membership_access','recognition'=>'custom'];
+    $type=$typeMap[$legacyType]??$legacyType;
+    $settings=['value_label'=>campaigns_rewards_text_v100($input['value_label']??'',120),'inventory_limit'=>max(0,(int)($input['inventory_limit']??0))];
+    $reward=campaigns_rewards_save_reward_product_v100($pdo,(int)$campaign['merchant_id'],$actorUserId,[
+        'name'=>$input['title']??'','description'=>$input['description']??'','reward_type'=>$type,'claim_limit'=>max(1,(int)($input['per_customer_limit']??1)),
+        'inventory_mode'=>((int)($input['inventory_limit']??0)>0?'tracked':'none'),'pickup_enabled'=>1,'is_active'=>(string)($input['status']??'active')==='active',
+        'settings'=>$settings,'currency'=>'USD',
+    ],$rewardId);
+    campaigns_rewards_attach_reward_v100($pdo,$campaignId,(int)$reward['id'],$actorUserId,'fixed',1);
+    return campaigns_rewards_reward_v100($pdo,(int)$reward['id'])?:throw new RuntimeException('Reward Product could not be reloaded.');
 }
 
 function campaigns_rewards_campaign_by_slug_v100(PDO $pdo,string $slug,bool $publicOnly=true): ?array
