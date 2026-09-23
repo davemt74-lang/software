@@ -40,7 +40,7 @@ Canonical Profile booking/product revenue remains in `profile_events` and Profil
 
 ### Manual confirmation
 
-The user explicitly confirms the realized money or outcome score. The confirmation is append-only and may later be revoked with another event.
+The user explicitly confirms the realized money or outcome score. Manual confirmation is accepted only while the profile is configured for `manual_confirmation`. The confirmation is append-only and may later be revoked with another event. Switching the profile to another realization mode automatically prevents stale manual evidence from overriding the selected canonical evidence mode.
 
 ### Verified completion
 
@@ -56,7 +56,9 @@ When the user explicitly chooses this mode, the declared expected value becomes 
 
 A monetary value profile can be explicitly linked to an existing Profile conversion target key.
 
-v25.70 reads booking/product conversion events from the canonical `profile_events` ledger after the profile baseline and sums only matching-currency values.
+v25.70 reads booking/product conversion events from the canonical `profile_events` ledger after the profile baseline and sums only matching-currency values. Changing the conversion target, realization mode, or currency resets that baseline so earlier unrelated events are not silently reinterpreted.
+
+Conversion evidence is batched per request. If the owner has more conversion events after the earliest relevant baseline than the bounded evidence scan permits, v25.70 marks the evidence **incomplete** and withholds realization instead of silently summing a partial result.
 
 This is canonical business evidence, not model inference.
 
@@ -84,7 +86,7 @@ If there is no goal profile, v25.70 may inherit an explicit value profile from e
 2. project/source key,
 3. Agent.
 
-If more than one matching profile exists at a precedence level, inheritance is marked ambiguous and no value planning adjustment is applied.
+If more than one matching profile exists at a precedence level, inheritance is marked ambiguous and no value planning adjustment is applied. Likewise, if one non-goal profile would be inherited by multiple active portfolio goals, v25.70 treats that inherited value as shared/ambiguous for planning and does not multiply the same project/Agent/workflow value across each goal.
 
 No model chooses between conflicting value definitions.
 
