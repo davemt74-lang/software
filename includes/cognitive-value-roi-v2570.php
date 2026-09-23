@@ -562,11 +562,12 @@ function vp3_cognitive_value_apply_v2570(
 
         $econ=$econByGoal[$goalId]??null;
         $historical=$econ?max(0,(int)($econ['attributed_known_cost_micros']??0)):0;
+        $historicalUnknown=$econ?max(0,(int)($econ['unknown_cost_requests']??0)):0;
         $remaining=function_exists('vp3_cognitive_budget_goal_projection_v2560')
             ?vp3_cognitive_budget_goal_projection_v2560($item,$econ,$accountUsage)
             :['cost_micros'=>null,'cost_known'=>false,'tokens'=>null,'tokens_known'=>false];
         $remainingCost=$remaining['cost_micros']??null;
-        $expectedCostKnown=$remainingCost!==null;
+        $expectedCostKnown=$remainingCost!==null&&$historicalUnknown===0;
         $expectedCost=$expectedCostKnown?$historical+max(0,(int)$remainingCost):null;
         $realization=vp3_cognitive_value_realization_v2570($pdo,$user,$profile);
         $expectedMoney=$profile['expected_value_micros'];
@@ -576,7 +577,8 @@ function vp3_cognitive_value_apply_v2570(
         );
         $realizedRoi=vp3_cognitive_value_roi_percent_v2570(
             $realization['value_micros']===null?null:(int)$realization['value_micros'],
-            $historical>0?$historical:null,(string)($realization['currency']??$profile['currency'])
+            ($historicalUnknown===0&&$historical>0)?$historical:null,
+            (string)($realization['currency']??$profile['currency'])
         );
         $adjustment=vp3_cognitive_value_planning_adjustment_v2570($item,$profile,$expectedCost);
         $atRisk=empty($realization['verified'])&&vp3_cognitive_value_item_at_risk_v2570($item);
@@ -589,7 +591,8 @@ function vp3_cognitive_value_apply_v2570(
             'goal_id'=>$goalId,'title'=>(string)($item['title']??('Goal #'.$goalId)),
             'profile'=>$profile,'profile_source'=>(string)$resolved['source'],'ambiguous'=>false,
             'realization'=>$realization,
-            'historical_cost_micros'=>$historical,'projected_remaining_cost_micros'=>$remainingCost,
+            'historical_cost_micros'=>$historical,'historical_unknown_cost_requests'=>$historicalUnknown,
+            'projected_remaining_cost_micros'=>$remainingCost,
             'expected_total_cost_micros'=>$expectedCost,'expected_cost_known'=>$expectedCostKnown,
             'expected_roi_percent'=>$expectedRoi,'realized_roi_percent'=>$realizedRoi,
             'planning_adjustment'=>$adjustment,'value_at_risk'=>$atRisk,
