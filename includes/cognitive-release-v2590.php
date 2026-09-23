@@ -39,6 +39,7 @@ function vp3_cognitive_release_manifest_v2590(): array
             'v2370_live_session_remains_authority'=>true,
             'v94_activity_is_compatibility_input_only'=>true,
             'current_state_is_ephemeral_read_only'=>true,
+            'attention_uses_latest_fresh_domain_state_only'=>true,
             'raw_event_payloads_user_facing'=>false,
             'system_prompts_user_facing'=>false,
             'tool_traces_user_facing'=>false,
