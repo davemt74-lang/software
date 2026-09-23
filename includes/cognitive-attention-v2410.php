@@ -249,6 +249,7 @@ function vp3_cognitive_attention_recent_key_v2410(PDO $pdo,int $uid,string $name
     if($key==='')return null;
     $stmt=$pdo->prepare("SELECT * FROM cognitive_attention_receipts_v2410
       WHERE owner_user_id=? AND agent_namespace=? AND signal_key=?
+        AND interruptive=1 AND status IN ('planned','delivered')
         AND created_at>=DATE_SUB(UTC_TIMESTAMP(),INTERVAL ".VP3_COGNITIVE_ATTENTION_REPEAT_COOLDOWN_MINUTES_V2410." MINUTE)
       ORDER BY id DESC LIMIT 1");
     $stmt->execute([$uid,$namespace,$key]);$row=$stmt->fetch();
