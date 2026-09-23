@@ -619,17 +619,28 @@ function campaigns_rewards_save_reward_v100(PDO $pdo,int $campaignId,int $actorU
     $campaign=campaigns_rewards_campaign_platform_v100($pdo,$campaignId)?:throw new RuntimeException('Campaign not found.');
     $legacyType=(string)($input['reward_type']??'gift');
     $typeMap=['offer'=>'custom','gift'=>'free_product','discount'=>'percentage_discount','access'=>'membership_access','recognition'=>'custom'];
-    $type=$typeMap[$legacyType]??$legacyType;
-    $settings=['value_label'=>campaigns_rewards_text_v100($input['value_label']??'',120),'inventory_limit'=>max(0,(int)($input['inventory_limit']??0))];
+    $type=$typeMap[$legacyType]??$legacyType;$inventory=max(0,(int)($input['inventory_limit']??0));
+    $settings=['value_label'=>campaigns_rewards_text_v100($input['value_label']??'',120),'inventory_limit'=>$inventory];
     $reward=campaigns_rewards_save_reward_product_v100($pdo,(int)$campaign['merchant_id'],$actorUserId,[
         'name'=>$input['title']??'','description'=>$input['description']??'','reward_type'=>$type,'claim_limit'=>max(1,(int)($input['per_customer_limit']??1)),
-        'inventory_mode'=>((int)($input['inventory_limit']??0)>0?'tracked':'none'),'pickup_enabled'=>1,'is_active'=>(string)($input['status']??'active')==='active',
-        'settings'=>$settings,'currency'=>'USD',
+        'inventory_mode'=>$inventory>0?'tracked':'none','pickup_enabled'=>1,'is_active'=>(string)($input['status']??'active')==='active',
+        'settings'=>$settings,'currency'=>$campaign['budget_currency']??'USD',
     ],$rewardId);
     campaigns_rewards_attach_reward_v100($pdo,$campaignId,(int)$reward['id'],$actorUserId,'fixed',1);
+    if($inventory>0){
+        $q=$pdo->prepare("SELECT id,on_hand,reserved FROM reward_inventory_balances WHERE reward_product_id=? AND variant_id=0 AND location_id=0 LIMIT 1 FOR UPDATE");
+        $q->execute([(int)$reward['id']]);$balance=$q->fetch();$old=$balance?(int)$balance['on_hand']:0;
+        if($balance){
+            $reserved=min((int)$balance['reserved'],$inventory);
+            $pdo->prepare("UPDATE reward_inventory_balances SET on_hand=?,reserved=?,updated_at=UTC_TIMESTAMP() WHERE id=?")->execute([$inventory,$reserved,(int)$balance['id']]);
+        }else{
+            $pdo->prepare("INSERT INTO reward_inventory_balances (reward_product_id,variant_id,location_id,on_hand,reserved) VALUES (?,0,0,?,0)")->execute([(int)$reward['id'],$inventory]);
+        }
+        $delta=$inventory-$old;if($delta!==0)$pdo->prepare("INSERT INTO reward_inventory_ledger (reward_product_id,variant_id,location_id,movement_type,quantity_delta,source_type,source_id,actor_user_id,metadata_json)
+          VALUES (?,0,0,'adjust',?,'reward_product',?,?,?)")->execute([(int)$reward['id'],$delta,(string)$reward['id'],$actorUserId,campaigns_rewards_json_v100(['target_on_hand'=>$inventory])]);
+    }
     return campaigns_rewards_reward_v100($pdo,(int)$reward['id'])?:throw new RuntimeException('Reward Product could not be reloaded.');
 }
-
 function campaigns_rewards_campaign_by_slug_v100(PDO $pdo,string $slug,bool $publicOnly=true): ?array
 {
     $slug=campaigns_rewards_slug_v100($slug);if($slug==='')return null;
