@@ -100,6 +100,17 @@ function agent_job_dependencies_satisfied_v1900(PDO $pdo,int $uid,int $actionId)
 function agent_job_claim_run_v1900(PDO $pdo,array $user,int $runId,string $executor,string $workerId,int $leaseSeconds=VP3_AGENT_JOB_DEFAULT_LEASE_SECONDS_V1900): ?array
 {
     $uid=(int)($user['id']??0);$executor=strtolower(trim($executor));$workerId=agent_workflow_text_v1400($workerId,120);if($uid<1||$runId<1||!in_array($executor,['cloud','homeserver'],true)||$workerId===''||!agent_job_engine_schema_ready_v1900($pdo))return null;$leaseSeconds=max(30,min(900,$leaseSeconds));
+    if(function_exists('vp3_cognitive_portfolio_claim_admission_v2480')){
+        try{
+            $portfolioAdmission=vp3_cognitive_portfolio_claim_admission_v2480($pdo,$user,$runId,$executor);
+            if(empty($portfolioAdmission['allowed']))return null;
+        }catch(Throwable $e){
+            // Portfolio coordination is an admission policy over the existing
+            // claimant, not a replacement availability dependency. Fail open
+            // so an unavailable projection cannot deadlock already-authorized
+            // durable work; leases/approvals/dependencies still gate execution.
+        }
+    }
     try{$pdo->beginTransaction();$run=agent_workflow_row_v1400($pdo,$uid,$runId,true);if(!$run||!in_array((string)$run['status'],['approved','executing'],true)||(int)($run['current_action_id']??0)>0){$pdo->rollBack();return null;}
         if(agent_job_control_ready_v1900($pdo)&&agent_job_pause_requested_v1900($run)){$pdo->rollBack();return null;}
         if(!agent_work_dependencies_satisfied_v174($pdo,$uid,$runId)){$pdo->rollBack();return null;}
