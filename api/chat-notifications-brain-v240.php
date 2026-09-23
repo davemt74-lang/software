@@ -325,6 +325,9 @@ function chat_notifications_v240_state(array $user, PDO $pdo, int $agentId=0): a
     $followthrough = $brainAllowed && function_exists('vp3_cognitive_followthrough_activity_projection_v2450')
         ? vp3_cognitive_followthrough_activity_projection_v2450($pdo, $user, $namespace)
         : ['build'=>'','focus'=>null,'items'=>[],'counts'=>[],'projection_only'=>true];
+    $supervision = $brainAllowed && function_exists('vp3_cognitive_supervision_activity_projection_v2460')
+        ? vp3_cognitive_supervision_activity_projection_v2460($pdo, $user, $namespace)
+        : ['build'=>'','focus'=>null,'issues'=>[],'counts'=>[],'projection_only'=>true];
     $live = is_array($workingContext['live_session'] ?? null) ? $workingContext['live_session'] : null;
     $activity = $live ? [
         'state'=>(string)($live['status'] ?? 'idle'),
@@ -358,6 +361,7 @@ function chat_notifications_v240_state(array $user, PDO $pdo, int $agentId=0): a
             'turn_state'=>$turnState,
             'continuity'=>$continuity,
             'followthrough'=>$followthrough,
+            'supervision'=>$supervision,
             'priorities'=>$brainAllowed ? chat_notifications_v313_brain_priorities($user, $pdo) : [],
             'operations'=>$brainAllowed ? chat_notifications_v240_brain_operations($user, 60) : [],
             'events'=>$brainAllowed ? chat_notifications_v240_activity_events($pdo, $userId, 50) : [],
