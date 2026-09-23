@@ -38,29 +38,58 @@ function vp3_cognitive_portfolio_ready_v2480(?PDO $pdo=null): bool
 
 function vp3_cognitive_portfolio_capacity_v2480(PDO $pdo,array $user): array
 {
+    $uid=(int)($user['id']??0);
     $out=[
         'known'=>false,'total_max'=>0,'total_active'=>0,'total_free'=>0,
         'executors'=>[
-            'cloud'=>['ready'=>false,'max'=>0,'active'=>0,'free'=>0,'state'=>'unavailable'],
-            'homeserver'=>['ready'=>false,'max'=>0,'active'=>0,'free'=>0,'state'=>'unavailable'],
+            'cloud'=>['ready'=>false,'max'=>0,'active'=>0,'free'=>0,'state'=>'unavailable','reason'=>'unavailable'],
+            'homeserver'=>['ready'=>false,'max'=>0,'active'=>0,'free'=>0,'state'=>'unavailable','reason'=>'unavailable'],
         ],
+        // This is an admission/capacity projection only. Live capability
+        // readiness remains authoritative in agent_worker_runtime_v1910.
+        'execution_authority'=>false,
     ];
-    if(!function_exists('agent_worker_runtime_summary_v1910'))return $out;
-    try{$summary=agent_worker_runtime_summary_v1910($pdo,$user);}catch(Throwable $e){return $out;}
+    if($uid<1||!function_exists('agent_worker_runtime_active_count_v1910'))return $out;
     $out['known']=true;
-    foreach((array)($summary['workers']??[]) as $worker){
-        $executor=(string)($worker['executor']??'');
-        if(!isset($out['executors'][$executor]))continue;
-        $ready=!empty($worker['ready']);
-        $max=$ready?max(0,(int)($worker['max_concurrency']??0)):0;
-        $active=$ready?max(0,(int)($worker['active_jobs']??0)):0;
-        $free=max(0,$max-$active);
-        $out['executors'][$executor]=[
-            'ready'=>$ready,'max'=>$max,'active'=>$active,'free'=>$free,
-            'state'=>(string)($worker['state']??'unavailable'),
-            'reason'=>(string)($worker['reason']??''),
-        ];
-        $out['total_max']+=$max;$out['total_active']+=$active;$out['total_free']+=$free;
+
+    $cloudMax=defined('VP3_AGENT_WORKER_CLOUD_MAX_CONCURRENCY_V1910')
+        ?max(0,(int)VP3_AGENT_WORKER_CLOUD_MAX_CONCURRENCY_V1910):1;
+    $cloudActive=agent_worker_runtime_active_count_v1910($pdo,$uid,'cloud');
+    $out['executors']['cloud']=[
+        'ready'=>true,'max'=>$cloudMax,'active'=>$cloudActive,
+        'free'=>max(0,$cloudMax-$cloudActive),'state'=>'ready','reason'=>'cloud_runtime',
+    ];
+
+    $homeReady=false;$homeState='unpaired';$homeReason='homeserver_unpaired';
+    if(function_exists('homeserver_vp3_connection')){
+        try{
+            $connection=homeserver_vp3_connection($uid);
+            if(is_array($connection)){
+                $deviceId=trim((string)($connection['device_id']??''));
+                $paired=$deviceId!==''&&!empty($connection['homeserver_token_enc']);
+                if($paired){
+                    $seen=strtotime((string)($connection['last_seen_at']??''))?:0;
+                    $staleSeconds=defined('VP3_AGENT_WORKER_STALE_SECONDS_V1910')
+                        ?max(60,(int)VP3_AGENT_WORKER_STALE_SECONDS_V1910):300;
+                    $homeReady=$seen>0&&$seen>=time()-$staleSeconds;
+                    $homeState=$homeReady?'paired_recent':'stale';
+                    $homeReason=$homeReady?'recent_pair_state':'homeserver_stale';
+                }
+            }
+        }catch(Throwable $e){}
+    }
+    $homeMax=$homeReady&&defined('VP3_AGENT_WORKER_HOMESERVER_MAX_CONCURRENCY_V1910')
+        ?max(0,(int)VP3_AGENT_WORKER_HOMESERVER_MAX_CONCURRENCY_V1910):0;
+    $homeActive=$homeReady?agent_worker_runtime_active_count_v1910($pdo,$uid,'homeserver'):0;
+    $out['executors']['homeserver']=[
+        'ready'=>$homeReady,'max'=>$homeMax,'active'=>$homeActive,
+        'free'=>max(0,$homeMax-$homeActive),'state'=>$homeState,'reason'=>$homeReason,
+    ];
+
+    foreach(['cloud','homeserver'] as $executor){
+        $out['total_max']+=(int)$out['executors'][$executor]['max'];
+        $out['total_active']+=(int)$out['executors'][$executor]['active'];
+        $out['total_free']+=(int)$out['executors'][$executor]['free'];
     }
     return $out;
 }
