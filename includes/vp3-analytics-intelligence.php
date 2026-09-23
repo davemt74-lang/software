@@ -135,6 +135,16 @@ function vp3_analytics_intelligence_record_spike_v310(PDO $pdo,array $user,array
     );
     $stmt->execute([$uid,$propertyId,$severity,(int)$spike['score'],mb_strimwidth($summary,0,500,'…'),json_encode($details,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE)]);
     $eventId=(int)$pdo->lastInsertId();
+    if($eventId>0&&function_exists('vp3_cognitive_domain_record_v2390')){
+        vp3_cognitive_domain_record_v2390($pdo,$uid,'analytics_attribution','analytics.signal_detected',[
+            vp3_cognitive_ref_v2390('analytics_signal',$eventId)
+        ],[
+            'signal_type'=>'traffic_spike',
+            'property_id'=>$propertyId,
+            'severity'=>$severity,
+            'score'=>(int)$spike['score'],
+        ],['external_event_id'=>'analytics-signal:'.$eventId]);
+    }
     if($eventId>0&&function_exists('create_notification')){
         $label=trim((string)($property['label']??''))?:trim((string)($property['domain']??''));if($label==='')$label='VP3 property';
         create_notification($uid,'analytics_traffic_spike','Traffic spike · '.$label,$summary,url('/profile-agent.php?tab=analytics'),'radar_event',$eventId);
