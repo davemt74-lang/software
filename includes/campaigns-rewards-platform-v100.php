@@ -15,7 +15,7 @@ function campaigns_rewards_platform_required_tables_v100(): array
 {
     return [
         'crm_merchant_relationships',
-        'merchant_accounts','merchant_profiles','merchant_roles','merchant_role_capabilities','merchant_members','merchant_member_capability_overrides','merchant_locations','merchant_member_locations',
+        'merchant_accounts','merchant_profiles','merchant_roles','merchant_role_capabilities','merchant_members','merchant_member_access_sources','merchant_member_capability_overrides','merchant_locations','merchant_member_locations',
         'merchant_claim_codes','merchant_claim_code_campaigns',
         'campaign_types','campaigns','campaign_versions','campaign_audiences','campaign_audience_members','campaign_enrollments','campaign_cases',
         'campaign_landing_pages','campaign_profile_publications','campaign_public_sessions','campaign_public_events',
@@ -147,6 +147,24 @@ function campaigns_rewards_platform_ensure_schema_v100(?PDO $pdo=null): void
       id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,merchant_id BIGINT UNSIGNED NOT NULL,user_id INT UNSIGNED NOT NULL,role_id BIGINT UNSIGNED NOT NULL,status VARCHAR(20) NOT NULL DEFAULT 'active',is_owner TINYINT(1) NOT NULL DEFAULT 0,joined_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,suspended_at DATETIME NULL,removed_at DATETIME NULL,created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       UNIQUE KEY uq_merchant_member (merchant_id,user_id),INDEX idx_merchant_member_user (user_id,status,merchant_id),INDEX idx_merchant_owner (merchant_id,is_owner,status,id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+    $exec("CREATE TABLE IF NOT EXISTS merchant_member_access_sources (
+      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+      merchant_id BIGINT UNSIGNED NOT NULL,
+      user_id INT UNSIGNED NOT NULL,
+      source_type VARCHAR(30) NOT NULL,
+      source_ref VARCHAR(120) NOT NULL DEFAULT '',
+      role_key VARCHAR(80) NOT NULL,
+      status VARCHAR(20) NOT NULL DEFAULT 'active',
+      granted_by_user_id INT UNSIGNED NULL,
+      granted_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      suspended_at DATETIME NULL,
+      removed_at DATETIME NULL,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY uq_merchant_access_source (merchant_id,user_id,source_type,source_ref),
+      INDEX idx_merchant_access_source_user (user_id,status,merchant_id),
+      INDEX idx_merchant_access_source_merchant (merchant_id,status,source_type,user_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
     $exec("CREATE TABLE IF NOT EXISTS merchant_member_capability_overrides (
       merchant_member_id BIGINT UNSIGNED NOT NULL,capability_key VARCHAR(120) NOT NULL,effect VARCHAR(10) NOT NULL DEFAULT 'allow',reason VARCHAR(500) NOT NULL DEFAULT '',granted_by_user_id INT UNSIGNED NULL,created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,PRIMARY KEY(merchant_member_id,capability_key)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
