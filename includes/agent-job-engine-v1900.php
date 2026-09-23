@@ -132,6 +132,9 @@ function agent_job_claim_next_v1900(PDO $pdo,array $user,string $executor,string
     if(function_exists('vp3_cognitive_commitment_rank_claims_v2540')){
         try{$rows=vp3_cognitive_commitment_rank_claims_v2540($pdo,$user,$executor,$rows);}catch(Throwable $e){}
     }
+    if(function_exists('vp3_cognitive_budget_filter_claim_candidates_v2560')){
+        try{$rows=vp3_cognitive_budget_filter_claim_candidates_v2560($pdo,$user,$executor,$rows);}catch(Throwable $e){}
+    }
     foreach($rows as $r){$claim=agent_job_claim_run_v1900($pdo,$user,(int)$r['id'],$executor,$workerId);if($claim)return $claim;}return null;
 }
 function agent_job_heartbeat_v1900(PDO $pdo,array $user,int $runId,int $actionId,string $leaseToken,int $progress,string $message='',int $leaseSeconds=120): bool
