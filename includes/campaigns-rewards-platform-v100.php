@@ -198,8 +198,33 @@ function campaigns_rewards_platform_ensure_schema_v100(?PDO $pdo=null): void
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
     $exec("CREATE TABLE IF NOT EXISTS campaigns (
       id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,public_id CHAR(36) NOT NULL,public_code VARCHAR(24) NOT NULL,merchant_id BIGINT UNSIGNED NOT NULL,campaign_type_id BIGINT UNSIGNED NOT NULL,name VARCHAR(190) NOT NULL,slug VARCHAR(120) NOT NULL,description TEXT NULL,status VARCHAR(20) NOT NULL DEFAULT 'draft',environment VARCHAR(12) NOT NULL DEFAULT 'production',objective VARCHAR(500) NOT NULL DEFAULT '',owner_user_id INT UNSIGNED NOT NULL,current_version_no INT UNSIGNED NOT NULL DEFAULT 0,starts_at DATETIME NULL,ends_at DATETIME NULL,audience_mode VARCHAR(20) NOT NULL DEFAULT 'static',budget_minor BIGINT UNSIGNED NULL,budget_currency CHAR(3) NULL,budget_quantity BIGINT UNSIGNED NULL,max_enrollments BIGINT UNSIGNED NULL,max_rewards BIGINT UNSIGNED NULL,per_contact_limit INT UNSIGNED NULL,settings_json LONGTEXT NULL,created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,launched_at DATETIME NULL,paused_at DATETIME NULL,completed_at DATETIME NULL,archived_at DATETIME NULL,
-      UNIQUE KEY uq_campaign_public (public_id),UNIQUE KEY uq_campaign_slug (merchant_id,slug),UNIQUE KEY uq_campaign_code (merchant_id,public_code),INDEX idx_campaign_status (merchant_id,environment,status,updated_at,id)
+      UNIQUE KEY uq_campaign_public (public_id),UNIQUE KEY uq_campaign_slug (slug),UNIQUE KEY uq_campaign_code (merchant_id,public_code),INDEX idx_campaign_status (merchant_id,environment,status,updated_at,id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+    // The public route is /campaign/{slug}, so slug authority is global rather
+    // than Merchant-scoped. Reconcile any pre-release duplicate slugs before
+    // converting an older composite index.
+    $campaignSlugIndex=$pdo->query("SHOW INDEX FROM campaigns WHERE Key_name='uq_campaign_slug'")->fetchAll()?:[];
+    $campaignSlugColumns=array_values(array_map(static fn(array $row): string=>(string)($row['Column_name']??''),$campaignSlugIndex));
+    if($campaignSlugColumns!==['slug']){
+        $dupes=$pdo->query("SELECT slug FROM campaigns GROUP BY slug HAVING COUNT(*)>1")->fetchAll(PDO::FETCH_COLUMN)?:[];
+        foreach($dupes as $duplicateSlug){
+            $rows=$pdo->prepare("SELECT id,slug FROM campaigns WHERE slug=? ORDER BY id");
+            $rows->execute([(string)$duplicateSlug]);$items=$rows->fetchAll()?:[];array_shift($items);
+            foreach($items as $item){
+                $base=substr((string)$item['slug'],0,100);$candidate=$base.'-'.(int)$item['id'];$n=1;
+                while(true){
+                    $check=$pdo->prepare("SELECT 1 FROM campaigns WHERE slug=? AND id<>? LIMIT 1");
+                    $check->execute([$candidate,(int)$item['id']]);if(!$check->fetchColumn())break;
+                    $candidate=$base.'-'.(int)$item['id'].'-'.(++$n);
+                }
+                $pdo->prepare("UPDATE campaigns SET slug=?,updated_at=UTC_TIMESTAMP() WHERE id=?")->execute([$candidate,(int)$item['id']]);
+                $pdo->prepare("UPDATE campaign_landing_pages SET slug=?,updated_at=UTC_TIMESTAMP() WHERE campaign_id=?")->execute([$candidate,(int)$item['id']]);
+            }
+        }
+        if($campaignSlugIndex)$pdo->exec("ALTER TABLE campaigns DROP INDEX uq_campaign_slug");
+        $pdo->exec("ALTER TABLE campaigns ADD UNIQUE KEY uq_campaign_slug (slug)");
+    }
+
     $exec("CREATE TABLE IF NOT EXISTS campaign_versions (
       id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,campaign_id BIGINT UNSIGNED NOT NULL,version_no INT UNSIGNED NOT NULL,status VARCHAR(20) NOT NULL DEFAULT 'snapshot',campaign_snapshot_json LONGTEXT NOT NULL,audience_snapshot_json LONGTEXT NULL,eligibility_snapshot_json LONGTEXT NULL,trigger_snapshot_json LONGTEXT NULL,landing_snapshot_json LONGTEXT NULL,reward_snapshot_json LONGTEXT NULL,terms_snapshot_json LONGTEXT NULL,created_by_user_id INT UNSIGNED NOT NULL,created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       UNIQUE KEY uq_campaign_version (campaign_id,version_no)
