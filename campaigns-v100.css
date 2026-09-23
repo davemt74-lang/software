@@ -8,3 +8,9 @@
 .cr-fieldset legend{padding:0 7px;color:#666;font-size:11px;font-weight:900;text-transform:uppercase;letter-spacing:.06em}
 @media(max-width:1050px){.cr-metrics-five{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:800px){.cr-metrics-five{grid-template-columns:1fr 1fr}.cr-check-grid{grid-template-columns:1fr}}
+
+/* Campaigns & Rewards V1.18 */
+.cr-type-help{display:block;margin-top:3px;color:#777;font-size:11px;font-weight:600;line-height:1.45}
+.cr-list .cr-inline{margin-top:0;align-items:center;flex-wrap:wrap}
+.cr-list .cr-inline select{min-width:160px}
+@media(max-width:800px){.cr-list article{align-items:flex-start;flex-direction:column}.cr-list .cr-inline{width:100%}.cr-list .cr-inline select{flex:1 1 180px;min-width:0}}

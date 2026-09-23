@@ -569,6 +569,7 @@ function campaigns_rewards_set_campaign_lifecycle_v100(PDO $pdo,int $campaignId,
         $cap=in_array($status,['active','paused','completed'],true)?'campaigns.launch':'campaigns.edit';
         if($status==='archived')$cap='campaigns.archive';
         campaigns_rewards_platform_assert_can_v100($pdo,(int)$campaign['merchant_id'],$actorUserId,$cap);
+        if($status==='active'&&function_exists('campaigns_rewards_validate_campaign_activation_v118'))campaigns_rewards_validate_campaign_activation_v118($pdo,$campaign);
         if($status==='active'&&(int)$campaign['current_version_no']<1)campaigns_rewards_snapshot_campaign_v100($pdo,$campaignId,$actorUserId,'published');
         $timestamp=match($status){'active'=>'launched_at','paused'=>'paused_at','completed'=>'completed_at','archived'=>'archived_at',default=>''};
         $sql="UPDATE campaigns SET status=?,updated_at=UTC_TIMESTAMP()".($timestamp!==''?",{$timestamp}=UTC_TIMESTAMP()":'')." WHERE id=?";

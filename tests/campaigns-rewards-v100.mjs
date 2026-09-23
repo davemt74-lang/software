@@ -4,7 +4,9 @@ import assert from 'node:assert/strict';
 const read=p=>fs.readFileSync(new URL('../'+p,import.meta.url),'utf8');
 const core=read('includes/campaigns-rewards-v100.php');
 const schema=read('includes/campaigns-rewards-platform-v100.php');
+const types=read('includes/campaigns-rewards-types-v118.php');
 const runtime=read('includes/campaigns-rewards-domain-v100.php');
+const v118=read('includes/campaigns-rewards-v118.php');
 const release=read('includes/campaigns-rewards-release-v100.php');
 const crm=read('includes/crm-v180.php');
 const registry=read('includes/plugin-registry-v320.php');
@@ -68,7 +70,7 @@ const checks=[
  ['Campaign acquisition resolves Core CRM rather than a parallel customer table',/crm_v180_upsert_contact/.test(runtime)&&/crm_merchant_relationships/.test(schema)&&!/CREATE TABLE IF NOT EXISTS campaign_customers_v100/.test(schema+core)],
  ['Merchant relationship stores Merchant-specific customer state',/customer_status/.test(schema)&&/loyalty_status/.test(schema)&&/acquisition_source/.test(schema)],
 
- ['Campaign Types are seeded and extensible',/signup/.test(schema)&&/make_good/.test(schema)&&/loyalty/.test(schema)&&/referral/.test(schema)&&/win_back/.test(schema)],
+ ['Campaign Types are seeded and extensible',/campaigns_rewards_campaign_type_catalog_v118/.test(schema)&&/signup/.test(types)&&/make_good/.test(types)&&/loyalty/.test(types)&&/referral/.test(types)&&/win_back/.test(types)],
  ['Campaign lifecycle includes draft scheduled active paused completed archived',/\$allowed=\['draft','scheduled','active','paused','completed','archived'\]/.test(runtime)],
  ['Campaign versions freeze snapshots',/CREATE TABLE IF NOT EXISTS campaign_versions/.test(schema)&&/campaign_snapshot_json/.test(schema)&&/reward_snapshot_json/.test(schema)&&/INSERT INTO campaign_versions/.test(runtime)],
  ['public Campaign lookup requires active production published landing',/c\.status='active'/.test(core)&&/c\.environment='production'/.test(core)&&/lp\.is_published=1/.test(core)],
@@ -84,7 +86,7 @@ const checks=[
  ['Merchant Claim Code plaintext is not a persistence column',/code_hash/.test(schema)&&/code_last4/.test(schema)&&!/claim_code\s+(?:VARCHAR|TEXT|LONGTEXT)/i.test(schema)],
 
  ['public signup is limited to supported active production Campaign Types',/supports_public_signup/.test(runtime)&&/actorType==='public'/.test(runtime)&&/environment.*production/.test(runtime)],
- ['public signup resolves CRM relationship Enrollment and Reward Issuance',/campaigns_rewards_customer_upsert_v100/.test(campaignPage)&&/campaigns_rewards_public_enroll_v100/.test(campaignPage)&&/campaigns_rewards_issue_reward_v100/.test(campaignPage)],
+ ['public signup resolves Core CRM relationship Enrollment and Reward Issuance through the current public runtime',/campaigns_rewards_public_participate_v118/.test(campaignPage)&&/campaigns_rewards_resolve_contact_v100/.test(v118)&&/campaigns_rewards_public_enroll_v100/.test(v118)&&/campaigns_rewards_issue_reward_v100/.test(v118)],
  ['public signup retains honeypot rate limiting and CSRF',/name="website"/.test(campaignPage)&&/campaigns_rewards_public_claim_rate_limit_v100/.test(campaignPage)&&/csrf_field/.test(campaignPage)],
  ['issuance is idempotent and bounded by campaign contact budget and inventory limits',/campaigns_rewards_idempotency_begin_v100/.test(runtime)&&/max_rewards/.test(runtime)&&/per_contact_limit/.test(runtime)&&/budget_minor/.test(runtime)&&/inventory_mode/.test(runtime)],
  ['tracked inventory reserves on issuance and consumes on Claim',/reserved=reserved\+\?/.test(runtime)&&/on_hand=on_hand-\?,reserved=reserved-\?/.test(runtime)&&/movement_type/.test(schema)],
@@ -105,7 +107,7 @@ const checks=[
  ['domain activity has durable idempotency and liability foundations',/campaign_idempotency_keys/.test(schema)&&/reward_liability_ledger/.test(schema)&&/campaign_activity_events/.test(schema)],
 
  ['Campaigns registers through canonical v5.00 cognitive module registry',/campaigns_rewards_register_cognitive_module_v100/.test(core)&&/vp3_cognitive_register_module_v500/.test(core)],
- ['v26 declares canonical Campaigns authority objects',/'implementation_status'=>'integrated-v1\.10'/.test(domain)&&/'reward_issuance'/.test(domain)&&/'claim_code'/.test(domain)],
+ ['v26 declares canonical Campaigns authority objects',/'implementation_status'=>'integrated-v1\.18'/.test(domain)&&/'reward_issuance'/.test(domain)&&/'claim_code'/.test(domain)],
  ['v26 uses canonical ingress current-state attention and presentation authorities',/'event_ingress'=>'agent_event_inbox_v1920'/.test(domain)&&/'attention_policy'=>'cognitive_attention_v2410'/.test(domain)&&/'current_state'=>'cognitive_current_state_v2590'/.test(domain)&&/'presentation'=>'cognitive_presentation_firewall_v2590'/.test(domain)],
  ['v26 still prohibits duplicate CRM Team cognitive authorities',/crm_or_team_records_duplicated_for_campaigns'=>false/.test(v26release)&&/second_event_ledger'=>false/.test(v26release)],
  ['canonical cognitive context does not expose credentials or CRM PII',!/credential_hash/.test((runtime.match(/function campaigns_rewards_cognitive_context_canonical_v100[\s\S]*?function campaigns_rewards_cognitive_relationships_canonical_v100/)||[''])[0])&&!/email|phone/.test((runtime.match(/function campaigns_rewards_cognitive_context_canonical_v100[\s\S]*?function campaigns_rewards_cognitive_relationships_canonical_v100/)||[''])[0])],

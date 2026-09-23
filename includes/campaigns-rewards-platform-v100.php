@@ -447,23 +447,49 @@ function campaigns_rewards_platform_ensure_schema_v100(?PDO $pdo=null): void
 
 function campaigns_rewards_platform_seed_v100(PDO $pdo): void
 {
-    $campaignTypes=[
-        'signup'=>['Signup','public_signup',1,0],
-        'make_good'=>['Make Good','make_good',0,1],
-        'loyalty'=>['Loyalty','loyalty',0,0],
-        'promotional_goods'=>['Promotional Goods','promotional_goods',1,0],
-        'discount_voucher'=>['Discount Voucher','discount_voucher',1,0],
-        'post_purchase'=>['Post Purchase','post_purchase',0,0],
-        'referral'=>['Referral','referral',1,0],
-        'win_back'=>['Win Back','win_back',0,0],
-    ];
+    $campaignTypes=function_exists('campaigns_rewards_campaign_type_catalog_v118')
+        ?campaigns_rewards_campaign_type_catalog_v118()
+        :[
+            'signup'=>['name'=>'Signup Reward','description'=>'Newsletter/email-list signup with a welcome Reward.','handler'=>'public_signup','public'=>true,'existing_contacts'=>true,'cases'=>false,'automation'=>true,'agent'=>true,'public_action'=>'newsletter_signup','reward_timing'=>'immediate','marketing'=>'required','default_cta'=>'Sign up & get reward','required_fields'=>['name','email'],'requires_reward'=>true,'trigger'=>'public_submit'],
+            'make_good'=>['name'=>'Make Good','description'=>'Customer service recovery Reward.','handler'=>'make_good','public'=>false,'existing_contacts'=>true,'cases'=>true,'automation'=>false,'agent'=>true,'public_action'=>'none','reward_timing'=>'manual','marketing'=>'none','default_cta'=>'View reward','required_fields'=>[],'requires_reward'=>true,'trigger'=>'case_opened'],
+        ];
     $findCampaign=$pdo->prepare("SELECT id FROM campaign_types WHERE merchant_id IS NULL AND type_key=? ORDER BY id LIMIT 1");
     $insertCampaign=$pdo->prepare("INSERT INTO campaign_types
-      (merchant_id,type_key,name,description,base_handler_key,supports_public_signup,supports_existing_contacts,supports_cases,supports_automation,supports_agent,is_system,is_active)
-      VALUES (NULL,?,?,?, ?,?,1,?,1,1,1,1)");
-    foreach($campaignTypes as $key=>[$name,$handler,$public,$cases]){
-        $findCampaign->execute([$key]);
-        if(!$findCampaign->fetchColumn())$insertCampaign->execute([$key,$name,$name.' campaign type.',$handler,$public,$cases]);
+      (merchant_id,type_key,name,description,base_handler_key,field_schema_json,eligibility_schema_json,trigger_schema_json,reward_rules_schema_json,landing_schema_json,
+       supports_public_signup,supports_existing_contacts,supports_cases,supports_automation,supports_agent,is_system,is_active)
+      VALUES (NULL,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,1)");
+    $updateCampaign=$pdo->prepare("UPDATE campaign_types SET name=?,description=?,base_handler_key=?,field_schema_json=?,eligibility_schema_json=?,trigger_schema_json=?,reward_rules_schema_json=?,landing_schema_json=?,
+      supports_public_signup=?,supports_existing_contacts=?,supports_cases=?,supports_automation=?,supports_agent=?,is_system=1,is_active=1,updated_at=UTC_TIMESTAMP()
+      WHERE id=?");
+    foreach($campaignTypes as $key=>$definition){
+        $fieldSchema=campaigns_rewards_json_v100([
+            'category'=>$definition['category']??'Other',
+            'required_fields'=>$definition['required_fields']??[],
+            'public_action'=>$definition['public_action']??'none',
+            'marketing'=>$definition['marketing']??'optional',
+        ]);
+        $eligibilitySchema=campaigns_rewards_json_v100([
+            'existing_contacts'=>!empty($definition['existing_contacts']),
+            'public'=>!empty($definition['public']),
+        ]);
+        $triggerSchema=campaigns_rewards_json_v100(['trigger'=>$definition['trigger']??'manual']);
+        $rewardRules=campaigns_rewards_json_v100([
+            'timing'=>$definition['reward_timing']??'manual',
+            'requires_reward'=>!empty($definition['requires_reward']),
+        ]);
+        $landingSchema=campaigns_rewards_json_v100([
+            'cta'=>$definition['default_cta']??'Continue',
+            'public_action'=>$definition['public_action']??'none',
+        ]);
+        $args=[
+            (string)($definition['name']??$key),(string)($definition['description']??''),(string)($definition['handler']??$key),
+            $fieldSchema,$eligibilitySchema,$triggerSchema,$rewardRules,$landingSchema,
+            !empty($definition['public'])?1:0,!empty($definition['existing_contacts'])?1:0,!empty($definition['cases'])?1:0,
+            !empty($definition['automation'])?1:0,!empty($definition['agent'])?1:0,
+        ];
+        $findCampaign->execute([$key]);$campaignTypeId=(int)$findCampaign->fetchColumn();
+        if($campaignTypeId>0)$updateCampaign->execute(array_merge($args,[$campaignTypeId]));
+        else $insertCampaign->execute(array_merge([$key],$args));
     }
 
     $rewardTypes=[

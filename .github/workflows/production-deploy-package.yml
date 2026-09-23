@@ -49,8 +49,8 @@ jobs:
 
           cat > _deploy/VP3_RELEASE.json <<EOF
           {
-            "release": "Campaigns & Rewards V1.10",
-            "build": "vp3-campaigns-rewards-v110-20260923",
+            "release": "Campaigns & Rewards V1.18",
+            "build": "vp3-campaigns-rewards-v118-20260923",
             "commit": "${VP3_RELEASE_SHA}",
             "repository": "${GITHUB_REPOSITORY}",
             "workflow_run_id": "${GITHUB_RUN_ID}",
@@ -64,7 +64,7 @@ jobs:
           test -f _deploy/chat.php
           test -f _deploy/.htaccess
 
-          # Campaigns & Rewards V1.10 release hardening: the production artifact must contain
+          # Campaigns & Rewards V1.18 release hardening: the production artifact must contain
           # the canonical cognitive loop, live-session/event foundation and user surfaces.
           test -f _deploy/includes/cognitive-runtime-v500.php
           test -f _deploy/includes/cognitive-presentation-v510.php
@@ -152,6 +152,9 @@ jobs:
           test -f _deploy/includes/campaigns-rewards-release-v100.php
           test -f _deploy/includes/campaigns-rewards-v110.php
           test -f _deploy/includes/campaigns-rewards-release-v110.php
+          test -f _deploy/includes/campaigns-rewards-types-v118.php
+          test -f _deploy/includes/campaigns-rewards-v118.php
+          test -f _deploy/includes/campaigns-rewards-release-v118.php
           test -f _deploy/api/reward-tray-v110.php
           test -f _deploy/campaigns.php
           test -f _deploy/rewards.php
