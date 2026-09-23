@@ -372,6 +372,9 @@
     const resourceBudget = brain.resource_budget || {};
     const resourceReservations = Array.isArray(resourceBudget.reservations) ? resourceBudget.reservations : [];
     const resourceExecutors = resourceBudget.executors || {};
+    const replanning = brain.replanning || {};
+    const replanIssues = Array.isArray(replanning.issues) ? replanning.issues : [];
+    const replanChanges = Array.isArray(replanning.changes) ? replanning.changes : [];
     const autonomyItems = Array.isArray(autonomy.items) ? autonomy.items : [];
     const supervisionIssues = Array.isArray(supervision.issues) ? supervision.issues : [];
     const supervisionByRef = new Map(supervisionIssues.map(item => [String(item.continuity_ref || ''), item]));
@@ -509,6 +512,35 @@
             <small>${esc(String(issue.health_state || '').replaceAll('_',' '))}${issue.supervisor_action ? ` · ${esc(String(issue.supervisor_action).replaceAll('_',' '))}` : ''}${issue.auto_reconcile ? ' · governed auto-reconcile' : ''}</small>
           </article>`).join('')}
         </div>
+      </section>` : ''}
+
+      ${replanning.health && replanning.health !== 'unavailable' ? `
+      <section class="chat-activity-section">
+        <div class="chat-activity-section-head">
+          <div><strong>Portfolio Replanning</strong><span>v25.30 detects plan drift and applies bounded autonomous recovery ordering without changing executors, approvals, or Phase 19 execution authority.</span></div>
+        </div>
+        <div class="chat-brain-metrics">
+          ${brainMetric('Plan health', String(replanning.health || 'healthy').replaceAll('_',' '))}
+          ${brainMetric('Issues', Number(replanning.counts?.issues || replanIssues.length))}
+          ${brainMetric('Rank changes', Number(replanning.counts?.changes || replanChanges.length))}
+          ${brainMetric('Deadline threats', Number(replanning.counts?.deadline_threats || 0))}
+          ${brainMetric('Capacity loss', Number(replanning.counts?.capacity_loss || 0))}
+        </div>
+        ${replanChanges.length ? `<div class="chat-brain-memory-list">
+          ${replanChanges.map(item => `<article>
+            <span>${esc(String(item.action || 'keep_plan').replaceAll('_',' '))}</span>
+            <strong>${esc(item.title || ('Goal #' + Number(item.goal_id || 0)))}</strong>
+            <p>Rank ${Number(item.from_rank || 0)} → ${Number(item.to_rank || 0)}</p>
+            <small>${esc((Array.isArray(item.reason_codes) ? item.reason_codes : []).join(', ').replaceAll('_',' ') || 'bounded recovery ordering')} · autonomous only</small>
+          </article>`).join('')}
+        </div>` : (replanIssues.length ? `<div class="chat-brain-memory-list">
+          ${replanIssues.map(item => `<article>
+            <span>${esc(String(item.recommended_action || 'review').replaceAll('_',' '))}</span>
+            <strong>${esc(item.title || ('Goal #' + Number(item.goal_id || 0)))}</strong>
+            <p>${esc((Array.isArray(item.issue_codes) ? item.issue_codes : []).join(', ').replaceAll('_',' '))}</p>
+            <small>${item.requires_user ? 'Requires user/approval' : 'Recovery overlay only'} · ${esc(item.executor || 'cloud')}</small>
+          </article>`).join('')}
+        </div>` : '')}
       </section>` : ''}
 
       ${resourceReservations.length ? `
