@@ -384,6 +384,9 @@
     const budgetGovernance = brain.budget_governance || {};
     const budgetPolicies = Array.isArray(budgetGovernance.policies) ? budgetGovernance.policies : [];
     const budgetHeldGoals = Array.isArray(budgetGovernance.held_goals) ? budgetGovernance.held_goals : [];
+    const valueRoi = brain.value_roi || {};
+    const valueGoals = Array.isArray(valueRoi.goals) ? valueRoi.goals : [];
+    const valueProfiles = Array.isArray(valueRoi.profiles) ? valueRoi.profiles : [];
     const autonomyItems = Array.isArray(autonomy.items) ? autonomy.items : [];
     const supervisionIssues = Array.isArray(supervision.issues) ? supervision.issues : [];
     const supervisionByRef = new Map(supervisionIssues.map(item => [String(item.continuity_ref || ''), item]));
@@ -575,6 +578,36 @@
           }).join('')}
         </div>` : ''}
         <div class="chat-activity-section-head"><a href="${esc(budgetGovernance.manage_url || '/budget-governance.php')}">Manage Budget Governance ↗</a></div>
+      </section>` : ''}
+      ${valueRoi.configured ? `
+      <section class="chat-activity-section">
+        <div class="chat-activity-section-head">
+          <div><strong>Outcome Value & ROI</strong><span>v25.70 uses explicit user value plus canonical outcome evidence. Dollars are never inferred; non-USD value is not silently converted against USD AI cost.</span></div>
+        </div>
+        <div class="chat-brain-metrics">
+          ${brainMetric('Value profiles', Number(valueRoi.counts?.profiles || valueProfiles.length))}
+          ${brainMetric('Verified outcomes', Number(valueRoi.counts?.verified_outcomes || 0))}
+          ${brainMetric('Value at risk', Number(valueRoi.counts?.value_at_risk || 0))}
+          ${brainMetric('Planning adjusted', Number(valueRoi.counts?.planning_adjusted || 0))}
+          ${brainMetric('Ambiguous inheritance', Number(valueRoi.counts?.ambiguous_goals || 0))}
+        </div>
+        ${valueGoals.length ? `<div class="chat-brain-memory-list">
+          ${valueGoals.map(row => {
+            const profile = row.profile || {};
+            const realization = row.realization || {};
+            const money = String(profile.value_kind || '') === 'money';
+            const expected = money ? `${esc(profile.currency || '')} ${(Number(profile.expected_value_micros || 0) / 1000000).toFixed(2)}` : `${Number(profile.expected_score || 0)}/100 score`;
+            const realized = realization.verified ? (money ? `${esc(realization.currency || profile.currency || '')} ${(Number(realization.value_micros || 0) / 1000000).toFixed(2)}` : `${Number(realization.score_value || 0)}/100 score`) : 'not verified';
+            const roi = row.expected_roi_percent === null || row.expected_roi_percent === undefined ? 'ROI unavailable' : `${Number(row.expected_roi_percent).toFixed(1)}% expected AI-cost ROI`;
+            return `<article>
+              <span>${row.value_at_risk ? 'value at risk · ' : ''}${esc(String(row.profile_source || 'goal'))}${row.commitment_protected ? ' · commitment protected' : ''}${row.budget_hard_hold ? ' · budget held' : ''}</span>
+              <strong>${esc(row.title || profile.label || ('Goal #' + Number(row.goal_id || 0)))}</strong>
+              <p>Expected ${expected} · realized ${realized}</p>
+              <small>${esc(roi)} · est. AI cost ${row.expected_total_cost_micros === null || row.expected_total_cost_micros === undefined ? 'unknown' : '$' + (Number(row.expected_total_cost_micros) / 1000000).toFixed(4)} · adjustment ${Number(row.planning_adjustment || 0).toFixed(3)}</small>
+            </article>`;
+          }).join('')}
+        </div>` : ''}
+        <div class="chat-activity-section-head"><a href="${esc(valueRoi.manage_url || '/outcome-value.php')}">Manage Outcome Value ↗</a></div>
       </section>` : ''}
       ${(economicsUsage.available || economicsQuota.available || economicsGoals.length) ? `
       <section class="chat-activity-section">

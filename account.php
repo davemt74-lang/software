@@ -525,6 +525,13 @@ $accountBrainTools = agent_brain_tools($user);
                   <span>Manage Budgets ↗</span>
                 </a>
 
+                <a class="account-access-card" href="<?= e(url('/outcome-value.php')) ?>">
+                  <small>Portfolio Intelligence</small>
+                  <strong>Outcome Value & ROI</strong>
+                  <p>Define explicit outcome value, verify realized results, and review AI-cost ROI and value at risk.</p>
+                  <span>Manage Value ↗</span>
+                </a>
+
                 <a class="account-access-card" href="<?= e(url('/chat.php?view=player')) ?>">
                   <small>Music</small>
                   <strong><?= e(system_agent_name()) ?> Player</strong>

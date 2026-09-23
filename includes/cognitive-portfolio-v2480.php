@@ -453,8 +453,23 @@ function vp3_cognitive_portfolio_snapshot_v2480(PDO $pdo,array $user): array
         }catch(Throwable $e){}
     }
 
+    // v25.70 adds explicit outcome value/ROI after budget governance. It may
+    // annotate only existing work and contribute a bounded planning signal.
+    // Commitments and hard budget holds remain dominant.
+    $valueRoi=[
+        'build'=>'','configured'=>false,'focus'=>null,'goals'=>[],'profiles'=>[],
+        'counts'=>[],'calibration'=>[],'projection_only'=>false,
+    ];
+    if(function_exists('vp3_cognitive_value_apply_v2570')){
+        try{
+            $valueApplied=vp3_cognitive_value_apply_v2570($pdo,$user,$items,$capacity,$economics,$budgetGovernance);
+            if(is_array($valueApplied['items']??null))$items=$valueApplied['items'];
+            if(is_array($valueApplied['value_roi']??null))$valueRoi=$valueApplied['value_roi'];
+        }catch(Throwable $e){}
+    }
+
     // v25.30 may apply a bounded recovery overlay after commitment/economic/
-    // budget annotation. It can only reorder existing autonomous portfolio
+    // budget/value annotation. It can only reorder existing autonomous portfolio
     // items and annotate recovery intent. v24.80 remains admission authority,
     // and failure preserves the proven v24.80 order.
     $replanning=[
@@ -604,11 +619,16 @@ function vp3_cognitive_portfolio_snapshot_v2480(PDO $pdo,array $user): array
             'budget_attention_policies'=>(int)($budgetGovernance['counts']['attention_policies']??0),
             'budget_held_goals'=>(int)($budgetGovernance['counts']['held_goals']??0),
             'budget_commitment_conflicts'=>(int)($budgetGovernance['counts']['commitment_conflicts']??0),
+            'value_profiles'=>(int)($valueRoi['counts']['profiles']??0),
+            'value_verified_outcomes'=>(int)($valueRoi['counts']['verified_outcomes']??0),
+            'value_at_risk'=>(int)($valueRoi['counts']['value_at_risk']??0),
+            'value_planning_adjusted'=>(int)($valueRoi['counts']['planning_adjusted']??0),
         ],
         'capacity'=>$capacity,
         'commitment_protection'=>$commitmentProtection,
         'economics'=>$economics,
         'budget_governance'=>$budgetGovernance,
+        'value_roi'=>$valueRoi,
         'replanning'=>$replanning,
         'resource_budget'=>$resourceBudget,
         'reservation_admission'=>$reservationAdmission,
@@ -630,6 +650,7 @@ function vp3_cognitive_portfolio_snapshot_v2480(PDO $pdo,array $user): array
             'commitment_protection'=>'cognitive_commitment_protection_v2540_projection',
             'economics'=>'cognitive_economics_v2550_projection',
             'budget_governance'=>'cognitive_budget_governance_v2560_policy',
+            'value_roi'=>'cognitive_value_roi_v2570_projection',
             'replanning'=>'cognitive_replanning_v2530_recovery_overlay',
             'resource_budget'=>'cognitive_resource_budget_v2520_admission_policy',
             'claimant'=>'agent_job_engine_v1900',

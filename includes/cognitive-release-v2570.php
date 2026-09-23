@@ -1,0 +1,113 @@
+<?php
+declare(strict_types=1);
+
+/**
+ * VP3 Cognitive Runtime v25.70 — Outcome Value & ROI Optimization release gate.
+ */
+const VP3_COGNITIVE_RELEASE_V2570='vp3-cognitive-outcome-value-roi-release-v2570-20260923';
+
+function vp3_cognitive_release_manifest_v2570(): array
+{
+    return [
+        'build'=>VP3_COGNITIVE_RELEASE_V2570,
+        'release_phase'=>'v25.70',
+        'previous_release'=>'v25.60',
+        'scope'=>'outcome_value_and_roi_optimization',
+        'durable_value_governance'=>[
+            'profiles'=>'cognitive_value_profiles_v2570',
+            'manual_evidence'=>'cognitive_value_events_v2570_append_only',
+            'goal_verification'=>'agent_goal_review_v1714',
+            'workflow_verification'=>'agent_workflow_runs_objective_verification',
+            'meeting_verification'=>'video_meeting_followthrough_closure_v18200',
+            'canonical_revenue'=>'profile_events_profile_revenue_v180',
+        ],
+        'authority_chain'=>[
+            'outcome_value_roi'=>'cognitive_value_roi_v2570',
+            'budget_governance'=>'cognitive_budget_governance_v2560',
+            'economics'=>'cognitive_economics_v2550_projection',
+            'commitment_protection'=>'cognitive_commitment_protection_v2540',
+            'replanning'=>'cognitive_replanning_v2530_recovery_overlay',
+            'resource_budget'=>'cognitive_resource_budget_v2520_admission_policy',
+            'strategic_optimization'=>'cognitive_optimization_v2510_projection_only',
+            'forecast_and_sequence'=>'cognitive_forecast_v2490',
+            'portfolio_admission'=>'cognitive_portfolio_v2480',
+            'autonomous_mutations'=>'cognitive_autonomy_v2470',
+            'claims_leases_execution_receipts'=>'agent_job_engine_v1900',
+        ],
+        'invariants'=>[
+            'default_value_profile_created'=>false,
+            'monetary_value_requires_explicit_or_canonical_evidence'=>true,
+            'model_inferred_monetary_value'=>false,
+            'fx_conversion_authority'=>false,
+            'non_usd_value_compared_to_usd_ai_cost'=>false,
+            'second_revenue_ledger'=>false,
+            'second_billing_ledger'=>false,
+            'second_usage_ledger'=>false,
+            'second_scheduler'=>false,
+            'second_job_queue'=>false,
+            'second_worker'=>false,
+            'second_lease_system'=>false,
+            'second_receipt_ledger'=>false,
+            'value_profiles_are_user_configuration'=>true,
+            'value_events_are_append_only_user_evidence'=>true,
+            'manual_realization_requires_explicit_user_confirmation'=>true,
+            'manual_realization_only_when_configured'=>true,
+            'profile_evidence_change_resets_baseline'=>true,
+            'profile_definition_change_revokes_stale_manual_evidence'=>true,
+            'profile_conversion_over_scan_limit_is_incomplete_not_undercounted'=>true,
+            'shared_inherited_value_not_multiplied_across_goals'=>true,
+            'verified_completion_uses_canonical_outcome_authority'=>true,
+            'declared_completion_value_is_not_labeled_revenue'=>true,
+            'profile_conversion_value_uses_canonical_profile_event_ledger'=>true,
+            'unknown_ai_cost_disables_direct_roi'=>true,
+            'ambiguous_inherited_value_is_advisory_only'=>true,
+            'commitments_outrank_value_optimization'=>true,
+            'hard_budgets_outrank_value_optimization'=>true,
+            'manual_work_is_not_value_reordered'=>true,
+            'supervised_work_is_not_value_reordered'=>true,
+            'value_optimization_cannot_make_ineligible_work_eligible'=>true,
+            'value_optimization_cannot_change_executor'=>true,
+            'value_optimization_cannot_change_deadline'=>true,
+            'value_optimization_cannot_change_approval'=>true,
+            'value_optimization_cannot_change_budget_or_tokens'=>true,
+            'value_optimization_cannot_claim_or_execute'=>true,
+            'v2560_remains_budget_authority'=>true,
+            'v2550_remains_economics_authority'=>true,
+            'v2540_remains_commitment_authority'=>true,
+            'v2530_remains_replanning_authority'=>true,
+            'v2520_remains_capacity_reservation_authority'=>true,
+            'v2480_remains_portfolio_admission_authority'=>true,
+            'phase19_remains_claim_lease_execution_receipt_authority'=>true,
+            'agent_brain_uses_same_value_projection'=>true,
+            'agent_brief_uses_same_value_projection'=>true,
+            'proactive_now_uses_same_value_projection'=>true,
+            'working_context_includes_bounded_value_projection'=>true,
+            'history_remains_canonical_chat_history'=>true,
+            'model_reasoning_persisted'=>false,
+        ],
+    ];
+}
+
+function vp3_cognitive_release_readiness_v2570(?PDO $pdo=null): array
+{
+    $pdo=$pdo?:db();
+    $checks=[
+        'v2560_ready'=>function_exists('vp3_cognitive_release_readiness_v2560'),
+        'value_schema_ready'=>function_exists('vp3_cognitive_value_schema_ready_v2570')&&vp3_cognitive_value_schema_ready_v2570($pdo),
+        'value_runtime_loaded'=>function_exists('vp3_cognitive_value_apply_v2570'),
+        'economics_preserved'=>function_exists('vp3_cognitive_economics_apply_v2550'),
+        'budget_governance_preserved'=>function_exists('vp3_cognitive_budget_apply_v2560'),
+        'commitment_protection_preserved'=>function_exists('vp3_cognitive_commitment_apply_v2540'),
+        'replanning_preserved'=>function_exists('vp3_cognitive_replanning_overlay_v2530'),
+        'resource_budget_preserved'=>function_exists('vp3_cognitive_resource_budget_plan_v2520'),
+        'portfolio_admission_preserved'=>function_exists('vp3_cognitive_portfolio_claim_admission_v2480'),
+        'phase19_claimant_preserved'=>function_exists('agent_job_claim_next_v1900'),
+        'working_context_preserved'=>function_exists('vp3_cognitive_context_assemble_v2420'),
+    ];
+    return [
+        'build'=>VP3_COGNITIVE_RELEASE_V2570,
+        'ready'=>!in_array(false,$checks,true),
+        'checks'=>$checks,
+        'authority'=>'diagnostic_only',
+    ];
+}

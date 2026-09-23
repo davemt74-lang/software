@@ -111,6 +111,8 @@ function vp3_cognitive_replanning_goal_analysis_v2530(
     $budgetAdjustment=max(-0.10,min(0.0,(float)($item['budget_planning_adjustment']??0.0)));
     $budgetHardHold=!empty($item['budget_hard_hold']);
     $budgetCommitmentConflict=!empty($item['budget_commitment_conflict']);
+    $valueAdjustment=max(-0.08,min(0.08,(float)($item['value_planning_adjustment']??0.0)));
+    $valueAtRisk=!empty($item['value_at_risk']);
     $commitmentAtRisk=!empty($item['commitment_at_risk']);
     $commitmentConflict=(string)($item['commitment_conflict_code']??'');
 
@@ -128,10 +130,11 @@ function vp3_cognitive_replanning_goal_analysis_v2530(
         if($budgetHardHold)$issues[]='hard_budget_hold';
         elseif($budgetAdjustment<0)$issues[]='budget_pressure';
         if($budgetCommitmentConflict)$issues[]='commitment_budget_conflict';
+        if($valueAtRisk)$issues[]='value_at_risk';
     }
 
     $score=($deadline*0.28)+($priority*0.17)+($leverage*0.15)+($optimized*0.12)
-        +($commitment*0.18)+($capacityPressure*0.06)+($progress*0.04)+$economicAdjustment+$budgetAdjustment;
+        +($commitment*0.18)+($capacityPressure*0.06)+($progress*0.04)+$economicAdjustment+$budgetAdjustment+$valueAdjustment;
     if($deadlineThreat)$score+=0.16;
     if($urgent)$score+=0.07;
     if($commitmentAtRisk)$score+=0.18;
@@ -155,7 +158,9 @@ function vp3_cognitive_replanning_goal_analysis_v2530(
     elseif($commitmentAtRisk)$action='protect_commitment';
     elseif($deadlineThreat)$action='protect_deadline';
     elseif($urgent&&$capacityPressure>=0.75)$action='protect_capacity';
+    elseif($valueAtRisk&&$valueAdjustment>0)$action='protect_high_value_outcome';
     elseif($economicAdjustment<0)$action='defer_if_safe_for_budget';
+    elseif($valueAdjustment<0)$action='defer_lower_value_if_safe';
     elseif($leverage>=0.67)$action='unlock_downstream_work';
 
     return [
@@ -185,6 +190,8 @@ function vp3_cognitive_replanning_goal_analysis_v2530(
         'budget_planning_adjustment'=>$budgetAdjustment,
         'budget_hard_hold'=>$budgetHardHold,
         'budget_commitment_conflict'=>$budgetCommitmentConflict,
+        'value_planning_adjustment'=>$valueAdjustment,
+        'value_at_risk'=>$valueAtRisk,
         'dependency_leverage_goal_ids'=>array_values(array_map(
             'intval',(array)($item['dependency_leverage_goal_ids']??[])
         )),
