@@ -113,6 +113,11 @@ const checks=[
    /vp3_cognitive_portfolio_snapshot_v2480/.test(budget)
    &&/budget_hold_policy_ids/.test(budget)
    &&/vp3_cognitive_budget_policy_rows_v2560/.test(budget)],
+ ['shared Phase 19 runs are governed by every linked autonomous goal',
+   /vp3_cognitive_budget_goals_for_run_v2560/.test(budget)
+   &&/SELECT DISTINCT g\.id/.test(budget)
+   &&/foreach\(\$goalIds as \$goalId\)/.test(budget)
+   &&/break 2/.test(budget)],
  ['budget guard never directly claims creates lease or writes execution receipts',
    !/agent_job_claim_(?:run|next)_v1900\(/.test(budget)
    &&!/lease_token|random_bytes\(/.test(budget)
