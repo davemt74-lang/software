@@ -217,6 +217,7 @@ require_once __DIR__.'/cognitive-release-v2580.php';
 require_once __DIR__.'/cognitive-release-v2590.php';
 require_once __DIR__.'/cognitive-release-v2600.php';
 require_once __DIR__.'/campaigns-rewards-release-v100.php';
+require_once __DIR__.'/campaigns-rewards-release-v110.php';
 require_once __DIR__.'/cognitive-release-v2610.php';
 require_once __DIR__.'/cognitive-proactive-now-v2340.php';
 require_once __DIR__.'/cognitive-feed-v530.php';
