@@ -625,7 +625,7 @@ function campaigns_rewards_attach_reward_v100(PDO $pdo,int $campaignId,int $rewa
     $stmt=$pdo->prepare("SELECT id FROM campaign_reward_sets WHERE campaign_id=? ORDER BY id LIMIT 1");$stmt->execute([$campaignId]);$setId=(int)$stmt->fetchColumn();
     if($setId<1){$pdo->prepare("INSERT INTO campaign_reward_sets (campaign_id,name,selection_mode,min_choices,max_choices) VALUES (?,'Default rewards',?,1,1)")->execute([$campaignId,$selectionMode]);$setId=(int)$pdo->lastInsertId();}
     $pdo->prepare("INSERT INTO campaign_reward_set_items (reward_set_id,reward_product_id,variant_id,quantity,priority,conditions_json)
-      VALUES (?,?,0,?,100,'{}') ON DUPLICATE KEY UPDATE quantity=VALUES(quantity),updated_at=updated_at")->execute([$setId,$rewardProductId,max(1,$quantity)]);
+      VALUES (?,?,0,?,100,'{}') ON DUPLICATE KEY UPDATE quantity=VALUES(quantity),priority=VALUES(priority),conditions_json=VALUES(conditions_json)")->execute([$setId,$rewardProductId,max(1,$quantity)]);
     return $setId;
 }
 
