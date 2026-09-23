@@ -3,7 +3,7 @@ declare(strict_types=1);
 require __DIR__.'/includes/bootstrap.php';
 $pdo=db();$user=current_user();$client=(string)($_GET['client_id']??$_POST['client_id']??'');$app=vp3_connected_site_app_v100($client);
 $redirect=(string)($_GET['redirect_uri']??$_POST['redirect_uri']??'');$state=(string)($_GET['state']??$_POST['state']??'');$scope=(string)($_GET['scope']??$_POST['scope']??'');$mode=(string)($_GET['mode']??$_POST['mode']??'connect');
-if(!$app){http_response_code(400);exit('Unknown connected application.');}
+if(!$app||strlen((string)($app['client_secret']??''))<32||trim((string)($app['redirect_uri']??''))===''){http_response_code(503);exit('This connected application is not configured.');}
 try{$redirect=vp3_connected_site_validate_redirect_v100($app,$redirect);$scopes=vp3_connected_site_scopes_v100($app,$scope);}catch(Throwable $e){http_response_code(400);exit(e($e->getMessage()));}
 if(!$user){$_SESSION['vp3_connected_site_after_login']=$_SERVER['REQUEST_URI']??'/connected-site-authorize.php';redirect(url('/login.php?return_to='.rawurlencode((string)$_SESSION['vp3_connected_site_after_login'])));}
 $error='';
