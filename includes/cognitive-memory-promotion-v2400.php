@@ -206,7 +206,13 @@ function vp3_cognitive_memory_promotion_episode_v2400(PDO $pdo,array $user,strin
 function vp3_cognitive_memory_promotion_write_brain_v2400(
     PDO $pdo,array $user,array $event,array $ref,array $policy,int $recurrence
 ): array {
-    if(!function_exists('agent_brain_v122_upsert_system_memory'))return ['memory_id'=>0,'subject'=>''];
+    if(!function_exists('agent_brain_schema_ready')||!agent_brain_schema_ready()
+        ||!function_exists('agent_brain_v122_memory_hash')
+        ||!function_exists('vp3_agent_memory_scope_hash_v410')
+        ||!function_exists('vp3_agent_memory_scope_provenance_v410')){
+        return ['memory_id'=>0,'subject'=>''];
+    }
+    $uid=(int)($user['id']??0);if($uid<1)return ['memory_id'=>0,'subject'=>''];
     $eventType=(string)$event['event_type'];
     $subject=mb_strimwidth('cognitive-promotion:'.$eventType.':'.$ref['type'].':'.$ref['id'],0,190,'');
     $text=vp3_cognitive_memory_promotion_label_v2400($eventType);
@@ -223,9 +229,26 @@ function vp3_cognitive_memory_promotion_write_brain_v2400(
         'raw_event_payload_copied'=>false,
         'build'=>VP3_COGNITIVE_MEMORY_PROMOTION_V2400,
     ];
-    $memoryId=agent_brain_v122_upsert_system_memory($user,'cognitive_episode',$subject,$text,$metadata,max(.65,min(.99,(float)$policy['salience'])));
-    if($memoryId>0){
-        try{$pdo->prepare('UPDATE agent_memory_items SET occurrence_count=GREATEST(occurrence_count,?) WHERE id=? AND user_id=?')->execute([$recurrence,$memoryId,(int)$user['id']]);}catch(Throwable $e){}
+    // Domain promotion is owner/system memory. Do not inherit whichever named
+    // Agent happens to be the active chat scope when the cognitive loop runs.
+    $hash=vp3_agent_memory_scope_hash_v410(0,agent_brain_v122_memory_hash('cognitive_episode',$subject));
+    $metadata=vp3_agent_memory_scope_provenance_v410($metadata,0,0,0);
+    $json=json_encode($metadata,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
+    $confidence=max(.65,min(.99,(float)$policy['salience']));
+    $stmt=$pdo->prepare(
+        'INSERT INTO agent_memory_items
+         (user_id,user_agent_id,memory_type,subject,memory_text,memory_hash,memory_scope_version,source_archive_id,confidence,occurrence_count,first_seen_at,last_seen_at,is_active,metadata_json)
+         VALUES (?,NULL,?,?,?,?,410,NULL,?, ?,NOW(),NOW(),1,?)
+         ON DUPLICATE KEY UPDATE
+           id=LAST_INSERT_ID(id),memory_text=VALUES(memory_text),confidence=VALUES(confidence),
+           occurrence_count=GREATEST(occurrence_count,VALUES(occurrence_count)),last_seen_at=NOW(),
+           is_active=1,metadata_json=VALUES(metadata_json),memory_scope_version=410'
+    );
+    $stmt->execute([$uid,'cognitive_episode',$subject,$text,$hash,$confidence,max(1,$recurrence),is_string($json)?$json:'{}']);
+    $memoryId=(int)$pdo->lastInsertId();
+    if($memoryId<1){
+        $q=$pdo->prepare('SELECT id FROM agent_memory_items WHERE user_id=? AND user_agent_id IS NULL AND memory_hash=? LIMIT 1');
+        $q->execute([$uid,$hash]);$memoryId=(int)$q->fetchColumn();
     }
     return ['memory_id'=>$memoryId,'subject'=>$subject];
 }
