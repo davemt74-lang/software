@@ -22,7 +22,7 @@ const checks=[
  ['trusted event seeds read object_refs only',/verification_status IN \('trusted','verified'\)/.test(graph)&&/payload\['object_refs'\]/.test(graph)&&/event_seed_source.*object_refs_only/.test(graph)],
  ['every seed and hop uses canonical object authorization',/vp3_cognitive_validate_object_ref_v500/.test(graph)&&/vp3_cognitive_authorize_ref_v500/.test(graph)&&/vp3_cognitive_relationships_for_ref_v500/.test(graph)],
  ['model inferred links stay unresolved',/model_inferred_not_merged/.test(graph)&&/confirmation==='model_inferred'/.test(graph)],
- ['only deterministic or user confirmed relationships expand graph',/\\['deterministic','user_confirmed'\\]/.test(graph)],
+ ['only deterministic or user confirmed relationships expand graph',graph.includes("in_array($confirmation,['deterministic','user_confirmed'],true)")],
  ['conflicting verified identities become diagnostics not merges',/conflicting_verified_identity_links/.test(graph)&&/same_as/.test(graph)&&/represents/.test(graph)],
  ['graph presentation passes through v25.90 firewall',/vp3_cognitive_presentation_firewall_validate_v2590/.test(graph)&&/entity_graph_presentation_v2610/.test(graph)],
  ['Working Context has a single entity_graph section',/'entity_graph'=>1/.test(context)&&/vp3_cognitive_entity_graph_context_item_v2610/.test(context)&&/cognitive_entity_graph_v2610_ephemeral_projection/.test(context)],
