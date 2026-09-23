@@ -139,25 +139,33 @@ function campaigns_rewards_set_access_source_v100(PDO $pdo,int $merchantId,int $
     return campaigns_rewards_sync_member_projection_v100($pdo,$merchantId,$userId);
 }
 
-function campaigns_rewards_platform_can_v100(PDO $pdo,int $merchantId,int $userId,string $capability): bool
+function campaigns_rewards_platform_member_can_v100(PDO $pdo,int $merchantId,int $userId,string $capability): bool
 {
     if($merchantId<1||$userId<1||$capability==='')return false;
     $user=campaigns_rewards_platform_user_v100($userId);if(!$user||(int)($user['is_active']??0)!==1)return false;
     if(function_exists('user_has_role')&&user_has_role('admin',$user))return true;
-    $merchant=campaigns_rewards_platform_merchant_v100($pdo,$merchantId);
-    if(!$merchant||!in_array((string)$merchant['status'],['active','suspended'],true))return false;
     $member=campaigns_rewards_platform_member_v100($pdo,$merchantId,$userId);
     if(!$member||($member['status']??'')!=='active')return false;
     if(!empty($member['is_owner']))return true;
-
     $override=$pdo->prepare("SELECT effect FROM merchant_member_capability_overrides WHERE merchant_member_id=? AND capability_key=? LIMIT 1");
     $override->execute([(int)$member['id'],$capability]);$effect=$override->fetchColumn();
     if($effect!==false)return $effect==='allow';
-
     $stmt=$pdo->prepare("SELECT effect FROM merchant_role_capabilities WHERE role_id=? AND capability_key=? LIMIT 1");
     $stmt->execute([(int)$member['role_id'],$capability]);return $stmt->fetchColumn()==='allow';
 }
 
+function campaigns_rewards_platform_can_v100(PDO $pdo,int $merchantId,int $userId,string $capability): bool
+{
+    $merchant=campaigns_rewards_platform_merchant_v100($pdo,$merchantId);if(!$merchant)return false;
+    $status=(string)$merchant['status'];
+    if($status==='closed'){
+        $user=campaigns_rewards_platform_user_v100($userId);
+        return (bool)($user&&function_exists('user_has_role')&&user_has_role('admin',$user));
+    }
+    if($status==='archived'&&!in_array($capability,['merchant.view','merchant.manage','merchant.settings.manage'],true))return false;
+    if(!in_array($status,['active','suspended','archived'],true))return false;
+    return campaigns_rewards_platform_member_can_v100($pdo,$merchantId,$userId,$capability);
+}
 function campaigns_rewards_platform_assert_can_v100(PDO $pdo,int $merchantId,int $userId,string $capability): void
 {
     if(!campaigns_rewards_platform_can_v100($pdo,$merchantId,$userId,$capability)){
@@ -266,11 +274,12 @@ function campaigns_rewards_create_platform_merchant_v100(PDO $pdo,array $user,ar
 function campaigns_rewards_set_platform_merchant_status_v100(PDO $pdo,int $merchantId,int $actorUserId,string $status,string $reason=''): array
 {
     $allowed=['active','suspended','archived','closed'];if(!in_array($status,$allowed,true))throw new RuntimeException('Choose a valid Merchant status.');
-    campaigns_rewards_platform_assert_can_v100($pdo,$merchantId,$actorUserId,'merchant.manage');
+    if(!campaigns_rewards_platform_member_can_v100($pdo,$merchantId,$actorUserId,'merchant.manage'))throw new RuntimeException('Merchant management access is required.');
     $owns=!$pdo->inTransaction();if($owns)$pdo->beginTransaction();
     try{
         $merchant=campaigns_rewards_platform_merchant_v100($pdo,$merchantId,true)?:throw new RuntimeException('Merchant not found.');
-        $old=(string)$merchant['status'];if($old===$status){if($owns)$pdo->commit();return $merchant;}
+        $old=(string)$merchant['status'];if($old==='closed'&&$status!=='closed')throw new RuntimeException('Closed Merchants are terminal and cannot be restored.');
+        if($old===$status){if($owns)$pdo->commit();return $merchant;}
         $fields=[
             'suspended'=>$status==='suspended'?'UTC_TIMESTAMP()':'NULL',
             'archived'=>$status==='archived'?'UTC_TIMESTAMP()':'NULL',
