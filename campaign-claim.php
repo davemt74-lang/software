@@ -8,8 +8,8 @@ if(!$user||!$pdo||!function_exists('campaigns_rewards_platform_schema_ready_v100
     http_response_code(503);exit('Claim Terminal is unavailable.');
 }
 $uid=(int)$user['id'];$merchants=[];
-foreach(campaigns_rewards_platform_merchants_v100($pdo,$uid) as $merchant){
-    if(campaigns_rewards_platform_can_v100($pdo,(int)$merchant['id'],$uid,'claims.process'))$merchants[]=$merchant;
+foreach(campaigns_rewards_accessible_merchants_v100($pdo,$user) as $merchant){
+    if(($merchant['status']??'')==='active'&&campaigns_rewards_platform_can_v100($pdo,(int)$merchant['id'],$uid,'claims.process'))$merchants[]=$merchant;
 }
 $merchantId=max(0,(int)($_REQUEST['merchant']??$_REQUEST['merchant_id']??0));
 if($merchantId<1&&$merchants)$merchantId=(int)$merchants[0]['id'];
