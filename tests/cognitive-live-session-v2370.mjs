@@ -50,6 +50,7 @@ const checks=[
   ['live session tracks current focus and recent actions', /current_conversation_id/.test(session) && /current_project_ref/.test(session) && /current_task_ref/.test(session) && /last_actions_json/.test(session)],
   ['activity bridge updates canonical live session', /vp3_live_session_record_activity_v2370/.test(activity)],
   ['low-level session events record without Brain dispatch', /agent_event_ingest_v1920/.test(session) && !/agent_event_dispatch_v1920/.test(session) && !/agent_event_brain_observe_v1920/.test(session)],
+  ['sub-second session actions retain distinct event identities', /microtime\(true\)/.test(session) && /sprintf\('\%\.6F'/.test(session)],
   ['session is a first-class cognitive module', /'module'=>'live_session'/.test(sessionAdapter) && /'live_session','session_segment'/.test(sessionAdapter)],
   ['session module registers Chat and session events', /session\.started/.test(sessionAdapter) && /chat\.message_sent/.test(sessionAdapter) && /chat\.stop_requested/.test(sessionAdapter)],
   ['cognitive presentation uses real session idle state', /vp3_live_session_snapshot_v2370/.test(runtime) && /idleMinutes/.test(runtime) && /interruptible/.test(runtime)],
