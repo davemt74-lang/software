@@ -16,7 +16,7 @@ assert.doesNotMatch(legacyWrapper, /Stem Studio|Video Editor|workspace-main-side
 
 // Primary navigation is rendered from canonical keyed destinations. Keep the source
 // contract aligned with the consolidated shell rather than expecting duplicated anchors.
-assert.match(mainSidebar, /\$mainSidebarPrimaryOrder = \['home','chat','profile_agent','messages','contacts','knowledge','transcriptions','calendar','scheduling','profile_commerce','team'\]/, 'canonical Agent sidebar must retain the primary destination order');
+assert.match(mainSidebar, /\$mainSidebarPrimaryOrder = \['home','chat','profile_agent','messages','contacts','knowledge','transcriptions','calendar','scheduling','profile_commerce','campaigns','team'\]/, 'canonical Agent sidebar must retain the primary destination order');
 for (const [key, label] of [
   ['home', 'Home'],
   ['chat', 'Agent Chat'],
@@ -26,6 +26,7 @@ for (const [key, label] of [
   ['knowledge', 'Knowledge'],
   ['transcriptions', 'Transcriptions'],
   ['calendar', 'Calendar'],
+  ['campaigns', 'Campaigns & Rewards'],
 ]) {
   assert.ok(mainSidebar.includes(`'${key}'=>'${label}'`), `canonical Agent sidebar must retain ${label}`);
 }
@@ -44,7 +45,8 @@ assert.match(agentUiCss, /\.chat-history-new\{[^}]*width:24px;[^}]*height:24px;/
 assert.match(mainSidebar, /data-agent-user-footer/, 'secondary account and product navigation must live in the bottom user menu');
 assert.match(mainSidebar, /member_navigation_menu_links\(\$mainSidebarUser\)/, 'sidebar and bottom user menu must reuse canonical member navigation');
 assert.match(mainSidebar, /\$mainSidebarPrimaryKeys = array_fill_keys\(\$mainSidebarPrimaryOrder, true\)/, 'promoted destinations must be represented by the canonical primary key set');
-assert.match(mainSidebar, /!isset\(\$mainSidebarPrimaryKeys\[\(string\)\(\$link\['key'\] \?\? ''\)\]\)/, 'promoted destinations must be filtered out of the bottom menu');
+assert.match(mainSidebar, /!isset\(\$mainSidebarPrimaryKeys\[\(string\)\(\$link\['key'\] \?\? ''\)\]\)/, 'promoted destinations must be filtered out of the bottom menu by default');
+assert.match(mainSidebar, /array_unshift\(\$mainSidebarFooterLinks,\$campaignsFooterLink\)/, 'Campaigns & Rewards is the explicit dual-navigation exception in the bottom user menu');
 assert.doesNotMatch(mainSidebar, /\$mainSidebarCalendarActive|\$mainSidebarProductsActive|\$mainSidebarTranscriptionsActive/, 'page-specific active-state booleans must not return');
 assert.doesNotMatch(mainSidebar, /class="agent-sidebar-avatar"/, 'bottom user section must not render the user picture/avatar');
 assert.match(mainSidebar, /class="agent-sidebar-user-copy"><strong>/, 'bottom user section must retain the user name');

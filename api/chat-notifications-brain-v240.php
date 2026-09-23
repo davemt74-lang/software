@@ -370,6 +370,12 @@ function chat_notifications_v240_state(array $user, PDO $pdo, int $agentId=0): a
     $currentStatePresentation = $brainAllowed && function_exists('vp3_cognitive_presentation_from_current_state_v2590')
         ? vp3_cognitive_presentation_from_current_state_v2590($currentState)
         : [];
+    $entityGraph = $brainAllowed && function_exists('vp3_cognitive_entity_graph_projection_v2610')
+        ? vp3_cognitive_entity_graph_projection_v2610($pdo, $user, $namespace)
+        : ['build'=>'','ready'=>false,'counts'=>[],'domain_counts'=>[],'diagnostics'=>[],'authority'=>[],'privacy'=>[]];
+    $entityGraphPresentation = $brainAllowed && function_exists('vp3_cognitive_entity_graph_presentation_v2610')
+        ? vp3_cognitive_entity_graph_presentation_v2610($entityGraph)
+        : [];
     $live = is_array($workingContext['live_session'] ?? null) ? $workingContext['live_session'] : null;
     $activity = $live ? [
         'state'=>(string)($live['status'] ?? 'idle'),
@@ -417,6 +423,19 @@ function chat_notifications_v240_state(array $user, PDO $pdo, int $agentId=0): a
             'decision_calibration'=>$decisionCalibration,
             'current_state'=>$currentState,
             'current_state_presentation'=>$currentStatePresentation,
+            'entity_graph'=>[
+                'build'=>$entityGraph['build']??'','ready'=>!empty($entityGraph['ready']),
+                'counts'=>$entityGraph['counts']??[],'domain_counts'=>$entityGraph['domain_counts']??[],
+                'health'=>[
+                    'ok'=>empty($entityGraph['diagnostics']['conflicts']),
+                    'truncated'=>!empty($entityGraph['diagnostics']['truncated']),
+                    'unresolved_count'=>(int)($entityGraph['counts']['unresolved']??0),
+                    'conflict_count'=>(int)($entityGraph['counts']['conflicts']??0),
+                    'orphaned_seed_count'=>(int)($entityGraph['counts']['orphaned_seeds']??0),
+                ],
+                'authority'=>$entityGraph['authority']??[],'privacy'=>$entityGraph['privacy']??[],
+            ],
+            'entity_graph_presentation'=>$entityGraphPresentation,
             'priorities'=>$brainAllowed ? chat_notifications_v313_brain_priorities($user, $pdo) : [],
             'operations'=>$brainAllowed ? chat_notifications_v240_brain_operations($user, 60) : [],
             'events'=>$brainAllowed ? chat_notifications_v240_activity_events($pdo, $userId, 50) : [],

@@ -14,7 +14,7 @@ $mainSidebarIsChat = $mainSidebarActive === 'chat' || $mainSidebarScript === 'ch
 $mainSidebarCanChat = $mainSidebarUser && has_permission('chat.access', $mainSidebarUser);
 $mainSidebarCurrentSection = function_exists('member_navigation_section_label') ? member_navigation_section_label($mainSidebarActive) : 'Workspace';
 
-$mainSidebarPrimaryOrder = ['home','chat','profile_agent','messages','contacts','knowledge','transcriptions','calendar','scheduling','profile_commerce','team'];
+$mainSidebarPrimaryOrder = ['home','chat','profile_agent','messages','contacts','knowledge','transcriptions','calendar','scheduling','profile_commerce','campaigns','team'];
 $mainSidebarPrimaryKeys = array_fill_keys($mainSidebarPrimaryOrder, true);
 $mainSidebarPrimaryLabels = [
     'home'=>'Home',
@@ -27,6 +27,7 @@ $mainSidebarPrimaryLabels = [
     'calendar'=>'Calendar',
     'scheduling'=>'Scheduling',
     'profile_commerce'=>'Products',
+    'campaigns'=>'Campaigns & Rewards',
     'team'=>'Team',
 ];
 $mainSidebarPrimaryIcons = [
@@ -40,6 +41,7 @@ $mainSidebarPrimaryIcons = [
     'calendar'=>'▣',
     'scheduling'=>'◷',
     'profile_commerce'=>'▦',
+    'campaigns'=>'◆',
     'team'=>'◎',
 ];
 $mainSidebarPrimarySections = [
@@ -53,6 +55,7 @@ $mainSidebarPrimarySections = [
     'calendar'=>'Plan & Sell',
     'scheduling'=>'Plan & Sell',
     'profile_commerce'=>'Plan & Sell',
+    'campaigns'=>'Plan & Sell',
     'team'=>'Team',
 ];
 $mainSidebarLinkIndex = [];
@@ -68,6 +71,13 @@ $mainSidebarFooterLinks = array_values(array_filter(
     $mainSidebarMenuLinks,
     static fn(array $link): bool => !isset($mainSidebarPrimaryKeys[(string)($link['key'] ?? '')])
 ));
+// Campaigns & Rewards is intentionally available in both Plan & Sell and the
+// bottom user menu so the plugin is discoverable from either navigation mode.
+if (isset($mainSidebarLinkIndex['campaigns'])) {
+    $campaignsFooterLink=$mainSidebarLinkIndex['campaigns'];
+    $campaignsFooterLink['group']='agent';
+    array_unshift($mainSidebarFooterLinks,$campaignsFooterLink);
+}
 $mainSidebarRoleSummary = $mainSidebarUser ? implode(' · ', user_role_labels($mainSidebarUser)) : '';
 $mainSidebarRenderAgentVoiceAssets = empty($GLOBALS['VP3_MEMBER_AGENT_VOICE_MENU_ASSETS_RENDERED']);
 if ($mainSidebarRenderAgentVoiceAssets) $GLOBALS['VP3_MEMBER_AGENT_VOICE_MENU_ASSETS_RENDERED'] = true;

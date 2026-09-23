@@ -23,7 +23,7 @@ assert.match(wrapper, /<aside class=\"chat-sidebar\" id=\"chatSidebar\">\.\*\?<\
 assert.doesNotMatch(wrapper, /data-chat-view-target=\"\(\?:player\|saved\|playlists\)\"|chatMyTeamSidebarLink|data-chat-my-team/, 'Main Feed must not strip/inject individual sidebar items after render');
 
 assert.match(mainSidebar, /aria-label="VP3 Home">VP3<\/a>/, 'Canonical sidebar logo must identify VP3 Home');
-assert.match(mainSidebar, /\$mainSidebarPrimaryOrder = \['home','chat','profile_agent','messages','contacts','knowledge','transcriptions','calendar','scheduling','profile_commerce','team'\]/, 'Canonical sidebar must retain the consolidated primary Agent navigation order');
+assert.match(mainSidebar, /\$mainSidebarPrimaryOrder = \['home','chat','profile_agent','messages','contacts','knowledge','transcriptions','calendar','scheduling','profile_commerce','campaigns','team'\]/, 'Canonical sidebar must retain the consolidated primary Agent navigation order');
 for (const [key, label] of [
   ['home', 'Home'],
   ['chat', 'Agent Chat'],
@@ -35,6 +35,7 @@ for (const [key, label] of [
   ['calendar', 'Calendar'],
   ['scheduling', 'Scheduling'],
   ['profile_commerce', 'Products'],
+  ['campaigns', 'Campaigns & Rewards'],
   ['team', 'Team'],
 ]) {
   assert.ok(mainSidebar.includes(`'${key}'=>'${label}'`), `Canonical Agent sidebar must retain ${label}`);
@@ -47,7 +48,9 @@ assert.match(mainSidebar, /aria-current="page"/, 'Canonical primary navigation m
 assert.doesNotMatch(mainSidebar, /\$mainSidebarCalendarActive|\$mainSidebarProductsActive|\$mainSidebarTranscriptionsActive/, 'Legacy page-specific active-state booleans must not return');
 assert.ok(!mainSidebar.includes("'memory'=>'Memory'") && !mainSidebar.includes("'approvals'=>'Approvals'"), 'Memory and Approvals must not become primary Agent destinations');
 assert.match(mainSidebar, /\$mainSidebarPrimaryKeys = array_fill_keys\(\$mainSidebarPrimaryOrder, true\)/, 'Primary destinations must be represented by the canonical key set');
-assert.match(mainSidebar, /!isset\(\$mainSidebarPrimaryKeys\[\(string\)\(\$link\['key'\] \?\? ''\)\]\)/, 'Primary destinations must be removed from duplicate footer navigation');
+assert.match(mainSidebar, /!isset\(\$mainSidebarPrimaryKeys\[\(string\)\(\$link\['key'\] \?\? ''\)\]\)/, 'Primary destinations must be removed from duplicate footer navigation by default');
+assert.match(mainSidebar, /Campaigns & Rewards is intentionally available in both Plan & Sell and the/, 'Campaigns & Rewards must document its intentional primary/footer duplication');
+assert.match(mainSidebar, /array_unshift\(\$mainSidebarFooterLinks,\$campaignsFooterLink\)/, 'Campaigns & Rewards must also be restored into the bottom user menu');
 assert.match(mainSidebar, /class="chat-history-heading"[\s\S]*id="newChatButton"[\s\S]*data-chat-view-target="chat"/, 'Canonical sidebar must preserve Main Feed New Chat behavior in the Chats heading');
 assert.match(mainSidebar, /class="chat-history-new" id="newChatButton"/, 'Canonical Main Feed New Chat action must use the compact Chats-heading plus control');
 assert.match(mainSidebar, /id="chatHistory"[\s\S]*data-conversation-id/, 'Canonical sidebar must own recent Chat history rendering when supplied');

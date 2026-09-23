@@ -1,4 +1,4 @@
-name: Cognitive Runtime Release v26.00
+name: Cognitive Runtime Release v26.10
 
 on:
   pull_request:
@@ -38,6 +38,14 @@ on:
       - 'includes/cognitive-release-v2600.php'
       - 'tests/cognitive-domain-registry-v2600.php'
       - 'tests/cognitive-domain-registry-v2600.mjs'
+      - 'docs/VP3_COGNITIVE_ENTITY_GRAPH_V2610.md'
+      - 'includes/cognitive-entity-graph-v2610.php'
+      - 'includes/cognitive-release-v2610.php'
+      - 'tests/cognitive-entity-graph-v2610.php'
+      - 'tests/cognitive-entity-graph-v2610.mjs'
+      - 'includes/campaigns-rewards-domain-v100.php'
+      - 'includes/main-sidebar.php'
+      - 'includes/member-navigation.php'
       - 'decision-calibration.php'
       - 'decision-calibration-v2580.css'
       - 'budget-governance.php'
@@ -97,11 +105,11 @@ on:
       - '.github/workflows/cognitive-loop-release-v2360.yml'
   push:
     branches:
-      - 'cognitive-domain-registry-v2600'
+      - 'cognitive-entity-graph-v2610'
 
 jobs:
   release:
-    name: Cognitive Runtime v26.00 · PHP ${{ matrix.php }}
+    name: Cognitive Runtime v26.10 · PHP ${{ matrix.php }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -170,6 +178,10 @@ jobs:
           php -l includes/cognitive-release-v2590.php
           php -l includes/cognitive-domain-registry-v2600.php
           php -l includes/cognitive-release-v2600.php
+          php -l includes/cognitive-entity-graph-v2610.php
+          php -l includes/cognitive-release-v2610.php
+          php -l includes/campaigns-rewards-domain-v100.php
+          php -l includes/main-sidebar.php
           php -l decision-calibration.php
           php -l budget-governance.php
           php -l outcome-value.php
@@ -287,6 +299,10 @@ jobs:
         run: |
           php tests/cognitive-domain-registry-v2600.php
           node tests/cognitive-domain-registry-v2600.mjs
+      - name: v26.10 cross-domain entity graph
+        run: |
+          php tests/cognitive-entity-graph-v2610.php
+          node tests/cognitive-entity-graph-v2610.mjs
       - name: v23.x feature family
         run: |
           node tests/cognitive-calibration-v2350.mjs
