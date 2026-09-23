@@ -329,9 +329,13 @@ function campaigns_rewards_save_campaign_v100(PDO $pdo,int $merchantId,int $acto
         }
 
         $campaignRow=campaigns_rewards_campaign_platform_v100($pdo,$campaignId)?:throw new RuntimeException('Campaign could not be loaded.');
+        $typeBehavior=function_exists('campaigns_rewards_campaign_type_behavior_v118')
+            ?campaigns_rewards_campaign_type_behavior_v118($pdo,$merchantId,(string)$campaignRow['campaign_type_key']):[];
+        $ctaLabel=campaigns_rewards_text_v100($input['cta_label']??'',80);
+        if($ctaLabel==='')$ctaLabel=campaigns_rewards_text_v100($typeBehavior['default_cta']??'Continue',80);
         $pdo->prepare("UPDATE campaign_landing_pages SET slug=?,visibility=?,headline=?,subheadline=?,cta_label=?,terms_json=?,updated_at=UTC_TIMESTAMP() WHERE campaign_id=?")
           ->execute([(string)$campaignRow['slug'],!empty($input['profile_visible'])?'profile_public':'unlisted',(string)$campaignRow['name'],
-            campaigns_rewards_text_v100($input['subtitle']??'',500),campaigns_rewards_text_v100($input['cta_label']??'Claim reward',80),
+            campaigns_rewards_text_v100($input['subtitle']??'',500),$ctaLabel,
             campaigns_rewards_json_v100(['text'=>mb_strimwidth(trim((string)($input['terms']??'')),0,12000,'…')]),$campaignId]);
 
         $locationId=max(0,(int)($input['location_id']??0));
