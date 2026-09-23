@@ -157,6 +157,11 @@ function vp3_cognitive_economics_run_costs_v2550(PDO $pdo,int $uid,array $runIds
     }catch(Throwable $e){return [];}
 }
 
+function vp3_cognitive_economics_attribution_share_v2550(int $goalCount): float
+{
+    return 1.0/max(1,$goalCount);
+}
+
 function vp3_cognitive_economics_efficiency_v2550(?int $goalAverage,?int $accountAverage): float
 {
     if($goalAverage===null||$accountAverage===null||$accountAverage<=0)return 0.5;
@@ -200,14 +205,15 @@ function vp3_cognitive_economics_apply_v2550(
         foreach($goalRunIds as $runId){
             $row=$runCosts[$runId]??null;if(!$row)continue;
             $share=max(1,(int)($runGoalCounts[$runId]??1));
+            $shareWeight=vp3_cognitive_economics_attribution_share_v2550($share);
             $requests+=(int)$row['requests'];$known+=(int)$row['known_cost_requests'];
             $unknown+=(int)$row['unknown_cost_requests'];$cost+=(int)$row['known_cost_micros'];
             $tokens+=(int)$row['total_tokens'];$cloudTokens+=(int)$row['cloud_tokens_charged'];
             $cloudRequests+=(int)$row['cloud_requests'];$localRequests+=(int)$row['local_requests'];
-            $attributedCost+=((int)$row['known_cost_micros'])/$share;
-            $attributedKnown+=((int)$row['known_cost_requests'])/$share;
-            $attributedTokens+=((int)$row['total_tokens'])/$share;
-            $attributedCloudTokens+=((int)$row['cloud_tokens_charged'])/$share;
+            $attributedCost+=((int)$row['known_cost_micros'])*$shareWeight;
+            $attributedKnown+=((int)$row['known_cost_requests'])*$shareWeight;
+            $attributedTokens+=((int)$row['total_tokens'])*$shareWeight;
+            $attributedCloudTokens+=((int)$row['cloud_tokens_charged'])*$shareWeight;
         }
         $attributedCostMicros=max(0,(int)round($attributedCost));
         $goalAvg=$attributedKnown>0?(int)round($attributedCost/$attributedKnown):null;
