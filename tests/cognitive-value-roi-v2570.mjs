@@ -93,7 +93,7 @@ const checks=[
  ['declared completion value is explicitly not revenue',
    /declared_completion_value/.test(value)
    &&/'declared_completion_value_is_not_labeled_revenue'=>true/.test(release)
-   &&/declared completion value becomes a \*\*declared completion value\*\*/.test(docs)],
+   &&/declared expected value becomes a \*\*declared completion value\*\*/.test(docs)],
  ['Profile conversion value reads canonical Profile event revenue evidence',
    /FROM profile_events/.test(value)
    &&/booking_converted/.test(value)&&/product_converted/.test(value)
