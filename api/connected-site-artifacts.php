@@ -4,7 +4,7 @@ require dirname(__DIR__).'/includes/bootstrap.php';header('Content-Type: applica
 $pdo=db();try{
  $auth=vp3_connected_site_auth_v100($pdo,'transcriptions.read');$uid=(int)$auth['user_id'];$id=strtolower(trim((string)($_GET['id']??'')));
  if($id===''){
-   $rows=[];foreach(video_meeting_recent_for_user_v1800($pdo,$uid,80) as $m)$rows[]=vp3_connected_site_meeting_descriptor_v100($pdo,$m,$uid,$auth['scopes']);
+   $rows=[];foreach(vp3_connected_site_meeting_rows_v100($pdo,$uid,80) as $m)$rows[]=vp3_connected_site_meeting_descriptor_v100($pdo,$m,$uid,$auth['scopes']);
    foreach(vp3_connected_site_transcription_rows_v100($pdo,$uid,80) as $s)$rows[]=vp3_connected_site_transcription_descriptor_v100($pdo,$s,$auth['scopes']);
    usort($rows,static fn($a,$b)=>strcmp((string)($b['updated_at']??''),(string)($a['updated_at']??'')));$rows=array_slice($rows,0,100);
    echo json_encode(['ok'=>true,'data'=>['artifacts'=>$rows]],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);exit;
