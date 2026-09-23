@@ -200,7 +200,7 @@ const checks=[
    &&/latest settled snapshot per goal/.test(docs)
    &&/verified value profiles/.test(docs)
    &&/raw completion window/.test(docs)
-   &&/Raw projected remaining AI cost/.test(docs)
+   &&/raw projected remaining AI cost/i.test(docs)
    &&/No already-authorized work can deadlock/.test(docs)],
 ];
 
