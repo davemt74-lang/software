@@ -132,6 +132,9 @@ function vp3_cognitive_proactive_now_compose_v2340(
     $supervision=function_exists('vp3_cognitive_supervision_activity_projection_v2460')
         ?vp3_cognitive_supervision_activity_projection_v2460($pdo,$user,$namespace)
         :['focus'=>null,'counts'=>[],'issues'=>[]];
+    $autonomy=function_exists('vp3_cognitive_autonomy_activity_projection_v2470')
+        ?vp3_cognitive_autonomy_activity_projection_v2470($pdo,$user,$namespace)
+        :['focus'=>null,'counts'=>[],'items'=>[]];
     $voiceEnabled=false;
     if(function_exists('chat_settings_get_v237')){
         try{$voiceEnabled=!empty(chat_settings_get_v237($pdo,(int)($user['id']??0))['agent_voice_enabled']);}
@@ -156,6 +159,10 @@ function vp3_cognitive_proactive_now_compose_v2340(
             'focus'=>$supervision['focus']??null,
             'counts'=>$supervision['counts']??[],
         ],
+        'autonomy'=>[
+            'focus'=>$autonomy['focus']??null,
+            'counts'=>$autonomy['counts']??[],
+        ],
         'voice'=>[
             'enabled'=>$voiceEnabled,
             'delivery_authority'=>'cognitive_presentation_v510_and_extension_notifications_v2140',
@@ -174,6 +181,7 @@ function vp3_cognitive_proactive_now_compose_v2340(
             'delivery'=>'cognitive_presentation_v510_and_extension_notifications_v2140',
             'followthrough'=>'cognitive_followthrough_v2450',
             'supervision'=>'cognitive_supervision_v2460',
+            'autonomy'=>'cognitive_autonomy_v2470',
             'automatic_external_writes'=>false,
             'approval_bypass'=>false,
             'execution_bypass'=>false,
