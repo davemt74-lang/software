@@ -57,6 +57,7 @@ NODE_TESTS = [
     'tests/cognitive-replanning-v2530.mjs',
     'tests/cognitive-commitment-protection-v2540.mjs',
     'tests/cognitive-economics-v2550.mjs',
+    'tests/cognitive-budget-governance-v2560.mjs',
     'tests/knowledge-agent-context-v162-browser-contract.mjs',
     'tests/agent-brain-learning-history-v317.mjs',
     'tests/chat-onboarding-v241.mjs',
@@ -167,6 +168,7 @@ PHP_TESTS = [
     'tests/cognitive-replanning-v2530.php',
     'tests/cognitive-commitment-protection-v2540.php',
     'tests/cognitive-economics-v2550.php',
+    'tests/cognitive-budget-governance-v2560.php',
 ]
 
 
