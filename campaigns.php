@@ -68,6 +68,11 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
             $allowed=['referral_qualified','winner_selected','attendance_confirmed','proof_approved','loyalty_milestone','product_available','allocation_approved','agent_action','manual'];
             if(!in_array($trigger,$allowed,true))throw new RuntimeException('Choose a supported governed Campaign event.');
             $contactId=max(0,(int)($_POST['contact_id']??0));$referrerId=max(0,(int)($_POST['referrer_contact_id']??0));
+            $enrollmentId=max(0,(int)($_POST['enrollment_id']??0));
+            if($referrerId<1&&$enrollmentId>0){
+                $q=$pdo->prepare("SELECT metadata_json FROM campaign_enrollments e INNER JOIN campaigns c ON c.id=e.campaign_id WHERE e.id=? AND c.merchant_id=? LIMIT 1");
+                $q->execute([$enrollmentId,$merchantId]);$meta=json_decode((string)($q->fetchColumn()?:''),true);if(is_array($meta))$referrerId=max(0,(int)($meta['referrer_contact_id']??0));
+            }
             $eventId='merchant-event:'.$trigger.':'.$merchantId.':'.($contactId?:0).':'.bin2hex(random_bytes(8));
             $summary=campaigns_rewards_automation_run_trigger_v119($pdo,$trigger,[
                 'contact_id'=>$contactId,'referrer_contact_id'=>$referrerId,
