@@ -147,7 +147,7 @@ function vp3_cognitive_campaigns_rewards_contract_v2600(): array
             'Campaigns & Rewards V1.19 activates the existing Campaign Automation Rule and Rule Execution authorities for governed lifecycle triggers.',
             'Event automations are constrained to the triggering CRM contact; scheduled birthday and win-back rules may evaluate configured CRM audiences.',
             'Lifecycle intelligence creates human-review recommendations only and never auto-activates Campaigns or automation rules.',
-            'Signup Reward remains a newsletter/email-list acquisition flow that writes Core CRM marketing consent and issues the attached welcome Reward.'
+            'Signup Reward remains a newsletter/email-list acquisition flow that writes Core CRM marketing consent and issues the attached welcome Reward.',
             'CRM contact identity and Team human lifecycle remain VP3 Core authorities and are referenced rather than duplicated.',
             'INBOX, SENT and CLAIMED are projections over Reward Issuance, Reward Transfer and Claim state; no second mutable Wallet ledger exists.',
             'Plugin disable pauses surfaces without deleting Merchant, CRM relationship, Campaign, Reward, Claim, Loyalty or audit history.',
