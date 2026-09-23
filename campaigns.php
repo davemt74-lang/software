@@ -33,6 +33,19 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
             flash('notice','Campaign saved.');$redirectMerchant($merchantId,'&edit_campaign='.(int)$campaign['id'].'#campaign-editor');
         }elseif($action==='campaign_status'){
             campaigns_rewards_set_campaign_status_v100($pdo,max(0,(int)($_POST['campaign_id']??0)),$uid,(string)($_POST['status']??'draft'));flash('notice','Campaign lifecycle updated.');
+        }elseif($action==='campaign_fulfill'){
+            $result=campaigns_rewards_issue_enrollment_reward_v118(
+                $pdo,$merchantId,max(0,(int)($_POST['campaign_id']??0)),max(0,(int)($_POST['enrollment_id']??0)),
+                max(0,(int)($_POST['reward_product_id']??0)),$uid
+            );
+            if(session_status()===PHP_SESSION_ACTIVE){
+                $_SESSION['campaign_fulfillment_once']=[
+                    'credential'=>(string)($result['issuance']['credential']??''),
+                    'credential_last4'=>(string)($result['issuance']['credential_last4']??''),
+                    'campaign'=>(string)($result['campaign']['name']??'Campaign'),
+                ];
+            }
+            flash('notice','Campaign participant fulfilled and Reward issued.');
         }elseif($action==='merchant_member_save'){
             if(!campaigns_rewards_can_own_merchant_v100($pdo,$merchantId,$uid))throw new RuntimeException('Merchant Owner access is required.');
             $email=strtolower(trim((string)($_POST['member_email']??'')));if(!filter_var($email,FILTER_VALIDATE_EMAIL))throw new RuntimeException('Enter an active VP3 user email.');
@@ -58,13 +71,15 @@ $canManage=$merchant?campaigns_rewards_platform_can_v100($pdo,$merchantId,$uid,'
 $canOwn=$merchant?campaigns_rewards_can_own_merchant_v100($pdo,$merchantId,$uid):false;
 $canLocations=$merchant?campaigns_rewards_platform_can_v100($pdo,$merchantId,$uid,'locations.manage'):false;
 $canCampaignEdit=$merchant?campaigns_rewards_platform_can_v100($pdo,$merchantId,$uid,'campaigns.edit'):false;
+$canRewardIssue=$merchant?campaigns_rewards_platform_can_v100($pdo,$merchantId,$uid,'rewards.issue'):false;
 $canAnalytics=$merchant?campaigns_rewards_platform_can_v100($pdo,$merchantId,$uid,'analytics.view'):false;
 
 $locations=$merchant?campaigns_rewards_locations_v100($pdo,$merchantId):[];
 $campaigns=$merchant?campaigns_rewards_campaigns_v100($pdo,$merchantId):[];
 $members=$merchant?campaigns_rewards_merchant_members_v100($pdo,$merchantId):[];
 $report=$merchant&&$canAnalytics?campaigns_rewards_reporting_v100($pdo,$merchantId,$uid):['active_campaigns'=>0,'landing_views'=>0,'customers'=>0,'claims_redeemed'=>0];
-$campaignTypes=[];$campaignTypesByCategory=[];$rewardProducts=[];$editCampaignRewardIds=[];
+$recentEnrollments=$merchant&&function_exists('campaigns_rewards_recent_enrollments_v118')?campaigns_rewards_recent_enrollments_v118($pdo,$merchantId,$uid,40):[];
+$campaignTypes=[];$campaignTypesByCategory=[];$rewardProducts=[];$editCampaignRewardIds=[];$campaignRewardOptions=[];
 if($merchant){
     $s=$pdo->prepare("SELECT type_key,name,description,field_schema_json,reward_rules_schema_json,landing_schema_json FROM campaign_types WHERE is_active=1 AND (merchant_id=? OR merchant_id IS NULL) ORDER BY is_system DESC,name");
     $s->execute([$merchantId]);$campaignTypes=$s->fetchAll()?:[];
@@ -79,12 +94,20 @@ if($merchant){
         $campaignTypesByCategory[$typeRow['category']][]=$typeRow;
     }unset($typeRow);
     if(function_exists('campaigns_rewards_reward_products_v110'))$rewardProducts=campaigns_rewards_reward_products_v110($pdo,$merchantId,$uid);
+    if(function_exists('campaigns_rewards_campaign_reward_ids_v118')){
+        foreach($campaigns as $campaignRow){
+            $ids=campaigns_rewards_campaign_reward_ids_v118($pdo,(int)$campaignRow['id']);
+            $campaignRewardOptions[(int)$campaignRow['id']]=array_values(array_filter($rewardProducts,static fn(array $rp):bool=>in_array((int)$rp['id'],$ids,true)&&!empty($rp['is_active'])));
+        }
+    }
 }
 
 $editCampaignId=max(0,(int)($_GET['edit_campaign']??0));$editCampaign=null;foreach($campaigns as $row)if((int)$row['id']===$editCampaignId)$editCampaign=$row;
 if($editCampaign&&function_exists('campaigns_rewards_campaign_reward_ids_v118'))$editCampaignRewardIds=campaigns_rewards_campaign_reward_ids_v118($pdo,(int)$editCampaign['id']);
 $editLocationId=max(0,(int)($_GET['edit_location']??0));$editLocation=null;foreach($locations as $row)if((int)$row['id']===$editLocationId)$editLocation=$row;
 $notice=(string)(flash('notice')??'');$error=(string)(flash('error')??'');
+$fulfillmentOnce=session_status()===PHP_SESSION_ACTIVE?($_SESSION['campaign_fulfillment_once']??null):null;
+if(session_status()===PHP_SESSION_ACTIVE)unset($_SESSION['campaign_fulfillment_once']);
 
 $memberHeaderUser=$user;$memberHeaderTitle='Campaigns';$memberHeaderSubtitle='Merchant identity, locations, Campaign lifecycle, landing pages and Team access';
 $actions=['<a class="cr-btn primary" href="'.e(url('/rewards.php'.($merchantId?'?merchant='.$merchantId:''))).'">Rewards</a>'];
