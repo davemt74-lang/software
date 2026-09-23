@@ -90,7 +90,7 @@ try{
         vp3_extension_notifications_json_v2140(200,['ok'=>true,'voice'=>$voice]);
     }
     if($action==='release'){
-        vp3_extension_notification_release_v2140($pdo,$session,$eventKey,strtolower(trim((string)($input['claim_token']??''))));
+        vp3_extension_notification_release_v2140($pdo,$session,$eventKey,strtolower(trim((string)($input['claim_token']??''))),$user,$namespace);
         vp3_extension_notifications_json_v2140(200,['ok'=>true]);
     }
     if($action==='voice_delivered'||$action==='voice_failed'){
