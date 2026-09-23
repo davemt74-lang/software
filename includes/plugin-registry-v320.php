@@ -15,7 +15,7 @@ function vp3_plugin_catalog_v320(): array
         'campaigns_rewards'=>[
             'label'=>'Campaigns & Rewards',
             'description'=>'Merchant accounts, campaigns, rewards, claim codes, customers, landing pages and reporting.',
-            'entitlement'=>'',
+            'entitlement'=>'campaigns_rewards.access',
         ],
     ];
 }
