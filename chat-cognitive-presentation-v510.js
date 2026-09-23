@@ -188,7 +188,8 @@
         esc(commitment.title || 'Protected commitment') + '</strong>' +
         '<p>' + esc(state) + ' · protection ' + Number(commitment.protection_score || 0).toFixed(2) + '</p>' +
         '<p><small>' + Number(commitmentCounts.protected || 0) + ' protected · ' +
-        Number(commitmentCounts.at_risk || 0) + ' at risk · ' + Number(commitmentCounts.conflicts || 0) + ' conflict(s)</small></p>' +
+        Number(commitmentCounts.at_risk || 0) + ' at risk · ' + Number(commitmentCounts.conflicts || 0) + ' conflict(s) · ' +
+        Number(commitmentCounts.verified_complete || 0) + ' verified complete</small></p>' +
         '<div class="chat-agent-brief-actions">' +
         actionButton('Review commitments',
           ' data-agent-brief-prompt="' + esc('Review my protected commitments and deadlines. Explain what is at risk, what is waiting on me, any capacity conflicts, and what can safely be reprioritized without changing commitments or executors.') + '"',false) +
