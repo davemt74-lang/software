@@ -16,7 +16,14 @@ function agent_commerce_upsert_bound_product_v800(PDO $pdo,int $ownerUserId,?int
       else{$pdo->prepare('INSERT INTO agent_commerce_products_v800 (owner_user_id,workspace_owner_user_id,product_key,title,description,product_type,fulfillment_type,payment_mode,price_cents,deposit_cents,currency,provider_mode,fixed_connection_id,hold_minutes,refund_before_hours,cancellation_fee_cents,cancellation_policy,is_active,metadata_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?)')->execute([$ownerUserId,$workspaceOwnerId,$productKey,$title,$description,$productType,$fulfillmentType,$terms['payment_mode'],$terms['price_cents'],$terms['deposit_cents'],$terms['currency'],$providerMode,$fixed,$terms['hold_minutes'],$terms['refund_before_hours'],$terms['cancellation_fee_cents'],$terms['cancellation_policy'],$metadata?json_encode($metadata,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE):null]);$productId=(int)$pdo->lastInsertId();$pdo->prepare('INSERT INTO agent_commerce_product_bindings_v800 (product_id,binding_type,binding_id) VALUES (?,?,?)')->execute([$productId,$bindingType,$bindingId]);}
       if($owns)$pdo->commit();
     }catch(Throwable $e){if($owns&&$pdo->inTransaction())$pdo->rollBack();throw $e;}
-    return agent_commerce_product_v800($pdo,$productId,$ownerUserId)?:throw new RuntimeException('Commerce product could not be saved.');
+    $saved=agent_commerce_product_v800($pdo,$productId,$ownerUserId)?:throw new RuntimeException('Commerce product could not be saved.');
+    if(function_exists('vp3_cognitive_domain_record_v2380')){
+        $canonical=$existing?'product.updated':'product.created';
+        vp3_cognitive_domain_record_v2380($pdo,$ownerUserId,'commerce',$canonical,[vp3_cognitive_domain_ref_v2380('product',$productId)],[
+            'product_type'=>(string)$saved['product_type'],'payment_mode'=>(string)$saved['payment_mode'],'is_active'=>!empty($saved['is_active'])
+        ],['external_event_id'=>'commerce-product:'.$productId.':'.$canonical.':'.substr(hash('sha256',(string)($saved['updated_at']??microtime(true))),0,16)]);
+    }
+    return $saved;
 }
 function agent_commerce_product_terms_v800(array $product): array
 {
