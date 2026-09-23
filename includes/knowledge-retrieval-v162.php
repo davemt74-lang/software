@@ -106,6 +106,22 @@ function knowledge_retrieval_v162_generate_answer(string $query,array $history,a
     $knowledge=['scope'=>knowledge_retrieval_v162_normalize_scope($rawScope),'context'=>$context,'citations'=>[],'provenance'=>[],'homeserver_local_knowledge'=>'not_queried'];
     if($pdo)$knowledge=knowledge_retrieval_v162_for_chat($pdo,$user,$principal,$query,$rawScope,$context,$conversationId);
     $context=$knowledge['context'];if($agentContext&&function_exists('agent_surface_v131_context_item'))array_unshift($context,agent_surface_v131_context_item($agentContext));
-    $answer=chat_remote_answer($query,$history,$context,$user);if($answer===null)$answer=chat_local_answer($query,$context);
-    return ['answer'=>$answer,'context'=>$context,'knowledge'=>['scope'=>$knowledge['scope'],'citations'=>$knowledge['citations'],'provenance'=>$knowledge['provenance'],'homeserver_local_knowledge'=>$knowledge['homeserver_local_knowledge']]];
+    $turnPrepared=null;
+    if($pdo&&function_exists('vp3_cognitive_turn_prepare_v2430')){
+        try{
+            $turnPrepared=vp3_cognitive_turn_prepare_v2430(
+                $pdo,$user,$principal,$query,$context,
+                ['direct_user_turn'=>true,'surface'=>'chat','conversation_id'=>$conversationId]
+            );
+            $context=is_array($turnPrepared['context']??null)?$turnPrepared['context']:$context;
+        }catch(Throwable $e){
+            error_log('VP3 Cognitive Turn v24.30 Knowledge preparation failed: '.$e->getMessage());
+        }
+    }
+    $turnControl=is_array($turnPrepared['control']??null)?$turnPrepared['control']:null;
+    $answer=chat_remote_answer($query,$history,$context,$user,$turnControl);if($answer===null)$answer=chat_local_answer($query,$context);
+    $turn=$turnPrepared&&function_exists('vp3_cognitive_turn_finalize_v2430')
+        ?vp3_cognitive_turn_finalize_v2430($turnPrepared,$answer,[],[],false,['conversation_id'=>$conversationId])
+        :[];
+    return ['answer'=>$answer,'context'=>$context,'knowledge'=>['scope'=>$knowledge['scope'],'citations'=>$knowledge['citations'],'provenance'=>$knowledge['provenance'],'homeserver_local_knowledge'=>$knowledge['homeserver_local_knowledge']],'turn'=>$turn,'_turn_prepared'=>$turnPrepared];
 }
