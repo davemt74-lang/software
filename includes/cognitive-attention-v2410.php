@@ -12,6 +12,7 @@ const VP3_COGNITIVE_ATTENTION_V2410='vp3-cognitive-attention-v2410-20260922';
 const VP3_COGNITIVE_ATTENTION_WINDOW_MINUTES_V2410=30;
 const VP3_COGNITIVE_ATTENTION_MAX_INTERRUPTS_V2410=3;
 const VP3_COGNITIVE_ATTENTION_REPEAT_COOLDOWN_MINUTES_V2410=30;
+const VP3_COGNITIVE_ATTENTION_RETENTION_DAYS_V2410=90;
 const VP3_COGNITIVE_ATTENTION_CRITICAL_SCORE_V2410=90;
 const VP3_COGNITIVE_ATTENTION_URGENT_SCORE_V2410=80;
 const VP3_COGNITIVE_ATTENTION_ELEVATED_SCORE_V2410=65;
@@ -62,6 +63,8 @@ function vp3_cognitive_attention_ensure_schema_v2410(?PDO $pdo=null): void
       UNIQUE KEY uq_cognitive_attention_signal_v2410 (owner_user_id,agent_namespace,signal_fingerprint),
       INDEX idx_cognitive_attention_budget_v2410 (owner_user_id,agent_namespace,interruptive,status,created_at,id),
       INDEX idx_cognitive_attention_key_v2410 (owner_user_id,agent_namespace,signal_key,created_at,id),
+      INDEX idx_cognitive_attention_global_budget_v2410 (owner_user_id,interruptive,status,created_at,id),
+      INDEX idx_cognitive_attention_global_key_v2410 (owner_user_id,signal_key,created_at,id),
       CONSTRAINT fk_cognitive_attention_owner_v2410 FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 }
@@ -232,6 +235,16 @@ function vp3_cognitive_attention_fingerprint_v2410(array $signal): string
     ]));
 }
 
+function vp3_cognitive_attention_prune_v2410(PDO $pdo,int $uid): void
+{
+    if($uid<1||!vp3_cognitive_attention_schema_ready_v2410($pdo))return;
+    try{
+        $stmt=$pdo->prepare("DELETE FROM cognitive_attention_receipts_v2410
+          WHERE owner_user_id=? AND created_at<DATE_SUB(UTC_TIMESTAMP(),INTERVAL ".VP3_COGNITIVE_ATTENTION_RETENTION_DAYS_V2410." DAY)");
+        $stmt->execute([$uid]);
+    }catch(Throwable $e){}
+}
+
 function vp3_cognitive_attention_budget_v2410(PDO $pdo,array $user,string $namespace): array
 {
     $uid=(int)($user['id']??0);if($uid<1||!vp3_cognitive_attention_schema_ready_v2410($pdo))return ['used'=>0,'limit'=>VP3_COGNITIVE_ATTENTION_MAX_INTERRUPTS_V2410,'remaining'=>true];
@@ -323,6 +336,7 @@ function vp3_cognitive_attention_arbitrate_v2410(
     $namespace=vp3_cognitive_validate_namespace_v500($pdo,$user,$namespace);
     $locked=vp3_cognitive_attention_lock_v2410($pdo,$uid,$namespace);
     try{
+        vp3_cognitive_attention_prune_v2410($pdo,$uid);
         $s=vp3_cognitive_attention_signal_v2410($signal);
         $fingerprint=vp3_cognitive_attention_fingerprint_v2410($signal);
         $existing=$pdo->prepare('SELECT * FROM cognitive_attention_receipts_v2410 WHERE owner_user_id=? AND agent_namespace=? AND signal_fingerprint=? LIMIT 1');
