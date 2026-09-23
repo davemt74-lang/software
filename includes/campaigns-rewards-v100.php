@@ -151,8 +151,7 @@ function campaigns_rewards_can_own_merchant_v100(PDO $pdo,int $merchantId,int $u
 
 function campaigns_rewards_unique_slug_v100(PDO $pdo,string $table,string $value,int $excludeId=0): string
 {
-    $aliases=['campaign_merchant_accounts_v100'=>'merchant_accounts','campaigns_v100'=>'campaigns','merchant_accounts'=>'merchant_accounts','campaigns'=>'campaigns'];
-    $table=$aliases[$table]??'';if($table==='')throw new InvalidArgumentException('Unsupported slug authority.');
+    if(!in_array($table,['merchant_accounts','campaigns'],true))throw new InvalidArgumentException('Unsupported slug authority.');
     $base=campaigns_rewards_slug_v100($value);if($base==='')$base=$table==='merchant_accounts'?'merchant':'campaign';
     for($i=0;$i<100;$i++){
         $slug=$i===0?$base:substr($base,0,100).'-'.($i+1);
@@ -227,35 +226,20 @@ function campaigns_rewards_update_merchant_v100(PDO $pdo,int $merchantId,int $ac
 
 function campaigns_rewards_accessible_merchants_v100(PDO $pdo,array $user): array
 {
-    $uid=(int)($user['id']??0);if($uid<1)return [];
-    if(function_exists('campaigns_rewards_platform_schema_ready_v100')&&campaigns_rewards_platform_schema_ready_v100($pdo)){
-        $stmt=$pdo->prepare("SELECT m.*,mp.description,mp.website_url,mr.role_key access_role,mm.status access_status
-          FROM merchant_members mm INNER JOIN merchant_accounts m ON m.id=mm.merchant_id
-          INNER JOIN merchant_roles mr ON mr.id=mm.role_id LEFT JOIN merchant_profiles mp ON mp.merchant_id=m.id
-          WHERE mm.user_id=? AND mm.status='active' AND m.status='active' ORDER BY m.name,m.id");
-        $stmt->execute([$uid]);return $stmt->fetchAll()?:[];
-    }
-    if(!campaigns_rewards_schema_ready_v100($pdo))return [];
-    $stmt=$pdo->prepare("SELECT m.*,COALESCE(mm.member_role,IF(m.owner_user_id=?,'owner','')) access_role,
-      COALESCE(mm.member_status,IF(m.owner_user_id=?,'active','')) access_status
-      FROM campaign_merchant_accounts_v100 m
-      LEFT JOIN campaign_merchant_members_v100 mm ON mm.merchant_account_id=m.id AND mm.user_id=?
-      WHERE m.status='active' AND (m.owner_user_id=? OR (mm.user_id=? AND mm.member_status='active'))
-      ORDER BY m.name,m.id");
-    $stmt->execute([$uid,$uid,$uid,$uid,$uid]);return $stmt->fetchAll()?:[];
+    $uid=(int)($user['id']??0);if($uid<1||!campaigns_rewards_schema_ready_v100($pdo))return [];
+    $stmt=$pdo->prepare("SELECT m.*,mp.description,mp.website_url,mr.role_key access_role,mm.status access_status
+      FROM merchant_members mm INNER JOIN merchant_accounts m ON m.id=mm.merchant_id
+      INNER JOIN merchant_roles mr ON mr.id=mm.role_id LEFT JOIN merchant_profiles mp ON mp.merchant_id=m.id
+      WHERE mm.user_id=? AND mm.status='active' AND m.status='active' ORDER BY m.name,m.id");
+    $stmt->execute([$uid]);return $stmt->fetchAll()?:[];
 }
 
 function campaigns_rewards_owned_merchants_v100(PDO $pdo,int $ownerUserId): array
 {
-    if($ownerUserId<1)return [];
-    if(function_exists('campaigns_rewards_platform_schema_ready_v100')&&campaigns_rewards_platform_schema_ready_v100($pdo)){
-        $stmt=$pdo->prepare("SELECT m.*,mp.description,mp.website_url FROM merchant_accounts m
-          LEFT JOIN merchant_profiles mp ON mp.merchant_id=m.id
-          WHERE m.owner_user_id=? AND m.status='active' ORDER BY m.name,m.id");
-        $stmt->execute([$ownerUserId]);return $stmt->fetchAll()?:[];
-    }
-    if(!campaigns_rewards_schema_ready_v100($pdo))return [];
-    $stmt=$pdo->prepare("SELECT * FROM campaign_merchant_accounts_v100 WHERE owner_user_id=? AND status='active' ORDER BY name,id");
+    if($ownerUserId<1||!campaigns_rewards_schema_ready_v100($pdo))return [];
+    $stmt=$pdo->prepare("SELECT m.*,mp.description,mp.website_url FROM merchant_accounts m
+      LEFT JOIN merchant_profiles mp ON mp.merchant_id=m.id
+      WHERE m.owner_user_id=? AND m.status='active' ORDER BY m.name,m.id");
     $stmt->execute([$ownerUserId]);return $stmt->fetchAll()?:[];
 }
 
