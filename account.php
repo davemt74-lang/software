@@ -127,6 +127,9 @@ if (agent_brain_schema_ready() && (int)$accountBrain['archive_count'] === 0) {
     $accountBrain = agent_brain_summary($user);
 }
 $accountBrainTools = agent_brain_tools($user);
+vp3_connected_sites_ensure_schema_v100($pdo);
+$accountConnectedSites = vp3_connected_sites_for_user_v100($pdo, (int)$user['id']);
+$accountActiveConnectedSites = count(array_filter($accountConnectedSites, static fn($row)=>(string)($row['status']??'')==='active'));
 ?>
 <!doctype html>
 <html lang="en">
@@ -301,7 +304,7 @@ $accountBrainTools = agent_brain_tools($user);
             <a href="#security">Security</a>
             <a href="#agent-brain">Agent Brain</a>
             <a href="#access">Your Access</a>
-            <a href="<?= e(url('/connected-sites.php')) ?>">Connected Sites</a>
+            <a href="#connected-sites">Connected Sites</a>
           </nav>
 
           <div class="account-canvas-content">
@@ -426,6 +429,25 @@ $accountBrainTools = agent_brain_tools($user);
               </form>
             </section>
 
+            <section class="account-panel" id="connected-sites">
+              <div class="account-panel-head">
+                <span>Connected Sites</span>
+                <h2><?= (int)$accountActiveConnectedSites ?> Active Connection<?= $accountActiveConnectedSites===1?'':'s' ?></h2>
+                <p>External sites you explicitly authorized to access selected VP3 account data.</p>
+              </div>
+              <?php if ($accountConnectedSites): ?>
+                <div class="account-access-grid">
+                  <?php foreach (array_slice($accountConnectedSites,0,4) as $site): ?>
+                    <article class="account-access-card">
+                      <small><?= e(ucfirst((string)$site['status'])) ?></small>
+                      <strong><?= e((string)$site['app_label']) ?></strong>
+                      <p><?= e(count((array)$site['scopes'])) ?> permission<?= count((array)$site['scopes'])===1?'':'s' ?> · Connected <?= e((string)$site['connected_at']) ?><?= !empty($site['last_used_at'])?' · Last used '.e((string)$site['last_used_at']):'' ?></p>
+                    </article>
+                  <?php endforeach; ?>
+                </div>
+              <?php else: ?><p>No external sites are connected to this account.</p><?php endif; ?>
+              <p style="margin-top:16px"><a class="account-shell-button" href="<?= e(url('/connected-sites.php')) ?>">Manage Connected Sites</a></p>
+            </section>
 
             <section class="account-panel agent-brain-panel" id="agent-brain">
               <div class="account-panel-head">
