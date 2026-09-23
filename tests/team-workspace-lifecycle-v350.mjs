@@ -76,9 +76,9 @@ assert.match(team, /workspace_team_v350_set_status\(\$pdo,\$ownerUserId,\$target
 assert.match(team, /workspace_team_v350_set_status\(\$pdo,\$ownerUserId,\$targetId,'removed'\)/);
 
 // Campaigns & Rewards extends Team with plugin-specific scope, never a second Team lifecycle.
-assert.match(team, /Basic Team/);
-assert.match(team, /Merchant Team/);
-assert.match(team, /Both/);
+assert.match(team, /campaigns_rewards_team_categories_v100/);
+assert.match(team, /name="team_category"/);
+assert.match(team, /name="merchant_account_id"/);
 assert.match(team, /campaigns_rewards_set_invite_scope_v100/);
 assert.match(team, /campaigns_rewards_set_team_scope_v100/);
 assert.match(lifecycle, /campaigns_rewards_apply_invite_scope_v100/);
