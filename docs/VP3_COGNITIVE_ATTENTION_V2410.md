@@ -50,6 +50,8 @@ Agent namespace remains on the receipt for provenance, but the budget is counted
 
 Critical signals can bypass the budget. They are still subject to privacy and interruptibility rules for voice.
 
+A selected-but-not-yet-delivered interruption reserves a slot for **5 minutes**. Once actually delivered, it counts for the full **30-minute** budget window. This prevents abandoned Browser claims or an unplayed web voice candidate from consuming attention capacity for the entire window.
+
 ## Attention bands
 
 Signals are normalized to a 0–100 score using urgency, impact, goal relevance, confidence and novelty, with structured priority acting as a floor.
