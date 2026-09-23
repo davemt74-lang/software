@@ -908,17 +908,20 @@ function campaigns_rewards_record_claim_attempt_v100(PDO $pdo,?int $merchantId,?
 function campaigns_rewards_process_claim_v100(PDO $pdo,string $rewardCredential,string $merchantClaimCode,int $actorUserId=0,array $context=[]): array
 {
     if(empty($context['online']))throw new RuntimeException('Authoritative V1 Claim processing is online-only.');
+    if($actorUserId<1)throw new RuntimeException('An authenticated Merchant operator is required.');
     $rewardHash=campaigns_rewards_secret_hash_v100($rewardCredential);$claimHash=campaigns_rewards_secret_hash_v100($merchantClaimCode);
     $owns=!$pdo->inTransaction();if($owns)$pdo->beginTransaction();
     $merchantId=0;$issuanceId=0;$claimCodeId=0;
     try{
         $stmt=$pdo->prepare("SELECT ri.*,c.public_id campaign_public_id,c.status campaign_status,c.environment,c.merchant_id,
-          rp.public_id reward_product_public_id,rp.name reward_name,m.public_id merchant_public_id,m.status merchant_status
+          rp.public_id reward_product_public_id,rp.name reward_name,rp.inventory_mode,m.public_id merchant_public_id,m.status merchant_status
           FROM reward_issuances ri INNER JOIN campaigns c ON c.id=ri.campaign_id
           INNER JOIN reward_products rp ON rp.id=ri.reward_product_id INNER JOIN merchant_accounts m ON m.id=ri.merchant_id
           WHERE ri.credential_hash=? LIMIT 1 FOR UPDATE");
         $stmt->execute([$rewardHash]);$issuance=$stmt->fetch()?:throw new RuntimeException('Reward Credential is invalid.');
         $issuanceId=(int)$issuance['id'];$merchantId=(int)$issuance['merchant_id'];
+        $expectedMerchant=max(0,(int)($context['expected_merchant_id']??0));
+        if($expectedMerchant>0&&$expectedMerchant!==$merchantId)throw new RuntimeException('Reward Credential belongs to a different Merchant.');
         if((string)$issuance['merchant_status']!=='active')throw new RuntimeException('Merchant is not accepting Claims.');
         if(!in_array((string)$issuance['campaign_status'],['active','completed'],true))throw new RuntimeException('Campaign is not claimable.');
         if(!in_array((string)$issuance['status'],['issued','sent','viewed'],true)||((int)$issuance['remaining_quantity'])<1)throw new RuntimeException('Reward is no longer claimable.');
@@ -929,8 +932,8 @@ function campaigns_rewards_process_claim_v100(PDO $pdo,string $rewardCredential,
         if((int)$code['merchant_id']!==$merchantId||($code['status']??'')!=='active')throw new RuntimeException('Merchant Claim Code is not active for this Merchant.');
         if(!empty($code['active_from'])&&strtotime((string)$code['active_from'])>time())throw new RuntimeException('Merchant Claim Code is not active yet.');
         if(!empty($code['active_until'])&&strtotime((string)$code['active_until'])<=time())throw new RuntimeException('Merchant Claim Code has expired.');
-        if($actorUserId>0)campaigns_rewards_platform_assert_can_v100($pdo,$merchantId,$actorUserId,'claims.process');
-        if(!empty($code['merchant_member_id'])&&$actorUserId>0){
+        campaigns_rewards_platform_assert_can_v100($pdo,$merchantId,$actorUserId,'claims.process');
+        if(!empty($code['merchant_member_id'])){
             $member=campaigns_rewards_platform_member_v100($pdo,$merchantId,$actorUserId);
             if(!$member||(int)$member['id']!==(int)$code['merchant_member_id'])throw new RuntimeException('Merchant Claim Code is assigned to a different Team Member.');
         }
@@ -947,7 +950,7 @@ function campaigns_rewards_process_claim_v100(PDO $pdo,string $rewardCredential,
         }
         $dup=$pdo->prepare("SELECT * FROM reward_claims WHERE reward_issuance_id=? AND status='claimed' LIMIT 1 FOR UPDATE");$dup->execute([$issuanceId]);if($dup->fetch())throw new RuntimeException('Reward has already been claimed.');
 
-        $public=campaigns_rewards_uuid_v100();$quantity=max(1,min((int)$issuance['remaining_quantity'],(int)($context['quantity']??1)));
+        $public=campaigns_rewards_uuid_v100();$quantity=(int)$issuance['remaining_quantity'];
         $memberId=null;if($actorUserId>0){$m=campaigns_rewards_platform_member_v100($pdo,$merchantId,$actorUserId);$memberId=$m?(int)$m['id']:null;}
         $pdo->prepare("INSERT INTO reward_claims
           (public_id,merchant_id,campaign_id,reward_issuance_id,claim_code_id,location_id,merchant_member_id,processed_by_user_id,processed_by_actor_type,environment,quantity,value_minor,currency,status,order_ref,claimed_at,metadata_json)
@@ -957,11 +960,23 @@ function campaigns_rewards_process_claim_v100(PDO $pdo,string $rewardCredential,
         $pdo->prepare("UPDATE reward_issuances SET remaining_quantity=?,status=?,claimed_at=IF(?=0,UTC_TIMESTAMP(),claimed_at),updated_at=UTC_TIMESTAMP() WHERE id=?")
             ->execute([$remaining,$remaining===0?'claimed':(string)$issuance['status'],$remaining,$issuanceId]);
         $pdo->prepare("UPDATE merchant_claim_codes SET last_used_at=UTC_TIMESTAMP(),updated_at=UTC_TIMESTAMP() WHERE id=?")->execute([$claimCodeId]);
+        if((string)$issuance['inventory_mode']==='tracked'){
+            $balance=$pdo->prepare("SELECT id,reward_product_id,variant_id,location_id,on_hand,reserved FROM reward_inventory_balances
+              WHERE reward_product_id=? AND reserved>=? AND on_hand>=?
+              ORDER BY (location_id=?) DESC,(location_id=0) DESC,id LIMIT 1 FOR UPDATE");
+            $balance->execute([(int)$issuance['reward_product_id'],$quantity,$quantity,$requestedLocation?:0]);$inventoryRow=$balance->fetch();
+            if(!$inventoryRow)throw new RuntimeException('Reward inventory reservation is inconsistent.');
+            $pdo->prepare("UPDATE reward_inventory_balances SET on_hand=on_hand-?,reserved=reserved-?,updated_at=UTC_TIMESTAMP() WHERE id=?")
+              ->execute([$quantity,$quantity,(int)$inventoryRow['id']]);
+            $pdo->prepare("INSERT INTO reward_inventory_ledger (reward_product_id,variant_id,location_id,movement_type,quantity_delta,source_type,source_id,actor_user_id,metadata_json)
+              VALUES (?,?,?,?,?,'reward_claim',?,?,?)")
+              ->execute([(int)$inventoryRow['reward_product_id'],(int)$inventoryRow['variant_id'],(int)$inventoryRow['location_id'],'claim',-1*$quantity,(string)$claimId,$actorUserId,campaigns_rewards_json_v100(['issuance_id'=>$issuanceId])]);
+        }
         if((string)$issuance['environment']==='production'){
             $pdo->prepare("INSERT INTO reward_liability_ledger
               (merchant_id,campaign_id,reward_issuance_id,entry_type,face_value_delta_minor,estimated_cost_delta_minor,currency,source_type,source_id,metadata_json)
               VALUES (?,?,?,'claimed',?,?,?,?,?,'{}')")
-              ->execute([$merchantId,(int)$issuance['campaign_id'],$issuanceId,$issuance['face_value_minor']===null?null:-1*(int)$issuance['face_value_minor'],null,$issuance['currency'],'reward_claim',(string)$claimId]);
+              ->execute([$merchantId,(int)$issuance['campaign_id'],$issuanceId,$issuance['face_value_minor']===null?null:-1*(int)$issuance['face_value_minor']*$quantity,null,$issuance['currency'],'reward_claim',(string)$claimId]);
         }
         if($owns)$pdo->commit();
     }catch(Throwable $e){
@@ -986,6 +1001,10 @@ function campaigns_rewards_process_claim_v100(PDO $pdo,string $rewardCredential,
         'reward_product_public_id'=>$claim['reward_product_public_id'],'reward_issuance_public_id'=>$claim['reward_issuance_public_id'],
         'claim_public_id'=>$claim['public_id'],'claim_code_public_id'=>$claim['claim_code_public_id'],
     ],(string)$claim['environment'],$actorUserId?:null);
+    campaigns_rewards_activity_event_v100($pdo,$merchantId,'campaign.conversion_attributed',['campaign_id'=>(int)$claim['campaign_id'],'reward_issuance_id'=>$issuanceId,'claim_id'=>$claimId],[
+        'summary'=>'Campaign conversion attributed from Reward Claim','merchant_public_id'=>$claim['merchant_public_id'],'campaign_public_id'=>$claim['campaign_public_id'],
+        'reward_issuance_public_id'=>$claim['reward_issuance_public_id'],'claim_public_id'=>$claim['public_id'],
+    ],(string)$claim['environment'],$actorUserId);
     return $claim;
 }
 
