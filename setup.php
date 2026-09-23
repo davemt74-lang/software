@@ -43,6 +43,7 @@ try {
     vp3_live_session_ensure_schema_v2370($pdo);
     vp3_cognitive_memory_ensure_schema_v570($pdo);
     vp3_cognitive_memory_promotion_ensure_schema_v2400($pdo);
+    vp3_cognitive_attention_ensure_schema_v2410($pdo);
 
     $count = (int)$pdo->query('SELECT COUNT(*) FROM users')->fetchColumn();
     if ($count > 0) {
