@@ -567,6 +567,12 @@ function campaigns_rewards_save_campaign_v100(PDO $pdo,int $merchantId,int $acto
           ->execute([$slug,!empty($input['profile_visible'])?'profile_public':'unlisted',$title,campaigns_rewards_text_v100($input['subtitle']??'',500),campaigns_rewards_text_v100($input['cta_label']??'Claim reward',80),campaigns_rewards_json_v100(['text'=>mb_strimwidth(trim((string)($input['terms']??'')),0,12000,'…')]),$campaignId]);
         campaigns_rewards_activity_event_v100($pdo,$merchantId,'campaign.updated',['campaign_id'=>$campaignId],['summary'=>'Campaign updated','campaign_public_id'=>$campaign['public_id'],'merchant_public_id'=>$campaign['merchant_public_id']],(string)$campaign['environment'],$actorUserId);
     }
+    $campaignRow=campaigns_rewards_campaign_platform_v100($pdo,$campaignId)?:throw new RuntimeException('Campaign could not be loaded.');
+    $pdo->prepare("UPDATE campaign_landing_pages SET slug=?,visibility=?,headline=?,subheadline=?,cta_label=?,terms_json=?,updated_at=UTC_TIMESTAMP() WHERE campaign_id=?")
+      ->execute([(string)$campaignRow['slug'],!empty($input['profile_visible'])?'profile_public':'unlisted',(string)$campaignRow['name'],
+        campaigns_rewards_text_v100($input['subtitle']??'',500),campaigns_rewards_text_v100($input['cta_label']??'Claim reward',80),
+        campaigns_rewards_json_v100(['text'=>mb_strimwidth(trim((string)($input['terms']??'')),0,12000,'…')]),$campaignId]);
+
     $locationId=max(0,(int)($input['location_id']??0));
     $pdo->prepare("DELETE FROM campaigns_rewards_object_bindings WHERE merchant_id=? AND subject_type='campaign' AND subject_id=? AND purpose='location'")->execute([$merchantId,$campaignId]);
     if($locationId>0){
