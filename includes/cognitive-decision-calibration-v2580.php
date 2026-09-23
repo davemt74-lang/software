@@ -162,15 +162,36 @@ function vp3_cognitive_decision_factor_v2580(
     if($uid<1||!vp3_cognitive_decision_schema_ready_v2580($pdo))return $default;
 
     if(in_array($metric,['value_money','value_score'],true)
-        &&function_exists('vp3_cognitive_value_profile_rows_v2570')
+        &&function_exists('vp3_cognitive_value_profile_row_v2570')
         &&function_exists('vp3_cognitive_value_realization_v2570')){
         $kind=$metric==='value_money'?'money':'score';$ratios=[];
         try{
-            foreach(vp3_cognitive_value_profile_rows_v2570($pdo,$user,true) as $profile){
-                if((string)($profile['value_kind']??'')!==$kind)continue;
+            // Use the expected value frozen into the latest settled decision
+            // snapshot for each value profile. The realized side is read from
+            // the latest canonical v25.70 evidence, so late verification is
+            // learned without letting later edits rewrite the old prediction.
+            $stmt=$pdo->prepare("SELECT s.*
+              FROM cognitive_decision_snapshots_v2580 s
+              INNER JOIN cognitive_decision_settlements_v2580 x ON x.snapshot_id=s.id
+              INNER JOIN (
+                SELECT s2.value_profile_id,MAX(s2.id) snapshot_id
+                FROM cognitive_decision_snapshots_v2580 s2
+                INNER JOIN cognitive_decision_settlements_v2580 x2 ON x2.snapshot_id=s2.id
+                WHERE s2.owner_user_id=? AND s2.value_profile_id>0 AND s2.value_kind=?
+                  AND x2.settled_at>=DATE_SUB(UTC_TIMESTAMP(),INTERVAL ".VP3_COGNITIVE_DECISION_CALIBRATION_WINDOW_DAYS_V2580." DAY)
+                GROUP BY s2.value_profile_id
+              ) latest ON latest.snapshot_id=s.id
+              WHERE s.owner_user_id=?");
+            $stmt->execute([$uid,$kind,$uid]);
+            foreach($stmt->fetchAll(PDO::FETCH_ASSOC)?:[] as $snapshot){
+                $profileId=(int)($snapshot['value_profile_id']??0);if($profileId<1)continue;
+                $profile=vp3_cognitive_value_profile_row_v2570($pdo,$uid,$profileId);
+                if(!$profile||(string)($profile['value_kind']??'')!==$kind)continue;
+                if($kind==='money'
+                    &&strtoupper((string)($profile['currency']??''))!==strtoupper((string)($snapshot['value_currency']??'')))continue;
                 $realization=vp3_cognitive_value_realization_v2570($pdo,$user,$profile);
                 if(empty($realization['verified']))continue;
-                $expected=$kind==='money'?($profile['expected_value_micros']??null):($profile['expected_score']??null);
+                $expected=$kind==='money'?($snapshot['expected_value_micros']??null):($snapshot['expected_value_score']??null);
                 $realized=$kind==='money'?($realization['value_micros']??null):($realization['score_value']??null);
                 if($expected===null||$realized===null||(float)$expected<=0)continue;
                 $ratio=max(0.0,(float)$realized/(float)$expected);
@@ -178,7 +199,7 @@ function vp3_cognitive_decision_factor_v2580(
             }
         }catch(Throwable $e){$ratios=[];}
         return array_merge($default,vp3_cognitive_decision_ratio_factor_v2580($ratios,.70,1.15),[
-            'evidence_unit'=>'verified_value_profile'
+            'evidence_unit'=>'latest_settled_value_profile'
         ]);
     }
 
