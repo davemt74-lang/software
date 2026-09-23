@@ -17,6 +17,7 @@ const api=read('api/reward-tray-v110.php');
 const tray=read('reward-tray-v110.js');
 const qr=read('reward-qr-v110.js');
 const css=read('reward-tray-v110.css');
+const agentUiCss=read('agent-ui-v034.css');
 const docs=read('docs/CAMPAIGNS_REWARDS_V110.md');
 const setup=read('setup.php');
 const upgrade=read('upgrade.php');
@@ -36,6 +37,10 @@ const checks=[
  ['API exposes state send prepare_claim and claim actions',api.includes("$action==='state'")&&api.includes("$action==='send'")&&api.includes("$action==='prepare_claim'")&&api.includes("$action==='claim'")],
  ['Agent Chat loads Reward Tray CSS local QR and tray runtime',chat.includes('reward-tray-v110.css')&&chat.includes('reward-qr-v110.js')&&chat.includes('reward-tray-v110.js')&&chat.includes('/api/reward-tray-v110.php')],
  ['Header tray contains INBOX SENT CLAIMED tabs with live count badges',tray.includes("['inbox','sent','claimed']")&&tray.includes('data-reward-count')&&tray.includes('reward-tray-tabs')],
+ ['Rewards sidebar exposes INBOX SENT CLAIMED links with count badges',sidebar.includes('reward-sidebar-subnav')&&sidebar.includes("['inbox'=>'INBOX','sent'=>'SENT','claimed'=>'CLAIMED']")&&sidebar.includes("data-reward-count=\"<?= e($rewardBucket) ?>\"")&&sidebar.includes("url('/chat.php?reward_tray='.$rewardBucket)"))],
+ ['Reward counts synchronize across sidebar and header badges',tray.includes("document.querySelectorAll('[data-reward-count=\"'+k+'\"]')"))],
+ ['Reward tray UI does not disappear when the V1.10 schema needs an upgrade',chat.includes("$rewardTrayRuntime = function_exists('campaigns_rewards_v110_schema_ready')")&&!chat.includes("campaigns_rewards_v110_schema_ready(db())"))],
+ ['Sidebar reward certificate links are visibly styled',agentUiCss.includes('.reward-sidebar-subnav{')&&agentUiCss.includes('.reward-sidebar-subnav-link{')&&agentUiCss.includes('.reward-sidebar-count{')],
  ['Inbox cards contain SEND and CLAIM controls',tray.includes('data-reward-send')&&tray.includes('>SEND<')&&tray.includes('data-reward-claim')&&tray.includes('>CLAIM<')],
  ['SEND modal selects from returned CRM contacts',tray.includes('Send to CRM Contact')&&tray.includes('state.contacts')&&tray.includes('contact_id')&&tray.includes('idempotency_key')],
  ['CLAIM modal renders QR and Merchant Claim Code input',tray.includes('rewardClaimQr')&&tray.includes('Merchant Claim Code')&&tray.includes('merchant_claim_code')&&tray.includes('VP3RewardQR')],
