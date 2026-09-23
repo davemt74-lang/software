@@ -62,6 +62,7 @@ NODE_TESTS = [
     'tests/cognitive-decision-calibration-v2580.mjs',
     'tests/cognitive-current-state-v2590.mjs',
     'tests/cognitive-domain-registry-v2600.mjs',
+    'tests/cognitive-entity-graph-v2610.mjs',
     'tests/campaigns-rewards-v100.mjs',
     'tests/knowledge-agent-context-v162-browser-contract.mjs',
     'tests/agent-brain-learning-history-v317.mjs',
@@ -178,6 +179,7 @@ PHP_TESTS = [
     'tests/cognitive-decision-calibration-v2580.php',
     'tests/cognitive-current-state-v2590.php',
     'tests/cognitive-domain-registry-v2600.php',
+    'tests/cognitive-entity-graph-v2610.php',
     'tests/campaigns-rewards-v100.php',
 ]
 
