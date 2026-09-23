@@ -42,14 +42,16 @@ const checks=[
  ['repeat cooldown is thirty minutes and user-global',
    /ATTENTION_REPEAT_COOLDOWN_MINUTES_V2410=30/.test(attention)
    &&/WHERE owner_user_id=\? AND signal_key=\?/.test(attention)],
- ['only interruptive planned or delivered receipts start repeat cooldown',
-   /signal_key=\?[\s\S]{0,180}interruptive=1 AND status IN \('planned','delivered'\)/.test(attention)],
+ ['only delivered or fresh planned interruptions start repeat cooldown',
+   /status='delivered'[\s\S]{0,180}ATTENTION_REPEAT_COOLDOWN_MINUTES_V2410/.test(attention)
+   &&/status='planned'[\s\S]{0,180}ATTENTION_PLAN_TTL_MINUTES_V2410/.test(attention)],
  ['critical attention can bypass budget while noncritical respects it',
    /budget_bypass/.test(attention)&&/attention_budget_exhausted/.test(attention)&&/critical_attention/.test(attention)],
  ['focus and quiet state suppress noncritical interruptions',
    /focus_or_quiet_hours/.test(attention)&&/response_deferred_by_focus/.test(attention)],
- ['noninterruptible state blocks voice interruption',
-   /not_interruptible/.test(attention)&&/\$interruptible/.test(attention)],
+ ['noninterruptible state blocks voice and defers required user response',
+   /not_interruptible/.test(attention)&&/user_response_deferred_not_interruptible/.test(attention)
+   &&/\$interruptible/.test(attention)],
  ['sensitive content is excluded from voice eligibility',
    /empty\(\$ctx\['sensitive_for_voice'\]\)/.test(attention)],
  ['direct user requests stay in chat',
@@ -58,6 +60,11 @@ const checks=[
    /function vp3_cognitive_attention_preview_v2410/.test(attention)
    &&/bool \$reserve=false/.test(attention)
    &&/\$reserve[\s\S]{0,120}vp3_cognitive_attention_arbitrate_v2410/.test(attention)],
+ ['released and context-deferred receipts can be reconsidered',
+   /function vp3_cognitive_attention_reconsiderable_v2410/.test(attention)
+   &&/\$status==='released'/.test(attention)
+   &&/attention_budget_exhausted/.test(attention)],
+
  ['cross-surface reservations use a user-global advisory lock',
    /SELECT GET_LOCK/.test(attention)&&/vp3_attn_user_/.test(attention)&&/SELECT RELEASE_LOCK/.test(attention)],
  ['Browser candidates are ranked before v24.10 preview',
@@ -69,6 +76,10 @@ const checks=[
  ['Browser visual delivery reconciles central attention receipt',
    /vp3_cognitive_attention_mark_delivered_v2410/.test(extension)
    &&/visual_delivered_v2140\(\$pdo,\$session,\$eventKey,\$claimToken,\$user,\$namespace\)/.test(extensionApi)],
+ ['Browser explicit release frees central attention reservation',
+   /vp3_cognitive_attention_mark_released_v2410/.test(extension)
+   &&/release_v2140\(\$pdo,\$session,\$eventKey,[\s\S]{0,120}\$user,\$namespace\)/.test(extensionApi)],
+
  ['Browser dismiss reconciles central attention receipt',
    /vp3_cognitive_attention_mark_dismissed_v2410/.test(extension)
    &&/dismiss_v2140\(\$pdo,\$session,\$eventKey,\$user,\$namespace\)/.test(extensionApi)],
@@ -91,8 +102,16 @@ const checks=[
    /vp3_cognitive_attention_schema_ready_v2410/.test(upgrade)&&/vp3_cognitive_attention_ensure_schema_v2410/.test(upgrade)],
  ['fresh setup installs v24.10 schema',
    /vp3_cognitive_attention_ensure_schema_v2410/.test(setup)],
+ ['release contract requires deferral and stale-plan recovery',
+   /'noninterruptible_user_response_is_deferred'=>true/.test(release)
+   &&/'released_reservations_reconsiderable'=>true/.test(release)
+   &&/'stale_planned_reservations_do_not_hold_budget'=>true/.test(release)],
+
  ['release contract forbids parallel notification and voice queues',
    /'second_notification_queue'=>false/.test(release)&&/'second_voice_queue'=>false/.test(release)],
+ ['docs cover context-sensitive deferral and reservation recovery',
+   /## Context-sensitive deferral/.test(docs)&&/## Reservation recovery/.test(docs)],
+
  ['docs explicitly separate policy from delivery',
    /owns \*\*attention policy\*\*/.test(docs)&&/own \*\*delivery mechanics\*\*/.test(docs)],
 ];
