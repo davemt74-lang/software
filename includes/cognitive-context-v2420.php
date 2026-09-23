@@ -59,7 +59,7 @@ function vp3_cognitive_context_section_weight_v2420(string $section,bool $histor
 {
     if($historyIntent){
         return match($section){
-            'conversation'=>98.0,'current_state'=>96.10,'current_state'=>96.10,'budget_governance'=>96.05,'value_roi'=>96.04,'decision_calibration'=>96.03,'durable_memory'=>96.0,'commitment_protection'=>95.99,'economics'=>95.985,'replanning'=>95.97,'resource_budget'=>95.95,'optimization'=>95.9,'forecast'=>95.8,'portfolio'=>95.7,'autonomy'=>95.5,'supervision'=>95.0,'continuity'=>94.0,'episodic_memory'=>92.0,
+            'conversation'=>98.0,'current_state'=>96.10,'budget_governance'=>96.05,'value_roi'=>96.04,'decision_calibration'=>96.03,'durable_memory'=>96.0,'commitment_protection'=>95.99,'economics'=>95.985,'replanning'=>95.97,'resource_budget'=>95.95,'optimization'=>95.9,'forecast'=>95.8,'portfolio'=>95.7,'autonomy'=>95.5,'supervision'=>95.0,'continuity'=>94.0,'episodic_memory'=>92.0,
             'live_session'=>88.0,'current_priorities'=>86.0,'active_objects'=>84.0,
             'attention'=>80.0,'knowledge'=>74.0,'domain'=>72.0,'capabilities'=>50.0,
             default=>48.0,
