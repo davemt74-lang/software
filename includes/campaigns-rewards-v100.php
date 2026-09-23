@@ -394,8 +394,8 @@ function campaigns_rewards_save_reward_v100(PDO $pdo,int $campaignId,int $actorU
         }else{
             $pdo->prepare("INSERT INTO reward_inventory_balances (reward_product_id,variant_id,location_id,on_hand,reserved) VALUES (?,0,0,?,0)")->execute([(int)$reward['id'],$inventory]);
         }
-        $delta=$inventory-$old;if($delta!==0)$pdo->prepare("INSERT INTO reward_inventory_ledger (reward_product_id,variant_id,location_id,movement_type,quantity_delta,source_type,source_id,actor_user_id,metadata_json)
-          VALUES (?,0,0,'adjust',?,'reward_product',?,?,?)")->execute([(int)$reward['id'],$delta,(string)$reward['id'],$actorUserId,campaigns_rewards_json_v100(['target_on_hand'=>$inventory])]);
+        $delta=$inventory-$old;if($delta!==0)$pdo->prepare("INSERT INTO reward_inventory_ledger (reward_product_id,variant_id,location_id,movement_type,quantity_delta,on_hand_delta,reserved_delta,source_type,source_id,actor_user_id,metadata_json)
+          VALUES (?,0,0,'adjust',?,?,0,'reward_product',?,?,?)")->execute([(int)$reward['id'],$delta,$delta,(string)$reward['id'],$actorUserId,campaigns_rewards_json_v100(['target_on_hand'=>$inventory])]);
     }
     return campaigns_rewards_reward_v100($pdo,(int)$reward['id'])?:throw new RuntimeException('Reward Product could not be reloaded.');
 }
