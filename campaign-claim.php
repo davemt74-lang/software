@@ -1,28 +1,59 @@
 <?php
 declare(strict_types=1);
 require __DIR__.'/includes/bootstrap.php';
+require_login();
 
-$pdo=db();if(!$pdo||!campaigns_rewards_schema_ready_v100($pdo)){http_response_code(503);exit('Claim verification temporarily unavailable.');}
-$code=(string)($_GET['code']??$_POST['code']??'');$claim=campaigns_rewards_claim_by_code_v100($pdo,$code);
-if(!$claim){http_response_code(404);exit('Claim code not found.');}
-$user=current_user();$canManage=$user&&campaigns_rewards_can_manage_merchant_v100($pdo,(int)$claim['merchant_account_id'],(int)$user['id']);
-$error='';$notice='';
+$user=current_user();$pdo=db();
+if(!$user||!$pdo||!function_exists('campaigns_rewards_platform_schema_ready_v100')||!campaigns_rewards_platform_schema_ready_v100($pdo)){
+    http_response_code(503);exit('Claim Terminal is unavailable.');
+}
+$uid=(int)$user['id'];$merchants=[];
+foreach(campaigns_rewards_platform_merchants_v100($pdo,$uid) as $merchant){
+    if(campaigns_rewards_platform_can_v100($pdo,(int)$merchant['id'],$uid,'claims.process'))$merchants[]=$merchant;
+}
+$merchantId=max(0,(int)($_REQUEST['merchant']??$_REQUEST['merchant_id']??0));
+if($merchantId<1&&$merchants)$merchantId=(int)$merchants[0]['id'];
+$merchant=null;foreach($merchants as $candidate)if((int)$candidate['id']===$merchantId){$merchant=$candidate;break;}
+if(!$merchant&&$merchants){$merchant=$merchants[0];$merchantId=(int)$merchant['id'];}
+$error='';$notice='';$claim=null;
+
 if($_SERVER['REQUEST_METHOD']==='POST'){
-    if(!$user||!$canManage){http_response_code(403);exit('Merchant admin access is required.');}
     if(!verify_csrf())$error='Session expired. Try again.';
+    elseif(!$merchant)$error='Choose a Merchant where you can process Claims.';
     else{
         try{
-            $action=(string)($_POST['action']??'');
-            if($action==='validate'){$claim=campaigns_rewards_validate_claim_v100($pdo,$code,(int)$user['id']);$notice='Claim validated.';}
-            elseif($action==='redeem'){$claim=campaigns_rewards_redeem_claim_v100($pdo,$code,(int)$user['id']);$notice='Claim redeemed and conversion recorded.';}
-            else throw new RuntimeException('Unknown claim action.');
+            $claim=campaigns_rewards_process_claim_v100(
+                $pdo,
+                trim((string)($_POST['reward_credential']??'')),
+                trim((string)($_POST['merchant_claim_code']??'')),
+                $uid,
+                [
+                    'online'=>true,
+                    'location_id'=>max(0,(int)($_POST['location_id']??0)),
+                    'order_ref'=>trim((string)($_POST['order_ref']??'')),
+                    'actor_type'=>'user',
+                    'request_fingerprint'=>(string)($_SERVER['REMOTE_ADDR']??'').'|'.(string)($_SERVER['HTTP_USER_AGENT']??''),
+                ]
+            );
+            if((int)$claim['merchant_id']!==$merchantId)throw new RuntimeException('Claim belongs to a different Merchant.');
+            $notice='Reward claimed successfully.';
         }catch(Throwable $e){$error=$e->getMessage();}
     }
 }
-$status=(string)$claim['status'];
-?><!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#f6f7f8"><title>Reward Claim · <?= e((string)$claim['merchant_name']) ?></title><link rel="stylesheet" href="<?= e(url('/campaigns-v100.css?v=100')) ?>"></head><body class="cr-public"><main class="cr-claim-shell">
-<a class="cr-back" href="<?= e(campaigns_rewards_campaign_url_v100((string)$claim['campaign_slug'])) ?>">← <?= e((string)$claim['campaign_title']) ?></a>
-<section class="cr-claim-card"><span>Reward claim</span><h1><?= e((string)$claim['reward_title']) ?></h1><?php if(trim((string)$claim['value_label'])!==''):?><p class="cr-claim-value"><?= e((string)$claim['value_label']) ?></p><?php endif;?><div class="cr-code"><?= e((string)$claim['claim_code']) ?></div><div class="cr-status <?= e($status) ?>"><?= e(ucfirst($status)) ?></div><p>Issued by <strong><?= e((string)$claim['merchant_name']) ?></strong>. Show this code to the merchant when redeeming the reward.</p><?php if($status==='redeemed'&&!empty($claim['redeemed_at'])):?><p>Redeemed <?= e(date('M j, Y g:i A',strtotime((string)$claim['redeemed_at']))) ?> UTC</p><?php endif;?></section>
+$locations=[];
+if($merchant){
+    $stmt=$pdo->prepare("SELECT * FROM merchant_locations WHERE merchant_id=? AND is_active=1 ORDER BY is_primary DESC,name,id");
+    $stmt->execute([$merchantId]);$locations=$stmt->fetchAll()?:[];
+}
+$memberHeaderUser=$user;$memberHeaderTitle='Claim Terminal';$memberHeaderSubtitle='Three-factor Reward redemption: credential, Merchant Claim Code and authorized operator';
+$memberHeaderActions='<a class="cr-btn" href="'.e(url('/campaigns.php'.($merchantId?'?merchant='.$merchantId:''))).'">Campaigns & Rewards</a>';
+?><!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#f7f7f8"><title>VP3 | Claim Terminal</title><link rel="stylesheet" href="<?= e(url('/chat.css?v=82')) ?>"><link rel="stylesheet" href="<?= e(url('/campaigns-v100.css?v=101')) ?>"></head>
+<body class="cr-page"><div class="chat-app"><?php $workspaceSidebarUser=$user;$workspaceSidebarActive='claim_terminal';require __DIR__.'/includes/workspace-sidebar-v82.php'; ?><div class="chat-sidebar-backdrop" id="chatSidebarBackdrop"></div>
+<main class="chat-main cr-main"><?php require __DIR__.'/includes/member-header.php'; ?><div class="cr-wrap">
 <?php if($notice):?><div class="cr-notice success"><?= e($notice) ?></div><?php endif;?><?php if($error):?><div class="cr-notice error"><?= e($error) ?></div><?php endif;?>
-<?php if($canManage&&in_array($status,['issued','validated'],true)):?><section class="cr-claim-admin"><h2>Merchant controls</h2><div class="cr-actions"><?php if($status==='issued'):?><form method="post"><?= csrf_field() ?><input type="hidden" name="code" value="<?= e((string)$claim['claim_code']) ?>"><input type="hidden" name="action" value="validate"><button class="cr-btn">Validate claim</button></form><?php endif;?><form method="post" onsubmit="return confirm('Redeem this claim now?')"><?= csrf_field() ?><input type="hidden" name="code" value="<?= e((string)$claim['claim_code']) ?>"><input type="hidden" name="action" value="redeem"><button class="cr-btn primary">Redeem reward</button></form></div></section><?php endif;?>
-<footer>VP3 Campaigns &amp; Rewards verification</footer></main></body></html>
+<?php if(!$merchants):?><section class="cr-empty"><h2>No Claim Terminal access</h2><p>You need an active Merchant role with <code>claims.process</code> capability.</p></section><?php else:?>
+<section class="cr-toolbar"><div><strong>Merchant Claim Terminal</strong><span>Authoritative V1 redemption is online-only.</span></div><form method="get"><select name="merchant" onchange="this.form.submit()"><?php foreach($merchants as $m):?><option value="<?= (int)$m['id'] ?>"<?= (int)$m['id']===$merchantId?' selected':'' ?>><?= e((string)$m['name']) ?></option><?php endforeach;?></select></form></section>
+<section class="cr-card"><header><div><span>Redeem</span><h2><?= e((string)$merchant['name']) ?></h2></div></header><form method="post" class="cr-form"><?= csrf_field() ?><input type="hidden" name="merchant_id" value="<?= $merchantId ?>"><label>Reward Credential<input name="reward_credential" required autocomplete="off" spellcheck="false" placeholder="Customer Reward Credential"></label><label>Merchant Claim Code<input name="merchant_claim_code" required autocomplete="off" spellcheck="false" placeholder="Merchant Claim Code"></label><div class="cr-form-grid"><label>Location<select name="location_id"><option value="">No location</option><?php foreach($locations as $location):?><option value="<?= (int)$location['id'] ?>"><?= e((string)$location['name']) ?></option><?php endforeach;?></select></label><label>Order / receipt reference<input name="order_ref" maxlength="190"></label></div><button class="cr-btn primary" type="submit">Claim Reward</button></form></section>
+<?php if($claim):?><section class="cr-claim-card"><span>Claim accepted</span><h2><?= e((string)$claim['reward_product_public_id']) ?></h2><div class="cr-status active">Claimed</div><p><strong>Claim:</strong> <?= e((string)$claim['public_id']) ?></p><p><strong>Reward Issuance:</strong> <?= e((string)$claim['reward_issuance_public_id']) ?></p><p><strong>Campaign:</strong> <?= e((string)$claim['campaign_public_id']) ?></p></section><?php endif;?>
+<?php endif;?>
+</div></main></div><script src="<?= e(url('/workspace-shell-v82.js?v=82')) ?>" defer></script></body></html>
