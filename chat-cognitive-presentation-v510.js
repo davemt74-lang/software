@@ -159,11 +159,32 @@
     const supervisionCounts = brief.supervision_counts || {};
     const autonomy = brief.autonomy_focus || null;
     const autonomyCounts = brief.autonomy_counts || {};
+    const portfolio = brief.portfolio_focus || null;
+    const portfolioCounts = brief.portfolio_counts || {};
+    const portfolioCapacity = brief.portfolio_capacity || {};
     const counts = brief.counts || {};
     let html = '<div class="chat-agent-brief-status"><span><i class="chat-agent-brief-dot ' +
       (brief.active !== false ? 'active' : '') + '"></i>' +
       esc(brief.agent_name || 'Agent') + ' · ' + esc(brief.status_label || 'Active') +
       '</span><small>' + esc(brief.activity_title || 'Ready') + '</small></div>';
+
+    if (portfolio) {
+      const action = String(portfolio.coordination_action || 'observe').replaceAll('_',' ');
+      const hold = String(portfolio.hold_reason || '').replaceAll('_',' ');
+      const executor = String(portfolio.executor || 'cloud');
+      const free = Number(portfolioCapacity.executors?.[executor]?.free || 0);
+      html += '<article class="chat-agent-brief-card"><small>Portfolio coordination · ' +
+        esc(executor) + '</small><strong>' +
+        esc(portfolio.title || ('Goal #' + Number(portfolio.goal_id || 0))) + '</strong>' +
+        '<p>' + Number(portfolio.score_percent || 0) + '/100 coordination score · ' +
+        esc(action) + (hold ? ' · held: ' + esc(hold) : '') + '</p>' +
+        '<p><small>' + free + ' worker slot' + (free === 1 ? '' : 's') + ' currently free</small></p>' +
+        ((portfolio.requires_user || hold === 'semantic overlap') ? '<div class="chat-agent-brief-actions">' +
+          actionButton('Review portfolio',
+            ' data-agent-brief-prompt="' + esc('Review autonomous goal #' + Number(portfolio.goal_id || 0) + ' in my portfolio, including capacity, overlap, dependencies, and the safest next action.') + '"',true) +
+          '</div>' : '') +
+        '</article>';
+    }
 
     if (autonomy) {
       const mode = String(autonomy.execution_mode || 'manual');
@@ -261,6 +282,9 @@
         : '') +
       (Number(autonomyCounts.autonomous || 0) > 0
         ? '<span><strong>' + Number(autonomyCounts.autonomous || 0) + '</strong><small>Autonomous goals</small></span>'
+        : '') +
+      (Number(portfolioCounts.held || 0) > 0
+        ? '<span><strong>' + Number(portfolioCounts.held || 0) + '</strong><small>Portfolio holds</small></span>'
         : '') +
       '</div>';
     return html;
