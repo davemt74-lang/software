@@ -200,6 +200,28 @@ function campaigns_rewards_platform_ensure_schema_v100(?PDO $pdo=null): void
       id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,public_id CHAR(36) NOT NULL,public_code VARCHAR(24) NOT NULL,merchant_id BIGINT UNSIGNED NOT NULL,campaign_type_id BIGINT UNSIGNED NOT NULL,name VARCHAR(190) NOT NULL,slug VARCHAR(120) NOT NULL,description TEXT NULL,status VARCHAR(20) NOT NULL DEFAULT 'draft',environment VARCHAR(12) NOT NULL DEFAULT 'production',objective VARCHAR(500) NOT NULL DEFAULT '',owner_user_id INT UNSIGNED NOT NULL,current_version_no INT UNSIGNED NOT NULL DEFAULT 0,starts_at DATETIME NULL,ends_at DATETIME NULL,audience_mode VARCHAR(20) NOT NULL DEFAULT 'static',budget_minor BIGINT UNSIGNED NULL,budget_currency CHAR(3) NULL,budget_quantity BIGINT UNSIGNED NULL,max_enrollments BIGINT UNSIGNED NULL,max_rewards BIGINT UNSIGNED NULL,per_contact_limit INT UNSIGNED NULL,settings_json LONGTEXT NULL,created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,launched_at DATETIME NULL,paused_at DATETIME NULL,completed_at DATETIME NULL,archived_at DATETIME NULL,
       UNIQUE KEY uq_campaign_public (public_id),UNIQUE KEY uq_campaign_slug (slug),UNIQUE KEY uq_campaign_code (merchant_id,public_code),INDEX idx_campaign_status (merchant_id,environment,status,updated_at,id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+    $exec("CREATE TABLE IF NOT EXISTS campaign_versions (
+      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,campaign_id BIGINT UNSIGNED NOT NULL,version_no INT UNSIGNED NOT NULL,status VARCHAR(20) NOT NULL DEFAULT 'snapshot',campaign_snapshot_json LONGTEXT NOT NULL,audience_snapshot_json LONGTEXT NULL,eligibility_snapshot_json LONGTEXT NULL,trigger_snapshot_json LONGTEXT NULL,landing_snapshot_json LONGTEXT NULL,reward_snapshot_json LONGTEXT NULL,terms_snapshot_json LONGTEXT NULL,created_by_user_id INT UNSIGNED NOT NULL,created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE KEY uq_campaign_version (campaign_id,version_no)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+    $exec("CREATE TABLE IF NOT EXISTS campaign_audiences (
+      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,campaign_id BIGINT UNSIGNED NOT NULL,name VARCHAR(190) NOT NULL,mode VARCHAR(20) NOT NULL DEFAULT 'static',rules_json LONGTEXT NULL,status VARCHAR(20) NOT NULL DEFAULT 'active',created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+    $exec("CREATE TABLE IF NOT EXISTS campaign_audience_members (
+      audience_id BIGINT UNSIGNED NOT NULL,contact_id BIGINT UNSIGNED NOT NULL,membership_source VARCHAR(60) NOT NULL DEFAULT 'manual',qualified_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,snapshot_version_no INT UNSIGNED NULL,metadata_json LONGTEXT NULL,PRIMARY KEY(audience_id,contact_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+    $exec("CREATE TABLE IF NOT EXISTS campaign_enrollments (
+      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,public_id CHAR(36) NOT NULL,campaign_id BIGINT UNSIGNED NOT NULL,campaign_version_id BIGINT UNSIGNED NOT NULL,contact_id BIGINT UNSIGNED NULL,external_identity_ref VARCHAR(255) NULL,source VARCHAR(80) NOT NULL DEFAULT 'manual',status VARCHAR(30) NOT NULL DEFAULT 'enrolled',environment VARCHAR(12) NOT NULL DEFAULT 'production',qualified_at DATETIME NULL,enrolled_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,converted_to_contact_at DATETIME NULL,completed_at DATETIME NULL,metadata_json LONGTEXT NULL,created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY uq_campaign_enrollment_public (public_id),INDEX idx_campaign_enrollment_contact (campaign_id,contact_id,status,id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+    $exec("CREATE TABLE IF NOT EXISTS campaign_cases (
+      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,public_id CHAR(36) NOT NULL,merchant_id BIGINT UNSIGNED NOT NULL,campaign_id BIGINT UNSIGNED NOT NULL,enrollment_id BIGINT UNSIGNED NULL,contact_id BIGINT UNSIGNED NOT NULL,case_type VARCHAR(60) NOT NULL,reason_code VARCHAR(80) NOT NULL DEFAULT '',summary VARCHAR(500) NOT NULL DEFAULT '',internal_notes TEXT NULL,status VARCHAR(20) NOT NULL DEFAULT 'open',environment VARCHAR(12) NOT NULL DEFAULT 'production',created_by_user_id INT UNSIGNED NULL,created_by_actor_type VARCHAR(30) NOT NULL DEFAULT 'user',created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,resolved_at DATETIME NULL,updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY uq_campaign_case_public (public_id),INDEX idx_campaign_case_contact (merchant_id,contact_id,status,id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+    $exec("CREATE TABLE IF NOT EXISTS campaign_landing_pages (
+      campaign_id BIGINT UNSIGNED NOT NULL PRIMARY KEY,slug VARCHAR(120) NOT NULL,visibility VARCHAR(30) NOT NULL DEFAULT 'profile_public',presentation_mode VARCHAR(20) NOT NULL DEFAULT 'profile',headline VARCHAR(255) NOT NULL DEFAULT '',subheadline VARCHAR(500) NOT NULL DEFAULT '',hero_media_ref VARCHAR(255) NOT NULL DEFAULT '',cta_label VARCHAR(80) NOT NULL DEFAULT 'Claim reward',content_json LONGTEXT NULL,terms_json LONGTEXT NULL,is_published TINYINT(1) NOT NULL DEFAULT 0,published_at DATETIME NULL,updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
     // The public route is /campaign/{slug}, so slug authority is global rather
     // than Merchant-scoped. Reconcile any pre-release duplicate slugs before
     // converting an older composite index.
@@ -225,28 +247,6 @@ function campaigns_rewards_platform_ensure_schema_v100(?PDO $pdo=null): void
         $pdo->exec("ALTER TABLE campaigns ADD UNIQUE KEY uq_campaign_slug (slug)");
     }
 
-    $exec("CREATE TABLE IF NOT EXISTS campaign_versions (
-      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,campaign_id BIGINT UNSIGNED NOT NULL,version_no INT UNSIGNED NOT NULL,status VARCHAR(20) NOT NULL DEFAULT 'snapshot',campaign_snapshot_json LONGTEXT NOT NULL,audience_snapshot_json LONGTEXT NULL,eligibility_snapshot_json LONGTEXT NULL,trigger_snapshot_json LONGTEXT NULL,landing_snapshot_json LONGTEXT NULL,reward_snapshot_json LONGTEXT NULL,terms_snapshot_json LONGTEXT NULL,created_by_user_id INT UNSIGNED NOT NULL,created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      UNIQUE KEY uq_campaign_version (campaign_id,version_no)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
-    $exec("CREATE TABLE IF NOT EXISTS campaign_audiences (
-      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,campaign_id BIGINT UNSIGNED NOT NULL,name VARCHAR(190) NOT NULL,mode VARCHAR(20) NOT NULL DEFAULT 'static',rules_json LONGTEXT NULL,status VARCHAR(20) NOT NULL DEFAULT 'active',created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
-    $exec("CREATE TABLE IF NOT EXISTS campaign_audience_members (
-      audience_id BIGINT UNSIGNED NOT NULL,contact_id BIGINT UNSIGNED NOT NULL,membership_source VARCHAR(60) NOT NULL DEFAULT 'manual',qualified_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,snapshot_version_no INT UNSIGNED NULL,metadata_json LONGTEXT NULL,PRIMARY KEY(audience_id,contact_id)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
-    $exec("CREATE TABLE IF NOT EXISTS campaign_enrollments (
-      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,public_id CHAR(36) NOT NULL,campaign_id BIGINT UNSIGNED NOT NULL,campaign_version_id BIGINT UNSIGNED NOT NULL,contact_id BIGINT UNSIGNED NULL,external_identity_ref VARCHAR(255) NULL,source VARCHAR(80) NOT NULL DEFAULT 'manual',status VARCHAR(30) NOT NULL DEFAULT 'enrolled',environment VARCHAR(12) NOT NULL DEFAULT 'production',qualified_at DATETIME NULL,enrolled_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,converted_to_contact_at DATETIME NULL,completed_at DATETIME NULL,metadata_json LONGTEXT NULL,created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-      UNIQUE KEY uq_campaign_enrollment_public (public_id),INDEX idx_campaign_enrollment_contact (campaign_id,contact_id,status,id)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
-    $exec("CREATE TABLE IF NOT EXISTS campaign_cases (
-      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,public_id CHAR(36) NOT NULL,merchant_id BIGINT UNSIGNED NOT NULL,campaign_id BIGINT UNSIGNED NOT NULL,enrollment_id BIGINT UNSIGNED NULL,contact_id BIGINT UNSIGNED NOT NULL,case_type VARCHAR(60) NOT NULL,reason_code VARCHAR(80) NOT NULL DEFAULT '',summary VARCHAR(500) NOT NULL DEFAULT '',internal_notes TEXT NULL,status VARCHAR(20) NOT NULL DEFAULT 'open',environment VARCHAR(12) NOT NULL DEFAULT 'production',created_by_user_id INT UNSIGNED NULL,created_by_actor_type VARCHAR(30) NOT NULL DEFAULT 'user',created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,resolved_at DATETIME NULL,updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-      UNIQUE KEY uq_campaign_case_public (public_id),INDEX idx_campaign_case_contact (merchant_id,contact_id,status,id)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
-
-    $exec("CREATE TABLE IF NOT EXISTS campaign_landing_pages (
-      campaign_id BIGINT UNSIGNED NOT NULL PRIMARY KEY,slug VARCHAR(120) NOT NULL,visibility VARCHAR(30) NOT NULL DEFAULT 'profile_public',presentation_mode VARCHAR(20) NOT NULL DEFAULT 'profile',headline VARCHAR(255) NOT NULL DEFAULT '',subheadline VARCHAR(500) NOT NULL DEFAULT '',hero_media_ref VARCHAR(255) NOT NULL DEFAULT '',cta_label VARCHAR(80) NOT NULL DEFAULT 'Claim reward',content_json LONGTEXT NULL,terms_json LONGTEXT NULL,is_published TINYINT(1) NOT NULL DEFAULT 0,published_at DATETIME NULL,updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
     $exec("CREATE TABLE IF NOT EXISTS campaign_profile_publications (
       campaign_id BIGINT UNSIGNED NOT NULL,profile_user_id INT UNSIGNED NOT NULL,status VARCHAR(20) NOT NULL DEFAULT 'active',featured TINYINT(1) NOT NULL DEFAULT 0,sort_order INT NOT NULL DEFAULT 100,created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,PRIMARY KEY(campaign_id,profile_user_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
