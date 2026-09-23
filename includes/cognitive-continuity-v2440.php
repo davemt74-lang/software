@@ -121,8 +121,11 @@ function vp3_cognitive_continuity_workflows_v2440(PDO $pdo,array $user,string $n
     $out=[];
     foreach($rows as $row){
         $status=(string)($row['status']??'');
-        $blockers=function_exists('agent_work_dependency_blockers_v174')
-            ?agent_work_dependency_blockers_v174($pdo,$uid,(int)$row['id']):[];
+        $blockers=[];
+        if(function_exists('agent_work_dependencies_schema_ready_v174')&&agent_work_dependencies_schema_ready_v174($pdo)
+            &&function_exists('agent_work_dependency_blockers_v174')){
+            try{$blockers=agent_work_dependency_blockers_v174($pdo,$uid,(int)$row['id']);}catch(Throwable $e){$blockers=[];}
+        }
         $blockerCount=count($blockers);
         $nextAt=(string)($row['next_attempt_at']??'');
         $scheduled=$nextAt!==''&&(strtotime($nextAt.' UTC')?:0)>time();
