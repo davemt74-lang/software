@@ -12,6 +12,7 @@ const proactive=read('includes/cognitive-proactive-now-v2340.php');
 const brainApi=read('api/chat-notifications-brain-v240.php');
 const briefJs=read('chat-cognitive-presentation-v510.js');
 const brainJs=read('chat-notifications-drawer-v240.js');
+const chat=read('chat.php');
 const workflow=read('.github/workflows/cognitive-loop-release-v2360.yml');
 const recovery=read('tools/run_recovery_baseline.py');
 const packageWorkflow=read('.github/workflows/production-deploy-package.yml');
@@ -35,6 +36,7 @@ const checks=[
  ['Agent Brain API uses same current-state projection and firewalled presentation',/vp3_cognitive_current_state_projection_v2590/.test(brainApi)&&/'current_state'=>\$currentState/.test(brainApi)&&/'current_state_presentation'=>\$currentStatePresentation/.test(brainApi)],
  ['Agent Brief UI renders only presentation object fields',/current_state_presentation/.test(briefJs)&&/Review current state/.test(briefJs)&&!/currentState\.payload|currentState\.raw_json/.test(briefJs)],
  ['Agent Brain UI renders only firewalled current-state presentation',/Unified Current State/.test(brainJs)&&/current_state_presentation/.test(brainJs)&&!/brain\.current_state\s*\|\|/.test(brainJs)&&!/currentStateRecent/.test(brainJs)],
+ ['chat cache bust exposes v25.90 current-state build',/cognitive-current-state-v2590-20260923/.test(chat)&&/currentStateBuild/.test(chat)&&/cognitivePresentationAssetBuild/.test(chat)],
  ['release gate preserves one-event-ledger and authority boundaries',/'second_event_ledger'=>false/.test(release)&&/'canonical_event_inbox_remains_authority'=>true/.test(release)&&/'agent_brain_user_facing_state_uses_presentation_firewall'=>true/.test(release)&&/'phase19_remains_claim_lease_execution_receipt_authority'=>true/.test(release)],
  ['v25.90 CI runs PHP and Node gates',/cognitive-current-state-v2590\.php/.test(workflow)&&/cognitive-current-state-v2590\.mjs/.test(workflow)],
  ['Recovery Baseline retains v25.90 gates',/cognitive-current-state-v2590\.php/.test(recovery)&&/cognitive-current-state-v2590\.mjs/.test(recovery)],
