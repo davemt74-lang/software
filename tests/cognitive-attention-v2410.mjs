@@ -35,7 +35,8 @@ const checks=[
    /ATTENTION_MAX_INTERRUPTS_V2410=3/.test(attention)&&/ATTENTION_WINDOW_MINUTES_V2410=30/.test(attention)],
  ['planned reservations expire after five minutes',
    /ATTENTION_PLAN_TTL_MINUTES_V2410=5/.test(attention)
-   &&/status='planned'[\\s\\S]{0,140}ATTENTION_PLAN_TTL_MINUTES_V2410/.test(attention)],
+   &&/status='planned'/.test(attention)
+   &&/DATE_SUB\\(UTC_TIMESTAMP\\(\\),INTERVAL [\\s\\S]*ATTENTION_PLAN_TTL_MINUTES_V2410[\\s\\S]* MINUTE\\)/.test(attention)],
  ['budget query is user-global rather than namespace-scoped',
    /WHERE owner_user_id=\? AND interruptive=1/.test(attention)
    &&!/WHERE owner_user_id=\? AND agent_namespace=\? AND interruptive=1[\s\S]{0,180}ATTENTION_WINDOW_MINUTES/.test(attention)],
