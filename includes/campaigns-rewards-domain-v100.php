@@ -467,8 +467,8 @@ function campaigns_rewards_create_campaign_v100(PDO $pdo,int $merchantId,int $ac
     $typeKey=campaigns_rewards_slug_v100((string)($input['campaign_type']??'signup'),80)?:'signup';
     $type=campaigns_rewards_campaign_type_v100($pdo,$merchantId,$typeKey)?:throw new RuntimeException('Campaign Type is unavailable.');
     $slug=campaigns_rewards_slug_v100((string)($input['slug']??$name),120);if($slug==='')$slug='campaign';
-    $base=$slug;$n=1;$check=$pdo->prepare('SELECT 1 FROM campaigns WHERE merchant_id=? AND slug=? LIMIT 1');
-    while(true){$check->execute([$merchantId,$slug]);if(!$check->fetchColumn())break;$n++;$slug=substr($base,0,110).'-'.$n;}
+    $base=$slug;$n=1;$check=$pdo->prepare('SELECT 1 FROM campaigns WHERE slug=? LIMIT 1');
+    while(true){$check->execute([$slug]);if(!$check->fetchColumn())break;$n++;$slug=substr($base,0,110).'-'.$n;}
     $public=campaigns_rewards_uuid_v100();$code='';for($i=0;$i<20;$i++){ $candidate=campaigns_rewards_public_code_v100();$q=$pdo->prepare('SELECT 1 FROM campaigns WHERE merchant_id=? AND public_code=? LIMIT 1');$q->execute([$merchantId,$candidate]);if(!$q->fetchColumn()){$code=$candidate;break;}}
     if($code==='')throw new RuntimeException('Campaign code could not be generated.');
     $environment=!empty($merchant['sandbox_mode'])?'sandbox':((string)($input['environment']??'production')==='sandbox'?'sandbox':'production');
