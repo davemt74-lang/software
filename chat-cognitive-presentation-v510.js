@@ -638,7 +638,7 @@
         '<p><small>' + esc(quotaState) + ' · ' + esc(remaining) + ' · ' + Number(economicsCounts.planning_adjusted || 0) + ' autonomous goal(s) economically adjusted</small></p>' +
         '<div class="chat-agent-brief-actions">' +
         actionButton('Review economics',
-          ' data-agent-brief-prompt="' + esc('Review my AI cost and resource economics. Separate known metered cost from unknown pricing, explain token pressure and any autonomous planning adjustments, and do not change commitments, executors, deadlines, packages, or token balances.') + '"',false) +
+          ' data-agent-brief-prompt="' + esc('Review my AI cost and resource economics. Separate ledger-estimated cost from unknown pricing, explain token pressure and any autonomous planning adjustments, and do not change commitments, executors, deadlines, packages, or token balances.') + '"',false) +
         '</div></article>';
     }
 
