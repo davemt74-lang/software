@@ -12,6 +12,7 @@ const VP3_COGNITIVE_ATTENTION_V2410='vp3-cognitive-attention-v2410-20260922';
 const VP3_COGNITIVE_ATTENTION_WINDOW_MINUTES_V2410=30;
 const VP3_COGNITIVE_ATTENTION_MAX_INTERRUPTS_V2410=3;
 const VP3_COGNITIVE_ATTENTION_REPEAT_COOLDOWN_MINUTES_V2410=30;
+const VP3_COGNITIVE_ATTENTION_PLAN_TTL_MINUTES_V2410=5;
 const VP3_COGNITIVE_ATTENTION_RETENTION_DAYS_V2410=90;
 const VP3_COGNITIVE_ATTENTION_CRITICAL_SCORE_V2410=90;
 const VP3_COGNITIVE_ATTENTION_URGENT_SCORE_V2410=80;
@@ -161,6 +162,9 @@ function vp3_cognitive_attention_decide_v2410(array $signal,array $context=[]): 
     }
 
     if(!empty($ctx['requires_user_response'])){
+        if(!$interruptible){
+            return $base+['surface'=>'brief','paired_surface'=>'','voice'=>false,'reason_code'=>'user_response_deferred_not_interruptible'];
+        }
         if($quiet&&!$critical){
             return $base+['surface'=>'brief','paired_surface'=>'','voice'=>false,'reason_code'=>'response_deferred_by_focus'];
         }
@@ -168,7 +172,7 @@ function vp3_cognitive_attention_decide_v2410(array $signal,array $context=[]): 
             return $base+['surface'=>'brief','paired_surface'=>'','voice'=>false,'reason_code'=>'attention_budget_exhausted'];
         }
         return array_replace($base,[
-            'surface'=>'ask_user','paired_surface'=>$interruptible?'notification':'',
+            'surface'=>'ask_user','paired_surface'=>'notification',
             'voice'=>false,'reason_code'=>$critical?'critical_user_response_required':'user_response_required',
             'interruptive'=>true,'budget_bypass'=>$critical,
         ]);
@@ -251,8 +255,11 @@ function vp3_cognitive_attention_budget_v2410(PDO $pdo,array $user,string $names
     vp3_cognitive_validate_namespace_v500($pdo,$user,$namespace);
     $stmt=$pdo->prepare("SELECT COUNT(*) FROM cognitive_attention_receipts_v2410
       WHERE owner_user_id=? AND interruptive=1
-        AND status IN ('planned','delivered')
-        AND created_at>=DATE_SUB(UTC_TIMESTAMP(),INTERVAL ".VP3_COGNITIVE_ATTENTION_WINDOW_MINUTES_V2410." MINUTE)");
+        AND (
+          (status='delivered' AND COALESCE(delivered_at,created_at)>=DATE_SUB(UTC_TIMESTAMP(),INTERVAL ".VP3_COGNITIVE_ATTENTION_WINDOW_MINUTES_V2410." MINUTE))
+          OR
+          (status='planned' AND created_at>=DATE_SUB(UTC_TIMESTAMP(),INTERVAL ".VP3_COGNITIVE_ATTENTION_PLAN_TTL_MINUTES_V2410." MINUTE))
+        )");
     $stmt->execute([$uid]);$used=(int)$stmt->fetchColumn();
     return ['used'=>$used,'limit'=>VP3_COGNITIVE_ATTENTION_MAX_INTERRUPTS_V2410,'remaining'=>$used<VP3_COGNITIVE_ATTENTION_MAX_INTERRUPTS_V2410];
 }
@@ -261,9 +268,12 @@ function vp3_cognitive_attention_recent_key_v2410(PDO $pdo,int $uid,string $name
 {
     if($key==='')return null;
     $stmt=$pdo->prepare("SELECT * FROM cognitive_attention_receipts_v2410
-      WHERE owner_user_id=? AND signal_key=?
-        AND interruptive=1 AND status IN ('planned','delivered')
-        AND created_at>=DATE_SUB(UTC_TIMESTAMP(),INTERVAL ".VP3_COGNITIVE_ATTENTION_REPEAT_COOLDOWN_MINUTES_V2410." MINUTE)
+      WHERE owner_user_id=? AND signal_key=? AND interruptive=1
+        AND (
+          (status='delivered' AND COALESCE(delivered_at,created_at)>=DATE_SUB(UTC_TIMESTAMP(),INTERVAL ".VP3_COGNITIVE_ATTENTION_REPEAT_COOLDOWN_MINUTES_V2410." MINUTE))
+          OR
+          (status='planned' AND created_at>=DATE_SUB(UTC_TIMESTAMP(),INTERVAL ".VP3_COGNITIVE_ATTENTION_PLAN_TTL_MINUTES_V2410." MINUTE))
+        )
       ORDER BY id DESC LIMIT 1");
     $stmt->execute([$uid,$key]);$row=$stmt->fetch();
     return is_array($row)?$row:null;
@@ -308,6 +318,25 @@ function vp3_cognitive_attention_receipt_public_v2410(array $row): array
     ];
 }
 
+function vp3_cognitive_attention_reconsiderable_v2410(array $row): bool
+{
+    if((string)($row['status']??'')!=='deferred')return false;
+    return in_array((string)($row['reason_code']??''),[
+        'not_interruptible','user_response_deferred_not_interruptible',
+        'focus_or_quiet_hours','response_deferred_by_focus','attention_budget_exhausted',
+    ],true);
+}
+
+function vp3_cognitive_attention_status_for_decision_v2410(array $decision): string
+{
+    if(!empty($decision['interruptive']))return 'planned';
+    if(in_array((string)($decision['reason_code']??''),[
+        'not_interruptible','user_response_deferred_not_interruptible',
+        'focus_or_quiet_hours','response_deferred_by_focus','attention_budget_exhausted',
+    ],true))return 'deferred';
+    return in_array((string)($decision['surface']??''),['none','memory'],true)?'suppressed':'deferred';
+}
+
 function vp3_cognitive_attention_preview_v2410(
     PDO $pdo,array $user,string $namespace,array $signal,array $context=[]
 ): array {
@@ -318,7 +347,7 @@ function vp3_cognitive_attention_preview_v2410(
     $fingerprint=vp3_cognitive_attention_fingerprint_v2410($signal);
     $existing=$pdo->prepare('SELECT * FROM cognitive_attention_receipts_v2410 WHERE owner_user_id=? AND agent_namespace=? AND signal_fingerprint=? LIMIT 1');
     $existing->execute([$uid,$namespace,$fingerprint]);$row=$existing->fetch();
-    if(is_array($row))return vp3_cognitive_attention_receipt_public_v2410($row);
+    if(is_array($row)&&!vp3_cognitive_attention_reconsiderable_v2410($row))return vp3_cognitive_attention_receipt_public_v2410($row);
 
     $budget=vp3_cognitive_attention_budget_v2410($pdo,$user,$namespace);
     $ctx=vp3_cognitive_attention_context_v2410($context);
@@ -341,13 +370,27 @@ function vp3_cognitive_attention_arbitrate_v2410(
         $fingerprint=vp3_cognitive_attention_fingerprint_v2410($signal);
         $existing=$pdo->prepare('SELECT * FROM cognitive_attention_receipts_v2410 WHERE owner_user_id=? AND agent_namespace=? AND signal_fingerprint=? LIMIT 1');
         $existing->execute([$uid,$namespace,$fingerprint]);$row=$existing->fetch();
-        if(is_array($row))return vp3_cognitive_attention_receipt_public_v2410($row);
+        if(is_array($row)&&!vp3_cognitive_attention_reconsiderable_v2410($row))return vp3_cognitive_attention_receipt_public_v2410($row);
 
         // Recalculate budget/cooldown while holding the per-user policy lock.
         // Preview calls outside this lock are advisory only.
         $decision=vp3_cognitive_attention_preview_v2410($pdo,$user,$namespace,$signal,$context);
         $interruptive=!empty($decision['interruptive']);
-        $status=$interruptive?'planned':(in_array((string)$decision['surface'],['none','memory'],true)?'suppressed':'deferred');
+        $status=vp3_cognitive_attention_status_for_decision_v2410($decision);
+        if(is_array($row)&&vp3_cognitive_attention_reconsiderable_v2410($row)){
+            $pdo->prepare("UPDATE cognitive_attention_receipts_v2410 SET
+              attention_score=?,attention_band=?,requested_surface=?,selected_surface=?,paired_surface=?,reason_code=?,
+              voice_allowed=?,sensitive=?,interruptive=?,status=?,delivered_at=NULL,dismissed_at=NULL,updated_at=UTC_TIMESTAMP()
+              WHERE id=? AND owner_user_id=? AND agent_namespace=?")
+              ->execute([
+                  (float)$decision['attention_score'],(string)$decision['attention_band'],(string)$decision['requested_surface'],
+                  (string)$decision['surface'],(string)$decision['paired_surface'],(string)$decision['reason_code'],
+                  !empty($decision['voice'])?1:0,!empty($s['sensitive'])?1:0,$interruptive?1:0,$status,
+                  (int)$row['id'],$uid,$namespace,
+              ]);
+            $existing->execute([$uid,$namespace,$fingerprint]);$fresh=$existing->fetch();
+            return is_array($fresh)?vp3_cognitive_attention_receipt_public_v2410($fresh):$decision;
+        }
         $public=vp3_cognitive_uuid_v500();
         $stmt=$pdo->prepare("INSERT IGNORE INTO cognitive_attention_receipts_v2410
           (public_id,owner_user_id,agent_namespace,signal_key,signal_fingerprint,source_kind,category,attention_score,attention_band,requested_surface,selected_surface,paired_surface,reason_code,voice_allowed,sensitive,interruptive,status)
@@ -376,6 +419,15 @@ function vp3_cognitive_attention_mark_delivered_v2410(PDO $pdo,array $user,strin
     $namespace=vp3_cognitive_validate_namespace_v500($pdo,$user,$namespace);
     $pdo->prepare("UPDATE cognitive_attention_receipts_v2410 SET status='delivered',delivered_at=COALESCE(delivered_at,UTC_TIMESTAMP()),updated_at=UTC_TIMESTAMP()
       WHERE owner_user_id=? AND agent_namespace=? AND signal_key=? AND interruptive=1 AND status='planned'
+      ORDER BY id DESC LIMIT 1")->execute([$uid,$namespace,$signalKey]);
+}
+
+function vp3_cognitive_attention_mark_released_v2410(PDO $pdo,array $user,string $namespace,string $signalKey): void
+{
+    $uid=(int)($user['id']??0);if($uid<1||$signalKey===''||!vp3_cognitive_attention_schema_ready_v2410($pdo))return;
+    $namespace=vp3_cognitive_validate_namespace_v500($pdo,$user,$namespace);
+    $pdo->prepare("UPDATE cognitive_attention_receipts_v2410 SET status='released',updated_at=UTC_TIMESTAMP()
+      WHERE owner_user_id=? AND agent_namespace=? AND signal_key=? AND status='planned'
       ORDER BY id DESC LIMIT 1")->execute([$uid,$namespace,$signalKey]);
 }
 
