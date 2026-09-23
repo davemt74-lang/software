@@ -417,6 +417,9 @@ function vp3_cognitive_presentation_state_v510(PDO $pdo,array $user,string $name
     $commitmentProtection=function_exists('vp3_cognitive_commitment_activity_projection_v2540')
         ?vp3_cognitive_commitment_activity_projection_v2540($pdo,$user,$namespace)
         :['build'=>'','focus'=>null,'commitments'=>[],'counts'=>[]];
+    $economics=function_exists('vp3_cognitive_economics_activity_projection_v2550')
+        ?vp3_cognitive_economics_activity_projection_v2550($pdo,$user,$namespace)
+        :['build'=>'','focus'=>null,'goals'=>[],'usage'=>[],'quota'=>[],'counts'=>[]];
     $brief['followthrough']=$followthrough['focus']??null;
     $brief['followthrough_counts']=$followthrough['counts']??[];
     $brief['away_followthrough']=$followthrough['away']??['count'=>0,'summary'=>'','items'=>[]];
@@ -445,6 +448,10 @@ function vp3_cognitive_presentation_state_v510(PDO $pdo,array $user,string $name
     $brief['commitment_focus']=$commitmentProtection['focus']??null;
     $brief['commitment_counts']=$commitmentProtection['counts']??[];
     $brief['commitments']=$commitmentProtection['commitments']??[];
+    $brief['economics_focus']=$economics['focus']??null;
+    $brief['economics_counts']=$economics['counts']??[];
+    $brief['economics_usage']=$economics['usage']??[];
+    $brief['economics_quota']=$economics['quota']??[];
     return [
         'build'=>VP3_COGNITIVE_PRESENTATION_V510,'agent_namespace'=>$namespace,
         'idle_minutes'=>vp3_cognitive_presentation_idle_minutes_v510($row),
@@ -458,6 +465,7 @@ function vp3_cognitive_presentation_state_v510(PDO $pdo,array $user,string $name
         'resource_budget'=>$resourceBudget,
         'replanning'=>$replanning,
         'commitment_protection'=>$commitmentProtection,
+        'economics'=>$economics,
         'digest'=>$digest,'voice_candidate'=>$voice,'attention'=>$attentionStatus,
         'poll_seconds'=>VP3_COGNITIVE_PRESENTATION_POLL_SECONDS_V510,
     ];
