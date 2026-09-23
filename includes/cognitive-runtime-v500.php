@@ -818,6 +818,9 @@ function vp3_cognitive_presentation_context_v500(PDO $pdo,array $user,array $ove
 
 function vp3_cognitive_presentation_decide_v500(array $observation,array $context=[]): array
 {
+    if(function_exists('vp3_cognitive_attention_decide_v2410')){
+        return vp3_cognitive_attention_decide_v2410($observation,$context);
+    }
     $obs=[
         'category'=>(string)($observation['category']??'fact_summary'),
         'confidence'=>vp3_cognitive_score_v500($observation['confidence']??0),
