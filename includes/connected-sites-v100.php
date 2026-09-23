@@ -114,7 +114,7 @@ function vp3_connected_site_refresh_v100(PDO $pdo,array $app,string $refresh): a
 }
 function vp3_connected_site_auth_v100(PDO $pdo,string $requiredScope=''): array
 {
-    vp3_connected_sites_ensure_schema_v100($pdo);$header=(string)($_SERVER['HTTP_AUTHORIZATION']??'');if(!preg_match('/^Bearer\\s+([A-Fa-f0-9]{64})$/',$header,$m))throw new RuntimeException('Connected-site bearer token is required.');
+    vp3_connected_sites_ensure_schema_v100($pdo);$header=(string)($_SERVER['HTTP_AUTHORIZATION']??$_SERVER['REDIRECT_HTTP_AUTHORIZATION']??'');if(!preg_match('/^Bearer\\s+([A-Fa-f0-9]{64})$/',$header,$m))throw new RuntimeException('Connected-site bearer token is required.');
     $q=$pdo->prepare("SELECT t.id token_id,t.connection_id,s.*,u.display_name,u.email,u.is_active FROM user_connected_site_tokens t JOIN user_connected_sites s ON s.id=t.connection_id JOIN users u ON u.id=s.user_id WHERE t.access_token_hash=? AND t.revoked_at IS NULL AND t.access_expires_at>NOW() AND s.status='active' LIMIT 1");$q->execute([hash('sha256',strtolower($m[1]))]);$row=$q->fetch();if(!$row||empty($row['is_active']))throw new RuntimeException('Connected-site token is invalid or expired.');$scopes=json_decode((string)$row['scopes_json'],true)?:[];if($requiredScope!==''&&!in_array($requiredScope,$scopes,true))throw new RuntimeException('Connected-site scope is not authorized.');$pdo->prepare('UPDATE user_connected_site_tokens SET last_used_at=NOW() WHERE id=?')->execute([(int)$row['token_id']]);$pdo->prepare('UPDATE user_connected_sites SET last_used_at=NOW() WHERE id=?')->execute([(int)$row['connection_id']]);$row['scopes']=$scopes;return $row;
 }
 function vp3_connected_site_revoke_v100(PDO $pdo,int $userId,int $connectionId): void
