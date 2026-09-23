@@ -37,6 +37,7 @@ for (const [label, route] of [
   ['Voice Profile', '/voice-profile.php'],
   ['My Team', '/team.php'],
   ['Music Workspace', '/music-workspace.php'],
+  ['Campaigns & Rewards', '/campaigns.php'],
   ['Team Workspaces', '/admin/team-workspaces.php'],
   ['Admin Dashboard', '/admin/index.php'],
   ['Log Out', '/logout.php'],
