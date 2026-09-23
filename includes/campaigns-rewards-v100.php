@@ -461,6 +461,7 @@ function campaigns_rewards_owned_merchants_v100(PDO $pdo,int $ownerUserId): arra
 
 function campaigns_rewards_user_has_access_v100(PDO $pdo,array $user): bool
 {
+    if(!campaigns_rewards_schema_ready_v100($pdo))return false;
     return campaigns_rewards_enabled_v100($user,$pdo)||campaigns_rewards_accessible_merchants_v100($pdo,$user)!==[];
 }
 
