@@ -423,6 +423,9 @@ function vp3_cognitive_presentation_state_v510(PDO $pdo,array $user,string $name
     $budgetGovernance=function_exists('vp3_cognitive_budget_activity_projection_v2560')
         ?vp3_cognitive_budget_activity_projection_v2560($pdo,$user,$namespace)
         :['build'=>'','configured'=>false,'focus'=>null,'policies'=>[],'held_goals'=>[],'counts'=>[],'manage_url'=>''];
+    $valueRoi=function_exists('vp3_cognitive_value_activity_projection_v2570')
+        ?vp3_cognitive_value_activity_projection_v2570($pdo,$user,$namespace)
+        :['build'=>'','configured'=>false,'focus'=>null,'goals'=>[],'profiles'=>[],'counts'=>[],'calibration'=>[],'manage_url'=>''];
     $brief['followthrough']=$followthrough['focus']??null;
     $brief['followthrough_counts']=$followthrough['counts']??[];
     $brief['away_followthrough']=$followthrough['away']??['count'=>0,'summary'=>'','items'=>[]];
@@ -459,6 +462,10 @@ function vp3_cognitive_presentation_state_v510(PDO $pdo,array $user,string $name
     $brief['budget_counts']=$budgetGovernance['counts']??[];
     $brief['budget_policies']=$budgetGovernance['policies']??[];
     $brief['budget_manage_url']=$budgetGovernance['manage_url']??'';
+    $brief['value_focus']=$valueRoi['focus']??null;
+    $brief['value_counts']=$valueRoi['counts']??[];
+    $brief['value_calibration']=$valueRoi['calibration']??[];
+    $brief['value_manage_url']=$valueRoi['manage_url']??'';
     return [
         'build'=>VP3_COGNITIVE_PRESENTATION_V510,'agent_namespace'=>$namespace,
         'idle_minutes'=>vp3_cognitive_presentation_idle_minutes_v510($row),
@@ -474,6 +481,7 @@ function vp3_cognitive_presentation_state_v510(PDO $pdo,array $user,string $name
         'commitment_protection'=>$commitmentProtection,
         'economics'=>$economics,
         'budget_governance'=>$budgetGovernance,
+        'value_roi'=>$valueRoi,
         'digest'=>$digest,'voice_candidate'=>$voice,'attention'=>$attentionStatus,
         'poll_seconds'=>VP3_COGNITIVE_PRESENTATION_POLL_SECONDS_V510,
     ];
