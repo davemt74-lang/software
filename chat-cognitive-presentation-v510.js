@@ -167,11 +167,31 @@
     const optimization = brief.optimization_focus || null;
     const optimizationStrategy = String(brief.optimization_strategy || '');
     const optimizationCounts = brief.optimization_counts || {};
+    const resourceBudget = brief.resource_budget_focus || null;
+    const resourceBudgetCounts = brief.resource_budget_counts || {};
+    const resourceBudgetExecutors = brief.resource_budget_executors || {};
     const counts = brief.counts || {};
     let html = '<div class="chat-agent-brief-status"><span><i class="chat-agent-brief-dot ' +
       (brief.active !== false ? 'active' : '') + '"></i>' +
       esc(brief.agent_name || 'Agent') + ' · ' + esc(brief.status_label || 'Active') +
       '</span><small>' + esc(brief.activity_title || 'Ready') + '</small></div>';
+
+    if (resourceBudget) {
+      const executor = String(resourceBudget.executor || 'cloud');
+      const state = String(resourceBudget.reservation_state || 'planned').replaceAll('_',' ');
+      const executorBudget = resourceBudgetExecutors?.[executor] || {};
+      html += '<article class="chat-agent-brief-card"><small>Capacity reservation · ' +
+        esc(executor) + '</small><strong>' +
+        esc(resourceBudget.title || ('Goal #' + Number(resourceBudget.goal_id || 0))) + '</strong>' +
+        '<p>' + esc(state) + ' · reservation score ' + Number(resourceBudget.reservation_score || 0).toFixed(2) + '</p>' +
+        '<p><small>' + Number(resourceBudgetCounts.active || 0) + ' active · ' +
+        Number(resourceBudgetCounts.planned || 0) + ' planned · ' +
+        Number(executorBudget.capacity_free || 0) + ' current free slot(s)</small></p>' +
+        '<div class="chat-agent-brief-actions">' +
+        actionButton('Review capacity plan',
+          ' data-agent-brief-prompt="' + esc('Review my resource budget and capacity reservations. Explain what capacity is protected, why, and what remains available without changing or executing anything.') + '"',false) +
+        '</div></article>';
+    }
 
     if (optimization) {
       const strategy = optimizationStrategy.replaceAll('_',' ') || 'balanced';
