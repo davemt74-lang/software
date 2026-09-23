@@ -462,8 +462,9 @@ function vp3_extension_notification_delivery_row_v2140(PDO $pdo,int $uid,string 
     return is_array($row)?$row:null;
 }
 
-function vp3_extension_notification_visual_delivered_v2140(PDO $pdo,array $session,string $eventKey,string $claimToken): bool
-{
+function vp3_extension_notification_visual_delivered_v2140(
+    PDO $pdo,array $session,string $eventKey,string $claimToken,?array $user=null,string $namespace='system'
+): bool {
     $uid=(int)$session['user_id'];$device=(string)($session['device_id']??'');
     if($uid<1||$device===''||!preg_match('/^[a-f0-9]{48}$/',$claimToken))return false;
     $stmt=$pdo->prepare("UPDATE extension_notification_delivery_v2140
@@ -472,7 +473,11 @@ function vp3_extension_notification_visual_delivered_v2140(PDO $pdo,array $sessi
       WHERE owner_user_id=? AND event_key=? AND claimed_device_id=?
         AND claim_token_hash=? AND visual_delivered_at IS NULL AND dismissed_at IS NULL");
     $stmt->execute([$uid,$eventKey,$device,hash('sha256',$claimToken)]);
-    return $stmt->rowCount()>0;
+    $changed=$stmt->rowCount()>0;
+    if($changed&&$user&&function_exists('vp3_cognitive_attention_mark_delivered_v2410')){
+        vp3_cognitive_attention_mark_delivered_v2410($pdo,$user,$namespace,$eventKey);
+    }
+    return $changed;
 }
 
 function vp3_extension_notification_release_v2140(PDO $pdo,array $session,string $eventKey,string $claimToken): void
@@ -540,14 +545,18 @@ function vp3_extension_notification_open_v2140(PDO $pdo,array $session,string $e
     return vp3_extension_notification_internal_url_v2140($row['target_url']??'')?:'/chat.php';
 }
 
-function vp3_extension_notification_dismiss_v2140(PDO $pdo,array $session,string $eventKey): void
-{
+function vp3_extension_notification_dismiss_v2140(
+    PDO $pdo,array $session,string $eventKey,?array $user=null,string $namespace='system'
+): void {
     $uid=(int)$session['user_id'];$device=(string)($session['device_id']??'');
     if($uid<1||$device==='')return;
-    $pdo->prepare("UPDATE extension_notification_delivery_v2140
+    $stmt=$pdo->prepare("UPDATE extension_notification_delivery_v2140
       SET dismissed_at=COALESCE(dismissed_at,UTC_TIMESTAMP()),updated_at=UTC_TIMESTAMP()
-      WHERE owner_user_id=? AND event_key=? AND claimed_device_id=?")
-      ->execute([$uid,$eventKey,$device]);
+      WHERE owner_user_id=? AND event_key=? AND claimed_device_id=?");
+    $stmt->execute([$uid,$eventKey,$device]);
+    if($stmt->rowCount()>0&&$user&&function_exists('vp3_cognitive_attention_mark_dismissed_v2410')){
+        vp3_cognitive_attention_mark_dismissed_v2410($pdo,$user,$namespace,$eventKey);
+    }
 }
 
 function vp3_extension_notification_snooze_v2140(PDO $pdo,array $session,string $eventKey): void
