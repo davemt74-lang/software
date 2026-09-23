@@ -230,6 +230,7 @@ function personal_knowledge_store(
     );
     $find->execute([$userId, $marker]);
     $knowledgeId = (int)$find->fetchColumn();
+    $knowledgeCreated = $knowledgeId < 1;
 
     if ($knowledgeId > 0) {
         if ($folderId === null) {
@@ -265,6 +266,7 @@ function personal_knowledge_store(
     if (function_exists('shared_knowledge_index_sync_item_v236')) {
         shared_knowledge_index_sync_item_v236($pdo, $knowledgeId);
     }
+    if(function_exists('vp3_cognitive_knowledge_event_v2390'))vp3_cognitive_knowledge_event_v2390($pdo,$userId,$knowledgeId,$knowledgeCreated);
     return $knowledgeId;
 }
 
