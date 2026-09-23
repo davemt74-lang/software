@@ -36,11 +36,8 @@ assert.match(mainSidebar, /data-agent-primary-nav/, 'canonical Agent sidebar mus
 assert.match(mainSidebar, /data-vp3-nav-key=/, 'primary navigation rows must expose canonical destination keys');
 assert.match(mainSidebar, /aria-current="page"/, 'active primary destination must expose aria-current');
 assert.match(mainSidebar, /class="reward-sidebar-subnav"/, 'Rewards must expose persistent certificate sub-navigation in the canonical sidebar');
-for (const bucket of ['inbox','sent','claimed']) {
-  assert.ok(mainSidebar.includes(`data-reward-tray-tab="<?= e($rewardBucket) ?>"`) && mainSidebar.includes(`data-reward-count="<?= e($rewardBucket) ?>"`), 'Reward sidebar sub-navigation must expose tray action and count hooks');
-  assert.ok(mainSidebar.includes("url('/chat.php?reward_tray='.$rewardBucket)"), 'Reward sidebar sub-navigation must route to Agent Chat reward canvas');
-  break;
-}
+assert.ok(mainSidebar.includes('data-reward-tray-tab="<?= e($rewardBucket) ?>"') && mainSidebar.includes('data-reward-count="<?= e($rewardBucket) ?>"'), 'Reward sidebar sub-navigation must expose tray action and count hooks');
+assert.ok(mainSidebar.includes("url('/chat.php?reward_tray='.$rewardBucket)"), 'Reward sidebar sub-navigation must route to Agent Chat reward canvas');
 assert.match(agentUiCss, /\.reward-sidebar-subnav\{[^}]*display:grid/, 'Reward certificate sub-navigation must be visibly styled');
 assert.ok(!mainSidebar.includes("'approvals'=>"), 'canonical Agent navigation must not restore the removed Approvals shortcut');
 
