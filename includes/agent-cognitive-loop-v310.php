@@ -533,6 +533,7 @@ function agent_cognitive_loop_v310_run(array $user): array
 
     $since=agent_cognitive_loop_v310_since($prior);
     $refresh=['relationships'=>0,'watchlist_notifications'=>0];
+    $memoryPromotion=['evaluated'=>0,'promoted'=>0,'episodic'=>0,'suppressed'=>0,'duplicates'=>0,'skipped'=>0];
 
     // OBSERVE + CORRELATE: refresh canonical relationship state first so CRM,
     // Radar and messaging evidence is current before ranking anything.
@@ -547,6 +548,15 @@ function agent_cognitive_loop_v310_run(array $user): array
     }
     if(function_exists('vp3_agent_crm_watchlist_refresh')){
         try{$refresh['watchlist_notifications']=vp3_agent_crm_watchlist_refresh($pdo,$user,7);}catch(Throwable $e){}
+    }
+
+    // REMEMBER: v24.00 consumes only domain events explicitly marked
+    // record-only/brain-promotion-deferred by v23.80/v23.90. Routine events stay
+    // episodic/suppressed; durable memory is selective and deterministic.
+    if(function_exists('vp3_cognitive_memory_promotion_scan_v2400')){
+        try{$memoryPromotion=vp3_cognitive_memory_promotion_scan_v2400($pdo,$user,'system');}catch(Throwable $e){
+            if(function_exists('agent_runtime_v125_trace'))agent_runtime_v125_trace('brain.memory_promotion.failed',['user_id'=>$uid,'error_class'=>get_class($e)]);
+        }
     }
 
     $analytics=function_exists('vp3_analytics_intelligence_signals_v310')
@@ -584,6 +594,7 @@ function agent_cognitive_loop_v310_run(array $user): array
         'source_counts'=>agent_cognitive_loop_v311_source_counts($candidates),
         'diagnostics'=>$diagnostics,
         'refresh'=>$refresh,
+        'memory_promotion'=>$memoryPromotion,
         'activity'=>$activity,
         'last_surface_at'=>(string)($prior['last_surface_at']??''),
         'last_surface_signature'=>(string)($prior['last_surface_signature']??''),
@@ -606,6 +617,9 @@ function agent_cognitive_loop_v310_run(array $user): array
             'priorities'=>count($priorities),
             'candidates'=>count($candidates),
             'analytics'=>count($analytics),
+            'memory_promoted'=>(int)($memoryPromotion['promoted']??0),
+            'memory_episodic'=>(int)($memoryPromotion['episodic']??0),
+            'memory_suppressed'=>(int)($memoryPromotion['suppressed']??0),
             'suppressed'=>(int)($diagnostics['suppressed']??0),
             'noise'=>(int)($diagnostics['ignored_noise']??0),
             'surfaced'=>$surfaced,
