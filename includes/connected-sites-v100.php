@@ -75,9 +75,8 @@ function vp3_connected_site_app_v100(string $clientId): ?array
 }
 function vp3_connected_site_scopes_v100(array $app,string|array $requested): array
 {
-    $parts=is_array($requested)?$requested:(preg_split('/[\\s,]+/',trim($requested))?:[]);
-    $allowed=array_keys((array)$app['scopes']);$out=[];foreach($parts as $scope){$scope=trim((string)$scope);if($scope!==''&&in_array($scope,$allowed,true))$out[$scope]=true;}
-    if(!$out)$out=array_fill_keys($allowed,true);return array_keys($out);
+    $parts=is_array($requested)?array_values(array_filter(array_map('trim',$requested))):(trim($requested)===''?[]:(preg_split('/[\\s,]+/',trim($requested))?:[]));
+    $allowed=array_keys((array)$app['scopes']);if(!$parts)return $allowed;$out=[];foreach($parts as $scope){$scope=trim((string)$scope);if($scope!==''&&in_array($scope,$allowed,true))$out[$scope]=true;}return array_keys($out);
 }
 function vp3_connected_site_validate_redirect_v100(array $app,string $redirect): string
 {
