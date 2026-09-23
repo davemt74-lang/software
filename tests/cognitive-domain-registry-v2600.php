@@ -17,9 +17,9 @@ v2600_assert(($registry['authority']??'')==='validation_projection_only','regist
 v2600_assert(isset($registry['domains']['campaigns_rewards']),'Campaigns & Rewards reference domain is present');
 
 $campaign=$registry['domains']['campaigns_rewards'];
-v2600_assert(($campaign['implementation_status']??'')==='contract_ready','Campaigns & Rewards is contract-ready only');
-v2600_assert(empty($campaign['plugin_catalog_registered']),'Campaigns & Rewards is not prematurely exposed in plugin catalog');
-v2600_assert(empty($campaign['authority']),'Campaigns & Rewards does not claim business-table authority before plugin build');
+v2600_assert(str_starts_with((string)($campaign['implementation_status']??''),'integrated'),'Campaigns & Rewards reference contract is fulfilled by V1');
+v2600_assert(!empty($campaign['plugin_catalog_registered']),'Campaigns & Rewards plugin catalog exposure follows implementation');
+v2600_assert(in_array('campaigns_v100',$campaign['authority']??[],true),'Campaigns & Rewards declares its V1 business authority');
 v2600_assert(in_array('campaign.conversion',$campaign['events'],true),'Campaign conversion is a declared canonical event');
 v2600_assert(in_array('reward.claimed',$campaign['events'],true),'Reward claim outcome is a declared canonical event');
 
