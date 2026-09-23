@@ -267,6 +267,17 @@ function vp3_cognitive_portfolio_goal_graph_v2480(PDO $pdo,int $uid,array $goalI
     return $base;
 }
 
+function vp3_cognitive_portfolio_goal_run_ids_v2480(array $graph,int $goalId): array
+{
+    if($goalId<1)return [];
+    $ids=[];
+    foreach((array)($graph['run_goals']??[]) as $runId=>$goals){
+        if(in_array($goalId,array_map('intval',(array)$goals),true))$ids[]=(int)$runId;
+    }
+    sort($ids,SORT_NUMERIC);
+    return array_values(array_unique(array_filter($ids,static fn(int $id): bool=>$id>0)));
+}
+
 function vp3_cognitive_portfolio_goal_score_v2480(
     array $goalRow,array $state,int $dependencyLeverage
 ): array {
@@ -349,6 +360,7 @@ function vp3_cognitive_portfolio_snapshot_v2480(PDO $pdo,array $user): array
             'shared_objective_goal_ids'=>(array)($graph['shared_goal_ids'][$goalId]??[]),
             'active_executors'=>(array)($graph['active_executors'][$goalId]??[]),
             'claimable_executors'=>(array)($graph['claimable_executors'][$goalId]??[]),
+            'workflow_run_ids'=>vp3_cognitive_portfolio_goal_run_ids_v2480($graph,$goalId),
             'hold_reason'=>'',
             'conflicts_with_goal_id'=>0,
             'coordination_action'=>'observe',
