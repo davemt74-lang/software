@@ -49,8 +49,8 @@ jobs:
 
           cat > _deploy/VP3_RELEASE.json <<EOF
           {
-            "release": "Cognitive Runtime v24.60",
-            "build": "vp3-cognitive-supervision-release-v2460-20260922",
+            "release": "Cognitive Runtime v24.70",
+            "build": "vp3-cognitive-autonomy-release-v2470-20260922",
             "commit": "${VP3_RELEASE_SHA}",
             "repository": "${GITHUB_REPOSITORY}",
             "workflow_run_id": "${GITHUB_RUN_ID}",
@@ -64,7 +64,7 @@ jobs:
           test -f _deploy/chat.php
           test -f _deploy/.htaccess
 
-          # v24.60 release hardening: the production artifact must contain
+          # v24.70 release hardening: the production artifact must contain
           # the canonical cognitive loop, live-session/event foundation and user surfaces.
           test -f _deploy/includes/cognitive-runtime-v500.php
           test -f _deploy/includes/cognitive-presentation-v510.php
@@ -80,6 +80,9 @@ jobs:
           test -f _deploy/includes/cognitive-action-planning-v2330.php
           test -f _deploy/includes/cognitive-proactive-now-v2340.php
           test -f _deploy/includes/agent-cognitive-loop-v310.php
+          test -f _deploy/includes/agent-goal-strategy-v1710.php
+          test -f _deploy/includes/agent-goal-execution-v1712.php
+          test -f _deploy/includes/agent-objective-verification-v176.php
           test -f _deploy/includes/cognitive-calibration-v2350.php
           test -f _deploy/includes/cognitive-release-v2360.php
           test -f _deploy/includes/cognitive-domain-manifest-v2370.php
@@ -108,6 +111,8 @@ jobs:
           test -f _deploy/includes/cognitive-release-v2450.php
           test -f _deploy/includes/cognitive-supervision-v2460.php
           test -f _deploy/includes/cognitive-release-v2460.php
+          test -f _deploy/includes/cognitive-autonomy-v2470.php
+          test -f _deploy/includes/cognitive-release-v2470.php
           test -f _deploy/includes/agent-event-infrastructure-v1920.php
           test -f _deploy/api/cognitive-feed-v530.php
           test -f _deploy/api/cognitive-planning-v550.php

@@ -396,17 +396,23 @@ function vp3_cognitive_presentation_state_v510(PDO $pdo,array $user,string $name
     $supervision=function_exists('vp3_cognitive_supervision_activity_projection_v2460')
         ?vp3_cognitive_supervision_activity_projection_v2460($pdo,$user,$namespace)
         :['build'=>'','focus'=>null,'issues'=>[],'counts'=>[]];
+    $autonomy=function_exists('vp3_cognitive_autonomy_activity_projection_v2470')
+        ?vp3_cognitive_autonomy_activity_projection_v2470($pdo,$user,$namespace)
+        :['build'=>'','focus'=>null,'items'=>[],'counts'=>[]];
     $brief['followthrough']=$followthrough['focus']??null;
     $brief['followthrough_counts']=$followthrough['counts']??[];
     $brief['away_followthrough']=$followthrough['away']??['count'=>0,'summary'=>'','items'=>[]];
     $brief['supervision_focus']=$supervision['focus']??null;
     $brief['supervision_counts']=$supervision['counts']??[];
+    $brief['autonomy_focus']=$autonomy['focus']??null;
+    $brief['autonomy_counts']=$autonomy['counts']??[];
     return [
         'build'=>VP3_COGNITIVE_PRESENTATION_V510,'agent_namespace'=>$namespace,
         'idle_minutes'=>vp3_cognitive_presentation_idle_minutes_v510($row),
         'brief'=>$brief,
         'followthrough'=>$followthrough,
         'supervision'=>$supervision,
+        'autonomy'=>$autonomy,
         'digest'=>$digest,'voice_candidate'=>$voice,'attention'=>$attentionStatus,
         'poll_seconds'=>VP3_COGNITIVE_PRESENTATION_POLL_SECONDS_V510,
     ];

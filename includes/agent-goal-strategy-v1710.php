@@ -26,6 +26,8 @@ function agent_goal_strategy_schema_ready_v1710(?PDO $pdo=null): bool
         && table_exists('agent_goal_events')
         && column_exists('agent_goals','owner_user_id')
         && column_exists('agent_goals','success_criteria')
+        && column_exists('agent_goals','execution_mode')
+        && column_exists('agent_goals','autonomy_updated_at')
         && column_exists('agent_goal_objectives','objective_run_id'));
 }
 
@@ -44,6 +46,8 @@ function agent_goal_strategy_ensure_schema_v1710(?PDO $pdo=null): void
         target_date DATE NULL,
         status VARCHAR(32) NOT NULL DEFAULT 'active',
         priority INT NOT NULL DEFAULT 50,
+        execution_mode VARCHAR(24) NOT NULL DEFAULT 'manual',
+        autonomy_updated_at DATETIME NULL,
         created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         archived_at DATETIME NULL,
@@ -51,6 +55,8 @@ function agent_goal_strategy_ensure_schema_v1710(?PDO $pdo=null): void
         KEY idx_agent_goals_owner_status (owner_user_id,status,priority,id),
         KEY idx_agent_goals_owner_target (owner_user_id,target_date,id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+    if(!column_exists('agent_goals','execution_mode'))$pdo->exec("ALTER TABLE agent_goals ADD COLUMN execution_mode VARCHAR(24) NOT NULL DEFAULT 'manual' AFTER priority");
+    if(!column_exists('agent_goals','autonomy_updated_at'))$pdo->exec("ALTER TABLE agent_goals ADD COLUMN autonomy_updated_at DATETIME NULL AFTER execution_mode");
     $pdo->exec("CREATE TABLE IF NOT EXISTS agent_goal_objectives (
         id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
         owner_user_id BIGINT UNSIGNED NOT NULL,
@@ -198,13 +204,13 @@ function agent_goal_state_v1710(PDO $pdo,array $user,int $goalId): array
 {
     $uid=agent_goal_strategy_require_v1710($pdo,$user);$goal=agent_goal_row_v1710($pdo,$uid,$goalId);$objectives=agent_goal_objectives_v1710($pdo,$uid,$goalId);$progress=agent_goal_progress_v1710($objectives);$strategy=agent_goal_strategy_analysis_v1710($pdo,$user,$goal,$objectives,$progress);$public=[];
     foreach($objectives as $row)$public[]=['id'=>(int)$row['id'],'title'=>(string)$row['title'],'goal'=>(string)$row['goal'],'status'=>(string)$row['status'],'verification_status'=>(string)$row['objective_verification_status'],'priority'=>(int)($row['work_priority']??50),'contribution_weight'=>(int)($row['contribution_weight']??100)];
-    return ['build'=>VP3_AGENT_GOAL_STRATEGY_V1710,'goal'=>['id'=>(int)$goal['id'],'title'=>(string)$goal['title'],'goal'=>(string)$goal['goal'],'strategy_summary'=>(string)$goal['strategy_summary'],'success_criteria'=>agent_goal_text_v1710($goal['success_criteria']??'',2000),'target_date'=>(string)($goal['target_date']??''),'status'=>(string)$goal['status'],'priority'=>(int)$goal['priority'],'derived_status'=>(string)$progress['derived_status'],'progress_percent'=>(int)$progress['progress_percent'],'attention_score_percent'=>agent_goal_attention_v1710($goal,$progress)],'counts'=>$progress['counts'],'objectives'=>$public,'strategy'=>$strategy];
+    return ['build'=>VP3_AGENT_GOAL_STRATEGY_V1710,'goal'=>['id'=>(int)$goal['id'],'title'=>(string)$goal['title'],'goal'=>(string)$goal['goal'],'strategy_summary'=>(string)$goal['strategy_summary'],'success_criteria'=>agent_goal_text_v1710($goal['success_criteria']??'',2000),'target_date'=>(string)($goal['target_date']??''),'status'=>(string)$goal['status'],'priority'=>(int)$goal['priority'],'execution_mode'=>(string)($goal['execution_mode']??'manual'),'autonomy_updated_at'=>(string)($goal['autonomy_updated_at']??''),'derived_status'=>(string)$progress['derived_status'],'progress_percent'=>(int)$progress['progress_percent'],'attention_score_percent'=>agent_goal_attention_v1710($goal,$progress)],'counts'=>$progress['counts'],'objectives'=>$public,'strategy'=>$strategy];
 }
 
 function agent_goal_list_v1710(PDO $pdo,array $user,bool $includeArchived=false): array
 {
     $uid=agent_goal_strategy_require_v1710($pdo,$user);$sql='SELECT * FROM agent_goals WHERE owner_user_id=?'.($includeArchived?'':" AND status<>'archived'").' ORDER BY id DESC LIMIT '.VP3_AGENT_GOAL_LIMIT_V1710;$stmt=$pdo->prepare($sql);$stmt->execute([$uid]);$out=[];
-    foreach($stmt->fetchAll()?:[] as $goal){$objectives=agent_goal_objectives_v1710($pdo,$uid,(int)$goal['id']);$progress=agent_goal_progress_v1710($objectives);$out[]=['goal'=>['id'=>(int)$goal['id'],'goal'=>(string)$goal['goal'],'status'=>(string)$goal['status'],'priority'=>(int)$goal['priority'],'target_date'=>(string)($goal['target_date']??''),'derived_status'=>(string)$progress['derived_status'],'progress_percent'=>(int)$progress['progress_percent'],'attention_score_percent'=>agent_goal_attention_v1710($goal,$progress)],'counts'=>$progress['counts']];}
+    foreach($stmt->fetchAll()?:[] as $goal){$objectives=agent_goal_objectives_v1710($pdo,$uid,(int)$goal['id']);$progress=agent_goal_progress_v1710($objectives);$out[]=['goal'=>['id'=>(int)$goal['id'],'goal'=>(string)$goal['goal'],'status'=>(string)$goal['status'],'priority'=>(int)$goal['priority'],'execution_mode'=>(string)($goal['execution_mode']??'manual'),'target_date'=>(string)($goal['target_date']??''),'derived_status'=>(string)$progress['derived_status'],'progress_percent'=>(int)$progress['progress_percent'],'attention_score_percent'=>agent_goal_attention_v1710($goal,$progress)],'counts'=>$progress['counts']];}
     usort($out,static fn(array $a,array $b):int=>((int)($b['goal']['attention_score_percent']??0)<=>(int)($a['goal']['attention_score_percent']??0))?:((int)($b['goal']['priority']??0)<=>(int)($a['goal']['priority']??0))?:((int)($b['goal']['id']??0)<=>(int)($a['goal']['id']??0)));return $out;
 }
 
@@ -245,8 +251,12 @@ function agent_goal_chat_v1710(string $query,array $user,int $conversationId=0):
     try{
         if($create!==null){$state=agent_goal_create_v1710($pdo,$user,(string)$create['goal'],(string)$create['criteria'],$create['target_date']!==null?(string)$create['target_date']:null);$out=$empty;$out['handled']=true;$out['answer']='Created '.agent_goal_answer_v1710($state,true);if(function_exists('agent_tool_log'))agent_tool_log($user,'goal.create',$query,'success',['goal_id'=>(int)$state['goal']['id']],$conversationId);return $out;}
         $listIntent=(bool)(preg_match('/\b(?:show|list|what are)\s+(?:all\s+)?(?:my\s+)?goals?\b/i',$q)||preg_match('/\b(?:which|what)\s+goal\b.*\b(?:attention|first|priority|focus)\b/i',$q));
-        if($listIntent&&!preg_match('/goal\s*#?\s*\d+/i',$q)){$goals=agent_goal_list_v1710($pdo,$user,false);$lines=[];foreach($goals as $state){$g=(array)$state['goal'];$lines[]='#'.(int)$g['id'].' · attention '.(int)$g['attention_score_percent'].'/100 · '.(int)$g['progress_percent'].'% verified · '.ucfirst((string)$g['status']).' · '.agent_goal_text_v1710($g['goal']??'',150);} $out=$empty;$out['handled']=true;if(!$lines)$out['answer']='You do not have any active goals yet.';else{$top=(array)$goals[0]['goal'];$out['answer']='Goal #'.(int)$top['id'].' needs the most attention right now ('.(int)$top['attention_score_percent'].'/100).'."\n".implode("\n",$lines);}return $out;}
+        if($listIntent&&!preg_match('/goal\s*#?\s*\d+/i',$q)){$goals=agent_goal_list_v1710($pdo,$user,false);$lines=[];foreach($goals as $state){$g=(array)$state['goal'];$lines[]='#'.(int)$g['id'].' · attention '.(int)$g['attention_score_percent'].'/100 · '.(int)$g['progress_percent'].'% verified · '.ucfirst((string)$g['status']).' · '.ucfirst((string)($g['execution_mode']??'manual')).' · '.agent_goal_text_v1710($g['goal']??'',150);} $out=$empty;$out['handled']=true;if(!$lines)$out['answer']='You do not have any active goals yet.';else{$top=(array)$goals[0]['goal'];$out['answer']='Goal #'.(int)$top['id'].' needs the most attention right now ('.(int)$top['attention_score_percent'].'/100).'."\n".implode("\n",$lines);}return $out;}
         $goalId=0;if(preg_match('/\bgoal\s*#?\s*(\d+)\b/i',$q,$gm))$goalId=(int)$gm[1];if($goalId<1)return $empty;$tool='goal.inspect';
+        if(function_exists('vp3_cognitive_autonomy_chat_goal_mode_v2470')){
+            $modeResult=vp3_cognitive_autonomy_chat_goal_mode_v2470($q,$user,$conversationId,$goalId);
+            if(is_array($modeResult)&&!empty($modeResult['handled']))return $modeResult;
+        }
         if(preg_match('/\b(?:attach|link|add)\s+objective\s*#?\s*(\d+)\b.*\bgoal\b/i',$q,$m)||preg_match('/\bgoal\s*#?\s*\d+\b.*\b(?:attach|link|add)\s+objective\s*#?\s*(\d+)\b/i',$q,$m)){$weight=100;if(preg_match('/\bweight\s+(\d+)\b/i',$q,$wm))$weight=(int)$wm[1];$state=agent_goal_link_objective_v1710($pdo,$user,$goalId,(int)$m[1],$weight);$answer='Linked objective #'.(int)$m[1].'. '.agent_goal_answer_v1710($state,true);$tool='goal.objective.link';}
         elseif(preg_match('/\b(?:remove|unlink|detach)\s+objective\s*#?\s*(\d+)\b/i',$q,$m)){$state=agent_goal_unlink_objective_v1710($pdo,$user,$goalId,(int)$m[1]);$answer='Unlinked objective #'.(int)$m[1].'. '.agent_goal_answer_v1710($state,true);$tool='goal.objective.unlink';}
         elseif(preg_match('/\bcreate\s+(?:a\s+)?(?:new\s+)?objective\s+(?:for\s+)?goal\s*#?\s*\d+\s+(?:to|for)\s+(.+)$/i',$q,$m)){$state=agent_goal_create_objective_v1710($pdo,$user,$goalId,(string)$m[1],$conversationId);$answer='Created and linked a fresh objective. '.agent_goal_answer_v1710($state,true);$tool='goal.objective.create';}

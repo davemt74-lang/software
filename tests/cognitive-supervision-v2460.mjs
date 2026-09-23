@@ -74,7 +74,8 @@ const checks=[
     /function agent_objective_verification_rewire_failed_v176/.test(verification)
     && !/agent_objective_verification_rewire_failed_v176\(/.test(reconcileBody)],
   ['v24.20 Working Context includes bounded supervision section',
-    /'live_session','continuity','supervision','conversation'/.test(context)
+    context.indexOf("'continuity'")<context.indexOf("'supervision'")
+    &&context.indexOf("'supervision'")<context.indexOf("'conversation'")
     &&/'supervision'=>1/.test(context)
     &&/vp3_cognitive_supervision_context_item_v2460/.test(context)],
   ['supervision context has no execution authority',

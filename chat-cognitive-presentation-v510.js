@@ -157,11 +157,29 @@
     const awayFollowthrough = brief.away_followthrough || {};
     const supervision = brief.supervision_focus || null;
     const supervisionCounts = brief.supervision_counts || {};
+    const autonomy = brief.autonomy_focus || null;
+    const autonomyCounts = brief.autonomy_counts || {};
     const counts = brief.counts || {};
     let html = '<div class="chat-agent-brief-status"><span><i class="chat-agent-brief-dot ' +
       (brief.active !== false ? 'active' : '') + '"></i>' +
       esc(brief.agent_name || 'Agent') + ' · ' + esc(brief.status_label || 'Active') +
       '</span><small>' + esc(brief.activity_title || 'Ready') + '</small></div>';
+
+    if (autonomy) {
+      const mode = String(autonomy.execution_mode || 'manual');
+      const state = String(autonomy.execution_state || 'unknown').replaceAll('_',' ');
+      const recommendation = autonomy.recommendation || {};
+      html += '<article class="chat-agent-brief-card"><small>Long-horizon goal · ' +
+        esc(mode) + '</small><strong>' +
+        esc(autonomy.title || ('Goal #' + Number(autonomy.goal_id || 0))) + '</strong>' +
+        '<p>' + esc(state) + ' · ' + Number(autonomy.progress_percent || 0) + '% verified</p>' +
+        '<p><small>' + esc(String(recommendation.action || 'observe').replaceAll('_',' ')) + '</small></p>' +
+        (recommendation.requires_user ? '<div class="chat-agent-brief-actions">' +
+          actionButton('Review goal',
+            ' data-agent-brief-prompt="' + esc('Review goal #' + Number(autonomy.goal_id || 0) + ' and tell me what is blocking autonomous progress.') + '"',true) +
+          '</div>' : '') +
+        '</article>';
+    }
 
     if (supervision) {
       const severity = String(supervision.severity || 'info');
@@ -240,6 +258,9 @@
       '<span><strong>' + Number(counts.unread || 0) + '</strong><small>Unread</small></span>' +
       (Number(supervisionCounts.critical || 0) + Number(supervisionCounts.high || 0) > 0
         ? '<span><strong>' + (Number(supervisionCounts.critical || 0) + Number(supervisionCounts.high || 0)) + '</strong><small>Supervision</small></span>'
+        : '') +
+      (Number(autonomyCounts.autonomous || 0) > 0
+        ? '<span><strong>' + Number(autonomyCounts.autonomous || 0) + '</strong><small>Autonomous goals</small></span>'
         : '') +
       '</div>';
     return html;

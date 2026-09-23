@@ -238,6 +238,10 @@ function agent_goal_execution_extract_id_v1712(string $query): int
 function agent_goal_execution_chat_v1712(string $query,array $user,int $conversationId=0): array
 {
     $empty=agent_objective_empty_tool_v175();$q=trim($query);if($q==='')return $empty;$goalId=agent_goal_execution_extract_id_v1712($q);if($goalId<1)return $empty;
+    if(function_exists('vp3_cognitive_autonomy_chat_goal_mode_v2470')){
+        $modeResult=vp3_cognitive_autonomy_chat_goal_mode_v2470($q,$user,$conversationId,$goalId);
+        if(is_array($modeResult)&&!empty($modeResult['handled']))return $modeResult;
+    }
     $advance=(bool)(preg_match('/\b(?:advance|work\s+on|start\s+work\s+on|continue\s+work\s+on|move\s+forward\s+on)\s+goal\s*#?\s*\d+\b/i',$q)||preg_match('/\bgoal\s*#?\s*\d+\s+(?:advance|work|continue)\b/i',$q));
     $why=(bool)(preg_match('/\bwhy\b.*\bgoal\s*#?\s*\d+\b/i',$q)&&preg_match('/\b(?:moving|progressing|advancing|stalled|blocked|stuck|waiting)\b/i',$q));
     $doing=(bool)(preg_match('/\bwhat(?:\'s|\s+is)\s+(?:the\s+)?agent\s+doing\b.*\bgoal\s*#?\s*\d+/i',$q)||preg_match('/\bgoal\s*#?\s*\d+\b.*\bwhat(?:\'s|\s+is)\s+(?:the\s+)?agent\s+doing\b/i',$q));

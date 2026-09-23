@@ -238,7 +238,17 @@ function agent_objective_existing_parent_v175(PDO $pdo,int $uid,string $objectiv
 function agent_objective_children_rows_v175(PDO $pdo,int $uid,array $parent): array
 {
     $hash=(string)($parent['source_hash']??'');if($hash==='')return [];
-    $stmt=$pdo->prepare("SELECT * FROM agent_workflow_runs WHERE owner_user_id=? AND source_kind='objective_step' AND source_hash=? ORDER BY id");
+    // A failed child that has an objective_replaced event is immutable history,
+    // not active unfinished work. The replacement workflow carries the live
+    // dependency and verification responsibility.
+    $stmt=$pdo->prepare("SELECT r.* FROM agent_workflow_runs r
+      WHERE r.owner_user_id=? AND r.source_kind='objective_step' AND r.source_hash=?
+        AND NOT EXISTS (
+          SELECT 1 FROM agent_workflow_events e
+          WHERE e.owner_user_id=r.owner_user_id AND e.run_id=r.id
+            AND e.event_type='objective_replaced'
+        )
+      ORDER BY r.id");
     $stmt->execute([$uid,$hash]);return $stmt->fetchAll()?:[];
 }
 

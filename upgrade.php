@@ -126,6 +126,7 @@ function vp3_upgrade_complete(): bool
         && agent_objective_memory_schema_ready_v177()
         && agent_goal_strategy_schema_ready_v1710()
         && agent_goal_planning_schema_ready_v1711()
+        && vp3_cognitive_autonomy_schema_ready_v2470()
         && agent_goal_review_schema_ready_v1714()
         && vp3_cognitive_schema_ready_v500()
         && vp3_cognitive_presentation_schema_ready_v510()
@@ -236,6 +237,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             agent_objective_memory_ensure_schema_v177($pdo);
             agent_goal_strategy_ensure_schema_v1710($pdo);
             agent_goal_planning_ensure_schema_v1711($pdo);
+            vp3_cognitive_autonomy_ensure_schema_v2470($pdo);
             agent_goal_review_ensure_schema_v1714($pdo);
             vp3_cognitive_ensure_schema_v500($pdo);
             vp3_cognitive_presentation_ensure_schema_v510($pdo);
