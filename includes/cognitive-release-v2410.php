@@ -19,6 +19,7 @@ function vp3_cognitive_release_manifest_v2410(): array
             'scope'=>'user_global_across_agent_namespaces_and_surfaces',
             'interruptions'=>VP3_COGNITIVE_ATTENTION_MAX_INTERRUPTS_V2410,
             'window_minutes'=>VP3_COGNITIVE_ATTENTION_WINDOW_MINUTES_V2410,
+            'planned_reservation_ttl_minutes'=>VP3_COGNITIVE_ATTENTION_PLAN_TTL_MINUTES_V2410,
             'repeat_cooldown_minutes'=>VP3_COGNITIVE_ATTENTION_REPEAT_COOLDOWN_MINUTES_V2410,
             'critical_can_bypass'=>true,
         ],
