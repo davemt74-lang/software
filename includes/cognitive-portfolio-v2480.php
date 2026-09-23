@@ -391,10 +391,28 @@ function vp3_cognitive_portfolio_snapshot_v2480(PDO $pdo,array $user): array
         }
     }
 
-    // v25.30 may apply a bounded recovery overlay after the normal
-    // forecast/optimization/overlap pass. It can only reorder existing
-    // autonomous portfolio items and annotate recovery intent. v24.80 remains
-    // admission authority, and failure preserves the proven v24.80 order.
+    // v25.40 projects canonical commitments before recovery planning.
+    // It may only annotate existing items and surface constraints. It creates
+    // no new commitment/task store and cannot mutate dates, executors, or
+    // approvals. Failure preserves the existing portfolio order.
+    $commitmentProtection=[
+        'build'=>'','focus'=>null,'commitments'=>[],'counts'=>[],
+        'projection_only'=>true,
+    ];
+    if(function_exists('vp3_cognitive_commitment_apply_v2540')){
+        try{
+            $commitmentApplied=vp3_cognitive_commitment_apply_v2540($pdo,$user,$items,$capacity);
+            if(is_array($commitmentApplied['items']??null))$items=$commitmentApplied['items'];
+            if(is_array($commitmentApplied['commitment_protection']??null)){
+                $commitmentProtection=$commitmentApplied['commitment_protection'];
+            }
+        }catch(Throwable $e){}
+    }
+
+    // v25.30 may apply a bounded recovery overlay after commitment annotation.
+    // It can only reorder existing autonomous portfolio items and annotate
+    // recovery intent. v24.80 remains admission authority, and failure
+    // preserves the proven v24.80 order.
     $replanning=[
         'build'=>'','health'=>'unavailable','replan_needed'=>false,
         'replan_applied'=>false,'focus'=>null,'issues'=>[],'changes'=>[],
@@ -524,8 +542,12 @@ function vp3_cognitive_portfolio_snapshot_v2480(PDO $pdo,array $user): array
             'replan_changes'=>(int)($replanning['counts']['changes']??0),
             'deadline_threats'=>(int)($replanning['counts']['deadline_threats']??0),
             'capacity_loss'=>(int)($replanning['counts']['capacity_loss']??0),
+            'protected_commitments'=>(int)($commitmentProtection['counts']['protected']??0),
+            'commitments_at_risk'=>(int)($commitmentProtection['counts']['at_risk']??0),
+            'commitment_conflicts'=>(int)($commitmentProtection['counts']['conflicts']??0),
         ],
         'capacity'=>$capacity,
+        'commitment_protection'=>$commitmentProtection,
         'replanning'=>$replanning,
         'resource_budget'=>$resourceBudget,
         'reservation_admission'=>$reservationAdmission,
@@ -544,6 +566,7 @@ function vp3_cognitive_portfolio_snapshot_v2480(PDO $pdo,array $user): array
             'objective_store'=>'agent_workflow_runs',
             'dependencies'=>'agent_workflow_run_dependencies',
             'capacity'=>'agent_worker_runtime_v1910',
+            'commitment_protection'=>'cognitive_commitment_protection_v2540_projection',
             'replanning'=>'cognitive_replanning_v2530_recovery_overlay',
             'resource_budget'=>'cognitive_resource_budget_v2520_admission_policy',
             'claimant'=>'agent_job_engine_v1900',
