@@ -610,7 +610,13 @@ function campaigns_rewards_customer_upsert_v100(PDO $pdo,array $campaign,string 
 {
     $email=strtolower(trim($email));if(!filter_var($email,FILTER_VALIDATE_EMAIL))throw new RuntimeException('Enter a valid email address.');
     $name=campaigns_rewards_text_v100($name,190);if($name==='')$name=$email;$phone=campaigns_rewards_text_v100($phone,80);$merchantId=(int)$campaign['merchant_account_id'];$campaignId=(int)$campaign['id'];$crmContactId=null;
-    if(function_exists('crm_v180_schema_ready')&&crm_v180_schema_ready($pdo)&&function_exists('crm_v180_upsert_contact')){try{$crmContactId=crm_v180_upsert_contact($pdo,['name'=>$name,'email'=>$email,'phone'=>$phone,'company'=>(string)$campaign['merchant_name'],'source'=>'campaigns_rewards']);}catch(Throwable $e){$crmContactId=null;}}
+    if(function_exists('crm_v180_schema_ready')&&crm_v180_schema_ready($pdo)&&function_exists('crm_v180_upsert_contact')){
+        try{
+            $existingCrm=$pdo->prepare('SELECT id FROM crm_contacts WHERE email_normalized=? LIMIT 1');
+            $existingCrm->execute([$email]);$crmContactId=(int)$existingCrm->fetchColumn();
+            if($crmContactId<1)$crmContactId=crm_v180_upsert_contact($pdo,['name'=>$name,'email'=>$email,'phone'=>$phone,'company'=>(string)$campaign['merchant_name'],'source'=>'campaigns_rewards']);
+        }catch(Throwable $e){$crmContactId=null;}
+    }
     $public=campaigns_rewards_uuid_v100();$stmt=$pdo->prepare("INSERT INTO campaign_customers_v100
       (public_id,merchant_account_id,crm_contact_id,email,email_normalized,name,phone,first_campaign_id,last_campaign_id,first_engaged_at,last_engaged_at)
       VALUES (?,?,?,?,?,?,?,?,?,UTC_TIMESTAMP(),UTC_TIMESTAMP())
