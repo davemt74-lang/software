@@ -62,6 +62,9 @@ const checks=[
   ['stable Browser event key prevents repeated state delivery',
     /'event_key'=>\(string\)\$candidate\['event_key'\]/.test(follow)
     &&/INSERT IGNORE INTO extension_notification_delivery_v2140/.test(extension)],
+  ['older Cognitive Feed handoff is suppressed for an identical continuity ref',
+    /\$followthroughRefs\[\$ref\]=true/.test(extension)
+    &&/isset\(\$followthroughRefs\[\$ref\]\)\)continue/.test(extension)],
   ['handoff metadata contains source target reason status and delivery surface',
     ['source_surface','target_surface','handoff_reason','handoff_status','delivery_surface'].every(k=>follow.includes("'"+k+"'"))],
   ['meaningful-away summary uses Presentation last meaningful timestamp',
