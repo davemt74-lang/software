@@ -123,7 +123,7 @@ function vp3_cognitive_knowledge_event_v2390(PDO $pdo,int $owner,int $knowledgeI
     if($owner<1||$knowledgeId<1)return;
     vp3_cognitive_domain_record_v2390($pdo,$owner,'research_knowledge',$created?'knowledge.created':'knowledge.updated',[
         vp3_cognitive_ref_v2390('knowledge',$knowledgeId)
-    ],[],['external_event_id'=>'knowledge:'.$knowledgeId.':'.($created?'created':'updated').':'.gmdate('YmdHis')]);
+    ],[],['external_event_id'=>'knowledge:'.$knowledgeId.':'.($created?'created':'updated').':'.sprintf('%.6F',microtime(true))]);
 }
 
 function vp3_cognitive_message_bridge_v2390(PDO $pdo,array $conversation,array $message): void
@@ -198,13 +198,14 @@ function vp3_cognitive_attribution_event_v2390(PDO $pdo,int $owner,int $referral
 {
     if($owner<1||$referralId<1)return;
     $event=$conversion?'conversion.attributed':'referral.attributed';
+    $identity=$attributionEventId>0?(string)$attributionEventId:($referralId.':'.$eventName);
     vp3_cognitive_domain_record_v2390($pdo,$owner,'analytics_attribution',$event,[
         vp3_cognitive_ref_v2390('attribution_event',$attributionEventId>0?$attributionEventId:$referralId),
         vp3_cognitive_ref_v2390('contact',$contactId),
     ],[
         'referral_id'=>$referralId,'contact_id'=>$contactId,'event_name'=>mb_strimwidth($eventName,0,80,''),
         'value'=>$value,
-    ],['external_event_id'=>'attribution:'.($attributionEventId>0?$attributionEventId:$referralId.':'.$eventName)]);
+    ],['external_event_id'=>'attribution:'.$identity]);
 }
 
 function vp3_cognitive_browser_transaction_event_v2390(PDO $pdo,int $owner,array $continuity,string $eventType,array $payload=[]): void
