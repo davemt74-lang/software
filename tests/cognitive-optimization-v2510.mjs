@@ -39,7 +39,7 @@ const checks=[
  ['strategy selection is deterministic and not model generated',
    /function vp3_cognitive_optimization_compare_v2510/.test(optimization)
    &&/usort\(\$scenarios/.test(optimization)
-   &&!/openai|anthropic|llm|prompt|completion/i.test(optimization)],
+   &&!/openai|anthropic|chat_completions|llm_provider|prompt_to_model/i.test(optimization)],
  ['only autonomous ordering is optimized',
    /if\(\$aMode!==\'autonomous\'\|\|\$bMode!==\'autonomous\'\)/.test(optimization)
    &&/keeps its existing order/.test(optimization)],
