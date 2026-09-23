@@ -11,6 +11,7 @@ const me=read('api/connected-site-me.php');
 const artifacts=read('api/connected-site-artifacts.php');
 const revoke=read('api/connected-site-revoke.php');
 const upgrade=read('upgrade.php');
+const setup=read('setup.php');
 
 for(const needle of ['user_connected_sites','user_connected_site_codes','user_connected_site_tokens','access_token_hash','refresh_token_hash','vp3_connected_site_revoke_v100'])assert.ok(core.includes(needle),needle);
 for(const scope of ['account.identity.read','meetings.transcripts.read','meetings.intelligence.read'])assert.ok(core.includes(scope),scope);
@@ -37,5 +38,6 @@ assert.ok(me.includes("vp3_connected_site_auth_v100($pdo,'account.identity.read'
 assert.ok(artifacts.includes("vp3_connected_site_auth_v100($pdo,'meetings.transcripts.read')"),'artifact endpoint transcript scope guarded');
 assert.ok(revoke.includes('vp3_connected_site_revoke_v100'),'remote revoke endpoint wired');
 assert.ok(upgrade.includes('vp3_connected_sites_schema_ready_v100()')&&upgrade.includes('vp3_connected_sites_ensure_schema_v100($pdo)'),'upgrade installs and verifies Connected Sites');
+assert.ok(setup.includes('vp3_connected_sites_ensure_schema_v100($pdo)'),'fresh setup installs Connected Sites');
 
 console.log('Annotated connector v1.0 static contract passed.');
