@@ -62,13 +62,17 @@ function campaigns_rewards_core_crm_ensure_v100(PDO $pdo): void
         if(function_exists('column_exists')&&!column_exists('crm_contacts',$name))$pdo->exec("ALTER TABLE crm_contacts ADD COLUMN {$name} {$ddl}");
     }
     $pdo->exec("UPDATE crm_contacts SET public_id=UUID() WHERE public_id IS NULL OR public_id=''");
-    foreach([
-        "ALTER TABLE crm_contacts DROP INDEX uq_crm_contacts_email_normalized",
-        "ALTER TABLE crm_contacts ADD UNIQUE KEY uq_crm_contacts_public (public_id)",
-        "ALTER TABLE crm_contacts ADD UNIQUE KEY uq_crm_contacts_owner_email (owner_user_id,email_normalized)",
-        "ALTER TABLE crm_contacts ADD INDEX idx_crm_contacts_owner_user (owner_user_id,vp3_user_id)",
-        "ALTER TABLE crm_contacts ADD INDEX idx_crm_contacts_owner_stage (owner_user_id,lifecycle_stage,updated_at)",
-    ] as $sql){try{$pdo->exec($sql);}catch(Throwable $e){}}
+    $pdo->exec("UPDATE crm_contacts SET owner_user_id=0 WHERE owner_user_id IS NULL");
+    try{$pdo->exec("ALTER TABLE crm_contacts MODIFY public_id CHAR(36) NOT NULL");}catch(Throwable $e){}
+    try{$pdo->exec("ALTER TABLE crm_contacts MODIFY owner_user_id INT UNSIGNED NOT NULL DEFAULT 0");}catch(Throwable $e){}
+
+    $crmIndexes=$pdo->query("SHOW INDEX FROM crm_contacts")->fetchAll()?:[];
+    $crmIndexNames=[];foreach($crmIndexes as $idx)$crmIndexNames[(string)($idx['Key_name']??'')]=true;
+    if(isset($crmIndexNames['uq_crm_contacts_email_normalized']))$pdo->exec("ALTER TABLE crm_contacts DROP INDEX uq_crm_contacts_email_normalized");
+    if(!isset($crmIndexNames['uq_crm_contacts_public']))$pdo->exec("ALTER TABLE crm_contacts ADD UNIQUE KEY uq_crm_contacts_public (public_id)");
+    if(!isset($crmIndexNames['uq_crm_contacts_owner_email']))$pdo->exec("ALTER TABLE crm_contacts ADD UNIQUE KEY uq_crm_contacts_owner_email (owner_user_id,email_normalized)");
+    if(!isset($crmIndexNames['idx_crm_contacts_owner_user']))$pdo->exec("ALTER TABLE crm_contacts ADD INDEX idx_crm_contacts_owner_user (owner_user_id,vp3_user_id)");
+    if(!isset($crmIndexNames['idx_crm_contacts_owner_stage']))$pdo->exec("ALTER TABLE crm_contacts ADD INDEX idx_crm_contacts_owner_stage (owner_user_id,lifecycle_stage,updated_at)");
 
     $pdo->exec("CREATE TABLE IF NOT EXISTS crm_contact_emails (
       id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,contact_id BIGINT UNSIGNED NOT NULL,email VARCHAR(190) NOT NULL,email_normalized VARCHAR(190) NOT NULL,label VARCHAR(50) NOT NULL DEFAULT 'primary',is_primary TINYINT(1) NOT NULL DEFAULT 0,verified_at DATETIME NULL,created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
