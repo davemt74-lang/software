@@ -318,7 +318,9 @@ function profile_event_create(PDO $pdo,int $ownerUserId,array $session,string $t
     try{
         $stmt=$pdo->prepare('INSERT INTO profile_events (owner_user_id,profile_session_id,visitor_user_id,profile_agent_id,event_type,priority,dedupe_key,metadata_json) VALUES (?,?,?,?,?,?,?,?)');
         $stmt->execute([$ownerUserId,(int)$session['id'],(int)($session['visitor_user_id']??0)?:null,$agentId?:null,$type,$priority,$dedupeKey,json_encode($metadata,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE)]);
-        $id=(int)$pdo->lastInsertId();$get=$pdo->prepare('SELECT * FROM profile_events WHERE id=?');$get->execute([$id]);return $get->fetch()?:null;
+        $id=(int)$pdo->lastInsertId();$get=$pdo->prepare('SELECT * FROM profile_events WHERE id=?');$get->execute([$id]);$row=$get->fetch()?:null;
+        if($row&&function_exists('vp3_cognitive_profile_event_bridge_v2380'))vp3_cognitive_profile_event_bridge_v2380($pdo,$row,$session,$metadata);
+        return $row;
     }catch(PDOException $e){if((string)$e->getCode()==='23000')return null;throw $e;}
 }
 
