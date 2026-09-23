@@ -35,7 +35,7 @@ const checks=[
  ['goal commitments reuse Phase 17.15 authority',
    /agent_goal_commitment_state_v1715/.test(commitment)
    &&/agent_goal_commitment_state_v1715/.test(goalCommitments)
-   &&/'goal_commitments'=>'agent_goal_commitments_v1715'/.test(release)],
+   &&/'goals'=>'agent_goal_commitments_v1715_and_agent_goals'/.test(release)],
  ['meeting commitments reuse existing follow-up and verification lineage',
    /video_meeting_agenda_items/.test(commitment)
    &&/video_meeting_followthrough_plans/.test(commitment)
@@ -45,7 +45,7 @@ const checks=[
  ['Agent Brain tasks reuse v123 memory lifecycle',
    /agent_memory_v123_tasks/.test(commitment)
    &&/memory_type IN \('commitment','task'\)/.test(memoryLifecycle)
-   &&/'memory_commitments'=>'agent_memory_items_task_lifecycle_v123'/.test(release)],
+   &&/'memory_tasks'=>'agent_memory_items_task_lifecycle_v123'/.test(release)],
  ['commitments use stable source identities',
    /'goal:'\.\$goalId/.test(commitment)
    &&/'meeting:'\.\(int\)\$row\['agenda_item_id'\]/.test(commitment)
