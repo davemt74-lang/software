@@ -357,6 +357,7 @@
     const recent = Array.isArray(brain.recent) ? brain.recent : [];
     const themes = Array.isArray(brain.themes) ? brain.themes : [];
     const working = brain.working_context || {};
+    const turn = brain.turn_state || {};
     const counts = working.counts || {};
     const budget = working.attention?.budget || {};
     const currentState = stateLabel(activity.state || 'idle');
@@ -365,6 +366,24 @@
     const attentionLabel = Number.isFinite(Number(budget.limit))
       ? `${Math.max(0, Number(budget.limit || 0) - Number(budget.used || 0))} of ${Number(budget.limit || 0)} interruption slots available`
       : 'Attention budget unavailable';
+    const turnType = String(turn.turn_type || '');
+    const turnStatus = String(turn.status || '');
+    const turnTypeLabel = ({
+      answer:'Answer',
+      ask_user:'Waiting for you',
+      present_update:'Progress update',
+      propose_action:'Proposed action',
+      request_approval:'Needs approval',
+      execute_authorized_action:'Authorized action',
+      remain_silent:'Quiet'
+    }[turnType] || turnType.replaceAll('_',' ') || 'No recorded turn');
+    const turnStatusLabel = ({
+      completed:'Completed',
+      needs_input:'Waiting for you',
+      approval_required:'Needs your approval',
+      action_proposed:'Action proposed',
+      suppressed:'Quiet'
+    }[turnStatus] || turnStatus.replaceAll('_',' ') || 'No status');
 
     return `
       <section class="chat-activity-section chat-brain-overview">
@@ -391,6 +410,19 @@
           ${brainMetric('Attention', attentionLabel)}
         </div>
       </section>
+
+      ${turnType ? `
+      <section class="chat-activity-section">
+        <div class="chat-activity-section-head">
+          <div><strong>Current Turn</strong><span>v24.30 observable orchestration state — no hidden model reasoning.</span></div>
+        </div>
+        <div class="chat-brain-metrics">
+          ${brainMetric('Turn', turnTypeLabel)}
+          ${brainMetric('State', turnStatusLabel)}
+          ${brainMetric('Relevant context', `${Number(turn.context_item_count || 0)} items`)}
+        </div>
+        ${turn.task_ref || turn.goal_ref || turn.context_key ? `<div class="chat-brain-memory-list"><article><span>Continuity</span><strong>${esc(turn.task_ref || turn.goal_ref || turn.context_key || 'Active work')}</strong><p>${esc(turn.goal_ref ? `Goal: ${turn.goal_ref}` : turn.context_key || '')}</p><small>${esc(relative(turn.created_at))}</small></article></div>` : ''}
+      </section>` : ''}
 
       <section class="chat-activity-section chat-brain-priorities-section">
         <div class="chat-activity-section-head">
@@ -451,7 +483,7 @@
             const day = Number.isNaN(date.getTime()) ? '' : date.toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'});
             const divider = day && day !== lastDay ? `<div class="chat-brain-history-day">${esc(day)}</div>` : '';
             lastDay = day || lastDay;
-            return `${divider}<article class="${esc(row.role || 'user')}"><div><strong>${row.role === 'assistant' ? 'Agent' : 'You'}</strong><span>${esc(row.input_mode || 'text')}</span><small>${esc(relative(row.created_at))}</small></div><p>${esc(row.message || '')}</p><footer>Conversation ${Number(row.conversation_id || 0)}</footer></article>`;
+            return `${divider}<article class="${esc(row.role || 'user')}"><div><strong>${row.role === 'assistant' ? 'Agent' : 'You'}</strong><span>${esc(row.input_mode || 'text')}</span><small>${esc(relative(row.created_at))}</small></div><p>${esc(row.message || '')}</p><footer>Conversation ${Number(row.conversation_id || 0)}${row.turn_type ? ` · ${esc(String(row.turn_type).replaceAll('_',' '))}` : ''}</footer></article>`;
           }).join('') : '<div class="chat-activity-empty">No conversation history in this Agent scope yet.</div>'}
         </div>
       </section>`;
