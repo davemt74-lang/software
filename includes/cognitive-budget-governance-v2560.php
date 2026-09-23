@@ -719,16 +719,19 @@ function vp3_cognitive_budget_apply_v2560(
     ];
 }
 
-function vp3_cognitive_budget_goal_for_run_v2560(PDO $pdo,int $uid,int $runId): int
+function vp3_cognitive_budget_goals_for_run_v2560(PDO $pdo,int $uid,int $runId): array
 {
-    if($uid<1||$runId<1||!table_exists('agent_goal_objectives')||!table_exists('agent_goals'))return 0;
+    if($uid<1||$runId<1||!table_exists('agent_goal_objectives')||!table_exists('agent_goals'))return [];
     try{
-        $stmt=$pdo->prepare("SELECT g.id FROM agent_goal_objectives x
+        $stmt=$pdo->prepare("SELECT DISTINCT g.id FROM agent_goal_objectives x
           INNER JOIN agent_goals g ON g.id=x.goal_id AND g.owner_user_id=x.owner_user_id
           WHERE x.owner_user_id=? AND x.objective_run_id=? AND g.execution_mode='autonomous'
-          ORDER BY g.priority DESC,g.id LIMIT 1");
-        $stmt->execute([$uid,$runId]);return max(0,(int)$stmt->fetchColumn());
-    }catch(Throwable $e){return 0;}
+          ORDER BY g.priority DESC,g.id");
+        $stmt->execute([$uid,$runId]);
+        return array_values(array_unique(array_filter(array_map(
+            'intval',array_column($stmt->fetchAll(PDO::FETCH_ASSOC)?:[],'id')
+        ),static fn(int $id): bool=>$id>0)));
+    }catch(Throwable $e){return [];}
 }
 
 /**
@@ -778,19 +781,21 @@ function vp3_cognitive_budget_filter_claim_candidates_v2560(
     $admitted=[];
     foreach($approved as $row){
         $runId=(int)($row['id']??0);if($runId<1)continue;
-        $goalId=vp3_cognitive_budget_goal_for_run_v2560($pdo,$uid,$runId);
-        $holds=(array)($holdPoliciesByGoal[$goalId]??[]);
-        if($goalId<1||!$holds){$admitted[]=$row;continue;}
+        $goalIds=vp3_cognitive_budget_goals_for_run_v2560($pdo,$uid,$runId);
+        if(!$goalIds){$admitted[]=$row;continue;}
 
         $blocked=false;
-        foreach($holds as $policyId){
-            $policy=$policyMap[(int)$policyId]??null;
-            if(!$policy)continue;
-            $scopeSubject=(string)$policy['scope_kind'].':'.(string)$policy['scope_key'];
-            $override=vp3_cognitive_budget_active_override_v2560($pdo,$uid,(int)$policyId,'run',(string)$runId,$now)
-                ?:vp3_cognitive_budget_active_override_v2560($pdo,$uid,(int)$policyId,'goal',(string)$goalId,$now)
-                ?:vp3_cognitive_budget_active_override_v2560($pdo,$uid,(int)$policyId,'scope',$scopeSubject,$now);
-            if(!$override){$blocked=true;break;}
+        foreach($goalIds as $goalId){
+            $holds=(array)($holdPoliciesByGoal[$goalId]??[]);
+            foreach($holds as $policyId){
+                $policy=$policyMap[(int)$policyId]??null;
+                if(!$policy)continue;
+                $scopeSubject=(string)$policy['scope_kind'].':'.(string)$policy['scope_key'];
+                $override=vp3_cognitive_budget_active_override_v2560($pdo,$uid,(int)$policyId,'run',(string)$runId,$now)
+                    ?:vp3_cognitive_budget_active_override_v2560($pdo,$uid,(int)$policyId,'goal',(string)$goalId,$now)
+                    ?:vp3_cognitive_budget_active_override_v2560($pdo,$uid,(int)$policyId,'scope',$scopeSubject,$now);
+                if(!$override){$blocked=true;break 2;}
+            }
         }
         if(!$blocked)$admitted[]=$row;
     }
