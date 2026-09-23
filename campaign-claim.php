@@ -29,13 +29,13 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
                 $uid,
                 [
                     'online'=>true,
+                    'expected_merchant_id'=>$merchantId,
                     'location_id'=>max(0,(int)($_POST['location_id']??0)),
                     'order_ref'=>trim((string)($_POST['order_ref']??'')),
                     'actor_type'=>'user',
                     'request_fingerprint'=>(string)($_SERVER['REMOTE_ADDR']??'').'|'.(string)($_SERVER['HTTP_USER_AGENT']??''),
                 ]
             );
-            if((int)$claim['merchant_id']!==$merchantId)throw new RuntimeException('Claim belongs to a different Merchant.');
             $notice='Reward claimed successfully.';
         }catch(Throwable $e){$error=$e->getMessage();}
     }
