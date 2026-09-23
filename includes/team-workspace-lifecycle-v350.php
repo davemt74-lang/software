@@ -20,7 +20,9 @@ function workspace_team_v350_schema_ready(?PDO $pdo=null): bool
     $pdo??=db();
     return (bool)$pdo
         &&table_exists('workspace_memberships_v350')
-        &&table_exists('workspace_team_invitations_v350');
+        &&table_exists('workspace_team_invitations_v350')
+        &&table_exists('workspace_team_access_v1')
+        &&table_exists('workspace_team_invitation_scopes_v1');
 }
 
 /** Never run DDL from inside a membership/invitation transaction. */
@@ -86,6 +88,38 @@ function workspace_team_v350_ensure_schema(?PDO $pdo=null): void
       CONSTRAINT fk_workspace_invite_inviter FOREIGN KEY (invited_by_user_id) REFERENCES users(id) ON DELETE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 
+    $pdo->exec("CREATE TABLE IF NOT EXISTS workspace_team_access_v1 (
+      workspace_owner_user_id INT UNSIGNED NOT NULL,
+      member_user_id INT UNSIGNED NOT NULL,
+      basic_team_enabled TINYINT(1) NOT NULL DEFAULT 1,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (workspace_owner_user_id,member_user_id),
+      INDEX idx_workspace_team_access_member (member_user_id,basic_team_enabled,workspace_owner_user_id),
+      CONSTRAINT fk_workspace_team_access_owner FOREIGN KEY (workspace_owner_user_id) REFERENCES users(id) ON DELETE CASCADE,
+      CONSTRAINT fk_workspace_team_access_member FOREIGN KEY (member_user_id) REFERENCES users(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+    $pdo->exec("CREATE TABLE IF NOT EXISTS workspace_team_invitation_scopes_v1 (
+      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+      invitation_id BIGINT UNSIGNED NOT NULL,
+      scope_type VARCHAR(30) NOT NULL,
+      scope_id BIGINT UNSIGNED NULL,
+      role_key VARCHAR(80) NULL,
+      metadata_json LONGTEXT NULL,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE KEY uq_workspace_invite_scope (invitation_id,scope_type,scope_id),
+      INDEX idx_workspace_invite_scope_lookup (invitation_id,scope_type,id),
+      CONSTRAINT fk_workspace_invite_scope_invitation FOREIGN KEY (invitation_id) REFERENCES workspace_team_invitations_v350(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+    // Every pre-V1 canonical teammate starts with Basic Team enabled. Merchant
+    // scope may later turn Basic off, but never creates a second human identity.
+    $pdo->exec("INSERT IGNORE INTO workspace_team_access_v1
+      (workspace_owner_user_id,member_user_id,basic_team_enabled,created_at,updated_at)
+      SELECT workspace_owner_user_id,member_user_id,1,created_at,updated_at
+      FROM workspace_memberships_v350");
+
     if(table_exists('artist_team_members')){
         // Import historical active rows without ever overwriting a durable
         // suspended/removed lifecycle record on later upgrade passes.
@@ -98,7 +132,9 @@ function workspace_team_v350_ensure_schema(?PDO $pdo=null): void
         $pdo->exec("DELETE atm FROM artist_team_members atm
           INNER JOIN workspace_memberships_v350 wm
             ON wm.workspace_owner_user_id=atm.artist_user_id AND wm.member_user_id=atm.member_user_id
-          WHERE wm.membership_status<>'active'");
+          LEFT JOIN workspace_team_access_v1 wa
+            ON wa.workspace_owner_user_id=wm.workspace_owner_user_id AND wa.member_user_id=wm.member_user_id
+          WHERE wm.membership_status<>'active' OR COALESCE(wa.basic_team_enabled,1)=0");
         $pdo->exec("UPDATE artist_team_members atm
           INNER JOIN workspace_memberships_v350 wm
             ON wm.workspace_owner_user_id=atm.artist_user_id AND wm.member_user_id=atm.member_user_id
@@ -106,7 +142,10 @@ function workspace_team_v350_ensure_schema(?PDO $pdo=null): void
           WHERE wm.membership_status='active'");
         $pdo->exec("INSERT IGNORE INTO artist_team_members (artist_user_id,member_user_id,team_role,created_at,updated_at)
           SELECT workspace_owner_user_id,member_user_id,team_role,COALESCE(activated_at,created_at),updated_at
-          FROM workspace_memberships_v350 WHERE membership_status='active'");
+          FROM workspace_memberships_v350 wm
+          LEFT JOIN workspace_team_access_v1 wa
+            ON wa.workspace_owner_user_id=wm.workspace_owner_user_id AND wa.member_user_id=wm.member_user_id
+          WHERE wm.membership_status='active' AND COALESCE(wa.basic_team_enabled,1)=1");
     }
 }
 
@@ -152,11 +191,28 @@ function workspace_team_v350_memberships_for_user(PDO $pdo,int $memberId,string 
     $stmt->execute([$memberId,$status]);return $stmt->fetchAll()?:[];
 }
 
+function workspace_team_v350_basic_enabled_v1(PDO $pdo,int $ownerId,int $memberId): bool
+{
+    if($ownerId<1||$memberId<1||!table_exists('workspace_team_access_v1'))return true;
+    $stmt=$pdo->prepare('SELECT basic_team_enabled FROM workspace_team_access_v1 WHERE workspace_owner_user_id=? AND member_user_id=? LIMIT 1');
+    $stmt->execute([$ownerId,$memberId]);$value=$stmt->fetchColumn();
+    return $value===false?true:(int)$value===1;
+}
+
+function workspace_team_v350_set_basic_enabled_v1(PDO $pdo,int $ownerId,int $memberId,bool $enabled): void
+{
+    workspace_team_v350_require_schema($pdo);
+    $pdo->prepare("INSERT INTO workspace_team_access_v1 (workspace_owner_user_id,member_user_id,basic_team_enabled)
+      VALUES (?,?,?) ON DUPLICATE KEY UPDATE basic_team_enabled=VALUES(basic_team_enabled),updated_at=UTC_TIMESTAMP()")
+      ->execute([$ownerId,$memberId,$enabled?1:0]);
+    workspace_team_v350_sync_projection($pdo,$ownerId,$memberId);
+}
+
 function workspace_team_v350_sync_projection(PDO $pdo,int $ownerId,int $memberId): void
 {
     workspace_team_v350_require_schema($pdo);
     $row=workspace_team_v350_membership($pdo,$ownerId,$memberId);
-    if($row&&$row['membership_status']==='active'){
+    if($row&&$row['membership_status']==='active'&&workspace_team_v350_basic_enabled_v1($pdo,$ownerId,$memberId)){
         $stmt=$pdo->prepare('INSERT INTO artist_team_members (artist_user_id,member_user_id,team_role) VALUES (?,?,?) ON DUPLICATE KEY UPDATE team_role=VALUES(team_role),updated_at=NOW()');
         $stmt->execute([$ownerId,$memberId,(string)$row['team_role']]);
     }else{
@@ -201,6 +257,7 @@ function workspace_team_v350_activate_member(PDO $pdo,int $ownerId,int $memberId
           VALUES (?,?,?,'active',?,NOW(),NULL,NULL,NOW())
           ON DUPLICATE KEY UPDATE role_changed_at=IF(team_role<>VALUES(team_role),NOW(),role_changed_at),team_role=VALUES(team_role),membership_status='active',invited_by_user_id=COALESCE(VALUES(invited_by_user_id),invited_by_user_id),activated_at=NOW(),suspended_at=NULL,removed_at=NULL,updated_at=NOW()");
         $stmt->execute([$ownerId,$memberId,$teamRole,$actorId]);
+        $pdo->prepare("INSERT IGNORE INTO workspace_team_access_v1 (workspace_owner_user_id,member_user_id,basic_team_enabled) VALUES (?,?,1)")->execute([$ownerId,$memberId]);
         workspace_team_v350_sync_projection($pdo,$ownerId,$memberId);
         artist_workspace_v104_sync_context_role_permissions($pdo);
         artist_workspace_v104_sync_member_context_roles($pdo,$memberId);
