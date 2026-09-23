@@ -239,7 +239,7 @@ function vp3_cognitive_decision_factor_v2580(
         $values=[];
         foreach($stmt->fetchAll(PDO::FETCH_ASSOC)?:[] as $row){
             if($row['ratio']===null)continue;
-            $ratio=(float)$row['ratio'];if($ratio>0&&is_finite($ratio))$values[]=$ratio;
+            $ratio=(float)$row['ratio'];if($ratio>=0&&is_finite($ratio))$values[]=$ratio;
         }
         return array_merge($default,vp3_cognitive_decision_ratio_factor_v2580($values,$min,$max),[
             'evidence_unit'=>'latest_settled_goal'
