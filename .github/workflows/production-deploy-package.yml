@@ -84,7 +84,9 @@ jobs:
           test -f _deploy/includes/cognitive-domain-manifest-v2370.php
           test -f _deploy/includes/cognitive-live-session-v2370.php
           test -f _deploy/includes/cognitive-runtime-session-v2370.php
-          test -f _deploy/includes/cognitive-release-v2370.php\n          test -f _deploy/includes/cognitive-domain-integration-v2380.php\n          test -f _deploy/includes/cognitive-release-v2380.php
+          test -f _deploy/includes/cognitive-release-v2370.php
+          test -f _deploy/includes/cognitive-domain-integration-v2380.php
+          test -f _deploy/includes/cognitive-release-v2380.php
           test -f _deploy/includes/agent-event-infrastructure-v1920.php
           test -f _deploy/api/cognitive-feed-v530.php
           test -f _deploy/api/cognitive-planning-v550.php
