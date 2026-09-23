@@ -225,6 +225,14 @@ function vp3_cognitive_forecast_snapshot_v2490(PDO $pdo,array $user): array
     catch(Throwable $e){return $empty;}
     $capacity=is_array($portfolio['capacity']??null)?$portfolio['capacity']:[];
     $history=vp3_cognitive_forecast_history_v2490($pdo,$user);
+    $durationCalibration=[
+        'cloud'=>function_exists('vp3_cognitive_decision_factor_v2580')
+            ?vp3_cognitive_decision_factor_v2580($pdo,$user,'forecast_duration','cloud')
+            :['factor'=>1.0,'sample_count'=>0,'calibrated'=>false],
+        'homeserver'=>function_exists('vp3_cognitive_decision_factor_v2580')
+            ?vp3_cognitive_decision_factor_v2580($pdo,$user,'forecast_duration','homeserver')
+            :['factor'=>1.0,'sample_count'=>0,'calibrated'=>false],
+    ];
     $items=array_slice((array)($portfolio['items']??[]),0,VP3_COGNITIVE_FORECAST_MAX_ITEMS_V2490);
     $now=time();
     $lanes=[];$conflicts=[];$forecastItems=[];
@@ -253,9 +261,13 @@ function vp3_cognitive_forecast_snapshot_v2490(PDO $pdo,array $user): array
         $dependencyDelay=(int)round($blockers*$base*0.75);
         $approvalDelay=(string)($item['execution_state']??'')==='waiting_approval'?86400:0;
         $holdDelay=(string)($item['hold_reason']??'')==='semantic_overlap'?86400:0;
-        $likelySeconds=$startDelay+$dependencyDelay+$approvalDelay+$holdDelay+$likelyWork;
-        $earliestSeconds=max(0,(int)round($startDelay+($dependencyDelay*0.4)+($likelyWork*0.70)));
-        $latestSeconds=max($likelySeconds,(int)round($startDelay+($dependencyDelay*1.5)+$approvalDelay+$holdDelay+($likelyWork*1.65)));
+        $rawLikelySeconds=$startDelay+$dependencyDelay+$approvalDelay+$holdDelay+$likelyWork;
+        $rawEarliestSeconds=max(0,(int)round($startDelay+($dependencyDelay*0.4)+($likelyWork*0.70)));
+        $rawLatestSeconds=max($rawLikelySeconds,(int)round($startDelay+($dependencyDelay*1.5)+$approvalDelay+$holdDelay+($likelyWork*1.65)));
+        $calibrationFactor=max(0.75,min(1.35,(float)($durationCalibration[$executor]['factor']??1.0)));
+        $likelySeconds=max(0,(int)round($rawLikelySeconds*$calibrationFactor));
+        $earliestSeconds=max(0,(int)round($rawEarliestSeconds*$calibrationFactor));
+        $latestSeconds=max($likelySeconds,(int)round($rawLatestSeconds*$calibrationFactor));
         $lanes[$executor][$laneIndex]=$startDelay+$likelyWork;
 
         $deadline=vp3_cognitive_forecast_target_ts_v2490((string)($item['target_date']??''));
@@ -278,10 +290,17 @@ function vp3_cognitive_forecast_snapshot_v2490(PDO $pdo,array $user): array
             'sequence_score'=>round((float)($item['forecast_sequence_score']??0),4),
             'work_units'=>$units,
             'queue_seconds'=>$startDelay,
-            'estimated_action_seconds'=>$base,
+            'raw_estimated_action_seconds'=>$base,
+            'estimated_action_seconds'=>max(VP3_COGNITIVE_FORECAST_MIN_ACTION_SECONDS_V2490,(int)round($base*$calibrationFactor)),
+            'raw_earliest_completion_at'=>gmdate('c',$now+$rawEarliestSeconds),
+            'raw_likely_completion_at'=>gmdate('c',$now+$rawLikelySeconds),
+            'raw_latest_completion_at'=>gmdate('c',$now+$rawLatestSeconds),
             'earliest_completion_at'=>gmdate('c',$now+$earliestSeconds),
             'likely_completion_at'=>gmdate('c',$now+$likelySeconds),
             'latest_completion_at'=>gmdate('c',$now+$latestSeconds),
+            'calibration_factor'=>round($calibrationFactor,4),
+            'calibration_samples'=>(int)($durationCalibration[$executor]['sample_count']??0),
+            'calibrated'=>!empty($durationCalibration[$executor]['calibrated']),
             'target_date'=>(string)($item['target_date']??''),
             'deadline_risk'=>$deadlineRisk,
             'risk'=>$risk,
@@ -330,7 +349,10 @@ function vp3_cognitive_forecast_snapshot_v2490(PDO $pdo,array $user): array
             'completion_windows_are_estimates'=>true,
             'approval_wait_is_not_predictable'=>true,
             'dependency_delay_is_bounded_estimate'=>true,
+            'decision_calibration_is_bounded'=>true,
+            'raw_forecasts_are_retained'=>true,
         ],
+        'decision_calibration'=>$durationCalibration,
         'authority'=>[
             'forecast_projection'=>'cognitive_forecast_v2490',
             'portfolio_admission'=>'cognitive_portfolio_v2480',
