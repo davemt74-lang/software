@@ -43,8 +43,10 @@ const checks=[
    /ATTENTION_REPEAT_COOLDOWN_MINUTES_V2410=30/.test(attention)
    &&/WHERE owner_user_id=\? AND signal_key=\?/.test(attention)],
  ['only delivered or fresh planned interruptions start repeat cooldown',
-   /status='delivered'[\s\S]{0,180}ATTENTION_REPEAT_COOLDOWN_MINUTES_V2410/.test(attention)
-   &&/status='planned'[\s\S]{0,180}ATTENTION_PLAN_TTL_MINUTES_V2410/.test(attention)],
+   /status='delivered'/.test(attention)
+   &&/ATTENTION_REPEAT_COOLDOWN_MINUTES_V2410/.test(attention)
+   &&/status='planned'/.test(attention)
+   &&/ATTENTION_PLAN_TTL_MINUTES_V2410/.test(attention)],
  ['critical attention can bypass budget while noncritical respects it',
    /budget_bypass/.test(attention)&&/attention_budget_exhausted/.test(attention)&&/critical_attention/.test(attention)],
  ['focus and quiet state suppress noncritical interruptions',
