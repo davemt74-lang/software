@@ -55,7 +55,7 @@ const checks=[
   ['automatic workflow repair uses only existing expired-lease recovery',
     /agent_job_recover_expired_v1900/.test(reconcileBody)
     &&!/agent_job_retry_v1900\(/.test(reconcileBody)
-    &&!/agent_workflow_retry_v1400\(/.test(reconcileBody)],
+    && !/agent_workflow_retry_v1400\(/.test(reconcileBody)],
   ['supervision never claims worker execution',
     !/agent_job_claim_run_v1900\(/.test(supervision)
     &&!/agent_job_claim_next_v1900\(/.test(supervision)
@@ -66,13 +66,13 @@ const checks=[
     &&/status='failed'/.test(jobs)],
   ['automatic plan work is reconciliation only',
     /vp3_cognitive_orchestration_reconcile_run_v560/.test(reconcileBody)
-    &&!/vp3_cognitive_orchestration_handoff_v560\(/.test(reconcileBody)],
+    && !/vp3_cognitive_orchestration_handoff_v560\(/.test(reconcileBody)],
   ['existing Cognitive Orchestration still owns replan step creation',
     /function vp3_cognitive_orchestration_replan_step_v560/.test(orchestration)
     &&/status='needs_replan'/.test(orchestration)],
   ['objective replacement remains existing v17.6 authority',
     /function agent_objective_verification_rewire_failed_v176/.test(verification)
-    &&!/agent_objective_verification_rewire_failed_v176\(/.test(reconcileBody)],
+    && !/agent_objective_verification_rewire_failed_v176\(/.test(reconcileBody)],
   ['v24.20 Working Context includes bounded supervision section',
     /'live_session','continuity','supervision','conversation'/.test(context)
     &&/'supervision'=>1/.test(context)
