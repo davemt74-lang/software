@@ -78,6 +78,67 @@ function campaigns_rewards_platform_role_capabilities_v100(PDO $pdo,int $roleId)
     return $out;
 }
 
+
+function campaigns_rewards_merchant_role_id_v100(PDO $pdo,int $merchantId,string $roleKey): int
+{
+    $stmt=$pdo->prepare("SELECT id FROM merchant_roles
+      WHERE role_key=? AND is_active=1 AND (merchant_id=? OR merchant_id IS NULL)
+      ORDER BY merchant_id IS NULL ASC,id DESC LIMIT 1");
+    $stmt->execute([$roleKey,$merchantId]);return (int)$stmt->fetchColumn();
+}
+
+function campaigns_rewards_ensure_merchant_team_role_v100(PDO $pdo,int $merchantId): int
+{
+    $roleId=campaigns_rewards_merchant_role_id_v100($pdo,$merchantId,'merchant_team');
+    if($roleId>0)return $roleId;
+    $pdo->prepare("INSERT INTO merchant_roles (merchant_id,role_key,name,description,is_system,is_active)
+      VALUES (?,'merchant_team','Merchant Team','Bounded Campaigns & Rewards access inherited from canonical VP3 Team scope.',1,1)")
+      ->execute([$merchantId]);
+    $roleId=(int)$pdo->lastInsertId();
+    $cap=$pdo->prepare("INSERT IGNORE INTO merchant_role_capabilities (role_id,capability_key,effect) VALUES (?,?,'allow')");
+    foreach(['merchant.view','locations.view','campaigns.view','rewards.view','claims.view','loyalty.view','analytics.view'] as $key)$cap->execute([$roleId,$key]);
+    return $roleId;
+}
+
+function campaigns_rewards_sync_member_projection_v100(PDO $pdo,int $merchantId,int $userId): ?array
+{
+    $stmt=$pdo->prepare("SELECT * FROM merchant_member_access_sources
+      WHERE merchant_id=? AND user_id=? AND status='active'
+      ORDER BY FIELD(source_type,'owner','direct','team'),updated_at DESC,id DESC");
+    $stmt->execute([$merchantId,$userId]);$sources=$stmt->fetchAll()?:[];
+    if(!$sources){
+        $pdo->prepare("UPDATE merchant_members SET status='removed',is_owner=0,removed_at=COALESCE(removed_at,UTC_TIMESTAMP()),updated_at=UTC_TIMESTAMP()
+          WHERE merchant_id=? AND user_id=?")->execute([$merchantId,$userId]);
+        return null;
+    }
+    $selected=$sources[0];$isOwner=(string)$selected['source_type']==='owner';
+    $roleKey=$isOwner?'owner':((string)$selected['source_type']==='team'?'merchant_team':(string)$selected['role_key']);
+    $roleId=$roleKey==='merchant_team'
+        ?campaigns_rewards_ensure_merchant_team_role_v100($pdo,$merchantId)
+        :campaigns_rewards_merchant_role_id_v100($pdo,$merchantId,$roleKey);
+    if($roleId<1)throw new RuntimeException('Merchant role projection could not be resolved.');
+    $pdo->prepare("INSERT INTO merchant_members (merchant_id,user_id,role_id,status,is_owner,joined_at)
+      VALUES (?,?,?,'active',?,UTC_TIMESTAMP())
+      ON DUPLICATE KEY UPDATE role_id=VALUES(role_id),status='active',is_owner=VALUES(is_owner),
+        suspended_at=NULL,removed_at=NULL,updated_at=UTC_TIMESTAMP()")
+      ->execute([$merchantId,$userId,$roleId,$isOwner?1:0]);
+    return campaigns_rewards_platform_member_v100($pdo,$merchantId,$userId);
+}
+
+function campaigns_rewards_set_access_source_v100(PDO $pdo,int $merchantId,int $userId,string $sourceType,string $sourceRef,string $roleKey,string $status='active',?int $actorUserId=null): ?array
+{
+    if(!in_array($sourceType,['owner','direct','team'],true))throw new RuntimeException('Invalid Merchant access source.');
+    if(!in_array($status,['active','suspended','removed'],true))throw new RuntimeException('Invalid Merchant access status.');
+    $sourceRef=campaigns_rewards_text_v100($sourceRef,120);
+    $pdo->prepare("INSERT INTO merchant_member_access_sources
+      (merchant_id,user_id,source_type,source_ref,role_key,status,granted_by_user_id,granted_at,suspended_at,removed_at)
+      VALUES (?,?,?,?,?,?,?,UTC_TIMESTAMP(),IF(?='suspended',UTC_TIMESTAMP(),NULL),IF(?='removed',UTC_TIMESTAMP(),NULL))
+      ON DUPLICATE KEY UPDATE role_key=VALUES(role_key),status=VALUES(status),granted_by_user_id=COALESCE(VALUES(granted_by_user_id),granted_by_user_id),
+        suspended_at=IF(VALUES(status)='suspended',UTC_TIMESTAMP(),NULL),removed_at=IF(VALUES(status)='removed',UTC_TIMESTAMP(),NULL),updated_at=UTC_TIMESTAMP()")
+      ->execute([$merchantId,$userId,$sourceType,$sourceRef,$roleKey,$status,$actorUserId,$status,$status]);
+    return campaigns_rewards_sync_member_projection_v100($pdo,$merchantId,$userId);
+}
+
 function campaigns_rewards_platform_can_v100(PDO $pdo,int $merchantId,int $userId,string $capability): bool
 {
     if($merchantId<1||$userId<1||$capability==='')return false;
