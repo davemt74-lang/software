@@ -60,6 +60,6 @@ The current-state materializer cannot execute, approve, claim, schedule, bill, c
 
 ## Cross-surface behavior
 
-Working Context receives one bounded internal current-state item. Agent Brief, Agent Brain, and Proactive Now use the same materialized current-state projection. User-facing Agent Brief output receives only the firewalled presentation object, so internal evidence and UI copy have an explicit architectural boundary.
+Working Context receives one bounded internal current-state item. Agent Brief, Agent Brain, and Proactive Now use the same materialized current-state projection. User-facing Agent Brief and Agent Brain output consume only the firewalled presentation object; Proactive Now carries both the internal projection and its firewalled presentation form for downstream surfaces. Internal evidence and UI copy therefore have an explicit architectural boundary.
 
 The intended return-session behavior is concise: surface the most relevant current condition or explicit attention candidate rather than dumping a raw event report.
