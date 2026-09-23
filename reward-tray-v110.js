@@ -20,7 +20,7 @@ const getState=async()=>{
 };
 function renderCounts(){
  const counts=state.tray?.counts||{};
- ['inbox','sent','claimed'].forEach(k=>{const el=qs('[data-reward-count="'+k+'"]');if(el)el.textContent=String(Number(counts[k]||0));});
+ ['inbox','sent','claimed'].forEach(k=>{document.querySelectorAll('[data-reward-count="'+k+'"]').forEach(el=>{el.textContent=String(Number(counts[k]||0));});});
 }
 function fmtDate(v){if(!v)return '';const d=new Date(String(v).replace(' ','T')+'Z');return Number.isNaN(d.getTime())?'':d.toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'});}
 function card(row,bucket){
@@ -108,7 +108,7 @@ function wire(){
    '<div class="reward-tray-modal" id="rewardClaimModal" hidden><button class="reward-tray-modal-backdrop" type="button" data-reward-modal-close></button><section class="reward-tray-dialog" role="dialog" aria-modal="true" aria-labelledby="rewardClaimTitle"><header><div><small id="rewardClaimMerchant"></small><h2 id="rewardClaimTitle"><span id="rewardClaimName">Claim Reward</span></h2></div><button class="reward-tray-dialog-close" type="button" data-reward-modal-close>×</button></header><div class="reward-tray-form"><div class="reward-claim-layout"><div id="rewardClaimQr" class="reward-claim-qr"></div><div class="reward-claim-copy"><strong>Merchant redemption QR</strong><span>Scan this QR at the Merchant Claim Terminal. It contains a fresh one-time Reward Credential and opens the terminal without putting that credential in a server request.</span><div id="rewardClaimAuthority" class="reward-claim-warning">This account is not an authorized claim operator for the issuing Merchant. A Merchant operator must scan the QR and complete the claim.</div><a id="rewardClaimTerminal" href="#" target="_blank" rel="noopener">Open Claim Terminal ↗</a></div></div><form id="rewardClaimForm" class="reward-tray-form" style="padding:0"><input type="hidden" name="issuance_id"><label>Merchant Claim Code<input name="merchant_claim_code" autocomplete="off" spellcheck="false" required placeholder="Enter Merchant Claim Code"></label><label>Location<select name="location_id"><option value="">No location</option></select></label><label>Order / receipt reference<input name="order_ref" maxlength="190"></label><div class="reward-tray-form-actions"><button class="reward-tray-btn" type="button" data-reward-modal-close>Cancel</button><button class="reward-tray-btn primary" type="submit">CLAIM</button></div></form></div></section></div>');
  }
  document.addEventListener('click',e=>{
-   const tab=e.target.closest('[data-reward-tray-tab]');if(tab){open(tab.dataset.rewardTrayTab);return;}
+   const tab=e.target.closest('[data-reward-tray-tab]');if(tab){if(tab.tagName==='A'&&!qs('#chatThread'))return;e.preventDefault();open(tab.dataset.rewardTrayTab);return;}
    if(e.target.closest('[data-reward-tray-close]')){close();return;}
    const send=e.target.closest('[data-reward-send]');if(send&&!send.disabled){startSend(Number(send.dataset.rewardSend));return;}
    const claim=e.target.closest('[data-reward-claim]');if(claim){prepareClaim(Number(claim.dataset.rewardClaim));return;}
