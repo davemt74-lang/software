@@ -695,7 +695,11 @@ function campaigns_rewards_clear_invite_scope_v100(PDO $pdo,int $inviteId): void
 function campaigns_rewards_team_membership_status_v100(PDO $pdo,int $ownerUserId,int $memberUserId,string $status): void
 {
     if(!function_exists('campaigns_rewards_set_access_source_v100'))return;
-    $scope=campaigns_rewards_team_scope_v100($pdo,$ownerUserId,$memberUserId);$merchantId=(int)($scope['merchant_account_id']??0);
+    $stmt=$pdo->prepare("SELECT src.merchant_id FROM merchant_member_access_sources src
+      INNER JOIN merchant_accounts m ON m.id=src.merchant_id
+      WHERE m.owner_user_id=? AND src.user_id=? AND src.source_type='team' AND src.source_ref=?
+      ORDER BY src.updated_at DESC,src.id DESC LIMIT 1");
+    $stmt->execute([$ownerUserId,$memberUserId,'workspace:'.$ownerUserId]);$merchantId=(int)$stmt->fetchColumn();
     if($merchantId<1)return;
     $next=$status==='active'?'active':($status==='suspended'?'suspended':'removed');
     campaigns_rewards_set_access_source_v100($pdo,$merchantId,$memberUserId,'team','workspace:'.$ownerUserId,'merchant_team',$next,$ownerUserId);
