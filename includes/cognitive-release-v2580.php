@@ -55,6 +55,7 @@ function vp3_cognitive_release_manifest_v2580(): array
             'expected_value_is_frozen_from_settled_decision_snapshot'=>true,
             'one_latest_settled_snapshot_per_value_profile_drives_reliability'=>true,
             'zero_actual_or_realized_ratio_is_valid_evidence'=>true,
+            'zero_prediction_positive_actual_is_underprediction_evidence'=>true,
             'minimum_evidence_before_calibration'=>true,
             'forecast_factor_bounds'=>'0.75_to_1.35',
             'cost_factor_bounds'=>'0.75_to_1.35',
