@@ -12,6 +12,11 @@ function vp3_plugin_catalog_v320(): array
             'description'=>'Tracks, albums, releases, team collaboration, production and music-supervisor tools.',
             'entitlement'=>'music_workspace.access',
         ],
+        'campaigns_rewards'=>[
+            'label'=>'Campaigns & Rewards',
+            'description'=>'Merchant accounts, campaigns, rewards, claim codes, customers, landing pages and reporting.',
+            'entitlement'=>'',
+        ],
     ];
 }
 
