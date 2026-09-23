@@ -1,0 +1,95 @@
+name: Campaigns & Rewards V1.10
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+on:
+  push:
+    branches:
+      - main
+      - campaigns-rewards-v110-reward-tray
+  pull_request:
+    paths:
+      - 'campaigns.php'
+      - 'rewards.php'
+      - 'rewards-wallet.php'
+      - 'campaign-claim.php'
+      - 'campaigns-v100.css'
+      - 'reward-tray-v110.css'
+      - 'reward-tray-v110.js'
+      - 'reward-qr-v110.js'
+      - 'api/reward-tray-v110.php'
+      - 'includes/campaigns-rewards-*.php'
+      - 'includes/member-navigation.php'
+      - 'includes/main-sidebar.php'
+      - 'includes/bootstrap.php'
+      - 'includes/cognitive-domain-registry-v2600.php'
+      - 'chat.php'
+      - 'setup.php'
+      - 'upgrade.php'
+      - 'tests/campaigns-rewards-v100.*'
+      - 'tests/campaigns-rewards-v110.*'
+      - 'tests/main-feed-canonical-ui-contract.mjs'
+      - 'tests/member-sidebar-shell-contract.mjs'
+      - 'tests/profile-visitor-crm-v243.mjs'
+      - 'tools/run_recovery_baseline.py'
+      - '.github/workflows/campaigns-rewards-v110.yml'
+      - '.github/workflows/production-deploy-package.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    name: Campaigns & Rewards V1.10 · PHP ${{ matrix.php }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.1','8.3']
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: PHP syntax
+        run: |
+          php -l includes/campaigns-rewards-platform-v100.php
+          php -l includes/campaigns-rewards-domain-v100.php
+          php -l includes/campaigns-rewards-v110.php
+          php -l includes/campaigns-rewards-release-v110.php
+          php -l api/reward-tray-v110.php
+          php -l campaigns.php
+          php -l rewards.php
+          php -l rewards-wallet.php
+          php -l campaign-claim.php
+          php -l includes/member-navigation.php
+          php -l includes/main-sidebar.php
+          php -l includes/bootstrap.php
+          php -l setup.php
+          php -l upgrade.php
+      - name: JavaScript syntax
+        run: |
+          node --check reward-tray-v110.js
+          node --check reward-qr-v110.js
+          node --check tests/campaigns-rewards-v110.mjs
+      - name: V1 retained contract
+        run: |
+          php tests/campaigns-rewards-v100.php
+          node tests/campaigns-rewards-v100.mjs
+      - name: V1.10 Rewards workspace and tray
+        run: |
+          php tests/campaigns-rewards-v110.php
+          node tests/campaigns-rewards-v110.mjs
+      - name: Sidebar and CRM integration contracts
+        run: |
+          node tests/profile-visitor-crm-v243.mjs
+          node tests/main-feed-canonical-ui-contract.mjs
+          node tests/member-sidebar-shell-contract.mjs
