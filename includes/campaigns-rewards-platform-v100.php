@@ -172,6 +172,10 @@ function campaigns_rewards_platform_ensure_schema_v100(?PDO $pdo=null): void
       id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,public_id CHAR(36) NOT NULL,merchant_id BIGINT UNSIGNED NOT NULL,name VARCHAR(190) NOT NULL,location_type VARCHAR(30) NOT NULL DEFAULT 'store',address1 VARCHAR(190) NOT NULL DEFAULT '',address2 VARCHAR(190) NOT NULL DEFAULT '',city VARCHAR(120) NOT NULL DEFAULT '',region VARCHAR(120) NOT NULL DEFAULT '',postal_code VARCHAR(40) NOT NULL DEFAULT '',country VARCHAR(80) NOT NULL DEFAULT 'US',phone VARCHAR(80) NOT NULL DEFAULT '',timezone VARCHAR(80) NOT NULL DEFAULT 'UTC',is_primary TINYINT(1) NOT NULL DEFAULT 0,is_active TINYINT(1) NOT NULL DEFAULT 1,metadata_json LONGTEXT NULL,created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       UNIQUE KEY uq_merchant_location_public (public_id),INDEX idx_merchant_location (merchant_id,is_active,name,id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+    if(function_exists('column_exists')&&!column_exists('merchant_locations','is_primary')){
+        $pdo->exec("ALTER TABLE merchant_locations ADD COLUMN is_primary TINYINT(1) NOT NULL DEFAULT 0 AFTER timezone");
+    }
+
     $exec("CREATE TABLE IF NOT EXISTS merchant_member_locations (
       merchant_member_id BIGINT UNSIGNED NOT NULL,location_id BIGINT UNSIGNED NOT NULL,role_key VARCHAR(80) NULL,created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,PRIMARY KEY(merchant_member_id,location_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
