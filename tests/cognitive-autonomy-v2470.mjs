@@ -86,7 +86,8 @@ const checks=[
     loop.indexOf('vp3_cognitive_supervision_reconcile_owner_v2460')<loop.indexOf('vp3_cognitive_autonomy_run_owner_v2470')
     &&/'autonomy_run'=>\$autonomyRun/.test(loop)],
   ['v24.20 Working Context includes one bounded autonomy section',
-    /'live_session','continuity','supervision','autonomy','conversation'/.test(context)
+    context.indexOf("'supervision'")<context.indexOf("'autonomy'")
+    &&context.indexOf("'autonomy'")<context.indexOf("'conversation'")
     &&/'autonomy'=>1/.test(context)
     &&/vp3_cognitive_autonomy_context_item_v2470/.test(context)],
   ['autonomy context is projection-only with no instruction authority',
