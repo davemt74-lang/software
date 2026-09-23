@@ -387,6 +387,10 @@
     const valueRoi = brain.value_roi || {};
     const valueGoals = Array.isArray(valueRoi.goals) ? valueRoi.goals : [];
     const valueProfiles = Array.isArray(valueRoi.profiles) ? valueRoi.profiles : [];
+    const decisionCalibration = brain.decision_calibration || {};
+    const decisionFactors = decisionCalibration.calibration || {};
+    const decisionAccuracy = decisionCalibration.accuracy || {};
+    const decisionRecent = Array.isArray(decisionCalibration.recent) ? decisionCalibration.recent : [];
     const autonomyItems = Array.isArray(autonomy.items) ? autonomy.items : [];
     const supervisionIssues = Array.isArray(supervision.issues) ? supervision.issues : [];
     const supervisionByRef = new Map(supervisionIssues.map(item => [String(item.continuity_ref || ''), item]));
@@ -608,6 +612,34 @@
           }).join('')}
         </div>` : ''}
         <div class="chat-activity-section-head"><a href="${esc(valueRoi.manage_url || '/outcome-value.php')}">Manage Outcome Value ↗</a></div>
+      </section>` : ''}
+      ${decisionCalibration.ready ? `
+      <section class="chat-activity-section">
+        <div class="chat-activity-section-head">
+          <div><strong>Portfolio Decision Calibration</strong><span>v25.80 compares prior numeric portfolio decisions with later canonical outcomes. It keeps raw estimates, requires five independent evidence units per factor, and cannot change execution authority.</span></div>
+        </div>
+        <div class="chat-brain-metrics">
+          ${brainMetric('Settled goals', Number(decisionAccuracy.settled_goals || 0))}
+          ${brainMetric('Forecast window hit', decisionAccuracy.forecast_window_hit_rate === null || decisionAccuracy.forecast_window_hit_rate === undefined ? 'n/a' : (Number(decisionAccuracy.forecast_window_hit_rate) * 100).toFixed(0) + '%')}
+          ${brainMetric('Cloud forecast factor', Number(decisionFactors.forecast?.cloud?.factor || 1).toFixed(2) + '×')}
+          ${brainMetric('Cloud cost factor', Number(decisionFactors.cost?.cloud?.factor || 1).toFixed(2) + '×')}
+          ${brainMetric('Cloud token factor', Number(decisionFactors.tokens?.cloud?.factor || 1).toFixed(2) + '×')}
+          ${brainMetric('Value reliability', Number(decisionFactors.value?.money?.factor || 1).toFixed(2) + '×')}
+        </div>
+        ${decisionRecent.length ? `<div class="chat-brain-memory-list">
+          ${decisionRecent.slice(0,6).map(row => {
+            const settled = !!row.settled_at;
+            const err = row.forecast_error_seconds === null || row.forecast_error_seconds === undefined ? 'pending' : `${Math.round(Math.abs(Number(row.forecast_error_seconds)) / 3600)}h forecast error`;
+            const meta = (() => { try { return JSON.parse(row.metadata_json || '{}'); } catch (_) { return {}; } })();
+            return `<article>
+              <span>${settled ? 'settled' : 'open'} · ${esc(row.executor || 'cloud')} · goal #${Number(row.goal_id || 0)}</span>
+              <strong>${esc(meta.title || ('Goal #' + Number(row.goal_id || 0)))}</strong>
+              <p>${esc(err)}${row.forecast_window_hit === null || row.forecast_window_hit === undefined ? '' : (Number(row.forecast_window_hit) ? ' · inside calibrated window' : ' · outside calibrated window')}</p>
+              <small>forecast ×${Number(row.forecast_calibration_factor || 1).toFixed(2)} · cost ×${Number(row.cost_calibration_factor || 1).toFixed(2)} · token ×${Number(row.token_calibration_factor || 1).toFixed(2)} · value ×${Number(row.value_reliability_factor || 1).toFixed(2)}</small>
+            </article>`;
+          }).join('')}
+        </div>` : ''}
+        <div class="chat-activity-section-head"><a href="${esc(decisionCalibration.manage_url || '/decision-calibration.php')}">Decision Calibration Details ↗</a></div>
       </section>` : ''}
       ${(economicsUsage.available || economicsQuota.available || economicsGoals.length) ? `
       <section class="chat-activity-section">

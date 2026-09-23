@@ -1,0 +1,121 @@
+<?php
+declare(strict_types=1);
+
+/**
+ * VP3 Cognitive Runtime v25.80 — Portfolio Learning & Decision Calibration release gate.
+ */
+const VP3_COGNITIVE_RELEASE_V2580='vp3-cognitive-decision-calibration-release-v2580-20260923';
+
+function vp3_cognitive_release_manifest_v2580(): array
+{
+    return [
+        'build'=>VP3_COGNITIVE_RELEASE_V2580,
+        'release_phase'=>'v25.80',
+        'previous_release'=>'v25.70',
+        'scope'=>'portfolio_learning_and_decision_calibration',
+        'durable_calibration'=>[
+            'snapshots'=>'cognitive_decision_snapshots_v2580_append_only',
+            'settlements'=>'cognitive_decision_settlements_v2580_append_only',
+            'goal_outcomes'=>'agent_goal_review_v1714',
+            'usage_cost'=>'ai_execution_ledger_v032',
+            'value_evidence'=>'cognitive_value_roi_v2570',
+        ],
+        'authority_chain'=>[
+            'decision_calibration'=>'cognitive_decision_calibration_v2580',
+            'outcome_value_roi'=>'cognitive_value_roi_v2570',
+            'budget_governance'=>'cognitive_budget_governance_v2560',
+            'economics'=>'cognitive_economics_v2550_projection',
+            'commitment_protection'=>'cognitive_commitment_protection_v2540',
+            'replanning'=>'cognitive_replanning_v2530_recovery_overlay',
+            'resource_budget'=>'cognitive_resource_budget_v2520_admission_policy',
+            'strategic_optimization'=>'cognitive_optimization_v2510_projection_only',
+            'forecast_and_sequence'=>'cognitive_forecast_v2490',
+            'portfolio_admission'=>'cognitive_portfolio_v2480',
+            'claims_leases_execution_receipts'=>'agent_job_engine_v1900',
+        ],
+        'invariants'=>[
+            'second_relevance_learner'=>false,
+            'v540_remains_relevance_learning_authority'=>true,
+            'v2350_remains_proactive_presentation_calibration_authority'=>true,
+            'second_outcome_ledger'=>false,
+            'second_usage_ledger'=>false,
+            'second_billing_ledger'=>false,
+            'second_scheduler'=>false,
+            'second_job_queue'=>false,
+            'second_worker'=>false,
+            'second_lease_system'=>false,
+            'second_receipt_ledger'=>false,
+            'snapshots_are_append_only_decision_evidence'=>true,
+            'settlements_are_append_only_derived_calibration_evidence'=>true,
+            'canonical_goal_outcome_is_not_rewritten'=>true,
+            'canonical_usage_is_not_rewritten'=>true,
+            'canonical_value_evidence_is_not_rewritten'=>true,
+            'one_latest_settlement_per_goal_drives_forecast_cost_token_factors'=>true,
+            'latest_canonical_verified_value_drives_value_reliability'=>true,
+            'expected_value_is_frozen_from_settled_decision_snapshot'=>true,
+            'one_latest_settled_snapshot_per_value_profile_drives_reliability'=>true,
+            'zero_actual_or_realized_ratio_is_valid_evidence'=>true,
+            'zero_prediction_positive_actual_is_underprediction_evidence'=>true,
+            'minimum_evidence_before_calibration'=>true,
+            'forecast_factor_bounds'=>'0.75_to_1.35',
+            'cost_factor_bounds'=>'0.75_to_1.35',
+            'token_factor_bounds'=>'0.75_to_1.35',
+            'value_reliability_bounds'=>'0.70_to_1.15',
+            'raw_forecast_is_retained'=>true,
+            'raw_cost_projection_is_retained'=>true,
+            'raw_token_projection_is_retained'=>true,
+            'cost_token_projection_capture_does_not_require_budget_or_value_profile'=>true,
+            'projection_capture_does_not_create_governance_policy'=>true,
+            'user_expected_value_is_not_rewritten'=>true,
+            'hard_budget_authority_unchanged'=>true,
+            'commitment_authority_unchanged'=>true,
+            'manual_work_not_reordered_by_calibration'=>true,
+            'supervised_work_not_reordered_by_calibration'=>true,
+            'calibration_cannot_make_ineligible_work_eligible'=>true,
+            'calibration_cannot_change_executor'=>true,
+            'calibration_cannot_change_deadline'=>true,
+            'calibration_cannot_change_approval'=>true,
+            'calibration_cannot_change_budget_or_tokens'=>true,
+            'calibration_cannot_claim_or_execute'=>true,
+            'resource_decision_metrics_are_descriptive_not_causal'=>true,
+            'v2570_remains_value_authority'=>true,
+            'v2560_remains_budget_authority'=>true,
+            'v2540_remains_commitment_authority'=>true,
+            'v2530_remains_replanning_authority'=>true,
+            'v2520_remains_capacity_reservation_authority'=>true,
+            'v2480_remains_portfolio_admission_authority'=>true,
+            'phase19_remains_claim_lease_execution_receipt_authority'=>true,
+            'agent_brain_uses_same_calibration_projection'=>true,
+            'agent_brief_uses_same_calibration_projection'=>true,
+            'proactive_now_uses_same_calibration_projection'=>true,
+            'working_context_includes_bounded_calibration_projection'=>true,
+            'history_remains_canonical_chat_history'=>true,
+            'model_reasoning_persisted'=>false,
+        ],
+    ];
+}
+
+function vp3_cognitive_release_readiness_v2580(?PDO $pdo=null): array
+{
+    $pdo=$pdo?:db();
+    $checks=[
+        'v2570_ready'=>function_exists('vp3_cognitive_release_readiness_v2570'),
+        'decision_schema_ready'=>function_exists('vp3_cognitive_decision_schema_ready_v2580')&&vp3_cognitive_decision_schema_ready_v2580($pdo),
+        'decision_runtime_loaded'=>function_exists('vp3_cognitive_decision_refresh_v2580'),
+        'forecast_calibration_loaded'=>function_exists('vp3_cognitive_decision_factor_v2580'),
+        'value_preserved'=>function_exists('vp3_cognitive_value_apply_v2570'),
+        'budget_preserved'=>function_exists('vp3_cognitive_budget_apply_v2560'),
+        'commitments_preserved'=>function_exists('vp3_cognitive_commitment_apply_v2540'),
+        'replanning_preserved'=>function_exists('vp3_cognitive_replanning_overlay_v2530'),
+        'resource_budget_preserved'=>function_exists('vp3_cognitive_resource_budget_plan_v2520'),
+        'portfolio_admission_preserved'=>function_exists('vp3_cognitive_portfolio_claim_admission_v2480'),
+        'phase19_claimant_preserved'=>function_exists('agent_job_claim_next_v1900'),
+        'working_context_preserved'=>function_exists('vp3_cognitive_context_assemble_v2420'),
+    ];
+    return [
+        'build'=>VP3_COGNITIVE_RELEASE_V2580,
+        'ready'=>!in_array(false,$checks,true),
+        'checks'=>$checks,
+        'authority'=>'diagnostic_only',
+    ];
+}

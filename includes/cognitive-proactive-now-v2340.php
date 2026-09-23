@@ -162,6 +162,12 @@ function vp3_cognitive_proactive_now_compose_v2340(
     $valueRoi=function_exists('vp3_cognitive_value_activity_projection_v2570')
         ?vp3_cognitive_value_activity_projection_v2570($pdo,$user,$namespace)
         :['configured'=>false,'focus'=>null,'goals'=>[],'profiles'=>[],'counts'=>[],'calibration'=>[],'manage_url'=>''];
+    $decisionCalibration=function_exists('vp3_cognitive_decision_activity_projection_v2580')
+        ?vp3_cognitive_decision_activity_projection_v2580($pdo,$user,$namespace,[
+            'portfolio'=>$portfolio,'forecast'=>$forecast,'resource_budget'=>$resourceBudget,
+            'replanning'=>$replanning,'value_roi'=>$valueRoi,
+        ])
+        :['ready'=>false,'calibration'=>[],'accuracy'=>[],'recent'=>[],'manage_url'=>''];
     $voiceEnabled=false;
     if(function_exists('chat_settings_get_v237')){
         try{$voiceEnabled=!empty(chat_settings_get_v237($pdo,(int)($user['id']??0))['agent_voice_enabled']);}
@@ -249,6 +255,13 @@ function vp3_cognitive_proactive_now_compose_v2340(
             'calibration'=>$valueRoi['calibration']??[],
             'manage_url'=>$valueRoi['manage_url']??'',
         ],
+        'decision_calibration'=>[
+            'ready'=>!empty($decisionCalibration['ready']),
+            'calibration'=>$decisionCalibration['calibration']??[],
+            'accuracy'=>$decisionCalibration['accuracy']??[],
+            'recent'=>$decisionCalibration['recent']??[],
+            'manage_url'=>$decisionCalibration['manage_url']??'',
+        ],
         'voice'=>[
             'enabled'=>$voiceEnabled,
             'delivery_authority'=>'cognitive_presentation_v510_and_extension_notifications_v2140',
@@ -277,6 +290,7 @@ function vp3_cognitive_proactive_now_compose_v2340(
             'economics'=>'cognitive_economics_v2550',
             'budget_governance'=>'cognitive_budget_governance_v2560',
             'value_roi'=>'cognitive_value_roi_v2570',
+            'decision_calibration'=>'cognitive_decision_calibration_v2580',
             'automatic_external_writes'=>false,
             'approval_bypass'=>false,
             'execution_bypass'=>false,

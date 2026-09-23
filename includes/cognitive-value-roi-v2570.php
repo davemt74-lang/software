@@ -555,22 +555,25 @@ function vp3_cognitive_value_roi_percent_v2570(?int $valueMicros,?int $costMicro
 }
 
 function vp3_cognitive_value_planning_adjustment_v2570(
-    array $item,array $profile,?int $expectedCostMicros
+    array $item,array $profile,?int $expectedCostMicros,float $reliabilityFactor=1.0
 ): float {
     if((string)($item['execution_mode']??'manual')!=='autonomous')return 0.0;
     if(!empty($item['budget_hard_hold']))return 0.0;
     if((float)($item['commitment_protection_score']??0)>=0.65)return 0.0;
     $kind=(string)($profile['value_kind']??'score');
+    $reliabilityFactor=max(0.70,min(1.15,$reliabilityFactor));
     if($kind==='score'){
         $score=max(0,min(100,(int)($profile['expected_score']??50)));
-        return round(max(-0.08,min(0.08,(($score-50)/50)*0.08)),4);
+        $base=max(-0.08,min(0.08,(($score-50)/50)*0.08));
+        return round(max(-0.08,min(0.08,$base*$reliabilityFactor)),4);
     }
     $currency=strtoupper((string)($profile['currency']??''));
     $value=$profile['expected_value_micros']===null?null:max(0,(int)$profile['expected_value_micros']);
     if($currency!=='USD'||$value===null||$expectedCostMicros===null||$expectedCostMicros<=0)return 0.0;
     $ratio=max(0.0,$value/$expectedCostMicros);
     $efficiency=$ratio/(1.0+$ratio);
-    return round(max(-0.08,min(0.08,($efficiency-0.5)*0.16)),4);
+    $base=max(-0.08,min(0.08,($efficiency-0.5)*0.16));
+    return round(max(-0.08,min(0.08,$base*$reliabilityFactor)),4);
 }
 
 function vp3_cognitive_value_item_at_risk_v2570(array $item): bool
@@ -619,6 +622,16 @@ function vp3_cognitive_value_apply_v2570(
     $profileMap=vp3_cognitive_value_profile_map_v2570($profiles);
     $econByGoal=[];foreach((array)($economics['goals']??[]) as $row)if(is_array($row))$econByGoal[(int)($row['goal_id']??0)]=$row;
     $accountUsage=(array)($economics['usage']??[]);
+    $decisionCalibration=[
+        'cost'=>function_exists('vp3_cognitive_decision_factor_v2580')
+            ?vp3_cognitive_decision_factor_v2580($pdo,$user,'cost','cloud'):['factor'=>1.0,'sample_count'=>0],
+        'tokens'=>function_exists('vp3_cognitive_decision_factor_v2580')
+            ?vp3_cognitive_decision_factor_v2580($pdo,$user,'tokens','cloud'):['factor'=>1.0,'sample_count'=>0],
+        'value_money'=>function_exists('vp3_cognitive_decision_factor_v2580')
+            ?vp3_cognitive_decision_factor_v2580($pdo,$user,'value_money'):['factor'=>1.0,'sample_count'=>0],
+        'value_score'=>function_exists('vp3_cognitive_decision_factor_v2580')
+            ?vp3_cognitive_decision_factor_v2580($pdo,$user,'value_score'):['factor'=>1.0,'sample_count'=>0],
+    ];
     $conversionEvidence=vp3_cognitive_value_profile_conversion_batch_v2570($pdo,$uid,$profiles);
     $goalRows=[];$resolutions=[];$profileUsage=[];
     foreach($items as $item){
@@ -648,8 +661,11 @@ function vp3_cognitive_value_apply_v2570(
         $historical=$econ?max(0,(int)($econ['attributed_known_cost_micros']??0)):0;
         $historicalUnknown=$econ?max(0,(int)($econ['unknown_cost_requests']??0)):0;
         $remaining=function_exists('vp3_cognitive_budget_goal_projection_v2560')
-            ?vp3_cognitive_budget_goal_projection_v2560($item,$econ,$accountUsage)
-            :['cost_micros'=>null,'cost_known'=>false,'tokens'=>null,'tokens_known'=>false];
+            ?vp3_cognitive_budget_goal_projection_v2560(
+                $item,$econ,$accountUsage,
+                ['cost'=>$decisionCalibration['cost'],'tokens'=>$decisionCalibration['tokens']]
+            )
+            :['raw_cost_micros'=>null,'cost_micros'=>null,'raw_tokens'=>null,'tokens'=>null,'cost_known'=>false,'tokens_known'=>false];
         $remainingCost=$remaining['cost_micros']??null;
         $expectedCostKnown=$remainingCost!==null&&$historicalUnknown===0;
         $expectedCost=$expectedCostKnown?$historical+max(0,(int)$remainingCost):null;
@@ -664,9 +680,12 @@ function vp3_cognitive_value_apply_v2570(
             ($historicalUnknown===0&&$historical>0)?$historical:null,
             (string)($realization['currency']??$profile['currency'])
         );
-        $adjustment=$sharedInherited?0.0:vp3_cognitive_value_planning_adjustment_v2570($item,$profile,$expectedCost);
+        $valueKind=(string)($profile['value_kind']??'score');
+        $reliability=(float)($decisionCalibration[$valueKind==='money'?'value_money':'value_score']['factor']??1.0);
+        $adjustment=$sharedInherited?0.0:vp3_cognitive_value_planning_adjustment_v2570($item,$profile,$expectedCost,$reliability);
         $atRisk=!$sharedInherited&&empty($realization['verified'])&&vp3_cognitive_value_item_at_risk_v2570($item);
         $item['value_planning_adjustment']=$adjustment;
+        $item['value_reliability_factor']=round(max(0.70,min(1.15,$reliability)),4);
         $item['value_at_risk']=$atRisk;
         $item['expected_value_micros']=$expectedMoney;
         $item['expected_value_score']=$expectedScore;
@@ -677,7 +696,13 @@ function vp3_cognitive_value_apply_v2570(
             'shared_inherited'=>$sharedInherited,
             'realization'=>$realization,
             'historical_cost_micros'=>$historical,'historical_unknown_cost_requests'=>$historicalUnknown,
+            'raw_projected_remaining_cost_micros'=>$remaining['raw_cost_micros']??null,
             'projected_remaining_cost_micros'=>$remainingCost,
+            'raw_projected_remaining_tokens'=>$remaining['raw_tokens']??null,
+            'projected_remaining_tokens'=>$remaining['tokens']??null,
+            'cost_calibration_factor'=>(float)($remaining['cost_calibration_factor']??1.0),
+            'token_calibration_factor'=>(float)($remaining['token_calibration_factor']??1.0),
+            'value_reliability_factor'=>round(max(0.70,min(1.15,$reliability)),4),
             'expected_total_cost_micros'=>$expectedCost,'expected_cost_known'=>$expectedCostKnown,
             'expected_roi_percent'=>$expectedRoi,'realized_roi_percent'=>$realizedRoi,
             'planning_adjustment'=>$adjustment,'value_at_risk'=>$atRisk,
@@ -696,6 +721,12 @@ function vp3_cognitive_value_apply_v2570(
     $calibration=[
         'money'=>vp3_cognitive_value_calibration_v2570($profileRows,'money'),
         'score'=>vp3_cognitive_value_calibration_v2570($profileRows,'score'),
+        'decision'=>[
+            'money'=>$decisionCalibration['value_money'],
+            'score'=>$decisionCalibration['value_score'],
+            'cost'=>$decisionCalibration['cost'],
+            'tokens'=>$decisionCalibration['tokens'],
+        ],
     ];
 
     usort($goalRows,static function(array $a,array $b): int {
@@ -741,6 +772,7 @@ function vp3_cognitive_value_apply_v2570(
                 'canonical_profile_revenue'=>'profile_events_profile_revenue_v180',
                 'economics'=>'cognitive_economics_v2550',
                 'budget_governance'=>'cognitive_budget_governance_v2560',
+                'decision_calibration'=>'cognitive_decision_calibration_v2580_bounded_projection',
                 'commitments'=>'cognitive_commitment_protection_v2540',
                 'portfolio_admission'=>'cognitive_portfolio_v2480',
                 'claims_leases_execution_receipts'=>'agent_job_engine_v1900',
