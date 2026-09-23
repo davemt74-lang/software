@@ -73,16 +73,16 @@ function vp3_cognitive_campaigns_rewards_contract_v2600(): array
     return [
         'id'=>'campaigns_rewards',
         'label'=>'Campaigns & Rewards',
-        'phase'=>'v26.00-reference-contract',
-        'implementation_status'=>'contract_ready',
+        'phase'=>'campaigns-rewards-v1.00',
+        'implementation_status'=>'integrated-v1.00',
         'plugin_key'=>'campaigns_rewards',
-        'plugin_catalog_registered'=>false,
-        'authority'=>[],
-        'planned_authority'=>[
-            'merchant_accounts','merchant_account_members','merchant_locations',
-            'campaigns','campaign_rewards','campaign_reward_claims','campaign_customers',
-            'campaign_activity','campaign_reporting',
+        'plugin_catalog_registered'=>true,
+        'authority'=>[
+            'campaign_merchant_accounts_v100','campaign_merchant_members_v100','campaign_merchant_locations_v100',
+            'campaigns_v100','campaign_rewards_v100','campaign_reward_claims_v100','campaign_customers_v100',
+            'campaign_activity_v100','campaign_team_scopes_v100','campaign_team_invite_scopes_v100',
         ],
+        'planned_authority'=>[],
         'objects'=>[
             'merchant_account','merchant_location','campaign','reward','reward_claim','campaign_customer',
         ],
@@ -126,9 +126,9 @@ function vp3_cognitive_campaigns_rewards_contract_v2600(): array
         'current_state'=>'cognitive_current_state_v2590',
         'presentation'=>'cognitive_presentation_firewall_v2590',
         'notes'=>[
-            'Business tables are intentionally not created by v26.00.',
-            'The Campaigns & Rewards plugin will implement these authorities against this contract.',
+            'Campaigns & Rewards V1.00 implements this domain against the v26.00 contract.',
             'CRM and Team remain independent authorities and are referenced rather than duplicated.',
+            'Plugin disable pauses surfaces without deleting merchant, campaign, reward, customer, claim or Team-scope history.',
         ],
     ];
 }
@@ -397,8 +397,9 @@ function vp3_cognitive_domain_registry_integrity_v2600(): array
         foreach((array)$definition['objects'] as $type)$objectOwners[$type][]=$domain;
     }
     $campaign=(array)($registry['domains']['campaigns_rewards']??[]);
-    if(($campaign['implementation_status']??'')!=='contract_ready')$errors[]='campaigns_rewards:not_contract_ready';
-    if(!empty($campaign['plugin_catalog_registered']))$errors[]='campaigns_rewards:premature_plugin_catalog_exposure';
+    if(!str_starts_with((string)($campaign['implementation_status']??''),'integrated'))$errors[]='campaigns_rewards:not_integrated';
+    if(empty($campaign['plugin_catalog_registered']))$errors[]='campaigns_rewards:plugin_catalog_missing';
+    if(empty($campaign['authority']))$errors[]='campaigns_rewards:missing_business_authority';
     return [
         'ok'=>$errors===[],
         'errors'=>$errors,
