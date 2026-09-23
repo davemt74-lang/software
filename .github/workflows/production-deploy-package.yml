@@ -49,8 +49,8 @@ jobs:
 
           cat > _deploy/VP3_RELEASE.json <<EOF
           {
-            "release": "Cognitive Runtime v25.40",
-            "build": "vp3-cognitive-commitment-protection-release-v2540-20260922",
+            "release": "Cognitive Runtime v25.50",
+            "build": "vp3-cognitive-cost-resource-economics-release-v2550-20260923",
             "commit": "${VP3_RELEASE_SHA}",
             "repository": "${GITHUB_REPOSITORY}",
             "workflow_run_id": "${GITHUB_RUN_ID}",
@@ -64,7 +64,7 @@ jobs:
           test -f _deploy/chat.php
           test -f _deploy/.htaccess
 
-          # v25.40 release hardening: the production artifact must contain
+          # v25.50 release hardening: the production artifact must contain
           # the canonical cognitive loop, live-session/event foundation and user surfaces.
           test -f _deploy/includes/cognitive-runtime-v500.php
           test -f _deploy/includes/cognitive-presentation-v510.php
@@ -129,6 +129,10 @@ jobs:
           test -f _deploy/includes/cognitive-release-v2530.php
           test -f _deploy/includes/cognitive-commitment-protection-v2540.php
           test -f _deploy/includes/cognitive-release-v2540.php
+          test -f _deploy/includes/cognitive-economics-v2550.php
+          test -f _deploy/includes/cognitive-release-v2550.php
+          test -f _deploy/includes/ai-usage-accounting-v032.php
+          test -f _deploy/includes/subscription-quota.php
           test -f _deploy/includes/agent-goal-commitments-v1715.php
           test -f _deploy/includes/agent-memory-lifecycle-v123.php
           test -f _deploy/includes/video-meetings-commitment-command-v18230.php
