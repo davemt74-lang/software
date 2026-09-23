@@ -82,7 +82,7 @@ async function prepareClaim(id){
  try{
    const data=await post({action:'prepare_claim',issuance_id:id});claimCtx=data.claim||null;if(!claimCtx)throw new Error('Claim preparation failed.');
    qs('#rewardClaimName').textContent=claimCtx.reward_name||'Reward';qs('#rewardClaimMerchant').textContent=claimCtx.merchant_name||'';
-   const qr=qs('#rewardClaimQr');qr.innerHTML='';if(window.VP3RewardQR)window.VP3RewardQR.render(qr,claimCtx.qr_payload,{scale:5});
+   const qr=qs('#rewardClaimQr');qr.innerHTML='';if(window.VP3RewardQR){const qrUrl=new URL(claimCtx.claim_terminal_url||'/campaign-claim.php',window.location.origin);qrUrl.hash='reward='+encodeURIComponent(String(claimCtx.credential||''));window.VP3RewardQR.render(qr,qrUrl.href,{scale:5});}
    const form=qs('#rewardClaimForm');form.reset();form.elements.issuance_id.value=String(id);
    form.elements.location_id.innerHTML='<option value="">No location</option>'+((claimCtx.locations||[]).map(l=>'<option value="'+Number(l.id)+'">'+esc(l.name)+'</option>').join(''));
    const can=!!claimCtx.can_process;form.elements.merchant_claim_code.disabled=!can;form.elements.location_id.disabled=!can;form.elements.order_ref.disabled=!can;form.querySelector('[type=submit]').disabled=!can;
