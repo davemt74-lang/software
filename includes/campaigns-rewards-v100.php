@@ -633,24 +633,40 @@ function campaigns_rewards_save_reward_v100(PDO $pdo,int $campaignId,int $actorU
 function campaigns_rewards_campaign_by_slug_v100(PDO $pdo,string $slug,bool $publicOnly=true): ?array
 {
     $slug=campaigns_rewards_slug_v100($slug);if($slug==='')return null;
-    $sql="SELECT c.*,m.public_id merchant_public_id,m.owner_user_id,m.profile_user_id,m.name merchant_name,m.slug merchant_slug,m.description merchant_description,m.website_url merchant_website_url,m.contact_email merchant_contact_email,m.contact_phone merchant_contact_phone,
-      l.public_id location_public_id,l.name location_name,l.address_line1,l.address_line2,l.city,l.region,l.postal_code,l.country,l.phone location_phone,
+    $sql="SELECT c.*,c.merchant_id merchant_account_id,c.name title,m.public_id merchant_public_id,m.owner_user_id,m.owner_user_id profile_user_id,
+      m.name merchant_name,m.slug merchant_slug,mp.description merchant_description,mp.website_url merchant_website_url,mp.public_contact_json,
+      lp.subheadline subtitle,lp.cta_label,lp.terms_json,lp.visibility,lp.is_published,lp.published_at,
       u.display_name profile_display_name,u.avatar_path profile_avatar_path,p.username profile_username,p.is_public profile_is_public
-      FROM campaigns_v100 c INNER JOIN campaign_merchant_accounts_v100 m ON m.id=c.merchant_account_id AND m.status='active'
-      LEFT JOIN campaign_merchant_locations_v100 l ON l.id=c.location_id LEFT JOIN users u ON u.id=m.profile_user_id LEFT JOIN user_profiles p ON p.user_id=m.profile_user_id WHERE c.slug=?";
-    if($publicOnly)$sql.=" AND c.status='active' AND (c.starts_at IS NULL OR c.starts_at<=UTC_TIMESTAMP()) AND (c.ends_at IS NULL OR c.ends_at>UTC_TIMESTAMP())";
-    $stmt=$pdo->prepare($sql.' LIMIT 1');$stmt->execute([$slug]);$row=$stmt->fetch();if(!$row||!campaigns_rewards_owner_plugin_enabled_v100($pdo,(int)$row['owner_user_id']))return null;return $row;
+      FROM campaigns c INNER JOIN merchant_accounts m ON m.id=c.merchant_id AND m.status='active'
+      INNER JOIN campaign_landing_pages lp ON lp.campaign_id=c.id
+      LEFT JOIN merchant_profiles mp ON mp.merchant_id=m.id LEFT JOIN users u ON u.id=m.owner_user_id
+      LEFT JOIN user_profiles p ON p.user_id=m.owner_user_id WHERE c.slug=?";
+    if($publicOnly)$sql.=" AND c.status='active' AND c.environment='production' AND lp.is_published=1 AND lp.visibility<>'private'
+      AND (c.starts_at IS NULL OR c.starts_at<=UTC_TIMESTAMP()) AND (c.ends_at IS NULL OR c.ends_at>UTC_TIMESTAMP())";
+    $stmt=$pdo->prepare($sql.' ORDER BY c.id DESC LIMIT 1');$stmt->execute([$slug]);$row=$stmt->fetch();if(!$row)return null;
+    if(function_exists('campaigns_rewards_owner_plugin_enabled_v100')&&!campaigns_rewards_owner_plugin_enabled_v100($pdo,(int)$row['owner_user_id']))return null;
+    $contact=json_decode((string)($row['public_contact_json']??''),true);if(!is_array($contact))$contact=[];
+    $row['merchant_contact_email']=(string)($contact['email']??'');$row['merchant_contact_phone']=(string)($contact['phone']??'');
+    $terms=json_decode((string)($row['terms_json']??''),true);$row['terms']=is_array($terms)?(string)($terms['text']??''):'';
+    $bind=$pdo->prepare("SELECT ml.* FROM campaigns_rewards_object_bindings b INNER JOIN merchant_locations ml ON ml.id=CAST(b.target_id AS UNSIGNED)
+      WHERE b.merchant_id=? AND b.subject_type='campaign' AND b.subject_id=? AND b.purpose='location' AND ml.merchant_id=b.merchant_id LIMIT 1");
+    $bind->execute([(int)$row['merchant_id'],(int)$row['id']]);$loc=$bind->fetch()?:[];
+    $row['location_id']=$loc['id']??null;$row['location_public_id']=$loc['public_id']??null;$row['location_name']=$loc['name']??'';
+    $row['address_line1']=$loc['address1']??'';$row['address_line2']=$loc['address2']??'';$row['city']=$loc['city']??'';$row['region']=$loc['region']??'';$row['postal_code']=$loc['postal_code']??'';$row['country']=$loc['country']??'';$row['location_phone']=$loc['phone']??'';
+    return $row;
 }
 
 function campaigns_rewards_profile_campaigns_v100(PDO $pdo,int $profileUserId,int $limit=24): array
 {
-    if($profileUserId<1||!campaigns_rewards_schema_ready_v100($pdo))return [];$limit=max(1,min(50,$limit));
-    $stmt=$pdo->prepare("SELECT c.id,c.public_id,c.slug,c.title,c.subtitle,c.description,c.cta_label,c.ends_at,m.id merchant_account_id,m.public_id merchant_public_id,m.owner_user_id,m.name merchant_name
-      FROM campaigns_v100 c INNER JOIN campaign_merchant_accounts_v100 m ON m.id=c.merchant_account_id
-      WHERE m.profile_user_id=? AND m.status='active' AND c.profile_visible=1 AND c.status='active'
-        AND (c.starts_at IS NULL OR c.starts_at<=UTC_TIMESTAMP()) AND (c.ends_at IS NULL OR c.ends_at>UTC_TIMESTAMP())
-      ORDER BY c.published_at DESC,c.id DESC LIMIT {$limit}");
-    $stmt->execute([$profileUserId]);$rows=[];foreach($stmt->fetchAll()?:[] as $row)if(campaigns_rewards_owner_plugin_enabled_v100($pdo,(int)$row['owner_user_id']))$rows[]=$row;return $rows;
+    if($profileUserId<1)return [];$limit=max(1,min(50,$limit));
+    if(!function_exists('campaigns_rewards_profile_campaigns_platform_v100'))return [];
+    $rows=array_slice(campaigns_rewards_profile_campaigns_platform_v100($pdo,$profileUserId),0,$limit);$out=[];
+    foreach($rows as $row){
+        $row['merchant_account_id']=(int)$row['merchant_id'];$row['owner_user_id']=$profileUserId;
+        $row['title']=$row['name'];$row['subtitle']=$row['subheadline']??'';$row['cta_label']=$row['cta_label']??'View campaign';
+        $out[]=$row;
+    }
+    return $out;
 }
 
 function campaigns_rewards_campaign_url_v100(string $slug): string{return url('/campaign/'.rawurlencode(campaigns_rewards_slug_v100($slug)));}
@@ -659,20 +675,17 @@ function campaigns_rewards_claim_url_v100(string $code): string{return url('/cam
 function campaigns_rewards_customer_upsert_v100(PDO $pdo,array $campaign,string $name,string $email,string $phone=''): array
 {
     $email=strtolower(trim($email));if(!filter_var($email,FILTER_VALIDATE_EMAIL))throw new RuntimeException('Enter a valid email address.');
-    $name=campaigns_rewards_text_v100($name,190);if($name==='')$name=$email;$phone=campaigns_rewards_text_v100($phone,80);$merchantId=(int)$campaign['merchant_account_id'];$campaignId=(int)$campaign['id'];$crmContactId=null;
-    if(function_exists('crm_v180_schema_ready')&&crm_v180_schema_ready($pdo)&&function_exists('crm_v180_upsert_contact')){
-        try{
-            $existingCrm=$pdo->prepare('SELECT id FROM crm_contacts WHERE email_normalized=? LIMIT 1');
-            $existingCrm->execute([$email]);$crmContactId=(int)$existingCrm->fetchColumn();
-            if($crmContactId<1)$crmContactId=crm_v180_upsert_contact($pdo,['name'=>$name,'email'=>$email,'phone'=>$phone,'company'=>(string)$campaign['merchant_name'],'source'=>'campaigns_rewards']);
-        }catch(Throwable $e){$crmContactId=null;}
-    }
-    $public=campaigns_rewards_uuid_v100();$stmt=$pdo->prepare("INSERT INTO campaign_customers_v100
-      (public_id,merchant_account_id,crm_contact_id,email,email_normalized,name,phone,first_campaign_id,last_campaign_id,first_engaged_at,last_engaged_at)
-      VALUES (?,?,?,?,?,?,?,?,?,UTC_TIMESTAMP(),UTC_TIMESTAMP())
-      ON DUPLICATE KEY UPDATE crm_contact_id=COALESCE(VALUES(crm_contact_id),crm_contact_id),email=VALUES(email),name=VALUES(name),phone=IF(VALUES(phone)<>'',VALUES(phone),phone),last_campaign_id=VALUES(last_campaign_id),last_engaged_at=UTC_TIMESTAMP(),updated_at=UTC_TIMESTAMP()");
-    $stmt->execute([$public,$merchantId,$crmContactId,$email,$email,$name,$phone,$campaignId,$campaignId]);$find=$pdo->prepare('SELECT * FROM campaign_customers_v100 WHERE merchant_account_id=? AND email_normalized=? LIMIT 1');$find->execute([$merchantId,$email]);
-    return $find->fetch()?:throw new RuntimeException('Campaign customer could not be loaded.');
+    $merchantId=(int)($campaign['merchant_id']??$campaign['merchant_account_id']??0);if($merchantId<1)throw new RuntimeException('Merchant is unavailable.');
+    $userStmt=$pdo->prepare('SELECT id FROM users WHERE email=? AND is_active=1 LIMIT 1');$userStmt->execute([$email]);$vp3UserId=(int)$userStmt->fetchColumn();
+    $contact=campaigns_rewards_resolve_contact_v100($pdo,$merchantId,[
+      'name'=>$name,'email'=>$email,'phone'=>$phone,'source'=>'campaigns_rewards','vp3_user_id'=>$vp3UserId,
+    ]);
+    $relationship=campaigns_rewards_ensure_merchant_relationship_v100($pdo,$merchantId,(int)$contact['id'],[
+      'customer_status'=>'customer','acquisition_source'=>'campaign:'.(string)($campaign['public_id']??''),
+    ]);
+    return $contact+[
+      'merchant_account_id'=>$merchantId,'crm_contact_id'=>(int)$contact['id'],'relationship_id'=>(int)$relationship['id'],
+    ];
 }
 
 function campaigns_rewards_public_claim_rate_limit_v100(string $campaignPublicId): void
@@ -738,18 +751,37 @@ function campaigns_rewards_redeem_claim_v100(PDO $pdo,string $code,int $actorUse
 
 function campaigns_rewards_record_landing_view_v100(PDO $pdo,array $campaign,string $sessionKey): void
 {
-    $sessionKey=campaigns_rewards_text_v100($sessionKey,120);if($sessionKey==='')$sessionKey='anonymous';$bucket=gmdate('YmdH');$dedupe='campaign-view|'.$campaign['public_id'].'|'.hash('sha256',$sessionKey).'|'.$bucket;
-    $activityId=campaigns_rewards_record_activity_v100($pdo,(int)$campaign['merchant_account_id'],'campaign.landing_viewed',['campaign_id'=>(int)$campaign['id']],[],$dedupe);if($activityId<1)return;
-    campaigns_rewards_emit_v100($pdo,(int)$campaign['owner_user_id'],'campaign.landing_viewed',[campaigns_rewards_ref_v100('campaign',$campaign['public_id'],'public')],['campaign_id'=>$campaign['public_id']],['external_event_id'=>hash('sha256',$dedupe)]);
+    $campaignId=(int)($campaign['id']??0);$merchantId=(int)($campaign['merchant_id']??$campaign['merchant_account_id']??0);
+    if($campaignId<1||$merchantId<1)return;
+    $sessionKey=campaigns_rewards_text_v100($sessionKey,500);if($sessionKey==='')$sessionKey='anonymous';
+    $hash=hash('sha256',$sessionKey);$profileUserId=(int)($campaign['profile_user_id']??$campaign['owner_user_id']??0);
+    $pdo->prepare("INSERT INTO campaign_public_sessions
+      (campaign_id,merchant_id,profile_owner_user_id,session_hash,source,medium,referral_ref,first_seen_at,last_seen_at,view_count,metadata_json)
+      VALUES (?,?,?,?,?,?,?,UTC_TIMESTAMP(),UTC_TIMESTAMP(),1,'{}')
+      ON DUPLICATE KEY UPDATE last_seen_at=UTC_TIMESTAMP(),view_count=view_count+1")
+      ->execute([$campaignId,$merchantId,$profileUserId?:null,campaigns_rewards_text_v100($hash,64),campaigns_rewards_text_v100($_GET['utm_source']??'',120),campaigns_rewards_text_v100($_GET['utm_medium']??'',120),campaigns_rewards_text_v100($_GET['ref']??'',190)]);
+    $q=$pdo->prepare('SELECT id FROM campaign_public_sessions WHERE campaign_id=? AND session_hash=? LIMIT 1');$q->execute([$campaignId,$hash]);$sessionId=(int)$q->fetchColumn();if($sessionId<1)return;
+    $dedupe=$pdo->prepare("SELECT 1 FROM campaign_public_events WHERE campaign_id=? AND session_id=? AND event_type='landing_view' AND occurred_at>=DATE_FORMAT(UTC_TIMESTAMP(),'%Y-%m-%d %H:00:00') LIMIT 1");
+    $dedupe->execute([$campaignId,$sessionId]);if($dedupe->fetchColumn())return;
+    $pdo->prepare("INSERT INTO campaign_public_events (campaign_id,session_id,event_type,occurred_at,metadata_json) VALUES (?,?,'landing_view',UTC_TIMESTAMP(),'{}')")->execute([$campaignId,$sessionId]);
+    campaigns_rewards_activity_event_v100($pdo,$merchantId,'campaign.signup_started',['campaign_id'=>$campaignId],[
+      'summary'=>'Campaign landing viewed','merchant_public_id'=>$campaign['merchant_public_id']??'','campaign_public_id'=>$campaign['public_id']??'',
+    ],(string)($campaign['environment']??'production'),null,'system');
 }
 
 function campaigns_rewards_reporting_v100(PDO $pdo,int $merchantId,int $userId): array
 {
-    if(!campaigns_rewards_can_manage_merchant_v100($pdo,$merchantId,$userId))throw new RuntimeException('Merchant admin access is required.');
+    campaigns_rewards_platform_assert_can_v100($pdo,$merchantId,$userId,'analytics.view');
     $scalar=static function(PDO $pdo,string $sql,array $params): int{$s=$pdo->prepare($sql);$s->execute($params);return (int)$s->fetchColumn();};
-    $active=$scalar($pdo,"SELECT COUNT(*) FROM campaigns_v100 WHERE merchant_account_id=? AND status='active'",[$merchantId]);$views=$scalar($pdo,"SELECT COUNT(*) FROM campaign_activity_v100 WHERE merchant_account_id=? AND event_type='campaign.landing_viewed'",[$merchantId]);
-    $customers=$scalar($pdo,"SELECT COUNT(*) FROM campaign_customers_v100 WHERE merchant_account_id=?",[$merchantId]);$issued=$scalar($pdo,"SELECT COUNT(*) FROM campaign_reward_claims_v100 WHERE merchant_account_id=?",[$merchantId]);$redeemed=$scalar($pdo,"SELECT COUNT(*) FROM campaign_reward_claims_v100 WHERE merchant_account_id=? AND status='redeemed'",[$merchantId]);
-    return ['active_campaigns'=>$active,'landing_views'=>$views,'customers'=>$customers,'claims_issued'=>$issued,'claims_redeemed'=>$redeemed,'redemption_rate'=>$issued>0?round(($redeemed/$issued)*100,1):0.0];
+    $active=$scalar($pdo,"SELECT COUNT(*) FROM campaigns WHERE merchant_id=? AND status='active'",[$merchantId]);
+    $views=$scalar($pdo,"SELECT COUNT(*) FROM campaign_public_events pe INNER JOIN campaigns c ON c.id=pe.campaign_id WHERE c.merchant_id=? AND pe.event_type='landing_view'",[$merchantId]);
+    $customers=$scalar($pdo,"SELECT COUNT(*) FROM crm_merchant_relationships WHERE merchant_id=?",[$merchantId]);
+    $issued=$scalar($pdo,"SELECT COUNT(*) FROM reward_issuances WHERE merchant_id=?",[$merchantId]);
+    $redeemed=$scalar($pdo,"SELECT COUNT(*) FROM reward_claims WHERE merchant_id=? AND status='claimed'",[$merchantId]);
+    $sent=$scalar($pdo,"SELECT COUNT(*) FROM reward_issuances WHERE merchant_id=? AND status IN ('sent','viewed','claimed')",[$merchantId]);
+    $viewed=$scalar($pdo,"SELECT COUNT(*) FROM reward_issuances WHERE merchant_id=? AND status IN ('viewed','claimed')",[$merchantId]);
+    return ['active_campaigns'=>$active,'landing_views'=>$views,'customers'=>$customers,'claims_issued'=>$issued,'claims_redeemed'=>$redeemed,
+      'redemption_rate'=>$issued>0?round(($redeemed/$issued)*100,1):0.0,'rewards_sent'=>$sent,'rewards_viewed'=>$viewed];
 }
 
 function campaigns_rewards_merchant_members_v100(PDO $pdo,int $merchantId): array
