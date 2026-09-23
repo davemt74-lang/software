@@ -391,6 +391,8 @@
     const decisionFactors = decisionCalibration.calibration || {};
     const decisionAccuracy = decisionCalibration.accuracy || {};
     const decisionRecent = Array.isArray(decisionCalibration.recent) ? decisionCalibration.recent : [];
+    const unifiedCurrentState = brain.current_state || {};
+    const currentStateRecent = Array.isArray(unifiedCurrentState.recent) ? unifiedCurrentState.recent : [];
     const autonomyItems = Array.isArray(autonomy.items) ? autonomy.items : [];
     const supervisionIssues = Array.isArray(supervision.issues) ? supervision.issues : [];
     const supervisionByRef = new Map(supervisionIssues.map(item => [String(item.continuity_ref || ''), item]));
@@ -612,6 +614,26 @@
           }).join('')}
         </div>` : ''}
         <div class="chat-activity-section-head"><a href="${esc(valueRoi.manage_url || '/outcome-value.php')}">Manage Outcome Value ↗</a></div>
+      </section>` : ''}
+      ${unifiedCurrentState.ready ? `
+      <section class="chat-activity-section">
+        <div class="chat-activity-section-head">
+          <div><strong>Unified Current State</strong><span>v25.90 materializes bounded cross-domain state from the canonical event inbox and live session. Raw event payloads and internal reasoning are not exposed.</span></div>
+        </div>
+        <div class="chat-brain-metrics">
+          ${brainMetric('Domains', Number(unifiedCurrentState.counts?.domains || 0))}
+          ${brainMetric('Recent events', Number(unifiedCurrentState.counts?.recent_events || 0))}
+          ${brainMetric('Needs attention', Number(unifiedCurrentState.counts?.attention || 0))}
+          ${brainMetric('Session', esc(String(unifiedCurrentState.session?.status || unifiedCurrentState.activity?.state || 'idle')))}
+        </div>
+        ${currentStateRecent.length ? `<div class="chat-brain-memory-list">
+          ${currentStateRecent.slice(0,6).map(row => `<article>
+            <span>${esc(String(row.domain || 'VP3').replaceAll('_',' '))} · ${esc(row.processing_status || 'current')}</span>
+            <strong>${esc(row.label || 'Recent activity')}</strong>
+            <p>${esc(row.event_type || '')}</p>
+            <small>${row.fresh ? 'fresh' : 'older'}${row.attention ? ' · needs attention' : ''}</small>
+          </article>`).join('')}
+        </div>` : ''}
       </section>` : ''}
       ${decisionCalibration.ready ? `
       <section class="chat-activity-section">
