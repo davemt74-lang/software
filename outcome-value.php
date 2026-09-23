@@ -203,7 +203,7 @@ vp3_public_header('Outcome Value & ROI — VP3','Explicit outcome value, verifie
           <button type="button" class="secondary value-edit" data-profile="<?= e(json_encode($profile,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE)) ?>">Edit</button>
           <?php if(!empty($profile['is_active'])): ?><form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="disable_profile"><input type="hidden" name="profile_id" value="<?= $id ?>"><button type="submit" class="secondary">Disable</button></form><?php endif; ?>
         </div>
-        <?php if(!empty($profile['is_active'])): ?>
+        <?php if(!empty($profile['is_active'])&&(string)$profile['realization_mode']==='manual_confirmation'): ?>
         <form method="post" class="value-realize-form">
           <?= csrf_field() ?><input type="hidden" name="action" value="set_realized"><input type="hidden" name="profile_id" value="<?= $id ?>">
           <?php if($money): ?><input name="realized_value" inputmode="decimal" placeholder="Confirmed <?= e((string)$profile['currency']) ?> value"><?php else: ?><input name="realized_score" type="number" min="0" max="100" placeholder="Confirmed score 0–100"><?php endif; ?>
