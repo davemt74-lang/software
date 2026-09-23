@@ -14,3 +14,11 @@
 .cr-list .cr-inline{margin-top:0;align-items:center;flex-wrap:wrap}
 .cr-list .cr-inline select{min-width:160px}
 @media(max-width:800px){.cr-list article{align-items:flex-start;flex-direction:column}.cr-list .cr-inline{width:100%}.cr-list .cr-inline select{flex:1 1 180px;min-width:0}}
+/* Campaigns & Rewards V1.19 */
+.cr-mini-funnel{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}.cr-mini-funnel span{font-size:11px;color:#6b7280}.cr-mini-funnel strong{color:#111827}
+.cr-funnel{display:grid;grid-template-columns:repeat(7,minmax(92px,1fr));gap:8px;margin:14px 0}.cr-funnel article{border:1px solid #e5e7eb;border-radius:10px;padding:10px;background:#fafafa}.cr-funnel span,.cr-funnel small{display:block;color:#6b7280;font-size:11px}.cr-funnel strong{display:block;font-size:20px;margin:3px 0;color:#111827}
+.cr-ops-strip{display:flex;gap:18px;flex-wrap:wrap;padding:10px 12px;border:1px solid #e5e7eb;border-radius:10px;background:#fff}.cr-ops-strip span{font-size:12px;color:#6b7280}.cr-ops-strip strong{color:#111827}
+.cr-insights{display:grid;gap:8px;margin:14px 0}.cr-insights article{border-left:3px solid #d1d5db;padding:8px 10px;background:#fafafa;border-radius:0 8px 8px 0}.cr-insights strong,.cr-insights span{display:block}.cr-insights span{font-size:12px;color:#6b7280;margin-top:2px}
+.cr-automation-sentence{padding:11px 12px;border-radius:10px;background:#f3f4f6;font-size:13px;line-height:1.45}.cr-automation-list article{align-items:flex-start}.cr-automation-event button{white-space:normal}
+@media(max-width:980px){.cr-funnel{grid-template-columns:repeat(4,minmax(100px,1fr))}}
+@media(max-width:640px){.cr-funnel{grid-template-columns:repeat(2,minmax(0,1fr))}.cr-ops-strip{display:grid;gap:6px}.cr-mini-funnel{display:grid;grid-template-columns:repeat(2,1fr)}}
