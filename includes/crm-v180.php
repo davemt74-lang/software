@@ -246,9 +246,8 @@ function crm_v180_upsert_contact(PDO $pdo, array $data): int
     // callers may know the same email independently without duplicating it
     // across Merchant Accounts owned by that same VP3 account.
     if(function_exists('column_exists')&&column_exists('crm_contacts','owner_user_id')){
-        $where=$ownerUserId>0?'owner_user_id=?':'owner_user_id IS NULL';
-        $find=$pdo->prepare("SELECT id FROM crm_contacts WHERE {$where} AND email_normalized=? ORDER BY id LIMIT 1");
-        $find->execute($ownerUserId>0?[$ownerUserId,$email]:[$email]);
+        $find=$pdo->prepare("SELECT id FROM crm_contacts WHERE owner_user_id=? AND email_normalized=? ORDER BY id LIMIT 1");
+        $find->execute([$ownerUserId,$email]);
         $id=(int)$find->fetchColumn();
         if($id>0){
             $stmt=$pdo->prepare("UPDATE crm_contacts SET name=?,email=?,phone=CASE WHEN ?<>'' THEN ? ELSE phone END,
@@ -259,7 +258,7 @@ function crm_v180_upsert_contact(PDO $pdo, array $data): int
             $stmt=$pdo->prepare("INSERT INTO crm_contacts
               (public_id,owner_user_id,vp3_user_id,name,email,email_normalized,phone,company,source,status,lifecycle_stage,marketing_status,created_at,updated_at)
               VALUES (?,?,?,?,?,?,?,?,?,'active','','unknown',UTC_TIMESTAMP(),UTC_TIMESTAMP())");
-            $stmt->execute([function_exists('campaigns_rewards_uuid_v100')?campaigns_rewards_uuid_v100():bin2hex(random_bytes(16)),$ownerUserId?:null,$vp3UserId?:null,$name,$email,$email,$phone,$company,$source]);
+            $stmt->execute([function_exists('campaigns_rewards_uuid_v100')?campaigns_rewards_uuid_v100():bin2hex(random_bytes(16)),$ownerUserId,$vp3UserId?:null,$name,$email,$email,$phone,$company,$source]);
             $id=(int)$pdo->lastInsertId();
         }
         if(table_exists('crm_contact_emails')){
