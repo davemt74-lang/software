@@ -71,6 +71,8 @@ v24.10 still owns:
 
 Browser Companion performs the normal preview → claim → central reserve flow. v24.50 only contributes candidates.
 
+When an older Cognitive Feed candidate has the same canonical continuity reference (for example `workflow:123` or `goal:45`), the extension candidate merger suppresses that older duplicate and keeps the v24.50 handoff candidate. Direct canonical notifications remain untouched.
+
 ## Working Context and Turn Orchestration
 
 For the highest-value follow-through focus, v24.50 prepares a non-user proactive turn through v24.30.
