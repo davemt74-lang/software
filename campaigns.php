@@ -64,10 +64,25 @@ $locations=$merchant?campaigns_rewards_locations_v100($pdo,$merchantId):[];
 $campaigns=$merchant?campaigns_rewards_campaigns_v100($pdo,$merchantId):[];
 $members=$merchant?campaigns_rewards_merchant_members_v100($pdo,$merchantId):[];
 $report=$merchant&&$canAnalytics?campaigns_rewards_reporting_v100($pdo,$merchantId,$uid):['active_campaigns'=>0,'landing_views'=>0,'customers'=>0,'claims_redeemed'=>0];
-$campaignTypes=[];
-if($merchant){$s=$pdo->prepare("SELECT type_key,name FROM campaign_types WHERE is_active=1 AND (merchant_id=? OR merchant_id IS NULL) ORDER BY is_system DESC,name");$s->execute([$merchantId]);$campaignTypes=$s->fetchAll()?:[];}
+$campaignTypes=[];$campaignTypesByCategory=[];$rewardProducts=[];$editCampaignRewardIds=[];
+if($merchant){
+    $s=$pdo->prepare("SELECT type_key,name,description,field_schema_json,reward_rules_schema_json,landing_schema_json FROM campaign_types WHERE is_active=1 AND (merchant_id=? OR merchant_id IS NULL) ORDER BY is_system DESC,name");
+    $s->execute([$merchantId]);$campaignTypes=$s->fetchAll()?:[];
+    foreach($campaignTypes as &$typeRow){
+        $field=json_decode((string)($typeRow['field_schema_json']??''),true);if(!is_array($field))$field=[];
+        $rewardRules=json_decode((string)($typeRow['reward_rules_schema_json']??''),true);if(!is_array($rewardRules))$rewardRules=[];
+        $landing=json_decode((string)($typeRow['landing_schema_json']??''),true);if(!is_array($landing))$landing=[];
+        $typeRow['category']=(string)($field['category']??'Other');
+        $typeRow['reward_timing']=(string)($rewardRules['timing']??'manual');
+        $typeRow['requires_reward']=!empty($rewardRules['requires_reward']);
+        $typeRow['default_cta']=(string)($landing['cta']??'Continue');
+        $campaignTypesByCategory[$typeRow['category']][]=$typeRow;
+    }unset($typeRow);
+    if(function_exists('campaigns_rewards_reward_products_v110'))$rewardProducts=campaigns_rewards_reward_products_v110($pdo,$merchantId,$uid);
+}
 
 $editCampaignId=max(0,(int)($_GET['edit_campaign']??0));$editCampaign=null;foreach($campaigns as $row)if((int)$row['id']===$editCampaignId)$editCampaign=$row;
+if($editCampaign&&function_exists('campaigns_rewards_campaign_reward_ids_v118'))$editCampaignRewardIds=campaigns_rewards_campaign_reward_ids_v118($pdo,(int)$editCampaign['id']);
 $editLocationId=max(0,(int)($_GET['edit_location']??0));$editLocation=null;foreach($locations as $row)if((int)$row['id']===$editLocationId)$editLocation=$row;
 $notice=(string)(flash('notice')??'');$error=(string)(flash('error')??'');
 
