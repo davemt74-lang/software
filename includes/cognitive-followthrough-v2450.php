@@ -265,6 +265,41 @@ function vp3_cognitive_followthrough_preview_v2450(
     return $candidate;
 }
 
+function vp3_cognitive_followthrough_prepare_turn_v2450(
+    PDO $pdo,array $user,string $namespace,array $candidate
+): array {
+    if(!function_exists('vp3_cognitive_turn_prepare_v2430'))return [];
+    $agentId=vp3_cognitive_agent_id_v500($namespace);
+    $attention=is_array($candidate['attention']??null)?$candidate['attention']:[];
+    $surface=(string)($attention['surface']??'none');
+    $attentionAllowed=!in_array($surface,['none','memory'],true);
+    try{
+        $prepared=vp3_cognitive_turn_prepare_v2430(
+            $pdo,$user,
+            ['kind'=>$agentId>0?'user_agent':'system','agent_id'=>$agentId],
+            'Continue authorized follow-through for '.(string)($candidate['continuity_ref']??'open work').'.',
+            [],
+            [
+                'direct_user_turn'=>false,
+                'proactive'=>true,
+                'attention_allowed'=>$attentionAllowed,
+                'surface'=>(string)($candidate['target_surface']??'chat'),
+            ]
+        );
+    }catch(Throwable $e){return [];}
+    $control=is_array($prepared['control']??null)?$prepared['control']:[];
+    $context=is_array($control['context']??null)?$control['context']:[];
+    return [
+        'turn_type'=>(string)($control['preferred_turn_type']??'remain_silent'),
+        'context_build'=>(string)($context['build']??VP3_COGNITIVE_CONTEXT_V2420),
+        'context_item_count'=>max(0,(int)($context['item_count']??0)),
+        'context_section_counts'=>is_array($context['section_counts']??null)?$context['section_counts']:[],
+        'continuity_ref'=>(string)($candidate['continuity_ref']??''),
+        'target_surface'=>(string)($candidate['target_surface']??'chat'),
+        'authority'=>'response_shape_only',
+    ];
+}
+
 function vp3_cognitive_followthrough_state_v2450(
     PDO $pdo,array $user,string $namespace='system'
 ): array {
@@ -274,6 +309,10 @@ function vp3_cognitive_followthrough_state_v2450(
         try{$items[]=vp3_cognitive_followthrough_preview_v2450($pdo,$user,$namespace,$candidate);}
         catch(Throwable $e){}
         if(count($items)>=VP3_COGNITIVE_FOLLOWTHROUGH_MAX_PRESENTATION_V2450)break;
+    }
+    if(isset($items[0])){
+        $preparedTurn=vp3_cognitive_followthrough_prepare_turn_v2450($pdo,$user,$namespace,$items[0]);
+        if($preparedTurn)$items[0]['prepared_turn']=$preparedTurn;
     }
     $ready=0;$waiting=0;$cross=0;
     foreach($items as $item){
@@ -342,15 +381,16 @@ function vp3_cognitive_followthrough_extension_candidates_v2450(
 }
 
 function vp3_cognitive_followthrough_away_v2450(
-    PDO $pdo,array $user,string $namespace,string $lastMeaningfulAt
+    PDO $pdo,array $user,string $namespace,string $lastMeaningfulAt,?array $state=null
 ): array {
     $cutoff=strtotime($lastMeaningfulAt.' UTC')?:0;
     if($cutoff<1)return ['count'=>0,'summary'=>'','items'=>[]];
+    $state=$state?:vp3_cognitive_followthrough_state_v2450($pdo,$user,$namespace);
     $items=[];
-    foreach(vp3_cognitive_followthrough_state_v2450($pdo,$user,$namespace)['items'] as $item){
+    foreach((array)($state['items']??[]) as $item){
         $updated=strtotime((string)($item['created_at']??''))?:0;
         if($updated<=$cutoff)continue;
-        if((string)($item['handoff_status']??'')==='quiet'&&!empty($item['requires_user_response'])===false)continue;
+        if((string)($item['handoff_status']??'')==='quiet'&&empty($item['requires_user_response']))continue;
         $items[]=[
             'continuity_ref'=>(string)$item['continuity_ref'],
             'title'=>(string)$item['title'],
@@ -375,7 +415,7 @@ function vp3_cognitive_followthrough_brief_v2450(
 ): array {
     $state=vp3_cognitive_followthrough_state_v2450($pdo,$user,$namespace);
     $last=(string)($presentationState['last_meaningful_at']??'');
-    $away=$last!==''?vp3_cognitive_followthrough_away_v2450($pdo,$user,$namespace,$last):['count'=>0,'summary'=>'','items'=>[]];
+    $away=$last!==''?vp3_cognitive_followthrough_away_v2450($pdo,$user,$namespace,$last,$state):['count'=>0,'summary'=>'','items'=>[]];
     return [
         'build'=>VP3_COGNITIVE_FOLLOWTHROUGH_V2450,
         'focus'=>$state['focus'],
