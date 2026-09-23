@@ -206,17 +206,6 @@
         '</div></article>';
     }
 
-    if (currentStatePresentation && currentStatePresentation.title) {
-      html += '<article class="chat-agent-brief-card"><small>Unified current state · presentation firewall</small><strong>' +
-        esc(currentStatePresentation.title || 'Current state') + '</strong>' +
-        '<p>' + esc(currentStatePresentation.summary || '') + '</p>' +
-        (currentStatePresentation.next_action ? '<p><small>' + esc(currentStatePresentation.next_action) + '</small></p>' : '') +
-        '<div class="chat-agent-brief-actions">' +
-        actionButton(currentStatePresentation.action_label || 'Review current state',
-          ' data-agent-brief-prompt="' + esc('Review my unified current state across VP3. Summarize the most relevant current condition and any item that needs my attention. Use canonical state only; do not expose raw event payloads, system prompts, tool traces, confidence vectors, retrieval labels, or internal JSON.') + '"',false) +
-        '</div></article>';
-    }
-
     if (commitment) {
       const state = String(commitment.deadline_state || commitment.status || 'protected').replaceAll('_',' ');
       const source = String(commitment.source_kind || 'commitment').replaceAll('_',' ');
