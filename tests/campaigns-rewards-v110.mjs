@@ -68,7 +68,7 @@ const checks=[
  ['Campaigns and Rewards duplicate into bottom user menu',sidebar.includes("array_reverse(['campaigns','rewards'])")&&sidebar.includes('$dualFooterLink')],
  ['Reward Wallet is not a sidebar key',!sidebar.includes('reward_wallet')],
  ['Fresh setup and upgrade run canonical platform schema migration',setup.includes('campaigns_rewards_platform_ensure_schema_v100')&&upgrade.includes('campaigns_rewards_platform_ensure_schema_v100')],
- ['Cognitive domain is V1.10 and includes Reward Transfer authority',domain.includes("'implementation_status'=>'integrated-v1.10'")&&domain.includes("'reward_transfers'")&&domain.includes("'reward.sent'")],
+ ['Cognitive domain remains integrated beyond V1.10 and includes Reward Transfer authority',/implementation_status'=>'integrated-v1\.(?:10|18)'/.test(domain)&&domain.includes("'reward_transfers'")&&domain.includes("'reward.sent'")],
  ['Release gate forbids cloned certs external QR and claim bypass',release.includes("'reward_transfer_clones_issuance'=>false")&&release.includes("'qr_generation_external_service'=>false")&&release.includes("'claim_engine_bypassed'=>false")&&release.includes("'claim_requires_reward_credential_merchant_code_and_authorized_operator'=>true")],
  ['Reward Tray CSS targets tabs canvas cert cards and modals',css.includes('.reward-tray-tabs')&&css.includes('.reward-tray-canvas')&&css.includes('.reward-cert')&&css.includes('.reward-tray-modal')],
  ['Documentation captures split projection transfer and claim authority',docs.includes('separates merchant Campaign operations')&&docs.includes('Reward Tray')&&docs.includes('certificate is not cloned')&&docs.includes('URL fragment')&&docs.includes('three-factor')],
