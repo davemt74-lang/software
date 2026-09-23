@@ -1,4 +1,4 @@
-name: Cognitive Runtime Release v24.20
+name: Cognitive Runtime Release v24.30
 
 on:
   pull_request:
@@ -12,6 +12,7 @@ on:
       - 'docs/VP3_COGNITIVE_MEMORY_PROMOTION_V2400.md'
       - 'docs/VP3_COGNITIVE_ATTENTION_V2410.md'
       - 'docs/VP3_COGNITIVE_CONTEXT_V2420.md'
+      - 'docs/VP3_COGNITIVE_TURN_V2430.md'
       - 'api/cognitive-*.php'
       - 'api/chat-notifications-brain-v240.php'
       - 'api/extension-cognitive-now-v2120.php'
@@ -29,6 +30,8 @@ on:
       - 'includes/member-user-menu.php'
       - 'includes/chat-engine.php'
       - 'includes/chat-agent-policy-v236.php'
+      - 'includes/knowledge-retrieval-v162.php'
+      - 'includes/ai-settings.php'
       - 'includes/release-chat-v105.php'
       - 'includes/agent-chat-runtime-v2160.php'
       - 'api/agent-voice-v117.php'
@@ -52,11 +55,11 @@ on:
       - '.github/workflows/cognitive-loop-release-v2360.yml'
   push:
     branches:
-      - 'cognitive-context-v2420'
+      - 'cognitive-turn-orchestration-v2430'
 
 jobs:
   release:
-    name: Cognitive Runtime v24.20 · PHP ${{ matrix.php }}
+    name: Cognitive Runtime v24.30 · PHP ${{ matrix.php }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -90,6 +93,8 @@ jobs:
           php -l includes/cognitive-release-v2410.php
           php -l includes/cognitive-context-v2420.php
           php -l includes/cognitive-release-v2420.php
+          php -l includes/cognitive-turn-v2430.php
+          php -l includes/cognitive-release-v2430.php
           php -l includes/cognitive-presentation-v510.php
           php -l includes/cognitive-cards-v520.php
           php -l includes/cognitive-feed-v530.php
@@ -114,6 +119,8 @@ jobs:
           php -l api/chat-notifications-brain-v240.php
           php -l includes/chat-engine.php
           php -l includes/chat-agent-policy-v236.php
+          php -l includes/knowledge-retrieval-v162.php
+          php -l includes/ai-settings.php
           php -l includes/release-chat-v105.php
           php -l includes/agent-chat-runtime-v2160.php
           php -l includes/member-header.php
@@ -143,6 +150,8 @@ jobs:
         run: node tests/cognitive-attention-v2410.mjs
       - name: v24.20 unified context assembly and working memory
         run: node tests/cognitive-context-v2420.mjs
+      - name: v24.30 cognitive turn orchestration
+        run: node tests/cognitive-turn-v2430.mjs
       - name: v23.x feature family
         run: |
           node tests/cognitive-calibration-v2350.mjs

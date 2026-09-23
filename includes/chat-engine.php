@@ -580,9 +580,9 @@ function chat_presentation_violation_v2370(string $answer): bool
     return false;
 }
 
-function chat_remote_answer(string $query, array $history, array $context, array $user): ?string
+function chat_remote_answer(string $query, array $history, array $context, array $user, ?array $turnControl = null): ?string
 {
-    $result = ai_generate_chat_response($query, $history, $context, $user);
+    $result = ai_generate_chat_response($query, $history, $context, $user, null, $turnControl);
 
     if (!($result['ok'] ?? false)) {
         return null;
@@ -599,10 +599,31 @@ function chat_remote_answer(string $query, array $history, array $context, array
 function chat_generate_answer(string $query, array $history, array $user): array
 {
     $context = chat_context($query, $user);
-    $answer = chat_remote_answer($query, $history, $context, $user);
+    $turnPrepared = null;
+    $pdo = db();
+    if ($pdo && function_exists('vp3_cognitive_turn_prepare_v2430')) {
+        try {
+            $turnPrepared = vp3_cognitive_turn_prepare_v2430(
+                $pdo,
+                $user,
+                ['kind'=>'system','agent_id'=>0,'display_name'=>function_exists('system_agent_name')?system_agent_name():'Stonefellow'],
+                $query,
+                $context,
+                ['context_is_canonical'=>true,'direct_user_turn'=>true,'surface'=>'chat']
+            );
+            $context = is_array($turnPrepared['context'] ?? null) ? $turnPrepared['context'] : $context;
+        } catch (Throwable $e) {
+            error_log('VP3 Cognitive Turn v24.30 generic preparation failed: ' . $e->getMessage());
+        }
+    }
+    $turnControl = is_array($turnPrepared['control'] ?? null) ? $turnPrepared['control'] : null;
+    $answer = chat_remote_answer($query, $history, $context, $user, $turnControl);
     if ($answer === null) {
         $answer = chat_local_answer($query, $context);
     }
+    $turn = $turnPrepared && function_exists('vp3_cognitive_turn_finalize_v2430')
+        ? vp3_cognitive_turn_finalize_v2430($turnPrepared, $answer)
+        : [];
 
-    return ['answer'=>$answer,'context'=>$context];
+    return ['answer'=>$answer,'context'=>$context,'turn'=>$turn];
 }

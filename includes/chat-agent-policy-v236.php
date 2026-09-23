@@ -246,11 +246,28 @@ function chat_generate_answer_policy_v236(string $query,array $history,array $us
 {
     $context=chat_policy_context_v236($query,$user,$principal,$conversationId);
     if($agentContext&&function_exists('agent_surface_v131_context_item'))array_unshift($context,agent_surface_v131_context_item($agentContext));
-    $answer=chat_remote_answer($query,$history,$context,$user);
+    $turnPrepared=null;
+    $pdo=db();
+    if($pdo&&function_exists('vp3_cognitive_turn_prepare_v2430')){
+        try{
+            $turnPrepared=vp3_cognitive_turn_prepare_v2430(
+                $pdo,$user,$principal,$query,$context,
+                ['direct_user_turn'=>true,'surface'=>'chat','conversation_id'=>$conversationId]
+            );
+            $context=is_array($turnPrepared['context']??null)?$turnPrepared['context']:$context;
+        }catch(Throwable $e){
+            error_log('VP3 Cognitive Turn v24.30 policy preparation failed: '.$e->getMessage());
+        }
+    }
+    $turnControl=is_array($turnPrepared['control']??null)?$turnPrepared['control']:null;
+    $answer=chat_remote_answer($query,$history,$context,$user,$turnControl);
     $actions=[];
     if($answer===null){
         $answer=chat_local_answer($query,$context);
         if(function_exists('chat_context_fallback_actions'))$actions=chat_context_fallback_actions($query,$context);
     }
-    return ['answer'=>$answer,'context'=>$context,'actions'=>$actions];
+    $turn=$turnPrepared&&function_exists('vp3_cognitive_turn_finalize_v2430')
+        ?vp3_cognitive_turn_finalize_v2430($turnPrepared,$answer,$actions,[],false,['conversation_id'=>$conversationId])
+        :[];
+    return ['answer'=>$answer,'context'=>$context,'actions'=>$actions,'turn'=>$turn,'_turn_prepared'=>$turnPrepared];
 }
