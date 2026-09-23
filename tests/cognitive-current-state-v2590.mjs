@@ -41,7 +41,7 @@ const checks=[
  ['release gate preserves one-event-ledger and authority boundaries',/'second_event_ledger'=>false/.test(release)&&/'canonical_event_inbox_remains_authority'=>true/.test(release)&&/'agent_brain_user_facing_state_uses_presentation_firewall'=>true/.test(release)&&/'phase19_remains_claim_lease_execution_receipt_authority'=>true/.test(release)],
  ['v25.90 CI runs PHP and Node gates',/cognitive-current-state-v2590\.php/.test(workflow)&&/cognitive-current-state-v2590\.mjs/.test(workflow)],
  ['Recovery Baseline retains v25.90 gates',/cognitive-current-state-v2590\.php/.test(recovery)&&/cognitive-current-state-v2590\.mjs/.test(recovery)],
- ['production package declares v25.90 and requires runtime files',/Cognitive Runtime v25\.90/.test(packageWorkflow)&&/cognitive-current-state-v2590\.php/.test(packageWorkflow)&&/cognitive-presentation-firewall-v2590\.php/.test(packageWorkflow)&&/cognitive-release-v2590\.php/.test(packageWorkflow)],
+ ['production package retains v25.90 runtime files in later releases',/cognitive-current-state-v2590\.php/.test(packageWorkflow)&&/cognitive-presentation-firewall-v2590\.php/.test(packageWorkflow)&&/cognitive-release-v2590\.php/.test(packageWorkflow)],
  ['docs define materialization and presentation firewall boundaries',/ephemeral materialization/i.test(docs)&&/allowlist/i.test(docs)&&/does not create another event ledger/i.test(docs)],
 ];
 

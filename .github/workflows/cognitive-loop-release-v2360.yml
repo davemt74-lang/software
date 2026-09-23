@@ -1,4 +1,4 @@
-name: Cognitive Runtime Release v25.90
+name: Cognitive Runtime Release v26.00
 
 on:
   pull_request:
@@ -33,6 +33,11 @@ on:
       - 'includes/cognitive-release-v2590.php'
       - 'tests/cognitive-current-state-v2590.php'
       - 'tests/cognitive-current-state-v2590.mjs'
+      - 'docs/VP3_COGNITIVE_DOMAIN_REGISTRY_V2600.md'
+      - 'includes/cognitive-domain-registry-v2600.php'
+      - 'includes/cognitive-release-v2600.php'
+      - 'tests/cognitive-domain-registry-v2600.php'
+      - 'tests/cognitive-domain-registry-v2600.mjs'
       - 'decision-calibration.php'
       - 'decision-calibration-v2580.css'
       - 'budget-governance.php'
@@ -92,11 +97,11 @@ on:
       - '.github/workflows/cognitive-loop-release-v2360.yml'
   push:
     branches:
-      - 'cognitive-current-state-presentation-v2590'
+      - 'cognitive-domain-registry-v2600'
 
 jobs:
   release:
-    name: Cognitive Runtime v25.90 · PHP ${{ matrix.php }}
+    name: Cognitive Runtime v26.00 · PHP ${{ matrix.php }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -163,6 +168,8 @@ jobs:
           php -l includes/cognitive-current-state-v2590.php
           php -l includes/cognitive-presentation-firewall-v2590.php
           php -l includes/cognitive-release-v2590.php
+          php -l includes/cognitive-domain-registry-v2600.php
+          php -l includes/cognitive-release-v2600.php
           php -l decision-calibration.php
           php -l budget-governance.php
           php -l outcome-value.php
@@ -276,6 +283,10 @@ jobs:
         run: |
           php tests/cognitive-current-state-v2590.php
           node tests/cognitive-current-state-v2590.mjs
+      - name: v26.00 cognitive domain registry foundation
+        run: |
+          php tests/cognitive-domain-registry-v2600.php
+          node tests/cognitive-domain-registry-v2600.mjs
       - name: v23.x feature family
         run: |
           node tests/cognitive-calibration-v2350.mjs
