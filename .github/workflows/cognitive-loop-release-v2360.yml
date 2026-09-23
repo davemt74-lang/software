@@ -1,4 +1,4 @@
-name: Cognitive Runtime Release v24.40
+name: Cognitive Runtime Release v24.50
 
 on:
   pull_request:
@@ -14,6 +14,7 @@ on:
       - 'docs/VP3_COGNITIVE_CONTEXT_V2420.md'
       - 'docs/VP3_COGNITIVE_TURN_V2430.md'
       - 'docs/VP3_COGNITIVE_CONTINUITY_V2440.md'
+      - 'docs/VP3_COGNITIVE_FOLLOWTHROUGH_V2450.md'
       - 'api/cognitive-*.php'
       - 'api/chat-notifications-brain-v240.php'
       - 'api/extension-cognitive-now-v2120.php'
@@ -56,11 +57,11 @@ on:
       - '.github/workflows/cognitive-loop-release-v2360.yml'
   push:
     branches:
-      - 'cognitive-goal-task-continuity-v2440'
+      - 'cognitive-proactive-followthrough-v2450'
 
 jobs:
   release:
-    name: Cognitive Runtime v24.40 · PHP ${{ matrix.php }}
+    name: Cognitive Runtime v24.50 · PHP ${{ matrix.php }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -98,6 +99,8 @@ jobs:
           php -l includes/cognitive-release-v2430.php
           php -l includes/cognitive-continuity-v2440.php
           php -l includes/cognitive-release-v2440.php
+          php -l includes/cognitive-followthrough-v2450.php
+          php -l includes/cognitive-release-v2450.php
           php -l includes/cognitive-presentation-v510.php
           php -l includes/cognitive-cards-v520.php
           php -l includes/cognitive-feed-v530.php
@@ -157,6 +160,8 @@ jobs:
         run: node tests/cognitive-turn-v2430.mjs
       - name: v24.40 goal and task continuity
         run: node tests/cognitive-continuity-v2440.mjs
+      - name: v24.50 proactive follow-through and cross-surface handoff
+        run: node tests/cognitive-followthrough-v2450.mjs
       - name: v23.x feature family
         run: |
           node tests/cognitive-calibration-v2350.mjs
