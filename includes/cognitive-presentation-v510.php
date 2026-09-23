@@ -420,6 +420,9 @@ function vp3_cognitive_presentation_state_v510(PDO $pdo,array $user,string $name
     $economics=function_exists('vp3_cognitive_economics_activity_projection_v2550')
         ?vp3_cognitive_economics_activity_projection_v2550($pdo,$user,$namespace)
         :['build'=>'','focus'=>null,'goals'=>[],'usage'=>[],'quota'=>[],'counts'=>[]];
+    $budgetGovernance=function_exists('vp3_cognitive_budget_activity_projection_v2560')
+        ?vp3_cognitive_budget_activity_projection_v2560($pdo,$user,$namespace)
+        :['build'=>'','configured'=>false,'focus'=>null,'policies'=>[],'held_goals'=>[],'counts'=>[],'manage_url'=>''];
     $brief['followthrough']=$followthrough['focus']??null;
     $brief['followthrough_counts']=$followthrough['counts']??[];
     $brief['away_followthrough']=$followthrough['away']??['count'=>0,'summary'=>'','items'=>[]];
@@ -452,6 +455,10 @@ function vp3_cognitive_presentation_state_v510(PDO $pdo,array $user,string $name
     $brief['economics_counts']=$economics['counts']??[];
     $brief['economics_usage']=$economics['usage']??[];
     $brief['economics_quota']=$economics['quota']??[];
+    $brief['budget_focus']=$budgetGovernance['focus']??null;
+    $brief['budget_counts']=$budgetGovernance['counts']??[];
+    $brief['budget_policies']=$budgetGovernance['policies']??[];
+    $brief['budget_manage_url']=$budgetGovernance['manage_url']??'';
     return [
         'build'=>VP3_COGNITIVE_PRESENTATION_V510,'agent_namespace'=>$namespace,
         'idle_minutes'=>vp3_cognitive_presentation_idle_minutes_v510($row),
@@ -466,6 +473,7 @@ function vp3_cognitive_presentation_state_v510(PDO $pdo,array $user,string $name
         'replanning'=>$replanning,
         'commitment_protection'=>$commitmentProtection,
         'economics'=>$economics,
+        'budget_governance'=>$budgetGovernance,
         'digest'=>$digest,'voice_candidate'=>$voice,'attention'=>$attentionStatus,
         'poll_seconds'=>VP3_COGNITIVE_PRESENTATION_POLL_SECONDS_V510,
     ];
