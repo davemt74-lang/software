@@ -135,6 +135,7 @@ function vp3_upgrade_complete(): bool
         && vp3_cognitive_orchestration_schema_ready_v560()
         && vp3_cognitive_memory_schema_ready_v570()
         && vp3_cognitive_memory_promotion_schema_ready_v2400()
+        && vp3_cognitive_attention_schema_ready_v2410()
         && table_exists('homeserver_connections')
         && table_exists('homeserver_releases')
         && client_release_rollouts_schema_ready_v110()
@@ -244,6 +245,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             vp3_cognitive_orchestration_ensure_schema_v560($pdo);
             vp3_cognitive_memory_ensure_schema_v570($pdo);
             vp3_cognitive_memory_promotion_ensure_schema_v2400($pdo);
+            vp3_cognitive_attention_ensure_schema_v2410($pdo);
             homeserver_vp3_ensure_schema($pdo);
             chrome_extension_releases_ensure_schema($pdo);
             client_release_rollouts_ensure_schema_v110($pdo);

@@ -43,6 +43,7 @@ NODE_TESTS = [
     'tests/cognitive-domain-integration-v2380.mjs',
     'tests/cognitive-domain-integration-v2390.mjs',
     'tests/cognitive-memory-promotion-v2400.mjs',
+    'tests/cognitive-attention-v2410.mjs',
     'tests/knowledge-agent-context-v162-browser-contract.mjs',
     'tests/agent-brain-learning-history-v317.mjs',
     'tests/chat-onboarding-v241.mjs',

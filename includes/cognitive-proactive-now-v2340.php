@@ -156,6 +156,8 @@ function vp3_cognitive_proactive_now_compose_v2340(
         'authority'=>[
             'item_set'=>'cognitive_feed_v530_selected_items',
             'ranking'=>'cognitive_priority_queue_v2310',
+            'attention_policy'=>function_exists('vp3_cognitive_attention_owns_policy_v2410')?'cognitive_attention_v2410':'cognitive_runtime_v500',
+            'delivery'=>'cognitive_presentation_v510_and_extension_notifications_v2140',
             'automatic_external_writes'=>false,
             'approval_bypass'=>false,
             'execution_bypass'=>false,

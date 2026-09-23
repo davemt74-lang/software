@@ -84,13 +84,13 @@ try{
 
     if($action==='visual_delivered'){
         $claimToken=strtolower(trim((string)($input['claim_token']??'')));
-        $ok=vp3_extension_notification_visual_delivered_v2140($pdo,$session,$eventKey,$claimToken);
+        $ok=vp3_extension_notification_visual_delivered_v2140($pdo,$session,$eventKey,$claimToken,$user,$namespace);
         if(!$ok)vp3_extension_notifications_json_v2140(409,['ok'=>false,'error'=>['code'=>'claim_expired','message'=>'Notification delivery claim expired.']]);
         $voice=vp3_extension_notification_voice_pending_v2140($pdo,$session,$user,$namespace,[]);
         vp3_extension_notifications_json_v2140(200,['ok'=>true,'voice'=>$voice]);
     }
     if($action==='release'){
-        vp3_extension_notification_release_v2140($pdo,$session,$eventKey,strtolower(trim((string)($input['claim_token']??''))));
+        vp3_extension_notification_release_v2140($pdo,$session,$eventKey,strtolower(trim((string)($input['claim_token']??''))),$user,$namespace);
         vp3_extension_notifications_json_v2140(200,['ok'=>true]);
     }
     if($action==='voice_delivered'||$action==='voice_failed'){
@@ -103,7 +103,7 @@ try{
         vp3_extension_notifications_json_v2140(200,['ok'=>true,'target_url'=>$url]);
     }
     if($action==='dismiss'){
-        vp3_extension_notification_dismiss_v2140($pdo,$session,$eventKey);
+        vp3_extension_notification_dismiss_v2140($pdo,$session,$eventKey,$user,$namespace);
         vp3_extension_notifications_json_v2140(200,['ok'=>true]);
     }
     if($action==='snooze'){

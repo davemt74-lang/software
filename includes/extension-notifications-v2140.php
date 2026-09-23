@@ -255,6 +255,32 @@ function vp3_extension_notification_candidates_v2140(PDO $pdo,array $user,string
         $dedup[$key]=$candidate;
     }
     $out=array_values($dedup);
+    // Allocate the bounded interruption budget in true priority order, not
+    // discovery order. A lower-value notification must never reserve a slot
+    // ahead of a more important approval/risk/meeting signal.
+    usort($out,static function(array $a,array $b): int {
+        $x=(int)($b['priority']??0)<=>(int)($a['priority']??0);
+        if($x!==0)return $x;
+        return strcmp((string)($b['created_at']??''),(string)($a['created_at']??''));
+    });
+    if(function_exists('vp3_cognitive_attention_extension_candidate_v2410')){
+        $attentionContext=function_exists('vp3_cognitive_presentation_context_v500')
+            ?vp3_cognitive_presentation_context_v500($pdo,$user)
+            :['interruptible'=>true,'idle_minutes'=>0];
+        $filtered=[];
+        foreach($out as $candidate){
+            $decision=vp3_cognitive_attention_extension_candidate_v2410(
+                $pdo,$user,$namespace,$candidate,
+                array_replace($attentionContext,[
+                    'agent_voice_enabled'=>vp3_extension_notification_voice_enabled_v2140($pdo,$user),
+                    'voice_candidate_allowed'=>!empty($candidate['voice_allowed']),
+                    'sensitive_for_voice'=>!empty($candidate['sensitive']),
+                ])
+            );
+            if($decision)$filtered[]=$decision;
+        }
+        $out=$filtered;
+    }
     usort($out,static function(array $a,array $b): int {
         $x=(int)($b['priority']??0)<=>(int)($a['priority']??0);
         if($x!==0)return $x;
@@ -326,8 +352,30 @@ function vp3_extension_notification_claim_next_v2140(PDO $pdo,array $session,arr
 {
     vp3_extension_notification_prune_v2140($pdo,(int)$user['id']);
     foreach(vp3_extension_notification_candidates_v2140($pdo,$user,$namespace,$contextInput) as $candidate){
+        // Claim the existing delivery ledger first, then reserve the central
+        // attention budget. If another surface consumed the budget between
+        // preview and claim, release this lease and continue without surfacing.
         $claimed=vp3_extension_notification_claim_v2140($pdo,$session,$candidate);
-        if($claimed)return $claimed;
+        if(!$claimed)continue;
+        if(function_exists('vp3_cognitive_attention_extension_candidate_v2410')){
+            $attentionContext=function_exists('vp3_cognitive_presentation_context_v500')
+                ?vp3_cognitive_presentation_context_v500($pdo,$user,[
+                    'agent_voice_enabled'=>vp3_extension_notification_voice_enabled_v2140($pdo,$user),
+                    'voice_candidate_allowed'=>!empty($candidate['voice_allowed']),
+                    'sensitive_for_voice'=>!empty($candidate['sensitive']),
+                ])
+                :['interruptible'=>true,'agent_voice_enabled'=>false,'voice_candidate_allowed'=>false];
+            $approved=vp3_cognitive_attention_extension_candidate_v2410(
+                $pdo,$user,$namespace,$candidate,$attentionContext,true
+            );
+            if(!$approved){
+                vp3_extension_notification_release_v2140($pdo,$session,(string)$candidate['event_key'],(string)$claimed['claim_token'],$user,$namespace);
+                continue;
+            }
+            $claimed=['claim_token'=>(string)$claimed['claim_token']]
+                +vp3_extension_notification_candidate_public_v2140($approved);
+        }
+        return $claimed;
     }
     return null;
 }
@@ -436,8 +484,9 @@ function vp3_extension_notification_delivery_row_v2140(PDO $pdo,int $uid,string 
     return is_array($row)?$row:null;
 }
 
-function vp3_extension_notification_visual_delivered_v2140(PDO $pdo,array $session,string $eventKey,string $claimToken): bool
-{
+function vp3_extension_notification_visual_delivered_v2140(
+    PDO $pdo,array $session,string $eventKey,string $claimToken,?array $user=null,string $namespace='system'
+): bool {
     $uid=(int)$session['user_id'];$device=(string)($session['device_id']??'');
     if($uid<1||$device===''||!preg_match('/^[a-f0-9]{48}$/',$claimToken))return false;
     $stmt=$pdo->prepare("UPDATE extension_notification_delivery_v2140
@@ -446,17 +495,25 @@ function vp3_extension_notification_visual_delivered_v2140(PDO $pdo,array $sessi
       WHERE owner_user_id=? AND event_key=? AND claimed_device_id=?
         AND claim_token_hash=? AND visual_delivered_at IS NULL AND dismissed_at IS NULL");
     $stmt->execute([$uid,$eventKey,$device,hash('sha256',$claimToken)]);
-    return $stmt->rowCount()>0;
+    $changed=$stmt->rowCount()>0;
+    if($changed&&$user&&function_exists('vp3_cognitive_attention_mark_delivered_v2410')){
+        vp3_cognitive_attention_mark_delivered_v2410($pdo,$user,$namespace,$eventKey);
+    }
+    return $changed;
 }
 
-function vp3_extension_notification_release_v2140(PDO $pdo,array $session,string $eventKey,string $claimToken): void
-{
+function vp3_extension_notification_release_v2140(
+    PDO $pdo,array $session,string $eventKey,string $claimToken,?array $user=null,string $namespace='system'
+): void {
     $uid=(int)$session['user_id'];$device=(string)($session['device_id']??'');
     if($uid<1||$device===''||!preg_match('/^[a-f0-9]{48}$/',$claimToken))return;
     $stmt=$pdo->prepare("UPDATE extension_notification_delivery_v2140
       SET claimed_device_id=NULL,claim_token_hash=NULL,claimed_at=NULL,claim_expires_at=NULL,updated_at=UTC_TIMESTAMP()
       WHERE owner_user_id=? AND event_key=? AND claimed_device_id=? AND claim_token_hash=? AND visual_delivered_at IS NULL");
     $stmt->execute([$uid,$eventKey,$device,hash('sha256',$claimToken)]);
+    if($stmt->rowCount()>0&&$user&&function_exists('vp3_cognitive_attention_mark_released_v2410')){
+        vp3_cognitive_attention_mark_released_v2410($pdo,$user,$namespace,$eventKey);
+    }
 }
 
 function vp3_extension_notification_voice_result_v2140(PDO $pdo,array $session,array $user,string $namespace,string $eventKey,bool $delivered): void
@@ -514,14 +571,18 @@ function vp3_extension_notification_open_v2140(PDO $pdo,array $session,string $e
     return vp3_extension_notification_internal_url_v2140($row['target_url']??'')?:'/chat.php';
 }
 
-function vp3_extension_notification_dismiss_v2140(PDO $pdo,array $session,string $eventKey): void
-{
+function vp3_extension_notification_dismiss_v2140(
+    PDO $pdo,array $session,string $eventKey,?array $user=null,string $namespace='system'
+): void {
     $uid=(int)$session['user_id'];$device=(string)($session['device_id']??'');
     if($uid<1||$device==='')return;
-    $pdo->prepare("UPDATE extension_notification_delivery_v2140
+    $stmt=$pdo->prepare("UPDATE extension_notification_delivery_v2140
       SET dismissed_at=COALESCE(dismissed_at,UTC_TIMESTAMP()),updated_at=UTC_TIMESTAMP()
-      WHERE owner_user_id=? AND event_key=? AND claimed_device_id=?")
-      ->execute([$uid,$eventKey,$device]);
+      WHERE owner_user_id=? AND event_key=? AND claimed_device_id=?");
+    $stmt->execute([$uid,$eventKey,$device]);
+    if($stmt->rowCount()>0&&$user&&function_exists('vp3_cognitive_attention_mark_dismissed_v2410')){
+        vp3_cognitive_attention_mark_dismissed_v2410($pdo,$user,$namespace,$eventKey);
+    }
 }
 
 function vp3_extension_notification_snooze_v2140(PDO $pdo,array $session,string $eventKey): void

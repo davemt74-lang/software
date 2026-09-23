@@ -1,4 +1,4 @@
-name: Cognitive Runtime Release v24.00
+name: Cognitive Runtime Release v24.10
 
 on:
   pull_request:
@@ -10,6 +10,7 @@ on:
       - 'docs/VP3_COGNITIVE_DOMAIN_INTEGRATION_V2380.md'
       - 'docs/VP3_COGNITIVE_DOMAIN_INTEGRATION_V2390.md'
       - 'docs/VP3_COGNITIVE_MEMORY_PROMOTION_V2400.md'
+      - 'docs/VP3_COGNITIVE_ATTENTION_V2410.md'
       - 'api/cognitive-*.php'
       - 'api/extension-cognitive-now-v2120.php'
       - 'includes/extension-notifications-v2140.php'
@@ -53,7 +54,7 @@ on:
 
 jobs:
   release:
-    name: Cognitive Runtime v24.00 · PHP ${{ matrix.php }}
+    name: Cognitive Runtime v24.10 · PHP ${{ matrix.php }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -83,6 +84,8 @@ jobs:
           php -l includes/cognitive-release-v2390.php
           php -l includes/cognitive-memory-promotion-v2400.php
           php -l includes/cognitive-release-v2400.php
+          php -l includes/cognitive-attention-v2410.php
+          php -l includes/cognitive-release-v2410.php
           php -l includes/cognitive-presentation-v510.php
           php -l includes/cognitive-cards-v520.php
           php -l includes/cognitive-feed-v530.php
@@ -131,6 +134,8 @@ jobs:
         run: node tests/cognitive-domain-integration-v2390.mjs
       - name: v24.00 memory promotion and episodic consolidation
         run: node tests/cognitive-memory-promotion-v2400.mjs
+      - name: v24.10 unified attention engine
+        run: node tests/cognitive-attention-v2410.mjs
       - name: v23.x feature family
         run: |
           node tests/cognitive-calibration-v2350.mjs
