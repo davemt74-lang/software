@@ -457,9 +457,11 @@ function campaigns_rewards_campaign_by_slug_v100(PDO $pdo,string $slug,bool $pub
     $slug=campaigns_rewards_slug_v100($slug);if($slug==='')return null;
     $sql="SELECT c.*,c.merchant_id merchant_account_id,c.name title,m.public_id merchant_public_id,m.owner_user_id,m.owner_user_id profile_user_id,
       m.name merchant_name,m.slug merchant_slug,mp.description merchant_description,mp.website_url merchant_website_url,mp.public_contact_json,
+      ct.type_key campaign_type_key,ct.name campaign_type_name,ct.base_handler_key,ct.supports_public_signup,ct.supports_existing_contacts,ct.supports_cases,ct.supports_automation,ct.supports_agent,
       lp.subheadline subtitle,lp.cta_label,lp.terms_json,lp.visibility,lp.is_published,lp.published_at,
       u.display_name profile_display_name,u.avatar_path profile_avatar_path,p.username profile_username,p.is_public profile_is_public
       FROM campaigns c INNER JOIN merchant_accounts m ON m.id=c.merchant_id AND m.status='active'
+      INNER JOIN campaign_types ct ON ct.id=c.campaign_type_id AND ct.is_active=1
       INNER JOIN campaign_landing_pages lp ON lp.campaign_id=c.id
       LEFT JOIN merchant_profiles mp ON mp.merchant_id=m.id LEFT JOIN users u ON u.id=m.owner_user_id
       LEFT JOIN user_profiles p ON p.user_id=m.owner_user_id WHERE c.slug=?";
