@@ -456,14 +456,14 @@ $notificationDrawerRuntime = '<link rel="stylesheet" data-chat-notification-draw
     . '<script data-chat-notification-drawer src="' . e(url('/chat-notifications-drawer-v240.js?v=' . $notificationDrawerAssetBuild)) . '"></script>'
     . '<script data-brain-learning-history-v317 src="' . e(url('/chat-brain-learning-history-v317.js?v=' . $brainLearningBuild)) . '"></script>';
 
-$rewardTrayRuntime = function_exists('campaigns_rewards_v110_schema_ready') && campaigns_rewards_v110_schema_ready(db())
-    ? '<link rel="stylesheet" data-reward-tray-v110 href="' . e(url('/reward-tray-v110.css?v=110')) . '">'
+$rewardTrayRuntime = function_exists('campaigns_rewards_v110_schema_ready')
+    ? '<link rel="stylesheet" data-reward-tray-v110 href="' . e(url('/reward-tray-v110.css?v=111')) . '">'
         . '<script data-reward-tray-config-v110>window.VP3_REWARD_TRAY_V110={endpoint:'
         . json_encode(url('/api/reward-tray-v110.php'),JSON_UNESCAPED_SLASHES)
         . ',csrf:' . json_encode(csrf_token(),JSON_UNESCAPED_SLASHES)
         . '};</script>'
-        . '<script data-reward-qr-v110 src="' . e(url('/reward-qr-v110.js?v=110')) . '"></script>'
-        . '<script data-reward-tray-v110 src="' . e(url('/reward-tray-v110.js?v=110')) . '"></script>'
+        . '<script data-reward-qr-v110 src="' . e(url('/reward-qr-v110.js?v=111')) . '"></script>'
+        . '<script data-reward-tray-v110 src="' . e(url('/reward-tray-v110.js?v=111')) . '"></script>'
     : '';
 
 $runtime = $headerUiRuntime
