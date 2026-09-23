@@ -236,6 +236,8 @@ function chat_notifications_v313_brain_priorities(array $user, PDO $pdo): array
 
 function chat_notifications_v313_record_brain_outcome(PDO $pdo, array $user, array $input): array
 {
+    $agentId=max(0,(int)($input['agent_id']??0));
+    if($agentId>0)throw new DomainException('Named Agent priorities are not yet produced by the namespace-aware priority engine.');
     if (!personal_capability_has_v242('agent_brain.access', $user)) {
         throw new DomainException('Agent Brain is not enabled for this account type.');
     }
@@ -264,7 +266,7 @@ function chat_notifications_v313_record_brain_outcome(PDO $pdo, array $user, arr
     $final = ['successful','resolved','unsuccessful','ignored'];
     if (in_array($current, $final, true)) {
         if ($current !== $outcome) throw new DomainException('This priority already has a final outcome.');
-        $state = chat_notifications_v240_state($user, $pdo);
+        $state = chat_notifications_v240_state($user, $pdo, max(0,(int)($input['agent_id']??0)));
         $state['outcome_result'] = ['recorded'=>false,'duplicate'=>true,'outcome'=>$current];
         return $state;
     }
@@ -284,27 +286,46 @@ function chat_notifications_v313_record_brain_outcome(PDO $pdo, array $user, arr
         throw new DomainException('The outcome could not be recorded.');
     }
 
-    $state = chat_notifications_v240_state($user, $pdo);
+    $state = chat_notifications_v240_state($user, $pdo, max(0,(int)($input['agent_id']??0)));
     $state['outcome_result'] = $result;
     return $state;
 }
 
-function chat_notifications_v240_state(array $user, PDO $pdo): array
+function chat_notifications_v240_state(array $user, PDO $pdo, int $agentId=0): array
 {
     if (function_exists('agent_chat_activity_reconcile')) {
         agent_chat_activity_reconcile($user);
     }
 
     $userId = (int)($user['id'] ?? 0);
+    $namespace = vp3_cognitive_agent_namespace_v500($pdo, $user, max(0, $agentId));
+    if (function_exists('vp3_agent_memory_scope_set_current_v410')) {
+        vp3_agent_memory_scope_set_current_v410($userId, $agentId > 0 ? $agentId : null);
+    }
+
     $brainAllowed = personal_capability_has_v242('agent_brain.access', $user);
     $brain = $brainAllowed && agent_brain_schema_ready() ? agent_brain_summary($user) : [
         'archive_count'=>0,'memory_count'=>0,'themes'=>[],'dates'=>[],'files'=>[],'recent'=>[]
     ];
-    $activity = $brainAllowed ? agent_activity_v94_snapshot($user, 'chat', []) : [];
+    $workingContext = $brainAllowed && function_exists('vp3_cognitive_context_activity_projection_v2420')
+        ? vp3_cognitive_context_activity_projection_v2420($pdo, $user, $namespace)
+        : ['build'=>'','agent_namespace'=>$namespace,'mode'=>'unavailable','live_session'=>null,'counts'=>[],'attention'=>['ready'=>false]];
+    $live = is_array($workingContext['live_session'] ?? null) ? $workingContext['live_session'] : null;
+    $activity = $live ? [
+        'state'=>(string)($live['status'] ?? 'idle'),
+        'surface'=>(string)($live['surface'] ?? 'chat'),
+        'task_title'=>trim((string)($live['context_key'] ?? '')) ?: 'Agent Chat',
+        'context_key'=>(string)($live['context_key'] ?? ''),
+        'last_activity_at'=>(string)($live['last_activity_at'] ?? ''),
+    ] : ($agentId < 1 && $brainAllowed ? agent_activity_v94_snapshot($user, 'chat', []) : [
+        'state'=>'idle','surface'=>'chat','task_title'=>'Agent Chat'
+    ]);
+    $systemOnly = $namespace === 'system';
 
     return [
         'ok'=>true,
         'agent_voice_enabled'=>member_agent_voice_enabled($user),
+        'agent_namespace'=>$namespace,
         'notifications'=>[
             'unread'=>notification_unread_count($user),
             'items'=>notification_recent($user, 25),
@@ -312,6 +333,7 @@ function chat_notifications_v240_state(array $user, PDO $pdo): array
         'attention_cursor'=>notification_latest_id($user),
         'brain'=>[
             'enabled'=>$brainAllowed,
+            'namespace'=>$namespace,
             'archive_count'=>(int)($brain['archive_count'] ?? 0),
             'memory_count'=>(int)($brain['memory_count'] ?? 0),
             'themes'=>array_values(is_array($brain['themes'] ?? null) ? $brain['themes'] : []),
@@ -319,11 +341,14 @@ function chat_notifications_v240_state(array $user, PDO $pdo): array
             'files'=>array_values(is_array($brain['files'] ?? null) ? $brain['files'] : []),
             'recent'=>array_values(is_array($brain['recent'] ?? null) ? $brain['recent'] : []),
             'activity'=>$activity,
-            'priorities'=>$brainAllowed ? chat_notifications_v313_brain_priorities($user, $pdo) : [],
-            'operations'=>$brainAllowed ? chat_notifications_v240_brain_operations($user, 60) : [],
-            'events'=>$brainAllowed ? chat_notifications_v240_activity_events($pdo, $userId, 50) : [],
+            'working_context'=>$workingContext,
+            'priorities'=>$brainAllowed && $systemOnly ? chat_notifications_v313_brain_priorities($user, $pdo) : [],
+            'operations'=>$brainAllowed && $systemOnly ? chat_notifications_v240_brain_operations($user, 60) : [],
+            'events'=>$brainAllowed && $systemOnly ? chat_notifications_v240_activity_events($pdo, $userId, 50) : [],
         ],
-        'history'=>$brainAllowed ? chat_notifications_v240_history($pdo, $userId, 60) : [],
+        'history'=>$brainAllowed && function_exists('vp3_cognitive_context_history_rows_v2420')
+            ? vp3_cognitive_context_history_rows_v2420($pdo, $user, $namespace, 60)
+            : [],
     ];
 }
 
@@ -549,7 +574,7 @@ $action = trim((string)($input['action'] ?? 'state'));
 
 try {
     if ($method === 'GET' && $action === 'state') {
-        chat_notifications_v240_json(chat_notifications_v240_state($user, $pdo));
+        chat_notifications_v240_json(chat_notifications_v240_state($user, $pdo, max(0,(int)($input['agent_id']??0))));
     }
     if ($method === 'GET' && $action === 'attention') {
         $afterId = max(0, (int)($input['after_id'] ?? 0));
