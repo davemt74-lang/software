@@ -268,7 +268,7 @@ function vp3_cognitive_attention_receipt_public_v2410(array $row): array
     ];
 }
 
-function vp3_cognitive_attention_arbitrate_v2410(
+function vp3_cognitive_attention_preview_v2410(
     PDO $pdo,array $user,string $namespace,array $signal,array $context=[]
 ): array {
     $uid=(int)($user['id']??0);if($uid<1)throw new RuntimeException('A signed-in VP3 user is required.');
@@ -285,7 +285,22 @@ function vp3_cognitive_attention_arbitrate_v2410(
     $ctx['attention_budget_remaining']=!empty($budget['remaining']);
     $recent=vp3_cognitive_attention_recent_key_v2410($pdo,$uid,$namespace,(string)$s['key']);
     if($recent)$ctx['already_presented']=true;
-    $decision=vp3_cognitive_attention_decide_v2410($signal,$ctx);
+    return vp3_cognitive_attention_decide_v2410($signal,$ctx);
+}
+
+function vp3_cognitive_attention_arbitrate_v2410(
+    PDO $pdo,array $user,string $namespace,array $signal,array $context=[]
+): array {
+    $uid=(int)($user['id']??0);if($uid<1)throw new RuntimeException('A signed-in VP3 user is required.');
+    if(!vp3_cognitive_attention_schema_ready_v2410($pdo))return vp3_cognitive_attention_decide_v2410($signal,$context);
+    $namespace=vp3_cognitive_validate_namespace_v500($pdo,$user,$namespace);
+    $s=vp3_cognitive_attention_signal_v2410($signal);
+    $fingerprint=vp3_cognitive_attention_fingerprint_v2410($signal);
+    $existing=$pdo->prepare('SELECT * FROM cognitive_attention_receipts_v2410 WHERE owner_user_id=? AND agent_namespace=? AND signal_fingerprint=? LIMIT 1');
+    $existing->execute([$uid,$namespace,$fingerprint]);$row=$existing->fetch();
+    if(is_array($row))return vp3_cognitive_attention_receipt_public_v2410($row);
+
+    $decision=vp3_cognitive_attention_preview_v2410($pdo,$user,$namespace,$signal,$context);
     $interruptive=!empty($decision['interruptive']);
     $status=$interruptive?'planned':(in_array((string)$decision['surface'],['none','memory'],true)?'suppressed':'deferred');
     $public=vp3_cognitive_uuid_v500();
@@ -378,7 +393,7 @@ function vp3_cognitive_attention_notification_row_signal_v2410(array $user,array
 }
 
 function vp3_cognitive_attention_extension_candidate_v2410(
-    PDO $pdo,array $user,string $namespace,array $candidate,array $context=[]
+    PDO $pdo,array $user,string $namespace,array $candidate,array $context=[],bool $reserve=false
 ): ?array {
     $signal=vp3_cognitive_attention_notification_signal_v2410($candidate);
     $context=array_replace([
@@ -386,7 +401,9 @@ function vp3_cognitive_attention_extension_candidate_v2410(
         'voice_candidate_allowed'=>!empty($candidate['voice_allowed']),
         'sensitive_for_voice'=>!empty($candidate['sensitive']),
     ],$context);
-    $decision=vp3_cognitive_attention_arbitrate_v2410($pdo,$user,$namespace,$signal,$context);
+    $decision=$reserve
+        ?vp3_cognitive_attention_arbitrate_v2410($pdo,$user,$namespace,$signal,$context)
+        :vp3_cognitive_attention_preview_v2410($pdo,$user,$namespace,$signal,$context);
     if(!in_array((string)($decision['surface']??''),['notification','voice_announce','ask_user'],true))return null;
     $candidate['attention_score']=(float)($decision['score']??$decision['attention_score']??0);
     $candidate['attention_band']=(string)($decision['band']??$decision['attention_band']??'');
