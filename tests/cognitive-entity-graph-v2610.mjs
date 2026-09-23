@@ -37,7 +37,7 @@ const checks=[
  ['navigation catalog gates separate Campaigns and Rewards destinations by actual plugin access',/campaigns_rewards_user_has_access_v100/.test(nav)&&/'campaigns','Campaigns'/.test(nav)&&/'rewards','Rewards'/.test(nav)],
  ['dedicated cognitive workflow is v26.10 aware',workflow.includes('name: Cognitive Runtime Release v26.10')&&workflow.includes('cognitive-entity-graph-v2610.php')&&workflow.includes('cognitive-entity-graph-v2610.mjs')],
  ['Recovery Baseline includes both v26.10 contracts',recovery.includes("'tests/cognitive-entity-graph-v2610.mjs'")&&recovery.includes("'tests/cognitive-entity-graph-v2610.php'")],
- ['production package requires v26.10 graph and release files',packageWorkflow.includes('"release": "Cognitive Runtime v26.10"')&&packageWorkflow.includes('cognitive-entity-graph-v2610.php')&&packageWorkflow.includes('cognitive-release-v2610.php')],
+ ['production package retains v26.10 graph and release files in later releases',packageWorkflow.includes('cognitive-entity-graph-v2610.php')&&packageWorkflow.includes('cognitive-release-v2610.php')],
  ['documentation states no duplicate domain data and no fuzzy identity merge',/does not create a graph database/i.test(docs)&&/does not merge records because names, email addresses/i.test(docs)&&/Model-inferred links/.test(docs)],
 ];
 for(const [name,ok] of checks){assert.equal(ok,true,name);console.log('PASS',name);}
