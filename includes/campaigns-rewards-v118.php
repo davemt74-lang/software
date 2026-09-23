@@ -193,6 +193,15 @@ function campaigns_rewards_public_participate_v118(PDO $pdo,array $campaign,arra
             'campaign_enrollment_id'=>(int)$enrollment['id'],'recipient_user_id'=>$vp3UserId,
             'idempotency_key'=>'public-v118-reward:'.hash('sha256',$requestToken.'|'.$campaignId.'|'.(int)$selectedReward['id'].'|'.$contactId),
         ]);
+        $pdo->prepare("UPDATE campaign_enrollments SET status='completed',completed_at=COALESCE(completed_at,UTC_TIMESTAMP()),updated_at=UTC_TIMESTAMP() WHERE id=?")
+          ->execute([(int)$enrollment['id']]);
+        campaigns_rewards_activity_event_v100($pdo,$merchantId,'campaign.enrollment_completed',[
+            'campaign_id'=>$campaignId,'contact_id'=>$contactId,'enrollment_id'=>(int)$enrollment['id'],'reward_issuance_id'=>(int)$issued['id'],
+        ],[
+            'summary'=>'Public Campaign participation fulfilled with Reward',
+            'merchant_public_id'=>$campaign['merchant_public_id'],'campaign_public_id'=>$campaign['public_id'],
+        ],'production',null,'public');
+        $enrollment['status']='completed';$enrollment['completed_at']=gmdate('Y-m-d H:i:s');
         return ['contact'=>$contact,'enrollment'=>$enrollment,'issued'=>$issued,'reward'=>$selectedReward,'behavior'=>$behavior,'message'=>'Reward issued.'];
     }
     if($shouldIssue&&!$selectedReward&&!empty($behavior['requires_reward']))throw new RuntimeException('This Campaign does not have an available Reward attached.');
@@ -233,6 +242,7 @@ function campaigns_rewards_issue_enrollment_reward_v118(PDO $pdo,int $merchantId
         if((int)$campaign['merchant_id']!==$merchantId)throw new RuntimeException('Campaign not found.');
         $q=$pdo->prepare("SELECT * FROM campaign_enrollments WHERE id=? AND campaign_id=? AND contact_id IS NOT NULL LIMIT 1 FOR UPDATE");
         $q->execute([$enrollmentId,$campaignId]);$enrollment=$q->fetch()?:throw new RuntimeException('Campaign participant not found.');
+        if((string)$enrollment['status']==='completed')throw new RuntimeException('This Campaign participant has already been fulfilled.');
         if(!in_array($rewardProductId,campaigns_rewards_campaign_reward_ids_v118($pdo,$campaignId),true))throw new RuntimeException('That Reward is not attached to this Campaign.');
         $issuance=campaigns_rewards_issue_reward_v100($pdo,$campaignId,$rewardProductId,(int)$enrollment['contact_id'],$actorUserId,[
             'actor_type'=>'user','source'=>'campaign_fulfillment','campaign_enrollment_id'=>$enrollmentId,
