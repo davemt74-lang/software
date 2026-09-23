@@ -616,7 +616,7 @@
       ${decisionCalibration.ready ? `
       <section class="chat-activity-section">
         <div class="chat-activity-section-head">
-          <div><strong>Portfolio Decision Calibration</strong><span>v25.80 compares prior numeric portfolio decisions with later canonical outcomes. It keeps raw estimates, requires at least five independent settled goals per factor, and cannot change execution authority.</span></div>
+          <div><strong>Portfolio Decision Calibration</strong><span>v25.80 compares prior numeric portfolio decisions with later canonical outcomes. It keeps raw estimates, requires five independent evidence units per factor, and cannot change execution authority.</span></div>
         </div>
         <div class="chat-brain-metrics">
           ${brainMetric('Settled goals', Number(decisionAccuracy.settled_goals || 0))}
