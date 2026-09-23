@@ -571,8 +571,9 @@ function campaigns_rewards_record_landing_view_v100(PDO $pdo,array $campaign,str
     $dedupe=$pdo->prepare("SELECT 1 FROM campaign_public_events WHERE campaign_id=? AND session_id=? AND event_type='landing_view' AND occurred_at>=DATE_FORMAT(UTC_TIMESTAMP(),'%Y-%m-%d %H:00:00') LIMIT 1");
     $dedupe->execute([$campaignId,$sessionId]);if($dedupe->fetchColumn())return;
     $pdo->prepare("INSERT INTO campaign_public_events (campaign_id,session_id,event_type,occurred_at,metadata_json) VALUES (?,?,'landing_view',UTC_TIMESTAMP(),'{}')")->execute([$campaignId,$sessionId]);
-    campaigns_rewards_activity_event_v100($pdo,$merchantId,'campaign.signup_started',['campaign_id'=>$campaignId],[
+    campaigns_rewards_activity_event_v100($pdo,$merchantId,'campaign.landing_viewed',['campaign_id'=>$campaignId],[
       'summary'=>'Campaign landing viewed','merchant_public_id'=>$campaign['merchant_public_id']??'','campaign_public_id'=>$campaign['public_id']??'',
+      'campaign_type'=>$campaign['campaign_type_key']??'',
     ],(string)($campaign['environment']??'production'),null,'system');
 }
 
