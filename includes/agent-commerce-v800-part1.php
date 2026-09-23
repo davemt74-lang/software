@@ -398,5 +398,6 @@ function agent_commerce_validate_terms_v800(array $input): array
 }
 function agent_commerce_audit_v800(PDO $pdo,?int $orderId,int $ownerUserId,?int $workspaceOwnerId,string $actorType,?int $actorUserId,?int $actorAgentId,string $eventType,string $fromStatus='',string $toStatus='',int $amountCents=0,array $metadata=[]): void
 {
-    if($ownerUserId<1)return;$pdo->prepare('INSERT INTO agent_commerce_audit_v800 (order_id,owner_user_id,workspace_owner_user_id,actor_type,actor_user_id,actor_agent_id,event_type,from_status,to_status,amount_cents,metadata_json) VALUES (?,?,?,?,?,?,?,?,?,?,?)')->execute([$orderId,$ownerUserId,$workspaceOwnerId,$actorType,$actorUserId,$actorAgentId,$eventType,$fromStatus,$toStatus,max(0,$amountCents),$metadata?json_encode($metadata,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE):null]);
+    if($ownerUserId<1)return;$pdo->prepare('INSERT INTO agent_commerce_audit_v800 (order_id,owner_user_id,workspace_owner_user_id,actor_type,actor_user_id,actor_agent_id,event_type,from_status,to_status,amount_cents,metadata_json) VALUES (?,?,?,?,?,?,?,?,?,?,?)')->execute([$orderId,$ownerUserId,$workspaceOwnerId,$actorType,$actorUserId,$actorAgentId,$eventType,$fromStatus,$toStatus,max(0,$amountCents),$metadata?json_encode($metadata,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE):null]);$auditId=(int)$pdo->lastInsertId();
+    if(function_exists('vp3_cognitive_commerce_audit_bridge_v2380'))vp3_cognitive_commerce_audit_bridge_v2380($pdo,$orderId,$ownerUserId,$eventType,$fromStatus,$toStatus,$amountCents,$metadata,$auditId);
 }
