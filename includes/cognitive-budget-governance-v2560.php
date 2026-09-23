@@ -482,10 +482,15 @@ function vp3_cognitive_budget_usage_v2560(
 }
 
 function vp3_cognitive_budget_goal_projection_v2560(
-    array $item,?array $economicsRow,array $accountUsage=[]
+    array $item,?array $economicsRow,array $accountUsage=[],array $calibration=[]
 ): array {
     if((string)($item['execution_mode']??'manual')!=='autonomous'||(string)($item['executor']??'cloud')!=='cloud'){
-        return ['cost_micros'=>0,'tokens'=>0,'cost_known'=>true,'tokens_known'=>true,'work_units'=>0.0];
+        return [
+            'raw_cost_micros'=>0,'cost_micros'=>0,'raw_tokens'=>0,'tokens'=>0,
+            'cost_calibration_factor'=>1.0,'token_calibration_factor'=>1.0,
+            'cost_calibration_samples'=>0,'token_calibration_samples'=>0,
+            'cost_known'=>true,'tokens_known'=>true,'work_units'=>0.0
+        ];
     }
     $units=function_exists('vp3_cognitive_resource_work_units_v2520')
         ?vp3_cognitive_resource_work_units_v2520($item)
@@ -504,9 +509,19 @@ function vp3_cognitive_budget_goal_projection_v2560(
         $cloudTokens=max(0,(int)($accountUsage['cloud_tokens_charged']??0));
         if($cloudRequests>0)$avgTokens=(int)round($cloudTokens/$cloudRequests);
     }
+    $costFactor=max(0.75,min(1.35,(float)($calibration['cost']['factor']??1.0)));
+    $tokenFactor=max(0.75,min(1.35,(float)($calibration['tokens']['factor']??1.0)));
+    $rawCost=$avgCost===null?null:max(0,(int)round($avgCost*$units));
+    $rawTokens=$avgTokens===null?null:max(0,(int)round($avgTokens*$units));
     return [
-        'cost_micros'=>$avgCost===null?null:max(0,(int)round($avgCost*$units)),
-        'tokens'=>$avgTokens===null?null:max(0,(int)round($avgTokens*$units)),
+        'raw_cost_micros'=>$rawCost,
+        'cost_micros'=>$rawCost===null?null:max(0,(int)round($rawCost*$costFactor)),
+        'raw_tokens'=>$rawTokens,
+        'tokens'=>$rawTokens===null?null:max(0,(int)round($rawTokens*$tokenFactor)),
+        'cost_calibration_factor'=>round($costFactor,4),
+        'token_calibration_factor'=>round($tokenFactor,4),
+        'cost_calibration_samples'=>(int)($calibration['cost']['sample_count']??0),
+        'token_calibration_samples'=>(int)($calibration['tokens']['sample_count']??0),
         'cost_known'=>$avgCost!==null,'tokens_known'=>$avgTokens!==null,'work_units'=>round($units,2),
     ];
 }
@@ -573,12 +588,27 @@ function vp3_cognitive_budget_apply_v2560(
     $runMeta=vp3_cognitive_budget_run_metadata_v2560($pdo,$uid,$runIds);
     $econByGoal=[];foreach((array)($economics['goals']??[]) as $row)if(is_array($row))$econByGoal[(int)($row['goal_id']??0)]=$row;
     $accountUsage=(array)($economics['usage']??[]);
+    $projectionCalibration=[
+        'cloud'=>[
+            'cost'=>function_exists('vp3_cognitive_decision_factor_v2580')
+                ?vp3_cognitive_decision_factor_v2580($pdo,$user,'cost','cloud'):['factor'=>1.0,'sample_count'=>0],
+            'tokens'=>function_exists('vp3_cognitive_decision_factor_v2580')
+                ?vp3_cognitive_decision_factor_v2580($pdo,$user,'tokens','cloud'):['factor'=>1.0,'sample_count'=>0],
+        ],
+        'homeserver'=>[
+            'cost'=>['factor'=>1.0,'sample_count'=>0],
+            'tokens'=>['factor'=>1.0,'sample_count'=>0],
+        ],
+    ];
     $itemContexts=[];$projections=[];
     foreach($items as $index=>$item){
         if(!is_array($item))continue;
         $goalId=(int)($item['goal_id']??0);
         $itemContexts[$goalId]=vp3_cognitive_budget_item_context_v2560($item,$runMeta);
-        $projections[$goalId]=vp3_cognitive_budget_goal_projection_v2560($item,$econByGoal[$goalId]??null,$accountUsage);
+        $executor=in_array((string)($item['executor']??''),['cloud','homeserver'],true)?(string)$item['executor']:'cloud';
+        $projections[$goalId]=vp3_cognitive_budget_goal_projection_v2560(
+            $item,$econByGoal[$goalId]??null,$accountUsage,$projectionCalibration[$executor]??[]
+        );
     }
 
     $policySnapshots=[];$heldByGoal=[];$overridesByGoal=[];$softPressureByGoal=[];
@@ -669,6 +699,14 @@ function vp3_cognitive_budget_apply_v2560(
         $item['budget_hold_policy_ids']=array_values(array_map(static fn(array $x): int=>(int)$x[0],$holds));
         $item['budget_hold_reasons']=array_values(array_map(static fn(array $x): string=>(string)$x[1],$holds));
         $item['budget_override_policy_ids']=array_values(array_map('intval',(array)($overridesByGoal[$goalId]??[])));
+        $projection=(array)($projections[$goalId]??[]);
+        $item['budget_projection']=$projection;
+        $item['budget_raw_projected_remaining_cost_micros']=$projection['raw_cost_micros']??null;
+        $item['budget_projected_remaining_cost_micros']=$projection['cost_micros']??null;
+        $item['budget_raw_projected_remaining_tokens']=$projection['raw_tokens']??null;
+        $item['budget_projected_remaining_tokens']=$projection['tokens']??null;
+        $item['budget_cost_calibration_factor']=(float)($projection['cost_calibration_factor']??1.0);
+        $item['budget_token_calibration_factor']=(float)($projection['token_calibration_factor']??1.0);
         $pressure=max(0.0,(float)($softPressureByGoal[$goalId]??0.0));
         $commitment=(float)($item['commitment_protection_score']??0.0)>=0.65;
         $item['budget_planning_adjustment']=$commitment?0.0:round(max(-0.10,min(0.0,-0.08*min(1.25,$pressure))),4);
@@ -708,6 +746,7 @@ function vp3_cognitive_budget_apply_v2560(
                 'usage_cost'=>'ai_execution_ledger_v032',
                 'token_balance_and_enforcement'=>'subscription_quota_and_ai_gateway',
                 'economics'=>'cognitive_economics_v2550',
+                'decision_calibration'=>'cognitive_decision_calibration_v2580_bounded_projection',
                 'commitments'=>'cognitive_commitment_protection_v2540',
                 'portfolio_admission'=>'cognitive_portfolio_v2480',
                 'claims_leases_execution_receipts'=>'agent_job_engine_v1900',
