@@ -68,7 +68,7 @@ function vp3_cognitive_domain_manifest_v2370(): array
             'commerce'=>[
                 'authority'=>['agent_commerce_products_v800','agent_commerce_orders_v800','agent_commerce_order_items_v800','agent_commerce_payments_v800','agent_commerce_refunds_v800'],
                 'objects'=>['product','commerce_order','commerce_customer','sale','refund'],
-                'events'=>['product.created','product.updated','product.published','product.unpublished','order.created','order.paid','order.fulfillment_started','order.fulfilled','order.cancelled','refund.requested','refund.completed','customer.returned','sale.converted'],
+                'events'=>['product.created','product.updated','product.published','product.unpublished','order.created','order.payment_received','order.paid','order.fulfillment_started','order.fulfilled','order.cancelled','order.expired','refund.requested','refund.completed','refund.failed','customer.returned','sale.converted'],
                 'phase'=>'v23.80',
             ],
             'crm_relationships'=>[
@@ -129,7 +129,7 @@ function vp3_cognitive_domain_manifest_v2370(): array
                 'authority'=>['notifications'],
                 'objects'=>['notification'],
                 'events'=>['notification.created','notification.read','notification.dismissed'],
-                'phase'=>'v24.10',
+                'phase'=>'v23.80',
             ],
             'subscription_billing'=>[
                 'authority'=>['user_subscriptions','subscription_packages','package_entitlements','subscription_audit_log'],
