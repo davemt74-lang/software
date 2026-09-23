@@ -134,8 +134,11 @@ function campaigns_rewards_automation_save_rule_v119(PDO $pdo,int $merchantId,in
         'cooldown_days'=>max(0,min(3650,(int)($input['cooldown_days']??90))),
         'marketing_only'=>!empty($input['marketing_only']),
         'max_actions_per_run'=>max(1,min(1000,(int)($input['max_actions_per_run']??100))),
+        'minimum_purchase_minor'=>max(0,(int)($input['minimum_purchase_minor']??0)),
+        'minimum_points'=>max(0,(int)($input['minimum_points']??0)),
     ];
-    $actions=['action'=>'issue_reward','reward_product_id'=>$rewardId,'complete_enrollment'=>true];
+    $recipientMode=in_array((string)($input['recipient_mode']??'event_contact'),['event_contact','referrer','both'],true)?(string)$input['recipient_mode']:'event_contact';
+    $actions=['action'=>'issue_reward','reward_product_id'=>$rewardId,'complete_enrollment'=>true,'recipient_mode'=>$recipientMode];
     if($ruleId>0){
         $row=campaigns_rewards_automation_rule_v119($pdo,$ruleId,true)?:throw new RuntimeException('Automation rule not found.');
         if((int)$row['merchant_id']!==$merchantId||(int)$row['campaign_id']!==$campaignId)throw new RuntimeException('Automation rule not found.');
@@ -240,6 +243,29 @@ function campaigns_rewards_automation_audience_contacts_v119(PDO $pdo,int $merch
     return $ids;
 }
 
+function campaigns_rewards_automation_payload_matches_v119(array $rule,array $payload): bool
+{
+    $conditions=(array)($rule['conditions']??[]);
+    $minPurchase=max(0,(int)($conditions['minimum_purchase_minor']??0));
+    if($minPurchase>0&&max(0,(int)($payload['amount_paid_cents']??$payload['amount_minor']??0))<$minPurchase)return false;
+    $minPoints=max(0,(int)($conditions['minimum_points']??0));
+    if($minPoints>0&&max(0,(int)($payload['balance']??$payload['points']??0))<$minPoints)return false;
+    return true;
+}
+
+function campaigns_rewards_automation_recipients_v119(PDO $pdo,array $rule,array $payload,int $limit): array
+{
+    if(!campaigns_rewards_automation_payload_matches_v119($rule,$payload))return [];
+    $merchantId=(int)$rule['merchant_id'];$conditions=(array)$rule['conditions'];$mode=(string)($rule['actions']['recipient_mode']??'event_contact');
+    $base=campaigns_rewards_automation_audience_contacts_v119($pdo,$merchantId,$conditions,$payload,$limit);
+    if((string)$rule['trigger_event']!=='referral_qualified'||$mode==='event_contact')return $base;
+    $referrer=max(0,(int)($payload['referrer_contact_id']??0));
+    if($referrer<1)return $mode==='referrer'?[]:$base;
+    if(!campaigns_rewards_automation_contact_matches_v119($pdo,$merchantId,$referrer,$conditions))return $mode==='referrer'?[]:$base;
+    if($mode==='referrer')return [$referrer];
+    return array_values(array_unique(array_merge($base,[$referrer])));
+}
+
 function campaigns_rewards_automation_validate_issue_v119(PDO $pdo,int $campaignId,int $rewardProductId,int $contactId,int $ruleId): array
 {
     $rule=campaigns_rewards_automation_rule_v119($pdo,$ruleId,true)?:throw new RuntimeException('Automation rule not found.');
@@ -303,13 +329,14 @@ function campaigns_rewards_automation_run_trigger_v119(PDO $pdo,string $trigger,
       WHERE r.status='active' AND r.trigger_event=? AND c.status='active' AND c.environment='production' AND m.status='active'
         AND (c.starts_at IS NULL OR c.starts_at<=UTC_TIMESTAMP()) AND (c.ends_at IS NULL OR c.ends_at>UTC_TIMESTAMP())";
     $params=[$trigger];if($merchantId>0){$sql.=" AND r.merchant_id=?";$params[]=$merchantId;}
+    $ownerUserId=max(0,(int)($payload['owner_user_id']??0));if($ownerUserId>0){$sql.=" AND m.owner_user_id=?";$params[]=$ownerUserId;}
     $sql.=" ORDER BY r.id";
     $q=$pdo->prepare($sql);$q->execute($params);$ruleIds=array_map('intval',$q->fetchAll(PDO::FETCH_COLUMN)?:[]);
     $summary=['trigger'=>$trigger,'rules'=>0,'contacts'=>0,'executed'=>0,'suppressed'=>0,'failed'=>0];
     foreach($ruleIds as $ruleId){
         $rule=campaigns_rewards_automation_rule_v119($pdo,$ruleId);if(!$rule)continue;$summary['rules']++;
         $limit=max(1,min(1000,(int)($rule['conditions']['max_actions_per_run']??100)));
-        $contacts=campaigns_rewards_automation_audience_contacts_v119($pdo,(int)$rule['merchant_id'],(array)$rule['conditions'],$payload,$limit);
+        $contacts=campaigns_rewards_automation_recipients_v119($pdo,$rule,$payload,$limit);
         $summary['contacts']+=count($contacts);
         $eventId=$triggerEventId!==''?$triggerEventId:($trigger.':'.gmdate('Y-m-d'));
         foreach($contacts as $contactId){
