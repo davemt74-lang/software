@@ -361,6 +361,8 @@
     const continuity = brain.continuity || {};
     const followthrough = brain.followthrough || {};
     const supervision = brain.supervision || {};
+    const autonomy = brain.autonomy || {};
+    const autonomyItems = Array.isArray(autonomy.items) ? autonomy.items : [];
     const supervisionIssues = Array.isArray(supervision.issues) ? supervision.issues : [];
     const supervisionByRef = new Map(supervisionIssues.map(item => [String(item.continuity_ref || ''), item]));
     const followthroughItems = Array.isArray(followthrough.items) ? followthrough.items : [];
@@ -458,6 +460,7 @@
           ${brainMetric('Waiting on you', Number(continuity.waiting_for_user || 0))}
           ${brainMetric('Cross-surface', Number(followthrough.counts?.cross_surface || 0))}
           ${brainMetric('Supervision', Number(supervision.counts?.critical || 0) + Number(supervision.counts?.high || 0))}
+          ${brainMetric('Autonomous goals', Number(autonomy.counts?.autonomous || 0))}
           ${brainMetric('Focus', continuityStateLabel(continuityFocus.state || ''))}
         </div>
         <div class="chat-brain-memory-list">
@@ -495,6 +498,29 @@
             <p>${esc(issue.reason || '')}</p>
             <small>${esc(String(issue.health_state || '').replaceAll('_',' '))}${issue.supervisor_action ? ` · ${esc(String(issue.supervisor_action).replaceAll('_',' '))}` : ''}${issue.auto_reconcile ? ' · governed auto-reconcile' : ''}</small>
           </article>`).join('')}
+        </div>
+      </section>` : ''}
+
+      ${autonomyItems.length ? `
+      <section class="chat-activity-section">
+        <div class="chat-activity-section-head">
+          <div><strong>Autonomous Projects</strong><span>v24.70 continues explicitly autonomous goals through existing milestones, objectives, approvals and workers.</span></div>
+        </div>
+        <div class="chat-brain-metrics">
+          ${brainMetric('Autonomous', Number(autonomy.counts?.autonomous || 0))}
+          ${brainMetric('Supervised', Number(autonomy.counts?.supervised || 0))}
+          ${brainMetric('Needs you', Number(autonomy.counts?.requires_user || 0))}
+        </div>
+        <div class="chat-brain-memory-list">
+          ${autonomyItems.map(item => {
+            const rec = item.recommendation || {};
+            return `<article>
+              <span>${esc(String(item.execution_mode || 'manual'))}</span>
+              <strong>${esc(item.title || ('Goal #' + Number(item.goal_id || 0)))}</strong>
+              <p>${esc(String(item.execution_state || 'unknown').replaceAll('_',' '))} · ${Number(item.progress_percent || 0)}% verified</p>
+              <small>${esc(String(rec.action || 'observe').replaceAll('_',' '))}${rec.requires_user ? ' · needs you' : ''}</small>
+            </article>`;
+          }).join('')}
         </div>
       </section>` : ''}
 
