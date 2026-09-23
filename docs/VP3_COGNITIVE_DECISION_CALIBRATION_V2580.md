@@ -85,11 +85,11 @@ v25.80 may retain several historical snapshots for one long-running goal.
 
 Forecast, cost and token calibration factors use **only the latest settled snapshot per goal** within the rolling evidence window. One frequently observed goal therefore cannot overwhelm those samples.
 
-Value reliability is different: it reads the latest canonical verified realization for each explicit v25.70 value profile. This means a value confirmation or canonical conversion that arrives after goal completion can still improve value reliability without rewriting an old decision settlement.
+Value reliability is different: for each value profile it uses the **expected value frozen in that profile's latest settled decision snapshot**, then compares it with the latest canonical v25.70 realized evidence. This means a confirmation or canonical conversion that arrives after goal completion can still improve reliability, while editing the profile later cannot rewrite what VP3 originally expected.
 
 ## Minimum evidence and bounds
 
-No forecast/cost/token calibration factor changes behavior before at least **5 independent settled goals** provide valid evidence for that metric. Value reliability requires at least **5 independently verified value profiles**.
+No forecast/cost/token calibration factor changes behavior before at least **5 independent settled goals** provide valid evidence for that metric. Value reliability requires at least **5 independently verified value profiles with settled decision snapshots**.
 
 A valid observed/predicted ratio of **0** is real evidence and is not discarded; the final factor is still clamped to the bounded range.
 
@@ -158,7 +158,7 @@ The Decision Calibration surface reports:
 - value realization ratio,
 - reservation-associated forecast error.
 
-Historical settlement rows preserve the value evidence available when they settled. The active value-reliability factor itself uses the latest canonical v25.70 realization state, so later verified value evidence is not lost.
+Historical settlement rows preserve the value evidence available when they settled. The active value-reliability factor uses the latest canonical v25.70 realization state against the immutable expected value captured in the latest settled snapshot for that value profile, so later verified value evidence is learned without retroactively changing the prediction.
 
 This makes it possible to see whether calibration is improving the numeric planning layer.
 
