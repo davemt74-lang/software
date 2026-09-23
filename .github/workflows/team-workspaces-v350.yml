@@ -55,11 +55,14 @@ jobs:
           php -l includes/team-subscription.php
           php -l includes/bootstrap.php
           php -l includes/campaigns-rewards-v100.php
+          php -l includes/campaigns-rewards-platform-v100.php
+          php -l includes/campaigns-rewards-domain-v100.php
           php -l includes/campaigns-rewards-release-v100.php
           php -l team.php
           php -l campaigns.php
           php -l campaign.php
           php -l campaign-claim.php
+          php -l rewards-wallet.php
           php -l profile.php
           php -l plugins.php
           php -l includes/member-navigation.php
