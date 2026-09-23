@@ -148,6 +148,9 @@ function campaigns_rewards_public_participate_v118(PDO $pdo,array $campaign,arra
     $marketingStatus=$marketingConsent?'subscribed':'unknown';
 
     $enrollment=campaigns_rewards_public_enroll_v100($pdo,$campaignId,$contactId,'public-v118:'.$campaign['public_id'].':'.$contactId);
+    $referralRef=campaigns_rewards_public_field_value_v118($input,'referral_ref')?:trim((string)($_GET['ref']??''));
+    $referrerContactId=((string)$campaign['campaign_type_key']==='referral'&&function_exists('campaigns_rewards_referral_referrer_v119'))
+        ?campaigns_rewards_referral_referrer_v119($pdo,$merchantId,$referralRef):0;
     $metadata=[
         'campaign_type'=>$campaign['campaign_type_key'],
         'public_action'=>$behavior['public_action']??'signup',
@@ -155,7 +158,8 @@ function campaigns_rewards_public_participate_v118(PDO $pdo,array $campaign,arra
         'birthday'=>campaigns_rewards_public_field_value_v118($input,'birthday'),
         'social_handle'=>campaigns_rewards_public_field_value_v118($input,'social_handle'),
         'proof_url'=>campaigns_rewards_public_field_value_v118($input,'proof_url'),
-        'referral_ref'=>campaigns_rewards_public_field_value_v118($input,'referral_ref')?:trim((string)($_GET['ref']??'')),
+        'referral_ref'=>$referralRef,
+        'referrer_contact_id'=>$referrerContactId?:null,
     ];
     $pdo->prepare("UPDATE campaign_enrollments SET source=?,metadata_json=?,updated_at=UTC_TIMESTAMP() WHERE id=?")
       ->execute([(string)($behavior['public_action']??'public_signup'),campaigns_rewards_json_v100($metadata),(int)$enrollment['id']]);

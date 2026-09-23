@@ -85,7 +85,7 @@ const checks=[
  ['Landing telemetry is type-neutral and no longer labels every visit signup_started',
   compat.includes("'campaign.landing_viewed'")&&!compat.includes("'campaign.signup_started',['campaign_id'=>$campaignId]")],
  ['V1.18 Campaign behavior events are registered in the existing cognitive domain',
-  registry.includes("'phase'=>'campaigns-rewards-v1.18'")&&registry.includes("'implementation_status'=>'integrated-v1.18'")
+  /phase'=>'campaigns-rewards-v1\.(?:18|19)'/.test(registry)&&/implementation_status'=>'integrated-v1\.(?:18|19)'/.test(registry)
   &&registry.includes("'campaign.newsletter_signup'")&&registry.includes("'campaign.rewards_updated'")
   &&registry.includes("'campaign.event_rsvp'")],
  ['Release manifest preserves authority boundaries',
