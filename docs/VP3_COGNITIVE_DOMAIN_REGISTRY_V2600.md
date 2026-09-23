@@ -32,18 +32,16 @@ Entity references are bounded to 16 per event and use the existing v5.00 object-
 
 ## Campaigns & Rewards reference domain
 
-Campaigns & Rewards is the first new domain designed against v26.00. In this release it is a reference domain contract only:
+Campaigns & Rewards was the first reference domain designed against v26.00, and Campaigns & Rewards V1.00 now fulfills that contract:
 
 - plugin key: campaigns_rewards
-- implementation status: contract_ready
-- plugin catalog exposure: not yet enabled
-- business-table authority: not yet created
+- implementation status: integrated-v1.00
+- plugin catalog exposure: enabled
+- business-table authority: campaign_*_v100 tables
 
-The contract reserves merchant account/location, campaign, reward, reward claim, and campaign customer identities plus canonical event families for campaign lifecycle, landing-page activity, engagement, conversion, rewards, and claims.
+The domain retains merchant account/location, campaign, reward, reward claim, and campaign customer identities plus canonical event families for campaign lifecycle, landing-page activity, engagement, conversion, rewards, and claims.
 
-CRM contacts, Team members, and Profile identities are declared as related objects. They remain owned by their existing systems and are not duplicated into Campaigns & Rewards.
-
-The next plugin build will create the business schema and UI against this contract, register the plugin only when those surfaces actually exist, and route plugin activity through the canonical v26.00 admission path.
+CRM contacts, Team members, and Profile identities remain related objects owned by their existing systems. Campaigns & Rewards references those authorities rather than duplicating them.
 
 ## Presentation boundary
 
