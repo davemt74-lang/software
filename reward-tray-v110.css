@@ -7,6 +7,11 @@
 .reward-tray-tab.active{color:#111827;border-bottom-color:#111827}
 .reward-tray-count{display:inline-grid;place-items:center;min-width:20px;height:20px;padding:0 6px;border-radius:999px;background:#eef0f3;color:#4b5563;font-size:10px;letter-spacing:0}
 .reward-tray-tab.active .reward-tray-count{background:#111827;color:#fff}
+.reward-tray-tab{text-decoration:none}
+.reward-tray-subheader{display:none;background:#fff;border-bottom:1px solid #e5e7eb;overflow-x:auto;overscroll-behavior-x:contain;scrollbar-width:none}
+.reward-tray-subheader::-webkit-scrollbar{display:none}
+.reward-page-main{min-height:0}
+.reward-page-canvas{overflow-y:auto}
 .reward-tray-canvas{min-height:100%;padding:24px 28px 120px;background:#f7f7f8}
 .reward-tray-head{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;margin-bottom:20px}
 .reward-tray-head small{display:block;color:#8b93a1;font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase}
@@ -50,10 +55,12 @@
 .reward-claim-success{padding:12px;border-radius:9px;background:#ecfdf3;color:#146c43;font-size:12px;font-weight:700}
 body.reward-tray-open .chat-composer-shell{display:none!important}
 @media(max-width:760px){
-  body.reward-tray-ready .chat-main{grid-template-rows:auto minmax(0,1fr) auto}
-  body.reward-tray-ready .chat-topbar{min-height:58px;flex-wrap:wrap;gap:4px 10px;padding:6px 10px 0}
-  .reward-tray-tabs{order:2;flex:1 1 100%;width:100%;justify-content:flex-start;border-top:1px solid #eef0f2}
-  .reward-tray-tab{flex:1 0 92px;min-height:46px;padding:0 10px}
+  body.reward-tray-ready .chat-main{grid-template-rows:58px auto minmax(0,1fr) auto}
+  body.reward-page .reward-page-main{grid-template-rows:58px auto minmax(0,1fr)}
+  body.reward-tray-ready .chat-topbar{min-height:58px;flex-wrap:nowrap;gap:10px;padding:0 10px}
+  .reward-tray-tabs-desktop{display:none!important}
+  .reward-tray-subheader{display:flex;align-items:stretch;justify-content:flex-start;min-height:47px}
+  .reward-tray-subheader .reward-tray-tab{flex:1 0 92px;min-height:46px;padding:0 10px}
   .reward-tray-canvas{padding:18px 14px 90px}
   .reward-tray-list{grid-template-columns:1fr}
   .reward-claim-layout{grid-template-columns:1fr}
