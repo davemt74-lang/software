@@ -49,8 +49,8 @@ jobs:
 
           cat > _deploy/VP3_RELEASE.json <<EOF
           {
-            "release": "Cognitive Runtime v24.20",
-            "build": "vp3-cognitive-context-release-v2420-20260922",
+            "release": "Cognitive Runtime v24.30",
+            "build": "vp3-cognitive-turn-release-v2430-20260922",
             "commit": "${VP3_RELEASE_SHA}",
             "repository": "${GITHUB_REPOSITORY}",
             "workflow_run_id": "${GITHUB_RUN_ID}",
@@ -64,7 +64,7 @@ jobs:
           test -f _deploy/chat.php
           test -f _deploy/.htaccess
 
-          # v24.20 release hardening: the production artifact must contain
+          # v24.30 release hardening: the production artifact must contain
           # the canonical cognitive loop, live-session/event foundation and user surfaces.
           test -f _deploy/includes/cognitive-runtime-v500.php
           test -f _deploy/includes/cognitive-presentation-v510.php
@@ -95,6 +95,8 @@ jobs:
           test -f _deploy/includes/cognitive-release-v2410.php
           test -f _deploy/includes/cognitive-context-v2420.php
           test -f _deploy/includes/cognitive-release-v2420.php
+          test -f _deploy/includes/cognitive-turn-v2430.php
+          test -f _deploy/includes/cognitive-release-v2430.php
           test -f _deploy/includes/agent-event-infrastructure-v1920.php
           test -f _deploy/api/cognitive-feed-v530.php
           test -f _deploy/api/cognitive-planning-v550.php
@@ -105,6 +107,11 @@ jobs:
           test -f _deploy/chat-notifications-drawer-v240.js
           test -f _deploy/chat-cognitive-feed-v530.js
           test -f _deploy/chat-cognitive-feed-v530.css
+          test -f _deploy/includes/ai-settings.php
+          test -f _deploy/includes/chat-engine.php
+          test -f _deploy/includes/chat-agent-policy-v236.php
+          test -f _deploy/includes/knowledge-retrieval-v162.php
+          test -f _deploy/includes/agent-chat-runtime-v2160.php
           test -f _deploy/includes/bootstrap.php
           test -f _deploy/upgrade.php
 
