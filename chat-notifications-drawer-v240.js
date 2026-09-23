@@ -362,6 +362,8 @@
     const followthrough = brain.followthrough || {};
     const supervision = brain.supervision || {};
     const autonomy = brain.autonomy || {};
+    const portfolio = brain.portfolio || {};
+    const portfolioItems = Array.isArray(portfolio.items) ? portfolio.items : [];
     const autonomyItems = Array.isArray(autonomy.items) ? autonomy.items : [];
     const supervisionIssues = Array.isArray(supervision.issues) ? supervision.issues : [];
     const supervisionByRef = new Map(supervisionIssues.map(item => [String(item.continuity_ref || ''), item]));
@@ -498,6 +500,34 @@
             <p>${esc(issue.reason || '')}</p>
             <small>${esc(String(issue.health_state || '').replaceAll('_',' '))}${issue.supervisor_action ? ` · ${esc(String(issue.supervisor_action).replaceAll('_',' '))}` : ''}${issue.auto_reconcile ? ' · governed auto-reconcile' : ''}</small>
           </article>`).join('')}
+        </div>
+      </section>` : ''}
+
+      ${portfolioItems.length ? `
+      <section class="chat-activity-section">
+        <div class="chat-activity-section-head">
+          <div><strong>Portfolio Coordination</strong><span>v24.80 arbitrates autonomous goals against shared worker capacity, priorities, deadlines, dependencies and overlap.</span></div>
+        </div>
+        <div class="chat-brain-metrics">
+          ${brainMetric('Held', Number(portfolio.counts?.held || 0))}
+          ${brainMetric('Claim admitted', Number(portfolio.counts?.claim_admitted || 0))}
+          ${brainMetric('New objectives', Number(portfolio.counts?.materialize_admitted || 0))}
+          ${brainMetric('Repairs', Number(portfolio.counts?.repair_admitted || 0))}
+          ${brainMetric('Cloud free', Number(portfolio.capacity?.executors?.cloud?.free || 0))}
+          ${brainMetric('HomeServer free', Number(portfolio.capacity?.executors?.homeserver?.free || 0))}
+        </div>
+        <div class="chat-brain-memory-list">
+          ${portfolioItems.map(item => {
+            const deps = Array.isArray(item.blocked_by_goal_ids) ? item.blocked_by_goal_ids.length : 0;
+            const shared = Array.isArray(item.shared_objective_goal_ids) ? item.shared_objective_goal_ids.length : 0;
+            const hold = String(item.hold_reason || '').replaceAll('_',' ');
+            return `<article>
+              <span>${esc(String(item.execution_mode || 'manual'))} · ${Number(item.score_percent || 0)}/100</span>
+              <strong>${esc(item.title || ('Goal #' + Number(item.goal_id || 0)))}</strong>
+              <p>${esc(String(item.execution_state || 'unknown').replaceAll('_',' '))} · ${esc(String(item.coordination_action || 'observe').replaceAll('_',' '))}</p>
+              <small>${esc(item.executor || 'cloud')}${hold ? ` · held: ${esc(hold)}` : ''}${deps ? ` · blocked by ${deps} goal${deps === 1 ? '' : 's'}` : ''}${shared ? ` · shared across ${shared + 1} goals` : ''}</small>
+            </article>`;
+          }).join('')}
         </div>
       </section>` : ''}
 
