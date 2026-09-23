@@ -166,6 +166,9 @@ function campaigns_rewards_automation_set_status_v119(PDO $pdo,int $ruleId,int $
         if((string)$row['campaign_status']!=='active')throw new RuntimeException('Activate the Campaign before activating its automation.');
     }
     $pdo->prepare("UPDATE campaign_automation_rules SET status=?,updated_at=UTC_TIMESTAMP() WHERE id=?")->execute([$status,$ruleId]);
+    campaigns_rewards_activity_event_v100($pdo,(int)$row['merchant_id'],'campaign.automation_saved',['campaign_id'=>(int)$row['campaign_id']],[
+        'summary'=>'Campaign automation status changed to '.$status,'campaign_public_id'=>$row['campaign_public_id'],'automation_rule_id'=>$ruleId,'status'=>$status,
+    ],(string)$row['environment'],$actorUserId);
     return campaigns_rewards_automation_rule_v119($pdo,$ruleId)?:throw new RuntimeException('Automation rule unavailable.');
 }
 
@@ -314,17 +317,24 @@ function campaigns_rewards_automation_execute_contact_v119(PDO $pdo,array $rule,
     $ruleId=(int)$rule['id'];$campaignId=(int)$rule['campaign_id'];$merchantId=(int)$rule['merchant_id'];
     $rewardId=max(0,(int)($rule['actions']['reward_product_id']??0));if($rewardId<1)throw new RuntimeException('Automation Reward is not configured.');
     $key=hash('sha256',$ruleId.'|'.$contactId.'|'.$triggerEventId);
-    if($existing=campaigns_rewards_automation_execution_v119($pdo,$ruleId,$contactId,$key))return ['duplicate'=>true,'execution'=>$existing];
+    $existing=campaigns_rewards_automation_execution_v119($pdo,$ruleId,$contactId,$key);
+    if($existing&&in_array((string)$existing['status'],['completed','running'],true))return ['duplicate'=>true,'execution'=>$existing];
     if(campaigns_rewards_automation_cooldown_blocked_v119($pdo,$rule,$contactId))return ['duplicate'=>false,'suppressed'=>true,'reason'=>'cooldown'];
     if(!campaigns_rewards_automation_contact_matches_v119($pdo,$merchantId,$contactId,(array)$rule['conditions']))return ['duplicate'=>false,'suppressed'=>true,'reason'=>'audience'];
-    $insert=$pdo->prepare("INSERT IGNORE INTO campaign_rule_executions (rule_id,trigger_event_id,contact_id,campaign_id,idempotency_key,status,environment,result_json)
-      VALUES (?,?,?,?,?,'running','production','{}')");
-    $insert->execute([$ruleId,$triggerEventId,$contactId,$campaignId,$key]);
-    if($insert->rowCount()!==1){
-        $existing=campaigns_rewards_automation_execution_v119($pdo,$ruleId,$contactId,$key);
-        return ['duplicate'=>true,'execution'=>$existing];
+    if($existing&&$existing['status']==='failed'){
+        $executionId=(int)$existing['id'];
+        $pdo->prepare("UPDATE campaign_rule_executions SET status='running',trigger_event_id=?,result_json='{}',executed_at=UTC_TIMESTAMP() WHERE id=? AND status='failed'")
+          ->execute([$triggerEventId,$executionId]);
+    }else{
+        $insert=$pdo->prepare("INSERT IGNORE INTO campaign_rule_executions (rule_id,trigger_event_id,contact_id,campaign_id,idempotency_key,status,environment,result_json)
+          VALUES (?,?,?,?,?,'running','production','{}')");
+        $insert->execute([$ruleId,$triggerEventId,$contactId,$campaignId,$key]);
+        if($insert->rowCount()!==1){
+            $existing=campaigns_rewards_automation_execution_v119($pdo,$ruleId,$contactId,$key);
+            return ['duplicate'=>true,'execution'=>$existing];
+        }
+        $executionId=(int)$pdo->lastInsertId();
     }
-    $executionId=(int)$pdo->lastInsertId();
     try{
         $issuance=campaigns_rewards_issue_reward_v100($pdo,$campaignId,$rewardId,$contactId,0,[
             'actor_type'=>'automation','automation_rule_id'=>$ruleId,'source'=>'campaign_automation',
