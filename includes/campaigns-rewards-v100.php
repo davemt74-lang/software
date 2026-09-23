@@ -277,7 +277,7 @@ function campaigns_rewards_plugin_state_v100(?array $user=null,?PDO $pdo=null): 
     $user??=current_user();$pdo??=db();
     if(!$user||!$pdo)return ['enabled'=>false,'reason'=>'unavailable','schema_ready'=>false];
     $state=function_exists('vp3_plugin_effective_state_v360')?vp3_plugin_effective_state_v360($pdo,$user,VP3_CAMPAIGNS_REWARDS_PLUGIN_KEY_V100):['enabled'=>false,'reason'=>'unavailable'];
-    $state['schema_ready']=campaigns_rewards_schema_ready_v100($pdo);return $state;
+    $state['schema_ready']=function_exists('campaigns_rewards_platform_schema_ready_v100')&&campaigns_rewards_platform_schema_ready_v100($pdo);return $state;
 }
 
 function campaigns_rewards_enabled_v100(?array $user=null,?PDO $pdo=null): bool
@@ -466,7 +466,7 @@ function campaigns_rewards_owned_merchants_v100(PDO $pdo,int $ownerUserId): arra
 
 function campaigns_rewards_user_has_access_v100(PDO $pdo,array $user): bool
 {
-    if(!campaigns_rewards_schema_ready_v100($pdo))return false;
+    if(!function_exists('campaigns_rewards_platform_schema_ready_v100')||!campaigns_rewards_platform_schema_ready_v100($pdo))return false;
     return campaigns_rewards_enabled_v100($user,$pdo)||campaigns_rewards_accessible_merchants_v100($pdo,$user)!==[];
 }
 
