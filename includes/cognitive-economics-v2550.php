@@ -26,7 +26,8 @@ function vp3_cognitive_economics_usage_v2550(PDO $pdo,int $uid,int $days=VP3_COG
         'available'=>false,'window_days'=>$days,'requests'=>0,'known_cost_requests'=>0,
         'unknown_cost_requests'=>0,'known_cost_micros'=>0,'total_tokens'=>0,
         'cloud_tokens_charged'=>0,'local_requests'=>0,'cloud_requests'=>0,
-        'average_known_cost_micros'=>null,'by_source'=>[],
+        'average_known_cost_micros'=>null,'cloud_known_cost_requests'=>0,
+        'cloud_known_cost_micros'=>0,'cloud_average_known_cost_micros'=>null,'by_source'=>[],
         'authority'=>'ai_execution_ledger_v032',
     ];
     if($uid<1||!function_exists('table_exists')||!table_exists('ai_execution_ledger'))return $empty;
@@ -40,7 +41,9 @@ function vp3_cognitive_economics_usage_v2550(PDO $pdo,int $uid,int $days=VP3_COG
             COALESCE(SUM(total_tokens),0) total_tokens,
             COALESCE(SUM(cloud_tokens_charged),0) cloud_tokens_charged,
             COALESCE(SUM(source='homeserver_local'),0) local_requests,
-            COALESCE(SUM(source='vp3_cloud'),0) cloud_requests
+            COALESCE(SUM(source='vp3_cloud'),0) cloud_requests,
+            SUM(CASE WHEN source='vp3_cloud' AND estimated_cost_micros IS NOT NULL THEN 1 ELSE 0 END) cloud_known_cost_requests,
+            COALESCE(SUM(CASE WHEN source='vp3_cloud' THEN estimated_cost_micros ELSE 0 END),0) cloud_known_cost_micros
             FROM ai_execution_ledger
             WHERE user_id=? AND created_at>=DATE_SUB(UTC_TIMESTAMP(),INTERVAL {$days} DAY)");
         $s->execute([$uid]);$row=$s->fetch(PDO::FETCH_ASSOC)?:[];
@@ -56,6 +59,8 @@ function vp3_cognitive_economics_usage_v2550(PDO $pdo,int $uid,int $days=VP3_COG
         $by->execute([$uid]);$bySource=$by->fetchAll(PDO::FETCH_ASSOC)?:[];
         $known=max(0,(int)($row['known_cost_requests']??0));
         $cost=max(0,(int)($row['known_cost_micros']??0));
+        $cloudKnown=max(0,(int)($row['cloud_known_cost_requests']??0));
+        $cloudCost=max(0,(int)($row['cloud_known_cost_micros']??0));
         return [
             'available'=>true,'window_days'=>$days,
             'requests'=>max(0,(int)($row['requests']??0)),
@@ -67,6 +72,9 @@ function vp3_cognitive_economics_usage_v2550(PDO $pdo,int $uid,int $days=VP3_COG
             'local_requests'=>max(0,(int)($row['local_requests']??0)),
             'cloud_requests'=>max(0,(int)($row['cloud_requests']??0)),
             'average_known_cost_micros'=>$known>0?(int)round($cost/$known):null,
+            'cloud_known_cost_requests'=>$cloudKnown,
+            'cloud_known_cost_micros'=>$cloudCost,
+            'cloud_average_known_cost_micros'=>$cloudKnown>0?(int)round($cloudCost/$cloudKnown):null,
             'by_source'=>$bySource,
             'authority'=>'ai_execution_ledger_v032',
         ];
@@ -173,24 +181,36 @@ function vp3_cognitive_economics_apply_v2550(
     $uid=(int)($user['id']??0);
     $usage=vp3_cognitive_economics_usage_v2550($pdo,$uid);
     $quota=vp3_cognitive_economics_quota_v2550($user,$pdo);
-    $runIds=[];
-    foreach($items as $item)foreach((array)($item['workflow_run_ids']??[]) as $runId)$runIds[]=(int)$runId;
+    $runIds=[];$runGoalCounts=[];
+    foreach($items as $item){
+        $unique=array_values(array_unique(array_filter(array_map('intval',(array)($item['workflow_run_ids']??[])),static fn(int $id): bool=>$id>0)));
+        foreach($unique as $runId){$runIds[]=$runId;$runGoalCounts[$runId]=($runGoalCounts[$runId]??0)+1;}
+    }
     $runCosts=vp3_cognitive_economics_run_costs_v2550($pdo,$uid,$runIds);
-    $accountAvg=is_int($usage['average_known_cost_micros']??null)?$usage['average_known_cost_micros']:null;
+    $accountAvg=is_int($usage['cloud_average_known_cost_micros']??null)
+        ?$usage['cloud_average_known_cost_micros']
+        :(is_int($usage['average_known_cost_micros']??null)?$usage['average_known_cost_micros']:null);
     $economics=[];
 
     foreach($items as &$item){
         if(!is_array($item))continue;
         $goalRunIds=array_values(array_unique(array_filter(array_map('intval',(array)($item['workflow_run_ids']??[])),static fn(int $id): bool=>$id>0)));
         $requests=0;$known=0;$unknown=0;$cost=0;$tokens=0;$cloudTokens=0;$cloudRequests=0;$localRequests=0;
+        $attributedCost=0.0;$attributedKnown=0.0;$attributedTokens=0.0;$attributedCloudTokens=0.0;
         foreach($goalRunIds as $runId){
             $row=$runCosts[$runId]??null;if(!$row)continue;
+            $share=max(1,(int)($runGoalCounts[$runId]??1));
             $requests+=(int)$row['requests'];$known+=(int)$row['known_cost_requests'];
             $unknown+=(int)$row['unknown_cost_requests'];$cost+=(int)$row['known_cost_micros'];
             $tokens+=(int)$row['total_tokens'];$cloudTokens+=(int)$row['cloud_tokens_charged'];
             $cloudRequests+=(int)$row['cloud_requests'];$localRequests+=(int)$row['local_requests'];
+            $attributedCost+=((int)$row['known_cost_micros'])/$share;
+            $attributedKnown+=((int)$row['known_cost_requests'])/$share;
+            $attributedTokens+=((int)$row['total_tokens'])/$share;
+            $attributedCloudTokens+=((int)$row['cloud_tokens_charged'])/$share;
         }
-        $goalAvg=$known>0?(int)round($cost/$known):null;
+        $attributedCostMicros=max(0,(int)round($attributedCost));
+        $goalAvg=$attributedKnown>0?(int)round($attributedCost/$attributedKnown):null;
         $efficiency=vp3_cognitive_economics_efficiency_v2550($goalAvg,$accountAvg);
         $relative=($goalAvg!==null&&$accountAvg!==null&&$accountAvg>0)?round($goalAvg/$accountAvg,4):null;
         $costKnown=$known>0;
@@ -206,10 +226,12 @@ function vp3_cognitive_economics_apply_v2550(
             'goal_id'=>(int)($item['goal_id']??0),'title'=>(string)($item['title']??''),
             'executor'=>(string)($item['executor']??'cloud'),'workflow_run_ids'=>$goalRunIds,
             'historical_requests'=>$requests,'known_cost_requests'=>$known,
-            'unknown_cost_requests'=>$unknown,'historical_known_cost_micros'=>$cost,
-            'historical_total_tokens'=>$tokens,'historical_cloud_tokens_charged'=>$cloudTokens,
+            'unknown_cost_requests'=>$unknown,'linked_known_cost_micros'=>$cost,
+            'attributed_known_cost_micros'=>$attributedCostMicros,
+            'linked_total_tokens'=>$tokens,'attributed_total_tokens'=>max(0,(int)round($attributedTokens)),
+            'linked_cloud_tokens_charged'=>$cloudTokens,'attributed_cloud_tokens_charged'=>max(0,(int)round($attributedCloudTokens)),
             'historical_cloud_requests'=>$cloudRequests,'historical_local_requests'=>$localRequests,
-            'average_known_cost_micros'=>$goalAvg,'account_average_known_cost_micros'=>$accountAvg,
+            'average_attributed_known_cost_micros'=>$goalAvg,'account_cloud_average_known_cost_micros'=>$accountAvg,
             'relative_cost_index'=>$relative,'efficiency_score'=>$efficiency,
             'quota_state'=>(string)($quota['state']??'unavailable'),
             'quota_pressure'=>$quotaPressure,'cloud_exposed'=>$cloudExposed,
@@ -224,7 +246,7 @@ function vp3_cognitive_economics_apply_v2550(
         $item['economic_planning_adjustment']=$adjustment;
         $item['economic_attention_score']=$attention;
         $item['economic_cost_known']=$costKnown;
-        $item['economic_known_cost_micros']=$cost;
+        $item['economic_known_cost_micros']=$attributedCostMicros;
         $item['economic_unknown_cost_requests']=$unknown;
         $item['economic_quota_state']=(string)($quota['state']??'unavailable');
     }
@@ -232,7 +254,7 @@ function vp3_cognitive_economics_apply_v2550(
 
     usort($economics,static function(array $a,array $b): int {
         $x=((float)($b['attention_score']??0))<=>((float)($a['attention_score']??0));if($x!==0)return $x;
-        $x=((int)($b['historical_known_cost_micros']??0))<=>((int)($a['historical_known_cost_micros']??0));if($x!==0)return $x;
+        $x=((int)($b['attributed_known_cost_micros']??0))<=>((int)($a['attributed_known_cost_micros']??0));if($x!==0)return $x;
         return ((int)($a['goal_id']??0))<=>((int)($b['goal_id']??0));
     });
     $economics=array_slice($economics,0,VP3_COGNITIVE_ECONOMICS_MAX_ITEMS_V2550);
@@ -257,6 +279,7 @@ function vp3_cognitive_economics_apply_v2550(
                 'explicit_cost_budget_micros'=>null,
                 'no_fabricated_cost_budget'=>true,
                 'unknown_pricing_is_not_zero'=>true,
+                'shared_run_cost_is_proportionally_attributed'=>true,
                 'goal_attribution_is_non_additive'=>true,
                 'commitments_outrank_economics'=>true,
                 'economics_can_block_execution'=>false,
