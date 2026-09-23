@@ -151,10 +151,11 @@ function campaigns_rewards_can_own_merchant_v100(PDO $pdo,int $merchantId,int $u
 
 function campaigns_rewards_unique_slug_v100(PDO $pdo,string $table,string $value,int $excludeId=0): string
 {
-    if(!in_array($table,['campaign_merchant_accounts_v100','campaigns_v100'],true))throw new InvalidArgumentException('Unsupported slug authority.');
-    $base=campaigns_rewards_slug_v100($value);if($base==='')$base='campaign';
+    $aliases=['campaign_merchant_accounts_v100'=>'merchant_accounts','campaigns_v100'=>'campaigns','merchant_accounts'=>'merchant_accounts','campaigns'=>'campaigns'];
+    $table=$aliases[$table]??'';if($table==='')throw new InvalidArgumentException('Unsupported slug authority.');
+    $base=campaigns_rewards_slug_v100($value);if($base==='')$base=$table==='merchant_accounts'?'merchant':'campaign';
     for($i=0;$i<100;$i++){
-        $slug=$i===0?$base:substr($base,0,72).'-'.($i+1);
+        $slug=$i===0?$base:substr($base,0,100).'-'.($i+1);
         $sql="SELECT id FROM {$table} WHERE slug=?".($excludeId>0?' AND id<>?':'')." LIMIT 1";
         $stmt=$pdo->prepare($sql);$stmt->execute($excludeId>0?[$slug,$excludeId]:[$slug]);if(!$stmt->fetchColumn())return $slug;
     }
@@ -182,18 +183,17 @@ function campaigns_rewards_emit_v100(PDO $pdo,int $ownerUserId,string $eventType
 
 function campaigns_rewards_record_activity_v100(PDO $pdo,int $merchantId,string $eventType,array $ids=[],array $metadata=[],?string $dedupeKey=null): int
 {
-    $meta=function_exists('vp3_cognitive_sanitize_value_v500')?vp3_cognitive_sanitize_value_v500($metadata):$metadata;
-    $json=json_encode($meta,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE|JSON_INVALID_UTF8_SUBSTITUTE);
-    $dedupe=$dedupeKey!==null&&$dedupeKey!==''?hash('sha256',$dedupeKey):null;
-    $stmt=$pdo->prepare("INSERT IGNORE INTO campaign_activity_v100
-      (merchant_account_id,campaign_id,reward_id,claim_id,customer_id,actor_user_id,event_type,dedupe_key,metadata_json,occurred_at)
-      VALUES (?,?,?,?,?,?,?,?,?,UTC_TIMESTAMP())");
-    $stmt->execute([
-        $merchantId,!empty($ids['campaign_id'])?(int)$ids['campaign_id']:null,!empty($ids['reward_id'])?(int)$ids['reward_id']:null,
-        !empty($ids['claim_id'])?(int)$ids['claim_id']:null,!empty($ids['customer_id'])?(int)$ids['customer_id']:null,
-        !empty($ids['actor_user_id'])?(int)$ids['actor_user_id']:null,campaigns_rewards_text_v100($eventType,120),$dedupe,is_string($json)?$json:'{}'
-    ]);
-    return (int)$pdo->lastInsertId();
+    if(!function_exists('campaigns_rewards_activity_event_v100'))return 0;
+    if($dedupeKey!==null&&$dedupeKey!==''){
+        $fingerprint=hash('sha256',$dedupeKey);
+        $check=$pdo->prepare("SELECT id FROM campaign_activity_events WHERE merchant_id=? AND event_type=? AND JSON_UNQUOTE(JSON_EXTRACT(details_json,'$.dedupe'))=? LIMIT 1");
+        try{$check->execute([$merchantId,$eventType,$fingerprint]);if($check->fetchColumn())return 0;}catch(Throwable $e){}
+        $metadata['dedupe']=$fingerprint;
+    }
+    return campaigns_rewards_activity_event_v100($pdo,$merchantId,$eventType,[
+        'campaign_id'=>(int)($ids['campaign_id']??0),'reward_issuance_id'=>(int)($ids['reward_issuance_id']??0),
+        'claim_id'=>(int)($ids['claim_id']??0),'contact_id'=>(int)($ids['contact_id']??$ids['customer_id']??0),
+    ],$metadata,(string)($metadata['environment']??'production'),isset($ids['actor_user_id'])?(int)$ids['actor_user_id']:null);
 }
 
 function campaigns_rewards_create_merchant_v100(PDO $pdo,array $user,array $input): array
@@ -488,55 +488,39 @@ function campaigns_rewards_public_claim_rate_limit_v100(string $campaignPublicId
 
 function campaigns_rewards_issue_claim_v100(PDO $pdo,array $campaign,string $rewardPublicId,string $name,string $email,string $phone=''): array
 {
-    $campaignId=(int)($campaign['id']??0);$merchantId=(int)($campaign['merchant_account_id']??0);if($campaignId<1||$merchantId<1||($campaign['status']??'')!=='active')throw new RuntimeException('This campaign is not accepting claims.');
-    campaigns_rewards_public_claim_rate_limit_v100((string)$campaign['public_id']);$pdo->beginTransaction();
-    try{
-        $stmt=$pdo->prepare("SELECT * FROM campaign_rewards_v100 WHERE public_id=? AND campaign_id=? AND status='active' AND (starts_at IS NULL OR starts_at<=UTC_TIMESTAMP()) AND (ends_at IS NULL OR ends_at>UTC_TIMESTAMP()) LIMIT 1 FOR UPDATE");$stmt->execute([$rewardPublicId,$campaignId]);$reward=$stmt->fetch();if(!$reward)throw new RuntimeException('That reward is not currently available.');
-        $customer=campaigns_rewards_customer_upsert_v100($pdo,$campaign,$name,$email,$phone);$activeStatuses="'issued','validated','redeemed'";
-        $countStmt=$pdo->prepare("SELECT COUNT(*) FROM campaign_reward_claims_v100 WHERE reward_id=? AND status IN ({$activeStatuses})");$countStmt->execute([(int)$reward['id']]);$issued=(int)$countStmt->fetchColumn();$inventory=(int)$reward['inventory_limit'];if($inventory>0&&$issued>=$inventory)throw new RuntimeException('This reward has reached its claim limit.');
-        $perStmt=$pdo->prepare("SELECT COUNT(*) FROM campaign_reward_claims_v100 WHERE reward_id=? AND customer_id=? AND status IN ({$activeStatuses})");$perStmt->execute([(int)$reward['id'],(int)$customer['id']]);if((int)$perStmt->fetchColumn()>=(int)$reward['per_customer_limit'])throw new RuntimeException('You have already reached the claim limit for this reward.');
-        $code='';for($i=0;$i<20;$i++){$candidate=campaigns_rewards_claim_code_v100();$check=$pdo->prepare('SELECT 1 FROM campaign_reward_claims_v100 WHERE claim_code=? LIMIT 1');$check->execute([$candidate]);if(!$check->fetchColumn()){$code=$candidate;break;}}
-        if($code==='')throw new RuntimeException('A unique claim code could not be generated.');$public=campaigns_rewards_uuid_v100();
-        $insert=$pdo->prepare("INSERT INTO campaign_reward_claims_v100 (public_id,merchant_account_id,campaign_id,reward_id,customer_id,claim_code,status,issued_at) VALUES (?,?,?,?,?,?,'issued',UTC_TIMESTAMP())");$insert->execute([$public,$merchantId,$campaignId,(int)$reward['id'],(int)$customer['id'],$code]);$claimId=(int)$pdo->lastInsertId();
-        campaigns_rewards_record_activity_v100($pdo,$merchantId,'claim.created',['campaign_id'=>$campaignId,'reward_id'=>(int)$reward['id'],'claim_id'=>$claimId,'customer_id'=>(int)$customer['id']],[]);$pdo->commit();
-    }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();throw $e;}
-    $claim=campaigns_rewards_claim_by_code_v100($pdo,$code)?:throw new RuntimeException('Reward claim could not be loaded.');$owner=(int)$campaign['owner_user_id'];
-    $refs=[campaigns_rewards_ref_v100('campaign',$campaign['public_id'],'public'),campaigns_rewards_ref_v100('reward',$reward['public_id'],'public'),campaigns_rewards_ref_v100('reward_claim',$claim['public_id'],'public'),campaigns_rewards_ref_v100('campaign_customer',$customer['public_id'],'workspace')];
-    campaigns_rewards_emit_v100($pdo,$owner,'campaign.customer_engaged',$refs,['campaign_id'=>$campaign['public_id'],'reward_id'=>$reward['public_id'],'customer_id'=>$customer['public_id']],['external_event_id'=>'claim:'.$public.':engaged']);
-    campaigns_rewards_emit_v100($pdo,$owner,'reward.issued',$refs,['campaign_id'=>$campaign['public_id'],'reward_id'=>$reward['public_id'],'claim_id'=>$claim['public_id']],['external_event_id'=>'claim:'.$public.':issued']);
-    campaigns_rewards_emit_v100($pdo,$owner,'claim.created',$refs,['campaign_id'=>$campaign['public_id'],'reward_id'=>$reward['public_id'],'claim_id'=>$claim['public_id']],['external_event_id'=>'claim:'.$public.':created']);
-    return $claim;
+    $campaignId=(int)($campaign['id']??0);if($campaignId<1)throw new RuntimeException('Campaign is unavailable.');
+    campaigns_rewards_public_claim_rate_limit_v100((string)($campaign['public_id']??''));
+    $stmt=$pdo->prepare("SELECT rp.id FROM reward_products rp
+      INNER JOIN campaign_reward_set_items i ON i.reward_product_id=rp.id INNER JOIN campaign_reward_sets rs ON rs.id=i.reward_set_id
+      WHERE rp.public_id=? AND rs.campaign_id=? AND rp.is_active=1 LIMIT 1");
+    $stmt->execute([$rewardPublicId,$campaignId]);$rewardId=(int)$stmt->fetchColumn();if($rewardId<1)throw new RuntimeException('That Reward is not currently available.');
+    $contact=campaigns_rewards_customer_upsert_v100($pdo,$campaign,$name,$email,$phone);$contactId=(int)$contact['crm_contact_id'];
+    $enrollment=campaigns_rewards_public_enroll_v100($pdo,$campaignId,$contactId,'legacy-public-enroll:'.($campaign['public_id']??$campaignId).':'.$contactId);
+    return campaigns_rewards_issue_reward_v100($pdo,$campaignId,$rewardId,$contactId,0,[
+        'actor_type'=>'public','source'=>'public_signup','campaign_enrollment_id'=>(int)$enrollment['id'],
+        'recipient_user_id'=>(int)($contact['vp3_user_id']??0),'idempotency_key'=>'legacy-public-reward:'.hash('sha256',$campaignId.'|'.$rewardId.'|'.$contactId),
+    ]);
 }
 
 function campaigns_rewards_claim_by_code_v100(PDO $pdo,string $code): ?array
 {
-    $code=strtoupper(preg_replace('/[^A-Z0-9]/i','',trim($code))??'');if($code==='')return null;
-    $stmt=$pdo->prepare("SELECT cl.*,r.public_id reward_public_id,r.title reward_title,r.value_label,r.description reward_description,c.public_id campaign_public_id,c.slug campaign_slug,c.title campaign_title,m.id merchant_account_id,m.public_id merchant_public_id,m.owner_user_id,m.name merchant_name,m.slug merchant_slug
-      FROM campaign_reward_claims_v100 cl INNER JOIN campaign_rewards_v100 r ON r.id=cl.reward_id INNER JOIN campaigns_v100 c ON c.id=cl.campaign_id INNER JOIN campaign_merchant_accounts_v100 m ON m.id=cl.merchant_account_id WHERE cl.claim_code=? LIMIT 1");
-    $stmt->execute([$code]);$row=$stmt->fetch();if(!$row||!campaigns_rewards_owner_plugin_enabled_v100($pdo,(int)$row['owner_user_id']))return null;return $row;
+    $code=trim($code);if($code==='')return null;$hash=campaigns_rewards_secret_hash_v100($code);
+    $stmt=$pdo->prepare("SELECT ri.*,rp.public_id reward_public_id,rp.name reward_title,c.public_id campaign_public_id,c.slug campaign_slug,c.name campaign_title,
+      m.id merchant_account_id,m.public_id merchant_public_id,m.owner_user_id,m.name merchant_name
+      FROM reward_issuances ri INNER JOIN reward_products rp ON rp.id=ri.reward_product_id
+      INNER JOIN campaigns c ON c.id=ri.campaign_id INNER JOIN merchant_accounts m ON m.id=ri.merchant_id
+      WHERE ri.credential_hash=? LIMIT 1");
+    $stmt->execute([$hash]);$row=$stmt->fetch();return $row?:null;
 }
 
 function campaigns_rewards_validate_claim_v100(PDO $pdo,string $code,int $actorUserId): array
 {
-    $claim=campaigns_rewards_claim_by_code_v100($pdo,$code)?:throw new RuntimeException('Claim code not found.');if(!campaigns_rewards_can_manage_merchant_v100($pdo,(int)$claim['merchant_account_id'],$actorUserId))throw new RuntimeException('Merchant admin access is required.');
-    if(!in_array((string)$claim['status'],['issued','validated'],true))throw new RuntimeException('This claim cannot be validated in its current state.');
-    if((string)$claim['status']==='issued')$pdo->prepare("UPDATE campaign_reward_claims_v100 SET status='validated',validated_at=UTC_TIMESTAMP(),updated_at=UTC_TIMESTAMP() WHERE id=? AND status='issued'")->execute([(int)$claim['id']]);
-    $saved=campaigns_rewards_claim_by_code_v100($pdo,$code)?:throw new RuntimeException('Claim could not be reloaded.');$merchant=campaigns_rewards_merchant_v100($pdo,(int)$saved['merchant_account_id'])?:throw new RuntimeException('Merchant account not found.');
-    campaigns_rewards_record_activity_v100($pdo,(int)$merchant['id'],'claim.validated',['campaign_id'=>(int)$saved['campaign_id'],'reward_id'=>(int)$saved['reward_id'],'claim_id'=>(int)$saved['id'],'actor_user_id'=>$actorUserId],[]);
-    campaigns_rewards_emit_v100($pdo,(int)$merchant['owner_user_id'],'claim.validated',[campaigns_rewards_ref_v100('reward_claim',$saved['public_id']),campaigns_rewards_ref_v100('campaign',$saved['campaign_public_id'])],['claim_id'=>$saved['public_id'],'campaign_id'=>$saved['campaign_public_id']]);return $saved;
+    throw new RuntimeException('Legacy one-code validation is disabled. Use the Claim Terminal with Reward Credential, Merchant Claim Code and an authorized signed-in operator.');
 }
 
 function campaigns_rewards_redeem_claim_v100(PDO $pdo,string $code,int $actorUserId): array
 {
-    $preview=campaigns_rewards_claim_by_code_v100($pdo,$code)?:throw new RuntimeException('Claim code not found.');if(!campaigns_rewards_can_manage_merchant_v100($pdo,(int)$preview['merchant_account_id'],$actorUserId))throw new RuntimeException('Merchant admin access is required.');
-    $pdo->beginTransaction();try{$stmt=$pdo->prepare('SELECT * FROM campaign_reward_claims_v100 WHERE id=? LIMIT 1 FOR UPDATE');$stmt->execute([(int)$preview['id']]);$locked=$stmt->fetch();if(!$locked||!in_array((string)$locked['status'],['issued','validated'],true))throw new RuntimeException('This claim is not redeemable.');
-        $pdo->prepare("UPDATE campaign_reward_claims_v100 SET status='redeemed',validated_at=COALESCE(validated_at,UTC_TIMESTAMP()),redeemed_at=UTC_TIMESTAMP(),updated_at=UTC_TIMESTAMP() WHERE id=?")->execute([(int)$locked['id']]);
-        campaigns_rewards_record_activity_v100($pdo,(int)$locked['merchant_account_id'],'claim.completed',['campaign_id'=>(int)$locked['campaign_id'],'reward_id'=>(int)$locked['reward_id'],'claim_id'=>(int)$locked['id'],'customer_id'=>(int)$locked['customer_id'],'actor_user_id'=>$actorUserId],[]);$pdo->commit();
-    }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();throw $e;}
-    $saved=campaigns_rewards_claim_by_code_v100($pdo,$code)?:throw new RuntimeException('Claim could not be reloaded.');$merchant=campaigns_rewards_merchant_v100($pdo,(int)$saved['merchant_account_id'])?:throw new RuntimeException('Merchant account not found.');
-    $refs=[campaigns_rewards_ref_v100('campaign',$saved['campaign_public_id']),campaigns_rewards_ref_v100('reward',$saved['reward_public_id']),campaigns_rewards_ref_v100('reward_claim',$saved['public_id'])];
-    foreach(['reward.claimed','claim.completed','campaign.conversion'] as $event)campaigns_rewards_emit_v100($pdo,(int)$merchant['owner_user_id'],$event,$refs,['campaign_id'=>$saved['campaign_public_id'],'reward_id'=>$saved['reward_public_id'],'claim_id'=>$saved['public_id'],'status'=>'redeemed'],['external_event_id'=>'claim:'.$saved['public_id'].':'.$event]);
-    return $saved;
+    throw new RuntimeException('Legacy one-code redemption is disabled. Use campaigns_rewards_process_claim_v100() through the Claim Terminal.');
 }
 
 function campaigns_rewards_record_landing_view_v100(PDO $pdo,array $campaign,string $sessionKey): void
@@ -743,26 +727,9 @@ function campaigns_rewards_team_membership_status_v100(PDO $pdo,int $ownerUserId
 
 function campaigns_rewards_cognitive_object_v100(PDO $pdo,array $user,array $ref): ?array
 {
-    $type=(string)($ref['type']??'');
-    if(in_array($type,['merchant','merchant_location','merchant_team_member','campaign','campaign_enrollment','campaign_case','reward_product','reward_issuance','reward_claim','claim_code','loyalty_account'],true)
-        &&function_exists('campaigns_rewards_cognitive_object_canonical_v100')){
-        return campaigns_rewards_cognitive_object_canonical_v100($pdo,$user,$ref);
-    }
-    $uid=(int)($user['id']??0);$public=(string)($ref['id']??'');
-    if($uid<1||$public===''||!campaigns_rewards_schema_ready_v100($pdo))return null;
-    $map=[
-        'merchant_account'=>['table'=>'campaign_merchant_accounts_v100','merchant'=>'id'],
-        'merchant_location'=>['table'=>'campaign_merchant_locations_v100','merchant'=>'merchant_account_id'],
-        'campaign'=>['table'=>'campaigns_v100','merchant'=>'merchant_account_id'],
-        'reward'=>['table'=>'campaign_rewards_v100','merchant'=>'merchant_account_id'],
-        'reward_claim'=>['table'=>'campaign_reward_claims_v100','merchant'=>'merchant_account_id'],
-        'campaign_customer'=>['table'=>'campaign_customers_v100','merchant'=>'merchant_account_id'],
-    ];
-    $cfg=$map[$type]??null;if(!$cfg)return null;
-    $stmt=$pdo->prepare("SELECT * FROM {$cfg['table']} WHERE public_id=? LIMIT 1");$stmt->execute([$public]);$row=$stmt->fetch();
-    if(!$row)return null;$merchantId=$cfg['merchant']==='id'?(int)$row['id']:(int)$row[$cfg['merchant']];
-    if(campaigns_rewards_member_role_v100($pdo,$merchantId,$uid)==='')return null;
-    $row['_merchant_account_id']=$merchantId;return $row;
+    return function_exists('campaigns_rewards_cognitive_object_canonical_v100')
+        ?campaigns_rewards_cognitive_object_canonical_v100($pdo,$user,$ref)
+        :null;
 }
 
 function campaigns_rewards_cognitive_permission_v100(PDO $pdo,array $user,string $agentNamespace,array $ref,string $operation='read'): bool
@@ -794,29 +761,9 @@ function campaigns_rewards_cognitive_context_v100(PDO $pdo,array $user,string $a
 
 function campaigns_rewards_cognitive_relationships_v100(PDO $pdo,array $user,string $agentNamespace,array $ref,array $options=[]): array
 {
-    $type=(string)($ref['type']??'');
-    if(in_array($type,['merchant','merchant_location','merchant_team_member','campaign','campaign_enrollment','campaign_case','reward_product','reward_issuance','reward_claim','claim_code','loyalty_account'],true)
-        &&function_exists('campaigns_rewards_cognitive_relationships_canonical_v100')){
-        return campaigns_rewards_cognitive_relationships_canonical_v100($pdo,$user,$ref);
-    }
-    $row=campaigns_rewards_cognitive_object_v100($pdo,$user,$ref);if(!$row)return [];$edges=[];$scope=(string)($ref['scope']??'workspace');
-    $add=static function(array &$edges,string $relation,string $type,mixed $id,string $scope): void{
-        if((string)$id==='')return;$edges[]=['relation'=>$relation,'object_ref'=>campaigns_rewards_ref_v100($type,$id,$scope),'provenance'=>'campaigns_rewards_v100','confidence'=>1,'confirmation_state'=>'deterministic'];
-    };
-    if($type==='campaign'){
-        $merchant=campaigns_rewards_merchant_v100($pdo,(int)$row['merchant_account_id']);if($merchant)$add($edges,'owned_by','merchant_account',$merchant['public_id'],$scope);
-        $stmt=$pdo->prepare('SELECT public_id FROM campaign_rewards_v100 WHERE campaign_id=? AND status="active" ORDER BY id LIMIT 20');$stmt->execute([(int)$row['id']]);
-        foreach($stmt->fetchAll(PDO::FETCH_COLUMN)?:[] as $rewardPublic)$add($edges,'offers','reward',$rewardPublic,$scope);
-    }elseif($type==='reward'){
-        $campaign=campaigns_rewards_campaign_v100($pdo,(int)$row['campaign_id']);if($campaign)$add($edges,'belongs_to','campaign',$campaign['public_id'],$scope);
-    }elseif($type==='reward_claim'){
-        $stmt=$pdo->prepare('SELECT c.public_id campaign_public,r.public_id reward_public FROM campaigns_v100 c INNER JOIN campaign_rewards_v100 r ON r.campaign_id=c.id WHERE c.id=? AND r.id=? LIMIT 1');
-        $stmt->execute([(int)$row['campaign_id'],(int)$row['reward_id']]);$related=$stmt->fetch();
-        if($related){$add($edges,'claims_from','campaign',$related['campaign_public'],$scope);$add($edges,'claims','reward',$related['reward_public'],$scope);}
-    }elseif($type==='merchant_location'){
-        $merchant=campaigns_rewards_merchant_v100($pdo,(int)$row['merchant_account_id']);if($merchant)$add($edges,'location_of','merchant_account',$merchant['public_id'],$scope);
-    }
-    return array_slice($edges,0,30);
+    return function_exists('campaigns_rewards_cognitive_relationships_canonical_v100')
+        ?campaigns_rewards_cognitive_relationships_canonical_v100($pdo,$user,$ref)
+        :[];
 }
 
 function campaigns_rewards_register_cognitive_module_v100(): void
