@@ -1,17 +1,47 @@
 # Campaigns & Rewards V1.00
 
-Campaigns & Rewards is a native VP3 plugin built against the Cognitive Domain Registry introduced in v26.00.
+Campaigns & Rewards is a native VP3 plugin built on the v26.00 Cognitive Domain Registry. V1 uses one canonical business model: Merchant → Campaign / immutable Campaign Version → reusable Reward Product → Reward Issuance → Claim. The earlier prototype `campaign_*_v100` persistence model is not installed and is not an authority.
 
-A VP3 user account is an identity. A merchant account is a separate business entity. The plugin host user owns the plugin installation, while each merchant account supports multiple active owner, admin, and member relationships. Merchant records never replace a user's Profile, CRM, Team membership, subscription, or Agent identity.
+## Authority boundaries
 
-V1 owns merchant accounts and merchant members, merchant locations, campaigns and campaign landing pages, rewards, campaign customers, claim codes and claim lifecycle, campaign activity and derived reporting, and plugin-specific Team scope metadata.
+A VP3 user is an identity; a Merchant is a separate business entity. Merchant ownership, lifecycle, Locations, roles and capabilities live in the Campaigns & Rewards domain. A Merchant must retain at least one active Owner.
 
-CRM remains authoritative for contacts. A campaign customer stores an optional crm_contact_id reference after the existing CRM contact upsert runs. Canonical Team membership remains workspace_memberships_v350. Campaigns & Rewards adds Basic Team, Merchant Team, and Both as plugin scope metadata. It does not create a second Team identity or lifecycle table. Direct merchant owner/admin roles and Merchant Team scope are independent access sources; removing or suspending Team scope never revives a previously removed direct admin role.
+Core CRM remains authoritative for contact identity. Campaign acquisition resolves one owner-scoped `crm_contacts` record and attaches Merchant-specific customer state through `crm_merchant_relationships`. Campaigns does not create a parallel customer identity table.
 
-Campaigns may be draft, active, paused, or ended. Only active campaigns inside their configured time window are public and appear on the owner's Profile Campaigns tab. Rewards have independent active windows, inventory limits, and per-customer limits.
+Canonical VP3 Team membership remains `workspace_memberships_v350`. Campaigns stores independent Merchant access-source grants. Direct Merchant roles and Merchant Team scope can coexist. Removing a direct Administrator does not restore Administrator authority through Team scope; the remaining Team source projects only the bounded Merchant Team role.
 
-A visitor claim upserts the existing CRM contact when available, upserts a merchant-scoped campaign customer, locks the reward while checking inventory and per-customer limits, creates a random unique claim code, exposes a public verification URL, and lets an authorized merchant owner or admin validate and redeem the code. Redemption emits reward.claimed, claim.completed, and campaign.conversion.
+## Campaigns and Rewards
 
-Campaign activity enters the existing v19.20 canonical event inbox through the v26.00 campaigns_rewards domain contract. It does not create another event ledger, Brain, memory system, attention engine, or presentation system. User-facing state continues through the v25.90 Presentation Firewall, and customer email, phone, raw claim form input, and internal activity metadata are not copied into cognitive event payloads.
+Campaign Types are system-seeded and extensible. V1 includes Signup, Make Good, Loyalty, Promotional Goods, Discount Voucher, Post Purchase, Referral and Win Back. Publishing/activation freezes a Campaign Version snapshot so later edits cannot rewrite the terms governing existing Reward Issuances.
 
-The plugin uses the existing v3.20/v3.60 plugin registry and lifecycle. Disabling Campaigns & Rewards pauses working surfaces; merchant, campaign, reward, customer, claim, Team scope, CRM linkage, and reporting history remain durable.
+Reward Products are reusable Merchant objects. Campaign Reward Sets attach those products to Campaigns. A Reward Issuance is the customer-facing entitlement and the Reward Wallet is a projection over Reward Issuance + Claim state, not a second mutable wallet ledger.
+
+Public Signup Campaigns resolve Core CRM identity, create/update a Merchant Relationship, create a version-bound Enrollment, and issue an attached Reward. Public issuance is allowed only for active production Campaign Types that explicitly support public signup. Campaign, contact, budget, per-contact and inventory limits are enforced server-side.
+
+## Claim security
+
+Redemption is online-only in V1 and requires all three factors:
+
+1. the customer Reward Credential,
+2. a Merchant Claim Code,
+3. an authenticated VP3 operator with `claims.process` for that Merchant.
+
+Reward Credentials and Merchant Claim Codes are stored only as SHA-256 hashes plus display-safe last-four metadata. The Reward Wallet can rotate a credential and reveal the new plaintext once. The Claim Terminal binds redemption to the selected Merchant before mutation, locks the Reward Issuance and Claim Code, enforces location/campaign/value/use restrictions, consumes tracked inventory transactionally, writes the Claim, settles production liability evidence and emits conversion attribution.
+
+## Operations
+
+Make Good is a first-class Campaign Case flow that resolves the customer through Core CRM, opens a Make Good case, enrolls the contact and issues selected reusable Reward Products.
+
+Inventory and Loyalty use append-only ledgers with current balance projections. Production Reward issuance and claiming write liability evidence. Idempotency keys protect issuance/enrollment retries. Reconciliation is diagnostic: it records findings and never silently replays business side effects.
+
+Sandbox activity remains domain-auditable but is prevented from becoming production cognitive/outcome evidence.
+
+## Cognitive integration
+
+Campaigns & Rewards uses the existing v19.20 canonical event inbox through the v26.00 `campaigns_rewards` domain contract. Canonical events include Merchant lifecycle, Campaign lifecycle, Enrollments/Cases, Reward Issuances, accepted/rejected Claims, Loyalty activity, reconciliation, and `campaign.conversion_attributed`.
+
+The plugin does not create another event bus, Brain, memory store, attention engine, learner, scheduler, worker, approval system or execution authority. User-facing cognitive state continues through the v25.90 Presentation Firewall. CRM PII, plaintext credentials, raw payloads and internal traces are not exposed through cognitive object context.
+
+## Plugin lifecycle
+
+The plugin uses the existing VP3 plugin registry/lifecycle. Disabling Campaigns & Rewards pauses its surfaces and contextual capability; it does not delete Merchant, CRM Relationship, Campaign, Version, Reward, Issuance, Claim, Loyalty, audit, reconciliation or Team-source history.
