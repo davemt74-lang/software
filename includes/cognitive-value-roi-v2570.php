@@ -213,11 +213,24 @@ function vp3_cognitive_value_profile_save_v2570(PDO $pdo,array $user,array $inpu
     if($id>0&&!$before)throw new RuntimeException('Outcome value profile not found.');
 
     if($before){
+        $resetBaseline=(string)$before['realization_mode']!==$mode||(string)$before['evidence_key']!==$evidenceKey;
+        $revokeManual=(string)$before['scope_kind']!==$scopeKind
+            ||(string)$before['scope_key']!==$scopeKey
+            ||(string)$before['value_kind']!==$kind
+            ||strtoupper((string)$before['currency'])!==$currency;
+        $manualBefore=$revokeManual?vp3_cognitive_value_latest_manual_v2570($pdo,$uid,$id):null;
         $stmt=$pdo->prepare('UPDATE cognitive_value_profiles_v2570
           SET label=?,scope_kind=?,scope_key=?,value_kind=?,currency=?,expected_value_micros=?,expected_score=?,
-              realization_mode=?,evidence_key=?,is_active=1,updated_at=NOW()
+              realization_mode=?,evidence_key=?,baseline_at=CASE WHEN ?=1 THEN NOW() ELSE baseline_at END,
+              is_active=1,updated_at=NOW()
           WHERE id=? AND owner_user_id=?');
-        $stmt->execute([$label,$scopeKind,$scopeKey,$kind,$currency,$money,$score,$mode,$evidenceKey,$id,$uid]);
+        $stmt->execute([$label,$scopeKind,$scopeKey,$kind,$currency,$money,$score,$mode,$evidenceKey,$resetBaseline?1:0,$id,$uid]);
+        if($manualBefore){
+            vp3_cognitive_value_event_insert_v2570(
+                $pdo,$uid,$id,'realized_revoked',null,null,'','profile_configuration_change',
+                $scopeKind.':'.$scopeKey,'Profile definition changed; the prior manual realized-value confirmation no longer applies.'
+            );
+        }
     }else{
         $stmt=$pdo->prepare('INSERT INTO cognitive_value_profiles_v2570
           (owner_user_id,label,scope_kind,scope_key,value_kind,currency,expected_value_micros,expected_score,realization_mode,evidence_key,is_active)
@@ -547,15 +560,26 @@ function vp3_cognitive_value_apply_v2570(
     $profileMap=vp3_cognitive_value_profile_map_v2570($profiles);
     $econByGoal=[];foreach((array)($economics['goals']??[]) as $row)if(is_array($row))$econByGoal[(int)($row['goal_id']??0)]=$row;
     $accountUsage=(array)($economics['usage']??[]);
-    $goalRows=[];
+    $goalRows=[];$resolutions=[];$profileUsage=[];
+    foreach($items as $item){
+        if(!is_array($item))continue;$goalId=(int)($item['goal_id']??0);
+        $resolved=vp3_cognitive_value_resolve_item_profile_v2570($item,$profileMap,$runMeta);
+        $resolutions[$goalId]=$resolved;
+        $profile=is_array($resolved['profile']??null)?$resolved['profile']:null;
+        if($profile)$profileUsage[(int)$profile['id']]=($profileUsage[(int)$profile['id']]??0)+1;
+    }
 
     foreach($items as &$item){
         if(!is_array($item))continue;$goalId=(int)($item['goal_id']??0);
-        $resolved=vp3_cognitive_value_resolve_item_profile_v2570($item,$profileMap,$runMeta);
+        $resolved=$resolutions[$goalId]??['profile'=>null,'source'=>'none','ambiguous'=>false];
         $profile=is_array($resolved['profile']??null)?$resolved['profile']:null;
+        $sharedInherited=$profile
+            &&(string)($profile['scope_kind']??'')!=='goal'
+            &&(int)($profileUsage[(int)$profile['id']]??0)>1;
         $item['value_profile_id']=$profile?(int)$profile['id']:0;
         $item['value_profile_source']=(string)($resolved['source']??'none');
-        $item['value_profile_ambiguous']=!empty($resolved['ambiguous']);
+        $item['value_profile_ambiguous']=!empty($resolved['ambiguous'])||$sharedInherited;
+        $item['value_profile_shared_inheritance']=$sharedInherited;
         $item['value_planning_adjustment']=0.0;
         $item['value_at_risk']=false;
         if(!$profile)continue;
@@ -580,8 +604,8 @@ function vp3_cognitive_value_apply_v2570(
             ($historicalUnknown===0&&$historical>0)?$historical:null,
             (string)($realization['currency']??$profile['currency'])
         );
-        $adjustment=vp3_cognitive_value_planning_adjustment_v2570($item,$profile,$expectedCost);
-        $atRisk=empty($realization['verified'])&&vp3_cognitive_value_item_at_risk_v2570($item);
+        $adjustment=$sharedInherited?0.0:vp3_cognitive_value_planning_adjustment_v2570($item,$profile,$expectedCost);
+        $atRisk=!$sharedInherited&&empty($realization['verified'])&&vp3_cognitive_value_item_at_risk_v2570($item);
         $item['value_planning_adjustment']=$adjustment;
         $item['value_at_risk']=$atRisk;
         $item['expected_value_micros']=$expectedMoney;
@@ -589,7 +613,8 @@ function vp3_cognitive_value_apply_v2570(
         $item['expected_roi_percent']=$expectedRoi;
         $goalRows[]=[
             'goal_id'=>$goalId,'title'=>(string)($item['title']??('Goal #'.$goalId)),
-            'profile'=>$profile,'profile_source'=>(string)$resolved['source'],'ambiguous'=>false,
+            'profile'=>$profile,'profile_source'=>(string)$resolved['source'],'ambiguous'=>!empty($resolved['ambiguous']),
+            'shared_inherited'=>$sharedInherited,
             'realization'=>$realization,
             'historical_cost_micros'=>$historical,'historical_unknown_cost_requests'=>$historicalUnknown,
             'projected_remaining_cost_micros'=>$remainingCost,
