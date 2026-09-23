@@ -178,6 +178,16 @@ function campaigns_rewards_automation_crm_segments_v119(PDO $pdo,int $merchantId
     $stmt->execute([(int)$merchant['owner_user_id']]);return $stmt->fetchAll()?:[];
 }
 
+function campaigns_rewards_referral_referrer_v119(PDO $pdo,int $merchantId,string $reference): int
+{
+    $reference=trim($reference);if($reference==='')return 0;
+    $merchant=campaigns_rewards_platform_merchant_v100($pdo,$merchantId);if(!$merchant)return 0;
+    $q=$pdo->prepare("SELECT c.id FROM crm_contacts c INNER JOIN crm_merchant_relationships r ON r.contact_id=c.id AND r.merchant_id=?
+      WHERE c.owner_user_id=? AND (c.public_id=? OR c.email_normalized=?) LIMIT 1");
+    $q->execute([$merchantId,(int)$merchant['owner_user_id'],$reference,strtolower($reference)]);
+    return (int)$q->fetchColumn();
+}
+
 function campaigns_rewards_automation_event_contact_v119(PDO $pdo,int $merchantId,array $payload): int
 {
     $contactId=max(0,(int)($payload['contact_id']??0));
