@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 const read=p=>fs.readFileSync(new URL('../'+p,import.meta.url),'utf8');
 const core=read('includes/campaigns-rewards-v100.php');
 const schema=read('includes/campaigns-rewards-platform-v100.php');
+const types=read('includes/campaigns-rewards-types-v118.php');
 const runtime=read('includes/campaigns-rewards-domain-v100.php');
 const v118=read('includes/campaigns-rewards-v118.php');
 const release=read('includes/campaigns-rewards-release-v100.php');
@@ -69,7 +70,7 @@ const checks=[
  ['Campaign acquisition resolves Core CRM rather than a parallel customer table',/crm_v180_upsert_contact/.test(runtime)&&/crm_merchant_relationships/.test(schema)&&!/CREATE TABLE IF NOT EXISTS campaign_customers_v100/.test(schema+core)],
  ['Merchant relationship stores Merchant-specific customer state',/customer_status/.test(schema)&&/loyalty_status/.test(schema)&&/acquisition_source/.test(schema)],
 
- ['Campaign Types are seeded and extensible',/signup/.test(schema)&&/make_good/.test(schema)&&/loyalty/.test(schema)&&/referral/.test(schema)&&/win_back/.test(schema)],
+ ['Campaign Types are seeded and extensible',/campaigns_rewards_campaign_type_catalog_v118/.test(schema)&&/signup/.test(types)&&/make_good/.test(types)&&/loyalty/.test(types)&&/referral/.test(types)&&/win_back/.test(types)],
  ['Campaign lifecycle includes draft scheduled active paused completed archived',/\$allowed=\['draft','scheduled','active','paused','completed','archived'\]/.test(runtime)],
  ['Campaign versions freeze snapshots',/CREATE TABLE IF NOT EXISTS campaign_versions/.test(schema)&&/campaign_snapshot_json/.test(schema)&&/reward_snapshot_json/.test(schema)&&/INSERT INTO campaign_versions/.test(runtime)],
  ['public Campaign lookup requires active production published landing',/c\.status='active'/.test(core)&&/c\.environment='production'/.test(core)&&/lp\.is_published=1/.test(core)],
