@@ -22,8 +22,8 @@ The initial registered first-party site is `annotated`.
 ## Scopes
 
 - `account.identity.read`
-- `meetings.transcripts.read`
-- `meetings.intelligence.read`
+- `transcriptions.read`
+- `transcriptions.intelligence.read`
 
 Authorization codes are single-use and expire after five minutes. Access tokens expire after one hour. Refresh tokens expire after 90 days and rotate whenever used. VP3 stores token hashes, never raw issued tokens.
 
@@ -31,9 +31,9 @@ Authorization codes are single-use and expire after five minutes. Access tokens 
 
 The connector does not create transcript or summary tables.
 
-Meeting transcripts are projected from `video_meeting_transcript_segments`.
+Meeting transcripts are projected from `video_meeting_transcript_segments`. General VP3 transcriptions are projected from `artist_transcript_sessions_v172` + `artist_transcript_segments_v172`.
 
-Meeting AI summaries / decisions / actions / questions / risks / topics are projected from the existing canonical Meeting Intelligence / Transcription Intelligence stack.
+Meeting AI summaries and general transcription summaries are projected from the existing canonical Meeting Intelligence / Transcription Intelligence stack.
 
 Meeting access is checked against the existing meeting owner/participant boundary on every API request.
 
