@@ -363,10 +363,14 @@ function campaigns_rewards_platform_seed_v100(PDO $pdo): void
         'referral'=>['Referral','referral',1,0],
         'win_back'=>['Win Back','win_back',0,0],
     ];
-    $stmt=$pdo->prepare("INSERT IGNORE INTO campaign_types
+    $findCampaign=$pdo->prepare("SELECT id FROM campaign_types WHERE merchant_id IS NULL AND type_key=? ORDER BY id LIMIT 1");
+    $insertCampaign=$pdo->prepare("INSERT INTO campaign_types
       (merchant_id,type_key,name,description,base_handler_key,supports_public_signup,supports_existing_contacts,supports_cases,supports_automation,supports_agent,is_system,is_active)
       VALUES (NULL,?,?,?, ?,?,1,?,1,1,1,1)");
-    foreach($campaignTypes as $key=>[$name,$handler,$public,$cases])$stmt->execute([$key,$name,$name.' campaign type.',$handler,$public,$cases]);
+    foreach($campaignTypes as $key=>[$name,$handler,$public,$cases]){
+        $findCampaign->execute([$key]);
+        if(!$findCampaign->fetchColumn())$insertCampaign->execute([$key,$name,$name.' campaign type.',$handler,$public,$cases]);
+    }
 
     $rewardTypes=[
         'percentage_discount'=>'Percentage Discount','fixed_value_discount'=>'Fixed-value Discount','free_product'=>'Free Product',
@@ -374,8 +378,12 @@ function campaigns_rewards_platform_seed_v100(PDO $pdo): void
         'loyalty_points'=>'Loyalty Points','free_service'=>'Free Service','upgrade'=>'Upgrade',
         'membership_access'=>'Membership / Access','custom'=>'Custom',
     ];
-    $reward=$pdo->prepare("INSERT IGNORE INTO reward_types (merchant_id,type_key,name,description,base_handler_key,is_system,is_active) VALUES (NULL,?,?,?, ?,1,1)");
-    foreach($rewardTypes as $key=>$name)$reward->execute([$key,$name,$name.' reward type.',$key]);
+    $findReward=$pdo->prepare("SELECT id FROM reward_types WHERE merchant_id IS NULL AND type_key=? ORDER BY id LIMIT 1");
+    $insertReward=$pdo->prepare("INSERT INTO reward_types (merchant_id,type_key,name,description,base_handler_key,is_system,is_active) VALUES (NULL,?,?,?, ?,1,1)");
+    foreach($rewardTypes as $key=>$name){
+        $findReward->execute([$key]);
+        if(!$findReward->fetchColumn())$insertReward->execute([$key,$name,$name.' reward type.',$key]);
+    }
 
     $roleCaps=[
       'owner'=>['Owner','*'],
@@ -388,11 +396,13 @@ function campaigns_rewards_platform_seed_v100(PDO $pdo): void
       'analyst'=>['Analyst','merchant.view,locations.view,crm.view,crm.history.view,campaigns.view,rewards.view,claims.view,loyalty.view,analytics.view,analytics.export'],
       'custom'=>['Custom',''],
     ];
-    $role=$pdo->prepare("INSERT IGNORE INTO merchant_roles (merchant_id,role_key,name,description,is_system,is_active) VALUES (NULL,?,?,?,1,1)");
+    $findRole=$pdo->prepare("SELECT id FROM merchant_roles WHERE merchant_id IS NULL AND role_key=? ORDER BY id LIMIT 1");
+    $insertRole=$pdo->prepare("INSERT INTO merchant_roles (merchant_id,role_key,name,description,is_system,is_active) VALUES (NULL,?,?,?,1,1)");
     foreach($roleCaps as $key=>[$name,$caps]){
-        $role->execute([$key,$name,$name.' merchant role.']);
-        $idStmt=$pdo->prepare("SELECT id FROM merchant_roles WHERE merchant_id IS NULL AND role_key=? LIMIT 1");$idStmt->execute([$key]);$roleId=(int)$idStmt->fetchColumn();
-        if($roleId<1)continue;
+        $findRole->execute([$key]);$roleId=(int)$findRole->fetchColumn();
+        if($roleId<1){
+            $insertRole->execute([$key,$name,$name.' merchant role.']);$roleId=(int)$pdo->lastInsertId();
+        }
         if($caps==='*')$caps='merchant.view,merchant.manage,merchant.settings.manage,merchant.team.view,merchant.team.manage,merchant.team.roles.manage,locations.view,locations.manage,crm.view,crm.edit,crm.history.view,crm.export,crm.actions.send,campaigns.view,campaigns.create,campaigns.edit,campaigns.publish,campaigns.launch,campaigns.pause,campaigns.complete,campaigns.archive,campaigns.audience.preview,campaigns.enrollment.manage,rewards.view,rewards.manage,rewards.issue,rewards.void,rewards.inventory.manage,claims.view,claims.process,claims.override,claims.reverse,claim_codes.manage,loyalty.view,loyalty.manage,loyalty.adjust,analytics.view,analytics.export';
         $capStmt=$pdo->prepare("INSERT IGNORE INTO merchant_role_capabilities (role_id,capability_key,effect) VALUES (?,?,'allow')");
         foreach(array_filter(array_map('trim',explode(',',$caps))) as $cap)$capStmt->execute([$roleId,$cap]);
