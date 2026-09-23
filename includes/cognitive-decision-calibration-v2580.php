@@ -211,11 +211,11 @@ function vp3_cognitive_decision_factor_v2580(
         $expr="TIMESTAMPDIFF(SECOND,s.captured_at,x.actual_completion_at) / NULLIF(TIMESTAMPDIFF(SECOND,s.captured_at,s.raw_forecast_likely_at),0)";
         if(in_array($dimension,['cloud','homeserver'],true)){$where[]='s.executor=?';$params[]=$dimension;}
     }elseif($metric==='cost'){
-        $expr='x.actual_incremental_cost_micros / NULLIF(s.raw_projected_remaining_cost_micros,0)';
+        $expr='CASE WHEN s.raw_projected_remaining_cost_micros=0 THEN CASE WHEN x.actual_incremental_cost_micros=0 THEN 0.0 ELSE 2.0 END ELSE x.actual_incremental_cost_micros / s.raw_projected_remaining_cost_micros END';
         $where[]='x.actual_unknown_cost_requests=0';
         if(in_array($dimension,['cloud','homeserver'],true)){$where[]='s.executor=?';$params[]=$dimension;}
     }elseif($metric==='tokens'){
-        $expr='x.actual_incremental_tokens / NULLIF(s.raw_projected_remaining_tokens,0)';
+        $expr='CASE WHEN s.raw_projected_remaining_tokens=0 THEN CASE WHEN x.actual_incremental_tokens=0 THEN 0.0 ELSE 2.0 END ELSE x.actual_incremental_tokens / s.raw_projected_remaining_tokens END';
         if(in_array($dimension,['cloud','homeserver'],true)){$where[]='s.executor=?';$params[]=$dimension;}
     }else return $default;
 
@@ -535,12 +535,18 @@ function vp3_cognitive_decision_settle_v2580(PDO $pdo,array $user): array
         $predCost=$row['raw_projected_remaining_cost_micros'];
         $actualCost=$usage['unknown_cost_requests']===0?(int)$usage['known_cost_micros']:null;
         $costError=($predCost!==null&&$actualCost!==null)?$actualCost-(int)$predCost:null;
-        $costRatio=($predCost!==null&&(int)$predCost>0&&$actualCost!==null)?$actualCost/(int)$predCost:null;
+        $costRatio=null;
+        if($predCost!==null&&$actualCost!==null){
+            $costRatio=(int)$predCost>0?$actualCost/(int)$predCost:($actualCost===0?0.0:2.0);
+        }
 
         $predTokens=$row['raw_projected_remaining_tokens'];
         $actualTokens=(int)$usage['cloud_tokens_charged'];
         $tokenError=$predTokens!==null?$actualTokens-(int)$predTokens:null;
-        $tokenRatio=($predTokens!==null&&(int)$predTokens>0)?$actualTokens/(int)$predTokens:null;
+        $tokenRatio=null;
+        if($predTokens!==null){
+            $tokenRatio=(int)$predTokens>0?$actualTokens/(int)$predTokens:($actualTokens===0?0.0:2.0);
+        }
 
         $realizedMoney=is_array($realization)&&!empty($realization['verified'])&&$realization['value_micros']!==null
             ?(int)$realization['value_micros']:null;
