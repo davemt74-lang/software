@@ -179,6 +179,9 @@
     const economicsCounts = brief.economics_counts || {};
     const economicsUsage = brief.economics_usage || {};
     const economicsQuota = brief.economics_quota || {};
+    const budgetGovernance = brief.budget_focus || null;
+    const budgetCounts = brief.budget_counts || {};
+    const budgetManageUrl = String(brief.budget_manage_url || '/budget-governance.php');
     const counts = brief.counts || {};
     let html = '<div class="chat-agent-brief-status"><span><i class="chat-agent-brief-dot ' +
       (brief.active !== false ? 'active' : '') + '"></i>' +
@@ -198,6 +201,22 @@
         actionButton('Review commitments',
           ' data-agent-brief-prompt="' + esc('Review my protected commitments and deadlines. Explain what is at risk, what is waiting on me, any capacity conflicts, and what can safely be reprioritized without changing commitments or executors.') + '"',false) +
         '</div></article>';
+    }
+
+    if (budgetGovernance) {
+      const policy = budgetGovernance.policy || {};
+      const budgetState = String(budgetGovernance.state?.state || 'healthy').replaceAll('_',' ');
+      const usage = budgetGovernance.usage || {};
+      const costUsed = '$' + (Number(usage.known_cost_micros || 0) / 1000000).toFixed(2);
+      const tokenUsed = Number(usage.cloud_tokens_charged || 0).toLocaleString();
+      html += '<article class="chat-agent-brief-card"><small>Budget governance · ' + esc(String(policy.enforcement_mode || 'soft')) + '</small><strong>' +
+        esc(policy.label || 'AI budget') + '</strong>' +
+        '<p>' + esc(budgetState) + ' · ' + esc(costUsed) + ' est. cost used · ' + esc(tokenUsed) + ' cloud tokens</p>' +
+        '<p><small>' + Number(budgetCounts.held_goals || 0) + ' held goal(s) · ' + Number(budgetCounts.commitment_conflicts || 0) + ' commitment conflict(s) · ' + Number(budgetCounts.active_overrides || 0) + ' active override(s)</small></p>' +
+        '<div class="chat-agent-brief-actions">' +
+        actionButton('Review budget',
+          ' data-agent-brief-prompt="' + esc('Review my explicit AI budget guardrails. Explain current-period usage, projected burn, held autonomous work, commitment conflicts, and any override I need to approve. Do not change budgets, packages, tokens, executors, deadlines, or workflow approvals.') + '"',false) +
+        '<a href="' + esc(budgetManageUrl) + '">Manage budgets ↗</a></div></article>';
     }
 
     if (economics || economicsUsage.available || economicsQuota.available) {
