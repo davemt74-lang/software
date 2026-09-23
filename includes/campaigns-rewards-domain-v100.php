@@ -844,6 +844,31 @@ function campaigns_rewards_wallet_v100(PDO $pdo,int $contactId=0,int $userId=0):
     return $out;
 }
 
+function campaigns_rewards_rotate_reward_credential_v100(PDO $pdo,int $issuanceId,int $userId): array
+{
+    if($issuanceId<1||$userId<1)throw new RuntimeException('Reward is unavailable.');
+    $owns=!$pdo->inTransaction();if($owns)$pdo->beginTransaction();
+    try{
+        $stmt=$pdo->prepare("SELECT ri.*,c.public_id campaign_public_id,rp.public_id reward_product_public_id,m.public_id merchant_public_id
+          FROM reward_issuances ri INNER JOIN campaigns c ON c.id=ri.campaign_id
+          INNER JOIN reward_products rp ON rp.id=ri.reward_product_id INNER JOIN merchant_accounts m ON m.id=ri.merchant_id
+          LEFT JOIN crm_contacts cc ON cc.id=ri.recipient_contact_id
+          WHERE ri.id=? AND (ri.recipient_user_id=? OR cc.vp3_user_id=?) LIMIT 1 FOR UPDATE");
+        $stmt->execute([$issuanceId,$userId,$userId]);$issuance=$stmt->fetch()?:throw new RuntimeException('Reward is not in your Wallet.');
+        if(!in_array((string)$issuance['status'],['issued','sent','viewed'],true)||(int)$issuance['remaining_quantity']<1)throw new RuntimeException('This Reward is no longer redeemable.');
+        if(!empty($issuance['expires_at'])&&strtotime((string)$issuance['expires_at'])<=time())throw new RuntimeException('This Reward has expired.');
+        $credential=campaigns_rewards_secret_v100(24);$hash=campaigns_rewards_secret_hash_v100($credential);$last4=substr($credential,-4);
+        $pdo->prepare("UPDATE reward_issuances SET credential_hash=?,credential_last4=?,status=IF(status='issued','viewed',status),viewed_at=COALESCE(viewed_at,UTC_TIMESTAMP()),updated_at=UTC_TIMESTAMP() WHERE id=?")
+            ->execute([$hash,$last4,$issuanceId]);
+        if($owns)$pdo->commit();
+    }catch(Throwable $e){if($owns&&$pdo->inTransaction())$pdo->rollBack();throw $e;}
+    campaigns_rewards_activity_event_v100($pdo,(int)$issuance['merchant_id'],'reward.viewed',['campaign_id'=>(int)$issuance['campaign_id'],'contact_id'=>(int)$issuance['recipient_contact_id'],'reward_issuance_id'=>$issuanceId],[
+        'summary'=>'Reward credential revealed from Wallet','merchant_public_id'=>$issuance['merchant_public_id'],'campaign_public_id'=>$issuance['campaign_public_id'],
+        'reward_product_public_id'=>$issuance['reward_product_public_id'],'reward_issuance_public_id'=>$issuance['public_id'],
+    ],(string)$issuance['environment'],$userId,'user');
+    return $issuance+['credential'=>$credential,'credential_last4'=>$last4];
+}
+
 function campaigns_rewards_create_claim_code_v100(PDO $pdo,int $merchantId,int $actorUserId,array $input=[]): array
 {
     campaigns_rewards_platform_assert_can_v100($pdo,$merchantId,$actorUserId,'claim_codes.manage');
