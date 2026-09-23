@@ -187,6 +187,7 @@ require_once __DIR__.'/cognitive-release-v2440.php';
 require_once __DIR__.'/cognitive-release-v2450.php';
 require_once __DIR__.'/cognitive-release-v2460.php';
 require_once __DIR__.'/cognitive-release-v2470.php';
+require_once __DIR__.'/cognitive-release-v2480.php';
 require_once __DIR__.'/cognitive-proactive-now-v2340.php';
 require_once __DIR__.'/cognitive-feed-v530.php';
 require_once __DIR__.'/cognitive-presentation-v510.php';
