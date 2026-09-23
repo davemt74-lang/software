@@ -201,7 +201,7 @@ function vp3_cognitive_economics_apply_v2550(
         if(!is_array($item))continue;
         $goalRunIds=array_values(array_unique(array_filter(array_map('intval',(array)($item['workflow_run_ids']??[])),static fn(int $id): bool=>$id>0)));
         $requests=0;$known=0;$unknown=0;$cost=0;$tokens=0;$cloudTokens=0;$cloudRequests=0;$localRequests=0;
-        $attributedCost=0.0;$attributedKnown=0.0;$attributedTokens=0.0;$attributedCloudTokens=0.0;
+        $attributedCost=0.0;$attributedKnown=0.0;$attributedTokens=0.0;$attributedCloudTokens=0.0;$attributedCloudRequests=0.0;
         foreach($goalRunIds as $runId){
             $row=$runCosts[$runId]??null;if(!$row)continue;
             $share=max(1,(int)($runGoalCounts[$runId]??1));
@@ -214,6 +214,7 @@ function vp3_cognitive_economics_apply_v2550(
             $attributedKnown+=((int)$row['known_cost_requests'])*$shareWeight;
             $attributedTokens+=((int)$row['total_tokens'])*$shareWeight;
             $attributedCloudTokens+=((int)$row['cloud_tokens_charged'])*$shareWeight;
+            $attributedCloudRequests+=((int)$row['cloud_requests'])*$shareWeight;
         }
         $attributedCostMicros=max(0,(int)round($attributedCost));
         $goalAvg=$attributedKnown>0?(int)round($attributedCost/$attributedKnown):null;
@@ -236,7 +237,8 @@ function vp3_cognitive_economics_apply_v2550(
             'attributed_known_cost_micros'=>$attributedCostMicros,
             'linked_total_tokens'=>$tokens,'attributed_total_tokens'=>max(0,(int)round($attributedTokens)),
             'linked_cloud_tokens_charged'=>$cloudTokens,'attributed_cloud_tokens_charged'=>max(0,(int)round($attributedCloudTokens)),
-            'historical_cloud_requests'=>$cloudRequests,'historical_local_requests'=>$localRequests,
+            'historical_cloud_requests'=>$cloudRequests,'attributed_cloud_requests'=>max(0,(int)round($attributedCloudRequests)),
+            'historical_local_requests'=>$localRequests,
             'average_attributed_known_cost_micros'=>$goalAvg,'account_cloud_average_known_cost_micros'=>$accountAvg,
             'relative_cost_index'=>$relative,'efficiency_score'=>$efficiency,
             'quota_state'=>(string)($quota['state']??'unavailable'),

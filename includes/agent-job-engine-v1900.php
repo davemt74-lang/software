@@ -128,9 +128,12 @@ function agent_job_claim_next_v1900(PDO $pdo,array $user,string $executor,string
 {
     $uid=(int)($user['id']??0);if($uid<1||!agent_job_engine_schema_ready_v1900($pdo))return null;$limit=max(1,min(100,$limit));
     $control=agent_job_control_ready_v1900($pdo);$pauseSql=$control?' AND pause_requested_at IS NULL':'';$order=$control?'work_priority DESC,':'';
-    $s=$pdo->prepare("SELECT id FROM agent_workflow_runs WHERE owner_user_id=? AND status IN ('approved','executing') AND current_action_id IS NULL{$pauseSql} AND (next_attempt_at IS NULL OR next_attempt_at<=UTC_TIMESTAMP()) AND (lease_expires_at IS NULL OR lease_expires_at<=UTC_TIMESTAMP()) ORDER BY {$order}COALESCE(next_attempt_at,created_at),id LIMIT ".$limit);$s->execute([$uid]);$rows=$s->fetchAll()?:[];
+    $s=$pdo->prepare("SELECT id,status FROM agent_workflow_runs WHERE owner_user_id=? AND status IN ('approved','executing') AND current_action_id IS NULL{$pauseSql} AND (next_attempt_at IS NULL OR next_attempt_at<=UTC_TIMESTAMP()) AND (lease_expires_at IS NULL OR lease_expires_at<=UTC_TIMESTAMP()) ORDER BY {$order}COALESCE(next_attempt_at,created_at),id LIMIT ".$limit);$s->execute([$uid]);$rows=$s->fetchAll()?:[];
     if(function_exists('vp3_cognitive_commitment_rank_claims_v2540')){
         try{$rows=vp3_cognitive_commitment_rank_claims_v2540($pdo,$user,$executor,$rows);}catch(Throwable $e){}
+    }
+    if(function_exists('vp3_cognitive_budget_filter_claim_candidates_v2560')){
+        try{$rows=vp3_cognitive_budget_filter_claim_candidates_v2560($pdo,$user,$executor,$rows);}catch(Throwable $e){}
     }
     foreach($rows as $r){$claim=agent_job_claim_run_v1900($pdo,$user,(int)$r['id'],$executor,$workerId);if($claim)return $claim;}return null;
 }

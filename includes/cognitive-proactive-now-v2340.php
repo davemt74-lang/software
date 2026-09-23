@@ -156,6 +156,9 @@ function vp3_cognitive_proactive_now_compose_v2340(
     $economics=function_exists('vp3_cognitive_economics_activity_projection_v2550')
         ?vp3_cognitive_economics_activity_projection_v2550($pdo,$user,$namespace)
         :['focus'=>null,'goals'=>[],'usage'=>[],'quota'=>[],'counts'=>[]];
+    $budgetGovernance=function_exists('vp3_cognitive_budget_activity_projection_v2560')
+        ?vp3_cognitive_budget_activity_projection_v2560($pdo,$user,$namespace)
+        :['configured'=>false,'focus'=>null,'policies'=>[],'held_goals'=>[],'counts'=>[],'manage_url'=>''];
     $voiceEnabled=false;
     if(function_exists('chat_settings_get_v237')){
         try{$voiceEnabled=!empty(chat_settings_get_v237($pdo,(int)($user['id']??0))['agent_voice_enabled']);}
@@ -227,6 +230,14 @@ function vp3_cognitive_proactive_now_compose_v2340(
             'quota'=>$economics['quota']??[],
             'goals'=>$economics['goals']??[],
         ],
+        'budget_governance'=>[
+            'configured'=>!empty($budgetGovernance['configured']),
+            'focus'=>$budgetGovernance['focus']??null,
+            'counts'=>$budgetGovernance['counts']??[],
+            'policies'=>$budgetGovernance['policies']??[],
+            'held_goals'=>$budgetGovernance['held_goals']??[],
+            'manage_url'=>$budgetGovernance['manage_url']??'',
+        ],
         'voice'=>[
             'enabled'=>$voiceEnabled,
             'delivery_authority'=>'cognitive_presentation_v510_and_extension_notifications_v2140',
@@ -253,6 +264,7 @@ function vp3_cognitive_proactive_now_compose_v2340(
             'replanning'=>'cognitive_replanning_v2530',
             'commitment_protection'=>'cognitive_commitment_protection_v2540',
             'economics'=>'cognitive_economics_v2550',
+            'budget_governance'=>'cognitive_budget_governance_v2560',
             'automatic_external_writes'=>false,
             'approval_bypass'=>false,
             'execution_bypass'=>false,

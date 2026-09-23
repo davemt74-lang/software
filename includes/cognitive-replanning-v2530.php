@@ -108,6 +108,9 @@ function vp3_cognitive_replanning_goal_analysis_v2530(
     $economicAdjustment=max(-0.10,min(0.08,(float)($item['economic_planning_adjustment']??0.0)));
     $economicAttention=max(0.0,min(1.5,(float)($item['economic_attention_score']??0.0)));
     $economicQuotaState=(string)($item['economic_quota_state']??'unavailable');
+    $budgetAdjustment=max(-0.10,min(0.0,(float)($item['budget_planning_adjustment']??0.0)));
+    $budgetHardHold=!empty($item['budget_hard_hold']);
+    $budgetCommitmentConflict=!empty($item['budget_commitment_conflict']);
     $commitmentAtRisk=!empty($item['commitment_at_risk']);
     $commitmentConflict=(string)($item['commitment_conflict_code']??'');
 
@@ -122,10 +125,13 @@ function vp3_cognitive_replanning_goal_analysis_v2530(
         if($commitmentAtRisk)$issues[]='protected_commitment_at_risk';
         if($commitmentConflict!=='')$issues[]='commitment_'.$commitmentConflict;
         if($economicAdjustment<0)$issues[]='economic_pressure';
+        if($budgetHardHold)$issues[]='hard_budget_hold';
+        elseif($budgetAdjustment<0)$issues[]='budget_pressure';
+        if($budgetCommitmentConflict)$issues[]='commitment_budget_conflict';
     }
 
     $score=($deadline*0.28)+($priority*0.17)+($leverage*0.15)+($optimized*0.12)
-        +($commitment*0.18)+($capacityPressure*0.06)+($progress*0.04)+$economicAdjustment;
+        +($commitment*0.18)+($capacityPressure*0.06)+($progress*0.04)+$economicAdjustment+$budgetAdjustment;
     if($deadlineThreat)$score+=0.16;
     if($urgent)$score+=0.07;
     if($commitmentAtRisk)$score+=0.18;
@@ -136,11 +142,12 @@ function vp3_cognitive_replanning_goal_analysis_v2530(
     $score=round(max(0.0,min(1.50,$score)),4);
 
     $autonomousSafe=$mode==='autonomous'
-        &&$ready&&!$blocked&&!$requiresUser&&!$semanticHold;
+        &&$ready&&!$blocked&&!$requiresUser&&!$semanticHold&&!$budgetHardHold;
     $needsReplan=$mode==='autonomous'&&!empty($issues);
 
     $action='keep_plan';
     if($mode!=='autonomous')$action='authority_passthrough';
+    elseif($budgetHardHold)$action='request_budget_approval';
     elseif(!$ready)$action='escalate_executor_unavailable';
     elseif($requiresUser)$action='request_user_or_approval';
     elseif($semanticHold)$action='review_overlap';
@@ -175,6 +182,9 @@ function vp3_cognitive_replanning_goal_analysis_v2530(
         'economic_planning_adjustment'=>$economicAdjustment,
         'economic_attention_score'=>$economicAttention,
         'economic_quota_state'=>$economicQuotaState,
+        'budget_planning_adjustment'=>$budgetAdjustment,
+        'budget_hard_hold'=>$budgetHardHold,
+        'budget_commitment_conflict'=>$budgetCommitmentConflict,
         'dependency_leverage_goal_ids'=>array_values(array_map(
             'intval',(array)($item['dependency_leverage_goal_ids']??[])
         )),
