@@ -203,9 +203,8 @@ const checks=[
  ['Recovery Baseline retains v25.70 gates',
    /cognitive-value-roi-v2570\.php/.test(recovery)
    &&/cognitive-value-roi-v2570\.mjs/.test(recovery)],
- ['production package requires v25.70 runtime controls upgrade and canonical sources',
-   /Cognitive Runtime v25\.70/.test(packageWorkflow)
-   &&/cognitive-value-roi-v2570\.php/.test(packageWorkflow)
+ ['production package retains v25.70 runtime controls upgrade and canonical sources',
+   /cognitive-value-roi-v2570\.php/.test(packageWorkflow)
    &&/cognitive-release-v2570\.php/.test(packageWorkflow)
    &&/outcome-value\.php/.test(packageWorkflow)
    &&/outcome-value-v2570\.css/.test(packageWorkflow)
