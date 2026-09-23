@@ -19,22 +19,22 @@ v2600_assert(isset($registry['domains']['campaigns_rewards']),'Campaigns & Rewar
 $campaign=$registry['domains']['campaigns_rewards'];
 v2600_assert(str_starts_with((string)($campaign['implementation_status']??''),'integrated'),'Campaigns & Rewards reference contract is fulfilled by V1');
 v2600_assert(!empty($campaign['plugin_catalog_registered']),'Campaigns & Rewards plugin catalog exposure follows implementation');
-v2600_assert(in_array('campaigns_v100',$campaign['authority']??[],true),'Campaigns & Rewards declares its V1 business authority');
-v2600_assert(in_array('campaign.conversion',$campaign['events'],true),'Campaign conversion is a declared canonical event');
-v2600_assert(in_array('reward.claimed',$campaign['events'],true),'Reward claim outcome is a declared canonical event');
+v2600_assert(in_array('merchant_accounts',$campaign['authority']??[],true)&&in_array('reward_issuances',$campaign['authority']??[],true)&&in_array('reward_claims',$campaign['authority']??[],true),'Campaigns & Rewards declares canonical V1 business authority');
+v2600_assert(in_array('campaign.conversion_attributed',$campaign['events'],true),'Campaign conversion attribution is a declared canonical event');
+v2600_assert(in_array('claim.accepted',$campaign['events'],true),'Accepted Reward Claim is a declared canonical outcome event');
 
-v2600_assert(vp3_cognitive_domain_for_event_v2600('campaigns_rewards','campaign.conversion')==='campaigns_rewards','campaign event resolves to reference domain');
+v2600_assert(vp3_cognitive_domain_for_event_v2600('campaigns_rewards','campaign.conversion_attributed')==='campaigns_rewards','campaign event resolves to reference domain');
 v2600_assert(vp3_cognitive_current_state_domain_v2600('browser_operations','browser.transaction_changed')==='browser_operations','legacy browser source resolves to existing current-state domain');
 v2600_assert(vp3_cognitive_current_state_domain_v2600('agent_chat','chat.message_sent')==='session','Agent Chat remains grouped into canonical session current state');
-v2600_assert(vp3_cognitive_domain_event_class_v2600('campaigns_rewards','claim.failed')==='failure_recovery','failed claim is recovery-class');
-v2600_assert(vp3_cognitive_domain_event_class_v2600('campaigns_rewards','campaign.conversion')==='outcome','campaign conversion is outcome-class');
+v2600_assert(vp3_cognitive_domain_event_class_v2600('campaigns_rewards','claim.rejected')==='failure_recovery','rejected claim is recovery-class');
+v2600_assert(vp3_cognitive_domain_event_class_v2600('campaigns_rewards','campaign.conversion_attributed')==='outcome','campaign conversion attribution is outcome-class');
 
 $ref=vp3_cognitive_domain_entity_ref_v2600('campaigns_rewards','campaign','cmp_123','workspace');
 v2600_assert(($ref['type']??'')==='campaign'&&($ref['id']??'')==='cmp_123','normalized entity reference preserves campaign identity');
 v2600_assert(($ref['domain']??'')==='campaigns_rewards','normalized entity reference carries domain');
 
-$prepared=vp3_cognitive_domain_prepare_event_v2600('campaigns_rewards','reward.claimed',[
-    vp3_cognitive_domain_entity_ref_v2600('campaigns_rewards','reward','rw_1','workspace'),
+$prepared=vp3_cognitive_domain_prepare_event_v2600('campaigns_rewards','claim.accepted',[
+    vp3_cognitive_domain_entity_ref_v2600('campaigns_rewards','reward_issuance','ri_1','workspace'),
     vp3_cognitive_domain_entity_ref_v2600('campaigns_rewards','reward_claim','cl_1','workspace'),
 ],['status'=>'claimed','secret_token'=>'must-not-survive']);
 v2600_assert(!empty($prepared['accepted']),'known Campaigns & Rewards event is accepted for canonical ingress');
