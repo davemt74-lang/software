@@ -253,13 +253,15 @@ function vp3_human_insert_message_v370(PDO $pdo,array $conversation,int $senderI
         ->execute([$createdAt,(int)$conversation['id']]);
 
     // Deliberately do not copy message bodies to generic activity/audit storage.
-    return [
+    $message=[
         'id'=>$id,
         'conversation_id'=>(int)$conversation['id'],
         'sender_user_id'=>$senderId,
         'body'=>$body,
         'created_at'=>$createdAt??date('Y-m-d H:i:s'),
     ];
+    if(function_exists('vp3_cognitive_message_bridge_v2390'))vp3_cognitive_message_bridge_v2390($pdo,$conversation,$message);
+    return $message;
 }
 
 function vp3_human_start_direct_v370(PDO $pdo,int $senderId,int $recipientId,string $initialMessage=''): array
