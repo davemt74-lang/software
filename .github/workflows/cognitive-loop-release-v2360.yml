@@ -1,4 +1,4 @@
-name: Cognitive Runtime Release v24.60
+name: Cognitive Runtime Release v24.70
 
 on:
   pull_request:
@@ -16,6 +16,7 @@ on:
       - 'docs/VP3_COGNITIVE_CONTINUITY_V2440.md'
       - 'docs/VP3_COGNITIVE_FOLLOWTHROUGH_V2450.md'
       - 'docs/VP3_COGNITIVE_SUPERVISION_V2460.md'
+      - 'docs/VP3_COGNITIVE_AUTONOMY_V2470.md'
       - 'api/cognitive-*.php'
       - 'api/chat-notifications-brain-v240.php'
       - 'api/extension-cognitive-now-v2120.php'
@@ -59,11 +60,11 @@ on:
       - '.github/workflows/cognitive-loop-release-v2360.yml'
   push:
     branches:
-      - 'cognitive-autonomous-supervision-v2460'
+      - 'cognitive-governed-autonomy-v2470'
 
 jobs:
   release:
-    name: Cognitive Runtime v24.60 · PHP ${{ matrix.php }}
+    name: Cognitive Runtime v24.70 · PHP ${{ matrix.php }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -105,6 +106,8 @@ jobs:
           php -l includes/cognitive-release-v2450.php
           php -l includes/cognitive-supervision-v2460.php
           php -l includes/cognitive-release-v2460.php
+          php -l includes/cognitive-autonomy-v2470.php
+          php -l includes/cognitive-release-v2470.php
           php -l includes/cognitive-presentation-v510.php
           php -l includes/cognitive-cards-v520.php
           php -l includes/cognitive-feed-v530.php
@@ -169,6 +172,8 @@ jobs:
         run: node tests/cognitive-followthrough-v2450.mjs
       - name: v24.60 autonomous work supervision
         run: node tests/cognitive-supervision-v2460.mjs
+      - name: v24.70 governed autonomous remediation and long-horizon execution
+        run: node tests/cognitive-autonomy-v2470.mjs
       - name: v23.x feature family
         run: |
           node tests/cognitive-calibration-v2350.mjs
