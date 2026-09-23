@@ -255,6 +255,14 @@ function vp3_extension_notification_candidates_v2140(PDO $pdo,array $user,string
         $dedup[$key]=$candidate;
     }
     $out=array_values($dedup);
+    // Allocate the bounded interruption budget in true priority order, not
+    // discovery order. A lower-value notification must never reserve a slot
+    // ahead of a more important approval/risk/meeting signal.
+    usort($out,static function(array $a,array $b): int {
+        $x=(int)($b['priority']??0)<=>(int)($a['priority']??0);
+        if($x!==0)return $x;
+        return strcmp((string)($b['created_at']??''),(string)($a['created_at']??''));
+    });
     if(function_exists('vp3_cognitive_attention_extension_candidate_v2410')){
         $attentionContext=function_exists('vp3_cognitive_presentation_context_v500')
             ?vp3_cognitive_presentation_context_v500($pdo,$user)
