@@ -34,7 +34,8 @@ assert.ok(!core.includes('CREATE TABLE IF NOT EXISTS video_meeting_intelligence'
 
 assert.ok(boot.includes("require_once __DIR__.'/connected-sites-v100.php'"),'bootstrap loads Connected Sites');
 assert.ok(account.includes('/connected-sites.php')&&account.includes('Connected Sites')&&account.includes('accountActiveConnectedSites'),'account exposes Connected Sites with an active-connection summary');
-assert.ok(authorize.includes('verify_csrf()')&&authorize.includes('Requested access')&&authorize.includes("decision==='approve'"),'authorization requires user consent + CSRF');
+assert.ok(authorize.includes('verify_csrf()')&&authorize.includes('Requested access')&&authorize.includes("decision==='approve'")&&authorize.includes('client_secret'),'authorization requires configured client + user consent + CSRF');
+assert.ok(core.includes('REDIRECT_HTTP_AUTHORIZATION'),'bearer authentication supports CGI-forwarded Authorization headers');
 assert.ok(token.includes('client_secret')&&token.includes('authorization_code')&&token.includes('refresh_token'),'token endpoint supports authenticated code/refresh grants');
 assert.ok(me.includes("vp3_connected_site_auth_v100($pdo,'account.identity.read')"),'identity endpoint scope guarded');
 assert.ok(artifacts.includes("vp3_connected_site_auth_v100($pdo,'transcriptions.read')"),'artifact endpoint transcription scope guarded');
