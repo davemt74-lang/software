@@ -307,7 +307,7 @@ function vp3_cognitive_economics_context_item_v2550(PDO $pdo,array $user,string 
     ],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
     if(!is_string($json))return null;
     return vp3_cognitive_context_item_v2420(
-        'economics','cognitive-economics:v2550','Cost and resource economics',$json,95.995,
+        'economics','cognitive-economics:v2550','Cost and resource economics',$json,95.985,
         ['direct'=>true,'ephemeral_projection'=>true,'instruction_authority'=>false]
     );
 }
