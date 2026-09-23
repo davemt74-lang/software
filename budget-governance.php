@@ -79,6 +79,7 @@ $budget=is_array($portfolio['budget_governance']??null)?$portfolio['budget_gover
     'configured'=>false,'policies'=>[],'held_goals'=>[],'counts'=>[]
 ];
 $audit=vp3_cognitive_budget_audit_rows_v2560($pdo,$user,50);
+$activeOverrides=vp3_cognitive_budget_active_overrides_v2560($pdo,$user);
 $policySnapshot=[];
 foreach((array)($budget['policies']??[]) as $row){
     if(is_array($row)&&isset($row['policy']['id']))$policySnapshot[(int)$row['policy']['id']]=$row;
@@ -199,6 +200,27 @@ vp3_public_header('Budget Governance — VP3','Explicit AI budget guardrails, fo
       </article>
       <?php endforeach; ?>
       <?php if(!$heldItems): ?><div class="budget-empty">No autonomous goals are currently held by a hard budget policy.</div><?php endif; ?>
+    </div>
+  </section>
+
+  <section class="budget-panel">
+    <header><div><small>Active approvals</small><h2>Budget overrides</h2></div><p>Overrides are temporary user decisions. Revoking one immediately restores the matching hard-policy guardrail for new autonomous Cloud work.</p></header>
+    <div class="budget-policy-list">
+      <?php foreach($activeOverrides as $override): ?>
+      <article class="budget-policy">
+        <div class="budget-policy-top"><span>Active override</span><span><?= e((string)$override['subject_kind']) ?> <?= e((string)$override['subject_key']) ?></span></div>
+        <h3><?= e((string)$override['policy_label']) ?></h3>
+        <p><?= e((string)$override['reason']) ?></p>
+        <small class="budget-period">Expires <?= e((string)($override['expires_at']?:'at period end')) ?></small>
+        <?php if((string)$override['subject_kind']==='goal'): ?>
+        <form method="post" class="budget-policy-actions">
+          <?= csrf_field() ?><input type="hidden" name="action" value="revoke_override"><input type="hidden" name="policy_id" value="<?= (int)$override['policy_id'] ?>"><input type="hidden" name="goal_id" value="<?= (int)$override['subject_key'] ?>">
+          <button type="submit" class="secondary">Revoke override</button>
+        </form>
+        <?php endif; ?>
+      </article>
+      <?php endforeach; ?>
+      <?php if(!$activeOverrides): ?><div class="budget-empty">No active budget overrides.</div><?php endif; ?>
     </div>
   </section>
 
