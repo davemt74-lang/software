@@ -391,9 +391,26 @@ function vp3_cognitive_portfolio_snapshot_v2480(PDO $pdo,array $user): array
         }
     }
 
-    // v25.20 derives bounded admission reservations from the already-ranked
-    // portfolio. These are not worker leases: they can only protect v24.80
-    // autonomous admission capacity. Failure preserves the v24.80 behavior.
+    // v25.30 may apply a bounded recovery overlay after the normal
+    // forecast/optimization/overlap pass. It can only reorder existing
+    // autonomous portfolio items and annotate recovery intent. v24.80 remains
+    // admission authority, and failure preserves the proven v24.80 order.
+    $replanning=[
+        'build'=>'','health'=>'unavailable','replan_needed'=>false,
+        'replan_applied'=>false,'focus'=>null,'issues'=>[],'changes'=>[],
+        'sequence_goal_ids'=>[],'counts'=>[],'projection_only'=>true,
+    ];
+    if(function_exists('vp3_cognitive_replanning_overlay_v2530')){
+        try{
+            $overlay=vp3_cognitive_replanning_overlay_v2530($items,$capacity);
+            if(is_array($overlay['items']??null))$items=$overlay['items'];
+            if(is_array($overlay['replan']??null))$replanning=$overlay['replan'];
+        }catch(Throwable $e){}
+    }
+
+    // v25.20 derives bounded admission reservations from the recovered order.
+    // These are not worker leases: they can only protect v24.80 autonomous
+    // admission capacity. Failure preserves the v24.80 behavior.
     $resourceBudget=[
         'build'=>'','focus'=>null,'reservations'=>[],'executors'=>[],'counts'=>[],
         'projection_only'=>true,
@@ -415,6 +432,9 @@ function vp3_cognitive_portfolio_snapshot_v2480(PDO $pdo,array $user): array
             $aActive=in_array($executor,(array)($a['active_executors']??[]),true)?1:0;
             $bActive=in_array($executor,(array)($b['active_executors']??[]),true)?1:0;
             if($aActive!==$bActive)return $aActive<=>$bActive;
+            $aReplan=max(1,(int)($a['replan_rank']??PHP_INT_MAX));
+            $bReplan=max(1,(int)($b['replan_rank']??PHP_INT_MAX));
+            if($aReplan!==$bReplan)return $aReplan<=>$bReplan;
             return ((float)($b['score']??0))<=>((float)($a['score']??0));
         });
 
@@ -500,8 +520,13 @@ function vp3_cognitive_portfolio_snapshot_v2480(PDO $pdo,array $user): array
                 static fn(array $budget): int=>max(0,(int)($budget['held_reserved_slots']??0)),
                 array_values($reservationAdmission)
             )),
+            'replan_issues'=>(int)($replanning['counts']['issues']??0),
+            'replan_changes'=>(int)($replanning['counts']['changes']??0),
+            'deadline_threats'=>(int)($replanning['counts']['deadline_threats']??0),
+            'capacity_loss'=>(int)($replanning['counts']['capacity_loss']??0),
         ],
         'capacity'=>$capacity,
+        'replanning'=>$replanning,
         'resource_budget'=>$resourceBudget,
         'reservation_admission'=>$reservationAdmission,
         'claim_admitted_goal_ids'=>$claimAdmitted,
@@ -519,6 +544,7 @@ function vp3_cognitive_portfolio_snapshot_v2480(PDO $pdo,array $user): array
             'objective_store'=>'agent_workflow_runs',
             'dependencies'=>'agent_workflow_run_dependencies',
             'capacity'=>'agent_worker_runtime_v1910',
+            'replanning'=>'cognitive_replanning_v2530_recovery_overlay',
             'resource_budget'=>'cognitive_resource_budget_v2520_admission_policy',
             'claimant'=>'agent_job_engine_v1900',
             'autonomous_mutations'=>'cognitive_autonomy_v2470',

@@ -102,9 +102,8 @@ const checks=[
  ['Recovery Baseline retains v25.20 gates',
    /cognitive-resource-budget-v2520\.mjs/.test(recovery)
    &&/cognitive-resource-budget-v2520\.php/.test(recovery)],
- ['production package requires v25.20 runtime and release files',
-   /Cognitive Runtime v25\.20/.test(packageWorkflow)
-   &&/cognitive-resource-budget-v2520\.php/.test(packageWorkflow)
+ ['production package retains v25.20 runtime and release files',
+   /cognitive-resource-budget-v2520\.php/.test(packageWorkflow)
    &&/cognitive-release-v2520\.php/.test(packageWorkflow)],
  ['docs preserve authority chain and explain reservations are not leases',
    /v25\.20 Resource Budget/.test(docs)

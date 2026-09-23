@@ -343,6 +343,9 @@ function chat_notifications_v240_state(array $user, PDO $pdo, int $agentId=0): a
     $resourceBudget = $brainAllowed && function_exists('vp3_cognitive_resource_activity_projection_v2520')
         ? vp3_cognitive_resource_activity_projection_v2520($pdo, $user, $namespace)
         : ['build'=>'','focus'=>null,'reservations'=>[],'executors'=>[],'counts'=>[],'projection_only'=>true];
+    $replanning = $brainAllowed && function_exists('vp3_cognitive_replanning_activity_projection_v2530')
+        ? vp3_cognitive_replanning_activity_projection_v2530($pdo, $user, $namespace)
+        : ['build'=>'','health'=>'unavailable','replan_needed'=>false,'focus'=>null,'issues'=>[],'changes'=>[],'counts'=>[],'projection_only'=>true];
     $live = is_array($workingContext['live_session'] ?? null) ? $workingContext['live_session'] : null;
     $activity = $live ? [
         'state'=>(string)($live['status'] ?? 'idle'),
@@ -382,6 +385,7 @@ function chat_notifications_v240_state(array $user, PDO $pdo, int $agentId=0): a
             'forecast'=>$forecast,
             'optimization'=>$optimization,
             'resource_budget'=>$resourceBudget,
+            'replanning'=>$replanning,
             'priorities'=>$brainAllowed ? chat_notifications_v313_brain_priorities($user, $pdo) : [],
             'operations'=>$brainAllowed ? chat_notifications_v240_brain_operations($user, 60) : [],
             'events'=>$brainAllowed ? chat_notifications_v240_activity_events($pdo, $userId, 50) : [],
