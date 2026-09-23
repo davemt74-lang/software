@@ -255,6 +255,24 @@ function vp3_extension_notification_candidates_v2140(PDO $pdo,array $user,string
         $dedup[$key]=$candidate;
     }
     $out=array_values($dedup);
+    if(function_exists('vp3_cognitive_attention_extension_candidate_v2410')){
+        $attentionContext=function_exists('vp3_cognitive_presentation_context_v500')
+            ?vp3_cognitive_presentation_context_v500($pdo,$user)
+            :['interruptible'=>true,'idle_minutes'=>0];
+        $filtered=[];
+        foreach($out as $candidate){
+            $decision=vp3_cognitive_attention_extension_candidate_v2410(
+                $pdo,$user,$namespace,$candidate,
+                array_replace($attentionContext,[
+                    'agent_voice_enabled'=>vp3_extension_notification_voice_enabled_v2140($pdo,$user),
+                    'voice_candidate_allowed'=>!empty($candidate['voice_allowed']),
+                    'sensitive_for_voice'=>!empty($candidate['sensitive']),
+                ])
+            );
+            if($decision)$filtered[]=$decision;
+        }
+        $out=$filtered;
+    }
     usort($out,static function(array $a,array $b): int {
         $x=(int)($b['priority']??0)<=>(int)($a['priority']??0);
         if($x!==0)return $x;
