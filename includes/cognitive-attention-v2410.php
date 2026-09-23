@@ -235,12 +235,12 @@ function vp3_cognitive_attention_fingerprint_v2410(array $signal): string
 function vp3_cognitive_attention_budget_v2410(PDO $pdo,array $user,string $namespace): array
 {
     $uid=(int)($user['id']??0);if($uid<1||!vp3_cognitive_attention_schema_ready_v2410($pdo))return ['used'=>0,'limit'=>VP3_COGNITIVE_ATTENTION_MAX_INTERRUPTS_V2410,'remaining'=>true];
-    $namespace=vp3_cognitive_validate_namespace_v500($pdo,$user,$namespace);
+    vp3_cognitive_validate_namespace_v500($pdo,$user,$namespace);
     $stmt=$pdo->prepare("SELECT COUNT(*) FROM cognitive_attention_receipts_v2410
-      WHERE owner_user_id=? AND agent_namespace=? AND interruptive=1
+      WHERE owner_user_id=? AND interruptive=1
         AND status IN ('planned','delivered')
         AND created_at>=DATE_SUB(UTC_TIMESTAMP(),INTERVAL ".VP3_COGNITIVE_ATTENTION_WINDOW_MINUTES_V2410." MINUTE)");
-    $stmt->execute([$uid,$namespace]);$used=(int)$stmt->fetchColumn();
+    $stmt->execute([$uid]);$used=(int)$stmt->fetchColumn();
     return ['used'=>$used,'limit'=>VP3_COGNITIVE_ATTENTION_MAX_INTERRUPTS_V2410,'remaining'=>$used<VP3_COGNITIVE_ATTENTION_MAX_INTERRUPTS_V2410];
 }
 
@@ -248,17 +248,18 @@ function vp3_cognitive_attention_recent_key_v2410(PDO $pdo,int $uid,string $name
 {
     if($key==='')return null;
     $stmt=$pdo->prepare("SELECT * FROM cognitive_attention_receipts_v2410
-      WHERE owner_user_id=? AND agent_namespace=? AND signal_key=?
+      WHERE owner_user_id=? AND signal_key=?
         AND interruptive=1 AND status IN ('planned','delivered')
         AND created_at>=DATE_SUB(UTC_TIMESTAMP(),INTERVAL ".VP3_COGNITIVE_ATTENTION_REPEAT_COOLDOWN_MINUTES_V2410." MINUTE)
       ORDER BY id DESC LIMIT 1");
-    $stmt->execute([$uid,$namespace,$key]);$row=$stmt->fetch();
+    $stmt->execute([$uid,$key]);$row=$stmt->fetch();
     return is_array($row)?$row:null;
 }
 
 function vp3_cognitive_attention_lock_name_v2410(int $uid,string $namespace): string
 {
-    return 'vp3_attn_'.$uid.'_'.substr(hash('sha256',$namespace),0,32);
+    // Interruption budget is user-global across system and named Agents.
+    return 'vp3_attn_user_'.$uid;
 }
 
 function vp3_cognitive_attention_lock_v2410(PDO $pdo,int $uid,string $namespace): bool
@@ -437,6 +438,7 @@ function vp3_cognitive_attention_extension_candidate_v2410(
     $decision=$reserve
         ?vp3_cognitive_attention_arbitrate_v2410($pdo,$user,$namespace,$signal,$context)
         :vp3_cognitive_attention_preview_v2410($pdo,$user,$namespace,$signal,$context);
+    if((string)($decision['status']??'')==='dismissed')return null;
     if(!in_array((string)($decision['surface']??''),['notification','voice_announce','ask_user'],true))return null;
     $candidate['attention_score']=(float)($decision['score']??$decision['attention_score']??0);
     $candidate['attention_band']=(string)($decision['band']??$decision['attention_band']??'');
