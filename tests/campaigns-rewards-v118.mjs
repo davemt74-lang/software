@@ -29,8 +29,10 @@ const checks=[
  ['Signup Reward is newsletter acquisition with required consent and immediate Reward',
   types.includes("'signup'=>$t('Signup Reward','Acquisition'")
   &&types.includes("'newsletter_signup','immediate','required','Sign up & get reward'")],
- ['Event RSVP and proof campaigns gate Rewards until verification',
-  types.includes("'local_event'=>$t('Local Event / RSVP'")
+ ['Contest winner, Event RSVP and proof campaigns gate Rewards until verification',
+  types.includes("'contest_giveaway'=>$t('Contest / Giveaway'")
+  &&types.includes("'contest_entry','after_verification'")
+  &&types.includes("'local_event'=>$t('Local Event / RSVP'")
   &&types.includes("'event_rsvp','after_verification'")
   &&types.includes("'social_engagement'=>$t('Social Engagement'")
   &&types.includes("'proof_submit','after_verification'")],
@@ -53,6 +55,12 @@ const checks=[
  ['Required-Reward Campaign Types cannot activate without an attached Reward',
   runtime.includes("Attach at least one active Reward before activating this Campaign Type.")
   &&domain.includes("campaigns_rewards_validate_campaign_activation_v118")],
+ ['Merchant fulfillment queue completes triggered or verified participants through canonical issuance',
+  runtime.includes('function campaigns_rewards_recent_enrollments_v118')
+  &&runtime.includes('function campaigns_rewards_issue_enrollment_reward_v118')
+  &&runtime.includes("'campaign_fulfillment'")
+  &&campaigns.includes('Campaign fulfillment')
+  &&campaigns.includes('Fulfill + Issue')],
  ['Public landing delegates participation to V1.18 behavior runtime',
   publicPage.includes('campaigns_rewards_public_participate_v118')&&publicPage.includes('$behavior')
   &&publicPage.includes('$publicCopy')],
