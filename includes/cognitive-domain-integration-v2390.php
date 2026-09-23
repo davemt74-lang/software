@@ -261,6 +261,9 @@ function vp3_cognitive_domain_row_v2390(PDO $pdo,array $user,array $ref): ?array
     if($type==='attribution_event'&&ctype_digit($id)){
         $stmt=$pdo->prepare('SELECT id,referral_id,owner_user_id,agent_contact_id,property_id,event_type,value_amount,occurred_at FROM vp3_agent_referral_events WHERE id=? AND owner_user_id=? LIMIT 1');$stmt->execute([(int)$id,$uid]);return $stmt->fetch()?:null;
     }
+    if($type==='analytics_signal'&&ctype_digit($id)){
+        $stmt=$pdo->prepare('SELECT id,owner_user_id,property_id,event_type,severity,significance_score,risk_score,summary,occurred_at FROM vp3_radar_events WHERE id=? AND owner_user_id=? LIMIT 1');$stmt->execute([(int)$id,$uid]);return $stmt->fetch()?:null;
+    }
     return null;
 }
 
@@ -300,7 +303,7 @@ function vp3_cognitive_register_domains_v2390(): void
     vp3_cognitive_register_domain_module_v2390('workflow_tools_approvals',['tool_action'],$events['workflow_tools_approvals'],['default_seconds'=>20]);
     vp3_cognitive_register_domain_module_v2390('homeserver_operations',['homeserver_device'],$events['homeserver_operations'],['default_seconds'=>30]);
     vp3_cognitive_register_domain_module_v2390('media_studio',['media_asset'],$events['media_studio'],['default_seconds'=>60]);
-    vp3_cognitive_register_domain_module_v2390('analytics_attribution',['attribution_event'],$events['analytics_attribution'],['default_seconds'=>60]);
+    vp3_cognitive_register_domain_module_v2390('analytics_attribution',['attribution_event','analytics_signal'],$events['analytics_attribution'],['default_seconds'=>60]);
 }
 
 vp3_cognitive_register_domains_v2390();
