@@ -369,7 +369,7 @@ function vp3_extension_notification_claim_next_v2140(PDO $pdo,array $session,arr
                 $pdo,$user,$namespace,$candidate,$attentionContext,true
             );
             if(!$approved){
-                vp3_extension_notification_release_v2140($pdo,$session,(string)$candidate['event_key'],(string)$claimed['claim_token']);
+                vp3_extension_notification_release_v2140($pdo,$session,(string)$candidate['event_key'],(string)$claimed['claim_token'],$user,$namespace);
                 continue;
             }
             $claimed=['claim_token'=>(string)$claimed['claim_token']]
@@ -502,14 +502,18 @@ function vp3_extension_notification_visual_delivered_v2140(
     return $changed;
 }
 
-function vp3_extension_notification_release_v2140(PDO $pdo,array $session,string $eventKey,string $claimToken): void
-{
+function vp3_extension_notification_release_v2140(
+    PDO $pdo,array $session,string $eventKey,string $claimToken,?array $user=null,string $namespace='system'
+): void {
     $uid=(int)$session['user_id'];$device=(string)($session['device_id']??'');
     if($uid<1||$device===''||!preg_match('/^[a-f0-9]{48}$/',$claimToken))return;
     $stmt=$pdo->prepare("UPDATE extension_notification_delivery_v2140
       SET claimed_device_id=NULL,claim_token_hash=NULL,claimed_at=NULL,claim_expires_at=NULL,updated_at=UTC_TIMESTAMP()
       WHERE owner_user_id=? AND event_key=? AND claimed_device_id=? AND claim_token_hash=? AND visual_delivered_at IS NULL");
     $stmt->execute([$uid,$eventKey,$device,hash('sha256',$claimToken)]);
+    if($stmt->rowCount()>0&&$user&&function_exists('vp3_cognitive_attention_mark_released_v2410')){
+        vp3_cognitive_attention_mark_released_v2410($pdo,$user,$namespace,$eventKey);
+    }
 }
 
 function vp3_extension_notification_voice_result_v2140(PDO $pdo,array $session,array $user,string $namespace,string $eventKey,bool $delivered): void
