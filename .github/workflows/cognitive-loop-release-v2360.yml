@@ -1,4 +1,4 @@
-name: Cognitive Runtime Release v24.80
+name: Cognitive Runtime Release v24.90
 
 on:
   pull_request:
@@ -18,6 +18,7 @@ on:
       - 'docs/VP3_COGNITIVE_SUPERVISION_V2460.md'
       - 'docs/VP3_COGNITIVE_AUTONOMY_V2470.md'
       - 'docs/VP3_COGNITIVE_PORTFOLIO_V2480.md'
+      - 'docs/VP3_COGNITIVE_FORECAST_V2490.md'
       - 'api/cognitive-*.php'
       - 'api/chat-notifications-brain-v240.php'
       - 'api/extension-cognitive-now-v2120.php'
@@ -70,11 +71,11 @@ on:
       - '.github/workflows/cognitive-loop-release-v2360.yml'
   push:
     branches:
-      - 'cognitive-autonomous-portfolio-v2480'
+      - 'cognitive-portfolio-forecasting-v2490'
 
 jobs:
   release:
-    name: Cognitive Runtime v24.80 · PHP ${{ matrix.php }}
+    name: Cognitive Runtime v24.90 · PHP ${{ matrix.php }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -120,6 +121,8 @@ jobs:
           php -l includes/cognitive-release-v2470.php
           php -l includes/cognitive-portfolio-v2480.php
           php -l includes/cognitive-release-v2480.php
+          php -l includes/cognitive-forecast-v2490.php
+          php -l includes/cognitive-release-v2490.php
           php -l includes/cognitive-presentation-v510.php
           php -l includes/cognitive-cards-v520.php
           php -l includes/cognitive-feed-v530.php
@@ -192,6 +195,8 @@ jobs:
         run: node tests/cognitive-autonomy-v2470.mjs
       - name: v24.80 autonomous portfolio coordination
         run: node tests/cognitive-portfolio-v2480.mjs
+      - name: v24.90 portfolio forecasting and adaptive resource planning
+        run: node tests/cognitive-forecast-v2490.mjs
       - name: v23.x feature family
         run: |
           node tests/cognitive-calibration-v2350.mjs
