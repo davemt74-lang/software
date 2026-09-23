@@ -25,6 +25,8 @@ assert.match(header, /data-member-header/, 'canonical member header must expose 
 assert.match(header, /chatNotificationMenu/, 'canonical member header must own notifications');
 assert.match(header, /member-user-menu\.php/, 'canonical member header must own the shared user menu');
 assert.match(header, /memberHeaderShowSidebarToggle/, 'canonical member header must support pages without a sidebar toggle');
+assert.match(header, /memberHeaderShowTitle/, 'canonical member header must support tabs/actions-only pages without redundant title text');
+assert.match(header, /if \(\$memberHeaderShowTitle\)/, 'member header title block must be conditionally rendered, not merely CSS-hidden');
 assert.match(header, /\$memberHeaderUiBuild\s*=\s*'universal-member-header-layout-20260906'/, 'canonical member header must cache-bust the portable layout build');
 assert.match(header, /chat-header-ui\.css\?v='\s*\.\s*\$memberHeaderUiBuild/, 'canonical member header must load its own layout stylesheet');
 assert.match(header, /member-page-scroll\.css\?v='\s*\.\s*\$memberHeaderScrollBuild/, 'canonical member header must load member page scroll ownership fixes');
