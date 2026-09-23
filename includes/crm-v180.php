@@ -238,6 +238,42 @@ function crm_v180_upsert_contact(PDO $pdo, array $data): int
     $phone = trim((string)($data['phone'] ?? ''));
     $company = trim((string)($data['company'] ?? ''));
     $source = trim((string)($data['source'] ?? 'website')) ?: 'website';
+    $ownerUserId=max(0,(int)($data['owner_user_id']??0));
+    $vp3UserId=max(0,(int)($data['vp3_user_id']??0));
+
+    // Campaigns & Rewards V1 extends the same Core CRM identity. Legacy admin
+    // callers remain compatible with owner_user_id=NULL while owner-scoped
+    // callers may know the same email independently without duplicating it
+    // across Merchant Accounts owned by that same VP3 account.
+    if(function_exists('column_exists')&&column_exists('crm_contacts','owner_user_id')){
+        $find=$pdo->prepare("SELECT id FROM crm_contacts WHERE owner_user_id=? AND email_normalized=? ORDER BY id LIMIT 1");
+        $find->execute([$ownerUserId,$email]);
+        $id=(int)$find->fetchColumn();
+        if($id>0){
+            $stmt=$pdo->prepare("UPDATE crm_contacts SET name=?,email=?,phone=CASE WHEN ?<>'' THEN ? ELSE phone END,
+              company=CASE WHEN ?<>'' THEN ? ELSE company END,source=?,vp3_user_id=COALESCE(?,vp3_user_id),updated_at=UTC_TIMESTAMP()
+              WHERE id=?");
+            $stmt->execute([$name,$email,$phone,$phone,$company,$company,$source,$vp3UserId?:null,$id]);
+        }else{
+            $stmt=$pdo->prepare("INSERT INTO crm_contacts
+              (public_id,owner_user_id,vp3_user_id,name,email,email_normalized,phone,company,source,status,lifecycle_stage,marketing_status,created_at,updated_at)
+              VALUES (?,?,?,?,?,?,?,?,?,'active','','unknown',UTC_TIMESTAMP(),UTC_TIMESTAMP())");
+            $stmt->execute([function_exists('campaigns_rewards_uuid_v100')?campaigns_rewards_uuid_v100():bin2hex(random_bytes(16)),$ownerUserId,$vp3UserId?:null,$name,$email,$email,$phone,$company,$source]);
+            $id=(int)$pdo->lastInsertId();
+        }
+        if(table_exists('crm_contact_emails')){
+            $pdo->prepare("INSERT INTO crm_contact_emails (contact_id,email,email_normalized,label,is_primary)
+              VALUES (?,?,?,'primary',1) ON DUPLICATE KEY UPDATE email=VALUES(email),is_primary=1,updated_at=UTC_TIMESTAMP()")
+              ->execute([$id,$email,$email]);
+        }
+        if($phone!==''&&table_exists('crm_contact_phones')){
+            $normalized=preg_replace('/[^0-9]+/','',$phone)??'';
+            if($normalized!=='')$pdo->prepare("INSERT INTO crm_contact_phones (contact_id,phone,phone_normalized,label,is_primary)
+              VALUES (?,?,?,'primary',1) ON DUPLICATE KEY UPDATE phone=VALUES(phone),is_primary=1,updated_at=UTC_TIMESTAMP()")
+              ->execute([$id,$phone,$normalized]);
+        }
+        return $id;
+    }
 
     $stmt = $pdo->prepare(
         "INSERT INTO crm_contacts (name,email,email_normalized,phone,company,source,created_at,updated_at)
@@ -255,6 +291,21 @@ function crm_v180_upsert_contact(PDO $pdo, array $data): int
     $find = $pdo->prepare('SELECT id FROM crm_contacts WHERE email_normalized=? LIMIT 1');
     $find->execute([$email]);
     return (int)$find->fetchColumn();
+}
+
+function crm_v180_contact_for_owner(PDO $pdo,int $ownerUserId,int $contactId): ?array
+{
+    if($ownerUserId<1||$contactId<1||!function_exists('column_exists')||!column_exists('crm_contacts','owner_user_id'))return null;
+    $stmt=$pdo->prepare("SELECT * FROM crm_contacts WHERE id=? AND owner_user_id=? AND status<>'archived' LIMIT 1");
+    $stmt->execute([$contactId,$ownerUserId]);$row=$stmt->fetch();return $row?:null;
+}
+
+function crm_v180_contacts_for_owner(PDO $pdo,int $ownerUserId,int $limit=250): array
+{
+    if($ownerUserId<1||!function_exists('column_exists')||!column_exists('crm_contacts','owner_user_id'))return [];
+    $limit=max(1,min(500,$limit));
+    $stmt=$pdo->prepare("SELECT * FROM crm_contacts WHERE owner_user_id=? AND status<>'archived' ORDER BY updated_at DESC,id DESC LIMIT {$limit}");
+    $stmt->execute([$ownerUserId]);return $stmt->fetchAll()?:[];
 }
 
 function crm_v180_notify_new_lead(PDO $pdo, int $leadId, array $contact, array $lead): void

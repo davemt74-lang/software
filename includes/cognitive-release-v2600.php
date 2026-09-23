@@ -70,8 +70,8 @@ function vp3_cognitive_release_readiness_v2600(?PDO $pdo=null): array
         'presentation_firewall_preserved'=>function_exists('vp3_cognitive_presentation_firewall_validate_v2590'),
         'domain_registry_loaded'=>!empty($registry),
         'domain_registry_integrity'=>!empty($integrity['ok']),
-        'campaigns_rewards_contract_ready'=>($campaign['implementation_status']??'')==='contract_ready',
-        'campaigns_rewards_not_prematurely_exposed'=>empty($campaign['plugin_catalog_registered']),
+        'campaigns_rewards_contract_integrated'=>str_starts_with((string)($campaign['implementation_status']??''),'integrated'),
+        'campaigns_rewards_plugin_registered'=>!empty($campaign['plugin_catalog_registered']),
     ];
     return [
         'build'=>VP3_COGNITIVE_RELEASE_V2600,

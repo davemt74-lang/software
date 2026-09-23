@@ -90,6 +90,8 @@ assert.match(music,/function music_workspace_legacy_package_v340/);
 assert.match(music,/package_slug[^\n]*legacy-access/);
 assert.doesNotMatch(music,/legacy\.permissions/,'Music grandfathering must not depend on retired permission entitlements');
 assert.match(team,/subscription_has_entitlement\(\$user,'team_seats'\)/);
+assert.match(schema,/'campaigns_rewards\.access'\s*=>\s*\['label'=>'Campaigns & Rewards'/);
+assert.match(schema,/\$legacyEntitlements[\s\S]*?'campaigns_rewards\.access'=>\[1,null\]/);
 assert.match(team,/subscription_entitlement_limit\(\$user,'team_seats',0\)/);
 assert.doesNotMatch(team,/subscription_entitlement_row\([^\n]*team_seats/);
 

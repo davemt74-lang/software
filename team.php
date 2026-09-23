@@ -17,6 +17,9 @@ if(empty($teamState['authorized'])){
 
 $ownerUserId=(int)$user['id'];
 $teamRoles=artist_workspace_v104_team_roles();
+$campaignsTeamEnabled=function_exists('campaigns_rewards_enabled_v100')&&campaigns_rewards_enabled_v100($user,$pdo)&&campaigns_rewards_schema_ready_v100($pdo);
+$campaignMerchants=$campaignsTeamEnabled?campaigns_rewards_owned_merchants_v100($pdo,$ownerUserId):[];
+$teamCategories=$campaignsTeamEnabled?campaigns_rewards_team_categories_v100():['basic'=>'Basic Team'];
 $memberId=max(0,(int)($_GET['edit']??0));
 
 if($_SERVER['REQUEST_METHOD']==='POST'){
@@ -47,7 +50,12 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
         if($action==='update_role'){
             $teamRole=trim((string)($_POST['team_role']??''));
             workspace_team_v350_change_role($pdo,$ownerUserId,$targetId,$teamRole);
-            flash('notice','Workspace role updated without changing membership state or the member’s VP3 identity.');
+            if($campaignsTeamEnabled){
+                $teamCategory=trim((string)($_POST['team_category']??'basic'));
+                $merchantId=max(0,(int)($_POST['merchant_account_id']??0));
+                campaigns_rewards_set_team_scope_v100($pdo,$ownerUserId,$targetId,$teamCategory,$merchantId,$ownerUserId);
+            }
+            flash('notice','Workspace role and Team category updated without changing the member’s VP3 identity.');
             redirect(url('/team.php'));
         }
         if($action!=='invite')throw new RuntimeException('Unknown Team action.');
@@ -56,7 +64,14 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
         // by the lifecycle service here; capacity is locked/rechecked on acceptance.
         $email=strtolower(trim((string)($_POST['email']??'')));
         $teamRole=trim((string)($_POST['team_role']??'producer'));
-        $invite=workspace_team_v350_create_invitation($pdo,$ownerUserId,$email,$teamRole,$ownerUserId);
+        $teamCategory=$campaignsTeamEnabled?trim((string)($_POST['team_category']??'basic')):'basic';
+        $merchantId=$campaignsTeamEnabled?max(0,(int)($_POST['merchant_account_id']??0)):0;
+        $ownsInvite=!$pdo->inTransaction();if($ownsInvite)$pdo->beginTransaction();
+        try{
+            $invite=workspace_team_v350_create_invitation($pdo,$ownerUserId,$email,$teamRole,$ownerUserId);
+            if($campaignsTeamEnabled)campaigns_rewards_set_invite_scope_v100($pdo,(int)$invite['id'],$ownerUserId,$teamCategory,$merchantId);
+            if($ownsInvite)$pdo->commit();
+        }catch(Throwable $e){if($ownsInvite&&$pdo->inTransaction())$pdo->rollBack();throw $e;}
         $_SESSION['team_invite_share_v350']=$invite;
         flash('notice','Team invitation created. Pending invitations do not consume a Team seat; capacity is rechecked when the invitation is accepted.');
         redirect(url('/team.php'));
@@ -68,6 +83,8 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
 
 $teamMembers=workspace_team_v350_members($pdo,$ownerUserId,false);
 $pendingInvites=workspace_team_v350_pending_invitations($pdo,$ownerUserId);
+$teamScopes=$campaignsTeamEnabled?campaigns_rewards_team_scopes_v100($pdo,$ownerUserId):[];
+$inviteScopes=$campaignsTeamEnabled?campaigns_rewards_pending_invite_scopes_v100($pdo,$ownerUserId):[];
 $teamState=team_subscription_state($user,$pdo);
 $teamCount=(int)$teamState['used'];
 $teamCanAdd=!empty($teamState['can_add']);
@@ -123,6 +140,7 @@ $notice=flash('notice');$errorNotice=flash('error');
               <div class="team-person"><span class="team-avatar"><?php if(!empty($member['avatar_path'])):?><img src="<?= e(user_avatar_url($member)) ?>" alt=""><?php else:?><?= e(user_initials($member)) ?><?php endif;?></span><div><strong><?= e((string)$member['display_name']) ?></strong><small><?= e((string)$member['email']) ?></small></div></div>
               <div class="team-member-meta"><span>Workspace role</span><strong><?= e($teamRoles[(string)$member['team_role']]??ucfirst((string)$member['team_role'])) ?></strong></div>
               <div class="team-member-meta"><span>Personal package</span><strong><?= e((string)($memberSub['package_name']??'No package')) ?></strong></div>
+              <?php if($campaignsTeamEnabled): $scope=$teamScopes[(int)$member['id']]??['team_category'=>'basic','merchant_account_id'=>0]; ?><div class="team-member-meta"><span>Team category</span><strong><?= e($teamCategories[(string)$scope['team_category']]??'Basic Team') ?></strong></div><?php endif; ?>
               <div class="team-member-status <?= e($status) ?>"><i></i><?= e(ucfirst($status)) ?><?= (int)$member['is_active']!==1?' · Account disabled':'' ?></div>
               <div class="team-member-actions">
                 <a class="team-button small" href="<?= e(url('/team.php?edit='.(int)$member['id'].'#team-edit')) ?>">Role</a>
@@ -140,7 +158,7 @@ $notice=flash('notice');$errorNotice=flash('error');
         <header class="team-panel-head"><div><span>Invitation queue</span><h2>Pending invitations</h2><p>An invitation is not a membership and consumes no seat until accepted. Acceptance rechecks identity, expiration and current Team capacity.</p></div><strong><?= number_format(count($pendingInvites)) ?></strong></header>
         <div class="team-list">
           <?php foreach($pendingInvites as $invite):?>
-            <article class="team-member"><div class="team-person"><span class="team-avatar">✉</span><div><strong><?= e((string)($invite['existing_user_name']?:$invite['invited_email'])) ?></strong><small><?= e((string)$invite['invited_email']) ?></small></div></div><div class="team-member-meta"><span>Invited role</span><strong><?= e($teamRoles[(string)$invite['team_role']]??ucfirst((string)$invite['team_role'])) ?></strong></div><div class="team-invite-meta"><small>Expires <?= e(date('M j, Y',strtotime((string)$invite['expires_at']))) ?></small></div><div class="team-member-actions"><form method="post" onsubmit="return confirm('Revoke this pending invitation?')"><?= csrf_field() ?><input type="hidden" name="action" value="revoke_invite"><input type="hidden" name="id" value="<?= (int)$invite['id'] ?>"><button class="team-button small danger" type="submit">Revoke</button></form></div></article>
+            <article class="team-member"><div class="team-person"><span class="team-avatar">✉</span><div><strong><?= e((string)($invite['existing_user_name']?:$invite['invited_email'])) ?></strong><small><?= e((string)$invite['invited_email']) ?></small></div></div><div class="team-member-meta"><span>Invited role</span><strong><?= e($teamRoles[(string)$invite['team_role']]??ucfirst((string)$invite['team_role'])) ?></strong></div><div class="team-invite-meta"><small>Expires <?= e(date('M j, Y',strtotime((string)$invite['expires_at']))) ?></small><?php if($campaignsTeamEnabled): $inviteScope=$inviteScopes[(int)$invite['id']]??['team_category'=>'basic']; ?><small><?= e($teamCategories[(string)$inviteScope['team_category']]??'Basic Team') ?></small><?php endif; ?></div><div class="team-member-actions"><form method="post" onsubmit="return confirm('Revoke this pending invitation?')"><?= csrf_field() ?><input type="hidden" name="action" value="revoke_invite"><input type="hidden" name="id" value="<?= (int)$invite['id'] ?>"><button class="team-button small danger" type="submit">Revoke</button></form></div></article>
           <?php endforeach;?>
           <?php if(!$pendingInvites):?><div class="team-empty"><strong>No pending invitations.</strong><span>Only accepted, active members consume Team seats.</span></div><?php endif;?>
         </div>
@@ -149,11 +167,11 @@ $notice=flash('notice');$errorNotice=flash('error');
       <?php if(isset($_GET['new'])&&$teamCanInvite):?>
       <section class="team-panel team-form-panel" id="team-add">
         <header class="team-panel-head"><div><span>Invite collaborator</span><h2>Send workspace access</h2><p>Do not create a password for someone else. They sign in to their existing VP3 account or create their own account with the invited email.</p></div><a class="team-button small" href="<?= e(url('/team.php')) ?>">Close</a></header>
-        <form class="team-form" method="post"><?= csrf_field() ?><input type="hidden" name="action" value="invite"><label><span>Email</span><input name="email" type="email" maxlength="190" required></label><label><span>Workspace role</span><select name="team_role" required><?php foreach($teamRoles as $role=>$label):?><option value="<?= e($role) ?>"><?= e($label) ?></option><?php endforeach;?></select></label><p>Invitations expire after seven days. They do not consume a seat until accepted. Existing users also receive an in-app notification; new users create their own VP3 credentials.</p><div class="team-form-actions"><button class="team-button primary" type="submit">Create Invitation</button><a class="team-button" href="<?= e(url('/team.php')) ?>">Cancel</a></div></form>
+        <form class="team-form" method="post"><?= csrf_field() ?><input type="hidden" name="action" value="invite"><label><span>Email</span><input name="email" type="email" maxlength="190" required></label><label><span>Workspace role</span><select name="team_role" required><?php foreach($teamRoles as $role=>$label):?><option value="<?= e($role) ?>"><?= e($label) ?></option><?php endforeach;?></select></label><?php if($campaignsTeamEnabled): ?><label><span>Team category</span><select name="team_category" required><?php foreach($teamCategories as $category=>$label):?><option value="<?= e($category) ?>"<?= (!$campaignMerchants&&$category!=='basic')?' disabled':'' ?>><?= e($label) ?></option><?php endforeach;?></select></label><label><span>Merchant account</span><select name="merchant_account_id"><option value="">None / Basic Team</option><?php foreach($campaignMerchants as $merchant):?><option value="<?= (int)$merchant['id'] ?>"><?= e((string)$merchant['name']) ?></option><?php endforeach;?></select></label><?php if(!$campaignMerchants): ?><p>Merchant Team access becomes available after you create a merchant account in <a href="<?= e(url('/campaigns.php')) ?>">Campaigns &amp; Rewards</a>.</p><?php endif; ?><?php endif; ?><p>Invitations expire after seven days. They do not consume a seat until accepted. Existing users also receive an in-app notification; new users create their own VP3 credentials.</p><div class="team-form-actions"><button class="team-button primary" type="submit">Create Invitation</button><a class="team-button" href="<?= e(url('/team.php')) ?>">Cancel</a></div></form>
       </section><?php endif;?>
 
       <?php if($editing):?>
-      <section class="team-panel team-form-panel" id="team-edit"><header class="team-panel-head"><div><span>Workspace role</span><h2><?= e((string)$editing['display_name']) ?></h2><p>Changing a role never changes a suspended membership back to active.</p></div><a class="team-button small" href="<?= e(url('/team.php')) ?>">Close</a></header><form class="team-form compact" method="post"><?= csrf_field() ?><input type="hidden" name="action" value="update_role"><input type="hidden" name="id" value="<?= (int)$editing['id'] ?>"><label><span>Role</span><select name="team_role" required><?php foreach($teamRoles as $role=>$label):?><option value="<?= e($role) ?>" <?= (string)$editing['team_role']===$role?'selected':'' ?>><?= e($label) ?></option><?php endforeach;?></select></label><div class="team-form-actions"><button class="team-button primary" type="submit">Save Workspace Role</button></div></form></section><?php endif;?>
+      <section class="team-panel team-form-panel" id="team-edit"><header class="team-panel-head"><div><span>Workspace role</span><h2><?= e((string)$editing['display_name']) ?></h2><p>Changing a role never changes a suspended membership back to active.</p></div><a class="team-button small" href="<?= e(url('/team.php')) ?>">Close</a></header><form class="team-form compact" method="post"><?= csrf_field() ?><input type="hidden" name="action" value="update_role"><input type="hidden" name="id" value="<?= (int)$editing['id'] ?>"><label><span>Role</span><select name="team_role" required><?php foreach($teamRoles as $role=>$label):?><option value="<?= e($role) ?>" <?= (string)$editing['team_role']===$role?'selected':'' ?>><?= e($label) ?></option><?php endforeach;?></select></label><?php if($campaignsTeamEnabled): $editScope=$teamScopes[(int)$editing['id']]??['team_category'=>'basic','merchant_account_id'=>0]; ?><label><span>Team category</span><select name="team_category"><?php foreach($teamCategories as $category=>$label):?><option value="<?= e($category) ?>"<?= (string)$editScope['team_category']===$category?' selected':'' ?><?= (!$campaignMerchants&&$category!=='basic')?' disabled':'' ?>><?= e($label) ?></option><?php endforeach;?></select></label><label><span>Merchant account</span><select name="merchant_account_id"><option value="">None / Basic Team</option><?php foreach($campaignMerchants as $merchant):?><option value="<?= (int)$merchant['id'] ?>"<?= (int)($editScope['merchant_account_id']??0)===(int)$merchant['id']?' selected':'' ?>><?= e((string)$merchant['name']) ?></option><?php endforeach;?></select></label><?php endif; ?><div class="team-form-actions"><button class="team-button primary" type="submit">Save Team Access</button></div></form></section><?php endif;?>
     </div></section>
   </main>
 </div>

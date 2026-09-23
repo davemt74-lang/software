@@ -10,6 +10,7 @@ on:
     branches:
       - main
       - feature/canonical-teams-workspaces-v350
+      - campaigns-rewards-v100
   pull_request:
 
 permissions:
@@ -37,8 +38,15 @@ jobs:
       - name: Team lifecycle contract
         run: node tests/team-workspace-lifecycle-v350.mjs
 
+      - name: Campaigns & Rewards V1 contract
+        run: |
+          php tests/campaigns-rewards-v100.php
+          node tests/campaigns-rewards-v100.mjs
+
       - name: JavaScript syntax
-        run: node --check tests/team-workspace-lifecycle-v350.mjs
+        run: |
+          node --check tests/team-workspace-lifecycle-v350.mjs
+          node --check tests/campaigns-rewards-v100.mjs
 
       - name: PHP syntax
         run: |
@@ -46,7 +54,18 @@ jobs:
           php -l includes/artist-workspaces-v104.php
           php -l includes/team-subscription.php
           php -l includes/bootstrap.php
+          php -l includes/campaigns-rewards-v100.php
+          php -l includes/campaigns-rewards-platform-v100.php
+          php -l includes/campaigns-rewards-domain-v100.php
+          php -l includes/campaigns-rewards-release-v100.php
           php -l team.php
+          php -l campaigns.php
+          php -l campaign.php
+          php -l campaign-claim.php
+          php -l rewards-wallet.php
+          php -l profile.php
+          php -l plugins.php
+          php -l includes/member-navigation.php
           php -l team-invite.php
           php -l login.php
           php -l signup.php

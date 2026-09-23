@@ -83,6 +83,16 @@ foreach($tracksByAlbum as &$group)usort($group,static fn(array $a,array $b):int=
 $commerceProducts=[];
 try { $commerceProducts=profile_commerce_products_for_profile_v900($pdo,$profile,true,40); }
 catch (Throwable $e) { vp3_profile_optional_failure('commerce',$e,$username); }
+
+$campaigns=[];
+try {
+    if(function_exists('campaigns_rewards_schema_ready_v100')&&campaigns_rewards_schema_ready_v100($pdo)){
+        $campaigns=campaigns_rewards_profile_campaigns_v100($pdo,(int)$profile['user_id'],24);
+    }
+} catch (Throwable $e) {
+    vp3_profile_optional_failure('campaigns-rewards',$e,$username);
+    $campaigns=[];
+}
 $publicSchedule=null;$bookingTypes=[];
 try {
     if(table_exists('agent_scheduling_schedules')&&table_exists('agent_scheduling_event_types')){
@@ -108,6 +118,7 @@ $profileTabs=[];
 if($bio!==''||$links)$profileTabs['about']='About';
 if($shows)$profileTabs['calendar']='Calendar';
 if($bookingTypes)$profileTabs['booking']='Booking';
+if($campaigns)$profileTabs['campaigns']='Campaigns';
 if($commerceProducts)$profileTabs['products']='Products';
 if($tracks||$albums)$profileTabs['music']='Music';
 if($photos)$profileTabs['photos']='Photos';
@@ -184,6 +195,17 @@ $activeTab=(string)(array_key_first($profileTabs)??'');
         <div class="profile-booking-list">
           <?php foreach($bookingTypes as $event): $duration=max(0,(int)($event['duration_minutes']??0)); ?>
             <article class="profile-booking-item"><div class="profile-booking-meta"><?php if($duration>0): ?><span><?= $duration ?> min</span><?php endif; ?></div><h3><?= e((string)($event['title']??'Appointment')) ?></h3><?php if(trim((string)($event['description']??''))!==''): ?><p><?= e(mb_strimwidth((string)$event['description'],0,260,'…')) ?></p><?php endif; ?><a href="<?= e(agent_scheduling_public_booking_url_v450($username,(string)($event['slug']??''))) ?>">Book a time →</a></article>
+          <?php endforeach; ?>
+        </div>
+      </section>
+    <?php endif; ?>
+
+    <?php if(isset($profileTabs['campaigns'])): ?>
+      <section class="profile-card profile-panel" data-profile-panel="campaigns"<?= $activeTab==='campaigns'?'':' hidden' ?>>
+        <div class="profile-panel-heading"><h2>Campaigns</h2><?php if($isOwner&&function_exists('campaigns_rewards_user_has_access_v100')&&$viewer&&campaigns_rewards_user_has_access_v100($pdo,$viewer)): ?><a class="profile-tab-manage" href="<?= e(url('/campaigns.php')) ?>">Manage campaigns</a><?php endif; ?></div>
+        <div class="profile-products-list">
+          <?php foreach($campaigns as $campaign): ?>
+            <article class="profile-product-item"><div class="profile-product-tags"><span><?= e((string)$campaign['merchant_name']) ?></span><?php if(!empty($campaign['ends_at'])): ?><span>Ends <?= e(date('M j',strtotime((string)$campaign['ends_at']))) ?></span><?php endif; ?></div><h3><?= e((string)$campaign['title']) ?></h3><?php if(trim((string)$campaign['subtitle'])!==''): ?><p><?= e((string)$campaign['subtitle']) ?></p><?php elseif(trim((string)$campaign['description'])!==''): ?><p><?= e(mb_strimwidth((string)$campaign['description'],0,260,'…')) ?></p><?php endif; ?><a href="<?= e(campaigns_rewards_campaign_url_v100((string)$campaign['slug'])) ?>"><?= e((string)$campaign['cta_label']) ?> →</a></article>
           <?php endforeach; ?>
         </div>
       </section>

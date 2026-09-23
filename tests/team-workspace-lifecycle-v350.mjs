@@ -48,7 +48,7 @@ assert.ok(statusBody.indexOf("workspace_team_v350_membership($pdo,$ownerId,$memb
 
 // Legacy Team storage is active-only projection; lifecycle history is durable.
 assert.match(lifecycle, /WHERE wm\.membership_status<>'active'/);
-assert.match(lifecycle, /FROM workspace_memberships_v350 WHERE membership_status='active'/);
+assert.match(lifecycle, /FROM workspace_memberships_v350 wm[\s\S]*?WHERE wm\.membership_status='active' AND COALESCE\(wa\.basic_team_enabled,1\)=1/);
 assert.match(lifecycle, /membership_status='suspended'/);
 assert.match(lifecycle, /membership_status='removed'/);
 assert.match(legacy, /workspace_team_v350_activate_member/);
@@ -74,6 +74,16 @@ assert.doesNotMatch(team, /Temporary password/i);
 assert.match(team, /workspace_team_v350_set_status\(\$pdo,\$ownerUserId,\$targetId,'suspended'\)/);
 assert.match(team, /workspace_team_v350_set_status\(\$pdo,\$ownerUserId,\$targetId,'active'\)/);
 assert.match(team, /workspace_team_v350_set_status\(\$pdo,\$ownerUserId,\$targetId,'removed'\)/);
+
+// Campaigns & Rewards extends Team with plugin-specific scope, never a second Team lifecycle.
+assert.match(team, /campaigns_rewards_team_categories_v100/);
+assert.match(team, /name="team_category"/);
+assert.match(team, /name="merchant_account_id"/);
+assert.match(team, /campaigns_rewards_set_invite_scope_v100/);
+assert.match(team, /campaigns_rewards_set_team_scope_v100/);
+assert.match(lifecycle, /campaigns_rewards_apply_invite_scope_v100/);
+assert.match(lifecycle, /campaigns_rewards_clear_invite_scope_v100/);
+assert.match(lifecycle, /campaigns_rewards_team_membership_status_v100/);
 
 // Invite acceptance is tied to the signed-in account and survives auth without open redirect input.
 assert.match(invite, /workspace_team_v350_accept_invitation/);

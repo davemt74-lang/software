@@ -27,6 +27,10 @@ RewriteRule ^([A-Za-z0-9][A-Za-z0-9._-]{1,58}[A-Za-z0-9])/order/([A-Za-z0-9._-]{
 RewriteRule ^([A-Za-z0-9][A-Za-z0-9._-]{1,58}[A-Za-z0-9])/product/([A-Za-z0-9-]{1,80})/checkout/?$ profile-commerce-product.php?username=$1&product=$2&checkout=1 [L,QSA,NC]
 RewriteRule ^([A-Za-z0-9][A-Za-z0-9._-]{1,58}[A-Za-z0-9])/product/([A-Za-z0-9-]{1,80})/?$ profile-commerce-product.php?username=$1&product=$2 [L,QSA,NC]
 
+# Campaigns & Rewards exposes only the public Campaign landing route.
+# Reward redemption is authenticated and online-only through campaign-claim.php.
+RewriteRule ^campaign/([A-Za-z0-9-]{1,100})/?$ campaign.php?slug=$1 [L,QSA,NC]
+
 # Legacy profile URLs permanently collapse to the canonical root username URL.
 RewriteRule ^stonefellow/([A-Za-z0-9._-]+)/?$ /$1 [R=301,L,NE]
 

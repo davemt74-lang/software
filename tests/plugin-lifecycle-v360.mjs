@@ -42,6 +42,13 @@ assert.match(music, /vp3_plugin_effective_enabled_v360/);
 assert.match(music, /vp3_plugin_set_enabled_v360/);
 assert.match(music, /vp3_plugin_effective_state_v360/);
 
+// Campaigns & Rewards uses the same canonical plugin lifecycle and preserves contextual collaborator access.
+assert.match(registry, /'campaigns_rewards'=>/);
+assert.match(plugins, /campaigns_enable/);
+assert.match(plugins, /campaigns_disable/);
+assert.match(plugins, /does not delete merchant accounts, campaigns, rewards, customer links, claim history, Team scope or reporting data/);
+assert.match(lifecycle, /campaigns_rewards_accessible_merchants_v100/);
+
 // Workspace access checks the owning workspace's plugin, while collaborators use active workspace role.
 assert.match(resources, /function music_workspace_resources_v330_workspace_enabled/);
 assert.match(resources, /return \$owner \? music_workspace_enabled_v320\(\$owner\) : false/);

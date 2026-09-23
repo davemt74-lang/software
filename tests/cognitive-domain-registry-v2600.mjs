@@ -24,9 +24,9 @@ const checks=[
  ['unknown events quarantine before ingress',/quarantined_before_ingress/.test(registry)&&/unknown_or_malformed_domain_events_quarantined_before_ingress/.test(release)],
  ['domain references are bounded and normalized',/VP3_COGNITIVE_DOMAIN_MAX_REFS_V2600=16/.test(registry)&&/vp3_cognitive_domain_entity_ref_v2600/.test(registry)&&/vp3_cognitive_object_ref_v500/.test(registry)],
  ['event classification contract exists',/approval_required/.test(registry)&&/failure_recovery/.test(registry)&&/completion/.test(registry)&&/outcome/.test(registry)],
- ['Campaigns & Rewards is first reference contract',/function vp3_cognitive_campaigns_rewards_contract_v2600/.test(registry)&&/campaign\.conversion/.test(registry)&&/reward\.claimed/.test(registry)&&/claim\.failed/.test(registry)],
- ['Campaigns & Rewards does not claim tables early',/'implementation_status'=>'contract_ready'/.test(registry)&&/'authority'=>\[\]/.test(registry)&&/'plugin_catalog_registered'=>false/.test(registry)],
- ['Campaigns & Rewards is not prematurely in v3.20 catalog',!/campaigns_rewards/.test(pluginRegistry)],
+ ['Campaigns & Rewards is first reference contract',/function vp3_cognitive_campaigns_rewards_contract_v2600/.test(registry)&&/campaign\.conversion_attributed/.test(registry)&&/claim\.accepted/.test(registry)&&/claim\.rejected/.test(registry)],
+ ['Campaigns & Rewards V1 fulfills the reference contract',/'implementation_status'=>'integrated-v1\.00'/.test(registry)&&/'merchant_accounts'/.test(registry)&&/'reward_issuances'/.test(registry)&&/'reward_claims'/.test(registry)&&/'plugin_catalog_registered'=>true/.test(registry)],
+ ['Campaigns & Rewards is registered only after V1 implementation',/campaigns_rewards/.test(pluginRegistry)&&/Merchant accounts, campaigns, rewards/.test(pluginRegistry)],
  ['CRM and Team are related authorities not duplicated campaign objects',/'related_objects'=>\['contact','team_member','profile'\]/.test(registry)&&/crm_or_team_records_duplicated_for_campaigns/.test(release)],
  ['v25.90 current-state mapper consults v26.00 registry',/vp3_cognitive_current_state_domain_v2600/.test(current)],
  ['v25.90 safe ref allowlist includes campaign identities',/merchant_id/.test(current)&&/campaign_id/.test(current)&&/reward_id/.test(current)&&/claim_id/.test(current)&&/customer_id/.test(current)],
@@ -34,7 +34,7 @@ const checks=[
  ['domain health is diagnostic only',/function vp3_cognitive_domain_health_v2600/.test(registry)&&/'authority'=>'diagnostic_only'/.test(registry)],
  ['v26.00 CI runs PHP and Node gates',/cognitive-domain-registry-v2600\.php/.test(workflow)&&/cognitive-domain-registry-v2600\.mjs/.test(workflow)],
  ['Recovery Baseline retains v26.00 gates',/cognitive-domain-registry-v2600\.php/.test(recovery)&&/cognitive-domain-registry-v2600\.mjs/.test(recovery)],
- ['production package declares v26.00 and requires runtime files',/Cognitive Runtime v26\.00/.test(packageWorkflow)&&/cognitive-domain-registry-v2600\.php/.test(packageWorkflow)&&/cognitive-release-v2600\.php/.test(packageWorkflow)],
+ ['production package retains v26.00 runtime files in later releases',/cognitive-domain-registry-v2600\.php/.test(packageWorkflow)&&/cognitive-release-v2600\.php/.test(packageWorkflow)],
  ['docs define reference-domain and authority boundaries',/reference domain/i.test(docs)&&/no new event ledger/i.test(docs)&&/Campaigns & Rewards/i.test(docs)],
 ];
 
