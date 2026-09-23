@@ -83,11 +83,15 @@ When workflow work is shared across goals, usage is proportionally attributed by
 
 v25.80 may retain several historical snapshots for one long-running goal.
 
-Calibration factors use **only the latest settled snapshot per goal** within the rolling evidence window. One frequently observed goal therefore cannot overwhelm the sample.
+Forecast, cost and token calibration factors use **only the latest settled snapshot per goal** within the rolling evidence window. One frequently observed goal therefore cannot overwhelm those samples.
+
+Value reliability is different: it reads the latest canonical verified realization for each explicit v25.70 value profile. This means a value confirmation or canonical conversion that arrives after goal completion can still improve value reliability without rewriting an old decision settlement.
 
 ## Minimum evidence and bounds
 
-No calibration factor changes behavior before at least **5 independent settled goals** provide valid evidence for that metric.
+No forecast/cost/token calibration factor changes behavior before at least **5 independent settled goals** provide valid evidence for that metric. Value reliability requires at least **5 independently verified value profiles**.
+
+A valid observed/predicted ratio of **0** is real evidence and is not discarded; the final factor is still clamped to the bounded range.
 
 Rolling calibration window: **180 days**.
 
@@ -153,6 +157,8 @@ The Decision Calibration surface reports:
 - token projection ratio,
 - value realization ratio,
 - reservation-associated forecast error.
+
+Historical settlement rows preserve the value evidence available when they settled. The active value-reliability factor itself uses the latest canonical v25.70 realization state, so later verified value evidence is not lost.
 
 This makes it possible to see whether calibration is improving the numeric planning layer.
 
