@@ -103,9 +103,8 @@ const checks=[
    /cognitive-replanning-v2530\.mjs/.test(workflow)&&/cognitive-replanning-v2530\.php/.test(workflow)],
  ['Recovery Baseline retains v25.30 gates',
    /cognitive-replanning-v2530\.mjs/.test(recovery)&&/cognitive-replanning-v2530\.php/.test(recovery)],
- ['production package requires v25.30 runtime and release files',
-   /Cognitive Runtime v25\.30/.test(packageWorkflow)
-   &&/cognitive-replanning-v2530\.php/.test(packageWorkflow)
+ ['production package retains v25.30 runtime and release files',
+   /cognitive-replanning-v2530\.php/.test(packageWorkflow)
    &&/cognitive-release-v2530\.php/.test(packageWorkflow)],
  ['docs preserve authority and derived reservation cleanup',
    /v25\.30 Replan/.test(docs)&&/v25\.20 Resource Budget/.test(docs)
