@@ -364,6 +364,13 @@ function vp3_cognitive_portfolio_snapshot_v2480(PDO $pdo,array $user): array
         return ((int)($a['goal_id']??0))<=>((int)($b['goal_id']??0));
     });
 
+    // v24.90 may adapt future sequencing pressure, but v24.80 remains the
+    // admission authority. Forecast failure leaves the proven v24.80 order.
+    if(function_exists('vp3_cognitive_forecast_adaptive_resequence_v2490')){
+        try{$items=vp3_cognitive_forecast_adaptive_resequence_v2490($items,$capacity);}
+        catch(Throwable $e){}
+    }
+
     // Prevent creation of substantially overlapping new project work. Existing
     // canonical objectives are never cancelled or blocked merely by similarity.
     for($i=0;$i<count($items);$i++){

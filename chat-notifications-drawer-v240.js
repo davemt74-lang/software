@@ -364,6 +364,8 @@
     const autonomy = brain.autonomy || {};
     const portfolio = brain.portfolio || {};
     const portfolioItems = Array.isArray(portfolio.items) ? portfolio.items : [];
+    const forecast = brain.forecast || {};
+    const forecastItems = Array.isArray(forecast.items) ? forecast.items : [];
     const autonomyItems = Array.isArray(autonomy.items) ? autonomy.items : [];
     const supervisionIssues = Array.isArray(supervision.issues) ? supervision.issues : [];
     const supervisionByRef = new Map(supervisionIssues.map(item => [String(item.continuity_ref || ''), item]));
@@ -499,6 +501,27 @@
             <strong>${esc(issue.title || issue.continuity_ref || 'Supervised work')}</strong>
             <p>${esc(issue.reason || '')}</p>
             <small>${esc(String(issue.health_state || '').replaceAll('_',' '))}${issue.supervisor_action ? ` · ${esc(String(issue.supervisor_action).replaceAll('_',' '))}` : ''}${issue.auto_reconcile ? ' · governed auto-reconcile' : ''}</small>
+          </article>`).join('')}
+        </div>
+      </section>` : ''}
+
+      ${forecastItems.length ? `
+      <section class="chat-activity-section">
+        <div class="chat-activity-section-head">
+          <div><strong>Portfolio Forecast</strong><span>v24.90 projects completion windows, deadline/capacity conflicts and adaptive sequencing without replacing v24.80 admission or Phase 19 execution.</span></div>
+        </div>
+        <div class="chat-brain-metrics">
+          ${brainMetric('Forecasted', Number(forecast.counts?.forecasted || 0))}
+          ${brainMetric('Conflicts', Number(forecast.counts?.conflicts || 0))}
+          ${brainMetric('Deadline risk', Number(forecast.counts?.deadline_risk || 0))}
+          ${brainMetric('Capacity pressure', Number(forecast.counts?.capacity_pressure || 0))}
+        </div>
+        <div class="chat-brain-memory-list">
+          ${forecastItems.map(item => `<article>
+            <span>#${Number(item.sequence_rank || 0)} · ${esc(String(item.risk || 'on_track').replaceAll('_',' '))}</span>
+            <strong>${esc(item.title || ('Goal #' + Number(item.goal_id || 0)))}</strong>
+            <p>${esc(item.executor || 'cloud')} · likely ${esc(item.likely_completion_at || 'unknown')}</p>
+            <small>${esc(String(item.confidence?.label || 'low'))} confidence · latest ${esc(item.latest_completion_at || 'unknown')}</small>
           </article>`).join('')}
         </div>
       </section>` : ''}

@@ -402,6 +402,9 @@ function vp3_cognitive_presentation_state_v510(PDO $pdo,array $user,string $name
     $portfolio=function_exists('vp3_cognitive_portfolio_activity_projection_v2480')
         ?vp3_cognitive_portfolio_activity_projection_v2480($pdo,$user,$namespace)
         :['build'=>'','focus'=>null,'items'=>[],'counts'=>[],'capacity'=>[]];
+    $forecast=function_exists('vp3_cognitive_forecast_activity_projection_v2490')
+        ?vp3_cognitive_forecast_activity_projection_v2490($pdo,$user,$namespace)
+        :['build'=>'','focus'=>null,'items'=>[],'counts'=>[],'conflicts'=>[]];
     $brief['followthrough']=$followthrough['focus']??null;
     $brief['followthrough_counts']=$followthrough['counts']??[];
     $brief['away_followthrough']=$followthrough['away']??['count'=>0,'summary'=>'','items'=>[]];
@@ -412,6 +415,9 @@ function vp3_cognitive_presentation_state_v510(PDO $pdo,array $user,string $name
     $brief['portfolio_focus']=$portfolio['focus']??null;
     $brief['portfolio_counts']=$portfolio['counts']??[];
     $brief['portfolio_capacity']=$portfolio['capacity']??[];
+    $brief['forecast_focus']=$forecast['focus']??null;
+    $brief['forecast_counts']=$forecast['counts']??[];
+    $brief['forecast_conflicts']=$forecast['conflicts']??[];
     return [
         'build'=>VP3_COGNITIVE_PRESENTATION_V510,'agent_namespace'=>$namespace,
         'idle_minutes'=>vp3_cognitive_presentation_idle_minutes_v510($row),
@@ -420,6 +426,7 @@ function vp3_cognitive_presentation_state_v510(PDO $pdo,array $user,string $name
         'supervision'=>$supervision,
         'autonomy'=>$autonomy,
         'portfolio'=>$portfolio,
+        'forecast'=>$forecast,
         'digest'=>$digest,'voice_candidate'=>$voice,'attention'=>$attentionStatus,
         'poll_seconds'=>VP3_COGNITIVE_PRESENTATION_POLL_SECONDS_V510,
     ];

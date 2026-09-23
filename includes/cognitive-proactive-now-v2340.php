@@ -138,6 +138,9 @@ function vp3_cognitive_proactive_now_compose_v2340(
     $portfolio=function_exists('vp3_cognitive_portfolio_activity_projection_v2480')
         ?vp3_cognitive_portfolio_activity_projection_v2480($pdo,$user,$namespace)
         :['focus'=>null,'counts'=>[],'items'=>[],'capacity'=>[]];
+    $forecast=function_exists('vp3_cognitive_forecast_activity_projection_v2490')
+        ?vp3_cognitive_forecast_activity_projection_v2490($pdo,$user,$namespace)
+        :['focus'=>null,'counts'=>[],'items'=>[],'conflicts'=>[]];
     $voiceEnabled=false;
     if(function_exists('chat_settings_get_v237')){
         try{$voiceEnabled=!empty(chat_settings_get_v237($pdo,(int)($user['id']??0))['agent_voice_enabled']);}
@@ -171,6 +174,12 @@ function vp3_cognitive_proactive_now_compose_v2340(
             'counts'=>$portfolio['counts']??[],
             'capacity'=>$portfolio['capacity']??[],
         ],
+        'forecast'=>[
+            'focus'=>$forecast['focus']??null,
+            'counts'=>$forecast['counts']??[],
+            'conflicts'=>$forecast['conflicts']??[],
+            'adaptive_sequence_goal_ids'=>$forecast['adaptive_sequence_goal_ids']??[],
+        ],
         'voice'=>[
             'enabled'=>$voiceEnabled,
             'delivery_authority'=>'cognitive_presentation_v510_and_extension_notifications_v2140',
@@ -191,6 +200,7 @@ function vp3_cognitive_proactive_now_compose_v2340(
             'supervision'=>'cognitive_supervision_v2460',
             'autonomy'=>'cognitive_autonomy_v2470',
             'portfolio'=>'cognitive_portfolio_v2480',
+            'forecast'=>'cognitive_forecast_v2490',
             'automatic_external_writes'=>false,
             'approval_bypass'=>false,
             'execution_bypass'=>false,
