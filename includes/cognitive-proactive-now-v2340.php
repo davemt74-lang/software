@@ -272,7 +272,13 @@ function vp3_cognitive_proactive_now_compose_v2340(
         'entity_graph'=>[
             'build'=>$entityGraph['build']??'','ready'=>!empty($entityGraph['ready']),
             'counts'=>$entityGraph['counts']??[],'domain_counts'=>$entityGraph['domain_counts']??[],
-            'health'=>function_exists('vp3_cognitive_entity_graph_health_v2610')?vp3_cognitive_entity_graph_health_v2610($entityGraph):[],
+            'health'=>[
+                    'ok'=>empty($entityGraph['diagnostics']['conflicts']),
+                    'truncated'=>!empty($entityGraph['diagnostics']['truncated']),
+                    'unresolved_count'=>(int)($entityGraph['counts']['unresolved']??0),
+                    'conflict_count'=>(int)($entityGraph['counts']['conflicts']??0),
+                    'orphaned_seed_count'=>(int)($entityGraph['counts']['orphaned_seeds']??0),
+                ],
         ],
         'entity_graph_presentation'=>$entityGraphPresentation,
         'decision_calibration'=>[
