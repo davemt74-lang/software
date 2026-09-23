@@ -395,6 +395,22 @@ function vp3_cognitive_budget_item_context_v2560(array $item,array $runMeta): ar
     ];
 }
 
+function vp3_cognitive_budget_allocation_compare_v2560(array $a,array $b): int
+{
+    $aCommit=(float)($a['commitment_protection_score']??0.0);
+    $bCommit=(float)($b['commitment_protection_score']??0.0);
+    $x=$bCommit<=>$aCommit;if($x!==0)return $x;
+    $aRisk=!empty($a['commitment_at_risk'])?0:1;$bRisk=!empty($b['commitment_at_risk'])?0:1;
+    if($aRisk!==$bRisk)return $aRisk<=>$bRisk;
+    $aTarget=strtotime((string)($a['target_date']??''))?:PHP_INT_MAX;
+    $bTarget=strtotime((string)($b['target_date']??''))?:PHP_INT_MAX;
+    if($aTarget!==$bTarget)return $aTarget<=>$bTarget;
+    $x=((float)($b['optimization_strategy_score']??$b['forecast_sequence_score']??$b['score']??0.0))<=>
+        ((float)($a['optimization_strategy_score']??$a['forecast_sequence_score']??$a['score']??0.0));
+    if($x!==0)return $x;
+    return ((int)($a['goal_id']??0))<=>((int)($b['goal_id']??0));
+}
+
 function vp3_cognitive_budget_policy_matches_v2560(array $policy,array $context): bool
 {
     $kind=(string)($policy['scope_kind']??'account');$key=(string)($policy['scope_key']??'');
@@ -575,20 +591,7 @@ function vp3_cognitive_budget_apply_v2560(
             if(vp3_cognitive_budget_policy_matches_v2560($policy,$itemContexts[$goalId]??[]))$applicable[]=$item;
         }
 
-        usort($applicable,static function(array $a,array $b): int {
-            $aCommit=(float)($a['commitment_protection_score']??0.0);
-            $bCommit=(float)($b['commitment_protection_score']??0.0);
-            $x=$bCommit<=>$aCommit;if($x!==0)return $x;
-            $aRisk=!empty($a['commitment_at_risk'])?0:1;$bRisk=!empty($b['commitment_at_risk'])?0:1;
-            if($aRisk!==$bRisk)return $aRisk<=>$bRisk;
-            $aTarget=strtotime((string)($a['target_date']??''))?:PHP_INT_MAX;
-            $bTarget=strtotime((string)($b['target_date']??''))?:PHP_INT_MAX;
-            if($aTarget!==$bTarget)return $aTarget<=>$bTarget;
-            $x=((float)($b['optimization_strategy_score']??$b['forecast_sequence_score']??$b['score']??0.0))<=>
-                ((float)($a['optimization_strategy_score']??$a['forecast_sequence_score']??$a['score']??0.0));
-            if($x!==0)return $x;
-            return ((int)($a['goal_id']??0))<=>((int)($b['goal_id']??0));
-        });
+        usort($applicable,'vp3_cognitive_budget_allocation_compare_v2560');
 
         $usageContext=[];
         if((string)$policy['scope_kind']==='goal'){
