@@ -1,4 +1,4 @@
-name: Cognitive Runtime Release v25.50
+name: Cognitive Runtime Release v25.60
 
 on:
   pull_request:
@@ -24,6 +24,9 @@ on:
       - 'docs/VP3_COGNITIVE_REPLANNING_V2530.md'
       - 'docs/VP3_COGNITIVE_COMMITMENT_PROTECTION_V2540.md'
       - 'docs/VP3_COGNITIVE_ECONOMICS_V2550.md'
+      - 'docs/VP3_COGNITIVE_BUDGET_GOVERNANCE_V2560.md'
+      - 'budget-governance.php'
+      - 'budget-governance-v2560.css'
       - 'api/cognitive-*.php'
       - 'api/chat-notifications-brain-v240.php'
       - 'api/extension-cognitive-now-v2120.php'
@@ -77,11 +80,11 @@ on:
       - '.github/workflows/cognitive-loop-release-v2360.yml'
   push:
     branches:
-      - 'cognitive-cost-resource-economics-v2550'
+      - 'cognitive-budget-governance-v2560'
 
 jobs:
   release:
-    name: Cognitive Runtime v25.50 · PHP ${{ matrix.php }}
+    name: Cognitive Runtime v25.60 · PHP ${{ matrix.php }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -139,6 +142,9 @@ jobs:
           php -l includes/cognitive-release-v2540.php
           php -l includes/cognitive-economics-v2550.php
           php -l includes/cognitive-release-v2550.php
+          php -l includes/cognitive-budget-governance-v2560.php
+          php -l includes/cognitive-release-v2560.php
+          php -l budget-governance.php
           php -l includes/cognitive-presentation-v510.php
           php -l includes/cognitive-cards-v520.php
           php -l includes/cognitive-feed-v530.php
@@ -233,6 +239,10 @@ jobs:
         run: |
           php tests/cognitive-economics-v2550.php
           node tests/cognitive-economics-v2550.mjs
+      - name: v25.60 budget guardrails and spend governance
+        run: |
+          php tests/cognitive-budget-governance-v2560.php
+          node tests/cognitive-budget-governance-v2560.mjs
       - name: v23.x feature family
         run: |
           node tests/cognitive-calibration-v2350.mjs
