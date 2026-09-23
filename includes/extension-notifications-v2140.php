@@ -243,6 +243,9 @@ function vp3_extension_notification_candidates_v2140(PDO $pdo,array $user,string
         if($candidate)$out[]=$candidate;
     }
     foreach(vp3_extension_notification_cognitive_candidates_v2140($pdo,$user,$namespace) as $candidate)$out[]=$candidate;
+    if(function_exists('vp3_cognitive_followthrough_extension_candidates_v2450')){
+        foreach(vp3_cognitive_followthrough_extension_candidates_v2450($pdo,$user,$namespace) as $candidate)$out[]=$candidate;
+    }
 
     $dedup=[];
     foreach($out as $candidate){
