@@ -17,4 +17,6 @@ cr_v100_assert(vp3_cognitive_domain_event_class_v2600('campaigns_rewards','campa
 $ref=campaigns_rewards_ref_v100('campaign','cmp-public','public');
 cr_v100_assert(($ref['domain']??'')==='campaigns_rewards'&&($ref['type']??'')==='campaign','campaign references are normalized through v26.00');
 cr_v100_assert(campaigns_rewards_datetime_v100('')===null,'empty scheduling boundary remains unset');
+$modules=array_column(vp3_cognitive_registry_public_v500()['modules']??[],'module');
+cr_v100_assert(in_array('campaigns_rewards',$modules,true),'Campaigns & Rewards is registered in the canonical v5.00 cognitive module registry');
 echo "CAMPAIGNS_REWARDS_V100=PASS\n";
