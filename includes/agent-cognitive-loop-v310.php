@@ -536,6 +536,7 @@ function agent_cognitive_loop_v310_run(array $user): array
     $memoryPromotion=['evaluated'=>0,'promoted'=>0,'episodic'=>0,'suppressed'=>0,'duplicates'=>0,'skipped'=>0];
     $supervisionReconcile=['workflow_recovered'=>0,'workflow_failed'=>0,'plans_reconciled'=>0,'plan_errors'=>0];
     $autonomyRun=['goals_checked'=>0,'objectives_materialized'=>0,'remediations_performed'=>0,'replacement_runs'=>0,'requires_user'=>0,'errors'=>0];
+    $portfolioRun=['build'=>'','portfolio'=>['items'=>[],'counts'=>[],'capacity'=>[]],'policy'=>[],'autonomy_run'=>$autonomyRun];
 
     // OBSERVE + CORRELATE: refresh canonical relationship state first so CRM,
     // Radar and messaging evidence is current before ranking anything.
@@ -572,12 +573,18 @@ function agent_cognitive_loop_v310_run(array $user): array
         }
     }
 
-    // EXECUTE LONG-HORIZON GOVERNED WORK: v24.70 only acts on goals
-    // explicitly set to autonomous. It may materialize the next existing
-    // roadmap milestone into a canonical objective or create bounded low-risk
-    // replacement work. Workers, leases, approvals and receipts remain owned
-    // by the existing durable workflow runtime.
-    if(function_exists('vp3_cognitive_autonomy_run_owner_v2470')){
+    // COORDINATE + EXECUTE LONG-HORIZON GOVERNED WORK: v24.80
+    // chooses bounded portfolio admission from canonical goals, dependencies
+    // and worker capacity, then delegates actual materialization/remediation to
+    // v24.70. No scheduler, worker, lease, approval or receipt authority moves.
+    if(function_exists('vp3_cognitive_portfolio_run_owner_v2480')){
+        try{
+            $portfolioRun=vp3_cognitive_portfolio_run_owner_v2480($pdo,$user);
+            $autonomyRun=is_array($portfolioRun['autonomy_run']??null)?$portfolioRun['autonomy_run']:$autonomyRun;
+        }catch(Throwable $e){
+            if(function_exists('agent_runtime_v125_trace'))agent_runtime_v125_trace('brain.portfolio.failed',['user_id'=>$uid,'error_class'=>get_class($e)]);
+        }
+    }elseif(function_exists('vp3_cognitive_autonomy_run_owner_v2470')){
         try{$autonomyRun=vp3_cognitive_autonomy_run_owner_v2470($pdo,$user);}
         catch(Throwable $e){
             if(function_exists('agent_runtime_v125_trace'))agent_runtime_v125_trace('brain.autonomy.failed',['user_id'=>$uid,'error_class'=>get_class($e)]);
@@ -622,6 +629,7 @@ function agent_cognitive_loop_v310_run(array $user): array
         'memory_promotion'=>$memoryPromotion,
         'supervision_reconcile'=>$supervisionReconcile,
         'autonomy_run'=>$autonomyRun,
+        'portfolio_run'=>$portfolioRun,
         'activity'=>$activity,
         'last_surface_at'=>(string)($prior['last_surface_at']??''),
         'last_surface_signature'=>(string)($prior['last_surface_signature']??''),
@@ -652,6 +660,8 @@ function agent_cognitive_loop_v310_run(array $user): array
             'supervision_plans_reconciled'=>(int)($supervisionReconcile['plans_reconciled']??0),
             'autonomy_objectives_materialized'=>(int)($autonomyRun['objectives_materialized']??0),
             'autonomy_remediations'=>(int)($autonomyRun['remediations_performed']??0),
+            'portfolio_held'=>(int)($portfolioRun['portfolio']['counts']['held']??0),
+            'portfolio_claim_admitted'=>(int)($portfolioRun['portfolio']['counts']['claim_admitted']??0),
             'suppressed'=>(int)($diagnostics['suppressed']??0),
             'noise'=>(int)($diagnostics['ignored_noise']??0),
             'surfaced'=>$surfaced,

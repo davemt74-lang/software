@@ -1,4 +1,4 @@
-name: Cognitive Runtime Release v24.70
+name: Cognitive Runtime Release v24.80
 
 on:
   pull_request:
@@ -17,6 +17,7 @@ on:
       - 'docs/VP3_COGNITIVE_FOLLOWTHROUGH_V2450.md'
       - 'docs/VP3_COGNITIVE_SUPERVISION_V2460.md'
       - 'docs/VP3_COGNITIVE_AUTONOMY_V2470.md'
+      - 'docs/VP3_COGNITIVE_PORTFOLIO_V2480.md'
       - 'api/cognitive-*.php'
       - 'api/chat-notifications-brain-v240.php'
       - 'api/extension-cognitive-now-v2120.php'
@@ -44,6 +45,10 @@ on:
       - 'includes/agent-goal-execution-v1712.php'
       - 'includes/agent-objective-plans-v175.php'
       - 'includes/agent-objective-verification-v176.php'
+      - 'includes/agent-objective-portfolio-v179.php'
+      - 'includes/agent-work-dependencies-v174.php'
+      - 'includes/agent-job-engine-v1900.php'
+      - 'includes/agent-worker-runtime-v1910.php'
       - 'api/agent-voice-v117.php'
       - 'tools/run_recovery_baseline.py'
       - 'upgrade.php'
@@ -65,11 +70,11 @@ on:
       - '.github/workflows/cognitive-loop-release-v2360.yml'
   push:
     branches:
-      - 'cognitive-governed-autonomy-v2470'
+      - 'cognitive-autonomous-portfolio-v2480'
 
 jobs:
   release:
-    name: Cognitive Runtime v24.70 · PHP ${{ matrix.php }}
+    name: Cognitive Runtime v24.80 · PHP ${{ matrix.php }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -113,6 +118,8 @@ jobs:
           php -l includes/cognitive-release-v2460.php
           php -l includes/cognitive-autonomy-v2470.php
           php -l includes/cognitive-release-v2470.php
+          php -l includes/cognitive-portfolio-v2480.php
+          php -l includes/cognitive-release-v2480.php
           php -l includes/cognitive-presentation-v510.php
           php -l includes/cognitive-cards-v520.php
           php -l includes/cognitive-feed-v530.php
@@ -126,6 +133,10 @@ jobs:
           php -l includes/cognitive-action-planning-v2330.php
           php -l includes/cognitive-proactive-now-v2340.php
           php -l includes/agent-cognitive-loop-v310.php
+          php -l includes/agent-objective-portfolio-v179.php
+          php -l includes/agent-work-dependencies-v174.php
+          php -l includes/agent-job-engine-v1900.php
+          php -l includes/agent-worker-runtime-v1910.php
           php -l includes/cognitive-calibration-v2350.php
           php -l api/cognitive-feed-v530.php
           php -l api/cognitive-planning-v550.php
@@ -179,6 +190,8 @@ jobs:
         run: node tests/cognitive-supervision-v2460.mjs
       - name: v24.70 governed autonomous remediation and long-horizon execution
         run: node tests/cognitive-autonomy-v2470.mjs
+      - name: v24.80 autonomous portfolio coordination
+        run: node tests/cognitive-portfolio-v2480.mjs
       - name: v23.x feature family
         run: |
           node tests/cognitive-calibration-v2350.mjs

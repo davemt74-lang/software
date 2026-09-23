@@ -336,33 +336,53 @@ function vp3_cognitive_autonomy_context_item_v2470(PDO $pdo,array $user,string $
     );
 }
 
-function vp3_cognitive_autonomy_run_owner_v2470(PDO $pdo,array $user): array
+function vp3_cognitive_autonomy_run_owner_v2470(PDO $pdo,array $user,array $policy=[]): array
 {
     $result=[
         'goals_checked'=>0,'objectives_materialized'=>0,'remediations_performed'=>0,
-        'replacement_runs'=>0,'requires_user'=>0,'errors'=>0,
+        'replacement_runs'=>0,'requires_user'=>0,'errors'=>0,'held_by_portfolio'=>0,
+        'portfolio_policy_applied'=>array_key_exists('allowed_goal_ids',$policy),
         'build'=>VP3_COGNITIVE_AUTONOMY_V2470,
     ];
     if(!vp3_cognitive_autonomy_schema_ready_v2470($pdo))return $result;
-    $objectiveBudget=VP3_COGNITIVE_AUTONOMY_MAX_OBJECTIVES_PER_PASS_V2470;
-    $remediationBudget=VP3_COGNITIVE_AUTONOMY_MAX_REMEDIATIONS_PER_PASS_V2470;
+
+    $restrictGoals=array_key_exists('allowed_goal_ids',$policy);
+    $allowedGoalIds=array_fill_keys(array_values(array_unique(array_filter(
+        array_map('intval',(array)($policy['allowed_goal_ids']??[])),
+        static fn(int $id): bool=>$id>0
+    ))),true);
+    $allowedActions=[];
+    foreach((array)($policy['allowed_actions']??[]) as $goalId=>$action){
+        $id=(int)$goalId;$action=trim((string)$action);
+        if($id>0&&in_array($action,['materialize_objective','bounded_remediation'],true))$allowedActions[$id]=$action;
+    }
+    $objectiveBudget=array_key_exists('objective_budget',$policy)
+        ?max(0,min(VP3_COGNITIVE_AUTONOMY_MAX_OBJECTIVES_PER_PASS_V2470,(int)$policy['objective_budget']))
+        :VP3_COGNITIVE_AUTONOMY_MAX_OBJECTIVES_PER_PASS_V2470;
+    $remediationBudget=array_key_exists('remediation_budget',$policy)
+        ?max(0,min(VP3_COGNITIVE_AUTONOMY_MAX_REMEDIATIONS_PER_PASS_V2470,(int)$policy['remediation_budget']))
+        :VP3_COGNITIVE_AUTONOMY_MAX_REMEDIATIONS_PER_PASS_V2470;
 
     foreach(vp3_cognitive_autonomy_goal_rows_v2470($pdo,$user,false) as $goal){
         $result['goals_checked']++;
+        $goalId=(int)($goal['id']??0);
         $mode=vp3_cognitive_autonomy_mode_v2470($goal['execution_mode']??'manual');
         if($mode!=='autonomous')continue;
+        if($restrictGoals&&!isset($allowedGoalIds[$goalId])){$result['held_by_portfolio']++;continue;}
         try{
-            $state=agent_goal_execution_state_v1712($pdo,$user,(int)$goal['id']);
+            $state=agent_goal_execution_state_v1712($pdo,$user,$goalId);
             $execution=(string)($state['execution_state']??'unknown');
             if($execution==='needs_objective'){
+                if(isset($allowedActions[$goalId])&&$allowedActions[$goalId]!=='materialize_objective')continue;
                 if($objectiveBudget<=0)continue;
                 $milestone=(array)($state['milestone']??[]);
                 $milestoneId=(int)($milestone['id']??0);
                 if($milestoneId>0){
-                    $made=vp3_cognitive_autonomy_materialize_milestone_v2470($pdo,$user,(int)$goal['id'],$milestoneId);
+                    $made=vp3_cognitive_autonomy_materialize_milestone_v2470($pdo,$user,$goalId,$milestoneId);
                     if(!empty($made['performed'])){$result['objectives_materialized']++;$objectiveBudget--;}
                 }
             }elseif($execution==='repair_needed'){
+                if(isset($allowedActions[$goalId])&&$allowedActions[$goalId]!=='bounded_remediation')continue;
                 if($remediationBudget<=0)continue;
                 $objective=(array)($state['objective']??[]);
                 $objectiveId=(int)($objective['objective']['id']??0);
