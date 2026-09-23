@@ -18,7 +18,7 @@ const VP3_COGNITIVE_CONTEXT_MAX_PACKET_BYTES_V2420=65536;
 function vp3_cognitive_context_section_order_v2420(): array
 {
     return [
-        'live_session','continuity','supervision','conversation','current_priorities','active_objects',
+        'live_session','continuity','supervision','autonomy','conversation','current_priorities','active_objects',
         'attention','episodic_memory','durable_memory','domain','knowledge',
         'capabilities','external',
     ];
@@ -30,6 +30,7 @@ function vp3_cognitive_context_section_limit_v2420(string $section): int
         'live_session'=>1,
         'continuity'=>1,
         'supervision'=>1,
+        'autonomy'=>1,
         'conversation'=>3,
         'current_priorities'=>5,
         'active_objects'=>5,
@@ -47,14 +48,14 @@ function vp3_cognitive_context_section_weight_v2420(string $section,bool $histor
 {
     if($historyIntent){
         return match($section){
-            'conversation'=>98.0,'durable_memory'=>96.0,'supervision'=>95.0,'continuity'=>94.0,'episodic_memory'=>92.0,
+            'conversation'=>98.0,'durable_memory'=>96.0,'autonomy'=>95.5,'supervision'=>95.0,'continuity'=>94.0,'episodic_memory'=>92.0,
             'live_session'=>88.0,'current_priorities'=>86.0,'active_objects'=>84.0,
             'attention'=>80.0,'knowledge'=>74.0,'domain'=>72.0,'capabilities'=>50.0,
             default=>48.0,
         };
     }
     return match($section){
-        'live_session'=>96.0,'supervision'=>95.0,'continuity'=>94.0,'current_priorities'=>92.0,'conversation'=>90.0,
+        'live_session'=>96.0,'autonomy'=>95.5,'supervision'=>95.0,'continuity'=>94.0,'current_priorities'=>92.0,'conversation'=>90.0,
         'active_objects'=>88.0,'attention'=>84.0,'episodic_memory'=>82.0,
         'durable_memory'=>80.0,'domain'=>76.0,'knowledge'=>74.0,
         'capabilities'=>54.0,default=>50.0,
@@ -104,6 +105,7 @@ function vp3_cognitive_context_authority_v2420(string $section,string $source): 
         'live_session'=>'agent_live_sessions_v2370',
         'continuity'=>'cognitive_continuity_v2440_projection',
         'supervision'=>'cognitive_supervision_v2460_projection',
+        'autonomy'=>'cognitive_autonomy_v2470_projection',
         'current_priorities'=>'agent_cognitive_loop_v310',
         'active_objects'=>'cognitive_runtime_v500_authorized_refs',
         'attention'=>'cognitive_attention_v2410',
@@ -381,6 +383,9 @@ function vp3_cognitive_context_assemble_v2420(
     if(function_exists('vp3_cognitive_supervision_context_item_v2460')){
         try{$supervisionItem=vp3_cognitive_supervision_context_item_v2460($pdo,$user,$namespace);if($supervisionItem)$items[]=$supervisionItem;}catch(Throwable $e){}
     }
+    if(function_exists('vp3_cognitive_autonomy_context_item_v2470')){
+        try{$autonomyItem=vp3_cognitive_autonomy_context_item_v2470($pdo,$user,$namespace);if($autonomyItem)$items[]=$autonomyItem;}catch(Throwable $e){}
+    }
     foreach(vp3_cognitive_context_priority_items_v2420($user,$namespace) as $item)$items[]=$item;
     foreach(vp3_cognitive_context_authorized_object_items_v2420(
         $pdo,$user,$namespace,is_array($options['object_refs']??null)?$options['object_refs']:[],$options
@@ -411,6 +416,7 @@ function vp3_cognitive_context_assemble_v2420(
             'live_session'=>'agent_live_sessions_v2370',
             'attention'=>'cognitive_attention_v2410',
             'supervision'=>'cognitive_supervision_v2460',
+            'autonomy'=>'cognitive_autonomy_v2470',
             'object_authorization'=>'cognitive_runtime_v500',
             'execution_authority'=>false,
             'voice_is_authentication_authority'=>false,
