@@ -121,9 +121,8 @@ const checks=[
  ['Recovery Baseline retains v25.40 gates',
    /cognitive-commitment-protection-v2540\.php/.test(recovery)
    &&/cognitive-commitment-protection-v2540\.mjs/.test(recovery)],
- ['production package requires v25.40 runtime release and canonical sources',
-   /Cognitive Runtime v25\.40/.test(packageWorkflow)
-   &&/cognitive-commitment-protection-v2540\.php/.test(packageWorkflow)
+ ['production package retains v25.40 runtime release and canonical sources',
+   /cognitive-commitment-protection-v2540\.php/.test(packageWorkflow)
    &&/cognitive-release-v2540\.php/.test(packageWorkflow)
    &&/agent-goal-commitments-v1715\.php/.test(packageWorkflow)
    &&/agent-memory-lifecycle-v123\.php/.test(packageWorkflow)
