@@ -9,6 +9,11 @@ if(!$pdo||!function_exists('campaigns_rewards_platform_schema_ready_v100')||!cam
 $slug=(string)($_GET['slug']??'');$campaign=campaigns_rewards_campaign_by_slug_v100($pdo,$slug,true);
 if(!$campaign){http_response_code(404);exit('Campaign not found.');}
 $rewards=campaigns_rewards_rewards_v100($pdo,(int)$campaign['id'],true);
+$behavior=function_exists('campaigns_rewards_campaign_type_behavior_v118')
+    ?campaigns_rewards_campaign_type_behavior_v118($pdo,(int)$campaign['merchant_id'],(string)$campaign['campaign_type_key']):[];
+$publicCopy=function_exists('campaigns_rewards_campaign_type_public_copy_v118')
+    ?campaigns_rewards_campaign_type_public_copy_v118((string)$campaign['campaign_type_key'])
+    :['action'=>'signup','cta'=>(string)$campaign['cta_label'],'marketing'=>'optional','required_fields'=>['name','email'],'reward_timing'=>'immediate','requires_reward'=>true];
 $sessionKey=session_id()?:hash('sha256',(string)($_SERVER['REMOTE_ADDR']??'').(string)($_SERVER['HTTP_USER_AGENT']??''));
 try{campaigns_rewards_record_landing_view_v100($pdo,$campaign,$sessionKey);}catch(Throwable $e){error_log('Campaign landing telemetry failed: '.$e->getMessage());}
 
@@ -19,7 +24,7 @@ if(session_status()===PHP_SESSION_ACTIVE){
     }
 }
 $requestToken=(string)($_SESSION['campaign_public_request_tokens'][$campaign['public_id']]??bin2hex(random_bytes(20)));
-$error='';$issued=null;$issuedReward=null;
+$error='';$issued=null;$issuedReward=null;$participation=null;$completionMessage='';
 
 if($_SERVER['REQUEST_METHOD']==='POST'){
     if(!verify_csrf())$error='Session expired. Reload the page and try again.';
