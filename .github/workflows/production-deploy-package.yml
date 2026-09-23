@@ -143,10 +143,13 @@ jobs:
           test -f _deploy/includes/cognitive-domain-registry-v2600.php
           test -f _deploy/includes/cognitive-release-v2600.php
           test -f _deploy/includes/campaigns-rewards-v100.php
+          test -f _deploy/includes/campaigns-rewards-platform-v100.php
+          test -f _deploy/includes/campaigns-rewards-domain-v100.php
           test -f _deploy/includes/campaigns-rewards-release-v100.php
           test -f _deploy/campaigns.php
           test -f _deploy/campaign.php
           test -f _deploy/campaign-claim.php
+          test -f _deploy/rewards-wallet.php
           test -f _deploy/campaigns-v100.css
           test -f _deploy/profile.php
           test -f _deploy/plugins.php
