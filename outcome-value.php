@@ -198,7 +198,7 @@ vp3_public_header('Outcome Value & ROI — VP3','Explicit outcome value, verifie
           <div><small>Expected AI-cost ROI</small><strong><?= $goal&&$goal['expected_roi_percent']!==null?e(number_format((float)$goal['expected_roi_percent'],1).'%'):'—' ?></strong></div>
           <div><small>Realized AI-cost ROI</small><strong><?= $goal&&$goal['realized_roi_percent']!==null?e(number_format((float)$goal['realized_roi_percent'],1).'%'):'—' ?></strong></div>
         </div>
-        <p class="value-note"><?= !empty($realization['verified'])?'Verified by '.e(str_replace('_',' ',(string)$realization['source'])).' · '.e((string)$realization['verified_at']):'Awaiting '.e(str_replace('_',' ',(string)$profile['realization_mode'])) ?><?= !empty($goal['value_at_risk'])?' · value at risk':'' ?><?= !empty($goal['historical_unknown_cost_requests'])?' · ROI withheld: unknown AI pricing':'' ?></p>
+        <p class="value-note"><?= !empty($realization['verified'])?'Verified by '.e(str_replace('_',' ',(string)$realization['source'])).' · '.e((string)$realization['verified_at']):'Awaiting '.e(str_replace('_',' ',(string)$profile['realization_mode'])) ?><?= !empty($realization['incomplete'])?' · conversion evidence exceeds bounded scan; narrow/reset the evidence baseline before using it for realized value':'' ?><?= !empty($goal['value_at_risk'])?' · value at risk':'' ?><?= !empty($goal['historical_unknown_cost_requests'])?' · ROI withheld: unknown AI pricing':'' ?></p>
         <div class="value-card-actions">
           <button type="button" class="secondary value-edit" data-profile="<?= e(json_encode($profile,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE)) ?>">Edit</button>
           <?php if(!empty($profile['is_active'])): ?><form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="disable_profile"><input type="hidden" name="profile_id" value="<?= $id ?>"><button type="submit" class="secondary">Disable</button></form><?php endif; ?>
@@ -263,7 +263,15 @@ vp3_public_header('Outcome Value & ROI — VP3','Explicit outcome value, verifie
     project:document.getElementById('valueProjectOptions'),agent:document.getElementById('valueAgentOptions'),
     meeting:document.getElementById('valueMeetingOptions')
   };
-  function syncScope(){list.innerHTML=scopeSources[scope.value]?.innerHTML||'';key.placeholder=scope.value==='project'?'Existing workflow source key':'Numeric '+scope.value+' id';}
+  function syncScope(){
+    list.innerHTML=scopeSources[scope.value]?.innerHTML||'';
+    key.placeholder=scope.value==='project'?'Existing workflow source key':'Numeric '+scope.value+' id';
+    const verified=mode.querySelector('option[value="verified_completion"]');
+    const completionAllowed=['goal','workflow','meeting'].includes(scope.value);
+    if(verified)verified.disabled=!completionAllowed;
+    if(!completionAllowed&&mode.value==='verified_completion')mode.value='manual_confirmation';
+    syncMode();
+  }
   function syncKind(){
     document.querySelectorAll('.value-money-field').forEach(el=>el.hidden=kind.value!=='money');
     document.querySelectorAll('.value-score-field').forEach(el=>el.hidden=kind.value!=='score');
