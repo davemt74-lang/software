@@ -391,6 +391,7 @@
     const decisionFactors = decisionCalibration.calibration || {};
     const decisionAccuracy = decisionCalibration.accuracy || {};
     const decisionRecent = Array.isArray(decisionCalibration.recent) ? decisionCalibration.recent : [];
+    const unifiedCurrentStatePresentation = brain.current_state_presentation || {};
     const autonomyItems = Array.isArray(autonomy.items) ? autonomy.items : [];
     const supervisionIssues = Array.isArray(supervision.issues) ? supervision.issues : [];
     const supervisionByRef = new Map(supervisionIssues.map(item => [String(item.continuity_ref || ''), item]));
@@ -612,6 +613,20 @@
           }).join('')}
         </div>` : ''}
         <div class="chat-activity-section-head"><a href="${esc(valueRoi.manage_url || '/outcome-value.php')}">Manage Outcome Value ↗</a></div>
+      </section>` : ''}
+      ${unifiedCurrentStatePresentation.title ? `
+      <section class="chat-activity-section">
+        <div class="chat-activity-section-head">
+          <div><strong>Unified Current State</strong><span>v25.90 user-facing state is produced by the presentation firewall; raw event payloads and internal reasoning are not rendered here.</span></div>
+        </div>
+        <div class="chat-brain-memory-list">
+          <article>
+            <span>${esc(unifiedCurrentStatePresentation.status || 'current')}</span>
+            <strong>${esc(unifiedCurrentStatePresentation.title || 'Current state')}</strong>
+            <p>${esc(unifiedCurrentStatePresentation.summary || '')}</p>
+            ${unifiedCurrentStatePresentation.next_action ? `<small>${esc(unifiedCurrentStatePresentation.next_action)}</small>` : ''}
+          </article>
+        </div>
       </section>` : ''}
       ${decisionCalibration.ready ? `
       <section class="chat-activity-section">

@@ -1,8 +1,10 @@
 name: Recovery Baseline
 
+# Recovery is the final merge gate: once an exact-head run starts, let it finish
+# so GitHub records a definitive pass/fail instead of a late cancellation.
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: false
 
 
 on:

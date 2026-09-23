@@ -1,4 +1,4 @@
-name: Cognitive Runtime Release v25.80
+name: Cognitive Runtime Release v25.90
 
 on:
   pull_request:
@@ -27,6 +27,12 @@ on:
       - 'docs/VP3_COGNITIVE_BUDGET_GOVERNANCE_V2560.md'
       - 'docs/VP3_COGNITIVE_VALUE_ROI_V2570.md'
       - 'docs/VP3_COGNITIVE_DECISION_CALIBRATION_V2580.md'
+      - 'docs/VP3_COGNITIVE_CURRENT_STATE_PRESENTATION_V2590.md'
+      - 'includes/cognitive-current-state-v2590.php'
+      - 'includes/cognitive-presentation-firewall-v2590.php'
+      - 'includes/cognitive-release-v2590.php'
+      - 'tests/cognitive-current-state-v2590.php'
+      - 'tests/cognitive-current-state-v2590.mjs'
       - 'decision-calibration.php'
       - 'decision-calibration-v2580.css'
       - 'budget-governance.php'
@@ -86,11 +92,11 @@ on:
       - '.github/workflows/cognitive-loop-release-v2360.yml'
   push:
     branches:
-      - 'cognitive-decision-calibration-v2580'
+      - 'cognitive-current-state-presentation-v2590'
 
 jobs:
   release:
-    name: Cognitive Runtime v25.80 · PHP ${{ matrix.php }}
+    name: Cognitive Runtime v25.90 · PHP ${{ matrix.php }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -154,6 +160,9 @@ jobs:
           php -l includes/cognitive-release-v2570.php
           php -l includes/cognitive-decision-calibration-v2580.php
           php -l includes/cognitive-release-v2580.php
+          php -l includes/cognitive-current-state-v2590.php
+          php -l includes/cognitive-presentation-firewall-v2590.php
+          php -l includes/cognitive-release-v2590.php
           php -l decision-calibration.php
           php -l budget-governance.php
           php -l outcome-value.php
@@ -263,6 +272,10 @@ jobs:
         run: |
           php tests/cognitive-decision-calibration-v2580.php
           node tests/cognitive-decision-calibration-v2580.mjs
+      - name: v25.90 unified current state and presentation firewall
+        run: |
+          php tests/cognitive-current-state-v2590.php
+          node tests/cognitive-current-state-v2590.mjs
       - name: v23.x feature family
         run: |
           node tests/cognitive-calibration-v2350.mjs

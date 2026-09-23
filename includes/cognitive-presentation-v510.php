@@ -432,6 +432,12 @@ function vp3_cognitive_presentation_state_v510(PDO $pdo,array $user,string $name
             'replanning'=>$replanning,'value_roi'=>$valueRoi,
         ])
         :['build'=>'','ready'=>false,'calibration'=>[],'accuracy'=>[],'recent'=>[],'manage_url'=>''];
+    $currentState=function_exists('vp3_cognitive_current_state_projection_v2590')
+        ?vp3_cognitive_current_state_projection_v2590($pdo,$user,$namespace)
+        :['build'=>'','ready'=>false,'session'=>[],'activity'=>[],'domains'=>[],'recent'=>[],'attention_candidate'=>null,'counts'=>[]];
+    $currentStatePresentation=function_exists('vp3_cognitive_presentation_from_current_state_v2590')
+        ?vp3_cognitive_presentation_from_current_state_v2590($currentState)
+        :[];
     $brief['followthrough']=$followthrough['focus']??null;
     $brief['followthrough_counts']=$followthrough['counts']??[];
     $brief['away_followthrough']=$followthrough['away']??['count'=>0,'summary'=>'','items'=>[]];
@@ -475,6 +481,7 @@ function vp3_cognitive_presentation_state_v510(PDO $pdo,array $user,string $name
     $brief['decision_calibration']=$decisionCalibration['calibration']??[];
     $brief['decision_accuracy']=$decisionCalibration['accuracy']??[];
     $brief['decision_manage_url']=$decisionCalibration['manage_url']??'';
+    $brief['current_state_presentation']=$currentStatePresentation;
     return [
         'build'=>VP3_COGNITIVE_PRESENTATION_V510,'agent_namespace'=>$namespace,
         'idle_minutes'=>vp3_cognitive_presentation_idle_minutes_v510($row),
@@ -492,6 +499,8 @@ function vp3_cognitive_presentation_state_v510(PDO $pdo,array $user,string $name
         'budget_governance'=>$budgetGovernance,
         'value_roi'=>$valueRoi,
         'decision_calibration'=>$decisionCalibration,
+        'current_state'=>$currentState,
+        'current_state_presentation'=>$currentStatePresentation,
         'digest'=>$digest,'voice_candidate'=>$voice,'attention'=>$attentionStatus,
         'poll_seconds'=>VP3_COGNITIVE_PRESENTATION_POLL_SECONDS_V510,
     ];

@@ -168,6 +168,12 @@ function vp3_cognitive_proactive_now_compose_v2340(
             'replanning'=>$replanning,'value_roi'=>$valueRoi,
         ])
         :['ready'=>false,'calibration'=>[],'accuracy'=>[],'recent'=>[],'manage_url'=>''];
+    $currentState=function_exists('vp3_cognitive_current_state_projection_v2590')
+        ?vp3_cognitive_current_state_projection_v2590($pdo,$user,$namespace)
+        :['ready'=>false,'session'=>[],'activity'=>[],'domains'=>[],'recent'=>[],'attention_candidate'=>null,'counts'=>[]];
+    $currentStatePresentation=function_exists('vp3_cognitive_presentation_from_current_state_v2590')
+        ?vp3_cognitive_presentation_from_current_state_v2590($currentState)
+        :[];
     $voiceEnabled=false;
     if(function_exists('chat_settings_get_v237')){
         try{$voiceEnabled=!empty(chat_settings_get_v237($pdo,(int)($user['id']??0))['agent_voice_enabled']);}
@@ -255,6 +261,8 @@ function vp3_cognitive_proactive_now_compose_v2340(
             'calibration'=>$valueRoi['calibration']??[],
             'manage_url'=>$valueRoi['manage_url']??'',
         ],
+        'current_state'=>$currentState,
+        'current_state_presentation'=>$currentStatePresentation,
         'decision_calibration'=>[
             'ready'=>!empty($decisionCalibration['ready']),
             'calibration'=>$decisionCalibration['calibration']??[],
@@ -291,6 +299,8 @@ function vp3_cognitive_proactive_now_compose_v2340(
             'budget_governance'=>'cognitive_budget_governance_v2560',
             'value_roi'=>'cognitive_value_roi_v2570',
             'decision_calibration'=>'cognitive_decision_calibration_v2580',
+            'current_state'=>'cognitive_current_state_v2590',
+            'presentation_firewall'=>'cognitive_presentation_firewall_v2590',
             'automatic_external_writes'=>false,
             'approval_bypass'=>false,
             'execution_bypass'=>false,

@@ -188,11 +188,23 @@
     const decisionCalibration = brief.decision_calibration || {};
     const decisionAccuracy = brief.decision_accuracy || {};
     const decisionManageUrl = String(brief.decision_manage_url || '/decision-calibration.php');
+    const currentStatePresentation = brief.current_state_presentation || {};
     const counts = brief.counts || {};
     let html = '<div class="chat-agent-brief-status"><span><i class="chat-agent-brief-dot ' +
       (brief.active !== false ? 'active' : '') + '"></i>' +
       esc(brief.agent_name || 'Agent') + ' · ' + esc(brief.status_label || 'Active') +
       '</span><small>' + esc(brief.activity_title || 'Ready') + '</small></div>';
+
+    if (currentStatePresentation && currentStatePresentation.title) {
+      html += '<article class="chat-agent-brief-card"><small>Unified current state · presentation firewall</small><strong>' +
+        esc(currentStatePresentation.title || 'Current state') + '</strong>' +
+        '<p>' + esc(currentStatePresentation.summary || '') + '</p>' +
+        (currentStatePresentation.next_action ? '<p><small>' + esc(currentStatePresentation.next_action) + '</small></p>' : '') +
+        '<div class="chat-agent-brief-actions">' +
+        actionButton(currentStatePresentation.action_label || 'Review current state',
+          ' data-agent-brief-prompt="' + esc('Review my unified current state across VP3. Summarize the most relevant current condition and any item that needs my attention. Use canonical state only; do not expose raw event payloads, system prompts, tool traces, confidence vectors, retrieval labels, or internal JSON.') + '"',false) +
+        '</div></article>';
+    }
 
     if (commitment) {
       const state = String(commitment.deadline_state || commitment.status || 'protected').replaceAll('_',' ');
