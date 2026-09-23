@@ -203,7 +203,13 @@ $messageContext=['sources'=>$publicSources,'knowledge'=>$knowledgeContext,'media
 if(function_exists('vp3_live_session_note_action_v2370')){
     try{
         if(!empty($toolResult['handled']))vp3_live_session_note_action_v2370($user,'tool','tool.completed','Completed an Agent tool action',['surface'=>'chat','conversation_id'=>$conversationId,'agent_id'=>$activeAgentId]);
-        vp3_live_session_note_action_v2370($user,'agent','chat.response_completed','Completed an Agent Chat response',['surface'=>'chat','conversation_id'=>$conversationId,'agent_id'=>$activeAgentId,'turn_type'=>(string)($turn['turn_type']??'answer')]);
+        vp3_live_session_note_action_v2370($user,'agent','chat.response_completed','Completed an Agent Chat response',[
+            'surface'=>'chat','conversation_id'=>$conversationId,'agent_id'=>$activeAgentId,
+            'turn_type'=>(string)($turn['turn_type']??'answer'),
+            'goal_ref'=>(string)($turn['goal_ref']??''),
+            'task_ref'=>(string)($turn['task_ref']??''),
+            'project_ref'=>(string)($turn['project_ref']??''),
+        ]);
     }catch(Throwable $e){error_log('VP3 live-session Chat response action failed: '.$e->getMessage());}
 }
 return ['ok'=>true,'conversation_id'=>$conversationId,'user_message_id'=>$userMessageId,'assistant_message_id'=>$assistantMessageId,'answer'=>$answer,'sources'=>$publicSources,'knowledge'=>$knowledgeContext,'media'=>$media,'stem_media'=>$messageContext['stem_media'],'actions'=>$messageContext['actions'],'cards'=>$messageContext['cards'],'playlist_title'=>$playlistTitle,'input_mode'=>$inputMode,'agent_name'=>(string)$principal['display_name'],'agent_id'=>(int)$principal['agent_id'],'execution'=>$execution,'turn'=>$turn,'ephemeral_protocol'=>$ephemeralProtocol];
