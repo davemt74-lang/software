@@ -665,29 +665,37 @@ function campaigns_rewards_idempotency_complete_v100(PDO $pdo,int $id,string $re
 
 function campaigns_rewards_enroll_contact_v100(PDO $pdo,int $campaignId,int $contactId,int $actorUserId,string $source='manual',string $idempotencyKey=''): array
 {
-    $campaign=campaigns_rewards_campaign_platform_v100($pdo,$campaignId)?:throw new RuntimeException('Campaign not found.');
-    campaigns_rewards_platform_assert_can_v100($pdo,(int)$campaign['merchant_id'],$actorUserId,'campaigns.enrollment.manage');
-    if((int)$campaign['current_version_no']<1)$version=campaigns_rewards_snapshot_campaign_v100($pdo,$campaignId,$actorUserId,'draft');
-    else{$q=$pdo->prepare('SELECT * FROM campaign_versions WHERE campaign_id=? AND version_no=? LIMIT 1');$q->execute([$campaignId,(int)$campaign['current_version_no']]);$version=$q->fetch()?:throw new RuntimeException('Campaign version not found.');}
-    campaigns_rewards_ensure_merchant_relationship_v100($pdo,(int)$campaign['merchant_id'],$contactId,['acquisition_source'=>$source]);
-    $key=$idempotencyKey!==''?$idempotencyKey:'enroll:'.$campaignId.':'.$contactId.':'.$version['id'];
-    $idem=campaigns_rewards_idempotency_begin_v100($pdo,(int)$campaign['merchant_id'],'campaign.enroll',$key,['campaign_id'=>$campaignId,'contact_id'=>$contactId,'version_id'=>(int)$version['id']]);
-    if(empty($idem['new'])&&($idem['status']??'')==='completed'&&($idem['result_ref_type']??'')==='campaign_enrollment'){
-        $q=$pdo->prepare('SELECT * FROM campaign_enrollments WHERE id=? LIMIT 1');$q->execute([(int)$idem['result_ref_id']]);$row=$q->fetch();if($row)return $row;
-    }
-    $existing=$pdo->prepare("SELECT * FROM campaign_enrollments WHERE campaign_id=? AND contact_id=? AND status IN ('eligible','enrolled','completed') ORDER BY id DESC LIMIT 1");
-    $existing->execute([$campaignId,$contactId]);$row=$existing->fetch();
-    if(!$row){
-        $public=campaigns_rewards_uuid_v100();
-        $pdo->prepare("INSERT INTO campaign_enrollments (public_id,campaign_id,campaign_version_id,contact_id,source,status,environment,qualified_at,enrolled_at,metadata_json)
-          VALUES (?,?,?,?,?,'enrolled',?,UTC_TIMESTAMP(),UTC_TIMESTAMP(),'{}')")->execute([$public,$campaignId,(int)$version['id'],$contactId,$source,(string)$campaign['environment']]);
-        $id=(int)$pdo->lastInsertId();$q=$pdo->prepare('SELECT * FROM campaign_enrollments WHERE id=?');$q->execute([$id]);$row=$q->fetch();
-        campaigns_rewards_activity_event_v100($pdo,(int)$campaign['merchant_id'],'campaign.enrollment_created',['campaign_id'=>$campaignId,'contact_id'=>$contactId,'enrollment_id'=>$id],[
-            'summary'=>'Contact enrolled','merchant_public_id'=>$campaign['merchant_public_id'],'campaign_public_id'=>$campaign['public_id'],'enrollment_public_id'=>$public,
-        ],(string)$campaign['environment'],$actorUserId);
-    }
-    campaigns_rewards_idempotency_complete_v100($pdo,(int)$idem['id'],'campaign_enrollment',(int)$row['id']);
-    return $row;
+    $owns=!$pdo->inTransaction();if($owns)$pdo->beginTransaction();
+    try{
+        $campaign=campaigns_rewards_campaign_platform_v100($pdo,$campaignId,true)?:throw new RuntimeException('Campaign not found.');
+        campaigns_rewards_platform_assert_can_v100($pdo,(int)$campaign['merchant_id'],$actorUserId,'campaigns.enrollment.manage');
+        if((int)$campaign['current_version_no']<1)$version=campaigns_rewards_snapshot_campaign_v100($pdo,$campaignId,$actorUserId,'draft');
+        else{$q=$pdo->prepare('SELECT * FROM campaign_versions WHERE campaign_id=? AND version_no=? LIMIT 1');$q->execute([$campaignId,(int)$campaign['current_version_no']]);$version=$q->fetch()?:throw new RuntimeException('Campaign version not found.');}
+        campaigns_rewards_ensure_merchant_relationship_v100($pdo,(int)$campaign['merchant_id'],$contactId,['acquisition_source'=>$source]);
+        $key=$idempotencyKey!==''?$idempotencyKey:'enroll:'.$campaignId.':'.$contactId.':'.$version['id'];
+        $idem=campaigns_rewards_idempotency_begin_v100($pdo,(int)$campaign['merchant_id'],'campaign.enroll',$key,['campaign_id'=>$campaignId,'contact_id'=>$contactId,'version_id'=>(int)$version['id']]);
+        if(empty($idem['new'])&&($idem['status']??'')==='completed'&&($idem['result_ref_type']??'')==='campaign_enrollment'){
+            $q=$pdo->prepare('SELECT * FROM campaign_enrollments WHERE id=? LIMIT 1');$q->execute([(int)$idem['result_ref_id']]);$row=$q->fetch();
+            if($row){if($owns)$pdo->commit();return $row;}
+        }
+        $existing=$pdo->prepare("SELECT * FROM campaign_enrollments WHERE campaign_id=? AND contact_id=? AND status IN ('eligible','enrolled','completed') ORDER BY id DESC LIMIT 1");
+        $existing->execute([$campaignId,$contactId]);$row=$existing->fetch();
+        if(!$row){
+            if($campaign['max_enrollments']!==null){
+                $q=$pdo->prepare("SELECT COUNT(*) FROM campaign_enrollments WHERE campaign_id=? AND status NOT IN ('disqualified','cancelled')");
+                $q->execute([$campaignId]);if((int)$q->fetchColumn()>=(int)$campaign['max_enrollments'])throw new RuntimeException('This Campaign has reached its enrollment limit.');
+            }
+            $public=campaigns_rewards_uuid_v100();
+            $pdo->prepare("INSERT INTO campaign_enrollments (public_id,campaign_id,campaign_version_id,contact_id,source,status,environment,qualified_at,enrolled_at,metadata_json)
+              VALUES (?,?,?,?,?,'enrolled',?,UTC_TIMESTAMP(),UTC_TIMESTAMP(),'{}')")->execute([$public,$campaignId,(int)$version['id'],$contactId,$source,(string)$campaign['environment']]);
+            $id=(int)$pdo->lastInsertId();$q=$pdo->prepare('SELECT * FROM campaign_enrollments WHERE id=?');$q->execute([$id]);$row=$q->fetch();
+            campaigns_rewards_activity_event_v100($pdo,(int)$campaign['merchant_id'],'campaign.enrollment_created',['campaign_id'=>$campaignId,'contact_id'=>$contactId,'enrollment_id'=>$id],[
+                'summary'=>'Contact enrolled','merchant_public_id'=>$campaign['merchant_public_id'],'campaign_public_id'=>$campaign['public_id'],'enrollment_public_id'=>$public,
+            ],(string)$campaign['environment'],$actorUserId);
+        }
+        campaigns_rewards_idempotency_complete_v100($pdo,(int)$idem['id'],'campaign_enrollment',(int)$row['id']);
+        if($owns)$pdo->commit();return $row;
+    }catch(Throwable $e){if($owns&&$pdo->inTransaction())$pdo->rollBack();throw $e;}
 }
 
 function campaigns_rewards_reward_product_v100(PDO $pdo,int $rewardProductId): ?array
@@ -821,36 +829,43 @@ function campaigns_rewards_issue_reward_v100(PDO $pdo,int $campaignId,int $rewar
 
 function campaigns_rewards_public_enroll_v100(PDO $pdo,int $campaignId,int $contactId,string $idempotencyKey): array
 {
-    $campaign=campaigns_rewards_campaign_platform_v100($pdo,$campaignId)?:throw new RuntimeException('Campaign not found.');
-    if((string)$campaign['status']!=='active'||(string)$campaign['environment']!=='production'||empty($campaign['supports_public_signup']))throw new RuntimeException('This Campaign is not accepting public signups.');
-    if((int)$campaign['current_version_no']<1)throw new RuntimeException('This Campaign has not been published.');
-    campaigns_rewards_ensure_merchant_relationship_v100($pdo,(int)$campaign['merchant_id'],$contactId,['acquisition_source'=>'public_signup']);
-    $q=$pdo->prepare('SELECT * FROM campaign_versions WHERE campaign_id=? AND version_no=? LIMIT 1');$q->execute([$campaignId,(int)$campaign['current_version_no']]);$version=$q->fetch()?:throw new RuntimeException('Campaign version unavailable.');
-    $idem=campaigns_rewards_idempotency_begin_v100($pdo,(int)$campaign['merchant_id'],'campaign.public_enroll',$idempotencyKey,['campaign_id'=>$campaignId,'contact_id'=>$contactId,'version_id'=>(int)$version['id']]);
-    if(empty($idem['new'])&&($idem['status']??'')==='completed'&&($idem['result_ref_type']??'')==='campaign_enrollment'){
-        $q=$pdo->prepare('SELECT * FROM campaign_enrollments WHERE id=? LIMIT 1');$q->execute([(int)$idem['result_ref_id']]);$row=$q->fetch();if($row)return $row;
-    }
-    if($campaign['max_enrollments']!==null){
-        $q=$pdo->prepare("SELECT COUNT(*) FROM campaign_enrollments WHERE campaign_id=? AND status NOT IN ('disqualified','cancelled')");$q->execute([$campaignId]);
-        if((int)$q->fetchColumn()>=(int)$campaign['max_enrollments'])throw new RuntimeException('This Campaign has reached its signup limit.');
-    }
-    $existing=$pdo->prepare("SELECT * FROM campaign_enrollments WHERE campaign_id=? AND contact_id=? AND status IN ('eligible','enrolled','completed') ORDER BY id DESC LIMIT 1");
-    $existing->execute([$campaignId,$contactId]);$row=$existing->fetch();
-    if(!$row){
-        $public=campaigns_rewards_uuid_v100();
-        $pdo->prepare("INSERT INTO campaign_enrollments (public_id,campaign_id,campaign_version_id,contact_id,source,status,environment,qualified_at,enrolled_at,metadata_json)
-          VALUES (?,?,?,?,'public_signup','enrolled','production',UTC_TIMESTAMP(),UTC_TIMESTAMP(),'{}')")->execute([$public,$campaignId,(int)$version['id'],$contactId]);
-        $id=(int)$pdo->lastInsertId();$q=$pdo->prepare('SELECT * FROM campaign_enrollments WHERE id=?');$q->execute([$id]);$row=$q->fetch();
-        campaigns_rewards_activity_event_v100($pdo,(int)$campaign['merchant_id'],'campaign.signup_completed',['campaign_id'=>$campaignId,'contact_id'=>$contactId,'enrollment_id'=>$id],[
-          'summary'=>'Campaign signup completed','merchant_public_id'=>$campaign['merchant_public_id'],'campaign_public_id'=>$campaign['public_id'],'enrollment_public_id'=>$public,
-        ],'production',null,'public');
-        campaigns_rewards_activity_event_v100($pdo,(int)$campaign['merchant_id'],'campaign.contact_acquired',['campaign_id'=>$campaignId,'contact_id'=>$contactId,'enrollment_id'=>$id],[
-          'summary'=>'Campaign contact acquired','merchant_public_id'=>$campaign['merchant_public_id'],'campaign_public_id'=>$campaign['public_id'],'enrollment_public_id'=>$public,
-        ],'production',null,'public');
-    }
-    campaigns_rewards_idempotency_complete_v100($pdo,(int)$idem['id'],'campaign_enrollment',(int)$row['id']);
-    return $row;
+    $owns=!$pdo->inTransaction();if($owns)$pdo->beginTransaction();
+    try{
+        $campaign=campaigns_rewards_campaign_platform_v100($pdo,$campaignId,true)?:throw new RuntimeException('Campaign not found.');
+        if((string)$campaign['status']!=='active'||(string)$campaign['environment']!=='production'||empty($campaign['supports_public_signup']))throw new RuntimeException('This Campaign is not accepting public signups.');
+        if(!empty($campaign['starts_at'])&&strtotime((string)$campaign['starts_at'])>time())throw new RuntimeException('This Campaign has not started yet.');
+        if(!empty($campaign['ends_at'])&&strtotime((string)$campaign['ends_at'])<=time())throw new RuntimeException('This Campaign has ended.');
+        if((int)$campaign['current_version_no']<1)throw new RuntimeException('This Campaign has not been published.');
+        campaigns_rewards_ensure_merchant_relationship_v100($pdo,(int)$campaign['merchant_id'],$contactId,['acquisition_source'=>'public_signup']);
+        $q=$pdo->prepare('SELECT * FROM campaign_versions WHERE campaign_id=? AND version_no=? LIMIT 1');$q->execute([$campaignId,(int)$campaign['current_version_no']]);$version=$q->fetch()?:throw new RuntimeException('Campaign version unavailable.');
+        $idem=campaigns_rewards_idempotency_begin_v100($pdo,(int)$campaign['merchant_id'],'campaign.public_enroll',$idempotencyKey,['campaign_id'=>$campaignId,'contact_id'=>$contactId,'version_id'=>(int)$version['id']]);
+        if(empty($idem['new'])&&($idem['status']??'')==='completed'&&($idem['result_ref_type']??'')==='campaign_enrollment'){
+            $q=$pdo->prepare('SELECT * FROM campaign_enrollments WHERE id=? LIMIT 1');$q->execute([(int)$idem['result_ref_id']]);$row=$q->fetch();
+            if($row){if($owns)$pdo->commit();return $row;}
+        }
+        $existing=$pdo->prepare("SELECT * FROM campaign_enrollments WHERE campaign_id=? AND contact_id=? AND status IN ('eligible','enrolled','completed') ORDER BY id DESC LIMIT 1");
+        $existing->execute([$campaignId,$contactId]);$row=$existing->fetch();
+        if(!$row){
+            if($campaign['max_enrollments']!==null){
+                $q=$pdo->prepare("SELECT COUNT(*) FROM campaign_enrollments WHERE campaign_id=? AND status NOT IN ('disqualified','cancelled')");
+                $q->execute([$campaignId]);if((int)$q->fetchColumn()>=(int)$campaign['max_enrollments'])throw new RuntimeException('This Campaign has reached its signup limit.');
+            }
+            $public=campaigns_rewards_uuid_v100();
+            $pdo->prepare("INSERT INTO campaign_enrollments (public_id,campaign_id,campaign_version_id,contact_id,source,status,environment,qualified_at,enrolled_at,metadata_json)
+              VALUES (?,?,?,?,'public_signup','enrolled','production',UTC_TIMESTAMP(),UTC_TIMESTAMP(),'{}')")->execute([$public,$campaignId,(int)$version['id'],$contactId]);
+            $id=(int)$pdo->lastInsertId();$q=$pdo->prepare('SELECT * FROM campaign_enrollments WHERE id=?');$q->execute([$id]);$row=$q->fetch();
+            campaigns_rewards_activity_event_v100($pdo,(int)$campaign['merchant_id'],'campaign.signup_completed',['campaign_id'=>$campaignId,'contact_id'=>$contactId,'enrollment_id'=>$id],[
+              'summary'=>'Campaign signup completed','merchant_public_id'=>$campaign['merchant_public_id'],'campaign_public_id'=>$campaign['public_id'],'enrollment_public_id'=>$public,
+            ],'production',null,'public');
+            campaigns_rewards_activity_event_v100($pdo,(int)$campaign['merchant_id'],'campaign.contact_acquired',['campaign_id'=>$campaignId,'contact_id'=>$contactId,'enrollment_id'=>$id],[
+              'summary'=>'Campaign contact acquired','merchant_public_id'=>$campaign['merchant_public_id'],'campaign_public_id'=>$campaign['public_id'],'enrollment_public_id'=>$public,
+            ],'production',null,'public');
+        }
+        campaigns_rewards_idempotency_complete_v100($pdo,(int)$idem['id'],'campaign_enrollment',(int)$row['id']);
+        if($owns)$pdo->commit();return $row;
+    }catch(Throwable $e){if($owns&&$pdo->inTransaction())$pdo->rollBack();throw $e;}
 }
+
 function campaigns_rewards_wallet_v100(PDO $pdo,int $contactId=0,int $userId=0): array
 {
     if($contactId<1&&$userId<1)return ['inbox'=>[],'sent'=>[],'claimed'=>[]];
