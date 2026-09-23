@@ -52,6 +52,8 @@ Each policy reads its current-period usage from the canonical AI execution ledge
 
 Goal budgets use canonical goal → workflow-run lineage. Agent budgets use `ai_execution_ledger.agent_id`. Project budgets use the existing workflow `source_key` as the project/source identity.
 
+When one workflow run is linked to multiple goals, goal-scoped current-period cost and Cloud-token usage are proportionally attributed across those canonical goal links, matching v25.50's non-additive shared-run economics.
+
 ## Projection
 
 v25.60 combines:
@@ -142,5 +144,7 @@ Agent History remains actual Agent Chat conversation history.
 ## Failure behavior
 
 If v25.60 is unavailable, v25.50/v25.40/v25.30/v25.20/v24.80 and Phase 19 retain their prior behavior.
+
+**No already-authorized work can deadlock because Budget Governance is unavailable.** Already-executing multi-step workflows also continue between actions rather than being stranded by a newly exhausted budget.
 
 Budget governance cannot deadlock non-autonomous work or replace subscription enforcement.
