@@ -44,6 +44,7 @@ const checks=[
  ['multiple merchant owner/admin/member relationships are supported',/campaigns_rewards_merchant_roles_v100/.test(core)&&/'owner'=>'Owner'/.test(core)&&/'admin'=>'Admin'/.test(core)&&/'member'=>'Member'/.test(core)],
  ['last active merchant owner cannot be removed by role change',/must keep at least one active owner/.test(core)],
  ['CRM remains canonical and campaign customer stores a reference',/crm_v180_upsert_contact/.test(core)&&/crm_contact_id/.test(core)&&!/CREATE TABLE IF NOT EXISTS crm_contacts/i.test(core)],
+ ['existing CRM contacts are linked without overwriting their richer CRM record',/SELECT id FROM crm_contacts WHERE email_normalized=\? LIMIT 1/.test(core)&&/if\(\$crmContactId<1\)\$crmContactId=crm_v180_upsert_contact/.test(core)],
  ['Team membership remains canonical and plugin stores scope metadata only',/campaign_team_scopes_v100/.test(core)&&!/CREATE TABLE IF NOT EXISTS workspace_memberships_v350/i.test(core)&&/workspace_memberships_v350/.test(release)],
  ['Team categories are Basic Merchant and Both',/'basic'=>'Basic Team'/.test(core)&&/'merchant'=>'Merchant Team'/.test(core)&&/'both'=>'Both'/.test(core)],
  ['Team UI exposes category and merchant selection only when plugin is active',/campaignsTeamEnabled/.test(team)&&/name="team_category"/.test(team)&&/name="merchant_account_id"/.test(team)],
