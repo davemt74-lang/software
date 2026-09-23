@@ -41,6 +41,8 @@ try {
     vp3_agent_memory_scope_ensure_schema_v410($pdo);
     agent_event_ensure_schema_v1920($pdo);
     vp3_live_session_ensure_schema_v2370($pdo);
+    vp3_cognitive_memory_ensure_schema_v570($pdo);
+    vp3_cognitive_memory_promotion_ensure_schema_v2400($pdo);
 
     $count = (int)$pdo->query('SELECT COUNT(*) FROM users')->fetchColumn();
     if ($count > 0) {
