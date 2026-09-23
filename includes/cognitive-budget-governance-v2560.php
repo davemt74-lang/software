@@ -419,19 +419,29 @@ function vp3_cognitive_budget_usage_v2560(
     $join='';
     $kind=(string)($policy['scope_kind']??'account');$key=(string)($policy['scope_key']??'');
     if($kind==='goal'){
-        $runIds=array_values(array_unique(array_filter(array_map('intval',(array)($context['run_ids']??[])),static fn(int $id): bool=>$id>0)));
-        if(!$runIds&&table_exists('agent_goal_objectives')){
-            try{
-                $q=$pdo->prepare('SELECT objective_run_id FROM agent_goal_objectives WHERE owner_user_id=? AND goal_id=? ORDER BY id');
-                $q->execute([$uid,(int)$key]);
-                $runIds=array_values(array_unique(array_filter(array_map(
-                    'intval',array_column($q->fetchAll(PDO::FETCH_ASSOC)?:[],'objective_run_id')
-                ),static fn(int $id): bool=>$id>0)));
-            }catch(Throwable $e){$runIds=[];}
-        }
-        if(!$runIds)return $empty;
-        $where[]='l.run_id IN ('.implode(',',array_fill(0,count($runIds),'?')).')';
-        $params=array_merge($params,$runIds);
+        if(!table_exists('agent_goal_objectives'))return $empty;
+        try{
+            $stmt=$pdo->prepare("SELECT COUNT(*) requests,
+              COALESCE(SUM(l.estimated_cost_micros / GREATEST(1,x.goal_count)),0) known_cost_micros,
+              SUM(CASE WHEN l.estimated_cost_micros IS NULL THEN 1 ELSE 0 END) unknown_cost_requests,
+              COALESCE(SUM(l.cloud_tokens_charged / GREATEST(1,x.goal_count)),0) cloud_tokens_charged
+              FROM ai_execution_ledger l
+              INNER JOIN agent_goal_objectives mine
+                ON mine.objective_run_id=l.run_id AND mine.owner_user_id=l.user_id AND mine.goal_id=?
+              INNER JOIN (
+                SELECT owner_user_id,objective_run_id,COUNT(DISTINCT goal_id) goal_count
+                FROM agent_goal_objectives GROUP BY owner_user_id,objective_run_id
+              ) x ON x.owner_user_id=mine.owner_user_id AND x.objective_run_id=mine.objective_run_id
+              WHERE l.user_id=? AND l.created_at>=? AND l.created_at<?");
+            $stmt->execute([(int)$key,$uid,$params[1],$params[2]]);$row=$stmt->fetch(PDO::FETCH_ASSOC)?:[];
+            return [
+                'known_cost_micros'=>max(0,(int)round((float)($row['known_cost_micros']??0))),
+                'unknown_cost_requests'=>max(0,(int)($row['unknown_cost_requests']??0)),
+                'cloud_tokens_charged'=>max(0,(int)round((float)($row['cloud_tokens_charged']??0))),
+                'requests'=>max(0,(int)($row['requests']??0)),
+                'period'=>$bounds,'authority'=>'ai_execution_ledger_v032_proportional_goal_attribution',
+            ];
+        }catch(Throwable $e){return $empty;}
     }elseif($kind==='agent'){
         $where[]='l.agent_id=?';$params[]=(int)$key;
     }elseif($kind==='project'){
@@ -504,7 +514,11 @@ function vp3_cognitive_budget_state_v2560(
     $tokenActualRatio=vp3_cognitive_budget_ratio_v2560($tokenActual,$tokenLimit);
     $costForecastRatio=vp3_cognitive_budget_ratio_v2560($costForecast,$costLimit);
     $tokenForecastRatio=vp3_cognitive_budget_ratio_v2560($tokenForecast,$tokenLimit);
-    $ratios=array_values(array_filter([$costForecastRatio,$tokenForecastRatio],static fn($x): bool=>$x!==null&&is_finite((float)$x)));
+    $ratios=[];
+    foreach([$costForecastRatio,$tokenForecastRatio] as $ratio){
+        if($ratio===null)continue;
+        $ratios[]=is_finite((float)$ratio)?max(0.0,(float)$ratio):2.0;
+    }
     $maxForecast=$ratios?max($ratios):0.0;
     $warning=max(0.50,min(0.99,((int)($policy['warning_percent']??80))/100));
     $actualExceeded=($costActualRatio!==null&&$costActualRatio>=1.0)||($tokenActualRatio!==null&&$tokenActualRatio>=1.0);
@@ -560,6 +574,21 @@ function vp3_cognitive_budget_apply_v2560(
             if((string)($item['execution_mode']??'manual')!=='autonomous'||(string)($item['executor']??'cloud')!=='cloud')continue;
             if(vp3_cognitive_budget_policy_matches_v2560($policy,$itemContexts[$goalId]??[]))$applicable[]=$item;
         }
+
+        usort($applicable,static function(array $a,array $b): int {
+            $aCommit=(float)($a['commitment_protection_score']??0.0);
+            $bCommit=(float)($b['commitment_protection_score']??0.0);
+            $x=$bCommit<=>$aCommit;if($x!==0)return $x;
+            $aRisk=!empty($a['commitment_at_risk'])?0:1;$bRisk=!empty($b['commitment_at_risk'])?0:1;
+            if($aRisk!==$bRisk)return $aRisk<=>$bRisk;
+            $aTarget=strtotime((string)($a['target_date']??''))?:PHP_INT_MAX;
+            $bTarget=strtotime((string)($b['target_date']??''))?:PHP_INT_MAX;
+            if($aTarget!==$bTarget)return $aTarget<=>$bTarget;
+            $x=((float)($b['optimization_strategy_score']??$b['forecast_sequence_score']??$b['score']??0.0))<=>
+                ((float)($a['optimization_strategy_score']??$a['forecast_sequence_score']??$a['score']??0.0));
+            if($x!==0)return $x;
+            return ((int)($a['goal_id']??0))<=>((int)($b['goal_id']??0));
+        });
 
         $usageContext=[];
         if((string)$policy['scope_kind']==='goal'){
