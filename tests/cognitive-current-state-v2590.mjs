@@ -25,6 +25,7 @@ const checks=[
  ['v25.90 creates no new durable tables',!/CREATE TABLE|ALTER TABLE|INSERT INTO|UPDATE\s+[a-z_]+\s+SET|DELETE FROM/i.test(current)&&!/CREATE TABLE|ALTER TABLE|INSERT INTO|UPDATE\s+[a-z_]+\s+SET|DELETE FROM/i.test(firewall)],
  ['current state reads canonical event inbox',/FROM agent_event_inbox/.test(current)&&/agent_event_schema_ready_v1920/.test(current)],
  ['current state reads canonical live session',/vp3_live_session_snapshot_v2370/.test(current)],
+ ['current-state attention reconciles latest fresh domain state',/vp3_cognitive_current_state_materialize_events_v2590/.test(current)&&/!empty\(\$event\['attention'\]\)&&!empty\(\$event\['fresh'\]\)/.test(current)],
  ['legacy activity is compatibility input only',/agent_activity_v94_snapshot/.test(current)&&/'legacy_activity_compatibility'=>'agent_activity_v94_snapshot'/.test(release)],
  ['raw event payload is reduced to safe refs',/vp3_cognitive_current_state_refs_v2590/.test(current)&&/'raw_event_payloads_exposed'=>false/.test(current)],
  ['presentation firewall is explicit allowlist',/\$allowed=\['type','title','summary','status','next_action','action_label','href','meta'\]/.test(firewall)],
