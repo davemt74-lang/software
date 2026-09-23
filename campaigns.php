@@ -191,7 +191,9 @@ $memberHeaderActions=implode(' ',$actions);
 </div>
 
 <section class="cr-card"><header><div><span>Campaigns</span><h2>Campaign lifecycle & landing pages</h2></div><a class="cr-btn" href="<?= e(url('/rewards.php?merchant='.$merchantId)) ?>">Manage Rewards</a></header>
-<div class="cr-campaign-grid"><?php foreach($campaigns as $campaign):?><article class="cr-campaign"><div class="cr-status <?= e((string)$campaign['status']) ?>"><?= e(ucfirst((string)$campaign['status'])) ?></div><h3><?= e((string)$campaign['title']) ?></h3><p><?= e((string)$campaign['subtitle']) ?></p><small><?= e(ucwords(str_replace('_',' ',(string)($campaign['campaign_type_key']??'campaign')))) ?> · v<?= (int)$campaign['current_version_no'] ?></small><div class="cr-actions"><a href="<?= e(campaigns_rewards_campaign_url_v100((string)$campaign['slug'])) ?>" target="_blank">Landing page ↗</a><?php if($canCampaignEdit):?><a href="<?= e(url('/campaigns.php?merchant='.$merchantId.'&edit_campaign='.(int)$campaign['id'].'#campaign-editor')) ?>">Edit</a><a href="<?= e(url('/rewards.php?merchant='.$merchantId.'#reward-editor')) ?>">Rewards</a><?php endif;?></div><?php if($canCampaignEdit):?><form method="post" class="cr-inline"><?= csrf_field() ?><input type="hidden" name="action" value="campaign_status"><input type="hidden" name="merchant_id" value="<?= $merchantId ?>"><input type="hidden" name="campaign_id" value="<?= (int)$campaign['id'] ?>"><select name="status"><?php foreach(['draft','scheduled','active','paused','completed','archived'] as $st):?><option value="<?= e($st) ?>"<?= $campaign['status']===$st?' selected':'' ?>><?= e(ucfirst($st)) ?></option><?php endforeach;?></select><button>Update</button></form><?php endif;?></article><?php endforeach;?><?php if(!$campaigns):?><div class="cr-empty"><h3>No Campaigns yet</h3><p>Create a Campaign and then attach reusable Reward Products from Rewards.</p></div><?php endif;?></div>
+<div class="cr-campaign-grid"><?php foreach($campaigns as $campaign): $funnel=$campaignFunnels[(int)$campaign['id']]??null;$ruleCount=count($automationRulesByCampaign[(int)$campaign['id']]??[]);?><article class="cr-campaign"><div class="cr-status <?= e((string)$campaign['status']) ?>"><?= e(ucfirst((string)$campaign['status'])) ?></div><h3><?= e((string)$campaign['title']) ?></h3><p><?= e((string)$campaign['subtitle']) ?></p><small><?= e(ucwords(str_replace('_',' ',(string)($campaign['campaign_type_key']??'campaign')))) ?> · v<?= (int)$campaign['current_version_no'] ?> · <?= $ruleCount ?> automation<?= $ruleCount===1?'':'s' ?></small>
+<?php if($funnel):?><div class="cr-mini-funnel"><span>Views <strong><?= number_format((int)$funnel['views']) ?></strong></span><span>Joined <strong><?= number_format((int)$funnel['participated']) ?></strong></span><span>Issued <strong><?= number_format((int)$funnel['issued']) ?></strong></span><span>Claimed <strong><?= number_format((int)$funnel['claimed']) ?></strong></span></div><?php endif;?>
+<div class="cr-actions"><a href="<?= e(campaigns_rewards_campaign_url_v100((string)$campaign['slug'])) ?>" target="_blank">Landing page ↗</a><?php if($canCampaignEdit):?><a href="<?= e(url('/campaigns.php?merchant='.$merchantId.'&edit_campaign='.(int)$campaign['id'].'#campaign-editor')) ?>">Edit</a><a href="<?= e(url('/campaigns.php?merchant='.$merchantId.'&edit_campaign='.(int)$campaign['id'].'#campaign-automation')) ?>">Automation</a><a href="<?= e(url('/rewards.php?merchant='.$merchantId.'#reward-editor')) ?>">Rewards</a><?php endif;?></div><?php if($canCampaignEdit):?><form method="post" class="cr-inline"><?= csrf_field() ?><input type="hidden" name="action" value="campaign_status"><input type="hidden" name="merchant_id" value="<?= $merchantId ?>"><input type="hidden" name="campaign_id" value="<?= (int)$campaign['id'] ?>"><select name="status"><?php foreach(['draft','scheduled','active','paused','completed','archived'] as $st):?><option value="<?= e($st) ?>"<?= $campaign['status']===$st?' selected':'' ?>><?= e(ucfirst($st)) ?></option><?php endforeach;?></select><button>Update</button></form><?php endif;?></article><?php endforeach;?><?php if(!$campaigns):?><div class="cr-empty"><h3>No Campaigns yet</h3><p>Create a Campaign and then attach reusable Reward Products from Rewards.</p></div><?php endif;?></div>
 <?php if($canCampaignEdit):?>
 <form method="post" class="cr-form cr-editor" id="campaign-editor">
 <?= csrf_field() ?>
@@ -267,6 +269,81 @@ $memberHeaderActions=implode(' ',$actions);
 })();
 </script>
 <?php endif;?></section>
+
+<?php if($editCampaign): $editFunnel=$campaignFunnels[(int)$editCampaign['id']]??null;$editInsights=$campaignInsights[(int)$editCampaign['id']]??[];$editRewards=$campaignRewardOptions[(int)$editCampaign['id']]??[]; ?>
+<section class="cr-card" id="campaign-automation">
+<header>
+<div><span>Automation + intelligence</span><h2><?= e((string)$editCampaign['title']) ?></h2></div>
+<?php if($canCampaignPublish&&$canRewardIssue):?><form method="post" class="cr-inline"><?= csrf_field() ?><input type="hidden" name="action" value="automation_evaluate_due"><input type="hidden" name="merchant_id" value="<?= $merchantId ?>"><button type="submit">Evaluate due rules</button></form><?php endif;?>
+</header>
+<p class="cr-help">Campaign automations reuse canonical CRM, Campaign Versions, Reward Issuance, inventory, budgets and VP3 lifecycle events. Active automation never creates a second scheduler, CRM, Wallet or Agent Brain.</p>
+
+<?php if($editFunnel):?>
+<div class="cr-funnel">
+<article><span>Viewed</span><strong><?= number_format((int)$editFunnel['views']) ?></strong></article>
+<article><span>Participated</span><strong><?= number_format((int)$editFunnel['participated']) ?></strong><small><?= e((string)$editFunnel['participation_rate']) ?>%</small></article>
+<article><span>Qualified</span><strong><?= number_format((int)$editFunnel['qualified']) ?></strong></article>
+<article><span>Issued</span><strong><?= number_format((int)$editFunnel['issued']) ?></strong><small><?= e((string)$editFunnel['issue_rate']) ?>%</small></article>
+<article><span>Reward viewed</span><strong><?= number_format((int)$editFunnel['reward_viewed']) ?></strong></article>
+<article><span>Sent / regifted</span><strong><?= number_format((int)$editFunnel['sent']) ?></strong></article>
+<article><span>Claimed</span><strong><?= number_format((int)$editFunnel['claimed']) ?></strong><small><?= e((string)$editFunnel['claim_rate']) ?>%</small></article>
+</div>
+<div class="cr-ops-strip"><span>Outstanding liability <strong><?= e(number_format(((int)$editFunnel['outstanding_liability_minor'])/100,2)) ?></strong></span><span>Tracked inventory remaining <strong><?= number_format((int)$editFunnel['inventory_remaining']) ?></strong></span></div>
+<?php endif;?>
+
+<?php if($editInsights):?><div class="cr-insights"><?php foreach($editInsights as $insight):?><article><strong><?= e((string)$insight['title']) ?></strong><span><?= e((string)$insight['detail']) ?></span></article><?php endforeach;?></div><?php endif;?>
+
+<div class="cr-list cr-automation-list">
+<?php foreach($editCampaignRules as $rule): $cond=(array)$rule['conditions'];$act=(array)$rule['actions']; ?>
+<article>
+<div><strong><?= e((string)$rule['name']) ?></strong><small><?= e((string)($automationTriggerCatalog[$rule['trigger_event']]['label']??$rule['trigger_event'])) ?> → <?= e((string)($automationAudienceCatalog[$cond['audience_mode']??'all_contacts']??($cond['audience_mode']??'all_contacts'))) ?> → Issue Reward #<?= (int)($act['reward_product_id']??0) ?> · <?= e(ucfirst((string)$rule['status'])) ?></small></div>
+<div class="cr-actions"><a href="<?= e(url('/campaigns.php?merchant='.$merchantId.'&edit_campaign='.(int)$editCampaign['id'].'&edit_rule='.(int)$rule['id'].'#campaign-automation')) ?>">Edit</a>
+<?php if($canCampaignEdit):?><form method="post" class="cr-inline"><?= csrf_field() ?><input type="hidden" name="action" value="automation_status"><input type="hidden" name="merchant_id" value="<?= $merchantId ?>"><input type="hidden" name="rule_id" value="<?= (int)$rule['id'] ?>"><select name="status"><?php foreach(['draft','active','paused'] as $st):?><option value="<?= e($st) ?>"<?= $rule['status']===$st?' selected':'' ?>><?= e(ucfirst($st)) ?></option><?php endforeach;?></select><button>Set</button></form><?php endif;?>
+</div>
+</article>
+<?php endforeach;?>
+<?php if(!$editCampaignRules):?><p>No automation rules yet. The form below is prefilled from this Campaign Type.</p><?php endif;?>
+</div>
+
+<?php if($canCampaignEdit):?>
+<form method="post" class="cr-form cr-editor cr-automation-editor">
+<?= csrf_field() ?>
+<input type="hidden" name="action" value="automation_save">
+<input type="hidden" name="merchant_id" value="<?= $merchantId ?>">
+<input type="hidden" name="campaign_id" value="<?= (int)$editCampaign['id'] ?>">
+<input type="hidden" name="rule_id" value="<?= (int)($editRule['id']??0) ?>">
+<h3><?= $editRule?'Edit automation':'Add automation' ?></h3>
+<div class="cr-automation-sentence">When <strong id="automationTriggerSummary"></strong>, for <strong id="automationAudienceSummary"></strong>, issue the selected Reward.</div>
+<div class="cr-form-grid">
+<label>Name<input name="name" maxlength="190" value="<?= e((string)($editRule['name']??($editCampaign['title'].' automation'))) ?>"></label>
+<label>Trigger<select name="trigger_event" id="automationTrigger"><?php $selectedTrigger=(string)($editRule['trigger_event']??$automationDefaultTrigger);foreach($automationTriggerCatalog as $key=>$meta):?><option value="<?= e($key) ?>"<?= $selectedTrigger===$key?' selected':'' ?>><?= e((string)$meta['label']) ?></option><?php endforeach;?></select></label>
+<label>CRM audience<select name="audience_mode" id="automationAudience"><?php $selectedAudience=(string)($automationConditions['audience_mode']??$automationDefaultAudience);foreach($automationAudienceCatalog as $key=>$label):?><option value="<?= e($key) ?>"<?= $selectedAudience===$key?' selected':'' ?>><?= e($label) ?></option><?php endforeach;?></select></label>
+<label>Saved CRM segment<select name="crm_segment_id"><option value="">None</option><?php foreach($crmSegments as $segment):?><option value="<?= (int)$segment['id'] ?>"<?= (int)($automationConditions['crm_segment_id']??0)===(int)$segment['id']?' selected':'' ?>><?= e((string)$segment['name']) ?> · <?= number_format((int)$segment['member_count']) ?></option><?php endforeach;?></select></label>
+<label>Reward<select name="reward_product_id" required><?php $selectedReward=(int)($automationActions['reward_product_id']??($editRewards[0]['id']??0));foreach($editRewards as $rewardOption):?><option value="<?= (int)$rewardOption['id'] ?>"<?= $selectedReward===(int)$rewardOption['id']?' selected':'' ?>><?= e((string)$rewardOption['name']) ?></option><?php endforeach;?></select></label>
+<label>Referral recipient<select name="recipient_mode"><?php $recipientMode=(string)($automationActions['recipient_mode']??'event_contact');foreach(['event_contact'=>'Participant / event contact','referrer'=>'Referrer','both'=>'Both participant + referrer'] as $key=>$label):?><option value="<?= e($key) ?>"<?= $recipientMode===$key?' selected':'' ?>><?= e($label) ?></option><?php endforeach;?></select></label>
+<label>Status<select name="status"><?php $ruleStatus=(string)($editRule['status']??'draft');foreach(['draft','active','paused'] as $st):?><option value="<?= e($st) ?>"<?= $ruleStatus===$st?' selected':'' ?>><?= e(ucfirst($st)) ?></option><?php endforeach;?></select></label>
+<label>Cooldown days<input type="number" min="0" max="3650" name="cooldown_days" value="<?= (int)($automationConditions['cooldown_days']??90) ?>"></label>
+<label>Win-back inactivity days<input type="number" min="1" max="3650" name="inactive_days" value="<?= (int)($automationConditions['inactive_days']??30) ?>"></label>
+<label>Birthday window ± days<input type="number" min="0" max="31" name="birthday_window_days" value="<?= (int)($automationConditions['birthday_window_days']??0) ?>"></label>
+<label>Minimum purchase (cents)<input type="number" min="0" name="minimum_purchase_minor" value="<?= (int)($automationConditions['minimum_purchase_minor']??0) ?>"></label>
+<label>Minimum loyalty points<input type="number" min="0" name="minimum_points" value="<?= (int)($automationConditions['minimum_points']??0) ?>"></label>
+<label>Max actions / run<input type="number" min="1" max="1000" name="max_actions_per_run" value="<?= (int)($automationConditions['max_actions_per_run']??100) ?>"></label>
+</div>
+<label class="cr-check"><input type="checkbox" name="marketing_only" value="1"<?= !empty($automationConditions['marketing_only'])?' checked':'' ?>> Only contacts currently subscribed to Merchant marketing</label>
+<p class="cr-help">Activating a rule requires Campaign publish + Reward issue authority and an active Campaign. Event rules act only on the verified event contact; scheduled birthday/win-back rules may evaluate a broader configured audience.</p>
+<button class="cr-btn primary" type="submit">Save automation</button>
+</form>
+<script>
+(function(){
+ const t=document.getElementById('automationTrigger'),a=document.getElementById('automationAudience'),ts=document.getElementById('automationTriggerSummary'),as=document.getElementById('automationAudienceSummary');
+ if(!t||!a||!ts||!as)return;
+ const render=()=>{ts.textContent=t.selectedOptions[0]?.textContent||'the trigger fires';as.textContent=a.selectedOptions[0]?.textContent||'the audience';};
+ t.addEventListener('change',render);a.addEventListener('change',render);render();
+})();
+</script>
+<?php endif;?>
+</section>
+<?php endif;?>
 
 <section class="cr-card" id="campaign-participants">
 <header><div><span>Participation</span><h2>Campaign fulfillment</h2></div><small><?= number_format(count($recentEnrollments)) ?> recent</small></header>
