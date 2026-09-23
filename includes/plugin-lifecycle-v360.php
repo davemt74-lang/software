@@ -138,6 +138,13 @@ function vp3_plugin_agent_capabilities_v360(PDO $pdo,array $user): array
                 $contextual=$workspaceCount>0;
             }catch(Throwable $e){$contextual=false;$workspaceCount=0;}
         }
+        if(empty($state['enabled'])&&$key==='campaigns_rewards'&&function_exists('campaigns_rewards_accessible_merchants_v100')){
+            try{
+                $workspaces=campaigns_rewards_accessible_merchants_v100($pdo,$user);
+                $workspaceCount=count($workspaces);
+                $contextual=$workspaceCount>0;
+            }catch(Throwable $e){$contextual=false;$workspaceCount=0;}
+        }
         if(empty($state['enabled'])&&!$contextual)continue;
         $out[]=[
             'plugin_key'=>$key,
