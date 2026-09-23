@@ -19,6 +19,7 @@ The materializer:
 
 - reads trusted/verified `agent_event_inbox` rows;
 - keeps only bounded recent state and the latest event per domain;
+- derives attention only from each domain's latest fresh state, so superseded or stale failures do not resurface as current alerts;
 - decodes event payloads only to extract a small allowlist of canonical reference fields;
 - never exposes arbitrary payload text;
 - reads the canonical v23.70 live-session snapshot;
