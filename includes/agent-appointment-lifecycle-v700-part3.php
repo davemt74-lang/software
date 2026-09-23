@@ -29,6 +29,7 @@ function agent_appointment_lifecycle_event_v700(
     $pdo->prepare('INSERT INTO agent_scheduling_lifecycle_events (booking_id,owner_user_id,event_type,from_status,to_status,actor_type,actor_user_id,actor_agent_id,details_json) VALUES (?,?,?,?,?,?,?,?,?)')
         ->execute([(int)$booking['id'],(int)$booking['owner_user_id'],mb_strimwidth($eventType,0,50,''),mb_strimwidth($from,0,24,''),mb_strimwidth($to,0,24,''),mb_strimwidth($actorType,0,24,''),$actorUserId?:null,$actorAgentId?:null,$json]);
     $pdo->prepare('UPDATE agent_scheduling_bookings SET last_lifecycle_event_at=NOW() WHERE id=?')->execute([(int)$booking['id']]);
+    if(function_exists('vp3_cognitive_appointment_lifecycle_bridge_v2380'))vp3_cognitive_appointment_lifecycle_bridge_v2380($pdo,$booking,$eventType,$from,$to,$details);
 }
 
 function agent_appointment_lifecycle_transition_v700(

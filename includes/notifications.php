@@ -355,6 +355,10 @@ function create_notification(
                 $sourceId,
             ]);
         }
+        $notificationId=(int)$pdo->lastInsertId();
+        if($notificationId>0&&function_exists('vp3_cognitive_notification_event_v2380'))vp3_cognitive_notification_event_v2380($pdo,$userId,'notification.created',$notificationId,[
+            'type'=>mb_substr($type,0,50),'source_type'=>mb_substr($sourceType,0,80),'source_id'=>$sourceId,
+        ]);
     } catch (Throwable $e) {
         error_log('Notification create failed: ' . $e->getMessage());
     }
@@ -416,6 +420,7 @@ function mark_notification_read(int $notificationId, int $userId): void
          WHERE id=? AND user_id=? AND ' . notification_system_sql_predicate()
     );
     $stmt->execute([$notificationId, $userId]);
+    if($stmt->rowCount()>0&&function_exists('vp3_cognitive_notification_event_v2380'))vp3_cognitive_notification_event_v2380($pdo,$userId,'notification.read',$notificationId);
 }
 
 function mark_all_notifications_read(int $userId): void

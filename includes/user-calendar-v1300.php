@@ -188,6 +188,7 @@ function user_calendar_create_event_v1300(PDO $pdo, array $user, array $input, s
     ]);
     $event = user_calendar_event_v1300($pdo, $ownerUserId, (int)$pdo->lastInsertId());
     if (!$event) throw new RuntimeException('Calendar event could not be created.');
+    if(function_exists('vp3_cognitive_calendar_event_v2380'))vp3_cognitive_calendar_event_v2380($pdo,$ownerUserId,'calendar.event_created',$event);
     return $event;
 }
 
@@ -210,16 +211,23 @@ function user_calendar_update_event_v1300(PDO $pdo, array $user, int $eventId, a
     if (mb_strlen($description) > 10000 || mb_strlen($location) > 500) throw new RuntimeException('Event details are too long.');
     $stmt = $pdo->prepare('UPDATE user_calendar_events SET title=?,description=?,location=?,start_at_utc=?,end_at_utc=?,timezone=?,all_day=? WHERE id=? AND owner_user_id=?');
     $stmt->execute([$title,$description,$location,$range['start_at_utc'],$range['end_at_utc'],$range['timezone'],$range['all_day']?1:0,$eventId,$ownerUserId]);
-    return user_calendar_event_v1300($pdo, $ownerUserId, $eventId) ?: $existing;
+    $saved=user_calendar_event_v1300($pdo, $ownerUserId, $eventId) ?: $existing;
+    if(function_exists('vp3_cognitive_calendar_event_v2380'))vp3_cognitive_calendar_event_v2380($pdo,$ownerUserId,'calendar.event_updated',$saved);
+    return $saved;
 }
 
 function user_calendar_cancel_event_v1300(PDO $pdo, array $user, int $eventId): bool
 {
     $ownerUserId = (int)($user['id'] ?? 0);
     if ($ownerUserId < 1 || $eventId < 1) return false;
+    $existing=user_calendar_event_v1300($pdo,$ownerUserId,$eventId);
     $stmt = $pdo->prepare("UPDATE user_calendar_events SET status='cancelled',cancelled_at=UTC_TIMESTAMP() WHERE id=? AND owner_user_id=? AND status='active'");
-    $stmt->execute([$eventId,$ownerUserId]);
-    return $stmt->rowCount() > 0;
+    $stmt->execute([$eventId,$ownerUserId]);$changed=$stmt->rowCount()>0;
+    if($changed&&$existing&&function_exists('vp3_cognitive_calendar_event_v2380')){
+        $existing['status']='cancelled';$existing['cancelled_at']=gmdate('Y-m-d H:i:s');
+        vp3_cognitive_calendar_event_v2380($pdo,$ownerUserId,'calendar.event_cancelled',$existing);
+    }
+    return $changed;
 }
 
 function user_calendar_automation_create_event_v1300(PDO $pdo, array $ownerUser, array $input, string $sourceReference): array

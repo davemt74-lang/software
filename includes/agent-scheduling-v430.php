@@ -262,6 +262,7 @@ function agent_scheduling_default_schedule_v430(PDO $pdo, array $user, ?int $age
 
     $created = agent_scheduling_schedule_v430($pdo, $ownerUserId, (int)$pdo->lastInsertId());
     if (!$created) throw new RuntimeException('Schedule could not be created.');
+    if(function_exists('vp3_cognitive_scheduling_event_v2380'))vp3_cognitive_scheduling_event_v2380($pdo,$ownerUserId,'schedule.created',(int)$created['id'],null,['agent_id'=>(int)($created['agent_id']??0)]);
     return $created;
 }
 
@@ -295,7 +296,9 @@ function agent_scheduling_save_schedule_v430(PDO $pdo, array $user, array $input
         $scheduleId,
         $ownerUserId,
     ]);
-    return agent_scheduling_schedule_v430($pdo, $ownerUserId, $scheduleId) ?: throw new RuntimeException('Schedule could not be saved.');
+    $saved=agent_scheduling_schedule_v430($pdo, $ownerUserId, $scheduleId) ?: throw new RuntimeException('Schedule could not be saved.');
+    if(function_exists('vp3_cognitive_scheduling_event_v2380'))vp3_cognitive_scheduling_event_v2380($pdo,$ownerUserId,'schedule.updated',$scheduleId,null,['agent_id'=>(int)($saved['agent_id']??0)]);
+    return $saved;
 }
 
 function agent_scheduling_save_event_type_v430(PDO $pdo, array $user, array $input): array
@@ -356,7 +359,9 @@ function agent_scheduling_save_event_type_v430(PDO $pdo, array $user, array $inp
         $eventId = (int)$pdo->lastInsertId();
     }
 
-    return agent_scheduling_event_type_v430($pdo, $eventId) ?: throw new RuntimeException('Appointment type could not be saved.');
+    $saved=agent_scheduling_event_type_v430($pdo, $eventId) ?: throw new RuntimeException('Appointment type could not be saved.');
+    if(function_exists('vp3_cognitive_scheduling_event_v2380'))vp3_cognitive_scheduling_event_v2380($pdo,$ownerUserId,'schedule.updated',$scheduleId,$eventId,['change'=>'scheduling_type']);
+    return $saved;
 }
 
 function agent_scheduling_validate_window_v430(int $weekday, int $startMinute, int $endMinute): array
@@ -396,6 +401,7 @@ function agent_scheduling_replace_weekly_availability_v430(PDO $pdo, array $user
         $insert = $pdo->prepare('INSERT INTO agent_scheduling_availability (schedule_id,event_type_id,weekday,start_minute,end_minute,is_active) VALUES (?,?,?,?,?,1)');
         foreach ($normalized as [$weekday, $start, $end]) $insert->execute([$scheduleId, $eventTypeId, $weekday, $start, $end]);
         if ($started) $pdo->commit();
+        if(function_exists('vp3_cognitive_scheduling_event_v2380'))vp3_cognitive_scheduling_event_v2380($pdo,$ownerUserId,'availability.changed',$scheduleId,$eventTypeId,['kind'=>'weekly','window_count'=>count($normalized)]);
     } catch (Throwable $e) {
         if ($started && $pdo->inTransaction()) $pdo->rollBack();
         throw $e;
@@ -443,6 +449,7 @@ function agent_scheduling_replace_date_override_v430(PDO $pdo, array $user, int 
             foreach ($normalized as [$start, $end]) $insert->execute([$scheduleId, $eventTypeId, $date, 1, $start, $end, mb_strimwidth(trim($note), 0, 255, '')]);
         }
         if ($started) $pdo->commit();
+        if(function_exists('vp3_cognitive_scheduling_event_v2380'))vp3_cognitive_scheduling_event_v2380($pdo,$ownerUserId,'availability.changed',$scheduleId,$eventTypeId,['kind'=>'override','date'=>$date,'window_count'=>count($normalized)]);
     } catch (Throwable $e) {
         if ($started && $pdo->inTransaction()) $pdo->rollBack();
         throw $e;
@@ -688,6 +695,7 @@ function agent_scheduling_create_booking_v430(PDO $pdo, array $input): array
         agent_calendar_sync_booking_v500($pdo,$booking);
         $refresh=$pdo->prepare('SELECT * FROM agent_scheduling_bookings WHERE id=? AND owner_user_id=? LIMIT 1');$refresh->execute([(int)$booking['id'],$ownerUserId]);$booking=$refresh->fetch()?:$booking;
     }
+    if(function_exists('vp3_cognitive_booking_event_v2380'))vp3_cognitive_booking_event_v2380($pdo,$booking,'booking.created',[],'booking-created:'.(int)$booking['id']);
     return $booking;
 }
 
@@ -701,6 +709,7 @@ function agent_scheduling_cancel_booking_v430(PDO $pdo, int $bookingId, ?int $ow
         $stmt->execute([$bookingId, $ownerUserId]);
         $changed=$stmt->rowCount()>0;
         if($changed&&function_exists('agent_calendar_sync_cancel_booking_v500'))agent_calendar_sync_cancel_booking_v500($pdo,$booking);
+        if($changed&&function_exists('vp3_cognitive_booking_event_v2380'))vp3_cognitive_booking_event_v2380($pdo,$booking,'booking.cancelled',['cancelled_by'=>'owner'],'booking-cancelled:'.$bookingId);
         return $changed;
     }
     $cancelToken = trim($cancelToken);
@@ -711,5 +720,6 @@ function agent_scheduling_cancel_booking_v430(PDO $pdo, int $bookingId, ?int $ow
     $stmt->execute([$bookingId, $cancelToken]);
     $changed=$stmt->rowCount()>0;
     if($changed&&function_exists('agent_calendar_sync_cancel_booking_v500'))agent_calendar_sync_cancel_booking_v500($pdo,$booking);
+    if($changed&&function_exists('vp3_cognitive_booking_event_v2380'))vp3_cognitive_booking_event_v2380($pdo,$booking,'booking.cancelled',['cancelled_by'=>'guest'],'booking-cancelled:'.$bookingId);
     return $changed;
 }

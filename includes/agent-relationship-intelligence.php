@@ -93,6 +93,7 @@ function vp3_agent_relationship_calculate(array $contact,array $sessionMetrics,a
 function vp3_agent_relationship_store(PDO $pdo,array $contact,array $metrics): array
 {
     $metadata=json_decode((string)($contact['metadata_json']??''),true);if(!is_array($metadata))$metadata=[];
+    $beforeRelationship=is_array($metadata['relationship_intelligence']??null)?$metadata['relationship_intelligence']:[];
     $metadata['relationship_intelligence']=[
         'window_days'=>(int)$metrics['window_days'],'opportunity_score'=>(int)$metrics['opportunity_score'],'recommendation'=>(string)$metrics['recommendation'],
         'sessions_30d'=>(int)$metrics['sessions_30d'],'views_30d'=>(int)$metrics['views_30d'],'requests_30d'=>(int)$metrics['requests_30d'],'properties_30d'=>(int)$metrics['properties_30d'],
@@ -112,6 +113,7 @@ function vp3_agent_relationship_store(PDO $pdo,array $contact,array $metrics): a
             mb_strimwidth((string)$metrics['intent'],0,120,''),(int)$metrics['intent_confidence'],$encoded,(int)$contact['id'],(int)$contact['owner_user_id'],
         ]);
     }
+    if(function_exists('vp3_cognitive_crm_relationship_bridge_v2380'))vp3_cognitive_crm_relationship_bridge_v2380($pdo,$contact,$beforeRelationship,$metrics+['risk_score'=>(int)($contact['risk_score']??0)]);
     return $metadata;
 }
 
