@@ -601,11 +601,11 @@ try {
             chat_notifications_v240_json(['ok'=>false,'error'=>'notification_required'], 400);
         }
         mark_notification_read($id, (int)$user['id']);
-        chat_notifications_v240_json(chat_notifications_v240_state($user, $pdo));
+        chat_notifications_v240_json(chat_notifications_v240_state($user, $pdo, max(0,(int)($input['agent_id']??0))));
     }
     if ($action === 'mark_all_read') {
         mark_all_notifications_read((int)$user['id']);
-        chat_notifications_v240_json(chat_notifications_v240_state($user, $pdo));
+        chat_notifications_v240_json(chat_notifications_v240_state($user, $pdo, max(0,(int)($input['agent_id']??0))));
     }
 
     chat_notifications_v240_json(['ok'=>false,'error'=>'unknown_action'], 400);
