@@ -245,7 +245,7 @@ function vp3_live_session_record_event_v2370(PDO $pdo,array $user,array $session
         'agent_namespace'=>(string)($session['agent_namespace']??'system'),
         'object_refs'=>$objectRefs?:vp3_live_session_object_refs_v2370($session,$payload),
     ]+$payload;
-    $eventKey=(string)($session['public_id']??'').'|'.$type.'|'.gmdate('YmdHis').'|'.substr(hash('sha256',vp3_live_session_json_v2370($payload)),0,16);
+    $eventKey=(string)($session['public_id']??'').'|'.$type.'|'.sprintf('%.6F',microtime(true)).'|'.substr(hash('sha256',vp3_live_session_json_v2370($payload)),0,16);
     try{
         $ingest=agent_event_ingest_v1920($pdo,$uid,'live_session',$type,$payload,[
             'verification_status'=>'trusted',
