@@ -380,16 +380,18 @@ function campaigns_rewards_save_platform_location_v100(PDO $pdo,int $merchantId,
     $name=campaigns_rewards_text_v100($input['name']??'',190);if($name==='')throw new RuntimeException('Location name is required.');
     $type=campaigns_rewards_slug_v100((string)($input['location_type']??'store'),30)?:'store';
     $allowed=['store','restaurant','office','warehouse','pop-up','event','mobile','online','other'];if(!in_array($type,$allowed,true))$type='other';
+    $primary=!empty($input['is_primary'])?1:0;
+    if($primary)$pdo->prepare('UPDATE merchant_locations SET is_primary=0,updated_at=UTC_TIMESTAMP() WHERE merchant_id=?')->execute([$merchantId]);
     if($locationId>0){
-        $stmt=$pdo->prepare("UPDATE merchant_locations SET name=?,location_type=?,address1=?,address2=?,city=?,region=?,postal_code=?,country=?,phone=?,timezone=?,is_active=?,metadata_json=?,updated_at=UTC_TIMESTAMP() WHERE id=? AND merchant_id=?");
-        $stmt->execute([$name,$type,campaigns_rewards_text_v100($input['address1']??'',190),campaigns_rewards_text_v100($input['address2']??'',190),campaigns_rewards_text_v100($input['city']??'',120),campaigns_rewards_text_v100($input['region']??'',120),campaigns_rewards_text_v100($input['postal_code']??'',40),campaigns_rewards_text_v100($input['country']??'US',80),campaigns_rewards_text_v100($input['phone']??'',80),campaigns_rewards_text_v100($input['timezone']??$merchant['timezone'],80),empty($input['is_active'])?0:1,campaigns_rewards_json_v100($input['metadata']??[]),$locationId,$merchantId]);
+        $stmt=$pdo->prepare("UPDATE merchant_locations SET name=?,location_type=?,address1=?,address2=?,city=?,region=?,postal_code=?,country=?,phone=?,timezone=?,is_primary=?,is_active=?,metadata_json=?,updated_at=UTC_TIMESTAMP() WHERE id=? AND merchant_id=?");
+        $stmt->execute([$name,$type,campaigns_rewards_text_v100($input['address1']??$input['address_line1']??'',190),campaigns_rewards_text_v100($input['address2']??$input['address_line2']??'',190),campaigns_rewards_text_v100($input['city']??'',120),campaigns_rewards_text_v100($input['region']??'',120),campaigns_rewards_text_v100($input['postal_code']??'',40),campaigns_rewards_text_v100($input['country']??'US',80),campaigns_rewards_text_v100($input['phone']??'',80),campaigns_rewards_text_v100($input['timezone']??$merchant['timezone'],80),$primary,isset($input['is_active'])&&!$input['is_active']?0:1,campaigns_rewards_json_v100($input['metadata']??[]),$locationId,$merchantId]);
         if($stmt->rowCount()===0){$check=$pdo->prepare('SELECT 1 FROM merchant_locations WHERE id=? AND merchant_id=?');$check->execute([$locationId,$merchantId]);if(!$check->fetchColumn())throw new RuntimeException('Location not found.');}
         $event='merchant.location_updated';
     }else{
         $public=campaigns_rewards_uuid_v100();
-        $stmt=$pdo->prepare("INSERT INTO merchant_locations (public_id,merchant_id,name,location_type,address1,address2,city,region,postal_code,country,phone,timezone,is_active,metadata_json)
-          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
-        $stmt->execute([$public,$merchantId,$name,$type,campaigns_rewards_text_v100($input['address1']??'',190),campaigns_rewards_text_v100($input['address2']??'',190),campaigns_rewards_text_v100($input['city']??'',120),campaigns_rewards_text_v100($input['region']??'',120),campaigns_rewards_text_v100($input['postal_code']??'',40),campaigns_rewards_text_v100($input['country']??'US',80),campaigns_rewards_text_v100($input['phone']??'',80),campaigns_rewards_text_v100($input['timezone']??$merchant['timezone'],80),isset($input['is_active'])&&!$input['is_active']?0:1,campaigns_rewards_json_v100($input['metadata']??[])]);
+        $stmt=$pdo->prepare("INSERT INTO merchant_locations (public_id,merchant_id,name,location_type,address1,address2,city,region,postal_code,country,phone,timezone,is_primary,is_active,metadata_json)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
+        $stmt->execute([$public,$merchantId,$name,$type,campaigns_rewards_text_v100($input['address1']??$input['address_line1']??'',190),campaigns_rewards_text_v100($input['address2']??$input['address_line2']??'',190),campaigns_rewards_text_v100($input['city']??'',120),campaigns_rewards_text_v100($input['region']??'',120),campaigns_rewards_text_v100($input['postal_code']??'',40),campaigns_rewards_text_v100($input['country']??'US',80),campaigns_rewards_text_v100($input['phone']??'',80),campaigns_rewards_text_v100($input['timezone']??$merchant['timezone'],80),$primary,isset($input['is_active'])&&!$input['is_active']?0:1,campaigns_rewards_json_v100($input['metadata']??[])]);
         $locationId=(int)$pdo->lastInsertId();$event='merchant.location_created';
     }
     $stmt=$pdo->prepare('SELECT * FROM merchant_locations WHERE id=? AND merchant_id=? LIMIT 1');$stmt->execute([$locationId,$merchantId]);$row=$stmt->fetch()?:throw new RuntimeException('Location unavailable.');
@@ -399,7 +401,6 @@ function campaigns_rewards_save_platform_location_v100(PDO $pdo,int $merchantId,
     ],!empty($merchant['sandbox_mode'])?'sandbox':'production',$actorUserId);
     return $row;
 }
-
 function campaigns_rewards_resolve_contact_v100(PDO $pdo,int $merchantId,array $data): array
 {
     $merchant=campaigns_rewards_platform_merchant_v100($pdo,$merchantId)?:throw new RuntimeException('Merchant not found.');
