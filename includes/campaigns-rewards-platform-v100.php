@@ -270,9 +270,14 @@ function campaigns_rewards_platform_ensure_schema_v100(?PDO $pdo=null): void
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 
     $exec("CREATE TABLE IF NOT EXISTS reward_inventory_balances (
-      reward_product_id BIGINT UNSIGNED NOT NULL,variant_id BIGINT UNSIGNED NULL,location_id BIGINT UNSIGNED NULL,on_hand BIGINT NOT NULL DEFAULT 0,reserved BIGINT NOT NULL DEFAULT 0,reorder_level BIGINT NULL,updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,reward_product_id BIGINT UNSIGNED NOT NULL,variant_id BIGINT UNSIGNED NOT NULL DEFAULT 0,location_id BIGINT UNSIGNED NOT NULL DEFAULT 0,on_hand BIGINT NOT NULL DEFAULT 0,reserved BIGINT NOT NULL DEFAULT 0,reorder_level BIGINT NULL,updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       UNIQUE KEY uq_reward_inventory (reward_product_id,variant_id,location_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+    if(function_exists('column_exists')&&!column_exists('reward_inventory_balances','id')){
+        $pdo->exec("ALTER TABLE reward_inventory_balances ADD COLUMN id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY FIRST");
+    }
+    try{$pdo->exec("ALTER TABLE reward_inventory_balances MODIFY variant_id BIGINT UNSIGNED NOT NULL DEFAULT 0, MODIFY location_id BIGINT UNSIGNED NOT NULL DEFAULT 0");}catch(Throwable $e){}
+
     $exec("CREATE TABLE IF NOT EXISTS reward_inventory_ledger (
       id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,reward_product_id BIGINT UNSIGNED NOT NULL,variant_id BIGINT UNSIGNED NULL,location_id BIGINT UNSIGNED NULL,movement_type VARCHAR(40) NOT NULL,quantity_delta BIGINT NOT NULL,source_type VARCHAR(60) NOT NULL,source_id VARCHAR(120) NOT NULL,actor_user_id INT UNSIGNED NULL,created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,metadata_json LONGTEXT NULL,INDEX idx_inventory_ledger (reward_product_id,location_id,created_at,id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
