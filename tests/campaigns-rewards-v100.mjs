@@ -69,7 +69,7 @@ const checks=[
  ['Merchant relationship stores Merchant-specific customer state',/customer_status/.test(schema)&&/loyalty_status/.test(schema)&&/acquisition_source/.test(schema)],
 
  ['Campaign Types are seeded and extensible',/signup/.test(schema)&&/make_good/.test(schema)&&/loyalty/.test(schema)&&/referral/.test(schema)&&/win_back/.test(schema)],
- ['Campaign lifecycle includes draft scheduled active paused completed archived',/draft/.test(schema)&&/scheduled/.test(schema)&&/active/.test(schema)&&/paused/.test(schema)&&/completed/.test(schema)&&/archived/.test(schema)],
+ ['Campaign lifecycle includes draft scheduled active paused completed archived',/\$allowed=\['draft','scheduled','active','paused','completed','archived'\]/.test(runtime)],
  ['Campaign versions freeze snapshots',/CREATE TABLE IF NOT EXISTS campaign_versions/.test(schema)&&/campaign_snapshot_json/.test(schema)&&/reward_snapshot_json/.test(schema)&&/INSERT INTO campaign_versions/.test(runtime)],
  ['public Campaign lookup requires active production published landing',/c\.status='active'/.test(core)&&/c\.environment='production'/.test(core)&&/lp\.is_published=1/.test(core)],
  ['Profile Campaigns projection is active production and profile-public only',/campaigns_rewards_profile_campaigns_platform_v100/.test(runtime)&&/lp\.visibility='profile_public'/.test(runtime)&&/\$profileTabs\['campaigns'\]='Campaigns'/.test(profile)],
