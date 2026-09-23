@@ -673,35 +673,63 @@ function vp3_cognitive_budget_filter_claim_candidates_v2560(
 ): array {
     if($executor!=='cloud'||!$rows||!vp3_cognitive_budget_schema_ready_v2560($pdo))return $rows;
     $uid=(int)($user['id']??0);if($uid<1)return $rows;
-    $policies=vp3_cognitive_budget_policy_rows_v2560($pdo,$user,true);
-    $hard=array_values(array_filter($policies,static fn(array $p): bool=>(string)$p['enforcement_mode']==='hard'));
-    if(!$hard)return $rows;
-    $out=[];
+    $now=$now>0?$now:time();
+
+    // Never interrupt an already-started multi-step workflow between actions.
+    // The budget boundary governs new autonomous Cloud admission only.
+    $approved=[];$passthrough=[];
     foreach($rows as $row){
+        if((string)($row['status']??'approved')==='executing')$passthrough[]=$row;
+        else $approved[]=$row;
+    }
+    if(!$approved)return $rows;
+
+    // Use the same canonical portfolio projection that calculated hard holds.
+    // This preserves account/goal/Agent/project scope behavior and projected
+    // next-work checks rather than reducing Phase 19 to actual-spend-only logic.
+    try{$portfolio=vp3_cognitive_portfolio_snapshot_v2480($pdo,$user);}
+    catch(Throwable $e){return $rows;}
+
+    $holdPoliciesByGoal=[];
+    foreach((array)($portfolio['items']??[]) as $item){
+        if(!is_array($item)||empty($item['budget_hard_hold']))continue;
+        $goalId=(int)($item['goal_id']??0);if($goalId<1)continue;
+        $ids=array_values(array_unique(array_filter(
+            array_map('intval',(array)($item['budget_hold_policy_ids']??[])),
+            static fn(int $id): bool=>$id>0
+        )));
+        if($ids)$holdPoliciesByGoal[$goalId]=$ids;
+    }
+    if(!$holdPoliciesByGoal)return $rows;
+
+    $policyMap=[];
+    foreach(vp3_cognitive_budget_policy_rows_v2560($pdo,$user,true) as $policy){
+        $policyMap[(int)$policy['id']]=$policy;
+    }
+
+    $admitted=[];
+    foreach($approved as $row){
         $runId=(int)($row['id']??0);if($runId<1)continue;
         $goalId=vp3_cognitive_budget_goal_for_run_v2560($pdo,$uid,$runId);
-        if($goalId<1){$out[]=$row;continue;}
-        $goalContext=['goal_id'=>$goalId,'run_ids'=>[$runId],'agent_ids'=>[],'project_keys'=>[]];
+        $holds=(array)($holdPoliciesByGoal[$goalId]??[]);
+        if($goalId<1||!$holds){$admitted[]=$row;continue;}
+
         $blocked=false;
-        foreach($hard as $policy){
-            if(!vp3_cognitive_budget_policy_matches_v2560($policy,$goalContext)&&$policy['scope_kind']!=='account')continue;
-            if(vp3_cognitive_budget_active_override_v2560($pdo,$uid,(int)$policy['id'],'run',(string)$runId,$now)
-                ||vp3_cognitive_budget_active_override_v2560($pdo,$uid,(int)$policy['id'],'goal',(string)$goalId,$now)
-                ||vp3_cognitive_budget_active_override_v2560($pdo,$uid,(int)$policy['id'],'scope',(string)$policy['scope_kind'].':'.(string)$policy['scope_key'],$now)){
-                continue;
-            }
-            $usage=vp3_cognitive_budget_usage_v2560($pdo,$uid,$policy,$goalContext,$now);
-            if($policy['cost_limit_micros']!==null
-                &&((int)$usage['unknown_cost_requests']>0||(int)$usage['known_cost_micros']>=(int)$policy['cost_limit_micros'])){
-                $blocked=true;break;
-            }
-            if($policy['token_limit']!==null&&(int)$usage['cloud_tokens_charged']>=(int)$policy['token_limit']){
-                $blocked=true;break;
-            }
+        foreach($holds as $policyId){
+            $policy=$policyMap[(int)$policyId]??null;
+            if(!$policy)continue;
+            $scopeSubject=(string)$policy['scope_kind'].':'.(string)$policy['scope_key'];
+            $override=vp3_cognitive_budget_active_override_v2560($pdo,$uid,(int)$policyId,'run',(string)$runId,$now)
+                ?:vp3_cognitive_budget_active_override_v2560($pdo,$uid,(int)$policyId,'goal',(string)$goalId,$now)
+                ?:vp3_cognitive_budget_active_override_v2560($pdo,$uid,(int)$policyId,'scope',$scopeSubject,$now);
+            if(!$override){$blocked=true;break;}
         }
-        if(!$blocked)$out[]=$row;
+        if(!$blocked)$admitted[]=$row;
     }
-    return $out;
+
+    // Existing executing runs keep their relative precedence; approved work is
+    // narrowed only by explicit hard budget holds/overrides.
+    return array_merge($passthrough,$admitted);
 }
 
 function vp3_cognitive_budget_snapshot_v2560(PDO $pdo,array $user): array
