@@ -138,7 +138,7 @@ function vp3_cognitive_message_bridge_v2390(PDO $pdo,array $conversation,array $
         $event=$uid===$sender?'team.message_sent':'team.message_received';
         vp3_cognitive_domain_record_v2390($pdo,$uid,'messaging_team',$event,[
             vp3_cognitive_ref_v2390('human_message',$messageId),
-            vp3_cognitive_ref_v2390('team_conversation',$conversationId,(string)($conversation['conversation_type']??'')==='team'?'team':'personal'),
+            vp3_cognitive_ref_v2390('team_conversation',$conversationId,str_starts_with((string)($conversation['conversation_type']??''),'team')?'team':'personal'),
         ],[
             'conversation_type'=>(string)($conversation['conversation_type']??'direct'),
             'sender_user_id'=>$sender,
@@ -297,10 +297,10 @@ function vp3_cognitive_register_domains_v2390(): void
     vp3_cognitive_register_domain_module_v2390('browser_operations',['browser_transaction'],$events['browser_operations'],['default_seconds'=>20]);
     vp3_cognitive_register_domain_module_v2390('research_knowledge',['research_project'],$events['research_knowledge'],['default_seconds'=>60]);
     vp3_cognitive_register_domain_module_v2390('messaging_team',['team_conversation','team_member'],$events['messaging_team'],['default_seconds'=>15]);
-    vp3_cognitive_register_domain_module_v2390('workflow_tools_approvals',['tool_action','approval_request'],$events['workflow_tools_approvals'],['default_seconds'=>20]);
-    vp3_cognitive_register_domain_module_v2390('homeserver_operations',['homeserver_device','homeserver_action_request'],$events['homeserver_operations'],['default_seconds'=>30]);
-    vp3_cognitive_register_domain_module_v2390('media_studio',['media_asset','studio_project'],$events['media_studio'],['default_seconds'=>60]);
-    vp3_cognitive_register_domain_module_v2390('analytics_attribution',['attribution_event','analytics_signal'],$events['analytics_attribution'],['default_seconds'=>60]);
+    vp3_cognitive_register_domain_module_v2390('workflow_tools_approvals',['tool_action'],$events['workflow_tools_approvals'],['default_seconds'=>20]);
+    vp3_cognitive_register_domain_module_v2390('homeserver_operations',['homeserver_device'],$events['homeserver_operations'],['default_seconds'=>30]);
+    vp3_cognitive_register_domain_module_v2390('media_studio',['media_asset'],$events['media_studio'],['default_seconds'=>60]);
+    vp3_cognitive_register_domain_module_v2390('analytics_attribution',['attribution_event'],$events['analytics_attribution'],['default_seconds'=>60]);
 }
 
 vp3_cognitive_register_domains_v2390();
