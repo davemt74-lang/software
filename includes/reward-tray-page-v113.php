@@ -7,11 +7,6 @@ $pdo=db();
 $bucket=isset($rewardTrayPageBucket)?trim((string)$rewardTrayPageBucket):'inbox';
 if(!in_array($bucket,['inbox','sent','claimed'],true))$bucket='inbox';
 $labels=['inbox'=>'Inbox','sent'=>'Sent','claimed'=>'Claimed'];
-$subtitles=[
-    'inbox'=>'Certificates available to send or claim.',
-    'sent'=>'Certificates you sent to your CRM contacts.',
-    'claimed'=>'Your claimed certificate history.',
-];
 $routes=[
     'inbox'=>url('/reward-inbox.php'),
     'sent'=>url('/reward-sent.php'),
@@ -20,8 +15,9 @@ $routes=[
 $schemaReady=(bool)$pdo&&function_exists('campaigns_rewards_v110_schema_ready')&&campaigns_rewards_v110_schema_ready($pdo);
 
 $memberHeaderUser=$user;
-$memberHeaderTitle='Rewards';
-$memberHeaderSubtitle=$labels[$bucket];
+$memberHeaderTitle='';
+$memberHeaderSubtitle='';
+$memberHeaderShowTitle=false;
 $memberHeaderActions='';
 $memberHeaderLeadingHtml='<nav id="rewardTrayTabs" class="reward-tray-tabs reward-tray-tabs-desktop" aria-label="Reward certificates">'
     .implode('',array_map(static function(string $key)use($bucket,$routes,$labels):string{
@@ -56,9 +52,6 @@ require __DIR__.'/workspace-sidebar-v82.php';
 <?php endforeach; ?>
 </nav>
 <section id="rewardTrayCanvas" class="reward-tray-canvas reward-page-canvas">
-<header class="reward-tray-head">
-<div><small>Rewards</small><h1 id="rewardTrayTitle"><?= e($labels[$bucket]) ?></h1><p id="rewardTraySubtitle"><?= e($subtitles[$bucket]) ?></p></div>
-</header>
 <?php if(!$schemaReady): ?>
 <div id="rewardTrayStatus" class="reward-tray-status error">Rewards needs the latest VP3 database upgrade.<?php if(user_has_role('admin',$user)): ?> <a href="<?= e(url('/upgrade.php')) ?>">Run upgrade</a>.<?php endif; ?></div>
 <?php else: ?>
