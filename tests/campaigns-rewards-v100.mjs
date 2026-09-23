@@ -75,6 +75,8 @@ const checks=[
  ['Profile Campaigns projection is active production and profile-public only',/campaigns_rewards_profile_campaigns_platform_v100/.test(runtime)&&/lp\.visibility='profile_public'/.test(runtime)&&/\$profileTabs\['campaigns'\]='Campaigns'/.test(profile)],
 
  ['Reward Products are reusable and attached through Reward Sets',/CREATE TABLE IF NOT EXISTS reward_products/.test(schema)&&/campaign_reward_sets/.test(schema)&&/campaign_reward_set_items/.test(schema)&&/campaigns_rewards_attach_reward_v100/.test(runtime)],
+ ['Reward Set composite primary key uses non-null zero variant sentinel',/campaign_reward_set_items[\s\S]{0,500}variant_id BIGINT UNSIGNED NOT NULL DEFAULT 0[\s\S]{0,500}PRIMARY KEY\(reward_set_id,reward_product_id,variant_id\)/.test(schema)&&runtime.includes("VALUES (?,?,0,?,100,'{}')")],
+ ['Reward Set migration normalizes legacy null variants before enforcing NOT NULL',schema.includes("UPDATE campaign_reward_set_items SET variant_id=0 WHERE variant_id IS NULL")&&schema.includes("ALTER TABLE campaign_reward_set_items MODIFY variant_id BIGINT UNSIGNED NOT NULL DEFAULT 0")],
  ['Reward Issuance is the customer entitlement authority',/CREATE TABLE IF NOT EXISTS reward_issuances/.test(schema)&&/terms_snapshot_json/.test(schema)&&/campaign_version_id/.test(schema)],
  ['Wallet is a projection over Issuance and Claim state',/function campaigns_rewards_wallet_v100/.test(runtime)&&/reward_issuances/.test(runtime)&&/reward_claims/.test(runtime)&&/wallet_is_projection_not_second_ledger'=>true/.test(release)],
  ['Wallet authority can rotate and reveal a fresh one-time Reward credential',/campaigns_rewards_rotate_reward_credential_v100/.test(runtime)&&/credential_hash=\?/.test(runtime)&&/reward-inbox\.php/.test(walletPage)],
