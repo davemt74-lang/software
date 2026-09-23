@@ -1141,6 +1141,11 @@ function campaigns_rewards_loyalty_adjust_v100(PDO $pdo,int $programId,int $cont
         'summary'=>'Loyalty balance changed','merchant_public_id'=>$program['merchant_public_id'],'loyalty_account_public_id'=>'loyalty-'.$account['id'],
         'points_delta'=>$points,'balance'=>$balance,
     ],!empty($program['sandbox_mode'])?'sandbox':'production',$actorUserId);
+    if(empty($program['sandbox_mode'])&&$points>0&&function_exists('campaigns_rewards_automation_run_trigger_v119')){
+        try{campaigns_rewards_automation_run_trigger_v119($pdo,'loyalty_milestone',[
+            'contact_id'=>$contactId,'balance'=>$balance,'points_delta'=>$points,'loyalty_program_id'=>$programId,
+        ],'loyalty:'.$account['id'].':'.$balance,(int)$program['merchant_id']);}catch(Throwable $e){error_log('Campaign automation loyalty bridge failed: '.$e->getMessage());}
+    }
     return ['account'=>$account,'balance'=>$balance,'points_delta'=>$points];
 }
 
