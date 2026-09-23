@@ -48,7 +48,7 @@ function campaigns_rewards_campaign_reward_ids_v118(PDO $pdo,int $campaignId): a
     return array_values(array_map('intval',$stmt->fetchAll(PDO::FETCH_COLUMN)?:[]));
 }
 
-function campaigns_rewards_sync_campaign_rewards_v118(PDO $pdo,int $merchantId,int $campaignId,int $actorUserId,array $rewardIds): void
+function campaigns_rewards_sync_campaign_rewards_v118(PDO $pdo,int $merchantId,int $campaignId,int $actorUserId,array $rewardIds,bool $snapshotActive=true): void
 {
     campaigns_rewards_platform_assert_can_v100($pdo,$merchantId,$actorUserId,'campaigns.edit');
     $campaign=campaigns_rewards_campaign_platform_v100($pdo,$campaignId,true)?:throw new RuntimeException('Campaign not found.');
@@ -83,7 +83,7 @@ function campaigns_rewards_sync_campaign_rewards_v118(PDO $pdo,int $merchantId,i
     campaigns_rewards_activity_event_v100($pdo,$merchantId,'campaign.rewards_updated',['campaign_id'=>$campaignId],[
         'summary'=>'Campaign Rewards updated','campaign_public_id'=>$campaign['public_id'],'reward_count'=>count($selected),
     ],(string)$campaign['environment'],$actorUserId);
-    if($wasActive)campaigns_rewards_snapshot_campaign_v100($pdo,$campaignId,$actorUserId,'published');
+    if($wasActive&&$snapshotActive)campaigns_rewards_snapshot_campaign_v100($pdo,$campaignId,$actorUserId,'published');
 }
 
 function campaigns_rewards_validate_campaign_activation_v118(PDO $pdo,array $campaign): void
