@@ -155,11 +155,30 @@
     const calendar = brief.next_calendar || null;
     const followthrough = brief.followthrough || null;
     const awayFollowthrough = brief.away_followthrough || {};
+    const supervision = brief.supervision_focus || null;
+    const supervisionCounts = brief.supervision_counts || {};
     const counts = brief.counts || {};
     let html = '<div class="chat-agent-brief-status"><span><i class="chat-agent-brief-dot ' +
       (brief.active !== false ? 'active' : '') + '"></i>' +
       esc(brief.agent_name || 'Agent') + ' · ' + esc(brief.status_label || 'Active') +
       '</span><small>' + esc(brief.activity_title || 'Ready') + '</small></div>';
+
+    if (supervision) {
+      const severity = String(supervision.severity || 'info');
+      const health = String(supervision.health_state || 'open').replaceAll('_',' ');
+      html += '<article class="chat-agent-brief-card"><small>Autonomous supervision · ' +
+        esc(severity) + '</small><strong>' +
+        esc(supervision.title || 'Open work needs review') + '</strong>' +
+        (supervision.reason ? '<p>' + esc(supervision.reason) + '</p>' : '') +
+        '<p><small>' + esc(health) +
+        (supervision.supervisor_action ? ' · ' + esc(String(supervision.supervisor_action).replaceAll('_',' ')) : '') +
+        '</small></p>' +
+        (supervision.requires_user ? '<div class="chat-agent-brief-actions">' +
+          actionButton(supervision.requires_approval ? 'Review approval' : 'Review with Agent',
+            ' data-agent-brief-prompt="' + esc('Review supervised work ' + String(supervision.continuity_ref || '') + ' and tell me the safest next step.') + '"',true) +
+          '</div>' : '') +
+        '</article>';
+    }
 
     if (Number(awayFollowthrough.count || 0) > 0) {
       html += '<article class="chat-agent-brief-card"><small>While you were away</small><strong>' +
@@ -219,6 +238,9 @@
       '<span><strong>' + Number(counts.blocked || 0) + '</strong><small>Blocked</small></span>' +
       '<span><strong>' + Number(counts.failed || 0) + '</strong><small>Failed</small></span>' +
       '<span><strong>' + Number(counts.unread || 0) + '</strong><small>Unread</small></span>' +
+      (Number(supervisionCounts.critical || 0) + Number(supervisionCounts.high || 0) > 0
+        ? '<span><strong>' + (Number(supervisionCounts.critical || 0) + Number(supervisionCounts.high || 0)) + '</strong><small>Supervision</small></span>'
+        : '') +
       '</div>';
     return html;
   }
