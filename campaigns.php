@@ -115,7 +115,81 @@ $memberHeaderActions=implode(' ',$actions);
 
 <section class="cr-card"><header><div><span>Campaigns</span><h2>Campaign lifecycle & landing pages</h2></div><a class="cr-btn" href="<?= e(url('/rewards.php?merchant='.$merchantId)) ?>">Manage Rewards</a></header>
 <div class="cr-campaign-grid"><?php foreach($campaigns as $campaign):?><article class="cr-campaign"><div class="cr-status <?= e((string)$campaign['status']) ?>"><?= e(ucfirst((string)$campaign['status'])) ?></div><h3><?= e((string)$campaign['title']) ?></h3><p><?= e((string)$campaign['subtitle']) ?></p><small><?= e(ucwords(str_replace('_',' ',(string)($campaign['campaign_type_key']??'campaign')))) ?> · v<?= (int)$campaign['current_version_no'] ?></small><div class="cr-actions"><a href="<?= e(campaigns_rewards_campaign_url_v100((string)$campaign['slug'])) ?>" target="_blank">Landing page ↗</a><?php if($canCampaignEdit):?><a href="<?= e(url('/campaigns.php?merchant='.$merchantId.'&edit_campaign='.(int)$campaign['id'].'#campaign-editor')) ?>">Edit</a><a href="<?= e(url('/rewards.php?merchant='.$merchantId.'#reward-editor')) ?>">Rewards</a><?php endif;?></div><?php if($canCampaignEdit):?><form method="post" class="cr-inline"><?= csrf_field() ?><input type="hidden" name="action" value="campaign_status"><input type="hidden" name="merchant_id" value="<?= $merchantId ?>"><input type="hidden" name="campaign_id" value="<?= (int)$campaign['id'] ?>"><select name="status"><?php foreach(['draft','scheduled','active','paused','completed','archived'] as $st):?><option value="<?= e($st) ?>"<?= $campaign['status']===$st?' selected':'' ?>><?= e(ucfirst($st)) ?></option><?php endforeach;?></select><button>Update</button></form><?php endif;?></article><?php endforeach;?><?php if(!$campaigns):?><div class="cr-empty"><h3>No Campaigns yet</h3><p>Create a Campaign and then attach reusable Reward Products from Rewards.</p></div><?php endif;?></div>
-<?php if($canCampaignEdit):?><form method="post" class="cr-form cr-editor" id="campaign-editor"><?= csrf_field() ?><input type="hidden" name="action" value="campaign_save"><input type="hidden" name="merchant_id" value="<?= $merchantId ?>"><input type="hidden" name="campaign_id" value="<?= (int)($editCampaign['id']??0) ?>"><h3><?= $editCampaign?'Edit Campaign':'Create Campaign' ?></h3><div class="cr-form-grid"><label>Campaign Type<select name="campaign_type"><?php foreach($campaignTypes as $type):?><option value="<?= e((string)$type['type_key']) ?>"<?= ($editCampaign['campaign_type_key']??'signup')===$type['type_key']?' selected':'' ?>><?= e((string)$type['name']) ?></option><?php endforeach;?></select></label><label>Title<input name="title" required value="<?= e((string)($editCampaign['title']??'')) ?>"></label><label>Public slug<input name="slug" value="<?= e((string)($editCampaign['slug']??'')) ?>"></label><label>Subtitle<input name="subtitle" value="<?= e((string)($editCampaign['subtitle']??'')) ?>"></label><label>CTA label<input name="cta_label" value="<?= e((string)($editCampaign['cta_label']??'Claim reward')) ?>"></label><label>Location<select name="location_id"><option value="">All Locations</option><?php foreach($locations as $location):?><option value="<?= (int)$location['id'] ?>"<?= (int)($editCampaign['location_id']??0)===(int)$location['id']?' selected':'' ?>><?= e((string)$location['name']) ?></option><?php endforeach;?></select></label><label>Starts<input name="starts_at" type="datetime-local" value="<?= !empty($editCampaign['starts_at'])?e(date('Y-m-d\TH:i',strtotime((string)$editCampaign['starts_at']))):'' ?>"></label><label>Ends<input name="ends_at" type="datetime-local" value="<?= !empty($editCampaign['ends_at'])?e(date('Y-m-d\TH:i',strtotime((string)$editCampaign['ends_at']))):'' ?>"></label></div><label>Objective<input name="objective" value="<?= e((string)($editCampaign['objective']??'')) ?>"></label><label>Description<textarea name="description"><?= e((string)($editCampaign['description']??'')) ?></textarea></label><label>Terms<textarea name="terms"><?= e((string)($editCampaign['terms']??'')) ?></textarea></label><label class="cr-check"><input type="checkbox" name="profile_visible" value="1"<?= !isset($editCampaign['profile_visible'])||!empty($editCampaign['profile_visible'])?' checked':'' ?>> Publish active Campaign on Owner Profile</label><button class="cr-btn primary">Save Campaign</button></form><?php endif;?></section>
+<?php if($canCampaignEdit):?>
+<form method="post" class="cr-form cr-editor" id="campaign-editor">
+<?= csrf_field() ?>
+<input type="hidden" name="action" value="campaign_save">
+<input type="hidden" name="merchant_id" value="<?= $merchantId ?>">
+<input type="hidden" name="campaign_id" value="<?= (int)($editCampaign['id']??0) ?>">
+<input type="hidden" name="reward_selection_present" value="1">
+<h3><?= $editCampaign?'Edit Campaign':'Create Campaign' ?></h3>
+
+<div class="cr-form-grid">
+<label>Campaign Type
+<select name="campaign_type" id="campaignTypeSelect">
+<?php foreach($campaignTypesByCategory as $category=>$types):?>
+<optgroup label="<?= e($category) ?>">
+<?php foreach($types as $type):?>
+<option value="<?= e((string)$type['type_key']) ?>"
+  data-description="<?= e((string)$type['description']) ?>"
+  data-reward-timing="<?= e((string)$type['reward_timing']) ?>"
+  data-requires-reward="<?= !empty($type['requires_reward'])?'1':'0' ?>"
+  data-default-cta="<?= e((string)$type['default_cta']) ?>"
+  <?= ($editCampaign['campaign_type_key']??'signup')===$type['type_key']?' selected':'' ?>><?= e((string)$type['name']) ?></option>
+<?php endforeach;?>
+</optgroup>
+<?php endforeach;?>
+</select>
+<small class="cr-type-help" id="campaignTypeHelp"></small>
+</label>
+<label>Title<input name="title" required value="<?= e((string)($editCampaign['title']??'')) ?>"></label>
+<label>Public slug<input name="slug" value="<?= e((string)($editCampaign['slug']??'')) ?>"></label>
+<label>Subtitle<input name="subtitle" value="<?= e((string)($editCampaign['subtitle']??'')) ?>"></label>
+<label>CTA label<input name="cta_label" id="campaignCtaInput" value="<?= e((string)($editCampaign['cta_label']??'')) ?>"></label>
+<label>Location<select name="location_id"><option value="">All Locations</option><?php foreach($locations as $location):?><option value="<?= (int)$location['id'] ?>"<?= (int)($editCampaign['location_id']??0)===(int)$location['id']?' selected':'' ?>><?= e((string)$location['name']) ?></option><?php endforeach;?></select></label>
+<label>Starts<input name="starts_at" type="datetime-local" value="<?= !empty($editCampaign['starts_at'])?e(date('Y-m-d\TH:i',strtotime((string)$editCampaign['starts_at']))):'' ?>"></label>
+<label>Ends<input name="ends_at" type="datetime-local" value="<?= !empty($editCampaign['ends_at'])?e(date('Y-m-d\TH:i',strtotime((string)$editCampaign['ends_at']))):'' ?>"></label>
+</div>
+
+<label>Objective<input name="objective" value="<?= e((string)($editCampaign['objective']??'')) ?>"></label>
+<label>Description<textarea name="description"><?= e((string)($editCampaign['description']??'')) ?></textarea></label>
+<label>Terms<textarea name="terms"><?= e((string)($editCampaign['terms']??'')) ?></textarea></label>
+
+<fieldset class="cr-fieldset">
+<legend>Campaign Rewards</legend>
+<p class="cr-help">Attach the reusable Reward Products this Campaign is allowed to issue. Campaign types that require a Reward cannot be activated until at least one is selected.</p>
+<?php if($rewardProducts):?>
+<div class="cr-check-grid">
+<?php foreach($rewardProducts as $rp): if(empty($rp['is_active']))continue; ?>
+<label class="cr-check"><input type="checkbox" name="reward_ids[]" value="<?= (int)$rp['id'] ?>"<?= in_array((int)$rp['id'],$editCampaignRewardIds,true)?' checked':'' ?>> <?= e((string)$rp['name']) ?><?= !empty($rp['reward_type_name'])?' · '.e((string)$rp['reward_type_name']):'' ?></label>
+<?php endforeach;?>
+</div>
+<?php else:?>
+<div class="cr-empty"><h4>No active Reward Products yet</h4><p>Create a reusable Reward first, then return here to attach it.</p><a class="cr-btn" href="<?= e(url('/rewards.php?merchant='.$merchantId.'#reward-editor')) ?>">Create Reward Product</a></div>
+<?php endif;?>
+</fieldset>
+
+<label class="cr-check"><input type="checkbox" name="profile_visible" value="1"<?= !isset($editCampaign['profile_visible'])||!empty($editCampaign['profile_visible'])?' checked':'' ?>> Publish active Campaign on Owner Profile</label>
+<button class="cr-btn primary">Save Campaign</button>
+</form>
+<script>
+(function(){
+ const select=document.getElementById('campaignTypeSelect'),help=document.getElementById('campaignTypeHelp'),cta=document.getElementById('campaignCtaInput');
+ if(!select||!help||!cta)return;
+ let autoCta=cta.value.trim()==='';
+ const render=()=>{
+   const option=select.selectedOptions[0];if(!option)return;
+   const timing=String(option.dataset.rewardTiming||'manual').replaceAll('_',' ');
+   const requires=option.dataset.requiresReward==='1'?' · Reward required':'';
+   help.textContent=(option.dataset.description||'')+' · Reward timing: '+timing+requires;
+   if(autoCta)cta.value=option.dataset.defaultCta||'Continue';
+ };
+ cta.addEventListener('input',()=>{autoCta=false;});
+ select.addEventListener('change',()=>{autoCta=true;render();});
+ render();
+})();
+</script>
+<?php endif;?></section>
 
 <section class="cr-card"><header><div><span>Merchant access</span><h2>Owners & Team</h2></div></header><div class="cr-list"><?php foreach($members as $member):?><article><div><strong><?= e((string)$member['display_name']) ?></strong><small><?= e((string)$member['email']) ?> · <?= e(ucwords(str_replace('_',' ',(string)($member['effective_role']??$member['member_role'])))) ?><?= !empty($member['team_scope_active'])?' · Merchant Team':'' ?></small></div><?php if($canOwn&&(int)$member['user_id']!==$uid):?><form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="merchant_member_remove"><input type="hidden" name="merchant_id" value="<?= $merchantId ?>"><input type="hidden" name="member_user_id" value="<?= (int)$member['user_id'] ?>"><button>Remove direct access</button></form><?php endif;?></article><?php endforeach;?></div><?php if($canOwn):?><form method="post" class="cr-form cr-subform"><?= csrf_field() ?><input type="hidden" name="action" value="merchant_member_save"><input type="hidden" name="merchant_id" value="<?= $merchantId ?>"><h3>Add or update direct Merchant role</h3><label>VP3 email<input name="member_email" type="email" required></label><label>Merchant role<select name="member_role"><?php foreach(campaigns_rewards_merchant_roles_v100() as $role=>$label):?><option value="<?= e($role) ?>"><?= e($label) ?></option><?php endforeach;?></select></label><button class="cr-btn">Save role</button></form><?php endif;?><p class="cr-help">Direct Merchant roles and Merchant Team scope are independent. Removing a direct Administrator never restores admin authority through Team scope.</p></section>
 <?php endif;?>
