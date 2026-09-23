@@ -25,6 +25,9 @@ const docs=read('docs/VP3_COGNITIVE_PORTFOLIO_V2480.md');
 
 const claimStart=portfolio.indexOf('function vp3_cognitive_portfolio_claim_admission_v2480');
 const claimBody=portfolio.slice(claimStart);
+const jobClaimStart=jobs.indexOf('function agent_job_claim_run_v1900');
+const jobClaimEnd=jobs.indexOf('\nfunction ',jobClaimStart+10);
+const jobClaimBody=jobs.slice(jobClaimStart,jobClaimEnd<0?jobs.length:jobClaimEnd);
 const runStart=portfolio.indexOf('function vp3_cognitive_portfolio_run_owner_v2480');
 const runBody=portfolio.slice(runStart,claimStart);
 
@@ -67,8 +70,8 @@ const checks=[
     &&!/agent_job_claim_next_v1900\(/.test(portfolio)
     &&/'worker_claim_authority'=>false/.test(portfolio)],
   ['existing job claimant asks v24.80 before leasing autonomous project work',
-    /vp3_cognitive_portfolio_claim_admission_v2480/.test(jobs)
-    &&jobs.indexOf('vp3_cognitive_portfolio_claim_admission_v2480')<jobs.indexOf('$pdo->beginTransaction()')],
+    /vp3_cognitive_portfolio_claim_admission_v2480/.test(jobClaimBody)
+    &&jobClaimBody.indexOf('vp3_cognitive_portfolio_claim_admission_v2480')<jobClaimBody.indexOf('$pdo->beginTransaction()')],
   ['portfolio failure cannot deadlock already-authorized durable work',
     /Portfolio coordination is an admission policy/.test(jobs)
     &&/Fail open/.test(jobs)],
