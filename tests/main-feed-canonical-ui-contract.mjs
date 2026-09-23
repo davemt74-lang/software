@@ -53,6 +53,7 @@ assert.match(mainSidebar, /!isset\(\$mainSidebarPrimaryKeys\[\(string\)\(\$link\
 assert.match(mainSidebar, /Campaigns and Rewards are intentionally available in both Plan & Sell and/, 'Campaigns and Rewards must document intentional dual navigation');
 assert.match(mainSidebar, /array_reverse\(\['campaigns','rewards'\]\)/, 'Campaigns and Rewards must both be restored into the bottom user menu');
 assert.doesNotMatch(mainSidebar, /reward_wallet.*Reward Wallet/, 'Reward Wallet must not return as a sidebar destination');
+assert.doesNotMatch(mainSidebar, /reward-sidebar-subnav|data-reward-tray-tab|data-reward-count/, 'INBOX SENT CLAIMED must stay in the right-column header, not the left sidebar');
 assert.match(mainSidebar, /class="chat-history-heading"[\s\S]*id="newChatButton"[\s\S]*data-chat-view-target="chat"/, 'Canonical sidebar must preserve Main Feed New Chat behavior in the Chats heading');
 assert.match(mainSidebar, /class="chat-history-new" id="newChatButton"/, 'Canonical Main Feed New Chat action must use the compact Chats-heading plus control');
 assert.match(mainSidebar, /id="chatHistory"[\s\S]*data-conversation-id/, 'Canonical sidebar must own recent Chat history rendering when supplied');
