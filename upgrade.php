@@ -86,6 +86,7 @@ function vp3_upgrade_complete(): bool
         && vp3_plugin_schema_ready_v320()
         && vp3_plugin_lifecycle_v360_ready()
         && campaigns_rewards_schema_ready_v100()
+        && campaigns_rewards_platform_schema_ready_v100()
         && vp3_social_schema_ready_v320()
         && vp3_human_messaging_v370_ready()
         && vp3_browser_share_schema_ready_v2010()
@@ -278,6 +279,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             profile_agent_ensure_schema();
             personal_capability_ensure_schema_v242();
             crm_v180_ensure_schema();
+            campaigns_rewards_platform_ensure_schema_v100($pdo);
+            campaigns_rewards_ensure_schema_v100($pdo);
             video_meeting_ensure_schema_v1800($pdo);
             video_meeting_transcription_ensure_schema_v1800($pdo);
             video_meeting_intelligence_ensure_schema_v1820($pdo);
