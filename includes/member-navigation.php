@@ -79,6 +79,7 @@ function member_navigation_active_key(?string $scriptName = null): string
         'scheduling.php'=>'scheduling',
         'appointment-lifecycle.php'=>'appointment_lifecycle',
         'commerce.php'=>'commerce',
+        'campaigns.php'=>'campaigns',
         'profile-commerce-products.php'=>'profile_commerce',
         'profile-commerce-delivery.php'=>'profile_commerce_delivery',
         'profile-commerce-refund-requests.php'=>'profile_commerce_refunds',
@@ -95,7 +96,7 @@ function member_navigation_section_label(string $key): string
     return match($key){
         'home','chat','profile_agent','voice_profile'=>'Agent',
         'messages','contacts','knowledge','local_knowledge','memory','transcriptions','calendar'=>'Workspace',
-        'meetings','scheduling','appointment_lifecycle','commerce','profile_commerce','profile_commerce_delivery','profile_commerce_refunds'=>'Business',
+        'meetings','scheduling','appointment_lifecycle','commerce','campaigns','profile_commerce','profile_commerce_delivery','profile_commerce_refunds'=>'Business',
         'team','team_scheduling','team_workspaces'=>'Team',
         'music_workspace'=>'Creator',
         'account','homeserver','client_updates','plugins','subscription','token_packs','ai_usage'=>'Account',
@@ -164,6 +165,10 @@ function member_navigation_menu_links(?array $user = null): array
         $add($links,'profile_commerce_delivery','Delivery',url('/profile-commerce-delivery.php'),'agent');
         $add($links,'profile_commerce_refunds','Refund Requests',url('/profile-commerce-refund-requests.php'),'agent');
     }
+    $pdo=db();
+    if($pdo&&function_exists('campaigns_rewards_user_has_access_v100')){
+        try{if(campaigns_rewards_user_has_access_v100($pdo,$user))$add($links,'campaigns','Campaigns & Rewards',url('/campaigns.php'),'agent');}catch(Throwable $e){}
+    }
     if(member_navigation_entitled($user,'transcription.access',member_navigation_package_permission($user,'artist_listening.access',has_permission('artist_listening.access',$user))))$add($links,'transcriptions','My Transcriptions',url('/artist-listening.php'),'identity');
     if(member_navigation_entitled($user,'voice.access',personal_capability_has_v242('voice_profile.access',$user)))$add($links,'voice_profile','Voice Profile',url('/voice-profile.php'),'agent');
 
@@ -173,7 +178,6 @@ function member_navigation_menu_links(?array $user = null): array
         if($accountAllowed&&function_exists('agent_team_scheduling_schema_ready_v600')&&agent_team_scheduling_schema_ready_v600())$add($links,'team_scheduling','Team Scheduling',url('/team-scheduling.php'),'collaboration');
     }
 
-    $pdo=db();
     $musicEnabled=function_exists('music_workspace_enabled_v320')?music_workspace_enabled_v320($user):false;
     $musicWorkspaces=[];
     if($pdo&&function_exists('music_workspace_resources_v330_accessible_workspaces')){
