@@ -27,7 +27,17 @@ function agent_commerce_mark_paid_v800(PDO $pdo,int $orderId,string $provider,st
         $dispatch=$from==='awaiting_payment'?'paid':($remaining===0?'paid_in_full':'payment_updated');
         if($owns)$pdo->commit();
     }catch(Throwable $e){if($owns&&$pdo->inTransaction())$pdo->rollBack();throw $e;}
-    $fresh=agent_commerce_order_v800($pdo,$orderId)?:throw new RuntimeException('Commerce order could not be reloaded.');if($dispatch!=='')agent_commerce_dispatch_fulfillment_v800($pdo,$fresh,$dispatch);if(function_exists('profile_conversion_commerce_order_v179'))profile_conversion_commerce_order_v179($pdo,$fresh);return $fresh;
+    $fresh=agent_commerce_order_v800($pdo,$orderId)?:throw new RuntimeException('Commerce order could not be reloaded.');
+    if($dispatch!=='')agent_commerce_dispatch_fulfillment_v800($pdo,$fresh,$dispatch);
+    if(function_exists('profile_conversion_commerce_order_v179'))profile_conversion_commerce_order_v179($pdo,$fresh);
+    if((string)($fresh['payment_status']??'')==='paid'&&function_exists('campaigns_rewards_automation_external_event_v119')){
+        try{campaigns_rewards_automation_external_event_v119($pdo,'purchase_completed',[
+            'owner_user_id'=>(int)($fresh['owner_user_id']??0),'payer_email'=>(string)($fresh['payer_email']??''),
+            'order_id'=>(int)($fresh['id']??0),'order_number'=>(string)($fresh['order_number']??''),
+            'amount_paid_cents'=>(int)($fresh['amount_paid_cents']??0),'currency'=>(string)($fresh['currency']??''),
+        ],'commerce-order:'.(int)($fresh['id']??0).':paid');}catch(Throwable $e){error_log('Campaign automation commerce bridge failed: '.$e->getMessage());}
+    }
+    return $fresh;
 }
 function agent_commerce_expire_one_v800(PDO $pdo,array $order): void
 {
