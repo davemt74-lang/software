@@ -118,6 +118,7 @@ $memberHeaderActions=implode(' ',$actions);
 <body class="cr-page"><div class="chat-app"><?php $workspaceSidebarUser=$user;$workspaceSidebarActive='campaigns';require __DIR__.'/includes/workspace-sidebar-v82.php'; ?><div class="chat-sidebar-backdrop" id="chatSidebarBackdrop"></div>
 <main class="chat-main cr-main"><?php require __DIR__.'/includes/member-header.php'; ?><div class="cr-wrap">
 <?php if($notice!==''):?><div class="cr-notice success"><?= e($notice) ?></div><?php endif;?><?php if($error!==''):?><div class="cr-notice error"><?= e($error) ?></div><?php endif;?>
+<?php if(is_array($fulfillmentOnce)&&!empty($fulfillmentOnce['credential'])):?><div class="cr-notice success"><strong>Reward Credential:</strong> <code><?= e((string)$fulfillmentOnce['credential']) ?></code> · <?= e((string)$fulfillmentOnce['campaign']) ?>. Copy it now; only its hash is stored.</div><?php endif;?>
 
 <section class="cr-toolbar"><div><strong>Merchant workspace</strong><span>Business identity is separate from your VP3 login; Team scope and direct Merchant roles remain independent.</span></div><?php if($merchants):?><form method="get"><select name="merchant" onchange="this.form.submit()"><?php foreach($merchants as $m):?><option value="<?= (int)$m['id'] ?>"<?= (int)$m['id']===$merchantId?' selected':'' ?>><?= e((string)$m['name']) ?> · <?= e(ucwords(str_replace('_',' ',(string)$m['access_role']))) ?></option><?php endforeach;?></select></form><?php endif;?></section>
 
@@ -213,6 +214,32 @@ $memberHeaderActions=implode(' ',$actions);
 })();
 </script>
 <?php endif;?></section>
+
+<section class="cr-card" id="campaign-participants">
+<header><div><span>Participation</span><h2>Campaign fulfillment</h2></div><small><?= number_format(count($recentEnrollments)) ?> recent</small></header>
+<p class="cr-help">Triggered and verification-gated Campaign Types land here. Verify the condition, then issue one of that Campaign's attached Rewards. Immediate Campaigns are completed automatically when their Reward is issued.</p>
+<div class="cr-list">
+<?php foreach($recentEnrollments as $enrollment): $options=$campaignRewardOptions[(int)$enrollment['campaign_id']]??[]; ?>
+<article>
+<div>
+<strong><?= e((string)($enrollment['contact_name']?:$enrollment['contact_email']?:'Campaign participant')) ?></strong>
+<small><?= e((string)$enrollment['campaign_name']) ?> · <?= e((string)$enrollment['campaign_type_name']) ?> · <?= e(ucwords(str_replace('_',' ',(string)$enrollment['status']))) ?> · <?= e(date('M j, Y g:i A',strtotime((string)$enrollment['enrolled_at']))) ?> UTC</small>
+</div>
+<?php if($canRewardIssue&&$canCampaignEdit&&(string)$enrollment['status']!=='completed'&&$options):?>
+<form method="post" class="cr-inline"><?= csrf_field() ?>
+<input type="hidden" name="action" value="campaign_fulfill">
+<input type="hidden" name="merchant_id" value="<?= $merchantId ?>">
+<input type="hidden" name="campaign_id" value="<?= (int)$enrollment['campaign_id'] ?>">
+<input type="hidden" name="enrollment_id" value="<?= (int)$enrollment['id'] ?>">
+<select name="reward_product_id" required><?php foreach($options as $rewardOption):?><option value="<?= (int)$rewardOption['id'] ?>"><?= e((string)$rewardOption['name']) ?></option><?php endforeach;?></select>
+<button>Fulfill + Issue</button>
+</form>
+<?php elseif((string)$enrollment['status']!=='completed'&&!$options):?><small>No active Reward is attached to this Campaign.</small><?php endif;?>
+</article>
+<?php endforeach;?>
+<?php if(!$recentEnrollments):?><p>No Campaign participation yet.</p><?php endif;?>
+</div>
+</section>
 
 <section class="cr-card"><header><div><span>Merchant access</span><h2>Owners & Team</h2></div></header><div class="cr-list"><?php foreach($members as $member):?><article><div><strong><?= e((string)$member['display_name']) ?></strong><small><?= e((string)$member['email']) ?> · <?= e(ucwords(str_replace('_',' ',(string)($member['effective_role']??$member['member_role'])))) ?><?= !empty($member['team_scope_active'])?' · Merchant Team':'' ?></small></div><?php if($canOwn&&(int)$member['user_id']!==$uid):?><form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="merchant_member_remove"><input type="hidden" name="merchant_id" value="<?= $merchantId ?>"><input type="hidden" name="member_user_id" value="<?= (int)$member['user_id'] ?>"><button>Remove direct access</button></form><?php endif;?></article><?php endforeach;?></div><?php if($canOwn):?><form method="post" class="cr-form cr-subform"><?= csrf_field() ?><input type="hidden" name="action" value="merchant_member_save"><input type="hidden" name="merchant_id" value="<?= $merchantId ?>"><h3>Add or update direct Merchant role</h3><label>VP3 email<input name="member_email" type="email" required></label><label>Merchant role<select name="member_role"><?php foreach(campaigns_rewards_merchant_roles_v100() as $role=>$label):?><option value="<?= e($role) ?>"><?= e($label) ?></option><?php endforeach;?></select></label><button class="cr-btn">Save role</button></form><?php endif;?><p class="cr-help">Direct Merchant roles and Merchant Team scope are independent. Removing a direct Administrator never restores admin authority through Team scope.</p></section>
 <?php endif;?>
