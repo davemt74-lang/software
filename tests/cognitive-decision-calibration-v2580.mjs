@@ -107,6 +107,11 @@ const checks=[
  ['deadline risk uses calibrated likely completion',
    /\$deadlineRisk=\$deadline>0&&\(\$now\+\$likelySeconds\)>\$deadline/.test(forecast)
    &&/\$likelySeconds=max\(0,\(int\)round\(\$rawLikelySeconds\*\$calibrationFactor\)\)/.test(forecast)],
+ ['snapshot capture gets canonical cost/token projections even without budget or value configuration',
+   /fallbackProjection=/.test(decision)
+   &&/vp3_cognitive_budget_goal_projection_v2560/.test(decision)
+   &&/'cost_token_projection_capture_does_not_require_budget_or_value_profile'=>true/.test(release)
+   &&/'projection_capture_does_not_create_governance_policy'=>true/.test(release)],
  ['v25.60 retains raw cost and token projections and calibrates only projected remainder',
    /raw_cost_micros/.test(budget)&&/raw_tokens/.test(budget)
    &&/cost_calibration_factor/.test(budget)&&/token_calibration_factor/.test(budget)
