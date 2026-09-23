@@ -91,7 +91,7 @@ Value reliability is different: for each value profile it uses the **expected va
 
 No forecast/cost/token calibration factor changes behavior before at least **5 independent settled goals** provide valid evidence for that metric. Value reliability requires at least **5 independently verified value profiles with settled decision snapshots**.
 
-A valid observed/predicted ratio of **0** is real evidence and is not discarded; the final factor is still clamped to the bounded range.
+A valid observed/predicted ratio of **0** is real evidence and is not discarded; the final factor is still clamped to the bounded range. If predicted cost/tokens were zero but actual usage is positive, v25.80 records that as strong underprediction evidence rather than dropping the sample because of a zero denominator.
 
 Rolling calibration window: **180 days**.
 
