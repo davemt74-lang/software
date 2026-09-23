@@ -21,7 +21,7 @@ function campaigns_rewards_platform_required_tables_v100(): array
         'campaign_landing_pages','campaign_profile_publications','campaign_public_sessions','campaign_public_events',
         'campaign_messages','campaign_deliveries',
         'reward_types','reward_products','reward_product_variants','campaign_reward_sets','campaign_reward_set_items',
-        'reward_issuances','reward_claims','reward_claim_attempts','reward_claim_adjustments',
+        'reward_issuances','reward_transfers','reward_claims','reward_claim_attempts','reward_claim_adjustments',
         'reward_inventory_balances','reward_inventory_ledger',
         'loyalty_programs','loyalty_tiers','loyalty_accounts','loyalty_ledger',
         'campaign_automation_rules','campaign_rule_executions','campaigns_rewards_object_bindings','campaign_activity_events',
@@ -289,6 +289,30 @@ function campaigns_rewards_platform_ensure_schema_v100(?PDO $pdo=null): void
     $exec("CREATE TABLE IF NOT EXISTS reward_issuances (
       id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,public_id CHAR(36) NOT NULL,merchant_id BIGINT UNSIGNED NOT NULL,campaign_id BIGINT UNSIGNED NOT NULL,campaign_version_id BIGINT UNSIGNED NOT NULL,campaign_enrollment_id BIGINT UNSIGNED NULL,campaign_case_id BIGINT UNSIGNED NULL,reward_product_id BIGINT UNSIGNED NOT NULL,reward_variant_id BIGINT UNSIGNED NULL,inventory_balance_id BIGINT UNSIGNED NULL,recipient_contact_id BIGINT UNSIGNED NOT NULL,recipient_user_id INT UNSIGNED NULL,issued_by_user_id INT UNSIGNED NULL,issued_by_actor_type VARCHAR(30) NOT NULL DEFAULT 'user',environment VARCHAR(12) NOT NULL DEFAULT 'production',status VARCHAR(20) NOT NULL DEFAULT 'issued',credential_hash CHAR(64) NOT NULL,credential_last4 VARCHAR(8) NOT NULL,quantity INT UNSIGNED NOT NULL DEFAULT 1,remaining_quantity INT UNSIGNED NOT NULL DEFAULT 1,face_value_minor BIGINT UNSIGNED NULL,currency CHAR(3) NOT NULL DEFAULT 'USD',terms_snapshot_json LONGTEXT NOT NULL,issued_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,sent_at DATETIME NULL,viewed_at DATETIME NULL,claimed_at DATETIME NULL,expires_at DATETIME NULL,voided_at DATETIME NULL,created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       UNIQUE KEY uq_reward_issuance_public (public_id),UNIQUE KEY uq_reward_credential_hash (credential_hash),INDEX idx_wallet_contact (recipient_contact_id,status,expires_at,id),INDEX idx_reward_issuance_campaign (campaign_id,status,id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+    $exec("CREATE TABLE IF NOT EXISTS reward_transfers (
+      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+      public_id CHAR(36) NOT NULL,
+      merchant_id BIGINT UNSIGNED NOT NULL,
+      reward_issuance_id BIGINT UNSIGNED NOT NULL,
+      from_contact_id BIGINT UNSIGNED NOT NULL,
+      from_user_id INT UNSIGNED NULL,
+      to_contact_id BIGINT UNSIGNED NOT NULL,
+      to_user_id INT UNSIGNED NULL,
+      sent_by_user_id INT UNSIGNED NOT NULL,
+      delivery_mode VARCHAR(30) NOT NULL DEFAULT 'crm',
+      status VARCHAR(20) NOT NULL DEFAULT 'sent',
+      note VARCHAR(500) NOT NULL DEFAULT '',
+      idempotency_key VARCHAR(190) NOT NULL,
+      transferred_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE KEY uq_reward_transfer_public (public_id),
+      UNIQUE KEY uq_reward_transfer_idempotency (reward_issuance_id,idempotency_key),
+      INDEX idx_reward_transfer_sender (sent_by_user_id,transferred_at,id),
+      INDEX idx_reward_transfer_from (from_user_id,transferred_at,id),
+      INDEX idx_reward_transfer_to (to_user_id,transferred_at,id),
+      INDEX idx_reward_transfer_issuance (reward_issuance_id,id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 
     $exec("CREATE TABLE IF NOT EXISTS reward_claims (
