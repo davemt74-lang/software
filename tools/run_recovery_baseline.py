@@ -48,6 +48,7 @@ NODE_TESTS = [
     'tests/cognitive-turn-v2430.mjs',
     'tests/cognitive-continuity-v2440.mjs',
     'tests/cognitive-followthrough-v2450.mjs',
+    'tests/cognitive-supervision-v2460.mjs',
     'tests/knowledge-agent-context-v162-browser-contract.mjs',
     'tests/agent-brain-learning-history-v317.mjs',
     'tests/chat-onboarding-v241.mjs',

@@ -94,31 +94,36 @@ function vp3_cognitive_followthrough_reason_v2450(array $item): string
     };
 }
 
-function vp3_cognitive_followthrough_event_key_v2450(string $namespace,array $item): string
+function vp3_cognitive_followthrough_event_key_v2450(string $namespace,array $item,array $supervision=[]): string
 {
-    // Stable for a continuity item while it remains in the same semantic state.
-    // This gives v24.10 receipts and Browser v21.40 delivery a shared dedupe key.
+    // Stable while both continuity and supervision stay in the same semantic
+    // state. A meaningful health transition (for example working → expired
+    // lease) gets a new key and can surface once through existing ledgers.
     $basis=implode('|',[
         $namespace,
         (string)($item['ref']??''),
         (string)($item['state']??''),
         !empty($item['requires_user'])?'user':'',
         !empty($item['requires_approval'])?'approval':'',
+        (string)($supervision['health_state']??''),
     ]);
     return 'followthrough:'.hash('sha256',$basis);
 }
 
-function vp3_cognitive_followthrough_candidate_v2450(string $namespace,array $item): array
+function vp3_cognitive_followthrough_candidate_v2450(string $namespace,array $item,array $supervision=[]): array
 {
     $state=(string)($item['state']??'planned');
     $sourceSurface=vp3_cognitive_followthrough_source_surface_v2450($item);
     $targetSurface=vp3_cognitive_followthrough_target_surface_v2450($item);
-    $requiresApproval=!empty($item['requires_approval']);
-    $requiresUser=!empty($item['requires_user'])||$requiresApproval;
+    $requiresApproval=!empty($item['requires_approval'])||!empty($supervision['requires_approval']);
+    $requiresUser=!empty($item['requires_user'])||!empty($supervision['requires_user'])||$requiresApproval;
     $title=vp3_cognitive_text_v500($item['title']??'Open VP3 work',190);
     $summary=vp3_cognitive_text_v500($item['summary']??vp3_cognitive_followthrough_reason_v2450($item),500);
-    $eventKey=vp3_cognitive_followthrough_event_key_v2450($namespace,$item);
-    $handoffReason=vp3_cognitive_followthrough_reason_v2450($item);
+    if(!empty($supervision['reason']))$summary=vp3_cognitive_text_v500($supervision['reason'],500);
+    $eventKey=vp3_cognitive_followthrough_event_key_v2450($namespace,$item,$supervision);
+    $handoffReason=!empty($supervision['reason'])
+        ?vp3_cognitive_text_v500($supervision['reason'],500)
+        :vp3_cognitive_followthrough_reason_v2450($item);
     $type=$requiresApproval?'followthrough_approval_required'
         :($requiresUser?'followthrough_response_required'
         :(in_array($state,['repair_needed','blocked'],true)?'followthrough_failure':'followthrough_update'));
@@ -134,7 +139,10 @@ function vp3_cognitive_followthrough_candidate_v2450(string $namespace,array $it
         'continuity_state'=>$state,
         'title'=>$title,
         'body'=>$summary!==''?$summary:$handoffReason,
-        'priority'=>vp3_cognitive_followthrough_priority_v2450($state),
+        'priority'=>max(
+            vp3_cognitive_followthrough_priority_v2450($state),
+            max(0,min(100,(int)($supervision['score']??0)))
+        ),
         'requires_user_response'=>$requiresUser,
         'requires_approval'=>$requiresApproval,
         'source_surface'=>$sourceSurface,
@@ -153,6 +161,12 @@ function vp3_cognitive_followthrough_candidate_v2450(string $namespace,array $it
         'task_ref'=>(string)($item['task_ref']??''),
         'project_ref'=>(string)($item['project_ref']??''),
         'resume_action'=>(string)($item['resume_action']??''),
+        'supervision'=>$supervision?[
+            'health_state'=>(string)($supervision['health_state']??''),
+            'severity'=>(string)($supervision['severity']??''),
+            'supervisor_action'=>(string)($supervision['supervisor_action']??''),
+            'auto_reconcile'=>!empty($supervision['auto_reconcile']),
+        ]:null,
         'metadata'=>vp3_cognitive_sanitize_value_v500(is_array($item['metadata']??null)?$item['metadata']:[]),
     ];
 }
@@ -163,11 +177,20 @@ function vp3_cognitive_followthrough_candidates_v2450(
     $namespace=vp3_cognitive_validate_namespace_v500($pdo,$user,$namespace);
     if(!function_exists('vp3_cognitive_continuity_snapshot_v2440'))return [];
     try{$snapshot=vp3_cognitive_continuity_snapshot_v2440($pdo,$user,$namespace);}catch(Throwable $e){return [];}
+    $continuityItems=(array)($snapshot['items']??[]);
+    $supervisionByRef=[];
+    if(function_exists('vp3_cognitive_supervision_assess_items_v2460')){
+        try{
+            foreach(vp3_cognitive_supervision_assess_items_v2460($pdo,$user,$namespace,$continuityItems) as $issue){
+                if(is_array($issue)&&!empty($issue['continuity_ref']))$supervisionByRef[(string)$issue['continuity_ref']]=$issue;
+            }
+        }catch(Throwable $e){}
+    }
     $out=[];$seen=[];
-    foreach((array)($snapshot['items']??[]) as $item){
+    foreach($continuityItems as $item){
         if(!is_array($item))continue;
         $ref=(string)($item['ref']??'');if($ref===''||isset($seen[$ref]))continue;
-        $candidate=vp3_cognitive_followthrough_candidate_v2450($namespace,$item);
+        $candidate=vp3_cognitive_followthrough_candidate_v2450($namespace,$item,$supervisionByRef[$ref]??[]);
         $seen[$ref]=true;$out[]=$candidate;
         if(count($out)>=VP3_COGNITIVE_FOLLOWTHROUGH_MAX_CANDIDATES_V2450)break;
     }

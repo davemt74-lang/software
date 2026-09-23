@@ -57,7 +57,8 @@ const checks=[
     /VP3_COGNITIVE_CONTINUITY_MAX_ITEMS_V2440=16/.test(continuity)
     &&/function vp3_cognitive_continuity_resume_v2440/.test(continuity)],
   ['v24.20 Working Context includes one continuity section',
-    /'live_session','continuity','conversation'/.test(context)
+    context.indexOf("'live_session'")<context.indexOf("'continuity'")
+    &&context.indexOf("'continuity'")<context.indexOf("'conversation'")
     &&/'continuity'=>1/.test(context)
     &&/vp3_cognitive_continuity_context_item_v2440/.test(context)],
   ['continuity remains data-only inside Working Context',

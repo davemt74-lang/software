@@ -360,6 +360,9 @@
     const turn = brain.turn_state || {};
     const continuity = brain.continuity || {};
     const followthrough = brain.followthrough || {};
+    const supervision = brain.supervision || {};
+    const supervisionIssues = Array.isArray(supervision.issues) ? supervision.issues : [];
+    const supervisionByRef = new Map(supervisionIssues.map(item => [String(item.continuity_ref || ''), item]));
     const followthroughItems = Array.isArray(followthrough.items) ? followthrough.items : [];
     const followthroughByRef = new Map(followthroughItems.map(item => [String(item.continuity_ref || ''), item]));
     const continuityItems = Array.isArray(continuity.items) ? continuity.items : [];
@@ -454,11 +457,13 @@
           ${brainMetric('Open items', Number(continuity.open_count || continuityItems.length))}
           ${brainMetric('Waiting on you', Number(continuity.waiting_for_user || 0))}
           ${brainMetric('Cross-surface', Number(followthrough.counts?.cross_surface || 0))}
+          ${brainMetric('Supervision', Number(supervision.counts?.critical || 0) + Number(supervision.counts?.high || 0))}
           ${brainMetric('Focus', continuityStateLabel(continuityFocus.state || ''))}
         </div>
         <div class="chat-brain-memory-list">
           ${continuityItems.map(item => {
             const handoff = followthroughByRef.get(String(item.ref || '')) || {};
+            const supervised = supervisionByRef.get(String(item.ref || '')) || {};
             const source = String(handoff.source_surface || '').replaceAll('_',' ');
             const target = String(handoff.target_surface || '').replaceAll('_',' ');
             const handoffState = String(handoff.handoff_status || '').replaceAll('_',' ');
@@ -466,9 +471,30 @@
               <span>${esc(continuityStateLabel(item.state))}</span>
               <strong>${esc(item.title || item.ref || 'Open work')}</strong>
               <p>${esc(item.summary || item.resume_action || '')}</p>
-              <small>${esc(String(item.kind || '').replaceAll('_',' '))}${item.blocked_by ? ` · ${Number(item.blocked_by)} blocker${Number(item.blocked_by) === 1 ? '' : 's'}` : ''}${source && target ? ` · ${esc(source)} → ${esc(target)}` : ''}${handoffState ? ` · ${esc(handoffState)}` : ''}</small>
+              <small>${esc(String(item.kind || '').replaceAll('_',' '))}${item.blocked_by ? ` · ${Number(item.blocked_by)} blocker${Number(item.blocked_by) === 1 ? '' : 's'}` : ''}${source && target ? ` · ${esc(source)} → ${esc(target)}` : ''}${handoffState ? ` · ${esc(handoffState)}` : ''}${supervised.health_state ? ` · ${esc(String(supervised.health_state).replaceAll('_',' '))}` : ''}</small>
             </article>`;
           }).join('')}
+        </div>
+      </section>` : ''}
+
+      ${supervisionIssues.length ? `
+      <section class="chat-activity-section">
+        <div class="chat-activity-section-head">
+          <div><strong>Work Supervision</strong><span>v24.60 monitors stalls, failures, dependencies and verification without bypassing execution or approval controls.</span></div>
+        </div>
+        <div class="chat-brain-metrics">
+          ${brainMetric('Critical', Number(supervision.counts?.critical || 0))}
+          ${brainMetric('High', Number(supervision.counts?.high || 0))}
+          ${brainMetric('Needs you', Number(supervision.counts?.requires_user || 0))}
+          ${brainMetric('Auto-reconcile', Number(supervision.counts?.auto_reconcile || 0))}
+        </div>
+        <div class="chat-brain-memory-list">
+          ${supervisionIssues.map(issue => `<article>
+            <span>${esc(String(issue.severity || 'info'))}</span>
+            <strong>${esc(issue.title || issue.continuity_ref || 'Supervised work')}</strong>
+            <p>${esc(issue.reason || '')}</p>
+            <small>${esc(String(issue.health_state || '').replaceAll('_',' '))}${issue.supervisor_action ? ` · ${esc(String(issue.supervisor_action).replaceAll('_',' '))}` : ''}${issue.auto_reconcile ? ' · governed auto-reconcile' : ''}</small>
+          </article>`).join('')}
         </div>
       </section>` : ''}
 

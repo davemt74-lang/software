@@ -35,7 +35,8 @@ const checks=[
     &&/\$namespace,[\s\S]*\$item\['ref'\][\s\S]*\$item\['state'\]/.test(follow)
     &&!/updated_at/.test(follow.slice(follow.indexOf('function vp3_cognitive_followthrough_event_key_v2450'),follow.indexOf('function vp3_cognitive_followthrough_candidate_v2450')))],
   ['closed work disappears because candidates only consume open v24.40 projection',
-    /foreach\(\(array\)\(\$snapshot\['items'\]/.test(follow)
+    /\$continuityItems=\(array\)\(\$snapshot\['items'\]\?\?\[\]\)/.test(follow)
+    &&/foreach\(\$continuityItems as \$item\)/.test(follow)
     &&/status NOT IN \('completed','cancelled'\)/.test(continuity)],
   ['follow-through attention signals go through v24.10 preview',
     /vp3_cognitive_attention_preview_v2410/.test(follow)
