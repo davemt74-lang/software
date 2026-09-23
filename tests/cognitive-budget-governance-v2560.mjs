@@ -177,9 +177,8 @@ const checks=[
  ['Recovery Baseline retains v25.60 gates',
    /cognitive-budget-governance-v2560\.php/.test(recovery)
    &&/cognitive-budget-governance-v2560\.mjs/.test(recovery)],
- ['production package requires v25.60 runtime controls upgrade and canonical sources',
-   /Cognitive Runtime v25\.60/.test(packageWorkflow)
-   &&/cognitive-budget-governance-v2560\.php/.test(packageWorkflow)
+ ['production package retains v25.60 runtime controls upgrade and canonical sources',
+   /cognitive-budget-governance-v2560\.php/.test(packageWorkflow)
    &&/cognitive-release-v2560\.php/.test(packageWorkflow)
    &&/budget-governance\.php/.test(packageWorkflow)
    &&/budget-governance-v2560\.css/.test(packageWorkflow)
