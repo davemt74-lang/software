@@ -77,7 +77,7 @@ const checks=[
  ['Reward Products are reusable and attached through Reward Sets',/CREATE TABLE IF NOT EXISTS reward_products/.test(schema)&&/campaign_reward_sets/.test(schema)&&/campaign_reward_set_items/.test(schema)&&/campaigns_rewards_attach_reward_v100/.test(runtime)],
  ['Reward Issuance is the customer entitlement authority',/CREATE TABLE IF NOT EXISTS reward_issuances/.test(schema)&&/terms_snapshot_json/.test(schema)&&/campaign_version_id/.test(schema)],
  ['Wallet is a projection over Issuance and Claim state',/function campaigns_rewards_wallet_v100/.test(runtime)&&/reward_issuances/.test(runtime)&&/reward_claims/.test(runtime)&&/wallet_is_projection_not_second_ledger'=>true/.test(release)],
- ['Wallet authority can rotate and reveal a fresh one-time Reward credential',/campaigns_rewards_rotate_reward_credential_v100/.test(runtime)&&/credential_hash=\?/.test(runtime)&&/reward_tray=inbox/.test(walletPage)],
+ ['Wallet authority can rotate and reveal a fresh one-time Reward credential',/campaigns_rewards_rotate_reward_credential_v100/.test(runtime)&&/credential_hash=\?/.test(runtime)&&/reward-inbox\.php/.test(walletPage)],
  ['Reward Credential plaintext is not a persistence column',/credential_hash/.test(schema)&&/credential_last4/.test(schema)&&!/credential\s+(?:VARCHAR|TEXT|LONGTEXT)/i.test(schema)],
  ['Merchant Claim Code plaintext is not a persistence column',/code_hash/.test(schema)&&/code_last4/.test(schema)&&!/claim_code\s+(?:VARCHAR|TEXT|LONGTEXT)/i.test(schema)],
 
@@ -111,7 +111,7 @@ const checks=[
  ['Campaigns dashboard retains Merchant Location Campaign and Team controls',/merchant_update/.test(dashboard)&&/location_save/.test(dashboard)&&/campaign_save/.test(dashboard)&&/merchant_member_save/.test(dashboard)&&!/claim_code_create/.test(dashboard)&&!/make_good/.test(dashboard)],
  ['member navigation exposes separate Campaigns Rewards and Claim Terminal without Wallet sidebar item',/'campaigns','Campaigns'/.test(nav)&&/'rewards','Rewards'/.test(nav)&&/Claim Terminal/.test(nav)&&!/\$add\(\$links,'reward_wallet','Reward Wallet'/.test(nav)],
  ['Claim Terminal is authenticated',/require_login\(\)/.test(claimPage)&&/claims\.process/.test(claimPage)],
- ['legacy Reward Wallet route is authenticated and redirects to Agent Chat Inbox',/require_login\(\)/.test(walletPage)&&/chat\.php\?reward_tray=inbox/.test(walletPage)],
+ ['legacy Reward Wallet route is authenticated and redirects to dedicated Reward Inbox',/require_login\(\)/.test(walletPage)&&/reward-inbox\.php/.test(walletPage)],
 
  ['fresh setup installs canonical Campaigns platform schema after CRM',setup.indexOf('crm_v180_ensure_schema')<setup.indexOf('campaigns_rewards_platform_ensure_schema_v100')&&/campaigns_rewards_platform_ensure_schema_v100\(\$pdo\)/.test(setup)],
  ['upgrade readiness includes canonical Campaigns platform schema',/campaigns_rewards_platform_schema_ready_v100/.test(upgrade)&&/campaigns_rewards_platform_ensure_schema_v100/.test(upgrade)],
