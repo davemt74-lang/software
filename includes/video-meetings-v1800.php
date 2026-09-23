@@ -70,7 +70,7 @@ function video_meeting_ensure_schema_v1800(?PDO $pdo=null): void
       calendar_event_id BIGINT UNSIGNED NULL,
       display_name VARCHAR(190) NOT NULL DEFAULT '',
       email VARCHAR(190) NOT NULL DEFAULT '',
-      role VARCHAR(24) NOT NULL DEFAULT 'attendee',
+      `role` VARCHAR(24) NOT NULL DEFAULT 'attendee',
       invite_token CHAR(64) NOT NULL,
       invitation_status VARCHAR(24) NOT NULL DEFAULT 'invited',
       attendance_status VARCHAR(24) NOT NULL DEFAULT 'invited',
@@ -81,7 +81,7 @@ function video_meeting_ensure_schema_v1800(?PDO $pdo=null): void
       created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       UNIQUE KEY uq_video_meeting_invite (invite_token),
-      INDEX idx_video_meeting_participant_meeting (meeting_id,role,id),
+      INDEX idx_video_meeting_participant_meeting (meeting_id,`role`,id),
       INDEX idx_video_meeting_participant_user (user_id,meeting_id,id),
       INDEX idx_video_meeting_participant_email (email,meeting_id,id),
       INDEX idx_video_meeting_participant_crm (crm_contact_id,meeting_id,id),
@@ -272,7 +272,7 @@ function video_meeting_for_calendar_event_v1800(PDO $pdo,int $eventId): ?array
 function video_meeting_participants_v1800(PDO $pdo,int $meetingId): array
 {
     if($meetingId<1||!video_meeting_schema_ready_v1800($pdo))return [];
-    $stmt=$pdo->prepare('SELECT * FROM video_meeting_participants WHERE meeting_id=? ORDER BY role=\'organizer\' DESC,id');$stmt->execute([$meetingId]);
+    $stmt=$pdo->prepare('SELECT * FROM video_meeting_participants WHERE meeting_id=? ORDER BY `role`=\'organizer\' DESC,id');$stmt->execute([$meetingId]);
     return $stmt->fetchAll()?:[];
 }
 
@@ -377,7 +377,7 @@ function video_meeting_add_participant_v1800(PDO $pdo,array $meeting,array $inpu
     if($email!==''){$find=$pdo->prepare('SELECT * FROM video_meeting_participants WHERE meeting_id=? AND email=? ORDER BY id LIMIT 1');$find->execute([$meetingId,$email]);if($row=$find->fetch())return $row;}
 
     $crm=$email!==''?video_meeting_crm_contact_v1800($pdo,$email):null;$crmId=$crm?(int)$crm['id']:null;$invite=bin2hex(random_bytes(32));
-    $stmt=$pdo->prepare("INSERT INTO video_meeting_participants (meeting_id,user_id,crm_contact_id,display_name,email,role,invite_token,invitation_status,attendance_status) VALUES (?,?,?,?,?,?,?,'invited','invited')");
+    $stmt=$pdo->prepare("INSERT INTO video_meeting_participants (meeting_id,user_id,crm_contact_id,display_name,email,`role`,invite_token,invitation_status,attendance_status) VALUES (?,?,?,?,?,?,?,'invited','invited')");
     $stmt->execute([$meetingId,$userId?:null,$crmId,mb_strimwidth($displayName,0,190,''),mb_strimwidth($email,0,190,''),$role,$invite]);
     $id=(int)$pdo->lastInsertId();$stmt=$pdo->prepare('SELECT * FROM video_meeting_participants WHERE id=? LIMIT 1');$stmt->execute([$id]);$participant=$stmt->fetch();
     if(!$participant)throw new RuntimeException('Meeting participant could not be created.');
@@ -467,7 +467,7 @@ function video_meeting_access_v1800(PDO $pdo,?array $user,string $publicId='',st
     if(!$meeting)return null;
     if($userId>0){
         if($userId===(int)$meeting['owner_user_id']){
-            $stmt=$pdo->prepare("SELECT * FROM video_meeting_participants WHERE meeting_id=? AND user_id=? AND role='organizer' LIMIT 1");$stmt->execute([(int)$meeting['id'],$userId]);$participant=$stmt->fetch()?:null;
+            $stmt=$pdo->prepare("SELECT * FROM video_meeting_participants WHERE meeting_id=? AND user_id=? AND `role`='organizer' LIMIT 1");$stmt->execute([(int)$meeting['id'],$userId]);$participant=$stmt->fetch()?:null;
         }elseif(!$participant){
             $stmt=$pdo->prepare('SELECT * FROM video_meeting_participants WHERE meeting_id=? AND user_id=? LIMIT 1');$stmt->execute([(int)$meeting['id'],$userId]);$participant=$stmt->fetch()?:null;
         }
