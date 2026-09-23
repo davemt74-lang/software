@@ -305,6 +305,9 @@ function vp3_cognitive_presentation_voice_delivered_v510(PDO $pdo,array $user,st
     vp3_cognitive_presentation_state_row_v510($pdo,$user,$namespace);
     $pdo->prepare('UPDATE cognitive_presentation_state_v510 SET last_voice_notification_id=GREATEST(last_voice_notification_id,?),updated_at=UTC_TIMESTAMP() WHERE owner_user_id=? AND agent_namespace=?')
         ->execute([max(0,$throughId),(int)$user['id'],$namespace]);
+    if(function_exists('vp3_cognitive_attention_mark_latest_voice_v2410')){
+        vp3_cognitive_attention_mark_latest_voice_v2410($pdo,$user,$namespace,true);
+    }
 }
 
 function vp3_cognitive_presentation_voice_suppressed_v510(PDO $pdo,array $user,string $namespace,int $throughId): void
@@ -312,6 +315,9 @@ function vp3_cognitive_presentation_voice_suppressed_v510(PDO $pdo,array $user,s
     // A user stop/cancel is an explicit consumption decision. Advance the
     // proactive voice cursor so the same report is not announced again.
     vp3_cognitive_presentation_voice_delivered_v510($pdo,$user,$namespace,$throughId);
+    if(function_exists('vp3_cognitive_attention_mark_latest_voice_v2410')){
+        vp3_cognitive_attention_mark_latest_voice_v2410($pdo,$user,$namespace,false);
+    }
     vp3_cognitive_presentation_touch_v510($pdo,$user,$namespace);
 }
 
