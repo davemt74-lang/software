@@ -112,7 +112,7 @@ function agent_team_scheduling_ensure_schema_v600(?PDO $pdo=null): void
       pool_member_id BIGINT UNSIGNED NOT NULL,
       user_id INT UNSIGNED NOT NULL,
       canonical_booking_id BIGINT UNSIGNED NOT NULL,
-      role VARCHAR(24) NOT NULL DEFAULT 'participant',
+      `role` VARCHAR(24) NOT NULL DEFAULT 'participant',
       created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       UNIQUE KEY uq_team_booking_member (team_booking_id,user_id),
       UNIQUE KEY uq_team_booking_canonical (canonical_booking_id),
@@ -422,7 +422,7 @@ function agent_team_scheduling_create_booking_v600(PDO $pdo,array $pool,array $i
             $publicToken=bin2hex(random_bytes(32));$cancelToken=bin2hex(random_bytes(32));$assigned=(string)$pool['mode']==='round_robin'?(int)$selected[0]['user_id']:null;
             $stmt=$pdo->prepare('INSERT INTO agent_team_scheduling_bookings (workspace_owner_user_id,pool_id,assigned_user_id,created_by_agent_id,start_at_utc,end_at_utc,guest_timezone,guest_name,guest_email,guest_phone,routing_answer,status,source,public_token,cancel_token) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
             $stmt->execute([(int)$pool['workspace_owner_user_id'],(int)$pool['id'],$assigned,$agentId,$start,$end,$guestTimezone,mb_strimwidth($guestName,0,190,''),mb_strimwidth($guestEmail,0,190,''),mb_strimwidth(trim((string)($input['guest_phone']??'')),0,80,''),$routing,'confirmed',$source,$publicToken,$cancelToken]);
-            $teamBookingId=(int)$pdo->lastInsertId();$map=$pdo->prepare('INSERT INTO agent_team_scheduling_booking_members (team_booking_id,pool_member_id,user_id,canonical_booking_id,role) VALUES (?,?,?,?,?)');
+            $teamBookingId=(int)$pdo->lastInsertId();$map=$pdo->prepare('INSERT INTO agent_team_scheduling_booking_members (team_booking_id,pool_member_id,user_id,canonical_booking_id,`role`) VALUES (?,?,?,?,?)');
             foreach($canonical as $item)$map->execute([$teamBookingId,(int)$item['member']['id'],(int)$item['member']['user_id'],(int)$item['booking']['id'],(string)$item['role']]);
             if((string)$pool['mode']==='round_robin')$pdo->prepare('UPDATE agent_team_scheduling_members SET assignment_count=assignment_count+1,last_assigned_at=NOW() WHERE id=? AND pool_id=?')->execute([(int)$selected[0]['id'],(int)$pool['id']]);
             if($started)$pdo->commit();
