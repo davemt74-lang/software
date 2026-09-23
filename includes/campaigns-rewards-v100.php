@@ -845,7 +845,12 @@ function campaigns_rewards_team_membership_status_v100(PDO $pdo,int $ownerUserId
 
 function campaigns_rewards_cognitive_object_v100(PDO $pdo,array $user,array $ref): ?array
 {
-    $uid=(int)($user['id']??0);$type=(string)($ref['type']??'');$public=(string)($ref['id']??'');
+    $type=(string)($ref['type']??'');
+    if(in_array($type,['merchant','merchant_location','merchant_team_member','campaign','campaign_enrollment','campaign_case','reward_product','reward_issuance','reward_claim','claim_code','loyalty_account'],true)
+        &&function_exists('campaigns_rewards_cognitive_object_canonical_v100')){
+        return campaigns_rewards_cognitive_object_canonical_v100($pdo,$user,$ref);
+    }
+    $uid=(int)($user['id']??0);$public=(string)($ref['id']??'');
     if($uid<1||$public===''||!campaigns_rewards_schema_ready_v100($pdo))return null;
     $map=[
         'merchant_account'=>['table'=>'campaign_merchant_accounts_v100','merchant'=>'id'],
@@ -869,9 +874,13 @@ function campaigns_rewards_cognitive_permission_v100(PDO $pdo,array $user,string
 
 function campaigns_rewards_cognitive_context_v100(PDO $pdo,array $user,string $agentNamespace,array $ref,array $options=[]): array
 {
+    $type=(string)($ref['type']??'');
+    if(in_array($type,['merchant','merchant_location','merchant_team_member','campaign','campaign_enrollment','campaign_case','reward_product','reward_issuance','reward_claim','claim_code','loyalty_account'],true)
+        &&function_exists('campaigns_rewards_cognitive_context_canonical_v100')){
+        return campaigns_rewards_cognitive_context_canonical_v100($pdo,$user,$ref);
+    }
     $row=campaigns_rewards_cognitive_object_v100($pdo,$user,$ref);
     if(!$row)throw new RuntimeException('Campaigns & Rewards object is unavailable.');
-    $type=(string)$ref['type'];
     $allowed=match($type){
         'merchant_account'=>['public_id','name','slug','description','website_url','status','profile_user_id','created_at','updated_at'],
         'merchant_location'=>['public_id','merchant_account_id','name','city','region','country','is_primary','status','created_at','updated_at'],
@@ -887,8 +896,12 @@ function campaigns_rewards_cognitive_context_v100(PDO $pdo,array $user,string $a
 
 function campaigns_rewards_cognitive_relationships_v100(PDO $pdo,array $user,string $agentNamespace,array $ref,array $options=[]): array
 {
-    $row=campaigns_rewards_cognitive_object_v100($pdo,$user,$ref);if(!$row)return [];
-    $type=(string)$ref['type'];$edges=[];$scope=(string)($ref['scope']??'workspace');
+    $type=(string)($ref['type']??'');
+    if(in_array($type,['merchant','merchant_location','merchant_team_member','campaign','campaign_enrollment','campaign_case','reward_product','reward_issuance','reward_claim','claim_code','loyalty_account'],true)
+        &&function_exists('campaigns_rewards_cognitive_relationships_canonical_v100')){
+        return campaigns_rewards_cognitive_relationships_canonical_v100($pdo,$user,$ref);
+    }
+    $row=campaigns_rewards_cognitive_object_v100($pdo,$user,$ref);if(!$row)return [];$edges=[];$scope=(string)($ref['scope']??'workspace');
     $add=static function(array &$edges,string $relation,string $type,mixed $id,string $scope): void{
         if((string)$id==='')return;$edges[]=['relation'=>$relation,'object_ref'=>campaigns_rewards_ref_v100($type,$id,$scope),'provenance'=>'campaigns_rewards_v100','confidence'=>1,'confirmation_state'=>'deterministic'];
     };
