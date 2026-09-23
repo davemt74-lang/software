@@ -1,0 +1,106 @@
+<?php
+declare(strict_types=1);
+
+/**
+ * VP3 Cognitive Runtime v25.60 — Budget Guardrails & Spend Governance release gate.
+ */
+const VP3_COGNITIVE_RELEASE_V2560='vp3-cognitive-budget-governance-release-v2560-20260923';
+
+function vp3_cognitive_release_manifest_v2560(): array
+{
+    return [
+        'build'=>VP3_COGNITIVE_RELEASE_V2560,
+        'release_phase'=>'v25.60',
+        'previous_release'=>'v25.50',
+        'scope'=>'budget_guardrails_and_spend_governance',
+        'durable_governance'=>[
+            'policies'=>'cognitive_budget_policies_v2560',
+            'decisions'=>'cognitive_budget_decisions_v2560_append_only',
+            'usage_ledger'=>'ai_execution_ledger_v032',
+            'token_balance'=>'subscription_ai_balance',
+        ],
+        'authority_chain'=>[
+            'budget_governance'=>'cognitive_budget_governance_v2560',
+            'economics'=>'cognitive_economics_v2550_projection',
+            'commitment_protection'=>'cognitive_commitment_protection_v2540',
+            'replanning'=>'cognitive_replanning_v2530_recovery_overlay',
+            'resource_budget'=>'cognitive_resource_budget_v2520_admission_policy',
+            'strategic_optimization'=>'cognitive_optimization_v2510_projection_only',
+            'forecast_and_sequence'=>'cognitive_forecast_v2490',
+            'portfolio_admission'=>'cognitive_portfolio_v2480',
+            'autonomous_mutations'=>'cognitive_autonomy_v2470',
+            'claims_leases_execution_receipts'=>'agent_job_engine_v1900',
+            'live_capability_readiness'=>'agent_worker_runtime_v1910',
+        ],
+        'invariants'=>[
+            'default_budget_created'=>false,
+            'budget_requires_explicit_user_policy'=>true,
+            'second_usage_ledger'=>false,
+            'second_billing_ledger'=>false,
+            'second_token_ledger'=>false,
+            'second_token_reservation_system'=>false,
+            'second_scheduler'=>false,
+            'second_job_queue'=>false,
+            'second_worker'=>false,
+            'second_lease_system'=>false,
+            'second_receipt_ledger'=>false,
+            'policy_store_is_governance_configuration_only'=>true,
+            'decision_store_is_append_only_governance_audit'=>true,
+            'usage_is_derived_from_ai_execution_ledger'=>true,
+            'soft_policy_never_blocks_execution'=>true,
+            'hard_policy_only_holds_autonomous_cloud_work'=>true,
+            'manual_work_not_budget_blocked'=>true,
+            'supervised_work_not_budget_blocked'=>true,
+            'homeserver_work_not_budget_blocked_by_cloud_policy'=>true,
+            'already_executing_work_not_cancelled'=>true,
+            'unknown_pricing_under_hard_cost_policy_requires_user'=>true,
+            'hard_budget_commitment_conflict_is_surfaced'=>true,
+            'protected_commitment_is_not_silently_dropped'=>true,
+            'override_requires_explicit_user_decision'=>true,
+            'override_expires_no_later_than_budget_period'=>true,
+            'override_does_not_mutate_budget_or_token_balance'=>true,
+            'budget_cannot_change_executor'=>true,
+            'budget_cannot_change_deadline'=>true,
+            'budget_cannot_change_workflow_approval_state'=>true,
+            'budget_cannot_purchase_tokens'=>true,
+            'budget_cannot_change_subscription_package'=>true,
+            'v2550_remains_economics_authority'=>true,
+            'v2540_remains_commitment_authority'=>true,
+            'v2530_remains_replanning_authority'=>true,
+            'v2520_remains_capacity_reservation_authority'=>true,
+            'v2480_remains_portfolio_admission_authority'=>true,
+            'phase19_remains_claim_lease_execution_receipt_authority'=>true,
+            'agent_brain_uses_same_budget_projection'=>true,
+            'agent_brief_uses_same_budget_projection'=>true,
+            'proactive_now_uses_same_budget_projection'=>true,
+            'working_context_includes_bounded_budget_projection'=>true,
+            'history_remains_canonical_chat_history'=>true,
+            'model_reasoning_persisted'=>false,
+        ],
+    ];
+}
+
+function vp3_cognitive_release_readiness_v2560(?PDO $pdo=null): array
+{
+    $pdo=$pdo?:db();
+    $checks=[
+        'v2550_ready'=>function_exists('vp3_cognitive_release_readiness_v2550'),
+        'budget_schema_ready'=>function_exists('vp3_cognitive_budget_schema_ready_v2560')&&vp3_cognitive_budget_schema_ready_v2560($pdo),
+        'budget_runtime_loaded'=>function_exists('vp3_cognitive_budget_apply_v2560'),
+        'budget_claim_guard_loaded'=>function_exists('vp3_cognitive_budget_filter_claim_candidates_v2560'),
+        'economics_preserved'=>function_exists('vp3_cognitive_economics_apply_v2550'),
+        'commitments_preserved'=>function_exists('vp3_cognitive_commitment_apply_v2540'),
+        'replanning_preserved'=>function_exists('vp3_cognitive_replanning_overlay_v2530'),
+        'resource_budget_preserved'=>function_exists('vp3_cognitive_resource_budget_plan_v2520'),
+        'portfolio_admission_preserved'=>function_exists('vp3_cognitive_portfolio_claim_admission_v2480'),
+        'phase19_claimant_preserved'=>function_exists('agent_job_claim_next_v1900'),
+        'worker_runtime_preserved'=>function_exists('agent_worker_runtime_poll_v1910'),
+        'working_context_preserved'=>function_exists('vp3_cognitive_context_assemble_v2420'),
+    ];
+    return [
+        'build'=>VP3_COGNITIVE_RELEASE_V2560,
+        'ready'=>!in_array(false,$checks,true),
+        'checks'=>$checks,
+        'authority'=>'diagnostic_only',
+    ];
+}
