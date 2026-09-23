@@ -111,7 +111,10 @@ $members=$merchant?campaigns_rewards_merchant_members_v100($pdo,$merchantId):[];
 $report=$merchant&&$canAnalytics?campaigns_rewards_reporting_v100($pdo,$merchantId,$uid):['active_campaigns'=>0,'landing_views'=>0,'customers'=>0,'claims_redeemed'=>0];
 $recentEnrollments=$merchant&&function_exists('campaigns_rewards_recent_enrollments_v118')?campaigns_rewards_recent_enrollments_v118($pdo,$merchantId,$uid,40):[];
 $automationRules=$merchant?campaigns_rewards_automation_rules_v119($pdo,$merchantId):[];
+$automationRulesByCampaign=[];$activeAutomationCount=0;
+foreach($automationRules as $automationRow){$automationRulesByCampaign[(int)$automationRow['campaign_id']][]=$automationRow;if((string)$automationRow['status']==='active')$activeAutomationCount++;}
 $crmSegments=$merchant?campaigns_rewards_automation_crm_segments_v119($pdo,$merchantId):[];
+$automationTriggerCatalog=campaigns_rewards_automation_triggers_v119();$automationAudienceCatalog=campaigns_rewards_automation_audiences_v119();
 $campaignFunnels=[];$campaignInsights=[];
 $campaignTypes=[];$campaignTypesByCategory=[];$rewardProducts=[];$editCampaignRewardIds=[];$campaignRewardOptions=[];
 if($merchant){
@@ -144,7 +147,11 @@ $editCampaignId=max(0,(int)($_GET['edit_campaign']??0));$editCampaign=null;forea
 if($editCampaign&&function_exists('campaigns_rewards_campaign_reward_ids_v118'))$editCampaignRewardIds=campaigns_rewards_campaign_reward_ids_v118($pdo,(int)$editCampaign['id']);
 $editRuleId=max(0,(int)($_GET['edit_rule']??0));$editRule=null;
 foreach($automationRules as $ruleRow)if((int)$ruleRow['id']===$editRuleId&&(!$editCampaign||(int)$ruleRow['campaign_id']===(int)$editCampaign['id'])){$editRule=$ruleRow;break;}
-$editCampaignRules=$editCampaign?array_values(array_filter($automationRules,static fn(array $r):bool=>(int)$r['campaign_id']===(int)$editCampaign['id'])):[];
+$editCampaignRules=$editCampaign?($automationRulesByCampaign[(int)$editCampaign['id']]??[]):[];
+$automationConditions=is_array($editRule['conditions']??null)?$editRule['conditions']:[];
+$automationActions=is_array($editRule['actions']??null)?$editRule['actions']:[];
+$automationDefaultTrigger=$editCampaign?campaigns_rewards_automation_default_trigger_v119((string)$editCampaign['campaign_type_key']):'manual';
+$automationDefaultAudience=$editCampaign?campaigns_rewards_automation_default_audience_v119((string)$editCampaign['campaign_type_key']):'all_contacts';
 $editLocationId=max(0,(int)($_GET['edit_location']??0));$editLocation=null;foreach($locations as $row)if((int)$row['id']===$editLocationId)$editLocation=$row;
 $notice=(string)(flash('notice')??'');$error=(string)(flash('error')??'');
 $fulfillmentOnce=session_status()===PHP_SESSION_ACTIVE?($_SESSION['campaign_fulfillment_once']??null):null;
@@ -167,7 +174,7 @@ $memberHeaderActions=implode(' ',$actions);
 <section class="cr-empty" id="new-merchant"><h2>Create your first Merchant</h2><p>Merchants own business state; your VP3 login remains your personal identity.</p><?php if($canCreate):?><form method="post" class="cr-form"><?= csrf_field() ?><input type="hidden" name="action" value="merchant_create"><label>Name<input name="name" required maxlength="190"></label><label>Public slug<input name="slug" maxlength="100"></label><label>Description<textarea name="description"></textarea></label><div class="cr-form-grid"><label>Website<input name="website_url"></label><label>Timezone<input name="timezone" value="America/Phoenix"></label><label>Currency<input name="currency" value="USD" maxlength="3"></label></div><label class="cr-check"><input type="checkbox" name="sandbox_mode" value="1"> Sandbox Merchant</label><button class="cr-btn primary">Create Merchant</button></form><?php else:?><a class="cr-btn primary" href="<?= e(url('/plugins.php')) ?>">Enable plugin</a><?php endif;?></section>
 <?php else:?>
 
-<?php if($canAnalytics):?><section class="cr-metrics"><article><span>Active Campaigns</span><strong><?= number_format((int)$report['active_campaigns']) ?></strong></article><article><span>Landing views</span><strong><?= number_format((int)$report['landing_views']) ?></strong></article><article><span>Merchant relationships</span><strong><?= number_format((int)$report['customers']) ?></strong></article><article><span>Reward conversions</span><strong><?= number_format((int)$report['claims_redeemed']) ?></strong><small>Claimed certificates attributed to Campaigns</small></article></section><?php endif;?>
+<?php if($canAnalytics):?><section class="cr-metrics"><article><span>Active Campaigns</span><strong><?= number_format((int)$report['active_campaigns']) ?></strong></article><article><span>Active Automations</span><strong><?= number_format($activeAutomationCount) ?></strong></article><article><span>Landing views</span><strong><?= number_format((int)$report['landing_views']) ?></strong></article><article><span>Reward conversions</span><strong><?= number_format((int)$report['claims_redeemed']) ?></strong><small>Claimed certificates attributed to Campaigns</small></article></section><?php endif;?>
 
 <div class="cr-grid">
 <section class="cr-card"><header><div><span>Merchant</span><h2><?= e((string)$merchant['name']) ?></h2></div><strong><?= e(ucfirst((string)$merchant['status'])) ?></strong></header><p><?= e((string)($merchant['description']??'')) ?></p>
