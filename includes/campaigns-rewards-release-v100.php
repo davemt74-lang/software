@@ -26,7 +26,9 @@ function campaigns_rewards_release_readiness_v100(?PDO $pdo=null): array
     $checks=[
         'schema_ready'=>$pdo&&campaigns_rewards_schema_ready_v100($pdo),'plugin_catalog_registered'=>isset($catalog['campaigns_rewards']),
         'v2600_domain_integrated'=>str_starts_with((string)($domain['implementation_status']??''),'integrated'),
-        'v2600_plugin_catalog_consistent'=>!empty($domain['plugin_catalog_registered']),'canonical_event_ingress'=>function_exists('vp3_cognitive_domain_ingest_v2600'),
+        'v2600_plugin_catalog_consistent'=>!empty($domain['plugin_catalog_registered']),
+        'v500_cognitive_module_registered'=>function_exists('vp3_cognitive_registry_public_v500')&&in_array('campaigns_rewards',array_column(vp3_cognitive_registry_public_v500()['modules']??[],'module'),true),
+        'canonical_event_ingress'=>function_exists('vp3_cognitive_domain_ingest_v2600'),
         'profile_campaign_query'=>function_exists('campaigns_rewards_profile_campaigns_v100'),'team_scope_contract'=>function_exists('campaigns_rewards_set_team_scope_v100'),
         'crm_link_contract'=>function_exists('crm_v180_upsert_contact'),
     ];
