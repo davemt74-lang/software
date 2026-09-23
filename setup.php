@@ -28,6 +28,7 @@ try {
     artist_workspace_v104_ensure_schema();
     workspace_team_v350_ensure_schema($pdo);
     vp3_plugin_ensure_schema_v320($pdo);
+    campaigns_rewards_ensure_schema_v100($pdo);
     vp3_social_ensure_schema_v320($pdo);
     vp3_human_messaging_v370_ensure_schema($pdo);
     artist_workspace_v181_ensure_schema($pdo);
