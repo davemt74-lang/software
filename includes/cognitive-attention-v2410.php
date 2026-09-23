@@ -320,7 +320,9 @@ function vp3_cognitive_attention_receipt_public_v2410(array $row): array
 
 function vp3_cognitive_attention_reconsiderable_v2410(array $row): bool
 {
-    if((string)($row['status']??'')!=='deferred')return false;
+    $status=(string)($row['status']??'');
+    if($status==='released')return true;
+    if($status!=='deferred')return false;
     return in_array((string)($row['reason_code']??''),[
         'not_interruptible','user_response_deferred_not_interruptible',
         'focus_or_quiet_hours','response_deferred_by_focus','attention_budget_exhausted',
