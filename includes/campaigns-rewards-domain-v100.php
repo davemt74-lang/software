@@ -234,7 +234,6 @@ function campaigns_rewards_create_platform_merchant_v100(PDO $pdo,array $user,ar
     $slug=campaigns_rewards_slug_v100((string)($input['slug']??$name),100);if($slug==='')$slug='merchant-'.$uid;
     $base=$slug;$i=1;$check=$pdo->prepare('SELECT 1 FROM merchant_accounts WHERE owner_user_id=? AND slug=? LIMIT 1');
     while(true){$check->execute([$uid,$slug]);if(!$check->fetchColumn())break;$i++;$slug=substr($base,0,90).'-'.$i;}
-    $roleId=campaigns_rewards_system_role_id_v100($pdo,'owner');if($roleId<1)throw new RuntimeException('Merchant Owner role is unavailable.');
     $public=campaigns_rewards_uuid_v100();$timezone=campaigns_rewards_text_v100($input['timezone']??'UTC',80)?:'UTC';
     $currency=strtoupper(substr(preg_replace('/[^A-Z]/','',strtoupper((string)($input['currency']??'USD')))??'USD',0,3));if(strlen($currency)!==3)$currency='USD';
     $sandbox=!empty($input['sandbox_mode']);
@@ -252,8 +251,7 @@ function campaigns_rewards_create_platform_merchant_v100(PDO $pdo,array $user,ar
             campaigns_rewards_safe_url_v100((string)($input['website_url']??'')),
             campaigns_rewards_json_v100([]),campaigns_rewards_json_v100([]),campaigns_rewards_json_v100([]),
         ]);
-        $pdo->prepare("INSERT INTO merchant_members (merchant_id,user_id,role_id,status,is_owner,joined_at) VALUES (?,?,?,'active',1,UTC_TIMESTAMP())")
-            ->execute([$merchantId,$uid,$roleId]);
+        campaigns_rewards_set_access_source_v100($pdo,$merchantId,$uid,'owner','owner:'.$uid,'owner','active',$uid);
         $pdo->prepare("INSERT INTO merchant_ownership_events (merchant_id,event_type,to_user_id,actor_user_id,reason) VALUES (?,'owner_added',?,?,?)")
             ->execute([$merchantId,$uid,$uid,'Merchant created']);
         if($owns)$pdo->commit();
@@ -307,18 +305,13 @@ function campaigns_rewards_grant_platform_member_v100(PDO $pdo,int $merchantId,i
         $team=workspace_team_v350_membership($pdo,$ownerUserId,$targetUserId);
         if(!$team||($team['membership_status']??'')!=='active')throw new RuntimeException('Merchant staff must have an active canonical VP3 Team relationship.');
     }
-    $roleKey=$asOwner?'owner':$roleKey;$roleId=campaigns_rewards_system_role_id_v100($pdo,$roleKey);if($roleId<1)throw new RuntimeException('Merchant role not found.');
-    $owns=!$pdo->inTransaction();if($owns)$pdo->beginTransaction();
-    try{
-        $pdo->prepare("INSERT INTO merchant_members (merchant_id,user_id,role_id,status,is_owner,joined_at)
-          VALUES (?,?,?,'active',?,UTC_TIMESTAMP())
-          ON DUPLICATE KEY UPDATE role_id=VALUES(role_id),status='active',is_owner=VALUES(is_owner),suspended_at=NULL,removed_at=NULL,updated_at=UTC_TIMESTAMP()")
-          ->execute([$merchantId,$targetUserId,$roleId,$asOwner?1:0]);
-        if($asOwner)$pdo->prepare("INSERT INTO merchant_ownership_events (merchant_id,event_type,to_user_id,actor_user_id,reason) VALUES (?,'owner_added',?,?,?)")
-            ->execute([$merchantId,$targetUserId,$actorUserId,'Owner granted']);
-        if($owns)$pdo->commit();
-    }catch(Throwable $e){if($owns&&$pdo->inTransaction())$pdo->rollBack();throw $e;}
-    $member=campaigns_rewards_platform_member_v100($pdo,$merchantId,$targetUserId)?:throw new RuntimeException('Merchant member could not be loaded.');
+    $roleKey=$asOwner?'owner':$roleKey;
+    if($roleKey!=='owner'&&campaigns_rewards_merchant_role_id_v100($pdo,$merchantId,$roleKey)<1)throw new RuntimeException('Merchant role not found.');
+    $sourceType=$asOwner?'owner':'direct';$sourceRef=$sourceType.':'.$targetUserId;
+    $member=campaigns_rewards_set_access_source_v100($pdo,$merchantId,$targetUserId,$sourceType,$sourceRef,$roleKey,'active',$actorUserId)
+        ?:throw new RuntimeException('Merchant access projection failed.');
+    if($asOwner)$pdo->prepare("INSERT INTO merchant_ownership_events (merchant_id,event_type,to_user_id,actor_user_id,reason) VALUES (?,'owner_added',?,?,?)")
+        ->execute([$merchantId,$targetUserId,$actorUserId,'Owner granted']);
     campaigns_rewards_activity_event_v100($pdo,$merchantId,$asOwner?'merchant.owner_added':'merchant.member_granted',['merchant_member_id'=>(int)$member['id']],[
         'summary'=>$asOwner?'Merchant owner added':'Merchant member granted','merchant_public_id'=>$merchant['public_id'],
     ],!empty($merchant['sandbox_mode'])?'sandbox':'production',$actorUserId);
@@ -332,19 +325,26 @@ function campaigns_rewards_remove_platform_member_v100(PDO $pdo,int $merchantId,
     try{
         $merchant=campaigns_rewards_platform_merchant_v100($pdo,$merchantId,true)?:throw new RuntimeException('Merchant not found.');
         $member=campaigns_rewards_platform_member_v100($pdo,$merchantId,$targetUserId,true)?:throw new RuntimeException('Merchant member not found.');
-        if(!empty($member['is_owner'])){
-            $count=$pdo->prepare("SELECT COUNT(*) FROM merchant_members WHERE merchant_id=? AND status='active' AND is_owner=1 FOR UPDATE");
+        $ownerSource=$pdo->prepare("SELECT id FROM merchant_member_access_sources WHERE merchant_id=? AND user_id=? AND source_type='owner' AND status='active' LIMIT 1 FOR UPDATE");
+        $ownerSource->execute([$merchantId,$targetUserId]);$isOwner=(bool)$ownerSource->fetchColumn();
+        if($isOwner){
+            $count=$pdo->prepare("SELECT COUNT(DISTINCT user_id) FROM merchant_member_access_sources WHERE merchant_id=? AND source_type='owner' AND status='active'");
             $count->execute([$merchantId]);if((int)$count->fetchColumn()<=1)throw new RuntimeException('A Merchant must always have at least one active Owner. Transfer ownership before removing the final Owner.');
+            $pdo->prepare("UPDATE merchant_member_access_sources SET status='removed',removed_at=UTC_TIMESTAMP(),updated_at=UTC_TIMESTAMP()
+              WHERE merchant_id=? AND user_id=? AND source_type='owner' AND status='active'")->execute([$merchantId,$targetUserId]);
+        }else{
+            $pdo->prepare("UPDATE merchant_member_access_sources SET status='removed',removed_at=UTC_TIMESTAMP(),updated_at=UTC_TIMESTAMP()
+              WHERE merchant_id=? AND user_id=? AND source_type='direct' AND status='active'")->execute([$merchantId,$targetUserId]);
         }
-        $pdo->prepare("UPDATE merchant_members SET status='removed',is_owner=0,removed_at=UTC_TIMESTAMP(),updated_at=UTC_TIMESTAMP() WHERE id=?")->execute([(int)$member['id']]);
+        campaigns_rewards_sync_member_projection_v100($pdo,$merchantId,$targetUserId);
         $pdo->prepare("UPDATE merchant_claim_codes SET status='suspended',updated_at=UTC_TIMESTAMP() WHERE merchant_id=? AND merchant_member_id=? AND status='active'")
             ->execute([$merchantId,(int)$member['id']]);
-        if(!empty($member['is_owner']))$pdo->prepare("INSERT INTO merchant_ownership_events (merchant_id,event_type,from_user_id,actor_user_id,reason) VALUES (?,'owner_removed',?,?,?)")
+        if($isOwner)$pdo->prepare("INSERT INTO merchant_ownership_events (merchant_id,event_type,from_user_id,actor_user_id,reason) VALUES (?,'owner_removed',?,?,?)")
             ->execute([$merchantId,$targetUserId,$actorUserId,campaigns_rewards_text_v100($reason,500)]);
         if($owns)$pdo->commit();
     }catch(Throwable $e){if($owns&&$pdo->inTransaction())$pdo->rollBack();throw $e;}
-    campaigns_rewards_activity_event_v100($pdo,$merchantId,!empty($member['is_owner'])?'merchant.owner_removed':'merchant.member_revoked',[],[
-        'summary'=>'Merchant access removed','merchant_public_id'=>$merchant['public_id'],
+    campaigns_rewards_activity_event_v100($pdo,$merchantId,$isOwner?'merchant.owner_removed':'merchant.member_revoked',[],[
+        'summary'=>'Merchant direct access removed','merchant_public_id'=>$merchant['public_id'],
     ],!empty($merchant['sandbox_mode'])?'sandbox':'production',$actorUserId);
 }
 
