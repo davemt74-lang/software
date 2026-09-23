@@ -325,6 +325,7 @@ function homeserver_vp3_claim_and_pair(int $userId, string $claimCode): array
         homeserver_vp3_encrypt($claimToken),
         $approvalCode,
     ]);
+    if(function_exists('vp3_cognitive_homeserver_event_v2390'))vp3_cognitive_homeserver_event_v2390($pdo,$userId,'homeserver.pairing_started','awaiting_approval');
     return [
         'device_id' => $deviceId,
         'approval_code' => $approvalCode,
@@ -369,6 +370,10 @@ function homeserver_vp3_check_pairing(int $userId): array
         );
         $stmt->execute([$status, 'HomeServer pairing ' . $status . '.', $userId]);
     }
+    if(isset($pdo)&&$pdo instanceof PDO&&function_exists('vp3_cognitive_homeserver_event_v2390')){
+        if($status==='paired')vp3_cognitive_homeserver_event_v2390($pdo,$userId,'homeserver.connected',$status);
+        elseif(in_array($status,['expired','denied'],true))vp3_cognitive_homeserver_event_v2390($pdo,$userId,'homeserver.status_changed',$status);
+    }
     return ['status' => $status, 'ready' => $status === 'paired', 'permissions' => $pairing['permissions'] ?? []];
 }
 
@@ -390,6 +395,7 @@ function homeserver_vp3_disconnect(int $userId): void
     $pdo = db();
     if ($pdo) {
         $pdo->prepare('DELETE FROM homeserver_connections WHERE user_id=?')->execute([$userId]);
+        if(function_exists('vp3_cognitive_homeserver_event_v2390'))vp3_cognitive_homeserver_event_v2390($pdo,$userId,'homeserver.disconnected','disconnected');
     }
 }
 
