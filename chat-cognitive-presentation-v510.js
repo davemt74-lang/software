@@ -170,11 +170,30 @@
     const resourceBudget = brief.resource_budget_focus || null;
     const resourceBudgetCounts = brief.resource_budget_counts || {};
     const resourceBudgetExecutors = brief.resource_budget_executors || {};
+    const replanning = brief.replanning_focus || null;
+    const replanningHealth = String(brief.replanning_health || 'unavailable');
+    const replanningCounts = brief.replanning_counts || {};
     const counts = brief.counts || {};
     let html = '<div class="chat-agent-brief-status"><span><i class="chat-agent-brief-dot ' +
       (brief.active !== false ? 'active' : '') + '"></i>' +
       esc(brief.agent_name || 'Agent') + ' · ' + esc(brief.status_label || 'Active') +
       '</span><small>' + esc(brief.activity_title || 'Ready') + '</small></div>';
+
+    if (replanning && replanningHealth !== 'unavailable') {
+      const health = replanningHealth.replaceAll('_',' ');
+      const action = String(replanning.recommended_action || 'keep_plan').replaceAll('_',' ');
+      html += '<article class="chat-agent-brief-card"><small>Portfolio replanning · ' +
+        esc(health) + '</small><strong>' +
+        esc(replanning.title || ('Goal #' + Number(replanning.goal_id || 0))) + '</strong>' +
+        '<p>' + esc(action) + ' · recovery score ' + Number(replanning.recovery_score || 0).toFixed(2) + '</p>' +
+        '<p><small>' + Number(replanningCounts.deadline_threats || 0) + ' deadline threat(s) · ' +
+        Number(replanningCounts.capacity_loss || 0) + ' capacity loss · ' +
+        Number(replanningCounts.changes || 0) + ' rank change(s)</small></p>' +
+        '<div class="chat-agent-brief-actions">' +
+        actionButton('Review replan',
+          ' data-agent-brief-prompt="' + esc('Review my portfolio replan. Explain the plan-health issue, proposed ordering changes, capacity impact, and anything that requires my approval. Do not execute or change executors.') + '"',false) +
+        '</div></article>';
+    }
 
     if (resourceBudget) {
       const executor = String(resourceBudget.executor || 'cloud');
