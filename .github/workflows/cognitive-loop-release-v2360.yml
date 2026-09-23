@@ -45,6 +45,10 @@ on:
       - 'includes/agent-goal-execution-v1712.php'
       - 'includes/agent-objective-plans-v175.php'
       - 'includes/agent-objective-verification-v176.php'
+      - 'includes/agent-objective-portfolio-v179.php'
+      - 'includes/agent-work-dependencies-v174.php'
+      - 'includes/agent-job-engine-v1900.php'
+      - 'includes/agent-worker-runtime-v1910.php'
       - 'api/agent-voice-v117.php'
       - 'tools/run_recovery_baseline.py'
       - 'upgrade.php'
@@ -129,6 +133,10 @@ jobs:
           php -l includes/cognitive-action-planning-v2330.php
           php -l includes/cognitive-proactive-now-v2340.php
           php -l includes/agent-cognitive-loop-v310.php
+          php -l includes/agent-objective-portfolio-v179.php
+          php -l includes/agent-work-dependencies-v174.php
+          php -l includes/agent-job-engine-v1900.php
+          php -l includes/agent-worker-runtime-v1910.php
           php -l includes/cognitive-calibration-v2350.php
           php -l api/cognitive-feed-v530.php
           php -l api/cognitive-planning-v550.php
