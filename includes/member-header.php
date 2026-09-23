@@ -7,6 +7,7 @@ if (!$memberHeaderUser) return;
 $memberHeaderTitle = trim((string)($memberHeaderTitle ?? ''));
 $memberHeaderSubtitle = trim((string)($memberHeaderSubtitle ?? ''));
 $memberHeaderActions = (string)($memberHeaderActions ?? '');
+$memberHeaderLeadingHtml = (string)($memberHeaderLeadingHtml ?? '');
 $memberHeaderClass = trim((string)($memberHeaderClass ?? ''));
 $memberHeaderShowSidebarToggle = (bool)($memberHeaderShowSidebarToggle ?? true);
 $memberHeaderActiveKey = trim((string)($memberHeaderActiveKey ?? $mainSidebarActive ?? $workspaceSidebarActive ?? ''));
@@ -26,6 +27,7 @@ if ($memberHeaderRenderAgentVoiceAssets) $GLOBALS['VP3_MEMBER_AGENT_VOICE_MENU_A
 ?>
 <header class="chat-topbar member-header<?= $memberHeaderClass !== '' ? ' ' . e($memberHeaderClass) : '' ?>" data-member-header data-shell-active="<?= e($memberHeaderActiveKey) ?>" data-shell-section="<?= e($memberHeaderSection) ?>">
   <?php if ($memberHeaderShowSidebarToggle): ?><button class="chat-icon-button mobile-only" id="openChatSidebar" type="button" aria-label="Open VP3 navigation" aria-controls="chatSidebar">☰</button><?php endif; ?>
+  <?= $memberHeaderLeadingHtml ?>
 
   <div class="chat-topbar-title member-header-title">
     <?php if ($memberHeaderSection !== ''): ?><small class="member-header-context">VP3 · <?= e($memberHeaderSection) ?></small><?php endif; ?>
