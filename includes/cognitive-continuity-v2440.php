@@ -509,6 +509,7 @@ function vp3_cognitive_continuity_activity_projection_v2440(PDO $pdo,array $user
         'build'=>VP3_COGNITIVE_CONTINUITY_V2440,
         'agent_namespace'=>$snapshot['agent_namespace'],
         'focus'=>$snapshot['focus'],
+        'items'=>array_slice($snapshot['items'],0,6),
         'counts'=>$snapshot['counts'],
         'waiting_for_user'=>$snapshot['waiting_for_user'],
         'open_count'=>count($snapshot['items']),
