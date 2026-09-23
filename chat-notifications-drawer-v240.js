@@ -359,6 +359,9 @@
     const working = brain.working_context || {};
     const turn = brain.turn_state || {};
     const continuity = brain.continuity || {};
+    const followthrough = brain.followthrough || {};
+    const followthroughItems = Array.isArray(followthrough.items) ? followthrough.items : [];
+    const followthroughByRef = new Map(followthroughItems.map(item => [String(item.continuity_ref || ''), item]));
     const continuityItems = Array.isArray(continuity.items) ? continuity.items : [];
     const continuityFocus = continuity.focus || {};
     const counts = working.counts || {};
@@ -450,15 +453,22 @@
         <div class="chat-brain-metrics">
           ${brainMetric('Open items', Number(continuity.open_count || continuityItems.length))}
           ${brainMetric('Waiting on you', Number(continuity.waiting_for_user || 0))}
+          ${brainMetric('Cross-surface', Number(followthrough.counts?.cross_surface || 0))}
           ${brainMetric('Focus', continuityStateLabel(continuityFocus.state || ''))}
         </div>
         <div class="chat-brain-memory-list">
-          ${continuityItems.map(item => `<article>
-            <span>${esc(continuityStateLabel(item.state))}</span>
-            <strong>${esc(item.title || item.ref || 'Open work')}</strong>
-            <p>${esc(item.summary || item.resume_action || '')}</p>
-            <small>${esc(String(item.kind || '').replaceAll('_',' '))}${item.blocked_by ? ` · ${Number(item.blocked_by)} blocker${Number(item.blocked_by) === 1 ? '' : 's'}` : ''}</small>
-          </article>`).join('')}
+          ${continuityItems.map(item => {
+            const handoff = followthroughByRef.get(String(item.ref || '')) || {};
+            const source = String(handoff.source_surface || '').replaceAll('_',' ');
+            const target = String(handoff.target_surface || '').replaceAll('_',' ');
+            const handoffState = String(handoff.handoff_status || '').replaceAll('_',' ');
+            return `<article>
+              <span>${esc(continuityStateLabel(item.state))}</span>
+              <strong>${esc(item.title || item.ref || 'Open work')}</strong>
+              <p>${esc(item.summary || item.resume_action || '')}</p>
+              <small>${esc(String(item.kind || '').replaceAll('_',' '))}${item.blocked_by ? ` · ${Number(item.blocked_by)} blocker${Number(item.blocked_by) === 1 ? '' : 's'}` : ''}${source && target ? ` · ${esc(source)} → ${esc(target)}` : ''}${handoffState ? ` · ${esc(handoffState)}` : ''}</small>
+            </article>`;
+          }).join('')}
         </div>
       </section>` : ''}
 

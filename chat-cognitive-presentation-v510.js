@@ -153,11 +153,37 @@
     const suggestion = brief.top_suggestion || null;
     const work = brief.current_work || null;
     const calendar = brief.next_calendar || null;
+    const followthrough = brief.followthrough || null;
+    const awayFollowthrough = brief.away_followthrough || {};
     const counts = brief.counts || {};
     let html = '<div class="chat-agent-brief-status"><span><i class="chat-agent-brief-dot ' +
       (brief.active !== false ? 'active' : '') + '"></i>' +
       esc(brief.agent_name || 'Agent') + ' · ' + esc(brief.status_label || 'Active') +
       '</span><small>' + esc(brief.activity_title || 'Ready') + '</small></div>';
+
+    if (Number(awayFollowthrough.count || 0) > 0) {
+      html += '<article class="chat-agent-brief-card"><small>While you were away</small><strong>' +
+        esc(awayFollowthrough.summary || 'Open work changed while you were away.') + '</strong>' +
+        '<p>' + Number(awayFollowthrough.count || 0) + ' meaningful continuity change' +
+        (Number(awayFollowthrough.count || 0) === 1 ? '' : 's') + ' detected.</p>' +
+        '</article>';
+    }
+
+    if (followthrough) {
+      const source = String(followthrough.source_surface || 'chat').replaceAll('_',' ');
+      const target = String(followthrough.target_surface || 'chat').replaceAll('_',' ');
+      const state = String(followthrough.continuity_state || '').replaceAll('_',' ');
+      const turn = String(followthrough.turn_type || '').replaceAll('_',' ');
+      html += '<article class="chat-agent-brief-card"><small>Follow-through · ' +
+        esc(state || 'open') + '</small><strong>' +
+        esc(followthrough.title || 'Open work') + '</strong>' +
+        (followthrough.body ? '<p>' + esc(followthrough.body) + '</p>' : '') +
+        '<p><small>' + esc(source) + ' → ' + esc(target) +
+        (turn ? ' · ' + esc(turn) : '') + '</small></p>' +
+        '<div class="chat-agent-brief-actions">' +
+        (followthrough.target_url ? '<a href="' + esc(followthrough.target_url) + '">' + esc(followthrough.action_label || 'Open') + '</a>' : '') +
+        '</div></article>';
+    }
 
     if (suggestion) {
       html += '<article class="chat-agent-brief-card"><small>Suggested next action</small><strong>' +
