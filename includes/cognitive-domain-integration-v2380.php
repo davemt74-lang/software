@@ -324,8 +324,8 @@ function vp3_cognitive_register_domains_v2380(): void
     vp3_cognitive_register_domain_module_v2380('scheduling',['schedule','scheduling_type'],$events['scheduling'],['default_seconds'=>60]);
     vp3_cognitive_register_domain_module_v2380('booking_appointments',['booking','appointment'],$events['booking_appointments'],['default_seconds'=>30]);
     vp3_cognitive_register_domain_module_v2380('calendar',['calendar_event'],$events['calendar'],['default_seconds'=>30]);
-    vp3_cognitive_register_domain_module_v2380('commerce',['product','commerce_order','sale','refund'],$events['commerce'],['default_seconds'=>30]);
-    vp3_cognitive_register_domain_module_v2380('crm_relationships',['contact','relationship'],$events['crm_relationships'],['default_seconds'=>60]);
+    // product and commerce_order remain owned by Universal Cards v5.20; v23.80 adds event-native commerce around them.\n    vp3_cognitive_register_domain_module_v2380('commerce',['sale','refund'],$events['commerce'],['default_seconds'=>30]);
+    // contact remains owned by Universal Cards v5.20; relationship is the new domain-native object.\n    vp3_cognitive_register_domain_module_v2380('crm_relationships',['relationship'],$events['crm_relationships'],['default_seconds'=>60]);
     vp3_cognitive_register_domain_module_v2380('notifications',['notification'],$events['notifications'],['default_seconds'=>15]);
 }
 
