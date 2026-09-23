@@ -182,18 +182,36 @@ function vp3_cognitive_current_state_session_v2590(PDO $pdo,array $user): array
     ];
 }
 
+function vp3_cognitive_current_state_materialize_events_v2590(array $events): array
+{
+    $latest=[];
+    foreach($events as $event){
+        if(!is_array($event))continue;
+        $domain=(string)($event['domain']??'external');
+        if($domain==='')$domain='external';
+        if(!isset($latest[$domain]))$latest[$domain]=$event;
+    }
+    $latest=array_slice($latest,0,VP3_COGNITIVE_CURRENT_STATE_MAX_ITEMS_V2590,true);
+    $attention=null;$attentionCount=0;
+    foreach($latest as $event){
+        $isAttention=!empty($event['attention'])&&!empty($event['fresh']);
+        if(!$isAttention)continue;
+        $attentionCount++;
+        if($attention===null)$attention=$event;
+    }
+    return [
+        'domains'=>$latest,
+        'attention_candidate'=>$attention,
+        'attention_count'=>$attentionCount,
+    ];
+}
+
 function vp3_cognitive_current_state_projection_v2590(PDO $pdo,array $user,string $namespace=''): array
 {
     $events=vp3_cognitive_current_state_recent_events_v2590($pdo,$user);
-    $latest=[];
-    $attention=null;
-    foreach($events as $event){
-        $domain=(string)($event['domain']??'external');
-        if(!isset($latest[$domain]))$latest[$domain]=$event;
-        if($attention===null&&!empty($event['attention']))$attention=$event;
-        if(count($latest)>=VP3_COGNITIVE_CURRENT_STATE_MAX_ITEMS_V2590&&$attention!==null)break;
-    }
-    $latest=array_slice($latest,0,VP3_COGNITIVE_CURRENT_STATE_MAX_ITEMS_V2590,true);
+    $materialized=vp3_cognitive_current_state_materialize_events_v2590($events);
+    $latest=is_array($materialized['domains']??null)?$materialized['domains']:[];
+    $attention=is_array($materialized['attention_candidate']??null)?$materialized['attention_candidate']:null;
     $session=vp3_cognitive_current_state_session_v2590($pdo,$user);
     $activity=vp3_cognitive_current_state_activity_v2590($user);
     return [
@@ -208,7 +226,7 @@ function vp3_cognitive_current_state_projection_v2590(PDO $pdo,array $user,strin
         'counts'=>[
             'recent_events'=>count($events),
             'domains'=>count($latest),
-            'attention'=>count(array_filter($events,static fn(array $e): bool=>!empty($e['attention']))),
+            'attention'=>max(0,(int)($materialized['attention_count']??0)),
         ],
         'authority'=>[
             'event_ingress'=>'agent_event_inbox_v1920',
