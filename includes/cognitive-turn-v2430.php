@@ -255,12 +255,12 @@ function vp3_cognitive_turn_finalize_v2430(
     $approvalRequired=false;
     foreach($safeActions as $action)if(!empty($action['requires_approval'])){$approvalRequired=true;break;}
 
-    if($toolHandled){
-        $turnType='execute_authorized_action';
-        $status='completed';
-    }elseif($approvalRequired){
+    if($approvalRequired){
         $turnType='request_approval';
         $status='approval_required';
+    }elseif($toolHandled){
+        $turnType='execute_authorized_action';
+        $status='completed';
     }elseif($safeActions){
         $turnType='propose_action';
         $status='action_proposed';
