@@ -366,6 +366,9 @@
     const portfolioItems = Array.isArray(portfolio.items) ? portfolio.items : [];
     const forecast = brain.forecast || {};
     const forecastItems = Array.isArray(forecast.items) ? forecast.items : [];
+    const optimization = brain.optimization || {};
+    const optimizationItems = Array.isArray(optimization.items) ? optimization.items : [];
+    const optimizationScenarios = Array.isArray(optimization.scenarios) ? optimization.scenarios : [];
     const autonomyItems = Array.isArray(autonomy.items) ? autonomy.items : [];
     const supervisionIssues = Array.isArray(supervision.issues) ? supervision.issues : [];
     const supervisionByRef = new Map(supervisionIssues.map(item => [String(item.continuity_ref || ''), item]));
@@ -502,6 +505,30 @@
             <p>${esc(issue.reason || '')}</p>
             <small>${esc(String(issue.health_state || '').replaceAll('_',' '))}${issue.supervisor_action ? ` · ${esc(String(issue.supervisor_action).replaceAll('_',' '))}` : ''}${issue.auto_reconcile ? ' · governed auto-reconcile' : ''}</small>
           </article>`).join('')}
+        </div>
+      </section>` : ''}
+
+      ${optimizationItems.length ? `
+      <section class="chat-activity-section">
+        <div class="chat-activity-section-head">
+          <div><strong>Strategic Portfolio Optimization</strong><span>v25.10 compares bounded portfolio strategies and advises v24.90 sequencing without changing admission, executors, approvals or Phase 19 execution.</span></div>
+        </div>
+        <div class="chat-brain-metrics">
+          ${brainMetric('Recommended', String(optimization.recommended_strategy || 'balanced').replaceAll('_',' '))}
+          ${brainMetric('Strategies', Number(optimization.counts?.strategies || optimizationScenarios.length))}
+          ${brainMetric('Goals', Number(optimization.counts?.goals || optimizationItems.length))}
+          ${brainMetric('Deadline risk', Number(optimization.counts?.projected_deadline_risk || 0))}
+        </div>
+        <div class="chat-brain-memory-list">
+          ${optimizationScenarios.map(scenario => {
+            const metrics = scenario.metrics || {};
+            return `<article>
+              <span>${esc(String(scenario.strategy || 'balanced').replaceAll('_',' '))}</span>
+              <strong>${Number(metrics.deadline_risk_count || 0)} deadline risk · ${Number(metrics.total_lateness_seconds || 0)}s lateness</strong>
+              <p>Strategic value ${Number(metrics.strategic_value || 0).toFixed(2)} · dependency unlock ${Number(metrics.dependency_unlock_value || 0).toFixed(2)}</p>
+              <small>Makespan ${Number(metrics.makespan_seconds || 0)}s · advisory only</small>
+            </article>`;
+          }).join('')}
         </div>
       </section>` : ''}
 

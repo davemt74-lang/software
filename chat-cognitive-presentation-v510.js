@@ -164,11 +164,29 @@
     const portfolioCapacity = brief.portfolio_capacity || {};
     const forecast = brief.forecast_focus || null;
     const forecastCounts = brief.forecast_counts || {};
+    const optimization = brief.optimization_focus || null;
+    const optimizationStrategy = String(brief.optimization_strategy || '');
+    const optimizationCounts = brief.optimization_counts || {};
     const counts = brief.counts || {};
     let html = '<div class="chat-agent-brief-status"><span><i class="chat-agent-brief-dot ' +
       (brief.active !== false ? 'active' : '') + '"></i>' +
       esc(brief.agent_name || 'Agent') + ' · ' + esc(brief.status_label || 'Active') +
       '</span><small>' + esc(brief.activity_title || 'Ready') + '</small></div>';
+
+    if (optimization) {
+      const strategy = optimizationStrategy.replaceAll('_',' ') || 'balanced';
+      html += '<article class="chat-agent-brief-card"><small>Strategic optimization · ' +
+        esc(strategy) + '</small><strong>' +
+        esc(optimization.title || ('Goal #' + Number(optimization.goal_id || 0))) + '</strong>' +
+        '<p>#' + Number(optimization.rank || 0) + ' optimized sequence · priority ' +
+        Number(optimization.priority || 0) + '/100</p>' +
+        '<p><small>' + Number(optimizationCounts.strategies || 0) + ' strategies compared · ' +
+        Number(optimizationCounts.projected_deadline_risk || 0) + ' projected deadline risk</small></p>' +
+        '<div class="chat-agent-brief-actions">' +
+        actionButton('Compare strategies',
+          ' data-agent-brief-prompt="' + esc('Compare my portfolio optimization strategies and explain why ' + strategy + ' is currently recommended without changing or executing anything.') + '"',false) +
+        '</div></article>';
+    }
 
     if (forecast) {
       const risk = String(forecast.risk || 'on_track').replaceAll('_',' ');

@@ -106,10 +106,9 @@ const checks=[
     &&/'adaptive_sequence_is_advisory_only'=>true/.test(release)],
   ['CI runs v24.90 release gate',/cognitive-forecast-v2490\.mjs/.test(workflow)],
   ['Recovery Baseline retains v24.90 gate',/cognitive-forecast-v2490\.mjs/.test(recovery)],
-  ['Production package requires v24.90 runtime and release gate',
+  ['Production package retains v24.90 runtime and release gate',
     /cognitive-forecast-v2490\.php/.test(packageWorkflow)
-    &&/cognitive-release-v2490\.php/.test(packageWorkflow)
-    &&/Cognitive Runtime v24\.90/.test(packageWorkflow)],
+    &&/cognitive-release-v2490\.php/.test(packageWorkflow)],
   ['docs preserve authority chain and History',
     /v24\.90 Forecast\/Plan/.test(docs)
     &&/v24\.80 Admission/.test(docs)

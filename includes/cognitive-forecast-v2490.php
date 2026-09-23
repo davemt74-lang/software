@@ -128,6 +128,14 @@ function vp3_cognitive_forecast_adaptive_resequence_v2490(array $items,array $ca
         unset($item['_forecast_original_index']);
     }
     unset($item);
+
+    // v25.10 may compare strategic portfolio orderings after v24.90 has
+    // produced its forecast features. v24.90 still owns the forecast sequence
+    // handed to v24.80, and failure preserves the proven v24.90 order.
+    if(function_exists('vp3_cognitive_optimization_resequence_v2510')){
+        try{$items=vp3_cognitive_optimization_resequence_v2510($items,$capacity,$now);}
+        catch(Throwable $e){}
+    }
     return $items;
 }
 
