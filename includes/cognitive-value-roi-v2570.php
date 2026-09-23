@@ -213,11 +213,14 @@ function vp3_cognitive_value_profile_save_v2570(PDO $pdo,array $user,array $inpu
     if($id>0&&!$before)throw new RuntimeException('Outcome value profile not found.');
 
     if($before){
-        $resetBaseline=(string)$before['realization_mode']!==$mode||(string)$before['evidence_key']!==$evidenceKey;
+        $resetBaseline=(string)$before['realization_mode']!==$mode
+            ||(string)$before['evidence_key']!==$evidenceKey
+            ||strtoupper((string)$before['currency'])!==$currency;
         $revokeManual=(string)$before['scope_kind']!==$scopeKind
             ||(string)$before['scope_key']!==$scopeKey
             ||(string)$before['value_kind']!==$kind
-            ||strtoupper((string)$before['currency'])!==$currency;
+            ||strtoupper((string)$before['currency'])!==$currency
+            ||(string)$before['realization_mode']!==$mode;
         $manualBefore=$revokeManual?vp3_cognitive_value_latest_manual_v2570($pdo,$uid,$id):null;
         $stmt=$pdo->prepare('UPDATE cognitive_value_profiles_v2570
           SET label=?,scope_kind=?,scope_key=?,value_kind=?,currency=?,expected_value_micros=?,expected_score=?,
@@ -279,6 +282,9 @@ function vp3_cognitive_value_realization_set_v2570(
 ): array {
     $uid=(int)($user['id']??0);$profile=vp3_cognitive_value_profile_row_v2570($pdo,$uid,$profileId);
     if(!$profile)throw new RuntimeException('Outcome value profile not found.');
+    if((string)($profile['realization_mode']??'')!=='manual_confirmation'){
+        throw new RuntimeException('Manual realized value is available only for profiles configured for manual confirmation.');
+    }
     $kind=(string)$profile['value_kind'];$money=null;$score=null;$currency='';
     if($kind==='money'){
         if(!array_key_exists('value_micros',$input)||$input['value_micros']===''||$input['value_micros']===null){
@@ -459,9 +465,11 @@ function vp3_cognitive_value_realization_v2570(PDO $pdo,array $user,array $profi
         'evidence_key'=>'',
     ];
     if($uid<1||$profileId<1)return $empty;
-    $manual=vp3_cognitive_value_latest_manual_v2570($pdo,$uid,$profileId);
-    if($manual)return array_merge($empty,$manual);
     $mode=(string)($profile['realization_mode']??'manual_confirmation');
+    if($mode==='manual_confirmation'){
+        $manual=vp3_cognitive_value_latest_manual_v2570($pdo,$uid,$profileId);
+        if($manual)return array_merge($empty,$manual);
+    }
     if($mode==='verified_completion'){
         $verified=vp3_cognitive_value_verified_completion_v2570($pdo,$uid,$profile);
         return $verified?array_merge($empty,$verified):$empty;
