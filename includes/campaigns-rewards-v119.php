@@ -367,6 +367,7 @@ function campaigns_rewards_automation_run_due_v119(PDO $pdo,int $merchantId=0): 
 {
     $out=['birthday_trigger'=>campaigns_rewards_automation_run_trigger_v119($pdo,'birthday_trigger',[],'birthday:'.gmdate('Y-m-d'),$merchantId),
       'crm_lapse'=>campaigns_rewards_automation_run_trigger_v119($pdo,'crm_lapse',[],'winback:'.gmdate('Y-m-d'),$merchantId)];
+    $out['lifecycle_intelligence']=campaigns_rewards_refresh_recommendations_v119($pdo,$merchantId);
     return $out;
 }
 
@@ -408,4 +409,38 @@ function campaigns_rewards_lifecycle_insights_v119(PDO $pdo,int $campaignId,int 
     $rules=campaigns_rewards_automation_rules_v119($pdo,(int)$campaign['merchant_id'],$campaignId);
     if(!$rules)$out[]=['kind'=>'automation','title'=>'No automation configured','detail'=>'Add a governed trigger if this Campaign Type should act on CRM or lifecycle events.'];
     return $out;
+}
+
+function campaigns_rewards_refresh_recommendations_v119(PDO $pdo,int $merchantId=0): array
+{
+    $sql="SELECT c.id,c.merchant_id,m.owner_user_id,c.public_id campaign_public_id,m.public_id merchant_public_id
+      FROM campaigns c INNER JOIN merchant_accounts m ON m.id=c.merchant_id
+      WHERE c.status='active' AND c.environment='production' AND m.status='active'";
+    $params=[];if($merchantId>0){$sql.=" AND c.merchant_id=?";$params[]=$merchantId;}
+    $sql.=" ORDER BY c.id";
+    $q=$pdo->prepare($sql);$q->execute($params);$created=0;$reviewed=0;
+    foreach($q->fetchAll()?:[] as $row){
+        $owner=(int)$row['owner_user_id'];if($owner<1)continue;
+        try{$insights=campaigns_rewards_lifecycle_insights_v119($pdo,(int)$row['id'],$owner);}catch(Throwable $e){continue;}
+        $reviewed++;
+        foreach($insights as $insight){
+            $type='lifecycle.'.preg_replace('/[^a-z0-9_]/','',strtolower((string)($insight['kind']??'general')));
+            $summary=campaigns_rewards_text_v100(($insight['title']??'Campaign insight').': '.($insight['detail']??''),1000);
+            $exists=$pdo->prepare("SELECT id FROM campaign_agent_recommendations WHERE merchant_id=? AND campaign_id=? AND recommendation_type=? AND summary=? AND status='proposed' LIMIT 1");
+            $exists->execute([(int)$row['merchant_id'],(int)$row['id'],$type,$summary]);if($exists->fetchColumn())continue;
+            $pdo->prepare("INSERT INTO campaign_agent_recommendations
+              (public_id,merchant_id,campaign_id,recommendation_type,summary,status,evidence_refs_json,impact_preview_json,created_for_user_id)
+              VALUES (?,?,?,?,?,'proposed',?,?,?)")->execute([
+                campaigns_rewards_uuid_v100(),(int)$row['merchant_id'],(int)$row['id'],$type,$summary,
+                campaigns_rewards_json_v100(['campaign_public_id'=>$row['campaign_public_id'],'source'=>'v119_lifecycle_intelligence']),
+                campaigns_rewards_json_v100(['requires_human_decision'=>true]),$owner,
+            ]);
+            $created++;
+            campaigns_rewards_activity_event_v100($pdo,(int)$row['merchant_id'],'campaign.recommendation_proposed',['campaign_id'=>(int)$row['id']],[
+                'summary'=>'Campaign lifecycle recommendation proposed','campaign_public_id'=>$row['campaign_public_id'],'merchant_public_id'=>$row['merchant_public_id'],
+                'recommendation_type'=>$type,
+            ],'production',null,'agent');
+        }
+    }
+    return ['campaigns_reviewed'=>$reviewed,'recommendations_created'=>$created];
 }
