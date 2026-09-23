@@ -31,6 +31,7 @@ require_once __DIR__ . '/includes/agent-goal-planning-v1711.php';
 require_once __DIR__ . '/includes/agent-goal-review-v1714.php';
 require_once __DIR__ . '/includes/cognitive-budget-governance-v2560.php';
 require_once __DIR__ . '/includes/cognitive-value-roi-v2570.php';
+require_once __DIR__ . '/includes/cognitive-decision-calibration-v2580.php';
 require_once __DIR__ . '/includes/video-meetings-agenda-v18140.php';
 require_once __DIR__ . '/includes/video-meetings-actions-v18150.php';
 require_once __DIR__ . '/includes/video-meetings-followthrough-intelligence-v18160.php';
@@ -131,6 +132,7 @@ function vp3_upgrade_complete(): bool
         && vp3_cognitive_autonomy_schema_ready_v2470()
         && vp3_cognitive_budget_schema_ready_v2560()
         && vp3_cognitive_value_schema_ready_v2570()
+        && vp3_cognitive_decision_schema_ready_v2580()
         && agent_goal_review_schema_ready_v1714()
         && vp3_cognitive_schema_ready_v500()
         && vp3_cognitive_presentation_schema_ready_v510()
@@ -244,6 +246,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             vp3_cognitive_autonomy_ensure_schema_v2470($pdo);
             vp3_cognitive_budget_ensure_schema_v2560($pdo);
             vp3_cognitive_value_ensure_schema_v2570($pdo);
+            vp3_cognitive_decision_ensure_schema_v2580($pdo);
             agent_goal_review_ensure_schema_v1714($pdo);
             vp3_cognitive_ensure_schema_v500($pdo);
             vp3_cognitive_presentation_ensure_schema_v510($pdo);
