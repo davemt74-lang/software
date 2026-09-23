@@ -358,6 +358,12 @@ function chat_notifications_v240_state(array $user, PDO $pdo, int $agentId=0): a
     $valueRoi = $brainAllowed && function_exists('vp3_cognitive_value_activity_projection_v2570')
         ? vp3_cognitive_value_activity_projection_v2570($pdo, $user, $namespace)
         : ['build'=>'','configured'=>false,'focus'=>null,'goals'=>[],'profiles'=>[],'counts'=>[],'calibration'=>[],'manage_url'=>'','projection_only'=>false];
+    $decisionCalibration = $brainAllowed && function_exists('vp3_cognitive_decision_activity_projection_v2580')
+        ? vp3_cognitive_decision_activity_projection_v2580($pdo, $user, $namespace, [
+            'portfolio'=>$portfolio,'forecast'=>$forecast,'resource_budget'=>$resourceBudget,
+            'replanning'=>$replanning,'value_roi'=>$valueRoi,
+        ])
+        : ['build'=>'','ready'=>false,'calibration'=>[],'accuracy'=>[],'recent'=>[],'manage_url'=>''];
     $live = is_array($workingContext['live_session'] ?? null) ? $workingContext['live_session'] : null;
     $activity = $live ? [
         'state'=>(string)($live['status'] ?? 'idle'),
@@ -402,6 +408,7 @@ function chat_notifications_v240_state(array $user, PDO $pdo, int $agentId=0): a
             'economics'=>$economics,
             'budget_governance'=>$budgetGovernance,
             'value_roi'=>$valueRoi,
+            'decision_calibration'=>$decisionCalibration,
             'priorities'=>$brainAllowed ? chat_notifications_v313_brain_priorities($user, $pdo) : [],
             'operations'=>$brainAllowed ? chat_notifications_v240_brain_operations($user, 60) : [],
             'events'=>$brainAllowed ? chat_notifications_v240_activity_events($pdo, $userId, 50) : [],
