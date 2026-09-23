@@ -526,6 +526,7 @@
           ${brainMetric('At risk', Number(commitmentProtection.counts?.at_risk || 0))}
           ${brainMetric('Waiting on you', Number(commitmentProtection.counts?.needs_user || 0))}
           ${brainMetric('Conflicts', Number(commitmentProtection.counts?.conflicts || 0))}
+          ${brainMetric('Verified complete', Number(commitmentProtection.counts?.verified_complete || 0))}
           ${brainMetric('Meeting commitments', Number(commitmentProtection.counts?.meetings || 0))}
         </div>
         <div class="chat-brain-memory-list">
