@@ -431,21 +431,25 @@ function campaigns_rewards_create_merchant_v100(PDO $pdo,array $user,array $inpu
 
 function campaigns_rewards_update_merchant_v100(PDO $pdo,int $merchantId,int $actorUserId,array $input): array
 {
-    if(!campaigns_rewards_can_manage_merchant_v100($pdo,$merchantId,$actorUserId))throw new RuntimeException('Merchant admin access is required.');
-    $merchant=campaigns_rewards_merchant_v100($pdo,$merchantId,true)?:throw new RuntimeException('Merchant account not found.');
-    $name=campaigns_rewards_text_v100($input['name']??$merchant['name'],190);if($name==='')throw new RuntimeException('Merchant name is required.');
-    $slug=campaigns_rewards_unique_slug_v100($pdo,'campaign_merchant_accounts_v100',(string)($input['slug']??$merchant['slug']),$merchantId);
-    $description=mb_strimwidth(trim((string)($input['description']??$merchant['description']??'')),0,4000,'…');
-    $website=campaigns_rewards_safe_url_v100((string)($input['website_url']??$merchant['website_url']??''));
-    $email=strtolower(trim((string)($input['contact_email']??$merchant['contact_email']??'')));if($email!==''&&!filter_var($email,FILTER_VALIDATE_EMAIL))throw new RuntimeException('Enter a valid merchant email.');
-    $phone=campaigns_rewards_text_v100($input['contact_phone']??$merchant['contact_phone']??'',80);
-    $profileUserId=max(0,(int)($input['profile_user_id']??$merchant['profile_user_id']??0));if($profileUserId>0&&!campaigns_rewards_user_row_v100($pdo,$profileUserId))throw new RuntimeException('Profile owner is unavailable.');
-    $pdo->prepare("UPDATE campaign_merchant_accounts_v100 SET name=?,slug=?,description=?,website_url=?,contact_email=?,contact_phone=?,profile_user_id=? WHERE id=?")
-        ->execute([$name,$slug,$description,$website,$email,$phone,$profileUserId?:null,$merchantId]);
-    $saved=campaigns_rewards_merchant_v100($pdo,$merchantId)?:throw new RuntimeException('Merchant account could not be reloaded.');
-    campaigns_rewards_record_activity_v100($pdo,$merchantId,'merchant.updated',['actor_user_id'=>$actorUserId],[]);
-    campaigns_rewards_emit_v100($pdo,(int)$saved['owner_user_id'],'merchant.updated',[campaigns_rewards_ref_v100('merchant_account',$saved['public_id'])],['merchant_id'=>$saved['public_id']]);
-    return $saved;
+    if(function_exists('campaigns_rewards_platform_schema_ready_v100')&&campaigns_rewards_platform_schema_ready_v100($pdo)){
+        campaigns_rewards_platform_assert_can_v100($pdo,$merchantId,$actorUserId,'merchant.manage');
+        $merchant=campaigns_rewards_platform_merchant_v100($pdo,$merchantId)?:throw new RuntimeException('Merchant not found.');
+        $name=campaigns_rewards_text_v100($input['name']??$merchant['name'],190);if($name==='')throw new RuntimeException('Merchant name is required.');
+        $slug=campaigns_rewards_slug_v100((string)($input['slug']??$merchant['slug']),120);if($slug==='')$slug=(string)$merchant['slug'];
+        $check=$pdo->prepare('SELECT 1 FROM merchant_accounts WHERE owner_user_id=? AND slug=? AND id<>? LIMIT 1');$check->execute([(int)$merchant['owner_user_id'],$slug,$merchantId]);if($check->fetchColumn())throw new RuntimeException('That Merchant slug is already in use.');
+        $pdo->prepare("UPDATE merchant_accounts SET name=?,slug=?,business_name=?,timezone=?,currency=?,sandbox_mode=?,updated_at=UTC_TIMESTAMP() WHERE id=?")
+          ->execute([$name,$slug,campaigns_rewards_text_v100($input['business_name']??$name,190),campaigns_rewards_text_v100($input['timezone']??$merchant['timezone'],80),strtoupper(substr((string)($input['currency']??$merchant['currency']),0,3)),!empty($input['sandbox_mode'])?1:0,$merchantId]);
+        $contact=['email'=>strtolower(trim((string)($input['contact_email']??''))),'phone'=>campaigns_rewards_text_v100($input['contact_phone']??'',80)];
+        if($contact['email']!==''&&!filter_var($contact['email'],FILTER_VALIDATE_EMAIL))throw new RuntimeException('Enter a valid Merchant email.');
+        $pdo->prepare("INSERT INTO merchant_profiles (merchant_id,display_name,description,website_url,social_links_json,public_contact_json,branding_json)
+          VALUES (?,?,?,?,? ,?,?)
+          ON DUPLICATE KEY UPDATE display_name=VALUES(display_name),description=VALUES(description),website_url=VALUES(website_url),public_contact_json=VALUES(public_contact_json),updated_at=UTC_TIMESTAMP()")
+          ->execute([$merchantId,$name,mb_strimwidth(trim((string)($input['description']??'')),0,4000,'…'),campaigns_rewards_safe_url_v100((string)($input['website_url']??'')),campaigns_rewards_json_v100([]),campaigns_rewards_json_v100($contact),campaigns_rewards_json_v100([])]);
+        $saved=campaigns_rewards_merchant_v100($pdo,$merchantId)?:throw new RuntimeException('Merchant could not be reloaded.');
+        campaigns_rewards_activity_event_v100($pdo,$merchantId,'merchant.updated',[],['summary'=>'Merchant updated','merchant_public_id'=>$saved['public_id']],!empty($saved['sandbox_mode'])?'sandbox':'production',$actorUserId);
+        return $saved;
+    }
+    throw new RuntimeException('Run the VP3 database upgrade before changing Merchant data.');
 }
 
 function campaigns_rewards_accessible_merchants_v100(PDO $pdo,array $user): array
@@ -490,48 +494,49 @@ function campaigns_rewards_user_has_access_v100(PDO $pdo,array $user): bool
 
 function campaigns_rewards_locations_v100(PDO $pdo,int $merchantId): array
 {
-    $stmt=$pdo->prepare("SELECT * FROM campaign_merchant_locations_v100 WHERE merchant_account_id=? AND status='active' ORDER BY is_primary DESC,name,id");$stmt->execute([$merchantId]);
-    return $stmt->fetchAll()?:[];
+    if(function_exists('campaigns_rewards_platform_schema_ready_v100')&&campaigns_rewards_platform_schema_ready_v100($pdo)){
+        $stmt=$pdo->prepare("SELECT ml.*,ml.merchant_id merchant_account_id,ml.address1 address_line1,ml.address2 address_line2,
+          IF(ml.is_active=1,'active','inactive') status FROM merchant_locations ml WHERE ml.merchant_id=? AND ml.is_active=1
+          ORDER BY ml.is_primary DESC,ml.name,ml.id");
+        $stmt->execute([$merchantId]);return $stmt->fetchAll()?:[];
+    }
+    return [];
 }
 
 function campaigns_rewards_save_location_v100(PDO $pdo,int $merchantId,int $actorUserId,array $input,int $locationId=0): array
 {
-    if(!campaigns_rewards_can_manage_merchant_v100($pdo,$merchantId,$actorUserId))throw new RuntimeException('Merchant admin access is required.');
-    $name=campaigns_rewards_text_v100($input['name']??'',190);if($name==='')throw new RuntimeException('Location name is required.');
-    $fields=[campaigns_rewards_text_v100($input['address_line1']??'',190),campaigns_rewards_text_v100($input['address_line2']??'',190),campaigns_rewards_text_v100($input['city']??'',120),campaigns_rewards_text_v100($input['region']??'',120),campaigns_rewards_text_v100($input['postal_code']??'',40),strtoupper(campaigns_rewards_text_v100($input['country']??'US',80))?:'US',campaigns_rewards_text_v100($input['phone']??'',80)];
-    $primary=!empty($input['is_primary'])?1:0;$creating=$locationId<1;
-    if(!$creating){
-        $check=$pdo->prepare('SELECT id FROM campaign_merchant_locations_v100 WHERE id=? AND merchant_account_id=? LIMIT 1');$check->execute([$locationId,$merchantId]);if(!$check->fetchColumn())throw new RuntimeException('Location not found.');
-        if($primary)$pdo->prepare('UPDATE campaign_merchant_locations_v100 SET is_primary=0 WHERE merchant_account_id=?')->execute([$merchantId]);
-        $pdo->prepare("UPDATE campaign_merchant_locations_v100 SET name=?,address_line1=?,address_line2=?,city=?,region=?,postal_code=?,country=?,phone=?,is_primary=?,status='active' WHERE id=? AND merchant_account_id=?")
-            ->execute(array_merge([$name],$fields,[$primary,$locationId,$merchantId]));
-    }else{
-        if($primary)$pdo->prepare('UPDATE campaign_merchant_locations_v100 SET is_primary=0 WHERE merchant_account_id=?')->execute([$merchantId]);
-        $stmt=$pdo->prepare("INSERT INTO campaign_merchant_locations_v100 (public_id,merchant_account_id,name,address_line1,address_line2,city,region,postal_code,country,phone,is_primary,status) VALUES (?,?,?,?,?,?,?,?,?,?,?,'active')");
-        $stmt->execute(array_merge([campaigns_rewards_uuid_v100(),$merchantId,$name],$fields,[$primary]));$locationId=(int)$pdo->lastInsertId();
-    }
-    $stmt=$pdo->prepare('SELECT * FROM campaign_merchant_locations_v100 WHERE id=? AND merchant_account_id=? LIMIT 1');$stmt->execute([$locationId,$merchantId]);$row=$stmt->fetch()?:throw new RuntimeException('Location could not be loaded.');
-    $merchant=campaigns_rewards_merchant_v100($pdo,$merchantId);
-    if($merchant){
-        $event=$creating?'merchant.location_created':'merchant.location_updated';
-        campaigns_rewards_record_activity_v100($pdo,$merchantId,$event,['actor_user_id'=>$actorUserId],['location_public_id'=>$row['public_id']]);
-        campaigns_rewards_emit_v100($pdo,(int)$merchant['owner_user_id'],$event,[campaigns_rewards_ref_v100('merchant_account',$merchant['public_id']),campaigns_rewards_ref_v100('merchant_location',$row['public_id'])],['merchant_location_id'=>$row['public_id']]);
-    }
-    return $row;
+    if(function_exists('campaigns_rewards_save_platform_location_v100'))return campaigns_rewards_save_platform_location_v100($pdo,$merchantId,$actorUserId,$input,$locationId);
+    throw new RuntimeException('Campaigns & Rewards V1 Location runtime is unavailable.');
 }
 
 function campaigns_rewards_campaign_v100(PDO $pdo,int $campaignId,bool $forUpdate=false): ?array
 {
-    if($campaignId<1||!campaigns_rewards_schema_ready_v100($pdo))return null;
-    $stmt=$pdo->prepare('SELECT * FROM campaigns_v100 WHERE id=? LIMIT 1'.($forUpdate?' FOR UPDATE':''));
-    $stmt->execute([$campaignId]);$row=$stmt->fetch();return $row?:null;
+    if($campaignId<1||!function_exists('campaigns_rewards_campaign_platform_v100'))return null;
+    $row=campaigns_rewards_campaign_platform_v100($pdo,$campaignId,$forUpdate);if(!$row)return null;
+    $lp=$pdo->prepare('SELECT * FROM campaign_landing_pages WHERE campaign_id=? LIMIT 1');$lp->execute([$campaignId]);$landing=$lp->fetch()?:[];
+    $bind=$pdo->prepare("SELECT target_id FROM campaigns_rewards_object_bindings WHERE merchant_id=? AND subject_type='campaign' AND subject_id=? AND purpose='location' ORDER BY id DESC LIMIT 1");
+    $bind->execute([(int)$row['merchant_id'],$campaignId]);$locationId=(int)$bind->fetchColumn();
+    $terms='';$termsJson=json_decode((string)($landing['terms_json']??''),true);if(is_array($termsJson))$terms=(string)($termsJson['text']??'');
+    return $row+[
+      'merchant_account_id'=>(int)$row['merchant_id'],'title'=>(string)$row['name'],'subtitle'=>(string)($landing['subheadline']??''),
+      'cta_label'=>(string)($landing['cta_label']??'Claim reward'),'terms'=>$terms,'profile_visible'=>(($landing['visibility']??'')==='profile_public'?1:0),
+      'published_at'=>$landing['published_at']??null,'location_id'=>$locationId?:null,
+    ];
 }
 
 function campaigns_rewards_campaigns_v100(PDO $pdo,int $merchantId,bool $activeOnly=false): array
 {
-    $sql='SELECT c.*,l.name location_name FROM campaigns_v100 c LEFT JOIN campaign_merchant_locations_v100 l ON l.id=c.location_id WHERE c.merchant_account_id=?';
-    if($activeOnly)$sql.=" AND c.status='active' AND (c.starts_at IS NULL OR c.starts_at<=UTC_TIMESTAMP()) AND (c.ends_at IS NULL OR c.ends_at>UTC_TIMESTAMP())";
-    $sql.=' ORDER BY c.updated_at DESC,c.id DESC';$stmt=$pdo->prepare($sql);$stmt->execute([$merchantId]);return $stmt->fetchAll()?:[];
+    $sql="SELECT c.id FROM campaigns c WHERE c.merchant_id=?";
+    if($activeOnly)$sql.=" AND c.status='active' AND c.environment='production' AND (c.starts_at IS NULL OR c.starts_at<=UTC_TIMESTAMP()) AND (c.ends_at IS NULL OR c.ends_at>UTC_TIMESTAMP())";
+    $sql.=" ORDER BY c.updated_at DESC,c.id DESC";
+    $stmt=$pdo->prepare($sql);$stmt->execute([$merchantId]);$rows=[];
+    foreach($stmt->fetchAll(PDO::FETCH_COLUMN)?:[] as $id){
+        $row=campaigns_rewards_campaign_v100($pdo,(int)$id);if(!$row)continue;
+        $row['location_name']='';
+        if(!empty($row['location_id'])){$q=$pdo->prepare('SELECT name FROM merchant_locations WHERE id=? AND merchant_id=? LIMIT 1');$q->execute([(int)$row['location_id'],$merchantId]);$row['location_name']=(string)($q->fetchColumn()?:'');}
+        $rows[]=$row;
+    }
+    return $rows;
 }
 
 function campaigns_rewards_save_campaign_v100(PDO $pdo,int $merchantId,int $actorUserId,array $input,int $campaignId=0): array
