@@ -189,6 +189,7 @@ require_once __DIR__.'/campaigns-rewards-platform-v100.php';
 require_once __DIR__.'/campaigns-rewards-domain-v100.php';
 require_once __DIR__.'/campaigns-rewards-v110.php';
 require_once __DIR__.'/campaigns-rewards-v118.php';
+require_once __DIR__.'/campaigns-rewards-v119.php';
 require_once __DIR__.'/cognitive-entity-graph-v2610.php';
 require_once __DIR__.'/cognitive-operations-v2300.php';
 require_once __DIR__.'/cognitive-priority-queue-v2310.php';
