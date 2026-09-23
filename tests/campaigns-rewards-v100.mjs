@@ -48,6 +48,8 @@ const checks=[
  ['Team membership remains canonical and plugin stores scope metadata only',/campaign_team_scopes_v100/.test(core)&&!/CREATE TABLE IF NOT EXISTS workspace_memberships_v350/i.test(core)&&/workspace_memberships_v350/.test(release)],
  ['Team categories are Basic Merchant and Both',/'basic'=>'Basic Team'/.test(core)&&/'merchant'=>'Merchant Team'/.test(core)&&/'both'=>'Both'/.test(core)],
  ['Team UI exposes category and merchant selection only when plugin is active',/campaignsTeamEnabled/.test(team)&&/name="team_category"/.test(team)&&/name="merchant_account_id"/.test(team)],
+ ['direct merchant roles and Merchant Team scope are independent access sources',/team_scope_active/.test(core)&&/member_status=IF\(source='team_scope'/.test(core)&&/if\(!empty\(\$member\['team_scope_active'\]\)/.test(core)],
+ ['removed direct admins cannot regain admin via Merchant Team scope',/if\(\(\$member\['member_status'\]\?\?'')==='active'&&\(\$member\['source'\]\?\?'')==='direct'\)return \(string\)\$member\['member_role'\]/.test(core)&&/return 'member'/.test(core)],
  ['Team invitation acceptance applies stored merchant scope',/campaigns_rewards_apply_invite_scope_v100/.test(teamLifecycle)],
  ['Team suspension removal and resume propagate merchant member status',/campaigns_rewards_team_membership_status_v100/.test(teamLifecycle)],
  ['campaigns have draft active paused ended lifecycle',/campaign\.launched/.test(core)&&/campaign\.paused/.test(core)&&/campaign\.ended/.test(core)],
