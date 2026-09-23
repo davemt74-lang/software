@@ -86,6 +86,10 @@ const checks=[
    /\$n>=0&&is_finite/.test(decision)
    &&/\$ratio>=0&&is_finite/.test(decision)
    &&/'zero_actual_or_realized_ratio_is_valid_evidence'=>true/.test(release)],
+ ['zero predicted cost or tokens with positive actual usage is retained as underprediction evidence',
+   /raw_projected_remaining_cost_micros=0.*actual_incremental_cost_micros=0.*0\.0 ELSE 2\.0/s.test(decision)
+   &&/raw_projected_remaining_tokens=0.*actual_incremental_tokens=0.*0\.0 ELSE 2\.0/s.test(decision)
+   &&/'zero_prediction_positive_actual_is_underprediction_evidence'=>true/.test(release)],
  ['minimum evidence is five and behavior is neutral below threshold',
    /VP3_COGNITIVE_DECISION_CALIBRATION_MIN_SAMPLES_V2580=5/.test(decision)
    &&/return \['factor'=>1\.0,'sample_count'=>\$count,'calibrated'=>false/.test(decision)],
