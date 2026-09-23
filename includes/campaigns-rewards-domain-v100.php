@@ -733,20 +733,22 @@ function campaigns_rewards_issue_reward_v100(PDO $pdo,int $campaignId,int $rewar
             $q=$pdo->prepare("SELECT COUNT(*) FROM reward_issuances WHERE reward_product_id=? AND recipient_contact_id=? AND status NOT IN ('voided','expired')");
             $q->execute([$rewardProductId,$contactId]);if((int)$q->fetchColumn()>=(int)$reward['claim_limit'])throw new RuntimeException('You have reached this Reward limit.');
         }
+        $inventoryBalanceId=null;
         if((string)$reward['inventory_mode']==='tracked'){
             $q=$pdo->prepare("SELECT COALESCE(SUM(on_hand-reserved),0) FROM reward_inventory_balances WHERE reward_product_id=?");
             $q->execute([$rewardProductId]);if((int)$q->fetchColumn()<$quantity)throw new RuntimeException('This Reward is out of inventory.');
             $reserve=$pdo->prepare("SELECT id FROM reward_inventory_balances WHERE reward_product_id=? AND on_hand-reserved>=? ORDER BY location_id,variant_id LIMIT 1 FOR UPDATE");
             $reserve->execute([$rewardProductId,$quantity]);$balanceId=(int)$reserve->fetchColumn();
             if($balanceId<1)throw new RuntimeException('This Reward is out of inventory.');
+            $inventoryBalanceId=$balanceId;
             $pdo->prepare("UPDATE reward_inventory_balances SET reserved=reserved+?,updated_at=UTC_TIMESTAMP() WHERE id=?")->execute([$quantity,$balanceId]);
-            $pdo->prepare("INSERT INTO reward_inventory_ledger (reward_product_id,variant_id,location_id,movement_type,quantity_delta,source_type,source_id,actor_user_id,metadata_json)
-              SELECT reward_product_id,variant_id,location_id,'reserve',?, 'campaign',?, ?, '{}' FROM reward_inventory_balances WHERE id=?")
-              ->execute([-1*$quantity,(string)$campaignId,$actorUserId?:null,$balanceId]);
+            $pdo->prepare("INSERT INTO reward_inventory_ledger (reward_product_id,variant_id,location_id,movement_type,quantity_delta,on_hand_delta,reserved_delta,source_type,source_id,actor_user_id,metadata_json)
+              SELECT reward_product_id,variant_id,location_id,'reserve',0,0,?, 'campaign',?, ?, '{}' FROM reward_inventory_balances WHERE id=?")
+              ->execute([$quantity,(string)$campaignId,$actorUserId?:null,$balanceId]);
         }
 
         if($locked['budget_minor']!==null&&$reward['retail_value_minor']!==null){
-            $q=$pdo->prepare("SELECT COALESCE(SUM(face_value_minor),0) FROM reward_issuances WHERE campaign_id=? AND status NOT IN ('voided','expired')");
+            $q=$pdo->prepare("SELECT COALESCE(SUM(COALESCE(face_value_minor,0)*quantity),0) FROM reward_issuances WHERE campaign_id=? AND status NOT IN ('voided','expired')");
             $q->execute([$campaignId]);$projected=(int)$q->fetchColumn()+((int)$reward['retail_value_minor']*$quantity);
             if($projected>(int)$locked['budget_minor'])throw new RuntimeException('Campaign budget would be exceeded.');
         }
@@ -764,11 +766,11 @@ function campaigns_rewards_issue_reward_v100(PDO $pdo,int $campaignId,int $rewar
         ];
         $recipientUserId=isset($options['recipient_user_id'])?max(0,(int)$options['recipient_user_id']):0;
         $pdo->prepare("INSERT INTO reward_issuances
-          (public_id,merchant_id,campaign_id,campaign_version_id,campaign_enrollment_id,campaign_case_id,reward_product_id,reward_variant_id,recipient_contact_id,recipient_user_id,issued_by_user_id,issued_by_actor_type,environment,status,credential_hash,credential_last4,quantity,remaining_quantity,face_value_minor,currency,terms_snapshot_json,issued_at,expires_at)
-          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'issued',?,?,?,?,?,?,?,UTC_TIMESTAMP(),?)")
+          (public_id,merchant_id,campaign_id,campaign_version_id,campaign_enrollment_id,campaign_case_id,reward_product_id,reward_variant_id,inventory_balance_id,recipient_contact_id,recipient_user_id,issued_by_user_id,issued_by_actor_type,environment,status,credential_hash,credential_last4,quantity,remaining_quantity,face_value_minor,currency,terms_snapshot_json,issued_at,expires_at)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,'issued',?,?,?,?,?,?,?,UTC_TIMESTAMP(),?)")
           ->execute([
             $public,(int)$campaign['merchant_id'],$campaignId,(int)$version['id'],((int)($options['campaign_enrollment_id']??0))?:null,((int)($options['campaign_case_id']??0))?:null,
-            $rewardProductId,((int)($options['reward_variant_id']??0))?:null,$contactId,$recipientUserId?:null,$actorUserId?:null,$actorType,(string)$campaign['environment'],
+            $rewardProductId,((int)($options['reward_variant_id']??0))?:null,$inventoryBalanceId,$contactId,$recipientUserId?:null,$actorUserId?:null,$actorType,(string)$campaign['environment'],
             $hash,$last4,$quantity,$quantity,$reward['retail_value_minor'],$reward['currency'],campaigns_rewards_json_v100($terms),$expiresAt,
           ]);
         $issuanceId=(int)$pdo->lastInsertId();
@@ -776,7 +778,7 @@ function campaigns_rewards_issue_reward_v100(PDO $pdo,int $campaignId,int $rewar
             $pdo->prepare("INSERT INTO reward_liability_ledger
               (merchant_id,campaign_id,reward_issuance_id,entry_type,face_value_delta_minor,estimated_cost_delta_minor,currency,source_type,source_id,metadata_json)
               VALUES (?,?,?,'issued',?,?,?,?,?,'{}')")
-              ->execute([(int)$campaign['merchant_id'],$campaignId,$issuanceId,$reward['retail_value_minor'],$reward['internal_cost_minor'],$reward['currency'],'reward_issuance',(string)$issuanceId]);
+              ->execute([(int)$campaign['merchant_id'],$campaignId,$issuanceId,$reward['retail_value_minor']===null?null:(int)$reward['retail_value_minor']*$quantity,$reward['internal_cost_minor']===null?null:(int)$reward['internal_cost_minor']*$quantity,$reward['currency'],'reward_issuance',(string)$issuanceId]);
         }
         campaigns_rewards_idempotency_complete_v100($pdo,(int)$idem['id'],'reward_issuance',$issuanceId);
         if($owns)$pdo->commit();
@@ -961,16 +963,16 @@ function campaigns_rewards_process_claim_v100(PDO $pdo,string $rewardCredential,
             ->execute([$remaining,$remaining===0?'claimed':(string)$issuance['status'],$remaining,$issuanceId]);
         $pdo->prepare("UPDATE merchant_claim_codes SET last_used_at=UTC_TIMESTAMP(),updated_at=UTC_TIMESTAMP() WHERE id=?")->execute([$claimCodeId]);
         if((string)$issuance['inventory_mode']==='tracked'){
+            if(empty($issuance['inventory_balance_id']))throw new RuntimeException('Reward inventory reservation is missing.');
             $balance=$pdo->prepare("SELECT id,reward_product_id,variant_id,location_id,on_hand,reserved FROM reward_inventory_balances
-              WHERE reward_product_id=? AND reserved>=? AND on_hand>=?
-              ORDER BY (location_id=?) DESC,(location_id=0) DESC,id LIMIT 1 FOR UPDATE");
-            $balance->execute([(int)$issuance['reward_product_id'],$quantity,$quantity,$requestedLocation?:0]);$inventoryRow=$balance->fetch();
+              WHERE id=? AND reward_product_id=? AND reserved>=? AND on_hand>=? LIMIT 1 FOR UPDATE");
+            $balance->execute([(int)$issuance['inventory_balance_id'],(int)$issuance['reward_product_id'],$quantity,$quantity]);$inventoryRow=$balance->fetch();
             if(!$inventoryRow)throw new RuntimeException('Reward inventory reservation is inconsistent.');
             $pdo->prepare("UPDATE reward_inventory_balances SET on_hand=on_hand-?,reserved=reserved-?,updated_at=UTC_TIMESTAMP() WHERE id=?")
               ->execute([$quantity,$quantity,(int)$inventoryRow['id']]);
-            $pdo->prepare("INSERT INTO reward_inventory_ledger (reward_product_id,variant_id,location_id,movement_type,quantity_delta,source_type,source_id,actor_user_id,metadata_json)
-              VALUES (?,?,?,?,?,'reward_claim',?,?,?)")
-              ->execute([(int)$inventoryRow['reward_product_id'],(int)$inventoryRow['variant_id'],(int)$inventoryRow['location_id'],'claim',-1*$quantity,(string)$claimId,$actorUserId,campaigns_rewards_json_v100(['issuance_id'=>$issuanceId])]);
+            $pdo->prepare("INSERT INTO reward_inventory_ledger (reward_product_id,variant_id,location_id,movement_type,quantity_delta,on_hand_delta,reserved_delta,source_type,source_id,actor_user_id,metadata_json)
+              VALUES (?,?,?,?,?,?,?,'reward_claim',?,?,?)")
+              ->execute([(int)$inventoryRow['reward_product_id'],(int)$inventoryRow['variant_id'],(int)$inventoryRow['location_id'],'claim',-1*$quantity,-1*$quantity,-1*$quantity,(string)$claimId,$actorUserId,campaigns_rewards_json_v100(['issuance_id'=>$issuanceId])]);
         }
         if((string)$issuance['environment']==='production'){
             $pdo->prepare("INSERT INTO reward_liability_ledger
