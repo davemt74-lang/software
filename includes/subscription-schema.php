@@ -41,6 +41,7 @@ function subscription_capability_catalog(): array
         'voice_clone.access' => ['label'=>'Voice Clone','type'=>'boolean','category'=>'AI'],
         'transcription.access' => ['label'=>'Transcription','type'=>'boolean','category'=>'AI'],
         'music_workspace.access' => ['label'=>'Music Workspace','type'=>'boolean','category'=>'Studio'],
+        'campaigns_rewards.access' => ['label'=>'Campaigns & Rewards','type'=>'boolean','category'=>'Business'],
         'stem_editor.access' => ['label'=>'Stem Editor','type'=>'boolean','category'=>'Studio'],
         'video_editor.access' => ['label'=>'Video Editor','type'=>'boolean','category'=>'Studio'],
         'team_seats' => ['label'=>'Team Seats','type'=>'limit','category'=>'Collaboration'],
@@ -219,6 +220,7 @@ function subscription_seed_defaults(PDO $pdo): void
         'transcription.access'=>[1,null],
         'stem_editor.access'=>[0,null],
         'video_editor.access'=>[0,null],
+        'campaigns_rewards.access'=>[0,null],
         'team_seats'=>[1,0],
     ];
     foreach ($trialEntitlements as $key => [$enabled,$limit]) {
@@ -236,6 +238,7 @@ function subscription_seed_defaults(PDO $pdo): void
         'transcription.access'=>[1,null],
         'stem_editor.access'=>[1,null],
         'video_editor.access'=>[1,null],
+        'campaigns_rewards.access'=>[1,null],
         'team_seats'=>[1,2],
         'ai.unlimited'=>[1,null],
     ];
