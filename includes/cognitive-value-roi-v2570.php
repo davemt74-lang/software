@@ -17,7 +17,7 @@ const VP3_COGNITIVE_VALUE_ROI_V2570='vp3-cognitive-value-roi-v2570-20260923';
 const VP3_COGNITIVE_VALUE_ROI_CONTRACT_V2570='cognitive-outcome-value-roi-v1';
 const VP3_COGNITIVE_VALUE_MAX_PROFILES_V2570=64;
 const VP3_COGNITIVE_VALUE_MAX_EVENTS_V2570=120;
-const VP3_COGNITIVE_VALUE_MAX_PROFILE_EVENTS_SCAN_V2570=1200;
+const VP3_COGNITIVE_VALUE_MAX_PROFILE_EVENTS_SCAN_V2570=5000;
 
 function vp3_cognitive_value_schema_ready_v2570(?PDO $pdo=null): bool
 {
@@ -338,31 +338,80 @@ function vp3_cognitive_value_profile_target_key_v2570(string $eventType,array $m
     return $kind.':title:'.strtolower(vp3_cognitive_value_text_v2570($metadata['target_title']??'unknown',190));
 }
 
-function vp3_cognitive_value_profile_conversion_v2570(PDO $pdo,int $uid,array $profile): ?array
-{
-    if($uid<1||!table_exists('profile_events'))return null;
-    $target=(string)($profile['evidence_key']??'');$currency=strtoupper((string)($profile['currency']??''));
-    if($target===''||$currency==='')return null;
-    $baseline=(string)($profile['baseline_at']??$profile['created_at']??'');
+function vp3_cognitive_value_profile_conversion_batch_v2570(
+    PDO $pdo,int $uid,array $profiles
+): array {
+    if($uid<1||!table_exists('profile_events'))return [];
+    $targets=[];$earliest=0;
+    foreach($profiles as $profile){
+        if(!is_array($profile)||(string)($profile['realization_mode']??'')!=='profile_conversion')continue;
+        $id=(int)($profile['id']??0);
+        $target=(string)($profile['evidence_key']??'');
+        $currency=strtoupper((string)($profile['currency']??''));
+        if($id<1||$target===''||$currency==='')continue;
+        $baseline=(string)($profile['baseline_at']??$profile['created_at']??'');
+        $baselineTs=strtotime($baseline)?:0;
+        $targets[$id]=[
+            'profile'=>$profile,'target'=>$target,'currency'=>$currency,
+            'baseline'=>$baseline!==''?$baseline:'1970-01-01 00:00:00',
+            'baseline_ts'=>$baselineTs,
+        ];
+        if($earliest===0||($baselineTs>0&&$baselineTs<$earliest))$earliest=$baselineTs;
+    }
+    if(!$targets)return [];
+
+    $since=$earliest>0?gmdate('Y-m-d H:i:s',$earliest):'1970-01-01 00:00:00';
     try{
+        $countStmt=$pdo->prepare("SELECT COUNT(*) FROM profile_events
+          WHERE owner_user_id=? AND event_type IN ('booking_converted','product_converted') AND created_at>=?");
+        $countStmt->execute([$uid,$since]);$eventCount=max(0,(int)$countStmt->fetchColumn());
+        if($eventCount>VP3_COGNITIVE_VALUE_MAX_PROFILE_EVENTS_SCAN_V2570){
+            $out=[];
+            foreach($targets as $id=>$target){
+                $out[$id]=[
+                    'verified'=>false,'source'=>'profile_conversion_scan_limit','verified_at'=>'',
+                    'value_micros'=>null,'score_value'=>null,'currency'=>$target['currency'],
+                    'evidence_key'=>$target['target'],'conversion_count'=>0,'incomplete'=>true,
+                    'event_count'=>$eventCount,
+                ];
+            }
+            return $out;
+        }
+
         $stmt=$pdo->prepare("SELECT event_type,metadata_json,created_at FROM profile_events
           WHERE owner_user_id=? AND event_type IN ('booking_converted','product_converted')
-            AND created_at>=? ORDER BY id ASC LIMIT ".VP3_COGNITIVE_VALUE_MAX_PROFILE_EVENTS_SCAN_V2570);
-        $stmt->execute([$uid,$baseline!==''?$baseline:'1970-01-01 00:00:00']);
-        $cents=0;$matches=0;$lastAt='';
-        foreach($stmt->fetchAll(PDO::FETCH_ASSOC)?:[] as $row){
-            $meta=json_decode((string)($row['metadata_json']??''),true);if(!is_array($meta))$meta=[];
-            if(vp3_cognitive_value_profile_target_key_v2570((string)$row['event_type'],$meta)!==$target)continue;
-            $rowCurrency=strtoupper(trim((string)($meta['currency']??'')));if($rowCurrency!==$currency)continue;
-            $cents+=max(0,(int)($meta['value_cents']??0));$matches++;$lastAt=(string)($row['created_at']??$lastAt);
+            AND created_at>=? ORDER BY id ASC");
+        $stmt->execute([$uid,$since]);$events=$stmt->fetchAll(PDO::FETCH_ASSOC)?:[];
+        $out=[];
+        foreach($targets as $id=>$target){
+            $cents=0;$matches=0;$lastAt='';
+            foreach($events as $row){
+                $at=strtotime((string)($row['created_at']??''))?:0;
+                if($target['baseline_ts']>0&&$at>0&&$at<$target['baseline_ts'])continue;
+                $meta=json_decode((string)($row['metadata_json']??''),true);if(!is_array($meta))$meta=[];
+                if(vp3_cognitive_value_profile_target_key_v2570((string)$row['event_type'],$meta)!==$target['target'])continue;
+                $rowCurrency=strtoupper(trim((string)($meta['currency']??'')));
+                if($rowCurrency!==$target['currency'])continue;
+                $cents+=max(0,(int)($meta['value_cents']??0));$matches++;
+                $lastAt=(string)($row['created_at']??$lastAt);
+            }
+            if($matches<1)continue;
+            $out[$id]=[
+                'verified'=>true,'source'=>'profile_conversion_ledger','verified_at'=>$lastAt,
+                'value_micros'=>$cents*10000,'score_value'=>null,'currency'=>$target['currency'],
+                'evidence_key'=>$target['target'],'conversion_count'=>$matches,'incomplete'=>false,
+                'event_count'=>$eventCount,
+            ];
         }
-        if($matches<1)return null;
-        return [
-            'verified'=>true,'source'=>'profile_conversion_ledger','verified_at'=>$lastAt,
-            'value_micros'=>$cents*10000,'score_value'=>null,'currency'=>$currency,
-            'evidence_key'=>$target,'conversion_count'=>$matches,
-        ];
-    }catch(Throwable $e){return null;}
+        return $out;
+    }catch(Throwable $e){return [];}
+}
+
+function vp3_cognitive_value_profile_conversion_v2570(PDO $pdo,int $uid,array $profile): ?array
+{
+    $id=(int)($profile['id']??0);if($id<1)return null;
+    $batch=vp3_cognitive_value_profile_conversion_batch_v2570($pdo,$uid,[$profile]);
+    return is_array($batch[$id]??null)?$batch[$id]:null;
 }
 
 function vp3_cognitive_value_verified_completion_v2570(PDO $pdo,int $uid,array $profile): ?array
@@ -401,7 +450,7 @@ function vp3_cognitive_value_verified_completion_v2570(PDO $pdo,int $uid,array $
     ];
 }
 
-function vp3_cognitive_value_realization_v2570(PDO $pdo,array $user,array $profile): array
+function vp3_cognitive_value_realization_v2570(PDO $pdo,array $user,array $profile,array $conversionEvidence=[]): array
 {
     $uid=(int)($user['id']??0);$profileId=(int)($profile['id']??0);
     $empty=[
@@ -418,7 +467,9 @@ function vp3_cognitive_value_realization_v2570(PDO $pdo,array $user,array $profi
         return $verified?array_merge($empty,$verified):$empty;
     }
     if($mode==='profile_conversion'){
-        $verified=vp3_cognitive_value_profile_conversion_v2570($pdo,$uid,$profile);
+        $verified=is_array($conversionEvidence[$profileId]??null)
+            ?$conversionEvidence[$profileId]
+            :vp3_cognitive_value_profile_conversion_v2570($pdo,$uid,$profile);
         return $verified?array_merge($empty,$verified):$empty;
     }
     return $empty;
@@ -560,6 +611,7 @@ function vp3_cognitive_value_apply_v2570(
     $profileMap=vp3_cognitive_value_profile_map_v2570($profiles);
     $econByGoal=[];foreach((array)($economics['goals']??[]) as $row)if(is_array($row))$econByGoal[(int)($row['goal_id']??0)]=$row;
     $accountUsage=(array)($economics['usage']??[]);
+    $conversionEvidence=vp3_cognitive_value_profile_conversion_batch_v2570($pdo,$uid,$profiles);
     $goalRows=[];$resolutions=[];$profileUsage=[];
     foreach($items as $item){
         if(!is_array($item))continue;$goalId=(int)($item['goal_id']??0);
@@ -593,7 +645,7 @@ function vp3_cognitive_value_apply_v2570(
         $remainingCost=$remaining['cost_micros']??null;
         $expectedCostKnown=$remainingCost!==null&&$historicalUnknown===0;
         $expectedCost=$expectedCostKnown?$historical+max(0,(int)$remainingCost):null;
-        $realization=vp3_cognitive_value_realization_v2570($pdo,$user,$profile);
+        $realization=vp3_cognitive_value_realization_v2570($pdo,$user,$profile,$conversionEvidence);
         $expectedMoney=$profile['expected_value_micros'];
         $expectedScore=$profile['expected_score'];
         $expectedRoi=vp3_cognitive_value_roi_percent_v2570(
@@ -630,7 +682,7 @@ function vp3_cognitive_value_apply_v2570(
 
     $profileRows=[];
     foreach($profiles as $profile){
-        $realization=vp3_cognitive_value_realization_v2570($pdo,$user,$profile);
+        $realization=vp3_cognitive_value_realization_v2570($pdo,$user,$profile,$conversionEvidence);
         $profileRows[]=['profile'=>$profile,'realization'=>$realization];
     }
     $calibration=[
