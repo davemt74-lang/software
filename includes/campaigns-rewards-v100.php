@@ -225,8 +225,12 @@ function campaigns_rewards_accessible_merchants_v100(PDO $pdo,array $user): arra
     $stmt=$pdo->prepare("SELECT m.*,mp.description,mp.website_url,mr.role_key access_role,mm.status access_status
       FROM merchant_members mm INNER JOIN merchant_accounts m ON m.id=mm.merchant_id
       INNER JOIN merchant_roles mr ON mr.id=mm.role_id LEFT JOIN merchant_profiles mp ON mp.merchant_id=m.id
-      WHERE mm.user_id=? AND mm.status='active' AND m.status='active' ORDER BY m.name,m.id");
-    $stmt->execute([$uid]);return $stmt->fetchAll()?:[];
+      WHERE mm.user_id=? AND mm.status='active' AND m.status<>'closed' ORDER BY m.name,m.id");
+    $stmt->execute([$uid]);$rows=[];
+    foreach($stmt->fetchAll()?:[] as $row){
+        if(campaigns_rewards_owner_plugin_enabled_v100($pdo,(int)$row['owner_user_id']))$rows[]=$row;
+    }
+    return $rows;
 }
 
 function campaigns_rewards_owned_merchants_v100(PDO $pdo,int $ownerUserId): array
@@ -470,6 +474,7 @@ function campaigns_rewards_campaign_by_slug_v100(PDO $pdo,string $slug,bool $pub
 function campaigns_rewards_profile_campaigns_v100(PDO $pdo,int $profileUserId,int $limit=24): array
 {
     if($profileUserId<1)return [];$limit=max(1,min(50,$limit));
+    if(!campaigns_rewards_owner_plugin_enabled_v100($pdo,$profileUserId))return [];
     if(!function_exists('campaigns_rewards_profile_campaigns_platform_v100'))return [];
     $rows=array_slice(campaigns_rewards_profile_campaigns_platform_v100($pdo,$profileUserId),0,$limit);$out=[];
     foreach($rows as $row){
