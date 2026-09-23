@@ -203,3 +203,53 @@ function campaigns_rewards_public_participate_v118(PDO $pdo,array $campaign,arra
     };
     return ['contact'=>$contact,'enrollment'=>$enrollment,'issued'=>null,'reward'=>null,'behavior'=>$behavior,'message'=>$message];
 }
+
+function campaigns_rewards_recent_enrollments_v118(PDO $pdo,int $merchantId,int $actorUserId,int $limit=40): array
+{
+    campaigns_rewards_platform_assert_can_v100($pdo,$merchantId,$actorUserId,'campaigns.view');
+    $limit=max(1,min(100,$limit));
+    $sql="SELECT e.*,c.name campaign_name,c.public_id campaign_public_id,c.status campaign_status,
+      ct.type_key campaign_type_key,ct.name campaign_type_name,
+      cc.name contact_name,cc.email contact_email
+      FROM campaign_enrollments e
+      INNER JOIN campaigns c ON c.id=e.campaign_id
+      INNER JOIN campaign_types ct ON ct.id=c.campaign_type_id
+      LEFT JOIN crm_contacts cc ON cc.id=e.contact_id
+      WHERE c.merchant_id=?
+      ORDER BY e.updated_at DESC,e.id DESC LIMIT {$limit}";
+    $stmt=$pdo->prepare($sql);$stmt->execute([$merchantId]);
+    return $stmt->fetchAll()?:[];
+}
+
+function campaigns_rewards_issue_enrollment_reward_v118(PDO $pdo,int $merchantId,int $campaignId,int $enrollmentId,int $rewardProductId,int $actorUserId): array
+{
+    campaigns_rewards_platform_assert_can_v100($pdo,$merchantId,$actorUserId,'campaigns.enrollment.manage');
+    campaigns_rewards_platform_assert_can_v100($pdo,$merchantId,$actorUserId,'rewards.issue');
+    if($campaignId<1||$enrollmentId<1||$rewardProductId<1)throw new RuntimeException('Choose a Campaign participant and attached Reward.');
+
+    $owns=!$pdo->inTransaction();if($owns)$pdo->beginTransaction();
+    try{
+        $campaign=campaigns_rewards_campaign_platform_v100($pdo,$campaignId,true)?:throw new RuntimeException('Campaign not found.');
+        if((int)$campaign['merchant_id']!==$merchantId)throw new RuntimeException('Campaign not found.');
+        $q=$pdo->prepare("SELECT * FROM campaign_enrollments WHERE id=? AND campaign_id=? AND contact_id IS NOT NULL LIMIT 1 FOR UPDATE");
+        $q->execute([$enrollmentId,$campaignId]);$enrollment=$q->fetch()?:throw new RuntimeException('Campaign participant not found.');
+        if(!in_array($rewardProductId,campaigns_rewards_campaign_reward_ids_v118($pdo,$campaignId),true))throw new RuntimeException('That Reward is not attached to this Campaign.');
+        $issuance=campaigns_rewards_issue_reward_v100($pdo,$campaignId,$rewardProductId,(int)$enrollment['contact_id'],$actorUserId,[
+            'actor_type'=>'user','source'=>'campaign_fulfillment','campaign_enrollment_id'=>$enrollmentId,
+            'idempotency_key'=>'campaign-fulfillment:'.$campaignId.':'.$enrollmentId.':'.$rewardProductId,
+        ]);
+        $pdo->prepare("UPDATE campaign_enrollments SET status='completed',completed_at=COALESCE(completed_at,UTC_TIMESTAMP()),updated_at=UTC_TIMESTAMP() WHERE id=?")
+          ->execute([$enrollmentId]);
+        campaigns_rewards_activity_event_v100($pdo,$merchantId,'campaign.enrollment_completed',[
+            'campaign_id'=>$campaignId,'contact_id'=>(int)$enrollment['contact_id'],'enrollment_id'=>$enrollmentId,
+            'reward_issuance_id'=>(int)$issuance['id'],
+        ],[
+            'summary'=>'Campaign participation fulfilled with Reward',
+            'merchant_public_id'=>$campaign['merchant_public_id'],'campaign_public_id'=>$campaign['public_id'],
+            'reward_product_id'=>$rewardProductId,
+        ],(string)$campaign['environment'],$actorUserId);
+        if($owns)$pdo->commit();
+        return ['campaign'=>$campaign,'enrollment'=>$enrollment,'issuance'=>$issuance];
+    }catch(Throwable $e){if($owns&&$pdo->inTransaction())$pdo->rollBack();throw $e;}
+}
+
