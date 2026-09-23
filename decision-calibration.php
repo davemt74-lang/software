@@ -25,7 +25,7 @@ function vp3_decision_ui_factor_v2580(array $factor): string
 function vp3_decision_ui_duration_v2580(mixed $seconds): string
 {
     if($seconds===null||$seconds==='')return '—';
-    $seconds=abs((int)$seconds;
+    $seconds=abs((int)$seconds);
     if($seconds<3600)return number_format($seconds/60,0).' min';
     if($seconds<86400)return number_format($seconds/3600,1).' hr';
     return number_format($seconds/86400,1).' days';
