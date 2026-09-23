@@ -108,22 +108,17 @@ function campaigns_rewards_merchant_v100(PDO $pdo,int $merchantId,bool $forUpdat
 
 function campaigns_rewards_merchant_member_v100(PDO $pdo,int $merchantId,int $userId,bool $forUpdate=false): ?array
 {
-    if($merchantId<1||$userId<1)return null;
-    if(function_exists('campaigns_rewards_platform_schema_ready_v100')&&campaigns_rewards_platform_schema_ready_v100($pdo)){
-        $stmt=$pdo->prepare("SELECT mm.*,mr.role_key member_role,mm.status member_status,
-          IF(mm.is_owner=1,'direct','projected') source
-          FROM merchant_members mm INNER JOIN merchant_roles mr ON mr.id=mm.role_id
-          WHERE mm.merchant_id=? AND mm.user_id=? LIMIT 1".($forUpdate?' FOR UPDATE':''));
-        $stmt->execute([$merchantId,$userId]);$row=$stmt->fetch();
-        if($row){
-            $sources=$pdo->prepare("SELECT source_type,role_key,status FROM merchant_member_access_sources WHERE merchant_id=? AND user_id=? ORDER BY FIELD(source_type,'owner','direct','team'),id");
-            $sources->execute([$merchantId,$userId]);$row['access_sources']=$sources->fetchAll()?:[];
-        }
-        return $row?:null;
+    if($merchantId<1||$userId<1||!campaigns_rewards_schema_ready_v100($pdo))return null;
+    $stmt=$pdo->prepare("SELECT mm.*,mr.role_key member_role,mm.status member_status,
+      IF(mm.is_owner=1,'direct','projected') source
+      FROM merchant_members mm INNER JOIN merchant_roles mr ON mr.id=mm.role_id
+      WHERE mm.merchant_id=? AND mm.user_id=? LIMIT 1".($forUpdate?' FOR UPDATE':''));
+    $stmt->execute([$merchantId,$userId]);$row=$stmt->fetch();
+    if($row){
+        $sources=$pdo->prepare("SELECT source_type,role_key,status FROM merchant_member_access_sources WHERE merchant_id=? AND user_id=? ORDER BY FIELD(source_type,'owner','direct','team'),id");
+        $sources->execute([$merchantId,$userId]);$row['access_sources']=$sources->fetchAll()?:[];
     }
-    if(!campaigns_rewards_schema_ready_v100($pdo))return null;
-    $stmt=$pdo->prepare('SELECT * FROM campaign_merchant_members_v100 WHERE merchant_account_id=? AND user_id=? LIMIT 1'.($forUpdate?' FOR UPDATE':''));
-    $stmt->execute([$merchantId,$userId]);$row=$stmt->fetch();return $row?:null;
+    return $row?:null;
 }
 
 function campaigns_rewards_member_role_v100(PDO $pdo,int $merchantId,int $userId): string
@@ -544,17 +539,14 @@ function campaigns_rewards_reporting_v100(PDO $pdo,int $merchantId,int $userId):
 
 function campaigns_rewards_merchant_members_v100(PDO $pdo,int $merchantId): array
 {
-    if(function_exists('campaigns_rewards_platform_schema_ready_v100')&&campaigns_rewards_platform_schema_ready_v100($pdo)){
-        $stmt=$pdo->prepare("SELECT mm.*,mr.role_key member_role,mr.name role_name,mm.status member_status,
-          CASE WHEN mm.is_owner=1 THEN 'owner' WHEN mr.role_key='administrator' THEN 'admin' WHEN mr.role_key='merchant_team' THEN 'member' ELSE mr.role_key END effective_role,
-          EXISTS(SELECT 1 FROM merchant_member_access_sources src WHERE src.merchant_id=mm.merchant_id AND src.user_id=mm.user_id AND src.source_type='team' AND src.status='active') team_scope_active,
-          u.display_name,u.email,u.avatar_path,u.is_active
-          FROM merchant_members mm INNER JOIN merchant_roles mr ON mr.id=mm.role_id INNER JOIN users u ON u.id=mm.user_id
-          WHERE mm.merchant_id=? AND mm.status<>'removed'
-          ORDER BY mm.is_owner DESC,FIELD(mr.role_key,'administrator','manager','marketing','customer_service','claim_processor','fulfillment','analyst','merchant_team','custom'),u.display_name,u.id");
-        $stmt->execute([$merchantId]);return $stmt->fetchAll()?:[];
-    }
-    $stmt=$pdo->prepare("SELECT mm.*,CASE WHEN mm.member_status='active' AND mm.source='direct' THEN mm.member_role WHEN mm.team_scope_active=1 THEN 'member' ELSE mm.member_role END effective_role,u.display_name,u.email,u.avatar_path,u.is_active FROM campaign_merchant_members_v100 mm INNER JOIN users u ON u.id=mm.user_id WHERE mm.merchant_account_id=? AND (mm.member_status<>'removed' OR mm.team_scope_active=1) ORDER BY u.display_name,u.id");
+    if(!campaigns_rewards_schema_ready_v100($pdo))return [];
+    $stmt=$pdo->prepare("SELECT mm.*,mr.role_key member_role,mr.name role_name,mm.status member_status,
+      CASE WHEN mm.is_owner=1 THEN 'owner' WHEN mr.role_key='administrator' THEN 'admin' WHEN mr.role_key='merchant_team' THEN 'member' ELSE mr.role_key END effective_role,
+      EXISTS(SELECT 1 FROM merchant_member_access_sources src WHERE src.merchant_id=mm.merchant_id AND src.user_id=mm.user_id AND src.source_type='team' AND src.status='active') team_scope_active,
+      u.display_name,u.email,u.avatar_path,u.is_active
+      FROM merchant_members mm INNER JOIN merchant_roles mr ON mr.id=mm.role_id INNER JOIN users u ON u.id=mm.user_id
+      WHERE mm.merchant_id=? AND mm.status<>'removed'
+      ORDER BY mm.is_owner DESC,FIELD(mr.role_key,'administrator','manager','marketing','customer_service','claim_processor','fulfillment','analyst','merchant_team','custom'),u.display_name,u.id");
     $stmt->execute([$merchantId]);return $stmt->fetchAll()?:[];
 }
 
