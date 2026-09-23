@@ -1,4 +1,4 @@
-name: Cognitive Loop Release v23.60
+name: Cognitive Runtime Release v23.70
 
 on:
   pull_request:
@@ -50,7 +50,7 @@ on:
 
 jobs:
   release:
-    name: Cognitive Loop Release · PHP ${{ matrix.php }}
+    name: Cognitive Runtime v23.70 · PHP ${{ matrix.php }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -69,7 +69,11 @@ jobs:
       - name: PHP syntax
         run: |
           php -l includes/cognitive-release-v2360.php
+          php -l includes/cognitive-domain-manifest-v2370.php
+          php -l includes/cognitive-live-session-v2370.php
           php -l includes/cognitive-runtime-v500.php
+          php -l includes/cognitive-runtime-session-v2370.php
+          php -l includes/cognitive-release-v2370.php
           php -l includes/cognitive-presentation-v510.php
           php -l includes/cognitive-cards-v520.php
           php -l includes/cognitive-feed-v530.php
@@ -110,6 +114,8 @@ jobs:
           node --check member-agent-voice-menu.js
       - name: End-to-end release contract
         run: node tests/cognitive-loop-release-v2360.mjs
+      - name: v23.70 live session foundation
+        run: node tests/cognitive-live-session-v2370.mjs
       - name: v23.x feature family
         run: |
           node tests/cognitive-calibration-v2350.mjs

@@ -39,6 +39,7 @@ NODE_TESTS = [
     'tests/chat-notifications-brain-v240.mjs',
     'tests/chat-proactive-voice-hardening-v244.mjs',
     'tests/ai-credential-key-preservation-v2453.mjs',
+    'tests/cognitive-live-session-v2370.mjs',
     'tests/knowledge-agent-context-v162-browser-contract.mjs',
     'tests/agent-brain-learning-history-v317.mjs',
     'tests/chat-onboarding-v241.mjs',

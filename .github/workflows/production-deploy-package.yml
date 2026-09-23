@@ -49,8 +49,8 @@ jobs:
 
           cat > _deploy/VP3_RELEASE.json <<EOF
           {
-            "release": "Cognitive Loop v23.60",
-            "build": "vp3-cognitive-loop-release-v2360-20260921",
+            "release": "Cognitive Runtime v23.70",
+            "build": "vp3-cognitive-live-session-release-v2370-20260922",
             "commit": "${VP3_RELEASE_SHA}",
             "repository": "${GITHUB_REPOSITORY}",
             "workflow_run_id": "${GITHUB_RUN_ID}",
@@ -64,8 +64,8 @@ jobs:
           test -f _deploy/chat.php
           test -f _deploy/.htaccess
 
-          # v23.60 release hardening: the production artifact must contain
-          # the complete canonical cognitive loop and both user surfaces.
+          # v23.70 release hardening: the production artifact must contain
+          # the canonical cognitive loop, live-session/event foundation and user surfaces.
           test -f _deploy/includes/cognitive-runtime-v500.php
           test -f _deploy/includes/cognitive-presentation-v510.php
           test -f _deploy/includes/cognitive-cards-v520.php
@@ -81,6 +81,11 @@ jobs:
           test -f _deploy/includes/cognitive-proactive-now-v2340.php
           test -f _deploy/includes/cognitive-calibration-v2350.php
           test -f _deploy/includes/cognitive-release-v2360.php
+          test -f _deploy/includes/cognitive-domain-manifest-v2370.php
+          test -f _deploy/includes/cognitive-live-session-v2370.php
+          test -f _deploy/includes/cognitive-runtime-session-v2370.php
+          test -f _deploy/includes/cognitive-release-v2370.php
+          test -f _deploy/includes/agent-event-infrastructure-v1920.php
           test -f _deploy/api/cognitive-feed-v530.php
           test -f _deploy/api/cognitive-planning-v550.php
           test -f _deploy/api/cognitive-orchestration-v560.php

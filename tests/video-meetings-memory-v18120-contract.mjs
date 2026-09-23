@@ -95,7 +95,10 @@ const enrichPos=chat.indexOf("$agentContext=agent_surface_v131_enrich($user,'cha
 const preservePos=chat.indexOf("$agentContext['meeting_memory']=$meetingMemory",enrichPos);
 assert.ok(enrichPos>=0&&preservePos>enrichPos,'meeting memory must be preserved after Agent surface enrichment');
 assert.ok(chat.includes('video_meeting_memory_chat_sources_v18120($meetingMemory)'));
-assert.ok(chat.includes('$publicSources=array_merge($publicSources,$toolSources,$meetingSources)'));
+assert.ok(chat.includes('$meetingSources=array_merge(video_meeting_memory_chat_sources_v18120($meetingMemory),video_meeting_commitment_command_chat_sources_v18230($meetingMemory))'),'meeting citations must still enter the shared source set');
+assert.ok(chat.includes('$publicSources=array_merge($publicSources,$toolSources,$meetingSources,[chat_execution_v019_source($execution)])'),'meeting citations must remain merged with tool/runtime source candidates');
+assert.ok(chat.includes('$publicSources=array_values(array_filter($publicSources'),'public source set must pass through the canonical internal-source filter');
+assert.ok(chat.includes("chat_context_is_internal_source($source)"),'source hardening must not remove meeting citations by bypassing canonical filtering');
 assert.ok(chat.includes('homeserver_agent_v025_chat($user,$query,$conversationId,$history,$principal,$activeAgent,$agentContext'));
 assert.ok(chat.includes('knowledge_retrieval_v162_generate_answer($query,$history,$user,$principal,$agentContext'));
 

@@ -53,6 +53,12 @@ function agent_activity_v94_record(array $user,string $surface,string $state,arr
         $e=$pdo->prepare('INSERT INTO agent_activity_events (user_id,surface,context_key,task_kind,task_title,previous_state,activity_state,reason,details_json,created_at) VALUES (?,?,?,?,?,?,?,?,?,NOW())');
         $e->execute([$uid,$surface,$contextKey,$taskKind,$taskTitle,(string)($prev['activity_state']??''),$state,mb_substr($reason,0,120),json_encode($details,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE)]);
     }
+    if(function_exists('vp3_live_session_record_activity_v2370')){
+        $liveContext=$context;
+        $liveContext['task_title']=$taskTitle;
+        $liveContext['task_kind']=$taskKind;
+        try{vp3_live_session_record_activity_v2370($user,$surface,$state,$liveContext,$reason,$changed);}catch(Throwable $e){error_log('VP3 live session bridge failed: '.$e->getMessage());}
+    }
     return agent_activity_v94_snapshot($user,$surface,$context);
 }
 

@@ -784,15 +784,31 @@ function vp3_cognitive_presentation_context_v500(PDO $pdo,array $user,array $ove
             $voice=false;
         }
     }
+    $idleMinutes=0;$interruptible=true;
+    if($uid>0&&function_exists('vp3_live_session_snapshot_v2370')){
+        try{
+            $live=vp3_live_session_snapshot_v2370($pdo,$user,false);
+            $session=is_array($live['session']??null)?$live['session']:[];
+            $status=(string)($session['status']??'');
+            $interruptible=$status!=='active';
+            $segments=is_array($live['segments']??null)?$live['segments']:[];
+            $last=$segments?end($segments):null;
+            if(is_array($last)&&($last['segment_type']??'')==='idle'&&empty($last['ended_at'])){
+                $idleMinutes=(int)floor(max(0,(int)($last['duration_seconds']??0))/60);
+            }
+        }catch(Throwable $e){
+            error_log('VP3 Cognitive Runtime live session context unavailable: '.$e->getMessage());
+        }
+    }
     $defaults=[
         'direct_user_request'=>false,
         'requires_user_response'=>false,
         'agent_voice_enabled'=>(bool)$voice,
-        'interruptible'=>true,
+        'interruptible'=>$interruptible,
         'quiet_hours'=>false,
         'focus_mode'=>false,
         'sensitive_for_voice'=>false,
-        'idle_minutes'=>0,
+        'idle_minutes'=>$idleMinutes,
         'already_presented'=>false,
         'attention_budget_remaining'=>true,
         'voice_candidate_allowed'=>false,
@@ -915,12 +931,17 @@ function vp3_cognitive_relationship_upsert_v500(PDO $pdo,array $user,string $age
 function vp3_cognitive_state_v500(PDO $pdo,array $user,string $agentNamespace='system'): array
 {
     $agentNamespace=vp3_cognitive_validate_namespace_v500($pdo,$user,$agentNamespace);
+    $liveSession=['ready'=>false,'session'=>null,'segments'=>[]];
+    if(function_exists('vp3_live_session_snapshot_v2370')){
+        try{$liveSession=vp3_live_session_snapshot_v2370($pdo,$user,false);}catch(Throwable $e){}
+    }
     return [
         'build'=>VP3_COGNITIVE_RUNTIME_V500,
         'contract'=>VP3_COGNITIVE_CONTRACT_V500,
         'schema_ready'=>vp3_cognitive_schema_ready_v500($pdo),
         'agent_namespace'=>$agentNamespace,
         'registry'=>vp3_cognitive_registry_public_v500(),
+        'live_session'=>$liveSession,
         'presentation_context'=>vp3_cognitive_presentation_context_v500($pdo,$user),
         'recent_observations'=>vp3_cognitive_schema_ready_v500($pdo)?vp3_cognitive_recent_observations_v500($pdo,$user,$agentNamespace,20):[],
     ];
