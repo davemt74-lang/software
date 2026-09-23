@@ -1,4 +1,4 @@
-name: Cognitive Runtime Release v23.70
+name: Cognitive Runtime Release v23.80
 
 on:
   pull_request:
@@ -6,7 +6,7 @@ on:
       - 'docs/VP3_COGNITIVE_LOOP_RELEASE_V2360.md'
       - 'includes/cognitive-release-v2360.php'
       - 'includes/bootstrap.php'
-      - 'includes/cognitive-*.php'
+      - 'includes/cognitive-*.php'\n      - 'docs/VP3_COGNITIVE_DOMAIN_INTEGRATION_V2380.md'
       - 'api/cognitive-*.php'
       - 'api/extension-cognitive-now-v2120.php'
       - 'includes/extension-notifications-v2140.php'
@@ -50,7 +50,7 @@ on:
 
 jobs:
   release:
-    name: Cognitive Runtime v23.70 · PHP ${{ matrix.php }}
+    name: Cognitive Runtime v23.80 · PHP ${{ matrix.php }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -73,7 +73,7 @@ jobs:
           php -l includes/cognitive-live-session-v2370.php
           php -l includes/cognitive-runtime-v500.php
           php -l includes/cognitive-runtime-session-v2370.php
-          php -l includes/cognitive-release-v2370.php
+          php -l includes/cognitive-release-v2370.php\n          php -l includes/cognitive-domain-integration-v2380.php\n          php -l includes/cognitive-release-v2380.php
           php -l includes/cognitive-presentation-v510.php
           php -l includes/cognitive-cards-v520.php
           php -l includes/cognitive-feed-v530.php
@@ -114,8 +114,7 @@ jobs:
           node --check member-agent-voice-menu.js
       - name: End-to-end release contract
         run: node tests/cognitive-loop-release-v2360.mjs
-      - name: v23.70 live session foundation
-        run: node tests/cognitive-live-session-v2370.mjs
+      - name: v23.70 live session foundation\n        run: node tests/cognitive-live-session-v2370.mjs\n      - name: v23.80 domain integration foundation\n        run: node tests/cognitive-domain-integration-v2380.mjs
       - name: v23.x feature family
         run: |
           node tests/cognitive-calibration-v2350.mjs
