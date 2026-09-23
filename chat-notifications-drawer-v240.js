@@ -377,6 +377,10 @@
     const replanChanges = Array.isArray(replanning.changes) ? replanning.changes : [];
     const commitmentProtection = brain.commitment_protection || {};
     const protectedCommitments = Array.isArray(commitmentProtection.commitments) ? commitmentProtection.commitments : [];
+    const economics = brain.economics || {};
+    const economicsGoals = Array.isArray(economics.goals) ? economics.goals : [];
+    const economicsUsage = economics.usage || {};
+    const economicsQuota = economics.quota || {};
     const autonomyItems = Array.isArray(autonomy.items) ? autonomy.items : [];
     const supervisionIssues = Array.isArray(supervision.issues) ? supervision.issues : [];
     const supervisionByRef = new Map(supervisionIssues.map(item => [String(item.continuity_ref || ''), item]));
@@ -537,6 +541,1312 @@
             <small>Protection ${Number(item.protection_score || 0).toFixed(2)}${item.due_at ? ` · due ${esc(item.due_at)}` : ''}${item.conflict_code ? ` · ${esc(String(item.conflict_code).replaceAll('_',' '))}` : ''}${item.requires_user ? ' · needs user/approval' : ''}${item.verified_complete ? ' · verified complete' : ''}</small>
           </article>`).join('')}
         </div>
+      </section>` : ''}
+
+      ${(economicsUsage.available || economicsQuota.available || economicsGoals.length) ? `
+      <section class="chat-activity-section">
+        <div class="chat-activity-section-head">
+          <div><strong>Cost & Resource Economics</strong><span>v25.50 reads canonical AI usage cost and token balance. Known cost is actual ledger evidence; unknown pricing is never treated as zero, and economics cannot override commitments or execution authority.</span></div>
+        </div>
+        <div class="chat-brain-metrics">
+          ${brainMetric('30d known cost', '
+        <div class="chat-activity-section-head">
+          <div><strong>Portfolio Replanning</strong><span>v25.30 detects plan drift and applies bounded autonomous recovery ordering without changing executors, approvals, or Phase 19 execution authority.</span></div>
+        </div>
+        <div class="chat-brain-metrics">
+          ${brainMetric('Plan health', String(replanning.health || 'healthy').replaceAll('_',' '))}
+          ${brainMetric('Issues', Number(replanning.counts?.issues || replanIssues.length))}
+          ${brainMetric('Rank changes', Number(replanning.counts?.changes || replanChanges.length))}
+          ${brainMetric('Deadline threats', Number(replanning.counts?.deadline_threats || 0))}
+          ${brainMetric('Capacity loss', Number(replanning.counts?.capacity_loss || 0))}
+        </div>
+        ${replanChanges.length ? `<div class="chat-brain-memory-list">
+          ${replanChanges.map(item => `<article>
+            <span>${esc(String(item.action || 'keep_plan').replaceAll('_',' '))}</span>
+            <strong>${esc(item.title || ('Goal #' + Number(item.goal_id || 0)))}</strong>
+            <p>Rank ${Number(item.from_rank || 0)} → ${Number(item.to_rank || 0)}</p>
+            <small>${esc((Array.isArray(item.reason_codes) ? item.reason_codes : []).join(', ').replaceAll('_',' ') || 'bounded recovery ordering')} · autonomous only</small>
+          </article>`).join('')}
+        </div>` : (replanIssues.length ? `<div class="chat-brain-memory-list">
+          ${replanIssues.map(item => `<article>
+            <span>${esc(String(item.recommended_action || 'review').replaceAll('_',' '))}</span>
+            <strong>${esc(item.title || ('Goal #' + Number(item.goal_id || 0)))}</strong>
+            <p>${esc((Array.isArray(item.issue_codes) ? item.issue_codes : []).join(', ').replaceAll('_',' '))}</p>
+            <small>${item.requires_user ? 'Requires user/approval' : 'Recovery overlay only'} · ${esc(item.executor || 'cloud')}</small>
+          </article>`).join('')}
+        </div>` : '')}
+      </section>` : ''}
+
+      ${resourceReservations.length ? `
+      <section class="chat-activity-section">
+        <div class="chat-activity-section-head">
+          <div><strong>Capacity Reservations</strong><span>v25.20 protects bounded autonomous admission capacity around important deadlines without creating worker leases or replacing Phase 19.</span></div>
+        </div>
+        <div class="chat-brain-metrics">
+          ${brainMetric('Active', Number(resourceBudget.counts?.active || 0))}
+          ${brainMetric('Planned', Number(resourceBudget.counts?.planned || 0))}
+          ${brainMetric('Conditional', Number(resourceBudget.counts?.conditional || 0))}
+          ${brainMetric('Cloud reserved', Number(resourceExecutors.cloud?.active_reserved_slots || 0))}
+          ${brainMetric('HomeServer reserved', Number(resourceExecutors.homeserver?.active_reserved_slots || 0))}
+        </div>
+        <div class="chat-brain-memory-list">
+          ${resourceReservations.map(item => `<article>
+            <span>${esc(String(item.reservation_state || 'planned').replaceAll('_',' '))} · ${esc(item.executor || 'cloud')}</span>
+            <strong>${esc(item.title || ('Goal #' + Number(item.goal_id || 0)))}</strong>
+            <p>Reserved ${esc(item.reserved_from || 'unknown')} → ${esc(item.reserved_until || 'unknown')}</p>
+            <small>Score ${Number(item.reservation_score || 0).toFixed(2)} · target ${esc(item.target_date || 'none')} · admission only</small>
+          </article>`).join('')}
+        </div>
+      </section>` : ''}
+
+      ${optimizationItems.length ? `
+      <section class="chat-activity-section">
+        <div class="chat-activity-section-head">
+          <div><strong>Strategic Portfolio Optimization</strong><span>v25.10 compares bounded portfolio strategies and advises v24.90 sequencing without changing admission, executors, approvals or Phase 19 execution.</span></div>
+        </div>
+        <div class="chat-brain-metrics">
+          ${brainMetric('Recommended', String(optimization.recommended_strategy || 'balanced').replaceAll('_',' '))}
+          ${brainMetric('Strategies', Number(optimization.counts?.strategies || optimizationScenarios.length))}
+          ${brainMetric('Goals', Number(optimization.counts?.goals || optimizationItems.length))}
+          ${brainMetric('Deadline risk', Number(optimization.counts?.projected_deadline_risk || 0))}
+        </div>
+        <div class="chat-brain-memory-list">
+          ${optimizationScenarios.map(scenario => {
+            const metrics = scenario.metrics || {};
+            return `<article>
+              <span>${esc(String(scenario.strategy || 'balanced').replaceAll('_',' '))}</span>
+              <strong>${Number(metrics.deadline_risk_count || 0)} deadline risk · ${Number(metrics.total_lateness_seconds || 0)}s lateness</strong>
+              <p>Strategic value ${Number(metrics.strategic_value || 0).toFixed(2)} · dependency unlock ${Number(metrics.dependency_unlock_value || 0).toFixed(2)}</p>
+              <small>Makespan ${Number(metrics.makespan_seconds || 0)}s · advisory only</small>
+            </article>`;
+          }).join('')}
+        </div>
+      </section>` : ''}
+
+      ${forecastItems.length ? `
+      <section class="chat-activity-section">
+        <div class="chat-activity-section-head">
+          <div><strong>Portfolio Forecast</strong><span>v24.90 projects completion windows, deadline/capacity conflicts and adaptive sequencing without replacing v24.80 admission or Phase 19 execution.</span></div>
+        </div>
+        <div class="chat-brain-metrics">
+          ${brainMetric('Forecasted', Number(forecast.counts?.forecasted || 0))}
+          ${brainMetric('Conflicts', Number(forecast.counts?.conflicts || 0))}
+          ${brainMetric('Deadline risk', Number(forecast.counts?.deadline_risk || 0))}
+          ${brainMetric('Capacity pressure', Number(forecast.counts?.capacity_pressure || 0))}
+        </div>
+        <div class="chat-brain-memory-list">
+          ${forecastItems.map(item => `<article>
+            <span>#${Number(item.sequence_rank || 0)} · ${esc(String(item.risk || 'on_track').replaceAll('_',' '))}</span>
+            <strong>${esc(item.title || ('Goal #' + Number(item.goal_id || 0)))}</strong>
+            <p>${esc(item.executor || 'cloud')} · likely ${esc(item.likely_completion_at || 'unknown')}</p>
+            <small>${esc(String(item.confidence?.label || 'low'))} confidence · latest ${esc(item.latest_completion_at || 'unknown')}</small>
+          </article>`).join('')}
+        </div>
+      </section>` : ''}
+
+      ${portfolioItems.length ? `
+      <section class="chat-activity-section">
+        <div class="chat-activity-section-head">
+          <div><strong>Portfolio Coordination</strong><span>v24.80 arbitrates autonomous goals against shared worker capacity, priorities, deadlines, dependencies and overlap.</span></div>
+        </div>
+        <div class="chat-brain-metrics">
+          ${brainMetric('Held', Number(portfolio.counts?.held || 0))}
+          ${brainMetric('Claim admitted', Number(portfolio.counts?.claim_admitted || 0))}
+          ${brainMetric('New objectives', Number(portfolio.counts?.materialize_admitted || 0))}
+          ${brainMetric('Repairs', Number(portfolio.counts?.repair_admitted || 0))}
+          ${brainMetric('Cloud free', Number(portfolio.capacity?.executors?.cloud?.free || 0))}
+          ${brainMetric('HomeServer free', Number(portfolio.capacity?.executors?.homeserver?.free || 0))}
+        </div>
+        <div class="chat-brain-memory-list">
+          ${portfolioItems.map(item => {
+            const deps = Array.isArray(item.blocked_by_goal_ids) ? item.blocked_by_goal_ids.length : 0;
+            const shared = Array.isArray(item.shared_objective_goal_ids) ? item.shared_objective_goal_ids.length : 0;
+            const hold = String(item.hold_reason || '').replaceAll('_',' ');
+            return `<article>
+              <span>${esc(String(item.execution_mode || 'manual'))} · ${Number(item.score_percent || 0)}/100</span>
+              <strong>${esc(item.title || ('Goal #' + Number(item.goal_id || 0)))}</strong>
+              <p>${esc(String(item.execution_state || 'unknown').replaceAll('_',' '))} · ${esc(String(item.coordination_action || 'observe').replaceAll('_',' '))}</p>
+              <small>${esc(item.executor || 'cloud')}${hold ? ` · held: ${esc(hold)}` : ''}${deps ? ` · blocked by ${deps} goal${deps === 1 ? '' : 's'}` : ''}${shared ? ` · shared across ${shared + 1} goals` : ''}</small>
+            </article>`;
+          }).join('')}
+        </div>
+      </section>` : ''}
+
+      ${autonomyItems.length ? `
+      <section class="chat-activity-section">
+        <div class="chat-activity-section-head">
+          <div><strong>Autonomous Projects</strong><span>v24.70 continues explicitly autonomous goals through existing milestones, objectives, approvals and workers.</span></div>
+        </div>
+        <div class="chat-brain-metrics">
+          ${brainMetric('Autonomous', Number(autonomy.counts?.autonomous || 0))}
+          ${brainMetric('Supervised', Number(autonomy.counts?.supervised || 0))}
+          ${brainMetric('Needs you', Number(autonomy.counts?.requires_user || 0))}
+        </div>
+        <div class="chat-brain-memory-list">
+          ${autonomyItems.map(item => {
+            const rec = item.recommendation || {};
+            return `<article>
+              <span>${esc(String(item.execution_mode || 'manual'))}</span>
+              <strong>${esc(item.title || ('Goal #' + Number(item.goal_id || 0)))}</strong>
+              <p>${esc(String(item.execution_state || 'unknown').replaceAll('_',' '))} · ${Number(item.progress_percent || 0)}% verified</p>
+              <small>${esc(String(rec.action || 'observe').replaceAll('_',' '))}${rec.requires_user ? ' · needs you' : ''}</small>
+            </article>`;
+          }).join('')}
+        </div>
+      </section>` : ''}
+
+      <section class="chat-activity-section chat-brain-priorities-section">
+        <div class="chat-activity-section-head">
+          <div><strong>Current Priorities</strong><span>${namespace === 'system' ? 'Ranked by Agent Brain. Record the real outcome so future priorities learn from what happened.' : 'Named-Agent priorities appear only when the priority engine provides that Agent namespace.'}</span></div>
+        </div>
+        <div class="chat-brain-priority-list">
+          ${priorities.length ? priorities.map(brainPriorityCard).join('') : '<div class="chat-activity-empty">No fresh high-value priorities for this Agent scope right now.</div>'}
+        </div>
+      </section>
+
+      <section class="chat-activity-section">
+        <div class="chat-activity-section-head">
+          <div><strong>Operational Activity</strong><span>${namespace === 'system' ? 'Tools, edits, transcriptions, knowledge saves and Agent opportunities' : 'Account-wide operations stay with the System Agent to avoid crossing Agent scopes.'}</span></div>
+        </div>
+        <div class="chat-notification-list chat-brain-operation-list">
+          ${operations.length ? operations.map(item => `
+            <article class="chat-notification-item chat-brain-operation">
+              <span class="chat-notification-dot" aria-hidden="true"></span>
+              <div>
+                <strong>${esc(item.title || 'Agent activity')}</strong>
+                ${item.body ? `<p>${esc(item.body)}</p>` : ''}
+                <small>${esc(brainSourceLabel(item.source_type))} · ${esc(relative(item.created_at))}</small>
+              </div>
+              ${item.target_url ? `<a href="${esc(item.target_url)}">Open</a>` : ''}
+            </article>`).join('') : '<div class="chat-activity-empty">No operational activity for this Agent scope.</div>'}
+        </div>
+      </section>
+
+      <section class="chat-activity-section">
+        <div class="chat-activity-section-head"><div><strong>Agent State Timeline</strong><span>Live-state history shown only where its scope is authoritative</span></div></div>
+        <div class="chat-brain-timeline">
+          ${events.length ? events.slice(0,30).map(event => `
+            <article class="chat-brain-event">
+              <span class="chat-brain-event-state ${esc(event.activity_state || 'idle')}"></span>
+              <div><strong>${esc(event.task_title || stateLabel(event.activity_state))}</strong><p>${esc(stateLabel(event.previous_state))} → ${esc(stateLabel(event.activity_state))}${event.reason ? ` · ${esc(String(event.reason).replaceAll('_',' '))}` : ''}</p><small>${esc(event.surface || 'chat')} · ${esc(relative(event.created_at))}</small></div>
+            </article>`).join('') : '<div class="chat-activity-empty">No scoped Agent state history yet.</div>'}
+        </div>
+      </section>
+
+      <section class="chat-activity-section">
+        <div class="chat-activity-section-head"><div><strong>Recent Memory</strong><span>Durable memories retained by this Agent Brain scope</span></div></div>
+        <div class="chat-brain-memory-list">
+          ${recent.length ? recent.map(memory => `<article><span>${esc(memory.memory_type || 'memory')}</span><strong>${esc(memory.subject || 'Memory')}</strong><p>${esc(memory.memory_text || '')}</p><small>${Number(memory.occurrence_count || 1)} occurrence${Number(memory.occurrence_count || 1) === 1 ? '' : 's'} · ${esc(relative(memory.last_seen_at))}</small></article>`).join('') : '<div class="chat-activity-empty">No durable memory in this Agent scope yet.</div>'}
+        </div>
+        ${themes.length ? `<div class="chat-brain-themes"><strong>Recurring themes</strong><div>${themes.slice(0,10).map(theme => `<span>${esc(theme.subject || '')}<small>${Number(theme.occurrence_count || 0)}</small></span>`).join('')}</div></div>` : ''}
+      </section>`;
+  }
+
+  function historyView() {
+    const rows = Array.isArray(state?.history) ? state.history : [];
+    let lastDay = '';
+    return `
+      <section class="chat-activity-section">
+        <div class="chat-activity-section-head"><div><strong>Agent History</strong><span>Authorized conversation archive for the selected Agent identity</span></div></div>
+        <div class="chat-brain-history">
+          ${rows.length ? rows.map(row => {
+            const date = new Date(String(row.created_at || '').replace(' ', 'T'));
+            const day = Number.isNaN(date.getTime()) ? '' : date.toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'});
+            const divider = day && day !== lastDay ? `<div class="chat-brain-history-day">${esc(day)}</div>` : '';
+            lastDay = day || lastDay;
+            return `${divider}<article class="${esc(row.role || 'user')}"><div><strong>${row.role === 'assistant' ? 'Agent' : 'You'}</strong><span>${esc(row.input_mode || 'text')}</span><small>${esc(relative(row.created_at))}</small></div><p>${esc(row.message || '')}</p><footer>Conversation ${Number(row.conversation_id || 0)}${row.turn_type ? ` · ${esc(String(row.turn_type).replaceAll('_',' '))}` : ''}</footer></article>`;
+          }).join('') : '<div class="chat-activity-empty">No conversation history in this Agent scope yet.</div>'}
+        </div>
+      </section>`;
+  }
+
+  function render() {
+    if (!drawer) return;
+    drawer.querySelectorAll('[data-notification-tab]').forEach(tab => tab.classList.toggle('active', tab.dataset.notificationTab === activeTab));
+    const count = drawer.querySelector('[data-notification-tab-count]');
+    const unread = Number(state?.notifications?.unread || 0);
+    if (count) {
+      count.hidden = unread < 1;
+      count.textContent = unread > 99 ? '99+' : String(unread);
+    }
+    const body = drawer.querySelector('[data-notification-drawer-body]');
+    if (!body) return;
+    if (!state) {
+      body.innerHTML = '<div class="chat-activity-loading">Loading Activity Center…</div>';
+      return;
+    }
+    body.innerHTML = activeTab === 'brain' ? brainView() : activeTab === 'history' ? historyView() : notificationView();
+    updateUnread();
+  }
+
+  async function refresh(showError = false) {
+    try {
+      state = await request('state');
+      if (Object.prototype.hasOwnProperty.call(state, 'agent_voice_enabled')) {
+        agentVoicePreference = state.agent_voice_enabled !== false;
+      }
+      render();
+      syncMainFeedBrainOutcomeControls();
+    } catch (error) {
+      if (showError && drawer) {
+        const body = drawer.querySelector('[data-notification-drawer-body]');
+        if (body) body.innerHTML = `<div class="chat-activity-empty error">${esc(error instanceof Error ? error.message : 'Activity Center unavailable.')}</div>`;
+      }
+    }
+  }
+
+  function openDrawer() {
+    ensureDrawer();
+    drawer.hidden = false;
+    backdrop.hidden = false;
+    requestAnimationFrame(() => {
+      drawer.classList.add('open');
+      backdrop.classList.add('open');
+    });
+    button?.setAttribute('aria-expanded', 'true');
+    document.body.classList.add('chat-notification-drawer-open');
+    render();
+    void refresh(true);
+  }
+
+  function closeDrawer() {
+    if (!drawer) return;
+    drawer.classList.remove('open');
+    backdrop.classList.remove('open');
+    button?.setAttribute('aria-expanded', 'false');
+    document.body.classList.remove('chat-notification-drawer-open');
+    window.setTimeout(() => {
+      if (!drawer?.classList.contains('open')) {
+        drawer.hidden = true;
+        backdrop.hidden = true;
+      }
+    }, 180);
+  }
+
+  async function mutate(action, payload = {}) {
+    if (busy) return;
+    busy = true;
+    try {
+      state = await request(action, payload);
+      render();
+      syncMainFeedBrainOutcomeControls();
+    } catch (error) {
+      const body = drawer?.querySelector('[data-notification-drawer-body]');
+      const fallback = action === 'brain_outcome' ? 'Could not record Brain outcome.' : 'Could not update notification.';
+      if (body) body.insertAdjacentHTML('afterbegin', `<div class="chat-activity-inline-error">${esc(error instanceof Error ? error.message : fallback)}</div>`);
+    } finally {
+      busy = false;
+    }
+  }
+
+  function handleDrawerClick(event) {
+    const tab = event.target.closest('[data-notification-tab]');
+    if (tab) {
+      activeTab = tab.dataset.notificationTab || 'notifications';
+      render();
+      return;
+    }
+    const outcomeButton = event.target.closest('[data-brain-outcome]');
+    if (outcomeButton) {
+      const hash = String(outcomeButton.dataset.brainOutcomeHash || '');
+      const outcome = String(outcomeButton.dataset.brainOutcome || '');
+      if (/^[a-f0-9]{40}$/.test(hash) && ['successful','resolved','unsuccessful','ignored'].includes(outcome)) {
+        void mutate('brain_outcome', {hash, outcome});
+      }
+      return;
+    }
+    if (event.target.closest('[data-notification-mark-all]')) {
+      void mutate('mark_all_read');
+      return;
+    }
+    const item = event.target.closest('[data-notification-id]');
+    if (!item) return;
+    const id = Number(item.dataset.notificationId || 0);
+    if (id < 1) return;
+    if (event.target.closest('[data-notification-open]')) {
+      if (item.classList.contains('unread')) void request('mark_read', {notification_id:id}).catch(() => {});
+      return;
+    }
+    if (event.target.closest('[data-notification-read]') || item.classList.contains('unread')) void mutate('mark_read', {notification_id:id});
+  }
+
+  function keepBellNextToProfile() {
+    const menu = document.getElementById('chatNotificationMenu');
+    const profile = document.getElementById('chatProfileMenu');
+    const actions = document.querySelector('.chat-topbar-actions');
+    if (!menu || !profile || !actions) return;
+    if (menu.nextElementSibling !== profile) actions.insertBefore(menu, profile);
+  }
+
+  function continuity() {
+    return window.STONEFELLOW_CHAT_CONTINUITY || window.STONEFELLOW_CHAT_CONTINUITY_V87 || {};
+  }
+
+  function chatCanvasAvailable() {
+    return typeof continuity().openConversation === 'function';
+  }
+
+  function activeConversationId() {
+    return Math.max(0, Number(continuity().conversationId?.() || 0));
+  }
+
+  function activeAgentId() {
+    return Math.max(0, Number(window.STONEFELLOW_AGENT_IDENTITY_V236?.agentId || 0));
+  }
+
+  async function showAttentionConversation(conversationId, message) {
+    const id = Math.max(0, Number(conversationId || 0));
+    const chat = continuity();
+    if (id < 1 || typeof chat.openConversation !== 'function') return false;
+    const opened = await chat.openConversation(id);
+    if (!opened) return false;
+    const expected = String(message || '').trim();
+    const deadline = Date.now() + 5000;
+    while (Date.now() < deadline) {
+      const texts = [...document.querySelectorAll('#chatThread .message.assistant .message-text')];
+      if (texts.some(node => String(node.textContent || '').trim() === expected)) return true;
+      if (typeof chat.syncConversation === 'function') await chat.syncConversation(id);
+      await new Promise(resolve => setTimeout(resolve, 80));
+    }
+    return false;
+  }
+
+  function voiceButton() {
+    return document.getElementById('chatVoiceButton');
+  }
+
+  function voiceIsOn() {
+    return Boolean(continuity().isVoice?.());
+  }
+
+  function setVoiceMode(enabled) {
+    const control = voiceButton();
+    if (!control || control.disabled) return false;
+    const current = voiceIsOn();
+    if (current !== Boolean(enabled)) control.click();
+    return voiceIsOn();
+  }
+
+  function agentVoiceEnabled() {
+    return agentVoicePreference !== false;
+  }
+
+  function waitForAgentIdle(timeoutMs = 30000) {
+    const deadline = Date.now() + timeoutMs;
+    return new Promise(resolve => {
+      const tick = () => {
+        const mode = String(document.body.dataset.stonefellowAgentState || 'idle');
+        if (!['processing','speaking'].includes(mode) || Date.now() >= deadline) {
+          resolve();
+          return;
+        }
+        window.setTimeout(tick, 120);
+      };
+      tick();
+    });
+  }
+
+  function announceSpeechState(state, text = '') {
+    try {
+      window.dispatchEvent(new CustomEvent('stonefellow:agent-proactive-speech',{
+        detail:{state:String(state||''),text:String(text||'')}
+      }));
+    } catch (_error) {}
+  }
+
+  function cancelSpeech() {
+    speechGeneration += 1;
+    const cancel = activeSpeechCancel;
+    activeSpeechCancel = null;
+    try { cancel?.(); } catch (_error) {}
+    try { window.speechSynthesis?.cancel(); } catch (_error) {}
+    announceSpeechState('end');
+    return true;
+  }
+
+  function browserSpeak(text, generation) {
+    return new Promise(resolve => {
+      const message = String(text || '').trim();
+      if (!message || !('speechSynthesis' in window) || !window.SpeechSynthesisUtterance) {
+        resolve(false);
+        return;
+      }
+      const utterance = new window.SpeechSynthesisUtterance(message);
+      let started = false;
+      let settled = false;
+      let closed = false;
+      const settle = ok => {
+        if (settled) return;
+        settled = true;
+        resolve(ok);
+      };
+      const close = () => {
+        if (closed) return;
+        closed = true;
+        if (activeSpeechCancel === cancel) activeSpeechCancel = null;
+        announceSpeechState('end', message);
+      };
+      const cancel = () => {
+        try { window.speechSynthesis.cancel(); } catch (_error) {}
+        close();
+        if (!started) settle(false);
+      };
+      activeSpeechCancel = cancel;
+      utterance.onstart = () => {
+        if (generation !== speechGeneration) {
+          cancel();
+          return;
+        }
+        started = true;
+        announceSpeechState('start', message);
+        settle(true);
+      };
+      utterance.onend = () => close();
+      utterance.onerror = () => {
+        close();
+        if (!started) settle(false);
+      };
+      try {
+        window.speechSynthesis.cancel();
+        window.speechSynthesis.speak(utterance);
+      } catch (_error) {
+        close();
+        settle(false);
+      }
+    });
+  }
+
+  async function speakWithExistingVoice(text, generation) {
+    if (!agentVoiceEnabled() || generation !== speechGeneration) return false;
+    const message = String(text || '').trim();
+    if (!message) return false;
+    await waitForAgentIdle();
+    if (generation !== speechGeneration) return false;
+
+    let spoken = false;
+    const PremiumVoice = window.StonefellowPremiumVoiceV122;
+    if (typeof PremiumVoice === 'function') {
+      try {
+        const premium = PremiumVoice({
+          agentEndpoint:String(window.STONEFELLOW_CHAT?.endpoint || '/api/chat-v236.php'),
+          csrf:String(cfg.csrf || '')
+        });
+        spoken = await new Promise(resolve => {
+          let started = false;
+          let settled = false;
+          let closed = false;
+          const settle = ok => {
+            if (settled) return;
+            settled = true;
+            resolve(ok);
+          };
+          const close = () => {
+            if (closed) return;
+            closed = true;
+            if (activeSpeechCancel === cancel) activeSpeechCancel = null;
+            announceSpeechState('end', message);
+          };
+          const cancel = () => {
+            try { premium.stop?.(); } catch (_error) {}
+            close();
+            if (!started) settle(false);
+          };
+          activeSpeechCancel = cancel;
+          Promise.resolve(premium.speak(message, {
+            onStart:() => {
+              if (generation !== speechGeneration) {
+                cancel();
+                return;
+              }
+              started = true;
+              announceSpeechState('start', message);
+              settle(true);
+            },
+            onEnd:() => close(),
+            onError:() => {
+              close();
+              if (!started) settle(false);
+            }
+          })).then(ok => {
+            if (ok === true && !started && generation === speechGeneration) {
+              started = true;
+              announceSpeechState('start', message);
+              settle(true);
+            }
+          }).catch(() => {
+            close();
+            if (!started) settle(false);
+          });
+        });
+      } catch (_error) {
+        spoken = false;
+      }
+    }
+    if (!spoken && generation === speechGeneration) spoken = await browserSpeak(message, generation);
+    return spoken === true;
+  }
+
+  function queueSpeech(text) {
+    const generation = speechGeneration;
+    const queued = speechQueue
+      .then(() => generation === speechGeneration ? speakWithExistingVoice(text, generation) : false)
+      .catch(() => false);
+    speechQueue = queued.then(() => undefined, () => undefined);
+    return queued;
+  }
+
+  async function presentAttention(item, speak = true) {
+    const notificationId = Number(item?.id || 0);
+    if (notificationId < 1) return true;
+    const data = await request('present_attention', {
+      notification_id:notificationId,
+      conversation_id:activeConversationId(),
+      agent_id:activeAgentId()
+    });
+    if (!data.handled) return true;
+
+    const surfaced = await showAttentionConversation(
+      Number(data.conversation_id || 0),
+      String(data.message || '')
+    );
+    if (!surfaced) {
+      throw new Error('Actionable notification could not be surfaced in Agent Chat.');
+    }
+
+    if (speak) queueSpeech(String(data.message || ''));
+    state = await request('mark_read', {notification_id:notificationId});
+    render();
+    syncMainFeedBrainOutcomeControls();
+    return true;
+  }
+
+  async function pollAttention(bootstrap = false) {
+    if (!chatCanvasAvailable()) return;
+    if (attentionBusy || (document.hidden && !bootstrap)) return;
+    attentionBusy = true;
+    try {
+      const data = await request('attention', null, {after_id:bootstrap ? 0 : attentionCursor});
+      const items = Array.isArray(data.items) ? data.items : [];
+      for (let index = 0; index < items.length; index += 1) {
+        // Only genuine user-attention notifications reach this path. Agent
+        // Brain operational activity is rendered in the Brain tab instead.
+        const speak = !bootstrap || index === items.length - 1;
+        await presentAttention(items[index], speak);
+      }
+      attentionCursor = Math.max(attentionCursor, Number(data.latest_id || 0));
+    } catch (_error) {
+      // Keep the cursor unchanged so a failed canvas presentation is retried
+      // instead of silently consuming an actionable notification.
+    } finally {
+      attentionBusy = false;
+    }
+  }
+
+  function startAttentionPolling() {
+    if (window.VP3_COGNITIVE_PRESENTATION_V510?.ownsAttention) return;
+    if (!chatCanvasAvailable()) return;
+    void pollAttention(true);
+    if (attentionTimer) window.clearInterval(attentionTimer);
+    attentionTimer = window.setInterval(() => pollAttention(false), 5000);
+  }
+
+  if (!ownNotificationButton()) return;
+  ensureDrawer();
+  keepBellNextToProfile();
+  if (!window.VP3_COGNITIVE_PRESENTATION_V510?.ownsBrainPresentation) observeMainFeedBrainPriorities();
+  const actions = document.querySelector('.chat-topbar-actions');
+  if (actions) new MutationObserver(keepBellNextToProfile).observe(actions, {childList:true});
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && drawer?.classList.contains('open')) closeDrawer();
+  });
+  window.addEventListener('stonefellow:agent-voice', event => {
+    agentVoicePreference = event.detail?.enabled !== false;
+  });
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && chatCanvasAvailable()) void pollAttention(false);
+  });
+  window.addEventListener('pagehide', () => {
+    if (attentionTimer) window.clearInterval(attentionTimer);
+    attentionTimer = 0;
+    if (mainFeedRefreshTimer) window.clearTimeout(mainFeedRefreshTimer);
+    mainFeedRefreshTimer = 0;
+    mainFeedObserver?.disconnect();
+    mainFeedObserver = null;
+    cancelSpeech();
+    clearResponseWindow();
+  }, {once:true});
+
+  window.STONEFELLOW_NOTIFICATION_CENTER = {
+    open:openDrawer,
+    openBrain:() => { activeTab='brain'; openDrawer(); render(); },
+    openHistory:() => { activeTab='history'; openDrawer(); render(); },
+    close:closeDrawer,
+    refresh,
+    pollAttention,
+    announce:text => queueSpeech(String(text || '')),
+    cancelSpeech,
+    syncMainFeedOutcomes:syncMainFeedBrainOutcomeControls
+  };
+  void refresh(false).finally(startAttentionPolling);
+})(); + (Number(economicsUsage.known_cost_micros || 0) / 1000000).toFixed(Number(economicsUsage.known_cost_micros || 0) > 0 && Number(economicsUsage.known_cost_micros || 0) < 10000 ? 4 : 2))}
+          ${brainMetric('Unknown pricing', Number(economicsUsage.unknown_cost_requests || 0) + ' request(s)')}
+          ${brainMetric('30d tokens', Number(economicsUsage.total_tokens || 0).toLocaleString())}
+          ${brainMetric('Cloud tokens charged', Number(economicsUsage.cloud_tokens_charged || 0).toLocaleString())}
+          ${brainMetric('Quota state', String(economicsQuota.state || 'unavailable').replaceAll('_',' '))}
+          ${brainMetric('Remaining', economicsQuota.unlimited ? 'Unlimited' : Number(economicsQuota.remaining || 0).toLocaleString() + ' tokens')}
+        </div>
+        ${economicsGoals.length ? `<div class="chat-brain-memory-list">
+          ${economicsGoals.map(item => {
+            const micros = Number(item.historical_known_cost_micros || 0);
+            const cost = '
+        <div class="chat-activity-section-head">
+          <div><strong>Portfolio Replanning</strong><span>v25.30 detects plan drift and applies bounded autonomous recovery ordering without changing executors, approvals, or Phase 19 execution authority.</span></div>
+        </div>
+        <div class="chat-brain-metrics">
+          ${brainMetric('Plan health', String(replanning.health || 'healthy').replaceAll('_',' '))}
+          ${brainMetric('Issues', Number(replanning.counts?.issues || replanIssues.length))}
+          ${brainMetric('Rank changes', Number(replanning.counts?.changes || replanChanges.length))}
+          ${brainMetric('Deadline threats', Number(replanning.counts?.deadline_threats || 0))}
+          ${brainMetric('Capacity loss', Number(replanning.counts?.capacity_loss || 0))}
+        </div>
+        ${replanChanges.length ? `<div class="chat-brain-memory-list">
+          ${replanChanges.map(item => `<article>
+            <span>${esc(String(item.action || 'keep_plan').replaceAll('_',' '))}</span>
+            <strong>${esc(item.title || ('Goal #' + Number(item.goal_id || 0)))}</strong>
+            <p>Rank ${Number(item.from_rank || 0)} → ${Number(item.to_rank || 0)}</p>
+            <small>${esc((Array.isArray(item.reason_codes) ? item.reason_codes : []).join(', ').replaceAll('_',' ') || 'bounded recovery ordering')} · autonomous only</small>
+          </article>`).join('')}
+        </div>` : (replanIssues.length ? `<div class="chat-brain-memory-list">
+          ${replanIssues.map(item => `<article>
+            <span>${esc(String(item.recommended_action || 'review').replaceAll('_',' '))}</span>
+            <strong>${esc(item.title || ('Goal #' + Number(item.goal_id || 0)))}</strong>
+            <p>${esc((Array.isArray(item.issue_codes) ? item.issue_codes : []).join(', ').replaceAll('_',' '))}</p>
+            <small>${item.requires_user ? 'Requires user/approval' : 'Recovery overlay only'} · ${esc(item.executor || 'cloud')}</small>
+          </article>`).join('')}
+        </div>` : '')}
+      </section>` : ''}
+
+      ${resourceReservations.length ? `
+      <section class="chat-activity-section">
+        <div class="chat-activity-section-head">
+          <div><strong>Capacity Reservations</strong><span>v25.20 protects bounded autonomous admission capacity around important deadlines without creating worker leases or replacing Phase 19.</span></div>
+        </div>
+        <div class="chat-brain-metrics">
+          ${brainMetric('Active', Number(resourceBudget.counts?.active || 0))}
+          ${brainMetric('Planned', Number(resourceBudget.counts?.planned || 0))}
+          ${brainMetric('Conditional', Number(resourceBudget.counts?.conditional || 0))}
+          ${brainMetric('Cloud reserved', Number(resourceExecutors.cloud?.active_reserved_slots || 0))}
+          ${brainMetric('HomeServer reserved', Number(resourceExecutors.homeserver?.active_reserved_slots || 0))}
+        </div>
+        <div class="chat-brain-memory-list">
+          ${resourceReservations.map(item => `<article>
+            <span>${esc(String(item.reservation_state || 'planned').replaceAll('_',' '))} · ${esc(item.executor || 'cloud')}</span>
+            <strong>${esc(item.title || ('Goal #' + Number(item.goal_id || 0)))}</strong>
+            <p>Reserved ${esc(item.reserved_from || 'unknown')} → ${esc(item.reserved_until || 'unknown')}</p>
+            <small>Score ${Number(item.reservation_score || 0).toFixed(2)} · target ${esc(item.target_date || 'none')} · admission only</small>
+          </article>`).join('')}
+        </div>
+      </section>` : ''}
+
+      ${optimizationItems.length ? `
+      <section class="chat-activity-section">
+        <div class="chat-activity-section-head">
+          <div><strong>Strategic Portfolio Optimization</strong><span>v25.10 compares bounded portfolio strategies and advises v24.90 sequencing without changing admission, executors, approvals or Phase 19 execution.</span></div>
+        </div>
+        <div class="chat-brain-metrics">
+          ${brainMetric('Recommended', String(optimization.recommended_strategy || 'balanced').replaceAll('_',' '))}
+          ${brainMetric('Strategies', Number(optimization.counts?.strategies || optimizationScenarios.length))}
+          ${brainMetric('Goals', Number(optimization.counts?.goals || optimizationItems.length))}
+          ${brainMetric('Deadline risk', Number(optimization.counts?.projected_deadline_risk || 0))}
+        </div>
+        <div class="chat-brain-memory-list">
+          ${optimizationScenarios.map(scenario => {
+            const metrics = scenario.metrics || {};
+            return `<article>
+              <span>${esc(String(scenario.strategy || 'balanced').replaceAll('_',' '))}</span>
+              <strong>${Number(metrics.deadline_risk_count || 0)} deadline risk · ${Number(metrics.total_lateness_seconds || 0)}s lateness</strong>
+              <p>Strategic value ${Number(metrics.strategic_value || 0).toFixed(2)} · dependency unlock ${Number(metrics.dependency_unlock_value || 0).toFixed(2)}</p>
+              <small>Makespan ${Number(metrics.makespan_seconds || 0)}s · advisory only</small>
+            </article>`;
+          }).join('')}
+        </div>
+      </section>` : ''}
+
+      ${forecastItems.length ? `
+      <section class="chat-activity-section">
+        <div class="chat-activity-section-head">
+          <div><strong>Portfolio Forecast</strong><span>v24.90 projects completion windows, deadline/capacity conflicts and adaptive sequencing without replacing v24.80 admission or Phase 19 execution.</span></div>
+        </div>
+        <div class="chat-brain-metrics">
+          ${brainMetric('Forecasted', Number(forecast.counts?.forecasted || 0))}
+          ${brainMetric('Conflicts', Number(forecast.counts?.conflicts || 0))}
+          ${brainMetric('Deadline risk', Number(forecast.counts?.deadline_risk || 0))}
+          ${brainMetric('Capacity pressure', Number(forecast.counts?.capacity_pressure || 0))}
+        </div>
+        <div class="chat-brain-memory-list">
+          ${forecastItems.map(item => `<article>
+            <span>#${Number(item.sequence_rank || 0)} · ${esc(String(item.risk || 'on_track').replaceAll('_',' '))}</span>
+            <strong>${esc(item.title || ('Goal #' + Number(item.goal_id || 0)))}</strong>
+            <p>${esc(item.executor || 'cloud')} · likely ${esc(item.likely_completion_at || 'unknown')}</p>
+            <small>${esc(String(item.confidence?.label || 'low'))} confidence · latest ${esc(item.latest_completion_at || 'unknown')}</small>
+          </article>`).join('')}
+        </div>
+      </section>` : ''}
+
+      ${portfolioItems.length ? `
+      <section class="chat-activity-section">
+        <div class="chat-activity-section-head">
+          <div><strong>Portfolio Coordination</strong><span>v24.80 arbitrates autonomous goals against shared worker capacity, priorities, deadlines, dependencies and overlap.</span></div>
+        </div>
+        <div class="chat-brain-metrics">
+          ${brainMetric('Held', Number(portfolio.counts?.held || 0))}
+          ${brainMetric('Claim admitted', Number(portfolio.counts?.claim_admitted || 0))}
+          ${brainMetric('New objectives', Number(portfolio.counts?.materialize_admitted || 0))}
+          ${brainMetric('Repairs', Number(portfolio.counts?.repair_admitted || 0))}
+          ${brainMetric('Cloud free', Number(portfolio.capacity?.executors?.cloud?.free || 0))}
+          ${brainMetric('HomeServer free', Number(portfolio.capacity?.executors?.homeserver?.free || 0))}
+        </div>
+        <div class="chat-brain-memory-list">
+          ${portfolioItems.map(item => {
+            const deps = Array.isArray(item.blocked_by_goal_ids) ? item.blocked_by_goal_ids.length : 0;
+            const shared = Array.isArray(item.shared_objective_goal_ids) ? item.shared_objective_goal_ids.length : 0;
+            const hold = String(item.hold_reason || '').replaceAll('_',' ');
+            return `<article>
+              <span>${esc(String(item.execution_mode || 'manual'))} · ${Number(item.score_percent || 0)}/100</span>
+              <strong>${esc(item.title || ('Goal #' + Number(item.goal_id || 0)))}</strong>
+              <p>${esc(String(item.execution_state || 'unknown').replaceAll('_',' '))} · ${esc(String(item.coordination_action || 'observe').replaceAll('_',' '))}</p>
+              <small>${esc(item.executor || 'cloud')}${hold ? ` · held: ${esc(hold)}` : ''}${deps ? ` · blocked by ${deps} goal${deps === 1 ? '' : 's'}` : ''}${shared ? ` · shared across ${shared + 1} goals` : ''}</small>
+            </article>`;
+          }).join('')}
+        </div>
+      </section>` : ''}
+
+      ${autonomyItems.length ? `
+      <section class="chat-activity-section">
+        <div class="chat-activity-section-head">
+          <div><strong>Autonomous Projects</strong><span>v24.70 continues explicitly autonomous goals through existing milestones, objectives, approvals and workers.</span></div>
+        </div>
+        <div class="chat-brain-metrics">
+          ${brainMetric('Autonomous', Number(autonomy.counts?.autonomous || 0))}
+          ${brainMetric('Supervised', Number(autonomy.counts?.supervised || 0))}
+          ${brainMetric('Needs you', Number(autonomy.counts?.requires_user || 0))}
+        </div>
+        <div class="chat-brain-memory-list">
+          ${autonomyItems.map(item => {
+            const rec = item.recommendation || {};
+            return `<article>
+              <span>${esc(String(item.execution_mode || 'manual'))}</span>
+              <strong>${esc(item.title || ('Goal #' + Number(item.goal_id || 0)))}</strong>
+              <p>${esc(String(item.execution_state || 'unknown').replaceAll('_',' '))} · ${Number(item.progress_percent || 0)}% verified</p>
+              <small>${esc(String(rec.action || 'observe').replaceAll('_',' '))}${rec.requires_user ? ' · needs you' : ''}</small>
+            </article>`;
+          }).join('')}
+        </div>
+      </section>` : ''}
+
+      <section class="chat-activity-section chat-brain-priorities-section">
+        <div class="chat-activity-section-head">
+          <div><strong>Current Priorities</strong><span>${namespace === 'system' ? 'Ranked by Agent Brain. Record the real outcome so future priorities learn from what happened.' : 'Named-Agent priorities appear only when the priority engine provides that Agent namespace.'}</span></div>
+        </div>
+        <div class="chat-brain-priority-list">
+          ${priorities.length ? priorities.map(brainPriorityCard).join('') : '<div class="chat-activity-empty">No fresh high-value priorities for this Agent scope right now.</div>'}
+        </div>
+      </section>
+
+      <section class="chat-activity-section">
+        <div class="chat-activity-section-head">
+          <div><strong>Operational Activity</strong><span>${namespace === 'system' ? 'Tools, edits, transcriptions, knowledge saves and Agent opportunities' : 'Account-wide operations stay with the System Agent to avoid crossing Agent scopes.'}</span></div>
+        </div>
+        <div class="chat-notification-list chat-brain-operation-list">
+          ${operations.length ? operations.map(item => `
+            <article class="chat-notification-item chat-brain-operation">
+              <span class="chat-notification-dot" aria-hidden="true"></span>
+              <div>
+                <strong>${esc(item.title || 'Agent activity')}</strong>
+                ${item.body ? `<p>${esc(item.body)}</p>` : ''}
+                <small>${esc(brainSourceLabel(item.source_type))} · ${esc(relative(item.created_at))}</small>
+              </div>
+              ${item.target_url ? `<a href="${esc(item.target_url)}">Open</a>` : ''}
+            </article>`).join('') : '<div class="chat-activity-empty">No operational activity for this Agent scope.</div>'}
+        </div>
+      </section>
+
+      <section class="chat-activity-section">
+        <div class="chat-activity-section-head"><div><strong>Agent State Timeline</strong><span>Live-state history shown only where its scope is authoritative</span></div></div>
+        <div class="chat-brain-timeline">
+          ${events.length ? events.slice(0,30).map(event => `
+            <article class="chat-brain-event">
+              <span class="chat-brain-event-state ${esc(event.activity_state || 'idle')}"></span>
+              <div><strong>${esc(event.task_title || stateLabel(event.activity_state))}</strong><p>${esc(stateLabel(event.previous_state))} → ${esc(stateLabel(event.activity_state))}${event.reason ? ` · ${esc(String(event.reason).replaceAll('_',' '))}` : ''}</p><small>${esc(event.surface || 'chat')} · ${esc(relative(event.created_at))}</small></div>
+            </article>`).join('') : '<div class="chat-activity-empty">No scoped Agent state history yet.</div>'}
+        </div>
+      </section>
+
+      <section class="chat-activity-section">
+        <div class="chat-activity-section-head"><div><strong>Recent Memory</strong><span>Durable memories retained by this Agent Brain scope</span></div></div>
+        <div class="chat-brain-memory-list">
+          ${recent.length ? recent.map(memory => `<article><span>${esc(memory.memory_type || 'memory')}</span><strong>${esc(memory.subject || 'Memory')}</strong><p>${esc(memory.memory_text || '')}</p><small>${Number(memory.occurrence_count || 1)} occurrence${Number(memory.occurrence_count || 1) === 1 ? '' : 's'} · ${esc(relative(memory.last_seen_at))}</small></article>`).join('') : '<div class="chat-activity-empty">No durable memory in this Agent scope yet.</div>'}
+        </div>
+        ${themes.length ? `<div class="chat-brain-themes"><strong>Recurring themes</strong><div>${themes.slice(0,10).map(theme => `<span>${esc(theme.subject || '')}<small>${Number(theme.occurrence_count || 0)}</small></span>`).join('')}</div></div>` : ''}
+      </section>`;
+  }
+
+  function historyView() {
+    const rows = Array.isArray(state?.history) ? state.history : [];
+    let lastDay = '';
+    return `
+      <section class="chat-activity-section">
+        <div class="chat-activity-section-head"><div><strong>Agent History</strong><span>Authorized conversation archive for the selected Agent identity</span></div></div>
+        <div class="chat-brain-history">
+          ${rows.length ? rows.map(row => {
+            const date = new Date(String(row.created_at || '').replace(' ', 'T'));
+            const day = Number.isNaN(date.getTime()) ? '' : date.toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'});
+            const divider = day && day !== lastDay ? `<div class="chat-brain-history-day">${esc(day)}</div>` : '';
+            lastDay = day || lastDay;
+            return `${divider}<article class="${esc(row.role || 'user')}"><div><strong>${row.role === 'assistant' ? 'Agent' : 'You'}</strong><span>${esc(row.input_mode || 'text')}</span><small>${esc(relative(row.created_at))}</small></div><p>${esc(row.message || '')}</p><footer>Conversation ${Number(row.conversation_id || 0)}${row.turn_type ? ` · ${esc(String(row.turn_type).replaceAll('_',' '))}` : ''}</footer></article>`;
+          }).join('') : '<div class="chat-activity-empty">No conversation history in this Agent scope yet.</div>'}
+        </div>
+      </section>`;
+  }
+
+  function render() {
+    if (!drawer) return;
+    drawer.querySelectorAll('[data-notification-tab]').forEach(tab => tab.classList.toggle('active', tab.dataset.notificationTab === activeTab));
+    const count = drawer.querySelector('[data-notification-tab-count]');
+    const unread = Number(state?.notifications?.unread || 0);
+    if (count) {
+      count.hidden = unread < 1;
+      count.textContent = unread > 99 ? '99+' : String(unread);
+    }
+    const body = drawer.querySelector('[data-notification-drawer-body]');
+    if (!body) return;
+    if (!state) {
+      body.innerHTML = '<div class="chat-activity-loading">Loading Activity Center…</div>';
+      return;
+    }
+    body.innerHTML = activeTab === 'brain' ? brainView() : activeTab === 'history' ? historyView() : notificationView();
+    updateUnread();
+  }
+
+  async function refresh(showError = false) {
+    try {
+      state = await request('state');
+      if (Object.prototype.hasOwnProperty.call(state, 'agent_voice_enabled')) {
+        agentVoicePreference = state.agent_voice_enabled !== false;
+      }
+      render();
+      syncMainFeedBrainOutcomeControls();
+    } catch (error) {
+      if (showError && drawer) {
+        const body = drawer.querySelector('[data-notification-drawer-body]');
+        if (body) body.innerHTML = `<div class="chat-activity-empty error">${esc(error instanceof Error ? error.message : 'Activity Center unavailable.')}</div>`;
+      }
+    }
+  }
+
+  function openDrawer() {
+    ensureDrawer();
+    drawer.hidden = false;
+    backdrop.hidden = false;
+    requestAnimationFrame(() => {
+      drawer.classList.add('open');
+      backdrop.classList.add('open');
+    });
+    button?.setAttribute('aria-expanded', 'true');
+    document.body.classList.add('chat-notification-drawer-open');
+    render();
+    void refresh(true);
+  }
+
+  function closeDrawer() {
+    if (!drawer) return;
+    drawer.classList.remove('open');
+    backdrop.classList.remove('open');
+    button?.setAttribute('aria-expanded', 'false');
+    document.body.classList.remove('chat-notification-drawer-open');
+    window.setTimeout(() => {
+      if (!drawer?.classList.contains('open')) {
+        drawer.hidden = true;
+        backdrop.hidden = true;
+      }
+    }, 180);
+  }
+
+  async function mutate(action, payload = {}) {
+    if (busy) return;
+    busy = true;
+    try {
+      state = await request(action, payload);
+      render();
+      syncMainFeedBrainOutcomeControls();
+    } catch (error) {
+      const body = drawer?.querySelector('[data-notification-drawer-body]');
+      const fallback = action === 'brain_outcome' ? 'Could not record Brain outcome.' : 'Could not update notification.';
+      if (body) body.insertAdjacentHTML('afterbegin', `<div class="chat-activity-inline-error">${esc(error instanceof Error ? error.message : fallback)}</div>`);
+    } finally {
+      busy = false;
+    }
+  }
+
+  function handleDrawerClick(event) {
+    const tab = event.target.closest('[data-notification-tab]');
+    if (tab) {
+      activeTab = tab.dataset.notificationTab || 'notifications';
+      render();
+      return;
+    }
+    const outcomeButton = event.target.closest('[data-brain-outcome]');
+    if (outcomeButton) {
+      const hash = String(outcomeButton.dataset.brainOutcomeHash || '');
+      const outcome = String(outcomeButton.dataset.brainOutcome || '');
+      if (/^[a-f0-9]{40}$/.test(hash) && ['successful','resolved','unsuccessful','ignored'].includes(outcome)) {
+        void mutate('brain_outcome', {hash, outcome});
+      }
+      return;
+    }
+    if (event.target.closest('[data-notification-mark-all]')) {
+      void mutate('mark_all_read');
+      return;
+    }
+    const item = event.target.closest('[data-notification-id]');
+    if (!item) return;
+    const id = Number(item.dataset.notificationId || 0);
+    if (id < 1) return;
+    if (event.target.closest('[data-notification-open]')) {
+      if (item.classList.contains('unread')) void request('mark_read', {notification_id:id}).catch(() => {});
+      return;
+    }
+    if (event.target.closest('[data-notification-read]') || item.classList.contains('unread')) void mutate('mark_read', {notification_id:id});
+  }
+
+  function keepBellNextToProfile() {
+    const menu = document.getElementById('chatNotificationMenu');
+    const profile = document.getElementById('chatProfileMenu');
+    const actions = document.querySelector('.chat-topbar-actions');
+    if (!menu || !profile || !actions) return;
+    if (menu.nextElementSibling !== profile) actions.insertBefore(menu, profile);
+  }
+
+  function continuity() {
+    return window.STONEFELLOW_CHAT_CONTINUITY || window.STONEFELLOW_CHAT_CONTINUITY_V87 || {};
+  }
+
+  function chatCanvasAvailable() {
+    return typeof continuity().openConversation === 'function';
+  }
+
+  function activeConversationId() {
+    return Math.max(0, Number(continuity().conversationId?.() || 0));
+  }
+
+  function activeAgentId() {
+    return Math.max(0, Number(window.STONEFELLOW_AGENT_IDENTITY_V236?.agentId || 0));
+  }
+
+  async function showAttentionConversation(conversationId, message) {
+    const id = Math.max(0, Number(conversationId || 0));
+    const chat = continuity();
+    if (id < 1 || typeof chat.openConversation !== 'function') return false;
+    const opened = await chat.openConversation(id);
+    if (!opened) return false;
+    const expected = String(message || '').trim();
+    const deadline = Date.now() + 5000;
+    while (Date.now() < deadline) {
+      const texts = [...document.querySelectorAll('#chatThread .message.assistant .message-text')];
+      if (texts.some(node => String(node.textContent || '').trim() === expected)) return true;
+      if (typeof chat.syncConversation === 'function') await chat.syncConversation(id);
+      await new Promise(resolve => setTimeout(resolve, 80));
+    }
+    return false;
+  }
+
+  function voiceButton() {
+    return document.getElementById('chatVoiceButton');
+  }
+
+  function voiceIsOn() {
+    return Boolean(continuity().isVoice?.());
+  }
+
+  function setVoiceMode(enabled) {
+    const control = voiceButton();
+    if (!control || control.disabled) return false;
+    const current = voiceIsOn();
+    if (current !== Boolean(enabled)) control.click();
+    return voiceIsOn();
+  }
+
+  function agentVoiceEnabled() {
+    return agentVoicePreference !== false;
+  }
+
+  function waitForAgentIdle(timeoutMs = 30000) {
+    const deadline = Date.now() + timeoutMs;
+    return new Promise(resolve => {
+      const tick = () => {
+        const mode = String(document.body.dataset.stonefellowAgentState || 'idle');
+        if (!['processing','speaking'].includes(mode) || Date.now() >= deadline) {
+          resolve();
+          return;
+        }
+        window.setTimeout(tick, 120);
+      };
+      tick();
+    });
+  }
+
+  function announceSpeechState(state, text = '') {
+    try {
+      window.dispatchEvent(new CustomEvent('stonefellow:agent-proactive-speech',{
+        detail:{state:String(state||''),text:String(text||'')}
+      }));
+    } catch (_error) {}
+  }
+
+  function cancelSpeech() {
+    speechGeneration += 1;
+    const cancel = activeSpeechCancel;
+    activeSpeechCancel = null;
+    try { cancel?.(); } catch (_error) {}
+    try { window.speechSynthesis?.cancel(); } catch (_error) {}
+    announceSpeechState('end');
+    return true;
+  }
+
+  function browserSpeak(text, generation) {
+    return new Promise(resolve => {
+      const message = String(text || '').trim();
+      if (!message || !('speechSynthesis' in window) || !window.SpeechSynthesisUtterance) {
+        resolve(false);
+        return;
+      }
+      const utterance = new window.SpeechSynthesisUtterance(message);
+      let started = false;
+      let settled = false;
+      let closed = false;
+      const settle = ok => {
+        if (settled) return;
+        settled = true;
+        resolve(ok);
+      };
+      const close = () => {
+        if (closed) return;
+        closed = true;
+        if (activeSpeechCancel === cancel) activeSpeechCancel = null;
+        announceSpeechState('end', message);
+      };
+      const cancel = () => {
+        try { window.speechSynthesis.cancel(); } catch (_error) {}
+        close();
+        if (!started) settle(false);
+      };
+      activeSpeechCancel = cancel;
+      utterance.onstart = () => {
+        if (generation !== speechGeneration) {
+          cancel();
+          return;
+        }
+        started = true;
+        announceSpeechState('start', message);
+        settle(true);
+      };
+      utterance.onend = () => close();
+      utterance.onerror = () => {
+        close();
+        if (!started) settle(false);
+      };
+      try {
+        window.speechSynthesis.cancel();
+        window.speechSynthesis.speak(utterance);
+      } catch (_error) {
+        close();
+        settle(false);
+      }
+    });
+  }
+
+  async function speakWithExistingVoice(text, generation) {
+    if (!agentVoiceEnabled() || generation !== speechGeneration) return false;
+    const message = String(text || '').trim();
+    if (!message) return false;
+    await waitForAgentIdle();
+    if (generation !== speechGeneration) return false;
+
+    let spoken = false;
+    const PremiumVoice = window.StonefellowPremiumVoiceV122;
+    if (typeof PremiumVoice === 'function') {
+      try {
+        const premium = PremiumVoice({
+          agentEndpoint:String(window.STONEFELLOW_CHAT?.endpoint || '/api/chat-v236.php'),
+          csrf:String(cfg.csrf || '')
+        });
+        spoken = await new Promise(resolve => {
+          let started = false;
+          let settled = false;
+          let closed = false;
+          const settle = ok => {
+            if (settled) return;
+            settled = true;
+            resolve(ok);
+          };
+          const close = () => {
+            if (closed) return;
+            closed = true;
+            if (activeSpeechCancel === cancel) activeSpeechCancel = null;
+            announceSpeechState('end', message);
+          };
+          const cancel = () => {
+            try { premium.stop?.(); } catch (_error) {}
+            close();
+            if (!started) settle(false);
+          };
+          activeSpeechCancel = cancel;
+          Promise.resolve(premium.speak(message, {
+            onStart:() => {
+              if (generation !== speechGeneration) {
+                cancel();
+                return;
+              }
+              started = true;
+              announceSpeechState('start', message);
+              settle(true);
+            },
+            onEnd:() => close(),
+            onError:() => {
+              close();
+              if (!started) settle(false);
+            }
+          })).then(ok => {
+            if (ok === true && !started && generation === speechGeneration) {
+              started = true;
+              announceSpeechState('start', message);
+              settle(true);
+            }
+          }).catch(() => {
+            close();
+            if (!started) settle(false);
+          });
+        });
+      } catch (_error) {
+        spoken = false;
+      }
+    }
+    if (!spoken && generation === speechGeneration) spoken = await browserSpeak(message, generation);
+    return spoken === true;
+  }
+
+  function queueSpeech(text) {
+    const generation = speechGeneration;
+    const queued = speechQueue
+      .then(() => generation === speechGeneration ? speakWithExistingVoice(text, generation) : false)
+      .catch(() => false);
+    speechQueue = queued.then(() => undefined, () => undefined);
+    return queued;
+  }
+
+  async function presentAttention(item, speak = true) {
+    const notificationId = Number(item?.id || 0);
+    if (notificationId < 1) return true;
+    const data = await request('present_attention', {
+      notification_id:notificationId,
+      conversation_id:activeConversationId(),
+      agent_id:activeAgentId()
+    });
+    if (!data.handled) return true;
+
+    const surfaced = await showAttentionConversation(
+      Number(data.conversation_id || 0),
+      String(data.message || '')
+    );
+    if (!surfaced) {
+      throw new Error('Actionable notification could not be surfaced in Agent Chat.');
+    }
+
+    if (speak) queueSpeech(String(data.message || ''));
+    state = await request('mark_read', {notification_id:notificationId});
+    render();
+    syncMainFeedBrainOutcomeControls();
+    return true;
+  }
+
+  async function pollAttention(bootstrap = false) {
+    if (!chatCanvasAvailable()) return;
+    if (attentionBusy || (document.hidden && !bootstrap)) return;
+    attentionBusy = true;
+    try {
+      const data = await request('attention', null, {after_id:bootstrap ? 0 : attentionCursor});
+      const items = Array.isArray(data.items) ? data.items : [];
+      for (let index = 0; index < items.length; index += 1) {
+        // Only genuine user-attention notifications reach this path. Agent
+        // Brain operational activity is rendered in the Brain tab instead.
+        const speak = !bootstrap || index === items.length - 1;
+        await presentAttention(items[index], speak);
+      }
+      attentionCursor = Math.max(attentionCursor, Number(data.latest_id || 0));
+    } catch (_error) {
+      // Keep the cursor unchanged so a failed canvas presentation is retried
+      // instead of silently consuming an actionable notification.
+    } finally {
+      attentionBusy = false;
+    }
+  }
+
+  function startAttentionPolling() {
+    if (window.VP3_COGNITIVE_PRESENTATION_V510?.ownsAttention) return;
+    if (!chatCanvasAvailable()) return;
+    void pollAttention(true);
+    if (attentionTimer) window.clearInterval(attentionTimer);
+    attentionTimer = window.setInterval(() => pollAttention(false), 5000);
+  }
+
+  if (!ownNotificationButton()) return;
+  ensureDrawer();
+  keepBellNextToProfile();
+  if (!window.VP3_COGNITIVE_PRESENTATION_V510?.ownsBrainPresentation) observeMainFeedBrainPriorities();
+  const actions = document.querySelector('.chat-topbar-actions');
+  if (actions) new MutationObserver(keepBellNextToProfile).observe(actions, {childList:true});
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && drawer?.classList.contains('open')) closeDrawer();
+  });
+  window.addEventListener('stonefellow:agent-voice', event => {
+    agentVoicePreference = event.detail?.enabled !== false;
+  });
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && chatCanvasAvailable()) void pollAttention(false);
+  });
+  window.addEventListener('pagehide', () => {
+    if (attentionTimer) window.clearInterval(attentionTimer);
+    attentionTimer = 0;
+    if (mainFeedRefreshTimer) window.clearTimeout(mainFeedRefreshTimer);
+    mainFeedRefreshTimer = 0;
+    mainFeedObserver?.disconnect();
+    mainFeedObserver = null;
+    cancelSpeech();
+    clearResponseWindow();
+  }, {once:true});
+
+  window.STONEFELLOW_NOTIFICATION_CENTER = {
+    open:openDrawer,
+    openBrain:() => { activeTab='brain'; openDrawer(); render(); },
+    openHistory:() => { activeTab='history'; openDrawer(); render(); },
+    close:closeDrawer,
+    refresh,
+    pollAttention,
+    announce:text => queueSpeech(String(text || '')),
+    cancelSpeech,
+    syncMainFeedOutcomes:syncMainFeedBrainOutcomeControls
+  };
+  void refresh(false).finally(startAttentionPolling);
+})(); + (micros / 1000000).toFixed(micros > 0 && micros < 10000 ? 4 : 2);
+            const adjustment = Number(item.planning_adjustment || 0);
+            return `<article>
+              <span>${esc(String(item.recommendation || 'neutral').replaceAll('_',' '))} · ${esc(item.executor || 'cloud')}</span>
+              <strong>${esc(item.title || ('Goal #' + Number(item.goal_id || 0)))}</strong>
+              <p>${cost} known historical cost${Number(item.unknown_cost_requests || 0) ? ` · ${Number(item.unknown_cost_requests || 0)} unknown-priced request(s)` : ''}</p>
+              <small>${item.cost_known ? `relative cost ${Number(item.relative_cost_index || 0).toFixed(2)}× account average` : 'no priced run evidence'} · adjustment ${adjustment >= 0 ? '+' : ''}${adjustment.toFixed(3)}${item.commitment_exempt ? ' · commitment exempt' : ''} · attribution non-additive</small>
+            </article>`;
+          }).join('')}
+        </div>` : ''}
       </section>` : ''}
 
       ${replanning.health && replanning.health !== 'unavailable' ? `
