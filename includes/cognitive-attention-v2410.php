@@ -327,23 +327,54 @@ function vp3_cognitive_attention_mark_dismissed_v2410(PDO $pdo,array $user,strin
 
 function vp3_cognitive_attention_notification_signal_v2410(array $candidate): array
 {
-    $priority=max(0,min(100,(int)($candidate['priority']??0)));
+    $rawPriority=max(0,min(100,(int)($candidate['priority']??0)));
     $type=(string)($candidate['type']??$candidate['card_type']??'');
-    $requires=(bool)preg_match('/(?:approval|confirm|permission|response|required)/i',$type.' '.(string)($candidate['title']??''));
+    $title=(string)($candidate['title']??'');
+    $text=strtolower($type.' '.$title.' '.(string)($candidate['source_type']??''));
+    $requires=(bool)preg_match('/(?:approval|confirm|permission|response|required)/i',$text);
+    if(preg_match('/(?:security|failed|failure|error|critical|risk)/i',$text))$priority=92;
+    elseif($requires)$priority=87;
+    elseif(preg_match('/(?:meeting|appointment|booking|calendar)/i',$text))$priority=82;
+    else $priority=max(65,min(85,(int)round($rawPriority*.85)));
     return [
         'key'=>(string)($candidate['event_key']??''),
         'source'=>(string)($candidate['source_kind']??$candidate['source_type']??'notification'),
-        'category'=>(bool)preg_match('/(?:risk|security|failed|failure|error)/i',$type)?'risk':'recommendation',
-        'title'=>(string)($candidate['title']??''),
+        'category'=>(bool)preg_match('/(?:risk|security|failed|failure|error|critical)/i',$text)?'risk':'recommendation',
+        'title'=>$title,
         'reason'=>(string)($candidate['body']??''),
         'priority'=>$priority,
         'confidence'=>.90,'novelty'=>.70,'urgency'=>$priority/100,'impact'=>$priority/100,'goal_relevance'=>.60,
-        'presentation_recommendation'=>'notification',
+        'presentation_recommendation'=>!empty($candidate['voice_allowed'])?'voice_announce':'notification',
         'voice_safe_summary'=>(string)($candidate['voice_text']??''),
         'requires_user_response'=>$requires,
         'sensitive'=>!empty($candidate['sensitive']),
         'updated_at'=>(string)($candidate['created_at']??''),
     ];
+}
+
+function vp3_cognitive_attention_notification_row_signal_v2410(array $user,array $row,int $count=1): array
+{
+    $attention=function_exists('notification_requires_attention')&&notification_requires_attention($row);
+    $voiceAllowed=function_exists('vp3_cognitive_presentation_voice_allowed_type_v510')
+        &&vp3_cognitive_presentation_voice_allowed_type_v510($row);
+    $candidate=[
+        'event_key'=>'notification:'.max(0,(int)($row['id']??0)),
+        'source_kind'=>'notification',
+        'source_type'=>(string)($row['source_type']??''),
+        'type'=>(string)($row['type']??''),
+        'title'=>(string)($row['title']??'VP3 update'),
+        'body'=>(string)($row['body']??''),
+        'created_at'=>(string)($row['created_at']??''),
+        'priority'=>$attention?100:70,
+        'voice_allowed'=>$voiceAllowed,
+        'voice_text'=>$voiceAllowed&&function_exists('vp3_cognitive_presentation_voice_text_v510')
+            ?vp3_cognitive_presentation_voice_text_v510($user,$row,$count)
+            :'',
+        'sensitive'=>function_exists('vp3_cognitive_presentation_voice_sensitive_v510')
+            ?vp3_cognitive_presentation_voice_sensitive_v510($row)
+            :false,
+    ];
+    return vp3_cognitive_attention_notification_signal_v2410($candidate);
 }
 
 function vp3_cognitive_attention_extension_candidate_v2410(
