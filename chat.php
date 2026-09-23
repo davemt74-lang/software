@@ -16,7 +16,7 @@ $profileActivityBuild = 'profile-activity-overlay-20260905';
 $headerUiBuild = 'live-wiring-20260903-3';
 $teamChatAdminBuild = 'team-chat-bootstrap-v236-20260905';
 $chatSettingsBuild = 'chat-settings-v239-canonical-20260905';
-$notificationDrawerBuild = 'chat-notifications-context-v2420-20260922';
+$notificationDrawerBuild = 'chat-notifications-proactive-v244-20260922';
 $activityBuild = 'agent-activity-v94-canonical-runtime-20260907';
 $brainLearningBuild = 'brain-learning-history-v317-20260907-pr81-hotfix1';
 $agentIntelligenceBuild = 'agent-chat-intelligence-v171-20260914';
@@ -28,6 +28,7 @@ $cognitivePlanningBuild = 'cognitive-planning-v550-20260918';
 $cognitiveOrchestrationBuild = 'cognitive-orchestration-v560-20260919';
 $cognitiveMemoryBuild = 'cognitive-memory-v570-20260919';
 $cognitiveContextBuild = 'cognitive-context-v2420-20260922';
+$notificationDrawerAssetBuild = $notificationDrawerBuild . '-' . $cognitiveContextBuild;
 $browserContextBuild = 'browser-context-v2130-20260919';
 $agentIdentityAssetBuild = $agentIdentityBuild . '-activation-v243';
 $cognitiveCardsAssetBuild = $cognitiveCardsBuild . '-memory-v570';
@@ -407,7 +408,7 @@ $cognitivePresentationPost = '<script data-cognitive-presentation-v510 src="' . 
 $browserContextRuntime = '<link rel="stylesheet" data-browser-context-v2130 href="' . e(url('/chat-browser-context-v2130.css?v=' . $browserContextBuild)) . '">'
     . '<script data-browser-context-v2130 src="' . e(url('/chat-browser-context-v2130.js?v=' . $browserContextBuild)) . '"></script>';
 
-$notificationDrawerRuntime = '<link rel="stylesheet" data-chat-notification-drawer href="' . e(url('/chat-notifications-drawer-v240.css?v=' . $notificationDrawerBuild)) . '">'
+$notificationDrawerRuntime = '<link rel="stylesheet" data-chat-notification-drawer href="' . e(url('/chat-notifications-drawer-v240.css?v=' . $notificationDrawerAssetBuild)) . '">'
     . '<link rel="stylesheet" data-brain-learning-history-v317 href="' . e(url('/chat-brain-learning-history-v317.css?v=' . $brainLearningBuild)) . '">'
     . '<script data-chat-notification-drawer-config>window.STONEFELLOW_NOTIFICATION_DRAWER='
     . json_encode([
@@ -419,7 +420,7 @@ $notificationDrawerRuntime = '<link rel="stylesheet" data-chat-notification-draw
         'learningEndpoint'=>url('/api/agent-learning-history-v317.php'),
     ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
     . ';</script>'
-    . '<script data-chat-notification-drawer src="' . e(url('/chat-notifications-drawer-v240.js?v=' . $notificationDrawerBuild)) . '"></script>'
+    . '<script data-chat-notification-drawer src="' . e(url('/chat-notifications-drawer-v240.js?v=' . $notificationDrawerAssetBuild)) . '"></script>'
     . '<script data-brain-learning-history-v317 src="' . e(url('/chat-brain-learning-history-v317.js?v=' . $brainLearningBuild)) . '"></script>';
 
 $runtime = $headerUiRuntime
