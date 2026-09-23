@@ -507,9 +507,18 @@ function campaigns_rewards_snapshot_campaign_v100(PDO $pdo,int $campaignId,int $
         campaigns_rewards_platform_assert_can_v100($pdo,(int)$campaign['merchant_id'],$actorUserId,'campaigns.publish');
         $next=max(1,(int)$campaign['current_version_no']+1);
         $landingStmt=$pdo->prepare('SELECT * FROM campaign_landing_pages WHERE campaign_id=? LIMIT 1');$landingStmt->execute([$campaignId]);$landing=$landingStmt->fetch()?:[];
-        $sets=$pdo->prepare("SELECT rs.*,GROUP_CONCAT(CONCAT(i.reward_product_id,':',i.quantity) ORDER BY i.priority,i.reward_product_id SEPARATOR ',') reward_items
-          FROM campaign_reward_sets rs LEFT JOIN campaign_reward_set_items i ON i.reward_set_id=rs.id WHERE rs.campaign_id=? GROUP BY rs.id ORDER BY rs.id");
-        $sets->execute([$campaignId]);$rewardSnapshot=$sets->fetchAll()?:[];
+        $rewardStmt=$pdo->prepare("SELECT rs.id reward_set_id,rs.name reward_set_name,rs.selection_mode,rs.min_choices,rs.max_choices,
+          i.reward_product_id,i.variant_id,i.quantity,i.priority,i.conditions_json,
+          rp.public_id reward_product_public_id,rp.name reward_name,rp.description reward_description,rp.sku,rp.image_ref,
+          rp.retail_value_minor,rp.internal_cost_minor,rp.currency,rp.inventory_mode,rp.fulfillment_type,
+          rp.pickup_enabled,rp.shipping_enabled,rp.digital_enabled,rp.expiration_policy,rp.expiration_days,rp.claim_limit,
+          rp.transferable,rp.regiftable,rp.terms,rp.settings_json,rp.is_active,rt.type_key reward_type_key
+          FROM campaign_reward_sets rs
+          INNER JOIN campaign_reward_set_items i ON i.reward_set_id=rs.id
+          INNER JOIN reward_products rp ON rp.id=i.reward_product_id
+          INNER JOIN reward_types rt ON rt.id=rp.reward_type_id
+          WHERE rs.campaign_id=? ORDER BY rs.id,i.priority,i.reward_product_id");
+        $rewardStmt->execute([$campaignId]);$rewardSnapshot=$rewardStmt->fetchAll()?:[];
         $stmt=$pdo->prepare("INSERT INTO campaign_versions
           (campaign_id,version_no,status,campaign_snapshot_json,audience_snapshot_json,eligibility_snapshot_json,trigger_snapshot_json,landing_snapshot_json,reward_snapshot_json,terms_snapshot_json,created_by_user_id)
           VALUES (?,?,?,?,?,?,?,?,?,?,?)");
@@ -521,6 +530,13 @@ function campaigns_rewards_snapshot_campaign_v100(PDO $pdo,int $campaignId,int $
     $q=$pdo->prepare('SELECT * FROM campaign_versions WHERE id=? LIMIT 1');$q->execute([$versionId]);return $q->fetch()?:throw new RuntimeException('Campaign version unavailable.');
 }
 
+function campaigns_rewards_version_reward_snapshot_v100(array $version,int $rewardProductId): ?array
+{
+    if($rewardProductId<1)return null;
+    $items=json_decode((string)($version['reward_snapshot_json']??''),true);if(!is_array($items))return null;
+    foreach($items as $item)if(is_array($item)&&(int)($item['reward_product_id']??0)===$rewardProductId)return $item;
+    return null;
+}
 function campaigns_rewards_set_campaign_lifecycle_v100(PDO $pdo,int $campaignId,int $actorUserId,string $status): array
 {
     $allowed=['draft','scheduled','active','paused','completed','archived'];if(!in_array($status,$allowed,true))throw new RuntimeException('Choose a valid Campaign status.');
