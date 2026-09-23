@@ -129,6 +129,10 @@ jobs:
           test -f _deploy/includes/cognitive-release-v2530.php
           test -f _deploy/includes/cognitive-commitment-protection-v2540.php
           test -f _deploy/includes/cognitive-release-v2540.php
+          test -f _deploy/includes/agent-goal-commitments-v1715.php
+          test -f _deploy/includes/agent-memory-lifecycle-v123.php
+          test -f _deploy/includes/video-meetings-commitment-command-v18230.php
+          test -f _deploy/includes/video-meetings-followthrough-verification-v18200.php
           test -f _deploy/includes/agent-event-infrastructure-v1920.php
           test -f _deploy/api/cognitive-feed-v530.php
           test -f _deploy/api/cognitive-planning-v550.php
