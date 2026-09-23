@@ -632,9 +632,9 @@
       const unknown = Number(economicsUsage.unknown_cost_requests || 0);
       const quotaState = String(economicsQuota.state || 'unavailable').replaceAll('_',' ');
       const remaining = economicsQuota.unlimited ? 'unlimited' : Number(economicsQuota.remaining || 0).toLocaleString() + ' tokens remaining';
-      html += '<article class="chat-agent-brief-card"><small>Cost & resource economics · 30-day actuals</small><strong>' +
+      html += '<article class="chat-agent-brief-card"><small>Cost & resource economics · 30-day ledger estimate</small><strong>' +
         esc(economics?.title || 'AI resource economics') + '</strong>' +
-        '<p>' + esc(knownCost) + ' known metered AI cost' + (unknown ? ' + ' + unknown + ' unknown-priced request(s)' : '') + '</p>' +
+        '<p>' + esc(knownCost) + ' estimated AI cost from recorded usage' + (unknown ? ' + ' + unknown + ' unknown-priced request(s)' : '') + '</p>' +
         '<p><small>' + esc(quotaState) + ' · ' + esc(remaining) + ' · ' + Number(economicsCounts.planning_adjusted || 0) + ' autonomous goal(s) economically adjusted</small></p>' +
         '<div class="chat-agent-brief-actions">' +
         actionButton('Review economics',
