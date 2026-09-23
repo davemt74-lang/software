@@ -25,7 +25,7 @@ const checks=[
  ['domain references are bounded and normalized',/VP3_COGNITIVE_DOMAIN_MAX_REFS_V2600=16/.test(registry)&&/vp3_cognitive_domain_entity_ref_v2600/.test(registry)&&/vp3_cognitive_object_ref_v500/.test(registry)],
  ['event classification contract exists',/approval_required/.test(registry)&&/failure_recovery/.test(registry)&&/completion/.test(registry)&&/outcome/.test(registry)],
  ['Campaigns & Rewards is first reference contract',/function vp3_cognitive_campaigns_rewards_contract_v2600/.test(registry)&&/campaign\.conversion_attributed/.test(registry)&&/claim\.accepted/.test(registry)&&/claim\.rejected/.test(registry)],
- ['Campaigns & Rewards V1 fulfills the reference contract',/'implementation_status'=>'integrated-v1\.00'/.test(registry)&&/'merchant_accounts'/.test(registry)&&/'reward_issuances'/.test(registry)&&/'reward_claims'/.test(registry)&&/'plugin_catalog_registered'=>true/.test(registry)],
+ ['Campaigns & Rewards V1.10 fulfills the reference contract',/'implementation_status'=>'integrated-v1\.10'/.test(registry)&&/'merchant_accounts'/.test(registry)&&/'reward_issuances'/.test(registry)&&/'reward_claims'/.test(registry)&&/'plugin_catalog_registered'=>true/.test(registry)],
  ['Campaigns & Rewards is registered only after V1 implementation',/campaigns_rewards/.test(pluginRegistry)&&/Merchant accounts, campaigns, rewards/.test(pluginRegistry)],
  ['CRM and Team are related authorities not duplicated campaign objects',/'related_objects'=>\['contact','team_member','profile'\]/.test(registry)&&/crm_or_team_records_duplicated_for_campaigns/.test(release)],
  ['v25.90 current-state mapper consults v26.00 registry',/vp3_cognitive_current_state_domain_v2600/.test(current)],
