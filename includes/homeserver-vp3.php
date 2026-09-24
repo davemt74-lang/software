@@ -723,6 +723,34 @@ function homeserver_vp3_status(int $userId, bool $forceRefresh = false): array
         ];
     }
 
+    // A current-generation HTTPS pairing never owns a legacy relay credential.
+    // If its HTTPS session record is missing, keep it in the HTTPS lifecycle
+    // instead of silently reclassifying it as a custom WebSocket connection.
+    if (empty($row['relay_token_enc'])) {
+        $capabilities = [];
+        if (!empty($row['capabilities_json'])) {
+            $decoded = json_decode((string)$row['capabilities_json'], true);
+            if (is_array($decoded)) $capabilities = $decoded;
+        }
+        $installedVersion = trim((string)($row['installed_version'] ?? ''));
+        $latestVersion = trim((string)($latest['version'] ?? ''));
+        $updateAvailable = homeserver_vp3_version_valid($installedVersion)
+            && homeserver_vp3_version_valid($latestVersion)
+            && version_compare($installedVersion,$latestVersion,'<');
+        $inference = isset($capabilities['inference']) && is_array($capabilities['inference']) ? $capabilities['inference'] : null;
+        $features = isset($capabilities['features']) && is_array($capabilities['features']) ? array_values($capabilities['features']) : [];
+        $rowStatus = (string)($row['status'] ?? '');
+        $paired = !empty($row['homeserver_token_enc']) && !in_array($rowStatus,['revoked','disconnected'],true);
+        return [
+            'state'=>in_array($rowStatus,['revoked','disconnected'],true)?'revoked':($paired?'offline':'error'),
+            'connected'=>false,'paired'=>$paired,'relay_configured'=>true,'transport'=>'vp3_https',
+            'device_id'=>(string)($row['device_id']??''),'last_seen_at'=>$row['last_seen_at']??null,
+            'installed_version'=>$installedVersion,'latest_release'=>$latestPublic,'update_available'=>$updateAvailable,
+            'agent_brain_ready'=>false,'inference'=>$inference,'capabilities'=>$features,'pairing'=>null,
+            'error'=>$paired?'HomeServer HTTPS session is unavailable. Re-pair HomeServer.':(string)($row['last_error']??''),
+        ];
+    }
+
     $cachedAt = !empty($row['last_checked_at']) ? strtotime((string)$row['last_checked_at']) : false;
     $cacheFresh = !$forceRefresh && $cachedAt && (time() - $cachedAt) < VP3_HOMESERVER_STATUS_CACHE_SECONDS;
     $capabilities = [];
