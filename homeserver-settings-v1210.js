@@ -26,7 +26,7 @@ function post(action){const body=new URLSearchParams({action,csrf_token:csrf});r
 function stopPoll(){if(pollTimer)clearTimeout(pollTimer);pollTimer=null;pollCount=0;}
 function tokenPending(status){return ['pending','redeeming'].includes(status?.account_pairing?.status||'');}
 function setSteps(status){const state=status.connection_state||'not_connected',pending=tokenPending(status);els.stepper.hidden=!['not_connected','connecting'].includes(state);els.stepper.querySelectorAll('.hs-step').forEach((node,index)=>{node.classList.remove('active','complete');const n=index+1;if(state==='connecting'||pending){if(n===1)node.classList.add('complete');if(n===2)node.classList.add('active');}else if(n===1)node.classList.add('active');});}
-function render(status,{preserveAlert=false}={}){status=status||{};let state=status.connection_state||'not_connected';if(state==='waiting_for_approval')state='connecting';
+function render(status,{preserveAlert=false}={}){status=status||{};const state=status.connection_state||'not_connected';
  const account=status.account_pairing||{},pending=tokenPending(status);
  if(els.pill)els.pill.dataset.state=state;if(els.label)els.label.textContent=labels[state]||'HomeServer';setSteps({...status,connection_state:state});
  els.tokenPanel.hidden=state!=='not_connected';els.tokenResult.hidden=!rawToken;
