@@ -51,7 +51,7 @@ const checks=[
  ['V1.20 cron is CLI-only and runs V1.19 due automation plus reminders and dispatch',
   cron.includes("PHP_SAPI!=='cli'")&&runtime.includes('campaigns_rewards_automation_run_due_v119')&&runtime.includes('campaigns_rewards_dispatch_due_v120')],
  ['Cognitive domain recognizes V1.20 messaging lifecycle',
-  (registry.includes("'implementation_status'=>'integrated-v1.20'")||(registry.includes("'implementation_status'=>'integrated-v1.21'")||(registry.includes("'implementation_status'=>'integrated-v1.22'")||(registry.includes("'implementation_status'=>'integrated-v1.23'")||(registry.includes("'implementation_status'=>'integrated-v1.24'")||registry.includes("'implementation_status'=>'integrated-v1.25'"))))))&&registry.includes("'campaign.message_sent'")&&registry.includes("'campaign.message_converted'")],
+  (registry.includes("'implementation_status'=>'integrated-v1.20'")||(registry.includes("'implementation_status'=>'integrated-v1.21'")||(registry.includes("'implementation_status'=>'integrated-v1.22'")||(registry.includes("'implementation_status'=>'integrated-v1.23'")||(registry.includes("'implementation_status'=>'integrated-v1.24'")||registry.includes("'implementation_status'=>'integrated-v1.25','integrated-v1.26'"))))))&&registry.includes("'campaign.message_sent'")&&registry.includes("'campaign.message_converted'")],
  ['Release manifest preserves authority boundaries',
   release.includes("'no_new_tables'=>true")&&release.includes("'parallel_human_messaging_added'=>false")&&release.includes("'payment_authority_added'=>false")],
  ['Existing CI workflow runs V1.20 contracts without adding a workflow',
