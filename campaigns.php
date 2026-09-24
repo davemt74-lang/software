@@ -6,8 +6,9 @@ require_login();
 $user=current_user();$pdo=db();
 if(!$user||!$pdo){http_response_code(503);exit('Campaigns is unavailable.');}
 if(!function_exists('campaigns_rewards_platform_schema_ready_v100')||!campaigns_rewards_platform_schema_ready_v100($pdo)
-    ||!function_exists('campaigns_rewards_journey_release_schema_ready_v123')||!campaigns_rewards_journey_release_schema_ready_v123($pdo)){
-    http_response_code(503);exit('Campaigns needs the latest VP3 database upgrade. Run upgrade.php to install Journey Releases V1.23.');
+    ||!function_exists('campaigns_rewards_journey_release_schema_ready_v123')||!campaigns_rewards_journey_release_schema_ready_v123($pdo)
+    ||!function_exists('campaigns_rewards_journey_operations_schema_ready_v124')||!campaigns_rewards_journey_operations_schema_ready_v124($pdo)){
+    http_response_code(503);exit('Campaigns needs the latest VP3 database upgrade. Run upgrade.php to install Journey Operations V1.24.');
 }
 if(!campaigns_rewards_user_has_access_v100($pdo,$user)){flash('error','Enable Campaigns & Rewards or ask a Merchant Owner for access.');redirect(url('/plugins.php'));}
 
@@ -128,6 +129,27 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
             if(session_status()===PHP_SESSION_ACTIVE)$_SESSION['campaign_journey_simulation_once']=$simulation;
             flash('notice','Pinned journey release simulation completed without sending messages or mutating Campaign state.');
             $redirectMerchant($merchantId,'&edit_campaign='.max(0,(int)($_POST['campaign_id']??0)).'&journey='.$journeyId.'#campaign-intelligence');
+        }elseif($action==='journey_emergency_stop'){
+            $journeyId=max(0,(int)($_POST['journey_id']??0));$stopped=campaigns_rewards_journey_emergency_stop_v124($pdo,$journeyId,$uid,(string)($_POST['inflight_policy']??'pause'));
+            flash('notice','Emergency stop applied: new enrollment paused; '.(int)$stopped['instances_affected'].' in-flight instance'.((int)$stopped['instances_affected']===1?'':'s').' affected.');
+            $redirectMerchant($merchantId,'&edit_campaign='.(int)$stopped['journey']['campaign_id'].'&journey='.$journeyId.'#journey-operations-v124');
+        }elseif($action==='journey_instance_control'){
+            $instanceId=max(0,(int)($_POST['instance_id']??0));$instance=campaigns_rewards_instance_control_v124($pdo,$instanceId,$uid,(string)($_POST['instance_action']??'pause'));
+            flash('notice','Journey instance '.e((string)$instance['status']).'.');
+            $redirectMerchant($merchantId,'&edit_campaign='.(int)$instance['campaign_id'].'&journey='.(int)$instance['journey_id'].'#journey-operations-v124');
+        }elseif($action==='journey_instance_retry'){
+            $instanceId=max(0,(int)($_POST['instance_id']??0));$delivery=campaigns_rewards_instance_retry_delivery_v124($pdo,$instanceId,max(0,(int)($_POST['delivery_id']??0)),$uid);
+            $instance=campaigns_rewards_journey_instance_v124($pdo,$instanceId);
+            flash('notice','Failed journey delivery requeued for governed retry.');
+            $redirectMerchant($merchantId,'&edit_campaign='.(int)($instance['campaign_id']??0).'&journey='.(int)($instance['journey_id']??0).'#journey-operations-v124');
+        }elseif($action==='journey_instance_skip'){
+            $instanceId=max(0,(int)($_POST['instance_id']??0));$instance=campaigns_rewards_instance_skip_delivery_v124($pdo,$instanceId,max(0,(int)($_POST['delivery_id']??0)),$uid);
+            flash('notice','Pending node skipped and the pinned Journey Version advanced to its explicit next step.');
+            $redirectMerchant($merchantId,'&edit_campaign='.(int)$instance['campaign_id'].'&journey='.(int)$instance['journey_id'].'#journey-operations-v124');
+        }elseif($action==='journey_instance_move'){
+            $instanceId=max(0,(int)($_POST['instance_id']??0));$instance=campaigns_rewards_instance_move_step_v124($pdo,$instanceId,(string)($_POST['target_step_key']??''),$uid);
+            flash('notice','Journey instance moved to '.(string)$instance['current_step_key'].' on its pinned release.');
+            $redirectMerchant($merchantId,'&edit_campaign='.(int)$instance['campaign_id'].'&journey='.(int)$instance['journey_id'].'&instance='.$instanceId.'#journey-operations-v124');
         }elseif($action==='journey_recommendations_refresh'){
             campaigns_rewards_platform_assert_can_v100($pdo,$merchantId,$uid,'analytics.view');
             $summary=campaigns_rewards_refresh_optimization_recommendations_v122($pdo,$merchantId);
@@ -259,6 +281,13 @@ foreach($campaignJourneys as $journeyRow){
 }
 $selectedJourneyId=max(0,(int)($_GET['journey']??0));if($selectedJourneyId<1&&$campaignJourneys)$selectedJourneyId=(int)$campaignJourneys[0]['id'];
 $selectedJourneySnapshot=$journeySnapshots[$selectedJourneyId]??null;
+$journeyInstances=$selectedJourneyId>0&&function_exists('campaigns_rewards_journey_instances_v124')?campaigns_rewards_journey_instances_v124($pdo,$merchantId,$selectedJourneyId,100):[];
+$journeyIncidents=$selectedJourneyId>0&&function_exists('campaigns_rewards_journey_incidents_v124')?campaigns_rewards_journey_incidents_v124($pdo,$merchantId,$selectedJourneyId):[];
+$journeyVersionComparison=$selectedJourneyId>0&&function_exists('campaigns_rewards_journey_version_comparison_v124')?campaigns_rewards_journey_version_comparison_v124($pdo,$selectedJourneyId):[];
+$selectedJourneyInstanceId=max(0,(int)($_GET['instance']??0));$selectedJourneyTimeline=null;
+if($selectedJourneyInstanceId>0&&function_exists('campaigns_rewards_journey_instance_timeline_v124')){
+    try{$selectedJourneyTimeline=campaigns_rewards_journey_instance_timeline_v124($pdo,$selectedJourneyInstanceId,$uid);}catch(Throwable $ignored){$selectedJourneyTimeline=null;}
+}
 $messageChannels=function_exists('campaigns_rewards_message_channels_v120')?campaigns_rewards_message_channels_v120():[];
 $messageTriggers=function_exists('campaigns_rewards_journey_triggers_v120')?campaigns_rewards_journey_triggers_v120():[];
 $messagePurposes=function_exists('campaigns_rewards_message_purposes_v120')?campaigns_rewards_message_purposes_v120():[];
@@ -280,7 +309,7 @@ $actions=['<a class="cr-btn primary" href="'.e(url('/rewards.php'.($merchantId?'
 if($canCreate)$actions[]='<a class="cr-btn" href="'.e(url('/campaigns.php?new_merchant=1#new-merchant')).'">+ Merchant</a>';
 $memberHeaderActions=implode(' ',$actions);
 ?><!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#f7f7f8"><title>VP3 | Campaigns</title>
-<link rel="stylesheet" href="<?= e(url('/chat.css?v=82')) ?>"><link rel="stylesheet" href="<?= e(url('/campaigns-v100.css?v=123')) ?>"><link rel="stylesheet" href="<?= e(url('/campaign-journey-builder-v123.css?v=123')) ?>"></head>
+<link rel="stylesheet" href="<?= e(url('/chat.css?v=82')) ?>"><link rel="stylesheet" href="<?= e(url('/campaigns-v100.css?v=124')) ?>"><link rel="stylesheet" href="<?= e(url('/campaign-journey-builder-v123.css?v=123')) ?>"></head>
 <body class="cr-page"><div class="chat-app"><?php $workspaceSidebarUser=$user;$workspaceSidebarActive='campaigns';require __DIR__.'/includes/workspace-sidebar-v82.php'; ?><div class="chat-sidebar-backdrop" id="chatSidebarBackdrop"></div>
 <main class="chat-main cr-main"><?php require __DIR__.'/includes/member-header.php'; ?><div class="cr-wrap">
 <?php if($notice!==''):?><div class="cr-notice success"><?= e($notice) ?></div><?php endif;?><?php if($error!==''):?><div class="cr-notice error"><?= e($error) ?></div><?php endif;?>
@@ -525,7 +554,7 @@ $graphScriptId='journeyGraphData123-'.(int)$jrow['id'];
 <form method="post" class="cr-form cr-subform"><?= csrf_field() ?><input type="hidden" name="action" value="journey_validate"><input type="hidden" name="merchant_id" value="<?= $merchantId ?>"><input type="hidden" name="campaign_id" value="<?= (int)$editCampaign['id'] ?>"><input type="hidden" name="journey_id" value="<?= (int)$jrow['id'] ?>">
 <h4>Pre-publish suite</h4><?php if($simulationContacts):?><label>Sample CRM contact <small>Optional</small><select name="sample_contact_id"><option value="0">Structural + provider checks only</option><?php foreach($simulationContacts as $contactId=>$label):?><option value="<?= (int)$contactId ?>"><?= e($label) ?></option><?php endforeach;?></select></label><?php endif;?><button>Run release suite</button><p class="cr-help">Checks entry nodes, targets, branches, A/B weights, reachability, cycles, exit paths, provider readiness, and optional sample-contact simulation.</p></form>
 <form method="post" class="cr-form cr-subform"><?= csrf_field() ?><input type="hidden" name="action" value="journey_publish"><input type="hidden" name="merchant_id" value="<?= $merchantId ?>"><input type="hidden" name="journey_id" value="<?= (int)$jrow['id'] ?>">
-<h4>Publish Journey v<?= (int)$jdraft['version_no'] ?></h4><label>Release notes<textarea name="release_notes" rows="3" placeholder="What changed in this release?"><?= e((string)($jdraft['release_notes']??'')) ?></textarea></label><div class="cr-form-grid"><label>Schedule <small>Optional · <?= e((string)$merchant['timezone']) ?></small><input type="datetime-local" name="scheduled_publish_at"></label><label>In-flight instances<select name="inflight_policy"><option value="continue">Continue pinned current version</option><option value="migrate_pending">Migrate pending nodes to this release</option><option value="exit_remaining">Exit remaining pending nodes</option></select></label></div><button class="cr-btn primary">Publish / schedule release</button></form>
+<h4>Publish Journey v<?= (int)$jdraft['version_no'] ?></h4><label>Release notes<textarea name="release_notes" rows="3" placeholder="What changed in this release?"><?= e((string)($jdraft['release_notes']??'')) ?></textarea></label><div class="cr-form-grid"><label>Schedule <small>Optional · <?= e((string)$merchant['timezone']) ?></small><input type="datetime-local" name="scheduled_publish_at"></label><label>New-entry rollout<input type="number" name="rollout_percent" min="1" max="100" value="100"><small>% of new entrants pinned to this release; remainder stay on the prior release.</small></label><label>In-flight instances<select name="inflight_policy"><option value="continue">Continue pinned current version</option><option value="migrate_pending">Migrate pending nodes to this release</option><option value="exit_remaining">Exit remaining pending nodes</option></select></label></div><button class="cr-btn primary">Publish / schedule release</button></form>
 </div>
 <?php endif;?>
 <?php endif;?>
@@ -541,6 +570,30 @@ $graphScriptId='journeyGraphData123-'.(int)$jrow['id'];
 <?php if($canCampaignPublish&&in_array((string)$versionRow['status'],['published','superseded'],true)&&(!$jlive||(int)$versionRow['id']!==(int)$jlive['id'])):?><form method="post" class="cr-inline"><?= csrf_field() ?><input type="hidden" name="action" value="journey_rollback"><input type="hidden" name="merchant_id" value="<?= $merchantId ?>"><input type="hidden" name="journey_id" value="<?= (int)$jrow['id'] ?>"><input type="hidden" name="version_id" value="<?= (int)$versionRow['id'] ?>"><select name="inflight_policy"><option value="continue">Keep in-flight pinned</option><option value="migrate_pending">Migrate pending</option><option value="exit_remaining">Exit pending</option></select><input name="release_notes" placeholder="Rollback notes"><button>Rollback as new release</button></form><?php endif;?>
 </article><?php endforeach;?>
 </div>
+</section>
+<?php endif;?>
+
+<?php if($selectedJourneySnapshot):?>
+<section class="cr-subpanel" id="journey-operations-v124">
+<header><div><span>V1.24 operations</span><h3>Live Journey Operations & Recovery</h3></div><strong><?= count($journeyInstances) ?> instances</strong></header>
+<p class="cr-help">Instances are canonical operational records pinned to the Journey Version they entered. Pause/resume/cancel/retry/skip/move are explicit human actions; the Agent may surface incidents but cannot execute these controls.</p>
+<?php if($canCampaignPublish):?><form method="post" class="cr-form cr-subform"><?= csrf_field() ?><input type="hidden" name="action" value="journey_emergency_stop"><input type="hidden" name="merchant_id" value="<?= $merchantId ?>"><input type="hidden" name="journey_id" value="<?= (int)$selectedJourneyId ?>"><h4>Emergency Journey stop</h4><div class="cr-form-grid"><label>In-flight instances<select name="inflight_policy"><option value="pause">Pause all in-flight instances</option><option value="continue">Let in-flight instances continue</option><option value="cancel">Cancel remaining in-flight work</option></select></label></div><button>Pause new enrollment now</button><p class="cr-help">New entrants stop immediately. Choose separately whether existing pinned instances continue, pause, or cancel.</p></form><?php endif;?>
+
+<?php if($journeyIncidents):?><div class="cr-validation-warnings-v123"><strong>Operational incidents</strong><?php foreach($journeyIncidents as $incident):?><p><b><?= e(strtoupper((string)$incident['severity'])) ?></b> · <?= e((string)$incident['message']) ?><?php if(!empty($incident['instance_id'])):?> · Instance #<?= (int)$incident['instance_id'] ?><?php endif;?></p><?php endforeach;?></div><?php else:?><p class="cr-help">No current Journey incidents detected.</p><?php endif;?>
+
+<?php if($journeyVersionComparison):?><h4>Release operations comparison</h4><div class="cr-release-grid-v123"><?php foreach($journeyVersionComparison as $versionId=>$stats): $versionRow=campaigns_rewards_journey_version_v123($pdo,(int)$versionId);?><article class="cr-release-card-v123"><h4>Journey v<?= (int)($versionRow['version_no']??0) ?></h4><p><?= number_format((int)($stats['total']??0)) ?> instances</p><small><?= number_format((int)($stats['completed']??0)) ?> completed · <?= number_format((int)($stats['active']??0)) ?> active · <?= number_format((int)($stats['paused']??0)) ?> paused · <?= number_format((int)($stats['needs_attention']??0)) ?> need attention · <?= number_format((int)($stats['cancelled']??0)) ?> cancelled</small></article><?php endforeach;?></div><?php endif;?>
+
+<h4>Recent instances</h4><div class="cr-list">
+<?php foreach($journeyInstances as $instance): $pending=campaigns_rewards_instance_pending_deliveries_v124($pdo,(int)$instance['id']);?>
+<article><div><strong><?= e((string)($instance['contact_name']?:$instance['contact_email']?:('Contact #'.(int)$instance['contact_id']))) ?></strong>
+<small>Instance #<?= (int)$instance['id'] ?> · Journey Version #<?= (int)$instance['journey_version_id'] ?> · <?= e(ucwords(str_replace('_',' ',(string)$instance['status']))) ?> · Current step <?= e((string)($instance['current_step_key']?:'—')) ?> · Started <?= e((string)$instance['started_at']) ?> UTC</small><a href="<?= e(url('/campaigns.php?merchant='.$merchantId.'&edit_campaign='.(int)$editCampaign['id'].'&journey='.(int)$selectedJourneyId.'&instance='.(int)$instance['id'].'#journey-operations-v124')) ?>">Timeline</a></div>
+<?php if($canCampaignPublish&&!in_array((string)$instance['status'],['completed','cancelled'],true)):?><div class="cr-actions"><form method="post" class="cr-inline"><?= csrf_field() ?><input type="hidden" name="action" value="journey_instance_control"><input type="hidden" name="merchant_id" value="<?= $merchantId ?>"><input type="hidden" name="instance_id" value="<?= (int)$instance['id'] ?>"><?php if($instance['status']==='paused'):?><button name="instance_action" value="resume">Resume</button><?php else:?><button name="instance_action" value="pause">Pause</button><?php endif;?><button name="instance_action" value="cancel">Cancel remaining</button></form>
+<?php $instanceVersion=campaigns_rewards_journey_version_v123($pdo,(int)$instance['journey_version_id']);$instanceSteps=$instanceVersion?array_keys(campaigns_rewards_graph_groups_v123($instanceVersion['graph'])):[];if($instanceSteps):?><form method="post" class="cr-inline"><?= csrf_field() ?><input type="hidden" name="action" value="journey_instance_move"><input type="hidden" name="merchant_id" value="<?= $merchantId ?>"><input type="hidden" name="instance_id" value="<?= (int)$instance['id'] ?>"><select name="target_step_key"><?php foreach($instanceSteps as $stepKey):?><option value="<?= e($stepKey) ?>"<?= $instance['current_step_key']===$stepKey?' selected':'' ?>><?= e($stepKey) ?></option><?php endforeach;?></select><button>Move step</button></form><?php endif;?></div><?php endif;?>
+<?php if($pending):?><div class="cr-list"><?php foreach($pending as $delivery):?><article><div><small>Delivery #<?= (int)$delivery['id'] ?> · <?= e((string)($delivery['metadata']['step_key']??$delivery['message_key'])) ?> · <?= e(ucwords(str_replace('_',' ',(string)$delivery['status']))) ?><?php if(!empty($delivery['metadata']['last_error'])):?> · <?= e((string)$delivery['metadata']['last_error']) ?><?php endif;?></small></div><?php if($canCampaignPublish):?><div class="cr-actions"><?php if(in_array((string)$delivery['status'],['dead_letter','failed'],true)):?><form method="post" class="cr-inline"><?= csrf_field() ?><input type="hidden" name="action" value="journey_instance_retry"><input type="hidden" name="merchant_id" value="<?= $merchantId ?>"><input type="hidden" name="instance_id" value="<?= (int)$instance['id'] ?>"><input type="hidden" name="delivery_id" value="<?= (int)$delivery['id'] ?>"><button>Retry</button></form><?php elseif(in_array((string)$delivery['status'],['pending','retry_wait'],true)&&!empty($delivery['template']['next_step_key'])):?><form method="post" class="cr-inline"><?= csrf_field() ?><input type="hidden" name="action" value="journey_instance_skip"><input type="hidden" name="merchant_id" value="<?= $merchantId ?>"><input type="hidden" name="instance_id" value="<?= (int)$instance['id'] ?>"><input type="hidden" name="delivery_id" value="<?= (int)$delivery['id'] ?>"><button>Skip node</button></form><?php endif;?></div><?php endif;?></article><?php endforeach;?></div><?php endif;?>
+</article><?php endforeach;?>
+<?php if(!$journeyInstances):?><p class="cr-help">No V1.24 Journey Instances exist yet. New entrants will create one automatically after the V1.24 upgrade.</p><?php endif;?>
+</div>
+<?php if($selectedJourneyTimeline):?><div class="cr-subpanel"><h4>Contact Journey Timeline · Instance #<?= (int)$selectedJourneyTimeline['instance']['id'] ?></h4><div class="cr-list"><?php foreach($selectedJourneyTimeline['items'] as $item):?><article><div><strong><?= e((string)$item['step_key']) ?></strong><small><?= e(ucwords(str_replace('_',' ',(string)$item['node_type']))) ?> · <?= e((string)$item['channel']) ?> · <?= e(ucwords(str_replace('_',' ',(string)$item['status']))) ?> · created <?= e((string)$item['created_at']) ?> UTC<?php if($item['sent_at']):?> · sent <?= e((string)$item['sent_at']) ?><?php endif;?><?php if($item['branch']):?> · branch <?= e((string)$item['branch']) ?><?php endif;?><?php if($item['operator_skipped_at']):?> · operator skipped<?php endif;?><?php if($item['error']):?> · <?= e((string)$item['error']) ?><?php endif;?></small></div></article><?php endforeach;?></div></div><?php endif;?>
 </section>
 <?php endif;?>
 

@@ -73,8 +73,8 @@ function vp3_cognitive_campaigns_rewards_contract_v2600(): array
     return [
         'id'=>'campaigns_rewards',
         'label'=>'Campaigns & Rewards',
-        'phase'=>'campaigns-rewards-v1.23',
-        'implementation_status'=>'integrated-v1.23',
+        'phase'=>'campaigns-rewards-v1.24',
+        'implementation_status'=>'integrated-v1.24',
         'plugin_key'=>'campaigns_rewards',
         'plugin_catalog_registered'=>true,
         'authority'=>[
@@ -83,13 +83,13 @@ function vp3_cognitive_campaigns_rewards_contract_v2600(): array
             'campaign_landing_pages','campaign_profile_publications','reward_types','reward_products',
             'campaign_reward_sets','reward_issuances','reward_transfers','merchant_claim_codes','reward_claims',
             'loyalty_accounts','loyalty_ledger','reward_inventory_ledger','reward_liability_ledger',
-            'campaign_activity_events','campaign_messages','campaign_deliveries','campaign_journeys','campaign_journey_versions','campaign_journey_publications','campaign_automation_rules','campaign_rule_executions','campaign_agent_recommendations',
+            'campaign_activity_events','campaign_messages','campaign_deliveries','campaign_journeys','campaign_journey_versions','campaign_journey_publications','campaign_journey_instances','campaign_automation_rules','campaign_rule_executions','campaign_agent_recommendations',
             'campaign_idempotency_keys','campaign_reconciliation_runs',
         ],
         'planned_authority'=>[],
         'objects'=>[
             'merchant','merchant_location','merchant_team_member','campaign','campaign_enrollment','campaign_case',
-            'reward_product','reward_issuance','reward_claim','claim_code','loyalty_account','campaign_message','campaign_delivery','campaign_journey','campaign_journey_version','campaign_journey_publication',
+            'reward_product','reward_issuance','reward_claim','claim_code','loyalty_account','campaign_message','campaign_delivery','campaign_journey','campaign_journey_version','campaign_journey_publication','campaign_journey_instance',
         ],
         'related_objects'=>['contact','team_member','profile'],
         'events'=>[
@@ -108,6 +108,7 @@ function vp3_cognitive_campaigns_rewards_contract_v2600(): array
             'campaign.journey_node_saved','campaign.journey_node_queued','campaign.journey_started','campaign.journey_branch_selected','campaign.journey_node_completed','campaign.journey_exited','campaign.message_retry_scheduled','campaign.message_dead_lettered','campaign.provider_event_received',
             'campaign.journey_optimization_updated','campaign.journey_template_applied','campaign.journey_simulated','campaign.journey_frequency_deferred','campaign.journey_send_time_optimized','campaign.journey_recommendation_proposed','campaign.journey_recommendation_reviewed',
             'campaign.journey_draft_changed','campaign.journey_release_validated','campaign.journey_published','campaign.journey_publish_scheduled','campaign.journey_publish_cancelled','campaign.journey_version_started','campaign.journey_release_simulated','campaign.journey_enrollment_changed','campaign.journey_archived','campaign.journey_cloned',
+            'campaign.journey_instance_pause','campaign.journey_instance_resume','campaign.journey_instance_cancel','campaign.journey_instance_node_skipped','campaign.journey_instance_step_moved','campaign.journey_emergency_stopped','campaign.journey_incident_proposed',
             'campaign.enrollment_qualified','campaign.enrollment_created','campaign.enrollment_completed',
             'campaign.enrollment_disqualified','campaign.case_opened','campaign.case_resolved','campaign.case_reopened',
             'reward.product_created','reward.product_updated','reward.issued','reward.sent','reward.viewed',
@@ -134,6 +135,7 @@ function vp3_cognitive_campaigns_rewards_contract_v2600(): array
             'campaign.journey_node_saved'=>'informational','campaign.journey_node_queued'=>'informational','campaign.journey_started'=>'informational','campaign.journey_branch_selected'=>'informational','campaign.journey_node_completed'=>'completion','campaign.journey_exited'=>'completion','campaign.message_retry_scheduled'=>'actionable','campaign.message_dead_lettered'=>'failure_recovery','campaign.provider_event_received'=>'informational',
             'campaign.journey_optimization_updated'=>'informational','campaign.journey_template_applied'=>'informational','campaign.journey_simulated'=>'informational','campaign.journey_frequency_deferred'=>'actionable','campaign.journey_send_time_optimized'=>'informational','campaign.journey_recommendation_proposed'=>'actionable','campaign.journey_recommendation_reviewed'=>'completion',
             'campaign.journey_draft_changed'=>'informational','campaign.journey_release_validated'=>'informational','campaign.journey_published'=>'completion','campaign.journey_publish_scheduled'=>'approval_required','campaign.journey_publish_cancelled'=>'informational','campaign.journey_version_started'=>'informational','campaign.journey_release_simulated'=>'informational','campaign.journey_enrollment_changed'=>'actionable','campaign.journey_archived'=>'completion','campaign.journey_cloned'=>'informational',
+            'campaign.journey_instance_pause'=>'actionable','campaign.journey_instance_resume'=>'completion','campaign.journey_instance_cancel'=>'approval_required','campaign.journey_instance_node_skipped'=>'approval_required','campaign.journey_instance_step_moved'=>'approval_required','campaign.journey_emergency_stopped'=>'approval_required','campaign.journey_incident_proposed'=>'failure_recovery',
             'campaign.enrollment_qualified'=>'informational','campaign.enrollment_created'=>'actionable','campaign.enrollment_completed'=>'completion','campaign.enrollment_disqualified'=>'completion',
             'campaign.case_opened'=>'actionable','campaign.case_resolved'=>'outcome','campaign.case_reopened'=>'actionable',
             'reward.product_created'=>'informational','reward.product_updated'=>'informational','reward.issued'=>'actionable','reward.sent'=>'informational','reward.viewed'=>'informational',
@@ -152,6 +154,7 @@ function vp3_cognitive_campaigns_rewards_contract_v2600(): array
         'current_state'=>'cognitive_current_state_v2590',
         'presentation'=>'cognitive_presentation_firewall_v2590',
         'notes'=>[
+            'Campaigns & Rewards V1.24 promotes pinned Journey Instances into canonical operational records for live monitoring, human recovery controls, controlled new-entry rollouts, incident surfacing and descriptive release operations comparison.',
             'Campaigns & Rewards V1.23 makes the whole Journey graph a governed release artifact with draft/live separation, atomic publishing, immutable version history, in-flight release pinning, rollback and scheduled publication.',
             'Campaigns & Rewards V1.22 derives journey intelligence from canonical delivery outcomes, adds opt-in optimization/frequency controls, dry-run simulation and human-reviewed Agent recommendations without an autonomous learner.',
             'Campaigns & Rewards V1.21 adds graph orchestration, deterministic A/B variants, timezone delivery, bounded retry/dead-letter handling and signed provider delivery events over the existing message/delivery authorities.',

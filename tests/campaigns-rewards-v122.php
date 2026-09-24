@@ -35,7 +35,7 @@ cr_v122_assert(($inv['simulation_is_dry_run']??false)===true&&($inv['templates_c
 cr_v122_assert(($inv['agent_recommendations_require_human_review']??false)===true&&($inv['recommendations_never_auto_apply']??false)===true,'Agent optimization remains human reviewed');
 
 $domain=vp3_cognitive_domain_registry_v2600()['domains']['campaigns_rewards']??[];
-cr_v122_assert(in_array(($domain['implementation_status']??''),['integrated-v1.22','integrated-v1.23'],true),'cognitive domain declares integrated V1.22');
+cr_v122_assert(in_array(($domain['implementation_status']??''),['integrated-v1.22','integrated-v1.23','integrated-v1.24'],true),'cognitive domain declares integrated V1.22');
 foreach(['campaign.journey_template_applied','campaign.journey_simulated','campaign.journey_frequency_deferred','campaign.journey_send_time_optimized','campaign.journey_recommendation_proposed','campaign.journey_recommendation_reviewed'] as $event)
     cr_v122_assert(in_array($event,$domain['events']??[],true),"cognitive domain registers {$event}");
 

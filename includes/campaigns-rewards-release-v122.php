@@ -51,7 +51,7 @@ function campaigns_rewards_release_readiness_v122(?PDO $pdo=null): array
         'frequency'=>function_exists('campaigns_rewards_frequency_gate_v122'),
         'simulation'=>function_exists('campaigns_rewards_simulate_journey_v122'),
         'recommendations'=>function_exists('campaigns_rewards_refresh_optimization_recommendations_v122'),
-        'cognitive_domain'=>in_array(($domain['implementation_status']??''),['integrated-v1.22','integrated-v1.23'],true),
+        'cognitive_domain'=>in_array(($domain['implementation_status']??''),['integrated-v1.22','integrated-v1.23','integrated-v1.24'],true),
         'schema_ready'=>$pdo&&function_exists('campaigns_rewards_platform_schema_ready_v100')&&campaigns_rewards_platform_schema_ready_v100($pdo),
     ];
     return ['build'=>VP3_CAMPAIGNS_REWARDS_RELEASE_V122,'ready'=>!in_array(false,$checks,true),'checks'=>$checks,'authority'=>'diagnostic_only'];

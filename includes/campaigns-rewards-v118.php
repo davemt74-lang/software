@@ -128,6 +128,7 @@ function campaigns_rewards_public_validate_v118(array $behavior,array $input,arr
 
 function campaigns_rewards_journey_enqueue_latest_v118(PDO $pdo,int $campaignId,int $contactId,string $trigger,array $context=[],string $eventId=''): array
 {
+    if(function_exists('campaigns_rewards_journey_enqueue_v124')&&function_exists('campaigns_rewards_journey_operations_schema_ready_v124')&&campaigns_rewards_journey_operations_schema_ready_v124($pdo))return campaigns_rewards_journey_enqueue_v124($pdo,$campaignId,$contactId,$trigger,$context,$eventId);
     if(function_exists('campaigns_rewards_journey_enqueue_v123')&&function_exists('campaigns_rewards_journey_release_schema_ready_v123')&&campaigns_rewards_journey_release_schema_ready_v123($pdo))return campaigns_rewards_journey_enqueue_v123($pdo,$campaignId,$contactId,$trigger,$context,$eventId);
     if(function_exists('campaigns_rewards_journey_enqueue_v121'))return campaigns_rewards_journey_enqueue_v121($pdo,$campaignId,$contactId,$trigger,$context,$eventId);
     if(function_exists('campaigns_rewards_journey_enqueue_v120'))return campaigns_rewards_journey_enqueue_v120($pdo,$campaignId,$contactId,$trigger,$context,$eventId);

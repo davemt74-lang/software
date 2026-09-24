@@ -50,7 +50,7 @@ cr_v121_assert(($inv['sendgrid_email_provider']??false)===true&&($inv['twilio_sm
 cr_v121_assert(($inv['provider_webhooks_cannot_issue_rewards']??false)===true,'provider webhooks cannot gain Reward authority');
 
 $domain=vp3_cognitive_domain_registry_v2600()['domains']['campaigns_rewards']??[];
-cr_v121_assert(in_array(($domain['implementation_status']??''),['integrated-v1.21','integrated-v1.22','integrated-v1.23'],true),'cognitive domain declares integrated V1.21');
+cr_v121_assert(in_array(($domain['implementation_status']??''),['integrated-v1.21','integrated-v1.22','integrated-v1.23','integrated-v1.24'],true),'cognitive domain declares integrated V1.21');
 foreach(['campaign.journey_node_saved','campaign.journey_started','campaign.journey_branch_selected','campaign.message_retry_scheduled','campaign.message_dead_lettered','campaign.provider_event_received'] as $event)
     cr_v121_assert(in_array($event,$domain['events']??[],true),"cognitive domain registers {$event}");
 
