@@ -61,9 +61,7 @@ assert.match(api, /generate_pairing_token/);
 assert.match(api, /homeserver_account_v1210_generate_token/);
 assert.match(api, /account_pairing/);
 assert.match(api, /account-token-v1/);
-assert.match(api, /start_pairing/); // compatibility for older HomeServer builds
-assert.match(api, /pairing_status/);
-assert.match(api, /homeserver_account_v1210_mark_paired/);
+assert.doesNotMatch(api, /start_pairing|pairing_status|repair|cancel_pairing/);
 assert.match(api, /disconnect/);
 assert.match(api, /remove/);
 assert.doesNotMatch(api, /\brelay_token\b|\bclaim_token\b|\bhomeserver_token\b/);
@@ -85,16 +83,16 @@ assert.match(page, /account-token-v1/);
 assert.match(page, /homeserver-settings-v1210\.js/);
 assert.doesNotMatch(page, /HomeServer connection code/);
 assert.doesNotMatch(page, /Approval code/);
-assert.doesNotMatch(page, /Paste connection code from HomeServer/);
+assert.doesNotMatch(page, /Paste connection code from HomeServer|Local approval required|Re-pair permissions|Remote Bridge/);
 assert.match(nav, /'homeserver','HomeServer',url\('\/settings-homeserver\.php'\)/);
 
-for (const state of ['not_connected','connecting','waiting_for_approval','connected','connection_error','disconnected']) {
+for (const state of ['not_connected','connecting','connected','connection_error','disconnected']) {
   assert.match(js, new RegExp(state));
 }
 assert.match(js, /generate_pairing_token/);
 assert.match(js, /Generate Pairing Token/);
 assert.match(js, /navigator\.clipboard\.writeText/);
-assert.match(js, /pairing_status/);
+assert.doesNotMatch(js, /pairing_status|cancel_pairing|post\('repair'\)|waiting_for_approval/);
 assert.match(js, /setTimeout\(tick,3000\)/);
 assert.doesNotMatch(js, /claim_code|HomeServer connection code|Approval code/);
 assert.match(lifecycle, /disconnected/);
