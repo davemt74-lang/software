@@ -1,0 +1,46 @@
+name: Package HomeServer Core v13.03
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build deploy ZIP
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist/includes dist/api
+          cp api/homeserver-status.php dist/api/
+          cp homeserver-vp3.js dist/
+          cp includes/homeserver-cloud-pairing-v1200.php dist/includes/
+          cp includes/homeserver-vp3.php dist/includes/
+          cp includes/main-sidebar.php dist/includes/
+          cat > dist/DEPLOY.txt <<'EOF'
+          VP3 Cloud HomeServer Core v13.03
+
+          This release collapses normal HomeServer connection truth onto the
+          canonical outbound VP3 HTTPS session. It removes the duplicate legacy
+          claim-code flow from the sidebar modal and keeps custom WebSocket relay
+          configuration advanced-only.
+
+          No database migration is required.
+
+          Upload these files preserving their paths and replace the existing files.
+          EOF
+          cd dist
+          zip -r VP3-Cloud-HomeServer-Core-v13.03-deploy.zip             api/homeserver-status.php             homeserver-vp3.js             includes/homeserver-cloud-pairing-v1200.php             includes/homeserver-vp3.php             includes/main-sidebar.php             DEPLOY.txt
+      - name: Upload deploy ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: VP3-Cloud-HomeServer-Core-v13.03-deploy
+          path: dist/VP3-Cloud-HomeServer-Core-v13.03-deploy.zip
+          if-no-files-found: error
+          retention-days: 14
