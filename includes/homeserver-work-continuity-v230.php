@@ -289,7 +289,7 @@ function homeserver_work_v230_before_homeserver_dispatch(PDO $pdo,array $user,ar
 {
     $uid=(int)($user['id']??0);$runId=(int)($claim['run_id']??0);if($uid<1||$runId<1)return [];
     $run=agent_workflow_row_v1400($pdo,$uid,$runId);if(!$run)return [];
-    $row=homeserver_work_v230_ensure_run($pdo,$user,$run,(string)($run['source_key']??''),(string)($run['origin']??'agent_brain'),true);
+    $row=homeserver_work_v230_ensure_run($pdo,$user,$run,(string)($run['source_key']??''),(string)($run['origin']??'agent_brain'),null);
     $actionId=(int)($claim['action']['id']??$row['action_id']??0);$key=homeserver_work_v230_key($uid,$runId,$actionId);
     $pdo->prepare("UPDATE homeserver_work_continuity SET action_id=?,continuity_key=?,state='running',last_job_status='executing',last_transition_at=UTC_TIMESTAMP(),updated_at=UTC_TIMESTAMP() WHERE owner_user_id=? AND run_id=?")
       ->execute([$actionId,$key,$uid,$runId]);
