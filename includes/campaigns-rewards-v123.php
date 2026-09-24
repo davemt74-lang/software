@@ -368,10 +368,18 @@ function campaigns_rewards_apply_inflight_plan_v123(PDO $pdo,array $plan): void
             $pdo->prepare("UPDATE campaign_deliveries SET message_id=?,channel=?,metadata_json=? WHERE id=? AND status IN ('pending','retry_wait')")
               ->execute([(int)$action['message_id'],(string)$action['channel'],campaigns_rewards_json_v100($action['metadata']),(int)$action['delivery_id']]);
         }
+        if(function_exists('campaigns_rewards_journey_instance_by_key_v124')&&function_exists('campaigns_rewards_journey_operations_schema_ready_v124')&&campaigns_rewards_journey_operations_schema_ready_v124($pdo)){
+            $key=(string)($action['metadata']['journey_instance_key']??'');$instance=$key!==''?campaigns_rewards_journey_instance_by_key_v124($pdo,$key):null;
+            if($instance){
+                if($action['kind']==='exit')$pdo->prepare("UPDATE campaign_journey_instances SET status='cancelled',cancelled_at=UTC_TIMESTAMP(),last_activity_at=UTC_TIMESTAMP(),updated_at=UTC_TIMESTAMP() WHERE id=? AND status<>'completed'")->execute([(int)$instance['id']]);
+                elseif($action['kind']==='migrate')$pdo->prepare("UPDATE campaign_journey_instances SET journey_version_id=?,current_step_key=?,last_activity_at=UTC_TIMESTAMP(),updated_at=UTC_TIMESTAMP() WHERE id=?")
+                  ->execute([(int)($action['metadata']['journey_version_id']??$instance['journey_version_id']),(string)($action['metadata']['step_key']??$instance['current_step_key']),(int)$instance['id']]);
+            }
+        }
     }
 }
 
-function campaigns_rewards_perform_publish_v123(PDO $pdo,int $versionId,int $actorUserId,string $inflightPolicy='continue',string $action='publish',string $releaseNotes=''): array
+function campaigns_rewards_perform_publish_v123(PDO $pdo,int $versionId,int $actorUserId,string $inflightPolicy='continue',string $action='publish',string $releaseNotes='',array $publicationMeta=[]): array
 {
     $version=campaigns_rewards_journey_version_v123($pdo,$versionId)?:throw new RuntimeException('Journey release not found.');
     $journey=campaigns_rewards_journey_v123($pdo,(int)$version['journey_id'])?:throw new RuntimeException('Journey not found.');
@@ -402,14 +410,14 @@ function campaigns_rewards_perform_publish_v123(PDO $pdo,int $versionId,int $act
         $pdo->prepare("INSERT INTO campaign_journey_publications
           (public_id,journey_id,journey_version_id,previous_journey_version_id,action,inflight_policy,release_notes,metadata_json,actor_user_id,published_at)
           VALUES (?,?,?,?,?,?,?,?,?,UTC_TIMESTAMP())")
-          ->execute([campaigns_rewards_uuid_v100(),(int)$journey['id'],$versionId,$previousId?:null,$action,$inflightPolicy,$releaseNotes,campaigns_rewards_json_v100(['validation'=>$validation,'inflight_affected'=>$plan['affected']]),$actorUserId]);
+          ->execute([campaigns_rewards_uuid_v100(),(int)$journey['id'],$versionId,$previousId?:null,$action,$inflightPolicy,$releaseNotes,campaigns_rewards_json_v100(array_merge(['validation'=>$validation,'inflight_affected'=>$plan['affected']],$publicationMeta)),$actorUserId]);
         if($owns)$pdo->commit();
     }catch(Throwable $e){if($owns&&$pdo->inTransaction())$pdo->rollBack();throw $e;}
 
     campaigns_rewards_activity_event_v100($pdo,(int)$journey['merchant_id'],'campaign.journey_published',['campaign_id'=>(int)$journey['campaign_id']],[
         'summary'=>'Campaign journey release published atomically','campaign_public_id'=>$journey['campaign_public_id'],'journey_id'=>(int)$journey['id'],
         'journey_version_id'=>$versionId,'version_no'=>(int)$version['version_no'],'action'=>$action,'inflight_policy'=>$inflightPolicy,'inflight_affected'=>$plan['affected'],
-        'validation_warnings'=>count($validation['warnings']),
+        'rollout_percent'=>max(1,min(100,(int)($publicationMeta['rollout_percent']??100))),'validation_warnings'=>count($validation['warnings']),
     ],(string)$journey['environment'],$actorUserId);
     return campaigns_rewards_journey_version_v123($pdo,$versionId)?:$version;
 }
@@ -435,6 +443,9 @@ function campaigns_rewards_publish_journey_v123(PDO $pdo,int $journeyId,int $act
     $suite=campaigns_rewards_journey_release_suite_v123($pdo,$journeyId,$actorUserId,[]);
     if(empty($suite['passed']))throw new RuntimeException('Journey release validation failed. Resolve the release errors before publishing.');
     $policy=(string)($input['inflight_policy']??'continue');if(!in_array($policy,['continue','migrate_pending','exit_remaining'],true))$policy='continue';
+    $rolloutPercent=max(1,min(100,(int)($input['rollout_percent']??100)));
+    if($rolloutPercent<100&&max(0,(int)$journey['current_published_version_id'])<1)$rolloutPercent=100;
+    $publicationMeta=['rollout_percent'=>$rolloutPercent];
     $notes=trim((string)($input['release_notes']??''));$scheduled=campaigns_rewards_schedule_datetime_v123($pdo,(int)$journey['merchant_id'],(string)($input['scheduled_publish_at']??''));
     if($scheduled!==null&&strtotime($scheduled)>time()+60){
         $pdo->prepare("UPDATE campaign_journey_versions SET status='cancelled',updated_at=UTC_TIMESTAMP() WHERE journey_id=? AND status='scheduled'")->execute([$journeyId]);
@@ -444,14 +455,14 @@ function campaigns_rewards_publish_journey_v123(PDO $pdo,int $journeyId,int $act
         $pdo->prepare("INSERT INTO campaign_journey_publications
           (public_id,journey_id,journey_version_id,previous_journey_version_id,action,inflight_policy,release_notes,metadata_json,actor_user_id,published_at)
           VALUES (?,?,?,?, 'schedule',?,?,?, ?,UTC_TIMESTAMP())")
-          ->execute([campaigns_rewards_uuid_v100(),$journeyId,(int)$draft['id'],max(0,(int)$journey['current_published_version_id'])?:null,$policy,$notes,campaigns_rewards_json_v100(['scheduled_publish_at'=>$scheduled]),$actorUserId]);
+          ->execute([campaigns_rewards_uuid_v100(),$journeyId,(int)$draft['id'],max(0,(int)$journey['current_published_version_id'])?:null,$policy,$notes,campaigns_rewards_json_v100(['scheduled_publish_at'=>$scheduled,'rollout_percent'=>$rolloutPercent]),$actorUserId]);
         campaigns_rewards_activity_event_v100($pdo,(int)$journey['merchant_id'],'campaign.journey_publish_scheduled',['campaign_id'=>(int)$journey['campaign_id']],[
             'summary'=>'Campaign journey publication scheduled','campaign_public_id'=>$journey['campaign_public_id'],'journey_id'=>$journeyId,
-            'journey_version_id'=>(int)$draft['id'],'version_no'=>(int)$draft['version_no'],'scheduled_publish_at'=>$scheduled,'inflight_policy'=>$policy,
+            'journey_version_id'=>(int)$draft['id'],'version_no'=>(int)$draft['version_no'],'scheduled_publish_at'=>$scheduled,'inflight_policy'=>$policy,'rollout_percent'=>$rolloutPercent,
         ],(string)$journey['environment'],$actorUserId);
         return campaigns_rewards_journey_version_v123($pdo,(int)$draft['id'])?:$draft;
     }
-    return campaigns_rewards_perform_publish_v123($pdo,(int)$draft['id'],$actorUserId,$policy,'publish',$notes);
+    return campaigns_rewards_perform_publish_v123($pdo,(int)$draft['id'],$actorUserId,$policy,'publish',$notes,$publicationMeta);
 }
 
 function campaigns_rewards_publish_due_v123(PDO $pdo,int $merchantId=0,int $limit=50): array
@@ -463,7 +474,7 @@ function campaigns_rewards_publish_due_v123(PDO $pdo,int $merchantId=0,int $limi
     $q=$pdo->prepare($sql);$q->execute($params);$summary=['due'=>0,'published'=>0,'stale_cancelled'=>0,'failed'=>0];
     foreach($q->fetchAll()?:[] as $row){
         $summary['due']++;$version=campaigns_rewards_journey_version_v123($pdo,(int)$row['id']);if(!$version){$summary['failed']++;continue;}
-        $pub=$pdo->prepare("SELECT previous_journey_version_id,inflight_policy,release_notes FROM campaign_journey_publications WHERE journey_version_id=? AND action='schedule' ORDER BY id DESC LIMIT 1");$pub->execute([(int)$row['id']]);$scheduled=$pub->fetch()?:[];
+        $pub=$pdo->prepare("SELECT previous_journey_version_id,inflight_policy,release_notes,metadata_json FROM campaign_journey_publications WHERE journey_version_id=? AND action='schedule' ORDER BY id DESC LIMIT 1");$pub->execute([(int)$row['id']]);$scheduled=$pub->fetch()?:[];$scheduledMeta=json_decode((string)($scheduled['metadata_json']??''),true)?:[];
         $journey=campaigns_rewards_journey_v123($pdo,(int)$version['journey_id']);
         $expectedPrevious=max(0,(int)($scheduled['previous_journey_version_id']??0));$currentPublished=max(0,(int)($journey['current_published_version_id']??0));
         if(!$journey||$expectedPrevious!==$currentPublished){
@@ -477,7 +488,7 @@ function campaigns_rewards_publish_due_v123(PDO $pdo,int $merchantId=0,int $limi
         $actor=max(0,(int)($row['published_by_user_id']??0));
         if($actor<1){$summary['failed']++;error_log('Campaign journey scheduled publish missing authorizing user.');continue;}
         try{
-            campaigns_rewards_perform_publish_v123($pdo,(int)$row['id'],$actor,(string)($scheduled['inflight_policy']??'continue'),'scheduled_publish',(string)($scheduled['release_notes']??''));
+            campaigns_rewards_perform_publish_v123($pdo,(int)$row['id'],$actor,(string)($scheduled['inflight_policy']??'continue'),'scheduled_publish',(string)($scheduled['release_notes']??''),['rollout_percent'=>max(1,min(100,(int)($scheduledMeta['rollout_percent']??100)))]);
             $summary['published']++;
         }catch(Throwable $e){$summary['failed']++;error_log('Campaign journey scheduled publish failed: '.$e->getMessage());}
     }
@@ -639,7 +650,10 @@ function campaigns_rewards_journey_enqueue_v123(PDO $pdo,int $campaignId,int $co
     $q->execute([$campaignId]);$journeys=$q->fetchAll()?:[];$matched=false;$summary=['trigger'=>$trigger,'journeys'=>0,'queued'=>0,'duplicate'=>0,'suppressed'=>0];
     $eventId=$triggerEventId!==''?$triggerEventId:$trigger.':'.$campaignId.':'.$contactId.':'.gmdate('YmdHi');
     foreach($journeys as $journey){
-        $version=campaigns_rewards_journey_version_v123($pdo,(int)$journey['current_published_version_id']);if(!$version)continue;
+        $version=function_exists('campaigns_rewards_journey_entry_version_v124')
+          ?campaigns_rewards_journey_entry_version_v124($pdo,$journey,$contactId,$eventId)
+          :campaigns_rewards_journey_version_v123($pdo,(int)$journey['current_published_version_id']);
+        if(!$version)continue;
         $entries=campaigns_rewards_version_graph_entry_v123($version,$trigger);if(!$entries)continue;$matched=true;$summary['journeys']++;
         $instance='v123:'.hash('sha256',$campaignId.'|'.$contactId.'|'.(int)$journey['id'].'|'.(int)$version['id'].'|'.$eventId);
         if(function_exists('campaigns_rewards_journey_instance_start_v124')&&function_exists('campaigns_rewards_journey_operations_schema_ready_v124')&&campaigns_rewards_journey_operations_schema_ready_v124($pdo)){
