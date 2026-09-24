@@ -275,11 +275,35 @@ function transcription_app_analyze_v304(
         }
 
         $status=artist_listening_v237_analysis_status($pdo,$sessionId,$map);
+        $rawFallbackPages=0;
         foreach ($map['pages'] as $page) {
-            $saved=$status['pages'][(string)$page['page_number']]??null;
-            if (is_array($saved)&&!empty($saved['fresh'])) $pages[]=['page'=>(int)$page['page_number'],'analysis'=>$saved['analysis']];
+            $number=(int)$page['page_number'];
+            $saved=$status['pages'][(string)$number]??null;
+            if (is_array($saved)&&!empty($saved['fresh'])) {
+                $pages[]=['page'=>$number,'word_count'=>(int)$page['word_count'],'source'=>'page_analysis','analysis'=>$saved['analysis']];
+                continue;
+            }
+            if ($mode!=='manual'||(int)$page['word_count']<1) continue;
+            $lines=[];
+            foreach ((array)($page['segments']??[]) as $segment) {
+                if ((string)($segment['segment_type']??'transcript')!=='transcript') continue;
+                $text=artist_listening_v237_clean_text((string)($segment['transcript_text']??''));
+                if ($text==='') continue;
+                $speaker=trim((string)($segment['speaker_label']??'Speaker 1'))?:'Speaker 1';
+                $lines[]=$speaker.': '.$text;
+            }
+            $raw=trim(implode("\n",$lines));
+            if ($raw!=='') {
+                $pages[]=['page'=>$number,'word_count'=>(int)$page['word_count'],'source'=>'saved_transcript','transcript'=>mb_strimwidth($raw,0,22000,'…')];
+                $rawFallbackPages++;
+            }
         }
-        if (!$pages) throw new RuntimeException('There is not enough saved transcript analysis to run the selected plugins yet.');
+        if (!$pages) {
+            if ($words<1) throw new RuntimeException('This transcription has no saved transcript words to analyze yet.');
+            if ($pageErrors) throw new RuntimeException('Transcript page preparation failed: '.(string)reset($pageErrors));
+            throw new RuntimeException('The saved transcript could not be prepared for analysis. Save the transcript and try again.');
+        }
+        $result['raw_transcript_fallback_pages']=$rawFallbackPages;
 
         $terms=$tags;
         foreach ($pages as $page) foreach (['key_points','decisions','action_items','open_questions','research_queries'] as $key) foreach ((array)($page['analysis'][$key]??[]) as $item) $terms[]=(string)$item;
