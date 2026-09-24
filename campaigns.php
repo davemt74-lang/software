@@ -221,6 +221,8 @@ $journeyNodeTypes=function_exists('campaigns_rewards_journey_node_types_v121')?c
 $journeyConditionFields=function_exists('campaigns_rewards_journey_condition_fields_v121')?campaigns_rewards_journey_condition_fields_v121():[];
 $journeyConditionOperators=function_exists('campaigns_rewards_journey_condition_operators_v121')?campaigns_rewards_journey_condition_operators_v121():[];
 $journeyWaitModes=function_exists('campaigns_rewards_journey_wait_modes_v121')?campaigns_rewards_journey_wait_modes_v121():[];
+$simulationContacts=[];
+if($editCampaign)foreach($recentEnrollments as $enrollmentRow)if((int)($enrollmentRow['campaign_id']??0)===(int)$editCampaign['id']&&!empty($enrollmentRow['contact_id']))$simulationContacts[(int)$enrollmentRow['contact_id']]=(string)($enrollmentRow['contact_name']??$enrollmentRow['contact_email']??('Contact #'.(int)$enrollmentRow['contact_id']));
 $editLocationId=max(0,(int)($_GET['edit_location']??0));$editLocation=null;foreach($locations as $row)if((int)$row['id']===$editLocationId)$editLocation=$row;
 $notice=(string)(flash('notice')??'');$error=(string)(flash('error')??'');
 $fulfillmentOnce=session_status()===PHP_SESSION_ACTIVE?($_SESSION['campaign_fulfillment_once']??null):null;
@@ -417,7 +419,19 @@ $memberHeaderActions=implode(' ',$actions);
 <form method="post" class="cr-inline"><?= csrf_field() ?><input type="hidden" name="action" value="message_retry_dead_letters"><input type="hidden" name="merchant_id" value="<?= $merchantId ?>"><input type="hidden" name="campaign_id" value="<?= (int)$editCampaign['id'] ?>"><button type="submit">Retry dead letters</button></form>
 </div><?php endif;?>
 </header>
-<p class="cr-help">V1.21 turns Campaign messaging into a durable journey graph. Message, decision, wait-until and exit nodes share the canonical Campaign delivery queue; A/B variants are deterministic, consent is rechecked at send time, and provider failures use bounded retry + dead-letter handling.</p>
+<p class="cr-help">V1.22 adds outcome-driven intelligence to the V1.21 journey graph: reusable draft templates, path/drop-off analytics, observed A/B comparison, opt-in send-time optimization, frequency/fatigue controls, dry-run simulation, and human-reviewed Agent recommendations.</p>
+<?php if($canCampaignEdit&&$journeyTemplates):?>
+<form method="post" class="cr-form cr-subform">
+<?= csrf_field() ?><input type="hidden" name="action" value="journey_template_apply"><input type="hidden" name="merchant_id" value="<?= $merchantId ?>"><input type="hidden" name="campaign_id" value="<?= (int)$editCampaign['id'] ?>">
+<h3>Start from a journey template</h3>
+<div class="cr-form-grid">
+<label>Template<select name="template_key"><?php foreach($journeyTemplates as $key=>$definition):?><option value="<?= e($key) ?>"><?= e((string)$definition['name']) ?> — <?= e((string)$definition['description']) ?></option><?php endforeach;?></select></label>
+<label>Journey key <small>Optional</small><input name="journey_key" maxlength="42" placeholder="Auto-generated unique key"></label>
+</div>
+<p class="cr-help">Templates create draft nodes only. They never activate or replace an active journey automatically.</p>
+<button type="submit">Add draft journey</button>
+</form>
+<?php endif;?>
 
 <?php if($messagePerformance): $mp=$messagePerformance['totals']??[]; ?>
 <div class="cr-funnel" aria-label="Message performance">
@@ -430,6 +444,35 @@ $memberHeaderActions=implode(' ',$actions);
 <article><span>Dead letter</span><strong><?= number_format((int)($messagePerformance['dead_letter']??0)) ?></strong></article>
 </div>
 <p class="cr-help"><strong>Message performance</strong> keeps delivery/view/conversion attribution while V1.21 adds orchestration, retry and variant-level state.</p>
+<?php endif;?>
+
+<?php if($journeyIntelligence): $pathRows=$journeyIntelligence['path']['steps']??[];$abRows=$journeyIntelligence['ab']??[];$sendSignals=$journeyIntelligence['send_time']??[]; ?>
+<section class="cr-subpanel" id="campaign-intelligence">
+<header><div><span>V1.22</span><h3>Journey intelligence</h3></div><?php if($canAnalytics):?><form method="post" class="cr-inline"><?= csrf_field() ?><input type="hidden" name="action" value="journey_recommendations_refresh"><input type="hidden" name="merchant_id" value="<?= $merchantId ?>"><button>Refresh Agent recommendations</button></form><?php endif;?></header>
+<?php if($pathRows):?><div class="cr-list">
+<?php foreach($pathRows as $row):?><article><div><strong><?= e((string)$row['journey_key']) ?> · <?= e((string)$row['step_key']) ?></strong><small><?= e(ucwords(str_replace('_',' ',(string)$row['node_type']))) ?> · Entered <?= number_format((int)$row['entered']) ?> · Continued <?= number_format((int)$row['continued']) ?> · Drop-off <?= e((string)$row['dropoff_rate']) ?>% · Converted <?= number_format((int)$row['converted']) ?></small></div></article><?php endforeach;?>
+</div><?php else:?><p class="cr-help">Path analytics will appear after journey instances have run.</p><?php endif;?>
+
+<?php if($abRows):?><h4>A/B observed outcomes</h4><div class="cr-list">
+<?php foreach($abRows as $ab):?><article><div><strong><?= e((string)$ab['journey_key']) ?> · <?= e((string)$ab['step_key']) ?></strong><?php foreach($ab['variants'] as $variant):?><small>Variant <?= e((string)$variant['variant_key']) ?> · Sent <?= number_format((int)$variant['sent']) ?> · Viewed <?= e((string)$variant['view_rate']) ?>% · Converted <?= e((string)$variant['conversion_rate']) ?>%</small><?php endforeach;?></div></article><?php endforeach;?>
+</div><?php endif;?>
+
+<h4>Verified send-time signals</h4><div class="cr-list"><?php foreach($sendSignals as $channel=>$signal):?><article><div><strong><?= e(strtoupper((string)$channel)) ?></strong><small><?php if(!empty($signal['eligible'])):?>Observed recommendation: <?= str_pad((string)$signal['recommended_hour'],2,'0',STR_PAD_LEFT) ?>:00 <?= e((string)$signal['timezone']) ?> from <?= number_format((int)$signal['samples']) ?> verified sends.<?php else:?>Not enough verified outcomes yet (<?= number_format((int)($signal['samples']??0)) ?> samples).<?php endif;?></small></div></article><?php endforeach;?></div>
+
+<?php if($journeyRecommendations):?><h4>Agent recommendations</h4><div class="cr-list"><?php foreach($journeyRecommendations as $rec):?><article><div><strong><?= e(ucwords(str_replace(['journey.','-','_'],['',' ',' '],(string)$rec['recommendation_type']))) ?></strong><small><?= e((string)$rec['summary']) ?> · <?= e(ucfirst((string)$rec['status'])) ?></small></div><?php if($canCampaignEdit&&(string)$rec['status']==='proposed'):?><div class="cr-actions"><form method="post" class="cr-inline"><?= csrf_field() ?><input type="hidden" name="action" value="journey_recommendation_review"><input type="hidden" name="merchant_id" value="<?= $merchantId ?>"><input type="hidden" name="campaign_id" value="<?= (int)$editCampaign['id'] ?>"><input type="hidden" name="recommendation_id" value="<?= (int)$rec['id'] ?>"><button name="decision" value="accepted">Accept review</button><button name="decision" value="dismissed">Dismiss</button></form></div><?php endif;?></article><?php endforeach;?></div><?php endif;?>
+<p class="cr-help">Accepting a recommendation records the human review only; it does not change node settings or activate anything.</p>
+
+<?php if($canCampaignEdit):?><form method="post" class="cr-form cr-subform">
+<?= csrf_field() ?><input type="hidden" name="action" value="journey_simulate"><input type="hidden" name="merchant_id" value="<?= $merchantId ?>"><input type="hidden" name="campaign_id" value="<?= (int)$editCampaign['id'] ?>">
+<h4>Dry-run journey simulation</h4><div class="cr-form-grid">
+<label>CRM contact<?php if($simulationContacts):?><select name="contact_id"><?php foreach($simulationContacts as $contactId=>$label):?><option value="<?= (int)$contactId ?>"><?= e($label) ?> · #<?= (int)$contactId ?></option><?php endforeach;?></select><?php else:?><input type="number" min="1" name="contact_id" required placeholder="CRM contact ID"><?php endif;?></label>
+<label>Trigger<select name="trigger_event"><?php foreach($messageTriggers as $key=>$label):?><option value="<?= e($key) ?>"><?= e($label) ?></option><?php endforeach;?></select></label>
+<label>Purchase amount (cents)<input type="number" min="0" name="amount_paid_cents" value="0"></label>
+<label>Loyalty balance<input type="number" min="0" name="balance" value="0"></label>
+</div><button>Simulate journey</button><p class="cr-help">Simulation sends nothing, issues no Reward, and writes no delivery rows.</p></form><?php endif;?>
+
+<?php if(is_array($journeySimulationOnce)):?><div class="cr-subpanel"><h4>Simulation result</h4><?php foreach(($journeySimulationOnce['journeys']??[]) as $simJourney):?><div class="cr-list"><article><div><strong><?= e((string)$simJourney['journey_key']) ?></strong><?php foreach(($simJourney['path']??[]) as $simStep):?><small><?= e((string)$simStep['step_key']) ?> → <?= e(ucwords(str_replace('_',' ',(string)$simStep['node_type']))) ?> · variant <?= e((string)($simStep['variant_key']??'default')) ?><?php if(array_key_exists('condition_result',$simStep)):?> · branch <?= !empty($simStep['condition_result'])?'true':'false' ?><?php endif;?><?php if(!empty($simStep['outcome'])):?> · <?= e((string)$simStep['outcome']) ?><?php endif;?></small><?php endforeach;?></div></article></div><?php endforeach;?></div><?php endif;?>
+</section>
 <?php endif;?>
 
 <div class="cr-list cr-journey-list">
@@ -479,6 +522,18 @@ $memberHeaderActions=implode(' ',$actions);
 <label>Message / node notes<textarea name="body" rows="6"><?= e((string)($editMessage['body']??'')) ?></textarea></label>
 <p class="cr-help">Message tokens: <code>{{name}}</code>, <code>{{email}}</code>, <code>{{campaign_name}}</code>, <code>{{merchant_name}}</code>, <code>{{reward_name}}</code>, <code>{{reward_expiration}}</code>, <code>{{campaign_url}}</code>, <code>{{reward_wallet_url}}</code>.</p>
 <label class="cr-check"><input type="checkbox" name="respect_quiet_hours" value="1"<?= !array_key_exists('respect_quiet_hours',$editMessageTemplate)||!empty($editMessageTemplate['respect_quiet_hours'])?' checked':'' ?>> Respect CRM quiet hours and contact/Merchant timezone</label>
+</fieldset>
+
+<fieldset><legend>V1.22 optimization & fatigue controls</legend>
+<label class="cr-check"><input type="checkbox" name="optimize_send_time" value="1"<?= !empty($editMessageTemplate['optimize_send_time'])?' checked':'' ?>> Optimize send hour from verified Campaign delivery/view/conversion outcomes</label>
+<div class="cr-form-grid">
+<label>Minimum send-time samples<input type="number" min="5" max="500" name="optimization_min_samples" value="<?= (int)($editMessageTemplate['optimization_min_samples']??20) ?>"></label>
+<label>Max messages / 24h<input type="number" min="0" max="100" name="frequency_cap_24h" value="<?= (int)($editMessageTemplate['frequency_cap_24h']??0) ?>"><small>0 = no cap</small></label>
+<label>Max messages / 7d<input type="number" min="0" max="500" name="frequency_cap_7d" value="<?= (int)($editMessageTemplate['frequency_cap_7d']??0) ?>"><small>0 = no cap</small></label>
+<label>Fatigue window (days)<input type="number" min="1" max="90" name="fatigue_window_days" value="<?= (int)($editMessageTemplate['fatigue_window_days']??7) ?>"></label>
+<label>Max messages in fatigue window<input type="number" min="0" max="500" name="fatigue_max_messages" value="<?= (int)($editMessageTemplate['fatigue_max_messages']??0) ?>"><small>0 = disabled</small></label>
+</div>
+<p class="cr-help">Caps count successful Merchant sends to the same contact and channel. Reaching a cap defers delivery until capacity reopens; it does not bypass consent or quiet hours.</p>
 </fieldset>
 
 <fieldset><legend>Decision branch</legend><div class="cr-form-grid">
