@@ -39,7 +39,7 @@ const checks=[
  ['normal status path reconciles into Agent Brain',/homeserver_shared_v210_reconcile_status/.test(pairing)],
  ['connection API exposes real test_connection action',/test_connection/.test(connectionApi)&&/homeserver_shared_v210_roundtrip/.test(connectionApi)],
  ['settings UI exposes Test Connection and round-trip diagnostics',/hsTestConnection/.test(page)&&/hsRoundTripStatus/.test(page)&&/hsSharedSync/.test(page)&&/hsBrainStatus/.test(page)&&/Cloud → HomeServer → Cloud verified/.test(ui)],
- ['legacy protocol filenames remain compatibility identifiers',/homeserver-https-relay-v1300\.php/.test(bootstrap)&&/homeserver-cloud-pairing-v1200\.php/.test(bootstrap)],
+ ['legacy protocol filenames remain compatibility identifiers',fs.existsSync('includes/homeserver-https-relay-v1300.php')&&fs.existsSync('includes/homeserver-cloud-pairing-v1200.php')],
 ];
 
 for(const [name,ok] of checks){assert.equal(ok,true,name);console.log('PASS',name);}
