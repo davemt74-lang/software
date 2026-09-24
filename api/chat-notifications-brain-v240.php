@@ -511,9 +511,11 @@ function chat_notifications_v240_action_label(array $notification): string
 
 function chat_notifications_v240_activity_context(array $notification): array
 {
+    $type=strtolower(trim((string)($notification['type']??'')));
+    $presenceUpdate=$type==='homeserver_connection_update';
     return [
-        'kind'=>'user_attention',
-        'status'=>'needs_response',
+        'kind'=>$presenceUpdate?'agent_status_update':'user_attention',
+        'status'=>$presenceUpdate?'informational':'needs_response',
         'source_type'=>(string)($notification['source_type'] ?? ''),
         'source_id'=>max(0, (int)($notification['source_id'] ?? 0)),
         'occurred_at'=>(string)($notification['created_at'] ?? ''),
@@ -601,10 +603,12 @@ function chat_notifications_v240_present_attention(PDO $pdo, array $user, array 
         'url'=>$target,
     ]] : [];
     $activity = chat_notifications_v240_activity_context($notification);
+    $notificationType=strtolower(trim((string)($notification['type']??'')));
+    $presenceUpdate=$notificationType==='homeserver_connection_update';
     $context = [
         'sources'=>[[
             'source'=>'notification:' . $notificationId,
-            'title'=>$contact ? 'Profile visitor attention' : 'User attention notification',
+            'title'=>$presenceUpdate?'HomeServer connection status':($contact ? 'Profile visitor attention' : 'User attention notification'),
         ]],
         'media'=>[],
         'stem_media'=>[],
@@ -612,11 +616,11 @@ function chat_notifications_v240_present_attention(PDO $pdo, array $user, array 
         'actions'=>$actions,
         'activity'=>$activity,
         'attention'=>[
-            'required'=>true,
+            'required'=>!$presenceUpdate,
             'notification_id'=>$notificationId,
             'notification_type'=>(string)($notification['type'] ?? ''),
-            'prompt'=>$prompt,
-            'response_timeout_ms'=>10000,
+            'prompt'=>$presenceUpdate?'':$prompt,
+            'response_timeout_ms'=>$presenceUpdate?0:10000,
             'target_url'=>$target,
             'profile_contact'=>$contact,
         ],
