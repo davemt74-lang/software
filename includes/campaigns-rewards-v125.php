@@ -292,7 +292,6 @@ function campaigns_rewards_offer_decision_v125(PDO $pdo,array $delivery,array $t
           'idempotency_key'=>'decision-offer:'.(int)$decision['id'],
         ]);
         $offer['reward_issuance_id']=(int)$issuance['id'];
-        $pdo->prepare("UPDATE campaign_decisions SET outcome_json=? WHERE id=?")->execute([campaigns_rewards_json_v100($offer),(int)$decision['id']]);
         $pdo->prepare("UPDATE campaign_deliveries SET reward_issuance_id=?,metadata_json=? WHERE id=?")->execute([
           (int)$issuance['id'],
           campaigns_rewards_json_v100(array_merge($delivery['metadata'],['decision_id'=>(int)$decision['id'],'selected_reward_product_id'=>(int)$offer['reward_product_id'],'reward_issuance_id'=>(int)$issuance['id']])),
