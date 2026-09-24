@@ -18,7 +18,7 @@ const page=read('settings-homeserver.php');
 const ui=read('homeserver-settings-v1210.js');
 
 const checks=[
- ['shared product release is 2.2',/VP3_HOMESERVER_RELEASE_VERSION = '2\.1'/.test(vp3)&&/VP3_HOMESERVER_SHARED_AGENT_VERSION='2\.1'/.test(shared)],
+ ['shared product release is 2.2',/VP3_HOMESERVER_RELEASE_VERSION = '2\.2'/.test(vp3)&&/VP3_HOMESERVER_SHARED_AGENT_VERSION='2\.2'/.test(shared)],
  ['shared state and event ledgers exist',/homeserver_agent_state/.test(shared)&&/homeserver_agent_events/.test(shared)],
  ['bootstrap loads v2.2 fabric after cognitive HomeServer domain support',bootstrap.indexOf('cognitive-domain-integration-v2390.php')<bootstrap.indexOf('homeserver-shared-agent-v210.php')],
  ['fresh setup installs shared Agent schema',/homeserver_shared_v210_ensure_schema\(\$pdo\)/.test(setup)],
