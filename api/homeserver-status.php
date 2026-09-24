@@ -71,8 +71,14 @@ try {
     $force = (string)($_GET['refresh'] ?? '') === '1';
     $statusSnapshot=homeserver_status_with_connectors_v1000($userId,homeserver_cloud_v1200_status($userId,$force));
     $response=['ok'=>true,'status'=>$statusSnapshot];
-    if((string)($_GET['registry'] ?? '')==='1')$response['registry']=homeserver_capability_v033_registry($userId,$force);
-    if((string)($_GET['policy'] ?? '')==='1')$response['policy']=homeserver_policy_v035_snapshot($userId,false,$statusSnapshot);
+    if((string)($_GET['registry'] ?? '')==='1'){
+        try{$response['registry']=homeserver_capability_v033_registry($userId,$force);}
+        catch(Throwable $ignored){$response['registry']=['available'=>false,'reason'=>'unavailable'];}
+    }
+    if((string)($_GET['policy'] ?? '')==='1'){
+        try{$response['policy']=homeserver_policy_v035_snapshot($userId,false,$statusSnapshot);}
+        catch(Throwable $ignored){$response['policy']=['available'=>false,'reason'=>!empty($statusSnapshot['connected'])?'remote_unavailable':'offline'];}
+    }
     echo json_encode($response, JSON_UNESCAPED_SLASHES);
 } catch (Throwable $e) {
     http_response_code(400);
