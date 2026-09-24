@@ -309,6 +309,7 @@ function homeserver_cloud_v1200_status(int $userId, bool $forceRefresh=false): a
         : '';
 
     $raw['build'] = VP3_HOMESERVER_CLOUD_PAIRING_V1200;
+    $raw['release_version'] = VP3_HOMESERVER_RELEASE_VERSION;
     $raw['connection_state'] = $connectionState;
     $raw['device_name'] = 'HomeServer';
     $raw['paired_scopes'] = $paired ? homeserver_cloud_v1200_permissions() : [];
