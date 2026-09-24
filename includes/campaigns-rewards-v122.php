@@ -219,7 +219,8 @@ function campaigns_rewards_ab_comparison_v122(PDO $pdo,int $campaignId,int $acto
 function campaigns_rewards_send_time_signal_v122(PDO $pdo,int $campaignId,string $channel='email',int $minSamples=20): array
 {
     $campaign=campaigns_rewards_campaign_platform_v100($pdo,$campaignId);if(!$campaign)return ['eligible'=>false,'samples'=>0,'reason'=>'campaign_unavailable'];
-    $timezone=campaigns_rewards_valid_timezone_v121((string)($campaign['timezone']??'UTC'));
+    $tzq=$pdo->prepare("SELECT timezone FROM merchant_accounts WHERE id=? LIMIT 1");$tzq->execute([(int)$campaign['merchant_id']]);
+    $timezone=campaigns_rewards_valid_timezone_v121((string)($tzq->fetchColumn()?:'UTC'));
     $q=$pdo->prepare("SELECT sent_at,delivered_at,viewed_at,metadata_json,status FROM campaign_deliveries
       WHERE campaign_id=? AND channel=? AND status IN ('sent','delivered','viewed') AND sent_at IS NOT NULL ORDER BY id DESC LIMIT 1000");
     $q->execute([$campaignId,$channel]);$hours=array_fill(0,24,['sent'=>0,'viewed'=>0,'converted'=>0,'score'=>0.0]);
@@ -245,10 +246,11 @@ function campaigns_rewards_frequency_gate_v122(PDO $pdo,array $delivery,array $t
     $fatigueDays=max(1,(int)($template['fatigue_window_days']??7));$fatigueMax=max(0,(int)($template['fatigue_max_messages']??0));
     if($cap24===0&&$cap7===0&&$fatigueMax===0)return ['allowed'=>true,'reason'=>'no_caps'];
     $merchant=(int)$delivery['merchant_id'];$contact=(int)$delivery['contact_id'];$channel=(string)$delivery['channel'];
+    $look=max(7,min(90,$fatigueDays));
     $q=$pdo->prepare("SELECT d.sent_at FROM campaign_deliveries d INNER JOIN campaigns c ON c.id=d.campaign_id
       WHERE c.merchant_id=? AND d.contact_id=? AND d.channel=? AND d.status IN ('sent','delivered','viewed')
-        AND d.sent_at>=DATE_SUB(UTC_TIMESTAMP(),INTERVAL ? DAY) ORDER BY d.sent_at");
-    $look=max(7,$fatigueDays);$q->execute([$merchant,$contact,$channel,$look]);$times=array_values(array_filter(array_map(static fn($r)=>strtotime((string)$r['sent_at'])?:null,$q->fetchAll()?:[])));
+        AND d.sent_at>=DATE_SUB(UTC_TIMESTAMP(),INTERVAL {$look} DAY) ORDER BY d.sent_at");
+    $q->execute([$merchant,$contact,$channel]);$times=array_values(array_filter(array_map(static fn($r)=>strtotime((string)$r['sent_at'])?:null,$q->fetchAll()?:[])));
     $now=time();$last24=array_values(array_filter($times,static fn($ts)=>$ts>=$now-86400));$last7=array_values(array_filter($times,static fn($ts)=>$ts>=$now-604800));$fatigue=array_values(array_filter($times,static fn($ts)=>$ts>=$now-($fatigueDays*86400)));
     $defer=0;$reasons=[];
     if($cap24>0&&count($last24)>=$cap24){$defer=max($defer,min($last24)+86400);$reasons[]='frequency_cap_24h';}
