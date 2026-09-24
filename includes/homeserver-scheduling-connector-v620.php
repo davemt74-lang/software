@@ -3,6 +3,11 @@ declare(strict_types=1);
 
 const VP3_HOMESERVER_SCHEDULING_CONNECTOR_V620='homeserver-scheduling-connector-v620-20260911';
 
+function homeserver_scheduling_v620_schema_ready(): bool
+{
+    return function_exists('table_exists') && table_exists('homeserver_scheduling_tokens') && table_exists('homeserver_scheduling_idempotency');
+}
+
 function homeserver_scheduling_v620_ensure_schema(PDO $pdo): void
 {
     $pdo->exec("CREATE TABLE IF NOT EXISTS homeserver_scheduling_tokens (
