@@ -18,7 +18,9 @@ function campaigns_rewards_release_manifest_v124(): array
         'instances_pin_journey_version'=>true,'pause_resume_cancel_human_only'=>true,'skip_retry_human_only'=>true,
         'cancel_suppresses_pending_only'=>true,'sent_history_immutable'=>true,'dead_letter_recovery_governed'=>true,
         'incident_detection_read_only'=>true,'agent_cannot_pause_cancel_skip_retry'=>true,
-        'release_health_comparison_descriptive'=>true,'transcription_saved_source_fix_included'=>true,
+        'controlled_new_entry_rollout'=>true,'existing_instances_remain_pinned'=>true,
+        'contact_journey_timeline'=>true,'emergency_stop_human_only'=>true,'compatible_step_move_human_only'=>true,
+        'operations_sla_detection'=>true,'release_health_comparison_descriptive'=>true,'transcription_saved_source_fix_included'=>true,
       ]
     ];
 }
