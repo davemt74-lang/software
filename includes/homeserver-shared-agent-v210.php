@@ -171,6 +171,31 @@ function homeserver_shared_v210_cloud_snapshot(int $userId,string $query=''): ar
         }catch(Throwable $ignored){}
     }
 
+    if(table_exists('vp3_agent_contacts')){
+        try{
+            $s=$pdo->prepare("SELECT id,display_name,operator_name,visitor_class,relationship_status,verification_status,
+              inferred_intent,recommendation,risk_score,opportunity_score,last_seen_at
+              FROM vp3_agent_contacts WHERE owner_user_id=? ORDER BY last_seen_at DESC,id DESC LIMIT 80");
+            $s->execute([$userId]);
+            foreach($s->fetchAll()?:[] as $row){
+                $title=trim((string)($row['display_name']??''))?:'Automated agent';
+                $body=implode(' · ',array_filter([
+                  trim((string)($row['operator_name']??'')),
+                  (string)($row['visitor_class']??'automated'),
+                  'relationship '.(string)($row['relationship_status']??'observed'),
+                  'verification '.(string)($row['verification_status']??'unverified'),
+                  trim((string)($row['inferred_intent']??'')),
+                  trim((string)($row['recommendation']??'')),
+                  'risk '.(int)($row['risk_score']??0),
+                  'opportunity '.(int)($row['opportunity_score']??0),
+                ]));
+                if(!homeserver_shared_v210_matches($query,$title.' '.$body))continue;
+                $datasets['contacts'][]=homeserver_shared_v210_record('contacts','agent:'.(int)$row['id'],$title,$body,(string)($row['last_seen_at']??''));
+                if(count($datasets['contacts'])>=50)break;
+            }
+        }catch(Throwable $ignored){}
+    }
+
     if(table_exists('notifications')){
         $s=$pdo->prepare("SELECT id,type,title,body,is_read,created_at FROM notifications
           WHERE user_id=? AND created_at>=DATE_SUB(UTC_TIMESTAMP(),INTERVAL 14 DAY)
