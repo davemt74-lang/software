@@ -773,6 +773,50 @@ function campaigns_rewards_journey_release_health_v123(PDO $pdo,int $journeyId,i
     return ['journey'=>$journey,'versions'=>$versions,'delivery_stats'=>$stats,'scheduled_releases'=>$scheduled];
 }
 
+function campaigns_rewards_message_release_managed_v123(PDO $pdo,int $messageId): bool
+{
+    $message=campaigns_rewards_message_v120($pdo,$messageId);if(!$message)return false;
+    $t=(array)($message['template']??[]);if(($t['kind']??'')!=='journey_node')return false;
+    return (bool)campaigns_rewards_journey_by_key_v123($pdo,(int)$message['campaign_id'],(string)($t['journey_key']??''));
+}
+
+function campaigns_rewards_journey_publications_v123(PDO $pdo,int $journeyId): array
+{
+    $q=$pdo->prepare("SELECT p.*,v.version_no,u.display_name actor_name
+      FROM campaign_journey_publications p
+      INNER JOIN campaign_journey_versions v ON v.id=p.journey_version_id
+      LEFT JOIN users u ON u.id=p.actor_user_id
+      WHERE p.journey_id=? ORDER BY p.id DESC LIMIT 100");
+    $q->execute([$journeyId]);$rows=$q->fetchAll()?:[];
+    foreach($rows as &$row)$row['metadata']=json_decode((string)($row['metadata_json']??''),true)?:[];unset($row);
+    return $rows;
+}
+
+function campaigns_rewards_simulate_journey_release_v123(PDO $pdo,int $journeyId,int $contactId,int $actorUserId,array $context=[]): array
+{
+    $journey=campaigns_rewards_journey_v123($pdo,$journeyId)?:throw new RuntimeException('Journey not found.');
+    campaigns_rewards_platform_assert_can_v100($pdo,(int)$journey['merchant_id'],$actorUserId,'campaigns.view');
+    $version=null;
+    if((int)$journey['current_draft_version_id']>0)$version=campaigns_rewards_journey_version_v123($pdo,(int)$journey['current_draft_version_id']);
+    if(!$version&&(int)$journey['current_published_version_id']>0)$version=campaigns_rewards_journey_version_v123($pdo,(int)$journey['current_published_version_id']);
+    if(!$version)throw new RuntimeException('Journey has no draft or published release to simulate.');
+    return campaigns_rewards_simulate_version_v123($pdo,$version,$contactId,$context,true);
+}
+
+function campaigns_rewards_journey_editor_snapshot_v123(PDO $pdo,int $journeyId): array
+{
+    $journey=campaigns_rewards_journey_v123($pdo,$journeyId)?:throw new RuntimeException('Journey not found.');
+    $draft=(int)$journey['current_draft_version_id']>0?campaigns_rewards_journey_version_v123($pdo,(int)$journey['current_draft_version_id']):null;
+    $published=(int)$journey['current_published_version_id']>0?campaigns_rewards_journey_version_v123($pdo,(int)$journey['current_published_version_id']):null;
+    $display=$draft?:$published;
+    return [
+        'journey'=>$journey,'draft'=>$draft,'published'=>$published,'display'=>$display,
+        'diff'=>campaigns_rewards_journey_diff_v123($published,$draft),
+        'versions'=>campaigns_rewards_journey_versions_v123($pdo,$journeyId),
+        'publications'=>campaigns_rewards_journey_publications_v123($pdo,$journeyId),
+    ];
+}
+
 function campaigns_rewards_run_due_v123(PDO $pdo,int $merchantId=0): array
 {
     $publishing=campaigns_rewards_publish_due_v123($pdo,$merchantId);
