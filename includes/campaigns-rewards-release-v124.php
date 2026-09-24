@@ -35,7 +35,7 @@ function campaigns_rewards_release_readiness_v124(?PDO $pdo=null): array
       'controls'=>function_exists('campaigns_rewards_instance_control_v124')&&function_exists('campaigns_rewards_instance_skip_delivery_v124'),
       'incidents'=>function_exists('campaigns_rewards_journey_incidents_v124'),
       'runtime'=>function_exists('campaigns_rewards_dispatch_due_v124'),
-      'cognitive_domain'=>($domain['implementation_status']??'')==='integrated-v1.24',
+      'cognitive_domain'=>in_array(($domain['implementation_status']??''),['integrated-v1.24','integrated-v1.25'],true),
     ];
     return ['build'=>VP3_CAMPAIGNS_REWARDS_RELEASE_V124,'ready'=>!in_array(false,$checks,true),'checks'=>$checks,'authority'=>'diagnostic_only'];
 }
