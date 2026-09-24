@@ -481,6 +481,9 @@ function campaigns_rewards_set_journey_enrollment_v123(PDO $pdo,int $journeyId,i
     $journey=campaigns_rewards_journey_v123($pdo,$journeyId)?:throw new RuntimeException('Journey not found.');
     campaigns_rewards_platform_assert_can_v100($pdo,(int)$journey['merchant_id'],$actorUserId,'campaigns.publish');
     $pdo->prepare("UPDATE campaign_journeys SET enrollment_status=?,updated_at=UTC_TIMESTAMP() WHERE id=?")->execute([$status,$journeyId]);
+    campaigns_rewards_activity_event_v100($pdo,(int)$journey['merchant_id'],'campaign.journey_enrollment_changed',['campaign_id'=>(int)$journey['campaign_id']],[
+        'summary'=>'Campaign journey enrollment state changed','campaign_public_id'=>$journey['campaign_public_id'],'journey_id'=>$journeyId,'enrollment_status'=>$status
+    ],(string)$journey['environment'],$actorUserId);
     return campaigns_rewards_journey_v123($pdo,$journeyId)?:$journey;
 }
 
@@ -493,6 +496,9 @@ function campaigns_rewards_archive_journey_v123(PDO $pdo,int $journeyId,int $act
         $plan=campaigns_rewards_inflight_plan_v123($pdo,$journey,$published,$published,'exit_remaining');campaigns_rewards_apply_inflight_plan_v123($pdo,$plan);
     }
     $pdo->prepare("UPDATE campaign_journeys SET status='archived',enrollment_status='paused',archived_by_user_id=?,archived_at=UTC_TIMESTAMP(),updated_at=UTC_TIMESTAMP() WHERE id=?")->execute([$actorUserId,$journeyId]);
+    campaigns_rewards_activity_event_v100($pdo,(int)$journey['merchant_id'],'campaign.journey_archived',['campaign_id'=>(int)$journey['campaign_id']],[
+        'summary'=>'Campaign journey archived with history preserved','campaign_public_id'=>$journey['campaign_public_id'],'journey_id'=>$journeyId,'inflight_policy'=>$inflightPolicy
+    ],(string)$journey['environment'],$actorUserId);
     return campaigns_rewards_journey_v123($pdo,$journeyId)?:$journey;
 }
 
@@ -523,6 +529,10 @@ function campaigns_rewards_clone_journey_v123(PDO $pdo,int $journeyId,int $sourc
       VALUES (?,?,1,'draft',?,'{}','Cloned journey',NULL,?,UTC_TIMESTAMP(),UTC_TIMESTAMP())")
       ->execute([campaigns_rewards_uuid_v100(),(int)$newJourney['id'],campaigns_rewards_json_v100($graph),$actorUserId]);
     $draftId=(int)$pdo->lastInsertId();$pdo->prepare("UPDATE campaign_journeys SET current_draft_version_id=? WHERE id=?")->execute([$draftId,(int)$newJourney['id']]);
+    campaigns_rewards_activity_event_v100($pdo,(int)$sourceJourney['merchant_id'],'campaign.journey_cloned',['campaign_id'=>(int)$sourceJourney['campaign_id']],[
+        'summary'=>'Campaign journey release cloned to a new draft','campaign_public_id'=>$sourceJourney['campaign_public_id'],'source_journey_id'=>$journeyId,
+        'source_version_id'=>(int)$version['id'],'cloned_journey_id'=>(int)$newJourney['id'],'cloned_draft_version_id'=>$draftId
+    ],(string)$sourceJourney['environment'],$actorUserId);
     return campaigns_rewards_journey_v123($pdo,(int)$newJourney['id'])?:$newJourney;
 }
 
