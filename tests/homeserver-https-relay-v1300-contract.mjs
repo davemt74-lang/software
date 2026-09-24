@@ -8,6 +8,8 @@ const poll=read('api/homeserver-https-poll-v1300.php');
 const vp3=read('includes/homeserver-vp3.php');
 const agent=read('includes/homeserver-agent-v018.php');
 const actions=read('includes/homeserver-cloud-pairing-actions-v1200.php');
+const modal=read('homeserver-vp3.js');
+const settingsUi=read('homeserver-settings-v1210.js');
 const setup=read('setup.php');
 const upgrade=read('upgrade.php');
 
@@ -35,6 +37,11 @@ const checks=[
   !relay.includes('VP3_HOMESERVER_RELAY_URL')],
  ['canonical HomeServer status prefers the official HTTPS session when present',
   vp3.includes("homeserver_https_v1300_status($userId)")&&vp3.includes("'transport'=>'vp3_https'")],
+ ['Cloud status wrapper treats HTTPS heartbeat as authoritative without requiring custom relay configuration',
+  actions.includes("$httpsStatus = function_exists('homeserver_https_v1300_status')")&&
+  actions.indexOf("$httpsStatus = function_exists('homeserver_https_v1300_status')")<actions.indexOf("$relaySecurity = null;")],
+ ['HomeServer Cloud surfaces continuously refresh the same live status and interpret SQL timestamps as UTC',
+  modal.includes("+'Z'")&&modal.includes("},10000);")&&settingsUi.includes("},10000);")],
  ['Agent runtime routes chat and usage through the transport-neutral per-user operation helper',
   vp3.includes('homeserver_vp3_remote_operation_for_user')&&
   agent.includes("homeserver_vp3_remote_operation_for_user($userId,'agent.chat'")&&
