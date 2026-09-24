@@ -376,6 +376,7 @@ function campaigns_rewards_perform_publish_v123(PDO $pdo,int $versionId,int $act
     $version=campaigns_rewards_journey_version_v123($pdo,$versionId)?:throw new RuntimeException('Journey release not found.');
     $journey=campaigns_rewards_journey_v123($pdo,(int)$version['journey_id'])?:throw new RuntimeException('Journey not found.');
     campaigns_rewards_platform_assert_can_v100($pdo,(int)$journey['merchant_id'],$actorUserId,'campaigns.publish');
+    if((string)$journey['status']==='archived')throw new RuntimeException('Archived journeys cannot publish releases.');
     if((string)$journey['merchant_status']!=='active'||(string)$journey['campaign_status']!=='active'||(int)$journey['campaign_version_no']<1)throw new RuntimeException('Campaign and Merchant must be active and the Campaign published before a journey release can go live.');
     if(!in_array((string)$version['status'],['draft','scheduled'],true))throw new RuntimeException('Only draft or scheduled releases can be published.');
 
@@ -519,6 +520,7 @@ function campaigns_rewards_archive_journey_v123(PDO $pdo,int $journeyId,int $act
     if($published&&$inflightPolicy==='exit_remaining'){
         $plan=campaigns_rewards_inflight_plan_v123($pdo,$journey,$published,$published,'exit_remaining');campaigns_rewards_apply_inflight_plan_v123($pdo,$plan);
     }
+    $pdo->prepare("UPDATE campaign_journey_versions SET status='cancelled',updated_at=UTC_TIMESTAMP() WHERE journey_id=? AND status='scheduled'")->execute([$journeyId]);
     $pdo->prepare("UPDATE campaign_journeys SET status='archived',enrollment_status='paused',archived_by_user_id=?,archived_at=UTC_TIMESTAMP(),updated_at=UTC_TIMESTAMP() WHERE id=?")->execute([$actorUserId,$journeyId]);
     campaigns_rewards_activity_event_v100($pdo,(int)$journey['merchant_id'],'campaign.journey_archived',['campaign_id'=>(int)$journey['campaign_id']],[
         'summary'=>'Campaign journey archived with history preserved','campaign_public_id'=>$journey['campaign_public_id'],'journey_id'=>$journeyId,'inflight_policy'=>$inflightPolicy
