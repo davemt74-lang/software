@@ -160,6 +160,13 @@ function campaigns_rewards_record_decision_v125(PDO $pdo,array $base,string $typ
         campaigns_rewards_slug_v100((string)($base['step_key']??''),80),$type,$key,$hash,campaigns_rewards_json_v100($context),campaigns_rewards_json_v100($rules),campaigns_rewards_json_v100($outcome),$holdout?1:0,$status
     ]);
     $id=(int)$pdo->lastInsertId();$q=$pdo->prepare("SELECT * FROM campaign_decisions WHERE id=?");$q->execute([$id]);$row=$q->fetch()?:[];
+    $campaign=campaigns_rewards_campaign_platform_v100($pdo,(int)$base['campaign_id']);
+    if($campaign)campaigns_rewards_activity_event_v100($pdo,$merchantId,'campaign.decision_recorded',['campaign_id'=>(int)$base['campaign_id'],'contact_id'=>(int)$base['contact_id']],[
+      'summary'=>'Campaign decision recorded','campaign_public_id'=>$campaign['public_id'],'decision_id'=>$id,'decision_type'=>$type,
+      'journey_id'=>max(0,(int)($base['journey_id']??0)),'journey_version_id'=>max(0,(int)($base['journey_version_id']??0)),
+      'journey_instance_id'=>max(0,(int)($base['journey_instance_id']??0)),'step_key'=>(string)($base['step_key']??''),
+      'is_holdout'=>$holdout,'reason'=>(string)($outcome['reason']??'decided'),
+    ],(string)$campaign['environment'],null,'automation');
     $row['context']=$context;$row['rules']=$rules;$row['outcome']=$outcome;return $row;
 }
 
@@ -335,6 +342,32 @@ function campaigns_rewards_decisions_v125(PDO $pdo,int $merchantId,int $campaign
     if($campaignId>0){$sql.=" AND d.campaign_id=?";$params[]=$campaignId;}if($journeyId>0){$sql.=" AND d.journey_id=?";$params[]=$journeyId;}
     $sql.=" ORDER BY d.id DESC LIMIT {$limit}";$q=$pdo->prepare($sql);$q->execute($params);$rows=$q->fetchAll()?:[];
     foreach($rows as &$row){$row['context']=json_decode((string)$row['context_json'],true)?:[];$row['rules']=json_decode((string)$row['rules_json'],true)?:[];$row['outcome']=json_decode((string)$row['outcome_json'],true)?:[];}unset($row);return $rows;
+}
+
+function campaigns_rewards_validate_decision_graph_v125(PDO $pdo,int $journeyId,array $graph): array
+{
+    $journey=campaigns_rewards_journey_v123($pdo,$journeyId);$errors=[];$warnings=[];
+    if(!$journey)return ['errors'=>[['code'=>'decision_journey_missing','message'=>'Journey is unavailable for decision validation.']],'warnings'=>[]];
+    $attached=campaigns_rewards_campaign_reward_ids_v118($pdo,(int)$journey['campaign_id']);
+    foreach(campaigns_rewards_graph_nodes_v123($graph) as $node){
+        $t=(array)$node['template'];$step=(string)($t['step_key']??'step');$type=(string)($t['node_type']??'message');
+        $field=(string)($t['decision_field']??'');$offer=(string)($t['offer_mode']??'none');$offerAction=(string)($t['offer_action']??'select');
+        if($field!==''&&!isset(campaigns_rewards_decision_fields_v125()[$field]))$errors[]=['code'=>'invalid_decision_field','message'=>"{$step} uses an unsupported V1.25 decision field."];
+        if($field!==''&&$type!=='decision')$warnings[]=['code'=>'decision_field_non_branch','message'=>"{$step} has a decision field but is not a Decision node; that branch rule will not execute."];
+        if($offer!=='none'&&$type!=='message')$errors[]=['code'=>'offer_non_message','message'=>"{$step} configures an offer but is not a Message node."];
+        if($offer==='specific'){
+            $rewardId=max(0,(int)($t['offer_reward_product_id']??0));
+            if($rewardId<1)$errors[]=['code'=>'specific_offer_missing','message'=>"{$step} requires a specific attached Reward."];
+            elseif(!in_array($rewardId,$attached,true))$errors[]=['code'=>'specific_offer_not_attached','message'=>"{$step} references Reward #{$rewardId}, which is not attached to this Campaign."];
+        }
+        if($offerAction==='issue'&&$offer==='none')$errors[]=['code'=>'offer_issue_without_selection','message'=>"{$step} cannot issue a dynamic Reward when offer selection is disabled."];
+        if(max(0,(int)($t['holdout_percent']??0))>0&&!empty($t['entry_node'])===false)$warnings[]=['code'=>'holdout_non_entry','message'=>"{$step} has a holdout percentage, but holdout only applies to entry nodes."];
+        $group=(string)($t['conflict_group']??'');$window=max(0,(int)($t['conflict_window_hours']??0));
+        if($group!==''&&$window<1)$warnings[]=['code'=>'conflict_window_missing','message'=>"{$step} has a conflict group with no conflict window, so no conflict suppression will occur."];
+        if($group===''&&$window>0)$warnings[]=['code'=>'conflict_group_missing','message'=>"{$step} has a conflict window but no conflict group."];
+        if(!empty($t['personalization_enabled'])&&$type!=='message')$warnings[]=['code'=>'personalization_non_message','message'=>"{$step} enables message personalization on a non-message node."];
+    }
+    return ['errors'=>$errors,'warnings'=>$warnings];
 }
 
 function campaigns_rewards_preview_decision_v125(PDO $pdo,int $journeyId,int $contactId,int $actorUserId,array $triggerContext=[]): array
