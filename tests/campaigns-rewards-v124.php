@@ -32,7 +32,7 @@ cr_v124_assert(($inv['controlled_new_entry_rollout']??false)===true,'controlled 
 cr_v124_assert(($inv['transcription_saved_source_fix_included']??false)===true,'release includes saved-transcript Analyze repair');
 
 $domain=vp3_cognitive_domain_registry_v2600()['domains']['campaigns_rewards']??[];
-cr_v124_assert(in_array(($domain['implementation_status']??''),['integrated-v1.24','integrated-v1.25'],true),'cognitive domain declares integrated V1.24');
+cr_v124_assert(in_array(($domain['implementation_status']??''),['integrated-v1.24','integrated-v1.25','integrated-v1.26'],true),'cognitive domain declares integrated V1.24');
 cr_v124_assert(in_array('campaign_journey_instances',(array)($domain['authority']??[]),true),'Journey Instance is canonical Campaign authority');
 foreach([
  'campaign.journey_instance_pause','campaign.journey_instance_resume','campaign.journey_instance_cancel',

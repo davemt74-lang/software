@@ -68,7 +68,7 @@ const checks=[
  ['release health derives from canonical campaign_deliveries',
   runtime.includes('campaigns_rewards_journey_release_health_v123')&&runtime.includes('FROM campaign_deliveries')&&release.includes("'release_health_derived_from_canonical_deliveries'=>true")],
  ['Cognitive domain advances to V1.23 release lifecycle',
-  (registry.includes("'implementation_status'=>'integrated-v1.23'")||(registry.includes("'implementation_status'=>'integrated-v1.24'")||registry.includes("'implementation_status'=>'integrated-v1.25'")))&&registry.includes("'campaign.journey_published'")&&registry.includes("'campaign.journey_version_started'")],
+  (registry.includes("'implementation_status'=>'integrated-v1.23'")||(registry.includes("'implementation_status'=>'integrated-v1.24'")||(registry.includes("'implementation_status'=>'integrated-v1.25'")||registry.includes("'implementation_status'=>'integrated-v1.26'"))))&&registry.includes("'campaign.journey_published'")&&registry.includes("'campaign.journey_version_started'")],
  ['bootstrap loads schema before V1.23 runtime and release after runtime',
   bootstrap.indexOf("campaigns-rewards-schema-v123.php")<bootstrap.indexOf("campaigns-rewards-v123.php")&&bootstrap.indexOf("campaigns-rewards-v123.php")<bootstrap.indexOf("campaigns-rewards-release-v123.php")],
  ['V1.23 cron is CLI-only and requires migration readiness',
@@ -76,7 +76,7 @@ const checks=[
  ['existing consolidated CI runs V1.23 contracts and migration syntax',
   workflow.includes('Campaigns & Rewards V1.23 contract')&&workflow.includes('tests/campaigns-rewards-v123.mjs')&&workflow.includes('campaigns-rewards-schema-v123.php')],
  ['production package advances to V1.23 and includes schema runtime release cron migration and builder',
-  (packageFlow.includes('"Campaigns & Rewards V1.23"')||(packageFlow.includes('"Campaigns & Rewards V1.24"')||packageFlow.includes('"Campaigns & Rewards V1.25"')))&&packageFlow.includes('campaigns-rewards-schema-v123.php')&&packageFlow.includes('campaigns-rewards-v123.php')&&packageFlow.includes('cron/campaigns-rewards-v123.php')&&packageFlow.includes('upgrade-campaigns-rewards-v123.sql')&&packageFlow.includes('campaign-journey-builder-v123.js')],
+  (packageFlow.includes('"Campaigns & Rewards V1.23"')||(packageFlow.includes('"Campaigns & Rewards V1.24"')||(packageFlow.includes('"Campaigns & Rewards V1.25"')||packageFlow.includes('"Campaigns & Rewards V1.26"'))))&&packageFlow.includes('campaigns-rewards-schema-v123.php')&&packageFlow.includes('campaigns-rewards-v123.php')&&packageFlow.includes('cron/campaigns-rewards-v123.php')&&packageFlow.includes('upgrade-campaigns-rewards-v123.sql')&&packageFlow.includes('campaign-journey-builder-v123.js')],
  ['documentation describes migration immutable versions pinned execution and rollback semantics',
   docs.includes('requires the new idempotent migration')&&docs.includes('Published Journey Versions are never edited in place')&&docs.includes('journey_version_id')&&docs.includes('creates a **new Journey Version**')],
 ];
