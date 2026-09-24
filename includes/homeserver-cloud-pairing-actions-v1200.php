@@ -51,56 +51,81 @@ function homeserver_cloud_v1200_restore_previous_pairing(int $userId, array $res
     return $result;
 }
 
-function homeserver_cloud_v1200_disconnect(int $userId): void
+function homeserver_cloud_v1200_disconnect(int $userId): array
 {
-    homeserver_cloud_v1200_relay_security();
     $row = homeserver_vp3_connection($userId);
-    if (!$row) return;
-    $relayToken = homeserver_vp3_decrypt((string)($row['relay_token_enc'] ?? ''));
-    if ($relayToken === '') throw new RuntimeException('HomeServer relay authorization is unavailable.');
-
-    // Rotate first so every previously issued Cloud relay credential is invalidated.
-    // Preserve only the replacement server-side so this already-claimed HomeServer can be re-paired without an owner reset.
-    $rotated = homeserver_vp3_relay_request('POST', '/v1/session/rotate', [], $relayToken);
-    $replacement = trim((string)($rotated['relay_token'] ?? ''));
-    if (strlen($replacement) < 32 || strlen($replacement) > 512) {
-        throw new RuntimeException('HomeServer relay did not return a replacement authorization.');
-    }
+    if (!$row) return ['disconnected'=>true,'relay_revoked'=>false,'local_only'=>true];
 
     $pdo = db();
     if (!$pdo) throw new RuntimeException('Database connection is unavailable.');
-    $pdo->prepare(
-        "UPDATE homeserver_connections
-         SET relay_token_enc=?,homeserver_token_enc=NULL,pending_request_id='',pending_claim_token_enc=NULL,pending_code='',
-             status='disconnected',last_error='',capabilities_json=NULL,last_checked_at=NOW()
-         WHERE user_id=?"
-    )->execute([homeserver_vp3_encrypt($replacement),$userId]);
+
+    $replacement = '';
+    $relayRevoked = false;
+    try {
+        homeserver_cloud_v1200_relay_security();
+        $relayToken = homeserver_vp3_decrypt((string)($row['relay_token_enc'] ?? ''));
+        if ($relayToken !== '') {
+            $rotated = homeserver_vp3_relay_request('POST', '/v1/session/rotate', [], $relayToken);
+            $replacement = trim((string)($rotated['relay_token'] ?? ''));
+            $relayRevoked = strlen($replacement) >= 32 && strlen($replacement) <= 512;
+        }
+    } catch (Throwable $ignored) {
+        $replacement = '';
+        $relayRevoked = false;
+    }
+
+    if ($relayRevoked) {
+        $pdo->prepare(
+            "UPDATE homeserver_connections
+             SET relay_token_enc=?,homeserver_token_enc=NULL,pending_request_id='',pending_claim_token_enc=NULL,pending_code='',
+                 status='disconnected',last_error='',capabilities_json=NULL,last_checked_at=UTC_TIMESTAMP()
+             WHERE user_id=?"
+        )->execute([homeserver_vp3_encrypt($replacement),$userId]);
+    } else {
+        // Fail closed locally. VP3 discards every credential it could use even if the
+        // relay is offline, misconfigured, or the stored credential can no longer decrypt.
+        $pdo->prepare(
+            "UPDATE homeserver_connections
+             SET relay_token_enc=NULL,homeserver_token_enc=NULL,pending_request_id='',pending_claim_token_enc=NULL,pending_code='',
+                 status='revoked',last_error='',capabilities_json=NULL,last_checked_at=UTC_TIMESTAMP()
+             WHERE user_id=?"
+        )->execute([$userId]);
+    }
+
+    return ['disconnected'=>true,'relay_revoked'=>$relayRevoked,'local_only'=>!$relayRevoked];
 }
 
-function homeserver_cloud_v1200_remove_pairing(int $userId): void
+function homeserver_cloud_v1200_remove_pairing(int $userId): array
 {
-    homeserver_cloud_v1200_relay_security();
     $row = homeserver_vp3_connection($userId);
-    if (!$row) return;
-    if ((string)($row['status'] ?? '') !== 'disconnected'
+    if (!$row) return ['removed'=>true,'relay_released'=>false];
+
+    $status = (string)($row['status'] ?? '');
+    if (!in_array($status, ['disconnected','revoked'], true)
         || !empty($row['homeserver_token_enc'])
         || trim((string)($row['pending_request_id'] ?? '')) !== '') {
         throw new RuntimeException('Disconnect HomeServer before removing the Cloud pairing.');
     }
-    $relayToken = homeserver_vp3_decrypt((string)($row['relay_token_enc'] ?? ''));
-    if ($relayToken === '') {
-        throw new RuntimeException('HomeServer relay authorization is unavailable.');
-    }
 
-    // Release before deleting Cloud state. The relay revokes every Cloud session for
-    // this device and gives the connected HomeServer fresh private bootstrap proof.
-    // If release fails, retain the Cloud row so recovery remains possible.
-    $released = homeserver_relay_v1210_release($relayToken);
-    if (trim((string)($released['device_id'] ?? '')) !== trim((string)($row['device_id'] ?? ''))) {
-        throw new RuntimeException('HomeServer relay did not release the expected device pairing.');
+    $relayReleased = false;
+    $relayToken = '';
+    try { $relayToken = homeserver_vp3_decrypt((string)($row['relay_token_enc'] ?? '')); }
+    catch (Throwable $ignored) { $relayToken = ''; }
+
+    if ($relayToken !== '') {
+        try {
+            homeserver_cloud_v1200_relay_security();
+            $released = homeserver_relay_v1210_release($relayToken);
+            $relayReleased = trim((string)($released['device_id'] ?? '')) === trim((string)($row['device_id'] ?? ''));
+        } catch (Throwable $ignored) {
+            // Cloud removal is still allowed because the local row and relay credential
+            // are being destroyed. A later HomeServer claim establishes fresh proof.
+            $relayReleased = false;
+        }
     }
 
     $pdo = db();
     if (!$pdo) throw new RuntimeException('Database connection is unavailable.');
     $pdo->prepare('DELETE FROM homeserver_connections WHERE user_id=?')->execute([$userId]);
+    return ['removed'=>true,'relay_released'=>$relayReleased];
 }

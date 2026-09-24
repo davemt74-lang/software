@@ -6,6 +6,7 @@ require_once dirname(__DIR__) . '/includes/homeserver-policy-v035.php';
 require_once dirname(__DIR__) . '/includes/homeserver-scheduling-connector-v620.php';
 require_once dirname(__DIR__) . '/includes/homeserver-commerce-agent-v1000.php';
 require_once dirname(__DIR__) . '/includes/homeserver-cloud-pairing-actions-v1200.php';
+require_once dirname(__DIR__) . '/includes/homeserver-account-pairing-v1210.php';
 require_login();
 
 header('Content-Type: application/json; charset=utf-8');
@@ -21,13 +22,15 @@ if ($userId < 1) {
 
 function homeserver_status_error_snapshot(int $userId): ?array
 {
-    try { return homeserver_vp3_status($userId, false); } catch (Throwable $e) { return null; }
+    try { return homeserver_cloud_v1200_status($userId, false); } catch (Throwable $e) { return null; }
 }
 
 function homeserver_status_with_connectors_v1000(int $userId,array $status): array
 {
-    $status['scheduling_connector']=homeserver_scheduling_v620_connector_status($userId);
-    $status['commerce_agent_connector']=homeserver_commerce_agent_v1000_status($userId);
+    try { $status['scheduling_connector']=homeserver_scheduling_v620_connector_status($userId); }
+    catch (Throwable $e) { $status['scheduling_connector']=['configured'=>false,'provisioned'=>false,'version'=>'v6.20','error'=>'Connector status unavailable.']; }
+    try { $status['commerce_agent_connector']=homeserver_commerce_agent_v1000_status($userId); }
+    catch (Throwable $e) { $status['commerce_agent_connector']=['configured'=>false,'provisioned'=>false,'version'=>'v10.00','error'=>'Connector status unavailable.']; }
     return $status;
 }
 
@@ -48,11 +51,11 @@ try {
             $pairing = homeserver_vp3_check_pairing($userId);
             $scheduling=homeserver_scheduling_v620_connector_status($userId);
             $commerce=homeserver_commerce_agent_v1000_status($userId);
-            if(!empty($pairing['ready'])&&!empty(homeserver_vp3_status($userId,false)['connected'])){
+            if(!empty($pairing['ready'])&&!empty(homeserver_cloud_v1200_status($userId,false)['connected'])){
                 try{$scheduling=homeserver_scheduling_v620_provision($userId,false);}catch(Throwable $e){$scheduling['error']='Pairing is complete, but the scheduling connector is awaiting a compatible HomeServer.';}
                 try{$commerce=homeserver_commerce_agent_v1000_provision($userId,false);}catch(Throwable $e){$commerce['error']='Pairing is complete, but Agent Commerce may require the new Commerce permissions to be approved in HomeServer.';}
             }
-            $status=homeserver_vp3_status($userId,true);
+            $status=homeserver_cloud_v1200_status($userId,true);
             $status['scheduling_connector']=$scheduling;$status['commerce_agent_connector']=$commerce;
             echo json_encode(['ok'=>true,'pairing'=>$pairing,'status'=>$status], JSON_UNESCAPED_SLASHES);
             exit;
@@ -72,9 +75,10 @@ try {
         if ($action === 'disconnect') {
             // Keep legacy callers on the same fail-closed, re-pairable lifecycle as Settings → HomeServer.
             // Reverse connector grants are revoked before relay rotation to preserve the existing security contract.
-            homeserver_commerce_agent_v1000_revoke($userId);
-            homeserver_scheduling_v620_revoke($userId);
+            try { homeserver_commerce_agent_v1000_revoke($userId); } catch (Throwable $ignored) {}
+            try { homeserver_scheduling_v620_revoke($userId); } catch (Throwable $ignored) {}
             homeserver_cloud_v1200_disconnect($userId);
+            homeserver_account_v1210_revoke_user_tokens($userId);
             echo json_encode(['ok'=>true,'status'=>homeserver_cloud_v1200_status($userId,false)], JSON_UNESCAPED_SLASHES);
             exit;
         }
@@ -84,7 +88,7 @@ try {
     }
 
     $force = (string)($_GET['refresh'] ?? '') === '1';
-    $statusSnapshot=homeserver_status_with_connectors_v1000($userId,homeserver_vp3_status($userId,$force));
+    $statusSnapshot=homeserver_status_with_connectors_v1000($userId,homeserver_cloud_v1200_status($userId,$force));
     $response=['ok'=>true,'status'=>$statusSnapshot];
     if((string)($_GET['registry'] ?? '')==='1')$response['registry']=homeserver_capability_v033_registry($userId,$force);
     if((string)($_GET['policy'] ?? '')==='1')$response['policy']=homeserver_policy_v035_snapshot($userId,false,$statusSnapshot);

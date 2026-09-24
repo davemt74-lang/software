@@ -44,11 +44,26 @@ jobs:
           php -l includes/chat-execution-v019.php
           php -l includes/homeserver-agent-v018.php
           php -l includes/homeserver-agent-v025.php
+          php -l includes/homeserver-account-pairing-v1210.php
+          php -l includes/homeserver-cloud-pairing-v1200.php
+          php -l includes/homeserver-cloud-pairing-actions-v1200.php
+          php -l includes/homeserver-scheduling-connector-v620.php
+          php -l includes/homeserver-commerce-agent-v1000.php
+          php -l api/homeserver-connection-v1200.php
+          php -l api/homeserver-status.php
+          php -l settings-homeserver.php
+          php -l setup.php
+          php -l upgrade.php
           php -l tests/homeserver-runtime-journey-v030.php
+          node --check homeserver-settings-v1210.js
+          node --check tests/homeserver-settings-recovery-v1220-contract.mjs
 
       - name: Verify canonical VP3/HomeServer contracts
         run: |
           node tests/homeserver-vp3-integration-contract.mjs
+          node tests/homeserver-cloud-pairing-v1200-contract.mjs
+          node tests/homeserver-account-pairing-v1210-contract.mjs
+          node tests/homeserver-settings-recovery-v1220-contract.mjs
           node tests/chat-execution-v019-contract.mjs
           node tests/chat-execution-v022-contract.mjs
 

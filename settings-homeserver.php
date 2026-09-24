@@ -14,7 +14,7 @@ if (!$user) redirect(url('/login.php'));
 <title><?= e(system_agent_name()) ?> | HomeServer</title>
 <link rel="stylesheet" href="<?= e(url('/chat.css?v=82')) ?>">
 <link rel="stylesheet" href="<?= e(url('/account.css?v=account-light-20260904')) ?>">
-<link rel="stylesheet" href="<?= e(url('/homeserver-settings-v1200.css?v=20260912')) ?>">
+<link rel="stylesheet" href="<?= e(url('/homeserver-settings-v1200.css?v=20260924')) ?>">
 </head>
 <body>
 <div class="chat-app">
@@ -75,6 +75,10 @@ if (!$user) redirect(url('/login.php'));
           <div class="hs-actions" id="hsDisconnectedActions" hidden>
             <button class="hs-button danger-outline" id="hsRemove" type="button">Remove Cloud pairing</button>
           </div>
+          <div class="hs-actions" id="hsRecoveryActions" hidden>
+            <button class="hs-button primary" id="hsStartOver" type="button">Start new pairing</button>
+            <span class="hs-action-note">Clears the stale Cloud pairing and generates a fresh 15-minute VP3 account token.</span>
+          </div>
         </section>
 
         <section class="hs-card" id="hsConnectionInfo" hidden>
@@ -103,7 +107,6 @@ if (!$user) redirect(url('/login.php'));
   </main>
 </div>
 <script src="<?= e(url('/member-shell-v77.js')) ?>"></script>
-<script src="<?= e(url('/homeserver-settings-v1210.js?v=20260913')) ?>" defer></script>
-<script src="<?= e(url('/homeserver-settings-lifecycle-v1200.js?v=20260912')) ?>" defer></script>
+<script src="<?= e(url('/homeserver-settings-v1210.js?v=20260924')) ?>" defer></script>
 </body>
 </html>

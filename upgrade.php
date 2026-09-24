@@ -2,6 +2,9 @@
 declare(strict_types=1);
 require __DIR__ . '/includes/bootstrap.php';
 require_once __DIR__ . '/includes/cognitive-memory-v570.php';
+require_once __DIR__ . '/includes/homeserver-account-pairing-v1210.php';
+require_once __DIR__ . '/includes/homeserver-scheduling-connector-v620.php';
+require_once __DIR__ . '/includes/homeserver-commerce-agent-v1000.php';
 require_once __DIR__ . '/includes/browser-memory-v2170.php';
 require_once __DIR__ . '/includes/browser-execution-v2180.php';
 require_once __DIR__ . '/includes/browser-delegation-v2190.php';
@@ -67,6 +70,9 @@ function vp3_upgrade_complete(): bool
         && vp3_extension_notifications_schema_ready_v2140()
         && agent_event_schema_ready_v1920()
         && vp3_live_session_schema_ready_v2370()
+        && homeserver_account_v1210_schema_ready()
+        && homeserver_scheduling_v620_schema_ready()
+        && homeserver_commerce_agent_v1000_schema_ready()
         && vp3_browser_memory_schema_ready_v2170()
         && vp3_browser_execution_schema_ready_v2180()
         && vp3_browser_delegation_schema_ready_v2190()
@@ -266,6 +272,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             vp3_cognitive_memory_promotion_ensure_schema_v2400($pdo);
             vp3_cognitive_attention_ensure_schema_v2410($pdo);
             homeserver_vp3_ensure_schema($pdo);
+            homeserver_account_v1210_ensure_schema($pdo);
+            homeserver_scheduling_v620_ensure_schema($pdo);
+            homeserver_commerce_agent_v1000_ensure_schema($pdo);
             chrome_extension_releases_ensure_schema($pdo);
             client_release_rollouts_ensure_schema_v110($pdo);
             client_release_health_ensure_schema_v120($pdo);

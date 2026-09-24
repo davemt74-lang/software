@@ -7,6 +7,11 @@ require_once __DIR__ . '/homeserver-relay-lifecycle-v1210.php';
 const VP3_HOMESERVER_ACCOUNT_PAIRING_V1210 = 'homeserver-account-pairing-v1210-20260913';
 const VP3_HOMESERVER_ACCOUNT_PAIRING_TTL_SECONDS = 900;
 
+function homeserver_account_v1210_schema_ready(): bool
+{
+    return function_exists('table_exists') && table_exists('homeserver_connections') && table_exists('homeserver_pairing_tokens');
+}
+
 function homeserver_account_v1210_ensure_schema(?PDO $pdo = null): void
 {
     $pdo ??= db();
@@ -94,7 +99,7 @@ function homeserver_account_v1210_token_status(int $userId): ?array
     if ($userId < 1) return null;
     $pdo = db();
     if (!$pdo) return null;
-    homeserver_account_v1210_ensure_schema($pdo);
+    if (function_exists('table_exists') && !table_exists('homeserver_pairing_tokens')) return null;
     $stmt = $pdo->prepare(
         "SELECT id,status,device_id,expires_at,redeemed_at,created_at
          FROM homeserver_pairing_tokens
@@ -176,6 +181,19 @@ function homeserver_account_v1210_mark_awaiting(int $tokenId, string $deviceId):
     );
     $stmt->execute([$deviceId,$tokenId]);
     if ($stmt->rowCount() !== 1) throw new RuntimeException('The VP3 pairing token could not be finalized.');
+}
+
+function homeserver_account_v1210_revoke_user_tokens(int $userId): void
+{
+    if ($userId < 1) return;
+    $pdo = db();
+    if (!$pdo) return;
+    if (function_exists('table_exists') && !table_exists('homeserver_pairing_tokens')) return;
+    $pdo->prepare(
+        "UPDATE homeserver_pairing_tokens
+         SET status='revoked'
+         WHERE user_id=? AND status IN ('pending','redeeming','awaiting_approval','paired')"
+    )->execute([$userId]);
 }
 
 function homeserver_account_v1210_mark_paired(int $userId, string $deviceId=''): void
