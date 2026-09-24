@@ -7,6 +7,11 @@ require_once __DIR__ . '/homeserver-relay-lifecycle-v1210.php';
 const VP3_HOMESERVER_ACCOUNT_PAIRING_V1210 = 'homeserver-account-pairing-v1210-20260913';
 const VP3_HOMESERVER_ACCOUNT_PAIRING_TTL_SECONDS = 900;
 
+function homeserver_account_v1210_schema_ready(): bool
+{
+    return function_exists('table_exists') && table_exists('homeserver_connections') && table_exists('homeserver_pairing_tokens');
+}
+
 function homeserver_account_v1210_ensure_schema(?PDO $pdo = null): void
 {
     $pdo ??= db();
