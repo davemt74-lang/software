@@ -5,6 +5,7 @@ require_once __DIR__ . '/includes/cognitive-memory-v570.php';
 require_once __DIR__ . '/includes/homeserver-account-pairing-v1210.php';
 require_once __DIR__ . '/includes/homeserver-scheduling-connector-v620.php';
 require_once __DIR__ . '/includes/homeserver-commerce-agent-v1000.php';
+require_once __DIR__ . '/includes/homeserver-https-relay-v1300.php';
 require_once __DIR__ . '/includes/browser-memory-v2170.php';
 require_once __DIR__ . '/includes/browser-execution-v2180.php';
 require_once __DIR__ . '/includes/browser-delegation-v2190.php';
@@ -275,6 +276,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             homeserver_account_v1210_ensure_schema($pdo);
             homeserver_scheduling_v620_ensure_schema($pdo);
             homeserver_commerce_agent_v1000_ensure_schema($pdo);
+            homeserver_https_v1300_ensure_schema($pdo);
             chrome_extension_releases_ensure_schema($pdo);
             client_release_rollouts_ensure_schema_v110($pdo);
             client_release_health_ensure_schema_v120($pdo);
