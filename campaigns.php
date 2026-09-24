@@ -6,8 +6,9 @@ require_login();
 $user=current_user();$pdo=db();
 if(!$user||!$pdo){http_response_code(503);exit('Campaigns is unavailable.');}
 if(!function_exists('campaigns_rewards_platform_schema_ready_v100')||!campaigns_rewards_platform_schema_ready_v100($pdo)
-    ||!function_exists('campaigns_rewards_journey_release_schema_ready_v123')||!campaigns_rewards_journey_release_schema_ready_v123($pdo)){
-    http_response_code(503);exit('Campaigns needs the latest VP3 database upgrade. Run upgrade.php to install Journey Releases V1.23.');
+    ||!function_exists('campaigns_rewards_journey_release_schema_ready_v123')||!campaigns_rewards_journey_release_schema_ready_v123($pdo)
+    ||!function_exists('campaigns_rewards_journey_operations_schema_ready_v124')||!campaigns_rewards_journey_operations_schema_ready_v124($pdo)){
+    http_response_code(503);exit('Campaigns needs the latest VP3 database upgrade. Run upgrade.php to install Journey Operations V1.24.');
 }
 if(!campaigns_rewards_user_has_access_v100($pdo,$user)){flash('error','Enable Campaigns & Rewards or ask a Merchant Owner for access.');redirect(url('/plugins.php'));}
 
