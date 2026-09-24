@@ -33,6 +33,11 @@ return [
         // Enables one-time VP3 password-reset emails. If omitted, the runtime
         // falls back to send_contact_email for backward compatibility.
         'send_password_reset_email' => false,
+
+        // Campaigns & Rewards V1.20 outbound email is independently gated.
+        // Leave disabled until the server has a working mail transport.
+        'send_campaign_email' => false,
+        'campaign_email_from' => '',
     ],
 
     // HomeServer's trusted Remote Relay. Production must use HTTPS. The same

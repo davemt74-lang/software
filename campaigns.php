@@ -61,6 +61,19 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
             $summary=campaigns_rewards_automation_run_due_v119($pdo,$merchantId);
             $executed=(int)($summary['birthday_trigger']['executed']??0)+(int)($summary['crm_lapse']['executed']??0);
             flash('notice','Due Campaign automations evaluated. '.$executed.' Reward'.($executed===1?'':'s').' issued.');
+        }elseif($action==='message_save'){
+            $campaignId=max(0,(int)($_POST['campaign_id']??0));
+            $message=campaigns_rewards_message_save_v120($pdo,$merchantId,$campaignId,$uid,$_POST,max(0,(int)($_POST['message_id']??0)));
+            flash('notice','Campaign journey step saved.');
+            $redirectMerchant($merchantId,'&edit_campaign='.$campaignId.'&edit_message='.(int)$message['id'].'#campaign-messaging');
+        }elseif($action==='message_status'){
+            $message=campaigns_rewards_message_set_status_v120($pdo,max(0,(int)($_POST['message_id']??0)),$uid,(string)($_POST['status']??'paused'));
+            flash('notice','Campaign journey step status updated.');
+            $redirectMerchant($merchantId,'&edit_campaign='.(int)$message['campaign_id'].'&edit_message='.(int)$message['id'].'#campaign-messaging');
+        }elseif($action==='message_dispatch_due'){
+            campaigns_rewards_platform_assert_can_v100($pdo,$merchantId,$uid,'campaigns.publish');
+            $summary=campaigns_rewards_dispatch_due_v120($pdo,$merchantId,200);
+            flash('notice','Due Campaign messages processed. '.((int)$summary['sent']+(int)$summary['delivered']).' sent/delivered, '.(int)$summary['suppressed'].' suppressed.');
         }elseif($action==='automation_event'){
             campaigns_rewards_platform_assert_can_v100($pdo,$merchantId,$uid,'campaigns.enrollment.manage');
             campaigns_rewards_platform_assert_can_v100($pdo,$merchantId,$uid,'rewards.issue');
@@ -116,6 +129,8 @@ $members=$merchant?campaigns_rewards_merchant_members_v100($pdo,$merchantId):[];
 $report=$merchant&&$canAnalytics?campaigns_rewards_reporting_v100($pdo,$merchantId,$uid):['active_campaigns'=>0,'landing_views'=>0,'customers'=>0,'claims_redeemed'=>0];
 $recentEnrollments=$merchant&&function_exists('campaigns_rewards_recent_enrollments_v118')?campaigns_rewards_recent_enrollments_v118($pdo,$merchantId,$uid,40):[];
 $automationRules=$merchant?campaigns_rewards_automation_rules_v119($pdo,$merchantId):[];
+$campaignMessages=$merchant&&function_exists('campaigns_rewards_messages_v120')?campaigns_rewards_messages_v120($pdo,$merchantId):[];
+$campaignMessagesByCampaign=[];foreach($campaignMessages as $messageRow)$campaignMessagesByCampaign[(int)$messageRow['campaign_id']][]=$messageRow;
 $automationRulesByCampaign=[];$activeAutomationCount=0;
 foreach($automationRules as $automationRow){$automationRulesByCampaign[(int)$automationRow['campaign_id']][]=$automationRow;if((string)$automationRow['status']==='active')$activeAutomationCount++;}
 $crmSegments=$merchant?campaigns_rewards_automation_crm_segments_v119($pdo,$merchantId):[];
@@ -157,6 +172,15 @@ $automationConditions=is_array($editRule['conditions']??null)?$editRule['conditi
 $automationActions=is_array($editRule['actions']??null)?$editRule['actions']:[];
 $automationDefaultTrigger=$editCampaign?campaigns_rewards_automation_default_trigger_v119((string)$editCampaign['campaign_type_key']):'manual';
 $automationDefaultAudience=$editCampaign?campaigns_rewards_automation_default_audience_v119((string)$editCampaign['campaign_type_key']):'all_contacts';
+$editCampaignMessages=$editCampaign?($campaignMessagesByCampaign[(int)$editCampaign['id']]??[]):[];
+$editMessageId=max(0,(int)($_GET['edit_message']??0));$editMessage=null;
+foreach($editCampaignMessages as $messageRow)if((int)$messageRow['id']===$editMessageId){$editMessage=$messageRow;break;}
+$editMessageTemplate=is_array($editMessage['template']??null)?$editMessage['template']:[];
+$messagePerformance=$editCampaign&&$canAnalytics&&function_exists('campaigns_rewards_message_performance_v120')
+    ?campaigns_rewards_message_performance_v120($pdo,(int)$editCampaign['id'],$uid):null;
+$messageChannels=function_exists('campaigns_rewards_message_channels_v120')?campaigns_rewards_message_channels_v120():[];
+$messageTriggers=function_exists('campaigns_rewards_journey_triggers_v120')?campaigns_rewards_journey_triggers_v120():[];
+$messagePurposes=function_exists('campaigns_rewards_message_purposes_v120')?campaigns_rewards_message_purposes_v120():[];
 $editLocationId=max(0,(int)($_GET['edit_location']??0));$editLocation=null;foreach($locations as $row)if((int)$row['id']===$editLocationId)$editLocation=$row;
 $notice=(string)(flash('notice')??'');$error=(string)(flash('error')??'');
 $fulfillmentOnce=session_status()===PHP_SESSION_ACTIVE?($_SESSION['campaign_fulfillment_once']??null):null;
@@ -167,7 +191,7 @@ $actions=['<a class="cr-btn primary" href="'.e(url('/rewards.php'.($merchantId?'
 if($canCreate)$actions[]='<a class="cr-btn" href="'.e(url('/campaigns.php?new_merchant=1#new-merchant')).'">+ Merchant</a>';
 $memberHeaderActions=implode(' ',$actions);
 ?><!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#f7f7f8"><title>VP3 | Campaigns</title>
-<link rel="stylesheet" href="<?= e(url('/chat.css?v=82')) ?>"><link rel="stylesheet" href="<?= e(url('/campaigns-v100.css?v=119')) ?>"></head>
+<link rel="stylesheet" href="<?= e(url('/chat.css?v=82')) ?>"><link rel="stylesheet" href="<?= e(url('/campaigns-v100.css?v=120')) ?>"></head>
 <body class="cr-page"><div class="chat-app"><?php $workspaceSidebarUser=$user;$workspaceSidebarActive='campaigns';require __DIR__.'/includes/workspace-sidebar-v82.php'; ?><div class="chat-sidebar-backdrop" id="chatSidebarBackdrop"></div>
 <main class="chat-main cr-main"><?php require __DIR__.'/includes/member-header.php'; ?><div class="cr-wrap">
 <?php if($notice!==''):?><div class="cr-notice success"><?= e($notice) ?></div><?php endif;?><?php if($error!==''):?><div class="cr-notice error"><?= e($error) ?></div><?php endif;?>
@@ -341,6 +365,68 @@ $memberHeaderActions=implode(' ',$actions);
  t.addEventListener('change',render);a.addEventListener('change',render);render();
 })();
 </script>
+<?php endif;?>
+</section>
+
+<section class="cr-card" id="campaign-messaging">
+<header>
+<div><span>Messaging & Journeys</span><h2>Campaign messaging</h2></div>
+<?php if($canCampaignPublish):?><form method="post" class="cr-inline"><?= csrf_field() ?><input type="hidden" name="action" value="message_dispatch_due"><input type="hidden" name="merchant_id" value="<?= $merchantId ?>"><button type="submit">Dispatch due messages</button></form><?php endif;?>
+</header>
+<p class="cr-help">Build versioned Email, SMS, and VP3/Agent notification steps on top of V1.19 Campaign automation. Marketing consent is checked when a step is queued and again immediately before delivery. SMS requires a configured provider adapter.</p>
+
+<?php if($messagePerformance): $mp=$messagePerformance['totals']??[]; ?>
+<div class="cr-funnel" aria-label="Message performance">
+<article><span>Queued</span><strong><?= number_format((int)($mp['queued']??0)) ?></strong></article>
+<article><span>Sent</span><strong><?= number_format((int)($mp['sent']??0)) ?></strong></article>
+<article><span>Delivered</span><strong><?= number_format((int)($mp['delivered']??0)) ?></strong><small><?= e((string)($messagePerformance['delivery_rate']??0)) ?>%</small></article>
+<article><span>Viewed</span><strong><?= number_format((int)($mp['viewed']??0)) ?></strong><small><?= e((string)($messagePerformance['view_rate']??0)) ?>%</small></article>
+<article><span>Converted</span><strong><?= number_format((int)($mp['converted']??0)) ?></strong><small><?= e((string)($messagePerformance['conversion_rate']??0)) ?>%</small></article>
+<article><span>Suppressed</span><strong><?= number_format((int)($mp['suppressed']??0)) ?></strong></article>
+</div>
+<p class="cr-help"><strong>Message performance</strong> attributes Reward Claims to the most recent eligible sent/delivered/viewed Campaign delivery.</p>
+<?php endif;?>
+
+<div class="cr-list">
+<?php foreach($editCampaignMessages as $messageRow): $messageMeta=(array)($messageRow['template']??[]); ?>
+<article>
+<div><strong><?= e((string)($messageMeta['journey_key']??'default')) ?> · <?= e((string)($messageMeta['step_key']??$messageRow['message_key'])) ?></strong>
+<small>Step <?= (int)($messageMeta['step_order']??1) ?> · <?= e((string)($messageTriggers[$messageMeta['trigger_event']??'manual']??($messageMeta['trigger_event']??'manual'))) ?> · <?= e((string)($messageChannels[$messageRow['channel']]??$messageRow['channel'])) ?> · v<?= (int)$messageRow['version_no'] ?> · <?= e(ucfirst((string)$messageRow['status'])) ?></small></div>
+<div class="cr-actions"><a href="<?= e(url('/campaigns.php?merchant='.$merchantId.'&edit_campaign='.(int)$editCampaign['id'].'&edit_message='.(int)$messageRow['id'].'#campaign-messaging')) ?>">Edit</a>
+<?php if($canCampaignEdit):?><form method="post" class="cr-inline"><?= csrf_field() ?><input type="hidden" name="action" value="message_status"><input type="hidden" name="merchant_id" value="<?= $merchantId ?>"><input type="hidden" name="message_id" value="<?= (int)$messageRow['id'] ?>"><select name="status"><?php foreach(['draft','active','paused'] as $st):?><option value="<?= e($st) ?>"<?= $messageRow['status']===$st?' selected':'' ?>><?= e(ucfirst($st)) ?></option><?php endforeach;?></select><button>Set</button></form><?php endif;?>
+</div>
+</article>
+<?php endforeach;?>
+<?php if(!$editCampaignMessages):?><p>No journey steps yet. Add the first message below.</p><?php endif;?>
+</div>
+
+<?php if($canCampaignEdit):?>
+<form method="post" class="cr-form cr-editor">
+<?= csrf_field() ?>
+<input type="hidden" name="action" value="message_save">
+<input type="hidden" name="merchant_id" value="<?= $merchantId ?>">
+<input type="hidden" name="campaign_id" value="<?= (int)$editCampaign['id'] ?>">
+<input type="hidden" name="message_id" value="<?= (int)($editMessage['id']??0) ?>">
+<h3><?= $editMessage?'Edit journey step':'Add journey step' ?></h3>
+<div class="cr-form-grid">
+<label>Journey key<input name="journey_key" maxlength="50" value="<?= e((string)($editMessageTemplate['journey_key']??'default')) ?>"<?= $editMessage?' readonly':'' ?>></label>
+<label>Step key<input name="step_key" maxlength="50" value="<?= e((string)($editMessageTemplate['step_key']??'message-1')) ?>"<?= $editMessage?' readonly':'' ?>></label>
+<label>Step order<input type="number" min="1" max="999" name="step_order" value="<?= (int)($editMessageTemplate['step_order']??1) ?>"></label>
+<label>Trigger<select name="trigger_event"><?php $selectedMessageTrigger=(string)($editMessageTemplate['trigger_event']??$automationDefaultTrigger);foreach($messageTriggers as $key=>$label):?><option value="<?= e($key) ?>"<?= $selectedMessageTrigger===$key?' selected':'' ?>><?= e($label) ?></option><?php endforeach;?></select></label>
+<label>Channel<select name="channel"><?php $selectedChannel=(string)($editMessage['channel']??'email');foreach($messageChannels as $key=>$label):?><option value="<?= e($key) ?>"<?= $selectedChannel===$key?' selected':'' ?>><?= e($label) ?></option><?php endforeach;?></select></label>
+<label>Purpose<select name="purpose"><?php $selectedPurpose=(string)($editMessageTemplate['purpose']??'marketing');foreach($messagePurposes as $key=>$label):?><option value="<?= e($key) ?>"<?= $selectedPurpose===$key?' selected':'' ?>><?= e($label) ?></option><?php endforeach;?></select></label>
+<label>Delay (minutes)<input type="number" min="0" max="5256000" name="delay_minutes" value="<?= (int)($editMessageTemplate['delay_minutes']??0) ?>"></label>
+<label>Expiration lead (days)<input type="number" min="0" max="3650" name="expiration_lead_days" value="<?= (int)($editMessageTemplate['expiration_lead_days']??7) ?>"></label>
+<label>Status<select name="status"><?php $messageStatus=(string)($editMessage['status']??'draft');foreach(['draft','active','paused'] as $st):?><option value="<?= e($st) ?>"<?= $messageStatus===$st?' selected':'' ?>><?= e(ucfirst($st)) ?></option><?php endforeach;?></select></label>
+<label>Subject<input name="subject" maxlength="255" value="<?= e((string)($editMessage['subject']??'')) ?>"></label>
+</div>
+<label>Message body<textarea name="body" rows="7" required><?= e((string)($editMessage['body']??'')) ?></textarea></label>
+<p class="cr-help">Tokens: <code>{{name}}</code>, <code>{{email}}</code>, <code>{{campaign_name}}</code>, <code>{{merchant_name}}</code>, <code>{{reward_name}}</code>, <code>{{reward_expiration}}</code>, <code>{{campaign_url}}</code>, <code>{{reward_wallet_url}}</code>.</p>
+<label class="cr-check"><input type="checkbox" name="stop_on_claim" value="1"<?= !empty($editMessageTemplate['stop_on_claim'])?' checked':'' ?>> Stop this Reward-linked step if the Reward is already claimed</label>
+<label class="cr-check"><input type="checkbox" name="stop_on_expiration" value="1"<?= !empty($editMessageTemplate['stop_on_expiration'])?' checked':'' ?>> Stop this Reward-linked step if the Reward is expired or voided</label>
+<p class="cr-help">Activating a journey step requires publish authority and an already active, published Campaign. The Agent may recommend journey changes but cannot activate them autonomously.</p>
+<button class="cr-btn primary" type="submit">Save journey step</button>
+</form>
 <?php endif;?>
 </section>
 <?php endif;?>

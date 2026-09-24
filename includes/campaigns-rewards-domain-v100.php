@@ -1084,6 +1084,10 @@ function campaigns_rewards_process_claim_v100(PDO $pdo,string $rewardCredential,
         'summary'=>'Campaign conversion attributed from Reward Claim','merchant_public_id'=>$claim['merchant_public_id'],'campaign_public_id'=>$claim['campaign_public_id'],
         'reward_issuance_public_id'=>$claim['reward_issuance_public_id'],'claim_public_id'=>$claim['public_id'],
     ],(string)$claim['environment'],$actorUserId);
+    if(function_exists('campaigns_rewards_attribute_claim_v120')){
+        try{campaigns_rewards_attribute_claim_v120($pdo,(int)$claim['campaign_id'],(int)$issuance['recipient_contact_id'],$issuanceId,$claimId);}
+        catch(Throwable $e){error_log('Campaign messaging V1.20 attribution failed: '.$e->getMessage());}
+    }
     return $claim;
 }
 
