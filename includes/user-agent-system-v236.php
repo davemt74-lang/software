@@ -28,6 +28,7 @@ function user_agent_resource_catalog_v236(): array
         'homeserver_knowledge'=>['label'=>'HomeServer Knowledge','description'=>'Knowledge stored on the paired HomeServer.'],
         'homeserver_contacts'=>['label'=>'HomeServer Contacts','description'=>'Contacts stored on the paired HomeServer.'],
         'homeserver_tasks'=>['label'=>'HomeServer Tasks','description'=>'Tasks and commitments stored on the paired HomeServer.'],
+        'homeserver_notifications'=>['label'=>'HomeServer Notifications','description'=>'Notifications stored on the paired HomeServer.'],
     ];
 }
 
