@@ -166,6 +166,57 @@ function campaigns_rewards_instance_skip_delivery_v124(PDO $pdo,int $instanceId,
     return campaigns_rewards_journey_instance_v124($pdo,$instanceId)?:$instance;
 }
 
+function campaigns_rewards_instance_move_step_v124(PDO $pdo,int $instanceId,string $targetStep,int $actorUserId): array
+{
+    $instance=campaigns_rewards_journey_instance_v124($pdo,$instanceId)?:throw new RuntimeException('Journey instance not found.');
+    campaigns_rewards_platform_assert_can_v100($pdo,(int)$instance['merchant_id'],$actorUserId,'campaigns.publish');
+    if(!in_array((string)$instance['status'],['active','paused','needs_attention'],true))throw new RuntimeException('Only an active, paused or attention-required instance can move steps.');
+    $targetStep=campaigns_rewards_slug_v100($targetStep,50);if($targetStep==='')throw new RuntimeException('Choose a target step.');
+    $version=campaigns_rewards_journey_version_v123($pdo,(int)$instance['journey_version_id'])?:throw new RuntimeException('Pinned Journey Version is unavailable.');
+    $journey=campaigns_rewards_journey_v123($pdo,(int)$instance['journey_id'])?:throw new RuntimeException('Journey is unavailable.');
+    $groups=campaigns_rewards_graph_groups_v123($version['graph']);$descriptors=$groups[$targetStep]??[];
+    if(!$descriptors)throw new RuntimeException('Target step does not exist in the pinned Journey Version.');
+    foreach(campaigns_rewards_instance_pending_deliveries_v124($pdo,$instanceId) as $delivery){
+        if(!in_array((string)$delivery['status'],['pending','retry_wait','dead_letter'],true))continue;
+        $meta=$delivery['metadata'];$meta['operator_replaced_at']=gmdate('Y-m-d H:i:s');$meta['operator_replaced_by_step']=$targetStep;
+        $pdo->prepare("UPDATE campaign_deliveries SET status='suppressed',metadata_json=? WHERE id=?")->execute([campaigns_rewards_json_v100($meta),(int)$delivery['id']]);
+    }
+    $variants=array_map('campaigns_rewards_graph_hydrate_node_v123',$descriptors);
+    $node=campaigns_rewards_select_variant_v121($variants,(int)$instance['campaign_id'],(int)$instance['contact_id'],(string)$instance['instance_key'],$targetStep);
+    if(!$node)throw new RuntimeException('Target step could not select a deterministic variant.');
+    $campaign=campaigns_rewards_campaign_platform_v100($pdo,(int)$instance['campaign_id'])?:throw new RuntimeException('Campaign unavailable.');
+    $result=campaigns_rewards_enqueue_node_v123($pdo,$campaign,$journey,$version,$node,(int)$instance['contact_id'],(string)$instance['instance_key'],(string)$instance['trigger_event_id'],(array)($instance['metadata']['context']??[]));
+    if(!empty($result['suppressed']))throw new RuntimeException('Target step is currently suppressed: '.(string)($result['reason']??'policy'));
+    $pdo->prepare("UPDATE campaign_journey_instances SET status='active',current_step_key=?,paused_at=NULL,last_activity_at=UTC_TIMESTAMP(),updated_at=UTC_TIMESTAMP() WHERE id=?")
+      ->execute([$targetStep,$instanceId]);
+    campaigns_rewards_activity_event_v100($pdo,(int)$instance['merchant_id'],'campaign.journey_instance_step_moved',['campaign_id'=>(int)$instance['campaign_id'],'contact_id'=>(int)$instance['contact_id']],[
+      'summary'=>'Campaign journey instance moved to a compatible step by operator','campaign_public_id'=>$instance['campaign_public_id'],
+      'journey_instance_id'=>$instanceId,'journey_version_id'=>(int)$instance['journey_version_id'],'target_step_key'=>$targetStep
+    ],(string)$instance['environment'],$actorUserId);
+    return campaigns_rewards_journey_instance_v124($pdo,$instanceId)?:$instance;
+}
+
+function campaigns_rewards_journey_emergency_stop_v124(PDO $pdo,int $journeyId,int $actorUserId,string $inflightPolicy='pause'): array
+{
+    $journey=campaigns_rewards_journey_v123($pdo,$journeyId)?:throw new RuntimeException('Journey not found.');
+    campaigns_rewards_platform_assert_can_v100($pdo,(int)$journey['merchant_id'],$actorUserId,'campaigns.publish');
+    if(!in_array($inflightPolicy,['continue','pause','cancel'],true))throw new RuntimeException('Choose continue, pause or cancel for in-flight instances.');
+    $pdo->prepare("UPDATE campaign_journeys SET enrollment_status='paused',updated_at=UTC_TIMESTAMP() WHERE id=?")->execute([$journeyId]);
+    $affected=0;
+    if($inflightPolicy!=='continue'){
+        $instances=campaigns_rewards_journey_instances_v124($pdo,(int)$journey['merchant_id'],$journeyId,1000);
+        foreach($instances as $instance){
+            if(in_array((string)$instance['status'],['completed','cancelled'],true))continue;
+            campaigns_rewards_instance_control_v124($pdo,(int)$instance['id'],$actorUserId,$inflightPolicy==='cancel'?'cancel':'pause');$affected++;
+        }
+    }
+    campaigns_rewards_activity_event_v100($pdo,(int)$journey['merchant_id'],'campaign.journey_emergency_stopped',['campaign_id'=>(int)$journey['campaign_id']],[
+      'summary'=>'Campaign journey emergency stop applied','campaign_public_id'=>$journey['campaign_public_id'],'journey_id'=>$journeyId,
+      'new_enrollment'=>'paused','inflight_policy'=>$inflightPolicy,'instances_affected'=>$affected
+    ],(string)$journey['environment'],$actorUserId);
+    return ['journey'=>campaigns_rewards_journey_v123($pdo,$journeyId)?:$journey,'instances_affected'=>$affected,'inflight_policy'=>$inflightPolicy];
+}
+
 function campaigns_rewards_journey_instance_timeline_v124(PDO $pdo,int $instanceId,int $actorUserId): array
 {
     $instance=campaigns_rewards_journey_instance_v124($pdo,$instanceId)?:throw new RuntimeException('Journey instance not found.');
@@ -208,7 +259,13 @@ function campaigns_rewards_journey_incidents_v124(PDO $pdo,int $merchantId,int $
     foreach($instances as $i){
         if((string)$i['status']==='needs_attention')$out[]=['severity'=>'high','type'=>'failed_instance','instance_id'=>(int)$i['id'],'message'=>'Journey instance needs attention after a dead-letter delivery.'];
         $age=time()-(strtotime((string)$i['last_activity_at'])?:time());
-        if(in_array((string)$i['status'],['active','paused'],true)&&$age>86400)$out[]=['severity'=>'medium','type'=>'stale_instance','instance_id'=>(int)$i['id'],'message'=>'Journey instance has had no activity for more than 24 hours.'];
+        if((string)$i['status']==='active'&&$age>86400)$out[]=['severity'=>'medium','type'=>'stale_instance','instance_id'=>(int)$i['id'],'message'=>'Active journey instance has had no activity for more than 24 hours.'];
+        if((string)$i['status']==='paused'&&$age>259200)$out[]=['severity'=>'low','type'=>'long_pause','instance_id'=>(int)$i['id'],'message'=>'Journey instance has remained paused for more than 72 hours.'];
+        foreach(campaigns_rewards_instance_pending_deliveries_v124($pdo,(int)$i['id']) as $d){
+            $scheduled=strtotime((string)($d['metadata']['scheduled_for']??$d['created_at']))?:time();
+            if((string)$d['status']==='pending'&&$scheduled<time()-7200)$out[]=['severity'=>'medium','type'=>'queue_age','instance_id'=>(int)$i['id'],'delivery_id'=>(int)$d['id'],'message'=>'A due Journey delivery has remained pending for more than 2 hours.'];
+            if((string)$d['status']==='retry_wait'&&$scheduled<time()-21600)$out[]=['severity'=>'high','type'=>'retry_age','instance_id'=>(int)$i['id'],'delivery_id'=>(int)$d['id'],'message'=>'A Journey retry has remained unresolved for more than 6 hours.'];
+        }
     }
     $q=$pdo->prepare("SELECT COUNT(*) FROM campaign_deliveries d INNER JOIN campaigns c ON c.id=d.campaign_id WHERE c.merchant_id=? AND d.status='dead_letter' AND d.failed_at>=DATE_SUB(UTC_TIMESTAMP(),INTERVAL 24 HOUR)");
     $q->execute([$merchantId]);$dead=(int)$q->fetchColumn();if($dead>=5)$out[]=['severity'=>'high','type'=>'dead_letter_spike','instance_id'=>0,'message'=>"{$dead} Campaign deliveries reached dead letter in the last 24 hours."];
@@ -234,8 +291,11 @@ function campaigns_rewards_refresh_operations_recommendations_v124(PDO $pdo,int 
           VALUES (?,?,?,?,?,'proposed',?,?,?)")->execute([
             campaigns_rewards_uuid_v100(),$merchantId,$campaignId,$type,$summary,
             campaigns_rewards_json_v100(['source'=>'v124_operations','incident'=>$incident]),
-            campaigns_rewards_json_v100(['requires_human_decision'=>true,'auto_apply'=>false,'allowed_actions'=>['inspect','pause','resume','cancel','retry','skip']]),$owner
+            campaigns_rewards_json_v100(['requires_human_decision'=>true,'auto_apply'=>false,'allowed_actions'=>['inspect','pause','resume','cancel','retry','skip','move_step']]),$owner
         ]);
+        campaigns_rewards_activity_event_v100($pdo,$merchantId,'campaign.journey_incident_proposed',['campaign_id'=>$campaignId],[
+          'summary'=>'Journey operations incident proposed for human review','incident_type'=>$incident['type'],'severity'=>$incident['severity'],'journey_instance_id'=>$instanceId,'auto_apply'=>false
+        ],'production',null,'agent');
         $created++;
     }
     return ['incidents'=>count($incidents),'recommendations_created'=>$created];
