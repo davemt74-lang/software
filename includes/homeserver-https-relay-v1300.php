@@ -4,6 +4,7 @@ declare(strict_types=1);
 const VP3_HOMESERVER_HTTPS_RELAY_V1300='homeserver-https-relay-v1300-20260924';
 const VP3_HOMESERVER_HTTPS_ONLINE_SECONDS=20;
 const VP3_HOMESERVER_HTTPS_REQUEST_TTL_SECONDS=120;
+const VP3_HOMESERVER_HTTPS_POLL_URL='https://vp3.me/api/homeserver-https-poll-v1300.php';
 
 function homeserver_https_v1300_uuid(): string
 {
@@ -131,7 +132,7 @@ function homeserver_https_v1300_pair(string $pairingToken,string $deviceId,strin
     if(function_exists('vp3_cognitive_homeserver_event_v2390'))vp3_cognitive_homeserver_event_v2390($pdo,$userId,'homeserver.connected','paired');
     return [
       'user_id'=>$userId,'device_id'=>$deviceId,'session_token'=>$sessionToken,
-      'poll_url'=>url('/api/homeserver-https-poll-v1300.php'),
+      'poll_url'=>VP3_HOMESERVER_HTTPS_POLL_URL,
       'transport'=>'vp3_https','protocol'=>'https-relay-v1','poll_after_ms'=>900,
     ];
 }
