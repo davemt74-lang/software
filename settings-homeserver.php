@@ -32,7 +32,7 @@ if (!$user) redirect(url('/login.php'));
         <nav class="hs-breadcrumb" aria-label="Settings breadcrumb"><a href="<?= e(url('/account.php')) ?>">Settings</a><span>›</span><strong>HomeServer</strong></nav>
 
         <header class="hs-hero">
-          <div><span class="hs-eyebrow">Private AI connection</span><h1>HomeServer</h1><p>Keep private AI knowledge, tools, models, credentials and personal context on your own computer while VP3 connects through the secure relay.</p></div>
+          <div><span class="hs-eyebrow">Private AI connection</span><h1>HomeServer</h1><p>Keep private AI knowledge, tools, models, credentials and personal context on your own computer while VP3 connects through the secure outbound HTTPS channel.</p></div>
           <div class="hs-state-pill" id="hsStatePill" data-state="loading"><span></span><strong id="hsStateLabel">Checking…</strong></div>
         </header>
 
@@ -43,7 +43,7 @@ if (!$user) redirect(url('/login.php'));
 
           <div class="hs-stepper" id="hsStepper" hidden aria-label="Pairing steps">
             <div class="hs-step" data-step="1"><span>1</span><div><strong>Generate in VP3 Cloud</strong><small>Create an account-bound one-time pairing token below.</small></div></div>
-            <div class="hs-step" data-step="2"><span>2</span><div><strong>Paste and pair</strong><small>Open HomeServer → Remote Bridge, paste the VP3 token, and click Pair. HomeServer connects automatically.</small></div></div>
+            <div class="hs-step" data-step="2"><span>2</span><div><strong>Paste and pair</strong><small>Open HomeServer → VP3 Cloud Connection, paste the VP3 token, and click Pair. HomeServer connects automatically.</small></div></div>
           </div>
 
           <div class="hs-claim-form" id="hsTokenPanel">
@@ -55,20 +55,12 @@ if (!$user) redirect(url('/login.php'));
           <div class="hs-approval" id="hsTokenResult" hidden>
             <span>One-time VP3 pairing token</span>
             <strong id="hsPairingToken">—</strong>
-            <p>Copy this token now. Open HomeServer → Remote Bridge, paste it, and click Pair. HomeServer configures the secure two-way VP3 HTTPS connection automatically. VP3 does not show this raw token again after you leave or refresh this page.</p>
+            <p>Copy this token now. Open HomeServer → VP3 Cloud Connection, paste it, and click Pair. HomeServer configures the secure two-way VP3 HTTPS connection automatically. VP3 does not show this raw token again after you leave or refresh this page.</p>
             <div class="hs-actions"><button class="hs-button" id="hsCopyToken" type="button">Copy token</button><button class="hs-button quiet" id="hsRegenerateToken" type="button">Generate new token</button></div>
-          </div>
-
-          <div class="hs-approval" id="hsApproval" hidden>
-            <span>Local approval required</span>
-            <strong>Review VP3 in HomeServer</strong>
-            <p>The account token was accepted and this HomeServer proved its relay identity. In HomeServer → Remote Bridge, review the requested capabilities and click Approve VP3. No second code is required.</p>
-            <div class="hs-actions"><button class="hs-button" id="hsCheckApproval" type="button">Check now</button><button class="hs-button quiet" id="hsCancelPairing" type="button">Cancel request</button></div>
           </div>
 
           <div class="hs-actions" id="hsConnectedActions" hidden>
             <button class="hs-button" id="hsReconnect" type="button">Reconnect</button>
-            <button class="hs-button" id="hsRepair" type="button">Re-pair permissions</button>
             <button class="hs-button danger" id="hsDisconnect" type="button">Disconnect</button>
           </div>
           <div class="hs-actions" id="hsDisconnectedActions" hidden>
@@ -99,13 +91,13 @@ if (!$user) redirect(url('/login.php'));
 
         <details class="hs-card hs-advanced" id="hsAdvanced">
           <summary><span><small>Advanced</small><strong>Connection details</strong></span><span>＋</span></summary>
-          <div class="hs-advanced-body"><dl class="hs-info-grid"><div><dt>Pairing protocol</dt><dd>account-token-v1</dd></div><div><dt>Relay host</dt><dd id="hsRelayHost">—</dd></div><div><dt>Cloud build</dt><dd id="hsBuild">—</dd></div><div><dt>Paired scopes</dt><dd id="hsScopeCount">—</dd></div></dl></div>
+          <div class="hs-advanced-body"><dl class="hs-info-grid"><div><dt>Pairing protocol</dt><dd>account-token-v1</dd></div><div><dt>Transport</dt><dd>VP3 HTTPS Relay</dd></div><div><dt>Cloud build</dt><dd id="hsBuild">—</dd></div><div><dt>Paired scopes</dt><dd id="hsScopeCount">—</dd></div></dl></div>
         </details>
       </div>
     </section>
   </main>
 </div>
 <script src="<?= e(url('/member-shell-v77.js')) ?>"></script>
-<script src="<?= e(url('/homeserver-settings-v1210.js?v=20260924-1301')) ?>" defer></script>
+<script src="<?= e(url('/homeserver-settings-v1210.js?v=homeserver-core-v1304-20260924')) ?>" defer></script>
 </body>
 </html>
