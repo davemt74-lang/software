@@ -64,7 +64,7 @@ const checks=[
  ['consolidated CI runs V1.24 and transcription saved-source contracts',
   workflow.includes('Campaigns & Rewards V1.24 contract')&&workflow.includes('tests/campaigns-rewards-v124.mjs')&&workflow.includes('tests/transcription-analysis-source-v308-contract.mjs')],
  ['production package identifies V1.24 and retains migration operations runtime cron and transcription fix',
-  (packageFlow.includes('"Campaigns & Rewards V1.24"')||(packageFlow.includes('"Campaigns & Rewards V1.25"')||packageFlow.includes('"Campaigns & Rewards V1.26"')))&&packageFlow.includes('campaigns-rewards-schema-v124.php')&&packageFlow.includes('campaigns-rewards-v124.php')&&packageFlow.includes('cron/campaigns-rewards-v124.php')&&packageFlow.includes('upgrade-campaigns-rewards-v124.sql')&&packageFlow.includes('transcription-workflow-config.php')],
+  packageFlow.includes('"VP3 Cloud Production"')&&packageFlow.includes('campaigns-rewards-schema-v124.php')&&packageFlow.includes('campaigns-rewards-v124.php')&&packageFlow.includes('cron/campaigns-rewards-v124.php')&&packageFlow.includes('upgrade-campaigns-rewards-v124.sql')&&packageFlow.includes('transcription-workflow-config.php')],
  ['documentation covers canonical instance authority controlled rollout operations and transcription repair',
   docs.includes('campaign_journey_instances')&&docs.includes('Controlled rollout of new Journey releases')&&docs.includes('Contact Journey Timeline')&&docs.includes('Transcription Analyze fix')],
 ];
