@@ -1,0 +1,39 @@
+name: Package HomeServer Status v13.01
+
+on:
+  push:
+    branches:
+      - package-homeserver-status-v1301
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build deploy ZIP
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist/includes
+          cp includes/homeserver-cloud-pairing-v1200.php dist/includes/
+          cp includes/main-sidebar.php dist/includes/
+          cp homeserver-vp3.js dist/
+          cp homeserver-settings-v1210.js dist/
+          cp settings-homeserver.php dist/
+          cat > dist/DEPLOY.txt <<'EOF'
+          VP3 Cloud HomeServer Status v13.01
+          No database migration required.
+          Upload these files preserving paths, replacing the existing files.
+          EOF
+          cd dist
+          zip -r VP3-Cloud-HomeServer-Status-v13.01-deploy.zip             includes/homeserver-cloud-pairing-v1200.php             includes/main-sidebar.php             homeserver-vp3.js             homeserver-settings-v1210.js             settings-homeserver.php             DEPLOY.txt
+      - name: Upload deploy ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: VP3-Cloud-HomeServer-Status-v13.01-deploy
+          path: dist/VP3-Cloud-HomeServer-Status-v13.01-deploy.zip
+          if-no-files-found: error
+          retention-days: 14
