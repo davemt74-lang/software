@@ -33,6 +33,8 @@ assert.doesNotMatch(statusApi, /homeserver_vp3_check_pairing/);
 assert.match(statusApi, /homeserver_cloud_v1200_disconnect/);
 assert.doesNotMatch(statusApi, /homeserver_vp3_disconnect\(\$userId\)/);
 assert.match(statusApi, /homeserver-cloud-pairing-actions-v1200\.php/);
+assert.match(statusApi, /try\{\$response\['policy'\]=homeserver_policy_v035_snapshot/);
+assert.match(statusApi, /catch\(Throwable \$ignored\)\{\$response\['policy'\]=\['available'=>false/);
 assert.doesNotMatch(statusApi, /\$pairing\s*=\s*homeserver_vp3_claim_and_pair/);
 assert.match(cloudActions, /\/v1\/session\/rotate/);
 assert.match(cloudActions, /homeserver_vp3_encrypt\(\$replacement\)/);
