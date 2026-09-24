@@ -155,7 +155,7 @@ function vp3_cognitive_campaigns_rewards_contract_v2600(): array
         'presentation'=>'cognitive_presentation_firewall_v2590',
         'notes'=>[
             'Campaigns & Rewards V1.24 promotes pinned Journey Instances into canonical operational records for live monitoring, human recovery controls, controlled new-entry rollouts, incident surfacing and descriptive release operations comparison.',
-            'Campaigns & Rewards V1.23 makes the whole Journey graph a governed release artifact with draft/live separation, atomic publishing, immutable version history, in-flight release pinning, rollback and scheduled publication.'
+            'Campaigns & Rewards V1.23 makes the whole Journey graph a governed release artifact with draft/live separation, atomic publishing, immutable version history, in-flight release pinning, rollback and scheduled publication.',
             'Campaigns & Rewards V1.22 derives journey intelligence from canonical delivery outcomes, adds opt-in optimization/frequency controls, dry-run simulation and human-reviewed Agent recommendations without an autonomous learner.',
             'Campaigns & Rewards V1.21 adds graph orchestration, deterministic A/B variants, timezone delivery, bounded retry/dead-letter handling and signed provider delivery events over the existing message/delivery authorities.',
             'Campaigns & Rewards V1.20 adds versioned Campaign messaging journeys over the existing message, delivery and idempotency authorities without a second scheduler.',
