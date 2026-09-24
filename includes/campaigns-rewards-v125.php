@@ -361,7 +361,7 @@ function campaigns_rewards_validate_decision_graph_v125(PDO $pdo,int $journeyId,
             elseif(!in_array($rewardId,$attached,true))$errors[]=['code'=>'specific_offer_not_attached','message'=>"{$step} references Reward #{$rewardId}, which is not attached to this Campaign."];
         }
         if($offerAction==='issue'&&$offer==='none')$errors[]=['code'=>'offer_issue_without_selection','message'=>"{$step} cannot issue a dynamic Reward when offer selection is disabled."];
-        if(max(0,(int)($t['holdout_percent']??0))>0&&!empty($t['entry_node'])===false)$warnings[]=['code'=>'holdout_non_entry','message'=>"{$step} has a holdout percentage, but holdout only applies to entry nodes."];
+        if(max(0,(int)($t['holdout_percent']??0))>0&&empty($t['entry_node']))$warnings[]=['code'=>'holdout_non_entry','message'=>"{$step} has a holdout percentage, but holdout only applies to entry nodes."];
         $group=(string)($t['conflict_group']??'');$window=max(0,(int)($t['conflict_window_hours']??0));
         if($group!==''&&$window<1)$warnings[]=['code'=>'conflict_window_missing','message'=>"{$step} has a conflict group with no conflict window, so no conflict suppression will occur."];
         if($group===''&&$window>0)$warnings[]=['code'=>'conflict_group_missing','message'=>"{$step} has a conflict window but no conflict group."];
