@@ -31,6 +31,16 @@ function campaigns_rewards_journey_triggers_v120(): array
 {
     return [
         'newsletter_signup'=>'Newsletter signup',
+        'contest_entry'=>'Contest entry',
+        'qr_claim'=>'QR / link claim',
+        'referral_signup'=>'Referral signup',
+        'birthday_signup'=>'Birthday signup',
+        'proof_submit'=>'Proof submitted',
+        'instant_claim'=>'Instant claim',
+        'interest_signup'=>'Interest / waitlist signup',
+        'event_rsvp'=>'Event RSVP',
+        'partner_signup'=>'Partner signup',
+        'community_signup'=>'Community signup',
         'birthday_trigger'=>'Birthday / VIP',
         'crm_lapse'=>'Win-back inactivity',
         'purchase_completed'=>'Post-purchase',
