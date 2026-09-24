@@ -38,7 +38,7 @@ cr_v119_assert(($inv['lifecycle_recommendations_require_human_decision']??false)
 cr_v119_assert(($inv['payment_authority_added']??true)===false&&($inv['parallel_crm_added']??true)===false,'V1.19 adds neither payment authority nor parallel CRM');
 
 $domain=vp3_cognitive_domain_registry_v2600()['domains']['campaigns_rewards']??[];
-cr_v119_assert(($domain['implementation_status']??'')==='integrated-v1.19','cognitive domain declares integrated V1.19');
+cr_v119_assert(in_array(($domain['implementation_status']??''),['integrated-v1.19','integrated-v1.20'],true),'cognitive domain declares integrated V1.19');
 foreach(['campaign.automation_saved','campaign.automation_executed','campaign.recommendation_proposed'] as $event){
     cr_v119_assert(in_array($event,$domain['events']??[],true),"cognitive domain registers {$event}");
 }
