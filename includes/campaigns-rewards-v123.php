@@ -614,7 +614,8 @@ function campaigns_rewards_enqueue_node_v123(PDO $pdo,array $campaign,array $jou
         $opsInstance=campaigns_rewards_journey_instance_by_key_v124($pdo,$instanceKey);$journeyInstanceId=(int)($opsInstance['id']??0);
     }
     $scheduled=gmdate('Y-m-d H:i:s',campaigns_rewards_node_schedule_v121($pdo,$campaign,$node,$contact,$safeContext));
-    $idempotency='v123:'.hash('sha256',implode('|',[(int)$campaign['id'],$contactId,(int)$journey['id'],(int)$version['id'],$instanceKey,(string)$t['step_key'],(string)($t['variant_key']??'default'),(int)$node['id']]));
+    $operationKey=campaigns_rewards_text_v100($context['_operation_key']??'',120);
+    $idempotency='v123:'.hash('sha256',implode('|',[(int)$campaign['id'],$contactId,(int)$journey['id'],(int)$version['id'],$instanceKey,(string)$t['step_key'],(string)($t['variant_key']??'default'),(int)$node['id'],$operationKey]));
     $idem=campaigns_rewards_idempotency_begin_v100($pdo,(int)$campaign['merchant_id'],'journey.v123.node.enqueue',$idempotency,['journey_version_id'=>(int)$version['id'],'message_id'=>(int)$node['id'],'contact_id'=>$contactId]);
     if(empty($idem['new'])&&($idem['status']??'')==='completed'&&($idem['result_ref_type']??'')==='campaign_delivery'){
         $existing=campaigns_rewards_delivery_v120($pdo,(int)$idem['result_ref_id']);if($existing)return ['duplicate'=>true,'delivery'=>$existing];
