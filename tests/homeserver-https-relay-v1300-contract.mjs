@@ -41,10 +41,13 @@ const checks=[
   !relay.includes('VP3_HOMESERVER_RELAY_URL')],
  ['canonical HomeServer status prefers the official HTTPS session when present',
   vp3.includes("homeserver_https_v1300_status($userId)")&&vp3.includes("'transport'=>'vp3_https'")],
- ['Cloud status wrapper treats HTTPS heartbeat as authoritative without requiring custom relay configuration',
-  cloudPairing.includes("$httpsStatus = function_exists('homeserver_https_v1300_status')")&&
-  cloudPairing.includes("The official outbound HTTPS session is authoritative")&&
-  cloudPairing.includes("$raw['relay_configured'] = true")],
+ ['modern HTTPS rows cannot silently fall through to legacy custom WebSocket status',
+  vp3.includes("if (empty($row['relay_token_enc']))")&&
+  vp3.includes("keep it in the HTTPS lifecycle")],
+ ['Cloud status wrapper derives standard connection truth once from the canonical VP3 status authority',
+  cloudPairing.includes("$raw = homeserver_vp3_status($userId, $forceRefresh)")&&
+  cloudPairing.includes("if ($transport === 'vp3_https')")&&
+  cloudPairing.includes("$raw['reconnect_status'] = $connected ? 'not_needed' : ($paired ? 'automatic' : 'not_available')")],
  ['HomeServer Cloud surfaces continuously refresh the same live status and interpret SQL timestamps as UTC',
   modal.includes("+'Z'")&&modal.includes("},10000);")&&settingsUi.includes("},10000);")],
  ['Agent runtime routes chat and usage through the transport-neutral per-user operation helper',

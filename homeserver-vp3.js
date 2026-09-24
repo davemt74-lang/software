@@ -7,9 +7,7 @@
   const csrf=String(button.dataset.csrf||'');
   const closeButton=document.getElementById('vp3HomeServerClose');
   const backdrop=modal.querySelector('[data-homeserver-close]');
-  const claimForm=document.getElementById('vp3HomeServerClaimForm');
   const refreshButton=document.getElementById('vp3HomeServerRefresh');
-  const checkButton=document.getElementById('vp3HomeServerCheckPairing');
   const disconnectButton=document.getElementById('vp3HomeServerDisconnect');
   const updateButton=document.getElementById('vp3HomeServerDownload');
   const policySummary=document.getElementById('vp3HomeServerPolicySummary');
@@ -30,7 +28,7 @@
     offline:'HomeServer is offline. The last known policy is not cached in VP3.',
     unsupported:'Update HomeServer to a build with Agent action-policy support.',
     credentials_unavailable:'Re-pair HomeServer to restore policy visibility.',
-    remote_unavailable:'HomeServer policy could not be read through the Remote Bridge.',
+    remote_unavailable:'HomeServer policy could not be read through the VP3 HTTPS connection.',
     invalid_response:'HomeServer returned an unsupported policy response.'
   };
 
@@ -38,7 +36,7 @@
   const show=(id,visible)=>{const el=document.getElementById(id);if(el)el.hidden=!visible};
   const fmtDate=value=>{if(!value)return 'Never';const raw=String(value);const normalized=raw.includes('T')?raw:(raw.replace(' ','T')+'Z');const d=new Date(normalized);return Number.isNaN(d.getTime())?raw:d.toLocaleString()};
   const focusable=()=>[...modal.querySelectorAll('a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])')].filter(el=>!el.hidden&&el.offsetParent!==null);
-  const setBusy=value=>{busy=Boolean(value);[refreshButton,checkButton,disconnectButton,claimForm&&claimForm.querySelector('button[type="submit"]')].filter(Boolean).forEach(el=>{el.disabled=busy;el.setAttribute('aria-busy',busy?'true':'false')})};
+  const setBusy=value=>{busy=Boolean(value);[refreshButton,disconnectButton].filter(Boolean).forEach(el=>{el.disabled=busy;el.setAttribute('aria-busy',busy?'true':'false')})};
 
   function policyBadge(mode){
     const badge=document.createElement('span');
@@ -128,19 +126,15 @@
     const latest=status.latest_release||null;
     text('vp3HomeServerLatest',latest&&latest.version?`v${latest.version}`:'No published release');
     text('vp3HomeServerUpdate',update?'Update available':(status.installed_version&&latest?'Up to date':'Unknown'));
-    text('vp3HomeServerBrain',status.agent_brain_ready?'Ready':(connected&&status.paired?'Inference unavailable':'Not paired'));
+    text('vp3HomeServerBrain',status.agent_brain_ready?'HomeServer ready':(connected&&status.paired?'VP3 Cloud fallback':'Not paired'));
     const inference=status.inference||{};
-    text('vp3HomeServerCompute',inference.compute_source||'—');
-    text('vp3HomeServerProvider',inference.selected_provider||'—');
+    text('vp3HomeServerCompute',inference.compute_source||(connected&&status.paired?'vp3_cloud':'—'));
+    text('vp3HomeServerProvider',inference.selected_provider||(connected&&status.paired?'VP3 Cloud':'—'));
     text('vp3HomeServerModel',inference.model||'—');
     const caps=document.getElementById('vp3HomeServerCapabilities');
     if(caps){caps.replaceChildren();(Array.isArray(status.capabilities)?status.capabilities:[]).slice(0,40).forEach(cap=>{const span=document.createElement('span');span.className='vp3-homeserver-capability';span.textContent=String(cap);caps.appendChild(span)});if(!caps.children.length){const span=document.createElement('span');span.className='vp3-homeserver-capability';span.textContent='No capabilities reported';caps.appendChild(span)}}
     show('vp3HomeServerError',Boolean(status.error));text('vp3HomeServerError',status.error||'');
     show('vp3HomeServerConnectPanel',!status.paired);
-    const pairing=status.pairing||null;
-    show('vp3HomeServerApprovalPanel',Boolean(pairing&&pairing.approval_code));
-    if(pairing&&pairing.approval_code)text('vp3HomeServerApprovalCode',pairing.approval_code);
-    show('vp3HomeServerClaimForm',!(pairing&&pairing.approval_code));
     if(updateButton){const file=latest&&(latest.installer||latest.portable);updateButton.hidden=!file;updateButton.href=file&&file.url?file.url:'#';updateButton.textContent=update?'Download Update':'Download HomeServer'}
     if(disconnectButton)disconnectButton.hidden=status.state==='unpaired';
     if(!status.paired)renderPolicy({available:false,reason:'unpaired'});
@@ -184,9 +178,7 @@
     if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus()}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus()}
   });
   refreshButton&&refreshButton.addEventListener('click',()=>load(true,true));
-  checkButton&&checkButton.addEventListener('click',async()=>{try{await action('check_pairing');await load(true,true)}catch(_){}});
   disconnectButton&&disconnectButton.addEventListener('click',async()=>{if(!confirm('Disconnect this HomeServer from VP3 on this account? The VP3 app permission can also be revoked from HomeServer.'))return;try{await action('disconnect');renderPolicy({available:false,reason:'unpaired'})}catch(_){}});
-  claimForm&&claimForm.addEventListener('submit',async event=>{event.preventDefault();const input=claimForm.querySelector('input[name="claim_code"]');const code=input?String(input.value||'').trim():'';if(!code)return;try{await action('claim',{claim_code:code});if(input)input.value='';await load(true,true)}catch(_){}});
   load(false,false);
   window.setInterval(()=>{if(document.visibilityState==='visible'&&!busy)load(false,!modal.hidden)},10000);
 })();

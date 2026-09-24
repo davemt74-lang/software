@@ -28,12 +28,11 @@ assert.match(modalCss, /\.vp3-homeserver-modal\{[^}]*z-index:20500/, 'HomeServer
 
 assert.match(statusApi, /require_login\(\)/);
 assert.match(statusApi, /verify_csrf\(\)/);
-assert.match(statusApi, /homeserver_approvals_v028_claim_and_pair/);
-assert.match(statusApi, /homeserver_vp3_check_pairing/);
+assert.doesNotMatch(statusApi, /homeserver_approvals_v028_claim_and_pair/);
+assert.doesNotMatch(statusApi, /homeserver_vp3_check_pairing/);
 assert.match(statusApi, /homeserver_cloud_v1200_disconnect/);
 assert.doesNotMatch(statusApi, /homeserver_vp3_disconnect\(\$userId\)/);
 assert.match(statusApi, /homeserver-cloud-pairing-actions-v1200\.php/);
-assert.match(statusApi, /homeserver-approvals-v028\.php/);
 assert.doesNotMatch(statusApi, /\$pairing\s*=\s*homeserver_vp3_claim_and_pair/);
 assert.match(cloudActions, /\/v1\/session\/rotate/);
 assert.match(cloudActions, /homeserver_vp3_encrypt\(\$replacement\)/);
@@ -92,7 +91,10 @@ assert.match(migration, /CREATE TABLE IF NOT EXISTS homeserver_connections/);
 assert.match(migration, /CREATE TABLE IF NOT EXISTS homeserver_releases/);
 assert.match(config, /homeserver[\s\S]*relay_base_url/);
 
-assert.match(modalJs, /check_pairing/);
+assert.doesNotMatch(modalJs, /check_pairing|claim_code/);
+assert.doesNotMatch(sidebar, /vp3HomeServerClaimForm|vp3HomeServerCheckPairing/);
+assert.match(sidebar, /Cloud Connection/);
+assert.match(sidebar, /Open HomeServer Settings/);
 assert.match(modalJs, /update_available/);
 assert.match(modalJs, /agent_brain_ready/);
 assert.match(modalJs, /selected_provider/);

@@ -1,7 +1,6 @@
 <?php
 declare(strict_types=1);
 require_once dirname(__DIR__) . '/includes/bootstrap.php';
-require_once dirname(__DIR__) . '/includes/homeserver-approvals-v028.php';
 require_once dirname(__DIR__) . '/includes/homeserver-policy-v035.php';
 require_once dirname(__DIR__) . '/includes/homeserver-scheduling-connector-v620.php';
 require_once dirname(__DIR__) . '/includes/homeserver-commerce-agent-v1000.php';
@@ -42,24 +41,6 @@ try {
             exit;
         }
         $action = trim((string)($_POST['action'] ?? ''));
-        if ($action === 'claim') {
-            $pairing = homeserver_approvals_v028_claim_and_pair($userId, (string)($_POST['claim_code'] ?? ''));
-            echo json_encode(['ok'=>true,'pairing'=>$pairing,'status'=>homeserver_status_with_connectors_v1000($userId,homeserver_vp3_status($userId,true))], JSON_UNESCAPED_SLASHES);
-            exit;
-        }
-        if ($action === 'check_pairing') {
-            $pairing = homeserver_vp3_check_pairing($userId);
-            $scheduling=homeserver_scheduling_v620_connector_status($userId);
-            $commerce=homeserver_commerce_agent_v1000_status($userId);
-            if(!empty($pairing['ready'])&&!empty(homeserver_cloud_v1200_status($userId,false)['connected'])){
-                try{$scheduling=homeserver_scheduling_v620_provision($userId,false);}catch(Throwable $e){$scheduling['error']='Pairing is complete, but the scheduling connector is awaiting a compatible HomeServer.';}
-                try{$commerce=homeserver_commerce_agent_v1000_provision($userId,false);}catch(Throwable $e){$commerce['error']='Pairing is complete, but Agent Commerce may require the new Commerce permissions to be approved in HomeServer.';}
-            }
-            $status=homeserver_cloud_v1200_status($userId,true);
-            $status['scheduling_connector']=$scheduling;$status['commerce_agent_connector']=$commerce;
-            echo json_encode(['ok'=>true,'pairing'=>$pairing,'status'=>$status], JSON_UNESCAPED_SLASHES);
-            exit;
-        }
         if ($action === 'provision_scheduling' || $action === 'rotate_scheduling') {
             $connector=homeserver_scheduling_v620_provision($userId,$action==='rotate_scheduling');
             $status=homeserver_status_with_connectors_v1000($userId,homeserver_vp3_status($userId,false));$status['scheduling_connector']=$connector;
