@@ -56,4 +56,5 @@ els.remove?.addEventListener('click',async()=>{if(busy||!confirm('Remove this di
 els.startOver?.addEventListener('click',async()=>{if(busy||!confirm('Clear the saved HomeServer pairing and generate a fresh VP3 pairing token?'))return;setBusy(true);try{const data=await post('reset_pairing');applyTokenResponse(data,'Old pairing cleared. A fresh VP3 pairing token is ready.');}catch(e){renderError(e);}finally{setBusy(false);}});
 els.refresh?.addEventListener('click',async()=>{if(busy)return;setBusy(true);try{const data=await getStatus(true);render(data.status||{});}catch(e){renderError(e);}finally{setBusy(false);}});
 (async()=>{try{const data=await getStatus(false);render(data.status||{});}catch(e){renderError(e);}})();
+setInterval(async()=>{if(document.visibilityState!=='visible'||busy||pollTimer)return;try{const data=await getStatus(false);render(data.status||{});}catch(e){renderError(e);}},10000);
 })();

@@ -277,6 +277,46 @@ function homeserver_cloud_v1200_remove_local(int $userId): void
 function homeserver_cloud_v1200_status(int $userId, bool $forceRefresh=false): array
 {
     $row = homeserver_vp3_connection($userId);
+
+    // The official outbound HTTPS session is authoritative and must not depend
+    // on the optional legacy/custom WebSocket relay configuration.
+    $httpsStatus = function_exists('homeserver_https_v1300_status')
+        ? homeserver_https_v1300_status($userId)
+        : null;
+    if (is_array($httpsStatus)) {
+        $raw = homeserver_vp3_status($userId, $forceRefresh);
+        $row = homeserver_vp3_connection($userId) ?? $row;
+        $rowStatus = (string)($row['status'] ?? '');
+        $pending = trim((string)($row['pending_request_id'] ?? '')) !== '';
+        $connected = !empty($raw['connected']);
+        $paired = !empty($raw['paired']);
+
+        $connectionState = 'not_connected';
+        if (in_array($rowStatus, ['disconnected','revoked'], true) || (string)($raw['state'] ?? '') === 'revoked') $connectionState = 'disconnected';
+        elseif ($pending || (!$paired && $rowStatus === 'awaiting_approval')) $connectionState = 'waiting_for_approval';
+        elseif ($connected && $paired) $connectionState = 'connected';
+        elseif ($paired) $connectionState = 'connection_error';
+        elseif ($connected) $connectionState = 'connecting';
+
+        $publicError = trim((string)($raw['error'] ?? '')) !== ''
+            ? homeserver_cloud_v1200_public_error((string)$raw['error'])
+            : '';
+        $raw['build'] = VP3_HOMESERVER_CLOUD_PAIRING_V1200;
+        $raw['connection_state'] = $connectionState;
+        $raw['relay_configured'] = true;
+        $raw['relay_status'] = $connected ? 'connected' : ($paired ? 'reconnecting' : 'available');
+        $raw['relay_host'] = '';
+        $raw['device_name'] = 'HomeServer';
+        $raw['paired_scopes'] = $paired ? homeserver_cloud_v1200_permissions() : [];
+        $raw['reconnect_status'] = $connected ? 'not_needed' : ($paired ? 'automatic' : 'not_available');
+        $raw['pairing'] = $pending ? [
+            'status'=>'awaiting_approval',
+            'approval_code'=>(string)($row['pending_code'] ?? ''),
+        ] : ($raw['pairing'] ?? null);
+        $raw['error'] = $publicError;
+        return $raw;
+    }
+
     $relaySecurity = null;
     $relayError = '';
     try { $relaySecurity = homeserver_cloud_v1200_relay_security(); }
