@@ -194,10 +194,16 @@ function campaigns_rewards_journey_node_save_v121(PDO $pdo,int $merchantId,int $
 
 function campaigns_rewards_journey_nodes_v121(PDO $pdo,int $campaignId,string $journeyKey='',string $trigger=''): array
 {
-    $steps=campaigns_rewards_journey_steps_v120($pdo,$campaignId,'');
-    $out=[];
-    foreach($steps as $row){
-        $t=(array)($row['template']??[]);
+    $q=$pdo->prepare("SELECT cm.* FROM campaign_messages cm
+      INNER JOIN (
+        SELECT campaign_id,message_key,MAX(version_no) latest_version
+        FROM campaign_messages WHERE campaign_id=? GROUP BY campaign_id,message_key
+      ) latest ON latest.campaign_id=cm.campaign_id AND latest.message_key=cm.message_key AND latest.latest_version=cm.version_no
+      WHERE cm.campaign_id=? AND cm.status='active' ORDER BY cm.id");
+    $q->execute([$campaignId,$campaignId]);$out=[];
+    foreach($q->fetchAll()?:[] as $row){
+        $row['template']=json_decode((string)($row['template_json']??''),true)?:[];
+        $t=(array)$row['template'];
         if(($t['kind']??'')!=='journey_node')continue;
         if($journeyKey!==''&&(string)($t['journey_key']??'')!==$journeyKey)continue;
         if($trigger!==''&&(string)($t['trigger_event']??'manual')!==$trigger)continue;
@@ -622,7 +628,10 @@ function campaigns_rewards_dispatch_delivery_v121(PDO $pdo,int $deliveryId): arr
 
     $exit=campaigns_rewards_journey_exit_reason_v121($pdo,$delivery);
     if($exit!==null){
-        $d=campaigns_rewards_complete_orchestration_node_v121($pdo,$delivery,'journey_exit',['exit_reason'=>$exit]);
+        $meta=$delivery['metadata'];$meta['exit_reason']=$exit;$meta['completed_at']=gmdate('Y-m-d H:i:s');
+        $pdo->prepare("UPDATE campaign_deliveries SET status='suppressed',metadata_json=? WHERE id=?")
+            ->execute([campaigns_rewards_json_v100($meta),$deliveryId]);
+        $d=campaigns_rewards_delivery_v120($pdo,$deliveryId)?:$delivery;
         campaigns_rewards_activity_event_v100($pdo,(int)$delivery['merchant_id'],'campaign.journey_exited',['campaign_id'=>(int)$delivery['campaign_id'],'contact_id'=>(int)$delivery['contact_id']],[
             'summary'=>'Campaign journey exited','campaign_public_id'=>$delivery['campaign_public_id'],'journey_key'=>$delivery['metadata']['journey_key']??'','reason'=>$exit
         ],(string)$delivery['environment'],null,'automation');
@@ -747,7 +756,7 @@ function campaigns_rewards_provider_event_v121(PDO $pdo,int $deliveryId,string $
 {
     $delivery=campaigns_rewards_delivery_v120($pdo,$deliveryId)?:throw new RuntimeException('Campaign delivery not found.');
     $providerId=campaigns_rewards_text_v100($payload['provider_message_id']??'',190);
-    if($providerId!==''&&!empty($delivery['external_source_id'])&&!hash_equals((string)$delivery['external_source_id'],$providerId))
+    if($provider==='twilio'&&$providerId!==''&&!empty($delivery['external_source_id'])&&!hash_equals((string)$delivery['external_source_id'],$providerId))
         throw new RuntimeException('Provider message does not match Campaign delivery.');
 
     $normalized=strtolower($event);$terminalFailure=false;$mapped='';
