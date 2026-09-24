@@ -143,9 +143,10 @@ function homeserver_https_v1300_authenticate(string $sessionToken,string $device
     if(strlen($sessionToken)<32||!preg_match('/^hs-[a-f0-9]{24}$/',$deviceId))throw new RuntimeException('HomeServer HTTPS session authorization is invalid.');
     $pdo=db();if(!$pdo)throw new RuntimeException('Database connection is unavailable.');
     homeserver_https_v1300_ensure_schema($pdo);
-    $q=$pdo->prepare("SELECT * FROM homeserver_https_sessions WHERE session_token_hash=? AND device_id=? AND status='active' LIMIT 1");
+    $q=$pdo->prepare("SELECT * FROM homeserver_https_sessions WHERE session_token_hash=? AND device_id=? LIMIT 1");
     $q->execute([hash('sha256',$sessionToken),$deviceId]);$row=$q->fetch();
-    if(!$row)throw new RuntimeException('HomeServer HTTPS session is no longer valid.');
+    if(!$row)throw new RuntimeException('HomeServer HTTPS session is not authorized.');
+    if((string)($row['status']??'')!=='active')throw new RuntimeException('HomeServer HTTPS session was revoked.');
     return $row;
 }
 
