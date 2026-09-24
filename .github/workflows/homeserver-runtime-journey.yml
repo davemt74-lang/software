@@ -50,6 +50,7 @@ jobs:
           php -l includes/homeserver-scheduling-connector-v620.php
           php -l includes/homeserver-commerce-agent-v1000.php
           php -l api/homeserver-connection-v1200.php
+          php -l api/homeserver-status.php
           php -l settings-homeserver.php
           php -l setup.php
           php -l upgrade.php
