@@ -193,7 +193,7 @@ if ($mainSidebarRenderAgentVoiceAssets) $GLOBALS['VP3_MEMBER_AGENT_VOICE_MENU_AS
       <div class="vp3-homeserver-summary" id="vp3HomeServerSummary" data-state="unpaired"><span class="vp3-homeserver-dot" aria-hidden="true"></span><div><strong id="vp3HomeServerSummaryTitle">Checking HomeServer…</strong><span id="vp3HomeServerSummaryDetail">Loading connection status.</span></div></div>
       <div class="vp3-homeserver-error" id="vp3HomeServerError" hidden></div>
       <div class="vp3-homeserver-grid">
-        <div class="vp3-homeserver-field"><small>Remote Bridge</small><strong id="vp3HomeServerRelay">—</strong></div>
+        <div class="vp3-homeserver-field"><small>Cloud Connection</small><strong id="vp3HomeServerRelay">—</strong></div>
         <div class="vp3-homeserver-field"><small>Last Seen</small><strong id="vp3HomeServerLastSeen">—</strong></div>
         <div class="vp3-homeserver-field"><small>Installed</small><strong id="vp3HomeServerInstalled">—</strong></div>
         <div class="vp3-homeserver-field"><small>Latest VP3 Release</small><strong id="vp3HomeServerLatest">—</strong></div>
@@ -204,9 +204,9 @@ if ($mainSidebarRenderAgentVoiceAssets) $GLOBALS['VP3_MEMBER_AGENT_VOICE_MENU_AS
         <div class="vp3-homeserver-field"><small>Model</small><strong id="vp3HomeServerModel">—</strong></div>
       </div>
       <div class="vp3-homeserver-panel" id="vp3HomeServerConnectPanel">
-        <h3>Connect this VP3 account</h3><p>Enable Remote Bridge in HomeServer, then enter the one-time relay claim code. VP3 will ask HomeServer to approve its scoped app permissions separately.</p>
-        <form class="vp3-homeserver-form" id="vp3HomeServerClaimForm"><input name="claim_code" maxlength="40" autocomplete="off" spellcheck="false" placeholder="Remote Bridge claim code" aria-label="HomeServer Remote Bridge claim code"><button class="vp3-homeserver-button primary" type="submit">Connect</button></form>
-        <div id="vp3HomeServerApprovalPanel" hidden><p>Approve the VP3 pairing code in the local HomeServer Control Center:</p><span class="vp3-homeserver-approval-code" id="vp3HomeServerApprovalCode">—</span><div><button class="vp3-homeserver-button primary" id="vp3HomeServerCheckPairing" type="button">Check Approval</button></div></div>
+        <h3>Connect HomeServer</h3>
+        <p>Use the single pairing flow in Settings → HomeServer. Generate the one-time VP3 pairing token there, then paste it into the local HomeServer.</p>
+        <div><a class="vp3-homeserver-download primary" href="<?= e(url('/settings-homeserver.php')) ?>">Open HomeServer Settings</a></div>
       </div>
       <div class="vp3-homeserver-panel"><h3>Capabilities</h3><p>Only capabilities reported by the connected HomeServer are shown. VP3 does not receive other apps’ raw private history.</p><div class="vp3-homeserver-capabilities" id="vp3HomeServerCapabilities"><span class="vp3-homeserver-capability">Checking…</span></div></div>
       <section class="vp3-homeserver-panel agent-policy-panel" id="vp3HomeServerPolicy" aria-labelledby="vp3HomeServerPolicyTitle">
@@ -218,7 +218,7 @@ if ($mainSidebarRenderAgentVoiceAssets) $GLOBALS['VP3_MEMBER_AGENT_VOICE_MENU_AS
     </div>
   </section>
 </div>
-<script src="<?= e(url('/homeserver-vp3.js?v=homeserver-status-v1301-20260924')) ?>" defer></script>
+<script src="<?= e(url('/homeserver-vp3.js?v=homeserver-connection-core-v1303-20260924')) ?>" defer></script>
 <script src="<?= e(url('/agent-ui-v034.js?v=agent-ui-v034-20260913-sidebar-footer')) ?>" defer></script>
 <?php if ($mainSidebarIsChat): ?><script data-chat-rail-controls-v132 src="<?= e(url('/chat-rail-controls-v132.js?v=20260911-1')) ?>" defer></script><?php endif; ?>
 <?php if ($mainSidebarRenderAgentVoiceAssets): ?><script data-member-agent-voice-menu src="<?= e(url('/member-agent-voice-menu.js?v=agent-voice-menu-20260913')) ?>" defer></script><?php endif; ?>
