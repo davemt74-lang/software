@@ -37,7 +37,7 @@ function campaigns_rewards_release_readiness_v125(?PDO $pdo=null): array
       'entry'=>function_exists('campaigns_rewards_entry_decision_v125'),
       'offer'=>function_exists('campaigns_rewards_select_offer_v125')&&function_exists('campaigns_rewards_decision_validate_issue_v125'),
       'preview'=>function_exists('campaigns_rewards_preview_decision_v125'),
-      'cognitive_domain'=>($domain['implementation_status']??'')==='integrated-v1.25',
+      'cognitive_domain'=>in_array(($domain['implementation_status']??''),['integrated-v1.25','integrated-v1.26'],true),
     ];
     return ['build'=>VP3_CAMPAIGNS_REWARDS_RELEASE_V125,'ready'=>!in_array(false,$checks,true),'checks'=>$checks,'authority'=>'diagnostic_only'];
 }
