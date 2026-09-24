@@ -126,10 +126,10 @@
     const latest=status.latest_release||null;
     text('vp3HomeServerLatest',latest&&latest.version?`v${latest.version}`:'No published release');
     text('vp3HomeServerUpdate',update?'Update available':(status.installed_version&&latest?'Up to date':'Unknown'));
-    text('vp3HomeServerBrain',status.agent_brain_ready?'Ready':(connected&&status.paired?'Inference unavailable':'Not paired'));
+    text('vp3HomeServerBrain',status.agent_brain_ready?'HomeServer ready':(connected&&status.paired?'VP3 Cloud fallback':'Not paired'));
     const inference=status.inference||{};
-    text('vp3HomeServerCompute',inference.compute_source||'—');
-    text('vp3HomeServerProvider',inference.selected_provider||'—');
+    text('vp3HomeServerCompute',inference.compute_source||(connected&&status.paired?'vp3_cloud':'—'));
+    text('vp3HomeServerProvider',inference.selected_provider||(connected&&status.paired?'VP3 Cloud':'—'));
     text('vp3HomeServerModel',inference.model||'—');
     const caps=document.getElementById('vp3HomeServerCapabilities');
     if(caps){caps.replaceChildren();(Array.isArray(status.capabilities)?status.capabilities:[]).slice(0,40).forEach(cap=>{const span=document.createElement('span');span.className='vp3-homeserver-capability';span.textContent=String(cap);caps.appendChild(span)});if(!caps.children.length){const span=document.createElement('span');span.className='vp3-homeserver-capability';span.textContent='No capabilities reported';caps.appendChild(span)}}
