@@ -1,0 +1,81 @@
+name: Package VP3 Cloud HomeServer Core v2.0
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build cumulative deploy ZIP
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist/includes dist/api dist/docs
+
+          cp api/homeserver-https-pair-v1300.php dist/api/
+          cp api/homeserver-https-poll-v1300.php dist/api/
+          cp api/homeserver-status.php dist/api/
+          cp api/homeserver-connection-v1200.php dist/api/
+
+          cp includes/bootstrap.php dist/includes/
+          cp includes/homeserver-agent-v018.php dist/includes/
+          cp includes/homeserver-cloud-pairing-actions-v1200.php dist/includes/
+          cp includes/homeserver-cloud-pairing-v1200.php dist/includes/
+          cp includes/homeserver-https-relay-v1300.php dist/includes/
+          cp includes/homeserver-vp3.php dist/includes/
+          cp includes/main-sidebar.php dist/includes/
+
+          cp homeserver-settings-v1210.js dist/
+          cp homeserver-vp3.js dist/
+          cp settings-homeserver.php dist/
+          cp setup.php dist/
+          cp upgrade.php dist/
+          cp docs/HOMESERVER_CLOUD_V2_RELEASE_BASELINE.md dist/docs/
+
+          cat > dist/DEPLOY.txt <<'EOF'
+          VP3 Cloud HomeServer Core v2.0
+          Matching release for HomeServer v2.0.
+
+          Upload these files preserving paths and replace the existing files.
+          Then run upgrade.php once.
+
+          Shared product release version: 2.0
+          Internal protocol and schema identifiers such as v1300/v1200 remain unchanged.
+          This package includes the verified v13.06 first-poll transaction fix.
+          EOF
+
+          cd dist
+          zip -r vp3-cloud-v2.0.zip \
+            api/homeserver-https-pair-v1300.php \
+            api/homeserver-https-poll-v1300.php \
+            api/homeserver-status.php \
+            api/homeserver-connection-v1200.php \
+            includes/bootstrap.php \
+            includes/homeserver-agent-v018.php \
+            includes/homeserver-cloud-pairing-actions-v1200.php \
+            includes/homeserver-cloud-pairing-v1200.php \
+            includes/homeserver-https-relay-v1300.php \
+            includes/homeserver-vp3.php \
+            includes/main-sidebar.php \
+            homeserver-settings-v1210.js \
+            homeserver-vp3.js \
+            settings-homeserver.php \
+            setup.php \
+            upgrade.php \
+            docs/HOMESERVER_CLOUD_V2_RELEASE_BASELINE.md \
+            DEPLOY.txt
+
+      - name: Upload deploy ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: vp3-cloud-v2.0
+          path: dist/vp3-cloud-v2.0.zip
+          if-no-files-found: error
+          retention-days: 14
