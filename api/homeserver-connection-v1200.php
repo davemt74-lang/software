@@ -72,11 +72,15 @@ try {
     $action = trim((string)($_POST['action'] ?? ''));
     $pairing = null;
     $accountToken = null;
+    $roundTrip = null;
 
     if ($action === 'generate_pairing_token') {
         $accountToken = homeserver_account_v1210_generate_token($userId);
     } elseif ($action === 'reconnect') {
         homeserver_cloud_v1200_reconnect($userId);
+    } elseif ($action === 'test_connection') {
+        if(!function_exists('homeserver_shared_v210_roundtrip'))throw new RuntimeException('HomeServer v2.1 diagnostics are unavailable.');
+        $roundTrip=homeserver_shared_v210_roundtrip($userId);
     } elseif ($action === 'disconnect') {
         try { homeserver_commerce_agent_v1000_revoke($userId); } catch (Throwable $ignored) {}
         try { homeserver_scheduling_v620_revoke($userId); } catch (Throwable $ignored) {}
@@ -104,6 +108,7 @@ try {
     $response = ['ok'=>true,'status'=>homeserver_connection_v1200_response($userId,true)];
     if (is_array($pairing)) $response['pairing'] = $pairing;
     if (is_array($accountToken)) $response['account_pairing_token'] = $accountToken;
+    if (is_array($roundTrip)) $response['round_trip'] = $roundTrip;
     echo json_encode($response, JSON_UNESCAPED_SLASHES);
 } catch (Throwable $e) {
     http_response_code(400);
