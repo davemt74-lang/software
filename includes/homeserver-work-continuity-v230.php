@@ -298,7 +298,7 @@ function homeserver_work_v230_after_homeserver_dispatch(PDO $pdo,array $user,arr
     if($reason==='homeserver_approval_pending')$state='waiting_local_approval';
     elseif($reason==='homeserver_continuity_pending')$state='running';
     elseif(!empty($result['ok'])&&$reason==='completed')$state='completed';
-    elseif(!empty($result['retryable']))$state='waiting_homeserver';
+    elseif(!empty($result['retryable']))$state=homeserver_work_v230_connection_ready($uid)?'retry_scheduled':'waiting_homeserver';
     else $state='failed';
     homeserver_work_v230_transition($pdo,$user,$row,$state,$state==='completed'?'completed':'executing',(string)($result['reason']??''),true);
 }
