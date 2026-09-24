@@ -73,8 +73,8 @@ function vp3_cognitive_campaigns_rewards_contract_v2600(): array
     return [
         'id'=>'campaigns_rewards',
         'label'=>'Campaigns & Rewards',
-        'phase'=>'campaigns-rewards-v1.20',
-        'implementation_status'=>'integrated-v1.20',
+        'phase'=>'campaigns-rewards-v1.21',
+        'implementation_status'=>'integrated-v1.21',
         'plugin_key'=>'campaigns_rewards',
         'plugin_catalog_registered'=>true,
         'authority'=>[
@@ -105,6 +105,7 @@ function vp3_cognitive_campaigns_rewards_contract_v2600(): array
             'campaign.proof_submit','campaign.instant_claim','campaign.interest_signup','campaign.event_rsvp','campaign.partner_signup','campaign.community_signup',
             'campaign.rewards_updated','campaign.automation_saved','campaign.automation_executed','campaign.recommendation_proposed',
             'campaign.message_saved','campaign.journey_queued','campaign.message_sent','campaign.message_delivered','campaign.message_viewed','campaign.message_failed','campaign.message_suppressed','campaign.message_converted',
+            'campaign.journey_node_saved','campaign.journey_node_queued','campaign.journey_started','campaign.journey_branch_selected','campaign.journey_node_completed','campaign.journey_exited','campaign.message_retry_scheduled','campaign.message_dead_lettered','campaign.provider_event_received',
             'campaign.enrollment_qualified','campaign.enrollment_created','campaign.enrollment_completed',
             'campaign.enrollment_disqualified','campaign.case_opened','campaign.case_resolved','campaign.case_reopened',
             'reward.product_created','reward.product_updated','reward.issued','reward.sent','reward.viewed',
@@ -128,6 +129,7 @@ function vp3_cognitive_campaigns_rewards_contract_v2600(): array
             'campaign.proof_submit'=>'actionable','campaign.instant_claim'=>'outcome','campaign.interest_signup'=>'informational','campaign.event_rsvp'=>'informational','campaign.partner_signup'=>'outcome','campaign.community_signup'=>'informational',
             'campaign.rewards_updated'=>'informational','campaign.automation_saved'=>'informational','campaign.automation_executed'=>'outcome','campaign.recommendation_proposed'=>'actionable',
             'campaign.message_saved'=>'informational','campaign.journey_queued'=>'informational','campaign.message_sent'=>'informational','campaign.message_delivered'=>'completion','campaign.message_viewed'=>'informational','campaign.message_failed'=>'failure_recovery','campaign.message_suppressed'=>'informational','campaign.message_converted'=>'outcome',
+            'campaign.journey_node_saved'=>'informational','campaign.journey_node_queued'=>'informational','campaign.journey_started'=>'informational','campaign.journey_branch_selected'=>'informational','campaign.journey_node_completed'=>'completion','campaign.journey_exited'=>'completion','campaign.message_retry_scheduled'=>'actionable','campaign.message_dead_lettered'=>'failure_recovery','campaign.provider_event_received'=>'informational',
             'campaign.enrollment_qualified'=>'informational','campaign.enrollment_created'=>'actionable','campaign.enrollment_completed'=>'completion','campaign.enrollment_disqualified'=>'completion',
             'campaign.case_opened'=>'actionable','campaign.case_resolved'=>'outcome','campaign.case_reopened'=>'actionable',
             'reward.product_created'=>'informational','reward.product_updated'=>'informational','reward.issued'=>'actionable','reward.sent'=>'informational','reward.viewed'=>'informational',
@@ -146,6 +148,7 @@ function vp3_cognitive_campaigns_rewards_contract_v2600(): array
         'current_state'=>'cognitive_current_state_v2590',
         'presentation'=>'cognitive_presentation_firewall_v2590',
         'notes'=>[
+            'Campaigns & Rewards V1.21 adds graph orchestration, deterministic A/B variants, timezone delivery, bounded retry/dead-letter handling and signed provider delivery events over the existing message/delivery authorities.',
             'Campaigns & Rewards V1.20 adds versioned Campaign messaging journeys over the existing message, delivery and idempotency authorities without a second scheduler.',
             'Campaigns & Rewards V1.19 activates the existing Campaign Automation Rule and Rule Execution authorities for governed lifecycle triggers.',
             'Event automations are constrained to the triggering CRM contact; scheduled birthday and win-back rules may evaluate configured CRM audiences.',

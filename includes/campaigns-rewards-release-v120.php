@@ -53,7 +53,7 @@ function campaigns_rewards_release_readiness_v120(?PDO $pdo=null): array
         'expiration'=>function_exists('campaigns_rewards_queue_expiration_reminders_v120'),
         'performance'=>function_exists('campaigns_rewards_message_performance_v120'),
         'message_tables'=>$pdo&&table_exists('campaign_messages')&&table_exists('campaign_deliveries')&&table_exists('campaign_idempotency_keys'),
-        'cognitive_domain'=>($domain['implementation_status']??'')==='integrated-v1.20',
+        'cognitive_domain'=>in_array(($domain['implementation_status']??''),['integrated-v1.20','integrated-v1.21'],true),
         'message_event'=>in_array('campaign.message_sent',(array)($domain['events']??[]),true),
         'journey_event'=>in_array('campaign.journey_queued',(array)($domain['events']??[]),true),
         'conversion_event'=>in_array('campaign.message_converted',(array)($domain['events']??[]),true),
