@@ -68,7 +68,7 @@ const checks=[
  ['consolidated CI runs V1.26 PHP/JS contracts and lint',
   workflow.includes('Campaigns & Rewards V1.26 contract')&&workflow.includes('tests/campaigns-rewards-v126.mjs')&&workflow.includes('php -l includes/campaigns-rewards-v126.php')],
  ['production package identifies V1.26 and asserts schema runtime release migration and cron',
-  packageFlow.includes('"Campaigns & Rewards V1.26"')&&packageFlow.includes('campaigns-rewards-schema-v126.php')&&packageFlow.includes('campaigns-rewards-v126.php')&&packageFlow.includes('upgrade-campaigns-rewards-v126.sql')&&packageFlow.includes('cron/campaigns-rewards-v126.php')],
+  packageFlow.includes('"VP3 Cloud Production"')&&packageFlow.includes('campaigns-rewards-schema-v126.php')&&packageFlow.includes('campaigns-rewards-v126.php')&&packageFlow.includes('upgrade-campaigns-rewards-v126.sql')&&packageFlow.includes('cron/campaigns-rewards-v126.php')],
  ['documentation states authority lifecycle fatigue offer holdout and deployment boundaries',
   docs.includes('Durable outcome attribution')&&docs.includes('Immutable optimization snapshots')&&docs.includes('Lifecycle intelligence')&&docs.includes('Fatigue and diminishing response')&&docs.includes('Holdouts and measurement language')&&docs.includes('Agent governance')],
 ];
