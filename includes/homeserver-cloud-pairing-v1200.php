@@ -236,8 +236,11 @@ function homeserver_cloud_v1200_check_pairing(int $userId): array
 
 function homeserver_cloud_v1200_reconnect(int $userId): array
 {
-    homeserver_cloud_v1200_relay_security();
     if (!homeserver_vp3_connection($userId)) throw new RuntimeException('HomeServer is not connected to this account.');
+    $status = homeserver_vp3_status($userId, true);
+    if ((string)($status['transport'] ?? 'vp3_https') !== 'vp3_https') {
+        homeserver_cloud_v1200_relay_security();
+    }
     return homeserver_cloud_v1200_status($userId, true);
 }
 
