@@ -79,9 +79,8 @@ assert.match(legacyApi, /homeserver-cloud-pairing-actions-v1200\.php/);
 assert.doesNotMatch(legacyApi, /homeserver_vp3_disconnect\(\$userId\)/);
 
 assert.match(page, /Generate Pairing Token/);
-assert.match(page, /Enter token in HomeServer/);
-assert.match(page, /Approve locally/);
-assert.match(page, /No second code is required/);
+assert.match(page, /Paste and pair/);
+assert.match(page, /HomeServer configures the secure two-way VP3 HTTPS connection automatically/);
 assert.match(page, /account-token-v1/);
 assert.match(page, /homeserver-settings-v1210\.js/);
 assert.doesNotMatch(page, /HomeServer connection code/);
