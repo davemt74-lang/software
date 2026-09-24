@@ -14,6 +14,7 @@
   const policyList=document.getElementById('vp3HomeServerPolicies');
   let status=null;
   let busy=false;
+  let policyBusy=false;
   let previousOverflow='';
   let previousFocus=null;
 
@@ -149,24 +150,38 @@
     const query=params.toString();
     return api+(query?`?${query}`:'');
   }
-  async function load(force,includePolicy){
+  async function load(force){
     if(busy||!api)return;setBusy(true);
     try{
-      const response=await fetch(statusUrl(Boolean(force),Boolean(includePolicy)),{credentials:'same-origin',cache:'no-store',headers:{Accept:'application/json'}});
+      const response=await fetch(statusUrl(Boolean(force),false),{credentials:'same-origin',cache:'no-store',headers:{Accept:'application/json'}});
       const data=await parse(response);
       render(data.status);
-      if(includePolicy)renderPolicy(data.policy||{available:false,reason:'unavailable'});
+      return data.status;
     }catch(error){
+      const message=error&&error.message?error.message:'HomeServer status unavailable';
       if(error&&error.data&&error.data.status)render(error.data.status);
-      if(includePolicy)renderPolicy({available:false,reason:'remote_unavailable'});
-      button.dataset.state='error';button.title=error&&error.message?error.message:'HomeServer status unavailable';button.setAttribute('aria-label','HomeServer status unavailable');
+      else render({state:'error',connected:false,paired:Boolean(status&&status.paired),error:message});
+      renderPolicy({available:false,reason:'remote_unavailable'});
+      button.dataset.state='error';button.title=message;button.setAttribute('aria-label','HomeServer status unavailable');
+      return null;
     }finally{setBusy(false)}
+  }
+  async function loadPolicy(){
+    if(policyBusy||!api||!status||!status.connected)return;
+    policyBusy=true;
+    try{
+      const response=await fetch(statusUrl(false,true),{credentials:'same-origin',cache:'no-store',headers:{Accept:'application/json'}});
+      const data=await parse(response);
+      renderPolicy(data.policy||{available:false,reason:'unavailable'});
+    }catch(_){
+      renderPolicy({available:false,reason:'remote_unavailable'});
+    }finally{policyBusy=false}
   }
   async function action(name,extra){
     if(busy)return;setBusy(true);
     try{const body=new URLSearchParams({action:name,csrf_token:csrf,...(extra||{})});const response=await fetch(api,{method:'POST',credentials:'same-origin',cache:'no-store',headers:{Accept:'application/json','Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},body});const data=await parse(response);render(data.status);return data}catch(error){if(error&&error.data&&error.data.status)render(error.data.status);const el=document.getElementById('vp3HomeServerError');if(el){el.hidden=false;el.textContent=error&&error.message?error.message:'HomeServer request failed.'}throw error}finally{setBusy(false)}
   }
-  function open(){previousFocus=document.activeElement;previousOverflow=document.documentElement.style.overflow;modal.hidden=false;document.documentElement.style.overflow='hidden';closeButton&&closeButton.focus();load(true,true)}
+  function open(){previousFocus=document.activeElement;previousOverflow=document.documentElement.style.overflow;modal.hidden=false;document.documentElement.style.overflow='hidden';closeButton&&closeButton.focus();load(true).then(current=>{if(current&&current.connected)loadPolicy()})}
   function close(){modal.hidden=true;document.documentElement.style.overflow=previousOverflow;if(previousFocus&&typeof previousFocus.focus==='function')previousFocus.focus();else button.focus()}
   button.addEventListener('click',open);closeButton&&closeButton.addEventListener('click',close);backdrop&&backdrop.addEventListener('click',close);
   document.addEventListener('keydown',event=>{
@@ -177,8 +192,8 @@
     const first=items[0],last=items[items.length-1];
     if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus()}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus()}
   });
-  refreshButton&&refreshButton.addEventListener('click',()=>load(true,true));
+  refreshButton&&refreshButton.addEventListener('click',()=>load(true).then(current=>{if(current&&current.connected)loadPolicy()}));
   disconnectButton&&disconnectButton.addEventListener('click',async()=>{if(!confirm('Disconnect this HomeServer from VP3 on this account? The VP3 app permission can also be revoked from HomeServer.'))return;try{await action('disconnect');renderPolicy({available:false,reason:'unpaired'})}catch(_){}});
-  load(false,false);
-  window.setInterval(()=>{if(document.visibilityState==='visible'&&!busy)load(false,!modal.hidden)},10000);
+  load(false);
+  window.setInterval(()=>{if(document.visibilityState==='visible'&&!busy)load(false)},5000);
 })();
