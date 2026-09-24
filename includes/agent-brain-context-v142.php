@@ -91,6 +91,25 @@ function agent_brain_v99_context(array $user,string $query,int $limit=12): array
         }
     }
 
+    if(function_exists('homeserver_execution_v220_projection')){
+        $routing=homeserver_execution_v220_projection((int)($user['id']??0));
+        $routes=is_array($routing['routes']??null)?$routing['routes']:[];
+        $lines=[
+          'HomeServer: '.(!empty($routing['connected'])?'connected':'offline').' · version '.((string)($routing['homeserver_version']??'')?:'unknown'),
+          'Agent compute: '.(string)($routes['agent_compute']??'cloud'),
+          'Local files: '.(string)($routes['local_files']??'unavailable'),
+          'Local knowledge: '.(string)($routes['local_knowledge']??'unavailable'),
+          'Local tools: '.(string)($routes['local_tools']??'unavailable'),
+          'Local voice: '.(string)($routes['local_voice']??'unavailable'),
+          'Devices: '.(string)($routes['devices']??'unavailable'),
+        ];
+        $context[]=[
+          'source'=>'homeserver:execution-routing',
+          'title'=>'HomeServer execution availability',
+          'text'=>implode("\n",$lines),
+        ];
+    }
+
     $archiveRows=agent_brain_v99_rows('SELECT a.conversation_id,a.role,a.input_mode,a.message_text,a.created_at FROM agent_chat_archive a WHERE a.user_id=? AND '.$archiveScope.' ORDER BY a.created_at DESC,a.id DESC LIMIT 160',array_merge([$uid],$archiveParams));
     $archiveRows=agent_brain_v99_pick($archiveRows,$terms,$deep?24:8,$deep,static fn(array $r):string=>(string)($r['message_text']??''),$activity);if($archiveRows){$lines=[];foreach(array_reverse($archiveRows) as $r)$lines[]='['.$r['created_at'].' · conversation '.(int)$r['conversation_id'].'] '.strtoupper((string)$r['role']).': '.agent_brain_v99_text($r['message_text'],440);$context[]=['source'=>'agent-brain:conversation-history','title'=>'Retrieved conversation history','text'=>implode("\n",$lines)];}
 
