@@ -322,10 +322,12 @@ function campaigns_rewards_prepare_message_v125(PDO $pdo,array $delivery,array $
     if(campaigns_rewards_decision_schema_ready_v125($pdo)&&(string)($template['offer_mode']??'none')!=='none'){$od=campaigns_rewards_offer_decision_v125($pdo,$delivery,$template,$contact,$message);$decision=$od['decision'];$offer=$od['outcome'];$context=$od['context'];}
     $ctx=campaigns_rewards_message_context_v120($pdo,$delivery,$contact,$message);
     if(!empty($offer['reward_issuance_id'])){$delivery=campaigns_rewards_delivery_v120($pdo,(int)$delivery['id'])?:$delivery;$ctx=campaigns_rewards_message_context_v120($pdo,$delivery,$contact,$message);}
-    $context['offer']=$offer;$tokens=campaigns_rewards_flatten_tokens_v125($context);
+    $context['offer']=$offer;$tokens=[];
+    if(!empty($template['personalization_enabled']))$tokens=campaigns_rewards_flatten_tokens_v125($context);
     $tokens+=['{{offer_name}}'=>(string)($offer['name']??''),'{{offer_value_minor}}'=>(string)($offer['retail_value_minor']??''),'{{offer_currency}}'=>(string)($offer['currency']??'')];
     $ctx['tokens']=array_merge($ctx['tokens'],$tokens);$ctx['decision_context']=$context;$ctx['offer']=$offer;$ctx['decision']=$decision;
-    return ['delivery'=>$delivery,'ctx'=>$ctx,'subject'=>campaigns_rewards_render_personalized_v125((string)$delivery['subject'],$ctx['tokens'],$context),'body'=>campaigns_rewards_render_personalized_v125((string)$delivery['body'],$ctx['tokens'],$context)];
+    $subject=campaigns_rewards_render_personalized_v125((string)$delivery['subject'],$ctx['tokens'],$context);$body=campaigns_rewards_render_personalized_v125((string)$delivery['body'],$ctx['tokens'],$context);
+    return ['delivery'=>$delivery,'ctx'=>$ctx,'subject'=>$subject,'body'=>$body];
 }
 
 function campaigns_rewards_decisions_v125(PDO $pdo,int $merchantId,int $campaignId=0,int $journeyId=0,int $limit=100): array
@@ -344,8 +346,12 @@ function campaigns_rewards_validate_decision_graph_v125(PDO $pdo,int $journeyId,
     $journey=campaigns_rewards_journey_v123($pdo,$journeyId);$errors=[];$warnings=[];
     if(!$journey)return ['errors'=>[['code'=>'decision_journey_missing','message'=>'Journey is unavailable for decision validation.']],'warnings'=>[]];
     $attached=campaigns_rewards_campaign_reward_ids_v118($pdo,(int)$journey['campaign_id']);
+    $entrySignatures=[];
     foreach(campaigns_rewards_graph_nodes_v123($graph) as $node){
         $t=(array)$node['template'];$step=(string)($t['step_key']??'step');$type=(string)($t['node_type']??'message');
+        if(!empty($t['entry_node']))$entrySignatures[$step][]=implode('|',[
+          max(0,(int)($t['holdout_percent']??0)),(string)($t['conflict_group']??''),max(0,(int)($t['conflict_window_hours']??0)),max(0,(int)($t['decision_priority']??100))
+        ]);
         $field=(string)($t['decision_field']??'');$offer=(string)($t['offer_mode']??'none');$offerAction=(string)($t['offer_action']??'select');
         if($field!==''&&!isset(campaigns_rewards_decision_fields_v125()[$field]))$errors[]=['code'=>'invalid_decision_field','message'=>"{$step} uses an unsupported V1.25 decision field."];
         if($field!==''&&$type!=='decision')$warnings[]=['code'=>'decision_field_non_branch','message'=>"{$step} has a decision field but is not a Decision node; that branch rule will not execute."];
@@ -362,7 +368,24 @@ function campaigns_rewards_validate_decision_graph_v125(PDO $pdo,int $journeyId,
         if($group===''&&$window>0)$warnings[]=['code'=>'conflict_group_missing','message'=>"{$step} has a conflict window but no conflict group."];
         if(!empty($t['personalization_enabled'])&&$type!=='message')$warnings[]=['code'=>'personalization_non_message','message'=>"{$step} enables message personalization on a non-message node."];
     }
+    foreach($entrySignatures as $step=>$signatures)if(count(array_unique($signatures))>1)$errors[]=['code'=>'entry_decision_variant_mismatch','message'=>"A/B variants at entry step {$step} must use identical holdout and conflict controls because entry eligibility is decided before variant selection."];
     return ['errors'=>$errors,'warnings'=>$warnings];
+}
+
+function campaigns_rewards_preview_entry_v125(PDO $pdo,array $journey,array $version,int $contactId): array
+{
+    $entry=null;foreach(campaigns_rewards_graph_nodes_v123($version['graph']) as $node)if(!empty($node['template']['entry_node'])){$entry=(array)$node['template'];break;}
+    if(!$entry)return ['allowed'=>false,'reason'=>'no_entry'];
+    $holdout=max(0,min(90,(int)($entry['holdout_percent']??0)));$bucket=(hexdec(substr(hash('sha256',(int)$journey['campaign_id'].'|'.(int)$version['id'].'|'.$contactId),0,8))%100)+1;
+    if($holdout>0&&$bucket<=$holdout)return ['allowed'=>false,'reason'=>'holdout','bucket'=>$bucket,'holdout_percent'=>$holdout];
+    $group=(string)($entry['conflict_group']??'');$window=max(0,(int)($entry['conflict_window_hours']??0));
+    if($group!==''&&$window>0){
+        $cutoff=gmdate('Y-m-d H:i:s',time()-$window*3600);
+        $q=$pdo->prepare("SELECT campaign_id,outcome_json FROM campaign_decisions WHERE merchant_id=? AND contact_id=? AND decision_type='entry' AND status='decided' AND is_holdout=0 AND created_at>=? ORDER BY id DESC LIMIT 100");
+        $q->execute([(int)$journey['merchant_id'],$contactId,$cutoff]);
+        foreach($q->fetchAll()?:[] as $row){$o=json_decode((string)$row['outcome_json'],true)?:[];if((string)($o['conflict_group']??'')===$group&&!empty($o['allowed'])&&(int)$row['campaign_id']!==(int)$journey['campaign_id'])return ['allowed'=>false,'reason'=>'campaign_conflict','conflict_group'=>$group,'conflicting_campaign_id'=>(int)$row['campaign_id']];}
+    }
+    return ['allowed'=>true,'reason'=>'eligible','bucket'=>$bucket,'holdout_percent'=>$holdout,'conflict_group'=>$group,'priority'=>max(0,(int)($entry['decision_priority']??100))];
 }
 
 function campaigns_rewards_preview_decision_v125(PDO $pdo,int $journeyId,int $contactId,int $actorUserId,array $triggerContext=[]): array
@@ -376,7 +399,9 @@ function campaigns_rewards_preview_decision_v125(PDO $pdo,int $journeyId,int $co
       if((string)($t['offer_mode']??'none')!=='none'){$fake=['campaign_id'=>(int)$journey['campaign_id'],'contact_id'=>$contactId,'metadata'=>['journey_instance_key'=>'preview:'.$journeyId.':'.$contactId,'step_key'=>(string)($t['step_key']??'')]];$item['offer']=campaigns_rewards_select_offer_v125($pdo,$fake,$t,$ctx);}
       $nodes[]=$item;
     }
-    return ['dry_run'=>true,'journey_id'=>$journeyId,'journey_version_id'=>(int)$version['id'],'version_no'=>(int)$version['version_no'],'contact_id'=>$contactId,'context'=>$ctx,'nodes'=>$nodes];
+    $entry=campaigns_rewards_preview_entry_v125($pdo,$journey,$version,$contactId);
+    $simulation=campaigns_rewards_simulate_version_v123($pdo,$version,$contactId,$triggerContext,false);
+    return ['dry_run'=>true,'journey_id'=>$journeyId,'journey_version_id'=>(int)$version['id'],'version_no'=>(int)$version['version_no'],'contact_id'=>$contactId,'entry'=>$entry,'context'=>$ctx,'nodes'=>$nodes,'simulation'=>$simulation];
 }
 
 function campaigns_rewards_refresh_decision_recommendations_v125(PDO $pdo,int $merchantId=0): array
