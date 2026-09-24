@@ -9,6 +9,9 @@ declare(strict_types=1);
  * those durable runs to HomeServer availability, conversation continuity and
  * user-facing lifecycle updates.
  */
+require_once __DIR__.'/agent-job-engine-v1900.php';
+require_once __DIR__.'/agent-chat-continuity-v101.php';
+
 const VP3_HOMESERVER_WORK_CONTINUITY_V230='vp3-homeserver-work-continuity-v230-20260924';
 const VP3_HOMESERVER_WORK_CONTINUITY_VERSION='2.3';
 
