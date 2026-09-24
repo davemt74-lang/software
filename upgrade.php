@@ -72,6 +72,7 @@ function vp3_upgrade_complete(): bool
         && agent_event_schema_ready_v1920()
         && vp3_live_session_schema_ready_v2370()
         && homeserver_account_v1210_schema_ready()
+        && homeserver_https_v1300_schema_ready()
         && homeserver_scheduling_v620_schema_ready()
         && homeserver_commerce_agent_v1000_schema_ready()
         && vp3_browser_memory_schema_ready_v2170()
