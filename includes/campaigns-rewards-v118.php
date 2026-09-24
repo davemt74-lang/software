@@ -206,9 +206,33 @@ function campaigns_rewards_public_participate_v118(PDO $pdo,array $campaign,arra
             'merchant_public_id'=>$campaign['merchant_public_id'],'campaign_public_id'=>$campaign['public_id'],
         ],'production',null,'public');
         $enrollment['status']='completed';$enrollment['completed_at']=gmdate('Y-m-d H:i:s');
+        if(function_exists('campaigns_rewards_journey_enqueue_v120')){
+            $publicTrigger=(string)($behavior['public_action']??'');
+            try{
+                if(isset(campaigns_rewards_journey_triggers_v120()[$publicTrigger])){
+                    campaigns_rewards_journey_enqueue_v120($pdo,$campaignId,$contactId,$publicTrigger,[
+                        'reward_issuance_id'=>(int)$issued['id'],'enrollment_id'=>(int)$enrollment['id'],
+                        'expires_at'=>(string)($issued['expires_at']??''),'occurred_at'=>gmdate('Y-m-d H:i:s'),
+                    ],'public:'.$publicTrigger.':'.(int)$enrollment['id']);
+                }
+                campaigns_rewards_journey_enqueue_v120($pdo,$campaignId,$contactId,'reward_issued',[
+                    'reward_issuance_id'=>(int)$issued['id'],'enrollment_id'=>(int)$enrollment['id'],
+                    'expires_at'=>(string)($issued['expires_at']??''),'occurred_at'=>gmdate('Y-m-d H:i:s'),
+                ],'reward-issued:'.(int)$issued['id']);
+            }catch(Throwable $e){error_log('Campaign messaging V1.20 public bridge failed: '.$e->getMessage());}
+        }
         return ['contact'=>$contact,'enrollment'=>$enrollment,'issued'=>$issued,'reward'=>$selectedReward,'behavior'=>$behavior,'message'=>'Reward issued.'];
     }
     if($shouldIssue&&!$selectedReward&&!empty($behavior['requires_reward']))throw new RuntimeException('This Campaign does not have an available Reward attached.');
+    if(function_exists('campaigns_rewards_journey_enqueue_v120')){
+        $publicTrigger=(string)($behavior['public_action']??'');
+        if(isset(campaigns_rewards_journey_triggers_v120()[$publicTrigger])){
+            try{campaigns_rewards_journey_enqueue_v120($pdo,$campaignId,$contactId,$publicTrigger,[
+                'enrollment_id'=>(int)$enrollment['id'],'occurred_at'=>gmdate('Y-m-d H:i:s'),
+            ],'public:'.$publicTrigger.':'.(int)$enrollment['id']);}
+            catch(Throwable $e){error_log('Campaign messaging V1.20 public bridge failed: '.$e->getMessage());}
+        }
+    }
     $message=match($timing){
         'after_verification'=>'Your participation was submitted. The Reward becomes available after verification.',
         'triggered'=>'You are enrolled. The Reward will be issued when the Campaign trigger is reached.',
@@ -263,6 +287,13 @@ function campaigns_rewards_issue_enrollment_reward_v118(PDO $pdo,int $merchantId
             'reward_product_id'=>$rewardProductId,
         ],(string)$campaign['environment'],$actorUserId);
         if($owns)$pdo->commit();
+        if(function_exists('campaigns_rewards_journey_enqueue_v120')){
+            try{campaigns_rewards_journey_enqueue_v120($pdo,$campaignId,(int)$enrollment['contact_id'],'reward_issued',[
+                'reward_issuance_id'=>(int)$issuance['id'],'enrollment_id'=>$enrollmentId,
+                'expires_at'=>(string)($issuance['expires_at']??''),'occurred_at'=>gmdate('Y-m-d H:i:s'),
+            ],'reward-issued:'.(int)$issuance['id']);}
+            catch(Throwable $e){error_log('Campaign messaging V1.20 fulfillment bridge failed: '.$e->getMessage());}
+        }
         return ['campaign'=>$campaign,'enrollment'=>$enrollment,'issuance'=>$issuance];
     }catch(Throwable $e){if($owns&&$pdo->inTransaction())$pdo->rollBack();throw $e;}
 }
