@@ -62,7 +62,7 @@ function campaigns_rewards_release_readiness_v123(?PDO $pdo=null): array
         'validation'=>function_exists('campaigns_rewards_validate_graph_v123')&&function_exists('campaigns_rewards_journey_release_suite_v123'),
         'scheduled'=>function_exists('campaigns_rewards_publish_due_v123'),
         'health'=>function_exists('campaigns_rewards_journey_release_health_v123'),
-        'cognitive_domain'=>($domain['implementation_status']??'')==='integrated-v1.23',
+        'cognitive_domain'=>in_array(($domain['implementation_status']??''),['integrated-v1.23','integrated-v1.24'],true),
         'publish_event'=>in_array('campaign.journey_published',(array)($domain['events']??[]),true),
         'pinned_event'=>in_array('campaign.journey_version_started',(array)($domain['events']??[]),true),
     ];
