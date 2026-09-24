@@ -12,7 +12,7 @@ const VP3_COMMERCE_AGENT_SHA256='b61b1baea945286fb006ef78f7f798b4a604284145a74f7
 function homeserver_commerce_agent_v1000_ensure_schema(PDO $pdo): void
 {
     $pdo->exec("CREATE TABLE IF NOT EXISTS homeserver_commerce_agent_tokens (
-        user_id BIGINT UNSIGNED NOT NULL PRIMARY KEY,
+        user_id INT UNSIGNED NOT NULL PRIMARY KEY,
         token_hash CHAR(64) NOT NULL UNIQUE,
         token_enc TEXT NOT NULL,
         token_prefix VARCHAR(16) NOT NULL DEFAULT '',
@@ -25,7 +25,7 @@ function homeserver_commerce_agent_v1000_ensure_schema(PDO $pdo): void
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
     $pdo->exec("CREATE TABLE IF NOT EXISTS homeserver_commerce_agent_idempotency (
         id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
-        user_id BIGINT UNSIGNED NOT NULL,
+        user_id INT UNSIGNED NOT NULL,
         operation VARCHAR(96) NOT NULL,
         idempotency_key VARCHAR(160) NOT NULL,
         response_json LONGTEXT NULL,
