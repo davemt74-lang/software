@@ -52,6 +52,10 @@ v123_migration=ROOT/'upgrade-campaigns-rewards-v123.sql'
 if v123_migration.is_file():
     audit_files.add(v123_migration)
     sources[v123_migration]=v123_migration.read_text(errors='ignore')
+v124_migration=ROOT/'upgrade-campaigns-rewards-v124.sql'
+if v124_migration.is_file():
+    audit_files.add(v124_migration)
+    sources[v124_migration]=v124_migration.read_text(errors='ignore')
 for file in list(ensure_files):
     for ref in re.findall(r"['\"](/?[^'\"]+\.sql)['\"]", sources[file]):
         candidate=ROOT/ref.lstrip('/')
@@ -118,8 +122,8 @@ for file in sorted(audit_files):
         if key in create_positions and m.start() < create_positions[key]:
             issues.append(f'{rel}: ALTER TABLE {m.group(1)} appears before its CREATE TABLE')
 
-if table_count < 360:
-    issues.append(f'Upgrade audit only found {table_count} CREATE TABLE definitions; expected at least 360 after Campaigns & Rewards V1.23')
+if table_count < 361:
+    issues.append(f'Upgrade audit only found {table_count} CREATE TABLE definitions; expected at least 361 after Campaigns & Rewards V1.24')
 
 if issues:
     print('FAIL MySQL 8 upgrade static audit')
