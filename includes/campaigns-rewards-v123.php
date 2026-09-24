@@ -298,6 +298,10 @@ function campaigns_rewards_validate_graph_v123(PDO $pdo,int $journeyId,array $gr
         while($queue){$step=array_shift($queue);if(isset($canExit[$step]))continue;$canExit[$step]=true;foreach($reverse[$step]??[] as $prev)$queue[]=$prev;}
         foreach(array_keys($groups) as $step)if(!isset($canExit[$step]))$errors[]=['code'=>'no_exit_path','message'=>"Step {$step} cannot reach an Exit node."];
     }
+    if(function_exists('campaigns_rewards_validate_decision_graph_v125')){
+        $decisionValidation=campaigns_rewards_validate_decision_graph_v125($pdo,$journeyId,$graph);
+        $errors=array_merge($errors,(array)($decisionValidation['errors']??[]));$warnings=array_merge($warnings,(array)($decisionValidation['warnings']??[]));
+    }
     $provider=$providerChecks?campaigns_rewards_provider_readiness_v123($graph):['ready'=>true,'channels'=>[]];
     if($providerChecks&&!$provider['ready'])$warnings[]=['code'=>'provider_not_ready','message'=>'One or more delivery providers are not configured for this journey.'];
     return ['valid'=>!$errors,'errors'=>$errors,'warnings'=>$warnings,'provider'=>$provider,'node_count'=>count($nodes),'step_count'=>count($groups),'checked_at'=>gmdate('c')];
@@ -814,11 +818,23 @@ function campaigns_rewards_simulate_version_v123(PDO $pdo,array $version,int $co
             $t=$node['template'];$type=(string)($t['node_type']??'message');$record=['step_key'=>$current,'node_type'=>$type,'variant_key'=>(string)($t['variant_key']??'default')];
             if($type==='decision'){
                 $fake=['metadata'=>['context'=>campaigns_rewards_journey_context_v121($context),'journey_instance_key'=>$instance],'merchant_id'=>(int)$journey['merchant_id'],'contact_id'=>$contactId,'campaign_id'=>(int)$journey['campaign_id'],'campaign_status'=>$journey['campaign_status'],'reward_issuance_id'=>max(0,(int)($context['reward_issuance_id']??0))];
-                $actual=campaigns_rewards_condition_source_v121($pdo,$fake,$contact,(string)($t['condition_field']??'contact.marketing_status'));$matched=campaigns_rewards_condition_compare_v121($actual,(string)($t['condition_operator']??'equals'),(string)($t['condition_value']??''));
-                $record['condition_result']=$matched;$record['condition_actual']=is_scalar($actual)?$actual:null;$current=$matched?(string)($t['true_next_step_key']??''):(string)($t['false_next_step_key']??'');
+                $decisionField=(string)($t['decision_field']??'');
+                if($decisionField!==''&&function_exists('campaigns_rewards_condition_source_v125')){
+                    $actual=campaigns_rewards_condition_source_v125($pdo,$fake,$contact,$decisionField);$matched=campaigns_rewards_decision_compare_v125($actual,(string)($t['decision_operator']??'equals'),(string)($t['decision_value']??''));
+                    $record['decision_field']=$decisionField;
+                }else{
+                    $actual=campaigns_rewards_condition_source_v121($pdo,$fake,$contact,(string)($t['condition_field']??'contact.marketing_status'));$matched=campaigns_rewards_condition_compare_v121($actual,(string)($t['condition_operator']??'equals'),(string)($t['condition_value']??''));
+                }
+                $record['condition_result']=$matched;$record['condition_actual']=is_scalar($actual)?$actual:$actual;$current=$matched?(string)($t['true_next_step_key']??''):(string)($t['false_next_step_key']??'');
             }elseif($type==='exit'){$record['outcome']='exit';$current='';}
             else{
-                if($type==='message'){$record['consent']=campaigns_rewards_message_consent_v120($contact,(string)$node['channel'],(string)($t['purpose']??'marketing'));$record['frequency_gate']=campaigns_rewards_frequency_gate_v122($pdo,['merchant_id'=>(int)$journey['merchant_id'],'contact_id'=>$contactId,'channel'=>$node['channel']],$t);}
+                if($type==='message'){
+                    $record['consent']=campaigns_rewards_message_consent_v120($contact,(string)$node['channel'],(string)($t['purpose']??'marketing'));$record['frequency_gate']=campaigns_rewards_frequency_gate_v122($pdo,['merchant_id'=>(int)$journey['merchant_id'],'contact_id'=>$contactId,'channel'=>$node['channel']],$t);
+                    if(function_exists('campaigns_rewards_select_offer_v125')&&(string)($t['offer_mode']??'none')!=='none'){
+                        $decisionContext=campaigns_rewards_decision_context_v125($pdo,(int)$journey['merchant_id'],(int)$journey['campaign_id'],$contactId,$context);
+                        $record['offer_preview']=campaigns_rewards_select_offer_v125($pdo,['campaign_id'=>(int)$journey['campaign_id'],'contact_id'=>$contactId,'metadata'=>['journey_instance_key'=>$instance,'step_key'=>$current]],$t,$decisionContext);
+                    }
+                }
                 $campaign=campaigns_rewards_campaign_platform_v100($pdo,(int)$journey['campaign_id']);$record['scheduled_for']=$campaign?gmdate('c',campaigns_rewards_node_schedule_v121($pdo,$campaign,$node,$contact,$context)):null;$current=(string)($t['next_step_key']??'');
             }
             $path[]=$record;
