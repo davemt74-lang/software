@@ -34,6 +34,7 @@ try {
     campaigns_rewards_ensure_schema_v100($pdo);
     campaigns_rewards_journey_release_ensure_schema_v123($pdo);
     campaigns_rewards_journey_operations_ensure_schema_v124($pdo);
+    campaigns_rewards_decision_ensure_schema_v125($pdo);
     vp3_social_ensure_schema_v320($pdo);
     vp3_human_messaging_v370_ensure_schema($pdo);
     artist_workspace_v181_ensure_schema($pdo);

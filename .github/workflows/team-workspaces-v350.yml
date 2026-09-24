@@ -85,6 +85,11 @@ jobs:
           node tests/campaigns-rewards-v124.mjs
           node tests/transcription-analysis-source-v308-contract.mjs
 
+      - name: Campaigns & Rewards V1.25 contract
+        run: |
+          php tests/campaigns-rewards-v125.php
+          node tests/campaigns-rewards-v125.mjs
+
       - name: Full MySQL 8 upgrade audit
         run: python3 tests/upgrade-mysql8-static-audit.py
 
@@ -100,6 +105,7 @@ jobs:
           node --check tests/campaigns-rewards-v122.mjs
           node --check tests/campaigns-rewards-v123.mjs
           node --check tests/campaigns-rewards-v124.mjs
+          node --check tests/campaigns-rewards-v125.mjs
           node --check tests/transcription-analysis-source-v308-contract.mjs
           node --check campaign-journey-builder-v123.js
           node --check reward-tray-v110.js
@@ -134,6 +140,9 @@ jobs:
           php -l includes/campaigns-rewards-schema-v124.php
           php -l includes/campaigns-rewards-v124.php
           php -l includes/campaigns-rewards-release-v124.php
+          php -l includes/campaigns-rewards-schema-v125.php
+          php -l includes/campaigns-rewards-v125.php
+          php -l includes/campaigns-rewards-release-v125.php
           php -l tests/campaigns-rewards-v118.php
           php -l tests/campaigns-rewards-v119.php
           php -l tests/campaigns-rewards-v120.php
@@ -141,12 +150,14 @@ jobs:
           php -l tests/campaigns-rewards-v122.php
           php -l tests/campaigns-rewards-v123.php
           php -l tests/campaigns-rewards-v124.php
+          php -l tests/campaigns-rewards-v125.php
           php -l cron/campaigns-rewards-v119.php
           php -l cron/campaigns-rewards-v120.php
           php -l cron/campaigns-rewards-v121.php
           php -l cron/campaigns-rewards-v122.php
           php -l cron/campaigns-rewards-v123.php
           php -l cron/campaigns-rewards-v124.php
+          php -l cron/campaigns-rewards-v125.php
           php -l api/campaign-delivery-webhook-v121.php
           php -l api/reward-tray-v110.php
           php -l team.php

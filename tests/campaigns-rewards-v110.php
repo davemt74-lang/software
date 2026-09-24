@@ -22,7 +22,7 @@ cr_v110_assert(($inv['qr_generation_external_service']??true)===false&&($inv['qr
 cr_v110_assert(($inv['claim_requires_reward_credential_merchant_code_and_authorized_operator']??false)===true&&($inv['claim_engine_bypassed']??true)===false,'V1 three-factor claim engine remains authoritative');
 
 $domain=vp3_cognitive_domain_registry_v2600()['domains']['campaigns_rewards']??[];
-cr_v110_assert(in_array(($domain['implementation_status']??''),['integrated-v1.10','integrated-v1.18','integrated-v1.19','integrated-v1.20','integrated-v1.21','integrated-v1.22','integrated-v1.23','integrated-v1.24'],true),'cognitive domain is at least integrated V1.10');
+cr_v110_assert(in_array(($domain['implementation_status']??''),['integrated-v1.10','integrated-v1.18','integrated-v1.19','integrated-v1.20','integrated-v1.21','integrated-v1.22','integrated-v1.23','integrated-v1.24','integrated-v1.25'],true),'cognitive domain is at least integrated V1.10');
 cr_v110_assert(in_array('reward_transfers',$domain['authority']??[],true),'cognitive domain recognizes Reward Transfer authority');
 cr_v110_assert(in_array('reward.sent',$domain['events']??[],true),'reward.sent remains canonical cognitive event');
 cr_v110_assert(VP3_CAMPAIGNS_REWARDS_V110==='vp3-campaigns-rewards-v110-20260923','V1.10 runtime build is pinned');

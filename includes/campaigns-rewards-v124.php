@@ -77,12 +77,12 @@ function campaigns_rewards_dispatch_due_v124(PDO $pdo,int $merchantId=0,int $lim
 {
     $limit=max(1,min(1000,$limit));$sql="SELECT d.id,d.metadata_json FROM campaign_deliveries d INNER JOIN campaigns c ON c.id=d.campaign_id WHERE d.status IN ('pending','retry_wait')";$params=[];
     if($merchantId>0){$sql.=" AND c.merchant_id=?";$params[]=$merchantId;}$sql.=" ORDER BY d.created_at,d.id LIMIT ".($limit*8);
-    $q=$pdo->prepare($sql);$q->execute($params);$summary=['checked'=>0,'due'=>0,'sent'=>0,'delivered'=>0,'viewed'=>0,'retry_wait'=>0,'dead_letter'=>0,'suppressed'=>0,'failed'=>0,'paused'=>0,'cancelled'=>0,'skipped'=>0];
+    $q=$pdo->prepare($sql);$q->execute($params);$summary=['checked'=>0,'due'=>0,'sent'=>0,'delivered'=>0,'viewed'=>0,'retry_wait'=>0,'dead_letter'=>0,'suppressed'=>0,'failed'=>0,'paused'=>0,'cancelled'=>0,'frequency_deferred'=>0,'optimized_deferred'=>0,'quiet_hours_deferred'=>0,'skipped'=>0];
     foreach($q->fetchAll()?:[] as $row){
         if($summary['due']>=$limit)break;$summary['checked']++;$meta=json_decode((string)($row['metadata_json']??''),true)?:[];$scheduled=(string)($meta['scheduled_for']??'');
         if($scheduled!==''&&strtotime($scheduled)!==false&&strtotime($scheduled)>time()){$summary['skipped']++;continue;}$summary['due']++;
         try{$r=campaigns_rewards_dispatch_delivery_v124($pdo,(int)$row['id']);}catch(Throwable $e){$summary['failed']++;error_log('Campaign V1.24 dispatch failed: '.$e->getMessage());continue;}
-        if(!empty($r['skipped'])){$reason=(string)($r['reason']??'');if($reason==='instance_paused')$summary['paused']++;elseif($reason==='instance_cancelled')$summary['cancelled']++;else $summary['skipped']++;continue;}
+        if(!empty($r['skipped'])){$reason=(string)($r['reason']??'');if($reason==='instance_paused')$summary['paused']++;elseif($reason==='instance_cancelled')$summary['cancelled']++;elseif($reason==='frequency_control')$summary['frequency_deferred']++;elseif($reason==='send_time_optimization')$summary['optimized_deferred']++;elseif($reason==='quiet_hours')$summary['quiet_hours_deferred']++;else $summary['skipped']++;continue;}
         $status=(string)($r['delivery']['status']??'failed');if(isset($summary[$status]))$summary[$status]++;else $summary['failed']++;
     }
     return $summary;
@@ -237,7 +237,17 @@ function campaigns_rewards_journey_instance_timeline_v124(PDO $pdo,int $instance
           'operator_skipped_at'=>(string)($d['metadata']['operator_skipped_at']??''),
         ];
     }
-    return ['instance'=>$instance,'items'=>$items];
+    $decisions=[];
+    if(table_exists('campaign_decisions')){
+        $entryKey='entry:'.hash('sha256',(int)$instance['journey_id'].'|'.(int)$instance['journey_version_id'].'|'.(int)$instance['contact_id'].'|'.(string)$instance['trigger_event_id']);
+        $dq=$pdo->prepare("SELECT * FROM campaign_decisions WHERE journey_instance_id=? OR (merchant_id=? AND decision_key=?) ORDER BY id");
+        $dq->execute([$instanceId,(int)$instance['merchant_id'],$entryKey]);
+        foreach($dq->fetchAll()?:[] as $decision){
+            $decision['rules']=json_decode((string)$decision['rules_json'],true)?:[];$decision['outcome']=json_decode((string)$decision['outcome_json'],true)?:[];
+            unset($decision['context_json'],$decision['rules_json'],$decision['outcome_json']);$decisions[]=$decision;
+        }
+    }
+    return ['instance'=>$instance,'items'=>$items,'decisions'=>$decisions];
 }
 
 function campaigns_rewards_journey_entry_version_v124(PDO $pdo,array $journey,int $contactId,string $eventId): ?array

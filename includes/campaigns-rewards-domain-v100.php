@@ -734,7 +734,7 @@ function campaigns_rewards_reward_product_v100(PDO $pdo,int $rewardProductId): ?
 function campaigns_rewards_issue_reward_v100(PDO $pdo,int $campaignId,int $rewardProductId,int $contactId,int $actorUserId,array $options=[]): array
 {
     $campaign=campaigns_rewards_campaign_platform_v100($pdo,$campaignId)?:throw new RuntimeException('Campaign not found.');
-    $actorType=(string)($options['actor_type']??'user');$publicFlow=$actorType==='public'&&$actorUserId<1;$automationFlow=$actorType==='automation'&&$actorUserId<1;
+    $actorType=(string)($options['actor_type']??'user');$publicFlow=$actorType==='public'&&$actorUserId<1;$automationFlow=$actorType==='automation'&&$actorUserId<1;$decisionFlow=$actorType==='decision'&&$actorUserId<1;
     if($publicFlow){
         if((string)$campaign['environment']!=='production'||(string)$campaign['status']!=='active'||empty($campaign['supports_public_signup']))throw new RuntimeException('This Campaign is not accepting public Reward requests.');
         if(!empty($campaign['starts_at'])&&strtotime((string)$campaign['starts_at'])>time())throw new RuntimeException('This Campaign has not started yet.');
@@ -742,6 +742,10 @@ function campaigns_rewards_issue_reward_v100(PDO $pdo,int $campaignId,int $rewar
     }elseif($automationFlow){
         if(!function_exists('campaigns_rewards_automation_validate_issue_v119'))throw new RuntimeException('Campaign automation runtime is unavailable.');
         campaigns_rewards_automation_validate_issue_v119($pdo,$campaignId,$rewardProductId,$contactId,max(0,(int)($options['automation_rule_id']??0)));
+    }elseif($decisionFlow){
+        if(!function_exists('campaigns_rewards_decision_validate_issue_v125'))throw new RuntimeException('Campaign decision runtime is unavailable.');
+        campaigns_rewards_decision_validate_issue_v125($pdo,$campaignId,$rewardProductId,$contactId,max(0,(int)($options['decision_id']??0)));
+        if((string)$campaign['environment']!=='production'||(string)$campaign['status']!=='active')throw new RuntimeException('Dynamic Reward decisions require an active production Campaign.');
     }else{
         campaigns_rewards_platform_assert_can_v100($pdo,(int)$campaign['merchant_id'],$actorUserId,'rewards.issue');
         if(!in_array((string)$campaign['status'],['active','scheduled','draft'],true))throw new RuntimeException('Campaign cannot issue Rewards in its current state.');
