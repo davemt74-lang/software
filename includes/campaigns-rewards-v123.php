@@ -276,7 +276,7 @@ function campaigns_rewards_validate_graph_v123(PDO $pdo,int $journeyId,array $gr
         $entries=array_keys($entryByTrigger[$trigger]??[]);
         if(count($entries)!==1)$errors[]=['code'=>'entry_count','message'=>"Trigger {$trigger} must have exactly one logical entry step; found ".count($entries).'.'];
     }
-    if(!$exitSteps)$warnings[]=['code'=>'no_explicit_exit','message'=>'Journey has no explicit Exit node.'];
+    if(!$exitSteps)$errors[]=['code'=>'no_explicit_exit','message'=>'Journey requires at least one explicit Exit node before publishing.'];
 
     $state=[];$cycle=false;
     $visit=function(string $step)use(&$visit,&$state,&$cycle,$adj):void{
@@ -413,6 +413,18 @@ function campaigns_rewards_perform_publish_v123(PDO $pdo,int $versionId,int $act
     return campaigns_rewards_journey_version_v123($pdo,$versionId)?:$version;
 }
 
+function campaigns_rewards_schedule_datetime_v123(PDO $pdo,int $merchantId,string $value): ?string
+{
+    $value=trim($value);if($value==='')return null;
+    $q=$pdo->prepare("SELECT timezone FROM merchant_accounts WHERE id=? LIMIT 1");$q->execute([$merchantId]);
+    $timezone=campaigns_rewards_valid_timezone_v121((string)($q->fetchColumn()?:'UTC'));
+    $tz=new DateTimeZone($timezone);
+    $dt=DateTimeImmutable::createFromFormat('!Y-m-d\\TH:i',$value,$tz);
+    $errors=DateTimeImmutable::getLastErrors();
+    if(!$dt||($errors!==false&&(($errors['warning_count']??0)>0||($errors['error_count']??0)>0)))throw new RuntimeException('Enter a valid scheduled publish date and time.');
+    return $dt->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d H:i:s');
+}
+
 function campaigns_rewards_publish_journey_v123(PDO $pdo,int $journeyId,int $actorUserId,array $input=[]): array
 {
     $journey=campaigns_rewards_journey_v123($pdo,$journeyId)?:throw new RuntimeException('Journey not found.');
@@ -422,7 +434,7 @@ function campaigns_rewards_publish_journey_v123(PDO $pdo,int $journeyId,int $act
     $suite=campaigns_rewards_journey_release_suite_v123($pdo,$journeyId,$actorUserId,[]);
     if(empty($suite['passed']))throw new RuntimeException('Journey release validation failed. Resolve the release errors before publishing.');
     $policy=(string)($input['inflight_policy']??'continue');if(!in_array($policy,['continue','migrate_pending','exit_remaining'],true))$policy='continue';
-    $notes=trim((string)($input['release_notes']??''));$scheduled=campaigns_rewards_datetime_v100((string)($input['scheduled_publish_at']??''));
+    $notes=trim((string)($input['release_notes']??''));$scheduled=campaigns_rewards_schedule_datetime_v123($pdo,(int)$journey['merchant_id'],(string)($input['scheduled_publish_at']??''));
     if($scheduled!==null&&strtotime($scheduled)>time()+60){
         $pdo->prepare("UPDATE campaign_journey_versions SET status='cancelled',updated_at=UTC_TIMESTAMP() WHERE journey_id=? AND status='scheduled'")->execute([$journeyId]);
         $pdo->prepare("UPDATE campaign_journey_versions SET status='scheduled',validation_json=?,release_notes=?,scheduled_publish_at=?,published_by_user_id=?,updated_at=UTC_TIMESTAMP() WHERE id=?")
@@ -447,12 +459,24 @@ function campaigns_rewards_publish_due_v123(PDO $pdo,int $merchantId=0,int $limi
       INNER JOIN campaign_journeys j ON j.id=v.journey_id INNER JOIN campaigns c ON c.id=j.campaign_id
       WHERE v.status='scheduled' AND v.scheduled_publish_at IS NOT NULL AND v.scheduled_publish_at<=UTC_TIMESTAMP()";
     $params=[];if($merchantId>0){$sql.=" AND c.merchant_id=?";$params[]=$merchantId;}$sql.=" ORDER BY v.scheduled_publish_at,v.id LIMIT {$limit}";
-    $q=$pdo->prepare($sql);$q->execute($params);$summary=['due'=>0,'published'=>0,'failed'=>0];
+    $q=$pdo->prepare($sql);$q->execute($params);$summary=['due'=>0,'published'=>0,'stale_cancelled'=>0,'failed'=>0];
     foreach($q->fetchAll()?:[] as $row){
         $summary['due']++;$version=campaigns_rewards_journey_version_v123($pdo,(int)$row['id']);if(!$version){$summary['failed']++;continue;}
-        $pub=$pdo->prepare("SELECT inflight_policy,release_notes FROM campaign_journey_publications WHERE journey_version_id=? AND action='schedule' ORDER BY id DESC LIMIT 1");$pub->execute([(int)$row['id']]);$scheduled=$pub->fetch()?:[];
+        $pub=$pdo->prepare("SELECT previous_journey_version_id,inflight_policy,release_notes FROM campaign_journey_publications WHERE journey_version_id=? AND action='schedule' ORDER BY id DESC LIMIT 1");$pub->execute([(int)$row['id']]);$scheduled=$pub->fetch()?:[];
+        $journey=campaigns_rewards_journey_v123($pdo,(int)$version['journey_id']);
+        $expectedPrevious=max(0,(int)($scheduled['previous_journey_version_id']??0));$currentPublished=max(0,(int)($journey['current_published_version_id']??0));
+        if(!$journey||$expectedPrevious!==$currentPublished){
+            $pdo->prepare("UPDATE campaign_journey_versions SET status='cancelled',updated_at=UTC_TIMESTAMP() WHERE id=? AND status='scheduled'")->execute([(int)$row['id']]);
+            if($journey)campaigns_rewards_activity_event_v100($pdo,(int)$journey['merchant_id'],'campaign.journey_publish_cancelled',['campaign_id'=>(int)$journey['campaign_id']],[
+                'summary'=>'Stale scheduled journey release cancelled because the live version changed','campaign_public_id'=>$journey['campaign_public_id'],
+                'journey_id'=>(int)$journey['id'],'journey_version_id'=>(int)$row['id'],'expected_previous_version_id'=>$expectedPrevious,'current_published_version_id'=>$currentPublished,
+            ],(string)$journey['environment'],null,'system');
+            $summary['stale_cancelled']++;continue;
+        }
+        $actor=max(0,(int)($row['published_by_user_id']??0));
+        if($actor<1){$summary['failed']++;error_log('Campaign journey scheduled publish missing authorizing user.');continue;}
         try{
-            campaigns_rewards_perform_publish_v123($pdo,(int)$row['id'],max(1,(int)($row['published_by_user_id']??0)),(string)($scheduled['inflight_policy']??'continue'),'scheduled_publish',(string)($scheduled['release_notes']??''));
+            campaigns_rewards_perform_publish_v123($pdo,(int)$row['id'],$actor,(string)($scheduled['inflight_policy']??'continue'),'scheduled_publish',(string)($scheduled['release_notes']??''));
             $summary['published']++;
         }catch(Throwable $e){$summary['failed']++;error_log('Campaign journey scheduled publish failed: '.$e->getMessage());}
     }
