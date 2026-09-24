@@ -209,6 +209,9 @@ function notification_attention_message(array $notification): string
 function notification_attention_after(?array $user, int $afterId = 0, int $limit = 20): array
 {
     $user ??= current_user();
+    if($user&&function_exists('homeserver_shared_v210_refresh_cognition')){
+        homeserver_shared_v210_refresh_cognition((int)($user['id']??0));
+    }
     $pdo = db();
     if (!$user || !$pdo || !table_exists('notifications')) return [];
 

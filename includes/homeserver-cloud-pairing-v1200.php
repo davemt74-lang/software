@@ -324,6 +324,7 @@ function homeserver_cloud_v1200_status(int $userId, bool $forceRefresh=false): a
         $raw['relay_status'] = $connected ? 'connected' : ($paired ? 'reconnecting' : 'available');
         $raw['relay_host'] = '';
         $raw['reconnect_status'] = $connected ? 'not_needed' : ($paired ? 'automatic' : 'not_available');
+        if(function_exists('homeserver_shared_v210_reconcile_status'))$raw=homeserver_shared_v210_reconcile_status($userId,$raw);
         return $raw;
     }
 
@@ -340,5 +341,6 @@ function homeserver_cloud_v1200_status(int $userId, bool $forceRefresh=false): a
     if ($relaySecurity === null && $raw['error'] === '' && $connectionState !== 'disconnected') {
         $raw['error'] = 'The custom HomeServer relay is not configured.';
     }
+    if(function_exists('homeserver_shared_v210_reconcile_status'))$raw=homeserver_shared_v210_reconcile_status($userId,$raw);
     return $raw;
 }

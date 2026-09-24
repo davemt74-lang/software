@@ -415,6 +415,34 @@ function profile_agent_context(PDO $pdo,array $profile,array $agent,?array $view
             if(count($context)>=18)break;
         }
     }
+
+    // HomeServer v2.1 participates in the same owner data-policy system. The
+    // public Profile Agent gets no HomeServer data by default: each dataset must
+    // be explicitly enabled for the Profile Agent and allowed for this viewer.
+    if(function_exists('homeserver_shared_v210_exchange')&&count($context)<24){
+        $home=homeserver_shared_v210_exchange($owner,$query);
+        $datasets=is_array($home['datasets']??null)?$home['datasets']:[];
+        $policyMap=[
+          'memory'=>'homeserver_memory',
+          'knowledge'=>'homeserver_knowledge',
+          'contacts'=>'homeserver_contacts',
+          'tasks'=>'homeserver_tasks',
+          'notifications'=>'homeserver_notifications',
+        ];
+        foreach($policyMap as $dataset=>$resourceType){
+            if(!user_data_policy_can_use_v236($pdo,$principal,$owner,$resourceType,'*',false))continue;
+            foreach((array)($datasets[$dataset]??[]) as $row){
+                if(!is_array($row))continue;
+                $title=trim((string)($row['title']??ucfirst($dataset)));
+                $text=trim((string)($row['content']??''));
+                if($text===''||!profile_context_match($query,$title.' '.$text))continue;
+                $source='homeserver:'.$dataset.':'.mb_strimwidth((string)($row['key']??$row['id']??''),0,100,'');
+                $context[]=['source'=>$source,'title'=>$title,'text'=>mb_strimwidth($text,0,5000,'…')];
+                if(function_exists('user_data_usage_log_v236'))user_data_usage_log_v236($pdo,$principal,$owner,$resourceType,'*',$title,$source,0);
+                if(count($context)>=24)break 2;
+            }
+        }
+    }
     return $context;
 }
 

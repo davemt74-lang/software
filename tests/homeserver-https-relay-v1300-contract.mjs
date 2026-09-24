@@ -19,8 +19,8 @@ const pollFunction=relay.slice(
 );
 
 const checks=[
- ['shared Cloud/HomeServer product release version is v2.0',
-  vp3.includes("const VP3_HOMESERVER_RELEASE_VERSION = '2.0';")&&
+ ['shared Cloud/HomeServer product release version is v2.1',
+  vp3.includes("const VP3_HOMESERVER_RELEASE_VERSION = '2.1';")&&
   relay.includes("'cloud_version'=>VP3_HOMESERVER_RELEASE_VERSION")&&
   pair.includes("'cloud_version'=>$result['cloud_version']??VP3_HOMESERVER_RELEASE_VERSION")&&
   cloudPairing.includes("$raw['release_version'] = VP3_HOMESERVER_RELEASE_VERSION")],
@@ -89,4 +89,4 @@ const checks=[
 ];
 
 for(const [name,ok] of checks){assert.equal(ok,true,name);console.log('PASS',name);}
-console.log('VP3 Cloud / HomeServer v2.0 HTTPS relay contract: '+checks.length+'/'+checks.length+' passed');
+console.log('VP3 Cloud / HomeServer v2.1 HTTPS relay contract: '+checks.length+'/'+checks.length+' passed');

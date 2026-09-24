@@ -75,6 +75,21 @@ function agent_brain_v99_context(array $user,string $query,int $limit=12): array
     $rows=agent_brain_v99_pick($rows,$terms,$deep?22:10,$deep,static fn(array $r):string=>implode(' ',[$r['memory_type']??'',$r['subject']??'',$r['memory_text']??'']),$activity);
     if($rows){$lines=[];foreach($rows as $r){$effective=function_exists('agent_memory_v123_effective_confidence')?agent_memory_v123_effective_confidence($r):(float)$r['confidence'];$meta=function_exists('agent_memory_v123_metadata')?agent_memory_v123_metadata($r):[];$status=(string)($meta['task_status']??'');$lines[]='['.$r['last_seen_at'].'] '.strtoupper((string)$r['memory_type']).' · '.agent_brain_v99_text($r['subject'],110).': '.agent_brain_v99_text($r['memory_text'],360).' · confidence '.number_format($effective,2).($status!==''?' · status '.$status:'');}$context[]=['source'=>'agent-brain:memory','title'=>'Confidence-ranked Agent Brain memory','text'=>implode("\n",$lines)];}
     if(function_exists('agent_memory_v123_tasks')){$tasks=agent_memory_v123_tasks($user,false);if($tasks){$lines=[];foreach(array_slice($tasks,0,12) as $t)$lines[]=strtoupper((string)$t['status']).' · '.agent_brain_v99_text($t['title'],120).': '.agent_brain_v99_text($t['text'],300).($t['due_at']!==''?' · due '.$t['due_at']:'').' · confidence '.number_format((float)$t['confidence'],2);$context[]=['source'=>'agent-brain:tasks','title'=>'Open task and commitment lifecycle','text'=>implode("\n",$lines)];}}
+    if(function_exists('homeserver_shared_v210_context_items')){
+        $homeItems=homeserver_shared_v210_context_items($user,$query,24);
+        if($homeItems){
+            $grouped=[];
+            foreach($homeItems as $item){
+                $dataset=(string)($item['dataset']??'context');
+                $grouped[$dataset][]='['.(string)($item['updated_at']??'current').'] '.agent_brain_v99_text($item['title']??ucfirst($dataset),140).': '.agent_brain_v99_text($item['text']??'',420);
+            }
+            foreach($grouped as $dataset=>$lines)$context[]=[
+                'source'=>'homeserver:'.$dataset,
+                'title'=>'HomeServer '.ucfirst($dataset).' · shared Agent fabric',
+                'text'=>implode("\n",array_slice($lines,0,8)),
+            ];
+        }
+    }
 
     $archiveRows=agent_brain_v99_rows('SELECT a.conversation_id,a.role,a.input_mode,a.message_text,a.created_at FROM agent_chat_archive a WHERE a.user_id=? AND '.$archiveScope.' ORDER BY a.created_at DESC,a.id DESC LIMIT 160',array_merge([$uid],$archiveParams));
     $archiveRows=agent_brain_v99_pick($archiveRows,$terms,$deep?24:8,$deep,static fn(array $r):string=>(string)($r['message_text']??''),$activity);if($archiveRows){$lines=[];foreach(array_reverse($archiveRows) as $r)$lines[]='['.$r['created_at'].' · conversation '.(int)$r['conversation_id'].'] '.strtoupper((string)$r['role']).': '.agent_brain_v99_text($r['message_text'],440);$context[]=['source'=>'agent-brain:conversation-history','title'=>'Retrieved conversation history','text'=>implode("\n",$lines)];}
