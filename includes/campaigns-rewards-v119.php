@@ -348,6 +348,15 @@ function campaigns_rewards_automation_execute_contact_v119(PDO $pdo,array $rule,
         ],[
             'summary'=>'Campaign automation issued Reward','campaign_public_id'=>$rule['campaign_public_id'],'automation_rule_id'=>$ruleId,'trigger'=>$rule['trigger_event'],
         ],'production',null,'automation');
+        if(function_exists('campaigns_rewards_journey_enqueue_v120')){
+            try{
+                campaigns_rewards_journey_enqueue_v120($pdo,$campaignId,$contactId,(string)$rule['trigger_event'],[
+                    'reward_issuance_id'=>(int)$issuance['id'],'automation_rule_id'=>$ruleId,
+                    'enrollment_id'=>max(0,(int)($payload['enrollment_id']??0)),
+                    'occurred_at'=>gmdate('Y-m-d H:i:s'),'expires_at'=>(string)($issuance['expires_at']??''),
+                ],'automation:'.$executionId.':'.$triggerEventId);
+            }catch(Throwable $e){error_log('Campaign messaging V1.20 bridge failed: '.$e->getMessage());}
+        }
         return ['duplicate'=>false,'suppressed'=>false,'execution_id'=>$executionId,'issuance'=>$issuance];
     }catch(Throwable $e){
         $pdo->prepare("UPDATE campaign_rule_executions SET status='failed',result_json=? WHERE id=?")
