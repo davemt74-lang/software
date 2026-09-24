@@ -289,6 +289,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             campaigns_rewards_journey_release_ensure_schema_v123($pdo);
             campaigns_rewards_journey_operations_ensure_schema_v124($pdo);
             campaigns_rewards_decision_ensure_schema_v125($pdo);
+            campaigns_rewards_optimization_ensure_schema_v126($pdo);
             video_meeting_ensure_schema_v1800($pdo);
             video_meeting_transcription_ensure_schema_v1800($pdo);
             video_meeting_intelligence_ensure_schema_v1820($pdo);
