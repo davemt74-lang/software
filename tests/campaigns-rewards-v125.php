@@ -51,7 +51,7 @@ cr_v125_assert(($inv['dynamic_reward_uses_attached_rewards_only']??false)===true
 cr_v125_assert(($inv['agent_recommendations_no_auto_apply']??false)===true,'Agent decision recommendations remain human-reviewed');
 
 $domain=vp3_cognitive_domain_registry_v2600()['domains']['campaigns_rewards']??[];
-cr_v125_assert(($domain['implementation_status']??'')==='integrated-v1.25','cognitive domain declares integrated V1.25');
+cr_v125_assert(in_array(($domain['implementation_status']??''),['integrated-v1.25','integrated-v1.26'],true),'cognitive domain remains compatible with V1.25 authority');
 cr_v125_assert(in_array('campaign_decisions',(array)($domain['authority']??[]),true),'Campaign Decision ledger is registered as canonical authority');
 foreach(['campaign.decision_recorded','campaign.decision_recommendation_proposed'] as $event)cr_v125_assert(in_array($event,$domain['events']??[],true),"cognitive domain registers {$event}");
 
