@@ -30,7 +30,7 @@ const checks=[
  ['bootstrap loads V1.22 after V1.21',bootstrap.indexOf("campaigns-rewards-v121.php")<bootstrap.indexOf("campaigns-rewards-v122.php")&&bootstrap.indexOf("campaigns-rewards-v122.php")<bootstrap.indexOf("campaigns-rewards-release-v122.php")],
  ['V1.22 cron is CLI-only and runs optimized dispatch plus recommendation refresh',cron.includes("PHP_SAPI!=='cli'")&&runtime.includes('campaigns_rewards_dispatch_due_v122')&&runtime.includes('campaigns_rewards_refresh_optimization_recommendations_v122')],
  ['existing consolidated CI runs V1.22 contracts',workflow.includes('Campaigns & Rewards V1.22 contract')&&workflow.includes('tests/campaigns-rewards-v122.mjs')],
- ['production package advances to V1.22 and includes runtime release and cron',(packageFlow.includes('"Campaigns & Rewards V1.22"')||(packageFlow.includes('"Campaigns & Rewards V1.23"')||(packageFlow.includes('"Campaigns & Rewards V1.24"')||(packageFlow.includes('"Campaigns & Rewards V1.25"')||packageFlow.includes('"Campaigns & Rewards V1.26"')))))&&packageFlow.includes('campaigns-rewards-v122.php')&&packageFlow.includes('cron/campaigns-rewards-v122.php')],
+ ['production package retains V1.22 runtime and cron under the global VP3 release label',packageFlow.includes('"VP3 Cloud Production"')&&packageFlow.includes('campaigns-rewards-v122.php')&&packageFlow.includes('cron/campaigns-rewards-v122.php')],
  ['documentation explicitly preserves dry-run and human-review boundaries',docs.includes('**no database tables or columns**')&&docs.includes('dry-run')&&docs.includes('does **not** mutate journey configuration')],
 ];
 
