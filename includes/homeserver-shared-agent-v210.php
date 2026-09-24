@@ -9,7 +9,7 @@ declare(strict_types=1);
  * runtimes can retrieve one logical context without cross-database ID writes.
  */
 const VP3_HOMESERVER_SHARED_AGENT_V210='vp3-homeserver-shared-agent-v210-20260924';
-const VP3_HOMESERVER_SHARED_AGENT_VERSION='2.2';
+const VP3_HOMESERVER_SHARED_AGENT_VERSION='2.3';
 
 function homeserver_shared_v210_ensure_schema(?PDO $pdo=null): void
 {
