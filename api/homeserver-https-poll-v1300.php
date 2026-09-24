@@ -19,7 +19,6 @@ if(!is_array($body))$body=[];
 
 try{
     $session=homeserver_https_v1300_authenticate($token,$device);
-    echo json_encode(homeserver_https_v1300_poll($session,$body),JSON_UNESCAPED_SLASHES);
 }catch(Throwable $e){
     $message=strtolower(trim((string)$e->getMessage()));
     $revoked=str_contains($message,'revoked');
@@ -27,5 +26,17 @@ try{
     echo json_encode([
       'ok'=>false,
       'error'=>$revoked?'HomeServer HTTPS session was revoked.':'HomeServer HTTPS session is not authorized.'
+    ],JSON_UNESCAPED_SLASHES);
+    exit;
+}
+
+try{
+    echo json_encode(homeserver_https_v1300_poll($session,$body),JSON_UNESCAPED_SLASHES);
+}catch(Throwable $e){
+    error_log('HomeServer HTTPS poll failed: '.$e->getMessage());
+    http_response_code(500);
+    echo json_encode([
+      'ok'=>false,
+      'error'=>'HomeServer HTTPS relay could not process the exchange.'
     ],JSON_UNESCAPED_SLASHES);
 }
