@@ -15,6 +15,7 @@ const commerce=read('includes/homeserver-commerce-agent-v1000.php');
 const setup=read('setup.php');
 const upgrade=read('upgrade.php');
 const workflow=read('.github/workflows/homeserver-runtime-journey.yml');
+const tokenStatusBody=account.slice(account.indexOf('function homeserver_account_v1210_token_status'),account.indexOf('function homeserver_account_v1210_begin_redeem'));
 
 const checks=[
  ['connector foreign keys use canonical users.id INT UNSIGNED',
@@ -38,7 +39,7 @@ const checks=[
  ['account pairing tokens are revoked when connection lifecycle is reset',
   account.includes('homeserver_account_v1210_revoke_user_tokens')&&api.includes('homeserver_account_v1210_revoke_user_tokens($userId)')],
  ['GET status no longer performs lazy pairing-token DDL',
-  account.includes("!table_exists('homeserver_pairing_tokens')")&&!/function homeserver_account_v1210_token_status[\s\S]*?homeserver_account_v1210_ensure_schema\(\$pdo\)/.test(account)],
+  tokenStatusBody.includes("!table_exists('homeserver_pairing_tokens')")&&!tokenStatusBody.includes('homeserver_account_v1210_ensure_schema($pdo)')],
  ['disconnected/revoked rows short-circuit live relay probing',
   cloud.includes("in_array($storedStatus, ['disconnected','revoked'], true)")&&cloud.includes("'connection_state'=>'disconnected'")],
  ['paired but offline/error records cannot be reported as connected',
