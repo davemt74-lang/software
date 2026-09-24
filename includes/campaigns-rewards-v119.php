@@ -312,6 +312,13 @@ function campaigns_rewards_automation_cooldown_blocked_v119(PDO $pdo,array $rule
     $q->execute([(int)$rule['id'],$contactId,$cutoff]);return (bool)$q->fetchColumn();
 }
 
+function campaigns_rewards_journey_enqueue_latest_v119(PDO $pdo,int $campaignId,int $contactId,string $trigger,array $context=[],string $eventId=''): array
+{
+    if(function_exists('campaigns_rewards_journey_enqueue_v121'))return campaigns_rewards_journey_enqueue_v121($pdo,$campaignId,$contactId,$trigger,$context,$eventId);
+    if(function_exists('campaigns_rewards_journey_enqueue_v120'))return campaigns_rewards_journey_enqueue_latest_v119($pdo,$campaignId,$contactId,$trigger,$context,$eventId);
+    return ['trigger'=>$trigger,'queued'=>0,'duplicate'=>0,'suppressed'=>1,'reason'=>'journey_runtime_unavailable'];
+}
+
 function campaigns_rewards_automation_execute_contact_v119(PDO $pdo,array $rule,int $contactId,string $triggerEventId,array $payload=[]): array
 {
     $ruleId=(int)$rule['id'];$campaignId=(int)$rule['campaign_id'];$merchantId=(int)$rule['merchant_id'];
@@ -348,19 +355,19 @@ function campaigns_rewards_automation_execute_contact_v119(PDO $pdo,array $rule,
         ],[
             'summary'=>'Campaign automation issued Reward','campaign_public_id'=>$rule['campaign_public_id'],'automation_rule_id'=>$ruleId,'trigger'=>$rule['trigger_event'],
         ],'production',null,'automation');
-        if(function_exists('campaigns_rewards_journey_enqueue_v120')){
+        if(function_exists('campaigns_rewards_journey_enqueue_v121')||function_exists('campaigns_rewards_journey_enqueue_v120')){
             try{
-                campaigns_rewards_journey_enqueue_v120($pdo,$campaignId,$contactId,(string)$rule['trigger_event'],[
+                campaigns_rewards_journey_enqueue_latest_v119($pdo,$campaignId,$contactId,(string)$rule['trigger_event'],[
                     'reward_issuance_id'=>(int)$issuance['id'],'automation_rule_id'=>$ruleId,
                     'enrollment_id'=>max(0,(int)($payload['enrollment_id']??0)),
                     'occurred_at'=>gmdate('Y-m-d H:i:s'),'expires_at'=>(string)($issuance['expires_at']??''),
                 ],'automation:'.$executionId.':'.$triggerEventId);
-                campaigns_rewards_journey_enqueue_v120($pdo,$campaignId,$contactId,'reward_issued',[
+                campaigns_rewards_journey_enqueue_latest_v119($pdo,$campaignId,$contactId,'reward_issued',[
                     'reward_issuance_id'=>(int)$issuance['id'],'automation_rule_id'=>$ruleId,
                     'enrollment_id'=>max(0,(int)($payload['enrollment_id']??0)),
                     'occurred_at'=>gmdate('Y-m-d H:i:s'),'expires_at'=>(string)($issuance['expires_at']??''),
                 ],'reward-issued:'.(int)$issuance['id']);
-            }catch(Throwable $e){error_log('Campaign messaging V1.20 bridge failed: '.$e->getMessage());}
+            }catch(Throwable $e){error_log('Campaign messaging journey bridge failed: '.$e->getMessage());}
         }
         return ['duplicate'=>false,'suppressed'=>false,'execution_id'=>$executionId,'issuance'=>$issuance];
     }catch(Throwable $e){
