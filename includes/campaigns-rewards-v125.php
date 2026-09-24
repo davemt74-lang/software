@@ -397,6 +397,9 @@ function campaigns_rewards_refresh_decision_recommendations_v125(PDO $pdo,int $m
       foreach($recommendations as $rec){$e=$pdo->prepare("SELECT id FROM campaign_agent_recommendations WHERE merchant_id=? AND campaign_id=? AND recommendation_type=? AND status='proposed' AND created_at>=DATE_SUB(UTC_TIMESTAMP(),INTERVAL 7 DAY) LIMIT 1");$e->execute([(int)$campaign['merchant_id'],$cid,$rec['type']]);if($e->fetchColumn())continue;
         $pdo->prepare("INSERT INTO campaign_agent_recommendations (public_id,merchant_id,campaign_id,recommendation_type,summary,status,evidence_refs_json,impact_preview_json,created_for_user_id)
           VALUES (?,?,?,?,?,'proposed',?,?,?)")->execute([campaigns_rewards_uuid_v100(),(int)$campaign['merchant_id'],$cid,$rec['type'],$rec['summary'],campaigns_rewards_json_v100(['source'=>'v125_decision_ledger','window_days'=>30]),campaigns_rewards_json_v100(['requires_human_decision'=>true,'auto_apply'=>false]),$owner]);$created++;
+        campaigns_rewards_activity_event_v100($pdo,(int)$campaign['merchant_id'],'campaign.decision_recommendation_proposed',['campaign_id'=>$cid],[
+          'summary'=>'Campaign decision recommendation proposed for human review','campaign_public_id'=>$campaign['public_id'],'recommendation_type'=>$rec['type'],'auto_apply'=>false
+        ],'production',null,'agent');
       }
     }
     return ['campaigns_reviewed'=>$reviewed,'recommendations_created'=>$created];
