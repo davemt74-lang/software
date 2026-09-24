@@ -326,7 +326,8 @@ function campaigns_rewards_prepare_message_v125(PDO $pdo,array $delivery,array $
     if(!empty($template['personalization_enabled']))$tokens=campaigns_rewards_flatten_tokens_v125($context);
     $tokens+=['{{offer_name}}'=>(string)($offer['name']??''),'{{offer_value_minor}}'=>(string)($offer['retail_value_minor']??''),'{{offer_currency}}'=>(string)($offer['currency']??'')];
     $ctx['tokens']=array_merge($ctx['tokens'],$tokens);$ctx['decision_context']=$context;$ctx['offer']=$offer;$ctx['decision']=$decision;
-    $subject=campaigns_rewards_render_personalized_v125((string)$delivery['subject'],$ctx['tokens'],$context);$body=campaigns_rewards_render_personalized_v125((string)$delivery['body'],$ctx['tokens'],$context);
+    $renderContext=!empty($template['personalization_enabled'])?$context:['offer'=>$offer];
+    $subject=campaigns_rewards_render_personalized_v125((string)$delivery['subject'],$ctx['tokens'],$renderContext);$body=campaigns_rewards_render_personalized_v125((string)$delivery['body'],$ctx['tokens'],$renderContext);
     return ['delivery'=>$delivery,'ctx'=>$ctx,'subject'=>$subject,'body'=>$body];
 }
 
