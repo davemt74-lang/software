@@ -76,7 +76,17 @@ function campaigns_rewards_decision_instance_v126(PDO $pdo,array $decision): ?ar
 
 function campaigns_rewards_decision_deliveries_v126(PDO $pdo,array $decision,?array $instance): array
 {
-    $ids=[];$direct=max(0,(int)($decision['delivery_id']??0));if($direct>0)$ids[$direct]=true;
+    $ids=[];$direct=max(0,(int)($decision['delivery_id']??0));
+    if($direct>0)$ids[$direct]=true;
+
+    // Offer performance must be attributable to the exact delivery that carried
+    // the selected Reward. Never inherit every delivery in the Journey for an offer.
+    if((string)($decision['decision_type']??'')==='offer'){
+        if($direct<1)return [];
+        $d=campaigns_rewards_delivery_v120($pdo,$direct);
+        return $d?[$d]:[];
+    }
+
     if($instance){
         $q=$pdo->prepare("SELECT id,metadata_json FROM campaign_deliveries WHERE campaign_id=? AND contact_id=? AND created_at>=? ORDER BY id");
         $q->execute([(int)$instance['campaign_id'],(int)$instance['contact_id'],(string)$instance['started_at']]);
@@ -150,17 +160,34 @@ function campaigns_rewards_fatigue_signal_v126(PDO $pdo,int $campaignId,int $win
 
 function campaigns_rewards_lifecycle_performance_v126(PDO $pdo,int $campaignId,int $windowDays=30): array
 {
-    $windowDays=max(7,min(365,$windowDays));$q=$pdo->prepare("SELECT * FROM campaign_decisions WHERE campaign_id=? AND created_at>=DATE_SUB(UTC_TIMESTAMP(),INTERVAL {$windowDays} DAY) ORDER BY id");
+    $windowDays=max(7,min(365,$windowDays));
+    $q=$pdo->prepare("SELECT * FROM campaign_decisions
+      WHERE campaign_id=? AND decision_type='entry'
+        AND created_at>=DATE_SUB(UTC_TIMESTAMP(),INTERVAL {$windowDays} DAY)
+      ORDER BY id");
     $q->execute([$campaignId]);$stages=[];
     foreach($q->fetchAll()?:[] as $d){
-        $ctx=json_decode((string)$d['context_json'],true)?:[];$stage=trim((string)($ctx['contact']['lifecycle_stage']??''));if($stage==='')$stage='unknown';
-        $stages[$stage]??=['decisions'=>0,'holdouts'=>0,'views'=>0,'conversions'=>0,'claims'=>0,'completed'=>0];
-        $stages[$stage]['decisions']++;if(!empty($d['is_holdout']))$stages[$stage]['holdouts']++;
-        $o=$pdo->prepare("SELECT outcome_type,COUNT(*) n FROM campaign_decision_outcomes WHERE decision_id=? GROUP BY outcome_type");$o->execute([(int)$d['id']]);
+        $ctx=json_decode((string)$d['context_json'],true)?:[];$outcome=json_decode((string)$d['outcome_json'],true)?:[];
+        $stage=trim((string)($ctx['contact']['lifecycle_stage']??''));if($stage==='')$stage='unknown';
+        $stages[$stage]??=['entries'=>0,'admitted'=>0,'holdouts'=>0,'suppressed'=>0,'views'=>0,'conversions'=>0,'claims'=>0,'completed'=>0];
+        $stages[$stage]['entries']++;
+        $admitted=empty($d['is_holdout'])&&!empty($outcome['allowed']);
+        if(!empty($d['is_holdout']))$stages[$stage]['holdouts']++;
+        elseif($admitted)$stages[$stage]['admitted']++;
+        else $stages[$stage]['suppressed']++;
+
+        // Entry decisions are the cohort authority for lifecycle performance.
+        // Deduplicate source evidence per entry before calculating response.
+        $o=$pdo->prepare("SELECT outcome_type,COUNT(DISTINCT CONCAT(source_type,':',source_id)) n
+          FROM campaign_decision_outcomes WHERE decision_id=? GROUP BY outcome_type");
+        $o->execute([(int)$d['id']]);
         foreach($o->fetchAll()?:[] as $row){$n=(int)$row['n'];if($row['outcome_type']==='viewed')$stages[$stage]['views']+=$n;elseif($row['outcome_type']==='converted')$stages[$stage]['conversions']+=$n;elseif($row['outcome_type']==='reward_claimed')$stages[$stage]['claims']+=$n;elseif($row['outcome_type']==='journey_completed')$stages[$stage]['completed']+=$n;}
     }
-    foreach($stages as &$s){$s['observed_conversion_rate']=campaigns_rewards_v126_rate($s['conversions'],$s['decisions']);$s['observed_completion_rate']=campaigns_rewards_v126_rate($s['completed'],$s['decisions']);}unset($s);
-    ksort($stages);return ['window_days'=>$windowDays,'stages'=>$stages,'source'=>'decision_time_context','mutates_crm'=>false];
+    foreach($stages as &$s){
+        $s['observed_conversion_rate']=campaigns_rewards_v126_rate($s['conversions'],$s['admitted']);
+        $s['observed_completion_rate']=campaigns_rewards_v126_rate($s['completed'],$s['admitted']);
+    }unset($s);
+    ksort($stages);return ['window_days'=>$windowDays,'stages'=>$stages,'cohort'=>'entry_decisions','denominator'=>'admitted_entries','source'=>'decision_time_context','mutates_crm'=>false];
 }
 
 function campaigns_rewards_offer_performance_v126(PDO $pdo,int $campaignId,int $windowDays=30): array
