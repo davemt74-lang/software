@@ -1,0 +1,65 @@
+<?php
+declare(strict_types=1);
+
+const VP3_CAMPAIGNS_REWARDS_SCHEMA_V126='vp3-campaigns-rewards-schema-v126-20260923';
+
+function campaigns_rewards_optimization_schema_ready_v126(?PDO $pdo=null): bool
+{
+    $pdo??=db();
+    return $pdo&&table_exists('campaign_decision_outcomes')&&table_exists('campaign_optimization_snapshots');
+}
+
+function campaigns_rewards_optimization_ensure_schema_v126(?PDO $pdo=null): void
+{
+    $pdo??=db();if(!$pdo)throw new RuntimeException('Database connection is unavailable.');
+    $pdo->exec("CREATE TABLE IF NOT EXISTS campaign_decision_outcomes (
+      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+      public_id CHAR(36) NOT NULL,
+      merchant_id BIGINT UNSIGNED NOT NULL,
+      campaign_id BIGINT UNSIGNED NOT NULL,
+      decision_id BIGINT UNSIGNED NOT NULL,
+      contact_id BIGINT UNSIGNED NOT NULL,
+      journey_id BIGINT UNSIGNED NULL,
+      journey_instance_id BIGINT UNSIGNED NULL,
+      delivery_id BIGINT UNSIGNED NULL,
+      reward_issuance_id BIGINT UNSIGNED NULL,
+      outcome_type VARCHAR(50) NOT NULL,
+      outcome_key VARCHAR(190) NOT NULL,
+      source_type VARCHAR(50) NOT NULL,
+      source_id VARCHAR(190) NOT NULL,
+      value_minor BIGINT NULL,
+      cost_minor BIGINT NULL,
+      currency CHAR(3) NOT NULL DEFAULT 'USD',
+      metadata_json LONGTEXT NOT NULL,
+      observed_at DATETIME NOT NULL,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE KEY uq_campaign_outcome_public (public_id),
+      UNIQUE KEY uq_campaign_outcome_key (merchant_id,outcome_key),
+      INDEX idx_campaign_outcome_decision (decision_id,outcome_type,observed_at,id),
+      INDEX idx_campaign_outcome_campaign (campaign_id,outcome_type,observed_at,id),
+      INDEX idx_campaign_outcome_contact (merchant_id,contact_id,observed_at,id),
+      INDEX idx_campaign_outcome_instance (journey_instance_id,observed_at,id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+    $pdo->exec("CREATE TABLE IF NOT EXISTS campaign_optimization_snapshots (
+      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+      public_id CHAR(36) NOT NULL,
+      merchant_id BIGINT UNSIGNED NOT NULL,
+      campaign_id BIGINT UNSIGNED NOT NULL,
+      journey_id BIGINT UNSIGNED NULL,
+      window_days SMALLINT UNSIGNED NOT NULL DEFAULT 30,
+      window_start DATETIME NOT NULL,
+      window_end DATETIME NOT NULL,
+      sample_count INT UNSIGNED NOT NULL DEFAULT 0,
+      metrics_json LONGTEXT NOT NULL,
+      lifecycle_json LONGTEXT NOT NULL,
+      recommendations_json LONGTEXT NOT NULL,
+      evidence_hash CHAR(64) NOT NULL,
+      status VARCHAR(30) NOT NULL DEFAULT 'observed',
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE KEY uq_campaign_optimization_public (public_id),
+      INDEX idx_campaign_optimization_campaign (campaign_id,created_at,id),
+      INDEX idx_campaign_optimization_merchant (merchant_id,created_at,id),
+      INDEX idx_campaign_optimization_hash (campaign_id,evidence_hash,created_at)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+}
