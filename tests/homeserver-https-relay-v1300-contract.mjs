@@ -30,6 +30,9 @@ const checks=[
   relay.includes("last_seen_at=UTC_TIMESTAMP()")&&relay.includes("status='paired'")&&relay.includes('capabilities_json')],
  ['Cloud to HomeServer requests are queued and delivered over the same outbound HTTPS session',
   relay.includes("status='queued'")&&relay.includes("status='delivered'")&&relay.includes("'requests'=>$requests")],
+ ['pairing returns a canonical absolute HTTPS poll URL',
+  relay.includes("VP3_HOMESERVER_HTTPS_POLL_URL='https://vp3.me/api/homeserver-https-poll-v1300.php'")&&
+  relay.includes("'poll_url'=>VP3_HOMESERVER_HTTPS_POLL_URL")],
  ['HomeServer results travel back to Cloud and complete the queued request',
   relay.includes("status=?,response_status=?,response_json=?,completed_at=UTC_TIMESTAMP()")&&
   relay.includes("$ok?'completed':'failed'")],
