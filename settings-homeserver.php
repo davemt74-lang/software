@@ -60,6 +60,7 @@ if (!$user) redirect(url('/login.php'));
           </div>
 
           <div class="hs-actions" id="hsConnectedActions" hidden>
+            <button class="hs-button primary" id="hsTestConnection" type="button">Test Connection</button>
             <button class="hs-button" id="hsReconnect" type="button">Reconnect</button>
             <button class="hs-button danger" id="hsDisconnect" type="button">Disconnect</button>
           </div>
@@ -81,6 +82,9 @@ if (!$user) redirect(url('/login.php'));
             <div><dt>Last successful contact</dt><dd id="hsLastSeen">—</dd></div>
             <div><dt>Version</dt><dd id="hsVersion">—</dd></div>
             <div><dt>Reconnect</dt><dd id="hsReconnectStatus">—</dd></div>
+            <div><dt>Round trip</dt><dd id="hsRoundTripStatus">Not tested</dd></div>
+            <div><dt>Shared Agent sync</dt><dd id="hsSharedSync">Not yet</dd></div>
+            <div><dt>Agent Brain</dt><dd id="hsBrainStatus">Checking…</dd></div>
           </dl>
         </section>
 
@@ -98,6 +102,6 @@ if (!$user) redirect(url('/login.php'));
   </main>
 </div>
 <script src="<?= e(url('/member-shell-v77.js')) ?>"></script>
-<script src="<?= e(url('/homeserver-settings-v1210.js?v=homeserver-core-v1304-20260924')) ?>" defer></script>
+<script src="<?= e(url('/homeserver-settings-v1210.js?v=homeserver-v21-shared-agent-20260924')) ?>" defer></script>
 </body>
 </html>
