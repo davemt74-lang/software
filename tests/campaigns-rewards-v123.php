@@ -42,7 +42,7 @@ cr_v123_assert(($inv['inflight_version_pinning']??false)===true&&($inv['new_entr
 cr_v123_assert(($inv['rollback_creates_new_release']??false)===true&&($inv['agent_cannot_publish_or_rollback']??false)===true,'rollback and Agent governance are explicit');
 
 $domain=vp3_cognitive_domain_registry_v2600()['domains']['campaigns_rewards']??[];
-cr_v123_assert(($domain['implementation_status']??'')==='integrated-v1.23','cognitive domain declares integrated V1.23');
+cr_v123_assert(in_array(($domain['implementation_status']??''),['integrated-v1.23','integrated-v1.24'],true),'cognitive domain declares integrated V1.23');
 foreach(['campaign.journey_draft_changed','campaign.journey_release_validated','campaign.journey_published','campaign.journey_publish_scheduled','campaign.journey_version_started'] as $event)
     cr_v123_assert(in_array($event,$domain['events']??[],true),"cognitive domain registers {$event}");
 
