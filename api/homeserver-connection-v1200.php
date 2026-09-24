@@ -35,9 +35,6 @@ function homeserver_connection_v1200_response(int $userId, bool $force=false): a
 {
     $status = homeserver_cloud_v1200_status($userId, $force);
     $row = homeserver_vp3_connection($userId);
-    $status['can_repair'] = $row
-        && !empty($row['relay_token_enc'])
-        && !in_array((string)($row['status'] ?? ''), ['disconnected','revoked'], true);
     $status['can_remove'] = $row !== null
         && in_array((string)($row['status'] ?? ''), ['disconnected','revoked'], true);
     $status['account_pairing'] = homeserver_account_v1210_token_status($userId);
@@ -78,27 +75,6 @@ try {
 
     if ($action === 'generate_pairing_token') {
         $accountToken = homeserver_account_v1210_generate_token($userId);
-    } elseif ($action === 'start_pairing') {
-        // Compatibility path for older HomeServer builds. New installations use
-        // the Cloud-issued account token and redeem it from HomeServer.
-        $pairing = homeserver_cloud_v1200_start_pairing($userId, (string)($_POST['claim_code'] ?? ''));
-    } elseif ($action === 'pairing_status') {
-        $now = microtime(true);
-        $lastPoll = (float)($_SESSION['vp3_homeserver_pair_poll_at'] ?? 0.0);
-        if ($lastPoll > 0 && ($now - $lastPoll) < 1.0) {
-            http_response_code(429);
-            header('Retry-After: 1');
-            echo json_encode(['ok'=>false,'error'=>'Checking too quickly. Try again in a moment.','status'=>homeserver_connection_v1200_response($userId,false)]);
-            exit;
-        }
-        $_SESSION['vp3_homeserver_pair_poll_at'] = $now;
-        $pairing = homeserver_cloud_v1200_check_pairing_safe($userId);
-        if (!empty($pairing['ready'])) {
-            $row = homeserver_vp3_connection($userId);
-            homeserver_account_v1210_mark_paired($userId, (string)($row['device_id'] ?? ''));
-            try { homeserver_scheduling_v620_provision($userId, false); } catch (Throwable $ignored) {}
-            try { homeserver_commerce_agent_v1000_provision($userId, false); } catch (Throwable $ignored) {}
-        }
     } elseif ($action === 'reconnect') {
         homeserver_cloud_v1200_reconnect($userId);
     } elseif ($action === 'repair') {
