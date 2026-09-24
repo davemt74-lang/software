@@ -13,7 +13,7 @@ const cognitive=read('includes/cognitive-presentation-v510.php');
 const cognitiveClient=read('chat-cognitive-presentation-v510.js');
 
 const checks=[
- ['shared product release is 2.2',/VP3_HOMESERVER_RELEASE_VERSION = '2\.2'/.test(vp3)&&/VP3_HOMESERVER_SHARED_AGENT_VERSION='2\.2'/.test(shared)],
+ ['shared product release is 2.3',/VP3_HOMESERVER_RELEASE_VERSION = '2\.3'/.test(vp3)&&/VP3_HOMESERVER_SHARED_AGENT_VERSION='2\.3'/.test(shared)],
  ['connection transitions create connected and reconnected Agent updates',/homeserver_connection_update/.test(shared)&&/HomeServer connected/.test(shared)&&/HomeServer reconnected/.test(shared)],
  ['disconnect remains a priority Agent update with Cloud fallback wording',/homeserver_needs_attention/.test(shared)&&/continue with Cloud capabilities/.test(shared)&&/local data, models and HomeServer tools/.test(shared)],
  ['connection notifications are eligible for canonical Agent Chat presentation',/homeserver_connection_update/.test(notifications)&&/homeserver_needs_attention/.test(notifications)],
@@ -29,4 +29,4 @@ const checks=[
 ];
 
 for(const [name,ok] of checks){assert.equal(ok,true,name);console.log('PASS',name);}
-console.log(`VP3 Cloud / HomeServer v2.2 presence + execution routing: ${checks.length}/${checks.length} passed`);
+console.log(`VP3 Cloud / HomeServer v2.3 presence + execution routing: ${checks.length}/${checks.length} passed`);
