@@ -6,6 +6,7 @@ const page=read('settings-homeserver.php');
 const js=read('homeserver-settings-v1210.js');
 const css=read('homeserver-settings-v1200.css');
 const api=read('api/homeserver-connection-v1200.php');
+const legacyApi=read('api/homeserver-status.php');
 const actions=read('includes/homeserver-cloud-pairing-actions-v1200.php');
 const cloud=read('includes/homeserver-cloud-pairing-v1200.php');
 const account=read('includes/homeserver-account-pairing-v1210.php');
@@ -28,6 +29,8 @@ const checks=[
   upgrade.includes('homeserver_account_v1210_schema_ready()')&&upgrade.includes('homeserver_scheduling_v620_schema_ready()')&&upgrade.includes('homeserver_commerce_agent_v1000_schema_ready()')],
  ['status API isolates optional connector failures from core pairing lifecycle',
   api.includes('homeserver_connection_v1200_optional_connector')&&api.includes("Connector status is unavailable until the database upgrade completes.")],
+ ['legacy/global HomeServer status uses the same canonical live connection state',
+  legacyApi.includes('homeserver_cloud_v1200_status($userId,$force)')&&legacyApi.includes('homeserver_account_v1210_revoke_user_tokens($userId)')&&!legacyApi.includes('homeserver_vp3_disconnect($userId)')],
  ['disconnect is fail-closed locally when relay rotation is unavailable',
   actions.includes("SET relay_token_enc=NULL,homeserver_token_enc=NULL")&&actions.includes("status='revoked'")&&actions.includes("'local_only'=>!$relayRevoked")],
  ['remove accepts disconnected or locally revoked rows and cannot deadlock on relay release',
