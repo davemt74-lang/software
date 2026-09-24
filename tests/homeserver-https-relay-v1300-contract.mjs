@@ -46,7 +46,7 @@ const checks=[
  ['upgrade completeness requires HTTPS relay schema',
   upgrade.includes('homeserver_https_v1300_schema_ready()')],
  ['official HTTPS transport needs no broker environment variable',
-  pair.includes("transport")&&poll.includes("transport")&&!pair.includes('VP3_HOMESERVER_RELAY_URL')]
+  relay.includes("'transport'=>'vp3_https'")&&!pair.includes('VP3_HOMESERVER_RELAY_URL')&&!poll.includes('VP3_HOMESERVER_RELAY_URL')]
 ];
 
 for(const [name,ok] of checks){assert.equal(ok,true,name);console.log('PASS',name);}
