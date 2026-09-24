@@ -34,10 +34,25 @@ return [
         // falls back to send_contact_email for backward compatibility.
         'send_password_reset_email' => false,
 
-        // Campaigns & Rewards V1.20 outbound email is independently gated.
-        // Leave disabled until the server has a working mail transport.
+        // Campaigns & Rewards V1.21 delivery providers.
+        // PHP mail remains the safe default; select SendGrid/Twilio explicitly.
         'send_campaign_email' => false,
         'campaign_email_from' => '',
+        'campaign_email_provider' => 'php_mail', // php_mail | sendgrid
+        'campaign_sendgrid_api_key' => '',
+        'campaign_sendgrid_from_email' => '',
+        'campaign_sendgrid_from_name' => '',
+        'campaign_sendgrid_api_base' => 'https://api.sendgrid.com',
+        // PEM-formatted ECDSA public key for SendGrid Signed Event Webhook.
+        'campaign_sendgrid_webhook_public_key_pem' => '',
+        'campaign_sms_provider' => '', // twilio
+        'campaign_twilio_account_sid' => '',
+        'campaign_twilio_auth_token' => '',
+        'campaign_twilio_from_number' => '',
+        'campaign_twilio_messaging_service_sid' => '',
+        // Set when reverse proxies make the externally signed callback URL
+        // differ from the request URL PHP can reconstruct.
+        'campaign_webhook_base_url' => '',
     ],
 
     // HomeServer's trusted Remote Relay. Production must use HTTPS. The same
