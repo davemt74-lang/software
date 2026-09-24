@@ -108,7 +108,7 @@ function campaigns_rewards_decision_context_v125(PDO $pdo,int $merchantId,int $c
       ],
       'loyalty'=>$loyalty,
       'rewards'=>['active_count'=>$activeRewards,'claimed_count'=>$claimedRewards],
-      'campaign'=>['id'=>$campaignId,'prior_participation_count'=>$priorCampaign],
+      'campaign'=>['id'=>$campaignId,'prior_participation_count'=>$priorCampaign,'version_no'=>(int)(campaigns_rewards_campaign_platform_v100($pdo,$campaignId)['current_version_no']??0)],
       'journey'=>['prior_completed_count'=>$priorJourney],
       'context'=>campaigns_rewards_journey_context_v121($triggerContext),
     ];
@@ -232,11 +232,17 @@ function campaigns_rewards_record_branch_v125(PDO $pdo,array $delivery,string $f
 
 function campaigns_rewards_reward_candidates_v125(PDO $pdo,int $campaignId): array
 {
-    $q=$pdo->prepare("SELECT i.reward_product_id,i.variant_id,i.quantity,i.priority,i.conditions_json,rp.name,rp.claim_limit,rp.inventory_mode,rp.retail_value_minor,rp.internal_cost_minor,rp.currency,rp.is_active
-      FROM campaign_reward_set_items i INNER JOIN campaign_reward_sets rs ON rs.id=i.reward_set_id
-      INNER JOIN reward_products rp ON rp.id=i.reward_product_id
-      WHERE rs.campaign_id=? AND rp.is_active=1 ORDER BY i.priority,i.reward_product_id,i.variant_id");
-    $q->execute([$campaignId]);return $q->fetchAll()?:[];
+    $campaign=campaigns_rewards_campaign_platform_v100($pdo,$campaignId);if(!$campaign||(int)$campaign['current_version_no']<1)return [];
+    $q=$pdo->prepare("SELECT id,reward_snapshot_json FROM campaign_versions WHERE campaign_id=? AND version_no=? LIMIT 1");$q->execute([$campaignId,(int)$campaign['current_version_no']]);$version=$q->fetch();
+    if(!$version)return [];$items=json_decode((string)$version['reward_snapshot_json'],true);if(!is_array($items))return [];
+    $out=[];
+    foreach($items as $item){
+        if(!is_array($item)||empty($item['is_active']))continue;$rewardId=max(0,(int)($item['reward_product_id']??0));if($rewardId<1)continue;
+        $active=$pdo->prepare("SELECT is_active FROM reward_products WHERE id=? AND merchant_id=? LIMIT 1");$active->execute([$rewardId,(int)$campaign['merchant_id']]);if(!(int)$active->fetchColumn())continue;
+        $item['campaign_version_id']=(int)$version['id'];$item['campaign_version_no']=(int)$campaign['current_version_no'];$out[]=$item;
+    }
+    usort($out,static fn(array $a,array $b):int=>[(int)($a['priority']??100),(int)($a['reward_product_id']??0),(int)($a['variant_id']??0)]<=>[(int)($b['priority']??100),(int)($b['reward_product_id']??0),(int)($b['variant_id']??0)]);
+    return $out;
 }
 
 function campaigns_rewards_reward_candidate_matches_v125(array $candidate,array $context): bool
@@ -263,7 +269,7 @@ function campaigns_rewards_select_offer_v125(PDO $pdo,array $delivery,array $tem
     $bestPriority=(int)$eligible[0]['priority'];$pool=array_values(array_filter($eligible,static fn($r)=>(int)$r['priority']===$bestPriority));
     $seed=(string)($delivery['metadata']['journey_instance_key']??'')."|".(string)($delivery['metadata']['step_key']??'')."|".(int)$delivery['contact_id'];
     $index=hexdec(substr(hash('sha256',$seed),0,8))%count($pool);$selected=$pool[$index];
-    return ['selected'=>true,'reason'=>'eligible','reward_product_id'=>(int)$selected['reward_product_id'],'variant_id'=>(int)$selected['variant_id'],'quantity'=>(int)$selected['quantity'],'name'=>(string)$selected['name'],'retail_value_minor'=>$selected['retail_value_minor']===null?null:(int)$selected['retail_value_minor'],'currency'=>(string)$selected['currency'],'candidate_count'=>count($eligible)];
+    return ['selected'=>true,'reason'=>'eligible','campaign_version_id'=>(int)($selected['campaign_version_id']??0),'campaign_version_no'=>(int)($selected['campaign_version_no']??0),'reward_product_id'=>(int)$selected['reward_product_id'],'variant_id'=>(int)($selected['variant_id']??0),'quantity'=>max(1,(int)($selected['quantity']??1)),'name'=>(string)$selected['reward_name'],'retail_value_minor'=>$selected['retail_value_minor']===null?null:(int)$selected['retail_value_minor'],'currency'=>(string)$selected['currency'],'candidate_count'=>count($eligible)];
 }
 
 function campaigns_rewards_decision_validate_issue_v125(PDO $pdo,int $campaignId,int $rewardProductId,int $contactId,int $decisionId): array
