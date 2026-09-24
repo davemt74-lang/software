@@ -73,6 +73,7 @@ NODE_TESTS = [
     'tests/campaigns-rewards-v122.mjs',
     'tests/campaigns-rewards-v123.mjs',
     'tests/campaigns-rewards-v124.mjs',
+    'tests/campaigns-rewards-v125.mjs',
     'tests/transcription-analysis-source-v308-contract.mjs',
     'tests/knowledge-agent-context-v162-browser-contract.mjs',
     'tests/agent-brain-learning-history-v317.mjs',
@@ -200,6 +201,7 @@ PHP_TESTS = [
     'tests/campaigns-rewards-v122.php',
     'tests/campaigns-rewards-v123.php',
     'tests/campaigns-rewards-v124.php',
+    'tests/campaigns-rewards-v125.php',
 ]
 
 
