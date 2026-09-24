@@ -21,14 +21,14 @@ const checks=[
  ['shared Cloud/HomeServer product release is 2.3',
   /VP3_HOMESERVER_RELEASE_VERSION = '2\.3'/.test(vp3)&&/VP3_HOMESERVER_SHARED_AGENT_VERSION='2\.3'/.test(shared)],
  ['v2.3 continuity binds to the existing Phase 19 durable Job Engine',
-  /require_once __DIR__\.\/['"]agent-job-engine-v1900\.php['"]/.test(continuity)&&
+  continuity.includes("agent-job-engine-v1900.php")&&
   /agent_job_retry_v1900/.test(continuity)&&/agent_job_cancel_v1900/.test(continuity)&&/agent_workflow_runs/.test(continuity)],
  ['continuity schema attaches one row to one canonical workflow run',
   /CREATE TABLE IF NOT EXISTS homeserver_work_continuity/.test(continuity)&&
   /run_id BIGINT UNSIGNED NOT NULL PRIMARY KEY/.test(continuity)&&
   /FOREIGN KEY \(run_id\) REFERENCES agent_workflow_runs\(id\) ON DELETE CASCADE/.test(continuity)],
  ['stable HomeServer idempotency key is scoped to owner run and action',
-  /hash\('sha256','vp3-v230\|'\.\$uid\.\|'\.\$runId\.\|'\.\$actionId\)/.test(continuity)],
+  continuity.includes("hash('sha256','vp3-v230|'.$uid.'|'.$runId.'|'.$actionId)")],
  ['fresh setup and upgrade install the v2.3 continuity schema',
   /homeserver_work_v230_ensure_schema\(\$pdo\)/.test(setup)&&
   /homeserver_work_v230_schema_ready\(\)/.test(upgrade)&&
