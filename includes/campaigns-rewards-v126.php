@@ -258,6 +258,33 @@ function campaigns_rewards_refresh_optimization_v126(PDO $pdo,int $merchantId=0,
     return $summary;
 }
 
+function campaigns_rewards_optimization_recommendations_v126(PDO $pdo,int $merchantId,int $campaignId,int $actorUserId): array
+{
+    campaigns_rewards_platform_assert_can_v100($pdo,$merchantId,$actorUserId,'analytics.view');
+    $q=$pdo->prepare("SELECT * FROM campaign_agent_recommendations
+      WHERE merchant_id=? AND campaign_id=? AND recommendation_type LIKE 'optimization.%'
+      ORDER BY (status='proposed') DESC,created_at DESC,id DESC LIMIT 100");
+    $q->execute([$merchantId,$campaignId]);$rows=$q->fetchAll()?:[];
+    foreach($rows as &$row){$row['evidence']=json_decode((string)$row['evidence_refs_json'],true)?:[];$row['impact']=json_decode((string)$row['impact_preview_json'],true)?:[];}unset($row);
+    return $rows;
+}
+
+function campaigns_rewards_review_optimization_recommendation_v126(PDO $pdo,int $merchantId,int $campaignId,int $recommendationId,int $actorUserId,string $decision): array
+{
+    campaigns_rewards_platform_assert_can_v100($pdo,$merchantId,$actorUserId,'campaigns.edit');
+    if(!in_array($decision,['accepted','dismissed'],true))throw new RuntimeException('Choose accept or dismiss.');
+    $q=$pdo->prepare("SELECT * FROM campaign_agent_recommendations
+      WHERE id=? AND merchant_id=? AND campaign_id=? AND recommendation_type LIKE 'optimization.%' LIMIT 1");
+    $q->execute([$recommendationId,$merchantId,$campaignId]);$row=$q->fetch()?:throw new RuntimeException('Optimization recommendation not found.');
+    if((string)$row['status']==='proposed')$pdo->prepare("UPDATE campaign_agent_recommendations SET status=?,resolved_at=UTC_TIMESTAMP() WHERE id=?")->execute([$decision,$recommendationId]);
+    $campaign=campaigns_rewards_campaign_platform_v100($pdo,$campaignId);
+    if($campaign)campaigns_rewards_activity_event_v100($pdo,$merchantId,'campaign.optimization_recommendation_reviewed',['campaign_id'=>$campaignId],[
+      'summary'=>'Campaign optimization recommendation reviewed','campaign_public_id'=>$campaign['public_id'],'recommendation_id'=>$recommendationId,
+      'decision'=>$decision,'auto_applied'=>false,'live_campaign_mutation'=>false,
+    ],(string)$campaign['environment'],$actorUserId,'user');
+    $q=$pdo->prepare("SELECT * FROM campaign_agent_recommendations WHERE id=?");$q->execute([$recommendationId]);return $q->fetch()?:$row;
+}
+
 function campaigns_rewards_optimization_snapshots_v126(PDO $pdo,int $merchantId,int $campaignId=0,int $limit=50): array
 {
     $limit=max(1,min(200,$limit));$sql="SELECT s.*,c.name campaign_name FROM campaign_optimization_snapshots s INNER JOIN campaigns c ON c.id=s.campaign_id WHERE s.merchant_id=?";$params=[$merchantId];
