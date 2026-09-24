@@ -161,6 +161,7 @@ require_once __DIR__.'/cognitive-cards-v520.php';
 require_once __DIR__.'/cognitive-domain-integration-v2380.php';
 require_once __DIR__.'/cognitive-domain-integration-v2390.php';
 require_once __DIR__.'/homeserver-shared-agent-v210.php';
+require_once __DIR__.'/homeserver-execution-routing-v220.php';
 require_once __DIR__.'/cognitive-learning-v540.php';
 require_once __DIR__.'/cognitive-planning-v550.php';
 require_once __DIR__.'/cognitive-orchestration-v560.php';
