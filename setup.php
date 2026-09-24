@@ -32,6 +32,7 @@ try {
     crm_v180_ensure_schema($pdo);
     campaigns_rewards_platform_ensure_schema_v100($pdo);
     campaigns_rewards_ensure_schema_v100($pdo);
+    campaigns_rewards_journey_release_ensure_schema_v123($pdo);
     vp3_social_ensure_schema_v320($pdo);
     vp3_human_messaging_v370_ensure_schema($pdo);
     artist_workspace_v181_ensure_schema($pdo);
