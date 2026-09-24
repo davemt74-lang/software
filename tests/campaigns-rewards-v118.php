@@ -37,7 +37,7 @@ cr_v118_assert(($inv['campaign_activity_uses_existing_cognitive_domain']??false)
 cr_v118_assert(($inv['payment_authority_added']??true)===false,'Campaigns does not gain payment authority');
 
 $domain=vp3_cognitive_domain_registry_v2600()['domains']['campaigns_rewards']??[];
-cr_v118_assert(in_array(($domain['implementation_status']??''),['integrated-v1.18','integrated-v1.19','integrated-v1.20','integrated-v1.21','integrated-v1.22'],true),'cognitive domain is at least integrated V1.18');
+cr_v118_assert(in_array(($domain['implementation_status']??''),['integrated-v1.18','integrated-v1.19','integrated-v1.20','integrated-v1.21','integrated-v1.22','integrated-v1.23'],true),'cognitive domain is at least integrated V1.18');
 foreach(['campaign.landing_viewed','campaign.newsletter_signup','campaign.referral_signup','campaign.event_rsvp','campaign.rewards_updated'] as $eventName){
     cr_v118_assert(in_array($eventName,$domain['events']??[],true),"cognitive domain registers {$eventName}");
 }

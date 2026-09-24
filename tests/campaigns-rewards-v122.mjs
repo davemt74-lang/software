@@ -26,11 +26,11 @@ const checks=[
  ['Agent recommendations use existing campaign_agent_recommendations authority',runtime.includes('INSERT INTO campaign_agent_recommendations')&&runtime.includes("'auto_apply'=>false")&&runtime.includes('campaigns_rewards_review_recommendation_v122')],
  ['human recommendation review does not mutate journey nodes',runtime.includes("['accepted','dismissed']")&&release.includes("'recommendations_never_auto_apply'=>true")],
  ['Campaign workspace exposes template simulation intelligence and optimization controls',campaigns.includes('journey_template_apply')&&campaigns.includes('journey_simulate')&&campaigns.includes('optimize_send_time')&&campaigns.includes('Journey intelligence')],
- ['Cognitive domain advances to V1.22 optimization lifecycle',registry.includes("'implementation_status'=>'integrated-v1.22'")&&registry.includes("'campaign.journey_send_time_optimized'")&&registry.includes("'campaign.journey_recommendation_reviewed'")],
+ ['Cognitive domain advances to V1.22 optimization lifecycle',(registry.includes("'implementation_status'=>'integrated-v1.22'")||registry.includes("'implementation_status'=>'integrated-v1.23'"))&&registry.includes("'campaign.journey_send_time_optimized'")&&registry.includes("'campaign.journey_recommendation_reviewed'")],
  ['bootstrap loads V1.22 after V1.21',bootstrap.indexOf("campaigns-rewards-v121.php")<bootstrap.indexOf("campaigns-rewards-v122.php")&&bootstrap.indexOf("campaigns-rewards-v122.php")<bootstrap.indexOf("campaigns-rewards-release-v122.php")],
  ['V1.22 cron is CLI-only and runs optimized dispatch plus recommendation refresh',cron.includes("PHP_SAPI!=='cli'")&&runtime.includes('campaigns_rewards_dispatch_due_v122')&&runtime.includes('campaigns_rewards_refresh_optimization_recommendations_v122')],
  ['existing consolidated CI runs V1.22 contracts',workflow.includes('Campaigns & Rewards V1.22 contract')&&workflow.includes('tests/campaigns-rewards-v122.mjs')],
- ['production package advances to V1.22 and includes runtime release and cron',packageFlow.includes('"Campaigns & Rewards V1.22"')&&packageFlow.includes('campaigns-rewards-v122.php')&&packageFlow.includes('cron/campaigns-rewards-v122.php')],
+ ['production package advances to V1.22 and includes runtime release and cron',(packageFlow.includes('"Campaigns & Rewards V1.22"')||packageFlow.includes('"Campaigns & Rewards V1.23"'))&&packageFlow.includes('campaigns-rewards-v122.php')&&packageFlow.includes('cron/campaigns-rewards-v122.php')],
  ['documentation explicitly preserves dry-run and human-review boundaries',docs.includes('**no database tables or columns**')&&docs.includes('dry-run')&&docs.includes('does **not** mutate journey configuration')],
 ];
 
