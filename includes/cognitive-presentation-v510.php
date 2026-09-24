@@ -219,6 +219,34 @@ function vp3_cognitive_presentation_digest_ack_v510(PDO $pdo,array $user,string 
     $pdo->prepare($sql)->execute([$publicId,(int)$user['id'],$namespace]);
 }
 
+function vp3_cognitive_presentation_work_update_v230(PDO $pdo,array $user): ?array
+{
+    $uid=(int)($user['id']??0);
+    if($uid<1||!table_exists('notifications'))return null;
+    try{
+        $s=$pdo->prepare("SELECT id,type,title,body,target_url,source_id,created_at
+          FROM notifications
+          WHERE user_id=? AND type IN ('workflow_update','workflow_needs_attention')
+            AND source_type='agent_workflow_run'
+            AND created_at>=DATE_SUB(UTC_TIMESTAMP(),INTERVAL 1 DAY)
+          ORDER BY id DESC LIMIT 1");
+        $s->execute([$uid]);$row=$s->fetch();
+        if(!is_array($row))return null;
+        return [
+          'id'=>(int)$row['id'],
+          'type'=>(string)$row['type'],
+          'title'=>(string)$row['title'],
+          'body'=>(string)$row['body'],
+          'target_url'=>vp3_cognitive_presentation_internal_url_v510((string)($row['target_url']??'')),
+          'run_id'=>max(0,(int)($row['source_id']??0)),
+          'created_at'=>(string)$row['created_at'],
+          'priority'=>(string)$row['type']==='workflow_needs_attention'?'critical':'status',
+        ];
+    }catch(Throwable $e){
+        return null;
+    }
+}
+
 function vp3_cognitive_presentation_homeserver_presence_v220(PDO $pdo,array $user): ?array
 {
     $uid=(int)($user['id']??0);
@@ -402,6 +430,7 @@ function vp3_cognitive_presentation_state_v510(PDO $pdo,array $user,string $name
     $digest=vp3_cognitive_presentation_digest_v510($pdo,$user,$namespace,$row);
     $voice=vp3_cognitive_presentation_voice_candidate_v510($pdo,$user,$row,$digest);
     $homeServerPresence=vp3_cognitive_presentation_homeserver_presence_v220($pdo,$user);
+    $workUpdate=vp3_cognitive_presentation_work_update_v230($pdo,$user);
     if(is_array($voice)&&isset($voice['skip_through_id'])){
         vp3_cognitive_presentation_voice_delivered_v510($pdo,$user,$namespace,(int)$voice['skip_through_id']);$voice=null;
     }
@@ -528,7 +557,7 @@ function vp3_cognitive_presentation_state_v510(PDO $pdo,array $user,string $name
         'decision_calibration'=>$decisionCalibration,
         'current_state'=>$currentState,
         'current_state_presentation'=>$currentStatePresentation,
-        'digest'=>$digest,'voice_candidate'=>$voice,'homeserver_presence'=>$homeServerPresence,'attention'=>$attentionStatus,
+        'digest'=>$digest,'voice_candidate'=>$voice,'homeserver_presence'=>$homeServerPresence,'work_update'=>$workUpdate,'attention'=>$attentionStatus,
         'poll_seconds'=>VP3_COGNITIVE_PRESENTATION_POLL_SECONDS_V510,
     ];
 }
