@@ -158,6 +158,10 @@ function homeserver_https_v1300_poll(array $session,array $body): array
     $caps=is_array($body['capabilities']??null)?$body['capabilities']:[];
     $capsJson=json_encode($caps,JSON_UNESCAPED_SLASHES);if(!is_string($capsJson))$capsJson='{}';
 
+    // Keep all schema/DDL work outside the polling transaction. MySQL DDL
+    // implicitly commits active transactions even when CREATE TABLE uses IF NOT EXISTS.
+    homeserver_https_v1300_ensure_schema($pdo);
+
     $pdo->beginTransaction();
     try{
         foreach((array)($body['results']??[]) as $result){
@@ -185,7 +189,10 @@ function homeserver_https_v1300_poll(array $session,array $body): array
           ORDER BY id LIMIT 8 FOR UPDATE");
         $q->execute([$userId,$deviceId]);$rows=$q->fetchAll()?:[];
         $home='';
-        $conn=homeserver_vp3_connection($userId);
+        // Query the already-ensured connection table directly. Do not call
+        // homeserver_vp3_connection() here because it performs schema DDL.
+        $connQ=$pdo->prepare("SELECT homeserver_token_enc FROM homeserver_connections WHERE user_id=? LIMIT 1");
+        $connQ->execute([$userId]);$conn=$connQ->fetch();
         if($conn)$home=homeserver_vp3_decrypt((string)($conn['homeserver_token_enc']??''));
         $requests=[];
         foreach($rows as $row){
