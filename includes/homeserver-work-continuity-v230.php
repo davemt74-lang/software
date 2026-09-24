@@ -337,6 +337,28 @@ function homeserver_work_v230_retry(PDO $pdo,array $user,int $runId): array
     return ['continuity'=>$fresh?homeserver_work_v230_public($pdo,$fresh):null,'job'=>$run,'build'=>VP3_HOMESERVER_WORK_CONTINUITY_V230];
 }
 
+function homeserver_work_v230_resume(PDO $pdo,array $user,int $runId): array
+{
+    $uid=(int)($user['id']??0);$row=homeserver_work_v230_row($pdo,$uid,$runId);
+    if(!$row)throw new RuntimeException('Durable work was not found.');
+    $run=agent_workflow_row_v1400($pdo,$uid,$runId);
+    if(!$run)throw new RuntimeException('Durable Agent job was not found.');
+    $status=(string)($run['status']??'');
+    if(in_array($status,['completed','cancelled'],true))throw new RuntimeException('Closed durable work cannot be resumed.');
+    if($status==='failed')return homeserver_work_v230_retry($pdo,$user,$runId);
+    if($status==='paused'&&function_exists('agent_work_control_resume_v173')){
+        agent_work_control_resume_v173($pdo,$user,$runId);
+    }elseif(in_array($status,['approved','executing'],true)){
+        $pdo->prepare("UPDATE agent_workflow_runs SET next_attempt_at=UTC_TIMESTAMP(),progress_message='Resume requested' WHERE id=? AND owner_user_id=?")->execute([$runId,$uid]);
+        $pdo->prepare("UPDATE agent_workflow_actions SET available_at=UTC_TIMESTAMP() WHERE run_id=? AND owner_user_id=? AND status='queued'")->execute([$runId,$uid]);
+    }
+    $connected=homeserver_work_v230_connection_ready($uid);
+    $target=(string)($row['desired_executor']??'homeserver');
+    $next=$target==='homeserver'&&!$connected?'waiting_homeserver':'resuming';
+    $fresh=homeserver_work_v230_transition($pdo,$user,$row,$next,(string)($run['status']??''),'',true);
+    return ['continuity'=>homeserver_work_v230_public($pdo,$fresh),'job'=>agent_workflow_row_v1400($pdo,$uid,$runId),'build'=>VP3_HOMESERVER_WORK_CONTINUITY_V230];
+}
+
 function homeserver_work_v230_route(PDO $pdo,array $user,int $runId,string $target): array
 {
     $uid=(int)($user['id']??0);$target=strtolower(trim($target));
