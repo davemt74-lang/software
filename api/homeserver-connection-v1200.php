@@ -77,10 +77,6 @@ try {
         $accountToken = homeserver_account_v1210_generate_token($userId);
     } elseif ($action === 'reconnect') {
         homeserver_cloud_v1200_reconnect($userId);
-    } elseif ($action === 'repair') {
-        $pairing = homeserver_cloud_v1200_repair($userId);
-    } elseif ($action === 'cancel_pairing') {
-        homeserver_cloud_v1200_cancel_pairing($userId);
     } elseif ($action === 'disconnect') {
         try { homeserver_commerce_agent_v1000_revoke($userId); } catch (Throwable $ignored) {}
         try { homeserver_scheduling_v620_revoke($userId); } catch (Throwable $ignored) {}
