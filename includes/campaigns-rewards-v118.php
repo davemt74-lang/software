@@ -129,7 +129,7 @@ function campaigns_rewards_public_validate_v118(array $behavior,array $input,arr
 function campaigns_rewards_journey_enqueue_latest_v118(PDO $pdo,int $campaignId,int $contactId,string $trigger,array $context=[],string $eventId=''): array
 {
     if(function_exists('campaigns_rewards_journey_enqueue_v121'))return campaigns_rewards_journey_enqueue_v121($pdo,$campaignId,$contactId,$trigger,$context,$eventId);
-    if(function_exists('campaigns_rewards_journey_enqueue_v120'))return campaigns_rewards_journey_enqueue_latest_v118($pdo,$campaignId,$contactId,$trigger,$context,$eventId);
+    if(function_exists('campaigns_rewards_journey_enqueue_v120'))return campaigns_rewards_journey_enqueue_v120($pdo,$campaignId,$contactId,$trigger,$context,$eventId);
     return ['trigger'=>$trigger,'queued'=>0,'duplicate'=>0,'suppressed'=>1,'reason'=>'journey_runtime_unavailable'];
 }
 
