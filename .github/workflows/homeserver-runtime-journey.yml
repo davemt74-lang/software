@@ -50,6 +50,7 @@ jobs:
           php -l includes/homeserver-scheduling-connector-v620.php
           php -l includes/homeserver-commerce-agent-v1000.php
           php -l includes/homeserver-https-relay-v1300.php
+          php -l includes/homeserver-shared-agent-v210.php
           php -l api/homeserver-https-pair-v1300.php
           php -l api/homeserver-https-poll-v1300.php
           php -l api/homeserver-connection-v1200.php
@@ -61,6 +62,7 @@ jobs:
           node --check homeserver-settings-v1210.js
           node --check tests/homeserver-settings-recovery-v1220-contract.mjs
           node --check tests/homeserver-https-relay-v1300-contract.mjs
+          node --check tests/homeserver-shared-agent-v210-contract.mjs
 
       - name: Verify canonical VP3/HomeServer contracts
         run: |
@@ -69,6 +71,7 @@ jobs:
           node tests/homeserver-account-pairing-v1210-contract.mjs
           node tests/homeserver-settings-recovery-v1220-contract.mjs
           node tests/homeserver-https-relay-v1300-contract.mjs
+          node tests/homeserver-shared-agent-v210-contract.mjs
           node tests/chat-execution-v019-contract.mjs
           node tests/chat-execution-v022-contract.mjs
 
