@@ -59,8 +59,9 @@ The four new owner-controlled policy resources are:
 - `homeserver_knowledge`
 - `homeserver_contacts`
 - `homeserver_tasks`
+- `homeserver_notifications`
 
-All default to Profile Agent denied because the existing policy default has `profile_agent_allowed=false`. The owner must explicitly allow a resource, and viewer/audience rules still apply. HomeServer notifications are not exposed to Profile Agent.
+All default to Profile Agent denied because the existing policy default has `profile_agent_allowed=false`. The owner must explicitly allow a resource, and viewer/audience rules still apply. HomeServer notifications are also policy-gated and remain unavailable unless the owner explicitly enables them.
 
 ## Packaging
 
