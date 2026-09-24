@@ -72,6 +72,13 @@ const checks=[
  ['Cloud fallback remains explicit and policy-bound',
   /fallback_allowed/.test(continuity)&&/This job does not permit Cloud fallback/.test(continuity)&&
   /Wait for the active leased action to finish or expire before changing runtimes/.test(continuity)],
+ ['reconciliation and worker dispatch preserve an explicit no-fallback policy',
+  /\?bool \$fallbackAllowed=null/.test(continuity)&&
+  /\$effectiveFallback=\$fallbackAllowed\?\?\(\$existing\?!empty\(\$existing\['fallback_allowed'\]\):true\)/.test(continuity)&&
+  continuity.split("homeserver_work_v230_ensure_run($pdo,$user,$run,(string)($run['source_key']??''),(string)($run['origin']??'agent_brain'),null)").length>=3],
+ ['Cloud-rerouted work remains visible in the same continuity ledger',
+  /LEFT JOIN homeserver_work_continuity c/.test(continuity)&&
+  /\(r\.execution_target='homeserver' OR c\.run_id IS NOT NULL\)/.test(continuity)],
 ];
 
 for(const [name,ok] of checks){assert.equal(ok,true,name);console.log('PASS',name);}
