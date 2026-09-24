@@ -101,5 +101,7 @@ assert.match(modalJs, /update_available/);
 assert.match(modalJs, /agent_brain_ready/);
 assert.match(modalJs, /selected_provider/);
 assert.match(modalJs, /compute_source/);
+assert.match(modalJs, /\{state:'error',connected:false,paired:false,error:message,capabilities:\[\]\}/);
+assert.match(sidebar, /homeserver-v1305-final-20260924/);
 
 console.log('homeserver-vp3-integration-contract: ok');

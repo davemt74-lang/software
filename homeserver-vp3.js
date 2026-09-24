@@ -157,9 +157,13 @@
       render(data.status);
       if(includePolicy)renderPolicy(data.policy||{available:false,reason:'unavailable'});
     }catch(error){
-      if(error&&error.data&&error.data.status)render(error.data.status);
+      const message=error&&error.message?error.message:'HomeServer status unavailable';
+      const fallback=error&&error.data&&error.data.status
+        ? error.data.status
+        : {state:'error',connected:false,paired:false,error:message,capabilities:[]};
+      render(fallback);
       if(includePolicy)renderPolicy({available:false,reason:'remote_unavailable'});
-      button.dataset.state='error';button.title=error&&error.message?error.message:'HomeServer status unavailable';button.setAttribute('aria-label','HomeServer status unavailable');
+      button.dataset.state='error';button.title=message;button.setAttribute('aria-label','HomeServer status unavailable');
     }finally{setBusy(false)}
   }
   async function action(name,extra){
