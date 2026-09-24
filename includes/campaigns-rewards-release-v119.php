@@ -53,7 +53,7 @@ function campaigns_rewards_release_readiness_v119(?PDO $pdo=null): array
         'recommendations'=>function_exists('campaigns_rewards_refresh_recommendations_v119'),
         'automation_tables'=>$pdo&&table_exists('campaign_automation_rules')&&table_exists('campaign_rule_executions'),
         'recommendation_table'=>$pdo&&table_exists('campaign_agent_recommendations'),
-        'cognitive_domain'=>($domain['implementation_status']??'')==='integrated-v1.19',
+        'cognitive_domain'=>in_array(($domain['implementation_status']??''),['integrated-v1.19','integrated-v1.20'],true),
         'automation_event'=>in_array('campaign.automation_executed',(array)($domain['events']??[]),true),
         'recommendation_event'=>in_array('campaign.recommendation_proposed',(array)($domain['events']??[]),true),
         'schema_ready'=>$pdo&&function_exists('campaigns_rewards_platform_schema_ready_v100')&&campaigns_rewards_platform_schema_ready_v100($pdo),
