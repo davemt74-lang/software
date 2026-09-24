@@ -74,6 +74,11 @@ jobs:
           php tests/campaigns-rewards-v122.php
           node tests/campaigns-rewards-v122.mjs
 
+      - name: Campaigns & Rewards V1.23 contract
+        run: |
+          php tests/campaigns-rewards-v123.php
+          node tests/campaigns-rewards-v123.mjs
+
       - name: Full MySQL 8 upgrade audit
         run: python3 tests/upgrade-mysql8-static-audit.py
 
@@ -87,6 +92,8 @@ jobs:
           node --check tests/campaigns-rewards-v120.mjs
           node --check tests/campaigns-rewards-v121.mjs
           node --check tests/campaigns-rewards-v122.mjs
+          node --check tests/campaigns-rewards-v123.mjs
+          node --check campaign-journey-builder-v123.js
           node --check reward-tray-v110.js
           node --check reward-qr-v110.js
 
@@ -113,15 +120,20 @@ jobs:
           php -l includes/campaigns-rewards-release-v121.php
           php -l includes/campaigns-rewards-v122.php
           php -l includes/campaigns-rewards-release-v122.php
+          php -l includes/campaigns-rewards-schema-v123.php
+          php -l includes/campaigns-rewards-v123.php
+          php -l includes/campaigns-rewards-release-v123.php
           php -l tests/campaigns-rewards-v118.php
           php -l tests/campaigns-rewards-v119.php
           php -l tests/campaigns-rewards-v120.php
           php -l tests/campaigns-rewards-v121.php
           php -l tests/campaigns-rewards-v122.php
+          php -l tests/campaigns-rewards-v123.php
           php -l cron/campaigns-rewards-v119.php
           php -l cron/campaigns-rewards-v120.php
           php -l cron/campaigns-rewards-v121.php
           php -l cron/campaigns-rewards-v122.php
+          php -l cron/campaigns-rewards-v123.php
           php -l api/campaign-delivery-webhook-v121.php
           php -l api/reward-tray-v110.php
           php -l team.php
