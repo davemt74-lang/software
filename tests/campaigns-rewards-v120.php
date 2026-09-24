@@ -43,7 +43,7 @@ cr_v120_assert(($inv['agent_channel_is_notification_not_autonomous_action']??fal
 cr_v120_assert(($inv['payment_authority_added']??true)===false&&($inv['parallel_crm_added']??true)===false,'V1.20 adds neither payment authority nor parallel CRM');
 
 $domain=vp3_cognitive_domain_registry_v2600()['domains']['campaigns_rewards']??[];
-cr_v120_assert(($domain['implementation_status']??'')==='integrated-v1.20','cognitive domain declares integrated V1.20');
+cr_v120_assert(in_array(($domain['implementation_status']??''),['integrated-v1.20','integrated-v1.21'],true),'cognitive domain declares integrated V1.20');
 foreach(['campaign.message_saved','campaign.journey_queued','campaign.message_sent','campaign.message_converted'] as $event)
     cr_v120_assert(in_array($event,$domain['events']??[],true),"cognitive domain registers {$event}");
 
