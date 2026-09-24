@@ -163,6 +163,11 @@ function campaigns_rewards_record_decision_v125(PDO $pdo,array $base,string $typ
     $row['context']=$context;$row['rules']=$rules;$row['outcome']=$outcome;return $row;
 }
 
+function campaigns_rewards_journey_enqueue_v125(PDO $pdo,int $campaignId,int $contactId,string $trigger,array $context=[],string $triggerEventId=''): array
+{
+    return campaigns_rewards_journey_enqueue_v123($pdo,$campaignId,$contactId,$trigger,$context,$triggerEventId);
+}
+
 function campaigns_rewards_entry_template_v125(array $version,string $trigger): ?array
 {
     foreach(campaigns_rewards_graph_nodes_v123($version['graph']) as $node){$t=(array)$node['template'];if(!empty($t['entry_node'])&&(string)($t['trigger_event']??'manual')===$trigger)return $t;}return null;
@@ -276,10 +281,11 @@ function campaigns_rewards_offer_decision_v125(PDO $pdo,array $delivery,array $t
     $instanceId=max(0,(int)($delivery['metadata']['journey_instance_id']??0));$base=['merchant_id'=>(int)$delivery['merchant_id'],'campaign_id'=>(int)$delivery['campaign_id'],'journey_id'=>max(0,(int)($delivery['metadata']['journey_id']??0)),'journey_version_id'=>max(0,(int)($delivery['metadata']['journey_version_id']??0)),'journey_instance_id'=>$instanceId,'delivery_id'=>(int)$delivery['id'],'contact_id'=>(int)$delivery['contact_id'],'step_key'=>(string)($delivery['metadata']['step_key']??'')];
     $key='offer:'.hash('sha256',(string)($delivery['metadata']['journey_instance_key']??'').'|'.(int)$delivery['id']);
     $q=$pdo->prepare("SELECT * FROM campaign_decisions WHERE merchant_id=? AND decision_key=? LIMIT 1");$q->execute([(int)$delivery['merchant_id'],$key]);$existing=$q->fetch();
-    if($existing){$outcome=json_decode((string)$existing['outcome_json'],true)?:[];return ['decision'=>$existing,'outcome'=>$outcome,'context'=>$context];}
-    $offer=campaigns_rewards_select_offer_v125($pdo,$delivery,$template,$context);
-    $decision=campaigns_rewards_record_decision_v125($pdo,$base,'offer',$key,$context,['offer_mode'=>(string)($template['offer_mode']??'none'),'offer_action'=>(string)($template['offer_action']??'select'),'specific_reward_id'=>max(0,(int)($template['offer_reward_product_id']??0))],$offer,false);
-    if(!empty($offer['selected'])&&(string)($template['offer_action']??'select')==='issue'){
+    if($existing){$offer=json_decode((string)$existing['outcome_json'],true)?:[];$decision=$existing;}
+    else{$offer=campaigns_rewards_select_offer_v125($pdo,$delivery,$template,$context);
+      $decision=campaigns_rewards_record_decision_v125($pdo,$base,'offer',$key,$context,['offer_mode'=>(string)($template['offer_mode']??'none'),'offer_action'=>(string)($template['offer_action']??'select'),'specific_reward_id'=>max(0,(int)($template['offer_reward_product_id']??0))],$offer,false);
+    }
+    if(!empty($offer['selected'])&&(string)($template['offer_action']??'select')==='issue'&&empty($offer['reward_issuance_id'])){
         $issuance=campaigns_rewards_issue_reward_v100($pdo,(int)$delivery['campaign_id'],(int)$offer['reward_product_id'],(int)$delivery['contact_id'],0,[
           'actor_type'=>'decision','decision_id'=>(int)$decision['id'],'source'=>'journey_decision',
           'reward_variant_id'=>max(0,(int)($offer['variant_id']??0)),'quantity'=>max(1,(int)($offer['quantity']??1)),
