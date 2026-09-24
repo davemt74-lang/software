@@ -63,7 +63,7 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
             flash('notice','Due Campaign automations evaluated. '.$executed.' Reward'.($executed===1?'':'s').' issued.');
         }elseif($action==='message_save'){
             $campaignId=max(0,(int)($_POST['campaign_id']??0));
-            $message=campaigns_rewards_journey_node_save_v121($pdo,$merchantId,$campaignId,$uid,$_POST,max(0,(int)($_POST['message_id']??0)));
+            $message=campaigns_rewards_journey_node_save_v122($pdo,$merchantId,$campaignId,$uid,$_POST,max(0,(int)($_POST['message_id']??0)));
             flash('notice','Campaign journey node saved.');
             $redirectMerchant($merchantId,'&edit_campaign='.$campaignId.'&edit_message='.(int)$message['id'].'#campaign-messaging');
         }elseif($action==='message_status'){
@@ -72,12 +72,38 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
             $redirectMerchant($merchantId,'&edit_campaign='.(int)$message['campaign_id'].'&edit_message='.(int)$message['id'].'#campaign-messaging');
         }elseif($action==='message_dispatch_due'){
             campaigns_rewards_platform_assert_can_v100($pdo,$merchantId,$uid,'campaigns.publish');
-            $summary=campaigns_rewards_dispatch_due_v121($pdo,$merchantId,200);
-            flash('notice','Due journey nodes processed. '.((int)$summary['sent']+(int)$summary['delivered']).' sent/delivered, '.(int)$summary['retry_wait'].' retrying, '.(int)$summary['dead_letter'].' dead-lettered.');
+            $summary=campaigns_rewards_dispatch_due_v122($pdo,$merchantId,200);
+            flash('notice','Due journey nodes processed. '.((int)$summary['sent']+(int)$summary['delivered']).' sent/delivered, '.(int)$summary['frequency_deferred'].' frequency-deferred, '.(int)$summary['optimized_deferred'].' send-time optimized.');
         }elseif($action==='message_retry_dead_letters'){
             $campaignId=max(0,(int)($_POST['campaign_id']??0));
             $requeued=campaigns_rewards_retry_dead_letters_v121($pdo,$merchantId,$uid,$campaignId,100);
             flash('notice',$requeued.' dead-letter deliver'.($requeued===1?'y':'ies').' requeued.');
+        }elseif($action==='journey_template_apply'){
+            $campaignId=max(0,(int)($_POST['campaign_id']??0));
+            $applied=campaigns_rewards_apply_journey_template_v122($pdo,$merchantId,$campaignId,$uid,(string)($_POST['template_key']??''),(string)($_POST['journey_key']??''));
+            flash('notice','Journey template added as '.count($applied['nodes']).' draft nodes. Review and activate them when ready.');
+            $redirectMerchant($merchantId,'&edit_campaign='.$campaignId.'#campaign-messaging');
+        }elseif($action==='journey_simulate'){
+            $campaignId=max(0,(int)($_POST['campaign_id']??0));$contactId=max(0,(int)($_POST['contact_id']??0));
+            $simulation=campaigns_rewards_simulate_journey_v122($pdo,$campaignId,$contactId,(string)($_POST['trigger_event']??'manual'),[
+                'balance'=>max(0,(int)($_POST['balance']??0)),
+                'amount_paid_cents'=>max(0,(int)($_POST['amount_paid_cents']??0)),
+                'reward_issuance_id'=>max(0,(int)($_POST['reward_issuance_id']??0)),
+                'referrer_contact_id'=>max(0,(int)($_POST['referrer_contact_id']??0)),
+                'occurred_at'=>gmdate('Y-m-d H:i:s'),
+            ],$uid);
+            if(session_status()===PHP_SESSION_ACTIVE)$_SESSION['campaign_journey_simulation_once']=$simulation;
+            flash('notice','Journey simulation completed without sending messages or mutating Campaign state.');
+            $redirectMerchant($merchantId,'&edit_campaign='.$campaignId.'#campaign-intelligence');
+        }elseif($action==='journey_recommendations_refresh'){
+            campaigns_rewards_platform_assert_can_v100($pdo,$merchantId,$uid,'analytics.view');
+            $summary=campaigns_rewards_refresh_optimization_recommendations_v122($pdo,$merchantId);
+            flash('notice',(int)$summary['recommendations_created'].' new journey optimization recommendation'.((int)$summary['recommendations_created']===1?'':'s').' proposed for human review.');
+        }elseif($action==='journey_recommendation_review'){
+            $campaignId=max(0,(int)($_POST['campaign_id']??0));
+            campaigns_rewards_review_recommendation_v122($pdo,$merchantId,$campaignId,max(0,(int)($_POST['recommendation_id']??0)),$uid,(string)($_POST['decision']??'dismissed'));
+            flash('notice','Journey recommendation review recorded. No journey settings were changed automatically.');
+            $redirectMerchant($merchantId,'&edit_campaign='.$campaignId.'#campaign-intelligence');
         }elseif($action==='automation_event'){
             campaigns_rewards_platform_assert_can_v100($pdo,$merchantId,$uid,'campaigns.enrollment.manage');
             campaigns_rewards_platform_assert_can_v100($pdo,$merchantId,$uid,'rewards.issue');
@@ -183,6 +209,11 @@ $editMessageTemplate=is_array($editMessage['template']??null)?$editMessage['temp
 $messagePerformance=$editCampaign&&$canAnalytics&&function_exists('campaigns_rewards_journey_performance_v121')
     ?campaigns_rewards_journey_performance_v121($pdo,(int)$editCampaign['id'],$uid)
     :($editCampaign&&$canAnalytics?campaigns_rewards_message_performance_v120($pdo,(int)$editCampaign['id'],$uid):null);
+$journeyIntelligence=$editCampaign&&$canAnalytics&&function_exists('campaigns_rewards_journey_intelligence_v122')
+    ?campaigns_rewards_journey_intelligence_v122($pdo,(int)$editCampaign['id'],$uid):null;
+$journeyRecommendations=$editCampaign&&function_exists('campaigns_rewards_optimization_recommendations_v122')
+    ?campaigns_rewards_optimization_recommendations_v122($pdo,$merchantId,(int)$editCampaign['id'],$uid):[];
+$journeyTemplates=function_exists('campaigns_rewards_journey_template_catalog_v122')?campaigns_rewards_journey_template_catalog_v122():[];
 $messageChannels=function_exists('campaigns_rewards_message_channels_v120')?campaigns_rewards_message_channels_v120():[];
 $messageTriggers=function_exists('campaigns_rewards_journey_triggers_v120')?campaigns_rewards_journey_triggers_v120():[];
 $messagePurposes=function_exists('campaigns_rewards_message_purposes_v120')?campaigns_rewards_message_purposes_v120():[];
@@ -193,14 +224,15 @@ $journeyWaitModes=function_exists('campaigns_rewards_journey_wait_modes_v121')?c
 $editLocationId=max(0,(int)($_GET['edit_location']??0));$editLocation=null;foreach($locations as $row)if((int)$row['id']===$editLocationId)$editLocation=$row;
 $notice=(string)(flash('notice')??'');$error=(string)(flash('error')??'');
 $fulfillmentOnce=session_status()===PHP_SESSION_ACTIVE?($_SESSION['campaign_fulfillment_once']??null):null;
-if(session_status()===PHP_SESSION_ACTIVE)unset($_SESSION['campaign_fulfillment_once']);
+$journeySimulationOnce=session_status()===PHP_SESSION_ACTIVE?($_SESSION['campaign_journey_simulation_once']??null):null;
+if(session_status()===PHP_SESSION_ACTIVE){unset($_SESSION['campaign_fulfillment_once'],$_SESSION['campaign_journey_simulation_once']);}
 
 $memberHeaderUser=$user;$memberHeaderTitle='Campaigns';$memberHeaderSubtitle='Merchant identity, locations, Campaign lifecycle, landing pages and Team access';
 $actions=['<a class="cr-btn primary" href="'.e(url('/rewards.php'.($merchantId?'?merchant='.$merchantId:''))).'">Rewards</a>'];
 if($canCreate)$actions[]='<a class="cr-btn" href="'.e(url('/campaigns.php?new_merchant=1#new-merchant')).'">+ Merchant</a>';
 $memberHeaderActions=implode(' ',$actions);
 ?><!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#f7f7f8"><title>VP3 | Campaigns</title>
-<link rel="stylesheet" href="<?= e(url('/chat.css?v=82')) ?>"><link rel="stylesheet" href="<?= e(url('/campaigns-v100.css?v=121')) ?>"></head>
+<link rel="stylesheet" href="<?= e(url('/chat.css?v=82')) ?>"><link rel="stylesheet" href="<?= e(url('/campaigns-v100.css?v=122')) ?>"></head>
 <body class="cr-page"><div class="chat-app"><?php $workspaceSidebarUser=$user;$workspaceSidebarActive='campaigns';require __DIR__.'/includes/workspace-sidebar-v82.php'; ?><div class="chat-sidebar-backdrop" id="chatSidebarBackdrop"></div>
 <main class="chat-main cr-main"><?php require __DIR__.'/includes/member-header.php'; ?><div class="cr-wrap">
 <?php if($notice!==''):?><div class="cr-notice success"><?= e($notice) ?></div><?php endif;?><?php if($error!==''):?><div class="cr-notice error"><?= e($error) ?></div><?php endif;?>
