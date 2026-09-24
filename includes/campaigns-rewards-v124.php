@@ -185,7 +185,9 @@ function campaigns_rewards_instance_move_step_v124(PDO $pdo,int $instanceId,stri
     $node=campaigns_rewards_select_variant_v121($variants,(int)$instance['campaign_id'],(int)$instance['contact_id'],(string)$instance['instance_key'],$targetStep);
     if(!$node)throw new RuntimeException('Target step could not select a deterministic variant.');
     $campaign=campaigns_rewards_campaign_platform_v100($pdo,(int)$instance['campaign_id'])?:throw new RuntimeException('Campaign unavailable.');
-    $result=campaigns_rewards_enqueue_node_v123($pdo,$campaign,$journey,$version,$node,(int)$instance['contact_id'],(string)$instance['instance_key'],(string)$instance['trigger_event_id'],(array)($instance['metadata']['context']??[]));
+    $moveContext=(array)($instance['metadata']['context']??[]);
+    $moveContext['_operation_key']='move:'.$instanceId.':'.$targetStep.':'.bin2hex(random_bytes(8));
+    $result=campaigns_rewards_enqueue_node_v123($pdo,$campaign,$journey,$version,$node,(int)$instance['contact_id'],(string)$instance['instance_key'],(string)$instance['trigger_event_id'],$moveContext);
     if(!empty($result['suppressed']))throw new RuntimeException('Target step is currently suppressed: '.(string)($result['reason']??'policy'));
     $pdo->prepare("UPDATE campaign_journey_instances SET status='active',current_step_key=?,paused_at=NULL,last_activity_at=UTC_TIMESTAMP(),updated_at=UTC_TIMESTAMP() WHERE id=?")
       ->execute([$targetStep,$instanceId]);
@@ -283,8 +285,9 @@ function campaigns_rewards_refresh_operations_recommendations_v124(PDO $pdo,int 
         $q=$pdo->prepare("SELECT id FROM campaign_agent_recommendations WHERE merchant_id=? AND recommendation_type=? AND status='proposed'
           AND created_at>=DATE_SUB(UTC_TIMESTAMP(),INTERVAL 24 HOUR) ORDER BY id DESC LIMIT 1");
         $q->execute([$merchantId,$type]);if($q->fetchColumn())continue;
-        $campaignId=0;if($instanceId>0){$instance=campaigns_rewards_journey_instance_v124($pdo,$instanceId);$campaignId=(int)($instance['campaign_id']??0);}
-        if($campaignId<1){$q=$pdo->prepare("SELECT id FROM campaigns WHERE merchant_id=? AND status='active' ORDER BY id LIMIT 1");$q->execute([$merchantId]);$campaignId=(int)$q->fetchColumn();}
+        $campaignId=0;$environment='production';
+        if($instanceId>0){$instance=campaigns_rewards_journey_instance_v124($pdo,$instanceId);$campaignId=(int)($instance['campaign_id']??0);$environment=(string)($instance['environment']??'production');}
+        if($campaignId<1){$q=$pdo->prepare("SELECT id,environment FROM campaigns WHERE merchant_id=? AND status='active' ORDER BY id LIMIT 1");$q->execute([$merchantId]);$campaignRow=$q->fetch()?:[];$campaignId=(int)($campaignRow['id']??0);$environment=(string)($campaignRow['environment']??'production');}
         if($campaignId<1)continue;
         $pdo->prepare("INSERT INTO campaign_agent_recommendations
           (public_id,merchant_id,campaign_id,recommendation_type,summary,status,evidence_refs_json,impact_preview_json,created_for_user_id)
@@ -295,7 +298,7 @@ function campaigns_rewards_refresh_operations_recommendations_v124(PDO $pdo,int 
         ]);
         campaigns_rewards_activity_event_v100($pdo,$merchantId,'campaign.journey_incident_proposed',['campaign_id'=>$campaignId],[
           'summary'=>'Journey operations incident proposed for human review','incident_type'=>$incident['type'],'severity'=>$incident['severity'],'journey_instance_id'=>$instanceId,'auto_apply'=>false
-        ],'production',null,'agent');
+        ],$environment,null,'agent');
         $created++;
     }
     return ['incidents'=>count($incidents),'recommendations_created'=>$created];
