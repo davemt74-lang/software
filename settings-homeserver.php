@@ -43,20 +43,19 @@ if (!$user) redirect(url('/login.php'));
 
           <div class="hs-stepper" id="hsStepper" hidden aria-label="Pairing steps">
             <div class="hs-step" data-step="1"><span>1</span><div><strong>Generate in VP3 Cloud</strong><small>Create an account-bound one-time pairing token below.</small></div></div>
-            <div class="hs-step" data-step="2"><span>2</span><div><strong>Enter token in HomeServer</strong><small>Open HomeServer → Remote Bridge and paste the VP3 token.</small></div></div>
-            <div class="hs-step" data-step="3"><span>3</span><div><strong>Approve locally</strong><small>Stay in HomeServer → Remote Bridge, review the requested VP3 permissions, and click Approve VP3.</small></div></div>
+            <div class="hs-step" data-step="2"><span>2</span><div><strong>Paste and pair</strong><small>Open HomeServer → Remote Bridge, paste the VP3 token, and click Pair. HomeServer connects automatically.</small></div></div>
           </div>
 
           <div class="hs-claim-form" id="hsTokenPanel">
             <label>VP3 account pairing token</label>
             <div><button class="hs-button primary" id="hsGenerateToken" type="button">Generate Pairing Token</button></div>
-            <small>VP3 creates this token for your signed-in account. It expires after 15 minutes and can be redeemed only once by a HomeServer that also proves its relay device identity.</small>
+            <small>VP3 creates this token for your signed-in account. It expires after 15 minutes and can be redeemed only once by the HomeServer that submits its private device identity.</small>
           </div>
 
           <div class="hs-approval" id="hsTokenResult" hidden>
             <span>One-time VP3 pairing token</span>
             <strong id="hsPairingToken">—</strong>
-            <p>Copy this token now. Open HomeServer → Remote Bridge, paste it into the VP3 pairing field, and submit it. VP3 does not show this raw token again after you leave or refresh this page.</p>
+            <p>Copy this token now. Open HomeServer → Remote Bridge, paste it, and click Pair. HomeServer configures the secure two-way VP3 HTTPS connection automatically. VP3 does not show this raw token again after you leave or refresh this page.</p>
             <div class="hs-actions"><button class="hs-button" id="hsCopyToken" type="button">Copy token</button><button class="hs-button quiet" id="hsRegenerateToken" type="button">Generate new token</button></div>
           </div>
 
@@ -86,7 +85,7 @@ if (!$user) redirect(url('/login.php'));
           <dl class="hs-info-grid">
             <div><dt>HomeServer</dt><dd id="hsDeviceName">—</dd></div>
             <div><dt>Device</dt><dd id="hsDeviceId">—</dd></div>
-            <div><dt>Relay</dt><dd id="hsRelayStatus">—</dd></div>
+            <div><dt>Transport</dt><dd id="hsRelayStatus">—</dd></div>
             <div><dt>Last successful contact</dt><dd id="hsLastSeen">—</dd></div>
             <div><dt>Version</dt><dd id="hsVersion">—</dd></div>
             <div><dt>Reconnect</dt><dd id="hsReconnectStatus">—</dd></div>

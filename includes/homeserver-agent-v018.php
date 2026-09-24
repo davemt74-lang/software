@@ -82,14 +82,20 @@ function homeserver_agent_v018_credentials(int $userId): ?array
     if($userId<1)return null;
     try{
         $row=homeserver_vp3_connection($userId);
-        if(!$row||empty($row['relay_token_enc'])||empty($row['homeserver_token_enc']))return null;
-        $relay=homeserver_vp3_decrypt((string)$row['relay_token_enc']);
+        if(!$row||empty($row['homeserver_token_enc']))return null;
         $home=homeserver_vp3_decrypt((string)$row['homeserver_token_enc']);
+        $https=function_exists('homeserver_https_v1300_status')?homeserver_https_v1300_status($userId):null;
+        if(is_array($https)&&!empty($https['paired'])){
+            if(strlen($home)<20)return null;
+            return ['transport'=>'vp3_https','relay'=>'','home'=>$home,'user_id'=>$userId];
+        }
+        if(empty($row['relay_token_enc']))return null;
+        $relay=homeserver_vp3_decrypt((string)$row['relay_token_enc']);
     }catch(Throwable $e){
         return null;
     }
     if(strlen($relay)<20||strlen($home)<20)return null;
-    return ['relay'=>$relay,'home'=>$home];
+    return ['transport'=>'custom_websocket','relay'=>$relay,'home'=>$home,'user_id'=>$userId];
 }
 
 /**
@@ -136,7 +142,7 @@ function homeserver_agent_v018_chat(array $user,string $query,int $conversationI
 {
     $userId=(int)($user['id']??0);
     homeserver_agent_v018_set_last_attempt(['attempted'=>false,'success'=>false,'failure_class'=>'none']);
-    if($userId<1||$conversationId<1||trim($query)===''||!function_exists('homeserver_vp3_remote_operation'))return null;
+    if($userId<1||$conversationId<1||trim($query)===''||!function_exists('homeserver_vp3_remote_operation_for_user'))return null;
     $credentials=homeserver_agent_v018_credentials($userId);
     if(!$credentials){
         homeserver_agent_v018_set_last_attempt(['attempted'=>false,'success'=>false,'failure_class'=>'homeserver_not_paired']);
@@ -155,7 +161,7 @@ function homeserver_agent_v018_chat(array $user,string $query,int $conversationI
     $started=microtime(true);
     homeserver_agent_v018_set_last_attempt(['attempted'=>true,'success'=>false,'failure_class'=>'none']);
     try{
-        $result=homeserver_vp3_remote_operation($credentials['relay'],'agent.chat',$payload,$credentials['home']);
+        $result=homeserver_vp3_remote_operation_for_user($userId,'agent.chat',$payload,$credentials['home']);
     }catch(Throwable $e){
         $latency=max(0,(int)round((microtime(true)-$started)*1000));
         homeserver_agent_v018_set_last_attempt([
@@ -228,7 +234,7 @@ function homeserver_agent_v018_write_cloud_usage(array $user): void
             'billable_tokens'=>max(0,(int)$usage['total_tokens']),
         ];
         if($balance!==null)$payload['balance_after_tokens']=$balance;
-        homeserver_vp3_remote_operation($credentials['relay'],'usage.write',$payload,$credentials['home']);
+        homeserver_vp3_remote_operation_for_user($userId,'usage.write',$payload,$credentials['home']);
     }catch(Throwable $e){
         // Usage mirroring is best-effort and never turns a completed VP3 answer into an error.
     }

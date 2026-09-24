@@ -251,6 +251,22 @@ function homeserver_vp3_remote_operation(string $relayToken, string $operation, 
     return is_array($result) ? $result : [];
 }
 
+function homeserver_vp3_remote_operation_for_user(int $userId,string $operation,array $payload=[],string $homeServerToken=''): array
+{
+    if(function_exists('homeserver_https_v1300_status')){
+        $https=homeserver_https_v1300_status($userId);
+        if(is_array($https)&&!empty($https['paired'])){
+            return homeserver_https_v1300_remote_operation($userId,$operation,$payload);
+        }
+    }
+    $row=homeserver_vp3_connection($userId);
+    if(!$row)throw new RuntimeException('HomeServer is not paired.');
+    $relay=homeserver_vp3_decrypt((string)($row['relay_token_enc']??''));
+    if($relay==='')throw new RuntimeException('HomeServer relay authorization is unavailable.');
+    if($homeServerToken==='')$homeServerToken=homeserver_vp3_decrypt((string)($row['homeserver_token_enc']??''));
+    return homeserver_vp3_remote_operation($relay,$operation,$payload,$homeServerToken);
+}
+
 function homeserver_vp3_connection(int $userId): ?array
 {
     if ($userId < 1) {
@@ -674,13 +690,36 @@ function homeserver_vp3_status(int $userId, bool $forceRefresh = false): array
     $latest = homeserver_vp3_latest_release('stable');
     $latestPublic = $latest ? homeserver_vp3_release_public($latest) : null;
     $relayConfigured = homeserver_vp3_relay_base_url() !== '';
+    $officialHttpsAvailable = function_exists('homeserver_https_v1300_status');
     $row = homeserver_vp3_connection($userId);
     if (!$row) {
         return [
-            'state' => 'unpaired','connected' => false,'paired' => false,'relay_configured' => $relayConfigured,
+            'state' => 'unpaired','connected' => false,'paired' => false,'relay_configured' => ($relayConfigured||$officialHttpsAvailable),
+            'transport' => 'vp3_https',
             'device_id' => '', 'last_seen_at' => null, 'installed_version' => '', 'latest_release' => $latestPublic,
             'update_available' => false, 'agent_brain_ready' => false, 'inference' => null, 'capabilities' => [],
-            'pairing' => null, 'error' => $relayConfigured ? '' : 'VP3 HomeServer relay is not configured.',
+            'pairing' => null, 'error' => '',
+        ];
+    }
+
+    $httpsStatus = $officialHttpsAvailable ? homeserver_https_v1300_status($userId) : null;
+    if (is_array($httpsStatus)) {
+        $capabilities = is_array($httpsStatus['capabilities'] ?? null) ? $httpsStatus['capabilities'] : [];
+        $installedVersion = trim((string)($httpsStatus['installed_version'] ?? ''));
+        $latestVersion = trim((string)($latest['version'] ?? ''));
+        $updateAvailable = homeserver_vp3_version_valid($installedVersion)
+            && homeserver_vp3_version_valid($latestVersion)
+            && version_compare($installedVersion,$latestVersion,'<');
+        $inference = isset($capabilities['inference']) && is_array($capabilities['inference']) ? $capabilities['inference'] : null;
+        $features = isset($capabilities['features']) && is_array($capabilities['features']) ? array_values($capabilities['features']) : [];
+        return [
+            'state'=>!empty($httpsStatus['connected'])?'connected':((string)($httpsStatus['paired']??false)?'offline':'revoked'),
+            'connected'=>!empty($httpsStatus['connected']),'paired'=>!empty($httpsStatus['paired']),'relay_configured'=>true,
+            'transport'=>'vp3_https','device_id'=>(string)($httpsStatus['device_id']??''),
+            'last_seen_at'=>$httpsStatus['last_seen_at']??null,'installed_version'=>$installedVersion,'latest_release'=>$latestPublic,
+            'update_available'=>$updateAvailable,'agent_brain_ready'=>!empty($httpsStatus['connected'])&&!empty($httpsStatus['paired'])
+                && !empty($inference['available']) && in_array('agent.chat',$features,true),
+            'inference'=>$inference,'capabilities'=>$features,'pairing'=>null,'error'=>(string)($httpsStatus['error']??''),
         ];
     }
 
@@ -752,6 +791,7 @@ function homeserver_vp3_status(int $userId, bool $forceRefresh = false): array
         'connected' => $connected,
         'paired' => $paired,
         'relay_configured' => $relayConfigured,
+        'transport' => 'custom_websocket',
         'device_id' => (string)($row['device_id'] ?? ''),
         'last_seen_at' => $row['last_seen_at'] ?? null,
         'installed_version' => $installedVersion,
