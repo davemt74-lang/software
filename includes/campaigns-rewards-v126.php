@@ -67,9 +67,10 @@ function campaigns_rewards_decision_instance_v126(PDO $pdo,array $decision): ?ar
     if($instanceId>0)return campaigns_rewards_journey_instance_v124($pdo,$instanceId);
     if((string)$decision['decision_type']!=='entry'||empty($decision['outcome']['allowed'])||max(0,(int)($decision['journey_id']??0))<1)return null;
     $q=$pdo->prepare("SELECT id FROM campaign_journey_instances
-      WHERE campaign_id=? AND journey_id=? AND journey_version_id=? AND contact_id=? AND started_at>=?
+      WHERE campaign_id=? AND journey_id=? AND journey_version_id=? AND contact_id=?
+        AND started_at>=? AND started_at<=DATE_ADD(?,INTERVAL 10 MINUTE)
       ORDER BY started_at,id LIMIT 1");
-    $q->execute([(int)$decision['campaign_id'],(int)$decision['journey_id'],max(0,(int)($decision['journey_version_id']??0)),(int)$decision['contact_id'],(string)$decision['created_at']]);
+    $q->execute([(int)$decision['campaign_id'],(int)$decision['journey_id'],max(0,(int)($decision['journey_version_id']??0)),(int)$decision['contact_id'],(string)$decision['created_at'],(string)$decision['created_at']]);
     $id=(int)$q->fetchColumn();return $id>0?campaigns_rewards_journey_instance_v124($pdo,$id):null;
 }
 
@@ -185,7 +186,16 @@ function campaigns_rewards_campaign_optimization_v126(PDO $pdo,int $campaignId,i
         if($row['decision_type']==='entry'){$metrics['entry']+=$n;if(!empty($row['is_holdout']))$metrics['holdout_entries']+=$n;elseif(($o['reason']??'')==='campaign_conflict')$metrics['conflict_suppressed']+=$n;elseif(!empty($o['allowed']))$metrics['treatment_entries']+=$n;}
         if($row['decision_type']==='offer'){$metrics['offers']+=$n;if(!empty($o['selected']))$metrics['offers_selected']+=$n;else $metrics['offers_unavailable']+=$n;}
     }
-    $oq=$pdo->prepare("SELECT outcome_type,COUNT(*) n,COALESCE(SUM(value_minor),0) value_minor,COALESCE(SUM(cost_minor),0) cost_minor FROM campaign_decision_outcomes WHERE campaign_id=? AND observed_at>=DATE_SUB(UTC_TIMESTAMP(),INTERVAL {$windowDays} DAY) GROUP BY outcome_type");$oq->execute([$campaignId]);
+    $oq=$pdo->prepare("SELECT outcome_type,
+      COUNT(DISTINCT CONCAT(source_type,':',source_id)) n,
+      COALESCE(SUM(CASE WHEN outcome_type='reward_claimed' THEN value_minor ELSE 0 END),0) value_minor,
+      COALESCE(SUM(CASE WHEN outcome_type='reward_claimed' THEN cost_minor ELSE 0 END),0) cost_minor
+      FROM (
+        SELECT campaign_id,outcome_type,source_type,source_id,MAX(value_minor) value_minor,MAX(cost_minor) cost_minor,MAX(observed_at) observed_at
+        FROM campaign_decision_outcomes
+        WHERE campaign_id=? AND observed_at>=DATE_SUB(UTC_TIMESTAMP(),INTERVAL {$windowDays} DAY)
+        GROUP BY campaign_id,outcome_type,source_type,source_id
+      ) unique_outcomes GROUP BY outcome_type");$oq->execute([$campaignId]);
     $metrics['outcomes']=['viewed'=>0,'converted'=>0,'reward_claimed'=>0,'journey_completed'=>0];$metrics['claimed_value_minor']=0;$metrics['claimed_cost_minor']=0;
     foreach($oq->fetchAll()?:[] as $row){$type=(string)$row['outcome_type'];if(isset($metrics['outcomes'][$type]))$metrics['outcomes'][$type]=(int)$row['n'];if($type==='reward_claimed'){$metrics['claimed_value_minor']=(int)$row['value_minor'];$metrics['claimed_cost_minor']=(int)$row['cost_minor'];}}
     $metrics['observed_treatment_conversion_rate']=campaigns_rewards_v126_rate((int)$metrics['outcomes']['converted'],(int)$metrics['treatment_entries']);
