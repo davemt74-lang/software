@@ -237,7 +237,17 @@ function campaigns_rewards_journey_instance_timeline_v124(PDO $pdo,int $instance
           'operator_skipped_at'=>(string)($d['metadata']['operator_skipped_at']??''),
         ];
     }
-    return ['instance'=>$instance,'items'=>$items];
+    $decisions=[];
+    if(table_exists('campaign_decisions')){
+        $entryKey='entry:'.hash('sha256',(int)$instance['journey_id'].'|'.(int)$instance['journey_version_id'].'|'.(int)$instance['contact_id'].'|'.(string)$instance['trigger_event_id']);
+        $dq=$pdo->prepare("SELECT * FROM campaign_decisions WHERE journey_instance_id=? OR (merchant_id=? AND decision_key=?) ORDER BY id");
+        $dq->execute([$instanceId,(int)$instance['merchant_id'],$entryKey]);
+        foreach($dq->fetchAll()?:[] as $decision){
+            $decision['rules']=json_decode((string)$decision['rules_json'],true)?:[];$decision['outcome']=json_decode((string)$decision['outcome_json'],true)?:[];
+            unset($decision['context_json'],$decision['rules_json'],$decision['outcome_json']);$decisions[]=$decision;
+        }
+    }
+    return ['instance'=>$instance,'items'=>$items,'decisions'=>$decisions];
 }
 
 function campaigns_rewards_journey_entry_version_v124(PDO $pdo,array $journey,int $contactId,string $eventId): ?array
