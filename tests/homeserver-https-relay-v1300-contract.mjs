@@ -39,7 +39,8 @@ const checks=[
   vp3.includes("homeserver_https_v1300_status($userId)")&&vp3.includes("'transport'=>'vp3_https'")],
  ['Cloud status wrapper treats HTTPS heartbeat as authoritative without requiring custom relay configuration',
   actions.includes("$httpsStatus = function_exists('homeserver_https_v1300_status')")&&
-  actions.indexOf("$httpsStatus = function_exists('homeserver_https_v1300_status')")<actions.indexOf("$relaySecurity = null;")],
+  actions.includes("The official outbound HTTPS session is authoritative")&&
+  actions.includes("$raw['relay_configured'] = true")],
  ['HomeServer Cloud surfaces continuously refresh the same live status and interpret SQL timestamps as UTC',
   modal.includes("+'Z'")&&modal.includes("},10000);")&&settingsUi.includes("},10000);")],
  ['Agent runtime routes chat and usage through the transport-neutral per-user operation helper',
