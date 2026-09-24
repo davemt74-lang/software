@@ -41,6 +41,9 @@ const checks=[
   !relay.includes('VP3_HOMESERVER_RELAY_URL')],
  ['canonical HomeServer status prefers the official HTTPS session when present',
   vp3.includes("homeserver_https_v1300_status($userId)")&&vp3.includes("'transport'=>'vp3_https'")],
+ ['modern HTTPS rows cannot silently fall through to legacy custom WebSocket status',
+  vp3.includes("if (empty($row['relay_token_enc']))")&&
+  vp3.includes("keep it in the HTTPS lifecycle")],
  ['Cloud status wrapper derives standard connection truth once from the canonical VP3 status authority',
   cloudPairing.includes("$raw = homeserver_vp3_status($userId, $forceRefresh)")&&
   cloudPairing.includes("if ($transport === 'vp3_https')")&&
