@@ -140,14 +140,17 @@ function homeserver_work_v230_action(PDO $pdo,int $uid,int $runId): ?array
     return is_array($row)?$row:null;
 }
 
-function homeserver_work_v230_ensure_run(PDO $pdo,array $user,array $run,string $conversationId='',string $sourceSurface='agent_chat',bool $fallbackAllowed=true): array
+function homeserver_work_v230_ensure_run(PDO $pdo,array $user,array $run,string $conversationId='',string $sourceSurface='agent_chat',?bool $fallbackAllowed=null): array
 {
     $uid=(int)($user['id']??0);$runId=(int)($run['id']??0);
     if($uid<1||$runId<1)throw new RuntimeException('Durable work could not be associated with an owner and run.');
+    $existing=homeserver_work_v230_row($pdo,$uid,$runId);
+    $effectiveFallback=$fallbackAllowed??($existing?!empty($existing['fallback_allowed']):true);
     $action=homeserver_work_v230_action($pdo,$uid,$runId);$actionId=(int)($action['id']??0);
     if($actionId<1)throw new RuntimeException('Durable work has no executable action.');
     $key=homeserver_work_v230_key($uid,$runId,$actionId);
     $conversationId=homeserver_work_v230_text($conversationId,190);
+    if($sourceSurface==='brain')$sourceSurface='agent_brain';
     $sourceSurface=in_array($sourceSurface,['agent_chat','profile_agent','agent_brain','system'],true)?$sourceSurface:'agent_chat';
     $target=(string)($action['execution_target']??$run['execution_target']??'homeserver');
     if(!in_array($target,['cloud','homeserver'],true))$target='homeserver';
@@ -157,7 +160,7 @@ function homeserver_work_v230_ensure_run(PDO $pdo,array $user,array $run,string 
       ON DUPLICATE KEY UPDATE action_id=VALUES(action_id),conversation_id=IF(VALUES(conversation_id)<>'',VALUES(conversation_id),conversation_id),
         source_surface=VALUES(source_surface),continuity_key=VALUES(continuity_key),desired_executor=VALUES(desired_executor),
         fallback_allowed=VALUES(fallback_allowed),last_job_status=VALUES(last_job_status),updated_at=UTC_TIMESTAMP()")
-      ->execute([$runId,$uid,$actionId,$conversationId,$sourceSurface,$key,$target,$fallbackAllowed?1:0,(string)($run['status']??'')]);
+      ->execute([$runId,$uid,$actionId,$conversationId,$sourceSurface,$key,$target,$effectiveFallback?1:0,(string)($run['status']??'')]);
     if($target==='homeserver'&&column_exists('agent_workflow_runs','max_attempts')){
         $pdo->prepare("UPDATE agent_workflow_runs SET max_attempts=GREATEST(max_attempts,20),retry_backoff_seconds=LEAST(GREATEST(retry_backoff_seconds,5),30),timeout_seconds=GREATEST(timeout_seconds,900) WHERE id=? AND owner_user_id=?")->execute([$runId,$uid]);
         $pdo->prepare("UPDATE agent_workflow_actions SET max_attempts=GREATEST(max_attempts,20),timeout_seconds=GREATEST(timeout_seconds,900) WHERE id=? AND run_id=? AND owner_user_id=?")->execute([$actionId,$runId,$uid]);
@@ -175,9 +178,10 @@ function homeserver_work_v230_enqueue(PDO $pdo,array $user,string $title,string 
     if($title===''||$instruction==='')throw new RuntimeException('Durable work requires a title and instruction.');
     $conversationId=homeserver_work_v230_text($options['conversation_id']??'',190);
     $surface=(string)($options['source_surface']??'agent_chat');
-    $target=in_array((string)($options['execution_target']??'homeserver'),['cloud','homeserver'],true)?(string)$options['execution_target']:'homeserver';
+    $requestedTarget=(string)($options['execution_target']??'homeserver');
+    $target=in_array($requestedTarget,['cloud','homeserver'],true)?$requestedTarget:'homeserver';
     $capability=homeserver_work_v230_text($options['capability_key']??'agent.next_action',160);
-    $requiresApproval=!empty($options['requires_approval']);$risk=in_array((string)($options['risk_level']??'low'),['low','medium','high'],true)?(string)$options['risk_level']:'low';
+    $requiresApproval=!empty($options['requires_approval']);$requestedRisk=(string)($options['risk_level']??'low');$risk=in_array($requestedRisk,['low','medium','high'],true)?$requestedRisk:'low';
     $fallbackAllowed=!array_key_exists('fallback_allowed',$options)||!empty($options['fallback_allowed']);
     $clientKey=homeserver_work_v230_text($options['idempotency_key']??'',190);
     if($clientKey==='')$clientKey=hash('sha256',$conversationId.'|'.$title.'|'.$instruction.'|'.$target.'|'.$capability);
@@ -259,7 +263,7 @@ function homeserver_work_v230_reconcile_owner(PDO $pdo,array $user): array
         AND r.status NOT IN ('completed','cancelled') ORDER BY r.updated_at ASC,r.id ASC LIMIT 100");
     $s->execute([$uid]);$updated=0;$waiting=0;$resumed=0;
     foreach($s->fetchAll()?:[] as $run){
-        $row=homeserver_work_v230_ensure_run($pdo,$user,$run,(string)($run['source_key']??''),(string)($run['origin']??'agent_brain'),true);
+        $row=homeserver_work_v230_ensure_run($pdo,$user,$run,(string)($run['source_key']??''),(string)($run['origin']??'agent_brain'),null);
         $job=(string)($run['status']??'');$state=(string)($row['state']??'queued');$target=(string)($run['execution_target']??$row['desired_executor']??'homeserver');
         $next=$state;
         if($job==='failed')$next='failed';
