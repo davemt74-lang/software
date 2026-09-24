@@ -9,7 +9,7 @@ declare(strict_types=1);
  * runtimes can retrieve one logical context without cross-database ID writes.
  */
 const VP3_HOMESERVER_SHARED_AGENT_V210='vp3-homeserver-shared-agent-v210-20260924';
-const VP3_HOMESERVER_SHARED_AGENT_VERSION='2.1';
+const VP3_HOMESERVER_SHARED_AGENT_VERSION='2.2';
 
 function homeserver_shared_v210_ensure_schema(?PDO $pdo=null): void
 {
@@ -401,12 +401,24 @@ function homeserver_shared_v210_reconcile_status(int $userId,array $status): arr
               'previous_state'=>$previous,'priority'=>in_array($state,['connection_error','disconnected'],true)?'critical':'normal',
             ]);
         }
-        if(in_array($state,['connection_error','disconnected'],true)&&function_exists('create_notification')){
-            create_notification(
-              $userId,'homeserver_needs_attention','HomeServer needs attention',
-              'Your HomeServer is not connected. The Agent Brain knows the local datasets and capabilities are unavailable and will resume them automatically when HomeServer reconnects.',
-              url('/settings-homeserver.php'),'homeserver_agent_event',$eventId
-            );
+        if(function_exists('create_notification')){
+            if($state==='connected'){
+                $reconnected=in_array($previous,['connection_error','disconnected'],true);
+                create_notification(
+                  $userId,'homeserver_connection_update',
+                  $reconnected?'HomeServer reconnected':'HomeServer connected',
+                  $reconnected
+                    ? 'HomeServer is back online. Local Agent Brain context, knowledge, contacts, tasks, notifications, models and approved HomeServer capabilities are available again.'
+                    : 'HomeServer is connected. Local Agent Brain context, knowledge, contacts, tasks, notifications, models and approved HomeServer capabilities are available.',
+                  url('/settings-homeserver.php'),'homeserver_agent_event',$eventId
+                );
+            }elseif(in_array($state,['connection_error','disconnected'],true)){
+                create_notification(
+                  $userId,'homeserver_needs_attention','HomeServer needs attention',
+                  'HomeServer is not connected. I can continue with Cloud capabilities, but local data, models and HomeServer tools are temporarily unavailable. I will restore them automatically when HomeServer reconnects.',
+                  url('/settings-homeserver.php'),'homeserver_agent_event',$eventId
+                );
+            }
         }
     }
     $status['agent_brain_status']=[

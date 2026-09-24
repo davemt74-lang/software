@@ -42,7 +42,7 @@ assert.match(approvalRuntime, /'approvals\.review'/);
 assert.match(approvalRuntime, /homeserver_approvals_v028_permissions/);
 assert.match(approvalRuntime, /'app_key'=>'vp3'/);
 
-assert.match(runtime, /const VP3_HOMESERVER_RELEASE_VERSION = '2\.1';/);
+assert.match(runtime, /const VP3_HOMESERVER_RELEASE_VERSION = '2\.2';/);
 assert.match(cloudActions, /homeserver_https_v1300_revoke/);
 assert.match(runtime, /aes-256-gcm/);
 assert.match(runtime, /homeserver-vp3\.key/);

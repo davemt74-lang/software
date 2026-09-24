@@ -9,6 +9,7 @@ declare(strict_types=1);
 function notification_is_agent_brain_activity(array $notification): bool
 {
     $type = strtolower(trim((string)($notification['type'] ?? '')));
+    if ($type === 'homeserver_connection_update' || $type === 'homeserver_needs_attention') return true;
     $sourceType = strtolower(trim((string)($notification['source_type'] ?? '')));
 
     if (str_starts_with($type, 'agent_activity_')) return true;
