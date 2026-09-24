@@ -8,8 +8,9 @@ if(!$user||!$pdo){http_response_code(503);exit('Campaigns is unavailable.');}
 if(!function_exists('campaigns_rewards_platform_schema_ready_v100')||!campaigns_rewards_platform_schema_ready_v100($pdo)
     ||!function_exists('campaigns_rewards_journey_release_schema_ready_v123')||!campaigns_rewards_journey_release_schema_ready_v123($pdo)
     ||!function_exists('campaigns_rewards_journey_operations_schema_ready_v124')||!campaigns_rewards_journey_operations_schema_ready_v124($pdo)
-    ||!function_exists('campaigns_rewards_decision_schema_ready_v125')||!campaigns_rewards_decision_schema_ready_v125($pdo)){
-    http_response_code(503);exit('Campaigns needs the latest VP3 database upgrade. Run upgrade.php to install Journey Personalization V1.25.');
+    ||!function_exists('campaigns_rewards_decision_schema_ready_v125')||!campaigns_rewards_decision_schema_ready_v125($pdo)
+    ||!function_exists('campaigns_rewards_optimization_schema_ready_v126')||!campaigns_rewards_optimization_schema_ready_v126($pdo)){
+    http_response_code(503);exit('Campaigns needs the latest VP3 database upgrade. Run upgrade.php to install Adaptive Campaign Optimization V1.26.');
 }
 if(!campaigns_rewards_user_has_access_v100($pdo,$user)){flash('error','Enable Campaigns & Rewards or ask a Merchant Owner for access.');redirect(url('/plugins.php'));}
 
@@ -77,7 +78,7 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
             $redirectMerchant($merchantId,'&edit_campaign='.(int)$message['campaign_id'].'&edit_message='.(int)$message['id'].'#campaign-messaging');
         }elseif($action==='message_dispatch_due'){
             campaigns_rewards_platform_assert_can_v100($pdo,$merchantId,$uid,'campaigns.publish');
-            $summary=campaigns_rewards_dispatch_due_v125($pdo,$merchantId,200);
+            $summary=campaigns_rewards_dispatch_due_v126($pdo,$merchantId,200);
             flash('notice','Due journey nodes processed. '.((int)$summary['sent']+(int)$summary['delivered']).' sent/delivered, '.(int)$summary['frequency_deferred'].' frequency-deferred, '.(int)$summary['optimized_deferred'].' send-time optimized.');
         }elseif($action==='message_retry_dead_letters'){
             $campaignId=max(0,(int)($_POST['campaign_id']??0));
@@ -167,6 +168,20 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
             $summary=campaigns_rewards_refresh_decision_recommendations_v125($pdo,$merchantId);
             flash('notice',(int)$summary['recommendations_created'].' new decision recommendation'.((int)$summary['recommendations_created']===1?'':'s').' proposed for human review.');
             $redirectMerchant($merchantId,'&edit_campaign='.max(0,(int)($_POST['campaign_id']??0)).'&journey='.max(0,(int)($_POST['journey_id']??0)).'#campaign-decisioning-v125');
+        }elseif($action==='optimization_refresh'){
+            campaigns_rewards_platform_assert_can_v100($pdo,$merchantId,$uid,'analytics.view');
+            $campaignId=max(0,(int)($_POST['campaign_id']??0));
+            $collected=campaigns_rewards_collect_decision_outcomes_v126($pdo,$merchantId,90,5000);
+            $analysis=campaigns_rewards_campaign_optimization_v126($pdo,$campaignId,30);
+            $snapshot=campaigns_rewards_create_optimization_snapshot_v126($pdo,$analysis);
+            $summary=campaigns_rewards_refresh_optimization_v126($pdo,$merchantId,30);
+            flash('notice','Optimization evidence refreshed: '.(int)$collected['outcomes_created'].' new verified outcome'.((int)$collected['outcomes_created']===1?'':'s').' and '.(int)$summary['recommendations_created'].' new human-review recommendation'.((int)$summary['recommendations_created']===1?'':'s').'.');
+            $redirectMerchant($merchantId,'&edit_campaign='.$campaignId.'&journey='.max(0,(int)($_POST['journey_id']??0)).'#campaign-optimization-v126');
+        }elseif($action==='optimization_recommendation_review'){
+            $campaignId=max(0,(int)($_POST['campaign_id']??0));
+            campaigns_rewards_review_optimization_recommendation_v126($pdo,$merchantId,$campaignId,max(0,(int)($_POST['recommendation_id']??0)),$uid,(string)($_POST['decision']??'dismissed'));
+            flash('notice','Optimization recommendation review recorded. No live Campaign or Journey settings were changed.');
+            $redirectMerchant($merchantId,'&edit_campaign='.$campaignId.'&journey='.max(0,(int)($_POST['journey_id']??0)).'#campaign-optimization-v126');
         }elseif($action==='journey_recommendations_refresh'){
             campaigns_rewards_platform_assert_can_v100($pdo,$merchantId,$uid,'analytics.view');
             $summary=campaigns_rewards_refresh_optimization_recommendations_v122($pdo,$merchantId);
@@ -302,6 +317,9 @@ $journeyInstances=$selectedJourneyId>0&&function_exists('campaigns_rewards_journ
 $journeyIncidents=$selectedJourneyId>0&&function_exists('campaigns_rewards_journey_incidents_v124')?campaigns_rewards_journey_incidents_v124($pdo,$merchantId,$selectedJourneyId):[];
 $journeyVersionComparison=$selectedJourneyId>0&&function_exists('campaigns_rewards_journey_version_comparison_v124')?campaigns_rewards_journey_version_comparison_v124($pdo,$selectedJourneyId):[];
 $campaignDecisions=$editCampaign&&function_exists('campaigns_rewards_decisions_v125')?campaigns_rewards_decisions_v125($pdo,$merchantId,(int)$editCampaign['id'],$selectedJourneyId,100):[];
+$campaignOptimization=$editCampaign&&$canAnalytics&&function_exists('campaigns_rewards_campaign_optimization_v126')?campaigns_rewards_campaign_optimization_v126($pdo,(int)$editCampaign['id'],30):null;
+$campaignOptimizationSnapshots=$editCampaign&&$canAnalytics&&function_exists('campaigns_rewards_optimization_snapshots_v126')?campaigns_rewards_optimization_snapshots_v126($pdo,$merchantId,(int)$editCampaign['id'],10):[];
+$campaignOptimizationRecommendations=$editCampaign&&$canAnalytics&&function_exists('campaigns_rewards_optimization_recommendations_v126')?campaigns_rewards_optimization_recommendations_v126($pdo,$merchantId,(int)$editCampaign['id'],$uid):[];
 $journeyDecisionFields=function_exists('campaigns_rewards_decision_fields_v125')?campaigns_rewards_decision_fields_v125():[];
 $journeyDecisionOperators=function_exists('campaigns_rewards_decision_operators_v125')?campaigns_rewards_decision_operators_v125():[];
 $selectedJourneyInstanceId=max(0,(int)($_GET['instance']??0));$selectedJourneyTimeline=null;
@@ -330,7 +348,7 @@ $actions=['<a class="cr-btn primary" href="'.e(url('/rewards.php'.($merchantId?'
 if($canCreate)$actions[]='<a class="cr-btn" href="'.e(url('/campaigns.php?new_merchant=1#new-merchant')).'">+ Merchant</a>';
 $memberHeaderActions=implode(' ',$actions);
 ?><!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#f7f7f8"><title>VP3 | Campaigns</title>
-<link rel="stylesheet" href="<?= e(url('/chat.css?v=82')) ?>"><link rel="stylesheet" href="<?= e(url('/campaigns-v100.css?v=125')) ?>"><link rel="stylesheet" href="<?= e(url('/campaign-journey-builder-v123.css?v=123')) ?>"></head>
+<link rel="stylesheet" href="<?= e(url('/chat.css?v=82')) ?>"><link rel="stylesheet" href="<?= e(url('/campaigns-v100.css?v=126')) ?>"><link rel="stylesheet" href="<?= e(url('/campaign-journey-builder-v123.css?v=123')) ?>"></head>
 <body class="cr-page"><div class="chat-app"><?php $workspaceSidebarUser=$user;$workspaceSidebarActive='campaigns';require __DIR__.'/includes/workspace-sidebar-v82.php'; ?><div class="chat-sidebar-backdrop" id="chatSidebarBackdrop"></div>
 <main class="chat-main cr-main"><?php require __DIR__.'/includes/member-header.php'; ?><div class="cr-wrap">
 <?php if($notice!==''):?><div class="cr-notice success"><?= e($notice) ?></div><?php endif;?><?php if($error!==''):?><div class="cr-notice error"><?= e($error) ?></div><?php endif;?>
@@ -640,6 +658,24 @@ $graphScriptId='journeyGraphData123-'.(int)$jrow['id'];
 <?php if(is_array($decisionPreviewOnce)&&($decisionPreviewOnce['journey_id']??0)===$selectedJourneyId):?><div class="cr-subpanel"><h4>Preview · Journey v<?= (int)$decisionPreviewOnce['version_no'] ?></h4><p><strong>Entry:</strong> <?= !empty($decisionPreviewOnce['entry']['allowed'])?'Eligible':'Suppressed' ?> · <?= e((string)($decisionPreviewOnce['entry']['reason']??'unknown')) ?><?php if(isset($decisionPreviewOnce['entry']['holdout_percent'])):?> · holdout <?= (int)$decisionPreviewOnce['entry']['holdout_percent'] ?>%<?php endif;?></p><div class="cr-list"><?php foreach($decisionPreviewOnce['nodes'] as $node):?><article><div><strong><?= e((string)$node['step_key']) ?> · <?= e(ucwords(str_replace('_',' ',(string)$node['node_type']))) ?></strong><?php if(!empty($node['decision'])):?><small><?= e((string)$node['decision']['field']) ?> <?= e((string)$node['decision']['operator']) ?> <?= e((string)$node['decision']['expected']) ?> → <?= !empty($node['decision']['matched'])?'true':'false' ?> · actual <?= e(is_array($node['decision']['actual'])?implode(', ',$node['decision']['actual']):(string)$node['decision']['actual']) ?></small><?php endif;?><?php if(!empty($node['offer'])):?><small>Offer: <?= !empty($node['offer']['selected'])?e((string)$node['offer']['name']):'No eligible offer' ?></small><?php endif;?></div></article><?php endforeach;?></div><?php if(!empty($decisionPreviewOnce['simulation']['paths'])):?><h4>Simulated path</h4><div class="cr-list"><?php foreach($decisionPreviewOnce['simulation']['paths'] as $previewPath):?><article><div><strong>Entry <?= e((string)$previewPath['entry_step']) ?></strong><?php foreach($previewPath['path'] as $previewStep):?><small><?= e((string)$previewStep['step_key']) ?> → <?= e(ucwords(str_replace('_',' ',(string)$previewStep['node_type']))) ?><?php if(array_key_exists('condition_result',$previewStep)):?> · branch <?= !empty($previewStep['condition_result'])?'true':'false' ?><?php endif;?><?php if(!empty($previewStep['offer_preview'])):?> · offer <?= !empty($previewStep['offer_preview']['selected'])?e((string)$previewStep['offer_preview']['name']):'none' ?><?php endif;?></small><?php endforeach;?></div></article><?php endforeach;?></div><?php endif;?></div><?php endif;?>
 
 <h4>Recent decision ledger</h4><div class="cr-list"><?php foreach(array_slice($campaignDecisions,0,30) as $decisionRow):?><article><div><strong><?= e(ucwords(str_replace('_',' ',(string)$decisionRow['decision_type']))) ?> · <?= e((string)($decisionRow['step_key']?:'entry')) ?></strong><small><?= e((string)($decisionRow['contact_name']?:$decisionRow['contact_email']?:('Contact #'.(int)$decisionRow['contact_id']))) ?> · <?= !empty($decisionRow['is_holdout'])?'Holdout · ':'' ?><?= e((string)($decisionRow['outcome']['reason']??($decisionRow['outcome']['matched']??null)!==null?'branch':'decided')) ?> · <?= e((string)$decisionRow['created_at']) ?> UTC</small></div></article><?php endforeach;?><?php if(!$campaignDecisions):?><p class="cr-help">No V1.25 decisions recorded yet.</p><?php endif;?></div>
+</section>
+<?php endif;?>
+
+<?php if($campaignOptimization): $co=$campaignOptimization['metrics']??[];$fatigue=$campaignOptimization['fatigue']??[];$life=$campaignOptimization['lifecycle']['stages']??[];$offerPerf=$campaignOptimization['offers']??[]; ?>
+<section class="cr-subpanel" id="campaign-optimization-v126">
+<header><div><span>V1.26 optimization</span><h3>Lifecycle Intelligence & Adaptive Optimization</h3></div><?php if($canAnalytics):?><form method="post" class="cr-inline"><?= csrf_field() ?><input type="hidden" name="action" value="optimization_refresh"><input type="hidden" name="merchant_id" value="<?= $merchantId ?>"><input type="hidden" name="campaign_id" value="<?= (int)$editCampaign['id'] ?>"><input type="hidden" name="journey_id" value="<?= (int)$selectedJourneyId ?>"><button>Refresh verified evidence</button></form><?php endif;?></header>
+<p class="cr-help">V1.26 learns from verified Decision outcomes while remaining read-only toward live Campaign rules. Snapshots are append-only; Agent recommendations always require human review.</p>
+<div class="cr-release-grid-v123">
+<article class="cr-release-card-v123"><h4>Admitted entries</h4><p><?= number_format((int)($co['treatment_entries']??0)) ?></p><small><?= number_format((int)($co['holdout_entries']??0)) ?> holdout · <?= number_format((int)($co['conflict_suppressed']??0)) ?> conflict-suppressed</small></article>
+<article class="cr-release-card-v123"><h4>Observed conversions</h4><p><?= number_format((int)($co['outcomes']['converted']??0)) ?></p><small><?= e((string)($co['observed_treatment_conversion_rate']??0)) ?>% Campaign-attributed response</small></article>
+<article class="cr-release-card-v123"><h4>Fatigue signal</h4><p><?= number_format((int)($fatigue['high_fatigue_contacts']??0)) ?> high</p><small><?= number_format((int)($fatigue['moderate_fatigue_contacts']??0)) ?> moderate · diagnostic only</small></article>
+<article class="cr-release-card-v123"><h4>Reward claims</h4><p><?= number_format((int)($co['outcomes']['reward_claimed']??0)) ?></p><small>Verified claimed value <?= number_format((int)($co['claimed_value_minor']??0)) ?> minor units</small></article>
+</div>
+<p class="cr-help"><strong>Holdout measurement:</strong> <?= e((string)($co['holdout_measurement_scope']??'')) ?></p>
+<?php if($life):?><h4>Decision-time lifecycle performance</h4><div class="cr-list"><?php foreach($life as $stage=>$stageRow):?><article><div><strong><?= e(ucwords(str_replace('_',' ',$stage))) ?></strong><small><?= number_format((int)$stageRow['decisions']) ?> decisions · <?= number_format((int)$stageRow['conversions']) ?> observed conversions · <?= e((string)$stageRow['observed_conversion_rate']) ?>% · <?= number_format((int)$stageRow['completed']) ?> completed Journeys</small></div></article><?php endforeach;?></div><?php endif;?>
+<?php if(!empty($offerPerf['rewards'])):?><h4>Dynamic Reward performance</h4><div class="cr-list"><?php foreach($offerPerf['rewards'] as $rewardRow):?><article><div><strong><?= e((string)($rewardRow['name']?:('Reward #'.(int)$rewardRow['reward_product_id']))) ?></strong><small><?= number_format((int)$rewardRow['selections']) ?> selections · <?= number_format((int)$rewardRow['claims']) ?> claims · <?= e((string)$rewardRow['observed_claim_rate']) ?>% observed claim rate</small></div></article><?php endforeach;?></div><?php endif;?>
+<?php if($campaignOptimizationRecommendations):?><h4>Human-review recommendations</h4><div class="cr-list"><?php foreach($campaignOptimizationRecommendations as $rec):?><article><div><strong><?= e(ucwords(str_replace(['optimization.','-','_'],['',' ',' '],(string)$rec['recommendation_type']))) ?></strong><small><?= e((string)$rec['summary']) ?> · <?= e(ucfirst((string)$rec['status'])) ?></small></div><?php if($canCampaignEdit&&(string)$rec['status']==='proposed'):?><div class="cr-actions"><form method="post" class="cr-inline"><?= csrf_field() ?><input type="hidden" name="action" value="optimization_recommendation_review"><input type="hidden" name="merchant_id" value="<?= $merchantId ?>"><input type="hidden" name="campaign_id" value="<?= (int)$editCampaign['id'] ?>"><input type="hidden" name="journey_id" value="<?= (int)$selectedJourneyId ?>"><input type="hidden" name="recommendation_id" value="<?= (int)$rec['id'] ?>"><button name="decision" value="accepted">Accept review</button><button name="decision" value="dismissed">Dismiss</button></form></div><?php endif;?></article><?php endforeach;?></div><?php endif;?>
+<?php if($campaignOptimizationSnapshots):?><h4>Immutable evidence snapshots</h4><div class="cr-list"><?php foreach(array_slice($campaignOptimizationSnapshots,0,5) as $snap):?><article><div><strong><?= e((string)$snap['created_at']) ?> UTC</strong><small><?= number_format((int)$snap['sample_count']) ?> decisions · <?= (int)$snap['window_days'] ?> day window · evidence <?= e(substr((string)$snap['evidence_hash'],0,12)) ?>…</small></div></article><?php endforeach;?></div><?php endif;?>
 </section>
 <?php endif;?>
 
