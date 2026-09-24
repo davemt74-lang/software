@@ -294,6 +294,29 @@ function homeserver_cloud_v1200_status(int $userId, bool $forceRefresh=false): a
         ];
     }
 
+    $storedStatus = (string)($row['status'] ?? '');
+    if (in_array($storedStatus, ['disconnected','revoked'], true)) {
+        $decoded = [];
+        if (!empty($row['capabilities_json'])) {
+            $value = json_decode((string)$row['capabilities_json'], true);
+            if (is_array($value)) $decoded = $value;
+        }
+        return [
+            'build'=>VP3_HOMESERVER_CLOUD_PAIRING_V1200,
+            'state'=>'disconnected','connection_state'=>'disconnected','connected'=>false,'paired'=>false,
+            'relay_configured'=>$relaySecurity !== null,
+            'relay_status'=>$relaySecurity ? 'available' : 'configuration_error',
+            'relay_host'=>$relaySecurity['host'] ?? '',
+            'device_id'=>(string)($row['device_id'] ?? ''),
+            'device_name'=>(string)($decoded['service'] ?? 'HomeServer'),
+            'last_seen_at'=>$row['last_seen_at'] ?? null,
+            'installed_version'=>(string)($row['installed_version'] ?? ''),
+            'latest_release'=>null,'update_available'=>false,'agent_brain_ready'=>false,'inference'=>null,
+            'capabilities'=>[],'paired_scopes'=>[],'pairing'=>null,'reconnect_status'=>'not_available',
+            'error'=>'',
+        ];
+    }
+
     if ($relaySecurity === null) {
         $decoded = [];
         if (!empty($row['capabilities_json'])) {
@@ -320,12 +343,12 @@ function homeserver_cloud_v1200_status(int $userId, bool $forceRefresh=false): a
     $rowStatus = (string)($row['status'] ?? '');
     $connected = !empty($raw['connected']);
     $paired = !empty($raw['paired']);
-    $connectionState = 'disconnected';
-    if ($rowStatus === 'revoked') $connectionState = 'disconnected';
-    elseif ($pending) $connectionState = 'waiting_for_approval';
+    $connectionState = 'not_connected';
+    if (in_array($rowStatus, ['disconnected','revoked'], true)) $connectionState = 'disconnected';
+    elseif ($pending || (!$paired && $rowStatus === 'awaiting_approval')) $connectionState = 'waiting_for_approval';
     elseif ($connected && $paired) $connectionState = 'connected';
-    elseif (in_array($rowStatus, ['error','expired','denied'], true)) $connectionState = 'connection_error';
-    elseif (!$paired && $rowStatus === 'awaiting_approval') $connectionState = 'waiting_for_approval';
+    elseif ($paired || in_array($rowStatus, ['error','offline','expired','denied'], true)) $connectionState = 'connection_error';
+    elseif ($connected) $connectionState = 'connecting';
 
     $publicError = trim((string)($raw['error'] ?? '')) !== '' ? homeserver_cloud_v1200_public_error((string)$raw['error']) : '';
     $raw['build'] = VP3_HOMESERVER_CLOUD_PAIRING_V1200;
