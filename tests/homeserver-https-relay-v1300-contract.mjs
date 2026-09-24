@@ -23,7 +23,8 @@ const checks=[
  ['pairing stores only the session hash in Cloud and encrypts the HomeServer local bearer token',
   relay.includes("hash('sha256',$sessionToken)")&&relay.includes('homeserver_vp3_encrypt($homeServerToken)')&&
   relay.includes("'session_token'=>$sessionToken")],
- ['poll endpoint authenticates a HomeServer-only outbound HTTPS session',
+ ['poll endpoint authenticates a HomeServer-only outbound HTTPS session with standard Bearer fallback',
+  poll.includes('HTTP_AUTHORIZATION')&&poll.includes('Bearer\\s+')&&
   poll.includes('HTTP_X_VP3_HOMESERVER_SESSION')&&poll.includes('HTTP_X_HOMESERVER_DEVICE')&&
   poll.includes('homeserver_https_v1300_authenticate')],
  ['HomeServer to Cloud heartbeat updates canonical connection truth',
@@ -49,7 +50,12 @@ const checks=[
   cloudPairing.includes("if ($transport === 'vp3_https')")&&
   cloudPairing.includes("$raw['reconnect_status'] = $connected ? 'not_needed' : ($paired ? 'automatic' : 'not_available')")],
  ['HomeServer Cloud surfaces continuously refresh the same live status and interpret SQL timestamps as UTC',
-  modal.includes("+'Z'")&&modal.includes("},10000);")&&settingsUi.includes("},10000);")],
+  modal.includes("+'Z'")&&modal.includes("},5000);")&&settingsUi.includes("},10000);")],
+ ['modal renders live connection status before optional policy retrieval',
+  modal.includes("load(true).then(current=>{if(current&&current.connected)loadPolicy()})")&&
+  modal.includes("fetch(statusUrl(Boolean(force),false)")],
+ ['explicitly revoked HTTPS sessions use 410 while ordinary auth mismatches remain retryable 401',
+  relay.includes("explicitly revoked.',410")&&poll.includes("$code=(int)$e->getCode()===410?410:401")],
  ['Cloud settings expose no second approval or legacy relay pairing path',
   !settingsUi.includes('pairing_status')&&!settingsUi.includes('cancel_pairing')&&
   !settingsUi.includes("post('repair')")&&!settingsUi.includes('waiting_for_approval')],
