@@ -107,7 +107,7 @@ const checks=[
  ['domain activity has durable idempotency and liability foundations',/campaign_idempotency_keys/.test(schema)&&/reward_liability_ledger/.test(schema)&&/campaign_activity_events/.test(schema)],
 
  ['Campaigns registers through canonical v5.00 cognitive module registry',/campaigns_rewards_register_cognitive_module_v100/.test(core)&&/vp3_cognitive_register_module_v500/.test(core)],
- ['v26 declares canonical Campaigns authority objects',/'implementation_status'=>'integrated-v1\.(?:18|19)'/.test(domain)&&/'reward_issuance'/.test(domain)&&/'claim_code'/.test(domain)],
+ ['v26 declares canonical Campaigns authority objects',/'implementation_status'=>'integrated-v1\.(?:18|19|20)'/.test(domain)&&/'reward_issuance'/.test(domain)&&/'claim_code'/.test(domain)],
  ['v26 uses canonical ingress current-state attention and presentation authorities',/'event_ingress'=>'agent_event_inbox_v1920'/.test(domain)&&/'attention_policy'=>'cognitive_attention_v2410'/.test(domain)&&/'current_state'=>'cognitive_current_state_v2590'/.test(domain)&&/'presentation'=>'cognitive_presentation_firewall_v2590'/.test(domain)],
  ['v26 still prohibits duplicate CRM Team cognitive authorities',/crm_or_team_records_duplicated_for_campaigns'=>false/.test(v26release)&&/second_event_ledger'=>false/.test(v26release)],
  ['canonical cognitive context does not expose credentials or CRM PII',!/credential_hash/.test((runtime.match(/function campaigns_rewards_cognitive_context_canonical_v100[\s\S]*?function campaigns_rewards_cognitive_relationships_canonical_v100/)||[''])[0])&&!/email|phone/.test((runtime.match(/function campaigns_rewards_cognitive_context_canonical_v100[\s\S]*?function campaigns_rewards_cognitive_relationships_canonical_v100/)||[''])[0])],
