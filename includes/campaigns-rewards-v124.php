@@ -132,7 +132,7 @@ function campaigns_rewards_instance_control_v124(PDO $pdo,int $instanceId,int $a
         }
     }
     campaigns_rewards_activity_event_v100($pdo,(int)$instance['merchant_id'],'campaign.journey_instance_'.$action,['campaign_id'=>(int)$instance['campaign_id'],'contact_id'=>(int)$instance['contact_id']],[
-      'summary'=>'Campaign journey instance '.($action==='resume'?'resumed':$action.'d'),'campaign_public_id'=>$instance['campaign_public_id'],'journey_instance_id'=>$instanceId,'journey_id'=>(int)$instance['journey_id'],'journey_version_id'=>(int)$instance['journey_version_id']
+      'summary'=>'Campaign journey instance '.match($action){'pause'=>'paused','resume'=>'resumed','cancel'=>'cancelled'},'campaign_public_id'=>$instance['campaign_public_id'],'journey_instance_id'=>$instanceId,'journey_id'=>(int)$instance['journey_id'],'journey_version_id'=>(int)$instance['journey_version_id']
     ],(string)$instance['environment'],$actorUserId);
     return campaigns_rewards_journey_instance_v124($pdo,$instanceId)?:$instance;
 }
