@@ -48,6 +48,10 @@ if missing:
     issues.append('Missing upgrade installer definitions: '+', '.join(missing))
 
 audit_files=set(ensure_files)
+v123_migration=ROOT/'upgrade-campaigns-rewards-v123.sql'
+if v123_migration.is_file():
+    audit_files.add(v123_migration)
+    sources[v123_migration]=v123_migration.read_text(errors='ignore')
 for file in list(ensure_files):
     for ref in re.findall(r"['\"](/?[^'\"]+\.sql)['\"]", sources[file]):
         candidate=ROOT/ref.lstrip('/')
@@ -114,8 +118,8 @@ for file in sorted(audit_files):
         if key in create_positions and m.start() < create_positions[key]:
             issues.append(f'{rel}: ALTER TABLE {m.group(1)} appears before its CREATE TABLE')
 
-if table_count < 357:
-    issues.append(f'Upgrade audit only found {table_count} CREATE TABLE definitions; expected at least 350')
+if table_count < 360:
+    issues.append(f'Upgrade audit only found {table_count} CREATE TABLE definitions; expected at least 360 after Campaigns & Rewards V1.23')
 
 if issues:
     print('FAIL MySQL 8 upgrade static audit')
