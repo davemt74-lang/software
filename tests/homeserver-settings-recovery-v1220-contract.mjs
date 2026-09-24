@@ -46,14 +46,18 @@ const checks=[
   cloud.includes("elseif ($paired)")&&cloud.includes("$connectionState = 'connection_error'")],
  ['page uses one lifecycle renderer and exposes fresh-pair recovery',
   page.includes('hsRecoveryActions')&&page.includes('hsStartOver')&&page.includes('Start new pairing')&&!page.includes('homeserver-settings-lifecycle-v1200.js')],
+ ['page and client contain no legacy approval or relay-pairing controls',
+  !page.includes('hsApproval')&&!page.includes('hsRepair')&&!page.includes('Remote Bridge')&&
+  !js.includes('pairing_status')&&!js.includes('cancel_pairing')&&!js.includes("post('repair')")],
  ['component hidden state is enforced against competing display rules',
   css.includes('.hs-settings [hidden]{display:none!important}')],
  ['client renders server error snapshots instead of leaving Checking UI stale',
   js.includes("if(e?.payload?.status)render(e.payload.status,{preserveAlert:true})")&&js.includes("els.title.textContent='HomeServer is not connected'")],
  ['client supports one-click stale pairing reset and fresh token generation',
   js.includes("post('reset_pairing')")&&api.includes("$action === 'reset_pairing'")&&api.includes('homeserver_account_v1210_generate_token($userId)')],
- ['disconnect UX reports local-only fallback instead of pretending relay success',
-  js.includes("data.pairing?.local_only")&&js.includes('VP3 discarded its Cloud credentials even though the relay could not be reached.')],
+ ['disconnect UX reports one canonical Cloud lifecycle',
+  js.includes("post('disconnect')")&&js.includes('HomeServer disconnected from VP3 Cloud.')&&
+  !js.includes('relay could not be reached')],
  ['HomeServer CI runs recovery contract and syntax checks',
   workflow.includes('homeserver-settings-recovery-v1220-contract.mjs')&&workflow.includes('node --check homeserver-settings-v1210.js')&&workflow.includes('php -l api/homeserver-connection-v1200.php')]
 ];
