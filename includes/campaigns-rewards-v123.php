@@ -598,6 +598,10 @@ function campaigns_rewards_enqueue_node_v123(PDO $pdo,array $campaign,array $jou
         if(empty($consent['allowed']))return ['suppressed'=>true,'reason'=>(string)$consent['reason']];
     }
     $safeContext=campaigns_rewards_journey_context_v121($context);
+    $journeyInstanceId=0;
+    if(function_exists('campaigns_rewards_journey_instance_by_key_v124')&&function_exists('campaigns_rewards_journey_operations_schema_ready_v124')&&campaigns_rewards_journey_operations_schema_ready_v124($pdo)){
+        $opsInstance=campaigns_rewards_journey_instance_by_key_v124($pdo,$instanceKey);$journeyInstanceId=(int)($opsInstance['id']??0);
+    }
     $scheduled=gmdate('Y-m-d H:i:s',campaigns_rewards_node_schedule_v121($pdo,$campaign,$node,$contact,$safeContext));
     $idempotency='v123:'.hash('sha256',implode('|',[(int)$campaign['id'],$contactId,(int)$journey['id'],(int)$version['id'],$instanceKey,(string)$t['step_key'],(string)($t['variant_key']??'default'),(int)$node['id']]));
     $idem=campaigns_rewards_idempotency_begin_v100($pdo,(int)$campaign['merchant_id'],'journey.v123.node.enqueue',$idempotency,['journey_version_id'=>(int)$version['id'],'message_id'=>(int)$node['id'],'contact_id'=>$contactId]);
@@ -606,7 +610,7 @@ function campaigns_rewards_enqueue_node_v123(PDO $pdo,array $campaign,array $jou
     }
     $meta=[
         'runtime'=>'v1.23','journey_id'=>(int)$journey['id'],'journey_version_id'=>(int)$version['id'],'journey_version_no'=>(int)$version['version_no'],
-        'journey_instance_key'=>$instanceKey,'journey_key'=>(string)$journey['journey_key'],'step_key'=>(string)$t['step_key'],
+        'journey_instance_id'=>$journeyInstanceId,'journey_instance_key'=>$instanceKey,'journey_key'=>(string)$journey['journey_key'],'step_key'=>(string)$t['step_key'],
         'variant_key'=>(string)($t['variant_key']??'default'),'variant_weight'=>(int)($t['variant_weight']??100),'node_type'=>$nodeType,
         'trigger_event'=>(string)($t['trigger_event']??'manual'),'trigger_event_id'=>$triggerEventId,'scheduled_for'=>$scheduled,
         'purpose'=>(string)($t['purpose']??'marketing'),'respect_quiet_hours'=>!empty($t['respect_quiet_hours']),
@@ -638,6 +642,9 @@ function campaigns_rewards_journey_enqueue_v123(PDO $pdo,int $campaignId,int $co
         $version=campaigns_rewards_journey_version_v123($pdo,(int)$journey['current_published_version_id']);if(!$version)continue;
         $entries=campaigns_rewards_version_graph_entry_v123($version,$trigger);if(!$entries)continue;$matched=true;$summary['journeys']++;
         $instance='v123:'.hash('sha256',$campaignId.'|'.$contactId.'|'.(int)$journey['id'].'|'.(int)$version['id'].'|'.$eventId);
+        if(function_exists('campaigns_rewards_journey_instance_start_v124')&&function_exists('campaigns_rewards_journey_operations_schema_ready_v124')&&campaigns_rewards_journey_operations_schema_ready_v124($pdo)){
+            campaigns_rewards_journey_instance_start_v124($pdo,$campaign,$journey,$version,$contactId,$instance,$trigger,$eventId,$context);
+        }
         foreach($entries as $step=>$descriptors){
             $variants=array_map('campaigns_rewards_graph_hydrate_node_v123',$descriptors);
             $node=campaigns_rewards_select_variant_v121($variants,$campaignId,$contactId,$instance,$step);if(!$node)continue;
