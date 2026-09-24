@@ -9,6 +9,11 @@ const VP3_HOMESERVER_COMMERCE_AGENT_V1000='homeserver-commerce-agent-v1000-20260
 const VP3_COMMERCE_AGENT_CONTRACT='commerce-agent-v1';
 const VP3_COMMERCE_AGENT_SHA256='b61b1baea945286fb006ef78f7f798b4a604284145a74f71628d43779173bf77';
 
+function homeserver_commerce_agent_v1000_schema_ready(): bool
+{
+    return function_exists('table_exists') && table_exists('homeserver_commerce_agent_tokens') && table_exists('homeserver_commerce_agent_idempotency');
+}
+
 function homeserver_commerce_agent_v1000_ensure_schema(PDO $pdo): void
 {
     $pdo->exec("CREATE TABLE IF NOT EXISTS homeserver_commerce_agent_tokens (
