@@ -22,7 +22,7 @@ try{
         is_array($body['capabilities']??null)?$body['capabilities']:[]
     );
     echo json_encode([
-      'ok'=>true,'device_id'=>$result['device_id'],'transport'=>$result['transport'],'protocol'=>$result['protocol'],
+      'ok'=>true,'device_id'=>$result['device_id'],'transport'=>$result['transport'],'protocol'=>$result['protocol'],'cloud_version'=>$result['cloud_version']??VP3_HOMESERVER_RELEASE_VERSION,
       'session_token'=>$result['session_token'],'poll_url'=>$result['poll_url'],'poll_after_ms'=>$result['poll_after_ms'],
       'next_step'=>'Connected. HomeServer will maintain the VP3 HTTPS session automatically.'
     ],JSON_UNESCAPED_SLASHES);
