@@ -36,7 +36,7 @@
 
   const text=(id,value)=>{const el=document.getElementById(id);if(el)el.textContent=value==null||value===''?'—':String(value)};
   const show=(id,visible)=>{const el=document.getElementById(id);if(el)el.hidden=!visible};
-  const fmtDate=value=>{if(!value)return 'Never';const normalized=String(value).includes('T')?String(value):String(value).replace(' ','T');const d=new Date(normalized);return Number.isNaN(d.getTime())?String(value):d.toLocaleString()};
+  const fmtDate=value=>{if(!value)return 'Never';const raw=String(value);const normalized=raw.includes('T')?raw:(raw.replace(' ','T')+'Z');const d=new Date(normalized);return Number.isNaN(d.getTime())?raw:d.toLocaleString()};
   const focusable=()=>[...modal.querySelectorAll('a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])')].filter(el=>!el.hidden&&el.offsetParent!==null);
   const setBusy=value=>{busy=Boolean(value);[refreshButton,checkButton,disconnectButton,claimForm&&claimForm.querySelector('button[type="submit"]')].filter(Boolean).forEach(el=>{el.disabled=busy;el.setAttribute('aria-busy',busy?'true':'false')})};
 
@@ -120,9 +120,9 @@
     button.setAttribute('aria-label',buttonLabel);
     const summaryTitle=update?'Connected · Update available':connected?'Connected':status.state==='awaiting_approval'?'Approval required':status.state==='unpaired'?'Not connected':status.state==='error'?'Connection error':'Offline';
     text('vp3HomeServerSummaryTitle',summaryTitle);
-    text('vp3HomeServerSummaryDetail',connected?'Remote Bridge is online and VP3 can reach this HomeServer.':(status.error||'Connect HomeServer to use your private Agent Brain from VP3.'));
+    text('vp3HomeServerSummaryDetail',connected?(status.transport==='vp3_https'?'VP3 HTTPS Relay is online and VP3 can reach this HomeServer.':'Custom Remote Bridge is online and VP3 can reach this HomeServer.'):(status.error||'Connect HomeServer to use your private Agent Brain from VP3.'));
     const summary=document.getElementById('vp3HomeServerSummary');if(summary)summary.dataset.state=state;
-    text('vp3HomeServerRelay',status.relay_configured?(connected?'Connected':'Configured'):'Not configured');
+    text('vp3HomeServerRelay',status.transport==='vp3_https'?(connected?'VP3 HTTPS Relay · Connected':'VP3 HTTPS Relay · Reconnecting'):(status.relay_configured?(connected?'Custom relay · Connected':'Custom relay · Configured'):'Not configured'));
     text('vp3HomeServerLastSeen',fmtDate(status.last_seen_at));
     text('vp3HomeServerInstalled',status.installed_version?`v${status.installed_version}`:'Unknown');
     const latest=status.latest_release||null;
@@ -188,5 +188,5 @@
   disconnectButton&&disconnectButton.addEventListener('click',async()=>{if(!confirm('Disconnect this HomeServer from VP3 on this account? The VP3 app permission can also be revoked from HomeServer.'))return;try{await action('disconnect');renderPolicy({available:false,reason:'unpaired'})}catch(_){}});
   claimForm&&claimForm.addEventListener('submit',async event=>{event.preventDefault();const input=claimForm.querySelector('input[name="claim_code"]');const code=input?String(input.value||'').trim():'';if(!code)return;try{await action('claim',{claim_code:code});if(input)input.value='';await load(true,true)}catch(_){}});
   load(false,false);
-  window.setInterval(()=>{if(document.visibilityState==='visible'&&modal.hidden)load(false,false)},60000);
+  window.setInterval(()=>{if(document.visibilityState==='visible'&&!busy)load(false,!modal.hidden)},10000);
 })();
