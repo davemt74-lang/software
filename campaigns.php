@@ -238,6 +238,10 @@ $automationDefaultAudience=$editCampaign?campaigns_rewards_automation_default_au
 $editCampaignMessages=$editCampaign?($campaignMessagesByCampaign[(int)$editCampaign['id']]??[]):[];
 $editMessageId=max(0,(int)($_GET['edit_message']??0));$editMessage=null;
 foreach($editCampaignMessages as $messageRow)if((int)$messageRow['id']===$editMessageId){$editMessage=$messageRow;break;}
+if($editMessageId>0&&!$editMessage&&$editCampaign){
+    $candidate=campaigns_rewards_message_v120($pdo,$editMessageId);
+    if($candidate&&(int)$candidate['campaign_id']===(int)$editCampaign['id']&&(int)$candidate['merchant_id']===$merchantId)$editMessage=$candidate;
+}
 $editMessageTemplate=is_array($editMessage['template']??null)?$editMessage['template']:[];
 $messagePerformance=$editCampaign&&$canAnalytics&&function_exists('campaigns_rewards_journey_performance_v121')
     ?campaigns_rewards_journey_performance_v121($pdo,(int)$editCampaign['id'],$uid)
@@ -521,7 +525,7 @@ $graphScriptId='journeyGraphData123-'.(int)$jrow['id'];
 <form method="post" class="cr-form cr-subform"><?= csrf_field() ?><input type="hidden" name="action" value="journey_validate"><input type="hidden" name="merchant_id" value="<?= $merchantId ?>"><input type="hidden" name="campaign_id" value="<?= (int)$editCampaign['id'] ?>"><input type="hidden" name="journey_id" value="<?= (int)$jrow['id'] ?>">
 <h4>Pre-publish suite</h4><?php if($simulationContacts):?><label>Sample CRM contact <small>Optional</small><select name="sample_contact_id"><option value="0">Structural + provider checks only</option><?php foreach($simulationContacts as $contactId=>$label):?><option value="<?= (int)$contactId ?>"><?= e($label) ?></option><?php endforeach;?></select></label><?php endif;?><button>Run release suite</button><p class="cr-help">Checks entry nodes, targets, branches, A/B weights, reachability, cycles, exit paths, provider readiness, and optional sample-contact simulation.</p></form>
 <form method="post" class="cr-form cr-subform"><?= csrf_field() ?><input type="hidden" name="action" value="journey_publish"><input type="hidden" name="merchant_id" value="<?= $merchantId ?>"><input type="hidden" name="journey_id" value="<?= (int)$jrow['id'] ?>">
-<h4>Publish Journey v<?= (int)$jdraft['version_no'] ?></h4><label>Release notes<textarea name="release_notes" rows="3" placeholder="What changed in this release?"><?= e((string)($jdraft['release_notes']??'')) ?></textarea></label><div class="cr-form-grid"><label>Schedule <small>Optional</small><input type="datetime-local" name="scheduled_publish_at"></label><label>In-flight instances<select name="inflight_policy"><option value="continue">Continue pinned current version</option><option value="migrate_pending">Migrate pending nodes to this release</option><option value="exit_remaining">Exit remaining pending nodes</option></select></label></div><button class="cr-btn primary">Publish / schedule release</button></form>
+<h4>Publish Journey v<?= (int)$jdraft['version_no'] ?></h4><label>Release notes<textarea name="release_notes" rows="3" placeholder="What changed in this release?"><?= e((string)($jdraft['release_notes']??'')) ?></textarea></label><div class="cr-form-grid"><label>Schedule <small>Optional · <?= e((string)$merchant['timezone']) ?></small><input type="datetime-local" name="scheduled_publish_at"></label><label>In-flight instances<select name="inflight_policy"><option value="continue">Continue pinned current version</option><option value="migrate_pending">Migrate pending nodes to this release</option><option value="exit_remaining">Exit remaining pending nodes</option></select></label></div><button class="cr-btn primary">Publish / schedule release</button></form>
 </div>
 <?php endif;?>
 <?php endif;?>
