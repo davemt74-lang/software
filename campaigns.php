@@ -475,6 +475,71 @@ $memberHeaderActions=implode(' ',$actions);
 </form>
 <?php endif;?>
 
+<?php if($campaignJourneys):?>
+<nav class="cr-actions" aria-label="Journey releases">
+<?php foreach($campaignJourneys as $journeyRow):?><a class="cr-btn<?= (int)$journeyRow['id']===$selectedJourneyId?' primary':'' ?>" href="<?= e(url('/campaigns.php?merchant='.$merchantId.'&edit_campaign='.(int)$editCampaign['id'].'&journey='.(int)$journeyRow['id'].'#campaign-messaging')) ?>"><?= e((string)$journeyRow['name']) ?> · <?= e(ucfirst((string)$journeyRow['status'])) ?></a><?php endforeach;?>
+</nav>
+<?php endif;?>
+
+<?php if($selectedJourneySnapshot): $jsnap=$selectedJourneySnapshot;$jrow=$jsnap['journey'];$jdraft=$jsnap['draft'];$jlive=$jsnap['published'];$jdisplay=$jsnap['display'];$jdiff=$jsnap['diff'];$jhealth=$journeyReleaseHealth[$selectedJourneyId]??null;$jstats=$jlive?($jhealth['delivery_stats'][(int)$jlive['id']]??[]):[]; ?>
+<section class="cr-subpanel" id="journey-release-v123">
+<header><div><span>V1.23 release authority</span><h3><?= e((string)$jrow['name']) ?></h3></div><strong><?= e((string)$jrow['journey_key']) ?></strong></header>
+<div class="cr-release-grid-v123">
+<article class="cr-release-card-v123"><h4>Live</h4><p><?php if($jlive):?>Journey v<?= (int)$jlive['version_no'] ?> · published <?= e(date('M j, Y g:i A',strtotime((string)$jlive['published_at']))) ?> UTC<?php else:?>Not published<?php endif;?></p><small>New entrants always pin this exact version.</small></article>
+<article class="cr-release-card-v123"><h4>Draft</h4><p><?php if($jdraft):?>Journey v<?= (int)$jdraft['version_no'] ?> · <?= count(campaigns_rewards_graph_nodes_v123($jdraft['graph'])) ?> nodes<?php else:?>No unpublished changes<?php endif;?></p><small>Edits never alter the live release until atomic publish.</small></article>
+<article class="cr-release-card-v123"><h4>Enrollment</h4><p><?= e(ucfirst((string)$jrow['enrollment_status'])) ?></p><small>Pausing enrollment does not stop existing pinned instances.</small></article>
+<article class="cr-release-card-v123"><h4>Live health</h4><p><?= number_format((int)($jstats['total']??0)) ?> deliveries · <?= number_format((int)($jstats['converted']??0)) ?> converted</p><small><?= number_format((int)($jstats['retry_wait']??0)) ?> retrying · <?= number_format((int)($jstats['dead_letter']??0)) ?> dead letter</small></article>
+</div>
+
+<?php if($jdisplay):
+$builderNodes=[];
+foreach(campaigns_rewards_graph_nodes_v123($jdisplay['graph']) as $builderNode){$bt=(array)$builderNode['template'];$builderNodes[]=[
+ 'step_key'=>(string)($bt['step_key']??''),'variant_key'=>(string)($bt['variant_key']??'default'),'variant_weight'=>(int)($bt['variant_weight']??100),
+ 'node_type'=>(string)($bt['node_type']??'message'),'step_order'=>(int)($bt['step_order']??999),'channel'=>(string)($builderNode['channel']??'orchestration'),
+ 'entry_node'=>!empty($bt['entry_node']),'next_step_key'=>(string)($bt['next_step_key']??''),'true_next_step_key'=>(string)($bt['true_next_step_key']??''),
+ 'false_next_step_key'=>(string)($bt['false_next_step_key']??''),'message_version_no'=>(int)($builderNode['message_version_no']??1),
+ 'edit_url'=>url('/campaigns.php?merchant='.$merchantId.'&edit_campaign='.(int)$editCampaign['id'].'&journey='.(int)$jrow['id'].'&edit_message='.(int)$builderNode['message_id'].'#journeyNodeEditor')
+];}
+$graphScriptId='journeyGraphData123-'.(int)$jrow['id'];
+?>
+<h4>Visual journey builder · <?= $jdraft?'Draft v'.(int)$jdraft['version_no']:'Live v'.(int)$jlive['version_no'] ?></h4>
+<div data-journey-builder-v123 data-graph-source="<?= e($graphScriptId) ?>"></div>
+<script type="application/json" id="<?= e($graphScriptId) ?>"><?= json_encode(['nodes'=>$builderNodes],JSON_UNESCAPED_SLASHES|JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT) ?></script>
+<?php endif;?>
+
+<?php if($jdraft):?>
+<div class="cr-release-grid-v123">
+<article class="cr-release-card-v123"><h4>Draft → Live comparison</h4><p><?= count($jdiff['added']) ?> added · <?= count($jdiff['changed']) ?> changed · <?= count($jdiff['removed']) ?> removed</p><small><?= $jdiff['has_changes']?'Unpublished graph changes are isolated from live traffic.':'Draft matches the live node snapshot.' ?></small></article>
+<?php $storedValidation=$jdraft['validation']??[];$validation=$journeyReleaseValidationOnce&&((int)($journeyReleaseValidationOnce['version_id']??0)===(int)$jdraft['id'])?$journeyReleaseValidationOnce:$storedValidation;$validationCore=(array)($validation['validation']??$validation); ?>
+<article class="cr-release-card-v123"><h4>Release validation</h4><p><?= !empty($validationCore['valid'])?'Passed':'Needs validation / changes' ?></p><small><?= count((array)($validationCore['errors']??[])) ?> errors · <?= count((array)($validationCore['warnings']??[])) ?> warnings<?php if(isset($validationCore['provider']['ready'])):?> · Providers <?= !empty($validationCore['provider']['ready'])?'ready':'need configuration' ?><?php endif;?></small></article>
+</div>
+<?php if(!empty($validationCore['errors'])):?><div class="cr-validation-errors-v123"><strong>Blocking release errors</strong><?php foreach($validationCore['errors'] as $issue):?><p><?= e((string)($issue['message']??'')) ?></p><?php endforeach;?></div><?php endif;?>
+<?php if(!empty($validationCore['warnings'])):?><div class="cr-validation-warnings-v123"><strong>Release warnings</strong><?php foreach($validationCore['warnings'] as $issue):?><p><?= e((string)($issue['message']??'')) ?></p><?php endforeach;?></div><?php endif;?>
+
+<?php if($canCampaignPublish):?>
+<div class="cr-grid">
+<form method="post" class="cr-form cr-subform"><?= csrf_field() ?><input type="hidden" name="action" value="journey_validate"><input type="hidden" name="merchant_id" value="<?= $merchantId ?>"><input type="hidden" name="campaign_id" value="<?= (int)$editCampaign['id'] ?>"><input type="hidden" name="journey_id" value="<?= (int)$jrow['id'] ?>">
+<h4>Pre-publish suite</h4><?php if($simulationContacts):?><label>Sample CRM contact <small>Optional</small><select name="sample_contact_id"><option value="0">Structural + provider checks only</option><?php foreach($simulationContacts as $contactId=>$label):?><option value="<?= (int)$contactId ?>"><?= e($label) ?></option><?php endforeach;?></select></label><?php endif;?><button>Run release suite</button><p class="cr-help">Checks entry nodes, targets, branches, A/B weights, reachability, cycles, exit paths, provider readiness, and optional sample-contact simulation.</p></form>
+<form method="post" class="cr-form cr-subform"><?= csrf_field() ?><input type="hidden" name="action" value="journey_publish"><input type="hidden" name="merchant_id" value="<?= $merchantId ?>"><input type="hidden" name="journey_id" value="<?= (int)$jrow['id'] ?>">
+<h4>Publish Journey v<?= (int)$jdraft['version_no'] ?></h4><label>Release notes<textarea name="release_notes" rows="3" placeholder="What changed in this release?"><?= e((string)($jdraft['release_notes']??'')) ?></textarea></label><div class="cr-form-grid"><label>Schedule <small>Optional</small><input type="datetime-local" name="scheduled_publish_at"></label><label>In-flight instances<select name="inflight_policy"><option value="continue">Continue pinned current version</option><option value="migrate_pending">Migrate pending nodes to this release</option><option value="exit_remaining">Exit remaining pending nodes</option></select></label></div><button class="cr-btn primary">Publish / schedule release</button></form>
+</div>
+<?php endif;?>
+<?php endif;?>
+
+<div class="cr-actions">
+<?php if($canCampaignPublish):?><form method="post" class="cr-inline"><?= csrf_field() ?><input type="hidden" name="action" value="journey_enrollment"><input type="hidden" name="merchant_id" value="<?= $merchantId ?>"><input type="hidden" name="journey_id" value="<?= (int)$jrow['id'] ?>"><select name="enrollment_status"><option value="open"<?= $jrow['enrollment_status']==='open'?' selected':'' ?>>Open new enrollment</option><option value="paused"<?= $jrow['enrollment_status']==='paused'?' selected':'' ?>>Pause new enrollment</option></select><button>Set enrollment</button></form><?php endif;?>
+<?php if($canCampaignEdit&&$jdisplay):?><form method="post" class="cr-inline"><?= csrf_field() ?><input type="hidden" name="action" value="journey_clone"><input type="hidden" name="merchant_id" value="<?= $merchantId ?>"><input type="hidden" name="journey_id" value="<?= (int)$jrow['id'] ?>"><input type="hidden" name="version_id" value="<?= (int)$jdisplay['id'] ?>"><input name="journey_key" placeholder="clone-key"><button>Clone release</button></form><?php endif;?>
+<?php if($canCampaignPublish&&$jrow['status']!=='archived'):?><form method="post" class="cr-inline"><?= csrf_field() ?><input type="hidden" name="action" value="journey_archive"><input type="hidden" name="merchant_id" value="<?= $merchantId ?>"><input type="hidden" name="journey_id" value="<?= (int)$jrow['id'] ?>"><select name="inflight_policy"><option value="continue">Archive + let in-flight finish</option><option value="exit_remaining">Archive + exit pending</option></select><button>Archive</button></form><?php endif;?>
+</div>
+
+<h4>Version history</h4><div class="cr-list">
+<?php foreach($jsnap['versions'] as $versionRow):?><article><div><strong>Journey v<?= (int)$versionRow['version_no'] ?> · <?= e(ucfirst((string)$versionRow['status'])) ?></strong><small><?= e((string)($versionRow['release_notes']?:'No release notes')) ?><?php if(!empty($versionRow['scheduled_publish_at'])):?> · scheduled <?= e(date('M j, Y g:i A',strtotime((string)$versionRow['scheduled_publish_at']))) ?> UTC<?php endif;?></small></div>
+<?php if($canCampaignPublish&&in_array((string)$versionRow['status'],['published','superseded'],true)&&(!$jlive||(int)$versionRow['id']!==(int)$jlive['id'])):?><form method="post" class="cr-inline"><?= csrf_field() ?><input type="hidden" name="action" value="journey_rollback"><input type="hidden" name="merchant_id" value="<?= $merchantId ?>"><input type="hidden" name="journey_id" value="<?= (int)$jrow['id'] ?>"><input type="hidden" name="version_id" value="<?= (int)$versionRow['id'] ?>"><select name="inflight_policy"><option value="continue">Keep in-flight pinned</option><option value="migrate_pending">Migrate pending</option><option value="exit_remaining">Exit pending</option></select><input name="release_notes" placeholder="Rollback notes"><button>Rollback as new release</button></form><?php endif;?>
+</article><?php endforeach;?>
+</div>
+</section>
+<?php endif;?>
+
 <?php if($messagePerformance): $mp=$messagePerformance['totals']??[]; ?>
 <div class="cr-funnel" aria-label="Message performance">
 <article><span>Queued</span><strong><?= number_format((int)($mp['queued']??0)) ?></strong></article>
@@ -505,15 +570,15 @@ $memberHeaderActions=implode(' ',$actions);
 <p class="cr-help">Accepting a recommendation records the human review only; it does not change node settings or activate anything.</p>
 
 <?php if($canCampaignEdit):?><form method="post" class="cr-form cr-subform">
-<?= csrf_field() ?><input type="hidden" name="action" value="journey_simulate"><input type="hidden" name="merchant_id" value="<?= $merchantId ?>"><input type="hidden" name="campaign_id" value="<?= (int)$editCampaign['id'] ?>">
-<h4>Dry-run journey simulation</h4><div class="cr-form-grid">
+<?= csrf_field() ?><input type="hidden" name="action" value="journey_simulate"><input type="hidden" name="merchant_id" value="<?= $merchantId ?>"><input type="hidden" name="campaign_id" value="<?= (int)$editCampaign['id'] ?>"><input type="hidden" name="journey_id" value="<?= (int)$selectedJourneyId ?>">
+<h4>Dry-run pinned release simulation</h4><div class="cr-form-grid">
 <label>CRM contact<?php if($simulationContacts):?><select name="contact_id"><?php foreach($simulationContacts as $contactId=>$label):?><option value="<?= (int)$contactId ?>"><?= e($label) ?> · #<?= (int)$contactId ?></option><?php endforeach;?></select><?php else:?><input type="number" min="1" name="contact_id" required placeholder="CRM contact ID"><?php endif;?></label>
-<label>Trigger<select name="trigger_event"><?php foreach($messageTriggers as $key=>$label):?><option value="<?= e($key) ?>"><?= e($label) ?></option><?php endforeach;?></select></label>
+<label>Release<input value="<?= $selectedJourneySnapshot?($selectedJourneySnapshot['draft']?'Draft v'.(int)$selectedJourneySnapshot['draft']['version_no']:'Live v'.(int)($selectedJourneySnapshot['published']['version_no']??0)):'Choose a journey above' ?>" readonly></label>
 <label>Purchase amount (cents)<input type="number" min="0" name="amount_paid_cents" value="0"></label>
 <label>Loyalty balance<input type="number" min="0" name="balance" value="0"></label>
 </div><button>Simulate journey</button><p class="cr-help">Simulation sends nothing, issues no Reward, and writes no delivery rows.</p></form><?php endif;?>
 
-<?php if(is_array($journeySimulationOnce)):?><div class="cr-subpanel"><h4>Simulation result</h4><?php foreach(($journeySimulationOnce['journeys']??[]) as $simJourney):?><div class="cr-list"><article><div><strong><?= e((string)$simJourney['journey_key']) ?></strong><?php foreach(($simJourney['path']??[]) as $simStep):?><small><?= e((string)$simStep['step_key']) ?> → <?= e(ucwords(str_replace('_',' ',(string)$simStep['node_type']))) ?> · variant <?= e((string)($simStep['variant_key']??'default')) ?><?php if(array_key_exists('condition_result',$simStep)):?> · branch <?= !empty($simStep['condition_result'])?'true':'false' ?><?php endif;?><?php if(!empty($simStep['outcome'])):?> · <?= e((string)$simStep['outcome']) ?><?php endif;?></small><?php endforeach;?></div></article></div><?php endforeach;?></div><?php endif;?>
+<?php if(is_array($journeySimulationOnce)):?><div class="cr-subpanel"><h4>Simulation result · Journey v<?= (int)($journeySimulationOnce['version_no']??0) ?></h4><?php foreach(($journeySimulationOnce['paths']??[]) as $simPath):?><div class="cr-list"><article><div><strong>Entry <?= e((string)$simPath['entry_step']) ?></strong><?php foreach(($simPath['path']??[]) as $simStep):?><small><?= e((string)$simStep['step_key']) ?> → <?= e(ucwords(str_replace('_',' ',(string)$simStep['node_type']))) ?> · variant <?= e((string)($simStep['variant_key']??'default')) ?><?php if(array_key_exists('condition_result',$simStep)):?> · branch <?= !empty($simStep['condition_result'])?'true':'false' ?><?php endif;?><?php if(!empty($simStep['outcome'])):?> · <?= e((string)$simStep['outcome']) ?><?php endif;?></small><?php endforeach;?></div></article></div><?php endforeach;?></div><?php endif;?>
 </section>
 <?php endif;?>
 
@@ -522,8 +587,8 @@ $memberHeaderActions=implode(' ',$actions);
 <article>
 <div><strong><?= e((string)($messageMeta['journey_key']??'default')) ?> · <?= e((string)($messageMeta['step_key']??$messageRow['message_key'])) ?><?php if(($messageMeta['variant_key']??'default')!=='default'):?> · variant <?= e((string)$messageMeta['variant_key']) ?><?php endif;?></strong>
 <small>Step <?= (int)($messageMeta['step_order']??1) ?> · <?= e((string)($journeyNodeTypes[$nodeType]??ucwords(str_replace('_',' ',$nodeType)))) ?> · <?= e((string)($messageTriggers[$messageMeta['trigger_event']??'manual']??($messageMeta['trigger_event']??'manual'))) ?><?php if($nodeType==='message'):?> · <?= e((string)($messageChannels[$messageRow['channel']]??$messageRow['channel'])) ?><?php endif;?> · v<?= (int)$messageRow['version_no'] ?> · <?= e(ucfirst((string)$messageRow['status'])) ?></small></div>
-<div class="cr-actions"><a href="<?= e(url('/campaigns.php?merchant='.$merchantId.'&edit_campaign='.(int)$editCampaign['id'].'&edit_message='.(int)$messageRow['id'].'#campaign-messaging')) ?>">Edit</a>
-<?php if($canCampaignEdit):?><form method="post" class="cr-inline"><?= csrf_field() ?><input type="hidden" name="action" value="message_status"><input type="hidden" name="merchant_id" value="<?= $merchantId ?>"><input type="hidden" name="message_id" value="<?= (int)$messageRow['id'] ?>"><select name="status"><?php foreach(['draft','active','paused'] as $st):?><option value="<?= e($st) ?>"<?= $messageRow['status']===$st?' selected':'' ?>><?= e(ucfirst($st)) ?></option><?php endforeach;?></select><button>Set</button></form><?php endif;?>
+<div class="cr-actions"><a href="<?= e(url('/campaigns.php?merchant='.$merchantId.'&edit_campaign='.(int)$editCampaign['id'].'&journey='.(int)($selectedJourneyId?:0).'&edit_message='.(int)$messageRow['id'].'#journeyNodeEditor')) ?>">Edit draft</a>
+<?php $managedJourney=campaigns_rewards_journey_by_key_v123($pdo,(int)$editCampaign['id'],(string)($messageMeta['journey_key']??''));if($canCampaignEdit&&$managedJourney&&$managedJourney['current_draft_version_id']):?><form method="post" class="cr-inline"><?= csrf_field() ?><input type="hidden" name="action" value="journey_node_remove"><input type="hidden" name="merchant_id" value="<?= $merchantId ?>"><input type="hidden" name="journey_id" value="<?= (int)$managedJourney['id'] ?>"><input type="hidden" name="message_id" value="<?= (int)$messageRow['id'] ?>"><button>Remove from draft</button></form><?php endif;?>
 </div>
 </article>
 <?php endforeach;?>
@@ -539,12 +604,12 @@ $memberHeaderActions=implode(' ',$actions);
 <input type="hidden" name="message_id" value="<?= (int)($editMessage['id']??0) ?>">
 <h3><?= $editMessage?'Edit journey node':'Add journey node' ?></h3>
 <div class="cr-form-grid">
-<label>Journey key<input name="journey_key" maxlength="50" value="<?= e((string)($editMessageTemplate['journey_key']??'default')) ?>"<?= $editMessage?' readonly':'' ?>></label>
+<label>Journey key<input name="journey_key" maxlength="50" value="<?= e((string)($editMessageTemplate['journey_key']??($selectedJourneySnapshot['journey']['journey_key']??'default'))) ?>"<?= $editMessage?' readonly':'' ?>></label>
 <label>Step key<input name="step_key" maxlength="50" value="<?= e((string)($editMessageTemplate['step_key']??'message-1')) ?>"<?= $editMessage?' readonly':'' ?>></label>
 <label>Node type<select name="node_type" id="journeyNodeType"><?php $selectedNodeType=(string)($editMessageTemplate['node_type']??'message');foreach($journeyNodeTypes as $key=>$label):?><option value="<?= e($key) ?>"<?= $selectedNodeType===$key?' selected':'' ?>><?= e($label) ?></option><?php endforeach;?></select></label>
 <label>Step order<input type="number" min="1" max="999" name="step_order" value="<?= (int)($editMessageTemplate['step_order']??1) ?>"></label>
 <label>Trigger<select name="trigger_event"><?php $selectedMessageTrigger=(string)($editMessageTemplate['trigger_event']??$automationDefaultTrigger);foreach($messageTriggers as $key=>$label):?><option value="<?= e($key) ?>"<?= $selectedMessageTrigger===$key?' selected':'' ?>><?= e($label) ?></option><?php endforeach;?></select></label>
-<label>Status<select name="status"><?php $messageStatus=(string)($editMessage['status']??'draft');foreach(['draft','active','paused'] as $st):?><option value="<?= e($st) ?>"<?= $messageStatus===$st?' selected':'' ?>><?= e(ucfirst($st)) ?></option><?php endforeach;?></select></label>
+<label>Release state<input value="Draft-managed by Journey Publish" readonly></label>
 <label>Variant key<input name="variant_key" maxlength="30" value="<?= e((string)($editMessageTemplate['variant_key']??'default')) ?>"<?= $editMessage?' readonly':'' ?>></label>
 <label>Variant weight<input type="number" min="1" max="10000" name="variant_weight" value="<?= (int)($editMessageTemplate['variant_weight']??100) ?>"></label>
 <label>Next step<input name="next_step_key" maxlength="50" value="<?= e((string)($editMessageTemplate['next_step_key']??'')) ?>" placeholder="thank-you"></label>
@@ -598,7 +663,7 @@ $memberHeaderActions=implode(' ',$actions);
 <label class="cr-check"><input type="checkbox" name="stop_on_claim" value="1"<?= !empty($editMessageTemplate['stop_on_claim'])?' checked':'' ?>> Exit if the linked Reward is already claimed</label>
 <label class="cr-check"><input type="checkbox" name="stop_on_expiration" value="1"<?= !empty($editMessageTemplate['stop_on_expiration'])?' checked':'' ?>> Exit if the linked Reward is expired or voided</label>
 </fieldset>
-<p class="cr-help">A/B variants share the same journey + step key and use different variant keys/weights. Selection is deterministic for the contact and journey instance. Activating nodes still requires publish authority; provider webhooks can only update delivery state.</p>
+<p class="cr-help">A/B variants share the same journey + step key and use different variant keys/weights. Selection is deterministic for the contact and journey instance. Nodes are draft-only in V1.23. Journey Publish validates and activates the complete graph atomically; provider webhooks can only update delivery state.</p>
 <button class="cr-btn primary" type="submit">Save journey node</button>
 </form>
 <?php endif;?>
