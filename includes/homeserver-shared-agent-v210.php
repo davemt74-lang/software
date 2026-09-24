@@ -306,6 +306,29 @@ function homeserver_shared_v210_diagnostics(int $userId): array
     ];
 }
 
+function homeserver_shared_v210_live_status(int $userId): array
+{
+    $raw=homeserver_vp3_status($userId,false);
+    $row=homeserver_vp3_connection($userId);
+    $connected=!empty($raw['connected']);$paired=!empty($raw['paired']);
+    $rowStatus=(string)($row['status']??'');
+    $state='not_connected';
+    if(in_array($rowStatus,['disconnected','revoked'],true)||(string)($raw['state']??'')==='revoked')$state='disconnected';
+    elseif($connected&&$paired)$state='connected';
+    elseif($paired)$state='connection_error';
+    elseif($connected)$state='connecting';
+    $raw['connection_state']=$state;
+    $raw['release_version']=VP3_HOMESERVER_RELEASE_VERSION;
+    return $raw;
+}
+
+function homeserver_shared_v210_refresh_cognition(int $userId): array
+{
+    if($userId<1)return [];
+    try{return homeserver_shared_v210_reconcile_status($userId,homeserver_shared_v210_live_status($userId));}
+    catch(Throwable $e){error_log('HomeServer v2.1 cognition refresh failed: '.$e->getMessage());return [];}
+}
+
 function homeserver_shared_v210_reconcile_status(int $userId,array $status): array
 {
     $pdo=db();if(!$pdo||$userId<1||!homeserver_shared_v210_schema_ready())return $status;
@@ -333,10 +356,19 @@ function homeserver_shared_v210_reconcile_status(int $userId,array $status): arr
         $pdo->prepare('INSERT INTO homeserver_agent_events(user_id,event_type,connection_state,detail,metadata_json) VALUES (?,?,?,?,?)')
           ->execute([$userId,$eventType,$state,homeserver_shared_v210_text($detail,500),json_encode(['previous_state'=>$previous,'status'=>$material],JSON_UNESCAPED_SLASHES)]);
         $eventId=(int)$pdo->lastInsertId();
-        $pdo->prepare("INSERT INTO homeserver_agent_state(user_id,connection_state,status_fingerprint,last_event_at)
-          VALUES (?,?,?,UTC_TIMESTAMP())
-          ON DUPLICATE KEY UPDATE connection_state=VALUES(connection_state),status_fingerprint=VALUES(status_fingerprint),last_event_at=UTC_TIMESTAMP()")
-          ->execute([$userId,$state,$fingerprint]);
+        $roundTripReset=in_array($state,['connection_error','disconnected'],true)?0:null;
+        if($roundTripReset===0){
+            $pdo->prepare("INSERT INTO homeserver_agent_state(user_id,connection_state,status_fingerprint,last_event_at,last_roundtrip_ok)
+              VALUES (?,?,?,UTC_TIMESTAMP(),0)
+              ON DUPLICATE KEY UPDATE connection_state=VALUES(connection_state),status_fingerprint=VALUES(status_fingerprint),
+                last_event_at=UTC_TIMESTAMP(),last_roundtrip_ok=0")
+              ->execute([$userId,$state,$fingerprint]);
+        }else{
+            $pdo->prepare("INSERT INTO homeserver_agent_state(user_id,connection_state,status_fingerprint,last_event_at)
+              VALUES (?,?,?,UTC_TIMESTAMP())
+              ON DUPLICATE KEY UPDATE connection_state=VALUES(connection_state),status_fingerprint=VALUES(status_fingerprint),last_event_at=UTC_TIMESTAMP()")
+              ->execute([$userId,$state,$fingerprint]);
+        }
 
         if(function_exists('vp3_cognitive_homeserver_event_v2390')){
             vp3_cognitive_homeserver_event_v2390($pdo,$userId,$eventType,$state,[
