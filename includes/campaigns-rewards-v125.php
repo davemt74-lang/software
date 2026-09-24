@@ -370,6 +370,11 @@ function campaigns_rewards_refresh_decision_recommendations_v125(PDO $pdo,int $m
     return ['campaigns_reviewed'=>$reviewed,'recommendations_created'=>$created];
 }
 
+function campaigns_rewards_dispatch_due_v125(PDO $pdo,int $merchantId=0,int $limit=200): array
+{
+    return campaigns_rewards_dispatch_due_v124($pdo,$merchantId,$limit);
+}
+
 function campaigns_rewards_run_due_v125(PDO $pdo,int $merchantId=0): array
 {
     $base=campaigns_rewards_run_due_v124($pdo,$merchantId);$base['decision_recommendations']=campaigns_rewards_refresh_decision_recommendations_v125($pdo,$merchantId);return $base;
