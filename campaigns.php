@@ -5,8 +5,9 @@ require_login();
 
 $user=current_user();$pdo=db();
 if(!$user||!$pdo){http_response_code(503);exit('Campaigns is unavailable.');}
-if(!function_exists('campaigns_rewards_platform_schema_ready_v100')||!campaigns_rewards_platform_schema_ready_v100($pdo)){
-    http_response_code(503);exit('Campaigns needs the latest VP3 database upgrade.');
+if(!function_exists('campaigns_rewards_platform_schema_ready_v100')||!campaigns_rewards_platform_schema_ready_v100($pdo)
+    ||!function_exists('campaigns_rewards_journey_release_schema_ready_v123')||!campaigns_rewards_journey_release_schema_ready_v123($pdo)){
+    http_response_code(503);exit('Campaigns needs the latest VP3 database upgrade. Run upgrade.php to install Journey Releases V1.23.');
 }
 if(!campaigns_rewards_user_has_access_v100($pdo,$user)){flash('error','Enable Campaigns & Rewards or ask a Merchant Owner for access.');redirect(url('/plugins.php'));}
 
@@ -63,16 +64,18 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
             flash('notice','Due Campaign automations evaluated. '.$executed.' Reward'.($executed===1?'':'s').' issued.');
         }elseif($action==='message_save'){
             $campaignId=max(0,(int)($_POST['campaign_id']??0));
-            $message=campaigns_rewards_journey_node_save_v122($pdo,$merchantId,$campaignId,$uid,$_POST,max(0,(int)($_POST['message_id']??0)));
-            flash('notice','Campaign journey node saved.');
+            $message=campaigns_rewards_node_save_v123($pdo,$merchantId,$campaignId,$uid,$_POST,max(0,(int)($_POST['message_id']??0)));
+            flash('notice','Journey draft node saved. The live release is unchanged until you publish the journey.');
             $redirectMerchant($merchantId,'&edit_campaign='.$campaignId.'&edit_message='.(int)$message['id'].'#campaign-messaging');
         }elseif($action==='message_status'){
-            $message=campaigns_rewards_message_set_status_v120($pdo,max(0,(int)($_POST['message_id']??0)),$uid,(string)($_POST['status']??'paused'));
-            flash('notice','Campaign journey node status updated.');
+            $messageId=max(0,(int)($_POST['message_id']??0));
+            if(campaigns_rewards_message_release_managed_v123($pdo,$messageId))throw new RuntimeException('V1.23 journey nodes are activated only through atomic Journey Publish.');
+            $message=campaigns_rewards_message_set_status_v120($pdo,$messageId,$uid,(string)($_POST['status']??'paused'));
+            flash('notice','Legacy journey node status updated.');
             $redirectMerchant($merchantId,'&edit_campaign='.(int)$message['campaign_id'].'&edit_message='.(int)$message['id'].'#campaign-messaging');
         }elseif($action==='message_dispatch_due'){
             campaigns_rewards_platform_assert_can_v100($pdo,$merchantId,$uid,'campaigns.publish');
-            $summary=campaigns_rewards_dispatch_due_v122($pdo,$merchantId,200);
+            $summary=campaigns_rewards_dispatch_due_v123($pdo,$merchantId,200);
             flash('notice','Due journey nodes processed. '.((int)$summary['sent']+(int)$summary['delivered']).' sent/delivered, '.(int)$summary['frequency_deferred'].' frequency-deferred, '.(int)$summary['optimized_deferred'].' send-time optimized.');
         }elseif($action==='message_retry_dead_letters'){
             $campaignId=max(0,(int)($_POST['campaign_id']??0));
@@ -80,21 +83,51 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
             flash('notice',$requeued.' dead-letter deliver'.($requeued===1?'y':'ies').' requeued.');
         }elseif($action==='journey_template_apply'){
             $campaignId=max(0,(int)($_POST['campaign_id']??0));
-            $applied=campaigns_rewards_apply_journey_template_v122($pdo,$merchantId,$campaignId,$uid,(string)($_POST['template_key']??''),(string)($_POST['journey_key']??''));
-            flash('notice','Journey template added as '.count($applied['nodes']).' draft nodes. Review and activate them when ready.');
-            $redirectMerchant($merchantId,'&edit_campaign='.$campaignId.'#campaign-messaging');
+            $applied=campaigns_rewards_apply_journey_template_v123($pdo,$merchantId,$campaignId,$uid,(string)($_POST['template_key']??''),(string)($_POST['journey_key']??''));
+            flash('notice','Journey template added as '.count($applied['nodes']).' draft nodes. The live release is unchanged.');
+            $redirectMerchant($merchantId,'&edit_campaign='.$campaignId.'&journey='.(int)($applied['journey']['id']??0).'#campaign-messaging');
+        }elseif($action==='journey_validate'){
+            $journeyId=max(0,(int)($_POST['journey_id']??0));$contacts=[];$sample=max(0,(int)($_POST['sample_contact_id']??0));if($sample>0)$contacts[]=$sample;
+            $suite=campaigns_rewards_journey_release_suite_v123($pdo,$journeyId,$uid,$contacts);
+            if(session_status()===PHP_SESSION_ACTIVE)$_SESSION['campaign_journey_release_validation_once']=$suite;
+            flash('notice',$suite['passed']?'Pre-publish release suite passed.':'Pre-publish release suite found blocking errors.');
+            $redirectMerchant($merchantId,'&edit_campaign='.max(0,(int)($_POST['campaign_id']??0)).'&journey='.$journeyId.'#campaign-messaging');
+        }elseif($action==='journey_publish'){
+            $journeyId=max(0,(int)($_POST['journey_id']??0));$published=campaigns_rewards_publish_journey_v123($pdo,$journeyId,$uid,$_POST);
+            flash('notice',(string)$published['status']==='scheduled'?'Journey release scheduled. The current live version remains authoritative until then.':'Journey release published atomically.');
+            $redirectMerchant($merchantId,'&edit_campaign='.(int)$published['campaign_id'].'&journey='.$journeyId.'#campaign-messaging');
+        }elseif($action==='journey_rollback'){
+            $journeyId=max(0,(int)($_POST['journey_id']??0));$rolled=campaigns_rewards_rollback_journey_v123($pdo,$journeyId,max(0,(int)($_POST['version_id']??0)),$uid,(string)($_POST['inflight_policy']??'continue'),(string)($_POST['release_notes']??''));
+            flash('notice','Rollback published as new Journey v'.(int)$rolled['version_no'].'. Historical releases remain immutable.');
+            $redirectMerchant($merchantId,'&edit_campaign='.(int)$rolled['campaign_id'].'&journey='.$journeyId.'#campaign-messaging');
+        }elseif($action==='journey_enrollment'){
+            $journey=campaigns_rewards_set_journey_enrollment_v123($pdo,max(0,(int)($_POST['journey_id']??0)),$uid,(string)($_POST['enrollment_status']??'paused'));
+            flash('notice','New journey enrollment is now '.(string)$journey['enrollment_status'].'. In-flight instances were not changed.');
+            $redirectMerchant($merchantId,'&edit_campaign='.(int)$journey['campaign_id'].'&journey='.(int)$journey['id'].'#campaign-messaging');
+        }elseif($action==='journey_archive'){
+            $journey=campaigns_rewards_archive_journey_v123($pdo,max(0,(int)($_POST['journey_id']??0)),$uid,(string)($_POST['inflight_policy']??'continue'));
+            flash('notice','Journey archived. Release history and analytics were preserved.');
+            $redirectMerchant($merchantId,'&edit_campaign='.(int)$journey['campaign_id'].'#campaign-messaging');
+        }elseif($action==='journey_clone'){
+            $journey=campaigns_rewards_clone_journey_v123($pdo,max(0,(int)($_POST['journey_id']??0)),max(0,(int)($_POST['version_id']??0)),$uid,(string)($_POST['journey_key']??''));
+            flash('notice','Journey cloned into a new draft release.');
+            $redirectMerchant($merchantId,'&edit_campaign='.(int)$journey['campaign_id'].'&journey='.(int)$journey['id'].'#campaign-messaging');
+        }elseif($action==='journey_node_remove'){
+            $journeyId=max(0,(int)($_POST['journey_id']??0));$draft=campaigns_rewards_remove_draft_node_v123($pdo,$journeyId,max(0,(int)($_POST['message_id']??0)),$uid);
+            flash('notice','Node removed from the draft. The live journey is unchanged.');
+            $redirectMerchant($merchantId,'&edit_campaign='.(int)$draft['campaign_id'].'&journey='.$journeyId.'#campaign-messaging');
         }elseif($action==='journey_simulate'){
-            $campaignId=max(0,(int)($_POST['campaign_id']??0));$contactId=max(0,(int)($_POST['contact_id']??0));
-            $simulation=campaigns_rewards_simulate_journey_v122($pdo,$campaignId,$contactId,(string)($_POST['trigger_event']??'manual'),[
+            $journeyId=max(0,(int)($_POST['journey_id']??0));$contactId=max(0,(int)($_POST['contact_id']??0));
+            $simulation=campaigns_rewards_simulate_journey_release_v123($pdo,$journeyId,$contactId,$uid,[
                 'balance'=>max(0,(int)($_POST['balance']??0)),
                 'amount_paid_cents'=>max(0,(int)($_POST['amount_paid_cents']??0)),
                 'reward_issuance_id'=>max(0,(int)($_POST['reward_issuance_id']??0)),
                 'referrer_contact_id'=>max(0,(int)($_POST['referrer_contact_id']??0)),
                 'occurred_at'=>gmdate('Y-m-d H:i:s'),
-            ],$uid);
+            ]);
             if(session_status()===PHP_SESSION_ACTIVE)$_SESSION['campaign_journey_simulation_once']=$simulation;
-            flash('notice','Journey simulation completed without sending messages or mutating Campaign state.');
-            $redirectMerchant($merchantId,'&edit_campaign='.$campaignId.'#campaign-intelligence');
+            flash('notice','Pinned journey release simulation completed without sending messages or mutating Campaign state.');
+            $redirectMerchant($merchantId,'&edit_campaign='.max(0,(int)($_POST['campaign_id']??0)).'&journey='.$journeyId.'#campaign-intelligence');
         }elseif($action==='journey_recommendations_refresh'){
             campaigns_rewards_platform_assert_can_v100($pdo,$merchantId,$uid,'analytics.view');
             $summary=campaigns_rewards_refresh_optimization_recommendations_v122($pdo,$merchantId);
@@ -214,6 +247,14 @@ $journeyIntelligence=$editCampaign&&$canAnalytics&&function_exists('campaigns_re
 $journeyRecommendations=$editCampaign&&function_exists('campaigns_rewards_optimization_recommendations_v122')
     ?campaigns_rewards_optimization_recommendations_v122($pdo,$merchantId,(int)$editCampaign['id'],$uid):[];
 $journeyTemplates=function_exists('campaigns_rewards_journey_template_catalog_v122')?campaigns_rewards_journey_template_catalog_v122():[];
+$campaignJourneys=$merchant?campaigns_rewards_journeys_v123($pdo,$merchantId,$editCampaign?(int)$editCampaign['id']:0):[];
+$journeySnapshots=[];$journeyReleaseHealth=[];
+foreach($campaignJourneys as $journeyRow){
+    $snapshot=campaigns_rewards_journey_editor_snapshot_v123($pdo,(int)$journeyRow['id']);$journeySnapshots[(int)$journeyRow['id']]=$snapshot;
+    if($canAnalytics)$journeyReleaseHealth[(int)$journeyRow['id']]=campaigns_rewards_journey_release_health_v123($pdo,(int)$journeyRow['id'],$uid);
+}
+$selectedJourneyId=max(0,(int)($_GET['journey']??0));if($selectedJourneyId<1&&$campaignJourneys)$selectedJourneyId=(int)$campaignJourneys[0]['id'];
+$selectedJourneySnapshot=$journeySnapshots[$selectedJourneyId]??null;
 $messageChannels=function_exists('campaigns_rewards_message_channels_v120')?campaigns_rewards_message_channels_v120():[];
 $messageTriggers=function_exists('campaigns_rewards_journey_triggers_v120')?campaigns_rewards_journey_triggers_v120():[];
 $messagePurposes=function_exists('campaigns_rewards_message_purposes_v120')?campaigns_rewards_message_purposes_v120():[];
@@ -227,14 +268,15 @@ $editLocationId=max(0,(int)($_GET['edit_location']??0));$editLocation=null;forea
 $notice=(string)(flash('notice')??'');$error=(string)(flash('error')??'');
 $fulfillmentOnce=session_status()===PHP_SESSION_ACTIVE?($_SESSION['campaign_fulfillment_once']??null):null;
 $journeySimulationOnce=session_status()===PHP_SESSION_ACTIVE?($_SESSION['campaign_journey_simulation_once']??null):null;
-if(session_status()===PHP_SESSION_ACTIVE){unset($_SESSION['campaign_fulfillment_once'],$_SESSION['campaign_journey_simulation_once']);}
+$journeyReleaseValidationOnce=session_status()===PHP_SESSION_ACTIVE?($_SESSION['campaign_journey_release_validation_once']??null):null;
+if(session_status()===PHP_SESSION_ACTIVE){unset($_SESSION['campaign_fulfillment_once'],$_SESSION['campaign_journey_simulation_once'],$_SESSION['campaign_journey_release_validation_once']);}
 
 $memberHeaderUser=$user;$memberHeaderTitle='Campaigns';$memberHeaderSubtitle='Merchant identity, locations, Campaign lifecycle, landing pages and Team access';
 $actions=['<a class="cr-btn primary" href="'.e(url('/rewards.php'.($merchantId?'?merchant='.$merchantId:''))).'">Rewards</a>'];
 if($canCreate)$actions[]='<a class="cr-btn" href="'.e(url('/campaigns.php?new_merchant=1#new-merchant')).'">+ Merchant</a>';
 $memberHeaderActions=implode(' ',$actions);
 ?><!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#f7f7f8"><title>VP3 | Campaigns</title>
-<link rel="stylesheet" href="<?= e(url('/chat.css?v=82')) ?>"><link rel="stylesheet" href="<?= e(url('/campaigns-v100.css?v=122')) ?>"></head>
+<link rel="stylesheet" href="<?= e(url('/chat.css?v=82')) ?>"><link rel="stylesheet" href="<?= e(url('/campaigns-v100.css?v=123')) ?>"><link rel="stylesheet" href="<?= e(url('/campaign-journey-builder-v123.css?v=123')) ?>"></head>
 <body class="cr-page"><div class="chat-app"><?php $workspaceSidebarUser=$user;$workspaceSidebarActive='campaigns';require __DIR__.'/includes/workspace-sidebar-v82.php'; ?><div class="chat-sidebar-backdrop" id="chatSidebarBackdrop"></div>
 <main class="chat-main cr-main"><?php require __DIR__.'/includes/member-header.php'; ?><div class="cr-wrap">
 <?php if($notice!==''):?><div class="cr-notice success"><?= e($notice) ?></div><?php endif;?><?php if($error!==''):?><div class="cr-notice error"><?= e($error) ?></div><?php endif;?>
@@ -605,4 +647,4 @@ $memberHeaderActions=implode(' ',$actions);
 <?php endif;?>
 
 <?php if(isset($_GET['new_merchant'])&&$canCreate&&$merchant):?><section class="cr-card" id="new-merchant"><header><div><span>New Merchant</span><h2>Create another business entity</h2></div></header><form method="post" class="cr-form"><?= csrf_field() ?><input type="hidden" name="action" value="merchant_create"><label>Name<input name="name" required></label><label>Slug<input name="slug"></label><label>Description<textarea name="description"></textarea></label><div class="cr-form-grid"><label>Website<input name="website_url"></label><label>Timezone<input name="timezone" value="<?= e((string)$merchant['timezone']) ?>"></label><label>Currency<input name="currency" value="<?= e((string)$merchant['currency']) ?>"></label></div><button class="cr-btn primary">Create Merchant</button></form></section><?php endif;?>
-</div></main></div><script src="<?= e(url('/workspace-shell-v82.js?v=82')) ?>" defer></script></body></html>
+</div></main></div><script src="<?= e(url('/workspace-shell-v82.js?v=82')) ?>" defer></script><script src="<?= e(url('/campaign-journey-builder-v123.js?v=123')) ?>" defer></script></body></html>
