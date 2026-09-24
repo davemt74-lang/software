@@ -355,6 +355,11 @@ function campaigns_rewards_automation_execute_contact_v119(PDO $pdo,array $rule,
                     'enrollment_id'=>max(0,(int)($payload['enrollment_id']??0)),
                     'occurred_at'=>gmdate('Y-m-d H:i:s'),'expires_at'=>(string)($issuance['expires_at']??''),
                 ],'automation:'.$executionId.':'.$triggerEventId);
+                campaigns_rewards_journey_enqueue_v120($pdo,$campaignId,$contactId,'reward_issued',[
+                    'reward_issuance_id'=>(int)$issuance['id'],'automation_rule_id'=>$ruleId,
+                    'enrollment_id'=>max(0,(int)($payload['enrollment_id']??0)),
+                    'occurred_at'=>gmdate('Y-m-d H:i:s'),'expires_at'=>(string)($issuance['expires_at']??''),
+                ],'reward-issued:'.(int)$issuance['id']);
             }catch(Throwable $e){error_log('Campaign messaging V1.20 bridge failed: '.$e->getMessage());}
         }
         return ['duplicate'=>false,'suppressed'=>false,'execution_id'=>$executionId,'issuance'=>$issuance];
