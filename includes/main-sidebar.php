@@ -218,7 +218,7 @@ if ($mainSidebarRenderAgentVoiceAssets) $GLOBALS['VP3_MEMBER_AGENT_VOICE_MENU_AS
     </div>
   </section>
 </div>
-<script src="<?= e(url('/homeserver-vp3.js?v=agent-policy-v035-20260909')) ?>" defer></script>
+<script src="<?= e(url('/homeserver-vp3.js?v=homeserver-status-v1301-20260924')) ?>" defer></script>
 <script src="<?= e(url('/agent-ui-v034.js?v=agent-ui-v034-20260913-sidebar-footer')) ?>" defer></script>
 <?php if ($mainSidebarIsChat): ?><script data-chat-rail-controls-v132 src="<?= e(url('/chat-rail-controls-v132.js?v=20260911-1')) ?>" defer></script><?php endif; ?>
 <?php if ($mainSidebarRenderAgentVoiceAssets): ?><script data-member-agent-voice-menu src="<?= e(url('/member-agent-voice-menu.js?v=agent-voice-menu-20260913')) ?>" defer></script><?php endif; ?>

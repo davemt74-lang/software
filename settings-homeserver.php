@@ -106,6 +106,6 @@ if (!$user) redirect(url('/login.php'));
   </main>
 </div>
 <script src="<?= e(url('/member-shell-v77.js')) ?>"></script>
-<script src="<?= e(url('/homeserver-settings-v1210.js?v=20260924')) ?>" defer></script>
+<script src="<?= e(url('/homeserver-settings-v1210.js?v=20260924-1301')) ?>" defer></script>
 </body>
 </html>
