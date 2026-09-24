@@ -50,6 +50,9 @@ const checks=[
   cloudPairing.includes("$raw['reconnect_status'] = $connected ? 'not_needed' : ($paired ? 'automatic' : 'not_available')")],
  ['HomeServer Cloud surfaces continuously refresh the same live status and interpret SQL timestamps as UTC',
   modal.includes("+'Z'")&&modal.includes("},10000);")&&settingsUi.includes("},10000);")],
+ ['Cloud settings expose no second approval or legacy relay pairing path',
+  !settingsUi.includes('pairing_status')&&!settingsUi.includes('cancel_pairing')&&
+  !settingsUi.includes("post('repair')")&&!settingsUi.includes('waiting_for_approval')],
  ['Agent runtime routes chat and usage through the transport-neutral per-user operation helper',
   vp3.includes('homeserver_vp3_remote_operation_for_user')&&
   agent.includes("homeserver_vp3_remote_operation_for_user($userId,'agent.chat'")&&
