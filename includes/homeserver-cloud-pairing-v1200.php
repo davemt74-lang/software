@@ -276,132 +276,65 @@ function homeserver_cloud_v1200_remove_local(int $userId): void
 
 function homeserver_cloud_v1200_status(int $userId, bool $forceRefresh=false): array
 {
-    $row = homeserver_vp3_connection($userId);
-
-    // The official outbound HTTPS session is authoritative and must not depend
-    // on the optional legacy/custom WebSocket relay configuration.
-    $httpsStatus = function_exists('homeserver_https_v1300_status')
-        ? homeserver_https_v1300_status($userId)
-        : null;
-    if (is_array($httpsStatus)) {
-        $raw = homeserver_vp3_status($userId, $forceRefresh);
-        $row = homeserver_vp3_connection($userId) ?? $row;
-        $rowStatus = (string)($row['status'] ?? '');
-        $pending = trim((string)($row['pending_request_id'] ?? '')) !== '';
-        $connected = !empty($raw['connected']);
-        $paired = !empty($raw['paired']);
-
-        $connectionState = 'not_connected';
-        if (in_array($rowStatus, ['disconnected','revoked'], true) || (string)($raw['state'] ?? '') === 'revoked') $connectionState = 'disconnected';
-        elseif ($pending || (!$paired && $rowStatus === 'awaiting_approval')) $connectionState = 'waiting_for_approval';
-        elseif ($connected && $paired) $connectionState = 'connected';
-        elseif ($paired) $connectionState = 'connection_error';
-        elseif ($connected) $connectionState = 'connecting';
-
-        $publicError = trim((string)($raw['error'] ?? '')) !== ''
-            ? homeserver_cloud_v1200_public_error((string)$raw['error'])
-            : '';
-        $raw['build'] = VP3_HOMESERVER_CLOUD_PAIRING_V1200;
-        $raw['connection_state'] = $connectionState;
-        $raw['relay_configured'] = true;
-        $raw['relay_status'] = $connected ? 'connected' : ($paired ? 'reconnecting' : 'available');
-        $raw['relay_host'] = '';
-        $raw['device_name'] = 'HomeServer';
-        $raw['paired_scopes'] = $paired ? homeserver_cloud_v1200_permissions() : [];
-        $raw['reconnect_status'] = $connected ? 'not_needed' : ($paired ? 'automatic' : 'not_available');
-        $raw['pairing'] = $pending ? [
-            'status'=>'awaiting_approval',
-            'approval_code'=>(string)($row['pending_code'] ?? ''),
-        ] : ($raw['pairing'] ?? null);
-        $raw['error'] = $publicError;
-        return $raw;
-    }
-
-    $relaySecurity = null;
-    $relayError = '';
-    try { $relaySecurity = homeserver_cloud_v1200_relay_security(); }
-    catch (Throwable $e) { $relayError = homeserver_cloud_v1200_public_error($e->getMessage()); }
-
-    if (!$row) {
-        return [
-            'build'=>VP3_HOMESERVER_CLOUD_PAIRING_V1200,
-            'state'=>'unpaired','connection_state'=>'not_connected','connected'=>false,'paired'=>false,
-            'relay_configured'=>$relaySecurity !== null,'relay_status'=>$relaySecurity ? 'ready' : 'configuration_error',
-            'relay_host'=>$relaySecurity['host'] ?? '', 'device_id'=>'','device_name'=>'', 'last_seen_at'=>null,
-            'installed_version'=>'','latest_release'=>null,'update_available'=>false,'agent_brain_ready'=>false,
-            'inference'=>null,'capabilities'=>[],'paired_scopes'=>[],'pairing'=>null,'reconnect_status'=>'not_available',
-            'error'=>$relayError,
-        ];
-    }
-
-    $storedStatus = (string)($row['status'] ?? '');
-    if (in_array($storedStatus, ['disconnected','revoked'], true)) {
-        $decoded = [];
-        if (!empty($row['capabilities_json'])) {
-            $value = json_decode((string)$row['capabilities_json'], true);
-            if (is_array($value)) $decoded = $value;
-        }
-        return [
-            'build'=>VP3_HOMESERVER_CLOUD_PAIRING_V1200,
-            'state'=>'disconnected','connection_state'=>'disconnected','connected'=>false,'paired'=>false,
-            'relay_configured'=>$relaySecurity !== null,
-            'relay_status'=>$relaySecurity ? 'available' : 'configuration_error',
-            'relay_host'=>$relaySecurity['host'] ?? '',
-            'device_id'=>(string)($row['device_id'] ?? ''),
-            'device_name'=>(string)($decoded['service'] ?? 'HomeServer'),
-            'last_seen_at'=>$row['last_seen_at'] ?? null,
-            'installed_version'=>(string)($row['installed_version'] ?? ''),
-            'latest_release'=>null,'update_available'=>false,'agent_brain_ready'=>false,'inference'=>null,
-            'capabilities'=>[],'paired_scopes'=>[],'pairing'=>null,'reconnect_status'=>'not_available',
-            'error'=>'',
-        ];
-    }
-
-    if ($relaySecurity === null) {
-        $decoded = [];
-        if (!empty($row['capabilities_json'])) {
-            $value = json_decode((string)$row['capabilities_json'], true);
-            if (is_array($value)) $decoded = $value;
-        }
-        return [
-            'build'=>VP3_HOMESERVER_CLOUD_PAIRING_V1200,
-            'state'=>'error','connection_state'=>'connection_error','connected'=>false,'paired'=>!empty($row['homeserver_token_enc']),
-            'relay_configured'=>false,'relay_status'=>'configuration_error','relay_host'=>'','device_id'=>(string)($row['device_id'] ?? ''),
-            'device_name'=>(string)($decoded['service'] ?? 'HomeServer'),'last_seen_at'=>$row['last_seen_at'] ?? null,
-            'installed_version'=>(string)($row['installed_version'] ?? ''),'latest_release'=>null,'update_available'=>false,
-            'agent_brain_ready'=>false,'inference'=>null,
-            'capabilities'=>is_array($decoded['features'] ?? null) ? array_values($decoded['features']) : [],
-            'paired_scopes'=>!empty($row['homeserver_token_enc']) ? homeserver_cloud_v1200_permissions() : [],
-            'pairing'=>!empty($row['pending_request_id']) ? ['status'=>'awaiting_approval','approval_code'=>(string)($row['pending_code'] ?? '')] : null,
-            'reconnect_status'=>'blocked','error'=>$relayError,
-        ];
-    }
-
+    // Standard HomeServer connection truth comes from one source:
+    // homeserver_vp3_status(), which prefers the official outbound HTTPS session.
+    // Legacy/custom WebSocket relay state is consulted only when that explicit
+    // transport is actually active.
     $raw = homeserver_vp3_status($userId, $forceRefresh);
-    $row = homeserver_vp3_connection($userId) ?? $row;
-    $pending = trim((string)($row['pending_request_id'] ?? '')) !== '';
-    $rowStatus = (string)($row['status'] ?? '');
+    $row = homeserver_vp3_connection($userId);
+    $transport = (string)($raw['transport'] ?? 'vp3_https');
     $connected = !empty($raw['connected']);
     $paired = !empty($raw['paired']);
-    $connectionState = 'not_connected';
-    if (in_array($rowStatus, ['disconnected','revoked'], true)) $connectionState = 'disconnected';
-    elseif ($pending || (!$paired && $rowStatus === 'awaiting_approval')) $connectionState = 'waiting_for_approval';
-    elseif ($connected && $paired) $connectionState = 'connected';
-    elseif ($paired || in_array($rowStatus, ['error','offline','expired','denied'], true)) $connectionState = 'connection_error';
-    elseif ($connected) $connectionState = 'connecting';
+    $rowStatus = (string)($row['status'] ?? '');
+    $pending = $row && trim((string)($row['pending_request_id'] ?? '')) !== '';
 
-    $publicError = trim((string)($raw['error'] ?? '')) !== '' ? homeserver_cloud_v1200_public_error((string)$raw['error']) : '';
+    $connectionState = 'not_connected';
+    if (in_array($rowStatus, ['disconnected','revoked'], true) || (string)($raw['state'] ?? '') === 'revoked') {
+        $connectionState = 'disconnected';
+    } elseif ($pending || (!$paired && $rowStatus === 'awaiting_approval')) {
+        $connectionState = 'waiting_for_approval';
+    } elseif ($connected && $paired) {
+        $connectionState = 'connected';
+    } elseif ($paired) {
+        $connectionState = 'connection_error';
+    } elseif ($connected) {
+        $connectionState = 'connecting';
+    }
+
+    $publicError = trim((string)($raw['error'] ?? '')) !== ''
+        ? homeserver_cloud_v1200_public_error((string)$raw['error'])
+        : '';
+
     $raw['build'] = VP3_HOMESERVER_CLOUD_PAIRING_V1200;
     $raw['connection_state'] = $connectionState;
-    $raw['relay_status'] = $connected ? 'connected' : ($relaySecurity ? 'available' : 'configuration_error');
-    $raw['relay_host'] = (string)$relaySecurity['host'];
     $raw['device_name'] = 'HomeServer';
     $raw['paired_scopes'] = $paired ? homeserver_cloud_v1200_permissions() : [];
-    $raw['reconnect_status'] = $connected ? 'not_needed' : ($paired ? 'available' : 'not_available');
     $raw['pairing'] = $pending ? [
         'status'=>'awaiting_approval',
         'approval_code'=>(string)($row['pending_code'] ?? ''),
-    ] : ($raw['pairing'] ?? null);
+    ] : null;
     $raw['error'] = $publicError;
+
+    if ($transport === 'vp3_https') {
+        $raw['relay_configured'] = true;
+        $raw['relay_status'] = $connected ? 'connected' : ($paired ? 'reconnecting' : 'available');
+        $raw['relay_host'] = '';
+        $raw['reconnect_status'] = $connected ? 'not_needed' : ($paired ? 'automatic' : 'not_available');
+        return $raw;
+    }
+
+    // Explicit custom WebSocket relay mode remains available for advanced
+    // deployments, but it is not part of the normal VP3 pairing lifecycle.
+    $relaySecurity = null;
+    try { $relaySecurity = homeserver_cloud_v1200_relay_security(); }
+    catch (Throwable $ignored) {}
+
+    $raw['relay_configured'] = $relaySecurity !== null;
+    $raw['relay_status'] = $connected ? 'connected' : ($relaySecurity ? 'available' : 'configuration_error');
+    $raw['relay_host'] = (string)($relaySecurity['host'] ?? '');
+    $raw['reconnect_status'] = $connected ? 'not_needed' : ($paired && $relaySecurity ? 'available' : 'not_available');
+    if ($relaySecurity === null && $raw['error'] === '' && $connectionState !== 'disconnected') {
+        $raw['error'] = 'The custom HomeServer relay is not configured.';
+    }
     return $raw;
 }
