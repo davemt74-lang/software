@@ -254,19 +254,21 @@ function homeserver_work_v230_reconcile_owner(PDO $pdo,array $user): array
     $uid=(int)($user['id']??0);if($uid<1||!homeserver_work_v230_schema_ready($pdo))return ['updated'=>0,'waiting'=>0,'resumed'=>0,'build'=>VP3_HOMESERVER_WORK_CONTINUITY_V230];
     $connected=homeserver_work_v230_connection_ready($uid);
     $s=$pdo->prepare("SELECT r.* FROM agent_workflow_runs r
-      WHERE r.owner_user_id=? AND r.execution_target='homeserver'
+      LEFT JOIN homeserver_work_continuity c ON c.run_id=r.id AND c.owner_user_id=r.owner_user_id
+      WHERE r.owner_user_id=? AND (r.execution_target='homeserver' OR c.run_id IS NOT NULL)
         AND r.status NOT IN ('completed','cancelled') ORDER BY r.updated_at ASC,r.id ASC LIMIT 100");
     $s->execute([$uid]);$updated=0;$waiting=0;$resumed=0;
     foreach($s->fetchAll()?:[] as $run){
         $row=homeserver_work_v230_ensure_run($pdo,$user,$run,(string)($run['source_key']??''),(string)($run['origin']??'agent_brain'),true);
-        $job=(string)($run['status']??'');$state=(string)($row['state']??'queued');
+        $job=(string)($run['status']??'');$state=(string)($row['state']??'queued');$target=(string)($run['execution_target']??$row['desired_executor']??'homeserver');
         $next=$state;
         if($job==='failed')$next='failed';
         elseif($job==='approval_pending')$next='waiting_approval';
         elseif($job==='executing')$next='running';
-        elseif($job==='approved'&&!$connected)$next='waiting_homeserver';
-        elseif($job==='approved'&&$connected&&$state==='waiting_homeserver')$next='resuming';
-        elseif($job==='approved'&&$connected)$next='ready';
+        elseif($job==='approved'&&$target==='homeserver'&&!$connected)$next='waiting_homeserver';
+        elseif($job==='approved'&&$target==='homeserver'&&$connected&&$state==='waiting_homeserver')$next='resuming';
+        elseif($job==='approved')$next='ready';
+        elseif(in_array($job,['queued','planning'],true))$next='queued';
         if($next!==$state){$row=homeserver_work_v230_transition($pdo,$user,$row,$next,$job,(string)($run['last_error_class']??''));$updated++;if($next==='waiting_homeserver')$waiting++;if($next==='resuming')$resumed++;}
     }
     $t=$pdo->prepare("SELECT c.*,r.status job_status,r.last_error_class,r.title FROM homeserver_work_continuity c JOIN agent_workflow_runs r ON r.id=c.run_id AND r.owner_user_id=c.owner_user_id
