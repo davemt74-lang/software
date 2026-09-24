@@ -46,6 +46,8 @@ try{
         $result=homeserver_work_v230_cancel($pdo,$user,$runId);
     }elseif($action==='retry'){
         $result=homeserver_work_v230_retry($pdo,$user,$runId);
+    }elseif($action==='resume'){
+        $result=homeserver_work_v230_resume($pdo,$user,$runId);
     }elseif($action==='run_cloud'){
         $result=homeserver_work_v230_route($pdo,$user,$runId,'cloud');
     }elseif($action==='run_homeserver'){
