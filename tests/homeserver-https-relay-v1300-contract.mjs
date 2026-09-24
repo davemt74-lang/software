@@ -13,6 +13,10 @@ const modal=read('homeserver-vp3.js');
 const settingsUi=read('homeserver-settings-v1210.js');
 const setup=read('setup.php');
 const upgrade=read('upgrade.php');
+const pollFunction=relay.slice(
+  relay.indexOf('function homeserver_https_v1300_poll'),
+  relay.indexOf('function homeserver_https_v1300_queue')
+);
 
 const checks=[
  ['HTTPS relay adds session and request queue authorities',
@@ -40,6 +44,14 @@ const checks=[
  ['only explicitly revoked HTTPS sessions return 410 while ordinary auth failures remain retryable',
   relay.includes("HomeServer HTTPS session was revoked.")&&
   poll.includes("http_response_code($revoked?410:401)")],
+ ['poll transaction performs schema DDL before beginTransaction and never calls a DDL-capable connection helper inside the transaction',
+  pollFunction.indexOf('homeserver_https_v1300_ensure_schema($pdo);') < pollFunction.indexOf('$pdo->beginTransaction();')&&
+  !pollFunction.includes('homeserver_vp3_connection($userId)')&&
+  pollFunction.includes('SELECT homeserver_token_enc FROM homeserver_connections WHERE user_id=? LIMIT 1')],
+ ['poll endpoint distinguishes authentication rejection from internal relay processing failure',
+  poll.includes("error_log('HomeServer HTTPS poll failed: '")&&
+  poll.includes('http_response_code(500)')&&
+  poll.includes("'HomeServer HTTPS relay could not process the exchange.'")],
  ['Cloud can synchronously await a bidirectional HTTPS result without a WebSocket broker',
   relay.includes('homeserver_https_v1300_remote_operation')&&relay.includes('homeserver_https_v1300_wait')&&
   !relay.includes('VP3_HOMESERVER_RELAY_URL')],
