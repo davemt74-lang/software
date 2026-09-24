@@ -57,7 +57,7 @@ const checks=[
  ['Existing CI workflow runs V1.20 contracts without adding a workflow',
   workflow.includes('Campaigns & Rewards V1.20 contract')&&workflow.includes('tests/campaigns-rewards-v120.mjs')],
  ['Production package retains V1.20 inside V1.20+ releases and includes runtime/release/cron',
-  (packageFlow.includes('"Campaigns & Rewards V1.20"')||(packageFlow.includes('"Campaigns & Rewards V1.21"')||(packageFlow.includes('"Campaigns & Rewards V1.22"')||(packageFlow.includes('"Campaigns & Rewards V1.23"')||(packageFlow.includes('"Campaigns & Rewards V1.24"')||packageFlow.includes('"Campaigns & Rewards V1.25"'))))))&&packageFlow.includes('campaigns-rewards-v120.php')&&packageFlow.includes('cron/campaigns-rewards-v120.php')],
+  (packageFlow.includes('"Campaigns & Rewards V1.20"')||(packageFlow.includes('"Campaigns & Rewards V1.21"')||(packageFlow.includes('"Campaigns & Rewards V1.22"')||(packageFlow.includes('"Campaigns & Rewards V1.23"')||(packageFlow.includes('"Campaigns & Rewards V1.24"')||(packageFlow.includes('"Campaigns & Rewards V1.25"')||packageFlow.includes('"Campaigns & Rewards V1.26"')))))))&&packageFlow.includes('campaigns-rewards-v120.php')&&packageFlow.includes('cron/campaigns-rewards-v120.php')],
  ['Documentation states no migration and V1.20 cron supersedes V1.19 campaign cron',
   docs.includes('No V1.20 database migration is required')&&docs.includes('supersedes the V1.19 Campaign cron entry')],
 ];
