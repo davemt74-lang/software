@@ -52,7 +52,7 @@ const checks=[
  ['Campaign workspace exposes operations incidents timeline recovery move emergency stop and rollout',
   campaigns.includes('Live Journey Operations & Recovery')&&campaigns.includes('Contact Journey Timeline')&&campaigns.includes('journey_instance_retry')&&campaigns.includes('journey_instance_move')&&campaigns.includes('journey_emergency_stop')&&campaigns.includes('rollout_percent')],
  ['cognitive registry declares V1.24 instance authority and human-operation events',
-  (registry.includes("'implementation_status'=>'integrated-v1.24'")||registry.includes("'implementation_status'=>'integrated-v1.25'"))&&registry.includes("'campaign_journey_instances'")&&registry.includes("'campaign.journey_emergency_stopped'")],
+  (registry.includes("'implementation_status'=>'integrated-v1.24'")||registry.includes("'implementation_status'=>'integrated-v1.25','integrated-v1.26'"))&&registry.includes("'campaign_journey_instances'")&&registry.includes("'campaign.journey_emergency_stopped'")],
  ['bootstrap loads V1.24 schema runtime and release after their V1.23 predecessors',
   bootstrap.indexOf("campaigns-rewards-schema-v123.php")<bootstrap.indexOf("campaigns-rewards-schema-v124.php")&&bootstrap.indexOf("campaigns-rewards-v123.php")<bootstrap.indexOf("campaigns-rewards-v124.php")&&bootstrap.indexOf("campaigns-rewards-release-v123.php")<bootstrap.indexOf("campaigns-rewards-release-v124.php")],
  ['V1.24 runner is CLI only and requires operations schema readiness',
