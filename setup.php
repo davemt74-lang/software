@@ -6,6 +6,7 @@ require_once __DIR__ . '/includes/homeserver-scheduling-connector-v620.php';
 require_once __DIR__ . '/includes/homeserver-commerce-agent-v1000.php';
 require_once __DIR__ . '/includes/homeserver-https-relay-v1300.php';
 require_once __DIR__ . '/includes/homeserver-shared-agent-v210.php';
+require_once __DIR__ . '/includes/homeserver-work-continuity-v230.php';
 
 $pdo = db();
 if (!$pdo) {
@@ -63,6 +64,7 @@ try {
     homeserver_commerce_agent_v1000_ensure_schema($pdo);
     homeserver_https_v1300_ensure_schema($pdo);
     homeserver_shared_v210_ensure_schema($pdo);
+    homeserver_work_v230_ensure_schema($pdo);
 
     $count = (int)$pdo->query('SELECT COUNT(*) FROM users')->fetchColumn();
     if ($count > 0) {

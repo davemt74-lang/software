@@ -25,7 +25,7 @@ $pdo=db();if(!$pdo||!profile_agent_schema_ready($pdo)||!personal_capability_sche
 $method=strtoupper((string)($_SERVER['REQUEST_METHOD']??'GET'));
 $input=$method==='POST'?json_decode((string)file_get_contents('php://input'),true):$_GET;if(!is_array($input))$input=$_POST;
 $action=trim((string)($input['action']??'state'));$user=current_user();
-$ownerActions=['owner_state','save_profile','save_profile_media','save_profile_agent','save_profile_access','attention_action','conversation_messages','conversation_status','owner_reply'];
+$ownerActions=['owner_state','save_profile','save_profile_media','save_profile_agent','save_profile_access','attention_action','conversation_messages','conversation_status','owner_reply','enqueue_durable_work'];
 
 try{
 if(in_array($action,$ownerActions,true)){
@@ -70,6 +70,29 @@ if(in_array($action,$ownerActions,true)){
             $pdo->commit();
         }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();throw $e;}
         profile_agent_json(true,['state'=>profile_agent_owner_state_v242($pdo,$user)]);
+    }
+    if($action==='enqueue_durable_work'){
+        if(!function_exists('homeserver_work_v230_enqueue')||!homeserver_work_v230_schema_ready($pdo))throw new RuntimeException('Durable cross-runtime work is not ready. Run the database upgrade.');
+        $cid=max(0,(int)($input['conversation_id']??0));
+        $conversation=vp3_profile_agent_owner_conversation_v390($pdo,$cid,$uid);
+        if(!$conversation)throw new RuntimeException('Profile Agent conversation not found.');
+        $title=trim((string)($input['title']??'Profile Agent follow-up'));
+        $instruction=trim((string)($input['instruction']??''));
+        if($instruction===''||mb_strlen($instruction)>3000)throw new RuntimeException('Enter an approved work instruction up to 3,000 characters.');
+        $target=in_array((string)($input['execution_target']??'homeserver'),['cloud','homeserver'],true)?(string)$input['execution_target']:'homeserver';
+        $agentId=max(0,(int)($conversation['profile_agent_id']??0));
+        $work=homeserver_work_v230_enqueue($pdo,$user,$title,$instruction,[
+          'conversation_id'=>'profile:'.$cid,
+          'source_surface'=>'profile_agent',
+          'execution_target'=>$target,
+          'capability_key'=>(string)($input['capability_key']??'agent.next_action'),
+          'requires_approval'=>!empty($input['requires_approval']),
+          'risk_level'=>(string)($input['risk_level']??'low'),
+          'fallback_allowed'=>!array_key_exists('fallback_allowed',$input)||!empty($input['fallback_allowed']),
+          'idempotency_key'=>(string)($input['idempotency_key']??('profile-'.$cid.'-'.sha1($instruction))),
+          'agent_id'=>$agentId,
+        ]);
+        profile_agent_json(true,['work'=>$work,'state'=>profile_agent_owner_state_v242($pdo,$user)]);
     }
     if($action==='owner_reply'){
         $cid=max(0,(int)($input['conversation_id']??0));$reply=trim((string)($input['message']??''));if($reply===''||mb_strlen($reply)>4000)throw new RuntimeException('Enter a reply up to 4,000 characters.');
