@@ -60,6 +60,10 @@ v125_migration=ROOT/'upgrade-campaigns-rewards-v125.sql'
 if v125_migration.is_file():
     audit_files.add(v125_migration)
     sources[v125_migration]=v125_migration.read_text(errors='ignore')
+v126_migration=ROOT/'upgrade-campaigns-rewards-v126.sql'
+if v126_migration.is_file():
+    audit_files.add(v126_migration)
+    sources[v126_migration]=v126_migration.read_text(errors='ignore')
 for file in list(ensure_files):
     for ref in re.findall(r"['\"](/?[^'\"]+\.sql)['\"]", sources[file]):
         candidate=ROOT/ref.lstrip('/')
