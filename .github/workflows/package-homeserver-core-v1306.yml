@@ -1,0 +1,82 @@
+name: Package VP3 Cloud HomeServer Core v13.06
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build cumulative deploy ZIP
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist/includes dist/api
+
+          cp api/homeserver-https-pair-v1300.php dist/api/
+          cp api/homeserver-https-poll-v1300.php dist/api/
+          cp api/homeserver-status.php dist/api/
+          cp api/homeserver-connection-v1200.php dist/api/
+
+          cp includes/bootstrap.php dist/includes/
+          cp includes/homeserver-agent-v018.php dist/includes/
+          cp includes/homeserver-cloud-pairing-actions-v1200.php dist/includes/
+          cp includes/homeserver-cloud-pairing-v1200.php dist/includes/
+          cp includes/homeserver-https-relay-v1300.php dist/includes/
+          cp includes/homeserver-vp3.php dist/includes/
+          cp includes/main-sidebar.php dist/includes/
+
+          cp homeserver-settings-v1210.js dist/
+          cp homeserver-vp3.js dist/
+          cp settings-homeserver.php dist/
+          cp setup.php dist/
+          cp upgrade.php dist/
+
+          cat > dist/DEPLOY.txt <<'EOF'
+          VP3 Cloud HomeServer Core v13.06
+          Cumulative VP3 Cloud side for HomeServer v19.5.
+
+          Upload these files preserving paths and replace the existing files.
+          Then run upgrade.php once.
+
+          v13.06 fixes the first HTTPS poll transaction failure:
+          - schema/DDL work is kept outside the active MySQL poll transaction
+          - the poll no longer calls a DDL-capable helper from inside the transaction
+          - authentication failures are separated from internal relay processing failures
+
+          Includes all v13.00-v13.05 HomeServer Cloud connection changes.
+          EOF
+
+          cd dist
+          zip -r vp3-cloud-v13.06.zip \
+            api/homeserver-https-pair-v1300.php \
+            api/homeserver-https-poll-v1300.php \
+            api/homeserver-status.php \
+            api/homeserver-connection-v1200.php \
+            includes/bootstrap.php \
+            includes/homeserver-agent-v018.php \
+            includes/homeserver-cloud-pairing-actions-v1200.php \
+            includes/homeserver-cloud-pairing-v1200.php \
+            includes/homeserver-https-relay-v1300.php \
+            includes/homeserver-vp3.php \
+            includes/main-sidebar.php \
+            homeserver-settings-v1210.js \
+            homeserver-vp3.js \
+            settings-homeserver.php \
+            setup.php \
+            upgrade.php \
+            DEPLOY.txt
+
+      - name: Upload deploy ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: vp3-cloud-v13.06
+          path: dist/vp3-cloud-v13.06.zip
+          if-no-files-found: error
+          retention-days: 14
