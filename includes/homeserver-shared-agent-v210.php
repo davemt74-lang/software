@@ -174,7 +174,7 @@ function homeserver_shared_v210_cloud_snapshot(int $userId,string $query=''): ar
     if(table_exists('vp3_agent_contacts')){
         try{
             $s=$pdo->prepare("SELECT id,display_name,operator_name,visitor_class,relationship_status,verification_status,
-              inferred_intent,recommendation,risk_score,opportunity_score,last_seen_at
+              inferred_intent,risk_score,engagement_score,value_score,last_seen_at
               FROM vp3_agent_contacts WHERE owner_user_id=? ORDER BY last_seen_at DESC,id DESC LIMIT 80");
             $s->execute([$userId]);
             foreach($s->fetchAll()?:[] as $row){
@@ -185,9 +185,9 @@ function homeserver_shared_v210_cloud_snapshot(int $userId,string $query=''): ar
                   'relationship '.(string)($row['relationship_status']??'observed'),
                   'verification '.(string)($row['verification_status']??'unverified'),
                   trim((string)($row['inferred_intent']??'')),
-                  trim((string)($row['recommendation']??'')),
                   'risk '.(int)($row['risk_score']??0),
-                  'opportunity '.(int)($row['opportunity_score']??0),
+                  'engagement '.(int)($row['engagement_score']??0),
+                  'value '.(int)($row['value_score']??0),
                 ]));
                 if(!homeserver_shared_v210_matches($query,$title.' '.$body))continue;
                 $datasets['contacts'][]=homeserver_shared_v210_record('contacts','agent:'.(int)$row['id'],$title,$body,(string)($row['last_seen_at']??''));
