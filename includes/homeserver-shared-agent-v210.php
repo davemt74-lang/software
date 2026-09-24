@@ -236,9 +236,10 @@ function homeserver_shared_v210_exchange(int $userId,string $query=''): ?array
     if(!$status||empty($status['connected'])||empty($status['paired']))return $cache[$cacheKey]=null;
     try{
         $cloud=homeserver_shared_v210_cloud_snapshot($userId,$query);
-        $result=homeserver_https_v1300_remote_operation($userId,'shared.context.exchange',[
+        $requestId=homeserver_https_v1300_queue($userId,'shared.context.exchange',[
           'query'=>$query,'cloud_snapshot'=>$cloud,
         ]);
+        $result=homeserver_https_v1300_wait($requestId,6500);
         $home=is_array($result['homeserver_snapshot']??null)?$result['homeserver_snapshot']:null;
         if(!$home)return $cache[$cacheKey]=null;
         $pdo=db();
