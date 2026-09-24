@@ -392,8 +392,10 @@ function campaigns_rewards_create_optimization_recommendation_v122(PDO $pdo,arra
 {
     $merchantId=(int)$campaign['merchant_id'];$campaignId=(int)$campaign['id'];$owner=(int)$campaign['merchant_owner_user_id'];if($owner<1)return false;
     $summary=campaigns_rewards_text_v100($summary,1000);$type=substr('journey.'.campaigns_rewards_slug_v100($type,70),0,80);
-    $q=$pdo->prepare("SELECT id FROM campaign_agent_recommendations WHERE merchant_id=? AND campaign_id=? AND recommendation_type=? AND summary=? AND status='proposed' LIMIT 1");
-    $q->execute([$merchantId,$campaignId,$type,$summary]);if($q->fetchColumn())return false;
+    $q=$pdo->prepare("SELECT id,status,created_at FROM campaign_agent_recommendations
+      WHERE merchant_id=? AND campaign_id=? AND recommendation_type=? ORDER BY id DESC LIMIT 1");
+    $q->execute([$merchantId,$campaignId,$type]);$latest=$q->fetch();
+    if($latest&&((string)$latest['status']==='proposed'||strtotime((string)$latest['created_at'])>=time()-604800))return false;
     $pdo->prepare("INSERT INTO campaign_agent_recommendations
       (public_id,merchant_id,campaign_id,recommendation_type,summary,status,evidence_refs_json,impact_preview_json,created_for_user_id)
       VALUES (?,?,?,?,?,'proposed',?,?,?)")->execute([
@@ -417,7 +419,7 @@ function campaigns_rewards_refresh_optimization_recommendations_v122(PDO $pdo,in
         try{$analytics=campaigns_rewards_journey_path_analytics_v122($pdo,(int)$campaign['id'],$owner);}catch(Throwable $e){continue;}
         foreach($analytics['steps'] as $step){
             if((int)$step['entered']>=10&&(float)$step['dropoff_rate']>=40.0&&(int)$step['dropoff']>=5){
-                if(campaigns_rewards_create_optimization_recommendation_v122($pdo,$campaign,'dropoff',
+                if(campaigns_rewards_create_optimization_recommendation_v122($pdo,$campaign,'dropoff-'.(string)$step['journey_key'].'-'.(string)$step['step_key'],
                     'Review '.$step['journey_key'].' / '.$step['step_key'].': '.$step['dropoff_rate'].'% of entered journey instances did not continue to the configured next step.',
                     ['journey_key'=>$step['journey_key'],'step_key'=>$step['step_key'],'entered'=>$step['entered'],'dropoff'=>$step['dropoff'],'dropoff_rate'=>$step['dropoff_rate']],
                     ['suggested_action'=>'Review copy, branch condition, wait length, consent or next-step configuration.']))$created++;
@@ -425,14 +427,14 @@ function campaigns_rewards_refresh_optimization_recommendations_v122(PDO $pdo,in
         }
         foreach(campaigns_rewards_ab_comparison_v122($pdo,(int)$campaign['id'],$owner) as $ab){
             if((int)$ab['sent']<20)continue;$rates=array_map(static fn($v)=>(float)$v['conversion_rate'],$ab['variants']);$spread=max($rates)-min($rates);
-            if($spread>=5.0&&campaigns_rewards_create_optimization_recommendation_v122($pdo,$campaign,'ab_review',
+            if($spread>=5.0&&campaigns_rewards_create_optimization_recommendation_v122($pdo,$campaign,'ab-review-'.(string)$ab['journey_key'].'-'.(string)$ab['step_key'],
                 'Review A/B variants for '.$ab['journey_key'].' / '.$ab['step_key'].': observed conversion rates differ by '.round($spread,1).' percentage points across '.$ab['sent'].' sent messages.',
                 ['journey_key'=>$ab['journey_key'],'step_key'=>$ab['step_key'],'variants'=>$ab['variants']],
                 ['suggested_action'=>'Review the observed variant outcomes before changing weights or copy.']))$created++;
         }
         foreach(['email','sms'] as $channel){
             $signal=campaigns_rewards_send_time_signal_v122($pdo,(int)$campaign['id'],$channel,20);
-            if(!empty($signal['eligible'])&&campaigns_rewards_create_optimization_recommendation_v122($pdo,$campaign,'send_time',
+            if(!empty($signal['eligible'])&&campaigns_rewards_create_optimization_recommendation_v122($pdo,$campaign,'send-time-'.$channel,
                 'Consider testing '.$channel.' delivery near '.str_pad((string)$signal['recommended_hour'],2,'0',STR_PAD_LEFT).':00 '.$signal['timezone'].'; this hour has the strongest verified view/conversion signal across '.$signal['samples'].' historical sends.',
                 ['channel'=>$channel,'samples'=>$signal['samples'],'recommended_hour'=>$signal['recommended_hour'],'timezone'=>$signal['timezone'],'score'=>$signal['score']],
                 ['suggested_action'=>'Enable send-time optimization on selected message nodes after human review.']))$created++;
