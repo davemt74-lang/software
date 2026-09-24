@@ -314,6 +314,7 @@ function campaigns_rewards_automation_cooldown_blocked_v119(PDO $pdo,array $rule
 
 function campaigns_rewards_journey_enqueue_latest_v119(PDO $pdo,int $campaignId,int $contactId,string $trigger,array $context=[],string $eventId=''): array
 {
+    if(function_exists('campaigns_rewards_journey_enqueue_v125')&&function_exists('campaigns_rewards_decision_schema_ready_v125')&&campaigns_rewards_decision_schema_ready_v125($pdo))return campaigns_rewards_journey_enqueue_v125($pdo,$campaignId,$contactId,$trigger,$context,$eventId);
     if(function_exists('campaigns_rewards_journey_enqueue_v124')&&function_exists('campaigns_rewards_journey_operations_schema_ready_v124')&&campaigns_rewards_journey_operations_schema_ready_v124($pdo))return campaigns_rewards_journey_enqueue_v124($pdo,$campaignId,$contactId,$trigger,$context,$eventId);
     if(function_exists('campaigns_rewards_journey_enqueue_v123')&&function_exists('campaigns_rewards_journey_release_schema_ready_v123')&&campaigns_rewards_journey_release_schema_ready_v123($pdo))return campaigns_rewards_journey_enqueue_v123($pdo,$campaignId,$contactId,$trigger,$context,$eventId);
     if(function_exists('campaigns_rewards_journey_enqueue_v121'))return campaigns_rewards_journey_enqueue_v121($pdo,$campaignId,$contactId,$trigger,$context,$eventId);
