@@ -65,10 +65,8 @@ function campaigns_rewards_decision_settings_v125(array $input,array $previous=[
 
 function campaigns_rewards_decision_context_v125(PDO $pdo,int $merchantId,int $campaignId,int $contactId,array $triggerContext=[]): array
 {
-    $contact=[];$relationship=[];$preferences=[];
-    $q=$pdo->prepare("SELECT * FROM crm_contacts WHERE id=? LIMIT 1");$q->execute([$contactId]);$contact=$q->fetch()?:[];
-    $q=$pdo->prepare("SELECT * FROM crm_merchant_relationships WHERE merchant_id=? AND contact_id=? LIMIT 1");$q->execute([$merchantId,$contactId]);$relationship=$q->fetch()?:[];
-    if(table_exists('crm_contact_preferences')){$q=$pdo->prepare("SELECT * FROM crm_contact_preferences WHERE contact_id=? LIMIT 1");$q->execute([$contactId]);$preferences=$q->fetch()?:[];}
+    $contact=campaigns_rewards_message_contact_v120($pdo,$merchantId,$contactId)?:throw new RuntimeException('CRM contact is not available to this Merchant.');
+    $relationship=[];$q=$pdo->prepare("SELECT * FROM crm_merchant_relationships WHERE merchant_id=? AND contact_id=? LIMIT 1");$q->execute([$merchantId,$contactId]);$relationship=$q->fetch()?:[];
 
     $tags=[];if(table_exists('crm_contact_tags')&&table_exists('crm_tags')){
         $q=$pdo->prepare("SELECT t.slug FROM crm_contact_tags ct INNER JOIN crm_tags t ON t.id=ct.tag_id WHERE ct.contact_id=? ORDER BY t.slug");$q->execute([$contactId]);$tags=$q->fetchAll(PDO::FETCH_COLUMN)?:[];
@@ -100,16 +98,13 @@ function campaigns_rewards_decision_context_v125(PDO $pdo,int $merchantId,int $c
 
     $lastPurchase=(string)($relationship['last_purchase_at']??'');$daysSince=null;
     if($lastPurchase!==''){$ts=strtotime($lastPurchase);if($ts!==false)$daysSince=max(0,(int)floor((time()-$ts)/86400));}
-    $contactMeta=json_decode((string)($contact['metadata_json']??''),true);if(!is_array($contactMeta))$contactMeta=[];
-    $relationshipMeta=json_decode((string)($relationship['metadata_json']??''),true);if(!is_array($relationshipMeta))$relationshipMeta=[];
-
     return [
       'contact'=>[
-        'id'=>$contactId,'name'=>(string)($contact['name']??''),'email'=>(string)($contact['email']??''),
-        'lifecycle_stage'=>(string)($contact['lifecycle_stage']??''),'marketing_status'=>(string)($relationship['marketing_status']??$contact['marketing_status']??''),
+        'id'=>$contactId,
+        'lifecycle_stage'=>(string)($contact['lifecycle_stage']??''),'marketing_status'=>(string)($relationship['marketing_status']??$contact['merchant_marketing_status']??''),
         'customer_status'=>(string)($relationship['customer_status']??''),'loyalty_status'=>(string)($relationship['loyalty_status']??''),
-        'preferred_channel'=>(string)($preferences['preferred_channel']??''),'days_since_purchase'=>$daysSince,
-        'tags'=>$tags,'segments'=>$segments,'metadata'=>$contactMeta,'relationship_metadata'=>$relationshipMeta,
+        'preferred_channel'=>(string)($contact['preferred_channel']??''),'days_since_purchase'=>$daysSince,
+        'tags'=>$tags,'segments'=>$segments,
       ],
       'loyalty'=>$loyalty,
       'rewards'=>['active_count'=>$activeRewards,'claimed_count'=>$claimedRewards],
