@@ -158,6 +158,10 @@ function homeserver_work_v230_ensure_run(PDO $pdo,array $user,array $run,string 
         source_surface=VALUES(source_surface),continuity_key=VALUES(continuity_key),desired_executor=VALUES(desired_executor),
         fallback_allowed=VALUES(fallback_allowed),last_job_status=VALUES(last_job_status),updated_at=UTC_TIMESTAMP()")
       ->execute([$runId,$uid,$actionId,$conversationId,$sourceSurface,$key,$target,$fallbackAllowed?1:0,(string)($run['status']??'')]);
+    if($target==='homeserver'&&column_exists('agent_workflow_runs','max_attempts')){
+        $pdo->prepare("UPDATE agent_workflow_runs SET max_attempts=GREATEST(max_attempts,20),retry_backoff_seconds=LEAST(GREATEST(retry_backoff_seconds,5),30),timeout_seconds=GREATEST(timeout_seconds,900) WHERE id=? AND owner_user_id=?")->execute([$runId,$uid]);
+        $pdo->prepare("UPDATE agent_workflow_actions SET max_attempts=GREATEST(max_attempts,20),timeout_seconds=GREATEST(timeout_seconds,900) WHERE id=? AND run_id=? AND owner_user_id=?")->execute([$actionId,$runId,$uid]);
+    }
     $row=homeserver_work_v230_row($pdo,$uid,$runId);
     if(!$row)throw new RuntimeException('Durable work continuity could not be persisted.');
     return $row;
@@ -219,6 +223,7 @@ function homeserver_work_v230_message(string $state,string $title,bool $fallback
       'resuming'=>'HomeServer is back. I resumed “'.$title.'” from its durable job state.',
       'running'=>'I sent “'.$title.'” to HomeServer and it is running under a durable lease.',
       'completed'=>'“'.$title.'” finished. The result is attached to this durable job and this conversation.',
+      'waiting_local_approval'=>'“'.$title.'” reached HomeServer and is waiting for a local approval before the protected action can continue.',
       'failed'=>'“'.$title.'” could not complete. I kept the failure reason and retry history so we can retry or choose another allowed runtime.',
       'cancelled'=>'“'.$title.'” was cancelled. No further execution will be claimed.',
       default=>'“'.$title.'” changed to '.$state.'.',
@@ -235,7 +240,7 @@ function homeserver_work_v230_transition(PDO $pdo,array $user,array $row,string 
     $run=agent_workflow_row_v1400($pdo,$uid,$runId);$title=(string)($run['title']??'Agent work');
     $message=homeserver_work_v230_message($state,$title,!empty($row['fallback_allowed']));
     if(function_exists('agent_workflow_event_v1400'))agent_workflow_event_v1400($pdo,$uid,$runId,'continuity_'.$state,$jobStatus,$jobStatus,'continuity',$message,['continuity_state'=>$state,'previous_state'=>$previous,'error_class'=>$errorClass]);
-    if($notify&&in_array($state,['waiting_homeserver','resuming','completed','failed','cancelled'],true)){
+    if($notify&&in_array($state,['waiting_homeserver','resuming','waiting_local_approval','completed','failed','cancelled'],true)){
         $type=$state==='failed'?'workflow_needs_attention':'workflow_update';
         if(function_exists('create_notification'))create_notification($uid,$type,$state==='failed'?'Agent work needs attention':'Agent work update',$message,url('/agent-workflows.php'),'agent_workflow_run',$runId);
         homeserver_work_v230_append_chat($pdo,$user,(string)($row['conversation_id']??''),$message,['work_continuity'=>['run_id'=>$runId,'state'=>$state,'version'=>'2.3']]);
@@ -289,7 +294,12 @@ function homeserver_work_v230_after_homeserver_dispatch(PDO $pdo,array $user,arr
 {
     $uid=(int)($user['id']??0);$runId=(int)($claim['run_id']??0);if($uid<1||$runId<1)return;
     $row=homeserver_work_v230_row($pdo,$uid,$runId);if(!$row)return;
-    $reason=(string)($result['reason']??'');$state=!empty($result['ok'])&&in_array($reason,['completed','homeserver_approval_pending'],true)?'completed':(!empty($result['retryable'])?'waiting_homeserver':'failed');
+    $reason=(string)($result['reason']??'');
+    if($reason==='homeserver_approval_pending')$state='waiting_local_approval';
+    elseif($reason==='homeserver_continuity_pending')$state='running';
+    elseif(!empty($result['ok'])&&$reason==='completed')$state='completed';
+    elseif(!empty($result['retryable']))$state='waiting_homeserver';
+    else $state='failed';
     homeserver_work_v230_transition($pdo,$user,$row,$state,$state==='completed'?'completed':'executing',(string)($result['reason']??''),true);
 }
 
