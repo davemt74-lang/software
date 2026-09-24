@@ -4,6 +4,7 @@ require __DIR__ . '/includes/bootstrap.php';
 require_once __DIR__ . '/includes/agent-workflow-runs-v1400.php';
 require_once __DIR__ . '/includes/agent-job-engine-v1900.php';
 require_once __DIR__ . '/includes/agent-worker-runtime-v1910.php';
+require_once __DIR__ . '/includes/homeserver-work-continuity-v230.php';
 require_once __DIR__ . '/includes/browser-agent-runtime-v2200.php';
 require_once __DIR__ . '/includes/browser-web-interaction-v2210.php';
 require_once __DIR__ . '/includes/browser-multisite-v2220.php';
@@ -36,6 +37,25 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
                 $notice='Workflow approved.';
             }elseif($action==='cancel'){$run=$durable?agent_job_cancel_v1900($pdo,$user,(int)($_POST['run_id']??0)):agent_workflow_cancel_v1400($pdo,$user,(int)($_POST['run_id']??0));$notice='Workflow cancelled.';}
             elseif($action==='retry'){$run=$durable?agent_job_retry_v1900($pdo,$user,(int)($_POST['run_id']??0)):agent_workflow_retry_v1400($pdo,$user,(int)($_POST['run_id']??0));$notice='Workflow retry queued.';}
+            elseif(in_array($action,['continuity_resume','continuity_retry','continuity_cancel','continuity_cloud','continuity_homeserver'],true)){
+                $runId=max(0,(int)($_POST['run_id']??0));
+                if($runId<1||!homeserver_work_v230_schema_ready($pdo))throw new RuntimeException('Durable work continuity is not ready.');
+                match($action){
+                    'continuity_resume'=>homeserver_work_v230_resume($pdo,$user,$runId),
+                    'continuity_retry'=>homeserver_work_v230_retry($pdo,$user,$runId),
+                    'continuity_cancel'=>homeserver_work_v230_cancel($pdo,$user,$runId),
+                    'continuity_cloud'=>homeserver_work_v230_route($pdo,$user,$runId,'cloud'),
+                    'continuity_homeserver'=>homeserver_work_v230_route($pdo,$user,$runId,'homeserver'),
+                };
+                $notice=match($action){
+                    'continuity_resume'=>'Durable work resumed.',
+                    'continuity_retry'=>'Durable work retry queued.',
+                    'continuity_cancel'=>'Durable work cancelled.',
+                    'continuity_cloud'=>'Durable work will continue in VP3 Cloud.',
+                    default=>'Durable work will continue on HomeServer.',
+                };
+                redirect(url('/agent-workflows.php?id='.$runId.'&notice='.rawurlencode($notice)));
+            }
             elseif(in_array($action,['browser_outcome_confirm_completed','browser_outcome_confirm_not_submitted'],true)){
                 $runId=max(0,(int)($_POST['run_id']??0));
                 $intentId=trim((string)($_POST['intent_id']??''));
@@ -126,9 +146,10 @@ if($notice===''&&isset($_GET['notice']))$notice=mb_strimwidth(trim((string)$_GET
 
 $brain=function_exists('agent_cognitive_loop_v310_state')?agent_cognitive_loop_v310_state($user):['priorities'=>[]];
 $priorities=array_values(array_filter((array)($brain['priorities']??[]),'is_array'));
+if(homeserver_work_v230_schema_ready($pdo)){try{homeserver_work_v230_reconcile_owner($pdo,$user);}catch(Throwable $e){}}
 $runs=agent_workflow_recent_v1400($pdo,$user,30);
-$detail=null;$detailId=max(0,(int)($_GET['id']??0));
-if($detailId>0){$row=agent_workflow_row_v1400($pdo,(int)$user['id'],$detailId);if($row)$detail=$durable?agent_job_public_run_v1900($pdo,$row,true):agent_workflow_public_run_v1400($pdo,$row,true);}
+$detail=null;$workContinuity=null;$detailId=max(0,(int)($_GET['id']??0));
+if($detailId>0){$row=agent_workflow_row_v1400($pdo,(int)$user['id'],$detailId);if($row)$detail=$durable?agent_job_public_run_v1900($pdo,$row,true):agent_workflow_public_run_v1400($pdo,$row,true);if($detail&&homeserver_work_v230_schema_ready($pdo))$workContinuity=homeserver_work_v230_status($pdo,$user,$detailId);}
 $browserRuntime=$detail&&vp3_browser_runtime_schema_ready_v2200($pdo)?vp3_browser_runtime_for_workflow_v2200($pdo,(int)$user['id'],$detailId):null;
 $browserWeb=$detail&&vp3_browser_web_schema_ready_v2210($pdo)?vp3_browser_web_for_workflow_v2210($pdo,(int)$user['id'],$detailId):['count'=>0,'verified'=>0,'failed'=>0,'checkpointed'=>0,'interactions'=>[]];
 $browserMulti=$detail&&vp3_browser_multisite_schema_ready_v2220($pdo)?vp3_browser_multisite_for_workflow_v2220($pdo,(int)$user['id'],$detailId):['attached'=>false];
@@ -183,6 +204,28 @@ function workflow_v1400_time(string $value): string{$ts=strtotime($value);return
     <div><small>Updated</small><strong><?= e(workflow_v1400_time((string)$detail['updated_at'])) ?></strong></div>
     <?php if($durable): ?><div><small>Progress</small><strong><?= (int)($detail['progress_percent']??0) ?>%<?= !empty($detail['progress_message'])?' · '.e((string)$detail['progress_message']):'' ?></strong></div><div><small>Attempts</small><strong><?= (int)($detail['attempt_count']??0) ?> / <?= (int)($detail['max_attempts']??3) ?></strong></div><?php endif; ?>
   </div>
+  <?php if($workContinuity): ?>
+  <section class="workflow-panel" aria-labelledby="workContinuityTitle">
+    <div class="workflow-panel-head"><div><small>v2.3</small><h3 id="workContinuityTitle">Cloud + HomeServer Work Continuity</h3></div><span class="workflow-status <?= e((string)$workContinuity['state']) ?>"><?= e(workflow_v1400_status_label((string)$workContinuity['state'])) ?></span></div>
+    <div class="workflow-summary-grid">
+      <div><small>Execution target</small><strong><?= e(ucfirst((string)$workContinuity['desired_executor'])) ?></strong></div>
+      <div><small>Cloud fallback</small><strong><?= !empty($workContinuity['fallback_allowed'])?'Allowed':'Not allowed' ?></strong></div>
+      <div><small>Job state</small><strong><?= e(workflow_v1400_status_label((string)$workContinuity['last_job_status'])) ?></strong></div>
+      <div><small>Conversation</small><strong><?= e((string)$workContinuity['conversation_id']!==''?(string)$workContinuity['conversation_id']:'Agent workspace') ?></strong></div>
+      <div><small>Last error</small><strong><?= e((string)$workContinuity['last_error_class']!==''?(string)$workContinuity['last_error_class']:'None') ?></strong></div>
+      <div><small>Updated</small><strong><?= e(workflow_v1400_time((string)$workContinuity['updated_at'])) ?></strong></div>
+    </div>
+    <div class="workflow-actions-bar">
+      <?php if(!in_array((string)$detail['status'],['completed','cancelled'],true)): ?>
+        <form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="continuity_resume"><input type="hidden" name="run_id" value="<?= (int)$detailId ?>"><button class="workflow-button primary" type="submit">Resume</button></form>
+        <?php if((string)$workContinuity['desired_executor']!=='cloud'&&!empty($workContinuity['fallback_allowed'])): ?><form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="continuity_cloud"><input type="hidden" name="run_id" value="<?= (int)$detailId ?>"><button class="workflow-button" type="submit">Run in Cloud</button></form><?php endif; ?>
+        <?php if((string)$workContinuity['desired_executor']!=='homeserver'): ?><form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="continuity_homeserver"><input type="hidden" name="run_id" value="<?= (int)$detailId ?>"><button class="workflow-button" type="submit">Run on HomeServer</button></form><?php endif; ?>
+        <?php if((string)$detail['status']==='failed'): ?><form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="continuity_retry"><input type="hidden" name="run_id" value="<?= (int)$detailId ?>"><button class="workflow-button" type="submit">Retry</button></form><?php endif; ?>
+        <form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="continuity_cancel"><input type="hidden" name="run_id" value="<?= (int)$detailId ?>"><button class="workflow-button danger" type="submit">Cancel</button></form>
+      <?php endif; ?>
+    </div>
+  </section>
+  <?php endif; ?>
   <?php if($browserRuntime): ?>
   <section class="workflow-panel" aria-labelledby="browserRuntimeTitle">
     <div class="workflow-panel-head">
