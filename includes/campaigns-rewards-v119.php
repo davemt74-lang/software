@@ -315,7 +315,7 @@ function campaigns_rewards_automation_cooldown_blocked_v119(PDO $pdo,array $rule
 function campaigns_rewards_journey_enqueue_latest_v119(PDO $pdo,int $campaignId,int $contactId,string $trigger,array $context=[],string $eventId=''): array
 {
     if(function_exists('campaigns_rewards_journey_enqueue_v121'))return campaigns_rewards_journey_enqueue_v121($pdo,$campaignId,$contactId,$trigger,$context,$eventId);
-    if(function_exists('campaigns_rewards_journey_enqueue_v120'))return campaigns_rewards_journey_enqueue_latest_v119($pdo,$campaignId,$contactId,$trigger,$context,$eventId);
+    if(function_exists('campaigns_rewards_journey_enqueue_v120'))return campaigns_rewards_journey_enqueue_v120($pdo,$campaignId,$contactId,$trigger,$context,$eventId);
     return ['trigger'=>$trigger,'queued'=>0,'duplicate'=>0,'suppressed'=>1,'reason'=>'journey_runtime_unavailable'];
 }
 
