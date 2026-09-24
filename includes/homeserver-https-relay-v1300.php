@@ -133,6 +133,7 @@ function homeserver_https_v1300_pair(string $pairingToken,string $deviceId,strin
     return [
       'user_id'=>$userId,'device_id'=>$deviceId,'session_token'=>$sessionToken,
       'poll_url'=>VP3_HOMESERVER_HTTPS_POLL_URL,
+      'cloud_version'=>VP3_HOMESERVER_RELEASE_VERSION,
       'transport'=>'vp3_https','protocol'=>'https-relay-v1','poll_after_ms'=>900,
     ];
 }
@@ -204,7 +205,7 @@ function homeserver_https_v1300_poll(array $session,array $body): array
         $pdo->commit();
     }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();throw $e;}
 
-    return ['ok'=>true,'transport'=>'vp3_https','requests'=>$requests,'poll_after_ms'=>900,'server_time'=>gmdate(DATE_ATOM)];
+    return ['ok'=>true,'transport'=>'vp3_https','cloud_version'=>VP3_HOMESERVER_RELEASE_VERSION,'requests'=>$requests,'poll_after_ms'=>900,'server_time'=>gmdate(DATE_ATOM)];
 }
 
 function homeserver_https_v1300_queue(int $userId,string $operation,array $payload=[]): string
@@ -260,7 +261,7 @@ function homeserver_https_v1300_status(int $userId): ?array
     $connected=(string)$session['status']==='active'&&$last&&(time()-$last)<=VP3_HOMESERVER_HTTPS_ONLINE_SECONDS;
     $caps=json_decode((string)($session['capabilities_json']??''),true);if(!is_array($caps))$caps=[];
     return [
-      'transport'=>'vp3_https','connected'=>(bool)$connected,'paired'=>(string)$session['status']==='active',
+      'transport'=>'vp3_https','cloud_version'=>VP3_HOMESERVER_RELEASE_VERSION,'connected'=>(bool)$connected,'paired'=>(string)$session['status']==='active',
       'device_id'=>(string)$session['device_id'],'last_seen_at'=>$session['last_seen_at']??null,
       'installed_version'=>(string)$session['installed_version'],'capabilities'=>$caps,
       'error'=>$connected?'':((string)$session['status']==='revoked'?'HomeServer pairing is revoked.':'HomeServer is offline.'),
