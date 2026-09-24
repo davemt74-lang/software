@@ -308,3 +308,69 @@ function homeserver_work_v230_status(PDO $pdo,array $user,int $runId): ?array
     $uid=(int)($user['id']??0);$row=homeserver_work_v230_row($pdo,$uid,$runId);
     return $row?homeserver_work_v230_public($pdo,$row):null;
 }
+
+
+function homeserver_work_v230_cancel(PDO $pdo,array $user,int $runId): array
+{
+    $uid=(int)($user['id']??0);$row=homeserver_work_v230_row($pdo,$uid,$runId);
+    if(!$row)throw new RuntimeException('Durable work was not found.');
+    $key=(string)($row['continuity_key']??'');
+    if($key!==''&&homeserver_work_v230_connection_ready($uid)&&function_exists('homeserver_https_v1300_remote_operation')){
+        try{homeserver_https_v1300_remote_operation($uid,'work.continuity.cancel',['key'=>$key]);}catch(Throwable $e){}
+    }
+    $run=agent_job_cancel_v1900($pdo,$user,$runId,'user');
+    $fresh=homeserver_work_v230_row($pdo,$uid,$runId);
+    if($fresh)homeserver_work_v230_transition($pdo,$user,$fresh,'cancelled','cancelled','',true);
+    return ['continuity'=>$fresh?homeserver_work_v230_public($pdo,$fresh):null,'job'=>$run,'build'=>VP3_HOMESERVER_WORK_CONTINUITY_V230];
+}
+
+function homeserver_work_v230_retry(PDO $pdo,array $user,int $runId): array
+{
+    $uid=(int)($user['id']??0);$row=homeserver_work_v230_row($pdo,$uid,$runId);
+    if(!$row)throw new RuntimeException('Durable work was not found.');
+    $run=agent_job_retry_v1900($pdo,$user,$runId);
+    $fresh=homeserver_work_v230_row($pdo,$uid,$runId);
+    if($fresh){
+        $next=((string)($fresh['desired_executor']??'homeserver')==='homeserver'&&!homeserver_work_v230_connection_ready($uid))?'waiting_homeserver':'ready';
+        $fresh=homeserver_work_v230_transition($pdo,$user,$fresh,$next,'approved','',true);
+    }
+    return ['continuity'=>$fresh?homeserver_work_v230_public($pdo,$fresh):null,'job'=>$run,'build'=>VP3_HOMESERVER_WORK_CONTINUITY_V230];
+}
+
+function homeserver_work_v230_route(PDO $pdo,array $user,int $runId,string $target): array
+{
+    $uid=(int)($user['id']??0);$target=strtolower(trim($target));
+    if(!in_array($target,['cloud','homeserver'],true))throw new RuntimeException('Execution target must be Cloud or HomeServer.');
+    $row=homeserver_work_v230_row($pdo,$uid,$runId);
+    if(!$row)throw new RuntimeException('Durable work was not found.');
+    if($target==='cloud'&&empty($row['fallback_allowed']))throw new RuntimeException('This job does not permit Cloud fallback.');
+    $run=agent_workflow_row_v1400($pdo,$uid,$runId);
+    if(!$run)throw new RuntimeException('Durable Agent job was not found.');
+    $status=(string)($run['status']??'');
+    if($status==='executing'||(int)($run['current_action_id']??0)>0)throw new RuntimeException('Wait for the active leased action to finish or expire before changing runtimes.');
+    if(in_array($status,['completed','cancelled'],true))throw new RuntimeException('Closed durable work cannot change runtimes.');
+    $pdo->beginTransaction();
+    try{
+        $pdo->prepare("UPDATE agent_workflow_runs SET execution_target=?,updated_at=UTC_TIMESTAMP() WHERE id=? AND owner_user_id=?")->execute([$target,$runId,$uid]);
+        $pdo->prepare("UPDATE agent_workflow_actions SET execution_target=?,updated_at=UTC_TIMESTAMP() WHERE run_id=? AND owner_user_id=? AND status IN ('queued','approval_pending','failed')")->execute([$target,$runId,$uid]);
+        $pdo->prepare("UPDATE homeserver_work_continuity SET desired_executor=?,state='queued',last_transition_at=UTC_TIMESTAMP(),updated_at=UTC_TIMESTAMP() WHERE run_id=? AND owner_user_id=?")->execute([$target,$runId,$uid]);
+        agent_workflow_event_v1400($pdo,$uid,$runId,'continuity_rerouted',$status,$status,'user','User changed the durable execution runtime.',['execution_target'=>$target]);
+        $pdo->commit();
+    }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();throw $e;}
+    if($status==='failed')agent_job_retry_v1900($pdo,$user,$runId);
+    $fresh=homeserver_work_v230_row($pdo,$uid,$runId);
+    $message='I will continue “'.homeserver_work_v230_text($run['title']??'Agent work',190).'” on '.($target==='homeserver'?'HomeServer':'VP3 Cloud').'.';
+    if(function_exists('create_notification'))create_notification($uid,'workflow_update','Execution route changed',$message,url('/agent-workflows.php'),'agent_workflow_run',$runId);
+    homeserver_work_v230_append_chat($pdo,$user,(string)($row['conversation_id']??''),$message,['work_continuity'=>['run_id'=>$runId,'state'=>'rerouted','target'=>$target,'version'=>'2.3']]);
+    return ['continuity'=>$fresh?homeserver_work_v230_public($pdo,$fresh):null,'job'=>agent_workflow_row_v1400($pdo,$uid,$runId),'build'=>VP3_HOMESERVER_WORK_CONTINUITY_V230];
+}
+
+function homeserver_work_v230_recent(PDO $pdo,array $user,int $limit=30): array
+{
+    $uid=(int)($user['id']??0);if($uid<1||!homeserver_work_v230_schema_ready($pdo))return [];
+    $limit=max(1,min(100,$limit));
+    $s=$pdo->prepare("SELECT * FROM homeserver_work_continuity WHERE owner_user_id=? ORDER BY updated_at DESC,run_id DESC LIMIT ".$limit);
+    $s->execute([$uid]);$out=[];
+    foreach($s->fetchAll()?:[] as $row)$out[]=homeserver_work_v230_public($pdo,$row);
+    return $out;
+}
