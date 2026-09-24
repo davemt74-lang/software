@@ -24,6 +24,7 @@ const checks=[
   relay.includes("hash('sha256',$sessionToken)")&&relay.includes('homeserver_vp3_encrypt($homeServerToken)')&&
   relay.includes("'session_token'=>$sessionToken")],
  ['poll endpoint authenticates a HomeServer-only outbound HTTPS session',
+  poll.includes('HTTP_AUTHORIZATION')&&poll.includes('Bearer\\s+')&&
   poll.includes('HTTP_X_VP3_HOMESERVER_SESSION')&&poll.includes('HTTP_X_HOMESERVER_DEVICE')&&
   poll.includes('homeserver_https_v1300_authenticate')],
  ['HomeServer to Cloud heartbeat updates canonical connection truth',
@@ -36,6 +37,9 @@ const checks=[
  ['HomeServer results travel back to Cloud and complete the queued request',
   relay.includes("status=?,response_status=?,response_json=?,completed_at=UTC_TIMESTAMP()")&&
   relay.includes("$ok?'completed':'failed'")],
+ ['only explicitly revoked HTTPS sessions return 410 while ordinary auth failures remain retryable',
+  relay.includes("HomeServer HTTPS session was revoked.")&&
+  poll.includes("http_response_code($revoked?410:401)")],
  ['Cloud can synchronously await a bidirectional HTTPS result without a WebSocket broker',
   relay.includes('homeserver_https_v1300_remote_operation')&&relay.includes('homeserver_https_v1300_wait')&&
   !relay.includes('VP3_HOMESERVER_RELAY_URL')],
