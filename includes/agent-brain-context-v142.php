@@ -110,6 +110,27 @@ function agent_brain_v99_context(array $user,string $query,int $limit=12): array
         ];
     }
 
+    if(function_exists('homeserver_work_v230_recent')){
+        try{
+            $workItems=homeserver_work_v230_recent($pdo,$user,12);
+            $workLines=[];
+            foreach($workItems as $item){
+                $job=is_array($item['job']??null)?$item['job']:[];
+                $status=(string)($item['state']??$job['status']??'');
+                if(in_array($status,['completed','cancelled'],true)&&count($workLines)>=4)continue;
+                $workLines[]='Job #'.(int)($item['run_id']??0).' · '.strtoupper($status).' · '.
+                  agent_brain_v99_text($job['title']??'Agent work',150).' · target '.(string)($item['desired_executor']??'homeserver').
+                  ((string)($item['last_error_class']??'')!==''?' · error '.agent_brain_v99_text($item['last_error_class'],80):'');
+                if(count($workLines)>=8)break;
+            }
+            if($workLines)$context[]=[
+              'source'=>'agent-brain:cross-runtime-work',
+              'title'=>'Durable Cloud + HomeServer work continuity',
+              'text'=>implode("\n",$workLines),
+            ];
+        }catch(Throwable $e){}
+    }
+
     $archiveRows=agent_brain_v99_rows('SELECT a.conversation_id,a.role,a.input_mode,a.message_text,a.created_at FROM agent_chat_archive a WHERE a.user_id=? AND '.$archiveScope.' ORDER BY a.created_at DESC,a.id DESC LIMIT 160',array_merge([$uid],$archiveParams));
     $archiveRows=agent_brain_v99_pick($archiveRows,$terms,$deep?24:8,$deep,static fn(array $r):string=>(string)($r['message_text']??''),$activity);if($archiveRows){$lines=[];foreach(array_reverse($archiveRows) as $r)$lines[]='['.$r['created_at'].' · conversation '.(int)$r['conversation_id'].'] '.strtoupper((string)$r['role']).': '.agent_brain_v99_text($r['message_text'],440);$context[]=['source'=>'agent-brain:conversation-history','title'=>'Retrieved conversation history','text'=>implode("\n",$lines)];}
 
