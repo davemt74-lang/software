@@ -85,6 +85,23 @@ function homeserver_shared_v210_record(string $dataset,mixed $id,string $title,s
     ];
 }
 
+function homeserver_shared_v210_fit_datasets(array $datasets,int $maxBytes=170000): array
+{
+    $order=['notifications','tasks','contacts','knowledge','memory'];
+    while(true){
+        $encoded=json_encode($datasets,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
+        if(is_string($encoded)&&strlen($encoded)<=$maxBytes)break;
+        $removed=false;
+        foreach($order as $dataset){
+            if(count((array)($datasets[$dataset]??[]))>5){
+                array_pop($datasets[$dataset]);$removed=true;break;
+            }
+        }
+        if(!$removed)break;
+    }
+    return $datasets;
+}
+
 function homeserver_shared_v210_cloud_snapshot(int $userId,string $query=''): array
 {
     $pdo=db();if(!$pdo||$userId<1)throw new RuntimeException('Database connection is unavailable.');
@@ -171,6 +188,7 @@ function homeserver_shared_v210_cloud_snapshot(int $userId,string $query=''): ar
         }
     }
 
+    $datasets=homeserver_shared_v210_fit_datasets($datasets);
     $json=json_encode($datasets,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
     $revision=hash('sha256',is_string($json)?$json:'{}');
     return [
