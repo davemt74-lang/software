@@ -1,0 +1,46 @@
+name: Package HomeServer Core v13.04
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build cumulative deploy ZIP
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist/includes dist/api
+          cp includes/homeserver-https-relay-v1300.php dist/includes/
+          cp includes/homeserver-cloud-pairing-v1200.php dist/includes/
+          cp includes/homeserver-vp3.php dist/includes/
+          cp includes/main-sidebar.php dist/includes/
+          cp api/homeserver-status.php dist/api/
+          cp api/homeserver-connection-v1200.php dist/api/
+          cp homeserver-vp3.js dist/
+          cp settings-homeserver.php dist/
+          cp homeserver-settings-v1210.js dist/
+          cat > dist/DEPLOY.txt <<'EOF'
+          VP3 Cloud HomeServer Core v13.04
+          Cumulative connection-core deploy.
+          No database migration required.
+          Upload these files preserving paths and replace the existing files.
+          This package includes the absolute HTTPS poll URL fix, canonical HTTPS status authority,
+          removal of legacy sidebar pairing, and the single Settings -> HomeServer pairing lifecycle.
+          EOF
+          cd dist
+          zip -r VP3-Cloud-HomeServer-Core-v13.04-deploy.zip             includes/homeserver-https-relay-v1300.php             includes/homeserver-cloud-pairing-v1200.php             includes/homeserver-vp3.php             includes/main-sidebar.php             api/homeserver-status.php             api/homeserver-connection-v1200.php             homeserver-vp3.js             settings-homeserver.php             homeserver-settings-v1210.js             DEPLOY.txt
+      - name: Upload deploy ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: VP3-Cloud-HomeServer-Core-v13.04-deploy
+          path: dist/VP3-Cloud-HomeServer-Core-v13.04-deploy.zip
+          if-no-files-found: error
+          retention-days: 14
