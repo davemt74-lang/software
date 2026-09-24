@@ -24,6 +24,10 @@ function user_agent_resource_catalog_v236(): array
         'recording'=>['label'=>'Recordings','description'=>'Private Artist Listening recordings and retained audio references.'],
         'voice'=>['label'=>'Voice Profile','description'=>'Voice clone availability and approved voice identity settings.'],
         'project'=>['label'=>'Projects','description'=>'Private studio projects, stems and collaboration context.'],
+        'homeserver_memory'=>['label'=>'HomeServer Agent Brain','description'=>'HomeServer-local Agent memory mirrored through the paired v2.1 shared Agent fabric.'],
+        'homeserver_knowledge'=>['label'=>'HomeServer Knowledge','description'=>'Knowledge stored on the paired HomeServer.'],
+        'homeserver_contacts'=>['label'=>'HomeServer Contacts','description'=>'Contacts stored on the paired HomeServer.'],
+        'homeserver_tasks'=>['label'=>'HomeServer Tasks','description'=>'Tasks and commitments stored on the paired HomeServer.'],
     ];
 }
 
