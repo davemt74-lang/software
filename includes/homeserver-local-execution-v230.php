@@ -74,16 +74,18 @@ function homeserver_execution_v230_policy(string $operation,array $payload=[]): 
       'tasks.list','notifications.list','shared.context.exchange','system.ping',
     ];
     $fallbackAllowed=in_array($op,$readSafe,true);
+    $writeOrPhysical=in_array($op,['memory.write','tasks.create','files.update','files.delete','action.approve','action.deny'],true);
     if($op==='tool.execute'){
         $tool=strtolower(trim((string)($payload['tool_key']??'')));
         $fallbackAllowed=in_array($tool,['contacts.search','files.list','files.read','knowledge.search','memory.list','tasks.list','notifications.list','devices.list'],true);
+        $writeOrPhysical=!$fallbackAllowed;
     }
     return [
       'version'=>VP3_HOMESERVER_EXECUTION_VERSION,
       'operation'=>$op,
       'domain'=>$domain,
       'fallback_allowed'=>$fallbackAllowed,
-      'write_or_physical'=>!$fallbackAllowed,
+      'write_or_physical'=>$writeOrPhysical,
     ];
 }
 
