@@ -1,6 +1,6 @@
 (()=>{'use strict';
 const root=document.querySelector('[data-homeserver-settings]');if(!root)return;
-const api=root.dataset.api||'',csrf=root.dataset.csrf||'',byId=id=>document.getElementById(id);
+const api=root.dataset.api||'',acceptanceApi=root.dataset.acceptanceApi||'',csrf=root.dataset.csrf||'',byId=id=>document.getElementById(id);
 const els={
  pill:byId('hsStatePill'),label:byId('hsStateLabel'),alert:byId('hsAlert'),card:byId('hsConnectCard'),
  title:byId('hsConnectionTitle'),detail:byId('hsConnectionDetail'),stepper:byId('hsStepper'),
@@ -12,7 +12,10 @@ const els={
  info:byId('hsConnectionInfo'),capsCard:byId('hsCapabilitiesCard'),caps:byId('hsCapabilities'),
  refresh:byId('hsRefresh'),deviceName:byId('hsDeviceName'),deviceId:byId('hsDeviceId'),
  relayStatus:byId('hsRelayStatus'),lastSeen:byId('hsLastSeen'),version:byId('hsVersion'),
- reconnectStatus:byId('hsReconnectStatus'),build:byId('hsBuild'),scopeCount:byId('hsScopeCount')
+ reconnectStatus:byId('hsReconnectStatus'),build:byId('hsBuild'),scopeCount:byId('hsScopeCount'),
+ acceptanceCard:byId('hsReleaseAcceptanceCard'),acceptanceRun:byId('hsRunReleaseAcceptance'),
+ acceptanceStatus:byId('hsReleaseAcceptanceStatus'),acceptanceSummary:byId('hsReleaseAcceptanceSummary'),
+ acceptanceChecks:byId('hsReleaseAcceptanceChecks')
 };
 let busy=false,pollTimer=null,pollCount=0,rawToken='';
 const labels={not_connected:'Not connected',connecting:'Connecting',connected:'Connected',connection_error:'Connection error',disconnected:'Disconnected'};
@@ -22,6 +25,8 @@ function showAlert(message,type='error'){if(!els.alert)return;if(!message){els.a
 function fmtDate(value){if(!value)return'Not yet';const raw=String(value),d=new Date(raw.includes('T')?raw:raw.replace(' ','T')+'Z');return Number.isNaN(d.getTime())?raw:d.toLocaleString();}
 async function request(url,options={}){const r=await fetch(url,{credentials:'same-origin',cache:'no-store',headers:{Accept:'application/json',...(options.headers||{})},...options});let data={};try{data=await r.json();}catch(_){const e=new Error('HomeServer returned an invalid response.');e.status=r.status;throw e;}if(!r.ok||!data.ok){const e=new Error(data.error||'HomeServer request failed.');e.status=r.status;e.payload=data;throw e;}return data;}
 function getStatus(force=false){const target=force?(api+(api.includes('?')?'&':'?')+'refresh=1'):api;return request(target,{method:'GET'});}
+function renderAcceptance(result){if(!result)return;const summary=result.summary||{},ready=Number(summary.ready||0),warnings=Number(summary.warnings||0),blocked=Number(summary.blocked||0),productionReady=Boolean(result.production_ready);if(els.acceptanceStatus)els.acceptanceStatus.textContent=productionReady?'Ready for HomeServer 2.3':'Needs attention';if(els.acceptanceSummary)els.acceptanceSummary.textContent=ready+' ready · '+warnings+' warnings · '+blocked+' blocked';if(els.acceptanceChecks){const checks=Array.isArray(result.checks)?result.checks:[];els.acceptanceChecks.innerHTML=checks.length?checks.map(check=>'<span title="'+esc(check?.detail||'')+'">'+esc(check?.label||'Check')+': '+esc(String(check?.status||'unknown').replaceAll('_',' '))+'</span>').join(''):'<span>No checks returned.</span>';}}
+async function runReleaseAcceptance(){if(busy||!acceptanceApi)return;setBusy(true);try{const body=new URLSearchParams({csrf_token:csrf});const data=await request(acceptanceApi,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},body:body.toString()});renderAcceptance(data.acceptance||{});showAlert(data.acceptance?.production_ready?'HomeServer 2.3 release acceptance passed.':'HomeServer release acceptance found items that need attention.',data.acceptance?.production_ready?'success':'error');}catch(e){renderError(e);}finally{setBusy(false);}}
 function post(action){const body=new URLSearchParams({action,csrf_token:csrf});return request(api,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},body:body.toString()});}
 function stopPoll(){if(pollTimer)clearTimeout(pollTimer);pollTimer=null;pollCount=0;}
 function tokenPending(status){return ['pending','redeeming'].includes(status?.account_pairing?.status||'');}
@@ -46,7 +51,7 @@ function render(status,{preserveAlert=false}={}){status=status||{};const state=s
  els.reconnectStatus.textContent=(status.reconnect_status||'—').replaceAll('_',' ');els.build.textContent=status.build||'—';
  const scopes=Array.isArray(status.paired_scopes)?status.paired_scopes:[];els.scopeCount.textContent=String(scopes.length);
  const caps=Array.isArray(status.capabilities)?status.capabilities:[];els.caps.innerHTML=caps.length?caps.map(v=>'<span>'+esc(v)+'</span>').join(''):'<span>None reported</span>';
- els.reconnect.hidden=state!=='connection_error';els.disconnect.hidden=!['connected','connection_error','connecting'].includes(state);els.remove.hidden=state!=='disconnected'||status.can_remove===false;
+ els.reconnect.hidden=state!=='connection_error';els.disconnect.hidden=!['connected','connection_error','connecting'].includes(state);els.remove.hidden=state!=='disconnected'||status.can_remove===false;if(els.acceptanceCard)els.acceptanceCard.hidden=state!=='connected';
  if(status.error&&!preserveAlert)showAlert(status.error);else if(!busy&&!preserveAlert)showAlert('');
  if(pending&&!pollTimer)schedulePoll();if(['connected','disconnected','connection_error'].includes(state)&&!pending)stopPoll();}
 function renderError(e){if(e?.payload?.status)render(e.payload.status,{preserveAlert:true});else if(els.pill){els.pill.dataset.state='connection_error';els.label.textContent=labels.connection_error;}showAlert(e?.message||'HomeServer request failed.');}
@@ -55,7 +60,7 @@ async function generateToken(){if(busy)return;setBusy(true);try{const data=await
 function schedulePoll(){stopPoll();pollCount=0;const tick=async()=>{if(pollCount++>300){stopPoll();showAlert('Pairing token expired or was not redeemed. Generate a new token to try again.');return;}try{const data=await getStatus(true);const status=data.status||{};render(status);if(status.connection_state==='connected'){stopPoll();showAlert('HomeServer connected successfully.','success');return;}if(tokenPending(status))pollTimer=setTimeout(tick,3000);else stopPoll();}catch(e){stopPoll();renderError(e);}};pollTimer=setTimeout(tick,2000);}
 els.generate?.addEventListener('click',generateToken);els.regenerate?.addEventListener('click',generateToken);
 els.copy?.addEventListener('click',async()=>{if(!rawToken)return;try{await navigator.clipboard.writeText(rawToken);showAlert('Pairing token copied.','success');}catch(_){showAlert('Copy was blocked by the browser. Select the token and copy it manually.');}});
-els.test?.addEventListener('click',async()=>{if(busy)return;setBusy(true);try{const data=await post('test_connection');render(data.status||{});const rt=data.round_trip||{};showAlert('Cloud → HomeServer → Cloud verified'+(rt.latency_ms!=null?' in '+rt.latency_ms+' ms':'')+'.','success');}catch(e){renderError(e);}finally{setBusy(false);}});
+els.test?.addEventListener('click',async()=>{if(busy)return;setBusy(true);try{const data=await post('test_connection');render(data.status||{});const rt=data.round_trip||{};showAlert('Cloud → HomeServer → Cloud verified'+(rt.latency_ms!=null?' in '+rt.latency_ms+' ms':'')+'.','success');}catch(e){renderError(e);}finally{setBusy(false);}});els.acceptanceRun?.addEventListener('click',runReleaseAcceptance);
 els.reconnect?.addEventListener('click',async()=>{if(busy)return;setBusy(true);try{const data=await post('reconnect');render(data.status||{});}catch(e){renderError(e);}finally{setBusy(false);}});
 els.disconnect?.addEventListener('click',async()=>{if(busy||!confirm('Disconnect VP3 from this HomeServer?'))return;setBusy(true);try{const data=await post('disconnect');rawToken='';els.tokenResult.hidden=true;render(data.status||{});showAlert('HomeServer disconnected from VP3 Cloud.','success');}catch(e){renderError(e);}finally{setBusy(false);}});
 els.remove?.addEventListener('click',async()=>{if(busy||!confirm('Remove this disconnected HomeServer pairing from VP3 Cloud?'))return;setBusy(true);try{const data=await post('remove');rawToken='';els.tokenResult.hidden=true;render(data.status||{});showAlert('HomeServer pairing record removed.','success');}catch(e){renderError(e);}finally{setBusy(false);}});
