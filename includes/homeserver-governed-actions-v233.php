@@ -15,6 +15,9 @@ function homeserver_governed_v233_catalog(): array
     return [
       'memory.write'=>['domain'=>'memory','approval_mode'=>'federated','local_owner_only'=>false],
       'tasks.create'=>['domain'=>'tasks','approval_mode'=>'federated','local_owner_only'=>false],
+      'contacts.create'=>['domain'=>'contacts','approval_mode'=>'federated','local_owner_only'=>false],
+      'contacts.update'=>['domain'=>'contacts','approval_mode'=>'federated','local_owner_only'=>false],
+      'contacts.delete'=>['domain'=>'contacts','approval_mode'=>'federated','local_owner_only'=>false],
       'files.update'=>['domain'=>'files','approval_mode'=>'local_owner','local_owner_only'=>true],
       'files.delete'=>['domain'=>'files','approval_mode'=>'local_owner','local_owner_only'=>true],
       'devices.command'=>['domain'=>'devices','approval_mode'=>'local_owner','local_owner_only'=>true],
