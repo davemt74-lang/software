@@ -282,6 +282,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             homeserver_commerce_agent_v1000_ensure_schema($pdo);
             homeserver_https_v1300_ensure_schema($pdo);
             homeserver_shared_v210_ensure_schema($pdo);
+            homeserver_federated_v240_ensure_schema($pdo);
             homeserver_execution_v230_ensure_schema($pdo);
             chrome_extension_releases_ensure_schema($pdo);
             client_release_rollouts_ensure_schema_v110($pdo);
