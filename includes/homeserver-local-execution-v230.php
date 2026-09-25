@@ -48,7 +48,7 @@ function homeserver_execution_v230_operation(string $operation): string
 function homeserver_execution_v230_domain(string $operation,array $payload=[]): string
 {
     $op=homeserver_execution_v230_operation($operation);
-    if($op==='agent.chat'||$op==='inference.status')return 'agent_compute';
+    if(in_array($op,['agent.chat','agent.infer.local','inference.status'],true))return 'agent_compute';
     if(str_starts_with($op,'files.'))return 'files';
     if($op==='knowledge.search')return 'knowledge';
     if(str_starts_with($op,'speech.'))return 'voice';
@@ -69,21 +69,23 @@ function homeserver_execution_v230_policy(string $operation,array $payload=[]): 
     $op=homeserver_execution_v230_operation($operation);
     $domain=homeserver_execution_v230_domain($op,$payload);
     $readSafe=[
-      'agent.chat','inference.status','capabilities','capability.registry',
+      'agent.chat','agent.infer.local','inference.status','capabilities','capability.registry','speech.status',
       'knowledge.search','files.list','files.read','tools.list','skills.list',
       'tasks.list','notifications.list','shared.context.exchange','system.ping',
     ];
     $fallbackAllowed=in_array($op,$readSafe,true);
+    $writeOrPhysical=in_array($op,['memory.write','tasks.create','files.update','files.delete','action.approve','action.deny'],true);
     if($op==='tool.execute'){
         $tool=strtolower(trim((string)($payload['tool_key']??'')));
         $fallbackAllowed=in_array($tool,['contacts.search','files.list','files.read','knowledge.search','memory.list','tasks.list','notifications.list','devices.list'],true);
+        $writeOrPhysical=!$fallbackAllowed;
     }
     return [
       'version'=>VP3_HOMESERVER_EXECUTION_VERSION,
       'operation'=>$op,
       'domain'=>$domain,
       'fallback_allowed'=>$fallbackAllowed,
-      'write_or_physical'=>!$fallbackAllowed,
+      'write_or_physical'=>$writeOrPhysical,
     ];
 }
 
@@ -102,7 +104,7 @@ function homeserver_execution_v230_result_meta(mixed $result): array
 {
     if(!is_array($result))return ['result_type'=>get_debug_type($result)];
     $meta=['result_keys'=>array_slice(array_values(array_filter(array_keys($result),'is_string')),0,20)];
-    foreach(['run_id','count','request_id','status','approval_required','owner_approval_required','action','action_key','local','provider','model'] as $key){
+    foreach(['run_id','count','request_id','status','approval_required','owner_approval_required','action','action_key','local','provider','model','bytes','content_type','voice','voice_source','stateless','tools_enabled'] as $key){
         if(!array_key_exists($key,$result)||is_array($result[$key])||is_object($result[$key]))continue;
         $value=$result[$key];
         if(is_string($value))$value=mb_strimwidth($value,0,160,'');

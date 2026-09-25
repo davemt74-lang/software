@@ -130,9 +130,18 @@ if($action==='message'){
     foreach(profile_agent_transcript_brain_context_v255($pdo,$ownerUser,$agent,$visitor,$query,$cid) as $item)$context[]=$item;
     if(count($context)>24)$context=array_slice($context,0,24);
     $substantive=array_values(array_filter($context,static fn(array $c):bool=>!in_array((string)$c['source'],['profile:identity','profile:rules'],true)));$greeting=(bool)preg_match('/^(?:hi|hello|hey|good\s+(?:morning|afternoon|evening))[!.\s]*$/i',$query);
+    $profileHome=['attempted'=>false,'success'=>false,'execution'=>null,'failure_class'=>'none'];
     if(!$substantive&&!$greeting){profile_agent_needs_owner($pdo,$profile,$agent,$session,$conversation,$query);$answer='I don’t have approved information to answer that accurately yet. I’ve asked '.(string)$profile['display_name'].' for input rather than guessing.';}
     elseif($greeting){$answer=trim((string)($profile['profile_agent_greeting']??''))?:'Hi — I’m '.(string)$agent['display_name'].', '.(string)$profile['display_name'].'’s AI representative. What would you like to know?';}
-    else{$answer=chat_remote_answer($query,$history,$context,$ownerUser);if($answer===null)$answer=chat_local_answer($query,$context);if(trim((string)$answer)===''){profile_agent_needs_owner($pdo,$profile,$agent,$session,$conversation,$query);$answer='I don’t have enough approved information to answer that accurately.';}}
+    else{
+        $homeAnswer=function_exists('homeserver_profile_v235_answer')
+          ?homeserver_profile_v235_answer($owner,$query,$history,$context)
+          :null;
+        $profileHome=function_exists('homeserver_profile_v235_last')?homeserver_profile_v235_last():$profileHome;
+        if(is_array($homeAnswer)&&trim((string)($homeAnswer['answer']??''))!=='')$answer=(string)$homeAnswer['answer'];
+        else{$answer=chat_remote_answer($query,$history,$context,$ownerUser);if($answer===null)$answer=chat_local_answer($query,$context);}
+        if(trim((string)$answer)===''){profile_agent_needs_owner($pdo,$profile,$agent,$session,$conversation,$query);$answer='I don’t have enough approved information to answer that accurately.';}
+    }
     $sources=[];foreach($context as $c){if(!in_array((string)$c['source'],['profile:identity','profile:rules'],true))$sources[]=['source'=>(string)$c['source'],'title'=>(string)$c['title']];}
 
     // The owner may have joined or resolved the thread while model generation was
@@ -144,7 +153,17 @@ if($action==='message'){
             $pdo->commit();
             profile_agent_json(true,['conversation_id'=>$cid,'answer'=>'','awaiting_owner'=>vp3_profile_agent_status_v390($current)==='owner_joined','conversation'=>vp3_profile_agent_public_state_v390($current),'agent'=>['name'=>(string)$agent['display_name'],'system_name'=>system_agent_name()]]);
         }
-        $pdo->prepare("INSERT INTO profile_agent_messages (conversation_id,sender_type,sender_user_id,message,context_json) VALUES (?,'agent',NULL,?,?)")->execute([$cid,$answer,json_encode(['sources'=>$sources],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE)]);
+        $messageContext=['sources'=>$sources];
+        if(!empty($profileHome['attempted'])){
+            $messageContext['homeserver_compute']=[
+              'success'=>!empty($profileHome['success']),
+              'failure_class'=>mb_strimwidth(trim((string)($profileHome['failure_class']??'none')),0,80,''),
+              'provider'=>mb_strimwidth(trim((string)($profileHome['provider']??'')),0,80,''),
+              'model'=>mb_strimwidth(trim((string)($profileHome['model']??'')),0,160,''),
+              'execution'=>is_array($profileHome['execution']??null)?$profileHome['execution']:null,
+            ];
+        }
+        $pdo->prepare("INSERT INTO profile_agent_messages (conversation_id,sender_type,sender_user_id,message,context_json) VALUES (?,'agent',NULL,?,?)")->execute([$cid,$answer,json_encode($messageContext,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE)]);
         $pdo->prepare('UPDATE profile_agent_conversations SET last_message_at=NOW(),updated_at=NOW() WHERE id=? AND owner_user_id=? AND profile_agent_id=? AND profile_session_id=?')->execute([$cid,$owner,$agentId,$sessionId]);
         $pdo->commit();
     }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();throw $e;}
