@@ -244,13 +244,23 @@ function homeserver_approvals_v028_begin_permission_upgrade(int $userId): array
         return ['ok'=>true,'pending'=>true,'approval_code'=>$pendingCode,'request_id'=>$pendingRequestId];
     }
 
-    $relay = homeserver_vp3_decrypt((string)($row['relay_token_enc'] ?? ''));
-    if (strlen($relay) < 20) throw new RuntimeException('HomeServer relay authorization is unavailable.');
-    $pairing = homeserver_vp3_remote_operation($relay, 'pair.request', [
-        'app_key'=>'vp3',
-        'app_name'=>'VP3',
-        'permissions'=>homeserver_approvals_v028_permissions(),
-    ]);
+    $https=function_exists('homeserver_https_v1300_status')?homeserver_https_v1300_status($userId):null;
+    $useHttps=is_array($https)&&!empty($https['paired']);
+    if($useHttps){
+        $pairing=homeserver_https_v1300_remote_operation($userId,'pair.request',[
+            'app_key'=>'vp3',
+            'app_name'=>'VP3',
+            'permissions'=>homeserver_approvals_v028_permissions(),
+        ]);
+    }else{
+        $relay = homeserver_vp3_decrypt((string)($row['relay_token_enc'] ?? ''));
+        if (strlen($relay) < 20) throw new RuntimeException('HomeServer relay authorization is unavailable.');
+        $pairing = homeserver_vp3_remote_operation($relay, 'pair.request', [
+            'app_key'=>'vp3',
+            'app_name'=>'VP3',
+            'permissions'=>homeserver_approvals_v028_permissions(),
+        ]);
+    }
     $requestId = trim((string)($pairing['request_id'] ?? ''));
     $claimToken = trim((string)($pairing['claim_token'] ?? ''));
     $approvalCode = trim((string)($pairing['code'] ?? ''));
@@ -275,7 +285,27 @@ function homeserver_approvals_v028_check_permission_upgrade(int $userId): array
     $row = homeserver_vp3_connection($userId);
     if (!$row) throw new RuntimeException('HomeServer connection was not found.');
     if (trim((string)($row['pending_request_id'] ?? '')) !== '') {
-        $pairing = homeserver_vp3_check_pairing($userId);
+        $https=function_exists('homeserver_https_v1300_status')?homeserver_https_v1300_status($userId):null;
+        if(is_array($https)&&!empty($https['paired'])){
+            $requestId=trim((string)$row['pending_request_id']);
+            $claimToken=homeserver_vp3_decrypt((string)($row['pending_claim_token_enc']??''));
+            if($claimToken==='')throw new RuntimeException('HomeServer permission-upgrade claim is unavailable.');
+            $pairing=homeserver_https_v1300_remote_operation($userId,'pair.status',[
+                'request_id'=>$requestId,
+                'claim_token'=>$claimToken,
+            ]);
+            if(!empty($pairing['ready'])){
+                $pdo=db();if(!$pdo)throw new RuntimeException('Database connection is unavailable.');
+                $pdo->prepare("UPDATE homeserver_connections SET homeserver_token_enc=?,pending_request_id='',pending_claim_token_enc=NULL,pending_code='',status='paired',last_error='' WHERE user_id=?")
+                    ->execute([homeserver_vp3_encrypt($claimToken),$userId]);
+                $pairing['status']='paired';
+            }elseif(in_array((string)($pairing['status']??''),['expired','denied'],true)){
+                $pdo=db();if($pdo)$pdo->prepare("UPDATE homeserver_connections SET pending_request_id='',pending_claim_token_enc=NULL,pending_code='',last_error=? WHERE user_id=?")
+                    ->execute(['HomeServer permission upgrade '.(string)$pairing['status'].'.',$userId]);
+            }
+        }else{
+            $pairing = homeserver_vp3_check_pairing($userId);
+        }
         if (($pairing['status'] ?? '') !== 'paired') {
             return ['ok'=>true,'ready'=>false,'pairing'=>$pairing];
         }
