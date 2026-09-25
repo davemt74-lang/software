@@ -172,6 +172,18 @@ function chat_execution_v019_tool(): array
     return chat_execution_v019_base('vp3_tool','VP3 Tool','vp3','','not_used',false,'none',[]);
 }
 
+function chat_execution_v019_homeserver_receipt(array $receipt): array
+{
+    $execution=chat_execution_v019_base(
+        'homeserver_local','HomeServer Local Tool','homeserver','','connected',false,'none',[],
+        0,0,max(0,(int)($receipt['duration_ms']??0)),(string)($receipt['failure_class']??'none')
+    );
+    $execution['homeserver_domain']=mb_strimwidth(trim((string)($receipt['domain']??'')),0,40,'');
+    $execution['homeserver_operation']=mb_strimwidth(trim((string)($receipt['operation']??'')),0,100,'');
+    $execution['homeserver_request_id']=mb_strimwidth(trim((string)($receipt['request_id']??'')),0,32,'');
+    return $execution;
+}
+
 function chat_execution_v019_fallback_label(string $reason): string
 {
     return match($reason){
