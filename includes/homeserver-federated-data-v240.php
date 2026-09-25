@@ -67,7 +67,7 @@ function homeserver_federated_v240_schema_ready(): bool
 
 function homeserver_federated_v240_text(mixed $value,int $max): string
 {
-    return mb_strimwidth(trim(preg_replace('/s+/u',' ',(string)$value)??(string)$value),0,$max,'');
+    return mb_strimwidth(trim(preg_replace('/\\s+/u',' ',(string)$value)??(string)$value),0,$max,'');
 }
 
 function homeserver_federated_v240_source(string $source): string
