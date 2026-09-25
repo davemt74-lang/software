@@ -75,12 +75,21 @@ function homeserver_shared_v210_matches(string $query,string $text): bool
 
 function homeserver_shared_v210_record(string $dataset,mixed $id,string $title,string $content,?string $updatedAt=null): array
 {
+    $key=$dataset.':'.homeserver_shared_v210_text((string)$id,120);
+    $item=function_exists('homeserver_federated_v240_envelope')
+      ?homeserver_federated_v240_envelope('vp3_cloud',$dataset,$key,$title,$content,$updatedAt)
+      :[];
     return [
-      'key'=>$dataset.':'.homeserver_shared_v210_text((string)$id,120),
+      'key'=>$key,
       'title'=>homeserver_shared_v210_text($title,240),
       'content'=>homeserver_shared_v210_text($content,2200),
       'updated_at'=>$updatedAt?:null,
       'authoritative_source'=>'vp3_cloud',
+      'authority_key'=>$item['authority_key']??$key,
+      'canonical_id'=>$item['canonical_id']??null,
+      'record_revision'=>$item['record_revision']??null,
+      'federation_version'=>$item['federation_version']??null,
+      'mirror_only'=>false,
       'dataset'=>$dataset,
     ];
 }
@@ -221,6 +230,7 @@ function homeserver_shared_v210_cloud_snapshot(int $userId,string $query=''): ar
       'revision'=>$revision,
       'generated_at'=>gmdate(DATE_ATOM),
       'authoritative_source'=>'vp3_cloud',
+      'federation_version'=>defined('VP3_HOMESERVER_FEDERATED_DATA_VERSION')?VP3_HOMESERVER_FEDERATED_DATA_VERSION:null,
       'datasets'=>$datasets,
     ];
 }
@@ -242,6 +252,10 @@ function homeserver_shared_v210_exchange(int $userId,string $query=''): ?array
         $result=homeserver_https_v1300_wait($requestId,6500);
         $home=is_array($result['homeserver_snapshot']??null)?$result['homeserver_snapshot']:null;
         if(!$home)return $cache[$cacheKey]=null;
+        if(function_exists('homeserver_federated_v240_observe_snapshot')){
+            homeserver_federated_v240_observe_snapshot($userId,$cloud,'vp3_cloud');
+            homeserver_federated_v240_observe_snapshot($userId,$home,'vp3_cloud');
+        }
         $pdo=db();
         if($pdo&&homeserver_shared_v210_schema_ready()){
             $pdo->prepare("INSERT INTO homeserver_agent_state(user_id,last_sync_at,cloud_revision,homeserver_revision)
@@ -267,13 +281,19 @@ function homeserver_shared_v210_context_items(array $user,string $query,int $lim
         foreach((array)($datasets[$dataset]??[]) as $row){
             if(!is_array($row))continue;
             $text=homeserver_shared_v210_text($row['content']??'',2200);if($text==='')continue;
+            $authority=homeserver_shared_v210_text($row['authoritative_source']??'homeserver',40);
+            $canonical=homeserver_shared_v210_text($row['canonical_id']??'',80);
             $out[]=[
               'dataset'=>$dataset,
-              'source'=>'homeserver:'.$dataset.':'.homeserver_shared_v210_text($row['key']??$row['id']??'',120),
+              'source'=>'homeserver:'.$dataset.':'.($canonical!==''?$canonical:homeserver_shared_v210_text($row['key']??$row['id']??'',120)),
               'title'=>homeserver_shared_v210_text($row['title']??ucfirst($dataset),240),
               'text'=>$text,
               'updated_at'=>$row['updated_at']??null,
-              'authoritative_source'=>'homeserver',
+              'authoritative_source'=>$authority,
+              'authority_key'=>homeserver_shared_v210_text($row['authority_key']??$row['key']??'',180),
+              'canonical_id'=>$canonical!==''?$canonical:null,
+              'record_revision'=>homeserver_shared_v210_text($row['record_revision']??'',64)?:null,
+              'federation_version'=>homeserver_shared_v210_text($row['federation_version']??'',20)?:null,
             ];
             if(count($out)>=max(1,min(40,$limit)))break 2;
         }

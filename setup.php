@@ -63,6 +63,7 @@ try {
     homeserver_commerce_agent_v1000_ensure_schema($pdo);
     homeserver_https_v1300_ensure_schema($pdo);
     homeserver_shared_v210_ensure_schema($pdo);
+    homeserver_federated_v240_ensure_schema($pdo);
     homeserver_execution_v230_ensure_schema($pdo);
 
     $count = (int)$pdo->query('SELECT COUNT(*) FROM users')->fetchColumn();
