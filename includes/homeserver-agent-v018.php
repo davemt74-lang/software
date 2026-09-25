@@ -99,6 +99,33 @@ function homeserver_agent_v018_credentials(int $userId): ?array
 }
 
 /**
+ * v2.3 routes normal HTTPS-paired Agent compute through the canonical local
+ * execution contract so every attempt receives the same sanitized receipt.
+ * Custom/legacy relay connections remain supported by the established user-aware
+ * remote-operation helper.
+ */
+function homeserver_agent_v018_execute(
+    int $userId,array $credentials,array $payload
+): array {
+    if($userId<1)throw new RuntimeException('Authentication required.');
+    $transport=(string)($credentials['transport']??'');
+    if($transport==='vp3_https'&&function_exists('homeserver_execution_v230_execute')){
+        $execution=homeserver_execution_v230_execute($userId,'agent.chat',$payload);
+        return [
+          'result'=>is_array($execution['result']??null)?$execution['result']:[],
+          'execution_receipt'=>is_array($execution['execution']??null)?$execution['execution']:[],
+        ];
+    }
+    if(!function_exists('homeserver_vp3_remote_operation_for_user'))throw new RuntimeException('HomeServer relay is unavailable.');
+    return [
+      'result'=>homeserver_vp3_remote_operation_for_user(
+          $userId,'agent.chat',$payload,(string)($credentials['home']??'')
+      ),
+      'execution_receipt'=>[],
+    ];
+}
+
+/**
  * v0.22 keeps one sanitized attempt snapshot in request memory so the canonical
  * chat execution object can explain a fallback without exposing relay errors,
  * credentials, provider bodies, prompts, or other private runtime details.
@@ -161,7 +188,9 @@ function homeserver_agent_v018_chat(array $user,string $query,int $conversationI
     $started=microtime(true);
     homeserver_agent_v018_set_last_attempt(['attempted'=>true,'success'=>false,'failure_class'=>'none']);
     try{
-        $result=homeserver_vp3_remote_operation_for_user($userId,'agent.chat',$payload,$credentials['home']);
+        $wrapped=homeserver_agent_v018_execute($userId,$credentials,$payload);
+        $result=is_array($wrapped['result']??null)?$wrapped['result']:[];
+        $executionReceipt=is_array($wrapped['execution_receipt']??null)?$wrapped['execution_receipt']:[];
     }catch(Throwable $e){
         $latency=max(0,(int)round((microtime(true)-$started)*1000));
         homeserver_agent_v018_set_last_attempt([
@@ -199,6 +228,7 @@ function homeserver_agent_v018_chat(array $user,string $query,int $conversationI
         'conversation_id'=>(string)($result['conversation_id']??''),
         'cloud_tokens_debited'=>max(0,(int)($result['cloud_tokens_debited']??0)),
         'latency_ms'=>$latency,
+        'execution_receipt'=>$executionReceipt??[],
     ];
 }
 

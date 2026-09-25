@@ -40,7 +40,15 @@ $runtimePlan=!empty($toolResult['handled'])?vp3_agent_runtime_tool_plan_v420($us
 $stmt=$pdo->prepare("INSERT INTO chat_messages (conversation_id,user_id,role,message,context_json) VALUES (?,NULL,'assistant','','{}')");$stmt->execute([$conversationId]);$assistantMessageId=(int)$pdo->lastInsertId();if(session_status()===PHP_SESSION_ACTIVE)session_write_close();while(ob_get_level()>0)@ob_end_flush();chat_v121_emit(['type'=>'start','conversation_id'=>$conversationId,'user_message_id'=>$userMessageId,'assistant_message_id'=>$assistantMessageId,'agent_id'=>$agentScopeId,'agent_name'=>(string)$principal['display_name'],'runtime'=>vp3_agent_runtime_public_plan_v420($runtimePlan)]);
 $streamPartial=false;$homeAttempted=false;$context=[];$knowledgeContext=['scope'=>knowledge_retrieval_v162_normalize_scope($input['knowledge_scope']??null),'citations'=>[],'provenance'=>[],'homeserver_local_knowledge'=>'not_queried'];
 if(!empty($toolResult['handled'])){
-    $answer=(string)$toolResult['answer'];if($answer!=='')chat_v121_emit(['type'=>'delta','delta'=>$answer]);$execution=vp3_agent_runtime_finalize_v420($runtimePlan,chat_execution_v019_tool(),'vp3_tool');$capabilityRoute=['version'=>'v4.20','capability'=>'tools','planned_source'=>'vp3_tool','actual_source'=>'vp3_tool','supported'=>true,'ready'=>true,'fallback_used'=>false,'reason'=>'vp3_tool_handled'];
+    $answer=(string)$toolResult['answer'];if($answer!=='')chat_v121_emit(['type'=>'delta','delta'=>$answer]);
+    $homeReceipt=is_array($toolResult['execution']??null)?$toolResult['execution']:[];
+    if($homeReceipt){
+        $execution=vp3_agent_runtime_finalize_v420($runtimePlan,chat_execution_v019_homeserver_receipt($homeReceipt),'homeserver_local_read');
+        $capabilityRoute=['version'=>'v4.20','capability'=>(string)($homeReceipt['domain']??'tools'),'planned_source'=>'homeserver','actual_source'=>'homeserver_local','supported'=>true,'ready'=>true,'fallback_used'=>!empty($homeReceipt['fallback_used']),'reason'=>'homeserver_v230_local_read'];
+    }else{
+        $execution=vp3_agent_runtime_finalize_v420($runtimePlan,chat_execution_v019_tool(),'vp3_tool');
+        $capabilityRoute=['version'=>'v4.20','capability'=>'tools','planned_source'=>'vp3_tool','actual_source'=>'vp3_tool','supported'=>true,'ready'=>true,'fallback_used'=>false,'reason'=>'vp3_tool_handled'];
+    }
 }else{
     $homeResult=null;
     if(!empty($runtimePlan['try_homeserver'])&&!empty($runtimePlan['home']['supported'])){$homeAttempted=true;$homeResult=homeserver_agent_v025_chat($user,$query,$conversationId,$history,$principal,$activeAgent,$agentContext,!empty($runtimePlan['homeserver_cloud_allowed']));}
