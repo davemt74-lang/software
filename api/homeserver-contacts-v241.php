@@ -58,8 +58,10 @@ try{
     homeserver_contacts_v241_json(['ok'=>true,'action'=>$action,'result'=>$result]);
 }catch(Throwable $e){
     $message=trim($e->getMessage());
+    $status=preg_match('/(?:changed after this|mutation_id was already used|no longer pending|already (?:executed|denied|failed|expired))/i',$message)?409:422;
     if($message===''||preg_match('/(?:sql|database|decrypt|token|bearer|curl)/i',$message)){
-        $message='HomeServer contact action could not be completed.';
+        $message='Contact action could not be completed.';
+        $status=503;
     }
-    homeserver_contacts_v241_json(['ok'=>false,'error'=>mb_strimwidth($message,0,500,'')],422);
+    homeserver_contacts_v241_json(['ok'=>false,'error'=>mb_strimwidth($message,0,500,'')],$status);
 }
