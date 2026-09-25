@@ -67,6 +67,7 @@ function homeserver_execution_v220_projection(int $userId): array
       'files'=>$files,
       'knowledge'=>$knowledge,
       'shared_agent_context'=>$shared,
+      'recent_receipts'=>function_exists('homeserver_execution_v230_recent')?homeserver_execution_v230_recent($userId,8):[],
     ];
 }
 
@@ -78,7 +79,7 @@ function homeserver_execution_v220_can_route(int $userId,string $operation): boo
     if(empty($registry['available']))return false;
     $safe=[
       'agent.chat','capabilities','capability.registry','knowledge.search',
-      'files.list','files.read','tools.list','tools.execute',
+      'files.list','files.read','tools.list','tool.execute','tools.execute',
       'tasks.list','notifications.list','shared.context.exchange','system.ping',
       'speech.transcribe','speech.synthesize',
     ];
