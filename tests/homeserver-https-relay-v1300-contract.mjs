@@ -74,9 +74,11 @@ const checks=[
  ['Cloud settings expose no second approval or legacy relay pairing path',
   !settingsUi.includes('pairing_status')&&!settingsUi.includes('cancel_pairing')&&
   !settingsUi.includes("post('repair')")&&!settingsUi.includes('waiting_for_approval')],
- ['Agent runtime routes chat and usage through the transport-neutral per-user operation helper',
+ ['Agent runtime routes chat through the canonical executor while preserving transport-neutral legacy and usage helpers',
   vp3.includes('homeserver_vp3_remote_operation_for_user')&&
-  agent.includes("homeserver_vp3_remote_operation_for_user($userId,'agent.chat'")&&
+  agent.includes("homeserver_agent_v018_execute($userId,$credentials,$payload)")&&
+  agent.includes("homeserver_execution_v230_execute($userId,'agent.chat'")&&
+  agent.includes("homeserver_vp3_remote_operation_for_user(")&&
   agent.includes("homeserver_vp3_remote_operation_for_user($userId,'usage.write'")],
  ['disconnect and remove revoke HTTPS sessions fail-closed',
   actions.includes('homeserver_https_v1300_revoke($userId,false)')&&actions.includes('homeserver_https_v1300_revoke($userId,true)')],

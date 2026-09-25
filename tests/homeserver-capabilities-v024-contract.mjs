@@ -74,7 +74,8 @@ assert.match(delegation, /'history'=>\$boundedHistory/, 'bounded canonical VP3 h
 assert.match(delegation, /'surface_context'=>\$surface/, 'sanitized VP3 surface context must be delegated');
 assert.match(delegation, /agent_surface_v131_sanitize/, 'delegated surface context must pass through canonical sanitizer');
 assert.match(delegation, /array_reverse\(array_slice\(\$history,-12\)\)/, 'history budget must prioritize recent turns');
-assert.match(delegation, /'agent\.chat'/, 'delegation must reuse the existing remote operation');
+assert.match(delegation, /homeserver_agent_v018_execute\(\$userId,\$credentials,\$payload\)/, 'delegation must reuse the canonical HTTPS-aware Agent compute executor');
+assert.doesNotMatch(delegation, /homeserver_vp3_remote_operation\(\$credentials\['relay'\]/, 'delegation must not bypass normal HTTPS pairing through the legacy relay call');
 assert.doesNotMatch(delegation, /homeserver_agent_v018_bind/, 'stateless delegation must not create a second HomeServer conversation mapping');
 assert.doesNotMatch(delegation, /CREATE\s+TABLE|ALTER\s+TABLE/i, 'v0.25 must not add VP3 schema');
 assert.doesNotMatch(delegation, /shell_exec|passthru|filesystem\.read|http\.proxy/i, 'delegation adapter must not add unsafe execution surfaces');

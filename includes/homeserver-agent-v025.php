@@ -84,7 +84,7 @@ function homeserver_agent_v025_chat(
     }
 
     homeserver_agent_v018_set_last_attempt(['attempted'=>false,'success'=>false,'failure_class'=>'none']);
-    if($userId<1||$conversationId<1||trim($query)===''||!function_exists('homeserver_vp3_remote_operation'))return null;
+    if($userId<1||$conversationId<1||trim($query)===''||!function_exists('homeserver_agent_v018_execute'))return null;
     $credentials=homeserver_agent_v018_credentials($userId);
     if(!$credentials){
         homeserver_agent_v018_set_last_attempt(['attempted'=>false,'success'=>false,'failure_class'=>'homeserver_not_paired']);
@@ -109,9 +109,12 @@ function homeserver_agent_v025_chat(
     $started=microtime(true);
     homeserver_agent_v018_set_last_attempt(['attempted'=>true,'success'=>false,'failure_class'=>'none']);
     try{
-        // Reuse the established agent.chat relay operation. Delegation is a
-        // capability-negotiated payload extension, not a second transport.
-        $result=homeserver_vp3_remote_operation($credentials['relay'],'agent.chat',$payload,$credentials['home']);
+        // Reuse the canonical v2.3 Agent-compute execution boundary.
+        // This is HTTPS-aware and preserves custom-relay compatibility through
+        // homeserver_agent_v018_execute().
+        $wrapped=homeserver_agent_v018_execute($userId,$credentials,$payload);
+        $result=is_array($wrapped['result']??null)?$wrapped['result']:[];
+        $executionReceipt=is_array($wrapped['execution_receipt']??null)?$wrapped['execution_receipt']:[];
     }catch(Throwable $e){
         $latency=max(0,(int)round((microtime(true)-$started)*1000));
         homeserver_agent_v018_set_last_attempt([
@@ -152,6 +155,7 @@ function homeserver_agent_v025_chat(
         'conversation_id'=>'',
         'cloud_tokens_debited'=>max(0,(int)($result['cloud_tokens_debited']??0)),
         'latency_ms'=>$latency,
+        'execution_receipt'=>$executionReceipt??[],
         'delegation'=>[
             'mode'=>'stateless_vp3_canonical',
             'history_messages'=>max(0,min(12,(int)($remoteDelegation['history_messages']??count($boundedHistory)))),

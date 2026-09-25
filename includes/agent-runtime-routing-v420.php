@@ -168,13 +168,28 @@ function vp3_agent_runtime_block_message_v420(array $plan): string
 function vp3_agent_runtime_homeserver_execution_v420(array $result): array
 {
     $compute=trim((string)($result['compute_source']??''));
-    if($compute!=='vp3_cloud')return chat_execution_v019_homeserver($result);
-    $usage=is_array($result['usage']??null)?$result['usage']:[];
-    return chat_execution_v019_base(
-        'vp3_cloud','VP3 Cloud via HomeServer',
-        trim((string)($result['provider']??'')),trim((string)($result['model']??'')),'connected',false,'none',$usage,
-        max(0,(int)($result['run_id']??0)),max(0,(int)($result['cloud_tokens_debited']??0)),max(0,(int)($result['latency_ms']??0)),'none'
-    );
+    if($compute!=='vp3_cloud'){
+        $execution=chat_execution_v019_homeserver($result);
+    }else{
+        $usage=is_array($result['usage']??null)?$result['usage']:[];
+        $execution=chat_execution_v019_base(
+            'vp3_cloud','VP3 Cloud via HomeServer',
+            trim((string)($result['provider']??'')),trim((string)($result['model']??'')),'connected',false,'none',$usage,
+            max(0,(int)($result['run_id']??0)),max(0,(int)($result['cloud_tokens_debited']??0)),max(0,(int)($result['latency_ms']??0)),'none'
+        );
+    }
+    $receipt=is_array($result['execution_receipt']??null)?$result['execution_receipt']:[];
+    if($receipt){
+        $execution['homeserver_execution']=[
+          'version'=>mb_strimwidth(trim((string)($receipt['version']??'2.3')),0,20,''),
+          'request_id'=>mb_strimwidth(trim((string)($receipt['request_id']??'')),0,32,''),
+          'domain'=>mb_strimwidth(trim((string)($receipt['domain']??'agent_compute')),0,40,''),
+          'operation'=>mb_strimwidth(trim((string)($receipt['operation']??'agent.chat')),0,100,''),
+          'route'=>mb_strimwidth(trim((string)($receipt['route']??'homeserver')),0,40,''),
+          'duration_ms'=>max(0,(int)($receipt['duration_ms']??0)),
+        ];
+    }
+    return $execution;
 }
 
 function vp3_agent_runtime_actual_route_v420(array $execution): string
