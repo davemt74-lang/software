@@ -163,6 +163,7 @@ require_once __DIR__.'/cognitive-domain-integration-v2390.php';
 require_once __DIR__.'/homeserver-shared-agent-v210.php';
 require_once __DIR__.'/homeserver-execution-routing-v220.php';
 require_once __DIR__.'/homeserver-local-execution-v230.php';
+require_once __DIR__.'/homeserver-local-reads-v231.php';
 require_once __DIR__.'/homeserver-agent-read-v230.php';
 require_once __DIR__.'/cognitive-learning-v540.php';
 require_once __DIR__.'/cognitive-planning-v550.php';
