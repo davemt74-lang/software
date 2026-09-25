@@ -25,6 +25,26 @@ $federatedExtraContacts = array_values(array_filter(
 ));
 $coreCrmCount = count(array_filter($federatedExtraContacts,static fn(array $item):bool=>(string)($item['contact_class']??'')==='core_crm'));
 $homeServerContactCount = count(array_filter($federatedExtraContacts,static fn(array $item):bool=>(string)($item['contact_class']??'')==='address_book'));
+$federatedClientContacts=[];
+foreach($federatedExtraContacts as $item){
+    $canonical=trim((string)($item['canonical_id']??''));
+    if($canonical==='')continue;
+    $federatedClientContacts[$canonical]=[
+      'canonical_id'=>$canonical,
+      'record_revision'=>(string)($item['record_revision']??''),
+      'authority_source'=>(string)($item['authority_source']??''),
+      'contact_class'=>(string)($item['contact_class']??''),
+      'display_name'=>(string)($item['display_name']??''),
+      'organization'=>(string)($item['organization']??''),
+      'email'=>(string)($item['email']??''),
+      'phone'=>(string)($item['phone']??''),
+      'relationship'=>(string)($item['relationship']??''),
+      'notes'=>(string)($item['notes']??''),
+      'source_label'=>(string)($item['source_label']??''),
+      'read_only'=>!empty($item['read_only']),
+      'allowed_mutations'=>array_values(array_filter((array)($item['allowed_mutations']??[]),'is_string')),
+    ];
+}
 
 $totalContacts = count($contacts);
 $repeatContacts = 0;
@@ -166,7 +186,7 @@ foreach($agentContacts as $agentContact){
       $memberHeaderUser = $user;
       $memberHeaderTitle = 'My Contacts';
       $memberHeaderSubtitle = 'People + AI agents + CRM + HomeServer relationships';
-      $memberHeaderActions = '<a class="contacts-button" href="' . e(url('/chat.php')) . '">Ask Agent</a><a class="contacts-button" href="' . e(url('/profile-agent.php?tab=radar')) . '">Agent Radar</a>';
+      $memberHeaderActions = '<button class="contacts-button primary" id="contactsNewContact" type="button">New contact</button><a class="contacts-button" href="' . e(url('/chat.php')) . '">Ask Agent</a><a class="contacts-button" href="' . e(url('/profile-agent.php?tab=radar')) . '">Agent Radar</a>';
       require __DIR__ . '/includes/member-header.php';
     ?>
 
@@ -251,6 +271,7 @@ foreach($agentContacts as $agentContact){
                 <div class="contacts-person-copy">
                   <strong><?= e($name) ?></strong>
                   <small><?= e($source) ?> · <?= e($classLabel) ?></small>
+                  <button class="contacts-contact-edit" type="button" data-federated-contact-edit="<?= e((string)($contact['canonical_id']??'')) ?>">Edit contact</button>
                 </div>
               </div>
               <div class="contacts-cell" data-label="Type / stage"><span class="contacts-stage"><?= e($classLabel) ?></span><small><?= e((string)($contact['authority_source']??'')) ?> authority</small></div>
@@ -322,10 +343,40 @@ foreach($agentContacts as $agentContact){
   </section>
 </div>
 
+<div class="contacts-agent-modal" id="federatedContactModal" hidden aria-hidden="true">
+  <div class="contacts-agent-modal-backdrop" data-federated-contact-close></div>
+  <section class="contacts-agent-modal-panel contacts-contact-editor" role="dialog" aria-modal="true" aria-labelledby="federatedContactTitle" tabindex="-1">
+    <header class="contacts-agent-modal-head">
+      <div class="contacts-agent-modal-identity">
+        <span class="contacts-person-avatar" aria-hidden="true">C</span>
+        <div><small id="federatedContactKicker">Federated Contacts</small><h2 id="federatedContactTitle">New contact</h2><p id="federatedContactMeta">Choose where this contact should be authoritative.</p></div>
+      </div>
+      <button class="contacts-agent-modal-close" type="button" data-federated-contact-close aria-label="Close contact editor">×</button>
+    </header>
+    <form class="contacts-contact-form" id="federatedContactForm">
+      <label><span>Authoritative store</span><select id="federatedContactAuthority"><option value="vp3_cloud">VP3 Cloud CRM</option><option value="homeserver">HomeServer address book</option></select><small id="federatedContactAuthorityHelp">Cloud CRM changes apply immediately.</small></label>
+      <label><span>Name</span><input id="federatedContactName" maxlength="240" autocomplete="name" required></label>
+      <label><span>Email</span><input id="federatedContactEmail" type="email" maxlength="320" autocomplete="email"></label>
+      <label><span>Organization</span><input id="federatedContactOrganization" maxlength="240" autocomplete="organization"></label>
+      <label><span>Phone</span><input id="federatedContactPhone" maxlength="80" autocomplete="tel"></label>
+      <label><span>Relationship</span><input id="federatedContactRelationship" maxlength="160"></label>
+      <label class="contacts-contact-form-wide"><span>Notes</span><textarea id="federatedContactNotes" maxlength="50000" rows="5"></textarea><small>Notes are supported for HomeServer address-book contacts. Core CRM keeps its existing native CRM fields.</small></label>
+      <div class="contacts-contact-form-actions">
+        <button class="contacts-button danger" id="federatedContactDelete" type="button" hidden>Delete</button>
+        <span></span>
+        <button class="contacts-button" type="button" data-federated-contact-close>Cancel</button>
+        <button class="contacts-button primary" id="federatedContactSave" type="submit">Save contact</button>
+      </div>
+    </form>
+  </section>
+</div>
+
 <script>window.VP3_CONTACTS=<?= json_encode([
     'policyEndpoint'=>url('/api/agent-radar-policy.php'),
+    'continuityEndpoint'=>url('/api/homeserver-contacts-v241.php'),
     'csrf'=>csrf_token(),
     'agents'=>$agentClientContacts,
+    'federated'=>$federatedClientContacts,
 ],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE|JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT) ?>;</script>
 <script>
 (() => {
@@ -345,7 +396,23 @@ foreach($agentContacts as $agentContact){
   const modalAvatar=document.getElementById('agentRelationshipAvatar');
   const modalBody=document.getElementById('agentRelationshipBody');
   const modalTabs=[...document.querySelectorAll('[data-agent-detail-tab]')];
-  let active='all',busy=false,activeAgent=null,activeTab='overview',modalOpener=null;
+  const federated=cfg.federated&&typeof cfg.federated==='object'?cfg.federated:{};
+  const contactModal=document.getElementById('federatedContactModal');
+  const contactPanel=contactModal?.querySelector('.contacts-contact-editor');
+  const contactForm=document.getElementById('federatedContactForm');
+  const contactAuthority=document.getElementById('federatedContactAuthority');
+  const contactAuthorityHelp=document.getElementById('federatedContactAuthorityHelp');
+  const contactTitle=document.getElementById('federatedContactTitle');
+  const contactKicker=document.getElementById('federatedContactKicker');
+  const contactMeta=document.getElementById('federatedContactMeta');
+  const contactName=document.getElementById('federatedContactName');
+  const contactEmail=document.getElementById('federatedContactEmail');
+  const contactOrganization=document.getElementById('federatedContactOrganization');
+  const contactPhone=document.getElementById('federatedContactPhone');
+  const contactRelationship=document.getElementById('federatedContactRelationship');
+  const contactNotes=document.getElementById('federatedContactNotes');
+  const contactDelete=document.getElementById('federatedContactDelete');
+  let active='all',busy=false,activeAgent=null,activeTab='overview',modalOpener=null,editingContact=null;
 
   const esc=value=>String(value??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#039;');
   const number=value=>new Intl.NumberFormat().format(Math.max(0,Number(value||0)));
@@ -372,6 +439,65 @@ foreach($agentContacts as $agentContact){
     if(!cfg.policyEndpoint||!cfg.csrf)throw new Error('Agent controls are unavailable.');
     const r=await fetch(cfg.policyEndpoint,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({csrf_token:cfg.csrf,...payload})});
     const d=await r.json().catch(()=>null);if(!r.ok||!d?.ok)throw new Error(d?.error||'Agent contact update failed.');return d;
+  }
+  const mutationId=()=>{
+    if(globalThis.crypto?.randomUUID)return 'contacts-'+globalThis.crypto.randomUUID();
+    return 'contacts-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,14);
+  };
+  function contactAuthorityCopy(authority){
+    const local=authority==='homeserver';
+    if(contactAuthorityHelp)contactAuthorityHelp.textContent=local?'HomeServer changes are submitted through its owner approval queue.':'Cloud CRM changes apply immediately.';
+    if(contactEmail)contactEmail.required=!local;
+  }
+  function closeContactEditor(){
+    if(!contactModal||contactModal.hidden)return;
+    contactModal.hidden=true;contactModal.setAttribute('aria-hidden','true');document.body.classList.remove('contacts-agent-modal-open');editingContact=null;
+  }
+  function openContactEditor(canonical=''){
+    if(!contactModal||!contactForm)return;
+    const item=canonical?federated[canonical]:null;
+    editingContact=item||null;
+    contactForm.reset();
+    const authority=String(item?.authority_source||'vp3_cloud');
+    if(contactAuthority){contactAuthority.value=authority;contactAuthority.disabled=Boolean(item);}
+    if(contactTitle)contactTitle.textContent=item?'Edit contact':'New contact';
+    if(contactKicker)contactKicker.textContent=item?(item.source_label||'Federated contact'):'Federated Contacts';
+    if(contactMeta)contactMeta.textContent=item?(authority==='homeserver'?'This contact remains authoritative on HomeServer.':'This contact remains authoritative in VP3 Cloud CRM.'):'Choose where this contact should be authoritative.';
+    if(contactName)contactName.value=String(item?.display_name||'');
+    if(contactEmail)contactEmail.value=String(item?.email||'');
+    if(contactOrganization)contactOrganization.value=String(item?.organization||'');
+    if(contactPhone)contactPhone.value=String(item?.phone||'');
+    if(contactRelationship)contactRelationship.value=String(item?.relationship||'');
+    if(contactNotes)contactNotes.value=String(item?.notes||'');
+    if(contactDelete)contactDelete.hidden=!item;
+    contactAuthorityCopy(authority);
+    contactModal.hidden=false;contactModal.setAttribute('aria-hidden','false');document.body.classList.add('contacts-agent-modal-open');
+    requestAnimationFrame(()=>contactPanel?.focus());
+  }
+  async function contactMutation(action){
+    if(!cfg.continuityEndpoint||!cfg.csrf)throw new Error('Federated Contacts are unavailable.');
+    const item=editingContact;
+    const authority=String(item?.authority_source||contactAuthority?.value||'vp3_cloud');
+    const payload={
+      csrf_token:cfg.csrf,action,authority_source:authority,mutation_id:mutationId(),
+      contact:{
+        display_name:String(contactName?.value||'').trim(),
+        email:String(contactEmail?.value||'').trim(),
+        organization:String(contactOrganization?.value||'').trim(),
+        phone:String(contactPhone?.value||'').trim(),
+        relationship:String(contactRelationship?.value||'').trim(),
+        notes:String(contactNotes?.value||'').trim()
+      }
+    };
+    if(item){
+      payload.canonical_id=String(item.canonical_id||'');
+      payload.expected_revision=String(item.record_revision||'');
+    }
+    if(action==='delete')payload.contact={};
+    const response=await fetch(cfg.continuityEndpoint,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    const data=await response.json().catch(()=>null);
+    if(!response.ok||!data?.ok)throw new Error(data?.error||'Contact update failed.');
+    return data;
   }
   function metric(label,value,detail=''){
     return `<article class="contacts-detail-metric"><span>${esc(label)}</span><strong>${esc(value)}</strong>${detail?`<small>${esc(detail)}</small>`:''}</article>`;
@@ -462,9 +588,39 @@ foreach($agentContacts as $agentContact){
     if(!modal||modal.hidden)return;modal.hidden=true;modal.setAttribute('aria-hidden','true');document.body.classList.remove('contacts-agent-modal-open');activeAgent=null;modalOpener?.focus?.();modalOpener=null;
   }
 
+  document.getElementById('contactsNewContact')?.addEventListener('click',()=>openContactEditor());
+  contactAuthority?.addEventListener('change',()=>contactAuthorityCopy(String(contactAuthority.value||'vp3_cloud')));
+  document.querySelectorAll('[data-federated-contact-close]').forEach(button=>button.addEventListener('click',closeContactEditor));
+  contactForm?.addEventListener('submit',async event=>{
+    event.preventDefault();if(busy)return;busy=true;
+    const save=document.getElementById('federatedContactSave');if(save)save.disabled=true;
+    try{
+      const data=await contactMutation(editingContact?'update':'create');
+      const result=data?.result||{};
+      const pending=result?.status==='pending_approval'||result?.approval_required===true;
+      setNotice(pending?'HomeServer contact change submitted for owner approval.':'Contact saved.');
+      closeContactEditor();
+      if(!pending)window.setTimeout(()=>window.location.reload(),300);
+    }catch(err){setNotice(err.message,true);}finally{busy=false;if(save)save.disabled=false;}
+  });
+  contactDelete?.addEventListener('click',async()=>{
+    if(!editingContact||busy)return;
+    if(!window.confirm('Delete this contact from its authoritative store?'))return;
+    busy=true;contactDelete.disabled=true;
+    try{
+      const data=await contactMutation('delete');
+      const result=data?.result||{};
+      const pending=result?.status==='pending_approval'||result?.approval_required===true;
+      setNotice(pending?'HomeServer contact deletion submitted for owner approval.':'Contact deleted.');
+      closeContactEditor();
+      if(!pending)window.setTimeout(()=>window.location.reload(),300);
+    }catch(err){setNotice(err.message,true);}finally{busy=false;contactDelete.disabled=false;}
+  });
+
   search?.addEventListener('input',apply);
   for(const filter of filters)filter.addEventListener('click',()=>{active=String(filter.dataset.contactFilter||'all');for(const button of filters)button.classList.toggle('active',button===filter);apply();});
   document.addEventListener('click',async e=>{
+    const edit=e.target.closest('[data-federated-contact-edit]');if(edit){openContactEditor(String(edit.dataset.federatedContactEdit||''));return;}
     const open=e.target.closest('[data-agent-detail-open]');if(open){openAgentDetail(open.dataset.agentDetailOpen,open);return;}
     if(e.target.closest('[data-agent-detail-close]')){closeAgentDetail();return;}
     const tab=e.target.closest('[data-agent-detail-tab]');if(tab&&activeAgent){renderTab(String(tab.dataset.agentDetailTab||'overview'));return;}
@@ -477,7 +633,7 @@ foreach($agentContacts as $agentContact){
       window.setTimeout(()=>window.location.reload(),350);
     }catch(err){setNotice(err.message,true);button.disabled=false;}finally{busy=false;}
   });
-  document.addEventListener('keydown',event=>{if(event.key==='Escape'&&modal&&!modal.hidden)closeAgentDetail();});
+  document.addEventListener('keydown',event=>{if(event.key!=='Escape')return;if(contactModal&&!contactModal.hidden)closeContactEditor();else if(modal&&!modal.hidden)closeAgentDetail();});
   apply();
 })();
 </script>
