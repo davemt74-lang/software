@@ -76,6 +76,7 @@ function vp3_upgrade_complete(): bool
         && homeserver_https_v1300_schema_ready()
         && homeserver_shared_v210_schema_ready()
         && homeserver_federated_v240_schema_ready()
+        && homeserver_contacts_v241_schema_ready()
         && homeserver_execution_v230_schema_ready()
         && homeserver_scheduling_v620_schema_ready()
         && homeserver_commerce_agent_v1000_schema_ready()
@@ -284,6 +285,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             homeserver_https_v1300_ensure_schema($pdo);
             homeserver_shared_v210_ensure_schema($pdo);
             homeserver_federated_v240_ensure_schema($pdo);
+            homeserver_contacts_v241_ensure_schema($pdo);
             homeserver_execution_v230_ensure_schema($pdo);
             chrome_extension_releases_ensure_schema($pdo);
             client_release_rollouts_ensure_schema_v110($pdo);
