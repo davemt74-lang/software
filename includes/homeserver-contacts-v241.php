@@ -460,12 +460,6 @@ function homeserver_contacts_v241_cloud_crm_update(int $userId,string $canonical
 {
     $mutationId=homeserver_contacts_v241_mutation_id($payload['mutation_id']??'');
     $expected=homeserver_contacts_v241_expected_revision($payload['expected_revision']??'');
-    $id=homeserver_contacts_v241_core_crm_id($userId,$canonicalId);
-    $current=homeserver_contacts_v241_core_crm_row($userId,$id);
-    if(!$current)throw new RuntimeException('VP3 CRM contact not found.');
-    $projection=homeserver_contacts_v241_core_crm_projection($userId,$current);
-    if(!hash_equals((string)$projection['record_revision'],$expected))throw new RuntimeException('VP3 CRM contact changed after this edit was prepared. Refresh and try again.');
-
     $allowed=['display_name','organization','email','phone','relationship'];
     $fields=[];
     foreach($allowed as $key)if(array_key_exists($key,$payload))$fields[$key]=$payload[$key];
@@ -474,6 +468,12 @@ function homeserver_contacts_v241_cloud_crm_update(int $userId,string $canonical
     $hash=homeserver_contacts_v241_mutation_hash('contacts.update.cloud',$request);
     $replay=homeserver_contacts_v241_mutation_replay($userId,$mutationId,'contacts.update.cloud',$hash);
     if($replay)return $replay;
+
+    $id=homeserver_contacts_v241_core_crm_id($userId,$canonicalId);
+    $current=homeserver_contacts_v241_core_crm_row($userId,$id);
+    if(!$current)throw new RuntimeException('VP3 CRM contact not found.');
+    $projection=homeserver_contacts_v241_core_crm_projection($userId,$current);
+    if(!hash_equals((string)$projection['record_revision'],$expected))throw new RuntimeException('VP3 CRM contact changed after this edit was prepared. Refresh and try again.');
 
     $name=homeserver_contacts_v241_text($fields['display_name']??$current['name']??'',240);
     $company=homeserver_contacts_v241_text($fields['organization']??$current['company']??'',240);
@@ -498,15 +498,16 @@ function homeserver_contacts_v241_cloud_crm_delete(int $userId,string $canonical
 {
     $mutationId=homeserver_contacts_v241_mutation_id($payload['mutation_id']??'');
     $expected=homeserver_contacts_v241_expected_revision($payload['expected_revision']??'');
+    $request=['canonical_id'=>$canonicalId,'expected_revision'=>$expected];
+    $hash=homeserver_contacts_v241_mutation_hash('contacts.delete.cloud',$request);
+    $replay=homeserver_contacts_v241_mutation_replay($userId,$mutationId,'contacts.delete.cloud',$hash);
+    if($replay)return $replay;
+
     $id=homeserver_contacts_v241_core_crm_id($userId,$canonicalId);
     $current=homeserver_contacts_v241_core_crm_row($userId,$id);
     if(!$current)throw new RuntimeException('VP3 CRM contact not found.');
     $projection=homeserver_contacts_v241_core_crm_projection($userId,$current);
     if(!hash_equals((string)$projection['record_revision'],$expected))throw new RuntimeException('VP3 CRM contact changed after this delete was prepared. Refresh and try again.');
-    $request=['canonical_id'=>$canonicalId,'expected_revision'=>$expected];
-    $hash=homeserver_contacts_v241_mutation_hash('contacts.delete.cloud',$request);
-    $replay=homeserver_contacts_v241_mutation_replay($userId,$mutationId,'contacts.delete.cloud',$hash);
-    if($replay)return $replay;
     $pdo=db();if(!$pdo)throw new RuntimeException('Database connection is unavailable.');
     $pdo->prepare("UPDATE crm_contacts SET status='archived',updated_at=UTC_TIMESTAMP() WHERE id=? AND owner_user_id=? AND status<>'archived'")
       ->execute([$id,$userId]);
