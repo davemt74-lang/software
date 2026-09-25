@@ -84,7 +84,7 @@ function homeserver_agent_v025_chat(
     }
 
     homeserver_agent_v018_set_last_attempt(['attempted'=>false,'success'=>false,'failure_class'=>'none']);
-    if($userId<1||$conversationId<1||trim($query)===''||!function_exists('homeserver_vp3_remote_operation'))return null;
+    if($userId<1||$conversationId<1||trim($query)===''||!function_exists('homeserver_agent_v018_execute'))return null;
     $credentials=homeserver_agent_v018_credentials($userId);
     if(!$credentials){
         homeserver_agent_v018_set_last_attempt(['attempted'=>false,'success'=>false,'failure_class'=>'homeserver_not_paired']);
