@@ -427,7 +427,7 @@ if ($action === 'warm') {
     header('X-Stonefellow-Voice-Model: ' . $modelId);
     header('X-Stonefellow-Voice-Format: ' . $outputFormat);
     header('X-Stonefellow-Voice-Ready: ' . ($ready ? '1' : '0'));
-    stonefellow_voice_v117_json([
+    $warmPayload=[
         'ok' => true,
         'ready' => $ready,
         'verified' => $verified,
@@ -440,11 +440,11 @@ if ($action === 'warm') {
         'chunked' => true,
         'latency_profile' => $selectedSource==='homeserver_local'?'local':'fast',
         'credential_state' => $credentialState,
-        'readiness_authority' => $selectedSource==='homeserver_local'
-            ? 'homeserver-speech-status'
-            : 'elevenlabs-get-voice',
+        'readiness_authority' => 'elevenlabs-get-voice',
         'error' => $error,
-    ], 200);
+    ];
+    if($selectedSource==='homeserver_local')$warmPayload['readiness_authority']='homeserver-speech-status';
+    stonefellow_voice_v117_json($warmPayload, 200);
 }
 if (!in_array($action, ['ticket', 'speak'], true)) {
     stonefellow_voice_v117_json(['ok' => false, 'error' => 'Unknown voice action.'], 422);
