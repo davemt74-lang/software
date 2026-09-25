@@ -162,45 +162,12 @@ function homeserver_shared_v210_cloud_snapshot(int $userId,string $query=''): ar
         }
     }
 
-    if(function_exists('profile_visitor_contact_list_v243')){
+    if(function_exists('homeserver_contacts_v241_snapshot_records')){
         try{
-            foreach(profile_visitor_contact_list_v243($pdo,$userId,80) as $row){
+            foreach(homeserver_contacts_v241_snapshot_records($userId,$query,80) as $row){
                 if(!is_array($row))continue;
-                $title=trim((string)($row['visitor_label']??''))?:trim((string)($row['contact_ref']??''))?:'Contact';
-                $body=implode(' · ',array_filter([
-                  !empty($row['signed_in'])?'signed-in member':'visitor',
-                  (string)($row['relationship_scope']??''),
-                  'visits '.(int)($row['visit_count']??0),
-                  'conversations '.(int)($row['conversation_count']??0),
-                ]));
-                if(!homeserver_shared_v210_matches($query,$title.' '.$body))continue;
-                $datasets['contacts'][]=homeserver_shared_v210_record('contacts',(string)($row['contact_ref']??$row['id']??count($datasets['contacts'])),$title,$body,(string)($row['last_seen_at']??''));
-                if(count($datasets['contacts'])>=30)break;
-            }
-        }catch(Throwable $ignored){}
-    }
-
-    if(table_exists('vp3_agent_contacts')){
-        try{
-            $s=$pdo->prepare("SELECT id,display_name,operator_name,visitor_class,relationship_status,verification_status,
-              inferred_intent,risk_score,engagement_score,value_score,last_seen_at
-              FROM vp3_agent_contacts WHERE owner_user_id=? ORDER BY last_seen_at DESC,id DESC LIMIT 80");
-            $s->execute([$userId]);
-            foreach($s->fetchAll()?:[] as $row){
-                $title=trim((string)($row['display_name']??''))?:'Automated agent';
-                $body=implode(' · ',array_filter([
-                  trim((string)($row['operator_name']??'')),
-                  (string)($row['visitor_class']??'automated'),
-                  'relationship '.(string)($row['relationship_status']??'observed'),
-                  'verification '.(string)($row['verification_status']??'unverified'),
-                  trim((string)($row['inferred_intent']??'')),
-                  'risk '.(int)($row['risk_score']??0),
-                  'engagement '.(int)($row['engagement_score']??0),
-                  'value '.(int)($row['value_score']??0),
-                ]));
-                if(!homeserver_shared_v210_matches($query,$title.' '.$body))continue;
-                $datasets['contacts'][]=homeserver_shared_v210_record('contacts','agent:'.(int)$row['id'],$title,$body,(string)($row['last_seen_at']??''));
-                if(count($datasets['contacts'])>=50)break;
+                $datasets['contacts'][]=$row;
+                if(count($datasets['contacts'])>=80)break;
             }
         }catch(Throwable $ignored){}
     }
