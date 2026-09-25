@@ -101,20 +101,32 @@ function homeserver_reads_v231_context_item(string $domain,array $row,int $index
     return ['source'=>$source,'title'=>$title,'text'=>$text];
 }
 
+function homeserver_reads_v231_set_last(array $state): array
+{
+    $GLOBALS['vp3_homeserver_local_read_v231_last']=$state;
+    return $state;
+}
+
+function homeserver_reads_v231_last(): array
+{
+    $state=$GLOBALS['vp3_homeserver_local_read_v231_last']??null;
+    return is_array($state)?$state:['attempted'=>false,'context'=>[],'execution'=>null,'domain'=>''];
+}
+
 function homeserver_reads_v231_context(array $user,string $query): array
 {
     $userId=(int)($user['id']??0);
-    if($userId<1||!function_exists('homeserver_execution_v230_execute'))return ['attempted'=>false,'context'=>[],'execution'=>null,'domain'=>''];
+    if($userId<1||!function_exists('homeserver_execution_v230_execute'))return homeserver_reads_v231_set_last(['attempted'=>false,'context'=>[],'execution'=>null,'domain'=>'']);
     $intent=homeserver_reads_v231_intent($query);
-    if(($intent['operation']??'')==='')return ['attempted'=>false,'context'=>[],'execution'=>null,'domain'=>''];
+    if(($intent['operation']??'')==='')return homeserver_reads_v231_set_last(['attempted'=>false,'context'=>[],'execution'=>null,'domain'=>'']);
 
     try{
         $run=homeserver_execution_v230_execute($userId,(string)$intent['operation'],(array)$intent['payload']);
     }catch(Throwable $e){
-        return ['attempted'=>true,'context'=>[],'execution'=>[
+        return homeserver_reads_v231_set_last(['attempted'=>true,'context'=>[],'execution'=>[
           'status'=>'failed','failure_class'=>homeserver_execution_v230_failure_class($e),
           'domain'=>(string)$intent['domain'],'operation'=>(string)$intent['operation'],
-        ],'domain'=>(string)$intent['domain']];
+        ],'domain'=>(string)$intent['domain']]);
     }
     $rows=homeserver_reads_v231_rows($run['result']??[]);
     $context=[];
@@ -122,12 +134,12 @@ function homeserver_reads_v231_context(array $user,string $query): array
         $item=homeserver_reads_v231_context_item((string)$intent['domain'],$row,$index);
         if($item)$context[]=$item;
     }
-    return [
+    return homeserver_reads_v231_set_last([
       'attempted'=>true,
       'context'=>$context,
       'execution'=>is_array($run['execution']??null)?$run['execution']:null,
       'domain'=>(string)$intent['domain'],
-    ];
+    ]);
 }
 
 function homeserver_reads_v231_enrich_context(array $context,array $user,string $query): array
