@@ -59,7 +59,7 @@ function homeserver_execution_v230_domain(string $operation,array $payload=[]): 
         $tool=strtolower(trim((string)($payload['tool_key']??'')));
         if(str_starts_with($tool,'devices.'))return 'devices';
         if(str_starts_with($tool,'files.'))return 'files';
-        if($tool==='knowledge.search')return 'knowledge';
+        if(str_starts_with($tool,'knowledge.'))return 'knowledge';
         if(str_starts_with($tool,'contacts.'))return 'contacts';
         return 'tools';
     }
