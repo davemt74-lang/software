@@ -356,14 +356,11 @@ function agent_worker_runtime_homeserver_safe_result_v1910(array $response): arr
     $compute=agent_worker_runtime_slug_v1910((string)($response['compute_source']??''),80);
     $conversationId=mb_strimwidth(trim((string)($response['conversation_id']??'')),0,128,'');
     $runId=max(0,(int)($response['run_id']??0));
-    $continuity=is_array($response['continuity']??null)?$response['continuity']:[];
     return [
         'effect_state'=>$requests?'homeserver_approval_pending':'reported_complete',
         'reply'=>$reply,'provider'=>$provider,'model'=>$model,'compute_source'=>$compute,
         'conversation_id'=>$conversationId,'homeserver_run_id'=>$runId,
         'local_action_request_count'=>count($requests),
-        'continuity_status'=>agent_worker_runtime_slug_v1910((string)($continuity['status']??''),40),
-        'continuity_replayed'=>!empty($continuity['replayed']),
     ];
 }
 
@@ -420,40 +417,20 @@ function agent_worker_runtime_execute_homeserver_once_v1910(PDO $pdo,array $user
     }
 
     $message=agent_worker_runtime_homeserver_instruction_v1910($claim);
-    $continuity=[];
-    if(function_exists('homeserver_work_v230_before_homeserver_dispatch')){
-        try{$continuity=homeserver_work_v230_before_homeserver_dispatch($pdo,$user,$claim);}catch(Throwable $e){$continuity=[];}
-    }
-    $conversationId=trim((string)($continuity['conversation_id']??''));
-    $payload=['message'=>$message,'conversation_id'=>$conversationId!==''?$conversationId:null];
-    if($continuity)$payload['_continuity']=$continuity;
-    $remote=agent_worker_runtime_homeserver_relay_v1910($relayToken,$homeToken,(string)$transport['operation'],$payload);
+    $remote=agent_worker_runtime_homeserver_relay_v1910($relayToken,$homeToken,(string)$transport['operation'],['message'=>$message,'conversation_id'=>null]);
     if(empty($remote['ok'])){
         $errorClass=(string)($remote['error_class']??'homeserver_execution_failed');
         $retryable=!empty($remote['retryable']);
         $receipt=agent_worker_runtime_homeserver_failure_v1910($pdo,$user,$claim,$errorClass,$retryable,'The paired HomeServer could not complete this execution handoff.');
-        $result=['ok'=>false,'reason'=>$errorClass,'retryable'=>$retryable,'receipt'=>$receipt,'build'=>VP3_AGENT_WORKER_RUNTIME_V1910];
-        if(function_exists('homeserver_work_v230_after_homeserver_dispatch')){try{homeserver_work_v230_after_homeserver_dispatch($pdo,$user,$claim,$result);}catch(Throwable $e){}}
-        return $result;
+        return ['ok'=>false,'reason'=>$errorClass,'retryable'=>$retryable,'receipt'=>$receipt,'build'=>VP3_AGENT_WORKER_RUNTIME_V1910];
     }
 
-    $remotePayload=is_array($remote['payload']??null)?$remote['payload']:[];
-    $remoteContinuity=is_array($remotePayload['continuity']??null)?$remotePayload['continuity']:[];
-    if((string)($remoteContinuity['status']??'')==='running'){
-        $receipt=agent_worker_runtime_homeserver_failure_v1910($pdo,$user,$claim,'homeserver_continuity_pending',true,'HomeServer durable work is still running; VP3 will check it again without duplicating the local work.');
-        $result=['ok'=>false,'reason'=>'homeserver_continuity_pending','retryable'=>true,'receipt'=>$receipt,'build'=>VP3_AGENT_WORKER_RUNTIME_V1910];
-        if(function_exists('homeserver_work_v230_after_homeserver_dispatch')){try{homeserver_work_v230_after_homeserver_dispatch($pdo,$user,$claim,$result);}catch(Throwable $e){}}
-        return $result;
-    }
-
-    $safe=agent_worker_runtime_homeserver_safe_result_v1910($remotePayload);
+    $safe=agent_worker_runtime_homeserver_safe_result_v1910((array)$remote['payload']);
     $pending=(int)$safe['local_action_request_count'];
     $summary=$pending>0
         ?'HomeServer accepted the durable action and created '.$pending.' local approval request'.($pending===1?'':'s').'.'
         :((string)$safe['reply']!==''?(string)$safe['reply']:'HomeServer reported the durable action complete.');
     $runId=(int)($claim['run_id']??0);$actionId=(int)($claim['action']['id']??0);$attempt=max(1,(int)($claim['action']['attempt_count']??1));
     $receipt=agent_worker_runtime_result_v1910($pdo,$user,$claim,'v1910-hs-'.$runId.'-'.$actionId.'-'.$attempt,true,$summary,$safe,'',false);
-    $result=['ok'=>true,'reason'=>$pending>0?'homeserver_approval_pending':'completed','effect_state'=>(string)$safe['effect_state'],'receipt'=>$receipt,'continuity_replayed'=>!empty($safe['continuity_replayed']),'build'=>VP3_AGENT_WORKER_RUNTIME_V1910];
-    if(function_exists('homeserver_work_v230_after_homeserver_dispatch')){try{homeserver_work_v230_after_homeserver_dispatch($pdo,$user,$claim,$result);}catch(Throwable $e){}}
-    return $result;
+    return ['ok'=>true,'reason'=>$pending>0?'homeserver_approval_pending':'completed','effect_state'=>(string)$safe['effect_state'],'receipt'=>$receipt,'build'=>VP3_AGENT_WORKER_RUNTIME_V1910];
 }

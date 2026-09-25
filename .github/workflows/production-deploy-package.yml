@@ -87,8 +87,6 @@ jobs:
           test -f _deploy/includes/agent-work-dependencies-v174.php
           test -f _deploy/includes/agent-job-engine-v1900.php
           test -f _deploy/includes/agent-worker-runtime-v1910.php
-          test -f _deploy/includes/homeserver-work-continuity-v230.php
-          test -f _deploy/api/homeserver-work-continuity-v230.php
           test -f _deploy/includes/cognitive-calibration-v2350.php
           test -f _deploy/includes/cognitive-release-v2360.php
           test -f _deploy/includes/cognitive-domain-manifest-v2370.php

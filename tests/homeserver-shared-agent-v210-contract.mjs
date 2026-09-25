@@ -18,9 +18,9 @@ const page=read('settings-homeserver.php');
 const ui=read('homeserver-settings-v1210.js');
 
 const checks=[
- ['shared product release is 2.3',/VP3_HOMESERVER_RELEASE_VERSION = '2\.3'/.test(vp3)&&/VP3_HOMESERVER_SHARED_AGENT_VERSION='2\.3'/.test(shared)],
+ ['shared product release is 2.2',/VP3_HOMESERVER_RELEASE_VERSION = '2\.2'/.test(vp3)&&/VP3_HOMESERVER_SHARED_AGENT_VERSION='2\.2'/.test(shared)],
  ['shared state and event ledgers exist',/homeserver_agent_state/.test(shared)&&/homeserver_agent_events/.test(shared)],
- ['bootstrap loads v2.3 fabric after cognitive HomeServer domain support',bootstrap.indexOf('cognitive-domain-integration-v2390.php')<bootstrap.indexOf('homeserver-shared-agent-v210.php')],
+ ['bootstrap loads v2.2 fabric after cognitive HomeServer domain support',bootstrap.indexOf('cognitive-domain-integration-v2390.php')<bootstrap.indexOf('homeserver-shared-agent-v210.php')],
  ['fresh setup installs shared Agent schema',/homeserver_shared_v210_ensure_schema\(\$pdo\)/.test(setup)],
  ['upgrade requires and installs shared Agent schema',/homeserver_shared_v210_schema_ready\(\)/.test(upgrade)&&/homeserver_shared_v210_ensure_schema\(\$pdo\)/.test(upgrade)],
  ['round trip queues authenticated system.ping and waits for result',/homeserver_https_v1300_queue\(\$userId,'system\.ping'/.test(shared)&&/homeserver_https_v1300_wait\(\$requestId,12000\)/.test(shared)&&/hash_equals\(\$nonce/.test(shared)],
@@ -43,4 +43,4 @@ const checks=[
 ];
 
 for(const [name,ok] of checks){assert.equal(ok,true,name);console.log('PASS',name);}
-console.log(`VP3 Cloud / HomeServer v2.3 shared Agent fabric: ${checks.length}/${checks.length} passed`);
+console.log(`VP3 Cloud / HomeServer v2.2 shared Agent fabric: ${checks.length}/${checks.length} passed`);

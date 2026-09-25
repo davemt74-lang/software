@@ -532,34 +532,6 @@
       '<div class="vp3-return-digest-list">' + list + '</div></section>';
   }
 
-  function renderWorkContinuityUpdate(candidate) {
-    if (!candidate || !candidate.id || !thread) return;
-    const id = Number(candidate.id || 0);
-    if (id < 1) return;
-    const key = 'vp3:work-continuity-presented';
-    let previous = 0;
-    try { previous = Number(sessionStorage.getItem(key) || 0); } catch (_error) {}
-    if (id <= previous || thread.querySelector('[data-work-continuity-id="' + id + '"]')) return;
-    const message = String(candidate.body || candidate.title || '').trim();
-    if (!message) return;
-    const node = document.createElement('div');
-    node.className = 'message assistant work-continuity-update';
-    node.dataset.workContinuityId = String(id);
-    node.dataset.workContinuityRunId = String(candidate.run_id || '');
-    node.dataset.workContinuityPriority = String(candidate.priority || 'status');
-    node.innerHTML = '<div class="message-avatar" aria-hidden="true">✦</div>' +
-      '<div class="message-body"><div class="message-role">Agent</div><div class="message-text"></div>' +
-      '<div class="message-sources"><span class="message-source">Work continuity · ' +
-      esc(String(candidate.priority || 'status')) + '</span></div></div>';
-    const text = node.querySelector('.message-text');
-    if (text) text.textContent = message;
-    const welcome = document.getElementById('chatWelcome');
-    if (welcome && welcome.parentNode === thread) thread.insertBefore(node,welcome);
-    else thread.appendChild(node);
-    try { sessionStorage.setItem(key,String(id)); } catch (_error) {}
-    thread.scrollTop = thread.scrollHeight;
-  }
-
   function renderHomeServerPresence(candidate) {
     if (!candidate || !candidate.id || !thread) return;
     const id = Number(candidate.id || 0);
@@ -671,7 +643,6 @@
       renderBrief(state.brief || {});
       renderDigest(state.digest || null);
       renderHomeServerPresence(state.homeserver_presence || null);
-      renderWorkContinuityUpdate(state.work_update || null);
       await maybeSpeak(state.voice_candidate || null);
     } catch (error) {
       renderBriefError(error);

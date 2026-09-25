@@ -53,9 +53,6 @@ function agent_worker_runner_cycle_v1910(PDO $pdo,string $executor,int $ownerLim
         $user=agent_cognitive_loop_v310_user($uid);
         if(!$user)continue;
         $counts['owners']++;
-        if(function_exists('homeserver_work_v230_reconcile_owner')){
-            try{homeserver_work_v230_reconcile_owner($pdo,$user);}catch(Throwable $e){agent_runtime_v125_trace('worker.continuity.reconcile.failed',['user_id'=>$uid,'error_class'=>get_class($e)]);}
-        }
         if($executor==='all'||$executor==='cloud'){
             try{
                 $result=agent_worker_cloud_execute_once_v1910($pdo,$user,25);
@@ -67,7 +64,6 @@ function agent_worker_runner_cycle_v1910(PDO $pdo,string $executor,int $ownerLim
         if($executor==='all'||$executor==='homeserver'){
             try{
                 $result=agent_job_worker_execute_homeserver_v1910($pdo,$user,25);
-                if(function_exists('homeserver_work_v230_reconcile_owner')){try{homeserver_work_v230_reconcile_owner($pdo,$user);}catch(Throwable $e){}}
                 if(in_array((string)($result['reason']??''),['completed','homeserver_approval_pending'],true))$counts['homeserver_completed']++;
                 elseif(($result['reason']??'')==='no_work')$counts['no_work']++;
                 elseif(empty($result['ok']))$counts['failed']++;
