@@ -168,6 +168,7 @@ require_once __DIR__.'/homeserver-compute-v232.php';
 require_once __DIR__.'/homeserver-governed-actions-v233.php';
 require_once __DIR__.'/homeserver-voice-v234.php';
 require_once __DIR__.'/homeserver-profile-agent-v235.php';
+require_once __DIR__.'/homeserver-acceptance-v236.php';
 require_once __DIR__.'/homeserver-agent-read-v230.php';
 require_once __DIR__.'/cognitive-learning-v540.php';
 require_once __DIR__.'/cognitive-planning-v550.php';
