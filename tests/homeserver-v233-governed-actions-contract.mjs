@@ -21,6 +21,8 @@ const checks=[
  ['writes remain ineligible for Cloud fallback',/write_or_physical/.test(execution)&&/fallbackAllowed=in_array/.test(execution)&&!/files\.update'.*fallbackAllowed=true/s.test(execution)],
  ['local-owner actions are blocked before remote approve',/local_owner_only/.test(actions)&&/local_owner_required/.test(actions)&&/action requires approval from local HomeServer owner control/.test(actions)],
  ['existing approval federation prefers HTTPS when paired',/homeserver_https_v1300_status/.test(approvals)&&/homeserver_governed_v233_list/.test(approvals)&&/homeserver_governed_v233_review/.test(approvals)],
+ ['pairing permission set includes local file and device scopes',["files.read","files.write","devices.read","devices.control"].every(x=>approvals.includes("'"+x+"'"))],
+ ['existing HTTPS pairings use owner-approved permission upgrade rather than silent grants',/homeserver_https_v1300_remote_operation\(\$userId,'pair\.request'/.test(approvals)&&/homeserver_https_v1300_remote_operation\(\$userId,'pair\.status'/.test(approvals)&&/pending_claim_token_enc/.test(approvals)],
  ['legacy custom-relay approval path remains available',/homeserver_vp3_remote_operation/.test(approvals)&&/homeserver_approvals_v028_credentials/.test(approvals)],
  ['governed action API requires login and CSRF',/require_login\(\)/.test(api)&&/verify_csrf\(\)/.test(api)],
  ['browser API cannot accept arbitrary tool names without server allowlist',/homeserver_governed_v233_request/.test(api)&&/not allowlisted for governed execution/.test(actions)],
