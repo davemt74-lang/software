@@ -165,6 +165,7 @@ require_once __DIR__.'/homeserver-execution-routing-v220.php';
 require_once __DIR__.'/homeserver-local-execution-v230.php';
 require_once __DIR__.'/homeserver-local-reads-v231.php';
 require_once __DIR__.'/homeserver-compute-v232.php';
+require_once __DIR__.'/homeserver-governed-actions-v233.php';
 require_once __DIR__.'/homeserver-agent-read-v230.php';
 require_once __DIR__.'/cognitive-learning-v540.php';
 require_once __DIR__.'/cognitive-planning-v550.php';
