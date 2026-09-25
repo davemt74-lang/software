@@ -75,6 +75,7 @@ function vp3_upgrade_complete(): bool
         && homeserver_account_v1210_schema_ready()
         && homeserver_https_v1300_schema_ready()
         && homeserver_shared_v210_schema_ready()
+        && homeserver_federated_v240_schema_ready()
         && homeserver_execution_v230_schema_ready()
         && homeserver_scheduling_v620_schema_ready()
         && homeserver_commerce_agent_v1000_schema_ready()
