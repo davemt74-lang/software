@@ -7,7 +7,8 @@ const VP3_HOMESERVER_APPROVAL_FEATURE = 'approvals.federation.v1';
 function homeserver_approvals_v028_permissions(): array
 {
     return [
-        'agent.chat','approvals.review','awareness.read','commerce.read','commerce.order','commerce.fulfill','contacts.read','events.read','events.write',
+        'agent.chat','approvals.review','awareness.read','commerce.read','commerce.order','commerce.fulfill','contacts.read',
+        'devices.read','devices.control','events.read','events.write','files.read','files.write',
         'knowledge.search','memory.read','memory.write','notifications.read','plugins.read',
         'scheduling.read','scheduling.write','tasks.read','tasks.write','tools.execute','usage.read','usage.write',
     ];
@@ -185,10 +186,29 @@ function homeserver_approvals_v028_review(int $userId, string $requestId, string
     if (empty($state['connected']) || empty($state['paired']) || empty($state['supported'])) {
         throw new RuntimeException('HomeServer approval federation is not available.');
     }
-    $credentials = homeserver_approvals_v028_credentials($userId);
-    if (!$credentials) throw new RuntimeException('HomeServer authorization is unavailable.');
+    $https=function_exists('homeserver_https_v1300_status')?homeserver_https_v1300_status($userId):null;
+    $useHttps=is_array($https)&&!empty($https['paired']);
+    $credentials=$useHttps?null:homeserver_approvals_v028_credentials($userId);
+    if(!$useHttps&&!$credentials)throw new RuntimeException('HomeServer authorization is unavailable.');
     $operation = $decision === 'approve' ? 'action.approve' : 'action.deny';
     try {
+        if($useHttps&&function_exists('homeserver_governed_v233_review')){
+            $modern=homeserver_governed_v233_review($userId,$requestId,$decision);
+            if(!empty($modern['local_owner_required'])){
+                return [
+                    'ok'=>false,
+                    'local_owner_required'=>true,
+                    'request'=>is_array($modern['request']??null)?$modern['request']:[],
+                    'execution'=>is_array($modern['execution']??null)?$modern['execution']:null,
+                    'error'=>(string)($modern['error']??'This action requires approval from local HomeServer owner control.'),
+                ];
+            }
+            return [
+                'ok'=>!empty($modern['ok']),
+                'request'=>is_array($modern['request']??null)?$modern['request']:[],
+                'execution'=>is_array($modern['execution']??null)?$modern['execution']:null,
+            ];
+        }
         $result = homeserver_vp3_remote_operation($credentials['relay'], $operation, ['request_id'=>$requestId], $credentials['home']);
     } catch (Throwable $e) {
         $class = homeserver_approvals_v028_error_class($e->getMessage());
