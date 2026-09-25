@@ -27,7 +27,7 @@ if (!$user) redirect(url('/login.php'));
       <div class="chat-topbar-actions"><a class="account-shell-button" href="<?= e(url('/client-updates.php#homeserver')) ?>">Client Updates</a><a class="account-shell-button" href="<?= e(url('/account.php')) ?>">My Account</a></div>
     </header>
 
-    <section class="hs-settings" data-homeserver-settings data-api="<?= e(url('/api/homeserver-connection-v1200.php')) ?>" data-csrf="<?= e(csrf_token()) ?>">
+    <section class="hs-settings" data-homeserver-settings data-api="<?= e(url('/api/homeserver-connection-v1200.php')) ?>" data-acceptance-api="<?= e(url('/api/homeserver-acceptance-v236.php')) ?>" data-csrf="<?= e(csrf_token()) ?>">
       <div class="hs-settings-inner">
         <nav class="hs-breadcrumb" aria-label="Settings breadcrumb"><a href="<?= e(url('/account.php')) ?>">Settings</a><span>›</span><strong>HomeServer</strong></nav>
 
@@ -92,6 +92,17 @@ if (!$user) redirect(url('/login.php'));
           <div class="hs-card-head"><div><small>Authorized capabilities</small><h2>Available to VP3</h2><p>HomeServer remains the source of truth. VP3 receives only the scopes and capability projection authorized for this pairing.</p></div></div>
           <div class="hs-chips" id="hsCapabilities"><span>None reported</span></div>
         </section>
+        <section class="hs-card" id="hsReleaseAcceptanceCard" hidden>
+          <div class="hs-card-head">
+            <div><small>HomeServer 2.3</small><h2>Unified release acceptance</h2><p>Run a zero-token, read-only check of compute, files, Knowledge, local voice, rooms/devices, governed actions, Profile Agent privacy, fallback rules and execution receipts.</p></div>
+            <button class="hs-button quiet" id="hsRunReleaseAcceptance" type="button">Run acceptance</button>
+          </div>
+          <div class="hs-info-grid">
+            <div><dt>Release status</dt><dd id="hsReleaseAcceptanceStatus">Not tested</dd></div>
+            <div><dt>Checks</dt><dd id="hsReleaseAcceptanceSummary">0 ready · 0 warnings · 0 blocked</dd></div>
+          </div>
+          <div class="hs-chips" id="hsReleaseAcceptanceChecks"><span>No release acceptance has been run.</span></div>
+        </section>
 
         <details class="hs-card hs-advanced" id="hsAdvanced">
           <summary><span><small>Advanced</small><strong>Connection details</strong></span><span>＋</span></summary>
@@ -102,6 +113,6 @@ if (!$user) redirect(url('/login.php'));
   </main>
 </div>
 <script src="<?= e(url('/member-shell-v77.js')) ?>"></script>
-<script src="<?= e(url('/homeserver-settings-v1210.js?v=homeserver-v21-shared-agent-20260924')) ?>" defer></script>
+<script src="<?= e(url('/homeserver-settings-v1210.js?v=homeserver-v23-release-acceptance-20260925')) ?>" defer></script>
 </body>
 </html>
