@@ -49,7 +49,7 @@ function homeserver_federated_v240_ensure_schema(?PDO $pdo=null): void
       peer_source VARCHAR(40) NOT NULL,
       dataset VARCHAR(60) NOT NULL,
       revision VARCHAR(128) NOT NULL DEFAULT '',
-      cursor VARCHAR(256) NOT NULL DEFAULT '',
+      sync_cursor VARCHAR(256) NOT NULL DEFAULT '',
       last_sync_at DATETIME NULL,
       last_success_at DATETIME NULL,
       last_error VARCHAR(500) NOT NULL DEFAULT '',
@@ -172,9 +172,9 @@ function homeserver_federated_v240_cursor(
     $peer=homeserver_federated_v240_source($peerSource);
     $name=homeserver_federated_v240_dataset($dataset);
     $pdo->prepare("INSERT INTO homeserver_federated_cursors
-      (user_id,peer_source,dataset,revision,cursor,last_sync_at,last_success_at,last_error)
+      (user_id,peer_source,dataset,revision,sync_cursor,last_sync_at,last_success_at,last_error)
       VALUES (?,?,?,?,?,UTC_TIMESTAMP(),".($success?'UTC_TIMESTAMP()':'NULL').",?)
-      ON DUPLICATE KEY UPDATE revision=VALUES(revision),cursor=VALUES(cursor),last_sync_at=UTC_TIMESTAMP(),
+      ON DUPLICATE KEY UPDATE revision=VALUES(revision),sync_cursor=VALUES(sync_cursor),last_sync_at=UTC_TIMESTAMP(),
         last_success_at=".($success?'UTC_TIMESTAMP()':'last_success_at').",last_error=VALUES(last_error)")
       ->execute([$userId,$peer,$name,homeserver_federated_v240_text($revision,128),homeserver_federated_v240_text($cursor,256),homeserver_federated_v240_text($error,500)]);
 }
@@ -205,7 +205,7 @@ function homeserver_federated_v240_registry(int $userId): array
     $pdo=db();$links=0;$cursors=[];
     if($pdo&&$userId>0&&homeserver_federated_v240_schema_ready()){
         $s=$pdo->prepare('SELECT COUNT(*) FROM homeserver_federated_records WHERE user_id=?');$s->execute([$userId]);$links=(int)$s->fetchColumn();
-        $s=$pdo->prepare('SELECT peer_source,dataset,revision,cursor,last_sync_at,last_success_at,last_error FROM homeserver_federated_cursors WHERE user_id=? ORDER BY peer_source,dataset');$s->execute([$userId]);$cursors=$s->fetchAll()?:[];
+        $s=$pdo->prepare('SELECT peer_source,dataset,revision,sync_cursor,last_sync_at,last_success_at,last_error FROM homeserver_federated_cursors WHERE user_id=? ORDER BY peer_source,dataset');$s->execute([$userId]);$cursors=$s->fetchAll()?:[];
     }
     return [
       'version'=>VP3_HOMESERVER_FEDERATED_DATA_VERSION,
