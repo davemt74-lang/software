@@ -111,6 +111,34 @@ function stonefellow_voice_v117_prune_tickets(): void
     $_SESSION['stonefellow_voice_v117'] = $tickets;
 }
 
+
+function stonefellow_voice_v234_homeserver_status(array $user,bool $force=false): array
+{
+    if(!function_exists('homeserver_voice_v234_status'))return ['available'=>false,'reason'=>'unsupported'];
+    return homeserver_voice_v234_status((int)($user['id']??0),$force);
+}
+
+function stonefellow_voice_v234_provider_set(int $agentId,string $source,array $status=[]): void
+{
+    $all=is_array($_SESSION['stonefellow_voice_v234_provider']??null)?$_SESSION['stonefellow_voice_v234_provider']:[];
+    $all[(string)$agentId]=[
+      'source'=>$source,
+      'expires'=>time()+120,
+      'max_text_chars'=>max(1,(int)($status['max_text_chars']??220)),
+      'voice'=>mb_strimwidth(trim((string)($status['voice_profile']['voice']??'')),0,120,''),
+    ];
+    $_SESSION['stonefellow_voice_v234_provider']=$all;
+}
+
+function stonefellow_voice_v234_provider_get(int $agentId): array
+{
+    $all=is_array($_SESSION['stonefellow_voice_v234_provider']??null)?$_SESSION['stonefellow_voice_v234_provider']:[];
+    $row=$all[(string)$agentId]??null;
+    if(!is_array($row)||(int)($row['expires']??0)<time())return [];
+    $source=(string)($row['source']??'');
+    return in_array($source,['elevenlabs','homeserver_local'],true)?$row:[];
+}
+
 function stonefellow_voice_v157_upstream_error(int $status, string $detail = ''): string
 {
     return match ($status) {
@@ -199,6 +227,30 @@ if ($requestMethod === 'GET') {
     // Persist one-use ticket consumption and release the PHP session lock
     // before the long-lived audio stream begins.
     if (session_status() === PHP_SESSION_ACTIVE) session_write_close();
+
+    $ticketSource=(string)($ticket['voice_source']??'elevenlabs');
+    if($ticketSource==='homeserver_local'){
+        try{
+            $local=homeserver_voice_v234_synthesize((int)$user['id'],$text);
+        }catch(Throwable $e){
+            stonefellow_voice_v117_json(['ok'=>false,'error'=>'HomeServer local voice is temporarily unavailable.'],503);
+        }
+        $audio=(string)($local['audio']??'');
+        if($audio===''||strlen($audio)<44){
+            stonefellow_voice_v117_json(['ok'=>false,'error'=>'HomeServer local voice returned no audio.'],503);
+        }
+        header('Content-Type: audio/wav');
+        header('Content-Length: '.strlen($audio));
+        header('X-Content-Type-Options: nosniff');
+        header('X-Stonefellow-Voice-Stream: 1');
+        header('X-Stonefellow-Voice-Model: piper');
+        header('X-Stonefellow-Voice-Format: wav');
+        header('X-Stonefellow-Voice-Source: homeserver_local');
+        header('Accept-Ranges: none');
+        header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+        echo $audio;
+        exit;
+    }
 
     [$apiKey, $configuredVoiceId, $configuredModelId, $configuredOutputFormat] = stonefellow_voice_v117_settings();
     $voiceId = trim((string)($ticket['voice_id'] ?? $configuredVoiceId));
@@ -343,7 +395,30 @@ if ($action === 'warm') {
     [$apiKey, $voiceId, $modelId, $outputFormat, $credentialState, $voiceSource] = stonefellow_voice_v117_settings($user, $agentId);
     $verification = stonefellow_voice_v244_verify($apiKey, $voiceId);
     $ready = !empty($verification['ready']);
+    $verified=!empty($verification['verified']);
+    $upstreamStatus=(int)($verification['status']??0);
+    $voiceName=(string)($verification['voice_name']??'');
     $error = (string)($verification['error'] ?? '');
+    $readinessAuthority='elevenlabs-get-voice';
+    $selectedSource='elevenlabs';
+
+    if (!$ready) {
+        $home=stonefellow_voice_v234_homeserver_status($user,true);
+        if(!empty($home['available'])){
+            $ready=true;
+            $verified=true;
+            $selectedSource='homeserver_local';
+            $voiceSource='homeserver_local';
+            $modelId='piper';
+            $outputFormat='wav';
+            $voiceName=trim((string)($home['voice_profile']['voice']??'HomeServer local voice'));
+            $error='';
+            $readinessAuthority='homeserver-speech-status';
+            stonefellow_voice_v234_provider_set($agentId,$selectedSource,$home);
+        }
+    }
+    if($ready&&$selectedSource==='elevenlabs')stonefellow_voice_v234_provider_set($agentId,'elevenlabs');
+
     if (!$ready && !in_array($credentialState, ['environment','saved','missing'], true)) {
         $error = ai_credential_state_message($credentialState, 'ElevenLabs');
     } elseif (!$ready && $voiceSource === 'agent_clone' && $voiceId === '') {
@@ -355,19 +430,20 @@ if ($action === 'warm') {
     stonefellow_voice_v117_json([
         'ok' => true,
         'ready' => $ready,
-        'verified' => !empty($verification['verified']),
-        'upstream_status' => (int)($verification['status'] ?? 0),
+        'verified' => $verified,
+        'upstream_status' => $upstreamStatus,
         'model_id' => $modelId,
         'output_format' => $outputFormat,
         'voice_source' => $voiceSource,
-        'voice_name' => (string)($verification['voice_name'] ?? ''),
+        'voice_name' => $voiceName,
         'streaming' => true,
         'chunked' => true,
-        'latency_profile' => 'fast',
+        'latency_profile' => $selectedSource==='homeserver_local'?'local':'fast',
         'credential_state' => $credentialState,
-        'readiness_authority' => 'elevenlabs-get-voice',
+        'readiness_authority' => $readinessAuthority,
         'error' => $error,
     ], 200);
+}
 }
 if (!in_array($action, ['ticket', 'speak'], true)) {
     stonefellow_voice_v117_json(['ok' => false, 'error' => 'Unknown voice action.'], 422);
@@ -383,8 +459,25 @@ if (mb_strlen($text) > 2000) {
 
 $agentId = max(0, (int)($_GET['agent'] ?? $input['agent'] ?? 0));
 [$apiKey, $voiceId, $modelId, $outputFormat] = stonefellow_voice_v117_settings($user, $agentId);
-if ($apiKey === '' || !preg_match('/^[A-Za-z0-9_-]{8,128}$/', $voiceId)) {
-    stonefellow_voice_v117_json(['ok' => false, 'error' => 'ElevenLabs voice is not configured.'], 503);
+$provider=stonefellow_voice_v234_provider_get($agentId);
+$ticketSource=(string)($provider['source']??'');
+if($ticketSource===''){
+    if($apiKey!==''&&preg_match('/^[A-Za-z0-9_-]{8,128}$/',$voiceId))$ticketSource='elevenlabs';
+    else{
+        $home=stonefellow_voice_v234_homeserver_status($user);
+        if(!empty($home['available'])){
+            $ticketSource='homeserver_local';
+            $provider=['source'=>$ticketSource,'max_text_chars'=>(int)($home['max_text_chars']??220)];
+            $modelId='piper';$outputFormat='wav';
+        }
+    }
+}
+if($ticketSource==='homeserver_local'){
+    $maxLocal=max(1,(int)($provider['max_text_chars']??220));
+    if(mb_strlen($text)>$maxLocal)stonefellow_voice_v117_json(['ok'=>false,'error'=>'Voice chunk is too long for HomeServer local voice.'],422);
+    $modelId='piper';$outputFormat='wav';
+}elseif($ticketSource!=='elevenlabs'||$apiKey===''||!preg_match('/^[A-Za-z0-9_-]{8,128}$/',$voiceId)){
+    stonefellow_voice_v117_json(['ok' => false, 'error' => 'No Agent voice provider is ready.'], 503);
 }
 
 stonefellow_voice_v117_prune_tickets();
@@ -399,6 +492,7 @@ $_SESSION['stonefellow_voice_v117'][$token] = [
     'voice_id' => $voiceId,
     'model_id' => $modelId,
     'output_format' => $outputFormat,
+    'voice_source' => $ticketSource,
     'expires' => time() + 180,
 ];
 
@@ -407,6 +501,7 @@ stonefellow_voice_v117_json([
     'streaming' => true,
     'model_id' => $modelId,
     'output_format' => $outputFormat,
-    'latency_profile' => 'fast',
+    'voice_source' => $ticketSource,
+    'latency_profile' => $ticketSource==='homeserver_local'?'local':'fast',
     'stream_url' => url('/api/agent-voice-v117.php?token=' . rawurlencode($token)),
 ]);
