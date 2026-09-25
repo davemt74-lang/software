@@ -59,6 +59,7 @@ jobs:
           php -l includes/homeserver-voice-v234.php
           php -l includes/homeserver-profile-agent-v235.php
           php -l includes/homeserver-acceptance-v236.php
+          php -l includes/homeserver-federated-data-v240.php
           php -l api/homeserver-governed-actions-v233.php
           php -l api/homeserver-voice-v234.php
           php -l api/agent-voice-v117.php
@@ -66,6 +67,7 @@ jobs:
           php -l api/homeserver-acceptance-v236.php
           php -l tests/homeserver-v235-voice-profile-unit.php
           php -l tests/homeserver-v236-release-acceptance-unit.php
+          php -l tests/homeserver-v240-federated-data-unit.php
           php -l tests/homeserver-v233-governed-actions-unit.php
           php -l tests/homeserver-v232-compute-unit.php
           php -l tests/homeserver-v231-local-reads-unit.php
@@ -92,6 +94,7 @@ jobs:
           node --check tests/homeserver-v233-governed-actions-contract.mjs
           node --check tests/homeserver-v235-voice-profile-contract.mjs
           node --check tests/homeserver-v236-release-acceptance-contract.mjs
+          node --check tests/homeserver-v240-federated-data-contract.mjs
           node --check tests/homeserver-v230-read-execution-contract.mjs
           node --check tests/homeserver-v230-agent-compute-contract.mjs
 
@@ -116,6 +119,8 @@ jobs:
           php tests/homeserver-v235-voice-profile-unit.php
           node tests/homeserver-v236-release-acceptance-contract.mjs
           php tests/homeserver-v236-release-acceptance-unit.php
+          node tests/homeserver-v240-federated-data-contract.mjs
+          php tests/homeserver-v240-federated-data-unit.php
           node tests/homeserver-v230-read-execution-contract.mjs
           php tests/homeserver-v230-read-execution-unit.php
           node tests/homeserver-v230-agent-compute-contract.mjs
