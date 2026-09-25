@@ -53,6 +53,8 @@ jobs:
           php -l includes/homeserver-shared-agent-v210.php
           php -l includes/homeserver-execution-routing-v220.php
           php -l includes/homeserver-local-execution-v230.php
+          php -l includes/homeserver-local-reads-v231.php
+          php -l tests/homeserver-v231-local-reads-unit.php
           php -l tests/homeserver-v230-execution-unit.php
           php -l api/homeserver-https-pair-v1300.php
           php -l api/homeserver-https-poll-v1300.php
@@ -68,6 +70,7 @@ jobs:
           node --check tests/homeserver-shared-agent-v210-contract.mjs
           node --check tests/homeserver-v220-presence-routing-contract.mjs
           node --check tests/homeserver-v230-execution-contract.mjs
+          node --check tests/homeserver-v231-local-reads-contract.mjs
 
       - name: Verify canonical VP3/HomeServer contracts
         run: |
@@ -80,6 +83,8 @@ jobs:
           node tests/homeserver-v220-presence-routing-contract.mjs
           node tests/homeserver-v230-execution-contract.mjs
           php tests/homeserver-v230-execution-unit.php
+          node tests/homeserver-v231-local-reads-contract.mjs
+          php tests/homeserver-v231-local-reads-unit.php
           node tests/chat-execution-v019-contract.mjs
           node tests/chat-execution-v022-contract.mjs
 
