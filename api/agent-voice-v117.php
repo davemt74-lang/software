@@ -444,7 +444,6 @@ if ($action === 'warm') {
         'error' => $error,
     ], 200);
 }
-}
 if (!in_array($action, ['ticket', 'speak'], true)) {
     stonefellow_voice_v117_json(['ok' => false, 'error' => 'Unknown voice action.'], 422);
 }
