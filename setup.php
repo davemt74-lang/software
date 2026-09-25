@@ -64,6 +64,7 @@ try {
     homeserver_https_v1300_ensure_schema($pdo);
     homeserver_shared_v210_ensure_schema($pdo);
     homeserver_federated_v240_ensure_schema($pdo);
+    homeserver_contacts_v241_ensure_schema($pdo);
     homeserver_execution_v230_ensure_schema($pdo);
 
     $count = (int)$pdo->query('SELECT COUNT(*) FROM users')->fetchColumn();
