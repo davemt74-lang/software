@@ -227,3 +227,28 @@ function homeserver_federated_v240_registry(int $userId): array
       'sync_cursors'=>$cursors,
     ];
 }
+
+
+function homeserver_federated_v240_remote_registry(int $userId): ?array
+{
+    if($userId<1||!function_exists('homeserver_execution_v220_can_route')||!function_exists('homeserver_execution_v220_execute'))return null;
+    if(!homeserver_execution_v220_can_route($userId,'federation.registry'))return null;
+    try{
+        $remote=homeserver_execution_v220_execute($userId,'federation.registry',[]);
+        if(!is_array($remote)||(string)($remote['version']??'')!==VP3_HOMESERVER_FEDERATED_DATA_VERSION)return null;
+        $rules=is_array($remote['rules']??null)?$remote['rules']:[];
+        if(empty($rules['native_source_remains_authoritative'])||empty($rules['remote_records_are_mirrors'])||empty($rules['no_cross_database_id_writes']))return null;
+        return $remote;
+    }catch(Throwable $e){
+        return null;
+    }
+}
+
+function homeserver_federated_v240_status(int $userId): array
+{
+    return [
+      'version'=>VP3_HOMESERVER_FEDERATED_DATA_VERSION,
+      'cloud'=>homeserver_federated_v240_registry($userId),
+      'homeserver'=>homeserver_federated_v240_remote_registry($userId),
+    ];
+}
