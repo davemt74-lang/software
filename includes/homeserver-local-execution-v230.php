@@ -51,6 +51,7 @@ function homeserver_execution_v230_domain(string $operation,array $payload=[]): 
     if(in_array($op,['agent.chat','agent.infer.local','inference.status'],true))return 'agent_compute';
     if(str_starts_with($op,'files.'))return 'files';
     if($op==='knowledge.search')return 'knowledge';
+    if($op==='federation.registry')return 'continuity';
     if(str_starts_with($op,'speech.'))return 'voice';
     if(str_starts_with($op,'action.'))return 'governance';
     if($op==='tool.execute'){
@@ -69,7 +70,7 @@ function homeserver_execution_v230_policy(string $operation,array $payload=[]): 
     $op=homeserver_execution_v230_operation($operation);
     $domain=homeserver_execution_v230_domain($op,$payload);
     $readSafe=[
-      'agent.chat','agent.infer.local','inference.status','capabilities','capability.registry','speech.status',
+      'agent.chat','agent.infer.local','inference.status','capabilities','capability.registry','federation.registry','speech.status',
       'knowledge.search','files.list','files.read','tools.list','skills.list',
       'tasks.list','notifications.list','shared.context.exchange','system.ping',
     ];
