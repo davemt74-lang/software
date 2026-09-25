@@ -50,7 +50,11 @@ if(in_array($action,['update','delete'],true)&&isset($input['canonical_id'])){
 }
 
 try{
-    $result=homeserver_contacts_v241_request_homeserver($userId,$action,$payload);
+    if(isset($input['authority_source'])&&!isset($payload['authority_source']))$payload['authority_source']=(string)$input['authority_source'];
+    if(isset($input['canonical_id'])&&!isset($payload['canonical_id']))$payload['canonical_id']=(string)$input['canonical_id'];
+    if(isset($input['mutation_id'])&&!isset($payload['mutation_id']))$payload['mutation_id']=(string)$input['mutation_id'];
+    if(isset($input['expected_revision'])&&!isset($payload['expected_revision']))$payload['expected_revision']=(string)$input['expected_revision'];
+    $result=homeserver_contacts_v241_mutate($userId,$action,$payload);
     homeserver_contacts_v241_json(['ok'=>true,'action'=>$action,'result'=>$result]);
 }catch(Throwable $e){
     $message=trim($e->getMessage());
