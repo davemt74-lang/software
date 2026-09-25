@@ -40,6 +40,10 @@ assert(str_contains($fileRead['context'][0]['text'],'Local plan body'));
 $knowledge=homeserver_reads_v231_context($user,'Search my HomeServer knowledge about launch');
 assert($GLOBALS['calls'][2]['operation']==='knowledge.search');
 assert(str_contains($knowledge['context'][0]['text'],'local knowledge'));
+$beforeRepeat=count($GLOBALS['calls']);
+$knowledgeRepeat=homeserver_reads_v231_context($user,'Search my HomeServer knowledge about launch');
+assert(count($GLOBALS['calls'])===$beforeRepeat,'same-turn local read should be request-cached');
+assert($knowledgeRepeat['context']===$knowledge['context']);
 
 $tools=homeserver_reads_v231_context($user,'What local tools can my HomeServer use?');
 assert($GLOBALS['calls'][3]['operation']==='tools.list');

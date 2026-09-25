@@ -135,12 +135,11 @@ $rawAgentContext['conversation_id']=$conversationId;$rawAgentContext['user_agent
 $persistedAgentContext=$agentContext;
 unset($persistedAgentContext['browser_context']);$historyStmt=$pdo->prepare('SELECT role,message FROM chat_messages WHERE conversation_id=? ORDER BY id DESC LIMIT 12');$historyStmt->execute([$conversationId]);$history=array_reverse($historyStmt->fetchAll());$userMessageId=0;if(!$ephemeralProtocol){$stmt=$pdo->prepare('INSERT INTO chat_messages (conversation_id,user_id,role,message) VALUES (?,?,?,?)');$stmt->execute([$conversationId,$userId,'user',$query]);$userMessageId=(int)$pdo->lastInsertId();if($brainAllowed)agent_brain_archive_and_parse($user,$conversationId,$userMessageId,'user',$query,$inputMode);}
 $toolResult=agent_work_control_chat_v173($query,$user,$conversationId);if(!empty($toolResult['handled'])){$toolResult=vp3_agent_tool_authorize_result_v400($toolResult,$user,$query);}else{$toolResult=user_calendar_agent_query_v1300($query,$user,$conversationId);if(!empty($toolResult['handled'])){$toolResult=vp3_agent_tool_authorize_result_v400($toolResult,$user,$query);}else{$toolResult=function_exists('release_v105_chat_tool')?release_v105_chat_tool($query,$user,$conversationId):vp3_agent_tool_empty_v400();if(empty($toolResult['handled']))$toolResult=vp3_agent_tool_execute_query_v400($query,$user,$conversationId);else $toolResult=vp3_agent_tool_authorize_result_v400($toolResult,$user,$query);}}
-$homeAttempted=false;$responseActions=[];$turnPrepared=null;$turn=[];$knowledgeContext=['scope'=>knowledge_retrieval_v162_normalize_scope($input['knowledge_scope']??null),'citations'=>[],'provenance'=>[],'homeserver_local_knowledge'=>'not_queried'];
+$homeAttempted=false;$homeResult=null;$responseActions=[];$turnPrepared=null;$turn=[];$knowledgeContext=['scope'=>knowledge_retrieval_v162_normalize_scope($input['knowledge_scope']??null),'citations'=>[],'provenance'=>[],'homeserver_local_knowledge'=>'not_queried'];
 if(!empty($toolResult['handled'])){
     $runtimePlan=vp3_agent_runtime_tool_plan_v420($userId,$activeAgentId,'chat');$answer=(string)$toolResult['answer'];$context=[];$execution=vp3_agent_runtime_finalize_v420($runtimePlan,chat_execution_v019_tool(),'vp3_tool');$capabilityRoute=['version'=>'v4.20','capability'=>'tools','planned_source'=>'vp3_tool','actual_source'=>'vp3_tool','supported'=>true,'ready'=>true,'fallback_used'=>false,'reason'=>'vp3_tool_handled'];
 }else{
     $runtimePlan=vp3_agent_runtime_plan_v420($pdo,$user,$activeAgentId,'chat');
-    $homeResult=null;
     if(!empty($runtimePlan['try_homeserver'])&&!empty($runtimePlan['home']['supported'])){
         $homeAttempted=true;
         $homeResult=homeserver_agent_v025_chat($user,$query,$conversationId,$history,$principal,$activeAgent,$agentContext,!empty($runtimePlan['homeserver_cloud_allowed']));
@@ -148,8 +147,10 @@ if(!empty($toolResult['handled'])){
     if($homeResult){
         $answer=(string)$homeResult['answer'];$context=[];$execution=vp3_agent_runtime_homeserver_execution_v420($homeResult);$execution['brain_delegation']=homeserver_agent_v025_public_state($homeResult);$execution=vp3_agent_runtime_finalize_v420($runtimePlan,$execution,'homeserver');
     }elseif((string)$runtimePlan['effective_preference']==='homeserver_only'){
+        if(function_exists('homeserver_compute_v232_failure'))homeserver_compute_v232_failure($userId);
         throw new RuntimeException(vp3_agent_runtime_block_message_v420($runtimePlan));
     }elseif(empty($runtimePlan['cloud']['ready'])||((string)$runtimePlan['route']!=='vp3_cloud'&&empty($runtimePlan['allow_vp3_fallback']))){
+        if($homeAttempted&&function_exists('homeserver_compute_v232_failure'))homeserver_compute_v232_failure($userId);
         throw new RuntimeException(vp3_agent_runtime_block_message_v420($runtimePlan));
     }else{
         $result=knowledge_retrieval_v162_generate_answer($query,$history,$user,$principal,$agentContext,$input['knowledge_scope']??null,$conversationId);
@@ -162,6 +163,12 @@ if(!empty($toolResult['handled'])){
     $capabilityRoute=vp3_agent_runtime_capability_route_v420($runtimePlan,$execution,$homeAttempted);
 }
 $execution['capability_route']=$capabilityRoute;
+if(function_exists('homeserver_compute_v232_attach'))$execution=homeserver_compute_v232_attach($userId,$execution,$homeResult,$homeAttempted);
+$localRead=function_exists('homeserver_reads_v231_last')?homeserver_reads_v231_last():['attempted'=>false,'execution'=>null,'domain'=>''];
+if(!empty($localRead['attempted']))$execution['homeserver_local_read']=[
+    'domain'=>(string)($localRead['domain']??''),
+    'execution'=>is_array($localRead['execution']??null)?$localRead['execution']:null,
+];
 if(function_exists('chat_presentation_violation_v2370')&&chat_presentation_violation_v2370((string)$answer)){
     error_log('VP3 v23.70 presentation firewall replaced an internal-context echo from the selected Agent runtime.');
     $answer=chat_local_answer($query,is_array($context??null)?$context:[]);

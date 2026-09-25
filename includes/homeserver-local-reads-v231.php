@@ -115,15 +115,18 @@ function homeserver_reads_v231_last(): array
 
 function homeserver_reads_v231_context(array $user,string $query): array
 {
+    static $cache=[];
     $userId=(int)($user['id']??0);
-    if($userId<1||!function_exists('homeserver_execution_v230_execute'))return homeserver_reads_v231_set_last(['attempted'=>false,'context'=>[],'execution'=>null,'domain'=>'']);
+    $cacheKey=$userId.'|'.hash('sha256',trim($query));
+    if(isset($cache[$cacheKey]))return homeserver_reads_v231_set_last($cache[$cacheKey]);
+    if($userId<1||!function_exists('homeserver_execution_v230_execute'))return homeserver_reads_v231_set_last($cache[$cacheKey]=['attempted'=>false,'context'=>[],'execution'=>null,'domain'=>'']);
     $intent=homeserver_reads_v231_intent($query);
-    if(($intent['operation']??'')==='')return homeserver_reads_v231_set_last(['attempted'=>false,'context'=>[],'execution'=>null,'domain'=>'']);
+    if(($intent['operation']??'')==='')return homeserver_reads_v231_set_last($cache[$cacheKey]=['attempted'=>false,'context'=>[],'execution'=>null,'domain'=>'']);
 
     try{
         $run=homeserver_execution_v230_execute($userId,(string)$intent['operation'],(array)$intent['payload']);
     }catch(Throwable $e){
-        return homeserver_reads_v231_set_last(['attempted'=>true,'context'=>[],'execution'=>[
+        return homeserver_reads_v231_set_last($cache[$cacheKey]=['attempted'=>true,'context'=>[],'execution'=>[
           'status'=>'failed','failure_class'=>homeserver_execution_v230_failure_class($e),
           'domain'=>(string)$intent['domain'],'operation'=>(string)$intent['operation'],
         ],'domain'=>(string)$intent['domain']]);
@@ -134,7 +137,7 @@ function homeserver_reads_v231_context(array $user,string $query): array
         $item=homeserver_reads_v231_context_item((string)$intent['domain'],$row,$index);
         if($item)$context[]=$item;
     }
-    return homeserver_reads_v231_set_last([
+    return homeserver_reads_v231_set_last($cache[$cacheKey]=[
       'attempted'=>true,
       'context'=>$context,
       'execution'=>is_array($run['execution']??null)?$run['execution']:null,

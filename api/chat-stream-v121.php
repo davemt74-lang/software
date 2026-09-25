@@ -21,10 +21,6 @@ function chat_v121_context(string $query,array $user,array $principal,array $age
         $context[]=['source'=>'agent:release-operations-tool','title'=>'Agent Operations tool contract','text'=>'Release Calendar is a first-class Agent tool even before the first release is created. It coordinates release plans, due work, tracks, shows, resources, contact lists, documents, websites and audited external actions. External actions may require approval before side effects. Never claim an external action was sent unless its action record reports completion.'];
     }
     if(release_v105_schema_ready()&&preg_match('/\b(credit|credits|credited|contributor|producer|songwriter|engineer)\b/i',$query)){$track=agent_tool_find_track($query,$user);if($track&&permission_v105_track_allowed($track,$user)){$rows=credits_v105_rows($user,(int)$track['id']);$lines=[];foreach($rows as $row)$lines[]=(string)$row['display_name'].' · '.(string)$row['contribution_role'].(trim((string)$row['contribution_detail'])!==''?' · '.(string)$row['contribution_detail']:'');if($lines)$context[]=['source'=>'agent-brain:credits:'.(int)$track['id'],'title'=>'Credits graph · '.(string)$track['title'],'text'=>implode("\n",$lines)];}}
-    if(function_exists('homeserver_reads_v231_enrich_context')){
-        $local=homeserver_reads_v231_enrich_context($context,$user,$query);
-        $context=is_array($local['context']??null)?$local['context']:$context;
-    }
     return array_slice($context,0,32);
 }
 
@@ -38,7 +34,7 @@ $rawAgentContext=is_array($input['agent_context']??null)?$input['agent_context']
 $toolResult=agent_runtime_v125_span('chat.tools',static function()use($query,$user,$conversationId):array{$result=function_exists('release_v105_chat_tool')?release_v105_chat_tool($query,$user,$conversationId):vp3_agent_tool_empty_v400();if(empty($result['handled']))$result=vp3_agent_tool_execute_query_v400($query,$user,$conversationId);else $result=vp3_agent_tool_authorize_result_v400($result,$user,$query);return $result;},['conversation_id'=>$conversationId,'user_id'=>$userId,'agent_id'=>$agentScopeId]);
 $runtimePlan=!empty($toolResult['handled'])?vp3_agent_runtime_tool_plan_v420($userId,$agentScopeId,'chat'):vp3_agent_runtime_plan_v420($pdo,$user,$agentScopeId,'chat');
 $stmt=$pdo->prepare("INSERT INTO chat_messages (conversation_id,user_id,role,message,context_json) VALUES (?,NULL,'assistant','','{}')");$stmt->execute([$conversationId]);$assistantMessageId=(int)$pdo->lastInsertId();if(session_status()===PHP_SESSION_ACTIVE)session_write_close();while(ob_get_level()>0)@ob_end_flush();chat_v121_emit(['type'=>'start','conversation_id'=>$conversationId,'user_message_id'=>$userMessageId,'assistant_message_id'=>$assistantMessageId,'agent_id'=>$agentScopeId,'agent_name'=>(string)$principal['display_name'],'runtime'=>vp3_agent_runtime_public_plan_v420($runtimePlan)]);
-$streamPartial=false;$homeAttempted=false;$context=[];$knowledgeContext=['scope'=>knowledge_retrieval_v162_normalize_scope($input['knowledge_scope']??null),'citations'=>[],'provenance'=>[],'homeserver_local_knowledge'=>'not_queried'];
+$streamPartial=false;$homeAttempted=false;$homeResult=null;$context=[];$knowledgeContext=['scope'=>knowledge_retrieval_v162_normalize_scope($input['knowledge_scope']??null),'citations'=>[],'provenance'=>[],'homeserver_local_knowledge'=>'not_queried'];
 if(!empty($toolResult['handled'])){
     $answer=(string)$toolResult['answer'];if($answer!=='')chat_v121_emit(['type'=>'delta','delta'=>$answer]);
     $homeReceipt=is_array($toolResult['execution']??null)?$toolResult['execution']:[];
@@ -50,13 +46,14 @@ if(!empty($toolResult['handled'])){
         $capabilityRoute=['version'=>'v4.20','capability'=>'tools','planned_source'=>'vp3_tool','actual_source'=>'vp3_tool','supported'=>true,'ready'=>true,'fallback_used'=>false,'reason'=>'vp3_tool_handled'];
     }
 }else{
-    $homeResult=null;
     if(!empty($runtimePlan['try_homeserver'])&&!empty($runtimePlan['home']['supported'])){$homeAttempted=true;$homeResult=homeserver_agent_v025_chat($user,$query,$conversationId,$history,$principal,$activeAgent,$agentContext,!empty($runtimePlan['homeserver_cloud_allowed']));}
     if($homeResult){
         $answer=(string)$homeResult['answer'];if($answer!=='')chat_v121_emit(['type'=>'delta','delta'=>$answer]);$execution=vp3_agent_runtime_homeserver_execution_v420($homeResult);$execution['brain_delegation']=homeserver_agent_v025_public_state($homeResult);$execution=vp3_agent_runtime_finalize_v420($runtimePlan,$execution,'homeserver');
     }elseif((string)$runtimePlan['effective_preference']==='homeserver_only'){
+        if(function_exists('homeserver_compute_v232_failure'))homeserver_compute_v232_failure($userId);
         throw new RuntimeException(vp3_agent_runtime_block_message_v420($runtimePlan));
     }elseif(empty($runtimePlan['cloud']['ready'])||((string)$runtimePlan['route']!=='vp3_cloud'&&empty($runtimePlan['allow_vp3_fallback']))){
+        if($homeAttempted&&function_exists('homeserver_compute_v232_failure'))homeserver_compute_v232_failure($userId);
         throw new RuntimeException(vp3_agent_runtime_block_message_v420($runtimePlan));
     }else{
         $baseContext=agent_runtime_v125_span('chat.context',static fn():array=>chat_v121_context($query,$user,$principal,$agentContext,$conversationId),['conversation_id'=>$conversationId,'user_id'=>$userId,'agent_id'=>$agentScopeId]);$knowledgeBundle=knowledge_retrieval_v162_for_chat($pdo,$user,$principal,$query,$input['knowledge_scope']??null,$baseContext,$conversationId);$context=$knowledgeBundle['context'];$knowledgeContext=['scope'=>$knowledgeBundle['scope'],'citations'=>$knowledgeBundle['citations'],'provenance'=>$knowledgeBundle['provenance'],'homeserver_local_knowledge'=>$knowledgeBundle['homeserver_local_knowledge']];
@@ -65,6 +62,7 @@ if(!empty($toolResult['handled'])){
     $capabilityRoute=vp3_agent_runtime_capability_route_v420($runtimePlan,$execution,$homeAttempted);
 }
 $execution['capability_route']=$capabilityRoute;
+if(function_exists('homeserver_compute_v232_attach'))$execution=homeserver_compute_v232_attach($userId,$execution,$homeResult,$homeAttempted);
 $localRead=function_exists('homeserver_reads_v231_last')?homeserver_reads_v231_last():['attempted'=>false,'execution'=>null,'domain'=>''];
 if(!empty($localRead['attempted']))$execution['homeserver_local_read']=[
     'domain'=>(string)($localRead['domain']??''),

@@ -5,6 +5,7 @@ const read=p=>fs.readFileSync(p,'utf8');
 const reads=read('includes/homeserver-local-reads-v231.php');
 const bootstrap=read('includes/bootstrap.php');
 const chat=read('api/chat-stream-v121.php');
+const policy=read('includes/chat-agent-policy-v236.php');
 const workflow=read('.github/workflows/homeserver-runtime-journey.yml');
 
 const checks=[
@@ -18,7 +19,7 @@ const checks=[
  ['device reads execute devices.list rather than a device command',/devices\.list/.test(reads)&&!/devices\.command/.test(reads)],
  ['all local reads route through the v2.3 receipt boundary',/homeserver_execution_v230_execute/.test(reads)],
  ['local read failures are soft and do not block Cloud Agent fallback',/catch\(Throwable \$e\)/.test(reads)&&/'status'=>'failed'/.test(reads)],
- ['Cloud Agent context is enriched through the same chat path',/homeserver_reads_v231_enrich_context/.test(chat)],
+ ['Cloud Agent context is enriched through the shared text/voice policy path',/homeserver_reads_v231_enrich_context/.test(policy)&&!/homeserver_reads_v231_enrich_context/.test(chat)],
  ['local execution provenance is attached to execution metadata',/homeserver_local_read/.test(chat)&&/homeserver_reads_v231_last/.test(chat)],
  ['runtime journey gates Section 2 static and runtime tests',/homeserver-v231-local-reads-contract\.mjs/.test(workflow)&&/homeserver-v231-local-reads-unit\.php/.test(workflow)],
 ];
