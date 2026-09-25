@@ -290,6 +290,13 @@ function vp3_agent_tool_execute_query_v400(string $query,array $user,int $conver
     $empty=vp3_agent_tool_empty_v400();$pdo=db();
     if(!$pdo)return $empty;
 
+    // HomeServer v2.3 explicit local reads enter through the same canonical
+    // Agent tool boundary before domain-specific Cloud tools.
+    if(function_exists('homeserver_agent_read_v230_query')){
+        $homeRead=homeserver_agent_read_v230_query($query,$user,$conversationId);
+        if(!empty($homeRead['handled']))return vp3_agent_tool_authorize_result_v400($homeRead,$user,$query);
+    }
+
     // Team scheduling is more specific than personal scheduling and must route
     // first so "book a team meeting" cannot fall through to music Booking Agent.
     if(function_exists('agent_team_scheduling_tools_query_v610')){
