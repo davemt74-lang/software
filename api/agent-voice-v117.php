@@ -440,7 +440,9 @@ if ($action === 'warm') {
         'chunked' => true,
         'latency_profile' => $selectedSource==='homeserver_local'?'local':'fast',
         'credential_state' => $credentialState,
-        'readiness_authority' => $readinessAuthority,
+        'readiness_authority' => $selectedSource==='homeserver_local'
+            ? 'homeserver-speech-status'
+            : 'elevenlabs-get-voice',
         'error' => $error,
     ], 200);
 }
