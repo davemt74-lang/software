@@ -301,7 +301,7 @@ function homeserver_vp3_claim_and_pair(int $userId, string $claimCode): array
     }
 
     $permissions = [
-        'agent.chat','awareness.read','contacts.read','events.read','events.write',
+        'agent.chat','awareness.read','contacts.read','contacts.write','events.read','events.write',
         'files.read','files.write','knowledge.search','memory.read','memory.write','notifications.read','plugins.read',
         'devices.read','devices.control','tasks.read','tasks.write','tools.execute','usage.read','usage.write',
     ];
