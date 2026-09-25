@@ -41,8 +41,10 @@ function homeserver_approvals_v028_error_class(string $message): string
 
 function homeserver_approvals_v028_state(int $userId, bool $forceRefresh=false): array
 {
-    $status = homeserver_vp3_status($userId, $forceRefresh);
-    $features = is_array($status['capabilities'] ?? null) ? $status['capabilities'] : [];
+    $https=function_exists('homeserver_https_v1300_status')?homeserver_https_v1300_status($userId):null;
+    $status=is_array($https)&&!empty($https['paired'])?$https:homeserver_vp3_status($userId, $forceRefresh);
+    $caps=is_array($status['capabilities'] ?? null) ? $status['capabilities'] : [];
+    $features=is_array($caps['features']??null)?array_values($caps['features']):(array_is_list($caps)?$caps:[]);
     $supported = in_array(VP3_HOMESERVER_APPROVAL_FEATURE, $features, true);
     $paired = !empty($status['paired']);
     $connected = !empty($status['connected']);
@@ -135,8 +137,10 @@ function homeserver_approvals_v028_list(int $userId, string $status='pending', i
         $state['permission'] = 'unsupported';
         return ['ok'=>false,'state'=>$state,'items'=>[],'error'=>'This HomeServer does not advertise approval federation. Update HomeServer and refresh the connection.'];
     }
-    $credentials = homeserver_approvals_v028_credentials($userId);
-    if (!$credentials) {
+    $https=function_exists('homeserver_https_v1300_status')?homeserver_https_v1300_status($userId):null;
+    $useHttps=is_array($https)&&!empty($https['paired']);
+    $credentials=$useHttps?null:homeserver_approvals_v028_credentials($userId);
+    if (!$useHttps&&!$credentials) {
         $state['permission'] = 'authorization';
         return ['ok'=>false,'state'=>$state,'items'=>[],'error'=>'VP3 cannot use the paired HomeServer credential. Re-pair HomeServer.'];
     }
@@ -144,8 +148,13 @@ function homeserver_approvals_v028_list(int $userId, string $status='pending', i
     if (!in_array($status, $allowed, true)) $status = 'pending';
     $limit = max(1, min(200, $limit));
     try {
-        $result = homeserver_vp3_remote_operation($credentials['relay'], 'action.list', ['status'=>$status,'limit'=>$limit], $credentials['home']);
-        $items = is_array($result['items'] ?? null) ? array_values(array_filter($result['items'], 'is_array')) : [];
+        if($useHttps&&function_exists('homeserver_governed_v233_list')){
+            $modern=homeserver_governed_v233_list($userId,$status,$limit);
+            $items=is_array($modern['items']??null)?array_values(array_filter($modern['items'],'is_array')):[];
+        }else{
+            $result = homeserver_vp3_remote_operation($credentials['relay'], 'action.list', ['status'=>$status,'limit'=>$limit], $credentials['home']);
+            $items = is_array($result['items'] ?? null) ? array_values(array_filter($result['items'], 'is_array')) : [];
+        }
         $state['permission'] = 'granted';
         $state['permission_upgrade_pending'] = false;
         $state['approval_code'] = '';
