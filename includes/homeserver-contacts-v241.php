@@ -347,7 +347,7 @@ function homeserver_contacts_v241_mutation_replay(
     int $userId,string $mutationId,string $action,string $requestHash
 ): ?array {
     $pdo=db();if(!$pdo)return null;
-    homeserver_contacts_v241_ensure_schema($pdo);
+    if(!homeserver_contacts_v241_schema_ready())homeserver_contacts_v241_ensure_schema($pdo);
     $s=$pdo->prepare('SELECT action_key,request_hash,result_json FROM homeserver_contact_mutations WHERE user_id=? AND mutation_id=? LIMIT 1');
     $s->execute([$userId,$mutationId]);$row=$s->fetch();
     if(!$row)return null;
@@ -364,7 +364,7 @@ function homeserver_contacts_v241_mutation_record(
     int $userId,string $mutationId,string $action,string $requestHash,?string $canonicalId,array $result
 ): void {
     $pdo=db();if(!$pdo)return;
-    homeserver_contacts_v241_ensure_schema($pdo);
+    if(!homeserver_contacts_v241_schema_ready())homeserver_contacts_v241_ensure_schema($pdo);
     $pdo->prepare('INSERT INTO homeserver_contact_mutations
       (user_id,mutation_id,action_key,request_hash,canonical_id,result_json)
       VALUES (?,?,?,?,?,?)')
