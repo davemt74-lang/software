@@ -12,6 +12,10 @@ const agentVoice=read('api/agent-voice-v117.php');
 const bootstrap=read('includes/bootstrap.php');
 const workflow=read('.github/workflows/homeserver-runtime-journey.yml');
 
+const warmStart=agentVoice.indexOf("if ($action === 'warm') {");
+const warmEnd=agentVoice.indexOf("if (!in_array($action, ['ticket', 'speak'], true))",warmStart);
+const warmBlock=warmStart>=0&&warmEnd>warmStart?agentVoice.slice(warmStart,warmEnd):'';
+
 const checks=[
  ['Section 5 helpers load after governed actions',bootstrap.indexOf('homeserver-governed-actions-v233.php')<bootstrap.indexOf('homeserver-voice-v234.php')&&bootstrap.indexOf('homeserver-voice-v234.php')<bootstrap.indexOf('homeserver-profile-agent-v235.php')],
  ['routing allowlists stateless local inference',routing.includes("'agent.infer.local'")],
@@ -29,7 +33,7 @@ const checks=[
  ['public Profile Agent stores sanitized HomeServer compute metadata',/homeserver_compute/.test(profileApi)&&/failure_class/.test(profileApi)&&/execution/.test(profileApi)],
  ['Agent voice warm path can select HomeServer local voice',/homeserver_local/.test(agentVoice)&&/homeserver-speech-status/.test(agentVoice)],
  ['Agent voice one-use stream can return HomeServer WAV',/homeserver_voice_v234_synthesize/.test(agentVoice)&&/Content-Type: audio\/wav/.test(agentVoice)],
- ['ElevenLabs remains the first readiness authority',agentVoice.indexOf('stonefellow_voice_v244_verify')<agentVoice.indexOf('stonefellow_voice_v234_homeserver_status')],
+ ['ElevenLabs remains the first readiness authority',warmBlock.indexOf('stonefellow_voice_v244_verify')>=0&&warmBlock.indexOf('stonefellow_voice_v244_verify')<warmBlock.indexOf('stonefellow_voice_v234_homeserver_status')],
  ['HomeServer transcription API requires chat access and CSRF',/chat\.access/.test(voiceApi)&&/hash_equals\(csrf_token\(\)/.test(voiceApi)],
  ['Section 5 runtime journey lints and executes contract/unit tests',/homeserver-v235-voice-profile-contract\.mjs/.test(workflow)&&/homeserver-v235-voice-profile-unit\.php/.test(workflow)],
 ];
