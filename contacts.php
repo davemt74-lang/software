@@ -16,6 +16,16 @@ $agentContacts = personal_capability_has_v242('profile_agent.access',$user) && v
     : [];
 $agentStats = function_exists('vp3_agent_crm_stats') ? vp3_agent_crm_stats($agentContacts) : ['total'=>count($agentContacts),'high_risk'=>0,'opportunities'=>0,'messaging'=>0,'watched'=>0,'referrals'=>0,'conversions'=>0];
 
+$continuity = function_exists('homeserver_contacts_v241_unified')
+    ? homeserver_contacts_v241_unified((int)$user['id'],'',500)
+    : ['items'=>[],'classes'=>[]];
+$federatedExtraContacts = array_values(array_filter(
+    is_array($continuity['items']??null)?$continuity['items']:[],
+    static fn(array $item):bool=>in_array((string)($item['contact_class']??''),['core_crm','address_book'],true)
+));
+$coreCrmCount = count(array_filter($federatedExtraContacts,static fn(array $item):bool=>(string)($item['contact_class']??'')==='core_crm'));
+$homeServerContactCount = count(array_filter($federatedExtraContacts,static fn(array $item):bool=>(string)($item['contact_class']??'')==='address_book'));
+
 $totalContacts = count($contacts);
 $repeatContacts = 0;
 $engagedContacts = 0;
@@ -31,7 +41,7 @@ foreach ($contacts as $contact) {
     if ($lastSeen !== false && $lastSeen >= $now - 300) $activeContacts++;
     $totalConversations += (int)($contact['conversation_count'] ?? 0);
 }
-$totalRelationships=$totalContacts+(int)$agentStats['total'];
+$totalRelationships=$totalContacts+(int)$agentStats['total']+count($federatedExtraContacts);
 
 function contacts_date_label(string $value): string
 {
@@ -155,7 +165,7 @@ foreach($agentContacts as $agentContact){
     <?php
       $memberHeaderUser = $user;
       $memberHeaderTitle = 'My Contacts';
-      $memberHeaderSubtitle = 'People + AI agents + relationship history';
+      $memberHeaderSubtitle = 'People + AI agents + CRM + HomeServer relationships';
       $memberHeaderActions = '<a class="contacts-button" href="' . e(url('/chat.php')) . '">Ask Agent</a><a class="contacts-button" href="' . e(url('/profile-agent.php?tab=radar')) . '">Agent Radar</a>';
       require __DIR__ . '/includes/member-header.php';
     ?>
@@ -166,6 +176,7 @@ foreach($agentContacts as $agentContact){
           <article class="contacts-metric"><span>Total relationships</span><strong><?= $totalRelationships ?></strong><small>People + recurring automated agents</small></article>
           <article class="contacts-metric"><span>People</span><strong><?= $totalContacts ?></strong><small><?= $repeatContacts ?> returning · <?= $engagedContacts ?> engaged</small></article>
           <article class="contacts-metric"><span>AI / automated</span><strong><?= (int)$agentStats['total'] ?></strong><small><?= (int)$agentStats['watched'] ?> watched · Agent Radar contacts</small></article>
+          <article class="contacts-metric"><span>CRM + HomeServer</span><strong><?= count($federatedExtraContacts) ?></strong><small><?= $coreCrmCount ?> Core CRM · <?= $homeServerContactCount ?> HomeServer address book</small></article>
           <article class="contacts-metric<?= (int)$agentStats['high_risk']>0?' alert':'' ?>"><span>High risk agents</span><strong><?= (int)$agentStats['high_risk'] ?></strong><small>Risk score 70 or higher</small></article>
           <article class="contacts-metric"><span>Agent opportunities</span><strong><?= (int)$agentStats['opportunities'] ?></strong><small>High opportunity · low risk</small></article>
           <article class="contacts-metric"><span>AI conversions</span><strong><?= (int)$agentStats['conversions'] ?></strong><small><?= (int)$agentStats['referrals'] ?> explicitly attributed referrals</small></article>
@@ -222,6 +233,35 @@ foreach($agentContacts as $agentContact){
             </article>
             <?php endforeach; ?>
 
+            <?php foreach ($federatedExtraContacts as $contact):
+              $class=(string)($contact['contact_class']??'');
+              $name=trim((string)($contact['display_name']??''))?:'Contact';
+              $source=(string)($contact['source_label']??($class==='address_book'?'HomeServer':'VP3 CRM'));
+              $relationship=trim((string)($contact['relationship']??''));
+              $organization=trim((string)($contact['organization']??''));
+              $email=trim((string)($contact['email']??''));
+              $phone=trim((string)($contact['phone']??''));
+              $updated=(string)($contact['updated_at']??'');
+              $classLabel=$class==='address_book'?'Address book':'Core CRM';
+              $searchText=strtolower(trim($name.' '.$source.' '.$classLabel.' '.$relationship.' '.$organization.' '.$email.' '.$phone.' human person'));
+            ?>
+            <article class="contacts-row" data-contact-row data-kind="human" data-stage="federated" data-member="0" data-risk="0" data-opportunity="0" data-watch="0" data-search="<?= e($searchText) ?>" data-contact-canonical-id="<?= e((string)($contact['canonical_id']??'')) ?>" data-contact-authority="<?= e((string)($contact['authority_source']??'')) ?>">
+              <div class="contacts-person">
+                <span class="contacts-person-avatar"><?= e(mb_strtoupper(mb_substr($name,0,1))) ?></span>
+                <div class="contacts-person-copy">
+                  <strong><?= e($name) ?></strong>
+                  <small><?= e($source) ?> · <?= e($classLabel) ?></small>
+                </div>
+              </div>
+              <div class="contacts-cell" data-label="Type / stage"><span class="contacts-stage"><?= e($classLabel) ?></span><small><?= e((string)($contact['authority_source']??'')) ?> authority</small></div>
+              <div class="contacts-cell" data-label="Activity"><strong><?= e($organization!==''?$organization:'—') ?></strong><small><?= e($email!==''?$email:'No email') ?></small></div>
+              <div class="contacts-cell" data-label="Relationship"><strong><?= e($relationship!==''?$relationship:'—') ?></strong><small><?= e($phone!==''?$phone:'No phone') ?></small></div>
+              <div class="contacts-cell" data-label="Outcomes"><strong><?= $class==='address_book'?'Governed edits':'Native CRM edits' ?></strong><small><?= e($class==='address_book'?'Mutations route to HomeServer':'Record remains VP3 Cloud authoritative') ?></small></div>
+              <div class="contacts-cell" data-label="First seen">—</div>
+              <div class="contacts-cell" data-label="Last activity"><?= e(contacts_date_label($updated)) ?></div>
+            </article>
+            <?php endforeach; ?>
+
             <?php foreach ($agentContacts as $contact):
               $contactId=(int)$contact['id'];$risk=(int)$contact['risk_score'];$opp=(int)$contact['opportunity_score'];$value=(int)$contact['value_score'];$cost=(int)$contact['cost_score'];$trust=(int)$contact['trust_score'];$engagement=(int)$contact['engagement_score'];$watched=!empty($contact['watch_enabled']);
               $name=trim((string)$contact['display_name'])?:'Automated agent';$operator=trim((string)$contact['operator_name']);$class=(string)$contact['visitor_class'];$stage=(string)$contact['relationship_status'];$intent=trim((string)$contact['inferred_intent']);
@@ -254,7 +294,7 @@ foreach($agentContacts as $agentContact){
 
         <section class="contacts-privacy">
           <span aria-hidden="true">◉</span>
-          <div><strong>Privacy-first guest continuity</strong><p><b>One CRM, separate privacy boundaries.</b> Human contacts use the existing privacy-preserving visitor relationship system. Automated visitors use Agent Radar identities. VP3 does not merge an AI agent into a human contact, and explicit AI referral attribution uses first-party token hashes rather than IP addresses or cross-customer tracking.</p></div>
+          <div><strong>Federated Contacts with native authority</strong><p><b>One Contacts view, separate privacy and ownership boundaries.</b> Profile relationships, Agent Radar, Core CRM and HomeServer address-book records keep their native authority. VP3 does not copy HomeServer contacts into Cloud-native CRM tables or merge AI-agent identities into human contacts. HomeServer address-book mutations use governed actions and canonical IDs.</p></div>
         </section>
       </div>
     </section>
