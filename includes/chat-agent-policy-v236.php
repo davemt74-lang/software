@@ -239,6 +239,10 @@ function chat_policy_context_v236(string $query,array $user,array $principal,int
     foreach(chat_policy_legacy_context_v236($pdo,$principal,$user,$query,$terms,$conversationId) as $item)$context[]=$item;
     foreach(chat_policy_knowledge_v236($pdo,$principal,$user,$query,$terms,$conversationId) as $item)$context[]=$item;
     if($brainAllowed&&agent_brain_schema_ready())$context[]=['source'=>'agent:tools','title'=>'Available Stonefellow tools','text'=>agent_brain_tool_prompt($user)];
+    if(function_exists('homeserver_reads_v231_enrich_context')){
+        $local=homeserver_reads_v231_enrich_context($context,$user,$query);
+        $context=is_array($local['context']??null)?$local['context']:$context;
+    }
     return array_slice($context,0,30);
 }
 
