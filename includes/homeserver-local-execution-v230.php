@@ -52,6 +52,7 @@ function homeserver_execution_v230_domain(string $operation,array $payload=[]): 
     if(str_starts_with($op,'files.'))return 'files';
     if($op==='knowledge.search')return 'knowledge';
     if(str_starts_with($op,'speech.'))return 'voice';
+    if(str_starts_with($op,'action.'))return 'governance';
     if($op==='tool.execute'){
         $tool=strtolower(trim((string)($payload['tool_key']??'')));
         if(str_starts_with($tool,'devices.'))return 'devices';
@@ -101,7 +102,7 @@ function homeserver_execution_v230_result_meta(mixed $result): array
 {
     if(!is_array($result))return ['result_type'=>get_debug_type($result)];
     $meta=['result_keys'=>array_slice(array_values(array_filter(array_keys($result),'is_string')),0,20)];
-    foreach(['run_id','count','request_id','status','approval_required','local','provider','model'] as $key){
+    foreach(['run_id','count','request_id','status','approval_required','owner_approval_required','action','action_key','local','provider','model'] as $key){
         if(!array_key_exists($key,$result)||is_array($result[$key])||is_object($result[$key]))continue;
         $value=$result[$key];
         if(is_string($value))$value=mb_strimwidth($value,0,160,'');
