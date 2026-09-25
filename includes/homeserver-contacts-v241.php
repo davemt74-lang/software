@@ -51,7 +51,7 @@ function homeserver_contacts_v241_cloud_item(
       'record_revision'=>$item['record_revision'],
       'federation_version'=>$item['federation_version'],
       'mirror_only'=>false,
-      'read_only'=>true,
+      'read_only'=>$class!=='core_crm',
       'source_label'=>match($class){
         'profile_visitor'=>'VP3 Profile relationship',
         'agent_radar'=>'VP3 Agent Radar',
@@ -64,7 +64,7 @@ function homeserver_contacts_v241_cloud_item(
       },
       'allowed_mutations'=>match($class){
         'agent_radar'=>['watch','policy'],
-        'core_crm'=>['native_crm'],
+        'core_crm'=>['update','delete'],
         default=>[],
       },
     ];
@@ -297,4 +297,256 @@ function homeserver_contacts_v241_request_homeserver(
     }
     if(!function_exists('homeserver_governed_v233_request'))throw new RuntimeException('HomeServer governed actions are unavailable.');
     return homeserver_governed_v233_request($userId,$tool,$payload);
+}
+
+
+function homeserver_contacts_v241_ensure_schema(?PDO $pdo=null): void
+{
+    $pdo ??= db();
+    if(!$pdo)throw new RuntimeException('Database connection is unavailable.');
+    $pdo->exec("CREATE TABLE IF NOT EXISTS homeserver_contact_mutations (
+      user_id INT UNSIGNED NOT NULL,
+      mutation_id VARCHAR(128) NOT NULL,
+      action_key VARCHAR(40) NOT NULL,
+      request_hash CHAR(64) NOT NULL,
+      canonical_id CHAR(45) NULL,
+      result_json MEDIUMTEXT NOT NULL,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY(user_id,mutation_id),
+      INDEX idx_hs_contact_mutations_created (user_id,created_at),
+      CONSTRAINT fk_hs_contact_mutations_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+}
+
+function homeserver_contacts_v241_schema_ready(): bool
+{
+    return function_exists('table_exists')&&table_exists('homeserver_contact_mutations');
+}
+
+function homeserver_contacts_v241_mutation_id(mixed $value): string
+{
+    $id=trim((string)$value);
+    if(!preg_match('/^[A-Za-z0-9._:-]{8,128}$/',$id))throw new RuntimeException('Contact mutation_id must be 8 to 128 safe characters.');
+    return $id;
+}
+
+function homeserver_contacts_v241_expected_revision(mixed $value): string
+{
+    $revision=strtolower(trim((string)$value));
+    if(!preg_match('/^[0-9a-f]{64}$/',$revision))throw new RuntimeException('Contact expected_revision must be a SHA-256 value.');
+    return $revision;
+}
+
+function homeserver_contacts_v241_mutation_hash(string $action,array $payload): string
+{
+    ksort($payload);
+    return hash('sha256',json_encode(['action'=>$action,'payload'=>$payload],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE)?:'{}');
+}
+
+function homeserver_contacts_v241_mutation_replay(
+    int $userId,string $mutationId,string $action,string $requestHash
+): ?array {
+    $pdo=db();if(!$pdo)return null;
+    homeserver_contacts_v241_ensure_schema($pdo);
+    $s=$pdo->prepare('SELECT action_key,request_hash,result_json FROM homeserver_contact_mutations WHERE user_id=? AND mutation_id=? LIMIT 1');
+    $s->execute([$userId,$mutationId]);$row=$s->fetch();
+    if(!$row)return null;
+    if((string)$row['action_key']!==$action||!hash_equals((string)$row['request_hash'],$requestHash)){
+        throw new RuntimeException('Contact mutation_id was already used with different arguments.');
+    }
+    $result=json_decode((string)$row['result_json'],true);
+    if(!is_array($result))throw new RuntimeException('Stored contact mutation result is unavailable.');
+    $result['idempotent_replay']=true;
+    return $result;
+}
+
+function homeserver_contacts_v241_mutation_record(
+    int $userId,string $mutationId,string $action,string $requestHash,?string $canonicalId,array $result
+): void {
+    $pdo=db();if(!$pdo)return;
+    homeserver_contacts_v241_ensure_schema($pdo);
+    $pdo->prepare('INSERT INTO homeserver_contact_mutations
+      (user_id,mutation_id,action_key,request_hash,canonical_id,result_json)
+      VALUES (?,?,?,?,?,?)')
+      ->execute([$userId,$mutationId,$action,$requestHash,$canonicalId,
+        json_encode($result,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE)?:'{}']);
+}
+
+function homeserver_contacts_v241_cloud_authority_row(int $userId,string $canonicalId): ?array
+{
+    $pdo=db();if(!$pdo||$userId<1)return null;
+    $s=$pdo->prepare("SELECT authority_source,authority_key,tombstoned FROM homeserver_federated_records
+      WHERE user_id=? AND canonical_id=? AND observed_source='vp3_cloud'
+      ORDER BY last_seen_at DESC LIMIT 1");
+    $s->execute([$userId,$canonicalId]);$row=$s->fetch();
+    return $row?:null;
+}
+
+function homeserver_contacts_v241_core_crm_row(int $userId,int $contactId): ?array
+{
+    $pdo=db();if(!$pdo||$userId<1||$contactId<1||!table_exists('crm_contacts'))return null;
+    if(!function_exists('column_exists')||!column_exists('crm_contacts','owner_user_id'))return null;
+    $s=$pdo->prepare("SELECT * FROM crm_contacts WHERE id=? AND owner_user_id=? AND status<>'archived' LIMIT 1");
+    $s->execute([$contactId,$userId]);$row=$s->fetch();
+    return $row?:null;
+}
+
+function homeserver_contacts_v241_core_crm_projection(int $userId,array $row): array
+{
+    $id=(int)($row['id']??0);
+    if($id<1)throw new RuntimeException('CRM contact identity is invalid.');
+    $name=homeserver_contacts_v241_text($row['name']??$row['email']??'',240)?:'CRM contact';
+    $relationship=homeserver_contacts_v241_text($row['lifecycle_stage']??$row['status']??'crm',160);
+    $content=implode(' · ',array_filter([
+      homeserver_contacts_v241_text($row['company']??'',240),
+      homeserver_contacts_v241_text($row['email']??'',320),
+      homeserver_contacts_v241_text($row['phone']??'',80),
+      $relationship,
+      homeserver_contacts_v241_text($row['source']??'',80),
+    ]));
+    return homeserver_contacts_v241_cloud_item(
+      $userId,'core_crm',(string)$id,$name,$content,
+      (string)($row['updated_at']??$row['created_at']??''),
+      [
+        'organization'=>(string)($row['company']??''),
+        'email'=>(string)($row['email']??''),
+        'phone'=>(string)($row['phone']??''),
+        'relationship'=>$relationship,
+        'notes'=>$content,
+      ]
+    );
+}
+
+function homeserver_contacts_v241_core_crm_id(int $userId,string $canonicalId): int
+{
+    $canonicalId=strtolower(trim($canonicalId));
+    if(!preg_match('/^fd24_[0-9a-f]{40}$/',$canonicalId))throw new RuntimeException('A valid contact canonical ID is required.');
+    $known=homeserver_contacts_v241_cloud_authority_row($userId,$canonicalId);
+    if(!$known||(string)$known['authority_source']!=='vp3_cloud'||!str_starts_with((string)$known['authority_key'],'core_crm:')||!empty($known['tombstoned'])){
+        throw new RuntimeException('That contact is not a writable VP3 CRM record.');
+    }
+    $id=(int)substr((string)$known['authority_key'],9);
+    if($id<1)throw new RuntimeException('CRM contact identity is invalid.');
+    $expected=homeserver_federated_v240_canonical_id('vp3_cloud','contacts','core_crm:'.$id);
+    if(!hash_equals($expected,$canonicalId))throw new RuntimeException('CRM contact identity does not match its authority.');
+    return $id;
+}
+
+function homeserver_contacts_v241_cloud_crm_create(int $userId,array $payload): array
+{
+    $mutationId=homeserver_contacts_v241_mutation_id($payload['mutation_id']??'');
+    $email=strtolower(trim((string)($payload['email']??'')));
+    if(!filter_var($email,FILTER_VALIDATE_EMAIL))throw new RuntimeException('A valid CRM contact email is required.');
+    $name=homeserver_contacts_v241_text($payload['display_name']??$payload['name']??$email,240);
+    $phone=homeserver_contacts_v241_text($payload['phone']??'',80);
+    $company=homeserver_contacts_v241_text($payload['organization']??$payload['company']??'',240);
+    $request=['email'=>$email,'display_name'=>$name,'phone'=>$phone,'organization'=>$company];
+    $hash=homeserver_contacts_v241_mutation_hash('contacts.create.cloud',$request);
+    $replay=homeserver_contacts_v241_mutation_replay($userId,$mutationId,'contacts.create.cloud',$hash);
+    if($replay)return $replay;
+    $pdo=db();if(!$pdo||!function_exists('crm_v180_upsert_contact'))throw new RuntimeException('VP3 CRM is unavailable.');
+    $id=crm_v180_upsert_contact($pdo,[
+      'owner_user_id'=>$userId,'name'=>$name,'email'=>$email,'phone'=>$phone,'company'=>$company,'source'=>'federated_contacts',
+    ]);
+    $row=homeserver_contacts_v241_core_crm_row($userId,$id);
+    if(!$row)throw new RuntimeException('VP3 CRM contact could not be loaded after creation.');
+    $item=homeserver_contacts_v241_core_crm_projection($userId,$row);
+    $result=['contact'=>$item,'created'=>true,'authority_source'=>'vp3_cloud'];
+    homeserver_contacts_v241_mutation_record($userId,$mutationId,'contacts.create.cloud',$hash,(string)$item['canonical_id'],$result);
+    return $result;
+}
+
+function homeserver_contacts_v241_cloud_crm_update(int $userId,string $canonicalId,array $payload): array
+{
+    $mutationId=homeserver_contacts_v241_mutation_id($payload['mutation_id']??'');
+    $expected=homeserver_contacts_v241_expected_revision($payload['expected_revision']??'');
+    $id=homeserver_contacts_v241_core_crm_id($userId,$canonicalId);
+    $current=homeserver_contacts_v241_core_crm_row($userId,$id);
+    if(!$current)throw new RuntimeException('VP3 CRM contact not found.');
+    $projection=homeserver_contacts_v241_core_crm_projection($userId,$current);
+    if(!hash_equals((string)$projection['record_revision'],$expected))throw new RuntimeException('VP3 CRM contact changed after this edit was prepared. Refresh and try again.');
+
+    $allowed=['display_name','organization','email','phone','relationship'];
+    $fields=[];
+    foreach($allowed as $key)if(array_key_exists($key,$payload))$fields[$key]=$payload[$key];
+    if(!$fields)throw new RuntimeException('No CRM contact fields were supplied.');
+    $request=['canonical_id'=>$canonicalId,'expected_revision'=>$expected,'fields'=>$fields];
+    $hash=homeserver_contacts_v241_mutation_hash('contacts.update.cloud',$request);
+    $replay=homeserver_contacts_v241_mutation_replay($userId,$mutationId,'contacts.update.cloud',$hash);
+    if($replay)return $replay;
+
+    $name=homeserver_contacts_v241_text($fields['display_name']??$current['name']??'',240);
+    $company=homeserver_contacts_v241_text($fields['organization']??$current['company']??'',240);
+    $phone=homeserver_contacts_v241_text($fields['phone']??$current['phone']??'',80);
+    $email=strtolower(trim((string)($fields['email']??$current['email']??'')));
+    if($email!==''&&!filter_var($email,FILTER_VALIDATE_EMAIL))throw new RuntimeException('CRM contact email is invalid.');
+    $relationship=homeserver_contacts_v241_text($fields['relationship']??$current['lifecycle_stage']??'',80);
+
+    $pdo=db();if(!$pdo)throw new RuntimeException('Database connection is unavailable.');
+    $pdo->prepare("UPDATE crm_contacts SET name=?,company=?,phone=?,email=?,email_normalized=?,
+      lifecycle_stage=?,updated_at=UTC_TIMESTAMP() WHERE id=? AND owner_user_id=? AND status<>'archived'")
+      ->execute([$name,$company,$phone,$email,$email,$relationship,$id,$userId]);
+    $row=homeserver_contacts_v241_core_crm_row($userId,$id);
+    if(!$row)throw new RuntimeException('VP3 CRM contact could not be loaded after update.');
+    $item=homeserver_contacts_v241_core_crm_projection($userId,$row);
+    $result=['contact'=>$item,'updated'=>true,'authority_source'=>'vp3_cloud'];
+    homeserver_contacts_v241_mutation_record($userId,$mutationId,'contacts.update.cloud',$hash,$canonicalId,$result);
+    return $result;
+}
+
+function homeserver_contacts_v241_cloud_crm_delete(int $userId,string $canonicalId,array $payload): array
+{
+    $mutationId=homeserver_contacts_v241_mutation_id($payload['mutation_id']??'');
+    $expected=homeserver_contacts_v241_expected_revision($payload['expected_revision']??'');
+    $id=homeserver_contacts_v241_core_crm_id($userId,$canonicalId);
+    $current=homeserver_contacts_v241_core_crm_row($userId,$id);
+    if(!$current)throw new RuntimeException('VP3 CRM contact not found.');
+    $projection=homeserver_contacts_v241_core_crm_projection($userId,$current);
+    if(!hash_equals((string)$projection['record_revision'],$expected))throw new RuntimeException('VP3 CRM contact changed after this delete was prepared. Refresh and try again.');
+    $request=['canonical_id'=>$canonicalId,'expected_revision'=>$expected];
+    $hash=homeserver_contacts_v241_mutation_hash('contacts.delete.cloud',$request);
+    $replay=homeserver_contacts_v241_mutation_replay($userId,$mutationId,'contacts.delete.cloud',$hash);
+    if($replay)return $replay;
+    $pdo=db();if(!$pdo)throw new RuntimeException('Database connection is unavailable.');
+    $pdo->prepare("UPDATE crm_contacts SET status='archived',updated_at=UTC_TIMESTAMP() WHERE id=? AND owner_user_id=? AND status<>'archived'")
+      ->execute([$id,$userId]);
+    if(function_exists('homeserver_federated_v240_mark_tombstone')){
+        homeserver_federated_v240_mark_tombstone($userId,'vp3_cloud','contacts','core_crm:'.$id,'vp3_cloud');
+    }else{
+        $pdo->prepare("UPDATE homeserver_federated_records SET tombstoned=1,last_seen_at=UTC_TIMESTAMP()
+          WHERE user_id=? AND canonical_id=? AND observed_source='vp3_cloud'")->execute([$userId,$canonicalId]);
+    }
+    $result=['deleted'=>true,'canonical_id'=>$canonicalId,'authority_source'=>'vp3_cloud'];
+    homeserver_contacts_v241_mutation_record($userId,$mutationId,'contacts.delete.cloud',$hash,$canonicalId,$result);
+    return $result;
+}
+
+function homeserver_contacts_v241_mutate(int $userId,string $action,array $payload): array
+{
+    $action=strtolower(trim($action));
+    if(!in_array($action,['create','update','delete'],true))throw new RuntimeException('Unsupported contact mutation.');
+
+    if($action==='create'){
+        $authority=strtolower(trim((string)($payload['authority_source']??'homeserver')));
+        if($authority==='vp3_cloud')return homeserver_contacts_v241_cloud_crm_create($userId,$payload);
+        if($authority!=='homeserver')throw new RuntimeException('Unsupported contact authority source.');
+        unset($payload['authority_source']);
+        return homeserver_contacts_v241_request_homeserver($userId,'create',$payload);
+    }
+
+    $canonical=strtolower(trim((string)($payload['canonical_id']??'')));
+    if(!preg_match('/^fd24_[0-9a-f]{40}$/',$canonical))throw new RuntimeException('A valid contact canonical ID is required.');
+    $known=homeserver_contacts_v241_cloud_authority_row($userId,$canonical);
+    if(!$known)throw new RuntimeException('Contact authority is unknown. Refresh Contacts and try again.');
+    $source=(string)$known['authority_source'];
+    $key=(string)$known['authority_key'];
+    if($source==='homeserver'&&str_starts_with($key,'address_book:')){
+        return homeserver_contacts_v241_request_homeserver($userId,$action,$payload);
+    }
+    if($source==='vp3_cloud'&&str_starts_with($key,'core_crm:')){
+        return $action==='update'
+          ?homeserver_contacts_v241_cloud_crm_update($userId,$canonical,$payload)
+          :homeserver_contacts_v241_cloud_crm_delete($userId,$canonical,$payload);
+    }
+    throw new RuntimeException('This contact class does not support generic edits. Use its native relationship controls.');
 }
