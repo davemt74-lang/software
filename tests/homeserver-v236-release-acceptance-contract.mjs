@@ -6,6 +6,8 @@ const bootstrap=read('includes/bootstrap.php');
 const acceptance=read('includes/homeserver-acceptance-v236.php');
 const api=read('api/homeserver-acceptance-v236.php');
 const workflow=read('.github/workflows/homeserver-runtime-journey.yml');
+const settings=read('settings-homeserver.php');
+const settingsJs=read('homeserver-settings-v1210.js');
 
 const checks=[
  ['v2.3 acceptance loads after Section 5 execution helpers',bootstrap.indexOf('homeserver-profile-agent-v235.php')<bootstrap.indexOf('homeserver-acceptance-v236.php')],
@@ -19,6 +21,8 @@ const checks=[
  ['acceptance checks canonical execution receipt schema',/homeserver_execution_v230_schema_ready/.test(acceptance)&&/homeserver_execution_v230_recent/.test(acceptance)],
  ['acceptance endpoint requires account/chat permissions and CSRF',/account\.access/.test(api)&&/chat\.access/.test(api)&&/hash_equals\(csrf_token\(\)/.test(api)],
  ['acceptance helper never calls Agent chat or governed action execution',!/homeserver_agent_v018_chat\(/.test(acceptance)&&!/homeserver_governed_v233_execute\(/.test(acceptance)],
+ ['HomeServer settings exposes v2.3 release acceptance endpoint and card',/data-acceptance-api/.test(settings)&&/hsReleaseAcceptanceCard/.test(settings)&&/Unified release acceptance/.test(settings)],
+ ['HomeServer settings JS runs acceptance only on explicit click',/runReleaseAcceptance/.test(settingsJs)&&/hsRunReleaseAcceptance/.test(settingsJs)&&/acceptanceApi/.test(settingsJs)],
  ['runtime journey lints and executes Section 6 acceptance tests',/homeserver-v236-release-acceptance-contract\.mjs/.test(workflow)&&/homeserver-v236-release-acceptance-unit\.php/.test(workflow)],
 ];
 
