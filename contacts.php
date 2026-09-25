@@ -185,7 +185,7 @@ foreach($agentContacts as $agentContact){
     <?php
       $memberHeaderUser = $user;
       $memberHeaderTitle = 'My Contacts';
-      $memberHeaderSubtitle = 'People + AI agents + CRM + HomeServer relationships';
+      $memberHeaderSubtitle = 'People + AI agents + relationship history · CRM + HomeServer';
       $memberHeaderActions = '<button class="contacts-button primary" id="contactsNewContact" type="button">New contact</button><a class="contacts-button" href="' . e(url('/chat.php')) . '">Ask Agent</a><a class="contacts-button" href="' . e(url('/profile-agent.php?tab=radar')) . '">Agent Radar</a>';
       require __DIR__ . '/includes/member-header.php';
     ?>
@@ -315,7 +315,7 @@ foreach($agentContacts as $agentContact){
 
         <section class="contacts-privacy">
           <span aria-hidden="true">◉</span>
-          <div><strong>Federated Contacts with native authority</strong><p><b>One Contacts view, separate privacy and ownership boundaries.</b> Profile relationships, Agent Radar, Core CRM and HomeServer address-book records keep their native authority. VP3 does not copy HomeServer contacts into Cloud-native CRM tables or merge AI-agent identities into human contacts. HomeServer address-book mutations use governed actions and canonical IDs.</p></div>
+          <div><strong>Federated Contacts with native authority</strong><p><b>One CRM, separate privacy boundaries.</b> <b>Privacy-first guest continuity</b> remains the human/profile relationship model. Profile relationships, Agent Radar, Core CRM and HomeServer address-book records keep their native authority. VP3 does not merge an AI agent into a human contact, and VP3 does not copy HomeServer contacts into Cloud-native CRM tables. HomeServer address-book mutations use governed actions and canonical IDs.</p></div>
         </section>
       </div>
     </section>
