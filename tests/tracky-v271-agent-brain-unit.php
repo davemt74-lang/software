@@ -15,6 +15,9 @@ function v271_same(mixed $actual,mixed $expected,string $message): void {
 v271_same(tracky_agent_intent_v271('Where am I?'),'current','where am I intent');
 v271_same(tracky_agent_intent_v271('Where are my keys?'),'where','where entity intent');
 v271_same(tracky_agent_intent_v271('Where is my invoice?'),'','nonphysical where query was hijacked');
+v271_same(tracky_agent_intent_v271('Where is my API key?'),'','API key query was hijacked');
+v271_same(tracky_agent_intent_v271('Who is in my CRM?'),'','CRM query was hijacked');
+v271_same(tracky_agent_intent_v271('Where is my phone?'),'where','physical phone query was blocked');
 v271_same(tracky_agent_intent_v271('Who is in the office?'),'present','presence intent');
 v271_same(tracky_agent_intent_v271('When did you last see my keys?'),'last_seen','last seen intent');
 v271_same(tracky_agent_intent_v271('When did Tracky last spot my wallet?'),'last_seen','Tracky last-spot intent');
@@ -25,6 +28,14 @@ v271_same(tracky_agent_intent_v271('Why do you think the keys are in the office?
 v271_same(tracky_agent_intent_v271('Tracky status'),'health','health intent');
 v271_same(tracky_agent_intent_v271('Show my calendar'),'','calendar query was hijacked');
 v271_same(tracky_agent_entity_label_v271('room:home_office'),'Home Office','entity label normalization');
+
+$fresh=tracky_agent_freshness_v271(gmdate('Y-m-d H:i:s',time()-30),['status'=>'healthy']);
+v271_same($fresh['state'],'current','fresh Tracky state mislabeled');
+v271_expect(!empty($fresh['live']),'fresh Tracky state should be live');
+$stale=tracky_agent_freshness_v271(gmdate('Y-m-d H:i:s',time()-7200),['status'=>'healthy']);
+v271_same($stale['state'],'stale','old Tracky state was not marked stale');
+$offline=tracky_agent_freshness_v271(gmdate('Y-m-d H:i:s'),['status'=>'offline']);
+v271_same($offline['state'],'stale','offline Tracky site was presented as current');
 
 v271_same(tracky_agent_cognitive_event_type_v271(['severity'=>'urgent','event_type'=>'object.state_changed']),'physical_context.alert','urgent event mapping');
 v271_same(tracky_agent_cognitive_event_type_v271(['severity'=>'system-health','event_type'=>'camera.health_changed']),'physical_context.health_changed','health event mapping');
@@ -71,5 +82,11 @@ $why=tracky_agent_answer_v271([
     'evidence'=>['event_type'=>'object.moved','occurred_at'=>'2026-09-26 15:00:00'],
 ],'why');
 v271_expect(str_contains($why,'Raw perception evidence is not copied'),'explanation omitted privacy boundary');
+
+$staleWhere=tracky_agent_answer_v271(['kind'=>'where','matches'=>[[
+    'entity'=>'Keys','predicate'=>'located_in','location'=>'Office','confidence'=>0.88,
+    'temporal_state'=>'current','as_of'=>'2026-09-26 15:00:00','freshness'=>['state'=>'stale','live'=>false],
+]]],'where');
+v271_expect(str_contains($staleWhere,'last known'),'stale physical state was worded as live current state');
 
 echo "TRACKY_V271_AGENT_BRAIN_UNIT=PASS\n";
