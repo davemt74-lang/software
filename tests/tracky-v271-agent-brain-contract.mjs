@@ -17,6 +17,11 @@ assert.match(agent,/VP3_TRACKY_AGENT_CONTRACT_V271='physical-context-agent-v1'/)
 assert.match(agent,/function tracky_agent_tools_query_v271/);
 assert.match(agent,/function tracky_agent_context_items_v271/);
 assert.match(agent,/function tracky_agent_register_cognitive_v271/);
+assert.match(agent,/function tracky_agent_freshness_v271/);
+assert.match(agent,/VP3_TRACKY_AGENT_CURRENT_SECONDS_V271=300/);
+assert.match(agent,/api key\|secret key\|access token/);
+assert.match(agent,/'relation'=>'location_of'/);
+assert.match(agent,/\?\'has_location\':\$predicate/);
 assert.match(agent,/function tracky_agent_on_sync_v271/);
 assert.match(agent,/module'=>'physical_context'/);
 for(const id of ['tracky.current_context','tracky.where_is','tracky.who_is_present','tracky.last_seen','tracky.what_changed','tracky.confidence','tracky.why','tracky.health']){
@@ -37,6 +42,7 @@ assert.match(context,/'physical_context'/);
 assert.match(context,/tracky_agent_context_items_v271/);
 assert.match(context,/'physical_context'=>'tracky_cloud_physical_context_v271_projection'/);
 assert.match(context,/'raw_physical_perception_copied'=>false/);
+assert.match(agent,/'freshness'=>\$current\['freshness'\]/);
 
 assert.match(domains,/\$domains\['physical_context'\]=tracky_agent_domain_contract_v271\(\)/);
 assert.match(domains,/tracky_agent_register_cognitive_v271\(\)/);
