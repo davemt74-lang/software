@@ -10,7 +10,7 @@ function homeserver_execution_v220_execute(int $userId,string $operation,array $
     return [
       'version'=>'2.4',
       'mode'=>'native_authority_mirrored_continuity',
-      'datasets'=>['memory','knowledge','contacts','tasks','notifications','profile_context'],
+      'datasets'=>['memory','knowledge','contacts','tasks','calendar','notifications','profile_context'],
       'rules'=>[
         'native_source_remains_authoritative'=>true,
         'remote_records_are_mirrors'=>true,
