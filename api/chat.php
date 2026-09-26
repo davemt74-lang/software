@@ -203,6 +203,9 @@ try {
                 ? release_v105_chat_tool($query, $user, $conversationId)
                 : ['handled'=>false,'answer'=>'','stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[]];
         }
+        if (empty($toolResult['handled']) && function_exists('tracky_agent_tools_query_v271')) {
+            $toolResult = tracky_agent_tools_query_v271($query, $user, $conversationId);
+        }
         if (empty($toolResult['handled']) && function_exists('homeserver_agent_read_v230_query')) {
             $toolResult = homeserver_agent_read_v230_query($query, $user, $conversationId);
         }

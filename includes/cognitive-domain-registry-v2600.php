@@ -207,6 +207,7 @@ function vp3_cognitive_domain_declarations_v2600(): array
         ];
     }
     $domains['campaigns_rewards']=vp3_cognitive_campaigns_rewards_contract_v2600();
+    if(function_exists('tracky_agent_domain_contract_v271'))$domains['physical_context']=tracky_agent_domain_contract_v271();
     ksort($domains);
     return $domains;
 }

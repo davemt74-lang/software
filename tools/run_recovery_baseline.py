@@ -182,6 +182,7 @@ PHP_TESTS = [
     'tests/homeserver-scope-v026.php',
     'tests/homeserver-acceptance-v027.php',
     'tests/tracky-v270-cloud-unit.php',
+    'tests/tracky-v271-agent-brain-unit.php',
     'tests/cognitive-optimization-v2510.php',
     'tests/cognitive-resource-budget-v2520.php',
     'tests/cognitive-replanning-v2530.php',

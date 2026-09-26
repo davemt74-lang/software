@@ -444,7 +444,7 @@ function tracky_cloud_v270_ingest(PDO $pdo,int $userId,string $deviceId,array $p
     $lastSequence=(int)($existing['last_sequence']??0);
     $maxSequence=$lastSequence;
     $inserted=0;$duplicates=0;$projected=0;$fresh=0;
-    $latestEventAt=null;
+    $latestEventAt=null;$acceptedForCognition=[];
 
     $pdo->beginTransaction();
     try{
@@ -485,6 +485,7 @@ function tracky_cloud_v270_ingest(PDO $pdo,int $userId,string $deviceId,array $p
             $stmt->execute([$userId,$siteId,$eventId,$sequence,$type,$severity,$confidence,$privacy,$occurredSql,$isFresh,$canProject,$json]);
             if($stmt->rowCount()===1){
                 $inserted++;if($isFresh)$fresh++;if($canProject)$projected++;
+                $acceptedForCognition[]=$event;
             }else{
                 $existingEvent=$pdo->prepare('SELECT sequence_no,event_json FROM tracky_cloud_events WHERE user_id=? AND site_id=? AND event_id=? LIMIT 1');
                 $existingEvent->execute([$userId,$siteId,$eventId]);$existingRow=$existingEvent->fetch();
@@ -542,6 +543,11 @@ function tracky_cloud_v270_ingest(PDO $pdo,int $userId,string $deviceId,array $p
         $update->execute([$maxSequence,$cursor,$latestEventAt,$userId,$siteId]);
         $pdo->commit();
     }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();throw $e;}
+
+    if($acceptedForCognition&&function_exists('tracky_agent_on_sync_v271')){
+        try{tracky_agent_on_sync_v271($pdo,$userId,$siteId,$acceptedForCognition);}
+        catch(Throwable $e){error_log('Tracky V2.71 cognitive event projection failed: '.$e->getMessage());}
+    }
 
     return [
         'ok'=>true,

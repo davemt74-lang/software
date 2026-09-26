@@ -187,6 +187,14 @@ function agent_brain_tools(array $user): array
         $tools[] = ['key'=>'team_chat','label'=>'Online Team Chat','description'=>'Message online managers, producers and supervisors.','kind'=>'communication','url'=>url('/chat.php')];
     }
 
+    if(function_exists('tracky_agent_tool_catalog_entry_v271')){
+        $pdo=db();
+        if($pdo){
+            $tracky=tracky_agent_tool_catalog_entry_v271($pdo,$user);
+            if($tracky)$tools[]=$tracky;
+        }
+    }
+
     return $tools;
 }
 
