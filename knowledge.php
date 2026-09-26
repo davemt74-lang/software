@@ -19,6 +19,10 @@ $homeServerKnowledge = function_exists('homeserver_knowledge_v242_homeserver_ite
     ? homeserver_knowledge_v242_homeserver_items($uid,'',50)
     : [];
 $homeServerKnowledgeCount=count($homeServerKnowledge);
+$homeServerFiles = function_exists('homeserver_files_v244_homeserver_items')
+    ? homeserver_files_v244_homeserver_items($uid,'',50)
+    : [];
+$homeServerFileCount=count($homeServerFiles);
 $notice = flash('knowledge_notice');
 $error = flash('knowledge_error');
 $editId = $canManage ? max(0, (int)($_GET['edit'] ?? 0)) : 0;
@@ -297,7 +301,8 @@ require __DIR__.'/includes/member-header.php';
             <div class="personal-knowledge-stat"><strong><?= count($folders) ?></strong><span>Folders</span></div>
             <div class="personal-knowledge-stat"><strong><?= $recentCount ?></strong><span>Updated 7d</span></div>
             <div class="personal-knowledge-stat"><strong><?= $totalChunks ?></strong><span>Agent chunks</span></div>
-            <div class="personal-knowledge-stat"><strong><?= $homeServerKnowledgeCount ?></strong><span>HomeServer</span></div>
+            <div class="personal-knowledge-stat"><strong><?= $homeServerKnowledgeCount ?></strong><span>HomeServer Knowledge</span></div>
+            <div class="personal-knowledge-stat"><strong><?= $homeServerFileCount ?></strong><span>HomeServer Files</span></div>
         </div>
     </div>
 
@@ -396,7 +401,31 @@ require __DIR__.'/includes/member-header.php';
         </div>
     </section>
 
-    <div class="personal-knowledge-privacy"><strong>Storage boundary:</strong> Cloud Personal Knowledge and HomeServer Local Knowledge appear in one workspace, but their native records remain in their authoritative stores. HomeServer filesystem paths are never copied into the Cloud database. Shared folders store only their owner-scoped folder identifier.</div>
+    <section class="personal-knowledge-panel homeserver-knowledge-panel" id="homeserver-files">
+        <div class="personal-knowledge-panel-head">
+            <div><h2>HomeServer Files</h2><p><?= $homeServerFileCount ?> tracked file<?= $homeServerFileCount===1?'':'s' ?> · file bytes and filesystem paths stay on HomeServer</p></div>
+            <a href="<?= e(url('/chat.php')) ?>">Ask Agent</a>
+        </div>
+        <div class="personal-knowledge-list">
+            <?php foreach($homeServerFiles as $item):$editable=!empty($item['editable_text']); ?>
+            <article class="personal-knowledge-row" data-file-authority="homeserver" data-file-canonical="<?= e((string)($item['canonical_id']??'')) ?>" data-file-revision="<?= e((string)($item['record_revision']??'')) ?>" data-file-ref="<?= e((string)($item['opaque_ref']??'')) ?>">
+                <div class="personal-knowledge-copy">
+                    <div class="personal-knowledge-titleline"><h3><?= e((string)($item['name']??'HomeServer file')) ?></h3><span class="source homeserver">HomeServer</span><span class="source kind"><?= e(strtoupper((string)($item['file_type']??'file'))) ?></span></div>
+                    <p><?= e((string)($item['source_label']??'HomeServer local file')) ?></p>
+                    <div class="personal-knowledge-meta">
+                        <span><?= e((string)($item['folder_name']??'General')) ?></span>
+                        <span><?= number_format(max(0,(int)($item['size_bytes']??0))) ?> bytes</span>
+                        <?php if(!empty($item['updated_at'])):?><span>Updated <?= e(date('M j',strtotime((string)$item['updated_at']))) ?></span><?php endif;?>
+                    </div>
+                </div>
+                <div class="personal-knowledge-actions"><span><?= $editable?'Update/delete · local owner approval required':'Delete · local owner approval required' ?></span></div>
+            </article>
+            <?php endforeach;?>
+            <?php if(!$homeServerFiles):?><div class="personal-knowledge-empty">No tracked HomeServer files are available right now. Cloud documents remain available above.</div><?php endif;?>
+        </div>
+    </section>
+
+    <div class="personal-knowledge-privacy"><strong>Storage boundary:</strong> Cloud Personal Knowledge/documents and HomeServer Knowledge/files appear in one workspace, but native records remain in their authoritative stores. HomeServer filesystem paths and file bytes are never copied into the Cloud database. Shared Agent file context carries privacy-safe metadata only; file content is read explicitly through HomeServer when needed. Shared folders store only their owner-scoped folder identifier.</div>
 </div></section>
 </main></div>
 <?php if($canManage):?><form id="knowledge-drag-form" method="post" hidden><?= csrf_field() ?><input type="hidden" name="action" value="bulk_move"><input type="hidden" name="folder_id" value="0"></form><?php endif;?>
