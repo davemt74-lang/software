@@ -11,6 +11,7 @@ const setup=read('setup.php');
 const upgrade=read('upgrade.php');
 const schema=read('includes/subscription-schema.php');
 const docs=read('docs/TRACKY_V270_CLOUD_FOUNDATION.md');
+const productionPackage=read('.github/workflows/production-deploy-package.yml');
 
 assert.match(registry,/'tracky'\s*=>\s*\[/);
 assert.match(registry,/'entitlement'=>'tracky\.access'/);
@@ -49,5 +50,8 @@ assert.match(upgrade,/tracky_cloud_v270_schema_ready\(\)/);
 assert.match(upgrade,/tracky_cloud_v270_ensure_schema\(\$pdo\)/);
 assert.match(docs,/idempotent/i);
 assert.match(docs,/second Agent Brain/i);
+assert.match(productionPackage,/test -f _deploy\/includes\/tracky-cloud-v270\.php/);
+assert.match(productionPackage,/test -f _deploy\/api\/tracky-sync-v270\.php/);
+assert.match(productionPackage,/test -f _deploy\/tracky\.php/);
 
 console.log('TRACKY_V270_CLOUD_CONTRACT=PASS');
