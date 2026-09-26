@@ -15,6 +15,10 @@ $canManage = personal_capability_has_v242('personal_knowledge.manage', $user);
 if (!personal_capability_schema_ready_v242($pdo)) redirect(url('/upgrade.php'));
 
 $uid = (int)$user['id'];
+$homeServerKnowledge = function_exists('homeserver_knowledge_v242_homeserver_items')
+    ? homeserver_knowledge_v242_homeserver_items($uid,'',50)
+    : [];
+$homeServerKnowledgeCount=count($homeServerKnowledge);
 $notice = flash('knowledge_notice');
 $error = flash('knowledge_error');
 $editId = $canManage ? max(0, (int)($_GET['edit'] ?? 0)) : 0;
@@ -293,6 +297,7 @@ require __DIR__.'/includes/member-header.php';
             <div class="personal-knowledge-stat"><strong><?= count($folders) ?></strong><span>Folders</span></div>
             <div class="personal-knowledge-stat"><strong><?= $recentCount ?></strong><span>Updated 7d</span></div>
             <div class="personal-knowledge-stat"><strong><?= $totalChunks ?></strong><span>Agent chunks</span></div>
+            <div class="personal-knowledge-stat"><strong><?= $homeServerKnowledgeCount ?></strong><span>HomeServer</span></div>
         </div>
     </div>
 
@@ -370,7 +375,28 @@ require __DIR__.'/includes/member-header.php';
         </aside>
     </div>
 
-    <div class="personal-knowledge-privacy"><strong>Storage boundary:</strong> every item shown above is a private VP3 Cloud Knowledge record. HomeServer Local Knowledge remains a separate local source; native filesystem paths stay HomeServer-authoritative and are never copied into this Cloud library. Shared folders store only their owner-scoped folder identifier.</div>
+    <section class="personal-knowledge-panel homeserver-knowledge-panel" id="homeserver-knowledge">
+        <div class="personal-knowledge-panel-head">
+            <div><h2>HomeServer Knowledge</h2><p><?= $homeServerKnowledgeCount ?> local item<?= $homeServerKnowledgeCount===1?'':'s' ?> · native authority stays on HomeServer</p></div>
+            <a href="<?= e(url('/chat.php')) ?>">Ask Agent</a>
+        </div>
+        <div class="personal-knowledge-list">
+            <?php foreach($homeServerKnowledge as $item):$mutable=!empty($item['allowed_mutations'])&&empty($item['read_only']); ?>
+            <article class="personal-knowledge-row" data-knowledge-authority="homeserver" data-knowledge-canonical="<?= e((string)($item['canonical_id']??'')) ?>">
+                <div class="personal-knowledge-copy">
+                    <div class="personal-knowledge-titleline"><h3><?= e((string)$item['title']) ?></h3><span class="source homeserver">HomeServer</span><span class="source kind"><?= e((string)$item['kind']) ?></span></div>
+                    <p><?= e((string)($item['excerpt']??'')) ?></p>
+                    <div class="personal-knowledge-meta"><span><?= e((string)($item['collection_key']??'general')) ?></span><span><?= e(str_replace('_',' ',(string)($item['source_type']??'local_item'))) ?></span><?php if(!empty($item['updated_at'])):?><span>Updated <?= e(date('M j',strtotime((string)$item['updated_at']))) ?></span><?php endif;?></div>
+                    <?php if(is_array($item['citation']??null)&&!empty($item['citation']['label'])):?><small><?= e((string)$item['citation']['label']) ?></small><?php endif;?>
+                </div>
+                <div class="personal-knowledge-actions"><span><?= $mutable?'Governed edits · approval required':'Source-managed · read only' ?></span></div>
+            </article>
+            <?php endforeach;?>
+            <?php if(!$homeServerKnowledge):?><div class="personal-knowledge-empty">No HomeServer Knowledge is available right now. Cloud Personal Knowledge remains available above.</div><?php endif;?>
+        </div>
+    </section>
+
+    <div class="personal-knowledge-privacy"><strong>Storage boundary:</strong> Cloud Personal Knowledge and HomeServer Local Knowledge appear in one workspace, but their native records remain in their authoritative stores. HomeServer filesystem paths are never copied into the Cloud database. Shared folders store only their owner-scoped folder identifier.</div>
 </div></section>
 </main></div>
 <?php if($canManage):?><form id="knowledge-drag-form" method="post" hidden><?= csrf_field() ?><input type="hidden" name="action" value="bulk_move"><input type="hidden" name="folder_id" value="0"></form><?php endif;?>

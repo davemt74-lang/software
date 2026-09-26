@@ -9,7 +9,7 @@ function homeserver_approvals_v028_permissions(): array
     return [
         'agent.chat','approvals.review','awareness.read','commerce.read','commerce.order','commerce.fulfill','contacts.read','contacts.write',
         'devices.read','devices.control','events.read','events.write','files.read','files.write',
-        'knowledge.search','memory.read','memory.write','notifications.read','plugins.read',
+        'knowledge.search','knowledge.write','memory.read','memory.write','notifications.read','plugins.read',
         'scheduling.read','scheduling.write','tasks.read','tasks.write','tools.execute','usage.read','usage.write',
     ];
 }

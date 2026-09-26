@@ -61,16 +61,22 @@ jobs:
           php -l includes/homeserver-acceptance-v236.php
           php -l includes/homeserver-federated-data-v240.php
           php -l includes/homeserver-contacts-v241.php
+          php -l includes/homeserver-knowledge-v242.php
+          php -l includes/knowledge-retrieval-v162.php
           php -l api/homeserver-governed-actions-v233.php
           php -l api/homeserver-voice-v234.php
           php -l api/agent-voice-v117.php
           php -l api/profile-agent.php
           php -l api/homeserver-acceptance-v236.php
           php -l api/homeserver-contacts-v241.php
+          php -l api/homeserver-knowledge-v242.php
           php -l tests/homeserver-v235-voice-profile-unit.php
           php -l tests/homeserver-v236-release-acceptance-unit.php
           php -l tests/homeserver-v240-federated-data-unit.php
           php -l tests/homeserver-v241-contacts-continuity-unit.php
+          php -l tests/homeserver-v242-knowledge-continuity-unit.php
+          php -l tests/knowledge-agent-context-v162-contract.php
+          php -l tests/knowledge-agent-context-v162-security-contract.php
           php -l tests/homeserver-v233-governed-actions-unit.php
           php -l tests/homeserver-v232-compute-unit.php
           php -l tests/homeserver-v231-local-reads-unit.php
@@ -99,6 +105,7 @@ jobs:
           node --check tests/homeserver-v236-release-acceptance-contract.mjs
           node --check tests/homeserver-v240-federated-data-contract.mjs
           node --check tests/homeserver-v241-contacts-continuity-contract.mjs
+          node --check tests/homeserver-v242-knowledge-continuity-contract.mjs
           node --check tests/homeserver-v230-read-execution-contract.mjs
           node --check tests/homeserver-v230-agent-compute-contract.mjs
 
@@ -127,6 +134,10 @@ jobs:
           php tests/homeserver-v240-federated-data-unit.php
           node tests/homeserver-v241-contacts-continuity-contract.mjs
           php tests/homeserver-v241-contacts-continuity-unit.php
+          node tests/homeserver-v242-knowledge-continuity-contract.mjs
+          php tests/homeserver-v242-knowledge-continuity-unit.php
+          php tests/knowledge-agent-context-v162-contract.php
+          php tests/knowledge-agent-context-v162-security-contract.php
           node tests/homeserver-v230-read-execution-contract.mjs
           php tests/homeserver-v230-read-execution-unit.php
           node tests/homeserver-v230-agent-compute-contract.mjs
