@@ -1,0 +1,97 @@
+name: Package VP3 Cloud v2.4 Section 5 Production
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build production-only deploy tree
+        shell: bash
+        env:
+          VP3_RELEASE_SHA: d9fb3bf386ae4135d22959b957f10f571dcc7277
+        run: |
+          set -euo pipefail
+
+          rm -rf _deploy
+          mkdir _deploy
+
+          rsync -a ./ _deploy/ \
+            --exclude='.git/' \
+            --exclude='.github/' \
+            --exclude='.gitignore' \
+            --exclude='config.php' \
+            --exclude='.env' \
+            --exclude='.env.*' \
+            --exclude='private/' \
+            --exclude='uploads/' \
+            --exclude='tests/' \
+            --exclude='tools/' \
+            --exclude='_deploy/' \
+            --exclude='*.md' \
+            --exclude='*.zip'
+
+          cat > _deploy/VP3_RELEASE.json <<EOF
+          {
+            "release": "VP3 Cloud HomeServer v2.4 Section 5",
+            "build": "vp3-cloud-v2.4-section5-${VP3_RELEASE_SHA:0:12}",
+            "commit": "${VP3_RELEASE_SHA}",
+            "repository": "${GITHUB_REPOSITORY}",
+            "packaging_pr_head": "${GITHUB_SHA}",
+            "preserve_runtime_paths": ["config.php", ".env", "private/", "uploads/"],
+            "section": "Files & Document Continuity"
+          }
+          EOF
+
+          python3 -m json.tool _deploy/VP3_RELEASE.json >/dev/null
+
+          test -f _deploy/chat.php
+          test -f _deploy/.htaccess
+          test -f _deploy/upgrade.php
+          test -f _deploy/knowledge.php
+          test -f _deploy/api/homeserver-files-v244.php
+          test -f _deploy/includes/bootstrap.php
+          test -f _deploy/includes/homeserver-federated-data-v240.php
+          test -f _deploy/includes/homeserver-files-v244.php
+          test -f _deploy/includes/homeserver-shared-agent-v210.php
+          test -f _deploy/includes/homeserver-governed-actions-v233.php
+          test -f _deploy/includes/homeserver-local-execution-v230.php
+          test -f _deploy/includes/profile-agent.php
+          test -f _deploy/includes/user-agent-system-v236.php
+
+          test ! -e _deploy/config.php
+          test ! -e _deploy/private
+          test ! -e _deploy/uploads
+          if find _deploy -maxdepth 1 -type f -name '.env*' | grep -q .; then
+            echo 'Runtime environment files leaked into deploy package.' >&2
+            exit 1
+          fi
+          if find _deploy -type f \( -path '*/tests/*' -o -path '*/tools/*' -o -path '*/.github/*' \) | grep -q .; then
+            echo 'Development-only files leaked into deploy package.' >&2
+            exit 1
+          fi
+
+          grep -Fq "homeserver_file_bytes_persisted" _deploy/includes/homeserver-files-v244.php
+          grep -Fq "absolute_homeserver_paths_persisted" _deploy/includes/homeserver-files-v244.php
+          grep -Fq "homeserver_files" _deploy/includes/user-agent-system-v236.php
+          grep -Fq "HomeServer Files" _deploy/knowledge.php
+
+          echo "Deploy file count: $(find _deploy -type f | wc -l)"
+          echo "Deploy size: $(du -sh _deploy | cut -f1)"
+
+      - name: Upload directly extractable production deploy
+        uses: actions/upload-artifact@v4
+        with:
+          name: vp3-cloud-v2.4-section5-production
+          path: _deploy/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 14
