@@ -17,6 +17,8 @@ const VP3_TRACKY_MAX_PAYLOAD_BYTES_V270=262144;
 const VP3_TRACKY_FRESH_EVENT_SECONDS_V270=300;
 const VP3_TRACKY_MAX_FUTURE_SKEW_SECONDS_V270=300;
 
+require_once __DIR__.'/tracky-agent-v271.php';
+
 function tracky_cloud_v270_schema_ready(?PDO $pdo=null): bool
 {
     $pdo??=db();
