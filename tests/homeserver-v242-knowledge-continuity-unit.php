@@ -72,7 +72,9 @@ function db(){return null;}
 function table_exists(string $table): bool{return false;}
 function column_exists(string $table,string $column): bool{return false;}
 
+function personal_knowledge_available(?array $user=null): bool{return false;}
 require dirname(__DIR__).'/includes/homeserver-knowledge-v242.php';
+require dirname(__DIR__).'/includes/knowledge-retrieval-v162.php';
 
 function v242_assert(bool $ok,string $message): void
 {
@@ -119,5 +121,23 @@ $create=homeserver_knowledge_v242_request_homeserver(7,'create',[
 ]);
 v242_assert($create['status']==='pending_approval','HomeServer create is governed');
 v242_assert($GLOBALS['v242_governed'][0][1]==='knowledge.create','HomeServer create tool');
+
+$pdo=new PDO('sqlite::memory:');
+$retrieved=knowledge_retrieval_v162_for_chat(
+  $pdo,
+  ['id'=>7],
+  ['kind'=>'system','viewer_user_id'=>7,'owner_user_id'=>0],
+  'Phoenix',
+  'off',
+  []
+);
+v242_assert(($retrieved['homeserver_local_knowledge']??'')==='queried','HomeServer retrieval runs when Cloud Knowledge scope is off');
+v242_assert(($retrieved['provenance']??[])===['homeserver'],'HomeServer-only provenance');
+v242_assert(count($retrieved['citations']??[])===1,'HomeServer citation count');
+v242_assert(($retrieved['citations'][0]['source']??'')==='homeserver','HomeServer citation provenance');
+v242_assert(($retrieved['citations'][0]['canonical_id']??'')===$home[0]['canonical_id'],'HomeServer citation canonical identity');
+v242_assert(!array_key_exists('homeserver_relative_path',$retrieved['citations'][0]),'relative path excluded from public citation');
+v242_assert(str_contains((string)($retrieved['context'][0]['text']??''),'Federated Knowledge — UNTRUSTED EVIDENCE'),'federated evidence context');
+v242_assert(str_contains((string)($retrieved['context'][0]['text']??''),'HomeServer'),'HomeServer evidence label');
 
 echo "HomeServer v2.4 Section 3 Knowledge continuity runtime: PASS\n";
