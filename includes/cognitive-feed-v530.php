@@ -145,6 +145,8 @@ function vp3_cognitive_feed_observation_candidates_v530(PDO $pdo,array $user,str
     ]);
     foreach(vp3_cognitive_recent_observations_v500($pdo,$user,$namespace,40) as $obs){
         if(!is_array($obs))continue;
+        if((string)($obs['source']??'')==='tracky'&&function_exists('tracky_v272_observation_now_allowed')
+            &&!tracky_v272_observation_now_allowed($pdo,$user,$obs))continue;
         $decision=vp3_cognitive_presentation_decide_v500($obs,$context);
         $surface=(string)($decision['surface']??'none');
         if(in_array($surface,['none','memory'],true))continue;
@@ -185,6 +187,11 @@ function vp3_cognitive_feed_observation_candidates_v530(PDO $pdo,array $user,str
             $candidate['planning_action_ids']=array_values(array_filter(array_map(
                 static fn($v)=>vp3_cognitive_id_v500($v,120),(array)($obs['proposed_action_ids']??[])
             )));
+            if((string)($obs['source']??'')==='tracky'&&function_exists('tracky_v272_observation_group_key')){
+                $trackyGroup=tracky_v272_observation_group_key($pdo,$user,$obs);
+                if($trackyGroup!=='')$candidate['group_key']=$trackyGroup;
+                $candidate['signals']=array_values(array_unique(array_merge((array)$candidate['signals'],['physical_context'])));
+            }
             $out[]=$candidate;
         }
     }

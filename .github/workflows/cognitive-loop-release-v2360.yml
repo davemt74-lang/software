@@ -9,9 +9,14 @@ on:
       - 'includes/cognitive-*.php'
       - 'includes/tracky-agent-v271.php'
       - 'includes/tracky-cloud-v270.php'
+      - 'includes/tracky-proactive-v272.php'
+      - 'tracky.php'
       - 'docs/TRACKY_V271_AGENT_BRAIN_INTEGRATION.md'
+      - 'docs/TRACKY_V272_CROSS_SURFACE_AWARENESS.md'
       - 'tests/tracky-v271-agent-brain-contract.mjs'
       - 'tests/tracky-v271-agent-brain-unit.php'
+      - 'tests/tracky-v272-cross-surface-contract.mjs'
+      - 'tests/tracky-v272-cross-surface-unit.php'
       - 'docs/VP3_COGNITIVE_DOMAIN_INTEGRATION_V2380.md'
       - 'docs/VP3_COGNITIVE_DOMAIN_INTEGRATION_V2390.md'
       - 'docs/VP3_COGNITIVE_MEMORY_PROMOTION_V2400.md'
@@ -184,7 +189,10 @@ jobs:
           php -l includes/cognitive-domain-registry-v2600.php
           php -l includes/tracky-cloud-v270.php
           php -l includes/tracky-agent-v271.php
+          php -l includes/tracky-proactive-v272.php
+          php -l tracky.php
           php -l tests/tracky-v271-agent-brain-unit.php
+          php -l tests/tracky-v272-cross-surface-unit.php
           php -l includes/cognitive-release-v2600.php
           php -l includes/cognitive-entity-graph-v2610.php
           php -l includes/cognitive-release-v2610.php
@@ -311,6 +319,10 @@ jobs:
         run: |
           php tests/tracky-v271-agent-brain-unit.php
           node tests/tracky-v271-agent-brain-contract.mjs
+      - name: Tracky V2.72 cross-surface awareness contract
+        run: |
+          php tests/tracky-v272-cross-surface-unit.php
+          node tests/tracky-v272-cross-surface-contract.mjs
       - name: v26.10 cross-domain entity graph
         run: |
           php tests/cognitive-entity-graph-v2610.php

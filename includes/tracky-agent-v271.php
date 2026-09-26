@@ -595,6 +595,9 @@ function tracky_agent_object_exists_v271(PDO $pdo,int $userId,array $ref): bool
     if($type==='physical_room'){
         $q=$pdo->prepare("SELECT 1 FROM tracky_cloud_world_state WHERE user_id=? AND (subject_id=? OR object_id=?) LIMIT 1");$q->execute([$userId,$id,$id]);return (bool)$q->fetchColumn();
     }
+    if($type==='physical_event'&&ctype_digit($id)){
+        $q=$pdo->prepare('SELECT 1 FROM tracky_cloud_events WHERE user_id=? AND id=? LIMIT 1');$q->execute([$userId,(int)$id]);return (bool)$q->fetchColumn();
+    }
     return false;
 }
 
@@ -629,6 +632,10 @@ function tracky_agent_cognitive_context_v271(PDO $pdo,array $user,string $agentN
           FROM tracky_cloud_world_state WHERE user_id=? AND object_id=? ORDER BY as_of DESC LIMIT 60");
         $q->execute([$uid,$id]);$rows=$q->fetchAll()?:[];
         return ['room_id'=>$id,'label'=>tracky_agent_entity_label_v271($id),'occupants_and_objects'=>$rows,'authority'=>'tracky_cloud_world_state','read_only'=>true];
+    }
+    if($type==='physical_event'&&ctype_digit($id)&&function_exists('tracky_v272_event_row_by_numeric_id')){
+        $row=tracky_v272_event_row_by_numeric_id($pdo,$uid,(int)$id);
+        return $row?['event'=>$row,'authority'=>'tracky_cloud_events','read_only'=>true,'raw_perception_exposed'=>false]:[];
     }
     return [];
 }
@@ -676,7 +683,9 @@ function tracky_agent_domain_contract_v271(): array
         'plugin_catalog_registered'=>true,
         'authority'=>['tracky_cloud_sites','tracky_cloud_events','tracky_cloud_world_state','tracky_cloud_context'],
         'planned_authority'=>[],
-        'objects'=>['physical_site','physical_entity','physical_room'],
+        'objects'=>function_exists('tracky_v272_card')
+            ?['physical_site','physical_entity','physical_room','physical_event']
+            :['physical_site','physical_entity','physical_room'],
         'related_objects'=>[],
         'events'=>['physical_context.changed','physical_context.health_changed','physical_context.alert'],
         'event_classes'=>[
@@ -704,15 +713,18 @@ function tracky_agent_register_cognitive_v271(): void
     if(!function_exists('vp3_cognitive_register_module_v500'))return;
     $registry=vp3_cognitive_registry_storage_v500();
     if(isset($registry['modules']['physical_context']))return;
+    $physicalObjects=['physical_site','physical_entity','physical_room'];
+    $physicalCards=[];
+    if(function_exists('tracky_v272_card')){$physicalObjects[]='physical_event';$physicalCards['physical_event']='tracky_v272_card';}
     vp3_cognitive_register_module_v500([
         'module'=>'physical_context',
-        'version'=>'tracky-v2.71',
-        'objects'=>['physical_site','physical_entity','physical_room'],
+        'version'=>function_exists('tracky_v272_card')?'tracky-v2.72':'tracky-v2.71',
+        'objects'=>$physicalObjects,
         'events'=>['physical_context.changed','physical_context.health_changed','physical_context.alert'],
         'permission_resolver'=>'tracky_agent_cognitive_permission_v271',
         'context_provider'=>'tracky_agent_cognitive_context_v271',
         'relationship_provider'=>'tracky_agent_cognitive_relationships_v271',
-        'cards'=>[],
+        'cards'=>$physicalCards,
         'tools'=>[
             'tracky.current_context'=>['label'=>'Read current physical context','kind'=>'read','risk'=>'low','requires_approval'=>false],
             'tracky.where_is'=>['label'=>'Find an entity in current physical state','kind'=>'read','risk'=>'low','requires_approval'=>false],
@@ -770,3 +782,5 @@ function tracky_agent_on_sync_v271(PDO $pdo,int $userId,string $siteId,array $ev
         );
     }
 }
+
+require_once __DIR__.'/tracky-proactive-v272.php';

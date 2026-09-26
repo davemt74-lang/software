@@ -257,6 +257,9 @@ function vp3_cognitive_presentation_voice_sensitive_v510(array $row): bool
 function vp3_cognitive_presentation_voice_allowed_type_v510(array $row): bool
 {
     if(vp3_cognitive_presentation_voice_sensitive_v510($row))return false;
+    if(strtolower(trim((string)($row['source_type']??'')))==='tracky_event'&&function_exists('tracky_v272_notification_voice_allowed')){
+        return tracky_v272_notification_voice_allowed($row);
+    }
     if(function_exists('notification_requires_attention')&&notification_requires_attention($row))return true;
     $type=strtolower(trim((string)($row['type']??'')));$source=strtolower(trim((string)($row['source_type']??'')));
     if($source==='profile_event'&&str_starts_with($type,'profile_'))return true;
