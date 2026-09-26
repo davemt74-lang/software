@@ -68,7 +68,7 @@ const checks=[
  ['reconnect event precedes full reconcile and continuity-restored notification',
   statusBlock.indexOf("HomeServer reconnected — reconciling") >= 0 &&
   statusBlock.indexOf("HomeServer reconnected — reconciling") < statusBlock.indexOf('homeserver_shared_v210_reconcile_full($userId)') &&
-  shared.indexOf('homeserver_shared_v210_reconcile_full($userId)') < shared.indexOf('HomeServer continuity restored')],
+  statusBlock.indexOf('homeserver_shared_v210_reconcile_full($userId)') < statusBlock.indexOf('HomeServer continuity restored')],
  ['Agent Brain receives reconciliation currentness without raw error text',
   /homeserver:reconciliation/.test(brain) &&
   /HomeServer-backed context should be treated as stale/.test(brain) &&
