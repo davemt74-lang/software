@@ -579,6 +579,27 @@ function homeserver_shared_v210_reconcile_status(int $userId,array $status): arr
               'reconciliation_required'=>!empty($reconciliation['needs_reconciliation']),
             ]);
         }
+        if($state==='connected'&&!empty($reconciliation['needs_reconciliation'])){
+            try{
+                homeserver_shared_v210_reconcile_full($userId);
+                if(function_exists('homeserver_reconciliation_v246_state')){
+                    $reconciliation=homeserver_reconciliation_v246_state($userId);
+                }
+            }catch(Throwable $reconcileError){
+                if(function_exists('homeserver_reconciliation_v246_mark_required')){
+                    $reconciliation=homeserver_reconciliation_v246_mark_required(
+                      $userId,$reconcileError->getMessage()
+                    );
+                }
+                if(function_exists('vp3_cognitive_homeserver_event_v2390')){
+                    vp3_cognitive_homeserver_event_v2390(
+                      $pdo,$userId,'homeserver.reconciliation_failed','connection_error',
+                      ['priority'=>'critical','failure_class'=>'reconciliation']
+                    );
+                }
+            }
+        }
+
         if(function_exists('create_notification')){
             if($state==='connected'){
                 create_notification(
