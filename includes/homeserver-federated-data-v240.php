@@ -14,7 +14,7 @@ const VP3_HOMESERVER_FEDERATED_DATA_VERSION='2.4';
 
 function homeserver_federated_v240_datasets(): array
 {
-    return ['memory','knowledge','contacts','tasks','calendar','notifications','profile_context'];
+    return ['memory','knowledge','contacts','tasks','calendar','files','notifications','profile_context'];
 }
 
 function homeserver_federated_v240_sources(): array
