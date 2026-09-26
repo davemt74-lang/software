@@ -61,6 +61,8 @@ function homeserver_execution_v230_domain(string $operation,array $payload=[]): 
         if(str_starts_with($tool,'files.'))return 'files';
         if(str_starts_with($tool,'knowledge.'))return 'knowledge';
         if(str_starts_with($tool,'contacts.'))return 'contacts';
+        if(str_starts_with($tool,'tasks.'))return 'tasks';
+        if(str_starts_with($tool,'calendar.'))return 'calendar';
         return 'tools';
     }
     if($op==='tools.list'||$op==='skills.list'||$op==='capability.registry')return 'tools';
@@ -80,7 +82,7 @@ function homeserver_execution_v230_policy(string $operation,array $payload=[]): 
     $writeOrPhysical=in_array($op,['memory.write','tasks.create','files.update','files.delete','action.approve','action.deny'],true);
     if($op==='tool.execute'){
         $tool=strtolower(trim((string)($payload['tool_key']??'')));
-        $fallbackAllowed=in_array($tool,['contacts.search','files.list','files.read','knowledge.search','memory.list','tasks.list','notifications.list','devices.list'],true);
+        $fallbackAllowed=in_array($tool,['contacts.search','files.list','files.read','knowledge.search','memory.list','tasks.list','calendar.list','notifications.list','devices.list'],true);
         $writeOrPhysical=!$fallbackAllowed;
     }
     return [
