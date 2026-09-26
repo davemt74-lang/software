@@ -97,7 +97,7 @@ function vp3_upgrade_complete(): bool
         && personal_capability_seeded_v242()
         && personal_capability_schema_ready_v242()
         && vp3_plugin_schema_ready_v320()
-        && tracky_cloud_v270_schema_ready($pdo)
+        && tracky_cloud_v270_schema_ready()
         && vp3_plugin_lifecycle_v360_ready()
         && vp3_connected_sites_schema_ready_v100()
         && campaigns_rewards_schema_ready_v100()
@@ -224,6 +224,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             permission_v105_seed_playlist_permission();
             personal_capability_seed_v242();
             vp3_plugin_ensure_schema_v320();
+            tracky_cloud_v270_ensure_schema($pdo);
             vp3_connected_sites_ensure_schema_v100($pdo);
             campaigns_rewards_ensure_schema_v100();
             vp3_social_ensure_schema_v320();
