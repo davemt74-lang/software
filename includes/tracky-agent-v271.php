@@ -346,16 +346,15 @@ function tracky_agent_health_v271(PDO $pdo,array $user): array
 
 function tracky_agent_current_v271(PDO $pdo,array $user,array $site): array
 {
+    $context=tracky_cloud_v270_current_context($pdo,(int)$user['id'],(string)$site['site_id']);
+    $observed=(string)($context['observed_at']??$context['updated_at']??'');
     return [
         'kind'=>'current',
         'site_id'=>(string)$site['site_id'],
         'site_label'=>(string)($site['label']?:$site['site_id']),
         'status'=>(string)$site['status'],
-        'context'=>tracky_cloud_v270_current_context($pdo,(int)$user['id'],(string)$site['site_id']),
-        'freshness'=>tracky_agent_freshness_v271(
-            (string)(tracky_cloud_v270_current_context($pdo,(int)$user['id'],(string)$site['site_id'])['observed_at']??tracky_cloud_v270_current_context($pdo,(int)$user['id'],(string)$site['site_id'])['updated_at']??''),
-            $site
-        ),
+        'context'=>$context,
+        'freshness'=>tracky_agent_freshness_v271($observed,$site),
     ];
 }
 
@@ -554,18 +553,19 @@ function tracky_agent_context_items_v271(PDO $pdo,array $user,string $namespace,
         $safe=[
             'site_id'=>(string)$site['site_id'],'site_label'=>(string)($site['label']?:$site['site_id']),
             'status'=>(string)$site['status'],'current'=>$current['context']??[],
+            'freshness'=>$current['freshness']??['state'=>'stale','live'=>false],
             'query_intent'=>tracky_agent_intent_v271($query),
         ];
         $json=json_encode($safe,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
         if(function_exists('vp3_cognitive_context_item_v2420')){
             $item=vp3_cognitive_context_item_v2420(
-                'physical_context','tracky:physical-context','Current physical context',
+                'physical_context','tracky:physical-context','Physical context',
                 'Governed Tracky physical context: '.(is_string($json)?$json:'{}'),97.0,
                 ['direct'=>true,'read_only'=>true,'protocol'=>VP3_TRACKY_PROTOCOL_V270,'raw_perception_exposed'=>false]
             );
             if($item)$out[]=$item;
         }else{
-            $out[]=['source'=>'tracky:physical-context','title'=>'Current physical context','text'=>(string)$json,'section'=>'physical_context','score'=>97.0];
+            $out[]=['source'=>'tracky:physical-context','title'=>'Physical context','text'=>(string)$json,'section'=>'physical_context','score'=>97.0];
         }
     }
     if($alerts){
