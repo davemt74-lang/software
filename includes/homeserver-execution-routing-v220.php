@@ -62,6 +62,7 @@ function homeserver_execution_v220_projection(int $userId): array
         'local_tools'=>!empty($caps['action_policy'])?'homeserver':'unavailable',
         'local_voice'=>!empty($caps['local_voice'])?'homeserver':'unavailable',
         'devices'=>!empty($caps['vp3_os_room_device_automation'])?'homeserver':'unavailable',
+        'physical_context'=>!empty($caps['tracky_physical_context'])?'homeserver':'unavailable',
       ],
       'inference'=>$inference,
       'files'=>$files,
