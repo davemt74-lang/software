@@ -26,6 +26,7 @@ function tracky_v272_settings_defaults(): array
         'voice_enabled'=>false,
         'automation_enabled'=>true,
         'cross_plugin_access'=>false,
+        'cross_plugin_plugins'=>[],
         'now_classes'=>['object','environment','routine','health','safety'],
         'chat_classes'=>['health','safety'],
         'voice_classes'=>['health','safety'],
@@ -46,6 +47,12 @@ function tracky_v272_settings_normalize(array $input): array
         $out[$key]=array_values(array_unique(array_intersect($allowed,array_map(
             static fn($v)=>strtolower(trim((string)$v)),$values
         ))));
+    }
+    if(array_key_exists('cross_plugin_plugins',$input)){
+        $plugins=is_array($input['cross_plugin_plugins'])?$input['cross_plugin_plugins']:[];
+        $out['cross_plugin_plugins']=array_values(array_unique(array_filter(array_map(
+            static fn($v)=>strtolower(trim((string)$v)),$plugins
+        ),static fn($v)=>$v!=='tracky'&&(bool)preg_match('/^[a-z0-9_]{2,80}$/',$v))));
     }
     return $out;
 }
@@ -68,6 +75,11 @@ function tracky_v272_settings_save(PDO $pdo,array $user,array $input): array
     if(!vp3_plugin_schema_ready_v320($pdo))vp3_plugin_ensure_schema_v320($pdo);
     if(!vp3_plugin_installation_v320($pdo,$uid,'tracky'))vp3_plugin_set_enabled_v320($pdo,$uid,'tracky',true);
     $settings=tracky_v272_settings_normalize($input);
+    $settings['cross_plugin_plugins']=array_values(array_filter((array)$settings['cross_plugin_plugins'],static function($plugin) use($pdo,$user): bool {
+        return vp3_plugin_valid_v320((string)$plugin)
+            &&function_exists('vp3_plugin_effective_enabled_v360')
+            &&vp3_plugin_effective_enabled_v360($pdo,$user,(string)$plugin);
+    }));
     $json=json_encode($settings,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
     if(!is_string($json))throw new RuntimeException('Tracky surface settings could not be encoded.');
     $stmt=$pdo->prepare("UPDATE user_plugin_installations SET settings_json=?,updated_at=UTC_TIMESTAMP() WHERE user_id=? AND plugin_key='tracky'");
@@ -273,7 +285,7 @@ function tracky_v272_observation_now_allowed(PDO $pdo,array $user,array $observa
 function tracky_v272_observation_group_key(PDO $pdo,array $user,array $observation): string
 {
     $row=tracky_v272_observation_event_row($pdo,$user,$observation);if(!$row)return '';
-    return 'tracky:'.(string)$row['site_id'].':'.tracky_v272_event_class((string)$row['event_type']);
+    return 'tracky:'.tracky_v272_event_class((string)$row['event_type']).':'.substr(hash('sha256',tracky_v272_alert_group($row)),0,20);
 }
 
 function tracky_v272_observation_id(string $siteId,string $eventId): string
@@ -339,7 +351,7 @@ function tracky_v272_notification_type(array $row): string
     return tracky_v272_event_score($row)['attention']?'tracky_needs_attention':'tracky_update';
 }
 
-function tracky_v272_create_attention_notification(PDO $pdo,array $user,array $row,array $settings,array $decision): void
+function tracky_v272_create_attention_notification(PDO $pdo,array $user,string $namespace,array $row,array $settings,array $decision): void
 {
     $class=tracky_v272_event_class((string)$row['event_type']);
     $selected=(string)($decision['surface']??'');
@@ -352,6 +364,13 @@ function tracky_v272_create_attention_notification(PDO $pdo,array $user,array $r
     $body=tracky_v272_safe_summary($row).' · '.tracky_v272_site_label($pdo,(int)$user['id'],(string)$row['site_id']);
     $url='/tracky.php?site='.rawurlencode((string)$row['site_id']).'&event='.rawurlencode((string)$row['event_id']);
     create_notification((int)$user['id'],tracky_v272_notification_type($row),$title,$body,$url,'tracky_event',$eventDbId,(string)$row['occurred_at']);
+    if(table_exists('notifications')&&function_exists('vp3_cognitive_attention_mark_delivered_v2410')){
+        $check=$pdo->prepare("SELECT id FROM notifications WHERE user_id=? AND source_type='tracky_event' AND source_id=? ORDER BY id DESC LIMIT 1");
+        $check->execute([(int)$user['id'],$eventDbId]);
+        if((int)($check->fetchColumn()?:0)>0){
+            vp3_cognitive_attention_mark_delivered_v2410($pdo,$user,$namespace,'tracky:event:'.(string)$row['event_id']);
+        }
+    }
 }
 
 function tracky_v272_on_sync(PDO $pdo,int $userId,string $siteId,array $events): void
@@ -381,7 +400,7 @@ function tracky_v272_on_sync(PDO $pdo,int $userId,string $siteId,array $events):
                 ?vp3_cognitive_attention_arbitrate_v2410($pdo,$user,$namespace,$signal,$context)
                 :vp3_cognitive_presentation_decide_v500($observation,$context);
             if(function_exists('vp3_cognitive_presentation_record_v500'))vp3_cognitive_presentation_record_v500($pdo,$user,$namespace,$observation,$decision);
-            tracky_v272_create_attention_notification($pdo,$user,$row,$settings,$decision);
+            tracky_v272_create_attention_notification($pdo,$user,$namespace,$row,$settings,$decision);
         }catch(Throwable $e){
             error_log('Tracky V2.72 proactive projection failed: '.$e->getMessage());
         }
@@ -393,8 +412,10 @@ function tracky_v272_alert_group(array $row): string
     $event=is_array($row['event']??null)?$row['event']:[];
     $type=(string)($row['event_type']??'');$class=tracky_v272_event_class($type);
     $subject=is_array($event['subject']??null)?(string)($event['subject']['entity_id']??''):'';
+    $object=is_array($event['object']??null)?(string)($event['object']['entity_id']??''):'';
+    $room=(string)($event['room_id']??'');
     $prefix=str_contains($type,'.')?strstr($type,'.',true):$type;
-    return (string)$row['site_id'].'|'.$class.'|'.$prefix.'|'.$subject;
+    return (string)$row['site_id'].'|'.$class.'|'.$prefix.'|'.$subject.'|'.$object.'|'.$room;
 }
 
 function tracky_v272_event_is_resolution(array $row): bool
@@ -585,7 +606,7 @@ function tracky_v272_plugin_can_read(PDO $pdo,array $user,string $consumerPlugin
     if($uid<1||$consumerPlugin===''||$consumerPlugin==='tracky'||!vp3_plugin_valid_v320($consumerPlugin))return false;
     if(!tracky_agent_enabled_v271($pdo,$user))return false;
     $settings=tracky_v272_settings($pdo,$uid);
-    if(empty($settings['cross_plugin_access']))return false;
+    if(empty($settings['cross_plugin_access'])||!in_array($consumerPlugin,(array)($settings['cross_plugin_plugins']??[]),true))return false;
     return function_exists('vp3_plugin_effective_enabled_v360')&&vp3_plugin_effective_enabled_v360($pdo,$user,$consumerPlugin);
 }
 
