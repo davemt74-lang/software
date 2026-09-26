@@ -93,6 +93,7 @@ function homeserver_reconciliation_v246_state(int $userId): array
       'last_run_id'=>(string)($row['last_run_id']??''),
       'last_error'=>(string)($row['last_error']??''),
       'last_summary'=>$summary,
+      'updated_at'=>$row['updated_at']??null,
     ];
 }
 
@@ -259,6 +260,21 @@ function homeserver_reconciliation_v246_reconcile_snapshot(
           ->execute([$userId,$runId,$error]);
         throw $e;
     }
+}
+
+function homeserver_reconciliation_v246_should_retry(int $userId,int $minimumSeconds=30): bool
+{
+    $state=homeserver_reconciliation_v246_state($userId);
+    if(empty($state['needs_reconciliation']))return false;
+    $pdo=db();if(!$pdo||$userId<1)return false;
+    $minimumSeconds=max(10,min(300,$minimumSeconds));
+    $s=$pdo->prepare("SELECT COALESCE(completed_at,started_at) AS attempted_at
+      FROM homeserver_reconciliation_runs_v246 WHERE user_id=?
+      ORDER BY started_at DESC,id DESC LIMIT 1");
+    $s->execute([$userId]);$attempt=(string)($s->fetchColumn()?:'');
+    if($attempt==='')return true;
+    $timestamp=strtotime($attempt.' UTC');
+    return $timestamp===false||$timestamp<=time()-$minimumSeconds;
 }
 
 function homeserver_reconciliation_v246_recent_runs(int $userId,int $limit=20): array
