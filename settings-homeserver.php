@@ -27,7 +27,7 @@ if (!$user) redirect(url('/login.php'));
       <div class="chat-topbar-actions"><a class="account-shell-button" href="<?= e(url('/client-updates.php#homeserver')) ?>">Client Updates</a><a class="account-shell-button" href="<?= e(url('/account.php')) ?>">My Account</a></div>
     </header>
 
-    <section class="hs-settings" data-homeserver-settings data-api="<?= e(url('/api/homeserver-connection-v1200.php')) ?>" data-acceptance-api="<?= e(url('/api/homeserver-acceptance-v236.php')) ?>" data-csrf="<?= e(csrf_token()) ?>">
+    <section class="hs-settings" data-homeserver-settings data-api="<?= e(url('/api/homeserver-connection-v1200.php')) ?>" data-acceptance-api="<?= e(url('/api/homeserver-acceptance-v247.php')) ?>" data-csrf="<?= e(csrf_token()) ?>">
       <div class="hs-settings-inner">
         <nav class="hs-breadcrumb" aria-label="Settings breadcrumb"><a href="<?= e(url('/account.php')) ?>">Settings</a><span>›</span><strong>HomeServer</strong></nav>
 
@@ -94,7 +94,7 @@ if (!$user) redirect(url('/login.php'));
         </section>
         <section class="hs-card" id="hsReleaseAcceptanceCard" hidden>
           <div class="hs-card-head">
-            <div><small>HomeServer 2.3</small><h2>Unified release acceptance</h2><p>Run a zero-token, read-only check of compute, files, Knowledge, local voice, rooms/devices, governed actions, Profile Agent privacy, fallback rules and execution receipts.</p></div>
+            <div><small>HomeServer 2.4</small><h2>Unified release acceptance</h2><p>Run a zero-token, read-only final v2.4 check across continuity, reconciliation, native authority, privacy, retained v2.3 execution safety, and Windows release packaging.</p></div>
             <button class="hs-button quiet" id="hsRunReleaseAcceptance" type="button">Run acceptance</button>
           </div>
           <div class="hs-info-grid">
@@ -113,6 +113,6 @@ if (!$user) redirect(url('/login.php'));
   </main>
 </div>
 <script src="<?= e(url('/member-shell-v77.js')) ?>"></script>
-<script src="<?= e(url('/homeserver-settings-v1210.js?v=homeserver-v23-release-acceptance-20260925')) ?>" defer></script>
+<script src="<?= e(url('/homeserver-settings-v1210.js?v=homeserver-v24-release-acceptance-20260926')) ?>" defer></script>
 </body>
 </html>
