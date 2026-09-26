@@ -20,7 +20,7 @@ const checks=[
  ['Cloud task authority stays in Agent Brain task and commitment records',/agent_memory_items/.test(helper)&&/memory_type IN \('task','commitment'\)/.test(helper)&&/agent_memory_task:/.test(helper)],
  ['HomeServer tasks are retrieved through canonical tool execution',/tasks\.list/.test(helper)&&/homeserver_task_calendar_v243_homeserver_tasks/.test(helper)],
  ['HomeServer calendar is retrieved through canonical tool execution',/calendar\.list/.test(helper)&&/homeserver_task_calendar_v243_homeserver_calendar_items/.test(helper)],
- ['Cloud and HomeServer calendar items preserve separate authority',/vp3_cloud','calendar/.test(helper)&&/homeserver','calendar/.test(helper)],
+ ['Cloud and HomeServer calendar items preserve separate authority',/homeserver_federated_v240_envelope\('vp3_cloud','calendar'/.test(helper)&&/'authority_source'=>'homeserver','dataset'=>'calendar'/.test(helper)],
  ['HomeServer mutations use the governed action path only',/homeserver_governed_v233_request/.test(helper)&&!/INSERT INTO local_calendar_events/.test(helper)&&!/UPDATE local_calendar_events/.test(helper)],
  ['governed catalog allowlists task and calendar mutations',['tasks.create','tasks.update','tasks.delete','calendar.create','calendar.update','calendar.delete'].every(x=>governed.includes("'"+x+"'"))],
  ['execution router classifies task and calendar tools explicitly',/str_starts_with\(\$tool,'tasks\.'\)/.test(execution)&&/str_starts_with\(\$tool,'calendar\.'\)/.test(execution)],
