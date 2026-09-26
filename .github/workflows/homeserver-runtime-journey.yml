@@ -109,6 +109,7 @@ jobs:
           node --check tests/homeserver-v240-federated-data-contract.mjs
           node --check tests/homeserver-v241-contacts-continuity-contract.mjs
           node --check tests/homeserver-v242-knowledge-continuity-contract.mjs
+          node --check tests/homeserver-v243-task-calendar-continuity-contract.mjs
           node --check tests/homeserver-v230-read-execution-contract.mjs
           node --check tests/homeserver-v230-agent-compute-contract.mjs
 
@@ -139,6 +140,7 @@ jobs:
           php tests/homeserver-v241-contacts-continuity-unit.php
           node tests/homeserver-v242-knowledge-continuity-contract.mjs
           php tests/homeserver-v242-knowledge-continuity-unit.php
+          node tests/homeserver-v243-task-calendar-continuity-contract.mjs
           php tests/homeserver-v243-task-calendar-continuity-unit.php
           php tests/knowledge-agent-context-v162-contract.php
           php tests/knowledge-agent-context-v162-security-contract.php
