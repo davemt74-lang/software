@@ -83,6 +83,8 @@ function homeserver_execution_v220_can_route(int $userId,string $operation): boo
       'tasks.list','notifications.list','shared.context.exchange','system.ping',
       'speech.status','speech.transcribe','speech.synthesize',
       'action.list','action.status','action.approve','action.deny',
+      'physical_context.capabilities','physical_context.current',
+      'physical_context.active_perception','physical_context.request_status','physical_context.sync',
     ];
     return in_array($operation,$safe,true);
 }
