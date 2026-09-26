@@ -99,7 +99,7 @@ function knowledge_retrieval_v162_citations(array $results): array
         ];
         if($source==='homeserver'){
             foreach(['id','uri','kind','collection_key','collection_name','source_type','source_label','chunk_index','char_start','char_end','version'] as $key){
-                if(array_key_exists($key,$citation)&&!in_array($key,['relative_path'],true))$item['homeserver_'.$key]=$citation[$key];
+                if(array_key_exists($key,$citation))$item['homeserver_'.$key]=$citation[$key];
             }
         }
         $out[]=$item;
