@@ -29,6 +29,7 @@ function user_agent_resource_catalog_v236(): array
         'homeserver_contacts'=>['label'=>'HomeServer Contacts','description'=>'Contacts stored on the paired HomeServer.'],
         'homeserver_tasks'=>['label'=>'HomeServer Tasks','description'=>'Tasks and commitments stored on the paired HomeServer.'],
         'homeserver_calendar'=>['label'=>'HomeServer Calendar','description'=>'Calendar events stored on the paired HomeServer.'],
+        'homeserver_files'=>['label'=>'HomeServer Files','description'=>'Privacy-safe metadata for files tracked by the paired HomeServer; file contents remain local unless explicitly read.'],
         'homeserver_notifications'=>['label'=>'HomeServer Notifications','description'=>'Notifications stored on the paired HomeServer.'],
     ];
 }

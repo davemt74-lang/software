@@ -96,7 +96,7 @@ function homeserver_shared_v210_record(string $dataset,mixed $id,string $title,s
 
 function homeserver_shared_v210_fit_datasets(array $datasets,int $maxBytes=170000): array
 {
-    $order=['notifications','calendar','tasks','contacts','knowledge','memory'];
+    $order=['notifications','files','calendar','tasks','contacts','knowledge','memory'];
     while(true){
         $encoded=json_encode($datasets,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
         if(is_string($encoded)&&strlen($encoded)<=$maxBytes)break;
@@ -114,7 +114,7 @@ function homeserver_shared_v210_fit_datasets(array $datasets,int $maxBytes=17000
 function homeserver_shared_v210_cloud_snapshot(int $userId,string $query=''): array
 {
     $pdo=db();if(!$pdo||$userId<1)throw new RuntimeException('Database connection is unavailable.');
-    $datasets=['memory'=>[],'knowledge'=>[],'contacts'=>[],'tasks'=>[],'calendar'=>[],'notifications'=>[]];
+    $datasets=['memory'=>[],'knowledge'=>[],'contacts'=>[],'tasks'=>[],'calendar'=>[],'files'=>[],'notifications'=>[]];
 
     if(table_exists('agent_memory_items')){
         $s=$pdo->prepare("SELECT id,memory_type,subject,memory_text,confidence,last_seen_at,metadata_json
@@ -164,6 +164,35 @@ function homeserver_shared_v210_cloud_snapshot(int $userId,string $query=''): ar
             $datasets['knowledge'][]=homeserver_shared_v210_record('knowledge',(int)$row['id'],(string)$row['title'],$content,(string)($row['updated_at']??''));
             if(count($datasets['knowledge'])>=30)break;
         }
+    }
+
+    if(function_exists('homeserver_files_v244_cloud_items')){
+        try{
+            foreach(homeserver_files_v244_cloud_items($userId,$query,40) as $row){
+                if(!is_array($row))continue;
+                $datasets['files'][]=[
+                  'id'=>(int)($row['id']??0),
+                  'key'=>(string)($row['authority_key']??''),
+                  'title'=>(string)($row['title']??$row['name']??'Cloud file'),
+                  'content'=>trim(
+                    'file: '.(string)($row['name']??'')
+                    .' · type: '.(string)($row['file_type']??'')
+                    .' · size: '.(int)($row['size_bytes']??0).' bytes'
+                    .' · folder: '.(string)($row['folder_name']??'Unfiled')
+                  ),
+                  'updated_at'=>$row['updated_at']??null,
+                  'authoritative_source'=>'vp3_cloud',
+                  'authority_source'=>'vp3_cloud',
+                  'authority_key'=>(string)($row['authority_key']??''),
+                  'canonical_id'=>$row['canonical_id']??null,
+                  'record_revision'=>$row['record_revision']??null,
+                  'federation_version'=>$row['federation_version']??'2.4',
+                  'mirror_only'=>false,
+                  'dataset'=>'files',
+                ];
+                if(count($datasets['files'])>=40)break;
+            }
+        }catch(Throwable $ignored){}
     }
 
     if(function_exists('homeserver_contacts_v241_snapshot_records')){
@@ -274,7 +303,7 @@ function homeserver_shared_v210_context_items(array $user,string $query,int $lim
     if(!$snapshot)return [];
     $datasets=is_array($snapshot['datasets']??null)?$snapshot['datasets']:[];
     $out=[];
-    foreach(['memory','knowledge','contacts','tasks','calendar','notifications'] as $dataset){
+    foreach(['memory','knowledge','contacts','tasks','calendar','files','notifications'] as $dataset){
         foreach((array)($datasets[$dataset]??[]) as $row){
             if(!is_array($row))continue;
             $text=homeserver_shared_v210_text($row['content']??'',2200);if($text==='')continue;
@@ -446,7 +475,7 @@ function homeserver_shared_v210_reconcile_status(int $userId,array $status): arr
     $status['diagnostics']=homeserver_shared_v210_diagnostics($userId);
     $status['shared_agent_fabric']=[
       'version'=>VP3_HOMESERVER_SHARED_AGENT_VERSION,
-      'datasets'=>['memory','knowledge','contacts','tasks','calendar','notifications'],
+      'datasets'=>['memory','knowledge','contacts','tasks','calendar','files','notifications'],
       'mode'=>'federated',
     ];
     return $status;

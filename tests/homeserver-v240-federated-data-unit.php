@@ -10,7 +10,7 @@ function homeserver_execution_v220_execute(int $userId,string $operation,array $
     return [
       'version'=>'2.4',
       'mode'=>'native_authority_mirrored_continuity',
-      'datasets'=>['memory','knowledge','contacts','tasks','calendar','notifications','profile_context'],
+      'datasets'=>['memory','knowledge','contacts','tasks','calendar','files','notifications','profile_context'],
       'rules'=>[
         'native_source_remains_authoritative'=>true,
         'remote_records_are_mirrors'=>true,
@@ -75,6 +75,7 @@ v240_assert(($remote['version']??'')==='2.4','remote registry version');
 v240_assert(!empty($remote['rules']['native_source_remains_authoritative']),'authority rule');
 v240_assert(!empty($remote['rules']['remote_records_are_mirrors']),'mirror rule');
 v240_assert(!empty($remote['rules']['no_cross_database_id_writes']),'cross-database write rule');
+v240_assert(in_array('files',(array)($remote['datasets']??[]),true),'files federation dataset');
 
 v240_assert(homeserver_federated_v240_remote_registry(8)===null,'unrouteable user must not get a remote registry');
 
