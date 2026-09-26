@@ -38,7 +38,7 @@ assert.match(plugins,/name="action" value="tracky_enable"/);
 assert.match(plugins,/name="action" value="tracky_disable"/);
 assert.match(plugins,/physical_context\.v1/);
 assert.match(setup,/tracky_cloud_v270_ensure_schema\(\$pdo\)/);
-assert.match(upgrade,/tracky_cloud_v270_schema_ready\(\$pdo\)/);
+assert.match(upgrade,/tracky_cloud_v270_schema_ready\(\)/);
 assert.match(upgrade,/tracky_cloud_v270_ensure_schema\(\$pdo\)/);
 assert.match(docs,/idempotent/i);
 assert.match(docs,/second Agent Brain/i);
