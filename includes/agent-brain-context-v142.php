@@ -85,7 +85,9 @@ function agent_brain_v99_context(array $user,string $query,int $limit=12): array
             }
             foreach($grouped as $dataset=>$lines)$context[]=[
                 'source'=>'homeserver:'.$dataset,
-                'title'=>'HomeServer '.ucfirst($dataset).' · shared Agent fabric',
+                'title'=>$dataset==='memory'
+                  ? 'HomeServer Agent Brain memory · canonical continuity'
+                  : 'HomeServer '.ucfirst($dataset).' · shared Agent fabric',
                 'text'=>implode("\n",array_slice($lines,0,8)),
             ];
         }
