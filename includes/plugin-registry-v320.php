@@ -17,6 +17,11 @@ function vp3_plugin_catalog_v320(): array
             'description'=>'Merchant accounts, campaigns, rewards, claim codes, customers, landing pages and reporting.',
             'entitlement'=>'campaigns_rewards.access',
         ],
+        'tracky'=>[
+            'label'=>'Tracky',
+            'description'=>'Governed physical awareness from your paired OTRO HomeServer using the physical_context.v1 contract.',
+            'entitlement'=>'tracky.access',
+        ],
     ];
 }
 
