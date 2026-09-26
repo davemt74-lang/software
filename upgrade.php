@@ -97,6 +97,7 @@ function vp3_upgrade_complete(): bool
         && personal_capability_seeded_v242()
         && personal_capability_schema_ready_v242()
         && vp3_plugin_schema_ready_v320()
+        && tracky_cloud_v270_schema_ready($pdo)
         && vp3_plugin_lifecycle_v360_ready()
         && vp3_connected_sites_schema_ready_v100()
         && campaigns_rewards_schema_ready_v100()
