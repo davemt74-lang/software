@@ -14,6 +14,8 @@ function homeserver_governed_v233_catalog(): array
 {
     return [
       'memory.write'=>['domain'=>'memory','approval_mode'=>'federated','local_owner_only'=>false],
+      'memory.update'=>['domain'=>'memory','approval_mode'=>'federated','local_owner_only'=>false],
+      'memory.delete'=>['domain'=>'memory','approval_mode'=>'federated','local_owner_only'=>false],
       'tasks.create'=>['domain'=>'tasks','approval_mode'=>'federated','local_owner_only'=>false],
       'tasks.update'=>['domain'=>'tasks','approval_mode'=>'federated','local_owner_only'=>false],
       'tasks.delete'=>['domain'=>'tasks','approval_mode'=>'federated','local_owner_only'=>false],
