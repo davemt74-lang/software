@@ -164,6 +164,7 @@ require_once __DIR__.'/homeserver-federated-data-v240.php';
 require_once __DIR__.'/homeserver-contacts-v241.php';
 require_once __DIR__.'/homeserver-knowledge-v242.php';
 require_once __DIR__.'/homeserver-tasks-calendar-v243.php';
+require_once __DIR__.'/homeserver-files-v244.php';
 require_once __DIR__.'/homeserver-shared-agent-v210.php';
 require_once __DIR__.'/homeserver-execution-routing-v220.php';
 require_once __DIR__.'/homeserver-local-execution-v230.php';
