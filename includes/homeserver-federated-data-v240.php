@@ -140,6 +140,11 @@ function homeserver_federated_v240_normalize(array $record,string $defaultSource
     );
     $supplied=homeserver_federated_v240_text($record['canonical_id']??'',80);
     if($supplied!==''&&!hash_equals($item['canonical_id'],$supplied))throw new RuntimeException('Federated record canonical identity does not match its authority tuple.');
+    $suppliedRevision=strtolower(homeserver_federated_v240_text($record['record_revision']??'',64));
+    if($suppliedRevision!==''){
+        if(!preg_match('/^[0-9a-f]{64}$/',$suppliedRevision))throw new RuntimeException('Federated record revision must be a SHA-256 value.');
+        $item['record_revision']=$suppliedRevision;
+    }
     return $item;
 }
 
@@ -198,6 +203,24 @@ function homeserver_federated_v240_observe_snapshot(int $userId,array $snapshot,
         homeserver_federated_v240_cursor($userId,$authority,$dataset,$revision,'',true,'');
     }
     return ['version'=>VP3_HOMESERVER_FEDERATED_DATA_VERSION,'observed'=>$counts];
+}
+
+function homeserver_federated_v240_mark_tombstone(
+    int $userId,string $authoritySource,string $dataset,mixed $authorityKey,string $observedSource='vp3_cloud'
+): void {
+    $pdo=db();if(!$pdo||$userId<1)throw new RuntimeException('Database connection is unavailable.');
+    $source=homeserver_federated_v240_source($authoritySource);
+    $name=homeserver_federated_v240_dataset($dataset);
+    $observed=homeserver_federated_v240_source($observedSource);
+    $key=homeserver_federated_v240_text($authorityKey,180);
+    if($key==='')throw new RuntimeException('Federated data authority key is required.');
+    $canonical=homeserver_federated_v240_canonical_id($source,$name,$key);
+    $pdo->prepare("INSERT INTO homeserver_federated_records
+      (user_id,authority_source,dataset,authority_key,canonical_id,observed_source,record_hash,source_updated_at,tombstoned,last_seen_at)
+      VALUES (?,?,?,?,?,?,'',NULL,1,UTC_TIMESTAMP())
+      ON DUPLICATE KEY UPDATE canonical_id=VALUES(canonical_id),record_hash='',source_updated_at=NULL,
+        tombstoned=1,last_seen_at=UTC_TIMESTAMP()")
+      ->execute([$userId,$source,$name,$key,$canonical,$observed]);
 }
 
 function homeserver_federated_v240_registry(int $userId): array
