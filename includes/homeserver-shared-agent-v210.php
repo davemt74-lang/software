@@ -96,7 +96,7 @@ function homeserver_shared_v210_record(string $dataset,mixed $id,string $title,s
 
 function homeserver_shared_v210_fit_datasets(array $datasets,int $maxBytes=170000): array
 {
-    $order=['notifications','tasks','contacts','knowledge','memory'];
+    $order=['notifications','calendar','tasks','contacts','knowledge','memory'];
     while(true){
         $encoded=json_encode($datasets,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
         if(is_string($encoded)&&strlen($encoded)<=$maxBytes)break;
@@ -114,7 +114,7 @@ function homeserver_shared_v210_fit_datasets(array $datasets,int $maxBytes=17000
 function homeserver_shared_v210_cloud_snapshot(int $userId,string $query=''): array
 {
     $pdo=db();if(!$pdo||$userId<1)throw new RuntimeException('Database connection is unavailable.');
-    $datasets=['memory'=>[],'knowledge'=>[],'contacts'=>[],'tasks'=>[],'notifications'=>[]];
+    $datasets=['memory'=>[],'knowledge'=>[],'contacts'=>[],'tasks'=>[],'calendar'=>[],'notifications'=>[]];
 
     if(table_exists('agent_memory_items')){
         $s=$pdo->prepare("SELECT id,memory_type,subject,memory_text,confidence,last_seen_at,metadata_json
@@ -132,21 +132,25 @@ function homeserver_shared_v210_cloud_snapshot(int $userId,string $query=''): ar
             if(count($datasets['memory'])>=40)break;
         }
 
-        $s=$pdo->prepare("SELECT id,memory_type,subject,memory_text,last_seen_at,metadata_json
-          FROM agent_memory_items WHERE user_id=? AND is_active=1 AND memory_type IN ('task','commitment')
-          ORDER BY last_seen_at DESC,id DESC LIMIT 60");
-        $s->execute([$userId]);
-        foreach($s->fetchAll()?:[] as $row){
-            $meta=json_decode((string)($row['metadata_json']??''),true);if(!is_array($meta))$meta=[];
-            $text=trim((string)($row['subject']??'').' '.(string)($row['memory_text']??''));
-            if(!homeserver_shared_v210_matches($query,$text))continue;
-            $datasets['tasks'][]=homeserver_shared_v210_record(
-              'tasks',(int)$row['id'],
-              (string)($row['subject']??'Agent task'),
-              (string)($row['memory_text']??'').' · status: '.(string)($meta['task_status']??'open').' · due: '.(string)($meta['due_at']??''),
-              (string)($row['last_seen_at']??'')
-            );
-            if(count($datasets['tasks'])>=30)break;
+        if(function_exists('homeserver_task_calendar_v243_cloud_tasks')){
+            foreach(homeserver_task_calendar_v243_cloud_tasks($userId,$query,30) as $row){
+                if(!is_array($row))continue;
+                $datasets['tasks'][]=[
+                  'id'=>(int)($row['id']??0),
+                  'key'=>(string)($row['authority_key']??''),
+                  'title'=>(string)($row['title']??'Agent task'),
+                  'content'=>(string)($row['description']??'').' · status: '.(string)($row['status']??'open').' · due: '.(string)($row['due_at']??''),
+                  'updated_at'=>$row['updated_at']??null,
+                  'authoritative_source'=>'vp3_cloud',
+                  'authority_source'=>'vp3_cloud',
+                  'authority_key'=>(string)($row['authority_key']??''),
+                  'canonical_id'=>$row['canonical_id']??null,
+                  'record_revision'=>$row['record_revision']??null,
+                  'federation_version'=>$row['federation_version']??'2.4',
+                  'mirror_only'=>false,
+                  'dataset'=>'tasks',
+                ];
+            }
         }
     }
 
@@ -168,6 +172,32 @@ function homeserver_shared_v210_cloud_snapshot(int $userId,string $query=''): ar
                 if(!is_array($row))continue;
                 $datasets['contacts'][]=$row;
                 if(count($datasets['contacts'])>=80)break;
+            }
+        }catch(Throwable $ignored){}
+    }
+
+    if(function_exists('homeserver_task_calendar_v243_cloud_calendar_records')){
+        try{
+            $calendarFrom=gmdate('Y-m-d H:i:s',time()-30*86400);
+            $calendarTo=gmdate('Y-m-d H:i:s',time()+370*86400);
+            foreach(homeserver_task_calendar_v243_cloud_calendar_records($userId,$calendarFrom,$calendarTo) as $row){
+                if(!is_array($row))continue;
+                $datasets['calendar'][]=[
+                  'id'=>(int)($row['id']??0),
+                  'key'=>(string)($row['authority_key']??''),
+                  'title'=>(string)($row['title']??'Calendar event'),
+                  'content'=>trim((string)($row['description']??'').' · '.(string)($row['location']??'').' · '.(string)($row['start_at_utc']??'').' → '.(string)($row['end_at_utc']??'')),
+                  'updated_at'=>$row['updated_at']??null,
+                  'authoritative_source'=>'vp3_cloud',
+                  'authority_source'=>'vp3_cloud',
+                  'authority_key'=>(string)($row['authority_key']??''),
+                  'canonical_id'=>$row['canonical_id']??null,
+                  'record_revision'=>$row['record_revision']??null,
+                  'federation_version'=>$row['federation_version']??'2.4',
+                  'mirror_only'=>false,
+                  'dataset'=>'calendar',
+                ];
+                if(count($datasets['calendar'])>=60)break;
             }
         }catch(Throwable $ignored){}
     }
@@ -244,7 +274,7 @@ function homeserver_shared_v210_context_items(array $user,string $query,int $lim
     if(!$snapshot)return [];
     $datasets=is_array($snapshot['datasets']??null)?$snapshot['datasets']:[];
     $out=[];
-    foreach(['memory','knowledge','contacts','tasks','notifications'] as $dataset){
+    foreach(['memory','knowledge','contacts','tasks','calendar','notifications'] as $dataset){
         foreach((array)($datasets[$dataset]??[]) as $row){
             if(!is_array($row))continue;
             $text=homeserver_shared_v210_text($row['content']??'',2200);if($text==='')continue;
@@ -416,7 +446,7 @@ function homeserver_shared_v210_reconcile_status(int $userId,array $status): arr
     $status['diagnostics']=homeserver_shared_v210_diagnostics($userId);
     $status['shared_agent_fabric']=[
       'version'=>VP3_HOMESERVER_SHARED_AGENT_VERSION,
-      'datasets'=>['memory','knowledge','contacts','tasks','notifications'],
+      'datasets'=>['memory','knowledge','contacts','tasks','calendar','notifications'],
       'mode'=>'federated',
     ];
     return $status;
