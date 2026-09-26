@@ -258,6 +258,7 @@ function homeserver_shared_v210_cloud_snapshot(int $userId,string $query=''): ar
       'authoritative_source'=>'vp3_cloud',
       'federation_version'=>defined('VP3_HOMESERVER_FEDERATED_DATA_VERSION')?VP3_HOMESERVER_FEDERATED_DATA_VERSION:null,
       'snapshot_mode'=>$query===''?'full':'filtered',
+      'covered_datasets'=>['memory','knowledge','contacts','tasks','calendar','files','notifications'],
       'datasets'=>$datasets,
     ];
 }
