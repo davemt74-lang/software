@@ -93,6 +93,28 @@ function agent_brain_v99_context(array $user,string $query,int $limit=12): array
         }
     }
 
+    if(function_exists('homeserver_reconciliation_v246_state')){
+        $reconciliation=homeserver_reconciliation_v246_state($uid);
+        $summary=is_array($reconciliation['last_summary']??null)?$reconciliation['last_summary']:[];
+        $changes=(int)($summary['created']??0)+(int)($summary['updated']??0)
+          +(int)($summary['restored']??0)+(int)($summary['tombstoned']??0);
+        $context[]=[
+          'source'=>'homeserver:reconciliation',
+          'title'=>'HomeServer continuity reconciliation',
+          'text'=>implode("\n",[
+            'State: '.(!empty($reconciliation['needs_reconciliation'])?'reconciliation required':'current'),
+            'Last reconciled: '.((string)($reconciliation['last_reconciled_at']??'')?:'not yet'),
+            'Last continuity changes: '.$changes,
+            'Created: '.(int)($summary['created']??0).' · updated: '.(int)($summary['updated']??0)
+              .' · restored: '.(int)($summary['restored']??0).' · retired mirrors: '.(int)($summary['tombstoned']??0),
+            'Conflict count: '.(int)($summary['conflicts']??0),
+            !empty($reconciliation['last_error'])
+              ?'Last reconciliation attempt failed; HomeServer-backed context should be treated as stale.'
+              :'No reconciliation failure is currently recorded.',
+          ]),
+        ];
+    }
+
     if(function_exists('homeserver_execution_v220_projection')){
         $routing=homeserver_execution_v220_projection((int)($user['id']??0));
         $routes=is_array($routing['routes']??null)?$routing['routes']:[];
