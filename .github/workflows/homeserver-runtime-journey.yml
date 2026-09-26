@@ -65,6 +65,7 @@ jobs:
           php -l includes/homeserver-tasks-calendar-v243.php
           php -l includes/homeserver-files-v244.php
           php -l includes/homeserver-agent-brain-memory-v245.php
+          php -l includes/homeserver-reconciliation-v246.php
           php -l includes/tracky-cloud-v270.php
           php -l includes/knowledge-retrieval-v162.php
           php -l api/homeserver-governed-actions-v233.php
@@ -87,6 +88,8 @@ jobs:
           php -l tests/homeserver-v242-knowledge-continuity-unit.php
           php -l tests/homeserver-v243-task-calendar-continuity-unit.php
           php -l tests/homeserver-v244-files-document-continuity-unit.php
+          php -l tests/homeserver-v245-agent-brain-memory-continuity-unit.php
+          php -l tests/homeserver-v246-reconnect-reconciliation-unit.php
           php -l tests/knowledge-agent-context-v162-contract.php
           php -l tests/knowledge-agent-context-v162-security-contract.php
           php -l tests/homeserver-v233-governed-actions-unit.php
@@ -121,6 +124,7 @@ jobs:
           node --check tests/homeserver-v243-task-calendar-continuity-contract.mjs
           node --check tests/homeserver-v244-files-document-continuity-contract.mjs
           node --check tests/homeserver-v245-agent-brain-memory-continuity-contract.mjs
+          node --check tests/homeserver-v246-reconnect-reconciliation-contract.mjs
           node --check tests/tracky-v270-cloud-contract.mjs
           node --check tests/homeserver-v230-read-execution-contract.mjs
           node --check tests/homeserver-v230-agent-compute-contract.mjs
@@ -158,6 +162,8 @@ jobs:
           php tests/homeserver-v244-files-document-continuity-unit.php
           node tests/homeserver-v245-agent-brain-memory-continuity-contract.mjs
           php tests/homeserver-v245-agent-brain-memory-continuity-unit.php
+          node tests/homeserver-v246-reconnect-reconciliation-contract.mjs
+          php tests/homeserver-v246-reconnect-reconciliation-unit.php
           node tests/tracky-v270-cloud-contract.mjs
           php tests/tracky-v270-cloud-unit.php
           php tests/knowledge-agent-context-v162-contract.php
