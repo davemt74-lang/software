@@ -23,6 +23,7 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
             'voice_enabled'=>isset($_POST['voice_enabled']),
             'automation_enabled'=>isset($_POST['automation_enabled']),
             'cross_plugin_access'=>isset($_POST['cross_plugin_access']),
+            'cross_plugin_plugins'=>is_array($_POST['cross_plugin_plugins']??null)?$_POST['cross_plugin_plugins']:[],
             'now_classes'=>is_array($_POST['now_classes']??null)?$_POST['now_classes']:[],
             'chat_classes'=>is_array($_POST['chat_classes']??null)?$_POST['chat_classes']:[],
             'voice_classes'=>is_array($_POST['voice_classes']??null)?$_POST['voice_classes']:[],
@@ -38,6 +39,14 @@ $surfaceSettings=function_exists('tracky_v272_settings')?tracky_v272_settings($p
 $globalVoiceEnabled=function_exists('chat_settings_agent_voice_enabled_v237')?chat_settings_agent_voice_enabled_v237($pdo,$user):false;
 $eventClasses=function_exists('tracky_v272_event_classes')?tracky_v272_event_classes():[];
 $triggerCatalog=function_exists('tracky_v272_trigger_catalog')?tracky_v272_trigger_catalog():[];
+$crossPluginCandidates=[];
+if(function_exists('vp3_plugin_catalog_v320')&&function_exists('vp3_plugin_effective_enabled_v360')){
+    foreach(vp3_plugin_catalog_v320() as $pluginKey=>$pluginMeta){
+        if($pluginKey==='tracky')continue;
+        try{$state=vp3_plugin_effective_enabled_v360($pdo,$user,$pluginKey);}catch(Throwable $e){$state=false;}
+        if($state)$crossPluginCandidates[$pluginKey]=(string)($pluginMeta['label']??$pluginKey);
+    }
+}
 $sites=tracky_cloud_v270_sites($pdo,$userId);
 $selected=trim((string)($_GET['site']??''));
 if($selected===''&&!empty($sites))$selected=(string)$sites[0]['site_id'];
@@ -64,7 +73,9 @@ $memberHeaderUser=$user;$memberHeaderTitle='Tracky';$memberHeaderSubtitle='Physi
 <div class="policy-box"><h3>Agent voice</h3><label class="check"><input type="checkbox" name="voice_enabled" value="1" <?= !empty($surfaceSettings['voice_enabled'])?'checked':'' ?>> Allow Tracky voice alerts</label><div class="checks" style="margin-top:10px"><?php foreach($eventClasses as $class): ?><label class="check"><input type="checkbox" name="voice_classes[]" value="<?= e($class) ?>" <?= in_array($class,(array)($surfaceSettings['voice_classes']??[]),true)?'checked':'' ?>><?= e(ucfirst($class)) ?></label><?php endforeach; ?></div><p class="muted" style="margin-bottom:0">Global Agent voice: <strong><?= $globalVoiceEnabled?'On':'Off' ?></strong>. Tracky voice is off by default and never bypasses global voice, focus/quiet or interruption rules.</p></div>
 <div class="policy-box"><h3>Automation triggers</h3><label class="check"><input type="checkbox" name="automation_enabled" value="1" <?= !empty($surfaceSettings['automation_enabled'])?'checked':'' ?>> Publish governed triggers</label><div class="checks" style="margin-top:10px"><?php foreach($eventClasses as $class): ?><label class="check"><input type="checkbox" name="automation_classes[]" value="<?= e($class) ?>" <?= in_array($class,(array)($surfaceSettings['automation_classes']??[]),true)?'checked':'' ?>><?= e(ucfirst($class)) ?></label><?php endforeach; ?></div><p class="muted" style="margin-bottom:0"><?= count($triggerCatalog) ?> trigger families are available. V2.72 publishes trigger metadata only; it does not execute physical actions.</p></div>
 </div>
-<div class="policy-actions"><label class="check"><input type="checkbox" name="cross_plugin_access" value="1" <?= !empty($surfaceSettings['cross_plugin_access'])?'checked':'' ?>> Allow other enabled VP3 plugins to read the governed current physical-context summary</label><button class="btn-save" type="submit">Save awareness settings</button></div>
+<div class="policy-actions"><label class="check"><input type="checkbox" name="cross_plugin_access" value="1" <?= !empty($surfaceSettings['cross_plugin_access'])?'checked':'' ?>> Allow selected VP3 plugins to read the governed current physical-context summary</label></div>
+<?php if($crossPluginCandidates): ?><div class="checks" style="margin-top:10px"><?php foreach($crossPluginCandidates as $pluginKey=>$pluginLabel): ?><label class="check"><input type="checkbox" name="cross_plugin_plugins[]" value="<?= e($pluginKey) ?>" <?= in_array($pluginKey,(array)($surfaceSettings['cross_plugin_plugins']??[]),true)?'checked':'' ?>><?= e($pluginLabel) ?></label><?php endforeach; ?></div><?php else: ?><p class="muted">No other enabled plugins are currently eligible for physical-context access.</p><?php endif; ?>
+<div class="policy-actions"><button class="btn-save" type="submit">Save awareness settings</button></div>
 </form></section>
 <?php if(empty($sites)): ?><section class="card"><h2>No Tracky site has synchronized yet.</h2><p class="muted">Tracky is enabled in VP3 Cloud. When your paired OTRO HomeServer advertises <code>physical_context.v1</code> and begins governed synchronization, its site will appear here.</p></section><?php else: ?>
 <nav class="site-tabs"><?php foreach($sites as $site): ?><a class="<?= $selected===(string)$site['site_id']?'active':'' ?>" href="<?= e(url('/tracky.php?site='.rawurlencode((string)$site['site_id']))) ?>"><?= e((string)($site['label']?:$site['site_id'])) ?></a><?php endforeach; ?></nav>
