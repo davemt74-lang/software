@@ -102,10 +102,10 @@ function tracky_v273_target_from_query(PDO $pdo,array $user,string $query,string
 {
     $target=['query'=>mb_strimwidth(trim($query),0,240,'')];
     $site=tracky_agent_site_v271($pdo,(int)$user['id'],$query);
-    if($site){
-        $context=tracky_cloud_v270_current_context($pdo,(int)$user['id'],(string)$site['site_id']);
-        $room=trim((string)($context['context']['current_room']??''));
-        if($intent==='present'&&$room!=='')$target['room_id']=$room;
+    if($site&&$intent==='present'){
+        $presence=tracky_agent_present_v271($pdo,$user,$site,$query);
+        $roomId=trim((string)($presence['room_id']??''));
+        if($roomId!=='')$target['room_id']=$roomId;
     }
     $terms=tracky_agent_query_terms_v271($query);
     if(in_array($intent,['where','last_seen','confidence','why'],true)&&$terms){
