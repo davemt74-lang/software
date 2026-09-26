@@ -21,7 +21,7 @@ v273_same(tracky_v273_query_request_type('Why do you think that?','why'),'re_eva
 v273_same(tracky_v273_query_request_type('Check again','current'),'refresh_current_view','current request type');
 
 $completed=tracky_v273_refresh_note([
-    'attempted'=>true,'status'=>'completed','cloud_sync_error'=>''
+    'attempted'=>true,'status'=>'completed','cloud_sync_error'=>'','cloud_projection_ingested'=>true
 ]);
 v273_expect(str_contains($completed,'fresh governed physical context'),'completed refresh wording missing');
 
