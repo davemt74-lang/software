@@ -6,6 +6,7 @@ $service = (string)file_get_contents($root . '/includes/knowledge-retrieval-v162
 $chat = (string)file_get_contents($root . '/api/chat-v236.php') . "\n" . (string)file_get_contents($root . '/includes/agent-chat-runtime-v2160.php');
 $stream = (string)file_get_contents($root . '/api/chat-stream-v121.php');
 $home = (string)file_get_contents($root . '/includes/homeserver-knowledge-v062.php');
+$continuity = (string)file_get_contents($root . '/includes/homeserver-knowledge-v242.php');
 
 $failures=[];
 $check=static function(bool $condition,string $message)use(&$failures):void{if(!$condition)$failures[]=$message;};
@@ -23,7 +24,12 @@ $check(!str_contains($service, 'native_path'), 'native_path must not appear in C
 $check(!str_contains($service, 'storage_path'), 'storage_path must not appear in Cloud retrieval implementation');
 $check(!str_contains($service, 'file_path'), 'file_path must not be selected or exposed by Cloud retrieval');
 $check(str_contains($service, "'homeserver_local_knowledge'=>'not_queried'"), 'HomeServer non-query provenance marker missing');
-$check(!preg_match('/homeserver_[a-z0-9_]+\s*\(/i', $service), 'Cloud retrieval service must not call HomeServer content APIs');
+$ownerGate=strpos($service,'knowledge_retrieval_v162_owner_session');
+$homeSearch=strpos($service,'homeserver_knowledge_v242_agent_search');
+$check($ownerGate!==false&&$homeSearch!==false&&$ownerGate<$homeSearch, 'HomeServer Knowledge retrieval must remain behind the authenticated owner-session gate');
+$check(str_contains($continuity,"'knowledge.search'"), 'HomeServer continuity must use citation-safe knowledge.search');
+$check(!str_contains($continuity,"'files.read'")&&!str_contains($continuity,"'files.list'"), 'Agent Knowledge continuity must not use HomeServer file APIs');
+$check(str_contains($service,'homeserver_knowledge_v242_merge_retrieval'), 'Cloud retrieval must merge only the sanitized v2.4 Knowledge projection');
 
 $check(str_contains($chat, 'includes/knowledge-retrieval-v162.php'), 'normal Chat must load v16.2 retrieval');
 $check(str_contains($chat, 'knowledge_retrieval_v162_generate_answer'), 'normal Chat must run v16.2 retrieval before model generation');
