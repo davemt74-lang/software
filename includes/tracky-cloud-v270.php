@@ -550,6 +550,10 @@ function tracky_cloud_v270_ingest(PDO $pdo,int $userId,string $deviceId,array $p
         try{tracky_agent_on_sync_v271($pdo,$userId,$siteId,$acceptedForCognition);}
         catch(Throwable $e){error_log('Tracky V2.71 cognitive event projection failed: '.$e->getMessage());}
     }
+    if($acceptedForCognition&&function_exists('tracky_v272_on_sync')){
+        try{tracky_v272_on_sync($pdo,$userId,$siteId,$acceptedForCognition);}
+        catch(Throwable $e){error_log('Tracky V2.72 cross-surface projection failed: '.$e->getMessage());}
+    }
 
     return [
         'ok'=>true,
