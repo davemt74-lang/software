@@ -271,6 +271,19 @@ function user_calendar_events_v1300(PDO $pdo, array $user, string $fromUtc, stri
         }
     }
 
+    if(function_exists('homeserver_task_calendar_v243_homeserver_calendar_items')){
+        try{
+            foreach(homeserver_task_calendar_v243_homeserver_calendar_items(
+                $ownerUserId,
+                $from->format('Y-m-d H:i:s'),
+                $to->format('Y-m-d H:i:s'),
+                100
+            ) as $row){
+                if(is_array($row))$events[]=$row;
+            }
+        }catch(Throwable $ignored){}
+    }
+
     usort($events, static function(array $a,array $b): int {
         $cmp = strcmp((string)$a['start_at_utc'], (string)$b['start_at_utc']);
         return $cmp !== 0 ? $cmp : strcmp((string)$a['kind'], (string)$b['kind']);
