@@ -185,6 +185,16 @@ function tracky_v273_active_perception(
     $request=is_array($response['request']??null)?$response['request']:[];
     $status=(string)($request['status']??'failed');
     $result=is_array($request['result']??null)?$request['result']:[];
+    $cloudIngest=null;$cloudSyncError='';
+    $projection=is_array($result['semantic_projection']??null)?$result['semantic_projection']:[];
+    if($status==='completed'&&$projection){
+        try{
+            $deviceId=(string)($capability['device_id']??'');
+            $cloudIngest=tracky_cloud_v270_ingest($pdo,$uid,$deviceId,$projection);
+        }catch(Throwable $e){
+            $cloudSyncError=mb_strimwidth($e->getMessage(),0,300,'');
+        }
+    }
     return [
         'attempted'=>true,
         'status'=>$status,
@@ -192,7 +202,9 @@ function tracky_v273_active_perception(
         'request_id'=>(string)($request['request_id']??$requestId),
         'correlation_id'=>(string)($request['correlation_id']??$correlationId),
         'request_type'=>(string)($request['request_type']??$payload['request_type']),
-        'cloud_sync_error'=>(string)($result['cloud_sync_error']??''),
+        'cloud_projection_ingested'=>is_array($cloudIngest)&&!empty($cloudIngest['ok']),
+        'cloud_ingest'=>$cloudIngest,
+        'cloud_sync_error'=>$cloudSyncError,
         'fresh_context'=>is_array($result['current_context']??null)?$result['current_context']:[],
         'raw_perception_exposed'=>false,
     ];
@@ -224,9 +236,12 @@ function tracky_v273_refresh_note(array $refresh): string
     $reason=(string)($refresh['reason']??'');
     if($status==='completed'){
         if(!empty($refresh['cloud_sync_error'])){
-            return ' I asked the HomeServer to check again. It completed locally, but the fresh semantic result has not finished syncing to Cloud, so I am not presenting the older Cloud state as freshly verified.';
+            return ' I asked the HomeServer to check again. It completed locally, but Cloud could not accept the fresh semantic projection, so I am not presenting the older Cloud state as freshly verified.';
         }
-        return ' I asked the HomeServer to check again and the fresh governed physical context was synchronized.';
+        if(!empty($refresh['cloud_projection_ingested'])){
+            return ' I asked the HomeServer to check again and the fresh governed physical context was synchronized.';
+        }
+        return ' I asked the HomeServer to check again. It completed, but it did not return a new semantic projection, so I am keeping the existing state labeled by its original freshness.';
     }
     if($reason==='homeserver_reconciliation_pending'){
         return ' I did not request a new camera check because HomeServer v2.4 continuity reconciliation is still running; HomeServer-backed context remains stale until that authority gate clears.';
