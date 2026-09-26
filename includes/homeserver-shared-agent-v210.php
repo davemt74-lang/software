@@ -257,8 +257,110 @@ function homeserver_shared_v210_cloud_snapshot(int $userId,string $query=''): ar
       'generated_at'=>gmdate(DATE_ATOM),
       'authoritative_source'=>'vp3_cloud',
       'federation_version'=>defined('VP3_HOMESERVER_FEDERATED_DATA_VERSION')?VP3_HOMESERVER_FEDERATED_DATA_VERSION:null,
+      'snapshot_mode'=>$query===''?'full':'filtered',
       'datasets'=>$datasets,
     ];
+}
+
+function homeserver_shared_v210_exchange_once(
+    int $userId,string $query='',string $triggerReason='query'
+): ?array {
+    $query=homeserver_shared_v210_text($query,240);
+    if(!function_exists('homeserver_https_v1300_status')||!function_exists('homeserver_https_v1300_remote_operation'))return null;
+    $status=homeserver_https_v1300_status($userId);
+    if(!$status||empty($status['connected'])||empty($status['paired']))return null;
+
+    $cloud=homeserver_shared_v210_cloud_snapshot($userId,$query);
+    $beforeReconciliation=function_exists('homeserver_reconciliation_v246_state')
+      ?homeserver_reconciliation_v246_state($userId):['needs_reconciliation'=>false];
+
+    $requestId=homeserver_https_v1300_queue($userId,'shared.context.exchange',[
+      'query'=>$query,
+      'cloud_snapshot'=>$cloud,
+      'reconciliation_trigger'=>$triggerReason,
+    ]);
+    $result=homeserver_https_v1300_wait($requestId,$query===''?9000:6500);
+    $home=is_array($result['homeserver_snapshot']??null)?$result['homeserver_snapshot']:null;
+    if(!$home)throw new RuntimeException('HomeServer did not return a shared Agent snapshot.');
+
+    $remoteSummary=null;
+    if(function_exists('homeserver_federated_v240_observe_snapshot')){
+        homeserver_federated_v240_observe_snapshot($userId,$cloud,'vp3_cloud');
+    }
+    if(function_exists('homeserver_reconciliation_v246_reconcile_snapshot')){
+        $remoteSummary=homeserver_reconciliation_v246_reconcile_snapshot(
+          $userId,$home,'vp3_cloud',$triggerReason,(string)($cloud['revision']??'')
+        );
+    }elseif(function_exists('homeserver_federated_v240_observe_snapshot')){
+        homeserver_federated_v240_observe_snapshot($userId,$home,'vp3_cloud');
+    }
+
+    if(($cloud['snapshot_mode']??'filtered')==='full'){
+        $homeApplied=$result['reconciliation']['cloud_to_homeserver']
+          ??$result['cloud_mirror']['reconciliation']
+          ??null;
+        if(!is_array($homeApplied)
+          ||(string)($homeApplied['status']??'')!=='completed'
+          ||(string)($homeApplied['snapshot_mode']??'')!=='full'){
+            if(function_exists('homeserver_reconciliation_v246_mark_required')){
+                homeserver_reconciliation_v246_mark_required(
+                  $userId,'HomeServer did not confirm full Cloud reconciliation.'
+                );
+            }
+            throw new RuntimeException('HomeServer did not confirm full Cloud reconciliation.');
+        }
+        if(!is_array($remoteSummary)
+          ||(string)($remoteSummary['status']??'')!=='completed'
+          ||(string)($remoteSummary['snapshot_mode']??'')!=='full'){
+            if(function_exists('homeserver_reconciliation_v246_mark_required')){
+                homeserver_reconciliation_v246_mark_required(
+                  $userId,'Cloud did not complete the HomeServer mirror reconciliation.'
+                );
+            }
+            throw new RuntimeException('Cloud did not complete HomeServer reconciliation.');
+        }
+    }
+
+    $pdo=db();
+    if($pdo&&homeserver_shared_v210_schema_ready()){
+        $pdo->prepare("INSERT INTO homeserver_agent_state(user_id,last_sync_at,cloud_revision,homeserver_revision)
+          VALUES (?,UTC_TIMESTAMP(),?,?)
+          ON DUPLICATE KEY UPDATE last_sync_at=UTC_TIMESTAMP(),cloud_revision=VALUES(cloud_revision),homeserver_revision=VALUES(homeserver_revision)")
+          ->execute([$userId,(string)($cloud['revision']??''),(string)($home['revision']??'')]);
+    }
+
+    if(($cloud['snapshot_mode']??'filtered')==='full'&&!empty($beforeReconciliation['needs_reconciliation'])){
+        $summary=is_array($remoteSummary)?$remoteSummary:[];
+        $changes=(int)($summary['created']??0)+(int)($summary['updated']??0)
+          +(int)($summary['restored']??0)+(int)($summary['tombstoned']??0);
+        if($pdo&&function_exists('vp3_cognitive_homeserver_event_v2390')){
+            vp3_cognitive_homeserver_event_v2390($pdo,$userId,'homeserver.reconciled','connected',[
+              'priority'=>'normal',
+              'reconciliation_run_id'=>(string)($summary['run_id']??''),
+              'change_count'=>$changes,
+              'created'=>(int)($summary['created']??0),
+              'updated'=>(int)($summary['updated']??0),
+              'restored'=>(int)($summary['restored']??0),
+              'tombstoned'=>(int)($summary['tombstoned']??0),
+            ]);
+        }
+        if(!empty($beforeReconciliation['last_disconnect_at'])&&function_exists('create_notification')){
+            create_notification(
+              $userId,'homeserver_connection_update','HomeServer continuity restored',
+              $changes>0
+                ? 'HomeServer reconnected and reconciled '.$changes.' continuity change'.($changes===1?'':'s').'. Agent Brain context and approved HomeServer capabilities are current again.'
+                : 'HomeServer reconnected and reconciliation completed with no continuity changes. Agent Brain context and approved HomeServer capabilities are current again.',
+              url('/settings-homeserver.php'),'homeserver_reconciliation',(string)($summary['run_id']??'')
+            );
+        }
+    }
+    return $home;
+}
+
+function homeserver_shared_v210_reconcile_full(int $userId): ?array
+{
+    if($userId<1)return null;
+    return homeserver_shared_v210_exchange_once($userId,'','reconnect');
 }
 
 function homeserver_shared_v210_exchange(int $userId,string $query=''): ?array
@@ -267,31 +369,33 @@ function homeserver_shared_v210_exchange(int $userId,string $query=''): ?array
     $query=homeserver_shared_v210_text($query,240);
     $cacheKey=$userId.'|'.sha1($query);
     if(array_key_exists($cacheKey,$cache))return $cache[$cacheKey];
-    if(!function_exists('homeserver_https_v1300_status')||!function_exists('homeserver_https_v1300_remote_operation'))return $cache[$cacheKey]=null;
+    if(!function_exists('homeserver_https_v1300_status'))return $cache[$cacheKey]=null;
     $status=homeserver_https_v1300_status($userId);
     if(!$status||empty($status['connected'])||empty($status['paired']))return $cache[$cacheKey]=null;
+
     try{
-        $cloud=homeserver_shared_v210_cloud_snapshot($userId,$query);
-        $requestId=homeserver_https_v1300_queue($userId,'shared.context.exchange',[
-          'query'=>$query,'cloud_snapshot'=>$cloud,
-        ]);
-        $result=homeserver_https_v1300_wait($requestId,6500);
-        $home=is_array($result['homeserver_snapshot']??null)?$result['homeserver_snapshot']:null;
-        if(!$home)return $cache[$cacheKey]=null;
-        if(function_exists('homeserver_federated_v240_observe_snapshot')){
-            homeserver_federated_v240_observe_snapshot($userId,$cloud,'vp3_cloud');
-            homeserver_federated_v240_observe_snapshot($userId,$home,'vp3_cloud');
+        if(function_exists('homeserver_reconciliation_v246_state')){
+            $reconciliation=homeserver_reconciliation_v246_state($userId);
+            if(!empty($reconciliation['needs_reconciliation'])){
+                $full=homeserver_shared_v210_reconcile_full($userId);
+                if(!$full)return $cache[$cacheKey]=null;
+                if($query==='')return $cache[$cacheKey]=$full;
+            }
+        }
+        return $cache[$cacheKey]=homeserver_shared_v210_exchange_once(
+          $userId,$query,$query===''?'full-sync':'query'
+        );
+    }catch(Throwable $e){
+        if(function_exists('homeserver_reconciliation_v246_mark_required')){
+            homeserver_reconciliation_v246_mark_required($userId,$e->getMessage());
         }
         $pdo=db();
-        if($pdo&&homeserver_shared_v210_schema_ready()){
-            $pdo->prepare("INSERT INTO homeserver_agent_state(user_id,last_sync_at,cloud_revision,homeserver_revision)
-              VALUES (?,UTC_TIMESTAMP(),?,?)
-              ON DUPLICATE KEY UPDATE last_sync_at=UTC_TIMESTAMP(),cloud_revision=VALUES(cloud_revision),homeserver_revision=VALUES(homeserver_revision)")
-              ->execute([$userId,(string)$cloud['revision'],(string)($home['revision']??'')]);
+        if($pdo&&function_exists('vp3_cognitive_homeserver_event_v2390')){
+            vp3_cognitive_homeserver_event_v2390($pdo,$userId,'homeserver.reconciliation_failed','connection_error',[
+              'priority'=>'critical','failure_class'=>'reconciliation',
+            ]);
         }
-        return $cache[$cacheKey]=$home;
-    }catch(Throwable $e){
-        error_log('HomeServer v2.1 shared Agent exchange failed: '.$e->getMessage());
+        error_log('HomeServer v2.4 reconciliation/shared Agent exchange failed: '.$e->getMessage());
         return $cache[$cacheKey]=null;
     }
 }
