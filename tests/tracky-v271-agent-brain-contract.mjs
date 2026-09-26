@@ -55,7 +55,7 @@ assert.match(chat,/tracky_agent_tools_query_v271/);
 assert.ok(chat.indexOf('tracky_agent_tools_query_v271') < chat.indexOf('homeserver_agent_read_v230_query'),'non-stream chat must route Tracky before generic HomeServer reads');
 
 assert.match(trackyPage,/Agent Brain integration/);
-assert.match(trackyPage,/Read only/);
+assert.match(agent,/'read_only'=>true/);
 assert.match(trackyPage,/never the raw perception stream/);
 
 assert.match(packageWorkflow,/test -f _deploy\/includes\/tracky-cloud-v270\.php/);
