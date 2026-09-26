@@ -73,7 +73,7 @@ function tracky_agent_intent_v271(string $query): string
     if(!$explicit&&tracky_agent_nonphysical_subject_v271($q))return '';
 
     if(preg_match('/\b(?:tracky|physical awareness|camera|physical context)\b.*\b(?:health|status|online|offline|working|connected)\b|\b(?:health|status)\b.*\btracky\b/u',$q))return 'health';
-    if(preg_match('/\b(?:last seen|last saw|when did (?:you|tracky) (?:see|spot|notice)|when was .{1,80} seen)\b/u',$q))return 'last_seen';
+    if(preg_match('/\b(?:last seen|last saw|when did (?:you|tracky)(?: last)? (?:see|spot|notice)|when (?:did )?(?:you|tracky) last (?:see|spot|notice)|when was .{1,80} seen)\b/u',$q))return 'last_seen';
     if(preg_match('/\b(?:what changed|what has changed|recent changes|what moved|what happened in (?:the )?room|physical changes)\b/u',$q))return 'changes';
     if(preg_match('/\b(?:who is|who\'s|who was|anyone|anybody|people)\b.*\b(?:here|present|in|room)\b|\bwho is here\b/u',$q))return 'present';
     if(preg_match('/\b(?:how sure|confidence|how confident)\b/u',$q))return 'confidence';
