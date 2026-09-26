@@ -36,7 +36,7 @@ v271_same($domain['plugin_key'],'tracky','plugin binding');
 v271_expect(in_array('physical_site',$domain['objects'],true),'physical site missing');
 v271_expect(in_array('physical_context.alert',$domain['events'],true),'physical alert missing');
 
-tracky_agent_register_cognitive_v271();
+require __DIR__.'/../includes/cognitive-domain-registry-v2600.php';
 $public=vp3_cognitive_registry_public_v500();
 $modules=array_column($public['modules'],'module');
 v271_expect(in_array('physical_context',$modules,true),'physical context module missing from canonical registry');
@@ -50,7 +50,6 @@ foreach(['tracky.current_context','tracky.where_is','tracky.who_is_present','tra
     v271_expect(!preg_match('/(?:control|write|move|unlock|open_door|switch|execute)/i',$id),'physical action authority leaked into Tracky tool id: '.$id);
 }
 
-require __DIR__.'/../includes/cognitive-domain-registry-v2600.php';
 $registry=vp3_cognitive_domain_registry_v2600();
 v271_expect(isset($registry['domains']['physical_context']),'physical context missing from canonical domain registry');
 v271_same(vp3_cognitive_domain_for_event_v2600('tracky','physical_context.alert'),'physical_context','Tracky source alias did not resolve');
