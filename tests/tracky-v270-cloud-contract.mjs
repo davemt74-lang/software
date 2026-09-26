@@ -28,6 +28,13 @@ assert.match(cloud,/tracky_cloud_v270_forbidden_key/);
 assert.match(cloud,/raw\|frame\|frames\|image\|images\|video\|videos\|audio/);
 assert.match(cloud,/cloud_derived','system_health','user_approved/);
 assert.match(cloud,/tracky_cloud_v270_simulator_payload/);
+assert.match(cloud,/function tracky_cloud_v270_event\(/);
+assert.match(cloud,/function tracky_cloud_v270_capabilities\(/);
+assert.match(cloud,/function tracky_cloud_v270_health\(/);
+assert.match(cloud,/function tracky_cloud_v270_relation_key\(/);
+assert.match(cloud,/idempotency conflict detected/);
+assert.match(cloud,/site is already bound to another HomeServer device/);
+assert.match(cloud,/timestamp is too far in the future/);
 
 assert.match(api,/homeserver_https_v1300_authenticate/);
 assert.match(api,/tracky_cloud_v270_plugin_enabled/);
