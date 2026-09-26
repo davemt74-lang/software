@@ -479,6 +479,8 @@ function homeserver_shared_v210_diagnostics(int $userId): array
       'last_shared_sync_at'=>$row['last_sync_at']??null,
       'cloud_revision'=>(string)($row['cloud_revision']??''),
       'homeserver_revision'=>(string)($row['homeserver_revision']??''),
+      'reconciliation'=>function_exists('homeserver_reconciliation_v246_diagnostics')
+        ?homeserver_reconciliation_v246_diagnostics($userId):null,
     ];
 }
 
@@ -519,18 +521,42 @@ function homeserver_shared_v210_reconcile_status(int $userId,array $status): arr
       'error'=>(string)($status['error']??''),
     ];
     $fingerprint=hash('sha256',json_encode($material,JSON_UNESCAPED_SLASHES)?:'{}');
-    $s=$pdo->prepare('SELECT connection_state,status_fingerprint FROM homeserver_agent_state WHERE user_id=? LIMIT 1');$s->execute([$userId]);$before=$s->fetch()?:null;
+    $s=$pdo->prepare('SELECT connection_state,status_fingerprint FROM homeserver_agent_state WHERE user_id=? LIMIT 1');
+    $s->execute([$userId]);$before=$s->fetch()?:null;
     $changed=!$before||!hash_equals((string)($before['status_fingerprint']??''),$fingerprint);
+    $previous=(string)($before['connection_state']??'not_connected');
+    $reconciliation=function_exists('homeserver_reconciliation_v246_state')
+      ?homeserver_reconciliation_v246_state($userId):['needs_reconciliation'=>false];
+
     if($changed){
-        $previous=(string)($before['connection_state']??'not_connected');
-        $eventType=$state==='connected'?'homeserver.connected':(in_array($state,['connection_error','disconnected'],true)?'homeserver.disconnected':'homeserver.status_changed');
+        $reconnected=$state==='connected'&&in_array($previous,['connection_error','disconnected'],true);
+        if(in_array($state,['connection_error','disconnected'],true)
+          &&function_exists('homeserver_reconciliation_v246_mark_required')){
+            $reconciliation=homeserver_reconciliation_v246_mark_required(
+              $userId,(string)($material['error']?:$state)
+            );
+        }elseif($state==='connected'&&function_exists('homeserver_reconciliation_v246_mark_connected')){
+            $reconciliation=homeserver_reconciliation_v246_mark_connected($userId);
+        }
+
+        $eventType=$state==='connected'
+          ?($reconnected?'homeserver.reconnected':'homeserver.connected')
+          :(in_array($state,['connection_error','disconnected'],true)?'homeserver.disconnected':'homeserver.status_changed');
         $detail=$state==='connected'
-          ? 'HomeServer is connected to VP3 Cloud.'
-          : (in_array($state,['connection_error','disconnected'],true)
-              ? 'HomeServer is '.$state.'. Local Agent Brain data and capabilities may be temporarily unavailable.'
-              : 'HomeServer status changed to '.$state.'.');
+          ?($reconnected
+              ?'HomeServer reconnected to VP3 Cloud. Continuity reconciliation is running before local context is trusted again.'
+              :'HomeServer is connected to VP3 Cloud. Initial continuity reconciliation is pending.')
+          :(in_array($state,['connection_error','disconnected'],true)
+              ?'HomeServer is '.$state.'. Local Agent Brain data and capabilities may be temporarily unavailable.'
+              :'HomeServer status changed to '.$state.'.');
         $pdo->prepare('INSERT INTO homeserver_agent_events(user_id,event_type,connection_state,detail,metadata_json) VALUES (?,?,?,?,?)')
-          ->execute([$userId,$eventType,$state,homeserver_shared_v210_text($detail,500),json_encode(['previous_state'=>$previous,'status'=>$material],JSON_UNESCAPED_SLASHES)]);
+          ->execute([
+            $userId,$eventType,$state,homeserver_shared_v210_text($detail,500),
+            json_encode([
+              'previous_state'=>$previous,'status'=>$material,
+              'reconciliation_required'=>!empty($reconciliation['needs_reconciliation']),
+            ],JSON_UNESCAPED_SLASHES)
+          ]);
         $eventId=(int)$pdo->lastInsertId();
         $roundTripReset=in_array($state,['connection_error','disconnected'],true)?0:null;
         if($roundTripReset===0){
@@ -548,39 +574,53 @@ function homeserver_shared_v210_reconcile_status(int $userId,array $status): arr
 
         if(function_exists('vp3_cognitive_homeserver_event_v2390')){
             vp3_cognitive_homeserver_event_v2390($pdo,$userId,$eventType,$state,[
-              'previous_state'=>$previous,'priority'=>in_array($state,['connection_error','disconnected'],true)?'critical':'normal',
+              'previous_state'=>$previous,
+              'priority'=>in_array($state,['connection_error','disconnected'],true)?'critical':($reconnected?'watch':'normal'),
+              'reconciliation_required'=>!empty($reconciliation['needs_reconciliation']),
             ]);
         }
         if(function_exists('create_notification')){
             if($state==='connected'){
-                $reconnected=in_array($previous,['connection_error','disconnected'],true);
                 create_notification(
                   $userId,'homeserver_connection_update',
-                  $reconnected?'HomeServer reconnected':'HomeServer connected',
+                  $reconnected?'HomeServer reconnected — reconciling':'HomeServer connected — synchronizing',
                   $reconnected
-                    ? 'HomeServer is back online. Local Agent Brain context, knowledge, contacts, tasks, notifications, models and approved HomeServer capabilities are available again.'
-                    : 'HomeServer is connected. Local Agent Brain context, knowledge, contacts, tasks, notifications, models and approved HomeServer capabilities are available.',
+                    ?'HomeServer is back online. I am reconciling Agent Brain context and HomeServer data before treating local context as current.'
+                    :'HomeServer is connected. I am completing the initial continuity reconciliation before treating local context as current.',
                   url('/settings-homeserver.php'),'homeserver_agent_event',$eventId
                 );
             }elseif(in_array($state,['connection_error','disconnected'],true)){
                 create_notification(
                   $userId,'homeserver_needs_attention','HomeServer needs attention',
-                  'HomeServer is not connected. I can continue with Cloud capabilities, but local data, models and HomeServer tools are temporarily unavailable. I will restore them automatically when HomeServer reconnects.',
+                  'HomeServer is not connected. I can continue with Cloud capabilities, but local data, models and HomeServer tools are temporarily unavailable. I will reconcile continuity automatically when HomeServer reconnects.',
                   url('/settings-homeserver.php'),'homeserver_agent_event',$eventId
                 );
             }
         }
     }
+
+    if(function_exists('homeserver_reconciliation_v246_state')){
+        $reconciliation=homeserver_reconciliation_v246_state($userId);
+    }
+    $reconciling=$state==='connected'&&!empty($reconciliation['needs_reconciliation']);
+    $reconcileFailed=$reconciling&&!empty($reconciliation['last_error']);
     $status['agent_brain_status']=[
       'known'=>true,
-      'priority'=>in_array($state,['connection_error','disconnected'],true)?'critical':($state==='connected'?'normal':'watch'),
-      'state'=>$state,
+      'priority'=>in_array($state,['connection_error','disconnected'],true)||$reconcileFailed
+        ?'critical':($reconciling?'watch':($state==='connected'?'normal':'watch')),
+      'state'=>$reconciling?'reconciling':$state,
+      'connection_state'=>$state,
+      'reconciliation_required'=>!empty($reconciliation['needs_reconciliation']),
     ];
+    $status['reconciliation']=$reconciliation;
     $status['diagnostics']=homeserver_shared_v210_diagnostics($userId);
     $status['shared_agent_fabric']=[
       'version'=>VP3_HOMESERVER_SHARED_AGENT_VERSION,
       'datasets'=>['memory','knowledge','contacts','tasks','calendar','files','notifications'],
       'mode'=>'federated',
+      'reconciliation_contract'=>'v246',
+      'filtered_snapshots_never_delete'=>true,
+      'full_snapshot_reconcile_on_reconnect'=>true,
     ];
     return $status;
 }
