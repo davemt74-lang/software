@@ -59,6 +59,7 @@ jobs:
           php -l includes/homeserver-voice-v234.php
           php -l includes/homeserver-profile-agent-v235.php
           php -l includes/homeserver-acceptance-v236.php
+          php -l includes/homeserver-acceptance-v247.php
           php -l includes/homeserver-federated-data-v240.php
           php -l includes/homeserver-contacts-v241.php
           php -l includes/homeserver-knowledge-v242.php
@@ -73,6 +74,7 @@ jobs:
           php -l api/agent-voice-v117.php
           php -l api/profile-agent.php
           php -l api/homeserver-acceptance-v236.php
+          php -l api/homeserver-acceptance-v247.php
           php -l api/homeserver-contacts-v241.php
           php -l api/homeserver-knowledge-v242.php
           php -l api/homeserver-tasks-calendar-v243.php
@@ -83,6 +85,7 @@ jobs:
           php -l tests/tracky-v270-cloud-unit.php
           php -l tests/homeserver-v235-voice-profile-unit.php
           php -l tests/homeserver-v236-release-acceptance-unit.php
+          php -l tests/homeserver-v247-release-acceptance-unit.php
           php -l tests/homeserver-v240-federated-data-unit.php
           php -l tests/homeserver-v241-contacts-continuity-unit.php
           php -l tests/homeserver-v242-knowledge-continuity-unit.php
@@ -118,6 +121,7 @@ jobs:
           node --check tests/homeserver-v233-governed-actions-contract.mjs
           node --check tests/homeserver-v235-voice-profile-contract.mjs
           node --check tests/homeserver-v236-release-acceptance-contract.mjs
+          node --check tests/homeserver-v247-release-acceptance-contract.mjs
           node --check tests/homeserver-v240-federated-data-contract.mjs
           node --check tests/homeserver-v241-contacts-continuity-contract.mjs
           node --check tests/homeserver-v242-knowledge-continuity-contract.mjs
@@ -150,6 +154,8 @@ jobs:
           php tests/homeserver-v235-voice-profile-unit.php
           node tests/homeserver-v236-release-acceptance-contract.mjs
           php tests/homeserver-v236-release-acceptance-unit.php
+          node tests/homeserver-v247-release-acceptance-contract.mjs
+          php tests/homeserver-v247-release-acceptance-unit.php
           node tests/homeserver-v240-federated-data-contract.mjs
           php tests/homeserver-v240-federated-data-unit.php
           node tests/homeserver-v241-contacts-continuity-contract.mjs
