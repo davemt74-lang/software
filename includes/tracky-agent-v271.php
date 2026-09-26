@@ -485,10 +485,23 @@ function tracky_agent_tools_query_v271(string $query,array $user,int $conversati
     }
     try{
         $data=tracky_agent_query_data_v271($pdo,$user,$query,$intent);
+        $refresh=function_exists('tracky_v273_maybe_refresh')
+            ?tracky_v273_maybe_refresh($pdo,$user,$query,$intent,$data)
+            :['attempted'=>false,'status'=>'unavailable'];
+        if(!empty($refresh['attempted'])&&($refresh['status']??'')==='completed'&&empty($refresh['cloud_sync_error'])){
+            $data=tracky_agent_query_data_v271($pdo,$user,$query,$intent);
+        }
         $result['answer']=tracky_agent_answer_v271($data,$intent);
+        if(function_exists('tracky_v273_refresh_note'))$result['answer'].=tracky_v273_refresh_note($refresh);
         $result['sources'][]=['source'=>'tracky:physical_context','title'=>'Tracky governed physical context'];
-        $result['tracky']=['contract'=>VP3_TRACKY_AGENT_CONTRACT_V271,'intent'=>$intent,'data'=>$data,'read_only'=>true,'raw_perception_exposed'=>false];
-        if(function_exists('agent_tool_log'))agent_tool_log($user,'tracky.'.$intent,$query,'success',['intent'=>$intent,'site_id'=>(string)($data['site_id']??''),'read_only'=>true],$conversationId);
+        $result['tracky']=[
+            'contract'=>VP3_TRACKY_AGENT_CONTRACT_V271,'intent'=>$intent,'data'=>$data,
+            'active_perception'=>$refresh,'read_only'=>true,'raw_perception_exposed'=>false
+        ];
+        if(function_exists('agent_tool_log'))agent_tool_log($user,'tracky.'.$intent,$query,'success',[
+            'intent'=>$intent,'site_id'=>(string)($data['site_id']??''),'read_only'=>true,
+            'active_perception_status'=>(string)($refresh['status']??'not_attempted')
+        ],$conversationId);
     }catch(Throwable $e){
         $result['answer']='Tracky physical context could not be read safely right now.';
         if(function_exists('agent_tool_log'))agent_tool_log($user,'tracky.'.$intent,$query,'failed',['error'=>mb_strimwidth($e->getMessage(),0,240,'')],$conversationId);

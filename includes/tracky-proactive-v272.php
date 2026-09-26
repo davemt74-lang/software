@@ -27,6 +27,8 @@ function tracky_v272_settings_defaults(): array
         'automation_enabled'=>true,
         'cross_plugin_access'=>false,
         'cross_plugin_plugins'=>[],
+        'active_perception_enabled'=>false,
+        'auto_refresh_stale'=>false,
         'now_classes'=>['object','environment','routine','health','safety'],
         'chat_classes'=>['health','safety'],
         'voice_classes'=>['health','safety'],
@@ -37,7 +39,7 @@ function tracky_v272_settings_defaults(): array
 function tracky_v272_settings_normalize(array $input): array
 {
     $defaults=tracky_v272_settings_defaults();$out=$defaults;
-    foreach(['now_enabled','chat_enabled','voice_enabled','automation_enabled','cross_plugin_access'] as $key){
+    foreach(['now_enabled','chat_enabled','voice_enabled','automation_enabled','cross_plugin_access','active_perception_enabled','auto_refresh_stale'] as $key){
         if(array_key_exists($key,$input))$out[$key]=(bool)$input[$key];
     }
     $allowed=tracky_v272_event_classes();
@@ -632,3 +634,5 @@ function tracky_v272_plugin_context(PDO $pdo,array $user,string $consumerPlugin)
         'read_only'=>true,
     ];
 }
+
+require_once __DIR__.'/tracky-join-v273.php';

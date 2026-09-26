@@ -207,6 +207,7 @@ jobs:
           test -f _deploy/includes/tracky-cloud-v270.php
           test -f _deploy/includes/tracky-agent-v271.php
           test -f _deploy/includes/tracky-proactive-v272.php
+          test -f _deploy/includes/tracky-join-v273.php
           test -f _deploy/api/tracky-sync-v270.php
           test -f _deploy/tracky.php
           test -f _deploy/team.php
