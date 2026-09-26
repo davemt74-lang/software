@@ -165,6 +165,7 @@ require_once __DIR__.'/homeserver-contacts-v241.php';
 require_once __DIR__.'/homeserver-knowledge-v242.php';
 require_once __DIR__.'/homeserver-tasks-calendar-v243.php';
 require_once __DIR__.'/homeserver-files-v244.php';
+require_once __DIR__.'/homeserver-agent-brain-memory-v245.php';
 require_once __DIR__.'/tracky-cloud-v270.php';
 require_once __DIR__.'/homeserver-shared-agent-v210.php';
 require_once __DIR__.'/homeserver-execution-routing-v220.php';
