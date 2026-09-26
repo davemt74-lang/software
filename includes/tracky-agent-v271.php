@@ -16,6 +16,8 @@ const VP3_TRACKY_AGENT_V271='vp3-tracky-agent-v271-20260926';
 const VP3_TRACKY_AGENT_CONTRACT_V271='physical-context-agent-v1';
 const VP3_TRACKY_AGENT_MAX_ROWS_V271=200;
 const VP3_TRACKY_AGENT_MAX_EVENT_SCAN_V271=300;
+const VP3_TRACKY_AGENT_CURRENT_SECONDS_V271=300;
+const VP3_TRACKY_AGENT_RECENT_SECONDS_V271=3600;
 
 function tracky_agent_empty_v271(): array
 {
@@ -41,6 +43,24 @@ function tracky_agent_entity_label_v271(string $id): string
     return $id===''?'Unknown':mb_convert_case($id,MB_CASE_TITLE,'UTF-8');
 }
 
+function tracky_agent_freshness_v271(?string $asOf,?array $site=null): array
+{
+    $asOf=trim((string)$asOf);$age=null;
+    if($asOf!==''){
+        try{$dt=new DateTimeImmutable($asOf,new DateTimeZone('UTC'));$age=max(0,time()-$dt->getTimestamp());}
+        catch(Throwable $e){$age=null;}
+    }
+    $siteStatus=strtolower(trim((string)($site['status']??'')));
+    $siteUnavailable=in_array($siteStatus,['offline','disabled','failed'],true);
+    if(!$siteUnavailable&&$age!==null&&$age<=VP3_TRACKY_AGENT_CURRENT_SECONDS_V271){
+        return ['state'=>'current','age_seconds'=>$age,'live'=>true];
+    }
+    if(!$siteUnavailable&&$age!==null&&$age<=VP3_TRACKY_AGENT_RECENT_SECONDS_V271){
+        return ['state'=>'recent','age_seconds'=>$age,'live'=>false];
+    }
+    return ['state'=>'stale','age_seconds'=>$age,'live'=>false];
+}
+
 function tracky_agent_query_terms_v271(string $query): array
 {
     $stop=array_flip([
@@ -61,7 +81,7 @@ function tracky_agent_query_terms_v271(string $query): array
 
 function tracky_agent_nonphysical_subject_v271(string $query): bool
 {
-    return (bool)preg_match('/\b(?:file|document|doc|email|message|order|booking|appointment|meeting|calendar|project|campaign|reward|invoice|payment|song|track|stem|playlist|website|page|release|conversation|task)\b/i',$query);
+    return (bool)preg_match('/\b(?:file|document|doc|email|message|order|booking|appointment|meeting|calendar|project|campaign|reward|invoice|payment|song|track|stem|playlist|website|page|release|conversation|task|crm|account|setting|menu|button|repository|repo|branch|commit|pull request|database|sql|password|credential|api key|secret key|access token|phone number|email address|billing address|shipping address|url|link)\b/i',$query);
 }
 
 function tracky_agent_intent_v271(string $query): string
@@ -140,6 +160,7 @@ function tracky_agent_where_v271(PDO $pdo,array $user,array $site,string $query)
                 'kind'=>'current_room','entity'=>'You','location'=>$room,
                 'confidence'=>(float)($context['context']['confidence']??0),
                 'as_of'=>(string)($context['observed_at']??$context['updated_at']??''),
+                'freshness'=>tracky_agent_freshness_v271((string)($context['observed_at']??$context['updated_at']??''),$site),
                 'site_id'=>$siteId,
             ];
         }
@@ -178,6 +199,7 @@ function tracky_agent_where_v271(PDO $pdo,array $user,array $site,string $query)
             'source_event_id'=>(string)$row['source_event_id'],
             'sequence'=>(int)$row['sequence_no'],
             'as_of'=>(string)$row['as_of'],
+            'freshness'=>tracky_agent_freshness_v271((string)$row['as_of'],$site),
         ];
     }
     return ['kind'=>'where','matches'=>$matches,'site_id'=>$siteId];
@@ -216,13 +238,15 @@ function tracky_agent_present_v271(PDO $pdo,array $user,array $site,string $quer
             'room'=>tracky_agent_entity_label_v271((string)$row['object_id']),
             'confidence'=>(float)$row['confidence'],
             'as_of'=>(string)$row['as_of'],
+            'freshness'=>tracky_agent_freshness_v271((string)$row['as_of'],$site),
         ];
     }
     if(!$people&&$roomId===''&&$roomLabel!==''){
         $context=tracky_cloud_v270_current_context($pdo,$uid,$siteId);
         foreach((array)($context['context']['people_present']??[]) as $name){
             $name=trim((string)$name);if($name==='')continue;
-            $people[]=['entity_id'=>'','name'=>$name,'room_id'=>'','room'=>$roomLabel,'confidence'=>(float)($context['context']['confidence']??0),'as_of'=>(string)($context['observed_at']??$context['updated_at']??'')];
+            $observed=(string)($context['observed_at']??$context['updated_at']??'');
+            $people[]=['entity_id'=>'','name'=>$name,'room_id'=>'','room'=>$roomLabel,'confidence'=>(float)($context['context']['confidence']??0),'as_of'=>$observed,'freshness'=>tracky_agent_freshness_v271($observed,$site)];
         }
     }
     return ['kind'=>'present','room'=>$roomLabel,'room_id'=>$roomId,'people'=>array_slice($people,0,20),'site_id'=>$siteId];
@@ -312,6 +336,7 @@ function tracky_agent_health_v271(PDO $pdo,array $user): array
             'site_id'=>(string)$site['site_id'],'label'=>(string)($site['label']?:$site['site_id']),
             'status'=>(string)$site['status'],'protocol'=>(string)$site['protocol_version'],
             'last_seen_at'=>$site['last_seen_at']??null,'last_event_at'=>$site['last_event_at']??null,
+            'freshness'=>tracky_agent_freshness_v271((string)($site['last_seen_at']??''),$site),
             'health'=>is_array($site['health']??null)?$site['health']:[],
             'capabilities'=>is_array($site['capabilities']??null)?$site['capabilities']:[],
         ];
@@ -327,6 +352,10 @@ function tracky_agent_current_v271(PDO $pdo,array $user,array $site): array
         'site_label'=>(string)($site['label']?:$site['site_id']),
         'status'=>(string)$site['status'],
         'context'=>tracky_cloud_v270_current_context($pdo,(int)$user['id'],(string)$site['site_id']),
+        'freshness'=>tracky_agent_freshness_v271(
+            (string)(tracky_cloud_v270_current_context($pdo,(int)$user['id'],(string)$site['site_id'])['observed_at']??tracky_cloud_v270_current_context($pdo,(int)$user['id'],(string)$site['site_id'])['updated_at']??''),
+            $site
+        ),
     ];
 }
 
@@ -363,7 +392,8 @@ function tracky_agent_answer_v271(array $data,string $intent): string
         $lines=[];foreach($sites as $site){
             $health=(array)($site['health']??[]);
             $healthText=$health?implode(', ',array_map(static fn($k,$v)=>$k.'='.$v,array_keys($health),array_values($health))):'no detailed health report';
-            $lines[]='• '.(string)$site['label'].' — '.(string)$site['status'].' · '.$healthText.' · last seen '.tracky_agent_time_label_v271((string)($site['last_seen_at']??''));
+            $fresh=(string)($site['freshness']['state']??'stale');
+            $lines[]='• '.(string)$site['label'].' — recorded status '.(string)$site['status'].' · sync '.$fresh.' · '.$healthText.' · last seen '.tracky_agent_time_label_v271((string)($site['last_seen_at']??''));
         }
         return "Tracky physical-awareness status:
 ".implode("
@@ -373,7 +403,8 @@ function tracky_agent_answer_v271(array $data,string $intent): string
         $ctx=(array)($data['context']['context']??[]);
         if(!$ctx)return 'Tracky has not synchronized a current physical-context snapshot for this site yet.';
         $room=(string)($ctx['current_room']??'Unknown');$people=(array)($ctx['people_present']??[]);
-        $answer='Tracky’s latest physical context: room '.$room;
+        $fresh=(string)($data['freshness']['state']??'stale');
+        $answer=($fresh==='current'?'Tracky’s current physical context':'Tracky’s last synchronized physical context').' ('.$fresh.'): room '.$room;
         if($people)$answer.=' · present: '.implode(', ',$people);
         $env=trim((string)($ctx['environment_status']??''));if($env!=='')$answer.=' · environment: '.$env;
         $answer.=' · confidence '.number_format((float)($ctx['confidence']??0)*100,1).'%';
@@ -382,13 +413,16 @@ function tracky_agent_answer_v271(array $data,string $intent): string
     }
     if($intent==='where'){
         if(($data['kind']??'')==='current_room'){
-            return 'Tracky’s latest physical context puts you in '.$data['location'].' with '.number_format((float)$data['confidence']*100,1).'% confidence, observed '.tracky_agent_time_label_v271((string)$data['as_of']).'.';
+            $fresh=(string)($data['freshness']['state']??'stale');
+            $verb=$fresh==='current'?'puts you in':'last recorded you in';
+            return 'Tracky '.$verb.' '.$data['location'].' with '.number_format((float)$data['confidence']*100,1).'% confidence ('.$fresh.'), observed '.tracky_agent_time_label_v271((string)$data['as_of']).'.';
         }
         $matches=(array)($data['matches']??[]);
         if(!$matches)return 'Tracky does not currently have a confident location match for that entity.';
         $lines=[];foreach($matches as $m){
-            $qual=(string)$m['temporal_state']==='current'?'currently':(string)$m['temporal_state'];
-            $lines[]='• '.(string)$m['entity'].' — '.$qual.' '.str_replace('_',' ',(string)$m['predicate']).' '.(string)$m['location'].' · '.number_format((float)$m['confidence']*100,1).'% · '.tracky_agent_time_label_v271((string)$m['as_of']);
+            $fresh=(string)($m['freshness']['state']??'stale');
+            $qual=((string)$m['temporal_state']==='current'&&$fresh==='current')?'currently':($fresh==='stale'?'last known':(string)$m['temporal_state']);
+            $lines[]='• '.(string)$m['entity'].' — '.$qual.' '.str_replace('_',' ',(string)$m['predicate']).' '.(string)$m['location'].' · '.number_format((float)$m['confidence']*100,1).'% · '.$fresh.' · '.tracky_agent_time_label_v271((string)$m['as_of']);
         }
         return "Tracky location state:
 ".implode("
@@ -398,7 +432,14 @@ function tracky_agent_answer_v271(array $data,string $intent): string
         $people=(array)($data['people']??[]);$room=trim((string)($data['room']??''));
         if(!$people)return $room!==''?'Tracky does not currently report anyone present in '.$room.'.':'Tracky does not currently report a person-presence match.';
         $names=array_values(array_unique(array_map(static fn($p)=>(string)$p['name'],$people)));
-        return 'Tracky currently reports '.implode(', ',$names).' present'.($room!==''?' in '.$room:'').'.';
+        $live=true;$minConfidence=1.0;$latest='';
+        foreach($people as $person){
+            if(empty($person['freshness']['live']))$live=false;
+            $minConfidence=min($minConfidence,(float)($person['confidence']??0));
+            if((string)($person['as_of']??'')>$latest)$latest=(string)$person['as_of'];
+        }
+        $prefix=$live?'Tracky currently reports ':'Tracky’s last recorded presence reports ';
+        return $prefix.implode(', ',$names).' present'.($room!==''?' in '.$room:'').' · confidence at least '.number_format($minConfidence*100,1).'%'.($latest!==''?' · '.tracky_agent_time_label_v271($latest):'').'.';
     }
     if($intent==='last_seen'){
         $event=$data['event']??null;if(!$event)return 'Tracky does not have a matching last-seen event in the synchronized history.';
@@ -420,7 +461,8 @@ function tracky_agent_answer_v271(array $data,string $intent): string
     if(in_array($intent,['confidence','why'],true)){
         $fact=$data['fact']??null;if(!$fact)return 'Tracky does not currently have enough synchronized evidence to explain that physical fact.';
         if(($fact['kind']??'')==='current_room'){
-            return 'That room estimate comes from Tracky’s latest governed context snapshot. Confidence is '.number_format((float)$fact['confidence']*100,1).'% and the snapshot is from '.tracky_agent_time_label_v271((string)$fact['as_of']).'. Raw camera evidence stays on the HomeServer.';
+            $fresh=(string)($fact['freshness']['state']??'stale');
+            return 'That room estimate comes from Tracky’s latest governed context snapshot ('.$fresh.'). Confidence is '.number_format((float)$fact['confidence']*100,1).'% and the snapshot is from '.tracky_agent_time_label_v271((string)$fact['as_of']).'. Raw camera evidence stays on the HomeServer.';
         }
         $answer='Tracky’s current fact is '.(string)$fact['entity'].' '.str_replace('_',' ',(string)$fact['predicate']).' '.(string)$fact['location'].' at '.number_format((float)$fact['confidence']*100,1).'% confidence.';
         $evidence=$data['evidence']??null;
@@ -469,8 +511,13 @@ function tracky_agent_tool_catalog_entry_v271(PDO $pdo,array $user): ?array
 
 function tracky_agent_context_relevant_v271(string $query): bool
 {
-    return tracky_agent_intent_v271($query)!==''
-        || (bool)preg_match('/\b(?:home|office|kitchen|garage|bedroom|living room|keys|wallet|phone|glasses|person|people|object|environment)\b/i',$query);
+    if(tracky_agent_intent_v271($query)!=='')return true;
+    if(tracky_agent_nonphysical_subject_v271($query))return false;
+    if((bool)preg_match('/\b(?:office|kitchen|garage|bedroom|living room|environment|around me|near me|in the room|here)\b/i',$query))return true;
+    return (bool)preg_match(
+        '/\b(?:left|leave|lost|put|placed|dropped|picked|moved|move|near|around|find)\b.{0,80}\b(?:keys?|wallet|phone|glasses|bag|backpack|item|object|car)\b|\b(?:keys?|wallet|phone|glasses|bag|backpack|item|object|car)\b.{0,80}\b(?:left|leave|lost|put|placed|dropped|picked|moved|move|near|around|find)\b/i',
+        $query
+    );
 }
 
 function tracky_agent_fresh_alerts_v271(PDO $pdo,int $userId,int $limit=4): array
@@ -574,6 +621,7 @@ function tracky_agent_cognitive_context_v271(PDO $pdo,array $user,string $agentN
         $q=$pdo->prepare("SELECT site_id,subject_id,predicate,object_id,value_json,confidence,temporal_state,source_event_id,sequence_no,as_of
           FROM tracky_cloud_world_state WHERE user_id=? AND subject_id=? ORDER BY as_of DESC LIMIT 40");
         $q->execute([$uid,$id]);$rows=$q->fetchAll()?:[];
+        foreach($rows as &$row){$value=json_decode((string)($row['value_json']??''),true);$row['value']=is_array($value)?$value:[];unset($row['value_json']);}unset($row);
         return ['entity_id'=>$id,'label'=>tracky_agent_entity_label_v271($id),'relations'=>$rows,'authority'=>'tracky_cloud_world_state','read_only'=>true];
     }
     if($type==='physical_room'){
@@ -602,14 +650,16 @@ function tracky_agent_cognitive_relationships_v271(PDO $pdo,array $user,string $
         foreach($q->fetchAll()?:[] as $row){
             $object=(string)$row['object_id'];if($object==='')continue;
             $targetType=str_starts_with(strtolower($object),'room:')?'physical_room':'physical_entity';
-            $out[]=['relation'=>(string)$row['predicate'],'object_ref'=>['type'=>$targetType,'id'=>$object,'scope'=>'personal'],'provenance'=>'tracky_cloud_world_state','confidence'=>(float)$row['confidence'],'confirmation_state'=>(string)$row['temporal_state']==='inferred'?'model_inferred':'deterministic'];
+            $predicate=(string)$row['predicate'];
+            $relation=$targetType==='physical_room'&&in_array($predicate,['located_in','located_on','present_in','moving_between'],true)?'has_location':$predicate;
+            $out[]=['relation'=>$relation,'object_ref'=>['type'=>$targetType,'id'=>$object,'scope'=>'personal'],'provenance'=>'tracky_cloud_world_state','confidence'=>(float)$row['confidence'],'confirmation_state'=>(string)$row['temporal_state']==='inferred'?'model_inferred':'deterministic'];
         }
     }elseif($type==='physical_room'){
         $q=$pdo->prepare("SELECT subject_id,predicate,confidence,temporal_state FROM tracky_cloud_world_state WHERE user_id=? AND object_id=? AND temporal_state IN ('current','inferred') ORDER BY as_of DESC LIMIT 30");
         $q->execute([$uid,$id]);
         foreach($q->fetchAll()?:[] as $row){
             $subject=(string)$row['subject_id'];if($subject==='')continue;
-            $out[]=['relation'=>'contains','object_ref'=>['type'=>'physical_entity','id'=>$subject,'scope'=>'personal'],'provenance'=>'tracky_cloud_world_state','confidence'=>(float)$row['confidence'],'confirmation_state'=>(string)$row['temporal_state']==='inferred'?'model_inferred':'deterministic'];
+            $out[]=['relation'=>'location_of','object_ref'=>['type'=>'physical_entity','id'=>$subject,'scope'=>'personal'],'provenance'=>'tracky_cloud_world_state','confidence'=>(float)$row['confidence'],'confirmation_state'=>(string)$row['temporal_state']==='inferred'?'model_inferred':'deterministic'];
         }
     }
     return $out;
