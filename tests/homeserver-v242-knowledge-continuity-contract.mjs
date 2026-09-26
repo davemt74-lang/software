@@ -11,6 +11,9 @@ const vp3=read('includes/homeserver-vp3.php');
 const governed=read('includes/homeserver-governed-actions-v233.php');
 const knowledgePage=read('knowledge.php');
 const workflow=read('.github/workflows/homeserver-runtime-journey.yml');
+const citationStart=retrieval.indexOf('function knowledge_retrieval_v162_citations');
+const citationEnd=retrieval.indexOf('function knowledge_retrieval_v162_strip_legacy_personal',citationStart);
+const citationBlock=citationStart>=0&&citationEnd>citationStart?retrieval.slice(citationStart,citationEnd):'';
 
 const checks=[
  ['v2.4 Knowledge helper is loaded',/homeserver-knowledge-v242\.php/.test(bootstrap)],
@@ -25,7 +28,7 @@ const checks=[
  ['Agent retrieval retains owner-session boundary',/knowledge_retrieval_v162_owner_session/.test(retrieval)],
  ['Agent context labels federated Knowledge as untrusted evidence',/Federated Knowledge — UNTRUSTED EVIDENCE/.test(retrieval)&&/\[K#\]/.test(retrieval)],
  ['Agent citations carry canonical authority metadata',/canonical_id/.test(retrieval)&&/authority_source/.test(retrieval)&&/record_revision/.test(retrieval)],
- ['HomeServer citation export does not copy relative_path into public citation shape',!/\['relative_path'\]/.test(retrieval)],
+ ['HomeServer citation export does not copy relative_path into public citation shape',citationBlock!==''&&!citationBlock.includes("'relative_path'")&&!citationBlock.includes('"relative_path"')],
  ['Knowledge workspace displays Cloud and HomeServer authority separately',/HomeServer Knowledge/.test(knowledgePage)&&/data-knowledge-authority="homeserver"/.test(knowledgePage)],
  ['API reads unified Knowledge and CSRF-protects mutations',/homeserver_knowledge_v242_unified/.test(api)&&/hash_equals\(csrf_token\(\)/.test(api)],
  ['runtime journey gates Section 3 contract and unit tests',/homeserver-v242-knowledge-continuity-contract\.mjs/.test(workflow)&&/homeserver-v242-knowledge-continuity-unit\.php/.test(workflow)],
