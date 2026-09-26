@@ -159,6 +159,81 @@ function homeserver_knowledge_v242_unified(
     ];
 }
 
+function homeserver_knowledge_v242_project_cloud_retrieval(int $userId,array $row): array
+{
+    $itemId=max(0,(int)($row['item_id']??0));
+    if($userId<1||$itemId<1)return $row;
+    $title=homeserver_knowledge_v242_text($row['title']??'Untitled Knowledge',240);
+    $excerpt=homeserver_knowledge_v242_text($row['excerpt']??'',1800);
+    $updated=homeserver_knowledge_v242_text($row['updated_at']??'',80);
+    $key='knowledge:'.$itemId;
+    $envelope=homeserver_federated_v240_envelope(
+      'vp3_cloud','knowledge',$key,$title,'',$updated!==''?$updated:null
+    );
+    homeserver_federated_v240_observe($userId,$envelope,'vp3_cloud');
+    $row['source']='cloud';
+    $row['authority_source']='vp3_cloud';
+    $row['authority_key']=$key;
+    $row['canonical_id']=$envelope['canonical_id'];
+    $row['record_revision']=$envelope['record_revision'];
+    $row['federation_version']='2.4';
+    $row['source_label']='VP3 Cloud';
+    $row['mirror_only']=false;
+    $row['excerpt']=$excerpt;
+    return $row;
+}
+
+function homeserver_knowledge_v242_agent_search(int $userId,string $query,int $limit=6): array
+{
+    if($userId<1||!function_exists('homeserver_execution_v220_can_route')
+      ||!homeserver_execution_v220_can_route($userId,'knowledge.search')){
+        return ['status'=>'unavailable','items'=>[]];
+    }
+    $items=homeserver_knowledge_v242_homeserver_items($userId,$query,max(1,min(8,$limit)));
+    $out=[];
+    foreach($items as $item){
+        $citation=is_array($item['citation']??null)?$item['citation']:[];
+        $out[]=[
+          'source'=>'homeserver',
+          'source_label'=>'HomeServer',
+          'item_id'=>(int)($item['id']??0),
+          'chunk_id'=>0,
+          'chunk_index'=>max(0,(int)($citation['chunk_index']??0)),
+          'title'=>(string)($item['title']??'HomeServer Knowledge'),
+          'folder_id'=>0,
+          'folder_name'=>(string)($item['collection_key']??'general'),
+          'excerpt'=>(string)($item['excerpt']??''),
+          'score'=>0.0,
+          'updated_at'=>$item['updated_at']??null,
+          'authority_source'=>'homeserver',
+          'authority_key'=>(string)($item['authority_key']??''),
+          'canonical_id'=>(string)($item['canonical_id']??''),
+          'record_revision'=>(string)($item['record_revision']??''),
+          'federation_version'=>'2.4',
+          'citation'=>$citation,
+        ];
+    }
+    return ['status'=>'queried','items'=>$out];
+}
+
+function homeserver_knowledge_v242_merge_retrieval(array $cloud,array $homeserver,int $limit=8): array
+{
+    $limit=max(1,min(12,$limit));$out=[];$seen=[];$queues=[array_values($cloud),array_values($homeserver)];
+    $index=0;
+    while(count($out)<$limit&&($queues[0]||$queues[1])){
+        $slot=$index%2;$index++;
+        if(!$queues[$slot])$slot=1-$slot;
+        if(!$queues[$slot])break;
+        $item=array_shift($queues[$slot]);
+        if(!is_array($item))continue;
+        $canonical=strtolower(trim((string)($item['canonical_id']??'')));
+        if(!preg_match('/^fd24_[0-9a-f]{40}$/',$canonical)||isset($seen[$canonical]))continue;
+        $seen[$canonical]=true;
+        $out[]=$item;
+    }
+    return $out;
+}
+
 function homeserver_knowledge_v242_known_homeserver(
     int $userId,string $canonicalId
 ): ?array {
