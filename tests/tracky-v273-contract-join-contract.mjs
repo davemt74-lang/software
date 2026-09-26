@@ -16,6 +16,8 @@ assert.match(join,/needs_reconciliation/);
 assert.match(join,/homeserver_execution_v220_registry/);
 assert.match(join,/homeserver_execution_v220_can_route/);
 assert.match(join,/homeserver_execution_v220_execute\(\$uid,'physical_context\.active_perception'/);
+assert.match(join,/tracky_cloud_v270_ingest\(\$pdo,\$uid,\$deviceId,\$projection\)/);
+assert.match(join,/'cloud_projection_ingested'/);
 assert.doesNotMatch(join,/homeserver_https_v1300_remote_operation\(/,'V2.73 must route through the canonical execution router');
 assert.doesNotMatch(join,/INSERT INTO homeserver_https_requests|homeserver_https_v1300_queue\(/,'V2.73 must not bypass canonical execution routing');
 assert.doesNotMatch(join,/CREATE TABLE|ALTER TABLE/,'Cloud V2.73 must not create another physical or reconciliation authority store');
