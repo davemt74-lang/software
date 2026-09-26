@@ -150,10 +150,26 @@ function homeserver_reconciliation_v246_reconcile_snapshot(
     $observed=homeserver_federated_v240_source($observedSource);
     $mode=strtolower(homeserver_reconciliation_v246_text($snapshot['snapshot_mode']??'filtered',20));
     if(!in_array($mode,['full','filtered'],true))throw new RuntimeException('Federated snapshot mode must be full or filtered.');
+    $coverageRaw=$snapshot['covered_datasets']??null;
+    if($coverageRaw===null){
+        $coverage=[];
+        foreach(homeserver_federated_v240_datasets() as $dataset){
+            if(is_array($datasets[$dataset]??null))$coverage[]=$dataset;
+        }
+    }elseif(is_array($coverageRaw)){
+        $coverage=[];
+        foreach($coverageRaw as $dataset){
+            $name=homeserver_federated_v240_dataset((string)$dataset);
+            if(!in_array($name,$coverage,true))$coverage[]=$name;
+        }
+    }else{
+        throw new RuntimeException('Federated snapshot covered_datasets must be a list.');
+    }
+    if(!$coverage)throw new RuntimeException('Federated snapshot coverage is empty.');
     if($mode==='full'){
         $missing=[];
-        foreach(homeserver_federated_v240_datasets() as $dataset)if(!is_array($datasets[$dataset]??null))$missing[]=$dataset;
-        if($missing)throw new RuntimeException('Full reconciliation snapshot is missing datasets: '.implode(', ',$missing));
+        foreach($coverage as $dataset)if(!is_array($datasets[$dataset]??null))$missing[]=$dataset;
+        if($missing)throw new RuntimeException('Full reconciliation snapshot is missing covered datasets: '.implode(', ',$missing));
     }
     $revision=homeserver_reconciliation_v246_text($snapshot['revision']??'',128);
     $runId=bin2hex(random_bytes(16));
@@ -168,7 +184,7 @@ function homeserver_reconciliation_v246_reconcile_snapshot(
 
     try{
         // Prevalidate every row before touching mirrors.
-        foreach(homeserver_federated_v240_datasets() as $dataset){
+        foreach($coverage as $dataset){
             if(!is_array($datasets[$dataset]??null))continue;
             $seen=[];$rows=[];
             foreach($datasets[$dataset] as $index=>$row){
@@ -246,6 +262,7 @@ function homeserver_reconciliation_v246_reconcile_snapshot(
         return [
           'version'=>'2.4','contract'=>'v246','run_id'=>$runId,'peer_source'=>$authority,
           'observed_source'=>$observed,'snapshot_mode'=>$mode,'snapshot_revision'=>$revision,
+          'covered_datasets'=>$coverage,
           'status'=>'completed',...$totals,'datasets'=>$summaries,
         ];
     }catch(Throwable $e){
