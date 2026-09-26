@@ -615,6 +615,14 @@ function homeserver_shared_v210_reconcile_status(int $userId,array $status): arr
                       ['priority'=>'critical','failure_class'=>'reconciliation']
                     );
                 }
+                if(function_exists('create_notification')){
+                    create_notification(
+                      $userId,'homeserver_needs_attention',
+                      'HomeServer reconciliation needs attention',
+                      'HomeServer is connected, but continuity reconciliation did not finish. I will keep retrying automatically; HomeServer-backed context remains marked stale until reconciliation succeeds.',
+                      url('/settings-homeserver.php'),'homeserver_reconciliation_failure',$eventId
+                    );
+                }
             }
         }
 
@@ -622,6 +630,19 @@ function homeserver_shared_v210_reconcile_status(int $userId,array $status): arr
 
     if(function_exists('homeserver_reconciliation_v246_state')){
         $reconciliation=homeserver_reconciliation_v246_state($userId);
+    }
+    if(
+        $state==='connected'
+        &&!empty($reconciliation['needs_reconciliation'])
+        &&function_exists('homeserver_reconciliation_v246_should_retry')
+        &&homeserver_reconciliation_v246_should_retry($userId,30)
+    ){
+        try{
+            homeserver_shared_v210_reconcile_full($userId);
+            $reconciliation=homeserver_reconciliation_v246_state($userId);
+        }catch(Throwable $ignored){
+            $reconciliation=homeserver_reconciliation_v246_state($userId);
+        }
     }
     $reconciling=$state==='connected'&&!empty($reconciliation['needs_reconciliation']);
     $reconcileFailed=$reconciling&&!empty($reconciliation['last_error']);
