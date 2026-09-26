@@ -15,6 +15,7 @@ const VP3_TRACKY_MAX_EVENTS_V270=100;
 const VP3_TRACKY_MAX_RELATIONS_V270=250;
 const VP3_TRACKY_MAX_PAYLOAD_BYTES_V270=262144;
 const VP3_TRACKY_FRESH_EVENT_SECONDS_V270=300;
+const VP3_TRACKY_MAX_FUTURE_SKEW_SECONDS_V270=300;
 
 function tracky_cloud_v270_schema_ready(?PDO $pdo=null): bool
 {
@@ -187,6 +188,98 @@ function tracky_cloud_v270_confidence(mixed $value): float
     return max(0.0,min(1.0,(float)$value));
 }
 
+
+function tracky_cloud_v270_scalar(mixed $value,int $max=500): string|int|float|bool|null
+{
+    if($value===null||is_bool($value)||is_int($value)||is_float($value))return $value;
+    if(is_string($value))return mb_strimwidth(trim($value),0,max(1,$max),'');
+    throw new RuntimeException('Tracky governed value must be scalar.');
+}
+
+function tracky_cloud_v270_capabilities(array $input): array
+{
+    $out=[];
+    $scalarKeys=['camera_count','scene_graph','active_perception','recognition','object_tracking','gesture_support','acceleration','protocol','world_state_version','event_schema_version','physical_context_version'];
+    foreach($scalarKeys as $key){
+        if(array_key_exists($key,$input))$out[$key]=tracky_cloud_v270_scalar($input[$key],120);
+    }
+    if(isset($input['sensors'])){
+        if(!is_array($input['sensors']))throw new RuntimeException('Tracky sensor capabilities must be a list.');
+        $out['sensors']=[];
+        foreach(array_slice($input['sensors'],0,40) as $sensor){
+            if(!is_scalar($sensor))throw new RuntimeException('Tracky sensor capability is invalid.');
+            $value=mb_strimwidth(trim((string)$sensor),0,80,'');
+            if($value!=='')$out['sensors'][]=$value;
+        }
+    }
+    return $out;
+}
+
+function tracky_cloud_v270_health(array $input): array
+{
+    $allowed=['runtime','camera','world_state','inference','model','database','event_backlog','sync_backlog','resource_pressure','storage_pressure'];
+    $out=[];
+    foreach($allowed as $key){
+        if(array_key_exists($key,$input))$out[$key]=tracky_cloud_v270_scalar($input[$key],160);
+    }
+    return $out;
+}
+
+function tracky_cloud_v270_entity_ref(mixed $input): array
+{
+    if(!is_array($input))return [];
+    $id=mb_strimwidth(trim((string)($input['entity_id']??'')),0,128,'');
+    $type=strtolower(mb_strimwidth(trim((string)($input['type']??'')),0,60,''));
+    if($id===''&&$type==='')return [];
+    if($id===''||!preg_match('/^[a-z0-9_.:-]{2,60}$/',$type))throw new RuntimeException('Tracky event entity reference is invalid.');
+    return ['entity_id'=>$id,'type'=>$type];
+}
+
+function tracky_cloud_v270_event(array $input): array
+{
+    $event=[
+        'event_id'=>tracky_cloud_v270_event_id((string)($input['event_id']??'')),
+        'sequence'=>max(0,(int)($input['sequence']??0)),
+        'event_type'=>tracky_cloud_v270_event_type((string)($input['event_type']??'')),
+        'severity'=>tracky_cloud_v270_severity((string)($input['severity']??'informational')),
+        'confidence'=>tracky_cloud_v270_confidence($input['confidence']??0),
+        'privacy_class'=>tracky_cloud_v270_privacy_class((string)($input['privacy_class']??'')),
+        'occurred_at'=>tracky_cloud_v270_time((string)($input['occurred_at']??''))->format(DATE_ATOM),
+    ];
+    if($event['sequence']<1)throw new RuntimeException('Tracky event sequence is required.');
+    foreach(['room_id','environment_id'] as $key){
+        $value=mb_strimwidth(trim((string)($input[$key]??'')),0,128,'');
+        if($value!=='')$event[$key]=$value;
+    }
+    foreach(['summary','state','previous_state'] as $key){
+        if(array_key_exists($key,$input))$event[$key]=tracky_cloud_v270_scalar($input[$key],300);
+    }
+    foreach(['subject','object'] as $key){
+        $ref=tracky_cloud_v270_entity_ref($input[$key]??null);
+        if($ref)$event[$key]=$ref;
+    }
+    return $event;
+}
+
+function tracky_cloud_v270_relation_value(mixed $input): array
+{
+    if($input===null)return [];
+    if(!is_array($input))throw new RuntimeException('Tracky world-state value must be an object.');
+    $allowed=['state','previous_state','label','unit','value'];
+    $out=[];
+    foreach($allowed as $key){
+        if(array_key_exists($key,$input))$out[$key]=tracky_cloud_v270_scalar($input[$key],300);
+    }
+    return $out;
+}
+
+function tracky_cloud_v270_relation_key(array $relation): string
+{
+    $singleValued=['located_in','located_on','present_in','moving_between','belongs_to'];
+    $suffix=in_array((string)$relation['predicate'],$singleValued,true)?'':"\0".(string)$relation['object_id'];
+    return hash('sha256',(string)$relation['subject_id']."\0".(string)$relation['predicate'].$suffix);
+}
+
 function tracky_cloud_v270_event_type(string $value): string
 {
     $value=strtolower(trim($value));
@@ -229,7 +322,7 @@ function tracky_cloud_v270_relation(array $input): array
     if($subject===''||!preg_match('/^[a-z0-9_.:-]{2,80}$/',$predicate))throw new RuntimeException('Tracky world-state relation is invalid.');
     $temporal=strtolower(trim((string)($input['temporal_state']??'current')));
     if(!in_array($temporal,['current','last_seen','historical','inferred','predicted','unknown'],true))$temporal='unknown';
-    $value=is_array($input['value']??null)?$input['value']:[];
+    $value=tracky_cloud_v270_relation_value($input['value']??null);
     return [
         'subject_id'=>$subject,
         'predicate'=>$predicate,
@@ -332,10 +425,8 @@ function tracky_cloud_v270_ingest(PDO $pdo,int $userId,string $deviceId,array $p
     $label=mb_strimwidth(trim((string)($site['label']??$siteId)),0,160,'');
     $status=strtolower(trim((string)($payload['status']??'healthy')));
     if(!in_array($status,['healthy','degraded','offline','disabled','recovering','failed','unknown'],true))$status='unknown';
-    $capabilities=is_array($payload['capabilities']??null)?$payload['capabilities']:[];
-    $health=is_array($payload['health']??null)?$payload['health']:[];
-    tracky_cloud_v270_assert_governed_value($capabilities,'capabilities');
-    tracky_cloud_v270_assert_governed_value($health,'health');
+    $capabilities=tracky_cloud_v270_capabilities(is_array($payload['capabilities']??null)?$payload['capabilities']:[]);
+    $health=tracky_cloud_v270_health(is_array($payload['health']??null)?$payload['health']:[]);
     $capsJson=tracky_cloud_v270_json($capabilities);
     $healthJson=tracky_cloud_v270_json($health);
     $cursor=mb_strimwidth(trim((string)($payload['cursor']??'')),0,190,'');
@@ -347,6 +438,9 @@ function tracky_cloud_v270_ingest(PDO $pdo,int $userId,string $deviceId,array $p
 
     tracky_cloud_v270_ensure_schema($pdo);
     $existing=tracky_cloud_v270_site_status($pdo,$userId,$siteId);
+    if($existing&&trim((string)($existing['device_id']??''))!==''&&!hash_equals((string)$existing['device_id'],mb_strimwidth(trim($deviceId),0,100,''))){
+        throw new RuntimeException('Tracky site is already bound to another HomeServer device.');
+    }
     $lastSequence=(int)($existing['last_sequence']??0);
     $maxSequence=$lastSequence;
     $inserted=0;$duplicates=0;$projected=0;$fresh=0;
@@ -365,24 +459,40 @@ function tracky_cloud_v270_ingest(PDO $pdo,int $userId,string $deviceId,array $p
         foreach($events as $raw){
             if(!is_array($raw))throw new RuntimeException('Tracky event batch contains an invalid event.');
             tracky_cloud_v270_assert_governed_value($raw,'events');
-            $eventId=tracky_cloud_v270_event_id((string)($raw['event_id']??''));
-            $sequence=max(0,(int)($raw['sequence']??0));
-            if($sequence<1)throw new RuntimeException('Tracky event sequence is required.');
-            $type=tracky_cloud_v270_event_type((string)($raw['event_type']??''));
-            $privacy=tracky_cloud_v270_privacy_class((string)($raw['privacy_class']??''));
-            $severity=tracky_cloud_v270_severity((string)($raw['severity']??'informational'));
-            $confidence=tracky_cloud_v270_confidence($raw['confidence']??0);
-            $occurred=tracky_cloud_v270_time((string)($raw['occurred_at']??''));
+            $event=tracky_cloud_v270_event($raw);
+            $eventId=(string)$event['event_id'];
+            $sequence=(int)$event['sequence'];
+            $type=(string)$event['event_type'];
+            $privacy=(string)$event['privacy_class'];
+            $severity=(string)$event['severity'];
+            $confidence=(float)$event['confidence'];
+            $occurred=tracky_cloud_v270_time((string)$event['occurred_at']);
+            if($occurred->getTimestamp()>time()+VP3_TRACKY_MAX_FUTURE_SKEW_SECONDS_V270)throw new RuntimeException('Tracky event timestamp is too far in the future.');
             $occurredSql=$occurred->format('Y-m-d H:i:s');
             $age=max(0,time()-$occurred->getTimestamp());
             $isFresh=$age<=VP3_TRACKY_FRESH_EVENT_SECONDS_V270?1:0;
-            $canProject=$sequence>$lastSequence?1:0;
-            $json=tracky_cloud_v270_json($raw);
+            $canProject=$sequence>$maxSequence?1:0;
+            $json=tracky_cloud_v270_json($event);
+
+            $sequenceCheck=$pdo->prepare('SELECT event_id FROM tracky_cloud_events WHERE user_id=? AND site_id=? AND sequence_no=? LIMIT 1');
+            $sequenceCheck->execute([$userId,$siteId,$sequence]);
+            $sequenceOwner=(string)($sequenceCheck->fetchColumn()?:'');
+            if($sequenceOwner!==''&&!hash_equals($sequenceOwner,$eventId))throw new RuntimeException('Tracky event sequence conflicts with an existing event.');
+
             $stmt=$pdo->prepare("INSERT IGNORE INTO tracky_cloud_events
               (user_id,site_id,event_id,sequence_no,event_type,severity,confidence,privacy_class,occurred_at,is_fresh,projected,event_json)
               VALUES (?,?,?,?,?,?,?,?,?,?,?,?)");
             $stmt->execute([$userId,$siteId,$eventId,$sequence,$type,$severity,$confidence,$privacy,$occurredSql,$isFresh,$canProject,$json]);
-            if($stmt->rowCount()===1){$inserted++;if($isFresh)$fresh++;if($canProject)$projected++;}else{$duplicates++;}
+            if($stmt->rowCount()===1){
+                $inserted++;if($isFresh)$fresh++;if($canProject)$projected++;
+            }else{
+                $existingEvent=$pdo->prepare('SELECT sequence_no,event_json FROM tracky_cloud_events WHERE user_id=? AND site_id=? AND event_id=? LIMIT 1');
+                $existingEvent->execute([$userId,$siteId,$eventId]);$existingRow=$existingEvent->fetch();
+                if(!$existingRow||(int)$existingRow['sequence_no']!==$sequence||!hash_equals(hash('sha256',(string)$existingRow['event_json']),hash('sha256',$json))){
+                    throw new RuntimeException('Tracky event idempotency conflict detected.');
+                }
+                $duplicates++;
+            }
             $maxSequence=max($maxSequence,$sequence);
             if($latestEventAt===null||$occurredSql>$latestEventAt)$latestEventAt=$occurredSql;
         }
@@ -391,7 +501,7 @@ function tracky_cloud_v270_ingest(PDO $pdo,int $userId,string $deviceId,array $p
             if(!is_array($rawRelation))throw new RuntimeException('Tracky world-state batch contains an invalid relation.');
             $rel=tracky_cloud_v270_relation($rawRelation);
             if($rel['sequence']<$lastSequence)continue;
-            $key=hash('sha256',$rel['subject_id']."\0".$rel['predicate']."\0".$rel['object_id']);
+            $key=tracky_cloud_v270_relation_key($rel);
             $valueJson=tracky_cloud_v270_json($rel['value']);
             $stmt=$pdo->prepare("INSERT INTO tracky_cloud_world_state
               (user_id,site_id,relation_key,subject_id,predicate,object_id,value_json,confidence,temporal_state,source_event_id,sequence_no,as_of)
