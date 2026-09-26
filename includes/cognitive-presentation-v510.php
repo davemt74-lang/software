@@ -262,6 +262,7 @@ function vp3_cognitive_presentation_voice_allowed_type_v510(array $row): bool
     }
     if(function_exists('notification_requires_attention')&&notification_requires_attention($row))return true;
     $type=strtolower(trim((string)($row['type']??'')));$source=strtolower(trim((string)($row['source_type']??'')));
+    if($type==='homeserver_connection_update')return true;
     if($source==='profile_event'&&str_starts_with($type,'profile_'))return true;
     return (bool)preg_match('/(?:meeting|appointment|booking|calendar|profile|order|message|approval|workflow|failed|failure)/',$type);
 }
