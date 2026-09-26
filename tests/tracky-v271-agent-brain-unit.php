@@ -17,6 +17,8 @@ v271_same(tracky_agent_intent_v271('Where are my keys?'),'where','where entity i
 v271_same(tracky_agent_intent_v271('Where is my invoice?'),'','nonphysical where query was hijacked');
 v271_same(tracky_agent_intent_v271('Who is in the office?'),'present','presence intent');
 v271_same(tracky_agent_intent_v271('When did you last see my keys?'),'last_seen','last seen intent');
+v271_same(tracky_agent_intent_v271('When did Tracky last spot my wallet?'),'last_seen','Tracky last-spot intent');
+v271_same(tracky_agent_intent_v271('When was my wallet seen?'),'last_seen','passive last-seen intent');
 v271_same(tracky_agent_intent_v271('What changed in the room?'),'changes','changes intent');
 v271_same(tracky_agent_intent_v271('How confident are you about the keys?'),'confidence','confidence intent');
 v271_same(tracky_agent_intent_v271('Why do you think the keys are in the office?'),'why','explain intent');
