@@ -12,6 +12,7 @@ const brain=read('includes/agent-brain-context-v142.php');
 const presentation=read('includes/cognitive-presentation-v510.php');
 const settings=read('homeserver-settings-v1210.js');
 const workflow=read('.github/workflows/homeserver-runtime-journey.yml');
+const statusBlock=shared.slice(shared.indexOf('function homeserver_shared_v210_reconcile_status'));
 
 const checks=[
  ['Section 7 reconciliation loads after federation and before shared context',
@@ -65,7 +66,8 @@ const checks=[
   /return \$cache\[\$cacheKey\]=null/.test(shared) &&
   /homeserver\.reconciliation_failed/.test(shared)],
  ['reconnect event precedes full reconcile and continuity-restored notification',
-  shared.indexOf("HomeServer reconnected — reconciling") < shared.indexOf('homeserver_shared_v210_reconcile_full($userId)') &&
+  statusBlock.indexOf("HomeServer reconnected — reconciling") >= 0 &&
+  statusBlock.indexOf("HomeServer reconnected — reconciling") < statusBlock.indexOf('homeserver_shared_v210_reconcile_full($userId)') &&
   shared.indexOf('homeserver_shared_v210_reconcile_full($userId)') < shared.indexOf('HomeServer continuity restored')],
  ['Agent Brain receives reconciliation currentness without raw error text',
   /homeserver:reconciliation/.test(brain) &&
