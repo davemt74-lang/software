@@ -1,0 +1,48 @@
+name: Tracky V2.7 Cloud Foundation
+
+on:
+  pull_request:
+    paths:
+      - 'includes/tracky-cloud-v270.php'
+      - 'api/tracky-sync-v270.php'
+      - 'tracky.php'
+      - 'includes/plugin-registry-v320.php'
+      - 'includes/plugin-lifecycle-v360.php'
+      - 'includes/subscription-schema.php'
+      - 'includes/bootstrap.php'
+      - 'plugins.php'
+      - 'setup.php'
+      - 'upgrade.php'
+      - 'tests/tracky-v270-cloud-contract.mjs'
+      - 'tests/tracky-v270-cloud-unit.php'
+      - 'docs/TRACKY_V270_CLOUD_FOUNDATION.md'
+      - '.github/workflows/tracky-v270-cloud.yml'
+  workflow_dispatch:
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        php: ['8.1', '8.3']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: PHP syntax
+        run: |
+          php -l includes/tracky-cloud-v270.php
+          php -l api/tracky-sync-v270.php
+          php -l tracky.php
+          php -l includes/plugin-registry-v320.php
+          php -l plugins.php
+          php -l setup.php
+          php -l upgrade.php
+      - name: Tracky Cloud unit
+        run: php tests/tracky-v270-cloud-unit.php
+      - name: Tracky Cloud architecture contract
+        run: node tests/tracky-v270-cloud-contract.mjs
