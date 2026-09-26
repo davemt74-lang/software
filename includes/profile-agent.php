@@ -427,6 +427,7 @@ function profile_agent_context(PDO $pdo,array $profile,array $agent,?array $view
           'knowledge'=>'homeserver_knowledge',
           'contacts'=>'homeserver_contacts',
           'tasks'=>'homeserver_tasks',
+          'calendar'=>'homeserver_calendar',
           'notifications'=>'homeserver_notifications',
         ];
         foreach($policyMap as $dataset=>$resourceType){

@@ -15,6 +15,11 @@ function homeserver_governed_v233_catalog(): array
     return [
       'memory.write'=>['domain'=>'memory','approval_mode'=>'federated','local_owner_only'=>false],
       'tasks.create'=>['domain'=>'tasks','approval_mode'=>'federated','local_owner_only'=>false],
+      'tasks.update'=>['domain'=>'tasks','approval_mode'=>'federated','local_owner_only'=>false],
+      'tasks.delete'=>['domain'=>'tasks','approval_mode'=>'federated','local_owner_only'=>false],
+      'calendar.create'=>['domain'=>'calendar','approval_mode'=>'federated','local_owner_only'=>false],
+      'calendar.update'=>['domain'=>'calendar','approval_mode'=>'federated','local_owner_only'=>false],
+      'calendar.delete'=>['domain'=>'calendar','approval_mode'=>'federated','local_owner_only'=>false],
       'contacts.create'=>['domain'=>'contacts','approval_mode'=>'federated','local_owner_only'=>false],
       'contacts.update'=>['domain'=>'contacts','approval_mode'=>'federated','local_owner_only'=>false],
       'contacts.delete'=>['domain'=>'contacts','approval_mode'=>'federated','local_owner_only'=>false],
