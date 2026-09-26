@@ -398,6 +398,11 @@ function agent_tool_execute_query(string $query, array $user, int $conversationI
     $q = mb_strtolower(trim($query));
     $empty = ['handled'=>false,'answer'=>'','stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[]];
 
+    if(function_exists('tracky_agent_tools_query_v271')){
+        $tracky=tracky_agent_tools_query_v271($query,$user,$conversationId);
+        if(!empty($tracky['handled']))return $tracky;
+    }
+
     $cameraIndex = 0;
     if (preg_match('/\bcamera\s*(?:#|number)?\s*(\d{1,2})\b/i', $query, $cameraMatch)) {
         $cameraIndex = max(0, min(4, (int)$cameraMatch[1]));
