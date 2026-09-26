@@ -12,6 +12,10 @@ const brain=read('includes/agent-brain-context-v142.php');
 const presentation=read('includes/cognitive-presentation-v510.php');
 const settings=read('homeserver-settings-v1210.js');
 const workflow=read('.github/workflows/homeserver-runtime-journey.yml');
+const exchangeStart=shared.indexOf('function homeserver_shared_v210_exchange_once');
+const reconcileFullStart=shared.indexOf('function homeserver_shared_v210_reconcile_full');
+const exchangeBlock=shared.slice(exchangeStart,reconcileFullStart);
+const reconcileFullBlock=shared.slice(reconcileFullStart,shared.indexOf('function homeserver_shared_v210_exchange(',reconcileFullStart));
 const statusBlock=shared.slice(shared.indexOf('function homeserver_shared_v210_reconcile_status'));
 
 const checks=[
@@ -68,7 +72,9 @@ const checks=[
  ['reconnect event precedes full reconcile and continuity-restored notification',
   statusBlock.indexOf("HomeServer reconnected — reconciling") >= 0 &&
   statusBlock.indexOf("HomeServer reconnected — reconciling") < statusBlock.indexOf('homeserver_shared_v210_reconcile_full($userId)') &&
-  statusBlock.indexOf('homeserver_shared_v210_reconcile_full($userId)') < statusBlock.indexOf('HomeServer continuity restored')],
+  /return homeserver_shared_v210_exchange_once\(\$userId,'','reconnect'\);/.test(reconcileFullBlock) &&
+  exchangeBlock.indexOf('homeserver_reconciliation_v246_reconcile_snapshot(') >= 0 &&
+  exchangeBlock.indexOf('homeserver_reconciliation_v246_reconcile_snapshot(') < exchangeBlock.indexOf("'HomeServer continuity restored'")],
  ['Agent Brain receives reconciliation currentness without raw error text',
   /homeserver:reconciliation/.test(brain) &&
   /HomeServer-backed context should be treated as stale/.test(brain) &&
