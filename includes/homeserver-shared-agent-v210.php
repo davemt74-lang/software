@@ -579,6 +579,24 @@ function homeserver_shared_v210_reconcile_status(int $userId,array $status): arr
               'reconciliation_required'=>!empty($reconciliation['needs_reconciliation']),
             ]);
         }
+        if(function_exists('create_notification')){
+            if($state==='connected'){
+                create_notification(
+                  $userId,'homeserver_connection_update',
+                  $reconnected?'HomeServer reconnected — reconciling':'HomeServer connected — synchronizing',
+                  $reconnected
+                    ?'HomeServer is back online. I am reconciling Agent Brain context and HomeServer data before treating local context as current.'
+                    :'HomeServer is connected. I am completing the initial continuity reconciliation before treating local context as current.',
+                  url('/settings-homeserver.php'),'homeserver_agent_event',$eventId
+                );
+            }elseif(in_array($state,['connection_error','disconnected'],true)){
+                create_notification(
+                  $userId,'homeserver_needs_attention','HomeServer needs attention',
+                  'HomeServer is not connected. I can continue with Cloud capabilities, but local data, models and HomeServer tools are temporarily unavailable. I will reconcile continuity automatically when HomeServer reconnects.',
+                  url('/settings-homeserver.php'),'homeserver_agent_event',$eventId
+                );
+            }
+        }
         if($state==='connected'&&!empty($reconciliation['needs_reconciliation'])){
             try{
                 homeserver_shared_v210_reconcile_full($userId);
@@ -600,24 +618,6 @@ function homeserver_shared_v210_reconcile_status(int $userId,array $status): arr
             }
         }
 
-        if(function_exists('create_notification')){
-            if($state==='connected'){
-                create_notification(
-                  $userId,'homeserver_connection_update',
-                  $reconnected?'HomeServer reconnected — reconciling':'HomeServer connected — synchronizing',
-                  $reconnected
-                    ?'HomeServer is back online. I am reconciling Agent Brain context and HomeServer data before treating local context as current.'
-                    :'HomeServer is connected. I am completing the initial continuity reconciliation before treating local context as current.',
-                  url('/settings-homeserver.php'),'homeserver_agent_event',$eventId
-                );
-            }elseif(in_array($state,['connection_error','disconnected'],true)){
-                create_notification(
-                  $userId,'homeserver_needs_attention','HomeServer needs attention',
-                  'HomeServer is not connected. I can continue with Cloud capabilities, but local data, models and HomeServer tools are temporarily unavailable. I will reconcile continuity automatically when HomeServer reconnects.',
-                  url('/settings-homeserver.php'),'homeserver_agent_event',$eventId
-                );
-            }
-        }
     }
 
     if(function_exists('homeserver_reconciliation_v246_state')){
