@@ -54,6 +54,7 @@ assert.match(cloud,/'federation_policy'=>\$federationPolicyRelay/);
 assert.match(sync,/tracky_v278_policy_decision\([^;]+semantic_world_read/s);
 assert.match(sync,/tracky_v278_policy_filter_world_fragment/);
 assert.match(sync,/'policy'=>\[/);
+assert.match(sync,/world_projection.*non_person_v1/s);
 assert.match(identity,/tracky_v278_policy_decision\([^;]+identity_continuity_read/s);
 assert.match(identity,/tracky_v278_policy_recognition_decision\([^;]+identity_linking/s);
 assert.match(mobile,/tracky_v278_policy_decision\([^;]+agent_context_read/s);
