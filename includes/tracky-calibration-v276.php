@@ -301,3 +301,5 @@ function tracky_v276_public_capability(): array
       'confidence_buckets_exposed'=>false,
     ];
 }
+
+require_once __DIR__.'/tracky-lifecycle-v277.php';
