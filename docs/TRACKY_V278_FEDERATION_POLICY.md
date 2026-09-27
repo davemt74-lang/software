@@ -49,6 +49,8 @@ The Section 6 federated Agent-context snapshot remains Cloud mirror-only; Sectio
 
 Cloud stores only a validated mirror of HomeServer-governed policy. It verifies the governing site authority device and epoch against the topology mirror and enforces the latest policy at relay time. This means a newly received revocation immediately suppresses delivery of older stored world or identity state.
 
+Cloud also returns a destination-specific policy mirror with each federation sync. The destination HomeServer stores that mirror read-only and applies it to cached remote world, identity, and mobile-transition views. Revoked cached remote state remains durable for reconciliation and audit, but disappears from Agent context and read APIs.
+
 Cloud capability guarantees:
 
 - `cloud_role = mirror_relay_enforcer`
