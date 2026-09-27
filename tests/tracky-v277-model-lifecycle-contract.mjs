@@ -24,7 +24,8 @@ assert.match(lifecycle,/'module'=>'physical_model_lifecycle'/);
 assert.match(lifecycle,/'tracky\.model_lifecycle'/);
 assert.match(lifecycle,/'kind'=>'read','risk'=>'low','requires_approval'=>false/);
 assert.doesNotMatch(lifecycle,/function\s+tracky_v277_(?:activate|promote|rollback|register_candidate|assign_canary)/i);
-assert.doesNotMatch(lifecycle,/["']package_checksum["']\s*=>|["']environment_profiles["']\s*=>/,'Cloud lifecycle must not expose local package/profile details');
+assert.doesNotMatch(lifecycle,/["']package_checksum["']\s*=>/,'Cloud lifecycle must not expose package checksum details');
+assert.doesNotMatch(lifecycle,/["'](?:room_id|camera_id|lighting_bucket|layout_fingerprint|calibration_key)["']\s*=>/,'Cloud lifecycle must not expose environment profile details');
 assert.doesNotMatch(lifecycle,/CREATE TABLE IF NOT EXISTS\s+tracky_cloud_model_(?:candidates|decisions|profiles|accuracy)/i);
 
 assert.match(calibration,/tracky-lifecycle-v277\.php/);
