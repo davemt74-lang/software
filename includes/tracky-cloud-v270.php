@@ -26,6 +26,7 @@ function tracky_cloud_v270_schema_ready(?PDO $pdo=null): bool
     foreach(['tracky_cloud_sites','tracky_cloud_events','tracky_cloud_world_state','tracky_cloud_context'] as $table){
         if(!table_exists($table))return false;
     }
+    if(function_exists('tracky_v276_schema_ready')&&!tracky_v276_schema_ready($pdo))return false;
     return true;
 }
 
@@ -109,6 +110,7 @@ function tracky_cloud_v270_ensure_schema(?PDO $pdo=null): void
       INDEX idx_tracky_context_updated (user_id,updated_at),
       CONSTRAINT fk_tracky_context_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+    if(function_exists('tracky_v276_ensure_schema'))tracky_v276_ensure_schema($pdo);
 }
 
 function tracky_cloud_v270_plugin_enabled(PDO $pdo,array $user): bool
@@ -201,7 +203,7 @@ function tracky_cloud_v270_scalar(mixed $value,int $max=500): string|int|float|b
 function tracky_cloud_v270_capabilities(array $input): array
 {
     $out=[];
-    $scalarKeys=['camera_count','scene_graph','active_perception','recognition','object_tracking','gesture_support','acceleration','protocol','world_state_version','event_schema_version','physical_context_version'];
+    $scalarKeys=['camera_count','scene_graph','active_perception','recognition','object_tracking','gesture_support','acceleration','protocol','world_state_version','event_schema_version','physical_context_version','forecast_calibration','forecast_calibration_protocol'];
     foreach($scalarKeys as $key){
         if(array_key_exists($key,$input))$out[$key]=tracky_cloud_v270_scalar($input[$key],120);
     }
@@ -219,7 +221,7 @@ function tracky_cloud_v270_capabilities(array $input): array
 
 function tracky_cloud_v270_health(array $input): array
 {
-    $allowed=['runtime','camera','world_state','inference','model','database','event_backlog','sync_backlog','resource_pressure','storage_pressure'];
+    $allowed=['runtime','camera','world_state','inference','model','database','event_backlog','sync_backlog','resource_pressure','storage_pressure','forecast_calibration'];
     $out=[];
     foreach($allowed as $key){
         if(array_key_exists($key,$input))$out[$key]=tracky_cloud_v270_scalar($input[$key],160);
@@ -435,6 +437,9 @@ function tracky_cloud_v270_ingest(PDO $pdo,int $userId,string $deviceId,array $p
 
     $events=is_array($payload['events']??null)?array_values($payload['events']):[];
     $relations=is_array($payload['world_state']??null)?array_values($payload['world_state']):[];
+    $calibration=is_array($payload['forecast_calibration']??null)
+        ?tracky_v276_normalize($payload['forecast_calibration'])
+        :null;
     if(count($events)>VP3_TRACKY_MAX_EVENTS_V270)throw new RuntimeException('Tracky event batch exceeds the cloud synchronization limit.');
     if(count($relations)>VP3_TRACKY_MAX_RELATIONS_V270)throw new RuntimeException('Tracky world-state batch exceeds the cloud synchronization limit.');
 
@@ -541,6 +546,11 @@ function tracky_cloud_v270_ingest(PDO $pdo,int $userId,string $deviceId,array $p
             }
         }
 
+        $calibrationResult=null;
+        if($calibration!==null&&function_exists('tracky_v276_ingest')){
+            $calibrationResult=tracky_v276_ingest($pdo,$userId,$siteId,$calibration);
+        }
+
         $update=$pdo->prepare("UPDATE tracky_cloud_sites SET last_sequence=?,sync_cursor=?,last_event_at=COALESCE(?,last_event_at),last_seen_at=UTC_TIMESTAMP() WHERE user_id=? AND site_id=?");
         $update->execute([$maxSequence,$cursor,$latestEventAt,$userId,$siteId]);
         $pdo->commit();
@@ -565,6 +575,10 @@ function tracky_cloud_v270_ingest(PDO $pdo,int $userId,string $deviceId,array $p
         'fresh_events'=>$fresh,
         'last_sequence'=>$maxSequence,
         'cursor'=>$cursor,
+        'forecast_calibration'=>[
+            'accepted'=>$calibration!==null,
+            'changed'=>!empty($calibrationResult['changed']),
+        ],
         'cloud_time'=>gmdate(DATE_ATOM),
     ];
 }
