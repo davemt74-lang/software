@@ -162,8 +162,14 @@ function tracky_v278_sync_build_relay(PDO $pdo,int $userId,string $reportingSite
         if(!is_array($fragment))continue;
         if((string)($fragment['site_id']??'')!==$source)continue;
         if(!tracky_v278_sync_authority_matches($pdo,$userId,$row,$fragment))continue;
+        if(!function_exists('tracky_v278_policy_decision')||!function_exists('tracky_v278_policy_filter_world_fragment'))continue;
+        $policyDecision=tracky_v278_policy_decision($pdo,$userId,$source,$destination,'semantic_world_read');
+        if(empty($policyDecision['allowed']))continue;
+        $fragment=tracky_v278_policy_filter_world_fragment($pdo,$userId,$source,$destination,$fragment);
+        if(!is_array($fragment))continue;
 
-        $fingerprint=(string)($row['fingerprint']??'');
+        $fingerprint=(string)($fragment['fingerprint']??'');
+        if($fingerprint==='')continue;
         $sourceTopology=tracky_v278_report($pdo,$userId,(string)$row['reporting_site_id']);
         $sourceTopologyRevision=(int)($sourceTopology['revision']??($sourceTopology['topology']['revision']??0));
         $authorityEpoch=(int)($fragment['authority_epoch']??0);
@@ -178,6 +184,13 @@ function tracky_v278_sync_build_relay(PDO $pdo,int $userId,string $reportingSite
           'source_world_revision'=>$revision,
           'source_fingerprint'=>$fingerprint,
           'topology_revision'=>$sourceTopologyRevision,
+          'policy'=>[
+            'protocol'=>VP3_TRACKY_FEDERATION_POLICY_PROTOCOL_V278,
+            'scope'=>'semantic_world_read',
+            'grant_revision'=>(int)($policyDecision['grant_revision']??0),
+            'policy_revision'=>(int)($policyDecision['policy_revision']??0),
+            'revocation_epoch'=>(int)($policyDecision['revocation_epoch']??0),
+          ],
           'emitted_at'=>gmdate(DATE_ATOM),
           'fragment'=>$fragment,
         ];
