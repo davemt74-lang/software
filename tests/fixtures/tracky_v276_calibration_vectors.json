@@ -1,0 +1,97 @@
+{
+  "version": "tracky-v2.76",
+  "protocol": "forecast_calibration.v1",
+  "valid": {
+    "protocol": "forecast_calibration.v1",
+    "schema_version": 1,
+    "generated_at": "2026-09-27T05:50:00+00:00",
+    "observed_at": "2026-09-27T05:51:00+00:00",
+    "predictions": 48,
+    "settlements": 32,
+    "profiles": [
+      {
+        "model_key": "location-model",
+        "model_version": "2.76",
+        "kind": "entity-location",
+        "channel": "active",
+        "settled_count": 20,
+        "weighted_count": 19,
+        "mean_original_confidence": 0.82,
+        "empirical_accuracy": 0.76,
+        "brier_score": 0.18,
+        "expected_calibration_error": 0.07
+      },
+      {
+        "model_key": "location-model",
+        "model_version": "2.76",
+        "kind": "entity-location",
+        "channel": "shadow",
+        "settled_count": 12,
+        "weighted_count": 11.4,
+        "mean_original_confidence": 0.88,
+        "empirical_accuracy": 0.67,
+        "brier_score": 0.27,
+        "expected_calibration_error": 0.21
+      }
+    ],
+    "summary_only": true,
+    "prediction_records_exposed": false,
+    "settlement_records_exposed": false
+  },
+  "invalid": [
+    {
+      "id": "confidence_buckets",
+      "patch": {
+        "profiles": [
+          {
+            "model_key": "x",
+            "model_version": "1",
+            "kind": "k",
+            "channel": "active",
+            "settled_count": 1,
+            "weighted_count": 1,
+            "buckets": []
+          }
+        ]
+      }
+    },
+    {
+      "id": "prediction_records",
+      "patch": {
+        "prediction_records_exposed": true
+      }
+    },
+    {
+      "id": "settlement_records",
+      "patch": {
+        "settlement_records_exposed": true
+      }
+    },
+    {
+      "id": "raw_wire_key",
+      "patch": {
+        "profiles": [
+          {
+            "model_key": "x",
+            "model_version": "1",
+            "kind": "k",
+            "channel": "active",
+            "settled_count": 1,
+            "weighted_count": 1,
+            "mean_raw_confidence": 0.9
+          }
+        ]
+      }
+    },
+    {
+      "id": "unknown_field",
+      "patch": {
+        "training_data": [
+          1,
+          2,
+          3
+        ]
+      }
+    }
+  ]
+}
