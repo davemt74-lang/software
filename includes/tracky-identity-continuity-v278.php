@@ -214,8 +214,8 @@ function tracky_v278_identity_link(array $input): array
       'governing_authority_epoch'=>$authorityEpoch,
       'fingerprint'=>strtolower(tracky_v278_identity_text($input['fingerprint']??'',64)),
     ];
-    if($out['fingerprint']!==''&&!preg_match('/^[0-9a-f]{64}$/',$out['fingerprint'])){
-        throw new RuntimeException('Tracky identity source fingerprint is invalid.');
+    if(!preg_match('/^[0-9a-f]{64}$/',$out['fingerprint'])){
+        throw new RuntimeException('Tracky identity source fingerprint is required and must be SHA-256.');
     }
     $semantic=$out;
     unset($semantic['governing_site_id'],$semantic['governing_authority_device_id'],$semantic['governing_authority_epoch'],$semantic['fingerprint']);
@@ -364,6 +364,12 @@ function tracky_v278_identity_ingest(PDO $pdo,int $userId,string $reportingSiteI
             throw new RuntimeException('Tracky identity governing authority does not match the current topology mirror.');
         }
 
+        $pairOwner=$pdo->prepare('SELECT link_uuid,governing_site_uuid FROM tracky_cloud_identity_links WHERE user_id=? AND pair_key=? LIMIT 1');
+        $pairOwner->execute([$userId,tracky_v278_identity_pair_key($link['left_ref'],$link['right_ref'])]);
+        $pairRow=$pairOwner->fetch();
+        if($pairRow&&(string)$pairRow['link_uuid']!==$link['link_id']){
+            throw new RuntimeException('Tracky identity pair is already governed by a different link.');
+        }
         $q=$pdo->prepare('SELECT revision,semantic_hash FROM tracky_cloud_identity_links WHERE user_id=? AND link_uuid=? LIMIT 1');
         $q->execute([$userId,$link['link_id']]);$prior=$q->fetch();
         if($prior&&$link['revision']<(int)$prior['revision']){$stale++;continue;}
@@ -477,9 +483,10 @@ function tracky_v278_identity_build_relay(PDO $pdo,int $userId,array $federation
     $destination=$request['local_site_id'];
     $q=$pdo->prepare("SELECT * FROM tracky_cloud_identity_links
       WHERE user_id=? AND (left_site_uuid=? OR right_site_uuid=?)
+        AND governing_site_uuid<>?
       ORDER BY updated_at DESC,link_uuid
       LIMIT 512");
-    $q->execute([$userId,$destination,$destination]);
+    $q->execute([$userId,$destination,$destination,$destination]);
     $links=[];$identityIds=[];$pairKeys=[];
 
     foreach($q->fetchAll()?:[] as $row){
