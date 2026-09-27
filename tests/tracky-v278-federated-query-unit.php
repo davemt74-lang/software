@@ -13,6 +13,9 @@ function fq_throws(callable $fn,string $contains,string $m): void {
 $home='11111111-1111-4111-8111-111111111111';
 $office='22222222-2222-4222-8222-222222222222';
 
+fq_expect(tracky_v278_query_timestamp_ms('2026-09-27T20:00:00+00:00')>1700000000000,'ISO timestamp parsing');
+fq_same(tracky_v278_query_timestamp_ms('2002'),2002,'numeric timestamp parsing');
+
 $q=tracky_v278_query_normalize([
   'intent'=>'history',
   'destination_site_id'=>$home,
