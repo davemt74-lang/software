@@ -30,6 +30,8 @@ assert.match(policy,/permission_revoked/);
 assert.match(policy,/consent_required/);
 assert.match(policy,/consent_revoked/);
 assert.match(policy,/tracky_v278_policy_filter_world_fragment/);
+assert.match(policy,/tracky_v278_policy_build_relay/);
+assert.match(policy,/physical_federation_policy_relay\\.v1/);
 assert.match(policy,/\['type'\].*person|type.*person/s);
 assert.match(policy,/\$filtered\['context'\]=\[\]/);
 assert.match(policy,/'cloud_role'=>'mirror_relay_enforcer'/);
@@ -44,6 +46,8 @@ assert.match(cloud,/tracky_v278_policy_normalize/);
 assert.match(cloud,/tracky_v278_policy_ingest/);
 assert.match(cloud,/governing site must match the uploader federation site/);
 assert.match(cloud,/federation_policy_protocol/);
+assert.match(cloud,/tracky_v278_policy_build_relay/);
+assert.match(cloud,/'federation_policy'=>\\$federationPolicyRelay/);
 
 assert.match(sync,/tracky_v278_policy_decision\([^;]+semantic_world_read/s);
 assert.match(sync,/tracky_v278_policy_filter_world_fragment/);
@@ -60,5 +64,7 @@ assert.match(docs,/Direct federated world sharing is intentionally non-person/i)
 assert.match(docs,/revocation epoch/i);
 assert.match(docs,/Cloud mirrors and enforces/i);
 assert.match(docs,/Raw frames, images, video, recordings, audio, embeddings/i);
+assert.match(docs,/destination-specific policy mirror/i);
+assert.match(docs,/cached remote state/i);
 
 console.log('TRACKY_V278_FEDERATION_POLICY_CONTRACT=PASS');
