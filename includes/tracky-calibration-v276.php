@@ -167,10 +167,10 @@ function tracky_v276_ingest(PDO $pdo,int $userId,string $siteId,array $input): a
         prediction_count=VALUES(prediction_count),
         settlement_count=VALUES(settlement_count),
         summary_json=VALUES(summary_json),
-        fingerprint=VALUES(fingerprint),
         generated_at=VALUES(generated_at),
         observed_at=VALUES(observed_at),
-        updated_at=IF(fingerprint<>VALUES(fingerprint),CURRENT_TIMESTAMP,updated_at)");
+        updated_at=IF(NOT (fingerprint <=> VALUES(fingerprint)),CURRENT_TIMESTAMP,updated_at),
+        fingerprint=VALUES(fingerprint)");
     $stmt->execute([
       $userId,$siteId,VP3_TRACKY_CALIBRATION_PROTOCOL_V276,(int)$summary['schema_version'],
       (int)$summary['predictions'],(int)$summary['settlements'],$json,$fingerprint,$generated,$observed
