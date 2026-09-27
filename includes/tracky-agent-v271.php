@@ -731,7 +731,7 @@ function tracky_agent_register_cognitive_v271(): void
     if(function_exists('tracky_v272_card')){$physicalObjects[]='physical_event';$physicalCards['physical_event']='tracky_v272_card';}
     vp3_cognitive_register_module_v500([
         'module'=>'physical_context',
-        'version'=>function_exists('tracky_v272_card')?'tracky-v2.72':'tracky-v2.71',
+        'version'=>function_exists('tracky_v275_propose')?'tracky-v2.75':(function_exists('tracky_v272_card')?'tracky-v2.72':'tracky-v2.71'),
         'objects'=>$physicalObjects,
         'events'=>['physical_context.changed','physical_context.health_changed','physical_context.alert'],
         'permission_resolver'=>'tracky_agent_cognitive_permission_v271',
