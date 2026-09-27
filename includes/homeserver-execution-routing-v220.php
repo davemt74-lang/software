@@ -86,6 +86,7 @@ function homeserver_execution_v220_can_route(int $userId,string $operation): boo
       'action.list','action.status','action.approve','action.deny',
       'physical_context.capabilities','physical_context.current',
       'physical_context.active_perception','physical_context.request_status','physical_context.sync',
+      'physical_context.action.propose','physical_context.action.status',
     ];
     return in_array($operation,$safe,true);
 }
