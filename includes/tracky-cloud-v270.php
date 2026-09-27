@@ -475,6 +475,9 @@ function tracky_cloud_v270_ingest(PDO $pdo,int $userId,string $deviceId,array $p
     $identityContinuity=is_array($payload['identity_continuity']??null)
         ?tracky_v278_identity_normalize($payload['identity_continuity'])
         :null;
+    if($identityContinuity!==null&&($federationSync===null||empty($federationSync['available']))){
+        throw new RuntimeException('Tracky identity continuity requires a resolved local federation site.');
+    }
     if($federationSync!==null&&!empty($federationSync['available'])){
         $localSite=(string)$federationSync['local_site_id'];
         if($federatedWorld!==null){
