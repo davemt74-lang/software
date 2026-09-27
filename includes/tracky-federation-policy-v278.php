@@ -539,6 +539,116 @@ function tracky_v278_policy_filter_world_fragment(PDO $pdo,int $userId,string $s
     return tracky_v278_world_fragment($filtered);
 }
 
+function tracky_v278_policy_build_relay(PDO $pdo,int $userId,array $federationRequest): array
+{
+    if(!tracky_v278_policy_schema_ready($pdo))tracky_v278_policy_ensure_schema($pdo);
+    $request=tracky_v278_sync_normalize($federationRequest);
+    $destination=(string)($request['local_site_id']??'');
+    if(empty($request['available'])||$destination===''){
+        return [
+          'protocol'=>'physical_federation_policy_relay.v1','schema_version'=>1,
+          'destination_site_id'=>'','projections'=>[],'cloud_role'=>'mirror_relay_enforcer',
+          'cloud_can_grant'=>false,'cloud_can_revoke'=>false,'cloud_can_change_consent'=>false,
+        ];
+    }
+
+    $sources=[];
+    $q=$pdo->prepare("SELECT DISTINCT source_site_uuid
+      FROM tracky_cloud_federation_permissions
+      WHERE user_id=? AND destination_site_uuid=? AND source_site_uuid<>?
+      ORDER BY source_site_uuid LIMIT 128");
+    $q->execute([$userId,$destination,$destination]);
+    foreach($q->fetchAll()?:[] as $row){
+        $source=(string)($row['source_site_uuid']??'');
+        if($source!=='')$sources[$source]=true;
+    }
+
+    $projections=[];
+    foreach(array_keys($sources) as $source){
+        $sq=$pdo->prepare("SELECT * FROM tracky_cloud_federation_policy_state
+          WHERE user_id=? AND governing_site_uuid=? LIMIT 1");
+        $sq->execute([$userId,$source]);$state=$sq->fetch();
+        if(!$state)continue;
+
+        $pq=$pdo->prepare("SELECT policy_json FROM tracky_cloud_federation_site_policies
+          WHERE user_id=? AND site_uuid=? LIMIT 1");
+        $pq->execute([$userId,$source]);
+        $policy=json_decode((string)($pq->fetchColumn()?:''),true);
+        if(!is_array($policy))continue;
+
+        $gq=$pdo->prepare("SELECT grant_json FROM tracky_cloud_federation_permissions
+          WHERE user_id=? AND source_site_uuid=? AND destination_site_uuid=?
+          ORDER BY scope");
+        $gq->execute([$userId,$source,$destination]);
+        $grants=[];
+        foreach($gq->fetchAll()?:[] as $row){
+            $v=json_decode((string)($row['grant_json']??''),true);
+            if(is_array($v))$grants[]=$v;
+        }
+
+        $identityIds=[];
+        if(table_exists('tracky_cloud_identity_links')){
+            $iq=$pdo->prepare("SELECT DISTINCT canonical_identity_uuid FROM tracky_cloud_identity_links
+              WHERE user_id=? AND governing_site_uuid=?
+                AND ((left_site_uuid=? AND right_site_uuid=?) OR (left_site_uuid=? AND right_site_uuid=?))");
+            $iq->execute([$userId,$source,$source,$destination,$destination,$source]);
+            foreach($iq->fetchAll()?:[] as $row){
+                $id=(string)($row['canonical_identity_uuid']??'');
+                if($id!=='')$identityIds[$id]=true;
+            }
+        }
+
+        $consents=[];
+        foreach(array_keys($identityIds) as $canonicalId){
+            $cq=$pdo->prepare("SELECT consent_json FROM tracky_cloud_recognition_consents
+              WHERE user_id=? AND site_uuid=? AND canonical_identity_uuid=?
+              ORDER BY scope");
+            $cq->execute([$userId,$source,$canonicalId]);
+            foreach($cq->fetchAll()?:[] as $row){
+                $v=json_decode((string)($row['consent_json']??''),true);
+                if(is_array($v))$consents[]=$v;
+            }
+        }
+
+        $revocations=[];
+        $rq=$pdo->prepare("SELECT revocation_json,revocation_key FROM tracky_cloud_federation_policy_revocations
+          WHERE user_id=? AND governing_site_uuid=? ORDER BY revocation_epoch,revision");
+        $rq->execute([$userId,$source]);
+        foreach($rq->fetchAll()?:[] as $row){
+            $key=(string)($row['revocation_key']??'');
+            $include=str_starts_with($key,'grant:'.$source.'|'.$destination.'|');
+            if(!$include&&str_starts_with($key,'consent:')){
+                foreach(array_keys($identityIds) as $canonicalId){
+                    if(str_contains($key,'|'.$canonicalId.'|')){$include=true;break;}
+                }
+            }
+            if(!$include)continue;
+            $v=json_decode((string)($row['revocation_json']??''),true);
+            if(is_array($v))$revocations[]=$v;
+        }
+
+        $projections[]=[
+          'protocol'=>VP3_TRACKY_FEDERATION_POLICY_PROTOCOL_V278,'schema_version'=>1,
+          'revision'=>(int)($state['revision']??0),
+          'revocation_epoch'=>(int)($state['revocation_epoch']??0),
+          'governing_site_id'=>$source,
+          'governing_authority_device_id'=>(string)($state['authority_device_uuid']??''),
+          'governing_authority_epoch'=>(int)($state['authority_epoch']??0),
+          'sites'=>[$policy],'grants'=>$grants,'consents'=>$consents,'revocations'=>$revocations,
+          'semantic_only'=>true,'summary_only'=>true,'authority_assignment'=>'local_site_policy',
+          'cloud_role'=>'mirror_relay_enforcer','cloud_can_grant'=>false,
+          'cloud_can_revoke'=>false,'cloud_can_change_consent'=>false,'raw_perception'=>false,
+        ];
+    }
+
+    return [
+      'protocol'=>'physical_federation_policy_relay.v1','schema_version'=>1,
+      'destination_site_id'=>$destination,'projections'=>$projections,
+      'cloud_role'=>'mirror_relay_enforcer','cloud_can_grant'=>false,
+      'cloud_can_revoke'=>false,'cloud_can_change_consent'=>false,
+    ];
+}
+
 function tracky_v278_policy_report(PDO $pdo,int $userId): array
 {
     if($userId<1)return ['available'=>false,'protocol'=>VP3_TRACKY_FEDERATION_POLICY_PROTOCOL_V278];
