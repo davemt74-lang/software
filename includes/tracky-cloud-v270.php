@@ -20,6 +20,7 @@ const VP3_TRACKY_MAX_FUTURE_SKEW_SECONDS_V270=300;
 require_once __DIR__.'/tracky-agent-v271.php';
 require_once __DIR__.'/tracky-topology-v278.php';
 require_once __DIR__.'/tracky-federated-world-v278.php';
+require_once __DIR__.'/tracky-federation-sync-v278.php';
 
 function tracky_cloud_v270_schema_ready(?PDO $pdo=null): bool
 {
@@ -32,6 +33,7 @@ function tracky_cloud_v270_schema_ready(?PDO $pdo=null): bool
     if(function_exists('tracky_v277_schema_ready')&&!tracky_v277_schema_ready($pdo))return false;
     if(function_exists('tracky_v278_schema_ready')&&!tracky_v278_schema_ready($pdo))return false;
     if(function_exists('tracky_v278_world_schema_ready')&&!tracky_v278_world_schema_ready($pdo))return false;
+    if(function_exists('tracky_v278_sync_schema_ready')&&!tracky_v278_sync_schema_ready($pdo))return false;
     return true;
 }
 
@@ -119,6 +121,7 @@ function tracky_cloud_v270_ensure_schema(?PDO $pdo=null): void
     if(function_exists('tracky_v277_ensure_schema'))tracky_v277_ensure_schema($pdo);
     if(function_exists('tracky_v278_ensure_schema'))tracky_v278_ensure_schema($pdo);
     if(function_exists('tracky_v278_world_ensure_schema'))tracky_v278_world_ensure_schema($pdo);
+    if(function_exists('tracky_v278_sync_ensure_schema'))tracky_v278_sync_ensure_schema($pdo);
 }
 
 function tracky_cloud_v270_plugin_enabled(PDO $pdo,array $user): bool
@@ -211,7 +214,7 @@ function tracky_cloud_v270_scalar(mixed $value,int $max=500): string|int|float|b
 function tracky_cloud_v270_capabilities(array $input): array
 {
     $out=[];
-    $scalarKeys=['camera_count','scene_graph','active_perception','recognition','object_tracking','gesture_support','acceleration','protocol','world_state_version','event_schema_version','physical_context_version','forecast_calibration','forecast_calibration_protocol','model_lifecycle','model_lifecycle_protocol','site_topology','site_topology_protocol','federated_world','federated_world_protocol'];
+    $scalarKeys=['camera_count','scene_graph','active_perception','recognition','object_tracking','gesture_support','acceleration','protocol','world_state_version','event_schema_version','physical_context_version','forecast_calibration','forecast_calibration_protocol','model_lifecycle','model_lifecycle_protocol','site_topology','site_topology_protocol','federated_world','federated_world_protocol','federation_sync','federation_sync_protocol'];
     foreach($scalarKeys as $key){
         if(array_key_exists($key,$input))$out[$key]=tracky_cloud_v270_scalar($input[$key],120);
     }
@@ -229,7 +232,7 @@ function tracky_cloud_v270_capabilities(array $input): array
 
 function tracky_cloud_v270_health(array $input): array
 {
-    $allowed=['runtime','camera','world_state','inference','model','database','event_backlog','sync_backlog','resource_pressure','storage_pressure','forecast_calibration','model_lifecycle','site_topology','federated_world'];
+    $allowed=['runtime','camera','world_state','inference','model','database','event_backlog','sync_backlog','resource_pressure','storage_pressure','forecast_calibration','model_lifecycle','site_topology','federated_world','federation_sync'];
     $out=[];
     foreach($allowed as $key){
         if(array_key_exists($key,$input))$out[$key]=tracky_cloud_v270_scalar($input[$key],160);
@@ -457,6 +460,17 @@ function tracky_cloud_v270_ingest(PDO $pdo,int $userId,string $deviceId,array $p
     $federatedWorld=is_array($payload['federated_world']??null)
         ?tracky_v278_world_normalize($payload['federated_world'])
         :null;
+    $federationSync=is_array($payload['federation_sync']??null)
+        ?tracky_v278_sync_normalize($payload['federation_sync'])
+        :null;
+    if($federationSync!==null&&!empty($federationSync['available'])&&$federatedWorld!==null){
+        $localSite=(string)$federationSync['local_site_id'];
+        foreach((array)($federatedWorld['sites']??[]) as $siteWorld){
+            if(!is_array($siteWorld)||($siteWorld['site_id']??'')!==$localSite){
+                throw new RuntimeException('Tracky federation-enabled HomeServer may upload only its local authoritative site world.');
+            }
+        }
+    }
     if(count($events)>VP3_TRACKY_MAX_EVENTS_V270)throw new RuntimeException('Tracky event batch exceeds the cloud synchronization limit.');
     if(count($relations)>VP3_TRACKY_MAX_RELATIONS_V270)throw new RuntimeException('Tracky world-state batch exceeds the cloud synchronization limit.');
 
@@ -588,6 +602,11 @@ function tracky_cloud_v270_ingest(PDO $pdo,int $userId,string $deviceId,array $p
         $pdo->commit();
     }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();throw $e;}
 
+    $federationRelay=null;
+    if($federationSync!==null&&function_exists('tracky_v278_sync_build_relay')){
+        $federationRelay=tracky_v278_sync_build_relay($pdo,$userId,$siteId,$federationSync);
+    }
+
     if($acceptedForCognition&&function_exists('tracky_agent_on_sync_v271')){
         try{tracky_agent_on_sync_v271($pdo,$userId,$siteId,$acceptedForCognition);}
         catch(Throwable $e){error_log('Tracky V2.71 cognitive event projection failed: '.$e->getMessage());}
@@ -624,6 +643,7 @@ function tracky_cloud_v270_ingest(PDO $pdo,int $userId,string $deviceId,array $p
             'changed'=>(int)($federatedWorldResult['changed']??0),
             'stale'=>(int)($federatedWorldResult['stale']??0),
         ],
+        'federation_sync'=>$federationRelay,
         'cloud_time'=>gmdate(DATE_ATOM),
     ];
 }
