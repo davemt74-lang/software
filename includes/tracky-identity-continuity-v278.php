@@ -377,6 +377,14 @@ function tracky_v278_identity_ingest(PDO $pdo,int $userId,string $reportingSiteI
             if(!hash_equals((string)$prior['semantic_hash'],$link['semantic_hash'])){
                 throw new RuntimeException('Tracky identity link revision conflicts with the existing Cloud mirror.');
             }
+            $refresh=$pdo->prepare("UPDATE tracky_cloud_identity_links
+              SET reporting_site_id=?,governing_site_uuid=?,governing_authority_device_uuid=?,
+                  governing_authority_epoch=?,source_fingerprint=?,updated_at=CURRENT_TIMESTAMP
+              WHERE user_id=? AND link_uuid=?");
+            $refresh->execute([
+              $reportingSiteId,$link['governing_site_id'],$link['governing_authority_device_id'],
+              $link['governing_authority_epoch'],$link['fingerprint'],$userId,$link['link_id']
+            ]);
             $idempotent++;continue;
         }
         if(in_array($link['status'],['proposed','confirmed'],true)){
