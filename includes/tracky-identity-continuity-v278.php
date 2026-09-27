@@ -501,11 +501,24 @@ function tracky_v278_identity_build_relay(PDO $pdo,int $userId,array $federation
         $reporting=(string)($row['reporting_site_id']??'');
         if($reporting==='')continue;
         $topology=tracky_v278_identity_topology($pdo,$userId,$reporting);
-        $authority=tracky_v278_identity_authority($topology,(string)$row['governing_site_uuid']);
+        $governingSite=(string)$row['governing_site_uuid'];
+        $authority=tracky_v278_identity_authority($topology,$governingSite);
         if($authority['status']!=='active'
           ||$authority['device_id']!==(string)$row['governing_authority_device_uuid']
           ||$authority['epoch']!==(int)$row['governing_authority_epoch']){
             continue;
+        }
+        if(!function_exists('tracky_v278_policy_decision'))continue;
+        $readDecision=tracky_v278_policy_decision(
+            $pdo,$userId,$governingSite,$destination,'identity_continuity_read'
+        );
+        if(empty($readDecision['allowed']))continue;
+        if((string)($row['entity_type']??'')==='person'){
+            if(!function_exists('tracky_v278_policy_recognition_decision'))continue;
+            $identityConsent=tracky_v278_policy_recognition_decision(
+                $pdo,$userId,$governingSite,(string)$row['canonical_identity_uuid'],'identity_linking'
+            );
+            if(empty($identityConsent['allowed']))continue;
         }
         $decoded=json_decode((string)($row['link_json']??''),true);
         if(!is_array($decoded))continue;
