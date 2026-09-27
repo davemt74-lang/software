@@ -237,3 +237,4 @@ function tracky_v275_register_cognitive(): void
     ]);
 }
 
+require_once __DIR__.'/tracky-calibration-v276.php';
