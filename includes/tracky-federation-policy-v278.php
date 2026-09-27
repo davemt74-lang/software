@@ -333,6 +333,13 @@ function tracky_v278_policy_ingest(PDO $pdo,int $userId,string $reportingSiteId,
         if($prior&&$row['revision']<(int)$prior['revision']){$stale++;continue;}
         if($prior&&$row['revision']===(int)$prior['revision']){
             if(!hash_equals((string)$prior['semantic_hash'],$hash))throw new RuntimeException('Tracky federation site policy revision conflicts with the Cloud mirror.');
+            $refresh=$pdo->prepare("UPDATE tracky_cloud_federation_site_policies
+              SET reporting_site_id=?,authority_device_uuid=?,authority_epoch=?,updated_at=CURRENT_TIMESTAMP
+              WHERE user_id=? AND site_uuid=?");
+            $refresh->execute([
+              $reportingSiteId,$projection['governing_authority_device_id'],
+              $projection['governing_authority_epoch'],$userId,$source
+            ]);
             $idempotent++;continue;
         }
         $stmt=$pdo->prepare("INSERT INTO tracky_cloud_federation_site_policies
@@ -385,6 +392,14 @@ function tracky_v278_policy_ingest(PDO $pdo,int $userId,string $reportingSiteId,
         if($prior&&$row['revision']<(int)$prior['revision']){$stale++;continue;}
         if($prior&&$row['revision']===(int)$prior['revision']){
             if(!hash_equals((string)$prior['semantic_hash'],$hash))throw new RuntimeException('Tracky federation permission revision conflicts with the Cloud mirror.');
+            $refresh=$pdo->prepare("UPDATE tracky_cloud_federation_permissions
+              SET reporting_site_id=?,authority_device_uuid=?,authority_epoch=?,updated_at=CURRENT_TIMESTAMP
+              WHERE user_id=? AND source_site_uuid=? AND destination_site_uuid=? AND scope=?");
+            $refresh->execute([
+              $reportingSiteId,$projection['governing_authority_device_id'],
+              $projection['governing_authority_epoch'],$userId,$source,
+              $row['destination_site_id'],$row['scope']
+            ]);
             $idempotent++;continue;
         }
         $stmt=$pdo->prepare("INSERT INTO tracky_cloud_federation_permissions
@@ -412,6 +427,14 @@ function tracky_v278_policy_ingest(PDO $pdo,int $userId,string $reportingSiteId,
         if($prior&&$row['revision']<(int)$prior['revision']){$stale++;continue;}
         if($prior&&$row['revision']===(int)$prior['revision']){
             if(!hash_equals((string)$prior['semantic_hash'],$hash))throw new RuntimeException('Tracky recognition consent revision conflicts with the Cloud mirror.');
+            $refresh=$pdo->prepare("UPDATE tracky_cloud_recognition_consents
+              SET reporting_site_id=?,authority_device_uuid=?,authority_epoch=?,updated_at=CURRENT_TIMESTAMP
+              WHERE user_id=? AND site_uuid=? AND canonical_identity_uuid=? AND scope=?");
+            $refresh->execute([
+              $reportingSiteId,$projection['governing_authority_device_id'],
+              $projection['governing_authority_epoch'],$userId,$source,
+              $row['canonical_identity_id'],$row['scope']
+            ]);
             $idempotent++;continue;
         }
         $stmt=$pdo->prepare("INSERT INTO tracky_cloud_recognition_consents
