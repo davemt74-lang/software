@@ -22,6 +22,7 @@ require_once __DIR__.'/tracky-topology-v278.php';
 require_once __DIR__.'/tracky-federated-world-v278.php';
 require_once __DIR__.'/tracky-federation-sync-v278.php';
 require_once __DIR__.'/tracky-mobile-transition-v278.php';
+require_once __DIR__.'/tracky-identity-continuity-v278.php';
 
 function tracky_cloud_v270_schema_ready(?PDO $pdo=null): bool
 {
@@ -36,6 +37,7 @@ function tracky_cloud_v270_schema_ready(?PDO $pdo=null): bool
     if(function_exists('tracky_v278_world_schema_ready')&&!tracky_v278_world_schema_ready($pdo))return false;
     if(function_exists('tracky_v278_sync_schema_ready')&&!tracky_v278_sync_schema_ready($pdo))return false;
     if(function_exists('tracky_v278_mobile_schema_ready')&&!tracky_v278_mobile_schema_ready($pdo))return false;
+    if(function_exists('tracky_v278_identity_schema_ready')&&!tracky_v278_identity_schema_ready($pdo))return false;
     return true;
 }
 
@@ -125,6 +127,7 @@ function tracky_cloud_v270_ensure_schema(?PDO $pdo=null): void
     if(function_exists('tracky_v278_world_ensure_schema'))tracky_v278_world_ensure_schema($pdo);
     if(function_exists('tracky_v278_sync_ensure_schema'))tracky_v278_sync_ensure_schema($pdo);
     if(function_exists('tracky_v278_mobile_ensure_schema'))tracky_v278_mobile_ensure_schema($pdo);
+    if(function_exists('tracky_v278_identity_ensure_schema'))tracky_v278_identity_ensure_schema($pdo);
 }
 
 function tracky_cloud_v270_plugin_enabled(PDO $pdo,array $user): bool
@@ -217,7 +220,7 @@ function tracky_cloud_v270_scalar(mixed $value,int $max=500): string|int|float|b
 function tracky_cloud_v270_capabilities(array $input): array
 {
     $out=[];
-    $scalarKeys=['camera_count','scene_graph','active_perception','recognition','object_tracking','gesture_support','acceleration','protocol','world_state_version','event_schema_version','physical_context_version','forecast_calibration','forecast_calibration_protocol','model_lifecycle','model_lifecycle_protocol','site_topology','site_topology_protocol','federated_world','federated_world_protocol','federation_sync','federation_sync_protocol','mobile_transitions','mobile_transition_protocol'];
+    $scalarKeys=['camera_count','scene_graph','active_perception','recognition','object_tracking','gesture_support','acceleration','protocol','world_state_version','event_schema_version','physical_context_version','forecast_calibration','forecast_calibration_protocol','model_lifecycle','model_lifecycle_protocol','site_topology','site_topology_protocol','federated_world','federated_world_protocol','federation_sync','federation_sync_protocol','mobile_transitions','mobile_transition_protocol','identity_continuity','identity_continuity_protocol'];
     foreach($scalarKeys as $key){
         if(array_key_exists($key,$input))$out[$key]=tracky_cloud_v270_scalar($input[$key],120);
     }
@@ -235,7 +238,7 @@ function tracky_cloud_v270_capabilities(array $input): array
 
 function tracky_cloud_v270_health(array $input): array
 {
-    $allowed=['runtime','camera','world_state','inference','model','database','event_backlog','sync_backlog','resource_pressure','storage_pressure','forecast_calibration','model_lifecycle','site_topology','federated_world','federation_sync','mobile_transitions'];
+    $allowed=['runtime','camera','world_state','inference','model','database','event_backlog','sync_backlog','resource_pressure','storage_pressure','forecast_calibration','model_lifecycle','site_topology','federated_world','federation_sync','mobile_transitions','identity_continuity'];
     $out=[];
     foreach($allowed as $key){
         if(array_key_exists($key,$input))$out[$key]=tracky_cloud_v270_scalar($input[$key],160);
@@ -469,6 +472,12 @@ function tracky_cloud_v270_ingest(PDO $pdo,int $userId,string $deviceId,array $p
     $mobileTransitions=is_array($payload['mobile_transitions']??null)
         ?tracky_v278_mobile_normalize($payload['mobile_transitions'])
         :null;
+    $identityContinuity=is_array($payload['identity_continuity']??null)
+        ?tracky_v278_identity_normalize($payload['identity_continuity'])
+        :null;
+    if($identityContinuity!==null&&($federationSync===null||empty($federationSync['available']))){
+        throw new RuntimeException('Tracky identity continuity requires a resolved local federation site.');
+    }
     if($federationSync!==null&&!empty($federationSync['available'])){
         $localSite=(string)$federationSync['local_site_id'];
         if($federatedWorld!==null){
@@ -482,6 +491,13 @@ function tracky_cloud_v270_ingest(PDO $pdo,int $userId,string $deviceId,array $p
             foreach((array)($mobileTransitions['transitions']??[]) as $transition){
                 if(!is_array($transition)||($transition['source_site_id']??'')!==$localSite){
                     throw new RuntimeException('Tracky federation-enabled HomeServer may upload only transitions authoritative at its local source site.');
+                }
+            }
+        }
+        if($identityContinuity!==null){
+            foreach((array)($identityContinuity['links']??[]) as $link){
+                if(!is_array($link)||($link['governing_site_id']??'')!==$localSite){
+                    throw new RuntimeException('Tracky federation-enabled HomeServer may upload only identity decisions governed by its local site.');
                 }
             }
         }
@@ -617,6 +633,11 @@ function tracky_cloud_v270_ingest(PDO $pdo,int $userId,string $deviceId,array $p
             $mobileTransitionResult=tracky_v278_mobile_ingest($pdo,$userId,$siteId,$mobileTransitions);
         }
 
+        $identityContinuityResult=null;
+        if($identityContinuity!==null&&function_exists('tracky_v278_identity_ingest')){
+            $identityContinuityResult=tracky_v278_identity_ingest($pdo,$userId,$siteId,$identityContinuity);
+        }
+
         $update=$pdo->prepare("UPDATE tracky_cloud_sites SET last_sequence=?,sync_cursor=?,last_event_at=COALESCE(?,last_event_at),last_seen_at=UTC_TIMESTAMP() WHERE user_id=? AND site_id=?");
         $update->execute([$maxSequence,$cursor,$latestEventAt,$userId,$siteId]);
         $pdo->commit();
@@ -624,11 +645,15 @@ function tracky_cloud_v270_ingest(PDO $pdo,int $userId,string $deviceId,array $p
 
     $federationRelay=null;
     $mobileTransitionRelay=null;
+    $identityContinuityRelay=null;
     if($federationSync!==null&&function_exists('tracky_v278_sync_build_relay')){
         $federationRelay=tracky_v278_sync_build_relay($pdo,$userId,$siteId,$federationSync);
     }
     if($federationSync!==null&&function_exists('tracky_v278_mobile_build_relay')){
         $mobileTransitionRelay=tracky_v278_mobile_build_relay($pdo,$userId,$federationSync);
+    }
+    if($federationSync!==null&&function_exists('tracky_v278_identity_build_relay')){
+        $identityContinuityRelay=tracky_v278_identity_build_relay($pdo,$userId,$federationSync);
     }
 
     if($acceptedForCognition&&function_exists('tracky_agent_on_sync_v271')){
@@ -673,8 +698,15 @@ function tracky_cloud_v270_ingest(PDO $pdo,int $userId,string $deviceId,array $p
             'stale'=>(int)($mobileTransitionResult['stale']??0),
             'idempotent'=>(int)($mobileTransitionResult['idempotent']??0),
         ],
+        'identity_continuity_ingest'=>[
+            'accepted'=>$identityContinuity!==null,
+            'changed'=>(int)($identityContinuityResult['changed']??0),
+            'stale'=>(int)($identityContinuityResult['stale']??0),
+            'idempotent'=>(int)($identityContinuityResult['idempotent']??0),
+        ],
         'federation_sync'=>$federationRelay,
         'mobile_transitions'=>$mobileTransitionRelay,
+        'identity_continuity'=>$identityContinuityRelay,
         'cloud_time'=>gmdate(DATE_ATOM),
     ];
 }
