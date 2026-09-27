@@ -495,3 +495,4 @@ function vp3_cognitive_domain_health_v2600(?PDO $pdo=null): array
 }
 
 if(function_exists('tracky_agent_register_cognitive_v271'))tracky_agent_register_cognitive_v271();
+if(function_exists('tracky_v275_register_cognitive'))tracky_v275_register_cognitive();
