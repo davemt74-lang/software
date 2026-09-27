@@ -387,11 +387,13 @@ function tracky_v278_identity_ingest(PDO $pdo,int $userId,string $reportingSiteI
           governing_site_uuid,identity_json
         ) VALUES (?,?,?,?,?,?,?,?,?)
         ON DUPLICATE KEY UPDATE
-          entity_type=VALUES(entity_type),status=VALUES(status),
-          aliases_json=VALUES(aliases_json),members_json=VALUES(members_json),
-          revision=IF(VALUES(revision)>=revision,VALUES(revision),revision),
-          governing_site_uuid=VALUES(governing_site_uuid),
+          entity_type=IF(VALUES(revision)>=revision,VALUES(entity_type),entity_type),
+          status=IF(VALUES(revision)>=revision,VALUES(status),status),
+          aliases_json=IF(VALUES(revision)>=revision,VALUES(aliases_json),aliases_json),
+          members_json=IF(VALUES(revision)>=revision,VALUES(members_json),members_json),
+          governing_site_uuid=IF(VALUES(revision)>=revision,VALUES(governing_site_uuid),governing_site_uuid),
           identity_json=IF(VALUES(revision)>=revision,VALUES(identity_json),identity_json),
+          revision=GREATEST(revision,VALUES(revision)),
           updated_at=CURRENT_TIMESTAMP");
         $idStmt->execute([
           $userId,$identity['canonical_identity_id'],$identity['entity_type'],$identity['status'],
