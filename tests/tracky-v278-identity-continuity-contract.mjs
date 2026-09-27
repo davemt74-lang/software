@@ -16,7 +16,9 @@ assert.match(identity,/tracky_v278_identity_authority/);
 assert.match(identity,/governing authority does not match the current topology mirror/);
 assert.match(identity,/semantic_hash/);
 assert.match(identity,/revision conflicts with the existing Cloud mirror/);
-assert.match(identity,/left_site_uuid=.*right_site_uuid|left_site_uuid|right_site_uuid/);
+assert.match(identity,/left_site_uuid/);
+assert.match(identity,/right_site_uuid/);
+assert.match(identity,/governing_site_uuid<>/,'Cloud must not self-relay a governing site identity link');
 assert.match(identity,/'cloud_role'=>'mirror_relay_only'/);
 assert.match(identity,/'world_mutation_authority'=>false/);
 assert.match(identity,/'cloud_can_confirm_links'=>false/);
@@ -29,6 +31,7 @@ assert.match(cloud,/tracky_v278_identity_normalize/);
 assert.match(cloud,/tracky_v278_identity_ingest/);
 assert.match(cloud,/tracky_v278_identity_build_relay/);
 assert.match(cloud,/identity decisions governed by its local site/);
+assert.match(cloud,/requires a resolved local federation site/);
 assert.match(cloud,/identity_continuity_protocol/);
 
 assert.match(api,/\$_SERVER\['REQUEST_METHOD'\].*GET/);
