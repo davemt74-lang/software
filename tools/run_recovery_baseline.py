@@ -203,6 +203,8 @@ PHP_TESTS = [
     'tests/tracky-v278-federated-world-unit.php',
     'tests/tracky-v278-federation-sync-contract.mjs',
     'tests/tracky-v278-federation-sync-unit.php',
+    'tests/tracky-v278-mobile-transition-contract.mjs',
+    'tests/tracky-v278-mobile-transition-unit.php',
     'tests/cognitive-optimization-v2510.php',
     'tests/cognitive-resource-budget-v2520.php',
     'tests/cognitive-replanning-v2530.php',
