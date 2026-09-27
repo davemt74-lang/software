@@ -218,9 +218,9 @@ function tracky_v276_report(PDO $pdo,int $userId,?string $siteId=null): array
     ];
 }
 
-function tracky_v276_account_summary(PDO $pdo,int $userId): array
+function tracky_v276_account_summary(PDO $pdo,int $userId,?string $siteId=null): array
 {
-    $report=tracky_v276_report($pdo,$userId);
+    $report=tracky_v276_report($pdo,$userId,$siteId);
     $active=array_values(array_filter(
       (array)($report['profiles']??[]),
       static fn($item)=>is_array($item)&&($item['channel']??'')==='active'
