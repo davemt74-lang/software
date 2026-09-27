@@ -215,6 +215,8 @@ jobs:
           test -f _deploy/api/tracky-calibration-v276.php
           test -f _deploy/includes/tracky-lifecycle-v277.php
           test -f _deploy/api/tracky-model-lifecycle-v277.php
+          test -f _deploy/includes/tracky-topology-v278.php
+          test -f _deploy/api/tracky-site-topology-v278.php
           test -f _deploy/api/tracky-sync-v270.php
           test -f _deploy/tracky.php
           test -f _deploy/team.php
