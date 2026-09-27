@@ -35,10 +35,10 @@ $bucket['profiles'][0]['buckets']=[];
 v276_throws(fn()=>tracky_v276_normalize($bucket),'unsupported field','confidence buckets accepted');
 
 $records=$valid;$records['prediction_records_exposed']=true;
-v276_throws(fn()=>tracky_v276_normalize($records),'summaries only','prediction records accepted');
+v276_throws(fn()=>tracky_v276_normalize($records),'prediction or settlement records','prediction records accepted');
 
 $settlements=$valid;$settlements['settlement_records_exposed']=true;
-v276_throws(fn()=>tracky_v276_normalize($settlements),'summaries only','settlement records accepted');
+v276_throws(fn()=>tracky_v276_normalize($settlements),'prediction or settlement records','settlement records accepted');
 
 $raw=$valid;$raw['profiles'][0]['mean_raw_confidence']=0.9;
 v276_throws(fn()=>tracky_v276_normalize($raw),'local-only perception data','raw-style wire key accepted');
