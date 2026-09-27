@@ -463,9 +463,16 @@ function tracky_v278_policy_recognition_decision(PDO $pdo,int $userId,string $si
     $siteId=tracky_v278_policy_uuid($siteId,'consent site id');
     $canonicalIdentityId=tracky_v278_policy_uuid($canonicalIdentityId,'canonical identity id');
     $scope=tracky_v278_policy_consent_scope($scope);
-    $q=$pdo->prepare('SELECT status,revision FROM tracky_cloud_recognition_consents WHERE user_id=? AND site_uuid=? AND canonical_identity_uuid=? AND scope=? LIMIT 1');
+    $q=$pdo->prepare('SELECT status,revision,reporting_site_id,authority_device_uuid,authority_epoch FROM tracky_cloud_recognition_consents WHERE user_id=? AND site_uuid=? AND canonical_identity_uuid=? AND scope=? LIMIT 1');
     $q->execute([$userId,$siteId,$canonicalIdentityId,$scope]);$row=$q->fetch();
     if(!$row)return ['allowed'=>false,'reason'=>'consent_required'];
+    try{$authority=tracky_v278_policy_topology_authority($pdo,$userId,(string)$row['reporting_site_id'],$siteId);}
+    catch(Throwable){return ['allowed'=>false,'reason'=>'consent_authority_unresolved'];}
+    if($authority['status']!=='active'
+      ||$authority['device_id']!==(string)$row['authority_device_uuid']
+      ||$authority['epoch']!==(int)$row['authority_epoch']){
+        return ['allowed'=>false,'reason'=>'consent_authority_stale'];
+    }
     $key='consent:'.$siteId.'|'.$canonicalIdentityId.'|'.$scope;
     $rq=$pdo->prepare('SELECT revision FROM tracky_cloud_federation_policy_revocations WHERE user_id=? AND revocation_key=? LIMIT 1');
     $rq->execute([$userId,$key]);$revokedRevision=(int)($rq->fetchColumn()?:0);
@@ -480,8 +487,18 @@ function tracky_v278_policy_decision(PDO $pdo,int $userId,string $sourceSiteId,s
     $source=tracky_v278_policy_uuid($sourceSiteId,'source site id');
     $destination=tracky_v278_policy_uuid($destinationSiteId,'destination site id');
     $scope=tracky_v278_policy_scope($scope);
-    $policy=tracky_v278_policy_site($pdo,$userId,$source);
-    if(!$policy)return ['allowed'=>false,'reason'=>'source_site_policy_missing'];
+    $pq=$pdo->prepare('SELECT policy_json,reporting_site_id,authority_device_uuid,authority_epoch FROM tracky_cloud_federation_site_policies WHERE user_id=? AND site_uuid=? LIMIT 1');
+    $pq->execute([$userId,$source]);$policyRow=$pq->fetch();
+    if(!$policyRow)return ['allowed'=>false,'reason'=>'source_site_policy_missing'];
+    $policy=json_decode((string)($policyRow['policy_json']??''),true);
+    if(!is_array($policy))return ['allowed'=>false,'reason'=>'source_site_policy_missing'];
+    try{$policyAuthority=tracky_v278_policy_topology_authority($pdo,$userId,(string)$policyRow['reporting_site_id'],$source);}
+    catch(Throwable){return ['allowed'=>false,'reason'=>'source_policy_authority_unresolved'];}
+    if($policyAuthority['status']!=='active'
+      ||$policyAuthority['device_id']!==(string)$policyRow['authority_device_uuid']
+      ||$policyAuthority['epoch']!==(int)$policyRow['authority_epoch']){
+        return ['allowed'=>false,'reason'=>'source_policy_authority_stale'];
+    }
     if(empty($policy['allow_federation']))return ['allowed'=>false,'reason'=>'source_site_federation_disabled'];
     if(!in_array($destination,(array)($policy['allowed_peer_sites']??[]),true)){
         return ['allowed'=>false,'reason'=>'destination_not_allowed_peer'];
@@ -569,6 +586,13 @@ function tracky_v278_policy_build_relay(PDO $pdo,int $userId,array $federationRe
           WHERE user_id=? AND governing_site_uuid=? LIMIT 1");
         $sq->execute([$userId,$source]);$state=$sq->fetch();
         if(!$state)continue;
+        try{$relayAuthority=tracky_v278_policy_topology_authority($pdo,$userId,(string)$state['reporting_site_id'],$source);}
+        catch(Throwable){continue;}
+        if($relayAuthority['status']!=='active'
+          ||$relayAuthority['device_id']!==(string)$state['authority_device_uuid']
+          ||$relayAuthority['epoch']!==(int)$state['authority_epoch']){
+            continue;
+        }
 
         $pq=$pdo->prepare("SELECT policy_json FROM tracky_cloud_federation_site_policies
           WHERE user_id=? AND site_uuid=? LIMIT 1");
