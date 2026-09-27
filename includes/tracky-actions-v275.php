@@ -190,3 +190,50 @@ function tracky_v275_result_note(array $result): string
     }
     return '';
 }
+
+function tracky_v275_cognitive_permission(
+    PDO $pdo,array $user,string $agentNamespace,array $ref,string $operation='read'
+): bool {
+    $uid=(int)($user['id']??0);
+    if($uid<1||!function_exists('tracky_agent_enabled_v271')||!tracky_agent_enabled_v271($pdo,$user))return false;
+    if((string)($ref['type']??'')!=='physical_action_intent')return false;
+    if($operation==='read')return true;
+    if($operation!=='write')return false;
+    return !empty(tracky_v275_settings($pdo,$uid)['governed_action_proposals_enabled']);
+}
+
+function tracky_v275_register_cognitive(): void
+{
+    if(!function_exists('vp3_cognitive_register_module_v500'))return;
+    $registry=vp3_cognitive_registry_storage_v500();
+    if(isset($registry['modules']['physical_action']))return;
+    vp3_cognitive_register_module_v500([
+        'module'=>'physical_action',
+        'version'=>'tracky-v2.75',
+        'objects'=>['physical_action_intent'],
+        'events'=>[],
+        'permission_resolver'=>'tracky_v275_cognitive_permission',
+        'context_provider'=>null,
+        'relationship_provider'=>null,
+        'cards'=>[],
+        'tools'=>[
+            'tracky.propose_device_action'=>[
+                'label'=>'Propose a governed physical device action',
+                'kind'=>'write',
+                'risk'=>'high',
+                'requires_approval'=>true,
+            ],
+        ],
+        'freshness_policy'=>[],
+        'sensitivity_policy'=>[
+            'owner_scoped'=>true,
+            'proposal_only'=>true,
+            'remote_approval_allowed'=>false,
+            'direct_execution'=>false,
+            'existing_homeserver_action_authority_only'=>true,
+        ],
+        'surfaces'=>['ask_user','chat_response'],
+        'voice_safe'=>false,
+    ]);
+}
+
