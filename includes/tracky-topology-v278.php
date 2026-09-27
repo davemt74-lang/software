@@ -199,9 +199,17 @@ function tracky_v278_ingest(PDO $pdo,int $userId,string $reportingSiteId,array $
     $summary=tracky_v278_normalize($input);
     $json=tracky_cloud_v270_json($summary);
     $fingerprint=hash('sha256',$json);
-    $q=$pdo->prepare('SELECT fingerprint FROM tracky_cloud_site_topology WHERE user_id=? AND reporting_site_id=? LIMIT 1');
+    $q=$pdo->prepare('SELECT topology_revision,fingerprint,summary_json FROM tracky_cloud_site_topology WHERE user_id=? AND reporting_site_id=? LIMIT 1');
     $q->execute([$userId,$reportingSiteId]);
-    $prior=(string)($q->fetchColumn()?:'');
+    $priorRow=$q->fetch();
+    $priorRevision=(int)($priorRow['topology_revision']??-1);
+    $prior=(string)($priorRow['fingerprint']??'');
+    if($priorRow&&$summary['revision']<$priorRevision){
+        return ['accepted'=>true,'changed'=>false,'stale'=>true,'fingerprint'=>$prior,'summary'=>json_decode((string)$priorRow['summary_json'],true)?:[]];
+    }
+    if($priorRow&&$summary['revision']===$priorRevision&&$prior!==''&&!hash_equals($prior,$fingerprint)){
+        throw new RuntimeException('Tracky site topology revision conflicts with an existing summary.');
+    }
     $changed=$prior===''||!hash_equals($prior,$fingerprint);
     $authorityCount=count(array_filter($summary['sites'],static fn($site)=>($site['authority_device_id']??'')!==''));
     $mobileCount=count(array_filter($summary['devices'],static fn($device)=>($device['mobility']??'')==='mobile'));
@@ -216,7 +224,7 @@ function tracky_v278_ingest(PDO $pdo,int $userId,string $reportingSiteId,array $
         updated_at=IF(NOT (fingerprint <=> VALUES(fingerprint)),CURRENT_TIMESTAMP,updated_at),
         fingerprint=IF(VALUES(topology_revision)>=topology_revision,VALUES(fingerprint),fingerprint)");
     $stmt->execute([$userId,$reportingSiteId,VP3_TRACKY_TOPOLOGY_PROTOCOL_V278,$summary['schema_version'],$summary['revision'],count($summary['sites']),count($summary['devices']),$authorityCount,$mobileCount,$json,$fingerprint]);
-    return ['accepted'=>true,'changed'=>$changed,'fingerprint'=>$fingerprint,'summary'=>$summary];
+    return ['accepted'=>true,'changed'=>$changed,'stale'=>false,'fingerprint'=>$fingerprint,'summary'=>$summary];
 }
 
 function tracky_v278_report(PDO $pdo,int $userId,?string $reportingSiteId=null): array
