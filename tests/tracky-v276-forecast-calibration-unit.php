@@ -32,7 +32,7 @@ tracky_cloud_v270_assert_governed_value($normalized);
 
 $bucket=$valid;
 $bucket['profiles'][0]['buckets']=[];
-v276_throws(fn()=>tracky_v276_normalize($bucket),'unsupported field','confidence buckets accepted');
+v276_throws(fn()=>tracky_v276_normalize($bucket),'does not accept confidence buckets','confidence buckets accepted');
 
 $records=$valid;$records['prediction_records_exposed']=true;
 v276_throws(fn()=>tracky_v276_normalize($records),'prediction or settlement records','prediction records accepted');
