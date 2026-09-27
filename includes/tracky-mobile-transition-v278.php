@@ -327,6 +327,11 @@ function tracky_v278_mobile_build_relay(PDO $pdo,int $userId,array $federationRe
           ||$authority['epoch']!==(int)$row['source_authority_epoch']){
             continue;
         }
+        if(!function_exists('tracky_v278_policy_decision'))continue;
+        $contextDecision=tracky_v278_policy_decision(
+            $pdo,$userId,(string)$row['source_site_uuid'],$destination,'agent_context_read'
+        );
+        if(empty($contextDecision['allowed']))continue;
         $decoded['origin_role']='local_authority';
         $decoded['authority_scope']='source_site';
         $decoded['identity_linking']=false;
