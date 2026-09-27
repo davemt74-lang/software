@@ -1,0 +1,71 @@
+{
+  "version": "tracky-v2.77",
+  "protocol": "physical_model_lifecycle.v1",
+  "valid": {
+    "protocol": "physical_model_lifecycle.v1",
+    "schema_version": 1,
+    "active": [
+      {
+        "id": "location-model@2.76",
+        "model_key": "location-model",
+        "model_version": "2.76",
+        "status": "active",
+        "known_good": true,
+        "canary_percent": 100,
+        "activated_at": "2026-09-27T14:00:00+00:00",
+        "registered_at": "2026-09-27T13:00:00+00:00"
+      }
+    ],
+    "shadow": [
+      {
+        "id": "location-model@2.77",
+        "model_key": "location-model",
+        "model_version": "2.77",
+        "status": "evaluating",
+        "known_good": false,
+        "canary_percent": 0,
+        "activated_at": "",
+        "registered_at": "2026-09-27T14:10:00+00:00"
+      }
+    ],
+    "canary": [
+      {
+        "id": "object-model@4",
+        "model_key": "object-model",
+        "model_version": "4",
+        "status": "canary",
+        "known_good": false,
+        "canary_percent": 10,
+        "activated_at": "",
+        "registered_at": "2026-09-27T14:10:00+00:00"
+      }
+    ],
+    "degraded": [],
+    "scenario_status": {
+      "location-model@2.77": {
+        "runs": 6,
+        "pass_rate": 1,
+        "critical_failures": 0,
+        "passed": true
+      }
+    },
+    "recent_decisions": [
+      {
+        "id": "decision-1",
+        "type": "register",
+        "model_id": "location-model@2.77",
+        "from_channel": "",
+        "to_channel": "shadow",
+        "reason": "candidate_registered",
+        "automatic": false,
+        "at": "2026-09-27T14:10:00+00:00"
+      }
+    ],
+    "environment_profile_count": 3,
+    "health_state": "healthy",
+    "summary_only": true,
+    "cloud_read_only": true,
+    "activation_authority": "local_only",
+    "rollback_authority": "local_only"
+  }
+}
