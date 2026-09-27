@@ -16,6 +16,8 @@ on:
       - 'api/tracky-actions-v275.php'
       - 'includes/tracky-calibration-v276.php'
       - 'api/tracky-calibration-v276.php'
+      - 'includes/tracky-lifecycle-v277.php'
+      - 'api/tracky-model-lifecycle-v277.php'
       - 'tracky.php'
       - 'docs/TRACKY_V271_AGENT_BRAIN_INTEGRATION.md'
       - 'docs/TRACKY_V272_CROSS_SURFACE_AWARENESS.md'
@@ -23,6 +25,7 @@ on:
       - 'docs/TRACKY_V274_RELIABILITY_HARDENING.md'
       - 'docs/TRACKY_V275_GOVERNED_PHYSICAL_ACTIONS.md'
       - 'docs/TRACKY_V276_FORECAST_CALIBRATION.md'
+      - 'docs/TRACKY_V277_MODEL_LIFECYCLE.md'
       - 'tests/tracky-v271-agent-brain-contract.mjs'
       - 'tests/tracky-v271-agent-brain-unit.php'
       - 'tests/tracky-v272-cross-surface-contract.mjs'
@@ -37,6 +40,9 @@ on:
       - 'tests/tracky-v276-forecast-calibration-contract.mjs'
       - 'tests/tracky-v276-forecast-calibration-unit.php'
       - 'tests/fixtures/tracky_v276_calibration_vectors.json'
+      - 'tests/tracky-v277-model-lifecycle-contract.mjs'
+      - 'tests/tracky-v277-model-lifecycle-unit.php'
+      - 'tests/fixtures/tracky_v277_lifecycle_vectors.json'
       - 'tests/fixtures/tracky_v274_resilience_vectors.json'
       - 'docs/VP3_COGNITIVE_DOMAIN_INTEGRATION_V2380.md'
       - 'docs/VP3_COGNITIVE_DOMAIN_INTEGRATION_V2390.md'
@@ -217,6 +223,8 @@ jobs:
           php -l api/tracky-actions-v275.php
           php -l includes/tracky-calibration-v276.php
           php -l api/tracky-calibration-v276.php
+          php -l includes/tracky-lifecycle-v277.php
+          php -l api/tracky-model-lifecycle-v277.php
           php -l tracky.php
           php -l tests/tracky-v271-agent-brain-unit.php
           php -l tests/tracky-v272-cross-surface-unit.php
@@ -224,6 +232,7 @@ jobs:
           php -l tests/tracky-v274-reliability-unit.php
           php -l tests/tracky-v275-governed-actions-unit.php
           php -l tests/tracky-v276-forecast-calibration-unit.php
+          php -l tests/tracky-v277-model-lifecycle-unit.php
           php -l includes/cognitive-release-v2600.php
           php -l includes/cognitive-entity-graph-v2610.php
           php -l includes/cognitive-release-v2610.php
@@ -370,6 +379,10 @@ jobs:
         run: |
           php tests/tracky-v276-forecast-calibration-unit.php
           node tests/tracky-v276-forecast-calibration-contract.mjs
+      - name: Tracky V2.77 model lifecycle
+        run: |
+          php tests/tracky-v277-model-lifecycle-unit.php
+          node tests/tracky-v277-model-lifecycle-contract.mjs
       - name: v26.10 cross-domain entity graph
         run: |
           php tests/cognitive-entity-graph-v2610.php

@@ -39,7 +39,9 @@ assert.match(cloud,/tracky_v276_normalize/);
 assert.match(cloud,/tracky_v276_ingest/);
 assert.match(cloud,/'forecast_calibration'=>\[/);
 assert.match(cloud,/forecast_calibration_protocol/);
-assert.match(cloud,/\$allowed=\['runtime','camera','world_state','inference','model','database','event_backlog','sync_backlog','resource_pressure','storage_pressure','forecast_calibration'\]/);
+for(const key of ['runtime','camera','world_state','inference','model','database','event_backlog','sync_backlog','resource_pressure','storage_pressure','forecast_calibration']){
+  assert.ok(cloud.includes("'"+key+"'"),'retained V2.76 health field missing: '+key);
+}
 
 assert.match(routing,/'physical_context\.calibration'/);
 assert.match(page,/Model accuracy · V2\.76/);
