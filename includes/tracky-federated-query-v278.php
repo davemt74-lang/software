@@ -54,6 +54,16 @@ function tracky_v278_query_text(mixed $value,int $max=180): string
     return mb_strimwidth(trim((string)($value??'')),0,max(1,$max),'');
 }
 
+function tracky_v278_query_timestamp_ms(mixed $value): int
+{
+    if(is_int($value)||is_float($value))return max(0,(int)$value);
+    $text=trim((string)($value??''));
+    if($text==='')return 0;
+    if(is_numeric($text))return max(0,(int)((float)$text));
+    try{$dt=new DateTimeImmutable($text);}catch(Throwable){return 0;}
+    return max(0,(int)round(((float)$dt->format('U.u'))*1000));
+}
+
 function tracky_v278_query_site_ref(string $value): ?array
 {
     $value=tracky_v278_query_text($value,320);
@@ -136,7 +146,7 @@ function tracky_v278_query_history(PDO $pdo,int $userId,array $query): array
             $fragment=tracky_v278_policy_filter_world_fragment($pdo,$userId,(string)$query['site_id'],(string)$query['destination_site_id'],$fragment);
             if(!is_array($fragment))continue;
         }
-        $observed=max(0,(int)($fragment['observed_at']??0));
+        $observed=tracky_v278_query_timestamp_ms($fragment['observed_at']??0);
         if($query['since_ms']>0&&$observed<$query['since_ms'])continue;
         if($query['until_ms']>0&&$observed>$query['until_ms'])continue;
         $out[]=[
