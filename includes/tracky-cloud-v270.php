@@ -22,6 +22,7 @@ require_once __DIR__.'/tracky-topology-v278.php';
 require_once __DIR__.'/tracky-federated-world-v278.php';
 require_once __DIR__.'/tracky-federation-sync-v278.php';
 require_once __DIR__.'/tracky-federation-policy-v278.php';
+require_once __DIR__.'/tracky-federated-query-v278.php';
 require_once __DIR__.'/tracky-mobile-transition-v278.php';
 require_once __DIR__.'/tracky-identity-continuity-v278.php';
 require_once __DIR__.'/tracky-federated-agent-context-v278.php';
@@ -42,6 +43,7 @@ function tracky_cloud_v270_schema_ready(?PDO $pdo=null): bool
     if(function_exists('tracky_v278_identity_schema_ready')&&!tracky_v278_identity_schema_ready($pdo))return false;
     if(function_exists('tracky_v278_agent_context_schema_ready')&&!tracky_v278_agent_context_schema_ready($pdo))return false;
     if(function_exists('tracky_v278_policy_schema_ready')&&!tracky_v278_policy_schema_ready($pdo))return false;
+    if(function_exists('tracky_v278_query_schema_ready')&&!tracky_v278_query_schema_ready($pdo))return false;
     return true;
 }
 
@@ -134,6 +136,7 @@ function tracky_cloud_v270_ensure_schema(?PDO $pdo=null): void
     if(function_exists('tracky_v278_identity_ensure_schema'))tracky_v278_identity_ensure_schema($pdo);
     if(function_exists('tracky_v278_agent_context_ensure_schema'))tracky_v278_agent_context_ensure_schema($pdo);
     if(function_exists('tracky_v278_policy_ensure_schema'))tracky_v278_policy_ensure_schema($pdo);
+    if(function_exists('tracky_v278_query_ensure_schema'))tracky_v278_query_ensure_schema($pdo);
 }
 
 function tracky_cloud_v270_plugin_enabled(PDO $pdo,array $user): bool
@@ -226,7 +229,7 @@ function tracky_cloud_v270_scalar(mixed $value,int $max=500): string|int|float|b
 function tracky_cloud_v270_capabilities(array $input): array
 {
     $out=[];
-    $scalarKeys=['camera_count','scene_graph','active_perception','recognition','object_tracking','gesture_support','acceleration','protocol','world_state_version','event_schema_version','physical_context_version','forecast_calibration','forecast_calibration_protocol','model_lifecycle','model_lifecycle_protocol','site_topology','site_topology_protocol','federated_world','federated_world_protocol','federation_sync','federation_sync_protocol','mobile_transitions','mobile_transition_protocol','identity_continuity','identity_continuity_protocol','federated_agent_context','federated_agent_context_protocol','federation_policy','federation_policy_protocol'];
+    $scalarKeys=['camera_count','scene_graph','active_perception','recognition','object_tracking','gesture_support','acceleration','protocol','world_state_version','event_schema_version','physical_context_version','forecast_calibration','forecast_calibration_protocol','model_lifecycle','model_lifecycle_protocol','site_topology','site_topology_protocol','federated_world','federated_world_protocol','federation_sync','federation_sync_protocol','mobile_transitions','mobile_transition_protocol','identity_continuity','identity_continuity_protocol','federated_agent_context','federated_agent_context_protocol','federation_policy','federation_policy_protocol','federated_query','federated_query_protocol'];
     foreach($scalarKeys as $key){
         if(array_key_exists($key,$input))$out[$key]=tracky_cloud_v270_scalar($input[$key],120);
     }
@@ -244,7 +247,7 @@ function tracky_cloud_v270_capabilities(array $input): array
 
 function tracky_cloud_v270_health(array $input): array
 {
-    $allowed=['runtime','camera','world_state','inference','model','database','event_backlog','sync_backlog','resource_pressure','storage_pressure','forecast_calibration','model_lifecycle','site_topology','federated_world','federation_sync','mobile_transitions','identity_continuity','federated_agent_context','federation_policy'];
+    $allowed=['runtime','camera','world_state','inference','model','database','event_backlog','sync_backlog','resource_pressure','storage_pressure','forecast_calibration','model_lifecycle','site_topology','federated_world','federation_sync','mobile_transitions','identity_continuity','federated_agent_context','federation_policy','federated_query'];
     $out=[];
     foreach($allowed as $key){
         if(array_key_exists($key,$input))$out[$key]=tracky_cloud_v270_scalar($input[$key],160);
