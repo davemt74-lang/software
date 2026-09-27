@@ -182,23 +182,46 @@ function tracky_v273_active_perception(
             'error'=>mb_strimwidth($e->getMessage(),0,300,''),
         ];
     }
-    $request=is_array($response['request']??null)?$response['request']:[];
-    $status=(string)($request['status']??'failed');
-    $result=is_array($request['result']??null)?$request['result']:[];
+    try{
+        if(function_exists('tracky_v274_validate_active_response')){
+            $validated=tracky_v274_validate_active_response(
+                $capability,$response,$requestId,$correlationId,(string)$payload['site_id']
+            );
+            $request=$validated['request'];$status=(string)$validated['status'];
+            $result=$validated['result'];$projection=$validated['projection'];
+        }else{
+            $request=is_array($response['request']??null)?$response['request']:[];
+            $status=(string)($request['status']??'failed');
+            $result=is_array($request['result']??null)?$request['result']:[];
+            $projection=is_array($result['semantic_projection']??null)?$result['semantic_projection']:[];
+        }
+    }catch(Throwable $e){
+        return [
+            'attempted'=>true,'status'=>'failed','reason'=>'invalid_homeserver_response',
+            'request_id'=>$requestId,'correlation_id'=>$correlationId,
+            'request_type'=>$payload['request_type'],
+            'error'=>mb_strimwidth($e->getMessage(),0,300,''),
+            'raw_perception_exposed'=>false,
+        ];
+    }
+
     $cloudIngest=null;$cloudSyncError='';
-    $projection=is_array($result['semantic_projection']??null)?$result['semantic_projection']:[];
     if($status==='completed'&&$projection){
         try{
             $deviceId=(string)($capability['device_id']??'');
-            $cloudIngest=tracky_cloud_v270_ingest($pdo,$uid,$deviceId,$projection);
+            $cloudIngest=function_exists('tracky_v274_ingest_active_projection')
+                ?tracky_v274_ingest_active_projection($pdo,$uid,$deviceId,$validated??['projection'=>$projection])
+                :tracky_cloud_v270_ingest($pdo,$uid,$deviceId,$projection);
         }catch(Throwable $e){
             $cloudSyncError=mb_strimwidth($e->getMessage(),0,300,'');
         }
     }
+    $reason=(string)($result['reason']??($request['error']??''));
+    if($status==='completed'&&$projection&&$cloudSyncError!=='')$reason='cloud_projection_verification_failed';
     return [
         'attempted'=>true,
         'status'=>$status,
-        'reason'=>(string)($result['reason']??($request['error']??'')),
+        'reason'=>$reason,
         'request_id'=>(string)($request['request_id']??$requestId),
         'correlation_id'=>(string)($request['correlation_id']??$correlationId),
         'request_type'=>(string)($request['request_type']??$payload['request_type']),
@@ -234,6 +257,10 @@ function tracky_v273_refresh_note(array $refresh): string
     if(empty($refresh['attempted']))return '';
     $status=(string)($refresh['status']??'');
     $reason=(string)($refresh['reason']??'');
+    if(function_exists('tracky_v274_failure_note')){
+        $hardeningNote=tracky_v274_failure_note($reason);
+        if($hardeningNote!=='')return $hardeningNote;
+    }
     if($status==='completed'){
         if(!empty($refresh['cloud_sync_error'])){
             return ' I asked the HomeServer to check again. It completed locally, but Cloud could not accept the fresh semantic projection, so I am not presenting the older Cloud state as freshly verified.';
@@ -263,3 +290,5 @@ function tracky_v273_refresh_note(array $refresh): string
     }
     return '';
 }
+
+require_once __DIR__.'/tracky-reliability-v274.php';
