@@ -364,6 +364,11 @@ function tracky_v278_identity_ingest(PDO $pdo,int $userId,string $reportingSiteI
             throw new RuntimeException('Tracky identity governing authority does not match the current topology mirror.');
         }
 
+        if(in_array($link['status'],['proposed','confirmed'],true)){
+            $blocked=$pdo->prepare('SELECT reason FROM tracky_cloud_identity_blocked_pairs WHERE user_id=? AND pair_key=? LIMIT 1');
+            $blocked->execute([$userId,tracky_v278_identity_pair_key($link['left_ref'],$link['right_ref'])]);
+            if($blocked->fetch())throw new RuntimeException('Tracky identity pair is blocked by a prior rejection or split.');
+        }
         $q=$pdo->prepare('SELECT revision,semantic_hash FROM tracky_cloud_identity_links WHERE user_id=? AND link_uuid=? LIMIT 1');
         $q->execute([$userId,$link['link_id']]);$prior=$q->fetch();
         if($prior&&$link['revision']<(int)$prior['revision']){$stale++;continue;}
