@@ -129,9 +129,12 @@ function tracky_v278_relationship(array $input): array
     foreach(array_keys($input) as $key){
         if(!in_array((string)$key,$allowed,true))throw new RuntimeException('Tracky site topology relationship contains unsupported field: '.(string)$key);
     }
+    $type=tracky_v278_token($input['type']??'','relationship type');
+    $known=['member_of','peers_with','observes','controls','backs_up','travels_with','bridges_to'];
+    if(!in_array($type,$known,true)&&!str_starts_with($type,'custom.'))throw new RuntimeException('Tracky site topology relationship type is unsupported.');
     return [
       'subject_id'=>tracky_v278_uuid($input['subject_id']??'','relationship subject'),
-      'type'=>tracky_v278_token($input['type']??'','relationship type'),
+      'type'=>$type,
       'object_id'=>tracky_v278_uuid($input['object_id']??'','relationship object'),
     ];
 }
@@ -179,7 +182,7 @@ function tracky_v278_normalize(array $input): array
             $matches=array_values(array_filter($out['devices'],static fn($d)=>$d['id']===$site['authority_device_id']));
             $authority=$matches[0]??[];
             if(($authority['site_id']??'')!==$site['id'])throw new RuntimeException('Tracky site topology authority device belongs to another site.');
-            if(($authority['trust_state']??'')!=='trusted'||!in_array('site_authority',$authority['roles']??[],true)||($authority['mobility']??'')==='mobile'){
+            if(($authority['trust_state']??'')!=='trusted'||!in_array('site_authority',$authority['roles']??[],true)||!in_array('site_authority_eligible',$authority['capabilities']??[],true)||($authority['mobility']??'')==='mobile'){
                 throw new RuntimeException('Tracky site topology authority device is not locally eligible.');
             }
         }
