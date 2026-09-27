@@ -78,6 +78,11 @@ on:
       - 'docs/TRACKY_V278_FEDERATION_POLICY.md'
       - 'tests/tracky-v278-federation-policy-contract.mjs'
       - 'tests/tracky-v278-federation-policy-unit.php'
+      - 'includes/tracky-federated-query-v278.php'
+      - 'api/tracky-federated-query-v278.php'
+      - 'docs/TRACKY_V278_FEDERATED_QUERY_HISTORY.md'
+      - 'tests/tracky-v278-federated-query-contract.mjs'
+      - 'tests/tracky-v278-federated-query-unit.php'
       - 'tests/fixtures/tracky_v274_resilience_vectors.json'
       - 'docs/VP3_COGNITIVE_DOMAIN_INTEGRATION_V2380.md'
       - 'docs/VP3_COGNITIVE_DOMAIN_INTEGRATION_V2390.md'
@@ -453,6 +458,11 @@ jobs:
           php -l tests/tracky-v278-federation-policy-unit.php
           php tests/tracky-v278-federation-policy-unit.php
           node tests/tracky-v278-federation-policy-contract.mjs
+          php -l includes/tracky-federated-query-v278.php
+          php -l api/tracky-federated-query-v278.php
+          php -l tests/tracky-v278-federated-query-unit.php
+          php tests/tracky-v278-federated-query-unit.php
+          node tests/tracky-v278-federated-query-contract.mjs
       - name: v26.10 cross-domain entity graph
         run: |
           php tests/cognitive-entity-graph-v2610.php
