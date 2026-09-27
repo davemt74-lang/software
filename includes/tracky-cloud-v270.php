@@ -667,14 +667,14 @@ function tracky_cloud_v270_ingest(PDO $pdo,int $userId,string $deviceId,array $p
             'changed'=>(int)($federatedWorldResult['changed']??0),
             'stale'=>(int)($federatedWorldResult['stale']??0),
         ],
-        'mobile_transitions'=>[
+        'mobile_transition_ingest'=>[
             'accepted'=>$mobileTransitions!==null,
             'changed'=>(int)($mobileTransitionResult['changed']??0),
             'stale'=>(int)($mobileTransitionResult['stale']??0),
             'idempotent'=>(int)($mobileTransitionResult['idempotent']??0),
         ],
         'federation_sync'=>$federationRelay,
-        'mobile_transition_relay'=>$mobileTransitionRelay,
+        'mobile_transitions'=>$mobileTransitionRelay,
         'cloud_time'=>gmdate(DATE_ATOM),
     ];
 }
