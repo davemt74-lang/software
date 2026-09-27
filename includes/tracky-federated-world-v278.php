@@ -163,7 +163,7 @@ function tracky_v278_world_fragment(array $input): array
 function tracky_v278_world_normalize(array $input): array
 {
     tracky_cloud_v270_assert_governed_value($input,'federated_world');
-    $allowed=['protocol','schema_version','site_count','sites','entities','relations','generated_at','identity_scope','cross_site_identity_links','semantic_only','summary_only','cloud_read_only','authority_assignment'];
+    $allowed=['protocol','schema_version','site_count','sites','entities','relations','generated_at','identity_scope','cross_site_identity_links','semantic_only','summary_only','cloud_read_only','authority_assignment','origin_scope'];
     foreach(array_keys($input) as $key){
         if(!in_array((string)$key,$allowed,true))throw new RuntimeException('Tracky federated world projection contains unsupported field: '.(string)$key);
     }
