@@ -715,7 +715,7 @@ function tracky_agent_domain_contract_v271(): array
         'presentation'=>'cognitive_presentation_firewall_v2590',
         'notes'=>[
             'Raw frames, video, audio, embeddings and local perception evidence remain HomeServer-only.',
-            'Tracky Agent tools are read-only and create no physical device-control authority.',
+            'Tracky read tools remain read-only. V2.75 may create governed physical-action proposals only; HomeServer retains approval and execution authority.',
             'Physical events enter canonical cognitive ingress as compact governed summaries only.',
         ],
     ];
@@ -747,9 +747,19 @@ function tracky_agent_register_cognitive_v271(): void
             'tracky.confidence'=>['label'=>'Read physical-state confidence','kind'=>'read','risk'=>'low','requires_approval'=>false],
             'tracky.why'=>['label'=>'Explain governed physical evidence','kind'=>'read','risk'=>'low','requires_approval'=>false],
             'tracky.health'=>['label'=>'Read Tracky site health','kind'=>'read','risk'=>'low','requires_approval'=>false],
+            'tracky.propose_device_action'=>[
+                'label'=>'Propose a governed physical device action',
+                'kind'=>'write','risk'=>'high','requires_approval'=>true,
+                'execution'=>'existing_homeserver_action_authority_only',
+                'remote_approval_allowed'=>false,
+            ],
         ],
         'freshness_policy'=>['current_seconds'=>30,'event_seconds'=>300,'stale_behavior'=>'label_and_continue'],
-        'sensitivity_policy'=>['owner_scoped'=>true,'raw_perception_exposed'=>false,'read_only'=>true],
+        'sensitivity_policy'=>[
+            'owner_scoped'=>true,'raw_perception_exposed'=>false,
+            'read_only_queries'=>true,'physical_action_proposal_only'=>true,
+            'remote_approval_allowed'=>false,'direct_execution'=>false
+        ],
         'surfaces'=>['brief','away_digest','notification','voice_announce','ask_user','chat_response'],
         'voice_safe'=>true,
     ]);
