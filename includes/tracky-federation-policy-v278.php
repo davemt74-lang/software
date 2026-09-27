@@ -309,7 +309,7 @@ function tracky_v278_policy_ingest(PDO $pdo,int $userId,string $reportingSiteId,
 {
     if($userId<1)throw new RuntimeException('Authentication required.');
     $reportingSiteId=tracky_cloud_v270_site_id($reportingSiteId);
-    tracky_v278_policy_ensure_schema($pdo);
+    if(!tracky_v278_policy_schema_ready($pdo))tracky_v278_policy_ensure_schema($pdo);
     $projection=tracky_v278_policy_normalize($input);
     $source=$projection['governing_site_id'];
     $authority=tracky_v278_policy_topology_authority($pdo,$userId,$reportingSiteId,$source);
