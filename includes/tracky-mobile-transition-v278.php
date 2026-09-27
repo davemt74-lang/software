@@ -239,7 +239,7 @@ function tracky_v278_mobile_ingest(PDO $pdo,int $userId,string $reportingSiteId,
 {
     if($userId<1)throw new RuntimeException('Authentication required.');
     $reportingSiteId=tracky_cloud_v270_site_id($reportingSiteId);
-    tracky_v278_mobile_ensure_schema($pdo);
+    if(!tracky_v278_mobile_schema_ready($pdo))tracky_v278_mobile_ensure_schema($pdo);
     $projection=tracky_v278_mobile_normalize($input);
     $changed=0;$stale=0;$idempotent=0;
 
@@ -297,7 +297,7 @@ function tracky_v278_mobile_ingest(PDO $pdo,int $userId,string $reportingSiteId,
 
 function tracky_v278_mobile_build_relay(PDO $pdo,int $userId,array $federationRequest): array
 {
-    tracky_v278_mobile_ensure_schema($pdo);
+    if(!tracky_v278_mobile_schema_ready($pdo))tracky_v278_mobile_ensure_schema($pdo);
     $request=tracky_v278_sync_normalize($federationRequest);
     if(!$request['available']){
         return [
