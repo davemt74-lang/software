@@ -197,6 +197,8 @@ PHP_TESTS = [
     'tests/tracky-v275-governed-actions-unit.php',
     'tests/tracky-v276-forecast-calibration-unit.php',
     'tests/tracky-v277-model-lifecycle-unit.php',
+    'tests/tracky-v278-site-topology-contract.mjs',
+    'tests/tracky-v278-site-topology-unit.php',
     'tests/cognitive-optimization-v2510.php',
     'tests/cognitive-resource-budget-v2520.php',
     'tests/cognitive-replanning-v2530.php',

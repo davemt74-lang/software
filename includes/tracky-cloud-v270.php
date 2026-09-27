@@ -18,6 +18,7 @@ const VP3_TRACKY_FRESH_EVENT_SECONDS_V270=300;
 const VP3_TRACKY_MAX_FUTURE_SKEW_SECONDS_V270=300;
 
 require_once __DIR__.'/tracky-agent-v271.php';
+require_once __DIR__.'/tracky-topology-v278.php';
 
 function tracky_cloud_v270_schema_ready(?PDO $pdo=null): bool
 {
@@ -28,6 +29,7 @@ function tracky_cloud_v270_schema_ready(?PDO $pdo=null): bool
     }
     if(function_exists('tracky_v276_schema_ready')&&!tracky_v276_schema_ready($pdo))return false;
     if(function_exists('tracky_v277_schema_ready')&&!tracky_v277_schema_ready($pdo))return false;
+    if(function_exists('tracky_v278_schema_ready')&&!tracky_v278_schema_ready($pdo))return false;
     return true;
 }
 
@@ -113,6 +115,7 @@ function tracky_cloud_v270_ensure_schema(?PDO $pdo=null): void
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
     if(function_exists('tracky_v276_ensure_schema'))tracky_v276_ensure_schema($pdo);
     if(function_exists('tracky_v277_ensure_schema'))tracky_v277_ensure_schema($pdo);
+    if(function_exists('tracky_v278_ensure_schema'))tracky_v278_ensure_schema($pdo);
 }
 
 function tracky_cloud_v270_plugin_enabled(PDO $pdo,array $user): bool
@@ -205,7 +208,7 @@ function tracky_cloud_v270_scalar(mixed $value,int $max=500): string|int|float|b
 function tracky_cloud_v270_capabilities(array $input): array
 {
     $out=[];
-    $scalarKeys=['camera_count','scene_graph','active_perception','recognition','object_tracking','gesture_support','acceleration','protocol','world_state_version','event_schema_version','physical_context_version','forecast_calibration','forecast_calibration_protocol','model_lifecycle','model_lifecycle_protocol'];
+    $scalarKeys=['camera_count','scene_graph','active_perception','recognition','object_tracking','gesture_support','acceleration','protocol','world_state_version','event_schema_version','physical_context_version','forecast_calibration','forecast_calibration_protocol','model_lifecycle','model_lifecycle_protocol','site_topology','site_topology_protocol'];
     foreach($scalarKeys as $key){
         if(array_key_exists($key,$input))$out[$key]=tracky_cloud_v270_scalar($input[$key],120);
     }
@@ -223,7 +226,7 @@ function tracky_cloud_v270_capabilities(array $input): array
 
 function tracky_cloud_v270_health(array $input): array
 {
-    $allowed=['runtime','camera','world_state','inference','model','database','event_backlog','sync_backlog','resource_pressure','storage_pressure','forecast_calibration','model_lifecycle'];
+    $allowed=['runtime','camera','world_state','inference','model','database','event_backlog','sync_backlog','resource_pressure','storage_pressure','forecast_calibration','model_lifecycle','site_topology'];
     $out=[];
     foreach($allowed as $key){
         if(array_key_exists($key,$input))$out[$key]=tracky_cloud_v270_scalar($input[$key],160);
@@ -445,6 +448,9 @@ function tracky_cloud_v270_ingest(PDO $pdo,int $userId,string $deviceId,array $p
     $lifecycle=is_array($payload['model_lifecycle']??null)
         ?tracky_v277_normalize($payload['model_lifecycle'])
         :null;
+    $topology=is_array($payload['site_topology']??null)
+        ?tracky_v278_normalize($payload['site_topology'])
+        :null;
     if(count($events)>VP3_TRACKY_MAX_EVENTS_V270)throw new RuntimeException('Tracky event batch exceeds the cloud synchronization limit.');
     if(count($relations)>VP3_TRACKY_MAX_RELATIONS_V270)throw new RuntimeException('Tracky world-state batch exceeds the cloud synchronization limit.');
 
@@ -561,6 +567,11 @@ function tracky_cloud_v270_ingest(PDO $pdo,int $userId,string $deviceId,array $p
             $lifecycleResult=tracky_v277_ingest($pdo,$userId,$siteId,$lifecycle);
         }
 
+        $topologyResult=null;
+        if($topology!==null&&function_exists('tracky_v278_ingest')){
+            $topologyResult=tracky_v278_ingest($pdo,$userId,$siteId,$topology);
+        }
+
         $update=$pdo->prepare("UPDATE tracky_cloud_sites SET last_sequence=?,sync_cursor=?,last_event_at=COALESCE(?,last_event_at),last_seen_at=UTC_TIMESTAMP() WHERE user_id=? AND site_id=?");
         $update->execute([$maxSequence,$cursor,$latestEventAt,$userId,$siteId]);
         $pdo->commit();
@@ -592,6 +603,10 @@ function tracky_cloud_v270_ingest(PDO $pdo,int $userId,string $deviceId,array $p
         'model_lifecycle'=>[
             'accepted'=>$lifecycle!==null,
             'changed'=>!empty($lifecycleResult['changed']),
+        ],
+        'site_topology'=>[
+            'accepted'=>$topology!==null,
+            'changed'=>!empty($topologyResult['changed']),
         ],
         'cloud_time'=>gmdate(DATE_ATOM),
     ];
