@@ -9,6 +9,12 @@ declare(strict_types=1);
 const VP3_TRACKY_FEDERATED_QUERY_V278='vp3-tracky-federated-query-v278-20260927';
 const VP3_TRACKY_FEDERATED_QUERY_PROTOCOL_V278='physical_federated_query.v1';
 
+function tracky_v278_query_schema_ready(?PDO $pdo=null): bool
+{
+    $pdo??=db();
+    return $pdo?table_exists('tracky_cloud_federated_world_history')&&table_exists('tracky_cloud_federated_query_audit'):false;
+}
+
 function tracky_v278_query_intents(): array
 {
     return ['current_state','where_is','last_seen','history','what_changed','explain'];
