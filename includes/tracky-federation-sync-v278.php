@@ -190,6 +190,7 @@ function tracky_v278_sync_build_relay(PDO $pdo,int $userId,string $reportingSite
             'grant_revision'=>(int)($policyDecision['grant_revision']??0),
             'policy_revision'=>(int)($policyDecision['policy_revision']??0),
             'revocation_epoch'=>(int)($policyDecision['revocation_epoch']??0),
+            'world_projection'=>'non_person_v1',
           ],
           'emitted_at'=>gmdate(DATE_ATOM),
           'fragment'=>$fragment,
