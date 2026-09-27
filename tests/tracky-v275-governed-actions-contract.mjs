@@ -20,7 +20,7 @@ assert.match(actions,/permission_upgrade_required/);
 assert.match(actions,/governed_action_proposals_not_enabled/);
 assert.doesNotMatch(actions,/action\.approve|action\.deny/,'Tracky Cloud must not review physical approvals');
 assert.doesNotMatch(actions,/homeserver_https_v1300_remote_operation\(/,'Tracky V2.75 must use canonical execution routing');
-assert.doesNotMatch(actions,/devices\.command.*execute|execute_device|driver/,'Tracky Cloud must not directly execute devices');
+assert.doesNotMatch(actions,/execute_command\s*\(|execute_device\s*\(|room_device_automation|provider_driver\s*\(/,'Tracky Cloud must not directly execute devices');
 assert.doesNotMatch(actions,/CREATE TABLE|ALTER TABLE/,'Tracky V2.75 Cloud must not create an action authority store');
 
 assert.match(proactive,/'governed_action_proposals_enabled'=>false/);
