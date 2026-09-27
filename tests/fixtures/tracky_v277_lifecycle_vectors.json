@@ -1,0 +1,49 @@
+{
+  "version": "tracky-v2.77",
+  "protocol": "physical_model_lifecycle.v1",
+  "valid": {
+    "protocol": "physical_model_lifecycle.v1",
+    "schema_version": 1,
+    "generated_at": "2026-09-27T08:45:00+00:00",
+    "observed_at": "2026-09-27T08:45:05+00:00",
+    "active_models": [
+      {
+        "model_key": "detector",
+        "model_version": "2",
+        "status": "active",
+        "known_good": true,
+        "canary_percent": 100
+      }
+    ],
+    "shadow_models": [
+      {
+        "model_key": "pose",
+        "model_version": "4",
+        "status": "evaluating",
+        "known_good": false,
+        "canary_percent": 0
+      }
+    ],
+    "canary_models": [
+      {
+        "model_key": "object",
+        "model_version": "3",
+        "status": "canary",
+        "known_good": false,
+        "canary_percent": 10
+      }
+    ],
+    "degraded_models": [],
+    "environment_profile_count": 8,
+    "last_decision": {
+      "type": "activate",
+      "automatic": false,
+      "at": 1800000000000
+    },
+    "summary_only": true,
+    "activation_authority": "local_tracky",
+    "environment_profiles_exposed": false,
+    "decision_history_exposed": false,
+    "scenario_details_exposed": false
+  }
+}
