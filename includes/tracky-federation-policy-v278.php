@@ -179,11 +179,16 @@ function tracky_v278_policy_consent_scope(mixed $value): string
 
 function tracky_v278_policy_normalize(array $input): array
 {
-    tracky_cloud_v270_assert_governed_value($input,'federation_policy');
+    if(!array_key_exists('raw_perception',$input)||!empty($input['raw_perception'])){
+        throw new RuntimeException('Tracky Cloud accepts semantic policy summaries only; raw perception is forbidden.');
+    }
+    $governed=$input;
+    unset($governed['raw_perception']);
+    tracky_cloud_v270_assert_governed_value($governed,'federation_policy');
     if((string)($input['protocol']??'')!==VP3_TRACKY_FEDERATION_POLICY_PROTOCOL_V278){
         throw new RuntimeException('Tracky federation policy protocol is unsupported.');
     }
-    if(empty($input['semantic_only'])||empty($input['summary_only'])||!empty($input['raw_perception'])){
+    if(empty($input['semantic_only'])||empty($input['summary_only'])){
         throw new RuntimeException('Tracky Cloud accepts semantic policy summaries only; raw perception is forbidden.');
     }
     if((string)($input['authority_assignment']??'')!=='local_site_policy'){
