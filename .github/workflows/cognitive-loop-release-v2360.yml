@@ -68,6 +68,11 @@ on:
       - 'docs/TRACKY_V278_IDENTITY_CONTINUITY.md'
       - 'tests/tracky-v278-identity-continuity-contract.mjs'
       - 'tests/tracky-v278-identity-continuity-unit.php'
+      - 'includes/tracky-federated-agent-context-v278.php'
+      - 'api/tracky-federated-agent-context-v278.php'
+      - 'docs/TRACKY_V278_FEDERATED_AGENT_CONTEXT.md'
+      - 'tests/tracky-v278-federated-agent-context-contract.mjs'
+      - 'tests/tracky-v278-federated-agent-context-unit.php'
       - 'tests/fixtures/tracky_v274_resilience_vectors.json'
       - 'docs/VP3_COGNITIVE_DOMAIN_INTEGRATION_V2380.md'
       - 'docs/VP3_COGNITIVE_DOMAIN_INTEGRATION_V2390.md'
@@ -433,6 +438,11 @@ jobs:
           php -l tests/tracky-v278-identity-continuity-unit.php
           php tests/tracky-v278-identity-continuity-unit.php
           node tests/tracky-v278-identity-continuity-contract.mjs
+          php -l includes/tracky-federated-agent-context-v278.php
+          php -l api/tracky-federated-agent-context-v278.php
+          php -l tests/tracky-v278-federated-agent-context-unit.php
+          php tests/tracky-v278-federated-agent-context-unit.php
+          node tests/tracky-v278-federated-agent-context-contract.mjs
       - name: v26.10 cross-domain entity graph
         run: |
           php tests/cognitive-entity-graph-v2610.php

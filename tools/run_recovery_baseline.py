@@ -207,6 +207,8 @@ PHP_TESTS = [
     'tests/tracky-v278-mobile-transition-unit.php',
     'tests/tracky-v278-identity-continuity-contract.mjs',
     'tests/tracky-v278-identity-continuity-unit.php',
+    'tests/tracky-v278-federated-agent-context-contract.mjs',
+    'tests/tracky-v278-federated-agent-context-unit.php',
     'tests/cognitive-optimization-v2510.php',
     'tests/cognitive-resource-budget-v2520.php',
     'tests/cognitive-replanning-v2530.php',
