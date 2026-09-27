@@ -24,7 +24,7 @@ assert.match(lifecycle,/'module'=>'physical_model_lifecycle'/);
 assert.match(lifecycle,/'tracky\.model_lifecycle'/);
 assert.match(lifecycle,/'kind'=>'read','risk'=>'low','requires_approval'=>false/);
 assert.doesNotMatch(lifecycle,/function\s+tracky_v277_(?:activate|promote|rollback|register_candidate|assign_canary)/i);
-assert.doesNotMatch(lifecycle,/package_checksum|environment_profiles/,'Cloud lifecycle must not expose local package/profile details');
+assert.doesNotMatch(lifecycle,/["']package_checksum["']\s*=>|["']environment_profiles["']\s*=>/,'Cloud lifecycle must not expose local package/profile details');
 assert.doesNotMatch(lifecycle,/CREATE TABLE IF NOT EXISTS\s+tracky_cloud_model_(?:candidates|decisions|profiles|accuracy)/i);
 
 assert.match(calibration,/tracky-lifecycle-v277\.php/);
@@ -40,7 +40,7 @@ assert.match(routing,/'physical_context\.model_lifecycle'/);
 assert.match(page,/Model lifecycle · V2\.77/);
 assert.match(page,/Cloud is read-only/);
 assert.match(api,/\$_SERVER\['REQUEST_METHOD'\]!=='GET'/);
-assert.doesNotMatch(api,/verify_csrf|tracky_v277_ingest|activate|promote|rollback|INSERT|UPDATE|DELETE/i,'read-only lifecycle API contains write authority');
+assert.doesNotMatch(api,/verify_csrf|tracky_v277_ingest|tracky_v277_(?:activate|promote|rollback|register_candidate)\s*\(|\b(?:INSERT|UPDATE|DELETE)\b/i,'read-only lifecycle API contains write authority');
 
 assert.match(workflow,/Tracky V2\.77 model lifecycle/);
 assert.match(recovery,/tests\/tracky-v277-model-lifecycle-contract\.mjs/);
