@@ -34,8 +34,6 @@ assert.match(policy,/tracky_v278_policy_build_relay/);
 assert.match(policy,/physical_federation_policy_relay\.v1/);
 assert.match(policy,/source_policy_authority_stale/);
 assert.match(policy,/consent_authority_stale/);
-assert.match(policy,/tracky_v278_policy_build_relay/);
-assert.match(policy,/physical_federation_policy_relay\\.v1/);
 assert.match(policy,/\['type'\].*person|type.*person/s);
 assert.match(policy,/\$filtered\['context'\]=\[\]/);
 assert.match(policy,/'cloud_role'=>'mirror_relay_enforcer'/);
@@ -52,8 +50,6 @@ assert.match(cloud,/governing site must match the uploader federation site/);
 assert.match(cloud,/federation_policy_protocol/);
 assert.match(cloud,/tracky_v278_policy_build_relay/);
 assert.match(cloud,/'federation_policy'=>\$federationPolicyRelay/);
-assert.match(cloud,/tracky_v278_policy_build_relay/);
-assert.match(cloud,/'federation_policy'=>\\$federationPolicyRelay/);
 
 assert.match(sync,/tracky_v278_policy_decision\([^;]+semantic_world_read/s);
 assert.match(sync,/tracky_v278_policy_filter_world_fragment/);
