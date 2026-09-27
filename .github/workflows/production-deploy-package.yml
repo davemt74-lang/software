@@ -225,6 +225,8 @@ jobs:
           test -f _deploy/api/tracky-mobile-transitions-v278.php
           test -f _deploy/includes/tracky-identity-continuity-v278.php
           test -f _deploy/api/tracky-identity-continuity-v278.php
+          test -f _deploy/includes/tracky-federated-agent-context-v278.php
+          test -f _deploy/api/tracky-federated-agent-context-v278.php
           test -f _deploy/api/tracky-sync-v270.php
           test -f _deploy/tracky.php
           test -f _deploy/team.php
