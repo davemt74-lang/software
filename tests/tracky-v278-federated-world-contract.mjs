@@ -1,0 +1,30 @@
+import fs from 'node:fs';
+import assert from 'node:assert/strict';
+
+const read=p=>fs.readFileSync(p,'utf8');
+const world=read('includes/tracky-federated-world-v278.php');
+const cloud=read('includes/tracky-cloud-v270.php');
+const api=read('api/tracky-federated-world-v278.php');
+const docs=read('docs/TRACKY_V278_FEDERATED_WORLD.md');
+
+assert.match(world,/VP3_TRACKY_FEDERATED_WORLD_PROTOCOL_V278='physical_federated_world\.v1'/);
+assert.match(world,/CREATE TABLE IF NOT EXISTS tracky_cloud_federated_world_fragments/);
+assert.match(world,/tracky_v278_report\(\$pdo,\$userId,\$reportingSiteId\)/,'Cloud must validate world against topology mirror');
+assert.match(world,/authority does not match current topology authority/);
+assert.match(world,/revision conflicts with the existing site world/);
+assert.match(world,/Cross-site identity links are deferred to V2\.78 Section 5/);
+assert.match(world,/'cloud_read_only'=>true/);
+assert.match(world,/'world_mutation_authority'=>false/);
+assert.doesNotMatch(world,/function\s+tracky_v278_world_(?:mutate|correct|link_identity|assign_authority|write_fact)/i);
+assert.match(cloud,/tracky-federated-world-v278\.php/);
+assert.match(cloud,/tracky_v278_world_ensure_schema/);
+assert.match(cloud,/tracky_v278_world_normalize/);
+assert.match(cloud,/tracky_v278_world_ingest/);
+assert.match(cloud,/'federated_world'=>\[/);
+assert.match(cloud,/federated_world_protocol/);
+assert.match(api,/\$_SERVER\['REQUEST_METHOD'\].*GET/);
+assert.doesNotMatch(api,/verify_csrf|tracky_v278_world_ingest|\b(?:INSERT|UPDATE|DELETE)\b/i);
+assert.match(docs,/same local entity key at two sites/i);
+assert.match(docs,/Section 5/);
+assert.match(docs,/Cloud is read-only/);
+console.log('TRACKY_V278_FEDERATED_WORLD_CONTRACT=PASS');
