@@ -680,6 +680,7 @@ function tracky_cloud_v270_ingest(PDO $pdo,int $userId,string $deviceId,array $p
     $federationRelay=null;
     $mobileTransitionRelay=null;
     $identityContinuityRelay=null;
+    $federationPolicyRelay=null;
     if($federationSync!==null&&function_exists('tracky_v278_sync_build_relay')){
         $federationRelay=tracky_v278_sync_build_relay($pdo,$userId,$siteId,$federationSync);
     }
@@ -688,6 +689,9 @@ function tracky_cloud_v270_ingest(PDO $pdo,int $userId,string $deviceId,array $p
     }
     if($federationSync!==null&&function_exists('tracky_v278_identity_build_relay')){
         $identityContinuityRelay=tracky_v278_identity_build_relay($pdo,$userId,$federationSync);
+    }
+    if($federationSync!==null&&function_exists('tracky_v278_policy_build_relay')){
+        $federationPolicyRelay=tracky_v278_policy_build_relay($pdo,$userId,$federationSync);
     }
 
     if($acceptedForCognition&&function_exists('tracky_agent_on_sync_v271')){
@@ -753,6 +757,7 @@ function tracky_cloud_v270_ingest(PDO $pdo,int $userId,string $deviceId,array $p
         'federation_sync'=>$federationRelay,
         'mobile_transitions'=>$mobileTransitionRelay,
         'identity_continuity'=>$identityContinuityRelay,
+        'federation_policy'=>$federationPolicyRelay,
         'cloud_time'=>gmdate(DATE_ATOM),
     ];
 }
