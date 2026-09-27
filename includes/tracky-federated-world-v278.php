@@ -39,6 +39,29 @@ function tracky_v278_world_ensure_schema(?PDO $pdo=null): void
       INDEX idx_tracky_federated_world_updated (user_id,updated_at),
       CONSTRAINT fk_tracky_federated_world_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+    $pdo->exec("CREATE TABLE IF NOT EXISTS tracky_cloud_federated_world_history (
+      user_id INT UNSIGNED NOT NULL,
+      site_uuid CHAR(36) NOT NULL,
+      world_revision BIGINT UNSIGNED NOT NULL,
+      fingerprint CHAR(64) NOT NULL,
+      reporting_site_id VARCHAR(100) NOT NULL,
+      authority_device_uuid CHAR(36) NOT NULL,
+      authority_epoch BIGINT UNSIGNED NOT NULL,
+      topology_revision BIGINT UNSIGNED NOT NULL DEFAULT 0,
+      observed_at VARCHAR(64) NOT NULL DEFAULT '',
+      fragment_json LONGTEXT NOT NULL,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (user_id,site_uuid,world_revision,fingerprint),
+      INDEX idx_tracky_federated_history_revision (user_id,site_uuid,world_revision),
+      INDEX idx_tracky_federated_history_created (user_id,created_at),
+      CONSTRAINT fk_tracky_federated_history_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+    $pdo->exec("INSERT IGNORE INTO tracky_cloud_federated_world_history
+      (user_id,site_uuid,world_revision,fingerprint,reporting_site_id,authority_device_uuid,
+       authority_epoch,topology_revision,observed_at,fragment_json)
+      SELECT user_id,site_uuid,world_revision,fingerprint,reporting_site_id,authority_device_uuid,
+             authority_epoch,topology_revision,observed_at,fragment_json
+      FROM tracky_cloud_federated_world_fragments");
 }
 
 function tracky_v278_world_uuid(mixed $value,string $label): string
@@ -225,6 +248,11 @@ function tracky_v278_world_ingest(PDO $pdo,int $userId,string $reportingSiteId,a
             entity_count=VALUES(entity_count),relation_count=VALUES(relation_count),
             fragment_json=VALUES(fragment_json),fingerprint=VALUES(fingerprint),updated_at=CURRENT_TIMESTAMP");
         $stmt->execute([$userId,$fragment['site_id'],$reportingSiteId,$fragment['authority_device_id'],$fragment['authority_epoch'],$fragment['topology_revision'],$fragment['revision'],$fragment['observed_at'],count($fragment['entities']),count($fragment['relations']),$json,$fingerprint]);
+        $history=$pdo->prepare("INSERT IGNORE INTO tracky_cloud_federated_world_history
+          (user_id,site_uuid,world_revision,fingerprint,reporting_site_id,authority_device_uuid,
+           authority_epoch,topology_revision,observed_at,fragment_json)
+          VALUES (?,?,?,?,?,?,?,?,?,?)");
+        $history->execute([$userId,$fragment['site_id'],$fragment['revision'],$fingerprint,$reportingSiteId,$fragment['authority_device_id'],$fragment['authority_epoch'],$fragment['topology_revision'],$fragment['observed_at'],$json]);
         $accepted++;$changed++;
     }
     return ['accepted'=>true,'sites'=>$accepted,'changed'=>$changed,'stale'=>$stale];
