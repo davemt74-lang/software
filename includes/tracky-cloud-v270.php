@@ -21,6 +21,7 @@ require_once __DIR__.'/tracky-agent-v271.php';
 require_once __DIR__.'/tracky-topology-v278.php';
 require_once __DIR__.'/tracky-federated-world-v278.php';
 require_once __DIR__.'/tracky-federation-sync-v278.php';
+require_once __DIR__.'/tracky-federation-reconciliation-v278.php';
 require_once __DIR__.'/tracky-federation-policy-v278.php';
 require_once __DIR__.'/tracky-federated-query-v278.php';
 require_once __DIR__.'/tracky-mobile-transition-v278.php';
@@ -229,7 +230,7 @@ function tracky_cloud_v270_scalar(mixed $value,int $max=500): string|int|float|b
 function tracky_cloud_v270_capabilities(array $input): array
 {
     $out=[];
-    $scalarKeys=['camera_count','scene_graph','active_perception','recognition','object_tracking','gesture_support','acceleration','protocol','world_state_version','event_schema_version','physical_context_version','forecast_calibration','forecast_calibration_protocol','model_lifecycle','model_lifecycle_protocol','site_topology','site_topology_protocol','federated_world','federated_world_protocol','federation_sync','federation_sync_protocol','mobile_transitions','mobile_transition_protocol','identity_continuity','identity_continuity_protocol','federated_agent_context','federated_agent_context_protocol','federation_policy','federation_policy_protocol','federated_query','federated_query_protocol'];
+    $scalarKeys=['camera_count','scene_graph','active_perception','recognition','object_tracking','gesture_support','acceleration','protocol','world_state_version','event_schema_version','physical_context_version','forecast_calibration','forecast_calibration_protocol','model_lifecycle','model_lifecycle_protocol','site_topology','site_topology_protocol','federated_world','federated_world_protocol','federation_sync','federation_sync_protocol','mobile_transitions','mobile_transition_protocol','identity_continuity','identity_continuity_protocol','federated_agent_context','federated_agent_context_protocol','federation_policy','federation_policy_protocol','federated_query','federated_query_protocol','federation_reconciliation','federation_reconciliation_protocol'];
     foreach($scalarKeys as $key){
         if(array_key_exists($key,$input))$out[$key]=tracky_cloud_v270_scalar($input[$key],120);
     }
