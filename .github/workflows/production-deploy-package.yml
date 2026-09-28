@@ -243,6 +243,10 @@ jobs:
           test -f _deploy/api/tracky-cross-site-presence-v280.php
           test -f _deploy/tracky-cross-site-presence-v280.js
           test -f _deploy/tracky-cross-site-presence-v280.css
+          test -f _deploy/includes/tracky-federation-sync-visibility-v280.php
+          test -f _deploy/api/tracky-federation-sync-visibility-v280.php
+          test -f _deploy/tracky-federation-sync-visibility-v280.js
+          test -f _deploy/tracky-federation-sync-visibility-v280.css
           test -f _deploy/api/tracky-federated-query-v278.php
           test -f _deploy/api/tracky-sync-v270.php
           test -f _deploy/tracky.php

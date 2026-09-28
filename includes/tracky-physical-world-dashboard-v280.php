@@ -215,6 +215,11 @@ function tracky_v280_dashboard_report(PDO $pdo,int $userId,string $selectedSiteI
     $agent=tracky_v278_agent_context_report($pdo,$userId);
     $context=is_array($agent['preferred_context']??null)?$agent['preferred_context']:[];
     $dashboard=tracky_v280_dashboard_build($operations,$world,$context,$selectedSiteId);
+    if(function_exists('tracky_v280_syncv_report')&&function_exists('tracky_v280_syncv_annotate_dashboard')){
+        $visibilityReport=tracky_v280_syncv_report($pdo,$userId);
+        $visibility=is_array($visibilityReport['preferred_visibility']??null)?$visibilityReport['preferred_visibility']:[];
+        if($visibility)$dashboard=tracky_v280_syncv_annotate_dashboard($dashboard,$visibility);
+    }
     return ['available'=>!empty($dashboard['site_options']),'dashboard'=>$dashboard,'capability'=>tracky_v280_dashboard_public_capability()];
 }
 
