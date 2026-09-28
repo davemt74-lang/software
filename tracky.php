@@ -125,10 +125,10 @@ $memberHeaderUser=$user;$memberHeaderTitle='Tracky';$memberHeaderSubtitle='Physi
 </section>
 <section class="card" style="margin-bottom:16px">
 <div class="muted">V2.81 Federated Automation</div>
-<h2 style="margin:6px 0 8px">Automation contract & action ledger</h2>
+<h2 style="margin:6px 0 8px">Distributed automation & action ledger</h2>
 <?php $fa281=function_exists('tracky_v281_fa_report')?tracky_v281_fa_report($pdo,(int)($user['id']??0),'',(string)($selected??'')):['preferred_automation'=>null];$faSnap=$fa281['preferred_automation']??null; ?>
-<div class="metric"><?= (int)(($faSnap['counts']['active_runs']??0)) ?> active runs · <?= (int)(($faSnap['counts']['definitions']??0)) ?> definitions</div>
-<p class="muted">Origin HomeServer owns the authoritative automation definition and ledger. Cloud is a read-only mirror. Execution remains disabled in Section 1; distributed physical execution arrives in later V2.81 sections.</p>
+<div class="metric"><?= (int)(($faSnap['counts']['active_runs']??0)) ?> active runs · <?= (int)(($faSnap['counts']['definitions']??0)) ?> definitions · <?= (int)(($faSnap['counts']['execution_receipts']??0)) ?> execution receipts</div>
+<p class="muted">Origin HomeServer owns the authoritative automation definition and ledger. Section 3 dispatches work to the current authoritative HomeServer for the target site. Cloud remains a read-only execution-receipt mirror and cannot dispatch or execute actions.</p>
 </section>
 <section class="card cfgo280" id="federationGovernedOperationsV280" data-endpoint="<?= e(url('/api/tracky-federation-governed-operations-v280.php')) ?>" data-origin-site="<?= e($selectedFederationOrigin) ?>">
 <div class="cfgo280-head"><div><div class="muted">V2.80 · GOVERNED FEDERATION OPERATIONS</div><h3>Request, approve locally, reconcile</h3><p class="muted">Cloud can create a request for the selected origin site and mirror progress. That HomeServer remains the executor and authority.</p></div><div class="cfgo280-actions"><span class="muted" data-cfgo-status>Loading operations…</span><button type="button" data-cfgo-refresh>Refresh</button></div></div>
