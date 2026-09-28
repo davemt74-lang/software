@@ -5,7 +5,7 @@ const loader=fs.readFileSync('includes/tracky-cloud-v270.php','utf8');
 const page=fs.readFileSync('tracky.php','utf8');
 const pkg=fs.readFileSync('.github/workflows/production-deploy-package.yml','utf8');
 const recovery=fs.readFileSync('tools/run_recovery_baseline.py','utf8');
-assert.match(inc,/physical_federated_automation\.v1/);assert.match(inc,/'version'=>'2\.81'/);assert.match(inc,/'section'=>1/);
+assert.match(inc,/physical_federated_automation\.v1/);assert.match(inc,/'version'=>'2\.81'/);assert.match(inc,/'section'=>2/);assert.match(inc,/trigger_receipts/);assert.match(inc,/trigger_execution_enabled'=>false/);
 assert.match(inc,/cloud_definition_authoring'=>false/);assert.match(inc,/cloud_execution_allowed'=>false/);assert.match(inc,/execution_enabled'=>false/);
 assert.match(inc,/origin-local definitions/);assert.match(inc,/origin-local runs/);assert.match(inc,/tracky_cloud_federated_automation/);assert.match(inc,/reportingSiteId/);assert.match(inc,/reporting_site_id=\?/);
 assert.match(api,/\$_SERVER\['REQUEST_METHOD'\]!=='GET'/);assert.doesNotMatch(api,/POST|execute|dispatch|create_definition/);
@@ -13,4 +13,4 @@ assert.match(loader,/tracky-federated-automation-v281\.php/);assert.match(loader
 assert.match(page,/V2\.81 Federated Automation/);assert.match(page,/Execution remains disabled/);assert.match(page,/tracky_v281_fa_report\(\$pdo/);
 assert.match(pkg,/includes\/tracky-federated-automation-v281\.php/);assert.match(pkg,/api\/tracky-federated-automation-v281\.php/);
 assert.match(recovery,/tracky-v281-federated-automation-contract\.mjs/);
-console.log('TRACKY_V281_FEDERATED_AUTOMATION_CONTRACT=PASS');
+console.log('TRACKY_V281_PHYSICAL_TRIGGER_CLOUD_CONTRACT=PASS');
