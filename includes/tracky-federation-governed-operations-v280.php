@@ -80,7 +80,7 @@ function tracky_v280_fgo_normalize(array $input): array {
         'reconciling'=>count(array_filter($ops,static fn($x)=>$x['state']==='reconciling'))
       ],
       'summary_only'=>true,'cloud_read_only'=>true,'remote_command_execution'=>false,'authority_mutation'=>false,
-      'safety'=>['section7_health_is_authoritative'=>true,'cloud_execution_allowed'=>false,'agent_execution_allowed'=>false,'authority_transfer_automatic'=>false,'reconnect_marks_recovered'=>false]
+      'safety'=>['section7_health_is_authoritative'=>true,'cloud_execution_allowed'=>false,'agent_execution_allowed'=>false,'authority_transfer_automatic'=>false,'reconnect_marks_recovered'=>false,'revocation_wins'=>true,'operation_expiration_mirrored'=>true]
     ];
 }
 function tracky_v280_fgo_ingest(PDO $pdo,int $userId,string $reportingSiteId,array $input): array {
