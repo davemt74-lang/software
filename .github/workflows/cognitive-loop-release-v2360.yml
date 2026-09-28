@@ -131,6 +131,9 @@ on:
       - 'api/tracky-federation-fleet-health-v280.php'
       - 'tests/tracky-v280-federation-fleet-health-unit.php'
       - 'tests/tracky-v280-federation-fleet-health-contract.mjs'
+      - 'tracky-federation-fleet-health-v280.js'
+      - 'tracky-federation-fleet-health-v280.css'
+      - 'tracky.php'
       - 'tests/fixtures/tracky_v274_resilience_vectors.json'
       - 'docs/VP3_COGNITIVE_DOMAIN_INTEGRATION_V2380.md'
       - 'docs/VP3_COGNITIVE_DOMAIN_INTEGRATION_V2390.md'
@@ -555,6 +558,7 @@ jobs:
           php tests/tracky-v280-federation-agent-health-unit.php
           node tests/tracky-v280-federation-agent-health-contract.mjs
           php tests/tracky-v280-federation-fleet-health-unit.php
+          node --check tracky-federation-fleet-health-v280.js
           node tests/tracky-v280-federation-fleet-health-contract.mjs
       - name: v26.10 cross-domain entity graph
         run: |
