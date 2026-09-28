@@ -1,0 +1,40 @@
+import fs from 'node:fs';
+import assert from 'node:assert/strict';
+
+const include=fs.readFileSync('includes/tracky-federation-access-operations-v280.php','utf8');
+const api=fs.readFileSync('api/tracky-federation-access-operations-v280.php','utf8');
+const loader=fs.readFileSync('includes/tracky-cloud-v270.php','utf8');
+const policy=fs.readFileSync('includes/tracky-federation-policy-v278.php','utf8');
+const agent=fs.readFileSync('includes/tracky-federated-agent-context-v278.php','utf8');
+const page=fs.readFileSync('tracky.php','utf8');
+const script=fs.readFileSync('tracky-federation-access-operations-v280.js','utf8');
+const release=fs.readFileSync('.github/workflows/cognitive-loop-release-v2360.yml','utf8');
+const packageWorkflow=fs.readFileSync('.github/workflows/production-deploy-package.yml','utf8');
+const recovery=fs.readFileSync('tools/run_recovery_baseline.py','utf8');
+
+assert.match(include,/physical_federation_access_operations\.v1/);
+assert.match(include,/stale_grant_suppressed/);
+assert.match(include,/revocation_wins'=>true/);
+assert.match(include,/cloud_can_grant'=>false/);
+assert.match(include,/cloud_can_revoke'=>false/);
+assert.match(include,/cloud_can_change_consent'=>false/);
+assert.match(policy,/revocation_key/);
+assert.match(agent,/federation_access_operations/);
+assert.match(agent,/revocation_wins'=>true/);
+assert.match(api,/\$_SERVER\['REQUEST_METHOD'\]!=='GET'/);
+assert.doesNotMatch(api,/tracky_v278_policy_(?:grant|revoke|set)/);
+assert.match(loader,/tracky-federation-access-operations-v280\.php/);
+assert.match(page,/id="federationAccessOperationsV280"/);
+assert.match(page,/Revocation always wins/);
+assert.match(page,/tracky-federation-access-operations-v280\.css/);
+assert.match(page,/tracky-federation-access-operations-v280\.js/);
+assert.doesNotMatch(script,/method\s*:\s*['"](?:POST|PUT|PATCH|DELETE)['"]/);
+assert.match(release,/tracky-v280-federation-access-operations-unit\.php/);
+assert.match(release,/tracky-v280-federation-access-operations-contract\.mjs/);
+assert.match(packageWorkflow,/tracky-federation-access-operations-v280\.php/);
+assert.match(packageWorkflow,/tracky-federation-access-operations-v280\.js/);
+assert.match(packageWorkflow,/tracky-federation-access-operations-v280\.css/);
+assert.match(recovery,/tracky-v280-federation-access-operations-unit\.php/);
+assert.match(recovery,/tracky-v280-federation-access-operations-contract\.mjs/);
+
+console.log('TRACKY_V280_FEDERATION_ACCESS_OPERATIONS_CONTRACT=PASS');
