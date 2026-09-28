@@ -310,8 +310,12 @@ function tracky_v278_agent_context_normalize(array $input): array
         $issues=[];
         foreach(array_slice(is_array($fh['active_issues']??null)?$fh['active_issues']:[],0,24) as $item){
             if(!is_array($item))continue;
+            $healthIssueSite=tracky_v278_agent_context_uuid($item['site_id']??'','federation health issue site id',true);
+            $healthIssueComponent=tracky_v278_agent_context_text($item['component']??'',80);
+            if($healthIssueSite===''&&$healthIssueComponent==='')continue;
             $issues[]=[
-              'site_id'=>tracky_v278_agent_context_uuid($item['site_id']??'','federation health issue site id'),
+              'site_id'=>$healthIssueSite,
+              'component'=>$healthIssueComponent,
               'label'=>tracky_v278_agent_context_text($item['label']??'',120),
               'state'=>tracky_v278_agent_context_text($item['state']??'unknown',30),
               'severity'=>tracky_v278_agent_context_text($item['severity']??'warning',20),
