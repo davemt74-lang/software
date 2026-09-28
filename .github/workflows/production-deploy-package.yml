@@ -253,6 +253,8 @@ jobs:
           test -f _deploy/tracky-federation-access-operations-v280.css
           test -f _deploy/includes/tracky-federation-agent-health-v280.php
           test -f _deploy/api/tracky-federation-agent-health-v280.php
+          test -f _deploy/includes/tracky-federation-fleet-health-v280.php
+          test -f _deploy/api/tracky-federation-fleet-health-v280.php
           test -f _deploy/tracky-federation-agent-health-v280.js
           test -f _deploy/tracky-federation-agent-health-v280.css
           test -f _deploy/api/tracky-federated-query-v278.php
