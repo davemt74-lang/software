@@ -83,6 +83,9 @@ on:
       - 'docs/TRACKY_V278_FEDERATED_QUERY_HISTORY.md'
       - 'tests/tracky-v278-federated-query-contract.mjs'
       - 'tests/tracky-v278-federated-query-unit.php'
+      - 'includes/tracky-federation-reconciliation-v278.php'
+      - 'tests/tracky-v278-federation-reconciliation-contract.mjs'
+      - 'tests/tracky-v278-federation-reconciliation-unit.php'
       - 'tests/fixtures/tracky_v274_resilience_vectors.json'
       - 'docs/VP3_COGNITIVE_DOMAIN_INTEGRATION_V2380.md'
       - 'docs/VP3_COGNITIVE_DOMAIN_INTEGRATION_V2390.md'
@@ -463,6 +466,10 @@ jobs:
           php -l tests/tracky-v278-federated-query-unit.php
           php tests/tracky-v278-federated-query-unit.php
           node tests/tracky-v278-federated-query-contract.mjs
+          php -l includes/tracky-federation-reconciliation-v278.php
+          php -l tests/tracky-v278-federation-reconciliation-unit.php
+          php tests/tracky-v278-federation-reconciliation-unit.php
+          node tests/tracky-v278-federation-reconciliation-contract.mjs
       - name: v26.10 cross-domain entity graph
         run: |
           php tests/cognitive-entity-graph-v2610.php
