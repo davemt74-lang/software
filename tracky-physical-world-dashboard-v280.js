@@ -43,6 +43,20 @@
     root.querySelector('[data-pw280-hardware-list]').innerHTML=(report.hardware_units||[]).length
       ?report.hardware_units.map(item=>'<div class="pw280-hardware"><div><strong>'+esc(item.label||item.id)+'</strong><span>'+esc(item.hardware_profile_label||item.hardware_profile||'Device')+'</span></div><div>'+(item.is_authority?'<b>site authority</b> ':'')+esc(item.trust_state||'unknown')+(item.version?' · v'+esc(item.version):'')+'</div></div>').join('')
       :'<div class="pw280-empty">No registered hardware units at this site.</div>';
+    const freshness=report.federation_freshness||selected.federation_freshness||null;
+    const syncWarning=root.querySelector('[data-pw280-sync-warning]');
+    if(syncWarning){
+      if(freshness){
+        syncWarning.hidden=false;
+        syncWarning.className='pw280-sync-warning '+esc(freshness.status||'unknown');
+        syncWarning.textContent=freshness.fresh
+          ?'Federation freshness: current (origin-HomeServer reported).'
+          :'Federation freshness: '+String(freshness.status||'unknown').replaceAll('_',' ')+'. '+(freshness.message||'Remote data is not origin-verified current.');
+      }else{
+        syncWarning.hidden=true;
+      }
+    }
+
     const warning=root.querySelector('[data-pw280-warning]');
     const missing=(report.issues||[]).some(x=>x.code==='requested_site_not_available');
     warning.hidden=!missing;
