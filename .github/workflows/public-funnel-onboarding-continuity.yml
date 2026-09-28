@@ -53,3 +53,28 @@ jobs:
         run: node tests/vp3-public-auth-contract.mjs
       - name: Retained mega-menu pages contract
         run: node tests/public-mega-menu-pages-contract.mjs
+      - name: Profile WebMCP PHP syntax
+        run: |
+          php -l includes/profile-webmcp-v100.php
+          php -l api/profile-webmcp-v100.php
+          php -l profile.php
+          php -l tests/profile-webmcp-v100.php
+      - name: Profile WebMCP PHP security contract
+        run: php tests/profile-webmcp-v100.php
+      - name: Profile WebMCP static integration contract
+        run: node tests/profile-webmcp-v100-contract.mjs
+      - name: Profile WebMCP browser runtime contract
+        run: node tests/profile-webmcp-v100-runtime.mjs
+      - name: Profile WebMCP production package smoke
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/vp3-webmcp-package
+          mkdir -p /tmp/vp3-webmcp-package
+          rsync -a ./ /tmp/vp3-webmcp-package/ \
+            --exclude='.git/' --exclude='.github/' --exclude='tests/' --exclude='private/' \
+            --exclude='uploads/' --exclude='config.php' --exclude='.env*'
+          test -f /tmp/vp3-webmcp-package/includes/profile-webmcp-v100.php
+          test -f /tmp/vp3-webmcp-package/api/profile-webmcp-v100.php
+          test -f /tmp/vp3-webmcp-package/profile-webmcp-v100.js
+          grep -Fq "includes/profile-webmcp-v100.php" /tmp/vp3-webmcp-package/profile.php
+          grep -Fq "profile-webmcp-v100.js" /tmp/vp3-webmcp-package/profile.php
