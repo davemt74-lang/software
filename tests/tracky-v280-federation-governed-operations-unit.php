@@ -1,0 +1,8 @@
+<?php
+declare(strict_types=1);require __DIR__.'/../includes/tracky-cloud-v270.php';
+function fgo_fail(string $m): never{fwrite(STDERR,$m."\n");exit(1);}function fgo_expect(bool $v,string $m):void{if(!$v)fgo_fail($m);}
+$home='11111111-1111-4111-8111-111111111111';$office='22222222-2222-4222-8222-222222222222';
+$n=tracky_v280_fgo_normalize(['protocol'=>'physical_federation_governed_operations.v1','generated_at'=>1759063200000,'local_site_id'=>$home,'cloud_read_only'=>true,'remote_command_execution'=>false,'authority_mutation'=>false,'operations'=>[['request_id'=>'r1','idempotency_key'=>'i1','operation_type'=>'reconcile','target_site_id'=>$office,'state'=>'reconciling','requires_approval'=>false,'requires_reconciliation'=>true,'authority_epoch_before'=>2,'authority_epoch_after'=>0]]]);
+fgo_expect($n['operations'][0]['state']==='reconciling','state');fgo_expect($n['cloud_read_only']===true,'read only');fgo_expect($n['remote_command_execution']===false,'execution boundary');
+try{tracky_v280_fgo_normalize(['protocol'=>'physical_federation_governed_operations.v1','local_site_id'=>$home,'cloud_read_only'=>false]);fgo_fail('writable projection accepted');}catch(Throwable $e){fgo_expect(str_contains($e->getMessage(),'read-only'),'read-only error');}
+$cap=tracky_v280_fgo_public_capability();fgo_expect($cap['cloud_execution_allowed']===false,'cloud execution');fgo_expect($cap['completion_requires_authoritative_reconciliation']===true,'reconciliation gate');echo "TRACKY_V280_FEDERATION_GOVERNED_OPERATIONS_UNIT=PASS\n";
