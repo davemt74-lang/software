@@ -54,6 +54,10 @@ jobs:
             "commit": "${VP3_RELEASE_SHA}",
             "repository": "${GITHUB_REPOSITORY}",
             "workflow_run_id": "${GITHUB_RUN_ID}",
+            "tracky_feature_track": "V2.80",
+            "tracky_release_section": 10,
+            "tracky_golden_operational_scenarios": 24,
+            "tracky_recovery_authority": "section7_authoritative_reconciliation",
             "preserve_runtime_paths": ["config.php", ".env", "private/", "uploads/"]
           }
           EOF
@@ -261,6 +265,8 @@ jobs:
           test -f _deploy/api/tracky-federation-governed-operations-v280.php
           test -f _deploy/tracky-federation-governed-operations-v280.js
           test -f _deploy/tracky-federation-governed-operations-v280.css
+          test -f _deploy/includes/tracky-release-hardening-v280.php
+          test -f _deploy/api/tracky-release-v280.php
           test -f _deploy/tracky-federation-agent-health-v280.js
           test -f _deploy/tracky-federation-agent-health-v280.css
           test -f _deploy/api/tracky-federated-query-v278.php

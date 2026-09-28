@@ -28,6 +28,7 @@ require_once __DIR__.'/tracky-federation-access-operations-v280.php';
 require_once __DIR__.'/tracky-federation-agent-health-v280.php';
 require_once __DIR__.'/tracky-federation-fleet-health-v280.php';
 require_once __DIR__.'/tracky-federation-governed-operations-v280.php';
+require_once __DIR__.'/tracky-release-hardening-v280.php';
 require_once __DIR__.'/tracky-physical-world-dashboard-v280.php';
 require_once __DIR__.'/tracky-cross-site-presence-v280.php';
 require_once __DIR__.'/tracky-federation-policy-v278.php';
