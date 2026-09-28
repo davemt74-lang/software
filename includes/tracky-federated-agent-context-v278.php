@@ -268,6 +268,21 @@ function tracky_v278_agent_context_normalize(array $input): array
         ];
     }
 
+    $accessOperations=null;
+    if(is_array($input['federation_access_operations']??null)){
+        $fa=$input['federation_access_operations'];
+        $accessOperations=[
+          'protocol'=>tracky_v278_agent_context_text($fa['protocol']??'',100),
+          'policy_revision'=>max(0,(int)($fa['policy_revision']??0)),
+          'revocation_epoch'=>max(0,(int)($fa['revocation_epoch']??0)),
+          'active_revocations'=>max(0,(int)($fa['active_revocations']??0)),
+          'stale_grants_suppressed'=>max(0,(int)($fa['stale_grants_suppressed']??0)),
+          'summary'=>tracky_v278_agent_context_text($fa['summary']??'',1000),
+          'revocation_wins'=>true,
+          'cloud_read_only'=>true,
+        ];
+    }
+
     $explain=is_array($input['explainability']??null)?$input['explainability']:[];
     $out=[
       'protocol'=>VP3_TRACKY_FEDERATED_AGENT_CONTEXT_PROTOCOL_V278,
@@ -282,6 +297,7 @@ function tracky_v278_agent_context_normalize(array $input): array
       'focus_identity'=>$focus,'active_mobile_transition'=>$transition,
       'changed_elsewhere'=>$changes,'sites'=>$sites,'site_revisions'=>$siteRevisions,
       'federation_sync_visibility'=>$syncVisibility,
+      'federation_access_operations'=>$accessOperations,
       'explainability'=>[
         'location_candidate_count'=>max(0,(int)($explain['location_candidate_count']??0)),
         'current_location_selected'=>!empty($explain['current_location_selected']),
