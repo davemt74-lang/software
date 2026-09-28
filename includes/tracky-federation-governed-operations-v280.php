@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 const VP3_TRACKY_GOVERNED_OPERATIONS_PROTOCOL_V280='physical_federation_governed_operations.v1';
 const VP3_TRACKY_GOVERNED_OPERATIONS_V280='2.80';
-const VP3_TRACKY_GOVERNED_OPERATION_TYPES_V280=['reconnect','reconcile','restart_runtime','request_update','revoke_device','transfer_authority'];
+const VP3_TRACKY_GOVERNED_OPERATION_TYPES_V280=['reconnect','reconcile','restart_runtime','request_update','revoke_site','revoke_device','transfer_authority'];
 const VP3_TRACKY_GOVERNED_OPERATION_STATES_V280=['proposed','awaiting_approval','approved','queued','running','reconciling','completed','failed','rejected','cancelled','expired'];
 
 function tracky_v280_fgo_text(mixed $v,int $n=240): string { return mb_strimwidth(trim((string)($v??'')),0,max(1,$n),''); }
@@ -32,12 +32,12 @@ function tracky_v280_fgo_ensure_schema(?PDO $pdo=null): void {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
     $pdo->exec("CREATE TABLE IF NOT EXISTS tracky_cloud_federation_operation_requests (
       user_id INT UNSIGNED NOT NULL, request_id VARCHAR(128) NOT NULL, idempotency_key VARCHAR(160) NOT NULL,
-      operation_type VARCHAR(40) NOT NULL, target_site_uuid CHAR(36) NOT NULL, device_id VARCHAR(80) NOT NULL DEFAULT '',
+      operation_type VARCHAR(40) NOT NULL, origin_site_uuid CHAR(36) NOT NULL, target_site_uuid CHAR(36) NOT NULL, device_id VARCHAR(80) NOT NULL DEFAULT '',
       new_authority_device_id VARCHAR(80) NOT NULL DEFAULT '', explicit_confirmation TINYINT(1) NOT NULL DEFAULT 0,
       request_json TEXT NOT NULL, status VARCHAR(40) NOT NULL DEFAULT 'proposed',
       created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       PRIMARY KEY(user_id,request_id), UNIQUE KEY uq_tracky_fgo_request_idem(user_id,idempotency_key),
-      INDEX idx_tracky_fgo_request_target(user_id,target_site_uuid,status,created_at),
+      INDEX idx_tracky_fgo_request_target(user_id,target_site_uuid,status,created_at), INDEX idx_tracky_fgo_request_origin(user_id,origin_site_uuid,status,created_at),
       CONSTRAINT fk_tracky_fgo_request_user FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 }
@@ -52,6 +52,7 @@ function tracky_v280_fgo_operation_row(array $row): array {
       'state'=>tracky_v280_fgo_state($row['state']??'proposed'),
       'requires_approval'=>!empty($row['requires_approval']),
       'requires_reconciliation'=>!empty($row['requires_reconciliation']),
+      'expires_at_ms'=>max(0,(int)($row['expires_at_ms']??0)),
       'authority_epoch_before'=>max(0,(int)($row['authority_epoch_before']??0)),
       'authority_epoch_after'=>max(0,(int)($row['authority_epoch_after']??0)),
       'last_error'=>tracky_v280_fgo_text($row['last_error']??'',300),
@@ -104,6 +105,7 @@ function tracky_v280_fgo_ingest(PDO $pdo,int $userId,string $reportingSiteId,arr
 function tracky_v280_fgo_create_request(PDO $pdo,int $userId,array $input): array {
     tracky_v280_fgo_ensure_schema($pdo);
     $op=tracky_v280_fgo_operation($input['operation_type']??'');
+    $origin=tracky_v280_fgo_uuid($input['origin_site_id']??'','origin site id');
     $target=tracky_v280_fgo_uuid($input['target_site_id']??'','target site id');
     $device=tracky_v280_fgo_text($input['device_id']??'',80);
     $newAuthority=tracky_v280_fgo_text($input['new_authority_device_id']??'',80);
@@ -119,22 +121,22 @@ function tracky_v280_fgo_create_request(PDO $pdo,int $userId,array $input): arra
     }
     $requestId='cloud-fop-'.bin2hex(random_bytes(16));
     $idem=tracky_v280_fgo_text($input['idempotency_key']??'',160)?:$requestId;
-    $payload=['request_id'=>$requestId,'idempotency_key'=>$idem,'operation_type'=>$op,'target_site_id'=>$target,'device_id'=>$device,
+    $payload=['request_id'=>$requestId,'idempotency_key'=>$idem,'operation_type'=>$op,'origin_site_id'=>$origin,'target_site_id'=>$target,'device_id'=>$device,
       'new_authority_device_id'=>$newAuthority,'explicit_confirmation'=>!empty($input['explicit_confirmation']),'reason'=>tracky_v280_fgo_text($input['reason']??'',240),'parameters'=>$params];
     $json=tracky_cloud_v270_json($payload);
     try{
-      $s=$pdo->prepare("INSERT INTO tracky_cloud_federation_operation_requests(user_id,request_id,idempotency_key,operation_type,target_site_uuid,device_id,new_authority_device_id,explicit_confirmation,request_json,status) VALUES(?,?,?,?,?,?,?,?,?,'proposed')");
-      $s->execute([$userId,$requestId,$idem,$op,$target,$device,$newAuthority,!empty($input['explicit_confirmation'])?1:0,$json]);
+      $s=$pdo->prepare("INSERT INTO tracky_cloud_federation_operation_requests(user_id,request_id,idempotency_key,operation_type,origin_site_uuid,target_site_uuid,device_id,new_authority_device_id,explicit_confirmation,request_json,status) VALUES(?,?,?,?,?,?,?,?,?,?,'proposed')");
+      $s->execute([$userId,$requestId,$idem,$op,$origin,$target,$device,$newAuthority,!empty($input['explicit_confirmation'])?1:0,$json]);
     }catch(PDOException $e){
       $q=$pdo->prepare('SELECT request_json,status FROM tracky_cloud_federation_operation_requests WHERE user_id=? AND idempotency_key=? LIMIT 1');$q->execute([$userId,$idem]);$row=$q->fetch();
-      if(!$row)throw $e;$existing=json_decode((string)$row['request_json'],true);if(!is_array($existing)||($existing['operation_type']??'')!==$op||($existing['target_site_id']??'')!==$target||($existing['device_id']??'')!==$device)throw new RuntimeException('Governed operation idempotency conflict.');
+      if(!$row)throw $e;$existing=json_decode((string)$row['request_json'],true);if(!is_array($existing)||($existing['operation_type']??'')!==$op||($existing['origin_site_id']??'')!==$origin||($existing['target_site_id']??'')!==$target||($existing['device_id']??'')!==$device)throw new RuntimeException('Governed operation idempotency conflict.');
       return ['created'=>false,'request'=>$existing,'status'=>(string)$row['status']];
     }
     return ['created'=>true,'request'=>$payload,'status'=>'proposed'];
 }
 function tracky_v280_fgo_pending_for_site(PDO $pdo,int $userId,string $siteId): array {
     tracky_v280_fgo_ensure_schema($pdo);$siteId=tracky_v280_fgo_uuid($siteId,'target site id');
-    $q=$pdo->prepare("SELECT request_json,status FROM tracky_cloud_federation_operation_requests WHERE user_id=? AND target_site_uuid=? AND status IN ('proposed','awaiting_approval') ORDER BY created_at,idempotency_key LIMIT 50");
+    $q=$pdo->prepare("SELECT request_json,status FROM tracky_cloud_federation_operation_requests WHERE user_id=? AND origin_site_uuid=? AND status IN ('proposed','awaiting_approval') ORDER BY created_at,idempotency_key LIMIT 50");
     $q->execute([$userId,$siteId]);$out=[];
     foreach($q->fetchAll()?:[] as $r){$x=json_decode((string)$r['request_json'],true);if(is_array($x)){$x['status']=(string)$r['status'];$out[]=$x;}}
     return ['protocol'=>VP3_TRACKY_GOVERNED_OPERATIONS_PROTOCOL_V280,'cloud_role'=>'request_relay_only','remote_command_execution'=>false,'authority_mutation'=>false,'requests'=>$out];
@@ -148,5 +150,5 @@ function tracky_v280_fgo_report(PDO $pdo,int $userId): array {
     return ['available'=>!empty($snapshots),'protocol'=>VP3_TRACKY_GOVERNED_OPERATIONS_PROTOCOL_V280,'snapshots'=>$snapshots,'preferred_operations'=>$snapshots[0]['operations']??null,'cloud_requests'=>$requests,'cloud_role'=>'request_and_mirror_only','cloud_execution_allowed'=>false,'authority_mutation'=>false];
 }
 function tracky_v280_fgo_public_capability(): array {
-    return ['version'=>'2.80','protocol'=>VP3_TRACKY_GOVERNED_OPERATIONS_PROTOCOL_V280,'operations'=>VP3_TRACKY_GOVERNED_OPERATION_TYPES_V280,'states'=>VP3_TRACKY_GOVERNED_OPERATION_STATES_V280,'cloud_request_creation'=>true,'cloud_execution_allowed'=>false,'agent_execution_allowed'=>false,'section7_health_is_authoritative'=>true,'completion_requires_authoritative_reconciliation'=>true,'authority_transfer_requires_epoch_advance'=>true];
+    return ['version'=>'2.80','protocol'=>VP3_TRACKY_GOVERNED_OPERATIONS_PROTOCOL_V280,'operations'=>VP3_TRACKY_GOVERNED_OPERATION_TYPES_V280,'states'=>VP3_TRACKY_GOVERNED_OPERATION_STATES_V280,'cloud_request_creation'=>true,'explicit_origin_routing'=>true,'operation_expiration_mirrored'=>true,'revocation_wins'=>true,'cloud_execution_allowed'=>false,'agent_execution_allowed'=>false,'section7_health_is_authoritative'=>true,'completion_requires_authoritative_reconciliation'=>true,'authority_transfer_requires_epoch_advance'=>true];
 }
