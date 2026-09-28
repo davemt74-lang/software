@@ -24,6 +24,7 @@ require_once __DIR__.'/tracky-federation-sync-v278.php';
 require_once __DIR__.'/tracky-federation-reconciliation-v278.php';
 require_once __DIR__.'/tracky-federation-operations-v280.php';
 require_once __DIR__.'/tracky-physical-world-dashboard-v280.php';
+require_once __DIR__.'/tracky-cross-site-presence-v280.php';
 require_once __DIR__.'/tracky-federation-policy-v278.php';
 require_once __DIR__.'/tracky-federated-query-v278.php';
 require_once __DIR__.'/tracky-mobile-transition-v278.php';
