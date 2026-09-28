@@ -217,6 +217,12 @@ function vp3_profile_webmcp_manifest_v100(PDO $pdo, array $profile, ?array $view
         if (($capabilities[$capability] ?? false) === true) $allowed[] = $name;
     }
     sort($allowed);
+    $authenticated = (int)($viewer['id'] ?? 0) > 0;
+    $identityDisclosed = false;
+    if ($authenticated && function_exists('profile_visitor_discloses_identity')) {
+        try { $identityDisclosed = profile_visitor_discloses_identity($pdo, $viewer); }
+        catch (Throwable $e) { $identityDisclosed = false; }
+    }
     return [
         'manifest_version' => VP3_PROFILE_WEBMCP_MANIFEST_V100,
         'surface' => 'native_profile',
@@ -224,8 +230,8 @@ function vp3_profile_webmcp_manifest_v100(PDO $pdo, array $profile, ?array $view
         'capabilities' => $capabilities,
         'allowed_tools' => $allowed,
         'session' => [
-            'authenticated' => (int)($viewer['id'] ?? 0) > 0,
-            'visitor_profile_known' => (int)($viewer['id'] ?? 0) > 0,
+            'authenticated' => $authenticated,
+            'visitor_profile_known' => $identityDisclosed,
         ],
     ];
 }
