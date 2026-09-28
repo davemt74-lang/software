@@ -109,7 +109,7 @@ function tracky_v280_fgo_create_request(PDO $pdo,int $userId,array $input): arra
     $target=tracky_v280_fgo_uuid($input['target_site_id']??'','target site id');
     $device=tracky_v280_fgo_text($input['device_id']??'',80);
     $newAuthority=tracky_v280_fgo_text($input['new_authority_device_id']??'',80);
-    if(in_array($op,['restart_runtime','request_update','revoke_device'],true)&&$device==='')throw new RuntimeException('Device id is required for this operation.');
+    if($op==='revoke_device'&&$device==='')throw new RuntimeException('Device id is required for this operation.');
     if($op==='transfer_authority'&&($newAuthority===''||empty($input['explicit_confirmation'])))throw new RuntimeException('Authority transfer requires an explicit confirmation and new authority device.');
     $params=[];
     if($op==='request_update'){
