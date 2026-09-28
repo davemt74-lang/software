@@ -54,6 +54,25 @@ function tracky_v281_fa_run(array $row,string $local): array {
       'origin_site_id'=>$origin,'state'=>$state,'deadline_at_ms'=>max(0,(int)($row['deadline_at_ms']??0)),'step_states'=>$stepStates,
     ];
 }
+
+function tracky_v281_fa_trigger_receipt(array $row,string $local): array {
+    $source=tracky_v281_fa_uuid($row['source_site_id']??$local,'trigger source site');
+    if($source!==$local)throw new RuntimeException('Tracky physical trigger mirror accepts only origin-local trigger evidence.');
+    $decision=strtolower(tracky_v281_fa_text($row['decision']??'',30));
+    if(!in_array($decision,['accepted','rejected','duplicate','debounced'],true))throw new RuntimeException('Tracky physical trigger decision is invalid.');
+    return [
+      'receipt_id'=>tracky_v281_fa_text($row['receipt_id']??'',160),
+      'automation_id'=>tracky_v281_fa_text($row['automation_id']??'',128),
+      'automation_revision'=>max(1,(int)($row['automation_revision']??1)),
+      'event_id'=>tracky_v281_fa_text($row['event_id']??'',160),
+      'event_key'=>strtolower(tracky_v281_fa_text($row['event_key']??'',120)),
+      'source_site_id'=>$source,'occurred_at_ms'=>max(0,(int)($row['occurred_at_ms']??0)),
+      'confidence'=>max(0.0,min(1.0,(float)($row['confidence']??0))),
+      'decision'=>$decision,'reason'=>tracky_v281_fa_text($row['reason']??'',120),
+      'run_id'=>tracky_v281_fa_text($row['run_id']??'',160) ?: null,
+      'created_at'=>tracky_v281_fa_text($row['created_at']??'',64),
+    ];
+}
 function tracky_v281_fa_normalize(array $input): array {
     if((string)($input['protocol']??'')!==VP3_TRACKY_FEDERATED_AUTOMATION_PROTOCOL_V281)throw new RuntimeException('Tracky federated automation protocol is unsupported.');
     if(isset($input['cloud_read_only'])&&!$input['cloud_read_only'])throw new RuntimeException('Cloud federated automation projection must remain read-only.');
@@ -67,11 +86,17 @@ function tracky_v281_fa_normalize(array $input): array {
     foreach(array_slice(is_array($input['runs']??null)?$input['runs']:[],0,500) as $row){
       if(!is_array($row))continue;$n=tracky_v281_fa_run($row,$local);if($n['run_id']===''||isset($seenRuns[$n['run_id']]))continue;$seenRuns[$n['run_id']]=true;$runs[]=$n;
     }
+    $triggerReceipts=[];$seenReceipts=[];
+    foreach(array_slice(is_array($input['trigger_receipts']??null)?$input['trigger_receipts']:[],0,500) as $row){
+      if(!is_array($row))continue;$n=tracky_v281_fa_trigger_receipt($row,$local);
+      if($n['receipt_id']===''||isset($seenReceipts[$n['receipt_id']]))continue;
+      $seenReceipts[$n['receipt_id']]=true;$triggerReceipts[]=$n;
+    }
     return [
       'protocol'=>VP3_TRACKY_FEDERATED_AUTOMATION_PROTOCOL_V281,'version'=>'2.81','schema_version'=>1,
       'generated_at'=>max(0,(int)($input['generated_at']??round(microtime(true)*1000))),'local_site_id'=>$local,
-      'definitions'=>$definitions,'runs'=>$runs,
-      'counts'=>['definitions'=>count($definitions),'runs'=>count($runs),'active_runs'=>count(array_filter($runs,static fn($x)=>!in_array($x['state'],['completed','failed','cancelled','expired'],true)))],
+      'definitions'=>$definitions,'runs'=>$runs,'trigger_receipts'=>$triggerReceipts,
+      'counts'=>['definitions'=>count($definitions),'runs'=>count($runs),'active_runs'=>count(array_filter($runs,static fn($x)=>!in_array($x['state'],['completed','failed','cancelled','expired'],true))),'trigger_receipts'=>count($triggerReceipts)],
       'cloud_read_only'=>true,'remote_action_execution'=>false,'authority_mutation'=>false,
       'safety'=>['execution_enabled'=>false,'cloud_execution_allowed'=>false,'agent_execution_allowed'=>false,'origin_homeserver_authoritative'=>true,'federation_v280_invariants_required'=>true],
     ];
@@ -101,5 +126,5 @@ function tracky_v281_fa_report(PDO $pdo,int $userId,string $originSiteId='',stri
     return ['available'=>!empty($snapshots),'protocol'=>VP3_TRACKY_FEDERATED_AUTOMATION_PROTOCOL_V281,'version'=>'2.81','origin_site_id'=>$origin,'reporting_site_id'=>$reporting,'snapshots'=>$snapshots,'preferred_automation'=>$snapshots[0]['automation']??null,'cloud_role'=>'read_only_mirror','cloud_execution_allowed'=>false,'cloud_definition_authoring'=>false,'authority_mutation'=>false];
 }
 function tracky_v281_fa_public_capability(): array {
-    return ['version'=>'2.81','protocol'=>VP3_TRACKY_FEDERATED_AUTOMATION_PROTOCOL_V281,'section'=>1,'schema_version'=>54,'cloud_role'=>'read_only_mirror','cloud_definition_authoring'=>false,'cloud_execution_allowed'=>false,'agent_execution_allowed'=>false,'origin_homeserver_authoritative'=>true,'durable_action_ledger'=>true,'execution_enabled'=>false];
+    return ['version'=>'2.81','protocol'=>VP3_TRACKY_FEDERATED_AUTOMATION_PROTOCOL_V281,'section'=>2,'schema_version'=>55,'cloud_role'=>'read_only_mirror','cloud_definition_authoring'=>false,'cloud_execution_allowed'=>false,'agent_execution_allowed'=>false,'origin_homeserver_authoritative'=>true,'durable_action_ledger'=>true,'physical_world_trigger_runtime'=>true,'trigger_receipts_immutable'=>true,'trigger_execution_enabled'=>false,'execution_enabled'=>false];
 }
