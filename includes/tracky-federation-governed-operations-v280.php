@@ -115,6 +115,7 @@ function tracky_v280_fgo_create_request(PDO $pdo,int $userId,array $input): arra
     if($op==='request_update'){
         $sha=strtolower(tracky_v280_fgo_text($input['package_sha256']??'',64));
         $version=tracky_v280_fgo_text($input['release_version']??'',40);
+        if($sha===''||$version==='')throw new RuntimeException('Update requests require a staged package checksum and release version.');
         if($sha!==''&&!preg_match('/^[0-9a-f]{64}$/',$sha))throw new RuntimeException('Update package checksum is invalid.');
         if($sha!=='')$params['package_sha256']=$sha;if($version!=='')$params['release_version']=$version;
         if(isset($input['rollout_id'])&&$input['rollout_id']!=='')$params['rollout_id']=max(0,(int)$input['rollout_id']);
