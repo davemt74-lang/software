@@ -72,6 +72,7 @@ NODE_TESTS = [
     'tests/tracky-v276-forecast-calibration-contract.mjs',
     'tests/tracky-v277-model-lifecycle-contract.mjs',
     'tests/tracky-v278-federated-query-contract.mjs',
+    'tests/tracky-v278-federation-reconciliation-contract.mjs',
     'tests/cognitive-entity-graph-v2610.mjs',
     'tests/campaigns-rewards-v100.mjs',
     'tests/campaigns-rewards-v110.mjs',
