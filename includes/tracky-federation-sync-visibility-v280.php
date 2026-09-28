@@ -56,7 +56,7 @@ function tracky_v280_syncv_site(array $row): array
     $fingerprintConflict=$localRev>0&&$localRev===$remoteRev&&$localFp!==''&&$remoteFp!==''&&!hash_equals($localFp,$remoteFp);
     $epochMismatch=$localEpoch>0&&$remoteEpoch>0&&$localEpoch!==$remoteEpoch;
     $fresh=!empty($row['fresh']);
-    if($status!=='current'&&!empty($row['is_local'])===false)$fresh=false;
+    if($status!=='current'&&empty($row['is_local']))$fresh=false;
     return [
       'site_id'=>$site,'label'=>tracky_v280_syncv_text($row['label']??$site,160),
       'is_local'=>!empty($row['is_local']),'status'=>$status,'fresh'=>$fresh,
