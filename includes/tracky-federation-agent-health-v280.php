@@ -80,7 +80,7 @@ function tracky_v280_health_site(array $row): array
       'message'=>tracky_v280_health_text($row['message']??'',800),
       'authority'=>[
         'status'=>tracky_v280_health_text($authority['status']??'unknown',40),
-        'device_id'=>isset($authority['device_id'])&&$authority['device_id']!==''?tracky_v278_world_uuid($authority['device_id'],'health authority device id',true):'',
+        'device_id'=>isset($authority['device_id'])&&$authority['device_id']!==''?tracky_v278_world_uuid($authority['device_id'],'health authority device id'):'',
         'epoch'=>max(0,(int)($authority['epoch']??0)),
         'reason'=>tracky_v280_health_text($authority['reason']??'',160),
       ],
