@@ -235,6 +235,10 @@ jobs:
           test -f _deploy/api/tracky-federation-operations-v280.php
           test -f _deploy/tracky-federation-control-center-v280.js
           test -f _deploy/tracky-federation-control-center-v280.css
+          test -f _deploy/includes/tracky-physical-world-dashboard-v280.php
+          test -f _deploy/api/tracky-physical-world-dashboard-v280.php
+          test -f _deploy/tracky-physical-world-dashboard-v280.js
+          test -f _deploy/tracky-physical-world-dashboard-v280.css
           test -f _deploy/api/tracky-federated-query-v278.php
           test -f _deploy/api/tracky-sync-v270.php
           test -f _deploy/tracky.php
