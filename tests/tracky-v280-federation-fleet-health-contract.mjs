@@ -1,0 +1,17 @@
+import fs from 'node:fs';
+import assert from 'node:assert/strict';
+const include=fs.readFileSync('includes/tracky-federation-fleet-health-v280.php','utf8');
+const api=fs.readFileSync('api/tracky-federation-fleet-health-v280.php','utf8');
+const loader=fs.readFileSync('includes/tracky-cloud-v270.php','utf8');
+assert.match(include,/physical_federation_fleet_health\.v1/);
+assert.match(include,/section7-federation-health-remains-authoritative/);
+assert.match(include,/cloud_read_only'=>true/);
+assert.match(include,/remote_command_execution'=>false/);
+assert.match(include,/authority_mutation'=>false/);
+assert.match(include,/raw_logs_included'=>false/);
+assert.match(include,/tracky_cloud_federation_fleet_health/);
+assert.match(api,/\$_SERVER\['REQUEST_METHOD'\]!=='GET'/);
+assert.doesNotMatch(api,/\b(?:POST|PUT|PATCH|DELETE)\b required/);
+assert.match(loader,/federation_fleet_health/);
+assert.match(loader,/tracky_v280_ffh_ingest/);
+console.log('TRACKY_V280_FEDERATION_FLEET_HEALTH_CONTRACT=PASS');
