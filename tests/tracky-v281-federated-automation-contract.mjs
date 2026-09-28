@@ -10,7 +10,7 @@ assert.match(inc,/cloud_definition_authoring'=>false/);assert.match(inc,/cloud_e
 assert.match(inc,/origin-local definitions/);assert.match(inc,/origin-local runs/);assert.match(inc,/tracky_cloud_federated_automation/);assert.match(inc,/reportingSiteId/);assert.match(inc,/reporting_site_id=\?/);
 assert.match(api,/\$_SERVER\['REQUEST_METHOD'\]!=='GET'/);assert.doesNotMatch(api,/POST|execute|dispatch|create_definition/);
 assert.match(loader,/tracky-federated-automation-v281\.php/);assert.match(loader,/tracky_v281_fa_ingest/);assert.match(loader,/federated_automation_ingest/);
-assert.match(page,/V2\.81 Federated Automation/);assert.match(page,/Execution remains disabled/);assert.match(page,/tracky_v281_fa_report\(\$pdo/);
+assert.match(page,/V2\.81 Federated Automation/);assert.match(page,/Cloud remains a read-only execution-receipt mirror/);assert.match(page,/tracky_v281_fa_report\(\$pdo/);
 assert.match(pkg,/includes\/tracky-federated-automation-v281\.php/);assert.match(pkg,/api\/tracky-federated-automation-v281\.php/);
 assert.match(recovery,/tracky-v281-federated-automation-contract\.mjs/);
 console.log('TRACKY_V281_DISTRIBUTED_EXECUTION_CLOUD_CONTRACT=PASS');
