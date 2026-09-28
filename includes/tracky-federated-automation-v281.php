@@ -91,12 +91,14 @@ function tracky_v281_fa_ingest(PDO $pdo,int $userId,string $reportingSiteId,arra
     $s->execute([$userId,$reportingSiteId,$snapshot['local_site_id'],$snapshot['generated_at'],$hash,$json]);
     return ['accepted'=>true,'changed'=>1,'stale'=>0,'idempotent'=>0];
 }
-function tracky_v281_fa_report(PDO $pdo,int $userId,string $originSiteId=''): array {
+function tracky_v281_fa_report(PDO $pdo,int $userId,string $originSiteId='',string $reportingSiteId=''): array {
     tracky_v281_fa_ensure_schema($pdo);$origin=trim($originSiteId)!==''?tracky_v281_fa_uuid($originSiteId,'origin site id'):'';
-    if($origin!==''){$q=$pdo->prepare('SELECT reporting_site_id,snapshot_json,updated_at FROM tracky_cloud_federated_automation WHERE user_id=? AND local_site_uuid=? ORDER BY updated_at DESC');$q->execute([$userId,$origin]);}
+    $reporting=trim($reportingSiteId)!==''?tracky_cloud_v270_site_id($reportingSiteId):'';
+    if($reporting!==''){$q=$pdo->prepare('SELECT reporting_site_id,snapshot_json,updated_at FROM tracky_cloud_federated_automation WHERE user_id=? AND reporting_site_id=? ORDER BY updated_at DESC');$q->execute([$userId,$reporting]);}
+    elseif($origin!==''){$q=$pdo->prepare('SELECT reporting_site_id,snapshot_json,updated_at FROM tracky_cloud_federated_automation WHERE user_id=? AND local_site_uuid=? ORDER BY updated_at DESC');$q->execute([$userId,$origin]);}
     else{$q=$pdo->prepare('SELECT reporting_site_id,snapshot_json,updated_at FROM tracky_cloud_federated_automation WHERE user_id=? ORDER BY updated_at DESC');$q->execute([$userId]);}
     $snapshots=[];foreach($q->fetchAll()?:[] as $r){$x=json_decode((string)$r['snapshot_json'],true);if(is_array($x))$snapshots[]=['reporting_site_id'=>(string)$r['reporting_site_id'],'updated_at'=>(string)$r['updated_at'],'automation'=>$x];}
-    return ['available'=>!empty($snapshots),'protocol'=>VP3_TRACKY_FEDERATED_AUTOMATION_PROTOCOL_V281,'version'=>'2.81','origin_site_id'=>$origin,'snapshots'=>$snapshots,'preferred_automation'=>$snapshots[0]['automation']??null,'cloud_role'=>'read_only_mirror','cloud_execution_allowed'=>false,'cloud_definition_authoring'=>false,'authority_mutation'=>false];
+    return ['available'=>!empty($snapshots),'protocol'=>VP3_TRACKY_FEDERATED_AUTOMATION_PROTOCOL_V281,'version'=>'2.81','origin_site_id'=>$origin,'reporting_site_id'=>$reporting,'snapshots'=>$snapshots,'preferred_automation'=>$snapshots[0]['automation']??null,'cloud_role'=>'read_only_mirror','cloud_execution_allowed'=>false,'cloud_definition_authoring'=>false,'authority_mutation'=>false];
 }
 function tracky_v281_fa_public_capability(): array {
     return ['version'=>'2.81','protocol'=>VP3_TRACKY_FEDERATED_AUTOMATION_PROTOCOL_V281,'section'=>1,'schema_version'=>54,'cloud_role'=>'read_only_mirror','cloud_definition_authoring'=>false,'cloud_execution_allowed'=>false,'agent_execution_allowed'=>false,'origin_homeserver_authoritative'=>true,'durable_action_ledger'=>true,'execution_enabled'=>false];
