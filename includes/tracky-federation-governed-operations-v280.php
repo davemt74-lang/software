@@ -34,7 +34,7 @@ function tracky_v280_fgo_ensure_schema(?PDO $pdo=null): void {
       user_id INT UNSIGNED NOT NULL, request_id VARCHAR(128) NOT NULL, idempotency_key VARCHAR(160) NOT NULL,
       operation_type VARCHAR(40) NOT NULL, origin_site_uuid CHAR(36) NOT NULL, target_site_uuid CHAR(36) NOT NULL, device_id VARCHAR(80) NOT NULL DEFAULT '',
       new_authority_device_id VARCHAR(80) NOT NULL DEFAULT '', explicit_confirmation TINYINT(1) NOT NULL DEFAULT 0,
-      request_json TEXT NOT NULL, status VARCHAR(40) NOT NULL DEFAULT 'proposed',
+      request_json TEXT NOT NULL, status VARCHAR(40) NOT NULL DEFAULT 'proposed', expires_at_ms BIGINT UNSIGNED NOT NULL DEFAULT 0,
       created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       PRIMARY KEY(user_id,request_id), UNIQUE KEY uq_tracky_fgo_request_idem(user_id,idempotency_key),
       INDEX idx_tracky_fgo_request_target(user_id,target_site_uuid,status,created_at), INDEX idx_tracky_fgo_request_origin(user_id,origin_site_uuid,status,created_at),
@@ -121,13 +121,14 @@ function tracky_v280_fgo_create_request(PDO $pdo,int $userId,array $input): arra
         if(isset($input['rollout_id'])&&$input['rollout_id']!=='')$params['rollout_id']=max(0,(int)$input['rollout_id']);
     }
     $requestId='cloud-fop-'.bin2hex(random_bytes(16));
+    $expiresAt=(int)round(microtime(true)*1000)+900000;
     $idem=tracky_v280_fgo_text($input['idempotency_key']??'',160)?:$requestId;
     $payload=['request_id'=>$requestId,'idempotency_key'=>$idem,'operation_type'=>$op,'origin_site_id'=>$origin,'target_site_id'=>$target,'device_id'=>$device,
-      'new_authority_device_id'=>$newAuthority,'explicit_confirmation'=>!empty($input['explicit_confirmation']),'reason'=>tracky_v280_fgo_text($input['reason']??'',240),'parameters'=>$params];
+      'new_authority_device_id'=>$newAuthority,'explicit_confirmation'=>!empty($input['explicit_confirmation']),'expires_at_ms'=>$expiresAt,'reason'=>tracky_v280_fgo_text($input['reason']??'',240),'parameters'=>$params];
     $json=tracky_cloud_v270_json($payload);
     try{
-      $s=$pdo->prepare("INSERT INTO tracky_cloud_federation_operation_requests(user_id,request_id,idempotency_key,operation_type,origin_site_uuid,target_site_uuid,device_id,new_authority_device_id,explicit_confirmation,request_json,status) VALUES(?,?,?,?,?,?,?,?,?,?,'proposed')");
-      $s->execute([$userId,$requestId,$idem,$op,$origin,$target,$device,$newAuthority,!empty($input['explicit_confirmation'])?1:0,$json]);
+      $s=$pdo->prepare("INSERT INTO tracky_cloud_federation_operation_requests(user_id,request_id,idempotency_key,operation_type,origin_site_uuid,target_site_uuid,device_id,new_authority_device_id,explicit_confirmation,request_json,status,expires_at_ms) VALUES(?,?,?,?,?,?,?,?,?,?,'proposed',?)");
+      $s->execute([$userId,$requestId,$idem,$op,$origin,$target,$device,$newAuthority,!empty($input['explicit_confirmation'])?1:0,$json,$expiresAt]);
     }catch(PDOException $e){
       $q=$pdo->prepare('SELECT request_json,status FROM tracky_cloud_federation_operation_requests WHERE user_id=? AND idempotency_key=? LIMIT 1');$q->execute([$userId,$idem]);$row=$q->fetch();
       if(!$row)throw $e;$existing=json_decode((string)$row['request_json'],true);if(!is_array($existing)||($existing['operation_type']??'')!==$op||($existing['origin_site_id']??'')!==$origin||($existing['target_site_id']??'')!==$target||($existing['device_id']??'')!==$device)throw new RuntimeException('Governed operation idempotency conflict.');
@@ -137,6 +138,9 @@ function tracky_v280_fgo_create_request(PDO $pdo,int $userId,array $input): arra
 }
 function tracky_v280_fgo_pending_for_site(PDO $pdo,int $userId,string $siteId): array {
     tracky_v280_fgo_ensure_schema($pdo);$siteId=tracky_v280_fgo_uuid($siteId,'target site id');
+    $now=(int)round(microtime(true)*1000);
+    $expire=$pdo->prepare("UPDATE tracky_cloud_federation_operation_requests SET status='expired' WHERE user_id=? AND origin_site_uuid=? AND status IN ('proposed','awaiting_approval') AND expires_at_ms>0 AND expires_at_ms<=?");
+    $expire->execute([$userId,$siteId,$now]);
     $q=$pdo->prepare("SELECT request_json,status FROM tracky_cloud_federation_operation_requests WHERE user_id=? AND origin_site_uuid=? AND status IN ('proposed','awaiting_approval') ORDER BY created_at,idempotency_key LIMIT 50");
     $q->execute([$userId,$siteId]);$out=[];
     foreach($q->fetchAll()?:[] as $r){$x=json_decode((string)$r['request_json'],true);if(is_array($x)){$x['status']=(string)$r['status'];$out[]=$x;}}
