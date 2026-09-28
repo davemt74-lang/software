@@ -61,7 +61,12 @@ if ((string)($input['surface'] ?? '') !== 'native_profile') {
 }
 
 $viewer = current_user();
-$manifest = vp3_profile_webmcp_manifest_v100($pdo, $profile, $viewer, ['surface'=>'native_profile']);
+try {
+    $manifest = vp3_profile_webmcp_manifest_v100($pdo, $profile, $viewer, ['surface'=>'native_profile']);
+} catch (Throwable $e) {
+    error_log('VP3 Profile WebMCP manifest failed @'.$username.': '.$e->getMessage());
+    vp3_profile_webmcp_json_v100(false, ['error'=>['code'=>'PROFILE_UNAVAILABLE','message'=>'Profile capabilities are temporarily unavailable.']], 503);
+}
 $tool = trim((string)($input['tool'] ?? ''));
 $catalog = vp3_profile_webmcp_tool_catalog_v100();
 if (!isset($catalog[$tool]) || !in_array($tool, $manifest['allowed_tools'], true)) {
