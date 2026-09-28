@@ -283,6 +283,54 @@ function tracky_v278_agent_context_normalize(array $input): array
         ];
     }
 
+    $federationHealth=null;
+    if(is_array($input['federation_agent_health']??null)){
+        $fh=$input['federation_agent_health'];
+        $state=strtolower(tracky_v278_agent_context_text($fh['state']??'stale',30));
+        if(!in_array($state,['connected','degraded','stale','reconciling','recovering','partitioned','offline','failed'],true))$state='stale';
+        $siteHealth=[];
+        foreach(array_slice(is_array($fh['site_health']??null)?$fh['site_health']:[],0,32) as $item){
+            if(!is_array($item))continue;
+            $trust=is_array($item['trust']??null)?$item['trust']:[];
+            $siteState=strtolower(tracky_v278_agent_context_text($item['state']??'stale',30));
+            if(!in_array($siteState,['connected','degraded','stale','reconciling','recovering','partitioned','offline','failed'],true))$siteState='stale';
+            $siteHealth[]=[
+              'site_id'=>tracky_v278_agent_context_uuid($item['site_id']??'','federation health site id'),
+              'label'=>tracky_v278_agent_context_text($item['label']??'',120),
+              'state'=>$siteState,
+              'priority'=>tracky_v278_agent_context_text($item['priority']??'info',30),
+              'message'=>tracky_v278_agent_context_text($item['message']??'',800),
+              'fresh'=>$siteState==='connected',
+              'reconciliation_required'=>!empty($item['reconciliation_required']),
+              'issue_code'=>tracky_v278_agent_context_text($item['issue_code']??'',120),
+              'trust'=>[
+                'local_physical_truth_current'=>!empty($trust['local_physical_truth_current']),
+                'remote_federation_truth_current'=>$siteState==='connected',
+                'cloud_transport_connected'=>!empty($trust['cloud_transport_connected']),
+                'agent_may_treat_remote_state_as_current'=>$siteState==='connected',
+                'agent_may_treat_local_state_as_current'=>!empty($trust['agent_may_treat_local_state_as_current']),
+              ],
+            ];
+        }
+        $bridge=is_array($fh['bridge']??null)?$fh['bridge']:[];
+        $bridgeState=strtolower(tracky_v278_agent_context_text($bridge['state']??'not_connected',40));
+        if(!in_array($bridgeState,['connected','reconnecting','offline','not_connected'],true))$bridgeState='offline';
+        $federationHealth=[
+          'protocol'=>tracky_v278_agent_context_text($fh['protocol']??'',100),
+          'state'=>$state,
+          'site_health'=>$siteHealth,
+          'bridge'=>[
+            'state'=>$bridgeState,'connected'=>$bridgeState==='connected',
+            'paired'=>!empty($bridge['paired']),
+            'last_error'=>tracky_v278_agent_context_text($bridge['last_error']??'',240),
+            'transport'=>tracky_v278_agent_context_text($bridge['transport']??'',80),
+          ],
+          'recovery_rule'=>'Connectivity returning does not equal recovery. Recovery completes only after authoritative reconciliation is current.',
+          'local_truth_survives_cloud_relay_failure'=>true,
+          'no_remote_authority_promotion'=>true,
+        ];
+    }
+
     $explain=is_array($input['explainability']??null)?$input['explainability']:[];
     $out=[
       'protocol'=>VP3_TRACKY_FEDERATED_AGENT_CONTEXT_PROTOCOL_V278,
@@ -298,6 +346,7 @@ function tracky_v278_agent_context_normalize(array $input): array
       'changed_elsewhere'=>$changes,'sites'=>$sites,'site_revisions'=>$siteRevisions,
       'federation_sync_visibility'=>$syncVisibility,
       'federation_access_operations'=>$accessOperations,
+      'federation_agent_health'=>$federationHealth,
       'explainability'=>[
         'location_candidate_count'=>max(0,(int)($explain['location_candidate_count']??0)),
         'current_location_selected'=>!empty($explain['current_location_selected']),
