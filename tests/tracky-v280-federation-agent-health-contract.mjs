@@ -1,0 +1,40 @@
+import fs from 'node:fs';
+import assert from 'node:assert/strict';
+
+const include=fs.readFileSync('includes/tracky-federation-agent-health-v280.php','utf8');
+const api=fs.readFileSync('api/tracky-federation-agent-health-v280.php','utf8');
+const loader=fs.readFileSync('includes/tracky-cloud-v270.php','utf8');
+const agent=fs.readFileSync('includes/tracky-federated-agent-context-v278.php','utf8');
+const page=fs.readFileSync('tracky.php','utf8');
+const script=fs.readFileSync('tracky-federation-agent-health-v280.js','utf8');
+const release=fs.readFileSync('.github/workflows/cognitive-loop-release-v2360.yml','utf8');
+const packageWorkflow=fs.readFileSync('.github/workflows/production-deploy-package.yml','utf8');
+const recovery=fs.readFileSync('tools/run_recovery_baseline.py','utf8');
+
+assert.match(include,/physical_federation_agent_health\.v1/);
+assert.match(include,/recovery_complete/);
+assert.match(include,/authoritative_reconciliation_current/);
+assert.match(include,/cloud_can_mark_recovered'=>false/);
+assert.match(include,/authority_mutation'=>false/);
+assert.match(include,/tracky_cloud_federation_agent_health/);
+assert.match(api,/\$_SERVER\['REQUEST_METHOD'\]!=='GET'/);
+assert.doesNotMatch(api,/\b(?:POST|PUT|PATCH|DELETE)\b required/);
+assert.match(loader,/tracky-federation-agent-health-v280\.php/);
+assert.match(loader,/federation_agent_health/);
+assert.match(loader,/local site must match the uploader federation site/i);
+assert.match(agent,/federation_agent_health/);
+assert.match(agent,/connectivity_returned_is_not_recovery/);
+assert.match(page,/id="federationAgentHealthV280"/);
+assert.match(page,/connectivity returning is not recovery/i);
+assert.match(page,/tracky-federation-agent-health-v280\.css/);
+assert.match(page,/tracky-federation-agent-health-v280\.js/);
+assert.doesNotMatch(script,/method\s*:\s*['"](?:POST|PUT|PATCH|DELETE)['"]/);
+assert.match(release,/tracky-v280-federation-agent-health-unit\.php/);
+assert.match(release,/tracky-v280-federation-agent-health-contract\.mjs/);
+assert.match(packageWorkflow,/tracky-federation-agent-health-v280\.php/);
+assert.match(packageWorkflow,/tracky-federation-agent-health-v280\.js/);
+assert.match(packageWorkflow,/tracky-federation-agent-health-v280\.css/);
+assert.match(recovery,/tracky-v280-federation-agent-health-unit\.php/);
+assert.match(recovery,/tracky-v280-federation-agent-health-contract\.mjs/);
+
+console.log('TRACKY_V280_FEDERATION_AGENT_HEALTH_CONTRACT=PASS');
