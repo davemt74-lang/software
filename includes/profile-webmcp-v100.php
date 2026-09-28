@@ -39,6 +39,9 @@ function vp3_profile_webmcp_tool_catalog_v100(): array
             'annotations' => ['readOnlyHint'=>true,'untrustedContentHint'=>true,'consequentialHint'=>false,'debugging'=>false],
         ],
     ];
+    if (function_exists('vp3_profile_webmcp_discovery_tools_v110')) {
+        $catalog = array_merge($catalog, vp3_profile_webmcp_discovery_tools_v110());
+    }
     return $catalog;
 }
 
