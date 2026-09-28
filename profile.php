@@ -136,6 +136,10 @@ if(!$preview){
         $webmcpManifest=[];$webmcpSessionProof='';
     }
 }
+if($webmcpManifest&&$webmcpSessionProof){
+    header('Cache-Control: private, no-store');
+    header('Vary: Cookie');
+}
 ?>
 <!doctype html>
 <html lang="en">
