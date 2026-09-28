@@ -114,6 +114,14 @@ $memberHeaderUser=$user;$memberHeaderTitle='Tracky';$memberHeaderSubtitle='Physi
 <div data-cffh280-list><div class="cffh280-empty">Loading fleet diagnostics…</div></div>
 <div class="cffh280-empty"><strong>Cloud boundary:</strong> read-only mirror. Section 7 federation freshness remains authoritative; diagnostics cannot mark a site current, recovered, or execute a remote fleet action.</div>
 </section>
+<section class="card" style="margin-bottom:16px">
+<div class="muted">V2.80 Release Hardening</div>
+<h2 style="margin:6px 0 8px">Golden operational release gate</h2>
+<?php $releaseV280=function_exists('tracky_v280_release_public_capability')?tracky_v280_release_public_capability():[]; ?>
+<div class="metric"><?= !empty($releaseV280['release_ready'])?'Release ready':'Release gate blocked' ?></div>
+<p class="muted">24 golden operational scenarios · Section 10 final release contract · HomeServer schema 053 · authoritative reconciliation remains the only recovery/currentness gate.</p>
+<p class="muted">Cloud remains request-relay/read-only mirror only. Agent may propose but cannot execute. Split-brain authority, stale-current promotion, revocation resurrection, Cloud authority mutation, and Cloud recovery promotion are all blocked by contract.</p>
+</section>
 <section class="card cfgo280" id="federationGovernedOperationsV280" data-endpoint="<?= e(url('/api/tracky-federation-governed-operations-v280.php')) ?>" data-origin-site="<?= e($selected) ?>">
 <div class="cfgo280-head"><div><div class="muted">V2.80 · GOVERNED FEDERATION OPERATIONS</div><h3>Request, approve locally, reconcile</h3><p class="muted">Cloud can create a request for the selected origin site and mirror progress. That HomeServer remains the executor and authority.</p></div><div class="cfgo280-actions"><span class="muted" data-cfgo-status>Loading operations…</span><button type="button" data-cfgo-refresh>Refresh</button></div></div>
 <div class="cfgo280-summary"><div><span>Active</span><strong data-cfgo-active>0</strong></div><div><span>Awaiting approval</span><strong data-cfgo-approval>0</strong></div><div><span>Reconciling</span><strong data-cfgo-reconciling>0</strong></div></div>
