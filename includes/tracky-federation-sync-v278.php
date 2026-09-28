@@ -147,7 +147,7 @@ function tracky_v278_sync_build_relay(PDO $pdo,int $userId,string $reportingSite
     foreach($request['received_cursors'] as $cursor)$cursorMap[$cursor['site_id']]=$cursor;
     $q=$pdo->prepare('SELECT * FROM tracky_cloud_federated_world_fragments WHERE user_id=? ORDER BY site_uuid');
     $q->execute([$userId]);$rows=$q->fetchAll()?:[];
-    $envelopes=[];$max=$request['max_envelopes'];
+    $envelopes=[];$remoteCursors=[];$max=$request['max_envelopes'];
 
     foreach($rows as $row){
         if(count($envelopes)>=$max)break;
@@ -156,7 +156,6 @@ function tracky_v278_sync_build_relay(PDO $pdo,int $userId,string $reportingSite
         if(!tracky_v278_sync_peer_allowed($topology,$source,$destination))continue;
         $revision=(int)($row['world_revision']??0);
         $cursorRevision=(int)($cursorMap[$source]['revision']??0);
-        if($revision<=$cursorRevision)continue;
 
         $fragment=json_decode((string)($row['fragment_json']??''),true);
         if(!is_array($fragment))continue;
@@ -173,6 +172,13 @@ function tracky_v278_sync_build_relay(PDO $pdo,int $userId,string $reportingSite
         $sourceTopology=tracky_v278_report($pdo,$userId,(string)$row['reporting_site_id']);
         $sourceTopologyRevision=(int)($sourceTopology['revision']??($sourceTopology['topology']['revision']??0));
         $authorityEpoch=(int)($fragment['authority_epoch']??0);
+        $remoteCursors[]=[
+          'site_id'=>$source,
+          'revision'=>$revision,
+          'fingerprint'=>$fingerprint,
+          'authority_epoch'=>$authorityEpoch,
+        ];
+        if($revision<=$cursorRevision)continue;
         $envelope=[
           'protocol'=>VP3_TRACKY_FEDERATION_SYNC_PROTOCOL_V278,
           'schema_version'=>1,
@@ -215,6 +221,7 @@ function tracky_v278_sync_build_relay(PDO $pdo,int $userId,string $reportingSite
       'topology_revision'=>(int)($topologyReport['revision']??($topology['revision']??0)),
       'emitted_at'=>gmdate(DATE_ATOM),
       'envelopes'=>$envelopes,
+      'reconciliation'=>tracky_v278_reconciliation_payload($remoteCursors),
       'cloud_role'=>'relay_only',
       'authority_assignment'=>'local_only',
     ];
@@ -244,5 +251,8 @@ function tracky_v278_sync_public_capability(): array
       'authority_assignment'=>'local_only','world_mutation_authority'=>false,
       'same_revision_conflicts'=>'quarantine','topology_ahead'=>'hold',
       'cross_site_identity_linking'=>false,
+      'reconciliation_protocol'=>VP3_TRACKY_FEDERATION_RECONCILIATION_PROTOCOL_V278,
+      'partition_recovery'=>'authoritative_full_semantic_snapshot',
+      'destination_decides_freshness'=>true,
     ];
 }

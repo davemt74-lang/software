@@ -30,4 +30,5 @@ echo json_encode([
   'ok'=>true,
   'sync'=>tracky_v278_sync_report($pdo,$userId),
   'capability'=>tracky_v278_sync_public_capability(),
+  'reconciliation_capability'=>tracky_v278_reconciliation_public_capability(),
 ],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
