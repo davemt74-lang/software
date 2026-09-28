@@ -15,6 +15,16 @@ function tracky_v280_fah_text(mixed $value,int $max=240): string
     return mb_strimwidth(trim(preg_replace('/\s+/',' ',(string)($value??''))??''),0,max(1,$max),'');
 }
 
+function tracky_v280_fah_uuid(mixed $value,string $label,bool $allowEmpty=false): string
+{
+    $value=strtolower(mb_strimwidth(trim((string)($value??'')),0,64,''));
+    if($value===''&&$allowEmpty)return '';
+    if(!preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/',$value)){
+        throw new RuntimeException('Tracky federation Agent health '.$label.' must be a UUID.');
+    }
+    return $value;
+}
+
 function tracky_v280_fah_state(mixed $value): string
 {
     $state=strtolower(tracky_v280_fah_text($value,30));
@@ -59,7 +69,7 @@ function tracky_v280_fah_trust(array $row): array
 
 function tracky_v280_fah_site(array $row): array
 {
-    $site=tracky_v278_world_uuid($row['site_id']??'','federation health site id');
+    $site=tracky_v280_fah_uuid($row['site_id']??'','federation health site id');
     $state=tracky_v280_fah_state($row['state']??'unknown');
     $authority=is_array($row['authority']??null)?$row['authority']:[];
     return [
@@ -79,7 +89,7 @@ function tracky_v280_fah_site(array $row): array
       'stale_age_ms'=>max(0,(int)($row['stale_age_ms']??0)),
       'authority'=>[
         'status'=>tracky_v280_fah_text($authority['status']??'unknown',30),
-        'device_id'=>tracky_v278_world_uuid($authority['device_id']??'','federation health authority device id',true),
+        'device_id'=>tracky_v280_fah_uuid($authority['device_id']??'','federation health authority device id',true),
         'epoch'=>max(0,(int)($authority['epoch']??0)),
       ],
       'authority_device_runtime'=>tracky_v280_fah_text($row['authority_device_runtime']??'unknown',40),
@@ -106,7 +116,7 @@ function tracky_v280_fah_history(array $items): array
           'importance'=>max(0.0,min(1.0,(float)($row['importance']??0))),
           'occurred_at'=>tracky_v280_fah_text($row['occurred_at']??'',80),
           'payload'=>[
-            'site_id'=>isset($payload['site_id'])?tracky_v278_world_uuid($payload['site_id'],'health history site id',true):'',
+            'site_id'=>isset($payload['site_id'])?tracky_v280_fah_uuid($payload['site_id'],'health history site id',true):'',
             'label'=>tracky_v280_fah_text($payload['label']??'',160),
             'component'=>tracky_v280_fah_text($payload['component']??'',80),
             'state'=>tracky_v280_fah_state($payload['state']??'unknown'),
@@ -132,7 +142,7 @@ function tracky_v280_fah_normalize(array $input): array
     if(!empty($input['authority_mutation'])){
         throw new RuntimeException('Tracky federation Agent health cannot grant Cloud authority mutation.');
     }
-    $local=tracky_v278_world_uuid($input['local_site_id']??'','federation health local site id');
+    $local=tracky_v280_fah_uuid($input['local_site_id']??'','federation health local site id');
     $sites=[];$seen=[];
     foreach(array_slice(is_array($input['sites']??null)?$input['sites']:[],0,128) as $row){
         if(!is_array($row))continue;
@@ -147,7 +157,7 @@ function tracky_v280_fah_normalize(array $input): array
     foreach(array_slice(is_array($agent['sites']??null)?$agent['sites']:[],0,32) as $row){
         if(!is_array($row))continue;
         $agentSites[]=[
-          'site_id'=>tracky_v278_world_uuid($row['site_id']??'','Agent health site id'),
+          'site_id'=>tracky_v280_fah_uuid($row['site_id']??'','Agent health site id'),
           'label'=>tracky_v280_fah_text($row['label']??'',160),
           'state'=>tracky_v280_fah_state($row['state']??'unknown'),
           'severity'=>tracky_v280_fah_text($row['severity']??'info',20),
@@ -161,7 +171,7 @@ function tracky_v280_fah_normalize(array $input): array
     foreach(array_slice(is_array($agent['active_issues']??null)?$agent['active_issues']:[],0,24) as $row){
         if(!is_array($row))continue;
         $issues[]=[
-          'site_id'=>tracky_v278_world_uuid($row['site_id']??'','Agent health issue site id'),
+          'site_id'=>tracky_v280_fah_uuid($row['site_id']??'','Agent health issue site id'),
           'label'=>tracky_v280_fah_text($row['label']??'',160),
           'state'=>tracky_v280_fah_state($row['state']??'unknown'),
           'severity'=>tracky_v280_fah_text($row['severity']??'warning',20),
