@@ -4,6 +4,7 @@ const read=p=>fs.readFileSync(p,'utf8');
 const domain=read('includes/profile-agent.php');
 const runtime=read('includes/profile-agent-runtime.php');
 const api=read('api/profile-agent.php');
+const publicService=read('includes/profile-agent-public-service-v110.php');
 const page=read('profile.php');
 const profileComposition=read('profile-v900.php');
 const portalPage=read('profile-agent.php');
@@ -53,11 +54,11 @@ assert.match(runtime,/active_visitors/,'owner state exposes recently active visi
 assert.match(runtime,/s\.last_message_at[\s\S]*FROM profile_visit_sessions s/,'visitor dashboard retains the profile session last-message timeline');
 assert.match(runtime,/event_type='profile_view'\) AS visit_count/,'visitor dashboard distinguishes visit sessions from raw page views');
 
-assert.match(api,/profile_runtime_session\(\$pdo,\$owner,\$visitor,false\)/,'Profile Agent chat does not count as a view');
+assert.match(publicService,/profile_runtime_session\(\$pdo,\$owner,\$visitor,false\)/,'Profile Agent chat does not count as a view');
 assert.match(api,/profile_runtime_owner_state/,'owner API uses hardened portal state');
 assert.match(api,/owner_reply/,'owner can answer Profile Agent conversations');
 assert.match(api,/conversation_status/,'owner can resolve and reopen Profile Agent conversations');
-assert.match(api,/I’ve asked .* for input rather than guessing/,'agent refuses to invent missing approved facts');
+assert.match(publicService,/I’ve asked .* for input rather than guessing/,'agent refuses to invent missing approved facts');
 
 assert.doesNotMatch(portalPage,/Customer service workspace|See who is visiting your profile/,'standalone portal starts directly in the working service UI');
 assert.match(portalPage,/class="chat-sidebar profile-agent-sidebar"/,'Profile Agent owns a dedicated customer-service sidebar');
