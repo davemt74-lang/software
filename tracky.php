@@ -122,6 +122,13 @@ $memberHeaderUser=$user;$memberHeaderTitle='Tracky';$memberHeaderSubtitle='Physi
 <p class="muted">24 golden operational scenarios · Section 10 final release contract · HomeServer schema 053 · authoritative reconciliation remains the only recovery/currentness gate.</p>
 <p class="muted">Cloud remains request-relay/read-only mirror only. Agent may propose but cannot execute. Split-brain authority, stale-current promotion, revocation resurrection, Cloud authority mutation, and Cloud recovery promotion are all blocked by contract.</p>
 </section>
+<section class="card" style="margin-bottom:16px">
+<div class="muted">V2.81 Federated Automation</div>
+<h2 style="margin:6px 0 8px">Automation contract & action ledger</h2>
+<?php $fa281=function_exists('tracky_v281_fa_report')?tracky_v281_fa_report(db(),(int)($user['id']??0),(string)($selected??'')):['preferred_automation'=>null];$faSnap=$fa281['preferred_automation']??null; ?>
+<div class="metric"><?= (int)(($faSnap['counts']['active_runs']??0)) ?> active runs · <?= (int)(($faSnap['counts']['definitions']??0)) ?> definitions</div>
+<p class="muted">Origin HomeServer owns the authoritative automation definition and ledger. Cloud is a read-only mirror. Execution remains disabled in Section 1; distributed physical execution arrives in later V2.81 sections.</p>
+</section>
 <section class="card cfgo280" id="federationGovernedOperationsV280" data-endpoint="<?= e(url('/api/tracky-federation-governed-operations-v280.php')) ?>" data-origin-site="<?= e($selected) ?>">
 <div class="cfgo280-head"><div><div class="muted">V2.80 · GOVERNED FEDERATION OPERATIONS</div><h3>Request, approve locally, reconcile</h3><p class="muted">Cloud can create a request for the selected origin site and mirror progress. That HomeServer remains the executor and authority.</p></div><div class="cfgo280-actions"><span class="muted" data-cfgo-status>Loading operations…</span><button type="button" data-cfgo-refresh>Refresh</button></div></div>
 <div class="cfgo280-summary"><div><span>Active</span><strong data-cfgo-active>0</strong></div><div><span>Awaiting approval</span><strong data-cfgo-approval>0</strong></div><div><span>Reconciling</span><strong data-cfgo-reconciling>0</strong></div></div>
