@@ -55,9 +55,11 @@ jobs:
             "repository": "${GITHUB_REPOSITORY}",
             "workflow_run_id": "${GITHUB_RUN_ID}",
             "tracky_feature_track": "V2.81",
-            "tracky_release_section": 2,
+            "tracky_release_section": 3,
             "tracky_federated_automation_protocol": "physical_federated_automation.v1",
-            "tracky_federated_automation_execution_enabled": false,\n            "tracky_physical_trigger_runtime": true,
+            "tracky_federated_automation_execution_enabled": false,
+            "tracky_physical_trigger_runtime": true,
+            "tracky_distributed_action_execution": true,
             "tracky_golden_operational_scenarios": 24,
             "tracky_recovery_authority": "section7_authoritative_reconciliation",
             "preserve_runtime_paths": ["config.php", ".env", "private/", "uploads/"]
@@ -270,7 +272,9 @@ jobs:
           test -f _deploy/includes/tracky-release-hardening-v280.php
           test -f _deploy/api/tracky-release-v280.php
           test -f _deploy/includes/tracky-federated-automation-v281.php
-          test -f _deploy/api/tracky-federated-automation-v281.php\n          grep -Fq 'physical_world_trigger_runtime' _deploy/includes/tracky-federated-automation-v281.php
+          test -f _deploy/api/tracky-federated-automation-v281.php
+          grep -Fq 'physical_world_trigger_runtime' _deploy/includes/tracky-federated-automation-v281.php
+          grep -Fq 'distributed_action_execution' _deploy/includes/tracky-federated-automation-v281.php
           test -f _deploy/tracky-federation-agent-health-v280.js
           test -f _deploy/tracky-federation-agent-health-v280.css
           test -f _deploy/api/tracky-federated-query-v278.php
