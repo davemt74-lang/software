@@ -68,6 +68,17 @@ function tracky_v280_ffh_device(array $row,string $siteId): array
       'storage_state'=>tracky_v280_ffh_text($row['storage_state']??'',24),
       'watchdog_failures'=>max(0,min(1000,(int)($row['watchdog_failures']??0))),
       'privacy_fault'=>!empty($row['privacy_fault']),
+      'runtime_status'=>tracky_v280_ffh_text($row['runtime_status']??'',32),
+      'runtime_version'=>tracky_v280_ffh_text($row['runtime_version']??'',80),
+      'camera_count'=>max(0,min(128,(int)($row['camera_count']??0))),
+      'sensor_count'=>max(0,min(512,(int)($row['sensor_count']??0))),
+      'model_health'=>tracky_v280_ffh_text($row['model_health']??'unknown',32),
+      'active_models'=>max(0,min(256,(int)($row['active_models']??0))),
+      'calibration_profiles'=>max(0,min(256,(int)($row['calibration_profiles']??0))),
+      'calibration_state'=>tracky_v280_ffh_text($row['calibration_state']??'unknown',32),
+      'last_sync_at'=>tracky_v280_ffh_text($row['last_sync_at']??'',80),
+      'error_count'=>max(0,min(1000,(int)($row['error_count']??count($issues)))),
+      'upgrade_state'=>tracky_v280_ffh_text($row['upgrade_state']??$row['update_status']??'',32),
       'last_seen_at'=>tracky_v280_ffh_text($row['last_seen_at']??'',80),
       'stale_age_ms'=>max(0,(int)($row['stale_age_ms']??0)),
       'state'=>tracky_v280_ffh_state($row['state']??'unknown'),
@@ -180,5 +191,6 @@ function tracky_v280_ffh_public_capability(): array
     return ['version'=>'2.80','protocol'=>VP3_TRACKY_FLEET_HEALTH_PROTOCOL_V280,
       'states'=>['healthy','degraded','stale','recovering','offline','failed','unknown'],
       'section7_health_is_authoritative'=>true,'diagnostics_never_promote_federation_freshness'=>true,
-      'privacy_safe_summary_only'=>true,'cloud_read_only'=>true,'remote_command_execution'=>false,'authority_mutation'=>false];
+      'privacy_safe_summary_only'=>true,'cloud_read_only'=>true,'remote_command_execution'=>false,'authority_mutation'=>false,
+      'hardware_profiles'=>['homeserver','node','desk','studio','team_node','pocket','custom','future']];
 }
