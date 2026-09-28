@@ -142,13 +142,28 @@ function tracky_v280_fgo_pending_for_site(PDO $pdo,int $userId,string $siteId): 
     foreach($q->fetchAll()?:[] as $r){$x=json_decode((string)$r['request_json'],true);if(is_array($x)){$x['status']=(string)$r['status'];$out[]=$x;}}
     return ['protocol'=>VP3_TRACKY_GOVERNED_OPERATIONS_PROTOCOL_V280,'cloud_role'=>'request_relay_only','remote_command_execution'=>false,'authority_mutation'=>false,'requests'=>$out];
 }
-function tracky_v280_fgo_report(PDO $pdo,int $userId): array {
+function tracky_v280_fgo_report(PDO $pdo,int $userId,string $originSiteId=''): array {
     tracky_v280_fgo_ensure_schema($pdo);
-    $q=$pdo->prepare('SELECT reporting_site_id,snapshot_json,updated_at FROM tracky_cloud_federation_governed_operations WHERE user_id=? ORDER BY updated_at DESC');$q->execute([$userId]);$snapshots=[];
+    $origin=trim($originSiteId)!==''?tracky_v280_fgo_uuid($originSiteId,'origin site id'):'';
+    if($origin!==''){
+        $q=$pdo->prepare('SELECT reporting_site_id,snapshot_json,updated_at FROM tracky_cloud_federation_governed_operations WHERE user_id=? AND local_site_uuid=? ORDER BY updated_at DESC');
+        $q->execute([$userId,$origin]);
+    }else{
+        $q=$pdo->prepare('SELECT reporting_site_id,snapshot_json,updated_at FROM tracky_cloud_federation_governed_operations WHERE user_id=? ORDER BY updated_at DESC');
+        $q->execute([$userId]);
+    }
+    $snapshots=[];
     foreach($q->fetchAll()?:[] as $r){$x=json_decode((string)$r['snapshot_json'],true);if(is_array($x))$snapshots[]=['reporting_site_id'=>(string)$r['reporting_site_id'],'updated_at'=>(string)$r['updated_at'],'operations'=>$x];}
-    $q=$pdo->prepare('SELECT request_json,status,created_at,updated_at FROM tracky_cloud_federation_operation_requests WHERE user_id=? ORDER BY created_at DESC LIMIT 100');$q->execute([$userId]);$requests=[];
+    if($origin!==''){
+        $q=$pdo->prepare('SELECT request_json,status,created_at,updated_at FROM tracky_cloud_federation_operation_requests WHERE user_id=? AND origin_site_uuid=? ORDER BY created_at DESC LIMIT 100');
+        $q->execute([$userId,$origin]);
+    }else{
+        $q=$pdo->prepare('SELECT request_json,status,created_at,updated_at FROM tracky_cloud_federation_operation_requests WHERE user_id=? ORDER BY created_at DESC LIMIT 100');
+        $q->execute([$userId]);
+    }
+    $requests=[];
     foreach($q->fetchAll()?:[] as $r){$x=json_decode((string)$r['request_json'],true);if(is_array($x)){$x['status']=(string)$r['status'];$x['created_at']=(string)$r['created_at'];$x['updated_at']=(string)$r['updated_at'];$requests[]=$x;}}
-    return ['available'=>!empty($snapshots),'protocol'=>VP3_TRACKY_GOVERNED_OPERATIONS_PROTOCOL_V280,'snapshots'=>$snapshots,'preferred_operations'=>$snapshots[0]['operations']??null,'cloud_requests'=>$requests,'cloud_role'=>'request_and_mirror_only','cloud_execution_allowed'=>false,'authority_mutation'=>false];
+    return ['available'=>!empty($snapshots),'protocol'=>VP3_TRACKY_GOVERNED_OPERATIONS_PROTOCOL_V280,'origin_site_id'=>$origin,'snapshots'=>$snapshots,'preferred_operations'=>$snapshots[0]['operations']??null,'cloud_requests'=>$requests,'cloud_role'=>'request_and_mirror_only','cloud_execution_allowed'=>false,'authority_mutation'=>false];
 }
 function tracky_v280_fgo_public_capability(): array {
     return ['version'=>'2.80','protocol'=>VP3_TRACKY_GOVERNED_OPERATIONS_PROTOCOL_V280,'operations'=>VP3_TRACKY_GOVERNED_OPERATION_TYPES_V280,'states'=>VP3_TRACKY_GOVERNED_OPERATION_STATES_V280,'cloud_request_creation'=>true,'explicit_origin_routing'=>true,'operation_expiration_mirrored'=>true,'revocation_wins'=>true,'cloud_execution_allowed'=>false,'agent_execution_allowed'=>false,'section7_health_is_authoritative'=>true,'completion_requires_authoritative_reconciliation'=>true,'authority_transfer_requires_epoch_advance'=>true];
