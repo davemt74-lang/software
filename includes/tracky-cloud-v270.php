@@ -560,6 +560,9 @@ function tracky_cloud_v270_ingest(PDO $pdo,int $userId,string $deviceId,array $p
                 }
             }
         }
+        if($federatedAutomation!==null&&($federatedAutomation['local_site_id']??'')!==$localSite){
+            throw new RuntimeException('Tracky federated automation projection must be authoritative at the resolved local origin site.');
+        }
         if($identityContinuity!==null){
             foreach((array)($identityContinuity['links']??[]) as $link){
                 if(!is_array($link)||($link['governing_site_id']??'')!==$localSite){
