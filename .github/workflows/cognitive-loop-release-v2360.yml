@@ -121,6 +121,12 @@ on:
       - 'tracky-federation-access-operations-v280.css'
       - 'tests/tracky-v280-federation-access-operations-unit.php'
       - 'tests/tracky-v280-federation-access-operations-contract.mjs'
+      - 'includes/tracky-federation-agent-health-v280.php'
+      - 'api/tracky-federation-agent-health-v280.php'
+      - 'tracky-federation-agent-health-v280.js'
+      - 'tracky-federation-agent-health-v280.css'
+      - 'tests/tracky-v280-federation-agent-health-unit.php'
+      - 'tests/tracky-v280-federation-agent-health-contract.mjs'
       - 'tests/fixtures/tracky_v274_resilience_vectors.json'
       - 'docs/VP3_COGNITIVE_DOMAIN_INTEGRATION_V2380.md'
       - 'docs/VP3_COGNITIVE_DOMAIN_INTEGRATION_V2390.md'
@@ -536,6 +542,11 @@ jobs:
           php -l tests/tracky-v280-federation-access-operations-unit.php
           php tests/tracky-v280-federation-access-operations-unit.php
           node tests/tracky-v280-federation-access-operations-contract.mjs
+          php -l includes/tracky-federation-agent-health-v280.php
+          php -l api/tracky-federation-agent-health-v280.php
+          php -l tests/tracky-v280-federation-agent-health-unit.php
+          php tests/tracky-v280-federation-agent-health-unit.php
+          node tests/tracky-v280-federation-agent-health-contract.mjs
       - name: v26.10 cross-domain entity graph
         run: |
           php tests/cognitive-entity-graph-v2610.php
