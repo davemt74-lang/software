@@ -83,6 +83,7 @@ NODE_TESTS = [
     'tests/tracky-v280-federation-agent-health-contract.mjs',
     'tests/tracky-v280-federation-fleet-health-contract.mjs',
     'tests/tracky-v280-federation-governed-operations-contract.mjs',
+    'tests/tracky-v280-golden-operational-release-contract.mjs',
     'tests/cognitive-entity-graph-v2610.mjs',
     'tests/campaigns-rewards-v100.mjs',
     'tests/campaigns-rewards-v110.mjs',
