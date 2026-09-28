@@ -283,6 +283,60 @@ function tracky_v278_agent_context_normalize(array $input): array
         ];
     }
 
+    $federationHealth=null;
+    if(is_array($input['federation_agent_health']??null)){
+        $fh=$input['federation_agent_health'];
+        $healthState=strtolower(tracky_v278_agent_context_text($fh['overall_state']??'unknown',30));
+        if(!in_array($healthState,['current','degraded','stale','partitioned','reconciling','recovering','offline','failed','unknown'],true))$healthState='unknown';
+        $healthSites=[];
+        foreach(array_slice(is_array($fh['sites']??null)?$fh['sites']:[],0,32) as $item){
+            if(!is_array($item))continue;
+            $healthSites[]=[
+              'site_id'=>tracky_v278_agent_context_uuid($item['site_id']??'','federation health site id'),
+              'label'=>tracky_v278_agent_context_text($item['label']??'',120),
+              'state'=>tracky_v278_agent_context_text($item['state']??'unknown',30),
+              'severity'=>tracky_v278_agent_context_text($item['severity']??'info',20),
+              'cause'=>tracky_v278_agent_context_text($item['cause']??'',160),
+              'fresh'=>!empty($item['fresh']),
+              'recovery_complete'=>!empty($item['recovery_complete']),
+              'trust'=>is_array($item['trust']??null)?[
+                'semantic_state'=>tracky_v278_agent_context_text($item['trust']['semantic_state']??'unknown',40),
+                'agent_use'=>tracky_v278_agent_context_text($item['trust']['agent_use']??'health_only',40),
+                'physical_claims'=>tracky_v278_agent_context_text($item['trust']['physical_claims']??'do_not_claim_current',50),
+                'reason'=>tracky_v278_agent_context_text($item['trust']['reason']??'',120),
+              ]:[],
+            ];
+        }
+        $issues=[];
+        foreach(array_slice(is_array($fh['active_issues']??null)?$fh['active_issues']:[],0,24) as $item){
+            if(!is_array($item))continue;
+            $issues[]=[
+              'site_id'=>tracky_v278_agent_context_uuid($item['site_id']??'','federation health issue site id'),
+              'label'=>tracky_v278_agent_context_text($item['label']??'',120),
+              'state'=>tracky_v278_agent_context_text($item['state']??'unknown',30),
+              'severity'=>tracky_v278_agent_context_text($item['severity']??'warning',20),
+              'cause'=>tracky_v278_agent_context_text($item['cause']??'',160),
+              'message'=>tracky_v278_agent_context_text($item['message']??'',500),
+            ];
+        }
+        $relayHealth=is_array($fh['relay_health']??null)?$fh['relay_health']:[];
+        $federationHealth=[
+          'protocol'=>tracky_v278_agent_context_text($fh['protocol']??'',100),
+          'overall_state'=>$healthState,
+          'sites'=>$healthSites,
+          'active_issues'=>$issues,
+          'summary'=>tracky_v278_agent_context_text($fh['summary']??'',1000),
+          'relay_health'=>[
+            'state'=>tracky_v278_agent_context_text($relayHealth['state']??'unknown',30),
+            'severity'=>tracky_v278_agent_context_text($relayHealth['severity']??'info',20),
+            'cause'=>tracky_v278_agent_context_text($relayHealth['cause']??'',160),
+            'recovery_complete'=>!empty($relayHealth['recovery_complete']),
+          ],
+          'recovery_requires_authoritative_reconciliation'=>true,
+          'connectivity_returned_is_not_recovery'=>true,
+        ];
+    }
+
     $explain=is_array($input['explainability']??null)?$input['explainability']:[];
     $out=[
       'protocol'=>VP3_TRACKY_FEDERATED_AGENT_CONTEXT_PROTOCOL_V278,
@@ -298,6 +352,7 @@ function tracky_v278_agent_context_normalize(array $input): array
       'changed_elsewhere'=>$changes,'sites'=>$sites,'site_revisions'=>$siteRevisions,
       'federation_sync_visibility'=>$syncVisibility,
       'federation_access_operations'=>$accessOperations,
+      'federation_agent_health'=>$federationHealth,
       'explainability'=>[
         'location_candidate_count'=>max(0,(int)($explain['location_candidate_count']??0)),
         'current_location_selected'=>!empty($explain['current_location_selected']),
