@@ -30,6 +30,30 @@ export const VP3_PROFILE_WEBMCP_TOOL_CATALOG_V100 = deepFreeze({
       additionalProperties:false
     },
     annotations: {readOnlyHint:true,untrustedContentHint:true,consequentialHint:false,debugging:false}
+  },
+  'vp3.profile.links.list': {
+    title:'List public profile links',
+    description:'Return explicitly public links published on this VP3 profile.',
+    inputSchema:{type:'object',properties:{},additionalProperties:false},
+    annotations:{readOnlyHint:true,untrustedContentHint:true,consequentialHint:false,debugging:false}
+  },
+  'vp3.profile.media.get': {
+    title:'Get public profile media',
+    description:'Return the public avatar and cover media for this VP3 profile when available.',
+    inputSchema:{type:'object',properties:{},additionalProperties:false},
+    annotations:{readOnlyHint:true,untrustedContentHint:true,consequentialHint:false,debugging:false}
+  },
+  'vp3.agent.get': {
+    title:'Get Profile Agent',
+    description:'Return the public identity and greeting of this profile’s enabled VP3 Profile Agent.',
+    inputSchema:{type:'object',properties:{},additionalProperties:false},
+    annotations:{readOnlyHint:true,untrustedContentHint:true,consequentialHint:false,debugging:false}
+  },
+  'vp3.profile.public_state.get': {
+    title:'Get public profile state',
+    description:'Return which public VP3 profile experiences are currently available without returning private or transactional data.',
+    inputSchema:{type:'object',properties:{},additionalProperties:false},
+    annotations:{readOnlyHint:true,untrustedContentHint:false,consequentialHint:false,debugging:false}
   }
 });
 

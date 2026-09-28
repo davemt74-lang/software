@@ -3,6 +3,8 @@ declare(strict_types=1);
 
 require dirname(__DIR__) . '/includes/bootstrap.php';
 require_once dirname(__DIR__) . '/includes/profile-webmcp-v100.php';
+require_once dirname(__DIR__) . '/includes/profile-public-media-v174.php';
+require_once dirname(__DIR__) . '/includes/profile-webmcp-discovery-v110.php';
 
 header('Content-Type: application/json; charset=UTF-8');
 header('Cache-Control: no-store');
@@ -88,6 +90,18 @@ try {
     if ($tool === 'vp3.intent.resolve') {
         $goal = trim((string)($args['goal'] ?? ''));
         vp3_profile_webmcp_json_v100(true, ['resolution'=>vp3_profile_webmcp_resolve_intent_v100($goal, $manifest)]);
+    }
+    if ($tool === 'vp3.profile.links.list') {
+        vp3_profile_webmcp_json_v100(true, ['links'=>vp3_profile_webmcp_links_v110($profile)]);
+    }
+    if ($tool === 'vp3.profile.media.get') {
+        vp3_profile_webmcp_json_v100(true, ['media'=>vp3_profile_webmcp_media_v110($profile)]);
+    }
+    if ($tool === 'vp3.agent.get') {
+        vp3_profile_webmcp_json_v100(true, ['agent'=>vp3_profile_webmcp_agent_v110($pdo, $profile)]);
+    }
+    if ($tool === 'vp3.profile.public_state.get') {
+        vp3_profile_webmcp_json_v100(true, ['state'=>vp3_profile_webmcp_public_state_v110($pdo, $profile, $viewer, $manifest)]);
     }
     vp3_profile_webmcp_json_v100(false, ['error'=>['code'=>'CAPABILITY_UNAVAILABLE','message'=>'That profile capability is unavailable.']], 404);
 } catch (Throwable $e) {
