@@ -172,7 +172,7 @@ function tracky_v280_syncv_normalize(array $input): array
 
 function tracky_v280_syncv_ingest(PDO $pdo,int $userId,string $reportingSiteId,array $input): array
 {
-    tracky_v280_syncv_ensure_schema($pdo);
+    if(!tracky_v280_syncv_schema_ready($pdo))tracky_v280_syncv_ensure_schema($pdo);
     $snapshot=tracky_v280_syncv_normalize($input);
     if($snapshot['local_site_id']!==$reportingSiteId){
         throw new RuntimeException('Tracky sync visibility local site must match the uploader federation site.');
