@@ -572,6 +572,9 @@ jobs:
           php tests/tracky-v280-federation-governed-operations-unit.php
           node --check tracky-federation-governed-operations-v280.js
           node tests/tracky-v280-federation-governed-operations-contract.mjs
+          php -l includes/tracky-release-hardening-v280.php
+          php -l api/tracky-release-v280.php
+          node tests/tracky-v280-golden-operational-release-contract.mjs
       - name: v26.10 cross-domain entity graph
         run: |
           php tests/cognitive-entity-graph-v2610.php
