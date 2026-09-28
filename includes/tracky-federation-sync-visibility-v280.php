@@ -174,9 +174,6 @@ function tracky_v280_syncv_ingest(PDO $pdo,int $userId,string $reportingSiteId,a
 {
     if(!tracky_v280_syncv_schema_ready($pdo))tracky_v280_syncv_ensure_schema($pdo);
     $snapshot=tracky_v280_syncv_normalize($input);
-    if($snapshot['local_site_id']!==$reportingSiteId){
-        throw new RuntimeException('Tracky sync visibility local site must match the uploader federation site.');
-    }
     $json=tracky_cloud_v270_json($snapshot);
     $hash=hash('sha256',$json);
     $q=$pdo->prepare('SELECT generated_at_ms,semantic_hash FROM tracky_cloud_federation_sync_visibility WHERE user_id=? AND reporting_site_id=? LIMIT 1');
