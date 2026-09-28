@@ -8,7 +8,7 @@ assert.match(include,/section7-federation-health-remains-authoritative/);
 assert.match(include,/cloud_read_only'=>true/);
 assert.match(include,/remote_command_execution'=>false/);
 assert.match(include,/authority_mutation'=>false/);
-assert.match(include,/raw_logs_included'=>false/);
+assert.match(include,/diagnostic_content_included'=>false/);
 assert.match(include,/tracky_cloud_federation_fleet_health/);
 assert.match(api,/\$_SERVER\['REQUEST_METHOD'\]!=='GET'/);
 assert.doesNotMatch(api,/\b(?:POST|PUT|PATCH|DELETE)\b required/);
