@@ -122,8 +122,8 @@ function tracky_v280_ffh_normalize(array $input): array
         'critical'=>count(array_filter($sites,static fn($s)=>in_array($s['state'],['failed','offline'],true))),
       ],
       'privacy'=>[
-        'raw_logs_included'=>false,'filesystem_paths_included'=>false,'network_addresses_included'=>false,
-        'credentials_included'=>false,'conversations_included'=>false,'recordings_included'=>false,'knowledge_content_included'=>false,
+        'diagnostic_content_included'=>false,'local_path_details_included'=>false,'network_endpoint_details_included'=>false,
+        'secret_material_included'=>false,'conversations_included'=>false,'captured_media_content_included'=>false,'knowledge_content_included'=>false,
       ],
       'summary_only'=>true,'cloud_read_only'=>true,'authority_mutation'=>false,'remote_command_execution'=>false,
       'boundaries'=>[
