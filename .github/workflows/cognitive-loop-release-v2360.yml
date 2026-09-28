@@ -103,6 +103,12 @@ on:
       - 'tracky-physical-world-dashboard-v280.css'
       - 'tests/tracky-v280-physical-world-dashboard-unit.php'
       - 'tests/tracky-v280-physical-world-dashboard-contract.mjs'
+      - 'includes/tracky-cross-site-presence-v280.php'
+      - 'api/tracky-cross-site-presence-v280.php'
+      - 'tracky-cross-site-presence-v280.js'
+      - 'tracky-cross-site-presence-v280.css'
+      - 'tests/tracky-v280-cross-site-presence-unit.php'
+      - 'tests/tracky-v280-cross-site-presence-contract.mjs'
       - 'tests/fixtures/tracky_v274_resilience_vectors.json'
       - 'docs/VP3_COGNITIVE_DOMAIN_INTEGRATION_V2380.md'
       - 'docs/VP3_COGNITIVE_DOMAIN_INTEGRATION_V2390.md'
@@ -503,6 +509,11 @@ jobs:
           php -l tests/tracky-v280-physical-world-dashboard-unit.php
           php tests/tracky-v280-physical-world-dashboard-unit.php
           node tests/tracky-v280-physical-world-dashboard-contract.mjs
+          php -l includes/tracky-cross-site-presence-v280.php
+          php -l api/tracky-cross-site-presence-v280.php
+          php -l tests/tracky-v280-cross-site-presence-unit.php
+          php tests/tracky-v280-cross-site-presence-unit.php
+          node tests/tracky-v280-cross-site-presence-contract.mjs
       - name: v26.10 cross-domain entity graph
         run: |
           php tests/cognitive-entity-graph-v2610.php
