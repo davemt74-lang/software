@@ -5,6 +5,7 @@ require_once __DIR__ . '/includes/profile-public-media-v174.php';
 require_once __DIR__ . '/includes/profile-commerce-v900.php';
 require_once __DIR__ . '/includes/agent-scheduling-public-v450.php';
 require_once __DIR__ . '/includes/profile-webmcp-v100.php';
+require_once __DIR__ . '/includes/profile-webmcp-discovery-v110.php';
 
 if (!function_exists('vp3_profile_optional_failure')) {
     function vp3_profile_optional_failure(string $stage, Throwable $e, string $username = ''): void
