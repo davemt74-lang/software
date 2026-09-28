@@ -1,0 +1,6 @@
+import fs from 'node:fs';import assert from 'node:assert/strict';
+const inc=fs.readFileSync('includes/tracky-federation-governed-operations-v280.php','utf8');
+const api=fs.readFileSync('api/tracky-federation-governed-operations-v280.php','utf8');
+const loader=fs.readFileSync('includes/tracky-cloud-v270.php','utf8');
+const page=fs.readFileSync('tracky.php','utf8');const ui=fs.readFileSync('tracky-federation-governed-operations-v280.js','utf8');
+assert.match(inc,/physical_federation_governed_operations\.v1/);assert.match(inc,/cloud_execution_allowed'=>false/);assert.match(inc,/authority_transfer_requires_epoch_advance/);assert.match(inc,/completion_requires_authoritative_reconciliation/);assert.match(inc,/tracky_cloud_federation_operation_requests/);assert.match(api,/verify_csrf\(\)/);assert.match(api,/tracky_v280_fgo_create_request/);assert.doesNotMatch(api,/execute_remote|remote_command_execute/);assert.match(loader,/federation_governed_operations/);assert.match(loader,/tracky_v280_fgo_ingest/);assert.match(page,/federationGovernedOperationsV280/);assert.match(page,/tracky-federation-governed-operations-v280\.js/);assert.match(ui,/Submitting governed request/);console.log('TRACKY_V280_FEDERATION_GOVERNED_OPERATIONS_CONTRACT=PASS');
