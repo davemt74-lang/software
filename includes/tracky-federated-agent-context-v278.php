@@ -238,6 +238,36 @@ function tracky_v278_agent_context_normalize(array $input): array
         $siteRevisions[tracky_v278_agent_context_uuid($siteId,'site revision key')]=max(0,(int)$revisionValue);
     }
 
+    $syncVisibility=null;
+    if(is_array($input['federation_sync_visibility']??null)){
+        $sv=$input['federation_sync_visibility'];
+        $state=strtolower(tracky_v278_agent_context_text($sv['state']??'unknown',24));
+        if(!in_array($state,['unknown','current','suspect','partitioned','reconciling','stale','failed'],true))$state='unknown';
+        $alerts=[];
+        foreach(array_slice(is_array($sv['alerts']??null)?$sv['alerts']:[],0,16) as $item){
+            if(!is_array($item))continue;
+            $alerts[]=[
+              'site_id'=>tracky_v278_agent_context_uuid($item['site_id']??'','sync visibility alert site id'),
+              'label'=>tracky_v278_agent_context_text($item['label']??'',120),
+              'status'=>tracky_v278_agent_context_text($item['status']??'unknown',24),
+              'severity'=>tracky_v278_agent_context_text($item['severity']??'degraded',24),
+              'message'=>tracky_v278_agent_context_text($item['message']??'',500),
+              'stale_age_ms'=>max(0,(int)($item['stale_age_ms']??0)),
+              'revision_gap'=>max(0,(int)($item['revision_gap']??0)),
+              'retry_count'=>max(0,(int)($item['retry_count']??0)),
+              'last_error'=>tracky_v278_agent_context_text($item['last_error']??'',240),
+            ];
+        }
+        $syncVisibility=[
+          'protocol'=>tracky_v278_agent_context_text($sv['protocol']??'',100),
+          'state'=>$state,
+          'summary'=>tracky_v278_agent_context_text($sv['summary']??'',1000),
+          'alerts'=>$alerts,
+          'cloud_can_mark_destination_current'=>false,
+          'no_remote_authority_promotion'=>true,
+        ];
+    }
+
     $explain=is_array($input['explainability']??null)?$input['explainability']:[];
     $out=[
       'protocol'=>VP3_TRACKY_FEDERATED_AGENT_CONTEXT_PROTOCOL_V278,
@@ -251,6 +281,7 @@ function tracky_v278_agent_context_normalize(array $input): array
       ],
       'focus_identity'=>$focus,'active_mobile_transition'=>$transition,
       'changed_elsewhere'=>$changes,'sites'=>$sites,'site_revisions'=>$siteRevisions,
+      'federation_sync_visibility'=>$syncVisibility,
       'explainability'=>[
         'location_candidate_count'=>max(0,(int)($explain['location_candidate_count']??0)),
         'current_location_selected'=>!empty($explain['current_location_selected']),
