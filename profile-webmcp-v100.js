@@ -134,6 +134,9 @@ export class VP3ProfileWebMCPRuntimeV100 {
   }
 
   async #execute(name,args,options) {
+    if (options?.signal?.aborted) {
+      return safeError('CANCELLED','The profile capability request was cancelled.');
+    }
     if (!this.fetchImpl || !this.manifest || !this.sessionProof) {
       return safeError('RUNTIME_UNAVAILABLE','VP3 Profile WebMCP is unavailable.');
     }
