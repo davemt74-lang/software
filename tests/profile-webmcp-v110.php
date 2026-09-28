@@ -41,6 +41,7 @@ $agent=vp3_profile_webmcp_agent_v110($pdo,$profile);
 t110(($agent['display_name']??'')==='Demo Agent','public agent identity');
 t110(($agent['greeting']??'')==='Hello from Demo Agent','public greeting');
 t110(!isset($agent['system_prompt']),'system prompt must not project');
+t110(!isset($agent['id']),'internal agent id must not project');
 t110(($agent['ai_representative']??false)===true,'AI disclosure');
 
 $manifest=[
