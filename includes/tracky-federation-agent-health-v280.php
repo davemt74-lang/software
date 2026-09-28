@@ -170,8 +170,12 @@ function tracky_v280_fah_normalize(array $input): array
     $issues=[];
     foreach(array_slice(is_array($agent['active_issues']??null)?$agent['active_issues']:[],0,24) as $row){
         if(!is_array($row))continue;
+        $siteId=tracky_v280_fah_uuid($row['site_id']??'','Agent health issue site id',true);
+        $component=tracky_v280_fah_text($row['component']??'',80);
+        if($siteId===''&&$component==='')continue;
         $issues[]=[
-          'site_id'=>tracky_v280_fah_uuid($row['site_id']??'','Agent health issue site id'),
+          'site_id'=>$siteId,
+          'component'=>$component,
           'label'=>tracky_v280_fah_text($row['label']??'',160),
           'state'=>tracky_v280_fah_state($row['state']??'unknown'),
           'severity'=>tracky_v280_fah_text($row['severity']??'warning',20),
