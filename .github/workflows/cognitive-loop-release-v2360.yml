@@ -577,6 +577,8 @@ jobs:
           node tests/tracky-v280-golden-operational-release-contract.mjs
           php -l includes/tracky-federated-automation-v281.php
           php -l api/tracky-federated-automation-v281.php
+          php -l tests/tracky-v281-federated-automation-unit.php
+          php tests/tracky-v281-federated-automation-unit.php
           node tests/tracky-v281-federated-automation-contract.mjs
       - name: v26.10 cross-domain entity graph
         run: |
