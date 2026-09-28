@@ -68,7 +68,6 @@ function vp3_profile_webmcp_agent_v110(PDO $pdo, array $profile): ?array
     $agent = profile_active_agent($pdo, $profile);
     if (!is_array($agent)) return null;
     return [
-        'id' => (int)($agent['id'] ?? 0),
         'display_name' => trim((string)($agent['display_name'] ?? $agent['name'] ?? '')),
         'greeting' => trim((string)($profile['profile_agent_greeting'] ?? '')),
         'ai_representative' => true,
