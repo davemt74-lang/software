@@ -54,6 +54,10 @@ jobs:
             "commit": "${VP3_RELEASE_SHA}",
             "repository": "${GITHUB_REPOSITORY}",
             "workflow_run_id": "${GITHUB_RUN_ID}",
+            "tracky_feature_track": "V2.80",
+            "tracky_release_section": 10,
+            "tracky_golden_operational_scenarios": 24,
+            "tracky_recovery_authority": "section7_authoritative_reconciliation",
             "preserve_runtime_paths": ["config.php", ".env", "private/", "uploads/"]
           }
           EOF
