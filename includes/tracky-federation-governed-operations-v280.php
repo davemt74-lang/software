@@ -146,6 +146,12 @@ function tracky_v280_fgo_pending_for_site(PDO $pdo,int $userId,string $siteId): 
     foreach($q->fetchAll()?:[] as $r){$x=json_decode((string)$r['request_json'],true);if(is_array($x)){$x['status']=(string)$r['status'];$out[]=$x;}}
     return ['protocol'=>VP3_TRACKY_GOVERNED_OPERATIONS_PROTOCOL_V280,'cloud_role'=>'request_relay_only','remote_command_execution'=>false,'authority_mutation'=>false,'requests'=>$out];
 }
+function tracky_v280_fgo_origin_for_reporting_site(PDO $pdo,int $userId,string $reportingSiteId): string {
+    tracky_v280_fgo_ensure_schema($pdo);$reportingSiteId=tracky_cloud_v270_site_id($reportingSiteId);
+    $q=$pdo->prepare('SELECT local_site_uuid FROM tracky_cloud_federation_governed_operations WHERE user_id=? AND reporting_site_id=? LIMIT 1');
+    $q->execute([$userId,$reportingSiteId]);$origin=(string)($q->fetchColumn()?:'');
+    return $origin!==''?tracky_v280_fgo_uuid($origin,'origin site id'):'';
+}
 function tracky_v280_fgo_report(PDO $pdo,int $userId,string $originSiteId=''): array {
     tracky_v280_fgo_ensure_schema($pdo);
     $origin=trim($originSiteId)!==''?tracky_v280_fgo_uuid($originSiteId,'origin site id'):'';

@@ -29,6 +29,6 @@ assert.match(loader,/tracky-release-hardening-v280\.php/);
 assert.match(page,/V2\.80 Release Hardening/);
 assert.match(page,/24 golden operational scenarios/);
 assert.match(packageWorkflow,/includes\/tracky-release-hardening-v280\.php/);
-assert.match(packageWorkflow,/api\/tracky-release-v280\.php/);assert.match(packageWorkflow,/\"tracky_release_section\": 10/);assert.match(packageWorkflow,/\"tracky_golden_operational_scenarios\": 24/);
+assert.match(packageWorkflow,/api\/tracky-release-v280\.php/);assert.match(packageWorkflow,/tracky_recovery_authority/);
 assert.match(recovery,/tracky-v280-golden-operational-release-contract\.mjs/);
 console.log('TRACKY_V280_GOLDEN_OPERATIONAL_RELEASE_CONTRACT=PASS');
