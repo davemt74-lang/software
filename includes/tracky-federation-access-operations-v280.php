@@ -200,7 +200,6 @@ function tracky_v280_access_report(PDO $pdo,int $userId): array
             ];
         }
         $siteConsents=array_values(array_filter($consents,static fn($c)=>($c['site_id']??'')===$source));
-        $suppressed=array_values(array_filter([...$rows??[],...$siteConsents],static fn($r)=>!empty($r['stale_grant_suppressed'])));
         $state=$stateRows[$source]??['revision'=>0,'revocation_epoch'=>0];
         $views[]=[
           'source_site_id'=>$source,'source_label'=>$labels[$source]??$source,
