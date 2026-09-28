@@ -4,6 +4,7 @@ require __DIR__ . '/includes/bootstrap.php';
 require_once __DIR__ . '/includes/profile-public-media-v174.php';
 require_once __DIR__ . '/includes/profile-commerce-v900.php';
 require_once __DIR__ . '/includes/agent-scheduling-public-v450.php';
+require_once __DIR__ . '/includes/profile-webmcp-v100.php';
 
 if (!function_exists('vp3_profile_optional_failure')) {
     function vp3_profile_optional_failure(string $stage, Throwable $e, string $username = ''): void
@@ -125,6 +126,20 @@ if($photos)$profileTabs['photos']='Photos';
 if($posts)$profileTabs['posts']='Posts';
 if($merch)$profileTabs['merch']='Merch';
 $activeTab=(string)(array_key_first($profileTabs)??'');
+$webmcpManifest=[];$webmcpSessionProof='';
+if(!$preview){
+    try {
+        $webmcpManifest=vp3_profile_webmcp_manifest_v100($pdo,$profile,$viewer,['surface'=>'native_profile']);
+        $webmcpSessionProof=vp3_profile_webmcp_session_proof_v100((int)$profile['user_id']);
+    } catch (Throwable $e) {
+        vp3_profile_optional_failure('webmcp-foundation',$e,$username);
+        $webmcpManifest=[];$webmcpSessionProof='';
+    }
+}
+if($webmcpManifest&&$webmcpSessionProof){
+    header('Cache-Control: private, no-store');
+    header('Vary: Cookie');
+}
 ?>
 <!doctype html>
 <html lang="en">
@@ -273,6 +288,16 @@ profileAgentLauncher?.addEventListener('click',()=>setProfileAgentOpen(profileAg
 profileAgentClose?.addEventListener('click',()=>setProfileAgentOpen(false));
 document.addEventListener('keydown',event=>{if(event.key==='Escape'&&profileAgentShell&&!profileAgentShell.hidden)setProfileAgentOpen(false);});
 </script>
+<?php if($webmcpManifest&&$webmcpSessionProof): ?>
+<script>
+window.VP3_PROFILE_WEBMCP={
+  manifest:<?= json_encode($webmcpManifest,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE) ?>,
+  endpoint:<?= json_encode(url('/api/profile-webmcp-v100.php'),JSON_UNESCAPED_SLASHES) ?>,
+  sessionProof:<?= json_encode($webmcpSessionProof,JSON_UNESCAPED_SLASHES) ?>
+};
+</script>
+<script type="module" src="<?= e(url('/profile-webmcp-v100.js?v=profile-webmcp-v100-20260928')) ?>"></script>
+<?php endif; ?>
 <?php if($viewer): ?><script src="<?= e(url('/member-shell-v77.js?v=universal-member-header-20260905')) ?>"></script><?php endif; ?>
 <?php if($agent&&!$preview): ?><script src="<?= e(url('/profile-agent.js?v=profile-activity-20260905')) ?>"></script><?php endif; ?>
 </body>

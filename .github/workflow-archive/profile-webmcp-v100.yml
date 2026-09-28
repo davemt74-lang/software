@@ -1,9 +1,8 @@
-name: Public Funnel + Onboarding Continuity
+name: Profile WebMCP v1.00
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
-
 
 on:
   pull_request:
@@ -14,9 +13,10 @@ permissions:
   contents: read
 
 jobs:
-  contract:
+  php:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         php: ['8.1','8.3']
     steps:
@@ -25,47 +25,32 @@ jobs:
         with:
           php-version: ${{ matrix.php }}
           coverage: none
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-      - name: Funnel PHP syntax
-        run: |
-          php -l includes/vp3-funnel.php
-          php -l includes/vp3-public.php
-          php -l signup.php
-          php -l login.php
-          php -l pricing.php
-          php -l book-demo.php
-          php -l api/public-funnel-event.php
-          php -l tests/public-funnel-runtime.php
-      - name: Runtime redirect and source contract
-        run: php tests/public-funnel-runtime.php
-      - name: Static contract syntax
-        run: |
-          node --check vp3-public-funnel.js
-          node --check tests/public-funnel-onboarding-contract.mjs
-          node --check tests/public-homepage-funnel-completion.mjs
-      - name: Public funnel and onboarding contract
-        run: node tests/public-funnel-onboarding-contract.mjs
-      - name: Homepage and funnel completion contract
-        run: node tests/public-homepage-funnel-completion.mjs
-      - name: Retained public/auth contract
-        run: node tests/vp3-public-auth-contract.mjs
-      - name: Retained mega-menu pages contract
-        run: node tests/public-mega-menu-pages-contract.mjs
-      - name: Profile WebMCP PHP syntax
+      - name: PHP syntax
         run: |
           php -l includes/profile-webmcp-v100.php
           php -l api/profile-webmcp-v100.php
           php -l profile.php
           php -l tests/profile-webmcp-v100.php
-      - name: Profile WebMCP PHP security contract
+      - name: Pure PHP security contract
         run: php tests/profile-webmcp-v100.php
-      - name: Profile WebMCP static integration contract
+
+  runtime:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Static integration contract
         run: node tests/profile-webmcp-v100-contract.mjs
-      - name: Profile WebMCP browser runtime contract
+      - name: Browser runtime contract
         run: node tests/profile-webmcp-v100-runtime.mjs
-      - name: Profile WebMCP production package smoke
+
+  package-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Production package contents
         run: |
           set -euo pipefail
           rm -rf /tmp/vp3-webmcp-package
