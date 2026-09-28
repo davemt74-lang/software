@@ -21,6 +21,11 @@ function tracky_v280_ffh_uuid(mixed $value,string $label,bool $allowEmpty=false)
     }
     return $value;
 }
+function tracky_v280_ffh_schema_ready(?PDO $pdo=null): bool
+{
+    $pdo??=db();
+    return $pdo?table_exists('tracky_cloud_federation_fleet_health'):false;
+}
 function tracky_v280_ffh_ensure_schema(?PDO $pdo=null): void
 {
     $pdo??=db();
