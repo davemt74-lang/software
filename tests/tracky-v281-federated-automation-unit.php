@@ -11,7 +11,8 @@ $n=tracky_v281_fa_normalize([
    'automation_id'=>'fa:test','revision'=>1,'name'=>'Test','state'=>'active','origin_site_id'=>$home,'trigger_kind'=>'world_state',
    'participating_site_ids'=>[$home,$office],'participating_device_ids'=>['node-office'],'step_count'=>2,'default_deadline_ms'=>60000
  ]],
- 'trigger_receipts'=>[['receipt_id'=>'ptr:1','automation_id'=>'fa:test','automation_revision'=>1,'event_id'=>'evt-1','event_key'=>'person.arrived','source_site_id'=>$home,'occurred_at_ms'=>1759082400000,'confidence'=>0.91,'decision'=>'accepted','reason'=>'matched','run_id'=>'run-1']],\n 'runs'=>[[
+ 'trigger_receipts'=>[['receipt_id'=>'ptr:1','automation_id'=>'fa:test','automation_revision'=>1,'event_id'=>'evt-1','event_key'=>'person.arrived','source_site_id'=>$home,'occurred_at_ms'=>1759082400000,'confidence'=>0.91,'decision'=>'accepted','reason'=>'matched','run_id'=>'run-1']],
+ 'runs'=>[[
    'run_id'=>'run-1','automation_id'=>'fa:test','automation_revision'=>1,'origin_site_id'=>$home,'state'=>'waiting','deadline_at_ms'=>1759082460000,
    'step_states'=>['home-check'=>'ready','office-light'=>'blocked']
  ]]
