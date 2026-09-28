@@ -96,22 +96,27 @@ function tracky_v280_ffh_normalize(array $input): array
         foreach(array_slice(is_array($row['devices']??null)?$row['devices']:[],0,256) as $device){
             if(is_array($device))$devices[]=tracky_v280_ffh_device($device,$siteId);
         }
+        $federationState=strtolower(tracky_v280_ffh_text($row['federation_state']??'unknown',32));
+        $recoveryComplete=!empty($row['federation_recovery_complete']);
+        $federationCurrent=$federationState==='current'&&$recoveryComplete;
+        $state=tracky_v280_ffh_state($row['state']??'unknown');
+        if(!$federationCurrent&&$state==='healthy')$state=in_array($federationState,['recovering','reconciling'],true)?'recovering':'stale';
         $sites[]=[
           'site_id'=>$siteId,'label'=>tracky_v280_ffh_text($row['label']??$siteId,160),
-          'state'=>tracky_v280_ffh_state($row['state']??'unknown'),
+          'state'=>$state,
           'severity'=>tracky_v280_ffh_text($row['severity']??'info',20),
           'cause'=>tracky_v280_ffh_text($row['cause']??'',160),
           'diagnostics_allowed'=>!empty($row['diagnostics_allowed']),
-          'diagnostics_current'=>!empty($row['diagnostics_current']),
-          'federation_state'=>tracky_v280_ffh_text($row['federation_state']??'unknown',32),
-          'federation_recovery_complete'=>!empty($row['federation_recovery_complete']),
+          'diagnostics_current'=>$federationCurrent&&!empty($row['diagnostics_current']),
+          'federation_state'=>$federationState,
+          'federation_recovery_complete'=>$recoveryComplete,
           'device_count'=>count($devices),
           'healthy_device_count'=>max(0,(int)($row['healthy_device_count']??0)),
           'degraded_device_count'=>max(0,(int)($row['degraded_device_count']??0)),
           'critical_device_count'=>max(0,(int)($row['critical_device_count']??0)),
           'devices'=>$devices,
           'agent_visible'=>!empty($row['agent_visible']),
-          'current_claims_allowed'=>!empty($row['current_claims_allowed']),
+          'current_claims_allowed'=>$federationCurrent&&!empty($row['current_claims_allowed']),
           'message'=>tracky_v280_ffh_text($row['message']??'',1000),
         ];
     }
