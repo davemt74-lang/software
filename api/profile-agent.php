@@ -2,6 +2,7 @@
 declare(strict_types=1);
 require dirname(__DIR__) . '/includes/bootstrap.php';
 require_once dirname(__DIR__) . '/includes/profile-agent-transcription-context.php';
+require_once dirname(__DIR__) . '/includes/profile-agent-public-service-v110.php';
 header('Content-Type: application/json; charset=UTF-8');
 header('Cache-Control: no-store');
 
@@ -87,93 +88,21 @@ if(in_array($action,$ownerActions,true)){
 
 $username=profile_username_normalize((string)($input['username']??''));$profile=profile_by_username($pdo,$username);
 if(!$profile||empty($profile['is_active'])||empty($profile['is_public']))profile_agent_json(false,['error'=>'That profile is not available.'],404);
-$owner=(int)$profile['user_id'];$ownerUser=profile_user_row($pdo,$owner);if(!$ownerUser||!personal_capability_has_v242('profile_agent.access',$ownerUser)||!personal_capability_has_v242('profile_chat.access',$ownerUser))profile_agent_json(false,['error'=>'This Profile Agent chat is not available.'],404);
-$visitor=$user;if((int)($visitor['id']??0)===$owner)profile_agent_json(false,['error'=>'Use visitor preview from your Profile Agent dashboard.'],403);
-$agent=profile_active_agent($pdo,$profile);if(!$agent)profile_agent_json(false,['error'=>'This Profile Agent is not available.'],404);
-$agentId=(int)$agent['id'];
+$publicCtx=vp3_profile_agent_public_context_v110($pdo,$profile,$user);$owner=(int)$publicCtx['owner_user_id'];
 if($method==='POST'&&!profile_chat_token_valid($owner,(string)($input['profile_token']??'')))profile_agent_json(false,['error'=>'Profile session expired. Refresh and try again.'],419);
-$session=profile_runtime_session($pdo,$owner,$visitor,false);$sessionId=(int)$session['id'];
 
 if($action==='state'){
-    $cid=max(0,(int)($input['conversation_id']??0));$messages=[];$conversationState=null;
-    if($cid>0){
-        $conversation=vp3_profile_agent_public_conversation_v390($pdo,$cid,$owner,$agentId,$sessionId);
-        if(!$conversation)profile_agent_json(false,['error'=>'Conversation not found for this Profile Agent.'],404);
-        $messages=profile_agent_messages($pdo,$cid);$conversationState=vp3_profile_agent_public_state_v390($conversation);
-    }
-    profile_agent_json(true,['agent'=>['id'=>$agentId,'name'=>(string)$agent['display_name'],'system_name'=>system_agent_name(),'greeting'=>trim((string)($profile['profile_agent_greeting']??''))],'conversation'=>$conversationState,'messages'=>$messages]);
+    $cid=max(0,(int)($input['conversation_id']??0));
+    profile_agent_json(true,vp3_profile_agent_public_state_service_v110($pdo,$publicCtx,$cid));
 }
 if($method!=='POST')profile_agent_json(false,['error'=>'POST is required.'],405);
 if($action==='message'){
-    $query=trim((string)($input['message']??''));if($query===''||mb_strlen($query)>2000)throw new RuntimeException('Enter a message up to 2,000 characters.');
     $cid=max(0,(int)($input['conversation_id']??0));
-    if($cid>0&&!vp3_profile_agent_public_conversation_v390($pdo,$cid,$owner,$agentId,$sessionId))profile_agent_json(false,['error'=>'Conversation not found for this Profile Agent.'],404);
-    if($cid<1){$conversation=profile_agent_conversation_create($pdo,$profile,$agent,$session);$cid=(int)$conversation['id'];}
-
-    $pdo->beginTransaction();
-    try{
-        $conversation=vp3_profile_agent_public_conversation_v390($pdo,$cid,$owner,$agentId,$sessionId,true);if(!$conversation)throw new RuntimeException('Conversation not found for this Profile Agent.');
-        $conversation=vp3_profile_agent_prepare_visitor_turn_v390($pdo,$conversation);
-        profile_agent_rate_check($pdo,$cid);
-        $pdo->prepare("INSERT INTO profile_agent_messages (conversation_id,sender_type,sender_user_id,message) VALUES (?,'visitor',?,?)")->execute([$cid,(int)($visitor['id']??0)?:null,$query]);
-        $pdo->prepare('UPDATE profile_visit_sessions SET last_message_at=NOW(),last_seen_at=NOW() WHERE id=? AND owner_user_id=?')->execute([$sessionId,$owner]);
-        $pdo->prepare('UPDATE profile_agent_conversations SET last_summary=?,last_message_at=NOW(),updated_at=NOW() WHERE id=? AND owner_user_id=? AND profile_agent_id=? AND profile_session_id=?')->execute([mb_strimwidth($query,0,900,'…'),$cid,$owner,$agentId,$sessionId]);
-        $pdo->commit();
-    }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();throw $e;}
-
-    if(!vp3_profile_agent_agent_may_reply_v390($conversation)){
-        profile_agent_json(true,['conversation_id'=>$cid,'answer'=>'','awaiting_owner'=>true,'conversation'=>vp3_profile_agent_public_state_v390($conversation),'agent'=>['name'=>(string)$agent['display_name'],'system_name'=>system_agent_name()]]);
-    }
-
-    $history=[];foreach(profile_agent_messages($pdo,$cid,14) as $m){if($m['sender_type']==='visitor')$history[]=['role'=>'user','message'=>(string)$m['message']];elseif(in_array($m['sender_type'],['agent','owner'],true))$history[]=['role'=>'assistant','message'=>(string)$m['message']];}
-    $context=profile_agent_context($pdo,$profile,$agent,$visitor,$query);
-    foreach(profile_agent_transcript_brain_context_v255($pdo,$ownerUser,$agent,$visitor,$query,$cid) as $item)$context[]=$item;
-    if(count($context)>24)$context=array_slice($context,0,24);
-    $substantive=array_values(array_filter($context,static fn(array $c):bool=>!in_array((string)$c['source'],['profile:identity','profile:rules'],true)));$greeting=(bool)preg_match('/^(?:hi|hello|hey|good\s+(?:morning|afternoon|evening))[!.\s]*$/i',$query);
-    $profileHome=['attempted'=>false,'success'=>false,'execution'=>null,'failure_class'=>'none'];
-    if(!$substantive&&!$greeting){profile_agent_needs_owner($pdo,$profile,$agent,$session,$conversation,$query);$answer='I don’t have approved information to answer that accurately yet. I’ve asked '.(string)$profile['display_name'].' for input rather than guessing.';}
-    elseif($greeting){$answer=trim((string)($profile['profile_agent_greeting']??''))?:'Hi — I’m '.(string)$agent['display_name'].', '.(string)$profile['display_name'].'’s AI representative. What would you like to know?';}
-    else{
-        $homeAnswer=function_exists('homeserver_profile_v235_answer')
-          ?homeserver_profile_v235_answer($owner,$query,$history,$context)
-          :null;
-        $profileHome=function_exists('homeserver_profile_v235_last')?homeserver_profile_v235_last():$profileHome;
-        if(is_array($homeAnswer)&&trim((string)($homeAnswer['answer']??''))!=='')$answer=(string)$homeAnswer['answer'];
-        else{$answer=chat_remote_answer($query,$history,$context,$ownerUser);if($answer===null)$answer=chat_local_answer($query,$context);}
-        if(trim((string)$answer)===''){profile_agent_needs_owner($pdo,$profile,$agent,$session,$conversation,$query);$answer='I don’t have enough approved information to answer that accurately.';}
-    }
-    $sources=[];foreach($context as $c){if(!in_array((string)$c['source'],['profile:identity','profile:rules'],true))$sources[]=['source'=>(string)$c['source'],'title'=>(string)$c['title']];}
-
-    // The owner may have joined or resolved the thread while model generation was
-    // in flight. Re-lock and recheck before persisting any Agent reply.
-    $pdo->beginTransaction();
-    try{
-        $current=vp3_profile_agent_public_conversation_v390($pdo,$cid,$owner,$agentId,$sessionId,true);if(!$current)throw new RuntimeException('Conversation not found for this Profile Agent.');
-        if(!vp3_profile_agent_agent_may_reply_v390($current)){
-            $pdo->commit();
-            profile_agent_json(true,['conversation_id'=>$cid,'answer'=>'','awaiting_owner'=>vp3_profile_agent_status_v390($current)==='owner_joined','conversation'=>vp3_profile_agent_public_state_v390($current),'agent'=>['name'=>(string)$agent['display_name'],'system_name'=>system_agent_name()]]);
-        }
-        $messageContext=['sources'=>$sources];
-        if(!empty($profileHome['attempted'])){
-            $messageContext['homeserver_compute']=[
-              'success'=>!empty($profileHome['success']),
-              'failure_class'=>mb_strimwidth(trim((string)($profileHome['failure_class']??'none')),0,80,''),
-              'provider'=>mb_strimwidth(trim((string)($profileHome['provider']??'')),0,80,''),
-              'model'=>mb_strimwidth(trim((string)($profileHome['model']??'')),0,160,''),
-              'execution'=>is_array($profileHome['execution']??null)?$profileHome['execution']:null,
-            ];
-        }
-        $pdo->prepare("INSERT INTO profile_agent_messages (conversation_id,sender_type,sender_user_id,message,context_json) VALUES (?,'agent',NULL,?,?)")->execute([$cid,$answer,json_encode($messageContext,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE)]);
-        $pdo->prepare('UPDATE profile_agent_conversations SET last_message_at=NOW(),updated_at=NOW() WHERE id=? AND owner_user_id=? AND profile_agent_id=? AND profile_session_id=?')->execute([$cid,$owner,$agentId,$sessionId]);
-        $pdo->commit();
-    }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();throw $e;}
-    profile_agent_json(true,['conversation_id'=>$cid,'answer'=>$answer,'sources'=>$sources,'conversation'=>vp3_profile_agent_public_state_v390($current),'agent'=>['name'=>(string)$agent['display_name'],'system_name'=>system_agent_name()]]);
+    profile_agent_json(true,vp3_profile_agent_public_message_service_v110($pdo,$publicCtx,(string)($input['message']??''),$cid));
 }
 if($action==='poll'){
     $cid=max(0,(int)($input['conversation_id']??0));$after=max(0,(int)($input['after_id']??0));
-    $conversation=vp3_profile_agent_public_conversation_v390($pdo,$cid,$owner,$agentId,$sessionId);if(!$conversation)profile_agent_json(false,['error'=>'Conversation not found for this Profile Agent.'],404);
-    $s=$pdo->prepare('SELECT id,sender_type,message,created_at FROM profile_agent_messages WHERE conversation_id=? AND id>? ORDER BY id ASC LIMIT 50');$s->execute([$cid,$after]);
-    profile_agent_json(true,['messages'=>$s->fetchAll()?:[],'conversation'=>vp3_profile_agent_public_state_v390($conversation)]);
+    profile_agent_json(true,vp3_profile_agent_public_poll_service_v110($pdo,$publicCtx,$cid,$after));
 }
 profile_agent_json(false,['error'=>'Unknown Profile Agent action.'],404);
-}catch(Throwable $e){profile_agent_json(false,['error'=>$e->getMessage()],400);}
+}catch(VP3ProfileAgentPublicException $e){profile_agent_json(false,['error'=>$e->getMessage(),'code'=>$e->publicCode],$e->httpStatus);}catch(Throwable $e){profile_agent_json(false,['error'=>$e->getMessage()],400);}
