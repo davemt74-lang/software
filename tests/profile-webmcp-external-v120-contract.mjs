@@ -12,7 +12,7 @@ const recovery=read('tools/run_recovery_baseline.py');
 
 assert.match(layer,/vp3_radar_external_origin_allowed/,'external origin must reuse Agent Radar registered-domain authority');
 assert.match(layer,/surface'\s*=>\s*'external_site'/);
-assert.match(layer,/read_only'\s*=>\s*!\$chatEnabled&&!\$schedulingEnabled/);
+assert.match(layer,/read_only'\s*=>\s*!\$chatEnabled&&!\$schedulingEnabled&&!\$commerceEnabled/);
 assert.match(layer,/stateful_profile_agent'\s*=>\s*\$chatEnabled/);
 assert.match(layer,/vp3\.agent\.get/);
 assert.match(layer,/vp3\.agent\.message\.send/,'external tool allowlist may expose governed public Agent chat');
