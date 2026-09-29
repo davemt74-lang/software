@@ -64,7 +64,7 @@ assert.doesNotMatch(externalRuntime,/localStorage|sessionStorage|document\.cooki
 assert.doesNotMatch(externalRuntime,/Authorization|X-VP3-WebMCP-Session/,'external chat must not inherit native/browser credentials');
 
 assert.match(sitesUi,/Agent Chat <b>/,'owner diagnostics must show external chat state');
-assert.match(sitesUi,/Public scheduling is available through explicit prepare\/confirm tools/);
+assert.match(sitesUi,/Public scheduling and Profile Commerce use explicit prepare\/confirm tools/);
 assert.match(sitesUi,/Hosted payment providers remain the payment authority/);
 assert.match(sitesUi,/rewards and other transactional domains remain unavailable/);
 
