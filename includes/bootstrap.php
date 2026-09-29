@@ -284,6 +284,7 @@ require_once __DIR__.'/cloud-hosting-ui-v140.php';
 require_once __DIR__.'/cloud-hosting-release-v150.php';
 require_once __DIR__.'/cloud-hosting-domains-v200.php';
 require_once __DIR__.'/cloud-hosting-releases-v220.php';
+require_once __DIR__.'/cloud-hosting-diagnostics-v230.php';
 require_once __DIR__.'/cloud-hosting-agent-v130.php';
 require_once __DIR__.'/ai-runtime-v100.php';
 require_once __DIR__.'/agent-tools-v90.php';
