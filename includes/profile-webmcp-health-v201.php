@@ -84,6 +84,16 @@ function vp3_profile_webmcp_health_snapshot_v201(PDO $pdo,array $profile,array $
     if($owner<1||$viewerId!==$owner)throw new RuntimeException('Profile WebMCP health requires the profile owner.');
 
     $releaseAudit=function_exists('vp3_profile_webmcp_release_audit_v196')?vp3_profile_webmcp_release_audit_v196():['ok'=>false];
+    $properties=vp3_profile_webmcp_health_properties_v201($pdo,$owner);
+    $selectedProperty=null;
+    if($propertyId>0){
+        foreach($properties as $candidate)if((int)$candidate['property_id']===$propertyId){$selectedProperty=$candidate;break;}
+    }
+    $propertyReady=$propertyId<1||(
+        is_array($selectedProperty)
+        &&!empty($selectedProperty['active'])
+        &&trim((string)($selectedProperty['domain']??''))!==''
+    );
     $components=[
         vp3_profile_webmcp_health_component_v201('capability_resolver',function_exists('vp3_profile_webmcp_resolve_capabilities_v190')),
         vp3_profile_webmcp_health_component_v201('tool_router',function_exists('vp3_profile_webmcp_dispatch_v191')),
@@ -92,9 +102,14 @@ function vp3_profile_webmcp_health_snapshot_v201(PDO $pdo,array $profile,array $
         vp3_profile_webmcp_health_component_v201('version_negotiation',function_exists('vp3_profile_webmcp_negotiate_v200')),
         vp3_profile_webmcp_health_component_v201('release_contract',!empty($releaseAudit['ok'])),
         vp3_profile_webmcp_health_component_v201('telemetry',function_exists('vp3_radar_schema_ready')&&vp3_radar_schema_ready($pdo)),
+        vp3_profile_webmcp_health_component_v201('property_verification',$propertyReady,$propertyId>0?(string)($selectedProperty['domain']??''):'native profile'),
     ];
 
-    $manifest=vp3_profile_webmcp_manifest_v100($pdo,$profile,$viewer,['surface'=>'native_profile']);
+    if(is_array($selectedProperty)&&($selectedProperty['type']??'')==='external'&&function_exists('vp3_profile_webmcp_external_manifest_v120')){
+        $manifest=vp3_profile_webmcp_external_manifest_v120($pdo,$selectedProperty+['owner_user_id'=>$owner],$profile,true,true,true,true);
+    }else{
+        $manifest=vp3_profile_webmcp_manifest_v100($pdo,$profile,$viewer,['surface'=>'native_profile']);
+    }
     $expected=count((array)($manifest['allowed_tools']??[]));
     $lastSuccess=vp3_profile_webmcp_health_latest_event_v201($pdo,$owner,'success',$propertyId);
     $lastFailure=vp3_profile_webmcp_health_latest_event_v201($pdo,$owner,'failure',$propertyId);
@@ -116,7 +131,7 @@ function vp3_profile_webmcp_health_snapshot_v201(PDO $pdo,array $profile,array $
             'last_success'=>$lastSuccess,
             'last_failure'=>$lastFailure,
         ],
-        'properties'=>vp3_profile_webmcp_health_properties_v201($pdo,$owner),
+        'properties'=>$properties,
         'release'=>[
             'version'=>defined('VP3_PROFILE_WEBMCP_RELEASE_V196')?VP3_PROFILE_WEBMCP_RELEASE_V196:'',
             'audit_ok'=>!empty($releaseAudit['ok']),
