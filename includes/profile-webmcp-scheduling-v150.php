@@ -4,12 +4,26 @@ declare(strict_types=1);
 const VP3_PROFILE_WEBMCP_SCHEDULING_V150='profile-webmcp-scheduling-v150-20260928';
 const VP3_PROFILE_WEBMCP_SCHEDULING_INTENT_TTL_V150=600;
 
-function vp3_profile_webmcp_scheduling_secret_v150(string $surface,string $nativeProof='',?array $property=null): string
+function vp3_profile_webmcp_native_signing_secret_v150(int $ownerUserId): string
+{
+    if($ownerUserId<1)throw new RuntimeException('Native WebMCP scheduling authority is unavailable.');
+    if(session_status()!==PHP_SESSION_ACTIVE)throw new RuntimeException('Native WebMCP session is unavailable.');
+    if(!isset($_SESSION['vp3_profile_webmcp_action_secrets'])||!is_array($_SESSION['vp3_profile_webmcp_action_secrets'])){
+        $_SESSION['vp3_profile_webmcp_action_secrets']=[];
+    }
+    $key=(string)$ownerUserId;
+    if(empty($_SESSION['vp3_profile_webmcp_action_secrets'][$key])){
+        $_SESSION['vp3_profile_webmcp_action_secrets'][$key]=bin2hex(random_bytes(32));
+    }
+    return hash('sha256','vp3-webmcp-native-action-v150|'.$_SESSION['vp3_profile_webmcp_action_secrets'][$key],true);
+}
+
+function vp3_profile_webmcp_scheduling_secret_v150(string $surface,int $ownerUserId=0,string $nativeProof='',?array $property=null): string
 {
     if($surface==='native_profile'){
         $nativeProof=trim($nativeProof);
         if(!preg_match('/^[a-f0-9]{64}$/',$nativeProof))throw new RuntimeException('Native WebMCP scheduling authority is unavailable.');
-        return hash('sha256','vp3-webmcp-scheduling-v150|native|'.$nativeProof,true);
+        return vp3_profile_webmcp_native_signing_secret_v150($ownerUserId);
     }
     if($surface==='external_site'&&$property){
         $verification=strtolower(trim((string)($property['verification_token']??'')));
@@ -38,7 +52,7 @@ function vp3_profile_webmcp_scheduling_context_v150(
         'property_id'=>$propertyId,
         'session_hash'=>hash('sha256',$webmcpSession),
         'origin_hash'=>$surface==='external_site'?hash('sha256',$origin):'',
-        'secret'=>vp3_profile_webmcp_scheduling_secret_v150($surface,$nativeProof,$property),
+        'secret'=>vp3_profile_webmcp_scheduling_secret_v150($surface,$owner,$nativeProof,$property),
     ];
 }
 
@@ -424,6 +438,8 @@ function vp3_profile_webmcp_scheduling_confirm_v150(
         if($started)$pdo->beginTransaction();
         $action=vp3_profile_webmcp_action_row_v150($pdo,$owner,$intentId,true);
         if(!$action)throw new RuntimeException('Prepared scheduling action was not found.');
+        if((string)$action['operation']!==$operation)throw new RuntimeException('Prepared scheduling operation changed.');
+        if(!hash_equals((string)$action['profile_username'],(string)$context['profile_username']))throw new RuntimeException('Prepared scheduling profile changed.');
         if(!hash_equals((string)$action['payload_hash'],vp3_profile_webmcp_payload_hash_v150($intent)))throw new RuntimeException('Prepared scheduling payload changed.');
         if(!hash_equals((string)$action['session_hash'],(string)$context['session_hash'])||(string)$action['surface']!==(string)$context['surface']||(int)($action['property_id']??0)!==(int)($context['property_id']??0)){
             throw new RuntimeException('Prepared scheduling action belongs to a different WebMCP session.');
@@ -435,7 +451,8 @@ function vp3_profile_webmcp_scheduling_confirm_v150(
             return $result;
         }
         if((string)$action['state']!=='prepared')throw new RuntimeException('Prepared scheduling action is no longer executable.');
-        if(strtotime((string)$action['expires_at'])<time())throw new RuntimeException('Scheduling confirmation expired. Prepare the action again.');
+        $expires=(new DateTimeImmutable((string)$action['expires_at'],new DateTimeZone('UTC')))->getTimestamp();
+        if($expires<time())throw new RuntimeException('Scheduling confirmation expired. Prepare the action again.');
 
         $existing=vp3_profile_webmcp_action_by_idempotency_v150($pdo,$owner,$operation,$idem,true);
         if($existing&&(int)$existing['id']!==(int)$action['id']){
