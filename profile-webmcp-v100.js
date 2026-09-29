@@ -26,6 +26,12 @@ export const VP3_PROFILE_WEBMCP_TOOL_CATALOG_V100 = deepFreeze({
     inputSchema: {type:'object',properties:{},additionalProperties:false},
     annotations: {readOnlyHint:true,untrustedContentHint:true,consequentialHint:false,debugging:false}
   },
+  'vp3.agent.chat.start': {
+    title: 'Start Profile Agent chat',
+    description: 'Start or resume a visitor conversation with this Profile Agent.',
+    inputSchema: {type:'object',properties:{},additionalProperties:false},
+    annotations: {readOnlyHint:false,untrustedContentHint:true,consequentialHint:false,debugging:false}
+  },
   'vp3.agent.conversation.get': {
     title: 'Get Profile Agent conversation',
     description: 'Return one conversation bound to this exact profile, Profile Agent, and visitor session.',

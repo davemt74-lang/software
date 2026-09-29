@@ -6,6 +6,7 @@ require_once dirname(__DIR__) . '/includes/profile-webmcp-v100.php';
 require_once dirname(__DIR__) . '/includes/profile-webmcp-analytics-v130.php';
 require_once dirname(__DIR__) . '/includes/profile-agent-transcription-context.php';
 require_once dirname(__DIR__) . '/includes/profile-agent-public-service-v110.php';
+require_once dirname(__DIR__) . '/includes/profile-webmcp-chat-v140.php';
 
 header('Content-Type: application/json; charset=UTF-8');
 header('Cache-Control: no-store');
@@ -112,6 +113,10 @@ try {
         if ($tool === 'vp3.agent.get') {
             $state=vp3_profile_agent_public_state_service_v110($pdo,$agentCtx,0);
             vp3_profile_webmcp_tool_json_v130($pdo,$telemetryContext,$tool,$startedAt,true,['agent'=>$state['agent']]);
+        }
+        if ($tool === 'vp3.agent.chat.start') {
+            $result=vp3_profile_webmcp_chat_start_v140($pdo,$agentCtx);
+            vp3_profile_webmcp_tool_json_v130($pdo,$telemetryContext,$tool,$startedAt,true,$result);
         }
         if ($tool === 'vp3.agent.conversation.get') {
             $cid=max(0,(int)($args['conversation_id']??0));

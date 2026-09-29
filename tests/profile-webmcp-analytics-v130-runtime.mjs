@@ -11,7 +11,7 @@ class MC{
 const manifest={
   manifest_version:'vp3.profile.webmcp.v1',surface:'external_site',property_id:44,property_domain:'example.com',profile_username:'demo',
   capabilities:{profile:true},allowed_tools:['vp3.profile.get'],session:{authenticated:false,visitor_profile_known:false},
-  external:{read_only:true,stateful_profile_agent:false}
+  external:{read_only:true,stateful_profile_agent:false,transactional_actions:false}
 };
 const calls=[],events=[];
 const runtime=new ExternalRuntime({
