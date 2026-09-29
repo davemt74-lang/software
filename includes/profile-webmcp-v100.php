@@ -104,6 +104,9 @@ function vp3_profile_webmcp_tool_catalog_v100(): array
     if(function_exists('vp3_profile_webmcp_campaigns_tool_catalog_v170')){
         foreach(vp3_profile_webmcp_campaigns_tool_catalog_v170() as $name=>$tool)$catalog[$name]=$tool;
     }
+    if(function_exists('vp3_profile_webmcp_rewards_tool_catalog_v180')){
+        foreach(vp3_profile_webmcp_rewards_tool_catalog_v180() as $name=>$tool)$catalog[$name]=$tool;
+    }
     return $catalog;
 }
 
