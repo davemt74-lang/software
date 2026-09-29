@@ -250,7 +250,8 @@ if($zip->open($zipPath,ZipArchive::CREATE|ZipArchive::OVERWRITE)!==true)throw ne
 $zip->addFromString('vp3-hosting.json',json_encode([
     'contract'=>'vp3.hosting.package.v1','version'=>'1.0.0','runtime'=>'static','entrypoint'=>'public/index.html'
 ],JSON_UNESCAPED_SLASHES));
-$zip->addFromString('public/index.html',str_repeat('VP3-PACKAGE-',20000));
+$zip->addFromString('public/index.html',base64_encode(random_bytes(180000)));
+if(method_exists($zip,'setCompressionName'))$zip->setCompressionName('public/index.html',ZipArchive::CM_STORE);
 $zip->close();
 $package=file_get_contents($zipPath);@unlink($zipPath);
 if(!is_string($package))throw new RuntimeException('Could not read test deployment ZIP.');
