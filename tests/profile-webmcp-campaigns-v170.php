@@ -3,7 +3,7 @@ declare(strict_types=1);
 require dirname(__DIR__).'/includes/profile-webmcp-campaigns-v170.php';
 function t(bool $v,string $m): void { if(!$v){fwrite(STDERR,"FAIL: {$m}\n");exit(1);} }
 $catalog=vp3_profile_webmcp_campaigns_tool_catalog_v170();
-t(count($catalog)===3,'8A must expose exactly three read-only Campaign discovery tools');
+t(count($catalog)>=3,'Campaign catalog must retain the three 8A discovery tools');
 foreach(['vp3.campaigns.list','vp3.campaign.get','vp3.campaign.eligibility.get'] as $name){
   t(isset($catalog[$name]),$name.' exists');
   t(($catalog[$name]['annotations']['readOnlyHint']??false)===true,$name.' is read-only');
