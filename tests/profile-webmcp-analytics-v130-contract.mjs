@@ -16,6 +16,11 @@ const recovery=read('tools/run_recovery_baseline.py');
 
 assert.match(bootstrap,/profile-webmcp-analytics-v130\.php/,'bootstrap must load WebMCP analytics layer');
 assert.match(layer,/VP3_PROFILE_WEBMCP_EVENT_ENVELOPE_V130='vp3\.webmcp\.event\.v1'/);
+assert.match(layer,/'event_id'=>bin2hex\(random_bytes\(16\)\)/,'event ids must be server generated');
+assert.match(layer,/'occurred_at_utc'=>gmdate\('c'\)/,'envelope must carry UTC event time');
+assert.match(layer,/'owner_user_id'/);
+assert.match(layer,/'property_id'/);
+assert.match(layer,/'agent_contact_id'/);
 for(const event of ['webmcp_tool_called','webmcp_tool_completed','webmcp_tool_failed','webmcp_tool_cancelled','webmcp_tool_denied','webmcp_handoff_requested','webmcp_message_sent']){
   assert.match(layer,new RegExp(event),'event taxonomy '+event);
 }
