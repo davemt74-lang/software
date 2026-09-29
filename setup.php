@@ -26,6 +26,7 @@ try {
     ensure_access_schema();
     subscription_ensure_schema($pdo);
     subscription_entitlements_v340_ensure_schema($pdo);
+    vp3_cloud_hosting_ensure_schema_v100($pdo);
     ai_usage_accounting_v032_ensure_schema($pdo);
     // schema.sql is the historical install baseline. Normalize it immediately to
     // the current architecture so fresh installs never retain retired constraints
