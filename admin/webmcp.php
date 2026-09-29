@@ -1,6 +1,10 @@
 <?php
 declare(strict_types=1);
 require_once dirname(__DIR__).'/includes/bootstrap.php';
+require_once dirname(__DIR__).'/includes/profile-webmcp-v100.php';
+require_once dirname(__DIR__).'/includes/profile-webmcp-commerce-v160.php';
+require_once dirname(__DIR__).'/includes/profile-webmcp-campaigns-v170.php';
+require_once dirname(__DIR__).'/includes/profile-webmcp-rewards-v180.php';
 require_once dirname(__DIR__).'/includes/profile-webmcp-admin-v202.php';
 require_permission('admin.access');
 
@@ -101,6 +105,43 @@ require __DIR__.'/_header.php';
         </tr>
       <?php endforeach; ?>
       <?php if(!$events): ?><tr><td colspan="7">No WebMCP activity in the selected scope.</td></tr><?php endif; ?>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+
+<?php
+$compatibility=function_exists('vp3_profile_webmcp_compatibility_public_v203')
+    ?vp3_profile_webmcp_compatibility_public_v203()
+    :['states'=>[],'tools'=>[],'deprecated_tools'=>[],'disabled_tools'=>[]];
+$lifecycleTools=is_array($compatibility['tools']??null)?$compatibility['tools']:[];
+?>
+<section class="admin-dashboard-card">
+  <div class="admin-dashboard-card-head">
+    <div><h3>Tool lifecycle</h3><p>Compatibility and deprecation policy for the canonical WebMCP tool catalog.</p></div>
+    <span><?= number_format(count($lifecycleTools)) ?> tools</span>
+  </div>
+  <div class="admin-kpi-grid" style="margin-bottom:18px!important">
+    <?php foreach(['active'=>'Active','deprecated'=>'Deprecated','sunset_pending'=>'Sunset pending','disabled'=>'Disabled'] as $state=>$label): ?>
+      <article class="admin-kpi"><div class="admin-kpi-head"><span><?= e($label) ?></span><span>Lifecycle</span></div><strong><?= number_format((int)($compatibility['states'][$state]??0)) ?></strong><small><?= $state==='disabled'?'Not available for discovery or execution':'Uses canonical router and policy controls' ?></small></article>
+    <?php endforeach; ?>
+  </div>
+  <div class="admin-table-wrap">
+    <table class="admin-table">
+      <thead><tr><th>Tool</th><th>Status</th><th>Introduced</th><th>Minimum release</th><th>Replacement</th><th>Sunset</th></tr></thead>
+      <tbody>
+      <?php foreach($lifecycleTools as $name=>$row): ?>
+        <tr>
+          <td><strong><?= e((string)$name) ?></strong></td>
+          <td><?= e((string)$row['status']) ?></td>
+          <td><?= e((string)$row['introduced_version']) ?></td>
+          <td><?= e((string)$row['minimum_release_version']) ?></td>
+          <td><?= e((string)($row['replacement_tool']?:'—')) ?></td>
+          <td><?= e((string)($row['sunset_at']?:'—')) ?></td>
+        </tr>
+      <?php endforeach; ?>
+      <?php if(!$lifecycleTools): ?><tr><td colspan="6">Lifecycle registry is unavailable.</td></tr><?php endif; ?>
       </tbody>
     </table>
   </div>
