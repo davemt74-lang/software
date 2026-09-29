@@ -30,7 +30,7 @@ const COMMERCE_CATALOG_V160=deepFreeze({
   },
   'vp3.commerce.order.get':{
     title:'Get commerce order',description:'Return the customer-safe canonical order projection using receipt authority.',
-    inputSchema:{type:'object',properties:{order_number:{type:'string',minLength:1,maxLength:80},receipt_token:{type:'string',pattern:'^[a-f0-9]{64} = deepFreeze({
+    inputSchema:{type:'object',properties:{order_number:{type:'string',minLength:1,maxLength:80},receipt_token:{type:'string',pattern:'^[a-f0-9]{64}
   'vp3.profile.capabilities.get': {
     title:'Get profile capabilities',description:'Return the currently available VP3 capabilities for this public profile and visitor.',
     inputSchema:{type:'object',properties:{},additionalProperties:false},
@@ -317,7 +317,7 @@ if (typeof window !== 'undefined' && window.VP3_PROFILE_WEBMCP) {
   },
   'vp3.commerce.receipt.get':{
     title:'Get commerce receipt',description:'Return the customer-safe receipt projection and receipt URL.',
-    inputSchema:{type:'object',properties:{order_number:{type:'string',minLength:1,maxLength:80},receipt_token:{type:'string',pattern:'^[a-f0-9]{64} = deepFreeze({
+    inputSchema:{type:'object',properties:{order_number:{type:'string',minLength:1,maxLength:80},receipt_token:{type:'string',pattern:'^[a-f0-9]{64}
   'vp3.profile.capabilities.get': {
     title:'Get profile capabilities',description:'Return the currently available VP3 capabilities for this public profile and visitor.',
     inputSchema:{type:'object',properties:{},additionalProperties:false},
@@ -603,7 +603,7 @@ if (typeof window !== 'undefined' && window.VP3_PROFILE_WEBMCP) {
   },
   'vp3.commerce.delivery.get':{
     title:'Get fulfillment status',description:'Return fulfillment state and whether private delivery is available without embedding private delivery content.',
-    inputSchema:{type:'object',properties:{order_number:{type:'string',minLength:1,maxLength:80},receipt_token:{type:'string',pattern:'^[a-f0-9]{64} = deepFreeze({
+    inputSchema:{type:'object',properties:{order_number:{type:'string',minLength:1,maxLength:80},receipt_token:{type:'string',pattern:'^[a-f0-9]{64}
   'vp3.profile.capabilities.get': {
     title:'Get profile capabilities',description:'Return the currently available VP3 capabilities for this public profile and visitor.',
     inputSchema:{type:'object',properties:{},additionalProperties:false},
@@ -889,7 +889,7 @@ if (typeof window !== 'undefined' && window.VP3_PROFILE_WEBMCP) {
   },
   'vp3.commerce.refund.status':{
     title:'Get refund request status',description:'Return refundable balance and seller-review refund-request status.',
-    inputSchema:{type:'object',properties:{order_number:{type:'string',minLength:1,maxLength:80},receipt_token:{type:'string',pattern:'^[a-f0-9]{64} = deepFreeze({
+    inputSchema:{type:'object',properties:{order_number:{type:'string',minLength:1,maxLength:80},receipt_token:{type:'string',pattern:'^[a-f0-9]{64}
   'vp3.profile.capabilities.get': {
     title:'Get profile capabilities',description:'Return the currently available VP3 capabilities for this public profile and visitor.',
     inputSchema:{type:'object',properties:{},additionalProperties:false},
@@ -1175,7 +1175,7 @@ if (typeof window !== 'undefined' && window.VP3_PROFILE_WEBMCP) {
   },
   'vp3.commerce.refund.prepare':{
     title:'Prepare refund request',description:'Validate and preview a seller-reviewed refund request. No money moves.',
-    inputSchema:{type:'object',properties:{order_number:{type:'string',minLength:1,maxLength:80},receipt_token:{type:'string',pattern:'^[a-f0-9]{64} = deepFreeze({
+    inputSchema:{type:'object',properties:{order_number:{type:'string',minLength:1,maxLength:80},receipt_token:{type:'string',pattern:'^[a-f0-9]{64}
   'vp3.profile.capabilities.get': {
     title:'Get profile capabilities',description:'Return the currently available VP3 capabilities for this public profile and visitor.',
     inputSchema:{type:'object',properties:{},additionalProperties:false},
