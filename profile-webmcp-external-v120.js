@@ -338,8 +338,18 @@ class ExternalRuntime{
       const data=await response.json().catch(()=>null);
       if(!response.ok||data?.ok!==true){
         const error=safeError(data?.error?.code||('HTTP_'+response.status),data?.error?.message||'The connected-site capability could not be completed.',Boolean(data?.error?.retryable));
+        if(data?.action?.contract==='vp3.webmcp.action.v1')error.action=data.action;
         this.onEvent({event:'tool_failed',tool:name,interaction_id:interactionId,duration_ms:Date.now()-startedAt,code:error.error.code});
         return error;
+      }
+      if(data?.action?.contract==='vp3.webmcp.action.v1'&&data.action.phase==='prepared'&&data.action.requires_confirmation===true){
+        this.onEvent({
+          event:'confirmation_required',
+          tool:name,
+          confirm_tool:String(data.action.confirm_tool||''),
+          intent_id:String(data.action.intent_id||''),
+          expires_at_unix:Number(data.action.expires_at_unix||0)
+        });
       }
       this.onEvent({event:'tool_completed',tool:name,interaction_id:interactionId,duration_ms:Date.now()-startedAt});
       return data;
