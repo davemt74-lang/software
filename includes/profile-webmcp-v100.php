@@ -98,6 +98,9 @@ function vp3_profile_webmcp_tool_catalog_v100(): array
             'annotations'=>['readOnlyHint'=>true,'untrustedContentHint'=>true,'consequentialHint'=>false,'debugging'=>false],
         ],
     ];
+    if(function_exists('vp3_profile_webmcp_commerce_tool_catalog_v160')){
+        foreach(vp3_profile_webmcp_commerce_tool_catalog_v160() as $name=>$tool)$catalog[$name]=$tool;
+    }
     return $catalog;
 }
 
@@ -117,9 +120,16 @@ function vp3_profile_webmcp_confirmation_schema_v150(): array
 
 function vp3_profile_webmcp_tool_runtime_ready_v150(PDO $pdo,string $tool): bool
 {
-    $ledgerTools=['vp3.booking.prepare','vp3.booking.confirm','vp3.booking.reschedule.prepare','vp3.booking.reschedule.confirm','vp3.booking.cancel.prepare','vp3.booking.cancel.confirm'];
+    $ledgerTools=[
+        'vp3.booking.prepare','vp3.booking.confirm','vp3.booking.reschedule.prepare','vp3.booking.reschedule.confirm','vp3.booking.cancel.prepare','vp3.booking.cancel.confirm',
+        'vp3.commerce.checkout.prepare','vp3.commerce.checkout.confirm','vp3.commerce.refund.prepare','vp3.commerce.refund.confirm'
+    ];
     if(!in_array($tool,$ledgerTools,true))return true;
-    return function_exists('vp3_profile_webmcp_actions_schema_ready_v150') && vp3_profile_webmcp_actions_schema_ready_v150($pdo);
+    if(!function_exists('vp3_profile_webmcp_actions_schema_ready_v150')||!vp3_profile_webmcp_actions_schema_ready_v150($pdo))return false;
+    if(str_starts_with($tool,'vp3.commerce.')){
+        return function_exists('agent_commerce_schema_ready_v800')&&agent_commerce_schema_ready_v800($pdo);
+    }
+    return true;
 }
 
 function vp3_profile_webmcp_session_proof_v100(int $ownerUserId): string
@@ -353,7 +363,7 @@ function vp3_profile_webmcp_resolve_intent_v100(string $goal, array $manifest): 
         'execution_performed' => false,
         'requires_domain_adapter' => array_values(array_filter(
             array_unique($matches),
-            static fn(string $capability): bool => !in_array($capability, ['profile','profile_agent','booking'], true)
+            static fn(string $capability): bool => !in_array($capability, ['profile','profile_agent','booking','commerce'], true)
         )),
     ];
 }
