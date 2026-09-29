@@ -78,6 +78,7 @@ if ((string)($input['manifest_version'] ?? '') !== VP3_PROFILE_WEBMCP_MANIFEST_V
 }
 $clientVersions=vp3_profile_webmcp_client_versions_v200($input);
 $negotiation=vp3_profile_webmcp_negotiate_v200('native_profile',$clientVersions);
+$telemetry['negotiation_mode']=(string)($negotiation['mode']??'');
 if(empty($negotiation['compatible'])){
     vp3_profile_webmcp_json_v100(false,vp3_profile_webmcp_negotiation_error_v200($negotiation),409);
 }
