@@ -9,6 +9,7 @@ require_once dirname(__DIR__) . '/includes/profile-agent-public-service-v110.php
 require_once dirname(__DIR__) . '/includes/profile-webmcp-chat-v140.php';
 require_once dirname(__DIR__) . '/includes/profile-webmcp-scheduling-v150.php';
 require_once dirname(__DIR__) . '/includes/profile-webmcp-commerce-v160.php';
+require_once dirname(__DIR__) . '/includes/profile-webmcp-campaigns-v170.php';
 
 header('Content-Type: application/json; charset=UTF-8');
 header('Cache-Control: no-store');
@@ -200,6 +201,17 @@ try {
                 trim((string)($args['confirmation_token']??'')),trim((string)($args['idempotency_key']??''))
             );
             vp3_profile_webmcp_tool_json_v130($pdo,$telemetryContext,$tool,$startedAt,true,$result);
+        }
+    }
+    if (str_starts_with($tool, 'vp3.campaign')) {
+        if ($tool === 'vp3.campaigns.list') {
+            vp3_profile_webmcp_tool_json_v130($pdo,$telemetryContext,$tool,$startedAt,true,['campaigns'=>vp3_profile_webmcp_campaigns_list_v170($pdo,$profile)]);
+        }
+        if ($tool === 'vp3.campaign.get') {
+            vp3_profile_webmcp_tool_json_v130($pdo,$telemetryContext,$tool,$startedAt,true,vp3_profile_webmcp_campaign_get_v170($pdo,$profile,(string)($args['campaign_slug']??'')));
+        }
+        if ($tool === 'vp3.campaign.eligibility.get') {
+            vp3_profile_webmcp_tool_json_v130($pdo,$telemetryContext,$tool,$startedAt,true,vp3_profile_webmcp_campaign_eligibility_v170($pdo,$profile,(string)($args['campaign_slug']??'')));
         }
     }
     if (str_starts_with($tool, 'vp3.agent.')) {
