@@ -174,6 +174,8 @@ export class VP3ProfileWebMCPRuntimeV100 {
     this.webmcpSessionId=transportIdV130();
     this.manifest=null;
     this.registrations=new Map();
+    this.confirmationListenerAttached=false;
+    this.confirmationHandler=event=>this.#handleConfirmationRequest(event);
   }
 
   get supported() {
@@ -192,6 +194,10 @@ export class VP3ProfileWebMCPRuntimeV100 {
       return {supported:false,registered:[]};
     }
     const registered=await this.syncManifest(manifest);
+    if(!this.confirmationListenerAttached&&this.documentObject?.addEventListener){
+      this.documentObject.addEventListener('vp3:webmcp-confirm',this.confirmationHandler);
+      this.confirmationListenerAttached=true;
+    }
     return {supported:true,registered};
   }
 
@@ -227,7 +233,41 @@ export class VP3ProfileWebMCPRuntimeV100 {
   stop() {
     for (const entry of this.registrations.values()) entry.controller.abort();
     this.registrations.clear();
+    if(this.confirmationListenerAttached&&this.documentObject?.removeEventListener){
+      this.documentObject.removeEventListener('vp3:webmcp-confirm',this.confirmationHandler);
+      this.confirmationListenerAttached=false;
+    }
     this.onEvent({event:'runtime_stopped'});
+  }
+
+  #dispatchConfirmationEvent(name,detail) {
+    const EventCtor=this.documentObject?.defaultView?.CustomEvent||globalThis.CustomEvent;
+    if(typeof EventCtor==='function'&&this.documentObject?.dispatchEvent){
+      this.documentObject.dispatchEvent(new EventCtor(name,{detail}));
+    }
+  }
+
+  async #handleConfirmationRequest(event) {
+    const detail=event?.detail||{};
+    const action=detail?.action||{};
+    if(action?.contract!=='vp3.webmcp.action.v1'||action?.phase!=='prepared'||action?.requires_confirmation!==true)return;
+    const confirmTool=String(action.confirm_tool||'');
+    if(!confirmTool||!this.effectiveToolNames().includes(confirmTool))return;
+    const token=String(action?.confirmation?.token||'');
+    const intent=action?.confirmation?.intent;
+    if(!token||!intent||typeof intent!=='object'||Array.isArray(intent))return;
+    const args={
+      confirmation_token:token,
+      idempotency_key:transportIdV130(),
+      intent:structuredClone(intent)
+    };
+    if(confirmTool==='vp3.commerce.checkout.confirm')args.terms_accepted=Boolean(detail.terms_accepted);
+    const result=await this.#execute(confirmTool,args,{});
+    this.#dispatchConfirmationEvent('vp3:webmcp-confirmation-result',{
+      intent_id:String(action.intent_id||''),
+      confirm_tool:confirmTool,
+      result
+    });
   }
 
   async #register(name,definition,fingerprint) {
@@ -293,8 +333,22 @@ export class VP3ProfileWebMCPRuntimeV100 {
           data?.error?.message || 'The profile capability could not be completed.',
           Boolean(data?.error?.retryable)
         );
+        if(data?.action?.contract==='vp3.webmcp.action.v1')error.action=data.action;
         this.onEvent({event:'tool_failed',tool:name,interaction_id:interactionId,duration_ms:Date.now()-startedAt,code:error.error.code});
         return error;
+      }
+      const action=data?.action;
+      if(action?.contract==='vp3.webmcp.action.v1'){
+        if(action.phase==='prepared'&&action.requires_confirmation===true){
+          this.#dispatchConfirmationEvent('vp3:webmcp-confirmation',structuredClone(action));
+          this.onEvent({event:'confirmation_required',tool:name,intent_id:String(action.intent_id||'')});
+        }else if(action.phase==='completed'){
+          this.#dispatchConfirmationEvent('vp3:webmcp-confirmation-result',{
+            intent_id:String(action.intent_id||''),
+            confirm_tool:String(action.confirm_tool||name),
+            result:data
+          });
+        }
       }
       this.onEvent({event:'tool_completed',tool:name,interaction_id:interactionId,duration_ms:Date.now()-startedAt});
       return data;
