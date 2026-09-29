@@ -129,7 +129,7 @@ $lifecycleTools=is_array($compatibility['tools']??null)?$compatibility['tools']:
   </div>
   <div class="admin-table-wrap">
     <table class="admin-table">
-      <thead><tr><th>Tool</th><th>Status</th><th>Introduced</th><th>Minimum release</th><th>Replacement</th><th>Sunset</th></tr></thead>
+      <thead><tr><th>Tool</th><th>Status</th><th>Introduced</th><th>Minimum release</th><th>Minimum runtime</th><th>Replacement</th><th>Sunset</th></tr></thead>
       <tbody>
       <?php foreach($lifecycleTools as $name=>$row): ?>
         <tr>
@@ -137,11 +137,12 @@ $lifecycleTools=is_array($compatibility['tools']??null)?$compatibility['tools']:
           <td><?= e((string)$row['status']) ?></td>
           <td><?= e((string)$row['introduced_version']) ?></td>
           <td><?= e((string)$row['minimum_release_version']) ?></td>
+          <td><?= e((string)($row['minimum_runtime_build']?:'—')) ?></td>
           <td><?= e((string)($row['replacement_tool']?:'—')) ?></td>
           <td><?= e((string)($row['sunset_at']?:'—')) ?></td>
         </tr>
       <?php endforeach; ?>
-      <?php if(!$lifecycleTools): ?><tr><td colspan="6">Lifecycle registry is unavailable.</td></tr><?php endif; ?>
+      <?php if(!$lifecycleTools): ?><tr><td colspan="7">Lifecycle registry is unavailable.</td></tr><?php endif; ?>
       </tbody>
     </table>
   </div>

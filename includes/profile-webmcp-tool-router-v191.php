@@ -37,6 +37,14 @@ function vp3_profile_webmcp_dispatch_v191(
         throw new RuntimeException('Unsupported Profile WebMCP execution surface.');
     }
 
+    $clientRuntime=(string)($telemetry['client_runtime_build']??'');
+    if(function_exists('vp3_profile_webmcp_tool_available_v203')&&!vp3_profile_webmcp_tool_available_v203($tool,$clientRuntime)){
+        vp3_profile_webmcp_router_record_v191($pdo,$telemetryContext,'webmcp_tool_denied',$tool,'unavailable',$startedAt,['result_code'=>'WEBMCP_TOOL_UNAVAILABLE']);
+        vp3_profile_webmcp_action_respond_v192($respond,$tool,false,[
+            'error'=>['code'=>'WEBMCP_TOOL_UNAVAILABLE','message'=>'This WebMCP tool is unavailable for this runtime.','retryable'=>false],
+        ],410,'WEBMCP_TOOL_UNAVAILABLE');
+    }
+
     $proof=(string)($transport['proof']??'');
     $property=is_array($transport['property']??null)?$transport['property']:null;
     $origin=(string)($transport['origin']??'');
