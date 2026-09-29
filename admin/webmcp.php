@@ -6,6 +6,7 @@ require_once dirname(__DIR__).'/includes/profile-webmcp-commerce-v160.php';
 require_once dirname(__DIR__).'/includes/profile-webmcp-campaigns-v170.php';
 require_once dirname(__DIR__).'/includes/profile-webmcp-rewards-v180.php';
 require_once dirname(__DIR__).'/includes/profile-webmcp-admin-v202.php';
+require_once dirname(__DIR__).'/includes/profile-webmcp-sites-v204.php';
 require_permission('admin.access');
 
 $pdo=db();
@@ -20,6 +21,7 @@ $runtime=is_array($summary['runtime_distribution']??null)?$summary['runtime_dist
 $surfaces=is_array($summary['surface_distribution']??null)?$summary['surface_distribution']:[];
 $modes=is_array($summary['negotiation_distribution']??null)?$summary['negotiation_distribution']:[];
 $failureRate=(float)($summary['failure_rate_percent']??0);
+$connectedSiteRuntime=$pdo?vp3_profile_webmcp_sites_admin_v204($pdo):[];
 
 $adminTitle='WebMCP Operations';
 $adminActive='webmcp';
@@ -83,6 +85,39 @@ require __DIR__.'/_header.php';
     </div>
   </section>
 </div>
+
+<section class="admin-dashboard-card">
+  <div class="admin-dashboard-card-head">
+    <div><h3>Connected site runtime management</h3><p>Verification, runtime version, negotiated features, last contact and recovery state for every connected WebMCP property.</p></div>
+    <span><?= number_format(count($connectedSiteRuntime)) ?> sites</span>
+  </div>
+  <div class="admin-table-wrap"><table class="admin-table">
+    <thead><tr><th>Site</th><th>Status</th><th>Runtime</th><th>Last contact</th><th>Tools</th><th>Features</th><th>Origin</th><th>Recovery</th></tr></thead>
+    <tbody>
+    <?php foreach($connectedSiteRuntime as $site): ?>
+      <?php
+        $features=array_keys(array_filter((array)$site['features'],static fn($v,$k)=>$k!=='read_only'&&!empty($v),ARRAY_FILTER_USE_BOTH));
+        $recovery=[];
+        if(!empty($site['upgrade_required']))$recovery[]='Upgrade required';
+        if(!empty($site['reverify_required']))$recovery[]='Reverify';
+        if(!empty($site['reconnect_required']))$recovery[]='Reconnect';
+        if(!$recovery)$recovery[]='None';
+      ?>
+      <tr>
+        <td><strong><?= e((string)$site['label']) ?></strong><br><small><?= e((string)$site['domain']) ?></small></td>
+        <td><?= e((string)$site['status']) ?><br><small><?= !empty($site['verified'])?'Verified':'Not verified' ?></small></td>
+        <td><?= e((string)($site['runtime_build']?:'Unseen')) ?><br><small><?= e((string)$site['runtime_state']) ?></small></td>
+        <td><?= e((string)($site['last_contact_at']?:'Never')) ?></td>
+        <td><?= number_format((int)$site['tool_count']) ?></td>
+        <td><?= e($features?implode(', ',$features):'Read only') ?></td>
+        <td><?= (int)$site['origin_denied_30d'] ?> denied / 30d</td>
+        <td><strong><?= e(implode(' · ',$recovery)) ?></strong><br><small><?= e((string)($site['upgrade_required']?$site['upgrade_guidance']:$site['reverify_guidance'])) ?></small><br><a href="<?= e(url((string)$site['management_path'])) ?>">Manage site →</a></td>
+      </tr>
+    <?php endforeach; ?>
+    <?php if(!$connectedSiteRuntime): ?><tr><td colspan="8">No connected sites are configured.</td></tr><?php endif; ?>
+    </tbody>
+  </table></div>
+</section>
 
 <section class="admin-dashboard-card">
   <div class="admin-dashboard-card-head">
