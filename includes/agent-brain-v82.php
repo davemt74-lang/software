@@ -187,6 +187,19 @@ function agent_brain_tools(array $user): array
         $tools[] = ['key'=>'team_chat','label'=>'Online Team Chat','description'=>'Message online managers, producers and supervisors.','kind'=>'communication','url'=>url('/chat.php')];
     }
 
+    if(function_exists('vp3_cloud_hosting_agent_v130_prompt')){
+        $hostingPrompt=vp3_cloud_hosting_agent_v130_prompt($user);
+        if($hostingPrompt!==''){
+            $tools[]=[
+                'key'=>'cloud_hosting',
+                'label'=>'Cloud Hosting',
+                'description'=>$hostingPrompt,
+                'kind'=>'hosting',
+                'url'=>url('/chat.php'),
+            ];
+        }
+    }
+
     if(function_exists('tracky_agent_tool_catalog_entry_v271')){
         $pdo=db();
         if($pdo){
