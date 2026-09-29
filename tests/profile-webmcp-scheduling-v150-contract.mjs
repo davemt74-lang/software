@@ -31,6 +31,8 @@ assert.match(commitBlock,/safeBooking/);
 assert.doesNotMatch(commitBlock,/guest_name|guest_email|public_token|manage_token|cancel_token/,'committed action snapshot must remain PII/credential free');
 
 assert.match(bootstrap,/profile-webmcp-actions-v150\.php/);
+assert.match(catalog,/vp3_profile_webmcp_tool_runtime_ready_v150/,'state-changing scheduling tools must be hidden until ledger upgrade');
+assert.match(externalLayer,/vp3_profile_webmcp_tool_runtime_ready_v150/,'connected-site scheduling actions must also fail closed before ledger upgrade');
 assert.match(upgrade,/vp3_profile_webmcp_actions_schema_ready_v150/);
 assert.match(upgrade,/vp3_profile_webmcp_actions_ensure_schema_v150/);
 
