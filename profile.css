@@ -17,3 +17,10 @@
 .profile-agent-confirmation-actions{display:flex;gap:7px}.profile-agent-confirmation-actions button{min-height:32px;padding:0 12px;border-radius:999px;font:800 10px/1 inherit;cursor:pointer}
 .profile-agent-confirmation-actions .confirm{border:0;background:var(--profile-dark);color:#fff}.profile-agent-confirmation-actions .dismiss{border:1px solid var(--profile-line);background:#fff;color:var(--profile-text)}
 .profile-agent-confirmation-actions button:disabled{opacity:.48;cursor:not-allowed}
+
+
+/* Profile WebMCP v1.94 cross-surface continuity */
+.profile-webmcp-resume{display:flex;align-items:center;justify-content:space-between;gap:14px;margin:0 0 18px;padding:12px 14px;border:1px solid var(--profile-line);border-radius:14px;background:#fff;box-shadow:0 8px 24px rgba(17,17,17,.06)}
+.profile-webmcp-resume[hidden]{display:none}.profile-webmcp-resume>div{display:grid;gap:3px;min-width:0}.profile-webmcp-resume strong{font-size:11px}.profile-webmcp-resume span{font-size:10px;line-height:1.4;color:var(--profile-muted);overflow-wrap:anywhere}
+.profile-webmcp-resume button{flex:0 0 auto;min-height:32px;padding:0 13px;border:0;border-radius:999px;background:var(--profile-dark);color:#fff;font:800 10px/1 inherit;cursor:pointer}.profile-webmcp-resume button:disabled{opacity:.48;cursor:not-allowed}
+@media(max-width:680px){.profile-webmcp-resume{align-items:flex-start;flex-direction:column}.profile-webmcp-resume button{width:100%}}

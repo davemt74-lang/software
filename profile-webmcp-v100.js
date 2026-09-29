@@ -176,6 +176,8 @@ export class VP3ProfileWebMCPRuntimeV100 {
     this.registrations=new Map();
     this.confirmationListenerAttached=false;
     this.confirmationHandler=event=>this.#handleConfirmationRequest(event);
+    this.resumeContinueListenerAttached=false;
+    this.resumeContinueHandler=event=>this.#handleResumeContinue(event);
   }
 
   get supported() {
@@ -198,7 +200,36 @@ export class VP3ProfileWebMCPRuntimeV100 {
       this.documentObject.addEventListener('vp3:webmcp-confirm',this.confirmationHandler);
       this.confirmationListenerAttached=true;
     }
+    if(!this.resumeContinueListenerAttached&&this.documentObject?.addEventListener){
+      this.documentObject.addEventListener('vp3:webmcp-resume-continue',this.resumeContinueHandler);
+      this.resumeContinueListenerAttached=true;
+    }
     return {supported:true,registered};
+  }
+
+  async resume(resume) {
+    if(!resume||resume.contract!=='vp3.webmcp.resume.v1')return null;
+    if(String(resume.profile_username||'')!==String(this.manifest?.profile_username||''))return null;
+    const goal=String(resume.goal||'').trim();
+    let resolution=null;
+    if(goal&&this.effectiveToolNames().includes('vp3.intent.resolve')){
+      resolution=await this.#execute('vp3.intent.resolve',{goal},{});
+    }
+    const detail={
+      contract:'vp3.webmcp.resume.v1',
+      continuity_version:String(resume.continuity_version||''),
+      profile_username:String(resume.profile_username||''),
+      goal,
+      recommended_capabilities:Array.isArray(resume.recommended_capabilities)?resume.recommended_capabilities.slice(0,8):[],
+      recommended_tools:Array.isArray(resume.recommended_tools)?resume.recommended_tools.slice(0,24):[],
+      resolved_capabilities:Array.isArray(resume.resolved_capabilities)?resume.resolved_capabilities.slice(0,8):[],
+      resolution,
+      execution_allowed:true,
+      auto_execute_consequential:false
+    };
+    this.#dispatchConfirmationEvent('vp3:webmcp-resume',detail);
+    this.onEvent({event:'resume_ready',capabilities:detail.recommended_capabilities});
+    return detail;
   }
 
   async syncManifest(manifest) {
@@ -237,6 +268,10 @@ export class VP3ProfileWebMCPRuntimeV100 {
       this.documentObject.removeEventListener('vp3:webmcp-confirm',this.confirmationHandler);
       this.confirmationListenerAttached=false;
     }
+    if(this.resumeContinueListenerAttached&&this.documentObject?.removeEventListener){
+      this.documentObject.removeEventListener('vp3:webmcp-resume-continue',this.resumeContinueHandler);
+      this.resumeContinueListenerAttached=false;
+    }
     this.onEvent({event:'runtime_stopped'});
   }
 
@@ -245,6 +280,30 @@ export class VP3ProfileWebMCPRuntimeV100 {
     if(typeof EventCtor==='function'&&this.documentObject?.dispatchEvent){
       this.documentObject.dispatchEvent(new EventCtor(name,{detail}));
     }
+  }
+
+  async #handleResumeContinue(event) {
+    const detail=event?.detail||{};
+    if(detail?.contract!=='vp3.webmcp.resume.v1')return;
+    const safeZeroInput=new Set([
+      'vp3.profile.get',
+      'vp3.booking.options.list',
+      'vp3.commerce.products.list',
+      'vp3.campaigns.list',
+      'vp3.rewards.wallet.get',
+      'vp3.loyalty.status.get'
+    ]);
+    const rows=Array.isArray(detail.recommended_tools)?detail.recommended_tools:[];
+    const selected=rows.find(row=>{
+      const name=String(row?.name||'');
+      return safeZeroInput.has(name)&&row?.read_only===true&&row?.consequential!==true&&this.effectiveToolNames().includes(name);
+    });
+    if(!selected){
+      this.#dispatchConfirmationEvent('vp3:webmcp-resume-result',{ok:true,tool:'',result:null,detail});
+      return;
+    }
+    const result=await this.#execute(String(selected.name),{},{});
+    this.#dispatchConfirmationEvent('vp3:webmcp-resume-result',{ok:result?.ok===true,tool:String(selected.name),result,detail});
   }
 
   async #handleConfirmationRequest(event) {
@@ -370,6 +429,16 @@ export async function vp3ProfileWebMCPBootV100(config=globalThis.VP3_PROFILE_WEB
     sessionProof:config.sessionProof
   });
   await runtime.start(config.manifest);
+  if(config.resume){
+    try{
+      const current=new URL(globalThis.location?.href||'https://vp3.invalid/');
+      if(current.searchParams.has('webmcp_resume')){
+        current.searchParams.delete('webmcp_resume');
+        globalThis.history?.replaceState?.(null,'',current.pathname+current.search+current.hash);
+      }
+    }catch{}
+    await runtime.resume(config.resume);
+  }
   return runtime;
 }
 

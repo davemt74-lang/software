@@ -5,6 +5,7 @@ require_once __DIR__ . '/includes/profile-public-media-v174.php';
 require_once __DIR__ . '/includes/profile-commerce-v900.php';
 require_once __DIR__ . '/includes/agent-scheduling-public-v450.php';
 require_once __DIR__ . '/includes/profile-webmcp-v100.php';
+require_once __DIR__ . '/includes/profile-webmcp-continuity-v194.php';
 
 if (!function_exists('vp3_profile_optional_failure')) {
     function vp3_profile_optional_failure(string $stage, Throwable $e, string $username = ''): void
@@ -126,11 +127,14 @@ if($photos)$profileTabs['photos']='Photos';
 if($posts)$profileTabs['posts']='Posts';
 if($merch)$profileTabs['merch']='Merch';
 $activeTab=(string)(array_key_first($profileTabs)??'');
-$webmcpManifest=[];$webmcpSessionProof='';
+$webmcpManifest=[];$webmcpSessionProof='';$webmcpResume=null;$webmcpResumeRequested=false;
 if(!$preview){
     try {
         $webmcpManifest=vp3_profile_webmcp_manifest_v100($pdo,$profile,$viewer,['surface'=>'native_profile']);
         $webmcpSessionProof=vp3_profile_webmcp_session_proof_v100((int)$profile['user_id']);
+        $resumeToken=trim((string)($_GET['webmcp_resume']??''));
+        $webmcpResumeRequested=$resumeToken!=='';
+        if($webmcpResumeRequested)$webmcpResume=vp3_profile_webmcp_resume_consume_v194($pdo,$profile,$viewer,$resumeToken);
     } catch (Throwable $e) {
         vp3_profile_optional_failure('webmcp-foundation',$e,$username);
         $webmcpManifest=[];$webmcpSessionProof='';
@@ -139,6 +143,10 @@ if(!$preview){
 if($webmcpManifest&&$webmcpSessionProof){
     header('Cache-Control: private, no-store');
     header('Vary: Cookie');
+}
+if($webmcpResumeRequested){
+    header('Referrer-Policy: no-referrer');
+    header('Cache-Control: private, no-store');
 }
 ?>
 <!doctype html>
@@ -176,6 +184,11 @@ if($webmcpManifest&&$webmcpSessionProof){
   <section class="profile-identity">
     <div class="profile-avatar"><?php if($avatar!==''): ?><img src="<?= e($avatar) ?>" alt="<?= e($displayName) ?>"><?php else: ?><span><?= e(mb_strtoupper(mb_substr($displayName,0,1))) ?></span><?php endif; ?></div>
     <div class="profile-name"><small><?= e($roleLabel) ?></small><h1><?= e($displayName) ?></h1><span>@<?= e($username) ?></span></div>
+  </section>
+
+  <section class="profile-webmcp-resume" data-profile-webmcp-resume hidden aria-live="polite">
+    <div><strong>Continuing from Agent Brain</strong><span data-profile-webmcp-resume-text></span></div>
+    <button type="button" data-profile-webmcp-resume-continue>Continue</button>
   </section>
 
   <?php if($commerceNotice): $noticeKind=(string)($commerceNotice['kind']??'pending'); ?>
@@ -287,13 +300,39 @@ function setProfileAgentOpen(open){if(!profileAgentShell||!profileAgentLauncher)
 profileAgentLauncher?.addEventListener('click',()=>setProfileAgentOpen(profileAgentShell?.hidden!==false));
 profileAgentClose?.addEventListener('click',()=>setProfileAgentOpen(false));
 document.addEventListener('keydown',event=>{if(event.key==='Escape'&&profileAgentShell&&!profileAgentShell.hidden)setProfileAgentOpen(false);});
+const webmcpResumeBox=document.querySelector('[data-profile-webmcp-resume]');
+const webmcpResumeText=document.querySelector('[data-profile-webmcp-resume-text]');
+const webmcpResumeContinue=document.querySelector('[data-profile-webmcp-resume-continue]');
+let webmcpResumeDetail=null;
+document.addEventListener('vp3:webmcp-resume',event=>{
+  const detail=event.detail||{};if(detail.contract!=='vp3.webmcp.resume.v1')return;
+  webmcpResumeDetail=detail;
+  const caps=Array.isArray(detail.recommended_capabilities)?detail.recommended_capabilities:[];
+  const cap=caps[0]||'profile';
+  const tabMap={booking:'booking',commerce:'products',campaigns:'campaigns'};
+  const tab=tabMap[cap]?document.querySelector('[data-profile-tab="'+tabMap[cap]+'"]'):null;
+  tab?.click();
+  if(webmcpResumeText)webmcpResumeText.textContent=detail.goal?(' '+detail.goal):(' Resume '+cap+'.');
+  if(webmcpResumeBox)webmcpResumeBox.hidden=false;
+});
+webmcpResumeContinue?.addEventListener('click',()=>{
+  if(!webmcpResumeDetail)return;
+  webmcpResumeContinue.disabled=true;
+  document.dispatchEvent(new CustomEvent('vp3:webmcp-resume-continue',{detail:webmcpResumeDetail}));
+});
+document.addEventListener('vp3:webmcp-resume-result',event=>{
+  const result=event.detail||{};
+  if(webmcpResumeText)webmcpResumeText.textContent=result.ok?' Ready to continue on this Profile.':' The resumed capability could not be loaded.';
+  if(webmcpResumeContinue)webmcpResumeContinue.hidden=true;
+});
 </script>
 <?php if($webmcpManifest&&$webmcpSessionProof): ?>
 <script>
 window.VP3_PROFILE_WEBMCP={
   manifest:<?= json_encode($webmcpManifest,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE) ?>,
   endpoint:<?= json_encode(url('/api/profile-webmcp-v100.php'),JSON_UNESCAPED_SLASHES) ?>,
-  sessionProof:<?= json_encode($webmcpSessionProof,JSON_UNESCAPED_SLASHES) ?>
+  sessionProof:<?= json_encode($webmcpSessionProof,JSON_UNESCAPED_SLASHES) ?>,
+  resume:<?= json_encode($webmcpResume,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE) ?>
 };
 </script>
 <script type="module" src="<?= e(url('/profile-webmcp-v100.js?v=profile-webmcp-v100-20260928')) ?>"></script>

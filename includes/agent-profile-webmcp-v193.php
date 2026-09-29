@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__.'/profile-webmcp-v100.php';
+require_once __DIR__.'/profile-webmcp-continuity-v194.php';
 
 const VP3_AGENT_PROFILE_WEBMCP_V193='agent-profile-webmcp-v193-20260929';
 
@@ -84,7 +85,11 @@ function vp3_agent_profile_webmcp_plan_v193(PDO $pdo,string $query,array $user):
     )));
     $domainText=$domains?implode(', ',$domains):'profile';
     $profileUrl=profile_public_url((string)$profile['username']);
-    $profilePath='/'.rawurlencode((string)$profile['username']);
+    $resume=vp3_profile_webmcp_resume_issue_v194($pdo,$profile,$user,$query,[
+        'recommended_capabilities'=>array_values($intent['recommended_capabilities']??[]),
+        'recommended_tools'=>$recommended,
+    ]);
+    $profilePath=(string)$resume['path'];
 
     return [
         'handled'=>true,
@@ -114,6 +119,9 @@ function vp3_agent_profile_webmcp_plan_v193(PDO $pdo,string $query,array $user):
             'handoff'=>[
                 'surface'=>'native_profile',
                 'url'=>$profileUrl,
+                'resume_token'=>(string)$resume['token'],
+                'resume_path'=>(string)$resume['path'],
+                'resume_expires_at'=>(int)$resume['expires_at'],
                 'requires_signed_profile_surface'=>true,
             ],
         ],
@@ -152,6 +160,8 @@ function vp3_agent_profile_webmcp_authorize_plan_v193(PDO $pdo,array $plan,array
         if($capability!==''&&!empty($resolution['capabilities'][$capability]))$capabilities[$capability]=true;
     }
     $url=profile_public_url((string)$profile['username']);
+    $handoff=is_array($plan['handoff']??null)?$plan['handoff']:[];
+    $resume=vp3_profile_webmcp_resume_validate_v194($profile,$user,(string)($handoff['resume_token']??''));
 
     return [
         'version'=>VP3_AGENT_PROFILE_WEBMCP_V193,
@@ -167,6 +177,9 @@ function vp3_agent_profile_webmcp_authorize_plan_v193(PDO $pdo,array $plan,array
         'handoff'=>[
             'surface'=>'native_profile',
             'url'=>$url,
+            'resume_token'=>(string)($resume['token']??''),
+            'resume_path'=>(string)($resume['path']??('/'.rawurlencode((string)$profile['username']))),
+            'resume_expires_at'=>(int)($resume['expires_at']??0),
             'requires_signed_profile_surface'=>true,
         ],
     ];
