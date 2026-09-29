@@ -60,6 +60,8 @@ jobs:
           php -l includes/profile-webmcp-external-v120.php
           php -l includes/profile-webmcp-analytics-v130.php
           php -l includes/profile-webmcp-chat-v140.php
+          php -l includes/profile-webmcp-actions-v150.php
+          php -l includes/profile-webmcp-scheduling-v150.php
           php -l api/profile-webmcp-v100.php
           php -l api/profile-webmcp-external-v120.php
           php -l profile.php
@@ -68,6 +70,7 @@ jobs:
           php -l tests/profile-webmcp-external-v120.php
           php -l tests/profile-webmcp-analytics-v130.php
           php -l tests/profile-webmcp-chat-v140.php
+          php -l tests/profile-webmcp-scheduling-v150.php
       - name: Profile WebMCP PHP security contract
         run: |
           php tests/profile-webmcp-v100.php
@@ -75,6 +78,7 @@ jobs:
           php tests/profile-webmcp-external-v120.php
           php tests/profile-webmcp-analytics-v130.php
           php tests/profile-webmcp-chat-v140.php
+          php tests/profile-webmcp-scheduling-v150.php
       - name: Profile WebMCP static integration contract
         run: |
           node tests/profile-webmcp-v100-contract.mjs
@@ -82,6 +86,7 @@ jobs:
           node tests/profile-webmcp-external-v120-contract.mjs
           node tests/profile-webmcp-analytics-v130-contract.mjs
           node tests/profile-webmcp-chat-v140-contract.mjs
+          node tests/profile-webmcp-scheduling-v150-contract.mjs
       - name: Profile WebMCP browser runtime contract
         run: |
           node tests/profile-webmcp-v100-runtime.mjs
@@ -89,6 +94,7 @@ jobs:
           node tests/profile-webmcp-external-v120-runtime.mjs
           node tests/profile-webmcp-analytics-v130-runtime.mjs
           node tests/profile-webmcp-chat-v140-runtime.mjs
+          node tests/profile-webmcp-scheduling-v150-runtime.mjs
       - name: Profile WebMCP production package smoke
         run: |
           set -euo pipefail
@@ -102,6 +108,8 @@ jobs:
           test -f /tmp/vp3-webmcp-package/includes/profile-webmcp-external-v120.php
           test -f /tmp/vp3-webmcp-package/includes/profile-webmcp-analytics-v130.php
           test -f /tmp/vp3-webmcp-package/includes/profile-webmcp-chat-v140.php
+          test -f /tmp/vp3-webmcp-package/includes/profile-webmcp-actions-v150.php
+          test -f /tmp/vp3-webmcp-package/includes/profile-webmcp-scheduling-v150.php
           test -f /tmp/vp3-webmcp-package/api/profile-webmcp-v100.php
           test -f /tmp/vp3-webmcp-package/api/profile-webmcp-external-v120.php
           test -f /tmp/vp3-webmcp-package/profile-webmcp-v100.js
@@ -112,3 +120,5 @@ jobs:
           grep -Fq "webmcpExternalScriptUrl" /tmp/vp3-webmcp-package/profile-agent-radar-sites.js
           grep -Fq "WebMCP calls" /tmp/vp3-webmcp-package/profile-agent-analytics.js
           grep -Fq "Agent Chat" /tmp/vp3-webmcp-package/profile-agent-radar-sites.js
+          grep -Fq "Scheduling" /tmp/vp3-webmcp-package/profile-agent-radar-sites.js
+          grep -Fq "vp3_profile_webmcp_actions_schema_ready_v150" /tmp/vp3-webmcp-package/upgrade.php
