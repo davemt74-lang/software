@@ -49,7 +49,7 @@ assert.match(sync,/previous_release_id=active_release_id,active_release_id=/);
 assert.match(sync,/fingerprint=hash\('sha256'/);
 assert.match(sync,/SELECT revision,fingerprint FROM cloud_hosting_entitlement_sync WHERE user_id=\? FOR UPDATE/);
 assert.match(sync,/reconcile_result.*stale_ignored/s);
-assert.match(sync,/nextRevision=\$remoteRevision\+1/);
+assert.match(sync,/\$minimum=\$remoteRevision\+1/);
 assert.match(sync,/Public route must stay inactive|runtimeReady/);
 assert.match(sync,/max_public_routes/);
 assert.match(sync,/stale_remote_revision_rebase'\s*=>\s*true/);
