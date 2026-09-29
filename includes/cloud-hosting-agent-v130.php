@@ -64,7 +64,8 @@ function vp3_cloud_hosting_agent_v130_intent(string $query): bool
 {
     $q=mb_strtolower(trim($query));
     if($q==='')return false;
-    return (bool)preg_match('/\b(?:hosting|hosted\s+sites?|subdomains?|custom\s+domains?|domains?|dns|deployment|deploy|releases?|promote|promotion|prune|retention|rollback|home\s*server\s+sites?|homeserver\s+sites?|website\s+offline|site\s+offline)\b/u',$q);
+    if((bool)preg_match('/\b(?:hosting|hosted\s+sites?|subdomains?|custom\s+domains?|domains?|dns|deployment|deploy|releases?|promote|promotion|prune|retention|rollback|home\s*server\s+sites?|homeserver\s+sites?|website\s+(?:offline|down)|site\s+(?:offline|down))\b/u',$q))return true;
+    return (bool)preg_match('/\b[a-z0-9][a-z0-9.-]+\.[a-z]{2,}\b.*\b(?:down|offline|slow|errors?|latency)\b/u',$q);
 }
 
 function vp3_cloud_hosting_agent_v130_user_site(int $userId,string $needle,?PDO $pdo=null): ?array
