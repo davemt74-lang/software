@@ -93,7 +93,7 @@ assert.match(externalRuntime,/credentials:'omit'/);
 assert.doesNotMatch(externalRuntime,/Authorization|X-VP3-WebMCP-Session/,'connected-site scheduling must remain credential-free browser transport');
 assert.doesNotMatch(externalRuntime,/localStorage|sessionStorage|document\.cookie/,'connected-site scheduling must remain in-memory only');
 assert.match(sitesUi,/Scheduling <b>/);
-assert.match(sitesUi,/Public scheduling is available through explicit prepare\/confirm tools/);
+assert.match(sitesUi,/Public scheduling and Profile Commerce use explicit prepare\/confirm tools/);
 
 assert.match(workflow,/profile-webmcp-actions-v150\.php/);
 assert.match(workflow,/profile-webmcp-scheduling-v150\.php/);
