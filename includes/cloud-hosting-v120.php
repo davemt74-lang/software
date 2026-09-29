@@ -71,6 +71,8 @@ function vp3_cloud_hosting_v120_ensure_schema(?PDO $pdo=null): void
       package_bytes BIGINT UNSIGNED NOT NULL DEFAULT 0,
       transfer_id VARCHAR(100) NOT NULL DEFAULT '',
       state VARCHAR(30) NOT NULL DEFAULT 'pending',
+      run_token CHAR(32) NOT NULL DEFAULT '',
+      run_expires_at DATETIME NULL,
       release_id VARCHAR(100) NULL,
       response_json LONGTEXT NULL,
       error_code VARCHAR(80) NOT NULL DEFAULT '',
@@ -516,8 +518,23 @@ function vp3_cloud_hosting_v120_claim_deployment(
         $stmt->execute([$siteId,$requestKey]);
         $existing=$stmt->fetch();
         if(is_array($existing)){
+            $terminal=in_array((string)$existing['state'],['deployed','rolled_back','failed'],true);
+            if(!$terminal){
+                $lease=trim((string)($existing['run_token']??''));
+                $expires=!empty($existing['run_expires_at'])?strtotime((string)$existing['run_expires_at'].' UTC'):false;
+                if($lease!==''&&$expires!==false&&$expires>time()){
+                    throw new RuntimeException('This Hosting deployment operation is already running.');
+                }
+                $runToken=bin2hex(random_bytes(16));
+                $pdo->prepare("UPDATE cloud_hosting_deployments
+                  SET run_token=?,run_expires_at=DATE_ADD(UTC_TIMESTAMP(),INTERVAL 30 MINUTE)
+                  WHERE id=?")->execute([$runToken,(int)$existing['id']]);
+                $stmt=$pdo->prepare('SELECT * FROM cloud_hosting_deployments WHERE id=? LIMIT 1');
+                $stmt->execute([(int)$existing['id']]);
+                $existing=$stmt->fetch();
+            }
             $pdo->commit();
-            return ['created'=>false,'row'=>$existing];
+            return ['created'=>false,'row'=>$existing,'run_token'=>$runToken??''];
         }
 
         $busy=$pdo->prepare("SELECT id,request_key,operation,state FROM cloud_hosting_deployments
@@ -529,18 +546,19 @@ function vp3_cloud_hosting_v120_claim_deployment(
             throw new RuntimeException('Another Hosting deployment operation is already in progress for this site.');
         }
 
+        $runToken=bin2hex(random_bytes(16));
         $stmt=$pdo->prepare("INSERT INTO cloud_hosting_deployments
-          (site_id,request_key,operation,desired_revision,package_sha256,package_bytes,state,created_by)
-          VALUES (?,?,?,?,?,?,'pending',?)");
+          (site_id,request_key,operation,desired_revision,package_sha256,package_bytes,state,run_token,run_expires_at,created_by)
+          VALUES (?,?,?,?,?,?,'pending',?,DATE_ADD(UTC_TIMESTAMP(),INTERVAL 30 MINUTE),?)");
         $stmt->execute([
-            $siteId,$requestKey,$operation,max(0,$revision),$sha,max(0,$size),
+            $siteId,$requestKey,$operation,max(0,$revision),$sha,max(0,$size),$runToken,
             $actorUserId&&$actorUserId>0?$actorUserId:null,
         ]);
         $id=(int)$pdo->lastInsertId();
         $pdo->commit();
         $row=vp3_cloud_hosting_v120_deployment_row($siteId,$requestKey,$pdo);
         if($row===null)throw new RuntimeException('Hosting deployment ledger could not be loaded.');
-        return ['created'=>true,'row'=>$row,'id'=>$id];
+        return ['created'=>true,'row'=>$row,'id'=>$id,'run_token'=>$runToken];
     }catch(Throwable $e){
         if($pdo->inTransaction())$pdo->rollBack();
         throw $e;
@@ -567,11 +585,17 @@ function vp3_cloud_hosting_v120_update_deployment(
     $transferId=mb_substr((string)($response['transfer_id']??''),0,100);
     $releaseId=trim((string)($response['release_id']??''));
     $terminal=in_array($state,['deployed','rolled_back','failed'],true);
-    $stmt=$pdo->prepare("UPDATE cloud_hosting_deployments SET state=?,transfer_id=IF(? <> '', ?, transfer_id),release_id=?,response_json=?,error_code=?,error_message=?,completed_at=IF(?,NOW(),completed_at) WHERE id=?");
+    $releaseLease=$terminal||$state==='interrupted';
+    $stmt=$pdo->prepare("UPDATE cloud_hosting_deployments SET
+      state=?,transfer_id=IF(? <> '', ?, transfer_id),release_id=?,response_json=?,error_code=?,error_message=?,
+      completed_at=IF(?,NOW(),completed_at),
+      run_token=IF(?,'',run_token),run_expires_at=IF(?,NULL,run_expires_at)
+      WHERE id=?");
     $stmt->execute([
         $state,$transferId,$transferId,$releaseId!==''?$releaseId:null,
         json_encode($public,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE),
-        $error!==''?'remote_error':'',mb_substr($error,0,500),$terminal?1:0,$id,
+        $error!==''?'remote_error':'',mb_substr($error,0,500),$terminal?1:0,
+        $releaseLease?1:0,$releaseLease?1:0,$id,
     ]);
 }
 
@@ -849,6 +873,7 @@ function vp3_cloud_hosting_v120_public_capability(): array
         'deployment_resume'=>true,
         'transient_failure_resume_with_same_key'=>true,
         'single_inflight_operation_per_site'=>true,
+        'deployment_execution_lease'=>true,
         'deployment_idempotency'=>true,
         'deployment_status_refresh'=>true,
         'deployment_entitlement_revalidation'=>true,
