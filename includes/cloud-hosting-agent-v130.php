@@ -296,27 +296,17 @@ function vp3_cloud_hosting_agent_v130_execute(array $row,array $user,?callable $
 
     if($type==='site.create'){
         $actionId=(int)($row['id']??0);
-        $pdo->beginTransaction();
-        try{
-            $stmt=$pdo->prepare('SELECT site_id FROM cloud_hosting_agent_actions WHERE id=? AND user_id=? FOR UPDATE');
-            $stmt->execute([$actionId,$uid]);
-            $existingSiteId=(int)$stmt->fetchColumn();
-            if($existingSiteId>0){
-                $existingSite=vp3_cloud_hosting_site_v100($existingSiteId,$uid,$pdo);
-                if($existingSite===null)throw new RuntimeException('Previously created hosted site is no longer available.');
-                $pdo->commit();
-                return ['site'=>$existingSite,'idempotent_replay'=>true];
-            }
-            $created=vp3_cloud_hosting_create_site_v100($user,$payload,$uid);
-            $createdId=(int)($created['id']??0);
-            if($createdId<1)throw new RuntimeException('Hosted site creation did not return an identifier.');
-            $pdo->prepare('UPDATE cloud_hosting_agent_actions SET site_id=? WHERE id=? AND user_id=?')->execute([$createdId,$actionId,$uid]);
-            $pdo->commit();
-            return ['site'=>$created,'idempotent_replay'=>false];
-        }catch(Throwable $e){
-            if($pdo->inTransaction())$pdo->rollBack();
-            throw $e;
+        $existingSiteId=(int)($row['site_id']??0);
+        if($existingSiteId>0){
+            $existingSite=vp3_cloud_hosting_site_v100($existingSiteId,$uid,$pdo);
+            if($existingSite!==null)return ['site'=>$existingSite,'idempotent_replay'=>true];
         }
+        $payload['_creation_key']='agent:'.(string)$row['public_id'];
+        $created=vp3_cloud_hosting_create_site_v100($user,$payload,$uid);
+        $createdId=(int)($created['id']??0);
+        if($createdId<1)throw new RuntimeException('Hosted site creation did not return an identifier.');
+        $pdo->prepare('UPDATE cloud_hosting_agent_actions SET site_id=? WHERE id=? AND user_id=?')->execute([$createdId,$actionId,$uid]);
+        return ['site'=>$created,'idempotent_replay'=>$existingSiteId>0];
     }
     if($site===null)throw new RuntimeException('Hosted site no longer exists.');
 
