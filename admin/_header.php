@@ -91,6 +91,7 @@ $adminUserMenuLinks = member_navigation_menu_links($user);
           <?php if (has_permission('ai.manage')): ?>
             <a class="<?= $adminActive === 'ai' ? 'active' : '' ?>" href="<?= e(url('/admin/ai.php')) ?>"><span>AI / API</span></a>
             <a class="<?= $adminActive === 'ai-data-usage' ? 'active' : '' ?>" href="<?= e(url('/admin/ai-data-usage-v236.php')) ?>"><span>AI Data Usage</span></a>
+            <a class="<?= $adminActive === 'webmcp' ? 'active' : '' ?>" href="<?= e(url('/admin/webmcp.php')) ?>"><span>WebMCP</span></a>
           <?php endif; ?>
           <?php if (has_permission('users.manage')): ?>
             <a class="<?= $adminActive === 'release-command-center' ? 'active' : '' ?>" href="<?= e(url('/admin/release-command-center.php')) ?>"><span>Release Command Center</span></a>
