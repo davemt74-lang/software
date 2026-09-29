@@ -274,11 +274,12 @@ function vp3_profile_webmcp_reward_transfer_prepare_v182(PDO $pdo,array $profile
     if(!in_array((string)$holder['status'],['issued','sent','viewed'],true)||(int)$holder['remaining_quantity']<1)throw new RuntimeException('This Reward can no longer be sent.');
     if(!empty($holder['expires_at'])&&strtotime((string)$holder['expires_at'])<=time())throw new RuntimeException('This Reward has expired.');
     $intent=[
-        'reward_public_id'=>$publicId,'issuance_id'=>(int)$holder['id'],'target_contact_id'=>$contactId,
+        'reward_public_id'=>$publicId,'target_contact_id'=>$contactId,
         'note'=>mb_strimwidth(trim((string)($input['note']??'')),0,500,''),
         'state_hash'=>vp3_profile_webmcp_reward_transfer_state_hash_v182($holder,$contact),
     ];
     $action=vp3_profile_webmcp_action_prepare_v150($pdo,$context,'reward.transfer',$intent,600);
+    $safeTerms=json_decode((string)($holder['terms_snapshot_json']??''),true);if(!is_array($safeTerms))$safeTerms=[];
     return [
         'intent_id'=>$action['intent_id'],'confirmation_token'=>vp3_profile_webmcp_rewards_token_v182($action,$context),
         'expires_at_unix'=>$action['expires_at_unix'],'intent'=>$intent,
@@ -286,7 +287,7 @@ function vp3_profile_webmcp_reward_transfer_prepare_v182(PDO $pdo,array $profile
             'reward'=>vp3_profile_webmcp_reward_row_v180([
                 'public_id'=>$publicId,'bucket'=>'inbox','status'=>$holder['status'],'reward_name'=>$holder['reward_name'],
                 'merchant_name'=>$holder['merchant_name'],'campaign_name'=>$holder['campaign_name'],
-                'value_label'=>(json_decode((string)$holder['terms_snapshot_json'],true)['value_label']??''),
+                'value_label'=>(string)($safeTerms['value_label']??''),
                 'quantity'=>$holder['remaining_quantity'],'currency'=>$holder['currency'],'face_value_minor'=>$holder['face_value_minor'],
                 'transferable'=>true,'expires_at'=>$holder['expires_at'],'issued_at'=>$holder['issued_at'],'sent_at'=>$holder['sent_at']??'','claimed_at'=>'',
             ]),
@@ -356,14 +357,13 @@ function vp3_profile_webmcp_reward_transfer_confirm_v182(PDO $pdo,array $profile
             $result=vp3_profile_webmcp_reward_transfer_projection_v182($pdo,$viewerId,(int)$existing['result_id']);
             $result['idempotent_replay']=true;if($started)$pdo->commit();return $result;
         }
-        $holder=campaigns_rewards_reward_holder_v110($pdo,(int)$intent['issuance_id'],$viewerId,false);
-        if(!hash_equals((string)$holder['public_id'],(string)$intent['reward_public_id']))throw new RuntimeException('Reward transfer authority changed.');
+        $holder=vp3_profile_webmcp_reward_raw_holder_v182($pdo,$viewerId,(string)$intent['reward_public_id']);
         $contact=vp3_profile_webmcp_reward_transfer_contact_v182($pdo,$viewerId,(int)$intent['target_contact_id']);
         if(!hash_equals((string)$intent['state_hash'],vp3_profile_webmcp_reward_transfer_state_hash_v182($holder,$contact)))throw new RuntimeException('Reward or target contact changed. Prepare the transfer again.');
         $claim=$pdo->prepare("UPDATE profile_webmcp_actions SET idempotency_hash=?,updated_at=UTC_TIMESTAMP() WHERE id=? AND state='prepared' AND idempotency_hash IS NULL");
         $claim->execute([$idem,(int)$action['id']]);
         if($claim->rowCount()!==1&&!hash_equals((string)($action['idempotency_hash']??''),$idem))throw new RuntimeException('Reward transfer idempotency claim changed.');
-        $canonical=campaigns_rewards_transfer_reward_v110($pdo,(int)$intent['issuance_id'],$viewerId,(int)$intent['target_contact_id'],(string)$intent['note'],'webmcp-v182:'.$idem);
+        $canonical=campaigns_rewards_transfer_reward_v110($pdo,(int)$holder['id'],$viewerId,(int)$intent['target_contact_id'],(string)$intent['note'],'webmcp-v182:'.$idem);
         $transferId=(int)($canonical['id']??0);if($transferId<1)throw new RuntimeException('Canonical Reward transfer did not return a result.');
         $result=vp3_profile_webmcp_reward_transfer_projection_v182($pdo,$viewerId,$transferId);
         vp3_profile_webmcp_action_commit_v150($pdo,(int)$action['id'],$idem,'reward_transfer',$transferId,$result);
