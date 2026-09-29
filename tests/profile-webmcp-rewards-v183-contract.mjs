@@ -4,6 +4,7 @@ const read=p=>fs.readFileSync(new URL('../'+p,import.meta.url),'utf8');
 
 const adapter=read('includes/profile-webmcp-rewards-v180.php');
 const api=read('api/profile-webmcp-v100.php');
+const router=read('includes/profile-webmcp-tool-router-v191.php');
 const layer=read('includes/profile-webmcp-v100.php');
 const runtime=read('profile-webmcp-v100.js');
 const externalLayer=read('includes/profile-webmcp-external-v120.php');
@@ -33,11 +34,11 @@ assert.match(adapter,/SELECT GET_LOCK\(\?,5\)/);
 assert.match(adapter,/webmcp:/,'canonical transfer idempotency must be namespaced to the prepared WebMCP intent');
 assert.doesNotMatch(adapter,/newCredential|credential_hash|credential_last4/,'WebMCP adapter must never manipulate transfer credential internals');
 
-assert.match(api,/vp3_profile_webmcp_reward_transfer_contacts_v183/);
-assert.match(api,/vp3_profile_webmcp_reward_transfer_prepare_v183/);
-assert.match(api,/vp3_profile_webmcp_reward_transfer_confirm_v183/);
-assert.match(api,/webmcp_reward_transfer_prepared/);
-assert.match(api,/webmcp_reward_transfer_completed/);
+assert.match(router,/vp3_profile_webmcp_reward_transfer_contacts_v183/);
+assert.match(router,/vp3_profile_webmcp_reward_transfer_prepare_v183/);
+assert.match(router,/vp3_profile_webmcp_reward_transfer_confirm_v183/);
+assert.match(router,/webmcp_reward_transfer_prepared/);
+assert.match(router,/webmcp_reward_transfer_completed/);
 assert.match(layer,/vp3\.rewards\.transfer\.prepare/);
 assert.match(layer,/vp3\.rewards\.transfer\.confirm/);
 assert.match(layer,/vp3_profile_webmcp_actions_schema_ready_v150/);

@@ -4,6 +4,7 @@ const read=p=>fs.readFileSync(new URL('../'+p,import.meta.url),'utf8');
 
 const adapter=read('includes/profile-webmcp-rewards-v180.php');
 const api=read('api/profile-webmcp-v100.php');
+const router=read('includes/profile-webmcp-tool-router-v191.php');
 const layer=read('includes/profile-webmcp-v100.php');
 const runtime=read('profile-webmcp-v100.js');
 const trayPage=read('includes/reward-tray-page-v113.php');
@@ -33,10 +34,10 @@ assert.match(adapter,/reward_redeemed'\s*=>\s*false/);
 assert.match(adapter,/different WebMCP session/);
 assert.match(adapter,/still in progress/);
 
-assert.match(api,/vp3_profile_webmcp_reward_claim_prepare_v182/);
-assert.match(api,/vp3_profile_webmcp_reward_claim_confirm_v182/);
-assert.match(api,/webmcp_reward_claim_prepared/);
-assert.match(api,/webmcp_reward_claim_handoff_confirmed/);
+assert.match(router,/vp3_profile_webmcp_reward_claim_prepare_v182/);
+assert.match(router,/vp3_profile_webmcp_reward_claim_confirm_v182/);
+assert.match(router,/webmcp_reward_claim_prepared/);
+assert.match(router,/webmcp_reward_claim_handoff_confirmed/);
 assert.match(layer,/vp3\.rewards\.claim\.prepare/);
 assert.match(layer,/vp3\.rewards\.claim\.confirm/);
 assert.match(layer,/vp3_profile_webmcp_actions_schema_ready_v150/);

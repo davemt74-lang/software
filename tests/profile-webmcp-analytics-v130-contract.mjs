@@ -5,6 +5,7 @@ const read=p=>fs.readFileSync(new URL('../'+p,import.meta.url),'utf8');
 const layer=read('includes/profile-webmcp-analytics-v130.php');
 const bootstrap=read('includes/bootstrap.php');
 const nativeApi=read('api/profile-webmcp-v100.php');
+const router=read('includes/profile-webmcp-tool-router-v191.php');
 const externalApi=read('api/profile-webmcp-external-v120.php');
 const nativeRuntime=read('profile-webmcp-v100.js');
 const externalRuntime=read('profile-webmcp-external-v120.js');
@@ -42,8 +43,8 @@ assert.match(nativeApi,/vp3_profile_webmcp_telemetry_v130/);
 assert.match(nativeApi,/webmcp_tool_called/);
 assert.match(nativeApi,/webmcp_tool_denied/);
 assert.match(nativeApi,/vp3_profile_webmcp_tool_json_v130/);
-assert.match(nativeApi,/webmcp_message_sent/);
-assert.match(nativeApi,/webmcp_handoff_requested/);
+assert.match(router,/webmcp_message_sent/);
+assert.match(router,/webmcp_handoff_requested/);
 
 assert.match(externalApi,/vp3_profile_webmcp_telemetry_v130/);
 assert.match(externalApi,/webmcp_manifest_loaded/);
