@@ -295,7 +295,16 @@ function vp3_profile_webmcp_campaign_normalize_participation_v170(PDO $pdo,array
         'marketing_consent'=>!empty($input['marketing_consent']),
         'reward_public_id'=>mb_strimwidth(trim((string)($input['reward_public_id']??'')),0,100,''),
     ];
-    if($normalized['proof_url']!==''&&!filter_var($normalized['proof_url'],FILTER_VALIDATE_URL))throw new RuntimeException('Add a valid proof or content link.');
+    if($normalized['proof_url']!==''){
+        $parts=parse_url($normalized['proof_url']);
+        $scheme=strtolower((string)($parts['scheme']??''));
+        if(!filter_var($normalized['proof_url'],FILTER_VALIDATE_URL)||!in_array($scheme,['http','https'],true)){
+            throw new RuntimeException('Add a valid HTTP or HTTPS proof or content link.');
+        }
+    }
+    if(in_array('referral_ref',(array)($behavior['required_fields']??[]),true)&&$normalized['referral_ref']===''){
+        throw new RuntimeException('This Referral Campaign requires an explicit referral link or code.');
+    }
     campaigns_rewards_public_validate_v118($behavior,$normalized,$campaign);
     $reward=vp3_profile_webmcp_campaign_reward_v170($pdo,$campaign,$normalized['reward_public_id']);
     $timing=(string)($behavior['reward_timing']??'manual');
