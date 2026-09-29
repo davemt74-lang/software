@@ -15,7 +15,7 @@ function vp3_agent_profile_webmcp_intent_v193(string $query): bool
     return (bool)preg_match('/\b(?:what|which|can|could|show|list|use|available|capabilit|book|booking|schedule|buy|purchase|checkout|campaign|offer|reward|loyalty|message|contact|agent|chat|profile|webmcp)\b/i',$query);
 }
 
-function vp3_agent_profile_webmcp_plan_v193(PDO $pdo,string $query,array $user): ?array
+function vp3_agent_profile_webmcp_plan_v193(PDO $pdo,string $query,array $user,int $conversationId=0): ?array
 {
     $userId=(int)($user['id']??0);
     if($userId<1||!vp3_agent_profile_webmcp_intent_v193($query))return null;
@@ -88,7 +88,7 @@ function vp3_agent_profile_webmcp_plan_v193(PDO $pdo,string $query,array $user):
     $resume=vp3_profile_webmcp_resume_issue_v194($pdo,$profile,$user,$query,[
         'recommended_capabilities'=>array_values($intent['recommended_capabilities']??[]),
         'recommended_tools'=>$recommended,
-    ]);
+    ],$conversationId);
     $profilePath=(string)$resume['path'];
 
     return [
@@ -122,6 +122,8 @@ function vp3_agent_profile_webmcp_plan_v193(PDO $pdo,string $query,array $user):
                 'resume_token'=>(string)$resume['token'],
                 'resume_path'=>(string)$resume['path'],
                 'resume_expires_at'=>(int)$resume['expires_at'],
+                'action_context_id'=>(string)$resume['action_context_id'],
+                'return_path'=>(string)$resume['return_path'],
                 'requires_signed_profile_surface'=>true,
             ],
         ],
@@ -180,6 +182,8 @@ function vp3_agent_profile_webmcp_authorize_plan_v193(PDO $pdo,array $plan,array
             'resume_token'=>(string)($resume['token']??''),
             'resume_path'=>(string)($resume['path']??('/'.rawurlencode((string)$profile['username']))),
             'resume_expires_at'=>(int)($resume['expires_at']??0),
+            'action_context_id'=>(string)($resume['action_context_id']??''),
+            'return_path'=>(string)($resume['return_path']??''),
             'requires_signed_profile_surface'=>true,
         ],
     ];

@@ -16,7 +16,7 @@ const VP3_AGENT_TOOL_AUTHORIZATION_V400='vp3-agent-tool-authorization-v400-20260
 
 function vp3_agent_tool_empty_v400(): array
 {
-    return ['handled'=>false,'answer'=>'','stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[],'profile_webmcp_plan'=>null];
+    return ['handled'=>false,'answer'=>'','stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[],'profile_webmcp_plan'=>null,'profile_webmcp_return'=>null];
 }
 
 function vp3_agent_tool_track_manage_v400(PDO $pdo,array $track,array $user): bool
@@ -313,11 +313,16 @@ function vp3_agent_tool_execute_query_v400(string $query,array $user,int $conver
         if(!empty($homeRead['handled']))return vp3_agent_tool_authorize_result_v400($homeRead,$user,$query);
     }
 
+    if(function_exists('vp3_profile_webmcp_return_followthrough_v195')){
+        $returned=vp3_profile_webmcp_return_followthrough_v195($user,$query,$conversationId);
+        if(is_array($returned)&&!empty($returned['handled']))return vp3_agent_tool_authorize_result_v400($returned,$user,$query);
+    }
+
     // Explicit Profile/WebMCP requests use the existing agent_brain capability
     // surface. Planning is allowed here; execution remains on the signed Profile
     // surface so Chat never becomes a parallel transactional authority.
     if(function_exists('vp3_agent_profile_webmcp_plan_v193')){
-        $profileWebmcp=vp3_agent_profile_webmcp_plan_v193($pdo,$query,$user);
+        $profileWebmcp=vp3_agent_profile_webmcp_plan_v193($pdo,$query,$user,$conversationId);
         if(is_array($profileWebmcp)&&!empty($profileWebmcp['handled'])){
             if(function_exists('agent_tool_log')){
                 agent_tool_log(

@@ -163,12 +163,14 @@ export class VP3ProfileWebMCPRuntimeV100 {
     documentObject=globalThis.document,
     fetchImpl=globalThis.fetch?.bind(globalThis),
     endpoint='/api/profile-webmcp-v100.php',
+    continuityEndpoint='/api/profile-webmcp-continuity-v195.php',
     sessionProof='',
     onEvent=()=>{}
   }={}) {
     this.documentObject=documentObject;
     this.fetchImpl=fetchImpl;
     this.endpoint=endpoint;
+    this.continuityEndpoint=continuityEndpoint;
     this.sessionProof=String(sessionProof||'');
     this.onEvent=onEvent;
     this.webmcpSessionId=transportIdV130();
@@ -178,6 +180,9 @@ export class VP3ProfileWebMCPRuntimeV100 {
     this.confirmationHandler=event=>this.#handleConfirmationRequest(event);
     this.resumeContinueListenerAttached=false;
     this.resumeContinueHandler=event=>this.#handleResumeContinue(event);
+    this.cancelListenerAttached=false;
+    this.cancelHandler=event=>this.#handleCancelledAction(event);
+    this.resumeContext=null;
   }
 
   get supported() {
@@ -204,6 +209,10 @@ export class VP3ProfileWebMCPRuntimeV100 {
       this.documentObject.addEventListener('vp3:webmcp-resume-continue',this.resumeContinueHandler);
       this.resumeContinueListenerAttached=true;
     }
+    if(!this.cancelListenerAttached&&this.documentObject?.addEventListener){
+      this.documentObject.addEventListener('vp3:webmcp-cancel',this.cancelHandler);
+      this.cancelListenerAttached=true;
+    }
     return {supported:true,registered};
   }
 
@@ -223,10 +232,15 @@ export class VP3ProfileWebMCPRuntimeV100 {
       recommended_capabilities:Array.isArray(resume.recommended_capabilities)?resume.recommended_capabilities.slice(0,8):[],
       recommended_tools:Array.isArray(resume.recommended_tools)?resume.recommended_tools.slice(0,24):[],
       resolved_capabilities:Array.isArray(resume.resolved_capabilities)?resume.resolved_capabilities.slice(0,8):[],
+      action_context_id:String(resume.action_context_id||''),
+      return_token:String(resume.return_token||''),
+      return_path:String(resume.return_path||''),
       resolution,
       execution_allowed:true,
       auto_execute_consequential:false
     };
+    this.resumeContext=/^[a-f0-9]{32}$/.test(detail.action_context_id)&&/^[a-f0-9]{32}$/.test(detail.return_token)?detail:null;
+    if(this.resumeContext)await this.noteContinuity('','viewed','',false);
     this.#dispatchConfirmationEvent('vp3:webmcp-resume',detail);
     this.onEvent({event:'resume_ready',capabilities:detail.recommended_capabilities});
     return detail;
@@ -272,6 +286,10 @@ export class VP3ProfileWebMCPRuntimeV100 {
       this.documentObject.removeEventListener('vp3:webmcp-resume-continue',this.resumeContinueHandler);
       this.resumeContinueListenerAttached=false;
     }
+    if(this.cancelListenerAttached&&this.documentObject?.removeEventListener){
+      this.documentObject.removeEventListener('vp3:webmcp-cancel',this.cancelHandler);
+      this.cancelListenerAttached=false;
+    }
     this.onEvent({event:'runtime_stopped'});
   }
 
@@ -304,6 +322,39 @@ export class VP3ProfileWebMCPRuntimeV100 {
     }
     const result=await this.#execute(String(selected.name),{},{});
     this.#dispatchConfirmationEvent('vp3:webmcp-resume-result',{ok:result?.ok===true,tool:String(selected.name),result,detail});
+  }
+
+  async #handleCancelledAction(event) {
+    const action=event?.detail?.action||{};
+    if(action?.contract!=='vp3.webmcp.action.v1')return;
+    await this.noteContinuity(String(action.prepare_tool||action.confirm_tool||''),'cancelled','',false);
+  }
+
+  async noteContinuity(tool,phase,resultCode='',idempotentReplay=false) {
+    const context=this.resumeContext;
+    if(!context||!this.fetchImpl||!this.sessionProof||!this.continuityEndpoint)return null;
+    try{
+      const response=await this.fetchImpl(this.continuityEndpoint,{
+        method:'POST',
+        credentials:'same-origin',
+        headers:{'Content-Type':'application/json','X-VP3-WebMCP-Session':this.sessionProof},
+        body:JSON.stringify({
+          profile_username:String(this.manifest?.profile_username||''),
+          context_id:String(context.action_context_id||''),
+          return_token:String(context.return_token||''),
+          tool:String(tool||'').slice(0,120),
+          phase:String(phase||'error'),
+          result_code:String(resultCode||'').slice(0,80),
+          idempotent_replay:Boolean(idempotentReplay)
+        })
+      });
+      const data=await response.json().catch(()=>null);
+      if(!response.ok||data?.ok!==true||data?.context?.contract!=='vp3.webmcp.return.v1')return null;
+      const detail={...data.context,return_path:String(context.return_path||'')};
+      this.#dispatchConfirmationEvent('vp3:webmcp-return-ready',detail);
+      this.onEvent({event:'continuity_updated',tool:String(tool||''),phase:String(detail.phase||'')});
+      return detail;
+    }catch{return null;}
   }
 
   async #handleConfirmationRequest(event) {
@@ -392,17 +443,22 @@ export class VP3ProfileWebMCPRuntimeV100 {
           data?.error?.message || 'The profile capability could not be completed.',
           Boolean(data?.error?.retryable)
         );
-        if(data?.action?.contract==='vp3.webmcp.action.v1')error.action=data.action;
+        if(data?.action?.contract==='vp3.webmcp.action.v1'){
+          error.action=data.action;
+          await this.noteContinuity(name,String(data.action.phase||'error'),String(data?.error?.code||''),false);
+        }
         this.onEvent({event:'tool_failed',tool:name,interaction_id:interactionId,duration_ms:Date.now()-startedAt,code:error.error.code});
         return error;
       }
       const action=data?.action;
       if(action?.contract==='vp3.webmcp.action.v1'){
         if(action.phase==='prepared'&&action.requires_confirmation===true){
+          await this.noteContinuity(name,'prepared','',false);
           this.#dispatchConfirmationEvent('vp3:webmcp-confirmation',structuredClone(action));
           this.onEvent({event:'confirmation_required',tool:name,intent_id:String(action.intent_id||'')});
-        }else if(action.phase==='completed'&&action.intent_id){
-          this.#dispatchConfirmationEvent('vp3:webmcp-confirmation-result',{
+        }else if(action.phase==='completed'){
+          await this.noteContinuity(name,'completed','',Boolean(action.idempotent_replay||data?.idempotent_replay));
+          if(action.intent_id)this.#dispatchConfirmationEvent('vp3:webmcp-confirmation-result',{
             intent_id:String(action.intent_id),
             confirm_tool:String(action.confirm_tool||name),
             result:data
@@ -426,6 +482,7 @@ export async function vp3ProfileWebMCPBootV100(config=globalThis.VP3_PROFILE_WEB
   if (!config || !config.manifest || !config.sessionProof) return null;
   const runtime=new VP3ProfileWebMCPRuntimeV100({
     endpoint:config.endpoint,
+    continuityEndpoint:config.continuityEndpoint,
     sessionProof:config.sessionProof
   });
   await runtime.start(config.manifest);

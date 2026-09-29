@@ -24,3 +24,10 @@
 .profile-webmcp-resume[hidden]{display:none}.profile-webmcp-resume>div{display:grid;gap:3px;min-width:0}.profile-webmcp-resume strong{font-size:11px}.profile-webmcp-resume span{font-size:10px;line-height:1.4;color:var(--profile-muted);overflow-wrap:anywhere}
 .profile-webmcp-resume button{flex:0 0 auto;min-height:32px;padding:0 13px;border:0;border-radius:999px;background:var(--profile-dark);color:#fff;font:800 10px/1 inherit;cursor:pointer}.profile-webmcp-resume button:disabled{opacity:.48;cursor:not-allowed}
 @media(max-width:680px){.profile-webmcp-resume{align-items:flex-start;flex-direction:column}.profile-webmcp-resume button{width:100%}}
+
+
+/* Profile WebMCP v1.95 action return */
+.profile-webmcp-resume-actions{display:flex;align-items:center;gap:8px;flex:0 0 auto}
+.profile-webmcp-resume-actions a{display:inline-flex;align-items:center;justify-content:center;min-height:32px;padding:0 13px;border:1px solid var(--profile-line);border-radius:999px;background:#fff;color:var(--profile-text);font:800 10px/1 inherit;text-decoration:none}
+.profile-webmcp-resume-actions a[hidden]{display:none}
+@media(max-width:680px){.profile-webmcp-resume-actions{width:100%;display:grid;grid-template-columns:1fr}.profile-webmcp-resume-actions a,.profile-webmcp-resume-actions button{width:100%}}
