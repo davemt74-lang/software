@@ -218,17 +218,17 @@ $bytesText=static function(int $bytes):string{
                 <div class="hosting-actions">
                   <form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="site.reconcile"><input type="hidden" name="site_id" value="<?= (int)$site['id'] ?>"><input type="hidden" name="request_key" value="<?= e(vp3_cloud_hosting_ui_v140_request_key('reconcile')) ?>"><button type="submit">Reconcile</button></form>
                   <?php if(!$isActive): ?>
-                    <form method="post" data-hosting-confirm="Activate this hosted site?"><?= csrf_field() ?><input type="hidden" name="action" value="site.activate"><input type="hidden" name="site_id" value="<?= (int)$site['id'] ?>"><button type="submit">Activate</button></form>
+                    <form method="post" data-hosting-confirm="Activate this hosted site?"><?= csrf_field() ?><input type="hidden" name="confirmed" value="0" data-hosting-confirmed><input type="hidden" name="action" value="site.activate"><input type="hidden" name="site_id" value="<?= (int)$site['id'] ?>"><button type="submit">Activate</button></form>
                   <?php else: ?>
-                    <form method="post" data-hosting-confirm="Suspend this hosted site and stop public serving?"><?= csrf_field() ?><input type="hidden" name="action" value="site.suspend"><input type="hidden" name="site_id" value="<?= (int)$site['id'] ?>"><button type="submit">Suspend</button></form>
+                    <form method="post" data-hosting-confirm="Suspend this hosted site and stop public serving?"><?= csrf_field() ?><input type="hidden" name="confirmed" value="0" data-hosting-confirmed><input type="hidden" name="action" value="site.suspend"><input type="hidden" name="site_id" value="<?= (int)$site['id'] ?>"><button type="submit">Suspend</button></form>
                   <?php endif; ?>
                   <?php if(!$route): ?>
-                    <form method="post" data-hosting-confirm="Provision this site's cPanel DNS CNAME?"><?= csrf_field() ?><input type="hidden" name="action" value="dns.provision"><input type="hidden" name="site_id" value="<?= (int)$site['id'] ?>"><input type="hidden" name="request_key" value="<?= e(vp3_cloud_hosting_ui_v140_request_key('dns')) ?>"><button type="submit">Provision DNS</button></form>
+                    <form method="post" data-hosting-confirm="Provision this site's cPanel DNS CNAME?"><?= csrf_field() ?><input type="hidden" name="confirmed" value="0" data-hosting-confirmed><input type="hidden" name="action" value="dns.provision"><input type="hidden" name="site_id" value="<?= (int)$site['id'] ?>"><input type="hidden" name="request_key" value="<?= e(vp3_cloud_hosting_ui_v140_request_key('dns')) ?>"><button type="submit">Provision DNS</button></form>
                   <?php elseif((string)($route['dns_state']??'')!=='verified'): ?>
                     <form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="dns.verify"><input type="hidden" name="site_id" value="<?= (int)$site['id'] ?>"><button type="submit">Verify DNS</button></form>
                   <?php endif; ?>
                   <?php if(!empty($site['previous_release_id'])): ?>
-                    <form method="post" data-hosting-confirm="Roll this site back to its previous HomeServer release?"><?= csrf_field() ?><input type="hidden" name="action" value="deployment.rollback"><input type="hidden" name="site_id" value="<?= (int)$site['id'] ?>"><input type="hidden" name="request_key" value="<?= e(vp3_cloud_hosting_ui_v140_request_key('rollback')) ?>"><button type="submit">Rollback</button></form>
+                    <form method="post" data-hosting-confirm="Roll this site back to its previous HomeServer release?"><?= csrf_field() ?><input type="hidden" name="confirmed" value="0" data-hosting-confirmed><input type="hidden" name="action" value="deployment.rollback"><input type="hidden" name="site_id" value="<?= (int)$site['id'] ?>"><input type="hidden" name="request_key" value="<?= e(vp3_cloud_hosting_ui_v140_request_key('rollback')) ?>"><button type="submit">Rollback</button></form>
                   <?php endif; ?>
                 </div>
 
@@ -239,6 +239,7 @@ $bytesText=static function(int $bytes):string{
                   </div>
                   <form method="post" enctype="multipart/form-data" data-hosting-deploy-form>
                     <?= csrf_field() ?>
+                    <input type="hidden" name="confirmed" value="0" data-hosting-confirmed>
                     <input type="hidden" name="action" value="deployment.deploy">
                     <input type="hidden" name="site_id" value="<?= (int)$site['id'] ?>">
                     <input type="hidden" name="request_key" value="<?= e(vp3_cloud_hosting_ui_v140_request_key('deploy')) ?>">
