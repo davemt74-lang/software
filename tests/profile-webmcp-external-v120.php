@@ -52,6 +52,9 @@ function vp3_profile_webmcp_tool_catalog_v100(): array {
       'vp3.commerce.refund.status'=>['capability'=>'commerce'],
       'vp3.commerce.refund.prepare'=>['capability'=>'commerce'],
       'vp3.commerce.refund.confirm'=>['capability'=>'commerce'],
+      'vp3.campaigns.list'=>['capability'=>'campaigns'],
+      'vp3.campaign.get'=>['capability'=>'campaigns'],
+      'vp3.campaign.eligibility.get'=>['capability'=>'campaigns'],
     ];
 }
 function url(string $path): string { return 'https://vp3.example'.$path; }
