@@ -287,6 +287,16 @@ $afterDeploy=vp3_cloud_hosting_site_v100((int)$site['id'],1,$testPdo);
 if(($afterDeploy['active_release_id']??'')!=='release_1')throw new RuntimeException('Cloud active release was not updated.');
 if(($afterDeploy['observed_state']??'')!=='active')throw new RuntimeException('Post-deploy reconcile did not activate observed state.');
 
+if(empty($result['reconcile']['route']['route_ready']))throw new RuntimeException('Public route did not become ready after runtime activation.');
+if(($result['reconcile']['route']['desired_state']??'')!=='active')throw new RuntimeException('Public route did not activate after deployment.');
+
+$syncBeforeError=$testPdo->query("SELECT observed_state,remote_json FROM cloud_hosting_site_sync WHERE site_id=".(int)$site['id'])->fetch();
+vp3_cloud_hosting_v120_store_site_sync($testPdo,(int)$site['id'],(int)$afterDeploy['desired_revision'],[],'simulated reconnect failure');
+$syncAfterError=$testPdo->query("SELECT observed_state,remote_json,last_error_code FROM cloud_hosting_site_sync WHERE site_id=".(int)$site['id'])->fetch();
+if(($syncAfterError['observed_state']??'')!==($syncBeforeError['observed_state']??''))throw new RuntimeException('Transient sync error erased last observed state.');
+if(($syncAfterError['remote_json']??'')!==($syncBeforeError['remote_json']??''))throw new RuntimeException('Transient sync error erased last remote projection.');
+if(($syncAfterError['last_error_code']??'')!=='remote_error')throw new RuntimeException('Transient sync error was not recorded.');
+
 if(($result['reconcile']['route']['desired_state']??'')!=='active'||empty($result['reconcile']['route']['route_ready']))throw new RuntimeException('Public route did not activate after runtime became ready.');
 $syncRow=$testPdo->query('SELECT public_route_ready FROM cloud_hosting_site_sync WHERE site_id='.(int)$site['id'])->fetch();
 if((int)($syncRow['public_route_ready']??0)!==1)throw new RuntimeException('Site sync did not retain public route readiness.');
