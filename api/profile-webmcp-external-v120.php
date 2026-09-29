@@ -12,6 +12,7 @@ require_once dirname(__DIR__).'/includes/profile-webmcp-scheduling-v150.php';
 require_once dirname(__DIR__).'/includes/profile-webmcp-commerce-v160.php';
 require_once dirname(__DIR__).'/includes/profile-webmcp-campaigns-v170.php';
 require_once dirname(__DIR__).'/includes/profile-webmcp-tool-router-v191.php';
+require_once dirname(__DIR__).'/includes/profile-webmcp-sites-v204.php';
 
 header('Content-Type: application/json; charset=UTF-8');
 header('Cache-Control: no-store');
@@ -48,6 +49,7 @@ if(!$property){
 try{
     $origin=vp3_profile_webmcp_external_origin_v120($property,(string)($_SERVER['HTTP_ORIGIN']??''));
 }catch(Throwable $e){
+    vp3_profile_webmcp_site_record_origin_denied_v204($pdo,$property);
     vp3_profile_webmcp_external_json_v120(false,['error'=>['code'=>'ORIGIN_DENIED','message'=>'Connected-site Origin is not authorized.']],403);
 }
 
@@ -92,8 +94,13 @@ if($method==='GET'){
         try{$chatGrantData=vp3_profile_webmcp_chat_grant_create_v140($property,$profile,$origin,$manifestSession);}
         catch(Throwable $e){$chatGrantData=null;}
     }
+    $manifestTelemetry=vp3_profile_webmcp_telemetry_v130([
+        'telemetry'=>['webmcp_session_id'=>$manifestSession,'interaction_id'=>'','agent_referral'=>''],
+        'client_versions'=>$getClientVersions,
+    ]);
+    $manifestTelemetry['negotiation_mode']=(string)($negotiation['mode']??'');
     $manifestTelemetryContext=vp3_profile_webmcp_context_v130(
-        $pdo,$profile,'external_site',['webmcp_session_id'=>$manifestSession,'interaction_id'=>'','agent_referral'=>''],$property,null
+        $pdo,$profile,'external_site',$manifestTelemetry,$property,null
     );
     vp3_profile_webmcp_record_v130($pdo,$manifestTelemetryContext,'webmcp_manifest_loaded','','loaded');
     vp3_profile_webmcp_external_json_v120(true,[
