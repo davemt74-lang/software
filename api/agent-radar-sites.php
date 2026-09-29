@@ -3,6 +3,7 @@ declare(strict_types=1);
 require dirname(__DIR__).'/includes/bootstrap.php';
 require_once dirname(__DIR__).'/includes/profile-webmcp-v100.php';
 require_once dirname(__DIR__).'/includes/profile-webmcp-external-v120.php';
+require_once dirname(__DIR__).'/includes/profile-webmcp-connected-sites-v204.php';
 header('Content-Type: application/json; charset=UTF-8');
 header('Cache-Control: no-store');
 
@@ -17,7 +18,8 @@ function vp3_radar_sites_state(PDO $pdo,array $user,array $state): array
 {
     $state=vp3_radar_server_enrich_site_state($pdo,$user,$state);
     $state=vp3_analytics_enrich_site_state($pdo,$user,$state);
-    return vp3_profile_webmcp_external_enrich_site_state_v120($pdo,$user,$state);
+    $state=vp3_profile_webmcp_external_enrich_site_state_v120($pdo,$user,$state);
+    return vp3_profile_webmcp_connected_sites_enrich_v204($pdo,$user,$state);
 }
 
 $pdo=db();$user=current_user();
@@ -43,6 +45,14 @@ try{
     }
     if($action==='set_active'){
         $state=vp3_radar_external_site_set_active($pdo,$user,max(0,(int)($input['property_id']??0)),!empty($input['is_active']));
+        vp3_radar_sites_json(true,['state'=>vp3_radar_sites_state($pdo,$user,$state)]);
+    }
+    if($action==='reverify_webmcp'){
+        $state=vp3_profile_webmcp_connected_site_reverify_v204($pdo,$user,max(0,(int)($input['property_id']??0)));
+        vp3_radar_sites_json(true,['state'=>vp3_radar_sites_state($pdo,$user,$state)]);
+    }
+    if($action==='reconnect_webmcp'){
+        $state=vp3_profile_webmcp_connected_site_reconnect_v204($pdo,$user,max(0,(int)($input['property_id']??0)));
         vp3_radar_sites_json(true,['state'=>vp3_radar_sites_state($pdo,$user,$state)]);
     }
     if($action==='rotate_server_token'){
