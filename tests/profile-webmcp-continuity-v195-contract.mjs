@@ -16,6 +16,8 @@ assert.match(continuity,/VP3_PROFILE_WEBMCP_CONTINUITY_V195/);
 assert.match(continuity,/bin2hex\(random_bytes\(16\)\)/);
 assert.match(continuity,/return_token_hash.*hash\('sha256'/s);
 assert.match(continuity,/contains_sensitive_payload'=>false/);
+assert.match(continuity,/returned_at/);
+assert.match(continuity,/return_token_hash'\]=''/,'return token must be invalidated after consume');
 assert.match(continuity,/execution_allowed'=>false/);
 assert.match(continuity,/function vp3_profile_webmcp_return_followthrough_v195/);
 assert.match(resume,/vp3_profile_webmcp_action_context_issue_v195/);
