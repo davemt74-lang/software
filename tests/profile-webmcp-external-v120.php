@@ -57,6 +57,7 @@ function vp3_profile_webmcp_tool_catalog_v100(): array {
       'vp3.campaign.eligibility.get'=>['capability'=>'campaigns'],
       'vp3.campaign.participation.prepare'=>['capability'=>'campaigns'],
       'vp3.campaign.participation.confirm'=>['capability'=>'campaigns'],
+      'vp3.campaign.participation.get'=>['capability'=>'campaigns'],
     ];
 }
 function url(string $path): string { return 'https://vp3.example'.$path; }
@@ -101,7 +102,7 @@ $state=['sites'=>[
 ]];
 $enriched=vp3_profile_webmcp_external_enrich_site_state_v120($pdo,['id'=>123],$state);
 t($enriched['sites'][0]['webmcp_enabled']===true,'active site WebMCP enabled');
-t($enriched['sites'][0]['webmcp_tool_count']===32,'active site tool count including Agent chat, Scheduling, Commerce, and governed Campaign participation');
+t($enriched['sites'][0]['webmcp_tool_count']===33,'active site tool count including Agent chat, Scheduling, Commerce, and governed Campaign participation');
 t($enriched['sites'][0]['webmcp_chat_enabled']===true,'active site reports Agent chat enabled');
 t($enriched['sites'][0]['webmcp_scheduling_enabled']===true,'active site reports Scheduling enabled');
 t($enriched['sites'][0]['webmcp_commerce_enabled']===true,'active site reports Commerce enabled');

@@ -55,6 +55,18 @@ function vp3_profile_webmcp_campaigns_tool_catalog_v170(): array
             ],
             'annotations'=>['readOnlyHint'=>false,'untrustedContentHint'=>true,'consequentialHint'=>true,'debugging'=>false],
         ],
+        'vp3.campaign.participation.get'=>[
+            'title'=>'Get Campaign participation status',
+            'description'=>'Return the safe lifecycle state for a previously confirmed Campaign participation using its opaque participation reference.',
+            'capability'=>'campaigns',
+            'input_schema'=>[
+                'type'=>'object',
+                'properties'=>['participation_reference'=>['type'=>'string','pattern'=>'^[a-f0-9]{32}$']],
+                'required'=>['participation_reference'],
+                'additionalProperties'=>false,
+            ],
+            'annotations'=>['readOnlyHint'=>true,'untrustedContentHint'=>false,'consequentialHint'=>false,'debugging'=>false],
+        ],
     ];
 }
 
@@ -343,14 +355,27 @@ function vp3_profile_webmcp_campaign_enrollment_projection_v170(PDO $pdo,array $
       WHERE e.id=? AND m.owner_user_id=? LIMIT 1");
     $stmt->execute([$enrollmentId,(int)$profile['user_id']]);$row=$stmt->fetch();
     if(!$row)throw new RuntimeException('Campaign participation result is unavailable.');
+    $behavior=campaigns_rewards_campaign_type_behavior_v118($pdo,(int)$row['merchant_id'],(string)$row['campaign_type_key']);
+    $status=(string)$row['status'];$timing=(string)($behavior['reward_timing']??'manual');
+    $terminal=in_array($status,['cancelled','failed','disqualified','expired'],true);
+    $lifecycleState=$status==='completed'?'completed':($terminal?$status:match($timing){
+        'after_verification'=>'awaiting_verification',
+        'triggered'=>'awaiting_trigger',
+        default=>'enrolled',
+    });
     return [
         'campaign'=>[
             'public_id'=>(string)$row['campaign_public_id'],'slug'=>(string)$row['campaign_slug'],
             'title'=>(string)$row['campaign_title'],'campaign_type'=>(string)$row['campaign_type_key'],
         ],
         'participation'=>[
-            'status'=>(string)$row['status'],'created_at'=>(string)$row['created_at'],
+            'status'=>$status,'created_at'=>(string)$row['created_at'],
             'updated_at'=>(string)$row['updated_at'],'completed_at'=>$row['completed_at']?:null,
+        ],
+        'lifecycle'=>[
+            'state'=>$lifecycleState,'public_action'=>(string)($behavior['public_action']??'participate'),
+            'reward_timing'=>$timing,'verification_pending'=>$lifecycleState==='awaiting_verification',
+            'trigger_pending'=>$lifecycleState==='awaiting_trigger',
         ],
     ];
 }
@@ -382,7 +407,7 @@ function vp3_profile_webmcp_campaign_confirm_v170(
         if((string)$action['state']==='committed'){
             if(!hash_equals((string)$action['idempotency_hash'],$idem))throw new RuntimeException('This Campaign intent was already confirmed with a different idempotency key.');
             $result=vp3_profile_webmcp_campaign_enrollment_projection_v170($pdo,$profile,(int)($action['result_id']??0));
-            $result['idempotent_replay']=true;if($started)$pdo->commit();return $result;
+            $result['participation_reference']=$intentId;$result['idempotent_replay']=true;if($started)$pdo->commit();return $result;
         }
         if((string)$action['state']!=='prepared')throw new RuntimeException('Prepared Campaign action is no longer executable.');
         $expires=(new DateTimeImmutable((string)$action['expires_at'],new DateTimeZone('UTC')))->getTimestamp();
@@ -392,7 +417,7 @@ function vp3_profile_webmcp_campaign_confirm_v170(
             if(!hash_equals((string)$existing['payload_hash'],(string)$action['payload_hash']))throw new RuntimeException('Idempotency key was already used for different Campaign participation.');
             if((string)$existing['state']!=='committed')throw new RuntimeException('That Campaign participation is still in progress.');
             $result=vp3_profile_webmcp_campaign_enrollment_projection_v170($pdo,$profile,(int)($existing['result_id']??0));
-            $result['idempotent_replay']=true;if($started)$pdo->commit();return $result;
+            $result['participation_reference']=(string)$existing['intent_id'];$result['idempotent_replay']=true;if($started)$pdo->commit();return $result;
         }
         $claim=$pdo->prepare("UPDATE profile_webmcp_actions SET idempotency_hash=?,updated_at=UTC_TIMESTAMP() WHERE id=? AND state='prepared' AND idempotency_hash IS NULL");
         $claim->execute([$idem,(int)$action['id']]);
@@ -413,6 +438,7 @@ function vp3_profile_webmcp_campaign_confirm_v170(
         $enrollmentId=(int)($canonical['enrollment']['id']??0);
         if($enrollmentId<1)throw new RuntimeException('Canonical Campaign participation did not return an enrollment.');
         $result=vp3_profile_webmcp_campaign_enrollment_projection_v170($pdo,$profile,$enrollmentId);
+        $result['participation_reference']=$intentId;
         vp3_profile_webmcp_action_commit_v150($pdo,(int)$action['id'],$idem,'campaign_enrollment',$enrollmentId,$result);
         if($started)$pdo->commit();
         return $result;
@@ -422,4 +448,19 @@ function vp3_profile_webmcp_campaign_confirm_v170(
     }finally{
         try{$release=$pdo->prepare('SELECT RELEASE_LOCK(?)');$release->execute([$lock]);}catch(Throwable $ignored){}
     }
+}
+
+
+function vp3_profile_webmcp_campaign_participation_get_v172(PDO $pdo,array $profile,array $input): array
+{
+    $reference=strtolower(trim((string)($input['participation_reference']??'')));
+    if(!preg_match('/^[a-f0-9]{32}$/',$reference))throw new RuntimeException('A valid Campaign participation reference is required.');
+    $action=vp3_profile_webmcp_action_row_v150($pdo,(int)$profile['user_id'],$reference,false);
+    if(!$action||(string)$action['operation']!=='campaign.participate'||(string)$action['state']!=='committed'
+       ||(string)$action['result_type']!=='campaign_enrollment'||(int)($action['result_id']??0)<1){
+        throw new RuntimeException('Campaign participation was not found for this Profile.');
+    }
+    $result=vp3_profile_webmcp_campaign_enrollment_projection_v170($pdo,$profile,(int)$action['result_id']);
+    $result['participation_reference']=$reference;
+    return $result;
 }
