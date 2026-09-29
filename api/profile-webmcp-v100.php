@@ -109,6 +109,9 @@ try {
 } catch (VP3ProfileAgentPublicException $e) {
     vp3_profile_webmcp_tool_json_v130($pdo,$telemetryContext,$tool,$startedAt,false,['error'=>['code'=>$e->publicCode,'message'=>$e->getMessage()]],$e->httpStatus,$e->publicCode);
 } catch (Throwable $e) {
-    $message = $e instanceof RuntimeException ? $e->getMessage() : 'The profile capability could not be completed.';
-    vp3_profile_webmcp_tool_json_v130($pdo,$telemetryContext,$tool,$startedAt,false,['error'=>['code'=>'VALIDATION_FAILED','message'=>$message]],422,'VALIDATION_FAILED');
+    $actionError=vp3_profile_webmcp_action_error_v192($e,'The profile capability could not be completed.');
+    vp3_profile_webmcp_tool_json_v130(
+        $pdo,$telemetryContext,$tool,$startedAt,false,
+        $actionError['payload'],(int)$actionError['status'],(string)$actionError['result_code']
+    );
 }
