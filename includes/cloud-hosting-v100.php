@@ -46,6 +46,7 @@ function vp3_cloud_hosting_ensure_schema_v100(?PDO $pdo=null): void
       id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
       site_key VARCHAR(80) NOT NULL,
       user_id INT UNSIGNED NOT NULL,
+      creation_key VARCHAR(160) NULL,
       homeserver_user_id INT UNSIGNED NULL,
       display_name VARCHAR(160) NOT NULL,
       requested_hostname VARCHAR(253) NULL,
@@ -69,6 +70,7 @@ function vp3_cloud_hosting_ensure_schema_v100(?PDO $pdo=null): void
       created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       UNIQUE KEY uq_cloud_hosting_site_key (site_key),
+      UNIQUE KEY uq_cloud_hosting_user_creation (user_id,creation_key),
       UNIQUE KEY uq_cloud_hosting_user_hostname (user_id,requested_hostname),
       INDEX idx_cloud_hosting_user_state (user_id,desired_state,observed_state,id),
       INDEX idx_cloud_hosting_homeserver (homeserver_user_id,desired_state,id),
@@ -77,6 +79,14 @@ function vp3_cloud_hosting_ensure_schema_v100(?PDO $pdo=null): void
       CONSTRAINT fk_cloud_hosting_site_homeserver FOREIGN KEY (homeserver_user_id) REFERENCES homeserver_connections(user_id) ON DELETE SET NULL,
       CONSTRAINT fk_cloud_hosting_site_creator FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+    if(function_exists('column_exists')&&!column_exists('cloud_hosting_sites','creation_key')){
+        $pdo->exec("ALTER TABLE cloud_hosting_sites ADD COLUMN creation_key VARCHAR(160) NULL AFTER user_id");
+    }
+    $idx=$pdo->query("SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema=DATABASE() AND table_name='cloud_hosting_sites' AND index_name='uq_cloud_hosting_user_creation'");
+    if($idx&&(int)$idx->fetchColumn()===0){
+        $pdo->exec("ALTER TABLE cloud_hosting_sites ADD UNIQUE KEY uq_cloud_hosting_user_creation (user_id,creation_key)");
+    }
 
     $pdo->exec("CREATE TABLE IF NOT EXISTS cloud_hosting_site_events (
       id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
@@ -183,14 +193,18 @@ function vp3_cloud_hosting_create_site_v100(array $user,array $input,?int $actor
     $pdo=db();if(!$pdo)throw new RuntimeException('Database connection is unavailable.');
     vp3_cloud_hosting_ensure_schema_v100($pdo);
 
+    $creationKey=trim((string)($input['_creation_key']??''));
+    if($creationKey!==''){
+        if(strlen($creationKey)>160||!preg_match('/^[A-Za-z0-9._:-]+$/',$creationKey))throw new RuntimeException('Hosted site creation key is invalid.');
+        $stmt=$pdo->prepare('SELECT * FROM cloud_hosting_sites WHERE user_id=? AND creation_key=? LIMIT 1');
+        $stmt->execute([$userId,$creationKey]);
+        $existing=$stmt->fetch();
+        if(is_array($existing))return $existing;
+    }
+
     $snapshot=vp3_cloud_hosting_entitlement_snapshot_v100($user);
     $access=(array)($snapshot['entitlements']['hosting.access']??[]);
     if(empty($access['enabled']))throw new RuntimeException('This account package does not include Cloud Hosting.');
-
-    $siteLimit=vp3_cloud_hosting_limit_v100($snapshot,'hosting.sites');
-    if($siteLimit!==null&&vp3_cloud_hosting_count_sites_v100($userId,$pdo)>=$siteLimit){
-        throw new RuntimeException('This account has reached its hosted-site limit.');
-    }
 
     $displayName=trim(preg_replace('/\s+/u',' ',(string)($input['display_name']??''))??'');
     if($displayName===''||mb_strlen($displayName)>160)throw new RuntimeException('Enter a hosted site name using 160 characters or fewer.');
@@ -199,40 +213,80 @@ function vp3_cloud_hosting_create_site_v100(array $user,array $input,?int $actor
     if($runtime==='php'&&empty($snapshot['entitlements']['hosting.php_access']['enabled'])){
         throw new RuntimeException('This account package does not include PHP hosting.');
     }
-
     $hostname=vp3_cloud_hosting_normalize_hostname_v100($input['requested_hostname']??null);
-    if($hostname!==null){
-        $subLimit=vp3_cloud_hosting_limit_v100($snapshot,'hosting.subdomains');
-        $stmt=$pdo->prepare('SELECT COUNT(*) FROM cloud_hosting_sites WHERE user_id=? AND requested_hostname IS NOT NULL');
-        $stmt->execute([$userId]);
-        if($subLimit!==null&&(int)$stmt->fetchColumn()>=$subLimit)throw new RuntimeException('This account has reached its hosting subdomain limit.');
-    }
-
     $storageMb=vp3_cloud_hosting_limit_v100($snapshot,'hosting.storage_mb_per_site');
     $sqliteMb=vp3_cloud_hosting_limit_v100($snapshot,'hosting.sqlite_mb_per_site');
     $storageBytes=$storageMb===null?0:max(0,$storageMb)*1024*1024;
     $sqliteBytes=$sqliteMb===null?0:max(0,$sqliteMb)*1024*1024;
 
-    $homeserverUserId=null;
-    $stmt=$pdo->prepare("SELECT user_id FROM homeserver_connections WHERE user_id=? AND status IN ('connected','paired','online') LIMIT 1");
-    $stmt->execute([$userId]);
-    $candidate=(int)$stmt->fetchColumn();
-    if($candidate>0)$homeserverUserId=$candidate;
+    $startedTransaction=!$pdo->inTransaction();
+    if($startedTransaction)$pdo->beginTransaction();
+    try{
+        $lock=$pdo->prepare('SELECT id FROM users WHERE id=? FOR UPDATE');
+        $lock->execute([$userId]);
+        if((int)$lock->fetchColumn()!==$userId)throw new RuntimeException('Hosting owner no longer exists.');
 
-    $siteKey=vp3_cloud_hosting_site_key_v100();
-    $stmt=$pdo->prepare("INSERT INTO cloud_hosting_sites
-      (site_key,user_id,homeserver_user_id,display_name,requested_hostname,runtime_kind,desired_state,observed_state,desired_revision,storage_limit_bytes,sqlite_limit_bytes,created_by,metadata_json)
-      VALUES (?,?,?,?,?,?,'configured','pending',1,?,?,?,?)");
-    $stmt->execute([
-        $siteKey,$userId,$homeserverUserId,$displayName,$hostname,$runtime,$storageBytes,$sqliteBytes,
-        $actorUserId&&$actorUserId>0?$actorUserId:null,
-        json_encode(['contract'=>VP3_CLOUD_HOSTING_V100],JSON_UNESCAPED_SLASHES),
-    ]);
-    $id=(int)$pdo->lastInsertId();
-    vp3_cloud_hosting_event_v100($pdo,$id,'site.created','configured',1,$actorUserId,[
-        'runtime_kind'=>$runtime,'requested_hostname'=>$hostname,'homeserver_bound'=>$homeserverUserId!==null,
-    ]);
-    return vp3_cloud_hosting_site_v100($id,$userId,$pdo)??[];
+        if($creationKey!==''){
+            $stmt=$pdo->prepare('SELECT * FROM cloud_hosting_sites WHERE user_id=? AND creation_key=? LIMIT 1');
+            $stmt->execute([$userId,$creationKey]);
+            $existing=$stmt->fetch();
+            if(is_array($existing)){
+                if($startedTransaction)$pdo->commit();
+                return $existing;
+            }
+        }
+
+        $siteLimit=vp3_cloud_hosting_limit_v100($snapshot,'hosting.sites');
+        if($siteLimit!==null&&vp3_cloud_hosting_count_sites_v100($userId,$pdo)>=$siteLimit){
+            throw new RuntimeException('This account has reached its hosted-site limit.');
+        }
+
+        if($hostname!==null){
+            $subLimit=vp3_cloud_hosting_limit_v100($snapshot,'hosting.subdomains');
+            $stmt=$pdo->prepare('SELECT COUNT(*) FROM cloud_hosting_sites WHERE user_id=? AND requested_hostname IS NOT NULL');
+            $stmt->execute([$userId]);
+            if($subLimit!==null&&(int)$stmt->fetchColumn()>=$subLimit)throw new RuntimeException('This account has reached its hosting subdomain limit.');
+        }
+
+        $homeserverUserId=null;
+        $stmt=$pdo->prepare("SELECT user_id FROM homeserver_connections WHERE user_id=? AND status IN ('connected','paired','online') LIMIT 1");
+        $stmt->execute([$userId]);
+        $candidate=(int)$stmt->fetchColumn();
+        if($candidate>0)$homeserverUserId=$candidate;
+
+        $siteKey=vp3_cloud_hosting_site_key_v100();
+        $stmt=$pdo->prepare("INSERT INTO cloud_hosting_sites
+          (site_key,user_id,creation_key,homeserver_user_id,display_name,requested_hostname,runtime_kind,desired_state,observed_state,desired_revision,storage_limit_bytes,sqlite_limit_bytes,created_by,metadata_json)
+          VALUES (?,?,?,?,?,?,?,'configured','pending',1,?,?,?,?)");
+        try{
+            $stmt->execute([
+                $siteKey,$userId,$creationKey!==''?$creationKey:null,$homeserverUserId,$displayName,$hostname,$runtime,$storageBytes,$sqliteBytes,
+                $actorUserId&&$actorUserId>0?$actorUserId:null,
+                json_encode(['contract'=>VP3_CLOUD_HOSTING_V100],JSON_UNESCAPED_SLASHES),
+            ]);
+        }catch(PDOException $e){
+            if($creationKey!==''&&str_contains((string)$e->getCode(),'23000')){
+                $retry=$pdo->prepare('SELECT * FROM cloud_hosting_sites WHERE user_id=? AND creation_key=? LIMIT 1');
+                $retry->execute([$userId,$creationKey]);
+                $existing=$retry->fetch();
+                if(is_array($existing)){
+                    if($startedTransaction)$pdo->commit();
+                    return $existing;
+                }
+            }
+            throw $e;
+        }
+        $id=(int)$pdo->lastInsertId();
+        vp3_cloud_hosting_event_v100($pdo,$id,'site.created','configured',1,$actorUserId,[
+            'runtime_kind'=>$runtime,'requested_hostname'=>$hostname,'homeserver_bound'=>$homeserverUserId!==null,
+        ]);
+        $created=vp3_cloud_hosting_site_v100($id,$userId,$pdo)??[];
+        if($startedTransaction)$pdo->commit();
+        return $created;
+    }catch(Throwable $e){
+        if($startedTransaction&&$pdo->inTransaction())$pdo->rollBack();
+        throw $e;
+    }
 }
 
 function vp3_cloud_hosting_site_v100(int $siteId,int $userId,?PDO $pdo=null): ?array

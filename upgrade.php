@@ -56,6 +56,7 @@ function vp3_upgrade_complete(): bool
         && vp3_cloud_hosting_schema_ready_v100()
         && vp3_cloud_hosting_v110_schema_ready()
         && vp3_cloud_hosting_v120_schema_ready()
+        && vp3_cloud_hosting_agent_v130_schema_ready()
         && workspace_team_v350_schema_ready()
         && ai_usage_accounting_v032_schema_ready()
         && column_exists('ai_execution_ledger','runtime_version')
@@ -290,6 +291,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             vp3_cloud_hosting_ensure_schema_v100($pdo);
             vp3_cloud_hosting_v110_ensure_schema($pdo);
             vp3_cloud_hosting_v120_ensure_schema($pdo);
+            vp3_cloud_hosting_agent_v130_ensure_schema($pdo);
             homeserver_account_v1210_ensure_schema($pdo);
             homeserver_scheduling_v620_ensure_schema($pdo);
             homeserver_commerce_agent_v1000_ensure_schema($pdo);
