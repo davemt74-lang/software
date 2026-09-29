@@ -66,6 +66,8 @@ $sites=(array)$dashboard['sites'];
 foreach($sites as $siteIndex=>$siteRow){
     $sites[$siteIndex]['release_catalog']=['releases'=>[],'active_release_id'=>$siteRow['active_release_id']??null,'previous_release_id'=>$siteRow['previous_release_id']??null];
     $sites[$siteIndex]['release_catalog_error']='';
+    $sites[$siteIndex]['diagnostics']=null;
+    $sites[$siteIndex]['diagnostics_error']='';
     try{
         $owned=vp3_cloud_hosting_site_v100((int)$siteRow['id'],(int)$user['id'],$pdo);
         if($owned&&function_exists('vp3_cloud_hosting_releases_v220_catalog')){
@@ -73,6 +75,14 @@ foreach($sites as $siteIndex=>$siteRow){
         }
     }catch(Throwable $releaseCatalogError){
         $sites[$siteIndex]['release_catalog_error']=mb_substr($releaseCatalogError->getMessage(),0,240);
+    }
+    try{
+        $owned=$owned??vp3_cloud_hosting_site_v100((int)$siteRow['id'],(int)$user['id'],$pdo);
+        if($owned&&function_exists('vp3_cloud_hosting_diagnostics_v230_summary')){
+            $sites[$siteIndex]['diagnostics']=vp3_cloud_hosting_diagnostics_v230_summary($owned,60,12,null,$pdo);
+        }
+    }catch(Throwable $diagnosticsError){
+        $sites[$siteIndex]['diagnostics_error']=mb_substr($diagnosticsError->getMessage(),0,240);
     }
 }
 $notice=flash('hosting_notice');
@@ -96,7 +106,7 @@ $bytesText=static function(int $bytes):string{
 <meta name="theme-color" content="#f4f5f7">
 <title><?= e(system_agent_name()) ?> | Cloud Hosting</title>
 <link rel="stylesheet" href="<?= e(url('/chat.css?v=82')) ?>">
-<link rel="stylesheet" href="<?= e(url('/cloud-hosting-v140.css?v=1')) ?>">
+<link rel="stylesheet" href="<?= e(url('/cloud-hosting-v140.css?v=2')) ?>">
 </head>
 <body>
 <div class="chat-app">
@@ -213,6 +223,9 @@ $bytesText=static function(int $bytes):string{
                 $releaseCatalog=(array)($site['release_catalog']??[]);
                 $releaseRows=(array)($releaseCatalog['releases']??[]);
                 $releaseCatalogError=(string)($site['release_catalog_error']??'');
+                $diagnostics=(array)($site['diagnostics']??[]);
+                $diagnosticsError=(string)($site['diagnostics_error']??'');
+                $diagnosticRows=(array)($diagnostics['recent']??[]);
                 $isActive=(string)$site['desired_state']==='active';
                 $routeReady=!empty($sync['public_route_ready']);
               ?>
@@ -240,6 +253,37 @@ $bytesText=static function(int $bytes):string{
                   <div><span>Active Release</span><strong><?= e((string)($site['active_release_id']??'none')) ?></strong><small><?= !empty($site['previous_release_id'])?'Previous: '.e((string)$site['previous_release_id']):'No previous release' ?></small></div>
                   <div><span>Limits</span><strong><?= e($bytesText((int)$site['storage_limit_bytes'])) ?></strong><small>SQLite <?= e($bytesText((int)$site['sqlite_limit_bytes'])) ?></small></div>
                 </div>
+
+                <section class="hosting-diagnostics">
+                  <div class="hosting-diagnostics-head">
+                    <div><strong>Traffic & Runtime</strong><span>Last 60 minutes from HomeServer runtime telemetry.</span></div>
+                    <a href="<?= e(url('/chat.php')) ?>?prompt=<?= e(rawurlencode('Why is my hosted site '.(string)$site['display_name'].' down or unhealthy?')) ?>">Ask Agent Why</a>
+                  </div>
+                  <?php if($diagnosticsError!==''): ?>
+                    <small class="hosting-diagnostics-error">Diagnostics unavailable: <?= e($diagnosticsError) ?></small>
+                  <?php elseif(!$diagnostics): ?>
+                    <small class="hosting-diagnostics-empty">No HomeServer diagnostics are available yet.</small>
+                  <?php else: ?>
+                    <div class="hosting-diagnostics-grid">
+                      <div><span>Requests</span><strong><?= number_format((int)$diagnostics['requests_total']) ?></strong><small><?= number_format((int)$diagnostics['client_error_total']) ?> 4xx · <?= number_format((int)$diagnostics['server_error_total']) ?> 5xx</small></div>
+                      <div><span>Latency</span><strong><?= number_format((float)$diagnostics['average_duration_ms'],1) ?> ms</strong><small>p95 <?= number_format((float)$diagnostics['p95_duration_ms'],1) ?> ms</small></div>
+                      <div><span>Runtime</span><strong><?= !empty($diagnostics['serving_ready'])?'Ready':'Not ready' ?></strong><small><?= number_format((int)$diagnostics['php_failure_total']) ?> PHP failures · <?= number_format((int)$diagnostics['slow_request_total']) ?> slow</small></div>
+                      <div><span>Storage</span><strong><?= e($bytesText((int)$diagnostics['storage_bytes'])) ?></strong><small>SQLite <?= e($bytesText((int)$diagnostics['sqlite_bytes'])) ?> · <?= !empty($diagnostics['sqlite_healthy'])?'healthy':'unhealthy' ?></small></div>
+                      <div><span>Route</span><strong><?= e((string)$diagnostics['cloud_dns_state']) ?></strong><small>TLS <?= e((string)$diagnostics['cloud_tls_state']) ?> · <?= !empty($diagnostics['homeserver_route_ready'])?'HomeServer ready':'HomeServer pending' ?></small></div>
+                      <div><span>Last Deploy</span><strong><?= !empty($diagnostics['last_deploy']['app_version'])?e((string)$diagnostics['last_deploy']['app_version']):(!empty($diagnostics['last_deploy']['release_id'])?e((string)$diagnostics['last_deploy']['release_id']):'None') ?></strong><small><?= !empty($diagnostics['last_deploy']['created_at'])?e((string)$diagnostics['last_deploy']['created_at']):'No active release metadata' ?></small></div>
+                    </div>
+                    <?php if(!empty($diagnostics['issues'])): ?>
+                      <div class="hosting-diagnostic-issues"><?php foreach((array)$diagnostics['issues'] as $issue): ?><span><?= e((string)$issue) ?></span><?php endforeach; ?></div>
+                    <?php endif; ?>
+                    <?php if($diagnosticRows): ?>
+                      <div class="hosting-request-log" aria-label="Recent hosting requests">
+                        <?php foreach($diagnosticRows as $requestRow): ?>
+                          <div><code><?= e((string)$requestRow['method']) ?></code><span><?= e((string)$requestRow['path']) ?></span><strong class="<?= (int)$requestRow['status']>=500?'error':((int)$requestRow['status']>=400?'warn':'') ?>"><?= (int)$requestRow['status'] ?></strong><small><?= number_format((float)$requestRow['duration_ms'],1) ?> ms</small></div>
+                        <?php endforeach; ?>
+                      </div>
+                    <?php endif; ?>
+                  <?php endif; ?>
+                </section>
 
                 <div class="hosting-actions">
                   <form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="site.reconcile"><input type="hidden" name="site_id" value="<?= (int)$site['id'] ?>"><input type="hidden" name="request_key" value="<?= e(vp3_cloud_hosting_ui_v140_request_key('reconcile')) ?>"><button type="submit">Reconcile</button></form>
