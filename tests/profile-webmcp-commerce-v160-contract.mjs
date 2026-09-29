@@ -79,8 +79,8 @@ assert.match(catalog,/registeredCapabilities/,'intent resolver must derive Comme
 assert.match(catalog,/requires_domain_adapter/,'intent resolver must report only genuinely missing domain adapters');
 assert.match(router,/vp3_profile_webmcp_commerce_checkout_confirm_v160/);
 assert.match(externalApi,/vp3_profile_webmcp_dispatch_v191/);
-assert.match(nativeApi,/webmcp_checkout_prepared/);
-assert.match(externalApi,/webmcp_checkout_started/);
+assert.match(router,/webmcp_checkout_prepared/);
+assert.match(router,/webmcp_checkout_started/);
 assert.match(externalLayer,/commerce_enabled'\s*=>\s*\$commerceEnabled/);
 assert.match(externalRuntime,/commerce_enabled===true/);
 assert.match(externalRuntime,/credentials:'omit'/);
