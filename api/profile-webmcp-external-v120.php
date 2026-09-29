@@ -5,6 +5,9 @@ require dirname(__DIR__).'/includes/bootstrap.php';
 require_once dirname(__DIR__).'/includes/profile-webmcp-v100.php';
 require_once dirname(__DIR__).'/includes/profile-webmcp-analytics-v130.php';
 require_once dirname(__DIR__).'/includes/profile-webmcp-external-v120.php';
+require_once dirname(__DIR__).'/includes/profile-agent-public-service-v110.php';
+require_once dirname(__DIR__).'/includes/profile-agent-transcription-context.php';
+require_once dirname(__DIR__).'/includes/profile-webmcp-chat-v140.php';
 
 header('Content-Type: application/json; charset=UTF-8');
 header('Cache-Control: no-store');
@@ -51,6 +54,7 @@ header('Access-Control-Allow-Headers: Content-Type');
 header('Access-Control-Max-Age: 600');
 
 $method=strtoupper((string)($_SERVER['REQUEST_METHOD']??'GET'));
+$manifestSession=vp3_profile_webmcp_transport_id_v130((string)($_GET['session']??''));
 if($method==='OPTIONS'){
     http_response_code(204);
     exit;
@@ -61,19 +65,30 @@ if(!in_array($method,['GET','POST'],true)){
 
 try{
     $profile=vp3_profile_webmcp_external_profile_v120($pdo,$property);
-    $manifest=vp3_profile_webmcp_external_manifest_v120($pdo,$property,$profile);
+    $chatAvailable=$manifestSession!==''&&vp3_profile_webmcp_external_agent_v120($pdo,$profile)!==null;
+    $manifest=vp3_profile_webmcp_external_manifest_v120($pdo,$property,$profile,$chatAvailable);
 }catch(Throwable $e){
     vp3_profile_webmcp_external_json_v120(false,['error'=>['code'=>'PROFILE_UNAVAILABLE','message'=>'The connected VP3 profile is unavailable.']],404);
 }
 
 if($method==='GET'){
-    $manifestTelemetryContext=vp3_profile_webmcp_context_v130($pdo,$profile,'external_site',[],$property,null);
+    $chatGrantData=null;
+    if($chatAvailable){
+        try{$chatGrantData=vp3_profile_webmcp_chat_grant_create_v140($property,$profile,$origin,$manifestSession);}
+        catch(Throwable $e){$chatGrantData=null;}
+    }
+    $manifestTelemetryContext=vp3_profile_webmcp_context_v130(
+        $pdo,$profile,'external_site',['webmcp_session_id'=>$manifestSession,'interaction_id'=>'','agent_referral'=>''],$property,null
+    );
     vp3_profile_webmcp_record_v130($pdo,$manifestTelemetryContext,'webmcp_manifest_loaded','','loaded');
     vp3_profile_webmcp_external_json_v120(true,[
         'manifest'=>$manifest,
+        'chat_grant'=>(string)($chatGrantData['grant']??''),
+        'chat_grant_expires_at'=>(string)($chatGrantData['expires_at_utc']??''),
         'runtime'=>[
             'build'=>VP3_PROFILE_WEBMCP_EXTERNAL_V120,
-            'read_only'=>true,
+            'read_only'=>!empty($manifest['external']['read_only']),
+            'chat_enabled'=>!empty($manifest['external']['stateful_profile_agent']),
         ],
     ]);
 }
@@ -101,12 +116,28 @@ if(!hash_equals((string)$profile['username'],(string)($input['profile_username']
 }
 
 $tool=trim((string)($input['tool']??''));
+$chatTools=['vp3.agent.chat.start','vp3.agent.conversation.get','vp3.agent.message.send','vp3.agent.owner_handoff.request'];
 $telemetryContext=vp3_profile_webmcp_context_v130($pdo,$profile,'external_site',$telemetry,$property,null);
 if(!in_array($tool,$manifest['allowed_tools'],true)){
     vp3_profile_webmcp_record_v130($pdo,$telemetryContext,'webmcp_tool_denied',$tool,'denied',0,['result_code'=>'CAPABILITY_UNAVAILABLE']);
     vp3_profile_webmcp_external_json_v120(false,['error'=>['code'=>'CAPABILITY_UNAVAILABLE','message'=>'That connected-site capability is unavailable.']],404);
 }
 $args=is_array($input['input']??null)?$input['input']:[];
+$agentCtx=null;
+if(in_array($tool,$chatTools,true)){
+    $grant=trim((string)($input['chat_grant']??''));
+    try{
+        vp3_profile_webmcp_chat_grant_verify_v140(
+            $property,$profile,$origin,(string)($telemetry['webmcp_session_id']??''),$grant
+        );
+        $agentCtx=vp3_profile_webmcp_external_chat_context_v140(
+            $pdo,$property,$profile,(string)($telemetry['webmcp_session_id']??'')
+        );
+    }catch(VP3ProfileAgentPublicException $e){
+        vp3_profile_webmcp_record_v130($pdo,$telemetryContext,'webmcp_tool_denied',$tool,'denied',0,['result_code'=>$e->publicCode]);
+        vp3_profile_webmcp_external_json_v120(false,['error'=>['code'=>$e->publicCode,'message'=>$e->getMessage()]],$e->httpStatus);
+    }
+}
 $startedAt=microtime(true);
 vp3_profile_webmcp_record_v130($pdo,$telemetryContext,'webmcp_tool_called',$tool,'called');
 
@@ -129,6 +160,28 @@ try{
         $agent=vp3_profile_webmcp_external_agent_v120($pdo,$profile);
         if(!$agent)vp3_profile_webmcp_external_tool_json_v130($pdo,$telemetryContext,$tool,$startedAt,false,['error'=>['code'=>'PROFILE_AGENT_UNAVAILABLE','message'=>'This Profile Agent is unavailable.']],404,'PROFILE_AGENT_UNAVAILABLE');
         vp3_profile_webmcp_external_tool_json_v130($pdo,$telemetryContext,$tool,$startedAt,true,['agent'=>$agent]);
+    }
+    if($tool==='vp3.agent.chat.start'){
+        $result=vp3_profile_webmcp_chat_start_v140($pdo,$agentCtx);
+        vp3_profile_webmcp_external_tool_json_v130($pdo,$telemetryContext,$tool,$startedAt,true,$result);
+    }
+    if($tool==='vp3.agent.conversation.get'){
+        $cid=max(0,(int)($args['conversation_id']??0));
+        vp3_profile_webmcp_external_tool_json_v130($pdo,$telemetryContext,$tool,$startedAt,true,vp3_profile_agent_public_state_service_v110($pdo,$agentCtx,$cid));
+    }
+    if($tool==='vp3.agent.message.send'){
+        $cid=max(0,(int)($args['conversation_id']??0));
+        $message=trim((string)($args['message']??''));
+        $result=vp3_profile_agent_public_message_service_v110($pdo,$agentCtx,$message,$cid);
+        vp3_profile_webmcp_record_v130($pdo,$telemetryContext,'webmcp_message_sent',$tool,'completed',(int)max(0,round((microtime(true)-$startedAt)*1000)),['conversation_id'=>(int)($result['conversation_id']??0)]);
+        vp3_profile_webmcp_external_tool_json_v130($pdo,$telemetryContext,$tool,$startedAt,true,$result);
+    }
+    if($tool==='vp3.agent.owner_handoff.request'){
+        $cid=max(0,(int)($args['conversation_id']??0));
+        $reason=trim((string)($args['reason']??''));
+        $result=vp3_profile_agent_public_request_owner_v110($pdo,$agentCtx,$cid,$reason);
+        vp3_profile_webmcp_record_v130($pdo,$telemetryContext,'webmcp_handoff_requested',$tool,'completed',(int)max(0,round((microtime(true)-$startedAt)*1000)),['conversation_id'=>$cid]);
+        vp3_profile_webmcp_external_tool_json_v130($pdo,$telemetryContext,$tool,$startedAt,true,$result);
     }
     vp3_profile_webmcp_external_tool_json_v130($pdo,$telemetryContext,$tool,$startedAt,false,['error'=>['code'=>'CAPABILITY_UNAVAILABLE','message'=>'That connected-site capability is unavailable.']],404,'CAPABILITY_UNAVAILABLE');
 }catch(Throwable $e){
