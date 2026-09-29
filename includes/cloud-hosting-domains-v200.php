@@ -119,6 +119,15 @@ function vp3_cloud_hosting_domains_v200_for_site(int $siteId,int $userId,?PDO $p
     return $stmt->fetchAll()?:[];
 }
 
+function vp3_cloud_hosting_domains_v200_tls_valid(array $row): bool
+{
+    if(!in_array((string)($row['tls_state']??''),['active','renewing'],true))return false;
+    $notAfter=trim((string)($row['certificate_not_after']??''));
+    if($notAfter==='')return false;
+    try{$expiry=new DateTimeImmutable($notAfter,new DateTimeZone('UTC'));}catch(Throwable $e){return false;}
+    return $expiry->getTimestamp()>time();
+}
+
 function vp3_cloud_hosting_domains_v200_public(array $row): array
 {
     return [
@@ -142,7 +151,7 @@ function vp3_cloud_hosting_domains_v200_public(array $row): array
         'detached_at'=>$row['detached_at']??null,
         'ready'=>(string)$row['verification_state']==='verified'
             && (string)$row['routing_state']==='verified'
-            && in_array((string)$row['tls_state'],['active','renewing'],true)
+            && vp3_cloud_hosting_domains_v200_tls_valid($row)
             && empty($row['detached_at']),
         'last_error_code'=>(string)$row['last_error_code'],
         'last_error_message'=>(string)$row['last_error_message'],
@@ -394,6 +403,11 @@ function vp3_cloud_hosting_domains_v200_record_tls(
         try{$date=new DateTimeImmutable($notAfter);}catch(Throwable $e){throw new RuntimeException('Custom-domain certificate expiry is invalid.');}
         $normalized=$date->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d H:i:s');
     }
+    if(in_array($state,['active','renewing'],true)){
+        if($normalized===null)throw new RuntimeException('Active custom-domain TLS requires a certificate expiry.');
+        $expiry=new DateTimeImmutable($normalized,new DateTimeZone('UTC'));
+        if($expiry->getTimestamp()<=time())throw new RuntimeException('Active custom-domain TLS certificate is expired.');
+    }
     $fingerprint=strtolower(trim($fingerprint));
     if($fingerprint!==''&&!preg_match('/^[a-f0-9]{32,128}$/',$fingerprint))throw new RuntimeException('Custom-domain certificate fingerprint is invalid.');
 
@@ -530,7 +544,9 @@ function vp3_cloud_hosting_domains_v200_edge_projection(int $userId=0,?PDO $pdo=
       WHERE d.detached_at IS NULL
         AND d.verification_state='verified'
         AND d.routing_state='verified'
-        AND d.tls_state IN ('active','renewing')";
+        AND d.tls_state IN ('active','renewing')
+        AND d.certificate_not_after IS NOT NULL
+        AND d.certificate_not_after>UTC_TIMESTAMP()";
     $params=[];
     if($userId>0){$sql.=' AND d.owner_user_id=?';$params[]=$userId;}
     $sql.=' ORDER BY d.site_id,d.is_canonical DESC,d.id';
@@ -579,6 +595,7 @@ function vp3_cloud_hosting_domains_v200_capability(): array
         'cloud_edge_rewrites_upstream_host'=>true,
         'home_server_revision_unchanged_by_aliases'=>true,
         'verification_token_encrypted_at_rest'=>true,
+        'active_tls_requires_future_expiry'=>true,
         'verification_token_publicly_exposed'=>false,
     ];
 }
