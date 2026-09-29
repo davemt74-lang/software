@@ -66,7 +66,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 save_setting('ai_anthropic_api_key', ai_encrypt_secret($anthropicKey));
             }
 
-            flash('notice', 'AI and system agent settings saved.');
+            $cpanelServer = vp3_cloud_hosting_normalize_cpanel_server_v100((string)($_POST['cpanel_server'] ?? ''));
+            $cpanelUsername = trim((string)($_POST['cpanel_username'] ?? ''));
+            if (mb_strlen($cpanelUsername) > 64 || ($cpanelUsername !== '' && !preg_match('/^[A-Za-z0-9._-]+$/', $cpanelUsername))) {
+                throw new RuntimeException('Enter a valid cPanel username.');
+            }
+            save_setting('hosting_cpanel_server', $cpanelServer);
+            save_setting('hosting_cpanel_username', $cpanelUsername);
+
+            $cpanelToken = trim((string)($_POST['cpanel_api_token'] ?? ''));
+            if ($cpanelToken !== '' && ($cpanelServer === '' || $cpanelUsername === '')) {
+                throw new RuntimeException('Enter the cPanel API server and username before saving a cPanel API token.');
+            }
+            if (!empty($_POST['remove_cpanel_token'])) {
+                save_setting('hosting_cpanel_api_token', '');
+            } elseif ($cpanelToken !== '') {
+                save_setting('hosting_cpanel_api_token', ai_encrypt_secret($cpanelToken));
+            }
+
+            flash('notice', 'AI, API, and system agent settings saved.');
             redirect(url('/admin/ai.php'));
         }
 
@@ -105,8 +123,10 @@ $credentialKeyState = ai_master_key_state();
 $encryptedCredentialsExist = ai_saved_encrypted_credentials_exist();
 $openaiCredentialState = ai_encrypted_secret_state((string)setting('ai_openai_api_key', ''));
 $anthropicCredentialState = ai_encrypted_secret_state((string)setting('ai_anthropic_api_key', ''));
+$cpanelCredentialState = ai_encrypted_secret_state((string)setting('hosting_cpanel_api_token', ''));
+$cpanelPublicState = vp3_cloud_hosting_cpanel_public_state_v100();
 $credentialRecoveryMessage = $encryptedCredentialsExist && $credentialKeyState !== 'ready'
-    ? ai_credential_state_message($credentialKeyState, 'AI')
+    ? ai_credential_state_message($credentialKeyState, 'API')
     : '';
 
 $adminTitle = 'AI / API Settings';
@@ -116,7 +136,7 @@ require __DIR__ . '/_header.php';
 <div class="ai-admin-page">
 <?php if ($credentialRecoveryMessage !== ''): ?>
 <div class="vp3-alert error" role="alert">
-  <strong>AI credential recovery required.</strong>
+  <strong>API credential recovery required.</strong>
   <?= e($credentialRecoveryMessage) ?>
   The deploy process must preserve <code>/private/ai-key.php</code>; do not create a replacement key unless the original cannot be recovered.
 </div>
@@ -245,8 +265,51 @@ require __DIR__ . '/_header.php';
       </div>
     </section>
 
+    <section class="ai-provider-card field full">
+      <div class="ai-provider-card-head">
+        <div>
+          <span class="ai-provider-mark">H</span>
+          <div>
+            <h3>Hosting / cPanel API</h3>
+            <p>Cloud Hosting provisioning · cPanel UAPI over HTTPS</p>
+          </div>
+        </div>
+        <span class="ai-ready-state <?= !empty($cpanelPublicState['configured']) ? 'ready' : '' ?>">
+          <?= !empty($cpanelPublicState['configured']) ? 'Ready' : 'Not ready' ?>
+        </span>
+      </div>
+
+      <div class="ai-provider-fields">
+        <div class="field">
+          <label for="cpanel_server">cPanel API Server</label>
+          <input id="cpanel_server" name="cpanel_server" autocomplete="off" value="<?= e((string)setting('hosting_cpanel_server', '')) ?>" placeholder="https://server.example.com:2083">
+          <small>Secure cPanel UAPI endpoint. Port 2083 is required.</small>
+        </div>
+
+        <div class="field">
+          <label for="cpanel_username">cPanel Username</label>
+          <input id="cpanel_username" name="cpanel_username" maxlength="64" autocomplete="off" value="<?= e((string)setting('hosting_cpanel_username', '')) ?>">
+          <small>The cPanel account username used in API authentication.</small>
+        </div>
+
+        <div class="field">
+          <label for="cpanel_api_token">cPanel API Token</label>
+          <input id="cpanel_api_token" name="cpanel_api_token" type="password" autocomplete="new-password" placeholder="<?= trim((string)setting('hosting_cpanel_api_token', '')) !== '' ? 'Saved encrypted token' . ($cpanelCredentialState === 'ready' ? ' ••••••' . e((string)($cpanelPublicState['token_suffix'] ?? '')) : '') : 'Paste cPanel API token' ?>">
+          <small><?= trim((string)setting('hosting_cpanel_api_token', '')) !== '' ? e($cpanelCredentialState === 'ready' ? 'An encrypted cPanel API token is saved. Leave blank to keep it.' : ai_credential_state_message($cpanelCredentialState, 'cPanel')) : 'No cPanel API token is saved.' ?></small>
+        </div>
+      </div>
+
+      <?php if (trim((string)setting('hosting_cpanel_api_token', '')) !== ''): ?>
+        <label class="admin-inline-check ai-remove-key"><input type="checkbox" name="remove_cpanel_token" value="1"> Remove saved cPanel API token</label>
+      <?php endif; ?>
+
+      <div class="ai-provider-actions">
+        <small>Cloud Hosting will use the account-level cPanel API token for UAPI provisioning. The token is encrypted with the same private credential key as the AI provider keys.</small>
+      </div>
+    </section>
+
     <div class="field full actions">
-      <button class="btn primary" type="submit">Save AI Settings</button>
+      <button class="btn primary" type="submit">Save AI / API Settings</button>
     </div>
   </form>
 </div>
