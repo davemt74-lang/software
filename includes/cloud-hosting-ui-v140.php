@@ -150,6 +150,10 @@ function vp3_cloud_hosting_ui_v140_execute(
     $uid=(int)($user['id']??0);
     if($uid<1)throw new RuntimeException('A signed-in user is required.');
     $action=trim($action);
+    $consequential=['site.activate','site.suspend','dns.provision','deployment.deploy','deployment.rollback'];
+    if(in_array($action,$consequential,true)&&((string)($input['confirmed']??''))!=='1'){
+        throw new RuntimeException('Confirm this consequential Hosting action before execution.');
+    }
 
     if($action==='site.create'){
         $payload=[
@@ -215,6 +219,7 @@ function vp3_cloud_hosting_ui_v140_capability(): array
         'deployment_zip_upload'=>true,
         'deployment_max_bytes'=>VP3_CLOUD_HOSTING_MAX_PACKAGE_BYTES,
         'desired_state_control'=>true,
+        'server_enforced_consequential_confirmation'=>true,
         'reconciliation'=>true,
         'rollback'=>true,
         'agent_chat_handoff'=>true,
