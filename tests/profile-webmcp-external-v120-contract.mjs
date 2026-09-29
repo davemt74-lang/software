@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 const read=p=>fs.readFileSync(new URL('../'+p,import.meta.url),'utf8');
 const layer=read('includes/profile-webmcp-external-v120.php');
+const resolver=read('includes/profile-webmcp-capability-resolver-v190.php');
 const endpoint=read('api/profile-webmcp-external-v120.php');
 const runtime=read('profile-webmcp-external-v120.js');
 const sitesApi=read('api/agent-radar-sites.php');
@@ -14,10 +15,10 @@ assert.match(layer,/vp3_radar_external_origin_allowed/,'external origin must reu
 assert.match(layer,/surface'\s*=>\s*'external_site'/);
 assert.match(layer,/read_only'\s*=>\s*!\$chatEnabled&&!\$schedulingEnabled&&!\$commerceEnabled/);
 assert.match(layer,/stateful_profile_agent'\s*=>\s*\$chatEnabled/);
-assert.match(layer,/vp3\.agent\.get/);
-assert.match(layer,/vp3\.agent\.message\.send/,'external tool allowlist may expose governed public Agent chat');
-assert.match(layer,/vp3\.booking\.prepare/,'connected-site manifest may expose governed public scheduling');
-assert.match(layer,/vp3\.commerce\.checkout\.prepare/,'connected-site manifest may expose governed Profile Commerce');
+assert.match(resolver,/vp3\.agent\.get/);
+assert.match(resolver,/vp3\.agent\.message\.send/,'external tool policy may expose governed public Agent chat');
+assert.match(resolver,/vp3\.booking\.prepare/,'unified resolver may expose governed public scheduling');
+assert.match(resolver,/vp3\.commerce\.checkout\.prepare/,'unified resolver may expose governed Profile Commerce');
 
 assert.match(endpoint,/vp3_radar_external_property_by_key/,'gateway must bind public property key to active Agent Radar property');
 assert.match(endpoint,/vp3_profile_webmcp_external_origin_v120/,'gateway must verify browser Origin');

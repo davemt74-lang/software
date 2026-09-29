@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__.'/profile-webmcp-capability-resolver-v190.php';
+
 const VP3_PROFILE_WEBMCP_V100 = 'profile-webmcp-v100-20260928';
 const VP3_PROFILE_WEBMCP_MANIFEST_V100 = 'vp3.profile.webmcp.v1';
 const VP3_PROFILE_WEBMCP_MAX_BODY_V100 = 16384;
@@ -234,113 +236,28 @@ function vp3_profile_webmcp_owner_user_v100(PDO $pdo, array $profile): ?array
     return $stmt->fetch() ?: null;
 }
 
-function vp3_profile_webmcp_capabilities_v100(PDO $pdo, array $profile, ?array $viewer): array
+function vp3_profile_webmcp_capabilities_v100(PDO $pdo,array $profile,?array $viewer): array
 {
-    $ownerUserId = (int)($profile['user_id'] ?? 0);
-    $viewerId = (int)($viewer['id'] ?? 0);
-    $ownerUser = vp3_profile_webmcp_owner_user_v100($pdo, $profile);
-
-    $profileAgent = false;
-    try {
-        $agent = function_exists('profile_active_agent') ? profile_active_agent($pdo, $profile) : null;
-        $entitled = !$ownerUser || !function_exists('personal_capability_has_v242')
-            ? true
-            : (
-                personal_capability_has_v242('profile_agent.access', $ownerUser)
-                && personal_capability_has_v242('profile_chat.access', $ownerUser)
-            );
-        $profileAgent = (bool)$agent && $entitled && ($viewerId<1 || $viewerId!==$ownerUserId);
-    } catch (Throwable $e) {
-        $profileAgent = false;
-    }
-
-    $booking = false;
-    try {
-        if (function_exists('agent_scheduling_public_schedule_v450') && function_exists('agent_scheduling_public_events_v450')) {
-            $schedule = agent_scheduling_public_schedule_v450($pdo, $ownerUserId);
-            $booking = is_array($schedule) && count(agent_scheduling_public_events_v450($pdo, (int)$schedule['id'])) > 0;
-        }
-    } catch (Throwable $e) {
-        $booking = false;
-    }
-
-    $commerce = false;
-    try {
-        if (function_exists('profile_commerce_products_for_profile_v900')) {
-            $commerce = count(profile_commerce_products_for_profile_v900($pdo, $profile, true, 1)) > 0;
-        }
-    } catch (Throwable $e) {
-        $commerce = false;
-    }
-
-    $campaigns = false;
-    try {
-        if (function_exists('campaigns_rewards_schema_ready_v100') && campaigns_rewards_schema_ready_v100($pdo)
-            && function_exists('campaigns_rewards_profile_campaigns_v100')) {
-            $campaigns = count(campaigns_rewards_profile_campaigns_v100($pdo, $ownerUserId, 1)) > 0;
-        }
-    } catch (Throwable $e) {
-        $campaigns = false;
-    }
-
-    $rewards = $viewerId > 0 && function_exists('campaigns_rewards_reward_tray_v110');
-    $social = false;
-    $messaging = false;
-    if ($viewerId > 0 && $viewerId !== $ownerUserId && function_exists('vp3_social_schema_ready_v320')) {
-        try {
-            $social = vp3_social_schema_ready_v320($pdo);
-            if ($social && function_exists('vp3_social_dm_route_v320')) {
-                $messaging = vp3_social_dm_route_v320($pdo, $viewerId, $ownerUserId) !== 'blocked';
-            }
-        } catch (Throwable $e) {
-            $social = false;
-            $messaging = false;
-        }
-    }
-
-    return [
-        'profile' => true,
-        'profile_agent' => $profileAgent,
-        'booking' => $booking,
-        'commerce' => $commerce,
-        'campaigns' => $campaigns,
-        'rewards' => $rewards,
-        'social' => $social,
-        'messaging' => $messaging,
-    ];
+    return vp3_profile_webmcp_detect_capabilities_v190($pdo,$profile,$viewer);
 }
-
-function vp3_profile_webmcp_manifest_v100(PDO $pdo, array $profile, ?array $viewer, array $context = []): array
+function vp3_profile_webmcp_manifest_v100(PDO $pdo,array $profile,?array $viewer,array $context=[]): array
 {
-    $surface = (string)($context['surface'] ?? 'native_profile');
-    if ($surface !== 'native_profile') throw new RuntimeException('Section 1 supports only the native profile surface.');
-    $capabilities = vp3_profile_webmcp_capabilities_v100($pdo, $profile, $viewer);
-    $catalog = vp3_profile_webmcp_tool_catalog_v100();
-    $allowed = [];
-    foreach ($catalog as $name => $tool) {
-        $capability = (string)($tool['capability'] ?? '');
-        if (($capabilities[$capability] ?? false) === true && vp3_profile_webmcp_tool_runtime_ready_v150($pdo,$name)) $allowed[] = $name;
-    }
-    sort($allowed);
-    $authenticated = (int)($viewer['id'] ?? 0) > 0;
-    $identityDisclosed = false;
-    if ($authenticated && function_exists('profile_visitor_discloses_identity')) {
-        try { $identityDisclosed = profile_visitor_discloses_identity($pdo, $viewer); }
-        catch (Throwable $e) { $identityDisclosed = false; }
-    }
+    $surface=(string)($context['surface']??'native_profile');
+    if($surface!=='native_profile')throw new RuntimeException('Native Profile manifest requires the native_profile surface.');
+    $resolution=vp3_profile_webmcp_resolve_capabilities_v190($pdo,$profile,$viewer,['surface'=>'native_profile']);
     return [
-        'manifest_version' => VP3_PROFILE_WEBMCP_MANIFEST_V100,
-        'surface' => 'native_profile',
-        'profile_username' => (string)($profile['username'] ?? ''),
-        'capabilities' => $capabilities,
-        'allowed_tools' => $allowed,
-        'session' => [
-            'authenticated' => $authenticated,
-            'visitor_profile_known' => $identityDisclosed,
+        'manifest_version'=>VP3_PROFILE_WEBMCP_MANIFEST_V100,
+        'surface'=>'native_profile',
+        'profile_username'=>(string)($profile['username']??''),
+        'capabilities'=>$resolution['capabilities'],
+        'allowed_tools'=>$resolution['allowed_tools'],
+        'session'=>$resolution['session'],
+        'resolver'=>[
+            'version'=>$resolution['resolver_version'],
+            'execution_allowed'=>$resolution['execution_allowed'],
         ],
     ];
 }
-
 function vp3_profile_webmcp_resolve_intent_v100(string $goal, array $manifest): array
 {
     $goal = mb_strtolower(trim($goal));
@@ -368,14 +285,22 @@ function vp3_profile_webmcp_resolve_intent_v100(string $goal, array $manifest): 
         }
     }
     if (!$matches) $matches[] = !empty($manifest['capabilities']['profile_agent']) ? 'profile_agent' : 'profile';
+    $registeredTools=array_values($manifest['allowed_tools']??[]);
+    $catalog=vp3_profile_webmcp_tool_catalog_v100();
+    $registeredCapabilities=[];
+    foreach($registeredTools as $toolName){
+        $capability=(string)($catalog[$toolName]['capability']??'');
+        if($capability!=='')$registeredCapabilities[$capability]=true;
+    }
+    $uniqueMatches=array_values(array_unique($matches));
     return [
-        'goal' => $goal,
-        'recommended_capabilities' => array_values(array_unique($matches)),
-        'registered_tools' => array_values($manifest['allowed_tools'] ?? []),
-        'execution_performed' => false,
-        'requires_domain_adapter' => array_values(array_filter(
-            array_unique($matches),
-            static fn(string $capability): bool => !in_array($capability, ['profile','profile_agent','booking','commerce'], true)
+        'goal'=>$goal,
+        'recommended_capabilities'=>$uniqueMatches,
+        'registered_tools'=>$registeredTools,
+        'execution_performed'=>false,
+        'requires_domain_adapter'=>array_values(array_filter(
+            $uniqueMatches,
+            static fn(string $capability):bool=>empty($registeredCapabilities[$capability])
         )),
     ];
 }

@@ -7,6 +7,7 @@ const scheduling=read('includes/profile-webmcp-scheduling-v150.php');
 const catalog=read('includes/profile-webmcp-v100.php');
 const nativeApi=read('api/profile-webmcp-v100.php');
 const externalLayer=read('includes/profile-webmcp-external-v120.php');
+const resolver=read('includes/profile-webmcp-capability-resolver-v190.php');
 const externalApi=read('api/profile-webmcp-external-v120.php');
 const nativeRuntime=read('profile-webmcp-v100.js');
 const externalRuntime=read('profile-webmcp-external-v120.js');
@@ -32,7 +33,7 @@ assert.doesNotMatch(commitBlock,/guest_name|guest_email|public_token|manage_toke
 
 assert.match(bootstrap,/profile-webmcp-actions-v150\.php/);
 assert.match(catalog,/vp3_profile_webmcp_tool_runtime_ready_v150/,'state-changing scheduling tools must be hidden until ledger upgrade');
-assert.match(externalLayer,/vp3_profile_webmcp_tool_runtime_ready_v150/,'connected-site scheduling actions must also fail closed before ledger upgrade');
+assert.match(resolver,/vp3_profile_webmcp_tool_runtime_ready_v150/,'connected-site scheduling actions must also fail closed before ledger upgrade');
 assert.match(upgrade,/vp3_profile_webmcp_actions_schema_ready_v150/);
 assert.match(upgrade,/vp3_profile_webmcp_actions_ensure_schema_v150/);
 

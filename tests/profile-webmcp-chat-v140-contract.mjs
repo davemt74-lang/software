@@ -5,6 +5,7 @@ const read=p=>fs.readFileSync(new URL('../'+p,import.meta.url),'utf8');
 const chat=read('includes/profile-webmcp-chat-v140.php');
 const catalog=read('includes/profile-webmcp-v100.php');
 const externalLayer=read('includes/profile-webmcp-external-v120.php');
+const resolver=read('includes/profile-webmcp-capability-resolver-v190.php');
 const nativeApi=read('api/profile-webmcp-v100.php');
 const externalApi=read('api/profile-webmcp-external-v120.php');
 const nativeRuntime=read('profile-webmcp-v100.js');
@@ -36,12 +37,12 @@ assert.match(nativeApi,/vp3_profile_webmcp_chat_start_v140/,'native and external
 assert.match(externalLayer,/stateful_profile_agent'\s*=>\s*\$chatEnabled/);
 assert.match(externalLayer,/transactional_actions'\s*=>\s*\$schedulingEnabled\|\|\$commerceEnabled/,'scheduling or commerce may enable governed connected-site transactional actions');
 for(const name of ['vp3.agent.chat.start','vp3.agent.conversation.get','vp3.agent.message.send','vp3.agent.owner_handoff.request']){
-  assert.match(externalLayer,new RegExp(name.replaceAll('.','\\.')),'external manifest tool '+name);
+  assert.match(resolver,new RegExp(name.replaceAll('.','\\.')),'unified external policy tool '+name);
   assert.match(externalRuntime,new RegExp(name.replaceAll('.','\\.')),'external trusted runtime '+name);
 }
-assert.match(externalLayer,/vp3\.booking\.prepare/,'Section 6 may expose public scheduling');
-assert.match(externalLayer,/vp3\.commerce\.checkout/,'Commerce WebMCP is now a governed external domain');
-assert.doesNotMatch(externalLayer,/vp3\.rewards\.claim/,'rewards remain outside the chat/scheduling/commerce surface');
+assert.match(resolver,/vp3\.booking\.prepare/,'Section 6 may expose public scheduling');
+assert.match(resolver,/vp3\.commerce\.checkout/,'Commerce WebMCP is now a governed external domain');
+assert.doesNotMatch(resolver,/vp3\.rewards\.claim/,'rewards remain outside the connected-site policy');
 
 assert.match(externalApi,/vp3_profile_webmcp_chat_grant_create_v140/,'GET manifest must mint a scoped chat grant');
 assert.match(externalApi,/vp3_profile_webmcp_chat_grant_verify_v140/,'stateful calls must verify the grant');
