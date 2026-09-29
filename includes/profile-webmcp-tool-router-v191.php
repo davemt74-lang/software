@@ -47,6 +47,8 @@ function vp3_profile_webmcp_dispatch_v191(
             'manifest_version'=>VP3_PROFILE_WEBMCP_MANIFEST_V100,
             'capabilities'=>$manifest['capabilities'],
             'allowed_tools'=>$manifest['allowed_tools'],
+            'release'=>vp3_profile_webmcp_release_descriptor_v196(),
+            'release_audit'=>vp3_profile_webmcp_release_audit_v196(),
         ]);
     }
     if($tool==='vp3.profile.get'){
