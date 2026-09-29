@@ -38,7 +38,8 @@ function vp3_profile_webmcp_dispatch_v191(
     }
 
     $catalog=vp3_profile_webmcp_tool_catalog_v100();
-    if(function_exists('vp3_profile_webmcp_tool_available_v203')&&!vp3_profile_webmcp_tool_available_v203($tool,$catalog)){
+    $clientRuntime=(string)($telemetry['client_runtime_build']??'');
+    if(function_exists('vp3_profile_webmcp_tool_available_v203')&&!vp3_profile_webmcp_tool_available_v203($tool,$catalog,null,[],$clientRuntime)){
         $lifecycle=vp3_profile_webmcp_tool_lifecycle_v203($tool,$catalog);
         vp3_profile_webmcp_router_record_v191($pdo,$telemetryContext,'webmcp_tool_denied',$tool,'unavailable',$startedAt,['result_code'=>'WEBMCP_TOOL_UNAVAILABLE']);
         vp3_profile_webmcp_action_respond_v192($respond,$tool,false,[
