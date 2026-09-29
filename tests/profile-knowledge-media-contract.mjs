@@ -4,6 +4,7 @@ const read=p=>fs.readFileSync(new URL(`../${p}`,import.meta.url),'utf8');
 const profile=read('includes/profile-agent.php');
 const userAgents=read('includes/user-agent-system-v236.php');
 const api=read('api/profile-agent.php');
+const publicService=read('includes/profile-agent-public-service-v110.php');
 const mediaApi=read('api/profile-media.php');
 const portal=read('profile-agent-portal.js');
 const publicProfile=read('profile.php');
@@ -18,7 +19,7 @@ assert.ok(profile.includes("user_data_policy_can_use_v236($pdo,$principal,$owner
 assert.ok(profile.includes("$legacy=!empty($item['is_published'])&&((string)($item['visibility']??'members')==='public')"),'inherit visibility must never make unpublished personal notes public');
 assert.ok(userAgents.includes("if($kind==='profile_agent')"),'data policy must distinguish the public Profile Agent principal');
 assert.ok(userAgents.includes("empty($p['profile_agent_allowed'])"),'Profile Agent access must require explicit profile_agent_allowed consent');
-assert.ok(api.includes('profile_agent_needs_owner'),'insufficient approved context must escalate instead of guessing');
+assert.ok(publicService.includes('profile_agent_needs_owner'),'insufficient approved context must escalate instead of guessing');
 assert.ok(api.includes("'save_profile_media'"),'owner API must support profile media upload');
 assert.ok(api.includes("['jpg','jpeg','png','webp']"),'profile media must use an image allow-list');
 assert.ok(api.includes("['image/jpeg','image/png','image/webp']"),'profile media must validate MIME types');

@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 
 const intelligence = readFileSync('api/artist-listening-intelligence-v254.php', 'utf8');
 const profileApi = readFileSync('api/profile-agent.php', 'utf8');
+const profileService = readFileSync('includes/profile-agent-public-service-v110.php', 'utf8');
 const bridge = readFileSync('includes/profile-agent-transcription-context.php', 'utf8');
 const profileRuntime = readFileSync('includes/profile-agent.php', 'utf8');
 const knowledgeRuntime = readFileSync('includes/knowledge.php', 'utf8');
@@ -28,7 +29,7 @@ assert.ok(bridge.includes("if ($knowledgeId > 0 && user_data_policy_can_use_v236
 
 // Public Profile Agent chat must explicitly add only the approved bridge context.
 assert.match(profileApi, /profile-agent-transcription-context\.php/, 'Profile Agent API must load the transcription integration bridge');
-assert.match(profileApi, /profile_agent_transcript_brain_context_v255\(\$pdo,\$ownerUser,\$agent,\$visitor,\$query,\$cid\)/, 'Profile Agent message path must append approved transcript Brain context');
+assert.match(profileService, /profile_agent_transcript_brain_context_v255\(\$pdo,\$ownerUser,\$agent,\$visitor,\$query,\$cid\)/, 'Profile Agent message path must append approved transcript Brain context');
 
 // The fixed-height member shell must give My Knowledge an explicit scrolling content owner.
 assert.match(knowledgeCss, /\.personal-knowledge-main\{[^}]*min-height:0[^}]*overflow:hidden/, 'My Knowledge main shell must constrain its grid row');

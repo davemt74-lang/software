@@ -56,15 +56,23 @@ jobs:
       - name: Profile WebMCP PHP syntax
         run: |
           php -l includes/profile-webmcp-v100.php
+          php -l includes/profile-agent-public-service-v110.php
           php -l api/profile-webmcp-v100.php
           php -l profile.php
           php -l tests/profile-webmcp-v100.php
+          php -l tests/profile-webmcp-agent-v110.php
       - name: Profile WebMCP PHP security contract
-        run: php tests/profile-webmcp-v100.php
+        run: |
+          php tests/profile-webmcp-v100.php
+          php tests/profile-webmcp-agent-v110.php
       - name: Profile WebMCP static integration contract
-        run: node tests/profile-webmcp-v100-contract.mjs
+        run: |
+          node tests/profile-webmcp-v100-contract.mjs
+          node tests/profile-webmcp-agent-v110-contract.mjs
       - name: Profile WebMCP browser runtime contract
-        run: node tests/profile-webmcp-v100-runtime.mjs
+        run: |
+          node tests/profile-webmcp-v100-runtime.mjs
+          node tests/profile-webmcp-agent-v110-runtime.mjs
       - name: Profile WebMCP production package smoke
         run: |
           set -euo pipefail
@@ -74,6 +82,7 @@ jobs:
             --exclude='.git/' --exclude='.github/' --exclude='tests/' --exclude='private/' \
             --exclude='uploads/' --exclude='config.php' --exclude='.env*'
           test -f /tmp/vp3-webmcp-package/includes/profile-webmcp-v100.php
+          test -f /tmp/vp3-webmcp-package/includes/profile-agent-public-service-v110.php
           test -f /tmp/vp3-webmcp-package/api/profile-webmcp-v100.php
           test -f /tmp/vp3-webmcp-package/profile-webmcp-v100.js
           grep -Fq "includes/profile-webmcp-v100.php" /tmp/vp3-webmcp-package/profile.php

@@ -3,6 +3,8 @@ declare(strict_types=1);
 
 require dirname(__DIR__) . '/includes/bootstrap.php';
 require_once dirname(__DIR__) . '/includes/profile-webmcp-v100.php';
+require_once dirname(__DIR__) . '/includes/profile-agent-transcription-context.php';
+require_once dirname(__DIR__) . '/includes/profile-agent-public-service-v110.php';
 
 header('Content-Type: application/json; charset=UTF-8');
 header('Cache-Control: no-store');
@@ -89,7 +91,30 @@ try {
         $goal = trim((string)($args['goal'] ?? ''));
         vp3_profile_webmcp_json_v100(true, ['resolution'=>vp3_profile_webmcp_resolve_intent_v100($goal, $manifest)]);
     }
+    if (str_starts_with($tool, 'vp3.agent.')) {
+        $agentCtx=vp3_profile_agent_public_context_v110($pdo,$profile,$viewer);
+        if ($tool === 'vp3.agent.get') {
+            $state=vp3_profile_agent_public_state_service_v110($pdo,$agentCtx,0);
+            vp3_profile_webmcp_json_v100(true,['agent'=>$state['agent']]);
+        }
+        if ($tool === 'vp3.agent.conversation.get') {
+            $cid=max(0,(int)($args['conversation_id']??0));
+            vp3_profile_webmcp_json_v100(true,vp3_profile_agent_public_state_service_v110($pdo,$agentCtx,$cid));
+        }
+        if ($tool === 'vp3.agent.message.send') {
+            $cid=max(0,(int)($args['conversation_id']??0));
+            $message=trim((string)($args['message']??''));
+            vp3_profile_webmcp_json_v100(true,vp3_profile_agent_public_message_service_v110($pdo,$agentCtx,$message,$cid));
+        }
+        if ($tool === 'vp3.agent.owner_handoff.request') {
+            $cid=max(0,(int)($args['conversation_id']??0));
+            $reason=trim((string)($args['reason']??''));
+            vp3_profile_webmcp_json_v100(true,vp3_profile_agent_public_request_owner_v110($pdo,$agentCtx,$cid,$reason));
+        }
+    }
     vp3_profile_webmcp_json_v100(false, ['error'=>['code'=>'CAPABILITY_UNAVAILABLE','message'=>'That profile capability is unavailable.']], 404);
+} catch (VP3ProfileAgentPublicException $e) {
+    vp3_profile_webmcp_json_v100(false,['error'=>['code'=>$e->publicCode,'message'=>$e->getMessage()]],$e->httpStatus);
 } catch (Throwable $e) {
     $message = $e instanceof RuntimeException ? $e->getMessage() : 'The profile capability could not be completed.';
     vp3_profile_webmcp_json_v100(false, ['error'=>['code'=>'VALIDATION_FAILED','message'=>$message]], 422);

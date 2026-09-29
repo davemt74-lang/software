@@ -20,6 +20,30 @@ export const VP3_PROFILE_WEBMCP_TOOL_CATALOG_V100 = deepFreeze({
     inputSchema: {type:'object',properties:{},additionalProperties:false},
     annotations: {readOnlyHint:true,untrustedContentHint:true,consequentialHint:false,debugging:false}
   },
+  'vp3.agent.get': {
+    title: 'Get Profile Agent',
+    description: 'Return the public Profile Agent identity and greeting available to this visitor.',
+    inputSchema: {type:'object',properties:{},additionalProperties:false},
+    annotations: {readOnlyHint:true,untrustedContentHint:true,consequentialHint:false,debugging:false}
+  },
+  'vp3.agent.conversation.get': {
+    title: 'Get Profile Agent conversation',
+    description: 'Return one conversation bound to this exact profile, Profile Agent, and visitor session.',
+    inputSchema: {type:'object',properties:{conversation_id:{type:'integer',minimum:1}},required:['conversation_id'],additionalProperties:false},
+    annotations: {readOnlyHint:true,untrustedContentHint:true,consequentialHint:false,debugging:false}
+  },
+  'vp3.agent.message.send': {
+    title: 'Send message to Profile Agent',
+    description: 'Send a visitor message to this Profile Agent using the canonical conversation and privacy boundary.',
+    inputSchema: {type:'object',properties:{conversation_id:{type:'integer',minimum:1},message:{type:'string',minLength:1,maxLength:2000}},required:['message'],additionalProperties:false},
+    annotations: {readOnlyHint:false,untrustedContentHint:true,consequentialHint:false,debugging:false}
+  },
+  'vp3.agent.owner_handoff.request': {
+    title: 'Request profile owner assistance',
+    description: 'Ask the profile owner for assistance with this exact visitor conversation.',
+    inputSchema: {type:'object',properties:{conversation_id:{type:'integer',minimum:1},reason:{type:'string',maxLength:1000}},required:['conversation_id'],additionalProperties:false},
+    annotations: {readOnlyHint:false,untrustedContentHint:true,consequentialHint:false,debugging:false}
+  },
   'vp3.intent.resolve': {
     title: 'Resolve profile intent',
     description: 'Identify which currently available VP3 profile capabilities can help with a user goal without executing an action.',

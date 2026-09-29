@@ -7,6 +7,7 @@ const execution=read('includes/homeserver-local-execution-v230.php');
 const voice=read('includes/homeserver-voice-v234.php');
 const profile=read('includes/homeserver-profile-agent-v235.php');
 const profileApi=read('api/profile-agent.php');
+const profileService=read('includes/profile-agent-public-service-v110.php');
 const voiceApi=read('api/homeserver-voice-v234.php');
 const agentVoice=read('api/agent-voice-v117.php');
 const bootstrap=read('includes/bootstrap.php');
@@ -29,8 +30,9 @@ const checks=[
  ['Profile Agent helper uses only stateless agent.infer.local',/agent\.infer\.local/.test(profile)&&!/'agent\.chat'/.test(profile)],
  ['Profile Agent helper requires advertised privacy-safe capability flags',/caller_supplied_context_only/.test(profile)&&/tools_enabled/.test(profile)&&/local_only/.test(profile)],
  ['Profile Agent local prompt is built only from approved context argument',/approvedContext/.test(profile)&&/Approved source/.test(profile)],
- ['public Profile Agent tries HomeServer before legacy Cloud answer',profileApi.indexOf('homeserver_profile_v235_answer')<profileApi.indexOf('chat_remote_answer')],
- ['public Profile Agent stores sanitized HomeServer compute metadata',/homeserver_compute/.test(profileApi)&&/failure_class/.test(profileApi)&&/execution/.test(profileApi)],
+ ['public Profile Agent tries HomeServer before legacy Cloud answer',profileService.indexOf('homeserver_profile_v235_answer')>=0&&profileService.indexOf('homeserver_profile_v235_answer')<profileService.indexOf('chat_remote_answer')],
+ ['public Profile Agent stores sanitized HomeServer compute metadata',/homeserver_compute/.test(profileService)&&/failure_class/.test(profileService)&&/execution/.test(profileService)],
+ ['public Profile Agent API delegates to canonical shared service',/profile-agent-public-service-v110\.php/.test(profileApi)&&/vp3_profile_agent_public_message_service_v110/.test(profileApi)],
  ['Agent voice warm path can select HomeServer local voice',/homeserver_local/.test(agentVoice)&&/homeserver-speech-status/.test(agentVoice)],
  ['Agent voice one-use stream can return HomeServer WAV',/homeserver_voice_v234_synthesize/.test(agentVoice)&&/Content-Type: audio\/wav/.test(agentVoice)],
  ['ElevenLabs remains the first readiness authority',warmBlock.indexOf('stonefellow_voice_v244_verify')>=0&&warmBlock.indexOf('stonefellow_voice_v244_verify')<warmBlock.indexOf('stonefellow_voice_v234_homeserver_status')],
