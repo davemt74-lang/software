@@ -634,8 +634,11 @@ function vp3_cloud_hosting_v120_deploy_package(
         throw new RuntimeException('Deployment idempotency key belongs to an older Cloud desired-state revision.');
     }
     if((string)$existing['state']==='deployed')return ['replayed'=>true,'deployment'=>$existing];
-    if((string)$existing['state']==='failed')throw new RuntimeException('Failed deployment requires a new idempotency key.');
     $deploymentId=(int)$existing['id'];
+    if((string)$existing['state']==='failed'){
+        $pdo->prepare("UPDATE cloud_hosting_deployments SET state='pending',error_code='',error_message='',completed_at=NULL WHERE id=?")->execute([$deploymentId]);
+        $existing=vp3_cloud_hosting_v120_deployment_row($siteId,$requestKey,$pdo)??$existing;
+    }
     $knownTransferId=trim((string)($existing['transfer_id']??''));
 
     try{
@@ -643,10 +646,11 @@ function vp3_cloud_hosting_v120_deploy_package(
         $synced=vp3_cloud_hosting_site_v100($siteId,$userId,$pdo);
         if($synced===null)throw new RuntimeException('Hosted site disappeared during reconciliation.');
         $syncedRevision=(int)$synced['desired_revision'];
-        if($existing!==null&&$syncedRevision!==$revision){
+        $created=!empty($claim['created']);
+        if(!$created&&$syncedRevision!==$revision){
             throw new RuntimeException('Deployment idempotency key belongs to a pre-reconciliation Cloud revision.');
         }
-        if($existing===null&&$syncedRevision!==$revision){
+        if($created&&$syncedRevision!==$revision){
             $revision=$syncedRevision;
             $pdo->prepare('UPDATE cloud_hosting_deployments SET desired_revision=? WHERE id=?')->execute([$revision,$deploymentId]);
         }
@@ -801,8 +805,10 @@ function vp3_cloud_hosting_v120_rollback(
         throw new RuntimeException('Rollback idempotency key belongs to an older Cloud desired-state revision.');
     }
     if((string)$existing['state']==='rolled_back')return ['replayed'=>true,'deployment'=>$existing];
-    if((string)$existing['state']==='failed')throw new RuntimeException('Failed rollback requires a new idempotency key.');
     $id=(int)$existing['id'];
+    if((string)$existing['state']==='failed'){
+        $pdo->prepare("UPDATE cloud_hosting_deployments SET state='pending',error_code='',error_message='',completed_at=NULL WHERE id=?")->execute([$id]);
+    }
     try{
         $result=vp3_cloud_hosting_v120_remote($userId,'hosting.deployment.rollback',[
             'cloud_site_id'=>(string)$fresh['site_key'],
