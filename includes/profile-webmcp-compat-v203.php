@@ -34,7 +34,7 @@ function vp3_profile_webmcp_tool_lifecycle_v203(string $tool,array $catalog,arra
     ];
 }
 
-function vp3_profile_webmcp_tool_available_v203(string $tool,array $catalog,?int $now=null,array $overrides=[]): bool
+function vp3_profile_webmcp_tool_available_v203(string $tool,array $catalog,?int $now=null,array $overrides=[],string $runtimeBuild=''): bool
 {
     $row=vp3_profile_webmcp_tool_lifecycle_v203($tool,$catalog,$overrides);
     if(($row['state']??'disabled')==='disabled')return false;
@@ -43,6 +43,8 @@ function vp3_profile_webmcp_tool_available_v203(string $tool,array $catalog,?int
         $ts=strtotime($sunset);
         if($ts!==false&&$ts<=($now??time()))return false;
     }
+    $minimum=trim((string)($row['minimum_runtime_build']??''));
+    if($minimum!==''&&!hash_equals($minimum,trim($runtimeBuild)))return false;
     return isset($catalog[$tool]);
 }
 
