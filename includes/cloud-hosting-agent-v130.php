@@ -484,7 +484,8 @@ function vp3_cloud_hosting_agent_v130_query(
     $hint=vp3_cloud_hosting_agent_v130_extract_site_hint($siteQuery);
     $site=vp3_cloud_hosting_agent_v130_user_site($uid,$hint,$pdo);
 
-    if(preg_match('/\b(?:list|show|what|which)\b.*\b(?:hosting|hosted\s+sites?|sites?)\b|\bmy\s+hosted\s+sites?\b/i',$query)){
+    if(!preg_match('/\b(?:releases?|release\s+history|deployment\s+history)\b/i',$query)
+        &&preg_match('/\b(?:list|show|what|which)\b.*\b(?:hosting|hosted\s+sites?|sites?)\b|\bmy\s+hosted\s+sites?\b/i',$query)){
         $sites=vp3_cloud_hosting_agent_v130_list($user,$remote,$pdo);
         $answer=$sites?'Your hosted sites:'."\n".implode("\n",vp3_cloud_hosting_agent_v130_site_lines($sites)):'You do not have any Cloud Hosting sites yet.';
         return ['handled'=>true,'answer'=>$answer,'stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[],'hosting_plan'=>null];
