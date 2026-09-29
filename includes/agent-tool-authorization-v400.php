@@ -16,7 +16,7 @@ const VP3_AGENT_TOOL_AUTHORIZATION_V400='vp3-agent-tool-authorization-v400-20260
 
 function vp3_agent_tool_empty_v400(): array
 {
-    return ['handled'=>false,'answer'=>'','stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[],'profile_webmcp_plan'=>null];
+    return ['handled'=>false,'answer'=>'','stem_media'=>[],'media'=>[],'actions'=>[],'sources'=>[],'profile_webmcp_plan'=>null,'profile_webmcp_return'=>null];
 }
 
 function vp3_agent_tool_track_manage_v400(PDO $pdo,array $track,array $user): bool
