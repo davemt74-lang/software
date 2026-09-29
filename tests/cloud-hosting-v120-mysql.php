@@ -98,8 +98,8 @@ $payload3=vp3_cloud_hosting_v120_entitlement_payload($owner,$testPdo);
 if((int)$payload3['revision']!==3)throw new RuntimeException('Restored entitlement fingerprint did not advance revision.');
 
 $remoteState=[
-    'ent_revision'=>0,
-    'site_revision'=>0,
+    'ent_revision'=>5,
+    'site_revision'=>7,
     'deployed'=>false,
     'release'=>'',
     'previous_release'=>'',
@@ -117,7 +117,21 @@ $remote=function(int $userId,string $operation,array $payload) use (&$remoteStat
         return ['revision'=>$rev,'reconcile_result'=>'applied','configured'=>true];
     }
     if($operation==='hosting.site.reconcile'){
-        $remoteState['site_revision']=(int)$payload['revision'];
+        $incoming=(int)$payload['revision'];
+        if($incoming<$remoteState['site_revision']){
+            return [
+                'contract'=>'vp3.hosting.cloud-control.v1',
+                'cloud_site_id'=>$payload['cloud_site_id'],
+                'site_id'=>'local_site_1',
+                'revision'=>$remoteState['site_revision'],
+                'desired_state'=>$payload['desired_state'],
+                'observed_state'=>'configured',
+                'active_release_id'=>$remoteState['release']?:null,
+                'public_routing'=>false,
+                'reconcile_result'=>'stale_ignored',
+            ];
+        }
+        $remoteState['site_revision']=$incoming;
         $desired=(string)$payload['desired_state'];
         $observed=$desired==='active'&&$remoteState['deployed']?'active':'configured';
         return [
@@ -219,8 +233,12 @@ $site=vp3_cloud_hosting_site_v100((int)$site['id'],1,$testPdo)??$site;
 
 $pre=vp3_cloud_hosting_v120_reconcile_site($site,$remote,$testPdo);
 if(($pre['site']['blocked_reason']??'')!=='deployment_required')throw new RuntimeException('Active site should be blocked until deployment.');
-if(($pre['route']['desired_state']??'')!=='active')throw new RuntimeException('Verified DNS + valid Cloud-edge TLS should reconcile as an active public route.');
+if(($pre['route']['desired_state']??'')!=='inactive')throw new RuntimeException('Public route must stay inactive until HomeServer runtime is active.');
 if(vp3_cloud_hosting_v120_route_token((int)$site['id'],$testPdo)!=='ROUTE_TOKEN_SUPER_SECRET')throw new RuntimeException('Route token was not recoverable from encrypted storage.');
+$rebasedSite=vp3_cloud_hosting_site_v100((int)$site['id'],1,$testPdo);
+if((int)($rebasedSite['desired_revision']??0)!==8)throw new RuntimeException('Cloud site revision did not rebase above older HomeServer state.');
+$entSync=$testPdo->query('SELECT revision,last_remote_revision FROM cloud_hosting_entitlement_sync WHERE user_id=1')->fetch();
+if((int)$entSync['revision']!==6||(int)$entSync['last_remote_revision']!==6)throw new RuntimeException('Cloud entitlement revision did not rebase above older HomeServer state.');
 $cred=$testPdo->query('SELECT route_token_enc,route_token_sha256 FROM cloud_hosting_route_credentials')->fetch();
 if(str_contains((string)$cred['route_token_enc'],'ROUTE_TOKEN_SUPER_SECRET'))throw new RuntimeException('Route token was stored in plaintext.');
 
@@ -258,6 +276,10 @@ foreach($chunks as $op){
 $afterDeploy=vp3_cloud_hosting_site_v100((int)$site['id'],1,$testPdo);
 if(($afterDeploy['active_release_id']??'')!=='release_1')throw new RuntimeException('Cloud active release was not updated.');
 if(($afterDeploy['observed_state']??'')!=='active')throw new RuntimeException('Post-deploy reconcile did not activate observed state.');
+
+if(($result['reconcile']['route']['desired_state']??'')!=='active'||empty($result['reconcile']['route']['route_ready']))throw new RuntimeException('Public route did not activate after runtime became ready.');
+$syncRow=$testPdo->query('SELECT public_route_ready FROM cloud_hosting_site_sync WHERE site_id='.(int)$site['id'])->fetch();
+if((int)($syncRow['public_route_ready']??0)!==1)throw new RuntimeException('Site sync did not retain public route readiness.');
 
 $refreshed=vp3_cloud_hosting_v120_refresh_deployment($afterDeploy,'deploy-1',$remote,$testPdo);
 if(($refreshed['deployment']['state']??'')!=='deployed')throw new RuntimeException('Deployment status refresh lost deployed state.');
