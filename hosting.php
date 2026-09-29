@@ -262,7 +262,10 @@ $bytesText=static function(int $bytes):string{
                   <?php foreach($customDomains as $customDomain): ?>
                     <?php
                       $rawCustomDomain=vp3_cloud_hosting_domains_v200_find((int)$customDomain['id'],(int)$user['id'],$pdo);
-                      $domainInstructions=$rawCustomDomain?vp3_cloud_hosting_domains_v200_instructions($rawCustomDomain):[];
+                      $domainInstructions=[];
+                      if($rawCustomDomain){
+                        try{$domainInstructions=vp3_cloud_hosting_domains_v200_instructions($rawCustomDomain);}catch(Throwable $domainInstructionError){$domainInstructions=[];}
+                      }
                       $ownership=(array)($domainInstructions['ownership']??[]);
                       $routing=(array)($domainInstructions['routing']??[]);
                     ?>
