@@ -45,8 +45,10 @@ function vp3_profile_webmcp_resume_issue_v194(PDO $pdo,array $profile,array $use
         'profile_username'=>(string)$profile['username'],
         'goal'=>$safeGoal,
         'action_context_id'=>(string)$actionContext['context_id'],
+        'correlation_id'=>(string)$actionContext['context_id'],
         'return_token'=>(string)$actionContext['return_token'],
         'return_path'=>(string)$actionContext['return_path'],
+        'conversation_id'=>max(0,$conversationId),
         'recommended_capabilities'=>array_values(array_filter(array_map('strval',(array)($plan['recommended_capabilities']??[])))),
         'recommended_tools'=>array_values(array_filter(array_map(
             static fn($row):string=>is_array($row)?(string)($row['name']??''):'',
@@ -85,6 +87,7 @@ function vp3_profile_webmcp_resume_validate_v194(array $profile,array $user,stri
         'path'=>'/'.rawurlencode((string)$profile['username']).'?webmcp_resume='.$token,
         'expires_at'=>(int)($row['expires_at']??0),
         'action_context_id'=>(string)($row['action_context_id']??''),
+        'correlation_id'=>(string)($row['action_context_id']??''),
         'return_token'=>(string)($row['return_token']??''),
         'return_path'=>(string)($row['return_path']??''),
     ];
@@ -132,6 +135,20 @@ function vp3_profile_webmcp_resume_consume_v194(PDO $pdo,array $profile,?array $
     }
 
     $goal=mb_strimwidth(trim((string)($row['goal']??'')),0,1000,'');
+    $correlationId=(string)($row['action_context_id']??'');
+    if(function_exists('vp3_profile_webmcp_context_v130')&&function_exists('vp3_profile_webmcp_record_v130')&&$correlationId!==''){
+        try{
+            $obsContext=vp3_profile_webmcp_context_v130($pdo,$profile,'native_profile',[
+                'webmcp_session_id'=>'Resume_'.substr($correlationId,0,32),
+                'interaction_id'=>$correlationId,
+                'correlation_id'=>$correlationId,
+            ],null,$viewer);
+            vp3_profile_webmcp_record_v130($pdo,$obsContext,'webmcp_resume_loaded','','resumed',0,[
+                'conversation_id'=>(int)($row['conversation_id']??0),
+            ]);
+        }catch(Throwable $e){error_log('VP3 WebMCP resume observability failed: '.$e->getMessage());}
+    }
+
     $intent=$goal!==''?vp3_profile_webmcp_resolve_intent_v100($goal,[
         'capabilities'=>$resolution['capabilities'],
         'allowed_tools'=>$resolution['allowed_tools'],
@@ -146,6 +163,7 @@ function vp3_profile_webmcp_resume_consume_v194(PDO $pdo,array $profile,?array $
         'recommended_tools'=>$tools,
         'resolved_capabilities'=>array_values($intent['recommended_capabilities']??[]),
         'action_context_id'=>(string)($row['action_context_id']??''),
+        'correlation_id'=>(string)($row['action_context_id']??''),
         'return_token'=>(string)($row['return_token']??''),
         'return_path'=>(string)($row['return_path']??''),
         'execution_allowed'=>true,

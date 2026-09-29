@@ -12,6 +12,7 @@ require_permission('admin.access');
 $pdo=db();
 $ownerFilter=max(0,(int)($_GET['owner_user_id']??0));
 $propertyFilter=max(0,(int)($_GET['property_id']??0));
+$correlationFilter=function_exists('vp3_profile_webmcp_correlation_id_v205')?vp3_profile_webmcp_correlation_id_v205((string)($_GET['correlation_id']??'')):'';
 $overview=$pdo?vp3_profile_webmcp_admin_overview_v202($pdo,$ownerFilter,$propertyFilter):[
     'active_profiles'=>0,'connected_sites'=>0,'summary'=>[],'events'=>[],'owners'=>[],'properties'=>[],'release'=>[],'release_audit'=>['ok'=>false],
 ];
@@ -22,6 +23,8 @@ $surfaces=is_array($summary['surface_distribution']??null)?$summary['surface_dis
 $modes=is_array($summary['negotiation_distribution']??null)?$summary['negotiation_distribution']:[];
 $failureRate=(float)($summary['failure_rate_percent']??0);
 $connectedSiteRuntime=$pdo?vp3_profile_webmcp_sites_admin_v204($pdo):[];
+$auditTimeline=$pdo&&function_exists('vp3_profile_webmcp_observability_rows_v205')?vp3_profile_webmcp_observability_rows_v205($pdo,$ownerFilter,$propertyFilter,$correlationFilter,400):[];
+$latencySummary=function_exists('vp3_profile_webmcp_latency_summary_v205')?vp3_profile_webmcp_latency_summary_v205($auditTimeline):[];
 
 $adminTitle='WebMCP Operations';
 $adminActive='webmcp';
@@ -63,6 +66,9 @@ require __DIR__.'/_header.php';
         <?php foreach((array)($overview['properties']??[]) as $property): ?><option value="<?= (int)$property['id'] ?>"<?= $propertyFilter===(int)$property['id']?' selected':'' ?>><?= e((string)$property['label']) ?> · <?= e((string)$property['domain']) ?></option><?php endforeach; ?>
       </select>
     </label>
+    <label>Correlation ID
+      <input name="correlation_id" value="<?= e($correlationFilter) ?>" placeholder="Optional journey correlation ID">
+    </label>
     <div class="actions" style="align-self:end"><button class="btn primary" type="submit">Apply</button></div>
   </form>
 </section>
@@ -83,6 +89,41 @@ require __DIR__.'/_header.php';
       <?php foreach($surfaces as $surface=>$count): ?><div class="admin-attention-row"><div><strong><?= e((string)$surface) ?></strong><small>Execution surface</small></div><span class="admin-attention-badge"><?= number_format((int)$count) ?></span></div><?php endforeach; ?>
       <?php if(!$modes&&!$surfaces): ?><div class="admin-activity-row"><div><strong>No surface activity yet</strong><small>Runtime and negotiation state will appear here.</small></div></div><?php endif; ?>
     </div>
+  </section>
+</div>
+
+<div class="admin-dashboard-grid">
+  <section class="admin-dashboard-card">
+    <div class="admin-dashboard-card-head"><div><h3>Audit timeline</h3><p>Cross-surface WebMCP lifecycle events grouped by sanitized correlation ID.</p></div><span><?= number_format(count($auditTimeline)) ?> events</span></div>
+    <div class="admin-table-wrap"><table class="admin-table">
+      <thead><tr><th>Time</th><th>Stage</th><th>Surface</th><th>Correlation</th><th>Event</th><th>Tool</th><th>Result</th><th>Latency</th></tr></thead>
+      <tbody>
+      <?php foreach(array_slice($auditTimeline,0,150) as $event): ?>
+        <tr>
+          <td><?= e((string)$event['occurred_at']) ?></td>
+          <td><?= e((string)$event['stage']) ?></td>
+          <td><?= e((string)$event['surface']) ?></td>
+          <td><code><?= e((string)$event['correlation_id']) ?></code></td>
+          <td><?= e((string)$event['event_name']) ?></td>
+          <td><?= e((string)$event['tool']) ?></td>
+          <td><?= e((string)($event['result_code']?:$event['status'])) ?></td>
+          <td><?= number_format((int)$event['duration_ms']) ?> ms</td>
+        </tr>
+      <?php endforeach; ?>
+      <?php if(!$auditTimeline): ?><tr><td colspan="8">No WebMCP audit events in the selected scope.</td></tr><?php endif; ?>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section class="admin-dashboard-card">
+    <div class="admin-dashboard-card-head"><div><h3>Latency by tool</h3><p>Observed server-side duration by execution surface and tool.</p></div></div>
+    <div class="admin-table-wrap"><table class="admin-table">
+      <thead><tr><th>Surface</th><th>Tool</th><th>Samples</th><th>Average</th><th>P95</th><th>Max</th></tr></thead>
+      <tbody>
+      <?php foreach(array_slice($latencySummary,0,40) as $row): ?><tr><td><?= e((string)$row['surface']) ?></td><td><?= e((string)$row['tool']) ?></td><td><?= number_format((int)$row['count']) ?></td><td><?= number_format((int)$row['avg_ms']) ?> ms</td><td><?= number_format((int)$row['p95_ms']) ?> ms</td><td><?= number_format((int)$row['max_ms']) ?> ms</td></tr><?php endforeach; ?>
+      <?php if(!$latencySummary): ?><tr><td colspan="6">No latency samples in the selected scope.</td></tr><?php endif; ?>
+      </tbody>
+    </table></div>
   </section>
 </div>
 

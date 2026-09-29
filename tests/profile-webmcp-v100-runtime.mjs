@@ -58,6 +58,7 @@ assert.deepEqual(requests[0].body.client_versions.release_versions,['profile-web
 assert.equal(requests[0].body.client_versions.runtime_build,'profile-webmcp-runtime-v100-20260928');
 assert.match(requests[0].body.telemetry.webmcp_session_id,/^[A-Za-z0-9_-]{8,96}$/);
 assert.match(requests[0].body.telemetry.interaction_id,/^[A-Za-z0-9_-]{8,96}$/);
+assert.equal(requests[0].body.telemetry.correlation_id,requests[0].body.telemetry.interaction_id,'ordinary native calls correlate to interaction');
 assert.equal(requests[0].body.telemetry.agent_referral,'');
 assert.equal('owner_user_id' in requests[0].body,false,'client must not assert owner authority');
 assert.deepEqual(requests[0].body.input,{},'session proof must stay outside tool input');

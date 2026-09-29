@@ -68,6 +68,7 @@ assert.deepEqual(body.client_versions.release_versions,['profile-webmcp-release-
 assert.equal(body.client_versions.runtime_build,'profile-webmcp-external-v120-20260928');
 assert.match(body.telemetry.webmcp_session_id,/^[A-Za-z0-9_-]{8,96}$/);
 assert.match(body.telemetry.interaction_id,/^[A-Za-z0-9_-]{8,96}$/);
+assert.equal(body.telemetry.correlation_id,body.telemetry.interaction_id,'external calls correlate to interaction');
 assert.equal(body.telemetry.agent_referral,'');
 assert.equal(body.surface,'external_site');
 assert.equal(body.property_id,44);

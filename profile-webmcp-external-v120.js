@@ -373,6 +373,7 @@ class ExternalRuntime{
         telemetry:{
           webmcp_session_id:this.webmcpSessionId,
           interaction_id:interactionId,
+          correlation_id:interactionId,
           agent_referral:referralTokenV130()
         }
       };

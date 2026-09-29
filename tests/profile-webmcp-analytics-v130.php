@@ -12,6 +12,7 @@ $transport=vp3_profile_webmcp_telemetry_v130([
     'telemetry'=>[
         'webmcp_session_id'=>$validSession,
         'interaction_id'=>$validInteraction,
+        'correlation_id'=>'Correlation_12345678',
         'agent_referral'=>strtoupper($ref),
         'extra_secret'=>'do-not-copy',
     ],
@@ -25,6 +26,7 @@ $transport=vp3_profile_webmcp_telemetry_v130([
 ]);
 t($transport['webmcp_session_id']===$validSession,'session id');
 t($transport['interaction_id']===$validInteraction,'interaction id');
+t($transport['correlation_id']==='Correlation_12345678','correlation id');
 t($transport['agent_referral']===$ref,'referral normalization');
 t(!array_key_exists('extra_secret',$transport),'transport allowlist');
 t($transport['client_manifest_version']==='vp3.profile.webmcp.v1','manifest version');
@@ -49,6 +51,7 @@ $context=[
     'profile_username'=>'demo',
     'webmcp_session_id'=>$validSession,
     'interaction_id'=>$validInteraction,
+    'correlation_id'=>'Correlation_12345678',
     'visitor_user_id'=>42,
     'referral_id'=>91,
     'referral_agent_contact_id'=>7,
@@ -74,6 +77,7 @@ t($envelope['surface']==='external_site','surface');
 t($envelope['tool']==='vp3.profile.get','tool');
 t($envelope['status']==='completed','status');
 t($envelope['duration_ms']===123,'duration');
+t($envelope['correlation_id']==='Correlation_12345678','durable correlation');
 t($envelope['referral_id']===91,'referral id');
 t($envelope['referral_agent_contact_id']===7,'referral contact');
 t($envelope['order_id']===55,'future link support');

@@ -461,6 +461,7 @@ export class VP3ProfileWebMCPRuntimeV100 {
       return safeError('CAPABILITY_UNAVAILABLE','That profile capability is unavailable.');
     }
     const interactionId=transportIdV130();
+    const correlationId=/^[A-Za-z0-9_-]{8,96}$/.test(String(this.resumeContext?.action_context_id||''))?String(this.resumeContext.action_context_id):interactionId;
     const startedAt=Date.now();
     try {
       this.onEvent({event:'tool_called',tool:name,interaction_id:interactionId});
@@ -481,6 +482,7 @@ export class VP3ProfileWebMCPRuntimeV100 {
           telemetry:{
             webmcp_session_id:this.webmcpSessionId,
             interaction_id:interactionId,
+            correlation_id:correlationId,
             agent_referral:referralTokenV130()
           }
         }),

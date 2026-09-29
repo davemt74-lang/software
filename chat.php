@@ -126,7 +126,7 @@ if($profileWebmcpReturnToken!==''){
     try{
         $returnProfile=$pdoForAgent&&function_exists('profile_for_user')?profile_for_user($pdoForAgent,(int)$user['id'],false):null;
         if(is_array($returnProfile)){
-            $profileWebmcpReturn=vp3_profile_webmcp_return_consume_v195($returnProfile,$user,$profileWebmcpReturnToken);
+            $profileWebmcpReturn=vp3_profile_webmcp_return_consume_v195($returnProfile,$user,$profileWebmcpReturnToken,$pdoForAgent);
             if(is_array($profileWebmcpReturn)&&(int)($profileWebmcpReturn['conversation_id']??0)>0){
                 $_GET['conversation_id']=(int)$profileWebmcpReturn['conversation_id'];
             }

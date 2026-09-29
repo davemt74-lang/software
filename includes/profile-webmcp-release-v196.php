@@ -36,6 +36,12 @@ function vp3_profile_webmcp_release_descriptor_v196(): array
             'required_for_future_major_versions'=>true,
             'consequential_downgrade_allowed'=>false,
         ],
+        'observability'=>[
+            'contract'=>'vp3.profile.webmcp.observability.v1',
+            'store'=>'canonical_radar_events',
+            'cross_surface_correlation'=>true,
+            'sensitive_input_logging'=>false,
+        ],
         'connected_sites'=>[
             'contract'=>'vp3.profile.webmcp.connected-sites.v1',
             'runtime_management'=>'canonical_radar_properties_and_events',
