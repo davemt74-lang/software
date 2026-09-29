@@ -12,29 +12,11 @@ function deepFreeze(value){
 }
 
 const COMMERCE_CATALOG_V160=deepFreeze({
-  'vp3.commerce.products.list':{
-    title:'List public products',description:'List canonical public Profile Commerce products.',
-    inputSchema:{type:'object',properties:{},additionalProperties:false},
-    annotations:{readOnlyHint:true,untrustedContentHint:true,consequentialHint:false,debugging:false}
-  },
-  'vp3.commerce.product.get':{
-    title:'Get public product',description:'Return one public product, seller terms, and safe payment-provider choices.',
-    inputSchema:{type:'object',properties:{product_slug:{type:'string',minLength:1,maxLength:80}},required:['product_slug'],additionalProperties:false},
-    annotations:{readOnlyHint:true,untrustedContentHint:true,consequentialHint:false,debugging:false}
-  },
-  'vp3.commerce.checkout.prepare':{
-    title:'Prepare commerce checkout',description:'Validate canonical product price, terms, payer email, and provider without creating an order.',
-    inputSchema:{type:'object',properties:{product_slug:{type:'string',minLength:1,maxLength:80},payer_email:{type:'string',minLength:3,maxLength:190},connection_id:{type:'integer',minimum:1}},required:['product_slug','payer_email'],additionalProperties:false},
-    annotations:{readOnlyHint:false,untrustedContentHint:true,consequentialHint:false,debugging:false}
-  },
-  'vp3.commerce.checkout.confirm':{
-    title:'Confirm commerce checkout',description:'Create the prepared canonical order and hosted provider checkout. This does not mark payment paid.',
-    inputSchema:{type:'object',properties:{confirmation_token:{type:'string',minLength:20,maxLength:4096},idempotency_key:{type:'string',minLength:8,maxLength:96},intent:{type:'object',additionalProperties:true},terms_accepted:{type:'boolean'}},required:['confirmation_token','idempotency_key','intent','terms_accepted'],additionalProperties:false},
-    annotations:{readOnlyHint:false,untrustedContentHint:true,consequentialHint:true,debugging:false}
-  },
-  'vp3.commerce.order.get':{
-    title:'Get commerce order',description:'Return the customer-safe canonical order projection using receipt authority.',
-    inputSchema:{type:'object',properties:{order_number:{type:'string',minLength:1,maxLength:80},receipt_token:{type:'string',pattern:'^[a-f0-9]{64}
+  'vp3.commerce.products.list':{title:'List public products',description:'List canonical public Profile Commerce products.',inputSchema:{type:'object',properties:{},additionalProperties:false},annotations:{readOnlyHint:true,untrustedContentHint:true,consequentialHint:false,debugging:false}},
+  'vp3.commerce.product.get':{title:'Get public product',description:'Return one public product, seller terms, and safe payment-provider choices.',inputSchema:{type:'object',properties:{product_slug:{type:'string',minLength:1,maxLength:80}},required:['product_slug'],additionalProperties:false},annotations:{readOnlyHint:true,untrustedContentHint:true,consequentialHint:false,debugging:false}},
+  'vp3.commerce.checkout.prepare':{title:'Prepare commerce checkout',description:'Validate canonical product price, terms, payer email, and provider without creating an order.',inputSchema:{type:'object',properties:{product_slug:{type:'string',minLength:1,maxLength:80},payer_email:{type:'string',minLength:3,maxLength:190},connection_id:{type:'integer',minimum:1}},required:['product_slug','payer_email'],additionalProperties:false},annotations:{readOnlyHint:false,untrustedContentHint:true,consequentialHint:false,debugging:false}},
+  'vp3.commerce.checkout.confirm':{title:'Confirm commerce checkout',description:'Create the prepared canonical order and hosted provider checkout. This does not mark payment paid.',inputSchema:{type:'object',properties:{confirmation_token:{type:'string',minLength:20,maxLength:4096},idempotency_key:{type:'string',minLength:8,maxLength:96},intent:{type:'object',additionalProperties:true},terms_accepted:{type:'boolean'}},required:['confirmation_token','idempotency_key','intent','terms_accepted'],additionalProperties:false},annotations:{readOnlyHint:false,untrustedContentHint:true,consequentialHint:true,debugging:false}},
+  'vp3.commerce.order.get':{title:'Get commerce order',description:'Return the customer-safe canonical order projection using receipt authority.',inputSchema:{type:'object',properties:{order_number:{type:'string',minLength:1,maxLength:80},receipt_token:{type:'string',pattern:'^[a-f0-9]{64}
   'vp3.profile.capabilities.get':{
     title:'Get profile capabilities',
     description:'Return the currently available VP3 capabilities for this connected website.',
@@ -408,12 +390,8 @@ if(autoScript?.dataset?.vp3Key&&autoScript?.dataset?.vp3WebmcpAuto!=='off'){
   });
 }
 })(globalThis);
-}},required:['order_number','receipt_token'],additionalProperties:false},
-    annotations:{readOnlyHint:true,untrustedContentHint:true,consequentialHint:false,debugging:false}
-  },
-  'vp3.commerce.receipt.get':{
-    title:'Get commerce receipt',description:'Return the customer-safe receipt projection and receipt URL.',
-    inputSchema:{type:'object',properties:{order_number:{type:'string',minLength:1,maxLength:80},receipt_token:{type:'string',pattern:'^[a-f0-9]{64}
+}},required:['order_number','receipt_token'],additionalProperties:false},annotations:{readOnlyHint:true,untrustedContentHint:true,consequentialHint:false,debugging:false}},
+  'vp3.commerce.receipt.get':{title:'Get commerce receipt',description:'Return the customer-safe receipt projection and receipt URL.',inputSchema:{type:'object',properties:{order_number:{type:'string',minLength:1,maxLength:80},receipt_token:{type:'string',pattern:'^[a-f0-9]{64}
   'vp3.profile.capabilities.get':{
     title:'Get profile capabilities',
     description:'Return the currently available VP3 capabilities for this connected website.',
@@ -775,12 +753,8 @@ if(autoScript?.dataset?.vp3Key&&autoScript?.dataset?.vp3WebmcpAuto!=='off'){
   });
 }
 })(globalThis);
-}},required:['order_number','receipt_token'],additionalProperties:false},
-    annotations:{readOnlyHint:true,untrustedContentHint:true,consequentialHint:false,debugging:false}
-  },
-  'vp3.commerce.delivery.get':{
-    title:'Get fulfillment status',description:'Return fulfillment state and whether private delivery is available without embedding private delivery content.',
-    inputSchema:{type:'object',properties:{order_number:{type:'string',minLength:1,maxLength:80},receipt_token:{type:'string',pattern:'^[a-f0-9]{64}
+}},required:['order_number','receipt_token'],additionalProperties:false},annotations:{readOnlyHint:true,untrustedContentHint:true,consequentialHint:false,debugging:false}},
+  'vp3.commerce.delivery.get':{title:'Get fulfillment status',description:'Return fulfillment state and whether private delivery is available without embedding private delivery content.',inputSchema:{type:'object',properties:{order_number:{type:'string',minLength:1,maxLength:80},receipt_token:{type:'string',pattern:'^[a-f0-9]{64}
   'vp3.profile.capabilities.get':{
     title:'Get profile capabilities',
     description:'Return the currently available VP3 capabilities for this connected website.',
@@ -1142,12 +1116,8 @@ if(autoScript?.dataset?.vp3Key&&autoScript?.dataset?.vp3WebmcpAuto!=='off'){
   });
 }
 })(globalThis);
-}},required:['order_number','receipt_token'],additionalProperties:false},
-    annotations:{readOnlyHint:true,untrustedContentHint:true,consequentialHint:false,debugging:false}
-  },
-  'vp3.commerce.refund.status':{
-    title:'Get refund request status',description:'Return refundable balance and seller-review refund-request status.',
-    inputSchema:{type:'object',properties:{order_number:{type:'string',minLength:1,maxLength:80},receipt_token:{type:'string',pattern:'^[a-f0-9]{64}
+}},required:['order_number','receipt_token'],additionalProperties:false},annotations:{readOnlyHint:true,untrustedContentHint:true,consequentialHint:false,debugging:false}},
+  'vp3.commerce.refund.status':{title:'Get refund request status',description:'Return refundable balance and seller-review refund-request status.',inputSchema:{type:'object',properties:{order_number:{type:'string',minLength:1,maxLength:80},receipt_token:{type:'string',pattern:'^[a-f0-9]{64}
   'vp3.profile.capabilities.get':{
     title:'Get profile capabilities',
     description:'Return the currently available VP3 capabilities for this connected website.',
@@ -1509,12 +1479,8 @@ if(autoScript?.dataset?.vp3Key&&autoScript?.dataset?.vp3WebmcpAuto!=='off'){
   });
 }
 })(globalThis);
-}},required:['order_number','receipt_token'],additionalProperties:false},
-    annotations:{readOnlyHint:true,untrustedContentHint:true,consequentialHint:false,debugging:false}
-  },
-  'vp3.commerce.refund.prepare':{
-    title:'Prepare refund request',description:'Validate and preview a seller-reviewed refund request. No money moves.',
-    inputSchema:{type:'object',properties:{order_number:{type:'string',minLength:1,maxLength:80},receipt_token:{type:'string',pattern:'^[a-f0-9]{64}
+}},required:['order_number','receipt_token'],additionalProperties:false},annotations:{readOnlyHint:true,untrustedContentHint:true,consequentialHint:false,debugging:false}},
+  'vp3.commerce.refund.prepare':{title:'Prepare refund request',description:'Validate and preview a seller-reviewed refund request. No money moves.',inputSchema:{type:'object',properties:{order_number:{type:'string',minLength:1,maxLength:80},receipt_token:{type:'string',pattern:'^[a-f0-9]{64}
   'vp3.profile.capabilities.get':{
     title:'Get profile capabilities',
     description:'Return the currently available VP3 capabilities for this connected website.',
@@ -1876,14 +1842,8 @@ if(autoScript?.dataset?.vp3Key&&autoScript?.dataset?.vp3WebmcpAuto!=='off'){
   });
 }
 })(globalThis);
-},reason:{type:'string',minLength:3,maxLength:500}},required:['order_number','receipt_token','reason'],additionalProperties:false},
-    annotations:{readOnlyHint:false,untrustedContentHint:true,consequentialHint:false,debugging:false}
-  },
-  'vp3.commerce.refund.confirm':{
-    title:'Confirm refund request',description:'Submit the prepared request for seller review. This never executes a provider refund.',
-    inputSchema:{type:'object',properties:{confirmation_token:{type:'string',minLength:20,maxLength:4096},idempotency_key:{type:'string',minLength:8,maxLength:96},intent:{type:'object',additionalProperties:true}},required:['confirmation_token','idempotency_key','intent'],additionalProperties:false},
-    annotations:{readOnlyHint:false,untrustedContentHint:true,consequentialHint:true,debugging:false}
-  }
+},reason:{type:'string',minLength:3,maxLength:500}},required:['order_number','receipt_token','reason'],additionalProperties:false},annotations:{readOnlyHint:false,untrustedContentHint:true,consequentialHint:false,debugging:false}},
+  'vp3.commerce.refund.confirm':{title:'Confirm refund request',description:'Submit the prepared request for seller review. This never executes a provider refund.',inputSchema:{type:'object',properties:{confirmation_token:{type:'string',minLength:20,maxLength:4096},idempotency_key:{type:'string',minLength:8,maxLength:96},intent:{type:'object',additionalProperties:true}},required:['confirmation_token','idempotency_key','intent'],additionalProperties:false},annotations:{readOnlyHint:false,untrustedContentHint:true,consequentialHint:true,debugging:false}}
 });
 
 const CATALOG=deepFreeze({
