@@ -63,7 +63,7 @@ function ai_saved_encrypted_credentials_exist(): bool
     if (!function_exists('setting')) {
         return false;
     }
-    foreach (['ai_openai_api_key','ai_anthropic_api_key','ai_elevenlabs_api_key'] as $settingKey) {
+    foreach (['ai_openai_api_key','ai_anthropic_api_key','ai_elevenlabs_api_key','hosting_cpanel_api_token'] as $settingKey) {
         if (trim((string)setting($settingKey, '')) !== '') {
             return true;
         }

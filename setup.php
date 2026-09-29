@@ -59,6 +59,7 @@ try {
     vp3_cognitive_memory_promotion_ensure_schema_v2400($pdo);
     vp3_cognitive_attention_ensure_schema_v2410($pdo);
     homeserver_vp3_ensure_schema($pdo);
+    vp3_cloud_hosting_ensure_schema_v100($pdo);
     homeserver_account_v1210_ensure_schema($pdo);
     homeserver_scheduling_v620_ensure_schema($pdo);
     homeserver_commerce_agent_v1000_ensure_schema($pdo);

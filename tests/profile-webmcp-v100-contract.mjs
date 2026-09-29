@@ -85,8 +85,8 @@ assert.match(recovery,/tests\/profile-webmcp-agent-v110\.php/,'Recovery Baseline
 assert.match(recovery,/tests\/profile-webmcp-agent-v110-contract\.mjs/,'Recovery Baseline must retain Profile Agent WebMCP static contract');
 assert.match(recovery,/tests\/profile-webmcp-agent-v110-runtime\.mjs/,'Recovery Baseline must retain Profile Agent WebMCP runtime contract');
 
-assert.match(ciGovernance,/active\.length,12/,'consolidated active workflow count must remain 12');
-assert.doesNotMatch(ciGovernance,/profile-webmcp-v100\.yml/,'WebMCP must not create a thirteenth active workflow');
+assert.match(ciGovernance,/active\.length,13/,'consolidated active workflow count must include the governed Cloud Hosting workflow');
+assert.doesNotMatch(ciGovernance,/profile-webmcp-v100\.yml/,'WebMCP must remain archived and must not create its own active workflow');
 assert.match(archivedWorkflow,/name: Profile WebMCP v1\.00/,'standalone WebMCP workflow should remain archived as release history');
 
 console.log('PROFILE_WEBMCP_V100_CONTRACT=PASS');

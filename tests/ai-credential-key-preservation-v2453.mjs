@@ -16,6 +16,7 @@ assert.match(ai,/The API credential encryption key is missing while encrypted cr
 assert.match(ai,/Restore \/private\/ai-key\.php before saving credentials/,'AI credential runtime must direct recovery to the original local key');
 assert.match(ai,/crypto_unavailable/,'AI credential runtime must distinguish missing crypto support');
 assert.match(ai,/key_mismatch/,'AI credential runtime must distinguish a mismatched key');
+assert.match(ai,/hosting_cpanel_api_token/,'cPanel API token must participate in encrypted credential key preservation');
 
 assert.match(voice,/ai_encrypted_secret_state\(\$encrypted\)/,'ElevenLabs runtime must classify encrypted credential state before decryption');
 assert.match(voice,/ai_credential_state_message\(\$credentialState, 'ElevenLabs'\)/,'ElevenLabs warm state must return actionable key recovery guidance');
@@ -25,8 +26,10 @@ assert.match(adminApi,/'credential_state' => \$credentialState/,'Admin ElevenLab
 assert.match(adminApi,/'credential_message' =>/,'Admin ElevenLabs API must expose recovery guidance');
 assert.match(adminUi,/Encryption key missing/,'Admin ElevenLabs UI must identify a missing local key');
 assert.match(adminUi,/credential_message/,'Admin ElevenLabs UI must render server recovery guidance');
-assert.match(adminPage,/AI credential recovery required\./,'Admin AI must show a cross-provider recovery warning');
+assert.match(adminPage,/API credential recovery required\./,'Admin AI/API settings must show a cross-provider recovery warning');
 assert.match(adminPage,/must never replace the <code>\/private<\/code> runtime directory/,'Admin AI must document deploy preservation');
+assert.match(adminPage,/name="cpanel_api_token"/,'Admin AI/API settings must expose the cPanel token field');
+assert.match(adminPage,/ai_encrypt_secret\(\$cpanelToken\)/,'cPanel token must be encrypted before storage');
 
 for (const excluded of ["--exclude='config.php'","--exclude='.env'","--exclude='.env.*'","--exclude='private/'","--exclude='uploads/'"]) {
   assert.ok(deploy.includes(excluded), `production deploy must preserve runtime path via ${excluded}`);
